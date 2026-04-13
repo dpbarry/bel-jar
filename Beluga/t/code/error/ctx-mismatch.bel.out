@@ -1,0 +1,8 @@
+File "./t/code/error/ctx-mismatch.bel", line 7, column 17:
+7 |mlam g, h, M => [h |- M];
+                   ^^^^^^^^ 
+Error: Context of meta-object does not match expected context.
+       Expected context:
+         g
+       Encountered context:
+         h

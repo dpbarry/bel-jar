@@ -1,0 +1,6 @@
+inductive t : ctype =;
+
+inductive Colour : ctype =
+| Blue : t
+| Red : t
+;

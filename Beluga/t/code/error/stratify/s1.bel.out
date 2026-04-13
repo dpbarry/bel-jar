@@ -1,0 +1,4 @@
+File "./t/code/error/stratify/s1.bel", line 8, column 12:
+8 |stratified Extends : {g:ctx} {h:ctx} ctype  =
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   
+Error: Stratification or positivity checking of datatype Extends fails.

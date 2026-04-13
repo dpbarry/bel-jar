@@ -1,0 +1,8 @@
+(library
+ (name support)
+ (package beluga)
+ (libraries
+  (re_export gen)
+  (re_export extlib))
+ (instrumentation
+  (backend bisect_ppx --bisect-silent yes)))

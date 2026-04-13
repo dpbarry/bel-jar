@@ -1,0 +1,5 @@
+File "./t/code/error/total-same.bel", line 9, column 14:
+9 || [ |- N] => foo [ |- N] ;
+                ^^^^^^^^^^^  
+Error: Type-checking error.
+       Recursive call not structurally smaller.

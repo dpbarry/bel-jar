@@ -1,0 +1,226 @@
+% Mechanization of POPLMark Reloaded challenge:
+% Section 2.6: Challenge 2b: Strong normalization proof using logical predicate
+% Extended with disjoint sums
+
+inductive Eq : (Γ:cxt) [Γ ⊢ tm A[]] → [Γ ⊢ tm A[]] → ctype =
+| Refl : Eq [Γ ⊢ M] [Γ ⊢ M];
+
+% Logical predicate
+
+stratified Red : (Γ:cxt) {A:[ ⊢ ty]} [Γ ⊢ tm A[]] → ctype =
+| RBase : SN [Γ ⊢ M] → Red [ ⊢ base] [Γ ⊢ M]
+| RArr  : ({Γ':cxt} {$σ:$[Γ' ⊢# Γ]} {N:[Γ' ⊢ tm A[]]}
+  Red [ ⊢ A] [Γ' ⊢ N] → Red [ ⊢ B] [Γ' ⊢ app M[$σ] N])
+  → Red [ ⊢ arr A B] [Γ ⊢ M]
+| RSum  : DSClosure [Γ ⊢ M] → Red [ ⊢ sum A B] [Γ ⊢ M]
+
+% Closure for disjoint sums
+
+and inductive DSClosure : (Γ:cxt) {M:[Γ ⊢ tm (sum A[] B[])]} ctype =
+| DSLeft  : Red [ ⊢ A] [Γ ⊢ N] → Eq [Γ ⊢ inl B[] N] [Γ ⊢ M] → DSClosure [Γ ⊢ M]
+| DSRight : Red [ ⊢ B] [Γ ⊢ N] → Eq [Γ ⊢ inr A[] N] [Γ ⊢ M] → DSClosure [Γ ⊢ M]
+| DSSNe   : SNe [Γ ⊢ M] → DSClosure [Γ ⊢ M]
+| DSRed   : DSClosure [Γ ⊢ M] → SNRed [Γ ⊢ N] [Γ ⊢ M] → DSClosure [Γ ⊢ N];
+
+% Semantic substitutions
+
+inductive RedS : {Γ:cxt} (Γ':cxt) {$σ:$[Γ' ⊢ Γ]} ctype =
+| RNil  : RedS [] $[Γ' ⊢ ^]
+| RCons : Red [ ⊢ A] [Γ' ⊢ M] → RedS [Γ] $[Γ' ⊢ $σ]
+  → RedS [Γ, x:tm A[]] $[Γ' ⊢ $σ, M];
+
+% Weakening for logical predicate and semantic substitutions
+
+rec rename_red : {Γ:cxt} {Γ':cxt} {A:[ ⊢ ty]} {M:[Γ ⊢ tm A[]]} {$ρ:$[Γ' ⊢# Γ]}
+Red [ ⊢ A] [Γ ⊢ M] → Red [ ⊢ A] [Γ' ⊢ M[$ρ]] =
+  % / total a (rename_red g g' a) /
+  mlam _, _, A, _, $ρ ⇒ fn r ⇒ case [ ⊢ A] of
+  | [ ⊢ base] ⇒ let RBase s = r in RBase (renameSN [_] [_] $[_ ⊢ $ρ] [_ ⊢ _] s)
+  | [ ⊢ arr A B] ⇒
+    let RArr r' = r in
+    RArr (mlam _, $σ, N ⇒ fn rn ⇒ r' [_] $[_ ⊢ $ρ[$σ[..]]] [_ ⊢ N] rn)
+  | [ ⊢ sum A B] ⇒ let RSum d = r in RSum (rename_DS [_] [_] [ ⊢ _] [ ⊢ _] [_ ⊢ _] $[_ ⊢ $ρ] d)
+
+% Inner IH for disjoint sum closure
+
+and rec rename_DS : {Γ:cxt} {Γ':cxt} {A:[ ⊢ ty]} {B:[ ⊢ ty]} {M:[Γ ⊢ tm (sum A[] B[])]} {$ρ:$[Γ' ⊢# Γ]}
+DSClosure [Γ ⊢ M] → DSClosure [Γ' ⊢ M[$ρ]] =
+  % / total d (rename_DS g g' a b m r d) /
+  mlam _, _, _, _, _, $ρ ⇒ fn d ⇒ case d of
+  | DSLeft r' Refl ⇒ DSLeft (rename_red [_] [_] [ ⊢ _] [_ ⊢ _] $[_ ⊢ $ρ] r') Refl
+  | DSRight r' Refl ⇒ DSRight (rename_red [_] [_] [ ⊢ _] [_ ⊢ _] $[_ ⊢ $ρ] r') Refl
+  | DSSNe sne ⇒ DSSNe (renameSNe $[_ ⊢ $ρ] [_ ⊢ _] sne)
+  | DSRed d' r' ⇒
+    let d'' = rename_DS [_] [_] [ ⊢ _] [ ⊢ _] [_ ⊢ _] $[_ ⊢ $ρ] d' in
+    DSRed d'' (renameSNRed $[_ ⊢ $ρ] [_ ⊢ _] r')
+
+and rec rename_redS : {Γ:cxt} {Γ':cxt} {$ρ:$[Γ' ⊢# Γ]} RedS [Φ] $[Γ ⊢ $σ] → RedS [Φ] $[Γ' ⊢ $σ[$ρ]] =
+  % / total rs (rename_redS g g' s rs) /
+  mlam _, _, $ρ ⇒ fn rs ⇒ case rs of
+  | RNil ⇒ RNil
+  | RCons r rs' ⇒
+    RCons (rename_red [_] [_] [ ⊢ _] [_ ⊢ _] $[_ ⊢ $ρ] r) (rename_redS [_] [_] $[_ ⊢ $ρ] rs')
+  ;
+
+% Reducibility candidate conditions
+
+rec cr1 : {Γ:cxt} {A :[ ⊢ ty]} {M:[Γ ⊢ tm A[]]} Red [ ⊢ A] [Γ ⊢ M] → SN [Γ ⊢ M] =
+  / total a (cr1 g a) /
+  mlam g, A, M ⇒ fn r ⇒ case [ ⊢ A] of
+  | [ ⊢ base] ⇒ let RBase s = r in s
+  | [ ⊢ arr A _] ⇒
+    let rv = cr3 [g, x:tm _] [ ⊢ A] [_, x:tm _ ⊢ x] (SVar [_, x:tm _ ⊢ x]) in
+    let RArr r' = r in
+    let s = cr1 [_, x:tm _] [ ⊢ _] [_, x:tm _ ⊢ app M[..] x]
+      (r' [_, x:tm _] $[_, x:tm _ ⊢ ..] [_, x:tm _ ⊢ x] rv) in
+    let sm = ext_SN [_,x:tm _ ⊢ M[..]] [_, x:tm _ ⊢ x] s in
+    anti_renameSN [_] [_] $[_, x:tm _ ⊢ ..] [_ ⊢ M] sm
+  | [ ⊢ sum _ _] ⇒ let RSum d = r in ds_cr1 [_] [ ⊢ _] [ ⊢ _] [_ ⊢ _] d
+
+% Inner IH for disjoint sum closure
+
+and rec ds_cr1 : {Γ:cxt} {A:[ ⊢ ty]} {B:[ ⊢ ty]} {M:[Γ ⊢ tm (sum A[] B[])]}
+DSClosure [Γ ⊢ M] → SN [Γ ⊢ M] =
+  / total d (ds_cr1 g a b m d) /
+  mlam _, A, B, M ⇒ fn d ⇒ case d of
+  | DSLeft r' Refl ⇒ SInl (cr1 [_] [ ⊢ _] [_ ⊢ _] r')
+  | DSRight r' Refl ⇒ SInr (cr1 [_] [ ⊢ _] [_ ⊢ _] r')
+  | DSSNe sne ⇒ SNeu sne
+  | DSRed d' r' ⇒ let sn = ds_cr1 [_] [ ⊢ _] [ ⊢ _] [_ ⊢ _] d' in SRed r' sn
+
+and rec cr2 : {Γ:cxt} {A:[ ⊢ ty]} {M:[Γ ⊢ tm A[]]} {M':[Γ ⊢ tm A[]]}
+SNRed [Γ ⊢ M] [Γ ⊢ M'] → Red [ ⊢ A] [Γ ⊢ M'] → Red [ ⊢ A] [Γ ⊢ M] =
+  / total a (cr2 g a) /
+  mlam _, A, M, M' ⇒ fn sr, rm' ⇒ case [ ⊢ A] of
+  | [ ⊢ base] ⇒ let RBase sm' = rm' in RBase (SRed sr sm')
+  | [ ⊢ arr A B] ⇒
+    let RArr rm' = rm' in
+    RArr (mlam _, $ρ, N ⇒ fn rn ⇒
+      cr2 [_] [ ⊢ B] [_ ⊢ app M[$ρ] N] [_ ⊢ app M'[$ρ] N]
+        (SAppl (renameSNRed $[_ ⊢ $ρ] [_ ⊢ M] sr)) (rm' [_] $[_ ⊢ $ρ] [_ ⊢ N] rn))
+  | [ ⊢ sum A B] ⇒ let RSum d = rm' in RSum (DSRed d sr)
+
+and rec cr3 : {Γ :cxt} {A:[ ⊢ ty]} {M:[Γ ⊢ tm A[]]} SNe [Γ ⊢ M] → Red [ ⊢ A] [Γ ⊢ M] =
+  / total a (cr3 g a) /
+  mlam _, A, M ⇒ fn sm ⇒ case [ ⊢ A] of
+  | [ ⊢ base] ⇒ RBase (SNeu sm)
+  | [ ⊢ arr A B] ⇒ RArr (mlam _, $ρ, N ⇒ fn rn ⇒
+    let sn = cr1 [_] [ ⊢ A] [_ ⊢ N] rn in
+    cr3 [_] [ ⊢ B] [_ ⊢ app M[$ρ] N] (SApp (renameSNe $[_ ⊢ $ρ] [_ ⊢ M] sm) sn))
+  | [ ⊢ sum A B] ⇒ RSum (DSSNe sm)
+  ;
+
+% Variables are reducible
+
+rec red_var : {Γ:cxt} {#p:#[Γ ⊢ tm A[]]} Red [ ⊢ A] [Γ ⊢ #p] =
+  / total (red_var) /
+  mlam _, #p ⇒ cr3 [_] [ ⊢ _] [_ ⊢ _] (SVar [_ ⊢ #p]);
+
+rec fundVar : {Γ:cxt} {#p:#[Γ ⊢ tm A[]]}
+RedS [Γ] $[Γ' ⊢ $σ] → Red [ ⊢ A] [Γ' ⊢ #p[$σ]] =
+  / total g (fundVar g) /
+  mlam g, #p ⇒ fn s ⇒ case [g] of
+  | [] ⇒ impossible [ ⊢ #p]
+  | [g, x:tm _] ⇒ (case [_, x:tm _ ⊢ #p] of
+    | [_, x:tm _ ⊢ x] ⇒ let RCons r s' = s in r
+    | [_, x:tm _ ⊢ #q[..]] ⇒ let RCons r s' = s in fundVar [g] [g ⊢ #q] s')
+  ;
+
+rec eq_red : Eq [Γ ⊢ M] [Γ ⊢ N] → Red [ ⊢ C] [Γ ⊢ match M (\x.N1) (\y.N2)]
+→ Red [ ⊢ C] [Γ ⊢ match N (\x.N1) (\y.N2)] =
+  / total (eq_red) /
+  fn e, r ⇒ let Refl = e in r
+  ;
+
+% Fundamental lemma
+
+rec fundamental_lemma : {Γ:cxt} {Γ':cxt} {M:[Γ ⊢ tm A[]]} {$σ:$[Γ' ⊢ Γ]}
+RedS [Γ] $[Γ' ⊢ $σ] → Red [ ⊢ A] [Γ' ⊢ M[$σ]] =
+  % / total m (fundamental_lemma g g' a m) /
+  mlam _, _, M, $σ ⇒ fn rs ⇒ case [_ ⊢ M] of
+  | [_ ⊢ #p] ⇒ fundVar [_] [_ ⊢ #p] rs
+  | [_ ⊢ app M N] ⇒
+    let RArr r1 = fundamental_lemma [_] [_] [_ ⊢ M] $[_ ⊢ $σ] rs in
+    let r2 = fundamental_lemma [_] [_] [_ ⊢ N] $[_ ⊢ $σ] rs in
+    r1 [_] $[_ ⊢ ..] [_ ⊢ N[$σ]] r2
+  | [_ ⊢ abs  \x.M] ⇒
+    RArr (mlam _, $ρ, N ⇒ fn rn ⇒
+      let rs' = rename_redS [_] [_] $[_ ⊢ $ρ] rs in
+      let r = fundamental_lemma [_, x:tm _] [_] [_, x:tm _ ⊢ M] $[_ ⊢ $σ[$ρ], N] (RCons rn rs') in
+      let sn = cr1 [_] [ ⊢ _] [_ ⊢ _] rn in
+      let sn' = SBeta [_, x:tm _ ⊢ M[$σ[$ρ[..]], x]] sn in
+      cr2 [_] [ ⊢ _] [_ ⊢ _] [_ ⊢ _] sn' r)
+  | [_ ⊢ inl B[] M] ⇒ let r = fundamental_lemma [_] [_] [_ ⊢ M] $[_ ⊢ $σ] rs in RSum (DSLeft r Refl)
+  | [_ ⊢ inr A[] M] ⇒ let r = fundamental_lemma [_] [_] [_ ⊢ M] $[_ ⊢ $σ] rs in RSum (DSRight r Refl)
+  | [_ ⊢ match M (\x.N1) (\y.N2)] ⇒
+    let RSum d = fundamental_lemma [_] [_] [_ ⊢ M] $[_ ⊢ $σ] rs in
+    main_ds [_] [_] [_ ⊢ M[$σ]] [_, x:tm _ ⊢ N1] [_, y:tm _ ⊢ N2] $[_ ⊢ $σ] rs d
+
+% Inner IH for disjoint sum closure
+
+and rec main_ds : {Γ:cxt} {Γ':cxt}
+{M:[Γ' ⊢ tm (sum A[] B[])]} {N1:[Γ, x:tm A[] ⊢ tm C[]]} {N2:[Γ, y:tm B[] ⊢ tm C[]]}
+{$σ:$[Γ' ⊢ Γ]} RedS [Γ] $[Γ' ⊢ $σ]
+→ DSClosure [Γ' ⊢ M]
+→ Red [ ⊢ C] [Γ' ⊢ match M (\x.N1[$σ[..], x]) (\y.N2[$σ[..], y])] =
+  % / total d (main_ds g g' m n1 n2 s rs d) /
+  mlam _, _, _, N1, N2, $σ ⇒ fn rs, d ⇒ case d of
+  | DSLeft r e ⇒
+    let sn0 = cr1 [_] [ ⊢ _] [_ ⊢ _] r in
+    let r1 = fundamental_lemma [_, x:tm _] [_] [_, x:tm _ ⊢ N1] $[_ ⊢ $σ[..], _] (RCons r rs) in
+    let r2 = fundamental_lemma [_, y:tm _] [_, y:tm _] [_, y:tm _ ⊢ N2] $[_ ⊢ $σ[..], _]
+      (RCons (red_var [_, y:tm _] [_, y:tm _ ⊢ y])
+      (rename_redS [_] [_, y:tm _] $[_, y:tm _ ⊢ ..] rs)) in
+    let r1' = fundamental_lemma [_, x:tm _] [_, x:tm _] [_, x:tm _ ⊢ N1] $[_ ⊢ $σ[..], _]
+      (RCons (red_var [_, x:tm _] [_, x:tm _ ⊢ x])
+      (rename_redS [_] [_, x:tm _] $[_, x:tm _ ⊢ ..] rs)) in
+    let sn1 = cr1 [_] [ ⊢ _] [_ ⊢ _] r1' in
+    let sn2 = cr1 [_] [ ⊢ _] [_ ⊢ _] r2 in
+    let snr = SCInl sn0 sn1 sn2 in
+    eq_red e (cr2 [_] [ ⊢ _] [_ ⊢ _] [_ ⊢ _] snr r1)
+  | DSRight r e ⇒
+    let sn0 = cr1 [_] [ ⊢ _] [_ ⊢ _] r in
+    let r1 = fundamental_lemma [_, x:tm _] [_, x:tm _] [_, x:tm _ ⊢ N1] $[_ ⊢ $σ[..], _]
+      (RCons (red_var [_, x:tm _] [_, x:tm _ ⊢ x])
+      (rename_redS [_] [_, x:tm _] $[_, x:tm _ ⊢ ..] rs)) in
+    let r2 = fundamental_lemma [_, y:tm _] [_] [_, y:tm _ ⊢ N2] $[_ ⊢ $σ[..], _] (RCons r rs) in
+    let r2' = fundamental_lemma [_, y:tm _] [_, y:tm _] [_, y:tm _ ⊢ N2] $[_ ⊢ $σ[..], _]
+      (RCons (red_var [_, y:tm _] [_, y:tm _ ⊢ y])
+      (rename_redS [_] [_, y:tm _] $[_, y:tm _ ⊢ ..] rs)) in
+    let sn1 = cr1 [_] [ ⊢ _] [_ ⊢ _] r1 in
+    let sn2 = cr1 [_] [ ⊢ _] [_ ⊢ _] r2' in
+    let snr = SCInr sn0 sn1 sn2 in
+    eq_red e (cr2 [_] [ ⊢ _] [_ ⊢ _] [_ ⊢ _] snr r2)
+  | DSSNe sne ⇒
+    let r1 = fundamental_lemma [_, x:tm _] [_, x:tm _] [_, x:tm _ ⊢ N1] $[_ ⊢ $σ[..], _]
+      (RCons (red_var [_, x:tm _] [_, x:tm _ ⊢ x])
+      (rename_redS [_] [_, x:tm _] $[_, x:tm _ ⊢ ..] rs)) in
+    let r2 = fundamental_lemma [_, y:tm _] [_, y:tm _] [_, y:tm _ ⊢ N2] $[_ ⊢ $σ[..], _]
+      (RCons (red_var [_, y:tm _] [_, y:tm _ ⊢ y])
+      (rename_redS [_] [_, y:tm _] $[_, y:tm _ ⊢ ..] rs)) in
+    let sn1 = cr1 [_] [ ⊢ _] [_ ⊢ _] r1 in
+    let sn2 = cr1 [_] [ ⊢ _] [_ ⊢ _] r2 in
+    let sne' = SCase sne sn1 sn2 in
+    cr3 [_] [ ⊢ _] [_ ⊢ _] sne'
+  | DSRed d' r ⇒
+    let _ : SNRed [_ ⊢ _] [_ ⊢ M'] = r in
+    let r' = main_ds [_] [_] [_ ⊢ M'] [_, x:tm _ ⊢ N1] [_, y:tm _ ⊢ N2] $[_ ⊢ $σ] rs d' in
+    let snr = SRCase r [_, x:tm _ ⊢ N1[$σ[..], x]] [_, y:tm _ ⊢ N2[$σ[..], y]] in
+    cr2 [_] [ ⊢ _] [_ ⊢ _] [_ ⊢ _] snr r'
+  ;
+
+% All well-typed terms are strongly normalizing.
+
+rec id_red : {Γ:cxt} RedS [Γ] $[Γ ⊢ ..] =
+  / total g (id_red g) /
+  mlam g ⇒ case [g] of
+  | [] ⇒ RNil
+  | [g, x:tm _] ⇒
+    let r = rename_redS [_] [_, x:tm _] $[_, x:tm _ ⊢ ..] (id_red [g]) in
+    RCons (red_var [_, x:tm _] [_, x:tm _ ⊢ x]) r
+  ;
+
+rec norm : (Γ:cxt) {M:[Γ ⊢ tm A[]]} SN [Γ ⊢ M] =
+  / total (norm) /
+  mlam M ⇒ cr1 [_] [ ⊢ _] [_ ⊢ _] (fundamental_lemma [_] [_] [_ ⊢ M] $[_ ⊢ ..] (id_red [_]))
+  ;

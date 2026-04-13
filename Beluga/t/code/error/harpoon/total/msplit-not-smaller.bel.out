@@ -1,0 +1,5 @@
+File "./t/code/error/harpoon/total/msplit-not-smaller.bel", line 22, column 8:
+22 |    by tp-refl [ ⊢ arr X X1] as uh-oh;
+           ^^^^^^^^^^^^^^^^^^^^^          
+Error: Type-checking error.
+       Recursive call not structurally smaller.

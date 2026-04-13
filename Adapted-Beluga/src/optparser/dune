@@ -1,0 +1,3 @@
+(library
+ (name optparser)
+ (package beluga))

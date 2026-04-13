@@ -1,0 +1,4 @@
+File "./t/code/error/modules/invalid_abbrev.bel", line 13, column 10:
+13 |--abbrev UnboundModule U.
+             ^^^^^^^^^^^^^   
+Error: Identifier UnboundModule is unbound.

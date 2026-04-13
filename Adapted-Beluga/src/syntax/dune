@@ -1,0 +1,14 @@
+(library
+ (name beluga_syntax)
+ (package beluga)
+ (modules :standard)
+ (libraries
+  support
+  (re_export syncom)
+  (re_export synext)
+  (re_export synapx)
+  (re_export synint))
+ (preprocess
+  (pps sedlex.ppx))
+ (instrumentation
+  (backend bisect_ppx --bisect-silent yes)))

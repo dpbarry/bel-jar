@@ -1,0 +1,55 @@
+% Author: Brigitte Pientka
+
+%{{
+# Normalizing lambda-Terms
+
+## Syntax
+We define first intrinsically well-typed lambda-terms using the base type `nat` and function type.
+}}%
+
+LF tp: type =
+| nat: tp
+| arr: tp -> tp -> tp
+;
+
+LF exp: tp -> type =
+| lam: (exp T1 -> exp T2) -> exp (arr T1 T2)
+| app: exp (arr T2 T) -> exp T2 -> exp T
+;
+
+
+%{{
+Next, we define the context schema expressing the fact that all declarations must be instances of the type `exp T` for some `T`.
+}}%
+
+schema ctx = exp T;
+
+%{{
+Finally, we write a function which traverses a lambda-term and normalizes it.
+In the type of the function `norm` we leave context variables implicit by writing `(g:ctx)`.
+As a consequence, we can omit passing a concrete context for it when calling `norm`.
+In the program, we distinguish between three different cases: the variable case `[ |- #p]`, the abstraction case `[g |- lam \x. M]`, and the application case `[g |- app M N]`.
+In the variable case, we simply return the variable.
+In the abstraction case, we recursively normalize `[g, x:exp _ |- M]` extending the context with the additional declaration `x:exp _`.
+Since we do not have a concrete name for the type of `x`, we simply write an underscore and let Beluga's reconstruction algorithm infer the argument.
+In the application case, we first normalize recursively `[g |- M]`.
+If this results in an abstraction `[g |- lam \x. M']`, then we continue to normalize `[g |- M'[.., N]]` substituting for `x` the term `N`.
+Otherwise, we normalize recursively `[g |- N]` and rebuild the application.
+
+Recall that all meta-variables are associated with the identity substitution  by default which may be omitted.
+}}%
+
+rec norm : (g: ctx) [g |- exp T] -> [g |- exp T] =
+fn e ⇒ case e of
+| [g |- #p] ⇒  [g |- #p]
+| [g |- lam \x. M] ⇒
+  let [g, x:exp _ |- M'] = norm [g, x:exp _ |- M] in
+    [g |- lam \x. M']
+| [g |- app M N] ⇒
+  (case norm [g |- M] of
+  | [g |- lam \x.M'] => norm [g |- M'[.., N]]
+  | [g |- M'] ⇒
+    let [g |- N'] = norm [g |- N] in
+     [g |- app M' N' ]
+  )
+;

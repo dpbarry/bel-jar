@@ -1,0 +1,14 @@
+(executable
+ (name beluga_web)
+ (modes js)
+ (libraries
+  js_of_ocaml
+  support
+  beluga
+  beluga_syntax
+  beluga_parser)
+ (js_of_ocaml
+  (flags (:standard --disable use-js-string)))
+ (flags (:standard -w -53))
+ (preprocess
+  (pps js_of_ocaml-ppx)))

@@ -1,0 +1,4 @@
+File "./t/code/error/positivity/non-terminated.bel", line 7, column 4:
+7 | | Con :  (D -> Empty) -> D
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Positivity checking of constructor Con fails.

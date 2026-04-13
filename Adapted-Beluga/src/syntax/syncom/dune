@@ -1,0 +1,10 @@
+(library
+ (name syncom)
+ (package beluga)
+ (libraries support sedlex str)
+ (instrumentation
+  (backend bisect_ppx --bisect-silent yes))
+ (preprocess
+  (per_module
+   ((pps sedlex.ppx)
+    error))))

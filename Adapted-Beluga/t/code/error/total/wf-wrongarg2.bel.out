@@ -1,0 +1,5 @@
+File "./t/code/error/total/wf-wrongarg2.bel", line 23, column 35:
+23 |              | [|- le-step D] => test [|- Y] [|- X'] [|- le-foo D]
+                                      ^^^^^^^^^^^                      
+Error: Type-checking error.
+       Recursive call not structurally smaller.

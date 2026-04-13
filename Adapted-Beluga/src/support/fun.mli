@@ -1,0 +1,50 @@
+include module type of Stdlib.Fun
+
+(** [f ++ g] is the function composition of [f] and [g], such that
+    [(f ++ g) x] is [f (g x)]. *)
+val ( ++ ) : ('b -> 'c) -> ('a -> 'b) -> 'a -> 'c
+
+(** [f >> g] is the function composition of [f] and [g], such that
+    [x |> (f >> g)] is [g (f x)]. *)
+val ( >> ) : ('a -> 'b) -> ('b -> 'c) -> 'a -> 'c
+
+(** [apply x f] is [f x]. This is useful when a function pipeline ends in a
+    call to the generated function. *)
+val apply : 'a -> ('a -> 'b) -> 'b
+
+(** [flip f x y] is [f y x]. *)
+val flip : ('a -> 'b -> 'c) -> 'b -> 'a -> 'c
+
+(** [until f] repeatedly calls the effectful function [f] until [f ()] is
+    [false]. If [f] always returns [true], then [until f] does not terminate. *)
+val until : (unit -> bool) -> unit
+
+(** [through f x] applies the effectful function [f] on [x] and returns [x].
+    For instance:
+
+    {[
+      ... |> through (fun x -> print_string x) |> ...
+    ]} *)
+val through : ('a -> unit) -> 'a -> 'a
+
+(** [after f x] calls the effectful function [f] and returns [x]. This
+    effectively calls [f] after executing a function pipeline.
+
+    For instance:
+
+    {[
+      ... |> through (fun x -> print_string "Success") |> ...
+    ]} *)
+val after : (unit -> unit) -> 'a -> 'a
+
+(** Converts an uncurried function to a curried function. *)
+val curry : ('a * 'b -> 'c) -> 'a -> 'b -> 'c
+
+(** Converts a curried function to a function on pairs. *)
+val uncurry : ('a -> 'b -> 'c) -> 'a * 'b -> 'c
+
+(** The fixpoint combinator. *)
+val fix : (('a -> 'b) -> 'a -> 'b) -> 'a -> 'b
+
+(** [repeat n f] calls [f] repeatedly [n] times. It is assumed that [n >= 0]. *)
+val repeat : int -> (unit -> unit) -> unit

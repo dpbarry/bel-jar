@@ -1,0 +1,12 @@
+t/harpoon/bwd_closed.bel
+halts_step
+{A : [⊢ tp]} {M : [⊢ tm A]} {M' : [⊢ tm A]} [|- step M M'] -> [|- halts M'] -> [|- halts M]
+
+
+inductive-auto-solve
+bwd_closed
+{T : (|- tp)} {M : (|- tm T)} {M' : (|- tm T)} [|- step M M'] -> Reduce [|- T] [|- M'] -> Reduce [|- T] [|- M]
+1
+
+inductive-auto-solve 3
+:quit

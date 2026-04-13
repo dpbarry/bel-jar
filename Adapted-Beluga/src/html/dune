@@ -1,0 +1,14 @@
+(library
+ (name beluga_html)
+ (package beluga)
+ (modules :standard)
+ (libraries uri str omd support beluga_syntax)
+ (instrumentation
+  (backend bisect_ppx --bisect-silent yes)))
+
+;; Install the stylesheet at `$(opam var share)/beluga/beluga.css`
+
+(install
+ (package beluga)
+ (section share)
+ (files beluga.css))

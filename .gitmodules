@@ -1,0 +1,6 @@
+[submodule "Beluga"]
+	path = Beluga
+	url = https://github.com/Beluga-lang/Beluga
+[submodule "Adapted-Beluga"]
+	path = Adapted-Beluga
+	url = https://github.com/dpbarry/Beluga-W.git

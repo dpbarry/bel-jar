@@ -1,0 +1,11 @@
+(library
+ (name test_parser)
+ (modules :standard)
+ (libraries
+  ounit2
+  beluga_syntax
+  beluga_parser
+  beluga_html
+  support
+  util
+  test_beluga_parser_fixtures_lib))

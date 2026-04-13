@@ -32,13 +32,13 @@ LF nd : o → type =
 ;
 
 rec p0 : [ ⊢ nd (A ∧ B ⊃ A)] =
-[ ⊢ ⊃I (\\\\u. ∧El u)] ;
+[ ⊢ ⊃I (\\u. ∧El u)] ;
 
 rec p1 : [ ⊢ nd ((A ∧ B) ⊃ (B ∧ A))] =
-[ ⊢ ⊃I \\\\u. ∧I (∧Er u) (∧El u)];`
+[ ⊢ ⊃I \\u. ∧I (∧Er u) (∧El u)];`
 };
 
-// --- Output helpers ---
+// --- Output ---
 
 function appendOutput(text) {
   if (text && text.trim()) {
@@ -76,16 +76,7 @@ function runCmd() {
   cmdInput.value = '';
 }
 
-function resetSession() {
-  try {
-    clearOutput();
-    appendOutput(Beluga.reset());
-  } catch (e) {
-    appendOutput('Error: ' + e.message);
-  }
-}
-
-// --- Template loading ---
+// --- Templates ---
 
 function loadTemplate(name) {
   if (TEMPLATES[name]) {
@@ -94,7 +85,25 @@ function loadTemplate(name) {
   }
 }
 
-// --- Editor keybindings ---
+// --- Theme ---
+
+function toggleTheme() {
+  document.documentElement.classList.toggle('light');
+  const isLight = document.documentElement.classList.contains('light');
+  localStorage.setItem('beljar-theme', isLight ? 'light' : 'dark');
+}
+
+if (localStorage.getItem('beljar-theme') === 'light') {
+  document.documentElement.classList.add('light');
+}
+
+// --- Events ---
+
+document.getElementById('btn-theme').addEventListener('click', toggleTheme);
+document.getElementById('btn-template-nd').addEventListener('click', () => loadTemplate('nd'));
+document.getElementById('btn-load').addEventListener('click', loadCode);
+document.getElementById('btn-clear').addEventListener('click', clearOutput);
+document.getElementById('btn-run').addEventListener('click', runCmd);
 
 editor.addEventListener('keydown', (e) => {
   if (e.key === 'Tab') {

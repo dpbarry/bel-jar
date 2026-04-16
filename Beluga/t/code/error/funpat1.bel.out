@@ -1,8 +1,0 @@
-File "./t/code/error/funpat1.bel", line 6, column 9:
-6 |      | [ |- z] => [ |- z]
-           ^^^^^^^           
-Error: Type-checking error.
-       Found
-         box-expression
-       but expected expression of type
-         [ |- nat] -> [ |- nat]

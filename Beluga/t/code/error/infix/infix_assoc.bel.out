@@ -1,8 +1,0 @@
-File "./t/code/error/infix/infix_assoc.bel", line 16, column 22:
-16 |let test = [ |- f ap f ap f ap nil];
-                         ^              
-Error: Ill-typed expression.
-       Expected type:
-         list ?N_3[^0][]
-       Actual type:
-         bool

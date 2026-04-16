@@ -1,4 +1,0 @@
-File "./t/code/error/badconstructortype2.bel", line 5, column 10:
-5 || Blue : Colour [ |- z]
-            ^^^^^^^^^^^^^^
-Error: Too many meta-objects supplied to data-constructor

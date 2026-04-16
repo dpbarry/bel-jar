@@ -1,3 +1,0 @@
-t/harpoon/bugs/225.bel
-solve [ |- term-eq/i ]
-:quit

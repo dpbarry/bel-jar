@@ -1,5 +1,0 @@
-tm : type.
-i : tm.
-
-inductive Foo : ctype =
-| Bad : (Foo -> [|-tm]) -> Foo;

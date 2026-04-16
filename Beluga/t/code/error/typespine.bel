@@ -1,6 +1,0 @@
-nat : type.
-z : nat.
-s : nat -> nat.
-
-vec : nat -> type.
-v : vec z z.

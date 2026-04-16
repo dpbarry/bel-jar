@@ -1,9 +1,0 @@
-File "./t/code/error/appchkmismatch.bel", line 45, column 23:
-45 |  [g |- cons E Ta] => b_env [h] map [g |- Ta]
-                          ^^^^^^^^^^^^^^^^^^^^^^^
-Error: Type-checking error.
-       Ill-typed expression.
-       Expected type:
-         [h |- target (cross T[] S[])]
-       Inferred type:
-         [h |- target S[]]

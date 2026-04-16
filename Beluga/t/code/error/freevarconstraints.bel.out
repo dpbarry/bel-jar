@@ -1,4 +1,0 @@
-File "./t/code/error/freevarconstraints.bel", line 16, column 17:
-16 |    | [g |- coe E[.., x]] => [g |- coe E[.., x]]
-                    ^^^^^^^^                        
-Error: Cannot reconstruct a type for free variable E (leftover constraints).

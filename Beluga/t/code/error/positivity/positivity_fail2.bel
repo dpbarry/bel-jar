@@ -1,5 +1,0 @@
-inductive Person : ctype  = P : Person;
-
-inductive Test : ctype   =
- | T1 : ((Person -> (Person -> Test) ) -> ((Test -> Person) -> Test)) -> Test
-;

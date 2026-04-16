@@ -1,9 +1,0 @@
-File "./t/code/error/checkvsschema.bel", line 30, column 4:
-30 |   let [g, x:tp |- U[..]] = [g |- U[..]] in
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-31 |      e
-    ^^^^^^^
-Error: Type
-         tp
-       doesn't check against schema
-         ctx = 

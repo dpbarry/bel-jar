@@ -1,4 +1,0 @@
-File "./t/code/error/positivity/positivity_fail11.bel", line 18, column 4:
-18 | | C4:  ((A -> C) -> (B -> C)) * (A -> (B * C)) -> C % fail
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^       
-Error: Positivity checking of constructor C4 fails.

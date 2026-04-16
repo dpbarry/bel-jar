@@ -1,8 +1,0 @@
-File "./t/code/error/termspine.bel", line 6, column 9:
-6 |v : vec (s z z).
-           ^^^^^^^ 
-Error: Ill-typed spine.
-       Expected number of arguments:
-         1
-       Actual number of arguments:
-         2

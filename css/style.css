@@ -1,31 +1,31 @@
 :root {
-  --bg: hsl(222, 16%, 6%);
+  --bg: hsl(224, 18%, 5%);
 
   /* low = less contrast, high = more contrast */
-  --base-lowest: hsl(222, 16%, 6%);
-  --base-lower: hsl(222, 14%, 9%);
-  --base-low: hsl(220, 12%, 12%);
-  --base-mid: hsl(218, 10%, 16%);
-  --base-high: hsl(216, 8%, 36%);
-  --base-higher: hsl(214, 6%, 55%);
-  --base-highest: hsl(210, 8%, 84%);
+  --base-lowest: hsl(224, 18%, 5%);
+  --base-lower: hsl(223, 16%, 8%);
+  --base-low: hsl(222, 14%, 12%);
+  --base-mid: hsl(220, 12%, 18%);
+  --base-high: hsl(218, 9%, 38%);
+  --base-higher: hsl(216, 7%, 58%);
+  --base-highest: hsl(213, 9%, 82%);
 
-  --accent-lowest: hsl(210, 30%, 12%);
-  --accent-lower: hsl(210, 36%, 22%);
-  --accent-low: hsl(210, 40%, 32%);
-  --accent-mid: hsl(210, 50%, 48%);
-  --accent-high: hsl(210, 55%, 60%);
-  --accent-higher: hsl(210, 50%, 70%);
-  --accent-highest: hsl(210, 45%, 85%);
-  --accent-glow: hsla(210, 50%, 58%, 0.1);
+  --accent-lowest: hsl(217, 40%, 10%);
+  --accent-lower: hsl(217, 42%, 18%);
+  --accent-low: hsl(217, 44%, 28%);
+  --accent-mid: hsl(217, 72%, 52%);
+  --accent-high: hsl(217, 78%, 65%);
+  --accent-higher: hsl(217, 70%, 76%);
+  --accent-highest: hsl(217, 60%, 88%);
+  --accent-glow: hsla(217, 72%, 52%, 0.12);
 
-  --muted-lowest: hsl(218, 10%, 10%);
-  --muted-lower: hsl(218, 10%, 22%);
-  --muted-low: hsl(216, 10%, 30%);
-  --muted-mid: hsl(216, 8%, 40%);
-  --muted-high: hsl(214, 6%, 52%);
-  --muted-higher: hsl(212, 6%, 62%);
-  --muted-highest: hsl(210, 6%, 74%);
+  --muted-lowest: hsl(220, 12%, 9%);
+  --muted-lower: hsl(220, 10%, 18%);
+  --muted-low: hsl(219, 8%, 27%);
+  --muted-mid: hsl(218, 6%, 38%);
+  --muted-high: hsl(216, 5%, 50%);
+  --muted-higher: hsl(214, 5%, 62%);
+  --muted-highest: hsl(212, 5%, 72%);
 
   --mono: 'JetBrains Mono', monospace;
   --sans: 'Inter', system-ui, sans-serif;
@@ -39,40 +39,42 @@
 /* -- Light theme -- */
 
 html.light {
-  --bg: hsl(216, 12%, 97%);
+  --bg: hsl(220, 20%, 98%);
 
-  --base-lowest: hsl(216, 12%, 97%);
-  --base-lower: hsl(216, 10%, 93%);
-  --base-low: hsl(216, 8%, 88%);
-  --base-mid: hsl(216, 8%, 82%);
-  --base-high: hsl(216, 6%, 50%);
-  --base-higher: hsl(218, 8%, 30%);
-  --base-highest: hsl(220, 12%, 12%);
+  --base-lowest: hsl(220, 20%, 98%);
+  --base-lower: hsl(220, 16%, 94%);
+  --base-low: hsl(220, 12%, 89%);
+  --base-mid: hsl(220, 10%, 82%);
+  --base-high: hsl(220, 8%, 52%);
+  --base-higher: hsl(221, 10%, 30%);
+  --base-highest: hsl(222, 16%, 10%);
 
-  --accent-lowest: hsl(210, 30%, 94%);
-  --accent-lower: hsl(210, 30%, 84%);
-  --accent-low: hsl(210, 34%, 70%);
-  --accent-mid: hsl(210, 40%, 52%);
-  --accent-high: hsl(210, 45%, 40%);
-  --accent-higher: hsl(210, 40%, 30%);
-  --accent-highest: hsl(210, 35%, 18%);
-  --accent-glow: hsla(210, 40%, 48%, 0.08);
+  --accent-lowest: hsl(217, 50%, 95%);
+  --accent-lower: hsl(217, 48%, 86%);
+  --accent-low: hsl(217, 50%, 72%);
+  --accent-mid: hsl(217, 72%, 52%);
+  --accent-high: hsl(217, 68%, 38%);
+  --accent-higher: hsl(217, 62%, 26%);
+  --accent-highest: hsl(217, 55%, 14%);
+  --accent-glow: hsla(217, 72%, 52%, 0.10);
 
-  --muted-lowest: hsl(216, 10%, 93%);
-  --muted-lower: hsl(216, 8%, 84%);
-  --muted-low: hsl(216, 8%, 72%);
-  --muted-mid: hsl(216, 6%, 56%);
-  --muted-high: hsl(216, 8%, 42%);
-  --muted-higher: hsl(218, 8%, 30%);
-  --muted-highest: hsl(218, 10%, 18%);
+  --muted-lowest: hsl(220, 14%, 94%);
+  --muted-lower: hsl(220, 10%, 86%);
+  --muted-low: hsl(219, 8%, 74%);
+  --muted-mid: hsl(218, 7%, 58%);
+  --muted-high: hsl(218, 8%, 42%);
+  --muted-higher: hsl(219, 9%, 28%);
+  --muted-highest: hsl(220, 12%, 16%);
 }
-
-/* -- Reset -- */
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+::selection {
+  background: var(--accent-low);
 }
 
 /* -- Scrollbar -- */
@@ -266,10 +268,21 @@ header {
 }
 
 /* Theme toggle: icon swap */
-.theme-toggle .icon-sun { display: none; }
-.theme-toggle .icon-moon { display: block; }
-html.light .theme-toggle .icon-sun { display: block; }
-html.light .theme-toggle .icon-moon { display: none; }
+.theme-toggle .icon-sun {
+  display: none;
+}
+
+.theme-toggle .icon-moon {
+  display: block;
+}
+
+html.light .theme-toggle .icon-sun {
+  display: block;
+}
+
+html.light .theme-toggle .icon-moon {
+  display: none;
+}
 
 /* -- Workspace -- */
 

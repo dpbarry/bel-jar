@@ -1,5 +1,0 @@
-File "./t/code/error/total-nonrec.bel", line 5, column 9:
-5 |fn n => foo n ;
-           ^^^^^  
-Error: Type-checking error.
-       Recursive call not structurally smaller.

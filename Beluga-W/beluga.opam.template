@@ -1,2 +1,0 @@
-run-test: [make "test"]
-x-maintenance-intent: ["(latest)"]

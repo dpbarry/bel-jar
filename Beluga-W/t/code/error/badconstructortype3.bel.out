@@ -1,5 +1,0 @@
-File "./t/code/error/badconstructortype3.bel", line 5, column 10:
-5 || Red  : [ |- nat]
-            ^^^^^^^^^
-Error: This computation-level type is expected to end with the application of
-       a computation-level type constant.

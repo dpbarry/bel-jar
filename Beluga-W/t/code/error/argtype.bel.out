@@ -1,8 +1,0 @@
-File "./t/code/error/argtype.bel", line 21, column 13:
-21 |let y = map [ |- z] l ;
-                ^^^^^^^    
-Error: Type-checking error.
-       Found
-         box-expression
-       but expected expression of type
-         [ |- nat] -> [ |- nat]

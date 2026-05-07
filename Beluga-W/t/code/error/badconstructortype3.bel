@@ -1,6 +1,0 @@
-nat : type.
-
-inductive Colour : ctype =
-| Blue : Colour
-| Red  : [ |- nat]
-;

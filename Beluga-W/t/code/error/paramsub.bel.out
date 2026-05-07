@@ -1,5 +1,0 @@
-File "./t/code/error/paramsub.bel", line 10, column 27:
-10 |mlam h g #p $S => foo [g] [g |- #p[$S[..]]];
-                              ^^^^^^^^^^^^^^^^^ 
-Error: A substitution was found when expecting a renaming.
-       Offending substitution: $S[..]

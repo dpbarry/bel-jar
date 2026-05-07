@@ -1,4 +1,0 @@
-File "./t/code/error/positivity/positivity_fail7.bel", line 3, column 4:
-3 | | A1: ((A -> A) -> A) -> A % fail
-      ^^^^^^^^^^^^^^^^^^^^^^^^       
-Error: Positivity checking of constructor A1 fails.

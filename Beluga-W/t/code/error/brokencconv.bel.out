@@ -1,4 +1,0 @@
-File "./t/code/error/brokencconv.bel", line 61, column 17:
-61 |  [xenv:(target Q) |- tfst xenv]
-                    ^               
-Error: This free meta-variable is illegal.

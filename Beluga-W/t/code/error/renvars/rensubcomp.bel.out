@@ -1,5 +1,0 @@
-File "./t/code/error/renvars/rensubcomp.bel", line 11, column 33:
-11 |mlam g, h,$W,$S, M => f [g] [h] $[h |- $W[$S[..]]] [g |- M]
-                                    ^^^^^^^^^^^^^^^^^^         
-Error: A substitution was found when expecting a renaming.
-       Offending substitution: $W[$S[..]]

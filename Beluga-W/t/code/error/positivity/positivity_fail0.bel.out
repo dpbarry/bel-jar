@@ -1,4 +1,0 @@
-File "./t/code/error/positivity/positivity_fail0.bel", line 5, column 3:
-5 || Bad : (Foo -> [|-tm]) -> Foo;
-     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
-Error: Positivity checking of constructor Bad fails.

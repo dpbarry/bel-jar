@@ -1,6 +1,0 @@
-(executable
- (name main)
- (public_name beluga)
- (package beluga)
- (libraries support beluga beluga_syntax beluga_parser dune-build-info)
- (modules :standard))

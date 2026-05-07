@@ -1,8 +1,0 @@
-File "./t/code/error/trec.bel", line 16, column 19:
-16 | [ |- z]  => [ |- z]
-                      ^ 
-Error: Ill-typed expression.
-       Expected type:
-         exp S
-       Actual type:
-         exp nat

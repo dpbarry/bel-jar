@@ -3,6 +3,15 @@
 
 <head>
   <meta charset="UTF-8">
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('beljar-theme') === 'light') {
+          document.documentElement.classList.add('light');
+        }
+      } catch (_) {}
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
   <title>BelJar</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.png">
@@ -40,9 +49,13 @@
 
   <div class="workspace">
     <aside class="sidebar">
-      <button id="btn-template-nd" class="icon-btn icon-btn-lg" data-tooltip="Natural Deduction">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/>
+      <button id="btn-prefabs" type="button" class="icon-btn icon-btn-lg" data-tooltip="Prefabs" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2.5" y="3.5" width="19" height="4.5" rx="1"/>
+          <path d="M4.5 8v10.75a1.75 1.75 0 0 0 1.75 1.75h11.5a1.75 1.75 0 0 0 1.75-1.75V8"/>
+          <path d="m9.4 12.1-2.1 1.9 2.1 1.9"/>
+          <path d="m14.6 12.1 2.1 1.9-2.1 1.9"/>
+          <path d="m12.8 11.3-1.6 5.4"/>
         </svg>
       </button>
     </aside>
@@ -50,7 +63,7 @@
     <div class="panel editor-panel">
       <div class="panel-header">
         <span class="panel-label">Editor</span>
-        <button id="btn-load" class="icon-btn" data-tooltip="Load into Beluga">
+        <button id="btn-load" class="icon-btn" data-tooltip="Run">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="6 3 20 12 6 21 6 3"/>
           </svg>
@@ -62,7 +75,7 @@
     <div class="panel output-panel">
       <div class="panel-header">
         <span class="panel-label">Output</span>
-        <button id="btn-clear" class="icon-btn" data-tooltip="Clear output">
+        <button id="btn-clear" class="icon-btn" data-tooltip="Clear">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
           </svg>
@@ -74,7 +87,7 @@
           <span class="repl-prompt">&gt;&gt;</span>
           <input id="command-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         </div>
-        <button id="btn-run" class="icon-btn icon-btn-accent" data-tooltip="Run command">
+        <button id="btn-run" class="icon-btn" data-tooltip="Run command">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
           </svg>
@@ -83,12 +96,17 @@
     </div>
   </div>
 
+  <div id="tooltip-root" class="tooltip-root" role="tooltip" hidden></div>
+  <div id="menu-root" class="menu-root"></div>
+
   <script>
     window.onerror = (msg, url, line) => {
       document.getElementById('output').textContent += '\n[JS ERROR] ' + msg + ' (line ' + line + ')';
     };
   </script>
   <script src="beluga_web.bc.js"></script>
+  <script src="js/floating-rect-placement.js"></script>
+  <script src="js/menu.js"></script>
   <script src="js/app.js"></script>
 </body>
 

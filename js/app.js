@@ -76,13 +76,26 @@ function runCmd() {
   cmdInput.value = '';
 }
 
-// --- Templates ---
+// --- Prefabs / templates ---
 
-function loadTemplate(name) {
-  if (TEMPLATES[name]) {
-    editor.value = TEMPLATES[name];
-    editor.focus();
+function insertNd(where) {
+  const code = TEMPLATES.nd;
+  if (!code) return;
+  if (where === 'top') {
+    editor.value = code + '\n\n' + editor.value;
+  } else {
+    editor.value = (editor.value ? editor.value.replace(/\s*$/, '') + '\n\n' : '') + code;
   }
+  editor.focus();
+}
+
+async function copyNd() {
+  try {
+    await navigator.clipboard.writeText(TEMPLATES.nd);
+  } catch {
+    appendOutput('Error: could not copy to clipboard');
+  }
+  editor.focus();
 }
 
 // --- Theme ---
@@ -93,14 +106,162 @@ function toggleTheme() {
   localStorage.setItem('beljar-theme', isLight ? 'light' : 'dark');
 }
 
-if (localStorage.getItem('beljar-theme') === 'light') {
-  document.documentElement.classList.add('light');
+// --- Tooltips (FloatingRectPlacement; menus use mode: 'menu')
+
+const TOOLTIP_MARGIN = FloatingRectPlacement.DEFAULT_MARGIN;
+const TOOLTIP_GAP = FloatingRectPlacement.DEFAULT_GAP;
+const TOUCH_SHOW_DELAY_MS = 400;
+
+const tooltipRoot = document.getElementById('tooltip-root');
+const prefersHover = () => window.matchMedia('(hover: hover)').matches;
+const suppressedTooltipAnchors = new Set();
+
+function layoutTooltip(anchor) {
+  const tip = tooltipRoot.firstElementChild;
+  if (!tip || tooltipRoot.hidden) return;
+
+  const text = anchor.getAttribute('data-tooltip');
+  if (!text) return;
+  tip.textContent = text;
+
+  tooltipRoot.classList.remove('is-visible');
+  tooltipRoot.classList.add('is-measuring');
+
+  const tw = tooltipRoot.offsetWidth;
+  const th = tooltipRoot.offsetHeight;
+  const tr = anchor.getBoundingClientRect();
+  const { x, y } = FloatingRectPlacement.computePosition({
+    anchor: tr,
+    width: tw,
+    height: th,
+    margin: TOOLTIP_MARGIN,
+    gap: TOOLTIP_GAP,
+    preferPlacement: FloatingRectPlacement.PREFERENCE_TOOLTIP,
+  });
+
+  tooltipRoot.classList.remove('is-measuring');
+  tooltipRoot.style.left = `${x}px`;
+  tooltipRoot.style.top = `${y}px`;
+  tooltipRoot.classList.add('is-visible');
+}
+
+let tooltipAnchor = null;
+let touchShowTimer = null;
+
+function ensureTooltipInner() {
+  if (!tooltipRoot.querySelector('.tooltip-inner')) {
+    const inner = document.createElement('div');
+    inner.className = 'tooltip-inner';
+    tooltipRoot.appendChild(inner);
+  }
+}
+
+function showTooltip(anchor) {
+  if (suppressedTooltipAnchors.has(anchor)) return;
+  const text = anchor.getAttribute('data-tooltip');
+  if (!text) return;
+  ensureTooltipInner();
+  tooltipAnchor = anchor;
+  tooltipRoot.hidden = false;
+  layoutTooltip(anchor);
+}
+
+function hideTooltip() {
+  tooltipAnchor = null;
+  tooltipRoot.classList.remove('is-visible', 'is-measuring');
+  tooltipRoot.hidden = true;
+  tooltipRoot.style.left = '';
+  tooltipRoot.style.top = '';
+}
+
+function bindTooltips() {
+  if (!tooltipRoot) return;
+  document.querySelectorAll('[data-tooltip]').forEach((el) => {
+    el.addEventListener('mouseenter', () => {
+      if (!prefersHover()) return;
+      showTooltip(el);
+    });
+    el.addEventListener('mouseleave', () => {
+      if (!prefersHover()) return;
+      if (tooltipAnchor === el) hideTooltip();
+    });
+    el.addEventListener('focusin', () => showTooltip(el));
+    el.addEventListener('focusout', () => {
+      if (tooltipAnchor === el) hideTooltip();
+    });
+
+    el.addEventListener(
+      'touchstart',
+      () => {
+        if (prefersHover()) return;
+        clearTimeout(touchShowTimer);
+        touchShowTimer = setTimeout(() => showTooltip(el), TOUCH_SHOW_DELAY_MS);
+      },
+      { passive: true }
+    );
+    el.addEventListener('touchend', () => {
+      clearTimeout(touchShowTimer);
+      if (tooltipAnchor === el) hideTooltip();
+    });
+    el.addEventListener('touchcancel', () => {
+      clearTimeout(touchShowTimer);
+      if (tooltipAnchor === el) hideTooltip();
+    });
+  });
+
+  window.addEventListener('resize', () => {
+    if (tooltipAnchor) layoutTooltip(tooltipAnchor);
+  });
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (tooltipAnchor) layoutTooltip(tooltipAnchor);
+    },
+    true
+  );
+}
+
+bindTooltips();
+
+// --- Prefabs menu ---
+
+const prefabsBtn = document.getElementById('btn-prefabs');
+if (prefabsBtn) {
+  prefabsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideTooltip();
+    if (typeof Menu !== 'undefined' && Menu.isOpen() && Menu.rootAnchor() === prefabsBtn) {
+      Menu.closeAll();
+      return;
+    }
+    if (typeof Menu === 'undefined') return;
+    suppressedTooltipAnchors.add(prefabsBtn);
+    Menu.open({
+      anchor: prefabsBtn,
+      side: 'right',
+      align: 'start',
+      items: [
+        {
+          label: 'Natural Deduction',
+          submenu: [
+            { label: 'Insert at top', onSelect: () => insertNd('top') },
+            { label: 'Insert at bottom', onSelect: () => insertNd('bottom') },
+            { label: 'Copy to clipboard', onSelect: () => void copyNd() },
+          ],
+        },
+      ],
+      onClose: () => {
+        suppressedTooltipAnchors.delete(prefabsBtn);
+        prefabsBtn.setAttribute('aria-expanded', 'false');
+      },
+    });
+    prefabsBtn.setAttribute('aria-expanded', 'true');
+  });
 }
 
 // --- Events ---
 
 document.getElementById('btn-theme').addEventListener('click', toggleTheme);
-document.getElementById('btn-template-nd').addEventListener('click', () => loadTemplate('nd'));
 document.getElementById('btn-load').addEventListener('click', loadCode);
 document.getElementById('btn-clear').addEventListener('click', clearOutput);
 document.getElementById('btn-run').addEventListener('click', runCmd);

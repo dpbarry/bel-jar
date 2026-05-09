@@ -15,6 +15,12 @@
 //
 // Where the surface grammar is genuinely ambiguous in a CFG sense, we resolve
 // in favour of the most common reading using `@dynamicPrecedence`.
+//
+// Outline (avoid reordering casually — precedences and token specials interact):
+//   Precedences · Program · LF decls · Pragmas · LF kinds/types · LF terms
+//   · Substitutions · Schemas · Inductive/stratified · Typedef/module
+//   · Computation types · Contextual syntax · Rec/let · Expressions · Patterns
+//   · Tokens · Keyword @specialize rules
 
 // -------------------------------------------------------------------------
 //  Precedences
@@ -542,7 +548,7 @@ TupleOrParenPattern {
 
   whitespace { @whitespace+ }
 
-  LineComment   { "%" ![{\n] ![\n]* }
+  LineComment   { "%" ![{\n] ![\n]* | "%" }
   BlockComment  { "%{" blockBody "}%" }
   blockBody     { (![}] | "}" ![%])* }
 

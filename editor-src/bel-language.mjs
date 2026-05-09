@@ -1,9 +1,8 @@
-// editor-src/bel-language.mjs — CodeMirror 6 + Beluga.
-
-// styleTags keys are grammar node names; paths like Foo/Bar only match direct
-// children. Literal-character keys are useless unless the grammar names them.
-// Palette + tags live here; bound-variable uses are overridden in
-// bel-scope-highlight.mjs (highlightingFor). Keep both in sync with beluga.grammar.
+// Beluga CodeMirror language: Lezer parser configuration (highlight tags,
+// indentation props, folding). Grammar source: ../beluga.grammar.
+//
+// Base tags here; bound-variable *uses* are overridden in bel-scope-highlight.mjs.
+// When adding nodes, update styleTags + scope collector + printer (format/printer.mjs).
 
 import {
   HighlightStyle,
@@ -18,7 +17,52 @@ import {
 import { Prec } from '@codemirror/state';
 import { styleTags, tags as t } from '@lezer/highlight';
 import { parser } from './beluga-parser.js';
+import { belParseErrorHighlightExtensions } from './bel-invalid-highlight.mjs';
 import { belugaScopeHighlight } from './bel-scope-highlight.mjs';
+
+/** LF/Comp parenthesis nodes otherwise get CM's implicit align:true (+2 units vs +1). */
+function parenDelimitedNoAlign(cx) {
+  const open = cx.node.firstChild;
+  if (!open || cx.state.doc.sliceString(open.from, open.to) !== '(') return cx.continue();
+  return delimitedIndent({ closing: ')', align: false })(cx);
+}
+
+function lineStartsClosingSemi(doc, pos) {
+  return /^\s*;\s*$/.test(doc.lineAt(pos).text);
+}
+
+/** LF datatype / inductive body: header line and lone `;` flush left; ctor lines indented. */
+function indentDeclBodyAfterHeader(cx) {
+  const doc = cx.state.doc;
+  const headerLn = doc.lineAt(cx.node.from).number;
+  if (doc.lineAt(cx.pos).number === headerLn) return cx.continue();
+  if (lineStartsClosingSemi(doc, cx.pos)) return cx.continue();
+  return cx.baseIndentFor(cx.node) + cx.unit;
+}
+
+function indentContinuationUnderAncestor(cx, ancestorNames) {
+  const doc = cx.state.doc;
+  if (doc.lineAt(cx.pos).number === doc.lineAt(cx.node.from).number) return cx.continue();
+  for (let p = cx.node.parent; p; p = p.parent) {
+    if (ancestorNames.has(p.name)) return cx.baseIndentFor(p) + cx.unit;
+  }
+  return cx.baseIndentFor(cx.node) + cx.unit;
+}
+
+const LF_TYPE_CONT_ANCESTORS = new Set(['LFConstructor', 'LFDeclaration', 'LFKind']);
+const LF_KIND_CONT_ANCESTORS = new Set(['LFDatatypeDeclaration', 'LFDeclaration']);
+const COMP_TYPE_CONT_ANCESTORS = new Set(['CompConstructor']);
+const COMP_KIND_CONT_ANCESTORS = new Set(['InductiveBody']);
+
+/** After `… =`, CM often resolves the parent decl exactly on `[`, skipping ContextualObject.delimitedIndent. */
+function indentBracketRhsAfterDeclHeader(cx) {
+  const doc = cx.state.doc;
+  const headerLn = doc.lineAt(cx.node.from).number;
+  if (doc.lineAt(cx.pos).number === headerLn) return cx.continue();
+  if (doc.lineAt(cx.pos).text.trimStart().startsWith('['))
+    return cx.baseIndentFor(cx.node) + cx.unit;
+  return cx.continue();
+}
 
 const belugaHighlight = styleTags({
   type: t.keyword,
@@ -85,7 +129,7 @@ const belugaHighlight = styleTags({
   'Associativity/...': t.modifier,
   QueryBound: t.number,
 
-  'LFDeclaration/LowerIdentifier':    t.definition(t.typeName),
+  'LFDeclaration/LowerIdentifier':    t.variableName,
   'LFDatatypeDeclaration/LowerIdentifier': t.definition(t.typeName),
   'LFConstructor/LowerIdentifier':    t.definition(t.function(t.variableName)),
   'SchemaDeclaration/LowerIdentifier': t.definition(t.typeName),
@@ -222,11 +266,23 @@ const belugaParser = parser.configure({
   props: [
     belugaHighlight,
     indentNodeProp.add({
-      ModuleDeclaration: delimitedIndent({ closing: 'end' }),
-      TupleOrParenExpression: delimitedIndent({ closing: ')' }),
-      TupleOrParenPattern: delimitedIndent({ closing: ')' }),
-      ContextualObject: delimitedIndent({ closing: ']' }),
-      ContextualType: delimitedIndent({ closing: ']' }),
+      ModuleDeclaration: delimitedIndent({ closing: 'end', align: false }),
+      LFDatatypeDeclaration: indentDeclBodyAfterHeader,
+      RecBody: indentBracketRhsAfterDeclHeader,
+      LetDeclaration: indentBracketRhsAfterDeclHeader,
+      InductiveBody: indentDeclBodyAfterHeader,
+      LFKind: (cx) => indentContinuationUnderAncestor(cx, LF_KIND_CONT_ANCESTORS),
+      LFType: (cx) => indentContinuationUnderAncestor(cx, LF_TYPE_CONT_ANCESTORS),
+      CompKind: (cx) => indentContinuationUnderAncestor(cx, COMP_KIND_CONT_ANCESTORS),
+      CompType: (cx) => indentContinuationUnderAncestor(cx, COMP_TYPE_CONT_ANCESTORS),
+      TupleOrParenExpression: delimitedIndent({ closing: ')', align: false }),
+      TupleOrParenPattern: delimitedIndent({ closing: ')', align: false }),
+      ContextualObject: delimitedIndent({ closing: ']', align: false }),
+      ContextualType: delimitedIndent({ closing: ']', align: false }),
+      Substitution: delimitedIndent({ closing: ']', align: false }),
+      LFAtomicTerm: parenDelimitedNoAlign,
+      LFAtomicType: parenDelimitedNoAlign,
+      CompAtomicType: parenDelimitedNoAlign,
       CaseBranch: cx => cx.baseIndent + cx.unit,
     }),
     foldNodeProp.add({
@@ -245,7 +301,7 @@ export const belugaLanguage = LRLanguage.define({
   languageData: {
     commentTokens: { line: '%', block: { open: '%{', close: '}%' } },
     closeBrackets: { brackets: ['(', '[', '{'] },
-    indentOnInput: /^\s*(=>|\||end)$/,
+    indentOnInput: /^\s*(=>|→|->|<-|\||end)$/,
   },
 });
 
@@ -253,5 +309,6 @@ export function beluga() {
   return new LanguageSupport(belugaLanguage, [
     syntaxHighlighting(defaultBelugaHighlightStyle),
     Prec.highest(belugaScopeHighlight),
+    ...belParseErrorHighlightExtensions,
   ]);
 }

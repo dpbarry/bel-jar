@@ -17,6 +17,18 @@ const editor =
       })
     : null;
 
+let replBeautifyEnabled = !(
+  typeof BelJarPersist !== 'undefined' && BelJarPersist.readStoredReplRaw()
+);
+
+function setReplBeautify(on) {
+  replBeautifyEnabled = !!on;
+  if (typeof BelJarPersist !== 'undefined') {
+    BelJarPersist.writeStoredReplRaw(!replBeautifyEnabled);
+  }
+  syncSettingsDialogFromState();
+}
+
 const REPL_HELP_ROWS = [
   { cmd: 'help', desc: 'Show this command reference.' },
   { cmd: 'chatteroff', desc: 'Turn off verbose solver chatter.' },
@@ -131,6 +143,11 @@ function appendRichTitle(shell, text) {
 }
 
 function appendRichShell(rawText, buildDom) {
+  if (!replBeautifyEnabled) {
+    const plain = stripBelugaAnsi(normalizeBelugaRaw(rawText));
+    if (plain.trim()) appendOutput(plain);
+    return;
+  }
   const block = createReplBlock();
   const shell = document.createElement('div');
   shell.className = 'repl-rich';
@@ -154,6 +171,7 @@ function polishBelugaErrorDetail(detail) {
 }
 
 function tryAppendBelugaWrappedCommandError(text) {
+  if (!replBeautifyEnabled) return false;
   const lines = normalizeBelugaRaw(text).split('\n');
   let i = 0;
   while (i < lines.length && !lines[i].trim()) i++;
@@ -273,18 +291,20 @@ function appendCountholesFormatted(raw) {
   const n = t.match(/^(\d+)\s*$/);
   if (n)
     appendRichShell(raw, function (shell) {
-      appendRichTitle(shell, 'Holes');
-      const row = document.createElement('div');
-      row.className = 'repl-rich-stat';
-      const lab = document.createElement('span');
-      lab.className = 'repl-rich-stat-label';
-      lab.textContent = 'Open holes';
-      const val = document.createElement('span');
-      val.className = 'repl-rich-stat-value';
-      val.textContent = n[1];
-      row.appendChild(lab);
-      row.appendChild(val);
-      shell.appendChild(row);
+      const count = Number(n[1]);
+      const stat = document.createElement('div');
+      stat.className = 'repl-rich-countholes';
+
+      const badge = document.createElement('span');
+      badge.className = 'repl-rich-countholes-badge';
+      badge.textContent = String(count);
+
+      const text = document.createElement('span');
+      text.className = 'repl-rich-countholes-text';
+      text.textContent = count === 1 ? 'open hole' : 'open holes';
+
+      stat.append(badge, text);
+      shell.appendChild(stat);
     });
   else appendOutput(raw);
 }
@@ -397,6 +417,10 @@ function appendBelugaResponse(raw, verb) {
 function appendRunOutput(raw) {
   const clean = stripBelugaAnsi(raw).replace(/\n+$/, '');
   if (!clean.trim()) return;
+  if (!replBeautifyEnabled) {
+    appendOutput(clean);
+    return;
+  }
   appendRichShell(clean, function (shell) {
     const blocks = clean.split(/\n{2,}/);
     blocks.forEach(function (blockText) {
@@ -405,15 +429,19 @@ function appendRunOutput(raw) {
       const pre = document.createElement('pre');
       pre.className = 'repl-rich-pre repl-rich-pre--run';
       const lines = trimmed.split('\n');
+      const isRunError = /\b(error|failed|exception)\b/i.test(trimmed);
       const isTypeReconStatus =
         lines.length > 0 &&
         lines.every(function (line) {
           return /^##\s*Type Reconstruction (begin|done):/i.test(line.trim());
         });
-      if (isTypeReconStatus) {
-        pre.classList.add('repl-rich-pre--run-success');
-      } else if (/\b(error|failed|exception)\b/i.test(trimmed)) {
+      const hasHolesSection = /##\s*Holes:/i.test(trimmed);
+      if (isRunError) {
         pre.classList.add('repl-rich-pre--run-error');
+      } else if (isTypeReconStatus) {
+        pre.classList.add('repl-rich-pre--run-success');
+      } else if (hasHolesSection) {
+        pre.classList.add('repl-rich-pre--run-holes');
       }
       pre.textContent = trimmed;
       shell.appendChild(pre);
@@ -432,6 +460,15 @@ function scrollReplBottom() {
 }
 
 function appendReplHelp() {
+  if (!replBeautifyEnabled) {
+    const lines = ['Commands'].concat(
+      REPL_HELP_ROWS.map(function (rowSpec) {
+        return '  ' + rowSpec.cmd + ' — ' + rowSpec.desc;
+      })
+    );
+    appendOutput(lines.join('\n'));
+    return;
+  }
   const block = createReplBlock();
   const wrap = document.createElement('div');
   wrap.className = 'repl-help';
@@ -493,7 +530,10 @@ function appendOutput(text, forcedKind) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const kind = useForce ? forcedKind : inferLineKind(line);
+    let kind;
+    if (useForce) kind = forcedKind;
+    else if (replBeautifyEnabled) kind = inferLineKind(line);
+    else kind = line === '' ? 'blank' : 'out';
     block.appendChild(makeReplLine(line, kind));
   }
   output.appendChild(block);
@@ -570,7 +610,7 @@ function runCmd() {
   const isHelp = bareCmd === 'help';
   const { verb } = parseBelugaCmd(cmd);
   try {
-    appendOutput('# ' + formatShownCmd(rawForHistory), 'cmd');
+    appendOutput('# ' + formatShownCmd(rawForHistory), replBeautifyEnabled ? 'cmd' : 'out');
     if (isHelp) appendReplHelp();
     else if (verb === 'quit') {
       appendRichMsg(
@@ -591,6 +631,12 @@ function insertNd(where) {
   if (!code || !editor) return;
   if (where === 'top') editor.insertTop(code);
   else editor.insertBottom(code);
+}
+
+function insertNdAtSelection() {
+  const code = TEMPLATES.nd;
+  if (!code || !editor || typeof editor.insertAtSelection !== 'function') return;
+  editor.insertAtSelection(code);
 }
 
 async function copyNd() {
@@ -614,6 +660,13 @@ window.BelJarRepl = {
   appendBuffered: function (text, kind) {
     appendOutput(text, kind || 'auto');
   },
+  getReplBeautify: function () {
+    return replBeautifyEnabled;
+  },
+  setReplBeautify: setReplBeautify,
+  toggleReplBeautify: function () {
+    setReplBeautify(!replBeautifyEnabled);
+  },
 };
 
 const prefabsBtn = document.getElementById('btn-prefabs');
@@ -636,6 +689,7 @@ if (prefabsBtn) {
           submenu: [
             { label: 'Insert at top', onSelect: () => insertNd('top') },
             { label: 'Insert at bottom', onSelect: () => insertNd('bottom') },
+            { label: 'Insert at cursor', onSelect: () => insertNdAtSelection() },
             { label: 'Copy to clipboard', onSelect: () => void copyNd() },
           ],
         },
@@ -671,7 +725,81 @@ if (prefabsBtn) {
   });
 }
 
+const settingsBtn = document.getElementById('btn-settings');
+/** @type {HTMLDialogElement|null} */
+let settingsDialogEl = null;
+/** @type {HTMLInputElement|null} */
+let settingsReplBeautifyInput = null;
+
+function syncSettingsDialogFromState() {
+  if (settingsReplBeautifyInput) settingsReplBeautifyInput.checked = replBeautifyEnabled;
+}
+
+function ensureSettingsDialog() {
+  if (settingsDialogEl) return settingsDialogEl;
+
+  const stack = document.createElement('div');
+  stack.className = 'bj-dialog__stack';
+
+  const section = document.createElement('div');
+  section.className = 'bj-dialog__section';
+
+  const row = document.createElement('label');
+  row.className = 'bj-dialog__setting';
+
+  const main = document.createElement('div');
+  main.className = 'bj-dialog__setting-main';
+  const labelEl = document.createElement('span');
+  labelEl.className = 'bj-dialog__setting-label';
+  labelEl.textContent = 'Beautified REPL';
+  const desc = document.createElement('span');
+  desc.className = 'bj-dialog__setting-desc';
+  desc.textContent =
+    'Turn off for plain terminal-style output.';
+  main.appendChild(labelEl);
+  main.appendChild(desc);
+
+  settingsReplBeautifyInput = document.createElement('input');
+  settingsReplBeautifyInput.type = 'checkbox';
+  settingsReplBeautifyInput.className = 'bj-switch-input';
+  settingsReplBeautifyInput.checked = replBeautifyEnabled;
+  settingsReplBeautifyInput.addEventListener('change', () =>
+    setReplBeautify(settingsReplBeautifyInput.checked)
+  );
+
+  const sw = document.createElement('span');
+  sw.className = 'bj-switch';
+  const thumb = document.createElement('span');
+  thumb.className = 'bj-switch__thumb';
+  sw.appendChild(thumb);
+
+  row.appendChild(main);
+  row.appendChild(settingsReplBeautifyInput);
+  row.appendChild(sw);
+  section.appendChild(row);
+  stack.appendChild(section);
+
+  settingsDialogEl = BelJarDialog.createDialog({
+    title: 'Settings',
+    content: stack,
+    cardClass: 'bj-dialog__card--settings',
+    removeOnClose: false,
+  });
+  return settingsDialogEl;
+}
+
+if (settingsBtn && typeof BelJarDialog !== 'undefined') {
+  settingsBtn.addEventListener('click', () => {
+    ensureSettingsDialog();
+    syncSettingsDialogFromState();
+    BelJarDialog.openDialog(settingsDialogEl);
+  });
+}
+
 document.getElementById('btn-theme').addEventListener('click', toggleTheme);
+document.getElementById('btn-format').addEventListener('click', () => {
+  if (editor && typeof editor.format === 'function') editor.format();
+});
 document.getElementById('btn-load').addEventListener('click', loadCode);
 document.getElementById('btn-clear').addEventListener('click', clearOutput);
 document.getElementById('btn-run').addEventListener('click', runCmd);

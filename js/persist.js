@@ -1,11 +1,13 @@
 /**
  * BelJar persistence: localStorage today, swappable adapter for a backend later.
  * Theme uses key `beljar-theme` — keep index.html FOUC preload in sync with THEME_STORAGE_KEY.
+ * Raw REPL uses key `beljar-repl-raw` (`1` = plain terminal-style output).
  */
 (function (global) {
   var SCHEMA_VERSION = 1;
   var STATE_KEY = 'beljar-state-v1';
   var THEME_STORAGE_KEY = 'beljar-theme';
+  var REPL_RAW_STORAGE_KEY = 'beljar-repl-raw';
   var DEFAULT_REPL_OUTPUT =
     'Welcome to BelJar. Try help for a list of REPL commands.';
 
@@ -132,14 +134,32 @@
     } catch (_) {}
   }
 
+  function readStoredReplRaw() {
+    try {
+      return global.localStorage.getItem(REPL_RAW_STORAGE_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeStoredReplRaw(raw) {
+    try {
+      if (raw) global.localStorage.setItem(REPL_RAW_STORAGE_KEY, '1');
+      else global.localStorage.removeItem(REPL_RAW_STORAGE_KEY);
+    } catch (_) {}
+  }
+
   global.BelJarPersist = {
     SCHEMA_VERSION: SCHEMA_VERSION,
     STATE_KEY: STATE_KEY,
     THEME_STORAGE_KEY: THEME_STORAGE_KEY,
+    REPL_RAW_STORAGE_KEY: REPL_RAW_STORAGE_KEY,
     DEFAULT_REPL_OUTPUT: DEFAULT_REPL_OUTPUT,
     createLocalStorageAdapter: createLocalStorageAdapter,
     createPersist: createPersist,
     readStoredTheme: readStoredTheme,
     writeStoredTheme: writeStoredTheme,
+    readStoredReplRaw: readStoredReplRaw,
+    writeStoredReplRaw: writeStoredReplRaw,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

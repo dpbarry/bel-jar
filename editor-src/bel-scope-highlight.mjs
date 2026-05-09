@@ -1,5 +1,7 @@
-// editor-src/bel-scope-highlight.mjs — scope stack over the parse tree; marks bound
-// identifier uses via highlightingFor (same tags as bel-language). Needs Prec.highest.
+// Scope-aware highlights: walk the Lezer tree with a binding stack, decorate
+// resolved identifier uses (Prec.highest — overrides base tags from bel-language).
+//
+//   Syntax helpers → binder collectors → module tails → decoration walk → ViewPlugin
 
 import { highlightingFor, syntaxTree } from '@codemirror/language';
 import { tags as hlTags } from '@lezer/highlight';
@@ -11,6 +13,10 @@ const tagBoundUpper = hlTags.local(hlTags.typeName);
 
 function txt(node, doc) {
   return doc.sliceString(node.from, node.to);
+}
+
+function binding(doc, node) {
+  return { name: txt(node, doc), bindFrom: node.from, bindTo: node.to };
 }
 
 function firstChildNamed(node, name) {
@@ -53,11 +59,7 @@ function collectCompTypeBinderIds(binder, doc) {
   const a = binder.firstChild;
   if (!a) return out;
   if (a.name === 'LowerIdentifier' || a.name === 'UpperIdentifier') {
-    out.push({
-      name: txt(a, doc),
-      bindFrom: a.from,
-      bindTo: a.to,
-    });
+    out.push(binding(doc, a));
     return out;
   }
   if (a.name === '#') {
@@ -76,6 +78,16 @@ function collectCompTypeBinderIds(binder, doc) {
   return out;
 }
 
+function lfDeclarationComplete(node) {
+  let colon = false;
+  let dot = false;
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === ':') colon = true;
+    if (c.name === '.') dot = true;
+  }
+  return colon && dot;
+}
+
 function collectLfDependent(node, doc) {
   const open = node.firstChild;
   if (!open || open.name !== '{') return null;
@@ -87,7 +99,7 @@ function collectLfDependent(node, doc) {
   const rhs = p.nextSibling;
   if (!rhs) return null;
   return {
-    bindings: [{ name: txt(id, doc), bindFrom: id.from, bindTo: id.to }],
+    bindings: [binding(doc, id)],
     scopeFrom: rhs.from,
     scopeTo: node.to,
   };
@@ -125,11 +137,7 @@ function collectSchemaSomeBindings(bindingsRoot, doc, acc) {
   for (let c = bindingsRoot.firstChild; c; c = c.nextSibling) {
     if (c.name === 'LowerIdentifier') {
       const name = txt(c, doc);
-      acc.push({
-        name,
-        bindFrom: c.from,
-        bindTo: c.to,
-      });
+      acc.push(binding(doc, c));
       acc.push({
         name: `#${name}`,
         bindFrom: null,
@@ -157,12 +165,7 @@ function schemaSomeFrame(schemaElement, doc) {
 function contextHatBindings(hatNode, doc) {
   const bindings = [];
   for (let c = hatNode.firstChild; c; c = c.nextSibling) {
-    if (c.name === 'LowerIdentifier')
-      bindings.push({
-        name: txt(c, doc),
-        bindFrom: c.from,
-        bindTo: c.to,
-      });
+    if (c.name === 'LowerIdentifier') bindings.push(binding(doc, c));
   }
   return bindings;
 }
@@ -191,12 +194,7 @@ function collectContextBindings(partRoot, doc, acc) {
   partRoot.cursor().iterate(ref => {
     if (ref.name === 'ContextEntry' || ref.name === 'LFBlockField') {
       const id = firstChildNamed(ref.node, 'LowerIdentifier');
-      if (id)
-        acc.push({
-          name: txt(id, doc),
-          bindFrom: id.from,
-          bindTo: id.to,
-        });
+      if (id) acc.push(binding(doc, id));
     }
   });
 }
@@ -205,25 +203,14 @@ function collectContextHeadBindings(partRoot, doc, acc) {
   const head = firstChildNamed(partRoot, 'ContextHead');
   if (!head) return;
   const id = firstChildNamed(head, 'LowerIdentifier');
-  if (id)
-    acc.push({
-      name: txt(id, doc),
-      bindFrom: id.from,
-      bindTo: id.to,
-    });
+  if (id) acc.push(binding(doc, id));
 }
 
 function collectAtomicPatternUpperBinder(patternSubtree, doc, acc) {
   patternSubtree.cursor().iterate(ref => {
     if (ref.name !== 'AtomicPattern') return;
     const leaf = ref.node.firstChild;
-    if (leaf && leaf.name === 'UpperIdentifier') {
-      acc.push({
-        name: txt(leaf, doc),
-        bindFrom: leaf.from,
-        bindTo: leaf.to,
-      });
-    }
+    if (leaf && leaf.name === 'UpperIdentifier') acc.push(binding(doc, leaf));
   });
 }
 
@@ -256,12 +243,7 @@ function fnParams(fnExpr, doc) {
   for (let c = fnExpr.firstChild; c; c = c.nextSibling) {
     if (c.name === 'FnParam') {
       const id = firstChildNamed(c, 'LowerIdentifier');
-      if (id)
-        bindings.push({
-          name: txt(id, doc),
-          bindFrom: id.from,
-          bindTo: id.to,
-        });
+      if (id) bindings.push(binding(doc, id));
     }
   }
   return bindings;
@@ -271,15 +253,8 @@ function mlamParams(mlam, doc) {
   const bindings = [];
   for (let c = mlam.firstChild; c; c = c.nextSibling) {
     if (c.name === 'MLamParam') {
-      const id =
-        firstChildNamed(c, 'LowerIdentifier') ||
-        firstChildNamed(c, 'UpperIdentifier');
-      if (id)
-        bindings.push({
-          name: txt(id, doc),
-          bindFrom: id.from,
-          bindTo: id.to,
-        });
+      const id = firstChildNamed(c, 'LowerIdentifier') || firstChildNamed(c, 'UpperIdentifier');
+      if (id) bindings.push(binding(doc, id));
     }
   }
   return bindings;
@@ -290,12 +265,7 @@ function recBindings(recDecl, doc) {
   for (let c = recDecl.firstChild; c; c = c.nextSibling) {
     if (c.name === 'RecBody') {
       const id = firstChildNamed(c, 'LowerIdentifier');
-      if (id)
-        bindings.push({
-          name: txt(id, doc),
-          bindFrom: id.from,
-          bindTo: id.to,
-        });
+      if (id) bindings.push(binding(doc, id));
     }
   }
   return bindings;
@@ -332,7 +302,7 @@ function pushModuleBindings(moduleLets, moduleEndStack, declNode, bindings) {
 function declLowerBindings(decl, doc) {
   const id = firstChildNamed(decl, 'LowerIdentifier');
   if (!id) return [];
-  return [{ name: txt(id, doc), bindFrom: id.from, bindTo: id.to }];
+  return [binding(doc, id)];
 }
 
 function lfDatatypeBindings(decl, doc) {
@@ -341,21 +311,12 @@ function lfDatatypeBindings(decl, doc) {
   for (let c = decl.firstChild; c; c = c.nextSibling) {
     if (c.name === 'LowerIdentifier' && !sawTypeName) {
       sawTypeName = true;
-      bindings.push({
-        name: txt(c, doc),
-        bindFrom: c.from,
-        bindTo: c.to,
-      });
+      bindings.push(binding(doc, c));
       continue;
     }
     if (c.name === 'LFConstructor') {
       const id = firstChildNamed(c, 'LowerIdentifier');
-      if (id)
-        bindings.push({
-          name: txt(id, doc),
-          bindFrom: id.from,
-          bindTo: id.to,
-        });
+      if (id) bindings.push(binding(doc, id));
     }
   }
   return bindings;
@@ -363,8 +324,7 @@ function lfDatatypeBindings(decl, doc) {
 
 function typedefBindings(decl, doc) {
   for (let c = decl.firstChild; c; c = c.nextSibling) {
-    if (c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier')
-      return [{ name: txt(c, doc), bindFrom: c.from, bindTo: c.to }];
+    if (c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') return [binding(doc, c)];
   }
   return [];
 }
@@ -372,27 +332,17 @@ function typedefBindings(decl, doc) {
 function schemaDeclBindings(decl, doc) {
   const id = firstChildNamed(decl, 'LowerIdentifier');
   if (!id) return [];
-  return [{ name: txt(id, doc), bindFrom: id.from, bindTo: id.to }];
+  return [binding(doc, id)];
 }
 
 function inductiveFamilyBindings(body, doc) {
   const bindings = [];
   const tid = firstChildNamed(body, 'UpperIdentifier');
-  if (tid)
-    bindings.push({
-      name: txt(tid, doc),
-      bindFrom: tid.from,
-      bindTo: tid.to,
-    });
+  if (tid) bindings.push(binding(doc, tid));
   for (let c = body.firstChild; c; c = c.nextSibling) {
     if (c.name === 'CompConstructor') {
       const id = firstChildNamed(c, 'UpperIdentifier');
-      if (id)
-        bindings.push({
-          name: txt(id, doc),
-          bindFrom: id.from,
-          bindTo: id.to,
-        });
+      if (id) bindings.push(binding(doc, id));
     }
   }
   return bindings;
@@ -509,9 +459,7 @@ function buildDecorations(view, markCache) {
         case 'LFLambda': {
           const binder = firstChildNamed(node, 'LFLambdaBinder');
           const id = binder && firstChildNamed(binder, 'LowerIdentifier');
-          const bindings = id
-            ? [{ name: txt(id, doc), bindFrom: id.from, bindTo: id.to }]
-            : [];
+          const bindings = id ? [binding(doc, id)] : [];
           stack.push({
             bindings,
             scopeFrom: node.from,
@@ -645,6 +593,11 @@ function buildDecorations(view, markCache) {
           } else if (n === 'CompKind') {
             if (collectCompKindDependent(node, doc)) stack.pop();
           }
+      }
+
+      if (n === 'LFDeclaration' && lfDeclarationComplete(node)) {
+        const id = firstChildNamed(node, 'LowerIdentifier');
+        if (id) decorateId(id.from, id.to, hlTags.definition(hlTags.typeName));
       }
     },
   });

@@ -57,6 +57,17 @@
     tooltipRoot.classList.add('is-visible');
   }
 
+  function refreshTooltipIfAnchored(target) {
+    if (!tooltipRoot || tooltipAnchor !== target) return;
+    if (tooltipRoot.hidden || tooltipRoot.classList.contains('is-leaving')) return;
+    const text = target.getAttribute('data-tooltip');
+    if (!text) {
+      hideTooltip();
+      return;
+    }
+    layoutTooltip(target);
+  }
+
   function ensureTooltipInner() {
     if (!tooltipRoot.querySelector('.tooltip-inner')) {
       const inner = document.createElement('div');
@@ -133,6 +144,7 @@
         hideTooltip();
       });
       el.addEventListener('focusin', () => {
+        if (!el.matches(':focus-visible')) return;
         if (
           tooltipAnchor === el &&
           !tooltipRoot.hidden &&
@@ -201,6 +213,20 @@
       },
       true
     );
+
+    const tooltipAttrObserver = new MutationObserver(function (records) {
+      for (let i = 0; i < records.length; i++) {
+        const r = records[i];
+        if (r.type !== 'attributes' || r.attributeName !== 'data-tooltip') continue;
+        const el = r.target;
+        if (el && el.nodeType === 1) refreshTooltipIfAnchored(el);
+      }
+    });
+    tooltipAttrObserver.observe(document.documentElement, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-tooltip'],
+    });
   }
 
   global.Tooltips = {

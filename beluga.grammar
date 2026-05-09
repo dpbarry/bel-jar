@@ -1,0 +1,664 @@
+// Lezer grammar for Beluga
+// =========================
+//
+// Beluga is a two-level dependently-typed functional language for reasoning
+// about formal systems via the LF logical framework.
+//
+// References:
+//   - "A beginner's guide to programming in Beluga" (Pientka & Kavanagh)
+//   - Beluga Reference Guide
+//
+// This grammar is intentionally permissive.  Many of Beluga's static rules
+// (case-of-identifier conventions, eta-expansion of LF terms inside
+// contextual objects, etc.) are not expressible in a context-free grammar
+// and are deferred to a later checking phase.
+//
+// Where the surface grammar is genuinely ambiguous in a CFG sense, we resolve
+// in favour of the most common reading using `@dynamicPrecedence`.
+
+// -------------------------------------------------------------------------
+//  Precedences
+// -------------------------------------------------------------------------
+
+@precedence {
+  app    @left
+  star   @left
+  arrow  @right
+  ann    @left
+  branch @left
+}
+
+// -------------------------------------------------------------------------
+//  Top-level
+// -------------------------------------------------------------------------
+
+@top Program { Declaration* }
+
+@skip { whitespace | LineComment | BlockComment }
+
+Declaration {
+    LFDeclaration
+  | LFDatatypeDeclaration
+  | SchemaDeclaration
+  | InductiveDeclaration
+  | StratifiedDeclaration
+  | TypedefDeclaration
+  | RecDeclaration
+  | LetDeclaration
+  | ModuleDeclaration
+  | OpenPragma
+  | AbbrevPragma
+  | NamePragma
+  | InfixPragma
+  | PrefixPragma
+  | AssocPragma
+  | NotPragma
+  | NoStrengthenPragma
+  | OpaquePragma
+  | CoveragePragma
+  | WarnCoveragePragma
+  | QueryPragma
+}
+
+// -------------------------------------------------------------------------
+//  LF declarations
+// -------------------------------------------------------------------------
+
+// In Twelf-style Beluga, a declaration `id : signature .` is either a kind
+// declaration (the rhs being `type` possibly nested inside Π's) or a type
+// declaration.  Since LFKind is essentially `LFType ... type`, we accept
+// LFKind here and let the type-checker tell the difference.
+LFDeclaration {
+    LowerIdentifier ":" LFKind "."
+  | LowerIdentifier ":" LFType "."
+}
+
+// Beluga supports two equivalent forms for new-style LF datatype
+// declarations.  The keyword is either the Twelf-style lowercase
+// `datatype` or the Beluga-style uppercase `LF`.  The reference manual
+// admits only the former; the tutorial uses the latter throughout.
+LFDatatypeDeclaration {
+    (LFKeyword | DatatypeKeyword) LowerIdentifier (":" LFKind)? "="
+    "|"? LFConstructor ("|" LFConstructor)*
+    ";"
+}
+
+LFConstructor { LowerIdentifier ":" LFType }
+
+// -------------------------------------------------------------------------
+//  Pragmas
+// -------------------------------------------------------------------------
+
+// Pragma trailing periods are optional in real-world Beluga code; the
+// reference grammar requires them on most pragmas but actual examples in
+// the tutorial omit them on `--abbrev`, `--open`, `--coverage`, etc.
+
+OpenPragma          { "--open" UpperIdentifier "."? }
+AbbrevPragma        { "--abbrev" UpperIdentifier UpperIdentifier "."? }
+NamePragma          { "--name" LowerIdentifier (UpperIdentifier | LowerIdentifier) "."? }
+// `--infix op assoc prec.` and `--infix op prec assoc.` are both attested
+// in the wild; we accept both orderings.
+InfixPragma         {
+    "--infix" LowerIdentifier Associativity Number "."?
+  | "--infix" LowerIdentifier Number Associativity "."?
+  | "--infix" LowerIdentifier Number "."?
+  | "--infix" LowerIdentifier Associativity "."?
+}
+PrefixPragma        { "--prefix" LowerIdentifier Number? "."? }
+AssocPragma         { "--assoc" Associativity }
+NotPragma           { "--not" }
+NoStrengthenPragma  { "--nostrengthen" }
+OpaquePragma        { "--opaque" LowerIdentifier "."? }
+CoveragePragma      { "--coverage" }
+WarnCoveragePragma  { "--warncoverage" }
+
+QueryPragma {
+    "--query" QueryBound QueryBound (UpperIdentifier ":")? LFType "."?
+}
+
+QueryBound { Number | "*" }
+
+Associativity { NoneKeyword | LeftKeyword | RightKeyword }
+
+// -------------------------------------------------------------------------
+//  LF kinds and types
+// -------------------------------------------------------------------------
+
+LFKind {
+    TypeKeyword
+  | LFType !arrow ArrowOp LFKind
+  | "{" LowerIdentifier ":" LFType "}" LFKind
+}
+
+LFType {
+    LFAppType
+  | LFType !arrow ArrowOp LFType
+  | "{" LowerIdentifier ":" LFType "}" LFType
+}
+
+LFAppType {
+    LFAtomicType
+  | LFAppType !app LFAtomicTerm
+}
+
+LFAtomicType {
+    LowerIdentifier                            // type-family name
+  | UpperIdentifier Substitution?              // meta-variable standing for a type
+  | "(" LFType ")"
+}
+
+ArrowOp { "->" | "<-" | "→" }
+
+// -------------------------------------------------------------------------
+//  LF terms
+// -------------------------------------------------------------------------
+
+LFTerm {
+    LFAppTerm
+  | LFLambda
+  | LFAppTerm !app LFLambda                     // f \x. M  ==  f (\x. M)
+}
+
+// LF lambda abstraction.  The head — the slash plus the binder identifier
+// — is wrapped in a named LFLambdaBinder node so highlighting can target
+// the binder cohesively (both the `\` / `λ` and the bound name).
+LFLambda { LFLambdaBinder "." LFTerm }
+
+LFLambdaBinder { ("\\" | "λ") LowerIdentifier }
+
+LFAppTerm {
+    LFAtomicTerm
+  | LFAppTerm !app LFAtomicTerm
+}
+
+LFAtomicTerm {
+    LowerIdentifier
+  | UpperIdentifier Substitution?
+  | ParameterVariable
+  | SubstitutionVariable
+  | Hole
+  | UnderscoreHole
+  | Projection
+  | "(" LFTerm ")"
+}
+
+Hole            { "?" }
+UnderscoreHole  { "_" }
+
+// A projection is `id.k` or `id.field`.  We lex `.<idx>` (where idx is a
+// number or lowercase identifier) as a single token, so that a sentence-
+// terminating `.` (which is followed by whitespace, a comment, or EOF)
+// cannot collide with it.
+Projection {
+    LowerIdentifier ProjectionTail
+}
+
+// LF block (Sigma type / record of dependent assumptions).
+//
+// Two surface forms are accepted: `block x:A, y:B` (reference grammar) and
+// `block (x:A, y:B)` (used in the tutorial's schema examples).  The
+// parenthesised form helps the parser delimit the block's fields when
+// blocks appear inside contexts whose own commas would otherwise compete
+// for the separator.
+LFBlock {
+    BlockKeyword LFBlockField (!app "," LFBlockField)*
+  | BlockKeyword "(" LFBlockField ("," LFBlockField)* ")"
+}
+
+LFBlockField { LowerIdentifier ":" LFType }
+
+// -------------------------------------------------------------------------
+//  Substitutions
+// -------------------------------------------------------------------------
+
+Substitution { "[" SubstBody? "]" }
+
+SubstBody {
+    SubstHead ("," LFTerm)*
+  | LFTerm ("," LFTerm)*
+}
+
+SubstHead { "^" | ".." }
+
+ParameterVariable {
+    "#" LowerIdentifier ProjectionTail? Substitution?
+}
+
+SubstitutionVariable {
+    "#" UpperIdentifier Substitution?
+}
+
+// -------------------------------------------------------------------------
+//  Schemas
+// -------------------------------------------------------------------------
+
+SchemaDeclaration {
+    SchemaKeyword LowerIdentifier "=" SchemaBody ";"
+}
+
+SchemaBody {
+    SchemaElement ("+" SchemaElement)*
+}
+
+SchemaElement {
+    SchemaSomeBlock LFBlock
+  | LFBlock
+  | LFType
+}
+
+SchemaSomeBlock {
+    SomeKeyword "[" SchemaSomeBindings "]"
+}
+
+SchemaSomeBindings {
+    LowerIdentifier ":" LFType ("," LowerIdentifier ":" LFType)*
+}
+
+// -------------------------------------------------------------------------
+//  Inductive and stratified datatypes
+// -------------------------------------------------------------------------
+
+InductiveDeclaration {
+    InductiveKeyword InductiveBody (AndKeyword InductiveBody)* ";"
+}
+
+StratifiedDeclaration {
+    StratifiedKeyword InductiveBody ";"
+}
+
+// Note: InductiveBody is shared between inductive and stratified
+// declarations.  Both name their type with an UpperIdentifier.
+
+InductiveBody {
+    UpperIdentifier ":" CompKind "=" "|"? CompConstructor ("|" CompConstructor)*
+}
+
+CompConstructor { UpperIdentifier ":" CompType }
+
+CompKind {
+    CTypeKeyword
+  | CompType !arrow ArrowOp CompKind
+  | "{" CompTypeBinder "}" CompKind
+}
+
+// -------------------------------------------------------------------------
+//  Type abbreviations and modules
+// -------------------------------------------------------------------------
+
+TypedefDeclaration {
+    TypedefKeyword (LowerIdentifier | UpperIdentifier) ":" CompKind "=" CompType ";"
+}
+
+ModuleDeclaration {
+    ModuleKeyword UpperIdentifier "=" StructKeyword
+        Declaration*
+    EndKeyword ";"
+}
+
+// -------------------------------------------------------------------------
+//  Computation-level types
+// -------------------------------------------------------------------------
+
+CompType {
+    CompAppType
+  | CompType !arrow ArrowOp CompType
+  | CompType !star "*" CompType
+  | "{" CompTypeBinder "}" CompType
+  | "(" CompTypeBinder ")" CompType
+}
+
+// Type-family application.  Datatypes index over contextual objects,
+// contexts, ordinary computation-level types, and bare identifiers, so
+// arguments are accepted from a generous atomic-type alphabet.
+//
+// Examples from the tutorial: `Tm [T]`, `Tm A`, `Tm (arr A B)`,
+// `cert_eval [ |- M ]`.
+CompAppType {
+    CompAtomicType
+  | CompAppType !app CompTypeArg
+}
+
+CompTypeArg {
+    CompAtomicType
+}
+
+CompAtomicType {
+    ContextualType
+  | UpperIdentifier
+  | LowerIdentifier
+  | "(" CompType ")"
+}
+
+// A binder for a Π-quantifier in a computation-level type.
+//
+// The first variant — `id : id` — covers both schema-typed context variables
+// (e.g. `{g : eqCtx}`) and bindings whose type is a base computation-level
+// type (`{N : nat}`).  We do not distinguish them syntactically.  The
+// uppercase-name binder is generously typed: in real code its rhs is almost
+// always a contextual type, but we also admit a plain CompType so that
+// `{T : tp}` (where `tp` is a base LF type used at the computation level)
+// parses without complaint.
+CompTypeBinder {
+    LowerIdentifier ":" CompType
+  | UpperIdentifier "::" ContextualType
+  | UpperIdentifier ":" CompType
+  | "#" UpperIdentifier ":" ContextualType
+}
+
+// -------------------------------------------------------------------------
+//  Contextual types and contextual objects
+// -------------------------------------------------------------------------
+
+// Contextual types and contextual objects share the bracket form
+// `[ <ctx>? |- <term> ]`.  The context part is optional (an empty context
+// may be written `[ |- M ]`).
+//
+// Note: the tutorial occasionally uses an even shorter form `[ M ]` (no
+// turnstile, empty context) — we do not accept that here because it
+// conflicts with bare context variables in LR(1).  Writers can use
+// `[ |- M ]` in all the same positions.
+
+ContextualType {
+    "[" ContextPart? Turnstile LFType "]"
+}
+
+ContextualObject {
+    "[" ContextPart? Turnstile LFTerm "]"
+}
+
+Turnstile { "|-" | "⊢" }
+
+// A context starts with an optional context variable, followed by zero or
+// more typed bindings, block declarations, or references to earlier-bound
+// block names.
+//
+// The "head" entry must be a typed binding or a fresh block introduction
+// (not a bare identifier) because a bare lone identifier `[g]` would be
+// LR-ambiguous with the contextual-object short form.  Once we are past
+// the first comma the ambiguity is gone, so a `ContextTailEntry` may also
+// be a bare identifier that references a block declared elsewhere.
+ContextPart {
+    ContextHead
+  | ContextHead "," ContextTailEntry ("," ContextTailEntry)*
+  | ContextEntry ("," ContextTailEntry)*
+}
+
+ContextHead {
+    LowerIdentifier
+  | "_"                                          // wildcard context variable
+}
+
+ContextEntry {
+    LowerIdentifier ":" LFType                   // typed binding
+  | LowerIdentifier ":" LFBlock                  // named block: `b:block x:A, y:B`
+  | LFBlock                                      // anonymous block
+}
+
+ContextTailEntry {
+    ContextEntry
+  | LowerIdentifier                              // reference to an earlier block
+  | "_"                                          // wildcard, also valid here
+}
+
+// -------------------------------------------------------------------------
+//  Recursive and non-recursive function declarations
+// -------------------------------------------------------------------------
+
+RecDeclaration {
+    RecKeyword RecBody (AndKeyword RecBody)* ";"
+}
+
+RecBody {
+    LowerIdentifier ":" CompType "=" Expression
+}
+
+LetDeclaration {
+    LetKeyword LowerIdentifier (":" CompType)? "=" Expression ";"
+}
+
+// -------------------------------------------------------------------------
+//  Expressions
+// -------------------------------------------------------------------------
+
+Expression {
+    AppExpression
+  | FnExpression
+  | MLamExpression
+  | CaseExpression
+  | LetExpression
+  | IfExpression
+  | ImpossibleExpression
+  | Expression !ann ":" CompType
+}
+
+AppExpression {
+    AtomicExpression
+  | AppExpression !app AtomicExpression
+}
+
+AtomicExpression {
+    LowerIdentifier
+  | UpperIdentifier
+  | ContextualObject
+  | TupleOrParenExpression
+  | ContextApplication
+  | AngleHatTerm
+  | Hole
+}
+
+TupleOrParenExpression {
+    "(" Expression ("," Expression)* ")"
+}
+
+ContextApplication {
+    "[" ContextPart "]"
+}
+
+AngleHatTerm {
+    "<" ContextHat ("|-" | "⊢") LFTerm ">"
+  | "<" "." LFTerm ">"
+}
+
+ContextHat {
+    LowerIdentifier ("," LowerIdentifier)*
+}
+
+FnExpression {
+    FnKeyword FnParam ("," FnParam)* "=>" Expression
+}
+
+FnParam { LowerIdentifier }
+
+MLamExpression {
+    (MLamKeyword | FNKeyword) MLamParam ("," MLamParam)* "=>" Expression
+}
+
+MLamParam { UpperIdentifier | LowerIdentifier }
+
+CaseExpression {
+    CaseKeyword Expression OfKeyword CaseBody
+}
+
+CaseBody {
+    "{" "}"                                              // case at uninhabited type
+  | "|"? CaseBranch (!branch "|" CaseBranch)*
+}
+
+CaseBranch {
+    QuantifiedBinder* Pattern "=>" Expression
+}
+
+QuantifiedBinder {
+    "{" CompTypeBinder "}"
+}
+
+LetExpression {
+    LetKeyword Pattern "=" Expression InKeyword Expression
+}
+
+IfExpression {
+    IfKeyword Expression ThenKeyword Expression ElseKeyword Expression
+}
+
+// `impossible e` is a complete expression on its own; we do not allow the
+// trailing `in [ ]` form here because it conflicts with `let ... in`.  The
+// reference manual includes both forms; our shape collapses them since the
+// `in [ ]` part is conventional surface noise and is checked for separately.
+ImpossibleExpression {
+    ImpossibleKeyword AppExpression
+}
+
+// -------------------------------------------------------------------------
+//  Patterns
+// -------------------------------------------------------------------------
+
+Pattern {
+    AppPattern
+  | Pattern !ann ":" CompType
+}
+
+AppPattern {
+    AtomicPattern
+  | AppPattern !app AtomicPattern
+}
+
+AtomicPattern {
+    LowerIdentifier
+  | UpperIdentifier
+  | ContextualObject
+  | TupleOrParenPattern
+  | UnderscoreHole
+}
+
+TupleOrParenPattern {
+    "(" Pattern ("," Pattern)* ")"
+}
+
+// -------------------------------------------------------------------------
+//  Tokens
+// -------------------------------------------------------------------------
+
+@tokens {
+
+  whitespace { @whitespace+ }
+
+  LineComment   { "%" ![{\n] ![\n]* }
+  BlockComment  { "%{" blockBody "}%" }
+  blockBody     { (![}] | "}" ![%])* }
+
+  // Identifier characters.  The reference manual lists the ASCII set
+  // ! $ & ' * + - / = @ ^ _ ~  but real-world Beluga code freely uses
+  // unicode mathematical operators (⊃ ∧ ∨ ¬ ⊤ ⊥ ≤ ≥ ≠ ≡ ⇒ ⇔ etc.) as
+  // identifier characters so that constants can be named after the logical
+  // connectives they encode.
+  //
+  // We accept the Mathematical Operators block (U+2200..U+22FF) and a
+  // handful of related blocks as identifier characters, except for a few
+  // code points that have dedicated punctuation meanings (U+2192 →,
+  // U+22A2 ⊢, U+03BB λ) which are tokenised as their own punctuation.
+  identChar     {
+      $[A-Za-z0-9_!$&'*+\-/=@\^~]
+    | "#"
+    | unicodeIdent
+  }
+
+  // Unicode characters allowed in identifiers (excluding ASCII so the
+  // case-sensitivity rules below stay clean).
+  unicodeIdent  {
+      $[\u00A1-\u00AC\u00AE-\u00FF]               // Latin-1 supplement (no soft-hyphen)
+    | $[\u0100-\u02FF]                            // Latin extended + IPA
+    | $[\u0370-\u03BA\u03BC-\u03FF]               // Greek (excl. λ at 03BB)
+    | $[\u0400-\u04FF]                            // Cyrillic
+    | $[\u2070-\u218F]                            // Super/sub, currency
+    | $[\u2190-\u2191\u2193-\u2199\u219B-\u21FF]  // Arrows (excl. → at 2192)
+    | $[\u2200-\u22A1\u22A3-\u22FF]               // Math ops (excl. ⊢ at 22A2)
+    | $[\u2300-\u23FF]                            // Misc technical
+    | $[\u25A0-\u26FF]                            // Geometric, misc symbols
+    | $[\u2A00-\u2AFF]                            // Supplemental math operators
+  }
+
+  // Lower- vs upper-case identifiers.  Most unicode logical operators
+  // (⊃ ∧ ∨ ¬ ⊤ etc.) sit naturally in the "constant" position, so an
+  // identifier starting with such a character is treated as a
+  // LowerIdentifier.  ASCII still distinguishes case as before.
+  LowerIdentifier { ($[a-z_] | unicodeIdent) identChar* }
+  UpperIdentifier { $[A-Z] identChar* }
+
+  Number { $[0-9]+ }
+
+  // `.k` (numeric) or `.field` (named) projection — lexed as one token so a
+  // bare `.` (sentence terminator) cannot be confused with it.
+  ProjectionTail { "." ($[0-9]+ | $[a-z_] identChar*) }
+
+  // Punctuation tokens.  Beluga code commonly uses unicode glyphs in place
+  // of the ASCII multi-character forms; both spellings tokenise to the
+  // same parser symbol, so the grammar above doesn't need to know.
+  "->" "<-" "=>" "::" ".."
+  "(" ")" "[" "]" "{" "}" "<" ">"
+  "." "," ":" ";" "|" "*" "+" "=" "?" "_" "^" "#"
+  "|-"
+  "\\"
+  "→"
+  "⊢"
+  "λ"
+
+  // Pragma markers (must be matched as a single token so they don't collide
+  // with the LineComment "%" and the start of identifiers).
+  "--coverage" "--warncoverage" "--nostrengthen" "--infix" "--prefix"
+  "--assoc" "--name" "--abbrev" "--not" "--open" "--query" "--opaque"
+
+  @precedence {
+    BlockComment, LineComment,
+    "--coverage", "--warncoverage", "--nostrengthen",
+    "--infix", "--prefix", "--assoc", "--name",
+    "--abbrev", "--not", "--open", "--query", "--opaque",
+    "->", "<-", "=>", "::", "..", "|-",
+    "→", "⊢", "λ",
+    ProjectionTail,
+    Number,
+    "^", "+", "*", "=", "?",
+    LowerIdentifier, UpperIdentifier,
+    "_",
+    ".",
+    whitespace
+  }
+}
+
+// Beluga's keywords are recognised by specialising the LowerIdentifier token
+// into explicit keyword terms, so highlighting and parse-tree consumers can
+// target them directly.
+
+// `LF` is the only upper-case keyword, used to introduce new-style LF
+// datatype declarations.
+LFKeyword { @specialize<UpperIdentifier, "LF"> }
+FNKeyword { @specialize<LowerIdentifier, "FN"> }
+
+TypeKeyword { @specialize<LowerIdentifier, "type"> }
+DatatypeKeyword { @specialize<LowerIdentifier, "datatype"> }
+SchemaKeyword { @specialize<LowerIdentifier, "schema"> }
+SomeKeyword { @specialize<LowerIdentifier, "some"> }
+BlockKeyword { @specialize<LowerIdentifier, "block"> }
+InductiveKeyword { @specialize<LowerIdentifier, "inductive"> }
+CTypeKeyword { @specialize<LowerIdentifier, "ctype"> }
+AndKeyword { @specialize<LowerIdentifier, "and"> }
+StratifiedKeyword { @specialize<LowerIdentifier, "stratified"> }
+TypedefKeyword { @specialize<LowerIdentifier, "typedef"> }
+RecKeyword { @specialize<LowerIdentifier, "rec"> }
+FnKeyword { @specialize<LowerIdentifier, "fn"> }
+MLamKeyword { @specialize<LowerIdentifier, "mlam"> }
+CaseKeyword { @specialize<LowerIdentifier, "case"> }
+OfKeyword { @specialize<LowerIdentifier, "of"> }
+LetKeyword { @specialize<LowerIdentifier, "let"> }
+InKeyword { @specialize<LowerIdentifier, "in"> }
+IfKeyword { @specialize<LowerIdentifier, "if"> }
+ThenKeyword { @specialize<LowerIdentifier, "then"> }
+ElseKeyword { @specialize<LowerIdentifier, "else"> }
+ImpossibleKeyword { @specialize<LowerIdentifier, "impossible"> }
+ModuleKeyword { @specialize<LowerIdentifier, "module"> }
+StructKeyword { @specialize<LowerIdentifier, "struct"> }
+EndKeyword { @specialize<LowerIdentifier, "end"> }
+NoneKeyword { @specialize<LowerIdentifier, "none"> }
+LeftKeyword { @specialize<LowerIdentifier, "left"> }
+RightKeyword { @specialize<LowerIdentifier, "right"> }
+
+@detectDelim

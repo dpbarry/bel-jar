@@ -1,11 +1,518 @@
 const output = document.getElementById('output');
-const editor = document.getElementById('editor');
+const editorMount = document.getElementById('editor');
 const cmdInput = document.getElementById('command-input');
+
+const persist =
+  typeof BelJarPersist !== 'undefined' ? BelJarPersist.createPersist() : null;
+
+const editor =
+  typeof BelJarEditor !== 'undefined' && BelJarEditor.mount
+    ? BelJarEditor.mount(editorMount, {
+        doc: persist ? persist.getEditorText() : '',
+        onDocChange: persist
+          ? function (text) {
+              persist.scheduleEditorPersist(text);
+            }
+          : function () {},
+      })
+    : null;
+
+const REPL_HELP_ROWS = [
+  { cmd: 'help', desc: 'Show this command reference.' },
+  { cmd: 'chatteroff', desc: 'Turn off verbose solver chatter.' },
+  { cmd: 'chatteron', desc: 'Turn chatter back on.' },
+  { cmd: 'clearholes', desc: 'Clear all computation-level holes.' },
+  { cmd: 'constructors IDENTIFIER', desc: 'LF constructors for the given type.' },
+  { cmd: 'constructors-comp IDENTIFIER', desc: 'Computational constructors for the given datatype.' },
+  { cmd: 'countholes', desc: 'Print how many holes are open.' },
+  { cmd: 'fdef IDENTIFIER', desc: 'Print a function definition (theorem-style).' },
+  { cmd: 'fsig IDENTIFIER', desc: 'Print a program signature (name : type).' },
+  { cmd: 'get-type LINE COLUMN', desc: 'Type at position (primarily for Emacs integration).' },
+  { cmd: 'intro N', desc: 'Introduce variables into computational hole N.' },
+  { cmd: 'load FILE', desc: 'Reset state and load a file from disk (limited in the browser).' },
+  { cmd: 'lochole N', desc: 'Source location tuple for hole N.' },
+  { cmd: 'lookuphole NAME', desc: "Map a hole name to its numeric id." },
+  { cmd: 'printhole N', desc: 'Full hole information for index N.' },
+  { cmd: 'query EXPECTED TRIES TYP', desc: 'Logic-programming query for inhabitants of a type.' },
+  { cmd: 'quit', desc: 'Exits Beluga CLI (disabled here in the browser).' },
+  { cmd: 'reload', desc: 'Reset and repeat the last load command.' },
+  { cmd: 'reset', desc: 'Clear store, type info, and holes.' },
+  { cmd: 'solve-lf-hole N', desc: 'Solve an LF hole via logic programming.' },
+  { cmd: 'split H V', desc: 'Split on variable V in computational hole H.' },
+  { cmd: 'type EXP', desc: 'Infer and print the type of a computation-level expression.' },
+  { cmd: 'types', desc: 'List LF types currently in scope.' },
+];
+
+function inferLineKind(line) {
+  if (line === '') return 'blank';
+  const t = line.trimStart();
+  if (/^\[JS ERROR\]/i.test(t)) return 'error';
+  if (/^\[FATAL\]/i.test(t)) return 'fatal';
+  if (/^Error:/i.test(t)) return 'error';
+  if (/^warning:/i.test(t)) return 'warn';
+  if (/^-\s*Unhandled exception:/i.test(t)) return 'error';
+  if (/^-\s*Failed to execute command\.?$/i.test(t)) return 'error';
+  if (/^-\s*Error\b/i.test(t)) return 'error';
+  if (/^Unrecognized command with name/i.test(t)) return 'error';
+  if (/^No load command to repeat\.?$/i.test(t)) return 'error';
+  if (/^##/.test(t)) {
+    if (/done/i.test(t)) return 'meta-done';
+    if (/begin/i.test(t)) return 'meta-begin';
+    return 'meta';
+  }
+  if (/^#\s+%:/.test(t)) return 'cmd';
+  if (/^#\s+Welcome to BelJar/i.test(t)) return 'welcome';
+  if (/^Welcome to BelJar\./i.test(t)) return 'welcome';
+  if (/^#\s/.test(t)) return 'muted';
+  return 'out';
+}
+
+function makeReplLine(line, kind) {
+  const row = document.createElement('div');
+  row.className = 'repl-line repl-line--' + kind;
+
+  if (kind === 'cmd') {
+    const chev = document.createElement('span');
+    chev.className = 'repl-chevron';
+    chev.textContent = '\u276F';
+    const body = document.createElement('span');
+    body.className = 'repl-cmd-body';
+    body.textContent = line.replace(/^#\s*/, '').replace(/^%:\s*/, '');
+    row.appendChild(chev);
+    row.appendChild(body);
+  } else {
+    row.textContent = line;
+  }
+  return row;
+}
+
+function normalizeBelugaRaw(raw) {
+  return String(raw != null ? raw : '').replace(/\r\n/g, '\n');
+}
+
+function stripBelugaAnsi(raw) {
+  return normalizeBelugaRaw(raw)
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .replace(/\u009b[0-9;]*m/g, '')
+    .replace(/Ø\[[0-9;]*m/g, '');
+}
+
+function splitOutputLines(text) {
+  return normalizeBelugaRaw(text)
+    .replace(/\n+$/, '')
+    .split('\n');
+}
+
+function stripBelugaTrailingSemicolons(text) {
+  return normalizeBelugaRaw(text)
+    .replace(/\s*;\s*$/g, '')
+    .trim();
+}
+
+function parseBelugaCmd(prefixed) {
+  const inner = normalizeBelugaRaw(prefixed).replace(/^%\:/, '').trim();
+  if (!inner) return { verb: '', args: '' };
+  const sp = inner.search(/\s/);
+  if (sp === -1) return { verb: inner, args: '' };
+  return { verb: inner.slice(0, sp), args: inner.slice(sp + 1).trim() };
+}
+
+function splitFirstColonSpace(line) {
+  const i = line.indexOf(' : ');
+  if (i <= 0) return null;
+  return { left: line.slice(0, i).trim(), right: line.slice(i + 3).trim() };
+}
+
+function appendRichTitle(shell, text) {
+  const t = document.createElement('div');
+  t.className = 'repl-rich-title';
+  t.textContent = text;
+  shell.appendChild(t);
+}
+
+function appendRichShell(rawText, buildDom) {
+  const block = createReplBlock();
+  const shell = document.createElement('div');
+  shell.className = 'repl-rich';
+  buildDom(shell);
+  block.appendChild(shell);
+  output.appendChild(block);
+  scrollReplBottom();
+}
+
+function appendRichMsg(kind, displayText, rawPlain) {
+  appendRichShell(rawPlain != null ? rawPlain : displayText, function (shell) {
+    const d = document.createElement('div');
+    d.className = 'repl-rich-msg repl-rich-msg--' + kind;
+    d.textContent = displayText;
+    shell.appendChild(d);
+  });
+}
+
+function polishBelugaErrorDetail(detail) {
+  return detail.replace(/;\s*$/, '').trim();
+}
+
+function tryAppendBelugaWrappedCommandError(text) {
+  const lines = normalizeBelugaRaw(text).split('\n');
+  let i = 0;
+  while (i < lines.length && !lines[i].trim()) i++;
+  if (i >= lines.length) return false;
+  const hdr = lines[i].trim();
+  if (!/^-\s*Failed to execute command\.?$/i.test(hdr)) return false;
+  const detailRaw = lines.slice(i + 1).join('\n').trim();
+  const detail = polishBelugaErrorDetail(detailRaw || 'Unknown error.');
+  appendRichBelugaCommandError(text, detail);
+  return true;
+}
+
+function appendRichBelugaCommandError(rawText, detail) {
+  appendRichShell(rawText, function (shell) {
+    const card = document.createElement('div');
+    card.className = 'repl-rich-error';
+
+    const head = document.createElement('div');
+    head.className = 'repl-rich-error-head';
+
+    const icon = document.createElement('span');
+    icon.className = 'repl-rich-error-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '\u26A0';
+
+    const ht = document.createElement('span');
+    ht.className = 'repl-rich-error-label';
+    ht.textContent = 'Command failed';
+
+    head.append(icon, ht);
+
+    const body = document.createElement('div');
+    body.className = 'repl-rich-error-detail';
+    body.textContent = detail;
+
+    card.append(head, body);
+    shell.appendChild(card);
+  });
+}
+
+function appendRichPre(raw, titleOpt) {
+  const text = normalizeBelugaRaw(raw);
+  const body = stripBelugaTrailingSemicolons(text);
+  appendRichShell(text, function (shell) {
+    if (titleOpt) appendRichTitle(shell, titleOpt);
+    const pre = document.createElement('pre');
+    pre.className = 'repl-rich-pre';
+    pre.textContent = body;
+    shell.appendChild(pre);
+  });
+}
+
+function appendRichKvGrid(raw, titleText) {
+  const inner = stripBelugaTrailingSemicolons(normalizeBelugaRaw(raw));
+  const lines = inner
+    .split('\n')
+    .map(function (l) {
+      return l.trim();
+    })
+    .filter(Boolean);
+  appendRichShell(raw, function (shell) {
+    appendRichTitle(shell, titleText);
+    const warnings = [];
+    const kv = [];
+    lines.forEach(function (line) {
+      if (/^\s*-\s/.test(line)) warnings.push(line.replace(/^\s*-\s*/, '').replace(/;\s*$/, '').trim());
+      else kv.push(line);
+    });
+    warnings.forEach(function (w) {
+      const d = document.createElement('div');
+      d.className = 'repl-rich-msg repl-rich-msg--warn';
+      d.textContent = w;
+      shell.appendChild(d);
+    });
+    if (!kv.length) return;
+    const grid = document.createElement('div');
+    grid.className = 'repl-rich-kv-grid';
+    kv.forEach(function (line) {
+      const row = document.createElement('div');
+      row.className = 'repl-rich-kv-row';
+      const parsed = splitFirstColonSpace(line);
+      if (parsed) {
+        const k = document.createElement('code');
+        k.className = 'repl-rich-k';
+        k.textContent = parsed.left;
+        const v = document.createElement('div');
+        v.className = 'repl-rich-v';
+        v.textContent = parsed.right;
+        row.appendChild(k);
+        row.appendChild(v);
+      } else {
+        row.className = 'repl-rich-kv-row repl-rich-kv-row--full';
+        row.textContent = line;
+      }
+      grid.appendChild(row);
+    });
+    shell.appendChild(grid);
+  });
+}
+
+function appendLoadFormatted(raw) {
+  const text = normalizeBelugaRaw(raw);
+  const m = text.match(/The file\s+(.+?)\s+has been successfully loaded;/);
+  if (m) {
+    appendRichShell(text, function (shell) {
+      appendRichTitle(shell, 'Loaded');
+      const d = document.createElement('div');
+      d.className = 'repl-rich-msg repl-rich-msg--success';
+      d.textContent = 'Loaded “' + m[1] + '”.';
+      shell.appendChild(d);
+    });
+  } else appendOutput(text);
+}
+
+function appendCountholesFormatted(raw) {
+  const t = stripBelugaTrailingSemicolons(normalizeBelugaRaw(raw));
+  const n = t.match(/^(\d+)\s*$/);
+  if (n)
+    appendRichShell(raw, function (shell) {
+      appendRichTitle(shell, 'Holes');
+      const row = document.createElement('div');
+      row.className = 'repl-rich-stat';
+      const lab = document.createElement('span');
+      lab.className = 'repl-rich-stat-label';
+      lab.textContent = 'Open holes';
+      const val = document.createElement('span');
+      val.className = 'repl-rich-stat-value';
+      val.textContent = n[1];
+      row.appendChild(lab);
+      row.appendChild(val);
+      shell.appendChild(row);
+    });
+  else appendOutput(raw);
+}
+
+function appendLookupholeFormatted(raw) {
+  const t = stripBelugaTrailingSemicolons(normalizeBelugaRaw(raw));
+  if (!t) return appendRichMsg('muted', '(no result)', '');
+  appendRichShell(raw, function (shell) {
+    appendRichTitle(shell, 'Hole id');
+    const c = document.createElement('code');
+    c.className = 'repl-rich-badge';
+    c.textContent = t;
+    shell.appendChild(c);
+  });
+}
+
+function appendChatterFormatted(raw) {
+  const t = stripBelugaTrailingSemicolons(normalizeBelugaRaw(raw));
+  const on = /chatter is on/i.test(t);
+  const off = /chatter is off/i.test(t);
+  appendRichShell(raw, function (shell) {
+    const d = document.createElement('div');
+    d.className =
+      'repl-rich-msg repl-rich-msg--success' + (on ? ' repl-rich-msg--accent' : '');
+    d.textContent = on ? 'Verbose chatter is on.' : off ? 'Verbose chatter is off.' : t || 'Ok.';
+    shell.appendChild(d);
+  });
+}
+
+function appendBelugaFormattedOutput(raw, verb) {
+  const text = normalizeBelugaRaw(raw);
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    if (verb === 'clearholes') appendRichMsg('success', 'Computation holes cleared.', '');
+    return;
+  }
+
+  switch (verb) {
+    case 'types':
+      if (trimmed === ';') appendRichMsg('muted', 'No LF types in scope yet.', ';');
+      else appendRichKvGrid(raw, 'LF types');
+      return;
+    case 'constructors':
+    case 'constructors-comp':
+      appendRichKvGrid(raw, verb === 'constructors' ? 'LF constructors' : 'Computation constructors');
+      return;
+    case 'fsig':
+      appendRichKvGrid(raw, 'Signature');
+      return;
+    case 'countholes':
+      appendCountholesFormatted(raw);
+      return;
+    case 'chatteron':
+    case 'chatteroff':
+      appendChatterFormatted(raw);
+      return;
+    case 'reset':
+      appendRichMsg('success', 'Store reset.', raw);
+      return;
+    case 'clearholes':
+      appendRichMsg('success', 'Computation holes cleared.', raw);
+      return;
+    case 'load':
+      appendLoadFormatted(raw);
+      return;
+    case 'reload':
+      appendOutput(raw);
+      return;
+    case 'lochole':
+      appendRichPre(raw, 'Location');
+      return;
+    case 'printhole':
+      appendRichPre(raw, 'Hole');
+      return;
+    case 'intro':
+    case 'split':
+      appendRichPre(raw, 'Expression');
+      return;
+    case 'solve-lf-hole':
+      appendRichPre(raw, 'LF solutions');
+      return;
+    case 'fdef':
+      appendRichPre(raw, 'Definition');
+      return;
+    case 'get-type':
+      appendRichPre(raw, 'Type');
+      return;
+    case 'type':
+      appendRichPre(raw, 'Type check');
+      return;
+    case 'lookuphole':
+      appendLookupholeFormatted(raw);
+      return;
+    case 'query':
+      if (/^\s*-\s*Error/i.test(text)) appendOutput(raw);
+      else if (/^\s*;\s*$/.test(trimmed)) appendRichMsg('success', 'Query completed.', raw);
+      else appendRichPre(raw, 'Query');
+      return;
+    default:
+      appendOutput(raw);
+  }
+}
+
+function appendBelugaResponse(raw, verb) {
+  if (verb == null || verb === '') appendRunOutput(raw);
+  else appendBelugaFormattedOutput(raw, verb);
+}
+
+function appendRunOutput(raw) {
+  const clean = stripBelugaAnsi(raw).replace(/\n+$/, '');
+  if (!clean.trim()) return;
+  appendRichShell(clean, function (shell) {
+    const blocks = clean.split(/\n{2,}/);
+    blocks.forEach(function (blockText) {
+      const trimmed = blockText.trim();
+      if (!trimmed) return;
+      const pre = document.createElement('pre');
+      pre.className = 'repl-rich-pre repl-rich-pre--run';
+      const lines = trimmed.split('\n');
+      const isTypeReconStatus =
+        lines.length > 0 &&
+        lines.every(function (line) {
+          return /^##\s*Type Reconstruction (begin|done):/i.test(line.trim());
+        });
+      if (isTypeReconStatus) {
+        pre.classList.add('repl-rich-pre--run-success');
+      } else if (/\b(error|failed|exception)\b/i.test(trimmed)) {
+        pre.classList.add('repl-rich-pre--run-error');
+      }
+      pre.textContent = trimmed;
+      shell.appendChild(pre);
+    });
+  });
+}
+
+function createReplBlock() {
+  const block = document.createElement('div');
+  block.className = 'repl-block';
+  return block;
+}
+
+function scrollReplBottom() {
+  output.scrollTop = output.scrollHeight;
+}
+
+function appendReplHelp() {
+  const block = createReplBlock();
+  const wrap = document.createElement('div');
+  wrap.className = 'repl-help';
+
+  const head = document.createElement('div');
+  head.className = 'repl-help-head';
+  head.textContent = 'Commands';
+
+  const grid = document.createElement('div');
+  grid.className = 'repl-help-grid';
+
+  REPL_HELP_ROWS.forEach(function (rowSpec) {
+    const row = document.createElement('div');
+    row.className = 'repl-help-row';
+    const cmdEl = document.createElement('code');
+    cmdEl.className = 'repl-help-cmd';
+    cmdEl.textContent = rowSpec.cmd;
+    const descEl = document.createElement('div');
+    descEl.className = 'repl-help-desc';
+    descEl.textContent = rowSpec.desc;
+    row.appendChild(cmdEl);
+    row.appendChild(descEl);
+    grid.appendChild(row);
+  });
+
+  wrap.append(head, grid);
+  block.appendChild(wrap);
+  output.appendChild(block);
+  scrollReplBottom();
+}
+
+function insertWelcomeBanner() {
+  const wrap = document.createElement('div');
+  wrap.className = 'repl-welcome';
+
+  const lead = document.createElement('p');
+  lead.className = 'repl-welcome-lead';
+
+  lead.appendChild(document.createTextNode('Welcome to BelJar. Try '));
+
+  const kHelp = document.createElement('kbd');
+  kHelp.className = 'repl-welcome-kbd';
+  kHelp.textContent = 'help';
+  lead.appendChild(kHelp);
+  lead.appendChild(document.createTextNode(' for a list of REPL commands.'));
+
+  wrap.appendChild(lead);
+  output.appendChild(wrap);
+}
+
+function appendOutput(text, forcedKind) {
+  if (text == null || text === '' || !String(text).trim()) return;
+
+  const useForce = forcedKind && forcedKind !== 'auto';
+  if (!useForce && tryAppendBelugaWrappedCommandError(text)) return;
+
+  const block = createReplBlock();
+  const lines = splitOutputLines(text);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const kind = useForce ? forcedKind : inferLineKind(line);
+    block.appendChild(makeReplLine(line, kind));
+  }
+  output.appendChild(block);
+  scrollReplBottom();
+}
+
+function clearOutput() {
+  output.replaceChildren();
+  replHistoryIndex = null;
+  insertWelcomeBanner();
+}
+
+let replHistory = [];
+let replHistoryIndex = null;
+
+insertWelcomeBanner();
 
 const TEMPLATES = {
   nd: `% Natural Deduction
-% Author: Brigitte Pientka
-
 LF o : type =
   | ⊃ : o → o → o
   | ⊤ : o
@@ -35,207 +542,90 @@ rec p0 : [ ⊢ nd (A ∧ B ⊃ A)] =
 [ ⊢ ⊃I (\\u. ∧El u)] ;
 
 rec p1 : [ ⊢ nd ((A ∧ B) ⊃ (B ∧ A))] =
-[ ⊢ ⊃I \\u. ∧I (∧Er u) (∧El u)];`
+[ ⊢ ⊃I \\u. ∧I (∧Er u) (∧El u)];`,
 };
 
-// --- Output ---
-
-function appendOutput(text) {
-  if (text && text.trim()) {
-    output.textContent += '\n' + text;
-    output.scrollTop = output.scrollHeight;
-  }
-}
-
-function clearOutput() {
-  output.textContent = '';
-}
-
-// --- Beluga bridge ---
-
 function loadCode() {
-  const code = editor.value;
+  if (!editor) return;
+  const code = editor.getValue();
   if (!code.trim()) return;
   try {
-    appendOutput(Beluga.loadFromString(code));
+    appendBelugaResponse(Beluga.loadFromString(code), null);
   } catch (e) {
-    appendOutput('Error: ' + e.message);
+    appendOutput('Error: ' + e.message, 'error');
   }
+}
+
+function formatShownCmd(raw) {
+  return raw.startsWith('%:') ? raw : '%:' + raw;
 }
 
 function runCmd() {
   let cmd = cmdInput.value.trim();
   if (!cmd) return;
+  const rawForHistory = cmd;
   if (!cmd.startsWith('%:')) cmd = '%:' + cmd;
+  replHistoryIndex = null;
+  const bareCmd = rawForHistory.replace(/^%:\s*/, '').trim().toLowerCase();
+  const isHelp = bareCmd === 'help';
+  const { verb } = parseBelugaCmd(cmd);
   try {
-    appendOutput('# ' + cmd);
-    appendOutput(Beluga.runCommand(cmd));
+    appendOutput('# ' + formatShownCmd(rawForHistory), 'cmd');
+    if (isHelp) appendReplHelp();
+    else if (verb === 'quit') {
+      appendRichMsg(
+        'muted',
+        'Quit is not available in the browser shell (nothing to exit).',
+        ''
+      );
+    } else appendBelugaResponse(Beluga.runCommand(cmd), verb);
   } catch (e) {
-    appendOutput('Error: ' + e.message);
+    appendOutput('Error: ' + e.message, 'error');
   }
   cmdInput.value = '';
+  replHistory.push(rawForHistory);
 }
-
-// --- Prefabs / templates ---
 
 function insertNd(where) {
   const code = TEMPLATES.nd;
-  if (!code) return;
-  if (where === 'top') {
-    editor.value = code + '\n\n' + editor.value;
-  } else {
-    editor.value = (editor.value ? editor.value.replace(/\s*$/, '') + '\n\n' : '') + code;
-  }
-  editor.focus();
+  if (!code || !editor) return;
+  if (where === 'top') editor.insertTop(code);
+  else editor.insertBottom(code);
 }
 
 async function copyNd() {
   try {
     await navigator.clipboard.writeText(TEMPLATES.nd);
   } catch {
-    appendOutput('Error: could not copy to clipboard');
+    appendOutput('Error: could not copy to clipboard', 'error');
   }
-  editor.focus();
+  if (editor) editor.focus();
 }
-
-// --- Theme ---
 
 function toggleTheme() {
   document.documentElement.classList.toggle('light');
-  const isLight = document.documentElement.classList.contains('light');
-  localStorage.setItem('beljar-theme', isLight ? 'light' : 'dark');
-}
-
-// --- Tooltips (FloatingRectPlacement; menus use mode: 'menu')
-
-const TOOLTIP_MARGIN = FloatingRectPlacement.DEFAULT_MARGIN;
-const TOOLTIP_GAP = FloatingRectPlacement.DEFAULT_GAP;
-const TOUCH_SHOW_DELAY_MS = 400;
-
-const tooltipRoot = document.getElementById('tooltip-root');
-const prefersHover = () => window.matchMedia('(hover: hover)').matches;
-const suppressedTooltipAnchors = new Set();
-
-function layoutTooltip(anchor) {
-  const tip = tooltipRoot.firstElementChild;
-  if (!tip || tooltipRoot.hidden) return;
-
-  const text = anchor.getAttribute('data-tooltip');
-  if (!text) return;
-  tip.textContent = text;
-
-  tooltipRoot.classList.remove('is-visible');
-  tooltipRoot.classList.add('is-measuring');
-
-  const tw = tooltipRoot.offsetWidth;
-  const th = tooltipRoot.offsetHeight;
-  const tr = anchor.getBoundingClientRect();
-  const { x, y } = FloatingRectPlacement.computePosition({
-    anchor: tr,
-    width: tw,
-    height: th,
-    margin: TOOLTIP_MARGIN,
-    gap: TOOLTIP_GAP,
-    preferPlacement: FloatingRectPlacement.PREFERENCE_TOOLTIP,
-  });
-
-  tooltipRoot.classList.remove('is-measuring');
-  tooltipRoot.style.left = `${x}px`;
-  tooltipRoot.style.top = `${y}px`;
-  tooltipRoot.classList.add('is-visible');
-}
-
-let tooltipAnchor = null;
-let touchShowTimer = null;
-
-function ensureTooltipInner() {
-  if (!tooltipRoot.querySelector('.tooltip-inner')) {
-    const inner = document.createElement('div');
-    inner.className = 'tooltip-inner';
-    tooltipRoot.appendChild(inner);
+  var isLight = document.documentElement.classList.contains('light');
+  if (typeof BelJarPersist !== 'undefined') {
+    BelJarPersist.writeStoredTheme(isLight ? 'light' : 'dark');
   }
 }
 
-function showTooltip(anchor) {
-  if (suppressedTooltipAnchors.has(anchor)) return;
-  const text = anchor.getAttribute('data-tooltip');
-  if (!text) return;
-  ensureTooltipInner();
-  tooltipAnchor = anchor;
-  tooltipRoot.hidden = false;
-  layoutTooltip(anchor);
-}
-
-function hideTooltip() {
-  tooltipAnchor = null;
-  tooltipRoot.classList.remove('is-visible', 'is-measuring');
-  tooltipRoot.hidden = true;
-  tooltipRoot.style.left = '';
-  tooltipRoot.style.top = '';
-}
-
-function bindTooltips() {
-  if (!tooltipRoot) return;
-  document.querySelectorAll('[data-tooltip]').forEach((el) => {
-    el.addEventListener('mouseenter', () => {
-      if (!prefersHover()) return;
-      showTooltip(el);
-    });
-    el.addEventListener('mouseleave', () => {
-      if (!prefersHover()) return;
-      if (tooltipAnchor === el) hideTooltip();
-    });
-    el.addEventListener('focusin', () => showTooltip(el));
-    el.addEventListener('focusout', () => {
-      if (tooltipAnchor === el) hideTooltip();
-    });
-
-    el.addEventListener(
-      'touchstart',
-      () => {
-        if (prefersHover()) return;
-        clearTimeout(touchShowTimer);
-        touchShowTimer = setTimeout(() => showTooltip(el), TOUCH_SHOW_DELAY_MS);
-      },
-      { passive: true }
-    );
-    el.addEventListener('touchend', () => {
-      clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el) hideTooltip();
-    });
-    el.addEventListener('touchcancel', () => {
-      clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el) hideTooltip();
-    });
-  });
-
-  window.addEventListener('resize', () => {
-    if (tooltipAnchor) layoutTooltip(tooltipAnchor);
-  });
-  window.addEventListener(
-    'scroll',
-    () => {
-      if (tooltipAnchor) layoutTooltip(tooltipAnchor);
-    },
-    true
-  );
-}
-
-bindTooltips();
-
-// --- Prefabs menu ---
+window.BelJarRepl = {
+  appendBuffered: function (text, kind) {
+    appendOutput(text, kind || 'auto');
+  },
+};
 
 const prefabsBtn = document.getElementById('btn-prefabs');
 if (prefabsBtn) {
-  prefabsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    hideTooltip();
+  let prefabsSuppressNextClick = false;
+
+  function runPrefabsMenuInteraction() {
     if (typeof Menu !== 'undefined' && Menu.isOpen() && Menu.rootAnchor() === prefabsBtn) {
       Menu.closeAll();
       return;
     }
     if (typeof Menu === 'undefined') return;
-    suppressedTooltipAnchors.add(prefabsBtn);
     Menu.open({
       anchor: prefabsBtn,
       side: 'right',
@@ -251,37 +641,81 @@ if (prefabsBtn) {
         },
       ],
       onClose: () => {
-        suppressedTooltipAnchors.delete(prefabsBtn);
-        prefabsBtn.setAttribute('aria-expanded', 'false');
+        if (typeof Tooltips !== 'undefined') Tooltips.releaseAnchor(prefabsBtn);
       },
     });
-    prefabsBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  prefabsBtn.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    prefabsSuppressNextClick = true;
+    if (typeof Tooltips !== 'undefined') {
+      Tooltips.suppressAnchor(prefabsBtn);
+      Tooltips.hide();
+    }
+    runPrefabsMenuInteraction();
+  });
+
+  prefabsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (prefabsSuppressNextClick) {
+      prefabsSuppressNextClick = false;
+      return;
+    }
+    if (typeof Tooltips !== 'undefined') {
+      Tooltips.suppressAnchor(prefabsBtn);
+      Tooltips.hide();
+    }
+    runPrefabsMenuInteraction();
   });
 }
-
-// --- Events ---
 
 document.getElementById('btn-theme').addEventListener('click', toggleTheme);
 document.getElementById('btn-load').addEventListener('click', loadCode);
 document.getElementById('btn-clear').addEventListener('click', clearOutput);
 document.getElementById('btn-run').addEventListener('click', runCmd);
 
-editor.addEventListener('keydown', (e) => {
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-    editor.selectionStart = editor.selectionEnd = start + 2;
-  }
+cmdInput.addEventListener('input', () => {
+  replHistoryIndex = null;
 });
 
 cmdInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') runCmd();
+  if (e.key === 'Enter') {
+    runCmd();
+    return;
+  }
+  if (e.key === 'ArrowUp') {
+    if (!replHistory.length) return;
+    e.preventDefault();
+    if (replHistoryIndex === null) replHistoryIndex = replHistory.length - 1;
+    else replHistoryIndex = Math.max(0, replHistoryIndex - 1);
+    cmdInput.value = replHistory[replHistoryIndex];
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    if (replHistoryIndex === null) return;
+    e.preventDefault();
+    replHistoryIndex++;
+    if (replHistoryIndex >= replHistory.length) {
+      replHistoryIndex = null;
+      cmdInput.value = '';
+    } else {
+      cmdInput.value = replHistory[replHistoryIndex];
+    }
+  }
 });
 
-// --- Init ---
+window.addEventListener('beforeunload', () => {
+  if (persist) persist.flushEditor();
+});
+window.addEventListener('pagehide', () => {
+  if (persist) persist.flushEditor();
+});
 
 if (typeof Beluga === 'undefined') {
-  appendOutput('[FATAL] Beluga module failed to load.');
+  appendOutput('[FATAL] Beluga module failed to load.', 'fatal');
+}
+if (!editor) {
+  appendOutput('[FATAL] CodeMirror editor bundle failed to load.', 'fatal');
 }

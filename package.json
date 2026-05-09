@@ -1,0 +1,20 @@
+{
+  "name": "bel-jar",
+  "private": true,
+  "scripts": {
+    "build": "npm run vendor-fonts && npm run build:editor",
+    "build:editor": "node scripts/build-editor.mjs",
+    "vendor-fonts": "node scripts/vendor-fonts.mjs"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.42.1"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "esbuild": "^0.25.0"
+  }
+}

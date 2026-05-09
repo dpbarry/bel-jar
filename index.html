@@ -15,9 +15,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
   <title>BelJar</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.png">
-  <link
-    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap"
-    rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 
@@ -49,8 +46,8 @@
 
   <div class="workspace">
     <aside class="sidebar">
-      <button id="btn-prefabs" type="button" class="icon-btn icon-btn-lg" data-tooltip="Prefabs" aria-haspopup="true" aria-expanded="false">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <button id="btn-prefabs" type="button" class="icon-btn icon-btn-lg" data-tooltip="Prefabs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2.5" y="3.5" width="19" height="4.5" rx="1"/>
           <path d="M4.5 8v10.75a1.75 1.75 0 0 0 1.75 1.75h11.5a1.75 1.75 0 0 0 1.75-1.75V8"/>
           <path d="m9.4 12.1-2.1 1.9 2.1 1.9"/>
@@ -69,7 +66,7 @@
           </svg>
         </button>
       </div>
-      <textarea id="editor" spellcheck="false" placeholder="Write Beluga code here..."></textarea>
+      <div id="editor" class="editor-cm-host" aria-label="Beluga source editor"></div>
     </div>
 
     <div class="panel output-panel">
@@ -81,17 +78,17 @@
           </svg>
         </button>
       </div>
-      <div id="output"># Welcome to BelJar. Type "help" below to see REPL commands.</div>
+      <div id="output" class="repl-log" role="log" aria-live="polite" aria-relevant="additions"></div>
       <div class="repl-bar">
-        <div class="repl-input-wrap">
-          <span class="repl-prompt">&gt;&gt;</span>
-          <input id="command-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <div class="repl-input-shell">
+          <span class="repl-prompt" aria-hidden="true">&#x276F;</span>
+          <input id="command-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="REPL command…" aria-label="REPL command">
+          <button id="btn-run" type="button" class="repl-send" data-tooltip="Run command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+            </svg>
+          </button>
         </div>
-        <button id="btn-run" class="icon-btn" data-tooltip="Run command">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-          </svg>
-        </button>
       </div>
     </div>
   </div>
@@ -100,12 +97,20 @@
   <div id="menu-root" class="menu-root"></div>
 
   <script>
-    window.onerror = (msg, url, line) => {
-      document.getElementById('output').textContent += '\n[JS ERROR] ' + msg + ' (line ' + line + ')';
+    window.onerror = function (msg, url, line) {
+      var lineMsg = '[JS ERROR] ' + msg + ' (line ' + line + ')';
+      if (window.BelJarRepl && BelJarRepl.appendBuffered) BelJarRepl.appendBuffered(lineMsg, 'error');
+      else {
+        var o = document.getElementById('output');
+        o.textContent = (o.textContent ? o.textContent + '\n' : '') + lineMsg;
+      }
     };
   </script>
   <script src="beluga_web.bc.js"></script>
-  <script src="js/floating-rect-placement.js"></script>
+  <script src="js/editor-cm.bundle.js"></script>
+  <script src="js/persist.js"></script>
+  <script src="js/float-placement.js"></script>
+  <script src="js/tooltips.js"></script>
   <script src="js/menu.js"></script>
   <script src="js/app.js"></script>
 </body>

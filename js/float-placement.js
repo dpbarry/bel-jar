@@ -6,7 +6,12 @@
 
   const DEFAULT_MARGIN = 8;
   const DEFAULT_GAP = 8;
+  const OVERLAY_TRANSITION_FALLBACK_MS = 170;
   const PREFERENCE_TOOLTIP = Object.freeze(['right', 'left', 'bottom', 'top']);
+
+  function prefersFineHover() {
+    return global.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  }
 
   function normalizeAnchor(a) {
     const left = Number(a.left);
@@ -228,13 +233,10 @@
   global.FloatingRectPlacement = {
     DEFAULT_MARGIN,
     DEFAULT_GAP,
+    OVERLAY_TRANSITION_FALLBACK_MS,
     PREFERENCE_TOOLTIP,
+    prefersFineHover,
     normalizeAnchor,
-    clampToViewport,
-    fitsViewport,
-    separatedFromAnchor,
-    overlapAreaWithAnchor,
-    visibleAreaInMargin,
     computePosition,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

@@ -168,11 +168,15 @@ function belEditorChrome() {
       color: 'var(--editor-gutter-fg)',
       border: 'none',
       borderRight: '1px solid var(--editor-gutter-edge)',
+      userSelect: 'none',
+      position: 'relative',
+      zIndex: 2,
     },
     '.cm-lineNumbers .cm-gutterElement': {
       padding: '0 0.4rem 0 0.5rem',
       minWidth: '2.5rem',
       textAlign: 'right',
+      userSelect: 'none',
     },
     '.cm-activeLineGutter': {
       backgroundColor: 'light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.038))',

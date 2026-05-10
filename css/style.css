@@ -623,6 +623,19 @@ html.light .theme-toggle .icon-moon {
   margin-top: 0 !important;
 }
 
+/* Gutters above cm-selectionLayer (z-index -1); blocks selection tint bleeding onto line numbers. */
+#editor.editor-cm-host .cm-gutters {
+  position: relative;
+  z-index: 2;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#editor.editor-cm-host .cm-gutters .cm-gutterElement {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* -- Output / REPL -- */
 
 .output-panel {

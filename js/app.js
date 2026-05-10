@@ -576,14 +576,7 @@ LF nd : o → type =
   | ∨Ir : nd B → nd (A ∨ B)
   | ∨E : nd (A ∨ B) → (nd A → nd C) → (nd B → nd C) → nd C
   | ⊤I : nd ⊤
-;
-
-rec p0 : [ ⊢ nd (A ∧ B ⊃ A)] =
-[ ⊢ ⊃I (\\u. ∧El u)] ;
-
-rec p1 : [ ⊢ nd ((A ∧ B) ⊃ (B ∧ A))] =
-[ ⊢ ⊃I \\u. ∧I (∧Er u) (∧El u)];`,
-};
+;`};
 
 function loadCode() {
   if (!editor) return;

@@ -190,29 +190,50 @@ All usages of `Unix.times ()` in the file replaced with `safe_times ()`. Monitor
 
 ---
 
-### 7. Configurable prompt — `src/core/logic.ml` + `logic.mli`
+### 7. Query output redirection + configurable prompt — `src/core/logic.ml` + `logic.mli`
 
-**Problem:** `read_line()` blocks the JS event loop forever.
+**Problem 1:** `Frontend.solve` and `Printer.printQuery` write to `Format.std_formatter` (stdout) and `Printf.printf` directly, bypassing the `ppf` buffer captured by `beluga_web.ml`. Query results never appear in the REPL.
 
-**Added to Options (logic.ml lines 38–43):**
+**Problem 2:** `read_line()` in `moreSolutions` blocks the JS event loop forever. `Options.more_solutions_prompt` was defined as a workaround ref but was never actually called.
+
+**Added to Options:**
 ```ocaml
+(* Formatter for query output; override in non-CLI contexts. *)
+let output_formatter : Format.formatter ref = ref Format.std_formatter
+
 let more_solutions_prompt : (unit -> bool) ref = ref (fun () ->
-  Printf.printf "More? ";
+  fprintf !output_formatter "More? @?";
   match read_line () with
   | "y" | "Y" | ";" -> true
-  | "q" | "Q" -> false
-  | _ -> false)
+  | "q" | "Q" | _ -> false)
 ```
 
-**Exposed in logic.mli (line 12):**
+`more_solutions_prompt` now uses `!output_formatter` so the "More?" prompt also respects the output redirect.
+
+**`Frontend.moreSolutions` simplified** to actually call the ref:
+```ocaml
+let moreSolutions () =
+  !Options.more_solutions_prompt ()
+```
+
+**`Printer.printQuery`** updated to use `!Options.output_formatter`.
+
+**`Frontend.solve.scInit`** and all status `printf`/`std_formatter` calls in `Frontend.solve` replaced with `fprintf !Options.output_formatter`.
+
+**Exposed in logic.mli:**
 ```ocaml
 module Options : sig
   val enableLogic : bool ref
+  val output_formatter : Format.formatter ref
   val more_solutions_prompt : (unit -> bool) ref
 end
 ```
 
-The default is the original CLI behavior. Web overrides it with `fun () -> false` — "no more solutions."
+Web sets both refs at session creation:
+```ocaml
+Logic.Options.output_formatter := ppf;
+Logic.Options.more_solutions_prompt := (fun () -> false);
+```
 
 ---
 
@@ -296,6 +317,8 @@ let drain session =
 let create () =
   let buf = Buffer.create 4096 in
   let ppf = Format.formatter_of_buffer buf in
+  Error.disable_colored_output ();
+  Logic.Options.output_formatter := ppf;
   Logic.Options.more_solutions_prompt := (fun () -> false);
   Chatter.level := 1;
   let state = Command.create_initial_state ~ppf () in
@@ -306,7 +329,7 @@ let load_from_string session content =
     ignore
       (Command.load_from_string session.state ~virtual_filename:"input.bel"
          ~content : Synint.Sgn.sgn);
-    drain session
+    (drain session, true)
   with e ->
     let bt = Printexc.get_backtrace () in
     let msg =
@@ -314,7 +337,7 @@ let load_from_string session content =
       with _ -> Printexc.to_string e
     in
     Buffer.clear session.buf;
-    msg ^ "\n" ^ bt
+    (msg ^ "\n" ^ bt, false)
 
 let run_command session input =
   try
@@ -339,7 +362,10 @@ let () =
 
        method loadFromString content =
          let s = Js.to_string content in
-         Js.string (load_from_string !session s)
+         let trial = create () in
+         let (out, ok) = load_from_string trial s in
+         if ok then session := trial;
+         Js.string out
 
        method runCommand input =
          let s = Js.to_string input in
@@ -353,10 +379,16 @@ let () =
 
 This file ties everything together:
 1. Creates a `Buffer.t` + `Format.formatter` pair (captures all output)
-2. Disables the blocking prompt (`more_solutions_prompt := fun () -> false`)
-3. Creates state with `~ppf` (patches 1–3)
-4. Exports `Beluga.loadFromString`, `Beluga.runCommand`, `Beluga.reset` to JS
-5. Exception handling: uses Beluga's registered printer for human-readable errors, falls back to `Printexc.to_string`
+2. Disables ANSI color codes in error output (`Error.disable_colored_output ()`) — otherwise Beluga's pretty-printer emits escape sequences that render as garbage in HTML
+3. Disables the blocking prompt (`more_solutions_prompt := fun () -> false`)
+4. Creates state with `~ppf` (patches 1–3)
+5. Exports `Beluga.loadFromString`, `Beluga.runCommand`, `Beluga.reset` to JS
+6. Exception handling: uses Beluga's registered printer for human-readable errors, falls back to `Printexc.to_string`
+
+> [!IMPORTANT]
+> **Trial-session pattern in `loadFromString`.** A failed load leaves Beluga's globally mutable state (`Store`, `Typeinfo`, `Holes`, reconstruction state) half-corrupted. Reusing that session for the next load would silently poison subsequent successes. So every `loadFromString` call builds a *fresh* session via `create ()`, attempts the load on it, and only commits the trial to the live `session` ref if it succeeded. Failures discard the trial wholesale — guaranteed clean rollback. This is what makes editor features that re-load on every keystroke (auto-format, live error highlighting) safe to use.
+>
+> `load_from_string` therefore returns `(string * bool)` rather than just `string`: the buffer contents plus a success flag the caller uses to decide whether to commit.
 
 ---
 
@@ -426,13 +458,13 @@ When Beluga updates upstream, re-apply these 13 patches in order:
 | 4 | `src/core/load.ml` | **Modify** | Add `read_signature_from_string` + `load_from_string` |
 | 5 | `src/core/load.mli` | **Modify** | Expose string-loading functions |
 | 6 | `src/core/monitor.ml` | **Modify** | Add `safe_times()` wrapper |
-| 7 | `src/core/logic.ml` | **Modify** | Add configurable `more_solutions_prompt` |
-| 8 | `src/core/logic.mli` | **Modify** | Expose `more_solutions_prompt` |
+| 7 | `src/core/logic.ml` | **Modify** | Add `output_formatter` ref; redirect all query output; simplify `moreSolutions` to call the ref |
+| 8 | `src/core/logic.mli` | **Modify** | Expose `output_formatter` + `more_solutions_prompt` |
 | 9 | `src/core/prettyint.ml` | **Modify** | Replace `Str` regex with char check |
 | 10 | `src/core/dune` | **Modify** | Remove `str` from libraries |
 | 11 | `src/html/dune` | **Modify** | Add `(package beluga)` to install stanza |
 | 12 | `src/web/dune` | **Create** | js_of_ocaml executable config (includes scoped `-w -53`) |
-| 13 | `src/web/beluga_web.ml` | **Create** | JS entry point |
+| 13 | `src/web/beluga_web.ml` | **Create** | JS entry point — includes `Error.disable_colored_output ()` and the trial-session rollback pattern |
 
 > [!TIP]
 > Quickest diff: `diff -rq Beluga/src Beluga-W/src` shows exactly which files diverge.
@@ -445,7 +477,10 @@ When Beluga updates upstream, re-apply these 13 patches in order:
 |---|---|---|
 | No filesystem | Browser has no `open_in` | Parse from string via `Lexer.lex_string` |
 | No stdout capture | `Format.std_formatter` → console | Redirect via `Chatter.set_formatter` to a `Buffer.t` |
+| Query output lost | `Frontend.solve` writes to `std_formatter`/`printf` | `output_formatter` ref redirected to session buffer at create |
 | Blocking I/O | `read_line()` halts JS event loop | Configurable function ref, default "no" |
 | C stubs | `Unix.times()` + `Str` not in JS | `try/with` fallback + pure OCaml reimplementation |
 | Build errors | Warning 53 from ppx codegen | `-w -53` scoped to `src/web/dune` |
 | String corruption | JS strings ≠ OCaml byte sequences | `--disable use-js-string` flag |
+| ANSI codes in HTML | Beluga's error printer emits color escapes | `Error.disable_colored_output ()` at session create |
+| State poisoned by failed loads | `Store`/`Typeinfo`/`Holes` are global mutable refs | Trial-session pattern: build fresh session per load, commit only on success |

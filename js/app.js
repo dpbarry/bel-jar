@@ -342,6 +342,175 @@ function appendChatterFormatted(raw) {
   });
 }
 
+function parseQuerySolutions(raw) {
+  const text = stripBelugaTrailingSemicolons(normalizeBelugaRaw(raw)).trim();
+  const lines = text.split('\n');
+  const solutions = [];
+  let cur = null;
+  let curBinding = null;
+  let isDone = false;
+
+  function flushBinding() {
+    if (curBinding && cur) {
+      cur.bindings.push({
+        key: curBinding.key,
+        value: curBinding.lines.join('\n').replace(/[;.]+\s*$/, '').trim(),
+      });
+    }
+    curBinding = null;
+  }
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+    if (/^--query\b/.test(trimmed)) continue;
+    if (trimmed === '[]' || trimmed === '^.' || trimmed === '^') continue;
+
+    const solM = trimmed.match(/^-+\s*Solution\s+(\d+)\s*-+$/i);
+    if (solM) {
+      flushBinding();
+      cur = { n: parseInt(solM[1], 10), bindings: [] };
+      solutions.push(cur);
+      continue;
+    }
+    if (/^Done\.?\s*$/.test(trimmed)) { isDone = true; continue; }
+
+    const bindM = trimmed.match(/^([A-Za-z_][A-Za-z0-9_']*)\s*=\s*([\s\S]*)$/);
+    if (bindM && cur) {
+      flushBinding();
+      const firstVal = bindM[2].replace(/[;.]+\s*$/, '').trimEnd();
+      curBinding = { key: bindM[1], lines: [firstVal] };
+      continue;
+    }
+    if (curBinding) {
+      curBinding.lines.push(rawLine.replace(/[;.]+\s*$/, '').trimEnd());
+    }
+  }
+  flushBinding();
+  return { solutions, isDone };
+}
+
+function buildQueryDom(solutions, isDone) {
+  appendRichShell('', function (shell) {
+    const wrap = document.createElement('div');
+    wrap.className = 'repl-query-result';
+
+    solutions.forEach(function (sol, idx) {
+      const card = document.createElement('div');
+      card.className = 'repl-query-sol' + (idx > 0 ? ' repl-query-sol--nth' : '');
+
+      const head = document.createElement('div');
+      head.className = 'repl-query-sol-head';
+      head.textContent = solutions.length > 1 ? 'Solution ' + sol.n : 'Solution';
+      card.appendChild(head);
+
+      if (sol.bindings.length) {
+        const rows = document.createElement('div');
+        rows.className = 'repl-query-bindings';
+        sol.bindings.forEach(function (b) {
+          const row = document.createElement('div');
+          row.className = 'repl-query-binding';
+          const key = document.createElement('code');
+          key.className = 'repl-query-key';
+          key.textContent = b.key;
+          const eq = document.createElement('span');
+          eq.className = 'repl-query-eq';
+          eq.textContent = '=';
+          const val = document.createElement('pre');
+          val.className = 'repl-query-val';
+          val.textContent = b.value;
+          row.appendChild(key);
+          row.appendChild(eq);
+          row.appendChild(val);
+          rows.appendChild(row);
+        });
+        card.appendChild(rows);
+      }
+      wrap.appendChild(card);
+    });
+
+    if (isDone) {
+      const msg = document.createElement('div');
+      msg.className = 'repl-query-summary';
+      msg.textContent = solutions.length === 1 ? '1 solution.' : solutions.length + ' solutions.';
+      wrap.appendChild(msg);
+    }
+
+    shell.appendChild(wrap);
+  });
+}
+
+function appendQueryFormatted(raw) {
+  const text = normalizeBelugaRaw(raw);
+  if (/^\s*-\s*Error/i.test(text) || /^\s*-\s*Failed/i.test(text)) {
+    appendOutput(raw);
+    return;
+  }
+  const trimmed = stripBelugaTrailingSemicolons(text).trim();
+  if (!trimmed) { appendRichMsg('success', 'Query completed.', raw); return; }
+
+  const { solutions, isDone } = parseQuerySolutions(raw);
+
+  if (!solutions.length) {
+    const msg = /Skipping query/i.test(trimmed) ? 'Query skipped (tries = 0).'
+              : isDone ? 'No solutions found.'
+              : trimmed;
+    appendRichMsg(isDone ? 'muted' : 'out', msg, raw);
+    return;
+  }
+
+  buildQueryDom(solutions, isDone);
+}
+
+function segmentRunOutput(text) {
+  const lines = text.split('\n');
+  const segs = [];
+  let i = 0;
+  let otherLines = [];
+
+  function flushOther() {
+    const filtered = otherLines
+      .filter(function (l) { return !/^Done\.?\s*$/.test(l.trim()) && !/^\s*;\s*$/.test(l.trim()); })
+      .join('\n').trim();
+    if (filtered) segs.push({ type: 'other', text: filtered });
+    otherLines = [];
+  }
+
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+
+    if (/^##\s/.test(trimmed)) {
+      flushOther();
+      const trLines = [];
+      while (i < lines.length && /^##\s/.test(lines[i].trim())) { trLines.push(lines[i]); i++; }
+      segs.push({ type: 'type-recon', text: trLines.join('\n').trim() });
+      continue;
+    }
+
+    if (/^--query\b/.test(trimmed) || /^-{5,}\s*Solution\s+\d+\s*-{5,}$/i.test(trimmed)) {
+      flushOther();
+      const qLines = [];
+      while (i < lines.length) {
+        qLines.push(lines[i]);
+        const t = lines[i].trim();
+        if (/^Done\.?\s*$/.test(t) || /^Query error/i.test(t) || /^Skipping query/i.test(t)) { i++; break; }
+        i++;
+      }
+      const { solutions, isDone } = parseQuerySolutions(qLines.join('\n'));
+      segs.push({ type: 'query', solutions, isDone, queryError: !isDone && !solutions.length });
+      continue;
+    }
+
+    if (!trimmed || trimmed === '[]' || trimmed === '^.' || trimmed === '^' || trimmed === ';') { i++; continue; }
+
+    otherLines.push(lines[i]);
+    i++;
+  }
+
+  flushOther();
+  return segs;
+}
+
 function appendBelugaFormattedOutput(raw, verb) {
   const text = normalizeBelugaRaw(raw);
   const trimmed = text.trim();
@@ -408,9 +577,7 @@ function appendBelugaFormattedOutput(raw, verb) {
       appendLookupholeFormatted(raw);
       return;
     case 'query':
-      if (/^\s*-\s*Error/i.test(text)) appendOutput(raw);
-      else if (/^\s*;\s*$/.test(trimmed)) appendRichMsg('success', 'Query completed.', raw);
-      else appendRichPre(raw, 'Query');
+      appendQueryFormatted(raw);
       return;
     default:
       appendOutput(raw);
@@ -429,29 +596,29 @@ function appendRunOutput(raw) {
     appendOutput(clean);
     return;
   }
-  appendRichShell(clean, function (shell) {
-    const blocks = clean.split(/\n{2,}/);
-    blocks.forEach(function (blockText) {
-      const trimmed = blockText.trim();
-      if (!trimmed) return;
+  const segs = segmentRunOutput(clean);
+  segs.forEach(function (seg) {
+    if (seg.type === 'query') {
+      buildQueryDom(seg.solutions, seg.isDone);
+      return;
+    }
+    const text = seg.text;
+    if (!text.trim()) return;
+    appendRichShell(text, function (shell) {
       const pre = document.createElement('pre');
       pre.className = 'repl-rich-pre repl-rich-pre--run';
-      const lines = trimmed.split('\n');
-      const isRunError = /\b(error|failed|exception)\b/i.test(trimmed);
+      const lines = text.split('\n');
+      const isRunError = /\b(error|failed|exception)\b/i.test(text);
       const isTypeReconStatus =
         lines.length > 0 &&
         lines.every(function (line) {
           return /^##\s*Type Reconstruction (begin|done):/i.test(line.trim());
         });
-      const hasHolesSection = /##\s*Holes:/i.test(trimmed);
-      if (isRunError) {
-        pre.classList.add('repl-rich-pre--run-error');
-      } else if (isTypeReconStatus) {
-        pre.classList.add('repl-rich-pre--run-success');
-      } else if (hasHolesSection) {
-        pre.classList.add('repl-rich-pre--run-holes');
-      }
-      pre.textContent = trimmed;
+      const hasHolesSection = /##\s*Holes:/i.test(text);
+      if (isRunError) pre.classList.add('repl-rich-pre--run-error');
+      else if (isTypeReconStatus) pre.classList.add('repl-rich-pre--run-success');
+      else if (hasHolesSection) pre.classList.add('repl-rich-pre--run-holes');
+      pre.textContent = text;
       shell.appendChild(pre);
     });
   });

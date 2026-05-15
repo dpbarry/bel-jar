@@ -7,6 +7,9 @@ if (-not (Test-Path $BelugaRepo)) {
     exit 1
 }
 
+$OpamBin = "$env:LOCALAPPDATA\opam\default\bin"
+$env:PATH = "$OpamBin;$env:PATH"
+
 Write-Host "Building beluga_web.bc.js ..."
 Push-Location $BelugaRepo
 dune build src/web/beluga_web.bc.js

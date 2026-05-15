@@ -1,118 +1,245 @@
-// Beluga source formatter: Lezer tree → pretty-print doc → string.
-//
-// Layering (extend here or in format/printer.mjs):
-//   format/doc.mjs     — Wadler/Leijen combinators + render()
-//   format/tree.mjs    — syntax-tree helpers + comment sweep
-//   format/printer.mjs — AST → Doc (add rules per grammar node)
-//
-// Driver below wires CodeMirror; declarations with parse errors or `%`
-// comments copy verbatim so line comments never swallow merged lines.
+// Beluga formatter: parse tree → doc → string (see format/printer.mjs).
 
 import { syntaxTree } from '@codemirror/language';
 import { EditorSelection } from '@codemirror/state';
 import { render } from './format/doc.mjs';
 import { makePrinter } from './format/printer.mjs';
-import { childrenArr, collectComments } from './format/tree.mjs';
+import { childrenArr } from './format/tree.mjs';
 
-function alignColons(s) {
-  const lines = s.split('\n');
-  let i = 0;
-  while (i < lines.length) {
-    const m = lines[i].match(/^(\s*\|\s*\S+)\s*:/);
-    if (!m) {
-      i++;
-      continue;
-    }
-    let j = i;
-    let maxCol = 0;
-    while (j < lines.length) {
-      const mj = lines[j].match(/^(\s*\|\s*\S+)\s*:/);
-      if (!mj) break;
-      maxCol = Math.max(maxCol, mj[1].length);
-      j++;
-    }
-    for (let k = i; k < j; k++) {
-      const mk = lines[k].match(/^(\s*\|\s*\S+)(\s*):(.*)$/);
-      if (!mk) continue;
-      const pad = ' '.repeat(maxCol - mk[1].length);
-      lines[k] = mk[1] + pad + ' :' + mk[3];
-    }
-    i = j;
-  }
-  return lines.join('\n');
+function normalizeNewlines(s) {
+  return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
-export function formatString(src, tree, opts = {}) {
-  const width = opts.printWidth ?? 80;
-  const { pp } = makePrinter(src);
+function sameSourceLine(src, posA, posB) {
+  if (posA < 0 || posB < 0) return false;
+  return src.lastIndexOf('\n', posA) === src.lastIndexOf('\n', posB);
+}
 
-  const root = tree.topNode;
-  const items = [];
-  const comments = collectComments(tree, src);
-
-  for (const c of childrenArr(root)) {
-    if (c.name === 'Declaration') {
-      const inner = c.firstChild;
-      if (inner) items.push({ kind: 'decl', node: inner });
-    } else if (c.name === 'LineComment' || c.name === 'BlockComment') {
-      items.push({ kind: 'comment', node: c });
+function normalizeSameLinePragmaGap(src, gap, gapStart, gapEnd) {
+  const g = normalizeNewlines(gap);
+  if (g.includes('\n')) return g;
+  if (gapEnd <= gapStart) {
+    if (gapStart > 0 && src.slice(gapEnd, gapEnd + 2) === '--' && sameSourceLine(src, gapStart - 1, gapEnd) && src[gapStart - 1] === '.') {
+      return ' ';
     }
+    return g;
   }
-
-  const out = [];
-  let prevEnd = 0;
-  for (const item of items) {
-    const blankLines = countBlankLinesBetween(prevEnd, item.node.from, src);
-
-    if (out.length > 0) {
-      out.push('\n');
-      if (blankLines >= 1) out.push('\n');
-    }
-
-    if (item.kind === 'comment') {
-      out.push(src.slice(item.node.from, item.node.to));
-    } else {
-      const leadingComments = pickLeadingComments(comments, prevEnd, item.node.from);
-      for (const lc of leadingComments) out.push(src.slice(lc.from, lc.to), '\n');
-      if (subtreeHasError(item.node) || declarationUsesPercentComment(src, item.node)) {
-        out.push(src.slice(item.node.from, item.node.to));
-      } else {
-        out.push(render(pp(item.node), width));
-      }
-    }
-
-    prevEnd = item.node.to;
+  if (!sameSourceLine(src, gapStart, gapEnd - 1)) return g;
+  if (gapStart > 0 && src[gapStart - 1] === '.' && src.slice(gapEnd, gapEnd + 2) === '--') {
+    if (g.trim() === '') return ' ';
   }
-
-  let result = out.join('');
-  if (opts.align) result = alignColons(result);
-  if (!result.endsWith('\n')) result += '\n';
-  return result;
+  return g;
 }
 
 function subtreeHasError(node) {
+  const lo = node.from;
+  const hi = node.to;
   let bad = false;
-  node.toTree().iterate({
-    enter(n) {
-      if (n.type.isError) bad = true;
-    },
+  node.cursor().iterate((n) => {
+    if (n.type.isError && n.from >= lo && n.to <= hi) bad = true;
   });
   return bad;
 }
 
-function declarationUsesPercentComment(src, node) {
-  return src.slice(node.from, node.to).includes('%');
+function subtreeHasNonRecoveryError(node) {
+  const lo = node.from;
+  const hi = node.to;
+  let bad = false;
+  node.cursor().iterate((n) => {
+    if (!(n.type.isError && n.from >= lo && n.to <= hi)) return;
+    if (n.name === '⚠' && n.from === n.to) return;
+    bad = true;
+  });
+  return bad;
 }
 
-function countBlankLinesBetween(from, to, src) {
-  const between = src.slice(from, to);
-  const m = between.match(/\n/g);
-  if (!m) return 0;
-  return m.length - 1;
+function declarationUsesPercentBlockMacro(src, node) {
+  const slice = src.slice(node.from, node.to);
+  return slice.includes('%{{') || slice.includes('}}%');
 }
 
-function pickLeadingComments(comments, fromPos, toPos) {
-  return comments.filter((c) => c.from >= fromPos && c.to <= toPos);
+const TOP_LEVEL_PRAGMA_INNER = new Set([
+  'OpenPragma',
+  'AbbrevPragma',
+  'NamePragma',
+  'InfixPragma',
+  'PrefixPragma',
+  'AssocPragma',
+  'NotPragma',
+  'NoStrengthenPragma',
+  'OpaquePragma',
+  'CoveragePragma',
+  'WarnCoveragePragma',
+  'QueryPragma',
+]);
+
+const GAP_PRAGMA_LINE =
+  /^\s*--(?:open|abbrev|name|infix|prefix|assoc|not|nostrengthen|opaque|coverage|warncoverage|query)\b/i;
+
+function proseBlockGap(gap) {
+  return gap.includes('%{{') || gap.includes('}}%');
+}
+
+function findProseBlocks(src) {
+  const blocks = [];
+  let i = 0;
+  while (i < src.length) {
+    const start = src.indexOf('%{{', i);
+    if (start < 0) break;
+    const end = src.indexOf('}}%', start);
+    if (end < 0) break;
+    blocks.push([start, end + 3]);
+    i = end + 3;
+  }
+  return blocks;
+}
+
+function proseBlockContaining(pos, blocks) {
+  for (const [a, b] of blocks) {
+    if (pos >= a && pos < b) return [a, b];
+  }
+  return null;
+}
+
+function normalizeGapTrailingPragmas(gap) {
+  if (!gap) return gap;
+  const lines = gap.split('\n');
+  let i = lines.length - 1;
+  while (i >= 0) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      i--;
+      continue;
+    }
+    if (GAP_PRAGMA_LINE.test(line)) {
+      i--;
+      continue;
+    }
+    break;
+  }
+  const start = i + 1;
+  for (let k = start; k < lines.length; k++) {
+    const L = lines[k];
+    if (L.trim() === '') {
+      lines[k] = '';
+      continue;
+    }
+    if (GAP_PRAGMA_LINE.test(L)) lines[k] = L.trimStart();
+  }
+  return lines.join('\n');
+}
+
+function declarationHasRiskyDoubleDash(src, node) {
+  if (TOP_LEVEL_PRAGMA_INNER.has(node.name)) return false;
+  const slice = src.slice(node.from, node.to);
+  for (const line of slice.split('\n')) {
+    const t = line.trimStart();
+    if (t.startsWith('--')) return true;
+  }
+  return false;
+}
+
+function isRecoverAbbrevNoise(inner, src) {
+  if (inner.name !== 'AbbrevPragma') return false;
+  if (!subtreeHasError(inner)) return false;
+  const head = src.slice(inner.from, inner.to).trimStart();
+  return !head.startsWith('--abbrev');
+}
+
+function errorProseClusterEnd(decls, src, start) {
+  if (!isRecoverAbbrevNoise(decls[start].inner, src)) return start + 1;
+  let j = start;
+  while (j + 1 < decls.length) {
+    const gap = src.slice(decls[j].wrap.to, decls[j + 1].wrap.from);
+    if (gap.includes('}}%') || gap.includes('%{{')) break;
+    if (!subtreeHasError(decls[j + 1].inner)) break;
+    j++;
+  }
+  return j + 1;
+}
+
+export function formatString(src, tree, opts = {}) {
+  src = normalizeNewlines(src);
+  const width = opts.printWidth ?? 80;
+  const minOutputRatio = opts.minOutputRatio ?? 0.85;
+  const { pp } = makePrinter(src, { printWidth: width });
+
+  const root = tree.topNode;
+  const decls = [];
+  for (const c of childrenArr(root)) {
+    if (c.name === 'Declaration') {
+      const inner = c.firstChild;
+      if (inner) decls.push({ wrap: c, inner });
+    }
+  }
+
+  const proseBlocks = findProseBlocks(src);
+  const out = [];
+  let cursor = 0;
+  let di = 0;
+  while (di < decls.length) {
+    const { wrap, inner } = decls[di];
+    const inProse = proseBlockContaining(wrap.from, proseBlocks);
+    if (inProse) {
+      const [pbStart, pbEnd] = inProse;
+      if (cursor < pbStart) {
+        const rawGap = src.slice(cursor, pbStart);
+        const gap = proseBlockGap(rawGap)
+          ? normalizeNewlines(rawGap)
+          : normalizeSameLinePragmaGap(src, normalizeGapTrailingPragmas(rawGap), cursor, pbStart);
+        out.push(gap);
+      }
+      out.push(normalizeNewlines(src.slice(pbStart, pbEnd)));
+      cursor = pbEnd;
+      while (di < decls.length && decls[di].wrap.from < pbEnd) di++;
+      continue;
+    }
+    const rawGap = src.slice(cursor, wrap.from);
+    const gap = proseBlockGap(rawGap)
+      ? normalizeNewlines(rawGap)
+      : normalizeSameLinePragmaGap(src, normalizeGapTrailingPragmas(rawGap), cursor, wrap.from);
+    out.push(gap);
+    const clusterEnd = errorProseClusterEnd(decls, src, di);
+    if (clusterEnd > di + 1) {
+      out.push(normalizeNewlines(src.slice(decls[di].wrap.from, decls[clusterEnd - 1].wrap.to)));
+      cursor = decls[clusterEnd - 1].wrap.to;
+      di = clusterEnd;
+      continue;
+    }
+    const verbatim =
+      subtreeHasNonRecoveryError(inner) ||
+      declarationUsesPercentBlockMacro(src, inner) ||
+      declarationHasRiskyDoubleDash(src, inner);
+    if (verbatim) {
+      out.push(normalizeNewlines(src.slice(wrap.from, wrap.to)));
+    } else {
+      let rendered = render(pp(inner), width);
+      rendered = rendered.replace(/[ \t]+(?=\n|$)/gm, '');
+      out.push(rendered);
+    }
+    cursor = wrap.to;
+    di++;
+  }
+  const tailGap = src.slice(cursor, src.length);
+  out.push(
+    proseBlockGap(tailGap) ? normalizeNewlines(tailGap) : normalizeGapTrailingPragmas(normalizeNewlines(tailGap)),
+  );
+
+  let result = normalizeNewlines(out.join(''));
+  result = result.replace(/\r\n?/g, '\n');
+  result = result.replace(/[ \t]+$/gm, '');
+  result = result.replace(/\n{4,}/g, '\n\n\n');
+  if (!result.endsWith('\n')) result += '\n';
+
+  if (!opts.allowShrink && src.length > 0 && result.length < src.length * minOutputRatio) {
+    const err = new Error(
+      `format: output length ${result.length} < ${minOutputRatio} × input ${src.length} (set opts.allowShrink to override)`
+    );
+    err.code = 'FORMAT_SHRINK_GUARD';
+    throw err;
+  }
+
+  return result;
 }
 
 export function formatDocument(state, opts = {}) {
@@ -122,6 +249,10 @@ export function formatDocument(state, opts = {}) {
   try {
     newText = formatString(oldText, tree, opts);
   } catch (e) {
+    if (e && e.code === 'FORMAT_SHRINK_GUARD') {
+      if (typeof console !== 'undefined') console.warn('beluga formatter:', e.message);
+      return null;
+    }
     if (typeof console !== 'undefined') console.warn('beluga formatter:', e);
     return null;
   }

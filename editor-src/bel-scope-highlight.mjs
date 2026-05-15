@@ -431,7 +431,6 @@ function upperExtent(node, doc, refFrom, refTo) {
 }
 
 function buildDecorations(view, markCache) {
-  const builder = new RangeSetBuilder();
   const tree = syntaxTree(view.state);
   const doc = view.state.doc;
   const state = view.state;
@@ -441,11 +440,13 @@ function buildDecorations(view, markCache) {
   const moduleLets = [];
   /** @type {number[]} */
   const moduleEndStack = [];
+  /** @type {{ from: number, to: number, deco: import('@codemirror/view').Decoration }[]} */
+  const pendingMarks = [];
 
   const decorateId = (from, to, tag) => {
     if (!overlapsViewport(from, to, view)) return;
     const mk = markFor(state, markCache, tag);
-    if (mk) builder.add(from, to, mk);
+    if (mk) pendingMarks.push({ from, to, deco: mk });
   };
 
   tree.iterate({
@@ -602,6 +603,9 @@ function buildDecorations(view, markCache) {
     },
   });
 
+  pendingMarks.sort((a, b) => a.from - b.from || a.to - b.to);
+  const builder = new RangeSetBuilder();
+  for (const p of pendingMarks) builder.add(p.from, p.to, p.deco);
   return builder.finish();
 }
 

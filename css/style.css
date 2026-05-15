@@ -508,11 +508,37 @@ html.light .theme-toggle .icon-moon {
 /* -- Workspace -- */
 
 .workspace {
+  position: relative;
   flex: 1;
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: var(
+    --workspace-split-cols,
+    var(--sidebar-w) minmax(0, 1fr) minmax(0, 1fr)
+  );
   min-height: 0;
   overflow: hidden;
+}
+
+.editor-panel {
+  position: relative;
+  border-right: 1px solid var(--chrome-divider);
+}
+
+.workspace-resize-hit {
+  position: absolute;
+  z-index: 50;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+body.workspace-resizing,
+body.workspace-resizing * {
+  cursor: grabbing !important;
+  user-select: none !important;
 }
 
 /* -- Sidebar -- */
@@ -585,10 +611,6 @@ html.light .theme-toggle .icon-moon {
   display: flex;
   align-items: center;
   gap: 0.1875rem;
-}
-
-.editor-panel {
-  border-right: 1px solid var(--chrome-divider);
 }
 
 /* -- Editor -- */
@@ -1261,7 +1283,10 @@ html.light .theme-toggle .icon-moon {
 @media (max-width: 48rem) {
   .workspace {
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: var(
+      --workspace-split-rows,
+      minmax(0, 1fr) minmax(0, 1fr)
+    );
   }
 
   .sidebar {

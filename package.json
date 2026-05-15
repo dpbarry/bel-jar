@@ -1,9 +1,11 @@
 {
   "name": "bel-jar",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "npm run vendor-fonts && npm run build:editor",
     "build:editor": "node scripts/build-editor.mjs",
+    "build:grammar": "lezer-generator beluga.grammar -o editor-src/beluga-parser.js",
     "vendor-fonts": "node scripts/vendor-fonts.mjs"
   },
   "dependencies": {
@@ -15,6 +17,7 @@
   "devDependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@lezer/generator": "^1.8.0",
     "esbuild": "^0.25.0"
   }
 }

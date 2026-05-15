@@ -1,5 +1,4 @@
-// Wadler/Leijen-style pretty-print documents + greedy width-fit renderer.
-// Consumed by format/printer.mjs; `render` is also used by the format driver.
+// Wadler/Leijen doc IR + renderer.
 
 const TEXT = 0;
 const LINE = 1;

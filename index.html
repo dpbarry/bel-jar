@@ -5,10 +5,42 @@
   <meta charset="UTF-8">
   <script>
     (function () {
+      var SPLIT_KEY = 'beljar-editor-split';
+      var SPLIT_MIN = 0.18;
+      var SPLIT_MAX = 0.82;
+      var SPLIT_DEFAULT = 0.5;
+      var STACK_MQ = '(max-width: 48rem)';
+
+      function clampSplit(n) {
+        if (!isFinite(n)) return SPLIT_DEFAULT;
+        if (n < SPLIT_MIN) return SPLIT_MIN;
+        if (n > SPLIT_MAX) return SPLIT_MAX;
+        return n;
+      }
+
+      function applySplitVars(ratio) {
+        var root = document.documentElement.style;
+        var rest = 1 - ratio;
+        if (window.matchMedia(STACK_MQ).matches) {
+          root.removeProperty('--workspace-split-cols');
+          root.setProperty(
+            '--workspace-split-rows',
+            'minmax(8rem, ' + ratio + 'fr) minmax(8rem, ' + rest + 'fr)'
+          );
+        } else {
+          root.removeProperty('--workspace-split-rows');
+          root.setProperty(
+            '--workspace-split-cols',
+            'var(--sidebar-w) minmax(12rem, ' + ratio + 'fr) minmax(12rem, ' + rest + 'fr)'
+          );
+        }
+      }
+
       try {
         if (localStorage.getItem('beljar-theme') === 'light') {
           document.documentElement.classList.add('light');
         }
+        applySplitVars(clampSplit(parseFloat(localStorage.getItem(SPLIT_KEY))));
       } catch (_) {}
     })();
   </script>
@@ -123,6 +155,7 @@
   <script src="beluga_web.bc.js"></script>
   <script src="js/editor-cm.bundle.js"></script>
   <script src="js/persist.js"></script>
+  <script src="js/workspace-split.js"></script>
   <script src="js/float-placement.js"></script>
   <script src="js/tooltips.js"></script>
   <script src="js/menu.js"></script>

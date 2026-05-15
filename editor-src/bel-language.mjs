@@ -154,7 +154,6 @@ const belugaHighlight = styleTags({
   'CompTypeBinder/UpperIdentifier':   t.definition(t.local(t.typeName)),
 
   'LFAtomicTerm/LowerIdentifier':     t.function(t.variableName),
-  'Projection/LowerIdentifier':      t.function(t.variableName),
 
   'InfixPragma/LowerIdentifier':      t.function(t.variableName),
   'PrefixPragma/LowerIdentifier':     t.function(t.variableName),
@@ -188,8 +187,8 @@ const belugaHighlight = styleTags({
 
   Turnstile:       t.controlKeyword,
   ArrowOp:         t.typeOperator,
-  ProjectionTail:  t.propertyName,
   SubstHead:       t.operator,
+  ProjectionTail:  t.propertyName,
 });
 
 // HighlightStyle: more specific tag rules first.

@@ -2,12 +2,17 @@
  * BelJar persistence: localStorage today, swappable adapter for a backend later.
  * Theme uses key `beljar-theme` — keep index.html FOUC preload in sync with THEME_STORAGE_KEY.
  * Raw REPL uses key `beljar-repl-raw` (`1` = plain terminal-style output).
+ * Editor/output split uses key `beljar-editor-split` (0–1, editor share) — keep index.html FOUC preload in sync.
  */
 (function (global) {
   var SCHEMA_VERSION = 1;
   var STATE_KEY = 'beljar-state-v1';
   var THEME_STORAGE_KEY = 'beljar-theme';
   var REPL_RAW_STORAGE_KEY = 'beljar-repl-raw';
+  var EDITOR_SPLIT_STORAGE_KEY = 'beljar-editor-split';
+  var DEFAULT_EDITOR_SPLIT = 0.5;
+  var MIN_EDITOR_SPLIT = 0.18;
+  var MAX_EDITOR_SPLIT = 0.82;
   var DEFAULT_REPL_OUTPUT =
     'Welcome to BelJar. Try help for a list of REPL commands.';
 
@@ -149,11 +154,42 @@
     } catch (_) {}
   }
 
+  function clampEditorSplit(ratio) {
+    var n = Number(ratio);
+    if (!isFinite(n)) return DEFAULT_EDITOR_SPLIT;
+    if (n < MIN_EDITOR_SPLIT) return MIN_EDITOR_SPLIT;
+    if (n > MAX_EDITOR_SPLIT) return MAX_EDITOR_SPLIT;
+    return n;
+  }
+
+  function readStoredEditorSplit() {
+    try {
+      return clampEditorSplit(parseFloat(global.localStorage.getItem(EDITOR_SPLIT_STORAGE_KEY)));
+    } catch (_) {
+      return DEFAULT_EDITOR_SPLIT;
+    }
+  }
+
+  function writeStoredEditorSplit(ratio) {
+    try {
+      var clamped = clampEditorSplit(ratio);
+      if (Math.abs(clamped - DEFAULT_EDITOR_SPLIT) < 0.001) {
+        global.localStorage.removeItem(EDITOR_SPLIT_STORAGE_KEY);
+      } else {
+        global.localStorage.setItem(EDITOR_SPLIT_STORAGE_KEY, String(clamped));
+      }
+    } catch (_) {}
+  }
+
   global.BelJarPersist = {
     SCHEMA_VERSION: SCHEMA_VERSION,
     STATE_KEY: STATE_KEY,
     THEME_STORAGE_KEY: THEME_STORAGE_KEY,
     REPL_RAW_STORAGE_KEY: REPL_RAW_STORAGE_KEY,
+    EDITOR_SPLIT_STORAGE_KEY: EDITOR_SPLIT_STORAGE_KEY,
+    DEFAULT_EDITOR_SPLIT: DEFAULT_EDITOR_SPLIT,
+    MIN_EDITOR_SPLIT: MIN_EDITOR_SPLIT,
+    MAX_EDITOR_SPLIT: MAX_EDITOR_SPLIT,
     DEFAULT_REPL_OUTPUT: DEFAULT_REPL_OUTPUT,
     createLocalStorageAdapter: createLocalStorageAdapter,
     createPersist: createPersist,
@@ -161,5 +197,8 @@
     writeStoredTheme: writeStoredTheme,
     readStoredReplRaw: readStoredReplRaw,
     writeStoredReplRaw: writeStoredReplRaw,
+    readStoredEditorSplit: readStoredEditorSplit,
+    writeStoredEditorSplit: writeStoredEditorSplit,
+    clampEditorSplit: clampEditorSplit,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

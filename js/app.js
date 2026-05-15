@@ -17,6 +17,14 @@ const editor =
       })
     : null;
 
+if (typeof BelJarWorkspaceSplit !== 'undefined') {
+  BelJarWorkspaceSplit.init({
+    onResize: function () {
+      if (editor && editor.getView) editor.getView().requestMeasure();
+    },
+  });
+}
+
 let replBeautifyEnabled = !(
   typeof BelJarPersist !== 'undefined' && BelJarPersist.readStoredReplRaw()
 );

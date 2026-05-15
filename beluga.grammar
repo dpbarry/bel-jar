@@ -1,30 +1,6 @@
-// Lezer grammar for Beluga
-// =========================
-//
-// Beluga is a two-level dependently-typed functional language for reasoning
-// about formal systems via the LF logical framework.
-//
-// References:
-//   - "A beginner's guide to programming in Beluga" (Pientka & Kavanagh)
-//   - Beluga Reference Guide
-//
-// This grammar is intentionally permissive.  Many of Beluga's static rules
-// (case-of-identifier conventions, eta-expansion of LF terms inside
-// contextual objects, etc.) are not expressible in a context-free grammar
-// and are deferred to a later checking phase.
-//
-// Where the surface grammar is genuinely ambiguous in a CFG sense, we resolve
-// in favour of the most common reading using `@dynamicPrecedence`.
-//
-// Outline (avoid reordering casually — precedences and token specials interact):
-//   Precedences · Program · LF decls · Pragmas · LF kinds/types · LF terms
-//   · Substitutions · Schemas · Inductive/stratified · Typedef/module
-//   · Computation types · Contextual syntax · Rec/let · Expressions · Patterns
-//   · Tokens · Keyword @specialize rules
+// Beluga (Lezer). Permissive surface grammar; static checks are deferred.
 
-// -------------------------------------------------------------------------
 //  Precedences
-// -------------------------------------------------------------------------
 
 @precedence {
   app    @left
@@ -34,9 +10,7 @@
   branch @left
 }
 
-// -------------------------------------------------------------------------
 //  Top-level
-// -------------------------------------------------------------------------
 
 @top Program { Declaration* }
 
@@ -66,14 +40,8 @@ Declaration {
   | QueryPragma
 }
 
-// -------------------------------------------------------------------------
 //  LF declarations
-// -------------------------------------------------------------------------
 
-// In Twelf-style Beluga, a declaration `id : signature .` is either a kind
-// declaration (the rhs being `type` possibly nested inside Π's) or a type
-// declaration.  Since LFKind is essentially `LFType ... type`, we accept
-// LFKind here and let the type-checker tell the difference.
 LFDeclaration {
     LowerIdentifier ":" LFKind "."
   | LowerIdentifier ":" LFType "."
@@ -91,19 +59,11 @@ LFDatatypeDeclaration {
 
 LFConstructor { LowerIdentifier ":" LFType }
 
-// -------------------------------------------------------------------------
 //  Pragmas
-// -------------------------------------------------------------------------
-
-// Pragma trailing periods are optional in real-world Beluga code; the
-// reference grammar requires them on most pragmas but actual examples in
-// the tutorial omit them on `--abbrev`, `--open`, `--coverage`, etc.
 
 OpenPragma          { "--open" UpperIdentifier "."? }
 AbbrevPragma        { "--abbrev" UpperIdentifier UpperIdentifier "."? }
 NamePragma          { "--name" LowerIdentifier (UpperIdentifier | LowerIdentifier) "."? }
-// `--infix op assoc prec.` and `--infix op prec assoc.` are both attested
-// in the wild; we accept both orderings.
 InfixPragma         {
     "--infix" LowerIdentifier Associativity Number "."?
   | "--infix" LowerIdentifier Number Associativity "."?
@@ -126,20 +86,20 @@ QueryBound { Number | "*" }
 
 Associativity { NoneKeyword | LeftKeyword | RightKeyword }
 
-// -------------------------------------------------------------------------
 //  LF kinds and types
-// -------------------------------------------------------------------------
+
+PiBinder { LowerIdentifier | UpperIdentifier }
 
 LFKind {
     TypeKeyword
   | LFType !arrow ArrowOp LFKind
-  | "{" LowerIdentifier ":" LFType "}" LFKind
+  | "{" PiBinder ":" LFType "}" LFKind
 }
 
 LFType {
     LFAppType
   | LFType !arrow ArrowOp LFType
-  | "{" LowerIdentifier ":" LFType "}" LFType
+  | "{" PiBinder ":" LFType "}" LFType
 }
 
 LFAppType {
@@ -155,9 +115,7 @@ LFAtomicType {
 
 ArrowOp { "->" | "<-" | "→" }
 
-// -------------------------------------------------------------------------
 //  LF terms
-// -------------------------------------------------------------------------
 
 LFTerm {
     LFAppTerm
@@ -165,12 +123,10 @@ LFTerm {
   | LFAppTerm !app LFLambda                     // f \x. M  ==  f (\x. M)
 }
 
-// LF lambda abstraction.  The head — the slash plus the binder identifier
-// — is wrapped in a named LFLambdaBinder node so highlighting can target
-// the binder cohesively (both the `\` / `λ` and the bound name).
-LFLambda { LFLambdaBinder "." LFTerm }
+// LFLambdaBinder includes `.` so `\ny.stepPW` is not a projection.
+LFLambda { LFLambdaBinder LFTerm }
 
-LFLambdaBinder { ("\\" | "λ") LowerIdentifier }
+LFLambdaBinder { ("\\" | "λ") LowerIdentifier "." }
 
 LFAppTerm {
     LFAtomicTerm
@@ -178,13 +134,13 @@ LFAppTerm {
 }
 
 LFAtomicTerm {
-    LowerIdentifier
+    LowerIdentifier ProjectionTail? Substitution?
   | UpperIdentifier Substitution?
   | ParameterVariable
   | SubstitutionVariable
   | Hole
   | UnderscoreHole
-  | Projection
+  | "(" LFTerm !ann ":" LFType ")"
   | "(" LFTerm ")"
 }
 
@@ -195,10 +151,6 @@ UnderscoreHole  { "_" }
 // number or lowercase identifier) as a single token, so that a sentence-
 // terminating `.` (which is followed by whitespace, a comment, or EOF)
 // cannot collide with it.
-Projection {
-    LowerIdentifier ProjectionTail
-}
-
 // LF block (Sigma type / record of dependent assumptions).
 //
 // Two surface forms are accepted: `block x:A, y:B` (reference grammar) and
@@ -213,15 +165,17 @@ LFBlock {
 
 LFBlockField { LowerIdentifier ":" LFType }
 
-// -------------------------------------------------------------------------
 //  Substitutions
-// -------------------------------------------------------------------------
 
 Substitution { "[" SubstBody? "]" }
 
+SubstElem { LFTerm | SubstPair }
+
+SubstPair { "<" LFTerm ";" LFTerm ">" }
+
 SubstBody {
-    SubstHead ("," LFTerm)*
-  | LFTerm ("," LFTerm)*
+    SubstHead ("," SubstElem)*
+  | SubstElem ("," SubstElem)*
 }
 
 SubstHead { "^" | ".." }
@@ -234,9 +188,7 @@ SubstitutionVariable {
     "#" UpperIdentifier Substitution?
 }
 
-// -------------------------------------------------------------------------
 //  Schemas
-// -------------------------------------------------------------------------
 
 SchemaDeclaration {
     SchemaKeyword LowerIdentifier "=" SchemaBody ";"
@@ -260,9 +212,7 @@ SchemaSomeBindings {
     LowerIdentifier ":" LFType ("," LowerIdentifier ":" LFType)*
 }
 
-// -------------------------------------------------------------------------
 //  Inductive and stratified datatypes
-// -------------------------------------------------------------------------
 
 InductiveDeclaration {
     InductiveKeyword InductiveBody (AndKeyword InductiveBody)* ";"
@@ -287,9 +237,7 @@ CompKind {
   | "{" CompTypeBinder "}" CompKind
 }
 
-// -------------------------------------------------------------------------
 //  Type abbreviations and modules
-// -------------------------------------------------------------------------
 
 TypedefDeclaration {
     TypedefKeyword (LowerIdentifier | UpperIdentifier) ":" CompKind "=" CompType ";"
@@ -301,14 +249,14 @@ ModuleDeclaration {
     EndKeyword ";"
 }
 
-// -------------------------------------------------------------------------
 //  Computation-level types
-// -------------------------------------------------------------------------
 
 CompType {
     CompAppType
   | CompType !arrow ArrowOp CompType
   | CompType !star "*" CompType
+  | "{" CompTypeBinder "}" ArrowOp CompType
+  | "(" CompTypeBinder ")" ArrowOp CompType
   | "{" CompTypeBinder "}" CompType
   | "(" CompTypeBinder ")" CompType
 }
@@ -332,6 +280,7 @@ CompAtomicType {
     ContextualType
   | UpperIdentifier
   | LowerIdentifier
+  | TypeKeyword
   | "(" CompType ")"
 }
 
@@ -351,9 +300,7 @@ CompTypeBinder {
   | "#" UpperIdentifier ":" ContextualType
 }
 
-// -------------------------------------------------------------------------
 //  Contextual types and contextual objects
-// -------------------------------------------------------------------------
 
 // Contextual types and contextual objects share the bracket form
 // `[ <ctx>? |- <term> ]`.  The context part is optional (an empty context
@@ -406,25 +353,44 @@ ContextTailEntry {
   | "_"                                          // wildcard, also valid here
 }
 
-// -------------------------------------------------------------------------
 //  Recursive and non-recursive function declarations
-// -------------------------------------------------------------------------
 
 RecDeclaration {
     RecKeyword RecBody (AndKeyword RecBody)* ";"
 }
 
 RecBody {
-    LowerIdentifier ":" CompType "=" Expression
+    LowerIdentifier ":" CompType "=" TotalityAnnotation? Expression
+}
+
+// Beluga totality measures between `=` and the function body, e.g.
+// `/ total 3 /` or `/ total LRQ (lem4-closure-exp1 Ψ K A P Q LRQ STEPPQ) /`.
+// Forms like `%/ total 1 /` are lexed as line comments and skipped.
+TotalityAnnotation {
+    "/" TotalKeyword TotalityMeasure "/"
+}
+
+TotalityMeasure {
+    Number
+  | LowerIdentifier TotalityCall?
+}
+
+TotalityCall {
+    "(" TotalityArg (TotalityArg)* ")"
+}
+
+TotalityArg {
+    LowerIdentifier
+  | UpperIdentifier
+  | "_"
+  | Number
 }
 
 LetDeclaration {
     LetKeyword LowerIdentifier (":" CompType)? "=" Expression ";"
 }
 
-// -------------------------------------------------------------------------
 //  Expressions
-// -------------------------------------------------------------------------
 
 Expression {
     AppExpression
@@ -470,13 +436,15 @@ ContextHat {
 }
 
 FnExpression {
-    FnKeyword FnParam ("," FnParam)* "=>" Expression
+  (FnKeyword | FunKeyword) FnParam "," FnParam ("," FnParam)* FatArrow Expression
+  | (FnKeyword | FunKeyword) FnParam+ FatArrow Expression
 }
 
-FnParam { LowerIdentifier }
+FnParam { LowerIdentifier | UpperIdentifier }
 
 MLamExpression {
-    (MLamKeyword | FNKeyword) MLamParam ("," MLamParam)* "=>" Expression
+  (MLamKeyword | FNKeyword) MLamParam "," MLamParam ("," MLamParam)* FatArrow Expression
+  | (MLamKeyword | FNKeyword) MLamParam+ FatArrow Expression
 }
 
 MLamParam { UpperIdentifier | LowerIdentifier }
@@ -491,8 +459,10 @@ CaseBody {
 }
 
 CaseBranch {
-    QuantifiedBinder* Pattern "=>" Expression
+    QuantifiedBinder* Pattern FatArrow Expression
 }
+
+FatArrow { "=>" | "⇒" }
 
 QuantifiedBinder {
     "{" CompTypeBinder "}"
@@ -514,9 +484,7 @@ ImpossibleExpression {
     ImpossibleKeyword AppExpression
 }
 
-// -------------------------------------------------------------------------
 //  Patterns
-// -------------------------------------------------------------------------
 
 Pattern {
     AppPattern
@@ -540,9 +508,7 @@ TupleOrParenPattern {
     "(" Pattern ("," Pattern)* ")"
 }
 
-// -------------------------------------------------------------------------
 //  Tokens
-// -------------------------------------------------------------------------
 
 @tokens {
 
@@ -553,15 +519,9 @@ TupleOrParenPattern {
   blockBody     { (![}] | "}" ![%])* }
 
   // Identifier characters.  The reference manual lists the ASCII set
-  // ! $ & ' * + - / = @ ^ _ ~  but real-world Beluga code freely uses
-  // unicode mathematical operators (⊃ ∧ ∨ ¬ ⊤ ⊥ ≤ ≥ ≠ ≡ ⇒ ⇔ etc.) as
-  // identifier characters so that constants can be named after the logical
-  // connectives they encode.
-  //
-  // We accept the Mathematical Operators block (U+2200..U+22FF) and a
-  // handful of related blocks as identifier characters, except for a few
-  // code points that have dedicated punctuation meanings (U+2192 →,
-  // U+22A2 ⊢, U+03BB λ) which are tokenised as their own punctuation.
+  // (! $ & ' * + - / = @ ^ _ ~) but real-world Beluga code freely uses
+  // Unicode (logical connectives, double-struck letters, etc.); see
+  // userguide.pdf / tutorial.pdf in this repo.
   identChar     {
       $[A-Za-z0-9_!$&'*+\-/=@\^~]
     | "#"
@@ -581,6 +541,7 @@ TupleOrParenPattern {
     | $[\u2300-\u23FF]                            // Misc technical
     | $[\u25A0-\u26FF]                            // Geometric, misc symbols
     | $[\u2A00-\u2AFF]                            // Supplemental math operators
+    | $[\u{1D400}-\u{1D7FF}]                      // Mathematical Alphanumeric Symbols (e.g. 𝟙 ℚ)
   }
 
   // Lower- vs upper-case identifiers.  Most unicode logical operators
@@ -592,14 +553,12 @@ TupleOrParenPattern {
 
   Number { $[0-9]+ }
 
-  // `.k` (numeric) or `.field` (named) projection — lexed as one token so a
-  // bare `.` (sentence terminator) cannot be confused with it.
-  ProjectionTail { "." ($[0-9]+ | $[a-z_] identChar*) }
+    ProjectionTail { "." $[0-9]+ }
 
   // Punctuation tokens.  Beluga code commonly uses unicode glyphs in place
   // of the ASCII multi-character forms; both spellings tokenise to the
   // same parser symbol, so the grammar above doesn't need to know.
-  "->" "<-" "=>" "::" ".."
+  "->" "<-" "=>" "⇒" "::" ".."
   "(" ")" "[" "]" "{" "}" "<" ">"
   "." "," ":" ";" "|" "*" "+" "=" "?" "_" "^" "#"
   "|-"
@@ -618,7 +577,7 @@ TupleOrParenPattern {
     "--coverage", "--warncoverage", "--nostrengthen",
     "--infix", "--prefix", "--assoc", "--name",
     "--abbrev", "--not", "--open", "--query", "--opaque",
-    "->", "<-", "=>", "::", "..", "|-",
+    "->", "<-", "=>", "⇒", "::", "..", "|-",
     "→", "⊢", "λ",
     ProjectionTail,
     Number,
@@ -650,7 +609,9 @@ AndKeyword { @specialize<LowerIdentifier, "and"> }
 StratifiedKeyword { @specialize<LowerIdentifier, "stratified"> }
 TypedefKeyword { @specialize<LowerIdentifier, "typedef"> }
 RecKeyword { @specialize<LowerIdentifier, "rec"> }
+TotalKeyword { @specialize<LowerIdentifier, "total"> }
 FnKeyword { @specialize<LowerIdentifier, "fn"> }
+FunKeyword { @specialize<LowerIdentifier, "fun"> }
 MLamKeyword { @specialize<LowerIdentifier, "mlam"> }
 CaseKeyword { @specialize<LowerIdentifier, "case"> }
 OfKeyword { @specialize<LowerIdentifier, "of"> }

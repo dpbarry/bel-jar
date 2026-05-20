@@ -29,10 +29,12 @@ function appendBuildFallbackNotice() {
 function belugaProgressHook(msg) {
   if (msg && msg.phase === 'build-fallback') {
     appendBuildFallbackNotice();
-    if (typeof RunProgress !== 'undefined') RunProgress.start({ op: 'load' });
+    if (typeof RunProgress !== 'undefined' && belugaBusy) RunProgress.start({ op: 'load' });
     return;
   }
-  if (typeof RunProgress !== 'undefined') RunProgress.onBelugaProgress(msg);
+  if (typeof RunProgress !== 'undefined' && RunProgress.isRunning()) {
+    RunProgress.onBelugaProgress(msg);
+  }
 }
 
 const persist =
@@ -947,6 +949,21 @@ window.BelJarRepl = {
   },
 };
 
+const filesBtn = document.getElementById('btn-files');
+const workspaceEl = document.querySelector('.workspace');
+const explorerPanelEl = document.getElementById('explorer-panel');
+
+if (filesBtn && workspaceEl) {
+  filesBtn.addEventListener('click', () => {
+    const open = workspaceEl.classList.toggle('is-explorer-open');
+    filesBtn.classList.toggle('is-active', open);
+    filesBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
+    if (explorerPanelEl) explorerPanelEl.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (editor && editor.getView) editor.getView().requestMeasure();
+    window.dispatchEvent(new Event('resize'));
+  });
+}
+
 const prefabsBtn = document.getElementById('btn-prefabs');
 if (prefabsBtn) {
   let prefabsSuppressNextClick = false;
@@ -1330,15 +1347,9 @@ if (typeof RunProgress !== 'undefined') {
 if (typeof BelugaClient !== 'undefined') {
   BelugaClient.setProgressHandler(belugaProgressHook);
   BelugaClient.configure(modeToConfig(belugaMode));
-  if (typeof RunProgress !== 'undefined') RunProgress.start({ op: 'init' });
-  BelugaClient.warm()
-    .then(function () {
-      if (typeof RunProgress !== 'undefined') return RunProgress.complete();
-    })
-    .catch(function (e) {
-      if (typeof RunProgress !== 'undefined') RunProgress.fail();
-      appendOutput('[FATAL] Beluga worker failed to load: ' + e.message, 'fatal');
-    });
+  BelugaClient.warm().catch(function (e) {
+    appendOutput('[FATAL] Beluga worker failed to load: ' + e.message, 'fatal');
+  });
 } else {
   appendOutput('[FATAL] Beluga client failed to load.', 'fatal');
 }

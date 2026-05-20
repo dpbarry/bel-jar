@@ -8,10 +8,12 @@
   function init(opts) {
     opts = opts || {};
     var workspace = document.querySelector('.workspace');
+    var workspacePanes = document.querySelector('.workspace-panes');
     var editorPanel = document.querySelector('.editor-panel');
     var outputPanel = document.querySelector('.output-panel');
     var sidebar = document.querySelector('.workspace .sidebar');
-    if (!workspace || !editorPanel || !outputPanel) return null;
+    var explorerPanel = document.querySelector('.explorer-panel');
+    if (!workspace || !workspacePanes || !editorPanel || !outputPanel) return null;
 
     var persist = global.BelJarPersist;
     var ratio =
@@ -25,7 +27,7 @@
     hitStrip.className = 'workspace-resize-hit';
     hitStrip.setAttribute('aria-hidden', 'true');
     hitStrip.tabIndex = -1;
-    workspace.appendChild(hitStrip);
+    workspacePanes.appendChild(hitStrip);
 
     function clamp(r) {
       return persist && persist.clampEditorSplit
@@ -43,19 +45,19 @@
     }
 
     function positionHitStrip() {
-      var ws = workspace.getBoundingClientRect();
+      var panes = workspacePanes.getBoundingClientRect();
       var er = editorPanel.getBoundingClientRect();
       var seam = seamCoord();
       var span = HIT_GRACE_PX * 2;
       if (isStacked()) {
-        hitStrip.style.left = er.left - ws.left + 'px';
+        hitStrip.style.left = er.left - panes.left + 'px';
         hitStrip.style.width = er.width + 'px';
-        hitStrip.style.top = seam - ws.top - HIT_GRACE_PX + 'px';
+        hitStrip.style.top = seam - panes.top - HIT_GRACE_PX + 'px';
         hitStrip.style.height = span + 'px';
       } else {
-        hitStrip.style.top = er.top - ws.top + 'px';
+        hitStrip.style.top = er.top - panes.top + 'px';
         hitStrip.style.height = er.height + 'px';
-        hitStrip.style.left = seam - ws.left - HIT_GRACE_PX + 'px';
+        hitStrip.style.left = seam - panes.left - HIT_GRACE_PX + 'px';
         hitStrip.style.width = span + 'px';
       }
     }
@@ -73,11 +75,7 @@
         root.removeProperty('--workspace-split-rows');
         root.setProperty(
           '--workspace-split-cols',
-          'var(--sidebar-w) minmax(12rem, ' +
-            r +
-            'fr) minmax(12rem, ' +
-            rest +
-            'fr)'
+          'minmax(12rem, ' + r + 'fr) minmax(12rem, ' + rest + 'fr)'
         );
       }
     }
@@ -100,8 +98,17 @@
         if (span <= 0) return ratio;
         return (ev.clientY - eRect.top) / span;
       }
-      var left = sidebar ? sidebar.getBoundingClientRect().right : workspace.getBoundingClientRect().left;
-      var right = workspace.getBoundingClientRect().right;
+      var left;
+      if (
+        explorerPanel &&
+        workspace.classList.contains('is-explorer-open') &&
+        explorerPanel.getBoundingClientRect().width > 0
+      ) {
+        left = explorerPanel.getBoundingClientRect().right;
+      } else {
+        left = sidebar ? sidebar.getBoundingClientRect().right : workspace.getBoundingClientRect().left;
+      }
+      var right = workspacePanes.getBoundingClientRect().right;
       var span = right - left;
       if (span <= 0) return ratio;
       return (ev.clientX - left) / span;
@@ -150,7 +157,7 @@
       var ro = new ResizeObserver(function () {
         positionHitStrip();
       });
-      ro.observe(workspace);
+      ro.observe(workspacePanes);
       ro.observe(editorPanel);
     }
 

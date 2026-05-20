@@ -47,13 +47,6 @@ function runNext() {
       if (typeof Beluga === 'undefined') throw new Error('Beluga failed to load in worker');
       belugaReady = true;
       self.postMessage({ id: currentJob.id, type: 'ready' });
-      self.postMessage({
-        id: currentJob.id,
-        type: 'progress',
-        ratio: 0.05,
-        phase: 'init',
-        state: 'done',
-      });
       currentJob = null;
       runNext();
       return;

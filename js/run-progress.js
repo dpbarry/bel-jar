@@ -140,6 +140,7 @@
 
   function handlePhaseEvent(msg) {
     if (!running) return;
+    if ((msg.phase || '').trim() === 'init') return;
     if (typeof msg.ratio === 'number') {
       bumpTarget(msg.ratio);
       return;

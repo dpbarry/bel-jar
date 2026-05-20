@@ -62,8 +62,8 @@
       if (!msg || msg.id == null) return;
       var entry = pending.get(msg.id);
       if (msg.type === 'progress') {
-        if (onProgress) onProgress(msg);
         if (entry && entry.onProgress) entry.onProgress(msg);
+        if (onProgress && entry && entry.jobType !== 'init') onProgress(msg);
         return;
       }
       if (!entry) return;
@@ -93,7 +93,12 @@
   function postWorker(type, payload, hooks) {
     var id = nextId++;
     return new Promise(function (resolve, reject) {
-      pending.set(id, { resolve: resolve, reject: reject, onProgress: hooks && hooks.onProgress });
+      pending.set(id, {
+        resolve: resolve,
+        reject: reject,
+        onProgress: hooks && hooks.onProgress,
+        jobType: type,
+      });
       worker.postMessage({ id: id, type: type, payload: payload });
     });
   }

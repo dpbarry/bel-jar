@@ -413,7 +413,17 @@
       return wrap;
     }
 
+    function isSubmenuOpenForRow(anchorRowEl, parentLevel) {
+      const lvl = parentLevel + 1;
+      for (let i = 0; i < openMenus.length; i++) {
+        const m = openMenus[i];
+        if (m.level === lvl && m.triggerEl === anchorRowEl) return true;
+      }
+      return false;
+    }
+
     function openSubmenu(items, anchorRowEl, parentLevel) {
+      if (isSubmenuOpenForRow(anchorRowEl, parentLevel)) return;
       closeFromLevel(parentLevel + 1, () => {
         submenuSourceRow = anchorRowEl;
         const level = parentLevel + 1;

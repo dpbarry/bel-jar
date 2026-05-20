@@ -1,6 +1,39 @@
 const output = document.getElementById('output');
 const editorMount = document.getElementById('editor');
 const cmdInput = document.getElementById('command-input');
+const btnLoad = document.getElementById('btn-load');
+const btnRun = document.getElementById('btn-run');
+
+let belugaBusy = false;
+
+function setBelugaBusy(busy) {
+  belugaBusy = !!busy;
+  if (btnLoad) btnLoad.disabled = belugaBusy;
+  if (btnRun) btnRun.disabled = belugaBusy;
+  if (cmdInput) cmdInput.disabled = belugaBusy;
+}
+
+function appendBuildFallbackNotice() {
+  const block = createReplBlock();
+  const shell = document.createElement('div');
+  shell.className = 'repl-rich';
+  const pre = document.createElement('pre');
+  pre.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes';
+  pre.textContent = 'Fast build hit the stack limit. Retrying with Stable.\nTip: switch to Stable in Settings to avoid this for large files.';
+  shell.appendChild(pre);
+  block.appendChild(shell);
+  output.appendChild(block);
+  scrollReplBottom();
+}
+
+function belugaProgressHook(msg) {
+  if (msg && msg.phase === 'build-fallback') {
+    appendBuildFallbackNotice();
+    if (typeof RunProgress !== 'undefined') RunProgress.start({ op: 'load' });
+    return;
+  }
+  if (typeof RunProgress !== 'undefined') RunProgress.onBelugaProgress(msg);
+}
 
 const persist =
   typeof BelJarPersist !== 'undefined' ? BelJarPersist.createPersist() : null;
@@ -33,6 +66,34 @@ function setReplBeautify(on) {
   replBeautifyEnabled = !!on;
   if (typeof BelJarPersist !== 'undefined') {
     BelJarPersist.writeStoredReplRaw(!replBeautifyEnabled);
+  }
+  syncSettingsDialogFromState();
+}
+
+const BELUGA_MODE_KEY = 'beljar-beluga-mode';
+
+let belugaMode = (() => {
+  try {
+    const v = localStorage.getItem(BELUGA_MODE_KEY);
+    if (v === 'fast' || v === 'stable') return v;
+    // Migrate from old build key
+    const old = localStorage.getItem('beljar-beluga-build');
+    return (old === 'fast' || old === 'auto') ? 'fast' : 'stable';
+  } catch (_) { return 'stable'; }
+})();
+
+function modeToConfig(mode) {
+  return mode === 'fast'
+    ? { thread: 'main', build: 'fast' }
+    : { thread: 'worker', build: 'stable' };
+}
+
+function setBelugaMode(m) {
+  belugaMode = m;
+  try { localStorage.setItem(BELUGA_MODE_KEY, m); } catch (_) {}
+  if (typeof BelugaClient !== 'undefined') {
+    BelugaClient.configure(modeToConfig(m));
+    BelugaClient.warm().catch(function () {});
   }
   syncSettingsDialogFromState();
 }
@@ -483,7 +544,14 @@ function segmentRunOutput(text) {
       flushOther();
       const trLines = [];
       while (i < lines.length && /^##\s/.test(lines[i].trim())) { trLines.push(lines[i]); i++; }
-      segs.push({ type: 'type-recon', text: trLines.join('\n').trim() });
+      const trText = trLines.join('\n').trim();
+      if (/##\s*Holes:/i.test(trText)) {
+        const detailLines = [];
+        while (i < lines.length && !/^##\s/.test(lines[i].trim())) { detailLines.push(lines[i]); i++; }
+        segs.push({ type: 'type-recon', text: (trText + '\n' + detailLines.join('\n')).trim() });
+      } else {
+        segs.push({ type: 'type-recon', text: trText });
+      }
       continue;
     }
 
@@ -508,7 +576,16 @@ function segmentRunOutput(text) {
   }
 
   flushOther();
-  return segs;
+  const merged = [];
+  for (let s = 0; s < segs.length; s++) {
+    const seg = segs[s];
+    if (seg.type === 'type-recon' && merged.length > 0 && merged[merged.length - 1].type === 'type-recon') {
+      merged[merged.length - 1].text += '\n' + seg.text;
+    } else {
+      merged.push(seg);
+    }
+  }
+  return merged;
 }
 
 function appendBelugaFormattedOutput(raw, verb) {
@@ -753,13 +830,28 @@ LF nd : o → type =
   | ⊤I : nd ⊤
 ;`};
 
-function loadCode() {
-  if (!editor) return;
+async function loadCode() {
+  if (!editor || belugaBusy) return;
   const code = editor.getValue();
   if (!code.trim()) return;
+  if (typeof BelugaClient === 'undefined') {
+    appendOutput('Error: Beluga is not available.', 'error');
+    return;
+  }
+  const lineCount = code.split('\n').length;
+  const t0 = performance.now();
+  setBelugaBusy(true);
+  if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') RunProgress.start({ op: 'load', lineCount });
   try {
-    appendBelugaResponse(Beluga.loadFromString(code), null);
+    const raw = await BelugaClient.load(code, { onProgress: belugaProgressHook });
+    appendBelugaResponse(raw, null);
+    setBelugaBusy(false);
+    if (typeof RunProgress !== 'undefined') {
+      void RunProgress.complete({ lines: lineCount, ms: performance.now() - t0 });
+    }
   } catch (e) {
+    setBelugaBusy(false);
+    if (typeof RunProgress !== 'undefined') RunProgress.fail();
     appendOutput('Error: ' + e.message, 'error');
   }
 }
@@ -768,7 +860,8 @@ function formatShownCmd(raw) {
   return raw.startsWith('%:') ? raw : '%:' + raw;
 }
 
-function runCmd() {
+async function runCmd() {
+  if (belugaBusy) return;
   let cmd = cmdInput.value.trim();
   if (!cmd) return;
   const rawForHistory = cmd;
@@ -777,21 +870,38 @@ function runCmd() {
   const bareCmd = rawForHistory.replace(/^%:\s*/, '').trim().toLowerCase();
   const isHelp = bareCmd === 'help';
   const { verb } = parseBelugaCmd(cmd);
-  try {
-    appendOutput('# ' + formatShownCmd(rawForHistory), replBeautifyEnabled ? 'cmd' : 'out');
-    if (isHelp) appendReplHelp();
-    else if (verb === 'quit') {
-      appendRichMsg(
-        'muted',
-        'Quit is not available in the browser shell (nothing to exit).',
-        ''
-      );
-    } else appendBelugaResponse(Beluga.runCommand(cmd), verb);
-  } catch (e) {
-    appendOutput('Error: ' + e.message, 'error');
-  }
+  appendOutput('# ' + formatShownCmd(rawForHistory), replBeautifyEnabled ? 'cmd' : 'out');
   cmdInput.value = '';
   replHistory.push(rawForHistory);
+
+  if (isHelp) {
+    appendReplHelp();
+    return;
+  }
+  if (verb === 'quit') {
+    appendRichMsg(
+      'muted',
+      'Quit is not available in the browser shell (nothing to exit).',
+      ''
+    );
+    return;
+  }
+  if (typeof BelugaClient === 'undefined') {
+    appendOutput('Error: Beluga is not available.', 'error');
+    return;
+  }
+  setBelugaBusy(true);
+  if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') RunProgress.start({ op: 'run', lineCount: 1 });
+  try {
+    const raw = await BelugaClient.run(cmd, { onProgress: belugaProgressHook });
+    appendBelugaResponse(raw, verb);
+    setBelugaBusy(false);
+    if (typeof RunProgress !== 'undefined') void RunProgress.complete();
+  } catch (e) {
+    setBelugaBusy(false);
+    if (typeof RunProgress !== 'undefined') RunProgress.fail();
+    appendOutput('Error: ' + e.message, 'error');
+  }
 }
 
 function insertNd(where) {
@@ -898,9 +1008,174 @@ const settingsBtn = document.getElementById('btn-settings');
 let settingsDialogEl = null;
 /** @type {HTMLInputElement|null} */
 let settingsReplBeautifyInput = null;
+let settingsModeDropdown = null;
 
 function syncSettingsDialogFromState() {
   if (settingsReplBeautifyInput) settingsReplBeautifyInput.checked = replBeautifyEnabled;
+  if (settingsModeDropdown) settingsModeDropdown.setValue(belugaMode);
+}
+
+function createDropdown(options, currentValue, onChange) {
+  var selected = currentValue;
+  var focusedIdx = -1;
+  var optionEls = [];
+
+  var container = document.createElement('div');
+  container.className = 'bj-dropdown';
+
+  var trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'bj-dropdown__trigger';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+
+  var valueSpan = document.createElement('span');
+  valueSpan.className = 'bj-dropdown__value';
+
+  var chevronEl = document.createElement('span');
+  chevronEl.className = 'bj-dropdown__chevron';
+  chevronEl.setAttribute('aria-hidden', 'true');
+  chevronEl.innerHTML = '<svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  trigger.appendChild(valueSpan);
+  trigger.appendChild(chevronEl);
+
+  var panel = document.createElement('div');
+  panel.className = 'bj-dropdown__panel';
+  panel.setAttribute('role', 'listbox');
+
+  options.forEach(function (opt, idx) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bj-dropdown__option';
+    btn.setAttribute('role', 'option');
+    btn.dataset.value = opt.value;
+
+    var labelSpan = document.createElement('span');
+    labelSpan.textContent = opt.label;
+
+    var checkEl = document.createElement('span');
+    checkEl.className = 'bj-dropdown__option-check';
+    checkEl.setAttribute('aria-hidden', 'true');
+    checkEl.innerHTML = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4.5L4.5 8L10 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    btn.appendChild(labelSpan);
+    btn.appendChild(checkEl);
+
+    btn.addEventListener('mouseenter', function () {
+      focusedIdx = idx;
+      updateFocus();
+    });
+    btn.addEventListener('click', function () {
+      if (opt.value !== selected) { setValue(opt.value); onChange(opt.value); }
+      close();
+    });
+
+    panel.appendChild(btn);
+    optionEls.push(btn);
+  });
+
+  container.appendChild(trigger);
+
+  function updateFocus() {
+    optionEls.forEach(function (el, i) { el.classList.toggle('is-focused', i === focusedIdx); });
+  }
+
+  function setValue(val) {
+    selected = val;
+    var opt = options.filter(function (o) { return o.value === val; })[0];
+    valueSpan.textContent = opt ? opt.label : val;
+    optionEls.forEach(function (el) { el.classList.toggle('is-selected', el.dataset.value === val); });
+  }
+
+  function reposition() {
+    if (!panel.classList.contains('is-open')) return;
+    var rect = trigger.getBoundingClientRect();
+    var pos = FloatingRectPlacement.computePosition({
+      anchor: rect,
+      width: panel.offsetWidth,
+      height: panel.offsetHeight,
+      mode: 'menu',
+      side: 'bottom',
+      align: 'end',
+      gap: 4,
+      margin: 8,
+    });
+    panel.style.top = pos.y + 'px';
+    panel.style.left = pos.x + 'px';
+  }
+
+  function open() {
+    // Mount inside the nearest <dialog> so we're in the top layer above its backdrop
+    var el = container.parentElement;
+    while (el && el.tagName !== 'DIALOG') el = el.parentElement;
+    var mountEl = el || document.body;
+    if (panel.parentElement !== mountEl) mountEl.appendChild(panel);
+
+    // Measure true dimensions while invisible
+    panel.style.visibility = 'hidden';
+    panel.style.display = 'block';
+    var pw = panel.offsetWidth;
+    var ph = panel.offsetHeight;
+    panel.style.display = '';
+    panel.style.visibility = '';
+
+    var rect = trigger.getBoundingClientRect();
+    var pos = FloatingRectPlacement.computePosition({
+      anchor: rect,
+      width: pw,
+      height: ph,
+      mode: 'menu',
+      side: 'bottom',
+      align: 'end',
+      gap: 4,
+      margin: 8,
+    });
+    panel.style.top = pos.y + 'px';
+    panel.style.left = pos.x + 'px';
+
+    container.classList.add('is-open');
+    panel.classList.add('is-open');
+    trigger.setAttribute('aria-expanded', 'true');
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    focusedIdx = options.findIndex(function (o) { return o.value === selected; });
+    updateFocus();
+  }
+
+  function close() {
+    container.classList.remove('is-open');
+    panel.classList.remove('is-open');
+    trigger.setAttribute('aria-expanded', 'false');
+    window.removeEventListener('scroll', reposition, true);
+    window.removeEventListener('resize', reposition);
+  }
+
+  trigger.addEventListener('click', function () {
+    if (container.classList.contains('is-open')) close(); else open();
+  });
+
+  trigger.addEventListener('keydown', function (e) {
+    var isOpen = container.classList.contains('is-open');
+    if (!isOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); focusedIdx = Math.min(focusedIdx + 1, options.length - 1); updateFocus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusedIdx = Math.max(focusedIdx - 1, 0); updateFocus(); }
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (focusedIdx >= 0) { var o = options[focusedIdx]; if (o.value !== selected) { setValue(o.value); onChange(o.value); } close(); }
+    }
+  });
+
+  document.addEventListener('click', function (e) {
+    if (container.classList.contains('is-open') && !container.contains(e.target) && !panel.contains(e.target)) close();
+  });
+
+  setValue(currentValue);
+  return { element: container, setValue: setValue };
 }
 
 function ensureSettingsDialog() {
@@ -946,6 +1221,40 @@ function ensureSettingsDialog() {
   row.appendChild(sw);
   section.appendChild(row);
   stack.appendChild(section);
+
+  const engineSection = document.createElement('div');
+  engineSection.className = 'bj-dialog__section';
+
+  function addDropdownRow(parent, labelText, descText, options, currentVal, onChange) {
+    const r = document.createElement('div');
+    r.className = 'bj-dialog__setting';
+    const m = document.createElement('div');
+    m.className = 'bj-dialog__setting-main';
+    const lbl = document.createElement('span');
+    lbl.className = 'bj-dialog__setting-label';
+    lbl.textContent = labelText;
+    const dsc = document.createElement('span');
+    dsc.className = 'bj-dialog__setting-desc';
+    dsc.textContent = descText;
+    m.appendChild(lbl);
+    m.appendChild(dsc);
+    const dd = createDropdown(options, currentVal, onChange);
+    r.appendChild(m);
+    r.appendChild(dd.element);
+    parent.appendChild(r);
+    return dd;
+  }
+
+  settingsModeDropdown = addDropdownRow(
+    engineSection,
+    'Engine',
+    'Stable runs in a worker and never crashes. Fast runs on the main thread and may be quicker for small files.',
+    [{ value: 'stable', label: 'Stable' }, { value: 'fast', label: 'Fast' }],
+    belugaMode,
+    setBelugaMode
+  );
+
+  stack.appendChild(engineSection);
 
   settingsDialogEl = BelJarDialog.createDialog({
     title: 'Settings',
@@ -1009,9 +1318,31 @@ window.addEventListener('pagehide', () => {
   if (persist) persist.flushEditor();
 });
 
-if (typeof Beluga === 'undefined') {
-  appendOutput('[FATAL] Beluga module failed to load.', 'fatal');
+if (typeof RunProgress !== 'undefined') {
+  RunProgress.bind({
+    header: document.getElementById('output-panel-header'),
+    fill: document.getElementById('output-header-progress'),
+    status: document.getElementById('output-header-status'),
+    output: output,
+  });
 }
+
+if (typeof BelugaClient !== 'undefined') {
+  BelugaClient.setProgressHandler(belugaProgressHook);
+  BelugaClient.configure(modeToConfig(belugaMode));
+  if (typeof RunProgress !== 'undefined') RunProgress.start({ op: 'init' });
+  BelugaClient.warm()
+    .then(function () {
+      if (typeof RunProgress !== 'undefined') return RunProgress.complete();
+    })
+    .catch(function (e) {
+      if (typeof RunProgress !== 'undefined') RunProgress.fail();
+      appendOutput('[FATAL] Beluga worker failed to load: ' + e.message, 'fatal');
+    });
+} else {
+  appendOutput('[FATAL] Beluga client failed to load.', 'fatal');
+}
+
 if (!editor) {
   appendOutput('[FATAL] CodeMirror editor bundle failed to load.', 'fatal');
 }

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(dune --version 2>&1)",
+      "Bash(opam exec *)"
+    ]
+  }
+}

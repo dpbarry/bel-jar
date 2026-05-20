@@ -44,10 +44,11 @@
       } catch (_) {}
     })();
 
-
-
-
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
   </script>
+  <link rel="preload" as="fetch" crossorigin href="beluga_web.bc.js">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
   <title>BelJar</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.png">
@@ -120,8 +121,11 @@
     </div>
 
     <div class="panel output-panel">
-      <div class="panel-header">
-        <span class="panel-label">Output</span>
+      <div class="panel-header output-panel-header" id="output-panel-header">
+        <div class="output-header-progress" id="output-header-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-hidden="true"></div>
+        <span class="panel-label" id="output-panel-label">
+          Output<span class="output-header-status" id="output-header-status" aria-hidden="true"> (running)</span>
+        </span>
         <button id="btn-clear" class="icon-btn" data-tooltip="Clear">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
@@ -156,7 +160,8 @@
       }
     };
   </script>
-  <script src="beluga_web.bc.js"></script>
+  <script src="js/run-progress.js"></script>
+  <script src="js/beluga-client.js"></script>
   <script src="js/editor-cm.bundle.js"></script>
   <script src="js/persist.js"></script>
   <script src="js/workspace-split.js"></script>

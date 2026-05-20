@@ -508,15 +508,25 @@ TupleOrParenPattern {
     "(" Pattern ("," Pattern)* ")"
 }
 
+@skip {} {
+  BlockComment[isolate] {
+    "%{" (blockCommentContent | blockCommentNewline)* blockCommentEnd
+  }
+}
+
+@local tokens {
+  blockCommentEnd { "}%" }
+  blockCommentNewline { $[\n] }
+  @else blockCommentContent
+}
+
 //  Tokens
 
 @tokens {
 
   whitespace { @whitespace+ }
 
-  LineComment   { "%" ![{\n] ![\n]* | "%" }
-  BlockComment  { "%{" blockBody "}%" }
-  blockBody     { (![}] | "}" ![%])* }
+  LineComment   { "%" ![{%\n] ![\n]* | "%" $[\n] }
 
   // Identifier characters.  The reference manual lists the ASCII set
   // (! $ & ' * + - / = @ ^ _ ~) but real-world Beluga code freely uses
@@ -573,7 +583,7 @@ TupleOrParenPattern {
   "--assoc" "--name" "--abbrev" "--not" "--open" "--query" "--opaque"
 
   @precedence {
-    BlockComment, LineComment,
+    LineComment,
     "--coverage", "--warncoverage", "--nostrengthen",
     "--infix", "--prefix", "--assoc", "--name",
     "--abbrev", "--not", "--open", "--query", "--opaque",

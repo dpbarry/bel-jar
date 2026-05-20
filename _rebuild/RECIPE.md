@@ -15,7 +15,7 @@
 3. **Blocking prompt** — `Logic.ml` calls `read_line()` for "More solutions?" — blocks forever in JS.
 4. **`Unix.times()`** — `Monitor.ml` uses this for timing. `js_of_ocaml`'s Unix stub throws.
 5. **`Str` library** — `prettyint.ml` uses `Str.regexp`. `Str` has C stubs, incompatible with js_of_ocaml.
-6. **Warning 53** — `js_of_ocaml-ppx` generates code that triggers warning 53 ("unused open"), which is a hard error under Beluga's `-warn-error +A` setting.
+6. **Warning 53** — `js_of_ocaml-ppx` can trigger warning 53 (`misplaced-attribute`) on the web executable. Suppress with `-w -53` on `src/web/dune` only. Invalid `[@unboxed]` on `List1` / `List2` / `Synext_precedence` was removed for OCaml 5.4.
 
 ---
 
@@ -290,7 +290,7 @@ Without specifying the package, `dune build` may fail depending on the version.
 > `--disable use-js-string` is **required**. Without it, js_of_ocaml uses JS native strings, but Beluga's lexer and string handling depend on OCaml byte-sequence semantics. Unicode characters (`⊃`, `∧`, `∨`, `¬`, `⊤`) corrupt without this flag.
 
 > [!NOTE]
-> `-w -53` is scoped deliberately to this stanza rather than globally. Warning 53 only fires from `js_of_ocaml-ppx` output — suppressing it globally would mask it legitimately elsewhere in the codebase.
+> `-w -53` is scoped to `src/web/dune` (ppx on the executable). Do not suppress it globally — invalid attributes in libraries should be fixed in source (see item 6).
 
 ---
 

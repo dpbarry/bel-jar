@@ -1,8 +1,5 @@
-/** Fixed-layer rects vs viewport + anchor (DOMRect / position:fixed space). */
 (function (global) {
   'use strict';
-
-  /** @typedef {'right'|'left'|'bottom'|'top'} PlacementSide */
 
   const DEFAULT_MARGIN = 8;
   const DEFAULT_GAP = 4;
@@ -60,7 +57,6 @@
     return Math.max(0, x2) * Math.max(0, y2);
   }
 
-  /** Point anchor: top-left + gap; flip left/up if overflow. */
   function computePointMenuPlacement(tw, th, vw, vh, m, g, tr) {
     let x = tr.left + g;
     let y = tr.top + g;
@@ -70,7 +66,6 @@
     return { x: c.x, y: c.y, placement: 'menu' };
   }
 
-  /** Rect anchor + side + align; flip primary axis if overflow; clamp cross-axis. */
   function computeSideMenuPlacement(tw, th, vw, vh, m, g, tr, side, align) {
     const ah = tr.bottom - tr.top;
     const aw = tr.right - tr.left;
@@ -121,7 +116,6 @@
     return computeSideMenuPlacement(tw, th, vw, vh, m, g, tr, side, align);
   }
 
-  /** @param {object} opts — anchor, width, height; optional mode, viewport, margin, gap, preferPlacement, requireSeparation, side, align */
   function computePosition(opts) {
     const tw = opts.width;
     const th = opts.height;
@@ -218,7 +212,7 @@
       const ov = overlapAreaWithAnchor(x, y, tw, th, tr);
       const area = visibleAreaInMargin(x, y, tw, th, vw, vh, m);
       if (ov < bestOverlap || (ov === bestOverlap && area > bestArea)) {
-        best = { x, y, placement: /** @type {'fallback'} */ ('fallback') };
+        best = { x, y, placement: 'fallback' };
         bestOverlap = ov;
         bestArea = area;
       }

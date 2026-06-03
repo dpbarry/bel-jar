@@ -1,6 +1,5 @@
 'use strict';
 
-// REPL rendering: output DOM, beautify toggle, all appendXxx helpers.
 (function (global) {
   var output = document.getElementById('output');
   var replBeautifyEnabled = !(

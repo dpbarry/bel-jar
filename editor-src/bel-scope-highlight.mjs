@@ -1,11 +1,3 @@
-// Scope-aware highlights: decorate identifier *uses* whose name resolves
-// to a binder in scope (overriding the base tags from bel-language).
-//
-// All scope/binder logic has moved to bel-walk.mjs. This module now only
-// emits decorations from the walker's `uses` array, filtered to the
-// viewport. Adding new binder kinds means editing the walker, not this
-// file.
-
 import { highlightingFor, syntaxTree } from '@codemirror/language';
 import { tags as hlTags } from '@lezer/highlight';
 import { Decoration, ViewPlugin } from '@codemirror/view';
@@ -52,7 +44,6 @@ function buildDecorations(view, markCache) {
 
   const pendingMarks = [];
 
-  // Bound-identifier-use decorations from the walker.
   for (const u of uses) {
     if (!u.bound) continue;
     if (!overlapsViewport(u.from, u.to, view)) continue;
@@ -61,9 +52,6 @@ function buildDecorations(view, markCache) {
     if (mk) pendingMarks.push({ from: u.from, to: u.to, deco: mk });
   }
 
-  // Completed LFDeclaration's defining identifier gets the definition tag
-  // (scope-highlight has always done this in `leave`; replicate here by
-  // scanning LFDeclaration nodes via the tree directly — cheap and local).
   tree.iterate({
     enter(ref) {
       if (ref.name !== 'LFDeclaration') return;

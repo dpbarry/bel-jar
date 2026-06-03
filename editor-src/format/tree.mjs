@@ -1,5 +1,3 @@
-// Shared Lezer syntax-tree helpers for the Beluga formatter.
-
 export function* children(node) {
   for (let c = node.firstChild; c; c = c.nextSibling) yield c;
 }

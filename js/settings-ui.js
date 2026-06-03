@@ -1,6 +1,5 @@
 'use strict';
 
-// Settings dialog: dropdown widget and dialog construction.
 (function (global) {
   var settingsDialogEl = null;
   var settingsReplBeautifyInput = null;
@@ -109,13 +108,11 @@
     }
 
     function open() {
-      // Mount inside the nearest <dialog> so we're in the top layer above its backdrop
       var el = container.parentElement;
       while (el && el.tagName !== 'DIALOG') el = el.parentElement;
       var mountEl = el || document.body;
       if (panel.parentElement !== mountEl) mountEl.appendChild(panel);
 
-      // Measure true dimensions while invisible
       panel.style.visibility = 'hidden';
       panel.style.display = 'block';
       var pw = panel.offsetWidth;

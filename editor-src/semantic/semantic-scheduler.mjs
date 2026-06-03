@@ -1,10 +1,3 @@
-/**
- * Smart Scheduler for Beluga Elaboration
- *
- * One warm Beluga session (via semantic-session) elaborates implicit metavariables
- * per *declaration* (batch %:get-type at all use-sites), not per hover.
- */
-
 const BATCH_PER_TICK = 8;
 
 export function createSemanticScheduler(engine, session) {
@@ -140,13 +133,6 @@ export function createSemanticScheduler(engine, session) {
         ? await engine.elaborateDeclarationImplicits(declId)
         : { ok: false, complete: false };
 
-      // Settle after one honest attempt, even if not every site got a type.
-      // Some sites are free metavars Beluga can't type at any occurrence; they
-      // never report `complete`, and re-running them on every cursor/viewport
-      // tick just saturates the single worker for no new information. Edits
-      // clear `elaborated` for dirty decls (onDocChange), so changed code is
-      // retried. Guard on ok !== false so a transient "engine/session not
-      // ready" result still gets retried rather than wrongly settled.
       if (result && result.ok !== false) elaborated.add(declId);
       waiter.resolve(result);
       return result;
@@ -251,13 +237,6 @@ export function createSemanticScheduler(engine, session) {
   }
 
   function startBackground() {
-    // Simmer the WHOLE file in the background so hints are warm before the
-    // user hovers — minimal friction, not hover-only-lazy. This is safe now
-    // that decls settle after one attempt (no perpetual re-elaboration): the
-    // pass dispatches one decl at a time (scheduleRun awaits each step), is
-    // ordered viewport/cursor-first by priorityFor, and each decl is visited
-    // exactly once per content version. A hover preempts via direct
-    // ensureElaborated and waits behind at most one in-flight job.
     seedAllImplicitDeclarations();
     scheduleRun();
   }

@@ -17,17 +17,10 @@ export function createSemanticEngine(options = {}) {
   const session = options.session || (options.belugaClient ? createSemanticSession(options.belugaClient) : null);
   const onTypeObserved = typeof options.onTypeObserved === 'function' ? options.onTypeObserved : null;
   let snapshot = null;
-  // Cross-session type memory: structuralKey -> last-known type, restored from
-  // storage via importTypes(). Because the structural key is deterministic and
-  // identity-stable (recomputed identically in a fresh session, unshaken by
-  // formatting/insertions), a reopened file can show its types INSTANTLY as
-  // stale-known instead of waiting for the whole-file recheck — the thing the
-  // legacy name+offset cache can't durably do.
   let hydratedTypes = new Map();
   let hydratedMetavars = new Map();
   const elaborationInflight = new Map();
   
-  // Initialize scheduler lazily after engine setup
   let scheduler = null;
   function getScheduler() {
     if (!scheduler && session) {
@@ -83,13 +76,8 @@ export function createSemanticEngine(options = {}) {
     };
   }
 
-  // Best available type for a declaration symbol, freshest first:
-  // freshly oracle-derived → persisted last-known (stale) → source annotation.
   function bestDeclType(symbol) {
     if (!symbol) return null;
-    // Persisted last-known type — served ONLY if the declaration's content is
-    // unchanged (fingerprint match). A changed decl falls through rather than
-    // show a type that no longer matches what's on screen.
     const hydrated = hydratedTypes.get(symbol.structuralKey);
     if (hydrated && hydrated.type != null && hydrated.fp === symbol.fingerprint) {
       return { type: hydrated.type, status: STATUS.STALE_KNOWN, source: 'hydrated' };
@@ -146,8 +134,6 @@ export function createSemanticEngine(options = {}) {
     const syntax = syntaxStore.update(tree, doc, { ...updateOptions, documentId });
     const symbols = symbolStore.update(syntax);
     const graph = semanticGraph.update(symbols, syntax);
-    // Demote dirty entries to stale-known and drop removed ones — keep the
-    // last-known truth of everything untouched by this edit.
     metavarStore.reconcile(graph.dirty, graph.removed);
     snapshot = {
       documentId,
@@ -169,23 +155,11 @@ export function createSemanticEngine(options = {}) {
     return snapshot;
   }
 
-  // The minimal set of SymbolIds whose semantics must be re-derived after the
-  // last edit — what a scheduler (or the future oracle) re-checks instead of
-  // the whole document. Everything not in it keeps its stale-known insight.
   function dirtyFrontier() {
     const g = semanticGraph.getSnapshot();
     return g ? [...g.dirty] : [];
   }
 
-  // Best-available type at a position, via the tiered model:
-  //   'annotation' — a resolved symbol/binder's source-written type (instant,
-  //                  no oracle; this is how V2 already types explicitly-bound
-  //                  implicits like `(P : [Ψ ⊢ tm K A])` that legacy missed).
-  //   'oracle'     — an UNANNOTATED implicit metavariable (free uppercase var),
-  //                  resolved via the oracle at THIS occurrence (the only place
-  //                  Beluga answers for it) and cached by enclosing decl + name.
-  //   'none'       — nothing typable here.
-  // Elaborate via the session manager (preferred path for implicit metavars)
   async function elaborateViaSession(pos, resolved, sessionMgr) {
     const syntax = syntaxStore.getSnapshot();
     if (!syntax) return null;
@@ -234,11 +208,6 @@ export function createSemanticEngine(options = {}) {
     };
   }
 
-  // Per-position Beluga type query via the single warm session — the engine's
-  // only round-trip path now that the oracle/derivation tier is gone. Normalizes
-  // to the { ok, type, diagnostics } shape callers expect. (Decl-level
-  // reconstructed types — "derivation" — will return here via a dedicated shim
-  // primitive: planned next, see project_semantic_v2.)
   async function sessionTypeAt(pos) {
     if (!session || typeof session.typeAt !== 'function') return { ok: false, type: null, diagnostics: [] };
     const syntax = syntaxStore.getSnapshot();
@@ -253,8 +222,6 @@ export function createSemanticEngine(options = {}) {
     }
   }
 
-  // Async only because the session may round-trip; the annotation path
-  // resolves synchronously inside the returned promise.
   async function elaborateAt(pos) {
     const syntax = syntaxStore.getSnapshot();
     const symbols = symbolStore.getSnapshot();
@@ -295,20 +262,18 @@ export function createSemanticEngine(options = {}) {
       const hit = metavarStore.get(declId, ref.name);
       const owner = symbols.symbolsById.get(declId);
       const hydratedKey = owner ? `${owner.structuralKey}::${ref.name}` : null;
-      // Query at THIS occurrence (the only position Beluga types a metavar).
       const result = await sessionTypeAt(ref.range.from);
       metavarStore.apply(declId, ref.name, result);
       if (owner && result && result.ok !== false && result.type != null && hydratedKey) {
         hydratedMetavars.set(hydratedKey, { type: result.type, fp: owner.fingerprint });
       }
       if (result && result.ok !== false && result.type != null && onTypeObserved) {
-        try { onTypeObserved(); } catch (_) { /* persistence hooks are best-effort */ }
+        try { onTypeObserved(); } catch (_) {}
       }
       const now = metavarStore.get(declId, ref.name);
       if (now && now.type != null) {
         return { name: ref.name, type: now.type, source: 'oracle', status: now.status };
       }
-      // Oracle gave nothing; surface a prior stale value if we have one.
       if (hit && hit.type != null) {
         return { name: ref.name, type: hit.type, source: 'oracle', status: STATUS.STALE_KNOWN };
       }
@@ -323,12 +288,6 @@ export function createSemanticEngine(options = {}) {
     return null;
   }
 
-  // Synchronous best-known type at a position — NO oracle round-trip. Serves
-  // freshly-derived, persisted-stale, or source-annotated types instantly.
-  // This is the hover fast-path: a reopened file shows last-known types with
-  // zero latency, and the recheck only upgrades stale → fresh in the
-  // background. Returns null when only the oracle could answer (a metavar with
-  // no cached/persisted entry).
   function cachedTypeAt(pos) {
     const query = symbolStore.queryAt(pos);
     const best = query && query.symbol ? bestDeclType(query.symbol) : null;
@@ -343,10 +302,6 @@ export function createSemanticEngine(options = {}) {
     };
   }
 
-  // Serialize last-known declaration types keyed by structural key (stable
-  // across sessions) for persistence. importTypes() restores them so the next
-  // session is warm. Only real types are exported (not source-annotation
-  // fallbacks, which are recomputed for free).
   function exportTypes() {
     const symbols = symbolStore.getSnapshot();
     const decls = [];
@@ -391,17 +346,13 @@ export function createSemanticEngine(options = {}) {
     for (const [key, type, fp] of (blob && blob.metavars) || []) hydratedMetavars.set(key, { type, fp });
   }
 
-  // Record a type produced elsewhere (e.g. the production checker's own
-  // derivation) into V2's durable, identity-keyed cache — no extra Beluga
-  // call, so it adds zero load. This is how V2 becomes the persistent type
-  // memory that survives a refresh while production stays the authority.
   function observeType(pos, type) {
     if (type == null) return;
     const symbol = symbolStore.symbolAt(pos) || symbolStore.declarationAt(pos);
     if (symbol && symbol.structuralKey) {
       hydratedTypes.set(symbol.structuralKey, { type, fp: symbol.fingerprint });
       if (onTypeObserved) {
-        try { onTypeObserved(); } catch (_) { /* persistence hooks are best-effort */ }
+        try { onTypeObserved(); } catch (_) {}
       }
     }
   }
@@ -415,7 +366,7 @@ export function createSemanticEngine(options = {}) {
       hydratedMetavars.set(`${owner.structuralKey}::${name}`, { type, fp: owner.fingerprint });
     }
     if (onTypeObserved) {
-      try { onTypeObserved(); } catch (_) { /* persistence hooks are best-effort */ }
+      try { onTypeObserved(); } catch (_) {}
     }
   }
 
@@ -498,13 +449,6 @@ export function createSemanticEngine(options = {}) {
     observeMetavarNamed(ref.enclosingDeclarationId, ref.name, type);
   }
 
-  // The single coherent query every feature can ask: who is at this position,
-  // where is it defined, where is it used, what's its type, what state is it
-  // in, what does it depend on, and what depends on it (impact). One call,
-  // keyed to stable identity — the substrate jump-to-def / references / rename
-  // / hover / graph-view all route through.
-  // Authoritative hover query (Milestone 1). Every UI path routes here.
-  // Returns ready | pending | blocked | unavailable with explicit provenance.
   function hoverAt(pos, options = {}) {
     const trace = createHoverTrace(hoverTraceEnabled(options));
     const syntax = syntaxStore.getSnapshot();
@@ -543,7 +487,6 @@ export function createSemanticEngine(options = {}) {
       return out;
     }
 
-    // Priority 1: Local source type (explicit binders, declarations with `: T`)
     if (resolved && resolved.sourceType) {
       const out = attachDependencyMeta({
         status: 'ready',
@@ -601,8 +544,6 @@ export function createSemanticEngine(options = {}) {
 
     const key = elaborationKey(pos, resolved, ref, query);
     const promise = dedupeElaboration(key, () => {
-      // Implicit metavars batch-elaborate per declaration via the session;
-      // everything else falls to the per-position session query in elaborateAt.
       if (session && resolved && resolved.needsElaboration) {
         return elaborateViaSession(pos, resolved, session);
       }
@@ -782,10 +723,6 @@ export function createSemanticEngine(options = {}) {
     if (!query || !query.symbol) return query;
     const status = semanticGraph.statusForSymbol(query.symbol.id);
     const node = semanticGraph.getSnapshot()?.nodeMap.get(query.symbol.id);
-    // Freshest-first via bestDeclType: oracle-derived → persisted-stale →
-    // source annotation. hoverType shows the best of those (annotation is a
-    // fine fallback); derivedType is reserved for a REAL reconstructed type
-    // (oracle/hydrated), null when only the source annotation is available.
     const best = bestDeclType(query.symbol);
     const real = best && best.source === 'hydrated' ? best : null;
     return {
@@ -843,8 +780,6 @@ export function createSemanticEngine(options = {}) {
           references: edge.references.map((ref) => ref.name),
         })),
       },
-      // Last-known type per global declaration from the persisted/hydrated
-      // cache — the at-a-glance check that the type memory is populated.
       derivations: snapshot.symbols.globalSymbols.map((symbol) => {
         const h = hydratedTypes.get(symbol.structuralKey);
         return { name: symbol.name, type: h ? h.type : null, status: h ? STATUS.STALE_KNOWN : null };
@@ -887,7 +822,6 @@ export function createSemanticEngine(options = {}) {
     session,
     scheduler: getScheduler(),
     setCheckerCode,
-    // Wiring for CodeMirror integration
     onCursorMove: (pos) => getScheduler()?.onCursorMove(pos),
     onViewportChange: (range) => getScheduler()?.onViewportChange(range),
     onDocChange: () => {

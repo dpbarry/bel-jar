@@ -1,6 +1,6 @@
 'use strict';
 
-var CACHE_NAME = 'beluga-runtime-20260602165949';
+var CACHE_NAME = 'beluga-runtime-20260602230141';
 
 function isBelugaRuntime(url) {
   return /\/beluga_web\.bc(\.dt)?\.js$/.test(new URL(url).pathname);
@@ -22,7 +22,6 @@ self.addEventListener('activate', function (event) {
   );
 });
 
-// Stale-while-revalidate: serve cached immediately, update cache in background.
 self.addEventListener('fetch', function (event) {
   if (!isBelugaRuntime(event.request.url)) return;
 

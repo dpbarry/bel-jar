@@ -1,5 +1,3 @@
-// Parse Beluga load/check output into CodeMirror lint diagnostics.
-
 function stripAnsi(s) {
   return String(s != null ? s : '')
     .replace(/\r\n/g, '\n')

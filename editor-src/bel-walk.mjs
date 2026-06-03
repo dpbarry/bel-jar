@@ -1,30 +1,3 @@
-// Single canonical pass over the Lezer tree producing the per-tree
-// summary consumed by lint, resolver, scope-highlight, and (Phase B+)
-// the Decl Graph cascade.
-//
-// Memoized per Lezer tree via WeakMap — the existing per-module
-// caches (_blocksCache in bel-units, _lintCache in bel-lint,
-// _declMapCache in bel-resolve, scope-highlight's internal walk)
-// collapse into this single cache, eliminating drift between modules.
-//
-// Phase A scope (what the walker produces today):
-//   blocks         — clustered top-level lint blocks (delegated to
-//                    computeLintBlocks in bel-units)
-//   blockAt        — pos → { index, block } lookup, identical to bel-units'
-//   definedNames   — defined identifier sites (replaces collectDefinedNames
-//                    in bel-lint)
-//   defMap         — name → declaration entry list (replaces buildDeclMap
-//                    in bel-resolve)
-//   parseDiags     — parser-error diagnostics (replaces collectParserErrors
-//                    in bel-lint)
-//   uses           — identifier references with extent + bound/free verdict
-//                    (replaces scope-highlight's internal walk; lets
-//                    Phase B dep-edge builder skip its own walk)
-//
-// Phase B will add per-decl AST fingerprints, exported-signature subranges,
-// and resolved target NodeIds on the use edges to this same summary
-// without re-walking.
-
 import {
   GAP_PRAGMA_LINE,
   lfDeclarationHasColon,
@@ -35,8 +8,6 @@ import {
 const PARSE_ERROR = '⚠';
 const BAD_DOUBLE_DASH_LINE = /^\s*--/;
 
-// Global declaration parent nodes whose first identifier child names the
-// declared entity. (Was duplicated in bel-resolve; canonical here now.)
 const GLOBAL_DECL_PARENT = new Set([
   'LFDeclaration',
   'LFDatatypeDeclaration',
@@ -59,10 +30,6 @@ export function walkTree(tree, doc) {
   _summaryCache.set(tree, s);
   return s;
 }
-
-// ---------------------------------------------------------------------------
-// Shared helpers (moved from bel-lint and bel-resolve).
-// ---------------------------------------------------------------------------
 
 function firstIdentChild(node) {
   for (let c = node.firstChild; c; c = c.nextSibling) {
@@ -147,12 +114,6 @@ function mergeDiagsByOverlap(primary, secondary) {
   return merged;
 }
 
-// ---------------------------------------------------------------------------
-// Binder collectors (moved from bel-scope-highlight).
-// Each returns a Frame { bindings, scopeFrom, scopeTo } or a list of
-// Bindings to splice into an outer frame.
-// ---------------------------------------------------------------------------
-
 function collectCompTypeBinderIds(binder, doc) {
   const out = [];
   const a = binder.firstChild;
@@ -161,10 +122,6 @@ function collectCompTypeBinderIds(binder, doc) {
     out.push(binding(doc, a));
     return out;
   }
-  // Tagged binders: parameter variable `#p:[...]`, legacy `#S:[...]`,
-  // modern substitution `$S:$[...]`, and Greek-lowercase `$ρ:$[...]`.
-  // The binder name INCLUDES the prefix so later use-references that
-  // also carry the prefix (per lowerExtent/upperExtent) match.
   if (a.name === '#' || a.name === '$') {
     const id = a.nextSibling;
     if (id && (id.name === 'UpperIdentifier' || id.name === 'LowerIdentifier')) {
@@ -323,9 +280,6 @@ function mlamParams(mlam, doc) {
     if (c.name !== 'MLamParam') continue;
     const first = c.firstChild;
     if (!first) continue;
-    // Tagged binders `#p` / `$S` / `$ρ` extend the binding name through
-    // the prefix so later use-references that also carry the prefix can
-    // match (the scope resolver compares extended names).
     if (first.name === '#' || first.name === '$') {
       const id = first.nextSibling;
       if (id && (id.name === 'LowerIdentifier' || id.name === 'UpperIdentifier')) {
@@ -355,9 +309,6 @@ function recBindings(recDecl, doc) {
   }
   return bindings;
 }
-
-// Module-tail collectors: bindings that scope from the declaration's end
-// to the closing `end` of the enclosing module.
 
 function declLowerBindings(decl, doc) {
   const id = firstChildNamed(decl, 'LowerIdentifier');
@@ -473,7 +424,6 @@ function lowerExtent(node, doc, refFrom, refTo) {
     const h = p.firstChild;
     if (h?.name === '#') return { from: h.from, to: refTo, name: doc.sliceString(h.from, refTo) };
   }
-  // Modern substitution variables can use `$` + lowercase Greek (`$ρ`).
   if (p?.name === 'SubstitutionVariable') {
     const h = p.firstChild;
     if (h?.name === '$') return { from: h.from, to: refTo, name: doc.sliceString(h.from, refTo) };
@@ -485,33 +435,12 @@ function upperExtent(node, doc, refFrom, refTo) {
   const p = node.parent;
   if (p?.name === 'SubstitutionVariable') {
     const h = p.firstChild;
-    // Both legacy `#S` and modern `$S` are recognised — accept either prefix.
     if (h?.name === '#' || h?.name === '$') {
       return { from: h.from, to: refTo, name: doc.sliceString(h.from, refTo) };
     }
   }
   return { from: refFrom, to: refTo, name: doc.sliceString(refFrom, refTo) };
 }
-
-// ---------------------------------------------------------------------------
-// The single canonical pass.
-//
-// One tree.iterate run threads four concerns through a shared cursor:
-//   (a) defMap         — every GLOBAL_DECL_PARENT node contributes its
-//                        primary identifier child to the name lookup map.
-//   (b) definedNames   — identifier sites recognized as definitions by
-//                        their parent role (matches bel-lint's old logic).
-//   (c) parseDiags     — error nodes, leaf tokens in error context, and
-//                        stray ⚠ markers within each lint block.
-//   (d) uses           — every identifier reference, with extent and a
-//                        bound/free verdict computed against the live
-//                        binder stack and module-tail frames.
-//
-// (a) (b) (c) write to disjoint outputs and don't observe each other.
-// (d) needs the binder stack maintained across enter/leave; everything
-// stays consistent because the stack/moduleLets are pushed/popped in the
-// same enter/leave boundaries scope-highlight used to use.
-// ---------------------------------------------------------------------------
 
 function doWalk(tree, doc) {
   const { blocks, blockAt } = computeLintBlocks(tree, doc);
@@ -525,7 +454,6 @@ function doWalk(tree, doc) {
   let inLFDatatype = false;
   let lfDatatypeKeywordSeen = false;
 
-  // Binder stack for (d) — push on enter, pop on leave.
   const stack = [];
   const moduleLets = [];
   const moduleEndStack = [];
@@ -568,7 +496,6 @@ function doWalk(tree, doc) {
       const node = ref.node;
       const n = node.name;
 
-      // ===== (d) binder stack pushes (mirror of scope-highlight's switch) =====
       if (n === 'ModuleDeclaration') moduleEndStack.push(node.to);
 
       switch (n) {
@@ -631,10 +558,8 @@ function doWalk(tree, doc) {
         }
       }
 
-      // ===== (a) defMap =====
       if (GLOBAL_DECL_PARENT.has(n)) addDefMapEntry(node);
 
-      // ===== (b) definedNames: LFDatatype state =====
       if (n === 'LFDatatypeDeclaration') {
         inLFDatatype = true;
         lfDatatypeKeywordSeen = false;
@@ -648,7 +573,6 @@ function doWalk(tree, doc) {
         }
       }
 
-      // ===== (b) definedNames: identifier-by-parent-role =====
       if (n === 'LowerIdentifier') {
         const parent = node.parent;
         if (parent) {
@@ -660,7 +584,6 @@ function doWalk(tree, doc) {
               p === 'LetDeclaration') {
             noteDefinedName(ref.from, ref.to);
           } else if (p === 'LFDeclaration') {
-            // Only count complete `name : type.` declarations.
             let hasDot = false, hasError = false;
             for (let c = parent.firstChild; c; c = c.nextSibling) {
               if (c.name === '.') hasDot = true;
@@ -670,7 +593,6 @@ function doWalk(tree, doc) {
           }
         }
 
-        // ===== (d) uses for LowerIdentifier =====
         const ext = lowerExtent(node, doc, ref.from, ref.to);
         const bound = resolveUseBound(stack, moduleLets, ext.from, ext.to, ext.name);
         uses.push({
@@ -692,7 +614,6 @@ function doWalk(tree, doc) {
           }
         }
 
-        // ===== (d) uses for UpperIdentifier =====
         const ext = upperExtent(node, doc, ref.from, ref.to);
         const bound = resolveUseBound(stack, moduleLets, ext.from, ext.to, ext.name);
         uses.push({
@@ -704,7 +625,6 @@ function doWalk(tree, doc) {
         });
       }
 
-      // ===== (c) parseDiags =====
       const hit = blockAt(ref.from);
       if (hit) {
         const { from: bFrom, to: bTo } = hit.block;
@@ -734,7 +654,6 @@ function doWalk(tree, doc) {
       const node = ref.node;
       const n = node.name;
 
-      // Module-tail bindings flow up to the enclosing module's scope.
       const tailCollect = MODULE_TAIL_COLLECTORS[n];
       if (tailCollect) {
         const bindings = tailCollect(node, doc);

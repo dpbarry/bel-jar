@@ -14,7 +14,7 @@ import {
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { bracketMatching, ensureSyntaxTree, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
-import { lintGutter, linter } from '@codemirror/lint';
+import { linter } from '@codemirror/lint';
 import { beluga } from './bel-language.mjs';
 import { formatCommand } from './bel-format.mjs';
 import { belAliases } from './bel-aliases.mjs';
@@ -22,13 +22,12 @@ import { syntaxLint } from './bel-lint.mjs';
 import { createBelugaLinter } from './bel-beluga-lint.mjs';
 import { updateIdeStatusDot } from './bel-ide-status.mjs';
 import { applySyntaxFaultMask, computeLintBlocks } from './bel-units.mjs';
-import { belHoverTooltip } from './bel-hover.mjs';
+import { belHoverTooltip, LINT_TOOLTIP_FILTER } from './bel-hover.mjs';
+import { diagnosticRowHighlight } from './bel-diag-gutter.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
-
-// --- LF datatype / inductive `|` continuation contexts for smart Enter ---
 
 const PIPE_CONTEXT_NODES = new Set([
   'LFDeclaration',
@@ -73,8 +72,6 @@ function continuePipeLine(view) {
 
 const smartEnterRules = [continuePipeLine];
 
-// --- Clipboard / bulk indent ---
-
 function smartEnter(view) {
   for (const rule of smartEnterRules) {
     if (rule(view)) return true;
@@ -82,7 +79,6 @@ function smartEnter(view) {
   return false;
 }
 
-/** Plain-text hygiene only; indentation comes from CM `indentRange` + Beluga grammar. */
 function sanitizePastedPlainText(text) {
   if (text == null || text === '') return '';
   return String(text)
@@ -102,8 +98,6 @@ function reindentWholeDocument(view) {
     });
   }
 }
-
-// --- Viewport padding so the caret can scroll comfortably past the last line ---
 
 const safeScrollPastEndPlugin = ViewPlugin.fromClass(
   class {
@@ -137,8 +131,6 @@ function safeScrollPastEnd() {
     }),
   ];
 }
-
-// --- Theme tokens (pair with css/style.css `.editor-cm-host`) ---
 
 function belEditorChrome() {
   return EditorView.baseTheme({
@@ -189,6 +181,14 @@ function belEditorChrome() {
       backgroundColor: 'light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.038))',
       color: 'var(--editor-gutter-fg-active)',
     },
+    '.cm-diagRow-warning': {
+      backgroundColor: 'light-dark(rgba(217, 119, 6, 0.16), rgba(251, 191, 36, 0.16))',
+      color: 'light-dark(rgb(180, 83, 9), rgb(252, 211, 77))',
+    },
+    '.cm-diagRow-error': {
+      backgroundColor: 'light-dark(rgba(220, 38, 38, 0.18), rgba(248, 113, 113, 0.24))',
+      color: 'light-dark(rgb(185, 28, 28), rgb(252, 165, 165))',
+    },
     '.cm-content': {
       caretColor: 'var(--accent-high)',
       paddingTop: '0',
@@ -220,8 +220,6 @@ function belEditorChrome() {
   });
 }
 
-// --- CM light/dark (pairs with html.light + EditorView tooltip/lint themes) ---
-
 function isDocumentDarkTheme() {
   return typeof document !== 'undefined' && !document.documentElement.classList.contains('light');
 }
@@ -229,8 +227,6 @@ function isDocumentDarkTheme() {
 function cmThemeExtensions(dark) {
   return dark ? [EditorView.darkTheme.of(true)] : [];
 }
-
-// --- Extension bundle ---
 
 function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLinterExt) {
   return [
@@ -269,7 +265,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     belEditorChrome(),
     belSyntaxLinter(),
     belugaLinterExt,
-    lintGutter(),
+    diagnosticRowHighlight(),
     belHoverTooltip(semanticEngine),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
@@ -277,8 +273,19 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
   ];
 }
 
+function adaptiveLintDelay(lineCount) {
+  if (lineCount < 60) return 200;
+  if (lineCount < 200) return 450;
+  if (lineCount < 600) return 800;
+  return 1100;
+}
+
+function lineCountOf(text) {
+  return (String(text == null ? '' : text).match(/\n/g) || []).length + 1;
+}
+
 function belSyntaxLinter() {
-  return linter((view) => syntaxLint(view), { delay: 80 });
+  return linter((view) => syntaxLint(view), { delay: 0, tooltipFilter: LINT_TOOLTIP_FILTER });
 }
 
 function mergeLintDiagnostics(syntaxDiags, belugaDiags) {
@@ -300,16 +307,14 @@ export function mount(parentEl, options = {}) {
   const ph = options.placeholder ?? 'Write Beluga code here...';
   const themeCompartment = new Compartment();
   const ideCompartment = new Compartment();
+  const lintDelayCompartment = new Compartment();
+  let lintDelay = adaptiveLintDelay(lineCountOf(options.doc));
   const initialDark = options.dark ?? isDocumentDarkTheme();
   parentEl.replaceChildren();
 
-  // Legacy declGraph and belugaPool removed — semantic engine now handles
-  // all type derivation and persistence through its unified stores.
   const g = typeof window !== 'undefined' ? window : self;
   let semanticView = null;
 
-  // Full file with syntax-fault blocks blanked, line numbers preserved — the
-  // code the semantic engine's session loads for its Beluga queries.
   function healthySnapshotForView() {
     if (!semanticView) return '';
     const doc = semanticView.state.doc;
@@ -324,11 +329,6 @@ export function mount(parentEl, options = {}) {
     onTypeObserved: scheduleSemanticTypesSave,
   });
 
-  // V2 cross-session type memory: persist the engine's identity-keyed type
-  // cache to localStorage (debounced) so a reopened file shows last-known
-  // types instantly. Per-decl fingerprint-gating (in the engine) keeps a
-  // changed declaration from showing a stale type. Single key — BelJar is
-  // single-document. Best-effort: storage failures are non-fatal.
   const SEMANTIC_TYPES_KEY = 'beljar:semantic-types';
   let semanticTypesSaveTimer = null;
   function saveSemanticTypes() {
@@ -340,7 +340,7 @@ export function mount(parentEl, options = {}) {
       if (hasDecls || hasMetavars) {
         g.localStorage && g.localStorage.setItem(SEMANTIC_TYPES_KEY, JSON.stringify(blob));
       }
-    } catch (_) { /* storage unavailable / quota — non-fatal */ }
+    } catch (_) {}
   }
   function scheduleSemanticTypesSave() {
     if (semanticTypesSaveTimer) clearTimeout(semanticTypesSaveTimer);
@@ -350,7 +350,7 @@ export function mount(parentEl, options = {}) {
     try {
       const raw = g.localStorage && g.localStorage.getItem(SEMANTIC_TYPES_KEY);
       if (raw) semanticEngine.importTypes(JSON.parse(raw));
-    } catch (_) { /* corrupt / unavailable — ignore, recompute from scratch */ }
+    } catch (_) {}
   }
 
   const ideStatusDot = typeof document !== 'undefined'
@@ -378,7 +378,8 @@ export function mount(parentEl, options = {}) {
   }
 
   const belugaLinter = createBelugaLinter({
-    delay: options.belugaLintDebounce || 1200,
+    delay: 0,
+
     onCheckStart(view) {
       markBelugaCheckPending(view);
       refreshIdeStatus(view);
@@ -453,6 +454,14 @@ export function mount(parentEl, options = {}) {
       semanticEngine.onDocChange(update.changes);
       seedSemanticScheduler(update.view);
       scheduleSemanticTypesSave();
+      const wantDelay = adaptiveLintDelay(update.state.doc.lines);
+      if (wantDelay !== lintDelay) {
+        lintDelay = wantDelay;
+        const v = update.view;
+        queueMicrotask(() => v.dispatch({
+          effects: lintDelayCompartment.reconfigure(linter(null, { delay: wantDelay })),
+        }));
+      }
     }
     if (update.selectionSet) {
       semanticEngine.onCursorMove(update.state.selection.main.head);
@@ -471,6 +480,7 @@ export function mount(parentEl, options = {}) {
     treeWatchPlugin,
     themeCompartment.of(cmThemeExtensions(initialDark)),
     ideCompartment.of([]),
+    lintDelayCompartment.of(linter(null, { delay: lintDelay })),
   ];
 
   const initialDoc = sanitizePastedPlainText(options.doc ?? '');
@@ -482,7 +492,7 @@ export function mount(parentEl, options = {}) {
     parent: parentEl,
     state,
   });
-  semanticView = view; // let the V2 oracle read the live document
+  semanticView = view;
 
   semanticEngine.setCheckerCode(() => healthySnapshotForView());
   hydrateSemanticTypes();
@@ -502,8 +512,6 @@ export function mount(parentEl, options = {}) {
     seedSemanticScheduler(view);
   });
 
-  // Best-effort flush on page unload so the latest semantic type cache
-  // makes it to localStorage before tear-down.
   if (typeof window !== 'undefined') {
     const flush = () => {
       if (semanticTypesSaveTimer) {
@@ -615,8 +623,6 @@ export function mount(parentEl, options = {}) {
       view.dispatch({ effects: themeCompartment.reconfigure(cmThemeExtensions(!!dark)) });
     },
 
-    // Semantic Engine: authoritative syntax/symbol/graph model; hover routes
-    // through semanticEngine.hoverAt.
     getSemanticEngine() { return semanticEngine; },
 
     getHydratePromise() { return Promise.resolve(0); },

@@ -83,7 +83,6 @@ const belParseErrorHighlightPlugin = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
-/** Neutral theme tag + plugin (Prec highest — applied after scope highlight). */
 export const belParseErrorHighlightExtensions = [
   syntaxHighlighting(belParseErrorNeutralStyle),
   Prec.highest(belParseErrorHighlightPlugin),

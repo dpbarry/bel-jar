@@ -1,9 +1,3 @@
-// Beluga CodeMirror language: Lezer parser configuration (highlight tags,
-// indentation props, folding). Grammar source: ../beluga.grammar.
-//
-// Base tags here; bound-variable *uses* are overridden in bel-scope-highlight.mjs.
-// When adding nodes, update styleTags + scope collector + printer (format/printer.mjs).
-
 import {
   HighlightStyle,
   LRLanguage,
@@ -20,7 +14,6 @@ import { parser } from './beluga-parser.js';
 import { belParseErrorHighlightExtensions } from './bel-invalid-highlight.mjs';
 import { belugaScopeHighlight } from './bel-scope-highlight.mjs';
 
-/** LF/Comp parenthesis nodes otherwise get CM's implicit align:true (+2 units vs +1). */
 function parenDelimitedNoAlign(cx) {
   const open = cx.node.firstChild;
   if (!open || cx.state.doc.sliceString(open.from, open.to) !== '(') return cx.continue();
@@ -31,7 +24,6 @@ function lineStartsClosingSemi(doc, pos) {
   return /^\s*;\s*$/.test(doc.lineAt(pos).text);
 }
 
-/** LF datatype / inductive body: header line and lone `;` flush left; ctor lines indented. */
 function indentDeclBodyAfterHeader(cx) {
   const doc = cx.state.doc;
   const headerLn = doc.lineAt(cx.node.from).number;
@@ -54,7 +46,6 @@ const LF_KIND_CONT_ANCESTORS = new Set(['LFDatatypeDeclaration', 'LFDeclaration'
 const COMP_TYPE_CONT_ANCESTORS = new Set(['CompConstructor']);
 const COMP_KIND_CONT_ANCESTORS = new Set(['InductiveBody']);
 
-/** After `… =`, CM often resolves the parent decl exactly on `[`, skipping ContextualObject.delimitedIndent. */
 function indentBracketRhsAfterDeclHeader(cx) {
   const doc = cx.state.doc;
   const headerLn = doc.lineAt(cx.node.from).number;
@@ -190,8 +181,6 @@ const belugaHighlight = styleTags({
   SubstHead:       t.operator,
   ProjectionTail:  t.propertyName,
 });
-
-// HighlightStyle: more specific tag rules first.
 
 const c = {
   keyword:      'light-dark(hsl(221, 82%, 34%), var(--accent-mid))',

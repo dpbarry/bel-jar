@@ -17,11 +17,6 @@
 
   var currentEditorCode = '';
   var editorFingerprint = '';
-  // Main-thread mode keeps fingerprints at module scope. Worker mode binds
-  // fingerprints to the slot itself (`slot.committedFingerprint`) so they
-  // die with the slot — preventing the silent-no-tooltip bug where an idle
-  // timeout killed the checker but left a stale "this code is loaded"
-  // marker, causing subsequent %:get-type calls on a fresh, unloaded slot.
   var mainCommittedFingerprint = '';
   var mainCheckerFingerprint = '';
   var activeLoad = null;
@@ -30,10 +25,6 @@
   var CHECK_CANCELLED_MSG = 'Beluga check cancelled';
   var RECONFIGURED_MSG = 'BelugaClient reconfigured';
   var LONG_LOAD_THRESHOLD_MS = 1200;
-  // Keep the checker warm for ~5 min of idle time. Going below this forced a
-  // full worker boot + `loadFromString` on every hover after a brief pause
-  // (multiple seconds of latency on non-trivial files). Memory cost per slot
-  // is modest; latency win is large.
   var CHECKER_IDLE_TTL_MS = 5 * 60 * 1000;
   var textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
 
@@ -93,9 +84,6 @@
       readyPromise: null,
       nextId: 1,
       pending: new Map(),
-      // What source fingerprint has been loaded into this worker.
-      // '' means "no loaded state" — any %:get-type / run that depends on
-      // the source must dispatch a fresh `load` first.
       committedFingerprint: '',
     };
   }
@@ -191,8 +179,6 @@
       err.isStackOverflow = isOvf;
       slot.ready = false;
       slot.readyPromise = null;
-      // The slot's fingerprint dies with the slot — no module-level state
-      // to reset in worker mode.
       if (slot === primarySlot) primarySlot = null;
       if (slot === primaryStandby) primaryStandby = null;
       if (slot === checkerSlot) checkerSlot = null;
@@ -415,8 +401,6 @@
         terminateSlot(primarySlot, makeCancelledError(LOAD_CANCELLED_MSG));
         primarySlot = standby;
         primaryStandby = null;
-        // The freshly-promoted standby has no loaded state — its own
-        // committedFingerprint is already ''.
         if (onProgress) {
           onProgress({ type: 'progress', phase: 'worker-swap', state: 'ready' });
         }
@@ -468,8 +452,6 @@
   function noteEditorChange(code) {
     currentEditorCode = String(code != null ? code : '');
     editorFingerprint = fingerprintCode(currentEditorCode);
-    // Mark the checker's loaded state stale even if the slot is idle and
-    // would otherwise survive; the next %:get-type must re-load.
     if (checkerSlot) checkerSlot.committedFingerprint = '';
     mainCheckerFingerprint = '';
 
@@ -530,9 +512,6 @@
       });
   }
 
-  // Run any `%:command` against the checker slot, transparently dispatching
-  // a `load` first if the slot doesn't already have this source loaded.
-  // Used by hover (%:get-type) and by hover fallbacks (%:fsig, %:constructors-comp).
   function dispatchCheckerCommand(code, cmd) {
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
@@ -541,9 +520,6 @@
       clearCheckerIdleTimer();
       return ensureCheckerReady(cfg.build)
         .then(function (slot) {
-          // Fingerprint check is per-slot: a freshly-created slot has
-          // committedFingerprint === '', so the load is always dispatched
-          // when the previous slot was killed (e.g. by the idle timer).
           if (slot.committedFingerprint === requestFP) {
             return postWorker(slot, 'run', cmd, null, null);
           }
@@ -584,10 +560,6 @@
     return dispatchCheckerCommand(code, '%:get-type ' + line + ' ' + col);
   }
 
-  // Structured (JSON) per-declaration type for the Semantic Engine V2 oracle.
-  // Same checker-slot / fingerprint-cached load as dispatchCheckerCommand, but
-  // routes to the shim's ideTypeAtJson so the engine gets {ok,type,raw} instead
-  // of free-form text. Kept parallel to the text path to avoid touching it.
   function dispatchIdeType(code, line, col) {
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
@@ -633,12 +605,6 @@
       .then(function (result) { return resultText(result) || ''; });
   }
 
-  // Send a `load` to the checker slot and commit on success. Returns the
-  // load's output text (which contains Beluga diagnostics — same surface
-  // as `dispatchCheck` parses). Used by live-intel's silentCheck to
-  // collapse the previous two-load pattern (check-then-prewarm) into a
-  // single load that BOTH gives us diagnostics AND warms the slot for
-  // subsequent hover %:get-type calls — no second round-trip.
   function dispatchLoadChecker(code) {
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
@@ -648,7 +614,6 @@
       return ensureCheckerReady(cfg.build)
         .then(function (slot) {
           if (slot.committedFingerprint === requestFP) {
-            // Already loaded — no diagnostics to report (success).
             return '';
           }
           return postWorker(slot, 'load', requestCode, null, null)
@@ -813,12 +778,8 @@
       return mainActiveBuild;
     },
 
-    // Current thread mode ('worker' | 'main') — the derivation pool only
-    // makes sense in worker mode (main-thread is single-threaded).
     getThread: function () { return cfg.thread; },
 
-    // Public worker-URL resolver — used by the Decl Graph derivation
-    // pool so it doesn't have to duplicate URL-resolution logic.
     workerUrl: function (build) { return workerUrl(build || cfg.build); },
 
     warm: function () { return ensureReady(); },
@@ -844,11 +805,6 @@
       return dispatchCheck(code, hooks);
     },
 
-    // Single round-trip variant of `check`: loads the code into the
-    // CHECKER slot (commits the slot's fingerprint on success) and
-    // returns the load's output text. Lets silentCheck both get its
-    // diagnostics AND warm the slot for subsequent %:get-type calls in
-    // one Beluga round-trip instead of two.
     loadChecker: function (code) {
       return dispatchLoadChecker(code);
     },
@@ -861,15 +817,10 @@
       return dispatchGetType(code, line, col);
     },
 
-    // JSON per-declaration type for Semantic Engine V2 (shadow). Returns the
-    // shim's {ok,type,raw} envelope as a string for the engine to parse.
     ideType: function (code, line, col) {
       return dispatchIdeType(code, line, col);
     },
 
-    // Batch elaboration for a declaration range. Returns JSON with all
-    // implicit binder types. Falls back to per-position ideType if not
-    // implemented in the OCaml shim.
     ideElaborate: function (code, startLine, endLine, positionsSpec) {
       var requestCode = String(code != null ? code : '');
       var requestFP = fingerprintCode(requestCode);

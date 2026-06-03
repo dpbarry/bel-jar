@@ -1,6 +1,3 @@
-/**
- * Drag the editor/output border to resize. Persists via BelJarPersist.
- */
 (function (global) {
   var STACK_MQ = '(max-width: 48rem)';
   var HIT_GRACE_PX = 6;

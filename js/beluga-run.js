@@ -1,6 +1,5 @@
 'use strict';
 
-// Beluga engine: busy state, mode selection, load/run orchestration.
 (function (global) {
   var belugaBusy = false;
   var belugaMode =

@@ -1,5 +1,3 @@
-// Wadler/Leijen doc IR + renderer.
-
 const TEXT = 0;
 const LINE = 1;
 const HARDLINE = 2;

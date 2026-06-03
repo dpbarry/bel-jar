@@ -2,10 +2,8 @@ import { isolateHistory } from '@codemirror/commands';
 import { Annotation, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 
-/** Marks alias replacements so we do not recurse or merge oddly with upstream listeners. */
 const belAliasTxn = Annotation.define();
 
-/** Ascii / LaTeX-style triggers → Unicode accepted by beluga.grammar (tokens + unicodeIdent). */
 const ALIAS_PAIRS = Object.entries({
   '\\Leftrightarrow': '⇔',
   '\\rightarrow': '→',

@@ -7,10 +7,6 @@ import {
 } from './ids.mjs';
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
-// Fixity pragmas declare notation for an operator that is itself an LF
-// symbol. We treat the pragma as a PRAGMA-namespace owner so the operator
-// occurrence inside it becomes a typed NOTATION dependency, while the
-// operator identifier stays a resolvable reference (enabling rename).
 const NOTATION_PRAGMA = new Set(['InfixPragma', 'PrefixPragma']);
 const GLOBAL_DECL_PARENT = new Set([
   'LFDeclaration',
@@ -46,12 +42,6 @@ const LOCAL_BINDER = new Set([
   'LFBlockField',
 ]);
 
-// For each binder kind, the ancestor node kinds that delimit its scope — the
-// construct whose *tail* (after the binder) is the body the binder is visible
-// in. The binder is visible from just after its own name to the end of that
-// construct. This replaces the old "parent range" heuristic, which both made a
-// binder visible before its introduction and (for context entries) ended the
-// scope before the turnstile body, so `[g, x:tp |- x]` could not see `x`.
 const SCOPE_DELIMITERS = Object.freeze({
   FnParam: ['FnExpression'],
   MLamParam: ['MLamExpression'],
@@ -63,8 +53,6 @@ const SCOPE_DELIMITERS = Object.freeze({
   SchemaElement: ['SchemaDeclaration'],
 });
 
-// Precise scope span for a binder: [introduction point, end of delimiting
-// construct]. Falls back to the immediate parent when the kind is unmapped.
 function scopeSpanFor(binderNode, identNode) {
   const kinds = SCOPE_DELIMITERS[binderNode.name];
   let construct = binderNode.parent || binderNode;
@@ -115,18 +103,6 @@ function declName(node, doc) {
   return id ? slice(doc, id.from, id.to) : '?';
 }
 
-// StructuralKey vs SymbolId — kept deliberately distinct:
-//   * baseKey/structuralKey is a VOLATILE, deterministic *locator*: where a
-//     declaration sits in the named/kinded structure of the document. It is
-//     name-based, so it changes when the declaration (or an enclosing one) is
-//     renamed. It never uses sibling index, so insertions and formatting do
-//     not move it.
-//   * SymbolId is the PERSISTENT *identity*, assigned by the registry and
-//     reconciliation (see reconcileIdentity) by carrying a prior id across
-//     edits/renames. For a fresh document with no registry it falls back to a
-//     deterministic seed derived from the structural key.
-// baseKey is the qualified locator without duplicate disambiguation; the
-// trailing ~N (added by disambiguate) only separates genuine duplicates.
 function baseStructuralKey(declarationNode, ownName, doc) {
   const qualifier = [];
   for (let cur = declarationNode.parent; cur; cur = cur.parent) {
@@ -143,9 +119,6 @@ function disambiguate(base, keyCounts) {
   return n ? `${base}~${n}` : base;
 }
 
-// Small, stable content hash of a declaration's text. Used by reconciliation
-// to recognise an unchanged declaration whose locator moved (reordering a
-// duplicate, or a duplicate appearing) and to avoid mis-binding identity.
 function fingerprintOf(text) {
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = (((h << 5) + h) ^ text.charCodeAt(i)) >>> 0;
@@ -156,18 +129,12 @@ function leafName(baseKey) {
   return baseKey.slice(baseKey.lastIndexOf('#') + 1);
 }
 
-// The group key drops the leaf name (everything from the final '#'), keeping
-// namespace + qualifier + declaration kind. Two symbols share a group when
-// they differ only by name within the same parent — the signal for a rename.
 function identityGroupKey(symbol) {
   const hash = symbol.baseKey.lastIndexOf('#');
   const stem = hash >= 0 ? symbol.baseKey.slice(0, hash) : symbol.baseKey;
   return `${symbol.namespace}|${stem}`;
 }
 
-// Rewrite the qualifier (parent name) segments of a baseKey using a
-// newName -> oldName map, so a child can be looked up under its parent's
-// pre-rename identity. The leaf segment (own kind#name) is left untouched.
 function substituteQualifier(baseKey, renameMap, ambiguous) {
   const parts = baseKey.split('/');
   let changed = false;
@@ -254,19 +221,6 @@ function isCompatibleGlobal(refKind, namespace) {
   return LOWER_GLOBAL_NAMESPACES.has(namespace);
 }
 
-// Grammar-position reference classification. The Lezer node directly enclosing
-// an identifier tells us which namespace is *legal* at that syntactic
-// position, far more precisely than blunt lower/upper matching:
-//   * LFAtomicType  head  -> an LF type family
-//   * LFAtomicTerm  head  -> an LF term constant/constructor
-//   * uppercase in either -> an LF meta-variable (implicit; not a global ref)
-//   * CompAtomicType      -> computation-level type / schema (ambiguous by
-//                            grammar, so kept broad rather than guessing)
-//   * fixity pragma operand -> the LF operator it annotates
-// Returns a Set of acceptable namespaces, or null to mean "position not
-// classified — fall back to the broad lower/upper compatibility". When a set
-// is returned and nothing matches, the reference stays unresolved rather than
-// binding to an illegal-position symbol.
 const LF_TYPE_HEAD = Object.freeze(new Set([NAMESPACE.LF_TYPE_FAMILY]));
 const LF_TERM_HEAD = Object.freeze(new Set([NAMESPACE.LF_CONSTRUCTOR, NAMESPACE.LF_CONSTANT]));
 const COMP_TYPE_LOWER = Object.freeze(new Set([
@@ -320,10 +274,6 @@ function validateNewName(newName) {
 
 export function createSymbolStore() {
   let snapshot = null;
-  // Persistent identity registry: structuralKey -> SymbolId. Survives across
-  // updates (and, via export/import, across sessions), so a declaration keeps
-  // its id through renames and edits. This is what separates the persistent
-  // SymbolId from the volatile, name-based structural key.
   let identityRegistry = new Map();
 
   function update(syntaxSnapshot) {
@@ -337,12 +287,8 @@ export function createSymbolStore() {
     const defByNameRange = new Map();
     const keyCounts = new Map();
 
-    // 1. Collect declarations with deterministic structural keys + fingerprints.
     collectGlobalSymbols({ documentId, tree, doc, symbols, globalSymbols, defByNameRange, keyCounts });
-    // 2. Assign persistent SymbolIds: reuse from the registry, detect renames,
-    //    re-anchor children of renamed parents, mint fresh for the rest.
     reconcileIdentity(globalSymbols, previous, identityRegistry);
-    // 3. Resolve references and locals against the (now persistent) ids.
     collectReferencesAndLocals({
       documentId,
       tree,
@@ -356,11 +302,9 @@ export function createSymbolStore() {
       keyCounts,
     });
 
-    // 4. Refresh the registry to the current key->id mapping for the next edit.
     identityRegistry = new Map();
     for (const symbol of globalSymbols) identityRegistry.set(symbol.structuralKey, symbol.id);
 
-    // Index by final id after reconciliation, so queries resolve persistent ids.
     const symbolsById = new Map();
     for (const symbol of symbols) symbolsById.set(symbol.id, symbol);
 
@@ -412,9 +356,6 @@ export function createSymbolStore() {
     return (snapshot.referencesBySymbolId.get(id) || []).slice();
   }
 
-  // Unresolved refs in a declaration — Beluga implicit / metavar use-sites.
-  // Include both upper and lower: proof binders like stepP'Q' are lowercase
-  // but still carry types from the declaration signature or application position.
   function implicitSitesForDeclaration(declId) {
     if (!snapshot || !declId) return [];
     const doc = snapshot.syntaxSnapshot && snapshot.syntaxSnapshot.doc;
@@ -474,9 +415,6 @@ export function createSymbolStore() {
     };
   }
 
-  // Cross-session identity persistence: serialise/restore the registry so a
-  // declaration's SymbolId survives reopening a file (including after a rename
-  // made in a prior session), the honest remedy for name-based fresh identity.
   function exportIdentity() {
     return [...identityRegistry];
   }
@@ -504,21 +442,6 @@ function mintId(symbol) {
   return structuralSymbolId(symbol.documentId, symbol.namespace, symbol.structuralKey);
 }
 
-// Persistent identity assignment. Goal: give each declaration the SymbolId of
-// the declaration it *is*, across formatting, insertions, reordering, renames,
-// and (via the imported registry) reopening. Passes, most-to-least certain:
-//   1. Exact structural-key reuse from the registry — but only for keys whose
-//      base is unique this pass, so a positional duplicate key can't steal an
-//      id (the insert-duplicate-before-another hazard).
-//   2a. Within a rename group, match an old symbol by equal content
-//       fingerprint — recognises a reordered or newly-twinned duplicate whose
-//       content is unchanged.
-//   2b. A lone unmatched old/new pair in a group is an unambiguous rename;
-//       carry the id and record the parent-name change.
-//   3. Re-anchor children whose enclosing family/module was renamed, by
-//      looking them up under the parent's pre-rename name.
-//   4. Mint a fresh deterministic id for whatever is genuinely new.
-// Anything ambiguous keeps a fresh id rather than risk binding the wrong one.
 function reconcileIdentity(globalSymbols, previous, registry) {
   const baseCount = new Map();
   for (const s of globalSymbols) baseCount.set(s.baseKey, (baseCount.get(s.baseKey) || 0) + 1);
@@ -526,7 +449,6 @@ function reconcileIdentity(globalSymbols, previous, registry) {
   const usedIds = new Set();
   const unmatched = [];
 
-  // Pass 1 — exact key reuse for unambiguous (non-duplicate) keys.
   for (const symbol of globalSymbols) {
     const reuse = baseCount.get(symbol.baseKey) === 1 ? registry.get(symbol.structuralKey) : null;
     if (reuse && !usedIds.has(reuse)) {
@@ -545,7 +467,6 @@ function reconcileIdentity(globalSymbols, previous, registry) {
   const oldUnused = previous.globalSymbols.filter((old) => !usedIds.has(old.id));
   const oldByGroup = groupBy(oldUnused, identityGroupKey);
 
-  // Pass 2a — content-fingerprint match within the rename group.
   const stillNew = [];
   for (const symbol of unmatched) {
     const pool = oldByGroup.get(identityGroupKey(symbol));
@@ -558,7 +479,6 @@ function reconcileIdentity(globalSymbols, previous, registry) {
     }
   }
 
-  // Pass 2b — unambiguous single rename within a group; record parent renames.
   const parentRenames = new Map();
   const ambiguousNames = new Set();
   const newByGroup = groupBy(stillNew, identityGroupKey);
@@ -579,7 +499,6 @@ function reconcileIdentity(globalSymbols, previous, registry) {
     }
   }
 
-  // Pass 3 — re-anchor children of a renamed parent under the old parent name.
   const stillLeft = [];
   for (const symbol of leftover) {
     const candidate = parentRenames.size ? substituteQualifier(symbol.baseKey, parentRenames, ambiguousNames) : null;
@@ -592,9 +511,6 @@ function reconcileIdentity(globalSymbols, previous, registry) {
     }
   }
 
-  // Pass 4 — genuinely new declarations. Guard against minting an id that a
-  // carried-forward symbol already holds (a fresh duplicate whose deterministic
-  // seed collides with an existing id), so SymbolIds stay unique.
   for (const symbol of stillLeft) {
     let id = mintId(symbol);
     if (usedIds.has(id)) {
@@ -641,11 +557,6 @@ function collectGlobalSymbols(ctx) {
   });
 }
 
-// Register an --infix/--prefix pragma as a PRAGMA-namespace owner. The
-// defining node is the pragma itself (not its operator identifier), so its
-// identity is the pragma's AST path and the operator stays a reference that
-// resolves to the LF symbol. nameRange is the keyword span, which never
-// equals an identifier range and so cannot suppress the operator reference.
 function registerNotationPragma(ctx, node) {
   const { doc, keyCounts } = ctx;
   const op = firstIdentChild(node);
@@ -671,15 +582,10 @@ function registerNotationPragma(ctx, node) {
 
 function makeSymbol({ documentId, doc, namespace, name, nameRange, definingNode, declarationNode, baseKey, structuralKey, isGlobal }) {
   const declarationText = slice(doc, declarationNode.from, declarationNode.to);
-  // Split the declaration into the part dependents observe (the signature,
-  // before '=' or ';') and the private body (after it). Separate hashes let
-  // incremental invalidation cascade signature changes but not body edits.
   const eq = declarationText.indexOf('=');
   const semi = declarationText.indexOf(';');
   const boundary = eq >= 0 ? eq : (semi >= 0 ? semi : declarationText.length);
   return {
-    // Default to a deterministic seed; reconcileIdentity overrides global ids
-    // with a persistent registry id when one carries forward.
     id: structuralSymbolId(documentId, namespace, structuralKey),
     baseKey,
     structuralKey,
@@ -721,8 +627,6 @@ function collectReferencesAndLocals(ctx) {
       structuralKey: disambiguate(base, ctx.keyCounts),
       isGlobal: false,
     });
-    // Explicit scope frame: visible from its introduction to the end of the
-    // delimiting construct (the binder's body), not its parent's full range.
     const scope = scopeSpanFor(node, ident);
     symbol.scope = scope;
     symbol.range = { from: scope.from, to: scope.to };
@@ -788,15 +692,11 @@ function collectReferencesAndLocals(ctx) {
 }
 
 function resolveReference(globalSymbols, localStack, name, refKind, from, node) {
-  // Locals (in-scope binders) take precedence over globals regardless of
-  // grammar position; the scope stack is the authority for them.
   for (let i = localStack.length - 1; i >= 0; i--) {
     const { symbol, to, from: scopeFrom } = localStack[i];
     if (scopeFrom <= from && from <= to && symbol.name === name) return symbol;
   }
 
-  // Narrow globals to the namespace(s) legal at this syntactic position; if the
-  // position is unclassified, fall back to broad lower/upper compatibility.
   const expected = expectedNamespaces(node, refKind);
   const allowed = expected
     ? (symbol) => expected.has(symbol.namespace)

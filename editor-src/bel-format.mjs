@@ -1,5 +1,3 @@
-// Beluga formatter: parse tree → doc → string (see format/printer.mjs).
-
 import { syntaxTree } from '@codemirror/language';
 import { EditorSelection } from '@codemirror/state';
 import { render } from './format/doc.mjs';

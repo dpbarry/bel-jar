@@ -3,7 +3,6 @@
 
   const DIALOG_ROOT_CLASS = 'bj-dialog';
 
-  /** @type {WeakMap<HTMLDialogElement, { removeOnClose: boolean, isClosing: boolean, timer: ReturnType<typeof setTimeout>|null }>} */
   const dialogs = new WeakMap();
 
   function parseMs(cssValue, fallback) {
@@ -19,10 +18,6 @@
     return dialogs.get(dialogEl);
   }
 
-  /**
-   * @param {HTMLDialogElement} dialogEl
-   * @param {boolean} [removeOnClose]
-   */
   function registerDialog(dialogEl, removeOnClose) {
     if (!dialogEl || dialogs.has(dialogEl)) return dialogEl || null;
 
@@ -58,7 +53,6 @@
     return dialogEl;
   }
 
-  /** @param {HTMLDialogElement|null|undefined} dialogEl */
   function openDialog(dialogEl) {
     if (!dialogEl) return null;
     registerDialog(dialogEl);
@@ -76,7 +70,6 @@
     return dialogEl;
   }
 
-  /** @param {HTMLDialogElement|null|undefined} dialogEl */
   function requestDialogClose(dialogEl) {
     if (!dialogEl) return;
     const info = dialogInfo(dialogEl);
@@ -96,17 +89,6 @@
     }, ms);
   }
 
-  /**
-   * @param {object} [opts]
-   * @param {string} [opts.className]
-   * @param {string} [opts.cardClass]
-   * @param {string} [opts.title]
-   * @param {string|Node} [opts.content]
-   * @param {boolean} [opts.closeButton]
-   * @param {string} [opts.closeLabel]
-   * @param {string} [opts.ariaLabel]
-   * @param {boolean} [opts.removeOnClose]
-   */
   function createDialog(opts) {
     opts = opts || {};
     const className = opts.className || '';
@@ -162,11 +144,10 @@
 
   function closeAllDialogs() {
     document.querySelectorAll('dialog.' + DIALOG_ROOT_CLASS + '[open]').forEach(function (dlg) {
-      requestDialogClose(/** @type {HTMLDialogElement} */ (dlg));
+      requestDialogClose(dlg);
     });
   }
 
-  /** @param {Element|null|undefined} root */
   function setDialogFooterError(root, message) {
     if (!root) return;
     const foot =

@@ -58,9 +58,6 @@ export function astNodeId(documentId, node) {
   return `${normalizeDocumentId(documentId)}#ast:${astPathFor(node)}:${node.name}`;
 }
 
-// A SymbolId is built from a position-independent structural key (see
-// symbol-store) rather than a raw sibling-index AST path, so unrelated
-// insertions before a declaration do not shift its identity.
 export function structuralSymbolId(documentId, namespace, structuralKey) {
   return `${normalizeDocumentId(documentId)}#sym:${namespace}:${structuralKey}`;
 }

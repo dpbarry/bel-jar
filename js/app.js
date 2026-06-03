@@ -1,5 +1,3 @@
-// Bootstrap: mount editor, initialize modules, wire event listeners.
-
 const editorMount = document.getElementById('editor');
 const cmdInput = document.getElementById('command-input');
 
@@ -111,7 +109,6 @@ window.BelJarRepl = {
   },
 };
 
-// Explorer panel
 const filesBtn = document.getElementById('btn-files');
 const workspaceEl = document.querySelector('.workspace');
 const explorerPanelEl = document.getElementById('explorer-panel');
@@ -135,7 +132,6 @@ if (filesBtn && workspaceEl) {
   });
 }
 
-// Prefabs menu
 const prefabsBtn = document.getElementById('btn-prefabs');
 if (prefabsBtn) {
   let prefabsSuppressNextClick = false;
@@ -192,7 +188,6 @@ if (prefabsBtn) {
   });
 }
 
-// Settings
 const settingsBtn = document.getElementById('btn-settings');
 if (settingsBtn && typeof BelJarDialog !== 'undefined') {
   settingsBtn.addEventListener('click', () => {
@@ -200,7 +195,6 @@ if (settingsBtn && typeof BelJarDialog !== 'undefined') {
   });
 }
 
-// Button and input event listeners
 document.getElementById('btn-theme').addEventListener('click', toggleTheme);
 document.getElementById('btn-format').addEventListener('click', () => {
   if (editor && typeof editor.format === 'function') editor.format();

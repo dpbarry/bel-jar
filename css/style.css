@@ -49,7 +49,6 @@
   --base-higher: light-dark(hsl(221, 10%, 30%), hsl(216, 7%, 58%));
   --base-highest: light-dark(hsl(222, 16%, 10%), hsl(213, 9%, 82%));
 
-  /* Dark — vivid blues (sat clearly above --muted*) via lifted L; skip heavy mid-L + max-S “mud” */
   --accent-lowest: light-dark(hsl(217, 50%, 95%), hsl(218, 22%, 8.5%));
   --accent-lower: light-dark(hsl(217, 48%, 86%), hsl(217, 28%, 14.5%));
   --accent-low: light-dark(hsl(217, 50%, 72%), hsl(216, 42%, 27.5%));
@@ -901,7 +900,6 @@ html.light .output-header-progress {
   min-height: 0;
 }
 
-/* CodeMirror nodes match `html *`; without this they inherit --sans like the rest of the UI. */
 #editor.editor-cm-host,
 #editor.editor-cm-host * {
   font-family: var(--mono);
@@ -909,7 +907,6 @@ html.light .output-header-progress {
   font-feature-settings: "liga" 0, "calt" 0;
 }
 
-/* Force top of document flush under panel header. */
 #editor.editor-cm-host .cm-scroller,
 #editor.editor-cm-host .cm-content,
 #editor.editor-cm-host .cm-gutters {
@@ -917,7 +914,6 @@ html.light .output-header-progress {
   margin-top: 0 !important;
 }
 
-/* Gutters above cm-selectionLayer (z-index -1); blocks selection tint bleeding onto line numbers. */
 #editor.editor-cm-host .cm-gutters {
   position: relative;
   z-index: 2;
@@ -2129,7 +2125,6 @@ html.light .bj-dialog::backdrop {
 }
 
 /* ---- IDE: squiggles ---- */
-/* Override CM's hardcoded backgroundImage squiggles with theme-aware wavy underlines */
 
 .cm-editor .cm-lintRange-error {
   background-image: none !important;
@@ -2160,11 +2155,7 @@ html.light .bj-dialog::backdrop {
   opacity: 0.85;
 }
 
-/* ---- IDE: editor tooltips (shared base) ---- */
-
-/* All editor tooltips — hover types AND lint diagnostics — share this base
-   so they look like .tooltip-inner everywhere else. CM's default chrome
-   is stripped on the wrappers; the inner element owns the look. */
+/* ---- IDE: editor tooltips ---- */
 
 .cm-tooltip:has(> .beljar-tip),
 .cm-editor .cm-tooltip-hover {
@@ -2176,8 +2167,14 @@ html.light .bj-dialog::backdrop {
   opacity: 1;
 }
 
-/* CM hover host: one .cm-tooltip-section per source (beljar-tip, ul.cm-tooltip-lint) */
 .cm-editor .cm-tooltip.cm-tooltip-hover {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.1rem;
+}
+
+.bel-hover-stack {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -2188,12 +2185,10 @@ html.light .bj-dialog::backdrop {
   display: none !important;
 }
 
-/* CM default draws a border-top between sections; gap handles separation */
 .cm-editor .cm-tooltip-hover > .cm-tooltip-section:not(:first-child) {
   border-top: none !important;
 }
 
-/* Lint host section is a transparent shell; li.cm-diagnostic is the frame */
 .cm-editor .cm-tooltip-hover > .cm-tooltip-lint.cm-tooltip-section {
   background: none;
   border: none;
@@ -2228,8 +2223,6 @@ html.light .bj-dialog::backdrop {
   opacity: 1;
 }
 
-/* .cm-diagnostic IS the lint tooltip frame (same role as .beljar-tip for
-   hover types). Its children are .beljar-tip-head + .beljar-tip-body. */
 .cm-editor .cm-tooltip-hover .cm-diagnostic {
   padding: 0;
   margin: 0;
@@ -2237,8 +2230,12 @@ html.light .bj-dialog::backdrop {
   overflow: visible;
 }
 
-/* Lint sub-titles are human-readable sentences, not identifiers — use sans
-   and allow wrapping rather than clipping with an ellipsis. */
+.cm-editor .cm-tooltip-hover .cm-diagnostic .cm-diagnosticText {
+  display: block;
+  padding: 0.32rem 0.55rem;
+  white-space: pre-wrap;
+}
+
 .cm-editor .cm-tooltip-hover .cm-diagnostic .beljar-tip-name {
   font-family: var(--sans);
   font-weight: 500;
@@ -2247,11 +2244,19 @@ html.light .bj-dialog::backdrop {
   text-overflow: clip;
 }
 
-.cm-editor .cm-tooltip-hover .cm-diagnostic + .cm-diagnostic {
+.cm-editor .cm-tooltip-hover > .cm-tooltip-lint .cm-diagnostic + .cm-diagnostic,
+.cm-editor .cm-panel-lint .cm-diagnostic + .cm-diagnostic {
   border-top: 1px solid var(--tooltip-border);
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   margin-top: -1px;
+}
+
+.bel-hover-stack > .cm-diagnostic + .cm-diagnostic {
+  margin-top: 0;
+  border-top: none;
+  border-top-left-radius: var(--radius-sm);
+  border-top-right-radius: var(--radius-sm);
 }
 
 /* ---- Hover-type structured content ---- */
@@ -2289,8 +2294,6 @@ html.light .bj-dialog::backdrop {
   transition: color 0.2s ease;
 }
 
-/* Body uses mono; reset inherited .beljar-tip 500 / 0.02em (Inter metrics).
-   JetBrains Mono is only vendored at 400 and 700 — other weights look identical. */
 .beljar-tip-body {
   padding: 0.32rem 0.55rem;
   font-family: var(--mono, ui-monospace, monospace);
@@ -2308,8 +2311,6 @@ html.light .bj-dialog::backdrop {
   color: var(--ide-warn-squiggle);
 }
 
-/* Loading label: <span.beljar-tip-shimmer> inside .beljar-tip-body--computing.
-   Style .beljar-tip-shimmer (or the --computing block below), not .beljar-tip-body alone. */
 .beljar-tip-body--computing {
   font-weight: 400;
   letter-spacing: normal;
@@ -2364,8 +2365,7 @@ html.light .bj-dialog::backdrop {
   }
 }
 
-/* ---- Severity variants for lint diagnostics ----
-   Full bg tint + left stripe in the squiggle color. */
+/* ---- IDE: diagnostic severity ---- */
 
 .cm-editor .cm-tooltip-hover .cm-diagnostic-error {
   --tooltip-bg: light-dark(hsl(355, 92%, 98%), hsl(355, 55%, 22%));
@@ -2387,13 +2387,7 @@ html.light .bj-dialog::backdrop {
   color: color-mix(in srgb, var(--ide-warn-squiggle) 62%, var(--muted-high));
 }
 
-/* ---- Shared spout (rotated-square diamond, two borders dropped) ----
-   CM adds .cm-tooltip-section on the frame itself (.beljar-tip or ul), not a
-   wrapper. Only the stack edge nearest the anchor gets a spout. */
-
-/* ---- Shared spout (rotated-square diamond, two borders dropped) ----
-   CM adds .cm-tooltip-section on the frame itself (.beljar-tip or ul), not a
-   wrapper. Only the stack edge nearest the anchor gets a spout. */
+/* ---- IDE: tooltip spout ---- */
 
 .cm-editor .cm-tooltip-hover :is(.beljar-tip, .cm-diagnostic)::before {
   display: none;
@@ -2410,7 +2404,7 @@ html.light .bj-dialog::backdrop {
 
 .cm-editor .cm-tooltip-hover.cm-tooltip-above > .cm-tooltip-section.beljar-tip:last-child::before,
 .cm-editor .cm-tooltip-hover.cm-tooltip-above
-  > .cm-tooltip-section:last-child .cm-diagnostic:last-of-type::before {
+  > .cm-tooltip-section:last-child:not(:has(.bel-hover-stack)) .cm-diagnostic:last-of-type::before {
   display: block;
   bottom: calc(var(--tooltip-spout-size) * -0.55);
   left: var(--tooltip-arrow-x, 0.7rem);
@@ -2421,7 +2415,29 @@ html.light .bj-dialog::backdrop {
 
 .cm-editor .cm-tooltip-hover.cm-tooltip-below > .cm-tooltip-section.beljar-tip:first-child::before,
 .cm-editor .cm-tooltip-hover.cm-tooltip-below
-  > .cm-tooltip-section:first-child .cm-diagnostic:first-of-type::before {
+  > .cm-tooltip-section:first-child:not(:has(.bel-hover-stack)) .cm-diagnostic:first-of-type::before {
+  display: block;
+  top: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 0.7rem);
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.cm-editor .cm-tooltip-hover .bel-hover-stack > *::before {
+  display: none;
+}
+
+.cm-editor .cm-tooltip-hover.cm-tooltip-above .bel-hover-stack > :last-child::before {
+  display: block;
+  bottom: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 0.7rem);
+  transform: translateX(-50%) rotate(45deg);
+  border-left: 0;
+  border-top: 0;
+}
+
+.cm-editor .cm-tooltip-hover.cm-tooltip-below .bel-hover-stack > :first-child::before {
   display: block;
   top: calc(var(--tooltip-spout-size) * -0.55);
   left: var(--tooltip-arrow-x, 0.7rem);
@@ -2446,18 +2462,12 @@ html.light .bj-dialog::backdrop {
   transition: background 0.25s ease;
 }
 
-/* Hover hit-target. */
 .ide-status-dot::before {
   content: '';
   position: absolute;
   inset: -7px;
 }
 
-/* Loading shimmer: a soft bright arc rotates around the dot's perimeter.
-   The dot itself stays put; the shimmer lives in ::after.
-   The rotation animation runs *continuously* but is hidden via opacity
-   when not in `checking` — that way, exiting the state never freezes the
-   arc mid-angle, it just gracefully fades away while still spinning. */
 .ide-status-dot::after {
   content: '';
   position: absolute;
@@ -2488,8 +2498,6 @@ html.light .bj-dialog::backdrop {
   background: var(--ide-status-error);
 }
 
-/* Cold and checking: powder-blue accent (in-progress / no signal yet).
-   Warning stays the yellow advisory color. */
 .ide-status-dot[data-live-state="cold"],
 .ide-status-dot[data-live-state="checking"] {
   background: var(--accent-mid);
@@ -2503,9 +2511,6 @@ html.light .bj-dialog::backdrop {
   background: var(--accent-mid);
 }
 
-/* Checking: reveal the shimmer ring. The animation is always running on
-   ::after (see base rule); we only toggle opacity here, so the exit fade
-   never freezes the arc mid-rotation. */
 .ide-status-dot[data-live-state="checking"]::after {
   opacity: 1;
 }

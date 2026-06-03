@@ -1,10 +1,3 @@
-/**
- * BelJar persistence: localStorage today, swappable adapter for a backend later.
- * Theme uses key `beljar-theme` — keep index.html FOUC preload in sync with THEME_STORAGE_KEY.
- * Raw REPL uses key `beljar-repl-raw` (`1` = plain terminal-style output).
- * Editor/output split uses key `beljar-editor-split` (0–1, editor share).
- * Split constants are sourced from window.BELJAR_SPLIT_* set by the index.html FOUC script.
- */
 (function (global) {
   var SCHEMA_VERSION = 1;
   var STATE_KEY = 'beljar-state-v1';
@@ -70,9 +63,6 @@
     adapter.setItem(STATE_KEY, JSON.stringify(state));
   }
 
-  /**
-   * @param {{ adapter?: ReturnType<createLocalStorageAdapter>, editorDebounceMs?: number }} [opts]
-   */
   function createPersist(opts) {
     opts = opts || {};
     var adapter = opts.adapter || createLocalStorageAdapter();
@@ -116,7 +106,6 @@
       flushEditor: flushEditor,
       exportSnapshot: exportSnapshot,
       importSnapshot: importSnapshot,
-      /** Swap storage (e.g. sync layer); reloads state from the new adapter. */
       setAdapter: function (next) {
         adapter = next;
         state = readState(adapter);

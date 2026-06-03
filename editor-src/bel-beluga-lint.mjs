@@ -1,5 +1,6 @@
 import { linter } from '@codemirror/lint';
 import { parseBelugaDiagnostics } from './bel-beluga-diag.mjs';
+import { LINT_TOOLTIP_FILTER } from './bel-hover.mjs';
 
 function belugaClient() {
   const g = typeof window !== 'undefined' ? window : globalThis;
@@ -41,7 +42,7 @@ export function createBelugaLinter({ onDiagnostics = null, onCheckStart = null, 
         notify(view, []);
         return [];
       });
-  }, { delay });
+  }, { delay, tooltipFilter: LINT_TOOLTIP_FILTER });
 
   ext.belugaLastDiagnostics = () => lastBelugaDiags;
   return ext;

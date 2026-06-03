@@ -3,7 +3,6 @@ import globals from 'globals';
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   {
-    // Never lint the bundled editor output
     ignores: ['js/editor-cm.bundle.js'],
   },
   {
@@ -26,7 +25,6 @@ export default [
       sourceType: 'script',
       globals: {
         ...globals.browser,
-        // BelJar module globals (each file declares these via window.Xxx = ...)
         BelugaText: 'readonly',
         BelJarPersist: 'readonly',
         BelJarEditor: 'readonly',

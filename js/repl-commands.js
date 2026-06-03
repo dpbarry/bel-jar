@@ -1,6 +1,5 @@
 'use strict';
 
-// REPL command dispatch and input history.
 (function (global) {
   var replHistory = [];
   var replHistoryIndex = null;
@@ -25,7 +24,6 @@
     replHistoryIndex = null;
   }
 
-  // Returns true if history was navigated (caller should preventDefault).
   function historyUp() {
     if (!replHistory.length) return false;
     if (replHistoryIndex === null) replHistoryIndex = replHistory.length - 1;
@@ -34,7 +32,6 @@
     return true;
   }
 
-  // Returns true if history was navigated (caller should preventDefault).
   function historyDown() {
     if (replHistoryIndex === null) return false;
     replHistoryIndex++;

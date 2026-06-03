@@ -7,11 +7,9 @@
 
   const customRowTypes = Object.create(null);
 
-  /** @type {Set<object>} */
   const allControllers = new Set();
 
   let sharedGlobalsBound = false;
-  /** @type {object|null} */
   let activeController = null;
 
   function submenuHoverOpen() {
@@ -63,10 +61,6 @@
     else detachSharedGlobalsIfIdle();
   }
 
-  /**
-   * @param {string} type
-   * @param {(item: object, wrap: HTMLElement, level: number, controller: object) => HTMLElement|null} fn
-   */
   function registerRowType(type, fn) {
     if (typeof type !== 'string' || typeof fn !== 'function') {
       throw new TypeError('Menu.registerRowType(type, fn): type string and fn required');
@@ -99,7 +93,6 @@
       return FRP.normalizeAnchor(anchor);
     }
 
-    /** Row vertical span; parent panel horizontal span — gap clears menu padding. */
     function submenuPlacementAnchor(anchorRowEl) {
       const parentMenuEl = anchorRowEl.closest('.menu');
       if (!parentMenuEl) {
@@ -336,7 +329,6 @@
       closeFromLevel(0, done);
     }
 
-    /** Close without animation — when another controller opens. */
     function forceCloseSync() {
       while (openMenus.length) {
         const entry = openMenus.pop();

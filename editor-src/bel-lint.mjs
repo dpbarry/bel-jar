@@ -1,31 +1,6 @@
-// Instant syntax-tree linter for Beluga.
-// Zero Beluga loads — runs on the Lezer tree on every keystroke.
-//
-// Parser-error and defined-name collection now live in bel-walk.mjs (the
-// unified per-tree walker). This module owns the second pass:
-//
-//   checkLFAtomicTypes: walk every LFAtomicType, check its LowerIdentifier
-//   head against the defined-name set plus any pi-binders currently in
-//   scope (tracked with an enter/leave stack). Each check is independent —
-//   an error node anywhere else in the document cannot suppress or trigger
-//   this check.
-//
-// Scope of checking (deliberately narrow to avoid false positives):
-//   - LF type-family names in LFAtomicType head position only.
-//   - UpperIdentifier in that position = meta-variable, always OK.
-//   - Everything at the computation level (rec, inductive, CompType) is left
-//     to the Beluga backend — too many implicit binders and forward refs.
-
 import { syntaxTree } from '@codemirror/language';
 import { walkTree } from './bel-walk.mjs';
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-// Memoize the merged result per Lezer tree. The walker is memoized
-// separately; this cache only covers checkLFAtomicTypes + merge, which is
-// the work that bel-walk doesn't do.
 const _lintCache = new WeakMap();
 
 export function syntaxLintTree(tree, doc) {
@@ -59,19 +34,6 @@ function rangesOverlap(a, b) {
   return a.from < b.to && b.from < a.to;
 }
 
-// ---------------------------------------------------------------------------
-// checkLFAtomicTypes — second pass over the tree with pi-binder stack
-// ---------------------------------------------------------------------------
-//
-// We walk the whole tree. When we enter an LFType or LFKind that opens with
-// a pi-binder ({ id : ... } body), we push the binder name onto a stack
-// scoped to the codomain. When we see LFAtomicType whose first child is a
-// LowerIdentifier, that identifier must be in `definedNames` (visible at
-// this position per block ordering) or in `piBinders`.
-//
-// Stack entries: { name: string, scopeTo: number }
-// We pop entries whose scopeTo <= current node from (they've gone out of scope).
-
 function nameVisibleAt(entry, atFrom, blockIndex) {
   if (entry.blockIndex < 0 || blockIndex < 0) return entry.from < atFrom;
   if (entry.blockIndex < blockIndex) return true;
@@ -93,17 +55,12 @@ function checkLFAtomicTypes(tree, doc, defined, blockAt) {
       const name = ref.name;
       const useBlock = blockAt(ref.from);
 
-      // Push pi-binders when we enter a pi-typed LFType or LFKind.
-      // Grammar: LFType { "{" PiBinder ":" LFType "}" LFType }
-      //          LFKind { "{" PiBinder ":" LFType "}" LFKind }
-      // The binder is in scope for the codomain (the trailing LFType/LFKind).
       if (name === 'LFType' || name === 'LFKind') {
         const first = ref.node.firstChild;
         if (first && first.name === '{') {
           const piBinder = first.nextSibling;
           if (piBinder && piBinder.name === 'PiBinder') {
             const binderName = doc.sliceString(piBinder.from, piBinder.to).trim();
-            // The codomain starts after the closing '}'.
             let c = piBinder.nextSibling;
             while (c && c.name !== '}') c = c.nextSibling;
             const codomain = c ? c.nextSibling : null;
@@ -112,7 +69,7 @@ function checkLFAtomicTypes(tree, doc, defined, blockAt) {
             }
           }
         }
-        return; // keep descending
+        return;
       }
 
       if (name === 'LFAtomicType') {
@@ -121,7 +78,6 @@ function checkLFAtomicTypes(tree, doc, defined, blockAt) {
 
         if (first.name === 'LowerIdentifier') {
           const idName = doc.sliceString(first.from, first.to);
-          // Pop stale binders before checking.
           while (piStack.length && piStack[piStack.length - 1].scopeTo <= first.from) {
             piStack.pop();
           }
@@ -135,15 +91,9 @@ function checkLFAtomicTypes(tree, doc, defined, blockAt) {
             });
           }
         }
-        // UpperIdentifier = meta-variable, always OK. '(' LFType ')' = recurse.
-        // Don't skip children — parens case needs descent.
         return;
       }
 
-      // Skip computation-level bodies entirely — too many implicit binders.
-      // We still need to descend into LFType/LFKind nodes inside them (e.g.
-      // constructor kinds in LFDatatypeDeclaration), so we only skip the
-      // nodes that are purely at the computation level.
       if (
         name === 'CompType'      ||
         name === 'CompKind'      ||

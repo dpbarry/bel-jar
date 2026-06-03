@@ -1,7 +1,3 @@
-// Hover/query observability (Milestone 2). Enable with
-//   globalThis.BelJarSemanticTrace = true
-// or pass { trace: true } to hoverAt.
-
 export function createHoverTrace(enabled) {
   if (!enabled) return null;
   const events = [];

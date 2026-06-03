@@ -1,6 +1,3 @@
-// Top-level lint blocks — one clustered Declaration span per logical unit.
-// Drives: syntax lint scope, Beluga input masking, divide-and-conquer blanking.
-
 export const GAP_PRAGMA_LINE =
   /^\s*--(?:open|abbrev|name|infix|prefix|assoc|not|nostrengthen|opaque|coverage|warncoverage|query)\b/i;
 
@@ -32,11 +29,6 @@ function subtreeHasError(node) {
   const hi = node.to;
   let bad = false;
   node.cursor().iterate((n) => {
-    // Skip empty-range error nodes — Lezer inserts these as recovery
-    // markers (synthetic anchors after a successful parse continuation)
-    // and they don't represent actual syntax errors. Counting them here
-    // mis-flags clean blocks as syntaxFault and blanks them from the
-    // Beluga input → "schema ctx is unbound" style cascades.
     if (n.type.isError && n.from < n.to && n.from >= lo && n.to <= hi) bad = true;
   });
   return bad;
@@ -78,8 +70,6 @@ function moduleEnvelopeSyntaxFault(modDecl, doc, raw) {
 
 function unitSyntaxFault(inner, doc, raw) {
   if (!inner) return true;
-  // Real-error check: must have a non-empty range. Empty-range error
-  // nodes are Lezer recovery markers and don't indicate a syntax fault.
   const realError = inner.type.isError && inner.from < inner.to;
   if (TOP_LEVEL_PRAGMA_INNER.has(inner.name)) {
     return hasBadPragmaLineInRange(doc, raw.from, raw.to) || realError;
@@ -100,7 +90,6 @@ function rawFromDecl(decl) {
   };
 }
 
-/** Flatten Program declarations; expand module bodies into per-decl blocks. */
 function gatherRawDecls(program) {
   const raws = [];
   for (let cur = program.firstChild; cur; cur = cur.nextSibling) {
@@ -164,9 +153,6 @@ function clusterDeclarations(rawDecls) {
       blocks.push({ from: groupFrom, to: groupTo, inners });
       i = j;
     } else if (inner && inner.type.isError && inner.from < inner.to) {
-      // Real error inner (non-empty range) → cluster with following
-      // error/continuation decls. Empty-range error nodes are Lezer
-      // recovery markers; skip them here, just as subtreeHasError does.
       let groupFrom = cur.from;
       let groupTo = cur.to;
       const inners = [inner];
@@ -213,17 +199,12 @@ function finalizeBlock(raw, doc) {
     from: raw.from,
     to: raw.to,
     inner: inner ? inner.name : (raw.moduleHeader ? 'ModuleDeclaration' : null),
-    // Inner Lezer nodes (one per logical decl in the cluster). Held only
-    // for the lifetime of the parent tree — never persisted across edits.
-    // The Decl Graph (Phase B+) consumes these for AST fingerprinting
-    // and exported-signature extraction.
     innerNodes: raw.inners,
     syntaxFault,
     trustBeluga: !raw.moduleHeader && !syntaxFault,
   };
 }
 
-/** Merge fragmented Declaration wrappers on the same line (e.g. orphan `--` + recovery chunks). */
 function coalesceSameLineBlocks(blocks, doc) {
   if (blocks.length < 2) return blocks;
   const out = [{ ...blocks[0] }];
@@ -289,10 +270,6 @@ function blankBlockLines(masked, doc, b) {
   return masked;
 }
 
-/**
- * Beluga input for checking blocks[activeIndex]: prior trustBeluga blocks stay
- * (definitions like LF o), syntaxFault blocks blanked, later blocks blanked.
- */
 export function maskBelugaBlockContext(code, doc, blocks, activeIndex) {
   let masked = code;
   for (let j = blocks.length - 1; j >= 0; j--) {
@@ -316,10 +293,6 @@ export function countSyntaxFaultBlocks(blocks) {
   return n;
 }
 
-// Memoize per Lezer tree. CodeMirror produces a fresh Tree object on every
-// edit (subtree-reused where possible), so the WeakMap entry naturally
-// expires with the tree it's keyed on. Re-asking for the same tree returns
-// the same blocks array — zero re-walks per check cycle.
 const _blocksCache = new WeakMap();
 
 export function computeLintBlocks(tree, doc) {

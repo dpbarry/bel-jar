@@ -23,10 +23,6 @@ function edgeKindFor(ref, owner) {
   return ref.from <= signatureBoundary(owner) ? EDGE_KIND.SIGNATURE : EDGE_KIND.BODY;
 }
 
-// Interface edges are the ones a dependent actually observes: a change to a
-// declaration's signature (or notation) must re-check everyone who depends on
-// it, but a change to its private body must not. Reverse index: target -> set
-// of declarations that depend on it through an interface edge.
 function buildInterfaceReverseDeps(edgeMap) {
   const rev = new Map();
   for (const edge of edgeMap.values()) {
@@ -52,8 +48,6 @@ function cascade(seeds, reverseDeps, into) {
   }
 }
 
-// Classify each declaration against the previous snapshot by its stable
-// SymbolId (stable identity is what makes this diff trustworthy across edits).
 function classifyChanges(nodeMap, previous) {
   const changes = new Map();
   for (const [id, node] of nodeMap) {
@@ -66,10 +60,6 @@ function classifyChanges(nodeMap, previous) {
   return changes;
 }
 
-// The minimal set of declarations that must be re-derived after this edit:
-// changed declarations themselves, plus the transitive interface-dependents
-// of signature/notation changes and of removed declarations. Body-only edits
-// dirty just their own declaration. Everything else stays stale-known.
 function computeDirty(nodeMap, edgeMap, previous, changes) {
   const dirty = new Set();
   const cascadeSeeds = [];
@@ -84,7 +74,6 @@ function computeDirty(nodeMap, edgeMap, previous, changes) {
     ? [...previous.nodeMap.keys()].filter((id) => !nodeMap.has(id))
     : [];
   if (removed.length) {
-    // Dependents of a deleted declaration only existed in the old graph.
     cascade(removed, buildInterfaceReverseDeps(previous.edgeMap), dirty);
     for (const id of removed) dirty.delete(id);
   }
@@ -107,8 +96,6 @@ export function createSemanticGraph() {
       unresolvedByOwner.set(ref.enclosingDeclarationId, list);
     }
 
-    // Pass 1 — build nodes (signature/body hashes carried for diffing); the
-    // re-derivation status is assigned after the dirty frontier is known.
     const meta = new Map();
     for (const symbol of symbolSnapshot.globalSymbols) {
       const diags = syntaxDiagnostics.filter((diag) => rangesOverlap(symbol.range, diag));
@@ -135,7 +122,6 @@ export function createSemanticGraph() {
       });
     }
 
-    // Pass 2 — typed dependency edges.
     for (const ref of symbolSnapshot.references) {
       if (!ref.symbolId || ref.resolution !== 'global') continue;
       const ownerId = ref.enclosingDeclarationId;
@@ -158,9 +144,6 @@ export function createSemanticGraph() {
       }
     }
 
-    // Pass 3 — incremental invalidation: classify changes and the minimal
-    // dirty frontier, then assign status. Unchanged declarations stay
-    // stale-known (their prior insight survives) instead of going dark.
     const changes = classifyChanges(nodeMap, previous);
     const { dirty, removed } = computeDirty(nodeMap, edgeMap, previous, changes);
     for (const [id, node] of nodeMap) {
@@ -194,7 +177,6 @@ export function createSemanticGraph() {
 
   const named = (id) => ({ id, name: snapshot.nodeMap.get(id)?.name || null });
 
-  // What this declaration depends on (outgoing typed edges).
   function dependenciesOf(symbolId) {
     if (!snapshot) return [];
     return snapshot.edges
@@ -202,7 +184,6 @@ export function createSemanticGraph() {
       .map((edge) => ({ ...named(edge.to), kind: edge.kind }));
   }
 
-  // What depends on this declaration (incoming typed edges) — direct impact.
   function dependentsOf(symbolId) {
     if (!snapshot) return [];
     return snapshot.edges
@@ -210,9 +191,6 @@ export function createSemanticGraph() {
       .map((edge) => ({ ...named(edge.from), kind: edge.kind }));
   }
 
-  // Transitive blast radius: everything that must be re-checked if this
-  // declaration's signature/notation changes (the same interface cascade the
-  // dirty frontier uses). Excludes the declaration itself.
   function impactOf(symbolId) {
     if (!snapshot) return [];
     const into = new Set();

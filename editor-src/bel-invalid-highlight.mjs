@@ -7,6 +7,7 @@ import {
 import { Prec, RangeSetBuilder } from '@codemirror/state';
 import { Tag, tags as t } from '@lezer/highlight';
 import { Decoration, ViewPlugin } from '@codemirror/view';
+import { lfDeclarationHasColon } from './bel-units.mjs';
 
 const PARSE_ERROR = '\u26A0';
 
@@ -15,13 +16,6 @@ export const belParseErrorNeutral = Tag.define(t.name);
 const belParseErrorNeutralStyle = HighlightStyle.define([
   { tag: belParseErrorNeutral, color: 'var(--base-highest)', fontWeight: '400' },
 ]);
-
-function lfDeclarationHasColon(node) {
-  for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (c.name === ':') return true;
-  }
-  return false;
-}
 
 function neutralHighlightContext(node) {
   for (let p = node.parent; p; p = p.parent) {

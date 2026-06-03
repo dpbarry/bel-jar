@@ -37,11 +37,25 @@ self.reportBelugaProgress = function (payload) {
   }
 };
 
+function runBelugaJob(type, payload) {
+  if (type === 'check') return Beluga.checkFromString(payload);
+  if (type === 'load') return Beluga.loadFromString(payload);
+  if (type === 'run') return Beluga.runCommand(payload);
+  if (type === 'ide-type') return Beluga.ideTypeAtJson(payload.line, payload.col);
+  if (type === 'ide-elaborate') {
+    return Beluga.ideElaborateDecl(payload.start, payload.end, payload.positions || '');
+  }
+  if (type === 'ide-command') return Beluga.ideCommandJson(payload);
+  if (type === 'fingerprint') return Beluga.getCommittedFingerprint();
+  throw new Error('Unknown job type: ' + type);
+}
+
 function runNext() {
   if (currentJob || !jobQueue.length) return;
   currentJob = jobQueue.shift();
   progressPending = null;
   progressScheduled = false;
+
   try {
     if (currentJob.type === 'init') {
       if (typeof Beluga === 'undefined') throw new Error('Beluga failed to load in worker');
@@ -51,17 +65,13 @@ function runNext() {
       runNext();
       return;
     }
+
     if (!belugaReady) throw new Error('Beluga worker not initialized');
-    var result;
-    if (currentJob.type === 'load') {
-      result = Beluga.loadFromString(currentJob.payload);
-      self.postMessage({ id: currentJob.id, type: 'result', text: result });
-    } else if (currentJob.type === 'run') {
-      result = Beluga.runCommand(currentJob.payload);
-      self.postMessage({ id: currentJob.id, type: 'result', text: result });
-    } else {
-      throw new Error('Unknown job type: ' + currentJob.type);
-    }
+    self.postMessage({
+      id: currentJob.id,
+      type: 'result',
+      result: runBelugaJob(currentJob.type, currentJob.payload),
+    });
   } catch (e) {
     var msg = e && e.message ? e.message : String(e);
     if ((e instanceof RangeError) || /maximum call stack|too much recursion/i.test(msg)) {
@@ -70,15 +80,20 @@ function runNext() {
       self.postMessage({ id: currentJob.id, type: 'error', message: msg });
     }
   }
+
   currentJob = null;
+  runNext();
+}
+
+function enqueueJob(msg) {
+  jobQueue.push(msg);
   runNext();
 }
 
 self.onmessage = function (e) {
   var msg = e.data;
-  if (!msg || !msg.id || !msg.type) return;
-  jobQueue.push(msg);
-  runNext();
+  if (!msg || !msg.type || !msg.id) return;
+  enqueueJob(msg);
 };
 
 importScripts(BELUGA_JS);

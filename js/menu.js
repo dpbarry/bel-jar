@@ -99,8 +99,45 @@
       return FRP.normalizeAnchor(anchor);
     }
 
+    /** Row vertical span; parent panel horizontal span — gap clears menu padding. */
+    function submenuPlacementAnchor(anchorRowEl) {
+      const parentMenuEl = anchorRowEl.closest('.menu');
+      if (!parentMenuEl) {
+        return { anchorRef: anchorRect(anchorRowEl), align: 'start' };
+      }
+
+      const rowEls = Array.from(parentMenuEl.querySelectorAll('.menu-item'));
+      const rowIdx = rowEls.indexOf(anchorRowEl);
+      const rowRect = anchorRowEl.getBoundingClientRect();
+      const menuRect = parentMenuEl.getBoundingClientRect();
+
+      const anchorRef = {
+        left: menuRect.left,
+        right: menuRect.right,
+        top: rowRect.top,
+        bottom: rowRect.bottom,
+      };
+      let align = 'start';
+
+      if (rowIdx === 0) {
+        anchorRef.top = menuRect.top;
+      } else if (rowIdx === rowEls.length - 1) {
+        anchorRef.bottom = menuRect.bottom;
+        align = 'end';
+      }
+
+      return { anchorRef, align };
+    }
+
     function layoutMenuEl(menuEl, anchor, side, align, isSubmenu) {
-      const ar = anchorRect(anchor);
+      let ar;
+      if (isSubmenu && anchor instanceof Element) {
+        const placed = submenuPlacementAnchor(anchor);
+        ar = placed.anchorRef;
+        align = placed.align;
+      } else {
+        ar = anchorRect(anchor);
+      }
       menuEl.classList.add('is-measuring');
       menuEl.style.left = '-9999px';
       menuEl.style.top = '0';
@@ -427,46 +464,20 @@
       closeFromLevel(parentLevel + 1, () => {
         submenuSourceRow = anchorRowEl;
         const level = parentLevel + 1;
-        let anchorRef = anchorRowEl;
-        let align = 'start';
-
-        const parentMenuEl = anchorRowEl.closest('.menu');
-        if (parentMenuEl) {
-          const rowEls = Array.from(parentMenuEl.querySelectorAll('.menu-item'));
-          const rowIdx = rowEls.indexOf(anchorRowEl);
-          const rowRect = anchorRowEl.getBoundingClientRect();
-          const menuRect = parentMenuEl.getBoundingClientRect();
-
-          if (rowIdx === 0) {
-            anchorRef = {
-              left: rowRect.left,
-              right: rowRect.right,
-              top: menuRect.top,
-              bottom: rowRect.bottom,
-            };
-          } else if (rowIdx === rowEls.length - 1) {
-            anchorRef = {
-              left: rowRect.left,
-              right: rowRect.right,
-              top: rowRect.top,
-              bottom: menuRect.bottom,
-            };
-            align = 'end';
-          }
-        }
+        const placed = submenuPlacementAnchor(anchorRowEl);
 
         const menuEl = buildMenu(items, level);
         menuRoot.appendChild(menuEl);
         openMenus.push({
           el: menuEl,
           level,
-          anchorRef,
+          anchorRef: anchorRowEl,
           triggerEl: anchorRowEl,
           side: 'right',
-          align,
+          align: placed.align,
           isSubmenu: true,
         });
-        layoutMenuEl(menuEl, anchorRef, 'right', align, true);
+        layoutMenuEl(menuEl, anchorRowEl, 'right', placed.align, true);
         rovingTabIndexForPanel(menuEl);
         focusMenuItem(menuEl, 0);
       });

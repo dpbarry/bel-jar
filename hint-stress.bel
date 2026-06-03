@@ -1,0 +1,126 @@
+% hint-stress.bel — stress-test every type-hint path in bel-jar
+%
+% HOW TO USE
+%   Open in the IDE. Search for ★ and hover each marked identifier.
+%   The comment on the same / next line states the expected rule and type shape.
+%
+% RULE KEY
+%   [global]     declaration head (LF constant, schema, rec name)
+%   [local]      explicit binder (fn / mlam / pi / context / ascription site)
+%   [type-app]   uppercase meta in type application → domain of head
+%   [term-app]   implicit LF constructor arg (+ lambda peel when nested)
+%   [sig-prefix] (name : T) binder in rec/mlam signature, used in body
+%   [pat-ann]    case pattern with trailing `: Type`
+%   [quant]      {name:[Ψ |- T]} on case branch (contextual binder — not `{name : o}`)
+%   [beluga]     no structural rule — elaborates via warm Beluga session
+
+% ── Minimal shared signature (definitions before use — matches all.bel order) ──
+
+mode : type.  m/q : mode.  m/u : mode.
+≻ : mode → mode → type.
+≻/refl : ≻ K K.
+tp : mode → type.
+𝟙 : {K:mode} tp K.
+⊗ : tp K → tp K → tp K.
+tm : {K:mode} tp K → type.
+pat : {K:mode} tp K → {K':mode} tp K' → type.
+match : tm K A → pat K A K' B → tm K' B.
+pat/unit : tm K' A → pat K (𝟙 K) K' A.
+pat/pair : (tm K A → tm K B → tm K' C) → pat K (⊗ A B) K' C.
+neu : tm m/q A → type.
+o : type.
+nd : o → type.
+pf : o → type.
+schema ctx = some [K:mode, A:tp K] tm K A;
+schema nctx = some [A:tp m/q] block (x:tm m/q A, rx:neu x);
+↑ok : ≻ K K' → type.              % ★K ★K' → mode [type-app]
+↦ : tm K A → tm K A → type.
+↦* : tm K A → tm K A → type.
+↦*/refl : ↦* M M.
+↦*/step : ↦ (M : tm K A) (M' : tm K A) → ↦* M' N → ↦* M N.
+↦/match/u : neu R → ↦ P P' → ↦ (match R (pat/unit P)) (match R (pat/unit Q)).
+↦/match/p : neu R
+  → ({x:tm m/q A} neu x → {y:tm m/q B} neu y → ↦ (P x y) (P' x y))
+  → ↦ (match R (pat/pair (\x.\y. P x y))) (match R (pat/pair (\x.\y. Q x y))).
+
+% ── 1. Declaration heads [global] ─────────────────────────────────────────
+
+% ★nd   [global]  nd above
+% ★ctx  [global]  schema ctx above
+% ★pf   [global]  pf above
+
+% ── 2. Type / kind application implicits [type-app] ───────────────────────
+
+rec sec2 : [⊢ pf A] → [⊢ pf B] → [⊢ pf A] =   % ★A ★B → o  [type-app]
+  fn d => fn _ => d
+;
+
+% ── 3. Signature-prefix implicits [sig-prefix] ────────────────────────────
+
+rec sec3 : (stepBind:[⊢ pf A]) [⊢ pf A] → [⊢ pf A] =
+  fn d => d                        % ★stepBind in sig above → [⊢ pf A]  [sig-prefix]
+;
+
+rec sec3b : (g:ctx) [g ⊢ nd MetaN] → [g ⊢ nd MetaN] =
+  fn d => d                        % ★g→ctx; ★MetaN→o [type-app]
+;
+
+% ── 4. Term ascriptions [local] ───────────────────────────────────────────
+
+rec sec4 : (Ψ:nctx) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]]) [Ψ ⊢ ↦* P Q] → [Ψ ⊢ ↦* P Q] =
+fn StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ ↦*/refl] ⇒ StepsPQ
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (PatW: tm K[] A[]) (W: tm K[] A[])) tail] ⇒
+    [Ψ ⊢ ↦*/step stepPW tail]
+  % ★stepPW → ↦ (PatW : tm K[] A[]) W
+  % ★PatW   → tm K[] A[]
+;
+
+% ── 5. Constructor implicits [term-app] + pattern annotation [pat-ann] ───
+
+rec sec5a : (Ψ:nctx) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]]) [Ψ ⊢ ↦* P Q] → [Ψ ⊢ ↦* P Q] =
+fn StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ ↦*/refl] ⇒ StepsPQ
+  | [Ψ ⊢ ↦*/step stepS rest] ⇒ [Ψ ⊢ ↦*/step stepS rest]
+  % ★stepS → ↦ (M : tm K A) (M' : tm K A)  [term-app, from ↦*/step head]
+;
+
+rec sec5 : (Ψ:nctx) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]]) [Ψ ⊢ ↦ P Q] → [Ψ ⊢ ↦ P Q] =
+fn StepPQ ⇒ case StepPQ of
+  | [Ψ ⊢ ↦/match/u neuR stepU] ⇒ StepPQ
+  % ★stepU → ↦ (match R (pat/unit P')) (match R (pat/unit Q'))  [term-app]
+  | [Ψ ⊢ ↦/match/p X (\x. \nx. \y. \ny. stepP)] ⇒ StepPQ
+  % ★stepP → ↦ (P x y) (P' x y)  [term-app + lambda peel, ↦/match/p]
+;
+
+% ── 6. Branch quantifier [quant] + context binders [local] ───────────────
+
+rec sec6 : [⊢ pf A] → [⊢ pf A] =
+fn d => d
+% ★BranchB [quant] — see all.bel `{A:[⊢ tp K]}` on inductive heads; case `{BranchB:[Ψ ⊢ o]}` needs matching nctx
+;
+
+rec sec6b : (Ψ:nctx) [Ψ, xv : tm m/q A[], xnv : neu xv ⊢ tm m/q A[]]
+  → [Ψ, xv : tm m/q A[], xnv : neu xv ⊢ tm m/q A[]] =
+fn t ⇒ t
+% ★xv → tm m/q A[]; ★xnv → neu xv  [local context entries]
+;
+
+% ── 7. Explicit fn / mlam parameters [local] ──────────────────────────────
+
+rec sec7 : (Ψ:nctx) {MetaQ:[⊢ o]} [Ψ ⊢ tm m/q A[]] → [Ψ ⊢ tm m/q A[]] =
+mlam MetaQ => fn ParamP => ParamP
+% ★ParamP [local]; ★MetaQ [local meta param — mlam binder in sig]
+;
+
+% ── 8. Global reference in term position [global] ─────────────────────────
+
+rec sec8 : (Ψ:nctx) [Ψ ⊢ tm m/q A[]] → [Ψ ⊢ tm m/q A[]] =
+  fn t => t                        % ★pf global hover: line 33 (LF decl head)
+;
+
+% ── 9. Beluga fallback [beluga] ───────────────────────────────────────────
+
+rec sec9 : [⊢ pf A] → [⊢ pf OrphanM] → [⊢ pf A] =
+  fn x => fn _ => x                % ★OrphanM — [beluga] if structural miss
+;

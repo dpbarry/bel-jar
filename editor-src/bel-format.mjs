@@ -5,6 +5,7 @@ import { EditorSelection } from '@codemirror/state';
 import { render } from './format/doc.mjs';
 import { makePrinter } from './format/printer.mjs';
 import { childrenArr } from './format/tree.mjs';
+import { GAP_PRAGMA_LINE, TOP_LEVEL_PRAGMA_INNER } from './bel-units.mjs';
 
 function normalizeNewlines(s) {
   return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -58,23 +59,6 @@ function declarationUsesPercentBlockMacro(src, node) {
   return slice.includes('%{{') || slice.includes('}}%');
 }
 
-const TOP_LEVEL_PRAGMA_INNER = new Set([
-  'OpenPragma',
-  'AbbrevPragma',
-  'NamePragma',
-  'InfixPragma',
-  'PrefixPragma',
-  'AssocPragma',
-  'NotPragma',
-  'NoStrengthenPragma',
-  'OpaquePragma',
-  'CoveragePragma',
-  'WarnCoveragePragma',
-  'QueryPragma',
-]);
-
-const GAP_PRAGMA_LINE =
-  /^\s*--(?:open|abbrev|name|infix|prefix|assoc|not|nostrengthen|opaque|coverage|warncoverage|query)\b/i;
 
 function proseBlockGap(gap) {
   return gap.includes('%{{') || gap.includes('}}%');

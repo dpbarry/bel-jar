@@ -14,7 +14,7 @@ import {
 } from './doc.mjs';
 import { splitCompRecPrefix } from './comp-prefix.mjs';
 import { layoutArrowChain, layoutPrefixChain, layoutStack, measureDoc } from './layout.mjs';
-import { defaultStyle, mergeStyle } from './style.mjs';
+import { mergeStyle } from './style.mjs';
 import { children, childrenArr, firstOfType, txt } from './tree.mjs';
 
 export function makePrinter(src, opts = {}) {
@@ -933,19 +933,6 @@ export function makePrinter(src, opts = {}) {
       ppFatArrow(node),
       text(' '),
       body ? ppExpr(body) : empty,
-    );
-  }
-
-  function ppLet(node) {
-    const pat = firstOfType(node, 'Pattern');
-    const exprs = childrenArr(node).filter((c) => c.name === 'Expression');
-    return concat(
-      text('let '),
-      pat ? ppPattern(pat) : empty,
-      text(' = '),
-      exprs[0] ? ppExpr(exprs[0]) : empty,
-      text(' in '),
-      exprs[1] ? ppExpr(exprs[1]) : empty,
     );
   }
 

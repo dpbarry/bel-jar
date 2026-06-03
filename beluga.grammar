@@ -111,6 +111,10 @@ LFAtomicType {
     LowerIdentifier                            // type-family name
   | UpperIdentifier Substitution?              // meta-variable standing for a type
   | "(" LFType ")"
+  | "(" LFType !ann ":" LFType ")"             // type ascription form: `(P : tp)`
+                                                // (Beluga allows this where a
+                                                // type is expected, treating P
+                                                // as elaborated to its type)
 }
 
 ArrowOp { "->" | "<-" | "→" }
@@ -184,8 +188,39 @@ ParameterVariable {
     "#" LowerIdentifier ProjectionTail? Substitution?
 }
 
+// Substitution variables: the modern syntax uses `$ID` (or `$id` for
+// Greek-lowercase like `$ρ`); the legacy syntax used `#ID`.  Accept all
+// three so existing corpora and current Beluga code both highlight.
 SubstitutionVariable {
     "#" UpperIdentifier Substitution?
+  | "$" UpperIdentifier Substitution?
+  | "$" LowerIdentifier Substitution?
+}
+
+// Substitution TYPE / VALUE: `$[g |- h]`.  Distinguished from a regular
+// ContextualType by the leading `$`.  Used in binders like
+// `{$S : $[g |- h]}` and as substitution values `$[Φ ⊢ $S]`, `$[Φ ⊢ ^]`,
+// `$[Φ ⊢ $S[$S']]`, `$[Φ ⊢ $S, P]`.  Beluga's substitution syntax (per
+// the reference: `^`, `..`, `sigma, term`, `$S`, `$S[closure]`) is more
+// permissive than just `LFType`, so the body accepts both shapes.
+SubstitutionType {
+    "$" "[" ContextPart? Turnstile SubstBracketBody "]"
+  | "$" "[" Turnstile SubstBracketBody "]"
+}
+
+// Body of `$[…]`.  SubstBody covers the substitution syntax (^, .., $S,
+// $S[…], elements separated by commas).  A bare LFTerm (e.g. `Δ`, a
+// context variable used as the range of a substitution type) goes
+// through SubstBody → SubstElem → LFTerm.
+SubstBracketBody {
+    SubstBody
+}
+
+// Parameter TYPE: `#[g |- A]`.  Symmetric to SubstitutionType but for
+// parameter variables.  Used in binders like `{#p : #[g |- A]}`.
+ParameterType {
+    "#" "[" ContextPart? Turnstile LFType "]"
+  | "#" "[" Turnstile LFType "]"
 }
 
 //  Schemas
@@ -209,17 +244,28 @@ SchemaSomeBlock {
 }
 
 SchemaSomeBindings {
-    LowerIdentifier ":" LFType ("," LowerIdentifier ":" LFType)*
+    (LowerIdentifier | UpperIdentifier) ":" LFType
+    ("," (LowerIdentifier | UpperIdentifier) ":" LFType)*
 }
 
 //  Inductive and stratified datatypes
 
+// Inductive and stratified declarations can be mutually recursive (and
+// can even mix kinds within one chain — `stratified X = ... and
+// inductive Y = ...`).  The continuation accepts an optional repeated
+// keyword (`and`, `and inductive`, `and stratified`).
 InductiveDeclaration {
-    InductiveKeyword InductiveBody (AndKeyword InductiveBody)* ";"
+    InductiveKeyword InductiveBody DatatypeContinuation* ";"
+}
+
+DatatypeContinuation {
+    AndKeyword InductiveBody
+  | AndKeyword InductiveKeyword InductiveBody
+  | AndKeyword StratifiedKeyword InductiveBody
 }
 
 StratifiedDeclaration {
-    StratifiedKeyword InductiveBody ";"
+    StratifiedKeyword InductiveBody DatatypeContinuation* ";"
 }
 
 // Note: InductiveBody is shared between inductive and stratified
@@ -235,6 +281,8 @@ CompKind {
     CTypeKeyword
   | CompType !arrow ArrowOp CompKind
   | "{" CompTypeBinder "}" CompKind
+  | "(" CompTypeBinder ")" CompKind   // parenthesised binders too:
+                                       //  `inductive F : (Δ:mctx) {P:...} ctype = ...`
 }
 
 //  Type abbreviations and modules
@@ -272,12 +320,19 @@ CompAppType {
   | CompAppType !app CompTypeArg
 }
 
+// Type-family arguments accept any atomic type, contextual objects (the
+// type-annotated bracket form), AND bare context applications like `[]`
+// or `[Φ]` — type families like `LogSub` are indexed by contexts as well
+// as contextual objects.
 CompTypeArg {
     CompAtomicType
+  | ContextApplication
 }
 
 CompAtomicType {
     ContextualType
+  | SubstitutionType
+  | ParameterType
   | UpperIdentifier
   | LowerIdentifier
   | TypeKeyword
@@ -298,6 +353,11 @@ CompTypeBinder {
   | UpperIdentifier "::" ContextualType
   | UpperIdentifier ":" CompType
   | "#" UpperIdentifier ":" ContextualType
+  | "#" LowerIdentifier ":" ContextualType     // parameter binder `#p:[...]`
+  | "#" LowerIdentifier ":" ParameterType      // typed parameter `#p:#[...]`
+  | "#" UpperIdentifier ":" ParameterType
+  | "$" UpperIdentifier ":" SubstitutionType   // substitution binder `$S:$[...]`
+  | "$" LowerIdentifier ":" SubstitutionType   // Greek-lowercase `$ρ:$[...]`
 }
 
 //  Contextual types and contextual objects
@@ -355,8 +415,19 @@ ContextTailEntry {
 
 //  Recursive and non-recursive function declarations
 
+// Mutually recursive blocks: Beluga lets users repeat the `rec` keyword
+// after `and` for readability — `rec f = ... and rec g = ...`.  Both
+// forms (with and without the second `rec`) are accepted.  Two-form
+// alternation (rather than an optional `RecKeyword?`) keeps the LR(1)
+// parser deterministic — `?` would force a lookahead decision Lezer
+// can't always commit to in time.
 RecDeclaration {
-    RecKeyword RecBody (AndKeyword RecBody)* ";"
+    RecKeyword RecBody RecContinuation* ";"
+}
+
+RecContinuation {
+    AndKeyword RecBody
+  | AndKeyword RecKeyword RecBody
 }
 
 RecBody {
@@ -373,6 +444,7 @@ TotalityAnnotation {
 TotalityMeasure {
     Number
   | LowerIdentifier TotalityCall?
+  | UpperIdentifier TotalityCall?       // measures can be uppercase (e.g. LRQ)
 }
 
 TotalityCall {
@@ -412,6 +484,8 @@ AtomicExpression {
     LowerIdentifier
   | UpperIdentifier
   | ContextualObject
+  | SubstitutionType         // `$[Φ ⊢ $S]` passed as a meta-object argument
+  | ParameterType            // `#[Φ ⊢ A]`  same idea
   | TupleOrParenExpression
   | ContextApplication
   | AngleHatTerm
@@ -422,8 +496,11 @@ TupleOrParenExpression {
     "(" Expression ("," Expression)* ")"
 }
 
+// Context application: passes a context as an argument or matches one
+// in a pattern.  The ContextPart is optional so the empty context `[]`
+// parses (e.g. `case [Δ] of | [] ⇒ ... | [Δ', x:tm K[] A[]] ⇒ ...`).
 ContextApplication {
-    "[" ContextPart "]"
+    "[" ContextPart? "]"
 }
 
 AngleHatTerm {
@@ -447,7 +524,18 @@ MLamExpression {
   | (MLamKeyword | FNKeyword) MLamParam+ FatArrow Expression
 }
 
-MLamParam { UpperIdentifier | LowerIdentifier }
+// mlam binders introduce meta-, parameter-, substitution-, and context
+// variables.  All four meta-syntax flavours are accepted: plain `M`/`g`,
+// `#p` (parameter), `$S` (substitution), with both case variants for the
+// tagged forms.
+MLamParam {
+    UpperIdentifier
+  | LowerIdentifier
+  | "#" LowerIdentifier
+  | "#" UpperIdentifier
+  | "$" LowerIdentifier
+  | "$" UpperIdentifier
+}
 
 CaseExpression {
     CaseKeyword Expression OfKeyword CaseBody
@@ -500,6 +588,7 @@ AtomicPattern {
     LowerIdentifier
   | UpperIdentifier
   | ContextualObject
+  | ContextApplication       // context patterns: `[]`, `[Δ', x:tm K[] A[]]`
   | TupleOrParenPattern
   | UnderscoreHole
 }
@@ -570,7 +659,7 @@ TupleOrParenPattern {
   // same parser symbol, so the grammar above doesn't need to know.
   "->" "<-" "=>" "⇒" "::" ".."
   "(" ")" "[" "]" "{" "}" "<" ">"
-  "." "," ":" ";" "|" "*" "+" "=" "?" "_" "^" "#"
+  "." "," ":" ";" "|" "*" "+" "=" "?" "_" "^" "#" "$"
   "|-"
   "\\"
   "→"
@@ -637,5 +726,17 @@ EndKeyword { @specialize<LowerIdentifier, "end"> }
 NoneKeyword { @specialize<LowerIdentifier, "none"> }
 LeftKeyword { @specialize<LowerIdentifier, "left"> }
 RightKeyword { @specialize<LowerIdentifier, "right"> }
+
+// Harpoon-style proof-script keywords. Reserved per the reference manual
+// (userguide.tex §Keywords) but not yet referenced by any production —
+// having them as named tokens prevents accidental shadowing as ordinary
+// identifiers and lets a syntax highlighter style them distinctly.
+TrustKeyword { @specialize<LowerIdentifier, "trust"> }
+CoinductiveKeyword { @specialize<LowerIdentifier, "coinductive"> }
+ProofKeyword { @specialize<LowerIdentifier, "proof"> }
+ByKeyword { @specialize<LowerIdentifier, "by"> }
+AsKeyword { @specialize<LowerIdentifier, "as"> }
+SufficesKeyword { @specialize<LowerIdentifier, "suffices"> }
+ToshowKeyword { @specialize<LowerIdentifier, "toshow"> }
 
 @detectDelim

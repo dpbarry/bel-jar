@@ -5,7 +5,7 @@
   /** @typedef {'right'|'left'|'bottom'|'top'} PlacementSide */
 
   const DEFAULT_MARGIN = 8;
-  const DEFAULT_GAP = 8;
+  const DEFAULT_GAP = 4;
   const OVERLAY_TRANSITION_FALLBACK_MS = 170;
   const PREFERENCE_TOOLTIP = Object.freeze(['right', 'left', 'bottom', 'top']);
 

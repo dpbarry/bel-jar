@@ -229,9 +229,8 @@ module Options : sig
 end
 ```
 
-Web sets both refs at session creation:
+Web sets the prompt ref at session creation:
 ```ocaml
-Logic.Options.output_formatter := ppf;
 Logic.Options.more_solutions_prompt := (fun () -> false);
 ```
 
@@ -272,6 +271,7 @@ Without specifying the package, `dune build` may fail depending on the version.
 ```dune
 (executable
  (name beluga_web)
+ (modules beluga_web)
  (modes js)
  (libraries
   js_of_ocaml
@@ -280,7 +280,28 @@ Without specifying the package, `dune build` may fail depending on the version.
   beluga_syntax
   beluga_parser)
  (js_of_ocaml
-  (flags (:standard --disable use-js-string)))
+  (flags (:standard --disable use-js-string --effects=cps)))
+ (flags (:standard -w -53))
+ (preprocess
+  (pps js_of_ocaml-ppx)))
+
+(rule
+ (target beluga_web_dt.ml)
+ (deps beluga_web.ml)
+ (action (copy %{deps} %{target})))
+
+(executable
+ (name beluga_web_dt)
+ (modules beluga_web_dt)
+ (modes js)
+ (libraries
+  js_of_ocaml
+  support
+  beluga
+  beluga_syntax
+  beluga_parser)
+ (js_of_ocaml
+  (flags (:standard --disable use-js-string --effects=double-translation)))
  (flags (:standard -w -53))
  (preprocess
   (pps js_of_ocaml-ppx)))
@@ -296,7 +317,7 @@ Without specifying the package, `dune build` may fail depending on the version.
 
 ### 11. Web entry point — `src/web/beluga_web.ml` (NEW)
 
-**Full file:**
+**Current shape (abridged):**
 ```ocaml
 open Js_of_ocaml
 open Beluga
@@ -306,89 +327,53 @@ type session =
   { state : Command.state
   ; buf : Buffer.t
   ; ppf : Format.formatter
+  ; scan_pos : int ref
   }
 
-let drain session =
-  Format.pp_print_flush session.ppf ();
-  let s = Buffer.contents session.buf in
-  Buffer.clear session.buf;
-  s
-
-let create () =
-  let buf = Buffer.create 4096 in
-  let ppf = Format.formatter_of_buffer buf in
-  Error.disable_colored_output ();
-  Logic.Options.output_formatter := ppf;
-  Logic.Options.more_solutions_prompt := (fun () -> false);
-  Chatter.level := 1;
-  let state = Command.create_initial_state ~ppf () in
-  { state; buf; ppf }
-
-let load_from_string session content =
-  try
-    ignore
-      (Command.load_from_string session.state ~virtual_filename:"input.bel"
-         ~content : Synint.Sgn.sgn);
-    (drain session, true)
-  with e ->
-    let bt = Printexc.get_backtrace () in
-    let msg =
-      try Format.asprintf "%t" (Error.find_printer e)
-      with _ -> Printexc.to_string e
-    in
-    Buffer.clear session.buf;
-    (msg ^ "\n" ^ bt, false)
-
-let run_command session input =
-  try
-    Command.interpret_command session.state ~input;
-    drain session
-  with e ->
-    let msg =
-      try Format.asprintf "%t" (Error.find_printer e)
-      with _ -> Printexc.to_string e
-    in
-    Buffer.clear session.buf;
-    msg
+let fingerprint_content s = ...
+let parse_meta_line line = ...
+let report_progress phase state = ...
+let scan_buffer_for_progress buf scan_pos = ...
+let make_progress_formatter buf scan_pos = ...
+let drain session = ...
+let create () = ...
+let normalize_exn e = ...
+let load_from_string session content = ...
+let run_command session input = ...
+let make_check_result ~output ~ok = ...
+let make_load_result ~output ~ok ~fingerprint = ...
 
 let () =
   Printexc.record_backtrace true;
   let session = ref (create ()) in
+  let committed_fingerprint = ref "" in
   Js.export "Beluga"
     (object%js
-       method create =
-         session := create ();
-         Js.string "Beluga session created."
-
-       method loadFromString content =
-         let s = Js.to_string content in
-         let trial = create () in
-         let (out, ok) = load_from_string trial s in
-         if ok then session := trial;
-         Js.string out
-
-       method runCommand input =
-         let s = Js.to_string input in
-         Js.string (run_command !session s)
-
-       method reset =
-         session := create ();
-         Js.string "Session reset."
+       method checkFromString content = ...
+       method loadFromString content = ...
+       method runCommand input = ...
+       method getCommittedFingerprint = ...
+       method reset = ...
     end)
 ```
 
 This file ties everything together:
-1. Creates a `Buffer.t` + `Format.formatter` pair (captures all output)
+1. Creates a `Buffer.t` + custom progress-scanning `Format.formatter` (`make_progress_formatter`) that scans each flush for `## Phase begin/done:` markers and fires them to JS via `reportBelugaProgress`
 2. Disables ANSI color codes in error output (`Error.disable_colored_output ()`) — otherwise Beluga's pretty-printer emits escape sequences that render as garbage in HTML
 3. Disables the blocking prompt (`more_solutions_prompt := fun () -> false`)
 4. Creates state with `~ppf` (patches 1–3)
-5. Exports `Beluga.loadFromString`, `Beluga.runCommand`, `Beluga.reset` to JS
-6. Exception handling: uses Beluga's registered printer for human-readable errors, falls back to `Printexc.to_string`
+5. Exports a split web API:
+   - `Beluga.checkFromString(code)` returns `{ output, ok }` and never commits to the live REPL session
+   - `Beluga.loadFromString(code)` returns `{ output, ok, fingerprint }` and commits only on success
+   - `Beluga.runCommand(cmd)` runs against the committed session
+   - `Beluga.getCommittedFingerprint()` reports what Beluga itself believes is currently loaded
+   - `Beluga.reset()` resets both the session and the committed fingerprint
+6. Exception handling: `normalize_exn` converts JS `RangeError` → OCaml `Stack_overflow` before printing, so stack overflows produce a clean message rather than a raw JS exception string; falls back to `Printexc.to_string` for anything else
 
 > [!IMPORTANT]
-> **Trial-session pattern in `loadFromString`.** A failed load leaves Beluga's globally mutable state (`Store`, `Typeinfo`, `Holes`, reconstruction state) half-corrupted. Reusing that session for the next load would silently poison subsequent successes. So every `loadFromString` call builds a *fresh* session via `create ()`, attempts the load on it, and only commits the trial to the live `session` ref if it succeeded. Failures discard the trial wholesale — guaranteed clean rollback. This is what makes editor features that re-load on every keystroke (auto-format, live error highlighting) safe to use.
+> **Trial-session pattern in both `checkFromString` and `loadFromString`.** A failed load leaves Beluga's globally mutable state (`Store`, `Typeinfo`, `Holes`, reconstruction state) half-corrupted. Reusing that session for the next load would silently poison subsequent successes. So every web load/check call builds a *fresh* session via `create ()`, attempts the load on it, and only `loadFromString` commits the trial to the live `session` ref if it succeeded. `checkFromString` always discards the trial. This is the key split that keeps lint from poisoning REPL state.
 >
-> `load_from_string` therefore returns `(string * bool)` rather than just `string`: the buffer contents plus a success flag the caller uses to decide whether to commit.
+> `load_from_string` therefore returns `(string * bool)` rather than just `string`: the buffer contents plus a success flag the caller uses to decide whether to commit. `loadFromString` also updates a Beluga-owned content fingerprint so JS can ask Beluga what is truly committed before running commands.
 
 ---
 
@@ -416,9 +401,11 @@ The build scripts (`rebuild.ps1` / `rebuild.sh`) just run `dune build` in `Belug
 ### JS API
 
 ```javascript
-Beluga.loadFromString(code)   // → string (compiler output)
-Beluga.runCommand(cmd)        // → string (command result)
-Beluga.reset()                // → string ("Session reset.")
+Beluga.checkFromString(code)        // -> { output, ok }
+Beluga.loadFromString(code)         // -> { output, ok, fingerprint }
+Beluga.runCommand(cmd)              // -> string
+Beluga.getCommittedFingerprint()    // -> string
+Beluga.reset()                      // -> string ("Session reset.")
 ```
 
 ### Data Flow
@@ -427,16 +414,23 @@ Beluga.reset()                // → string ("Session reset.")
 sequenceDiagram
     participant User
     participant Editor as textarea#editor
-    participant JS as app.js
+    participant JS as app.js / beluga-client.js
     participant Bel as Beluga (compiled OCaml)
 
     User->>Editor: Types Beluga code
+    JS->>JS: fingerprint current editor text
+    JS->>Bel: Beluga.checkFromString(editor.value)
+    Bel-->>JS: { output, ok }
+    JS->>User: Updates lint / diagnostics only
+
     User->>JS: Clicks "Load"
     JS->>Bel: Beluga.loadFromString(editor.value)
-    Bel-->>JS: "## Type Reconstruction begin... done ##"
+    Bel-->>JS: { output, ok, fingerprint }
     JS->>User: Appends to output div
 
     User->>JS: Types "help" in command input
+    JS->>Bel: Beluga.getCommittedFingerprint()
+    Bel-->>JS: fingerprint of committed session
     JS->>Bel: Beluga.runCommand("%:help")
     Bel-->>JS: List of available commands
     JS->>User: Appends to output div
@@ -463,8 +457,8 @@ When Beluga updates upstream, re-apply these 13 patches in order:
 | 9 | `src/core/prettyint.ml` | **Modify** | Replace `Str` regex with char check |
 | 10 | `src/core/dune` | **Modify** | Remove `str` from libraries |
 | 11 | `src/html/dune` | **Modify** | Add `(package beluga)` to install stanza |
-| 12 | `src/web/dune` | **Create** | js_of_ocaml executable config (includes scoped `-w -53`) |
-| 13 | `src/web/beluga_web.ml` | **Create** | JS entry point — includes `Error.disable_colored_output ()` and the trial-session rollback pattern |
+| 12 | `src/web/dune` | **Create** | Two js_of_ocaml executables: `beluga_web` (`--effects=cps`, stable) and `beluga_web_dt` (`--effects=double-translation`, fast) — the DT source is generated by a `(rule ...)` that copies `beluga_web.ml`; scoped `-w -53` on both |
+| 13 | `src/web/beluga_web.ml` | **Create** | JS entry point — progress scanning via `make_progress_formatter`; `normalize_exn` converts JS `RangeError` → `Stack_overflow`; trial-session rollback pattern; `Error.disable_colored_output ()` |
 
 > [!TIP]
 > Quickest diff: `diff -rq Beluga/src Beluga-W/src` shows exactly which files diverge.

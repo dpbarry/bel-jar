@@ -1,4 +1,4 @@
-import { EditorState, Transaction } from '@codemirror/state';
+import { Compartment, EditorState, Transaction } from '@codemirror/state';
 import {
   EditorView,
   ViewPlugin,
@@ -13,10 +13,17 @@ import {
   rectangularSelection,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { bracketMatching, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
+import { bracketMatching, ensureSyntaxTree, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
+import { lintGutter, linter } from '@codemirror/lint';
 import { beluga } from './bel-language.mjs';
 import { formatCommand } from './bel-format.mjs';
 import { belAliases } from './bel-aliases.mjs';
+import { syntaxLint } from './bel-lint.mjs';
+import { createBelugaLinter } from './bel-beluga-lint.mjs';
+import { updateIdeStatusDot } from './bel-ide-status.mjs';
+import { applySyntaxFaultMask, computeLintBlocks } from './bel-units.mjs';
+import { belHoverTooltip } from './bel-hover.mjs';
+import { createSemanticEngine } from './semantic/semantic-engine.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
@@ -213,9 +220,19 @@ function belEditorChrome() {
   });
 }
 
+// --- CM light/dark (pairs with html.light + EditorView tooltip/lint themes) ---
+
+function isDocumentDarkTheme() {
+  return typeof document !== 'undefined' && !document.documentElement.classList.contains('light');
+}
+
+function cmThemeExtensions(dark) {
+  return dark ? [EditorView.darkTheme.of(true)] : [];
+}
+
 // --- Extension bundle ---
 
-function baseExtensions(placeholderText, onDocChange) {
+function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLinterExt) {
   return [
     indentUnit.of(INDENT),
     EditorState.tabSize.of(TAB_SIZE),
@@ -250,10 +267,29 @@ function baseExtensions(placeholderText, onDocChange) {
     ]),
     placeholder(placeholderText),
     belEditorChrome(),
+    belSyntaxLinter(),
+    belugaLinterExt,
+    lintGutter(),
+    belHoverTooltip(semanticEngine),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
     }),
   ];
+}
+
+function belSyntaxLinter() {
+  return linter((view) => syntaxLint(view), { delay: 80 });
+}
+
+function mergeLintDiagnostics(syntaxDiags, belugaDiags) {
+  const merged = syntaxDiags.slice();
+  for (const d of belugaDiags) {
+    if (!merged.some((e) => e.from === d.from && e.to === d.to && e.message === d.message)) {
+      merged.push(d);
+    }
+  }
+  merged.sort((a, b) => a.from - b.from);
+  return merged;
 }
 
 export function mount(parentEl, options = {}) {
@@ -262,8 +298,180 @@ export function mount(parentEl, options = {}) {
     throw new TypeError('BelJarEditor.mount requires options.onDocChange (function)');
   }
   const ph = options.placeholder ?? 'Write Beluga code here...';
+  const themeCompartment = new Compartment();
+  const ideCompartment = new Compartment();
+  const initialDark = options.dark ?? isDocumentDarkTheme();
   parentEl.replaceChildren();
-  const extensions = baseExtensions(ph, options.onDocChange);
+
+  // Legacy declGraph and belugaPool removed — semantic engine now handles
+  // all type derivation and persistence through its unified stores.
+  const g = typeof window !== 'undefined' ? window : self;
+  let semanticView = null;
+
+  // Full file with syntax-fault blocks blanked, line numbers preserved — the
+  // code the semantic engine's session loads for its Beluga queries.
+  function healthySnapshotForView() {
+    if (!semanticView) return '';
+    const doc = semanticView.state.doc;
+    const code = doc.toString();
+    const { blocks } = computeLintBlocks(syntaxTree(semanticView.state), doc);
+    return applySyntaxFaultMask(code, doc, blocks);
+  }
+
+  const semanticEngine = createSemanticEngine({
+    documentId: options.documentId || 'workspace://main.bel',
+    belugaClient: g.BelugaClient,
+    onTypeObserved: scheduleSemanticTypesSave,
+  });
+
+  // V2 cross-session type memory: persist the engine's identity-keyed type
+  // cache to localStorage (debounced) so a reopened file shows last-known
+  // types instantly. Per-decl fingerprint-gating (in the engine) keeps a
+  // changed declaration from showing a stale type. Single key — BelJar is
+  // single-document. Best-effort: storage failures are non-fatal.
+  const SEMANTIC_TYPES_KEY = 'beljar:semantic-types';
+  let semanticTypesSaveTimer = null;
+  function saveSemanticTypes() {
+    semanticTypesSaveTimer = null;
+    try {
+      const blob = semanticEngine.exportTypes();
+      const hasDecls = blob && blob.decls && blob.decls.length;
+      const hasMetavars = blob && blob.metavars && blob.metavars.length;
+      if (hasDecls || hasMetavars) {
+        g.localStorage && g.localStorage.setItem(SEMANTIC_TYPES_KEY, JSON.stringify(blob));
+      }
+    } catch (_) { /* storage unavailable / quota — non-fatal */ }
+  }
+  function scheduleSemanticTypesSave() {
+    if (semanticTypesSaveTimer) clearTimeout(semanticTypesSaveTimer);
+    semanticTypesSaveTimer = setTimeout(saveSemanticTypes, 400);
+  }
+  function hydrateSemanticTypes() {
+    try {
+      const raw = g.localStorage && g.localStorage.getItem(SEMANTIC_TYPES_KEY);
+      if (raw) semanticEngine.importTypes(JSON.parse(raw));
+    } catch (_) { /* corrupt / unavailable — ignore, recompute from scratch */ }
+  }
+
+  const ideStatusDot = typeof document !== 'undefined'
+    ? document.getElementById('ide-status-dot')
+    : null;
+
+  let lastBelugaLintDiags = [];
+  let belugaCheckPending = false;
+
+  function belugaCheckEnabled(view) {
+    return !!(g.BelugaClient && typeof g.BelugaClient.check === 'function'
+      && view.state.doc.toString().trim());
+  }
+
+  function markBelugaCheckPending(view) {
+    belugaCheckPending = belugaCheckEnabled(view);
+  }
+
+  function refreshIdeStatus(view) {
+    updateIdeStatusDot(
+      ideStatusDot,
+      mergeLintDiagnostics(syntaxLint(view), lastBelugaLintDiags),
+      { belugaPending: belugaCheckPending },
+    );
+  }
+
+  const belugaLinter = createBelugaLinter({
+    delay: options.belugaLintDebounce || 1200,
+    onCheckStart(view) {
+      markBelugaCheckPending(view);
+      refreshIdeStatus(view);
+    },
+    onDiagnostics(view, belugaDiags) {
+      lastBelugaLintDiags = belugaDiags;
+      belugaCheckPending = false;
+      refreshIdeStatus(view);
+    },
+  });
+
+  function updateParseProgress(view) {
+    if (!ideStatusDot) return;
+    const docLen = view.state.doc.length;
+    if (docLen <= 0) {
+      ideStatusDot.removeAttribute('data-parsing');
+      return;
+    }
+    const pct = Math.min(100, Math.round((syntaxTree(view.state).length / docLen) * 100));
+    if (pct < 100) {
+      ideStatusDot.setAttribute('data-parsing', `${pct}%`);
+      ideStatusDot.setAttribute('data-tooltip', `Parsing ${pct}%`);
+      ideStatusDot.setAttribute('aria-label', `Parsing ${pct}%`);
+    } else {
+      ideStatusDot.removeAttribute('data-parsing');
+    }
+  }
+
+  function seedSemanticScheduler(view) {
+    const sched = semanticEngine.scheduler;
+    if (!sched) return;
+    sched.onCursorMove(view.state.selection.main.head);
+    const vr = view.visibleRanges[0];
+    if (vr) sched.onViewportChange({ from: vr.from, to: vr.to });
+    sched.seedFromFrontier();
+  }
+
+  function syncSemanticFromView(view) {
+    const tree = syntaxTree(view.state);
+    semanticEngine.update(tree, view.state.doc, {
+      cursorPos: view.state.selection.main.head,
+      visibleRanges: view.visibleRanges,
+    });
+    updateParseProgress(view);
+    refreshIdeStatus(view);
+  }
+
+  const treeWatchPlugin = ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.treeLength = syntaxTree(view.state).length;
+      this.parseMilestone = 0;
+    }
+    update(update) {
+      const newLen = syntaxTree(update.state).length;
+      const docLen = update.state.doc.length;
+      const pct = docLen ? Math.floor((newLen / docLen) * 100) : 100;
+      const milestone = pct >= 100 ? 100 : Math.floor(pct / 25) * 25;
+      if (newLen > this.treeLength || milestone > this.parseMilestone) {
+        this.treeLength = newLen;
+        this.parseMilestone = milestone;
+        syncSemanticFromView(update.view);
+        seedSemanticScheduler(update.view);
+      }
+    }
+  });
+
+  const docSyncExt = EditorView.updateListener.of((update) => {
+    if (update.docChanged) {
+      lastBelugaLintDiags = [];
+      markBelugaCheckPending(update.view);
+      syncSemanticFromView(update.view);
+      semanticEngine.onDocChange(update.changes);
+      seedSemanticScheduler(update.view);
+      scheduleSemanticTypesSave();
+    }
+    if (update.selectionSet) {
+      semanticEngine.onCursorMove(update.state.selection.main.head);
+      seedSemanticScheduler(update.view);
+    }
+    if (update.viewportChanged) {
+      const vr = update.view.visibleRanges[0];
+      if (vr) semanticEngine.onViewportChange({ from: vr.from, to: vr.to });
+      seedSemanticScheduler(update.view);
+    }
+  });
+
+  const extensions = [
+    ...baseExtensions(ph, options.onDocChange, semanticEngine, belugaLinter),
+    docSyncExt,
+    treeWatchPlugin,
+    themeCompartment.of(cmThemeExtensions(initialDark)),
+    ideCompartment.of([]),
+  ];
 
   const initialDoc = sanitizePastedPlainText(options.doc ?? '');
   let state = EditorState.create({ doc: initialDoc, extensions });
@@ -274,6 +482,39 @@ export function mount(parentEl, options = {}) {
     parent: parentEl,
     state,
   });
+  semanticView = view; // let the V2 oracle read the live document
+
+  semanticEngine.setCheckerCode(() => healthySnapshotForView());
+  hydrateSemanticTypes();
+  markBelugaCheckPending(view);
+  syncSemanticFromView(view);
+  seedSemanticScheduler(view);
+  if (semanticEngine.scheduler && semanticEngine.scheduler.startBackground) {
+    semanticEngine.scheduler.startBackground();
+  }
+
+  const scheduleIdle = typeof requestIdleCallback === 'function'
+    ? requestIdleCallback
+    : (fn) => setTimeout(fn, 1);
+  scheduleIdle(() => {
+    ensureSyntaxTree(view.state, view.state.doc.length, 5000);
+    syncSemanticFromView(view);
+    seedSemanticScheduler(view);
+  });
+
+  // Best-effort flush on page unload so the latest semantic type cache
+  // makes it to localStorage before tear-down.
+  if (typeof window !== 'undefined') {
+    const flush = () => {
+      if (semanticTypesSaveTimer) {
+        clearTimeout(semanticTypesSaveTimer);
+        semanticTypesSaveTimer = null;
+      }
+      saveSemanticTypes();
+    };
+    window.addEventListener('beforeunload', flush);
+    window.addEventListener('pagehide', flush);
+  }
 
   view.dom.addEventListener(
     'paste',
@@ -340,8 +581,44 @@ export function mount(parentEl, options = {}) {
     getView() {
       return view;
     },
+    runSyntaxLint() {
+      return syntaxLint(view);
+    },
+    getDeclSpan(pos) {
+      const tree = syntaxTree(view.state);
+      let node = tree.resolveInner(pos, 1);
+      while (node && node.parent && node.parent.name !== 'Program') {
+        node = node.parent;
+      }
+      if (!node || node.name === 'Program') return null;
+      return { from: node.from, to: node.to };
+    },
+    getLintBlocks() {
+      const tree = syntaxTree(view.state);
+      return computeLintBlocks(tree, view.state.doc);
+    },
+    getBlockGroups() {
+      return this.getLintBlocks().blocks;
+    },
+    maskForBelugaCheck() {
+      const doc = view.state.doc;
+      const { blocks } = this.getLintBlocks();
+      return applySyntaxFaultMask(doc.toString(), doc, blocks);
+    },
     format() {
       return formatCommand(view);
     },
+    setIdeExtensions(exts) {
+      view.dispatch({ effects: ideCompartment.reconfigure(exts) });
+    },
+    setDarkTheme(dark) {
+      view.dispatch({ effects: themeCompartment.reconfigure(cmThemeExtensions(!!dark)) });
+    },
+
+    // Semantic Engine: authoritative syntax/symbol/graph model; hover routes
+    // through semanticEngine.hoverAt.
+    getSemanticEngine() { return semanticEngine; },
+
+    getHydratePromise() { return Promise.resolve(0); },
   };
 }

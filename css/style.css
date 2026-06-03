@@ -162,6 +162,17 @@
     hsla(0, 0%, 100%, 0.72),
     hsla(220, 14%, 38%, 0.35)
   );
+
+  --ide-hole-bg: light-dark(hsla(46, 70%, 50%, 0.10), hsla(46, 70%, 50%, 0.13));
+  --ide-hole-border: light-dark(hsl(46, 62%, 38%), hsl(46, 70%, 58%));
+  --ide-error-squiggle: light-dark(hsl(0, 72%, 46%), hsl(0, 75%, 60%));
+  --ide-warn-squiggle: light-dark(hsl(38, 88%, 42%), hsl(38, 90%, 56%));
+  --ide-type-tip-bg: light-dark(hsl(220, 20%, 18%), hsl(220, 22%, 10%));
+  --ide-type-tip-fg: light-dark(hsl(210, 18%, 90%), hsl(210, 20%, 88%));
+  --ide-type-tip-border: light-dark(hsl(220, 16%, 30%), hsl(220, 18%, 22%));
+  --ide-status-clean: light-dark(hsl(145, 55%, 38%), hsl(145, 52%, 52%));
+  --ide-status-checking: light-dark(hsl(38, 80%, 52%), hsl(42, 85%, 62%));
+  --ide-status-error: light-dark(hsl(0, 68%, 50%), hsl(0, 72%, 60%));
 }
 
 html {
@@ -229,6 +240,7 @@ html.light body {
 /* -- Icon Buttons -- */
 
 .icon-btn {
+  position: relative;
   width: var(--icon-btn);
   height: var(--icon-btn);
   border: none;
@@ -239,25 +251,56 @@ html.light body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color var(--transition), background var(--transition), transform var(--transition);
-  position: relative;
+  transition: color var(--transition), box-shadow var(--transition);
+}
+
+.icon-btn::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 95%;
+  height: 95%;
+  transform: translate(-50%, -50%);
+  border-radius: inherit;
+  background: var(--accent-glow);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity var(--transition), background var(--transition);
 }
 
 .icon-btn svg {
+  position: relative;
+  z-index: 1;
   width: var(--icon-svg);
   height: var(--icon-svg);
+}
+
+.icon-btn:focus-visible,
+.icon-btn:active,
+.sidebar .icon-btn.is-active {
+  color: var(--accent-high);
+}
+
+.icon-btn:focus-visible::before,
+.icon-btn:active::before,
+.sidebar .icon-btn.is-active::before {
+  opacity: 1;
+}
+
+.icon-btn:active::before {
+  background: color-mix(in srgb, var(--accent-glow) 100%, var(--accent-lowest));
 }
 
 @media (hover: hover) and (pointer: fine) {
   .icon-btn:hover {
     color: var(--accent-high);
-    background: var(--accent-glow);
-    transform: scale(1.05);
   }
-}
 
-.icon-btn:active {
-  transform: scale(0.95);
+  .icon-btn:hover::before {
+    opacity: 1;
+  }
 }
 
 .icon-btn:focus-visible {
@@ -299,18 +342,22 @@ html.light body {
 }
 
 .tooltip-root .tooltip-inner {
+  --tooltip-bg: light-dark(var(--base-lowest), var(--base-lower));
+  --tooltip-border: light-dark(var(--muted-mid), var(--base-high));
+  --tooltip-spout-size: 6px;
+  position: relative;
+  overflow: visible;
   font-family: var(--sans);
   font-size: 0.65rem;
   font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1.35;
+  white-space: pre-line;
   color: var(--base-highest);
-  background: light-dark(var(--base-lowest), var(--base-lower));
-  border: 1px solid light-dark(var(--muted-low), var(--base-high));
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
   border-radius: var(--radius-sm);
-  box-shadow:
-    inset 0 1px 0 var(--surface-highlight),
-    0 0.06rem 0.16rem var(--tooltip-shadow-near);
+  box-shadow: 0 0.06rem 0.16rem var(--tooltip-shadow-near);
   padding: 0.3rem 0.55rem;
   max-width: min(18rem, calc(100vw - 1rem));
   word-wrap: break-word;
@@ -320,6 +367,53 @@ html.light body {
   transition:
     transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
     opacity calc(var(--overlay-pop-ms-in) * 0.82) ease-out;
+}
+
+.tooltip-root .tooltip-inner::before {
+  content: '';
+  position: absolute;
+  width: var(--tooltip-spout-size);
+  height: var(--tooltip-spout-size);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-above::before {
+  bottom: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 50%);
+  transform: translateX(-50%) rotate(45deg);
+  border-left: 0;
+  border-top: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-below::before {
+  top: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 50%);
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-left::before {
+  right: calc(var(--tooltip-spout-size) * -0.55);
+  top: var(--tooltip-arrow-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-left: 0;
+  border-bottom: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-right::before {
+  left: calc(var(--tooltip-spout-size) * -0.55);
+  top: var(--tooltip-arrow-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-right: 0;
+  border-top: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-none::before {
+  display: none;
 }
 
 .tooltip-root.is-measuring .tooltip-inner {
@@ -337,6 +431,54 @@ html.light body {
   transition:
     transform var(--overlay-pop-ms-out) var(--overlay-pop-ease-out),
     opacity var(--overlay-pop-ms-out) ease-in;
+}
+
+.tooltip-inner--lint-errors {
+  white-space: normal;
+  padding: 0.38rem 0.62rem 0.42rem;
+}
+
+.tooltip-lint-head {
+  font-weight: 600;
+  margin-bottom: 0.32rem;
+}
+
+.tooltip-inner--lint-errors:not(:has(.tooltip-lint-list)) .tooltip-lint-head {
+  margin-bottom: 0;
+}
+
+.tooltip-lint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+}
+
+.tooltip-lint-item {
+  display: grid;
+  grid-template-columns: minmax(1.15rem, auto) minmax(0, 1fr);
+  column-gap: 0.65rem;
+  align-items: baseline;
+}
+
+.tooltip-lint-line {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-high);
+  text-align: right;
+}
+
+.tooltip-lint-msg {
+  font-weight: 500;
+  min-width: 0;
+}
+
+.tooltip-lint-item--warning .tooltip-lint-msg {
+  color: var(--warn, #c9a227);
 }
 
 /* -- Menus -- */
@@ -587,7 +729,6 @@ body.workspace-resizing * {
 
 .sidebar .icon-btn.is-active {
   color: var(--accent-high);
-  background: var(--accent-glow);
 }
 
 /* -- Explorer panel -- */
@@ -612,6 +753,12 @@ body.workspace-resizing * {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+.explorer-empty {
+  margin: 1rem;
+  font-size: 0.8125rem;
+  color: var(--base-high);
 }
 
 /* -- Panels -- */
@@ -1022,6 +1169,41 @@ html.light .output-header-progress {
 .repl-rich-pre--run-holes {
   border-left: 3px solid color-mix(in srgb, var(--repl-holes-accent) 70%, transparent);
   background: color-mix(in srgb, var(--repl-holes-accent) 9%, var(--repl-input-well));
+}
+
+.repl-rich-warning-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.32rem 0.6rem 0.28rem;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border: 1px solid color-mix(in srgb, var(--repl-warn) 32%, transparent);
+  border-bottom: none;
+  background: color-mix(in srgb, var(--repl-warn) 12%, var(--repl-input-well));
+}
+
+.repl-rich-warning-kind {
+  font-family: var(--ui);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--repl-warn);
+}
+
+.repl-rich-warning-sub {
+  font-family: var(--ui);
+  font-size: 0.66rem;
+  color: color-mix(in srgb, var(--repl-warn) 70%, var(--muted-high));
+}
+
+.repl-rich-pre--warning {
+  border: 1px solid color-mix(in srgb, var(--repl-warn) 32%, transparent);
+  border-top: none;
+  border-left: 3px solid color-mix(in srgb, var(--repl-warn) 72%, transparent);
+  background: color-mix(in srgb, var(--repl-warn) 7%, var(--repl-input-well));
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  margin-top: 0;
 }
 
 .repl-rich-msg {
@@ -1944,4 +2126,396 @@ html.light .bj-dialog::backdrop {
 
 .bj-dropdown__option.is-selected .bj-dropdown__option-check {
   opacity: 1;
+}
+
+/* ---- IDE: squiggles ---- */
+/* Override CM's hardcoded backgroundImage squiggles with theme-aware wavy underlines */
+
+.cm-editor .cm-lintRange-error {
+  background-image: none !important;
+  text-decoration: underline wavy var(--ide-error-squiggle);
+  text-underline-offset: 3px;
+}
+
+.cm-editor .cm-lintRange-warning {
+  background-image: none !important;
+  text-decoration: underline wavy var(--ide-warn-squiggle);
+  text-underline-offset: 3px;
+}
+
+/* ---- IDE: hole decorations ---- */
+
+.bel-hole-mark {
+  background: var(--ide-hole-bg);
+  border-bottom: 1.5px solid var(--ide-hole-border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.bel-hole-badge {
+  font-size: 0.70em;
+  color: var(--ide-hole-border);
+  vertical-align: super;
+  margin-left: 1px;
+  opacity: 0.85;
+}
+
+/* ---- IDE: editor tooltips (shared base) ---- */
+
+/* All editor tooltips — hover types AND lint diagnostics — share this base
+   so they look like .tooltip-inner everywhere else. CM's default chrome
+   is stripped on the wrappers; the inner element owns the look. */
+
+.cm-tooltip:has(> .beljar-tip),
+.cm-editor .cm-tooltip-hover {
+  background: none !important;
+  border: none !important;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
+  opacity: 1;
+}
+
+/* CM hover host: one .cm-tooltip-section per source (beljar-tip, ul.cm-tooltip-lint) */
+.cm-editor .cm-tooltip.cm-tooltip-hover {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.1rem;
+}
+
+.cm-editor .cm-tooltip-hover > .cm-tooltip-arrow {
+  display: none !important;
+}
+
+/* CM default draws a border-top between sections; gap handles separation */
+.cm-editor .cm-tooltip-hover > .cm-tooltip-section:not(:first-child) {
+  border-top: none !important;
+}
+
+/* Lint host section is a transparent shell; li.cm-diagnostic is the frame */
+.cm-editor .cm-tooltip-hover > .cm-tooltip-lint.cm-tooltip-section {
+  background: none;
+  border: none;
+  box-shadow: none;
+  filter: none;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.beljar-tip,
+.cm-editor .cm-tooltip-hover .cm-diagnostic {
+  --tooltip-bg: light-dark(var(--base-lowest), var(--base-lower));
+  --tooltip-border: light-dark(var(--muted-mid), var(--base-higher));
+  --tooltip-spout-size: 6px;
+  position: relative;
+  overflow: visible;
+  background: var(--tooltip-bg);
+  color: var(--base-highest);
+  border: 1px solid var(--tooltip-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0.06rem 0.16rem var(--tooltip-shadow-near);
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  padding: 0;
+  max-width: min(44rem, calc(100vw - 2rem));
+  pointer-events: none;
+  word-wrap: break-word;
+  opacity: 1;
+}
+
+/* .cm-diagnostic IS the lint tooltip frame (same role as .beljar-tip for
+   hover types). Its children are .beljar-tip-head + .beljar-tip-body. */
+.cm-editor .cm-tooltip-hover .cm-diagnostic {
+  padding: 0;
+  margin: 0;
+  max-width: 36rem;
+  overflow: visible;
+}
+
+/* Lint sub-titles are human-readable sentences, not identifiers — use sans
+   and allow wrapping rather than clipping with an ellipsis. */
+.cm-editor .cm-tooltip-hover .cm-diagnostic .beljar-tip-name {
+  font-family: var(--sans);
+  font-weight: 500;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.cm-editor .cm-tooltip-hover .cm-diagnostic + .cm-diagnostic {
+  border-top: 1px solid var(--tooltip-border);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  margin-top: -1px;
+}
+
+/* ---- Hover-type structured content ---- */
+
+.beljar-tip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.22rem 0.55rem 0.18rem;
+  border-bottom: 1px solid var(--tooltip-border);
+  background: var(--tooltip-bg);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.beljar-tip-kind {
+  font-family: var(--sans);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-high);
+  flex: 0 0 auto;
+}
+
+.beljar-tip-name {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--base-highest);
+  letter-spacing: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+/* Body uses mono; reset inherited .beljar-tip 500 / 0.02em (Inter metrics).
+   JetBrains Mono is only vendored at 400 and 700 — other weights look identical. */
+.beljar-tip-body {
+  padding: 0.32rem 0.55rem;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 400;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  transition: opacity 90ms ease;
+}
+
+.beljar-tip-body--settling {
+  opacity: 0;
+}
+
+.beljar-tip-body--empty {
+  color: var(--ide-warn-squiggle);
+}
+
+/* Loading label: <span.beljar-tip-shimmer> inside .beljar-tip-body--computing.
+   Style .beljar-tip-shimmer (or the --computing block below), not .beljar-tip-body alone. */
+.beljar-tip-body--computing {
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+.beljar-tip-body--computing .beljar-tip-shimmer {
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+.beljar-tip-shimmer {
+  --shimmer-peak: color-mix(in srgb, var(--accent-mid) 55%, var(--base-highest));
+  background: linear-gradient(
+    90deg,
+    var(--muted-high) 0%,
+    var(--muted-high) 25%,
+    var(--shimmer-peak) 50%,
+    var(--muted-high) 75%,
+    var(--muted-high) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: beljar-tip-shimmer 1.85s linear infinite;
+}
+
+@keyframes beljar-tip-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.beljar-tip-shimmer--handoff {
+  animation: none;
+  background: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  color: var(--muted-high);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beljar-tip-shimmer {
+    animation: none;
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    color: var(--muted-high);
+  }
+
+  .beljar-tip-body {
+    transition: none;
+  }
+}
+
+/* ---- Severity variants for lint diagnostics ----
+   Full bg tint + left stripe in the squiggle color. */
+
+.cm-editor .cm-tooltip-hover .cm-diagnostic-error {
+  --tooltip-bg: light-dark(hsl(355, 92%, 98%), hsl(355, 55%, 22%));
+  --tooltip-border: light-dark(hsl(355, 70%, 78%), hsl(355, 50%, 48%));
+  border-left: 3px solid var(--ide-error-squiggle);
+}
+
+.cm-editor .cm-tooltip-hover .cm-diagnostic-warning {
+  --tooltip-bg: light-dark(hsl(40, 92%, 97%), hsl(40, 50%, 20%));
+  --tooltip-border: light-dark(hsl(40, 70%, 70%), hsl(40, 45%, 50%));
+  border-left: 3px solid var(--ide-warn-squiggle);
+}
+
+.cm-editor .cm-tooltip-hover .cm-diagnostic-error .beljar-tip-kind {
+  color: color-mix(in srgb, var(--ide-error-squiggle) 62%, var(--muted-high));
+}
+
+.cm-editor .cm-tooltip-hover .cm-diagnostic-warning .beljar-tip-kind {
+  color: color-mix(in srgb, var(--ide-warn-squiggle) 62%, var(--muted-high));
+}
+
+/* ---- Shared spout (rotated-square diamond, two borders dropped) ----
+   CM adds .cm-tooltip-section on the frame itself (.beljar-tip or ul), not a
+   wrapper. Only the stack edge nearest the anchor gets a spout. */
+
+/* ---- Shared spout (rotated-square diamond, two borders dropped) ----
+   CM adds .cm-tooltip-section on the frame itself (.beljar-tip or ul), not a
+   wrapper. Only the stack edge nearest the anchor gets a spout. */
+
+.cm-editor .cm-tooltip-hover :is(.beljar-tip, .cm-diagnostic)::before {
+  display: none;
+  content: '';
+  position: absolute;
+  width: var(--tooltip-spout-size);
+  height: var(--tooltip-spout-size);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cm-editor .cm-tooltip-hover.cm-tooltip-above > .cm-tooltip-section.beljar-tip:last-child::before,
+.cm-editor .cm-tooltip-hover.cm-tooltip-above
+  > .cm-tooltip-section:last-child .cm-diagnostic:last-of-type::before {
+  display: block;
+  bottom: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 0.7rem);
+  transform: translateX(-50%) rotate(45deg);
+  border-left: 0;
+  border-top: 0;
+}
+
+.cm-editor .cm-tooltip-hover.cm-tooltip-below > .cm-tooltip-section.beljar-tip:first-child::before,
+.cm-editor .cm-tooltip-hover.cm-tooltip-below
+  > .cm-tooltip-section:first-child .cm-diagnostic:first-of-type::before {
+  display: block;
+  top: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 0.7rem);
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 0;
+  border-bottom: 0;
+}
+
+/* ---- IDE: live-status dot ---- */
+
+.ide-status-dot {
+  display: inline-block;
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: middle;
+  margin-left: 5px;
+  background: var(--accent-mid);
+  cursor: default;
+  transition: background 0.25s ease;
+}
+
+/* Hover hit-target. */
+.ide-status-dot::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+/* Loading shimmer: a soft bright arc rotates around the dot's perimeter.
+   The dot itself stays put; the shimmer lives in ::after.
+   The rotation animation runs *continuously* but is hidden via opacity
+   when not in `checking` — that way, exiting the state never freezes the
+   arc mid-angle, it just gracefully fades away while still spinning. */
+.ide-status-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 260deg,
+    color-mix(in srgb, var(--accent-mid) 80%, white) 320deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    radial-gradient(circle, transparent 55%, #000 58%, #000 100%);
+          mask:
+    radial-gradient(circle, transparent 55%, #000 58%, #000 100%);
+  opacity: 0;
+  pointer-events: none;
+  animation: ide-status-shimmer 1.6s linear infinite;
+  transition: opacity 0.28s ease;
+}
+
+.ide-status-dot[data-live-state="clean"] {
+  background: var(--ide-status-clean);
+}
+
+.ide-status-dot[data-live-state="error"] {
+  background: var(--ide-status-error);
+}
+
+/* Cold and checking: powder-blue accent (in-progress / no signal yet).
+   Warning stays the yellow advisory color. */
+.ide-status-dot[data-live-state="cold"],
+.ide-status-dot[data-live-state="checking"] {
+  background: var(--accent-mid);
+}
+
+.ide-status-dot[data-live-state="warning"] {
+  background: var(--ide-status-checking);
+}
+
+.ide-status-dot[data-parsing] {
+  background: var(--accent-mid);
+}
+
+/* Checking: reveal the shimmer ring. The animation is always running on
+   ::after (see base rule); we only toggle opacity here, so the exit fade
+   never freezes the arc mid-rotation. */
+.ide-status-dot[data-live-state="checking"]::after {
+  opacity: 1;
+}
+
+@keyframes ide-status-shimmer {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ide-status-dot::after {
+    animation: none;
+  }
 }

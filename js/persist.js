@@ -2,19 +2,19 @@
  * BelJar persistence: localStorage today, swappable adapter for a backend later.
  * Theme uses key `beljar-theme` — keep index.html FOUC preload in sync with THEME_STORAGE_KEY.
  * Raw REPL uses key `beljar-repl-raw` (`1` = plain terminal-style output).
- * Editor/output split uses key `beljar-editor-split` (0–1, editor share) — keep index.html FOUC preload in sync.
+ * Editor/output split uses key `beljar-editor-split` (0–1, editor share).
+ * Split constants are sourced from window.BELJAR_SPLIT_* set by the index.html FOUC script.
  */
 (function (global) {
   var SCHEMA_VERSION = 1;
   var STATE_KEY = 'beljar-state-v1';
   var THEME_STORAGE_KEY = 'beljar-theme';
   var REPL_RAW_STORAGE_KEY = 'beljar-repl-raw';
-  var EDITOR_SPLIT_STORAGE_KEY = 'beljar-editor-split';
-  var DEFAULT_EDITOR_SPLIT = 0.5;
-  var MIN_EDITOR_SPLIT = 0.18;
-  var MAX_EDITOR_SPLIT = 0.82;
-  var DEFAULT_REPL_OUTPUT =
-    'Welcome to BelJar. Try help for a list of REPL commands.';
+  var BELUGA_MODE_STORAGE_KEY = 'beljar-beluga-mode';
+  var EDITOR_SPLIT_STORAGE_KEY = global.BELJAR_SPLIT_KEY || 'beljar-editor-split';
+  var DEFAULT_EDITOR_SPLIT = global.BELJAR_SPLIT_DEFAULT != null ? global.BELJAR_SPLIT_DEFAULT : 0.5;
+  var MIN_EDITOR_SPLIT = global.BELJAR_SPLIT_MIN != null ? global.BELJAR_SPLIT_MIN : 0.18;
+  var MAX_EDITOR_SPLIT = global.BELJAR_SPLIT_MAX != null ? global.BELJAR_SPLIT_MAX : 0.82;
 
   function tryParse(json) {
     try {
@@ -154,6 +154,19 @@
     } catch (_) {}
   }
 
+  function readStoredBelugaMode() {
+    try {
+      var v = global.localStorage.getItem(BELUGA_MODE_STORAGE_KEY);
+      if (v === 'fast' || v === 'stable') return v;
+      var old = global.localStorage.getItem('beljar-beluga-build');
+      return (old === 'fast' || old === 'auto') ? 'fast' : 'stable';
+    } catch (_) { return 'stable'; }
+  }
+
+  function writeStoredBelugaMode(mode) {
+    try { global.localStorage.setItem(BELUGA_MODE_STORAGE_KEY, mode); } catch (_) {}
+  }
+
   function clampEditorSplit(ratio) {
     var n = Number(ratio);
     if (!isFinite(n)) return DEFAULT_EDITOR_SPLIT;
@@ -190,7 +203,6 @@
     DEFAULT_EDITOR_SPLIT: DEFAULT_EDITOR_SPLIT,
     MIN_EDITOR_SPLIT: MIN_EDITOR_SPLIT,
     MAX_EDITOR_SPLIT: MAX_EDITOR_SPLIT,
-    DEFAULT_REPL_OUTPUT: DEFAULT_REPL_OUTPUT,
     createLocalStorageAdapter: createLocalStorageAdapter,
     createPersist: createPersist,
     readStoredTheme: readStoredTheme,
@@ -200,5 +212,7 @@
     readStoredEditorSplit: readStoredEditorSplit,
     writeStoredEditorSplit: writeStoredEditorSplit,
     clampEditorSplit: clampEditorSplit,
+    readStoredBelugaMode: readStoredBelugaMode,
+    writeStoredBelugaMode: writeStoredBelugaMode,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

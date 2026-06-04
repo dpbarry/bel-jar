@@ -1,13 +1,15 @@
 function stripAnsi(s) {
   return String(s != null ? s : '')
     .replace(/\r\n/g, '\n')
-    .replace(/\u001b\[[0-9;]*m/g, '')
-    .replace(/\u009b[0-9;]*m/g, '')
-    .replace(/Ø\[[0-9;]*m/g, '');
+    .replace(/\[[0-9;]*m/g, '')
+    .replace(/[0-9;]*m/g, '');
 }
 
 const FILE_LOC =
   /^File\s+"[^"]*"\s*,\s*line\s+(\d+)\s*(?:,\s*column\s+(\d+)|,\s*characters?\s+(\d+)(?:-(\d+))?)?\s*:?\s*$/i;
+
+// Any location marker — used to find where a message ends (i.e. the next marker).
+const ANY_LOC = /(?:[^\s:"]+\.bel:\d+\.\d+)|(?:File\s+"[^"]*"\s*,\s*line\s+\d+)|(?:\bat line\s+\d+,\s*characters?)/;
 
 function trimMessageLines(parts) {
   const out = [];
@@ -24,6 +26,7 @@ function cleanMessage(parts) {
     for (const line of part.split('\n')) {
       const t = line.trim();
       if (!t || FILE_LOC.test(t)) continue;
+      if (/^Raised at|^Called from|^Re-raised|^Backtrace/i.test(t)) break;
       if (/^(Error|Warning):\s*/i.test(t)) {
         lines.push(t.replace(/^(Error|Warning):\s*/i, ''));
       } else if (!/^File\s+"/i.test(t)) {
@@ -69,11 +72,20 @@ function rangeAt(doc, lineNum, colStart, colEnd) {
   return { from: line.from + start, to: line.from + end };
 }
 
-export function parseBelugaDiagnostics(raw, doc) {
-  const lines = stripAnsi(raw).split('\n');
-  const diags = [];
-  let i = 0;
+function severityOf(message) {
+  return /(^|\n)\s*warning\b/i.test(message) ? 'warning' : 'error';
+}
 
+function messageUntilNextLoc(text, fromIndex) {
+  const rest = text.slice(fromIndex);
+  const next = rest.search(ANY_LOC);
+  return cleanMessage([next >= 0 ? rest.slice(0, next) : rest]);
+}
+
+// Block scanner for the `File "input.bel", line L, ...` format.
+function parseFileLocations(text, doc, add) {
+  const lines = text.split('\n');
+  let i = 0;
   while (i < lines.length) {
     const loc = lines[i].trim().match(FILE_LOC);
     if (!loc) { i += 1; continue; }
@@ -85,15 +97,15 @@ export function parseBelugaDiagnostics(raw, doc) {
 
     const msgParts = [];
     while (i < lines.length) {
-      const raw = lines[i];
-      const t = raw.trim();
+      const rawLine = lines[i];
+      const t = rawLine.trim();
       if (!t) {
         i += 1;
         if (msgParts.length) break;
         continue;
       }
       if (FILE_LOC.test(t)) {
-        if (/^\s/.test(raw) && msgParts.length) {
+        if (/^\s/.test(rawLine) && msgParts.length) {
           i += 1;
           while (i < lines.length && /^\s/.test(lines[i]) && lines[i].trim()) {
             if (FILE_LOC.test(lines[i].trim())) break;
@@ -114,14 +126,138 @@ export function parseBelugaDiagnostics(raw, doc) {
 
     const trimmed = trimMessageLines(msgParts);
     if (!trimmed.length) continue;
-
     const message = cleanMessage(trimmed);
     if (!message) continue;
     const severity = /^Warning:/i.test(trimmed[0]) ? 'warning' : 'error';
     const span = rangeAt(doc, lineNum, colStart, colEnd);
     if (!span) continue;
-    diags.push({ from: span.from, to: span.to, severity, message });
+    add(span.from, span.to, severity, message);
+  }
+}
+
+// Compact `input.bel:L.C-L.C:` (0-based columns, the common form) plus
+// `at line L, characters C-C` (1-based). These are what most Beluga elaboration
+// errors actually carry; the File-only parser silently dropped them, which read
+// as a false "no errors".
+function parseCompactLocations(text, doc, add) {
+  let m;
+  const compact = /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g;
+  while ((m = compact.exec(text)) !== null) {
+    const sl = +m[2];
+    const sc = +m[3];
+    const el = m[4] != null ? +m[4] : sl;
+    const ec = m[5] != null ? +m[5] : null;
+    if (sl < 1 || sl > doc.lines) continue;
+    const ls = doc.line(sl);
+    const from = ls.from + Math.min(Math.max(0, sc), ls.length);
+    let to;
+    if (ec != null && el >= 1 && el <= doc.lines) {
+      const le = doc.line(el);
+      to = le.from + Math.min(Math.max(0, ec), le.length);
+    } else {
+      const lineText = doc.sliceString(ls.from, ls.to);
+      const tok = expandToToken(lineText, Math.min(Math.max(0, sc), Math.max(0, lineText.length - 1)));
+      to = ls.from + tok.end;
+    }
+    const msg = messageUntilNextLoc(text, m.index + m[0].length);
+    if (msg) add(from, Math.max(from + 1, to), severityOf(msg), msg);
   }
 
+  const atLine = /(?:^|\n)\s*at line\s+(\d+),\s*characters?\s+(\d+)(?:-(\d+))?/g;
+  while ((m = atLine.exec(text)) !== null) {
+    const ln = +m[1];
+    if (ln < 1 || ln > doc.lines) continue;
+    const line = doc.line(ln);
+    const col = Math.max(0, (+m[2]) - 1);
+    const colEnd = m[3] != null ? +m[3] : null;
+    const from = line.from + Math.min(col, line.length);
+    const to = colEnd != null ? line.from + Math.min(colEnd, line.length) : from + 1;
+    const msg = messageUntilNextLoc(text, m.index + m[0].length);
+    if (msg) add(from, Math.max(from + 1, to), severityOf(msg), msg);
+  }
+}
+
+export function parseBelugaDiagnostics(raw, doc) {
+  const text = stripAnsi(raw);
+  const diags = [];
+  const seen = new Set();
+  function add(from, to, severity, message) {
+    if (from == null || to == null) return;
+    if (to <= from) to = from + 1;
+    const msg = (message || '').trim() || 'Beluga error';
+    const key = from + ':' + to + ':' + msg.slice(0, 60);
+    if (seen.has(key)) return;
+    seen.add(key);
+    diags.push({ from, to, severity, message: msg });
+  }
+  parseCompactLocations(text, doc, add);
+  parseFileLocations(text, doc, add);
+  diags.sort((a, b) => a.from - b.from);
   return diags;
+}
+
+// Many location-less errors name the offending identifier in their text
+// ("Identifier ¬ is unbound"). Pull that name out so we can point the squiggle
+// at the real token instead of the top of the file.
+function namedCulprit(message) {
+  const patterns = [
+    /Identifier\s+(\S+)\s+is\s+unbound/i,
+    /Unbound\s+(?:identifier|variable|operator|constructor|type|module|namespace)\s+(\S+)/i,
+    /\b(\S+)\s+is\s+unbound\b/i,
+    /\b(\S+)\s+is\s+not\s+(?:bound|defined|in scope)\b/i,
+    /(?:No|Unknown)\s+(?:operator|pragma|constructor)\s+(\S+)/i,
+  ];
+  for (const re of patterns) {
+    const m = message.match(re);
+    if (m && m[1]) {
+      const name = m[1].replace(/^[`"']+/, '').replace(/[`"'.,;:]+$/, '');
+      if (name) return name;
+    }
+  }
+  return null;
+}
+
+const TOKEN_SEP = /[\s(){}\[\];:,.|]/;
+
+// First whole-token occurrence of `name` outside a comment line.
+function locateToken(doc, name) {
+  if (!name) return null;
+  const text = doc.toString();
+  let idx = text.indexOf(name);
+  while (idx >= 0) {
+    const before = idx > 0 ? text[idx - 1] : ' ';
+    const after = idx + name.length < text.length ? text[idx + name.length] : ' ';
+    const whole = (idx === 0 || TOKEN_SEP.test(before))
+      && (idx + name.length === text.length || TOKEN_SEP.test(after));
+    if (whole && !doc.lineAt(idx).text.trim().startsWith('%')) {
+      return { from: idx, to: idx + name.length };
+    }
+    idx = text.indexOf(name, idx + name.length);
+  }
+  return null;
+}
+
+function firstMeaningfulLineAnchor(doc) {
+  let anchorLine = 1;
+  for (let n = 1; n <= doc.lines; n += 1) {
+    const t = doc.line(n).text.trim();
+    if (t && !t.startsWith('%')) { anchorLine = n; break; }
+  }
+  const line = doc.line(anchorLine);
+  const lead = line.text.search(/\S/);
+  const from = line.from + (lead >= 0 ? lead : 0);
+  return { from, to: Math.max(from + 1, line.to) };
+}
+
+// A failed check that produced no locatable diagnostic must still surface — a
+// red squiggle beats a silent green. Point it at the named culprit token when
+// the message identifies one; otherwise anchor to the first meaningful line.
+// Returns a single diagnostic, or null if the output has nothing to say.
+export function fallbackDiagnostic(raw, doc) {
+  const text = stripAnsi(raw);
+  const message = cleanMessage([text]) || text.trim();
+  if (!message) return null;
+  const truncated = message.length > 600 ? `${message.slice(0, 600)}…` : message;
+  const span = locateToken(doc, namedCulprit(message)) || firstMeaningfulLineAnchor(doc);
+  return { from: span.from, to: span.to, severity: 'error', message: truncated };
 }

@@ -469,7 +469,14 @@
     }
   }
 
-  function dispatchCheck(code, hooks) {
+  // Structured check result: { ok, output }. `ok` is Beluga's own load/check
+  // verdict — the authoritative "did this file pass" signal — so the linter can
+  // surface a failure even when the error text carries no parseable location.
+  function checkResultOf(result) {
+    return { ok: !!(result && result.ok), output: resultText(result) || '' };
+  }
+
+  function dispatchCheckResult(code, hooks) {
     var requestCode = String(code != null ? code : '');
     if (cfg.thread === 'worker') {
       clearCheckerIdleTimer();
@@ -479,7 +486,7 @@
         })
         .then(function (result) {
           scheduleCheckerIdleShutdown();
-          return resultText(result) || '';
+          return checkResultOf(result);
         })
         .catch(function (err) {
           scheduleCheckerIdleShutdown();
@@ -498,18 +505,22 @@
         if (cfg.build === 'fast' && isOverflowValue(result)) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
-          return run('stable').then(function (fallback) { return resultText(fallback) || ''; });
+          return run('stable').then(checkResultOf);
         }
-        return resultText(result) || '';
+        return checkResultOf(result);
       })
       .catch(function (err) {
         if (cfg.build === 'fast' && isOverflowError(err)) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
-          return run('stable').then(function (fallback) { return resultText(fallback) || ''; });
+          return run('stable').then(checkResultOf);
         }
         throw err;
       });
+  }
+
+  function dispatchCheck(code, hooks) {
+    return dispatchCheckResult(code, hooks).then(function (r) { return r.output; });
   }
 
   function dispatchCheckerCommand(code, cmd) {
@@ -803,6 +814,12 @@
 
     check: function (code, hooks) {
       return dispatchCheck(code, hooks);
+    },
+
+    // Like check(), but resolves to { ok, output } so callers can tell a failed
+    // check apart from a clean one even when the error text has no location.
+    checkResult: function (code, hooks) {
+      return dispatchCheckResult(code, hooks);
     },
 
     loadChecker: function (code) {

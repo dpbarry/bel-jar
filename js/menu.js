@@ -77,6 +77,9 @@
     let rootAnchorEl = null;
     let rootOnClose = null;
     let submenuSourceRow = null;
+    let submenuOpenTimer = null;
+
+    const SUBMENU_OPEN_DELAY_MS = 90;
 
     const controller = { menuRoot };
 
@@ -143,7 +146,8 @@
         width: tw,
         height: th,
         margin: MARGIN,
-        gap: GAP,
+        // Submenus overlap the parent slightly (IDE style); root menus keep the gap
+        gap: isSubmenu ? -3 : GAP,
         side,
         align,
       });
@@ -162,7 +166,9 @@
       menuEl.classList.remove('is-visible', 'is-measuring');
       menuEl.classList.add('is-leaving');
       void menuEl.offsetHeight;
-      const prop = 'transform';
+      // Pop animates the `scale` property (not `transform`) so backdrop-filter
+      // keeps working — wait on the matching transitionend.
+      const prop = 'scale';
       let finished = false;
       const finish = () => {
         if (finished) return;
@@ -305,7 +311,11 @@
         return;
       }
       for (let i = 0; i < batch.length; i++) {
-        if (batch[i].level >= 1) submenuSourceRow = null;
+        if (batch[i].level >= 1) {
+          submenuSourceRow = null;
+          const trig = batch[i].triggerEl;
+          if (trig) trig.classList.remove('is-submenu-open');
+        }
       }
       let remaining = batch.length;
       const tick = () => {
@@ -330,8 +340,10 @@
     }
 
     function forceCloseSync() {
+      cancelScheduledSubmenuOpen();
       while (openMenus.length) {
         const entry = openMenus.pop();
+        if (entry.triggerEl) entry.triggerEl.classList.remove('is-submenu-open');
         if (entry.el && entry.el.parentNode) entry.el.remove();
       }
       submenuSourceRow = null;
@@ -364,6 +376,35 @@
       return svg;
     }
 
+    function checkSvg() {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', '2.4');
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', 'M20 6 9 17l-5-5');
+      svg.appendChild(p);
+      return svg;
+    }
+
+    // Build a leading icon slot from an SVG string, DOM node, or built-in check.
+    function buildIconSlot(icon) {
+      const slot = document.createElement('span');
+      slot.className = 'menu-item-icon';
+      slot.setAttribute('aria-hidden', 'true');
+      if (icon === 'check') {
+        slot.appendChild(checkSvg());
+      } else if (icon instanceof Node) {
+        slot.appendChild(icon);
+      } else if (typeof icon === 'string') {
+        slot.innerHTML = icon;
+      }
+      return slot;
+    }
+
     function buildDefaultMenuItem(item, wrap, level) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -372,6 +413,18 @@
       btn.tabIndex = -1;
       if (item.disabled) {
         btn.disabled = true;
+      }
+
+      // Leading icon / check gutter (icon wins; check shown when item.checked)
+      const iconSource = item.checked ? 'check' : item.icon;
+      if (iconSource) {
+        btn.classList.add('menu-item-has-icon');
+        btn.appendChild(buildIconSlot(iconSource));
+      }
+      if (item.checked) {
+        btn.classList.add('is-checked');
+        btn.setAttribute('role', 'menuitemcheckbox');
+        btn.setAttribute('aria-checked', 'true');
       }
 
       const label = document.createElement('span');
@@ -389,23 +442,33 @@
         });
       } else {
         btn._menuItemData = { submenu: null };
+        // Trailing keyboard-shortcut hint (mutually exclusive with the chevron)
+        if (item.shortcut) {
+          btn.classList.add('menu-item-has-shortcut');
+          const sc = document.createElement('span');
+          sc.className = 'menu-item-shortcut';
+          sc.textContent = item.shortcut;
+          btn.appendChild(sc);
+        }
       }
 
       if (level === 0) {
         btn.addEventListener('mouseenter', () => {
           if (submenuSourceRow && submenuSourceRow !== btn) {
             if (!(item.submenu && item.submenu.length && submenuHoverOpen())) {
-              closeFromLevel(1);
+              scheduleCloseSubmenus();
             }
           }
           if (item.submenu && item.submenu.length && submenuHoverOpen()) {
-            openSubmenu(item.submenu, btn, level);
+            scheduleOpenSubmenu(item.submenu, btn, level);
           }
         });
+        btn.addEventListener('mouseleave', cancelScheduledSubmenuOpen);
       } else if (item.submenu && item.submenu.length) {
         btn.addEventListener('mouseenter', () => {
-          if (submenuHoverOpen()) openSubmenu(item.submenu, btn, level);
+          if (submenuHoverOpen()) scheduleOpenSubmenu(item.submenu, btn, level);
         });
+        btn.addEventListener('mouseleave', cancelScheduledSubmenuOpen);
       }
 
       if (!(item.submenu && item.submenu.length) && typeof item.onSelect === 'function') {
@@ -419,15 +482,39 @@
       wrap.appendChild(btn);
     }
 
+    function buildSeparator() {
+      const sep = document.createElement('div');
+      sep.className = 'menu-separator';
+      sep.setAttribute('role', 'separator');
+      return sep;
+    }
+
+    function buildSection(item) {
+      const sec = document.createElement('div');
+      sec.className = 'menu-section';
+      sec.setAttribute('role', 'presentation');
+      sec.textContent = item.label ?? '';
+      return sec;
+    }
+
     function buildMenu(items, level) {
       const wrap = document.createElement('div');
       wrap.className = level > 0 ? 'menu is-submenu' : 'menu';
       wrap.setAttribute('role', 'menu');
       wrap.addEventListener('keydown', (e) => handlePanelKeydown(e, wrap, level));
 
+      let hasIcons = false;
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const rowType = item.type || 'item';
+        if (rowType === 'separator') {
+          wrap.appendChild(buildSeparator());
+          continue;
+        }
+        if (rowType === 'section') {
+          wrap.appendChild(buildSection(item));
+          continue;
+        }
         if (rowType !== 'item' && customRowTypes[rowType]) {
           const node = customRowTypes[rowType](item, wrap, level, controller);
           if (node) wrap.appendChild(node);
@@ -436,8 +523,12 @@
         if (rowType !== 'item') {
           console.warn('[Menu] unknown row type:', rowType, '— using default item row');
         }
+        if (item.icon || item.checked) hasIcons = true;
         buildDefaultMenuItem(item, wrap, level);
       }
+
+      // Reserve a consistent icon gutter only when the menu actually uses icons
+      if (hasIcons) wrap.classList.add('menu--has-icons');
 
       return wrap;
     }
@@ -451,14 +542,43 @@
       return false;
     }
 
+    function cancelScheduledSubmenuOpen() {
+      if (submenuOpenTimer !== null) {
+        clearTimeout(submenuOpenTimer);
+        submenuOpenTimer = null;
+      }
+    }
+
+    // Hover-intent: delay opening so skimming across submenu rows doesn't thrash.
+    function scheduleOpenSubmenu(items, anchorRowEl, parentLevel) {
+      cancelScheduledSubmenuOpen();
+      submenuOpenTimer = setTimeout(() => {
+        submenuOpenTimer = null;
+        if (anchorRowEl.isConnected) openSubmenu(items, anchorRowEl, parentLevel);
+      }, SUBMENU_OPEN_DELAY_MS);
+    }
+
+    // Hover-intent: delay closing the child level so the user can cross the gap
+    // toward the submenu without it collapsing under the pointer.
+    function scheduleCloseSubmenus() {
+      cancelScheduledSubmenuOpen();
+      submenuOpenTimer = setTimeout(() => {
+        submenuOpenTimer = null;
+        closeFromLevel(1);
+      }, SUBMENU_OPEN_DELAY_MS);
+    }
+
     function openSubmenu(items, anchorRowEl, parentLevel) {
+      cancelScheduledSubmenuOpen();
       if (isSubmenuOpenForRow(anchorRowEl, parentLevel)) return;
       closeFromLevel(parentLevel + 1, () => {
         submenuSourceRow = anchorRowEl;
+        anchorRowEl.classList.add('is-submenu-open');
         const level = parentLevel + 1;
         const placed = submenuPlacementAnchor(anchorRowEl);
 
         const menuEl = buildMenu(items, level);
+        menuEl.classList.add('is-flyout');
         menuRoot.appendChild(menuEl);
         openMenus.push({
           el: menuEl,
@@ -488,6 +608,13 @@
         rootAnchorEl = anchor instanceof Element ? anchor : null;
 
         const menuEl = buildMenu(items, 0);
+        // Origin-aware pop: the panel scales out of the edge nearest its trigger.
+        if (side === 'bottom') {
+          menuEl.classList.add('is-drop-down');
+          if (align === 'end') menuEl.classList.add('is-align-end');
+        } else if (side === 'right') {
+          menuEl.classList.add('is-flyout');
+        }
         menuRoot.appendChild(menuEl);
         openMenus.push({
           el: menuEl,
@@ -512,6 +639,44 @@
       }
     }
 
+    // Open a menu anchored at a viewport point (e.g. a right-click). The placement
+    // engine clamps/flips at the edges, so corner-spawned menus stay on-screen.
+    function openContext(opts) {
+      const x = opts.x;
+      const y = opts.y;
+      open({
+        anchor: { left: x, right: x, top: y, bottom: y },
+        side: opts.side || 'bottom',
+        align: opts.align || 'start',
+        items: opts.items,
+        onClose: opts.onClose,
+        onReady: opts.onReady,
+      });
+    }
+
+    // Ready-to-use primitive: turn an element into a right-click target.
+    // `itemsOrFn` is either an items array or a function(event) -> items.
+    function bindContextMenu(targetEl, itemsOrFn, opts) {
+      if (!(targetEl instanceof Element)) {
+        throw new TypeError('bindContextMenu(targetEl, items): targetEl must be an element');
+      }
+      const handler = (e) => {
+        const items = typeof itemsOrFn === 'function' ? itemsOrFn(e) : itemsOrFn;
+        if (!items || !items.length) return;
+        e.preventDefault();
+        openContext({
+          x: e.clientX,
+          y: e.clientY,
+          items,
+          side: opts && opts.side,
+          align: opts && opts.align,
+          onClose: opts && opts.onClose,
+        });
+      };
+      targetEl.addEventListener('contextmenu', handler);
+      return () => targetEl.removeEventListener('contextmenu', handler);
+    }
+
     function destroy() {
       allControllers.delete(controller);
       if (activeController === controller) setActiveController(null);
@@ -519,6 +684,8 @@
     }
 
     controller.open = open;
+    controller.openContext = openContext;
+    controller.bindContextMenu = bindContextMenu;
     controller.closeAll = closeAll;
     controller.isOpen = isOpen;
     controller.rootAnchor = rootAnchor;
@@ -536,6 +703,13 @@
   global.Menu = {
     open(opts) {
       if (defaultMenu) defaultMenu.open(opts);
+    },
+    openContext(opts) {
+      if (defaultMenu) defaultMenu.openContext(opts);
+    },
+    bindContextMenu(targetEl, itemsOrFn, opts) {
+      if (defaultMenu) return defaultMenu.bindContextMenu(targetEl, itemsOrFn, opts);
+      return () => {};
     },
     closeAll(done) {
       if (defaultMenu) defaultMenu.closeAll(done);

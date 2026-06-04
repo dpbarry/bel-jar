@@ -113,6 +113,17 @@ const filesBtn = document.getElementById('btn-files');
 const workspaceEl = document.querySelector('.workspace');
 const explorerPanelEl = document.getElementById('explorer-panel');
 
+function wireSidebarOpenTooltip(btn) {
+  if (!btn || typeof Tooltips === 'undefined') return () => {};
+  btn.addEventListener('mouseleave', () => {
+    Tooltips.releaseAnchor(btn);
+  });
+  return () => {
+    Tooltips.suppressAnchor(btn);
+    Tooltips.hideImmediate();
+  };
+}
+
 const explorerTreeEl = explorerPanelEl && explorerPanelEl.querySelector('.explorer-tree');
 if (explorerTreeEl && !explorerTreeEl.firstChild) {
   const placeholder = document.createElement('p');
@@ -122,7 +133,10 @@ if (explorerTreeEl && !explorerTreeEl.firstChild) {
 }
 
 if (filesBtn && workspaceEl) {
+  const hideExplorerTooltipUntilLeave = wireSidebarOpenTooltip(filesBtn);
   filesBtn.addEventListener('click', () => {
+    const wasOpen = workspaceEl.classList.contains('is-explorer-open');
+    if (!wasOpen) hideExplorerTooltipUntilLeave();
     const open = workspaceEl.classList.toggle('is-explorer-open');
     filesBtn.classList.toggle('is-active', open);
     filesBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
@@ -132,9 +146,101 @@ if (filesBtn && workspaceEl) {
   });
 }
 
+function wireMenuTrigger(btn, menuOpts) {
+  if (!btn) return;
+  let suppressNextClick = false;
+
+  function setOpen(open) {
+    btn.classList.toggle('is-active', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function runMenuInteraction() {
+    if (typeof Menu !== 'undefined' && Menu.isOpen() && Menu.rootAnchor() === btn) {
+      Menu.closeAll();
+      return;
+    }
+    if (typeof Menu === 'undefined') return;
+    Menu.open({
+      anchor: btn,
+      side: menuOpts.side,
+      align: menuOpts.align,
+      items: menuOpts.items,
+      onClose: () => setOpen(false),
+    });
+    setOpen(true);
+  }
+
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    suppressNextClick = true;
+    if (typeof Tooltips !== 'undefined') {
+      Tooltips.suppressAnchor(btn);
+      Tooltips.hide();
+    }
+    runMenuInteraction();
+  });
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
+    if (typeof Tooltips !== 'undefined') {
+      Tooltips.suppressAnchor(btn);
+      Tooltips.hide();
+    }
+    runMenuInteraction();
+  });
+}
+
+const headerMenuDefs = [
+  {
+    id: 'menu-project',
+    side: 'bottom',
+    align: 'start',
+    items: [
+      { label: 'New project…' },
+      { label: 'Open project…' },
+      { label: 'Save' },
+      { label: 'Close project' },
+    ],
+  },
+  {
+    id: 'menu-edit',
+    side: 'bottom',
+    align: 'start',
+    items: [
+      { label: 'Undo' },
+      { label: 'Redo' },
+      { label: 'Cut' },
+      { label: 'Copy' },
+      { label: 'Paste' },
+      { label: 'Find…' },
+    ],
+  },
+  {
+    id: 'menu-insights',
+    side: 'bottom',
+    align: 'start',
+    items: [
+      { label: 'View diagnostics' },
+      { label: 'Run lint' },
+      { label: 'Coverage report…' },
+    ],
+  },
+];
+
+headerMenuDefs.forEach((def) => {
+  wireMenuTrigger(document.getElementById(def.id), def);
+});
+
 const prefabsBtn = document.getElementById('btn-prefabs');
 if (prefabsBtn) {
   let prefabsSuppressNextClick = false;
+  const hidePrefabsTooltipUntilLeave = wireSidebarOpenTooltip(prefabsBtn);
 
   function runPrefabsMenuInteraction() {
     if (typeof Menu !== 'undefined' && Menu.isOpen() && Menu.rootAnchor() === prefabsBtn) {
@@ -142,6 +248,7 @@ if (prefabsBtn) {
       return;
     }
     if (typeof Menu === 'undefined') return;
+    hidePrefabsTooltipUntilLeave();
     Menu.open({
       anchor: prefabsBtn,
       side: 'right',
@@ -157,9 +264,6 @@ if (prefabsBtn) {
           ],
         },
       ],
-      onClose: () => {
-        if (typeof Tooltips !== 'undefined') Tooltips.releaseAnchor(prefabsBtn);
-      },
     });
   }
 
@@ -167,10 +271,6 @@ if (prefabsBtn) {
     if (e.button !== 0) return;
     e.stopPropagation();
     prefabsSuppressNextClick = true;
-    if (typeof Tooltips !== 'undefined') {
-      Tooltips.suppressAnchor(prefabsBtn);
-      Tooltips.hide();
-    }
     runPrefabsMenuInteraction();
   });
 
@@ -179,10 +279,6 @@ if (prefabsBtn) {
     if (prefabsSuppressNextClick) {
       prefabsSuppressNextClick = false;
       return;
-    }
-    if (typeof Tooltips !== 'undefined') {
-      Tooltips.suppressAnchor(prefabsBtn);
-      Tooltips.hide();
     }
     runPrefabsMenuInteraction();
   });

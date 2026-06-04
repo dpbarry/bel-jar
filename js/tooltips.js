@@ -238,6 +238,18 @@
     tooltipHideFallbackTimer = setTimeout(finish, fallbackMs);
   }
 
+  function hideTooltipImmediate() {
+    tooltipAnchor = null;
+    if (!tooltipRoot) return;
+    cancelTooltipHideAnim();
+    const inner = tooltipRoot.querySelector('.tooltip-inner');
+    if (inner) clearSpout(inner);
+    tooltipRoot.classList.remove('is-visible', 'is-measuring', 'is-leaving');
+    tooltipRoot.hidden = true;
+    tooltipRoot.style.left = '';
+    tooltipRoot.style.top = '';
+  }
+
   function bindTooltips() {
     if (!tooltipRoot) return;
     document.querySelectorAll('[data-tooltip]').forEach((el) => {
@@ -342,6 +354,7 @@
 
   global.Tooltips = {
     hide: hideTooltip,
+    hideImmediate: hideTooltipImmediate,
     suppressAnchor(el) {
       suppressedTooltipAnchors.add(el);
     },

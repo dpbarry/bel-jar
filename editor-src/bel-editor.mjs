@@ -14,7 +14,7 @@ import {
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { bracketMatching, ensureSyntaxTree, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
-import { linter } from '@codemirror/lint';
+import { diagnosticCount, forEachDiagnostic, linter } from '@codemirror/lint';
 import { beluga } from './bel-language.mjs';
 import { formatCommand } from './bel-format.mjs';
 import { belAliases } from './bel-aliases.mjs';
@@ -176,6 +176,8 @@ function belEditorChrome() {
       minWidth: '2.5rem',
       textAlign: 'right',
       userSelect: 'none',
+      transition:
+        'background-color var(--overlay-pop-ms-out) var(--overlay-pop-ease-out), color var(--overlay-pop-ms-out) var(--overlay-pop-ease-out)',
     },
     '.cm-activeLineGutter': {
       backgroundColor: 'light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.038))',
@@ -184,10 +186,14 @@ function belEditorChrome() {
     '.cm-diagRow-warning': {
       backgroundColor: 'light-dark(rgba(217, 119, 6, 0.16), rgba(251, 191, 36, 0.16))',
       color: 'light-dark(rgb(180, 83, 9), rgb(252, 211, 77))',
+      transition:
+        'background-color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in), color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in)',
     },
     '.cm-diagRow-error': {
       backgroundColor: 'light-dark(rgba(220, 38, 38, 0.18), rgba(248, 113, 113, 0.24))',
       color: 'light-dark(rgb(185, 28, 28), rgb(252, 165, 165))',
+      transition:
+        'background-color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in), color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in)',
     },
     '.cm-content': {
       caretColor: 'var(--accent-high)',
@@ -273,30 +279,11 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
   ];
 }
 
-function adaptiveLintDelay(lineCount) {
-  if (lineCount < 60) return 200;
-  if (lineCount < 200) return 450;
-  if (lineCount < 600) return 800;
-  return 1100;
-}
-
-function lineCountOf(text) {
-  return (String(text == null ? '' : text).match(/\n/g) || []).length + 1;
-}
-
 function belSyntaxLinter() {
-  return linter((view) => syntaxLint(view), { delay: 0, tooltipFilter: LINT_TOOLTIP_FILTER });
-}
-
-function mergeLintDiagnostics(syntaxDiags, belugaDiags) {
-  const merged = syntaxDiags.slice();
-  for (const d of belugaDiags) {
-    if (!merged.some((e) => e.from === d.from && e.to === d.to && e.message === d.message)) {
-      merged.push(d);
-    }
-  }
-  merged.sort((a, b) => a.from - b.from);
-  return merged;
+  // Syntax diagnostics are a synchronous Lezer tree walk — keep them on a small
+  // fixed delay so parser-level errors show fast on files of any size, decoupled
+  // from the Beluga checker's own adaptive debounce.
+  return linter((view) => syntaxLint(view), { delay: 80, tooltipFilter: LINT_TOOLTIP_FILTER });
 }
 
 export function mount(parentEl, options = {}) {
@@ -307,8 +294,6 @@ export function mount(parentEl, options = {}) {
   const ph = options.placeholder ?? 'Write Beluga code here...';
   const themeCompartment = new Compartment();
   const ideCompartment = new Compartment();
-  const lintDelayCompartment = new Compartment();
-  let lintDelay = adaptiveLintDelay(lineCountOf(options.doc));
   const initialDark = options.dark ?? isDocumentDarkTheme();
   parentEl.replaceChildren();
 
@@ -357,7 +342,6 @@ export function mount(parentEl, options = {}) {
     ? document.getElementById('ide-status-dot')
     : null;
 
-  let lastBelugaLintDiags = [];
   let belugaCheckPending = false;
 
   function belugaCheckEnabled(view) {
@@ -370,22 +354,20 @@ export function mount(parentEl, options = {}) {
   }
 
   function refreshIdeStatus(view) {
-    updateIdeStatusDot(
-      ideStatusDot,
-      mergeLintDiagnostics(syntaxLint(view), lastBelugaLintDiags),
-      { belugaPending: belugaCheckPending },
-    );
+    // Read the diagnostics ACTUALLY rendered in the editor (syntax + Beluga),
+    // so the status dot can never disagree with the squiggles.
+    const diags = [];
+    forEachDiagnostic(view.state, (d) => diags.push(d));
+    updateIdeStatusDot(ideStatusDot, diags, { belugaPending: belugaCheckPending });
   }
 
   const belugaLinter = createBelugaLinter({
-    delay: 0,
-
+    delay: 400,
     onCheckStart(view) {
       markBelugaCheckPending(view);
       refreshIdeStatus(view);
     },
-    onDiagnostics(view, belugaDiags) {
-      lastBelugaLintDiags = belugaDiags;
+    onDiagnostics(view) {
       belugaCheckPending = false;
       refreshIdeStatus(view);
     },
@@ -447,21 +429,17 @@ export function mount(parentEl, options = {}) {
   });
 
   const docSyncExt = EditorView.updateListener.of((update) => {
+    // Keep the status dot in lock-step with the rendered diagnostics: whenever
+    // the lint set changes (syntax pass, Beluga check landing), refresh it.
+    if (diagnosticCount(update.state) !== diagnosticCount(update.startState)) {
+      refreshIdeStatus(update.view);
+    }
     if (update.docChanged) {
-      lastBelugaLintDiags = [];
       markBelugaCheckPending(update.view);
       syncSemanticFromView(update.view);
       semanticEngine.onDocChange(update.changes);
       seedSemanticScheduler(update.view);
       scheduleSemanticTypesSave();
-      const wantDelay = adaptiveLintDelay(update.state.doc.lines);
-      if (wantDelay !== lintDelay) {
-        lintDelay = wantDelay;
-        const v = update.view;
-        queueMicrotask(() => v.dispatch({
-          effects: lintDelayCompartment.reconfigure(linter(null, { delay: wantDelay })),
-        }));
-      }
     }
     if (update.selectionSet) {
       semanticEngine.onCursorMove(update.state.selection.main.head);
@@ -480,7 +458,6 @@ export function mount(parentEl, options = {}) {
     treeWatchPlugin,
     themeCompartment.of(cmThemeExtensions(initialDark)),
     ideCompartment.of([]),
-    lintDelayCompartment.of(linter(null, { delay: lintDelay })),
   ];
 
   const initialDoc = sanitizePastedPlainText(options.doc ?? '');

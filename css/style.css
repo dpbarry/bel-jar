@@ -113,19 +113,15 @@
     hsla(0, 0%, 100%, 0.08)
   );
 
-  /* Menu surface (shared by .menu and the settings .bj-dropdown). Low bg alpha =
-     real frosted glass; --menu-shadow's dark value lives here, light below. */
+  /* Menu surface (shared by .menu and the settings .bj-dropdown). Opaque, IDE
+     style: a notch above the panels, never bright; tight contained shadow.
+     --menu-shadow's dark value lives here, light overridden in html.light. */
   --menu-radius: var(--radius-sm);
   --menu-item-radius: 2px;
-  --menu-pad: 0.2rem;
-  --menu-bg: light-dark(hsla(220, 40%, 99%, 0.35), hsla(222, 20%, 18%, 0.35));
-  --menu-bg-opaque: light-dark(hsl(220, 30%, 98%), hsl(222, 17%, 14%));
-  --menu-border: light-dark(hsla(220, 18%, 56%, 0.38), hsla(220, 14%, 80%, 0.2));
-  --menu-backdrop: blur(10px) saturate(1.5);
-  --menu-shadow:
-    0 1px 0 0 hsla(0, 0%, 100%, 0.04) inset,
-    0 18px 48px -12px hsla(0, 0%, 0%, 0.62),
-    0 6px 16px -8px hsla(0, 0%, 0%, 0.5);
+  --menu-pad: 0.3rem;
+  --menu-bg: light-dark(hsl(220, 22%, 99%), hsl(222, 15%, 8%));
+  --menu-border: light-dark(hsl(220, 13%, 75%), hsl(220, 10%, 30%));
+  --menu-shadow: 0 4px 14px -4px hsla(0, 0%, 0%, 0.55);
   --menu-item-fg: var(--base-higher);
   --menu-item-fg-hover: var(--accent-high);
   --menu-item-hover-wash: light-dark(hsla(217, 60%, 50%, 0.07), hsla(215, 60%, 66%, 0.09));
@@ -210,10 +206,7 @@ html {
 
 html.light {
   color-scheme: light;
-  --menu-shadow:
-    0 1px 0 0 hsla(0, 0%, 100%, 0.9) inset,
-    0 16px 40px -14px hsla(222, 40%, 30%, 0.28),
-    0 4px 12px -6px hsla(222, 40%, 30%, 0.16);
+  --menu-shadow: 0 4px 14px -4px hsla(222, 40%, 30%, 0.22);
 }
 
 * {
@@ -354,7 +347,7 @@ html.light body {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 10111000;
+  z-index: 100000;
   pointer-events: none;
   visibility: hidden;
 }
@@ -524,9 +517,6 @@ html.light body {
   overflow: visible;
 }
 
-/* Frosted glass. The panel must never get opacity<1 or a transform, or
-   backdrop-filter stops sampling the page and goes solid — so the pop animates
-   `scale` + `visibility` only. */
 .menu {
   position: fixed;
   left: 0;
@@ -536,22 +526,18 @@ html.light body {
   padding: var(--menu-pad);
   font-family: var(--sans);
   background: var(--menu-bg);
-  -webkit-backdrop-filter: var(--menu-backdrop);
-  backdrop-filter: var(--menu-backdrop);
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);
   box-shadow: var(--menu-shadow);
   transform-origin: top center;
-  scale: 0.96;
+  transform: scale(0.96);
+  opacity: 0;
   visibility: hidden;
   transition:
-    scale var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    opacity calc(var(--overlay-pop-ms-in) * 0.8) ease-out,
     visibility 0s var(--overlay-pop-ms-in);
   pointer-events: auto;
-}
-
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .menu { background: var(--menu-bg-opaque); }
 }
 
 .menu.is-submenu { min-width: 8rem; }
@@ -563,24 +549,26 @@ html.light body {
 
 .menu.is-measuring {
   visibility: visible !important;
-  scale: 1 !important;
+  transform: none !important;
+  opacity: 0 !important;
   transition: none !important;
   left: -9999px !important;
   top: 0 !important;
 }
 
 .menu.is-visible:not(.is-measuring) {
-  scale: 1;
+  transform: scale(1);
+  opacity: 1;
   visibility: visible;
-  transition: scale var(--overlay-pop-ms-in) var(--overlay-pop-ease-in);
 }
 
 .menu.is-leaving {
-  scale: 0.97;
+  transform: scale(0.97);
+  opacity: 0;
   pointer-events: none;
   transition:
-    scale var(--overlay-pop-ms-out) var(--overlay-pop-ease-out),
-    visibility 0s var(--overlay-pop-ms-out);
+    transform var(--overlay-pop-ms-out) var(--overlay-pop-ease-out),
+    opacity var(--overlay-pop-ms-out) ease-in;
 }
 
 .menu-item {
@@ -611,7 +599,8 @@ html.light body {
   left: 0.18rem;
   top: 50%;
   width: 2.5px;
-  height: 0;
+  height: 0.1rem;
+  opacity: 0;
   border-radius: 2px;
   background: var(--accent-mid);
   transform: translateY(-50%);
@@ -632,7 +621,7 @@ html.light body {
   background: var(--menu-item-hover-wash);
 }
 .menu-item:not(:disabled):focus-visible::before,
-.menu-item:not(:disabled).is-submenu-open::before { height: 1.05rem; }
+.menu-item:not(:disabled).is-submenu-open::before { opacity: 1;height: 1.05rem; }
 .menu-item:not(:disabled):focus-visible .menu-item-chevron,
 .menu-item.is-submenu-open .menu-item-chevron { opacity: 1; color: var(--accent-mid); }
 
@@ -641,7 +630,7 @@ html.light body {
     color: var(--menu-item-fg-hover);
     background: var(--menu-item-hover-wash);
   }
-  .menu-item:not(:disabled):hover::before { height: 1.05rem; }
+  .menu-item:not(:disabled):hover::before { opacity: 1; height: 1.05rem; }
   .menu-item:not(:disabled):hover .menu-item-chevron { opacity: 1; color: var(--accent-mid); }
 }
 
@@ -719,7 +708,7 @@ html.light body {
 header {
   height: var(--header-h);
   flex-shrink: 0;
-  padding: 0 calc(var(--pad-inline) - 0.0625rem);
+  padding: 0 calc(var(--pad-inline) - 0.0625rem) 0 0;
   background: var(--chrome-bg-header);
   border-bottom: 1px solid var(--chrome-divider);
   display: flex;
@@ -730,15 +719,17 @@ header {
 .header-start {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
   min-width: 0;
 }
 
+/* Match the sidebar column so the first menu button's left edge lands on the
+   sidebar's right border (border is inside --sidebar-w via border-box). */
 .header-brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  padding-left: 0.0625rem;
+  width: var(--sidebar-w);
 }
 
 .header-logo {
@@ -2238,19 +2229,11 @@ html.light .bj-dialog::backdrop {
   min-width: max-content;
   padding: var(--menu-pad);
   background: var(--menu-bg);
-  -webkit-backdrop-filter: var(--menu-backdrop);
-  backdrop-filter: var(--menu-backdrop);
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);
   box-shadow: var(--menu-shadow);
   z-index: 9999;
   display: none;
-}
-
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .bj-dropdown__panel {
-    background: var(--menu-bg-opaque);
-  }
 }
 
 .bj-dropdown__panel.is-open {

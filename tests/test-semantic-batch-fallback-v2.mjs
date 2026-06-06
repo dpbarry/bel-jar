@@ -63,9 +63,34 @@ const hit = engine.stores.metavar.get(decl.id, 'A');
 // A in `pf A` is filled structurally (`pf : o -> type`) without calling Beluga.
 expect(hit && hit.type === 'o', `metavar cache should hold structural type, got ${hit && hit.type}`);
 
-// Fallback path when batch returns use-ideTypeAtJson (parallel per-position)
-const META2 = `o : type.
+// When the head constant IS defined, structural inference recovers the implicit
+// types directly from its declared binders — no Beluga round-trip at all.
+const METAdef = `o : type.
 R : (A:o) -> (B:o) -> o -> type.
+c : R X Y -> R X Y.
+`;
+let defIdeCalls = 0;
+const belugaDef = {
+  fingerprint: (c) => 'fp:' + c.length,
+  loadChecker: async () => ({ ok: true }),
+  ideType: async () => { defIdeCalls += 1; return JSON.stringify({ ok: true, type: 'should-not-run' }); },
+  ideElaborate: async () => JSON.stringify({ ok: false, fallback: 'use-ideTypeAtJson' }),
+};
+const engineDef = createSemanticEngine({
+  session: createSemanticSession(belugaDef), belugaClient: belugaDef,
+});
+engineDef.setCheckerCode(() => METAdef);
+upd(engineDef, METAdef);
+const declDef = engineDef.getSnapshot().symbols.globalSymbols.find((s) => s.name === 'c');
+await engineDef.elaborateDeclarationImplicits(declDef.id);
+expect(defIdeCalls === 0, `defined head: structural inference should avoid Beluga, got ${defIdeCalls} ideType calls`);
+expect(engineDef.stores.metavar.get(declDef.id, 'X')?.type === '(A:o)',
+  `X should be structurally inferred from R's binder, got ${engineDef.stores.metavar.get(declDef.id, 'X')?.type}`);
+
+// Fallback path: when the head is UNDEFINED, structural inference cannot recover
+// the implicit types, so the batch returns use-ideTypeAtJson and we fall back to
+// per-position ideType.
+const META2 = `o : type.
 c : R X Y -> R X Y.
 `;
 const belugaFallback = {

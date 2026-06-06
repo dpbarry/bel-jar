@@ -42,17 +42,17 @@ Declaration {
 //  LF declarations
 
 LFDeclaration {
-    LowerIdentifier ":" LFKind "."
-  | LowerIdentifier ":" LFType "."
+    (LowerIdentifier | UpperIdentifier) ":" LFKind "."
+  | (LowerIdentifier | UpperIdentifier) ":" LFType "."
 }
 
 LFDatatypeDeclaration {
-    (LFKeyword | DatatypeKeyword) LowerIdentifier (":" LFKind)? "="
+    (LFKeyword | DatatypeKeyword) (LowerIdentifier | UpperIdentifier) (":" LFKind)? "="
     "|"? LFConstructor ("|" LFConstructor)*
     ";"
 }
 
-LFConstructor { LowerIdentifier ":" LFType }
+LFConstructor { (LowerIdentifier | UpperIdentifier) ":" LFType }
 
 //  Pragmas
 

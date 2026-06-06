@@ -616,6 +616,51 @@
       .then(function (result) { return resultText(result) || ''; });
   }
 
+  function dispatchIdeDeclType(code, name) {
+    var requestCode = String(code != null ? code : '');
+    var requestFP = fingerprintCode(requestCode);
+    var payload = { name: name };
+
+    if (cfg.thread === 'worker') {
+      clearCheckerIdleTimer();
+      return ensureCheckerReady(cfg.build)
+        .then(function (slot) {
+          if (slot.committedFingerprint === requestFP) {
+            return postWorker(slot, 'ide-decl-type', payload, null, null);
+          }
+          return postWorker(slot, 'load', requestCode, null, null)
+            .then(function (loadResult) {
+              if (!loadResult || !loadResult.ok) {
+                slot.committedFingerprint = '';
+                return '';
+              }
+              slot.committedFingerprint = requestFP;
+              return postWorker(slot, 'ide-decl-type', payload, null, null);
+            });
+        })
+        .then(function (result) {
+          scheduleCheckerIdleShutdown();
+          return resultText(result) || '';
+        })
+        .catch(function (err) {
+          scheduleCheckerIdleShutdown();
+          if (checkerSlot) checkerSlot.committedFingerprint = '';
+          throw err;
+        });
+    }
+
+    return ensureMainReady(cfg.build)
+      .then(function () {
+        if (mainCheckerFingerprint !== requestFP) {
+          var lr = global.Beluga.loadFromString(requestCode);
+          if (!lr || !lr.ok) { mainCheckerFingerprint = ''; return ''; }
+          mainCheckerFingerprint = requestFP;
+        }
+        return global.Beluga.ideDeclType(name);
+      })
+      .then(function (result) { return resultText(result) || ''; });
+  }
+
   function dispatchLoadChecker(code) {
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
@@ -836,6 +881,10 @@
 
     ideType: function (code, line, col) {
       return dispatchIdeType(code, line, col);
+    },
+
+    ideDeclType: function (code, name) {
+      return dispatchIdeDeclType(code, name);
     },
 
     ideElaborate: function (code, startLine, endLine, positionsSpec) {

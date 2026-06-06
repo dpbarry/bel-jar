@@ -174,6 +174,18 @@ export function createSemanticScheduler(engine, session) {
     scheduledRun = setTimeout(async () => {
       scheduledRun = null;
 
+      // Populate the reconstructed-type data layer (bounded per tick inside the
+      // engine), once per settle-cycle before implicit work. Returns whether
+      // reconstruction work remains.
+      let moreToDerive = false;
+      if (typeof engine.deriveFrontier === 'function') {
+        try {
+          moreToDerive = await engine.deriveFrontier();
+        } catch (e) {
+          console.error('[scheduler] deriveFrontier failed:', e);
+        }
+      }
+
       for (let i = 0; i < BATCH_PER_TICK && queue.length > 0; i++) {
         try {
           await elaborateNext();
@@ -182,7 +194,9 @@ export function createSemanticScheduler(engine, session) {
         }
       }
 
-      if (queue.length > 0) scheduleRun();
+      // Re-arm while implicit work is queued OR decls still await reconstruction
+      // (deriveFrontier is batch-bounded).
+      if (queue.length > 0 || moreToDerive) scheduleRun();
     }, 50);
   }
 

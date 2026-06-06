@@ -316,17 +316,23 @@ function declLowerBindings(decl, doc) {
   return [binding(doc, id)];
 }
 
+function lfDeclBindings(decl, doc) {
+  const id = firstIdentChild(decl);
+  if (!id) return [];
+  return [binding(doc, id)];
+}
+
 function lfDatatypeBindings(decl, doc) {
   const bindings = [];
   let sawTypeName = false;
   for (let c = decl.firstChild; c; c = c.nextSibling) {
-    if (c.name === 'LowerIdentifier' && !sawTypeName) {
+    if ((c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') && !sawTypeName) {
       sawTypeName = true;
       bindings.push(binding(doc, c));
       continue;
     }
     if (c.name === 'LFConstructor') {
-      const id = firstChildNamed(c, 'LowerIdentifier');
+      const id = firstIdentChild(c);
       if (id) bindings.push(binding(doc, id));
     }
   }
@@ -375,7 +381,7 @@ function stratifiedDeclBindings(decl, doc) {
 
 const MODULE_TAIL_COLLECTORS = {
   LetDeclaration: declLowerBindings,
-  LFDeclaration: declLowerBindings,
+  LFDeclaration: lfDeclBindings,
   LFDatatypeDeclaration: lfDatatypeBindings,
   TypedefDeclaration: typedefBindings,
   SchemaDeclaration: schemaDeclBindings,
@@ -567,7 +573,7 @@ function doWalk(tree, doc) {
       if (inLFDatatype) {
         if (n === 'LFKeyword' || n === 'DatatypeKeyword') {
           lfDatatypeKeywordSeen = true;
-        } else if (n === 'LowerIdentifier' && lfDatatypeKeywordSeen) {
+        } else if ((n === 'LowerIdentifier' || n === 'UpperIdentifier') && lfDatatypeKeywordSeen) {
           noteDefinedName(ref.from, ref.to);
           lfDatatypeKeywordSeen = false;
         }
@@ -609,8 +615,16 @@ function doWalk(tree, doc) {
           if (p === 'InductiveBody' ||
               p === 'CompConstructor' ||
               p === 'TypedefDeclaration' ||
-              p === 'ModuleDeclaration') {
+              p === 'ModuleDeclaration' ||
+              p === 'LFConstructor') {
             noteDefinedName(ref.from, ref.to);
+          } else if (p === 'LFDeclaration') {
+            let hasDot = false, hasError = false;
+            for (let c = parent.firstChild; c; c = c.nextSibling) {
+              if (c.name === '.') hasDot = true;
+              if (c.type.isError) hasError = true;
+            }
+            if (hasDot && !hasError) noteDefinedName(ref.from, ref.to);
           }
         }
 

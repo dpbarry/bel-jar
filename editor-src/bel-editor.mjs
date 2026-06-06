@@ -176,8 +176,7 @@ function belEditorChrome() {
       minWidth: '2.5rem',
       textAlign: 'right',
       userSelect: 'none',
-      transition:
-        'background-color var(--overlay-pop-ms-out) var(--overlay-pop-ease-out), color var(--overlay-pop-ms-out) var(--overlay-pop-ease-out)',
+      transition: 'background-color 80ms ease-out, color 80ms ease-out',
     },
     '.cm-activeLineGutter': {
       backgroundColor: 'light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.038))',
@@ -186,14 +185,12 @@ function belEditorChrome() {
     '.cm-diagRow-warning': {
       backgroundColor: 'light-dark(rgba(217, 119, 6, 0.16), rgba(251, 191, 36, 0.16))',
       color: 'light-dark(rgb(180, 83, 9), rgb(252, 211, 77))',
-      transition:
-        'background-color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in), color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in)',
+      transition: 'background-color 80ms ease-out, color 80ms ease-out',
     },
     '.cm-diagRow-error': {
       backgroundColor: 'light-dark(rgba(220, 38, 38, 0.18), rgba(248, 113, 113, 0.24))',
       color: 'light-dark(rgb(185, 28, 28), rgb(252, 165, 165))',
-      transition:
-        'background-color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in), color var(--overlay-pop-ms-in) var(--overlay-pop-ease-in)',
+      transition: 'background-color 80ms ease-out, color 80ms ease-out',
     },
     '.cm-content': {
       caretColor: 'var(--accent-high)',

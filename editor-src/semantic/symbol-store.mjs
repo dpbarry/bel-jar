@@ -229,7 +229,6 @@ const COMP_TYPE_LOWER = Object.freeze(new Set([
 const COMP_TYPE_UPPER = Object.freeze(new Set([
   NAMESPACE.COMP_TYPE, NAMESPACE.COMP_CONSTRUCTOR, NAMESPACE.TYPEDEF, NAMESPACE.MODULE,
 ]));
-const EMPTY_NS = Object.freeze(new Set());
 const FIXITY_PRAGMA = new Set(['InfixPragma', 'PrefixPragma', 'OpaquePragma']);
 
 function expectedNamespaces(node, refKind) {
@@ -237,9 +236,14 @@ function expectedNamespaces(node, refKind) {
   const ctx = parent ? parent.name : '';
   switch (ctx) {
     case 'LFAtomicType':
-      return refKind === 'upper' ? EMPTY_NS : LF_TYPE_HEAD;
+      // Uppercase in LF type position is normally a metavariable, but Beluga
+      // also permits uppercase LF type-family constants. Allow resolution to a
+      // defined LF head; if none exists the ref stays unresolved (a metavar).
+      return LF_TYPE_HEAD;
     case 'LFAtomicTerm':
-      return refKind === 'upper' ? EMPTY_NS : LF_TERM_HEAD;
+      // Likewise uppercase here is usually a metavariable, but may name an
+      // uppercase LF constant. Resolve to one if defined, else leave unresolved.
+      return LF_TERM_HEAD;
     case 'CompAtomicType':
       return refKind === 'upper' ? COMP_TYPE_UPPER : COMP_TYPE_LOWER;
     default:

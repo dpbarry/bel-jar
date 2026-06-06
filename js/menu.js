@@ -3,7 +3,6 @@
 
   const FRP = global.FloatingRectPlacement;
   const MARGIN = FRP.DEFAULT_MARGIN;
-  const GAP = FRP.DEFAULT_GAP;
 
   const customRowTypes = Object.create(null);
 
@@ -146,8 +145,9 @@
         width: tw,
         height: th,
         margin: MARGIN,
-        // Submenus overlap the parent slightly (IDE style); root menus keep the gap
-        gap: isSubmenu ? -3 : GAP,
+        // Submenus sit flush against the parent's right edge (IDE style); root
+        // menus sit flush against their trigger too.
+        gap: 0,
         side,
         align,
       });
@@ -166,9 +166,7 @@
       menuEl.classList.remove('is-visible', 'is-measuring');
       menuEl.classList.add('is-leaving');
       void menuEl.offsetHeight;
-      // Pop animates the `scale` property (not `transform`) so backdrop-filter
-      // keeps working — wait on the matching transitionend.
-      const prop = 'scale';
+      const prop = 'transform';
       let finished = false;
       const finish = () => {
         if (finished) return;

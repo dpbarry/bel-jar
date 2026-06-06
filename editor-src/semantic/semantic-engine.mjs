@@ -19,6 +19,9 @@ export function createSemanticEngine(options = {}) {
   let snapshot = null;
   let hydratedTypes = new Map();
   let hydratedMetavars = new Map();
+  // Elaborated (reconstructed) decl types, implicits expanded. structuralKey -> { type, fp, status }.
+  // Populated in the background by deriveFrontier; read via reconstructedTypeOf/At and bestDeclType.
+  let derivationStore = new Map();
   const elaborationInflight = new Map();
   
   let scheduler = null;
@@ -30,6 +33,7 @@ export function createSemanticEngine(options = {}) {
         observeMetavarNamed: (declId, name, type) => observeMetavarNamed(declId, name, type),
         elaborateDeclarationImplicits: (declId) => elaborateDeclarationImplicits(declId),
         dirtyFrontier,
+        deriveFrontier,
         getCheckerCode: () => checkerCodeFromSyntax(syntaxStore.getSnapshot()),
       };
       scheduler = createSemanticScheduler(engine, session);
@@ -39,6 +43,7 @@ export function createSemanticEngine(options = {}) {
 
   function mapTypeSource(best) {
     if (!best) return null;
+    if (best.source === 'reconstructed') return 'reconstructed';
     if (best.source === 'annotation') return 'source';
     if (best.source === 'hydrated' || best.status === STATUS.STALE_KNOWN) return 'stale-cache';
     if (best.source === 'oracle' && best.status === STATUS.FRESH) return 'fresh-cache';
@@ -78,6 +83,10 @@ export function createSemanticEngine(options = {}) {
 
   function bestDeclType(symbol) {
     if (!symbol) return null;
+    const derived = derivationStore.get(symbol.structuralKey);
+    if (derived && derived.type != null && derived.fp === symbol.fingerprint) {
+      return { type: derived.type, status: STATUS.FRESH, source: 'reconstructed' };
+    }
     const hydrated = hydratedTypes.get(symbol.structuralKey);
     if (hydrated && hydrated.type != null && hydrated.fp === symbol.fingerprint) {
       return { type: hydrated.type, status: STATUS.STALE_KNOWN, source: 'hydrated' };
@@ -302,15 +311,39 @@ export function createSemanticEngine(options = {}) {
     };
   }
 
+  // Reusable read API for the reconstructed-type data layer (expected-type-while-typing,
+  // holes, etc.). Returns the fp-validated { type, status } record or null.
+  function reconstructedTypeOf(symbolId) {
+    if (!symbolId || !snapshot || !snapshot.symbols) return null;
+    const symbol = snapshot.symbols.symbolsById.get(symbolId);
+    if (!symbol) return null;
+    const derived = derivationStore.get(symbol.structuralKey);
+    if (derived && derived.type != null && derived.fp === symbol.fingerprint) {
+      return { type: derived.type, status: derived.status || STATUS.FRESH };
+    }
+    return null;
+  }
+
+  function reconstructedTypeAt(pos) {
+    const query = symbolStore.queryAt(pos);
+    if (!query || !query.symbol) return null;
+    return reconstructedTypeOf(query.symbol.id);
+  }
+
   function exportTypes() {
     const symbols = symbolStore.getSnapshot();
     const decls = [];
     const metavars = [];
+    const reconstructed = [];
     if (symbols) {
       for (const symbol of symbols.globalSymbols) {
         const hydrated = hydratedTypes.get(symbol.structuralKey);
         if (hydrated && hydrated.type != null && hydrated.fp === symbol.fingerprint) {
           decls.push([symbol.structuralKey, hydrated.type, hydrated.fp]);
+        }
+        const derived = derivationStore.get(symbol.structuralKey);
+        if (derived && derived.type != null && derived.fp === symbol.fingerprint) {
+          reconstructed.push([symbol.structuralKey, derived.type, derived.fp]);
         }
       }
       const seen = new Set();
@@ -336,14 +369,16 @@ export function createSemanticEngine(options = {}) {
         }
       }
     }
-    return { v: 1, decls, metavars };
+    return { v: 1, decls, metavars, reconstructed };
   }
 
   function importTypes(blob) {
     hydratedTypes = new Map();
     hydratedMetavars = new Map();
+    derivationStore = new Map();
     for (const [key, type, fp] of (blob && blob.decls) || []) hydratedTypes.set(key, { type, fp });
     for (const [key, type, fp] of (blob && blob.metavars) || []) hydratedMetavars.set(key, { type, fp });
+    for (const [key, type, fp] of (blob && blob.reconstructed) || []) derivationStore.set(key, { type, fp, status: STATUS.FRESH });
   }
 
   function observeType(pos, type) {
@@ -439,6 +474,58 @@ export function createSemanticEngine(options = {}) {
     return { ok: true, complete: pendingOf().length === 0 };
   }
 
+  // Background population of the reconstructed-type data layer. Called once per
+  // settle-cycle by the scheduler. Walks dirty global decls, fetches the
+  // implicit-expanded type via the session, and writes it to derivationStore.
+  const DERIVE_BATCH = 6;
+  // Decls already attempted at their current fingerprint (success OR failure), so
+  // a permanent failure doesn't keep the scheduler re-arming. Cleared per-key
+  // implicitly by the fp check below when the decl changes.
+  const derivationAttempted = new Map(); // structuralKey -> fp
+
+  // Returns true if reconstruction work remains (so the scheduler should re-arm).
+  async function deriveFrontier() {
+    if (!session || typeof session.ideDeclType !== 'function') return false;
+    const symbols = symbolStore.getSnapshot();
+    const syntax = syntaxStore.getSnapshot();
+    if (!symbols || !syntax) return false;
+
+    const code = checkerCodeFromSyntax(syntax);
+    if (!code) return false;
+
+    const needsDerive = (symbol) => {
+      if (!symbol || !symbol.isGlobal || !symbol.name) return false;
+      const fresh = derivationStore.get(symbol.structuralKey);
+      if (fresh && fresh.fp === symbol.fingerprint) return false;
+      const tried = derivationAttempted.get(symbol.structuralKey);
+      if (tried === symbol.fingerprint) return false;
+      return true;
+    };
+
+    let budget = DERIVE_BATCH;
+    for (const symbol of symbols.globalSymbols) {
+      if (budget <= 0) break;
+      if (!needsDerive(symbol)) continue;
+      budget -= 1;
+      derivationAttempted.set(symbol.structuralKey, symbol.fingerprint);
+      try {
+        const r = await session.ideDeclType(code, symbol.name);
+        if (r && r.ok && r.type != null) {
+          derivationStore.set(symbol.structuralKey, {
+            type: r.type,
+            fp: symbol.fingerprint,
+            status: STATUS.FRESH,
+          });
+          if (onTypeObserved) {
+            try { onTypeObserved(); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    return symbols.globalSymbols.some(needsDerive);
+  }
+
   function observeMetavarAt(pos, type) {
     if (type == null) return;
     const ref = symbolStore.referenceAt(pos);
@@ -487,7 +574,22 @@ export function createSemanticEngine(options = {}) {
       return out;
     }
 
+    // Prefer a fresh reconstructed (implicit-expanded) decl type over the
+    // source-written signature, when one is available for this declaration.
     if (resolved && resolved.sourceType) {
+      const recon = query && query.symbol ? reconstructedTypeOf(query.symbol.id) : null;
+      if (recon && recon.type != null) {
+        const out = attachDependencyMeta({
+          status: 'ready',
+          source: 'reconstructed',
+          type: recon.type,
+          derivationStatus: recon.status,
+          ...base,
+          ...presentation,
+        }, blocked);
+        trace?.record('ready', { source: 'reconstructed', instant: true });
+        return out;
+      }
       const out = attachDependencyMeta({
         status: 'ready',
         source: 'local',
@@ -559,7 +661,7 @@ export function createSemanticEngine(options = {}) {
 
     const out = {
       status: 'pending',
-      reason: sync ? 'awaiting-oracle' : 'uncached',
+      reason: sync ? 'awaiting-session' : 'uncached',
       staleType,
       staleSource,
       promise,
@@ -678,14 +780,14 @@ export function createSemanticEngine(options = {}) {
         return {
           status: 'unavailable',
           reason: 'no-type-at-position',
-          proof: 'oracle-definitive-empty',
+          proof: 'session-definitive-empty',
         };
       }
-      return { status: 'pending', reason: 'oracle-miss', retryable: true };
+      return { status: 'pending', reason: 'session-miss', retryable: true };
     }
     return {
       status: 'pending',
-      reason: 'transient-oracle-miss',
+      reason: 'transient-session-miss',
       retryable: true,
     };
   }
@@ -797,8 +899,11 @@ export function createSemanticEngine(options = {}) {
     exportIdentity: () => symbolStore.exportIdentity(),
     importIdentity: (entries) => symbolStore.importIdentity(entries),
     dirtyFrontier,
+    deriveFrontier,
     elaborateAt,
     cachedTypeAt,
+    reconstructedTypeOf,
+    reconstructedTypeAt,
     exportTypes,
     importTypes,
     observeType,

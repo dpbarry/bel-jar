@@ -42,6 +42,7 @@ function runBelugaJob(type, payload) {
   if (type === 'load') return Beluga.loadFromString(payload);
   if (type === 'run') return Beluga.runCommand(payload);
   if (type === 'ide-type') return Beluga.ideTypeAtJson(payload.line, payload.col);
+  if (type === 'ide-decl-type') return Beluga.ideDeclType(payload.name);
   if (type === 'ide-elaborate') {
     return Beluga.ideElaborateDecl(payload.start, payload.end, payload.positions || '');
   }

@@ -123,6 +123,15 @@ export function createSemanticSession(belugaClient) {
     }
   }
 
+  async function ideDeclType(code, name) {
+    await ensureLoaded(code);
+    try {
+      return JSON.parse(await belugaClient.ideDeclType(lastCode, name));
+    } catch (e) {
+      return { ok: false, reason: 'parse-error' };
+    }
+  }
+
   function invalidate() {
     loadedFingerprint = null;
     loadPromise = null;
@@ -157,6 +166,7 @@ export function createSemanticSession(belugaClient) {
     elaborateDecl,
     elaboratePositions,
     typeAt,
+    ideDeclType,
     invalidate,
     getFingerprint,
   };

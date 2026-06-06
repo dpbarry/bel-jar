@@ -15,30 +15,17 @@ f : R A B C -> R A B C.
 `;
 const doc = Text.of(SRC.split('\n'));
 const tree = parser.parse(SRC);
-const posA = SRC.indexOf('R A B') + 2;
 const posB = SRC.indexOf('R A B') + 4;
-const posC = SRC.lastIndexOf('C') + 0;
 
-let batchCalls = 0;
+// A, B, C are positional args of `R : o -> o -> o`, so structural inference fills
+// every implicit in one pass from the head signature — no Beluga round-trip — and
+// hover thereafter serves from cache without re-calling.
+let belugaCalls = 0;
 const belugaClient = {
   fingerprint: (c) => 'fp:' + c.length,
   loadChecker: async () => ({ ok: true }),
-  ideType: async () => JSON.stringify({ ok: true, type: 'should-not-run' }),
-  ideElaborate: async (_code, _s, _e, spec) => {
-    batchCalls += 1;
-    const names = spec.split(';').map((p) => p.split('|')[0]);
-    expect(names.includes('A') && names.includes('B') && names.includes('C'),
-      `batch spec should list all implicits: ${spec}`);
-    return JSON.stringify({
-      ok: true,
-      implicits: names.map((name) => {
-        const site = name === 'A' ? { line: 3, col: posA - doc.line(3).from }
-          : name === 'B' ? { line: 3, col: posB - doc.line(3).from }
-            : { line: 3, col: posC - doc.line(3).from };
-        return { name, ...site, type: `Ty_${name}` };
-      }),
-    });
-  },
+  ideType: async () => { belugaCalls += 1; return JSON.stringify({ ok: true, type: 'should-not-run' }); },
+  ideElaborate: async () => { belugaCalls += 1; return JSON.stringify({ ok: false }); },
 };
 
 const session = createSemanticSession(belugaClient);
@@ -53,14 +40,13 @@ const decl = engine.getSnapshot().symbols.globalSymbols.find((s) => s.name === '
 expect(decl, 'decl f');
 
 await sched.ensureElaborated(decl.id, decl.range);
-expect(batchCalls === 1, `one batch per decl, got ${batchCalls}`);
-expect(engine.stores.metavar.get(decl.id, 'A')?.type === 'Ty_A', 'A cached');
-expect(engine.stores.metavar.get(decl.id, 'B')?.type === 'Ty_B', 'B cached');
-expect(engine.stores.metavar.get(decl.id, 'C')?.type === 'Ty_C', 'C cached');
+expect(belugaCalls === 0, `structural inference should fill implicits without Beluga, got ${belugaCalls}`);
+expect(engine.stores.metavar.get(decl.id, 'A')?.type === 'o', 'A cached');
+expect(engine.stores.metavar.get(decl.id, 'B')?.type === 'o', 'B cached');
+expect(engine.stores.metavar.get(decl.id, 'C')?.type === 'o', 'C cached');
 
-batchCalls = 0;
 const h1 = engine.hoverAt(posB, { oracle: { async declarationType() { throw new Error('no'); } } });
-expect(h1.status === 'ready' && h1.type === 'Ty_B', `hover B ready from cache: ${h1.status}/${h1.type}`);
-expect(batchCalls === 0, `hover must not call Beluga again, batchCalls=${batchCalls}`);
+expect(h1.status === 'ready' && h1.type === 'o', `hover B ready from cache: ${h1.status}/${h1.type}`);
+expect(belugaCalls === 0, `hover must not call Beluga, belugaCalls=${belugaCalls}`);
 
-console.log('OK semantic decl batch dedupe');
+console.log('OK semantic decl dedupe (structural fill, cached hover)');

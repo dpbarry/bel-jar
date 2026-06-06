@@ -294,6 +294,51 @@ function belSyntaxLinter() {
   return linter((view) => syntaxLint(view), { delay: 80, tooltipFilter: LINT_TOOLTIP_FILTER });
 }
 
+function viewportCenterLine(view) {
+  const scroller = view.scrollDOM;
+  const rect = scroller.getBoundingClientRect();
+  if (rect.height <= 0) return 1;
+  const midY = rect.top + rect.height / 2;
+  const midX = rect.left + Math.min(48, Math.max(8, rect.width * 0.15));
+  const pos = view.posAtCoords({ x: midX, y: midY });
+  if (pos == null) return 1;
+  return view.state.doc.lineAt(pos).number;
+}
+
+function scheduleViewportRestore(view, local) {
+  if (!local || typeof local !== 'object') return;
+
+  function apply() {
+    const doc = view.state.doc;
+    const docLen = doc.length;
+    const tr = { annotations: Transaction.addToHistory.of(false) };
+
+    if (local.selection && isFinite(local.selection.anchor) && isFinite(local.selection.head)) {
+      tr.selection = {
+        anchor: Math.max(0, Math.min(local.selection.anchor, docLen)),
+        head: Math.max(0, Math.min(local.selection.head, docLen)),
+      };
+    }
+
+    const centerLine = Number(local.centerLine);
+    if (isFinite(centerLine) && centerLine >= 1 && doc.lines > 0) {
+      const line = doc.line(Math.min(Math.max(1, Math.floor(centerLine)), doc.lines));
+      tr.effects = EditorView.scrollIntoView(line.from, { y: 'center' });
+    }
+
+    if (tr.selection || tr.effects) view.dispatch(tr);
+  }
+
+  view.requestMeasure();
+  const afterLayout = () => {
+    view.requestMeasure();
+    requestAnimationFrame(() => requestAnimationFrame(apply));
+  };
+  const fontsReady = typeof document !== 'undefined' && document.fonts?.ready;
+  if (fontsReady) fontsReady.then(afterLayout);
+  else afterLayout();
+}
+
 export function mount(parentEl, options = {}) {
   if (!parentEl) return null;
   if (typeof options.onDocChange !== 'function') {
@@ -319,31 +364,51 @@ export function mount(parentEl, options = {}) {
   const semanticEngine = createSemanticEngine({
     documentId: options.documentId || 'workspace://main.bel',
     belugaClient: g.BelugaClient,
-    onTypeObserved: scheduleSemanticTypesSave,
+    onTypeObserved: () => {
+      if (options.persist && typeof options.persist.scheduleCheckpointSave === 'function') {
+        options.persist.scheduleCheckpointSave();
+      }
+    },
   });
 
-  const SEMANTIC_TYPES_KEY = 'beljar:semantic-types';
-  let semanticTypesSaveTimer = null;
-  function saveSemanticTypes() {
-    semanticTypesSaveTimer = null;
-    try {
-      const blob = semanticEngine.exportTypes();
-      const hasDecls = blob && blob.decls && blob.decls.length;
-      const hasMetavars = blob && blob.metavars && blob.metavars.length;
-      if (hasDecls || hasMetavars) {
-        g.localStorage && g.localStorage.setItem(SEMANTIC_TYPES_KEY, JSON.stringify(blob));
-      }
-    } catch (_) {}
+  function docFingerprint(text) {
+    if (g.BelugaClient && typeof g.BelugaClient.fingerprint === 'function') {
+      return g.BelugaClient.fingerprint(text);
+    }
+    if (typeof g.BelJarPersist !== 'undefined' && g.BelJarPersist.documentFingerprint) {
+      return g.BelJarPersist.documentFingerprint(text);
+    }
+    return '';
   }
-  function scheduleSemanticTypesSave() {
-    if (semanticTypesSaveTimer) clearTimeout(semanticTypesSaveTimer);
-    semanticTypesSaveTimer = setTimeout(saveSemanticTypes, 400);
+
+  function hydrateSemanticCheckpoint(text) {
+    const semantic = options.semanticCheckpoint;
+    if (!semantic) return;
+    const belugaBuild = typeof g.BelJarPersist !== 'undefined'
+      ? g.BelJarPersist.readStoredBelugaMode()
+      : 'stable';
+    semanticEngine.importCheckpoint(semantic, {
+      docFp: docFingerprint(text),
+      belugaBuild,
+    });
   }
-  function hydrateSemanticTypes() {
-    try {
-      const raw = g.localStorage && g.localStorage.getItem(SEMANTIC_TYPES_KEY);
-      if (raw) semanticEngine.importTypes(JSON.parse(raw));
-    } catch (_) {}
+
+  if (options.persist && typeof options.persist.setCheckpointProviders === 'function') {
+    options.persist.setCheckpointProviders({
+      getSemantic: () => semanticEngine.exportCheckpoint(),
+      getViewport: () => {
+        if (!semanticView) return {};
+        const sel = semanticView.state.selection.main;
+        return {
+          selection: { anchor: sel.anchor, head: sel.head },
+          centerLine: viewportCenterLine(semanticView),
+        };
+      },
+      getDocFp: (text) => docFingerprint(text != null ? text : semanticView?.state.doc.toString() || ''),
+      getBelugaBuild: () => (
+        typeof g.BelJarPersist !== 'undefined' ? g.BelJarPersist.readStoredBelugaMode() : 'stable'
+      ),
+    });
   }
 
   const ideStatusDot = typeof document !== 'undefined'
@@ -447,7 +512,10 @@ export function mount(parentEl, options = {}) {
       syncSemanticFromView(update.view);
       semanticEngine.onDocChange(update.changes);
       seedSemanticScheduler(update.view);
-      scheduleSemanticTypesSave();
+      if (options.persist) options.persist.scheduleCheckpointSave();
+    }
+    if (update.selectionSet || update.viewportChanged) {
+      if (options.persist) options.persist.scheduleCheckpointSave();
     }
     if (update.selectionSet) {
       semanticEngine.onCursorMove(update.state.selection.main.head);
@@ -483,9 +551,10 @@ export function mount(parentEl, options = {}) {
   view._belSemanticEngine = semanticEngine;
 
   semanticEngine.setCheckerCode(() => healthySnapshotForView());
-  hydrateSemanticTypes();
+  hydrateSemanticCheckpoint(initialDoc);
   markBelugaCheckPending(view);
   syncSemanticFromView(view);
+  scheduleViewportRestore(view, options.initialLocal);
   seedSemanticScheduler(view);
   if (semanticEngine.scheduler && semanticEngine.scheduler.startBackground) {
     semanticEngine.scheduler.startBackground();
@@ -499,18 +568,6 @@ export function mount(parentEl, options = {}) {
     syncSemanticFromView(view);
     seedSemanticScheduler(view);
   });
-
-  if (typeof window !== 'undefined') {
-    const flush = () => {
-      if (semanticTypesSaveTimer) {
-        clearTimeout(semanticTypesSaveTimer);
-        semanticTypesSaveTimer = null;
-      }
-      saveSemanticTypes();
-    };
-    window.addEventListener('beforeunload', flush);
-    window.addEventListener('pagehide', flush);
-  }
 
   view.dom.addEventListener(
     'paste',

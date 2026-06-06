@@ -4,10 +4,16 @@ const cmdInput = document.getElementById('command-input');
 const persist =
   typeof BelJarPersist !== 'undefined' ? BelJarPersist.createPersist() : null;
 
+const initialCheckpoint = persist ? persist.getInitialCheckpoint() : null;
+
 const editor =
   typeof BelJarEditor !== 'undefined' && BelJarEditor.mount
     ? BelJarEditor.mount(editorMount, {
-        doc: persist ? persist.getEditorText() : '',
+        doc: initialCheckpoint ? initialCheckpoint.editor.text : (persist ? persist.getEditorText() : ''),
+        initialLocal: initialCheckpoint ? initialCheckpoint.editor.local : null,
+        semanticCheckpoint: initialCheckpoint ? initialCheckpoint.semantic : null,
+        documentId: initialCheckpoint ? initialCheckpoint.meta.documentId : undefined,
+        persist,
         onDocChange: function (text) {
           if (persist) persist.scheduleEditorPersist(text);
         },
@@ -323,8 +329,8 @@ cmdInput.addEventListener('keydown', (e) => {
   }
 });
 
-window.addEventListener('beforeunload', () => { if (persist) persist.flushEditor(); });
-window.addEventListener('pagehide', () => { if (persist) persist.flushEditor(); });
+window.addEventListener('beforeunload', () => { if (persist) persist.flushCheckpoint(); });
+window.addEventListener('pagehide', () => { if (persist) persist.flushCheckpoint(); });
 
 if (typeof RunProgress !== 'undefined') {
   RunProgress.bind({

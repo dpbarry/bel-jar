@@ -1,0 +1,46 @@
+%{{
+## Sample: reconstructed-type data layer
+
+Let the file settle, then hover the DECLARATION NAMES (left of the `:`).
+The new feature shows the *elaborated* type — what Beluga reconstructs, with
+implicit arguments made explicit — instead of only what you typed.
+
+Look for the leading `(X : _)` implicit binders in the hover that are absent
+from the source signature. They appear on constructors whose source mentions a
+variable (like `N` or `A`) that you never bound — Beluga infers it implicitly.
+}}%
+
+% ---- Natural numbers --------------------------------------------------------
+
+nat : type.
+z   : nat.
+s   : nat -> nat.
+
+% ---- Length-indexed vectors -------------------------------------------------
+% `vcons` is written WITHOUT binding the length `N`; Beluga reconstructs it.
+
+vec : nat -> type.
+vnil  : vec z.
+
+% Source:        vec N -> vec (s N)
+% Reconstructed: (N : nat) vec N -> vec (s N)   <-- implicit (N) now shown
+vcons : vec N -> vec (s N).
+
+% ---- Equality ---------------------------------------------------------------
+% `refl` is written `eq X X`; the `X` is implicit.
+
+eq   : nat -> nat -> type.
+
+% Source:        eq X X
+% Reconstructed: (X : nat) eq X X               <-- implicit (X) now shown
+refl : eq X X.
+
+% ---- A second implicit example ----------------------------------------------
+% `elem A` mentions `A` without binding it.
+
+tp   : type.
+
+% Source:        elem A -> elem A               (A implicit both sides)
+% Reconstructed surfaces the implicit (A : tp).
+elem : tp -> type.
+ecopy : elem A -> elem A.

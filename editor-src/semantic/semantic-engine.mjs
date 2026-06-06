@@ -378,7 +378,40 @@ export function createSemanticEngine(options = {}) {
     derivationStore = new Map();
     for (const [key, type, fp] of (blob && blob.decls) || []) hydratedTypes.set(key, { type, fp });
     for (const [key, type, fp] of (blob && blob.metavars) || []) hydratedMetavars.set(key, { type, fp });
-    for (const [key, type, fp] of (blob && blob.reconstructed) || []) derivationStore.set(key, { type, fp, status: STATUS.FRESH });
+    for (const [key, type, fp] of (blob && blob.reconstructed) || []) {
+      derivationStore.set(key, { type, fp, status: STATUS.STALE_KNOWN });
+    }
+  }
+
+  function exportDeriveProgress() {
+    return [...derivationAttempted.entries()];
+  }
+
+  function importDeriveProgress(entries) {
+    derivationAttempted.clear();
+    for (const [key, fp] of entries || []) derivationAttempted.set(key, fp);
+  }
+
+  function exportCheckpoint() {
+    return {
+      types: exportTypes(),
+      identity: symbolStore.exportIdentity(),
+      deriveAttempted: exportDeriveProgress(),
+    };
+  }
+
+  function importCheckpoint(blob, { docFp, belugaBuild } = {}) {
+    if (!blob) return { ok: false, reason: 'empty' };
+    if (blob.docFp && docFp && blob.docFp !== docFp) {
+      return { ok: false, reason: 'doc-fp-mismatch' };
+    }
+    if (blob.belugaBuild && belugaBuild && blob.belugaBuild !== belugaBuild) {
+      return { ok: false, reason: 'build-mismatch' };
+    }
+    if (blob.types) importTypes(blob.types);
+    if (blob.identity) symbolStore.importIdentity(blob.identity);
+    if (blob.deriveAttempted) importDeriveProgress(blob.deriveAttempted);
+    return { ok: true };
   }
 
   function observeType(pos, type) {
@@ -620,7 +653,6 @@ export function createSemanticEngine(options = {}) {
         type: sync.type,
         source: sync.source,
         derivationStatus: sync.status,
-        stale: sync.source === 'stale-cache',
         ...base,
         ...presentation,
       }, blocked);
@@ -963,6 +995,8 @@ export function createSemanticEngine(options = {}) {
     reconstructedTypeAt,
     exportTypes,
     importTypes,
+    exportCheckpoint,
+    importCheckpoint,
     observeType,
     observeMetavarAt,
     observeMetavarNamed,

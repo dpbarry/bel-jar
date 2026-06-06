@@ -2694,3 +2694,128 @@ html.light .bj-dialog::backdrop {
     animation: none;
   }
 }
+
+/* ── IDE navigation & refactor affordances ─────────────────────────────────
+   Word-occurrence highlight, Ctrl-click definition link, jump flash, and the
+   inline rename field. All tuned to read as quiet IDE chrome, not editor noise. */
+
+/* Live word-occurrence highlight on cursor rest. Borderless — a quiet wash
+   that just tints the matching tokens; the active token reads a touch warmer. */
+.cm-bel-occurrence {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent-glow) 55%, transparent);
+}
+.cm-bel-occurrence-active {
+  background: color-mix(in srgb, var(--accent-glow) 95%, transparent);
+}
+
+/* Ctrl/Cmd-hover definition link: underline the jumpable token. */
+.cm-bel-deflink {
+  text-decoration: underline;
+  text-decoration-color: var(--accent-mid);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.cm-editor.cm-bel-deflink-armed .cm-content {
+  cursor: pointer;
+}
+
+/* Jump flash: a feathered accent band painted over the landed-on line that
+   physically translates left→right and exits. Transform-based (not background-
+   position, which clamps), so it's a true GPU-smooth sweep. Ease-out so it
+   starts moving on frame one rather than hovering off-screen first. */
+.cm-bel-flash-line {
+  position: relative;
+  isolation: isolate;
+}
+.cm-bel-flash-line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 75%;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent-mid) 26%, transparent) 35%,
+    color-mix(in srgb, var(--accent-mid) 30%, transparent) 50%,
+    color-mix(in srgb, var(--accent-mid) 26%, transparent) 65%,
+    transparent 100%
+  );
+  animation: cm-bel-flash-sweep 750ms cubic-bezier(0.16, 0.84, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+@keyframes cm-bel-flash-sweep {
+  0% {
+    transform: translateX(100%);
+    opacity: 1;
+  }
+  95% { opacity: 1; }
+  100% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-bel-flash-line::after { animation: none; opacity: 0; }
+}
+
+/* Inline rename field — a small floating editor anchored over the symbol name.
+   Reads as a focused IDE affordance: a tight accent ring + soft accent glow,
+   pill hint chip on the trailing edge. */
+.bel-rename-field {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  transform: translateY(-100%);
+  margin-top: -3px;
+  padding: 2px 3px 2px 3px;
+  background: light-dark(hsl(220, 24%, 99%), hsl(224, 18%, 8%));
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-mid) 80%, transparent),
+    0 0 0 4px var(--accent-glow),
+    0 8px 22px -10px rgba(0, 0, 0, 0.55);
+}
+.bel-rename-field[data-invalid="true"] {
+  box-shadow:
+    0 0 0 1px light-dark(rgb(220, 38, 38), rgb(248, 113, 113)),
+    0 0 0 4px light-dark(rgba(220, 38, 38, 0.14), rgba(248, 113, 113, 0.14)),
+    0 8px 22px -10px rgba(0, 0, 0, 0.55);
+}
+.bel-rename-field input {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--base-highest);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 1px 3px;
+  min-width: 5ch;
+  width: auto;
+  field-sizing: content;
+}
+.bel-rename-hint {
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--accent-high);
+  background: var(--accent-glow);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-right: 1px;
+  white-space: nowrap;
+  user-select: none;
+}
+.bel-rename-hint:empty { display: none; }
+.bel-rename-field[data-invalid="true"] .bel-rename-hint {
+  color: light-dark(rgb(185, 28, 28), rgb(252, 165, 165));
+  background: light-dark(rgba(220, 38, 38, 0.12), rgba(248, 113, 113, 0.14));
+}

@@ -25,6 +25,11 @@ import { applySyntaxFaultMask, computeLintBlocks } from './bel-units.mjs';
 import { belHoverTooltip, LINT_TOOLTIP_FILTER } from './bel-hover.mjs';
 import { diagnosticRowHighlight } from './bel-diag-gutter.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
+import { belNavigation } from './bel-nav.mjs';
+import { belRename, startRename } from './bel-rename.mjs';
+import { belContextMenu } from './bel-context-menu.mjs';
+import { findReferences } from './bel-refs-panel.mjs';
+import { flashExtension, goToDefinition } from './bel-ide-actions.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
@@ -262,6 +267,8 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     keymap.of([
       { key: 'Enter', run: smartEnter },
       { key: 'Mod-Shift-f', run: formatCommand },
+      { key: 'F12', run: (view) => goToDefinition(view) },
+      { key: 'Shift-F12', run: (view) => findReferences(view) },
       indentWithTab, ...defaultKeymap, ...historyKeymap,
     ]),
     placeholder(placeholderText),
@@ -270,6 +277,10 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     belugaLinterExt,
     diagnosticRowHighlight(),
     belHoverTooltip(semanticEngine),
+    flashExtension(),
+    belNavigation(),
+    belRename(),
+    belContextMenu(),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
     }),
@@ -467,6 +478,9 @@ export function mount(parentEl, options = {}) {
     state,
   });
   semanticView = view;
+  // Let the IDE action layer reach the engine straight off the view, before the
+  // global BelJarCurrentEditor handle is assigned by app.js.
+  view._belSemanticEngine = semanticEngine;
 
   semanticEngine.setCheckerCode(() => healthySnapshotForView());
   hydrateSemanticTypes();
@@ -598,6 +612,11 @@ export function mount(parentEl, options = {}) {
     },
 
     getSemanticEngine() { return semanticEngine; },
+
+    // IDE navigation/refactor actions, callable from header menus or scripts.
+    goToDefinition(pos) { return goToDefinition(view, pos); },
+    findReferences(pos) { return findReferences(view, pos); },
+    rename(pos) { return startRename(view, pos); },
 
     getHydratePromise() { return Promise.resolve(0); },
   };

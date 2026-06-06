@@ -7,7 +7,9 @@
     "build:editor": "node scripts/build-editor.mjs",
     "build:grammar": "lezer-generator beluga.grammar -o editor-src/beluga-parser.js",
     "vendor-fonts": "node scripts/vendor-fonts.mjs",
-    "lint": "eslint js/ editor-src/"
+    "lint": "eslint js/ editor-src/",
+    "test": "node tests/run-all.mjs",
+    "test:semantic": "node tests/run-all.mjs semantic"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.0.0",

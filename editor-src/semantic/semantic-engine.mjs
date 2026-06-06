@@ -820,6 +820,61 @@ export function createSemanticEngine(options = {}) {
     };
   }
 
+  // One-call navigation substrate for the UI (go-to-def, find-refs, rename,
+  // reveal-binder, insert-signature), resolved through the symbol store +
+  // reconstructed-type layer. Synchronous; null when no identifier is at `pos`.
+  function navAt(pos) {
+    const symbols = symbolStore.getSnapshot();
+    if (!symbols) return null;
+    const ref = symbolStore.referenceAt(pos);
+    const target = symbolStore.definitionAt(pos);
+    if (!target && !ref) return null;
+
+    const sym = symbolStore.symbolAt(pos);
+    const onDefinition = !!(sym && target && sym.id === target.id);
+
+    const references = target ? symbolStore.referencesOf(target.id) : [];
+    const recon = target ? reconstructedTypeOf(target.id) : null;
+    const signature = recon && recon.type != null
+      ? { type: recon.type, source: 'reconstructed', status: recon.status }
+      : (target && target.sourceText
+        ? { type: target.sourceText, source: 'source', status: STATUS.UNKNOWN }
+        : null);
+
+    return {
+      symbolId: target ? target.id : null,
+      name: target ? target.name : (ref ? ref.name : null),
+      isGlobal: target ? target.isGlobal : false,
+      onDefinition,
+      // Declaration name range (jump-to-def target / rename anchor).
+      nameRange: target ? target.nameRange : null,
+      // Full declaration span.
+      declRange: target ? target.range : null,
+      // The reference under the cursor, if any (a free metavar has no symbolId).
+      reference: ref
+        ? { range: ref.range, name: ref.name, resolution: ref.resolution, symbolId: ref.symbolId }
+        : null,
+      references: references.map((r) => ({ from: r.range.from, to: r.range.to })),
+      // For reveal-binder on a free metavar that resolves to no symbol.
+      enclosingDeclarationId: ref ? ref.enclosingDeclarationId : null,
+      // Best-known signature for insert-signature (reconstructed preferred).
+      signature,
+    };
+  }
+
+  // All occurrence ranges (definition name + references) for the symbol at
+  // `pos`. Backs the word-occurrence highlight. [] when nothing resolves.
+  function occurrencesAt(pos) {
+    const target = symbolStore.definitionAt(pos);
+    if (!target) return [];
+    const out = [];
+    if (target.nameRange) out.push({ from: target.nameRange.from, to: target.nameRange.to });
+    for (const r of symbolStore.referencesOf(target.id)) {
+      out.push({ from: r.range.from, to: r.range.to });
+    }
+    return out.sort((a, b) => a.from - b.from || a.to - b.to);
+  }
+
   function queryAt(pos) {
     const query = symbolStore.queryAt(pos);
     if (!query || !query.symbol) return query;
@@ -896,6 +951,8 @@ export function createSemanticEngine(options = {}) {
     definitionAt: (pos) => symbolStore.definitionAt(pos),
     referencesOf: (symbolId) => symbolStore.referencesOf(symbolId),
     renamePreview: (symbolId, newName) => symbolStore.renamePreview(symbolId, newName),
+    navAt,
+    occurrencesAt,
     exportIdentity: () => symbolStore.exportIdentity(),
     importIdentity: (entries) => symbolStore.importIdentity(entries),
     dirtyFrontier,

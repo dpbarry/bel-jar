@@ -118,7 +118,29 @@ const belugaHighlight = styleTags({
    --name --abbrev --not --open --query --opaque': t.meta,
 
   'Associativity/...': t.modifier,
-  QueryBound: t.number,
+  'QueryBound!': t.number,
+
+  // Pragma arguments (opaque so generic ident rules do not win).
+  'NamePragma/LowerIdentifier!':        t.propertyName,
+  'NamePragma/NamePreferred/UpperIdentifier!': t.modifier,
+  'NamePragma/NamePreferred/LowerIdentifier!': t.modifier,
+  'OpenPragma/UpperIdentifier!':        t.namespace,
+  'AbbrevPragma/UpperIdentifier!':      t.namespace,
+  'InfixPragma/LowerIdentifier!':       t.function(t.variableName),
+  'InfixPragma/Number!':                t.number,
+  'PrefixPragma/LowerIdentifier!':      t.function(t.variableName),
+  'PrefixPragma/Number!':               t.number,
+  'OpaquePragma/LowerIdentifier!':      t.propertyName,
+  'QuerySubject/UpperIdentifier!':        t.propertyName,
+  'QuerySubject/:!':                      t.definitionOperator,
+  'QueryPragma/QueryBound!':              t.number,
+  'QueryPragma/CompType/CompAppType/CompAtomicType/LowerIdentifier!': t.typeName,
+  'QueryPragma/CompType/CompAppType/CompAtomicType/UpperIdentifier!': t.typeName,
+
+  'NotPragma!':                         t.meta,
+  'NoStrengthenPragma!':                t.meta,
+  'CoveragePragma!':                    t.meta,
+  'WarnCoveragePragma!':                t.meta,
 
   'LFDeclaration/LowerIdentifier':    t.variableName,
   'LFDatatypeDeclaration/LowerIdentifier': t.definition(t.typeName),
@@ -143,11 +165,10 @@ const belugaHighlight = styleTags({
   'SchemaSomeBindings/LowerIdentifier': t.definition(t.local(t.variableName)),
   'CompTypeBinder/LowerIdentifier':   t.definition(t.local(t.variableName)),
   'CompTypeBinder/UpperIdentifier':   t.definition(t.local(t.typeName)),
+  'PiBinder/LowerIdentifier':         t.definition(t.local(t.variableName)),
+  'PiBinder/UpperIdentifier':         t.definition(t.local(t.typeName)),
 
   'LFAtomicTerm/LowerIdentifier':     t.function(t.variableName),
-
-  'InfixPragma/LowerIdentifier':      t.function(t.variableName),
-  'PrefixPragma/LowerIdentifier':     t.function(t.variableName),
 
   'LFAtomicTerm/UpperIdentifier':     t.special(t.variableName),
   'LFAtomicType/UpperIdentifier':     t.special(t.typeName),
@@ -163,8 +184,12 @@ const belugaHighlight = styleTags({
   'AtomicPattern/UpperIdentifier':    t.definition(t.local(t.typeName)),
   'AtomicPattern/LowerIdentifier':    t.function(t.variableName),
 
-  ParameterVariable:                  t.special(t.variableName),
-  SubstitutionVariable:               t.special(t.typeName),
+  'ParameterVariable!':                  t.special(t.variableName),
+  'SubstitutionVariable!':               t.special(t.typeName),
+  'MLamParam/ParameterVariable!':     t.definition(t.special(t.variableName)),
+  'MLamParam/SubstitutionVariable!':   t.definition(t.special(t.typeName)),
+  'CompTypeBinder/ParameterVariable!': t.definition(t.special(t.variableName)),
+  'CompTypeBinder/SubstitutionVariable!': t.definition(t.special(t.typeName)),
 
   LowerIdentifier: t.variableName,
   UpperIdentifier: t.typeName,
@@ -176,10 +201,13 @@ const belugaHighlight = styleTags({
   LineComment:     t.lineComment,
   BlockComment:    t.blockComment,
 
-  Turnstile:       t.controlKeyword,
-  ArrowOp:         t.typeOperator,
-  SubstHead:       t.operator,
-  ProjectionTail:  t.propertyName,
+  'Turnstile!':      t.controlKeyword,
+  'ArrowOp!':        t.typeOperator,
+  'FatArrow!':       t.typeOperator,
+  'SubstHead!':      t.operator,
+  'ProjectionTail!': t.propertyName,
+  'SubstitutionType/$': t.operator,
+  'ParameterType/#':    t.operator,
 });
 
 const c = {
@@ -202,7 +230,7 @@ const c = {
   property:     'light-dark(hsl(213, 82%, 34%), hsl(210, 78%, 72%))',
   number:       'light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%))',
   comment:      'light-dark(hsl(221, 10%, 40%), var(--muted-high))',
-  control:      'light-dark(hsl(350, 78%, 39%), hsl(356, 75%, 72%))',
+  control:      'light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%))',
   punct:        'light-dark(var(--muted-higher), var(--muted-highest))',
   cyan:         'light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%))',
 };
@@ -224,11 +252,16 @@ export const defaultBelugaHighlightStyle = HighlightStyle.define([
   { tag: t.local(t.variableName), color: c.varNameLocalRef },
   { tag: t.local(t.typeName), color: c.varNameLocalRef },
 
+  { tag: t.definition(t.special(t.variableName)),
+    color: c.metaVar, fontWeight: '600' },
+  { tag: t.definition(t.special(t.typeName)),
+    color: c.metaType, fontWeight: '600' },
   { tag: t.special(t.variableName), color: c.metaVar },
   { tag: t.special(t.typeName),     color: c.metaType, fontWeight: '600' },
 
   { tag: t.function(t.variableName), color: c.ctorDef },
 
+  { tag: t.namespace,        color: c.property },
   { tag: t.typeName,     color: c.typeName },
   { tag: t.variableName, color: c.varName },
 

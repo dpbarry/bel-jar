@@ -14,6 +14,13 @@
   function stripAnsi(s) {
     return global.BelugaText ? global.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
   }
+  function isInternalQueryLine(trimmed) {
+    if (global.BelugaText && global.BelugaText.isInternalQueryLine) {
+      return global.BelugaText.isInternalQueryLine(trimmed);
+    }
+    return trimmed === '[]' || trimmed === '^.' || trimmed === '^'
+      || /^\[[^\]]*(?:TClo|FREE BVar|\?[A-Za-z0-9_.]+)/i.test(trimmed);
+  }
 
   var REPL_HELP_ROWS = [
     { cmd: 'help', desc: 'Show this command reference.' },
@@ -31,7 +38,7 @@
     { cmd: 'lochole N', desc: 'Source location tuple for hole N.' },
     { cmd: 'lookuphole NAME', desc: 'Map a hole name to its numeric id.' },
     { cmd: 'printhole N', desc: 'Full hole information for index N.' },
-    { cmd: 'query EXPECTED TRIES TYP', desc: 'Logic-programming query for inhabitants of a type.' },
+    { cmd: 'query EXPECTED TRIES [LABEL :]TYP', desc: 'Logic-programming query for an LF type. No trailing dot (unlike --query in source). Example: query 1 * D : oft z nat' },
     { cmd: 'quit', desc: 'Exits Beluga CLI (disabled here in the browser).' },
     { cmd: 'reload', desc: 'Reset and repeat the last load command.' },
     { cmd: 'reset', desc: 'Clear store, type info, and holes.' },
@@ -138,25 +145,22 @@
     });
   }
 
-  function polishBelugaErrorDetail(detail) {
-    return detail.replace(/;\s*$/, '').trim();
+  function belugaCommandErrorInfo(text) {
+    if (global.BelugaText && typeof global.BelugaText.parseBelugaCommandError === 'function') {
+      return global.BelugaText.parseBelugaCommandError(text);
+    }
+    return null;
   }
 
   function tryAppendBelugaWrappedCommandError(text) {
     if (!replBeautifyEnabled) return false;
-    var lines = normBelugaRaw(text).split('\n');
-    var i = 0;
-    while (i < lines.length && !lines[i].trim()) i++;
-    if (i >= lines.length) return false;
-    var hdr = lines[i].trim();
-    if (!/^-\s*Failed to execute command\.?$/i.test(hdr)) return false;
-    var detailRaw = lines.slice(i + 1).join('\n').trim();
-    var detail = polishBelugaErrorDetail(detailRaw || 'Unknown error.');
-    appendRichBelugaCommandError(text, detail);
+    var info = belugaCommandErrorInfo(text);
+    if (!info) return false;
+    appendRichBelugaCommandError(text, info.detail, info.label);
     return true;
   }
 
-  function appendRichBelugaCommandError(rawText, detail) {
+  function appendRichBelugaCommandError(rawText, detail, labelOpt) {
     appendRichShell(rawText, function (shell) {
       var card = document.createElement('div');
       card.className = 'repl-rich-error';
@@ -171,7 +175,7 @@
 
       var ht = document.createElement('span');
       ht.className = 'repl-rich-error-label';
-      ht.textContent = 'Command failed';
+      ht.textContent = labelOpt || 'Command failed';
 
       head.append(icon, ht);
 
@@ -333,6 +337,33 @@
     });
   }
 
+  function collectEditorQuerySourceLines() {
+    var editor = global.BelJarCurrentEditor;
+    if (!editor || typeof editor.getValue !== 'function') return [];
+    var src = editor.getValue();
+    var out = [];
+    var lines = src.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (/^\s*--query\b/.test(lines[i])) out.push(i + 1);
+    }
+    return out;
+  }
+
+  function attachQuerySourceLines(segs, sourceLines) {
+    if (!sourceLines || !sourceLines.length) return segs;
+    var qi = 0;
+    return segs.map(function (seg) {
+      if (seg.type !== 'query') return seg;
+      var sourceLine = qi < sourceLines.length ? sourceLines[qi] : null;
+      qi++;
+      if (!sourceLine) return seg;
+      return {
+        type: 'query',
+        query: Object.assign({}, seg.query, { sourceLine: sourceLine }),
+      };
+    });
+  }
+
   function parseQuerySolutions(raw) {
     var text = stripBelugaTrailingSemicolons(normBelugaRaw(raw)).trim();
     var lines = text.split('\n');
@@ -340,6 +371,8 @@
     var cur = null;
     var curBinding = null;
     var isDone = false;
+    var queryLine = '';
+    var queryError = '';
 
     function flushBinding() {
       if (curBinding && cur) {
@@ -355,8 +388,20 @@
       var rawLine = lines[li];
       var trimmed = rawLine.trim();
       if (!trimmed) continue;
-      if (/^--query\b/.test(trimmed)) continue;
-      if (trimmed === '[]' || trimmed === '^.' || trimmed === '^') continue;
+      if (/^--query\b/.test(trimmed)) {
+        queryLine = trimmed.replace(/[;.]\s*$/, '');
+        continue;
+      }
+      if (/^Query error/i.test(trimmed)) {
+        queryError = trimmed;
+        if (/Search incomplete/i.test(trimmed)) isDone = false;
+        continue;
+      }
+      if (/^Skipping query/i.test(trimmed)) {
+        queryError = trimmed;
+        continue;
+      }
+      if (isInternalQueryLine(trimmed)) continue;
 
       var solM = trimmed.match(/^-+\s*Solution\s+(\d+)\s*-+$/i);
       if (solM) {
@@ -379,15 +424,70 @@
       }
     }
     flushBinding();
-    return { solutions: solutions, isDone: isDone };
+    return { solutions: solutions, isDone: isDone, queryLine: queryLine, queryError: queryError };
   }
 
-  function buildQueryDom(solutions, isDone) {
+  function queryDisplayRows(bindings) {
+    return global.BelugaText && global.BelugaText.prettifyQueryBindings
+      ? global.BelugaText.prettifyQueryBindings(bindings)
+      : (bindings || []);
+  }
+
+  function displayQueryBindings(container, rows) {
+    container.replaceChildren();
+    rows.forEach(function (b) {
+      var row = document.createElement('div');
+      row.className = 'repl-query-binding';
+      var key = document.createElement('code');
+      key.className = 'repl-query-key';
+      key.textContent = b.key;
+      var eq = document.createElement('span');
+      eq.className = 'repl-query-eq';
+      eq.textContent = '=';
+      var val = document.createElement('code');
+      val.className = 'repl-query-val';
+      val.textContent = b.value;
+      row.appendChild(key);
+      row.appendChild(eq);
+      row.appendChild(val);
+      container.appendChild(row);
+    });
+  }
+
+  function buildQueryDom(meta) {
+    var solutions = meta.solutions || [];
+    var isDone = !!meta.isDone;
+    var queryLine = meta.queryLine || '';
+    var queryError = meta.queryError || '';
+    var sourceLine = meta.sourceLine || null;
+
     appendRichShell('', function (shell) {
       var wrap = document.createElement('div');
       wrap.className = 'repl-query-result';
+      if (queryError) wrap.classList.add('repl-query-result--error');
+
+      if (queryLine || sourceLine) {
+        var headRow = document.createElement('div');
+        headRow.className = 'repl-query-head';
+        if (queryLine) {
+          var goal = document.createElement('div');
+          goal.className = 'repl-query-goal';
+          goal.textContent = queryLine;
+          headRow.appendChild(goal);
+        }
+        if (sourceLine) {
+          var badge = document.createElement('div');
+          badge.className = 'repl-query-src-line';
+          badge.textContent = 'line ' + sourceLine;
+          headRow.appendChild(badge);
+        }
+        wrap.appendChild(headRow);
+      }
 
       solutions.forEach(function (sol, idx) {
+        var rows = queryDisplayRows(sol.bindings);
+        if (!rows.length) return;
+
         var card = document.createElement('div');
         card.className = 'repl-query-sol' + (idx > 0 ? ' repl-query-sol--nth' : '');
 
@@ -396,36 +496,34 @@
         head.textContent = solutions.length > 1 ? 'Solution ' + sol.n : 'Solution';
         card.appendChild(head);
 
-        if (sol.bindings.length) {
-          var rows = document.createElement('div');
-          rows.className = 'repl-query-bindings';
-          sol.bindings.forEach(function (b) {
-            var row = document.createElement('div');
-            row.className = 'repl-query-binding';
-            var key = document.createElement('code');
-            key.className = 'repl-query-key';
-            key.textContent = b.key;
-            var eq = document.createElement('span');
-            eq.className = 'repl-query-eq';
-            eq.textContent = '=';
-            var val = document.createElement('pre');
-            val.className = 'repl-query-val';
-            val.textContent = b.value;
-            row.appendChild(key);
-            row.appendChild(eq);
-            row.appendChild(val);
-            rows.appendChild(row);
-          });
-          card.appendChild(rows);
+        if (rows.length) {
+          var bindEl = document.createElement('div');
+          bindEl.className = 'repl-query-bindings';
+          displayQueryBindings(bindEl, rows);
+          card.appendChild(bindEl);
         }
+
         wrap.appendChild(card);
       });
 
-      if (isDone) {
+      if (queryError) {
+        var err = document.createElement('div');
+        err.className = 'repl-query-error';
+        err.textContent = queryError;
+        wrap.appendChild(err);
+      } else if (isDone) {
         var msg = document.createElement('div');
         msg.className = 'repl-query-summary';
-        msg.textContent = solutions.length === 1 ? '1 solution.' : solutions.length + ' solutions.';
+        msg.textContent = solutions.length === 1 ? '1 solution.'
+          : solutions.length + ' solutions.';
         wrap.appendChild(msg);
+      } else if (!solutions.length) {
+        var empty = document.createElement('div');
+        empty.className = 'repl-query-summary repl-query-summary--empty';
+        empty.textContent = queryLine
+          ? 'Search stopped without a result (no Done, no error reported).'
+          : 'No solutions found.';
+        wrap.appendChild(empty);
       }
 
       shell.appendChild(wrap);
@@ -434,26 +532,31 @@
 
   function appendQueryFormatted(raw) {
     var text = normBelugaRaw(raw);
-    if (/^\s*-\s*Error/i.test(text) || /^\s*-\s*Failed/i.test(text)) {
-      appendOutput(raw);
+    var cmdErr = belugaCommandErrorInfo(text);
+    if (cmdErr) {
+      appendRichBelugaCommandError(text, cmdErr.detail, cmdErr.label);
       return;
     }
     var trimmed = stripBelugaTrailingSemicolons(text).trim();
     if (!trimmed) { appendRichMsg('success', 'Query completed.', raw); return; }
 
     var result = parseQuerySolutions(raw);
-    var solutions = result.solutions;
-    var isDone = result.isDone;
 
-    if (!solutions.length) {
-      var msg = /Skipping query/i.test(trimmed) ? 'Query skipped (tries = 0).'
-               : isDone ? 'No solutions found.'
-               : trimmed;
-      appendRichMsg(isDone ? 'muted' : 'out', msg, raw);
+    if (!result.solutions.length && !result.queryError) {
+      if (/Skipping query/i.test(trimmed)) {
+        appendRichMsg('muted', 'Query skipped (tries = 0).', raw);
+        return;
+      }
+      if (result.isDone && result.queryLine) {
+        buildQueryDom(result);
+        return;
+      }
+      var msg = result.isDone ? 'No solutions found.' : trimmed;
+      appendRichMsg(result.isDone ? 'muted' : 'out', msg, raw);
       return;
     }
 
-    buildQueryDom(solutions, isDone);
+    buildQueryDom(result);
   }
 
   function segmentRunOutput(text) {
@@ -507,13 +610,17 @@
         flushOther();
         var qLines = [];
         while (i < lines.length) {
-          qLines.push(lines[i]);
           var qt = lines[i].trim();
-          if (/^Done\.?\s*$/.test(qt) || /^Query error/i.test(qt) || /^Skipping query/i.test(qt)) { i++; break; }
+          if (qLines.length > 0 && /^--query\b/.test(qt)) break;
+          qLines.push(lines[i]);
+          if (/^Done\.?\s*$/.test(qt) || /^Query error/i.test(qt) || /^Skipping query/i.test(qt)) {
+            i++;
+            break;
+          }
           i++;
         }
         var qResult = parseQuerySolutions(qLines.join('\n'));
-        segs.push({ type: 'query', solutions: qResult.solutions, isDone: qResult.isDone, queryError: !qResult.isDone && !qResult.solutions.length });
+        segs.push({ type: 'query', query: qResult });
         continue;
       }
 
@@ -621,10 +728,10 @@
       appendOutput(clean);
       return;
     }
-    var segs = segmentRunOutput(clean);
+    var segs = attachQuerySourceLines(segmentRunOutput(clean), collectEditorQuerySourceLines());
     segs.forEach(function (seg) {
       if (seg.type === 'query') {
-        buildQueryDom(seg.solutions, seg.isDone);
+        buildQueryDom(seg.query);
         return;
       }
       if (seg.type === 'warning') {

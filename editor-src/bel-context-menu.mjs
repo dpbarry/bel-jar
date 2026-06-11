@@ -2,7 +2,11 @@
 // actions from the shared IDE action layer. Built on Menu.openContext.
 
 import { EditorView } from '@codemirror/view';
-import { navInfoAt, goToDefinition, revealBinder, insertSignature } from './bel-ide-actions.mjs';
+import {
+  navInfoAt, termRangeAt, goToDefinition, revealBinder, insertSignature,
+} from './bel-ide-actions.mjs';
+import { openInspectorWindow } from './bel-inspector.mjs';
+import { openLocalGraphWindow } from './bel-graph-view.mjs';
 import { startRename } from './bel-rename.mjs';
 import { findReferences } from './bel-refs-panel.mjs';
 
@@ -67,6 +71,18 @@ function buildMenuItems(view, pos) {
         onSelect: () => insertSignature(view, pos),
       });
     }
+
+    // --- Inspect: open a pinned floating inspector for this term. ---
+    if (nav.symbolId) {
+      items.push({
+        label: 'Inspect',
+        onSelect: () => openInspectorWindow(view, pos),
+      });
+      items.push({
+        label: 'Show Dependency Graph',
+        onSelect: () => openLocalGraphWindow(view, pos),
+      });
+    }
   }
 
   // --- Selection-scoped actions ---
@@ -104,24 +120,31 @@ export function belContextMenu() {
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos == null) return false;
 
-      // Move the caret to the click so keyboard follow-ups (F2, etc.) target it,
-      // unless the click landed inside an existing selection.
+      // Select the token under the click (IDE-style) unless the click landed
+      // inside an existing selection.
       const sel = view.state.selection.main;
       const insideSel = !sel.empty && pos >= sel.from && pos <= sel.to;
       if (!insideSel) {
-        view.dispatch({ selection: { anchor: pos, head: pos } });
+        const range = termRangeAt(view, pos);
+        view.dispatch(range
+          ? { selection: { anchor: range.from, head: range.to } }
+          : { selection: { anchor: pos, head: pos } });
       }
 
       const items = buildMenuItems(view, insideSel ? sel.head : pos);
       if (!items.length) return false;
 
       event.preventDefault();
+      view.dom.classList.add('cm-bel-context-open');
       g.Menu.openContext({
         x: event.clientX,
         y: event.clientY,
         side: 'bottom',
         align: 'start',
         items,
+        onClose: () => {
+          view.dom.classList.remove('cm-bel-context-open');
+        },
         // The menu focuses item 0 on open, latching a :focus-visible ring that
         // coexists with :hover on the row the mouse moves to (two rows lit). Drop
         // it so hover leads; arrow keys re-focus on demand.

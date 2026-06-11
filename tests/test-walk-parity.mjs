@@ -3,7 +3,7 @@
 //
 // We compare:
 //   - walker.blocks       ≡ computeLintBlocks(tree, doc).blocks
-//   - walker.parseDiags   ⊆ syntaxLintTree(tree, doc) (parse-error subset)
+//   - walker.parseDiags   ≡ syntaxLintTree(tree, doc) parse-error subset (no name lint)
 //   - walker.defMap       ≡ resolver's internal map (probed via resolveHover)
 //
 // Strict block/parseDiag equality is the load-bearing check.
@@ -69,14 +69,19 @@ const blockDiff = blocksEqual(walk.blocks, ref.blocks);
 expect(!blockDiff, `blocks mismatch: ${blockDiff}`);
 console.log('OK blocks:', walk.blocks.length);
 
-// 2. Walker's parseDiags must be a subset of syntaxLintTree's diags
-// (lint adds undefined-name diags from checkLFAtomicTypes on top).
+// 2. Walker parseDiags and syntaxLintTree agree on parse errors (no extra name lint).
 const refKeys = new Set(refLintDiags.map(diagKey));
+const walkKeys = new Set(walk.parseDiags.map(diagKey));
 for (const d of walk.parseDiags) {
   expect(refKeys.has(diagKey(d)),
     `walker parseDiag not in syntaxLintTree output: ${diagKey(d)}`);
 }
-console.log('OK parseDiags subset:', walk.parseDiags.length, 'of', refLintDiags.length);
+for (const d of walk.parseDiags) {
+  expect(walkKeys.has(diagKey(d)), 'walker parseDiag duplicated');
+}
+expect(refLintDiags.length === walk.parseDiags.length,
+  `syntax lint must not add name diags beyond parse errors (${refLintDiags.length} vs ${walk.parseDiags.length})`);
+console.log('OK parseDiags parity:', walk.parseDiags.length);
 
 // 3. definedNames must contain every name from refLintDiags that's defined
 // (we can't easily probe the internal set, so we check known names are present).

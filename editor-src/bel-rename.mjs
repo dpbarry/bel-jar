@@ -62,7 +62,18 @@ function openRenameField(view, nav) {
     if (preview.ok) {
       host.removeAttribute('data-invalid');
       const n = preview.edits.length;
-      hint.textContent = `${n} occurrence${n === 1 ? '' : 's'}`;
+      let text = `${n} occurrence${n === 1 ? '' : 's'}`;
+      // Surface downstream blast radius from the dependency graph, if any.
+      if (eng && typeof eng.impactOf === 'function') {
+        let impact = [];
+        try {
+          impact = eng.impactOf(nav.symbolId) || [];
+        } catch (_) {
+          impact = [];
+        }
+        if (impact.length) text += ` · affects ${impact.length} downstream`;
+      }
+      hint.textContent = text;
       return 'ok';
     }
     host.setAttribute('data-invalid', 'true');

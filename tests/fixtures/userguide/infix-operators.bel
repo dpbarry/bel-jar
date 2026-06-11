@@ -1,0 +1,11 @@
+LF term : type.
+
+--assoc right.
+
+--infix app 1 none.
+--prefix lam 1.
+--prefix red 2.
+
+app: term -> term -> term.
+lam: (term -> term) -> term.
+red: term -> term.

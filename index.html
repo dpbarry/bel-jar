@@ -106,6 +106,12 @@
           <path d="m12.85 11.6-1.7 6"/>
         </svg>
       </button>
+      <button id="btn-inspector" type="button" class="icon-btn icon-btn-lg" data-tooltip="Inspector" aria-pressed="false" aria-controls="inspector-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
       <div class="sidebar-fill" aria-hidden="true"></div>
       <button id="btn-settings" type="button" class="icon-btn icon-btn-lg" data-tooltip="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -170,6 +176,15 @@
       </div>
     </div>
     </div>
+
+    <div id="inspector-panel" class="panel inspector-panel" aria-hidden="true">
+      <div class="panel-header">
+        <span class="panel-label">Inspector</span>
+      </div>
+      <div class="inspector-body">
+        <p class="inspector-empty-note">Place the cursor on a symbol.</p>
+      </div>
+    </div>
   </div>
 
   <div id="tooltip-root" class="tooltip-root" role="tooltip" hidden></div>
@@ -194,6 +209,8 @@
   <script src="js/float-placement.js"></script>
   <script src="js/tooltips.js"></script>
   <script src="js/menu.js"></script>
+  <script src="js/floating-window.js"></script>
+  <script src="js/scroll-fade.js"></script>
   <script src="js/dialog.js"></script>
   <script src="js/repl-output.js"></script>
   <script src="js/beluga-run.js"></script>

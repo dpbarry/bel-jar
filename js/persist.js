@@ -9,6 +9,18 @@
   var REPL_RAW_STORAGE_KEY = 'beljar-repl-raw';
   var BELUGA_MODE_STORAGE_KEY = 'beljar-beluga-mode';
   var EDITOR_SPLIT_STORAGE_KEY = global.BELJAR_SPLIT_KEY || 'beljar-editor-split';
+  var GRAPH_PREFS_STORAGE_KEY = 'beljar-graph-prefs';
+  var LEGACY_GRAPH_LAYOUT_KEY = 'beljar:graph-layout';
+  var LEGACY_GRAPH_IMPL_KEY = 'beljar:graph-impl';
+  var LEGACY_GRAPH_DEPTH_KEY = 'beljar:graph-depth';
+  var LEGACY_GRAPH_SIDEBAR_KEY = 'beljar:graph-sidebar';
+  var DEFAULT_GRAPH_PREFS = Object.freeze({
+    layout: 'force',
+    impl: 'show',
+    depth: 1,
+    labelDensity: 3,
+    sidebarCollapsed: false,
+  });
   var DEFAULT_EDITOR_SPLIT = global.BELJAR_SPLIT_DEFAULT != null ? global.BELJAR_SPLIT_DEFAULT : 0.5;
   var MIN_EDITOR_SPLIT = global.BELJAR_SPLIT_MIN != null ? global.BELJAR_SPLIT_MIN : 0.18;
   var MAX_EDITOR_SPLIT = global.BELJAR_SPLIT_MAX != null ? global.BELJAR_SPLIT_MAX : 0.82;
@@ -427,6 +439,70 @@
     }
   }
 
+  function normalizeGraphPrefs(raw) {
+    if (!raw || typeof raw !== 'object') {
+      return {
+        layout: DEFAULT_GRAPH_PREFS.layout,
+        impl: DEFAULT_GRAPH_PREFS.impl,
+        depth: DEFAULT_GRAPH_PREFS.depth,
+        labelDensity: DEFAULT_GRAPH_PREFS.labelDensity,
+        sidebarCollapsed: DEFAULT_GRAPH_PREFS.sidebarCollapsed,
+      };
+    }
+    var depth = parseInt(raw.depth, 10);
+    if (!isFinite(depth)) depth = DEFAULT_GRAPH_PREFS.depth;
+    depth = Math.min(3, Math.max(1, depth));
+    var labelDensity = parseInt(raw.labelDensity, 10);
+    if (!isFinite(labelDensity)) labelDensity = DEFAULT_GRAPH_PREFS.labelDensity;
+    labelDensity = Math.min(5, Math.max(1, labelDensity));
+    return {
+      layout: raw.layout === 'flat' ? 'flat' : 'force',
+      impl: raw.impl === 'hide' ? 'hide' : 'show',
+      depth: depth,
+      labelDensity: labelDensity,
+      sidebarCollapsed: !!raw.sidebarCollapsed,
+    };
+  }
+
+  function migrateLegacyGraphPrefs() {
+    var prefs = normalizeGraphPrefs(null);
+    var touched = false;
+    try {
+      var layout = backendLoad(LEGACY_GRAPH_LAYOUT_KEY);
+      if (layout === 'flat') { prefs.layout = 'flat'; touched = true; }
+      var impl = backendLoad(LEGACY_GRAPH_IMPL_KEY);
+      if (impl === 'hide' || impl === 'nodes' || impl === 'none') { prefs.impl = 'hide'; touched = true; }
+      var depth = parseInt(backendLoad(LEGACY_GRAPH_DEPTH_KEY) || '', 10);
+      if (isFinite(depth)) { prefs.depth = Math.min(3, Math.max(1, depth)); touched = true; }
+      var sidebar = backendLoad(LEGACY_GRAPH_SIDEBAR_KEY);
+      if (sidebar === 'collapsed') { prefs.sidebarCollapsed = true; touched = true; }
+      if (touched) {
+        backendSave(GRAPH_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+        backendRemove(LEGACY_GRAPH_LAYOUT_KEY);
+        backendRemove(LEGACY_GRAPH_IMPL_KEY);
+        backendRemove(LEGACY_GRAPH_DEPTH_KEY);
+        backendRemove(LEGACY_GRAPH_SIDEBAR_KEY);
+      }
+    } catch (_) {}
+    return prefs;
+  }
+
+  function readStoredGraphPrefs() {
+    try {
+      var parsed = tryParse(backendLoad(GRAPH_PREFS_STORAGE_KEY));
+      if (parsed) return normalizeGraphPrefs(parsed);
+      return migrateLegacyGraphPrefs();
+    } catch (_) {
+      return normalizeGraphPrefs(null);
+    }
+  }
+
+  function writeStoredGraphPrefs(partial) {
+    var next = normalizeGraphPrefs(Object.assign({}, readStoredGraphPrefs(), partial || {}));
+    backendSave(GRAPH_PREFS_STORAGE_KEY, JSON.stringify(next));
+    return next;
+  }
+
   function createAsyncPersistLayer() {
     return {
       push: function () { return Promise.resolve({ ok: false, reason: 'not-configured' }); },
@@ -443,6 +519,8 @@
     THEME_STORAGE_KEY: THEME_STORAGE_KEY,
     REPL_RAW_STORAGE_KEY: REPL_RAW_STORAGE_KEY,
     EDITOR_SPLIT_STORAGE_KEY: EDITOR_SPLIT_STORAGE_KEY,
+    GRAPH_PREFS_STORAGE_KEY: GRAPH_PREFS_STORAGE_KEY,
+    DEFAULT_GRAPH_PREFS: DEFAULT_GRAPH_PREFS,
     DEFAULT_EDITOR_SPLIT: DEFAULT_EDITOR_SPLIT,
     MIN_EDITOR_SPLIT: MIN_EDITOR_SPLIT,
     MAX_EDITOR_SPLIT: MAX_EDITOR_SPLIT,
@@ -458,6 +536,9 @@
     writeStoredReplRaw: writeStoredReplRaw,
     readStoredEditorSplit: readStoredEditorSplit,
     writeStoredEditorSplit: writeStoredEditorSplit,
+    readStoredGraphPrefs: readStoredGraphPrefs,
+    writeStoredGraphPrefs: writeStoredGraphPrefs,
+    normalizeGraphPrefs: normalizeGraphPrefs,
     clampEditorSplit: clampEditorSplit,
     readStoredBelugaMode: readStoredBelugaMode,
     writeStoredBelugaMode: writeStoredBelugaMode,

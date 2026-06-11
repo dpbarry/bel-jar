@@ -95,6 +95,100 @@ export function createSemanticEngine(options = {}) {
     return null;
   }
 
+  // SINGLE SOURCE OF TRUTH for a term's type, synchronously. Both hoverAt (the
+  // tooltip) and intelSyncAt (the inspector) resolve type through this, so they
+  // cannot drift. Mirrors hoverAt's sync ladder exactly. Returns:
+  //   { type, source, status, kind, needsAsync, definitive }
+  // where needsAsync=true means an async session/fallback path WOULD produce a
+  // type (so the UI should show "recalculating" then await), and definitive=true
+  // means we can prove there is no type to show (e.g. an unannotated fn param) —
+  // the UI should settle with no type, not spin.
+  function syncResolveType(pos, resolvedIn, queryIn, refIn) {
+    const syntax = syntaxStore.getSnapshot();
+    const symbols = symbolStore.getSnapshot();
+    if (!syntax || !symbols) {
+      return { type: null, source: null, status: STATUS.UNKNOWN, kind: 'unknown', needsAsync: false, definitive: false };
+    }
+    const resolved = resolvedIn !== undefined ? resolvedIn : resolveHoverDoc(syntax.tree, syntax.doc, pos);
+    const query = queryIn !== undefined ? queryIn : symbolStore.queryAt(pos);
+    const ref = refIn !== undefined ? refIn : symbolStore.referenceAt(pos);
+    const kind = classifyHover(resolved, ref, query);
+
+    // 1. A resolved source type. For a known symbol prefer its best cached decl
+    //    type (reconstructed > hydrated > annotation) over the raw source text,
+    //    so a derived/persisted type wins. Fall back to the literal sourceType
+    //    (e.g. a local/implicit binder with no symbol entry).
+    if (resolved && resolved.sourceType) {
+      const best = query && query.symbol ? bestDeclType(query.symbol) : null;
+      if (best && best.type != null) {
+        const source = best.source === 'reconstructed' ? 'reconstructed'
+          : best.source === 'hydrated' ? 'stale-cache'
+          : 'local';
+        return { type: best.type, source, status: best.status, kind, needsAsync: false, definitive: true };
+      }
+      return { type: resolved.sourceType, source: 'local', status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+    }
+
+    // 2. Local binder whose displayed type is its bracketed text.
+    if (resolved && resolved.kind === 'local') {
+      if (resolved.text != null) {
+        return { type: resolved.text, source: 'source', status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+      }
+      // A bare binder (e.g. an unannotated fn parameter): no type, none coming.
+      return { type: null, source: null, status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+    }
+
+    // 3. Cached decl/metavar type (covers globals via bestDeclType + metavars).
+    const sync = syncTypeFor(pos, resolved, query, ref);
+    if (sync && sync.type != null) {
+      return { type: sync.type, source: sync.source, status: sync.status, kind, needsAsync: false, definitive: true };
+    }
+
+    // 4. Source signature text.
+    if (resolved && resolved.sourceText) {
+      return { type: resolved.sourceText, source: 'source', status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+    }
+
+    // 5. Nothing synchronous is available (branches 3 and 4 already covered the
+    //    cache, metavar, and source-signature cases). Decide only whether an
+    //    async session/fallback path WOULD produce a type.
+    const wouldElaborate =
+      (!!session && resolved && resolved.needsElaboration) ||
+      (!!session && !!(ref && !ref.symbolId && ref.enclosingDeclarationId)) ||
+      (!!resolved && !!resolved.fallback);
+    return {
+      type: null,
+      source: null,
+      status: STATUS.UNKNOWN,
+      kind,
+      needsAsync: !!wouldElaborate,
+      // Definitive only if there's truly nothing more to try.
+      definitive: !wouldElaborate,
+    };
+  }
+
+  // Kind-aware user-facing status for ANY position (the inspector's source of
+  // truth). Three honest states; mirrors what the tooltip would show:
+  //   'error'         — real diagnostics overlap the owning declaration.
+  //   'recalculating' — a type is genuinely being awaited (needsAsync, none yet).
+  //   'settled'       — a type is available now, OR provably none is coming.
+  function userStatusAt(pos, sync) {
+    const r = sync || syncResolveType(pos);
+    // Real failure on the owning declaration.
+    const ownerId = owningDeclarationId(pos);
+    const node = ownerId && snapshot && snapshot.graph && snapshot.graph.nodeMap.get(ownerId);
+    if (node && (node.status === STATUS.SYNTAX_FAULT || (node.diagnostics && node.diagnostics.length))) {
+      return { state: 'error', detail: 'Declaration has an error' };
+    }
+    if (r.type != null) {
+      return { state: 'settled', detail: 'Type known' };
+    }
+    if (r.needsAsync) {
+      return { state: 'recalculating', detail: 'Reconstructing type…' };
+    }
+    return { state: 'settled', detail: 'No type' };
+  }
+
   function metavarContext(pos, resolved, symbols) {
     const name = (resolved && resolved.name) || null;
     if (!name) return null;
@@ -607,72 +701,26 @@ export function createSemanticEngine(options = {}) {
       return out;
     }
 
-    // Prefer a fresh reconstructed (implicit-expanded) decl type over the
-    // source-written signature, when one is available for this declaration.
-    if (resolved && resolved.sourceType) {
-      const recon = query && query.symbol ? reconstructedTypeOf(query.symbol.id) : null;
-      if (recon && recon.type != null) {
-        const out = attachDependencyMeta({
-          status: 'ready',
-          source: 'reconstructed',
-          type: recon.type,
-          derivationStatus: recon.status,
-          ...base,
-          ...presentation,
-        }, blocked);
-        trace?.record('ready', { source: 'reconstructed', instant: true });
-        return out;
-      }
+    // Resolve the type through the ONE shared synchronous ladder so the tooltip
+    // and the inspector (intelSyncAt) can never disagree. A `definitive` result
+    // is the final answer — emit it ready immediately (even a definitive null,
+    // e.g. an unannotated binder → head-only tooltip). Otherwise fall through to
+    // async elaboration below.
+    const sync = syncResolveType(pos, resolved, query, ref);
+    if (sync.definitive) {
       const out = attachDependencyMeta({
         status: 'ready',
-        source: 'local',
-        type: resolved.sourceType,
-        ...base,
-        ...presentation,
-      }, blocked);
-      trace?.record('ready', { source: 'local', instant: true });
-      return out;
-    }
-
-    if (resolved && resolved.kind === 'local') {
-      const out = attachDependencyMeta({
-        status: 'ready',
-        source: 'source',
-        type: resolved.text,
-        ...base,
-        ...presentation,
-      }, blocked);
-      trace?.record('ready', { source: 'source', cache: 'hit' });
-      return out;
-    }
-
-    const sync = syncTypeFor(pos, resolved, query, ref);
-    if (sync && sync.type != null) {
-      const out = attachDependencyMeta({
-        status: 'ready',
-        type: sync.type,
         source: sync.source,
+        type: sync.type,
         derivationStatus: sync.status,
         ...base,
         ...presentation,
       }, blocked);
-      trace?.record('ready', { source: sync.source, cache: 'hit' });
+      trace?.record('ready', { source: sync.source, instant: true });
       return out;
     }
 
-    if (resolved && resolved.sourceText) {
-      const out = attachDependencyMeta({
-        status: 'ready',
-        source: 'source',
-        type: resolved.sourceText,
-        ...base,
-        ...presentation,
-      }, blocked);
-      trace?.record('ready', { source: 'source', signature: true });
-      return out;
-    }
-
-    const stale = staleTypeFor(pos, resolved) || (sync && sync.type == null ? sync : null);
+    const stale = staleTypeFor(pos, resolved);
     const staleType = stale && stale.type != null ? stale.type : null;
     const staleSource = stale && stale.source;
 
@@ -693,7 +741,7 @@ export function createSemanticEngine(options = {}) {
 
     const out = {
       status: 'pending',
-      reason: sync ? 'awaiting-session' : 'uncached',
+      reason: staleType != null ? 'awaiting-session' : 'uncached',
       staleType,
       staleSource,
       promise,
@@ -824,34 +872,6 @@ export function createSemanticEngine(options = {}) {
     };
   }
 
-  async function intelAt(pos) {
-    const query = symbolStore.queryAt(pos);
-    if (!query) return null;
-    const target = query.symbol || (query.reference && query.reference.symbolId
-      ? symbolStore.getSnapshot().symbolsById.get(query.reference.symbolId)
-      : null);
-    const elaboration = await elaborateAt(pos);
-    const id = target ? target.id : null;
-    return {
-      name: (target && target.name) || (query.reference && query.reference.name) || null,
-      label: target ? target.label : null,
-      namespace: target ? target.namespace : (query.reference && query.reference.namespace),
-      definition: target
-        ? { id: target.id, name: target.name, range: target.nameRange, isGlobal: target.isGlobal }
-        : null,
-      reference: query.reference
-        ? { range: query.reference.range, resolution: query.reference.resolution }
-        : null,
-      references: id ? symbolStore.referencesOf(id).map((r) => r.range) : [],
-      type: elaboration ? elaboration.type : null,
-      typeSource: elaboration ? elaboration.source : null,
-      status: id ? semanticGraph.statusForSymbol(id) : STATUS.UNKNOWN,
-      dependencies: id ? semanticGraph.dependenciesOf(id) : [],
-      dependents: id ? semanticGraph.dependentsOf(id) : [],
-      impact: id ? semanticGraph.impactOf(id) : [],
-    };
-  }
-
   // One-call navigation substrate for the UI (go-to-def, find-refs, rename,
   // reveal-binder, insert-signature), resolved through the symbol store +
   // reconstructed-type layer. Synchronous; null when no identifier is at `pos`.
@@ -892,6 +912,84 @@ export function createSemanticEngine(options = {}) {
       // Best-known signature for insert-signature (reconstructed preferred).
       signature,
     };
+  }
+
+  // The inspector's one-call substrate: identity + type + references + the typed
+  // dependency graph, synchronously (NO await). Type and status come from the
+  // SHARED resolver (syncResolveType / userStatusAt) — the exact same logic the
+  // hover tooltip uses — so the inspector and tooltip never disagree. `needsAsync`
+  // is true when a type genuinely needs session elaboration (the UI then awaits
+  // via intelTypePromise and re-settles). Null when no identifier is at `pos`.
+  function intelSyncAt(pos) {
+    const query = symbolStore.queryAt(pos);
+    if (!query) return null;
+    const symbols = symbolStore.getSnapshot();
+    const syntax = syntaxStore.getSnapshot();
+    const ref = symbolStore.referenceAt(pos);
+    const resolved = symbols && syntax ? resolveHoverDoc(syntax.tree, syntax.doc, pos) : null;
+    const target = query.symbol || (query.reference && query.reference.symbolId && symbols
+      ? symbols.symbolsById.get(query.reference.symbolId)
+      : null);
+    const id = target ? target.id : null;
+
+    const sync = syncResolveType(pos, resolved, query, ref);
+    const userStatus = userStatusAt(pos, sync);
+
+    return {
+      name: (target && target.name) || (query.reference && query.reference.name)
+        || (resolved && resolved.name) || null,
+      label: (target && target.label) || (resolved && resolved.label) || null,
+      namespace: target ? target.namespace : (query.reference && query.reference.namespace) || null,
+      definition: target
+        ? { id: target.id, name: target.name, range: target.nameRange, isGlobal: target.isGlobal }
+        : null,
+      reference: query.reference
+        ? { range: query.reference.range, resolution: query.reference.resolution }
+        : null,
+      references: id
+        ? symbolStore.referencesOf(id).map((r) => ({
+          from: r.range.from, to: r.range.to, name: r.name, resolution: r.resolution,
+        }))
+        : [],
+      type: sync.type,
+      typeSource: sync.source,
+      typeStatus: sync.status,
+      typePending: userStatus.state === 'recalculating',
+      needsAsync: sync.needsAsync,
+      // User-facing status (settled / recalculating / error) + tooltip detail —
+      // kind-aware, position-based, identical basis to the hover tooltip.
+      userStatus,
+      // Internal graph status retained for debugging, not shown raw.
+      status: id ? semanticGraph.statusForSymbol(id) : STATUS.UNKNOWN,
+      dependencies: id ? semanticGraph.dependenciesOf(id) : [],
+      dependents: id ? semanticGraph.dependentsOf(id) : [],
+      impact: id ? semanticGraph.impactOf(id) : [],
+    };
+  }
+
+  // Async type for `pos`, mirroring the tooltip's elaboration so the inspector
+  // can re-settle a 'recalculating' term to its true type. Resolves to a string
+  // type or null. Reuses hoverAt's promise (same dedupe key, same session path).
+  function intelTypePromise(pos, options = {}) {
+    const hover = hoverAt(pos, options);
+    if (hover && hover.status === 'ready' && hover.type != null) {
+      return Promise.resolve(hover.type);
+    }
+    if (hover && hover.promise) {
+      return Promise.resolve(hover.promise).then((final) => {
+        if (final && final.status === 'ready' && final.type != null) return final.type;
+        return null;
+      }).catch(() => null);
+    }
+    return Promise.resolve(hover && hover.type != null ? hover.type : null);
+  }
+
+  // Range of a global symbol's name by id (for click-to-jump from the inspector
+  // dependency/usage lists). Null when the id is unknown in the current snapshot.
+  function symbolRangeById(id) {
+    const symbols = symbolStore.getSnapshot();
+    const symbol = symbols && id ? symbols.symbolsById.get(id) : null;
+    return symbol ? symbol.nameRange : null;
   }
 
   // All occurrence ranges (definition name + references) for the symbol at
@@ -1001,7 +1099,10 @@ export function createSemanticEngine(options = {}) {
     observeMetavarAt,
     observeMetavarNamed,
     elaborateDeclarationImplicits,
-    intelAt,
+    intelSyncAt,
+    intelTypePromise,
+    userStatusAt,
+    symbolRangeById,
     hoverAt,
     dependenciesOf: (symbolId) => semanticGraph.dependenciesOf(symbolId),
     dependentsOf: (symbolId) => semanticGraph.dependentsOf(symbolId),

@@ -1,5 +1,6 @@
 import { linter } from '@codemirror/lint';
 import { fallbackDiagnostic, parseBelugaDiagnostics } from './bel-beluga-diag.mjs';
+import { mergeDiagnostics, parseQueryRuntimeDiagnostics } from './bel-query-diag.mjs';
 import { LINT_TOOLTIP_FILTER } from './bel-hover.mjs';
 
 function belugaClient() {
@@ -7,10 +8,6 @@ function belugaClient() {
   return g.BelugaClient;
 }
 
-// Resolve to { ok, output } regardless of client age. Prefer checkResult (which
-// carries Beluga's own pass/fail verdict); fall back to check() and treat its
-// output as a potential failure (fallbackDiagnostic returns nothing for clean,
-// empty output, so a successful check still reads green).
 function runCheck(client, code) {
   if (typeof client.checkResult === 'function') return client.checkResult(code);
   if (typeof client.check === 'function') {
@@ -19,11 +16,12 @@ function runCheck(client, code) {
   return Promise.resolve(null);
 }
 
-// A normal async lint source: CodeMirror runs it after the lint debounce, awaits
-// the promise, and dispatches the result (merged with the syntax source). The
-// previous decoupled design tried to push results via forceLinting(), which is a
-// no-op once the lint plugin has already run — so diagnostics never rendered.
-export function createBelugaLinter({ onDiagnostics = null, onCheckStart = null, delay = 400 } = {}) {
+export function createBelugaLinter({
+  onDiagnostics = null,
+  onCheckStart = null,
+  onCheckComplete = null,
+  delay = 400,
+} = {}) {
   let last = [];
 
   function notify(view, diags) {
@@ -48,6 +46,7 @@ export function createBelugaLinter({ onDiagnostics = null, onCheckStart = null, 
         if (!res) { notify(view, []); return []; }
         const doc = view.state.doc;
         let diags = parseBelugaDiagnostics(res.output, doc);
+        diags = mergeDiagnostics(diags, parseQueryRuntimeDiagnostics(res.output, doc));
         // A failed check that yielded no locatable diagnostic must NOT read as
         // clean — anchor a fallback so the file is never falsely green.
         if (!diags.length && !res.ok) {
@@ -57,7 +56,10 @@ export function createBelugaLinter({ onDiagnostics = null, onCheckStart = null, 
         notify(view, diags);
         return diags;
       })
-      .catch(() => { notify(view, []); return []; });
+      .catch(() => { notify(view, []); return []; })
+      .finally(() => {
+        if (typeof onCheckComplete === 'function') onCheckComplete(view);
+      });
   }, { delay, tooltipFilter: LINT_TOOLTIP_FILTER });
 
   ext.belugaLastDiagnostics = () => last;

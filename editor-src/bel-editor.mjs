@@ -17,10 +17,11 @@ import { bracketMatching, ensureSyntaxTree, indentRange, indentUnit, syntaxTree 
 import { diagnosticCount, forEachDiagnostic, linter } from '@codemirror/lint';
 import { beluga } from './bel-language.mjs';
 import { formatCommand } from './bel-format.mjs';
+import { scheduleViewportRestore, viewportCenterLine } from './bel-viewport.mjs';
 import { belAliases } from './bel-aliases.mjs';
 import { syntaxLint } from './bel-lint.mjs';
 import { createBelugaLinter } from './bel-beluga-lint.mjs';
-import { updateIdeStatusDot } from './bel-ide-status.mjs';
+import { computeParseCoverage, updateIdeStatusDot } from './bel-ide-status.mjs';
 import { applySyntaxFaultMask, computeLintBlocks } from './bel-units.mjs';
 import { belHoverTooltip, LINT_TOOLTIP_FILTER } from './bel-hover.mjs';
 import { diagnosticRowHighlight } from './bel-diag-gutter.mjs';
@@ -29,7 +30,9 @@ import { belNavigation } from './bel-nav.mjs';
 import { belRename, startRename } from './bel-rename.mjs';
 import { belContextMenu } from './bel-context-menu.mjs';
 import { findReferences } from './bel-refs-panel.mjs';
-import { flashExtension, goToDefinition } from './bel-ide-actions.mjs';
+import { flashExtension, goToDefinition, revealInInspector } from './bel-ide-actions.mjs';
+import { openLocalGraphWindow, openGlobalGraphWindow } from './bel-graph-view.mjs';
+import { belInspector } from './bel-inspector.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
@@ -281,6 +284,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     belNavigation(),
     belRename(),
     belContextMenu(),
+    belInspector(),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
     }),
@@ -292,51 +296,6 @@ function belSyntaxLinter() {
   // fixed delay so parser-level errors show fast on files of any size, decoupled
   // from the Beluga checker's own adaptive debounce.
   return linter((view) => syntaxLint(view), { delay: 80, tooltipFilter: LINT_TOOLTIP_FILTER });
-}
-
-function viewportCenterLine(view) {
-  const scroller = view.scrollDOM;
-  const rect = scroller.getBoundingClientRect();
-  if (rect.height <= 0) return 1;
-  const midY = rect.top + rect.height / 2;
-  const midX = rect.left + Math.min(48, Math.max(8, rect.width * 0.15));
-  const pos = view.posAtCoords({ x: midX, y: midY });
-  if (pos == null) return 1;
-  return view.state.doc.lineAt(pos).number;
-}
-
-function scheduleViewportRestore(view, local) {
-  if (!local || typeof local !== 'object') return;
-
-  function apply() {
-    const doc = view.state.doc;
-    const docLen = doc.length;
-    const tr = { annotations: Transaction.addToHistory.of(false) };
-
-    if (local.selection && isFinite(local.selection.anchor) && isFinite(local.selection.head)) {
-      tr.selection = {
-        anchor: Math.max(0, Math.min(local.selection.anchor, docLen)),
-        head: Math.max(0, Math.min(local.selection.head, docLen)),
-      };
-    }
-
-    const centerLine = Number(local.centerLine);
-    if (isFinite(centerLine) && centerLine >= 1 && doc.lines > 0) {
-      const line = doc.line(Math.min(Math.max(1, Math.floor(centerLine)), doc.lines));
-      tr.effects = EditorView.scrollIntoView(line.from, { y: 'center' });
-    }
-
-    if (tr.selection || tr.effects) view.dispatch(tr);
-  }
-
-  view.requestMeasure();
-  const afterLayout = () => {
-    view.requestMeasure();
-    requestAnimationFrame(() => requestAnimationFrame(apply));
-  };
-  const fontsReady = typeof document !== 'undefined' && document.fonts?.ready;
-  if (fontsReady) fontsReady.then(afterLayout);
-  else afterLayout();
 }
 
 export function mount(parentEl, options = {}) {
@@ -417,51 +376,42 @@ export function mount(parentEl, options = {}) {
 
   let belugaCheckPending = false;
 
-  function belugaCheckEnabled(view) {
-    return !!(g.BelugaClient && typeof g.BelugaClient.check === 'function'
-      && view.state.doc.toString().trim());
-  }
-
-  function markBelugaCheckPending(view) {
-    belugaCheckPending = belugaCheckEnabled(view);
-  }
-
   function refreshIdeStatus(view) {
-    // Read the diagnostics ACTUALLY rendered in the editor (syntax + Beluga),
-    // so the status dot can never disagree with the squiggles.
     const diags = [];
     forEachDiagnostic(view.state, (d) => diags.push(d));
-    updateIdeStatusDot(ideStatusDot, diags, { belugaPending: belugaCheckPending });
+    updateIdeStatusDot(ideStatusDot, diags, {
+      parseCoverage: computeParseCoverage(view.state),
+      belugaPending: belugaCheckPending,
+    });
+  }
+
+  function collectIdeStatus() {
+    const diags = [];
+    forEachDiagnostic(view.state, (d) => diags.push(d));
+    const parse = computeParseCoverage(view.state);
+    const snap = semanticEngine.getSnapshot?.() || null;
+    return {
+      parse,
+      belugaChecking: belugaCheckPending,
+      errors: diags.filter((d) => d.severity === 'error').length,
+      warnings: diags.filter((d) => d.severity === 'warning').length,
+      syntaxVersion: snap?.syntax?.version ?? null,
+      symbolCount: snap?.summary?.symbols ?? snap?.symbols?.globalSymbols?.length ?? null,
+      dirtyCount: snap?.graph?.dirty?.size ?? snap?.summary?.dirty ?? 0,
+    };
   }
 
   const belugaLinter = createBelugaLinter({
     delay: 400,
-    onCheckStart(view) {
-      markBelugaCheckPending(view);
-      refreshIdeStatus(view);
+    onCheckStart(v) {
+      belugaCheckPending = true;
+      refreshIdeStatus(v);
     },
-    onDiagnostics(view) {
+    onCheckComplete(v) {
       belugaCheckPending = false;
-      refreshIdeStatus(view);
+      refreshIdeStatus(v);
     },
   });
-
-  function updateParseProgress(view) {
-    if (!ideStatusDot) return;
-    const docLen = view.state.doc.length;
-    if (docLen <= 0) {
-      ideStatusDot.removeAttribute('data-parsing');
-      return;
-    }
-    const pct = Math.min(100, Math.round((syntaxTree(view.state).length / docLen) * 100));
-    if (pct < 100) {
-      ideStatusDot.setAttribute('data-parsing', `${pct}%`);
-      ideStatusDot.setAttribute('data-tooltip', `Parsing ${pct}%`);
-      ideStatusDot.setAttribute('aria-label', `Parsing ${pct}%`);
-    } else {
-      ideStatusDot.removeAttribute('data-parsing');
-    }
-  }
 
   function seedSemanticScheduler(view) {
     const sched = semanticEngine.scheduler;
@@ -478,7 +428,6 @@ export function mount(parentEl, options = {}) {
       cursorPos: view.state.selection.main.head,
       visibleRanges: view.visibleRanges,
     });
-    updateParseProgress(view);
     refreshIdeStatus(view);
   }
 
@@ -508,7 +457,6 @@ export function mount(parentEl, options = {}) {
       refreshIdeStatus(update.view);
     }
     if (update.docChanged) {
-      markBelugaCheckPending(update.view);
       syncSemanticFromView(update.view);
       semanticEngine.onDocChange(update.changes);
       seedSemanticScheduler(update.view);
@@ -552,7 +500,6 @@ export function mount(parentEl, options = {}) {
 
   semanticEngine.setCheckerCode(() => healthySnapshotForView());
   hydrateSemanticCheckpoint(initialDoc);
-  markBelugaCheckPending(view);
   syncSemanticFromView(view);
   scheduleViewportRestore(view, options.initialLocal);
   seedSemanticScheduler(view);
@@ -669,11 +616,18 @@ export function mount(parentEl, options = {}) {
     },
 
     getSemanticEngine() { return semanticEngine; },
+    getParseCoverage() { return computeParseCoverage(view.state); },
+    getIdeStatus() { return collectIdeStatus(); },
 
     // IDE navigation/refactor actions, callable from header menus or scripts.
     goToDefinition(pos) { return goToDefinition(view, pos); },
     findReferences(pos) { return findReferences(view, pos); },
     rename(pos) { return startRename(view, pos); },
+    revealInInspector(pos) { return revealInInspector(view, pos); },
+    // Dependency graph: with a pos → local neighborhood; without → whole-file.
+    openDependencyGraph(pos) {
+      return pos == null ? openGlobalGraphWindow(view) : openLocalGraphWindow(view, pos);
+    },
 
     getHydratePromise() { return Promise.resolve(0); },
   };

@@ -915,6 +915,1281 @@ body.workspace-resizing * {
   color: var(--base-high);
 }
 
+/* -- Shared type presentation: the "type-of" flourish + syntax highlighting --
+   Used by hover tooltips, the inspector panel, and the pinned inspector window,
+   so every surface renders a term's type identically. */
+
+/* .bel-type is the container; .bel-type-text holds the highlighted type. The
+   leading glyph (∷, a styled supercolon meaning "has type") is decorative — it
+   is NOT literal text, so it never collides with real colons inside the type. */
+.bel-type {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--mono);
+}
+
+.bel-type::before {
+  content: '\2237'; /* ∷ PROPORTION — reads as "has type" */
+  flex: 0 0 auto;
+  font-size: 1.35em;
+  line-height: 1;
+  transform: translateY(0.06em);
+  color: var(--muted-highest);
+  opacity: 0.45;
+  user-select: none;
+}
+
+.bel-type-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bel-type.is-pending::before {
+  opacity: 0.3;
+}
+
+/* Syntax-highlight classes for rendered type strings (bel-type-render.mjs).
+   Mirrors the editor's defaultBelugaHighlightStyle palette (bel-language.mjs),
+   theme-aware via light-dark(). */
+.bel-hl-keyword  { color: light-dark(hsl(221, 82%, 34%), var(--accent-mid)); font-weight: 600; }
+.bel-hl-control  { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); font-weight: 600; }
+.bel-hl-arrow    { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); }
+.bel-hl-op       { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
+.bel-hl-type     { color: light-dark(hsl(268, 70%, 37%), hsl(264, 78%, 74%)); }
+.bel-hl-type-def { color: light-dark(hsl(270, 78%, 32%), hsl(264, 88%, 78%)); font-weight: 600; }
+.bel-hl-metatype { color: light-dark(hsl(195, 64%, 30%), hsl(190, 70%, 74%)); font-weight: 600; }
+.bel-hl-meta     { color: light-dark(hsl(194, 70%, 32%), hsl(190, 76%, 76%)); }
+.bel-hl-var      { color: var(--base-highest); }
+.bel-hl-var-def  { color: light-dark(hsl(220, 88%, 30%), hsl(215, 92%, 82%)); font-weight: 600; }
+.bel-hl-local    { color: light-dark(hsl(272, 64%, 38%), hsl(280, 50%, 80%)); }
+.bel-hl-ctor     { color: light-dark(hsl(221, 84%, 31%), hsl(215, 92%, 82%)); }
+.bel-hl-number   { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
+.bel-hl-atom     { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
+.bel-hl-prop     { color: light-dark(hsl(213, 82%, 34%), hsl(210, 78%, 72%)); }
+.bel-hl-meta-pragma { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
+.bel-hl-punct    { color: light-dark(var(--muted-higher), var(--muted-highest)); }
+
+/* -- Symbol Inspector panel (docks on the right) -- */
+
+.inspector-panel {
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chrome-bg-panel);
+  border-left: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace.is-inspector-open .inspector-panel {
+  flex: 0 0 var(--inspector-w, 16rem);
+  width: var(--inspector-w, 16rem);
+  border-left: 1px solid var(--chrome-divider);
+}
+
+.inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.5rem 0.625rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.inspector-empty-note {
+  margin: 0.75rem 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--base-high);
+}
+
+/* Header: a single calm row — dot · kind · name. No rule underneath; the type
+   card provides the visual break, so there's no empty doubled divider. */
+.inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.1rem 0.55rem;
+}
+
+.inspector-status-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--base-high);
+}
+
+.inspector-status-dot.is-settled {
+  background: var(--ide-status-clean, hsl(140, 45%, 48%));
+}
+
+.inspector-status-dot.is-recalculating {
+  background: var(--ide-status-checking, hsl(42, 90%, 55%));
+  animation: inspector-dot-pulse 1.1s ease-in-out infinite;
+}
+
+.inspector-status-dot.is-error {
+  background: var(--ide-status-error, hsl(0, 65%, 55%));
+}
+
+@keyframes inspector-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.inspector-kind-pill {
+  flex: 0 0 auto;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--accent-high);
+  background: var(--accent-lower);
+  border-radius: 0.25rem;
+  padding: 0.08rem 0.36rem;
+}
+
+.inspector-name {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--base-highest);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* A single-line horizontally-scrollable text container; ScrollFade adds the
+   edge fades (mask-image) dynamically as it scrolls. The mask is applied inline
+   by the JS, so here we only set the scroll behaviour + hide the scrollbar. */
+.bel-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* old Edge */
+}
+
+.bel-scroll-x::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+/* Type — presented as information (not a field). The supercolon flourish on the
+   left (.bel-type::before) reads "type of"; the highlighted text sits beside it. */
+.inspector-type {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 0.1rem 0 0.55rem;
+  color: var(--base-highest);
+}
+
+.inspector-type-pending {
+  font-style: italic;
+  color: var(--base-high);
+}
+
+.inspector-section {
+  padding-top: 0.45rem;
+  margin-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--chrome-divider) 60%, transparent);
+}
+
+.inspector-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.inspector-section-title {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--base-higher);
+  font-weight: 700;
+}
+
+.inspector-section-count {
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--base-high);
+  background: var(--accent-lowest);
+  border-radius: 0.7rem;
+  padding: 0.02rem 0.4rem;
+  min-width: 1.05rem;
+  text-align: center;
+}
+
+.inspector-group-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--base-high);
+  margin: 0.3rem 0 0.1rem;
+}
+
+.inspector-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  padding: 0.13rem 0.3rem;
+  cursor: pointer;
+  color: var(--base-higher);
+  font: inherit;
+}
+
+.inspector-row-loc {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-mid);
+  flex: 0 0 auto;
+}
+
+.inspector-row-label {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-row:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+.inspector-row:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+}
+
+/* -- FloatingWindow (generic draggable/resizable panel) -- */
+
+.floating-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  min-height: 8rem;
+  background: var(--chrome-bg-panel);
+  border: 1px solid var(--chrome-divider);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 0.5rem 1.5rem hsl(220 30% 4% / 0.28),
+    0 0 0 0.5px hsl(220 30% 4% / 0.1);
+  overflow: hidden;
+}
+
+.floating-window-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2rem;
+  padding: 0 0.35rem 0 0.65rem;
+  background: var(--chrome-bg-sidebar);
+  border-bottom: 1px solid var(--chrome-divider);
+  cursor: grab;
+  user-select: none;
+}
+
+body.floating-window-dragging .floating-window-bar {
+  cursor: grabbing;
+}
+
+.floating-window-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
+  color: var(--base-highest);
+}
+
+.floating-window-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--base-high);
+  cursor: pointer;
+}
+
+.floating-window-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: auto;
+}
+
+.floating-window-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--base-high);
+  cursor: pointer;
+}
+
+.floating-window-action svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-action:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+.floating-window-action:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+.floating-window-close svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-close:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+.floating-window-close:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+.floating-window-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.floating-window-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0.9rem;
+  height: 0.9rem;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 0 55%, var(--base-high) 55% 62%,
+      transparent 62% 70%, var(--base-high) 70% 77%, transparent 77%);
+  opacity: 0.5;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-grip:hover {
+    opacity: 0.9;
+  }
+}
+
+/* Pinned inspector window: reuse the docked body styling, tighten title. */
+.inspector-window .floating-window-body {
+  padding: 0.5rem 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.inspector-window-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.inspector-window-kind {
+  flex: 0 0 auto;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--accent-high);
+}
+
+.inspector-window-name {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--base-highest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* -- Dependency graph view (SVG: local neighborhood + global) -- */
+
+.bel-graph-container {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center,
+      color-mix(in srgb, var(--chrome-divider) 30%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.bel-graph-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.bel-graph-svg.is-panning {
+  cursor: grabbing;
+}
+
+.bel-graph-empty {
+  margin: 1rem;
+  font-size: 0.8125rem;
+  color: var(--base-high);
+}
+
+/* Nodes */
+.bel-graph-node {
+  cursor: pointer;
+}
+
+.bel-graph-node rect {
+  fill: var(--chrome-bg-panel);
+  stroke: var(--chrome-divider);
+  stroke-width: 1;
+}
+
+.bel-graph-node text {
+  font-family: var(--mono);
+  font-size: 12px;
+  fill: var(--base-highest);
+  pointer-events: none;
+}
+
+.bel-graph-node.is-root rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+}
+
+/* Status tints reuse the inspector dot palette (left stripe via a subtle fill). */
+.bel-graph-node.status-recalculating rect {
+  stroke: var(--ide-status-checking, hsl(42, 90%, 55%));
+}
+
+.bel-graph-node.status-error rect {
+  stroke: var(--ide-status-error, hsl(0, 65%, 55%));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph-node:hover rect {
+    fill: var(--accent-lower);
+    stroke: var(--accent-mid);
+  }
+}
+
+.bel-graph-node:focus-visible {
+  outline: none;
+}
+
+.bel-graph-node:focus-visible rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+}
+
+/* Edges, coloured by dependency kind. */
+.bel-graph-edge {
+  fill: none;
+  stroke: var(--base-high);
+  stroke-width: 1.5;
+  opacity: 0.75;
+}
+
+.bel-graph-edge--signature { stroke: var(--accent-mid); }
+.bel-graph-edge--body { stroke: var(--base-high); }
+.bel-graph-edge--notation { stroke: light-dark(hsl(280, 45%, 55%), hsl(280, 50%, 68%)); }
+.bel-graph-edge--module { stroke: light-dark(hsl(190, 55%, 42%), hsl(190, 55%, 60%)); }
+.bel-graph-edge--implicit { stroke-dasharray: 3 3; }
+.bel-graph-edge--coverage { stroke: var(--ide-status-checking, hsl(42, 90%, 55%)); }
+
+.bel-graph-arrowhead {
+  fill: var(--base-high);
+}
+
+/* Mini graph inside the inspector panel. */
+.bel-graph-mini {
+  height: 9.5rem;
+  border: 1px solid var(--chrome-divider);
+  border-radius: 0.375rem;
+  margin-top: 0.25rem;
+}
+
+.bel-graph-mini .bel-graph-svg {
+  cursor: default;
+}
+
+.inspector-graph-popout {
+  margin-left: auto;
+  width: 1.3rem;
+  height: 1.3rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--base-high);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-graph-popout:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+/* Graph FloatingWindow title. */
+.bel-graph-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.bel-graph-title-kind {
+  flex: 0 0 auto;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--accent-high);
+}
+
+.bel-graph-title-name {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--base-highest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* -- 3D dependency galaxy (WebGL canvas + projected label overlay) -- */
+
+.bel-graph3d-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* WebGL edge palette — light mode: muted structure lines; comets carry contrast. */
+  --graph3d-edge-body: light-dark(hsla(222, 12%, 40%, 0.48), hsla(220, 14%, 70%, 0.7));
+  --graph3d-edge-sig: light-dark(hsla(214, 78%, 42%, 0.88), hsla(214, 70%, 70%, 0.8));
+  --graph3d-comet-body: light-dark(hsl(212, 92%, 56%), hsl(202, 100%, 78%));
+  --graph3d-comet-sig: light-dark(hsl(200, 55%, 96%), hsl(200, 100%, 97%));
+  background:
+    radial-gradient(ellipse at 50% 34%,
+      light-dark(hsl(220 28% 98%), hsl(226 26% 9%)),
+      light-dark(hsl(222 20% 93%), hsl(230 32% 4.5%)));
+}
+
+.bel-graph-stale-banner {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: light-dark(hsl(248, 52%, 32%), hsl(248, 58%, 82%));
+  background: light-dark(
+    color-mix(in srgb, hsl(248 58% 52%) 10%, var(--bg)),
+    color-mix(in srgb, hsl(248 62% 68%) 14%, var(--bg))
+  );
+  border-bottom: 1px solid light-dark(
+    color-mix(in srgb, hsl(248 58% 52%) 22%, transparent),
+    color-mix(in srgb, hsl(248 62% 68%) 24%, transparent)
+  );
+}
+
+.bel-graph3d-container > .bel-graph3d-propbar {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.bel-graph3d-propbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  font-weight: 400;
+  color: var(--base-high);
+  background: color-mix(in srgb, var(--chrome-bg-panel) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--chrome-divider) 55%, transparent);
+}
+
+.bel-graph3d-propbar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 0.25rem;
+}
+
+.bel-graph3d-propbar-text.is-focus {
+  color: var(--base-highest);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: -0.01em;
+}
+
+.bel-graph3d-propbar-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.bel-graph3d-navbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  border-radius: 0.2rem;
+  cursor: pointer;
+}
+
+.bel-graph3d-navbtn svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.bel-graph3d-navbtn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-navbtn:hover:not(:disabled) {
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}
+
+.bel-graph3d-main {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.bel-graph3d-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bel-graph3d-container > .bel-graph-container {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ── Flat view: a 2D layered Sugiyama diagram with its own visual language ──
+   Foundational symbols at top, dependents below; orthogonal elbow edges; chips
+   coloured by namespace. Pure x/y pan + zoom (the SVG fills the stage). */
+.bel-graph3d-stage.is-flat {
+  background:
+    radial-gradient(120% 90% at 50% -10%,
+      color-mix(in srgb, var(--accent-lower) 22%, transparent), transparent 60%),
+    var(--editor-bg, var(--chrome-bg-panel));
+}
+
+.bel-flat-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.bel-flat-svg.is-panning { cursor: grabbing; }
+
+/* Edges: hairline structural lines that recede behind the chips, with a baked
+   filled arrowhead (.--head) at each tip. The kind colour lives in --edge-col so
+   the LINE path uses it as stroke and the HEAD path uses it as fill. */
+.bel-flat-edge {
+  --edge-col: var(--base-high);
+  fill: none;
+  stroke: var(--edge-col);
+  /* World-unit width is 1/scale (set in JS) so hairlines stay 1 device px. */
+  stroke-width: var(--flat-stroke-w, 1);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.24;
+  /* No transition: focus toggles classes on hundreds of edges at once; animating
+     them all would storm the compositor. Instant is snappier here. */
+}
+
+/* Arrowhead: a filled triangle baked into the path (no SVG marker). Drawn a touch
+   stronger than the faint lines so direction reads at a glance. */
+.bel-flat-edge--head {
+  fill: var(--edge-col);
+  stroke: none;
+  opacity: 0.7;
+}
+
+.bel-flat-edge--signature,
+.bel-flat-edge--coverage { --edge-col: var(--accent-mid); opacity: 0.36; }
+.bel-flat-edge--signature.bel-flat-edge--head,
+.bel-flat-edge--coverage.bel-flat-edge--head { opacity: 0.8; }
+.bel-flat-edge--notation { --edge-col: light-dark(hsl(280, 45%, 55%), hsl(280, 50%, 68%)); }
+.bel-flat-edge--module { --edge-col: light-dark(hsl(190, 55%, 42%), hsl(190, 55%, 60%)); }
+.bel-flat-edge--implicit { stroke-dasharray: var(--flat-edge-dash, 3 3); }
+
+/* While a node is focused, the bulk edges recede; the focused node's incident
+   edges (line + heads) are drawn bright by the separate overlay paths. */
+.bel-flat-edges.is-focusing .bel-flat-edge:not(.is-active) { opacity: 0.06; }
+
+/* Focus overlay: brighten incident edges but keep each kind's hue (body ≠ signature). */
+.bel-flat-edge.is-active {
+  stroke-width: var(--flat-stroke-w-active, 1.75);
+}
+.bel-flat-edge--body.is-active { opacity: 0.72; }
+.bel-flat-edge--body.bel-flat-edge--head.is-active { opacity: 0.85; }
+.bel-flat-edge--signature.is-active,
+.bel-flat-edge--coverage.is-active { opacity: 0.95; }
+.bel-flat-edge--signature.bel-flat-edge--head.is-active,
+.bel-flat-edge--coverage.bel-flat-edge--head.is-active { opacity: 1; }
+.bel-flat-edge--notation.is-active,
+.bel-flat-edge--module.is-active,
+.bel-flat-edge--implicit.is-active { opacity: 0.82; }
+.bel-flat-edge--notation.bel-flat-edge--head.is-active,
+.bel-flat-edge--module.bel-flat-edge--head.is-active,
+.bel-flat-edge--implicit.bel-flat-edge--head.is-active { opacity: 0.95; }
+
+/* Chips: lifted jewel-toned pills — crisp label contrast, namespace colour in fill +
+   border (matches the galaxy NS_COLOR intent). Interaction is stroke/fill only. */
+.bel-flat-node {
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.bel-flat-node rect {
+  fill: light-dark(hsl(220, 14%, 99%), hsl(222, 12%, 21%));
+  stroke: light-dark(hsl(220, 10%, 68%), hsl(217, 10%, 42%));
+  stroke-width: 1;
+  paint-order: stroke;
+  transition: fill var(--transition), stroke var(--transition), stroke-width var(--transition);
+}
+
+.bel-flat-node text {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  fill: var(--base-highest);
+  pointer-events: none;
+  user-select: none;
+  transition: fill var(--transition);
+}
+
+/* Namespace jewel palette — saturated enough to read, lifted off the stage. */
+.bel-flat-node.ns-type rect {
+  fill: light-dark(hsl(210, 72%, 96%), hsl(210, 48%, 19%));
+  stroke: light-dark(hsl(210, 68%, 46%), hsl(210, 62%, 58%));
+}
+.bel-flat-node.ns-const rect {
+  fill: light-dark(hsl(158, 55%, 95%), hsl(158, 42%, 17%));
+  stroke: light-dark(hsl(158, 52%, 38%), hsl(158, 48%, 50%));
+}
+.bel-flat-node.ns-fn rect {
+  fill: light-dark(hsl(262, 68%, 96%), hsl(262, 40%, 19%));
+  stroke: light-dark(hsl(262, 58%, 50%), hsl(262, 55%, 64%));
+}
+.bel-flat-node.ns-schema rect {
+  fill: light-dark(hsl(36, 85%, 95%), hsl(36, 52%, 17%));
+  stroke: light-dark(hsl(36, 78%, 42%), hsl(36, 70%, 54%));
+}
+.bel-flat-node.ns-typedef rect {
+  fill: light-dark(hsl(188, 58%, 95%), hsl(188, 42%, 17%));
+  stroke: light-dark(hsl(188, 52%, 38%), hsl(188, 48%, 52%));
+}
+
+/* Status overrides namespace border (actionable signal wins). */
+.bel-flat-node.status-recalculating rect {
+  stroke: var(--ide-status-checking, hsl(42, 90%, 55%));
+}
+.bel-flat-node.status-error rect {
+  stroke: var(--ide-status-error, hsl(0, 65%, 55%));
+}
+
+/* Root: accent-framed centre of the local view. */
+.bel-flat-node.is-root rect {
+  stroke: var(--accent-mid);
+  stroke-width: 1.5;
+  fill: light-dark(
+    color-mix(in srgb, var(--accent-lower) 68%, white),
+    color-mix(in srgb, var(--accent-low) 38%, hsl(222, 12%, 18%))
+  );
+}
+.bel-flat-node.is-root text {
+  fill: light-dark(var(--accent-high), var(--accent-highest));
+  font-weight: 600;
+}
+
+/* Focus: bright accent frame + lifted fill; neighbours recede via .is-dimmed. */
+.bel-flat-node.is-focused rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+  fill: light-dark(
+    color-mix(in srgb, var(--accent-lower) 72%, white),
+    color-mix(in srgb, var(--accent-low) 48%, hsl(222, 12%, 16%))
+  );
+}
+.bel-flat-node.is-focused text {
+  fill: light-dark(var(--accent-high), var(--accent-highest));
+  font-weight: 600;
+}
+.bel-flat-node.is-dimmed { opacity: 0.42; }
+/* (the focused chip is re-appended in JS so it paints above neighbours — SVG has
+   no z-index, so paint order = DOM order) */
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-flat-node:hover:not(.is-focused):not(.is-dimmed) rect {
+    stroke-width: 1.25;
+  }
+  .bel-flat-node:hover:not(.is-focused):not(.is-dimmed) text {
+    fill: light-dark(hsl(222, 18%, 8%), hsl(210, 12%, 94%));
+  }
+  .bel-flat-node:not([class*="ns-"]):hover:not(.is-focused):not(.is-dimmed) rect,
+  .bel-flat-node.ns-default:hover:not(.is-focused):not(.is-dimmed) rect {
+    fill: light-dark(hsl(220, 14%, 100%), hsl(222, 12%, 25%));
+    stroke: light-dark(hsl(220, 10%, 58%), hsl(217, 10%, 52%));
+  }
+  .bel-flat-node.ns-type:hover:not(.is-focused):not(.is-dimmed) rect {
+    fill: light-dark(hsl(210, 72%, 98%), hsl(210, 50%, 23%));
+    stroke: light-dark(hsl(210, 68%, 40%), hsl(210, 65%, 66%));
+  }
+  .bel-flat-node.ns-const:hover:not(.is-focused):not(.is-dimmed) rect {
+    fill: light-dark(hsl(158, 55%, 97%), hsl(158, 44%, 21%));
+    stroke: light-dark(hsl(158, 52%, 34%), hsl(158, 50%, 56%));
+  }
+  .bel-flat-node.ns-fn:hover:not(.is-focused):not(.is-dimmed) rect {
+    fill: light-dark(hsl(262, 68%, 98%), hsl(262, 42%, 23%));
+    stroke: light-dark(hsl(262, 58%, 44%), hsl(262, 58%, 70%));
+  }
+  .bel-flat-node.ns-schema:hover:not(.is-focused):not(.is-dimmed) rect {
+    fill: light-dark(hsl(36, 85%, 97%), hsl(36, 54%, 21%));
+    stroke: light-dark(hsl(36, 78%, 36%), hsl(36, 72%, 60%));
+  }
+  .bel-flat-node.ns-typedef:hover:not(.is-focused):not(.is-dimmed) rect {
+    fill: light-dark(hsl(188, 58%, 97%), hsl(188, 44%, 21%));
+    stroke: light-dark(hsl(188, 52%, 34%), hsl(188, 50%, 58%));
+  }
+}
+
+/* SVG <g tabindex> gets a harsh rectangular browser outline on click — suppress it;
+   selection is driven by .is-focused; keyboard users get the same accent frame. */
+.bel-flat-node:focus { outline: none; }
+.bel-flat-node:focus-visible:not(.is-focused) rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+  fill: light-dark(
+    color-mix(in srgb, var(--accent-lower) 60%, white),
+    color-mix(in srgb, var(--accent-low) 40%, hsl(222, 12%, 16%))
+  );
+}
+.bel-flat-node:focus-visible:not(.is-focused) text {
+  fill: light-dark(var(--accent-high), var(--accent-highest));
+}
+
+.bel-graph3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.bel-graph3d-canvas:active {
+  cursor: grabbing;
+}
+
+.bel-graph3d-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Labels float just above their node with a short leader tail pointing down to
+   it (so the label↔dot link is unambiguous). Translucent so they don't occlude
+   the graph; a soft shadow keeps them legible over dense edges. */
+.bel-graph3d-label {
+  position: absolute;
+  /* anchor point is the node; lift the chip above it and leave room for the tail */
+  transform: translate(-50%, calc(-100% - 7px));
+  pointer-events: auto;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  line-height: 1;
+  color: var(--base-highest);
+  background: color-mix(in srgb, var(--chrome-bg-panel) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-divider) 70%, transparent);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.32rem;
+  cursor: pointer;
+  backdrop-filter: blur(3px);
+  transition: color 90ms ease, border-color 90ms ease, background-color 90ms ease;
+}
+
+/* Leader tail: a short line from the chip's bottom down to the node anchor. */
+.bel-graph3d-label::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 7px;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom,
+    color-mix(in srgb, var(--chrome-divider) 70%, transparent), transparent);
+}
+
+.bel-graph3d-label.is-focus {
+  font-weight: 600;
+  color: light-dark(hsl(0, 0%, 100%), hsl(212, 32%, 96%));
+  background: light-dark(var(--accent-mid), hsl(215, 58%, 38%));
+  border-color: light-dark(var(--accent-high), hsl(215, 52%, 50%));
+  backdrop-filter: none;
+}
+
+.bel-graph3d-label.is-focus::after {
+  background: linear-gradient(to bottom,
+    light-dark(var(--accent-mid), hsl(215, 58%, 38%)),
+    transparent);
+  height: 9px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-label:hover {
+    border-color: var(--accent-mid);
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--chrome-bg-panel) 90%, transparent);
+  }
+}
+
+/* Bottom toolbar: compact icon strip over the canvas. */
+.bel-graph3d-toolbar {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.45rem;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.25rem;
+  align-items: center;
+  pointer-events: auto;
+  z-index: 5;
+  padding: 0.2rem 0.3rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--chrome-bg-panel) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-divider) 50%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.bel-graph3d-iconbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.bel-graph3d-search-wrap {
+  position: relative;
+}
+
+.bel-graph3d-autocomplete {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.25rem);
+  min-width: 100%;
+  max-height: 10rem;
+  overflow: auto;
+  background: color-mix(in srgb, var(--chrome-bg-panel) 94%, transparent);
+  border: 1px solid var(--chrome-divider);
+  border-radius: 0.3rem;
+  backdrop-filter: blur(4px);
+  z-index: 6;
+}
+
+.bel-graph3d-ac-item {
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 0.25rem 0.45rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--base-highest);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.bel-graph3d-ac-item.is-active,
+.bel-graph3d-ac-item:hover {
+  background: color-mix(in srgb, var(--accent-lower) 50%, transparent);
+  color: var(--accent-high);
+}
+
+.bel-graph3d-ac-kind {
+  font-size: 0.62rem;
+  color: var(--base-mid);
+}
+
+.bel-graph3d-sidebar {
+  flex: 0 0 11rem;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid color-mix(in srgb, var(--chrome-divider) 70%, transparent);
+  background: color-mix(in srgb, var(--chrome-bg-panel) 82%, transparent);
+  min-height: 0;
+}
+
+.bel-graph3d-sidebar-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: light-dark(var(--muted-higher), var(--muted-high));
+  border-bottom: 1px solid color-mix(in srgb, var(--chrome-divider) 60%, transparent);
+  user-select: none;
+}
+
+.bel-graph3d-sidebar-head-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bel-graph3d-sidebar-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  border-radius: 0.2rem;
+  cursor: pointer;
+}
+
+.bel-graph3d-sidebar-toggle svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-sidebar-toggle:hover {
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}
+
+.bel-graph3d-sidebar.is-collapsed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  flex: none;
+  width: auto;
+  min-width: 0;
+  border-right: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-head {
+  border-bottom: none;
+  padding: 0.25rem;
+  pointer-events: auto;
+}
+
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-toggle {
+  background: color-mix(in srgb, var(--chrome-bg-panel) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-divider) 50%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-list,
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-head-label {
+  display: none;
+}
+
+.bel-graph3d-sidebar-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 0.25rem 0;
+}
+
+.bel-graph3d-sidebar-group {
+  padding: 0.35rem 0.5rem 0.15rem;
+  font-size: 0.58rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--base-mid);
+}
+
+.bel-graph3d-sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-size: 0.7rem;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bel-graph3d-sidebar-item.is-active,
+.bel-graph3d-sidebar-item:hover {
+  background: color-mix(in srgb, var(--accent-lower) 45%, transparent);
+  color: var(--accent-high);
+}
+
+.bel-graph3d-sidebar-item.is-root {
+  font-weight: 600;
+}
+
+.bel-graph3d-depth {
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+}
+
+.bel-graph3d-depth-label {
+  font-size: 0.62rem;
+  color: var(--base-mid);
+  min-width: 0.85rem;
+  text-align: center;
+}
+
+.bel-graph3d-search {
+  width: 7rem;
+  font: inherit;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.4rem;
+  color: var(--base-highest);
+  background: transparent;
+  border: none;
+  border-right: 1px solid color-mix(in srgb, var(--chrome-divider) 45%, transparent);
+  border-radius: 0;
+  margin-right: 0.15rem;
+  padding-right: 0.5rem;
+}
+
+.bel-graph3d-search:focus-visible {
+  outline: none;
+}
+
+.bel-graph3d-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.bel-graph3d-iconbtn svg {
+  width: 0.88rem;
+  height: 0.88rem;
+}
+
+.bel-graph3d-scopebtn svg {
+  width: 1.02rem;
+  height: 1.02rem;
+}
+
+.bel-graph3d-iconbtn.is-on {
+  color: var(--accent-high);
+}
+
+.bel-graph3d-iconbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-iconbtn:hover:not(:disabled) {
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}
+
 /* -- Panels -- */
 
 .panel {
@@ -1506,6 +2781,49 @@ html.light .output-header-progress {
   border: 1px solid color-mix(in srgb, var(--repl-rule-edge) 70%, var(--chrome-divider));
   border-left: 3px solid color-mix(in srgb, var(--accent-mid) 55%, transparent);
   border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.repl-query-result--error {
+  border-left-color: color-mix(in srgb, var(--repl-error) 72%, transparent);
+}
+
+.repl-query-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  min-width: 0;
+}
+
+.repl-query-head .repl-query-goal {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.repl-query-src-line {
+  flex: 0 0 auto;
+  font-family: var(--sans);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--repl-muted);
+  white-space: nowrap;
+  padding-top: 0.125rem;
+}
+
+.repl-query-goal {
+  margin: 0 0 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--repl-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .repl-query-sol {
@@ -1536,6 +2854,26 @@ html.light .output-header-progress {
   padding-top: 0.375rem;
   border-top: 1px solid color-mix(in srgb, var(--repl-meta-done) 25%, transparent);
   margin-top: 0.125rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.repl-query-summary--empty {
+  color: var(--repl-muted);
+  border-top-color: color-mix(in srgb, var(--chrome-divider) 45%, transparent);
+}
+
+.repl-query-error {
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid color-mix(in srgb, var(--repl-error) 28%, transparent);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--repl-error);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .repl-query-bindings {
@@ -1578,8 +2916,9 @@ html.light .output-header-progress {
   font-size: 0.76rem;
   line-height: 1.55;
   color: var(--repl-muted);
-  white-space: pre;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 
@@ -1641,11 +2980,13 @@ html.light .output-header-progress {
   align-items: baseline;
   gap: 0.1875rem 0.375rem;
   color: var(--repl-cmd);
+  font-family: var(--mono);
   font-weight: 600;
 }
 
 .repl-line--cmd .repl-chevron {
   color: var(--repl-chevron);
+  font-family: var(--sans);
   font-weight: 700;
   flex-shrink: 0;
   line-height: 1;
@@ -1653,6 +2994,7 @@ html.light .output-header-progress {
 }
 
 .repl-line--cmd .repl-cmd-body {
+  font-family: var(--mono);
   font-weight: 600;
   color: var(--repl-cmd);
   min-width: 0;
@@ -1899,6 +3241,39 @@ html.light .output-header-progress {
   .editor-panel {
     border-right: none;
     border-bottom: 1px solid var(--chrome-divider);
+  }
+
+  /* Inspector stacks under the panes when open; hidden otherwise. */
+  .inspector-panel {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    flex: none;
+    width: auto;
+    border-left: none;
+  }
+
+  .workspace:not(.is-inspector-open) .inspector-panel {
+    display: none;
+  }
+
+  .workspace.is-inspector-open {
+    grid-template-rows: var(
+      --workspace-split-rows,
+      minmax(0, 1fr) minmax(0, 1fr)
+    ) minmax(6rem, 12rem);
+  }
+
+  .workspace.is-inspector-open .workspace-panes {
+    grid-row: 1 / span 2;
+  }
+
+  .workspace.is-inspector-open .inspector-panel {
+    display: flex;
+    grid-column: 2;
+    grid-row: 3;
+    width: auto;
+    flex: none;
+    border-top: 1px solid var(--chrome-divider);
   }
 }
 
@@ -2481,6 +3856,15 @@ html.light .bj-dialog::backdrop {
   color: var(--ide-warn-squiggle);
 }
 
+/* Type body in tooltips: the shared .bel-type flex + flourish, kept tight. */
+.beljar-tip-body--type {
+  align-items: baseline;
+}
+
+.beljar-tip-body--type::before {
+  font-size: 1.25em;
+}
+
 .beljar-tip-body--computing {
   font-weight: 400;
   letter-spacing: normal;
@@ -2673,16 +4057,21 @@ html.light .bj-dialog::backdrop {
   background: var(--accent-mid);
 }
 
+.ide-status-dot[data-live-state="parsing"] {
+  background: light-dark(hsl(248, 58%, 52%), hsl(248, 62%, 68%));
+}
+
 .ide-status-dot[data-live-state="warning"] {
   background: var(--ide-status-checking);
 }
 
-.ide-status-dot[data-parsing] {
-  background: var(--accent-mid);
-}
-
 .ide-status-dot[data-live-state="checking"]::after {
   opacity: 1;
+}
+
+.ide-status-dot[data-live-state="parsing"]::after {
+  opacity: 0.85;
+  animation-duration: 2.4s;
 }
 
 @keyframes ide-status-shimmer {
@@ -2707,6 +4096,12 @@ html.light .bj-dialog::backdrop {
 }
 .cm-bel-occurrence-active {
   background: color-mix(in srgb, var(--accent-glow) 95%, transparent);
+}
+
+/* Right-click context menu: keep the targeted token visibly selected while the
+   menu is open (editor often blurs, so the normal unfocused tint is too faint). */
+.cm-editor.cm-bel-context-open .cm-selectionBackground {
+  background-color: light-dark(rgba(37, 99, 235, 0.28), rgba(96, 165, 250, 0.28));
 }
 
 /* Ctrl/Cmd-hover definition link: underline the jumpable token. */

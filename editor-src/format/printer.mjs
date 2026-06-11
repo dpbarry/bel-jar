@@ -113,9 +113,7 @@ export function makePrinter(src, opts = {}) {
     },
 
     RecDeclaration(node) {
-      const bodies = childrenArr(node).filter((c) => c.name === 'RecBody');
-      const parts = bodies.map((b, i) => concat(i === 0 ? text('rec ') : text('and '), ppRecBody(b, i === 0)));
-      return concat(join(hardline, parts), text(';'));
+      return ppRecGroup(node);
     },
 
     LetDeclaration(node) {
@@ -173,10 +171,62 @@ export function makePrinter(src, opts = {}) {
     ContextualObject: (n) => ppContextual(n, 'term'),
   };
 
+  function ppComment(node) {
+    return concat(hardline, verbatim(node));
+  }
+
+  function ppRecContinuation(node) {
+    const body = firstOfType(node, 'RecBody');
+    const prefix = firstOfType(node, 'RecKeyword') ? 'and rec ' : 'and ';
+    return concat(text(prefix), body ? ppRecBody(body, false) : empty);
+  }
+
+  function ppRecGroup(node) {
+    const parts = [];
+    let first = true;
+    for (const c of childrenArr(node)) {
+      if (c.name === 'RecKeyword' || c.name === ';') continue;
+      if (c.name === 'RecBody') {
+        parts.push(concat(first ? text('rec ') : empty, ppRecBody(c, first)));
+        first = false;
+      } else if (c.name === 'RecContinuation') {
+        parts.push(concat(hardline, ppRecContinuation(c)));
+        first = false;
+      } else if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        parts.push(ppComment(c));
+      } else {
+        parts.push(verbatim(c));
+      }
+    }
+    return concat(...parts, text(';'));
+  }
+
+  function ppDatatypeContinuation(node) {
+    const body = firstOfType(node, 'InductiveBody');
+    let prefix = 'and ';
+    if (firstOfType(node, 'InductiveKeyword')) prefix = 'and inductive ';
+    else if (firstOfType(node, 'StratifiedKeyword')) prefix = 'and stratified ';
+    return concat(text(prefix), body ? ppInductiveBody(body) : empty);
+  }
+
   function ppInductive(node, kw) {
-    const bodies = childrenArr(node).filter((c) => c.name === 'InductiveBody');
-    const parts = bodies.map((b, i) => concat(i === 0 ? text(`${kw} `) : text('and '), ppInductiveBody(b)));
-    return concat(join(hardline, parts), text(';'));
+    const parts = [];
+    let first = true;
+    for (const c of childrenArr(node)) {
+      if (c.name === 'InductiveKeyword' || c.name === 'StratifiedKeyword' || c.name === ';') continue;
+      if (c.name === 'InductiveBody') {
+        parts.push(concat(first ? text(`${kw} `) : empty, ppInductiveBody(c)));
+        first = false;
+      } else if (c.name === 'DatatypeContinuation') {
+        parts.push(concat(hardline, ppDatatypeContinuation(c)));
+        first = false;
+      } else if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        parts.push(ppComment(c));
+      } else {
+        parts.push(verbatim(c));
+      }
+    }
+    return concat(...parts, text(';'));
   }
 
   function ppInductiveBody(node) {
@@ -351,13 +401,22 @@ export function makePrinter(src, opts = {}) {
         parts.push(text(txt(c, src)));
         continue;
       }
+      if (c.name === 'ParameterVariable' || c.name === 'SubstitutionVariable') {
+        parts.push(text(txt(c, src)));
+        continue;
+      }
       if (c.name === ':') {
         const prev = c.prevSibling;
         const nx = c.nextSibling;
+        const prevIsName =
+          prev &&
+          (prev.name === 'LowerIdentifier' ||
+            prev.name === 'UpperIdentifier' ||
+            prev.name === 'ParameterVariable' ||
+            prev.name === 'SubstitutionVariable');
         const tight =
           style.binderColon === 'tight' &&
-          prev &&
-          (prev.name === 'LowerIdentifier' || prev.name === 'UpperIdentifier') &&
+          prevIsName &&
           binderRhsTight(nx);
         parts.push(tight ? text(':') : text(' : '));
         continue;
@@ -850,12 +909,21 @@ export function makePrinter(src, opts = {}) {
     return text(a ? txt(a, src) : '⇒');
   }
 
+  function ppQuantifiedBinder(node) {
+    const binder = firstOfType(node, 'CompTypeBinder');
+    return concat(text('{'), binder ? ppCompTypeBinder(binder) : empty, text('}'));
+  }
+
   function ppBranchProof(node) {
+    const binders = childrenArr(node).filter((c) => c.name === 'QuantifiedBinder');
     const pat = firstOfType(node, 'Pattern');
     const expr = firstOfType(node, 'Expression');
     const barPad = ' '.repeat(style.indent);
     const bodyPad = ' '.repeat(style.indent * 2);
-    const head = concat(text(barPad + '| '), pat ? ppPattern(pat) : empty, text(' '), ppFatArrow(node));
+    const headParts = [text(barPad + '| ')];
+    for (const b of binders) headParts.push(ppQuantifiedBinder(b), space);
+    headParts.push(pat ? ppPattern(pat) : empty, text(' '), ppFatArrow(node));
+    const head = concat(...headParts);
     if (!expr) return head;
     if (style.proofCase.arrowBreaksBody) {
       return concat(head, hardline, text(bodyPad), ppExpr(expr));

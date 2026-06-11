@@ -1,11 +1,8 @@
-// Central IDE action layer: every navigation/refactor gesture (Ctrl-click, F2,
-// context menu, find-refs) routes through these functions, defined once and
-// shared. Each takes the EditorView and reads the engine via getEngine.
+// Shared IDE actions (navigation, rename, inspector, signature insert).
 
+import { syntaxTree } from '@codemirror/language';
 import { EditorView, Decoration } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
-
-// ---- engine access -------------------------------------------------------
 
 export function getEngine(view) {
   const g = typeof window !== 'undefined' ? window : self;
@@ -14,7 +11,6 @@ export function getEngine(view) {
     const eng = ed.getSemanticEngine();
     if (eng) return eng;
   }
-  // Fallback: a per-view engine stashed at mount (used before the global is set).
   return view._belSemanticEngine || null;
 }
 
@@ -28,8 +24,42 @@ export function navInfoAt(view, pos) {
   }
 }
 
-// ---- transient flash highlight ------------------------------------------
-// A short-lived line wash on jump, so the eye can land.
+const IDENT_NODES = new Set(['LowerIdentifier', 'UpperIdentifier']);
+
+function syntaxIdentRangeAt(state, pos) {
+  for (const bias of [1, -1]) {
+    const n = syntaxTree(state).resolveInner(pos, bias);
+    if (n && IDENT_NODES.has(n.name)) {
+      const p = n.parent;
+      if (p && (p.name === 'ParameterVariable' || p.name === 'SubstitutionVariable')) {
+        return { from: p.from, to: p.to };
+      }
+      return { from: n.from, to: n.to };
+    }
+    if (n && (n.name === '#' || n.name === '$')) {
+      const p = n.parent;
+      if (p && (p.name === 'ParameterVariable' || p.name === 'SubstitutionVariable')) {
+        return { from: p.from, to: p.to };
+      }
+      const sib = n.nextSibling;
+      if (sib && IDENT_NODES.has(sib.name)) return { from: n.from, to: sib.to };
+    }
+  }
+  return null;
+}
+
+export function termRangeAt(view, pos) {
+  const nav = navInfoAt(view, pos);
+  if (nav?.reference?.range) {
+    const { from, to } = nav.reference.range;
+    if (from < to) return { from, to };
+  }
+  if (nav?.nameRange) {
+    const { from, to } = nav.nameRange;
+    if (from < to) return { from, to };
+  }
+  return syntaxIdentRangeAt(view.state, pos);
+}
 
 const setFlashEffect = StateEffect.define();
 const clearFlashEffect = StateEffect.define();
@@ -56,7 +86,6 @@ const flashField = StateField.define({
 });
 
 let flashTimer = null;
-// Only the teardown is deferred; the flash rides the jump transaction (moveTo).
 function scheduleFlashClear(view) {
   if (flashTimer) clearTimeout(flashTimer);
   flashTimer = setTimeout(() => {
@@ -69,14 +98,10 @@ export function flashExtension() {
   return flashField;
 }
 
-// ---- navigation primitives ----------------------------------------------
-
 function moveTo(view, range, { flash = true, select = false } = {}) {
   if (!range) return false;
   const anchor = range.from;
   const head = select ? range.to : range.from;
-  // Caret move, scroll, and flash in one transaction so the line paints at its
-  // final position with the flash class already on it — sweep starts frame one.
   view.dispatch({
     selection: { anchor, head },
     scrollIntoView: true,
@@ -87,15 +112,12 @@ function moveTo(view, range, { flash = true, select = false } = {}) {
   return true;
 }
 
-// Jump to the declaration of the identifier at pos (or the cursor).
 export function goToDefinition(view, pos) {
   const nav = navInfoAt(view, pos ?? view.state.selection.main.head);
   if (!nav || !nav.nameRange) return false;
   return moveTo(view, nav.nameRange, { flash: true });
 }
 
-// Reveal the binder for the variable at pos: its definition, or for a free
-// implicit metavar the enclosing declaration header.
 export function revealBinder(view, pos) {
   const at = pos ?? view.state.selection.main.head;
   const nav = navInfoAt(view, at);
@@ -110,7 +132,6 @@ export function revealBinder(view, pos) {
   return false;
 }
 
-// Apply a rename across the definition + every reference, as one undoable edit.
 export function applyRename(view, symbolId, newName) {
   const eng = getEngine(view);
   if (!eng || typeof eng.renamePreview !== 'function') {
@@ -128,8 +149,19 @@ export function applyRename(view, symbolId, newName) {
   return { ok: true, count: changes.length };
 }
 
-// Insert the best-known signature (reconstructed type if available, else
-// source) as a comment above the declaration.
+export function revealInInspector(view, pos) {
+  const at = pos ?? view.state.selection.main.head;
+  if (at !== view.state.selection.main.head) {
+    view.dispatch({ selection: { anchor: at, head: at } });
+  }
+  const g = typeof window !== 'undefined' ? window : self;
+  if (typeof g.dispatchEvent === 'function') {
+    g.dispatchEvent(new CustomEvent('beljar:open-inspector', { detail: { pos: at } }));
+  }
+  view.focus();
+  return true;
+}
+
 export function insertSignature(view, pos) {
   const at = pos ?? view.state.selection.main.head;
   const nav = navInfoAt(view, at);

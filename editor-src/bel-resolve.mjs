@@ -42,6 +42,12 @@ const LOCAL_BINDER_BARE = new Set([
 function firstIdentChild(node) {
   for (let c = node.firstChild; c; c = c.nextSibling) {
     if (IDENT.has(c.name)) return c;
+    if (c.name === 'ParameterVariable' || c.name === 'SubstitutionVariable') {
+      const sigil = c.firstChild;
+      if (!sigil || (sigil.name !== '#' && sigil.name !== '$')) continue;
+      const id = sigil.nextSibling;
+      if (id && IDENT.has(id.name)) return id;
+    }
   }
   return null;
 }
@@ -96,12 +102,22 @@ function identAt(tree, pos) {
   let n = tree.resolveInner(pos, 1);
   if (n && IDENT.has(n.name)) return n;
   if (n && (n.name === '#' || n.name === '$')) {
+    const p = n.parent;
+    if (p && (p.name === 'ParameterVariable' || p.name === 'SubstitutionVariable')) {
+      const id = n.nextSibling;
+      if (id && IDENT.has(id.name)) return id;
+    }
     const sib = n.nextSibling;
     if (sib && IDENT.has(sib.name)) return sib;
   }
   n = tree.resolveInner(pos, -1);
   if (n && IDENT.has(n.name)) return n;
   if (n && (n.name === '#' || n.name === '$')) {
+    const p = n.parent;
+    if (p && (p.name === 'ParameterVariable' || p.name === 'SubstitutionVariable')) {
+      const id = n.nextSibling;
+      if (id && IDENT.has(id.name)) return id;
+    }
     const sib = n.nextSibling;
     if (sib && IDENT.has(sib.name)) return sib;
   }
@@ -115,12 +131,6 @@ function extendedNameOf(ident, doc) {
     const h = p.firstChild;
     if (h && (h.name === '#' || h.name === '$')) {
       return doc.sliceString(h.from, ident.to);
-    }
-  }
-  if (p.name === 'MLamParam' || p.name === 'CompTypeBinder') {
-    const first = p.firstChild;
-    if (first && (first.name === '#' || first.name === '$') && first.nextSibling === ident) {
-      return doc.sliceString(first.from, ident.to);
     }
   }
   return doc.sliceString(ident.from, ident.to);
@@ -727,6 +737,33 @@ function fallbackForGlobal(declParent, ident, doc) {
     return { kind: 'inline-kind', text: sliceText(doc, ty.from, ty.to) };
   }
   return null;
+}
+
+export function referenceKind(tree, doc, from) {
+  const ident = identAt(tree, from);
+  if (!ident) return null;
+
+  const name = doc.sliceString(ident.from, ident.to);
+  if (!name) return null;
+
+  const cls = classifyAsBinderSite(ident);
+  if (cls?.kind === 'decl-global') return 'global';
+  if (cls?.kind === 'binder-inline' || cls?.kind === 'binder-outer' || cls?.kind === 'binder-bare') {
+    return 'local';
+  }
+  if (ascribedTypeForIdent(ident, doc)) return 'local';
+  if (findEnclosingLocalBinder(ident, doc, name) !== null) return 'local';
+
+  const isUpper = ident.name === 'UpperIdentifier';
+  if (findGlobalDeclarationIdent(tree, doc, name, isUpper)) return 'global';
+
+  const encl = findEnclosingGlobalDecl(ident);
+  if (encl) {
+    const enclIdent = firstIdentChild(encl);
+    if (enclIdent && enclIdent !== ident) return 'implicit';
+  }
+
+  return 'unbound';
 }
 
 export function resolveHoverDoc(tree, doc, from) {

@@ -46,6 +46,7 @@ function buildDecorations(view, markCache) {
 
   for (const u of uses) {
     if (!u.bound) continue;
+    if (u.name.startsWith('#') || u.name.startsWith('$')) continue;
     if (!overlapsViewport(u.from, u.to, view)) continue;
     const tag = u.kind === 'upper' ? tagBoundUpper : tagBoundLower;
     const mk = markFor(state, markCache, tag);

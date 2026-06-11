@@ -250,9 +250,11 @@
     tooltipRoot.style.top = '';
   }
 
-  function bindTooltips() {
-    if (!tooltipRoot) return;
-    document.querySelectorAll('[data-tooltip]').forEach((el) => {
+  // Wire one element for custom tooltips. Idempotent (guarded) so dynamically
+  // created elements (graph labels, toolbar buttons) can call it safely.
+  function bindTooltipEl(el) {
+    if (!el || el.nodeType !== 1 || el._belTooltipBound) return;
+    el._belTooltipBound = true;
       el.addEventListener('mouseenter', () => {
         if (!FRP.prefersFineHover()) return;
         showTooltip(el);
@@ -307,7 +309,11 @@
         clearTimeout(touchShowTimer);
         if (tooltipAnchor === el) hideTooltip();
       });
-    });
+  }
+
+  function bindTooltips() {
+    if (!tooltipRoot) return;
+    document.querySelectorAll('[data-tooltip]').forEach(bindTooltipEl);
 
     window.addEventListener('pointerup', (e) => {
       if (!e.isPrimary || e.button !== 0) return;
@@ -355,6 +361,8 @@
   global.Tooltips = {
     hide: hideTooltip,
     hideImmediate: hideTooltipImmediate,
+    // Wire a dynamically-created element (with data-tooltip) for custom tooltips.
+    bind: bindTooltipEl,
     suppressAnchor(el) {
       suppressedTooltipAnchors.add(el);
     },

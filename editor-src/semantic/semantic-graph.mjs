@@ -198,6 +198,9 @@ export function createSemanticGraph() {
     return [...into].map(named);
   }
 
+  // Subgraph (nodes + typed edges) overlapping a document range, or the whole
+  // graph when no selection. The data backbone for a dependency/diagram view —
+  // not consumed by the UI yet, but the natural substrate for one.
   function graphFor(selection = null) {
     if (!snapshot) return { nodes: [], edges: [] };
     if (!selection || selection.from == null || selection.to == null) {

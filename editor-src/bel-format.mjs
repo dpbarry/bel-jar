@@ -4,9 +4,23 @@ import { render } from './format/doc.mjs';
 import { makePrinter } from './format/printer.mjs';
 import { childrenArr } from './format/tree.mjs';
 import { GAP_PRAGMA_LINE, TOP_LEVEL_PRAGMA_INNER } from './bel-units.mjs';
+import {
+  captureFormatViewportAnchor,
+  resolveFormatViewportAnchor,
+  scheduleScrollToCenter,
+} from './bel-viewport.mjs';
 
 function normalizeNewlines(s) {
   return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function significantLen(s) {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c !== ' ' && c !== '\t' && c !== '\n' && c !== '\r') n++;
+  }
+  return n;
 }
 
 function sameSourceLine(src, posA, posB) {
@@ -143,7 +157,7 @@ function errorProseClusterEnd(decls, src, start) {
 export function formatString(src, tree, opts = {}) {
   src = normalizeNewlines(src);
   const width = opts.printWidth ?? 80;
-  const minOutputRatio = opts.minOutputRatio ?? 0.85;
+  const minSignificantRatio = opts.minSignificantRatio ?? 0.95;
   const { pp } = makePrinter(src, { printWidth: width });
 
   const root = tree.topNode;
@@ -213,9 +227,11 @@ export function formatString(src, tree, opts = {}) {
   result = result.replace(/\n{4,}/g, '\n\n\n');
   if (!result.endsWith('\n')) result += '\n';
 
-  if (!opts.allowShrink && src.length > 0 && result.length < src.length * minOutputRatio) {
+  const srcSig = significantLen(src);
+  const resultSig = significantLen(result);
+  if (!opts.allowShrink && srcSig > 0 && resultSig < srcSig * minSignificantRatio) {
     const err = new Error(
-      `format: output length ${result.length} < ${minOutputRatio} × input ${src.length} (set opts.allowShrink to override)`
+      `format: would drop significant content (${resultSig} < ${minSignificantRatio} × ${srcSig}); refusing to apply`
     );
     err.code = 'FORMAT_SHRINK_GUARD';
     throw err;
@@ -246,12 +262,25 @@ export function formatDocument(state, opts = {}) {
 }
 
 export function formatCommand(view) {
+  const anchor = captureFormatViewportAnchor(view);
+  const oldText = view.state.doc.toString();
+  const sel = view.state.selection.main;
   const change = formatDocument(view.state);
   if (!change) return false;
+
+  const newText = change.changes.insert;
+  const newLen = newText.length;
+  const selHead = Math.min(sel.head, newLen);
+
   view.dispatch({
     ...change,
-    selection: EditorSelection.cursor(Math.min(view.state.selection.main.head, change.changes.insert.length)),
+    selection: EditorSelection.cursor(selHead),
     userEvent: 'format',
+  });
+
+  const resolvedPos = resolveFormatViewportAnchor(anchor, view.state, newText) ?? selHead;
+  scheduleScrollToCenter(view, resolvedPos, {
+    selection: { anchor: selHead, head: selHead },
   });
   return true;
 }

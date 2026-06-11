@@ -1,0 +1,1367 @@
+// Dependency graph view (local neighborhood + global file scope).
+
+import { getEngine } from './bel-ide-actions.mjs';
+import { computeParseCoverage, formatGlobalGraphStaleBanner } from './bel-ide-status.mjs';
+import { createForceSim } from './graph/force-sim.mjs';
+import { createGraph3D } from './graph/webgl-graph.mjs';
+import { createFlatGraph } from './graph/flat-graph.mjs';
+import { loadGraphPrefs, saveGraphPrefs, onGraphPrefsChange } from './graph/graph-prefs.mjs';
+import {
+  buildNavEntry, createNavState, navPush, navBack, navForward, navGoTo,
+  navCurrent, navCanBack, navCanForward, fuzzySearchNodes, graphKeyForEntry,
+} from './graph/graph-nav.mjs';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+let markerSeq = 0;
+
+function nodeMeta(engine, id, fallbackName) {
+  const snap = engine.getSnapshot && engine.getSnapshot();
+  const gnode = snap && snap.graph && snap.graph.nodeMap.get(id);
+  if (!gnode) return { id, name: fallbackName || null, namespace: null, label: null, status: 'unknown' };
+  return {
+    id, name: gnode.name, namespace: gnode.namespace, label: gnode.label,
+    status: gnode.status, nameRange: gnode.nameRange,
+  };
+}
+
+export function buildNeighborhood(engine, rootId, { depth = 1 } = {}) {
+  if (!engine || !rootId) return null;
+  const nodes = new Map();
+  const edges = [];
+  const seenEdge = new Set();
+
+  const add = (meta, role, d, dir) => {
+    if (!nodes.has(meta.id)) nodes.set(meta.id, { ...meta, role, depth: d, dir });
+  };
+  const pushEdge = (from, to, kind) => {
+    const key = `${from}->${to}:${kind}`;
+    if (seenEdge.has(key)) return;
+    seenEdge.add(key);
+    edges.push({ from, to, kind });
+  };
+
+  add(nodeMeta(engine, rootId), 'root', 0, 0);
+  let frontier = [{ id: rootId, d: 0 }];
+  while (frontier.length) {
+    const next = [];
+    for (const { id, d } of frontier) {
+      if (d >= depth) continue;
+      for (const dep of engine.dependenciesOf(id)) {
+        pushEdge(id, dep.id, dep.kind);
+        if (!nodes.has(dep.id)) {
+          add(nodeMeta(engine, dep.id, dep.name), 'dependency', d + 1, +1);
+          next.push({ id: dep.id, d: d + 1 });
+        }
+      }
+      for (const dep of engine.dependentsOf(id)) {
+        pushEdge(dep.id, id, dep.kind);
+        if (!nodes.has(dep.id)) {
+          add(nodeMeta(engine, dep.id, dep.name), 'dependent', d + 1, -1);
+          next.push({ id: dep.id, d: d + 1 });
+        }
+      }
+    }
+    frontier = next;
+  }
+  return demoteNotation({ root: rootId, nodes: [...nodes.values()], edges });
+}
+
+export function demoteNotation(model) {
+  if (!model || !model.nodes.length) return model;
+  const pragmaIds = new Set(model.nodes.filter((n) => n.namespace === 'pragma').map((n) => n.id));
+  if (!pragmaIds.size) return model;
+  const carriesNotation = new Set();
+  for (const e of model.edges) {
+    if (pragmaIds.has(e.from) && !pragmaIds.has(e.to)) carriesNotation.add(e.to);
+    if (pragmaIds.has(e.to) && !pragmaIds.has(e.from)) carriesNotation.add(e.from);
+  }
+  const nodes = model.nodes
+    .filter((n) => !pragmaIds.has(n.id))
+    .map((n) => (carriesNotation.has(n.id) ? { ...n, notation: true } : n));
+  const edges = model.edges.filter((e) => !pragmaIds.has(e.from) && !pragmaIds.has(e.to));
+  return { ...model, nodes, edges };
+}
+
+export function buildGlobalModel(engine) {
+  if (!engine || typeof engine.graphFor !== 'function') return { root: null, nodes: [], edges: [] };
+  const g = engine.graphFor();
+  return demoteNotation({
+    root: null,
+    nodes: (g.nodes || []).map((n) => ({
+      id: n.id, name: n.name, namespace: n.namespace, label: n.label,
+      status: n.status, role: 'node', depth: 0, dir: 0,
+    })),
+    edges: (g.edges || []).map((e) => ({ from: e.from, to: e.to, kind: e.kind })),
+  });
+}
+
+const NODE_W = 132;
+const NODE_H = 30;
+const COL_GAP = 28;
+const ROW_GAP = 64;
+
+function edgePath(a, b) {
+  const x1 = a.x + a.w / 2;
+  const y1 = a.y + a.h;
+  const x2 = b.x + b.w / 2;
+  const y2 = b.y;
+  if (b.y < a.y) {
+    const sy1 = a.y, sy2 = b.y + b.h;
+    const my = (sy1 + sy2) / 2;
+    return `M ${x1} ${sy1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${sy2}`;
+  }
+  const my = (y1 + y2) / 2;
+  return `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`;
+}
+
+export function layoutGraph(model, { mode = 'neighborhood' } = {}) {
+  if (!model || !model.nodes.length) return { nodes: [], edges: [], width: 0, height: 0 };
+  const rowOf = new Map();
+  if (mode === 'global') assignGlobalLevels(model, rowOf);
+  else for (const n of model.nodes) rowOf.set(n.id, (n.dir || 0) * (n.depth || 0));
+
+  const rows = new Map();
+  for (const n of model.nodes) {
+    const lvl = rowOf.get(n.id) ?? 0;
+    if (!rows.has(lvl)) rows.set(lvl, []);
+    rows.get(lvl).push(n);
+  }
+  const levels = [...rows.keys()].sort((a, b) => a - b);
+  const widest = Math.max(...[...rows.values()].map((r) => r.length));
+  const totalW = widest * NODE_W + (widest - 1) * COL_GAP;
+  const positioned = new Map();
+
+  levels.forEach((lvl, rowIdx) => {
+    const row = rows.get(lvl);
+    const rowW = row.length * NODE_W + (row.length - 1) * COL_GAP;
+    const x0 = (totalW - rowW) / 2;
+    row.forEach((n, i) => {
+      positioned.set(n.id, { ...n, x: x0 + i * (NODE_W + COL_GAP), y: rowIdx * (NODE_H + ROW_GAP), w: NODE_W, h: NODE_H });
+    });
+  });
+
+  const nodes = [...positioned.values()];
+  const edges = model.edges
+    .filter((e) => positioned.has(e.from) && positioned.has(e.to))
+    .map((e) => ({ from: e.from, to: e.to, kind: e.kind, path: edgePath(positioned.get(e.from), positioned.get(e.to)) }));
+  return { nodes, edges, width: Math.max(totalW, NODE_W), height: levels.length * NODE_H + Math.max(0, levels.length - 1) * ROW_GAP };
+}
+
+function assignGlobalLevels(model, rowOf) {
+  const out = new Map();
+  for (const e of model.edges) {
+    if (!out.has(e.from)) out.set(e.from, []);
+    out.get(e.from).push(e.to);
+  }
+  const memo = new Map();
+  const stack = new Set();
+  const levelOf = (id) => {
+    if (memo.has(id)) return memo.get(id);
+    if (stack.has(id)) return 0;
+    stack.add(id);
+    let lvl = 0;
+    for (const to of out.get(id) || []) lvl = Math.max(lvl, levelOf(to) + 1);
+    stack.delete(id);
+    memo.set(id, lvl);
+    return lvl;
+  };
+  for (const n of model.nodes) rowOf.set(n.id, levelOf(n.id));
+}
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function statusClass(status) {
+  if (status === 'syntax-fault' || status === 'erroring' || status === 'blocked') return 'error';
+  if (status === 'dirty' || status === 'checking' || status === 'stale-known') return 'recalculating';
+  return 'settled';
+}
+
+const PAD = 16;
+
+export function renderGraph(container, layout, { onJump, interactive = true, fit = false } = {}) {
+  container.textContent = '';
+  if (!layout.nodes.length) {
+    const empty = document.createElement('p');
+    empty.className = 'bel-graph-empty';
+    empty.textContent = 'No dependencies to graph.';
+    container.appendChild(empty);
+    return null;
+  }
+
+  const svg = svgEl('svg', { class: 'bel-graph-svg' });
+  const arrowId = `bel-graph-arrow-${++markerSeq}`;
+  const defs = svgEl('defs');
+  const marker = svgEl('marker', {
+    id: arrowId, viewBox: '0 0 8 8', refX: '7', refY: '4',
+    markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse',
+  });
+  marker.appendChild(svgEl('path', { d: 'M0 0 L8 4 L0 8 z', class: 'bel-graph-arrowhead' }));
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const viewport = svgEl('g', { class: 'bel-graph-viewport' });
+  svg.appendChild(viewport);
+
+  for (const e of layout.edges) {
+    viewport.appendChild(svgEl('path', {
+      d: e.path,
+      class: `bel-graph-edge bel-graph-edge--${e.kind || 'body'}`,
+      'marker-end': `url(#${arrowId})`,
+    }));
+  }
+
+  for (const n of layout.nodes) {
+    const g = svgEl('g', {
+      class: `bel-graph-node is-${n.role} status-${statusClass(n.status)}`,
+      transform: `translate(${n.x} ${n.y})`, tabindex: '0',
+    });
+    g.appendChild(svgEl('rect', { width: n.w, height: n.h, rx: '6' }));
+    const text = svgEl('text', { x: n.w / 2, y: n.h / 2, 'dominant-baseline': 'central', 'text-anchor': 'middle' });
+    text.textContent = n.name || '?';
+    if (n.name) g.appendChild(svgEl('title')).textContent = n.label ? `${n.label} ${n.name}` : n.name;
+    g.appendChild(text);
+    if (onJump) {
+      const fire = () => onJump(n);
+      g.addEventListener('click', fire);
+      g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fire(); } });
+    }
+    viewport.appendChild(g);
+  }
+
+  container.appendChild(svg);
+  const view = { x: PAD, y: PAD, scale: 1 };
+  const apply = () => viewport.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.scale})`);
+
+  function fitAll() {
+    const cw = container.clientWidth || 320;
+    const ch = container.clientHeight || 280;
+    const sx = (cw - PAD * 2) / Math.max(layout.width, 1);
+    const sy = (ch - PAD * 2) / Math.max(layout.height, 1);
+    view.scale = Math.min(1, Math.min(sx, sy));
+    view.x = (cw - layout.width * view.scale) / 2;
+    view.y = (ch - layout.height * view.scale) / 2;
+    apply();
+  }
+
+  if (fit) requestAnimationFrame(fitAll);
+  else apply();
+
+  if (interactive) {
+    svg.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
+      const factor = ev.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const ns = Math.min(2.5, Math.max(0.1, view.scale * factor));
+      view.x = px - (px - view.x) * (ns / view.scale);
+      view.y = py - (py - view.y) * (ns / view.scale);
+      view.scale = ns;
+      apply();
+    }, { passive: false });
+
+    let pan = null;
+    svg.addEventListener('pointerdown', (ev) => {
+      if (ev.target.closest('.bel-graph-node')) return;
+      pan = { px: ev.clientX, py: ev.clientY, x0: view.x, y0: view.y, id: ev.pointerId };
+      svg.setPointerCapture(ev.pointerId);
+      svg.classList.add('is-panning');
+    });
+    svg.addEventListener('pointermove', (ev) => {
+      if (!pan) return;
+      view.x = pan.x0 + (ev.clientX - pan.px);
+      view.y = pan.y0 + (ev.clientY - pan.py);
+      apply();
+    });
+    const endPan = () => { pan = null; svg.classList.remove('is-panning'); };
+    svg.addEventListener('pointerup', endPan);
+    svg.addEventListener('pointercancel', endPan);
+  }
+  return { svg, fitAll };
+}
+
+function jumpToNode(view, engine, node) {
+  const range = node.nameRange
+    || (typeof engine.symbolRangeById === 'function' ? engine.symbolRangeById(node.id) : null);
+  if (!range) return;
+  view.dispatch({ selection: { anchor: range.from, head: range.from }, scrollIntoView: true });
+  view.focus();
+  import('./bel-ide-actions.mjs').then((m) => m.goToDefinition(view, range.from)).catch(() => {});
+}
+
+const openGraphWindows = new Map();
+
+const GRAPH_SETTINGS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" '
+  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<g transform="translate(12 12) scale(1.08) translate(-12 -12)">'
+  + '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>'
+  + '<circle cx="12" cy="12" r="3"/></g></svg>';
+
+let graphSettingsDialog = null;
+const graphSettingsFields = {};
+
+function createGraphPrefDropdown(options, currentValue, onChange) {
+  let selected = currentValue;
+  let focusedIdx = -1;
+  const optionEls = [];
+
+  const container = document.createElement('div');
+  container.className = 'bj-dropdown';
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'bj-dropdown__trigger';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+
+  const valueSpan = document.createElement('span');
+  valueSpan.className = 'bj-dropdown__value';
+
+  const chevronEl = document.createElement('span');
+  chevronEl.className = 'bj-dropdown__chevron';
+  chevronEl.setAttribute('aria-hidden', 'true');
+  chevronEl.innerHTML = '<svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  trigger.append(valueSpan, chevronEl);
+
+  const panel = document.createElement('div');
+  panel.className = 'bj-dropdown__panel';
+  panel.setAttribute('role', 'listbox');
+
+  for (const [idx, opt] of options.entries()) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bj-dropdown__option';
+    btn.setAttribute('role', 'option');
+    btn.dataset.value = opt.value;
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = opt.label;
+
+    const checkEl = document.createElement('span');
+    checkEl.className = 'bj-dropdown__option-check';
+    checkEl.setAttribute('aria-hidden', 'true');
+    checkEl.innerHTML = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4.5L4.5 8L10 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    btn.append(labelSpan, checkEl);
+    btn.addEventListener('mouseenter', () => { focusedIdx = idx; updateFocus(); });
+    btn.addEventListener('click', () => {
+      if (opt.value !== selected) { setValue(opt.value); onChange(opt.value); }
+      close();
+    });
+    panel.appendChild(btn);
+    optionEls.push(btn);
+  }
+
+  container.appendChild(trigger);
+
+  function updateFocus() {
+    optionEls.forEach((el, i) => el.classList.toggle('is-focused', i === focusedIdx));
+  }
+
+  function setValue(val) {
+    selected = val;
+    const opt = options.find((o) => o.value === val);
+    valueSpan.textContent = opt ? opt.label : val;
+    optionEls.forEach((el) => el.classList.toggle('is-selected', el.dataset.value === val));
+  }
+
+  function reposition() {
+    if (!panel.classList.contains('is-open')) return;
+    const g = typeof window !== 'undefined' ? window : self;
+    if (!g.FloatingRectPlacement) return;
+    const rect = trigger.getBoundingClientRect();
+    const pos = g.FloatingRectPlacement.computePosition({
+      anchor: rect,
+      width: panel.offsetWidth,
+      height: panel.offsetHeight,
+      mode: 'menu',
+      side: 'bottom',
+      align: 'end',
+      gap: 4,
+      margin: 8,
+    });
+    panel.style.top = pos.y + 'px';
+    panel.style.left = pos.x + 'px';
+  }
+
+  function open() {
+    let el = container.parentElement;
+    while (el && el.tagName !== 'DIALOG') el = el.parentElement;
+    const mountEl = el || document.body;
+    if (panel.parentElement !== mountEl) mountEl.appendChild(panel);
+
+    panel.style.visibility = 'hidden';
+    panel.style.display = 'block';
+    const pw = panel.offsetWidth;
+    const ph = panel.offsetHeight;
+    panel.style.display = '';
+    panel.style.visibility = '';
+
+    const g = typeof window !== 'undefined' ? window : self;
+    const rect = trigger.getBoundingClientRect();
+    const pos = g.FloatingRectPlacement?.computePosition({
+      anchor: rect,
+      width: pw,
+      height: ph,
+      mode: 'menu',
+      side: 'bottom',
+      align: 'end',
+      gap: 4,
+      margin: 8,
+    }) ?? { x: rect.left, y: rect.bottom + 4 };
+    panel.style.top = pos.y + 'px';
+    panel.style.left = pos.x + 'px';
+
+    container.classList.add('is-open');
+    panel.classList.add('is-open');
+    trigger.setAttribute('aria-expanded', 'true');
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    focusedIdx = options.findIndex((o) => o.value === selected);
+    updateFocus();
+  }
+
+  function close() {
+    container.classList.remove('is-open');
+    panel.classList.remove('is-open');
+    trigger.setAttribute('aria-expanded', 'false');
+    window.removeEventListener('scroll', reposition, true);
+    window.removeEventListener('resize', reposition);
+  }
+
+  trigger.addEventListener('click', () => {
+    if (container.classList.contains('is-open')) close(); else open();
+  });
+
+  trigger.addEventListener('keydown', (e) => {
+    const isOpen = container.classList.contains('is-open');
+    if (!isOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); focusedIdx = Math.min(focusedIdx + 1, options.length - 1); updateFocus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusedIdx = Math.max(focusedIdx - 1, 0); updateFocus(); }
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (focusedIdx >= 0) {
+        const o = options[focusedIdx];
+        if (o.value !== selected) { setValue(o.value); onChange(o.value); }
+        close();
+      }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (container.classList.contains('is-open') && !container.contains(e.target) && !panel.contains(e.target)) close();
+  });
+
+  setValue(currentValue);
+  return { element: container, setValue };
+}
+
+const NUMERIC_PREF_KEYS = new Set(['depth', 'labelDensity']);
+
+function addGraphSettingDropdown(parent, labelText, descText, options, key) {
+  const prefs = loadGraphPrefs();
+  const current = NUMERIC_PREF_KEYS.has(key) ? String(prefs[key]) : prefs[key];
+  const row = document.createElement('div');
+  row.className = 'bj-dialog__setting';
+  const main = document.createElement('div');
+  main.className = 'bj-dialog__setting-main';
+  const label = document.createElement('span');
+  label.className = 'bj-dialog__setting-label';
+  label.textContent = labelText;
+  const desc = document.createElement('span');
+  desc.className = 'bj-dialog__setting-desc';
+  desc.textContent = descText;
+  main.append(label, desc);
+  const dd = createGraphPrefDropdown(options, current, (val) => {
+    saveGraphPrefs(NUMERIC_PREF_KEYS.has(key) ? { [key]: parseInt(val, 10) || 1 } : { [key]: val });
+  });
+  row.append(main, dd.element);
+  parent.appendChild(row);
+  graphSettingsFields[key] = dd;
+  return dd;
+}
+
+function syncGraphSettingsFields() {
+  const prefs = loadGraphPrefs();
+  const numericKeys = new Set(['depth', 'labelDensity']);
+  for (const [key, dd] of Object.entries(graphSettingsFields)) {
+    if (dd?.setValue && prefs[key] != null) {
+      dd.setValue(numericKeys.has(key) ? String(prefs[key]) : prefs[key]);
+    }
+  }
+}
+
+function ensureGraphSettingsDialog() {
+  if (graphSettingsDialog) return graphSettingsDialog;
+  const g = typeof window !== 'undefined' ? window : self;
+  if (typeof g.BelJarDialog === 'undefined') return null;
+
+  const stack = document.createElement('div');
+  stack.className = 'bj-dialog__stack';
+  const section = document.createElement('div');
+  section.className = 'bj-dialog__section';
+
+  addGraphSettingDropdown(
+    section,
+    'View',
+    '3D galaxy or a flat layered diagram.',
+    [{ value: 'force', label: '3D' }, { value: 'flat', label: 'Flat' }],
+    'layout',
+  );
+  addGraphSettingDropdown(
+    section,
+    'Implementation edges',
+    'Body edges link symbols to their implementation detail.',
+    [{ value: 'show', label: 'Show edges' }, { value: 'hide', label: 'Hide edges' }],
+    'impl',
+  );
+  addGraphSettingDropdown(
+    section,
+    'Neighborhood depth',
+    'Default hop count when exploring a symbol\'s local graph (1–3).',
+    [{ value: '1', label: '1 hop' }, { value: '2', label: '2 hops' }, { value: '3', label: '3 hops' }],
+    'depth',
+  );
+  addGraphSettingDropdown(
+    section,
+    'Label density',
+    'How many node labels are shown. Small graphs always show all labels regardless.',
+    [
+      { value: '1', label: 'None' },
+      { value: '2', label: 'Sparse' },
+      { value: '3', label: 'Normal' },
+      { value: '4', label: 'Dense' },
+      { value: '5', label: 'All' },
+    ],
+    'labelDensity',
+  );
+  stack.appendChild(section);
+
+  graphSettingsDialog = g.BelJarDialog.createDialog({
+    title: 'Dependency graph settings',
+    content: stack,
+    cardClass: 'bj-dialog__card--settings',
+    removeOnClose: false,
+  });
+  return graphSettingsDialog;
+}
+
+function openGraphSettingsDialog() {
+  ensureGraphSettingsDialog();
+  syncGraphSettingsFields();
+  const g = typeof window !== 'undefined' ? window : self;
+  if (graphSettingsDialog && g.BelJarDialog) g.BelJarDialog.openDialog(graphSettingsDialog);
+}
+
+// Flat and 3D cameras are incompatible shapes — only restore when the saved
+// state matches the renderer being mounted.
+function cameraForLayout(cam, layout) {
+  if (!cam) return null;
+  const wantFlat = layout === 'flat';
+  return !!cam.flat === wantFlat ? cam : null;
+}
+
+function applyGraphPrefsToWindow(win, prefs = loadGraphPrefs()) {
+  win._graphDepth = prefs.depth;
+  const bundle = win._graphBundle;
+  if (!bundle) return;
+  const { view, engine, ctx } = bundle;
+  ctx.sidebar?.setCollapsed?.(prefs.sidebarCollapsed, { save: false });
+  const cur = navCurrent(win._graphNav);
+
+  // Force ↔ flat are now two different renderers (WebGL galaxy vs. 2D SVG diagram),
+  // so a layout change re-mounts rather than morphing one controller in place.
+  if (win._graph3d && win._graphAppliedLayout !== prefs.layout) {
+    const cur = navCurrent(win._graphNav);
+    if (cur && win._graph3d.getCameraState) {
+      cur.camera = win._graph3d.getCameraState();
+      win._graphNav.stack[win._graphNav.index] = { ...cur };
+    }
+    win._graphAppliedLayout = prefs.layout;
+    navigateGraph(view, engine, win, ctx, navCurrent(win._graphNav), { push: false });
+    return;
+  }
+
+  if (win._graph3d) {
+    win._graph3d.setImplVisibility(prefs.impl);
+    win._graph3d.setLabelDensity?.(prefs.labelDensity ?? 3);
+  }
+
+  if (cur?.mode !== 'neighborhood') return;
+
+  const stackDepth = cur.depth || 1;
+  if (stackDepth !== prefs.depth) {
+    win._graphNav.stack[win._graphNav.index] = { ...cur, depth: prefs.depth };
+  }
+
+  if (win._graph3d && stackDepth !== prefs.depth) {
+    navigateGraph(
+      view, engine, win, ctx,
+      buildNavEntry({ mode: 'neighborhood', rootId: cur.rootId, depth: prefs.depth }),
+      { push: false },
+    );
+  } else if (!win._graph3d) {
+    ctx.model = buildNeighborhood(engine, cur.rootId, { depth: prefs.depth }) || ctx.model;
+  }
+
+  ctx.toolbar?.syncNavMode?.(win._graphNav);
+}
+
+function applyGraphPrefsToAll(prefs) {
+  for (const win of openGraphWindows.values()) applyGraphPrefsToWindow(win, prefs);
+}
+
+onGraphPrefsChange(applyGraphPrefsToAll);
+
+function rootIdAt(engine, view, pos) {
+  if (typeof engine.navAt !== 'function') return null;
+  const nav = engine.navAt(pos);
+  return nav && nav.symbolId ? nav.symbolId : null;
+}
+
+function nameForId(engine, id) {
+  return nodeMeta(engine, id).name || 'symbol';
+}
+
+function collectGlobalGraphMeta(view, engine) {
+  const snap = engine.getSnapshot?.() || null;
+  const parseCoverage = view ? computeParseCoverage(view.state) : null;
+  return {
+    parseCoverage,
+    symbolCount: snap?.summary?.symbols ?? snap?.symbols?.globalSymbols?.length ?? modelSymbolCount(engine),
+  };
+}
+
+function modelSymbolCount(engine) {
+  return engine.graphFor?.()?.nodes?.length ?? 0;
+}
+
+function makeStaleBanner(text) {
+  if (!text) return null;
+  const el = document.createElement('div');
+  el.className = 'bel-graph-stale-banner';
+  el.setAttribute('role', 'status');
+  el.textContent = text;
+  return el;
+}
+
+function graphWindowTitle(parseNote = '') {
+  const t = document.createElement('span');
+  t.className = 'bel-graph-title-name';
+  t.textContent = parseNote ? `Dependency graph (${parseNote})` : 'Dependency graph';
+  return t;
+}
+
+function viewMetaFor(engine, model, mode, depth = 1, { view } = {}) {
+  const meta = {
+    mode,
+    depth,
+    symbolCount: model?.nodes?.length ?? 0,
+    edgeCount: model?.edges?.length ?? 0,
+    rootName: model?.root ? nameForId(engine, model.root) : null,
+  };
+  if (mode === 'global' && model) {
+    let sigEdges = 0;
+    let bodyEdges = 0;
+    for (const e of model.edges || []) {
+      if (e.kind === 'body') bodyEdges++;
+      else sigEdges++;
+    }
+    meta.sigEdges = sigEdges;
+    meta.bodyEdges = bodyEdges;
+    if (view) {
+      const cov = computeParseCoverage(view.state);
+      if (!cov.complete) meta.parsePercent = cov.percent;
+    }
+  }
+  return meta;
+}
+
+function reflectPropBarIdle(propBar, ctx) {
+  if (ctx.viewMeta?.mode === 'global') propBar?.showContext?.(ctx.viewMeta);
+  else propBar?.showIdle?.();
+}
+
+function reflectPropSelection(propBar, ctx, ctrl) {
+  const id = ctx.selectedNodeId;
+  if (!id || !ctrl) {
+    reflectPropBarIdle(propBar, ctx);
+    return;
+  }
+  const idx = ctrl.indexOfId(id);
+  if (idx < 0) {
+    reflectPropBarIdle(propBar, ctx);
+    return;
+  }
+  const node = ctrl.getNodes()[idx];
+  if (!node) {
+    reflectPropBarIdle(propBar, ctx);
+    return;
+  }
+  ctrl.setFocus(idx);
+  propBar.showFocus(node, idx, ctrl);
+}
+
+function clearPropSelection(propBar, ctx, ctrl) {
+  const cur = navCurrent(ctx.win?._graphNav);
+  if (cur?.mode === 'neighborhood') return; // no deselected state in local view
+  ctx.selectedNodeId = null;
+  ctrl?.setFocus?.(-1);
+  reflectPropBarIdle(propBar, ctx);
+}
+
+export function formatPropContext(meta) {
+  if (!meta) return '';
+  if (meta.mode === 'global') {
+    const parts = [`${meta.edgeCount} edges`, `${meta.sigEdges} sig`, `${meta.bodyEdges} body`];
+    if (meta.parsePercent != null) parts.push(`parse ${meta.parsePercent}%`);
+    return parts.join(' · ');
+  }
+  const hop = `${meta.depth || 1}-hop`;
+  if (meta.rootName) return `${meta.rootName} · ${hop} neighborhood`;
+  return `${hop} neighborhood`;
+}
+
+export function formatPropFocus(node, idx, ctrl) {
+  const counts = ctrl?.countDeps?.(idx) || { deps: 0, dependents: 0 };
+  const parts = [node.name || '?'];
+  if (node.label) parts.push(node.label);
+  parts.push(`${counts.dependents} used by`, `${counts.deps} deps`);
+  return parts.join(' · ');
+}
+
+const ICONS = {
+  force: '<circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>'
+    + '<path d="M12 7v4m0 0-5.5 6m5.5-6 5.5 6"/>',
+  flat: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
+  reset: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>'
+    + '<path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/>',
+  body: '<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>'
+    + '<path d="M18 9a9 9 0 0 1-9 9"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+  forward: '<path d="m9 18 6-6-6-6"/>',
+  list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>'
+    + '<line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+  explore: '<circle cx="10" cy="10" r="8.5"/><path d="m19.5 19.5-4-4"/>'
+    + '<path d="M10 7v6"/><path d="M7 10h6"/>',
+  global: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  minus: '<path d="M5 12h14"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+};
+
+function iconSvg(name) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+}
+
+function setTip(el, text) {
+  el.setAttribute('data-tooltip', text);
+  el.setAttribute('aria-label', text);
+  const g = typeof window !== 'undefined' ? window : self;
+  if (g.Tooltips && typeof g.Tooltips.bind === 'function') g.Tooltips.bind(el);
+}
+
+function iconButton(name, title) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'bel-graph3d-iconbtn';
+  b.innerHTML = iconSvg(name);
+  setTip(b, title);
+  return b;
+}
+
+function bareNavBtn(name, title) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'bel-graph3d-navbtn';
+  b.innerHTML = iconSvg(name);
+  setTip(b, title);
+  return b;
+}
+
+function buildGraphPropBar() {
+  const el = document.createElement('div');
+  el.className = 'bel-graph3d-propbar';
+  const text = document.createElement('div');
+  text.className = 'bel-graph3d-propbar-text';
+  const nav = document.createElement('div');
+  nav.className = 'bel-graph3d-propbar-nav';
+  const backBtn = bareNavBtn('back', 'Back (Alt+←)');
+  const forwardBtn = bareNavBtn('forward', 'Forward (Alt+→)');
+  nav.append(backBtn, forwardBtn);
+  el.append(text, nav);
+  return {
+    el,
+    wire({ onBack, onForward }) {
+      backBtn.addEventListener('click', () => onBack?.());
+      forwardBtn.addEventListener('click', () => onForward?.());
+    },
+    updateNav(navState) {
+      backBtn.disabled = !navCanBack(navState);
+      forwardBtn.disabled = !navCanForward(navState);
+    },
+    showIdle() {
+      text.textContent = '';
+      text.classList.remove('is-focus');
+    },
+    showContext(meta) {
+      text.textContent = formatPropContext(meta);
+      text.classList.add('is-focus');
+    },
+    showFocus(node, idx, ctrl) {
+      text.textContent = formatPropFocus(node, idx, ctrl);
+      text.classList.add('is-focus');
+    },
+  };
+}
+
+function buildGraphToolbar({ sidebar } = {}) {
+  const el = document.createElement('div');
+  el.className = 'bel-graph3d-toolbar';
+
+  const searchWrap = document.createElement('div');
+  searchWrap.className = 'bel-graph3d-search-wrap';
+  const search = document.createElement('input');
+  search.type = 'text';
+  search.className = 'bel-graph3d-search';
+  search.placeholder = 'Search…';
+  search.setAttribute('autocomplete', 'off');
+  const acList = document.createElement('div');
+  acList.className = 'bel-graph3d-autocomplete';
+  acList.hidden = true;
+  searchWrap.append(search, acList);
+
+  const scopeBtn = iconButton('global', 'Whole-file graph');
+  scopeBtn.classList.add('bel-graph3d-scopebtn');
+  const resetBtn = iconButton('reset', 'Reset view');
+  const zoomOutBtn = iconButton('minus', 'Zoom out');
+  const zoomInBtn = iconButton('plus', 'Zoom in');
+
+  el.append(searchWrap, scopeBtn, resetBtn, zoomOutBtn, zoomInBtn);
+
+  let nodes = [], nodeHandlers = null, acPick = -1, lastFilter = '';
+  let ctrlRef = () => null;
+  let scopeMode = 'global'; // 'global' btn → escape to file; 'explore' btn → drill in
+
+  function reflectScopeBtn(isGlobal) {
+    scopeMode = isGlobal ? 'explore' : 'global';
+    scopeBtn.innerHTML = iconSvg(scopeMode);
+    setTip(scopeBtn, isGlobal ? 'Open neighborhood view' : 'Whole-file graph');
+  }
+
+  function reflectActions() {
+    const on = !!ctrlRef()?.getFocusedNode?.()?.node;
+    scopeBtn.disabled = scopeMode === 'explore' && !on;
+  }
+
+  function renderAc(query) {
+    const hits = fuzzySearchNodes(nodes, query);
+    acList.textContent = '';
+    if (!query.trim() || !hits.length) { acList.hidden = true; acPick = -1; return; }
+    acList.hidden = false;
+    hits.forEach((n, i) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'bel-graph3d-ac-item';
+      row.dataset.name = n.name || '';
+      row.textContent = n.name || '?';
+      row.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSearch(n.name); });
+      if (i === acPick) row.classList.add('is-active');
+      acList.appendChild(row);
+    });
+  }
+
+  function pickSearch(name) {
+    acList.hidden = true;
+    search.value = name;
+    ctrlRef()?.focusByName(name);
+  }
+
+  return {
+    el,
+    focusSearch: () => search.focus(),
+    syncNodes(nodeList, handlers) {
+      nodes = nodeList || [];
+      nodeHandlers = handlers;
+      sidebar?.setCount?.(nodes.length);
+      sidebar?.render(nodes, lastFilter, handlers);
+    },
+    syncFocus(node) {
+      sidebar?.highlight?.(node?.id);
+      sidebar?.render(nodes, lastFilter, nodeHandlers);
+      reflectActions();
+    },
+    syncNavMode(navState) {
+      const cur = navCurrent(navState);
+      reflectScopeBtn(cur?.mode === 'global');
+      reflectActions();
+    },
+    wire(getCtrl, { onReset, onExplore, onGlobal } = {}) {
+      ctrlRef = getCtrl;
+      reflectActions();
+      search.addEventListener('input', () => {
+        lastFilter = search.value;
+        renderAc(search.value);
+        sidebar?.render(nodes, lastFilter, nodeHandlers);
+      });
+      search.addEventListener('keydown', (ev) => {
+        const items = acList.querySelectorAll('.bel-graph3d-ac-item');
+        if (ev.key === 'ArrowDown' && items.length) { ev.preventDefault(); acPick = Math.min(items.length - 1, acPick + 1); renderAc(search.value); }
+        else if (ev.key === 'ArrowUp' && items.length) { ev.preventDefault(); acPick = Math.max(0, acPick - 1); renderAc(search.value); }
+        else if (ev.key === 'Enter') {
+          if (acPick >= 0 && items[acPick]) pickSearch(items[acPick].dataset.name);
+          else if (search.value.trim()) { ctrlRef()?.focusByName(search.value.trim()); acList.hidden = true; }
+        } else if (ev.key === 'Escape') { acList.hidden = true; search.blur(); }
+      });
+      search.addEventListener('blur', () => { setTimeout(() => { acList.hidden = true; }, 120); });
+
+      scopeBtn.addEventListener('click', () => {
+        if (scopeMode === 'explore') {
+          const f = ctrlRef()?.getFocusedNode?.();
+          if (f?.node) onExplore?.(f.node, f.idx);
+        } else {
+          onGlobal?.();
+        }
+      });
+
+      resetBtn.addEventListener('click', () => {
+        // onReset owns the framing decision (it knows the nav mode + selection):
+        // global+selection → re-center on the node; otherwise reset to fit-all.
+        onReset?.();
+        reflectActions();
+      });
+      zoomOutBtn.addEventListener('click', () => ctrlRef()?.zoomOut?.());
+      zoomInBtn.addEventListener('click', () => ctrlRef()?.zoomIn?.());
+    },
+  };
+}
+
+function buildGraphSidebar({ onLayoutChange } = {}) {
+  const el = document.createElement('aside');
+  el.className = 'bel-graph3d-sidebar';
+  const head = document.createElement('div');
+  head.className = 'bel-graph3d-sidebar-head';
+  const headLabel = document.createElement('span');
+  headLabel.className = 'bel-graph3d-sidebar-head-label';
+  headLabel.textContent = 'Symbols (0)';
+  const collapseBtn = document.createElement('button');
+  collapseBtn.type = 'button';
+  collapseBtn.className = 'bel-graph3d-sidebar-toggle';
+  collapseBtn.innerHTML = iconSvg('back');
+  setTip(collapseBtn, 'Collapse symbol list');
+  head.append(headLabel, collapseBtn);
+  const list = document.createElement('div');
+  list.className = 'bel-graph3d-sidebar-list';
+  el.append(head, list);
+
+  let collapsed = !!loadGraphPrefs().sidebarCollapsed;
+  function reflectCollapse({ save = true } = {}) {
+    el.classList.toggle('is-collapsed', collapsed);
+    collapseBtn.innerHTML = iconSvg(collapsed ? 'forward' : 'back');
+    setTip(collapseBtn, collapsed ? 'Expand symbol list' : 'Collapse symbol list');
+    if (save) saveGraphPrefs({ sidebarCollapsed: collapsed });
+    onLayoutChange?.();
+  }
+  function setCollapsed(next, { save = true } = {}) {
+    const v = !!next;
+    if (collapsed === v) return;
+    collapsed = v;
+    reflectCollapse({ save });
+  }
+  collapseBtn.addEventListener('click', () => { collapsed = !collapsed; reflectCollapse(); });
+  reflectCollapse({ save: false });
+
+  let handlers = null, hiId = null;
+  function render(nodes, filter, h) {
+    handlers = h || handlers;
+    list.textContent = '';
+    const q = (filter || '').trim().toLowerCase();
+    const sorted = [...(nodes || [])].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const items = sorted.filter((n) => !q || (n.name || '').toLowerCase().includes(q));
+    for (const n of items) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'bel-graph3d-sidebar-item' + (n.id === hiId ? ' is-active' : '') + (n.role === 'root' ? ' is-root' : '');
+      row.textContent = n.name || '?';
+      row.addEventListener('click', () => handlers?.onPick?.(n));
+      row.addEventListener('dblclick', (ev) => { ev.preventDefault(); handlers?.onJump?.(n); });
+      list.appendChild(row);
+    }
+  }
+  return {
+    el,
+    setCount(n) { headLabel.textContent = `Symbols (${n})`; },
+    setCollapsed,
+    render, highlight(id) { hiId = id; }, toggle() { setCollapsed(!collapsed); },
+  };
+}
+
+function mountGraph3DRenderer(view, engine, ctx) {
+  const { win, canvas, labels, toolbar, model, mode, propBar, restoreCamera } = ctx;
+  const prefs = loadGraphPrefs();
+  const stage = canvas.parentElement;
+
+  ctx.viewMeta = viewMetaFor(engine, model, mode, navCurrent(win._graphNav)?.depth || win._graphDepth || prefs.depth, { view });
+
+  const drill = (node) => drillGraph(view, engine, win, ctx, node.id);
+  const fly = (node, idx) => win._graph3d?.flyToIndex(idx, { animate: true });
+  // win._graph3d isn't assigned until mount returns, so focus callbacks that fire
+  // before then read the controller back through ctx._mountingCtrl.
+  const onFocus = (node, idx) => {
+    ctx.selectedNodeId = node?.id ?? null;
+    if (node) propBar?.showFocus?.(node, idx, win._graph3d || ctx._mountingCtrl);
+    else reflectPropBarIdle(propBar, ctx);
+    toolbar?.syncFocus?.(node, idx);
+  };
+
+  let ctrl;
+
+  // The flat view is its own 2D SVG renderer with an x/y camera — not the galaxy
+  // seen head-on. It hides the WebGL canvas/labels and draws an SVG into the stage.
+  if (prefs.layout === 'flat') {
+    stage.classList.add('is-flat');
+    canvas.style.display = 'none';
+    labels.style.display = 'none';
+    ctrl = createFlatGraph(stage, model, null, {
+      implVisibility: prefs.impl,
+      onJump: (node) => jumpToNode(view, engine, node),
+      onDrill: mode === 'neighborhood' ? drill : null,
+      onFly: fly,
+      onFocus,
+    });
+  } else {
+    stage.classList.remove('is-flat');
+    canvas.style.display = '';
+    labels.style.display = '';
+    const sim = createForceSim(model, { seed: 0x1234 });
+    sim.step(mode === 'global' ? 160 : 90);
+    ctrl = createGraph3D(canvas, sim, {
+      labelLayer: labels,
+      implVisibility: prefs.impl,
+      labelDensity: prefs.labelDensity ?? 3,
+      viewMode: mode,
+      onJump: (node) => jumpToNode(view, engine, node),
+      onDrill: mode === 'neighborhood' ? drill : null,
+      onFly: fly,
+      onFocus,
+    });
+  }
+  ctx._mountingCtrl = ctrl;
+  if (!ctrl) return null;
+
+  win._graphAppliedLayout = prefs.layout;
+  if (!ctrl.isFlat) {
+    ctrl.frameAll();
+    if (model.root) ctrl.frameNode(model.root);
+  } else if (model.root) {
+    ctrl.frameNode(model.root);
+  }
+  ctrl.setImplVisibility(prefs.impl);
+  if (restoreCamera) {
+    const cam = cameraForLayout(navCurrent(win._graphNav)?.camera, prefs.layout);
+    if (cam) ctrl.restoreCameraState(cam, { animate: false });
+  }
+
+  toolbar.syncNodes?.(ctrl.getNodes(), {
+    onPick: (node) => { const idx = ctrl.indexOfId(node.id); if (idx >= 0) ctrl.flyToIndex(idx, { animate: true }); },
+    onJump: (node) => jumpToNode(view, engine, node),
+  });
+
+  reflectPropSelection(propBar, ctx, ctrl);
+
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => ctrl.resize());
+    ro.observe(stage || canvas);
+    if (!ctrl.isFlat) ro.observe(canvas);
+    const prevDispose = ctrl.dispose;
+    ctrl.dispose = () => { ro.disconnect(); prevDispose(); };
+  }
+  return ctrl;
+}
+
+function drillGraph(view, engine, win, ctx, newRootId) {
+  ctx.selectedNodeId = newRootId;
+  const cur = navCurrent(win._graphNav);
+  const depth = loadGraphPrefs().depth;
+  if (cur?.mode === 'neighborhood' && cur.rootId === newRootId) {
+    win._graph3d?.frameNode(newRootId);
+    return;
+  }
+  navigateGraph(view, engine, win, ctx, buildNavEntry({ mode: 'neighborhood', rootId: newRootId, depth }), { push: true });
+}
+
+function navigateToGlobalGraph(view, engine, win, ctx) {
+  const cur = navCurrent(win._graphNav);
+  if (cur?.mode === 'global') return;
+  navigateGraph(view, engine, win, ctx, buildNavEntry({ mode: 'global' }), { push: true });
+}
+
+function navigateGraph(view, engine, win, ctx, entry, { push = true, restoreIndex = null } = {}) {
+  if (push) {
+    const dup = openGraphWindows.get(graphKeyForEntry(entry));
+    if (dup && dup !== win) { dup.raise(); applyGraphPrefsToWindow(dup); return; }
+    if (win._graph3d) {
+      const cur = navCurrent(win._graphNav);
+      if (cur) {
+        cur.camera = win._graph3d.getCameraState();
+        win._graphNav.stack[win._graphNav.index] = { ...cur };
+      }
+    }
+    win._graphNav = navPush(win._graphNav, entry.mode === 'neighborhood'
+      ? { ...entry, depth: loadGraphPrefs().depth }
+      : entry);
+  } else if (restoreIndex != null) {
+    win._graphNav = navGoTo(win._graphNav, restoreIndex);
+  }
+
+  const current = navCurrent(win._graphNav);
+  if (!current) return;
+
+  const prefs = loadGraphPrefs();
+  win._graphDepth = prefs.depth;
+  if (current.mode === 'neighborhood') {
+    current.depth = prefs.depth;
+    win._graphNav.stack[win._graphNav.index] = { ...current };
+  }
+
+  const model = current.mode === 'global'
+    ? buildGlobalModel(engine)
+    : buildNeighborhood(engine, current.rootId, { depth: prefs.depth });
+  if (!model) return;
+
+  openGraphWindows.delete(win._graphKey);
+  openGraphWindows.set(graphKeyForEntry(current), win);
+  win._graphKey = graphKeyForEntry(current);
+
+  if (win._graph3d) win._graph3d.dispose();
+  win._graph3d = null;
+  ctx.labels.textContent = '';
+  ctx.model = model;
+  ctx.mode = current.mode === 'global' ? 'global' : 'neighborhood';
+  ctx.graphKey = win._graphKey;
+  ctx.restoreCamera = !push;
+
+  const ctrl = mountGraph3DRenderer(view, engine, ctx);
+  if (ctrl) {
+    win._graph3d = ctrl;
+    const cam = cameraForLayout(current.camera, prefs.layout);
+    if (!push && cam) ctrl.restoreCameraState(cam, { animate: true });
+  }
+  ctx.propBar?.updateNav?.(win._graphNav);
+  ctx.toolbar?.syncNavMode?.(win._graphNav);
+}
+
+function navBackGraph(view, engine, win, ctx) {
+  if (!navCanBack(win._graphNav)) return;
+  win._graphNav = navBack(win._graphNav);
+  navigateGraph(view, engine, win, ctx, navCurrent(win._graphNav), { push: false });
+}
+
+function navForwardGraph(view, engine, win, ctx) {
+  if (!navCanForward(win._graphNav)) return;
+  win._graphNav = navForward(win._graphNav);
+  navigateGraph(view, engine, win, ctx, navCurrent(win._graphNav), { push: false });
+}
+
+function open3DGraph(view, engine, key, model, titleNode, { width, height, mode, staleBanner = null, rootId = null }) {
+  const g = typeof window !== 'undefined' ? window : self;
+  const existing = openGraphWindows.get(key);
+  if (existing) {
+    existing.raise();
+    applyGraphPrefsToWindow(existing);
+    return true;
+  }
+
+  const graphPrefs = loadGraphPrefs();
+  if (mode === 'neighborhood') {
+    const rid = rootId || model.root;
+    model = buildNeighborhood(engine, rid, { depth: graphPrefs.depth }) || model;
+  }
+
+  const body = document.createElement('div');
+  body.className = 'bel-graph3d-container';
+  body.tabIndex = -1;
+  if (staleBanner) body.appendChild(staleBanner);
+
+  const main = document.createElement('div');
+  main.className = 'bel-graph3d-main';
+  const graphHost = { win: null };
+  const sidebar = buildGraphSidebar({
+    onLayoutChange: () => graphHost.win?._graph3d?.resize?.(),
+  });
+  const propBar = buildGraphPropBar();
+  const stage = document.createElement('div');
+  stage.className = 'bel-graph3d-stage';
+  const canvas = document.createElement('canvas');
+  canvas.className = 'bel-graph3d-canvas';
+  const labels = document.createElement('div');
+  labels.className = 'bel-graph3d-labels';
+  const toolbar = buildGraphToolbar({ sidebar });
+
+  stage.append(canvas, labels, toolbar.el);
+  main.append(sidebar.el, stage);
+  body.append(propBar.el, main);
+
+  const initialEntry = mode === 'global'
+    ? buildNavEntry({ mode: 'global' })
+    : buildNavEntry({ mode: 'neighborhood', rootId: rootId || model.root, depth: graphPrefs.depth });
+
+  const ctx = {
+    win: null, canvas, labels, toolbar, propBar, sidebar, model, mode, graphKey: key,
+    restoreCamera: false, viewMeta: null,
+    selectedNodeId: mode === 'neighborhood' ? (rootId || model.root) : null,
+  };
+  const graphBundle = { view, engine, ctx };
+
+  const onKey = (ev) => {
+    if (ev.target?.closest?.('input, textarea, select')) {
+      if (ev.key === 'Escape') ev.target.blur();
+      return;
+    }
+    const ctrl = ctx.win?._graph3d;
+    if (ev.key === '/' && !ev.metaKey && !ev.ctrlKey) { ev.preventDefault(); toolbar.focusSearch?.(); }
+    else if (ev.key === 'Escape') clearPropSelection(propBar, ctx, ctrl);
+    else if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); navBackGraph(view, engine, ctx.win, ctx); }
+    else if (ev.altKey && ev.key === 'ArrowRight') { ev.preventDefault(); navForwardGraph(view, engine, ctx.win, ctx); }
+    else if (ev.key === 'Enter' && !ev.shiftKey) {
+      const f = ctrl?.getFocusedNode?.();
+      if (f) { ev.preventDefault(); ctx.selectedNodeId = f.node.id; drillGraph(view, engine, ctx.win, ctx, f.node.id); }
+    } else if (ev.key === 'Enter' && ev.shiftKey) {
+      const f = ctrl?.getFocusedNode?.();
+      if (f) { ev.preventDefault(); ctrl.flyToIndex(f.idx, { animate: true }); }
+    }
+  };
+
+  const win = g.FloatingWindow.open({
+    title: titleNode,
+    content: body,
+    className: 'bel-graph-window bel-graph3d-window',
+    width, height,
+    actions: [{
+      label: 'Dependency graph settings',
+      icon: GRAPH_SETTINGS_ICON,
+      onClick: openGraphSettingsDialog,
+    }],
+    onClose: () => {
+      body.removeEventListener('keydown', onKey);
+      if (win._graph3d) win._graph3d.dispose();
+      openGraphWindows.delete(win._graphKey ?? key);
+      win._graphBundle = null;
+    },
+  });
+  ctx.win = win;
+  graphHost.win = win;
+  win._graphKey = key;
+  win._graphNav = createNavState(initialEntry);
+  win._graphDepth = graphPrefs.depth;
+  win._graphBundle = graphBundle;
+  openGraphWindows.set(key, win);
+
+  propBar.wire({
+    onBack: () => navBackGraph(view, engine, win, ctx),
+    onForward: () => navForwardGraph(view, engine, win, ctx),
+  });
+
+  toolbar.wire(() => win._graph3d, {
+    onReset: () => {
+      const ctrl = win._graph3d;
+      const cur = navCurrent(win._graphNav);
+      const focused = ctrl?.getFocusedNode?.();
+      // In the whole-file (global) view, reset RE-CENTERS on the selected node (like
+      // clicking it) instead of clearing it. With nothing selected — or in a
+      // neighborhood view — reset zooms back out to fit the whole graph.
+      if (cur?.mode === 'global' && focused) {
+        ctrl.flyToIndex(focused.idx, { animate: true });
+      } else {
+        clearPropSelection(propBar, ctx, ctrl);
+        ctrl?.frameAll?.({ animate: true });
+      }
+    },
+    onExplore: (node) => {
+      ctx.selectedNodeId = node.id;
+      drillGraph(view, engine, win, ctx, node.id);
+    },
+    onGlobal: () => navigateToGlobalGraph(view, engine, win, ctx),
+  });
+  toolbar.syncNavMode?.(win._graphNav);
+
+  body.addEventListener('keydown', onKey);
+
+  requestAnimationFrame(() => {
+    const ctrl = mountGraph3DRenderer(view, engine, ctx);
+    if (!ctrl) {
+      const keptBanner = body.querySelector('.bel-graph-stale-banner');
+      body.textContent = '';
+      if (keptBanner) body.appendChild(keptBanner);
+      const fallback = document.createElement('div');
+      fallback.className = 'bel-graph-container';
+      body.appendChild(fallback);
+      renderGraph(fallback, layoutGraph(model, { mode }), {
+        interactive: true, fit: true, onJump: (node) => jumpToNode(view, engine, node),
+      });
+      return;
+    }
+    win._graph3d = ctrl;
+    propBar.updateNav?.(win._graphNav);
+    toolbar.syncNavMode?.(win._graphNav);
+    applyGraphPrefsToWindow(win, graphPrefs);
+  });
+  return true;
+}
+
+export function openLocalGraphWindow(view, pos) {
+  const g = typeof window !== 'undefined' ? window : self;
+  if (typeof g.FloatingWindow === 'undefined') return false;
+  const engine = getEngine(view);
+  if (!engine) return false;
+  const at = pos ?? view.state.selection.main.head;
+  const rootId = rootIdAt(engine, view, at);
+  if (!rootId) return false;
+  const prefs = loadGraphPrefs();
+  const model = buildNeighborhood(engine, rootId, { depth: prefs.depth });
+  return open3DGraph(view, engine, 'graph:' + rootId, model, graphWindowTitle(),
+    { width: 520, height: 440, mode: 'neighborhood', rootId });
+}
+
+export function openGlobalGraphWindow(view) {
+  const g = typeof window !== 'undefined' ? window : self;
+  if (typeof g.FloatingWindow === 'undefined') return false;
+  const engine = getEngine(view);
+  if (!engine) return false;
+  const model = buildGlobalModel(engine);
+  const meta = collectGlobalGraphMeta(view, engine);
+  const staleBanner = makeStaleBanner(formatGlobalGraphStaleBanner(meta));
+  const parseNote = meta.parseCoverage && !meta.parseCoverage.complete
+    ? `parse ${meta.parseCoverage.percent}%` : '';
+  return open3DGraph(view, engine, 'graph:__global__', model, graphWindowTitle(parseNote),
+    { width: 780, height: 580, mode: 'global', staleBanner });
+}
+
+export function renderMiniGraph(container, view, pos) {
+  const engine = getEngine(view);
+  if (!engine) return false;
+  const at = pos ?? view.state.selection.main.head;
+  const rootId = rootIdAt(engine, view, at);
+  if (!rootId) { container.textContent = ''; return false; }
+  const model = buildNeighborhood(engine, rootId, { depth: 1 });
+  if (!model || model.nodes.length <= 1) { container.textContent = ''; return false; }
+  renderGraph(container, layoutGraph(model, { mode: 'neighborhood' }), {
+    interactive: false, fit: true, onJump: (node) => jumpToNode(view, engine, node),
+  });
+  return true;
+}
+
+export { nameForId as _nameForId, viewMetaFor };
+export {
+  buildNavEntry, createNavState, navPush, navBack, navForward, navGoTo,
+  navCurrent, navCanBack, navCanForward, navBreadcrumbLabel, applyNavJump,
+  fuzzySearchNodes,
+} from './graph/graph-nav.mjs';

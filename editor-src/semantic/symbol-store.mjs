@@ -87,6 +87,12 @@ function slice(doc, from, to) {
 function firstIdentChild(node) {
   for (let c = node.firstChild; c; c = c.nextSibling) {
     if (IDENT.has(c.name)) return c;
+    if (c.name === 'ParameterVariable' || c.name === 'SubstitutionVariable') {
+      const sigil = c.firstChild;
+      if (!sigil || (sigil.name !== '#' && sigil.name !== '$')) continue;
+      const id = sigil.nextSibling;
+      if (id && IDENT.has(id.name)) return id;
+    }
   }
   return null;
 }
@@ -205,6 +211,10 @@ function sourceSignature(parent, ident, doc) {
 }
 
 function extendedRange(node) {
+  const p = node.parent;
+  if (p?.name === 'ParameterVariable' || p?.name === 'SubstitutionVariable') {
+    return { from: p.from, to: node.to };
+  }
   let from = node.from;
   for (let cur = node.prevSibling; cur && (cur.name === '#' || cur.name === '$'); cur = cur.prevSibling) {
     from = cur.from;

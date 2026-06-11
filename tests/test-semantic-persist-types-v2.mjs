@@ -37,9 +37,9 @@ const c2 = s2.cachedTypeAt(ndPos);
 expect(c2 && c2.type === 'D(nd)' && c2.source === 'hydrated',
   `persisted decl type should round-trip via export/import, got ${c2 && c2.type}`);
 
-// intelAt serves the persisted type without a session (this engine has none).
-const intel = await s2.intelAt(ndPos);
-expect(intel.type === 'D(nd)', `intelAt should serve the persisted type, got ${intel.type}`);
+// The inspector's sync query serves the persisted type without a session.
+const intel = s2.intelSyncAt(ndPos);
+expect(intel.type === 'D(nd)', `intelSyncAt should serve the persisted type, got ${intel.type}`);
 
 // Source-annotation fallback when nothing is cached (never a blank).
 const s3 = createSemanticEngine();

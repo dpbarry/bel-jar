@@ -44,8 +44,7 @@ if (!editor) {
 }
 
 const TEMPLATES = {
-  nd: `% Natural Deduction
-LF o : type =
+  nd: `LF o : type =
   | ⊃ : o → o → o
   | ⊤ : o
   | ∧ : o → o → o
@@ -61,6 +60,8 @@ LF o : type =
 LF nd : o → type =
   | ⊃I : (nd A → nd B) → nd (A ⊃ B)
   | ⊃E : nd (A ⊃ B) → nd A → nd B
+  | ¬I : ({p:o} nd A → nd p) → nd (¬ A)
+  | ¬E : nd (¬ A) → nd A → nd C
   | ∧I : nd A → nd B → nd (A ∧ B)
   | ∧El : nd (A ∧ B) → nd A
   | ∧Er : nd (A ∧ B) → nd B
@@ -152,6 +153,45 @@ if (filesBtn && workspaceEl) {
   });
 }
 
+// Symbol Inspector toggle (mirrors the explorer toggle). Opening it kicks one
+// render from the current cursor via the editor API / a refresh event.
+const inspectorBtn = document.getElementById('btn-inspector');
+const inspectorPanelEl = document.getElementById('inspector-panel');
+function openInspector() {
+  if (!workspaceEl) return;
+  if (!workspaceEl.classList.contains('is-inspector-open')) {
+    workspaceEl.classList.add('is-inspector-open');
+    if (inspectorBtn) {
+      inspectorBtn.classList.add('is-active');
+      inspectorBtn.setAttribute('aria-pressed', 'true');
+    }
+    if (inspectorPanelEl) inspectorPanelEl.setAttribute('aria-hidden', 'false');
+    if (editor && editor.getView) editor.getView().requestMeasure();
+    window.dispatchEvent(new Event('resize'));
+  }
+  // Let the layout settle, then ask the inspector to render the cursor target.
+  requestAnimationFrame(() => window.dispatchEvent(new Event('beljar:inspector-refresh')));
+}
+if (inspectorBtn && workspaceEl) {
+  const hideInspectorTooltipUntilLeave = wireSidebarOpenTooltip(inspectorBtn);
+  inspectorBtn.addEventListener('click', () => {
+    const open = workspaceEl.classList.contains('is-inspector-open');
+    if (open) {
+      workspaceEl.classList.remove('is-inspector-open');
+      inspectorBtn.classList.remove('is-active');
+      inspectorBtn.setAttribute('aria-pressed', 'false');
+      if (inspectorPanelEl) inspectorPanelEl.setAttribute('aria-hidden', 'true');
+      if (editor && editor.getView) editor.getView().requestMeasure();
+      window.dispatchEvent(new Event('resize'));
+    } else {
+      hideInspectorTooltipUntilLeave();
+      openInspector();
+    }
+  });
+  // The context-menu "Inspect" actions request the panel via this event.
+  window.addEventListener('beljar:open-inspector', openInspector);
+}
+
 function wireMenuTrigger(btn, menuOpts) {
   if (!btn) return;
   let suppressNextClick = false;
@@ -235,6 +275,11 @@ const headerMenuDefs = [
       { label: 'View diagnostics' },
       { label: 'Run lint' },
       { label: 'Coverage report…' },
+      { type: 'separator' },
+      {
+        label: 'Dependency graph…',
+        onSelect: () => window.BelJarCurrentEditor?.openDependencyGraph(),
+      },
     ],
   },
 ];

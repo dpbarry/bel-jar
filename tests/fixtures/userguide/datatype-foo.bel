@@ -1,0 +1,4 @@
+datatype foo: {x:A} p x -> type =
+  | d : a -> b -> foo c
+  | f : d -> e -> foo k
+;

@@ -42,7 +42,9 @@ Declaration {
 //  LF declarations
 
 LFDeclaration {
-    (LowerIdentifier | UpperIdentifier) ":" LFKind "."
+    LFKeyword (LowerIdentifier | UpperIdentifier) ":" LFKind "."
+  | LFKeyword (LowerIdentifier | UpperIdentifier) ":" LFType "."
+  | (LowerIdentifier | UpperIdentifier) ":" LFKind "."
   | (LowerIdentifier | UpperIdentifier) ":" LFType "."
 }
 
@@ -58,7 +60,8 @@ LFConstructor { (LowerIdentifier | UpperIdentifier) ":" LFType }
 
 OpenPragma          { "--open" UpperIdentifier "."? }
 AbbrevPragma        { "--abbrev" UpperIdentifier UpperIdentifier "."? }
-NamePragma          { "--name" LowerIdentifier (UpperIdentifier | LowerIdentifier) "."? }
+NamePreferred       { UpperIdentifier | LowerIdentifier }
+NamePragma          { "--name" LowerIdentifier NamePreferred NamePreferred? "." }
 InfixPragma         {
     "--infix" LowerIdentifier Associativity Number "."?
   | "--infix" LowerIdentifier Number Associativity "."?
@@ -66,15 +69,19 @@ InfixPragma         {
   | "--infix" LowerIdentifier Associativity "."?
 }
 PrefixPragma        { "--prefix" LowerIdentifier Number? "."? }
-AssocPragma         { "--assoc" Associativity }
-NotPragma           { "--not" }
-NoStrengthenPragma  { "--nostrengthen" }
+AssocPragma         { "--assoc" Associativity "."? }
+NotPragma           { "--not" "."? }
+NoStrengthenPragma  { "--nostrengthen" "."? }
 OpaquePragma        { "--opaque" LowerIdentifier "."? }
 CoveragePragma      { "--coverage" }
 WarnCoveragePragma  { "--warncoverage" }
 
 QueryPragma {
-    "--query" QueryBound QueryBound (UpperIdentifier ":")? LFType "."?
+    "--query" QueryBound QueryBound QuerySubject "."?
+}
+
+QuerySubject {
+    UpperIdentifier ":" CompType
 }
 
 QueryBound { Number | "*" }
@@ -199,7 +206,7 @@ SchemaBody {
 }
 
 SchemaElement {
-    SchemaSomeBlock LFBlock
+    SchemaSomeBlock (LFBlock | LFType)
   | LFBlock
   | LFType
 }
@@ -291,12 +298,11 @@ CompTypeBinder {
     LowerIdentifier ":" CompType
   | UpperIdentifier "::" ContextualType
   | UpperIdentifier ":" CompType
-  | "#" UpperIdentifier ":" ContextualType
-  | "#" LowerIdentifier ":" ContextualType
-  | "#" LowerIdentifier ":" ParameterType
-  | "#" UpperIdentifier ":" ParameterType
-  | "$" UpperIdentifier ":" SubstitutionType
-  | "$" LowerIdentifier ":" SubstitutionType
+  | ParameterVariable ":" ContextualType
+  | ParameterVariable ":" ParameterType
+  | SubstitutionVariable ":" ContextualType
+  | SubstitutionVariable ":" ParameterType
+  | SubstitutionVariable ":" SubstitutionType
 }
 
 //  Contextual types and contextual objects
@@ -437,10 +443,8 @@ MLamExpression {
 MLamParam {
     UpperIdentifier
   | LowerIdentifier
-  | "#" LowerIdentifier
-  | "#" UpperIdentifier
-  | "$" LowerIdentifier
-  | "$" UpperIdentifier
+  | ParameterVariable
+  | SubstitutionVariable
 }
 
 CaseExpression {
@@ -520,7 +524,7 @@ TupleOrParenPattern {
   LineComment   { "%" ![{%\n] ![\n]* | "%" $[\n] }
 
   identChar     {
-      $[A-Za-z0-9_!$&'*+\-/=@\^~]
+      $[A-Za-z0-9_!$&'*+\-/=@\^~<>]
     | "#"
     | unicodeIdent
   }
@@ -539,7 +543,7 @@ TupleOrParenPattern {
     | $[\u{1D400}-\u{1D7FF}]
   }
 
-  LowerIdentifier { ($[a-z_] | unicodeIdent) identChar* }
+  LowerIdentifier { ($[a-z_] | $[\^~!@] | unicodeIdent) identChar* }
   UpperIdentifier { $[A-Z] identChar* }
 
   Number { $[0-9]+ }
@@ -570,6 +574,7 @@ TupleOrParenPattern {
     "^", "+", "*", "=", "?",
     LowerIdentifier, UpperIdentifier,
     "_",
+    "<", ">",
     ".",
     whitespace
   }

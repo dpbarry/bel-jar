@@ -1,0 +1,6 @@
+LF term : type =
+| app : term -> term -> term
+| lam : (term -> term) -> term
+| z : term
+| s : term -> term
+;

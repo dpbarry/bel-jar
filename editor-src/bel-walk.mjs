@@ -34,6 +34,10 @@ export function walkTree(tree, doc) {
 function firstIdentChild(node) {
   for (let c = node.firstChild; c; c = c.nextSibling) {
     if (c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') return c;
+    if (c.name === 'ParameterVariable' || c.name === 'SubstitutionVariable') {
+      const id = metaVarIdent(c);
+      if (id) return id;
+    }
   }
   return null;
 }
@@ -114,6 +118,27 @@ function mergeDiagsByOverlap(primary, secondary) {
   return merged;
 }
 
+function metaVarIdent(node) {
+  const sigil = node.firstChild;
+  if (!sigil || (sigil.name !== '#' && sigil.name !== '$')) return null;
+  const id = sigil.nextSibling;
+  if (id && (id.name === 'LowerIdentifier' || id.name === 'UpperIdentifier')) return id;
+  return null;
+}
+
+function metaVarBinding(node, doc) {
+  if (node.name !== 'ParameterVariable' && node.name !== 'SubstitutionVariable') return null;
+  const id = metaVarIdent(node);
+  if (!id) return null;
+  return {
+    name: doc.sliceString(node.from, id.to),
+    bindFrom: node.from,
+    bindTo: id.to,
+    skipFrom: id.from,
+    skipTo: id.to,
+  };
+}
+
 function collectCompTypeBinderIds(binder, doc) {
   const out = [];
   const a = binder.firstChild;
@@ -122,33 +147,32 @@ function collectCompTypeBinderIds(binder, doc) {
     out.push(binding(doc, a));
     return out;
   }
-  if (a.name === '#' || a.name === '$') {
-    const id = a.nextSibling;
-    if (id && (id.name === 'UpperIdentifier' || id.name === 'LowerIdentifier')) {
-      out.push({
-        name: doc.sliceString(a.from, id.to),
-        bindFrom: a.from,
-        bindTo: id.to,
-        skipFrom: id.from,
-        skipTo: id.to,
-      });
-    }
+  const mv = metaVarBinding(a, doc);
+  if (mv) {
+    out.push(mv);
     return out;
   }
   return out;
 }
 
+function collectPiBinderIds(piBinder, doc) {
+  const id = firstIdentChild(piBinder);
+  return id ? [binding(doc, id)] : [];
+}
+
 function collectLfDependent(node, doc) {
   const open = node.firstChild;
   if (!open || open.name !== '{') return null;
-  const id = open.nextSibling;
-  if (!id || id.name !== 'LowerIdentifier') return null;
-  let p = id.nextSibling;
+  const pi = open.nextSibling;
+  if (!pi || pi.name !== 'PiBinder') return null;
+  const bindings = collectPiBinderIds(pi, doc);
+  if (!bindings.length) return null;
+  let p = pi.nextSibling;
   while (p && p.name !== '}') p = p.nextSibling;
   if (!p || p.name !== '}') return null;
   const rhs = p.nextSibling;
   if (!rhs) return null;
-  return { bindings: [binding(doc, id)], scopeFrom: rhs.from, scopeTo: node.to };
+  return { bindings, scopeFrom: rhs.from, scopeTo: node.to };
 }
 
 function collectWrappedBinderDependent(node, doc, rhsKind) {
@@ -280,17 +304,9 @@ function mlamParams(mlam, doc) {
     if (c.name !== 'MLamParam') continue;
     const first = c.firstChild;
     if (!first) continue;
-    if (first.name === '#' || first.name === '$') {
-      const id = first.nextSibling;
-      if (id && (id.name === 'LowerIdentifier' || id.name === 'UpperIdentifier')) {
-        bindings.push({
-          name: doc.sliceString(first.from, id.to),
-          bindFrom: first.from,
-          bindTo: id.to,
-          skipFrom: id.from,
-          skipTo: id.to,
-        });
-      }
+    const mv = metaVarBinding(first, doc);
+    if (mv) {
+      bindings.push(mv);
       continue;
     }
     const id = firstChildNamed(c, 'LowerIdentifier') || firstChildNamed(c, 'UpperIdentifier');

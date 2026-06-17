@@ -38,7 +38,7 @@ function lintCorpus(label, src, { maxParseErrors = 0, allowUndefinedName = false
 
 const TAPL = `LF tm : type.
 LF value : tm -> type.
-LF ~> : tm -> tm -> type.
+LF ↝ : tm -> tm -> type.
 LF ↦ : tm -> tm -> type.
 LF ↦* : tm -> tm -> type.
 
@@ -53,7 +53,7 @@ LF ↦* : tm -> tm -> type.
 --infix ⇓ right.
 
 ⇓/v : value v → v ⇓ v.
-LF ~>/ift : t ~> t' -> ift t t1 t2 ~> ift t' t1 t2.
+LF ↝/ift : t ↝ t' -> ift t t1 t2 ↝ ift t' t1 t2.
 `;
 
 lintCorpus('tapl', TAPL);
@@ -74,9 +74,7 @@ for (const name of ['hint-stress.bel']) {
 }
 
 const allBel = fs.readFileSync(path.join(__dir, '..', 'all.bel'), 'utf8');
-lintCorpus('all.bel (no false undefined-name lint)', allBel, {
-  maxParseErrors: Number.POSITIVE_INFINITY,
-});
+lintCorpus('all.bel (no parse or undefined-name lint)', allBel);
 
 const taplDoc = Text.of(TAPL.split('\n'));
 const taplTree = parser.parse(TAPL);

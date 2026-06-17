@@ -46,4 +46,16 @@ expect(topUse, 'constructor reference should resolve');
 expect(topUse.kind === 'global', `constructor reference kind should be global, got ${topUse.kind}`);
 expect(topUse.sourceText === 'o', `constructor reference sourceText mismatch: ${topUse.sourceText}`);
 
+const BLOCK_PROJ = `rec f : [b1:block (x:tm m/q _, nx:neu x) ⊢ tm m/q A[]] → type =
+  fn _ ⇒ [b1:block (x:tm m/q _, nx:neu x) ⊢ b1.1];
+`;
+const blockState = stateOf(BLOCK_PROJ);
+const b11Pos = BLOCK_PROJ.indexOf('b1.1');
+const b11 = resolveHover(blockState, b11Pos + 1);
+expect(b11 && b11.kind === 'local', 'block projection should resolve as local context entry');
+expect(
+  b11 && b11.sourceType === 'tm m/q _',
+  `b1.1 field type should be tm m/q _, got ${b11 && b11.sourceType}`,
+);
+
 console.log('OK hover source-signature fallback');

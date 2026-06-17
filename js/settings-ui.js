@@ -2,17 +2,24 @@
 
 (function (global) {
   var settingsDialogEl = null;
-  var settingsReplBeautifyInput = null;
   var settingsModeDropdown = null;
+  var settingsHoverDropdown = null;
+  var settingsAliasDropdown = null;
 
   function syncFromState() {
-    if (settingsReplBeautifyInput) {
-      settingsReplBeautifyInput.checked =
-        typeof BelJarReplOutput !== 'undefined' ? BelJarReplOutput.getReplBeautify() : true;
-    }
     if (settingsModeDropdown) {
       settingsModeDropdown.setValue(
         typeof BelJarBelugaRun !== 'undefined' ? BelJarBelugaRun.getBelugaMode() : 'stable'
+      );
+    }
+    if (settingsHoverDropdown) {
+      settingsHoverDropdown.setValue(
+        typeof BelJarPersist !== 'undefined' ? BelJarPersist.readStoredHoverScope() : 'all'
+      );
+    }
+    if (settingsAliasDropdown) {
+      settingsAliasDropdown.setValue(
+        typeof BelJarPersist !== 'undefined' ? BelJarPersist.readStoredAliasActivation() : 'strict'
       );
     }
   }
@@ -93,9 +100,11 @@
     function reposition() {
       if (!panel.classList.contains('is-open')) return;
       var rect = trigger.getBoundingClientRect();
+      panel.style.width = rect.width + 'px';
+      panel.style.minWidth = rect.width + 'px';
       var pos = FloatingRectPlacement.computePosition({
         anchor: rect,
-        width: panel.offsetWidth,
+        width: rect.width,
         height: panel.offsetHeight,
         mode: 'menu',
         side: 'bottom',
@@ -115,15 +124,16 @@
 
       panel.style.visibility = 'hidden';
       panel.style.display = 'block';
-      var pw = panel.offsetWidth;
+      var rect = trigger.getBoundingClientRect();
+      panel.style.width = rect.width + 'px';
+      panel.style.minWidth = rect.width + 'px';
       var ph = panel.offsetHeight;
       panel.style.display = '';
       panel.style.visibility = '';
 
-      var rect = trigger.getBoundingClientRect();
       var pos = FloatingRectPlacement.computePosition({
         anchor: rect,
-        width: pw,
+        width: rect.width,
         height: ph,
         mode: 'menu',
         side: 'bottom',
@@ -181,51 +191,13 @@
   function ensureSettingsDialog() {
     if (settingsDialogEl) return settingsDialogEl;
 
-    var replBeautify = typeof BelJarReplOutput !== 'undefined' ? BelJarReplOutput.getReplBeautify() : true;
     var currentMode = typeof BelJarBelugaRun !== 'undefined' ? BelJarBelugaRun.getBelugaMode() : 'stable';
-
-    var stack = document.createElement('div');
-    stack.className = 'bj-dialog__stack';
-
-    var section = document.createElement('div');
-    section.className = 'bj-dialog__section';
-
-    var row = document.createElement('label');
-    row.className = 'bj-dialog__setting';
-
-    var main = document.createElement('div');
-    main.className = 'bj-dialog__setting-main';
-    var labelEl = document.createElement('span');
-    labelEl.className = 'bj-dialog__setting-label';
-    labelEl.textContent = 'Beautified REPL';
-    var desc = document.createElement('span');
-    desc.className = 'bj-dialog__setting-desc';
-    desc.textContent = 'Turn off for plain terminal-style output.';
-    main.appendChild(labelEl);
-    main.appendChild(desc);
-
-    settingsReplBeautifyInput = document.createElement('input');
-    settingsReplBeautifyInput.type = 'checkbox';
-    settingsReplBeautifyInput.className = 'bj-switch-input';
-    settingsReplBeautifyInput.checked = replBeautify;
-    settingsReplBeautifyInput.addEventListener('change', function () {
-      if (typeof BelJarReplOutput !== 'undefined') BelJarReplOutput.setReplBeautify(settingsReplBeautifyInput.checked);
-    });
-
-    var sw = document.createElement('span');
-    sw.className = 'bj-switch';
-    var thumb = document.createElement('span');
-    thumb.className = 'bj-switch__thumb';
-    sw.appendChild(thumb);
-
-    row.appendChild(main);
-    row.appendChild(settingsReplBeautifyInput);
-    row.appendChild(sw);
-    section.appendChild(row);
-    stack.appendChild(section);
-
-    var engineSection = document.createElement('div');
-    engineSection.className = 'bj-dialog__section';
+    var currentHoverScope = typeof BelJarPersist !== 'undefined'
+      ? BelJarPersist.readStoredHoverScope()
+      : 'all';
+    var currentAliasActivation = typeof BelJarPersist !== 'undefined'
+      ? BelJarPersist.readStoredAliasActivation()
+      : 'strict';
 
     function addDropdownRow(parent, labelText, descText, options, currentVal, onChange) {
       var r = document.createElement('div');
@@ -247,8 +219,88 @@
       return dd;
     }
 
+    var shell = document.createElement('div');
+    shell.className = 'bj-settings';
+
+    var nav = document.createElement('nav');
+    nav.className = 'bj-settings__nav';
+    nav.setAttribute('role', 'tablist');
+    nav.setAttribute('aria-label', 'Settings categories');
+
+    var main = document.createElement('div');
+    main.className = 'bj-settings__main';
+
+    var categories = [
+      { id: 'beluga', label: 'Beluga' },
+      { id: 'editor', label: 'Editor' },
+      { id: 'repl', label: 'REPL' },
+      { id: 'keybindings', label: 'Keybindings' },
+      { id: 'aliases', label: 'Aliases' },
+    ];
+
+    var panelBodies = {};
+    var activeCategory = 'beluga';
+
+    function selectCategory(id) {
+      activeCategory = id;
+      nav.querySelectorAll('.bj-settings__nav-item').forEach(function (el) {
+        var on = el.dataset.category === id;
+        el.classList.toggle('is-active', on);
+        el.setAttribute('aria-selected', on ? 'true' : 'false');
+        el.tabIndex = on ? 0 : -1;
+      });
+      main.querySelectorAll('.bj-settings__panel').forEach(function (el) {
+        var on = el.dataset.category === id;
+        el.hidden = !on;
+        el.classList.toggle('is-active', on);
+      });
+    }
+
+    categories.forEach(function (cat) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'bj-settings__nav-item';
+      btn.textContent = cat.label;
+      btn.dataset.category = cat.id;
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', cat.id === activeCategory ? 'true' : 'false');
+      btn.tabIndex = cat.id === activeCategory ? 0 : -1;
+      btn.addEventListener('click', function () { selectCategory(cat.id); });
+      btn.addEventListener('keydown', function (e) {
+        var idx = categories.findIndex(function (c) { return c.id === cat.id; });
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          selectCategory(categories[Math.min(idx + 1, categories.length - 1)].id);
+          nav.querySelector('[data-category="' + activeCategory + '"]').focus();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          selectCategory(categories[Math.max(idx - 1, 0)].id);
+          nav.querySelector('[data-category="' + activeCategory + '"]').focus();
+        }
+      });
+      nav.appendChild(btn);
+
+      var panel = document.createElement('div');
+      panel.className = 'bj-settings__panel';
+      panel.dataset.category = cat.id;
+      panel.setAttribute('role', 'tabpanel');
+      panel.hidden = cat.id !== activeCategory;
+
+      var head = document.createElement('div');
+      head.className = 'bj-settings__panel-head';
+      head.textContent = cat.label;
+      panel.appendChild(head);
+
+      var body = document.createElement('div');
+      body.className = 'bj-settings__panel-body';
+      panel.appendChild(body);
+
+      panelBodies[cat.id] = body;
+      main.appendChild(panel);
+    });
+
     settingsModeDropdown = addDropdownRow(
-      engineSection,
+      panelBodies.beluga,
       'Engine',
       'Stable runs in a worker and never crashes. Fast runs on the main thread and may be quicker for small files.',
       [{ value: 'stable', label: 'Stable' }, { value: 'fast', label: 'Fast' }],
@@ -258,12 +310,62 @@
       }
     );
 
-    stack.appendChild(engineSection);
+    settingsHoverDropdown = addDropdownRow(
+      panelBodies.editor,
+      'Hover tooltips',
+      'Choose which tokens show a tooltip on hover.',
+      [
+        { value: 'all',       label: 'All symbols' },
+        { value: 'user-only', label: 'Identifiers only' },
+      ],
+      currentHoverScope,
+      function (v) {
+        if (typeof BelJarPersist !== 'undefined') BelJarPersist.writeStoredHoverScope(v);
+      }
+    );
+
+    settingsAliasDropdown = addDropdownRow(
+      panelBodies.aliases,
+      'Substitution activation',
+      'Strict expands only when you type an alias character by character without backspace or interruption. Greedy expands whenever an alias sequence appears, including paste, upload, and folder import.',
+      [
+        { value: 'strict', label: 'Strict' },
+        { value: 'greedy', label: 'Greedy' },
+      ],
+      currentAliasActivation,
+      function (v) {
+        if (typeof BelJarPersist !== 'undefined') BelJarPersist.writeStoredAliasActivation(v);
+        if (v !== 'greedy') return;
+        var ed = global.BelJarCurrentEditor;
+        if (ed && typeof ed.getValue === 'function' && typeof BelJarPersist !== 'undefined') {
+          var activeId = BelJarPersist.getActiveFileId();
+          if (activeId) BelJarPersist.setFileText(activeId, ed.getValue());
+        }
+        if (typeof BelJarPersist !== 'undefined') BelJarPersist.expandAliasesInAllFiles();
+        if (!ed || typeof ed.getValue !== 'function' || typeof ed.setValue !== 'function') return;
+        if (typeof BelJarEditor === 'undefined' || typeof BelJarEditor.expandBelAliases !== 'function') return;
+        var cur = ed.getValue();
+        var next = BelJarEditor.expandBelAliases(cur);
+        if (next !== cur) ed.setValue(next);
+      }
+    );
+
+    ['repl', 'keybindings'].forEach(function (id) {
+      var empty = document.createElement('p');
+      empty.className = 'bj-settings__empty';
+      empty.textContent = 'No settings in this category yet.';
+      panelBodies[id].appendChild(empty);
+    });
+
+    selectCategory(activeCategory);
+
+    shell.appendChild(nav);
+    shell.appendChild(main);
 
     if (typeof BelJarDialog === 'undefined') return null;
     settingsDialogEl = BelJarDialog.createDialog({
       title: 'Settings',
-      content: stack,
+      content: shell,
       cardClass: 'bj-dialog__card--settings',
       removeOnClose: false,
     });

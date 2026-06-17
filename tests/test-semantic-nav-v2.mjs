@@ -1,6 +1,6 @@
 // Semantic Engine V2 — navigation substrate (navAt / occurrencesAt).
 // Pins the one-call shape the IDE UI layer (go-to-def, find-refs, rename,
-// reveal-binder, insert-signature) reads, so the engine contract those
+// reveal-binder) reads, so the engine contract those
 // features depend on can't silently drift.
 import { Text } from '@codemirror/state';
 import { parser } from '../editor-src/beluga-parser.js';
@@ -62,6 +62,6 @@ expect(navNone === null || typeof navNone === 'object',
   'navAt returns null or a record at a non-identifier position');
 
 // --- signature surfaced for find/insert: ⊃ has a source signature ---
-expect(navDef.signature && navDef.signature.type, 'navAt surfaces a signature for insert-signature');
+expect(navDef.signature && navDef.signature.type, 'navAt surfaces a signature on global defs');
 
 console.log('OK semantic nav v2 (navAt shape, onDefinition, occurrencesAt, signature surfacing)');

@@ -1,10 +1,10 @@
 // Dependency graph view (local neighborhood + global file scope).
 
-import { getEngine } from './bel-ide-actions.mjs';
+import { getEngine, jumpToRange } from './bel-ide-actions.mjs';
 import { computeParseCoverage, formatGlobalGraphStaleBanner } from './bel-ide-status.mjs';
 import { createForceSim } from './graph/force-sim.mjs';
 import { createGraph3D } from './graph/webgl-graph.mjs';
-import { createFlatGraph } from './graph/flat-graph.mjs';
+import { createFlatGraph, renderFlatMini } from './graph/flat-graph.mjs';
 import { loadGraphPrefs, saveGraphPrefs, onGraphPrefsChange } from './graph/graph-prefs.mjs';
 import {
   buildNavEntry, createNavState, navPush, navBack, navForward, navGoTo,
@@ -14,13 +14,24 @@ import {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let markerSeq = 0;
 
+// The graph snapshot's 'dirty' is a transition log frozen at the last engine
+// update — decls that first appeared in the FINAL parse-milestone update stay
+// 'dirty' there forever on an idle file. The scheduler queue is the live truth:
+// only show churn while it actually has (re)elaboration work for the decl.
+function uiStatus(engine, id, status) {
+  if (status !== 'dirty') return status;
+  const sched = engine.scheduler;
+  if (sched && typeof sched.isPending === 'function' && !sched.isPending(id)) return 'stale-known';
+  return status;
+}
+
 function nodeMeta(engine, id, fallbackName) {
   const snap = engine.getSnapshot && engine.getSnapshot();
   const gnode = snap && snap.graph && snap.graph.nodeMap.get(id);
   if (!gnode) return { id, name: fallbackName || null, namespace: null, label: null, status: 'unknown' };
   return {
     id, name: gnode.name, namespace: gnode.namespace, label: gnode.label,
-    status: gnode.status, nameRange: gnode.nameRange,
+    status: uiStatus(engine, id, gnode.status), nameRange: gnode.nameRange,
   };
 }
 
@@ -89,7 +100,7 @@ export function buildGlobalModel(engine) {
     root: null,
     nodes: (g.nodes || []).map((n) => ({
       id: n.id, name: n.name, namespace: n.namespace, label: n.label,
-      status: n.status, role: 'node', depth: 0, dir: 0,
+      status: uiStatus(engine, n.id, n.status), role: 'node', depth: 0, dir: 0,
     })),
     edges: (g.edges || []).map((e) => ({ from: e.from, to: e.to, kind: e.kind })),
   });
@@ -176,7 +187,9 @@ function svgEl(tag, attrs) {
 
 function statusClass(status) {
   if (status === 'syntax-fault' || status === 'erroring' || status === 'blocked') return 'error';
-  if (status === 'dirty' || status === 'checking' || status === 'stale-known') return 'recalculating';
+  // NOT 'stale-known': that is the healthy steady state (type known from a safe
+  // earlier elaboration) — painting it as churn turns a settled graph amber.
+  if (status === 'dirty' || status === 'checking') return 'recalculating';
   return 'settled';
 }
 
@@ -287,9 +300,7 @@ function jumpToNode(view, engine, node) {
   const range = node.nameRange
     || (typeof engine.symbolRangeById === 'function' ? engine.symbolRangeById(node.id) : null);
   if (!range) return;
-  view.dispatch({ selection: { anchor: range.from, head: range.from }, scrollIntoView: true });
-  view.focus();
-  import('./bel-ide-actions.mjs').then((m) => m.goToDefinition(view, range.from)).catch(() => {});
+  jumpToRange(view, range);
 }
 
 const openGraphWindows = new Map();
@@ -755,6 +766,7 @@ const ICONS = {
   global: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
   minus: '<path d="M5 12h14"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
 };
 
 function iconSvg(name) {
@@ -763,10 +775,14 @@ function iconSvg(name) {
 }
 
 function setTip(el, text) {
-  el.setAttribute('data-tooltip', text);
-  el.setAttribute('aria-label', text);
   const g = typeof window !== 'undefined' ? window : self;
-  if (g.Tooltips && typeof g.Tooltips.bind === 'function') g.Tooltips.bind(el);
+  if (g.Tooltips?.set) g.Tooltips.set(el, text);
+  else if (text) {
+    el.removeAttribute('title');
+    el.setAttribute('data-tooltip', text);
+    el.setAttribute('aria-label', text);
+    g.Tooltips?.bind?.(el);
+  }
 }
 
 function iconButton(name, title) {
@@ -862,6 +878,54 @@ function buildGraphToolbar({ sidebar } = {}) {
     scopeBtn.disabled = scopeMode === 'explore' && !on;
   }
 
+  function nodeFromAcItem(item) {
+    if (!item) return null;
+    const id = item.dataset.id;
+    if (id) {
+      const byId = nodes.find((n) => String(n.id) === id);
+      if (byId) return byId;
+    }
+    const name = item.dataset.name;
+    return name ? nodes.find((n) => n.name === name) || null : null;
+  }
+
+  function resolveSearchNode(nodeOrName) {
+    if (nodeOrName && typeof nodeOrName === 'object') return nodeOrName;
+    const name = (nodeOrName || '').trim();
+    return name ? nodes.find((n) => n.name === name) || null : null;
+  }
+
+  function clearSearch() {
+    search.value = '';
+    lastFilter = '';
+    acList.hidden = true;
+    acPick = -1;
+    sidebar?.render(nodes, lastFilter, nodeHandlers);
+    el.classList.remove('is-search-expanded');
+    search.blur();
+  }
+
+  function jumpToSearch(nodeOrName) {
+    if (nodeOrName && typeof nodeOrName === 'object') {
+      const ctrl = ctrlRef();
+      if (!ctrl) return false;
+      const idx = ctrl.indexOfId?.(nodeOrName.id) ?? -1;
+      if (idx < 0) return false;
+      ctrl.flyToIndex(idx, { animate: true });
+      return true;
+    }
+    const name = (nodeOrName || '').trim();
+    if (!name) return false;
+    const exact = resolveSearchNode(name);
+    if (exact) return jumpToSearch(exact);
+    return !!ctrlRef()?.focusByName?.(name);
+  }
+
+  function pickSearch(nodeOrName) {
+    if (!jumpToSearch(nodeOrName)) return;
+    clearSearch();
+  }
+
   function renderAc(query) {
     const hits = fuzzySearchNodes(nodes, query);
     acList.textContent = '';
@@ -872,17 +936,13 @@ function buildGraphToolbar({ sidebar } = {}) {
       row.type = 'button';
       row.className = 'bel-graph3d-ac-item';
       row.dataset.name = n.name || '';
+      if (n.id != null) row.dataset.id = String(n.id);
       row.textContent = n.name || '?';
-      row.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSearch(n.name); });
+      row.addEventListener('mousedown', (ev) => ev.preventDefault());
+      row.addEventListener('click', (ev) => { ev.preventDefault(); pickSearch(n); });
       if (i === acPick) row.classList.add('is-active');
       acList.appendChild(row);
     });
-  }
-
-  function pickSearch(name) {
-    acList.hidden = true;
-    search.value = name;
-    ctrlRef()?.focusByName(name);
   }
 
   return {
@@ -917,11 +977,28 @@ function buildGraphToolbar({ sidebar } = {}) {
         if (ev.key === 'ArrowDown' && items.length) { ev.preventDefault(); acPick = Math.min(items.length - 1, acPick + 1); renderAc(search.value); }
         else if (ev.key === 'ArrowUp' && items.length) { ev.preventDefault(); acPick = Math.max(0, acPick - 1); renderAc(search.value); }
         else if (ev.key === 'Enter') {
-          if (acPick >= 0 && items[acPick]) pickSearch(items[acPick].dataset.name);
-          else if (search.value.trim()) { ctrlRef()?.focusByName(search.value.trim()); acList.hidden = true; }
+          if (acPick >= 0 && items[acPick]) pickSearch(nodeFromAcItem(items[acPick]));
+          else pickSearch(search.value);
         } else if (ev.key === 'Escape') { acList.hidden = true; search.blur(); }
       });
-      search.addEventListener('blur', () => { setTimeout(() => { acList.hidden = true; }, 120); });
+      const scrollAc = (ev) => {
+        if (acList.hidden) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        acList.scrollTop += ev.deltaY;
+      };
+      // Keep focus in the search field when clicking items or the list scrollbar.
+      acList.addEventListener('mousedown', (ev) => { ev.preventDefault(); });
+      acList.addEventListener('wheel', scrollAc, { passive: false });
+      searchWrap.addEventListener('wheel', scrollAc, { passive: false });
+      search.addEventListener('focus', () => el.classList.add('is-search-expanded'));
+      search.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (searchWrap.contains(document.activeElement)) return;
+          el.classList.remove('is-search-expanded');
+          acList.hidden = true;
+        }, 120);
+      });
 
       scopeBtn.addEventListener('click', () => {
         if (scopeMode === 'explore') {
@@ -1004,6 +1081,104 @@ function buildGraphSidebar({ onLayoutChange } = {}) {
   };
 }
 
+// Initial camera after a (re)mount: keep the selected node in view when one is
+// pinned; only fit-all when global view has no selection.
+function globalFocusLeavingLocal(cur, ctx) {
+  if (cur?.mode === 'neighborhood') return cur.rootId ?? ctx.selectedNodeId ?? null;
+  return ctx.selectedNodeId ?? null;
+}
+
+function syncNavEntryFromView(win, ctx) {
+  const cur = navCurrent(win._graphNav);
+  const ctrl = win._graph3d;
+  if (!cur || !ctrl?.getCameraState) return;
+  const snap = { ...cur, camera: ctrl.getCameraState() };
+  if (cur.mode === 'global') snap.focusId = ctx.selectedNodeId ?? cur.focusId ?? null;
+  win._graphNav.stack[win._graphNav.index] = snap;
+}
+
+function snapshotGlobalNavCamera(win, ctx, ctrl) {
+  const cur = navCurrent(win._graphNav);
+  if (!cur || cur.mode !== 'global' || cur.focusId == null || !ctrl?.getCameraState) return;
+  win._graphNav.stack[win._graphNav.index] = {
+    ...cur,
+    focusId: cur.focusId,
+    camera: ctrl.getCameraState(),
+  };
+}
+
+function recordGlobalFocusNav(win, ctx, prevFocusId, nextFocusId) {
+  if (ctx._navRestoring) return;
+  const cur = navCurrent(win._graphNav);
+  if (cur?.mode !== 'global') return;
+  const prev = prevFocusId ?? null;
+  const next = nextFocusId ?? null;
+  if (prev === next) return;
+
+  const ctrl = win._graph3d;
+  const leaving = {
+    ...cur,
+    focusId: prev,
+    camera: ctrl?.getCameraState?.() ?? cur.camera,
+  };
+  win._graphNav.stack[win._graphNav.index] = leaving;
+  win._graphNav = navPush(win._graphNav, buildNavEntry({ mode: 'global', focusId: next }));
+  ctx.propBar?.updateNav?.(win._graphNav);
+}
+
+function applyGlobalNavEntry(win, ctx, entry, { animate = false } = {}) {
+  ctx._navRestoring = true;
+  try {
+    ctx.selectedNodeId = entry.focusId ?? null;
+    const ctrl = win._graph3d;
+    if (!ctrl) return;
+    const cam = cameraForLayout(entry.camera, win._graphAppliedLayout ?? loadGraphPrefs().layout);
+    if (cam) {
+      ctrl.restoreCameraState(cam, { animate });
+    } else if (entry.focusId != null) {
+      const idx = ctrl.indexOfId(entry.focusId);
+      if (idx >= 0) ctrl.flyToIndex(idx, { animate, spotlight: true, tight: true });
+      else ctrl.setFocus(-1);
+    } else {
+      ctrl.setFocus(-1);
+    }
+    const fidx = entry.focusId != null ? ctrl.indexOfId(entry.focusId) : -1;
+    if (fidx >= 0) ctx.propBar?.showFocus?.(ctrl.getNodes()[fidx], fidx, ctrl);
+    else reflectPropBarIdle(ctx.propBar, ctx);
+    ctx.toolbar?.syncFocus?.(fidx >= 0 ? ctrl.getNodes()[fidx] : null, fidx);
+    ctx.propBar?.updateNav?.(win._graphNav);
+    ctx.toolbar?.syncNavMode?.(win._graphNav);
+  } finally {
+    ctx._navRestoring = false;
+  }
+}
+
+function applyNavFromStack(view, engine, win, ctx) {
+  const entry = navCurrent(win._graphNav);
+  if (!entry) return;
+  if (entry.mode === 'global' && ctx.mode === 'global' && win._graph3d) {
+    applyGlobalNavEntry(win, ctx, entry, { animate: true });
+    return;
+  }
+  navigateGraph(view, engine, win, ctx, entry, { push: false });
+}
+
+function frameInitialView(ctrl, ctx, model, mode) {
+  const id = ctx.selectedNodeId;
+  if (id != null) {
+    const idx = ctrl.indexOfId(id);
+    if (idx >= 0) {
+      ctrl.flyToIndex(idx, { animate: false, spotlight: true, tight: true });
+      return;
+    }
+  }
+  if (mode === 'neighborhood' && model.root) {
+    ctrl.frameNode(model.root, { animate: false });
+    return;
+  }
+  ctrl.frameAll({ animate: false });
+}
+
 function mountGraph3DRenderer(view, engine, ctx) {
   const { win, canvas, labels, toolbar, model, mode, propBar, restoreCamera } = ctx;
   const prefs = loadGraphPrefs();
@@ -1015,6 +1190,12 @@ function mountGraph3DRenderer(view, engine, ctx) {
   const fly = (node, idx) => win._graph3d?.flyToIndex(idx, { animate: true });
   // win._graph3d isn't assigned until mount returns, so focus callbacks that fire
   // before then read the controller back through ctx._mountingCtrl.
+  const onBeforeFocusChange = (prevIdx, nextIdx) => {
+    if (ctx._navRestoring || mode !== 'global') return;
+    const prevId = prevIdx >= 0 ? model.nodes[prevIdx]?.id : null;
+    const nextId = nextIdx >= 0 ? model.nodes[nextIdx]?.id : null;
+    recordGlobalFocusNav(win, ctx, prevId, nextId);
+  };
   const onFocus = (node, idx) => {
     ctx.selectedNodeId = node?.id ?? null;
     if (node) propBar?.showFocus?.(node, idx, win._graph3d || ctx._mountingCtrl);
@@ -1032,9 +1213,11 @@ function mountGraph3DRenderer(view, engine, ctx) {
     labels.style.display = 'none';
     ctrl = createFlatGraph(stage, model, null, {
       implVisibility: prefs.impl,
+      skipInitialFrame: true,
       onJump: (node) => jumpToNode(view, engine, node),
       onDrill: mode === 'neighborhood' ? drill : null,
       onFly: fly,
+      onBeforeFocusChange,
       onFocus,
     });
   } else {
@@ -1051,6 +1234,7 @@ function mountGraph3DRenderer(view, engine, ctx) {
       onJump: (node) => jumpToNode(view, engine, node),
       onDrill: mode === 'neighborhood' ? drill : null,
       onFly: fly,
+      onBeforeFocusChange,
       onFocus,
     });
   }
@@ -1058,24 +1242,32 @@ function mountGraph3DRenderer(view, engine, ctx) {
   if (!ctrl) return null;
 
   win._graphAppliedLayout = prefs.layout;
-  if (!ctrl.isFlat) {
-    ctrl.frameAll();
-    if (model.root) ctrl.frameNode(model.root);
-  } else if (model.root) {
-    ctrl.frameNode(model.root);
-  }
   ctrl.setImplVisibility(prefs.impl);
-  if (restoreCamera) {
-    const cam = cameraForLayout(navCurrent(win._graphNav)?.camera, prefs.layout);
-    if (cam) ctrl.restoreCameraState(cam, { animate: false });
-  }
 
   toolbar.syncNodes?.(ctrl.getNodes(), {
     onPick: (node) => { const idx = ctrl.indexOfId(node.id); if (idx >= 0) ctrl.flyToIndex(idx, { animate: true }); },
     onJump: (node) => jumpToNode(view, engine, node),
   });
 
-  reflectPropSelection(propBar, ctx, ctrl);
+  requestAnimationFrame(() => {
+    if (!ctrl) {
+      ctx._navRestoring = false;
+      return;
+    }
+    if (restoreCamera) {
+      const cam = cameraForLayout(navCurrent(win._graphNav)?.camera, prefs.layout);
+      if (cam) {
+        ctrl.restoreCameraState(cam, { animate: !!ctx.restoreAnimate });
+        reflectPropSelection(propBar, ctx, ctrl);
+        ctx._navRestoring = false;
+        return;
+      }
+    }
+    frameInitialView(ctrl, ctx, model, mode);
+    reflectPropSelection(propBar, ctx, ctrl);
+    if (mode === 'global' && !restoreCamera) snapshotGlobalNavCamera(win, ctx, ctrl);
+    ctx._navRestoring = false;
+  });
 
   if (typeof ResizeObserver === 'function') {
     const ro = new ResizeObserver(() => ctrl.resize());
@@ -1101,7 +1293,8 @@ function drillGraph(view, engine, win, ctx, newRootId) {
 function navigateToGlobalGraph(view, engine, win, ctx) {
   const cur = navCurrent(win._graphNav);
   if (cur?.mode === 'global') return;
-  navigateGraph(view, engine, win, ctx, buildNavEntry({ mode: 'global' }), { push: true });
+  const focusId = globalFocusLeavingLocal(cur, ctx);
+  navigateGraph(view, engine, win, ctx, buildNavEntry({ mode: 'global', focusId }), { push: true });
 }
 
 function navigateGraph(view, engine, win, ctx, entry, { push = true, restoreIndex = null } = {}) {
@@ -1111,13 +1304,20 @@ function navigateGraph(view, engine, win, ctx, entry, { push = true, restoreInde
     if (win._graph3d) {
       const cur = navCurrent(win._graphNav);
       if (cur) {
-        cur.camera = win._graph3d.getCameraState();
-        win._graphNav.stack[win._graphNav.index] = { ...cur };
+        const leaving = { ...cur, camera: win._graph3d.getCameraState() };
+        if (cur.mode === 'global') leaving.focusId = ctx.selectedNodeId ?? cur.focusId ?? null;
+        win._graphNav.stack[win._graphNav.index] = leaving;
       }
     }
-    win._graphNav = navPush(win._graphNav, entry.mode === 'neighborhood'
-      ? { ...entry, depth: loadGraphPrefs().depth }
-      : entry);
+    const from = navCurrent(win._graphNav);
+    let globalFocus = entry.focusId ?? null;
+    if (entry.mode === 'global' && globalFocus == null && from?.mode === 'neighborhood') {
+      globalFocus = from.rootId ?? ctx.selectedNodeId ?? null;
+    }
+    const pushed = entry.mode === 'neighborhood'
+      ? buildNavEntry({ mode: 'neighborhood', rootId: entry.rootId, depth: loadGraphPrefs().depth })
+      : buildNavEntry({ mode: 'global', focusId: globalFocus });
+    win._graphNav = navPush(win._graphNav, pushed);
   } else if (restoreIndex != null) {
     win._graphNav = navGoTo(win._graphNav, restoreIndex);
   }
@@ -1130,6 +1330,9 @@ function navigateGraph(view, engine, win, ctx, entry, { push = true, restoreInde
   if (current.mode === 'neighborhood') {
     current.depth = prefs.depth;
     win._graphNav.stack[win._graphNav.index] = { ...current };
+    ctx.selectedNodeId = current.rootId;
+  } else {
+    ctx.selectedNodeId = current.focusId ?? null;
   }
 
   const model = current.mode === 'global'
@@ -1148,27 +1351,27 @@ function navigateGraph(view, engine, win, ctx, entry, { push = true, restoreInde
   ctx.mode = current.mode === 'global' ? 'global' : 'neighborhood';
   ctx.graphKey = win._graphKey;
   ctx.restoreCamera = !push;
+  ctx.restoreAnimate = !push;
+  ctx._navRestoring = true;
 
   const ctrl = mountGraph3DRenderer(view, engine, ctx);
-  if (ctrl) {
-    win._graph3d = ctrl;
-    const cam = cameraForLayout(current.camera, prefs.layout);
-    if (!push && cam) ctrl.restoreCameraState(cam, { animate: true });
-  }
+  if (ctrl) win._graph3d = ctrl;
   ctx.propBar?.updateNav?.(win._graphNav);
   ctx.toolbar?.syncNavMode?.(win._graphNav);
 }
 
 function navBackGraph(view, engine, win, ctx) {
   if (!navCanBack(win._graphNav)) return;
+  syncNavEntryFromView(win, ctx);
   win._graphNav = navBack(win._graphNav);
-  navigateGraph(view, engine, win, ctx, navCurrent(win._graphNav), { push: false });
+  applyNavFromStack(view, engine, win, ctx);
 }
 
 function navForwardGraph(view, engine, win, ctx) {
   if (!navCanForward(win._graphNav)) return;
+  syncNavEntryFromView(win, ctx);
   win._graphNav = navForward(win._graphNav);
-  navigateGraph(view, engine, win, ctx, navCurrent(win._graphNav), { push: false });
+  applyNavFromStack(view, engine, win, ctx);
 }
 
 function open3DGraph(view, engine, key, model, titleNode, { width, height, mode, staleBanner = null, rootId = null }) {
@@ -1353,10 +1556,11 @@ export function renderMiniGraph(container, view, pos) {
   if (!rootId) { container.textContent = ''; return false; }
   const model = buildNeighborhood(engine, rootId, { depth: 1 });
   if (!model || model.nodes.length <= 1) { container.textContent = ''; return false; }
-  renderGraph(container, layoutGraph(model, { mode: 'neighborhood' }), {
-    interactive: false, fit: true, onJump: (node) => jumpToNode(view, engine, node),
+  // Same Sugiyama flat diagram as the dependency-graph window, miniaturised —
+  // one visual language everywhere (the old curved-edge layered render is gone).
+  return renderFlatMini(container, model, {
+    onJump: (node) => jumpToNode(view, engine, node),
   });
-  return true;
 }
 
 export { nameForId as _nameForId, viewMetaFor };

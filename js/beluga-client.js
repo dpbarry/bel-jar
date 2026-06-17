@@ -461,7 +461,8 @@
     }
 
     if (!activeLoad) return;
-    activeLoad.stale = activeLoad.requestFingerprint !== editorFingerprint;
+    activeLoad.stale = !activeLoad.pinned
+      && activeLoad.requestFingerprint !== editorFingerprint;
     if (!activeLoad.stale) return;
 
     if (Date.now() - activeLoad.startedAt >= LONG_LOAD_THRESHOLD_MS) {
@@ -476,13 +477,27 @@
     return { ok: !!(result && result.ok), output: resultText(result) || '' };
   }
 
+  function syncCheckerFingerprintFromCheck(code, result, slot) {
+    if (!result || !result.ok) return;
+    var fp = fingerprintCode(code);
+    if (cfg.thread === 'worker' && slot) {
+      slot.committedFingerprint = fp;
+    } else if (cfg.thread !== 'worker') {
+      mainCheckerFingerprint = fp;
+    }
+  }
+
   function dispatchCheckResult(code, hooks) {
     var requestCode = String(code != null ? code : '');
     if (cfg.thread === 'worker') {
       clearCheckerIdleTimer();
       return ensureCheckerReady(cfg.build)
         .then(function (slot) {
-          return postWorker(slot, 'check', requestCode, hooks, null);
+          return postWorker(slot, 'check', requestCode, hooks, null)
+            .then(function (result) {
+              syncCheckerFingerprintFromCheck(requestCode, result, slot);
+              return result;
+            });
         })
         .then(function (result) {
           scheduleCheckerIdleShutdown();
@@ -505,15 +520,22 @@
         if (cfg.build === 'fast' && isOverflowValue(result)) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
-          return run('stable').then(checkResultOf);
+          return run('stable').then(function (fallback) {
+            syncCheckerFingerprintFromCheck(requestCode, fallback, null);
+            return checkResultOf(fallback);
+          });
         }
+        syncCheckerFingerprintFromCheck(requestCode, result, null);
         return checkResultOf(result);
       })
       .catch(function (err) {
         if (cfg.build === 'fast' && isOverflowError(err)) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
-          return run('stable').then(checkResultOf);
+          return run('stable').then(function (fallback) {
+            syncCheckerFingerprintFromCheck(requestCode, fallback, null);
+            return checkResultOf(fallback);
+          });
         }
         throw err;
       });
@@ -710,10 +732,15 @@
     if (cfg.thread === 'worker') {
       if (activeLoad) return Promise.reject(new Error('Beluga load already in progress'));
 
+      // A "pinned" load intentionally differs from the editor buffer (project
+      // run: prelude/whole-project concatenation) — it must NOT be treated as
+      // stale just because its code isn't byte-identical to the buffer.
+      var pinned = !!(hooks && hooks.pinned);
       var loadInfo = {
         requestFingerprint: requestFingerprint,
         startedAt: Date.now(),
-        stale: requestFingerprint !== editorFingerprint && currentEditorCode !== '',
+        pinned: pinned,
+        stale: !pinned && requestFingerprint !== editorFingerprint && currentEditorCode !== '',
         longTimer: null,
       };
       activeLoad = loadInfo;

@@ -1,3 +1,4 @@
+import { mergeDiagnostics } from '../bel-query-diag.mjs';
 import { EDGE_KIND, NAMESPACE, STATUS } from './ids.mjs';
 
 function edgeId(from, to, kind) {
@@ -83,7 +84,9 @@ function computeDirty(nodeMap, edgeMap, previous, changes) {
 export function createSemanticGraph() {
   let snapshot = null;
 
-  function update(symbolSnapshot, syntaxSnapshot, previous = snapshot) {
+  function update(symbolSnapshot, syntaxSnapshot, options = {}) {
+    const previous = options.previous !== undefined ? options.previous : snapshot;
+    const belugaDiagnostics = options.belugaDiagnostics || [];
     const nodeMap = new Map();
     const edgeMap = new Map();
     const syntaxDiagnostics = syntaxSnapshot.syntaxDiagnostics || [];
@@ -98,11 +101,19 @@ export function createSemanticGraph() {
 
     const meta = new Map();
     for (const symbol of symbolSnapshot.globalSymbols) {
-      const diags = syntaxDiagnostics.filter((diag) => rangesOverlap(symbol.range, diag));
+      const syntaxDiags = syntaxDiagnostics.filter((diag) => rangesOverlap(symbol.range, diag));
+      const belugaDiags = belugaDiagnostics.filter((diag) => rangesOverlap(symbol.range, diag));
+      const diags = mergeDiagnostics(syntaxDiags, belugaDiags);
       const blockedRefs = unresolvedByOwner.get(symbol.id) || [];
       const old = previous && previous.nodeMap.get(symbol.id);
-      const safeOld = old && old.status !== STATUS.SYNTAX_FAULT ? old : null;
-      meta.set(symbol.id, { diags, blockedRefs, safeOld });
+      const safeOld = old
+        && old.status !== STATUS.SYNTAX_FAULT
+        && old.status !== STATUS.ERRORING
+        ? old
+        : null;
+      meta.set(symbol.id, {
+        diags, syntaxDiags, belugaDiags, blockedRefs, safeOld,
+      });
       nodeMap.set(symbol.id, {
         id: symbol.id,
         symbolId: symbol.id,
@@ -147,14 +158,17 @@ export function createSemanticGraph() {
     const changes = classifyChanges(nodeMap, previous);
     const { dirty, removed } = computeDirty(nodeMap, edgeMap, previous, changes);
     for (const [id, node] of nodeMap) {
-      const { diags, blockedRefs, safeOld } = meta.get(id);
-      node.status = diags.length
+      const { diags, syntaxDiags, belugaDiags, blockedRefs, safeOld } = meta.get(id);
+      node.diagnostics = diags;
+      node.status = syntaxDiags.length
         ? STATUS.SYNTAX_FAULT
-        : blockedRefs.length
-          ? STATUS.BLOCKED
-          : dirty.has(id)
-            ? STATUS.DIRTY
-            : (safeOld ? STATUS.STALE_KNOWN : STATUS.UNKNOWN);
+        : belugaDiags.length
+          ? STATUS.ERRORING
+          : blockedRefs.length
+            ? STATUS.BLOCKED
+            : dirty.has(id)
+              ? STATUS.DIRTY
+              : (safeOld ? STATUS.STALE_KNOWN : STATUS.UNKNOWN);
     }
 
     snapshot = {

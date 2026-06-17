@@ -1,4 +1,7 @@
-import { resolveHoverDoc } from '../bel-resolve.mjs';
+import { mergeDiagnostics } from '../bel-query-diag.mjs';
+import { checkerSnapshotFromSyntax } from '../checker-snapshot.mjs';
+import { hasTypeProjection, projectHoverType, resolveHoverDoc } from '../bel-resolve.mjs';
+import { createCheckerStore } from './checker-store.mjs';
 import { createHoverTrace, hoverTraceEnabled } from './hover-trace.mjs';
 import { createMetavarStore } from './metavar-store.mjs';
 import { DEFAULT_DOCUMENT_ID, normalizeDocumentId, STATUS } from './ids.mjs';
@@ -7,6 +10,7 @@ import { createSymbolStore } from './symbol-store.mjs';
 import { createSyntaxStore } from './syntax-store.mjs';
 import { createSemanticSession } from './semantic-session.mjs';
 import { createSemanticScheduler } from './semantic-scheduler.mjs';
+import { belugaDiagnosticsFromOutput, createSettlement } from './settlement.mjs';
 
 export function createSemanticEngine(options = {}) {
   const documentId = normalizeDocumentId(options.documentId || DEFAULT_DOCUMENT_ID);
@@ -14,8 +18,14 @@ export function createSemanticEngine(options = {}) {
   const symbolStore = createSymbolStore();
   const semanticGraph = createSemanticGraph();
   const metavarStore = createMetavarStore();
-  const session = options.session || (options.belugaClient ? createSemanticSession(options.belugaClient) : null);
+  const belugaClient = options.belugaClient || null;
+  const session = options.session || (belugaClient ? createSemanticSession(belugaClient) : null);
   const onTypeObserved = typeof options.onTypeObserved === 'function' ? options.onTypeObserved : null;
+  const onSettlement = typeof options.onSettlement === 'function' ? options.onSettlement : null;
+  const onSettlementChecking = typeof options.onSettlementChecking === 'function'
+    ? options.onSettlementChecking
+    : null;
+  const checkerStore = createCheckerStore();
   let snapshot = null;
   let hydratedTypes = new Map();
   let hydratedMetavars = new Map();
@@ -24,6 +34,70 @@ export function createSemanticEngine(options = {}) {
   let derivationStore = new Map();
   const elaborationInflight = new Map();
   
+  function applySettlementToGraph() {
+    const syntax = syntaxStore.getSnapshot();
+    const symbols = symbolStore.getSnapshot();
+    if (!syntax || !symbols) return null;
+    const checker = checkerStore.getSnapshot();
+    const graph = semanticGraph.update(symbols, syntax, {
+      belugaDiagnostics: checker.belugaDiagnostics,
+      previous: semanticGraph.getSnapshot(),
+    });
+    metavarStore.reconcile(graph.dirty, graph.removed);
+    if (snapshot) {
+      snapshot = {
+        ...snapshot,
+        graph,
+        checker,
+        summary: {
+          ...snapshot.summary,
+          belugaDiagnostics: checker.belugaDiagnostics.length,
+          dirty: graph.dirty.size,
+        },
+      };
+    }
+    return graph;
+  }
+
+  function onSettlementComplete(checkerSnap) {
+    applySettlementToGraph();
+    const syntax = syntaxStore.getSnapshot();
+    if (session && typeof session.markLoaded === 'function') {
+      if (checkerSnap.checkedFp) {
+        // Multi-pass settlement: the checker slot holds the maximal-healthy
+        // masked code (erroring blocks blanked), not the canonical snapshot.
+        session.markLoaded(checkerSnap.checkedFp, checkerSnap.checkedCode);
+      } else if (checkerSnap.checkerFp) {
+        session.markLoaded(checkerSnap.checkerFp, checkerCodeFromSyntax(syntax));
+      }
+    }
+    const sched = getScheduler();
+    if (sched && typeof sched.seedFromFrontier === 'function') {
+      sched.seedFromFrontier();
+    }
+    if (onSettlement) onSettlement(checkerSnap);
+  }
+
+  // Mid-settlement: diagnostics from completed passes land in the graph and
+  // the lint UI immediately; the session/scheduler side waits for completion.
+  function onSettlementProgress(checkerSnap) {
+    applySettlementToGraph();
+    if (onSettlement) onSettlement(checkerSnap);
+  }
+
+  const getCheckContext = typeof options.getCheckContext === 'function'
+    ? options.getCheckContext
+    : null;
+
+  const settlement = belugaClient ? createSettlement({
+    belugaClient,
+    checkerStore,
+    getCheckContext,
+    onComplete: onSettlementComplete,
+    onChecking: onSettlementChecking,
+    onProgress: onSettlementProgress,
+  }) : null;
+
   let scheduler = null;
   function getScheduler() {
     if (!scheduler && session) {
@@ -35,6 +109,11 @@ export function createSemanticEngine(options = {}) {
         dirtyFrontier,
         deriveFrontier,
         getCheckerCode: () => checkerCodeFromSyntax(syntaxStore.getSnapshot()),
+        isSettlementReady: () => {
+          const syntax = syntaxStore.getSnapshot();
+          if (!syntax || !settlement) return true;
+          return settlement.isSettledFor(syntax.version);
+        },
       };
       scheduler = createSemanticScheduler(engine, session);
     }
@@ -103,6 +182,18 @@ export function createSemanticEngine(options = {}) {
   // type (so the UI should show "recalculating" then await), and definitive=true
   // means we can prove there is no type to show (e.g. an unannotated fn param) —
   // the UI should settle with no type, not spin.
+  function projectTypeAt(pos, type) {
+    if (type == null) return null;
+    const syntax = syntaxStore.getSnapshot();
+    if (!syntax) return type;
+    return projectHoverType(type, syntax.tree, syntax.doc, pos);
+  }
+
+  function syncTypeResult(pos, partial) {
+    if (!partial || partial.type == null) return partial;
+    return { ...partial, type: projectTypeAt(pos, partial.type) };
+  }
+
   function syncResolveType(pos, resolvedIn, queryIn, refIn) {
     const syntax = syntaxStore.getSnapshot();
     const symbols = symbolStore.getSnapshot();
@@ -113,26 +204,67 @@ export function createSemanticEngine(options = {}) {
     const query = queryIn !== undefined ? queryIn : symbolStore.queryAt(pos);
     const ref = refIn !== undefined ? refIn : symbolStore.referenceAt(pos);
     const kind = classifyHover(resolved, ref, query);
+    const projecting = hasTypeProjection(syntax.tree, syntax.doc, pos);
+
+    // 0. Provably no displayable type (e.g. a substitution variable: the checker
+    //    annotation oracle records only LF/computation/kind types). Settle now,
+    //    head-only, rather than spinning on an elaboration that cannot succeed.
+    if (resolved && resolved.typeUnavailable) {
+      return { type: null, source: null, status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+    }
 
     // 1. A resolved source type. For a known symbol prefer its best cached decl
     //    type (reconstructed > hydrated > annotation) over the raw source text,
     //    so a derived/persisted type wins. Fall back to the literal sourceType
-    //    (e.g. a local/implicit binder with no symbol entry).
+    //    (e.g. a local/implicit binder with no symbol entry). A block projection
+    //    (b1.1) already has the field type in sourceType — never let a cached
+    //    whole-block schema from the checker override it.
     if (resolved && resolved.sourceType) {
+      if (projecting) {
+        return syncTypeResult(pos, {
+          type: resolved.sourceType,
+          source: 'local',
+          status: STATUS.UNKNOWN,
+          kind,
+          needsAsync: false,
+          definitive: true,
+        });
+      }
       const best = query && query.symbol ? bestDeclType(query.symbol) : null;
       if (best && best.type != null) {
         const source = best.source === 'reconstructed' ? 'reconstructed'
           : best.source === 'hydrated' ? 'stale-cache'
           : 'local';
-        return { type: best.type, source, status: best.status, kind, needsAsync: false, definitive: true };
+        return syncTypeResult(pos, {
+          type: best.type,
+          source,
+          status: best.status,
+          kind,
+          needsAsync: false,
+          definitive: true,
+        });
       }
-      return { type: resolved.sourceType, source: 'local', status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+      return syncTypeResult(pos, {
+        type: resolved.sourceType,
+        source: 'local',
+        status: STATUS.UNKNOWN,
+        kind,
+        needsAsync: false,
+        definitive: true,
+      });
     }
 
     // 2. Local binder whose displayed type is its bracketed text.
     if (resolved && resolved.kind === 'local') {
       if (resolved.text != null) {
-        return { type: resolved.text, source: 'source', status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+        return syncTypeResult(pos, {
+          type: resolved.text,
+          source: 'source',
+          status: STATUS.UNKNOWN,
+          kind,
+          needsAsync: false,
+          definitive: true,
+        });
       }
       // A bare binder (e.g. an unannotated fn parameter): no type, none coming.
       return { type: null, source: null, status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
@@ -141,12 +273,26 @@ export function createSemanticEngine(options = {}) {
     // 3. Cached decl/metavar type (covers globals via bestDeclType + metavars).
     const sync = syncTypeFor(pos, resolved, query, ref);
     if (sync && sync.type != null) {
-      return { type: sync.type, source: sync.source, status: sync.status, kind, needsAsync: false, definitive: true };
+      return syncTypeResult(pos, {
+        type: sync.type,
+        source: sync.source,
+        status: sync.status,
+        kind,
+        needsAsync: false,
+        definitive: true,
+      });
     }
 
     // 4. Source signature text.
     if (resolved && resolved.sourceText) {
-      return { type: resolved.sourceText, source: 'source', status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
+      return syncTypeResult(pos, {
+        type: resolved.sourceText,
+        source: 'source',
+        status: STATUS.UNKNOWN,
+        kind,
+        needsAsync: false,
+        definitive: true,
+      });
     }
 
     // 5. Nothing synchronous is available (branches 3 and 4 already covered the
@@ -177,7 +323,11 @@ export function createSemanticEngine(options = {}) {
     // Real failure on the owning declaration.
     const ownerId = owningDeclarationId(pos);
     const node = ownerId && snapshot && snapshot.graph && snapshot.graph.nodeMap.get(ownerId);
-    if (node && (node.status === STATUS.SYNTAX_FAULT || (node.diagnostics && node.diagnostics.length))) {
+    if (node && (
+      node.status === STATUS.SYNTAX_FAULT
+      || node.status === STATUS.ERRORING
+      || (node.diagnostics && node.diagnostics.length)
+    )) {
       return { state: 'error', detail: 'Declaration has an error' };
     }
     if (r.type != null) {
@@ -226,24 +376,47 @@ export function createSemanticEngine(options = {}) {
 
   function checkerCodeFromSyntax(syntax) {
     if (!syntax) return '';
-    return getCheckerCode ? getCheckerCode(syntax.doc) : syntax.doc.toString();
+    // Prefer the code the settlement actually got loaded clean (erroring
+    // blocks masked) — elaboration/hover on the healthy decls keeps working
+    // even while other blocks have type errors.
+    const checker = checkerStore.getSnapshot();
+    if (checker && checker.checkedCode && checker.syntaxVersion === syntax.version) {
+      return checker.checkedCode;
+    }
+    if (getCheckerCode) return getCheckerCode(syntax.doc);
+    return checkerSnapshotFromSyntax(syntax).code;
   }
 
   function setCheckerCode(fn) {
     getCheckerCode = typeof fn === 'function' ? fn : null;
   }
 
+  function belugaDiagnosticsForVersion(syntaxVersion) {
+    const checker = checkerStore.getSnapshot();
+    if (checker.syntaxVersion !== syntaxVersion) return [];
+    if (checker.state !== 'ready' && checker.state !== 'stale' && checker.state !== 'checking') {
+      return [];
+    }
+    return checker.belugaDiagnostics;
+  }
+
   function update(tree, doc, updateOptions = {}) {
     const syntax = syntaxStore.update(tree, doc, { ...updateOptions, documentId });
     const symbols = symbolStore.update(syntax);
-    const graph = semanticGraph.update(symbols, syntax);
+    const belugaDiags = belugaDiagnosticsForVersion(syntax.version);
+    const graph = semanticGraph.update(symbols, syntax, {
+      belugaDiagnostics: belugaDiags,
+      previous: semanticGraph.getSnapshot(),
+    });
     metavarStore.reconcile(graph.dirty, graph.removed);
+    const checker = checkerStore.getSnapshot();
     snapshot = {
       documentId,
       version: syntax.version,
       syntax,
       symbols,
       graph,
+      checker,
       summary: {
         symbols: symbols.symbols.length,
         globalSymbols: symbols.globalSymbols.length,
@@ -252,10 +425,72 @@ export function createSemanticEngine(options = {}) {
         unresolvedReferences: symbols.references.filter((ref) => !ref.symbolId).length,
         edges: graph.edges.length,
         syntaxDiagnostics: syntax.syntaxDiagnostics.length,
+        belugaDiagnostics: belugaDiags.length,
         dirty: graph.dirty.size,
       },
     };
+    if (settlement) settlement.schedule(syntax);
     return snapshot;
+  }
+
+  function getBelugaDiagnostics() {
+    const checker = checkerStore.getSnapshot();
+    if (checker.state !== 'ready' && checker.state !== 'stale' && checker.state !== 'checking') {
+      return [];
+    }
+    return checker.belugaDiagnostics || [];
+  }
+
+  function applyBelugaOutput(rawOutput, { ok } = {}) {
+    const syntax = syntaxStore.getSnapshot();
+    if (!syntax) return [];
+    const snap = checkerSnapshotFromSyntax(syntax);
+    const failed = ok != null ? !ok : false;
+    const diags = belugaDiagnosticsFromOutput(rawOutput, syntax.doc, {
+      blockAt: snap.blockAt,
+      hasSyntaxFault: snap.hasSyntaxFault,
+      ok: !failed,
+    });
+    const resolvedOk = diags.length === 0 && !failed;
+    const code = snap.code;
+    const fp = belugaClient && typeof belugaClient.fingerprint === 'function'
+      ? belugaClient.fingerprint(code)
+      : String(code.length);
+    checkerStore.applyResult({
+      syntaxVersion: syntax.version,
+      checkerFp: fp,
+      ok: resolvedOk,
+      belugaDiagnostics: diags,
+      rawOutput: rawOutput || '',
+    });
+    applySettlementToGraph();
+    if (onSettlement) onSettlement(checkerStore.getSnapshot());
+    return diags;
+  }
+
+  function settleState() {
+    return checkerStore.settleState();
+  }
+
+  function documentDiagnostics() {
+    const syntax = syntaxStore.getSnapshot();
+    const checker = checkerStore.getSnapshot();
+    const syntaxDiags = syntax?.syntaxDiagnostics || [];
+    const belugaDiags = (checker.state === 'ready' || checker.state === 'stale' || checker.state === 'checking')
+      ? (checker.belugaDiagnostics || [])
+      : [];
+    return mergeDiagnostics(syntaxDiags, belugaDiags);
+  }
+
+  function diagnosticsForSymbol(symbolId) {
+    const node = semanticGraph.getSnapshot()?.nodeMap.get(symbolId);
+    return node?.diagnostics ? node.diagnostics.slice() : [];
+  }
+
+  function diagnosticsAt(pos) {
+    const ownerId = owningDeclarationId(pos);
+    if (ownerId) return diagnosticsForSymbol(ownerId);
+    return documentDiagnostics().filter((d) => d.from <= pos && pos < d.to);
   }
 
   function dirtyFrontier() {
@@ -721,7 +956,7 @@ export function createSemanticEngine(options = {}) {
     }
 
     const stale = staleTypeFor(pos, resolved);
-    const staleType = stale && stale.type != null ? stale.type : null;
+    const staleType = stale && stale.type != null ? projectTypeAt(pos, stale.type) : null;
     const staleSource = stale && stale.source;
 
     const key = elaborationKey(pos, resolved, ref, query);
@@ -731,7 +966,7 @@ export function createSemanticEngine(options = {}) {
       }
       return elaborateAt(pos);
     })
-      .then((elab) => finalizeElaboration(elab, resolved, options))
+      .then((elab) => finalizeElaboration(elab, resolved, options, pos))
       .catch((error) => ({
         status: 'pending',
         reason: 'transient-failure',
@@ -777,6 +1012,9 @@ export function createSemanticEngine(options = {}) {
   function classifyHover(resolved, ref, query) {
     if (resolved && resolved.kind === 'local') return 'explicit-binder';
     if (resolved && resolved.kind === 'implicit') return 'implicit-metavar';
+    // A name defined by an earlier project file: a global reference — must win
+    // over the unresolved-ref implicit-metavar guess below.
+    if (resolved && resolved.kind === 'external') return 'global-ref';
     if (ref && !ref.symbolId && ref.enclosingDeclarationId) return 'implicit-metavar';
     if (query && query.symbol) return query.symbol.isGlobal ? 'global-decl' : 'local-decl';
     if (resolved && resolved.kind === 'global') return 'global-ref';
@@ -838,11 +1076,11 @@ export function createSemanticEngine(options = {}) {
     return `pos:${pos}`;
   }
 
-  async function finalizeElaboration(elab, resolved, options) {
+  async function finalizeElaboration(elab, resolved, options, pos) {
     if (elab && elab.type != null) {
       return {
         status: 'ready',
-        type: elab.type,
+        type: projectTypeAt(pos, elab.type),
         source: elab.source === 'hydrated' ? 'stale-cache'
           : elab.source === 'oracle' ? 'beluga'
           : 'source',
@@ -853,7 +1091,7 @@ export function createSemanticEngine(options = {}) {
       if (options.fallback && resolved && resolved.fallback) {
         const fb = await options.fallback(resolved.fallback);
         if (fb) {
-          return { status: 'ready', type: fb, source: 'beluga', via: 'fallback' };
+          return { status: 'ready', type: projectTypeAt(pos, fb), source: 'beluga', via: 'fallback' };
         }
       }
       if (elab.definitive) {
@@ -1109,8 +1347,15 @@ export function createSemanticEngine(options = {}) {
     impactOf: (symbolId) => semanticGraph.impactOf(symbolId),
     graphFor: (selection) => semanticGraph.graphFor(selection),
     getSnapshot: () => snapshot,
+    getBelugaDiagnostics,
+    applyBelugaOutput,
+    settleState,
+    documentDiagnostics,
+    diagnosticsForSymbol,
+    diagnosticsAt,
     debugSnapshot,
     stores: {
+      checker: checkerStore,
       syntax: syntaxStore,
       symbols: symbolStore,
       graph: semanticGraph,

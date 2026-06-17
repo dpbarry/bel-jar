@@ -19,6 +19,12 @@ export function viewportCenterLine(view) {
   return view.state.doc.lineAt(pos).number;
 }
 
+export function scrollIntoViewCenter(pos) {
+  const p = Math.max(0, Math.floor(Number(pos)));
+  const anchor = Number.isFinite(p) ? p : 0;
+  return EditorView.scrollIntoView(anchor, { y: 'center', x: 'nearest' });
+}
+
 function isSigChar(c) {
   return c !== ' ' && c !== '\t' && c !== '\n' && c !== '\r';
 }
@@ -120,7 +126,7 @@ export function scheduleScrollToCenter(view, pos, { selection } = {}) {
     const clamped = Math.max(0, Math.min(pos, docLen));
     const tr = {
       annotations: Transaction.addToHistory.of(false),
-      effects: EditorView.scrollIntoView(clamped, { y: 'center' }),
+      effects: scrollIntoViewCenter(clamped),
     };
     if (selection && isFinite(selection.anchor) && isFinite(selection.head)) {
       tr.selection = {

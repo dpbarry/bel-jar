@@ -80,7 +80,15 @@ export function normalizeType(typeStr) {
   if (typeStr == null) return '';
   return String(typeStr)
     .replace(/\r\n?/g, '\n')
+    // Beluga's Format boxes break block schemas at commas/parens; flatten those
+    // without inserting a space (e.g. "m/q _\n," must become "m/q _," not "_ ,").
+    .replace(/[ \t]*\n[ \t]*(?=[,;)\]}])/g, '')
+    .replace(/([(\[{])[ \t]*\n[ \t]*/g, '$1')
     .replace(/[ \t]*\n[ \t]*/g, ' ')
+    // The double quote is a reserved character in Beluga and can never appear
+    // in a real type; when the checker's pretty-printer emits one around a
+    // generated name (e.g. tm K1[] "i[]") it is a spurious artifact, so drop it.
+    .replace(/"/g, '')
     .replace(/->/g, '→')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();

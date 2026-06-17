@@ -1,7 +1,14 @@
 // Pure navigation + search helpers for the 3D dependency graph (DOM-free, tested).
 
-export function buildNavEntry({ mode, rootId = null, depth = 1, camera = null } = {}) {
-  return { mode, rootId, depth: depth || 1, camera };
+export function buildNavEntry({ mode, rootId = null, depth = 1, camera = null, focusId = null } = {}) {
+  return { mode, rootId, depth: depth || 1, camera, focusId: focusId ?? null };
+}
+
+export function navEntriesEqual(a, b) {
+  if (!a || !b) return false;
+  if (a.mode !== b.mode) return false;
+  if (a.mode === 'global') return (a.focusId ?? null) === (b.focusId ?? null);
+  return a.rootId === b.rootId && (a.depth || 1) === (b.depth || 1);
 }
 
 export function createNavState(entry) {
@@ -11,9 +18,7 @@ export function createNavState(entry) {
 export function navPush(state, entry) {
   if (!state) return createNavState(entry);
   const cur = state.stack[state.index];
-  if (cur && cur.mode === entry.mode && cur.rootId === entry.rootId && cur.depth === entry.depth) {
-    return state;
-  }
+  if (navEntriesEqual(cur, entry)) return state;
   const stack = state.stack.slice(0, state.index + 1);
   stack.push(entry);
   return { stack, index: stack.length - 1 };
@@ -48,7 +53,10 @@ export function navCanForward(state) {
 
 export function navBreadcrumbLabel(entry, nameForId) {
   if (!entry) return '?';
-  if (entry.mode === 'global') return 'whole file';
+  if (entry.mode === 'global') {
+    if (entry.focusId) return nameForId(entry.focusId) || 'whole file';
+    return 'whole file';
+  }
   return nameForId(entry.rootId) || 'symbol';
 }
 

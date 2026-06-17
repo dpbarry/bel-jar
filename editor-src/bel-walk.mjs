@@ -17,8 +17,11 @@ const GLOBAL_DECL_PARENT = new Set([
   'LetDeclaration',
   'ModuleDeclaration',
   'InductiveBody',
+  'CoinductiveBody',
   'CompConstructor',
+  'CompDestructor',
   'RecBody',
+  'ProofDeclaration',
 ]);
 
 const _summaryCache = new WeakMap();
@@ -263,8 +266,8 @@ function collectAtomicPatternUpperBinder(patternSubtree, doc, acc) {
   });
 }
 
-function quantifiedBinders(caseBranch, doc, acc) {
-  for (let c = caseBranch.firstChild; c; c = c.nextSibling) {
+function quantifiedBinders(parent, doc, acc) {
+  for (let c = parent.firstChild; c; c = c.nextSibling) {
     if (c.name !== 'QuantifiedBinder') break;
     const wrapped = firstChildNamed(c, 'CompTypeBinder');
     if (wrapped) {
@@ -281,10 +284,14 @@ function caseBranchBindings(branch, doc) {
   return bindings;
 }
 
-function letPatternBindings(patternNode, doc) {
-  const bindings = [];
-  collectAtomicPatternUpperBinder(patternNode, doc, bindings);
-  return bindings;
+function letExpressionBindings(node, doc) {
+  const quantified = [];
+  quantifiedBinders(node, doc, quantified);
+  const pat = firstChildNamed(node, 'Pattern');
+  const pattern = [];
+  if (pat) collectAtomicPatternUpperBinder(pat, doc, pattern);
+  const body = lastChildNamed(node, 'Expression');
+  return { quantified, pattern, pat, body };
 }
 
 function fnParams(fnExpr, doc) {
@@ -368,13 +375,16 @@ function schemaDeclBindings(decl, doc) {
   return [binding(doc, id)];
 }
 
+// Type-family name + its constructors/destructors. Names may be lower- or
+// upper-case (the grammar accepts both), so use firstIdentChild rather than a
+// fixed case.
 function inductiveFamilyBindings(body, doc) {
   const bindings = [];
-  const tid = firstChildNamed(body, 'UpperIdentifier');
+  const tid = firstIdentChild(body);
   if (tid) bindings.push(binding(doc, tid));
   for (let c = body.firstChild; c; c = c.nextSibling) {
-    if (c.name === 'CompConstructor') {
-      const id = firstChildNamed(c, 'UpperIdentifier');
+    if (c.name === 'CompConstructor' || c.name === 'CompDestructor') {
+      const id = firstIdentChild(c);
       if (id) bindings.push(binding(doc, id));
     }
   }
@@ -395,14 +405,25 @@ function stratifiedDeclBindings(decl, doc) {
   return body ? inductiveFamilyBindings(body, doc) : [];
 }
 
+function coinductiveDeclBindings(decl, doc) {
+  const bindings = [];
+  for (let c = decl.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'CoinductiveBody')
+      bindings.push(...inductiveFamilyBindings(c, doc));
+  }
+  return bindings;
+}
+
 const MODULE_TAIL_COLLECTORS = {
   LetDeclaration: declLowerBindings,
+  ProofDeclaration: declLowerBindings,
   LFDeclaration: lfDeclBindings,
   LFDatatypeDeclaration: lfDatatypeBindings,
   TypedefDeclaration: typedefBindings,
   SchemaDeclaration: schemaDeclBindings,
   InductiveDeclaration: inductiveDeclBindings,
   StratifiedDeclaration: stratifiedDeclBindings,
+  CoinductiveDeclaration: coinductiveDeclBindings,
 };
 
 function moduleTailTo(moduleEndStack, declNode) {
@@ -472,6 +493,12 @@ function doWalk(tree, doc) {
   const defMap = new Map();
   const uses = [];
   const parseDiagSeen = new Set();
+  // Blocks that received a real (non-zero-width) parse diagnostic, and the
+  // first zero-width (missing-token) error seen per block. Zero-width errors
+  // only surface when the block has no spanning error — otherwise they're
+  // recovery echoes of the same fault.
+  const realDiagBlocks = new Set();
+  const zeroWidthByBlock = new Map();
 
   let inLFDatatype = false;
   let lfDatatypeKeywordSeen = false;
@@ -488,7 +515,25 @@ function doWalk(tree, doc) {
     const key = `${cf}:${ct}`;
     if (parseDiagSeen.has(key)) return;
     parseDiagSeen.add(key);
+    const hit = blockAt(cf);
+    if (hit) realDiagBlocks.add(hit.index);
     parseDiags.push({ from: cf, to: ct, severity: 'error', message });
+  }
+
+  // A zero-width error node marks where the parser expected a token that never
+  // came (unclosed paren, missing colon). Anchor the squiggle on the last real
+  // token before that point so the user sees WHERE the construct broke off.
+  function zeroWidthAnchor(pos, blockFrom, blockTo) {
+    let end = Math.min(Math.max(pos, blockFrom), blockTo);
+    while (end > blockFrom && /\s/.test(doc.sliceString(end - 1, end))) end -= 1;
+    let start = end;
+    while (start > blockFrom && !/[\s([{:.,;|]/.test(doc.sliceString(start - 1, start))) start -= 1;
+    if (start === end) {
+      start = Math.max(blockFrom, Math.min(pos, blockTo - 1));
+      end = Math.min(blockTo, start + 1);
+    }
+    if (start >= end) return null;
+    return { from: start, to: end };
   }
 
   function noteDefinedName(from, to) {
@@ -546,12 +591,13 @@ function doWalk(tree, doc) {
           break;
         }
         case 'LetExpression': {
-          const pat = firstChildNamed(node, 'Pattern');
-          const body = lastChildNamed(node, 'Expression');
-          const bindings = pat && body ? letPatternBindings(pat, doc) : [];
-          const scopeFrom = body ? body.from : node.from;
-          const scopeTo = body ? body.to : node.to;
-          stack.push({ bindings, scopeFrom, scopeTo });
+          const { quantified, pattern, pat, body } = letExpressionBindings(node, doc);
+          if (quantified.length && pat) {
+            stack.push({ bindings: quantified, scopeFrom: pat.from, scopeTo: node.to });
+          }
+          if (pattern.length && body) {
+            stack.push({ bindings: pattern, scopeFrom: body.from, scopeTo: body.to });
+          }
           break;
         }
         case 'CaseBranch':
@@ -603,6 +649,11 @@ function doWalk(tree, doc) {
               p === 'SchemaDeclaration' ||
               p === 'TypedefDeclaration' ||
               p === 'RecBody' ||
+              p === 'ProofDeclaration' ||
+              p === 'InductiveBody' ||
+              p === 'CoinductiveBody' ||
+              p === 'CompConstructor' ||
+              p === 'CompDestructor' ||
               p === 'LetDeclaration') {
             noteDefinedName(ref.from, ref.to);
           } else if (p === 'LFDeclaration') {
@@ -629,9 +680,12 @@ function doWalk(tree, doc) {
         if (parent) {
           const p = parent.name;
           if (p === 'InductiveBody' ||
+              p === 'CoinductiveBody' ||
               p === 'CompConstructor' ||
+              p === 'CompDestructor' ||
               p === 'TypedefDeclaration' ||
               p === 'ModuleDeclaration' ||
+              p === 'ProofDeclaration' ||
               p === 'LFConstructor') {
             noteDefinedName(ref.from, ref.to);
           } else if (p === 'LFDeclaration') {
@@ -667,6 +721,10 @@ function doWalk(tree, doc) {
           } else if (node.type.isError && node.from < node.to && n !== PARSE_ERROR) {
             if (!node.firstChild && node.from >= bFrom && node.to <= bTo) {
               pushParseDiag(node.from, node.to, msg, bFrom, bTo);
+            }
+          } else if (node.type.isError && node.from === node.to) {
+            if (!zeroWidthByBlock.has(hit.index)) {
+              zeroWidthByBlock.set(hit.index, { pos: node.from, bFrom, bTo });
             }
           } else if (
             node.firstChild == null &&
@@ -704,11 +762,16 @@ function doWalk(tree, doc) {
         case 'MLamExpression':
         case 'ContextualType':
         case 'ContextualObject':
-        case 'LetExpression':
         case 'CaseBranch':
         case 'RecDeclaration':
           stack.pop();
           break;
+        case 'LetExpression': {
+          const { quantified, pattern, pat, body } = letExpressionBindings(node, doc);
+          if (pattern.length && body) stack.pop();
+          if (quantified.length && pat) stack.pop();
+          break;
+        }
         case 'SchemaElement':
           if (schemaSomeFrame(node, doc)) stack.pop();
           break;
@@ -732,6 +795,16 @@ function doWalk(tree, doc) {
     },
   });
 
+  // Surface missing-token faults in blocks that produced no spanning error —
+  // without this, an unclosed paren in one block shows NOTHING here while a
+  // different block's error shows, reading as "only one error at a time".
+  for (const [blockIndex, zw] of zeroWidthByBlock) {
+    if (realDiagBlocks.has(blockIndex)) continue;
+    const anchor = zeroWidthAnchor(zw.pos, zw.bFrom, zw.bTo);
+    if (!anchor) continue;
+    pushParseDiag(anchor.from, anchor.to, 'Syntax error: incomplete declaration', zw.bFrom, zw.bTo);
+  }
+
   const pragmaDiags = collectBadPragmaLineDiags(blocks, doc);
   const mergedParseDiags = mergeDiagsByOverlap(parseDiags, pragmaDiags);
 
@@ -743,4 +816,35 @@ function doWalk(tree, doc) {
     parseDiags: mergedParseDiags,
     uses,
   };
+}
+
+// Block-level dependency map derived from the walk: defining block index →
+// the set of block indices that USE a name it defines. This is the impact
+// relation the multi-pass settlement uses — when a block errors, everything
+// downstream of it can't be trusted (its errors would be induced "unbound
+// identifier" noise), so the whole impacted set is masked together.
+export function blockDependents(tree, doc) {
+  const summary = walkTree(tree, doc);
+  const defs = new Map();
+  for (const d of summary.definedNames) {
+    if (d.blockIndex == null || d.blockIndex < 0) continue;
+    let set = defs.get(d.name);
+    if (!set) { set = new Set(); defs.set(d.name, set); }
+    set.add(d.blockIndex);
+  }
+  const dependents = new Map();
+  for (const u of summary.uses) {
+    if (u.bound) continue;
+    const defBlocks = defs.get(u.name);
+    if (!defBlocks) continue;
+    const hit = summary.blockAt(u.from);
+    if (!hit) continue;
+    for (const defIdx of defBlocks) {
+      if (defIdx === hit.index) continue;
+      let set = dependents.get(defIdx);
+      if (!set) { set = new Set(); dependents.set(defIdx, set); }
+      set.add(hit.index);
+    }
+  }
+  return dependents;
 }

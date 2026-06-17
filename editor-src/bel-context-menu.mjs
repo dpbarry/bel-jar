@@ -1,10 +1,13 @@
 // Right-click context menu: classifies the click via engine.navAt and assembles
 // actions from the shared IDE action layer. Built on Menu.openContext.
 
+import { undo, redo, selectAll, undoDepth, redoDepth } from '@codemirror/commands';
+import { openSearchPanel } from '@codemirror/search';
 import { EditorView } from '@codemirror/view';
 import {
-  navInfoAt, termRangeAt, goToDefinition, revealBinder, insertSignature,
+  navInfoAt, termRangeAt, goToDefinition, revealBinder,
 } from './bel-ide-actions.mjs';
+import { formatCommand } from './bel-format.mjs';
 import { openInspectorWindow } from './bel-inspector.mjs';
 import { openLocalGraphWindow } from './bel-graph-view.mjs';
 import { startRename } from './bel-rename.mjs';
@@ -14,27 +17,76 @@ function hasStandardSelection(view) {
   return !view.state.selection.main.empty;
 }
 
-function runReplQuery(view) {
-  const sel = view.state.selection.main;
-  const text = view.state.sliceDoc(sel.from, sel.to).trim();
-  if (!text) return;
-  const g = typeof window !== 'undefined' ? window : self;
-  // The REPL runner reads from the command input; prime it and fire.
-  const input = document.getElementById('command-input');
-  if (input && g.BelJarReplCommands && typeof g.BelJarReplCommands.runCmd === 'function') {
-    input.value = text;
-    g.BelJarReplCommands.runCmd();
-  }
+function isEditable(view) {
+  return !view.state.readOnly;
+}
+
+function runClipboard(view, action) {
+  view.focus();
+  try {
+    document.execCommand(action);
+  } catch (_) {}
+}
+
+function buildEditMenuItems(view) {
+  const editable = isEditable(view);
+  const hasSel = hasStandardSelection(view);
+  const state = view.state;
+
+  return [
+    {
+      label: 'Undo',
+      shortcut: 'Ctrl+Z',
+      disabled: undoDepth(state) === 0,
+      onSelect: () => undo(view),
+    },
+    {
+      label: 'Redo',
+      shortcut: 'Ctrl+Y',
+      disabled: redoDepth(state) === 0,
+      onSelect: () => redo(view),
+    },
+    { type: 'separator' },
+    {
+      label: 'Cut',
+      shortcut: 'Ctrl+X',
+      disabled: !editable || !hasSel,
+      onSelect: () => runClipboard(view, 'cut'),
+    },
+    {
+      label: 'Copy',
+      shortcut: 'Ctrl+C',
+      disabled: !hasSel,
+      onSelect: () => runClipboard(view, 'copy'),
+    },
+    {
+      label: 'Paste',
+      shortcut: 'Ctrl+V',
+      disabled: !editable,
+      onSelect: () => runClipboard(view, 'paste'),
+    },
+    {
+      label: 'Select All',
+      shortcut: 'Ctrl+A',
+      onSelect: () => selectAll(view),
+    },
+    {
+      label: 'Find…',
+      shortcut: 'Ctrl+F',
+      onSelect: () => openSearchPanel(view),
+    },
+  ];
 }
 
 // Assemble the menu items for the position clicked. `pos` is the document
 // offset under the pointer (already resolved to the click point).
 function buildMenuItems(view, pos) {
   const nav = navInfoAt(view, pos);
-  const items = [];
+  const items = buildEditMenuItems(view);
 
   // --- Identifier-scoped actions ---
   if (nav && (nav.symbolId || nav.reference)) {
+    items.push({ type: 'separator' });
     if (nav.symbolId && !nav.onDefinition) {
       items.push({
         label: 'Go to Definition',
@@ -43,7 +95,8 @@ function buildMenuItems(view, pos) {
       });
     }
 
-    if (nav.symbolId || nav.enclosingDeclarationId) {
+    // Only when go-to-def can't help: unresolved local/metavar under an enclosing decl.
+    if (!nav.symbolId && nav.enclosingDeclarationId) {
       items.push({
         label: 'Reveal Binder',
         onSelect: () => revealBinder(view, pos),
@@ -62,16 +115,6 @@ function buildMenuItems(view, pos) {
       });
     }
 
-    // Insert-signature only for a global decl with a known type.
-    if (nav.signature && nav.signature.type != null && nav.isGlobal) {
-      items.push({
-        label: nav.signature.source === 'reconstructed'
-          ? 'Insert Reconstructed Signature'
-          : 'Insert Signature',
-        onSelect: () => insertSignature(view, pos),
-      });
-    }
-
     // --- Inspect: open a pinned floating inspector for this term. ---
     if (nav.symbolId) {
       items.push({
@@ -85,25 +128,12 @@ function buildMenuItems(view, pos) {
     }
   }
 
-  // --- Selection-scoped actions ---
-  if (hasStandardSelection(view)) {
-    if (items.length) items.push({ type: 'separator' });
-    items.push({
-      label: 'Run Selection as REPL Query',
-      onSelect: () => runReplQuery(view),
-    });
-  }
-
   // --- Always-available editor actions ---
-  if (items.length) items.push({ type: 'separator' });
+  items.push({ type: 'separator' });
   items.push({
     label: 'Format Document',
-    shortcut: 'Ctrl+Shift+F',
-    onSelect: () => {
-      const g = typeof window !== 'undefined' ? window : self;
-      const ed = g.BelJarCurrentEditor;
-      if (ed && typeof ed.format === 'function') ed.format();
-    },
+    shortcut: 'Alt+Shift+F',
+    onSelect: () => formatCommand(view),
   });
 
   return items;

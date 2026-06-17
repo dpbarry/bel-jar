@@ -1,5 +1,23 @@
 import { syntaxTree } from '@codemirror/language';
 import { walkTree } from './bel-walk.mjs';
+import { findGroupSignature } from './project-prelude.mjs';
+
+// The project group's answer for a name this document does not define: kind
+// label + source signature from the defining file. The document is a CHILD of
+// the project tree — a name defined by an earlier sibling is a global
+// reference, never an "implicit binder" guess.
+function externalSignatureFor(name) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!name || !P || typeof P.listFiles !== 'function' || typeof P.getFileText !== 'function') {
+    return null;
+  }
+  try {
+    return findGroupSignature(P.listFiles(), P.getActiveFileId(), name, (id) => P.getFileText(id));
+  } catch (_) {
+    return null;
+  }
+}
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
 
@@ -17,8 +35,11 @@ const GLOBAL_DECL_PARENT = new Set([
   'LetDeclaration',
   'ModuleDeclaration',
   'InductiveBody',
+  'CoinductiveBody',
   'CompConstructor',
+  'CompDestructor',
   'RecBody',
+  'ProofDeclaration',
 ]);
 
 const LOCAL_BINDER_INLINE_TYPE = new Set([
@@ -77,9 +98,13 @@ function globalLabel(declParent) {
   }
   if (n === 'LFDatatypeDeclaration')   return 'LF Type Family';
   if (n === 'LFConstructor')           return 'LF Constructor';
-  if (n === 'InductiveBody')           return 'Inductive Type';
+  if (n === 'InductiveBody')           return declParent.parent && declParent.parent.name === 'StratifiedDeclaration'
+    ? 'Stratified Type' : 'Inductive Type';
+  if (n === 'CoinductiveBody')         return 'Coinductive Type';
   if (n === 'CompConstructor')         return 'Constructor';
+  if (n === 'CompDestructor')          return 'Destructor';
   if (n === 'RecBody')                 return 'Recursive Function';
+  if (n === 'ProofDeclaration')        return 'Proof';
   if (n === 'TypedefDeclaration')      return 'Type Alias';
   if (n === 'SchemaDeclaration')       return 'Schema';
   if (n === 'LetDeclaration')          return 'Let Binding';
@@ -89,6 +114,23 @@ function globalLabel(declParent) {
 
 function localLabel(binderParent) {
   return LOCAL_BINDER_LABEL[binderParent.name] || 'Local Binding';
+}
+
+// An implicit (reconstruction-introduced) variable, named by its own kind. A
+// substitution variable ($S / #S) has no position-typeable classifier: the
+// checker's annotation oracle records only LF, computation, and kind types —
+// never a substitution type — so there is provably nothing to display. We label
+// it honestly and flag the type as unavailable so the tooltip settles head-only
+// instead of spinning on an elaboration that can never produce a result.
+function implicitVariableLabel(ident) {
+  const p = ident.parent;
+  if (p && p.name === 'SubstitutionVariable') return 'Substitution Variable';
+  if (p && p.name === 'ParameterVariable') return 'Parameter Variable';
+  return 'Implicit Binder';
+}
+
+function isSubstitutionVariable(ident) {
+  return !!(ident.parent && ident.parent.name === 'SubstitutionVariable');
 }
 
 function nextTypeSibling(node) {
@@ -124,16 +166,90 @@ function identAt(tree, pos) {
   return null;
 }
 
-function extendedNameOf(ident, doc) {
-  const p = ident.parent;
-  if (!p) return doc.sliceString(ident.from, ident.to);
-  if (p.name === 'ParameterVariable' || p.name === 'SubstitutionVariable') {
-    const h = p.firstChild;
-    if (h && (h.name === '#' || h.name === '$')) {
-      return doc.sliceString(h.from, ident.to);
+// The projection tail (the ".2" of "#p.2" or "b2.2"), if this identifier is
+// projected. The grammar attaches ProjectionTail as the identifier's immediate
+// next sibling in both LFAtomicTerm (bound variable x.k) and ParameterVariable
+// (#p.k). The tail selects a block field, so the projected entity has that
+// field's type — not the whole block's.
+function projectionTailOf(ident) {
+  const sib = ident.nextSibling;
+  return sib && sib.name === 'ProjectionTail' ? sib : null;
+}
+
+function projectionIndexOf(ident, doc) {
+  const proj = projectionTailOf(ident);
+  if (!proj) return null;
+  const n = parseInt(doc.sliceString(proj.from + 1, proj.to), 10);
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+// Split on commas that sit at bracket depth 0. Only ()[]{} count as nesting —
+// not <>, since ">" also occurs in the "->" arrow and must not be read as a
+// closing bracket.
+function splitTopLevelCommas(s) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth - 1);
+    else if (ch === ',' && depth === 0) { parts.push(s.slice(start, i)); start = i + 1; }
+  }
+  parts.push(s.slice(start));
+  return parts;
+}
+
+function stripOuterParens(s) {
+  if (s[0] !== '(') return s;
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '(') depth += 1;
+    else if (s[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return i === s.length - 1 ? s.slice(1, i).trim() : s;
     }
   }
-  return doc.sliceString(ident.from, ident.to);
+  return s;
+}
+
+// The type of the k-th field (1-indexed) of a "block (f1:T1, f2:T2, ...)" type.
+// null when the text is not a block or the index is out of range.
+function projectBlockField(typeText, index) {
+  if (!typeText || !Number.isInteger(index) || index < 1) return null;
+  const m = /^block\b/.exec(typeText.trim());
+  if (!m) return null;
+  const body = stripOuterParens(typeText.trim().slice(m[0].length).trim());
+  const fields = splitTopLevelCommas(body);
+  if (index > fields.length) return null;
+  const field = fields[index - 1].trim();
+  const colon = field.indexOf(':');
+  if (colon < 0) return null;
+  return field.slice(colon + 1).trim() || null;
+}
+
+// Apply a projection (if present) to a local binder's block type. Falls back to
+// the whole type when the text isn't a projectable block, so we never lose the
+// information we already had.
+function projectLocalType(typeText, ident, doc) {
+  const base = typeText || null;
+  const index = projectionIndexOf(ident, doc);
+  if (!base || index == null) return base;
+  return projectBlockField(base, index) || base;
+}
+
+function extendedNameOf(ident, doc) {
+  const p = ident.parent;
+  const proj = projectionTailOf(ident);
+  if (p && (p.name === 'ParameterVariable' || p.name === 'SubstitutionVariable')) {
+    const h = p.firstChild;
+    if (h && (h.name === '#' || h.name === '$')) {
+      // Carry the projection (#p.2) into the displayed name: it IS the hovered
+      // entity, and its projected type is what we report here.
+      return doc.sliceString(h.from, proj ? proj.to : ident.to);
+    }
+  }
+  return doc.sliceString(ident.from, proj ? proj.to : ident.to);
 }
 
 function lineColAt(doc, pos) {
@@ -211,7 +327,7 @@ function scanFrameForName(frame, doc, name) {
     }
   }
 
-  if (fname === 'CaseBranch') {
+  if (fname === 'CaseBranch' || fname === 'LetExpression') {
     for (let c = frame.firstChild; c; c = c.nextSibling) {
       if (c.name !== 'QuantifiedBinder') continue;
       const ctb = firstChildNamed(c, 'CompTypeBinder');
@@ -714,7 +830,7 @@ function fallbackForGlobal(declParent, ident, doc) {
   const name = doc.sliceString(ident.from, ident.to);
   if (!name) return null;
 
-  if (dname === 'RecBody') {
+  if (dname === 'RecBody' || dname === 'ProofDeclaration') {
     return { kind: 'fsig', name };
   }
   if (dname === 'CompConstructor') {
@@ -726,7 +842,7 @@ function fallbackForGlobal(declParent, ident, doc) {
     if (!parentName) return null;
     return { kind: 'comp-ctor', parent: parentName, ctor: name };
   }
-  if (dname === 'InductiveBody') {
+  if (dname === 'InductiveBody' || dname === 'CoinductiveBody') {
     const kindNode = nextTypeSibling(ident);
     if (!kindNode) return null;
     return { kind: 'inline-kind', text: sliceText(doc, kindNode.from, kindNode.to) };
@@ -756,6 +872,9 @@ export function referenceKind(tree, doc, from) {
 
   const isUpper = ident.name === 'UpperIdentifier';
   if (findGlobalDeclarationIdent(tree, doc, name, isUpper)) return 'global';
+
+  // Defined by an earlier file in the project group → a global reference.
+  if (externalSignatureFor(name)) return 'global';
 
   const encl = findEnclosingGlobalDecl(ident);
   if (encl) {
@@ -826,10 +945,12 @@ export function resolveHoverDoc(tree, doc, from) {
 
   const local = findEnclosingLocalBinder(ident, doc, name);
   if (local !== null) {
+    // A projected block variable (b2.2) shows the field's type, not the block's.
+    const projected = projectLocalType(local.text || null, ident, doc);
     return {
       kind: 'local',
-      text: local.text ? local.text : null,
-      sourceType: local.text ? local.text : null,
+      text: projected,
+      sourceType: projected,
       name, displayName,
       label: LOCAL_BINDER_LABEL[local.binderKind] || 'Local Binding',
     };
@@ -852,20 +973,43 @@ export function resolveHoverDoc(tree, doc, from) {
     };
   }
 
+  // Defined by an earlier file in the project group: a real global reference
+  // with its source signature — NOT an implicit-binder guess. Checked before
+  // the implicit branch because missing context must be PROVIDED, not guessed
+  // around.
+  const ext = externalSignatureFor(name);
+  if (ext) {
+    const { line, col } = lineColAt(doc, ident.from);
+    return {
+      kind: 'external',
+      line, col,
+      name, displayName,
+      label: ext.label,
+      sourceText: ext.type,
+      sourceType: ext.type,
+      externalFile: ext.fileName,
+    };
+  }
+
   const encl = findEnclosingGlobalDecl(ident);
   if (encl) {
     const enclIdent = firstIdentChild(encl);
     if (enclIdent && enclIdent !== ident) {
       const { line, col } = lineColAt(doc, ident.from);
       const enclDeclName = doc.sliceString(enclIdent.from, enclIdent.to);
-      const sourceType = inferImplicitArgType(tree, doc, ident);
+      // A projection (#p.2) selects a block field — source inference would only
+      // recover #p's whole type, so defer to the checker, which annotates the
+      // projected field type at this position.
+      const sourceType = projectionTailOf(ident) ? null : inferImplicitArgType(tree, doc, ident);
+      const typeUnavailable = isSubstitutionVariable(ident);
       return {
         kind: 'implicit',
         line, col,
         name, displayName,
-        label: 'Implicit Binder',
+        label: implicitVariableLabel(ident),
         sourceType,
-        needsElaboration: !sourceType,
+        typeUnavailable,
+        needsElaboration: !sourceType && !typeUnavailable,
         owningDeclaration: enclDeclName,
         owningDeclNode: encl,
       };
@@ -873,6 +1017,20 @@ export function resolveHoverDoc(tree, doc, from) {
   }
 
   return null;
+}
+
+// When the checker (or cache) reports a whole block schema for b1, project it to
+// the k-th field type for a hover on b1.k — matching projectLocalType for binders.
+export function projectHoverType(typeText, tree, doc, from) {
+  const ident = identAt(tree, from);
+  if (!ident || typeText == null) return typeText;
+  return projectLocalType(typeText, ident, doc);
+}
+
+export function hasTypeProjection(tree, doc, from) {
+  const ident = identAt(tree, from);
+  if (!ident) return false;
+  return projectionIndexOf(ident, doc) != null;
 }
 
 export function resolveHover(state, from) {

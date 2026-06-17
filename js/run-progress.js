@@ -1,10 +1,19 @@
 'use strict';
 
 (function (global) {
-  var STORAGE_KEY = 'beljar.loadStats';
   var FADE_OUT_MS = 175;
   var SMOOTH_K = 8;
   var CREEP_BUDGET_SCALE = 0.5;
+
+  // Conservative first-run model (stable WASM); refined per device after loads.
+  var DEFAULT_BASE_MS = 650;
+  var DEFAULT_MS_PER_LINE = 16;
+  var MIN_MS_PER_LINE = 1.5;
+  var MIN_BASE_MS = 120;
+  var MIN_ESTIMATE_MS = 900;
+  var LEARN_MIN_LINES = 5;
+  var LEARN_ALPHA_CAP = 0.35;
+  var LEARN_ALPHA_FLOOR = 0.08;
 
   var headerEl = null;
   var fillEl = null;
@@ -27,32 +36,74 @@
 
   var DEFAULT_PHASE = { begin: 0.2, done: 0.85 };
 
+  function defaultModel() {
+    return { baseMs: DEFAULT_BASE_MS, msPerLine: DEFAULT_MS_PER_LINE, sampleCount: 0 };
+  }
 
-  function readStats() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return null;
-      var o = JSON.parse(raw);
-      if (o && o.lines > 0 && o.ms > 0) return o;
-    } catch (_) {}
+  function normalizeStats(raw) {
+    if (!raw) return null;
+    if (typeof raw.msPerLine === 'number' && raw.msPerLine > 0 && typeof raw.baseMs === 'number') {
+      return {
+        baseMs: Math.max(MIN_BASE_MS, raw.baseMs),
+        msPerLine: Math.max(MIN_MS_PER_LINE, raw.msPerLine),
+        sampleCount: raw.sampleCount > 0 ? raw.sampleCount : 1,
+      };
+    }
+    if (raw.lines > 0 && raw.ms > 0) {
+      return {
+        baseMs: DEFAULT_BASE_MS,
+        msPerLine: Math.max(MIN_MS_PER_LINE, raw.ms / raw.lines),
+        sampleCount: 1,
+      };
+    }
     return null;
   }
 
+  function readModel() {
+    var P = global.BelJarPersist;
+    if (!P) return null;
+    return normalizeStats(P.loadStat());
+  }
+
+  function learningAlpha(sampleCount) {
+    return Math.max(LEARN_ALPHA_FLOOR, Math.min(LEARN_ALPHA_CAP, 2 / (sampleCount + 2)));
+  }
+
   function writeStats(lines, ms) {
+    if (lines < LEARN_MIN_LINES || ms <= 0) return;
+    var P = global.BelJarPersist;
+    if (!P) return;
     try {
-      var prev = readStats();
-      var next = {
-        lines: prev ? Math.round((prev.lines + lines) / 2) : lines,
-        ms: prev ? Math.round((prev.ms + ms) / 2) : ms,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      var prev = readModel() || defaultModel();
+      var observedRate = ms / lines;
+      var alpha = learningAlpha(prev.sampleCount);
+      if (prev.sampleCount >= 3) {
+        var ratio = observedRate / prev.msPerLine;
+        if (ratio > 3 || ratio < 0.33) alpha *= 0.25;
+      }
+      var msPerLine = prev.sampleCount
+        ? prev.msPerLine * (1 - alpha) + observedRate * alpha
+        : observedRate;
+      msPerLine = Math.max(MIN_MS_PER_LINE, msPerLine);
+      var baseMs = prev.baseMs;
+      if (prev.sampleCount > 0) {
+        var impliedBase = Math.max(MIN_BASE_MS, ms - lines * msPerLine);
+        baseMs = prev.baseMs * (1 - alpha) + impliedBase * alpha;
+      }
+      P.saveStat({
+        lines: lines,
+        ms: ms,
+        msPerLine: Math.round(msPerLine * 100) / 100,
+        baseMs: Math.round(baseMs),
+        sampleCount: prev.sampleCount + 1,
+      });
     } catch (_) {}
   }
 
-  function msPerLine() {
-    var s = readStats();
-    if (!s) return 4;
-    return Math.max(1.5, s.ms / s.lines);
+  function estimateDurationMs(lines) {
+    var model = readModel() || defaultModel();
+    var n = Math.max(1, lines || 1);
+    return Math.max(MIN_ESTIMATE_MS, model.baseMs + n * model.msPerLine);
   }
 
   function phaseWeights(name) {
@@ -118,7 +169,7 @@
 
     if (creepStart > 0) {
       var elapsed = now - creepStart;
-      var estimated = Math.max(lineCount * msPerLine(), 800);
+      var estimated = estimateDurationMs(lineCount);
       var tau = estimated * CREEP_BUDGET_SCALE;
       var creep = 0.95 * (1 - Math.exp(-elapsed / tau));
       targetRatio = Math.max(targetRatio, Math.min(creep, 0.95));

@@ -135,7 +135,24 @@
     tip.textContent = text;
   }
 
+  function tooltipPreferPlacement(anchor) {
+    const raw = (anchor.getAttribute('data-tooltip-placement') || '').trim().toLowerCase();
+    if (!raw) return FRP.PREFERENCE_TOOLTIP;
+    const side = raw === 'below' ? 'bottom' : raw === 'above' ? 'top' : raw;
+    const order = ['bottom', 'top', 'right', 'left'];
+    if (!order.includes(side)) return FRP.PREFERENCE_TOOLTIP;
+    return [side, ...order.filter((s) => s !== side)];
+  }
+
+  function anchorConnected(anchor) {
+    return !!(anchor && anchor.isConnected);
+  }
+
   function layoutTooltip(anchor) {
+    if (!anchorConnected(anchor)) {
+      hideTooltip();
+      return;
+    }
     const tip = tooltipRoot.firstElementChild;
     if (!tip || tooltipRoot.hidden) return;
 
@@ -154,7 +171,7 @@
       height: th,
       margin: TOOLTIP_MARGIN,
       gap: TOOLTIP_GAP,
-      preferPlacement: FRP.PREFERENCE_TOOLTIP,
+      preferPlacement: tooltipPreferPlacement(anchor),
     });
 
     tooltipRoot.classList.remove('is-measuring');
@@ -166,6 +183,10 @@
 
   function refreshTooltipIfAnchored(target) {
     if (!tooltipRoot || tooltipAnchor !== target) return;
+    if (!anchorConnected(target)) {
+      hideTooltip();
+      return;
+    }
     if (tooltipRoot.hidden || tooltipRoot.classList.contains('is-leaving')) return;
     const text = target.getAttribute('data-tooltip');
     if (!text) {
@@ -185,6 +206,7 @@
 
   function showTooltip(anchor) {
     if (suppressedTooltipAnchors.has(anchor)) return;
+    if (!anchorConnected(anchor)) return;
     const text = anchor.getAttribute('data-tooltip');
     if (!text) return;
     cancelTooltipHideAnim();
@@ -320,6 +342,10 @@
       const held = tooltipSuppressLeaveUntilPointerUp;
       tooltipSuppressLeaveUntilPointerUp = null;
       if (!held || tooltipAnchor !== held) return;
+      if (!held.isConnected) {
+        hideTooltip();
+        return;
+      }
       const under = document.elementFromPoint(e.clientX, e.clientY);
       const stillOver = under && (held === under || held.contains(under));
       if (!stillOver) hideTooltip();
@@ -358,9 +384,27 @@
     });
   }
 
+  // Set BelJar-native tooltip text on a (possibly dynamic) element. Never use
+  // the HTML title attribute — it shows the ugly browser default tooltip.
+  function setTooltip(el, text, opts) {
+    if (!el || el.nodeType !== 1) return;
+    opts = opts || {};
+    el.removeAttribute('title');
+    const tip = text != null ? String(text).trim() : '';
+    if (!tip) {
+      el.removeAttribute('data-tooltip');
+      if (opts.ariaLabel !== false) el.removeAttribute('aria-label');
+      return;
+    }
+    el.setAttribute('data-tooltip', tip);
+    if (opts.ariaLabel !== false) el.setAttribute('aria-label', tip);
+    bindTooltipEl(el);
+  }
+
   global.Tooltips = {
     hide: hideTooltip,
     hideImmediate: hideTooltipImmediate,
+    set: setTooltip,
     // Wire a dynamically-created element (with data-tooltip) for custom tooltips.
     bind: bindTooltipEl,
     suppressAnchor(el) {

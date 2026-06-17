@@ -21,9 +21,11 @@ Declaration {
   | SchemaDeclaration
   | InductiveDeclaration
   | StratifiedDeclaration
+  | CoinductiveDeclaration
   | TypedefDeclaration
   | RecDeclaration
   | LetDeclaration
+  | ProofDeclaration
   | ModuleDeclaration
   | OpenPragma
   | AbbrevPragma
@@ -50,9 +52,16 @@ LFDeclaration {
 
 LFDatatypeDeclaration {
     (LFKeyword | DatatypeKeyword) (LowerIdentifier | UpperIdentifier) (":" LFKind)? "="
-    "|"? LFConstructor ("|" LFConstructor)*
+    lfConstructorList (AndKeyword (LowerIdentifier | UpperIdentifier) (":" LFKind)? "="
+                          lfConstructorList)*
     ";"
 }
+
+// The leading `|` is optional and the first constructor may be omitted, matching
+// `"=" [con] {"|" con}` in the reference grammar (userguide.tex). Lowercase name
+// → inlined, so LFConstructor nodes stay direct children (the formatter relies
+// on that).
+lfConstructorList { ("|"? LFConstructor ("|" LFConstructor)*)? }
 
 LFConstructor { (LowerIdentifier | UpperIdentifier) ":" LFType }
 
@@ -95,12 +104,17 @@ PiBinder { LowerIdentifier | UpperIdentifier }
 LFKind {
     TypeKeyword
   | LFType !arrow ArrowOp LFKind
+  | "{" PiBinder ":" LFType "}" ArrowOp LFKind
   | "{" PiBinder ":" LFType "}" LFKind
 }
 
 LFType {
     LFAppType
+    // An index argument may be a lambda term (`[g ⊢ con args \x.M]`); the
+    // contextual type/object split is syntactic only, so allow it here too.
+  | LFAppType !app LFLambda
   | LFType !arrow ArrowOp LFType
+  | "{" PiBinder ":" LFType "}" ArrowOp LFType
   | "{" PiBinder ":" LFType "}" LFType
 }
 
@@ -110,13 +124,15 @@ LFAppType {
 }
 
 LFAtomicType {
-    LowerIdentifier
+    LowerIdentifier projection*
   | UpperIdentifier Substitution?
+  | ParameterVariable
+  | SubstitutionVariable
   | "(" LFType ")"
   | "(" LFType !ann ":" LFType ")"
 }
 
-ArrowOp { "->" | "<-" | "→" }
+ArrowOp { "->" | "<-" | "←" | "→" }
 
 //  LF terms
 
@@ -128,7 +144,7 @@ LFTerm {
 
 LFLambda { LFLambdaBinder LFTerm }
 
-LFLambdaBinder { ("\\" | "λ") LowerIdentifier "." }
+LFLambdaBinder { "\\" LowerIdentifier "." }
 
 LFAppTerm {
     LFAtomicTerm
@@ -136,17 +152,25 @@ LFAppTerm {
 }
 
 LFAtomicTerm {
-    LowerIdentifier ProjectionTail? Substitution?
+    LowerIdentifier projection* Substitution?
   | UpperIdentifier Substitution?
   | ParameterVariable
   | SubstitutionVariable
+  | Tuple
   | Hole
   | UnderscoreHole
   | "(" LFTerm !ann ":" LFType ")"
   | "(" LFTerm ")"
 }
 
-Hole            { "?" }
+// Projections chain (clf_parser.ml): a block field is selected by position
+// (`.2`, ProjectionTail) or by name (`.lbl`, NamedProjection — a contextual
+// external token, emitted only where a projection can be shifted, so it never
+// steals a lambda binder's `.` or a declaration-terminating `.`).
+projection { ProjectionTail | NamedProjection }
+
+// Sigma (block) tuple: <M1; M2; ...; Mn>, semicolon-separated (clf_parser.ml).
+Tuple           { "<" LFTerm (";" LFTerm)* ">" }
 UnderscoreHole  { "_" }
 
 LFBlock {
@@ -160,39 +184,91 @@ LFBlockField { LowerIdentifier ":" LFType }
 
 Substitution { "[" SubstBody? "]" }
 
-SubstElem { LFTerm | SubstPair }
-
-SubstPair { "<" LFTerm ";" LFTerm ">" }
+SubstElem { LFTerm }
 
 SubstBody {
     SubstHead ("," SubstElem)*
   | SubstElem ("," SubstElem)*
 }
 
-SubstHead { "^" | ".." }
+// `..` (or its Unicode ellipsis `…`) is the identity substitution; `^` the empty.
+SubstHead { "^" | ".." | "…" }
 
 ParameterVariable {
-    "#" LowerIdentifier ProjectionTail? Substitution?
+    "#" LowerIdentifier projection* Substitution?
+  | "#" "_"
 }
 
 SubstitutionVariable {
     "#" UpperIdentifier Substitution?
   | "$" UpperIdentifier Substitution?
   | "$" LowerIdentifier Substitution?
+  | "$" "_"
 }
 
 SubstitutionType {
-    "$" "[" ContextPart? Turnstile SubstBracketBody "]"
-  | "$" "[" Turnstile SubstBracketBody "]"
+    "$" "[" ContextPart? SubstTurnstile SubstBracketBody "]"
+  | "$" "[" SubstTurnstile SubstBracketBody "]"
 }
+
+// Inside a substitution type the turnstile may be hashed (`|-#` / `⊢#`),
+// marking a renaming substitution (meta_parser.ml).
+SubstTurnstile { Turnstile | TurnstileHash }
+
+TurnstileHash { "|-#" | "⊢#" }
 
 SubstBracketBody {
     SubstBody
 }
 
 ParameterType {
-    "#" "[" ContextPart? Turnstile LFType "]"
-  | "#" "[" Turnstile LFType "]"
+    "#" "[" ContextPart? Turnstile ParameterTypeBody "]"
+  | "#" "[" Turnstile ParameterTypeBody "]"
+}
+
+ParameterTypeBody {
+    LFType
+  | ParameterBlock
+}
+
+ParameterBlock {
+    BlockKeyword ParameterBlockField ("," ParameterBlockField)*
+  | BlockKeyword "(" ParameterBlockField ("," ParameterBlockField)* ")"
+}
+
+ParameterBlockField {
+    LowerIdentifier ":" ParameterFieldType
+}
+
+ParameterFieldType {
+    ParameterFieldAppType
+  | ParameterFieldType !arrow ArrowOp ParameterFieldType
+  | ParameterFieldType !star "*" ParameterFieldType
+  | "{" CompTypeBinder "}" ArrowOp ParameterFieldType
+  | "(" CompTypeBinder ")" ArrowOp ParameterFieldType
+  | "{" CompTypeBinder "}" ParameterFieldType
+  | "(" CompTypeBinder ")" ParameterFieldType
+}
+
+ParameterFieldAppType {
+    ParameterFieldAtom
+  | ParameterFieldAppType !app ParameterFieldTypeArg
+}
+
+ParameterFieldTypeArg {
+    ParameterSubstArg
+  | ParameterFieldAtom
+  | ContextApplication
+}
+
+ParameterFieldAtom {
+    ContextualType
+  | SubstitutionType
+  | ParameterType
+  | UpperIdentifier
+  | LowerIdentifier
+  | TypeKeyword
+  | "(" ParameterFieldType ")"
 }
 
 //  Schemas
@@ -212,7 +288,7 @@ SchemaElement {
 }
 
 SchemaSomeBlock {
-    SomeKeyword "[" SchemaSomeBindings "]"
+    SomeKeyword "[" SchemaSomeBindings? "]"
 }
 
 SchemaSomeBindings {
@@ -220,34 +296,57 @@ SchemaSomeBindings {
     ("," (LowerIdentifier | UpperIdentifier) ":" LFType)*
 }
 
-//  Inductive and stratified datatypes
+//  Inductive, stratified, and coinductive datatypes
 
 InductiveDeclaration {
     InductiveKeyword InductiveBody DatatypeContinuation* ";"
-}
-
-DatatypeContinuation {
-    AndKeyword InductiveBody
-  | AndKeyword InductiveKeyword InductiveBody
-  | AndKeyword StratifiedKeyword InductiveBody
 }
 
 StratifiedDeclaration {
     StratifiedKeyword InductiveBody DatatypeContinuation* ";"
 }
 
-
-InductiveBody {
-    UpperIdentifier ":" CompKind "=" "|"? CompConstructor ("|" CompConstructor)*
+CoinductiveDeclaration {
+    CoinductiveKeyword CoinductiveBody DatatypeContinuation* ";"
 }
 
-CompConstructor { UpperIdentifier ":" CompType }
+// A mutual block may mix inductive / stratified / coinductive siblings, each
+// reintroducing its flavour keyword after `and` (signature_parser.ml).
+DatatypeContinuation {
+    AndKeyword InductiveBody
+  | AndKeyword InductiveKeyword InductiveBody
+  | AndKeyword StratifiedKeyword InductiveBody
+  | AndKeyword CoinductiveKeyword CoinductiveBody
+}
+
+// Datatype and constructor names use the case-agnostic `identifier` in the
+// real parser, so accept lower- or upper-case (the upper-case convention is not
+// enforced by the grammar).
+InductiveBody {
+    datatypeName ":" CompKind "=" "|"? CompConstructor ("|" CompConstructor)*
+}
+
+CompConstructor { datatypeName ":" CompType }
+
+// Coinductive (codata): each branch is an observation/destructor whose
+// observation type and return type are separated by `::` (signature_parser.ml).
+CoinductiveBody {
+    datatypeName ":" CompKind "=" "|"? CompDestructor ("|" CompDestructor)*
+}
+
+CompDestructor {
+    datatypeName ":" CompType "::" CompType
+  | "(" datatypeName ":" CompType ")" "::" CompType
+}
+
+datatypeName { LowerIdentifier | UpperIdentifier }
 
 CompKind {
     CTypeKeyword
+  | PropKeyword
   | CompType !arrow ArrowOp CompKind
-  | "{" CompTypeBinder "}" CompKind
-  | "(" CompTypeBinder ")" CompKind
+  | "{" CompTypeBinder "}" ArrowOp? CompKind
+  | "(" CompTypeBinder ")" ArrowOp? CompKind
 }
 
 //  Type abbreviations and modules
@@ -358,12 +457,18 @@ RecBody {
 
 TotalityAnnotation {
     "/" TotalKeyword TotalityMeasure "/"
+  | "/" TotalKeyword "/"
+  | "/" TrustKeyword "/"
 }
 
 TotalityMeasure {
     Number
   | LowerIdentifier TotalityCall?
   | UpperIdentifier TotalityCall?
+    // Bare parenthesized measure: `/ total (fn args...) /`.
+  | TotalityCall
+    // Lexicographic order: `{ord1 ord2 ...} (fn args...)`.
+  | "{" (LowerIdentifier | UpperIdentifier | Number)+ "}" TotalityCall?
 }
 
 TotalityCall {
@@ -381,11 +486,19 @@ LetDeclaration {
     LetKeyword LowerIdentifier (":" CompType)? "=" Expression ";"
 }
 
+// Harpoon proof: the header (`proof name : type =`) is parsed precisely so the
+// type resolves on hover; the proof script body is consumed opaquely by an
+// external tokenizer up to the terminating `;` (signature_parser.ml).
+ProofDeclaration {
+    ProofKeyword datatypeName ":" CompType "=" ProofScript ";"
+}
+
 //  Expressions
 
 Expression {
     AppExpression
   | FnExpression
+  | CofunctionExpression
   | MLamExpression
   | CaseExpression
   | LetExpression
@@ -397,6 +510,8 @@ Expression {
 AppExpression {
     AtomicExpression
   | AppExpression !app AtomicExpression
+    // Destructor application: `e .obs` eliminates a codata value.
+  | AppExpression !app Observation
 }
 
 AtomicExpression {
@@ -407,7 +522,6 @@ AtomicExpression {
   | ParameterType
   | TupleOrParenExpression
   | ContextApplication
-  | AngleHatTerm
   | Hole
 }
 
@@ -419,21 +533,33 @@ ContextApplication {
     "[" ContextPart? "]"
 }
 
-AngleHatTerm {
-    "<" ContextHat ("|-" | "⊢") LFTerm ">"
-  | "<" "." LFTerm ">"
-}
-
-ContextHat {
-    LowerIdentifier ("," LowerIdentifier)*
-}
-
 FnExpression {
-  (FnKeyword | FunKeyword) FnParam "," FnParam ("," FnParam)* FatArrow Expression
-  | (FnKeyword | FunKeyword) FnParam+ FatArrow Expression
+  FnKeyword FnParam "," FnParam ("," FnParam)* FatArrow Expression
+  | FnKeyword FnParam+ FatArrow Expression
 }
 
-FnParam { LowerIdentifier | UpperIdentifier }
+FnParam { LowerIdentifier | UpperIdentifier | UnderscoreHole }
+
+// `fun` is the cofunction: a copattern-matching abstraction. Each branch is a
+// sequence of copatterns — observations (`.d`) and ordinary patterns —
+// separated by optional commas, then `=>` body (comp_parser.ml).
+CofunctionExpression {
+  FunKeyword "|"? CofunctionBranch (!branch "|" CofunctionBranch)*
+}
+
+CofunctionBranch {
+  QuantifiedBinder* Copattern (","? Copattern)* FatArrow Expression
+}
+
+// A copattern is an observation (`.d`) or a pattern. The observation's `.` +
+// name is two tokens here (comp-expression context only), so it does not clash
+// with LF-level lambda/declaration dots.
+Copattern {
+    Observation
+  | AtomicPattern
+}
+
+Observation { "." (LowerIdentifier | UpperIdentifier) }
 
 MLamExpression {
   (MLamKeyword | FNKeyword) MLamParam "," MLamParam ("," MLamParam)* FatArrow Expression
@@ -467,7 +593,7 @@ QuantifiedBinder {
 }
 
 LetExpression {
-    LetKeyword Pattern "=" Expression InKeyword Expression
+    LetKeyword QuantifiedBinder* Pattern "=" Expression InKeyword Expression
 }
 
 IfExpression {
@@ -495,6 +621,7 @@ AtomicPattern {
   | UpperIdentifier
   | ContextualObject
   | ContextApplication
+  | SubstitutionType
   | TupleOrParenPattern
   | UnderscoreHole
 }
@@ -503,17 +630,14 @@ TupleOrParenPattern {
     "(" Pattern ("," Pattern)* ")"
 }
 
-@skip {} {
-  BlockComment[isolate] {
-    "%{" (blockCommentContent | blockCommentNewline)* blockCommentEnd
-  }
-}
+// Block comments `%{ ... }%` nest, and documentation comments `%{{ ... }}%`
+// behave the same for skipping purposes; an external tokenizer depth-counts the
+// `%{` / `}%` delimiters so nested comments are consumed as one (lexer.ml).
+@external tokens blockComment from "./beluga-tokens.mjs" { BlockComment }
 
-@local tokens {
-  blockCommentEnd { "}%" }
-  blockCommentNewline { $[\n] }
-  @else blockCommentContent
-}
+@external tokens parameterSubst from "./beluga-tokens.mjs" { ParameterSubstArg }
+@external tokens proofScript from "./beluga-tokens.mjs" { ProofScript }
+@external tokens namedProjection from "./beluga-tokens.mjs" { NamedProjection }
 
 //  Tokens
 
@@ -521,43 +645,40 @@ TupleOrParenPattern {
 
   whitespace { @whitespace+ }
 
-  LineComment   { "%" ![{%\n] ![\n]* | "%" $[\n] }
+  LineComment   { "%%" ![\n]* | "%" ![{%\n] ![\n]* | "%" $[\n] }
 
-  identChar     {
-      $[A-Za-z0-9_!$&'*+\-/=@\^~<>]
-    | "#"
-    | unicodeIdent
+  // Identifier characters mirror Beluga's lexer (src/parser/lexer.ml): an
+  // identifier is any run of characters that are NOT whitespace, control
+  // characters, or one of the reserved characters  . , : ; % | " \ ( ) [ ] { }
+  // < > and the turnstile glyph (U+22A2). Operators glued to text therefore
+  // become part of the identifier (`m/q`, `is_value?`); a standalone operator
+  // still wins at a token boundary via @precedence below. Digits, `#`, `$`, `?`
+  // cannot START an identifier (they head numbers, parameter/substitution
+  // variables, and holes respectively).
+  identChar {
+    ![\u0000-\u0020\u007F\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000.,:;%|"\\(){}\[\]<>\u22A2]
   }
 
-  unicodeIdent  {
-      $[\u00A1-\u00AC\u00AE-\u00FF]
-    | $[\u0100-\u02FF]
-    | $[\u0370-\u03BA\u03BC-\u03FF]
-    | $[\u0400-\u04FF]
-    | $[\u2070-\u218F]
-    | $[\u2190-\u2191\u2193-\u2199\u219B-\u21FF]
-    | $[\u2200-\u22A1\u22A3-\u22FF]
-    | $[\u2300-\u23FF]
-    | $[\u25A0-\u26FF]
-    | $[\u2A00-\u2AFF]
-    | $[\u{1D400}-\u{1D7FF}]
+  LowerIdentifier {
+    ![\u0000-\u0020\u007F\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000.,:;%|"\\(){}\[\]<>\u22A2A-Z0-9#$?] identChar*
   }
-
-  LowerIdentifier { ($[a-z_] | $[\^~!@] | unicodeIdent) identChar* }
   UpperIdentifier { $[A-Z] identChar* }
 
   Number { $[0-9]+ }
 
     ProjectionTail { "." $[0-9]+ }
 
-  "->" "<-" "=>" "⇒" "::" ".."
+  // A hole is `?` optionally followed by a name (lexer.ml). The name binds
+  // tightly (no whitespace), so the whole thing must be one token.
+  Hole { "?" identChar* }
+
+  "->" "<-" "←" "=>" "⇒" "::" ".." "…"
   "(" ")" "[" "]" "{" "}" "<" ">"
-  "." "," ":" ";" "|" "*" "+" "=" "?" "_" "^" "#" "$"
-  "|-"
+  "." "," ":" ";" "|" "*" "+" "=" "_" "^" "#" "$" "/"
+  "|-" "|-#" "⊢#"
   "\\"
   "→"
   "⊢"
-  "λ"
 
   "--coverage" "--warncoverage" "--nostrengthen" "--infix" "--prefix"
   "--assoc" "--name" "--abbrev" "--not" "--open" "--query" "--opaque"
@@ -567,11 +688,13 @@ TupleOrParenPattern {
     "--coverage", "--warncoverage", "--nostrengthen",
     "--infix", "--prefix", "--assoc", "--name",
     "--abbrev", "--not", "--open", "--query", "--opaque",
-    "->", "<-", "=>", "⇒", "::", "..", "|-",
-    "→", "⊢", "λ",
+    "|-#", "⊢#",
+    "->", "<-", "←", "=>", "⇒", "::", "..", "…", "|-",
+    "→", "⊢",
     ProjectionTail,
     Number,
-    "^", "+", "*", "=", "?",
+    Hole,
+    "^", "+", "*", "=", "/",
     LowerIdentifier, UpperIdentifier,
     "_",
     "<", ">",
@@ -582,15 +705,16 @@ TupleOrParenPattern {
 
 
 LFKeyword { @specialize<UpperIdentifier, "LF"> }
-FNKeyword { @specialize<LowerIdentifier, "FN"> }
+FNKeyword { @extend<UpperIdentifier, "FN"> }
 
 TypeKeyword { @specialize<LowerIdentifier, "type"> }
-DatatypeKeyword { @specialize<LowerIdentifier, "datatype"> }
+DatatypeKeyword { @extend<LowerIdentifier, "datatype"> }
 SchemaKeyword { @specialize<LowerIdentifier, "schema"> }
 SomeKeyword { @specialize<LowerIdentifier, "some"> }
 BlockKeyword { @specialize<LowerIdentifier, "block"> }
 InductiveKeyword { @specialize<LowerIdentifier, "inductive"> }
 CTypeKeyword { @specialize<LowerIdentifier, "ctype"> }
+PropKeyword { @specialize<LowerIdentifier, "prop"> }
 AndKeyword { @specialize<LowerIdentifier, "and"> }
 StratifiedKeyword { @specialize<LowerIdentifier, "stratified"> }
 TypedefKeyword { @specialize<LowerIdentifier, "typedef"> }
@@ -610,9 +734,9 @@ ImpossibleKeyword { @specialize<LowerIdentifier, "impossible"> }
 ModuleKeyword { @specialize<LowerIdentifier, "module"> }
 StructKeyword { @specialize<LowerIdentifier, "struct"> }
 EndKeyword { @specialize<LowerIdentifier, "end"> }
-NoneKeyword { @specialize<LowerIdentifier, "none"> }
-LeftKeyword { @specialize<LowerIdentifier, "left"> }
-RightKeyword { @specialize<LowerIdentifier, "right"> }
+NoneKeyword { @extend<LowerIdentifier, "none"> }
+LeftKeyword { @extend<LowerIdentifier, "left"> }
+RightKeyword { @extend<LowerIdentifier, "right"> }
 
 TrustKeyword { @specialize<LowerIdentifier, "trust"> }
 CoinductiveKeyword { @specialize<LowerIdentifier, "coinductive"> }

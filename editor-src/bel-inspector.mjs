@@ -15,6 +15,18 @@ const KIND_LABEL = {
 };
 const KIND_ORDER = ['signature', 'body', 'notation', 'module', 'implicit', 'coverage'];
 
+function setTip(el, text) {
+  if (!el) return;
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  if (g.Tooltips?.set) g.Tooltips.set(el, text);
+  else if (text) {
+    el.removeAttribute('title');
+    el.setAttribute('data-tooltip', text);
+    el.setAttribute('aria-label', text);
+    g.Tooltips?.bind?.(el);
+  }
+}
+
 export function groupByKind(edges) {
   const buckets = new Map();
   for (const edge of edges || []) {
@@ -114,7 +126,6 @@ function jumpRow(view, label, range, meta) {
   row.appendChild(body);
   row.addEventListener('click', () => {
     if (!range) return;
-    view.dispatch({ selection: { anchor: range.from, head: range.from }, scrollIntoView: true });
     goToDefinition(view, range.from);
   });
   return row;
@@ -150,8 +161,7 @@ const STATUS_WORD = {
 function statusDot(state, detail) {
   const dot = el('span', `inspector-status-dot is-${state || 'settled'}`);
   const word = STATUS_WORD[state] || 'Settled';
-  dot.title = detail ? `${word} — ${detail}` : word;
-  dot.setAttribute('aria-label', dot.title);
+  setTip(dot, detail ? `${word} — ${detail}` : word);
   return dot;
 }
 
@@ -171,7 +181,7 @@ export function renderInspector(bodyEl, model, view, engine) {
   if (model.type != null) {
     const typeEl = el('div', 'inspector-type bel-type');
     const srcLabel = model.typeSource && TYPE_SOURCE_LABEL[model.typeSource];
-    if (srcLabel) typeEl.title = srcLabel;
+    if (srcLabel) setTip(typeEl, srcLabel);
     renderTypeInto(typeEl.appendChild(el('span', 'bel-type-text')), model.type, model.namespace);
     bodyEl.appendChild(typeEl);
   } else if (model.typePending || model.statusState === 'recalculating') {
@@ -204,8 +214,8 @@ export function renderInspector(bodyEl, model, view, engine) {
   // Impact — transitive signature-change cascade.
   const impactSec = section('Impact', model.impact.length);
   impactSec.dataset.section = 'impact';
-  impactSec.querySelector('.inspector-section-head').title =
-    'Declarations a change to this signature would cascade to';
+  setTip(impactSec.querySelector('.inspector-section-head'),
+    'Declarations a change to this signature would cascade to');
   if (model.impact.length) {
     for (const node of model.impact) {
       const range = rangeForId(engine, node.id);
@@ -224,7 +234,7 @@ export function renderInspector(bodyEl, model, view, engine) {
     graphSec.dataset.section = 'graph';
     const popOut = el('button', 'inspector-graph-popout');
     popOut.type = 'button';
-    popOut.title = 'Open in a window';
+    setTip(popOut, 'Open in a window');
     popOut.textContent = '⤢';
     popOut.addEventListener('click', () => openLocalGraphWindow(view, model.definitionPos));
     graphSec.querySelector('.inspector-section-head').appendChild(popOut);

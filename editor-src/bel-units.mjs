@@ -28,8 +28,11 @@ function subtreeHasError(node) {
   const lo = node.from;
   const hi = node.to;
   let bad = false;
+  // Zero-width error nodes (Lezer's "missing token" recovery — unclosed paren,
+  // missing colon) are real syntax faults too; requiring from < to here used to
+  // let broken blocks through to the Beluga checker unmasked.
   node.cursor().iterate((n) => {
-    if (n.type.isError && n.from < n.to && n.from >= lo && n.to <= hi) bad = true;
+    if (n.type.isError && n.from >= lo && n.to <= hi) bad = true;
   });
   return bad;
 }
@@ -266,6 +269,18 @@ function blankBlockLines(masked, doc, b) {
     masked = masked.slice(0, line.from)
       + masked.slice(line.from, line.to).replace(/[^\n]/g, ' ')
       + masked.slice(line.to);
+  }
+  return masked;
+}
+
+// Blank out a specific set of blocks (by index) on top of `code`. Used by the
+// multi-pass settlement: after a Beluga error is attributed to a block, that
+// block (and everything impacted by it) is masked so the next pass can reach
+// errors in the remaining independent blocks.
+export function maskBlocksByIndex(code, doc, blocks, indices) {
+  let masked = code;
+  for (let j = blocks.length - 1; j >= 0; j--) {
+    if (indices.has(j)) masked = blankBlockLines(masked, doc, blocks[j]);
   }
   return masked;
 }

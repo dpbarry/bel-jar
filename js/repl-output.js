@@ -2,9 +2,6 @@
 
 (function (global) {
   var output = document.getElementById('output');
-  var replBeautifyEnabled = !(
-    typeof BelJarPersist !== 'undefined' && BelJarPersist.readStoredReplRaw()
-  );
 
   function normBelugaRaw(s) {
     return global.BelugaText
@@ -122,11 +119,6 @@
   }
 
   function appendRichShell(rawText, buildDom) {
-    if (!replBeautifyEnabled) {
-      var plain = stripAnsi(normBelugaRaw(rawText));
-      if (plain.trim()) appendOutput(plain);
-      return;
-    }
     var block = createReplBlock();
     var shell = document.createElement('div');
     shell.className = 'repl-rich';
@@ -153,7 +145,6 @@
   }
 
   function tryAppendBelugaWrappedCommandError(text) {
-    if (!replBeautifyEnabled) return false;
     var info = belugaCommandErrorInfo(text);
     if (!info) return false;
     appendRichBelugaCommandError(text, info.detail, info.label);
@@ -717,6 +708,13 @@
   }
 
   function appendBelugaResponse(raw, verb) {
+    // After a whole-project load, checker locations refer to the concatenated
+    // source — rewrite them back to real file names + file-relative lines.
+    if (typeof BelJarBelugaRun !== 'undefined' && typeof BelJarProjectSource !== 'undefined'
+        && typeof BelJarBelugaRun.getProjectSpans === 'function') {
+      var spans = BelJarBelugaRun.getProjectSpans();
+      if (spans) raw = BelJarProjectSource.remapLocations(raw, spans);
+    }
     if (verb == null || verb === '') appendRunOutput(raw);
     else appendBelugaFormattedOutput(raw, verb);
   }
@@ -724,10 +722,6 @@
   function appendRunOutput(raw) {
     var clean = stripAnsi(raw).replace(/\n+$/, '');
     if (!clean.trim()) return;
-    if (!replBeautifyEnabled) {
-      appendOutput(clean);
-      return;
-    }
     var segs = attachQuerySourceLines(segmentRunOutput(clean), collectEditorQuerySourceLines());
     segs.forEach(function (seg) {
       if (seg.type === 'query') {
@@ -773,8 +767,7 @@
       var line = lines[i];
       var kind;
       if (useForce) kind = forcedKind;
-      else if (replBeautifyEnabled) kind = inferLineKind(line);
-      else kind = line === '' ? 'blank' : 'out';
+      else kind = inferLineKind(line);
       block.appendChild(makeReplLine(line, kind));
     }
     output.appendChild(block);
@@ -782,15 +775,6 @@
   }
 
   function appendReplHelp() {
-    if (!replBeautifyEnabled) {
-      var plainLines = ['Commands'].concat(
-        REPL_HELP_ROWS.map(function (rowSpec) {
-          return '  ' + rowSpec.cmd + ' — ' + rowSpec.desc;
-        })
-      );
-      appendOutput(plainLines.join('\n'));
-      return;
-    }
     var block = createReplBlock();
     var wrap = document.createElement('div');
     wrap.className = 'repl-help';
@@ -820,6 +804,61 @@
     block.appendChild(wrap);
     output.appendChild(block);
     scrollReplBottom();
+  }
+
+  function appendRichKvRow(grid, left, right) {
+    var row = document.createElement('div');
+    row.className = 'repl-rich-kv-row';
+    var k = document.createElement('code');
+    k.className = 'repl-rich-k';
+    k.textContent = left;
+    var v = document.createElement('div');
+    v.className = 'repl-rich-v';
+    v.textContent = right;
+    row.append(k, v);
+    grid.appendChild(row);
+  }
+
+  function projectFilesSummary(belCount, elfCount, cfgCount) {
+    var parts = [];
+    if (belCount) parts.push(belCount + ' .bel');
+    if (elfCount) parts.push(elfCount + ' .elf (prelude)');
+    if (cfgCount) parts.push(cfgCount + ' .cfg');
+    return parts.join(' · ');
+  }
+
+  function appendProjectOpened(info) {
+    info = info || {};
+    var name = String(info.name != null ? info.name : 'Untitled');
+    var belCount = Number(info.belCount) || 0;
+    var elfCount = Number(info.elfCount) || 0;
+    var cfgCount = Number(info.cfgCount) || 0;
+    var defaultCfgPath = info.defaultCfgPath ? String(info.defaultCfgPath) : '';
+
+    appendRichShell('', function (shell) {
+      appendRichTitle(shell, 'Project');
+      var grid = document.createElement('div');
+      grid.className = 'repl-rich-kv-grid';
+      appendRichKvRow(grid, 'Folder', name);
+      var files = projectFilesSummary(belCount, elfCount, cfgCount);
+      if (files) appendRichKvRow(grid, 'Files', files);
+      if (defaultCfgPath) appendRichKvRow(grid, 'Flow', defaultCfgPath.split('/').pop());
+      shell.appendChild(grid);
+      var note = document.createElement('div');
+      note.className = 'repl-rich-kv-row repl-rich-kv-row--full repl-rich-v';
+      note.textContent = 'Run and lint prepend earlier files from the matching .cfg in each folder.';
+      shell.appendChild(note);
+    });
+  }
+
+  function appendProjectEmpty() {
+    appendRichShell('', function (shell) {
+      appendRichTitle(shell, 'Project');
+      var msg = document.createElement('div');
+      msg.className = 'repl-rich-msg repl-rich-msg--warn';
+      msg.textContent = 'No .bel files in that folder.';
+      shell.appendChild(msg);
+    });
   }
 
   function insertWelcomeBanner() {
@@ -859,14 +898,6 @@
     scrollReplBottom();
   }
 
-  function setReplBeautify(on) {
-    replBeautifyEnabled = !!on;
-    if (typeof BelJarPersist !== 'undefined') {
-      BelJarPersist.writeStoredReplRaw(!replBeautifyEnabled);
-    }
-    if (typeof BelJarSettingsUI !== 'undefined') BelJarSettingsUI.syncFromState();
-  }
-
   global.BelJarReplOutput = {
     appendOutput: appendOutput,
     appendReplHelp: appendReplHelp,
@@ -874,11 +905,11 @@
     appendBelugaResponse: appendBelugaResponse,
     appendBuildFallbackNotice: appendBuildFallbackNotice,
     appendRichMsg: appendRichMsg,
+    appendProjectOpened: appendProjectOpened,
+    appendProjectEmpty: appendProjectEmpty,
     insertWelcomeBanner: insertWelcomeBanner,
     clearOutput: clearOutput,
     scrollReplBottom: scrollReplBottom,
-    setReplBeautify: setReplBeautify,
-    getReplBeautify: function () { return replBeautifyEnabled; },
     parseQuerySolutions: parseQuerySolutions,
     segmentRunOutput: segmentRunOutput,
     createReplBlock: createReplBlock,

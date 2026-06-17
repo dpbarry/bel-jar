@@ -1,6 +1,9 @@
 import assert from 'node:assert';
 import { Text } from '@codemirror/state';
-import { parseBelugaDiagnostics } from '../editor-src/bel-beluga-diag.mjs';
+import {
+  belugaOutputLooksLikeFailure,
+  parseBelugaDiagnostics,
+} from '../editor-src/bel-beluga-diag.mjs';
 
 const sample = `rec sec3 : (stepBind : pf o) → pf o =
   fn _ => stepBind
@@ -32,9 +35,19 @@ Error: Expected pf to be a computation-level type constant.
     File "input.bel", line 33, column 1
     Error: pf is a bound LF type constant.`;
 const chainedDiags = parseBelugaDiagnostics(chained, chainedDoc);
-assert.equal(chainedDiags.length, 1);
-assert.equal(chainedDiags[0].message, 'Expected pf to be a computation-level type constant.');
-assert.ok(!chainedDiags[0].message.includes('File "'));
-assert.ok(!chainedDiags[0].message.includes('bound LF type constant'));
+assert.equal(chainedDiags.length, 2);
+const chainedMsgs = chainedDiags.map((d) => d.message).sort();
+assert.deepEqual(chainedMsgs, [
+  'Expected pf to be a computation-level type constant.',
+  'pf is a bound LF type constant.',
+]);
+assert.ok(chainedDiags.every((d) => !d.message.includes('File "')));
+assert.ok(chainedDiags[0].from !== chainedDiags[1].from);
+
+assert.equal(belugaOutputLooksLikeFailure(raw), true);
+assert.equal(
+  belugaOutputLooksLikeFailure('## Type Reconstruction done: input.bel ##\n## Holes: input.bel ##'),
+  false,
+);
 
 console.log('OK bel-beluga-diag parses File/line/column errors');

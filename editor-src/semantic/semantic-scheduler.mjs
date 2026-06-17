@@ -9,6 +9,7 @@ export function createSemanticScheduler(engine, session) {
   let cursorPosition = 0;
   let viewportRange = { from: 0, to: 0 };
   let scheduledRun = null;
+  let stopped = false;
 
   function priorityFor(declRange) {
     if (!declRange) return 1000;
@@ -30,6 +31,7 @@ export function createSemanticScheduler(engine, session) {
   }
 
   function enqueue(declId, declRange) {
+    if (stopped) return;
     if (elaborated.has(declId) || elaborating.has(declId)) return;
 
     const priority = priorityFor(declRange);
@@ -169,10 +171,16 @@ export function createSemanticScheduler(engine, session) {
   }
 
   function scheduleRun() {
-    if (scheduledRun) return;
+    if (stopped || scheduledRun) return;
 
     scheduledRun = setTimeout(async () => {
       scheduledRun = null;
+      if (stopped) return;
+
+      if (typeof engine.isSettlementReady === 'function' && !engine.isSettlementReady()) {
+        scheduleRun();
+        return;
+      }
 
       // Populate the reconstructed-type data layer (bounded per tick inside the
       // engine), once per settle-cycle before implicit work. Returns whether
@@ -255,6 +263,13 @@ export function createSemanticScheduler(engine, session) {
     scheduleRun();
   }
 
+  // Permanently halt the scheduler (editor teardown). Unlike invalidateAll,
+  // nothing can re-arm a stopped scheduler.
+  function stop() {
+    stopped = true;
+    invalidateAll();
+  }
+
   function getStatus() {
     const sorted = queue.slice().sort((a, b) => a.priority - b.priority);
     return {
@@ -263,6 +278,14 @@ export function createSemanticScheduler(engine, session) {
       elaborating: elaborating.size,
       elaborated: elaborated.size,
     };
+  }
+
+  // Is this decl actually awaiting (re)elaboration right now? The graph's
+  // `dirty` set is a transition log frozen at the last engine update; the
+  // scheduler's queue is the live truth, so UI churn indicators ask here.
+  function isPending(declId) {
+    if (elaborating.has(declId)) return true;
+    return queue.some((item) => item.declId === declId);
   }
 
   return {
@@ -274,9 +297,11 @@ export function createSemanticScheduler(engine, session) {
     elaborateNext,
     ensureElaborated,
     invalidateAll,
+    stop,
     seedFromFrontier,
     seedAllImplicitDeclarations,
     startBackground,
     getStatus,
+    isPending,
   };
 }

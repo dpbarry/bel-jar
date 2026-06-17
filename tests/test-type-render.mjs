@@ -48,6 +48,10 @@ function leaves(node, out = []) {
 expect(normalizeType('  a  →  b ') === 'a → b', 'normalizeType collapses spaces');
 expect(normalizeType('a -> b') === 'a → b', 'normalizeType converts -> to →');
 expect(normalizeType('a →\n   b') === 'a → b', 'normalizeType joins wrapped lines');
+expect(normalizeType('block (x:tm m/q _,\n neux:neu x)') === 'block (x:tm m/q _, neux:neu x)',
+  'normalizeType joins schema comma breaks without space before comma');
+expect(normalizeType('block (\n x:tm m/q _)') === 'block (x:tm m/q _)',
+  'normalizeType joins schema paren breaks without space after open paren');
 expect(normalizeType(null) === '', 'normalizeType tolerates null');
 
 // --- a realistic comp type (from the screenshots) ---

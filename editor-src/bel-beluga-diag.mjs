@@ -2,13 +2,13 @@ function stripAnsi(s) {
   return String(s != null ? s : '')
     .replace(/\r\n/g, '\n')
     .replace(/\[[0-9;]*m/g, '')
-    .replace(/[0-9;]*m/g, '');
+    .replace(/\u001b\[[0-9;]*m/g, '');
 }
 
 const FILE_LOC =
   /^File\s+"[^"]*"\s*,\s*line\s+(\d+)\s*(?:,\s*column\s+(\d+)|,\s*characters?\s+(\d+)(?:-(\d+))?)?\s*:?\s*$/i;
 
-// Any location marker — used to find where a message ends (i.e. the next marker).
+// Any location marker � used to find where a message ends (i.e. the next marker).
 const ANY_LOC = /(?:[^\s:"]+\.bel:\d+\.\d+)|(?:File\s+"[^"]*"\s*,\s*line\s+\d+)|(?:\bat line\s+\d+,\s*characters?)/;
 
 function trimMessageLines(parts) {
@@ -38,7 +38,7 @@ function cleanMessage(parts) {
 }
 
 function expandToToken(lineText, offset) {
-  const isId = (ch) => ch && !/[\s\[\](){}:.,;|/]/.test(ch) && ch !== '⇒' && ch !== '→' && ch !== '⊢';
+  const isId = (ch) => ch && !/[\s\[\](){}:.,;|/]/.test(ch) && ch !== '?' && ch !== '?' && ch !== '?';
   let at = Math.max(0, Math.min(offset, lineText.length - 1));
   if (!isId(lineText[at])) {
     let fwd = at;
@@ -105,14 +105,7 @@ function parseFileLocations(text, doc, add) {
         continue;
       }
       if (FILE_LOC.test(t)) {
-        if (/^\s/.test(rawLine) && msgParts.length) {
-          i += 1;
-          while (i < lines.length && /^\s/.test(lines[i]) && lines[i].trim()) {
-            if (FILE_LOC.test(lines[i].trim())) break;
-            i += 1;
-          }
-          continue;
-        }
+        if (/^\s/.test(rawLine) && msgParts.length) break;
         break;
       }
       if (/^(Error|Warning):/i.test(t) || msgParts.length) {
@@ -197,9 +190,11 @@ export function parseBelugaDiagnostics(raw, doc) {
 }
 
 // Many location-less errors name the offending identifier in their text
-// ("Identifier ¬ is unbound"). Pull that name out so we can point the squiggle
-// at the real token instead of the top of the file.
-function namedCulprit(message) {
+// ("Identifier � is unbound"). Pull that name out so we can point the squiggle
+// at the real token instead of the top of the file. Also used by the
+// settlement to recognize INDUCED unbound errors (the named culprit is defined
+// in a block that was masked out).
+export function namedCulprit(message) {
   const patterns = [
     /Identifier\s+(\S+)\s+is\s+unbound/i,
     /Unbound\s+(?:identifier|variable|operator|constructor|type|module|namespace)\s+(\S+)/i,
@@ -241,7 +236,7 @@ function firstMeaningfulLineAnchor(doc) {
   let anchorLine = 1;
   for (let n = 1; n <= doc.lines; n += 1) {
     const t = doc.line(n).text.trim();
-    if (t && !t.startsWith('%')) { anchorLine = n; break; }
+    if (t && !t.startsWith('%') && !t.startsWith('%{{{')) { anchorLine = n; break; }
   }
   const line = doc.line(anchorLine);
   const lead = line.text.search(/\S/);
@@ -249,15 +244,34 @@ function firstMeaningfulLineAnchor(doc) {
   return { from, to: Math.max(from + 1, line.to) };
 }
 
-// A failed check that produced no locatable diagnostic must still surface — a
+// True when Beluga text looks like a failed check/load, not normal success
+// chatter (type reconstruction, holes listing, etc.).
+export function belugaOutputLooksLikeFailure(raw) {
+  const text = stripAnsi(raw);
+  if (!text.trim()) return false;
+  if (/\bunbound identifier\b/i.test(text)) return true;
+  if (/^Error:/im.test(text)) return true;
+  if (/File\s+"[^"]*"\s*,\s*line\s+\d+/i.test(text) && /\bError:/i.test(text)) return true;
+  if (/^-\s*Unhandled exception:/im.test(text)) return true;
+  if (/Failed to (?:parse|execute|load)\b/i.test(text)) return true;
+  if (/^-\s*Error\b/im.test(text)) return true;
+  return false;
+}
+
+// A failed check that produced no locatable diagnostic must still surface � a
 // red squiggle beats a silent green. Point it at the named culprit token when
 // the message identifies one; otherwise anchor to the first meaningful line.
 // Returns a single diagnostic, or null if the output has nothing to say.
-export function fallbackDiagnostic(raw, doc) {
+function firstErrorLine(raw) {
   const text = stripAnsi(raw);
-  const message = cleanMessage([text]) || text.trim();
-  if (!message) return null;
-  const truncated = message.length > 600 ? `${message.slice(0, 600)}…` : message;
-  const span = locateToken(doc, namedCulprit(message)) || firstMeaningfulLineAnchor(doc);
-  return { from: span.from, to: span.to, severity: 'error', message: truncated };
+  const m = text.match(/^Error:\s*(.+)$/im);
+  return m ? m[1].trim() : null;
+}
+
+export function fallbackDiagnostic(raw, doc) {
+  const short = firstErrorLine(raw);
+  if (!short) return null;
+  const message = short.length > 200 ? short.slice(0, 200) + '...' : short;
+  const span = locateToken(doc, namedCulprit(short)) || firstMeaningfulLineAnchor(doc);
+  return { from: span.from, to: span.to, severity: 'error', message };
 }

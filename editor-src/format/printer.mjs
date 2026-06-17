@@ -14,6 +14,11 @@ import {
 } from './doc.mjs';
 import { splitCompRecPrefix } from './comp-prefix.mjs';
 import { layoutArrowChain, layoutPrefixChain, layoutStack, measureDoc } from './layout.mjs';
+import {
+  formatContextualProofScript,
+  formatMultilineExprSticky,
+  reindentStickyBlock,
+} from './proof-script.mjs';
 import { mergeStyle } from './style.mjs';
 import { children, childrenArr, firstOfType, txt } from './tree.mjs';
 
@@ -44,6 +49,10 @@ export function makePrinter(src, opts = {}) {
     const fn = rules[node.name];
     if (fn) return fn(node);
     return verbatim(node);
+  }
+
+  function declSemicolon() {
+    return concat(hardline, text(';'));
   }
 
   const rules = {
@@ -93,7 +102,7 @@ export function makePrinter(src, opts = {}) {
     SchemaDeclaration(node) {
       const id = firstOfType(node, 'LowerIdentifier');
       const body = firstOfType(node, 'SchemaBody');
-      return concat(text('schema '), text(txt(id, src)), text(' = '), body ? nest(style.indent, ppSchemaBody(body)) : empty, text(';'));
+      return concat(text('schema '), text(txt(id, src)), text(' = '), body ? nest(style.indent, ppSchemaBody(body)) : empty, declSemicolon());
     },
 
     TypedefDeclaration(node) {
@@ -108,7 +117,7 @@ export function makePrinter(src, opts = {}) {
         text(' ='),
         line,
         group(nest(style.indent, ty ? ppType(ty) : empty)),
-        text(';'),
+        declSemicolon(),
       );
     },
 
@@ -127,7 +136,7 @@ export function makePrinter(src, opts = {}) {
         ty ? concat(text(' : '), group(nest(style.indent, ppType(ty)))) : empty,
         text(' = '),
         expr ? group(nest(2, concat(softline, ppExpr(expr)))) : empty,
-        text(';'),
+        declSemicolon(),
       );
     },
 
@@ -198,7 +207,7 @@ export function makePrinter(src, opts = {}) {
         parts.push(verbatim(c));
       }
     }
-    return concat(...parts, text(';'));
+    return concat(...parts, declSemicolon());
   }
 
   function ppDatatypeContinuation(node) {
@@ -226,7 +235,7 @@ export function makePrinter(src, opts = {}) {
         parts.push(verbatim(c));
       }
     }
-    return concat(...parts, text(';'));
+    return concat(...parts, declSemicolon());
   }
 
   function ppInductiveBody(node) {
@@ -251,7 +260,10 @@ export function makePrinter(src, opts = {}) {
   function ppCtor(node) {
     const id = firstOfType(node, 'LowerIdentifier') || firstOfType(node, 'UpperIdentifier');
     const ty = firstOfType(node, 'LFType') || firstOfType(node, 'CompType');
-    return concat(text(txt(id, src)), text(' : '), group(nest(style.indent, ty ? ppType(ty) : empty)));
+    const idt = txt(id, src);
+    // `  | name :` — continuation lines align with the declaration colon.
+    const colonCol = 5 + idt.length;
+    return concat(text(idt), text(' : '), ty ? ppTypeLike(ty, { colonCol }) : empty);
   }
 
   function ppRecBody(node, isFirstRec = false) {
@@ -266,10 +278,20 @@ export function makePrinter(src, opts = {}) {
       text(' ='),
       total ? concat(hardline, text(sliceNormalized(total.from, total.to, true))) : empty,
       hardline,
-      expr ? nest(style.indent, ppExpr(expr)) : empty,
+      expr ? ppExpr(expr, { baseCol: style.indent }) : empty,
     );
 
     if (!ty) return concat(text(idt), text(' : '), tail);
+
+    const typeRaw = src.slice(ty.from, ty.to);
+    if (typeRaw.includes('\n')) {
+      const typeLines = reindentStickyBlock(typeRaw, 0, style.indent);
+      let sig = concat(text(idt), text(' : '), text(typeLines[0] ?? ''));
+      for (let i = 1; i < typeLines.length; i++) {
+        if (typeLines[i]) sig = concat(sig, hardline, text(typeLines[i]));
+      }
+      return concat(sig, tail);
+    }
 
     const sig = ppRecTypeSignature(ty, head);
     if (sig) return concat(sig, tail);
@@ -305,7 +327,10 @@ export function makePrinter(src, opts = {}) {
     const prefixDoc = layoutPrefixChain(text(head), clauseDocs, { indent: style.indent });
 
     const chain = lfArrowSegmentsAndOps(split.arrowRoot);
-    if (!chain) return prefixDoc;
+    if (!chain) {
+      if (clauseDocs.length === 0) return null;
+      return concat(prefixDoc, space, ppTypeLike(split.arrowRoot));
+    }
 
     const { segments, ops } = chain;
     const prefixFlat = render(prefixDoc, 1e9).replace(/\s*\n\s*/g, ' ').trim();
@@ -553,29 +578,42 @@ export function makePrinter(src, opts = {}) {
     return concat(...parts);
   }
 
-  function ppTypeLike(node) {
+  function ppTypeLike(node, opts = {}) {
     if (!node.firstChild) return text(txt(node, src));
-    if (ARROW_CHAIN_TYPES.has(node.name)) {
+    if (!opts.colonCol && ARROW_CHAIN_TYPES.has(node.name)) {
       const spine = ppArrowSpineDoc(node);
       if (spine != null) return spine;
     }
-    return ppTypeLikeCore(node);
+    return ppTypeLikeCore(node, opts);
   }
 
-  function ppTypeLikeCore(node) {
+  function stickyBreakBefore(prev, cur) {
+    return prev != null && src.slice(prev.to, cur.from).includes('\n');
+  }
+
+  function ppTypeLikeCore(node, opts = {}) {
     if (!node.firstChild) return text(txt(node, src));
 
+    const { colonCol } = opts;
+    const contPad = colonCol != null ? text(' '.repeat(colonCol)) : null;
     const parts = [];
     let prevAtomic = false;
+    let prevChild = null;
 
     for (const c of children(node)) {
       let piece = null;
       switch (c.name) {
         case 'ArrowOp': {
-          const p = c.prevSibling;
-          const stickyBreak = p != null && src.slice(p.to, c.from).includes('\n');
-          parts.push(stickyBreak ? hardline : line, text(txt(c, src)), space);
+          const stickyBreak = stickyBreakBefore(c.prevSibling, c);
+          if (stickyBreak && contPad) {
+            parts.push(hardline, contPad, text(txt(c, src)), space);
+          } else if (colonCol != null) {
+            parts.push(space, text(txt(c, src)), space);
+          } else {
+            parts.push(stickyBreak ? hardline : line, text(txt(c, src)), space);
+          }
           prevAtomic = false;
+          prevChild = c;
           continue;
         }
         case '{':
@@ -630,7 +668,7 @@ export function makePrinter(src, opts = {}) {
         case 'CompAppType':
         case 'CompAtomicType':
         case 'CompTypeArg':
-          piece = ppTypeLike(c);
+          piece = ppTypeLike(c, opts);
           break;
         case 'ContextualType':
         case 'ContextualObject':
@@ -639,11 +677,17 @@ export function makePrinter(src, opts = {}) {
         default:
           piece = text(txt(c, src));
       }
-      if (prevAtomic && typeChildIsAtomic(c)) parts.push(space);
+      if (prevChild && stickyBreakBefore(prevChild, c) && contPad) {
+        parts.push(hardline, contPad);
+      } else if (prevAtomic && typeChildIsAtomic(c)) {
+        parts.push(space);
+      }
       parts.push(piece);
       prevAtomic = typeChildIsAtomic(c);
+      prevChild = c;
     }
-    return group(concat(...parts));
+    const doc = concat(...parts);
+    return colonCol != null ? doc : group(doc);
   }
 
   function renderTypeSegmentString(seg, w) {
@@ -806,37 +850,77 @@ export function makePrinter(src, opts = {}) {
     return bad;
   }
 
-  function ppExpr(node) {
-    if (node.name === 'Expression' && node.firstChild && !node.firstChild.nextSibling) return ppExpr(node.firstChild);
+  const STICKY_EXPR_NODES = new Set([
+    'LetExpression',
+    'AppExpression',
+    'CaseExpression',
+    'MLamExpression',
+    'FnExpression',
+  ]);
+
+  function isContextualProofApp(node) {
+    if (node.name === 'AppExpression') {
+      const ch = childrenArr(node);
+      if (ch.length === 1) return isContextualProofApp(ch[0]);
+      if (ch.length === 2) return isContextualProofApp(ch[1]);
+      return false;
+    }
+    if (node.name === 'AtomicExpression') {
+      const inner = node.firstChild;
+      return inner?.name === 'ContextualObject';
+    }
+    return false;
+  }
+
+  function shouldUseStickyExpr(node) {
+    if (!STICKY_EXPR_NODES.has(node.name)) return false;
+    if (node.name === 'AppExpression' && isContextualProofApp(node)) return false;
+    return true;
+  }
+
+  function ppExpr(node, opts = {}) {
+    if (node.name === 'Expression' && node.firstChild && !node.firstChild.nextSibling) return ppExpr(node.firstChild, opts);
 
     if (exprHasBlockingError(node)) return text(src.slice(node.from, node.to));
 
-    if (node.name === 'AppExpression') return ppAppExpr(node);
+    if (shouldUseStickyExpr(node)) {
+      const sticky = formatMultilineExprSticky(node, src, {
+        baseCol: opts.baseCol ?? 0,
+        step: style.indent,
+      });
+      if (sticky) return text(sticky);
+    }
+
+    if (node.name === 'AppExpression') return ppAppExpr(node, opts);
 
     if (node.name === 'CaseExpression') return ppCaseProof(node);
     if (node.name === 'FnExpression') return ppFn(node);
     if (node.name === 'MLamExpression') return ppMLam(node);
-    if (node.name === 'LetExpression') return ppLetProof(node);
+    if (node.name === 'LetExpression') return ppLetProof(node, opts);
     if (node.name === 'IfExpression') return ppIf(node);
-    if (node.name === 'ImpossibleExpression') return concat(text('impossible '), ppExpr(node.lastChild));
+    if (node.name === 'ImpossibleExpression') return concat(text('impossible '), ppExpr(node.lastChild, opts));
 
     const parts = [];
-    for (const c of children(node)) parts.push(exprPiece(c));
+    for (const c of children(node)) parts.push(exprPiece(c, opts));
     return concat(...parts);
   }
 
-  function ppAppExpr(node) {
+  function ppAppExpr(node, opts = {}) {
     const parts = [];
     function walk(n) {
       if (n.name === 'AppExpression') {
         const ch = childrenArr(n);
         if (ch.length === 2) {
           walk(ch[0]);
-          parts.push(atomicExprPiece(ch[1]));
+          parts.push(atomicExprPiece(ch[1], opts));
+          return;
+        }
+        if (ch.length === 1) {
+          walk(ch[0]);
           return;
         }
       }
-      parts.push(atomicExprPiece(n));
+      parts.push(atomicExprPiece(n, opts));
     }
     walk(node);
     if (parts.length === 0) return text(txt(node, src));
@@ -845,12 +929,12 @@ export function makePrinter(src, opts = {}) {
     return group(doc);
   }
 
-  function atomicExprPiece(n) {
+  function atomicExprPiece(n, opts = {}) {
     if (n.name === 'AtomicExpression') {
       const inner = n.firstChild;
-      return inner ? atomicExprPiece(inner) : text(txt(n, src));
+      return inner ? atomicExprPiece(inner, opts) : text(txt(n, src));
     }
-    if (n.name === 'ContextualObject') return ppContextual(n, 'term');
+    if (n.name === 'ContextualObject') return ppContextual(n, 'term', opts);
     if (n.name === 'TupleOrParenExpression') return ppTupleOrParenExpr(n);
     if (n.name === 'ContextApplication') return text(txt(n, src));
     if (n.name === 'AngleHatTerm') return text(txt(n, src));
@@ -865,16 +949,16 @@ export function makePrinter(src, opts = {}) {
     return concat(text('('), join(concat(text(','), space), inner), text(')'));
   }
 
-  function exprPiece(c) {
+  function exprPiece(c, opts = {}) {
     switch (c.name) {
       case 'Expression':
-        return ppExpr(c);
+        return ppExpr(c, opts);
       case 'AppExpression':
-        return ppAppExpr(c);
+        return ppAppExpr(c, opts);
       case 'AtomicExpression':
-        return atomicExprPiece(c);
+        return atomicExprPiece(c, opts);
       case 'ContextualObject':
-        return ppContextual(c, 'term');
+        return ppContextual(c, 'term', opts);
       case 'ContextualType':
         return ppContextual(c, 'type');
       case '(':
@@ -931,18 +1015,24 @@ export function makePrinter(src, opts = {}) {
     return concat(head, text(' '), group(ppExpr(expr)));
   }
 
-  function ppLetProof(node) {
+  function ppLetProof(node, opts = {}) {
     const pat = firstOfType(node, 'Pattern');
     const exprs = childrenArr(node).filter((c) => c.name === 'Expression');
     const rhs = exprs[0];
     const body = exprs[1];
-    const bind = concat(text('let '), pat ? ppPattern(pat) : empty, text(' = '), rhs ? ppExpr(rhs) : empty);
+    const bind = concat(text('let '), pat ? ppPattern(pat) : empty, text(' = '), rhs ? ppExpr(rhs, opts) : empty);
     if (!body) return bind;
     if (style.proofLet.breakChains && (body.name === 'LetExpression' || render(bind, printWidth).length > printWidth - 8)) {
       const ind = ' '.repeat(style.indent);
-      return concat(bind, text(' in'), hardline, text(ind), body.name === 'LetExpression' ? ppLetProof(body) : ppExpr(body));
+      return concat(
+        bind,
+        text(' in'),
+        hardline,
+        text(ind),
+        body.name === 'LetExpression' ? ppLetProof(body, opts) : ppExpr(body, opts),
+      );
     }
-    return concat(bind, text(' in '), ppExpr(body));
+    return concat(bind, text(' in '), ppExpr(body, opts));
   }
 
   function ppPattern(node) {
@@ -1016,7 +1106,17 @@ export function makePrinter(src, opts = {}) {
     );
   }
 
-  function ppContextual(node, _kind) {
+  function ppContextual(node, _kind, opts = {}) {
+    const baseCol = opts.baseCol ?? 0;
+    const turnstile = firstOfType(node, 'Turnstile');
+    const proof = formatContextualProofScript(node, src, {
+      baseCol,
+      step: style.indent,
+      bracket: style.contextualBracket,
+      turnstileText: turnstile ? txt(turnstile, src) : '⊢',
+    });
+    if (proof) return text(proof);
+
     const parts = [];
     for (const c of children(node)) {
       if (c.name === '[' || c.name === ']') continue;
@@ -1037,8 +1137,9 @@ export function makePrinter(src, opts = {}) {
       parts.push(txt(c, src));
     }
     const inner = parts.join('').trim();
-    if (style.contextualBracket === 'tight') return concat(text('['), text(inner), text(']'));
-    return concat(text('[ '), text(inner), text(' ]'));
+    const pad = baseCol ? text(' '.repeat(baseCol)) : empty;
+    if (style.contextualBracket === 'tight') return concat(pad, text('['), text(inner), text(']'));
+    return concat(pad, text('[ '), text(inner), text(' ]'));
   }
 
   function normalisePragma(node) {

@@ -3,8 +3,9 @@
 // subtle tint. All read the engine via bel-ide-actions.
 
 import { EditorView, Decoration, ViewPlugin } from '@codemirror/view';
-import { StateEffect, StateField, RangeSetBuilder } from '@codemirror/state';
-import { getEngine, navInfoAt, goToDefinition } from './bel-ide-actions.mjs';
+import { StateEffect, StateField, RangeSetBuilder, Transaction } from '@codemirror/state';
+import { getEngine, navInfoAt, goToDefinition, crossFileDefinitionAt } from './bel-ide-actions.mjs';
+import { renameActiveField } from './bel-rename.mjs';
 
 function modPressed(event) {
   return event.metaKey || event.ctrlKey;
@@ -52,9 +53,14 @@ const defLinkGestures = EditorView.domEventHandlers({
     if (pos == null) return false;
     const nav = navInfoAt(view, pos);
     // Underline only a token whose definition is elsewhere (not the def name).
-    const hl = nav && nav.nameRange && !nav.onDefinition && nav.reference
+    let hl = nav && nav.nameRange && !nav.onDefinition && nav.reference
       ? nav.reference.range
       : null;
+    if (!hl && (!nav || !nav.nameRange)) {
+      // Defined in another project file? Same gesture, cross-file jump.
+      const cross = crossFileDefinitionAt(view, pos);
+      if (cross) hl = cross.sourceRange;
+    }
     if (hl) {
       view._belDefLinkActive = true;
       view.dispatch({ effects: setLinkEffect.of({ from: hl.from, to: hl.to }) });
@@ -73,7 +79,12 @@ const defLinkGestures = EditorView.domEventHandlers({
     const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
     if (pos == null) return false;
     const nav = navInfoAt(view, pos);
-    if (!nav || !nav.nameRange || nav.onDefinition) return false;
+    const localTarget = nav && nav.nameRange && !nav.onDefinition;
+    if (!localTarget) {
+      // Cross-file: only claim the click when the group really defines it.
+      if (nav && nav.onDefinition) return false;
+      if (!crossFileDefinitionAt(view, pos)) return false;
+    }
     event.preventDefault();
     clearDefLink(view);
     goToDefinition(view, pos);
@@ -83,13 +94,28 @@ const defLinkGestures = EditorView.domEventHandlers({
 
 // ---- live word-occurrence highlight on cursor rest ----------------------
 
+export const belNavSemanticTick = StateEffect.define();
+
 const REST_MS = 260;
 
 const occMark = Decoration.mark({ class: 'cm-bel-occurrence' });
 const occActiveMark = Decoration.mark({ class: 'cm-bel-occurrence cm-bel-occurrence-active' });
 
-// Carries rest-timer-computed occurrence ranges back into the view.
 const setOccEffect = StateEffect.define();
+
+const occurrenceField = StateField.define({
+  create() {
+    return Decoration.none;
+  },
+  update(deco, tr) {
+    if (tr.docChanged) return Decoration.none;
+    for (const e of tr.effects) {
+      if (e.is(setOccEffect)) return e.value;
+    }
+    return deco.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 function buildOccDecorations(state, head, occ) {
   const builder = new RangeSetBuilder();
@@ -101,35 +127,61 @@ function buildOccDecorations(state, head, occ) {
   return builder.finish();
 }
 
-const occurrenceHighlighter = ViewPlugin.fromClass(
+function pointerSelection(update) {
+  return update.transactions.some((tr) => tr.annotation(Transaction.userEvent) === 'select.pointer');
+}
+
+function semanticTicked(update) {
+  return update.transactions.some((tr) => tr.effects.some((e) => e.is(belNavSemanticTick)));
+}
+
+function dispatchOcc(view, deco) {
+  queueMicrotask(() => {
+    if (!view.dom.isConnected) return;
+    view.dispatch({ effects: setOccEffect.of(deco) });
+  });
+}
+
+const occurrenceScheduler = ViewPlugin.fromClass(
   class {
-    constructor() {
-      this.decorations = Decoration.none;
+    constructor(view) {
       this.timer = null;
-      this.lastHead = -1;
+      this.lastHead = view.state.selection.main.head;
+      this.occShown = false;
     }
 
     update(update) {
-      for (const tr of update.transactions) {
-        for (const e of tr.effects) {
-          if (e.is(setOccEffect)) {
-            this.decorations = e.value;
-          }
+      if (update.state.field(renameActiveField, false)) {
+        if (this.timer) {
+          clearTimeout(this.timer);
+          this.timer = null;
         }
+        this.clear(update.view);
+        return;
       }
-      // Drop stale ranges on edit rather than mapping them through.
-      if (update.docChanged && this.decorations.size) {
-        this.decorations = Decoration.none;
-      }
+
       const sel = update.state.selection.main;
-      if (update.docChanged || (update.selectionSet && sel.head !== this.lastHead)) {
-        if (this.decorations.size && update.selectionSet) this.decorations = Decoration.none;
+      const headMoved = update.selectionSet && sel.head !== this.lastHead;
+
+      if (update.docChanged) {
         this.lastHead = sel.head;
-        this.schedule(update.view);
+        this.clear(update.view);
+        this.scheduleDebounced(update.view);
+        return;
+      }
+
+      if (semanticTicked(update)) {
+        this.scheduleDebounced(update.view);
+      }
+
+      if (headMoved) {
+        this.lastHead = sel.head;
+        if (pointerSelection(update)) this.recompute(update.view);
+        else this.scheduleDebounced(update.view);
       }
     }
 
-    schedule(view) {
+    scheduleDebounced(view) {
       if (this.timer) clearTimeout(this.timer);
       this.timer = setTimeout(() => {
         this.timer = null;
@@ -137,33 +189,47 @@ const occurrenceHighlighter = ViewPlugin.fromClass(
       }, REST_MS);
     }
 
+    clear(view) {
+      if (!this.occShown) return;
+      this.occShown = false;
+      dispatchOcc(view, Decoration.none);
+    }
+
+    show(view, deco) {
+      this.occShown = true;
+      dispatchOcc(view, deco);
+    }
+
     recompute(view) {
-      if (!view.dom.isConnected) return;
-      const sel = view.state.selection.main;
-      if (!sel.empty) {
-        if (this.decorations.size) view.dispatch({ effects: setOccEffect.of(Decoration.none) });
-        return;
-      }
-      const eng = getEngine(view);
-      const occ = eng && typeof eng.occurrencesAt === 'function'
-        ? eng.occurrencesAt(sel.head)
-        : [];
-      // A lone occurrence (just the declaration, no uses) isn't worth tinting.
-      if (!occ || occ.length < 2) {
-        if (this.decorations.size) view.dispatch({ effects: setOccEffect.of(Decoration.none) });
-        return;
-      }
-      const decos = buildOccDecorations(view.state, sel.head, occ);
-      view.dispatch({ effects: setOccEffect.of(decos) });
+      queueMicrotask(() => {
+        if (!view.dom.isConnected) return;
+        if (view.state.field(renameActiveField, false)) {
+          this.clear(view);
+          return;
+        }
+        const sel = view.state.selection.main;
+        if (!sel.empty) {
+          this.clear(view);
+          return;
+        }
+        const eng = getEngine(view);
+        const occ = eng && typeof eng.occurrencesAt === 'function'
+          ? eng.occurrencesAt(sel.head)
+          : [];
+        if (!occ || !occ.length) {
+          this.clear(view);
+          return;
+        }
+        this.show(view, buildOccDecorations(view.state, sel.head, occ));
+      });
     }
 
     destroy() {
       if (this.timer) clearTimeout(this.timer);
     }
   },
-  { decorations: (v) => v.decorations }
 );
 
 export function belNavigation() {
-  return [linkField, defLinkGestures, occurrenceHighlighter];
+  return [linkField, defLinkGestures, occurrenceField, occurrenceScheduler];
 }

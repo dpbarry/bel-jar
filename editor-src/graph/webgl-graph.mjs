@@ -198,7 +198,7 @@ export function createGraph3D(canvas, sim, opts = {}) {
 
   const {
     labelLayer = null, onJump = () => {}, onFocus = () => {},
-    onDrill = null, onFly = null, focusEdgesOnly = false,
+    onBeforeFocusChange = () => {}, onDrill = null, onFly = null, focusEdgesOnly = false,
     implVisibility = 'show',
     labelDensity: initLabelDensity = 3,
     viewMode = 'neighborhood',
@@ -395,6 +395,8 @@ export function createGraph3D(canvas, sim, opts = {}) {
   }
 
   function setFocus(idx) {
+    const prev = focusedIdx;
+    if (prev !== idx) onBeforeFocusChange(prev, idx);
     focusedIdx = idx;
     applyFocusEdges(idx, idx >= 0 ? neighborsOf(idx) : null);
     onFocus(idx >= 0 ? nodes[idx] : null, idx);
@@ -409,11 +411,28 @@ export function createGraph3D(canvas, sim, opts = {}) {
       el.className = 'bel-graph3d-label';
       el.type = 'button';
       el.textContent = nodes[idx].name || '?';
-      el.addEventListener('click', (ev) => {
+      let labelDown = null;
+      el.addEventListener('pointerdown', (ev) => {
+        if (ev.button !== 0) return;
         ev.stopPropagation();
-        handleNodeActivate(idx, ev.shiftKey);
+        labelDown = { sx: ev.clientX, sy: ev.clientY };
+        try { el.setPointerCapture(ev.pointerId); } catch (_) { /* ignore */ }
       });
-      el.addEventListener('dblclick', (ev) => { ev.stopPropagation(); onJump(nodes[idx], idx); });
+      el.addEventListener('pointerup', (ev) => {
+        if (ev.button !== 0) return;
+        ev.stopPropagation();
+        try { el.releasePointerCapture(ev.pointerId); } catch (_) { /* ignore */ }
+        const down = labelDown;
+        labelDown = null;
+        if (!down) return;
+        if (Math.abs(ev.clientX - down.sx) + Math.abs(ev.clientY - down.sy) > 4) return;
+        const now = Date.now();
+        if (idx === lastClickIdx && now - lastClickT < 350) onJump(nodes[idx], idx);
+        else handleNodeActivate(idx, ev.shiftKey);
+        lastClickIdx = idx;
+        lastClickT = now;
+        arm();
+      });
       labelLayer.appendChild(el);
       labelEls.set(idx, el);
     }
@@ -495,9 +514,9 @@ export function createGraph3D(canvas, sim, opts = {}) {
     }
 
     paintOrder.sort((a, b) => b.dist - a.dist);
-    for (const { i } of paintOrder) {
-      const el = labelEls.get(i);
-      if (el) labelLayer.appendChild(el);
+    for (let z = 0; z < paintOrder.length; z++) {
+      const el = labelEls.get(paintOrder[z].i);
+      if (el) el.style.zIndex = String(z + 1);
     }
 
     for (const [i, el] of labelEls) if (!shown.has(i)) el.style.display = 'none';
@@ -740,13 +759,13 @@ export function createGraph3D(canvas, sim, opts = {}) {
     arm();
   }
   function zoomBy(factor) {
-    cam.dist = Math.max(Math.max(b.radius * 0.3, 5), Math.min(Math.max(b.radius * 8, 100), cam.dist * factor));
+    cam.dist = Math.max(Math.max(b.radius * 0.1, 1), Math.min(Math.max(b.radius * 6, 80), cam.dist * factor));
     arm();
   }
   function onWheel(ev) {
     if (disposed) return;
     // Let a real text field (the search box) scroll/behave normally.
-    if (ev.target && ev.target.closest && ev.target.closest('input, textarea')) return;
+    if (ev.target?.closest?.('input, textarea, .bel-graph3d-toolbar, .bel-graph3d-autocomplete')) return;
     // Capture EVERYTHING else over the graph (incl. wheeling over labels) so the
     // page never scrolls/zooms. Trackpad pinch arrives as wheel + ctrlKey.
     ev.preventDefault();

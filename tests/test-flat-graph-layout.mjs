@@ -2,12 +2,33 @@
 // Top-down orientation: foundational symbols at layer 0 on top, dependents below;
 // same-layer nodes spread horizontally. Verifies layer ordering, straight vertical
 // trunks, no intra-layer overlap, compactness, and long-edge dummy routing.
+import { readFileSync } from 'node:fs';
+import { Text } from '@codemirror/state';
+import { parser } from '../editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
+import { buildGlobalModel } from '../editor-src/bel-graph-view.mjs';
 import { computeFlatLayout } from '../editor-src/graph/flat-graph.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
   console.error('FAIL:', msg);
   process.exit(1);
+}
+
+function expectNoChipOverlap(layout) {
+  const byLayer = new Map();
+  layout.forEach((p) => {
+    if (!p) return;
+    if (!byLayer.has(p.layer)) byLayer.set(p.layer, []);
+    byLayer.get(p.layer).push(p);
+  });
+  for (const [, row] of byLayer) {
+    row.sort((a, b) => a.x - b.x);
+    for (let i = 1; i < row.length; i++) {
+      const gap = (row[i].x - row[i].w / 2) - (row[i - 1].x + row[i - 1].w / 2);
+      expect(gap >= -0.5, `chips in a layer don't overlap (edge gap ${gap.toFixed(1)})`);
+    }
+  }
 }
 
 // --- a small DAG: a depends on b and c; b depends on d; chain a→b→d spans 2 layers
@@ -117,18 +138,7 @@ function expect(cond, msg) {
     edges.push({ from: 'root', to: 'k' + i, kind: 'signature' });
   }
   const { layout } = computeFlatLayout(nodes, edges);
-  const byLayer = new Map();
-  layout.forEach((p) => {
-    if (!byLayer.has(p.layer)) byLayer.set(p.layer, []);
-    byLayer.get(p.layer).push(p);
-  });
-  for (const [, row] of byLayer) {
-    row.sort((a, b) => a.x - b.x);
-    for (let i = 1; i < row.length; i++) {
-      const gap = (row[i].x - row[i].w / 2) - (row[i - 1].x + row[i - 1].w / 2);
-      expect(gap >= -0.5, `chips in a layer don't overlap (edge gap ${gap.toFixed(1)})`);
-    }
-  }
+  expectNoChipOverlap(layout);
 }
 
 // --- cycle tolerance: a↔b mutual dependency must not hang or NaN
@@ -210,6 +220,16 @@ function expect(cond, msg) {
       expect(Math.abs(a.x - b.x) < 0.5 || Math.abs(a.y - b.y) < 0.5, 'fan-in segment orthogonal');
     }
   }
+}
+
+// --- whole-file regression: BK block alignment must not leave colliding chips
+{
+  const bel = readFileSync(new URL('../all.bel', import.meta.url), 'utf8');
+  const engine = createSemanticEngine();
+  engine.update(parser.parse(bel), Text.of(bel.split('\n')));
+  const model = buildGlobalModel(engine);
+  const { layout } = computeFlatLayout(model.nodes, model.edges);
+  expectNoChipOverlap(layout);
 }
 
 console.log('OK flat-graph layout (layering, dummy routing, straight-trunk, compact-fan, no-overlap, cycle-safe, degenerate-safe, track-routing)');

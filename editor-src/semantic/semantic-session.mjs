@@ -132,6 +132,12 @@ export function createSemanticSession(belugaClient) {
     }
   }
 
+  function markLoaded(fp, code) {
+    loadedFingerprint = fp;
+    if (code != null) lastCode = String(code);
+    loadPromise = null;
+  }
+
   function invalidate() {
     loadedFingerprint = null;
     loadPromise = null;
@@ -167,6 +173,7 @@ export function createSemanticSession(belugaClient) {
     elaboratePositions,
     typeAt,
     ideDeclType,
+    markLoaded,
     invalidate,
     getFingerprint,
   };

@@ -1,7 +1,7 @@
 import {
   buildNavEntry, createNavState, navPush, navBack, navForward, navGoTo,
   navCurrent, navCanBack, navCanForward, navBreadcrumbLabel, applyNavJump,
-  fuzzySearchNodes, graphKeyForEntry,
+  fuzzySearchNodes, graphKeyForEntry, navEntriesEqual,
 } from '../editor-src/graph/graph-nav.mjs';
 import { buildNeighborhood, buildGlobalModel } from '../editor-src/bel-graph-view.mjs';
 import { Text } from '@codemirror/state';
@@ -51,14 +51,37 @@ expect(navCurrent(nav).rootId === oId, 'forward returns to o');
 nav = navGoTo(nav, 0);
 expect(nav.index === 0, 'go to index 0');
 
+const model = applyNavJump(nav, e, { buildGlobalModel, buildNeighborhood });
+expect(model && model.root === ndId, 'applyNavJump builds neighborhood from stack');
+
 expect(navBreadcrumbLabel({ mode: 'global' }, () => 'x') === 'whole file', 'global crumb');
+expect(navBreadcrumbLabel({ mode: 'global', focusId: ndId }, () => 'nd') === 'nd', 'global focused crumb');
 expect(navBreadcrumbLabel({ mode: 'neighborhood', rootId: ndId }, () => 'nd') === 'nd', 'local crumb');
+
+nav = navPush(nav, buildNavEntry({ mode: 'global' }));
+expect(navCurrent(nav).mode === 'global' && navCurrent(nav).focusId == null, 'push global whole file');
+nav = navPush(nav, buildNavEntry({ mode: 'global', focusId: oId }));
+expect(navCurrent(nav).focusId === oId, 'push global focus');
+nav = navPush(nav, buildNavEntry({ mode: 'global', focusId: oId }));
+expect(nav.stack.length === 3, 'dedupe identical global focus');
+nav = navPush(nav, buildNavEntry({ mode: 'global', focusId: ndId }));
+expect(navCurrent(nav).focusId === ndId, 'push different global focus');
+expect(navEntriesEqual(
+  { mode: 'global', focusId: oId },
+  { mode: 'global', focusId: oId },
+), 'navEntriesEqual global focus');
+expect(!navEntriesEqual(
+  { mode: 'global', focusId: oId },
+  { mode: 'global', focusId: null },
+), 'navEntriesEqual distinguishes focus');
+
+nav = navPush(nav, buildNavEntry({ mode: 'neighborhood', rootId: ndId, depth: 1 }));
+nav = navPush(nav, buildNavEntry({ mode: 'global', focusId: ndId }));
+expect(navCurrent(nav).mode === 'global' && navCurrent(nav).focusId === ndId,
+  'local then global keeps root as global focus');
 
 expect(graphKeyForEntry({ mode: 'global' }) === 'graph:__global__', 'global key');
 expect(graphKeyForEntry({ mode: 'neighborhood', rootId: ndId }) === 'graph:' + ndId, 'local key');
-
-const model = applyNavJump(nav, e, { buildGlobalModel, buildNeighborhood });
-expect(model && model.root === ndId, 'applyNavJump builds neighborhood from stack');
 
 // --- fuzzy search ---
 const nodes = [

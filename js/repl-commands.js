@@ -67,9 +67,8 @@
     var parsed = parseBelugaCmd(cmd);
     var verb = parsed.verb;
 
-    var beautify = typeof BelJarReplOutput !== 'undefined' && BelJarReplOutput.getReplBeautify();
     if (typeof BelJarReplOutput !== 'undefined') {
-      BelJarReplOutput.appendOutput('# ' + formatShownCmd(rawForHistory), beautify ? 'cmd' : 'out');
+      BelJarReplOutput.appendOutput('# ' + formatShownCmd(rawForHistory), 'cmd');
     }
     cmdInputEl.value = '';
     replHistory.push(rawForHistory);

@@ -10,6 +10,14 @@ import {
   scheduleScrollToCenter,
 } from './bel-viewport.mjs';
 
+function showFormatToast(message, kind) {
+  const T = typeof window !== 'undefined' ? window.BelJarToasts : null;
+  if (!T) return;
+  if (kind === 'error' && T.error) T.error(message);
+  else if (kind === 'warn' && T.warn) T.warn(message);
+  else if (T.show) T.show(message, { kind: kind || 'warn' });
+}
+
 function normalizeNewlines(s) {
   return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
@@ -157,7 +165,7 @@ function errorProseClusterEnd(decls, src, start) {
 export function formatString(src, tree, opts = {}) {
   src = normalizeNewlines(src);
   const width = opts.printWidth ?? 80;
-  const minSignificantRatio = opts.minSignificantRatio ?? 0.95;
+  const minSignificantRatio = opts.minSignificantRatio ?? 0.5;
   const { pp } = makePrinter(src, { printWidth: width });
 
   const root = tree.topNode;
@@ -225,6 +233,8 @@ export function formatString(src, tree, opts = {}) {
   result = result.replace(/\r\n?/g, '\n');
   result = result.replace(/[ \t]+$/gm, '');
   result = result.replace(/\n{4,}/g, '\n\n\n');
+  result = result.replace(/^(?:[ \t]*\n)+/, '');
+  result = result.replace(/(?:\n[ \t]*)+$/, '\n');
   if (!result.endsWith('\n')) result += '\n';
 
   const srcSig = significantLen(src);
@@ -248,10 +258,10 @@ export function formatDocument(state, opts = {}) {
     newText = formatString(oldText, tree, opts);
   } catch (e) {
     if (e && e.code === 'FORMAT_SHRINK_GUARD') {
-      if (typeof console !== 'undefined') console.warn('beluga formatter:', e.message);
+      showFormatToast('Format refused — would drop significant content.', 'warn');
       return null;
     }
-    if (typeof console !== 'undefined') console.warn('beluga formatter:', e);
+    showFormatToast('Format failed.', 'error');
     return null;
   }
   if (newText === oldText) return null;

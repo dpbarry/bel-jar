@@ -34,6 +34,7 @@ const NS_CLASS = {
 };
 
 const NODE_H = 26;
+const NODE_RX = 5;  // crisp rectangle with gently rounded corners (not a pill)
 const H_GAP = 22;   // min horizontal gap between nodes in a layer (breathing room)
 const V_GAP = 62;   // vertical gap between layers (room for elbow routing)
 const PAD = 64;     // world padding around the diagram
@@ -60,7 +61,9 @@ function svgEl(tag, attrs) {
 
 function statusClass(status) {
   if (status === 'syntax-fault' || status === 'erroring' || status === 'blocked') return 'error';
-  if (status === 'dirty' || status === 'checking' || status === 'stale-known') return 'recalculating';
+  // NOT 'stale-known': that is the healthy steady state (type known from a safe
+  // earlier elaboration) — painting it as churn turns a settled graph amber.
+  if (status === 'dirty' || status === 'checking') return 'recalculating';
   return 'settled';
 }
 
@@ -227,19 +230,62 @@ function computeLayout(nodes, edges) {
   const segsByLower = Array.from({ length: maxLayer + 1 }, () => []);
   for (const s of segments) segsByLower[layerOfKey(s.lower)].push(s);
 
-  function countCrossingsAt(L) {
-    // crossings on the boundary between layer L-1 (upper) and L (lower)
-    const segs = segsByLower[L];
-    if (segs.length < 2) return 0;
-    const seq = segs
-      .map((s) => ({ u: orderIdx.get(s.upper), l: orderIdx.get(s.lower) }))
-      .sort((a, b) => a.u - b.u || a.l - b.l)
-      .map((s) => s.l);
-    let cross = 0;
-    for (let i = 0; i < seq.length; i++) {
-      for (let j = i + 1; j < seq.length; j++) if (seq[i] > seq[j]) cross++;
+  // Index segments incident on each slot (for O(deg) transpose deltas).
+  const segsAtLower = new Map();
+  const segsAtUpper = new Map();
+  for (const s of segments) {
+    if (!segsAtLower.has(s.lower)) segsAtLower.set(s.lower, []);
+    segsAtLower.get(s.lower).push(s);
+    if (!segsAtUpper.has(s.upper)) segsAtUpper.set(s.upper, []);
+    segsAtUpper.get(s.upper).push(s);
+  }
+
+  // Crossing delta when swapping two adjacent slots in layer L. Each boundary is
+  // updated in O(deg²) for the swapped pair only — not a full O(segs²) recount.
+  function crossingDeltaLower(L, leftId, rightId) {
+    const leftSegs = segsAtLower.get(leftId);
+    const rightSegs = segsAtLower.get(rightId);
+    if (!leftSegs?.length || !rightSegs?.length) return 0;
+    let delta = 0;
+    for (const sl of leftSegs) {
+      const ul = orderIdx.get(sl.upper);
+      for (const sr of rightSegs) {
+        const ur = orderIdx.get(sr.upper);
+        if (ul > ur) delta--;
+        else if (ul < ur) delta++;
+      }
     }
-    return cross;
+    return delta;
+  }
+
+  function crossingDeltaUpper(L, leftId, rightId) {
+    const leftSegs = segsAtUpper.get(leftId);
+    const rightSegs = segsAtUpper.get(rightId);
+    if (!leftSegs?.length || !rightSegs?.length) return 0;
+    let delta = 0;
+    for (const sl of leftSegs) {
+      const ll = orderIdx.get(sl.lower);
+      for (const sr of rightSegs) {
+        const lr = orderIdx.get(sr.lower);
+        if (ll > lr) delta--;
+        else if (ll < lr) delta++;
+      }
+    }
+    return delta;
+  }
+
+  function swapAdjacent(L, i) {
+    const row = byLayer[L];
+    const left = row[i];
+    const right = row[i + 1];
+    const delta = (L > 0 ? crossingDeltaLower(L, left.id, right.id) : 0)
+      + (L < maxLayer ? crossingDeltaUpper(L, left.id, right.id) : 0);
+    if (delta >= 0) return false;
+    row[i] = right;
+    row[i + 1] = left;
+    orderIdx.set(left.id, i + 1);
+    orderIdx.set(right.id, i);
+    return true;
   }
 
   function transpose() {
@@ -250,29 +296,17 @@ function computeLayout(nodes, edges) {
       for (let L = 0; L <= maxLayer; L++) {
         const row = byLayer[L];
         for (let i = 0; i < row.length - 1; i++) {
-          const before = (L > 0 ? countCrossingsAt(L) : 0) + (L < maxLayer ? countCrossingsAt(L + 1) : 0);
-          // swap
-          [row[i], row[i + 1]] = [row[i + 1], row[i]];
-          orderIdx.set(row[i].id, i); orderIdx.set(row[i + 1].id, i + 1);
-          const after = (L > 0 ? countCrossingsAt(L) : 0) + (L < maxLayer ? countCrossingsAt(L + 1) : 0);
-          if (after < before) {
-            improved = true;
-          } else {
-            // revert
-            [row[i], row[i + 1]] = [row[i + 1], row[i]];
-            orderIdx.set(row[i].id, i); orderIdx.set(row[i + 1].id, i + 1);
-          }
+          if (swapAdjacent(L, i)) improved = true;
         }
       }
     }
   }
 
-  // A few alternating median sweeps + transpose passes. Cap by size so very large
-  // graphs stay responsive (transpose is O(layer²) in crossings).
+  // A few alternating median sweeps + transpose passes.
   const sweeps = n > 140 ? 4 : 8;
   for (let p = 0; p < sweeps; p++) {
     medianSort(p % 2 === 0);
-    if (n <= 220) transpose();
+    transpose();
   }
   reindex();
 
@@ -408,6 +442,21 @@ function computeLayout(nodes, edges) {
           moved = true;
         }
       }
+    }
+  }
+
+  // BK shares one center-x per block; siblings on the same layer can inherit the
+  // same coordinate and their chips collide. Re-space each layer by order index.
+  for (let L = 0; L <= maxLayer; L++) {
+    const row = byLayer[L];
+    if (row.length < 2) continue;
+    row.sort((a, b) => orderIdx.get(a.id) - orderIdx.get(b.id));
+    for (let i = 1; i < row.length; i++) {
+      const left = row[i - 1];
+      const right = row[i];
+      const minCx = xOf.get(left.id) + sep(left, right);
+      const cx = xOf.get(right.id);
+      if (cx < minCx) xOf.set(right.id, minCx);
     }
   }
 
@@ -560,8 +609,9 @@ function arrowHead(pts, headW = HEAD_W, headH = HEAD_H) {
 // (hidden) canvas so the toolbar/labels overlay still composites on top.
 export function createFlatGraph(stage, model, sim, opts = {}) {
   const {
-    onJump = () => {}, onFocus = () => {}, onDrill = null, onFly = null,
-    implVisibility = 'show',
+    onJump = () => {}, onFocus = () => {}, onBeforeFocusChange = () => {},
+    onDrill = null, onFly = null,
+    implVisibility = 'show', skipInitialFrame = false,
   } = opts;
 
   const nodes = model.nodes;
@@ -659,7 +709,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
       tabindex: '0',
     });
     g.dataset.idx = i;
-    g.appendChild(svgEl('rect', { width: w, height: NODE_H, rx: NODE_H / 2 }));
+    g.appendChild(svgEl('rect', { width: w, height: NODE_H, rx: NODE_RX }));
     const text = svgEl('text', {
       x: w / 2, y: NODE_H / 2 + 0.5,
       'dominant-baseline': 'central', 'text-anchor': 'middle',
@@ -781,7 +831,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
     return { w: r.width || stage.clientWidth || 600, h: r.height || stage.clientHeight || 400 };
   }
 
-  function clampScale(s) { return Math.min(2.2, Math.max(0.08, s)); }
+  function clampScale(s) { return Math.min(2.5, Math.max(0.08, s)); }
 
   function frameAll({ animate = false } = {}) {
     const { w, h } = viewSize();
@@ -852,7 +902,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
   svg.addEventListener('pointercancel', endPan);
   // Wheel zooms toward the cursor (trackpad pinch arrives as ctrl+wheel).
   svg.addEventListener('wheel', (ev) => {
-    if (ev.target?.closest?.('input, textarea')) return;
+    if (ev.target?.closest?.('input, textarea, .bel-graph3d-toolbar, .bel-graph3d-autocomplete')) return;
     ev.preventDefault();
     ev.stopPropagation();
     tween = null;
@@ -864,6 +914,8 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
 
   // --- controller surface (mirrors webgl-graph)
   function setFocus(idx) {
+    const prev = focusedIdx;
+    if (prev !== idx) onBeforeFocusChange(prev, idx);
     focusedIdx = idx;
     applyFocus();
     onFocus(idx >= 0 ? nodes[idx] : null, idx);
@@ -936,7 +988,9 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
   rebuildBulkEdges();
   syncEdgeZoom(cam.scale);
   applyFocus();
-  requestAnimationFrame(() => { if (!disposed) frameAll(); });
+  if (!skipInitialFrame) {
+    requestAnimationFrame(() => { if (!disposed) frameAll(); });
+  }
 
   return {
     isFlat: true,
@@ -962,4 +1016,78 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
     zoomOut,
     dispose,
   };
+}
+
+// --- inspector miniature ----------------------------------------------------
+
+// Non-interactive miniature of the SAME flat diagram, for the inspector's GRAPH
+// card: identical layout + chip/edge language as the windowed flat view, scaled
+// to fit its container via viewBox (no pan/zoom/focus machinery). Click = jump.
+export function renderFlatMini(container, model, { onJump = () => {} } = {}) {
+  container.textContent = '';
+  if (!model || !model.nodes.length) return false;
+  const { layout, routes, width, height, pad } = computeLayout(model.nodes, model.edges);
+
+  // The full view keeps a generous world pad for panning; the mini crops to the
+  // content box plus a sliver so strokes and arrowheads aren't clipped.
+  const M = 12;
+  const cw = width - pad * 2;
+  const ch = height - pad * 2;
+  const svg = svgEl('svg', {
+    class: 'bel-flat-svg bel-flat-svg--mini',
+    viewBox: `${-M} ${-M} ${cw + M * 2} ${ch + M * 2}`,
+    preserveAspectRatio: 'xMidYMid meet',
+  });
+  const edgeLayer = svgEl('g', { class: 'bel-flat-edges' });
+  const nodeLayer = svgEl('g', { class: 'bel-flat-nodes' });
+  svg.append(edgeLayer, nodeLayer);
+
+  // Merged edge paths per kind, same as the full view (lines + baked heads).
+  const lines = new Map();
+  const heads = new Map();
+  for (const r of routes) {
+    if (!r.pts.length) continue;
+    const kind = r.kind || (r.sig ? 'signature' : 'body');
+    const { d, head } = edgePaths(r.pts);
+    if (!lines.has(kind)) { lines.set(kind, []); heads.set(kind, []); }
+    lines.get(kind).push(d);
+    heads.get(kind).push(head);
+  }
+  for (const [kind, ds] of lines) {
+    edgeLayer.appendChild(svgEl('path', {
+      class: `bel-flat-edge bel-flat-edge--${kind}`, d: ds.join(' '),
+    }));
+    edgeLayer.appendChild(svgEl('path', {
+      class: `bel-flat-edge bel-flat-edge--${kind} bel-flat-edge--head`, d: heads.get(kind).join(' '),
+    }));
+  }
+
+  model.nodes.forEach((nd, i) => {
+    const p = layout[i];
+    if (!p) return;
+    const g = svgEl('g', {
+      class: `bel-flat-node is-${nd.role || 'node'} status-${statusClass(nd.status)} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
+      transform: `translate(${p.x - p.w / 2} ${p.y})`,
+      tabindex: '0',
+    });
+    g.appendChild(svgEl('rect', { width: p.w, height: NODE_H, rx: NODE_RX }));
+    const text = svgEl('text', {
+      x: p.w / 2, y: NODE_H / 2 + 0.5,
+      'dominant-baseline': 'central', 'text-anchor': 'middle',
+    });
+    text.textContent = chipLabel(nd.name);
+    g.appendChild(text);
+    const titleEl = svgEl('title');
+    titleEl.textContent = nd.label ? `${nd.label} ${nd.name || ''}`.trim() : (nd.name || '');
+    g.appendChild(titleEl);
+    const fire = () => onJump(nd, i);
+    g.addEventListener('click', fire);
+    g.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fire(); }
+    });
+    nodeLayer.appendChild(g);
+  });
+
+  container.appendChild(svg);
+  return true;
 }

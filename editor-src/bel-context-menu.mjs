@@ -6,12 +6,24 @@ import { openSearchPanel } from '@codemirror/search';
 import { EditorView } from '@codemirror/view';
 import {
   navInfoAt, termRangeAt, goToDefinition, revealBinder,
+  crossFileDefinitionAt,
 } from './bel-ide-actions.mjs';
 import { formatCommand } from './bel-format.mjs';
 import { openInspectorWindow } from './bel-inspector.mjs';
 import { openLocalGraphWindow } from './bel-graph-view.mjs';
-import { startRename } from './bel-rename.mjs';
-import { findReferences } from './bel-refs-panel.mjs';
+import { startRename, renameReachAt, renameReachTooltip } from './bel-rename.mjs';
+import { findReferences, canFindReferences } from './bel-refs-panel.mjs';
+
+function canGoToDefinition(view, pos, nav) {
+  if (nav?.symbolId && !nav.onDefinition) return true;
+  if (nav?.onDefinition) return false;
+  return !!crossFileDefinitionAt(view, pos);
+}
+
+function hasSymbolMenuContext(view, pos, nav) {
+  if (nav && (nav.symbolId || nav.reference)) return true;
+  return canFindReferences(view, pos);
+}
 
 function hasStandardSelection(view) {
   return !view.state.selection.main.empty;
@@ -85,9 +97,9 @@ function buildMenuItems(view, pos) {
   const items = buildEditMenuItems(view);
 
   // --- Identifier-scoped actions ---
-  if (nav && (nav.symbolId || nav.reference)) {
+  if (hasSymbolMenuContext(view, pos, nav)) {
     items.push({ type: 'separator' });
-    if (nav.symbolId && !nav.onDefinition) {
+    if (canGoToDefinition(view, pos, nav)) {
       items.push({
         label: 'Go to Definition',
         shortcut: 'Ctrl+Click',
@@ -96,27 +108,33 @@ function buildMenuItems(view, pos) {
     }
 
     // Only when go-to-def can't help: unresolved local/metavar under an enclosing decl.
-    if (!nav.symbolId && nav.enclosingDeclarationId) {
+    if (!nav?.symbolId && nav?.enclosingDeclarationId) {
       items.push({
         label: 'Reveal Binder',
         onSelect: () => revealBinder(view, pos),
       });
     }
 
-    if (nav.symbolId) {
+    if (canFindReferences(view, pos)) {
       items.push({
         label: 'Find References',
         onSelect: () => findReferences(view, pos),
       });
+    }
+
+    if (nav?.symbolId) {
+      const reach = renameReachAt(view, pos);
       items.push({
         label: 'Rename Symbol',
         shortcut: 'F2',
+        tooltip: reach ? renameReachTooltip(reach.total) : '',
+        tooltipPlacement: 'right',
         onSelect: () => startRename(view, pos),
       });
     }
 
     // --- Inspect: open a pinned floating inspector for this term. ---
-    if (nav.symbolId) {
+    if (nav?.symbolId) {
       items.push({
         label: 'Inspect',
         onSelect: () => openInspectorWindow(view, pos),
@@ -154,14 +172,18 @@ export function belContextMenu() {
       // inside an existing selection.
       const sel = view.state.selection.main;
       const insideSel = !sel.empty && pos >= sel.from && pos <= sel.to;
+      let menuPos = insideSel ? sel.head : pos;
       if (!insideSel) {
         const range = termRangeAt(view, pos);
-        view.dispatch(range
-          ? { selection: { anchor: range.from, head: range.to } }
-          : { selection: { anchor: pos, head: pos } });
+        if (range) {
+          view.dispatch({ selection: { anchor: range.from, head: range.to } });
+          menuPos = range.from;
+        } else {
+          view.dispatch({ selection: { anchor: pos, head: pos } });
+        }
       }
 
-      const items = buildMenuItems(view, insideSel ? sel.head : pos);
+      const items = buildMenuItems(view, menuPos);
       if (!items.length) return false;
 
       event.preventDefault();

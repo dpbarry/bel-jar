@@ -1,11 +1,12 @@
 // Shared IDE actions (navigation, rename, inspector, signature insert).
 
-import { syntaxTree } from '@codemirror/language';
+import { syntaxTree, ensureSyntaxTree } from '@codemirror/language';
 import { forEachDiagnostic } from '@codemirror/lint';
 import { EditorView, Decoration } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
-import { scrollIntoViewCenter } from './bel-viewport.mjs';
-import { findProjectDefinition } from './project-prelude.mjs';
+import { scrollIntoViewCenter, resolveReferenceJump, notifyInspectorJump } from './bel-viewport.mjs';
+import { logJumpSameFile } from './bel-jump-log.mjs';
+import { findProjectDefinition, findProjectDefinitions, findGroupDefinition } from './project-prelude.mjs';
 
 export function getEngine(view) {
   const g = typeof window !== 'undefined' ? window : self;
@@ -52,6 +53,7 @@ function syntaxIdentRangeAt(state, pos) {
 }
 
 export function termRangeAt(view, pos) {
+  ensureSyntaxTree(view.state, Math.min(view.state.doc.length, pos + 1), 100);
   const nav = navInfoAt(view, pos);
   if (nav?.reference?.range) {
     const { from, to } = nav.reference.range;
@@ -113,9 +115,10 @@ export function flashExtension() {
 }
 
 function moveTo(view, range, { flash = true, select = false } = {}) {
-  if (!range) return false;
+  if (!range || !view?.dom?.isConnected) return false;
   const from = clampPos(view, range.from);
-  const to = clampPos(view, select ? range.to : range.from);
+  const spanEnd = range.to != null && range.to > range.from ? range.to : range.from;
+  const to = clampPos(view, select ? spanEnd : range.from);
   const anchor = from;
   const head = select ? to : from;
   const scrollFx = scrollIntoViewCenter(from);
@@ -125,12 +128,42 @@ function moveTo(view, range, { flash = true, select = false } = {}) {
   });
   view.focus();
   if (flash) scheduleFlashClear(view);
+  notifyInspectorJump(view, from);
   return true;
 }
 
+export function jumpToReference(view, range, name, meta = {}) {
+  if (!range || !view?.dom?.isConnected) return false;
+  const resolved = resolveReferenceJump(
+    view.state.doc,
+    range,
+    name,
+    meta.line ?? range.line,
+    meta.col ?? range.col,
+  );
+  logJumpSameFile(view, { ...range, name, ...resolved }, 'jumpToReference');
+  return jumpToRange(view, resolved);
+}
+
 export function jumpToRange(view, range) {
+  if (!range || !view?.dom?.isConnected) return false;
+  if (range.name) {
+    return jumpToReference(view, range, range.name, range);
+  }
+  logJumpSameFile(view, range, 'jumpToRange');
+  const select = range.to != null && range.to > range.from;
+  return moveTo(view, range, { flash: true, select });
+}
+
+// Preview a range without committing: scroll it into view and flash the line,
+// but leave the caret and focus where they are. Backs find-refs hover-preview; a
+// click is still required to actually jump (and close the menu).
+export function peekRange(view, range) {
   if (!range) return false;
-  return moveTo(view, range, { flash: true });
+  const from = clampPos(view, range.from);
+  view.dispatch({ effects: [scrollIntoViewCenter(from), setFlashEffect.of({ from, to: from })] });
+  scheduleFlashClear(view);
+  return true;
 }
 
 // Syntax and Beluga linters can both squiggle the same line at different
@@ -197,6 +230,11 @@ export function crossFileDefinitionAt(view, pos) {
       P.getActiveFileId(),
       name,
       (id) => P.getFileText(id)
+    ) ?? findGroupDefinition(
+      P.listFiles(),
+      P.getActiveFileId(),
+      name,
+      (id) => P.getFileText(id)
     );
     return hit ? { ...hit, sourceRange: range } : null;
   } catch (_) {
@@ -204,18 +242,73 @@ export function crossFileDefinitionAt(view, pos) {
   }
 }
 
-export function goToDefinition(view, pos) {
-  const nav = navInfoAt(view, pos ?? view.state.selection.main.head);
-  if (nav && nav.nameRange) return moveTo(view, nav.nameRange, { flash: true });
-  // Not defined here — try the project group (jump opens the defining file).
-  const cross = crossFileDefinitionAt(view, pos);
-  if (!cross) return false;
+// All cross-file definitions of the name at `pos`, each carrying the queried
+// token's `sourceRange`. Empty when the name resolves locally or is unknown.
+export function crossFileDefinitionsAt(view, pos) {
+  const at = pos ?? view.state.selection.main.head;
+  const range = termRangeAt(view, at);
+  if (!range) return [];
+  const name = view.state.sliceDoc(range.from, range.to);
+  if (!name) return [];
+  const g = typeof window !== 'undefined' ? window : self;
+  const P = g.BelJarPersist;
+  if (!P || typeof P.listFiles !== 'function' || typeof P.getFileText !== 'function') return [];
+  try {
+    return findProjectDefinitions(P.listFiles(), P.getActiveFileId(), name, (id) => P.getFileText(id))
+      .map((hit) => ({ ...hit, name, sourceRange: range }));
+  } catch (_) {
+    return [];
+  }
+}
+
+function openFileAtDef(hit) {
   const g = typeof window !== 'undefined' ? window : self;
   if (typeof g.dispatchEvent !== 'function') return false;
   g.dispatchEvent(new CustomEvent('beljar:open-file-at', {
-    detail: { fileId: cross.fileId, from: cross.from, to: cross.to },
+    detail: { fileId: hit.fileId, from: hit.from, to: hit.to },
   }));
   return true;
+}
+
+// When one name is defined in several visible files, let the user pick which to
+// jump to instead of silently choosing the closest one. Falls back to a direct
+// jump when the Menu primitive isn't available.
+function chooseCrossFileTarget(view, at, targets) {
+  const g = typeof window !== 'undefined' ? window : self;
+  if (typeof g.Menu === 'undefined' || typeof g.Menu.openContext !== 'function') {
+    return openFileAtDef(targets[0]);
+  }
+  let x; let y;
+  const c = view.coordsAtPos(at);
+  if (c) { x = c.left; y = c.bottom; }
+  else {
+    const r = view.dom.getBoundingClientRect();
+    x = r.left + 40; y = r.top + 40;
+  }
+  const name = targets[0].name || '';
+  g.Menu.openContext({
+    x, y, side: 'bottom', align: 'start',
+    items: [
+      { type: 'section', label: `${name} — ${targets.length} definitions` },
+      ...targets.map((t) => ({
+        label: t.fileName.split('/').pop(),
+        onSelect: () => openFileAtDef(t),
+      })),
+    ],
+  });
+  return true;
+}
+
+export function goToDefinition(view, pos) {
+  const at = pos ?? view.state.selection.main.head;
+  const nav = navInfoAt(view, at);
+  if (nav && nav.nameRange) return moveTo(view, nav.nameRange, { flash: true });
+  // Not defined here — try the project group (jump opens the defining file).
+  // Several visible files may define the name: disambiguate rather than guess.
+  const targets = crossFileDefinitionsAt(view, at);
+  if (!targets.length) return false;
+  if (targets.length === 1) return openFileAtDef(targets[0]);
+  return chooseCrossFileTarget(view, at, targets);
 }
 
 export function revealBinder(view, pos) {

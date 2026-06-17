@@ -34,6 +34,20 @@
     return false;
   }
 
+  function pathTaken(path, reservedPaths) {
+    for (var i = 0; i < reservedPaths.length; i++) {
+      if (reservedPaths[i] === path) return true;
+    }
+    return false;
+  }
+
+  function splitNumberedStem(stem) {
+    var s = String(stem || '');
+    var match = s.match(/^(.*?)-(\d+)$/);
+    if (!match || match[1] === '') return { prefix: s, start: 1 };
+    return { prefix: match[1], start: parseInt(match[2], 10) + 1 };
+  }
+
   function suggestNewPath(path, reservedPaths) {
     var dir = parentDir(path);
     var base = baseName(path);
@@ -44,22 +58,40 @@
       stem = base.slice(0, dot);
       ext = base.slice(dot);
     }
-    var n = 1;
-    var candidate = stem + '-new' + ext;
-    var full = dir ? dir + '/' + candidate : candidate;
-    while (pathTaken(full, reservedPaths)) {
-      n += 1;
-      candidate = stem + '-new-' + n + ext;
+    var split = splitNumberedStem(stem);
+    var prefix = split.prefix;
+    var n = split.start;
+    var full;
+    do {
+      var candidate = prefix + '-' + n + ext;
       full = dir ? dir + '/' + candidate : candidate;
-    }
+      n += 1;
+    } while (pathTaken(full, reservedPaths));
     return full;
   }
 
-  function pathTaken(path, reservedPaths) {
-    for (var i = 0; i < reservedPaths.length; i++) {
-      if (reservedPaths[i] === path) return true;
+  function folderPathsFromFilePaths(paths) {
+    var set = {};
+    for (var i = 0; i < paths.length; i++) {
+      var parts = String(paths[i] || '').split('/');
+      var acc = '';
+      for (var j = 0; j < parts.length - 1; j++) {
+        acc = acc ? acc + '/' + parts[j] : parts[j];
+        set[acc] = true;
+      }
     }
-    return false;
+    return Object.keys(set);
+  }
+
+  function occupiedFolderPaths(files, emptyFolders) {
+    var paths = folderPathsFromFilePaths(
+      (files || []).map(function (f) { return f.name; }),
+    );
+    var set = {};
+    for (var i = 0; i < paths.length; i++) set[paths[i]] = true;
+    var empty = emptyFolders || [];
+    for (var j = 0; j < empty.length; j++) set[empty[j]] = true;
+    return Object.keys(set);
   }
 
   function joinPath(dir, name) {
@@ -100,6 +132,60 @@
       return moves;
     }
 
+    if (payload.kind === 'files') {
+      var ids = payload.fileIds || [];
+      var destNames = {};
+      for (var fi = 0; fi < ids.length; fi++) {
+        var fileM = null;
+        for (var im = 0; im < existingFiles.length; im++) {
+          if (existingFiles[im].id === ids[fi]) { fileM = existingFiles[im]; break; }
+        }
+        if (!fileM) continue;
+        var baseM = baseName(fileM.name);
+        var toM = joinPath(destDir, baseM);
+        if (destNames[toM]) return [];
+        destNames[toM] = true;
+        if (toM === fileM.name) continue;
+        moves.push({ id: fileM.id, from: fileM.name, to: toM, text: getText(fileM.id) });
+      }
+      return moves;
+    }
+
+    if (payload.kind === 'selection') {
+      var selFileIds = payload.fileIds || [];
+      var selFolderPaths = payload.folderPaths || [];
+      var selDestNames = {};
+      for (var sfi = 0; sfi < selFileIds.length; sfi++) {
+        var fileS = null;
+        for (var si = 0; si < existingFiles.length; si++) {
+          if (existingFiles[si].id === selFileIds[sfi]) { fileS = existingFiles[si]; break; }
+        }
+        if (!fileS) continue;
+        var baseS = baseName(fileS.name);
+        var toS = joinPath(destDir, baseS);
+        if (selDestNames[toS]) return [];
+        selDestNames[toS] = true;
+        if (toS === fileS.name) continue;
+        moves.push({ id: fileS.id, from: fileS.name, to: toS, text: getText(fileS.id) });
+      }
+      for (var sfo = 0; sfo < selFolderPaths.length; sfo++) {
+        var prefixS = String(selFolderPaths[sfo] || '');
+        if (!prefixS) continue;
+        var folderNameS = baseName(prefixS);
+        var underS = filesUnderPrefix(existingFiles, prefixS);
+        for (var sj = 0; sj < underS.length; sj++) {
+          var fS = underS[sj];
+          var relS = fS.name.slice(prefixS.length + 1);
+          var targetS = joinPath(joinPath(destDir, folderNameS), relS);
+          if (selDestNames[targetS]) return [];
+          selDestNames[targetS] = true;
+          if (targetS === fS.name) continue;
+          moves.push({ id: fS.id, from: fS.name, to: targetS, text: getText(fS.id) });
+        }
+      }
+      return moves;
+    }
+
     if (payload.kind === 'folder') {
       var prefix = String(payload.folderPath || '');
       if (!prefix) return [];
@@ -130,6 +216,34 @@
     if (payload.kind === 'file') {
       var movesF = computeMoveTargets(existingFiles, payload, dropTarget, function () { return ''; });
       return movesF.length > 0;
+    }
+    if (payload.kind === 'files') {
+      var ids = payload.fileIds || [];
+      var parent = null;
+      for (var ci = 0; ci < ids.length; ci++) {
+        var fileC = null;
+        for (var cj = 0; cj < existingFiles.length; cj++) {
+          if (existingFiles[cj].id === ids[ci]) { fileC = existingFiles[cj]; break; }
+        }
+        if (!fileC) return false;
+        var pC = parentDir(fileC.name);
+        if (parent === null) parent = pC;
+        else if (parent !== pC) return false;
+      }
+      var movesFs = computeMoveTargets(existingFiles, payload, dropTarget, function () { return ''; });
+      return movesFs.length > 0;
+    }
+    if (payload.kind === 'selection') {
+      var selFolders = payload.folderPaths || [];
+      for (var sfi = 0; sfi < selFolders.length; sfi++) {
+        var prefixSel = selFolders[sfi];
+        if (dropTarget.kind === 'folder') {
+          if (prefixSel === dropTarget.folderPath) return false;
+          if (isDescendantPath(prefixSel, dropTarget.folderPath)) return false;
+        }
+      }
+      var movesSel = computeMoveTargets(existingFiles, payload, dropTarget, function () { return ''; });
+      return movesSel.length > 0;
     }
     return false;
   }
@@ -294,7 +408,10 @@
         label: baseName(folderPath),
         incoming: incomingUnder,
         existingPaths: existingUnder,
-        suggestedPath: suggestNewPath(folderPath, existingPaths),
+        suggestedPath: suggestNewPath(
+          folderPath,
+          folderPathsFromFilePaths(existingPaths),
+        ),
       });
       for (var u = 0; u < incomingUnder.length; u++) handled[incomingUnder[u].name] = true;
     }
@@ -403,6 +520,9 @@
     joinPath: joinPath,
     nameConflict: nameConflict,
     suggestNewPath: suggestNewPath,
+    splitNumberedStem: splitNumberedStem,
+    folderPathsFromFilePaths: folderPathsFromFilePaths,
+    occupiedFolderPaths: occupiedFolderPaths,
     isDescendantPath: isDescendantPath,
     filesUnderPrefix: filesUnderPrefix,
     detectUploadConflicts: detectUploadConflicts,

@@ -4,25 +4,16 @@ import {
   lineSyntaxMessage,
   computeLintBlocks,
 } from './bel-units.mjs';
+import {
+  GLOBAL_DECL_PARENT,
+  firstChildNamed,
+  firstIdentChild,
+  isLFDatatypeHead,
+  metaVarIdent,
+} from './bel-tree-helpers.mjs';
 
 const PARSE_ERROR = '⚠';
 const BAD_DOUBLE_DASH_LINE = /^\s*--/;
-
-const GLOBAL_DECL_PARENT = new Set([
-  'LFDeclaration',
-  'LFDatatypeDeclaration',
-  'LFConstructor',
-  'SchemaDeclaration',
-  'TypedefDeclaration',
-  'LetDeclaration',
-  'ModuleDeclaration',
-  'InductiveBody',
-  'CoinductiveBody',
-  'CompConstructor',
-  'CompDestructor',
-  'RecBody',
-  'ProofDeclaration',
-]);
 
 const _summaryCache = new WeakMap();
 
@@ -32,24 +23,6 @@ export function walkTree(tree, doc) {
   s = doWalk(tree, doc);
   _summaryCache.set(tree, s);
   return s;
-}
-
-function firstIdentChild(node) {
-  for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') return c;
-    if (c.name === 'ParameterVariable' || c.name === 'SubstitutionVariable') {
-      const id = metaVarIdent(c);
-      if (id) return id;
-    }
-  }
-  return null;
-}
-
-function firstChildNamed(node, name) {
-  for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (c.name === name) return c;
-  }
-  return null;
 }
 
 function lastChildNamed(node, name) {
@@ -119,14 +92,6 @@ function mergeDiagsByOverlap(primary, secondary) {
   }
   merged.sort((a, b) => a.from - b.from);
   return merged;
-}
-
-function metaVarIdent(node) {
-  const sigil = node.firstChild;
-  if (!sigil || (sigil.name !== '#' && sigil.name !== '$')) return null;
-  const id = sigil.nextSibling;
-  if (id && (id.name === 'LowerIdentifier' || id.name === 'UpperIdentifier')) return id;
-  return null;
 }
 
 function metaVarBinding(node, doc) {
@@ -347,10 +312,10 @@ function lfDeclBindings(decl, doc) {
 
 function lfDatatypeBindings(decl, doc) {
   const bindings = [];
-  let sawTypeName = false;
   for (let c = decl.firstChild; c; c = c.nextSibling) {
-    if ((c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') && !sawTypeName) {
-      sawTypeName = true;
+    // Every mutual family head (`LF n … and a … and p …`) binds a type family,
+    // not just the first — isLFDatatypeHead recognises the post-`and` heads too.
+    if ((c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') && isLFDatatypeHead(c)) {
       bindings.push(binding(doc, c));
       continue;
     }
@@ -545,8 +510,7 @@ function doWalk(tree, doc) {
     });
   }
 
-  function addDefMapEntry(node) {
-    const id = firstIdentChild(node);
+  function addDefMapEntryFor(id, node) {
     if (!id) return;
     const name = doc.sliceString(id.from, id.to);
     const entry = {
@@ -556,6 +520,22 @@ function doWalk(tree, doc) {
     };
     const list = defMap.get(name);
     if (list) list.push(entry); else defMap.set(name, [entry]);
+  }
+
+  function addDefMapEntry(node) {
+    // A mutual LF block (`LF n … and a … and p …`) is ONE LFDatatypeDeclaration
+    // with several type-family heads. Each head must be navigable / resolvable,
+    // not just the first — otherwise references to `a`/`p` fall through to the
+    // implicit-binder guess.
+    if (node.name === 'LFDatatypeDeclaration') {
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if ((c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') && isLFDatatypeHead(c)) {
+          addDefMapEntryFor(c, node);
+        }
+      }
+      return;
+    }
+    addDefMapEntryFor(firstIdentChild(node), node);
   }
 
   tree.iterate({
@@ -633,7 +613,8 @@ function doWalk(tree, doc) {
         lfDatatypeKeywordSeen = false;
       }
       if (inLFDatatype) {
-        if (n === 'LFKeyword' || n === 'DatatypeKeyword') {
+        // `and` opens another mutual family whose head is also a defined name.
+        if (n === 'LFKeyword' || n === 'DatatypeKeyword' || n === 'AndKeyword') {
           lfDatatypeKeywordSeen = true;
         } else if ((n === 'LowerIdentifier' || n === 'UpperIdentifier') && lfDatatypeKeywordSeen) {
           noteDefinedName(ref.from, ref.to);

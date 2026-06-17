@@ -34,16 +34,39 @@
       clearTargetHighlight();
       if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
       ghost = null;
-      if (drag && drag.sourceEl) drag.sourceEl.classList.remove('is-dragging');
+      if (drag && drag.dragEls) {
+        for (var i = 0; i < drag.dragEls.length; i++) {
+          drag.dragEls[i].classList.remove('is-dragging');
+        }
+      } else if (drag && drag.sourceEl) {
+        drag.sourceEl.classList.remove('is-dragging');
+      }
       drag = null;
       document.body.classList.remove('tree-dnd-active');
+      document.body.classList.remove('tree-dnd-invalid');
+    }
+
+    function setInvalidCursor(invalid) {
+      document.body.classList.toggle('tree-dnd-invalid', !!invalid);
     }
 
     function applyHighlight(resolved) {
       clearTargetHighlight();
-      if (!resolved || !drag) return null;
+      if (!drag) return null;
+      if (drag.payload && drag.payload.dragBlocked) {
+        setInvalidCursor(true);
+        return null;
+      }
+      if (!resolved) {
+        setInvalidCursor(false);
+        return null;
+      }
       var ok = typeof opts.canDrop === 'function' && opts.canDrop(drag.payload, resolved.target);
-      if (!ok) return null;
+      if (!ok) {
+        setInvalidCursor(false);
+        return null;
+      }
+      setInvalidCursor(false);
       var els = resolved.highlightEls || (resolved.highlightEl ? [resolved.highlightEl] : []);
       for (var i = 0; i < els.length; i++) {
         if (els[i]) els[i].classList.add('is-drop-target');
@@ -74,6 +97,11 @@
 
     function updateTarget(clientX, clientY) {
       if (!drag || !drag.active) return;
+      if (drag.payload && drag.payload.dragBlocked) {
+        setInvalidCursor(true);
+        clearTargetHighlight();
+        return;
+      }
       applyHighlight(resolveAt(clientX, clientY));
     }
 
@@ -84,8 +112,12 @@
       if (!drag.active) {
         if (Math.abs(dx) + Math.abs(dy) < THRESHOLD) return;
         drag.active = true;
-        drag.sourceEl.classList.add('is-dragging');
+        drag.dragEls = (drag.payload && drag.payload.dragEls) || [drag.sourceEl];
+        for (var di = 0; di < drag.dragEls.length; di++) {
+          drag.dragEls[di].classList.add('is-dragging');
+        }
         document.body.classList.add('tree-dnd-active');
+        if (drag.payload && drag.payload.dragBlocked) setInvalidCursor(true);
         ghost = document.createElement('div');
         ghost.className = 'tree-dnd-ghost';
         ghost.textContent = drag.payload.label || '';
@@ -102,7 +134,7 @@
       var wasActive = drag.active;
       var target = wasActive ? applyHighlight(resolveAt(e.clientX, e.clientY)) : null;
       cleanup();
-      if (wasActive && target && typeof opts.canDrop === 'function'
+      if (wasActive && target && !payload.dragBlocked && typeof opts.canDrop === 'function'
         && opts.canDrop(payload, target) && typeof opts.onDrop === 'function') {
         opts.onDrop(payload, target);
       }
@@ -114,6 +146,7 @@
     function onPointerDown(e) {
       if (e.button !== 0 || drag) return;
       if (e.target.closest('.explorer-folder-chevron')) return;
+      if (e.target.closest('.explorer-default-cfg-mark--inactive')) return;
       var row = e.target.closest('[data-draggable]');
       if (!row || !container.contains(row)) return;
       if (typeof opts.getDragPayload !== 'function') return;

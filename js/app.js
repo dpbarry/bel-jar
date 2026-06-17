@@ -3,7 +3,10 @@ const cmdInput = document.getElementById('command-input');
 
 // ── Project init ──────────────────────────────────────────────────────────────
 
-if (typeof BelJarPersist !== 'undefined') BelJarPersist.ensureProject();
+if (typeof BelJarPersist !== 'undefined') {
+  BelJarPersist.ensureProject();
+  ensureProjectActiveCfgs();
+}
 
 const activeFileId =
   typeof BelJarPersist !== 'undefined' ? BelJarPersist.getActiveFileId() : null;
@@ -18,13 +21,17 @@ const initialCheckpoint = persist ? persist.getInitialCheckpoint() : null;
 // Mount an editor for a persisted snapshot. Used at startup and on every file
 // switch — each document gets a fresh editor + semantic engine so symbol
 // identity, checkpoints, and providers are always keyed to the right file.
-function mountEditorFor(snapshot) {
+function mountEditorFor(snapshot, openOpts) {
   if (typeof BelJarEditor === 'undefined' || !BelJarEditor.mount) return null;
+  const initialLocal = openOpts && openOpts.initialLocal != null
+    ? openOpts.initialLocal
+    : (snapshot ? snapshot.editor.local : null);
   return BelJarEditor.mount(editorMount, {
     doc: snapshot ? snapshot.editor.text : (persist ? persist.getEditorText() : ''),
-    initialLocal: snapshot ? snapshot.editor.local : null,
+    initialLocal,
     semanticCheckpoint: snapshot ? snapshot.semantic : null,
     documentId: snapshot ? snapshot.meta.documentId : undefined,
+    jumpAt: openOpts && openOpts.jumpAt,
     persist,
     onDocChange: function (text) {
       if (persist) persist.scheduleEditorPersist(text);
@@ -71,13 +78,6 @@ if (!editor) {
 function setBelJarTip(el, text, opts) {
   if (!el || typeof Tooltips === 'undefined' || !Tooltips.set) return;
   Tooltips.set(el, text, opts);
-}
-
-// Extra tooltip for a row that already shows a name — never repeat the label.
-function nameRowExtraTip(visibleName, fullName, kind) {
-  if (kind === 'elf') return 'LF prelude';
-  if (fullName && visibleName && fullName !== visibleName) return fullName;
-  return '';
 }
 
 const TEMPLATES = {
@@ -255,6 +255,10 @@ function updateTabLintStyles() {
     const id = tab.getAttribute('data-file-id');
     tab.classList.toggle('has-errors', fileTabHasErrors(id, activeId));
   });
+  // Mirror the error state into the explorer rows (in place, no re-render).
+  if (explorerController && typeof explorerController.refreshDiags === 'function') {
+    explorerController.refreshDiags();
+  }
 }
 
 function renderTabs() {
@@ -283,6 +287,7 @@ function renderTabs() {
     const nameSpan = document.createElement('span');
     nameSpan.className = 'editor-tab-name';
     nameSpan.textContent = baseName;
+    if (typeof Tooltips !== 'undefined') Tooltips.bindOverflow(nameSpan, () => baseName);
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
@@ -322,21 +327,304 @@ function renderTabs() {
 // Explorer tree (rendering, fold state, DnD) — see js/explorer-tree.js
 let explorerController = null;
 
-function resolvedDefaultCfgPath() {
+function ensureProjectActiveCfgs() {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return;
+  if (typeof BelJarProjectSource.inferActiveCfgByDir !== 'function') return;
+  if (typeof BelJarPersist.backfillActiveCfgByDir !== 'function') return;
+  const files = BelJarPersist.listFiles();
+  const getText = (id) => BelJarPersist.getFileText(id);
+  BelJarPersist.backfillActiveCfgByDir(BelJarProjectSource.inferActiveCfgByDir(files, getText));
+}
+
+function ensureActiveCfgForDir(dir) {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return;
+  if (BelJarPersist.getActiveCfgForDir(dir)) return;
+  if (typeof BelJarProjectSource.inferActiveCfgForDir !== 'function') return;
+  const files = BelJarPersist.listFiles();
+  const path = BelJarProjectSource.inferActiveCfgForDir(files, (id) => BelJarPersist.getFileText(id), dir);
+  if (path) BelJarPersist.setActiveCfgForDir(dir, path);
+}
+
+function activeCfgForDir(dir) {
+  if (typeof BelJarPersist === 'undefined') return null;
+  const path = BelJarPersist.getActiveCfgForDir(dir);
+  if (!path) return null;
+  return BelJarPersist.listFiles().some((f) => f.name === path) ? path : null;
+}
+
+// Ordered member file names of a folder's active suite (.cfg), or null when the
+// folder has no active suite. Lets the explorer show files in LOAD order with a
+// position badge instead of plain alphabetical — the order governs what each
+// file can see.
+function suiteOrderForDir(dir) {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return null;
+  const cfg = activeCfgForDir(dir);
+  if (!cfg) return null;
+  const files = BelJarPersist.listFiles();
+  const getText = (id) => BelJarPersist.getFileText(id);
+  return BelJarProjectSource.developmentFilesForCfg(files, cfg, getText).map((f) => f.name);
+}
+
+function makeActiveCfgForFile(fileName) {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return;
+  const dir = BelJarProjectSource.dirOf(fileName);
+  if (BelJarPersist.getActiveCfgForDir(dir) === fileName) return;
+  BelJarPersist.setActiveCfgForDir(dir, fileName);
+  const activeId = BelJarPersist.getActiveFileId();
+  const activeFile = BelJarPersist.getFileById(activeId);
+  if (editor?.remoduleContext && activeFile
+    && BelJarProjectSource.dirOf(activeFile.name) === dir) {
+    editor.remoduleContext();
+  }
+  renderExplorerTree();
+  updateHeaderContext();
+  updateRunButtonTooltip();
+}
+
+// The module (.cfg basename) for the file's folder active cfg, or null when standalone.
+function moduleNameFor(fileId) {
   if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return null;
   const files = BelJarPersist.listFiles();
   const getText = (id) => BelJarPersist.getFileText(id);
-  const stored = BelJarPersist.getDefaultCfgPath();
-  if (stored && files.some((f) => f.name === stored)) return stored;
-  return BelJarProjectSource.inferDefaultCfgPath(files, getText);
+  const id = fileId || BelJarPersist.getActiveFileId();
+  const dev = BelJarProjectSource.developmentForFile(files, id, getText);
+  if (dev.kind !== 'module' || !dev.cfg) return null;
+  return dev.cfg.slice(dev.cfg.lastIndexOf('/') + 1).replace(/\.cfg$/i, '');
+}
+
+// Suite name for the header title — only when the active file is listed in its
+// folder's active cfg, or when the active file is that cfg itself.
+function headerSuiteName(fileId) {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return null;
+  const id = fileId || BelJarPersist.getActiveFileId();
+  const file = BelJarPersist.getFileById(id);
+  if (!file) return null;
+  const dir = BelJarProjectSource.dirOf(file.name);
+  const activeCfg = BelJarPersist.getActiveCfgForDir(dir);
+  if (!activeCfg) return null;
+  const cfgBase = activeCfg.slice(activeCfg.lastIndexOf('/') + 1).replace(/\.cfg$/i, '');
+  if (file.name === activeCfg) return cfgBase;
+  const { member } = activeSuiteMembership(file.name);
+  return member ? cfgBase : null;
+}
+
+// The active suite (.cfg) for a file's folder, whether the file is listed in it,
+// and its load-order index — drives the "Add to / Remove from / Move in suite"
+// context-menu actions.
+function activeSuiteMembership(fileName) {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') {
+    return { cfg: null, member: false, index: -1, count: 0 };
+  }
+  const dir = BelJarProjectSource.dirOf(fileName);
+  const cfg = BelJarPersist.getActiveCfgForDir(dir);
+  if (!cfg) return { cfg: null, member: false, index: -1, count: 0 };
+  const files = BelJarPersist.listFiles();
+  const getText = (id) => BelJarPersist.getFileText(id);
+  const paths = BelJarProjectSource.developmentFilesForCfg(files, cfg, getText).map((f) => f.name);
+  const index = paths.indexOf(fileName);
+  return { cfg, member: index !== -1, index, count: paths.length };
+}
+
+// Does a .cfg list an entry that doesn't resolve to a project file (or a junk
+// line)? Cheap and project-wide — no Beluga — so the explorer can badge a broken
+// suite definition without opening it. Mirrors editor-src/bel-cfg-lint.mjs.
+function cfgHasDanglingEntry(cfgName) {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return false;
+  const files = BelJarPersist.listFiles();
+  const cfgFile = files.find((f) => f.name === cfgName);
+  if (!cfgFile) return false;
+  const names = new Set(files.map((f) => f.name));
+  const dir = BelJarProjectSource.dirOf(cfgName);
+  for (const entry of BelJarProjectSource.parseCfg(BelJarPersist.getFileText(cfgFile.id))) {
+    const low = entry.toLowerCase();
+    if (!(low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg'))) return true;
+    if (!names.has(dir ? dir + '/' + entry : entry)) return true;
+  }
+  return false;
+}
+
+// Explorer error indicator for a row: a .cfg with a dangling entry (computed
+// project-wide), or a .bel/.elf whose last check reported errors (known only for
+// files that have been checked — never a misleading guess for unopened ones).
+function explorerFileDiag(fileId, fileName) {
+  const low = String(fileName || '').toLowerCase();
+  if (low.endsWith('.cfg')) return cfgHasDanglingEntry(fileName) ? 'error' : null;
+  if (low.endsWith('.bel') || low.endsWith('.elf')) {
+    const activeId = persist ? persist.getCurrentFileId() : BelJarPersist.getActiveFileId();
+    return fileTabHasErrors(fileId, activeId) ? 'error' : null;
+  }
+  return null;
+}
+
+// Refresh everything that depends on suite membership after a cfg-body edit:
+// the active file may have gained/lost a prelude, so re-module it.
+function afterSuiteEdit(dir) {
+  const activeId = BelJarPersist.getActiveFileId();
+  const activeFile = BelJarPersist.getFileById(activeId);
+  if (editor?.remoduleContext && activeFile && BelJarProjectSource.dirOf(activeFile.name) === dir) {
+    editor.remoduleContext();
+  }
+  reloadActiveEditorFromPersist();
+  renderExplorerTree();
+  renderTabs();
+  updateHeaderContext();
+  updateRunButtonTooltip();
 }
 
 function updateRunButtonTooltip() {
   const btn = document.getElementById('btn-load');
   if (!btn) return;
-  let tip = 'Run';
-  if (developmentFileCount() > 1) tip += '\nCtrl+click to run project';
-  setBelJarTip(btn, tip);
+  setBelJarTip(btn, 'Run suite to here\nCtrl+click: run suite');
+}
+
+function renameFolderPrefix(from, to) {
+  if (typeof BelJarPersist === 'undefined' || !from || from === to) return;
+  const files = BelJarPersist.listFiles();
+  const moves = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (f.name !== from && !f.name.startsWith(from + '/')) continue;
+    const rel = f.name === from ? '' : f.name.slice(from.length + 1);
+    const newPath = to ? (rel ? to + '/' + rel : to) : rel;
+    if (newPath !== f.name) {
+      moves.push({ from: f.name, to: newPath });
+      BelJarPersist.renameFile(f.id, newPath); // cfg bodies are never auto-rewritten
+    }
+  }
+  BelJarPersist.preserveEmptyFoldersAfterMoves(moves);
+  reloadActiveEditorFromPersist();
+  BelJarPersist.renameEmptyFolderPrefix(from, to);
+  renderTabs();
+  updateHeaderContext();
+}
+
+function handleExplorerInlineCancel(session) {
+  if (!session || session.mode !== 'create') return;
+  if (session.kind === 'file') {
+    BelJarPersist.deleteFile(session.fileId);
+    renderTabs();
+    updateHeaderContext();
+  } else if (session.kind === 'folder') {
+    BelJarPersist.removeEmptyFolder(session.folderPath);
+  }
+}
+
+function handleExplorerInlineCommit(session, rawName) {
+  const IL = typeof BelJarExplorerInlineName !== 'undefined' ? BelJarExplorerInlineName : null;
+  if (!IL || typeof BelJarPersist === 'undefined') return false;
+  const files = BelJarPersist.listFiles();
+  const empty = BelJarPersist.listEmptyFolders();
+
+  if (session.kind === 'file') {
+    const file = BelJarPersist.getFileById(session.fileId);
+    if (!file) return false;
+    const parentDir = session.mode === 'rename'
+      ? BelJarProjectSource.dirOf(file.name)
+      : session.parentDir;
+    const result = IL.validateFileCommit(
+      rawName,
+      parentDir,
+      files,
+      session.fileId,
+    );
+    if (!result.ok) {
+      showToast(result.error, { kind: 'warn' });
+      return false;
+    }
+    if (result.fullPath !== file.name) BelJarPersist.renameFile(session.fileId, result.fullPath);
+    if (session.mode === 'create') switchToFile(session.fileId);
+    else {
+      renderTabs();
+      updateHeaderContext();
+    }
+    return true;
+  }
+
+  if (session.kind === 'folder') {
+    const parentDir = session.mode === 'rename'
+      ? IL.parentDir(session.folderPath)
+      : session.parentDir;
+    const result = IL.validateFolderCommit(
+      rawName,
+      parentDir,
+      files,
+      empty,
+      session.folderPath,
+    );
+    if (!result.ok) {
+      showToast(result.error, { kind: 'warn' });
+      return false;
+    }
+    if (session.mode === 'create') {
+      if (result.fullPath !== session.folderPath) {
+        BelJarPersist.removeEmptyFolder(session.folderPath);
+        BelJarPersist.addEmptyFolder(result.fullPath);
+      }
+    } else if (result.fullPath !== session.folderPath) {
+      renameFolderPrefix(session.folderPath, result.fullPath);
+    }
+    return true;
+  }
+  return false;
+}
+
+function startExplorerCreateFile(parentDir) {
+  ensureExplorer();
+  if (!explorerController || typeof BelJarExplorerInlineName === 'undefined') return;
+  const IL = BelJarExplorerInlineName;
+  const files = BelJarPersist.listFiles();
+  const fullPath = IL.suggestDefaultFileName(parentDir, files);
+  const id = BelJarPersist.createFile(fullPath);
+  explorerController.beginInlineName({
+    kind: 'file',
+    mode: 'create',
+    parentDir,
+    fileId: id,
+    folderPath: null,
+    displayName: IL.lastSegment(fullPath),
+    originalPath: fullPath,
+  });
+}
+
+function startExplorerCreateFolder(parentDir) {
+  ensureExplorer();
+  if (!explorerController || typeof BelJarExplorerInlineName === 'undefined') return;
+  const IL = BelJarExplorerInlineName;
+  const files = BelJarPersist.listFiles();
+  const empty = BelJarPersist.listEmptyFolders();
+  const fullPath = IL.suggestDefaultFolderName(parentDir, files, empty);
+  BelJarPersist.addEmptyFolder(fullPath);
+  explorerController.beginInlineName({
+    kind: 'folder',
+    mode: 'create',
+    parentDir,
+    folderPath: fullPath,
+    displayName: IL.lastSegment(fullPath),
+    originalPath: fullPath,
+  });
+}
+
+function explorerCreateMenuItems(parentDir) {
+  return [
+    { label: 'New file', onSelect: () => startExplorerCreateFile(parentDir) },
+    { label: 'New folder', onSelect: () => startExplorerCreateFolder(parentDir) },
+    { type: 'separator' },
+  ];
+}
+
+function renameFolderInteractive(folderPath) {
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarExplorerInlineName === 'undefined') return;
+  ensureExplorer();
+  if (!explorerController) return;
+  const IL = BelJarExplorerInlineName;
+  explorerController.beginInlineName({
+    kind: 'folder',
+    mode: 'rename',
+    parentDir: IL.parentDir(folderPath),
+    folderPath,
+    displayName: IL.lastSegment(folderPath),
+    originalPath: folderPath,
+  });
 }
 
 function ensureExplorer() {
@@ -346,14 +634,21 @@ function ensureExplorer() {
   explorerController = BelJarExplorer.init({
     container: treeEl,
     listFiles: () => BelJarPersist.listFiles(),
+    listEmptyFolders: () => BelJarPersist.listEmptyFolders(),
     getActiveId: () => (persist ? persist.getCurrentFileId() : BelJarPersist.getActiveFileId()),
-    getDefaultCfgPath: resolvedDefaultCfgPath,
+    getActiveCfgForDir: activeCfgForDir,
+    getSuiteOrderForDir: suiteOrderForDir,
+    getFileDiag: explorerFileDiag,
     getProjectName: () => BelJarPersist.getProjectName(),
-    getRowTip: nameRowExtraTip,
     applyTip: (el, tip) => setBelJarTip(el, tip, { ariaLabel: false }),
     getFileContextItems: (fileId) => fileContextItems(fileId),
-    onOpenFile: (id) => switchToFile(id),
+    getFolderContextItems: (folderPath) => explorerFolderContextItems(folderPath),
+    getBackgroundContextItems: () => backgroundRunItems(),
+    onOpenFile: (id, openOpts) => switchToFile(id, openOpts),
+    onMakeActiveCfg: makeActiveCfgForFile,
     onRefresh: updateRunButtonTooltip,
+    onInlineCommit: handleExplorerInlineCommit,
+    onInlineCancel: handleExplorerInlineCancel,
     canDrop: (payload, target) => {
       if (typeof BelJarNameConflicts === 'undefined') return false;
       return BelJarNameConflicts.canDropMove(payload, target, BelJarPersist.listFiles());
@@ -368,12 +663,47 @@ function renderExplorerTree() {
   else updateRunButtonTooltip();
 }
 
-function switchToFile(id) {
+function refreshInspector() {
+  requestAnimationFrame(() => window.dispatchEvent(new Event('beljar:inspector-refresh')));
+}
+
+function applyEditorJump(jumpAt) {
+  if (!editor || !jumpAt) return false;
+  if (typeof editor.jumpToReference === 'function' && jumpAt.name) {
+    return editor.jumpToReference(jumpAt, jumpAt.name);
+  }
+  if (typeof editor.jumpToRange === 'function') {
+    return editor.jumpToRange(jumpAt);
+  }
+  return false;
+}
+
+function switchToFile(id, openOpts) {
   if (!persist || !editor) return;
+  const keepSelection = openOpts && openOpts.keepSelection;
+  const shouldClearSelection = !keepSelection
+    && !(explorerController && explorerController.shouldKeepSelectionOnOpen
+      && explorerController.shouldKeepSelectionOnOpen());
+  const peekAt = openOpts && openOpts.peekAt;
+  const jumpAt = openOpts && openOpts.jumpAt;
+  const initialLocal = openOpts && openOpts.initialLocal;
   if (typeof BelJarPersist !== 'undefined') BelJarPersist.openFile(id);
-  if (id === persist.getCurrentFileId()) {
+  const editorDocId = typeof editor.getDocumentId === 'function' ? editor.getDocumentId() : null;
+  const persistId = persist.getCurrentFileId();
+  if (id === persistId && editorDocId === id) {
     renderTabs();
+    if (peekAt && editor && typeof editor.peekRange === 'function') editor.peekRange(peekAt);
+    else if (jumpAt) applyEditorJump(jumpAt);
+    else if (initialLocal != null && editor && typeof editor.applyViewport === 'function') {
+      editor.applyViewport(initialLocal);
+    } else if (shouldClearSelection && explorerController && explorerController.clearSelection) {
+      explorerController.clearSelection();
+    }
     return;
+  }
+  if (typeof BelJarPersist !== 'undefined' && typeof BelJarProjectSource !== 'undefined') {
+    const file = BelJarPersist.getFileById(id);
+    if (file) ensureActiveCfgForDir(BelJarProjectSource.dirOf(file.name));
   }
   const leavingId = persist.getCurrentFileId();
   const snap = liveFileLint();
@@ -385,7 +715,10 @@ function switchToFile(id) {
   // Pinned inspector/graph windows reference the old editor view.
   if (typeof FloatingWindow !== 'undefined' && FloatingWindow.closeAll) FloatingWindow.closeAll();
   editor.destroy();
-  editor = mountEditorFor(snapshot);
+  editor = mountEditorFor(snapshot, {
+    jumpAt,
+    initialLocal: initialLocal != null ? initialLocal : (snapshot ? snapshot.editor.local : null),
+  });
   window.BelJarCurrentEditor = editor;
   syncEditorCmTheme();
   if (typeof BelugaClient !== 'undefined' && BelugaClient.noteEditorChange) {
@@ -393,17 +726,111 @@ function switchToFile(id) {
   }
   if (editor) editor.focus();
   renderTabs();
+  if (shouldClearSelection && explorerController && explorerController.clearSelection) {
+    explorerController.clearSelection();
+  }
   renderExplorerTree();
   updateHeaderContext();
+  requestAnimationFrame(() => {
+    if (peekAt) {
+      if (editor && typeof editor.peekRange === 'function') editor.peekRange(peekAt);
+    } else if (jumpAt) {
+      if (!applyEditorJump(jumpAt) && editor && typeof editor.restoreViewport === 'function') {
+        editor.restoreViewport();
+      }
+    }
+  });
+}
+
+// Find-references hover preview: switch tabs to peek cross-file rows, then
+// restore the pre-menu editor state when the menu closes without a click.
+let refPeekRestore = null;
+
+function captureRefPeekRestore() {
+  if (!editor || !persist) return null;
+  const local = typeof editor.getViewport === 'function'
+    ? editor.getViewport()
+    : persist.getEditorLocal();
+  return { fileId: persist.getCurrentFileId(), local };
+}
+
+function beginRefPeekSession() {
+  if (!refPeekRestore) refPeekRestore = captureRefPeekRestore();
+}
+
+function endRefPeekSession() {
+  const snap = refPeekRestore;
+  refPeekRestore = null;
+  if (!snap || !persist) return;
+  const currentId = persist.getCurrentFileId();
+  if (currentId === snap.fileId) {
+    if (editor && typeof editor.applyViewport === 'function') {
+      editor.applyViewport(snap.local);
+    }
+    return;
+  }
+  switchToFile(snap.fileId, { initialLocal: snap.local, keepSelection: true });
+}
+
+function peekFileAt(fileId, opts) {
+  if (!persist || !fileId || opts.from == null) return;
+  opts = opts || {};
+  beginRefPeekSession();
+  const peekAt = {
+    from: opts.from,
+    to: opts.to,
+    line: opts.line,
+    col: opts.col,
+    name: opts.name,
+  };
+  const currentId = persist.getCurrentFileId();
+  if (currentId === fileId) {
+    if (editor && typeof editor.peekRange === 'function') editor.peekRange(peekAt);
+    return;
+  }
+  switchToFile(fileId, { peekAt, keepSelection: true });
 }
 
 // Open a file (switching if needed) and jump to a position in it — the target
 // of cross-file go-to-definition, palette symbols, and project search.
-function openFileAt(fileId, from, to) {
+function openFileAt(fileId, from, to, opts) {
   if (typeof BelJarPersist === 'undefined') return;
-  if (persist && persist.getCurrentFileId() !== fileId) switchToFile(fileId);
-  if (editor && typeof editor.jumpToRange === 'function' && from != null) {
-    editor.jumpToRange({ from, to: to != null ? to : from });
+  if (from == null) return;
+  opts = opts || {};
+  if (typeof BelJarEditor !== 'undefined' && typeof BelJarEditor.logJumpRequest === 'function') {
+    BelJarEditor.logJumpRequest({
+      fileId, from, to, line: opts.line, col: opts.col, phase: 'openFileAt',
+    });
+  } else {
+    console.warn('[bel-jar:jump] openFileAt (BelJarEditor.logJumpRequest missing)', { fileId, from, to });
+  }
+  const jumpAt = {
+    from,
+    to: to != null ? to : from,
+    line: opts.line,
+    col: opts.col,
+    name: opts.name,
+  };
+  const editorDocId = editor && typeof editor.getDocumentId === 'function'
+    ? editor.getDocumentId()
+    : (persist ? persist.getCurrentFileId() : null);
+  const needSwitch = editorDocId !== fileId;
+  if (needSwitch) {
+    switchToFile(fileId, { jumpAt });
+    return;
+  }
+  if (!editor) return;
+  if (typeof editor.jumpToReference === 'function' && opts.name) {
+    editor.jumpToReference(jumpAt, opts.name);
+  } else if (typeof editor.jumpToRange === 'function') {
+    editor.jumpToRange(jumpAt);
+    if (typeof BelJarEditor !== 'undefined' && typeof BelJarEditor.logJumpResult === 'function'
+      && typeof editor.getView === 'function') {
+      const v = editor.getView();
+      if (v) requestAnimationFrame(() => BelJarEditor.logJumpResult(v, jumpAt));
+    }
+  } else if (typeof editor.scheduleJumpToRange === 'function') {
+    editor.scheduleJumpToRange(jumpAt);
   }
 }
 
@@ -411,12 +838,59 @@ function openFileAt(fileId, from, to) {
 // into ANOTHER project file.
 window.addEventListener('beljar:open-file-at', (ev) => {
   const d = ev.detail || {};
-  if (d.fileId) openFileAt(d.fileId, d.from, d.to);
+  if (d.fileId) {
+    refPeekRestore = null;
+    openFileAt(d.fileId, d.from, d.to, d);
+  }
 });
 
-function newFile(name) {
+window.addEventListener('beljar:peek-file-at', (ev) => {
+  const d = ev.detail || {};
+  if (d.fileId) peekFileAt(d.fileId, d);
+});
+
+window.addEventListener('beljar:end-ref-peek', () => {
+  endRefPeekSession();
+});
+
+async function newFile(name) {
   if (typeof BelJarPersist === 'undefined') return;
-  var baseName = name || promptFileName('untitled.bel');
+  var baseName = name;
+  if (!baseName) {
+    var def = 'untitled.bel';
+    var stemEnd = 8;
+    if (typeof BelJarExplorerInlineName !== 'undefined') {
+      def = BelJarExplorerInlineName.suggestDefaultFileName('', BelJarPersist.listFiles());
+      var dot = def.lastIndexOf('.');
+      stemEnd = dot > 0 ? dot : def.length;
+    } else if (typeof BelJarNameConflicts !== 'undefined') {
+      var paths = BelJarPersist.listFiles().map(function (f) { return f.name; });
+      if (!BelJarNameConflicts.nameConflict(BelJarPersist.listFiles(), 'untitled.bel')) {
+        def = 'untitled.bel';
+      } else {
+        def = BelJarNameConflicts.suggestNewPath('untitled.bel', paths);
+      }
+      var dot2 = def.lastIndexOf('.');
+      stemEnd = dot2 > 0 ? dot2 : def.length;
+    }
+    if (typeof BelJarNamePrompt === 'undefined') return;
+    baseName = await BelJarNamePrompt.open({
+      title: 'New file',
+      value: def,
+      selection: { start: 0, end: stemEnd },
+      mono: true,
+      normalize: BelJarNamePrompt.normalizeBelFileName,
+      validate: function (n) {
+        if (!n) return 'Name is required.';
+        if (typeof BelJarNameConflicts !== 'undefined'
+          && BelJarNameConflicts.nameConflict(BelJarPersist.listFiles(), n)) {
+          return 'A file with that name already exists in this folder.';
+        }
+        return null;
+      },
+      confirmLabel: 'Create',
+    });
+  }
   if (!baseName) return;
   if (typeof BelJarNameConflicts !== 'undefined'
     && BelJarNameConflicts.nameConflict(BelJarPersist.listFiles(), baseName)) {
@@ -468,13 +942,59 @@ function deleteFileInteractive(id) {
   updateHeaderContext();
 }
 
-function promptFileName(defaultName) {
-  var name = window.prompt('File name:', defaultName || 'untitled.bel');
-  if (!name) return null;
-  name = name.trim();
-  if (!name) return null;
-  if (!name.endsWith('.bel')) name += '.bel';
-  return name;
+function filesUnderFolder(folderPath) {
+  if (typeof BelJarPersist === 'undefined') return [];
+  const allFiles = BelJarPersist.listFiles();
+  if (typeof BelJarNameConflicts !== 'undefined') {
+    return BelJarNameConflicts.filesUnderPrefix(allFiles, folderPath);
+  }
+  return allFiles.filter(
+    (f) => f.name === folderPath || f.name.startsWith(folderPath + '/'),
+  );
+}
+
+function fileDeleteDisabled() {
+  return typeof BelJarPersist === 'undefined' || BelJarPersist.listFiles().length <= 1;
+}
+
+function folderDeleteDisabled(folderPath) {
+  const allFiles = typeof BelJarPersist !== 'undefined' ? BelJarPersist.listFiles() : [];
+  if (!allFiles.length) return false;
+  return filesUnderFolder(folderPath).length >= allFiles.length;
+}
+
+function deleteFolderInteractive(folderPath) {
+  if (typeof BelJarPersist === 'undefined') return;
+  const IL = typeof BelJarExplorerInlineName !== 'undefined' ? BelJarExplorerInlineName : null;
+  const label = IL ? IL.lastSegment(folderPath) : folderPath;
+  const allFiles = BelJarPersist.listFiles();
+  const under = filesUnderFolder(folderPath);
+  const emptyUnder = BelJarPersist.listEmptyFolders().filter(
+    (p) => p === folderPath || p.startsWith(folderPath + '/'),
+  );
+  if (!under.length && !emptyUnder.length) return;
+
+  if (under.length >= allFiles.length && allFiles.length > 0) {
+    if (allFiles.length === 1) {
+      if (editor) editor.setValue('');
+      for (const p of emptyUnder) BelJarPersist.removeEmptyFolder(p);
+      renderExplorerTree();
+      return;
+    }
+    showToast('Cannot delete every file in the project.', { kind: 'warn' });
+    return;
+  }
+
+  const msg = under.length
+    ? `Delete folder "${label}" and ${under.length} file${under.length === 1 ? '' : 's'} inside? This cannot be undone.`
+    : `Delete empty folder "${label}"?`;
+  if (!window.confirm(msg)) return;
+
+  deleteProjectFilesById(under.map((f) => f.id));
+  for (const p of emptyUnder) BelJarPersist.removeEmptyFolder(p);
+  renderTabs();
+  renderExplorerTree();
+  updateHeaderContext();
 }
 
 // Switching projects swaps the entire hot-memory container (editor, engine,
@@ -496,12 +1016,66 @@ function switchProjectAndReload(mutate) {
   window.location.reload();
 }
 
-function newProject(name) {
+async function newProject(name) {
   if (typeof BelJarPersist === 'undefined') return;
-  const projName = name != null ? name : window.prompt('New project name:', 'Untitled');
-  if (projName === null) return; // cancelled
+  var projName = name;
+  if (projName == null) {
+    if (typeof BelJarNamePrompt === 'undefined') return;
+    projName = await BelJarNamePrompt.open({
+      title: 'New project',
+      value: 'Untitled',
+      selection: { start: 0, end: 8 },
+      normalize: BelJarNamePrompt.defaultNormalize,
+      validate: function (n) { return n ? null : 'Name is required.'; },
+      confirmLabel: 'Create',
+    });
+  }
+  if (projName === null) return;
   switchProjectAndReload(() =>
     BelJarPersist.newBlankProject((projName && projName.trim()) || 'Untitled'));
+}
+
+// Switch to another project (full reload boundary). No-op when already active.
+function switchToProject(id) {
+  if (typeof BelJarPersist === 'undefined') return;
+  if (id === BelJarPersist.getActiveProjectId()) return;
+  switchProjectAndReload(() => BelJarPersist.setActiveProjectId(id));
+}
+
+// Delete a project and its entire silo (destructive, confirmed). Refuses the
+// last project. When the active project is deleted, deleteProject hands back the
+// next id to activate, so we reload into it.
+function deleteProjectInteractive(id) {
+  if (typeof BelJarPersist === 'undefined') return;
+  const projects = BelJarPersist.listProjects();
+  if (projects.length <= 1) return;
+  const target = projects.find((p) => p.id === id);
+  if (!target) return;
+  if (!window.confirm('Delete project "' + target.name + '" and all its files? This cannot be undone.')) return;
+  const wasActive = id === BelJarPersist.getActiveProjectId();
+  if (wasActive) {
+    switchProjectAndReload(() => BelJarPersist.deleteProject(id));
+    return;
+  }
+  BelJarPersist.deleteProject(id);
+  showToast('Deleted project "' + target.name + '".');
+}
+
+// "Switch project" submenu: every project, active one checked. Null when there
+// is only one project (nothing to switch between).
+function buildSwitchProjectSubmenu() {
+  if (typeof BelJarPersist === 'undefined') return null;
+  const projects = BelJarPersist.listProjects();
+  if (projects.length <= 1) return null;
+  const activeId = BelJarPersist.getActiveProjectId();
+  return projects
+    .slice()
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+    .map((p) => ({
+      label: p.name,
+      checked: p.id === activeId,
+      onSelect: () => switchToProject(p.id),
+    }));
 }
 
 // ── Header project title ──────────────────────────────────────────────────────
@@ -518,9 +1092,11 @@ function updateHeaderContext() {
   const projectName = typeof BelJarPersist !== 'undefined'
     ? BelJarPersist.getProjectName()
     : 'Untitled';
-  nameEl.textContent = projectName;
-  el.setAttribute('aria-label', projectName);
-  setBelJarTip(el, headerContextFileHint());
+  const suite = headerSuiteName();
+  nameEl.textContent = suite ? `${projectName} > ${suite}` : projectName;
+  const tip = headerContextFileHint();
+  el.setAttribute('aria-label', tip);
+  setBelJarTip(el, tip);
 }
 
 window.addEventListener('beljar:file-lint', (ev) => {
@@ -747,21 +1323,46 @@ async function resolveAndApplyUpload(entries, options) {
   return executeUploadPlan(plan, options);
 }
 
+// After batch moves, cfg bodies are updated via BelJarPersist.setFileText while the
+// live editor may still hold the pre-sync buffer — reload when storage diverges.
+function reloadActiveEditorFromPersist() {
+  if (!persist || !editor || typeof BelJarPersist === 'undefined') return;
+  const id = persist.getCurrentFileId();
+  if (!id) return;
+  const file = BelJarPersist.getFileById(id);
+  const text = BelJarPersist.getFileText(id);
+  if (text == null) return;
+  if (editor.getValue() !== text) {
+    editor.setValue(text);
+    persist.scheduleEditorPersist(text);
+  }
+  if (file && /\.cfg$/i.test(file.name) && typeof editor.refreshLint === 'function') {
+    editor.refreshLint();
+  }
+}
+
 function applyMovePlan(plan) {
   if (!plan || typeof BelJarPersist === 'undefined' || !persist) return;
+  // Collect from→to for every rename for empty-folder bookkeeping. Cfg bodies
+  // are deliberately NOT rewritten — a now-dangling entry is surfaced by the
+  // cfg lint, not silently edited.
+  const moves = [];
+  const recordMove = (id, to) => {
+    const f = BelJarPersist.getFileById(id);
+    if (f) moves.push({ from: f.name, to });
+    BelJarPersist.renameFile(id, to);
+  };
   for (const folder of plan.replaceFolder || []) {
     deleteProjectFilesById(folder.deleteIds || []);
-    for (const r of folder.renames || []) {
-      BelJarPersist.renameFile(r.id, r.to);
-    }
+    for (const r of folder.renames || []) recordMove(r.id, r.to);
   }
   for (const rep of plan.replaces || []) {
     BelJarPersist.setFileText(rep.targetId, rep.text);
     deleteProjectFilesById([rep.deleteId]);
   }
-  for (const r of plan.renames || []) {
-    BelJarPersist.renameFile(r.id, r.to);
-  }
+  for (const r of plan.renames || []) recordMove(r.id, r.to);
+  BelJarPersist.preserveEmptyFoldersAfterMoves(moves);
+  reloadActiveEditorFromPersist();
   renderTabs();
   renderExplorerTree();
   updateHeaderContext();
@@ -848,18 +1449,17 @@ folderInputEl.addEventListener('change', async () => {
     .filter((e) => e.name.toLowerCase().endsWith('.bel'))
     .map((e) => e.name);
   const firstBel = orderedPaths.length ? orderedPaths[0] : null;
-  const defaultCfgPath = typeof BelJarProjectSource.inferDefaultCfgPath === 'function'
-    ? BelJarProjectSource.inferDefaultCfgPath(
-      projectEntries.map((e, i) => ({ id: 'tmp-' + i, name: e.name })),
-      (id) => projectEntries[Number(id.slice(4))]?.text ?? '',
-    )
+  const tmpFiles = projectEntries.map((e, i) => ({ id: 'tmp-' + i, name: e.name }));
+  const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? '';
+  const activeCfgByDir = typeof BelJarProjectSource.inferActiveCfgByDir === 'function'
+    ? BelJarProjectSource.inferActiveCfgByDir(tmpFiles, tmpText)
     : null;
   // Imports into a fresh PROJECT silo — the current project is untouched, and
   // the reload boots into the new (now active) project.
   switchProjectAndReload(() => {
     BelJarPersist.createProjectWithFiles(rootName, projectEntries, {
       projectName: rootName,
-      defaultCfgPath: defaultCfgPath || undefined,
+      activeCfgByDir: activeCfgByDir || undefined,
     });
     if (firstBel) {
       const created = BelJarPersist.listFiles().find((f) => f.name === firstBel);
@@ -884,35 +1484,50 @@ function downloadCurrentFile() {
   URL.revokeObjectURL(url);
 }
 
-function developmentFileCount() {
-  if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return 0;
-  const files = BelJarPersist.listFiles();
-  const getText = (id) => BelJarPersist.getFileText(id);
-  const cfgPath = resolvedDefaultCfgPath();
-  if (!cfgPath) return 0;
-  const dev = BelJarProjectSource.developmentFilesForCfg(files, cfgPath, getText);
-  return dev ? dev.length : 0;
+// Total signature files (.bel/.elf) in the workspace — gates "Run Project".
+function signatureFileCount() {
+  if (typeof BelJarPersist === 'undefined') return 0;
+  const files = BelJarPersist.listFiles() || [];
+  return files.filter((f) => /\.(?:bel|elf)$/i.test(String(f.name || ''))).length;
 }
 
 function buildProjectMenuItems() {
   const files = typeof BelJarPersist !== 'undefined' ? BelJarPersist.listFiles() : [];
   const currentId = persist ? persist.getCurrentFileId() : null;
   const currentFile = currentId ? BelJarPersist.getFileById(currentId) : null;
+  const switchSubmenu = buildSwitchProjectSubmenu();
+  const projectCount = typeof BelJarPersist !== 'undefined' ? BelJarPersist.listProjects().length : 1;
 
   return [
     {
       label: 'New project',
       onSelect: () => newProject(),
     },
+    ...(switchSubmenu ? [{ label: 'Switch project', submenu: switchSubmenu }] : []),
     {
       label: 'Rename project…',
-      onSelect: () => {
-        if (typeof BelJarPersist === 'undefined') return;
+      onSelect: async () => {
+        if (typeof BelJarPersist === 'undefined' || typeof BelJarNamePrompt === 'undefined') return;
         const cur = BelJarPersist.getProjectName();
-        const next = window.prompt('Project name:', cur);
-        if (!next || !next.trim()) return;
-        BelJarPersist.setProjectName(next.trim());
+        const next = await BelJarNamePrompt.open({
+          title: 'Rename project',
+          value: cur,
+          normalize: BelJarNamePrompt.defaultNormalize,
+          validate: function (n) { return n ? null : 'Name is required.'; },
+          confirmLabel: 'Save',
+        });
+        if (!next) return;
+        BelJarPersist.setProjectName(next);
         updateHeaderContext();
+      },
+    },
+    {
+      label: 'Delete project…',
+      disabled: projectCount <= 1,
+      onSelect: () => {
+        if (typeof BelJarPersist !== 'undefined') {
+          deleteProjectInteractive(BelJarPersist.getActiveProjectId());
+        }
       },
     },
     { type: 'separator' },
@@ -945,16 +1560,16 @@ function buildProjectMenuItems() {
     },
     {
       label: 'Delete file…',
-      disabled: !currentFile || files.length <= 1,
+      disabled: fileDeleteDisabled() || !currentFile,
       onSelect: () => { if (currentId) deleteFileInteractive(currentId); },
     },
     { type: 'separator' },
     {
-      label: 'Run whole project',
-      disabled: developmentFileCount() <= 1,
+      label: 'Run project',
+      disabled: signatureFileCount() <= 1,
       onSelect: () => {
-        if (typeof BelJarBelugaRun !== 'undefined' && BelJarBelugaRun.loadProject) {
-          BelJarBelugaRun.loadProject();
+        if (typeof BelJarBelugaRun !== 'undefined' && BelJarBelugaRun.runProject) {
+          BelJarBelugaRun.runProject();
         }
       },
     },
@@ -962,20 +1577,20 @@ function buildProjectMenuItems() {
 }
 
 function renameFileInteractive(id) {
-  if (typeof BelJarPersist === 'undefined') return;
+  if (typeof BelJarPersist === 'undefined' || typeof BelJarExplorerInlineName === 'undefined') return;
   const file = BelJarPersist.getFileById(id);
   if (!file) return;
-  const newName = window.prompt('Rename file:', file.name);
-  if (!newName || !newName.trim()) return;
-  const trimmed = newName.trim();
-  if (typeof BelJarNameConflicts !== 'undefined'
-    && BelJarNameConflicts.nameConflict(BelJarPersist.listFiles(), trimmed, id)) {
-    showToast('A file with that name already exists in this folder.', { kind: 'warn' });
-    return;
-  }
-  BelJarPersist.renameFile(id, trimmed);
-  renderTabs();
-  renderExplorerTree();
+  ensureExplorer();
+  if (!explorerController) return;
+  const IL = BelJarExplorerInlineName;
+  explorerController.beginInlineName({
+    kind: 'file',
+    mode: 'rename',
+    parentDir: BelJarProjectSource.dirOf(file.name),
+    fileId: id,
+    displayName: IL.lastSegment(file.name),
+    originalPath: file.name,
+  });
 }
 
 // ── File context menu (tabs + explorer rows) ──────────────────────────────────
@@ -985,7 +1600,8 @@ function fileContextItems(fileId) {
   const files = BelJarPersist.listFiles();
   const file = files.find((f) => f.id === fileId);
   if (!file) return [];
-  const refresh = () => { renderTabs(); renderExplorerTree(); };
+  const parentDir = typeof BelJarProjectSource !== 'undefined'
+    ? BelJarProjectSource.dirOf(file.name) : '';
   const items = [
     { label: 'Rename…', onSelect: () => renameFileInteractive(fileId) },
     { type: 'separator' },
@@ -997,24 +1613,106 @@ function fileContextItems(fileId) {
     },
     {
       label: 'Delete file…',
-      disabled: files.length <= 1,
+      disabled: fileDeleteDisabled(),
       onSelect: () => deleteFileInteractive(fileId),
     },
   ];
-  if (file.name.toLowerCase().endsWith('.cfg')
-    && BelJarPersist.getDefaultCfgPath() !== file.name) {
-    items.unshift(
-      {
-        label: 'Make active CFG',
-        onSelect: () => {
-          BelJarPersist.setDefaultCfgPath(file.name);
-          refresh();
+  const low = file.name.toLowerCase();
+  const Run = typeof BelJarBelugaRun !== 'undefined' ? BelJarBelugaRun : null;
+  if (low.endsWith('.cfg')) {
+    if (Run && Run.runModuleCfg) {
+      items.unshift(
+        { label: 'Run suite', onSelect: () => Run.runModuleCfg(file.name) },
+        { type: 'separator' },
+      );
+    }
+    if (BelJarPersist.getActiveCfgForDir(BelJarProjectSource.dirOf(file.name)) !== file.name) {
+      items.unshift(
+        {
+          label: 'Make active suite',
+          onSelect: () => {
+            makeActiveCfgForFile(file.name);
+            renderTabs();
+          },
         },
-      },
-      { type: 'separator' },
-    );
+        { type: 'separator' },
+      );
+    }
+  } else if (Run && (low.endsWith('.bel') || low.endsWith('.elf'))) {
+    const runItems = [{ label: 'Run file', onSelect: () => Run.runFile(fileId) }];
+    const moduleName = moduleNameFor(fileId);
+    if (moduleName) {
+      runItems.push(
+        { label: 'Run suite to here', onSelect: () => Run.runToHere(fileId) },
+        { label: `Run suite “${moduleName}”`, onSelect: () => Run.runModule(fileId) },
+      );
+    }
+    // Suite authoring: add/remove this file from its folder's active suite (.cfg)
+    // without hand-editing the cfg text.
+    const { cfg, member, index, count } = activeSuiteMembership(file.name);
+    if (cfg) {
+      const dir = BelJarProjectSource.dirOf(file.name);
+      if (member) {
+        if (index > 0) {
+          runItems.push({ label: 'Move up in suite', onSelect: () => { BelJarPersist.moveEntryInCfg(cfg, file.name, -1); afterSuiteEdit(dir); } });
+        }
+        if (index < count - 1) {
+          runItems.push({ label: 'Move down in suite', onSelect: () => { BelJarPersist.moveEntryInCfg(cfg, file.name, 1); afterSuiteEdit(dir); } });
+        }
+        runItems.push({ label: 'Remove from suite', onSelect: () => { BelJarPersist.removeEntryFromCfg(cfg, file.name); afterSuiteEdit(dir); } });
+      } else {
+        runItems.push({ label: 'Add to active suite', onSelect: () => { BelJarPersist.addEntryToCfg(cfg, file.name); afterSuiteEdit(dir); } });
+      }
+    }
+    items.unshift(...runItems, { type: 'separator' });
   }
-  return items;
+  return explorerCreateMenuItems(parentDir).concat(items);
+}
+
+function explorerFolderContextItems(folderPath) {
+  const create = explorerCreateMenuItems(folderPath);
+  const rename = [
+    { label: 'Rename…', onSelect: () => renameFolderInteractive(folderPath) },
+    { type: 'separator' },
+  ];
+  const destroy = [
+    {
+      label: 'Delete folder…',
+      disabled: folderDeleteDisabled(folderPath),
+      onSelect: () => deleteFolderInteractive(folderPath),
+    },
+    { type: 'separator' },
+  ];
+  const run = folderRunItems(folderPath);
+  const runBlock = run.length ? run.concat([{ type: 'separator' }]) : [];
+  return create.concat(rename).concat(destroy).concat(runBlock);
+}
+
+// Run actions for an explorer folder row: its module if a .cfg lives there,
+// else the folder's signature files as one run.
+function folderRunItems(folderPath) {
+  if (typeof BelJarBelugaRun === 'undefined' || typeof BelJarProjectSource === 'undefined') return [];
+  const files = BelJarPersist.listFiles() || [];
+  const dirOf = BelJarProjectSource.dirOf;
+  const hasRunnable = files.some(
+    (f) => dirOf(f.name) === folderPath && /\.(?:bel|elf)$/i.test(String(f.name)),
+  );
+  if (!hasRunnable) return [];
+  const cfg = files.find((f) => /\.cfg$/i.test(String(f.name)) && dirOf(f.name) === folderPath);
+  return [{
+    label: cfg ? 'Run suite' : 'Run folder',
+    onSelect: () => BelJarBelugaRun.runFolder(folderPath),
+  }];
+}
+
+// Run-everything action for empty explorer space.
+function backgroundRunItems() {
+  const create = explorerCreateMenuItems('');
+  if (typeof BelJarBelugaRun === 'undefined' || signatureFileCount() < 1) return create;
+  return create.concat([
+    { label: 'Run project', onSelect: () => BelJarBelugaRun.runProject() },
+    { type: 'separator' },
+  ]);
 }
 
 if (typeof Menu !== 'undefined') {
@@ -1107,6 +1805,15 @@ headerMenuDefs.forEach((def) => {
   wireMenuTrigger(document.getElementById(def.id), def);
 });
 
+const explorerNewBtn = document.getElementById('btn-explorer-new');
+if (explorerNewBtn) {
+  wireMenuTrigger(explorerNewBtn, {
+    side: 'bottom',
+    align: 'end',
+    items: () => explorerCreateMenuItems('').filter((item) => item.type !== 'separator'),
+  });
+}
+
 // ── Command palette ───────────────────────────────────────────────────────────
 
 if (typeof CommandPalette !== 'undefined') {
@@ -1114,7 +1821,7 @@ if (typeof CommandPalette !== 'undefined') {
   const reg = CommandPalette.register;
 
   reg({ id: 'project.new', title: 'New Project…', section: 'File', run: () => newProject() });
-  reg({ id: 'file.new', title: 'New File…', section: 'File', run: () => newFile() });
+  reg({ id: 'file.new', title: 'New file…', section: 'File', run: () => newFile() });
   reg({ id: 'file.upload', title: 'Upload File', section: 'File', run: () => fileInputEl.click() });
   reg({ id: 'file.upload-folder', title: 'Upload Folder', section: 'File', run: () => uploadFolderInputEl.click() });
   reg({ id: 'file.import-folder', title: 'Import Folder as New Project', section: 'File', run: () => folderInputEl.click() });
@@ -1167,17 +1874,30 @@ if (typeof CommandPalette !== 'undefined') {
   });
 
   reg({
-    id: 'run.check',
+    id: 'run.file',
     title: 'Run File',
     section: 'Run',
-    run: () => { if (typeof BelJarBelugaRun !== 'undefined') BelJarBelugaRun.loadCode(); },
+    run: () => { if (typeof BelJarBelugaRun !== 'undefined' && BelJarBelugaRun.runFile) BelJarBelugaRun.runFile(); },
+  });
+  reg({
+    id: 'run.here',
+    title: 'Run Suite to Here',
+    section: 'Run',
+    run: () => { if (typeof BelJarBelugaRun !== 'undefined' && BelJarBelugaRun.runToHere) BelJarBelugaRun.runToHere(); },
+  });
+  reg({
+    id: 'run.module',
+    title: 'Run Suite',
+    section: 'Run',
+    when: () => !!moduleNameFor(),
+    run: () => { if (typeof BelJarBelugaRun !== 'undefined' && BelJarBelugaRun.runModule) BelJarBelugaRun.runModule(); },
   });
   reg({
     id: 'run.project',
-    title: 'Run Whole Project',
+    title: 'Run Project',
     section: 'Run',
-    when: () => developmentFileCount() > 1,
-    run: () => { if (typeof BelJarBelugaRun !== 'undefined' && BelJarBelugaRun.loadProject) BelJarBelugaRun.loadProject(); },
+    when: () => signatureFileCount() > 1,
+    run: () => { if (typeof BelJarBelugaRun !== 'undefined' && BelJarBelugaRun.runProject) BelJarBelugaRun.runProject(); },
   });
   reg({
     id: 'run.clear-output',
@@ -1258,22 +1978,22 @@ if (typeof CommandPalette !== 'undefined') {
 
 }
 
-// ── Prefabs sidebar button ────────────────────────────────────────────────────
+// ── Library sidebar button ────────────────────────────────────────────────────
 
-const prefabsBtn = document.getElementById('btn-prefabs');
-if (prefabsBtn) {
-  let prefabsSuppressNextClick = false;
-  const hidePrefabsTooltipUntilLeave = wireSidebarOpenTooltip(prefabsBtn);
+const libraryBtn = document.getElementById('btn-library');
+if (libraryBtn) {
+  let librarySuppressNextClick = false;
+  const hideLibraryTooltipUntilLeave = wireSidebarOpenTooltip(libraryBtn);
 
-  function runPrefabsMenuInteraction() {
-    if (typeof Menu !== 'undefined' && Menu.isOpen() && Menu.rootAnchor() === prefabsBtn) {
+  function runLibraryMenuInteraction() {
+    if (typeof Menu !== 'undefined' && Menu.isOpen() && Menu.rootAnchor() === libraryBtn) {
       Menu.closeAll();
       return;
     }
     if (typeof Menu === 'undefined') return;
-    hidePrefabsTooltipUntilLeave();
+    hideLibraryTooltipUntilLeave();
     Menu.open({
-      anchor: prefabsBtn,
+      anchor: libraryBtn,
       side: 'right',
       align: 'start',
       items: [
@@ -1290,20 +2010,20 @@ if (prefabsBtn) {
     });
   }
 
-  prefabsBtn.addEventListener('pointerdown', (e) => {
+  libraryBtn.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    prefabsSuppressNextClick = true;
-    runPrefabsMenuInteraction();
+    librarySuppressNextClick = true;
+    runLibraryMenuInteraction();
   });
 
-  prefabsBtn.addEventListener('click', (e) => {
+  libraryBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (prefabsSuppressNextClick) {
-      prefabsSuppressNextClick = false;
+    if (librarySuppressNextClick) {
+      librarySuppressNextClick = false;
       return;
     }
-    runPrefabsMenuInteraction();
+    runLibraryMenuInteraction();
   });
 }
 
@@ -1321,10 +2041,11 @@ if (settingsBtn && typeof BelJarDialog !== 'undefined') {
 document.getElementById('btn-theme').addEventListener('click', toggleTheme);
 document.getElementById('btn-load').addEventListener('click', (e) => {
   if (typeof BelJarBelugaRun === 'undefined') return;
-  // Plain click runs the whole project (falls back to the file when there is no
-  // .cfg); Ctrl/Cmd+click runs only the prelude up to and including this file.
-  if (e.ctrlKey || e.metaKey) BelJarBelugaRun.loadCode();
-  else BelJarBelugaRun.loadProject();
+  // Plain click = Run Module to Here (active file + its module predecessors).
+  // Ctrl/Cmd+click = Run Module (the whole module the active file belongs to).
+  // Run File and Run Project (workspace) live in the command palette.
+  if (e.ctrlKey || e.metaKey) BelJarBelugaRun.runModule();
+  else BelJarBelugaRun.runToHere();
 });
 document.getElementById('btn-clear').addEventListener('click', () => {
   if (typeof BelJarReplOutput !== 'undefined') BelJarReplOutput.clearOutput();

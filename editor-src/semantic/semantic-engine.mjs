@@ -4,13 +4,17 @@ import { hasTypeProjection, projectHoverType, resolveHoverDoc } from '../bel-res
 import { createCheckerStore } from './checker-store.mjs';
 import { createHoverTrace, hoverTraceEnabled } from './hover-trace.mjs';
 import { createMetavarStore } from './metavar-store.mjs';
-import { DEFAULT_DOCUMENT_ID, normalizeDocumentId, STATUS } from './ids.mjs';
+import { DEFAULT_DOCUMENT_ID, NAMESPACE, normalizeDocumentId, STATUS } from './ids.mjs';
 import { createSemanticGraph } from './semantic-graph.mjs';
 import { createSymbolStore } from './symbol-store.mjs';
 import { createSyntaxStore } from './syntax-store.mjs';
 import { createSemanticSession } from './semantic-session.mjs';
 import { createSemanticScheduler } from './semantic-scheduler.mjs';
 import { belugaDiagnosticsFromOutput, createSettlement } from './settlement.mjs';
+import {
+  declSignatureAnnotation,
+  mergeDeclSignatures,
+} from './merge-decl-signatures.mjs';
 
 export function createSemanticEngine(options = {}) {
   const documentId = normalizeDocumentId(options.documentId || DEFAULT_DOCUMENT_ID);
@@ -44,6 +48,7 @@ export function createSemanticEngine(options = {}) {
       previous: semanticGraph.getSnapshot(),
     });
     metavarStore.reconcile(graph.dirty, graph.removed);
+    purgeHydratedMetavarsForDirty(graph.dirty, symbols);
     if (snapshot) {
       snapshot = {
         ...snapshot,
@@ -88,6 +93,7 @@ export function createSemanticEngine(options = {}) {
   const getCheckContext = typeof options.getCheckContext === 'function'
     ? options.getCheckContext
     : null;
+  const getScopeKey = typeof options.getScopeKey === 'function' ? options.getScopeKey : null;
 
   const settlement = belugaClient ? createSettlement({
     belugaClient,
@@ -174,6 +180,35 @@ export function createSemanticEngine(options = {}) {
     return null;
   }
 
+  function isDeclSignatureHover(resolved, symbol) {
+    return !!(symbol && symbol.isGlobal && resolved
+      && (resolved.kind === 'global' || resolved.kind === 'external'));
+  }
+
+  function annotationForHover(pos, resolved, queryIn) {
+    const query = queryIn !== undefined ? queryIn : symbolStore.queryAt(pos);
+    const sym = query && query.symbol;
+    if (resolved?.sourceType) return resolved.sourceType;
+    if (isDeclSignatureHover(resolved, sym)) return declSignatureAnnotation(sym, resolved);
+    return resolved?.sourceText || declSignatureAnnotation(sym, resolved);
+  }
+
+  function pickDeclDisplayType(symbol, sourceAnnotation) {
+    const best = bestDeclType(symbol);
+    if (!best || best.type == null) return null;
+    const ann = sourceAnnotation != null
+      ? sourceAnnotation
+      : declSignatureAnnotation(symbol, null);
+    if (ann && (best.source === 'reconstructed' || best.source === 'hydrated')) {
+      return {
+        type: mergeDeclSignatures(ann, best.type),
+        status: best.status,
+        source: best.source,
+      };
+    }
+    return best;
+  }
+
   // SINGLE SOURCE OF TRUTH for a term's type, synchronously. Both hoverAt (the
   // tooltip) and intelSyncAt (the inspector) resolve type through this, so they
   // cannot drift. Mirrors hoverAt's sync ladder exactly. Returns:
@@ -206,6 +241,13 @@ export function createSemanticEngine(options = {}) {
     const kind = classifyHover(resolved, ref, query);
     const projecting = hasTypeProjection(syntax.tree, syntax.doc, pos);
 
+    if (query && query.symbol && query.symbol.namespace === NAMESPACE.PRAGMA) {
+      return {
+        type: null, source: null, status: STATUS.UNKNOWN, kind: 'pragma',
+        needsAsync: false, definitive: true,
+      };
+    }
+
     // 0. Provably no displayable type (e.g. a substitution variable: the checker
     //    annotation oracle records only LF/computation/kind types). Settle now,
     //    head-only, rather than spinning on an elaboration that cannot succeed.
@@ -230,23 +272,28 @@ export function createSemanticEngine(options = {}) {
           definitive: true,
         });
       }
-      const best = query && query.symbol ? bestDeclType(query.symbol) : null;
-      if (best && best.type != null) {
-        const source = best.source === 'reconstructed' ? 'reconstructed'
-          : best.source === 'hydrated' ? 'stale-cache'
-          : 'local';
-        return syncTypeResult(pos, {
-          type: best.type,
-          source,
-          status: best.status,
-          kind,
-          needsAsync: false,
-          definitive: true,
-        });
+      const sym = query && query.symbol;
+      if (isDeclSignatureHover(resolved, sym)) {
+        const ann = declSignatureAnnotation(sym, resolved);
+        const best = pickDeclDisplayType(sym, ann);
+        if (best && best.type != null) {
+          const source = best.source === 'reconstructed' ? 'reconstructed'
+            : best.source === 'hydrated' ? 'stale-cache'
+            : best.source === 'source' ? 'source'
+            : 'local';
+          return syncTypeResult(pos, {
+            type: best.type,
+            source,
+            status: best.status,
+            kind,
+            needsAsync: false,
+            definitive: true,
+          });
+        }
       }
       return syncTypeResult(pos, {
         type: resolved.sourceType,
-        source: 'local',
+        source: resolved.kind === 'global' || resolved.kind === 'external' ? 'source' : 'local',
         status: STATUS.UNKNOWN,
         kind,
         needsAsync: false,
@@ -273,18 +320,39 @@ export function createSemanticEngine(options = {}) {
     // 3. Cached decl/metavar type (covers globals via bestDeclType + metavars).
     const sync = syncTypeFor(pos, resolved, query, ref);
     if (sync && sync.type != null) {
-      return syncTypeResult(pos, {
-        type: sync.type,
-        source: sync.source,
-        status: sync.status,
-        kind,
-        needsAsync: false,
-        definitive: true,
-      });
+      const implicit = resolved && resolved.kind === 'implicit';
+      const staleImplicit = implicit && sync.status !== STATUS.FRESH;
+      if (!staleImplicit) {
+        return syncTypeResult(pos, {
+          type: sync.type,
+          source: sync.source,
+          status: sync.status,
+          kind,
+          needsAsync: false,
+          definitive: true,
+        });
+      }
     }
 
-    // 4. Source signature text.
+    // 4. Source signature text (declarations without a separate sourceType path).
     if (resolved && resolved.sourceText) {
+      const sym = query && query.symbol;
+      if (isDeclSignatureHover(resolved, sym)) {
+        const best = pickDeclDisplayType(sym, declSignatureAnnotation(sym, resolved));
+        if (best && best.type != null) {
+          const source = best.source === 'reconstructed' ? 'reconstructed'
+            : best.source === 'hydrated' ? 'stale-cache'
+            : 'source';
+          return syncTypeResult(pos, {
+            type: best.type,
+            source,
+            status: best.status,
+            kind,
+            needsAsync: false,
+            definitive: true,
+          });
+        }
+      }
       return syncTypeResult(pos, {
         type: resolved.sourceText,
         source: 'source',
@@ -353,6 +421,22 @@ export function createSemanticEngine(options = {}) {
     return { declId, name: (ref && ref.name) || name };
   }
 
+  function purgeHydratedMetavarsForDirty(dirty, symbols) {
+    if (!dirty || !symbols) return;
+    for (const declId of dirty) {
+      const owner = symbols.symbolsById.get(declId);
+      if (!owner) continue;
+      const prefix = `${owner.structuralKey}::`;
+      for (const key of [...hydratedMetavars.keys()]) {
+        if (key.startsWith(prefix)) hydratedMetavars.delete(key);
+      }
+    }
+  }
+
+  function owningDeclIsDirty(declId) {
+    return !!(declId && snapshot?.graph?.dirty?.has(declId));
+  }
+
   function bestMetavarType(declId, name, symbols) {
     if (!declId || !name) return null;
     const hit = metavarStore.get(declId, name);
@@ -409,6 +493,7 @@ export function createSemanticEngine(options = {}) {
       previous: semanticGraph.getSnapshot(),
     });
     metavarStore.reconcile(graph.dirty, graph.removed);
+    purgeHydratedMetavarsForDirty(graph.dirty, symbols);
     const checker = checkerStore.getSnapshot();
     snapshot = {
       documentId,
@@ -566,12 +651,15 @@ export function createSemanticEngine(options = {}) {
     if (!symbols || !syntax) return null;
 
     const query = symbolStore.queryAt(pos);
-    const best = query && query.symbol ? bestDeclType(query.symbol) : null;
-    if (best) {
-      return { name: query.symbol.name, type: best.type, source: best.source, status: best.status };
+    const resolved = resolveHoverDoc(syntax.tree, syntax.doc, pos);
+    if (query && query.symbol) {
+      const ann = declSignatureAnnotation(query.symbol, resolved);
+      const best = pickDeclDisplayType(query.symbol, ann);
+      if (best) {
+        return { name: query.symbol.name, type: best.type, source: best.source, status: best.status };
+      }
     }
 
-    const resolved = resolveHoverDoc(syntax.tree, syntax.doc, pos);
     const ctx = metavarContext(pos, resolved, symbols);
     if (ctx) {
       const cached = bestMetavarType(ctx.declId, ctx.name, symbols);
@@ -628,7 +716,13 @@ export function createSemanticEngine(options = {}) {
 
   function cachedTypeAt(pos) {
     const query = symbolStore.queryAt(pos);
-    const best = query && query.symbol ? bestDeclType(query.symbol) : null;
+    if (!query || !query.symbol) return null;
+    const syntax = syntaxStore.getSnapshot();
+    const resolved = syntax ? resolveHoverDoc(syntax.tree, syntax.doc, pos) : null;
+    const ann = declSignatureAnnotation(query.symbol, resolved);
+    const best = isDeclSignatureHover(resolved, query.symbol)
+      ? pickDeclDisplayType(query.symbol, ann)
+      : bestDeclType(query.symbol);
     if (!best) return null;
     return {
       name: query.symbol.name,
@@ -701,14 +795,16 @@ export function createSemanticEngine(options = {}) {
     return { v: 1, decls, metavars, reconstructed };
   }
 
-  function importTypes(blob) {
+  function importTypes(blob, { dropOracle = false } = {}) {
     hydratedTypes = new Map();
     hydratedMetavars = new Map();
     derivationStore = new Map();
     for (const [key, type, fp] of (blob && blob.decls) || []) hydratedTypes.set(key, { type, fp });
-    for (const [key, type, fp] of (blob && blob.metavars) || []) hydratedMetavars.set(key, { type, fp });
-    for (const [key, type, fp] of (blob && blob.reconstructed) || []) {
-      derivationStore.set(key, { type, fp, status: STATUS.STALE_KNOWN });
+    if (!dropOracle) {
+      for (const [key, type, fp] of (blob && blob.metavars) || []) hydratedMetavars.set(key, { type, fp });
+      for (const [key, type, fp] of (blob && blob.reconstructed) || []) {
+        derivationStore.set(key, { type, fp, status: STATUS.STALE_KNOWN });
+      }
     }
   }
 
@@ -722,14 +818,16 @@ export function createSemanticEngine(options = {}) {
   }
 
   function exportCheckpoint() {
+    const scopeKey = getScopeKey ? getScopeKey() : '';
     return {
       types: exportTypes(),
       identity: symbolStore.exportIdentity(),
       deriveAttempted: exportDeriveProgress(),
+      scopeKey,
     };
   }
 
-  function importCheckpoint(blob, { docFp, belugaBuild } = {}) {
+  function importCheckpoint(blob, { docFp, belugaBuild, scopeKey } = {}) {
     if (!blob) return { ok: false, reason: 'empty' };
     if (blob.docFp && docFp && blob.docFp !== docFp) {
       return { ok: false, reason: 'doc-fp-mismatch' };
@@ -737,10 +835,18 @@ export function createSemanticEngine(options = {}) {
     if (blob.belugaBuild && belugaBuild && blob.belugaBuild !== belugaBuild) {
       return { ok: false, reason: 'build-mismatch' };
     }
-    if (blob.types) importTypes(blob.types);
+    const storedScope = blob.scopeKey || '';
+    const currentScope = scopeKey || (getScopeKey ? getScopeKey() : '');
+    const legacyScope = (k) => k === 'legacy'
+      || k.startsWith('cfg:')
+      || k.startsWith('orphan:');
+    const dropOracle = !!(storedScope && currentScope && storedScope !== currentScope)
+      || storedScope === 'legacy'
+      || legacyScope(storedScope);
+    if (blob.types) importTypes(blob.types, { dropOracle });
     if (blob.identity) symbolStore.importIdentity(blob.identity);
     if (blob.deriveAttempted) importDeriveProgress(blob.deriveAttempted);
-    return { ok: true };
+    return { ok: true, dropOracle };
   }
 
   function observeType(pos, type) {
@@ -769,23 +875,28 @@ export function createSemanticEngine(options = {}) {
 
   function metavarHasType(declId, name) {
     const hit = metavarStore.get(declId, name);
-    if (hit && hit.type != null) return true;
+    if (hit && hit.type != null && hit.status === STATUS.FRESH) return true;
     const symbols = symbolStore.getSnapshot();
     const owner = symbols && symbols.symbolsById.get(declId);
     if (!owner) return false;
     const hydrated = hydratedMetavars.get(`${owner.structuralKey}::${name}`);
-    return !!(hydrated && hydrated.type != null && hydrated.fp === owner.fingerprint);
+    if (hydrated && hydrated.type != null && hydrated.fp === owner.fingerprint) {
+      return !owningDeclIsDirty(declId);
+    }
+    return false;
   }
 
   function prewarmStructuralMetavars(declId) {
     const syntax = syntaxStore.getSnapshot();
     if (!syntax || !symbolStore.implicitSitesForDeclaration) return;
     for (const site of symbolStore.implicitSitesForDeclaration(declId)) {
-      if (metavarHasType(declId, site.name)) continue;
       const resolved = resolveHoverDoc(syntax.tree, syntax.doc, site.position);
-      if (resolved && resolved.sourceType) {
-        observeMetavarNamed(declId, site.name, resolved.sourceType);
+      if (!resolved || !resolved.sourceType) continue;
+      const existing = metavarStore.get(declId, site.name);
+      if (existing && existing.type === resolved.sourceType && existing.status === STATUS.FRESH) {
+        continue;
       }
+      observeMetavarNamed(declId, site.name, resolved.sourceType);
     }
   }
 
@@ -844,10 +955,14 @@ export function createSemanticEngine(options = {}) {
   // a permanent failure doesn't keep the scheduler re-arming. Cleared per-key
   // implicitly by the fp check below when the decl changes.
   const derivationAttempted = new Map(); // structuralKey -> fp
+  // Cross-file uses (a prelude term used here) examined at the owner decl's
+  // current fp — so a permanently-untypeable use doesn't keep the scheduler
+  // re-arming, and a use is re-examined when its owning declaration changes.
+  const crossFileAttempted = new Map(); // `${ownerStructuralKey}::${name}` -> fp
 
   // Returns true if reconstruction work remains (so the scheduler should re-arm).
   async function deriveFrontier() {
-    if (!session || typeof session.ideDeclType !== 'function') return false;
+    if (!session) return false;
     const symbols = symbolStore.getSnapshot();
     const syntax = syntaxStore.getSnapshot();
     if (!symbols || !syntax) return false;
@@ -855,37 +970,76 @@ export function createSemanticEngine(options = {}) {
     const code = checkerCodeFromSyntax(syntax);
     if (!code) return false;
 
-    const needsDerive = (symbol) => {
-      if (!symbol || !symbol.isGlobal || !symbol.name) return false;
-      const fresh = derivationStore.get(symbol.structuralKey);
-      if (fresh && fresh.fp === symbol.fingerprint) return false;
-      const tried = derivationAttempted.get(symbol.structuralKey);
-      if (tried === symbol.fingerprint) return false;
-      return true;
-    };
-
     let budget = DERIVE_BATCH;
-    for (const symbol of symbols.globalSymbols) {
-      if (budget <= 0) break;
-      if (!needsDerive(symbol)) continue;
-      budget -= 1;
-      derivationAttempted.set(symbol.structuralKey, symbol.fingerprint);
-      try {
-        const r = await session.ideDeclType(code, symbol.name);
-        if (r && r.ok && r.type != null) {
-          derivationStore.set(symbol.structuralKey, {
-            type: r.type,
-            fp: symbol.fingerprint,
-            status: STATUS.FRESH,
-          });
-          if (onTypeObserved) {
-            try { onTypeObserved(); } catch (_) {}
+    let more = false;
+
+    // (1) Reconstructed types for THIS file's own global declarations.
+    if (typeof session.ideDeclType === 'function') {
+      const needsDerive = (symbol) => {
+        if (!symbol || !symbol.isGlobal || !symbol.name) return false;
+        const fresh = derivationStore.get(symbol.structuralKey);
+        if (fresh && fresh.fp === symbol.fingerprint) return false;
+        const tried = derivationAttempted.get(symbol.structuralKey);
+        if (tried === symbol.fingerprint) return false;
+        return true;
+      };
+      for (const symbol of symbols.globalSymbols) {
+        if (budget <= 0) break;
+        if (!needsDerive(symbol)) continue;
+        budget -= 1;
+        derivationAttempted.set(symbol.structuralKey, symbol.fingerprint);
+        try {
+          const r = await session.ideDeclType(code, symbol.name);
+          if (r && r.ok && r.type != null) {
+            const merged = mergeDeclSignatures(symbol.sourceText, r.type) || r.type;
+            derivationStore.set(symbol.structuralKey, {
+              type: merged,
+              fp: symbol.fingerprint,
+              status: STATUS.FRESH,
+            });
+            if (onTypeObserved) {
+              try { onTypeObserved(); } catch (_) {}
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
+      if (symbols.globalSymbols.some(needsDerive)) more = true;
     }
 
-    return symbols.globalSymbols.some(needsDerive);
+    // (2) Cross-file pre-warm: a use of a prelude-defined term whose type the
+    //     checker must supply (the B1 external case) is, once the suite is
+    //     settled, elaborated in the BACKGROUND — same as single-file decls —
+    //     so the hover is instant rather than elaborating on demand. Reuses
+    //     elaborateAt's reference cache path (metavarStore + hydratedMetavars).
+    if (typeof session.typeAt === 'function' && Array.isArray(symbols.references)) {
+      for (const ref of symbols.references) {
+        if (ref.symbolId || !ref.enclosingDeclarationId || ref.resolution !== 'unresolved') continue;
+        const owner = symbols.symbolsById.get(ref.enclosingDeclarationId);
+        if (!owner) continue;
+        const key = `${owner.structuralKey}::${ref.name}`;
+        if (crossFileAttempted.get(key) === owner.fingerprint) continue;
+        const cached = bestMetavarType(ref.enclosingDeclarationId, ref.name, symbols);
+        if (cached && cached.status === STATUS.FRESH) { crossFileAttempted.set(key, owner.fingerprint); continue; }
+        const r = resolveHoverDoc(syntax.tree, syntax.doc, ref.from);
+        if (!(r && r.kind === 'external' && r.needsElaboration)) {
+          crossFileAttempted.set(key, owner.fingerprint); // not a candidate; don't re-scan at this fp
+          continue;
+        }
+        if (budget <= 0) { more = true; break; } // a real candidate but out of budget → retry next tick
+        budget -= 1;
+        crossFileAttempted.set(key, owner.fingerprint);
+        try {
+          const result = await sessionTypeAt(ref.from);
+          metavarStore.apply(ref.enclosingDeclarationId, ref.name, result);
+          if (result && result.ok !== false && result.type != null) {
+            hydratedMetavars.set(key, { type: result.type, fp: owner.fingerprint });
+            if (onTypeObserved) { try { onTypeObserved(); } catch (_) {} }
+          }
+        } catch (_) {}
+      }
+    }
+
+    return more;
   }
 
   function observeMetavarAt(pos, type) {
@@ -913,16 +1067,22 @@ export function createSemanticEngine(options = {}) {
       return out;
     }
 
-    const resolved = resolveHoverDoc(syntax.tree, syntax.doc, pos);
     const query = symbolStore.queryAt(pos);
-    const ref = symbolStore.referenceAt(pos);
+    const onPragma = query && query.symbol && query.symbol.namespace === NAMESPACE.PRAGMA;
+    const ref = onPragma ? null : symbolStore.referenceAt(pos);
+    const resolved = onPragma ? null : resolveHoverDoc(syntax.tree, syntax.doc, pos);
     const ownerId = owningDeclarationId(pos);
     const blocked = blockedContext(ownerId);
     const presentation = {
-      label: (resolved && resolved.label) || (query && query.symbol && query.symbol.label) || null,
-      name: (resolved && resolved.name) || (query && query.symbol && query.symbol.name)
+      label: (onPragma && query.symbol.label)
+        || (resolved && resolved.label)
+        || (query && query.symbol && query.symbol.label) || null,
+      name: (onPragma && (query.symbol.displayName || query.symbol.name))
+        || (resolved && resolved.name)
+        || (query && query.symbol && query.symbol.name)
         || (ref && ref.name) || null,
-      displayName: (resolved && resolved.displayName) || presentationName(resolved, query, ref),
+      displayName: (onPragma && (query.symbol.displayName || query.symbol.name))
+        || (resolved && resolved.displayName) || presentationName(resolved, query, ref),
       symbol: query && query.symbol ? query.symbol : null,
       reference: ref || (query && query.reference) || null,
       classification: classifyHover(resolved, ref, query),
@@ -1035,11 +1195,17 @@ export function createSemanticEngine(options = {}) {
     if (ctx) {
       const mv = bestMetavarType(ctx.declId, ctx.name, symbols);
       if (mv && mv.type != null) {
-        return {
-          type: mv.type,
-          source: mv.source === 'hydrated' ? 'stale-cache' : mv.source,
-          status: mv.status,
-        };
+        const implicit = resolved && resolved.kind === 'implicit';
+        const staleWhileDirty = implicit
+          && owningDeclIsDirty(ctx.declId)
+          && mv.status !== STATUS.FRESH;
+        if (!staleWhileDirty && mv.status === STATUS.FRESH) {
+          return {
+            type: mv.type,
+            source: mv.source === 'hydrated' ? 'stale-cache' : mv.source,
+            status: mv.status,
+          };
+        }
       }
     }
     return null;
@@ -1077,21 +1243,43 @@ export function createSemanticEngine(options = {}) {
   }
 
   async function finalizeElaboration(elab, resolved, options, pos) {
+    const query = symbolStore.queryAt(pos);
+    const sym = query && query.symbol;
+    const declAnn = isDeclSignatureHover(resolved, sym)
+      ? declSignatureAnnotation(sym, resolved)
+      : null;
     if (elab && elab.type != null) {
+      const projected = projectTypeAt(pos, elab.type);
+      const type = declAnn
+        ? projectTypeAt(pos, mergeDeclSignatures(declAnn, projected))
+        : projected;
       return {
         status: 'ready',
-        type: projectTypeAt(pos, elab.type),
+        type,
         source: elab.source === 'hydrated' ? 'stale-cache'
           : elab.source === 'oracle' ? 'beluga'
+          : declAnn ? 'reconstructed'
           : 'source',
         derivationStatus: elab.status,
       };
     }
     if (elab && elab.source === 'none') {
+      if (declAnn) {
+        return { status: 'ready', type: projectTypeAt(pos, declAnn), source: 'source' };
+      }
       if (options.fallback && resolved && resolved.fallback) {
         const fb = await options.fallback(resolved.fallback);
         if (fb) {
-          return { status: 'ready', type: projectTypeAt(pos, fb), source: 'beluga', via: 'fallback' };
+          const projected = projectTypeAt(pos, fb);
+          const type = declAnn
+            ? projectTypeAt(pos, mergeDeclSignatures(declAnn, projected))
+            : projected;
+          return {
+            status: 'ready',
+            type,
+            source: 'beluga',
+            via: 'fallback',
+          };
         }
       }
       if (elab.definitive) {
@@ -1124,12 +1312,14 @@ export function createSemanticEngine(options = {}) {
     const onDefinition = !!(sym && target && sym.id === target.id);
 
     const references = target ? symbolStore.referencesOf(target.id) : [];
-    const recon = target ? reconstructedTypeOf(target.id) : null;
-    const signature = recon && recon.type != null
-      ? { type: recon.type, source: 'reconstructed', status: recon.status }
-      : (target && target.sourceText
-        ? { type: target.sourceText, source: 'source', status: STATUS.UNKNOWN }
-        : null);
+    const picked = target ? pickDeclDisplayType(target) : null;
+    const signature = picked && picked.type != null
+      ? {
+        type: picked.type,
+        source: picked.source === 'reconstructed' ? 'reconstructed' : 'source',
+        status: picked.status,
+      }
+      : null;
 
     return {
       symbolId: target ? target.id : null,
@@ -1163,8 +1353,10 @@ export function createSemanticEngine(options = {}) {
     if (!query) return null;
     const symbols = symbolStore.getSnapshot();
     const syntax = syntaxStore.getSnapshot();
-    const ref = symbolStore.referenceAt(pos);
-    const resolved = symbols && syntax ? resolveHoverDoc(syntax.tree, syntax.doc, pos) : null;
+    const onPragma = query.symbol && query.symbol.namespace === NAMESPACE.PRAGMA;
+    const ref = onPragma ? null : symbolStore.referenceAt(pos);
+    const resolved = (!onPragma && symbols && syntax)
+      ? resolveHoverDoc(syntax.tree, syntax.doc, pos) : null;
     const target = query.symbol || (query.reference && query.reference.symbolId && symbols
       ? symbols.symbolsById.get(query.reference.symbolId)
       : null);
@@ -1173,13 +1365,19 @@ export function createSemanticEngine(options = {}) {
     const sync = syncResolveType(pos, resolved, query, ref);
     const userStatus = userStatusAt(pos, sync);
 
+    const displayName = target && (target.displayName || target.name);
     return {
-      name: (target && target.name) || (query.reference && query.reference.name)
+      name: displayName || (query.reference && query.reference.name)
         || (resolved && resolved.name) || null,
       label: (target && target.label) || (resolved && resolved.label) || null,
       namespace: target ? target.namespace : (query.reference && query.reference.namespace) || null,
       definition: target
-        ? { id: target.id, name: target.name, range: target.nameRange, isGlobal: target.isGlobal }
+        ? {
+          id: target.id,
+          name: target.displayName || target.name,
+          range: target.namespace === NAMESPACE.PRAGMA ? target.range : target.nameRange,
+          isGlobal: target.isGlobal,
+        }
         : null,
       reference: query.reference
         ? { range: query.reference.range, resolution: query.reference.resolution }
@@ -1248,7 +1446,12 @@ export function createSemanticEngine(options = {}) {
     if (!query || !query.symbol) return query;
     const status = semanticGraph.statusForSymbol(query.symbol.id);
     const node = semanticGraph.getSnapshot()?.nodeMap.get(query.symbol.id);
-    const best = bestDeclType(query.symbol);
+    const syntax = syntaxStore.getSnapshot();
+    const resolved = syntax ? resolveHoverDoc(syntax.tree, syntax.doc, pos) : null;
+    const ann = declSignatureAnnotation(query.symbol, resolved);
+    const best = isDeclSignatureHover(resolved, query.symbol)
+      ? pickDeclDisplayType(query.symbol, ann)
+      : bestDeclType(query.symbol);
     const real = best && best.source === 'hydrated' ? best : null;
     return {
       ...query,

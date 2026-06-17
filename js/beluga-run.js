@@ -40,7 +40,7 @@
     if (msg && msg.phase === 'build-fallback') {
       if (typeof BelJarToasts !== 'undefined') {
         BelJarToasts.warn(
-          'Fast build hit the stack limit — retrying with Stable. Switch to Stable in Settings to avoid this.',
+          'Fast build hit the stack limit. Retrying with Stable; switch to Stable in Settings to avoid this.',
           { duration: 0, closable: true },
         );
       }
@@ -87,27 +87,98 @@
   }
 
   function resolveDefaultCfgPath(files, getText) {
-    var path = BelJarPersist.getDefaultCfgPath();
+    if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return null;
+    var activeId = BelJarPersist.getActiveFileId();
+    var active = null;
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].id === activeId) { active = files[i]; break; }
+    }
+    if (!active) return null;
+    var path = BelJarPersist.getActiveCfgForDir(BelJarProjectSource.dirOf(active.name));
     if (path && files.some(function (f) { return f.name === path; })) return path;
-    return BelJarProjectSource.inferDefaultCfgPath(files, getText);
+    return null;
   }
 
+  function baseName(p) {
+    var s = String(p || '');
+    return s.slice(s.lastIndexOf('/') + 1);
+  }
+
+  // The checker always sees the assembled program as "input.bel". For output we
+  // want a real name: the project (cfg, no extension) for a whole-project run,
+  // or the active file for a single-file run.
+  function projectDisplayName(cfgPath) {
+    if (cfgPath) return baseName(cfgPath).replace(/\.cfg$/i, '');
+    return activeFileName();
+  }
+
+  function activeFileName() {
+    if (typeof BelJarPersist === 'undefined') return 'input.bel';
+    var id = BelJarPersist.getActiveFileId();
+    var files = BelJarPersist.listFiles() || [];
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].id === id) return baseName(files[i].name);
+    }
+    return 'input.bel';
+  }
+
+  // Remap locations back to real files/lines, then rename the synthetic
+  // "input.bel" the checker echoes (status lines, single-file references).
+  function applyOutputNaming(raw, spans, prelude, displayName) {
+    var out = String(raw == null ? '' : raw);
+    if (spans && typeof BelJarProjectSource !== 'undefined') {
+      out = BelJarProjectSource.remapLocations(out, spans);
+    } else if (prelude && typeof BelJarProjectSource !== 'undefined') {
+      out = BelJarProjectSource.shiftCheckerOutput(out, prelude).text;
+    }
+    if (displayName) out = out.replace(/input\.bel/g, displayName);
+    return out;
+  }
+
+  function makeGetText() {
+    var activeId = BelJarPersist.getActiveFileId();
+    var editor = typeof BelJarCurrentEditor !== 'undefined' ? BelJarCurrentEditor : null;
+    return function (id) { return fileTextForRun(id, activeId, editor); };
+  }
+
+  function entriesForPaths(paths, files, getText) {
+    var byName = {};
+    for (var i = 0; i < files.length; i++) byName[files[i].name] = files[i];
+    var out = [];
+    for (var j = 0; j < paths.length; j++) {
+      var f = byName[paths[j]];
+      if (f) out.push({ id: f.id, name: f.name, text: getText(f.id) });
+    }
+    return out;
+  }
+
+  // Default-cfg project source, used only to detect whether a committed
+  // whole-project load still matches the editor (REPL context preservation).
   function buildProjectSource() {
     if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return null;
     var files = BelJarPersist.listFiles();
     if (!files || !files.length) return null;
-    var activeId = BelJarPersist.getActiveFileId();
-    var editor = typeof BelJarCurrentEditor !== 'undefined' ? BelJarCurrentEditor : null;
-    var getText = function (id) { return fileTextForRun(id, activeId, editor); };
+    var getText = makeGetText();
     var cfgPath = resolveDefaultCfgPath(files, getText);
-    var dev = cfgPath
-      ? BelJarProjectSource.developmentFilesForCfg(files, cfgPath, getText)
-      : [];
-    if (!dev || dev.length <= 1) return null;
+    if (!cfgPath) return null;
+    return buildCfgSource(cfgPath);
+  }
+
+  // Assemble the full development chain of one .cfg into a single checker source.
+  function buildCfgSource(cfgPath) {
+    if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return null;
+    if (!cfgPath) return null;
+    var files = BelJarPersist.listFiles();
+    if (!files || !files.length) return null;
+    var getText = makeGetText();
+    var dev = BelJarProjectSource.developmentFilesForCfg(files, cfgPath, getText);
+    if (!dev || !dev.length) return null;
     var entries = dev.map(function (f) {
       return { id: f.id, name: f.name, text: getText(f.id) };
     });
-    return BelJarProjectSource.assembleProjectCode(entries);
+    var assembled = BelJarProjectSource.assembleProjectCode(entries);
+    assembled.name = projectDisplayName(cfgPath);
+    return assembled;
   }
 
   // Active file with same-folder predecessors prepended (Beluga project semantics).
@@ -164,14 +235,9 @@
     }
   }
 
-  function formatLoadError(e, spans, prelude) {
+  function formatLoadError(e, spans, prelude, displayName) {
     var msg = e && e.message ? String(e.message) : String(e);
-    if (spans && typeof BelJarProjectSource !== 'undefined') {
-      msg = BelJarProjectSource.remapLocations(msg, spans);
-    } else if (prelude && typeof BelJarProjectSource !== 'undefined') {
-      msg = BelJarProjectSource.shiftCheckerOutput(msg, prelude).text;
-    }
-    return msg;
+    return applyOutputNaming(msg, spans, prelude, displayName);
   }
 
   // Shared load pipeline. `code` is what Beluga gets; `spans` is the line map
@@ -194,10 +260,10 @@
     if (opts.pinned) hooks.pinned = true;
     try {
       var raw = await BelugaClient.load(code, hooks);
-      if (opts.prelude && typeof BelJarProjectSource !== 'undefined') {
-        raw = BelJarProjectSource.shiftCheckerOutput(raw, opts.prelude).text;
-      }
-      if (typeof BelJarReplOutput !== 'undefined') BelJarReplOutput.appendBelugaResponse(raw, null);
+      // applyOutputNaming already remaps via `spans`; appendRunOutput (unlike
+      // appendBelugaResponse) does NOT remap again, so naming happens once.
+      raw = applyOutputNaming(raw, spans, opts.prelude, opts.displayName);
+      if (typeof BelJarReplOutput !== 'undefined') BelJarReplOutput.appendRunOutput(raw);
       setBelugaBusy(false);
       if (typeof RunProgress !== 'undefined') {
         void RunProgress.complete({ lines: lineCount, ms: performance.now() - t0 });
@@ -206,27 +272,168 @@
       setBelugaBusy(false);
       if (typeof RunProgress !== 'undefined') RunProgress.fail();
       if (!isCancelled(e) && typeof BelJarToasts !== 'undefined') {
-        BelJarToasts.error(formatLoadError(e, spans, opts.prelude), { duration: 0, closable: true });
+        BelJarToasts.error(formatLoadError(e, spans, opts.prelude, opts.displayName), { duration: 0, closable: true });
       }
     }
   }
 
-  // Run button / Ctrl-Enter: active file with same-folder prelude (cfg order).
-  async function loadCode() {
-    if (belugaBusy) return;
-    var bundle = buildActiveFileSource();
-    if (!bundle) return;
-    return runLoad(bundle.code, null, { pinned: bundle.pinned, prelude: bundle.prelude });
+  // ── Run scopes ─────────────────────────────────────────────────────────────
+  // File ⊂ "suite to here" ⊂ Suite(one .cfg) ⊂ Project(whole workspace).
+  // A "suite" = the files a .cfg lists (internally still kind:'module'). The
+  // user-facing term is "suite" — Beluga's own `module` is a namespacing
+  // construct, so this avoids the collision. The file-targeting variants
+  // take an optional fileId so explorer/tab context menus can run a file other
+  // than the active one (active uses the live buffer, others use stored text).
+
+  function resolveTargetId(targetId) {
+    return targetId || (typeof BelJarPersist !== 'undefined' ? BelJarPersist.getActiveFileId() : null);
   }
 
-  // Explicit whole-project run: ordered concatenation of every project file,
-  // with checker output remapped back to real files/lines.
-  async function loadProject() {
-    if (belugaBusy) return;
-    var project = buildProjectSource();
-    if (!project) return loadCode(); // single-file project
-    return runLoad(project.code, project.spans, { pinned: true });
+  function fileNameOf(id) {
+    if (typeof BelJarPersist === 'undefined') return 'input.bel';
+    var files = BelJarPersist.listFiles() || [];
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].id === id) return baseName(files[i].name);
+    }
+    return 'input.bel';
   }
+
+  // Run File — one buffer alone, no prelude.
+  async function runFile(targetId) {
+    if (belugaBusy) return;
+    var id = resolveTargetId(targetId);
+    if (!id) return;
+    var assembled = BelJarProjectSource.assembleCheckerCode(makeGetText()(id), null);
+    return runLoad(assembled.code, null, { displayName: fileNameOf(id) });
+  }
+
+  // Run Module to Here — a file with its module predecessors prepended (cfg order).
+  async function runToHere(targetId) {
+    if (belugaBusy) return;
+    var id = resolveTargetId(targetId);
+    if (!id) return;
+    var files = BelJarPersist.listFiles();
+    var getText = makeGetText();
+    var prelude = BelJarProjectSource.buildPrelude(files, id, getText);
+    var assembled = BelJarProjectSource.assembleCheckerCode(getText(id), prelude);
+    return runLoad(assembled.code, null, {
+      pinned: !!assembled.prelude, prelude: assembled.prelude, displayName: fileNameOf(id),
+    });
+  }
+
+  // Run Module — the entire .cfg a file belongs to (orphan file ⇒ to-here).
+  async function runModule(targetId) {
+    if (belugaBusy) return;
+    var id = resolveTargetId(targetId);
+    if (!id) return;
+    var files = BelJarPersist.listFiles();
+    var cfgPath = BelJarProjectSource.cfgPathForActive(files, id, makeGetText());
+    if (!cfgPath) return runToHere(id);
+    return runModuleCfg(cfgPath);
+  }
+
+  // Run Module by explicit .cfg path (used by cfg-row / folder context menus).
+  async function runModuleCfg(cfgPath) {
+    if (belugaBusy) return;
+    var src = buildCfgSource(cfgPath);
+    if (!src) return;
+    return runLoad(src.code, src.spans, { pinned: true, displayName: src.name });
+  }
+
+  // Run Folder — the development rooted at a folder: its .cfg module if one
+  // lives there, else the folder's signature files (registry order) as one run.
+  async function runFolder(folderPath) {
+    if (belugaBusy) return;
+    if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return;
+    var activeCfg = BelJarPersist.getActiveCfgForDir(folderPath);
+    if (activeCfg) return runModuleCfg(activeCfg);
+    var files = BelJarPersist.listFiles();
+    var dirOf = BelJarProjectSource.dirOf;
+    for (var i = 0; i < files.length; i++) {
+      if (/\.cfg$/i.test(files[i].name) && dirOf(files[i].name) === folderPath) {
+        return runModuleCfg(files[i].name);
+      }
+    }
+    var paths = [];
+    for (var j = 0; j < files.length; j++) {
+      if (dirOf(files[j].name) === folderPath && /\.(?:bel|elf)$/i.test(files[j].name)) paths.push(files[j].name);
+    }
+    if (!paths.length) return;
+    var entries = entriesForPaths(paths, files, makeGetText());
+    var assembled = BelJarProjectSource.assembleProjectCode(entries);
+    return runLoad(assembled.code, assembled.spans, { pinned: true, displayName: folderPath || '(root)' });
+  }
+
+  // Run Project — every independent development in the workspace, checked
+  // separately and reported under its config/folder name. Errors in one
+  // development don't stop the others.
+  async function runProject() {
+    if (belugaBusy) return;
+    if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return;
+    if (typeof BelugaClient === 'undefined') {
+      if (typeof BelJarToasts !== 'undefined') BelJarToasts.error('Beluga is not available.');
+      return;
+    }
+    var files = BelJarPersist.listFiles();
+    if (!files || !files.length) return;
+    var getText = makeGetText();
+    var devs = BelJarProjectSource.workspaceDevelopments(files, getText);
+    if (!devs || !devs.length) return runModule();
+
+    var jobs = [];
+    for (var i = 0; i < devs.length; i++) {
+      var entries = entriesForPaths(devs[i].paths, files, getText);
+      if (!entries.length) continue;
+      var assembled = BelJarProjectSource.assembleProjectCode(entries);
+      jobs.push({ dev: devs[i], code: assembled.code, spans: assembled.spans });
+    }
+    if (!jobs.length) return;
+    if (jobs.length === 1) {
+      return runLoad(jobs[0].code, jobs[0].spans, { pinned: true, displayName: jobs[0].dev.name });
+    }
+
+    setBelugaBusy(true);
+    var t0 = performance.now();
+    if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') RunProgress.start({ op: 'load' });
+    var failures = 0;
+    var lines = 0;
+    for (var j = 0; j < jobs.length; j++) {
+      var job = jobs[j];
+      var label = (job.dev.kind === 'config' ? 'suite ' : 'file ') + job.dev.name;
+      lines += job.code.split('\n').length;
+      try {
+        var raw = await BelugaClient.load(job.code, { onProgress: belugaProgressHook, pinned: true });
+        projectSpans = job.spans; // last development stays the REPL context
+        raw = applyOutputNaming(raw, job.spans, null, job.dev.name);
+        if (typeof BelJarReplOutput !== 'undefined') {
+          BelJarReplOutput.appendRichMsg('muted', '── ' + label + ' ──');
+          BelJarReplOutput.appendRunOutput(raw);
+        }
+      } catch (e) {
+        if (isCancelled(e)) break;
+        failures++;
+        var msg = applyOutputNaming(e && e.message ? String(e.message) : String(e), job.spans, null, job.dev.name);
+        if (typeof BelJarReplOutput !== 'undefined') {
+          BelJarReplOutput.appendRichMsg('muted', '── ' + label + ' ──');
+          BelJarReplOutput.appendRunOutput(msg);
+        }
+      }
+    }
+    setBelugaBusy(false);
+    if (typeof RunProgress !== 'undefined') {
+      if (failures) RunProgress.fail();
+      else void RunProgress.complete({ lines: lines, ms: performance.now() - t0 });
+    }
+    if (failures && typeof BelJarToasts !== 'undefined') {
+      BelJarToasts.error(failures + ' of ' + jobs.length + ' developments failed type-checking.',
+        { duration: 0, closable: true });
+    }
+  }
+
+  // Back-compat aliases.
+  var loadCode = runToHere;
+  var loadProject = runModule;
+  var runConfig = runModule;
 
   function init() {
     if (typeof BelugaClient === 'undefined') {
@@ -254,6 +461,13 @@
     getBelugaMode: getBelugaMode,
     setBelugaMode: setBelugaMode,
     belugaProgressHook: belugaProgressHook,
+    runFile: runFile,
+    runToHere: runToHere,
+    runModule: runModule,
+    runModuleCfg: runModuleCfg,
+    runFolder: runFolder,
+    runProject: runProject,
+    runConfig: runConfig,
     loadCode: loadCode,
     loadProject: loadProject,
     ensureEditorLoadedForRun: ensureEditorLoadedForRun,

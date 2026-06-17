@@ -30,13 +30,17 @@ expect(!NC.nameConflict(existing, 'main.bel', 'a'), 'exclude self on rename');
 expect(NC.nameConflict(existing, 'lib/util.bel', 'x'), 'nested path conflict');
 expect(!NC.nameConflict(existing, 'util.bel'), 'same basename in different folder is ok');
 
-expect(NC.suggestNewPath('main.bel', ['main.bel']) === 'main-new.bel', 'suggest -new before ext');
-expect(NC.suggestNewPath('main.bel', ['main.bel', 'main-new.bel']) === 'main-new-2.bel',
-  'increment when -new taken');
+expect(NC.suggestNewPath('main.bel', ['main.bel']) === 'main-1.bel', 'suggest -1 before ext');
+expect(NC.suggestNewPath('main.bel', ['main.bel', 'main-1.bel']) === 'main-2.bel',
+  'increment when -1 taken');
+expect(NC.suggestNewPath('main-1.bel', ['main-1.bel']) === 'main-2.bel',
+  'increment trailing number on stem');
+expect(NC.suggestNewPath('lib/util.bel', ['lib/util.bel']) === 'lib/util-1.bel',
+  'suggest numbered path in folder');
 
 const fileConflict = NC.detectUploadConflicts(existing, [{ name: 'main.bel', text: 'x' }]);
 expect(fileConflict.length === 1 && fileConflict[0].kind === 'file', 'detect file conflict');
-expect(fileConflict[0].suggestedPath === 'main-new.bel', 'file conflict gets suggested path');
+expect(fileConflict[0].suggestedPath === 'main-1.bel', 'file conflict gets suggested path');
 
 const noConflict = NC.detectUploadConflicts(existing, [{ name: 'util.bel', text: 'x' }]);
 expect(noConflict.length === 0, 'no conflict when only basename matches in another folder');
@@ -47,6 +51,7 @@ const folderConflict = NC.detectUploadConflicts(existing, [
 ]);
 expect(folderConflict.length === 1 && folderConflict[0].kind === 'folder', 'folder conflict when tree collides');
 expect(folderConflict[0].path === 'pkg', 'folder conflict path is folder prefix');
+expect(folderConflict[0].suggestedPath === 'pkg-1', 'folder conflict suggests numbered folder');
 
 const planSkip = NC.applyResolutions(
   existing,

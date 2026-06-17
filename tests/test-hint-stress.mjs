@@ -22,7 +22,11 @@ assert.ok(tree.length > 0, 'hint-stress.bel should parse');
 assert.equal(hover('stepBind', 0).sourceType, '[⊢ pf A]');
 assert.ok(hover('stepPW', 0).sourceType?.includes('↦'));
 assert.equal(hover('PatW', 0).sourceType, 'tm K[] A[]');
-assert.ok(hover('stepU', 0).sourceType?.includes('pat/unit'));
+// stepU is the 2nd argument of `↦/match/u : neu R → ↦ P P' → …`, so its source
+// type is that argument slot, `↦ P P'`. (It is NOT the constructor's RESULT type
+// `↦ (match R (pat/unit …)) …`, which is the type of the whole application — an
+// earlier off-by-one in term-app arg indexing landed there by mistake.)
+assert.equal(hover('stepU', 0).sourceType, "↦ P P'");
 assert.ok(hover('stepP', 0).sourceType?.includes('↦'));
 
 console.log('OK hint-stress.bel parses and core ★ markers resolve structurally');

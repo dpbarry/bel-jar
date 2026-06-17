@@ -1,6 +1,10 @@
 .idea/
 .claude/
+.cursor/
 node_modules/
+
+_debug-*.mjs
+tests/_scratch-*.mjs
 
 tutorial.pdf
 userguide.pdf

@@ -401,12 +401,33 @@
     bindTooltipEl(el);
   }
 
+  // Show a tooltip with the element's full text only when its content overflows
+  // (scrollWidth > clientWidth). getText() defaults to the element's textContent.
+  // Must be called before any other bindTooltipEl call on the same element so
+  // the overflow check runs before the tooltip's own mouseenter handler.
+  function bindOverflowTip(el, getText) {
+    if (!el || el.nodeType !== 1 || el._belOverflowTipBound) return;
+    el._belOverflowTipBound = true;
+    el.addEventListener('mouseenter', function () {
+      if (!FRP.prefersFineHover()) return;
+      const text = el.scrollWidth > el.clientWidth
+        ? (getText ? getText() : (el.textContent || '').trim())
+        : '';
+      if (text) el.setAttribute('data-tooltip', text);
+      else el.removeAttribute('data-tooltip');
+    });
+    bindTooltipEl(el);
+  }
+
   global.Tooltips = {
     hide: hideTooltip,
     hideImmediate: hideTooltipImmediate,
     set: setTooltip,
+    show: showTooltip,
     // Wire a dynamically-created element (with data-tooltip) for custom tooltips.
     bind: bindTooltipEl,
+    // Show full text as tooltip only when the element's content is clipped.
+    bindOverflow: bindOverflowTip,
     suppressAnchor(el) {
       suppressedTooltipAnchors.add(el);
     },

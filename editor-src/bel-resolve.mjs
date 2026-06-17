@@ -1,6 +1,13 @@
 import { syntaxTree } from '@codemirror/language';
 import { walkTree } from './bel-walk.mjs';
-import { findGroupSignature } from './project-prelude.mjs';
+import {
+  GLOBAL_DECL_PARENT,
+  firstChildNamed,
+  firstIdentChild,
+  isLFDatatypeHead,
+} from './bel-tree-helpers.mjs';
+import { findGroupSignature, groupDefinesName } from './project-prelude.mjs';
+import { buildInfixState, infixSlotForIdent } from './bel-infix.mjs';
 
 // The project group's answer for a name this document does not define: kind
 // label + source signature from the defining file. The document is a CHILD of
@@ -19,27 +26,27 @@ function externalSignatureFor(name) {
   }
 }
 
+// Is `name` defined by an earlier suite file even though no syntactic signature
+// could be extracted for it (e.g. a datatype constructor)? Such a name is still
+// a real cross-file reference — its type just needs the checker, not a guess.
+function externalDefinedName(name) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!name || !P || typeof P.listFiles !== 'function' || typeof P.getFileText !== 'function') {
+    return false;
+  }
+  try {
+    return groupDefinesName(P.listFiles(), P.getActiveFileId(), name, (id) => P.getFileText(id));
+  } catch (_) {
+    return false;
+  }
+}
+
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
 
 const TYPE_RHS = new Set([
   'LFType', 'LFKind', 'CompType', 'CompKind',
   'ContextualType', 'LFBlock',
-]);
-
-const GLOBAL_DECL_PARENT = new Set([
-  'LFDeclaration',
-  'LFDatatypeDeclaration',
-  'LFConstructor',
-  'SchemaDeclaration',
-  'TypedefDeclaration',
-  'LetDeclaration',
-  'ModuleDeclaration',
-  'InductiveBody',
-  'CoinductiveBody',
-  'CompConstructor',
-  'CompDestructor',
-  'RecBody',
-  'ProofDeclaration',
 ]);
 
 const LOCAL_BINDER_INLINE_TYPE = new Set([
@@ -60,19 +67,6 @@ const LOCAL_BINDER_BARE = new Set([
   'ContextTailEntry',
 ]);
 
-function firstIdentChild(node) {
-  for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (IDENT.has(c.name)) return c;
-    if (c.name === 'ParameterVariable' || c.name === 'SubstitutionVariable') {
-      const sigil = c.firstChild;
-      if (!sigil || (sigil.name !== '#' && sigil.name !== '$')) continue;
-      const id = sigil.nextSibling;
-      if (id && IDENT.has(id.name)) return id;
-    }
-  }
-  return null;
-}
-
 const LOCAL_BINDER_LABEL = {
   PiBinder:           'Pi Binder',
   CompTypeBinder:     'Meta Binder',
@@ -85,6 +79,7 @@ const LOCAL_BINDER_LABEL = {
   FnParam:            'Parameter',
   MLamParam:          'Meta Parameter',
   SchemaSomeBindings: 'Schema Binder',
+  AtomicPattern:      'Pattern Variable',
 };
 
 function globalLabel(declParent) {
@@ -280,11 +275,51 @@ function sliceText(doc, from, to) {
   return doc.sliceString(from, to).replace(/\s+/g, ' ').trim();
 }
 
+// A schema has no ":"-type; its "type" is the body after "=" (the blocks). The
+// SchemaBody node already isolates it, so slice that rather than string-hunting
+// for "=" (the body itself contains ":" and "+").
+function schemaBodyText(declParent, doc) {
+  const body = firstChildNamed(declParent, 'SchemaBody');
+  if (!body) return null;
+  return sliceText(doc, body.from, body.to) || null;
+}
+
+const MODULE_MEMBER_CAP = 8;
+
+// The head name of a declaration: a direct identifier child, else the one nested
+// in its *Body node (RecBody, InductiveBody, …).
+function declHeadName(declNode, doc) {
+  let id = firstIdentChild(declNode);
+  if (id) return doc.sliceString(id.from, id.to);
+  for (let c = declNode.firstChild; c; c = c.nextSibling) {
+    if (!/Body$/.test(c.name)) continue;
+    id = firstIdentChild(c);
+    if (id) return doc.sliceString(id.from, id.to);
+  }
+  return null;
+}
+
+// A module is a namespace, not a typed value. The most useful "type" row is a
+// summary of what it exports: the head names of its top-level declarations.
+function moduleSummaryText(declParent, doc) {
+  const names = [];
+  for (let c = declParent.firstChild; c; c = c.nextSibling) {
+    if (c.name !== 'Declaration' || !c.firstChild) continue;
+    const n = declHeadName(c.firstChild, doc);
+    if (n && !names.includes(n)) names.push(n);
+  }
+  if (!names.length) return null;
+  const shown = names.slice(0, MODULE_MEMBER_CAP);
+  const tail = names.length > shown.length ? `, …(+${names.length - shown.length})` : '';
+  return `{ ${shown.join(', ')}${tail} }`;
+}
+
 function sourceSignatureForGlobal(declParent, ident, doc) {
   if (!declParent || !ident) return null;
   const dname = declParent.name;
-  if (dname === 'ModuleDeclaration' || dname === 'SchemaDeclaration') return null;
-  if (dname === 'LetDeclaration') return null;
+  if (dname === 'SchemaDeclaration') return schemaBodyText(declParent, doc);
+  if (dname === 'ModuleDeclaration') return moduleSummaryText(declParent, doc);
+  if (dname === 'LetDeclaration') return null; // computation type is checker-inferred
 
   const ty = nextTypeSibling(ident);
   if (!ty) return null;
@@ -338,6 +373,14 @@ function scanFrameForName(frame, doc, name) {
         if (ty) return hit(sliceText(doc, ty.from, ty.to), 'CompTypeBinder');
       }
     }
+  }
+
+  // Pattern-bound variables scope over their branch/let body. A use elsewhere in
+  // the body (`sim_trans s3 s4`) resolves to its binding here — head-only, since
+  // the variable's type is a refinement the source does not spell out.
+  if (fname === 'CaseBranch' || fname === 'LetExpression' || fname === 'CofunctionBranch') {
+    const found = scanFramePatternsForName(frame, doc, name);
+    if (found) return found;
   }
 
   if (fname === 'LFLambda') {
@@ -394,6 +437,33 @@ function scanFrameForName(frame, doc, name) {
   return null;
 }
 
+// Scan a branch/let frame's pattern(s) for a bare lowercase variable. The frame
+// carries Pattern children (case/let) or Copattern children (fun); within each,
+// any `AtomicPattern > LowerIdentifier` is a binding occurrence.
+function scanFramePatternsForName(frame, doc, name) {
+  for (let c = frame.firstChild; c; c = c.nextSibling) {
+    if (c.name !== 'Pattern' && c.name !== 'Copattern') continue;
+    const found = scanPatternSubtreeForName(c, doc, name);
+    if (found) return found;
+  }
+  return null;
+}
+
+function scanPatternSubtreeForName(node, doc, name) {
+  const stack = [node];
+  while (stack.length) {
+    const n = stack.pop();
+    if (n.name === 'AtomicPattern') {
+      const id = n.firstChild;
+      if (id && id.name === 'LowerIdentifier' && doc.sliceString(id.from, id.to) === name) {
+        return hit('', 'AtomicPattern');
+      }
+    }
+    for (let c = n.firstChild; c; c = c.nextSibling) stack.push(c);
+  }
+  return null;
+}
+
 function scanContextPartForName(part, doc, name) {
   const stack = [part];
   while (stack.length) {
@@ -408,13 +478,6 @@ function scanContextPartForName(part, doc, name) {
       }
       stack.push(c);
     }
-  }
-  return null;
-}
-
-function firstChildNamed(node, name) {
-  for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (c.name === name) return c;
   }
   return null;
 }
@@ -461,33 +524,57 @@ function headIdentOfTermApp(app) {
   return firstIdentChild(node);
 }
 
-function innermostTypeAppForIdent(ident) {
-  let app = null;
+// The application that types `ident`: its NEAREST enclosing application, and
+// only when `ident` sits in that app's argument slot. Two things matter:
+//   - Nearest wins. Type- and term-level apps nest (`red (pcomp P)`), and the
+//     inner head is the one that types the ident — never climb past it.
+//   - Argument, not head. In `red (P Y)`, P heads the inner application `P Y`;
+//     it is NOT an argument of anything, so it has no slot type. The old check
+//     only tested span-containment and so wrongly climbed to `red`, typing P as
+//     red's domain. Reaching the nearest app with ident in head position means
+//     "no arg type", full stop.
+function nearestArgApp(ident) {
   for (let p = ident.parent; p; p = p.parent) {
-    if (!TYPE_APP.has(p.name)) continue;
-    const arg = typeAppArgChild(p);
-    if (arg && ident.from >= arg.from && ident.to <= arg.to) app = p;
+    const isType = TYPE_APP.has(p.name);
+    const isTerm = TERM_APP.has(p.name);
+    if (!isType && !isTerm) continue;
+    const arg = isType ? typeAppArgChild(p) : termAppArgChild(p);
+    if (arg && ident.from >= arg.from && ident.to <= arg.to) {
+      return { app: p, kind: isType ? 'type' : 'term' };
+    }
+    return null; // nearest app, but ident is its head (or no arg) → untypeable here
   }
-  return app;
+  return null;
+}
+
+function innermostTypeAppForIdent(ident) {
+  const hit = nearestArgApp(ident);
+  return hit && hit.kind === 'type' ? hit.app : null;
 }
 
 function innermostTermAppForIdent(ident) {
-  let app = null;
-  for (let p = ident.parent; p; p = p.parent) {
-    if (!TERM_APP.has(p.name)) continue;
-    const arg = termAppArgChild(p);
-    if (!arg || ident.from < arg.from || ident.to > arg.to) continue;
-    app = p;
+  const hit = nearestArgApp(ident);
+  return hit && hit.kind === 'term' ? hit.app : null;
+}
+
+// A spine node carries an argument iff it nests a further application of the
+// same family (the grammar's `App !app Atomic` rule). The base case — an app
+// node wrapping a lone atom — is just the head and adds no argument. (Testing
+// for an atomic CHILD is wrong for terms: a term head IS an LFAtomicTerm, so
+// `pcomp` in `pcomp P` would be miscounted, shifting every arg index by one.)
+function hasNestedApp(app, family) {
+  for (let c = app.firstChild; c; c = c.nextSibling) {
+    if (family.has(c.name)) return true;
   }
-  return app;
+  return false;
 }
 
 function isHeadOnlyTypeApp(app) {
-  return TYPE_APP.has(app.name) && !typeAppArgChild(app);
+  return TYPE_APP.has(app.name) && !hasNestedApp(app, TYPE_APP);
 }
 
 function isHeadOnlyTermApp(app) {
-  return TERM_APP.has(app.name) && !termAppArgChild(app);
+  return TERM_APP.has(app.name) && !hasNestedApp(app, TERM_APP);
 }
 
 function argIndexInTypeApp(ident) {
@@ -715,6 +802,37 @@ function implicitTypeFromDeclSignature(tree, doc, ident) {
   return implicitBinderInTypePrefix(sig, name);
 }
 
+// The declared type signature of an application head, whether it lives in this
+// file or an earlier file of the project group. An implicit binder is typed by
+// the slot it fills under such a head (`A` in `dual A A'` ← dual's domain), so
+// when the head is `dual`/`linear`/… imported from another module, the group
+// signature must be consulted too — otherwise the binder reads as untyped.
+function headTypeSignature(tree, doc, headName, isUpper) {
+  const decl = findGlobalDeclarationIdent(tree, doc, headName, isUpper);
+  if (decl) {
+    const sig = sourceSignatureForGlobal(decl.declParent, decl.ident, doc);
+    if (sig) return sig;
+  }
+  const ext = externalSignatureFor(headName);
+  return ext && ext.type ? ext.type : null;
+}
+
+function inferImplicitFromInfix(tree, doc, ident) {
+  const state = buildInfixState(tree, doc, ident.from);
+  const slot = infixSlotForIdent(tree, doc, ident, state);
+  if (!slot) return null;
+
+  const sig = headTypeSignature(tree, doc, slot.headName, false);
+  if (!sig) return null;
+
+  const domain = domainAtArrowIndex(sig, slot.argIndex);
+  if (!domain) return null;
+
+  const span = { from: slot.from, to: slot.to };
+  const depth = lambdaDepthInSpan(span, ident);
+  return depth > 0 ? peelDependentArrows(domain, depth) : domain;
+}
+
 function inferImplicitFromTypeApp(tree, doc, ident) {
   const app = innermostTypeAppForIdent(ident);
   if (!app) return null;
@@ -724,10 +842,7 @@ function inferImplicitFromTypeApp(tree, doc, ident) {
   const head = headIdentOfTypeApp(app);
   if (!head) return null;
   const headName = doc.sliceString(head.from, head.to);
-  const decl = findGlobalDeclarationIdent(tree, doc, headName, head.name === 'UpperIdentifier');
-  if (!decl) return null;
-
-  const sig = sourceSignatureForGlobal(decl.declParent, decl.ident, doc);
+  const sig = headTypeSignature(tree, doc, headName, head.name === 'UpperIdentifier');
   if (!sig) return null;
 
   return domainAtArrowIndex(sig, argIndex) || null;
@@ -742,10 +857,7 @@ function inferImplicitFromTermApp(tree, doc, ident) {
   const head = headIdentOfTermApp(app);
   if (!head) return null;
   const headName = doc.sliceString(head.from, head.to);
-  const headDecl = findGlobalDeclarationIdent(tree, doc, headName, head.name === 'UpperIdentifier');
-  if (!headDecl) return null;
-
-  const sig = sourceSignatureForGlobal(headDecl.declParent, headDecl.ident, doc);
+  const sig = headTypeSignature(tree, doc, headName, head.name === 'UpperIdentifier');
   if (!sig) return null;
 
   const domain = domainAtArrowIndex(sig, argIndex);
@@ -756,11 +868,55 @@ function inferImplicitFromTermApp(tree, doc, ident) {
   return depth > 0 ? peelDependentArrows(domain, depth) : domain;
 }
 
+// Every free occurrence of an implicit binder in one declaration denotes the
+// same reconstruction-introduced variable, hence shares one type. Collect the
+// other free occurrences of this name within the enclosing declaration so an
+// untypeable spot can borrow from a typed one.
+function siblingOccurrences(encl, doc, name, isUpper, self) {
+  const out = [];
+  const stack = [encl];
+  while (stack.length) {
+    const n = stack.pop();
+    if (IDENT.has(n.name)
+      && (n.name === 'UpperIdentifier') === isUpper
+      && n.from !== self.from
+      && doc.sliceString(n.from, n.to) === name) {
+      out.push(n);
+    }
+    for (let c = n.firstChild; c; c = c.nextSibling) stack.push(c);
+  }
+  return out;
+}
+
+// Borrow this implicit binder's type from a sibling occurrence sitting in a
+// typed argument slot — e.g. `P` as the head of `(P Y)` has no local type, but
+// `P` in `pcomp A _ P` does, and they are the same binder.
+function inferImplicitFromSibling(tree, doc, ident) {
+  const encl = findEnclosingGlobalDecl(ident);
+  if (!encl) return null;
+  const name = doc.sliceString(ident.from, ident.to);
+  if (!name) return null;
+  const isUpper = ident.name === 'UpperIdentifier';
+  for (const cand of siblingOccurrences(encl, doc, name, isUpper, ident)) {
+    // A locally-bound occurrence (lambda/pi shadow) is a different variable.
+    if (findEnclosingLocalBinder(cand, doc, name)) continue;
+    const t = inferImplicitFromInfix(tree, doc, cand)
+      || inferImplicitFromTypeApp(tree, doc, cand)
+      || inferImplicitFromTermApp(tree, doc, cand);
+    if (t) return t;
+  }
+  return null;
+}
+
 function inferImplicitArgType(tree, doc, ident) {
-  return inferImplicitFromTypeApp(tree, doc, ident)
+  // An explicit pattern annotation is the declared type — authoritative over any
+  // application-slot inference, so it is consulted first.
+  return patternAnnotationType(ident, doc)
+    || inferImplicitFromInfix(tree, doc, ident)
+    || inferImplicitFromTypeApp(tree, doc, ident)
     || inferImplicitFromTermApp(tree, doc, ident)
-    || patternAnnotationType(ident, doc)
-    || implicitTypeFromDeclSignature(tree, doc, ident);
+    || implicitTypeFromDeclSignature(tree, doc, ident)
+    || inferImplicitFromSibling(tree, doc, ident);
 }
 
 function lfTermIsBareIdent(termNode) {
@@ -808,6 +964,14 @@ function classifyAsBinderSite(ident) {
     return { kind: 'decl-global', declParent: p };
   }
 
+  // A mutual LF block flattens `LF n … and a … and p …` into one
+  // LFDatatypeDeclaration; every head after the first still names a type family,
+  // so classify it global rather than letting it fall through to the
+  // implicit-binder guess below.
+  if (pname === 'LFDatatypeDeclaration' && isLFDatatypeHead(ident)) {
+    return { kind: 'decl-global', declParent: p };
+  }
+
   if (LOCAL_BINDER_INLINE_TYPE.has(pname)) {
     if (pname === 'SchemaSomeBindings' || firstIdentChild(p) === ident) {
       return { kind: 'binder-inline', binderParent: p };
@@ -819,6 +983,13 @@ function classifyAsBinderSite(ident) {
   }
 
   if (LOCAL_BINDER_BARE.has(pname)) {
+    return { kind: 'binder-bare', binderParent: p };
+  }
+
+  // A computation pattern variable: the bare lowercase atom of a `case` / `let` /
+  // `fun` pattern (`let MakeTransSimf t1 s3 = …` binds t1, s3). The constructor
+  // head is uppercase and resolves globally, so only LowerIdentifier counts.
+  if (pname === 'AtomicPattern' && ident.name === 'LowerIdentifier' && p.firstChild === ident) {
     return { kind: 'binder-bare', binderParent: p };
   }
 
@@ -988,6 +1159,23 @@ export function resolveHoverDoc(tree, doc, from) {
       sourceText: ext.type,
       sourceType: ext.type,
       externalFile: ext.fileName,
+    };
+  }
+
+  // Defined by an earlier suite file but with no extractable syntactic signature
+  // (e.g. a datatype constructor). It is still a genuine cross-file reference —
+  // classify it external (not an implicit-binder guess) and let the checker,
+  // which has the assembled prelude+active code loaded, supply the real type.
+  if (externalDefinedName(name)) {
+    const { line, col } = lineColAt(doc, ident.from);
+    return {
+      kind: 'external',
+      line, col,
+      name, displayName,
+      label: 'declaration',
+      sourceText: null,
+      sourceType: null,
+      needsElaboration: true,
     };
   }
 

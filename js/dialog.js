@@ -27,8 +27,21 @@
       timer: null,
     };
 
-    dialogEl.addEventListener('click', function (e) {
-      if (e.target === dialogEl) requestDialogClose(dialogEl);
+    dialogEl.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0 || e.target !== dialogEl) return;
+
+      function cleanup() {
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', cleanup);
+      }
+
+      function onPointerUp(upE) {
+        if (upE.target === dialogEl) requestDialogClose(dialogEl);
+        cleanup();
+      }
+
+      document.addEventListener('pointerup', onPointerUp);
+      document.addEventListener('pointercancel', cleanup);
     });
 
     dialogEl.addEventListener('cancel', function (e) {

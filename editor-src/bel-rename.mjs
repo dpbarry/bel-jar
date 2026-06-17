@@ -5,7 +5,7 @@ import { EditorState, Prec, RangeSetBuilder, StateEffect, StateField, Transactio
 import { getEngine, navInfoAt, crossFileDefinitionAt } from './bel-ide-actions.mjs';
 import { scrollIntoViewCenter } from './bel-viewport.mjs';
 import {
-  defsOf, usesOf, groupDefinesName, groupRenameEdits, applyTextEdits,
+  defsOf, usesOf, groupDefinesName, groupRenameEdits, applyTextEdits, groupReferencesFor,
 } from './project-prelude.mjs';
 
 const setRenameSession = StateEffect.define();
@@ -78,28 +78,105 @@ function groupConflict(view, session, trimmed) {
   return false;
 }
 
-function previewState(view, session) {
-  const draft = view.state.doc.sliceString(session.anchorFrom, session.anchorTo);
-  const trimmed = draft.trim();
-  if (trimmed === session.originalName) {
-    return { draft, trimmed, ok: true };
-  }
-  if (!trimmed) return { draft, trimmed, ok: false };
+// Is `trimmed` an acceptable target name for this rename session? Shared by the
+// live preview and by conflict-aware suggestion (which probes candidate names).
+function evaluateName(view, session, trimmed) {
+  if (trimmed === session.originalName) return true;
+  if (!trimmed) return false;
 
   const conflict = groupConflict(view, session, trimmed);
 
-  if (session.crossFile) {
-    const ok = VALID_IDENT.test(trimmed) && !conflict;
-    return { draft, trimmed, ok };
-  }
+  if (session.crossFile) return VALID_IDENT.test(trimmed) && !conflict;
 
   const eng = getEngine(view);
   const preview = eng && typeof eng.renamePreview === 'function'
     ? eng.renamePreview(session.symbolId, trimmed)
     : { ok: false, reason: 'no-semantic-snapshot' };
 
-  const ok = resolveRenameOk(session, trimmed, preview, conflict);
-  return { draft, trimmed, ok };
+  return resolveRenameOk(session, trimmed, preview, conflict);
+}
+
+function previewState(view, session) {
+  const draft = view.state.doc.sliceString(session.anchorFrom, session.anchorTo);
+  const trimmed = draft.trim();
+  return { draft, trimmed, ok: evaluateName(view, session, trimmed) };
+}
+
+// First free name near `base`: a primed variant (idiomatic in Beluga), then
+// base1, base2, … `isTaken(candidate)` reports whether a candidate is invalid or
+// already in use. Returns null if nothing is free within `limit`.
+export function suggestRenameName(base, isTaken, limit = 50) {
+  if (!base) return null;
+  const prime = `${base}'`;
+  if (!isTaken(prime)) return prime;
+  for (let i = 1; i <= limit; i++) {
+    const candidate = `${base}${i}`;
+    if (!isTaken(candidate)) return candidate;
+  }
+  return null;
+}
+
+// One-line preview of a rename's reach: occurrences in this file plus, when the
+// symbol is global, occurrences across the rest of the suite.
+export function renamePreviewMessage(name, here, group) {
+  const occ = (n) => `${n} occurrence${n === 1 ? '' : 's'}`;
+  let msg = `Renaming "${name}" — ${occ(here)} here`;
+  if (group > 0) msg += `, ${occ(group)} across the suite`;
+  return `${msg}.`;
+}
+
+export function renameReachTooltip(total) {
+  if (!total || total < 1) return '';
+  return `${total} occurrence${total === 1 ? '' : 's'} across the suite`;
+}
+
+// How many occurrences of the renamed name live in the rest of the group.
+function countGroupReferences(name, crossFile) {
+  const env = persistEnv();
+  if (!env) return 0;
+  try {
+    const opts = crossFile ? { defFileId: crossFile.defFileId } : {};
+    return groupReferencesFor(
+      env.P.listFiles(), env.P.getActiveFileId(), name,
+      (id) => env.P.getFileText(id), opts,
+    ).length;
+  } catch (_) {
+    return 0;
+  }
+}
+
+// Suite-wide occurrence count for a rename at `pos` (context-menu preview).
+export function renameReachAt(view, pos) {
+  const at = pos ?? view.state.selection.main.head;
+  const nav = navInfoAt(view, at);
+  if (nav && nav.symbolId && nav.nameRange) {
+    const { from } = nav.nameRange;
+    const eng = getEngine(view);
+    const preview = eng && typeof eng.renamePreview === 'function'
+      ? eng.renamePreview(nav.symbolId, nav.name || '')
+      : null;
+    const refCount = preview && preview.ok
+      ? preview.edits.filter((e) => e.from !== from).length
+      : 0;
+    const here = 1 + refCount;
+    const sym = eng && eng.getSnapshot && eng.getSnapshot()
+      ? eng.getSnapshot().symbols?.symbolsById?.get(nav.symbolId)
+      : null;
+    const group = sym && sym.isGlobal
+      ? countGroupReferences(nav.name || '', null)
+      : 0;
+    return { total: here + group };
+  }
+  const cross = crossFileDefinitionAt(view, at);
+  if (!cross || !cross.sourceRange) return null;
+  const { from, to } = cross.sourceRange;
+  const name = view.state.sliceDoc(from, to);
+  if (!name) return null;
+  const refCount = usesOf(view.state.doc.toString())
+    .filter((u) => u.name === name && u.from !== from).length;
+  const here = 1 + refCount;
+  const group = countGroupReferences(name, { defFileId: cross.fileId });
+  return { total: here + group };
 }
 
 export function resolveRenameOk(session, trimmed, preview, conflict) {
@@ -316,8 +393,17 @@ function commitRename(view) {
   if (!ok || !trimmed) {
     if (!trimmed) {
       showRenameToast('Enter a name to rename to.', 'warn');
+    } else if (!VALID_IDENT.test(trimmed)) {
+      showRenameToast(`Rename blocked: "${trimmed}" is not a valid name.`, 'warn');
     } else {
-      showRenameToast('Rename blocked — that name is already in use or invalid.', 'warn');
+      const suggestion = suggestRenameName(
+        session.originalName, (c) => !evaluateName(view, session, c),
+      );
+      showRenameToast(
+        `Rename blocked: "${trimmed}" is already in use`
+        + (suggestion ? `. Try "${suggestion}"?` : '.'),
+        'warn',
+      );
     }
     return true;
   }
@@ -457,15 +543,16 @@ export function startRename(view, pos) {
   const sym = eng && eng.getSnapshot && eng.getSnapshot()
     ? eng.getSnapshot().symbols?.symbolsById?.get(nav.symbolId)
     : null;
+  const session = {
+    symbolId: nav.symbolId,
+    originalName: nav.name || '',
+    anchorFrom: from,
+    anchorTo: to,
+    refRanges,
+    propagate: !!(sym && sym.isGlobal),
+  };
   view.dispatch({
-    effects: setRenameSession.of({
-      symbolId: nav.symbolId,
-      originalName: nav.name || '',
-      anchorFrom: from,
-      anchorTo: to,
-      refRanges,
-      propagate: !!(sym && sym.isGlobal),
-    }),
+    effects: setRenameSession.of(session),
     selection: { anchor: from, head: to },
   });
   view.focus();
@@ -484,15 +571,16 @@ function startCrossFileRename(view, at) {
   const refRanges = usesOf(view.state.doc.toString())
     .filter((u) => u.name === name && u.from !== from)
     .map((u) => ({ from: u.from, to: u.to }));
+  const session = {
+    symbolId: null,
+    originalName: name,
+    anchorFrom: from,
+    anchorTo: to,
+    refRanges,
+    crossFile: { defFileId: cross.fileId },
+  };
   view.dispatch({
-    effects: setRenameSession.of({
-      symbolId: null,
-      originalName: name,
-      anchorFrom: from,
-      anchorTo: to,
-      refRanges,
-      crossFile: { defFileId: cross.fileId },
-    }),
+    effects: setRenameSession.of(session),
     selection: { anchor: from, head: to },
   });
   view.focus();

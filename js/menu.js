@@ -79,6 +79,41 @@
     let submenuOpenTimer = null;
 
     const SUBMENU_OPEN_DELAY_MS = 90;
+    const MENU_ITEM_TIP_DELAY_MS = 300;
+
+    function hideMenuTooltips() {
+      const T = global.Tooltips;
+      if (T && T.hide) T.hide();
+    }
+
+    function bindMenuItemTooltip(btn, item) {
+      const text = item.tooltip;
+      if (!text) return;
+      const T = global.Tooltips;
+      if (!T) return;
+      let timer = null;
+      btn.addEventListener('mouseenter', () => {
+        if (!FRP.prefersFineHover()) return;
+        timer = setTimeout(() => {
+          timer = null;
+          if (!btn.isConnected) return;
+          if (item.tooltipPlacement) {
+            btn.setAttribute('data-tooltip-placement', item.tooltipPlacement);
+          }
+          T.set(btn, text, { ariaLabel: false });
+          if (T.show) T.show(btn);
+        }, MENU_ITEM_TIP_DELAY_MS);
+      });
+      btn.addEventListener('mouseleave', () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        btn.removeAttribute('data-tooltip');
+        btn.removeAttribute('data-tooltip-placement');
+        hideMenuTooltips();
+      });
+    }
 
     const controller = { menuRoot };
 
@@ -133,9 +168,16 @@
       } else {
         ar = anchorRect(anchor);
       }
-      menuEl.classList.add('is-measuring');
-      menuEl.style.left = '-9999px';
-      menuEl.style.top = '0';
+      // Initial layout measures off-screen to read the intrinsic size. A
+      // RE-layout (resize/scroll while open) measures the already-visible panel
+      // in place — the off-screen hop flickers the menu on every scroll tick
+      // (e.g. find-refs hover-preview scrolling the editor underneath).
+      const alreadyVisible = menuEl.classList.contains('is-visible');
+      if (!alreadyVisible) {
+        menuEl.classList.add('is-measuring');
+        menuEl.style.left = '-9999px';
+        menuEl.style.top = '0';
+      }
 
       const tw = menuEl.offsetWidth;
       const th = menuEl.offsetHeight;
@@ -300,6 +342,7 @@
         }
         if (openMenus.length === 0) {
           setActiveController(null);
+          hideMenuTooltips();
           const cb = rootOnClose;
           rootAnchorEl = null;
           rootOnClose = null;
@@ -321,6 +364,7 @@
         if (remaining > 0) return;
         if (openMenus.length === 0) {
           setActiveController(null);
+          hideMenuTooltips();
           const cb = rootOnClose;
           rootAnchorEl = null;
           rootOnClose = null;
@@ -346,6 +390,7 @@
       }
       submenuSourceRow = null;
       if (menuRoot) menuRoot.replaceChildren();
+      hideMenuTooltips();
       if (activeController === controller) setActiveController(null);
       const cb = rootOnClose;
       rootAnchorEl = null;
@@ -403,7 +448,7 @@
       return slot;
     }
 
-    function buildDefaultMenuItem(item, wrap, level) {
+    function buildDefaultMenuItem(item, wrap, level, usesCheckGutter) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'menu-item';
@@ -413,11 +458,10 @@
         btn.disabled = true;
       }
 
-      // Leading icon / check gutter (icon wins; check shown when item.checked)
       const iconSource = item.checked ? 'check' : item.icon;
-      if (iconSource) {
+      if (iconSource || usesCheckGutter) {
         btn.classList.add('menu-item-has-icon');
-        btn.appendChild(buildIconSlot(iconSource));
+        btn.appendChild(buildIconSlot(iconSource || null));
       }
       if (item.checked) {
         btn.classList.add('is-checked');
@@ -477,6 +521,8 @@
         });
       }
 
+      if (item.tooltip) bindMenuItemTooltip(btn, item);
+
       wrap.appendChild(btn);
     }
 
@@ -489,19 +535,42 @@
 
     function buildSection(item) {
       const sec = document.createElement('div');
-      sec.className = 'menu-section';
+      sec.className = 'menu-section' + (item.className ? ` ${item.className}` : '');
       sec.setAttribute('role', 'presentation');
       sec.textContent = item.label ?? '';
       return sec;
     }
 
+    function normalizeMenuItems(items) {
+      if (!items || !items.length) return [];
+      var out = [];
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var rowType = item.type || 'item';
+        if (rowType === 'separator') {
+          if (!out.length) continue;
+          if ((out[out.length - 1].type || 'item') === 'separator') continue;
+          out.push(item);
+        } else {
+          out.push(item);
+        }
+      }
+      if (out.length && (out[out.length - 1].type || 'item') === 'separator') out.pop();
+      return out;
+    }
+
     function buildMenu(items, level) {
+      items = normalizeMenuItems(items);
       const wrap = document.createElement('div');
       wrap.className = level > 0 ? 'menu is-submenu' : 'menu';
       wrap.setAttribute('role', 'menu');
       wrap.addEventListener('keydown', (e) => handlePanelKeydown(e, wrap, level));
 
       let hasIcons = false;
+      const usesCheckGutter = items.some((item) => {
+        const rowType = item.type || 'item';
+        return rowType === 'item' && item.checked;
+      });
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const rowType = item.type || 'item';
@@ -521,8 +590,8 @@
         if (rowType !== 'item') {
           console.warn('[Menu] unknown row type:', rowType, '— using default item row');
         }
-        if (item.icon || item.checked) hasIcons = true;
-        buildDefaultMenuItem(item, wrap, level);
+        if (item.icon || item.checked || usesCheckGutter) hasIcons = true;
+        buildDefaultMenuItem(item, wrap, level, usesCheckGutter);
       }
 
       // Reserve a consistent icon gutter only when the menu actually uses icons

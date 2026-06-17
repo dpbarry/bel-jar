@@ -99,4 +99,36 @@ expect(fake2.BelJarExplorer.rootZoneTopFromLastRow('folder', 0, 100, 130) === 13
 expect(fake2.BelJarExplorer.rootZoneTopFromLastRow('file', 2, 200, 230) === 230,
   'nested file: root zone starts below row');
 
+const multiMove = NC.computeMoveTargets(
+  [
+    { id: 'a', name: 'lib/a.bel' },
+    { id: 'b', name: 'lib/b.bel' },
+  ],
+  { kind: 'files', fileIds: ['a', 'b'] },
+  { kind: 'folder', folderPath: 'pkg' },
+  getText,
+);
+expect(multiMove.length === 2, 'multi-file move produces one entry per file');
+expect(multiMove.every((m) => m.to.indexOf('pkg/') === 0), 'multi-file move targets destination folder');
+
+expect(!NC.canDropMove(
+  { kind: 'files', fileIds: ['a', 'b'] },
+  { kind: 'folder', folderPath: 'lib' },
+  [
+    { id: 'a', name: 'lib/a.bel' },
+    { id: 'b', name: 'pkg/b.bel' },
+  ],
+), 'mixed-parent multi selection cannot drop');
+
+const sameBase = NC.computeMoveTargets(
+  [
+    { id: 'a', name: 'lib/a.bel' },
+    { id: 'b', name: 'sub/a.bel' },
+  ],
+  { kind: 'files', fileIds: ['a', 'b'] },
+  { kind: 'folder', folderPath: 'pkg' },
+  getText,
+);
+expect(sameBase.length === 0, 'batch move rejects internal basename collision');
+
 console.log('OK explorer-move');

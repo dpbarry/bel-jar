@@ -1,5 +1,6 @@
 import { EditorState } from '@codemirror/state';
 import {
+  buildAuxStatusPresentation,
   buildIdeStatusPresentation,
   computeParseCoverage,
   formatGlobalGraphStaleBanner,
@@ -56,4 +57,15 @@ const cov = computeParseCoverage(state);
 expect(cov.total === state.doc.length, 'coverage total matches doc');
 expect(cov.percent === 100, 'small file parses completely');
 
-console.log('OK ide status (parse/check dot, stale banner, coverage)');
+const auxClean = buildAuxStatusPresentation({ diagnostics: [], fileCount: 3 });
+expect(auxClean.liveState === 'clean', 'cfg clean → clean state');
+expect(auxClean.tooltip === 'Suite: 3 files', 'cfg clean tooltip names suite size');
+
+const auxBroken = buildAuxStatusPresentation({
+  diagnostics: [{ severity: 'error' }, { severity: 'warning' }],
+  fileCount: 2,
+});
+expect(auxBroken.liveState === 'error', 'cfg errors → error state');
+expect(auxBroken.tooltip === '2 problems', 'cfg problems tooltip');
+
+console.log('OK ide status (parse/check dot, aux suite dot, stale banner, coverage)');

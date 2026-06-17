@@ -1,7 +1,7 @@
 import { syntaxTree } from '@codemirror/language';
 import { linter } from '@codemirror/lint';
 import { checkerSnapshot } from './checker-snapshot.mjs';
-import { LINT_TOOLTIP_FILTER } from './bel-hover.mjs';
+import { lintLinterOptions } from './bel-lint-presentation.mjs';
 
 // Re-export for tests and callers that need masking without settlement.
 export function checkerCodeForView(view, getCheckCode) {
@@ -24,14 +24,13 @@ export function createBelugaLinter({
     const eng = typeof getEngine === 'function' ? getEngine(view) : null;
     if (!eng || typeof eng.getBelugaDiagnostics !== 'function') return [];
     return eng.getBelugaDiagnostics();
-  }, {
+  }, lintLinterOptions({
     delay,
-    tooltipFilter: LINT_TOOLTIP_FILTER,
     needsRefresh: settlementTickField
       ? (update) => update.state.field(settlementTickField)
           !== update.startState.field(settlementTickField)
       : null,
-  });
+  }));
 
   return ext;
 }

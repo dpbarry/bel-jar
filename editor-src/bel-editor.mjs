@@ -15,33 +15,47 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel, findNext, findPrevious, highlightSelectionMatches } from '@codemirror/search';
 import { belSearch } from './bel-search-panel.mjs';
-import { bracketMatching, codeFolding, ensureSyntaxTree, foldGutter, foldKeymap, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
+import { bracketMatching, ensureSyntaxTree, foldGutter, foldKeymap, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { diagnosticCount, forceLinting, forEachDiagnostic, linter } from '@codemirror/lint';
-import { beluga } from './bel-language.mjs';
+import { beluga, belCodeFolding } from './bel-language.mjs';
 import { formatCommand } from './bel-format.mjs';
-import { scheduleViewportRestore, viewportCenterLine } from './bel-viewport.mjs';
+import {
+  scheduleJumpToRange, scheduleViewportRestore, viewportCenterLine,
+  resolveJumpRange,
+} from './bel-viewport.mjs';
 import { belAliases, maybeExpandBelAliases } from './bel-aliases.mjs';
 
 export { expandBelAliases, maybeExpandBelAliases, readAliasActivationMode } from './bel-aliases.mjs';
+export {
+  enableJumpLog, jumpLogEnabled, logJumpMount, logJumpRequest, logJumpResult,
+} from './bel-jump-log.mjs';
+export { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
 import { syntaxLint } from './bel-lint.mjs';
 import { createBelugaLinter } from './bel-beluga-lint.mjs';
-import { computeParseCoverage, updateIdeStatusDot } from './bel-ide-status.mjs';
+import { cfgLinter, cfgDiagnostics } from './bel-cfg-lint.mjs';
+import { cfgEditorExtensions, countCfgEntries, goToCfgEntry } from './bel-cfg-editor.mjs';
+import { computeParseCoverage, updateAuxStatusDot, updateIdeStatusDot } from './bel-ide-status.mjs';
+import { lintLinterOptions, lintPresentation } from './bel-lint-presentation.mjs';
 import { checkerSnapshot } from './checker-snapshot.mjs';
 import { computeLintBlocks } from './bel-units.mjs';
-import { belHoverTooltip, LINT_TOOLTIP_FILTER } from './bel-hover.mjs';
+import { belHoverTooltip } from './bel-hover.mjs';
 import { diagnosticRowHighlight } from './bel-diag-gutter.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
 import { assembleCheckerCode, buildPrelude, listGroupSymbols } from './project-prelude.mjs';
+import { developmentForFile } from './development.mjs';
 import { belNavigation, belNavSemanticTick } from './bel-nav.mjs';
 import { belRename, startRename } from './bel-rename.mjs';
 import { belContextMenu } from './bel-context-menu.mjs';
 import { findReferences } from './bel-refs-panel.mjs';
 import {
-  flashExtension, goToDefinition, jumpToRange, jumpToNextError, revealInInspector,
+  flashExtension, goToDefinition, jumpToRange, jumpToReference, jumpToNextError, revealInInspector,
+  peekRange,
 } from './bel-ide-actions.mjs';
 import { openLocalGraphWindow, openGlobalGraphWindow } from './bel-graph-view.mjs';
 import { belInspector } from './bel-inspector.mjs';
+import { belEditorFollow } from './bel-follow-sync.mjs';
+import { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
@@ -110,13 +124,7 @@ function smartEnter(view) {
 }
 
 function sanitizePastedPlainText(text) {
-  if (text == null || text === '') return '';
-  return String(text)
-    .replace(/\uFEFF/g, '')
-    .replace(/\0/g, '')
-    .replace(/\r\n?|\u0085|\u2028|\u2029/g, '\n')
-    .replace(/\p{Zs}/gu, ' ')
-    .replace(/[\u200b-\u200d]/g, '');
+  return sanitizeEditorText(text);
 }
 
 function reindentWholeDocument(view) {
@@ -286,9 +294,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     highlightActiveLine(),
     bracketMatching(),
     closeBrackets(),
-    codeFolding({
-      placeholderText: '⋯',
-    }),
+    belCodeFolding(),
     foldGutter({
       markerDOM(open) {
         const el = document.createElement('span');
@@ -318,6 +324,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     ]),
     placeholder(placeholderText),
     belEditorChrome(),
+    ...lintPresentation(),
     belSyntaxLinter(),
     belugaLinterExt,
     diagnosticRowHighlight(),
@@ -327,6 +334,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     belRename(),
     belContextMenu(),
     belInspector(),
+    belEditorFollow(),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
     }),
@@ -337,14 +345,14 @@ function belSyntaxLinter() {
   // Syntax diagnostics are a synchronous Lezer tree walk — keep them on a small
   // fixed delay so parser-level errors show fast on files of any size, decoupled
   // from the Beluga checker's own adaptive debounce.
-  return linter((view) => syntaxLint(view), { delay: 80, tooltipFilter: LINT_TOOLTIP_FILTER });
+  return linter((view) => syntaxLint(view), lintLinterOptions({ delay: 80 }));
 }
 
 function auxFilePlaceholder() {
-  return 'Beluga load order — one file path per line (% comments allowed).';
+  return 'Beluga load order: one file path per line (% comments allowed).';
 }
 
-function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment) {
+function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment, cfgDocumentId) {
   return [
     indentUnit.of(INDENT),
     EditorState.tabSize.of(TAB_SIZE),
@@ -353,25 +361,72 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment)
     highlightActiveLine(),
     history(),
     drawSelection(),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    keymap.of([
+      { key: 'F12', run: (view) => goToCfgEntry(view, cfgDocumentId) },
+      ...defaultKeymap, ...historyKeymap,
+    ]),
     placeholder(placeholderText),
     belEditorChrome(),
+    ...lintPresentation(),
     EditorView.contentAttributes.of({ class: 'cm-aux-file' }),
     themeCompartment.of(cmThemeExtensions(dark)),
+    ...(cfgDocumentId ? [
+      cfgLinter(cfgDocumentId),
+      ...cfgEditorExtensions(cfgDocumentId),
+    ] : []),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
     }),
   ];
 }
 
-function mountAuxEditor(parentEl, options, docPath) {
+function wireStatusDotErrorNav(ideStatusDot) {
+  if (!ideStatusDot) return;
+  if (ideStatusDot._belErrorNavClick) {
+    ideStatusDot.removeEventListener('click', ideStatusDot._belErrorNavClick);
+    ideStatusDot.removeEventListener('keydown', ideStatusDot._belErrorNavKey);
+  }
+  const g = typeof globalThis !== 'undefined' ? globalThis : window;
+  ideStatusDot._belErrorNavClick = () => {
+    if (ideStatusDot.getAttribute('data-live-state') !== 'error') return;
+    const api = g.BelJarCurrentEditor;
+    const v = api && typeof api.getView === 'function' ? api.getView() : null;
+    if (v) jumpToNextError(v);
+  };
+  ideStatusDot._belErrorNavKey = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (ideStatusDot.getAttribute('data-live-state') !== 'error') return;
+    e.preventDefault();
+    const api = g.BelJarCurrentEditor;
+    const v = api && typeof api.getView === 'function' ? api.getView() : null;
+    if (v) jumpToNextError(v);
+  };
+  ideStatusDot.addEventListener('click', ideStatusDot._belErrorNavClick);
+  ideStatusDot.addEventListener('keydown', ideStatusDot._belErrorNavKey);
+}
+
+function mountAuxEditor(parentEl, options, documentId, docPath) {
   const initialDark = options.dark ?? isDocumentDarkTheme();
   const themeCompartment = new Compartment();
   const ph = auxFilePlaceholder();
   const initialDoc = sanitizePastedPlainText(options.doc ?? '');
+  const isCfg = /\.cfg$/i.test(String(docPath || ''));
+  // Refresh the status dot on every edit (defined below; safe to reference — it
+  // only fires after the view is mounted), then forward to the host listener.
+  function handleDocChange(text) {
+    refreshStatusDot();
+    if (typeof options.onDocChange === 'function') options.onDocChange(text);
+  }
   let state = EditorState.create({
     doc: initialDoc,
-    extensions: auxFileExtensions(ph, options.onDocChange, initialDark, themeCompartment),
+    extensions: [
+      ...auxFileExtensions(ph, handleDocChange, initialDark, themeCompartment, isCfg ? documentId : null),
+      EditorView.updateListener.of((update) => {
+        if (diagnosticCount(update.state) !== diagnosticCount(update.startState)) {
+          refreshStatusDot();
+        }
+      }),
+    ],
   });
   const view = new EditorView({ parent: parentEl, state });
   view.dom.classList.add('bel-editor--aux', 'bel-editor--cfg');
@@ -379,9 +434,43 @@ function mountAuxEditor(parentEl, options, docPath) {
   const ideStatusDot = typeof document !== 'undefined'
     ? document.getElementById('ide-status-dot')
     : null;
-  updateIdeStatusDot(ideStatusDot, [], { parseCoverage: 100, belugaPending: false });
+  wireStatusDotErrorNav(ideStatusDot);
+
+  function cfgStatus() {
+    if (!isCfg) return { errors: 0, warnings: 0, diags: [], fileCount: 0 };
+    const diags = cfgDiagnostics(view.state.doc, documentId);
+    let errors = 0;
+    let warnings = 0;
+    for (const d of diags) {
+      if (d.severity === 'error') errors += 1;
+      else warnings += 1;
+    }
+    return {
+      errors,
+      warnings,
+      diags,
+      fileCount: countCfgEntries(view.state.doc),
+    };
+  }
+  function refreshStatusDot() {
+    const { diags, fileCount } = cfgStatus();
+    updateAuxStatusDot(ideStatusDot, diags, { fileCount });
+    const g = typeof globalThis !== 'undefined' ? globalThis : window;
+    if (typeof g.dispatchEvent === 'function') {
+      const { errors, warnings } = cfgStatus();
+      g.dispatchEvent(new CustomEvent('beljar:file-lint', {
+        detail: { errors, warnings },
+      }));
+    }
+  }
+  refreshStatusDot();
+  if (isCfg) queueMicrotask(() => forceLinting(view));
 
   return {
+    getIdeStatus: () => {
+      const { errors, warnings } = cfgStatus();
+      return { errors, warnings };
+    },
     getValue: () => view.state.doc.toString(),
     setValue(text) {
       const doc = sanitizePastedPlainText(text ?? '');
@@ -412,6 +501,12 @@ function mountAuxEditor(parentEl, options, docPath) {
       view.dispatch({ effects: themeCompartment.reconfigure(cmThemeExtensions(dark)) });
     },
     destroy() { view.destroy(); },
+    refreshLint() {
+      if (isCfg) forceLinting(view);
+      refreshStatusDot();
+    },
+    goToDefinition(pos) { return isCfg ? goToCfgEntry(view, documentId, pos) : false; },
+    jumpToNextError() { return jumpToNextError(view); },
   };
 }
 
@@ -421,10 +516,11 @@ export function mount(parentEl, options = {}) {
     throw new TypeError('BelJarEditor.mount requires options.onDocChange (function)');
   }
   const g = typeof window !== 'undefined' ? window : self;
-  const docPath = String(options.documentId || '').replace(/^workspace:\/\//, '');
+  const docId = options.documentId || '';
+  const docPath = String(docId).replace(/^workspace:\/\//, '');
   const isCfgFile = /\.cfg$/i.test(docPath);
   parentEl.replaceChildren();
-  if (isCfgFile) return mountAuxEditor(parentEl, options, docPath);
+  if (isCfgFile) return mountAuxEditor(parentEl, options, docId, docPath);
 
   const ph = options.placeholder ?? 'Write Beluga code here...';
   const themeCompartment = new Compartment();
@@ -461,10 +557,20 @@ export function mount(parentEl, options = {}) {
 
   let refreshIdeStatusRef = () => {};
 
+  function currentScopeKey() {
+    if (!g.BelJarPersist) return '';
+    return developmentForFile(
+      g.BelJarPersist.listFiles(),
+      g.BelJarPersist.getActiveFileId(),
+      (id) => g.BelJarPersist.getFileText(id),
+    ).scopeKey;
+  }
+
   const semanticEngine = createSemanticEngine({
     documentId: options.documentId || 'workspace://main.bel',
     belugaClient: g.BelugaClient,
     getCheckContext: (syntaxSnap) => (syntaxSnap?.doc ? buildCheckContext(syntaxSnap.doc) : null),
+    getScopeKey: currentScopeKey,
     onTypeObserved: () => {
       if (options.persist && typeof options.persist.scheduleCheckpointSave === 'function') {
         options.persist.scheduleCheckpointSave();
@@ -505,6 +611,7 @@ export function mount(parentEl, options = {}) {
     semanticEngine.importCheckpoint(semantic, {
       docFp: docFingerprint(text),
       belugaBuild,
+      scopeKey: currentScopeKey(),
     });
   }
 
@@ -523,6 +630,7 @@ export function mount(parentEl, options = {}) {
       getBelugaBuild: () => (
         typeof g.BelJarPersist !== 'undefined' ? g.BelJarPersist.readStoredBelugaMode() : 'stable'
       ),
+      getScopeKey: currentScopeKey,
     });
   }
 
@@ -530,28 +638,8 @@ export function mount(parentEl, options = {}) {
     ? document.getElementById('ide-status-dot')
     : null;
 
-  function wireStatusDotErrorNav() {
-    if (!ideStatusDot) return;
-    if (ideStatusDot._belErrorNavClick) {
-      ideStatusDot.removeEventListener('click', ideStatusDot._belErrorNavClick);
-      ideStatusDot.removeEventListener('keydown', ideStatusDot._belErrorNavKey);
-    }
-    ideStatusDot._belErrorNavClick = () => {
-      if (ideStatusDot.getAttribute('data-live-state') !== 'error') return;
-      const api = g.BelJarCurrentEditor;
-      const v = api && typeof api.getView === 'function' ? api.getView() : null;
-      if (v) jumpToNextError(v);
-    };
-    ideStatusDot._belErrorNavKey = (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      if (ideStatusDot.getAttribute('data-live-state') !== 'error') return;
-      e.preventDefault();
-      const api = g.BelJarCurrentEditor;
-      const v = api && typeof api.getView === 'function' ? api.getView() : null;
-      if (v) jumpToNextError(v);
-    };
-    ideStatusDot.addEventListener('click', ideStatusDot._belErrorNavClick);
-    ideStatusDot.addEventListener('keydown', ideStatusDot._belErrorNavKey);
+  function wireStatusDotErrorNavLocal() {
+    wireStatusDotErrorNav(ideStatusDot);
   }
 
   function refreshIdeStatus(view) {
@@ -675,7 +763,7 @@ export function mount(parentEl, options = {}) {
     ideCompartment.of([]),
   ];
 
-  const initialDoc = maybeExpandBelAliases(sanitizePastedPlainText(options.doc ?? ''));
+  const initialDoc = prepareEditorDoc(options.doc ?? '', docPath);
   let state = EditorState.create({ doc: initialDoc, extensions });
   const ir0 = indentRange(state, 0, state.doc.length);
   if (!ir0.empty) state = state.update({ changes: ir0 }).state;
@@ -688,12 +776,13 @@ export function mount(parentEl, options = {}) {
   // Let the IDE action layer reach the engine straight off the view, before the
   // global BelJarCurrentEditor handle is assigned by app.js.
   view._belSemanticEngine = semanticEngine;
-  wireStatusDotErrorNav();
+  wireStatusDotErrorNavLocal();
+  if (/\.elf$/i.test(docPath)) view.dom.classList.add('bel-editor--elf');
 
   semanticEngine.setCheckerCode(() => healthyCodeWithPrelude());
   hydrateSemanticCheckpoint(initialDoc);
   syncSemanticFromView(view);
-  scheduleViewportRestore(view, options.initialLocal);
+  if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal);
   seedSemanticScheduler(view);
   if (semanticEngine.scheduler && semanticEngine.scheduler.startBackground) {
     semanticEngine.scheduler.startBackground();
@@ -810,9 +899,57 @@ export function mount(parentEl, options = {}) {
     getParseCoverage() { return computeParseCoverage(view.state); },
     getIdeStatus() { return collectIdeStatus(); },
 
+    remoduleContext() {
+      if (!semanticView) return;
+      const text = semanticView.state.doc.toString();
+      const blob = semanticEngine.exportCheckpoint();
+      semanticEngine.importCheckpoint(blob, {
+        docFp: docFingerprint(text),
+        belugaBuild: typeof g.BelJarPersist !== 'undefined'
+          ? g.BelJarPersist.readStoredBelugaMode()
+          : 'stable',
+        scopeKey: currentScopeKey(),
+      });
+      if (semanticEngine.session?.invalidate) semanticEngine.session.invalidate();
+      const sched = semanticEngine.scheduler;
+      if (sched?.invalidateAll) sched.invalidateAll();
+      syncSemanticFromView(semanticView);
+      if (sched?.seedFromFrontier) sched.seedFromFrontier({ includeCleanViewport: true });
+      semanticView.dispatch({
+        effects: [settlementUpdated.of(null), belNavSemanticTick.of(null)],
+      });
+      forceLinting(semanticView);
+      refreshIdeStatusRef(semanticView);
+    },
+
     // IDE navigation/refactor actions, callable from header menus or scripts.
+    getDocumentId() { return docId; },
     goToDefinition(pos) { return goToDefinition(view, pos); },
     jumpToRange(range) { return jumpToRange(view, range); },
+    jumpToReference(range, name) { return jumpToReference(view, range, name, range); },
+    peekRange(jumpAt) {
+      const resolved = resolveJumpRange(view.state.doc, jumpAt);
+      return resolved ? peekRange(view, resolved) : false;
+    },
+    getViewport() {
+      const sel = view.state.selection.main;
+      return {
+        selection: { anchor: sel.anchor, head: sel.head },
+        centerLine: viewportCenterLine(view),
+      };
+    },
+    applyViewport(local) { scheduleViewportRestore(view, local); },
+    scheduleJumpToRange(jumpAt) { scheduleJumpToRange(view, jumpAt); },
+    restoreViewport() { scheduleViewportRestore(view, options.initialLocal); },
+    syncIntelAt(pos) {
+      const p = pos != null ? pos : view.state.selection.main.from;
+      ensureSyntaxTree(view.state, view.state.doc.length, 5000);
+      syncSemanticFromView(view);
+      semanticEngine.onCursorMove(p);
+      const vr = view.visibleRanges[0];
+      if (vr) semanticEngine.onViewportChange({ from: vr.from, to: vr.to });
+      return p;
+    },
     // Definitions in the OTHER files of this file's development group
     // (palette "@" mode; the engine owns the active file's own symbols).
     listProjectSymbols() {

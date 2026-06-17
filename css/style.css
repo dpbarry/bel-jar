@@ -234,6 +234,9 @@ html.light {
 }
 
 /* -- Scrollbar -- */
+/* Padding on an overflow:auto scrollport creates a dead strip beside the thumb
+   (padding-inline-end sits between content and the scrollbar). Use start/block
+   padding on the scrollport; put inline-end inset on inner content if needed. */
 
 *::-webkit-scrollbar {
   width: 0.5rem;
@@ -716,11 +719,84 @@ html.light body {
   padding-top: 0.3rem;
 }
 
+/* Find-references list: keep it a short, scrolling stack rather than a tall
+   panel — capped height with its own scrollbar (scoped to ref menus only). */
+.menu:has(.menu-item-ref) {
+  max-height: min(42vh, 20rem);
+  overflow-y: auto;
+}
+
+/* Find-references rows: a def/use badge, a tabular line:col, then the source
+   snippet in a monospace, dimmed tail. */
+.menu-item-ref {
+  gap: 0.45rem;
+  font-variant-numeric: tabular-nums;
+}
+.menu-ref-badge {
+  flex-shrink: 0;
+  min-width: 1.9rem;
+  text-align: center;
+  padding: 0.04rem 0.28rem;
+  border-radius: 3px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.menu-ref-badge--def {
+  color: light-dark(#1d4ed8, #93c5fd);
+  background: light-dark(rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.18));
+}
+.menu-ref-badge--read {
+  color: var(--menu-section-fg);
+  background: var(--menu-separator);
+}
+.menu-ref-loc {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--menu-shortcut-fg);
+}
+.menu-ref-snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.menu-item-ref.is-ref-active {
+  position: relative;
+  background: light-dark(rgba(37, 99, 235, 0.1), rgba(96, 165, 250, 0.12));
+  color: light-dark(#1e40af, #bfdbfe);
+}
+.menu-item-ref.is-ref-active::before {
+  content: '';
+  position: absolute;
+  left: 0.2rem;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent-mid);
+}
+@media (hover: hover) and (pointer: fine) {
+  .menu-item-ref.is-ref-active:hover {
+    background: light-dark(rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.16));
+  }
+}
+.menu-item-ref.is-ref-active:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+}
+
 /* -- Header -- */
 
 header {
   position: relative;
-  z-index: 10090;
+  z-index: 10;
   height: var(--header-h);
   flex-shrink: 0;
   padding: 0 calc(var(--pad-inline) - 0.0625rem) 0 0;
@@ -1225,6 +1301,10 @@ body.workspace-resizing * {
 
 /* -- Explorer panel -- */
 
+.explorer-panel .panel-header {
+  padding-right: 0.25rem;
+}
+
 .explorer-panel {
   position: relative;
   flex: 0 0 0;
@@ -1342,7 +1422,68 @@ body.workspace-resizing * {
   width: 0.7rem;
   height: 0.7rem;
   color: var(--file-cfg-accent);
-  opacity: 0.7;
+}
+
+.explorer-default-cfg-mark--active .explorer-default-cfg-star {
+  opacity: 0.55;
+}
+
+
+.explorer-default-cfg-mark--inactive {
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .explorer-file-item--cfg:hover .explorer-default-cfg-mark--inactive {
+    opacity: 0.55;
+    pointer-events: auto;
+  }
+
+  .explorer-default-cfg-mark--inactive:hover {
+    opacity: 0.6;
+  }
+}
+
+/* Load-order position of a file within its folder's active suite (.cfg). The
+   number is what governs cross-file visibility, so it rides at the left of the
+   row like a step index. */
+.explorer-suite-pos {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15em;
+  height: 1.15em;
+  padding: 0 0.25em;
+  border-radius: 0.3rem;
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--file-cfg-accent);
+  background: light-dark(hsla(217, 55%, 50%, 0.1), hsla(215, 55%, 66%, 0.13));
+  opacity: 0.85;
+}
+
+/* Error/warning indicator on an explorer row: a .cfg with a dangling entry
+   (computed project-wide) or a checked file that reported problems. */
+.explorer-file-diag {
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  margin-left: 0.15rem;
+}
+
+.explorer-file-diag--error {
+  background: var(--ide-error-squiggle, #e5484d);
+}
+
+.explorer-file-diag--warning {
+  background: var(--ide-warning-squiggle, #f5a623);
 }
 
 .bel-editor--aux .cm-content {
@@ -1357,6 +1498,16 @@ body.workspace-resizing * {
 .explorer-file-item.is-active {
   background: var(--file-active-bg);
   font-weight: 500;
+}
+
+.explorer-file-item.is-selected,
+.explorer-folder-item.is-selected {
+  background: light-dark(hsla(217, 55%, 50%, 0.07), hsla(215, 55%, 66%, 0.09));
+}
+
+.explorer-file-item.is-active.is-selected {
+  background: var(--file-active-bg);
+  box-shadow: inset 0 0 0 1px light-dark(hsla(217, 60%, 50%, 0.15), hsla(215, 60%, 66%, 0.2));
 }
 
 .explorer-file-item.is-active::before {
@@ -1430,8 +1581,49 @@ body.workspace-resizing * {
   text-overflow: ellipsis;
 }
 
+.explorer-folder-item.is-renaming,
+.explorer-file-item.is-renaming {
+  background: light-dark(
+    color-mix(in srgb, var(--accent-glow) 35%, transparent),
+    hsla(215, 58%, 66%, 0.14)
+  );
+}
+
+.explorer-inline-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0.05rem 0.2rem;
+  border: 1px solid var(--accent-mid);
+  border-radius: 3px;
+  background: light-dark(hsl(220, 10%, 98%), hsl(220, 8%, 12%));
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.explorer-file-item--cfg .explorer-inline-name,
+.explorer-file-item--elf .explorer-inline-name {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.explorer-inline-name.is-invalid {
+  border-color: var(--warn-mid, hsl(0, 52%, 52%));
+  animation: explorer-inline-shake 0.35s ease;
+}
+
+@keyframes explorer-inline-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
 .explorer-folder-item,
 .explorer-file-item {
+  flex-shrink: 0;
   outline: none;
 }
 
@@ -1448,6 +1640,7 @@ body.workspace-resizing * {
 .explorer-folder-item.is-dragging,
 .explorer-file-item.is-dragging {
   opacity: 0.45;
+  pointer-events: none;
 }
 
 .tree-dnd-ghost {
@@ -1475,8 +1668,19 @@ body.tree-dnd-active {
   user-select: none;
 }
 
-body.tree-dnd-active .explorer-tree {
+body.tree-dnd-active .explorer-tree,
+body.tree-dnd-active .explorer-file-item,
+body.tree-dnd-active .explorer-folder-item,
+body.tree-dnd-active .explorer-tree-root-pad {
   cursor: grabbing;
+}
+
+body.tree-dnd-active.tree-dnd-invalid,
+body.tree-dnd-active.tree-dnd-invalid .explorer-tree,
+body.tree-dnd-active.tree-dnd-invalid .explorer-file-item,
+body.tree-dnd-active.tree-dnd-invalid .explorer-folder-item,
+body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
+  cursor: no-drop;
 }
 
 /* -- Shared type presentation: the "type-of" flourish + syntax highlighting --
@@ -1565,12 +1769,18 @@ body.tree-dnd-active .explorer-tree {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0.5rem 0.625rem 1rem;
+  padding: 0.5rem 0 1rem 0.85rem;
   font-size: 0.8125rem;
 }
 
+.inspector-scroll-inner {
+  min-width: 0;
+  width: 100%;
+  padding-inline-end: 0.85rem;
+}
+
 .inspector-empty-note {
-  margin: 0.75rem 0.25rem;
+  margin: 0.75rem 0;
   font-size: 0.8125rem;
   color: var(--base-high);
 }
@@ -1636,9 +1846,13 @@ body.tree-dnd-active .explorer-tree {
 .bel-scroll-x {
   overflow-x: auto;
   overflow-y: hidden;
-  white-space: nowrap;
   scrollbar-width: none;            /* Firefox */
   -ms-overflow-style: none;         /* old Edge */
+}
+
+.bel-scroll-x-text {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .bel-scroll-x::-webkit-scrollbar {
@@ -1672,6 +1886,25 @@ body.tree-dnd-active .explorer-tree {
   align-items: center;
   gap: 0.4rem;
   margin-bottom: 0.25rem;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 0.25rem;
+}
+
+.inspector-section.is-collapsed .inspector-section-head {
+  margin-bottom: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-section-head:hover .inspector-section-chevron {
+    color: var(--accent-high);
+    opacity: 1;
+  }
+}
+
+.inspector-section-head:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
 }
 
 .inspector-section-title {
@@ -1693,6 +1926,50 @@ body.tree-dnd-active .explorer-tree {
   text-align: center;
 }
 
+.inspector-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.inspector-section-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--base-high);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.inspector-section-chevron svg {
+  width: 0.65rem;
+  height: 0.65rem;
+  transition: transform 180ms ease;
+}
+
+.inspector-section.is-collapsed .inspector-section-chevron svg {
+  transform: rotate(-90deg);
+}
+
+.inspector-section-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease;
+}
+
+.inspector-section.is-collapsed .inspector-section-body {
+  grid-template-rows: 0fr;
+}
+
+.inspector-section-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
 .inspector-group-label {
   font-size: 0.62rem;
   text-transform: uppercase;
@@ -1706,6 +1983,7 @@ body.tree-dnd-active .explorer-tree {
   align-items: baseline;
   gap: 0.45rem;
   width: 100%;
+  min-width: 0;
   text-align: left;
   background: transparent;
   border: 0;
@@ -1727,8 +2005,37 @@ body.tree-dnd-active .explorer-tree {
 .inspector-row-label {
   font-family: var(--mono);
   font-size: 0.74rem;
+  flex: 1 1 0;
   min-width: 0;
-  flex: 1 1 auto;
+  max-width: 100%;
+}
+
+.inspector-row-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.inspector-row.is-ref-active {
+  position: relative;
+  background: light-dark(rgba(37, 99, 235, 0.1), rgba(96, 165, 250, 0.12));
+  color: light-dark(#1e40af, #bfdbfe);
+}
+.inspector-row.is-ref-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.1rem;
+  bottom: 0.1rem;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent-mid);
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector-row.is-ref-active:hover {
+    background: light-dark(rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.16));
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1845,6 +2152,16 @@ body.floating-window-dragging .floating-window-bar {
   outline-offset: -2px;
 }
 
+.floating-window-action.is-on {
+  color: var(--accent-high);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-action.is-on:hover {
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}
+
 .floating-window-close svg {
   width: 0.85rem;
   height: 0.85rem;
@@ -1887,10 +2204,19 @@ body.floating-window-dragging .floating-window-bar {
   }
 }
 
-/* Pinned inspector window: reuse the docked body styling, tighten title. */
+/* Pinned inspector window: one scrollport on the window body (not nested). */
 .inspector-window .floating-window-body {
-  padding: 0.5rem 0.625rem 0.75rem;
+  padding: 0.5rem 0 1rem 0.85rem;
   font-size: 0.8125rem;
+}
+
+.inspector-window .inspector-body {
+  overflow: visible;
+  padding: 0;
+  flex: none;
+  min-height: auto;
+  min-width: 0;
+  width: 100%;
 }
 
 .inspector-window-title {
@@ -2029,7 +2355,6 @@ body.floating-window-dragging .floating-window-bar {
 }
 
 .inspector-graph-popout {
-  margin-left: auto;
   width: 1.3rem;
   height: 1.3rem;
   padding: 0;
@@ -3546,6 +3871,7 @@ html.light .output-header-progress {
 }
 
 #editor.editor-cm-host .cm-foldPlaceholder {
+  display: inline-block;
   background: var(--accent-lowest);
   border: 1px solid var(--accent-low);
   border-radius: 3px;
@@ -3554,6 +3880,11 @@ html.light .output-header-progress {
   margin: 0 0.2rem;
   cursor: pointer;
   font-size: 0.7rem;
+  vertical-align: baseline;
+}
+
+#editor.editor-cm-host .cm-foldPlaceholder--gap-space {
+  margin-left: 0;
 }
 
 /* -- Editor -- */
@@ -4644,17 +4975,29 @@ html.light .bj-dialog::backdrop {
     opacity var(--dialog-ms-in) ease-out;
 }
 
-.bj-dialog__card--settings {
+.bj-dialog__card--settings,
+.bj-dialog__card--settings-compact {
   display: grid;
-  grid-template-rows: auto 1fr;
   grid-template-columns: 1fr;
-  width: min(54rem, calc(100vw - 2rem));
-  height: min(34rem, calc(100dvh - 2.5rem));
   padding: 0;
   overflow: hidden;
 }
 
-.bj-dialog__card--settings .bj-dialog__title {
+.bj-dialog__card--settings {
+  grid-template-rows: auto 1fr;
+  width: min(54rem, calc(100vw - 2rem));
+  height: min(34rem, calc(100dvh - 2.5rem));
+}
+
+.bj-dialog__card--settings-compact {
+  grid-template-rows: auto auto;
+  width: min(36rem, calc(100vw - 2rem));
+  height: auto;
+  max-height: min(34rem, calc(100dvh - 2.5rem));
+}
+
+.bj-dialog__card--settings .bj-dialog__title,
+.bj-dialog__card--settings-compact .bj-dialog__title {
   grid-row: 1;
   grid-column: 1;
   display: flex;
@@ -4664,7 +5007,8 @@ html.light .bj-dialog::backdrop {
   padding: 0 3rem 0 0.65rem;
 }
 
-.bj-dialog__card--settings .bj-dialog__close {
+.bj-dialog__card--settings .bj-dialog__close,
+.bj-dialog__card--settings-compact .bj-dialog__close {
   grid-row: 1;
   grid-column: 1;
   position: relative;
@@ -4676,7 +5020,8 @@ html.light .bj-dialog::backdrop {
   z-index: 1;
 }
 
-.bj-dialog__card--settings .bj-dialog__body {
+.bj-dialog__card--settings .bj-dialog__body,
+.bj-dialog__card--settings-compact .bj-dialog__body {
   grid-row: 2;
   min-height: 0;
   display: flex;
@@ -4684,11 +5029,37 @@ html.light .bj-dialog::backdrop {
   overflow: hidden;
 }
 
+.bj-dialog__card--settings-compact .bj-dialog__body {
+  overflow-y: auto;
+}
+
 .bj-settings {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
   border-top: 1px solid light-dark(hsla(220, 12%, 82%, 0.65), hsla(217, 12%, 26%, 0.85));
+}
+
+.bj-settings--solo {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.bj-settings--solo .bj-settings__main {
+  display: block;
+  min-height: 0;
+}
+
+.bj-settings--solo .bj-settings__panel {
+  display: flex;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.bj-settings--solo .bj-settings__panel-body {
+  flex: 0 1 auto;
+  overflow: visible;
 }
 
 .bj-settings__nav {
@@ -5180,6 +5551,130 @@ html.light .bj-dialog::backdrop {
 .bj-conflict-dialog__btn:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/* Name prompt dialog */
+.bj-name-prompt-dialog .bj-dialog__card.bj-name-prompt__card {
+  width: min(20rem, 100%);
+  padding: 0.85rem 1.1rem 1rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title close"
+    "body body";
+  align-items: center;
+  column-gap: 0.35rem;
+}
+
+.bj-name-prompt-dialog .bj-dialog__title {
+  grid-area: title;
+  margin: 0;
+  padding: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--muted-mid);
+}
+
+.bj-name-prompt-dialog .bj-dialog__close {
+  position: static;
+  grid-area: close;
+  align-self: center;
+  justify-self: end;
+  margin: 0;
+}
+
+.bj-name-prompt-dialog .bj-dialog__body {
+  grid-area: body;
+  margin: 0.7rem 0 0;
+}
+
+.bj-name-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.bj-name-prompt__input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: calc(var(--radius-md) + 1px);
+  border: 1px solid light-dark(hsla(220, 9%, 68%, 0.55), hsla(217, 10%, 32%, 0.85));
+  background: light-dark(
+    color-mix(in srgb, var(--base-lowest) 88%, hsl(220 12% 94%)),
+    color-mix(in srgb, var(--base-lower) 82%, hsl(220 10% 6%))
+  );
+  box-shadow: inset 0 1px 2px light-dark(hsla(220, 18%, 12%, 0.05), hsla(0, 0%, 0%, 0.22));
+  color: var(--base-highest);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.35;
+  outline: none;
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition),
+    background var(--transition);
+}
+
+.bj-name-prompt__input.is-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.875rem;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+}
+
+.bj-name-prompt__input:focus {
+  border-color: color-mix(in srgb, var(--accent-mid) 72%, transparent);
+  background: light-dark(
+    color-mix(in srgb, var(--base-lowest) 96%, var(--accent-lowest)),
+    color-mix(in srgb, var(--base-lower) 90%, hsl(217 28% 10%))
+  );
+  box-shadow:
+    inset 0 1px 2px light-dark(hsla(220, 18%, 12%, 0.04), hsla(0, 0%, 0%, 0.18)),
+    var(--focus-ring);
+}
+
+.bj-name-prompt__input.is-invalid {
+  border-color: var(--warn-mid, hsl(0, 52%, 52%));
+}
+
+.bj-name-prompt__error {
+  margin: -0.15rem 0 0;
+  min-height: 1.1em;
+  font-size: 0.72rem;
+  font-weight: 450;
+  color: var(--warn-mid, hsl(0, 52%, 52%));
+}
+
+.bj-name-prompt__hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--base-high);
+}
+
+.bj-name-prompt__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid light-dark(hsla(220, 10%, 50%, 0.1), hsla(217, 8%, 40%, 0.18));
+}
+
+.bj-name-prompt__actions .bj-conflict-dialog__btn {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+}
+
+.bj-name-prompt__actions .bj-conflict-dialog__btn.is-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Custom dropdown */
@@ -5833,4 +6328,37 @@ html.light .bj-dialog::backdrop {
     hsla(0, 58%, 48%, 0.14),
     hsla(0, 62%, 62%, 0.22)
   );
+}
+
+/* ─── TextSlide: marquee-on-hover for overflowing single-line labels ───────── */
+.text-slide {
+  overflow: hidden;
+}
+.text-slide-inner {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+@keyframes text-slide-loop {
+  /* pause at start; ease-in-out here controls the forward slide (10→48%) */
+  0%, 10% {
+    transform: translateX(0);
+    animation-timing-function: ease-in-out;
+  }
+  /* pause at end; ease-in-out here controls the backward slide (52→90%) */
+  48%, 52% {
+    transform: translateX(var(--text-slide-offset, 0));
+    animation-timing-function: ease-in-out;
+  }
+  90%, 100% {
+    transform: translateX(0);
+  }
+}
+.text-slide--playing .text-slide-inner {
+  animation: text-slide-loop var(--text-slide-duration, 4s) linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .text-slide--playing .text-slide-inner {
+    animation: none;
+  }
 }

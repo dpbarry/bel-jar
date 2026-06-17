@@ -77,4 +77,35 @@ const dup = engineOf(DUP).debugSnapshot().symbols.filter((s) => s.name === 'c');
 expect(dup.length === 2, `expected two 'c' symbols, got ${dup.length}`);
 expect(new Set(dup.map((s) => s.id)).size === 2, 'two distinct c declarations must not collapse to one SymbolId');
 
+// --- Mutual LF block: every head is its own type-family symbol ----------
+// `LF n … and a … and p …` parses as ONE LFDatatypeDeclaration with three
+// heads. Each head must be a distinct LF type family symbol, and references to
+// the later heads must resolve to them — not be dropped (which previously made
+// hovers read "implicit binder").
+const MUTUAL = `LF n : type =
+  | b : n
+  and a : type =
+  | dn : n -> n -> a
+  and p : type =
+  | match : n -> n -> p
+;
+`;
+const me = engineOf(MUTUAL);
+const ms = me.debugSnapshot().symbols.filter((s) => s.isGlobal);
+for (const n of ['n', 'a', 'p']) {
+  const sym = ms.find((s) => s.name === n);
+  expect(sym, `mutual head ${n} must be a global symbol`);
+  expect(sym.namespace === 'lf-type-family', `mutual head ${n} must be an LF type family, got ${sym && sym.namespace}`);
+}
+expect(new Set(ms.filter((s) => ['n', 'a', 'p'].includes(s.name)).map((s) => s.id)).size === 3,
+  'the three mutual heads must be three distinct symbols');
+
+// A reference to a later head (`-> a`) resolves to that head's symbol.
+const aRefPos = MUTUAL.indexOf('-> a') + 3;
+const aDef = me.definitionAt(aRefPos);
+expect(aDef, 'definitionAt on mutual head `a` reference should resolve');
+expect(aDef.namespace === 'lf-type-family', `use of \`a\` should resolve to type family, got ${aDef && aDef.namespace}`);
+const aSym = ms.find((s) => s.name === 'a');
+expect(aDef.id === aSym.id, 'use of `a` must resolve to the `a` head symbol by id');
+
 console.log('OK semantic symbols v2 (identity, resolution, distinctness)');

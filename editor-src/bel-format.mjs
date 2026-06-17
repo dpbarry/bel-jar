@@ -258,7 +258,7 @@ export function formatDocument(state, opts = {}) {
     newText = formatString(oldText, tree, opts);
   } catch (e) {
     if (e && e.code === 'FORMAT_SHRINK_GUARD') {
-      showFormatToast('Format refused — would drop significant content.', 'warn');
+      showFormatToast('Format refused. The result would drop too much content.', 'warn');
       return null;
     }
     showFormatToast('Format failed.', 'error');

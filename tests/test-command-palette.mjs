@@ -67,7 +67,7 @@ expect(parseInput('>form').mode === 'commands' && parseInput('>form').query === 
 // ── rankItems ─────────────────────────────────────────────────────────────────
 
 const items = [
-  { title: 'New File…', section: 'File' },
+  { title: 'New file…', section: 'File' },
   { title: 'Format Document', section: 'Edit' },
   { title: 'Find…', section: 'Edit' },
   { title: 'Toggle Theme', section: 'View' },
@@ -75,7 +75,7 @@ const items = [
 
 // Empty query preserves registration order.
 let out = rankItems(items, '');
-expect(out.length === 4 && out[0].title === 'New File…', 'empty query → original order');
+expect(out.length === 4 && out[0].title === 'New file…', 'empty query → original order');
 expect(out[0]._match === null, 'empty query → no highlight positions');
 
 // Query filters and sorts by score.

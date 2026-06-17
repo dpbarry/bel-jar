@@ -11,8 +11,7 @@ export function createMetavarStore() {
     for (const key of [...cache.keys()]) {
       const declId = declOf(key);
       if (drop.has(declId)) { cache.delete(key); continue; }
-      const entry = cache.get(key);
-      if (stale.has(declId) && entry.status === STATUS.FRESH) entry.status = STATUS.STALE_KNOWN;
+      if (stale.has(declId)) { cache.delete(key); }
     }
   }
 

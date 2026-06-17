@@ -8,7 +8,7 @@ function stripAnsi(s) {
 const FILE_LOC =
   /^File\s+"[^"]*"\s*,\s*line\s+(\d+)\s*(?:,\s*column\s+(\d+)|,\s*characters?\s+(\d+)(?:-(\d+))?)?\s*:?\s*$/i;
 
-// Any location marker ù used to find where a message ends (i.e. the next marker).
+// Any location marker ÔøΩ used to find where a message ends (i.e. the next marker).
 const ANY_LOC = /(?:[^\s:"]+\.bel:\d+\.\d+)|(?:File\s+"[^"]*"\s*,\s*line\s+\d+)|(?:\bat line\s+\d+,\s*characters?)/;
 
 function trimMessageLines(parts) {
@@ -190,7 +190,7 @@ export function parseBelugaDiagnostics(raw, doc) {
 }
 
 // Many location-less errors name the offending identifier in their text
-// ("Identifier ù is unbound"). Pull that name out so we can point the squiggle
+// ("Identifier ÔøΩ is unbound"). Pull that name out so we can point the squiggle
 // at the real token instead of the top of the file. Also used by the
 // settlement to recognize INDUCED unbound errors (the named culprit is defined
 // in a block that was masked out).
@@ -258,7 +258,7 @@ export function belugaOutputLooksLikeFailure(raw) {
   return false;
 }
 
-// A failed check that produced no locatable diagnostic must still surface ù a
+// A failed check that produced no locatable diagnostic must still surface ÔøΩ a
 // red squiggle beats a silent green. Point it at the named culprit token when
 // the message identifies one; otherwise anchor to the first meaningful line.
 // Returns a single diagnostic, or null if the output has nothing to say.

@@ -11,7 +11,7 @@ export const BUILTIN_TOOLTIPS = new Map([
   ['LFKeyword',         { label: 'LF DECLARATION',     desc: 'Declares an LF type family and its constructors.' }],
   ['DatatypeKeyword',   { label: 'LF DATATYPE',        desc: 'Legacy datatype-style LF declaration (prefer LF).' }],
   ['TypeKeyword',       { label: 'LF KIND',            desc: 'The kind `type`, classifying LF type families.' }],
-  ['SchemaKeyword',     { label: 'SCHEMA',             desc: 'Declares a context schema — the shape of admissible contexts.' }],
+  ['SchemaKeyword',     { label: 'SCHEMA',             desc: 'Declares a context schema (which contexts are allowed).' }],
   ['SomeKeyword',       { label: 'SCHEMA QUANTIFIER',  desc: 'Existentially quantifies a schema block’s parameters (`some [..]`).' }],
   ['BlockKeyword',      { label: 'BLOCK TYPE',         desc: 'A block (Sigma) type: a dependent record of LF assumptions.' }],
 
@@ -48,7 +48,7 @@ export const BUILTIN_TOOLTIPS = new Map([
   ['EndKeyword',        { label: 'MODULE END',         desc: 'Closes a module body opened with `struct`.' }],
 
   // ── Keywords: operator fixity (soft keywords in --infix / --assoc) ──────────
-  ['NoneKeyword',       { label: 'NON-ASSOCIATIVE',    desc: 'Operator associativity: none — parentheses needed to disambiguate.' }],
+  ['NoneKeyword',       { label: 'NON-ASSOCIATIVE',    desc: 'Non-associative operator; use parentheses to group.' }],
   ['LeftKeyword',       { label: 'LEFT ASSOCIATIVE',   desc: 'Operator associativity: groups to the left.' }],
   ['RightKeyword',      { label: 'RIGHT ASSOCIATIVE',  desc: 'Operator associativity: groups to the right.' }],
 

@@ -1,8 +1,10 @@
+import { Text } from '@codemirror/state';
+import { parser } from '../beluga-parser.js';
 import { fallbackDiagnostic, namedCulprit, parseBelugaDiagnostics } from '../bel-beluga-diag.mjs';
 import { assembleCheckerCode, shiftCheckerOutput } from '../project-prelude.mjs';
 import { mergeDiagnostics, parseQueryRuntimeDiagnostics } from '../bel-query-diag.mjs';
 import { checkerSnapshotFromSyntax } from '../checker-snapshot.mjs';
-import { maskBlocksByIndex } from '../bel-units.mjs';
+import { computeLintBlocks, maskBlocksByIndex } from '../bel-units.mjs';
 import { blockDependents, walkTree } from '../bel-walk.mjs';
 
 const SETTLE_DELAY_MS = 250;
@@ -69,7 +71,7 @@ function preludeBannerDiag(doc, issues) {
     from: 0,
     to: Math.min(1, doc.length),
     severity: 'error',
-    message: `Error in earlier file ${first.name}:${first.line} — fix prelude files in this folder first${more}`,
+    message: `Error in earlier file ${first.name}:${first.line}. Fix earlier suite files in this folder first${more}`,
     source: 'beluga',
   };
 }
@@ -123,14 +125,63 @@ export function createSettlement({
     let shiftPrelude = rawPrelude;
     const diagDoc = ctx?.doc || syntaxSnap.doc;
 
+    // Block-index the prelude the same way the active file is, so an error in an
+    // earlier suite file can be masked and the active file still reached —
+    // parity with the single-file divide-and-conquer. Lazy: an all-green run
+    // never parses it. `maskedPrelude` accumulates erroring prelude blocks;
+    // masking blanks lines (line count preserved) so shift offsets stay valid.
+    let preludeBlocks = null;
+    const maskedPrelude = new Set();
+    function ensurePreludeBlocks() {
+      if (preludeBlocks !== null) return preludeBlocks;
+      if (!rawPrelude || !rawPrelude.code) { preludeBlocks = false; return preludeBlocks; }
+      const pdoc = Text.of(String(rawPrelude.code).split('\n'));
+      const { blocks, blockAt } = computeLintBlocks(parser.parse(String(rawPrelude.code)), pdoc);
+      preludeBlocks = { blocks, blockAt, doc: pdoc };
+      return preludeBlocks;
+    }
+    function currentPrelude() {
+      if (!rawPrelude || !maskedPrelude.size) return rawPrelude;
+      const pb = ensurePreludeBlocks();
+      if (!pb) return rawPrelude;
+      return { ...rawPrelude, code: maskBlocksByIndex(rawPrelude.code, pb.doc, pb.blocks, maskedPrelude) };
+    }
+    // Attribute prelude diagnostics (file + file-relative line, from
+    // shiftCheckerOutput) to prelude blocks; returns how many NEW blocks were
+    // carved out so the loop knows the prelude made progress.
+    function maskPreludeIssues(issues) {
+      if (!issues || !issues.length || !rawPrelude) return 0;
+      const pb = ensurePreludeBlocks();
+      if (!pb) return 0;
+      let added = 0;
+      for (const iss of issues) {
+        const span = (rawPrelude.spans || []).find((s) => s.name === iss.name);
+        if (!span) continue;
+        const codeLine = span.startLine + (iss.line - 1);
+        if (codeLine < 1 || codeLine > pb.doc.lines) continue;
+        const hit = pb.blockAt(pb.doc.line(codeLine).from);
+        if (hit && !maskedPrelude.has(hit.index)) { maskedPrelude.add(hit.index); added += 1; }
+      }
+      return added;
+    }
+
     function withPrelude(fileCode) {
-      const assembled = assembleCheckerCode(fileCode, rawPrelude);
+      const assembled = assembleCheckerCode(fileCode, currentPrelude());
       shiftPrelude = assembled.prelude;
       return assembled.code;
     }
 
+    // Active-file diagnostics for one pass. Prelude issues come back separately
+    // (the caller masks the offending prelude block and re-checks) so a broken
+    // earlier file no longer blocks the active file's own results.
     function processCheckerOutput(rawOutput, ok) {
       const shifted = shiftPrelude ? shiftCheckerOutput(rawOutput, shiftPrelude) : { text: rawOutput, preludeIssues: [] };
+      const preludeIssues = shifted.preludeIssues || [];
+      // Beluga halts at the FIRST error, so one output carries one error. When
+      // that error is located in the prelude, every diagnostic parsed from this
+      // output is that same prelude error (re-shifted / fallback) — not an
+      // active-file finding. Mask the prelude block and re-check instead.
+      if (preludeIssues.length) return { diags: [], preludeIssues };
       let diags = belugaDiagnosticsFromOutput(shifted.text, diagDoc, {
         blockAt: snap.blockAt,
         hasSyntaxFault: snap.hasSyntaxFault,
@@ -142,9 +193,7 @@ export function createSettlement({
           return !(culprit && rawPrelude.names.has(culprit));
         });
       }
-      const banner = preludeBannerDiag(diagDoc, shifted.preludeIssues);
-      if (banner) diags = [banner, ...diags];
-      return { diags, shiftedText: shifted.text };
+      return { diags, preludeIssues };
     }
 
     if (!snap.code.trim()) {
@@ -204,6 +253,10 @@ export function createSettlement({
     const collected = [];
     const seen = new Set();
     const outputs = [];
+    // Prelude issues across all passes, deduped — one non-blocking banner is
+    // emitted at the end so a broken earlier file is reported without hiding the
+    // active file's own diagnostics/types.
+    const preludeIssuesSeen = new Map();
     let fileCode = masked.size
       ? maskBlocksByIndex(snap.code, syntaxSnap.doc, snap.blocks, masked)
       : snap.code;
@@ -244,7 +297,16 @@ export function createSettlement({
           break;
         }
 
-        const { diags } = processCheckerOutput(res.output, false);
+        const { diags, preludeIssues } = processCheckerOutput(res.output, false);
+        for (const iss of preludeIssues) {
+          const k = `${iss.name}:${iss.line}`;
+          if (!preludeIssuesSeen.has(k)) preludeIssuesSeen.set(k, iss);
+        }
+        // An error inside an earlier suite file halts Beluga before the active
+        // file is reached. Carve out that prelude block and re-check so the
+        // active file's own results still surface (its types for anything not
+        // depending on the masked block included).
+        const preludeAdded = maskPreludeIssues(preludeIssues);
 
         // Attribute this pass's findings to blocks. Anything pointing into a
         // block we already masked is an echo of a prior error (the checker
@@ -268,14 +330,16 @@ export function createSettlement({
           if (idx != null) newBlocks.add(idx);
         }
 
-        // No fresh block to carve out → no further progress possible.
-        if (!newBlocks.size) break;
+        // No fresh active block AND no fresh prelude block → no progress.
+        if (!newBlocks.size && !preludeAdded) break;
 
         // Mask the erroring blocks AND everything impacted by them: dependent
         // blocks can only produce induced "unbound identifier" noise once
         // their dependency is gone, so they're carved out of the next pass.
-        for (const idx of impactOf([...newBlocks])) masked.add(idx);
-        fileCode = maskBlocksByIndex(snap.code, syntaxSnap.doc, snap.blocks, masked);
+        if (newBlocks.size) for (const idx of impactOf([...newBlocks])) masked.add(idx);
+        fileCode = masked.size
+          ? maskBlocksByIndex(snap.code, syntaxSnap.doc, snap.blocks, masked)
+          : snap.code;
         code = withPrelude(fileCode);
         if (!code.trim()) {
           lastOk = true;
@@ -296,11 +360,17 @@ export function createSettlement({
       }
 
       collected.sort((a, b) => a.from - b.from);
+      // One non-blocking banner for the earlier-file errors that were masked to
+      // reach the active file. It rides alongside (not instead of) the active
+      // file's own diagnostics.
+      const preludeIssuesAll = [...preludeIssuesSeen.values()];
+      const banner = preludeBannerDiag(diagDoc, preludeIssuesAll);
+      const finalDiags = banner ? [banner, ...collected] : collected;
       return finish({
         syntaxVersion: syntaxSnap.version,
         checkerFp: canonicalFp,
-        ok: lastOk && collected.length === 0,
-        belugaDiagnostics: collected,
+        ok: lastOk && collected.length === 0 && preludeIssuesAll.length === 0,
+        belugaDiagnostics: finalDiags,
         rawOutput: outputs.join('\n'),
         checkedCode: checkedOkCode || '',
         checkedFp: checkedOkCode ? fingerprint(checkedOkCode) : '',

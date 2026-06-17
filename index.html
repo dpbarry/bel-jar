@@ -132,19 +132,19 @@
           <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
         </svg>
       </button>
-      <button id="btn-prefabs" type="button" class="icon-btn icon-btn-lg" data-tooltip="Prefabs">
+      <button id="btn-inspector" type="button" class="icon-btn icon-btn-lg" data-tooltip="Inspector" aria-pressed="false" aria-controls="inspector-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button id="btn-library" type="button" class="icon-btn icon-btn-lg" data-tooltip="Library">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="2" y="3" width="20" height="5" rx="1"/>
           <path d="M3.5 8v12.25a1.75 1.75 0 0 0 1.75 1.75h14a1.75 1.75 0 0 0 1.75-1.75V8"/>
           <path d="m8.65 12.6-2.2 2.1 2.2 2.1"/>
           <path d="m15.35 12.6 2.2 2.1-2.2 2.1"/>
           <path d="m12.85 11.6-1.7 6"/>
-        </svg>
-      </button>
-      <button id="btn-inspector" type="button" class="icon-btn icon-btn-lg" data-tooltip="Inspector" aria-pressed="false" aria-controls="inspector-panel">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-          <circle cx="12" cy="12" r="3"/>
         </svg>
       </button>
       <div class="sidebar-fill" aria-hidden="true"></div>
@@ -161,6 +161,11 @@
     <div id="explorer-panel" class="panel explorer-panel" aria-hidden="true">
       <div class="panel-header">
         <span class="panel-label">Explorer</span>
+        <button id="btn-explorer-new" type="button" class="icon-btn" data-tooltip="New file or folder" aria-label="New file or folder" aria-haspopup="menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
       </div>
       <div class="explorer-tree" role="tree" aria-label="Project files"></div>
     </div>
@@ -180,7 +185,7 @@
         <div class="editor-tabs" id="editor-tabs" role="tablist" aria-label="Open files"></div>
         <div class="editor-topbar-controls">
           <span class="ide-status-dot" id="ide-status-dot" role="status" tabindex="0" data-tooltip-head data-tooltip="Lint has not run" aria-label="Lint has not run"></span>
-          <button id="btn-load" type="button" class="icon-btn" data-tooltip="Run project — Ctrl+click runs up to this file" aria-label="Run project">
+          <button id="btn-load" type="button" class="icon-btn" data-tooltip="Run suite to here&#10;Ctrl+click: run suite" aria-label="Run suite to here">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 3 20 12 5 21V3Z"/>
             </svg>
@@ -277,10 +282,13 @@
   <script src="js/command-palette.js"></script>
   <script src="js/floating-window.js"></script>
   <script src="js/scroll-fade.js"></script>
+  <script src="js/text-slide.js"></script>
   <script src="js/dialog.js"></script>
+  <script src="js/name-prompt.js"></script>
   <script src="js/name-conflicts.js"></script>
   <script src="js/conflict-dialog.js"></script>
   <script src="js/tree-dnd.js"></script>
+  <script src="js/explorer-inline-name.js"></script>
   <script src="js/explorer-tree.js"></script>
   <script src="js/toasts.js"></script>
   <script src="js/notifications.js"></script>

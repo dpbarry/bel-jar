@@ -197,7 +197,7 @@ export function createGraph3D(canvas, sim, opts = {}) {
   if (!gl) return null;
 
   const {
-    labelLayer = null, onJump = () => {}, onFocus = () => {},
+    labelLayer = null, onJump = () => {}, onFocus = () => {}, onActivate = () => {},
     onBeforeFocusChange = () => {}, onDrill = null, onFly = null, focusEdgesOnly = false,
     implVisibility = 'show',
     labelDensity: initLabelDensity = 3,
@@ -677,6 +677,7 @@ export function createGraph3D(canvas, sim, opts = {}) {
 
   function handleNodeActivate(idx, shift) {
     if (idx < 0) return;
+    onActivate(nodes[idx], idx);
     if (shift && onFly) onFly(nodes[idx], idx);
     else if (onDrill) onDrill(nodes[idx], idx);
     else flyToIndex(idx);

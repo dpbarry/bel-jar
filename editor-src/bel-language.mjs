@@ -6,6 +6,8 @@ import {
   indentNodeProp,
   foldNodeProp,
   foldInside,
+  foldService,
+  codeFolding,
   delimitedIndent,
 } from '@codemirror/language';
 import { Prec } from '@codemirror/state';
@@ -53,6 +55,100 @@ function indentBracketRhsAfterDeclHeader(cx) {
   if (doc.lineAt(cx.pos).text.trimStart().startsWith('['))
     return cx.baseIndentFor(cx.node) + cx.unit;
   return cx.continue();
+}
+
+function foldBlockComment(node, state) {
+  const doc = state.doc;
+  if (doc.lineAt(node.from).number === doc.lineAt(node.to).number) return null;
+  const text = doc.sliceString(node.from, node.to);
+  let openLen = 2;
+  let closeLen = 2;
+  if (text.startsWith('%{{')) {
+    openLen = 3;
+    closeLen = 3;
+  } else if (!text.startsWith('%{')) {
+    return null;
+  }
+  if (!text.endsWith(closeLen === 3 ? '}}%' : '}%')) return null;
+  return { from: node.from + openLen, to: node.to - closeLen };
+}
+
+// Mirror beluga.grammar LineComment: "%%" … | "%" ![{%\n] … | "%" alone.
+function isPercentLineComment(text) {
+  const t = text.trimStart();
+  if (!t.startsWith('%') || t.startsWith('%{')) return false;
+  if (t.startsWith('%%') || t === '%') return true;
+  const ch = t.charCodeAt(1);
+  return ch !== 123 && ch !== 37 && ch !== 10;
+}
+
+function percentLineCommentFoldFrom(line) {
+  const text = line.text;
+  const t = text.trimStart();
+  const lead = text.length - t.length;
+  const prefixLen = t.startsWith('%%') ? 2 : 1;
+  let from = line.from + lead + prefixLen;
+  const rel = from - line.from;
+  if (rel < line.text.length && (line.text[rel] === ' ' || line.text[rel] === '\t')) {
+    from += 1;
+  }
+  return from;
+}
+
+function percentLineCommentFoldHasLeadingGap(state, from) {
+  if (from <= 0) return false;
+  const ch = state.doc.sliceString(from - 1, from);
+  return ch === ' ' || ch === '\t';
+}
+
+function foldPercentLineCommentRun(state, lineStart) {
+  const doc = state.doc;
+  const line = doc.lineAt(lineStart);
+  if (!isPercentLineComment(line.text)) return null;
+
+  let startLine = line.number;
+  while (startLine > 1 && isPercentLineComment(doc.line(startLine - 1).text)) startLine -= 1;
+  if (line.number !== startLine) return null;
+
+  let endLine = startLine;
+  while (endLine < doc.lines && isPercentLineComment(doc.line(endLine + 1).text)) endLine += 1;
+  if (endLine === startLine) return null;
+
+  const first = doc.line(startLine);
+  const last = doc.line(endLine);
+  return { from: percentLineCommentFoldFrom(first), to: last.to };
+}
+
+function isPercentLineCommentFold(state, { from }) {
+  const line = state.doc.lineAt(from);
+  return isPercentLineComment(line.text) && from === percentLineCommentFoldFrom(line);
+}
+
+const belPercentLineCommentFold = foldService.of((state, lineStart, lineEnd) => {
+  const range = foldPercentLineCommentRun(state, lineStart);
+  if (!range || range.from > lineEnd || range.from < lineStart || range.to <= lineEnd) return null;
+  return range;
+});
+
+export function belCodeFolding() {
+  return codeFolding({
+    placeholderText: '⋯',
+    preparePlaceholder(state, range) {
+      if (!isPercentLineCommentFold(state, range)) return null;
+      return percentLineCommentFoldHasLeadingGap(state, range.from) ? 'comment-space' : 'comment-margin';
+    },
+    placeholderDOM(view, onclick, prepared) {
+      const el = document.createElement('span');
+      const isComment = prepared === 'comment-space' || prepared === 'comment-margin';
+      el.textContent = isComment ? '...' : '⋯';
+      el.className = 'cm-foldPlaceholder';
+      if (prepared === 'comment-space') el.classList.add('cm-foldPlaceholder--gap-space');
+      el.setAttribute('aria-label', view.state.phrase('folded code'));
+      el.title = view.state.phrase('unfold');
+      el.onclick = onclick;
+      return el;
+    },
+  });
 }
 
 const belugaHighlight = styleTags({
@@ -333,7 +429,7 @@ const belugaParser = parser.configure({
       LFDatatypeDeclaration: foldInside,
       RecDeclaration: foldInside,
       SchemaDeclaration: foldInside,
-      BlockComment: foldInside,
+      BlockComment: foldBlockComment,
     }),
   ],
 });
@@ -350,6 +446,7 @@ export const belugaLanguage = LRLanguage.define({
 
 export function beluga() {
   return new LanguageSupport(belugaLanguage, [
+    belPercentLineCommentFold,
     syntaxHighlighting(defaultBelugaHighlightStyle),
     Prec.highest(belugaScopeHighlight),
     ...belParseErrorHighlightExtensions,

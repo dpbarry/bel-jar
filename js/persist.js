@@ -16,6 +16,7 @@
   var PROJECT_FILES_KEY = 'beljar-project-files';
   var PROJECT_NAME_KEY = 'beljar-project-name';
   var DEFAULT_CFG_KEY = 'beljar-default-cfg';
+  var ACTIVE_CFG_BY_DIR_KEY = 'beljar-active-cfg-by-dir';
   var ACTIVE_FILE_KEY = 'beljar-active-file';
   var OPEN_FILES_KEY = 'beljar-open-files';
   var DEFAULT_PROJECT_NAME = 'Untitled';
@@ -159,8 +160,14 @@
       if (suffix === 'active-file') return ACTIVE_FILE_KEY;
       if (suffix === 'open-files') return OPEN_FILES_KEY;
       if (suffix === 'default-cfg') return DEFAULT_CFG_KEY;
+      if (suffix === 'active-cfg-by-dir') return ACTIVE_CFG_BY_DIR_KEY;
     }
     return prefix + suffix;
+  }
+
+  function dirOf(name) {
+    var i = String(name || '').lastIndexOf('/');
+    return i === -1 ? '' : name.slice(0, i);
   }
 
   function stateKeyFor(id, pid) {
@@ -222,6 +229,7 @@
     if (!types && !raw.identity && !raw.deriveAttempted) return null;
     return {
       docFp: typeof raw.docFp === 'string' ? raw.docFp : '',
+      scopeKey: typeof raw.scopeKey === 'string' ? raw.scopeKey : '',
       belugaBuild: raw.belugaBuild === 'fast' ? 'fast' : 'stable',
       types: types || { v: 1, decls: [], metavars: [], reconstructed: [] },
       identity: Array.isArray(raw.identity) ? raw.identity : [],
@@ -259,6 +267,7 @@
     if (!types) return state;
     state.semantic = {
       docFp: documentFingerprint(state.editor.text),
+      scopeKey: 'legacy',
       belugaBuild: readStoredBelugaMode(),
       types: types,
       identity: [],
@@ -327,7 +336,7 @@
         } catch (_) {}
       }
       if (typeof global.BelJarToasts !== 'undefined' && global.BelJarToasts.error) {
-        global.BelJarToasts.error('Storage quota exceeded — could not save.', {
+        global.BelJarToasts.error('Storage quota exceeded. Could not save.', {
           duration: 0,
           closable: true,
         });
@@ -357,8 +366,11 @@
       var belugaBuild = typeof providers.getBelugaBuild === 'function'
         ? providers.getBelugaBuild()
         : readStoredBelugaMode();
+      var scopeKey = typeof exported.scopeKey === 'string' ? exported.scopeKey
+        : (typeof providers.getScopeKey === 'function' ? providers.getScopeKey() : '');
       var semantic = {
         docFp: docFp,
+        scopeKey: scopeKey,
         belugaBuild: belugaBuild,
         types: exported.types || { v: 1, decls: [], metavars: [], reconstructed: [] },
         identity: exported.identity || [],
@@ -884,6 +896,7 @@
     backendSave(projKey('files', id), JSON.stringify([{ id: DEFAULT_DOCUMENT_ID, name: 'main.bel' }]));
     backendSave(projKey('active-file', id), DEFAULT_DOCUMENT_ID);
     backendSave(projKey('open-files', id), JSON.stringify([DEFAULT_DOCUMENT_ID]));
+    backendSave(projKey('empty-folders', id), JSON.stringify([]));
     return id;
   }
 
@@ -920,6 +933,8 @@
     backendRemove(projKey('active-file', id));
     backendRemove(projKey('open-files', id));
     backendRemove(projKey('default-cfg', id));
+    backendRemove(projKey('active-cfg-by-dir', id));
+    backendRemove(projKey('empty-folders', id));
     projects.splice(idx, 1);
     writeProjects(projects);
     var nextId = projects[Math.max(0, idx - 1)].id;
@@ -937,6 +952,164 @@
 
   function writeProjectFiles(files) {
     backendSave(projKey('files'), JSON.stringify(files));
+  }
+
+  function readEmptyFolders() {
+    var raw = tryParse(backendLoad(projKey('empty-folders')));
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(function (p) { return typeof p === 'string' && p; });
+  }
+
+  function writeEmptyFolders(paths) {
+    backendSave(projKey('empty-folders'), JSON.stringify(paths || []));
+  }
+
+  function listEmptyFolders() {
+    return readEmptyFolders();
+  }
+
+  function addEmptyFolder(path) {
+    var p = String(path || '').trim();
+    if (!p) return;
+    var list = readEmptyFolders();
+    if (list.indexOf(p) !== -1) return;
+    list.push(p);
+    list.sort();
+    writeEmptyFolders(list);
+  }
+
+  function removeEmptyFolder(path) {
+    var p = String(path || '');
+    var list = readEmptyFolders();
+    var next = list.filter(function (x) { return x !== p; });
+    if (next.length === list.length) return;
+    writeEmptyFolders(next);
+  }
+
+  function renameEmptyFolderPrefix(from, to) {
+    var list = readEmptyFolders();
+    var changed = false;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (p === from || p.indexOf(from + '/') === 0) {
+        list[i] = to ? to + p.slice(from.length) : p.slice(from.length + 1);
+        changed = true;
+      }
+    }
+    if (changed) {
+      list = list.filter(function (x) { return x; });
+      list.sort();
+      writeEmptyFolders(list);
+    }
+  }
+
+  function pruneEmptyFoldersForFile(filePath) {
+    var name = String(filePath || '');
+    if (!name) return;
+    var list = readEmptyFolders();
+    var next = list.filter(function (ef) {
+      return name !== ef && name.indexOf(ef + '/') !== 0;
+    });
+    if (next.length !== list.length) writeEmptyFolders(next);
+  }
+
+  function folderSubtreeOccupied(folderPath, files, emptyFolders) {
+    if (!folderPath) return files.length > 0 || emptyFolders.length > 0;
+    var prefix = folderPath + '/';
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].name.indexOf(prefix) === 0) return true;
+    }
+    for (var j = 0; j < emptyFolders.length; j++) {
+      if (emptyFolders[j].indexOf(prefix) === 0) return true;
+    }
+    return false;
+  }
+
+  function preserveEmptyFoldersAfterPath(oldFilePath, skipPrefixes) {
+    var name = String(oldFilePath || '');
+    if (!name || name.indexOf('/') === -1) return;
+    var parts = name.split('/');
+    parts.pop();
+    var files = ensureProject();
+    var empty = readEmptyFolders();
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var fp = parts.slice(0, i + 1).join('/');
+      if (skipPrefixes && isPrefixUnderAny(fp, skipPrefixes)) continue;
+      if (!folderSubtreeOccupied(fp, files, empty)) {
+        addEmptyFolder(fp);
+        empty = readEmptyFolders();
+      }
+    }
+  }
+
+  function isPrefixUnderAny(path, prefixes) {
+    for (var p in prefixes) {
+      if (path === p || path.indexOf(p + '/') === 0) return true;
+    }
+    return false;
+  }
+
+  function relocatedPrefixTarget(prefix, moves, files) {
+    var ps = prefix + '/';
+    for (var i = 0; i < files.length; i++) {
+      var n = files[i].name;
+      if (n === prefix || n.indexOf(ps) === 0) return null;
+    }
+    var related = [];
+    for (var j = 0; j < moves.length; j++) {
+      if (moves[j].from.indexOf(ps) === 0) related.push(moves[j]);
+    }
+    if (!related.length) return null;
+    var newPrefix = null;
+    for (var k = 0; k < related.length; k++) {
+      var from = related[k].from;
+      var to = related[k].to;
+      var rel = from.slice(prefix.length + 1);
+      var np = rel ? to.slice(0, to.length - rel.length - 1) : to;
+      if (newPrefix === null) newPrefix = np;
+      else if (newPrefix !== np) return null;
+      if (to !== (rel ? np + '/' + rel : np)) return null;
+    }
+    return newPrefix;
+  }
+
+  function inferRelocatedFolderPrefixes(moves, files) {
+    var candidates = {};
+    for (var i = 0; i < moves.length; i++) {
+      var from = moves[i].from;
+      if (!from || from.indexOf('/') === -1) continue;
+      var parts = from.split('/');
+      parts.pop();
+      var acc = '';
+      for (var p = 0; p < parts.length; p++) {
+        acc = acc ? acc + '/' + parts[p] : parts[p];
+        candidates[acc] = true;
+      }
+    }
+    var out = {};
+    for (var prefix in candidates) {
+      var target = relocatedPrefixTarget(prefix, moves, files);
+      if (target != null) out[prefix] = target;
+    }
+    return out;
+  }
+
+  function preserveEmptyFoldersAfterMoves(moves) {
+    if (!moves || !moves.length) return;
+    var files = ensureProject();
+    var reloc = inferRelocatedFolderPrefixes(moves, files);
+    for (var oldP in reloc) {
+      renameEmptyFolderPrefix(oldP, reloc[oldP]);
+      removeEmptyFolder(oldP);
+    }
+    var skip = reloc;
+    var seen = {};
+    for (var i = 0; i < moves.length; i++) {
+      var from = moves[i].from;
+      if (!from || seen[from]) continue;
+      seen[from] = true;
+      preserveEmptyFoldersAfterPath(from, skip);
+    }
   }
 
   function ensureProject() {
@@ -1014,8 +1187,14 @@
       ? options.openIds.filter(function (id) { return files.some(function (f) { return f.id === id; }); })
       : (activeId ? [activeId] : []));
     if (options.projectName) setProjectName(options.projectName);
-    if (options.defaultCfgPath) setDefaultCfgPath(options.defaultCfgPath);
-    else setDefaultCfgPath(null);
+    if (options.activeCfgByDir && typeof options.activeCfgByDir === 'object') {
+      writeActiveCfgByDir(options.activeCfgByDir);
+    } else if (options.defaultCfgPath) {
+      setActiveCfgForDir(dirOf(options.defaultCfgPath), options.defaultCfgPath);
+    } else {
+      writeActiveCfgByDir({});
+    }
+    writeEmptyFolders([]);
     return { files: files, activeId: activeId };
   }
 
@@ -1023,10 +1202,48 @@
     var files = ensureProject();
     var used = {};
     for (var u = 0; u < files.length; u++) used[files[u].id] = true;
-    var id = uniqueFileId(name || 'untitled.bel', used);
-    files.push({ id: id, name: name || 'untitled.bel' });
+    var fileName = name || 'untitled.bel';
+    var id = uniqueFileId(fileName, used);
+    files.push({ id: id, name: fileName });
     writeProjectFiles(files);
+    pruneEmptyFoldersForFile(fileName);
     return id;
+  }
+
+  // A cfg lists entries relative to its OWN directory. Reverse that: the entry
+  // text for `fullPath` within a cfg living in `cfgDir`, or null when fullPath
+  // is outside that cfg's directory subtree (so it cannot be a member).
+  function relToCfgDir(cfgDir, fullPath) {
+    if (!cfgDir) return fullPath;
+    if (fullPath === cfgDir) return '';
+    if (fullPath.indexOf(cfgDir + '/') === 0) return fullPath.slice(cfgDir.length + 1);
+    return null;
+  }
+
+  // Rewrite a single cfg body so the entry resolving to `oldName` follows the
+  // file op: renamed/moved → point at `newName` (dropped if it left this cfg's
+  // dir); deleted (`newName` null) → removed. Comments, blank lines, ordering,
+  // and indentation are preserved; returns null when nothing matched.
+  function rewriteCfgBody(text, cfgDir, oldName, newName) {
+    var lines = String(text == null ? '' : text).split('\n');
+    var out = [];
+    var changed = false;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var t = line.trim();
+      var low = t.toLowerCase();
+      var isEntry = t && t.charAt(0) !== '%'
+        && (low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg'));
+      if (!isEntry) { out.push(line); continue; }
+      var resolved = cfgDir ? cfgDir + '/' + t : t;
+      if (resolved !== oldName) { out.push(line); continue; }
+      changed = true;
+      if (newName == null) continue; // delete: drop the line
+      var rel = relToCfgDir(cfgDir, newName);
+      if (rel == null || rel === '') continue; // moved out of this cfg's scope
+      out.push(line.slice(0, line.indexOf(t)) + rel);
+    }
+    return changed ? out.join('\n') : null;
   }
 
   function deleteFile(id) {
@@ -1036,26 +1253,121 @@
       if (files[i].id === id) { idx = i; break; }
     }
     if (idx === -1) return null;
-    if (getDefaultCfgPath() === files[idx].name) setDefaultCfgPath(null);
+    var deletedName = files[idx].name;
+    if (/\.cfg$/i.test(deletedName)) {
+      var d = dirOf(deletedName);
+      if (getActiveCfgForDir(d) === deletedName) setActiveCfgForDir(d, null);
+    }
     files.splice(idx, 1);
     writeProjectFiles(files);
+    // A cfg that still lists the deleted file is left untouched — the dangling
+    // entry is surfaced by the cfg lint, not silently removed for the user.
     closeOpenFile(id);
     // Delete the stored state.
     defaultBackend.removeSync(stateKeyFor(id));
+    preserveEmptyFoldersAfterPath(deletedName);
     // Return the id of the file to switch to (previous, next, or null).
     return files.length ? files[Math.max(0, idx - 1)].id : null;
   }
 
+  // Renaming/moving a file deliberately does NOT touch any .cfg body — the cfg
+  // is the user's source of truth, not ours to silently rewrite. A now-dangling
+  // entry is surfaced by the cfg lint instead, and "Add/Remove from suite" lets
+  // the user re-point it explicitly. (Only the active-cfg pointer, which stores
+  // a cfg's own path, follows the cfg's own rename.)
   function renameFile(id, newName) {
     var files = ensureProject();
     for (var i = 0; i < files.length; i++) {
       if (files[i].id === id) {
-        if (getDefaultCfgPath() === files[i].name) setDefaultCfgPath(newName);
+        var oldName = files[i].name;
         files[i].name = newName;
         writeProjectFiles(files);
+        var map = readActiveCfgByDir();
+        var changed = false;
+        for (var k in map) {
+          if (map[k] === oldName) { map[k] = newName; changed = true; }
+        }
+        if (changed) writeActiveCfgByDir(map);
+        pruneEmptyFoldersForFile(newName);
+        if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
         return;
       }
     }
+  }
+
+  function cfgFileByPath(cfgPath) {
+    var files = ensureProject();
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].name === cfgPath) return files[i];
+    }
+    return null;
+  }
+
+  function cfgListsEntry(text, cfgDir, fileName) {
+    var lines = String(text == null ? '' : text).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      if (!t || t.charAt(0) === '%') continue;
+      if ((cfgDir ? cfgDir + '/' + t : t) === fileName) return true;
+    }
+    return false;
+  }
+
+  // Append `fileName` to a suite's .cfg (load order) — the authoring counterpart
+  // to hand-editing the cfg. Returns false when the file is already listed or
+  // lives outside the cfg's directory subtree (so it cannot be a member).
+  function addEntryToCfg(cfgPath, fileName) {
+    var cfg = cfgFileByPath(cfgPath);
+    if (!cfg) return false;
+    var dir = dirOf(cfgPath);
+    var rel = relToCfgDir(dir, fileName);
+    if (rel == null || rel === '') return false;
+    var text = String(getFileText(cfg.id) || '');
+    if (cfgListsEntry(text, dir, fileName)) return false;
+    var body = text.replace(/\s*$/, '');
+    setFileText(cfg.id, (body ? body + '\n' : '') + rel + '\n');
+    return true;
+  }
+
+  // Drop `fileName` from a suite's .cfg (preserving comments/order). Returns
+  // false when the entry was not present.
+  function removeEntryFromCfg(cfgPath, fileName) {
+    var cfg = cfgFileByPath(cfgPath);
+    if (!cfg) return false;
+    var updated = rewriteCfgBody(getFileText(cfg.id), dirOf(cfgPath), fileName, null);
+    if (updated == null) return false;
+    setFileText(cfg.id, updated);
+    return true;
+  }
+
+  // Reorder a suite member by `delta` (-1 up / +1 down) within its .cfg — the
+  // load order is what governs cross-file visibility, so reordering is a primary
+  // authoring action. Swaps the target's ENTRY line with the adjacent entry line
+  // (comments/blank lines hold their positions). Returns false at a boundary.
+  function moveEntryInCfg(cfgPath, fileName, delta) {
+    var cfg = cfgFileByPath(cfgPath);
+    if (!cfg) return false;
+    var dir = dirOf(cfgPath);
+    var lines = String(getFileText(cfg.id) || '').split('\n');
+    var entryLineIdx = [];
+    var targetAt = -1;
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      var low = t.toLowerCase();
+      var isEntry = t && t.charAt(0) !== '%'
+        && (low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg'));
+      if (!isEntry) continue;
+      if ((dir ? dir + '/' + t : t) === fileName) targetAt = entryLineIdx.length;
+      entryLineIdx.push(i);
+    }
+    if (targetAt === -1) return false;
+    var neighbor = targetAt + (delta < 0 ? -1 : 1);
+    if (neighbor < 0 || neighbor >= entryLineIdx.length) return false;
+    var a = entryLineIdx[targetAt];
+    var b = entryLineIdx[neighbor];
+    var tmp = lines[a]; lines[a] = lines[b]; lines[b] = tmp;
+    setFileText(cfg.id, lines.join('\n'));
+    return true;
   }
 
   function getFileById(id) {
@@ -1164,10 +1476,72 @@
     renameProject(getActiveProjectId(), name);
   }
 
+  function readActiveCfgByDir() {
+    var raw = tryParse(backendLoad(projKey('active-cfg-by-dir')));
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    var migrated = {};
+    var legacy = backendLoad(projKey('default-cfg'));
+    if (legacy && String(legacy).trim()) {
+      migrated[dirOf(String(legacy).trim())] = String(legacy).trim();
+      writeActiveCfgByDir(migrated);
+      defaultBackend.removeSync(projKey('default-cfg'));
+    }
+    return migrated;
+  }
+
+  function writeActiveCfgByDir(map) {
+    var keys = Object.keys(map || {});
+    if (!keys.length) {
+      backendRemove(projKey('active-cfg-by-dir'));
+      return;
+    }
+    backendSave(projKey('active-cfg-by-dir'), JSON.stringify(map));
+  }
+
+  function getActiveCfgForDir(dir) {
+    var map = readActiveCfgByDir();
+    var d = dir != null ? String(dir) : '';
+    var path = map[d];
+    return path && String(path).trim() ? String(path).trim() : null;
+  }
+
+  function setActiveCfgForDir(dir, path) {
+    var map = readActiveCfgByDir();
+    var d = dir != null ? String(dir) : '';
+    var trimmed = String(path != null ? path : '').trim();
+    if (trimmed) map[d] = trimmed;
+    else delete map[d];
+    writeActiveCfgByDir(map);
+  }
+
+  function getActiveCfgByDir() {
+    return readActiveCfgByDir();
+  }
+
+  function backfillActiveCfgByDir(byDir) {
+    if (!byDir || typeof byDir !== 'object') return readActiveCfgByDir();
+    var map = readActiveCfgByDir();
+    var changed = false;
+    for (var d in byDir) {
+      if (!Object.prototype.hasOwnProperty.call(byDir, d)) continue;
+      var path = String(byDir[d] != null ? byDir[d] : '').trim();
+      if (!path || map[d]) continue;
+      map[d] = path;
+      changed = true;
+    }
+    if (changed) writeActiveCfgByDir(map);
+    return map;
+  }
+
+  /** Active cfg for the current file's folder (back-compat alias). */
   function getDefaultCfgPath() {
     try {
-      var path = backendLoad(projKey('default-cfg'));
-      return path && String(path).trim() ? String(path).trim() : null;
+      var activeId = getActiveFileId();
+      var files = readProjectFiles() || [];
+      for (var i = 0; i < files.length; i++) {
+        if (files[i].id === activeId) return getActiveCfgForDir(dirOf(files[i].name));
+      }
+      return null;
     } catch (_) {
       return null;
     }
@@ -1175,8 +1549,8 @@
 
   function setDefaultCfgPath(path) {
     var trimmed = String(path != null ? path : '').trim();
-    if (trimmed) backendSave(projKey('default-cfg'), trimmed);
-    else defaultBackend.removeSync(projKey('default-cfg'));
+    if (!trimmed) return;
+    setActiveCfgForDir(dirOf(trimmed), trimmed);
   }
 
   // Create a blank project and make it active. The caller reloads so the new
@@ -1275,7 +1649,15 @@
     createFile: createFile,
     deleteFile: deleteFile,
     renameFile: renameFile,
+    addEntryToCfg: addEntryToCfg,
+    removeEntryFromCfg: removeEntryFromCfg,
+    moveEntryInCfg: moveEntryInCfg,
     getFileById: getFileById,
+    listEmptyFolders: listEmptyFolders,
+    addEmptyFolder: addEmptyFolder,
+    removeEmptyFolder: removeEmptyFolder,
+    renameEmptyFolderPrefix: renameEmptyFolderPrefix,
+    preserveEmptyFoldersAfterMoves: preserveEmptyFoldersAfterMoves,
     moveFile: moveFile,
     getFileText: getFileText,
     setFileText: setFileText,
@@ -1286,6 +1668,10 @@
     setProjectName: setProjectName,
     getDefaultCfgPath: getDefaultCfgPath,
     setDefaultCfgPath: setDefaultCfgPath,
+    getActiveCfgForDir: getActiveCfgForDir,
+    setActiveCfgForDir: setActiveCfgForDir,
+    getActiveCfgByDir: getActiveCfgByDir,
+    backfillActiveCfgByDir: backfillActiveCfgByDir,
     DEFAULT_PROJECT_NAME: DEFAULT_PROJECT_NAME,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

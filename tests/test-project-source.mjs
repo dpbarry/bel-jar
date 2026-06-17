@@ -121,7 +121,8 @@ const CR2 = [
   { id: 'eqe', name: 'church-rosser/equiv.elf', text: 'eq2 : --> M N -> type.' },
   { id: 'cfg', name: 'church-rosser/test.cfg', text: 'lam.elf\nequiv.bel' },
 ];
-const dev = PS.developmentFilesFor(CR2, 'eqb', (id) => CR2.find((f) => f.id === id).text);
+const cr2Opts = { activeCfgForDir: PS.activeCfgResolver({ 'church-rosser': 'church-rosser/test.cfg' }) };
+const dev = PS.developmentFilesFor(CR2, 'eqb', (id) => CR2.find((f) => f.id === id).text, cr2Opts);
 expect(dev.map((f) => f.name).join('|') === 'church-rosser/lam.elf|church-rosser/equiv.bel',
   `development is cfg chain only, got: ${dev.map((f) => f.name).join('|')}`);
 expect(!dev.some((f) => f.name.endsWith('equiv.elf')), 'legacy equiv.elf excluded from whole-project run');
@@ -134,7 +135,8 @@ const CR = [
   { id: 'cfg', name: 'church-rosser/test-crec.cfg', text: 'lam.elf\npar-red.elf\npar-lemmas-crec.bel' },
   { id: 'other', name: 'church-rosser/test.cfg', text: 'lam.elf\npar-lemmas.bel' },
 ];
-const crPre = PS.buildPrelude(CR, 'bel', (id) => CR.find((f) => f.id === id).text);
+const crOpts = { activeCfgForDir: PS.activeCfgResolver({ 'church-rosser': 'church-rosser/test-crec.cfg' }) };
+const crPre = PS.buildPrelude(CR, 'bel', (id) => CR.find((f) => f.id === id).text, crOpts);
 expect(crPre && crPre.spans.length === 2
   && crPre.spans[0].name === 'church-rosser/lam.elf'
   && crPre.spans[1].name === 'church-rosser/par-red.elf',
@@ -146,18 +148,73 @@ const REGISTRY = [
   { id: 'a', name: 'grp/base.bel', text: 'LF o : type;' },
   { id: 'c', name: 'grp/order.cfg', text: 'base.bel\nuse.bel' },
 ];
-const preCfg = PS.buildPrelude(REGISTRY, 'z', (id) => REGISTRY.find((f) => f.id === id).text);
+const grpOpts = { activeCfgForDir: PS.activeCfgResolver({ grp: 'grp/order.cfg' }) };
+const preCfg = PS.buildPrelude(REGISTRY, 'z', (id) => REGISTRY.find((f) => f.id === id).text, grpOpts);
 expect(preCfg && preCfg.spans.length === 1 && preCfg.spans[0].name === 'grp/base.bel',
   'prelude follows .cfg even when active file is first in registry');
+
+// ── unusual workspace: one cfg + orphan dir-groups (the "codatatypes" case) ──
+// bisimulation/sources.cfg governs three files; howes-method/* and a root file
+// are orphans in no cfg.
+const WS = [
+  { id: 'cfg', name: 'bisimulation/sources.cfg', text: 'picalc.bel\nbisimulation.bel\ninvariant.bel' },
+  { id: 'pic', name: 'bisimulation/picalc.bel', text: 'LF tm : type;' },
+  { id: 'bis', name: 'bisimulation/bisimulation.bel', text: 'LF sim : type;' },
+  { id: 'inv', name: 'bisimulation/invariant.bel', text: 'LF inv : type;' },
+  { id: 'howe', name: 'bisimulation/howes-method/howe.bel', text: 'LF h : type;' },
+  { id: 'howet', name: 'bisimulation/howes-method/howe-total.bel', text: 'LF ht : type;' },
+  { id: 'tofte', name: 'tofte-hoas.bel', text: 'LF th : type;' },
+];
+const wsText = (id) => WS.find((f) => f.id === id).text;
+
+// cfgPathForActive: module member when folder has active cfg; else null.
+const bisimOpts = { activeCfgForDir: PS.activeCfgResolver({ bisimulation: 'bisimulation/sources.cfg' }) };
+expect(PS.cfgPathForActive(WS, 'bis', wsText, bisimOpts) === 'bisimulation/sources.cfg',
+  'cfgPathForActive: module member → active cfg');
+expect(PS.cfgPathForActive(WS, 'howe', wsText) === null,
+  'cfgPathForActive: no folder active cfg → null');
+expect(PS.cfgPathForActive(WS, 'tofte', wsText) === null,
+  'cfgPathForActive: root standalone → null');
+
+// workspaceDevelopments: one config + each non-cfg file isolated on its own.
+const devs = PS.workspaceDevelopments(WS, wsText);
+const configDev = devs.find((d) => d.kind === 'config');
+expect(configDev && configDev.name === 'sources'
+  && configDev.paths.join('|') === 'bisimulation/picalc.bel|bisimulation/bisimulation.bel|bisimulation/invariant.bel',
+  `config development is the cfg chain in order, got: ${configDev && configDev.paths.join('|')}`);
+const orphanNames = devs.filter((d) => d.kind === 'orphan').map((d) => d.name).join('|');
+expect(orphanNames === 'bisimulation/howes-method/howe.bel|bisimulation/howes-method/howe-total.bel|tofte-hoas.bel',
+  `each non-cfg file is its own isolated development, got: ${orphanNames}`);
+for (const d of devs.filter((x) => x.kind === 'orphan')) {
+  expect(d.paths.length === 1 && d.paths[0] === d.name, 'orphan development = the single file, isolated');
+}
+expect(devs.length === 4, `one config + three isolated orphans, got ${devs.length}`);
+// No file appears in more than one development.
+const seen = {};
+for (const d of devs) for (const p of d.paths) { expect(!seen[p], `${p} not double-counted`); seen[p] = true; }
+
+// ── nested cfg: an included cfg is not a separate top-level development ───────
+const NESTED = [
+  { id: 'top', name: 'all.cfg', text: 'sub/part.cfg\nmain.bel' },
+  { id: 'sub', name: 'sub/part.cfg', text: 'a.bel' },
+  { id: 'a', name: 'sub/a.bel', text: 'LF a : type;' },
+  { id: 'm', name: 'main.bel', text: 'LF m : type;' },
+];
+const nestedDevs = PS.workspaceDevelopments(NESTED, (id) => NESTED.find((f) => f.id === id).text);
+expect(nestedDevs.length === 1 && nestedDevs[0].name === 'all',
+  `nested cfg collapses into the parent development, got ${nestedDevs.map((d) => d.name).join('|')}`);
+expect(nestedDevs[0].paths.join('|') === 'sub/a.bel|main.bel',
+  `nested chain resolves through the sub-cfg, got: ${nestedDevs[0].paths.join('|')}`);
 
 // ── prelude + shiftCheckerOutput ──────────────────────────────────────────────
 const FILES2 = [
   { id: 'a', name: 'grp/base.bel', text: 'LF o : type;' },
   { id: 'b', name: 'grp/use.bel', text: 'LF nd : o → type;' },
+  { id: 'c', name: 'grp/order.cfg', text: 'base.bel\nuse.bel' },
 ];
 const hoisted = PS.assembleCheckerCode(
   '--nostrengthen\n\nLF nd : o → type;',
-  PS.buildPrelude(FILES2, 'b', (id) => FILES2.find((f) => f.id === id).text),
+  PS.buildPrelude(FILES2, 'b', (id) => FILES2.find((f) => f.id === id).text, grpOpts),
 );
 expect(hoisted.code.startsWith('--nostrengthen'), 'nostrengthen leads combined checker code');
 expect(hoisted.code.includes('LF o : type;'), 'prelude follows hoisted pragma');
@@ -180,7 +237,7 @@ expect(!/\n--nostrengthen\nschema/.test(folProject.code), 'pragma is not left mi
 expect(folProject.spans[1].name === 'fol/fol.bel' && folProject.spans[1].startLine > 1,
   'fol.bel span shifts after hoisted header');
 
-const pre = PS.buildPrelude(FILES2, 'b', (id) => FILES2.find((f) => f.id === id).text);
+const pre = PS.buildPrelude(FILES2, 'b', (id) => FILES2.find((f) => f.id === id).text, grpOpts);
 expect(pre.offsetLines === 2, 'prelude offset after 1-line file + blank');
 const shifted = PS.shiftCheckerOutput('File "input.bel", line 1, column 3:\nError: bad', pre);
 expect(shifted.preludeIssues.length === 1 && shifted.preludeIssues[0].name === 'grp/base.bel',
@@ -228,8 +285,16 @@ Persist.replaceProject([
   { name: 'grp/use.bel', text: 'LF b : type;' },
   { name: 'grp/short.cfg', text: 'base.bel' },
   { name: 'grp/long.cfg', text: 'base.bel\nuse.bel' },
-], { defaultCfgPath: 'grp/long.cfg' });
-expect(Persist.getDefaultCfgPath() === 'grp/long.cfg', 'replaceProject can set default cfg');
+  { name: 'cps/p.bel', text: 'LF cexp : type;' },
+  { name: 'cps/sources.cfg', text: 'p.bel' },
+], { activeCfgByDir: { grp: 'grp/long.cfg', cps: 'cps/sources.cfg' } });
+expect(Persist.getActiveCfgForDir('grp') === 'grp/long.cfg', 'per-folder active cfg stored');
+expect(Persist.getActiveCfgForDir('cps') === 'cps/sources.cfg', 'second folder active cfg stored');
+expect(Persist.getDefaultCfgPath() === 'grp/long.cfg', 'getDefaultCfgPath reflects active file folder cfg');
+
+Persist.backfillActiveCfgByDir({ debruijn: 'debruijn/main.cfg' });
+expect(Persist.getActiveCfgForDir('debruijn') === 'debruijn/main.cfg', 'backfill adds missing dirs');
+expect(Persist.getActiveCfgForDir('grp') === 'grp/long.cfg', 'backfill does not overwrite existing');
 expect(Persist.getOpenFileIds().length === 1, 'replaceProject opens one tab');
 expect(Persist.getFileText(Persist.listFiles()[0].id) === 'LF a : type;', 'replaceProject stores text');
 

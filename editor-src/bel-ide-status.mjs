@@ -52,6 +52,51 @@ export function buildIdeStatusPresentation({
   };
 }
 
+export function buildAuxStatusPresentation({ diagnostics, fileCount = 0 } = {}) {
+  const diags = diagnostics || [];
+  const errors = diags.filter((d) => d.severity === 'error').length;
+  const warnings = diags.filter((d) => d.severity === 'warning').length;
+  const problems = errors + warnings;
+
+  const parts = [];
+  if (problems > 0) {
+    parts.push(problems === 1 ? '1 problem' : `${problems} problems`);
+  } else if (fileCount > 0) {
+    parts.push(`Suite: ${fileCount} file${fileCount === 1 ? '' : 's'}`);
+  } else {
+    parts.push('Empty suite');
+  }
+
+  let liveState = 'clean';
+  if (errors > 0) liveState = 'error';
+  else if (warnings > 0) liveState = 'warning';
+
+  const tooltip = parts.join(' · ');
+  return {
+    liveState,
+    tooltip,
+    ariaLabel: tooltip,
+    errors,
+    warnings,
+    problems,
+    fileCount,
+  };
+}
+
+export function updateAuxStatusDot(dot, diagnostics, options = {}) {
+  if (!dot) return null;
+  const pres = buildAuxStatusPresentation({
+    diagnostics,
+    fileCount: options.fileCount ?? 0,
+  });
+  dot.setAttribute('data-live-state', pres.liveState);
+  dot.setAttribute('data-tooltip', pres.tooltip);
+  dot.setAttribute('aria-label', pres.ariaLabel);
+  dot.removeAttribute('data-parsing');
+  dot.removeAttribute('data-beluga-checking');
+  return pres;
+}
+
 export function updateIdeStatusDot(dot, diagnostics, options = {}) {
   if (!dot) return null;
   const pres = buildIdeStatusPresentation({
@@ -78,7 +123,7 @@ export function updateIdeStatusDot(dot, diagnostics, options = {}) {
 export function formatGlobalGraphStaleBanner({ parseCoverage, symbolCount }) {
   if (!parseCoverage || parseCoverage.complete) return '';
   const parts = [
-    `Parse ${parseCoverage.percent}% — declarations after character ${parseCoverage.parsed} are not in the graph yet`,
+    `Parse ${parseCoverage.percent}% complete. Declarations after character ${parseCoverage.parsed} are not in the graph yet.`,
   ];
   if (typeof symbolCount === 'number') {
     parts.push(`${symbolCount} symbol${symbolCount === 1 ? '' : 's'} indexed`);

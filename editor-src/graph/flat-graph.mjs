@@ -609,7 +609,7 @@ function arrowHead(pts, headW = HEAD_W, headH = HEAD_H) {
 // (hidden) canvas so the toolbar/labels overlay still composites on top.
 export function createFlatGraph(stage, model, sim, opts = {}) {
   const {
-    onJump = () => {}, onFocus = () => {}, onBeforeFocusChange = () => {},
+    onJump = () => {}, onFocus = () => {}, onActivate = () => {}, onBeforeFocusChange = () => {},
     onDrill = null, onFly = null,
     implVisibility = 'show', skipInitialFrame = false,
   } = opts;
@@ -922,6 +922,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
   }
   function handleActivate(idx, shift) {
     if (idx < 0) return;
+    onActivate(nodes[idx], idx);
     if (shift && onFly) onFly(nodes[idx], idx);
     else if (onDrill) onDrill(nodes[idx], idx);
     else flyToIndex(idx);

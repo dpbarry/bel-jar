@@ -17,7 +17,9 @@ const GLOBAL_DECL_PARENT = new Set([
   'LetDeclaration',
   'ModuleDeclaration',
   'InductiveBody',
+  'CoinductiveBody',
   'CompConstructor',
+  'CompDestructor',
   'RecBody',
 ]);
 
@@ -97,6 +99,30 @@ function firstIdentChild(node) {
   return null;
 }
 
+// A mutual LF block (`LF n … and a … and p …`) parses as ONE
+// LFDatatypeDeclaration whose direct identifier children are the family heads:
+// the first one, then one after each `and`. Each head names its own type family
+// and needs its own symbol — returning only firstIdentChild drops `a`/`p` from
+// the symbol store (so nav / find-refs / inspector / graph never see them).
+function lfDatatypeHeads(node) {
+  const heads = [];
+  let sawFirst = false;
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'AndKeyword') {
+      for (let h = c.nextSibling; h; h = h.nextSibling) {
+        if (IDENT.has(h.name)) { heads.push(h); break; }
+        if (h.name === 'AndKeyword' || h.name === 'LFConstructor') break;
+      }
+      continue;
+    }
+    if (IDENT.has(c.name) && !sawFirst) {
+      sawFirst = true;
+      heads.push(c);
+    }
+  }
+  return heads;
+}
+
 function nextTypeSibling(ident) {
   for (let s = ident.nextSibling; s; s = s.nextSibling) {
     if (TYPEISH.has(s.name)) return s;
@@ -172,11 +198,15 @@ function labelFor(namespace, nodeKind) {
     case NAMESPACE.LF_CONSTRUCTOR: return 'LF constructor';
     case NAMESPACE.SCHEMA: return 'schema';
     case NAMESPACE.TYPEDEF: return 'typedef';
-    case NAMESPACE.COMP_TYPE: return 'computation type';
-    case NAMESPACE.COMP_CONSTRUCTOR: return 'computation constructor';
+    case NAMESPACE.COMP_TYPE: return nodeKind === 'CoinductiveBody' ? 'coinductive type' : 'computation type';
+    case NAMESPACE.COMP_CONSTRUCTOR:
+      return nodeKind === 'CompDestructor' ? 'computation destructor' : 'computation constructor';
     case NAMESPACE.REC_FUNCTION: return 'recursive function';
     case NAMESPACE.MODULE: return 'module';
-    case NAMESPACE.PRAGMA: return 'notation';
+    case NAMESPACE.PRAGMA:
+      if (nodeKind === 'PrefixPragma') return 'prefix pragma';
+      if (nodeKind === 'InfixPragma') return 'infix pragma';
+      return 'pragma';
     case NAMESPACE.LOCAL_UPPER:
     case NAMESPACE.LOCAL_LOWER: return 'local binder';
     default: return nodeKind || 'symbol';
@@ -191,8 +221,8 @@ function namespaceForGlobal(parent, ident, doc) {
   if (name === 'TypedefDeclaration') return NAMESPACE.TYPEDEF;
   if (name === 'LetDeclaration') return NAMESPACE.REC_FUNCTION;
   if (name === 'ModuleDeclaration') return NAMESPACE.MODULE;
-  if (name === 'InductiveBody') return NAMESPACE.COMP_TYPE;
-  if (name === 'CompConstructor') return NAMESPACE.COMP_CONSTRUCTOR;
+  if (name === 'InductiveBody' || name === 'CoinductiveBody') return NAMESPACE.COMP_TYPE;
+  if (name === 'CompConstructor' || name === 'CompDestructor') return NAMESPACE.COMP_CONSTRUCTOR;
   if (name === 'RecBody') return NAMESPACE.REC_FUNCTION;
   if (name === 'LFDeclaration') {
     const rhs = nextTypeSibling(ident);
@@ -338,6 +368,13 @@ export function createSymbolStore() {
     return snapshot;
   }
 
+  function pragmaAt(pos) {
+    if (!snapshot) return null;
+    return snapshot.globalSymbols
+      .filter((symbol) => symbol.namespace === NAMESPACE.PRAGMA && spanContains(symbol.range, pos))
+      .sort((a, b) => (a.range.to - a.range.from) - (b.range.to - b.range.from))[0] || null;
+  }
+
   function symbolAt(pos) {
     if (!snapshot) return null;
     return snapshot.symbols
@@ -360,6 +397,8 @@ export function createSymbolStore() {
   }
 
   function definitionAt(pos) {
+    const pragma = pragmaAt(pos);
+    if (pragma) return pragma;
     const ref = referenceAt(pos);
     if (ref && ref.symbolId) return snapshot.symbolsById.get(ref.symbolId) || null;
     return symbolAt(pos);
@@ -413,6 +452,19 @@ export function createSymbolStore() {
 
   function queryAt(pos) {
     if (!snapshot) return null;
+    const pragma = pragmaAt(pos);
+    if (pragma) {
+      return {
+        symbol: pragma,
+        reference: null,
+        definition: pragma,
+        references: referencesOf(pragma.id),
+        hoverType: '',
+        diagnostics: [],
+        status: 'unknown',
+        actions: ['definition', 'references', 'rename-preview'],
+      };
+    }
     const ref = referenceAt(pos);
     const symbol = ref && ref.symbolId ? snapshot.symbolsById.get(ref.symbolId) : symbolAt(pos);
     if (!symbol && !ref) return null;
@@ -438,6 +490,7 @@ export function createSymbolStore() {
 
   return {
     update,
+    pragmaAt,
     symbolAt,
     referenceAt,
     declarationAt,
@@ -547,26 +600,31 @@ function collectGlobalSymbols(ctx) {
       }
       if (!GLOBAL_DECL_PARENT.has(ref.name)) return;
       const node = ref.node;
-      const ident = firstIdentChild(node);
-      if (!ident) return;
-      const namespace = namespaceForGlobal(node, ident, doc);
-      const nameRange = extendedRange(ident);
-      const name = slice(doc, nameRange.from, nameRange.to);
-      const base = baseStructuralKey(node, name, doc);
-      const symbol = makeSymbol({
-        ...ctx,
-        namespace,
-        name,
-        nameRange,
-        definingNode: ident,
-        declarationNode: node,
-        baseKey: base,
-        structuralKey: disambiguate(base, keyCounts),
-        isGlobal: true,
-      });
-      ctx.symbols.push(symbol);
-      ctx.globalSymbols.push(symbol);
-      ctx.defByNameRange.set(`${nameRange.from}:${nameRange.to}`, symbol);
+      // A mutual LF block flattens several type-family heads into one node; emit
+      // a symbol for each head, not just the first.
+      const heads = node.name === 'LFDatatypeDeclaration'
+        ? lfDatatypeHeads(node)
+        : [firstIdentChild(node)].filter(Boolean);
+      for (const ident of heads) {
+        const namespace = namespaceForGlobal(node, ident, doc);
+        const nameRange = extendedRange(ident);
+        const name = slice(doc, nameRange.from, nameRange.to);
+        const base = baseStructuralKey(node, name, doc);
+        const symbol = makeSymbol({
+          ...ctx,
+          namespace,
+          name,
+          nameRange,
+          definingNode: ident,
+          declarationNode: node,
+          baseKey: base,
+          structuralKey: disambiguate(base, keyCounts),
+          isGlobal: true,
+        });
+        ctx.symbols.push(symbol);
+        ctx.globalSymbols.push(symbol);
+        ctx.defByNameRange.set(`${nameRange.from}:${nameRange.to}`, symbol);
+      }
     },
   });
 }
@@ -577,11 +635,13 @@ function registerNotationPragma(ctx, node) {
   if (!op) return;
   const nameRange = { from: node.from, to: op.from };
   const opName = slice(doc, op.from, op.to);
+  const lineText = slice(doc, node.from, node.to).trim().replace(/\.\s*$/, '');
   const base = baseStructuralKey(node, opName, doc);
   const symbol = makeSymbol({
     ...ctx,
     namespace: NAMESPACE.PRAGMA,
     name: opName,
+    displayName: lineText,
     nameRange,
     definingNode: node,
     declarationNode: node,
@@ -594,7 +654,10 @@ function registerNotationPragma(ctx, node) {
   ctx.defByNameRange.set(`${nameRange.from}:${nameRange.to}`, symbol);
 }
 
-function makeSymbol({ documentId, doc, namespace, name, nameRange, definingNode, declarationNode, baseKey, structuralKey, isGlobal }) {
+function makeSymbol({
+  documentId, doc, namespace, name, displayName, nameRange, definingNode, declarationNode,
+  baseKey, structuralKey, isGlobal,
+}) {
   const declarationText = slice(doc, declarationNode.from, declarationNode.to);
   const eq = declarationText.indexOf('=');
   const semi = declarationText.indexOf(';');
@@ -610,7 +673,7 @@ function makeSymbol({ documentId, doc, namespace, name, nameRange, definingNode,
     documentId,
     namespace,
     name,
-    displayName: name,
+    displayName: displayName || name,
     label: labelFor(namespace, declarationNode.name),
     nodeKind: declarationNode.name,
     definingNodeKind: definingNode.name,

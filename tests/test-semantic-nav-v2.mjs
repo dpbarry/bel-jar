@@ -64,4 +64,25 @@ expect(navNone === null || typeof navNone === 'object',
 // --- signature surfaced for find/insert: ⊃ has a source signature ---
 expect(navDef.signature && navDef.signature.type, 'navAt surfaces a signature on global defs');
 
-console.log('OK semantic nav v2 (navAt shape, onDefinition, occurrencesAt, signature surfacing)');
+// --- coinductive declarations resolve like inductive ones ---
+// CoinductiveBody (the type name) and CompDestructor (its observations) are
+// their own grammar nodes; both must register as global symbols so go-to-def,
+// find-refs and rename work on codata. Regression for context-menu/Ctrl-click
+// doing nothing on a coinductive type's uses.
+{
+  const CO = `coinductive Val : ctype =\n| Out : Val -> Val\n;\n`;
+  const cdoc = Text.of(CO.split('\n'));
+  const ce = createSemanticEngine();
+  ce.update(parser.parse(CO), cdoc);
+  const csym = (n) => ce.debugSnapshot().symbols.find((s) => s.name === n && s.isGlobal);
+  expect(csym('Val'), 'coinductive type name registers as a global symbol');
+  expect(csym('Out'), 'coinductive observation (destructor) registers as a global symbol');
+  // A use of Val inside Out's body resolves to the Val declaration.
+  const useAt = CO.indexOf('Val -> Val') + 0;
+  const cnav = ce.navAt(useAt + 1);
+  expect(cnav && cnav.symbolId === csym('Val').id,
+    'a use of a coinductive type resolves to its declaration (Ctrl-click / find-refs work)');
+  expect(cnav.references.length >= 1, 'references to a coinductive type are collected');
+}
+
+console.log('OK semantic nav v2 (navAt shape, onDefinition, occurrencesAt, coinductive, signature surfacing)');

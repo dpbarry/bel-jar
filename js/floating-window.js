@@ -44,12 +44,32 @@
       for (const act of opts.actions) {
         const btn = makeEl('button', 'floating-window-action');
         btn.type = 'button';
-        if (act.label) btn.setAttribute('aria-label', act.label);
         btn.innerHTML = act.icon || '';
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (typeof act.onClick === 'function') act.onClick();
-        });
+        const tip = (on) => (on && act.labelOn ? act.labelOn : act.label);
+        if (act.toggle) {
+          const setPressed = (on) => {
+            btn.classList.toggle('is-on', !!on);
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            const t = tip(on);
+            if (t) btn.setAttribute('aria-label', t);
+            if (global.Tooltips?.set) global.Tooltips.set(btn, t);
+          };
+          setPressed(!!act.pressed);
+          if (act.ref) act.ref.setPressed = setPressed;
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const next = !btn.classList.contains('is-on');
+            setPressed(next);
+            if (typeof act.onToggle === 'function') act.onToggle(next);
+          });
+        } else {
+          if (act.label) btn.setAttribute('aria-label', act.label);
+          if (global.Tooltips?.set && act.label) global.Tooltips.set(btn, act.label);
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof act.onClick === 'function') act.onClick();
+          });
+        }
         actionBtns.push(btn);
         barActions.appendChild(btn);
       }

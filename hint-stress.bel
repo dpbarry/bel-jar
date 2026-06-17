@@ -88,7 +88,7 @@ fn StepsPQ ⇒ case StepsPQ of
 rec sec5 : (Ψ:nctx) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]]) [Ψ ⊢ ↦ P Q] → [Ψ ⊢ ↦ P Q] =
 fn StepPQ ⇒ case StepPQ of
   | [Ψ ⊢ ↦/match/u neuR stepU] ⇒ StepPQ
-  % ★stepU → ↦ (match R (pat/unit P')) (match R (pat/unit Q'))  [term-app]
+  % ★stepU → ↦ P P'  [term-app: 2nd arg slot of ↦/match/u : neu R → ↦ P P' → …]
   | [Ψ ⊢ ↦/match/p X (\x. \nx. \y. \ny. stepP)] ⇒ StepPQ
   % ★stepP → ↦ (P x y) (P' x y)  [term-app + lambda peel, ↦/match/p]
 ;

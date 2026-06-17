@@ -1,85 +1,30 @@
 // Project prelude — Beluga .cfg lists .elf (LF) and .bel files in load order.
-// Checking a .bel file means loading every predecessor from the same folder.
+// Cross-file visibility is governed by editor-src/development.mjs.
 import { Text } from '@codemirror/state';
 import { parser } from './beluga-parser.js';
 import { walkTree } from './bel-walk.mjs';
+import { expandBelAliases, readAliasActivationMode } from './bel-aliases.mjs';
+import { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
+import {
+  cfgByDirFromFiles,
+  developmentForFile,
+  dirOf,
+  parseCfg,
+  preludePathsFor,
+  resolveCfgOrder,
+  visibilityPaths,
+} from './development.mjs';
 
-export function dirOf(name) {
-  const i = String(name || '').lastIndexOf('/');
-  return i === -1 ? '' : name.slice(0, i);
-}
+export { cfgByDirFromFiles, dirOf, parseCfg, developmentForFile, activeCfgResolver } from './development.mjs';
 
-// File base name without directory or extension. Lets an orphan `par-red.bel`
-// (not listed in the .cfg) borrow the load position of its sibling `par-red.elf`
-// (which is listed), so it still sees the project prelude.
-function baseNoExt(name) {
-  const s = String(name || '');
-  const base = s.slice(s.lastIndexOf('/') + 1);
-  const dot = base.lastIndexOf('.');
-  return dot === -1 ? base : base.slice(0, dot);
-}
-
-function joinPath(dir, entry) {
-  if (!dir) return entry;
-  if (!entry) return dir;
-  return `${dir}/${entry}`;
-}
-
-export function parseCfg(text) {
-  const out = [];
-  for (const line of String(text || '').split('\n')) {
-    const t = line.trim();
-    if (!t || t.charAt(0) === '%') continue;
-    out.push(t);
-  }
-  return out;
-}
-
-function resolveCfgOrder(cfgDir, cfgText, cfgByDir, pathSet, seenCfg) {
-  seenCfg = seenCfg || new Set();
-  const key = `${cfgDir}\0${cfgText ? cfgText.length : 0}`;
-  if (seenCfg.has(key)) return [];
-  seenCfg.add(key);
-  const ordered = [];
-  const seen = new Set();
-  for (const entry of parseCfg(cfgText)) {
-    const low = entry.toLowerCase();
-    if (low.endsWith('.cfg')) {
-      const slash = entry.lastIndexOf('/');
-      const subDir = slash === -1 ? cfgDir : joinPath(cfgDir, entry.slice(0, slash));
-      const subName = slash === -1 ? entry : entry.slice(slash + 1);
-      const subMap = cfgByDir[subDir];
-      if (subMap?.[subName]) {
-        for (const p of resolveCfgOrder(subDir, subMap[subName], cfgByDir, pathSet, seenCfg)) {
-          if (!seen.has(p)) { seen.add(p); ordered.push(p); }
-        }
-      }
-    } else if (low.endsWith('.bel') || low.endsWith('.elf')) {
-      const full = joinPath(cfgDir, entry);
-      if (pathSet[full] && !seen.has(full)) {
-        seen.add(full);
-        ordered.push(full);
-      }
-    }
-  }
-  return ordered;
-}
-
-function pickCfgForDir(cfgByDir, dir, paths, activeName) {
+function pickCfgForDir(cfgByDir, dir, paths) {
   const map = cfgByDir[dir];
   if (!map) return null;
   const names = Object.keys(map);
-  if (!names.length) return null;
-  const inDir = Object.fromEntries(paths.filter((p) => dirOf(p) === dir).map((p) => [p, true]));
-  if (activeName) {
-    for (const cfgName of names) {
-      const ordered = resolveCfgOrder(dir, map[cfgName], cfgByDir, inDir, new Set());
-      if (ordered.indexOf(activeName) !== -1) return map[cfgName];
-    }
-  }
   if (names.length === 1) return map[names[0]];
   let best = null;
   let bestCount = -1;
+  const inDir = Object.fromEntries(paths.filter((p) => dirOf(p) === dir).map((p) => [p, true]));
   for (const cfgName of names) {
     const resolved = resolveCfgOrder(dir, map[cfgName], cfgByDir, inDir, new Set());
     if (resolved.length > bestCount) { bestCount = resolved.length; best = map[cfgName]; }
@@ -97,7 +42,7 @@ export function orderBelPaths(belPaths, cfgByDir = {}) {
   const out = [];
   for (const dir of Object.keys(byDir).sort()) {
     const files = byDir[dir].slice().sort();
-    const cfgText = pickCfgForDir(cfgByDir, dir, belPaths, null);
+    const cfgText = pickCfgForDir(cfgByDir, dir, belPaths);
     if (cfgText) {
       const pathSet = Object.fromEntries(files.map((p) => [p, true]));
       const ordered = resolveCfgOrder(dir, cfgText, cfgByDir, pathSet, new Set());
@@ -111,48 +56,20 @@ export function orderBelPaths(belPaths, cfgByDir = {}) {
   return out;
 }
 
-export function cfgByDirFromFiles(files, getText) {
-  const cfgByDir = {};
-  for (const f of files) {
-    const n = String(f.name || '');
-    if (!n.toLowerCase().endsWith('.cfg')) continue;
-    const dir = dirOf(n);
-    const base = n.slice(n.lastIndexOf('/') + 1);
-    if (!cfgByDir[dir]) cfgByDir[dir] = {};
-    cfgByDir[dir][base] = String(getText(f.id) ?? '');
-  }
-  return cfgByDir;
-}
-
-export function preludeFilesFor(files, activeId, getText) {
-  const active = files.find((f) => f.id === activeId);
-  // A project member is any .bel or .elf file. An .elf prelude (Twelf-style LF,
-  // e.g. lam.elf) must load ahead of the files that use it, exactly like a .bel.
-  if (!active || !/\.(?:bel|elf)$/i.test(String(active.name))) return [];
-  const dir = dirOf(active.name);
-  const paths = files
-    .filter((f) => {
-      const n = String(f.name || '').toLowerCase();
-      return dirOf(f.name) === dir && (n.endsWith('.bel') || n.endsWith('.elf'));
-    })
-    .map((f) => f.name);
-  const cfgByDir = cfgByDirFromFiles(files, getText);
-  const pathSet = Object.fromEntries(paths.map((p) => [p, true]));
-  const cfgText = pickCfgForDir(cfgByDir, dir, paths, active.name);
-  const ordered = cfgText
-    ? resolveCfgOrder(dir, cfgText, cfgByDir, pathSet, new Set())
-    : paths.filter((p) => /\.(?:bel|elf)$/i.test(p)).sort();
-  let idx = ordered.indexOf(active.name);
-  if (idx < 0) {
-    // Not listed in the cfg — borrow the position of a same-base-name sibling
-    // (e.g. editing par-red.bel while the cfg lists par-red.elf).
-    const base = baseNoExt(active.name);
-    idx = ordered.findIndex((p) => baseNoExt(p) === base);
-  }
-  if (idx <= 0) return [];
-  return ordered.slice(0, idx)
+function pathsToFiles(files, paths) {
+  return paths
     .map((name) => files.find((f) => f.name === name))
     .filter(Boolean);
+}
+
+function referencePaths(dev) {
+  if (!dev || !dev.paths.length) return [];
+  if (dev.kind === 'module') return dev.paths;
+  return visibilityPaths(dev);
+}
+
+export function preludeFilesFor(files, activeId, getText, options = {}) {
+  return pathsToFiles(files, preludePathsFor(files, activeId, getText, options));
 }
 
 // Per-text parse cache: a file's defined names (with positions + signatures)
@@ -175,8 +92,27 @@ const KIND_LABELS = {
   TypedefDeclaration: 'typedef',
 };
 
+function firstChildNamed(node, name) {
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === name) return c;
+  }
+  return null;
+}
+
+function clampSignature(type) {
+  const t = type.replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  return t.length > 160 ? `${t.slice(0, 159)}…` : t;
+}
+
 // The ": T" part of a declaration head — what hover shows as the source type.
+// Schemas have no ":"; their body lives after "=" in the SchemaBody node (and
+// itself contains ":"), so it must be read structurally, not by string search.
 function signatureFromDecl(src, declParent, ident) {
+  if (declParent.name === 'SchemaDeclaration') {
+    const body = firstChildNamed(declParent, 'SchemaBody');
+    return body ? clampSignature(src.slice(body.from, body.to)) : null;
+  }
   const declText = src.slice(declParent.from, declParent.to);
   const colonAt = declText.indexOf(':', ident.to - declParent.from);
   if (colonAt === -1) return null;
@@ -185,17 +121,26 @@ function signatureFromDecl(src, declParent, ident) {
   const semi = body.indexOf(';');
   const stop = eq >= 0 && semi >= 0 ? Math.min(eq, semi) : (eq >= 0 ? eq : semi);
   if (stop >= 0) body = body.slice(0, stop);
-  const type = body.replace(/\s+/g, ' ').trim();
-  if (!type) return null;
-  return type.length > 160 ? `${type.slice(0, 159)}…` : type;
+  return clampSignature(body);
 }
 
-function parsedDefsOf(text) {
-  const hit = defsCache.get(text);
+// Match bel-editor mount: sanitize, alias expand, auto-indent for .bel/.elf.
+export function editorTextForIndexing(text, fileName) {
+  if (fileName && /\.(bel|elf)$/i.test(fileName)) {
+    return prepareEditorDoc(text, fileName);
+  }
+  let src = sanitizeEditorText(text);
+  if (fileName && readAliasActivationMode() === 'greedy' && /\.(bel|elf)$/i.test(fileName)) {
+    src = expandBelAliases(src);
+  }
+  return src;
+}
+
+function parsedDefsOfSrc(src) {
+  const hit = defsCache.get(src);
   if (hit) return hit;
   let entry = { names: new Set(), defs: [], uses: [], sigByName: new Map() };
   try {
-    const src = String(text);
     const doc = Text.of(src.split('\n'));
     const walk = walkTree(parser.parse(src), doc);
     const seenDef = new Set();
@@ -230,59 +175,54 @@ function parsedDefsOf(text) {
     entry = { names: new Set(), defs: [], uses: [], sigByName: new Map() };
   }
   if (defsCache.size >= NAMES_CACHE_CAP) defsCache.clear();
-  defsCache.set(text, entry);
+  defsCache.set(src, entry);
   return entry;
 }
 
-export function usesOf(text) {
-  return parsedDefsOf(text).uses;
+function parsedDefsOfRaw(raw, fileName = null) {
+  return parsedDefsOfSrc(editorTextForIndexing(raw, fileName));
 }
 
-function namesOf(text) {
-  return parsedDefsOf(text).names;
+export function usesOf(text, fileName = null) {
+  return parsedDefsOfRaw(text, fileName).uses;
 }
 
-export function defsOf(text) {
-  return parsedDefsOf(text).defs;
+function namesOf(text, fileName = null) {
+  return parsedDefsOfRaw(text, fileName).names;
 }
 
-// The active file's whole development group, in load order: cfg-ordered when a
-// cfg covers it (includes .elf), else alphabetical signature files in its
-// directory. Includes the active file itself.
-export function groupFilesFor(files, activeId, getText) {
-  const active = files.find((f) => f.id === activeId);
-  if (!active) return [];
-  const dir = dirOf(active.name);
-  const paths = files
-    .filter((f) => {
-      const n = String(f.name || '').toLowerCase();
-      return dirOf(f.name) === dir && (n.endsWith('.bel') || n.endsWith('.elf'));
-    })
-    .map((f) => f.name);
-  const cfgByDir = cfgByDirFromFiles(files, getText);
-  const pathSet = Object.fromEntries(paths.map((p) => [p, true]));
-  const cfgText = pickCfgForDir(cfgByDir, dir, paths, active.name);
-  let ordered = cfgText
-    ? resolveCfgOrder(dir, cfgText, cfgByDir, pathSet, new Set())
-    : paths.slice().sort();
-  if (ordered.indexOf(active.name) === -1) ordered = ordered.concat([active.name]);
-  return ordered
-    .map((name) => files.find((f) => f.name === name))
-    .filter(Boolean);
+export function defsOf(text, fileName = null) {
+  return parsedDefsOfRaw(text, fileName).defs;
+}
+
+// Prelude predecessors + active file — the IDE signature/hover visibility scope.
+export function groupFilesFor(files, activeId, getText, options = {}) {
+  const dev = developmentForFile(files, activeId, getText, options);
+  return pathsToFiles(files, visibilityPaths(dev));
+}
+
+function moduleGroupFilesFor(files, activeId, getText, options = {}) {
+  const dev = developmentForFile(files, activeId, getText, options);
+  return pathsToFiles(files, referencePaths(dev));
+}
+
+// Module group files in cfg / development order (for reference listing).
+export function referenceGroupFilesFor(files, activeId, getText, options = {}) {
+  return moduleGroupFilesFor(files, activeId, getText, options);
 }
 
 // Where is `name` defined elsewhere in the active file's group? Prefers the
 // CLOSEST prelude definition (later files shadow earlier ones); falls back to
 // the first definition in a file after the active one. Null when unknown.
-export function findProjectDefinition(files, activeId, name, getText) {
+export function findProjectDefinition(files, activeId, name, getText, options = {}) {
   if (!name) return null;
-  const group = groupFilesFor(files, activeId, getText);
+  const group = moduleGroupFilesFor(files, activeId, getText, options);
   const activeIdx = group.findIndex((f) => f.id === activeId);
   let best = null;
   for (let i = 0; i < group.length; i++) {
     const f = group[i];
     if (f.id === activeId) continue;
-    const def = defsOf(String(getText(f.id) ?? '')).find((d) => d.name === name);
+    const def = defsOf(String(getText(f.id) ?? ''), f.name).find((d) => d.name === name);
     if (!def) continue;
     const hit = { fileId: f.id, fileName: f.name, from: def.from, to: def.to };
     if (activeIdx === -1 || i < activeIdx) best = hit; // later prelude wins
@@ -291,14 +231,57 @@ export function findProjectDefinition(files, activeId, name, getText) {
   return best;
 }
 
+// Cross-file definition lookup over the hover/IDE visibility scope (prelude + active).
+export function findGroupDefinition(files, activeId, name, getText, options = {}) {
+  if (!name) return null;
+  const group = groupFilesFor(files, activeId, getText, options);
+  const activeIdx = group.findIndex((f) => f.id === activeId);
+  let best = null;
+  for (let i = 0; i < group.length; i++) {
+    const f = group[i];
+    if (f.id === activeId) continue;
+    const def = defsOf(String(getText(f.id) ?? ''), f.name).find((d) => d.name === name);
+    if (!def) continue;
+    const hit = { fileId: f.id, fileName: f.name, from: def.from, to: def.to };
+    if (activeIdx === -1 || i < activeIdx) best = hit;
+    else if (!best) best = hit;
+  }
+  return best;
+}
+
+// ALL cross-file definitions of `name` in the active file's group (one per
+// defining file, excluding the active file), ordered closest-prelude-first then
+// post-active. Backs go-to-def disambiguation when a name is defined in more
+// than one visible file. `findProjectDefinition` returns the single best of
+// these; this returns every candidate so the UI can offer a chooser.
+export function findProjectDefinitions(files, activeId, name, getText, options = {}) {
+  if (!name) return [];
+  const group = moduleGroupFilesFor(files, activeId, getText, options);
+  const activeIdx = group.findIndex((f) => f.id === activeId);
+  const before = [];
+  const after = [];
+  for (let i = 0; i < group.length; i++) {
+    const f = group[i];
+    if (f.id === activeId) continue;
+    const def = defsOf(String(getText(f.id) ?? ''), f.name).find((d) => d.name === name);
+    if (!def) continue;
+    const hit = { fileId: f.id, fileName: f.name, from: def.from, to: def.to };
+    if (activeIdx === -1 || i < activeIdx) before.push(hit);
+    else after.push(hit);
+  }
+  // Closest prelude (latest before the active file) first, then post-active.
+  before.reverse();
+  return before.concat(after);
+}
+
 // Every definition in the group's OTHER files (the engine owns the active
 // file's symbols) — palette "@" fodder. Deduped per file by name.
-export function listGroupSymbols(files, activeId, getText) {
+export function listGroupSymbols(files, activeId, getText, options = {}) {
   const out = [];
-  for (const f of groupFilesFor(files, activeId, getText)) {
+  for (const f of groupFilesFor(files, activeId, getText, options)) {
     if (f.id === activeId) continue;
     const seen = new Set();
-    for (const d of defsOf(String(getText(f.id) ?? ''))) {
+    for (const d of defsOf(String(getText(f.id) ?? ''), f.name)) {
       if (seen.has(d.name)) continue;
       seen.add(d.name);
       out.push({ name: d.name, fileId: f.id, fileName: f.name, from: d.from, to: d.to });
@@ -309,15 +292,15 @@ export function listGroupSymbols(files, activeId, getText) {
 
 // Source signature (": T" of the declaration head) for a name defined in
 // another group file — the cross-file hover payload. Closest prelude wins.
-export function findGroupSignature(files, activeId, name, getText) {
+export function findGroupSignature(files, activeId, name, getText, options = {}) {
   if (!name) return null;
-  const group = groupFilesFor(files, activeId, getText);
+  const group = groupFilesFor(files, activeId, getText, options);
   const activeIdx = group.findIndex((f) => f.id === activeId);
   let best = null;
   for (let i = 0; i < group.length; i++) {
     const f = group[i];
     if (f.id === activeId) continue;
-    const sig = parsedDefsOf(String(getText(f.id) ?? '')).sigByName.get(name);
+    const sig = parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name).sigByName.get(name);
     if (!sig) continue;
     const hit = { fileName: f.name, type: sig.type, label: sig.label };
     if (activeIdx === -1 || i < activeIdx) best = hit;
@@ -343,13 +326,16 @@ function posToLineCol(text, from) {
 // Occurrences of `name` in the group's OTHER files: free uses plus definitions
 // (marked isDef). Files that DEFINE the name themselves are skipped unless they
 // are the queried definition's own file — their occurrences bind locally.
-export function groupReferencesFor(files, activeId, name, getText, { defFileId = null } = {}) {
+export function groupReferencesFor(files, activeId, name, getText, opts = {}) {
   if (!name) return [];
+  const { defFileId = null, activeCfgForDir } = opts;
+  const devOpts = activeCfgForDir ? { activeCfgForDir } : {};
   const out = [];
-  for (const f of groupFilesFor(files, activeId, getText)) {
+  for (const f of moduleGroupFilesFor(files, activeId, getText, devOpts)) {
     if (f.id === activeId) continue;
-    const text = String(getText(f.id) ?? '');
-    const parsed = parsedDefsOf(text);
+    const raw = String(getText(f.id) ?? '');
+    const text = editorTextForIndexing(raw, f.name);
+    const parsed = parsedDefsOfSrc(text);
     const defines = parsed.defs.some((d) => d.name === name);
     // defFileId null = the ACTIVE file owns the definition; any other file
     // defining the same name shadows it, so its occurrences don't belong here.
@@ -383,13 +369,22 @@ export function groupReferencesFor(files, activeId, name, getText, { defFileId =
 // the definition being renamed (null = the active file owns it); that file
 // gets its definition tokens renamed too. Files defining the same name
 // themselves are skipped — their occurrences refer to their own definition.
-export function groupRenameEdits(files, activeId, name, getText, defFileId = null) {
+export function groupRenameEdits(files, activeId, name, getText, opts = {}) {
   if (!name) return [];
+  let defFileId = null;
+  let devOpts = {};
+  if (opts != null && typeof opts === 'object') {
+    defFileId = opts.defFileId != null ? opts.defFileId : null;
+    if (opts.activeCfgForDir) devOpts = { activeCfgForDir: opts.activeCfgForDir };
+  } else {
+    defFileId = opts;
+  }
   const plans = [];
-  for (const f of groupFilesFor(files, activeId, getText)) {
+  for (const f of moduleGroupFilesFor(files, activeId, getText, devOpts)) {
     if (f.id === activeId) continue;
-    const text = String(getText(f.id) ?? '');
-    const parsed = parsedDefsOf(text);
+    const raw = String(getText(f.id) ?? '');
+    const text = editorTextForIndexing(raw, f.name);
+    const parsed = parsedDefsOfSrc(text);
     const defines = parsed.defs.some((d) => d.name === name);
     const isDefFile = defFileId != null && f.id === defFileId;
     if (defines && !isDefFile) continue;
@@ -416,11 +411,11 @@ export function applyTextEdits(text, edits, insert) {
 }
 
 // Would `name` collide with a definition somewhere in the group (other files)?
-export function groupDefinesName(files, activeId, name, getText) {
+export function groupDefinesName(files, activeId, name, getText, options = {}) {
   if (!name) return false;
-  for (const f of groupFilesFor(files, activeId, getText)) {
+  for (const f of groupFilesFor(files, activeId, getText, options)) {
     if (f.id === activeId) continue;
-    if (parsedDefsOf(String(getText(f.id) ?? '')).names.has(name)) return true;
+    if (parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name).names.has(name)) return true;
   }
   return false;
 }
@@ -519,8 +514,8 @@ export function assembleProjectCode(files) {
   };
 }
 
-export function buildPrelude(files, activeId, getText) {
-  const pre = preludeFilesFor(files, activeId, getText);
+export function buildPrelude(files, activeId, getText, options = {}) {
+  const pre = preludeFilesFor(files, activeId, getText, options);
   if (!pre.length) return null;
   const parts = [];
   const spans = [];

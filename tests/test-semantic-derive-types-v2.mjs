@@ -45,7 +45,7 @@ expect(byPos && byPos.type === '{g:ctx} nd → type',
 // All decls derived in this batch (only 2 globals) → no remaining work.
 expect(more === false, 'deriveFrontier should report no remaining work when all decls fit one batch');
 
-// --- First consumer: reconstructed OUTRANKS hydrated and source annotation. --
+// --- First consumer: reconstructed wins when richer than source annotation. -----
 s1.observeType(ndPos, 'HYDRATED-T'); // would normally show hydrated/stale-known
 const cached = s1.cachedTypeAt(ndPos);
 expect(cached && cached.type === '{g:ctx} nd → type'

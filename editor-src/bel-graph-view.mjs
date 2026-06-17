@@ -1,6 +1,8 @@
 // Dependency graph view (local neighborhood + global file scope).
 
+
 import { getEngine, jumpToRange } from './bel-ide-actions.mjs';
+import { createFollowWindowAction, registerEditorFollow } from './bel-follow-sync.mjs';
 import { computeParseCoverage, formatGlobalGraphStaleBanner } from './bel-ide-status.mjs';
 import { createForceSim } from './graph/force-sim.mjs';
 import { createGraph3D } from './graph/webgl-graph.mjs';
@@ -305,6 +307,42 @@ function jumpToNode(view, engine, node) {
 
 const openGraphWindows = new Map();
 
+function syncFollowFromEditor(view, engine, win, ctx) {
+  if (!ctx.followEditor || ctx._followFromGraph || ctx._navRestoring) return;
+  const ctrl = win._graph3d;
+  if (!ctrl) return;
+  const id = rootIdAt(engine, view, view.state.selection.main.head);
+  if (!id) return;
+
+  const cur = navCurrent(win._graphNav);
+  if (!cur) return;
+
+  ctx._followSyncing = true;
+  try {
+    if (cur.mode === 'global') {
+      const idx = ctrl.indexOfId(id);
+      if (idx < 0) return;
+      ctrl.flyToIndex(idx, { animate: true, spotlight: true, tight: true });
+      ctx.selectedNodeId = id;
+      reflectPropSelection(ctx.propBar, ctx, ctrl);
+      ctx.toolbar?.syncFocus?.(ctrl.getNodes()[idx], idx);
+    } else if (cur.rootId === id) {
+      ctrl.frameNode(id, { animate: true });
+    } else {
+      drillGraph(view, engine, win, ctx, id, { push: false });
+    }
+  } finally {
+    ctx._followSyncing = false;
+  }
+}
+
+function jumpOnGraphActivate(ctx, view, engine, node) {
+  if (!ctx.followEditor || ctx._followFromGraph) return;
+  ctx._followFromGraph = true;
+  jumpToNode(view, engine, node);
+  queueMicrotask(() => { ctx._followFromGraph = false; });
+}
+
 const GRAPH_SETTINGS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" '
   + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
   + '<g transform="translate(12 12) scale(1.08) translate(-12 -12)">'
@@ -515,34 +553,41 @@ function ensureGraphSettingsDialog() {
   const g = typeof window !== 'undefined' ? window : self;
   if (typeof g.BelJarDialog === 'undefined') return null;
 
-  const stack = document.createElement('div');
-  stack.className = 'bj-dialog__stack';
-  const section = document.createElement('div');
-  section.className = 'bj-dialog__section';
+  const shell = document.createElement('div');
+  shell.className = 'bj-settings bj-settings--solo';
+
+  const main = document.createElement('div');
+  main.className = 'bj-settings__main';
+
+  const panel = document.createElement('div');
+  panel.className = 'bj-settings__panel is-active';
+
+  const body = document.createElement('div');
+  body.className = 'bj-settings__panel-body';
 
   addGraphSettingDropdown(
-    section,
+    body,
     'View',
     '3D galaxy or a flat layered diagram.',
     [{ value: 'force', label: '3D' }, { value: 'flat', label: 'Flat' }],
     'layout',
   );
   addGraphSettingDropdown(
-    section,
+    body,
     'Implementation edges',
     'Body edges link symbols to their implementation detail.',
     [{ value: 'show', label: 'Show edges' }, { value: 'hide', label: 'Hide edges' }],
     'impl',
   );
   addGraphSettingDropdown(
-    section,
+    body,
     'Neighborhood depth',
     'Default hop count when exploring a symbol\'s local graph (1–3).',
     [{ value: '1', label: '1 hop' }, { value: '2', label: '2 hops' }, { value: '3', label: '3 hops' }],
     'depth',
   );
   addGraphSettingDropdown(
-    section,
+    body,
     'Label density',
     'How many node labels are shown. Small graphs always show all labels regardless.',
     [
@@ -554,12 +599,14 @@ function ensureGraphSettingsDialog() {
     ],
     'labelDensity',
   );
-  stack.appendChild(section);
+  panel.appendChild(body);
+  main.appendChild(panel);
+  shell.appendChild(main);
 
   graphSettingsDialog = g.BelJarDialog.createDialog({
     title: 'Dependency graph settings',
-    content: stack,
-    cardClass: 'bj-dialog__card--settings',
+    content: shell,
+    cardClass: 'bj-dialog__card--settings-compact',
     removeOnClose: false,
   });
   return graphSettingsDialog;
@@ -635,7 +682,12 @@ onGraphPrefsChange(applyGraphPrefsToAll);
 function rootIdAt(engine, view, pos) {
   if (typeof engine.navAt !== 'function') return null;
   const nav = engine.navAt(pos);
-  return nav && nav.symbolId ? nav.symbolId : null;
+  if (!nav || !nav.symbolId) return null;
+  const snap = engine.getSnapshot && engine.getSnapshot();
+  const sym = snap && snap.symbols && snap.symbols.symbolsById
+    ? snap.symbols.symbolsById.get(nav.symbolId) : null;
+  if (sym && sym.namespace === 'pragma') return null;
+  return nav.symbolId;
 }
 
 function nameForId(engine, id) {
@@ -770,8 +822,9 @@ const ICONS = {
 };
 
 function iconSvg(name) {
+  const join = 'round';
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" '
-    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+    + `stroke-linecap="round" stroke-linejoin="${join}" aria-hidden="true">` + ICONS[name] + '</svg>';
 }
 
 function setTip(el, text) {
@@ -1191,7 +1244,7 @@ function mountGraph3DRenderer(view, engine, ctx) {
   // win._graph3d isn't assigned until mount returns, so focus callbacks that fire
   // before then read the controller back through ctx._mountingCtrl.
   const onBeforeFocusChange = (prevIdx, nextIdx) => {
-    if (ctx._navRestoring || mode !== 'global') return;
+    if (ctx._navRestoring || ctx._followSyncing || mode !== 'global') return;
     const prevId = prevIdx >= 0 ? model.nodes[prevIdx]?.id : null;
     const nextId = nextIdx >= 0 ? model.nodes[nextIdx]?.id : null;
     recordGlobalFocusNav(win, ctx, prevId, nextId);
@@ -1202,6 +1255,8 @@ function mountGraph3DRenderer(view, engine, ctx) {
     else reflectPropBarIdle(propBar, ctx);
     toolbar?.syncFocus?.(node, idx);
   };
+
+  const onActivate = (node) => jumpOnGraphActivate(ctx, view, engine, node);
 
   let ctrl;
 
@@ -1217,6 +1272,7 @@ function mountGraph3DRenderer(view, engine, ctx) {
       onJump: (node) => jumpToNode(view, engine, node),
       onDrill: mode === 'neighborhood' ? drill : null,
       onFly: fly,
+      onActivate,
       onBeforeFocusChange,
       onFocus,
     });
@@ -1234,6 +1290,7 @@ function mountGraph3DRenderer(view, engine, ctx) {
       onJump: (node) => jumpToNode(view, engine, node),
       onDrill: mode === 'neighborhood' ? drill : null,
       onFly: fly,
+      onActivate,
       onBeforeFocusChange,
       onFocus,
     });
@@ -1245,7 +1302,11 @@ function mountGraph3DRenderer(view, engine, ctx) {
   ctrl.setImplVisibility(prefs.impl);
 
   toolbar.syncNodes?.(ctrl.getNodes(), {
-    onPick: (node) => { const idx = ctrl.indexOfId(node.id); if (idx >= 0) ctrl.flyToIndex(idx, { animate: true }); },
+    onPick: (node) => {
+      onActivate(node);
+      const idx = ctrl.indexOfId(node.id);
+      if (idx >= 0) ctrl.flyToIndex(idx, { animate: true });
+    },
     onJump: (node) => jumpToNode(view, engine, node),
   });
 
@@ -1279,15 +1340,21 @@ function mountGraph3DRenderer(view, engine, ctx) {
   return ctrl;
 }
 
-function drillGraph(view, engine, win, ctx, newRootId) {
+function drillGraph(view, engine, win, ctx, newRootId, { push = true } = {}) {
   ctx.selectedNodeId = newRootId;
   const cur = navCurrent(win._graphNav);
   const depth = loadGraphPrefs().depth;
   if (cur?.mode === 'neighborhood' && cur.rootId === newRootId) {
-    win._graph3d?.frameNode(newRootId);
+    win._graph3d?.frameNode(newRootId, { animate: true });
     return;
   }
-  navigateGraph(view, engine, win, ctx, buildNavEntry({ mode: 'neighborhood', rootId: newRootId, depth }), { push: true });
+  const next = buildNavEntry({ mode: 'neighborhood', rootId: newRootId, depth });
+  if (!push && cur?.mode === 'neighborhood') {
+    win._graphNav.stack[win._graphNav.index] = next;
+    navigateGraph(view, engine, win, ctx, next, { push: false });
+    return;
+  }
+  navigateGraph(view, engine, win, ctx, next, { push });
 }
 
 function navigateToGlobalGraph(view, engine, win, ctx) {
@@ -1419,10 +1486,29 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
 
   const ctx = {
     win: null, canvas, labels, toolbar, propBar, sidebar, model, mode, graphKey: key,
-    restoreCamera: false, viewMeta: null,
+    restoreCamera: false, viewMeta: null, followEditor: false,
     selectedNodeId: mode === 'neighborhood' ? (rootId || model.root) : null,
   };
   const graphBundle = { view, engine, ctx };
+  const { ref: followRef, action: followAction } = createFollowWindowAction((on) => setGraphFollow(on));
+  let unregisterGraphFollow = null;
+
+  function setGraphFollow(on) {
+    ctx.followEditor = !!on;
+    followRef.setPressed?.(!!on);
+    if (unregisterGraphFollow) {
+      unregisterGraphFollow();
+      unregisterGraphFollow = null;
+    }
+    if (ctx.followEditor) {
+      unregisterGraphFollow = registerEditorFollow({
+        view,
+        isActive: () => ctx.followEditor,
+        sync: () => syncFollowFromEditor(view, engine, ctx.win, ctx),
+      });
+      syncFollowFromEditor(view, engine, ctx.win, ctx);
+    }
+  }
 
   const onKey = (ev) => {
     if (ev.target?.closest?.('input, textarea, select')) {
@@ -1448,13 +1534,14 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
     content: body,
     className: 'bel-graph-window bel-graph3d-window',
     width, height,
-    actions: [{
+    actions: [followAction, {
       label: 'Dependency graph settings',
       icon: GRAPH_SETTINGS_ICON,
       onClick: openGraphSettingsDialog,
     }],
     onClose: () => {
       body.removeEventListener('keydown', onKey);
+      if (unregisterGraphFollow) unregisterGraphFollow();
       if (win._graph3d) win._graph3d.dispose();
       openGraphWindows.delete(win._graphKey ?? key);
       win._graphBundle = null;

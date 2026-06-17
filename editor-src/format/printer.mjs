@@ -67,58 +67,18 @@ export function makePrinter(src, opts = {}) {
     },
 
     LFDatatypeDeclaration(node) {
-      const kw = firstOfType(node, 'LFKeyword') || firstOfType(node, 'DatatypeKeyword');
-      const id = firstOfType(node, 'LowerIdentifier');
-      const kind = firstOfType(node, 'LFKind');
-      const ctors = childrenArr(node).filter((c) => c.name === 'LFConstructor');
-
-      const header = concat(
-        text(txt(kw, src)),
-        space,
-        text(txt(id, src)),
-        text(' : '),
-        kind ? ppKind(kind) : empty,
-        text(' ='),
-      );
-
-      const body =
-        ctors.length === 0
-          ? empty
-          : concat(
-              hardline,
-              text('  '),
-              join(
-                concat(hardline, text('  ')),
-                ctors.map((c) => concat(text('| '), ppCtor(c))),
-              ),
-            );
-
-      return concat(header, body, text('\n;'));
+      return ppLFDatatypeGroup(node);
     },
 
     InductiveDeclaration: (node) => ppInductive(node, 'inductive'),
     StratifiedDeclaration: (node) => ppInductive(node, 'stratified'),
 
     SchemaDeclaration(node) {
-      const id = firstOfType(node, 'LowerIdentifier');
-      const body = firstOfType(node, 'SchemaBody');
-      return concat(text('schema '), text(txt(id, src)), text(' = '), body ? nest(style.indent, ppSchemaBody(body)) : empty, declSemicolon());
+      return ppSchemaDecl(node);
     },
 
     TypedefDeclaration(node) {
-      const id = firstOfType(node, 'LowerIdentifier') || firstOfType(node, 'UpperIdentifier');
-      const kind = firstOfType(node, 'CompKind');
-      const ty = firstOfType(node, 'CompType');
-      return concat(
-        text('typedef '),
-        text(txt(id, src)),
-        text(' : '),
-        kind ? ppKind(kind) : empty,
-        text(' ='),
-        line,
-        group(nest(style.indent, ty ? ppType(ty) : empty)),
-        declSemicolon(),
-      );
+      return ppTypedefDecl(node);
     },
 
     RecDeclaration(node) {
@@ -126,18 +86,7 @@ export function makePrinter(src, opts = {}) {
     },
 
     LetDeclaration(node) {
-      const id = firstOfType(node, 'LowerIdentifier');
-      const ty = firstOfType(node, 'CompType');
-      const exprs = childrenArr(node).filter((c) => c.name === 'Expression');
-      const expr = exprs[0];
-      return concat(
-        text('let '),
-        text(txt(id, src)),
-        ty ? concat(text(' : '), group(nest(style.indent, ppType(ty)))) : empty,
-        text(' = '),
-        expr ? group(nest(2, concat(softline, ppExpr(expr)))) : empty,
-        declSemicolon(),
-      );
+      return ppLetDecl(node);
     },
 
     ModuleDeclaration(node) {
@@ -182,6 +131,235 @@ export function makePrinter(src, opts = {}) {
 
   function ppComment(node) {
     return concat(hardline, verbatim(node));
+  }
+
+  function ppInlineComment(node) {
+    return concat(space, verbatim(node));
+  }
+
+  function isTypeFamilyId(node) {
+    return node.name === 'LowerIdentifier' || node.name === 'UpperIdentifier';
+  }
+
+  function ppCtorListBody(bodyItems) {
+    if (bodyItems.length === 0) return empty;
+    const docs = bodyItems.map((item) => {
+      if (item.type === 'comment') return verbatim(item.node);
+      if (item.type === 'raw') return item.doc;
+      return concat(text('| '), ppCtor(item.node));
+    });
+    return concat(hardline, text('  '), join(concat(hardline, text('  ')), docs));
+  }
+
+  function pushSegmentComment(c, equalsEnd, afterEquals, bodyItems) {
+    if (bodyItems.length === 0 && equalsEnd != null && !src.slice(equalsEnd, c.from).includes('\n')) {
+      afterEquals.push(ppInlineComment(c));
+      return;
+    }
+    bodyItems.push({ type: 'comment', node: c });
+  }
+
+  function ppLFDatatypeSegment(id, kind, afterEquals, bodyItems) {
+    const header = concat(
+      text(txt(id, src)),
+      text(' : '),
+      kind ? ppKind(kind) : empty,
+      text(' ='),
+      ...afterEquals,
+    );
+    return concat(header, ppCtorListBody(bodyItems));
+  }
+
+  function readLFDatatypeSegment(children, start) {
+    const id = children[start];
+    let kind = null;
+    let equalsEnd = null;
+    const afterEquals = [];
+    const bodyItems = [];
+    let i = start + 1;
+    while (i < children.length) {
+      const c = children[i];
+      if (c.name === 'AndKeyword' || c.name === ';' || isTypeFamilyId(c)) break;
+      if (c.name === 'LFKind') {
+        kind = c;
+        i++;
+        continue;
+      }
+      if (c.name === '=') {
+        equalsEnd = c.to;
+        i++;
+        continue;
+      }
+      if (c.name === ':' || c.name === '|') {
+        i++;
+        continue;
+      }
+      if (c.name === 'LFConstructor') {
+        bodyItems.push({ type: 'ctor', node: c });
+        i++;
+        continue;
+      }
+      if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        pushSegmentComment(c, equalsEnd, afterEquals, bodyItems);
+        i++;
+        continue;
+      }
+      if (bodyItems.length === 0) afterEquals.push(verbatim(c));
+      else bodyItems.push({ type: 'raw', doc: verbatim(c) });
+      i++;
+    }
+    return { doc: ppLFDatatypeSegment(id, kind, afterEquals, bodyItems), next: i };
+  }
+
+  function ppLFDatatypeGroup(node) {
+    const children = childrenArr(node);
+    const kw = firstOfType(node, 'LFKeyword') || firstOfType(node, 'DatatypeKeyword');
+    if (!kw) return verbatim(node);
+    const parts = [text(txt(kw, src)), space];
+    let i = 0;
+    while (i < children.length) {
+      const c = children[i];
+      if (c.name === ';') break;
+      if (c.name === 'LFKeyword' || c.name === 'DatatypeKeyword') {
+        i++;
+        continue;
+      }
+      if (c.name === 'AndKeyword') {
+        parts.push(hardline, text('and '));
+        i++;
+        continue;
+      }
+      if (isTypeFamilyId(c)) {
+        const segment = readLFDatatypeSegment(children, i);
+        parts.push(segment.doc);
+        i = segment.next;
+        continue;
+      }
+      if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        parts.push(ppComment(c));
+        i++;
+        continue;
+      }
+      if (c.name === ':' || c.name === '=' || c.name === '|') {
+        i++;
+        continue;
+      }
+      parts.push(verbatim(c));
+      i++;
+    }
+    return concat(...parts, text('\n;'));
+  }
+
+  function ppSchemaDecl(node) {
+    const parts = [text('schema ')];
+    let id = null;
+    let body = null;
+    for (const c of childrenArr(node)) {
+      if (c.name === ';') continue;
+      if (c.name === 'SchemaKeyword') continue;
+      if (c.name === 'LowerIdentifier') {
+        id = c;
+        parts.push(text(txt(c, src)));
+        continue;
+      }
+      if (c.name === '=') {
+        parts.push(text(' = '));
+        continue;
+      }
+      if (c.name === 'SchemaBody') {
+        body = c;
+        parts.push(hardline, nest(style.indent, ppSchemaBody(c)));
+        continue;
+      }
+      if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        parts.push(ppInlineComment(c));
+        continue;
+      }
+      parts.push(verbatim(c));
+    }
+    if (!id) return verbatim(node);
+    if (!body && parts.length <= 2) return verbatim(node);
+    return concat(...parts, declSemicolon());
+  }
+
+  function ppTypedefDecl(node) {
+    let id = null;
+    let kind = null;
+    let ty = null;
+    const afterEquals = [];
+    for (const c of childrenArr(node)) {
+      if (c.name === 'TypedefKeyword' || c.name === ';' || c.name === ':' || c.name === '=') continue;
+      if (!id && isTypeFamilyId(c)) {
+        id = c;
+        continue;
+      }
+      if (c.name === 'CompKind') {
+        kind = c;
+        continue;
+      }
+      if (c.name === 'CompType') {
+        ty = c;
+        continue;
+      }
+      if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        afterEquals.push(
+          src.lastIndexOf('\n', c.from) > src.lastIndexOf('=', c.from) ? ppComment(c) : ppInlineComment(c),
+        );
+        continue;
+      }
+    }
+    if (!id || !ty) return verbatim(node);
+    return concat(
+      text('typedef '),
+      text(txt(id, src)),
+      text(' : '),
+      kind ? ppKind(kind) : empty,
+      text(' ='),
+      ...afterEquals,
+      line,
+      group(nest(style.indent, ppType(ty))),
+      declSemicolon(),
+    );
+  }
+
+  function ppLetDecl(node) {
+    const parts = [text('let ')];
+    let id = null;
+    let ty = null;
+    let expr = null;
+    for (const c of childrenArr(node)) {
+      if (c.name === ';') continue;
+      if (c.name === 'LetKeyword') continue;
+      if (c.name === 'LowerIdentifier') {
+        id = c;
+        parts.push(text(txt(c, src)));
+        continue;
+      }
+      if (c.name === 'CompType') {
+        ty = c;
+        continue;
+      }
+      if (c.name === 'Expression') {
+        expr = c;
+        continue;
+      }
+      if (c.name === ':') {
+        if (ty) parts.push(text(' : '), group(nest(style.indent, ppType(ty))));
+        continue;
+      }
+      if (c.name === '=') {
+        parts.push(text(' = '));
+        continue;
+      }
+      if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        parts.push(ppComment(c));
+        continue;
+      }
+      parts.push(verbatim(c));
+    }
+    if (!id) return verbatim(node);
+    if (expr) parts.push(group(nest(2, concat(softline, ppExpr(expr)))));
+    return concat(...parts, declSemicolon());
   }
 
   function ppRecContinuation(node) {
@@ -239,22 +417,36 @@ export function makePrinter(src, opts = {}) {
   }
 
   function ppInductiveBody(node) {
-    const id = firstOfType(node, 'UpperIdentifier');
+    const id = firstOfType(node, 'LowerIdentifier') || firstOfType(node, 'UpperIdentifier');
+    if (!id) return verbatim(node);
     const kind = firstOfType(node, 'CompKind');
-    const ctors = childrenArr(node).filter((c) => c.name === 'CompConstructor');
-    const header = concat(text(txt(id, src)), text(' : '), kind ? ppKind(kind) : empty, text(' ='));
-    const body =
-      ctors.length === 0
-        ? empty
-        : concat(
-            hardline,
-            text('  '),
-            join(
-              concat(hardline, text('  ')),
-              ctors.map((c) => concat(text('| '), ppCtor(c))),
-            ),
-          );
-    return concat(header, body);
+    let equalsEnd = null;
+    const afterEquals = [];
+    const bodyItems = [];
+    for (const c of childrenArr(node)) {
+      if (c.name === '=') {
+        equalsEnd = c.to;
+        continue;
+      }
+      if (c.name === ':' || c.name === '|' || c.name === 'CompKind') continue;
+      if (isTypeFamilyId(c)) continue;
+      if (c.name === 'CompConstructor') {
+        bodyItems.push({ type: 'ctor', node: c });
+        continue;
+      }
+      if (c.name === 'LineComment' || c.name === 'BlockComment') {
+        pushSegmentComment(c, equalsEnd, afterEquals, bodyItems);
+        continue;
+      }
+    }
+    const header = concat(
+      text(txt(id, src)),
+      text(' : '),
+      kind ? ppKind(kind) : empty,
+      text(' ='),
+      ...afterEquals,
+    );
+    return concat(header, ppCtorListBody(bodyItems));
   }
 
   function ppCtor(node) {

@@ -56,8 +56,7 @@ function mockSession(typeOf = (name) => 'MV@' + name) {
   m2.importTypes(blob);
   const h = m2.hoverAt(at(META, 'pf A') + 3);
   expect(h.status === 'ready', `hydrated hover ready, got ${h.status}`);
-  // Structural inference (`pf : o -> type` ⇒ A ↦ o) wins over stale cache when available.
-  expect(h.type === 'o' || /^MV@/.test(h.type), `type, got ${h.type}`);
+  expect(h.type === 'o', `structural wins over stale cache, got ${h.type}`);
   expect(!h.promise, 'no async path when instant');
 }
 

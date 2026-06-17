@@ -267,34 +267,158 @@
     return cfgByDir;
   }
 
-  // Cfg-ordered signature files (.elf + .bel) in the active file's directory.
-  // Legacy files not listed in the matching .cfg (e.g. church-rosser/equiv.elf) are
-  // excluded — same scope Beluga uses when you `beluga foo.cfg`.
-  function orderedDevelopmentPaths(files, activeId, getText) {
+  function topLevelCfgPaths(files, getText) {
+    var cfgByDir = cfgByDirFromFiles(files, getText);
+    var referenced = {};
+    var cfgPaths = [];
+    for (var i = 0; i < files.length; i++) {
+      var n = String(files[i].name || '');
+      if (!n.toLowerCase().endsWith('.cfg')) continue;
+      cfgPaths.push(n);
+      var cdir = dirOf(n);
+      var entries = parseCfg(getText(files[i].id));
+      for (var e = 0; e < entries.length; e++) {
+        if (entries[e].toLowerCase().endsWith('.cfg')) referenced[joinPath(cdir, entries[e])] = true;
+      }
+    }
+    cfgPaths.sort();
+    var out = [];
+    for (var c = 0; c < cfgPaths.length; c++) {
+      if (!referenced[cfgPaths[c]]) out.push(cfgPaths[c]);
+    }
+    return out;
+  }
+
+  function resolveActiveChain(files, cfgPath, getText) {
+    if (!cfgPath) return [];
+    var allSig = allSignaturePaths(files);
+    var allSet = {};
+    for (var sp = 0; sp < allSig.length; sp++) allSet[allSig[sp]] = true;
+    var cfgByDir = cfgByDirFromFiles(files, getText);
+    var dir = dirOf(cfgPath);
+    var base = cfgPath.slice(cfgPath.lastIndexOf('/') + 1);
+    var map = cfgByDir[dir];
+    if (!map || !map[base]) return [];
+    return resolveCfgOrder(dir, map[base], cfgByDir, allSet, new Set());
+  }
+
+  function bestCfgInDir(files, getText, dir) {
+    var cfgByDir = cfgByDirFromFiles(files, getText);
+    var d = dir != null ? String(dir) : '';
+    var map = cfgByDir[d];
+    if (!map) return null;
+    var sigPaths = allSignaturePaths(files);
+    var pathSet = {};
+    for (var p = 0; p < sigPaths.length; p++) {
+      if (dirOf(sigPaths[p]) === d) pathSet[sigPaths[p]] = true;
+    }
+    var best = null;
+    var bestCount = -1;
+    for (var cfgName in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, cfgName)) continue;
+      var cfgPath = joinPath(d, cfgName);
+      var ord = resolveCfgOrder(d, map[cfgName], cfgByDir, pathSet, new Set());
+      if (ord.length > bestCount || (ord.length === bestCount && cfgPath < (best || ''))) {
+        bestCount = ord.length;
+        best = cfgPath;
+      }
+    }
+    return best;
+  }
+
+  function inferActiveCfgForDir(files, getText, dir) {
+    return bestCfgInDir(files, getText, dir);
+  }
+
+  function inferActiveCfgByDir(files, getText) {
+    var cfgByDir = cfgByDirFromFiles(files, getText);
+    var out = {};
+    for (var dir in cfgByDir) {
+      if (!Object.prototype.hasOwnProperty.call(cfgByDir, dir)) continue;
+      var best = bestCfgInDir(files, getText, dir);
+      if (best) out[dir] = best;
+    }
+    return out;
+  }
+
+  function defaultActiveCfgForDir(dir) {
+    var d = dir != null ? String(dir) : '';
+    var g = typeof window !== 'undefined' ? window : globalThis;
+    var P = g.BelJarPersist;
+    if (P && typeof P.getActiveCfgForDir === 'function') {
+      var path = P.getActiveCfgForDir(d);
+      if (path) {
+        if (typeof P.listFiles === 'function') {
+          var files = P.listFiles();
+          for (var i = 0; i < files.length; i++) {
+            if (files[i].name === path) return path;
+          }
+        } else return path;
+      }
+    }
+    if (P && typeof P.listFiles === 'function' && typeof P.getFileText === 'function') {
+      return inferActiveCfgForDir(P.listFiles(), function (id) { return P.getFileText(id); }, d);
+    }
+    return null;
+  }
+
+  function activeCfgResolver(map) {
+    var byDir = map || {};
+    return function (dir) {
+      return byDir[dir != null ? String(dir) : ''] || null;
+    };
+  }
+
+  function resolveActiveCfgForDir(options) {
+    if (options && typeof options.activeCfgForDir === 'function') return options.activeCfgForDir;
+    return defaultActiveCfgForDir;
+  }
+
+  function standaloneResult(active) {
+    return {
+      kind: 'standalone',
+      cfg: null,
+      paths: active ? [active.name] : [],
+      activeIndex: active ? 0 : -1,
+      preludePaths: [],
+      scopeKey: active ? 'standalone:' + active.name : 'standalone:',
+    };
+  }
+
+  function developmentForFile(files, activeId, getText, options) {
+    options = options || {};
+    var activeCfgForDir = resolveActiveCfgForDir(options);
     var active = null;
     for (var i = 0; i < files.length; i++) {
       if (files[i].id === activeId) { active = files[i]; break; }
     }
-    if (!active) return [];
-    var dir = dirOf(active.name);
-    var paths = [];
-    for (var j = 0; j < files.length; j++) {
-      var fn = String(files[j].name || '');
-      var low = fn.toLowerCase();
-      if (dirOf(fn) === dir && (low.endsWith('.bel') || low.endsWith('.elf'))) paths.push(fn);
+    if (!active || !/\.(?:bel|elf)$/i.test(String(active.name))) {
+      return { kind: 'standalone', cfg: null, paths: [], activeIndex: -1, preludePaths: [], scopeKey: 'standalone:' };
     }
-    var cfgByDir = cfgByDirFromFiles(files, getText);
-    var pathSet = {};
-    for (var pi = 0; pi < paths.length; pi++) pathSet[paths[pi]] = true;
-    var cfgText = pickCfgForDir(cfgByDir, dir, paths, active.name);
-    if (cfgText) {
-      return resolveCfgOrder(dir, cfgText, cfgByDir, pathSet, new Set());
+    var cfgPath = activeCfgForDir(dirOf(active.name));
+    if (!cfgPath) return standaloneResult(active);
+    var paths = resolveActiveChain(files, cfgPath, getText);
+    var activeIndex = paths.indexOf(active.name);
+    if (activeIndex >= 0) {
+      return {
+        kind: 'module',
+        cfg: cfgPath,
+        paths: paths,
+        activeIndex: activeIndex,
+        preludePaths: activeIndex > 0 ? paths.slice(0, activeIndex) : [],
+        scopeKey: 'module:' + cfgPath,
+      };
     }
-    return paths.filter(function (p) { return p.toLowerCase().endsWith('.bel'); }).sort();
+    return standaloneResult(active);
   }
 
-  function developmentFilesFor(files, activeId, getText) {
-    var ordered = orderedDevelopmentPaths(files, activeId, getText);
+  // Cfg-ordered signature files for the active file's development scope.
+  function orderedDevelopmentPaths(files, activeId, getText, options) {
+    return developmentForFile(files, activeId, getText, options || {}).paths;
+  }
+
+  function developmentFilesFor(files, activeId, getText, options) {
+    var ordered = orderedDevelopmentPaths(files, activeId, getText, options);
     var out = [];
     for (var k = 0; k < ordered.length; k++) {
       for (var m = 0; m < files.length; m++) {
@@ -332,6 +456,71 @@
       }
     }
     return out;
+  }
+
+  function allSignaturePaths(files) {
+    var out = [];
+    for (var i = 0; i < files.length; i++) {
+      var fn = String(files[i].name || '');
+      var low = fn.toLowerCase();
+      if (low.endsWith('.bel') || low.endsWith('.elf')) out.push(fn);
+    }
+    return out;
+  }
+
+  // Module cfg when the file is a listed member of the folder's active cfg.
+  function cfgPathForActive(files, activeId, getText, options) {
+    var dev = developmentForFile(files, activeId, getText, options || {});
+    return dev.kind === 'module' && dev.cfg ? dev.cfg : null;
+  }
+
+  // Every independent development in the workspace, for a whole-project run:
+  // each top-level .cfg chain, plus each directory-group of orphan signature
+  // files (those in no cfg). Returns [{ kind, name, cfg, paths:[name,...] }];
+  // a "config" carries its resolved load order, an "orphan" group uses registry
+  // order so the user controls it from the explorer.
+  function workspaceDevelopments(files, getText) {
+    var sigPaths = allSignaturePaths(files);
+    var cfgByDir = cfgByDirFromFiles(files, getText);
+    var allSet = {};
+    for (var sp = 0; sp < sigPaths.length; sp++) allSet[sigPaths[sp]] = true;
+    var referenced = {};
+    var cfgPaths = [];
+    for (var i = 0; i < files.length; i++) {
+      var n = String(files[i].name || '');
+      if (!n.toLowerCase().endsWith('.cfg')) continue;
+      cfgPaths.push(n);
+      var cdir = dirOf(n);
+      var entries = parseCfg(getText(files[i].id));
+      for (var e = 0; e < entries.length; e++) {
+        if (entries[e].toLowerCase().endsWith('.cfg')) referenced[joinPath(cdir, entries[e])] = true;
+      }
+    }
+    cfgPaths.sort();
+    var developments = [];
+    var covered = {};
+    for (var c = 0; c < cfgPaths.length; c++) {
+      if (referenced[cfgPaths[c]]) continue;
+      var dir = dirOf(cfgPaths[c]);
+      var base = cfgPaths[c].slice(cfgPaths[c].lastIndexOf('/') + 1);
+      var map = cfgByDir[dir];
+      if (!map || !map[base]) continue;
+      // Resolve against ALL signature files so nested cfgs in sub-directories
+      // pull in their members (orderedPathsForCfg only sees same-dir files).
+      var ordered = resolveCfgOrder(dir, map[base], cfgByDir, allSet, new Set());
+      if (!ordered.length) continue;
+      for (var o = 0; o < ordered.length; o++) covered[ordered[o]] = true;
+      developments.push({ kind: 'config', name: baseNoExt(cfgPaths[c]), cfg: cfgPaths[c], paths: ordered });
+    }
+    // A file in no cfg operates in isolation — the same standalone scope the IDE
+    // uses while editing. So the whole-project run checks each orphan ALONE, one
+    // development per file (not dir-grouped): run-time visibility matches
+    // edit-time, "not in a cfg ⇒ isolation, period."
+    for (var s = 0; s < sigPaths.length; s++) {
+      if (covered[sigPaths[s]]) continue;
+      developments.push({ kind: 'orphan', name: sigPaths[s], cfg: null, paths: [sigPaths[s]] });
+    }
+    return developments;
   }
 
   // Pick the longest resolved .cfg chain (tie-break: path name).
@@ -376,28 +565,14 @@
     return dot === -1 ? base : base.slice(0, dot);
   }
 
-  function preludeFilesFor(files, activeId, getText) {
-    var active = null;
-    for (var i = 0; i < files.length; i++) {
-      if (files[i].id === activeId) { active = files[i]; break; }
-    }
-    // Project members are .bel and .elf files; an .elf prelude must load too.
-    if (!active || !/\.(?:bel|elf)$/i.test(String(active.name))) return [];
-    var ordered = orderedDevelopmentPaths(files, activeId, getText);
-    var idx = ordered.indexOf(active.name);
-    if (idx < 0) {
-      // Not listed in the cfg — borrow a same-base-name sibling's position
-      // (editing par-red.bel while the cfg lists par-red.elf).
-      var base = baseNoExt(active.name);
-      for (var bi = 0; bi < ordered.length; bi++) {
-        if (baseNoExt(ordered[bi]) === base) { idx = bi; break; }
-      }
-    }
-    if (idx <= 0) return [];
+  function preludeFilesFor(files, activeId, getText, options) {
+    options = options || {};
+    var dev = developmentForFile(files, activeId, getText, options);
+    if (!dev.preludePaths.length) return [];
     var out = [];
-    for (var k = 0; k < idx; k++) {
+    for (var k = 0; k < dev.preludePaths.length; k++) {
       for (var m = 0; m < files.length; m++) {
-        if (files[m].name === ordered[k]) { out.push(files[m]); break; }
+        if (files[m].name === dev.preludePaths[k]) { out.push(files[m]); break; }
       }
     }
     return out;
@@ -503,8 +678,8 @@
   }
 
   // Prepend same-directory predecessors for checking / running the active file.
-  function buildPrelude(files, activeId, getText) {
-    var pre = preludeFilesFor(files, activeId, getText);
+  function buildPrelude(files, activeId, getText, options) {
+    var pre = preludeFilesFor(files, activeId, getText, options);
     if (!pre.length) return null;
     var parts = [];
     var spans = [];
@@ -653,11 +828,18 @@
     orderSignaturePaths: orderSignaturePaths,
     pickCfgForDir: pickCfgForDir,
     cfgByDirFromFiles: cfgByDirFromFiles,
+    developmentForFile: developmentForFile,
+    activeCfgResolver: activeCfgResolver,
+    defaultActiveCfgForDir: defaultActiveCfgForDir,
     orderedDevelopmentPaths: orderedDevelopmentPaths,
     developmentFilesFor: developmentFilesFor,
     orderedPathsForCfg: orderedPathsForCfg,
     developmentFilesForCfg: developmentFilesForCfg,
+    cfgPathForActive: cfgPathForActive,
+    workspaceDevelopments: workspaceDevelopments,
     inferDefaultCfgPath: inferDefaultCfgPath,
+    inferActiveCfgForDir: inferActiveCfgForDir,
+    inferActiveCfgByDir: inferActiveCfgByDir,
     preludeFilesFor: preludeFilesFor,
     buildPrelude: buildPrelude,
     assembleCheckerCode: assembleCheckerCode,

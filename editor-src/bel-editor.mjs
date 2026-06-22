@@ -31,6 +31,7 @@ export {
   enableJumpLog, jumpLogEnabled, logJumpMount, logJumpRequest, logJumpResult,
 } from './bel-jump-log.mjs';
 export { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
+export { highlightSourceFragment, renderSourceInto } from './bel-source-render.mjs';
 import { syntaxLint } from './bel-lint.mjs';
 import { createBelugaLinter } from './bel-beluga-lint.mjs';
 import { cfgLinter, cfgDiagnostics } from './bel-cfg-lint.mjs';
@@ -40,9 +41,10 @@ import { lintLinterOptions, lintPresentation } from './bel-lint-presentation.mjs
 import { checkerSnapshot } from './checker-snapshot.mjs';
 import { computeLintBlocks } from './bel-units.mjs';
 import { belHoverTooltip } from './bel-hover.mjs';
-import { diagnosticRowHighlight } from './bel-diag-gutter.mjs';
+import { diagnosticRowHighlight, diagnosticGutterTooltips } from './bel-diag-gutter.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
-import { assembleCheckerCode, buildPrelude, listGroupSymbols } from './project-prelude.mjs';
+import { assembleCheckerCode, buildPrelude, preludeFilesFor, listGroupSymbols } from './project-prelude.mjs';
+import { analyzeSuite, suiteFileDiagnostics } from './bel-suite-lint.mjs';
 import { developmentForFile } from './development.mjs';
 import { belNavigation, belNavSemanticTick } from './bel-nav.mjs';
 import { belRename, startRename } from './bel-rename.mjs';
@@ -265,6 +267,16 @@ function isDocumentDarkTheme() {
   return typeof document !== 'undefined' && !document.documentElement.classList.contains('light');
 }
 
+function refreshSyntaxHighlighting(view) {
+  ensureSyntaxTree(view.state, view.state.doc.length, 5000);
+  // TreeHighlighter skips a rebuild when the Lezer tree grows in place (same ref).
+  // Clicking the editor fixes it via viewportChanged — nudge scroll to match that.
+  const sc = view.scrollDOM;
+  const y = sc.scrollTop;
+  sc.scrollTop = y + 1;
+  sc.scrollTop = y;
+}
+
 function cmThemeExtensions(dark) {
   return dark ? [EditorView.darkTheme.of(true)] : [];
 }
@@ -328,6 +340,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
     belSyntaxLinter(),
     belugaLinterExt,
     diagnosticRowHighlight(),
+    diagnosticGutterTooltips(),
     belHoverTooltip(semanticEngine),
     flashExtension(),
     belNavigation(),
@@ -363,6 +376,8 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
     drawSelection(),
     keymap.of([
       { key: 'F12', run: (view) => goToCfgEntry(view, cfgDocumentId) },
+      { key: 'Mod-f', run: openSearchPanel },
+      { key: 'F3', run: findNext, shift: findPrevious },
       ...defaultKeymap, ...historyKeymap,
     ]),
     placeholder(placeholderText),
@@ -374,6 +389,8 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
       cfgLinter(cfgDocumentId),
       ...cfgEditorExtensions(cfgDocumentId),
     ] : []),
+    belInspector(),
+    belEditorFollow(),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
     }),
@@ -387,15 +404,19 @@ function wireStatusDotErrorNav(ideStatusDot) {
     ideStatusDot.removeEventListener('keydown', ideStatusDot._belErrorNavKey);
   }
   const g = typeof globalThis !== 'undefined' ? globalThis : window;
+  const navigable = () => {
+    const s = ideStatusDot.getAttribute('data-live-state');
+    return s === 'error' || s === 'warning';
+  };
   ideStatusDot._belErrorNavClick = () => {
-    if (ideStatusDot.getAttribute('data-live-state') !== 'error') return;
+    if (!navigable()) return;
     const api = g.BelJarCurrentEditor;
     const v = api && typeof api.getView === 'function' ? api.getView() : null;
     if (v) jumpToNextError(v);
   };
   ideStatusDot._belErrorNavKey = (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (ideStatusDot.getAttribute('data-live-state') !== 'error') return;
+    if (!navigable()) return;
     e.preventDefault();
     const api = g.BelJarCurrentEditor;
     const v = api && typeof api.getView === 'function' ? api.getView() : null;
@@ -465,8 +486,10 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
   }
   refreshStatusDot();
   if (isCfg) queueMicrotask(() => forceLinting(view));
+  if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal);
 
   return {
+    getDocumentId() { return documentId; },
     getIdeStatus: () => {
       const { errors, warnings } = cfgStatus();
       return { errors, warnings };
@@ -506,7 +529,37 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
       refreshStatusDot();
     },
     goToDefinition(pos) { return isCfg ? goToCfgEntry(view, documentId, pos) : false; },
+    jumpToRange(range) { return jumpToRange(view, range); },
+    peekRange(jumpAt) {
+      const resolved = resolveJumpRange(view.state.doc, jumpAt);
+      return resolved ? peekRange(view, resolved) : false;
+    },
+    getViewport() {
+      const sel = view.state.selection.main;
+      return {
+        selection: { anchor: sel.anchor, head: sel.head },
+        centerLine: viewportCenterLine(view),
+      };
+    },
+    applyViewport(local) { scheduleViewportRestore(view, local); },
+    scheduleJumpToRange(jumpAt) { scheduleJumpToRange(view, jumpAt); },
+    restoreViewport() { scheduleViewportRestore(view, options.initialLocal); },
+    listProjectSymbols() {
+      const g = typeof window !== 'undefined' ? window : globalThis;
+      const P = g.BelJarPersist;
+      if (!P || !isCfg || typeof P.listFiles !== 'function' || typeof P.getFileText !== 'function') return [];
+      try {
+        return listGroupSymbols(P.listFiles(), documentId, (id) => P.getFileText(id));
+      } catch (_) {
+        return [];
+      }
+    },
     jumpToNextError() { return jumpToNextError(view); },
+    undo() { return undo(view); },
+    redo() { return redo(view); },
+    selectAll() { return selectAll(view); },
+    openSearch() { return openSearchPanel(view); },
+    toggleComment() { return toggleComment(view); },
   };
 }
 
@@ -539,14 +592,39 @@ export function mount(parentEl, options = {}) {
     if (!g.BelJarPersist || !doc) return null;
     const files = g.BelJarPersist.listFiles();
     const activeId = g.BelJarPersist.getActiveFileId();
-    const prelude = buildPrelude(files, activeId, (id) => {
-      if (id === activeId) return doc.toString();
-      return g.BelJarPersist.getFileText(id);
-    });
+    const getText = (id) => (id === activeId ? doc.toString() : g.BelJarPersist.getFileText(id));
+    const prelude = buildPrelude(files, activeId, getText);
     const fileCode = semanticView
       ? checkerSnapshot(syntaxTree(semanticView.state), doc).code
       : doc.toString();
-    return { doc, prelude, fileCode };
+    const suite = suiteAnalysisFor(files, activeId, getText, doc);
+    return { doc, prelude, fileCode, suiteDiagnostics: suite.diagnostics, suiteFindings: suite.findings };
+  }
+
+  // Suite-composition analysis for the active development: diagnostics surfaced in
+  // the OPEN file (same problems the cfg reports), PLUS the raw findings (with
+  // affected files resolved to NAMES) so the settlement can recognise when a
+  // "prelude error" is really caused by the active file's own pragma/decl and
+  // re-attribute the blame instead of telling the user to fix a correct file.
+  function suiteAnalysisFor(files, activeId, getText, doc) {
+    const pre = preludeFilesFor(files, activeId, getText);
+    if (!pre.length) return { diagnostics: [], findings: [] };
+    const active = files.find((f) => f.id === activeId);
+    const ordered = [...pre, active].filter(Boolean);
+    const entries = ordered.map((f) => ({ key: f.id, name: f.name, text: String(getText(f.id) ?? '') }));
+    const lineSpan = (lineIdx0) => {
+      const n = Math.min(Math.max(1, lineIdx0 + 1), doc.lines);
+      const line = doc.line(n);
+      return { from: line.from, to: Math.max(line.to, line.from + 1) };
+    };
+    const nameOf = new Map(ordered.map((f) => [f.id, f.name]));
+    const findings = analyzeSuite(entries).map((f) => ({
+      ...f,
+      atName: nameOf.get(f.at) || f.at,
+      atIsActive: f.at === activeId,
+      affectedNames: (f.affected || []).map((k) => nameOf.get(k) || k),
+    }));
+    return { diagnostics: suiteFileDiagnostics(entries, activeId, lineSpan), findings };
   }
 
   function healthyCodeWithPrelude() {
@@ -575,6 +653,12 @@ export function mount(parentEl, options = {}) {
       if (options.persist && typeof options.persist.scheduleCheckpointSave === 'function') {
         options.persist.scheduleCheckpointSave();
       }
+      if (semanticView?.dom?.isConnected) {
+        queueMicrotask(() => {
+          if (!semanticView.dom.isConnected) return;
+          semanticView.dispatch({ effects: belNavSemanticTick.of(null) });
+        });
+      }
     },
     onSettlement: () => {
       if (semanticView) {
@@ -588,7 +672,12 @@ export function mount(parentEl, options = {}) {
       }
     },
     onSettlementChecking: () => {
-      if (semanticView) refreshIdeStatusRef(semanticView);
+      if (!semanticView) return;
+      refreshIdeStatusRef(semanticView);
+      queueMicrotask(() => {
+        if (!semanticView.dom.isConnected) return;
+        semanticView.dispatch({ effects: belNavSemanticTick.of(null) });
+      });
     },
   });
 
@@ -792,11 +881,12 @@ export function mount(parentEl, options = {}) {
     ? requestIdleCallback
     : (fn) => setTimeout(fn, 1);
   scheduleIdle(() => {
-    ensureSyntaxTree(view.state, view.state.doc.length, 5000);
+    refreshSyntaxHighlighting(view);
     syncSemanticFromView(view);
     seedSemanticScheduler(view);
     view.dispatch({ effects: belNavSemanticTick.of(null) });
   });
+  requestAnimationFrame(() => refreshSyntaxHighlighting(view));
 
   view.dom.addEventListener(
     'paste',

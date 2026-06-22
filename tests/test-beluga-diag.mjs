@@ -3,6 +3,7 @@ import { Text } from '@codemirror/state';
 import {
   belugaOutputLooksLikeFailure,
   parseBelugaDiagnostics,
+  spanFirstLineDiagnostic,
 } from '../editor-src/bel-beluga-diag.mjs';
 
 const sample = `rec sec3 : (stepBind : pf o) → pf o =
@@ -50,4 +51,24 @@ assert.equal(
   false,
 );
 
-console.log('OK bel-beluga-diag parses File/line/column errors');
+// spanFirstLineDiagnostic — the GENERAL first-line rule (not a one-off): a diag
+// anchored anywhere on line 1 must cover the whole first line so it's hoverable.
+{
+  const d1 = Text.of(['--nostrengthen', 'schema ctx = down A;', '']);
+  // A 1-char error at the very top — the misery case.
+  const span = spanFirstLineDiagnostic({ from: 0, to: 1, severity: 'error', message: 'x' }, d1);
+  assert.equal(span.from, 0, 'first-line diag starts at column 0');
+  assert.equal(span.to, d1.line(1).to, 'first-line diag spans to the end of line 1');
+  // A short token in the middle of line 1 still gets stretched to the full line.
+  const mid = spanFirstLineDiagnostic({ from: 5, to: 8, severity: 'error', message: 'x' }, d1);
+  assert.equal(mid.from, 0);
+  assert.equal(mid.to, d1.line(1).to);
+  // A line-3 error is NOT pulled up to the top.
+  const l3from = d1.line(3).from;
+  const untouched = spanFirstLineDiagnostic({ from: l3from, to: l3from + 1, severity: 'error', message: 'x' }, d1);
+  assert.equal(untouched.from, l3from, 'a line-3 diagnostic is left where it is');
+  // Empty doc never throws.
+  assert.doesNotThrow(() => spanFirstLineDiagnostic({ from: 0, to: 0 }, Text.of([''])));
+}
+
+console.log('OK bel-beluga-diag parses File/line/column errors + first-line span rule');

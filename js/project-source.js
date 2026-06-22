@@ -392,7 +392,21 @@
     for (var i = 0; i < files.length; i++) {
       if (files[i].id === activeId) { active = files[i]; break; }
     }
-    if (!active || !/\.(?:bel|elf)$/i.test(String(active.name))) {
+    if (!active) {
+      return { kind: 'standalone', cfg: null, paths: [], activeIndex: -1, preludePaths: [], scopeKey: 'standalone:' };
+    }
+    if (/\.cfg$/i.test(String(active.name))) {
+      var cfgPaths = resolveActiveChain(files, active.name, getText);
+      return {
+        kind: 'module',
+        cfg: active.name,
+        paths: cfgPaths,
+        activeIndex: -1,
+        preludePaths: [],
+        scopeKey: 'module:' + active.name,
+      };
+    }
+    if (!/\.(?:bel|elf)$/i.test(String(active.name))) {
       return { kind: 'standalone', cfg: null, paths: [], activeIndex: -1, preludePaths: [], scopeKey: 'standalone:' };
     }
     var cfgPath = activeCfgForDir(dirOf(active.name));
@@ -605,6 +619,21 @@
     };
   }
 
+  // Blank the leading pragma lines in place (preserve line numbering) instead of
+  // dropping them; a copy still rides ahead of the prelude. Keeps active-file
+  // diagnostics mapping to the right doc line. Mirror of project-prelude.mjs.
+  function peelGlobalFilePragmasInPlace(fileCode) {
+    var text = String(fileCode != null ? fileCode : '');
+    var peeled = peelGlobalFilePragmas(text);
+    if (!peeled.hoisted) return { hoisted: '', body: text };
+    var lines = text.split('\n');
+    var blanked = 0;
+    for (var i = 0; i < lines.length && blanked < peeled.hoistLineCount; i++) {
+      if (GLOBAL_FILE_PRAGMA_LINE.test(lines[i])) { lines[i] = ''; blanked++; }
+    }
+    return { hoisted: peeled.hoisted, body: lines.join('\n') };
+  }
+
   function joinCheckerParts(parts) {
     var out = [];
     for (var i = 0; i < parts.length; i++) {
@@ -614,29 +643,33 @@
   }
 
   function assembleCheckerCode(fileCode, prelude) {
-    var peeled = peelGlobalFilePragmas(fileCode);
+    // No prelude: leave the text untouched so a diagnostic on line N maps to doc
+    // line N (a leading pragma is already at the top of a standalone program).
     if (!prelude) {
-      return { code: joinCheckerParts([peeled.hoisted, peeled.rest]), prelude: null };
+      return { code: String(fileCode != null ? fileCode : ''), prelude: null };
     }
-    var hoistOffset = peeled.hoistLineCount ? peeled.hoistLineCount + 1 : 0;
-    var adjustedPrelude = prelude;
-    if (hoistOffset) {
-      adjustedPrelude = {
-        code: prelude.code,
-        spans: prelude.spans.map(function (s) {
-          return {
-            id: s.id,
-            name: s.name,
-            startLine: s.startLine + hoistOffset,
-            endLine: s.endLine + hoistOffset,
-          };
-        }),
-        offsetLines: prelude.offsetLines + hoistOffset,
-        names: prelude.names,
-      };
+    // With a prelude, blank the pragma in place + prepend a copy so the body
+    // keeps its exact line numbers and the offsetLines shift stays exact.
+    var peeled = peelGlobalFilePragmasInPlace(fileCode);
+    if (!peeled.hoisted) {
+      return { code: joinCheckerParts([prelude.code, peeled.body]), prelude: prelude };
     }
+    var hoistOffset = peeled.hoisted.split('\n').length + 1;
+    var adjustedPrelude = {
+      code: prelude.code,
+      spans: prelude.spans.map(function (s) {
+        return {
+          id: s.id,
+          name: s.name,
+          startLine: s.startLine + hoistOffset,
+          endLine: s.endLine + hoistOffset,
+        };
+      }),
+      offsetLines: prelude.offsetLines + hoistOffset,
+      names: prelude.names,
+    };
     return {
-      code: joinCheckerParts([peeled.hoisted, prelude.code, peeled.rest]),
+      code: joinCheckerParts([peeled.hoisted, prelude.code, peeled.body]),
       prelude: adjustedPrelude,
     };
   }

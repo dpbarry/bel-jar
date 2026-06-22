@@ -6,10 +6,8 @@ import { walkTree } from './bel-walk.mjs';
 import { expandBelAliases, readAliasActivationMode } from './bel-aliases.mjs';
 import { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
 import {
-  cfgByDirFromFiles,
   developmentForFile,
   dirOf,
-  parseCfg,
   preludePathsFor,
   resolveCfgOrder,
   visibilityPaths,
@@ -209,6 +207,26 @@ function moduleGroupFilesFor(files, activeId, getText, options = {}) {
 // Module group files in cfg / development order (for reference listing).
 export function referenceGroupFilesFor(files, activeId, getText, options = {}) {
   return moduleGroupFilesFor(files, activeId, getText, options);
+}
+
+// ALL members of the active file's development (module: every cfg member, in
+// load order; standalone: the file alone) — the view-INDEPENDENT scope for
+// cross-file STRUCTURE (dependency graph, used-by, impact, source signature).
+// Distinct from groupFilesFor, which is the prelude-PREFIX hover scope: structure
+// must read identically from any member, so it spans the whole development, not
+// just predecessors of whichever file happens to be active.
+export function developmentFilesFor(files, activeId, getText, options = {}) {
+  return moduleGroupFilesFor(files, activeId, getText, options);
+}
+
+// Source signature (": T" of the head) of `name` as defined in a SPECIFIC file's
+// text. Unlike findGroupSignature, it does not skip any "active" file — point it
+// at the defining file and it reads it. Used by cross-file inspect, where the
+// symbol's own file is known (so the signature must come from that file, even
+// though findGroupSignature would skip it as the queried id).
+export function sourceSignatureOf(text, name, fileName = null) {
+  if (!name) return null;
+  return parsedDefsOfRaw(String(text ?? ''), fileName).sigByName.get(name) || null;
 }
 
 // Where is `name` defined elsewhere in the active file's group? Prefers the
@@ -423,7 +441,7 @@ export function groupDefinesName(files, activeId, name, getText, options = {}) {
 // Beluga accepts these only at the very start of the combined program. When a
 // project prelude is prepended, peel them from the active file and reattach
 // ahead of the prelude so checking matches standalone Beluga semantics.
-const GLOBAL_FILE_PRAGMA_LINE =
+export const GLOBAL_FILE_PRAGMA_LINE =
   /^\s*--(?:nostrengthen|coverage|warncoverage)\s*\.?\s*(?:%.*)?$/i;
 
 export function peelGlobalFilePragmas(fileCode) {
@@ -450,29 +468,60 @@ export function peelGlobalFilePragmas(fileCode) {
   };
 }
 
+// Like peelGlobalFilePragmas, but instead of DROPPING the pragma lines from the
+// body it BLANKS them in place — preserving the body's exact line numbering.
+// A copy of the pragmas still rides at the top of the combined program (Beluga
+// requires them there), but because the active file keeps every original line in
+// position, a checker diagnostic on line N maps straight back to doc line N — no
+// peel/join delta to compensate. This is what keeps "Ill-typed on the schema"
+// from landing on the blank line below it. `hoisted` is empty when there is no
+// leading pragma, in which case `body` is the text unchanged.
+export function peelGlobalFilePragmasInPlace(fileCode) {
+  const text = String(fileCode ?? '');
+  const peeled = peelGlobalFilePragmas(text);
+  if (!peeled.hoisted) return { hoisted: '', body: text };
+  const lines = text.split('\n');
+  // Blank exactly the pragma lines we hoisted (leave following blanks as-is).
+  let blanked = 0;
+  for (let i = 0; i < lines.length && blanked < peeled.hoistLineCount; i += 1) {
+    if (GLOBAL_FILE_PRAGMA_LINE.test(lines[i])) { lines[i] = ''; blanked += 1; }
+  }
+  return { hoisted: peeled.hoisted, body: lines.join('\n') };
+}
+
 function joinCheckerParts(parts) {
   return parts.filter((p) => p != null && p !== '').join('\n\n');
 }
 
 export function assembleCheckerCode(fileCode, prelude) {
-  const { hoisted, rest, hoistLineCount } = peelGlobalFilePragmas(fileCode);
+  // No prelude: the file stands alone, so a leading pragma is ALREADY at the top
+  // of the program — nothing to hoist. Leave the text byte-for-byte so a checker
+  // diagnostic on line N maps to doc line N (no spurious blank-line shift). This
+  // is what was previously broken: peeling+rejoining shifted the body down, so an
+  // error on the schema landed on the blank line below it.
   if (!prelude) {
-    return { code: joinCheckerParts([hoisted, rest]), prelude: null };
+    return { code: String(fileCode ?? ''), prelude: null };
   }
-  const hoistOffset = hoistLineCount ? hoistLineCount + 1 : 0;
-  const adjustedPrelude = hoistOffset
-    ? {
-      ...prelude,
-      spans: prelude.spans.map((s) => ({
-        ...s,
-        startLine: s.startLine + hoistOffset,
-        endLine: s.endLine + hoistOffset,
-      })),
-      offsetLines: prelude.offsetLines + hoistOffset,
-    }
-    : prelude;
+  // With a prelude, the pragma must jump AHEAD of it (Beluga only honours global
+  // pragmas at the very top). Blank the pragma in place rather than deleting it,
+  // so the active body keeps its exact line numbers and the `offsetLines` shift
+  // maps body line N straight back to doc line N.
+  const { hoisted, body } = peelGlobalFilePragmasInPlace(fileCode);
+  if (!hoisted) {
+    return { code: joinCheckerParts([prelude.code, body]), prelude };
+  }
+  const hoistOffset = hoisted.split('\n').length + 1; // pragma lines + the join blank
+  const adjustedPrelude = {
+    ...prelude,
+    spans: prelude.spans.map((s) => ({
+      ...s,
+      startLine: s.startLine + hoistOffset,
+      endLine: s.endLine + hoistOffset,
+    })),
+    offsetLines: prelude.offsetLines + hoistOffset,
+  };
   return {
-    code: joinCheckerParts([hoisted, prelude.code, rest]),
+    code: joinCheckerParts([hoisted, prelude.code, body]),
     prelude: adjustedPrelude,
   };
 }
@@ -547,11 +596,20 @@ function preludeFileAt(spans, line) {
   return null;
 }
 
+// The Beluga location ("File ..., line N") and the message sit on separate
+// lines, and our match index lands mid-location-line — so the FIRST tail line is
+// usually the location's leftover (", column 11:") rather than the error. Skip
+// location remnants and caret rows, then return the real "Error: …" line.
 function messageAfter(text, index) {
   const tail = text.slice(index, index + 400);
-  for (const line of tail.split('\n')) {
-    const t = line.trim().replace(/^(Error|Warning):\s*/i, '');
-    if (t && !/^[-^~\s]+$/.test(t)) return t.slice(0, 160);
+  for (const raw of tail.split('\n')) {
+    let t = raw.trim().replace(/^[,:]\s*/, ''); // drop a leading ", " / ": "
+    if (!t) continue;
+    if (/^columns?\s+\d/i.test(t)) continue; // "column 11:" remnant
+    if (/^line\s+\d/i.test(t)) continue; // stray "line N" remnant
+    if (/^[-^~\s]+$/.test(t)) continue; // caret / underline rows
+    t = t.replace(/^(Error|Warning):\s*/i, '');
+    if (/[A-Za-z]/.test(t)) return t.slice(0, 160);
   }
   return '';
 }

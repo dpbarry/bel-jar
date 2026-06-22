@@ -52,19 +52,9 @@ function identLength(input) {
   const first = input.next;
   if (first < 0) return 0;
   const isUpper = first >= 65 && first <= 90;
-  const isLower = first === 95 || (first >= 97 && first <= 122);
-  if (!isUpper && !isLower) return 0;
+  if (!isUpper && !isIdentStart(first)) return 0;
   let len = 1;
-  while (true) {
-    const ch = input.peek(len);
-    if (ch < 0) break;
-    const ok = (ch >= 48 && ch <= 57)
-      || (ch >= 65 && ch <= 90)
-      || (ch >= 97 && ch <= 122)
-      || ch === 95;
-    if (!ok) break;
-    len += 1;
-  }
+  while (isIdentContinue(input.peek(len))) len += 1;
   return len;
 }
 

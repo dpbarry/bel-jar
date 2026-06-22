@@ -54,4 +54,30 @@ const again = assembleCheckerCode(body, prelude);
 expect(again.prelude.offsetLines === first.prelude.offsetLines,
   're-assemble from the same raw prelude must keep a stable line map');
 
-console.log('OK settlement hoists global pragmas');
+// ── Line mapping under a hoisted pragma (the img2 "error on a blank line" bug) ─
+// A file with a leading pragma must keep its body lines aligned: an error on the
+// schema (doc line 2) must NOT drift onto the blank line below it.
+{
+  const src = '--nostrengthen\nschema ctx = down A;\n\nrec r : x = ?;';
+  // doc: 1=pragma, 2=schema, 3=blank, 4=rec
+  const lineOf = (code, needle) => code.split('\n').findIndex((l) => l.includes(needle)) + 1;
+
+  // No prelude: the body must be byte-identical, so schema stays on line 2.
+  const solo = assembleCheckerCode(src, null);
+  expect(lineOf(solo.code, 'schema') === 2,
+    `no-prelude: schema stays on doc line 2, got ${lineOf(solo.code, 'schema')}`);
+  expect(solo.code === src, 'no-prelude assembled code is the file unchanged (no blank-line shift)');
+
+  // With prelude: the in-place blank keeps the body aligned; shifting an error
+  // reported at the schema's assembled line back by offsetLines yields doc line 2.
+  const asm = assembleCheckerCode(src, prelude);
+  const schemaAsm = lineOf(asm.code, 'schema');
+  expect(schemaAsm - asm.prelude.offsetLines === 2,
+    `with-prelude: schema maps back to doc line 2, got ${schemaAsm - asm.prelude.offsetLines}`);
+  // The blanked-in-place pragma keeps the body's line COUNT identical to the doc.
+  const bodyTail = asm.code.split('\n').slice(asm.prelude.offsetLines);
+  expect(bodyTail.length === src.split('\n').length,
+    'with-prelude body preserves the doc line count (pragma blanked, not removed)');
+}
+
+console.log('OK settlement hoists global pragmas + keeps body line mapping under a hoisted pragma');

@@ -1,0 +1,26 @@
+LF o : type =
+  | ⊃ : o → o → o
+  | ⊤ : o
+  | ∧ : o → o → o
+  | ∨ : o → o → o
+  | ¬ : o → o
+;
+
+--prefix ¬ 10.
+--infix ∧ 5 right.
+--infix ∨ 4 right.
+--infix ⊃ 3 right.
+
+LF nd : o → type =
+  | ⊃I : (nd A → nd B) → nd (A ⊃ B)
+  | ⊃E : nd (A ⊃ B) → nd A → nd B
+  | ¬I : ({p:o} nd A → nd p) → nd (¬ A)
+  | ¬E : nd (¬ A) → nd A → nd C
+  | ∧I : nd A → nd B → nd (A ∧ B)
+  | ∧El : nd (A ∧ B) → nd A
+  | ∧Er : nd (A ∧ B) → nd B
+  | ∨Il : nd A → nd (A ∨ B)
+  | ∨Ir : nd B → nd (A ∨ B)
+  | ∨E : nd (A ∨ B) → (nd A → nd C) → (nd B → nd C) → nd C
+  | ⊤I : nd ⊤
+;

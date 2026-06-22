@@ -81,8 +81,108 @@ expect(msgs.some((m) => m.includes('badA')),
 const active = snap.belugaDiagnostics.find((d) => /badA/.test(d.message));
 expect(active && active.blockIndex === 0, 'active error maps to the active file block');
 // The earlier-file error is reported as a non-blocking banner.
-expect(msgs.some((m) => /earlier file base\.bel/.test(m)),
-  `a banner names the earlier file, got: ${msgs.join(' | ')}`);
+const banner = snap.belugaDiagnostics.find((d) => /earlier file base\.bel/.test(d.message));
+expect(banner, `a banner names the earlier file, got: ${msgs.join(' | ')}`);
 expect(snap.ok === false, 'a suite with a prelude error does not read ok');
+// The banner must be hoverable across the WHOLE first line, not a single char —
+// a start-of-file 1-char target is misery to hit. The active file's line 1 is
+// `LF q : type =`, so the banner span must reach that line's end.
+const line1End = syntax.doc.line(1).to;
+expect(banner.from === 0 && banner.to === line1End,
+  `banner should span the whole first line (0..${line1End}), got ${banner.from}..${banner.to}`);
 
-console.log('OK settlement prelude recovery (earlier-file error masked, active file still linted)');
+// ── Suite-composition diagnostics surface in the ACTIVE file ─────────────────
+// The cfg isn't the only place a suite problem must show; the open .bel file
+// gets them too (via ctx.suiteDiagnostics), even when the file checks clean.
+{
+  const cleanSyntax = syntaxFor(`LF up : type =\n  | mk : up\n;`);
+  const cleanClient = haltingMock([]); // active file has no Beluga error
+  const store2 = createCheckerStore();
+  const suiteDiag = {
+    from: 0, to: 5, severity: 'error', source: 'suite',
+    message: 'atom is no longer in scope: fol-handbook.bel redefines o without it (it came from fol.elf).',
+  };
+  const settlement2 = createSettlement({
+    belugaClient: cleanClient,
+    checkerStore: store2,
+    getCheckContext: () => ({ doc: cleanSyntax.doc, prelude: null, suiteDiagnostics: [suiteDiag] }),
+  });
+  await settlement2.settleNow(cleanSyntax, 0);
+  const snap2 = store2.getSnapshot();
+  const m2 = snap2.belugaDiagnostics.map((d) => d.message);
+  expect(m2.some((m) => /no longer in scope/.test(m)),
+    `suite-composition warning surfaces in the open file even when it checks clean, got: ${m2.join(' | ')}`);
+  // And it obeys the first-line rule (started on line 1 → spans line 1).
+  const sd = snap2.belugaDiagnostics.find((d) => /no longer in scope/.test(d.message));
+  expect(sd.from === 0 && sd.to === cleanSyntax.doc.line(1).to,
+    `surfaced suite diag spans the whole first line, got ${sd.from}..${sd.to}`);
+}
+
+// ── Banner re-attribution: don't blame a correct earlier file ────────────────
+// The active file's --nostrengthen breaks fol-handbook.bel IN THE PRELUDE. The
+// old banner said "fix the earlier file" — but that file is clean on its own, so
+// the user is stranded. When an active-file-caused suite finding names the
+// erroring prelude file, the "fix earlier file" banner must be SUPPRESSED (the
+// pragma-leak warning, pinned to the real cause in THIS file, explains it).
+{
+  // Prelude file "fol-handbook.bel" errors at line 76 — but only because the
+  // active file's pragma leaked onto it.
+  const handbookPrelude = {
+    code: `LF nd : type =\n  | mk : badHB\n;`,
+    spans: [{ id: 'hb', name: 'fol-handbook.bel', startLine: 1, endLine: 3 }],
+    offsetLines: 4,
+    names: new Set(['nd', 'mk']),
+  };
+  const activeSyntax = syntaxFor(`LF up : type =\n  | u : up\n;`);
+  const client2 = haltingMock([{ marker: 'badHB', message: 'Identifier badHB is unbound' }]);
+  const store3 = createCheckerStore();
+  const settlement3 = createSettlement({
+    belugaClient: client2,
+    checkerStore: store3,
+    getCheckContext: () => ({
+      doc: activeSyntax.doc,
+      prelude: handbookPrelude,
+      // The active file caused fol-handbook.bel's error via a leaked pragma.
+      suiteFindings: [{
+        kind: 'pragma-leak', severity: 'warning', at: 'active', atIsActive: true,
+        affectedNames: ['fol-handbook.bel'], pragma: '--nostrengthen',
+      }],
+      suiteDiagnostics: [{
+        from: 0, to: 4, severity: 'warning', source: 'suite',
+        message: '--nostrengthen also applies to every previous file in the suite.',
+      }],
+    }),
+  });
+  await settlement3.settleNow(activeSyntax, 0);
+  const snap3 = store3.getSnapshot();
+  const msgs3 = snap3.belugaDiagnostics.map((d) => d.message);
+  expect(!msgs3.some((m) => /Fix earlier suite files/.test(m)),
+    `the misleading "fix earlier file" banner must NOT appear when the active file caused it, got: ${msgs3.join(' | ')}`);
+  expect(msgs3.some((m) => /every previous file in the suite/.test(m)),
+    'the pragma-leak warning (the true cause) is shown instead');
+}
+
+// Control: a GENUINELY independent prelude error still raises the banner.
+{
+  const indepPrelude = {
+    code: `LF p : type =\n  | mk : badIndep\n;`,
+    spans: [{ id: 'base', name: 'base.bel', startLine: 1, endLine: 3 }],
+    offsetLines: 4,
+    names: new Set(['p', 'mk']),
+  };
+  const activeSyntax = syntaxFor(`LF up : type =\n  | u : up\n;`);
+  const client3 = haltingMock([{ marker: 'badIndep', message: 'Identifier badIndep is unbound' }]);
+  const store4 = createCheckerStore();
+  const settlement4 = createSettlement({
+    belugaClient: client3,
+    checkerStore: store4,
+    getCheckContext: () => ({ doc: activeSyntax.doc, prelude: indepPrelude, suiteFindings: [] }),
+  });
+  await settlement4.settleNow(activeSyntax, 0);
+  const msgs4 = store4.getSnapshot().belugaDiagnostics.map((d) => d.message);
+  expect(msgs4.some((m) => /Fix earlier suite files/.test(m)),
+    `a genuinely independent prelude error STILL raises the banner, got: ${msgs4.join(' | ')}`);
+}
+
+console.log('OK settlement prelude recovery (earlier-file error masked, active file still linted, '
+  + 'suite diags surfaced in-file, first-line span, banner re-attribution when active file is the cause)');

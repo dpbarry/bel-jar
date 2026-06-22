@@ -1,9 +1,8 @@
-// Suite authoring API (js/persist.js): a .cfg's load order is the user's source
-// of truth. The IDE NEVER rewrites it automatically on rename/move/delete — a
-// now-dangling entry is surfaced by the cfg lint (see test-cfg-lint) instead.
-// What the IDE offers is EXPLICIT authoring: addEntryToCfg / removeEntryFromCfg,
-// driven by the "Add to / Remove from suite" context-menu actions. Loads
-// persist.js against a fake localStorage, same pattern as test-project-source.
+// Suite authoring API (js/persist.js): a within-suite-dir file op keeps the .cfg
+// in sync — an in-place rename rewrites the entry, a delete removes it — but a
+// move to a DIFFERENT directory never touches the cfg (the dangling entry is
+// surfaced by the cfg lint; the user owns cross-dir moves). Explicit
+// add/remove/reorder remains the suite authoring surface.
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
@@ -36,25 +35,30 @@ function idByName(P, name) {
   return f ? f.id : null;
 }
 
-// ── rename / move / delete must NOT touch any cfg body ────────────────────────
+// ── in-dir rename rewrites; cross-dir move leaves the entry; delete removes it ─
 {
   const P = freshPersist();
   P.replaceProject([
     { name: 'grp/base.bel', text: 'LF a : type;' },
     { name: 'grp/use.bel', text: 'LF b : type;' },
     { name: 'grp/sources.cfg', text: '% load order\nbase.bel\nuse.bel\n' },
-  ], { projectName: 'NoAutoSync' });
+  ], { projectName: 'CfgSync' });
   const cfgId = idByName(P, 'grp/sources.cfg');
-  const before = P.getFileText(cfgId);
 
   P.renameFile(idByName(P, 'grp/base.bel'), 'grp/foundation.bel');
-  expect(P.getFileText(cfgId) === before, 'rename leaves the cfg body untouched (user owns it)');
+  const afterRename = P.getFileText(cfgId);
+  expect(afterRename.includes('foundation.bel'), 'in-dir rename rewrites the cfg entry');
+  expect(!afterRename.includes('base.bel'), 'old cfg entry name is gone');
 
   P.renameFile(idByName(P, 'grp/use.bel'), 'other/use.bel');
-  expect(P.getFileText(cfgId) === before, 'move leaves the cfg body untouched');
+  const afterMove = P.getFileText(cfgId);
+  expect(afterMove.includes('use.bel'), 'move to a different dir leaves the entry (cfg lint surfaces it; user owns cross-dir moves)');
+  expect(afterMove.includes('foundation.bel'), 'unaffected entries remain');
 
   P.deleteFile(idByName(P, 'grp/foundation.bel'));
-  expect(P.getFileText(cfgId) === before, 'delete leaves the cfg body untouched');
+  const afterDelete = P.getFileText(cfgId);
+  expect(!afterDelete.includes('foundation.bel'), 'delete removes the cfg entry');
+  expect(afterDelete.includes('use.bel'), 'the moved-out (dangling) entry is left untouched');
 }
 
 // ── suite authoring: explicit add / remove entries (C2) ───────────────────────
@@ -99,4 +103,4 @@ function idByName(P, name) {
   expect(/^% order$/m.test(P.getFileText(cfgId)), 'comment line holds its position across reorders');
 }
 
-console.log('OK cfg authoring (no auto-rewrite on rename/move/delete; explicit add/remove/reorder)');
+console.log('OK cfg authoring (in-dir rename/delete sync the cfg; cross-dir move left for lint; explicit add/remove/reorder)');

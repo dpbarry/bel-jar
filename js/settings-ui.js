@@ -327,7 +327,7 @@
     settingsAliasDropdown = addDropdownRow(
       panelBodies.aliases,
       'Substitution activation',
-      'Strict expands only when you type an alias character by character without backspace or interruption. Greedy expands whenever an alias sequence appears, including paste, upload, and folder import.',
+      'Strict expands only when you type an alias character by character without backspace or interruption. Greedy expands whenever an alias sequence appears, including paste, upload, folder import, and library insertion.',
       [
         { value: 'strict', label: 'Strict' },
         { value: 'greedy', label: 'Greedy' },

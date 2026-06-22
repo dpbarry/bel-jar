@@ -51,8 +51,10 @@
         }
         applyStoredPanelPx('beljar-explorer-w', '--explorer-w');
         applyStoredPanelPx('beljar-inspector-w', '--inspector-w');
+        applyStoredPanelPx('beljar-library-w', '--library-w');
         applyStoredPanelPx('beljar-explorer-h', '--explorer-h');
         applyStoredPanelPx('beljar-inspector-h', '--inspector-h');
+        applyStoredPanelPx('beljar-library-h', '--library-h');
       } catch (_) {}
     })();
 
@@ -88,8 +90,8 @@
         <button type="button" class="header-menu-btn" id="menu-tools" aria-haspopup="menu" aria-expanded="false">Tools</button>
       </nav>
     </div>
-    <div class="header-context" id="header-context" data-tooltip-placement="below" aria-label="Untitled">
-      <span class="header-context-name" id="header-context-name">Untitled</span>
+    <div class="header-context" id="header-context" data-tooltip-placement="below" aria-label="Untitled Project">
+      <span class="header-context-name" id="header-context-name">Untitled Project</span>
     </div>
     <div class="header-end">
       <button id="btn-notifications" type="button" class="icon-btn notif-bell" data-tooltip="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
@@ -138,7 +140,7 @@
           <circle cx="12" cy="12" r="3"/>
         </svg>
       </button>
-      <button id="btn-library" type="button" class="icon-btn icon-btn-lg" data-tooltip="Library">
+      <button id="btn-library" type="button" class="icon-btn icon-btn-lg" data-tooltip="Library" aria-pressed="false" aria-controls="library-panel">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="2" y="3" width="20" height="5" rx="1"/>
           <path d="M3.5 8v12.25a1.75 1.75 0 0 0 1.75 1.75h14a1.75 1.75 0 0 0 1.75-1.75V8"/>
@@ -159,24 +161,63 @@
     </aside>
 
     <div id="explorer-panel" class="panel explorer-panel" aria-hidden="true">
-      <div class="panel-header">
+      <div class="panel-header explorer-panel-header">
         <span class="panel-label">Explorer</span>
+        <div class="hsearch" id="explorer-search-wrap">
+          <span class="hsearch__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <input id="explorer-search-input" class="hsearch__input" type="text" placeholder="Search workspace…" aria-label="Search workspace" role="combobox" aria-expanded="false" aria-controls="explorer-search-ac" autocomplete="off" spellcheck="false">
+        </div>
         <button id="btn-explorer-new" type="button" class="icon-btn" data-tooltip="New file or folder" aria-label="New file or folder" aria-haspopup="menu" aria-expanded="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
             <path d="M12 5v14M5 12h14"/>
           </svg>
         </button>
+        <div class="hsearch-ac" id="explorer-search-ac" role="listbox" hidden></div>
       </div>
       <div class="explorer-tree" role="tree" aria-label="Project files"></div>
     </div>
 
     <div id="inspector-panel" class="panel inspector-panel" aria-hidden="true">
-      <div class="panel-header">
-        <span class="panel-label">Inspector</span>
+      <div class="panel-header inspector-header-bar">
+        <div class="inspector-nav-group">
+          <button id="inspector-nav-back" type="button" class="icon-btn inspector-nav-btn" data-tooltip="Back" aria-label="Back" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button id="inspector-nav-fwd" type="button" class="icon-btn inspector-nav-btn" data-tooltip="Forward" aria-label="Forward" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div class="hsearch inspector-search" id="inspector-search">
+          <span class="hsearch__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <input id="inspector-search-input" class="hsearch__input" type="text" placeholder="Search symbols..." aria-label="Search symbols in suite" role="combobox" aria-expanded="false" aria-controls="inspector-search-ac" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="inspector-header-actions">
+          <button id="inspector-sync-toggle" type="button" class="icon-btn inspector-nav-btn" data-tooltip="Not following editor selection" aria-label="Not following editor selection" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="miter" aria-hidden="true"><path d="M4 4l7.07 16.97 2.51-7.39 7.39-2.51z"/></svg>
+          </button>
+        </div>
+        <div class="inspector-search-ac" id="inspector-search-ac" role="listbox" hidden></div>
       </div>
       <div class="inspector-body">
         <p class="inspector-empty-note">Place the cursor on a symbol.</p>
       </div>
+    </div>
+
+    <div id="library-panel" class="panel library-panel" aria-hidden="true">
+      <div class="panel-header library-panel-header">
+        <span class="panel-label">Library</span>
+        <div class="hsearch" id="library-search-wrap">
+          <span class="hsearch__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <input id="library-search" class="hsearch__input" type="search" placeholder="Search library…" aria-label="Search library" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="library-tree" role="tree" aria-label="Code library"></div>
     </div>
 
     <div class="workspace-panes">
@@ -192,7 +233,12 @@
           </button>
         </div>
       </div>
-      <div id="editor" class="editor-cm-host" aria-label="Beluga source editor"></div>
+      <div class="editor-body">
+        <div id="editor-empty" class="editor-empty" hidden aria-live="polite">
+          <p class="editor-empty__note">No file open</p>
+        </div>
+        <div id="editor" class="editor-cm-host" aria-label="Beluga source editor"></div>
+      </div>
     </div>
 
     <div class="panel output-panel">
@@ -228,7 +274,17 @@
           if (!ws) return;
           var explorerOpen = localStorage.getItem('beljar-explorer-open') === '1';
           var inspectorOpen = localStorage.getItem('beljar-inspector-open') === '1';
-          if (inspectorOpen) {
+          var libraryOpen = localStorage.getItem('beljar-library-open') === '1';
+          if (libraryOpen) {
+            ws.classList.add('is-library-open');
+            var lp = document.getElementById('library-panel');
+            if (lp) lp.setAttribute('aria-hidden', 'false');
+            var lb = document.getElementById('btn-library');
+            if (lb) {
+              lb.classList.add('is-active');
+              lb.setAttribute('aria-pressed', 'true');
+            }
+          } else if (inspectorOpen) {
             ws.classList.add('is-inspector-open');
             var ip = document.getElementById('inspector-panel');
             if (ip) ip.setAttribute('aria-hidden', 'false');
@@ -288,8 +344,14 @@
   <script src="js/name-conflicts.js"></script>
   <script src="js/conflict-dialog.js"></script>
   <script src="js/tree-dnd.js"></script>
+  <script src="js/header-search.js"></script>
   <script src="js/explorer-inline-name.js"></script>
   <script src="js/explorer-tree.js"></script>
+  <script src="js/library-suites.js"></script>
+  <script src="js/library-search.js"></script>
+  <script src="js/explorer-search.js"></script>
+  <script src="js/library-preview.js"></script>
+  <script src="js/library-panel.js"></script>
   <script src="js/toasts.js"></script>
   <script src="js/notifications.js"></script>
   <script src="js/repl-output.js"></script>

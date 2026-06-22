@@ -1,0 +1,133 @@
+% Author: Brigitte Pientka
+
+%{{
+# Type Uniqueness for the Simply-typed Lambda-calculus
+
+We prove that every lambda term has a unique type.
+Type uniqueness is also a benchmark in [ORBI](https://github.com/pientka/ORBI), Open challenge problem Repository for systems reasoning with Binders.
+For a detailed description of the proof and a discussion regarding other systems see <a href="orbi-jar.pdf" target="_blank">(Felty et al, 2014)</a>.
+
+## Syntax: Types and Lambda-terms
+
+We first represent the simply-typed lambda-calculus in the logical framework LF: the LF type `tp` describes the types of our simply typed lambda-calculus, and the LF type `tm` characterizes the terms of the lambda-calculus.
+
+The LF type tp has two constructors, `nat` and `arr`, corresponding to the types `nat` and `arr T S`, respectively.
+Since `arr` is a constructor which takes in two arguments, its type is `tp -> tp -> tp`.
+}}%
+
+% Definition of types and expressions
+LF tp: type =
+| arr: tp -> tp -> tp
+| nat: tp
+;
+
+%{{
+The LF type `tm` also has two constructors.
+The constructor `app` takes as input two objects of type `tm` and allows us to construct an object of type `tm`.
+The constructor for lambda-terms also takes two arguments as input; it first takes an object of type `tp` for the type annotation and the body of the abstraction is second.
+We use higher-order abstract syntax to represent the object-level binding of the variable `x` in the body `M`.
+Accordingly, the body of the abstraction is represented by the type `(tm -> tm)`.
+For example, `lam x:(arr nat nat) . lam y:nat . app x y` is represented by `lam (arr nat nat) \x.lam nat \y.app x y`.
+This encoding has several well-known advantages: First, the encoding naturally supports alpha-renaming of bound variables, which is inherited from the logical framework.
+Second, the encoding elegantly supports substitution for bound variables which reduces to beta-reduction in the logical framework LF.
+}}%
+
+LF term: type =
+| lam : tp -> (term -> term) -> term
+| app : term -> term -> term
+;
+
+%{{
+##  Typing Rules
+
+We describe typing judgment using the type family `has_type` which relates terms `tm` and types `tp`.
+The inference rules for lambda-abstraction and application are encoded as `h_lam` and `h_app`, respectively.
+}}%
+
+LF hastype: term -> tp -> type =
+| h_lam: ({x:term}hastype x T1 -> hastype (M x) T2)
+        -> hastype (lam T1 M) (arr T1 T2)
+| h_app: hastype M1 (arr T2 T) -> hastype M2 T2
+       -> hastype (app M1 M2) T
+;
+
+%{{
+## Equality
+Since Beluga does not support equality types, we implement equality by reflexivity using the type family `equal`.}}%
+
+LF equal: tp -> tp -> type =
+| e_ref: equal T T;
+
+%{{
+## Schema
+
+The schema `txG` describes a context containing assumptions `x:tm`, each associated with a typing assumption `hastype x t` for some type `t`.
+Formally, we are using a dependent product Η (used only in contexts) to tie `x` to `hastype x t`.
+We thus do not need to establish separately that for every variable there is a unique typing assumption: this is inherent in the definition of `txG`.
+The schema classifies well-formed contexts and checking whether a context satisfies a schema will be part of type checking.
+As a consequence, type checking will ensure that we are manipulating only well-formed contexts, that later declarations overshadow previous declarations, and that all declarations are of the specified form.
+}}%
+
+schema xtG = some [t:tp] block x:term, _t:hastype x t;
+
+%{{
+## Typing uniqueness proof
+
+Our final proof of type uniqueness `rec unique` proceeds by case analysis on the first derivation.
+Accordingly, the recursive function pattern-matches on the first derivation `d` which has type `[g |- hastype M T]`.
+}}%
+
+% induction on [g |- hastype M T]
+rec unique : (g:xtG)[g |- hastype M T[]] -> [g |- hastype M T'[]]
+-> [ |- equal T T'] =
+fn d => fn f => case d of
+| [g |- h_app D1 D2] =>
+  let [g |- h_app F1 F2] = f in
+  let [ |- e_ref] = unique [g |- D1] [g |- F1] in
+    [ |- e_ref]
+
+| [g |- h_lam (\x.\u. D)] =>
+  let [g |- h_lam (\x.\u. F)] = f in
+  let [ |- e_ref] = unique [g, b: block x:term, u:hastype x _ |- D[.., b.x, b.u]] [g, b |- F[.., b.x, b.u]] in
+   [ |- e_ref]
+
+| [g |- #q.2] =>           % d : hastype #p.1 T
+  let [g |- #r.2] = f in   % f : hastype #p.1 T'
+    [ |- e_ref]
+;
+
+%{{
+Consider each case individually.
+
+- **Application case.**
+  If the first derivation `d` concludes with `h_app`, it matches the pattern `[g |- h_app D1 D2]`, and forms a contextual object in the context `g` of type `[g |- hastype M T'[]]`.
+  `D1` corresponds to the first premise of the typing rule for applications with contextual type `[g |- hastype M1 (arr T'[] T[])]`.
+  Using a let-binding, we invert the second argument, the derivation `f` which must have type `[g |- hastype (app M1 M2) T[]]`.
+  `F1` corresponds to the first premise of the typing rule for applications and has the contextual type `[g |- hastype M1 (arr S'[] S[])]`.
+  The appeal to the induction hypothesis using `D1` and `F1` in the on-paper proof corresponds to the recursive call `unique [g |- D1] [g |- F1]`.
+  Note that while `unique`’s type says it takes a context variable `(g:xtG)`, we do not pass it explicitly; Beluga infers it from the context in the first argument passed.
+  The result of the recursive call is a contextual object of type `[ |- eq (arr T1 T2) (arr S1 S2)]`.
+  The only rule that could derive such an object is `e_ref`, and pattern matching establishes that `arr T T' = arr S S’` and hence `T = S and T' = S’`.
+
+- **Lambda case.**
+  If the first derivation `d` concludes with `h_lam`, it matches the pattern `[g |- h_lam (\x.\u. D u)]`, and is a contextual object in the context `g` of type `hastype (lam T[] M) (arr T[] T'[])`.
+  Pattern matching—through a let-binding—serves to invert the second derivation `f`, which must have been by `h_lam` with a subderivation `F` to reach `hastype M S[]` that can use `x, u:hastype x T[]`, and assumptions from `g`.
+  <br/>
+  The use of the induction hypothesis on `D` and `F` in a paper proof corresponds to the recursive call to `unique`.
+  To appeal to the induction hypothesis, we need to extend the context by pairing up `x` and the typing assumption `hastype x T[]`.
+  This is accomplished by creating the declaration `b: block x:term, u:hastype x T[]`.
+  In the code, we wrote an underscore `_` instead of `T[]`, which tells Beluga to reconstruct it since we cannot write `T[]` there without binding it by explicitly giving the type of `D`.
+  To retrieve `x` we take the first projection `b.x`, and to retrieve `x`’s typing assumption we take the second projection `b.u`.
+  <br/>
+  Now we can appeal to the induction hypothesis using `D1[.., b.x, b.u]` and `F1[.., b.x, b.u]` in the context `g, b: block x:term, u:hastype x S[]`.
+  From the i.h. we get a contextual object, a closed derivation of `[|- eq (arr T T') (arr S S’)]`.
+  The only rule that could derive this is ref, and pattern matching establishes that `S` must equal `S’`, since we must have `arr T S = arr T1 S’`.
+  Therefore, there is a proof of `[ |- equal S S’]`, and we can finish with the reflexivity rule `e_ref`.
+
+- **Variable case.**
+  Since our context consists of blocks containing variables of type `tm` and assumptions `hastype x T[]`, we pattern match on `[g |- #p.2]`, i.e., we project out the second argument of the block.
+  By the given assumptions, we know that `[g |- #p.2]` has type `[g |- hastype #p.1 T[]]`, because `#p` has type `[g |- block x:tm , u:hastype x T[]]`.
+  We also know that the second input, called `f`, to the function unique has type `[g |- hastype #p.1 T'[]]`.
+  By inversion on `f`, we know that the only possible object that can inhabit this type is `[g |- #p.2]` and therefore `T'` must be identical to `T`.
+  Moreover, `#r` denotes the same block as `#p`.
+}}%

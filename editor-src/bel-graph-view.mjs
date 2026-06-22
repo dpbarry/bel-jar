@@ -2,6 +2,7 @@
 
 
 import { getEngine, jumpToRange } from './bel-ide-actions.mjs';
+import { dependencyGraph } from './workspace-index.mjs';
 import { createFollowWindowAction, registerEditorFollow } from './bel-follow-sync.mjs';
 import { computeParseCoverage, formatGlobalGraphStaleBanner } from './bel-ide-status.mjs';
 import { createForceSim } from './graph/force-sim.mjs';
@@ -33,7 +34,52 @@ function nodeMeta(engine, id, fallbackName) {
   if (!gnode) return { id, name: fallbackName || null, namespace: null, label: null, status: 'unknown' };
   return {
     id, name: gnode.name, namespace: gnode.namespace, label: gnode.label,
-    status: uiStatus(engine, id, gnode.status), nameRange: gnode.nameRange,
+    status: uiStatus(engine, id, gnode.status), nameRange: gnode.nameRange, fileId: gnode.fileId,
+  };
+}
+
+// A suite-wide stand-in for the engine's graph API, so the dependency graph can
+// show cross-file edges (a proof → its prelude constructors). Same method shape
+// the view already calls on the engine; null when there's no project store.
+function makeGroupSource(view, engine) {
+  const g = typeof window !== 'undefined' ? window : self;
+  const P = g.BelJarPersist;
+  if (!P || typeof P.listFiles !== 'function' || typeof P.getFileText !== 'function'
+    || typeof P.getActiveFileId !== 'function') {
+    return null;
+  }
+  let graph;
+  try {
+    const activeId = P.getActiveFileId();
+    const getText = (id) => (id === activeId && view?.state?.doc
+      ? view.state.doc.toString()
+      : String(P.getFileText(id) ?? ''));
+    const opts = typeof P.getActiveCfgForDir === 'function'
+      ? { activeCfgForDir: (dir) => P.getActiveCfgForDir(dir) } : {};
+    graph = dependencyGraph(P.listFiles(), activeId, getText, opts);
+  } catch (_) {
+    return null;
+  }
+  if (!graph.nodes || graph.nodes.size === 0) return null;
+  const nodeMap = graph.nodes;
+  return {
+    __group: true,
+    scheduler: null,
+    dependenciesOf: (id) => graph.dependenciesOf(id),
+    dependentsOf: (id) => graph.dependentsOf(id),
+    graphFor: () => ({ nodes: [...nodeMap.values()], edges: graph.edges }),
+    getSnapshot: () => ({ graph: { nodeMap }, symbols: { symbolsById: nodeMap } }),
+    symbolRangeById: (id) => nodeMap.get(id)?.nameRange || null,
+    navAt: (pos) => {
+      const name = engine && typeof engine.intelSyncAt === 'function'
+        ? (engine.intelSyncAt(pos) || {}).name : null;
+      if (!name) return null;
+      const node = graph.nodeForName(name);
+      return node ? { symbolId: node.id, name } : null;
+    },
+    // Root the graph on a symbol by NAME (cross-file: the def lives in another
+    // file, so a position in the active view can't resolve it).
+    rootIdForName: (name) => graph.nodeForName(name)?.id || null,
   };
 }
 
@@ -302,6 +348,15 @@ function jumpToNode(view, engine, node) {
   const range = node.nameRange
     || (typeof engine.symbolRangeById === 'function' ? engine.symbolRangeById(node.id) : null);
   if (!range) return;
+  // Cross-file node → open its file at the definition; same-file → flash-jump.
+  const g = typeof window !== 'undefined' ? window : self;
+  const activeId = g.BelJarPersist?.getActiveFileId?.();
+  if (node.fileId && activeId && node.fileId !== activeId && typeof g.dispatchEvent === 'function') {
+    g.dispatchEvent(new CustomEvent('beljar:open-file-at', {
+      detail: { fileId: node.fileId, from: range.from, to: range.to, name: node.name },
+    }));
+    return;
+  }
   jumpToRange(view, range);
 }
 
@@ -1607,13 +1662,15 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
   return true;
 }
 
-export function openLocalGraphWindow(view, pos) {
+export function openLocalGraphWindow(view, pos, opts = {}) {
   const g = typeof window !== 'undefined' ? window : self;
   if (typeof g.FloatingWindow === 'undefined') return false;
-  const engine = getEngine(view);
-  if (!engine) return false;
+  const realEngine = getEngine(view);
+  if (!realEngine) return false;
+  const engine = makeGroupSource(view, realEngine) || realEngine;
   const at = pos ?? view.state.selection.main.head;
-  const rootId = rootIdAt(engine, view, at);
+  const rootId = (opts.rootName && typeof engine.rootIdForName === 'function'
+    ? engine.rootIdForName(opts.rootName) : null) || rootIdAt(engine, view, at);
   if (!rootId) return false;
   const prefs = loadGraphPrefs();
   const model = buildNeighborhood(engine, rootId, { depth: prefs.depth });
@@ -1624,8 +1681,9 @@ export function openLocalGraphWindow(view, pos) {
 export function openGlobalGraphWindow(view) {
   const g = typeof window !== 'undefined' ? window : self;
   if (typeof g.FloatingWindow === 'undefined') return false;
-  const engine = getEngine(view);
-  if (!engine) return false;
+  const realEngine = getEngine(view);
+  if (!realEngine) return false;
+  const engine = makeGroupSource(view, realEngine) || realEngine;
   const model = buildGlobalModel(engine);
   const meta = collectGlobalGraphMeta(view, engine);
   const staleBanner = makeStaleBanner(formatGlobalGraphStaleBanner(meta));
@@ -1635,11 +1693,34 @@ export function openGlobalGraphWindow(view) {
     { width: 780, height: 580, mode: 'global', staleBanner });
 }
 
-export function renderMiniGraph(container, view, pos) {
-  const engine = getEngine(view);
-  if (!engine) return false;
+function rebindGraphWindowsToActiveEditor(view) {
+  if (!view) return;
+  const realEngine = getEngine(view);
+  const engine = realEngine ? (makeGroupSource(view, realEngine) || realEngine) : null;
+  for (const win of openGraphWindows.values()) {
+    const bundle = win._graphBundle;
+    if (!bundle?.ctx) continue;
+    bundle.view = view;
+    bundle.engine = engine;
+    if (bundle.ctx.followEditor && engine) {
+      syncFollowFromEditor(view, engine, win, bundle.ctx);
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beljar:active-editor-view', (e) => {
+    rebindGraphWindowsToActiveEditor(e?.detail?.view);
+  });
+}
+
+export function renderMiniGraph(container, view, pos, opts = {}) {
+  const realEngine = getEngine(view);
+  if (!realEngine) return false;
+  const engine = makeGroupSource(view, realEngine) || realEngine;
   const at = pos ?? view.state.selection.main.head;
-  const rootId = rootIdAt(engine, view, at);
+  const rootId = (opts.rootName && typeof engine.rootIdForName === 'function'
+    ? engine.rootIdForName(opts.rootName) : null) || rootIdAt(engine, view, at);
   if (!rootId) { container.textContent = ''; return false; }
   const model = buildNeighborhood(engine, rootId, { depth: 1 });
   if (!model || model.nodes.length <= 1) { container.textContent = ''; return false; }

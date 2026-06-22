@@ -298,13 +298,31 @@
     return 'input.bel';
   }
 
+  function filePathOf(id) {
+    if (typeof BelJarPersist === 'undefined') return null;
+    var files = BelJarPersist.listFiles() || [];
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].id === id) return files[i].name;
+    }
+    return null;
+  }
+
+  function cfgPathForId(id) {
+    var path = filePathOf(id);
+    return path && /\.cfg$/i.test(path) ? path : null;
+  }
+
   // Run File — one buffer alone, no prelude.
   async function runFile(targetId) {
     if (belugaBusy) return;
     var id = resolveTargetId(targetId);
     if (!id) return;
+    var cfgPath = cfgPathForId(id);
+    if (cfgPath) return runModuleCfg(cfgPath);
     var assembled = BelJarProjectSource.assembleCheckerCode(makeGetText()(id), null);
-    return runLoad(assembled.code, null, { displayName: fileNameOf(id) });
+    // pinned: explicit run scope — code may differ from the active editor buffer
+    // (explorer/tab context menu). Without this, worker loads are cancelled as stale.
+    return runLoad(assembled.code, null, { pinned: true, displayName: fileNameOf(id) });
   }
 
   // Run Module to Here — a file with its module predecessors prepended (cfg order).
@@ -312,12 +330,14 @@
     if (belugaBusy) return;
     var id = resolveTargetId(targetId);
     if (!id) return;
+    var cfgPath = cfgPathForId(id);
+    if (cfgPath) return runModuleCfg(cfgPath);
     var files = BelJarPersist.listFiles();
     var getText = makeGetText();
     var prelude = BelJarProjectSource.buildPrelude(files, id, getText);
     var assembled = BelJarProjectSource.assembleCheckerCode(getText(id), prelude);
     return runLoad(assembled.code, null, {
-      pinned: !!assembled.prelude, prelude: assembled.prelude, displayName: fileNameOf(id),
+      pinned: true, prelude: assembled.prelude, displayName: fileNameOf(id),
     });
   }
 
@@ -326,6 +346,8 @@
     if (belugaBusy) return;
     var id = resolveTargetId(targetId);
     if (!id) return;
+    var cfgPath = cfgPathForId(id);
+    if (cfgPath) return runModuleCfg(cfgPath);
     var files = BelJarPersist.listFiles();
     var cfgPath = BelJarProjectSource.cfgPathForActive(files, id, makeGetText());
     if (!cfgPath) return runToHere(id);

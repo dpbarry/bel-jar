@@ -1,0 +1,95 @@
+{
+  "sections": [
+    {
+      "id": "builtins",
+      "label": "Fundamentals",
+      "staticTree": {
+        "type": "folder",
+        "id": "builtins-root",
+        "name": "",
+        "children": [
+          {
+            "type": "folder",
+            "id": "builtins-core",
+            "name": "Natural Deduction",
+            "children": [
+              {
+                "type": "file",
+                "id": "builtins-nd-first-order",
+                "label": "nd-first-order.bel",
+                "path": "builtins/nd-first-order.bel",
+                "ext": "bel",
+                "description": "Natural deduction signatures including quantifiers"
+              },
+              {
+                "type": "file",
+                "id": "builtins-nd-propositional",
+                "label": "nd-propositional.bel",
+                "path": "builtins/nd-propositional.bel",
+                "ext": "bel",
+                "description": "Natural deduction signatures without quantifiers"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "examples",
+      "label": "Examples",
+      "dataPath": "examples"
+    },
+    {
+      "id": "case-studies",
+      "label": "Case Studies",
+      "dataPath": "case-studies"
+    }
+  ],
+  "folders": {
+    "examples/arith": "Recursive addition and multiplication on Peano naturals.",
+    "examples/back": "Bidirectional typechecker with even/odd nat subtyping on a small λ-language.",
+    "examples/bigstep-deterministic": "Big-step evaluation for λ-terms; proof that evaluation results are unique.",
+    "examples/cfg": "Coverage-checker stress tests using a free-variable analysis on typed expressions.",
+    "examples/church-rosser": "Church–Rosser for β on untyped λ via parallel reduction (Tait–Martin-Löf). Folder holds several developments; test.cfg loads the parallel-reduction proof chain.",
+    "examples/codatatypes": "Coinductive examples: pi-calculus bisimulation, Howe's method, and a Tofte-style environment semantics.",
+    "examples/compile": "Pfenning's compiler-correctness suite in Elf—SECD/CLS machines, CPS, closure conversion, and de Bruijn compilation.",
+    "examples/copy": "Structurally recursive deep copy of λ-terms; simply-typed and dependently typed variants.",
+    "examples/count-var": "Count variable occurrences in typed terms; illustrates pattern matching when types are refined in branches.",
+    "examples/cpp13": "Type-preserving closure conversion and CPS for a higher-order language.",
+    "examples/cut-elim": "Cut elimination for intuitionistic sequent calculus (Pfenning); Beluga and Elf versions.",
+    "examples/equal": "Soundness and completeness of algorithmic versus declarative equality on λ-terms.",
+    "examples/fol": "Intuitionistic logic: propositional proof search and a first-order Hilbert–natural-deduction translation.",
+    "examples/free-vars": "Decide whether a well-typed expression contains a free variable.",
+    "examples/freshML": "FreshML-style compilation: de Bruijn conversion, CPS, closure conversion, and environment passing.",
+    "examples/higher-order": "Third-order HOAS paths through λ-terms; shown equivalent to a second-order path judgment.",
+    "examples/improve": "Small examples that stress η-conversion and type reconstruction in patterns.",
+    "examples/lincx_mechanization": "LINCX linear logical framework: linear and unrestricted contexts, typing, substitution, and context join.",
+    "examples/literate_beluga": "Literate tutorial proofs from the Beluga docs—beginner through advanced, including POPLmark and normalization.",
+    "examples/logrel": "Logical relations for weak head normalization and algorithmic equality on STLC (Cave & Pientka, LFMTP 2013).",
+    "examples/lp-horn": "Horn-clause intuitionistic logic: canonical and uniform proof search, adapted from Twelf.",
+    "examples/mini-ml": "Mini-ML with substitution-based call-by-value evaluation, type preservation, and value soundness.",
+    "examples/path": "Paths through λ-term structure; agreeing on all paths implies β-conversion.",
+    "examples/polylam": "Normalize simply-typed λ-terms into a value-only representation.",
+    "examples/popl12": "Examples from the POPL 2012 Beluga paper: NbE, closure conversion, lists, and normalization.",
+    "examples/poplmark": "POPLmark challenge 1a: bounded subtype polymorphism (proof-pearl development).",
+    "examples/poplmark-reloaded": "POPLmark Reloaded 1a–2b: strong normalization via accessibility on step-indexed terms.",
+    "examples/poplmark-reloaded+": "Alternate encoding of the POPLmark Reloaded strong-normalization development.",
+    "examples/small-step": "Small-step STLC and System F with preservation and progress; includes a progress proof using inversion.",
+    "examples/tapl": "TAPL-style exercises: arithmetic and boolean evaluation, exceptions, and STLC big- and small-step semantics.",
+    "examples/typed-compilation": "Type-preserving CPS and closure conversion (Twelf POPL tutorial), plus de Bruijn shifting.",
+    "examples/typed-eval": "Type-directed evaluator for booleans, naturals, and let; only well-typed terms run.",
+    "examples/unique": "Uniqueness of typing and of evaluation results in a simply-typed λ-calculus.",
+    "case-studies/classical-processes": "Session types in Beluga (Sano, Kavanagh, Pientka, OOPSLA 2023): linearity, typing, and subject reduction for CP.",
+    "case-studies/harmony-lemma-formalization": "Harmony Lemma for π-calculus (Cecilia & Momigliano, LFMTP 2024): labeled transitions versus structural reduction."
+  },
+  "files": {
+    "builtins/nd-first-order.bel": "Natural deduction signatures including quantifiers",
+    "builtins/nd-propositional.bel": "Natural deduction signatures without quantifiers",
+    "examples/copy/copy-explicit.bel": "dependently typed, fully explicit",
+    "examples/copy/copy-simple-explicit.bel": "simply typed, fully explicit",
+    "examples/copy/copy-simple.bel": "simply typed",
+    "examples/copy/copy.bel": "dependently typed",
+    "examples/count-var/cntvar-2.bel": "same as cntvar.bel with different plus function",
+    "examples/count-var/cntvar-explicit.bel": "fully explicit version"
+  }
+}

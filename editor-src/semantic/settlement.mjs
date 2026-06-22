@@ -1,6 +1,6 @@
 import { Text } from '@codemirror/state';
 import { parser } from '../beluga-parser.js';
-import { fallbackDiagnostic, namedCulprit, parseBelugaDiagnostics } from '../bel-beluga-diag.mjs';
+import { fallbackDiagnostic, namedCulprit, parseBelugaDiagnostics, spanFirstLineDiagnostic } from '../bel-beluga-diag.mjs';
 import { assembleCheckerCode, shiftCheckerOutput } from '../project-prelude.mjs';
 import { mergeDiagnostics, parseQueryRuntimeDiagnostics } from '../bel-query-diag.mjs';
 import { checkerSnapshotFromSyntax } from '../checker-snapshot.mjs';
@@ -37,6 +37,8 @@ export function belugaDiagnosticsFromOutput(rawOutput, doc, {
       diags = [fb];
     }
   }
+  // General rule: any diagnostic anchored on line 1 spans the whole first line.
+  for (const d of diags) spanFirstLineDiagnostic(d, doc);
   return diags;
 }
 
@@ -63,17 +65,64 @@ function diagKey(d) {
   return `${d.from}:${d.to}:${(d.message || '').slice(0, 60)}`;
 }
 
-function preludeBannerDiag(doc, issues) {
-  if (!issues.length) return null;
-  const first = issues[0];
-  const more = issues.length > 1 ? ` (+${issues.length - 1} more in prelude)` : '';
-  return {
+// A prelude file shows an error, but is that error genuinely the prelude file's
+// fault — or did the ACTIVE file inject it? When the active file carries a global
+// pragma (e.g. --nostrengthen) or a colliding declaration, Beluga hoists/merges
+// it across the whole development and the prelude file fails at a line that is
+// perfectly correct on its own. Telling the user "fix the earlier file" is then
+// a lie: they open it, run it standalone, it's clean, and they're stranded. So a
+// prelude issue whose file is named by an active-file-caused suite finding is NOT
+// the earlier file's fault and must not raise the "fix earlier file" banner — the
+// suite finding (anchored on the real cause in THIS file) already explains it.
+function preludeIssueIsActiveCaused(issue, findings) {
+  for (const f of findings) {
+    if (!f.atIsActive) continue;
+    // A leaked pragma from the active file breaks earlier files in the prelude;
+    // "fix the earlier file" is then a lie (it's clean standalone). The
+    // shadowed-use finding, by contrast, makes the ACTIVE file the victim — its
+    // error lands in the active file itself, not the prelude — so it needs no
+    // banner re-attribution here.
+    if (f.kind === 'pragma-leak' && (f.affectedNames || []).includes(issue.name)) return true;
+  }
+  return false;
+}
+
+// The per-member diagnostic map: the prelude findings the recovery loop already
+// computed (file name + file-relative line + message), surfaced as structured
+// diagnostics keyed by member file name instead of collapsed into one banner.
+// This is the cross-file channel Tier-2 consumers (inspector, dependency graph)
+// read for members OTHER than the active file — so a checked-but-erroring member
+// shows its real health rather than "parsed, not checked here". Prelude issues
+// are always errors (Beluga halts at the first error; warnings never reach here).
+function memberDiagnosticsFromIssues(issues) {
+  const byFile = {};
+  for (const iss of issues) {
+    if (!iss || !iss.name) continue;
+    (byFile[iss.name] || (byFile[iss.name] = [])).push({
+      line: iss.line,
+      message: iss.message || 'Error in this file.',
+      severity: 'error',
+    });
+  }
+  return byFile;
+}
+
+function preludeBannerDiag(doc, issues, findings = []) {
+  // Drop prelude issues the active file itself caused — their true explanation is
+  // the suite finding pinned to this file, not "go fix a correct earlier file".
+  const genuine = issues.filter((iss) => !preludeIssueIsActiveCaused(iss, findings));
+  if (!genuine.length) return null;
+  const first = genuine[0];
+  const more = genuine.length > 1 ? ` (+${genuine.length - 1} more in prelude)` : '';
+  // Start-of-file banner: the shared first-line rule makes it hoverable across
+  // the whole line, not just one char.
+  return spanFirstLineDiagnostic({
     from: 0,
     to: Math.min(1, doc.length),
     severity: 'error',
     message: `Error in earlier file ${first.name}:${first.line}. Fix earlier suite files in this folder first${more}`,
     source: 'beluga',
-  };
+  }, doc);
 }
 
 export function createSettlement({
@@ -124,6 +173,17 @@ export function createSettlement({
     const rawPrelude = ctx?.prelude || null;
     let shiftPrelude = rawPrelude;
     const diagDoc = ctx?.doc || syntaxSnap.doc;
+    // Suite-composition warnings (pragma leak / duplicate decl) ride alongside
+    // the Beluga findings so the same problem the cfg flags is visible in the
+    // open file too. Non-fatal — they never flip `ok` on their own.
+    const suiteDiags = (ctx?.suiteDiagnostics || []).map((d) => {
+      const out = { ...d, source: d.source || 'suite' };
+      return spanFirstLineDiagnostic(out, diagDoc);
+    });
+    // Raw findings (affected files resolved to names) let the banner tell whether
+    // a "prelude error" is actually the active file's own fault — see
+    // preludeBannerDiag.
+    const suiteFindings = ctx?.suiteFindings || [];
 
     // Block-index the prelude the same way the active file is, so an error in an
     // earlier suite file can be masked and the active file still reached —
@@ -201,7 +261,7 @@ export function createSettlement({
         syntaxVersion: syntaxSnap.version,
         checkerFp: '',
         ok: true,
-        belugaDiagnostics: [],
+        belugaDiagnostics: suiteDiags,
         rawOutput: '',
       }, gen);
     }
@@ -268,13 +328,14 @@ export function createSettlement({
 
     try {
       // Everything checkable was carved out by syntax faults — the JS lint
-      // owns those errors; there is nothing for Beluga to add.
+      // owns those errors; there is nothing for Beluga to add. Suite-composition
+      // warnings are independent of that, so they still ride along.
       if (!code.trim()) {
         return finish({
           syntaxVersion: syntaxSnap.version,
           checkerFp: canonicalFp,
           ok: true,
-          belugaDiagnostics: [],
+          belugaDiagnostics: suiteDiags,
           rawOutput: '',
         }, gen);
       }
@@ -364,13 +425,14 @@ export function createSettlement({
       // reach the active file. It rides alongside (not instead of) the active
       // file's own diagnostics.
       const preludeIssuesAll = [...preludeIssuesSeen.values()];
-      const banner = preludeBannerDiag(diagDoc, preludeIssuesAll);
-      const finalDiags = banner ? [banner, ...collected] : collected;
+      const banner = preludeBannerDiag(diagDoc, preludeIssuesAll, suiteFindings);
+      const finalDiags = [...(banner ? [banner] : []), ...collected, ...suiteDiags];
       return finish({
         syntaxVersion: syntaxSnap.version,
         checkerFp: canonicalFp,
         ok: lastOk && collected.length === 0 && preludeIssuesAll.length === 0,
         belugaDiagnostics: finalDiags,
+        memberDiagnostics: memberDiagnosticsFromIssues(preludeIssuesAll),
         rawOutput: outputs.join('\n'),
         checkedCode: checkedOkCode || '',
         checkedFp: checkedOkCode ? fingerprint(checkedOkCode) : '',

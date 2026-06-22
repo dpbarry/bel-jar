@@ -829,7 +829,7 @@
 
   function appendProjectOpened(info) {
     info = info || {};
-    var name = String(info.name != null ? info.name : 'Untitled');
+    var name = String(info.name != null ? info.name : 'Untitled Project');
     var belCount = Number(info.belCount) || 0;
     var elfCount = Number(info.elfCount) || 0;
     var cfgCount = Number(info.cfgCount) || 0;

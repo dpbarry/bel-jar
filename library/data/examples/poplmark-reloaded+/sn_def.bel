@@ -1,0 +1,52 @@
+% Mechanization of POPLMark Reloaded challenge:
+% Section 2.2 Defining strong normalization
+
+inductive Sn : (Γ:cxt) [Γ ⊢ tm A[]] → ctype =
+| Acc : {Γ:cxt} {A:[ ⊢ ty]} {M:[Γ ⊢ tm A[]]}
+  ({M':[Γ ⊢ tm A[]]} {S:[Γ ⊢ step M M']} Sn [Γ ⊢ M'])
+  → Sn [Γ ⊢ M];
+
+rec mstep_sn : (Γ:cxt) {M:[Γ ⊢ tm A[]]} {M':[Γ ⊢ tm A[]]} [Γ ⊢ mstep M M'] → Sn [Γ ⊢ M] → Sn [Γ ⊢ M'] =
+  / total sn (mstep_sn g m m' ms sn) /
+  mlam _, M' ⇒ fn ms, sn ⇒ case ms of
+  | [_ ⊢ m-refl] ⇒ sn
+  | [_ ⊢ m-step S MS'] ⇒
+    let Acc [_] [ ⊢ _] [_ ⊢ _] r = sn in
+    let sn' = r [_ ⊢ _] [_ ⊢ S] in
+    mstep_sn [_ ⊢ _] [_ ⊢ M'] [_ ⊢ MS'] sn'
+  ;
+
+inductive SN : (Γ:cxt) [Γ ⊢ tm A[]] → ctype =
+| SNeu : SNe [Γ ⊢ R] → SN [Γ ⊢ R]
+| SAbs : SN [Γ, x:tm A[] ⊢ M] → SN [Γ ⊢ abs \x. M]
+| SRed : SNRed [Γ ⊢ M] [Γ ⊢ M'] → SN [Γ ⊢ M'] → SN [Γ ⊢ M]
+| SInl : SN [Γ ⊢ M] → SN [Γ ⊢ inl _ M]
+| SInr : SN [Γ ⊢ M] → SN [Γ ⊢ inr _ M]
+
+and inductive SNe : (Γ:cxt) [Γ ⊢ tm A[]] → ctype =
+| SVar : {#p:#[Γ ⊢ tm A[]]} SNe [Γ ⊢ #p]
+| SApp : SNe [Γ ⊢ R] → SN [Γ ⊢ M] → SNe [Γ ⊢ app R M]
+| SCase : SNe [Γ ⊢ M] → SN [Γ, x:tm A[] ⊢ N1] → SN [Γ, y:tm B[] ⊢ N2]
+  → SNe [Γ ⊢ match M (\x. N1) (\y. N2)]
+
+and inductive SNRed : (Γ:cxt) [Γ ⊢ tm A[]] → [Γ ⊢ tm A[]] → ctype =
+| SBeta : {M:[Γ, x:tm A[] ⊢ tm B[]]} SN [Γ ⊢ N] → SNRed [Γ ⊢ app (abs \x. M) N] [Γ ⊢ M[…, N]]
+| SAppl : SNRed [Γ ⊢ R] [Γ ⊢ R'] → SNRed [Γ ⊢ app R M] [Γ ⊢ app R' M]
+| SCInl : SN [Γ ⊢ M] → SN [Γ, x:tm A[] ⊢ N1] → SN [Γ, y:tm B[] ⊢ N2]
+  → SNRed [Γ ⊢ match (inl B[] M) (\x. N1) (\y. N2)] [Γ ⊢ N1[…, M]]
+| SCInr : SN [Γ ⊢ M] → SN [Γ, x:tm A[] ⊢ N1] → SN [Γ, y:tm B[] ⊢ N2]
+  → SNRed [Γ ⊢ match (inr A[] M) (\x. N1) (\y. N2)] [Γ ⊢ N2[…, M]]
+| SRCase : SNRed [Γ ⊢ M] [Γ ⊢ M']
+  → {N1:[Γ, x:tm A[] ⊢ tm C[]]} {N2:[Γ, y:tm B[] ⊢ tm C[]]}
+  SNRed [Γ ⊢ match M (\x. N1) (\y. N2)] [Γ ⊢ match M' (\x. N1) (\y. N2)];
+
+inductive SnRed : (Γ:cxt) [Γ ⊢ tm A[]] → [Γ ⊢ tm A[]] → ctype =
+| SnBeta : {M:[Γ, x:tm A[] ⊢ tm B[]]} Sn [Γ ⊢ N] → SnRed [Γ ⊢ app (abs \x. M) N] [Γ ⊢ M[…, N]]
+| SnAppl : SnRed [Γ ⊢ M] [Γ ⊢ M'] → SnRed [Γ ⊢ app M N] [Γ ⊢ app M' N]
+| SnCInl : Sn [Γ ⊢ M] → Sn [Γ, x:tm A[] ⊢ N1] → Sn [Γ, y:tm B[] ⊢ N2]
+  → SnRed [Γ ⊢ match (inl B[] M) (\x. N1) (\y. N2)] [Γ ⊢ N1[…, M]]
+| SnCInr : Sn [Γ ⊢ M] → Sn [Γ, x:tm A[] ⊢ N1] → Sn [Γ, y:tm B[] ⊢ N2]
+  → SnRed [Γ ⊢ match (inr A[] M) (\x. N1) (\y. N2)] [Γ ⊢ N2[…, M]]
+| SnCasR : SnRed [Γ ⊢ M] [Γ ⊢ M']
+  → {N1:[Γ, x:tm A[] ⊢ tm C[]]} {N2:[Γ, y:tm B[] ⊢ tm C[]]}
+  SnRed [Γ ⊢ match M (\x. N1) (\y. N2)] [Γ ⊢ match M' (\x. N1) (\y. N2)];

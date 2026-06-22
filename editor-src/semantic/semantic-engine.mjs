@@ -16,6 +16,16 @@ import {
   mergeDeclSignatures,
 } from './merge-decl-signatures.mjs';
 
+// Headline declaration namespaces shown in the inspector's file outline.
+const OUTLINE_NAMESPACES = new Set([
+  NAMESPACE.LF_TYPE_FAMILY,
+  NAMESPACE.COMP_TYPE,
+  NAMESPACE.REC_FUNCTION,
+  NAMESPACE.SCHEMA,
+  NAMESPACE.TYPEDEF,
+  NAMESPACE.MODULE,
+]);
+
 export function createSemanticEngine(options = {}) {
   const documentId = normalizeDocumentId(options.documentId || DEFAULT_DOCUMENT_ID);
   const syntaxStore = createSyntaxStore({ documentId });
@@ -183,14 +193,6 @@ export function createSemanticEngine(options = {}) {
   function isDeclSignatureHover(resolved, symbol) {
     return !!(symbol && symbol.isGlobal && resolved
       && (resolved.kind === 'global' || resolved.kind === 'external'));
-  }
-
-  function annotationForHover(pos, resolved, queryIn) {
-    const query = queryIn !== undefined ? queryIn : symbolStore.queryAt(pos);
-    const sym = query && query.symbol;
-    if (resolved?.sourceType) return resolved.sourceType;
-    if (isDeclSignatureHover(resolved, sym)) return declSignatureAnnotation(sym, resolved);
-    return resolved?.sourceText || declSignatureAnnotation(sym, resolved);
   }
 
   function pickDeclDisplayType(symbol, sourceAnnotation) {
@@ -565,6 +567,20 @@ export function createSemanticEngine(options = {}) {
       ? (checker.belugaDiagnostics || [])
       : [];
     return mergeDiagnostics(syntaxDiags, belugaDiags);
+  }
+
+  // Cross-file diagnostics for development members OTHER than the active file:
+  // { [memberFileName]: [{ line, message, severity }] }. These come from the
+  // development check the active file's session already ran (prelude members are
+  // loaded and checked), surfaced per-member instead of as one banner. The active
+  // file's own diagnostics live in documentDiagnostics()/belugaDiagnostics with
+  // real positions; consumers combine the two for a whole-development view.
+  function memberDiagnostics() {
+    const checker = checkerStore.getSnapshot();
+    if (checker.state !== 'ready' && checker.state !== 'stale' && checker.state !== 'checking') {
+      return {};
+    }
+    return checker.memberDiagnostics || {};
   }
 
   function diagnosticsForSymbol(symbolId) {
@@ -1420,12 +1436,54 @@ export function createSemanticEngine(options = {}) {
     return Promise.resolve(hover && hover.type != null ? hover.type : null);
   }
 
+  // Reconstructed type for a development MEMBER declaration by name. The active
+  // file's session already loaded the prelude (checkerCode includes it), so
+  // ideDeclType answers for any earlier-member decl — this lifts the inspector's
+  // cross-file view from a source-only signature to the real reconstructed type.
+  // Async; resolves null when the session can't reconstruct it (caller falls back
+  // to the source signature). Only meaningful for in-development members.
+  function memberTypePromise(name) {
+    if (!session || typeof session.ideDeclType !== 'function' || !name) {
+      return Promise.resolve(null);
+    }
+    const syntax = syntaxStore.getSnapshot();
+    const code = checkerCodeFromSyntax(syntax);
+    if (!code) return Promise.resolve(null);
+    return Promise.resolve(session.ideDeclType(code, name))
+      .then((r) => (r && r.ok && r.type != null ? r.type : null))
+      .catch(() => null);
+  }
+
   // Range of a global symbol's name by id (for click-to-jump from the inspector
   // dependency/usage lists). Null when the id is unknown in the current snapshot.
   function symbolRangeById(id) {
     const symbols = symbolStore.getSnapshot();
     const symbol = symbols && id ? symbols.symbolsById.get(id) : null;
     return symbol ? symbol.nameRange : null;
+  }
+
+  // Top-level declarations of the current document, in source order, for the
+  // inspector's file outline. Only the "headline" namespaces (type families,
+  // comp types, recs, schemas, typedefs, modules) — constructors/constants are
+  // reachable via the type's dependents and via search, and would bloat the
+  // list. Each row carries what the outline row needs (name, label, namespace,
+  // jump range, error flag). [] when nothing has parsed yet.
+  function outlineSymbols() {
+    const symbols = symbolStore.getSnapshot();
+    if (!symbols) return [];
+    const out = [];
+    for (const s of symbols.declarations) {
+      if (!OUTLINE_NAMESPACES.has(s.namespace)) continue;
+      out.push({
+        id: s.id,
+        name: s.displayName || s.name,
+        label: s.label,
+        namespace: s.namespace,
+        nameRange: s.nameRange ? { from: s.nameRange.from, to: s.nameRange.to } : null,
+        hasError: diagnosticsForSymbol(s.id).some((d) => d.severity === 'error'),
+      });
+    }
+    return out;
   }
 
   // All occurrence ranges (definition name + references) for the symbol at
@@ -1542,8 +1600,10 @@ export function createSemanticEngine(options = {}) {
     elaborateDeclarationImplicits,
     intelSyncAt,
     intelTypePromise,
+    memberTypePromise,
     userStatusAt,
     symbolRangeById,
+    outlineSymbols,
     hoverAt,
     dependenciesOf: (symbolId) => semanticGraph.dependenciesOf(symbolId),
     dependentsOf: (symbolId) => semanticGraph.dependentsOf(symbolId),
@@ -1554,6 +1614,7 @@ export function createSemanticEngine(options = {}) {
     applyBelugaOutput,
     settleState,
     documentDiagnostics,
+    memberDiagnostics,
     diagnosticsForSymbol,
     diagnosticsAt,
     debugSnapshot,

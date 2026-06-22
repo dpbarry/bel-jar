@@ -20,8 +20,7 @@
 
   // `orderedNames` is the active suite's load order for this folder (or null).
   // Members are listed right after the .cfg files, IN that order — the order is
-  // what governs cross-file visibility, so it should be visible, not hidden
-  // behind an alphabetical sort. Everything else stays alphabetical.
+  // what governs cross-file visibility. Everything else stays alphabetical.
   function sortExplorerFiles(files, orderedNames) {
     var orderIndex = {};
     if (orderedNames) for (var k = 0; k < orderedNames.length; k++) orderIndex[orderedNames[k]] = k;
@@ -359,7 +358,7 @@
     var container = opts.container;
     if (!container) return null;
 
-    var collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled');
+    var collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project');
     var saveTimer = null;
     var dndDetach = null;
     var focusedRow = null;
@@ -480,7 +479,7 @@
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(function () {
         saveTimer = null;
-        saveCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled', collapsed);
+        saveCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project', collapsed);
       }, 120);
     }
 
@@ -606,19 +605,6 @@
       return selectedFolders.has(rowKey.key);
     }
 
-    function getDragRowEls(fileIds, sourceRow) {
-      if (!fileIds || fileIds.length < 2) return sourceRow ? [sourceRow] : [];
-      var idSet = {};
-      for (var i = 0; i < fileIds.length; i++) idSet[fileIds[i]] = true;
-      var out = [];
-      var rows = visibleRows();
-      for (var r = 0; r < rows.length; r++) {
-        var fid = rows[r].getAttribute('data-file-id');
-        if (fid && idSet[fid]) out.push(rows[r]);
-      }
-      return out.length ? out : (sourceRow ? [sourceRow] : []);
-    }
-
     function getSelectionDragEls(fileIds, folderPaths, sourceRow) {
       var idSet = {};
       for (var i = 0; i < fileIds.length; i++) idSet[fileIds[i]] = true;
@@ -684,7 +670,6 @@
               dragEls: dragEls,
             };
           }
-          var n = rf.length + rfp.length;
           return {
             kind: 'selection',
             fileIds: rf,
@@ -893,8 +878,6 @@
         if (!isCollapsed) renderNode(treeEl, folder, depth + 1, folder.path);
       });
 
-      // Load-order positions for this folder's active suite — a member's badge
-      // shows where it sits in the .cfg (so "what can this file see" is visible).
       var suiteOrder = opts.getSuiteOrderForDir ? opts.getSuiteOrderForDir(zonePath) : null;
       var suitePos = {};
       if (suiteOrder) for (var so = 0; so < suiteOrder.length; so++) suitePos[suiteOrder[so]] = so + 1;
@@ -931,6 +914,13 @@
           var fileInput = mountInlineInput(btn, inlineSession.displayName || file.baseName);
           btn.appendChild(fileInput);
         } else {
+          var fileLabel = document.createElement('span');
+          fileLabel.className = 'explorer-file-item-label';
+          var nameSpan = document.createElement('span');
+          nameSpan.className = 'explorer-file-item-name';
+          nameSpan.textContent = file.baseName;
+          fileLabel.appendChild(nameSpan);
+          if (typeof Tooltips !== 'undefined') Tooltips.bindOverflow(nameSpan, function () { return file.baseName; });
           var pos = suitePos[file.name];
           if (pos && (isBel || isElf)) {
             var posMark = document.createElement('span');
@@ -940,14 +930,8 @@
             if (typeof opts.applyTip === 'function') {
               opts.applyTip(posMark, 'Position ' + pos + ' in the active suite');
             }
-            btn.appendChild(posMark);
-            btn.classList.add('explorer-file-item--suite-member');
+            fileLabel.appendChild(posMark);
           }
-
-          var fileLabel = document.createElement('span');
-          fileLabel.className = 'explorer-file-item-label';
-          fileLabel.textContent = file.baseName;
-          if (typeof Tooltips !== 'undefined') Tooltips.bindOverflow(fileLabel, function () { return file.baseName; });
           btn.appendChild(fileLabel);
 
           var diag = opts.getFileDiag ? opts.getFileDiag(file.id, file.name) : null;
@@ -1047,10 +1031,15 @@
     if (typeof global.Menu !== 'undefined') {
       global.Menu.bindContextMenu(container, function (e) {
         var fileEl = e.target.closest('[data-file-id]');
+        var folderEl = e.target.closest('[data-folder-path]');
+        var hasSelection = selectedFiles.size + selectedFolders.size > 0;
+        if (hasSelection && typeof opts.getSelectionContextItems === 'function') {
+          var selItems = opts.getSelectionContextItems(getSelection());
+          if (selItems && selItems.length) return selItems;
+        }
         if (fileEl && typeof opts.getFileContextItems === 'function') {
           return opts.getFileContextItems(fileEl.getAttribute('data-file-id'));
         }
-        var folderEl = e.target.closest('[data-folder-path]');
         if (folderEl) return folderContextItems(folderEl.getAttribute('data-folder-path'));
         return treeBackgroundItems();
       });
@@ -1170,7 +1159,7 @@
       setSelection: setSelection,
       shouldKeepSelectionOnOpen: function () { return suppressClearSelection; },
       reloadFoldState: function () {
-        collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled');
+        collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project');
       },
       destroy: function () {
         if (dndDetach) dndDetach();

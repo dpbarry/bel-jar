@@ -192,10 +192,12 @@ export function pickNextErrorStop(stops, headLine) {
   return stops[0];
 }
 
+// Cycle the cursor through the document's problems — errors AND warnings — so
+// the status dot navigates a warning-only file too, not just errors.
 export function jumpToNextError(view) {
   const errors = [];
   forEachDiagnostic(view.state, (d, from, to) => {
-    if (d.severity !== 'error') return;
+    if (d.severity !== 'error' && d.severity !== 'warning') return;
     const f = Number.isFinite(from) ? from : d.from;
     const t = Number.isFinite(to) ? to : f;
     if (!Number.isFinite(f)) return;

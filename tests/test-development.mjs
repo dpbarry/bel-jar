@@ -108,4 +108,11 @@ const cpsOpts = { activeCfgForDir: activeCfgResolver(byDir) };
 expect(preludePathsFor(multiDir, 'e', mdText, cpsOpts).join('|') === 'cps/p.bel',
   'cps-eval gets prelude once cps folder cfg is active');
 
+const cfgDev = developmentForFile(cr, 'c', crText);
+expect(cfgDev.kind === 'module' && cfgDev.cfg === 'church/ord.cfg',
+  'editing a .cfg describes its own suite');
+expect(cfgDev.paths.join('|') === 'church/lam.elf|church/ord-red.elf|church/par-red.elf|church/par-lemmas.bel',
+  'cfg file development paths follow load order');
+expect(cfgDev.activeIndex === -1, 'cfg file is not a suite member');
+
 console.log('OK development module (active cfg, standalone isolation)');

@@ -11,6 +11,7 @@
     var sidebar = document.querySelector('.workspace .sidebar');
     var explorerPanel = document.querySelector('.explorer-panel');
     var inspectorPanel = document.querySelector('.inspector-panel');
+    var libraryPanel = document.querySelector('.library-panel');
     if (!workspace || !workspacePanes || !editorPanel || !outputPanel) return null;
 
     var persist = global.BelJarPersist;
@@ -100,6 +101,7 @@
       var sidePanel = null;
       if (workspace.classList.contains('is-explorer-open')) sidePanel = explorerPanel;
       else if (workspace.classList.contains('is-inspector-open')) sidePanel = inspectorPanel;
+      else if (workspace.classList.contains('is-library-open')) sidePanel = libraryPanel;
       if (sidePanel && sidePanel.getBoundingClientRect().width > 0) {
         left = sidePanel.getBoundingClientRect().right;
       } else {

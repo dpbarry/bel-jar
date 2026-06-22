@@ -314,6 +314,12 @@ const belugaHighlight = styleTags({
   LineComment:     t.lineComment,
   BlockComment:    t.blockComment,
 
+  ':': t.separator,
+  '|': t.separator,
+  ';': t.separator,
+  '.': t.separator,
+  '=': t.definitionOperator,
+
   'Turnstile!':      t.controlKeyword,
   'TurnstileHash!':  t.controlKeyword,
   'ArrowOp!':        t.typeOperator,

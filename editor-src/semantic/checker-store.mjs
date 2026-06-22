@@ -5,6 +5,10 @@ export function createCheckerStore() {
     state: 'idle',
     ok: true,
     belugaDiagnostics: [],
+    // Per-member cross-file findings: { [memberFileName]: [{ line, message,
+    // severity }] } for development members OTHER than the active file (the
+    // active file's diagnostics carry real from/to and ride belugaDiagnostics).
+    memberDiagnostics: {},
     rawOutput: '',
     // The code (and its fingerprint) the LAST SUCCESSFUL checker pass actually
     // loaded. With multi-pass settlement this can be more masked than the
@@ -25,6 +29,9 @@ export function createCheckerStore() {
       state: keepDiags.length ? 'stale' : 'idle',
       ok: prev.ok,
       belugaDiagnostics: keepDiags,
+      // Cross-file health changes far slower than the active doc; carry it across
+      // an active-file re-check so member badges don't blink on every keystroke.
+      memberDiagnostics: prev.memberDiagnostics || {},
       rawOutput: prev.rawOutput,
       checkedCode: '',
       checkedFp: '',
@@ -59,6 +66,7 @@ export function createCheckerStore() {
     checkerFp,
     ok,
     belugaDiagnostics,
+    memberDiagnostics = {},
     rawOutput,
     checkedCode = '',
     checkedFp = '',
@@ -69,6 +77,7 @@ export function createCheckerStore() {
       state: 'ready',
       ok: !!ok,
       belugaDiagnostics: belugaDiagnostics || [],
+      memberDiagnostics: memberDiagnostics || {},
       rawOutput: rawOutput || '',
       checkedCode,
       checkedFp,

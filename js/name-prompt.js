@@ -68,10 +68,10 @@
       }
 
       var actions = el('div', 'bj-name-prompt__actions');
-      var cancelBtn = el('button', 'bj-conflict-dialog__btn is-ghost');
+      var cancelBtn = el('button', 'bj-name-prompt__btn is-ghost');
       cancelBtn.type = 'button';
       cancelBtn.textContent = opts.cancelLabel || 'Cancel';
-      var confirmBtn = el('button', 'bj-conflict-dialog__btn is-primary');
+      var confirmBtn = el('button', 'bj-name-prompt__btn is-primary');
       confirmBtn.type = 'button';
       confirmBtn.textContent = opts.confirmLabel || 'Create';
       actions.appendChild(cancelBtn);

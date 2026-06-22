@@ -73,6 +73,7 @@ expect(rootDrop.length === 0, 'folder to root is noop when already at root');
 const conflicts = NC.detectMoveConflicts(
   [{ id: 'x', name: 'main.bel' }, { id: 'y', name: 'nested/other.bel' }],
   [{ id: 'y', from: 'nested/other.bel', to: 'main.bel', text: 'z' }],
+  { moveKind: 'file' },
 );
 expect(conflicts.length === 1 && conflicts[0].kind === 'file', 'move detects file conflict');
 expect(conflicts[0].moveId === 'y', 'move conflict carries source id');

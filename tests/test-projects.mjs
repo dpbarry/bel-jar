@@ -141,4 +141,36 @@ function loadPersist(seed) {
   expect(P.renameProject('nope', 'x') === false, 'rename of unknown id fails');
 }
 
-console.log('OK projects (migration, siloing isolation, active switch, blank/import create, delete, rename)');
+// ── empty project registry ────────────────────────────────────────────────────
+{
+  const { P } = loadPersist({});
+  P.ensureProject();
+  P.deleteFile('workspace://main.bel');
+  expect(P.listFiles().length === 0, 'all files can be deleted');
+  expect(P.getActiveFileId() === null, 'no active file when empty');
+  expect(P.getOpenFileIds().length === 0, 'no open tabs when empty');
+  expect(P.listFiles().length === 0, 'listFiles does not re-seed main.bel');
+  const id = P.createFile('fresh.bel');
+  expect(P.listFiles().length === 1 && P.listFiles()[0].name === 'fresh.bel',
+    'createFile works on an empty project');
+  expect(P.getFileText(id) === '', 'new file starts blank');
+}
+
+// ── folder delete must not leave dangling empty-folder markers ────────────────
+{
+  const { P } = loadPersist({});
+  P.ensureProject();
+  const f1 = P.createFile('church-rosser/a.bel');
+  const f2 = P.createFile('church-rosser/b.bel');
+  P.setFileText(f1, 'x');
+  P.setFileText(f2, 'y');
+  P.deleteFile(f1);
+  P.deleteFile(f2);
+  expect(P.listEmptyFolders().indexOf('church-rosser') !== -1,
+    'deleting files leaves parent as empty-folder marker');
+  P.pruneEmptyFoldersUnder('church-rosser');
+  expect(P.listEmptyFolders().indexOf('church-rosser') === -1,
+    'pruneEmptyFoldersUnder removes the folder marker');
+}
+
+console.log('OK projects (migration, siloing isolation, active switch, blank/import create, delete, rename, empty registry, folder prune)');

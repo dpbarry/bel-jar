@@ -101,7 +101,7 @@
             btn.setAttribute('data-tooltip-placement', item.tooltipPlacement);
           }
           T.set(btn, text, { ariaLabel: false });
-          if (T.show) T.show(btn);
+          if (T.show) T.show(btn, { trackPointer: true });
         }, MENU_ITEM_TIP_DELAY_MS);
       });
       btn.addEventListener('mouseleave', () => {
@@ -766,10 +766,40 @@
 
   const defaultRoot = document.getElementById('menu-root');
   const defaultMenu = defaultRoot ? createMenuController(defaultRoot) : null;
+  const dialogMenuControllers = new WeakMap();
+
+  function menuControllerForAnchor(anchor) {
+    if (!(anchor instanceof Element)) return defaultMenu;
+    const dlg = anchor.closest('dialog.bj-dialog[open]');
+    if (!dlg) return defaultMenu;
+
+    let ctrl = dialogMenuControllers.get(dlg);
+    if (ctrl) return ctrl;
+
+    let root = dlg.querySelector(':scope > .menu-root');
+    if (!root) {
+      root = document.createElement('div');
+      root.className = 'menu-root menu-root--dialog';
+      dlg.appendChild(root);
+    }
+    ctrl = createMenuController(root);
+    dialogMenuControllers.set(dlg, ctrl);
+    dlg.addEventListener('close', function () {
+      const c = dialogMenuControllers.get(dlg);
+      if (c) {
+        c.forceCloseSync();
+        c.destroy();
+      }
+      dialogMenuControllers.delete(dlg);
+    }, { once: true });
+    return ctrl;
+  }
 
   global.Menu = {
     open(opts) {
-      if (defaultMenu) defaultMenu.open(opts);
+      const anchor = opts && opts.anchor;
+      const ctrl = menuControllerForAnchor(anchor instanceof Element ? anchor : null);
+      if (ctrl) ctrl.open(opts);
     },
     openContext(opts) {
       if (defaultMenu) defaultMenu.openContext(opts);

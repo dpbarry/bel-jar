@@ -75,6 +75,32 @@
   let touchShowTimer = null;
   let tooltipSuppressLeaveUntilPointerUp = null;
 
+  let tooltipPointerMoveHandler = null;
+
+  function anchorHitAt(anchor, x, y) {
+    const r = anchor.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  function stopTooltipPointerTracking() {
+    if (!tooltipPointerMoveHandler) return;
+    window.removeEventListener('pointermove', tooltipPointerMoveHandler);
+    tooltipPointerMoveHandler = null;
+  }
+
+  function startTooltipPointerTracking(anchor) {
+    stopTooltipPointerTracking();
+    tooltipPointerMoveHandler = (e) => {
+      if (tooltipAnchor !== anchor) return;
+      if (!anchorConnected(anchor)) {
+        hideTooltipImmediate();
+        return;
+      }
+      if (!anchorHitAt(anchor, e.clientX, e.clientY)) hideTooltipImmediate();
+    };
+    window.addEventListener('pointermove', tooltipPointerMoveHandler);
+  }
+
   function cancelTooltipHideAnim() {
     if (tooltipHideFallbackTimer != null) {
       clearTimeout(tooltipHideFallbackTimer);
@@ -204,7 +230,8 @@
     }
   }
 
-  function showTooltip(anchor) {
+  function showTooltip(anchor, opts) {
+    opts = opts || {};
     if (suppressedTooltipAnchors.has(anchor)) return;
     if (!anchorConnected(anchor)) return;
     const text = anchor.getAttribute('data-tooltip');
@@ -215,9 +242,11 @@
     tooltipAnchor = anchor;
     tooltipRoot.hidden = false;
     layoutTooltip(anchor);
+    if (opts.trackPointer && FRP.prefersFineHover()) startTooltipPointerTracking(anchor);
   }
 
   function hideTooltip() {
+    stopTooltipPointerTracking();
     tooltipAnchor = null;
     if (!tooltipRoot) return;
     if (tooltipRoot.hidden && !tooltipRoot.classList.contains('is-leaving')) return;
@@ -261,6 +290,7 @@
   }
 
   function hideTooltipImmediate() {
+    stopTooltipPointerTracking();
     tooltipAnchor = null;
     if (!tooltipRoot) return;
     cancelTooltipHideAnim();
@@ -279,13 +309,13 @@
     el._belTooltipBound = true;
       el.addEventListener('mouseenter', () => {
         if (!FRP.prefersFineHover()) return;
-        showTooltip(el);
+        showTooltip(el, { trackPointer: true });
       });
-      el.addEventListener('mouseleave', (e) => {
+      el.addEventListener('mouseleave', () => {
         if (!FRP.prefersFineHover()) return;
         if (tooltipSuppressLeaveUntilPointerUp === el) return;
         if (tooltipAnchor !== el) return;
-        hideTooltip();
+        hideTooltipImmediate();
       });
       el.addEventListener('focusin', () => {
         if (!el.matches(':focus-visible')) return;

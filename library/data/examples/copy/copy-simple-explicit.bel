@@ -1,0 +1,18 @@
+term :  type.
+lam  : (term -> term) -> term.
+
+schema tctx = some [] term;
+
+rec copy : {g:tctx} [g |- term] -> [g |- term] =
+/ total e (copy g e) /
+mlam g => fn e =>
+ (case e of
+    {#p:#[g |- term]}
+     [g |- #p] : [g |- term] => [g |- #p]
+
+  | {U:[g, x : term |- term]}
+    [g |- lam (\x. U)] : [g |- term] =>
+       (case (copy [g, x:term] [g, x |- U]) of
+          {V: [g, x : term |- term]}
+           [g, x:term |- V] : [g, x:term |- term] => [g |- lam (\x. V)])
+);

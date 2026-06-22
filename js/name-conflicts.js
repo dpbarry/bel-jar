@@ -248,14 +248,94 @@
     return false;
   }
 
-  function detectMoveConflicts(existingFiles, moves) {
+  function longestCommonDirectoryPrefix(paths) {
+    if (!paths.length) return '';
+    var split = paths.map(function (p) { return String(p || '').split('/'); });
+    var minLen = Math.min.apply(null, split.map(function (s) { return s.length; }));
+    var parts = [];
+    for (var i = 0; i < minLen - 1; i++) {
+      var seg = split[0][i];
+      for (var j = 1; j < split.length; j++) {
+        if (split[j][i] !== seg) return parts.join('/');
+      }
+      parts.push(seg);
+    }
+    return parts.join('/');
+  }
+
+  function folderMoveBatchRoot(moves, existingFiles) {
+    if (!moves || moves.length < 2) return null;
+    var fromPrefix = longestCommonDirectoryPrefix(moves.map(function (m) { return m.from; }));
+    if (!fromPrefix) return null;
+    for (var i = 0; i < moves.length; i++) {
+      var from = moves[i].from;
+      if (from !== fromPrefix && from.indexOf(fromPrefix + '/') !== 0) return null;
+    }
+    var underFrom = filesUnderPrefix(existingFiles, fromPrefix);
+    if (underFrom.length !== moves.length) return null;
+    var moveIds = {};
+    for (var m = 0; m < moves.length; m++) moveIds[moves[m].id] = true;
+    for (var u = 0; u < underFrom.length; u++) {
+      if (!moveIds[underFrom[u].id]) return null;
+    }
+    var toPrefix = longestCommonDirectoryPrefix(moves.map(function (m) { return m.to; }));
+    if (!toPrefix) return null;
+    for (var j = 0; j < moves.length; j++) {
+      var relFrom = moves[j].from.slice(fromPrefix.length);
+      if (relFrom.charAt(0) === '/') relFrom = relFrom.slice(1);
+      var relTo = moves[j].to.slice(toPrefix.length);
+      if (relTo.charAt(0) === '/') relTo = relTo.slice(1);
+      if (relFrom !== relTo) return null;
+    }
+    return toPrefix;
+  }
+
+  function uploadFolderBatchRoots(incomingEntries) {
+    if (!incomingEntries || !incomingEntries.length) return [];
+    var roots = {};
+    for (var i = 0; i < incomingEntries.length; i++) {
+      var parts = String(incomingEntries[i].name || '').split('/');
+      if (parts.length < 2) return [];
+      roots[parts[0]] = true;
+    }
+    var segs = Object.keys(roots);
+    if (segs.length !== 1) return [];
+    var root = segs[0];
+    for (var j = 0; j < incomingEntries.length; j++) {
+      var name = incomingEntries[j].name;
+      if (name !== root && name.indexOf(root + '/') !== 0) return [];
+    }
+    return [root];
+  }
+
+  function detectMoveConflicts(existingFiles, moves, opts) {
+    opts = opts || {};
     var sourceIds = {};
     for (var i = 0; i < moves.length; i++) sourceIds[moves[i].id] = true;
     var remaining = existingFiles.filter(function (f) { return !sourceIds[f.id]; });
     var incoming = moves.map(function (m) {
       return { name: m.to, text: m.text, moveId: m.id, from: m.from };
     });
-    var conflicts = detectUploadConflicts(remaining, incoming);
+    var folderRoot = null;
+    if (opts.moveKind === 'folder') {
+      folderRoot = folderMoveBatchRoot(moves, existingFiles);
+    } else if (opts.moveKind === 'selection' && opts.folderPaths && opts.folderPaths.length) {
+      for (var fp = 0; fp < opts.folderPaths.length; fp++) {
+        var prefix = String(opts.folderPaths[fp] || '');
+        if (!prefix) continue;
+        var related = moves.filter(function (m) {
+          return m.from === prefix || m.from.indexOf(prefix + '/') === 0;
+        });
+        var root = folderMoveBatchRoot(related, existingFiles);
+        if (root) {
+          folderRoot = root;
+          break;
+        }
+      }
+    }
+    var conflicts = detectUploadConflicts(remaining, incoming, {
+      folderBatchRoots: folderRoot ? [folderRoot] : [],
+    });
     for (var c = 0; c < conflicts.length; c++) {
       var conf = conflicts[c];
       if (conf.kind === 'file' && conf.entry) {
@@ -372,7 +452,11 @@
     return plan;
   }
 
-  function detectUploadConflicts(existingFiles, incomingEntries) {
+  function detectUploadConflicts(existingFiles, incomingEntries, opts) {
+    opts = opts || {};
+    var folderBatchRoots = opts.folderBatchRoots;
+    if (folderBatchRoots == null) folderBatchRoots = uploadFolderBatchRoots(incomingEntries);
+
     var existingPaths = existingFiles.map(function (f) { return f.name; });
     var existingSet = {};
     var pathToId = {};
@@ -385,10 +469,9 @@
     var conflicts = [];
     var folderCandidates = {};
 
-    for (var j = 0; j < incomingEntries.length; j++) {
-      var parts = incomingEntries[j].name.split('/');
-      for (var k = 0; k < parts.length - 1; k++) {
-        folderCandidates[parts.slice(0, k + 1).join('/')] = true;
+    if (folderBatchRoots.length) {
+      for (var r = 0; r < folderBatchRoots.length; r++) {
+        folderCandidates[folderBatchRoots[r]] = true;
       }
     }
 
@@ -527,6 +610,8 @@
     filesUnderPrefix: filesUnderPrefix,
     detectUploadConflicts: detectUploadConflicts,
     applyResolutions: applyResolutions,
+    uploadFolderBatchRoots: uploadFolderBatchRoots,
+    folderMoveBatchRoot: folderMoveBatchRoot,
     computeMoveTargets: computeMoveTargets,
     canDropMove: canDropMove,
     detectMoveConflicts: detectMoveConflicts,

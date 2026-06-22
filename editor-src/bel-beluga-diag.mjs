@@ -275,3 +275,20 @@ export function fallbackDiagnostic(raw, doc) {
   const span = locateToken(doc, namedCulprit(short)) || firstMeaningfulLineAnchor(doc);
   return { from: span.from, to: span.to, severity: 'error', message };
 }
+
+// General rule, NOT a one-off: any diagnostic that starts on the first line must
+// cover the WHOLE first line. A short or near-empty line 1 otherwise leaves a
+// 1-char (or tiny-token) target that is misery to hover — the classic
+// start-of-file lint nobody can hit. Mutates+returns the diag for convenience.
+// Applied at the single display funnel so every source (Beluga, fallback,
+// banner, cfg, suite-composition) obeys it without each re-implementing it.
+export function spanFirstLineDiagnostic(diag, doc) {
+  if (!diag || !doc || !doc.length) return diag;
+  const line1 = doc.line(1);
+  // Only when the diagnostic actually begins on line 1 — we don't stretch a
+  // line-3 error up to the top.
+  if (diag.from > line1.to) return diag;
+  diag.from = line1.from;
+  diag.to = Math.max(line1.to, line1.from + 1);
+  return diag;
+}

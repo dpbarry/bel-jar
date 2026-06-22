@@ -2,8 +2,10 @@
 
 import { autocompletion } from '@codemirror/autocomplete';
 import { EditorView, hoverTooltip } from '@codemirror/view';
+import { forEachDiagnostic } from '@codemirror/lint';
 import { dirOf, joinPath } from './development.mjs';
 import { resolveCfgDocumentPath } from './bel-cfg-lint.mjs';
+import { buildDiagnosticTip, buildTipHead, buildTipBody } from './bel-hover.mjs';
 
 function persist() {
   const g = typeof window !== 'undefined' ? window : globalThis;
@@ -141,21 +143,72 @@ function filesInCfgDir(cfgPath) {
   return out;
 }
 
+// Lint diagnostics overlapping the hovered entry's line. Whole-line warnings
+// (suite-composition) and token-span errors (dangling entry) both qualify.
+function diagnosticsOnEntry(view, entry) {
+  const line = view.state.doc.lineAt(entry.from);
+  const out = [];
+  forEachDiagnostic(view.state, (d, dFrom, dTo) => {
+    if (dTo >= line.from && dFrom <= line.to) out.push(d);
+  });
+  return out;
+}
+
+function cfgEntryNote(entry, exists) {
+  const baseName = entry.fullPath.split('/').pop() || entry.fullPath;
+  const note = document.createElement('div');
+  note.className = 'beljar-tip bel-type-tip';
+  note.appendChild(buildTipHead('Suite entry', baseName, null));
+
+  const bodyLines = [];
+  if (entry.fullPath !== baseName) bodyLines.push(entry.fullPath);
+  if (!exists) bodyLines.push('Not found in project');
+  bodyLines.push(`Position ${entry.index + 1} in suite`);
+  const body = buildTipBody(bodyLines.join('\n'));
+  if (!exists) body.classList.add('beljar-tip-body--warn');
+  note.appendChild(body);
+  return note;
+}
+
+function cfgInvalidEntryNote(entry) {
+  const note = document.createElement('div');
+  note.className = 'beljar-tip bel-type-tip';
+  note.appendChild(buildTipHead('Invalid entry', entry.text, null));
+  const body = buildTipBody('Not a .bel, .elf, or .cfg entry.');
+  body.classList.add('beljar-tip-body--warn');
+  note.appendChild(body);
+  return note;
+}
+
+// Hover for a cfg entry: render any lint warnings/errors in the SAME styled
+// frame as .bel tooltips, then the suite-position note — not the bare default
+// editor tooltip. Stacked in a .bel-hover-stack so chrome/spout match exactly.
 function cfgHover(documentId) {
   const cfgPath = resolveCfgDocumentPath(documentId);
   return hoverTooltip((view, pos) => {
     const entry = cfgEntryAt(view.state, pos, cfgPath);
-    if (!entry || entry.index < 0) return null;
-    const exists = !!fileIdForPath(entry.fullPath);
-    const posLabel = entry.index + 1;
-    const pathLine = exists ? entry.fullPath : `${entry.fullPath} (missing)`;
-    const dom = document.createElement('div');
-    dom.className = 'beljar-tip bel-type-tip';
-    const text = document.createElement('div');
-    text.className = 'cm-diagnosticText';
-    text.textContent = `${pathLine}\nposition ${posLabel} in suite`;
-    dom.appendChild(text);
-    return { pos: entry.from, end: entry.to, above: true, create: () => ({ dom }) };
+    if (!entry) return null;
+
+    const stack = document.createElement('div');
+    stack.className = 'bel-hover-stack';
+
+    const diags = diagnosticsOnEntry(view, entry);
+    for (const d of diags) {
+      const tip = buildDiagnosticTip(d);
+      tip.classList.add('beljar-tip');
+      stack.appendChild(tip);
+    }
+
+    if (entry.index >= 0) {
+      const exists = !!fileIdForPath(entry.fullPath);
+      if (!diags.length || exists) stack.appendChild(cfgEntryNote(entry, exists));
+    } else if (!diags.length) {
+      stack.appendChild(cfgInvalidEntryNote(entry));
+    }
+
+    if (!stack.childNodes.length) return null;
+
+    return { pos: entry.from, end: entry.to, above: true, create: () => ({ dom: stack }) };
   }, { hoverTime: 280 });
 }
 

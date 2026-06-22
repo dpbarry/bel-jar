@@ -113,19 +113,18 @@
     let dragP = null;
     function onDragMove(e) {
       if (!dragP) return;
+      e.preventDefault();
       x = clamp(dragP.startX + (e.clientX - dragP.px), MARGIN, viewportW() - root.offsetWidth - MARGIN);
       y = clamp(dragP.startY + (e.clientY - dragP.py), MARGIN, viewportH() - root.offsetHeight - MARGIN);
       root.style.left = x + 'px';
       root.style.top = y + 'px';
     }
     function onDragUp() {
-      if (dragP && bar.releasePointerCapture) {
-        try { bar.releasePointerCapture(dragP.id); } catch (_) { /* ignore */ }
-      }
+      if (!dragP) return;
       dragP = null;
-      // Listeners ride the captured element (pointer capture routes events there).
-      bar.removeEventListener('pointermove', onDragMove);
-      bar.removeEventListener('pointerup', onDragUp);
+      global.removeEventListener('pointermove', onDragMove);
+      global.removeEventListener('pointerup', onDragUp);
+      global.removeEventListener('pointercancel', onDragUp);
       document.body.classList.remove('floating-window-dragging');
     }
     bar.addEventListener('pointerdown', (e) => {
@@ -134,11 +133,11 @@
         if (e.target === b || b.contains(e.target)) return;
       }
       if (e.button !== 0) return;
-      dragP = { px: e.clientX, py: e.clientY, startX: x, startY: y, id: e.pointerId };
-      try { bar.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      dragP = { px: e.clientX, py: e.clientY, startX: x, startY: y };
       document.body.classList.add('floating-window-dragging');
-      bar.addEventListener('pointermove', onDragMove);
-      bar.addEventListener('pointerup', onDragUp);
+      global.addEventListener('pointermove', onDragMove);
+      global.addEventListener('pointerup', onDragUp);
+      global.addEventListener('pointercancel', onDragUp);
       e.preventDefault();
     });
 
@@ -146,27 +145,27 @@
     let rez = null;
     function onRezMove(e) {
       if (!rez) return;
+      e.preventDefault();
       width = clamp(rez.startW + (e.clientX - rez.px), minWidth, viewportW() - x - MARGIN);
       height = clamp(rez.startH + (e.clientY - rez.py), minHeight, viewportH() - y - MARGIN);
       root.style.width = width + 'px';
       root.style.height = height + 'px';
     }
     function onRezUp() {
-      if (rez && grip.releasePointerCapture) {
-        try { grip.releasePointerCapture(rez.id); } catch (_) { /* ignore */ }
-      }
+      if (!rez) return;
       rez = null;
-      grip.removeEventListener('pointermove', onRezMove);
-      grip.removeEventListener('pointerup', onRezUp);
+      global.removeEventListener('pointermove', onRezMove);
+      global.removeEventListener('pointerup', onRezUp);
+      global.removeEventListener('pointercancel', onRezUp);
       document.body.classList.remove('floating-window-resizing');
     }
     grip.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      rez = { px: e.clientX, py: e.clientY, startW: root.offsetWidth, startH: root.offsetHeight, id: e.pointerId };
-      try { grip.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      rez = { px: e.clientX, py: e.clientY, startW: root.offsetWidth, startH: root.offsetHeight };
       document.body.classList.add('floating-window-resizing');
-      grip.addEventListener('pointermove', onRezMove);
-      grip.addEventListener('pointerup', onRezUp);
+      global.addEventListener('pointermove', onRezMove);
+      global.addEventListener('pointerup', onRezUp);
+      global.addEventListener('pointercancel', onRezUp);
       e.preventDefault();
       e.stopPropagation();
     });

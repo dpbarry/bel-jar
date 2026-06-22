@@ -68,4 +68,82 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
   delete g.BelJarPersist;
 }
 
-console.log('OK cfg lint (resolves entries, flags dangling errors + junk warnings)');
+// ── Cross-file suite-composition lints (need a getText resolver) ─────────────
+
+// Pragma leak: --nostrengthen on a LATER file is hoisted above earlier files
+// that don't carry it → warn on the pragma-bearing entry, naming the affected.
+{
+  const fnames = new Set(['fol/sources.cfg', 'fol/a.bel', 'fol/b.bel']);
+  const texts = {
+    'fol/a.bel': 'LF foo : type = ;',
+    'fol/b.bel': '--nostrengthen\nLF bar : type = ;',
+  };
+  const get = (p) => texts[p] ?? '';
+  const d = cfgDiagnosticsFor('a.bel\nb.bel\n', 'fol/sources.cfg', fnames, get);
+  const leak = d.find((x) => /every previous file in the suite/.test(x.message));
+  expect(leak && leak.severity === 'warning', 'later-file global pragma → warning');
+  expect(leak.message.includes('--nostrengthen'), 'pragma-leak warning names the pragma');
+  // Span is on the pragma-bearing entry (b.bel, line 2), not line 1.
+  expect('a.bel\nb.bel\n'.slice(leak.from, leak.to) === 'b.bel', 'leak warning sits on the pragma entry');
+}
+
+// No leak when the pragma is on the FIRST entry (it legitimately leads the suite).
+{
+  const fnames = new Set(['fol/sources.cfg', 'fol/a.bel', 'fol/b.bel']);
+  const texts = {
+    'fol/a.bel': '--nostrengthen\nLF foo : type = ;',
+    'fol/b.bel': 'LF bar : type = ;',
+  };
+  const d = cfgDiagnosticsFor('a.bel\nb.bel\n', 'fol/sources.cfg', fnames, (p) => texts[p] ?? '');
+  expect(!d.some((x) => /hoisted/.test(x.message)), 'pragma on the first suite file is fine');
+}
+
+// Re-declaring an LF type is LEGAL shadowing — not flagged on its own, even
+// across two cfg entries (the contradiction the user caught).
+{
+  const fnames = new Set(['fol/sources.cfg', 'fol/x.elf', 'fol/y.bel']);
+  const texts = {
+    'fol/x.elf': 'LF o : type = | imp : o -> o -> o | atom : o ;',
+    'fol/y.bel': 'LF o : type = | all : (i -> o) -> o ;', // redeclares o, uses only its own
+  };
+  const d = cfgDiagnosticsFor('x.elf\ny.bel\n', 'fol/sources.cfg', fnames, (p) => texts[p] ?? '');
+  expect(!d.some((x) => x.source === 'cfg' && /scope|redefines/i.test(x.message)),
+    're-declaring a type that nobody later misuses is clean');
+}
+
+// But a LATER entry that uses a shadowed-away constructor IS flagged on that
+// entry (the victim), anchored on its cfg line.
+{
+  const fnames = new Set(['fol/sources.cfg', 'fol/x.elf', 'fol/y.bel', 'fol/z.bel']);
+  const texts = {
+    'fol/x.elf': 'LF o : type = | imp : o -> o -> o | atom : o ;',
+    'fol/y.bel': 'LF o : type = | all : (i -> o) -> o ;', // drops atom
+    'fol/z.bel': 'rec r : [ |- atom ] = ?;',              // uses atom → victim
+  };
+  const d = cfgDiagnosticsFor('x.elf\ny.bel\nz.bel\n', 'fol/sources.cfg', fnames, (p) => texts[p] ?? '');
+  const su = d.find((x) => /atom is no longer in scope/.test(x.message));
+  expect(su && su.severity === 'error', 'a later use of a shadowed-away constructor → error');
+  expect('x.elf\ny.bel\nz.bel\n'.slice(su.from, su.to) === 'z.bel', 'error sits on the victim entry (z.bel)');
+  expect(/y\.bel redefines o/.test(su.message), 'message names the redefiner');
+}
+
+// Distinct names across files never collide.
+{
+  const fnames = new Set(['ok/sources.cfg', 'ok/a.bel', 'ok/b.bel']);
+  const texts = {
+    'ok/a.bel': 'LF tm : type = ;',
+    'ok/b.bel': 'LF ty : type = ;\nschema ctx = block x:tm ;',
+  };
+  const d = cfgDiagnosticsFor('a.bel\nb.bel\n', 'ok/sources.cfg', fnames, (p) => texts[p] ?? '');
+  expect(d.length === 0, 'distinct decls across suite files yield no cross-file diagnostics');
+}
+
+// Without a getText resolver, cross-file lints are silently skipped (back-compat).
+{
+  const fnames = new Set(['fol/sources.cfg', 'fol/a.bel', 'fol/b.bel']);
+  const d = cfgDiagnosticsFor('a.bel\nb.bel\n', 'fol/sources.cfg', fnames);
+  expect(d.length === 0, 'no resolver → no cross-file diagnostics, never throws');
+}
+
+console.log('OK cfg lint (resolves entries, flags dangling errors + junk warnings, '
+  + 'pragma-leak + shadowed-use across suite files)');

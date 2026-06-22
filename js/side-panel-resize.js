@@ -7,6 +7,7 @@
     var workspace = document.querySelector('.workspace');
     var explorerPanel = document.querySelector('.explorer-panel');
     var inspectorPanel = document.querySelector('.inspector-panel');
+    var libraryPanel = document.querySelector('.library-panel');
     if (!workspace) return null;
 
     var persist = global.BelJarPersist;
@@ -184,8 +185,28 @@
       },
     });
 
+    var libraryResizer = createResizer({
+      panel: libraryPanel,
+      openClass: 'is-library-open',
+      cssVarW: '--library-w',
+      cssVarH: '--library-h',
+      seam: 'right',
+      seamStacked: 'bottom',
+      read: function (stacked) {
+        return persist
+          ? (stacked ? persist.readStoredLibraryHeight() : persist.readStoredLibraryWidth())
+          : (stacked ? 192 : 256);
+      },
+      write: function (px, stacked) {
+        if (!persist) return;
+        if (stacked) persist.writeStoredLibraryHeight(px);
+        else persist.writeStoredLibraryWidth(px);
+      },
+    });
+
     if (explorerResizer) resizers.push(explorerResizer);
     if (inspectorResizer) resizers.push(inspectorResizer);
+    if (libraryResizer) resizers.push(libraryResizer);
 
     function refreshAll() {
       for (var i = 0; i < resizers.length; i++) resizers[i].refresh();
@@ -207,6 +228,7 @@
       var ro = new ResizeObserver(repositionAll);
       if (explorerPanel) ro.observe(explorerPanel);
       if (inspectorPanel) ro.observe(inspectorPanel);
+      if (libraryPanel) ro.observe(libraryPanel);
     }
 
     refreshAll();

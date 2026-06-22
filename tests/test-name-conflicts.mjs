@@ -53,6 +53,30 @@ expect(folderConflict.length === 1 && folderConflict[0].kind === 'folder', 'fold
 expect(folderConflict[0].path === 'pkg', 'folder conflict path is folder prefix');
 expect(folderConflict[0].suggestedPath === 'pkg-1', 'folder conflict suggests numbered folder');
 
+const multiFileConflict = NC.detectUploadConflicts(
+  existing,
+  [{ name: 'main.bel', text: '1' }, { name: 'lib/util.bel', text: '2' }],
+  { folderBatchRoots: [] },
+);
+expect(multiFileConflict.length === 2, 'multi file upload yields per-file conflicts');
+expect(multiFileConflict.every(function (c) { return c.kind === 'file'; }), 'no bogus folder batch');
+
+const moveIntoFolder = NC.detectMoveConflicts(
+  [
+    { id: 'b', name: 'lib/a.bel' },
+    { id: 'c', name: 'lib/b.bel' },
+    { id: 'x', name: 'main.bel' },
+    { id: 'y', name: 'foo.bel' },
+  ],
+  [
+    { id: 'x', from: 'main.bel', to: 'lib/a.bel', text: '1' },
+    { id: 'y', from: 'foo.bel', to: 'lib/b.bel', text: '2' },
+  ],
+  { moveKind: 'files' },
+);
+expect(moveIntoFolder.length === 2, 'multi-file move into folder yields per-file conflicts');
+expect(moveIntoFolder.every(function (c) { return c.kind === 'file'; }), 'move loose files not folder batch');
+
 const planSkip = NC.applyResolutions(
   existing,
   [{ name: 'main.bel', text: 'new' }],
@@ -77,6 +101,24 @@ const planRename = NC.applyResolutions(
   [{ action: 'rename', newPath: 'main-copy.bel' }],
 );
 expect(planRename.create.length === 1 && planRename.create[0].name === 'main-copy.bel', 'rename creates new path');
+
+// Library Magic uses the same upload conflict plan for a single incoming sample.
+const magicNoConflict = NC.applyResolutions(
+  existing,
+  [{ name: 'samples/demo.bel', text: 'library code' }],
+  [],
+  [],
+);
+expect(magicNoConflict.create.length === 1 && magicNoConflict.create[0].name === 'samples/demo.bel',
+  'magic with no conflict creates at target path');
+
+const magicReplace = NC.applyResolutions(
+  existing,
+  [{ name: 'main.bel', text: 'from library' }],
+  NC.detectUploadConflicts(existing, [{ name: 'main.bel', text: 'from library' }]),
+  [{ action: 'replace' }],
+);
+expect(magicReplace.replace[0].text === 'from library', 'magic replace overwrites existing content');
 
 expect(NC.applyResolutions(existing, [], fileConflict, null) === null, 'null resolutions abort');
 

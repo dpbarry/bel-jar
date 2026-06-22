@@ -15,6 +15,15 @@
     return span;
   }
 
+  function suggestedBase(conflict) {
+    var path = conflict.suggestedPath;
+    if (global.BelJarNameConflicts && typeof BelJarNameConflicts.baseName === 'function') {
+      return BelJarNameConflicts.baseName(path);
+    }
+    var slash = path.lastIndexOf('/');
+    return slash === -1 ? path : path.slice(slash + 1);
+  }
+
   function actionButton(label, action, variant) {
     var btn = el('button', 'bj-conflict-dialog__btn' + (variant ? ' is-' + variant : ''));
     btn.type = 'button';
@@ -23,52 +32,41 @@
     return btn;
   }
 
-  function buildConflictBody(conflict, total, index, options) {
-    options = options || {};
-    var isMove = options.context === 'move';
+  function buildConflictBody(conflict, total, index) {
     var wrap = el('div', 'bj-conflict-dialog__panel');
 
     if (total > 1) {
-      var progress = el('p', 'bj-conflict-dialog__progress');
-      progress.textContent = 'Conflict ' + (index + 1) + ' of ' + total;
-      wrap.appendChild(progress);
+      wrap.appendChild(el('p', 'bj-conflict-dialog__step', (index + 1) + ' of ' + total));
     }
 
     var intro = el('p', 'bj-conflict-dialog__intro');
-    if (conflict.kind === 'folder') {
-      intro.appendChild(document.createTextNode('The folder '));
-      intro.appendChild(markName(conflict.label));
-      intro.appendChild(document.createTextNode(' already exists in this project ('));
-      intro.appendChild(document.createTextNode(String(conflict.existingPaths.length)));
-      intro.appendChild(document.createTextNode(' file' + (conflict.existingPaths.length === 1 ? '' : 's') + ' inside).'));
-    } else {
-      intro.appendChild(document.createTextNode('A file named '));
-      intro.appendChild(markName(conflict.label));
-      intro.appendChild(document.createTextNode(' already exists in this folder.'));
-    }
+    intro.appendChild(markName(conflict.kind === 'folder' ? conflict.label : conflict.label));
+    intro.appendChild(document.createTextNode(' already exists.'));
     wrap.appendChild(intro);
 
-    var hint = el('p', 'bj-conflict-dialog__hint');
-    if (conflict.kind === 'folder') {
-      hint.textContent = isMove
-        ? 'Replace removes every file currently inside this folder and keeps the moved contents instead.'
-        : 'Replace removes every file currently inside this folder and uses the uploaded contents instead.';
-    } else {
-      hint.textContent = isMove
-        ? 'Choose how to handle the moved file.'
-        : 'Choose how to handle the incoming file.';
-    }
-    wrap.appendChild(hint);
-
-    var renameLabel = el('p', 'bj-conflict-dialog__rename-note');
-    renameLabel.appendChild(document.createTextNode('Save as '));
-    renameLabel.appendChild(markName(global.BelJarNameConflicts
-      ? BelJarNameConflicts.baseName(conflict.suggestedPath)
-      : conflict.suggestedPath));
-    renameLabel.appendChild(document.createTextNode(' instead.'));
-    wrap.appendChild(renameLabel);
-
     return wrap;
+  }
+
+  function buildActions(conflict, total) {
+    var actions = el('div', 'bj-conflict-dialog__actions');
+
+    actions.appendChild(actionButton(
+      'Save as ' + suggestedBase(conflict),
+      'rename',
+      'primary',
+    ));
+    actions.appendChild(actionButton(
+      conflict.kind === 'folder' ? 'Replace folder' : 'Replace',
+      'replace',
+      'danger',
+    ));
+    actions.appendChild(actionButton(
+      total === 1 ? 'Cancel' : 'Skip',
+      total === 1 ? 'cancel' : 'skip',
+      'ghost',
+    ));
+
+    return actions;
   }
 
   function resolveConflicts(conflicts, options) {
@@ -88,47 +86,28 @@
         BelJarDialog.requestDialogClose(dialogEl);
       }
 
-      var bodyHost = el('div', 'bj-conflict-dialog__body-host');
-      var actions = el('div', 'bj-conflict-dialog__actions');
+      var shell = el('div', 'bj-conflict-dialog');
 
       var dialogEl = BelJarDialog.createDialog({
-        title: conflicts.length === 1 ? 'Name conflict' : conflicts.length + ' name conflicts',
-        content: bodyHost,
-        className: 'bj-conflict-dialog',
+        ariaLabel: 'Name conflict',
+        content: shell,
+        className: 'bj-conflict-dialog-wrap',
         cardClass: 'bj-dialog__card bj-conflict-dialog__card',
         removeOnClose: true,
       });
 
       function renderStep() {
-        bodyHost.innerHTML = '';
-        actions.innerHTML = '';
+        shell.replaceChildren();
         var conflict = conflicts[index];
-        bodyHost.appendChild(buildConflictBody(conflict, conflicts.length, index, options));
-
-        if (conflicts.length === 1) {
-          actions.appendChild(actionButton('Cancel', 'cancel', 'ghost'));
-        } else {
-          actions.appendChild(actionButton('Skip', 'skip', 'ghost'));
-        }
-        actions.appendChild(actionButton(
-          conflict.kind === 'folder' ? 'Replace folder' : 'Replace',
-          'replace',
-          'danger',
-        ));
-        actions.appendChild(actionButton(
-          'Save as ' + (global.BelJarNameConflicts
-            ? BelJarNameConflicts.baseName(conflict.suggestedPath)
-            : conflict.suggestedPath),
-          'rename',
-          'primary',
-        ));
-
-        if (!bodyHost.contains(actions)) bodyHost.appendChild(actions);
+        shell.appendChild(buildConflictBody(conflict, conflicts.length, index));
+        shell.appendChild(buildActions(conflict, conflicts.length));
       }
 
-      actions.addEventListener('click', function (e) {
+      shell.addEventListener('click', function (e) {
         var btn = e.target.closest('[data-action]');
         if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
         var action = btn.dataset.action;
         var conflict = conflicts[index];
 

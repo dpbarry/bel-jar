@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run vendor-fonts && npm run build:editor",
+    "build": "npm run vendor-fonts && npm run build:editor && npm run library:sync-cfgs && npm run library:refresh",
+    "library:refresh": "node library/refresh-manifest.mjs",
+    "library:sync-cfgs": "node library/sync-cfgs-from-beluga-w.mjs",
     "build:editor": "node scripts/build-editor.mjs",
     "build:grammar": "lezer-generator beluga.grammar -o editor-src/beluga-parser.js",
     "vendor-fonts": "node scripts/vendor-fonts.mjs",

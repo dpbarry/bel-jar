@@ -1,0 +1,2551 @@
+{
+  "version": 2,
+  "sections": [
+    {
+      "id": "builtins",
+      "label": "Fundamentals",
+      "tree": {
+        "type": "folder",
+        "id": "builtins-root",
+        "name": "",
+        "children": [
+          {
+            "type": "folder",
+            "id": "builtins-core",
+            "name": "Natural Deduction",
+            "children": [
+              {
+                "type": "file",
+                "id": "builtins-nd-first-order",
+                "label": "nd-first-order.bel",
+                "path": "builtins/nd-first-order.bel",
+                "ext": "bel",
+                "description": "Natural deduction signatures including quantifiers"
+              },
+              {
+                "type": "file",
+                "id": "builtins-nd-propositional",
+                "label": "nd-propositional.bel",
+                "path": "builtins/nd-propositional.bel",
+                "ext": "bel",
+                "description": "Natural deduction signatures without quantifiers"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "examples",
+      "label": "Examples",
+      "tree": {
+        "type": "folder",
+        "id": "examples-root",
+        "name": "",
+        "children": [
+          {
+            "type": "folder",
+            "id": "examples-arith",
+            "name": "arith",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-arith-arith-bel",
+                "label": "arith.bel",
+                "path": "examples/arith/arith.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Recursive addition and multiplication on Peano naturals."
+          },
+          {
+            "type": "folder",
+            "id": "examples-back",
+            "name": "back",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-back-tc-bel",
+                "label": "tc.bel",
+                "path": "examples/back/tc.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Bidirectional typechecker with even/odd nat subtyping on a small λ-language."
+          },
+          {
+            "type": "folder",
+            "id": "examples-bigstep-deterministic",
+            "name": "bigstep-deterministic",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-bigstep-deterministic-sources-cfg",
+                "label": "sources.cfg",
+                "path": "examples/bigstep-deterministic/sources.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-bigstep-deterministic-alternate-bel",
+                "label": "alternate.bel",
+                "path": "examples/bigstep-deterministic/alternate.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-bigstep-deterministic-bigstep-deterministic-bel",
+                "label": "bigstep-deterministic.bel",
+                "path": "examples/bigstep-deterministic/bigstep-deterministic.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-bigstep-deterministic-eq-bel",
+                "label": "eq.bel",
+                "path": "examples/bigstep-deterministic/eq.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Big-step evaluation for λ-terms; proof that evaluation results are unique."
+          },
+          {
+            "type": "folder",
+            "id": "examples-cfg",
+            "name": "cfg",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-cfg-fvnat-cfg",
+                "label": "fvnat.cfg",
+                "path": "examples/cfg/fvnat.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-cfg-test-cfg",
+                "label": "test.cfg",
+                "path": "examples/cfg/test.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-cfg-fvnat-pt1-bel",
+                "label": "fvnat-pt1.bel",
+                "path": "examples/cfg/fvnat-pt1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-cfg-fvnat-pt2-bel",
+                "label": "fvnat-pt2.bel",
+                "path": "examples/cfg/fvnat-pt2.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Coverage-checker stress tests using a free-variable analysis on typed expressions."
+          },
+          {
+            "type": "folder",
+            "id": "examples-church-rosser",
+            "name": "church-rosser",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-cfg",
+                "label": "ord.cfg",
+                "path": "examples/church-rosser/ord.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-test-crec-cover-cfg",
+                "label": "test-crec-cover.cfg",
+                "path": "examples/church-rosser/test-crec-cover.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-test-crec-cfg",
+                "label": "test-crec.cfg",
+                "path": "examples/church-rosser/test-crec.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-test-cfg",
+                "label": "test.cfg",
+                "path": "examples/church-rosser/test.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-equiv-crec-bel",
+                "label": "equiv-crec.bel",
+                "path": "examples/church-rosser/equiv-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-equiv-bel",
+                "label": "equiv.bel",
+                "path": "examples/church-rosser/equiv.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-equiv-elf",
+                "label": "equiv.elf",
+                "path": "examples/church-rosser/equiv.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-lam-elf",
+                "label": "lam.elf",
+                "path": "examples/church-rosser/lam.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-cr-crec-bel",
+                "label": "ord-cr-crec.bel",
+                "path": "examples/church-rosser/ord-cr-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-cr-bel",
+                "label": "ord-cr.bel",
+                "path": "examples/church-rosser/ord-cr.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-cr-elf",
+                "label": "ord-cr.elf",
+                "path": "examples/church-rosser/ord-cr.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-lemmas-crec-bel",
+                "label": "ord-lemmas-crec.bel",
+                "path": "examples/church-rosser/ord-lemmas-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-lemmas-bel",
+                "label": "ord-lemmas.bel",
+                "path": "examples/church-rosser/ord-lemmas.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-lemmas-elf",
+                "label": "ord-lemmas.elf",
+                "path": "examples/church-rosser/ord-lemmas.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-ord-red-elf",
+                "label": "ord-red.elf",
+                "path": "examples/church-rosser/ord-red.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-cr-crec-1-bel",
+                "label": "par-cr-crec-1.bel",
+                "path": "examples/church-rosser/par-cr-crec-1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-cr-crec-cover-bel",
+                "label": "par-cr-crec-cover.bel",
+                "path": "examples/church-rosser/par-cr-crec-cover.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-cr-crec-bel",
+                "label": "par-cr-crec.bel",
+                "path": "examples/church-rosser/par-cr-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-cr-bel",
+                "label": "par-cr.bel",
+                "path": "examples/church-rosser/par-cr.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-cr-elf",
+                "label": "par-cr.elf",
+                "path": "examples/church-rosser/par-cr.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-lemmas-crec-bel",
+                "label": "par-lemmas-crec.bel",
+                "path": "examples/church-rosser/par-lemmas-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-lemmas-bel",
+                "label": "par-lemmas.bel",
+                "path": "examples/church-rosser/par-lemmas.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-lemmas-elf",
+                "label": "par-lemmas.elf",
+                "path": "examples/church-rosser/par-lemmas.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-red-bel",
+                "label": "par-red.bel",
+                "path": "examples/church-rosser/par-red.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-church-rosser-par-red-elf",
+                "label": "par-red.elf",
+                "path": "examples/church-rosser/par-red.elf",
+                "ext": "elf"
+              }
+            ],
+            "description": "Church–Rosser for β on untyped λ via parallel reduction (Tait–Martin-Löf). Folder holds several developments; test.cfg loads the parallel-reduction proof chain."
+          },
+          {
+            "type": "folder",
+            "id": "examples-codatatypes",
+            "name": "codatatypes",
+            "children": [
+              {
+                "type": "folder",
+                "id": "examples-codatatypes-bisimulation",
+                "name": "bisimulation",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-codatatypes-bisimulation-sources-cfg",
+                    "label": "sources.cfg",
+                    "path": "examples/codatatypes/bisimulation/sources.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-codatatypes-bisimulation-bisimulation-bel",
+                    "label": "bisimulation.bel",
+                    "path": "examples/codatatypes/bisimulation/bisimulation.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-codatatypes-bisimulation-invariant-bel",
+                    "label": "invariant.bel",
+                    "path": "examples/codatatypes/bisimulation/invariant.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-codatatypes-bisimulation-picalc-bel",
+                    "label": "picalc.bel",
+                    "path": "examples/codatatypes/bisimulation/picalc.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-codatatypes-howes-method",
+                "name": "howes-method",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-codatatypes-howes-method-howe-total-bel",
+                    "label": "howe-total.bel",
+                    "path": "examples/codatatypes/howes-method/howe-total.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-codatatypes-howes-method-howe-bel",
+                    "label": "howe.bel",
+                    "path": "examples/codatatypes/howes-method/howe.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "file",
+                "id": "examples-codatatypes-tofte-hoas-bel",
+                "label": "tofte-hoas.bel",
+                "path": "examples/codatatypes/tofte-hoas.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Coinductive examples: pi-calculus bisimulation, Howe's method, and a Tofte-style environment semantics."
+          },
+          {
+            "type": "folder",
+            "id": "examples-compile",
+            "name": "compile",
+            "children": [
+              {
+                "type": "folder",
+                "id": "examples-compile-cls",
+                "name": "cls",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/compile/cls/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-cls-complete-elf",
+                    "label": "cls-complete.elf",
+                    "path": "examples/compile/cls/cls-complete.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-cls-sound-elf",
+                    "label": "cls-sound.elf",
+                    "path": "examples/compile/cls/cls-sound.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-cls-elf",
+                    "label": "cls.elf",
+                    "path": "examples/compile/cls/cls.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-complete-1-bel",
+                    "label": "complete-1.bel",
+                    "path": "examples/compile/cls/complete-1.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-complete-bel",
+                    "label": "complete.bel",
+                    "path": "examples/compile/cls/complete.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-compute-elf",
+                    "label": "compute.elf",
+                    "path": "examples/compile/cls/compute.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-debruijn-elf",
+                    "label": "debruijn.elf",
+                    "path": "examples/compile/cls/debruijn.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-feval-elf",
+                    "label": "feval.elf",
+                    "path": "examples/compile/cls/feval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-mini-ml-elf",
+                    "label": "mini-ml.elf",
+                    "path": "examples/compile/cls/mini-ml.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-trans-elf",
+                    "label": "trans.elf",
+                    "path": "examples/compile/cls/trans.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cls-trans2-elf",
+                    "label": "trans2.elf",
+                    "path": "examples/compile/cls/trans2.elf",
+                    "ext": "elf"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-compile-cpm",
+                "name": "cpm",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/compile/cpm/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-ceval-complete-bel",
+                    "label": "ceval-complete.bel",
+                    "path": "examples/compile/cpm/ceval-complete.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-ceval-complete-elf",
+                    "label": "ceval-complete.elf",
+                    "path": "examples/compile/cpm/ceval-complete.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-ceval-sound-bel",
+                    "label": "ceval-sound.bel",
+                    "path": "examples/compile/cpm/ceval-sound.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-ceval-sound-elf",
+                    "label": "ceval-sound.elf",
+                    "path": "examples/compile/cpm/ceval-sound.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-ceval-elf",
+                    "label": "ceval.elf",
+                    "path": "examples/compile/cpm/ceval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-cpm-elf",
+                    "label": "cpm.elf",
+                    "path": "examples/compile/cpm/cpm.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-evalv-elf",
+                    "label": "evalv.elf",
+                    "path": "examples/compile/cpm/evalv.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-mini-mlv-elf",
+                    "label": "mini-mlv.elf",
+                    "path": "examples/compile/cpm/mini-mlv.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-proof-equiv-elf",
+                    "label": "proof-equiv.elf",
+                    "path": "examples/compile/cpm/proof-equiv.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cpm-theorems-elf",
+                    "label": "theorems.elf",
+                    "path": "examples/compile/cpm/theorems.elf",
+                    "ext": "elf"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-compile-cps",
+                "name": "cps",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cps-sources-cfg",
+                    "label": "sources.cfg",
+                    "path": "examples/compile/cps/sources.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cps-cps-eval-elf",
+                    "label": "cps-eval.elf",
+                    "path": "examples/compile/cps/cps-eval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cps-cps-elf",
+                    "label": "cps.elf",
+                    "path": "examples/compile/cps/cps.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cps-mini-ml-elf",
+                    "label": "mini-ml.elf",
+                    "path": "examples/compile/cps/mini-ml.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cps-ml-cps-elf",
+                    "label": "ml-cps.elf",
+                    "path": "examples/compile/cps/ml-cps.elf",
+                    "ext": "elf"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-compile-cxm",
+                "name": "cxm",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cxm-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/compile/cxm/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cxm-evalv-elf",
+                    "label": "evalv.elf",
+                    "path": "examples/compile/cxm/evalv.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cxm-mini-mlv-elf",
+                    "label": "mini-mlv.elf",
+                    "path": "examples/compile/cxm/mini-mlv.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-cxm-xeval-elf",
+                    "label": "xeval.elf",
+                    "path": "examples/compile/cxm/xeval.elf",
+                    "ext": "elf"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-compile-debruijn",
+                "name": "debruijn",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/compile/debruijn/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-debruijn-elf",
+                    "label": "debruijn.elf",
+                    "path": "examples/compile/debruijn/debruijn.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-eval-elf",
+                    "label": "eval.elf",
+                    "path": "examples/compile/debruijn/eval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-feval-elf",
+                    "label": "feval.elf",
+                    "path": "examples/compile/debruijn/feval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-map-eval-bel",
+                    "label": "map-eval.bel",
+                    "path": "examples/compile/debruijn/map-eval.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-map-eval-elf",
+                    "label": "map-eval.elf",
+                    "path": "examples/compile/debruijn/map-eval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-mini-ml-elf",
+                    "label": "mini-ml.elf",
+                    "path": "examples/compile/debruijn/mini-ml.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-trans-elf",
+                    "label": "trans.elf",
+                    "path": "examples/compile/debruijn/trans.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-val-lemmas-elf",
+                    "label": "val-lemmas.elf",
+                    "path": "examples/compile/debruijn/val-lemmas.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn-value-elf",
+                    "label": "value.elf",
+                    "path": "examples/compile/debruijn/value.elf",
+                    "ext": "elf"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-compile-debruijn1",
+                "name": "debruijn1",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/compile/debruijn1/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-debruijn-elf",
+                    "label": "debruijn.elf",
+                    "path": "examples/compile/debruijn1/debruijn.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-eval-elf",
+                    "label": "eval.elf",
+                    "path": "examples/compile/debruijn1/eval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-feval-elf",
+                    "label": "feval.elf",
+                    "path": "examples/compile/debruijn1/feval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-map-eval-bel",
+                    "label": "map-eval.bel",
+                    "path": "examples/compile/debruijn1/map-eval.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-map-eval-elf",
+                    "label": "map-eval.elf",
+                    "path": "examples/compile/debruijn1/map-eval.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-mini-ml-elf",
+                    "label": "mini-ml.elf",
+                    "path": "examples/compile/debruijn1/mini-ml.elf",
+                    "ext": "elf"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-compile-debruijn1-trans-elf",
+                    "label": "trans.elf",
+                    "path": "examples/compile/debruijn1/trans.elf",
+                    "ext": "elf"
+                  }
+                ]
+              }
+            ],
+            "description": "Pfenning's compiler-correctness suite in Elf—SECD/CLS machines, CPS, closure conversion, and de Bruijn compilation."
+          },
+          {
+            "type": "folder",
+            "id": "examples-copy",
+            "name": "copy",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-copy-copy-crec-bel",
+                "label": "copy-crec.bel",
+                "path": "examples/copy/copy-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-copy-copy-explicit-bel",
+                "label": "copy-explicit.bel",
+                "path": "examples/copy/copy-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-copy-copy-simple-crec-bel",
+                "label": "copy-simple-crec.bel",
+                "path": "examples/copy/copy-simple-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-copy-copy-simple-explicit-bel",
+                "label": "copy-simple-explicit.bel",
+                "path": "examples/copy/copy-simple-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-copy-copy-simple-bel",
+                "label": "copy-simple.bel",
+                "path": "examples/copy/copy-simple.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-copy-copy-bel",
+                "label": "copy.bel",
+                "path": "examples/copy/copy.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Structurally recursive deep copy of λ-terms; simply-typed and dependently typed variants."
+          },
+          {
+            "type": "folder",
+            "id": "examples-count-var",
+            "name": "count-var",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-count-var-cntvar-2-bel",
+                "label": "cntvar-2.bel",
+                "path": "examples/count-var/cntvar-2.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-count-var-cntvar-crec-bel",
+                "label": "cntvar-crec.bel",
+                "path": "examples/count-var/cntvar-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-count-var-cntvar-explicit-bel",
+                "label": "cntvar-explicit.bel",
+                "path": "examples/count-var/cntvar-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-count-var-cntvar-simple-crec-bel",
+                "label": "cntvar-simple-crec.bel",
+                "path": "examples/count-var/cntvar-simple-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-count-var-cntvar-simple-bel",
+                "label": "cntvar-simple.bel",
+                "path": "examples/count-var/cntvar-simple.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-count-var-cntvar-str-bel",
+                "label": "cntvar-str.bel",
+                "path": "examples/count-var/cntvar-str.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-count-var-cntvar-bel",
+                "label": "cntvar.bel",
+                "path": "examples/count-var/cntvar.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Count variable occurrences in typed terms; illustrates pattern matching when types are refined in branches."
+          },
+          {
+            "type": "folder",
+            "id": "examples-cpp13",
+            "name": "cpp13",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-cpp13-cc-bel",
+                "label": "cc.bel",
+                "path": "examples/cpp13/cc.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-cpp13-cchoist-bel",
+                "label": "cchoist.bel",
+                "path": "examples/cpp13/cchoist.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-cpp13-cps-bel",
+                "label": "cps.bel",
+                "path": "examples/cpp13/cps.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-cpp13-sfcps-bel",
+                "label": "sfcps.bel",
+                "path": "examples/cpp13/sfcps.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Type-preserving closure conversion and CPS for a higher-order language."
+          },
+          {
+            "type": "folder",
+            "id": "examples-cut-elim",
+            "name": "cut-elim",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-cut-elim-test-cfg",
+                "label": "test.cfg",
+                "path": "examples/cut-elim/test.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-cut-elim-cut-admit-cover-bel",
+                "label": "cut-admit-cover.bel",
+                "path": "examples/cut-elim/cut-admit-cover.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-cut-elim-formulas-elf",
+                "label": "formulas.elf",
+                "path": "examples/cut-elim/formulas.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-cut-elim-int-admit-bel",
+                "label": "int-admit.bel",
+                "path": "examples/cut-elim/int-admit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-cut-elim-int-admit-elf",
+                "label": "int-admit.elf",
+                "path": "examples/cut-elim/int-admit.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-cut-elim-int-cut-elf",
+                "label": "int-cut.elf",
+                "path": "examples/cut-elim/int-cut.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-cut-elim-int-elim-bel",
+                "label": "int-elim.bel",
+                "path": "examples/cut-elim/int-elim.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-cut-elim-int-elf",
+                "label": "int.elf",
+                "path": "examples/cut-elim/int.elf",
+                "ext": "elf"
+              }
+            ],
+            "description": "Cut elimination for intuitionistic sequent calculus (Pfenning); Beluga and Elf versions."
+          },
+          {
+            "type": "folder",
+            "id": "examples-equal",
+            "name": "equal",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-equal-alg-equal-ctxrel-bel",
+                "label": "alg-equal-ctxrel.bel",
+                "path": "examples/equal/alg-equal-ctxrel.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-alg-equal-datatypes-adeq-bel",
+                "label": "alg-equal-datatypes-adeq.bel",
+                "path": "examples/equal/alg-equal-datatypes-adeq.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-alg-equal-datatypes-bel",
+                "label": "alg-equal-datatypes.bel",
+                "path": "examples/equal/alg-equal-datatypes.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-eq-proof-1-bel",
+                "label": "eq-proof-1.bel",
+                "path": "examples/equal/eq-proof-1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-eq-proof-2-bel",
+                "label": "eq-proof-2.bel",
+                "path": "examples/equal/eq-proof-2.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-eq-proof-crec-bel",
+                "label": "eq-proof-crec.bel",
+                "path": "examples/equal/eq-proof-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-eq-proof-full-crec-bel",
+                "label": "eq-proof-full-crec.bel",
+                "path": "examples/equal/eq-proof-full-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-eq-proof-tuple-bel",
+                "label": "eq-proof-tuple.bel",
+                "path": "examples/equal/eq-proof-tuple.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-equal-eq-proof-bel",
+                "label": "eq-proof.bel",
+                "path": "examples/equal/eq-proof.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Soundness and completeness of algorithmic versus declarative equality on λ-terms."
+          },
+          {
+            "type": "folder",
+            "id": "examples-fol",
+            "name": "fol",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-fol-sources-cfg",
+                "label": "sources.cfg",
+                "path": "examples/fol/sources.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-fol-test-cfg",
+                "label": "test.cfg",
+                "path": "examples/fol/test.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-fol-fol-handbook-bel",
+                "label": "fol-handbook.bel",
+                "path": "examples/fol/fol-handbook.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-fol-fol-bel",
+                "label": "fol.bel",
+                "path": "examples/fol/fol.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-fol-fol-elf",
+                "label": "fol.elf",
+                "path": "examples/fol/fol.elf",
+                "ext": "elf"
+              }
+            ],
+            "description": "Intuitionistic logic: propositional proof search and a first-order Hilbert–natural-deduction translation."
+          },
+          {
+            "type": "folder",
+            "id": "examples-free-vars",
+            "name": "free-vars",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-free-vars-fvnat-crec-bel",
+                "label": "fvnat-crec.bel",
+                "path": "examples/free-vars/fvnat-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-free-vars-fvnat-explicit-bel",
+                "label": "fvnat-explicit.bel",
+                "path": "examples/free-vars/fvnat-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-free-vars-fvnat-bel",
+                "label": "fvnat.bel",
+                "path": "examples/free-vars/fvnat.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Decide whether a well-typed expression contains a free variable."
+          },
+          {
+            "type": "folder",
+            "id": "examples-freshml",
+            "name": "freshML",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-freshml-cconv-cheney-bel",
+                "label": "cconv-cheney.bel",
+                "path": "examples/freshML/cconv-cheney.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-conv-untyped-bel",
+                "label": "conv-untyped.bel",
+                "path": "examples/freshML/conv-untyped.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-cps-crec-bel",
+                "label": "cps-crec.bel",
+                "path": "examples/freshML/cps-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-cps-popl-tutorial1-bel",
+                "label": "cps-popl-tutorial1.bel",
+                "path": "examples/freshML/cps-popl-tutorial1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-cps-popl-tutorial2-crec-bel",
+                "label": "cps-popl-tutorial2-crec.bel",
+                "path": "examples/freshML/cps-popl-tutorial2-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-cps-popl-tutorial2-bel",
+                "label": "cps-popl-tutorial2.bel",
+                "path": "examples/freshML/cps-popl-tutorial2.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-cps-bel",
+                "label": "cps.bel",
+                "path": "examples/freshML/cps.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-debruijn-1-bel",
+                "label": "debruijn-1.bel",
+                "path": "examples/freshML/debruijn-1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-debruijn-1a-bel",
+                "label": "debruijn-1a.bel",
+                "path": "examples/freshML/debruijn-1a.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-debruijn-uniform-bel",
+                "label": "debruijn-uniform.bel",
+                "path": "examples/freshML/debruijn-uniform.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-debruijn-bel",
+                "label": "debruijn.bel",
+                "path": "examples/freshML/debruijn.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-term-bel",
+                "label": "term.bel",
+                "path": "examples/freshML/term.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-freshml-ucconv-total-bel",
+                "label": "ucconv-total.bel",
+                "path": "examples/freshML/ucconv-total.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "FreshML-style compilation: de Bruijn conversion, CPS, closure conversion, and environment passing."
+          },
+          {
+            "type": "folder",
+            "id": "examples-higher-order",
+            "name": "higher-order",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-higher-order-jpath-bel",
+                "label": "jpath.bel",
+                "path": "examples/higher-order/jpath.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Third-order HOAS paths through λ-terms; shown equivalent to a second-order path judgment."
+          },
+          {
+            "type": "folder",
+            "id": "examples-improve",
+            "name": "improve",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-improve-eta-bel",
+                "label": "eta.bel",
+                "path": "examples/improve/eta.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-improve-recon-bel",
+                "label": "recon.bel",
+                "path": "examples/improve/recon.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Small examples that stress η-conversion and type reconstruction in patterns."
+          },
+          {
+            "type": "folder",
+            "id": "examples-lincx-mechanization",
+            "name": "lincx_mechanization",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-lincx-cfg",
+                "label": "lincx.cfg",
+                "path": "examples/lincx_mechanization/lincx.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-context-functions-bel",
+                "label": "context_functions.bel",
+                "path": "examples/lincx_mechanization/context_functions.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-join-bel",
+                "label": "join.bel",
+                "path": "examples/lincx_mechanization/join.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-judgments-bel",
+                "label": "judgments.bel",
+                "path": "examples/lincx_mechanization/judgments.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-lemma1-bel",
+                "label": "lemma1.bel",
+                "path": "examples/lincx_mechanization/lemma1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-subst-split-bel",
+                "label": "subst_split.bel",
+                "path": "examples/lincx_mechanization/subst_split.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-substitution-functions-bel",
+                "label": "substitution_functions.bel",
+                "path": "examples/lincx_mechanization/substitution_functions.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-substitution-bel",
+                "label": "substitution.bel",
+                "path": "examples/lincx_mechanization/substitution.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lincx-mechanization-syntax-bel",
+                "label": "syntax.bel",
+                "path": "examples/lincx_mechanization/syntax.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "LINCX linear logical framework: linear and unrestricted contexts, typing, substitution, and context join."
+          },
+          {
+            "type": "folder",
+            "id": "examples-literate-beluga",
+            "name": "literate_beluga",
+            "children": [
+              {
+                "type": "folder",
+                "id": "examples-literate-beluga-0beginner",
+                "name": "0Beginner",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-close-terms-bel",
+                    "label": "Close_Terms.bel",
+                    "path": "examples/literate_beluga/0Beginner/Close_Terms.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-from-hoas-to-debruijn-bel",
+                    "label": "From_HOAS_to_DeBruijn.bel",
+                    "path": "examples/literate_beluga/0Beginner/From_HOAS_to_DeBruijn.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-norm-bel",
+                    "label": "Norm.bel",
+                    "path": "examples/literate_beluga/0Beginner/Norm.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-parallel-reduction-bel",
+                    "label": "Parallel_Reduction.bel",
+                    "path": "examples/literate_beluga/0Beginner/Parallel_Reduction.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-polymorphic-algorithmic-equality-bel",
+                    "label": "Polymorphic_Algorithmic_Equality.bel",
+                    "path": "examples/literate_beluga/0Beginner/Polymorphic_Algorithmic_Equality.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-type-uniqueness-bel",
+                    "label": "Type_Uniqueness.bel",
+                    "path": "examples/literate_beluga/0Beginner/Type_Uniqueness.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-untyped-algorithmic-equality-context-relation-bel",
+                    "label": "Untyped_Algorithmic_Equality_-_Context_Relation.bel",
+                    "path": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Relation.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-0beginner-untyped-algorithmic-equality-context-subsumption-bel",
+                    "label": "Untyped_Algorithmic_Equality_-_Context_Subsumption.bel",
+                    "path": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Subsumption.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-literate-beluga-1intermediate",
+                "name": "1Intermediate",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-1intermediate-poplmark-bel",
+                    "label": "Poplmark.bel",
+                    "path": "examples/literate_beluga/1Intermediate/Poplmark.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-literate-beluga-2advanced",
+                "name": "2Advanced",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-2advanced-normalization-by-evaluation-bel",
+                    "label": "Normalization_by_Evaluation.bel",
+                    "path": "examples/literate_beluga/2Advanced/Normalization_by_Evaluation.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-literate-beluga-2advanced-weak-normalization-bel",
+                    "label": "Weak_Normalization.bel",
+                    "path": "examples/literate_beluga/2Advanced/Weak_Normalization.bel",
+                    "ext": "bel"
+                  }
+                ]
+              }
+            ],
+            "description": "Literate tutorial proofs from the Beluga docs—beginner through advanced, including POPLmark and normalization."
+          },
+          {
+            "type": "folder",
+            "id": "examples-logrel",
+            "name": "logrel",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-logrel-algeq-simplified-bel",
+                "label": "algeq-simplified.bel",
+                "path": "examples/logrel/algeq-simplified.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-algeq-simplified1-bel",
+                "label": "algeq-simplified1.bel",
+                "path": "examples/logrel/algeq-simplified1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-algeq-typing-bel",
+                "label": "algeq-typing.bel",
+                "path": "examples/logrel/algeq-typing.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-closed-ideal-bel",
+                "label": "weak-norm-closed-ideal.bel",
+                "path": "examples/logrel/weak-norm-closed-ideal.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-total-mix-lf-inductive-bel",
+                "label": "weak-norm-total-mix-lf-inductive.bel",
+                "path": "examples/logrel/weak-norm-total-mix-lf-inductive.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-total-products-explicit-typing-bel",
+                "label": "weak-norm-total-products-explicit-typing.bel",
+                "path": "examples/logrel/weak-norm-total-products-explicit-typing.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-total-products-bel",
+                "label": "weak-norm-total-products.bel",
+                "path": "examples/logrel/weak-norm-total-products.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-total-bel",
+                "label": "weak-norm-total.bel",
+                "path": "examples/logrel/weak-norm-total.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-under-binders-beta-only-bel",
+                "label": "weak-norm-under-binders-beta-only.bel",
+                "path": "examples/logrel/weak-norm-under-binders-beta-only.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-under-binders-simplified-bel",
+                "label": "weak-norm-under-binders-simplified.bel",
+                "path": "examples/logrel/weak-norm-under-binders-simplified.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-under-binders-bel",
+                "label": "weak-norm-under-binders.bel",
+                "path": "examples/logrel/weak-norm-under-binders.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-logrel-weak-norm-bel",
+                "label": "weak-norm.bel",
+                "path": "examples/logrel/weak-norm.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Logical relations for weak head normalization and algorithmic equality on STLC (Cave & Pientka, LFMTP 2013)."
+          },
+          {
+            "type": "folder",
+            "id": "examples-lp-horn",
+            "name": "lp-horn",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-lp-horn-iscan-bel",
+                "label": "iscan.bel",
+                "path": "examples/lp-horn/iscan.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lp-horn-uni-complete-crec-bel",
+                "label": "uni-complete-crec.bel",
+                "path": "examples/lp-horn/uni-complete-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lp-horn-uni-complete-bel",
+                "label": "uni-complete.bel",
+                "path": "examples/lp-horn/uni-complete.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lp-horn-uni-sound-crec-bel",
+                "label": "uni-sound-crec.bel",
+                "path": "examples/lp-horn/uni-sound-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-lp-horn-uni-sound-bel",
+                "label": "uni-sound.bel",
+                "path": "examples/lp-horn/uni-sound.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Horn-clause intuitionistic logic: canonical and uniform proof search, adapted from Twelf."
+          },
+          {
+            "type": "folder",
+            "id": "examples-mini-ml",
+            "name": "mini-ml",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-mini-ml-clos-eval-bel",
+                "label": "clos-eval.bel",
+                "path": "examples/mini-ml/clos-eval.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-mini-ml-eval-sub-1-explicit-bel",
+                "label": "eval-sub-1-explicit.bel",
+                "path": "examples/mini-ml/eval-sub-1-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-mini-ml-eval-sub-1-bel",
+                "label": "eval-sub-1.bel",
+                "path": "examples/mini-ml/eval-sub-1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-mini-ml-eval-sub-explicit-bel",
+                "label": "eval-sub-explicit.bel",
+                "path": "examples/mini-ml/eval-sub-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-mini-ml-eval-sub-bel",
+                "label": "eval-sub.bel",
+                "path": "examples/mini-ml/eval-sub.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-mini-ml-tps-bel",
+                "label": "tps.bel",
+                "path": "examples/mini-ml/tps.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-mini-ml-vsound-explicit-bel",
+                "label": "vsound-explicit.bel",
+                "path": "examples/mini-ml/vsound-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-mini-ml-vsound-bel",
+                "label": "vsound.bel",
+                "path": "examples/mini-ml/vsound.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Mini-ML with substitution-based call-by-value evaluation, type preservation, and value soundness."
+          },
+          {
+            "type": "folder",
+            "id": "examples-path",
+            "name": "path",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-path-bred-nf-bel",
+                "label": "bred-nf.bel",
+                "path": "examples/path/bred-nf.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-path-path-typed-bel",
+                "label": "path-typed.bel",
+                "path": "examples/path/path-typed.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-path-path-bel",
+                "label": "path.bel",
+                "path": "examples/path/path.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Paths through λ-term structure; agreeing on all paths implies β-conversion."
+          },
+          {
+            "type": "folder",
+            "id": "examples-polylam",
+            "name": "polylam",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-polylam-normal-bel",
+                "label": "normal.bel",
+                "path": "examples/polylam/normal.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Normalize simply-typed λ-terms into a value-only representation."
+          },
+          {
+            "type": "folder",
+            "id": "examples-popl12",
+            "name": "popl12",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-popl12-clos-eval-bel",
+                "label": "clos-eval.bel",
+                "path": "examples/popl12/clos-eval.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-closconv-bel",
+                "label": "closconv.bel",
+                "path": "examples/popl12/closconv.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-copy-bel",
+                "label": "copy.bel",
+                "path": "examples/popl12/copy.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-lists-bel",
+                "label": "lists.bel",
+                "path": "examples/popl12/lists.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-nbe-sub-bel",
+                "label": "nbe-sub.bel",
+                "path": "examples/popl12/nbe-sub.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-nbe-bel",
+                "label": "nbe.bel",
+                "path": "examples/popl12/nbe.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-normeval-abbrev-bel",
+                "label": "normeval-abbrev.bel",
+                "path": "examples/popl12/normeval-abbrev.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-normeval-subst-bel",
+                "label": "normeval-subst.bel",
+                "path": "examples/popl12/normeval-subst.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-normeval-total-bel",
+                "label": "normeval-total.bel",
+                "path": "examples/popl12/normeval-total.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-popl12-normeval-bel",
+                "label": "normeval.bel",
+                "path": "examples/popl12/normeval.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Examples from the POPL 2012 Beluga paper: NbE, closure conversion, lists, and normalization."
+          },
+          {
+            "type": "folder",
+            "id": "examples-poplmark",
+            "name": "poplmark",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-poplmark-pearl-bel",
+                "label": "pearl.bel",
+                "path": "examples/poplmark/pearl.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-poplmark-bel",
+                "label": "poplmark.bel",
+                "path": "examples/poplmark/poplmark.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "POPLmark challenge 1a: bounded subtype polymorphism (proof-pearl development)."
+          },
+          {
+            "type": "folder",
+            "id": "examples-poplmark-reloaded",
+            "name": "poplmark-reloaded",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-sources-cfg",
+                "label": "sources.cfg",
+                "path": "examples/poplmark-reloaded/sources.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-1a-prop-sn-bel",
+                "label": "1a_prop_sn.bel",
+                "path": "examples/poplmark-reloaded/1a_prop_sn.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-1b-soundness-bel",
+                "label": "1b_soundness.bel",
+                "path": "examples/poplmark-reloaded/1b_soundness.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-2a-prop-sn-bel",
+                "label": "2a_prop_SN.bel",
+                "path": "examples/poplmark-reloaded/2a_prop_SN.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-2b-sn-bel",
+                "label": "2b_sn.bel",
+                "path": "examples/poplmark-reloaded/2b_sn.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-sn-def-bel",
+                "label": "sn_def.bel",
+                "path": "examples/poplmark-reloaded/sn_def.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-terms-def-bel",
+                "label": "terms_def.bel",
+                "path": "examples/poplmark-reloaded/terms_def.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "POPLmark Reloaded 1a–2b: strong normalization via accessibility on step-indexed terms."
+          },
+          {
+            "type": "folder",
+            "id": "examples-poplmark-reloaded",
+            "name": "poplmark-reloaded+",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-sources-cfg-2",
+                "label": "sources.cfg",
+                "path": "examples/poplmark-reloaded+/sources.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-1a-prop-sn-bel-2",
+                "label": "1a_prop_sn.bel",
+                "path": "examples/poplmark-reloaded+/1a_prop_sn.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-1b-soundness-bel-2",
+                "label": "1b_soundness.bel",
+                "path": "examples/poplmark-reloaded+/1b_soundness.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-2a-prop-sn-bel-2",
+                "label": "2a_prop_SN.bel",
+                "path": "examples/poplmark-reloaded+/2a_prop_SN.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-2b-sn-bel-2",
+                "label": "2b_sn.bel",
+                "path": "examples/poplmark-reloaded+/2b_sn.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-sn-def-bel-2",
+                "label": "sn_def.bel",
+                "path": "examples/poplmark-reloaded+/sn_def.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-poplmark-reloaded-terms-def-bel-2",
+                "label": "terms_def.bel",
+                "path": "examples/poplmark-reloaded+/terms_def.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Alternate encoding of the POPLmark Reloaded strong-normalization development."
+          },
+          {
+            "type": "folder",
+            "id": "examples-small-step",
+            "name": "small-step",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-small-step-lam-bel",
+                "label": "lam.bel",
+                "path": "examples/small-step/lam.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-small-step-subject-red-bel",
+                "label": "subject-red.bel",
+                "path": "examples/small-step/subject-red.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-small-step-system-f-iso-bel",
+                "label": "system-f-iso.bel",
+                "path": "examples/small-step/system-f-iso.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-small-step-system-f-iso-elf",
+                "label": "system-f-iso.elf",
+                "path": "examples/small-step/system-f-iso.elf",
+                "ext": "elf"
+              },
+              {
+                "type": "file",
+                "id": "examples-small-step-system-f-bel",
+                "label": "system-f.bel",
+                "path": "examples/small-step/system-f.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-small-step-system-f-elf",
+                "label": "system-f.elf",
+                "path": "examples/small-step/system-f.elf",
+                "ext": "elf"
+              }
+            ],
+            "description": "Small-step STLC and System F with preservation and progress; includes a progress proof using inversion."
+          },
+          {
+            "type": "folder",
+            "id": "examples-tapl",
+            "name": "tapl",
+            "children": [
+              {
+                "type": "folder",
+                "id": "examples-tapl-ch3",
+                "name": "ch3",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-sources-cfg",
+                    "label": "sources.cfg",
+                    "path": "examples/tapl/ch3/sources.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/tapl/ch3/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-eval-bel",
+                    "label": "eval.bel",
+                    "path": "examples/tapl/ch3/eval.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-evaluation-2-bel",
+                    "label": "evaluation-2.bel",
+                    "path": "examples/tapl/ch3/evaluation-2.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-evaluation-seq-bel",
+                    "label": "evaluation-seq.bel",
+                    "path": "examples/tapl/ch3/evaluation-seq.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-evaluation-bel",
+                    "label": "evaluation.bel",
+                    "path": "examples/tapl/ch3/evaluation.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-evaluator-bel",
+                    "label": "evaluator.bel",
+                    "path": "examples/tapl/ch3/evaluator.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-exp-bel",
+                    "label": "exp.bel",
+                    "path": "examples/tapl/ch3/exp.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-tapl-ch3-arith",
+                "name": "ch3+arith",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-basic-cfg",
+                    "label": "basic.cfg",
+                    "path": "examples/tapl/ch3+arith/basic.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-big-small-cfg",
+                    "label": "big-small.cfg",
+                    "path": "examples/tapl/ch3+arith/big-small.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-det-cfg",
+                    "label": "det.cfg",
+                    "path": "examples/tapl/ch3+arith/det.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-sources-correct-cfg",
+                    "label": "sources-correct.cfg",
+                    "path": "examples/tapl/ch3+arith/sources-correct.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-sources-corrected-cfg",
+                    "label": "sources-corrected.cfg",
+                    "path": "examples/tapl/ch3+arith/sources-corrected.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-sources-cfg",
+                    "label": "sources.cfg",
+                    "path": "examples/tapl/ch3+arith/sources.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/tapl/ch3+arith/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-big-small-bel",
+                    "label": "big-small.bel",
+                    "path": "examples/tapl/ch3+arith/big-small.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-big-step-bel",
+                    "label": "big-step.bel",
+                    "path": "examples/tapl/ch3+arith/big-step.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-det-bel",
+                    "label": "det.bel",
+                    "path": "examples/tapl/ch3+arith/det.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-evaluation-corrected-bel",
+                    "label": "evaluation-corrected.bel",
+                    "path": "examples/tapl/ch3+arith/evaluation-corrected.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-evaluation-bel",
+                    "label": "evaluation.bel",
+                    "path": "examples/tapl/ch3+arith/evaluation.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-evaluator-big-step-bel",
+                    "label": "evaluator-big-step.bel",
+                    "path": "examples/tapl/ch3+arith/evaluator-big-step.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-evaluator-small-step-bel",
+                    "label": "evaluator-small-step.bel",
+                    "path": "examples/tapl/ch3+arith/evaluator-small-step.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-exp-bel",
+                    "label": "exp.bel",
+                    "path": "examples/tapl/ch3+arith/exp.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-tapl-ch3-arith-leq",
+                "name": "ch3+arith+leq",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-leq-sources-cfg",
+                    "label": "sources.cfg",
+                    "path": "examples/tapl/ch3+arith+leq/sources.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-leq-test-cfg",
+                    "label": "test.cfg",
+                    "path": "examples/tapl/ch3+arith+leq/test.cfg",
+                    "ext": "cfg",
+                    "description": "Development load order"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-leq-evaluation-bel",
+                    "label": "evaluation.bel",
+                    "path": "examples/tapl/ch3+arith+leq/evaluation.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-leq-exp-bel",
+                    "label": "exp.bel",
+                    "path": "examples/tapl/ch3+arith+leq/exp.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-leq-interpreter-cont-bel",
+                    "label": "interpreter-cont.bel",
+                    "path": "examples/tapl/ch3+arith+leq/interpreter-cont.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-leq-interpreter-bel",
+                    "label": "interpreter.bel",
+                    "path": "examples/tapl/ch3+arith+leq/interpreter.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch3-arith-leq-tps-bel",
+                    "label": "tps.bel",
+                    "path": "examples/tapl/ch3+arith+leq/tps.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "folder",
+                "id": "examples-tapl-ch6",
+                "name": "ch6",
+                "children": [
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch6-evaluator-bel",
+                    "label": "evaluator.bel",
+                    "path": "examples/tapl/ch6/evaluator.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch6-small-step-bel",
+                    "label": "small-step.bel",
+                    "path": "examples/tapl/ch6/small-step.bel",
+                    "ext": "bel"
+                  },
+                  {
+                    "type": "file",
+                    "id": "examples-tapl-ch6-tps-bel",
+                    "label": "tps.bel",
+                    "path": "examples/tapl/ch6/tps.bel",
+                    "ext": "bel"
+                  }
+                ]
+              },
+              {
+                "type": "file",
+                "id": "examples-tapl-ch14-b-bel",
+                "label": "ch14-b.bel",
+                "path": "examples/tapl/ch14-b.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-tapl-ch14-bel",
+                "label": "ch14.bel",
+                "path": "examples/tapl/ch14.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "TAPL-style exercises: arithmetic and boolean evaluation, exceptions, and STLC big- and small-step semantics."
+          },
+          {
+            "type": "folder",
+            "id": "examples-typed-compilation",
+            "name": "typed-compilation",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-typed-compilation-cconv-cheney-bel",
+                "label": "cconv-cheney.bel",
+                "path": "examples/typed-compilation/cconv-cheney.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-compilation-cps-popl-tutorial1-crec-bel",
+                "label": "cps-popl-tutorial1-crec.bel",
+                "path": "examples/typed-compilation/cps-popl-tutorial1-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-compilation-cps-popl-tutorial2-crec-bel",
+                "label": "cps-popl-tutorial2-crec.bel",
+                "path": "examples/typed-compilation/cps-popl-tutorial2-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-compilation-debruijn-bel",
+                "label": "debruijn.bel",
+                "path": "examples/typed-compilation/debruijn.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-compilation-term-typed-bel",
+                "label": "term-typed.bel",
+                "path": "examples/typed-compilation/term-typed.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Type-preserving CPS and closure conversion (Twelf POPL tutorial), plus de Bruijn shifting."
+          },
+          {
+            "type": "folder",
+            "id": "examples-typed-eval",
+            "name": "typed-eval",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-typed-eval-tpeval-explicit-bel",
+                "label": "tpeval-explicit.bel",
+                "path": "examples/typed-eval/tpeval-explicit.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-eval-tpeval-val-bel",
+                "label": "tpeval-val.bel",
+                "path": "examples/typed-eval/tpeval-val.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-eval-tpeval-bel",
+                "label": "tpeval.bel",
+                "path": "examples/typed-eval/tpeval.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-eval-tpeval2-bel",
+                "label": "tpeval2.bel",
+                "path": "examples/typed-eval/tpeval2.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-typed-eval-valsound-bel",
+                "label": "valsound.bel",
+                "path": "examples/typed-eval/valsound.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Type-directed evaluator for booleans, naturals, and let; only well-typed terms run."
+          },
+          {
+            "type": "folder",
+            "id": "examples-unique",
+            "name": "unique",
+            "children": [
+              {
+                "type": "file",
+                "id": "examples-unique-unique-crec-bel",
+                "label": "unique-crec.bel",
+                "path": "examples/unique/unique-crec.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-unique-unique-eval-bel",
+                "label": "unique-eval.bel",
+                "path": "examples/unique/unique-eval.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-unique-unique-standard-bel",
+                "label": "unique-standard.bel",
+                "path": "examples/unique/unique-standard.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "examples-unique-unique-bel",
+                "label": "unique.bel",
+                "path": "examples/unique/unique.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Uniqueness of typing and of evaluation results in a simply-typed λ-calculus."
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-studies",
+      "label": "Case Studies",
+      "tree": {
+        "type": "folder",
+        "id": "case-studies-root",
+        "name": "",
+        "children": [
+          {
+            "type": "folder",
+            "id": "case-studies-classical-processes",
+            "name": "classical-processes",
+            "children": [
+              {
+                "type": "file",
+                "id": "case-studies-classical-processes-cp-cfg",
+                "label": "cp.cfg",
+                "path": "case-studies/classical-processes/cp.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-classical-processes-cp-base-bel",
+                "label": "cp_base.bel",
+                "path": "case-studies/classical-processes/cp_base.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-classical-processes-cp-dyn-bel",
+                "label": "cp_dyn.bel",
+                "path": "case-studies/classical-processes/cp_dyn.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-classical-processes-cp-lemmas-bel",
+                "label": "cp_lemmas.bel",
+                "path": "case-studies/classical-processes/cp_lemmas.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-classical-processes-cp-linear-bel",
+                "label": "cp_linear.bel",
+                "path": "case-studies/classical-processes/cp_linear.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-classical-processes-cp-statics-bel",
+                "label": "cp_statics.bel",
+                "path": "case-studies/classical-processes/cp_statics.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-classical-processes-cp-thrm-bel",
+                "label": "cp_thrm.bel",
+                "path": "case-studies/classical-processes/cp_thrm.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Session types in Beluga (Sano, Kavanagh, Pientka, OOPSLA 2023): linearity, typing, and subject reduction for CP."
+          },
+          {
+            "type": "folder",
+            "id": "case-studies-harmony-lemma-formalization",
+            "name": "harmony-lemma-formalization",
+            "children": [
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-all-cfg",
+                "label": "all.cfg",
+                "path": "case-studies/harmony-lemma-formalization/all.cfg",
+                "ext": "cfg",
+                "description": "Development load order"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-1-definitions-bel",
+                "label": "1_definitions.bel",
+                "path": "case-studies/harmony-lemma-formalization/1_definitions.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-2-input-rewriting-bel",
+                "label": "2_input_rewriting.bel",
+                "path": "case-studies/harmony-lemma-formalization/2_input_rewriting.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-3-free-output-rewriting-bel",
+                "label": "3_free_output_rewriting.bel",
+                "path": "case-studies/harmony-lemma-formalization/3_free_output_rewriting.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-4-bound-output-rewriting-bel",
+                "label": "4_bound_output_rewriting.bel",
+                "path": "case-studies/harmony-lemma-formalization/4_bound_output_rewriting.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-5-theorem1-bel",
+                "label": "5_theorem1.bel",
+                "path": "case-studies/harmony-lemma-formalization/5_theorem1.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-6-stepcong-lemma-bel",
+                "label": "6_stepcong_lemma.bel",
+                "path": "case-studies/harmony-lemma-formalization/6_stepcong_lemma.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-7-reduction-rewriting-bel",
+                "label": "7_reduction_rewriting.bel",
+                "path": "case-studies/harmony-lemma-formalization/7_reduction_rewriting.bel",
+                "ext": "bel"
+              },
+              {
+                "type": "file",
+                "id": "case-studies-harmony-lemma-formalization-8-theorem2-bel",
+                "label": "8_theorem2.bel",
+                "path": "case-studies/harmony-lemma-formalization/8_theorem2.bel",
+                "ext": "bel"
+              }
+            ],
+            "description": "Harmony Lemma for π-calculus (Cecilia & Momigliano, LFMTP 2024): labeled transitions versus structural reduction."
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -93,16 +93,55 @@ export const BUILTIN_TOOLTIPS = new Map([
   ['+',    { label: 'SCHEMA ALTERNATION',   desc: 'Alternative schema elements (`block … + block …`).' }],
 
   // ── Pragma tokens ──────────────────────────────────────────────────────────
-  ['--name',         { label: 'NAME PRAGMA',         desc: 'Sets the preferred name for variables generated for a constant’s type.' }],
-  ['--infix',        { label: 'INFIX PRAGMA',        desc: 'Makes a two-argument constant infix, with associativity and precedence.' }],
-  ['--prefix',       { label: 'PREFIX PRAGMA',       desc: 'Makes a constant prefix, with an optional precedence.' }],
-  ['--assoc',        { label: 'ASSOC PRAGMA',        desc: 'Sets the default operator associativity for following declarations.' }],
-  ['--abbrev',       { label: 'ABBREV PRAGMA',       desc: 'Abbreviates a module’s qualified name.' }],
-  ['--not',          { label: 'NOT PRAGMA',          desc: 'Guards the following declaration from type-checking.' }],
-  ['--open',         { label: 'OPEN PRAGMA',         desc: 'Opens a module so its names are available unqualified.' }],
-  ['--query',        { label: 'QUERY PRAGMA',        desc: 'Runs a logic-programming query against the LF signature.' }],
-  ['--opaque',       { label: 'OPAQUE PRAGMA',       desc: 'Keeps a function’s definition from being unfolded during coverage checking.' }],
-  ['--coverage',     { label: 'COVERAGE PRAGMA',     desc: 'Enables coverage (exhaustiveness) checking.' }],
-  ['--warncoverage', { label: 'WARNCOVERAGE PRAGMA', desc: 'Reports missing cases as warnings instead of errors.' }],
-  ['--nostrengthen', { label: 'NOSTRENGTHEN PRAGMA', desc: 'Disables automatic meta-variable strengthening.' }],
+  ['--name',         { label: 'PRAGMA', desc: 'Sets the preferred name for variables generated for a constant’s type.' }],
+  ['--infix',        { label: 'PRAGMA', desc: 'Makes a two-argument constant infix, with associativity and precedence.' }],
+  ['--prefix',       { label: 'PRAGMA', desc: 'Makes a constant prefix, with an optional precedence.' }],
+  ['--assoc',        { label: 'PRAGMA', desc: 'Sets the default operator associativity for following declarations.' }],
+  ['--abbrev',       { label: 'PRAGMA', desc: 'Abbreviates a module’s qualified name.' }],
+  ['--not',          { label: 'PRAGMA', desc: 'Guards the following declaration from type-checking.' }],
+  ['--open',         { label: 'PRAGMA', desc: 'Opens a module so its names are available unqualified.' }],
+  ['--query',        { label: 'PRAGMA', desc: 'Runs a logic-programming query against the LF signature.' }],
+  ['--opaque',       { label: 'PRAGMA', desc: 'Keeps a function’s definition from being unfolded during coverage checking.' }],
+  ['--coverage',     { label: 'PRAGMA', desc: 'Enables coverage (exhaustiveness) checking.' }],
+  ['--warncoverage', { label: 'PRAGMA', desc: 'Reports missing cases as warnings instead of errors.' }],
+  ['--nostrengthen', { label: 'PRAGMA', desc: 'Disables automatic meta-variable strengthening.' }],
 ]);
+
+// Longest builtin token text in the map — used to bound the slice we take when
+// matching a node by its literal text (keeps us from slicing a huge rule span).
+const MAX_TOKEN_LEN = 14;
+
+// Resolve the built-in role tooltip for the token at `pos`, or null. Matches the
+// Lezer node name FIRST (when resolveInner lands on the wrapping rule, e.g.
+// `CaseKeyword`, `ArrowOp`), then the literal token text (when it lands on the
+// leaf, e.g. `->`, `--infix`). Tries both lex biases and walks a few parents so
+// the cursor sitting just before/after the glyph still resolves. The map only
+// holds specific token/operator node names, so walking up can't false-match a
+// big enclosing rule. Returns `{ label, desc, token }` or null.
+export function builtinTooltipAt(tree, doc, pos) {
+  if (!tree || !doc) return null;
+  const seen = new Set();
+  for (const bias of [-1, 1]) {
+    let node = tree.resolveInner(pos, bias);
+    for (let depth = 0; node && depth < 3; depth += 1, node = node.parent) {
+      const key = node.name + '@' + node.from + ':' + node.to;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const byName = BUILTIN_TOOLTIPS.get(node.name);
+      if (byName) return { ...byName, token: tokenText(doc, node) };
+      const span = node.to - node.from;
+      if (span > 0 && span <= MAX_TOKEN_LEN) {
+        const text = doc.sliceString(node.from, node.to);
+        const byText = BUILTIN_TOOLTIPS.get(text);
+        if (byText) return { ...byText, token: text };
+      }
+    }
+  }
+  return null;
+}
+
+function tokenText(doc, node) {
+  const span = node.to - node.from;
+  if (span <= 0 || span > MAX_TOKEN_LEN) return node.name;
+  return doc.sliceString(node.from, node.to);
+}

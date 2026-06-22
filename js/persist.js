@@ -19,7 +19,7 @@
   var ACTIVE_CFG_BY_DIR_KEY = 'beljar-active-cfg-by-dir';
   var ACTIVE_FILE_KEY = 'beljar-active-file';
   var OPEN_FILES_KEY = 'beljar-open-files';
-  var DEFAULT_PROJECT_NAME = 'Untitled';
+  var DEFAULT_PROJECT_NAME = 'Untitled Project';
   // Projects are the top container: files live in folders live in a project,
   // and every project is saved in main storage. Only the ACTIVE project is
   // loaded into the editor/engine (hot memory); the rest sit dormant in
@@ -45,18 +45,28 @@
   var EXPLORER_OPEN_KEY = 'beljar-explorer-open';
   var LOAD_STATS_KEY = 'beljar.loadStats';
   var INSPECTOR_OPEN_KEY = 'beljar-inspector-open';
+  var INSPECTOR_FOLLOW_KEY = 'beljar-inspector-follow';
+  var LIBRARY_OPEN_KEY = 'beljar-library-open';
+  var LIBRARY_WIDTH_KEY = 'beljar-library-w';
+  var LIBRARY_HEIGHT_KEY = 'beljar-library-h';
   var DEFAULT_EXPLORER_WIDTH = 224;
   var DEFAULT_INSPECTOR_WIDTH = 256;
+  var DEFAULT_LIBRARY_WIDTH = 256;
   var MIN_EXPLORER_WIDTH = 160;
   var MAX_EXPLORER_WIDTH = 512;
   var MIN_INSPECTOR_WIDTH = 160;
   var MAX_INSPECTOR_WIDTH = 512;
+  var MIN_LIBRARY_WIDTH = 160;
+  var MAX_LIBRARY_WIDTH = 512;
   var DEFAULT_EXPLORER_HEIGHT = 160;
   var DEFAULT_INSPECTOR_HEIGHT = 192;
+  var DEFAULT_LIBRARY_HEIGHT = 192;
   var MIN_EXPLORER_HEIGHT = 96;
   var MAX_EXPLORER_HEIGHT = 320;
   var MIN_INSPECTOR_HEIGHT = 96;
   var MAX_INSPECTOR_HEIGHT = 384;
+  var MIN_LIBRARY_HEIGHT = 96;
+  var MAX_LIBRARY_HEIGHT = 384;
 
   var textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
 
@@ -759,6 +769,72 @@
     else backendRemove(INSPECTOR_OPEN_KEY);
   }
 
+  function readStoredInspectorFollow() {
+    try {
+      return global.sessionStorage.getItem(INSPECTOR_FOLLOW_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeStoredInspectorFollow(on) {
+    try {
+      if (on) global.sessionStorage.setItem(INSPECTOR_FOLLOW_KEY, '1');
+      else global.sessionStorage.removeItem(INSPECTOR_FOLLOW_KEY);
+    } catch (_) {}
+  }
+
+  function readStoredLibraryOpen() {
+    try {
+      return backendLoad(LIBRARY_OPEN_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeStoredLibraryOpen(open) {
+    if (open) backendSave(LIBRARY_OPEN_KEY, '1');
+    else backendRemove(LIBRARY_OPEN_KEY);
+  }
+
+  function readStoredLibraryWidth() {
+    try {
+      return clampPanelPx(
+        parseFloat(backendLoad(LIBRARY_WIDTH_KEY)),
+        MIN_LIBRARY_WIDTH,
+        MAX_LIBRARY_WIDTH,
+        DEFAULT_LIBRARY_WIDTH
+      );
+    } catch (_) {
+      return DEFAULT_LIBRARY_WIDTH;
+    }
+  }
+
+  function writeStoredLibraryWidth(px) {
+    var clamped = clampPanelPx(px, MIN_LIBRARY_WIDTH, MAX_LIBRARY_WIDTH, DEFAULT_LIBRARY_WIDTH);
+    if (clamped === DEFAULT_LIBRARY_WIDTH) backendRemove(LIBRARY_WIDTH_KEY);
+    else backendSave(LIBRARY_WIDTH_KEY, String(clamped));
+  }
+
+  function readStoredLibraryHeight() {
+    try {
+      return clampPanelPx(
+        parseFloat(backendLoad(LIBRARY_HEIGHT_KEY)),
+        MIN_LIBRARY_HEIGHT,
+        MAX_LIBRARY_HEIGHT,
+        DEFAULT_LIBRARY_HEIGHT
+      );
+    } catch (_) {
+      return DEFAULT_LIBRARY_HEIGHT;
+    }
+  }
+
+  function writeStoredLibraryHeight(px) {
+    var clamped = clampPanelPx(px, MIN_LIBRARY_HEIGHT, MAX_LIBRARY_HEIGHT, DEFAULT_LIBRARY_HEIGHT);
+    if (clamped === DEFAULT_LIBRARY_HEIGHT) backendRemove(LIBRARY_HEIGHT_KEY);
+    else backendSave(LIBRARY_HEIGHT_KEY, String(clamped));
+  }
+
   function normalizeGraphPrefs(raw) {
     if (!raw || typeof raw !== 'object') {
       return {
@@ -986,6 +1062,23 @@
     writeEmptyFolders(next);
   }
 
+  function clearEmptyFolders() {
+    writeEmptyFolders([]);
+  }
+
+  function pruneEmptyFoldersUnder(prefix) {
+    var p = String(prefix || '').trim();
+    if (!p) {
+      clearEmptyFolders();
+      return;
+    }
+    var list = readEmptyFolders();
+    var kept = list.filter(function (x) {
+      return x !== p && x.indexOf(p + '/') !== 0;
+    });
+    if (kept.length !== list.length) writeEmptyFolders(kept);
+  }
+
   function renameEmptyFolderPrefix(from, to) {
     var list = readEmptyFolders();
     var changed = false;
@@ -1114,8 +1207,8 @@
 
   function ensureProject() {
     var files = readProjectFiles();
-    if (files && files.length) return files;
-    // First run: create a default file entry from whatever is already stored.
+    if (files !== null) return files;
+    // First run only — an explicit empty registry ([]) is kept empty.
     var defaultFile = { id: DEFAULT_DOCUMENT_ID, name: 'main.bel' };
     files = [defaultFile];
     writeProjectFiles(files);
@@ -1128,12 +1221,11 @@
   }
 
   function getActiveFileId() {
-    ensureProject();
+    var files = listFiles();
+    if (!files.length) return null;
     var id = backendLoad(projKey('active-file'));
-    if (!id) return DEFAULT_DOCUMENT_ID;
-    var files = readProjectFiles() || [];
-    if (files.some(function (f) { return f.id === id; })) return id;
-    return files.length ? files[0].id : DEFAULT_DOCUMENT_ID;
+    if (id && files.some(function (f) { return f.id === id; })) return id;
+    return files[0].id;
   }
 
   function setActiveFileId(id) {
@@ -1237,11 +1329,16 @@
       if (!isEntry) { out.push(line); continue; }
       var resolved = cfgDir ? cfgDir + '/' + t : t;
       if (resolved !== oldName) { out.push(line); continue; }
-      changed = true;
-      if (newName == null) continue; // delete: drop the line
+      if (newName == null) { changed = true; continue; } // delete / explicit remove: drop the line
       var rel = relToCfgDir(cfgDir, newName);
-      if (rel == null || rel === '') continue; // moved out of this cfg's scope
-      out.push(line.slice(0, line.indexOf(t)) + rel);
+      // Moved OUT of this cfg's directory → leave the (now-dangling) entry for the
+      // cfg lint to surface. The user owns cross-dir moves; we never silently
+      // rewrite the cfg for them. (This also keeps a whole-folder move — cfg and
+      // members relocating together — from being corrupted: the relative entry
+      // still resolves against the moved cfg's new directory.)
+      if (rel == null || rel === '') { out.push(line); continue; }
+      changed = true;
+      out.push(line.slice(0, line.indexOf(t)) + rel); // renamed in place → rewrite the entry
     }
     return changed ? out.join('\n') : null;
   }
@@ -1260,21 +1357,40 @@
     }
     files.splice(idx, 1);
     writeProjectFiles(files);
-    // A cfg that still lists the deleted file is left untouched — the dangling
-    // entry is surfaced by the cfg lint, not silently removed for the user.
+    // Deleting a file drops its entry from any same-directory .cfg that lists it
+    // (a within-suite op the user expects reflected). Runs after the splice so a
+    // deleted .cfg is never asked to rewrite itself.
+    rewriteCfgsForOp(deletedName, null);
     closeOpenFile(id);
     // Delete the stored state.
     defaultBackend.removeSync(stateKeyFor(id));
     preserveEmptyFoldersAfterPath(deletedName);
+    if (!files.length) {
+      backendRemove(projKey('active-file'));
+      writeOpenFileIds([]);
+    }
     // Return the id of the file to switch to (previous, next, or null).
     return files.length ? files[Math.max(0, idx - 1)].id : null;
   }
 
-  // Renaming/moving a file deliberately does NOT touch any .cfg body — the cfg
-  // is the user's source of truth, not ours to silently rewrite. A now-dangling
-  // entry is surfaced by the cfg lint instead, and "Add/Remove from suite" lets
-  // the user re-point it explicitly. (Only the active-cfg pointer, which stores
-  // a cfg's own path, follows the cfg's own rename.)
+  // Apply a within-suite-dir file op to every .cfg that lists `oldName`: an
+  // in-place rename rewrites the entry; a delete (newName == null) removes it; a
+  // move OUT of the cfg's directory leaves the dangling entry for the cfg lint
+  // (see rewriteCfgBody — the user owns cross-dir moves).
+  function rewriteCfgsForOp(oldName, newName) {
+    var files = ensureProject();
+    for (var i = 0; i < files.length; i++) {
+      var fn = files[i].name;
+      if (!/\.cfg$/i.test(fn)) continue;
+      var updated = rewriteCfgBody(getFileText(files[i].id), dirOf(fn), oldName, newName);
+      if (updated != null) setFileText(files[i].id, updated);
+    }
+  }
+
+  // A file op WITHIN a suite's directory keeps its .cfg in sync — an in-place
+  // rename rewrites the entry, a delete removes it — but a move to a DIFFERENT
+  // directory never touches the cfg (the dangling entry is surfaced by the cfg
+  // lint instead; the user owns cross-dir moves).
   function renameFile(id, newName) {
     var files = ensureProject();
     for (var i = 0; i < files.length; i++) {
@@ -1282,6 +1398,7 @@
         var oldName = files[i].name;
         files[i].name = newName;
         writeProjectFiles(files);
+        rewriteCfgsForOp(oldName, newName);
         var map = readActiveCfgByDir();
         var changed = false;
         for (var k in map) {
@@ -1329,6 +1446,38 @@
     return true;
   }
 
+  // Prepend `fileName` to a suite's .cfg (first load-order slot).
+  function prependEntryToCfg(cfgPath, fileName) {
+    var cfg = cfgFileByPath(cfgPath);
+    if (!cfg) return false;
+    var dir = dirOf(cfgPath);
+    var rel = relToCfgDir(dir, fileName);
+    if (rel == null || rel === '') return false;
+    var text = String(getFileText(cfg.id) || '');
+    if (cfgListsEntry(text, dir, fileName)) return false;
+    var lines = text.split('\n');
+    var firstEntry = -1;
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      var low = t.toLowerCase();
+      if (t && t.charAt(0) !== '%'
+        && (low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg'))) {
+        firstEntry = i;
+        break;
+      }
+    }
+    if (firstEntry === -1) {
+      var body = text.replace(/\s*$/, '');
+      setFileText(cfg.id, (body ? body + '\n' : '') + rel + '\n');
+      return true;
+    }
+    var before = lines.slice(0, firstEntry).join('\n');
+    var after = lines.slice(firstEntry).join('\n');
+    var prefix = before.length ? before + '\n' : '';
+    setFileText(cfg.id, prefix + rel + '\n' + after);
+    return true;
+  }
+
   // Drop `fileName` from a suite's .cfg (preserving comments/order). Returns
   // false when the entry was not present.
   function removeEntryFromCfg(cfgPath, fileName) {
@@ -1371,7 +1520,7 @@
   }
 
   function getFileById(id) {
-    var files = ensureProject();
+    var files = listFiles();
     for (var i = 0; i < files.length; i++) {
       if (files[i].id === id) return files[i];
     }
@@ -1388,7 +1537,8 @@
   }
 
   function getOpenFileIds() {
-    var files = ensureProject();
+    var files = listFiles();
+    if (!files.length) return [];
     var valid = {};
     for (var i = 0; i < files.length; i++) valid[files[i].id] = true;
     var raw = tryParse(backendLoad(projKey('open-files')));
@@ -1616,6 +1766,14 @@
     setExplorerFold: setExplorerFold,
     readStoredInspectorOpen: readStoredInspectorOpen,
     writeStoredInspectorOpen: writeStoredInspectorOpen,
+    readStoredInspectorFollow: readStoredInspectorFollow,
+    writeStoredInspectorFollow: writeStoredInspectorFollow,
+    readStoredLibraryOpen: readStoredLibraryOpen,
+    writeStoredLibraryOpen: writeStoredLibraryOpen,
+    readStoredLibraryWidth: readStoredLibraryWidth,
+    writeStoredLibraryWidth: writeStoredLibraryWidth,
+    readStoredLibraryHeight: readStoredLibraryHeight,
+    writeStoredLibraryHeight: writeStoredLibraryHeight,
     readStoredGraphPrefs: readStoredGraphPrefs,
     writeStoredGraphPrefs: writeStoredGraphPrefs,
     normalizeGraphPrefs: normalizeGraphPrefs,
@@ -1650,12 +1808,15 @@
     deleteFile: deleteFile,
     renameFile: renameFile,
     addEntryToCfg: addEntryToCfg,
+    prependEntryToCfg: prependEntryToCfg,
     removeEntryFromCfg: removeEntryFromCfg,
     moveEntryInCfg: moveEntryInCfg,
     getFileById: getFileById,
     listEmptyFolders: listEmptyFolders,
     addEmptyFolder: addEmptyFolder,
     removeEmptyFolder: removeEmptyFolder,
+    clearEmptyFolders: clearEmptyFolders,
+    pruneEmptyFoldersUnder: pruneEmptyFoldersUnder,
     renameEmptyFolderPrefix: renameEmptyFolderPrefix,
     preserveEmptyFoldersAfterMoves: preserveEmptyFoldersAfterMoves,
     moveFile: moveFile,

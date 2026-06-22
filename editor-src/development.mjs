@@ -214,7 +214,30 @@ function standaloneResult(active) {
 export function developmentForFile(files, activeId, getText, options = {}) {
   const activeCfgForDir = resolveActiveCfgForDir(options);
   const active = files.find((f) => f.id === activeId);
-  if (!active || !/\.(?:bel|elf)$/i.test(String(active.name))) {
+  if (!active) {
+    return {
+      kind: 'standalone',
+      cfg: null,
+      paths: [],
+      activeIndex: -1,
+      preludePaths: [],
+      scopeKey: 'standalone:',
+    };
+  }
+
+  if (/\.cfg$/i.test(String(active.name))) {
+    const paths = resolveActiveChain(files, active.name, getText);
+    return {
+      kind: 'module',
+      cfg: active.name,
+      paths,
+      activeIndex: -1,
+      preludePaths: [],
+      scopeKey: `module:${active.name}`,
+    };
+  }
+
+  if (!/\.(?:bel|elf)$/i.test(String(active.name))) {
     return {
       kind: 'standalone',
       cfg: null,

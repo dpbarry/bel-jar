@@ -51,6 +51,13 @@ export default [
         BelJarToasts: 'readonly',
         BelJarNotifications: 'readonly',
         BelJarExplorer: 'readonly',
+        BelJarExplorerInlineName: 'readonly',
+        BelJarExplorerSearch: 'readonly',
+        BelJarHeaderSearch: 'readonly',
+        BelJarLibrary: 'readonly',
+        BelJarLibrarySearch: 'readonly',
+        BelJarLibrarySuites: 'readonly',
+        BelJarNamePrompt: 'readonly',
       },
     },
     rules: {

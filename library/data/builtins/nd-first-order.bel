@@ -1,0 +1,36 @@
+LF i : type = ;
+
+LF o : type =
+  | ⊃ : o → o → o
+  | ⊤ : o
+  | ∧ : o → o → o
+  | ∨ : o → o → o
+  | ¬ : o → o
+  | ∀ : (i → o) → o
+  | ∃ : (i → o) → o
+;
+
+--prefix ¬ 10.
+--infix ∧ 5 right.
+--infix ∨ 4 right.
+--infix ⊃ 3 right.
+--prefix ∀ 8.
+--prefix ∃ 8.
+
+LF nd : o → type =
+  | ⊃I : (nd A → nd B) → nd (A ⊃ B)
+  | ⊃E : nd (A ⊃ B) → nd A → nd B
+  | ¬I : ({p:o} nd A → nd p) → nd (¬ A)
+  | ¬E : nd (¬ A) → nd A → nd C
+  | ∧I : nd A → nd B → nd (A ∧ B)
+  | ∧El : nd (A ∧ B) → nd A
+  | ∧Er : nd (A ∧ B) → nd B
+  | ∨Il : nd A → nd (A ∨ B)
+  | ∨Ir : nd B → nd (A ∨ B)
+  | ∨E : nd (A ∨ B) → (nd A → nd C) → (nd B → nd C) → nd C
+  | ⊤I : nd ⊤
+  | ∀I : ({a:i} nd (A a)) → nd (∀ (\x. A x))
+  | ∀E : {T:i} nd (∀ A) → nd (A T)
+  | ∃I : {T:i} nd (A T) → nd (∃ A)
+  | ∃E : nd (∃ (\x. A x)) → ({a:i} nd (A a) → nd C) → nd C
+;

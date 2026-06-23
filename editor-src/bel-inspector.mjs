@@ -1028,13 +1028,19 @@ export function renderInspector(bodyEl, model, view, engine, opts = {}) {
   scrollInner.appendChild(groupSection('Used by', 'used-by', model.usedBy, g, engine,
     'Nothing depends on this.', jumpOpts, model.groupNodes));
 
-  // Impact — transitive signature-change cascade.
+  // Impact — the full blast radius: the transitive type-cascade first, then
+  // terminal implementation uses (tagged, non-cascading). See group-graph.impactOf.
   const { sec: impactSec, body: impactBody, title: impactTitle } = section('Impact', model.impact.length, 'impact');
-  setTip(impactTitle, 'Declarations a change to this signature would cascade to');
+  setTip(impactTitle, 'Everything a change here would force you to revisit: the type-level cascade, plus implementations that use it (tagged “uses”)');
   if (model.impact.length) {
     for (const node of model.impact) {
       const { range, rowFile } = depRowTarget(engine, model.groupNodes, node.id, g);
-      impactBody.appendChild(jumpRowSymbol(g, node.name, range, jumpOpts, rowFile));
+      const row = jumpRowSymbol(g, node.name, range, jumpOpts, rowFile);
+      const isUses = node.kind === 'uses';
+      // Tier shown by text colour: signature cascade = blue, implementation use = grey.
+      row.classList.add(isUses ? 'inspector-impact-uses' : 'inspector-impact-sig');
+      setTip(row, isUses ? 'uses' : 'signature');
+      impactBody.appendChild(row);
     }
   } else {
     impactBody.appendChild(emptyNote('No downstream impact.'));

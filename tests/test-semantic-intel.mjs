@@ -69,12 +69,15 @@ const impIDeps = e.dependenciesOf(sym('⊃I').id).map((d) => d.name);
 expect(impIDeps.includes('nd'), '⊃I depends on nd');
 expect(impIDeps.includes('⊃'), '⊃I depends on ⊃');
 
-const oImpact = e.impactOf(sym('o').id).map((d) => d.name).sort();
+const oImpactRaw = e.impactOf(sym('o').id);
+expect(oImpactRaw.every((d) => d.kind === 'cascade' || d.kind === 'uses'),
+  'engine impact entries are tagged cascade|uses (two-tier blast radius)');
+const oImpact = oImpactRaw.map((d) => d.name).sort();
 expect(oImpact.includes('nd'), `changing o should impact nd transitively, got ${oImpact}`);
 expect(oImpact.includes('⊃') || oImpact.includes('⊤'), 'o impacts its own constructors');
 const oDirect = e.dependentsOf(sym('o').id).map((d) => d.name);
 expect(oDirect.every((n) => oImpact.includes(n)),
-  'direct dependents of o are within its transitive impact set');
+  'direct dependents of o are within its impact set');
 
 const ndRange = e.symbolRangeById(sym('nd').id);
 expect(ndRange && ndRange.from === sym('nd').nameRange.from,

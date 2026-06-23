@@ -411,28 +411,10 @@ export function createGraph3D(canvas, sim, opts = {}) {
       el.className = 'bel-graph3d-label';
       el.type = 'button';
       el.textContent = nodes[idx].name || '?';
-      let labelDown = null;
-      el.addEventListener('pointerdown', (ev) => {
-        if (ev.button !== 0) return;
-        ev.stopPropagation();
-        labelDown = { sx: ev.clientX, sy: ev.clientY };
-        try { el.setPointerCapture(ev.pointerId); } catch (_) { /* ignore */ }
-      });
-      el.addEventListener('pointerup', (ev) => {
-        if (ev.button !== 0) return;
-        ev.stopPropagation();
-        try { el.releasePointerCapture(ev.pointerId); } catch (_) { /* ignore */ }
-        const down = labelDown;
-        labelDown = null;
-        if (!down) return;
-        if (Math.abs(ev.clientX - down.sx) + Math.abs(ev.clientY - down.sy) > 4) return;
-        const now = Date.now();
-        if (idx === lastClickIdx && now - lastClickT < 350) onJump(nodes[idx], idx);
-        else handleNodeActivate(idx, ev.shiftKey);
-        lastClickIdx = idx;
-        lastClickT = now;
-        arm();
-      });
+      el.dataset.idx = String(idx);
+      // A label does NOT handle its own pointer gestures: capturing here would
+      // swallow a drag begun on the label. The stage-level handler owns drag-vs-
+      // click for the whole surface and reads dataset.idx to resolve a label click.
       labelLayer.appendChild(el);
       labelEls.set(idx, el);
     }
@@ -707,13 +689,19 @@ export function createGraph3D(canvas, sim, opts = {}) {
 
   function onPointerDown(ev) {
     if (disposed) return;
+    // The toolbar + its search field share the stage — let them behave normally
+    // rather than starting an orbit. Everything else (canvas AND labels) drags.
+    if (ev.target?.closest?.('.bel-graph3d-toolbar')) return;
     cancelFly();
+    const labelEl = ev.target?.closest?.('.bel-graph3d-label');
+    const li = labelEl ? Number(labelEl.dataset.idx) : -1;
     drag = {
       x: ev.clientX, y: ev.clientY,        // last frame (for incremental rotation)
       sx: ev.clientX, sy: ev.clientY,      // start (for total-displacement test)
       moved: false, id: ev.pointerId, pan: ev.shiftKey,
+      labelIdx: Number.isInteger(li) ? li : -1, // node a press LANDED on, if any
     };
-    canvas.setPointerCapture(ev.pointerId);
+    surface.setPointerCapture(ev.pointerId);
     arm();
   }
   function onPointerMove(ev) {
@@ -742,10 +730,13 @@ export function createGraph3D(canvas, sim, opts = {}) {
   function onPointerUp(ev) {
     if (disposed) return;
     const wasDrag = drag && drag.moved;
+    const downLabelIdx = drag ? drag.labelIdx : -1;
     drag = null;
     if (wasDrag) return;
-    // a click (no drag): focus, or jump on quick double.
-    const idx = pick(ev.clientX, ev.clientY);
+    // A click (no drag past the 4px leeway): a press that LANDED on a label resolves
+    // to that label's node directly — labels sit OFFSET from their sphere, so a
+    // ray-pick would miss. Otherwise ray-pick the spheres. Focus, or jump on double.
+    const idx = downLabelIdx >= 0 ? downLabelIdx : pick(ev.clientX, ev.clientY);
     const now = Date.now();
     if (idx >= 0 && idx === lastClickIdx && now - lastClickT < 350) {
       onJump(nodes[idx], idx);
@@ -780,9 +771,9 @@ export function createGraph3D(canvas, sim, opts = {}) {
   // toolbar), so gestures over a label are captured too — not just empty space.
   const surface = canvas.parentElement || canvas;
 
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
+  surface.addEventListener('pointerdown', onPointerDown);
+  surface.addEventListener('pointermove', onPointerMove);
+  surface.addEventListener('pointerup', onPointerUp);
   surface.addEventListener('wheel', onWheel, { passive: false });
 
   // Touch pinch-to-zoom (mobile): track two-finger distance over the surface.
@@ -988,9 +979,9 @@ export function createGraph3D(canvas, sim, opts = {}) {
     flyTween = null;
     themeObs?.disconnect();
     themeObs = null;
-    canvas.removeEventListener('pointerdown', onPointerDown);
-    canvas.removeEventListener('pointermove', onPointerMove);
-    canvas.removeEventListener('pointerup', onPointerUp);
+    surface.removeEventListener('pointerdown', onPointerDown);
+    surface.removeEventListener('pointermove', onPointerMove);
+    surface.removeEventListener('pointerup', onPointerUp);
     surface.removeEventListener('wheel', onWheel);
     surface.removeEventListener('touchstart', onTouchStart);
     surface.removeEventListener('touchmove', onTouchMove);

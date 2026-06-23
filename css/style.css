@@ -2598,7 +2598,7 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
   pointer-events: auto;
 }
 
-.library-category-item.is-menu-open .library-category-insert,
+.library-c\ategory-item.is-menu-open .library-category-insert,
 .library-category-item.is-menu-open .library-category-preview {
   opacity: 1;
   pointer-events: auto;
@@ -3191,6 +3191,17 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
   color: var(--muted-high);
   opacity: 0.7;
   white-space: nowrap;
+}
+
+/* Impact tier shown by the row's text colour: a signature cascade (this symbol's
+   type restructures it) is blue; a terminal implementation use (body-user, type
+   unaffected) is grey. The hover names the tier. */
+.inspector-impact-sig .inspector-row-label {
+  /* Softened toward the muted tone so it reads blue without dominating the panel. */
+  color: color-mix(in srgb, var(--accent-mid) 62%, var(--muted-high));
+}
+.inspector-impact-uses .inspector-row-label {
+  color: var(--muted-high);
 }
 
 /* -- Global overview: diagnostics — full-message boxes, nude list -- */

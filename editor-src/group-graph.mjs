@@ -144,22 +144,37 @@ function makeGraph(nodes, edges, extra = {}) {
   };
   const dependenciesOf = (id) => edges.filter((e) => e.from === id).map((e) => ({ ...named(e.to), kind: e.kind }));
   const dependentsOf = (id) => edges.filter((e) => e.to === id).map((e) => ({ ...named(e.from), kind: e.kind }));
-  // Impact = transitive dependents along INTERFACE (signature / notation) edges,
-  // matching the single-file engine's signature-change cascade.
+  // Impact = the full blast radius of changing this declaration (mirrors the
+  // single-file engine's semantic-graph.impactOf), in two tiers:
+  //  • 'cascade' — transitive over INTERFACE (signature / notation) edges: changing
+  //    this signature restructures each of these types in turn.
+  //  • 'uses'    — a decl that calls this (or a cascaded decl) in its BODY: its
+  //    proof needs re-checking, but its OWN type is unchanged, so it is a LEAF —
+  //    never propagated further. Cascade membership wins over a 'uses' tag.
   const impactOf = (id) => {
-    const into = new Set();
+    const cascadeSet = new Set();
     const stack = [id];
     while (stack.length) {
       const cur = stack.pop();
       for (const e of edges) {
         if (e.to !== cur) continue;
         if (e.kind !== EDGE_KIND.SIGNATURE && e.kind !== EDGE_KIND.NOTATION) continue;
-        if (e.from === id || into.has(e.from)) continue;
-        into.add(e.from);
+        if (e.from === id || cascadeSet.has(e.from)) continue;
+        cascadeSet.add(e.from);
         stack.push(e.from);
       }
     }
-    return [...into].map(named);
+    const usesSet = new Set();
+    for (const e of edges) {
+      if (e.kind !== EDGE_KIND.BODY) continue;
+      if (e.to !== id && !cascadeSet.has(e.to)) continue;
+      if (e.from === id || cascadeSet.has(e.from)) continue;
+      usesSet.add(e.from);
+    }
+    return [
+      ...[...cascadeSet].map((nid) => ({ ...named(nid), kind: 'cascade' })),
+      ...[...usesSet].map((nid) => ({ ...named(nid), kind: 'uses' })),
+    ];
   };
   // The node best matching a name as visible to the active file (for the
   // inspector, which knows the symbol by name + active scope).

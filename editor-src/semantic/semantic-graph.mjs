@@ -205,11 +205,28 @@ export function createSemanticGraph() {
       .map((edge) => ({ ...named(edge.from), kind: edge.kind }));
   }
 
+  // Impact = the full blast radius of changing this declaration, in two tiers:
+  //  • 'cascade' — transitive over INTERFACE (signature/notation) edges: changing
+  //    this signature restructures each of these types in turn (recursively).
+  //  • 'uses'    — a decl that calls this (or a cascaded decl) in its BODY: its
+  //    proof/implementation needs re-checking, but its OWN type is unchanged, so it
+  //    is a LEAF — never propagated further (a body-user's dependents are NOT hit).
+  // Cascade membership wins over a 'uses' tag.
   function impactOf(symbolId) {
     if (!snapshot) return [];
-    const into = new Set();
-    cascade([symbolId], buildInterfaceReverseDeps(snapshot.edgeMap), into);
-    return [...into].map(named);
+    const cascadeSet = new Set();
+    cascade([symbolId], buildInterfaceReverseDeps(snapshot.edgeMap), cascadeSet);
+    const usesSet = new Set();
+    for (const edge of snapshot.edges) {
+      if (edge.kind !== EDGE_KIND.BODY) continue;
+      if (edge.to !== symbolId && !cascadeSet.has(edge.to)) continue;
+      if (edge.from === symbolId || cascadeSet.has(edge.from)) continue;
+      usesSet.add(edge.from);
+    }
+    return [
+      ...[...cascadeSet].map((id) => ({ ...named(id), kind: 'cascade' })),
+      ...[...usesSet].map((id) => ({ ...named(id), kind: 'uses' })),
+    ];
   }
 
   // Subgraph (nodes + typed edges) overlapping a document range, or the whole

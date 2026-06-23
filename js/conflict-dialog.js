@@ -24,11 +24,19 @@
     return slash === -1 ? path : path.slice(slash + 1);
   }
 
-  function actionButton(label, action, variant) {
+  function actionButton(label, action, variant, opts) {
+    opts = opts || {};
     var btn = el('button', 'bj-conflict-dialog__btn' + (variant ? ' is-' + variant : ''));
     btn.type = 'button';
-    btn.textContent = label;
     btn.dataset.action = action;
+    if (opts.monoSuffix) {
+      btn.appendChild(el('span', 'bj-conflict-dialog__btn-prefix', 'Save as '));
+      var mono = el('span', 'bj-conflict-dialog__btn-mono');
+      mono.textContent = opts.monoSuffix;
+      btn.appendChild(mono);
+    } else {
+      btn.textContent = label;
+    }
     return btn;
   }
 
@@ -54,6 +62,7 @@
       'Save as ' + suggestedBase(conflict),
       'rename',
       'primary',
+      { monoSuffix: suggestedBase(conflict) },
     ));
     actions.appendChild(actionButton(
       conflict.kind === 'folder' ? 'Replace folder' : 'Replace',

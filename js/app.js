@@ -1405,10 +1405,11 @@ fileInputEl.addEventListener('change', async () => {
   }
 });
 
-function relPathFromPickerFile(file) {
+function relPathFromPickerFile(file, opts) {
   const rel = file.webkitRelativePath || file.name;
   const parts = rel.split('/');
-  return parts.length > 1 ? parts.slice(1).join('/') : rel;
+  if (opts && opts.stripRoot && parts.length > 1) return parts.slice(1).join('/');
+  return rel;
 }
 
 function projectEntriesFromRawEntries(rawEntries) {
@@ -1441,12 +1442,12 @@ function projectEntriesFromRawEntries(rawEntries) {
   return { projectEntries, belCount: belPaths.length, sigCount: sigPaths.length };
 }
 
-async function projectEntriesFromPickerFiles(all) {
+async function projectEntriesFromPickerFiles(all, opts) {
   const rawEntries = [];
   for (const file of all) {
     const low = file.name.toLowerCase();
     if (!low.endsWith('.bel') && !low.endsWith('.elf') && !low.endsWith('.cfg')) continue;
-    rawEntries.push({ name: relPathFromPickerFile(file), text: await file.text() });
+    rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
   }
   return projectEntriesFromRawEntries(rawEntries);
 }
@@ -1671,7 +1672,7 @@ async function resolveAndApplyMove(payload, dropTarget) {
 }
 
 // Hidden directory input for "Upload folder" — adds every .bel/.elf/.cfg in the
-// tree to the current project, keeping paths (minus the selected root).
+// tree to the current project, including the selected folder as a path prefix.
 const uploadFolderInputEl = document.createElement('input');
 uploadFolderInputEl.type = 'file';
 uploadFolderInputEl.webkitdirectory = true;
@@ -1705,8 +1706,8 @@ uploadFolderInputEl.addEventListener('change', async () => {
   }
 });
 
-// Hidden directory input for "Import folder as new project" — replaces the
-// project with every .bel/.elf/.cfg in the tree.
+// Hidden directory input for "Import folder as new project" — creates a project
+// named after the selected folder; file paths omit that outermost segment.
 const folderInputEl = document.createElement('input');
 folderInputEl.type = 'file';
 folderInputEl.webkitdirectory = true;
@@ -1717,7 +1718,7 @@ folderInputEl.addEventListener('change', async () => {
   const all = Array.from(folderInputEl.files || []);
   folderInputEl.value = '';
   if (typeof BelJarPersist === 'undefined' || !persist) return;
-  const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all);
+  const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all, { stripRoot: true });
   if (!belCount) {
     showToast('No .bel files in that folder.', { kind: 'warn' });
     return;

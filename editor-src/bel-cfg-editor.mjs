@@ -6,6 +6,7 @@ import { forEachDiagnostic } from '@codemirror/lint';
 import { dirOf, joinPath } from './development.mjs';
 import { resolveCfgDocumentPath } from './bel-cfg-lint.mjs';
 import { buildDiagnosticTip, buildTipHead, buildTipBody } from './bel-hover.mjs';
+import { armDefLink, clearDefLink, defLinkDecoration } from './bel-nav.mjs';
 
 function persist() {
   const g = typeof window !== 'undefined' ? window : globalThis;
@@ -82,6 +83,12 @@ function openCfgEntry(entry) {
 
 function modPressed(event) {
   return event.metaKey || event.ctrlKey;
+}
+
+function cfgJumpTargetAt(state, pos, cfgPath) {
+  const entry = cfgEntryAt(state, pos, cfgPath);
+  if (!entry || entry.index < 0 || !fileIdForPath(entry.fullPath)) return null;
+  return entry;
 }
 
 function entryLines(view) {
@@ -232,15 +239,39 @@ function cfgCompletion(documentId) {
 const cfgNavGestures = (documentId) => {
   const cfgPath = resolveCfgDocumentPath(documentId);
   return EditorView.domEventHandlers({
+    mousemove(event, view) {
+      if (!modPressed(event)) {
+        clearDefLink(view);
+        return false;
+      }
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      const entry = pos == null ? null : cfgJumpTargetAt(view.state, pos, cfgPath);
+      if (entry) armDefLink(view, entry.from, entry.to);
+      else clearDefLink(view);
+      return false;
+    },
+    mouseleave(event, view) {
+      clearDefLink(view);
+      return false;
+    },
     mousedown(event, view) {
       const inGutter = !!event.target?.closest?.('.cm-lineNumbers');
-      if (!inGutter && (event.button !== 0 || !modPressed(event))) return false;
-      if (inGutter && event.button !== 0) return false;
+      if (inGutter) {
+        if (event.button !== 0) return false;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos == null) return false;
+        const entry = cfgEntryAt(view.state, pos, cfgPath);
+        if (!entry || entry.index < 0) return false;
+        event.preventDefault();
+        return openCfgEntry(entry);
+      }
+      if (event.button !== 0 || !modPressed(event)) return false;
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos == null) return false;
-      const entry = cfgEntryAt(view.state, pos, cfgPath);
-      if (!entry || entry.index < 0) return false;
+      const entry = cfgJumpTargetAt(view.state, pos, cfgPath);
+      if (!entry) return false;
       event.preventDefault();
+      clearDefLink(view);
       return openCfgEntry(entry);
     },
   });
@@ -290,6 +321,7 @@ function cfgContextMenu(documentId) {
 
 export function cfgEditorExtensions(documentId) {
   return [
+    defLinkDecoration(),
     cfgHover(documentId),
     cfgCompletion(documentId),
     cfgNavGestures(documentId),

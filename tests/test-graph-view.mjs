@@ -52,7 +52,7 @@ expect(dirOf('⊃I') === -1, 'dependent points up (dir -1)');
 
 // Every node carries display metadata (so the renderer can tint/label).
 for (const n of model.nodes) {
-  expect('namespace' in n && 'status' in n, `node ${n.name} carries namespace+status`);
+  expect('namespace' in n, `node ${n.name} carries namespace`);
 }
 
 // Edges are unique and reference real nodes.

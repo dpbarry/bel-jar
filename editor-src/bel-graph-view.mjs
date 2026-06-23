@@ -17,24 +17,13 @@ import {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let markerSeq = 0;
 
-// The graph snapshot's 'dirty' is a transition log frozen at the last engine
-// update — decls that first appeared in the FINAL parse-milestone update stay
-// 'dirty' there forever on an idle file. The scheduler queue is the live truth:
-// only show churn while it actually has (re)elaboration work for the decl.
-function uiStatus(engine, id, status) {
-  if (status !== 'dirty') return status;
-  const sched = engine.scheduler;
-  if (sched && typeof sched.isPending === 'function' && !sched.isPending(id)) return 'stale-known';
-  return status;
-}
-
 function nodeMeta(engine, id, fallbackName) {
   const snap = engine.getSnapshot && engine.getSnapshot();
   const gnode = snap && snap.graph && snap.graph.nodeMap.get(id);
-  if (!gnode) return { id, name: fallbackName || null, namespace: null, label: null, status: 'unknown' };
+  if (!gnode) return { id, name: fallbackName || null, namespace: null, label: null };
   return {
     id, name: gnode.name, namespace: gnode.namespace, label: gnode.label,
-    status: uiStatus(engine, id, gnode.status), nameRange: gnode.nameRange, fileId: gnode.fileId,
+    nameRange: gnode.nameRange, fileId: gnode.fileId,
   };
 }
 
@@ -148,7 +137,7 @@ export function buildGlobalModel(engine) {
     root: null,
     nodes: (g.nodes || []).map((n) => ({
       id: n.id, name: n.name, namespace: n.namespace, label: n.label,
-      status: uiStatus(engine, n.id, n.status), role: 'node', depth: 0, dir: 0,
+      role: 'node', depth: 0, dir: 0,
     })),
     edges: (g.edges || []).map((e) => ({ from: e.from, to: e.to, kind: e.kind })),
   });
@@ -233,14 +222,6 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-function statusClass(status) {
-  if (status === 'syntax-fault' || status === 'erroring' || status === 'blocked') return 'error';
-  // NOT 'stale-known': that is the healthy steady state (type known from a safe
-  // earlier elaboration) — painting it as churn turns a settled graph amber.
-  if (status === 'dirty' || status === 'checking') return 'recalculating';
-  return 'settled';
-}
-
 const PAD = 16;
 
 export function renderGraph(container, layout, { onJump, interactive = true, fit = false } = {}) {
@@ -277,7 +258,7 @@ export function renderGraph(container, layout, { onJump, interactive = true, fit
 
   for (const n of layout.nodes) {
     const g = svgEl('g', {
-      class: `bel-graph-node is-${n.role} status-${statusClass(n.status)}`,
+      class: `bel-graph-node is-${n.role}`,
       transform: `translate(${n.x} ${n.y})`, tabindex: '0',
     });
     g.appendChild(svgEl('rect', { width: n.w, height: n.h, rx: '6' }));

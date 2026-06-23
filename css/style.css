@@ -4024,15 +4024,6 @@ body.floating-window-resizing {
   stroke-width: 2;
 }
 
-/* Status tints reuse the inspector dot palette (left stripe via a subtle fill). */
-.bel-graph-node.status-recalculating rect {
-  stroke: var(--ide-status-checking, hsl(42, 90%, 55%));
-}
-
-.bel-graph-node.status-error rect {
-  stroke: var(--ide-status-error, hsl(0, 65%, 55%));
-}
-
 @media (hover: hover) and (pointer: fine) {
   .bel-graph-node:hover rect {
     fill: var(--accent-lower);
@@ -4374,15 +4365,6 @@ body.floating-window-resizing {
   pointer-events: none;
   user-select: none;
   transition: fill var(--transition);
-}
-
-/* Status overrides the WHOLE chip colour (border + text + tint together via
-   --ns-col) — a mixed-hue chip (amber border, green label) reads as a glitch. */
-.bel-flat-node.status-recalculating {
-  --ns-col: var(--ide-status-checking, hsl(42, 90%, 55%));
-}
-.bel-flat-node.status-error {
-  --ns-col: var(--ide-status-error, hsl(0, 65%, 55%));
 }
 
 /* Root: accent-framed centre of the local view. */

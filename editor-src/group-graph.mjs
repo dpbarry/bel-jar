@@ -71,10 +71,6 @@ function makeNode(symbol, file, order) {
     nameRange: symbol.nameRange,
     fileId: file.id,
     fileName: file.name,
-    // No live check status across files — neutral steady state for the renderer.
-    // (A graph node carries no "active file" flag: the graph shows structure, not
-    // which tab is open. Membership/scope is the development, not the cursor.)
-    status: 'stale-known',
     order,
   };
 }

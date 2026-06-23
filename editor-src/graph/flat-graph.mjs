@@ -59,14 +59,6 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-function statusClass(status) {
-  if (status === 'syntax-fault' || status === 'erroring' || status === 'blocked') return 'error';
-  // NOT 'stale-known': that is the healthy steady state (type known from a safe
-  // earlier elaboration) — painting it as churn turns a settled graph amber.
-  if (status === 'dirty' || status === 'checking') return 'recalculating';
-  return 'settled';
-}
-
 // --- Sugiyama layout -------------------------------------------------------
 
 // Returns { layout, routes, width, height } where layout maps node index →
@@ -704,7 +696,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
     if (!p) return;
     const w = p.w;
     const g = svgEl('g', {
-      class: `bel-flat-node is-${nd.role || 'node'} status-${statusClass(nd.status)} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
+      class: `bel-flat-node is-${nd.role || 'node'} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
       transform: `translate(${p.x - w / 2} ${p.y})`,
       tabindex: '0',
     });
@@ -1067,7 +1059,7 @@ export function renderFlatMini(container, model, { onJump = () => {} } = {}) {
     const p = layout[i];
     if (!p) return;
     const g = svgEl('g', {
-      class: `bel-flat-node is-${nd.role || 'node'} status-${statusClass(nd.status)} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
+      class: `bel-flat-node is-${nd.role || 'node'} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
       transform: `translate(${p.x - p.w / 2} ${p.y})`,
       tabindex: '0',
     });

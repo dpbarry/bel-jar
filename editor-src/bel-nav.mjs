@@ -36,11 +36,21 @@ const linkField = StateField.define({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-function clearDefLink(view) {
+export function clearDefLink(view) {
   if (!view._belDefLinkActive) return;
   view._belDefLinkActive = false;
   view.dispatch({ effects: clearLinkEffect.of(null) });
   view.dom.classList.remove('cm-bel-deflink-armed');
+}
+
+export function armDefLink(view, from, to) {
+  view._belDefLinkActive = true;
+  view.dispatch({ effects: setLinkEffect.of({ from, to }) });
+  view.dom.classList.add('cm-bel-deflink-armed');
+}
+
+export function defLinkDecoration() {
+  return linkField;
 }
 
 const defLinkGestures = EditorView.domEventHandlers({
@@ -62,9 +72,7 @@ const defLinkGestures = EditorView.domEventHandlers({
       if (cross) hl = cross.sourceRange;
     }
     if (hl) {
-      view._belDefLinkActive = true;
-      view.dispatch({ effects: setLinkEffect.of({ from: hl.from, to: hl.to }) });
-      view.dom.classList.add('cm-bel-deflink-armed');
+      armDefLink(view, hl.from, hl.to);
     } else {
       clearDefLink(view);
     }

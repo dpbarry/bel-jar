@@ -1,3 +1,4 @@
+import { isSignaturePath } from './bel-paths.mjs';
 import { EditorState } from '@codemirror/state';
 import { indentRange, indentUnit } from '@codemirror/language';
 import { beluga } from './bel-language.mjs';
@@ -24,7 +25,7 @@ export function prepareEditorDoc(text, fileName) {
   if (hit !== undefined) return hit;
 
   let doc = maybeExpandBelAliases(sanitizeEditorText(raw));
-  if (fileName && /\.(bel|elf)$/i.test(fileName)) {
+  if (fileName && isSignaturePath(fileName)) {
     let state = EditorState.create({
       doc,
       extensions: [indentUnit.of(INDENT), beluga()],

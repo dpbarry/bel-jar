@@ -1,11 +1,16 @@
 (function (global) {
-  var SCHEMA_VERSION = 2;
+  var SCHEMA_VERSION = 3;
+  var LEGACY_CHECKPOINT_V2 = 2;
   var LEGACY_SCHEMA_VERSION = 1;
   var STATE_KEY = 'beljar-state-v2';
   var LEGACY_STATE_KEY = 'beljar-state-v1';
   var LEGACY_SEMANTIC_TYPES_KEY = 'beljar:semantic-types';
   var DEFAULT_DOCUMENT_ID = 'workspace://main.bel';
   var THEME_STORAGE_KEY = 'beljar-theme';
+  var UI_FONT_SIZE_KEY = 'beljar-ui-font-size';
+  var UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
+  var UI_TEXT_CONTRAST_KEY = 'beljar-ui-text-contrast';
+  var UI_TEXT_CONTRAST_MULTIPLIERS = { low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
   var BELUGA_MODE_STORAGE_KEY = 'beljar-beluga-mode';
   var EDITOR_SPLIT_STORAGE_KEY = global.BELJAR_SPLIT_KEY || 'beljar-editor-split';
   var GRAPH_PREFS_STORAGE_KEY = 'beljar-graph-prefs';
@@ -49,24 +54,44 @@
   var LIBRARY_OPEN_KEY = 'beljar-library-open';
   var LIBRARY_WIDTH_KEY = 'beljar-library-w';
   var LIBRARY_HEIGHT_KEY = 'beljar-library-h';
-  var DEFAULT_EXPLORER_WIDTH = 224;
-  var DEFAULT_INSPECTOR_WIDTH = 256;
-  var DEFAULT_LIBRARY_WIDTH = 256;
-  var MIN_EXPLORER_WIDTH = 160;
-  var MAX_EXPLORER_WIDTH = 512;
-  var MIN_INSPECTOR_WIDTH = 160;
-  var MAX_INSPECTOR_WIDTH = 512;
-  var MIN_LIBRARY_WIDTH = 160;
-  var MAX_LIBRARY_WIDTH = 512;
-  var DEFAULT_EXPLORER_HEIGHT = 160;
-  var DEFAULT_INSPECTOR_HEIGHT = 192;
-  var DEFAULT_LIBRARY_HEIGHT = 192;
-  var MIN_EXPLORER_HEIGHT = 96;
-  var MAX_EXPLORER_HEIGHT = 320;
-  var MIN_INSPECTOR_HEIGHT = 96;
-  var MAX_INSPECTOR_HEIGHT = 384;
-  var MIN_LIBRARY_HEIGHT = 96;
-  var MAX_LIBRARY_HEIGHT = 384;
+  var HARPOON_WIDTH_KEY = 'beljar-harpoon-w';
+  var HARPOON_HEIGHT_KEY = 'beljar-harpoon-h';
+  var DEFAULT_SIDE_PANEL_WIDTH = 250;
+  var DEFAULT_SIDE_PANEL_HEIGHT = 190;
+  var SIDE_PANEL_LAYOUT = {
+    explorer: {
+      widthKey: EXPLORER_WIDTH_KEY,
+      heightKey: EXPLORER_HEIGHT_KEY,
+      minW: 160,
+      maxW: 512,
+      minH: 96,
+      maxH: 320,
+    },
+    inspector: {
+      widthKey: INSPECTOR_WIDTH_KEY,
+      heightKey: INSPECTOR_HEIGHT_KEY,
+      minW: 160,
+      maxW: 512,
+      minH: 96,
+      maxH: 384,
+    },
+    library: {
+      widthKey: LIBRARY_WIDTH_KEY,
+      heightKey: LIBRARY_HEIGHT_KEY,
+      minW: 160,
+      maxW: 512,
+      minH: 96,
+      maxH: 384,
+    },
+    harpoon: {
+      widthKey: HARPOON_WIDTH_KEY,
+      heightKey: HARPOON_HEIGHT_KEY,
+      minW: 160,
+      maxW: 512,
+      minH: 96,
+      maxH: 384,
+    },
+  };
 
   var textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
 
@@ -220,6 +245,25 @@
     };
   }
 
+  function normalizeViewportAnchor(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.kind !== 'string') return null;
+    if (raw.kind === 'decl') {
+      var di = Number(raw.declIndex);
+      var so = Number(raw.sigOffset);
+      if (!isFinite(di) || di < 0 || !isFinite(so) || so < 0) return null;
+      return { kind: 'decl', declIndex: Math.floor(di), sigOffset: Math.floor(so) };
+    }
+    if (raw.kind === 'doc') {
+      var dso = Number(raw.sigOffset);
+      if (!isFinite(dso) || dso < 0) return null;
+      var out = { kind: 'doc', sigOffset: Math.floor(dso) };
+      var ln = Number(raw.line);
+      if (isFinite(ln) && ln >= 1) out.line = Math.floor(ln);
+      return out;
+    }
+    return null;
+  }
+
   function normalizeLocal(raw) {
     if (!raw || typeof raw !== 'object') return {};
     var out = {};
@@ -230,6 +274,12 @@
     }
     var cl = Number(raw.centerLine);
     if (isFinite(cl) && cl >= 1) out.centerLine = Math.floor(cl);
+    var st = Number(raw.scrollTop);
+    if (isFinite(st) && st >= 0) out.scrollTop = st;
+    var sl = Number(raw.scrollLeft);
+    if (isFinite(sl) && sl >= 0) out.scrollLeft = sl;
+    var va = normalizeViewportAnchor(raw.viewportAnchor);
+    if (va) out.viewportAnchor = va;
     return out;
   }
 
@@ -251,7 +301,7 @@
     var base = emptyState(documentId);
     if (!raw || typeof raw !== 'object') return base;
 
-    if (raw.v === SCHEMA_VERSION) {
+    if (raw.v === SCHEMA_VERSION || raw.v === LEGACY_CHECKPOINT_V2) {
       if (raw.meta && typeof raw.meta === 'object') {
         if (typeof raw.meta.documentId === 'string') base.meta.documentId = raw.meta.documentId;
         if (typeof raw.meta.updatedAt === 'number') base.meta.updatedAt = raw.meta.updatedAt;
@@ -292,7 +342,7 @@
     var key = stateKeyFor(documentId);
     var parsed = tryParse(b.loadSync(key));
     var state = normalizeLoaded(parsed, documentId);
-    if (parsed && parsed.v === SCHEMA_VERSION) {
+    if (parsed && (parsed.v === SCHEMA_VERSION || parsed.v === LEGACY_CHECKPOINT_V2)) {
       return migrateLegacySemantic(state, b);
     }
     // Only check legacy key for the default document.
@@ -359,7 +409,7 @@
     opts = opts || {};
     var backend = opts.backend || defaultBackend;
     var documentId = opts.documentId || DEFAULT_DOCUMENT_ID;
-    var debounceMs = opts.debounceMs != null ? opts.debounceMs : 320;
+    var debounceMs = opts.debounceMs != null ? opts.debounceMs : readStoredAutosaveDelay();
 
     var state = readStateForId(backend, documentId);
     var saveTimer = null;
@@ -408,7 +458,8 @@
 
     function scheduleSave() {
       clearTimeout(saveTimer);
-      saveTimer = global.setTimeout(persistNow, debounceMs);
+      var delay = opts.debounceMs != null ? debounceMs : readStoredAutosaveDelay();
+      saveTimer = global.setTimeout(persistNow, delay);
     }
 
     function scheduleEditorPersist(text) {
@@ -507,6 +558,61 @@
     else backendRemove(THEME_STORAGE_KEY);
   }
 
+  function readStoredUiFontSize() {
+    try {
+      var v = backendLoad(UI_FONT_SIZE_KEY);
+      if (v === 'sm' || v === 'lg' || v === 'xl') return v;
+      return 'md';
+    } catch (_) {
+      return 'md';
+    }
+  }
+
+  function writeStoredUiFontSize(size) {
+    if (size === 'md') backendRemove(UI_FONT_SIZE_KEY);
+    else if (size === 'sm' || size === 'lg' || size === 'xl') backendSave(UI_FONT_SIZE_KEY, size);
+    else backendRemove(UI_FONT_SIZE_KEY);
+  }
+
+  function uiFontScaleForSize(size) {
+    return UI_FONT_SCALES[size] || 1;
+  }
+
+  function applyStoredUiFontSize(doc) {
+    var root = doc && doc.documentElement ? doc.documentElement : null;
+    if (!root && typeof document !== 'undefined') root = document.documentElement;
+    if (!root) return;
+    root.style.setProperty('--ui-font-scale', String(uiFontScaleForSize(readStoredUiFontSize())));
+  }
+
+  function readStoredUiTextContrast() {
+    try {
+      var v = backendLoad(UI_TEXT_CONTRAST_KEY);
+      if (v === 'low' || v === 'normal') return 'low';
+      if (v === 'medium' || v === 'high' || v === 'maximum') return v;
+      return 'medium';
+    } catch (_) {
+      return 'medium';
+    }
+  }
+
+  function writeStoredUiTextContrast(contrast) {
+    if (contrast === 'medium') backendRemove(UI_TEXT_CONTRAST_KEY);
+    else if (contrast === 'low' || contrast === 'high' || contrast === 'maximum') backendSave(UI_TEXT_CONTRAST_KEY, contrast);
+    else backendRemove(UI_TEXT_CONTRAST_KEY);
+  }
+
+  function uiTextContrastMultiplierForLevel(contrast) {
+    return UI_TEXT_CONTRAST_MULTIPLIERS[contrast] || UI_TEXT_CONTRAST_MULTIPLIERS.medium;
+  }
+
+  function applyStoredUiTextContrast(doc) {
+    var root = doc && doc.documentElement ? doc.documentElement : null;
+    if (!root && typeof document !== 'undefined') root = document.documentElement;
+    if (!root) return;
+    root.style.setProperty('--ui-text-contrast', String(uiTextContrastMultiplierForLevel(readStoredUiTextContrast())));
+  }
+
   function readStoredBelugaMode() {
     try {
       var v = backendLoad(BELUGA_MODE_STORAGE_KEY);
@@ -527,7 +633,9 @@
   function readStoredHoverScope() {
     try {
       var v = backendLoad(HOVER_SCOPE_KEY);
-      return v === 'user-only' ? 'user-only' : 'all';
+      if (v === 'user-only') return 'user-only';
+      if (v === 'none') return 'none';
+      return 'all';
     } catch (_) {
       return 'all';
     }
@@ -542,6 +650,21 @@
   }
 
   var ALIAS_ACTIVATION_KEY = 'beljar-alias-activation';
+  var CFG_AUTO_SYNC_KEY = 'beljar-cfg-auto-sync';
+
+  function readStoredCfgAutoSync() {
+    try {
+      var v = backendLoad(CFG_AUTO_SYNC_KEY);
+      return v !== 'off';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function writeStoredCfgAutoSync(on) {
+    if (on) backendRemove(CFG_AUTO_SYNC_KEY);
+    else backendSave(CFG_AUTO_SYNC_KEY, 'off');
+  }
 
   function readStoredAliasActivation() {
     try {
@@ -557,9 +680,401 @@
     else backendRemove(ALIAS_ACTIVATION_KEY);
   }
 
+  // ── User settings (REPL, Beluga run, workspace, editor) ───────────────────
+
+  var REPL_AUTOSCROLL_KEY = 'beljar-repl-autoscroll';
+  var REPL_WELCOME_KEY = 'beljar-repl-welcome';
+  var REPL_ECHO_KEY = 'beljar-repl-echo';
+  var REPL_FILTER_CHATTER_KEY = 'beljar-repl-filter-chatter';
+  var REPL_HISTORY_CAP_KEY = 'beljar-repl-history-cap';
+  var BELUGA_FALLBACK_STABLE_KEY = 'beljar-beluga-fallback-stable';
+  var BELUGA_CANCEL_ON_EDIT_KEY = 'beljar-beluga-cancel-on-edit';
+  var LIBRARY_EXPAND_DEFAULT_KEY = 'beljar-library-expand-default';
+  var RESTORE_PANELS_KEY = 'beljar-restore-panels';
+  var ACTIVE_SIDE_PANEL_KEY = 'beljar-active-side-panel';
+  var WORKSPACE_KEY = 'beljar-workspace-v1';
+  var SIDE_PANEL_IDS = ['explorer', 'inspector', 'library', 'harpoon'];
+  var AUTOSAVE_DELAY_KEY = 'beljar-autosave-delay';
+  var EDITOR_FONT_SIZE_KEY = 'beljar-editor-font-size';
+  var EDITOR_LINE_HEIGHT_KEY = 'beljar-editor-line-height';
+  var EDITOR_WORD_WRAP_KEY = 'beljar-editor-word-wrap';
+  var EDITOR_TAB_SIZE_KEY = 'beljar-editor-tab-size';
+  var EDITOR_LINE_NUMBERS_KEY = 'beljar-editor-line-numbers';
+  var EDITOR_FOLD_GUTTER_KEY = 'beljar-editor-fold-gutter';
+  var EDITOR_ACTIVE_LINE_KEY = 'beljar-editor-active-line';
+  var EDITOR_DIAG_GUTTER_KEY = 'beljar-editor-diag-gutter';
+  var EDITOR_HOLE_GUTTER_KEY = 'beljar-editor-hole-gutter';
+  var EDITOR_SYNTAX_HIGHLIGHT_KEY = 'beljar-editor-syntax-highlight';
+  var EDITOR_SEMANTIC_HIGHLIGHT_KEY = 'beljar-editor-semantic-highlight';
+  var EDITOR_PARSE_HIGHLIGHT_KEY = 'beljar-editor-parse-highlight';
+  var EDITOR_OCCURRENCE_HIGHLIGHT_KEY = 'beljar-editor-occurrence-highlight';
+  var EDITOR_BRACKET_MATCH_KEY = 'beljar-editor-bracket-match';
+  var EDITOR_AUTO_CLOSE_BRACKETS_KEY = 'beljar-editor-auto-close-brackets';
+  var EDITOR_SELECTION_MATCHES_KEY = 'beljar-editor-selection-matches';
+  var EDITOR_REINDENT_PASTE_KEY = 'beljar-editor-reindent-paste';
+  var EDITOR_FORMAT_WIDTH_KEY = 'beljar-editor-format-width';
+
+  function readBoolDefaultOn(key) {
+    try {
+      return backendLoad(key) !== 'off';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function writeBoolDefaultOn(key, on) {
+    if (on) backendRemove(key);
+    else backendSave(key, 'off');
+  }
+
+  function readBoolDefaultOff(key) {
+    try {
+      return backendLoad(key) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeBoolDefaultOff(key, on) {
+    if (on) backendSave(key, '1');
+    else backendRemove(key);
+  }
+
+  function readStoredReplAutoscroll() { return readBoolDefaultOn(REPL_AUTOSCROLL_KEY); }
+  function writeStoredReplAutoscroll(on) { writeBoolDefaultOn(REPL_AUTOSCROLL_KEY, on); }
+
+  function readStoredReplWelcome() { return readBoolDefaultOn(REPL_WELCOME_KEY); }
+  function writeStoredReplWelcome(on) { writeBoolDefaultOn(REPL_WELCOME_KEY, on); }
+
+  function readStoredReplEcho() { return readBoolDefaultOn(REPL_ECHO_KEY); }
+  function writeStoredReplEcho(on) { writeBoolDefaultOn(REPL_ECHO_KEY, on); }
+
+  function readStoredReplFilterChatter() { return readBoolDefaultOn(REPL_FILTER_CHATTER_KEY); }
+  function writeStoredReplFilterChatter(on) { writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on); }
+
+  function readStoredReplHistoryCap() {
+    try {
+      var v = parseInt(backendLoad(REPL_HISTORY_CAP_KEY), 10);
+      if (v === 100 || v === 250 || v === 500) return v;
+      return 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function writeStoredReplHistoryCap(cap) {
+    var n = Number(cap);
+    if (n === 100 || n === 250 || n === 500) backendSave(REPL_HISTORY_CAP_KEY, String(n));
+    else backendRemove(REPL_HISTORY_CAP_KEY);
+  }
+
+  function readStoredBelugaFallbackStable() { return readBoolDefaultOn(BELUGA_FALLBACK_STABLE_KEY); }
+  function writeStoredBelugaFallbackStable(on) { writeBoolDefaultOn(BELUGA_FALLBACK_STABLE_KEY, on); }
+
+  function readStoredBelugaCancelOnEdit() { return readBoolDefaultOn(BELUGA_CANCEL_ON_EDIT_KEY); }
+  function writeStoredBelugaCancelOnEdit(on) { writeBoolDefaultOn(BELUGA_CANCEL_ON_EDIT_KEY, on); }
+
+  function readStoredLibraryExpandDefault() { return readBoolDefaultOff(LIBRARY_EXPAND_DEFAULT_KEY); }
+  function writeStoredLibraryExpandDefault(on) { writeBoolDefaultOff(LIBRARY_EXPAND_DEFAULT_KEY, on); }
+
+  function readStoredRestorePanels() { return readBoolDefaultOn(RESTORE_PANELS_KEY); }
+  function writeStoredRestorePanels(on) { writeBoolDefaultOn(RESTORE_PANELS_KEY, on); }
+
+  function readStoredAutosaveDelay() {
+    try {
+      var v = parseInt(backendLoad(AUTOSAVE_DELAY_KEY), 10);
+      if (v === 320 || v === 1000 || v === 2000) return v;
+      return 320;
+    } catch (_) {
+      return 320;
+    }
+  }
+
+  function writeStoredAutosaveDelay(ms) {
+    var n = Number(ms);
+    if (n === 320) backendRemove(AUTOSAVE_DELAY_KEY);
+    else if (n === 1000 || n === 2000) backendSave(AUTOSAVE_DELAY_KEY, String(n));
+    else backendRemove(AUTOSAVE_DELAY_KEY);
+  }
+
+  function readStoredEditorFontSize() {
+    try {
+      var v = backendLoad(EDITOR_FONT_SIZE_KEY);
+      if (v === 'sm' || v === 'lg' || v === 'xl') return v;
+      return 'md';
+    } catch (_) {
+      return 'md';
+    }
+  }
+
+  function writeStoredEditorFontSize(size) {
+    if (size === 'md') backendRemove(EDITOR_FONT_SIZE_KEY);
+    else if (size === 'sm' || size === 'lg' || size === 'xl') backendSave(EDITOR_FONT_SIZE_KEY, size);
+    else backendRemove(EDITOR_FONT_SIZE_KEY);
+  }
+
+  function readStoredEditorLineHeight() {
+    try {
+      var v = backendLoad(EDITOR_LINE_HEIGHT_KEY);
+      if (v === 'compact' || v === 'relaxed') return v;
+      return 'normal';
+    } catch (_) {
+      return 'normal';
+    }
+  }
+
+  function writeStoredEditorLineHeight(mode) {
+    if (mode === 'normal') backendRemove(EDITOR_LINE_HEIGHT_KEY);
+    else if (mode === 'compact' || mode === 'relaxed') backendSave(EDITOR_LINE_HEIGHT_KEY, mode);
+    else backendRemove(EDITOR_LINE_HEIGHT_KEY);
+  }
+
+  function readStoredEditorWordWrap() { return readBoolDefaultOff(EDITOR_WORD_WRAP_KEY); }
+  function writeStoredEditorWordWrap(on) { writeBoolDefaultOff(EDITOR_WORD_WRAP_KEY, on); }
+
+  function readStoredEditorTabSize() {
+    try {
+      return backendLoad(EDITOR_TAB_SIZE_KEY) === '4' ? 4 : 2;
+    } catch (_) {
+      return 2;
+    }
+  }
+
+  function writeStoredEditorTabSize(n) {
+    if (Number(n) === 4) backendSave(EDITOR_TAB_SIZE_KEY, '4');
+    else backendRemove(EDITOR_TAB_SIZE_KEY);
+  }
+
+  function readStoredEditorLineNumbers() { return readBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY); }
+  function writeStoredEditorLineNumbers(on) { writeBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY, on); }
+
+  function readStoredEditorFoldGutter() { return readBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY); }
+  function writeStoredEditorFoldGutter(on) { writeBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY, on); }
+
+  function readStoredEditorActiveLine() { return readBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY); }
+  function writeStoredEditorActiveLine(on) { writeBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY, on); }
+
+  function readStoredEditorDiagGutter() { return readBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY); }
+  function writeStoredEditorDiagGutter(on) { writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, on); }
+
+  function readStoredEditorHoleGutter() { return readBoolDefaultOn(EDITOR_HOLE_GUTTER_KEY); }
+  function writeStoredEditorHoleGutter(on) { writeBoolDefaultOn(EDITOR_HOLE_GUTTER_KEY, on); }
+
+  function readStoredEditorSyntaxHighlight() { return readBoolDefaultOn(EDITOR_SYNTAX_HIGHLIGHT_KEY); }
+  function writeStoredEditorSyntaxHighlight(on) { writeBoolDefaultOn(EDITOR_SYNTAX_HIGHLIGHT_KEY, on); }
+
+  function readStoredEditorSemanticHighlight() { return readBoolDefaultOn(EDITOR_SEMANTIC_HIGHLIGHT_KEY); }
+  function writeStoredEditorSemanticHighlight(on) { writeBoolDefaultOn(EDITOR_SEMANTIC_HIGHLIGHT_KEY, on); }
+
+  function readStoredEditorParseHighlight() { return readBoolDefaultOn(EDITOR_PARSE_HIGHLIGHT_KEY); }
+  function writeStoredEditorParseHighlight(on) { writeBoolDefaultOn(EDITOR_PARSE_HIGHLIGHT_KEY, on); }
+
+  function readStoredEditorOccurrenceHighlight() { return readBoolDefaultOn(EDITOR_OCCURRENCE_HIGHLIGHT_KEY); }
+  function writeStoredEditorOccurrenceHighlight(on) { writeBoolDefaultOn(EDITOR_OCCURRENCE_HIGHLIGHT_KEY, on); }
+
+  function readStoredEditorBracketMatch() { return readBoolDefaultOn(EDITOR_BRACKET_MATCH_KEY); }
+  function writeStoredEditorBracketMatch(on) { writeBoolDefaultOn(EDITOR_BRACKET_MATCH_KEY, on); }
+
+  function readStoredEditorAutoCloseBrackets() { return readBoolDefaultOn(EDITOR_AUTO_CLOSE_BRACKETS_KEY); }
+  function writeStoredEditorAutoCloseBrackets(on) { writeBoolDefaultOn(EDITOR_AUTO_CLOSE_BRACKETS_KEY, on); }
+
+  function readStoredEditorSelectionMatches() { return readBoolDefaultOn(EDITOR_SELECTION_MATCHES_KEY); }
+  function writeStoredEditorSelectionMatches(on) { writeBoolDefaultOn(EDITOR_SELECTION_MATCHES_KEY, on); }
+
+  function readStoredEditorReindentPaste() { return readBoolDefaultOn(EDITOR_REINDENT_PASTE_KEY); }
+  function writeStoredEditorReindentPaste(on) { writeBoolDefaultOn(EDITOR_REINDENT_PASTE_KEY, on); }
+
+  function readStoredEditorFormatWidth() {
+    try {
+      var v = parseInt(backendLoad(EDITOR_FORMAT_WIDTH_KEY), 10);
+      if (v === 100 || v === 120) return v;
+      return 80;
+    } catch (_) {
+      return 80;
+    }
+  }
+
+  function writeStoredEditorFormatWidth(width) {
+    var n = Number(width);
+    if (n === 80) backendRemove(EDITOR_FORMAT_WIDTH_KEY);
+    else if (n === 100 || n === 120) backendSave(EDITOR_FORMAT_WIDTH_KEY, String(n));
+    else backendRemove(EDITOR_FORMAT_WIDTH_KEY);
+  }
+
+  function resetLayoutPrefs() {
+    backendRemove(EDITOR_SPLIT_STORAGE_KEY);
+    for (var panelId in SIDE_PANEL_LAYOUT) {
+      if (!Object.prototype.hasOwnProperty.call(SIDE_PANEL_LAYOUT, panelId)) continue;
+      var layout = SIDE_PANEL_LAYOUT[panelId];
+      backendRemove(layout.widthKey);
+      backendRemove(layout.heightKey);
+    }
+  }
+
+  function resetAppearancePrefs() {
+    backendRemove(THEME_STORAGE_KEY);
+    backendRemove(UI_FONT_SIZE_KEY);
+    backendRemove(UI_TEXT_CONTRAST_KEY);
+  }
+
+  function resetEditorTypographyPrefs() {
+    backendRemove(EDITOR_FONT_SIZE_KEY);
+    backendRemove(EDITOR_LINE_HEIGHT_KEY);
+    backendRemove(EDITOR_WORD_WRAP_KEY);
+  }
+
+  function resetEditorIndentPrefs() {
+    backendRemove(EDITOR_TAB_SIZE_KEY);
+    backendRemove(AUTOSAVE_DELAY_KEY);
+    backendRemove(EDITOR_FORMAT_WIDTH_KEY);
+    backendRemove(EDITOR_REINDENT_PASTE_KEY);
+    backendRemove(CFG_AUTO_SYNC_KEY);
+  }
+
+  function resetEditorCodeInsightPrefs() {
+    backendRemove(EDITOR_SYNTAX_HIGHLIGHT_KEY);
+    backendRemove(EDITOR_SEMANTIC_HIGHLIGHT_KEY);
+    backendRemove(EDITOR_PARSE_HIGHLIGHT_KEY);
+    backendRemove(EDITOR_OCCURRENCE_HIGHLIGHT_KEY);
+    backendRemove(EDITOR_BRACKET_MATCH_KEY);
+    backendRemove(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
+    backendRemove(EDITOR_SELECTION_MATCHES_KEY);
+    backendRemove(HOVER_SCOPE_KEY);
+  }
+
+  function resetEditorGutterPrefs() {
+    backendRemove(EDITOR_LINE_NUMBERS_KEY);
+    backendRemove(EDITOR_FOLD_GUTTER_KEY);
+    backendRemove(EDITOR_ACTIVE_LINE_KEY);
+    backendRemove(EDITOR_DIAG_GUTTER_KEY);
+    backendRemove(EDITOR_HOLE_GUTTER_KEY);
+  }
+
+  function resetEditorPrefs() {
+    resetEditorTypographyPrefs();
+    resetEditorIndentPrefs();
+    resetEditorCodeInsightPrefs();
+    resetEditorGutterPrefs();
+  }
+
+  function resetBelugaPrefs() {
+    backendRemove(BELUGA_MODE_STORAGE_KEY);
+    backendRemove(BELUGA_FALLBACK_STABLE_KEY);
+    backendRemove(BELUGA_CANCEL_ON_EDIT_KEY);
+  }
+
+  function resetReplPrefs() {
+    backendRemove(REPL_AUTOSCROLL_KEY);
+    backendRemove(REPL_WELCOME_KEY);
+    backendRemove(REPL_ECHO_KEY);
+    backendRemove(REPL_FILTER_CHATTER_KEY);
+    backendRemove(REPL_HISTORY_CAP_KEY);
+  }
+
+  function workspaceKeyFor(pid) {
+    var prefix = projectPrefix(pid);
+    if (prefix === '') return WORKSPACE_KEY;
+    return prefix + 'workspace-v1';
+  }
+
+  function activeSidePanelKey(pid) {
+    var prefix = projectPrefix(pid);
+    if (prefix === '') return ACTIVE_SIDE_PANEL_KEY;
+    return prefix + 'active-side-panel';
+  }
+
+  function migrateActiveSidePanelFromLegacy(pid) {
+    if (backendLoad(activeSidePanelKey(pid))) return null;
+    if (readStoredHarpoonOpen()) return 'harpoon';
+    if (readStoredLibraryOpen()) return 'library';
+    if (readStoredInspectorOpen()) return 'inspector';
+    if (readStoredExplorerOpen()) return 'explorer';
+    return null;
+  }
+
+  function readStoredActiveSidePanel(pid) {
+    pid = pid || getActiveProjectId();
+    try {
+      var raw = backendLoad(activeSidePanelKey(pid));
+      if (raw && SIDE_PANEL_IDS.indexOf(raw) !== -1) return raw;
+    } catch (_) { /* fall through */ }
+    var migrated = migrateActiveSidePanelFromLegacy(pid);
+    if (migrated) {
+      writeStoredActiveSidePanel(migrated, pid);
+      return migrated;
+    }
+    return null;
+  }
+
+  function writeStoredActiveSidePanel(id, pid) {
+    pid = pid || getActiveProjectId();
+    var key = activeSidePanelKey(pid);
+    if (!id || SIDE_PANEL_IDS.indexOf(id) === -1) {
+      backendRemove(key);
+      writeStoredExplorerOpen(false);
+      writeStoredInspectorOpen(false);
+      writeStoredLibraryOpen(false);
+      writeStoredHarpoonOpen(false);
+      return;
+    }
+    backendSave(key, id);
+    if (id === 'explorer') writeStoredExplorerOpen(true);
+    else writeStoredExplorerOpen(false);
+    if (id === 'inspector') writeStoredInspectorOpen(true);
+    else writeStoredInspectorOpen(false);
+    if (id === 'library') writeStoredLibraryOpen(true);
+    else writeStoredLibraryOpen(false);
+    if (id === 'harpoon') writeStoredHarpoonOpen(true);
+    else writeStoredHarpoonOpen(false);
+  }
+
+  function readStoredWorkspace(pid) {
+    pid = pid || getActiveProjectId();
+    return tryParse(backendLoad(workspaceKeyFor(pid)));
+  }
+
+  function writeStoredWorkspace(snapshot, pid) {
+    pid = pid || getActiveProjectId();
+    try {
+      backendSave(workspaceKeyFor(pid), JSON.stringify(snapshot));
+      if (snapshot) {
+        writeStoredActiveSidePanel(snapshot.activeSidePanel || null, pid);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function resetStoredWorkspace(pid) {
+    pid = pid || getActiveProjectId();
+    backendRemove(workspaceKeyFor(pid));
+    backendRemove(activeSidePanelKey(pid));
+  }
+
+  function resetWorkspaceState(pid) {
+    resetStoredWorkspace(pid);
+  }
+
+  function resetWorkspacePrefs() {
+    resetStoredWorkspace();
+    backendRemove(INSPECTOR_FOLLOW_KEY);
+    backendRemove(RESTORE_PANELS_KEY);
+    backendRemove(LIBRARY_EXPAND_DEFAULT_KEY);
+  }
+
+  function resetAliasesPrefs() {
+    backendRemove(ALIAS_ACTIVATION_KEY);
+  }
+
   function isAliasExpandablePath(name) {
+    var PS = typeof BelJarProjectSource !== 'undefined' ? BelJarProjectSource : null;
+    if (PS && typeof PS.isBelPath === 'function') return PS.isBelPath(name);
     var n = String(name || '').toLowerCase();
-    return n.endsWith('.bel') || n.endsWith('.elf');
+    if (n.endsWith('.cfg') || n.endsWith('.elf')) return false;
+    if (n.endsWith('.bel')) return true;
+    var base = String(name || '').slice(String(name || '').lastIndexOf('/') + 1);
+    return base.indexOf('.') === -1;
   }
 
   function fileNameForId(id) {
@@ -633,80 +1148,74 @@
     return Math.round(v);
   }
 
-  function readStoredExplorerWidth() {
+  function readStoredSidePanelWidth(layout) {
     try {
       return clampPanelPx(
-        parseFloat(backendLoad(EXPLORER_WIDTH_KEY)),
-        MIN_EXPLORER_WIDTH,
-        MAX_EXPLORER_WIDTH,
-        DEFAULT_EXPLORER_WIDTH
+        parseFloat(backendLoad(layout.widthKey)),
+        layout.minW,
+        layout.maxW,
+        DEFAULT_SIDE_PANEL_WIDTH
       );
     } catch (_) {
-      return DEFAULT_EXPLORER_WIDTH;
+      return DEFAULT_SIDE_PANEL_WIDTH;
     }
+  }
+
+  function writeStoredSidePanelWidth(layout, px) {
+    var clamped = clampPanelPx(px, layout.minW, layout.maxW, DEFAULT_SIDE_PANEL_WIDTH);
+    if (clamped === DEFAULT_SIDE_PANEL_WIDTH) backendRemove(layout.widthKey);
+    else backendSave(layout.widthKey, String(clamped));
+  }
+
+  function readStoredSidePanelHeight(layout) {
+    try {
+      return clampPanelPx(
+        parseFloat(backendLoad(layout.heightKey)),
+        layout.minH,
+        layout.maxH,
+        DEFAULT_SIDE_PANEL_HEIGHT
+      );
+    } catch (_) {
+      return DEFAULT_SIDE_PANEL_HEIGHT;
+    }
+  }
+
+  function writeStoredSidePanelHeight(layout, px) {
+    var clamped = clampPanelPx(px, layout.minH, layout.maxH, DEFAULT_SIDE_PANEL_HEIGHT);
+    if (clamped === DEFAULT_SIDE_PANEL_HEIGHT) backendRemove(layout.heightKey);
+    else backendSave(layout.heightKey, String(clamped));
+  }
+
+  function readStoredExplorerWidth() {
+    return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT.explorer);
   }
 
   function writeStoredExplorerWidth(px) {
-    var clamped = clampPanelPx(px, MIN_EXPLORER_WIDTH, MAX_EXPLORER_WIDTH, DEFAULT_EXPLORER_WIDTH);
-    if (clamped === DEFAULT_EXPLORER_WIDTH) backendRemove(EXPLORER_WIDTH_KEY);
-    else backendSave(EXPLORER_WIDTH_KEY, String(clamped));
+    writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT.explorer, px);
   }
 
   function readStoredInspectorWidth() {
-    try {
-      return clampPanelPx(
-        parseFloat(backendLoad(INSPECTOR_WIDTH_KEY)),
-        MIN_INSPECTOR_WIDTH,
-        MAX_INSPECTOR_WIDTH,
-        DEFAULT_INSPECTOR_WIDTH
-      );
-    } catch (_) {
-      return DEFAULT_INSPECTOR_WIDTH;
-    }
+    return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT.inspector);
   }
 
   function writeStoredInspectorWidth(px) {
-    var clamped = clampPanelPx(px, MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH, DEFAULT_INSPECTOR_WIDTH);
-    if (clamped === DEFAULT_INSPECTOR_WIDTH) backendRemove(INSPECTOR_WIDTH_KEY);
-    else backendSave(INSPECTOR_WIDTH_KEY, String(clamped));
+    writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT.inspector, px);
   }
 
   function readStoredExplorerHeight() {
-    try {
-      return clampPanelPx(
-        parseFloat(backendLoad(EXPLORER_HEIGHT_KEY)),
-        MIN_EXPLORER_HEIGHT,
-        MAX_EXPLORER_HEIGHT,
-        DEFAULT_EXPLORER_HEIGHT
-      );
-    } catch (_) {
-      return DEFAULT_EXPLORER_HEIGHT;
-    }
+    return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT.explorer);
   }
 
   function writeStoredExplorerHeight(px) {
-    var clamped = clampPanelPx(px, MIN_EXPLORER_HEIGHT, MAX_EXPLORER_HEIGHT, DEFAULT_EXPLORER_HEIGHT);
-    if (clamped === DEFAULT_EXPLORER_HEIGHT) backendRemove(EXPLORER_HEIGHT_KEY);
-    else backendSave(EXPLORER_HEIGHT_KEY, String(clamped));
+    writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT.explorer, px);
   }
 
   function readStoredInspectorHeight() {
-    try {
-      return clampPanelPx(
-        parseFloat(backendLoad(INSPECTOR_HEIGHT_KEY)),
-        MIN_INSPECTOR_HEIGHT,
-        MAX_INSPECTOR_HEIGHT,
-        DEFAULT_INSPECTOR_HEIGHT
-      );
-    } catch (_) {
-      return DEFAULT_INSPECTOR_HEIGHT;
-    }
+    return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT.inspector);
   }
 
   function writeStoredInspectorHeight(px) {
-    var clamped = clampPanelPx(px, MIN_INSPECTOR_HEIGHT, MAX_INSPECTOR_HEIGHT, DEFAULT_INSPECTOR_HEIGHT);
-    if (clamped === DEFAULT_INSPECTOR_HEIGHT) backendRemove(INSPECTOR_HEIGHT_KEY);
-    else backendSave(INSPECTOR_HEIGHT_KEY, String(clamped));
+    writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT.inspector, px);
   }
 
   function readStoredExplorerOpen() {
@@ -771,7 +1280,14 @@
 
   function readStoredInspectorFollow() {
     try {
-      return global.sessionStorage.getItem(INSPECTOR_FOLLOW_KEY) === '1';
+      var v = backendLoad(INSPECTOR_FOLLOW_KEY);
+      if (v === '1') return true;
+      if (v === 'off') return false;
+      if (global.sessionStorage && global.sessionStorage.getItem(INSPECTOR_FOLLOW_KEY) === '1') {
+        writeStoredInspectorFollow(true);
+        return true;
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -779,8 +1295,9 @@
 
   function writeStoredInspectorFollow(on) {
     try {
-      if (on) global.sessionStorage.setItem(INSPECTOR_FOLLOW_KEY, '1');
-      else global.sessionStorage.removeItem(INSPECTOR_FOLLOW_KEY);
+      if (on) backendSave(INSPECTOR_FOLLOW_KEY, '1');
+      else backendRemove(INSPECTOR_FOLLOW_KEY);
+      if (global.sessionStorage) global.sessionStorage.removeItem(INSPECTOR_FOLLOW_KEY);
     } catch (_) {}
   }
 
@@ -797,42 +1314,49 @@
     else backendRemove(LIBRARY_OPEN_KEY);
   }
 
-  function readStoredLibraryWidth() {
+  function readStoredHarpoonOpen() {
     try {
-      return clampPanelPx(
-        parseFloat(backendLoad(LIBRARY_WIDTH_KEY)),
-        MIN_LIBRARY_WIDTH,
-        MAX_LIBRARY_WIDTH,
-        DEFAULT_LIBRARY_WIDTH
-      );
+      return backendLoad('beljar-harpoon-open') === '1';
     } catch (_) {
-      return DEFAULT_LIBRARY_WIDTH;
+      return false;
     }
+  }
+
+  function writeStoredHarpoonOpen(open) {
+    if (open) backendSave('beljar-harpoon-open', '1');
+    else backendRemove('beljar-harpoon-open');
+  }
+
+  function readStoredLibraryWidth() {
+    return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT.library);
   }
 
   function writeStoredLibraryWidth(px) {
-    var clamped = clampPanelPx(px, MIN_LIBRARY_WIDTH, MAX_LIBRARY_WIDTH, DEFAULT_LIBRARY_WIDTH);
-    if (clamped === DEFAULT_LIBRARY_WIDTH) backendRemove(LIBRARY_WIDTH_KEY);
-    else backendSave(LIBRARY_WIDTH_KEY, String(clamped));
+    writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT.library, px);
   }
 
   function readStoredLibraryHeight() {
-    try {
-      return clampPanelPx(
-        parseFloat(backendLoad(LIBRARY_HEIGHT_KEY)),
-        MIN_LIBRARY_HEIGHT,
-        MAX_LIBRARY_HEIGHT,
-        DEFAULT_LIBRARY_HEIGHT
-      );
-    } catch (_) {
-      return DEFAULT_LIBRARY_HEIGHT;
-    }
+    return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT.library);
   }
 
   function writeStoredLibraryHeight(px) {
-    var clamped = clampPanelPx(px, MIN_LIBRARY_HEIGHT, MAX_LIBRARY_HEIGHT, DEFAULT_LIBRARY_HEIGHT);
-    if (clamped === DEFAULT_LIBRARY_HEIGHT) backendRemove(LIBRARY_HEIGHT_KEY);
-    else backendSave(LIBRARY_HEIGHT_KEY, String(clamped));
+    writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT.library, px);
+  }
+
+  function readStoredHarpoonWidth() {
+    return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT.harpoon);
+  }
+
+  function writeStoredHarpoonWidth(px) {
+    writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT.harpoon, px);
+  }
+
+  function readStoredHarpoonHeight() {
+    return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT.harpoon);
+  }
+
+  function writeStoredHarpoonHeight(px) {
+    writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT.harpoon, px);
   }
 
   function normalizeGraphPrefs(raw) {
@@ -1312,33 +1836,75 @@
     return null;
   }
 
+  function resolveCfgEntryPath(cfgDir, entry) {
+    if (!cfgDir) return entry;
+    if (!entry) return cfgDir;
+    return cfgDir + '/' + entry;
+  }
+
+  function isCfgEntryToken(text) {
+    var PS = typeof BelJarProjectSource !== 'undefined' ? BelJarProjectSource : null;
+    if (PS && typeof PS.isCfgEntryToken === 'function') return PS.isCfgEntryToken(text);
+    var t = String(text || '').trim();
+    if (!t || t.charAt(0) === '%') return false;
+    var low = t.toLowerCase();
+    if (low.endsWith('.cfg') || low.endsWith('.elf') || low.endsWith('.bel')) return true;
+    var base = t.indexOf('/') === -1 ? t : t.slice(t.lastIndexOf('/') + 1);
+    return base.indexOf('.') === -1;
+  }
+
+  function isCfgEntryLine(text) {
+    var t = String(text || '').trim();
+    return t && t.charAt(0) !== '%' && isCfgEntryToken(t);
+  }
+
+  // Prefer the live editor buffer when the cfg tab is active — storage can lag
+  // autosave and would otherwise miss entries the user just typed in.
+  function cfgTextForRewrite(fileId) {
+    var g = typeof window !== 'undefined' ? window : null;
+    if (g) {
+      var activeId = getActiveFileId();
+      var ed = g.BelJarCurrentEditor;
+      if (fileId === activeId && ed && typeof ed.getValue === 'function') {
+        return String(ed.getValue() ?? '');
+      }
+    }
+    return getFileText(fileId);
+  }
+
+  function notifyCfgRewritten(fileIds) {
+    if (!fileIds.length) return;
+    var g = typeof window !== 'undefined' ? window : null;
+    if (g && typeof g.dispatchEvent === 'function') {
+      g.dispatchEvent(new CustomEvent('beljar:cfg-rewritten', { detail: { fileIds: fileIds } }));
+    }
+  }
+
   // Rewrite a single cfg body so the entry resolving to `oldName` follows the
-  // file op: renamed/moved → point at `newName` (dropped if it left this cfg's
-  // dir); deleted (`newName` null) → removed. Comments, blank lines, ordering,
-  // and indentation are preserved; returns null when nothing matched.
+  // file op: same-folder rename → rewrite the entry; folder move → leave it
+  // (dangling until the user re-points); deleted (`newName` null) → removed.
+  // Comments, blank lines, ordering, and indentation are preserved; returns
+  // null when nothing matched.
   function rewriteCfgBody(text, cfgDir, oldName, newName) {
     var lines = String(text == null ? '' : text).split('\n');
     var out = [];
     var changed = false;
+    var oldDir = dirOf(oldName);
+    var newDir = newName != null ? dirOf(newName) : null;
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       var t = line.trim();
       var low = t.toLowerCase();
-      var isEntry = t && t.charAt(0) !== '%'
-        && (low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg'));
+      var isEntry = isCfgEntryLine(t);
       if (!isEntry) { out.push(line); continue; }
-      var resolved = cfgDir ? cfgDir + '/' + t : t;
+      var resolved = resolveCfgEntryPath(cfgDir, t);
       if (resolved !== oldName) { out.push(line); continue; }
-      if (newName == null) { changed = true; continue; } // delete / explicit remove: drop the line
+      if (newName == null) { changed = true; continue; }
+      if (oldDir !== newDir) { out.push(line); continue; }
       var rel = relToCfgDir(cfgDir, newName);
-      // Moved OUT of this cfg's directory → leave the (now-dangling) entry for the
-      // cfg lint to surface. The user owns cross-dir moves; we never silently
-      // rewrite the cfg for them. (This also keeps a whole-folder move — cfg and
-      // members relocating together — from being corrupted: the relative entry
-      // still resolves against the moved cfg's new directory.)
       if (rel == null || rel === '') { out.push(line); continue; }
       changed = true;
-      out.push(line.slice(0, line.indexOf(t)) + rel); // renamed in place → rewrite the entry
+      out.push(line.slice(0, line.indexOf(t)) + rel);
     }
     return changed ? out.join('\n') : null;
   }
@@ -1352,8 +1918,7 @@
     if (idx === -1) return null;
     var deletedName = files[idx].name;
     if (/\.cfg$/i.test(deletedName)) {
-      var d = dirOf(deletedName);
-      if (getActiveCfgForDir(d) === deletedName) setActiveCfgForDir(d, null);
+      removeActiveCfgForDir(dirOf(deletedName), deletedName);
     }
     files.splice(idx, 1);
     writeProjectFiles(files);
@@ -1373,24 +1938,27 @@
     return files.length ? files[Math.max(0, idx - 1)].id : null;
   }
 
-  // Apply a within-suite-dir file op to every .cfg that lists `oldName`: an
-  // in-place rename rewrites the entry; a delete (newName == null) removes it; a
-  // move OUT of the cfg's directory leaves the dangling entry for the cfg lint
-  // (see rewriteCfgBody — the user owns cross-dir moves).
+  // When auto-sync is on, rewrite every .cfg that lists `oldName`: same-folder
+  // rename updates the entry; delete removes it; folder move leaves it dangling.
   function rewriteCfgsForOp(oldName, newName) {
+    if (!readStoredCfgAutoSync()) return [];
     var files = ensureProject();
+    var updatedIds = [];
     for (var i = 0; i < files.length; i++) {
       var fn = files[i].name;
       if (!/\.cfg$/i.test(fn)) continue;
-      var updated = rewriteCfgBody(getFileText(files[i].id), dirOf(fn), oldName, newName);
-      if (updated != null) setFileText(files[i].id, updated);
+      var cfgDir = dirOf(fn);
+      var text = cfgTextForRewrite(files[i].id);
+      if (!cfgListsEntry(text, cfgDir, oldName)) continue;
+      var updated = rewriteCfgBody(text, cfgDir, oldName, newName);
+      if (updated != null) {
+        setFileText(files[i].id, updated);
+        updatedIds.push(files[i].id);
+      }
     }
+    notifyCfgRewritten(updatedIds);
+    return updatedIds;
   }
-
-  // A file op WITHIN a suite's directory keeps its .cfg in sync — an in-place
-  // rename rewrites the entry, a delete removes it — but a move to a DIFFERENT
-  // directory never touches the cfg (the dangling entry is surfaced by the cfg
-  // lint instead; the user owns cross-dir moves).
   function renameFile(id, newName) {
     var files = ensureProject();
     for (var i = 0; i < files.length; i++) {
@@ -1402,7 +1970,15 @@
         var map = readActiveCfgByDir();
         var changed = false;
         for (var k in map) {
-          if (map[k] === oldName) { map[k] = newName; changed = true; }
+          if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
+          var list = normalizeActiveCfgList(map[k]);
+          for (var j = 0; j < list.length; j++) {
+            if (list[j] === oldName) {
+              list[j] = newName;
+              changed = true;
+            }
+          }
+          if (list.length) map[k] = list;
         }
         if (changed) writeActiveCfgByDir(map);
         pruneEmptyFoldersForFile(newName);
@@ -1424,8 +2000,8 @@
     var lines = String(text == null ? '' : text).split('\n');
     for (var i = 0; i < lines.length; i++) {
       var t = lines[i].trim();
-      if (!t || t.charAt(0) === '%') continue;
-      if ((cfgDir ? cfgDir + '/' + t : t) === fileName) return true;
+      if (!isCfgEntryToken(t)) continue;
+      if (resolveCfgEntryPath(cfgDir, t) === fileName) return true;
     }
     return false;
   }
@@ -1459,9 +2035,7 @@
     var firstEntry = -1;
     for (var i = 0; i < lines.length; i++) {
       var t = lines[i].trim();
-      var low = t.toLowerCase();
-      if (t && t.charAt(0) !== '%'
-        && (low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg'))) {
+      if (isCfgEntryLine(t)) {
         firstEntry = i;
         break;
       }
@@ -1503,8 +2077,7 @@
     for (var i = 0; i < lines.length; i++) {
       var t = lines[i].trim();
       var low = t.toLowerCase();
-      var isEntry = t && t.charAt(0) !== '%'
-        && (low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg'));
+      var isEntry = isCfgEntryLine(t);
       if (!isEntry) continue;
       if ((dir ? dir + '/' + t : t) === fileName) targetAt = entryLineIdx.length;
       entryLineIdx.push(i);
@@ -1595,11 +2168,25 @@
   // Read a file's stored editor text without constructing a persist instance.
   // NOTE: for the ACTIVE file the live buffer may be ahead of storage (debounced
   // save) — callers should prefer the live editor value for that one.
+  // getFileText is called for EVERY development member on every explorer/tab
+  // health refresh (potentially O(files²) per navigation). readState JSON-parses
+  // the whole per-file blob — including the large semantic checkpoint — which
+  // dominated navigation cost. Cache the extracted text keyed by the raw stored
+  // string: unchanged files (the common case during navigation) skip the parse
+  // entirely, and any write changes the stored string so the entry auto-misses.
+  var fileTextCache = new Map(); // id -> { raw, text }
+
   function getFileText(id) {
+    var raw = defaultBackend.loadSync(stateKeyFor(id));
+    var hit = fileTextCache.get(id);
+    if (hit && hit.raw === raw) return hit.text;
     var state = readState(defaultBackend, id);
-    return state && state.editor && typeof state.editor.text === 'string'
+    var text = state && state.editor && typeof state.editor.text === 'string'
       ? state.editor.text
       : '';
+    if (fileTextCache.size > 512) fileTextCache.clear();
+    fileTextCache.set(id, { raw: raw, text: text });
+    return text;
   }
 
   // Write a file's editor text directly (file import path). Preserves any
@@ -1626,13 +2213,35 @@
     renameProject(getActiveProjectId(), name);
   }
 
+  function normalizeActiveCfgList(val) {
+    if (!val) return [];
+    if (Array.isArray(val)) {
+      var out = [];
+      for (var i = 0; i < val.length; i++) {
+        var s = String(val[i] != null ? val[i] : '').trim();
+        if (s) out.push(s);
+      }
+      return out;
+    }
+    var one = String(val).trim();
+    return one ? [one] : [];
+  }
+
   function readActiveCfgByDir() {
     var raw = tryParse(backendLoad(projKey('active-cfg-by-dir')));
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      var normalized = {};
+      var keys = Object.keys(raw);
+      for (var ki = 0; ki < keys.length; ki++) {
+        var k = keys[ki];
+        normalized[k] = normalizeActiveCfgList(raw[k]);
+      }
+      return normalized;
+    }
     var migrated = {};
     var legacy = backendLoad(projKey('default-cfg'));
     if (legacy && String(legacy).trim()) {
-      migrated[dirOf(String(legacy).trim())] = String(legacy).trim();
+      migrated[dirOf(String(legacy).trim())] = [String(legacy).trim()];
       writeActiveCfgByDir(migrated);
       defaultBackend.removeSync(projKey('default-cfg'));
     }
@@ -1640,28 +2249,66 @@
   }
 
   function writeActiveCfgByDir(map) {
+    var out = {};
     var keys = Object.keys(map || {});
-    if (!keys.length) {
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var list = normalizeActiveCfgList(map[k]);
+      if (list.length) out[k] = list;
+    }
+    if (!Object.keys(out).length) {
       backendRemove(projKey('active-cfg-by-dir'));
       return;
     }
-    backendSave(projKey('active-cfg-by-dir'), JSON.stringify(map));
+    backendSave(projKey('active-cfg-by-dir'), JSON.stringify(out));
+  }
+
+  function getActiveCfgsForDir(dir) {
+    var map = readActiveCfgByDir();
+    var d = dir != null ? String(dir) : '';
+    return normalizeActiveCfgList(map[d]);
   }
 
   function getActiveCfgForDir(dir) {
+    var list = getActiveCfgsForDir(dir);
+    return list.length ? list[0] : null;
+  }
+
+  function setActiveCfgsForDir(dir, paths) {
     var map = readActiveCfgByDir();
     var d = dir != null ? String(dir) : '';
-    var path = map[d];
-    return path && String(path).trim() ? String(path).trim() : null;
+    var list = normalizeActiveCfgList(paths);
+    if (list.length) map[d] = list;
+    else delete map[d];
+    writeActiveCfgByDir(map);
   }
 
   function setActiveCfgForDir(dir, path) {
-    var map = readActiveCfgByDir();
-    var d = dir != null ? String(dir) : '';
     var trimmed = String(path != null ? path : '').trim();
-    if (trimmed) map[d] = trimmed;
-    else delete map[d];
-    writeActiveCfgByDir(map);
+    if (trimmed) setActiveCfgsForDir(dir, [trimmed]);
+    else setActiveCfgsForDir(dir, []);
+  }
+
+  function addActiveCfgForDir(dir, path) {
+    var trimmed = String(path != null ? path : '').trim();
+    if (!trimmed) return;
+    var list = getActiveCfgsForDir(dir);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] === trimmed) return;
+    }
+    list.push(trimmed);
+    setActiveCfgsForDir(dir, list);
+  }
+
+  function removeActiveCfgForDir(dir, path) {
+    var trimmed = String(path != null ? path : '').trim();
+    if (!trimmed) return;
+    var list = getActiveCfgsForDir(dir);
+    var next = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] !== trimmed) next.push(list[i]);
+    }
+    setActiveCfgsForDir(dir, next);
   }
 
   function getActiveCfgByDir() {
@@ -1675,8 +2322,8 @@
     for (var d in byDir) {
       if (!Object.prototype.hasOwnProperty.call(byDir, d)) continue;
       var path = String(byDir[d] != null ? byDir[d] : '').trim();
-      if (!path || map[d]) continue;
-      map[d] = path;
+      if (!path || normalizeActiveCfgList(map[d]).length) continue;
+      map[d] = [path];
       changed = true;
     }
     if (changed) writeActiveCfgByDir(map);
@@ -1748,6 +2395,18 @@
     createAsyncPersistLayer: createAsyncPersistLayer,
     readStoredTheme: readStoredTheme,
     writeStoredTheme: writeStoredTheme,
+    UI_FONT_SIZE_KEY: UI_FONT_SIZE_KEY,
+    UI_FONT_SCALES: UI_FONT_SCALES,
+    readStoredUiFontSize: readStoredUiFontSize,
+    writeStoredUiFontSize: writeStoredUiFontSize,
+    uiFontScaleForSize: uiFontScaleForSize,
+    applyStoredUiFontSize: applyStoredUiFontSize,
+    UI_TEXT_CONTRAST_KEY: UI_TEXT_CONTRAST_KEY,
+    UI_TEXT_CONTRAST_MULTIPLIERS: UI_TEXT_CONTRAST_MULTIPLIERS,
+    readStoredUiTextContrast: readStoredUiTextContrast,
+    writeStoredUiTextContrast: writeStoredUiTextContrast,
+    uiTextContrastMultiplierForLevel: uiTextContrastMultiplierForLevel,
+    applyStoredUiTextContrast: applyStoredUiTextContrast,
     readStoredEditorSplit: readStoredEditorSplit,
     writeStoredEditorSplit: writeStoredEditorSplit,
     readStoredExplorerWidth: readStoredExplorerWidth,
@@ -1770,10 +2429,19 @@
     writeStoredInspectorFollow: writeStoredInspectorFollow,
     readStoredLibraryOpen: readStoredLibraryOpen,
     writeStoredLibraryOpen: writeStoredLibraryOpen,
+    readStoredHarpoonOpen: readStoredHarpoonOpen,
+    writeStoredHarpoonOpen: writeStoredHarpoonOpen,
     readStoredLibraryWidth: readStoredLibraryWidth,
     writeStoredLibraryWidth: writeStoredLibraryWidth,
     readStoredLibraryHeight: readStoredLibraryHeight,
     writeStoredLibraryHeight: writeStoredLibraryHeight,
+    readStoredHarpoonWidth: readStoredHarpoonWidth,
+    writeStoredHarpoonWidth: writeStoredHarpoonWidth,
+    readStoredHarpoonHeight: readStoredHarpoonHeight,
+    writeStoredHarpoonHeight: writeStoredHarpoonHeight,
+    DEFAULT_SIDE_PANEL_WIDTH: DEFAULT_SIDE_PANEL_WIDTH,
+    DEFAULT_SIDE_PANEL_HEIGHT: DEFAULT_SIDE_PANEL_HEIGHT,
+    SIDE_PANEL_LAYOUT: SIDE_PANEL_LAYOUT,
     readStoredGraphPrefs: readStoredGraphPrefs,
     writeStoredGraphPrefs: writeStoredGraphPrefs,
     normalizeGraphPrefs: normalizeGraphPrefs,
@@ -1784,6 +2452,83 @@
     writeStoredHoverScope: writeStoredHoverScope,
     readStoredAliasActivation: readStoredAliasActivation,
     writeStoredAliasActivation: writeStoredAliasActivation,
+    readStoredCfgAutoSync: readStoredCfgAutoSync,
+    writeStoredCfgAutoSync: writeStoredCfgAutoSync,
+    readStoredReplAutoscroll: readStoredReplAutoscroll,
+    writeStoredReplAutoscroll: writeStoredReplAutoscroll,
+    readStoredReplWelcome: readStoredReplWelcome,
+    writeStoredReplWelcome: writeStoredReplWelcome,
+    readStoredReplEcho: readStoredReplEcho,
+    writeStoredReplEcho: writeStoredReplEcho,
+    readStoredReplFilterChatter: readStoredReplFilterChatter,
+    writeStoredReplFilterChatter: writeStoredReplFilterChatter,
+    readStoredReplHistoryCap: readStoredReplHistoryCap,
+    writeStoredReplHistoryCap: writeStoredReplHistoryCap,
+    readStoredBelugaFallbackStable: readStoredBelugaFallbackStable,
+    writeStoredBelugaFallbackStable: writeStoredBelugaFallbackStable,
+    readStoredBelugaCancelOnEdit: readStoredBelugaCancelOnEdit,
+    writeStoredBelugaCancelOnEdit: writeStoredBelugaCancelOnEdit,
+    readStoredLibraryExpandDefault: readStoredLibraryExpandDefault,
+    writeStoredLibraryExpandDefault: writeStoredLibraryExpandDefault,
+    readStoredRestorePanels: readStoredRestorePanels,
+    writeStoredRestorePanels: writeStoredRestorePanels,
+    readStoredActiveSidePanel: readStoredActiveSidePanel,
+    writeStoredActiveSidePanel: writeStoredActiveSidePanel,
+    readStoredWorkspace: readStoredWorkspace,
+    writeStoredWorkspace: writeStoredWorkspace,
+    resetStoredWorkspace: resetStoredWorkspace,
+    resetWorkspaceState: resetWorkspaceState,
+    workspaceKeyFor: workspaceKeyFor,
+    normalizeViewportAnchor: normalizeViewportAnchor,
+    readStoredAutosaveDelay: readStoredAutosaveDelay,
+    writeStoredAutosaveDelay: writeStoredAutosaveDelay,
+    readStoredEditorFontSize: readStoredEditorFontSize,
+    writeStoredEditorFontSize: writeStoredEditorFontSize,
+    readStoredEditorLineHeight: readStoredEditorLineHeight,
+    writeStoredEditorLineHeight: writeStoredEditorLineHeight,
+    readStoredEditorWordWrap: readStoredEditorWordWrap,
+    writeStoredEditorWordWrap: writeStoredEditorWordWrap,
+    readStoredEditorTabSize: readStoredEditorTabSize,
+    writeStoredEditorTabSize: writeStoredEditorTabSize,
+    readStoredEditorLineNumbers: readStoredEditorLineNumbers,
+    writeStoredEditorLineNumbers: writeStoredEditorLineNumbers,
+    readStoredEditorFoldGutter: readStoredEditorFoldGutter,
+    writeStoredEditorFoldGutter: writeStoredEditorFoldGutter,
+    readStoredEditorActiveLine: readStoredEditorActiveLine,
+    writeStoredEditorActiveLine: writeStoredEditorActiveLine,
+    readStoredEditorDiagGutter: readStoredEditorDiagGutter,
+    writeStoredEditorDiagGutter: writeStoredEditorDiagGutter,
+    readStoredEditorHoleGutter: readStoredEditorHoleGutter,
+    writeStoredEditorHoleGutter: writeStoredEditorHoleGutter,
+    readStoredEditorSyntaxHighlight: readStoredEditorSyntaxHighlight,
+    writeStoredEditorSyntaxHighlight: writeStoredEditorSyntaxHighlight,
+    readStoredEditorSemanticHighlight: readStoredEditorSemanticHighlight,
+    writeStoredEditorSemanticHighlight: writeStoredEditorSemanticHighlight,
+    readStoredEditorParseHighlight: readStoredEditorParseHighlight,
+    writeStoredEditorParseHighlight: writeStoredEditorParseHighlight,
+    readStoredEditorOccurrenceHighlight: readStoredEditorOccurrenceHighlight,
+    writeStoredEditorOccurrenceHighlight: writeStoredEditorOccurrenceHighlight,
+    readStoredEditorBracketMatch: readStoredEditorBracketMatch,
+    writeStoredEditorBracketMatch: writeStoredEditorBracketMatch,
+    readStoredEditorAutoCloseBrackets: readStoredEditorAutoCloseBrackets,
+    writeStoredEditorAutoCloseBrackets: writeStoredEditorAutoCloseBrackets,
+    readStoredEditorSelectionMatches: readStoredEditorSelectionMatches,
+    writeStoredEditorSelectionMatches: writeStoredEditorSelectionMatches,
+    readStoredEditorReindentPaste: readStoredEditorReindentPaste,
+    writeStoredEditorReindentPaste: writeStoredEditorReindentPaste,
+    readStoredEditorFormatWidth: readStoredEditorFormatWidth,
+    writeStoredEditorFormatWidth: writeStoredEditorFormatWidth,
+    resetLayoutPrefs: resetLayoutPrefs,
+    resetAppearancePrefs: resetAppearancePrefs,
+    resetEditorTypographyPrefs: resetEditorTypographyPrefs,
+    resetEditorIndentPrefs: resetEditorIndentPrefs,
+    resetEditorCodeInsightPrefs: resetEditorCodeInsightPrefs,
+    resetEditorGutterPrefs: resetEditorGutterPrefs,
+    resetEditorPrefs: resetEditorPrefs,
+    resetBelugaPrefs: resetBelugaPrefs,
+    resetReplPrefs: resetReplPrefs,
+    resetWorkspacePrefs: resetWorkspacePrefs,
+    resetAliasesPrefs: resetAliasesPrefs,
     expandAliasesInAllFiles: expandAliasesInAllFiles,
     normalizeLoaded: normalizeLoaded,
     emptyState: emptyState,
@@ -1830,7 +2575,11 @@
     getDefaultCfgPath: getDefaultCfgPath,
     setDefaultCfgPath: setDefaultCfgPath,
     getActiveCfgForDir: getActiveCfgForDir,
+    getActiveCfgsForDir: getActiveCfgsForDir,
     setActiveCfgForDir: setActiveCfgForDir,
+    setActiveCfgsForDir: setActiveCfgsForDir,
+    addActiveCfgForDir: addActiveCfgForDir,
+    removeActiveCfgForDir: removeActiveCfgForDir,
     getActiveCfgByDir: getActiveCfgByDir,
     backfillActiveCfgByDir: backfillActiveCfgByDir,
     DEFAULT_PROJECT_NAME: DEFAULT_PROJECT_NAME,

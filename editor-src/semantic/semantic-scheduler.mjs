@@ -65,6 +65,11 @@ export function createSemanticScheduler(engine, session) {
   function onViewportChange(range) {
     if (viewportRange.from === range.from && viewportRange.to === range.to) return;
     viewportRange = range;
+    const g = typeof globalThis !== 'undefined' ? globalThis : null;
+    const code = typeof engine.getCheckerCode === 'function' ? engine.getCheckerCode() : '';
+    if (code && g?.BelugaClient?.warmIntel) {
+      g.BelugaClient.warmIntel(code).catch(() => {});
+    }
     for (const item of queue) item.priority = priorityFor(item.declRange);
     requeue();
   }

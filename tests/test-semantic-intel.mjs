@@ -41,10 +41,10 @@ for (const key of ['name', 'label', 'definition', 'references', 'dependencies',
 
 expect(intel.userStatus && typeof intel.userStatus.state === 'string',
   'userStatus has a state string');
-expect(['settled', 'recalculating', 'error'].includes(intel.userStatus.state),
-  `userStatus.state is one of settled/recalculating/error (got ${intel.userStatus.state})`);
-expect(intel.userStatus.state === 'settled',
-  'a decl with a source signature and no session reads "settled" (not blocked/stale)');
+expect(['checked', 'checking', 'error'].includes(intel.userStatus.state),
+  `userStatus.state is one of checked/checking/error (got ${intel.userStatus.state})`);
+expect(intel.userStatus.state === 'checked',
+  'a decl with a source signature and no session reads "checked" (not blocked/stale)');
 
 expect(intel.userStatus.state !== 'error',
   'free implicit binders do not make nd read as an error');
@@ -98,7 +98,7 @@ expect(grouped.indexOf(sigGroup) < grouped.indexOf(bodyGroup),
 
 const model = buildInspectorModel(e, ndPos);
 expect(model && model.name === 'nd', 'buildInspectorModel resolves nd');
-expect(model.statusState === 'settled', 'inspector model carries the honest status state');
+expect(model.statusState === 'checked', 'inspector model carries the honest status state');
 expect(typeof model.statusDetail === 'string', 'inspector model carries a status detail string');
 expect(Array.isArray(model.usedBy), 'model.usedBy is grouped (array)');
 expect(Array.isArray(model.dependsOn), 'model.dependsOn is grouped (array)');
@@ -115,8 +115,8 @@ expect(aIntel && aIntel.type != null, 'intelSyncAt resolves a type for a local/i
 expect(aHover.status === 'ready' && aHover.type != null, 'hoverAt also resolves it (sanity)');
 expect(aIntel.type === aHover.type,
   `inspector type must equal tooltip type for the same position (got ${JSON.stringify(aIntel.type)} vs ${JSON.stringify(aHover.type)})`);
-expect(aIntel.userStatus.state === 'settled',
-  'a binder with a known type reads "settled", never spinning "recalculating"');
+expect(aIntel.userStatus.state === 'checked',
+  'a binder with a known type reads "checked", never spinning "checking"');
 
 const oPos2 = SAMPLE.indexOf('LF o') + 3;
 expect(e.intelSyncAt(oPos2).type === e.hoverAt(oPos2).type,
@@ -124,8 +124,8 @@ expect(e.intelSyncAt(oPos2).type === e.hoverAt(oPos2).type,
 
 for (const probe of [aPos, oPos2, ndPos]) {
   const st = e.intelSyncAt(probe).userStatus.state;
-  expect(st === 'settled' || st === 'error',
-    `no-session engine never reports "recalculating" (pos ${probe} -> ${st})`);
+  expect(st === 'checked' || st === 'error',
+    `no-session engine never reports "checking" (pos ${probe} -> ${st})`);
 }
 
 console.log('OK semantic intel (intelSyncAt shape, deps/dependents/impact, groupByKind, inspector model, tooltip==inspector single-source-of-truth)');

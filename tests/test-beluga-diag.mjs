@@ -45,6 +45,17 @@ assert.deepEqual(chainedMsgs, [
 assert.ok(chainedDiags.every((d) => !d.message.includes('File "')));
 assert.ok(chainedDiags[0].from !== chainedDiags[1].from);
 
+const garbledDoc = Text.of(['rec dual_sym : [ ⊢ dual A A\' ] → [', '', '', '', '', ';', '']);
+const garbledRaw = `File "input.bel", line 7, column 1
+Error: Failed to parse Expected the parser input to end here.`;
+const garbledDiags = parseBelugaDiagnostics(garbledRaw, garbledDoc);
+assert.equal(garbledDiags.length, 1);
+assert.equal(
+  garbledDiags[0].message,
+  'Failed to parse: unexpected text here.',
+  'menhir flush-on-one-line parse errors get readable text',
+);
+
 assert.equal(belugaOutputLooksLikeFailure(raw), true);
 assert.equal(
   belugaOutputLooksLikeFailure('## Type Reconstruction done: input.bel ##\n## Holes: input.bel ##'),

@@ -64,9 +64,26 @@ expect(gm.warnings === 2, `assembleGlobalModel counts 2 warnings (got ${gm.warni
 expect(gm.diagnostics.length === 3, `diagnostics list passes through (got ${gm.diagnostics.length})`);
 expect(gm.diagnostics[0].severity === 'error', 'errors sort ahead of warnings in the diagnostics list');
 expect(gm.checking === true, 'settle "checking" sets checking flag');
+
+const gmStale = assembleGlobalModel({
+  diagnostics: [{ severity: 'error', stale: true }],
+  settle: 'stale',
+});
+expect(gmStale.checking === true, 'settle "stale" sets checking flag (stale error recheck)');
+expect(gmStale.errors === 1, 'stale diagnostics still count as errors');
+expect(gmStale.hasStaleErrors === true, 'hasStaleErrors set when stale error present');
 expect(gm.fileName === 'main.bel', 'file name passes through');
 expect(gm.outline.length === 2, 'outline passes through');
+expect(Array.isArray(gm.holes) && gm.holes.length === 0, 'holes default to an empty array');
 expect(gm.projectFileCount === 3, 'project file count passes through');
+
+// Holes pass through as clickable rows (number + goal + range).
+const gmHoles = assembleGlobalModel({
+  fileName: 'plus.bel',
+  holes: [{ index: 0, goal: '[ |- nat]', from: 100, to: 101 }],
+});
+expect(gmHoles.holes.length === 1 && gmHoles.holes[0].goal === '[ |- nat]',
+  'holes pass through to the global model');
 expect(gm.suite && gm.suite.name === 'lists', `suite name derives from cfg base (got ${gm.suite && gm.suite.name})`);
 expect(gm.suite && gm.suite.activeIndex === 1, 'suite active index passes through');
 expect(gm.suite && gm.suite.paths.length === 2, 'suite carries the full load order');

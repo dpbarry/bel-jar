@@ -10,6 +10,7 @@ import { parser } from '../editor-src/beluga-parser.js';
 import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
 import { createSettlement } from '../editor-src/semantic/settlement.mjs';
 import { createCheckerStore } from '../editor-src/semantic/checker-store.mjs';
+import { suitePreludeBannerForActive } from '../editor-src/suite-prelude-banner.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -80,9 +81,18 @@ expect(msgs.some((m) => m.includes('badA')),
   `active file's own error must surface despite a prelude error, got: ${msgs.join(' | ')}`);
 const active = snap.belugaDiagnostics.find((d) => /badA/.test(d.message));
 expect(active && active.blockIndex === 0, 'active error maps to the active file block');
-// The earlier-file error is reported as a non-blocking banner.
-const banner = snap.belugaDiagnostics.find((d) => /earlier file base\.bel/.test(d.message));
-expect(banner, `a banner names the earlier file, got: ${msgs.join(' | ')}`);
+const banner = suitePreludeBannerForActive({
+  doc: syntax.doc,
+  members: [
+    { id: 'base', name: 'base.bel', text: prelude.code },
+    { id: 'active', name: 'use.bel', text: 'LF q : type =\n  | mkQ : badA\n;' },
+  ],
+  activeId: 'active',
+  memberDiagnostics: snap.memberDiagnostics,
+  getText: (id) => (id === 'active' ? syntax.doc.toString() : prelude.code),
+});
+expect(banner && /earlier suite file base\.bel/.test(banner.message),
+  `a banner names the earlier file, got: ${banner?.message || '(none)'}`);
 expect(snap.ok === false, 'a suite with a prelude error does not read ok');
 // The banner must be hoverable across the WHOLE first line, not a single char —
 // a start-of-file 1-char target is misery to hit. The active file's line 1 is
@@ -156,8 +166,21 @@ expect(banner.from === 0 && banner.to === line1End,
   await settlement3.settleNow(activeSyntax, 0);
   const snap3 = store3.getSnapshot();
   const msgs3 = snap3.belugaDiagnostics.map((d) => d.message);
-  expect(!msgs3.some((m) => /Fix earlier suite files/.test(m)),
-    `the misleading "fix earlier file" banner must NOT appear when the active file caused it, got: ${msgs3.join(' | ')}`);
+  const banner3 = suitePreludeBannerForActive({
+    doc: activeSyntax.doc,
+    members: [
+      { id: 'hb', name: 'fol-handbook.bel', text: handbookPrelude.code },
+      { id: 'active', name: 'use.bel', text: 'LF up : type =\n  | u : up\n;' },
+    ],
+    activeId: 'active',
+    memberDiagnostics: snap3.memberDiagnostics,
+    getText: (id) => (id === 'active' ? activeSyntax.doc.toString() : handbookPrelude.code),
+    suiteFindings: [{
+      kind: 'pragma-leak', severity: 'warning', at: 'active', atIsActive: true,
+      affectedNames: ['fol-handbook.bel'], pragma: '--nostrengthen',
+    }],
+  });
+  expect(!banner3, `the misleading "fix earlier file" banner must NOT appear when the active file caused it`);
   expect(msgs3.some((m) => /every previous file in the suite/.test(m)),
     'the pragma-leak warning (the true cause) is shown instead');
 }
@@ -180,8 +203,80 @@ expect(banner.from === 0 && banner.to === line1End,
   });
   await settlement4.settleNow(activeSyntax, 0);
   const msgs4 = store4.getSnapshot().belugaDiagnostics.map((d) => d.message);
-  expect(msgs4.some((m) => /Fix earlier suite files/.test(m)),
-    `a genuinely independent prelude error STILL raises the banner, got: ${msgs4.join(' | ')}`);
+  const banner4 = suitePreludeBannerForActive({
+    doc: activeSyntax.doc,
+    members: [
+      { id: 'base', name: 'base.bel', text: indepPrelude.code },
+      { id: 'active', name: 'use.bel', text: 'LF up : type =\n  | u : up\n;' },
+    ],
+    activeId: 'active',
+    memberDiagnostics: store4.getSnapshot().memberDiagnostics,
+    getText: (id) => (id === 'active' ? activeSyntax.doc.toString() : indepPrelude.code),
+  });
+  expect(banner4 && /earlier suite file/.test(banner4.message),
+    `a genuinely independent prelude error STILL raises the banner, got: ${banner4?.message || '(none)'}`);
+}
+
+// Many independent prelude errors must not exhaust the pass budget before the
+// active file is reached (classical-processes-scale suites).
+{
+  const blocks = [];
+  for (let i = 0; i < 10; i += 1) {
+    blocks.push(`LF p${i} : type =\n  | m${i} : bad${i}\n;`);
+  }
+  const preludeCode = blocks.join('\n\n');
+  const prelude = {
+    code: preludeCode,
+    spans: [{ id: 'big', name: 'big.bel', startLine: 1, endLine: preludeCode.split('\n').length }],
+    offsetLines: preludeCode.split('\n').length + 1,
+    names: new Set(),
+  };
+  const activeSyntax = syntaxFor(`LF q : type =\n  | m : badActive\n;`);
+  const rules = [];
+  for (let i = 0; i < 10; i += 1) rules.push({ marker: `bad${i}`, message: `Identifier bad${i} is unbound` });
+  rules.push({ marker: 'badActive', message: 'Identifier badActive is unbound' });
+  const store5 = createCheckerStore();
+  const settlement5 = createSettlement({
+    belugaClient: haltingMock(rules),
+    checkerStore: store5,
+    getCheckContext: () => ({ doc: activeSyntax.doc, prelude }),
+  });
+  await settlement5.settleNow(activeSyntax, 0);
+  const msgs5 = store5.getSnapshot().belugaDiagnostics.map((d) => d.message);
+  expect(msgs5.some((m) => /badActive/.test(m)),
+    `active error must survive a long broken prelude, got: ${msgs5.join(' | ')}`);
+}
+
+// Active-file errors that mention prelude-defined names must not be silently dropped.
+{
+  const prelude = {
+    code: 'LF bad : type =\n  | t1 : badPre\n;',
+    spans: [{ id: 'base', name: 'base.bel', startLine: 1, endLine: 3 }],
+    offsetLines: 4,
+    names: new Set(['bad', 't1', 'tp']),
+  };
+  const activeSyntax = syntaxFor(`LF use : type =\n  | u : tp\n;`);
+  let pass = 0;
+  const client5 = {
+    fingerprint: (c) => `fp:${c.length}:${pass}`,
+    checkResult: async (code) => {
+      pass += 1;
+      if (code.includes('badPre')) {
+        return { ok: false, output: 'File "input.bel", line 2, column 1:\nError: Identifier badPre is unbound' };
+      }
+      return { ok: false, output: 'File "input.bel", line 6, column 1:\nError: Identifier tp is unbound' };
+    },
+  };
+  const store6 = createCheckerStore();
+  const settlement6 = createSettlement({
+    belugaClient: client5,
+    checkerStore: store6,
+    getCheckContext: () => ({ doc: activeSyntax.doc, prelude }),
+  });
+  await settlement6.settleNow(activeSyntax, 0);
+  const msgs6 = store6.getSnapshot().belugaDiagnostics.map((d) => d.message);
+  expect(msgs6.some((m) => /Identifier tp is unbound/.test(m)),
+    `active-file error naming a prelude symbol must surface, got: ${msgs6.join(' | ')}`);
 }
 
 console.log('OK settlement prelude recovery (earlier-file error masked, active file still linted, '

@@ -17,12 +17,12 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
   expect(d.length === 0, 'valid cfg yields no diagnostics');
 }
 
-// A missing/misspelled entry is an error on its line.
+// A missing/misspelled entry is a warning on its line (ignored at load, not fatal).
 {
   const text = 'base.bel\nuze.bel\n';
   const d = cfgDiagnosticsFor(text, 'grp/sources.cfg', names);
-  expect(d.length === 1 && d[0].severity === 'error', 'dangling entry → one error');
-  expect(d[0].message.includes('grp/uze.bel'), 'error names the unresolved path');
+  expect(d.length === 1 && d[0].severity === 'warning', 'dangling entry → one warning');
+  expect(d[0].message.includes('grp/uze.bel'), 'warning names the unresolved path');
   // span covers exactly the "uze.bel" token on line 2
   expect(text.slice(d[0].from, d[0].to) === 'uze.bel', 'diagnostic span is the entry token');
 }
@@ -33,10 +33,24 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
   expect(d.length === 0, 'nested .cfg include that exists is valid');
 }
 
-// A non-entry junk line is a warning, not an error.
+// Incomplete lines (mid-typed extension) are ignored; extensionless names are entries.
 {
-  const d = cfgDiagnosticsFor('base.bel\nnonsense\n', 'grp/sources.cfg', names);
-  expect(d.length === 1 && d[0].severity === 'warning', 'non-entry line → warning');
+  const d = cfgDiagnosticsFor('base.bel\nuse.\nfoo.bar\n', 'grp/sources.cfg', names);
+  expect(d.length === 0, 'lines with a non-bel extension or trailing dot are skipped');
+}
+
+// Extensionless cfg entry resolves like an implicit .bel file.
+{
+  const extNames = new Set(['grp/name', 'grp/sources.cfg']);
+  const d = cfgDiagnosticsFor('name\n', 'grp/sources.cfg', extNames);
+  expect(d.length === 0, 'extensionless entry matching a project file is valid');
+}
+
+// Dangling extensionless entry warns like any other missing file.
+{
+  const d = cfgDiagnosticsFor('base.bel\nmissing\n', 'grp/sources.cfg', names);
+  expect(d.length === 1 && d[0].severity === 'warning', 'dangling extensionless entry → warning');
+  expect(d[0].message.includes('grp/missing'), 'warning names the unresolved path');
 }
 
 // Comments and blanks never flag.
@@ -145,5 +159,18 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
   expect(d.length === 0, 'no resolver → no cross-file diagnostics, never throws');
 }
 
-console.log('OK cfg lint (resolves entries, flags dangling errors + junk warnings, '
+{
+  const prev = globalThis.BelJarPersist;
+  globalThis.BelJarPersist = {
+    getFileById(id) {
+      if (id === 'workspace://untitled.bel') return { id, name: 'grp/a.cfg' };
+      return null;
+    },
+  };
+  expect(resolveCfgDocumentPath('workspace://untitled.bel') === 'grp/a.cfg',
+    'document path follows live registry name after rename');
+  globalThis.BelJarPersist = prev;
+}
+
+console.log('OK cfg lint (resolves entries, flags dangling warnings, '
   + 'pragma-leak + shadowed-use across suite files)');

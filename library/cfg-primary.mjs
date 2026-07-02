@@ -1,5 +1,7 @@
 // Pick the primary .cfg for a folder — same rule as BelJarProjectSource.bestCfgInDir.
 
+import { isCfgSourceEntry } from '../editor-src/bel-paths.mjs';
+
 export function parseCfg(text) {
   const out = [];
   for (const line of String(text || '').split('\n')) {
@@ -35,7 +37,7 @@ export function resolveCfgOrder(cfgDir, cfgText, cfgByDir, sigSet, seenCfg = new
           if (!seen.has(p)) { seen.add(p); ordered.push(p); }
         }
       }
-    } else if (low.endsWith('.bel') || low.endsWith('.elf')) {
+    } else if (isCfgSourceEntry(entry)) {
       const full = joinPath(cfgDir, entry);
       if (sigSet[full] && !seen.has(full)) { seen.add(full); ordered.push(full); }
     }

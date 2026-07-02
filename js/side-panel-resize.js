@@ -1,16 +1,20 @@
 (function (global) {
   var STACK_MQ = '(max-width: 48rem)';
   var HIT_GRACE_PX = 6;
+  var DEFAULT_W = 250;
+  var DEFAULT_H = 190;
 
   function init(opts) {
     opts = opts || {};
     var workspace = document.querySelector('.workspace');
-    var explorerPanel = document.querySelector('.explorer-panel');
-    var inspectorPanel = document.querySelector('.inspector-panel');
-    var libraryPanel = document.querySelector('.library-panel');
     if (!workspace) return null;
 
     var persist = global.BelJarPersist;
+    if (persist) {
+      DEFAULT_W = persist.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
+      DEFAULT_H = persist.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
+    }
+
     var stackedMq = global.matchMedia(STACK_MQ);
     var resizers = [];
 
@@ -140,80 +144,91 @@
       };
     }
 
+    var panelConfigs = [
+      {
+        panel: document.querySelector('.explorer-panel'),
+        openClass: 'is-explorer-open',
+        cssVarW: '--explorer-w',
+        cssVarH: '--explorer-h',
+        read: function (stacked) {
+          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist.readStoredExplorerHeight() : persist.readStoredExplorerWidth();
+        },
+        write: function (px, stacked) {
+          if (!persist) return;
+          if (stacked) persist.writeStoredExplorerHeight(px);
+          else persist.writeStoredExplorerWidth(px);
+        },
+      },
+      {
+        panel: document.querySelector('.inspector-panel'),
+        openClass: 'is-inspector-open',
+        cssVarW: '--inspector-w',
+        cssVarH: '--inspector-h',
+        read: function (stacked) {
+          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist.readStoredInspectorHeight() : persist.readStoredInspectorWidth();
+        },
+        write: function (px, stacked) {
+          if (!persist) return;
+          if (stacked) persist.writeStoredInspectorHeight(px);
+          else persist.writeStoredInspectorWidth(px);
+        },
+      },
+      {
+        panel: document.querySelector('.library-panel'),
+        openClass: 'is-library-open',
+        cssVarW: '--library-w',
+        cssVarH: '--library-h',
+        read: function (stacked) {
+          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist.readStoredLibraryHeight() : persist.readStoredLibraryWidth();
+        },
+        write: function (px, stacked) {
+          if (!persist) return;
+          if (stacked) persist.writeStoredLibraryHeight(px);
+          else persist.writeStoredLibraryWidth(px);
+        },
+      },
+      {
+        panel: document.querySelector('.harpoon-panel'),
+        openClass: 'is-harpoon-open',
+        cssVarW: '--harpoon-w',
+        cssVarH: '--harpoon-h',
+        read: function (stacked) {
+          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist.readStoredHarpoonHeight() : persist.readStoredHarpoonWidth();
+        },
+        write: function (px, stacked) {
+          if (!persist) return;
+          if (stacked) persist.writeStoredHarpoonHeight(px);
+          else persist.writeStoredHarpoonWidth(px);
+        },
+      },
+    ];
+
     if (persist) {
-      document.documentElement.style.setProperty('--explorer-w', persist.readStoredExplorerWidth() + 'px');
-      document.documentElement.style.setProperty('--inspector-w', persist.readStoredInspectorWidth() + 'px');
-      document.documentElement.style.setProperty('--explorer-h', persist.readStoredExplorerHeight() + 'px');
-      document.documentElement.style.setProperty('--inspector-h', persist.readStoredInspectorHeight() + 'px');
+      var root = document.documentElement.style;
+      for (var i = 0; i < panelConfigs.length; i++) {
+        var cfg = panelConfigs[i];
+        root.setProperty(cfg.cssVarW, cfg.read(false) + 'px');
+        root.setProperty(cfg.cssVarH, cfg.read(true) + 'px');
+      }
     }
 
-    var explorerResizer = createResizer({
-      panel: explorerPanel,
-      openClass: 'is-explorer-open',
-      cssVarW: '--explorer-w',
-      cssVarH: '--explorer-h',
-      seam: 'right',
-      seamStacked: 'bottom',
-      read: function (stacked) {
-        return persist
-          ? (stacked ? persist.readStoredExplorerHeight() : persist.readStoredExplorerWidth())
-          : (stacked ? 160 : 224);
-      },
-      write: function (px, stacked) {
-        if (!persist) return;
-        if (stacked) persist.writeStoredExplorerHeight(px);
-        else persist.writeStoredExplorerWidth(px);
-      },
-    });
-
-    var inspectorResizer = createResizer({
-      panel: inspectorPanel,
-      openClass: 'is-inspector-open',
-      cssVarW: '--inspector-w',
-      cssVarH: '--inspector-h',
-      seam: 'right',
-      seamStacked: 'bottom',
-      read: function (stacked) {
-        return persist
-          ? (stacked ? persist.readStoredInspectorHeight() : persist.readStoredInspectorWidth())
-          : (stacked ? 192 : 256);
-      },
-      write: function (px, stacked) {
-        if (!persist) return;
-        if (stacked) persist.writeStoredInspectorHeight(px);
-        else persist.writeStoredInspectorWidth(px);
-      },
-    });
-
-    var libraryResizer = createResizer({
-      panel: libraryPanel,
-      openClass: 'is-library-open',
-      cssVarW: '--library-w',
-      cssVarH: '--library-h',
-      seam: 'right',
-      seamStacked: 'bottom',
-      read: function (stacked) {
-        return persist
-          ? (stacked ? persist.readStoredLibraryHeight() : persist.readStoredLibraryWidth())
-          : (stacked ? 192 : 256);
-      },
-      write: function (px, stacked) {
-        if (!persist) return;
-        if (stacked) persist.writeStoredLibraryHeight(px);
-        else persist.writeStoredLibraryWidth(px);
-      },
-    });
-
-    if (explorerResizer) resizers.push(explorerResizer);
-    if (inspectorResizer) resizers.push(inspectorResizer);
-    if (libraryResizer) resizers.push(libraryResizer);
+    for (var j = 0; j < panelConfigs.length; j++) {
+      panelConfigs[j].seam = 'right';
+      panelConfigs[j].seamStacked = 'bottom';
+      var resizer = createResizer(panelConfigs[j]);
+      if (resizer) resizers.push(resizer);
+    }
 
     function refreshAll() {
-      for (var i = 0; i < resizers.length; i++) resizers[i].refresh();
+      for (var k = 0; k < resizers.length; k++) resizers[k].refresh();
     }
 
     function repositionAll() {
-      for (var i = 0; i < resizers.length; i++) resizers[i].reposition();
+      for (var m = 0; m < resizers.length; m++) resizers[m].reposition();
     }
 
     stackedMq.addEventListener('change', refreshAll);
@@ -226,9 +241,9 @@
 
     if (typeof ResizeObserver !== 'undefined') {
       var ro = new ResizeObserver(repositionAll);
-      if (explorerPanel) ro.observe(explorerPanel);
-      if (inspectorPanel) ro.observe(inspectorPanel);
-      if (libraryPanel) ro.observe(libraryPanel);
+      for (var n = 0; n < panelConfigs.length; n++) {
+        if (panelConfigs[n].panel) ro.observe(panelConfigs[n].panel);
+      }
     }
 
     refreshAll();

@@ -1,9 +1,12 @@
 // Full-file Beluga source → bel-hl-* highlighted DOM (read-only preview).
 
 import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
-import { belugaLanguage } from './bel-language.mjs';
+import { belugaLanguage, holeTag } from './bel-language.mjs';
+
+import { expandBelAliases } from './bel-aliases.mjs';
 
 const SOURCE_HIGHLIGHTER = tagHighlighter([
+  { tag: holeTag, class: 'bel-hl-hole' },
   { tag: t.keyword, class: 'bel-hl-keyword' },
   { tag: t.controlKeyword, class: 'bel-hl-control' },
   { tag: t.typeOperator, class: 'bel-hl-arrow' },
@@ -37,7 +40,7 @@ const SOURCE_HIGHLIGHTER = tagHighlighter([
 
 function normalizeSource(text) {
   if (text == null) return '';
-  return String(text).replace(/\r\n?/g, '\n');
+  return expandBelAliases(String(text).replace(/\r\n?/g, '\n'));
 }
 
 export function highlightSourceFragment(text) {

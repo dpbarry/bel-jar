@@ -1,7 +1,9 @@
 // Dependency graph view (local neighborhood + global file scope).
 
 
+import { EditorView } from '@codemirror/view';
 import { getEngine, jumpToRange } from './bel-ide-actions.mjs';
+import { editorFileId } from './bel-refs-panel.mjs';
 import { dependencyGraph } from './workspace-index.mjs';
 import { createFollowWindowAction, registerEditorFollow } from './bel-follow-sync.mjs';
 import { computeParseCoverage, formatGlobalGraphStaleBanner } from './bel-ide-status.mjs';
@@ -13,6 +15,7 @@ import {
   buildNavEntry, createNavState, navPush, navBack, navForward, navGoTo,
   navCurrent, navCanBack, navCanForward, fuzzySearchNodes, graphKeyForEntry,
 } from './graph/graph-nav.mjs';
+import { belNavSemanticTick } from './bel-nav.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let markerSeq = 0;
@@ -342,6 +345,98 @@ function jumpToNode(view, engine, node) {
 }
 
 const openGraphWindows = new Map();
+const graphLiveTargets = [];
+
+export function registerGraphLive(entry) {
+  graphLiveTargets.push(entry);
+  return () => {
+    const i = graphLiveTargets.indexOf(entry);
+    if (i >= 0) graphLiveTargets.splice(i, 1);
+  };
+}
+
+export function belGraphLive() {
+  let timer = null;
+  return EditorView.updateListener.of((update) => {
+    const semanticTicked = update.transactions.some((tr) =>
+      tr.effects.some((e) => e.is(belNavSemanticTick)));
+    if (!semanticTicked) return;
+    const active = graphLiveTargets.filter((t) => t.view === update.view);
+    if (!active.length) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      for (const t of active) {
+        if (t.view === update.view) t.sync();
+      }
+    }, 80);
+  });
+}
+
+function graphModelFingerprint(model) {
+  if (!model) return '0:0';
+  return `${model.nodes?.length ?? 0}:${model.edges?.length ?? 0}`;
+}
+
+function updateStaleBanner(container, text) {
+  if (!container) return;
+  let banner = container.querySelector('.bel-graph-stale-banner');
+  if (!text) {
+    banner?.remove();
+    return;
+  }
+  if (!banner) container.insertBefore(makeStaleBanner(text), container.firstChild);
+  else banner.textContent = text;
+}
+
+function resolveGraphEngine(view) {
+  const realEngine = getEngine(view);
+  return realEngine ? (makeGroupSource(view, realEngine) || realEngine) : null;
+}
+
+function syncGraphLive(view, win, ctx) {
+  if (!view || !win || !ctx) return;
+  const cur = navCurrent(win._graphNav);
+  if (!cur) return;
+  const engine = resolveGraphEngine(view);
+  if (!engine) return;
+  const bundle = win._graphBundle;
+  if (bundle) {
+    bundle.view = view;
+    bundle.engine = engine;
+  }
+
+  const parseCoverage = computeParseCoverage(view.state);
+  if (cur.mode === 'global') {
+    const meta = collectGlobalGraphMeta(view, engine);
+    updateStaleBanner(win.body, formatGlobalGraphStaleBanner(meta));
+    const parseNote = !parseCoverage.complete ? `parse ${parseCoverage.percent}%` : '';
+    win.setTitle?.(graphWindowTitle(parseNote));
+  }
+
+  const prefs = loadGraphPrefs();
+  const newModel = cur.mode === 'global'
+    ? buildGlobalModel(engine)
+    : buildNeighborhood(engine, cur.rootId, { depth: prefs.depth });
+  if (!newModel) return;
+
+  const fp = graphModelFingerprint(newModel);
+  const parseDone = parseCoverage.complete;
+  const shouldRemount = fp !== ctx._liveFp
+    || (cur.mode === 'global' && ctx._liveParseComplete === false && parseDone);
+  ctx._liveParseComplete = parseDone;
+  if (!shouldRemount) return;
+  ctx._liveFp = fp;
+  if (win._graph3d) {
+    const snap = navCurrent(win._graphNav);
+    if (snap) {
+      const leaving = { ...snap, camera: win._graph3d.getCameraState() };
+      if (snap.mode === 'global') leaving.focusId = ctx.selectedNodeId ?? snap.focusId ?? null;
+      win._graphNav.stack[win._graphNav.index] = leaving;
+    }
+  }
+  navigateGraph(view, engine, win, ctx, cur, { push: false });
+}
 
 function syncFollowFromEditor(view, engine, win, ctx) {
   if (!ctx.followEditor || ctx._followFromGraph || ctx._navRestoring) return;
@@ -1477,7 +1572,9 @@ function navForwardGraph(view, engine, win, ctx) {
   applyNavFromStack(view, engine, win, ctx);
 }
 
-function open3DGraph(view, engine, key, model, titleNode, { width, height, mode, staleBanner = null, rootId = null }) {
+function open3DGraph(view, engine, key, model, titleNode, {
+  width, height, mode, staleBanner = null, rootId = null, geom = null, followEditor = false,
+} = {}) {
   const g = typeof window !== 'undefined' ? window : self;
   const existing = openGraphWindows.get(key);
   if (existing) {
@@ -1528,6 +1625,20 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
   const graphBundle = { view, engine, ctx };
   const { ref: followRef, action: followAction } = createFollowWindowAction((on) => setGraphFollow(on));
   let unregisterGraphFollow = null;
+  let unregisterGraphLive = null;
+
+  function startGraphLive() {
+    if (unregisterGraphLive) return;
+    ctx._liveFp = graphModelFingerprint(model);
+    ctx._liveParseComplete = view ? computeParseCoverage(view.state).complete : true;
+    unregisterGraphLive = registerGraphLive({
+      view,
+      sync: () => syncGraphLive(view, win, ctx),
+    });
+    if (view && !ctx._liveParseComplete) {
+      queueMicrotask(() => syncGraphLive(view, win, ctx));
+    }
+  }
 
   function setGraphFollow(on) {
     ctx.followEditor = !!on;
@@ -1544,6 +1655,7 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
       });
       syncFollowFromEditor(view, engine, ctx.win, ctx);
     }
+    if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave();
   }
 
   const onKey = (ev) => {
@@ -1569,18 +1681,24 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
     title: titleNode,
     content: body,
     className: 'bel-graph-window bel-graph3d-window',
-    width, height,
+    width: geom?.w ?? width,
+    height: geom?.h ?? height,
+    x: geom?.x,
+    y: geom?.y,
     actions: [followAction, {
       label: 'Dependency graph settings',
       icon: GRAPH_SETTINGS_ICON,
       onClick: openGraphSettingsDialog,
     }],
+    onGeometryChange: () => { if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave(); },
     onClose: () => {
       body.removeEventListener('keydown', onKey);
       if (unregisterGraphFollow) unregisterGraphFollow();
+      if (unregisterGraphLive) unregisterGraphLive();
       if (win._graph3d) win._graph3d.dispose();
       openGraphWindows.delete(win._graphKey ?? key);
       win._graphBundle = null;
+      if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave();
     },
   });
   ctx.win = win;
@@ -1590,6 +1708,10 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
   win._graphDepth = graphPrefs.depth;
   win._graphBundle = graphBundle;
   openGraphWindows.set(key, win);
+
+  startGraphLive();
+
+  if (followEditor) setGraphFollow(true);
 
   propBar.wire({
     onBack: () => navBackGraph(view, engine, win, ctx),
@@ -1640,6 +1762,7 @@ function open3DGraph(view, engine, key, model, titleNode, { width, height, mode,
     toolbar.syncNavMode?.(win._graphNav);
     applyGraphPrefsToWindow(win, graphPrefs);
   });
+  if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave();
   return true;
 }
 
@@ -1650,16 +1773,21 @@ export function openLocalGraphWindow(view, pos, opts = {}) {
   if (!realEngine) return false;
   const engine = makeGroupSource(view, realEngine) || realEngine;
   const at = pos ?? view.state.selection.main.head;
-  const rootId = (opts.rootName && typeof engine.rootIdForName === 'function'
-    ? engine.rootIdForName(opts.rootName) : null) || rootIdAt(engine, view, at);
+  const rootId = opts.rootId
+    || (opts.rootName && typeof engine.rootIdForName === 'function'
+      ? engine.rootIdForName(opts.rootName) : null)
+    || rootIdAt(engine, view, at);
   if (!rootId) return false;
   const prefs = loadGraphPrefs();
   const model = buildNeighborhood(engine, rootId, { depth: prefs.depth });
   return open3DGraph(view, engine, 'graph:' + rootId, model, graphWindowTitle(),
-    { width: 520, height: 440, mode: 'neighborhood', rootId });
+    {
+      width: 520, height: 440, mode: 'neighborhood', rootId,
+      geom: opts.geom, followEditor: opts.followEditor,
+    });
 }
 
-export function openGlobalGraphWindow(view) {
+export function openGlobalGraphWindow(view, opts = {}) {
   const g = typeof window !== 'undefined' ? window : self;
   if (typeof g.FloatingWindow === 'undefined') return false;
   const realEngine = getEngine(view);
@@ -1671,13 +1799,15 @@ export function openGlobalGraphWindow(view) {
   const parseNote = meta.parseCoverage && !meta.parseCoverage.complete
     ? `parse ${meta.parseCoverage.percent}%` : '';
   return open3DGraph(view, engine, 'graph:__global__', model, graphWindowTitle(parseNote),
-    { width: 780, height: 580, mode: 'global', staleBanner });
+    {
+      width: 780, height: 580, mode: 'global', staleBanner,
+      geom: opts.geom, followEditor: opts.followEditor,
+    });
 }
 
 function rebindGraphWindowsToActiveEditor(view) {
   if (!view) return;
-  const realEngine = getEngine(view);
-  const engine = realEngine ? (makeGroupSource(view, realEngine) || realEngine) : null;
+  const engine = resolveGraphEngine(view);
   for (const win of openGraphWindows.values()) {
     const bundle = win._graphBundle;
     if (!bundle?.ctx) continue;
@@ -1686,6 +1816,7 @@ function rebindGraphWindowsToActiveEditor(view) {
     if (bundle.ctx.followEditor && engine) {
       syncFollowFromEditor(view, engine, win, bundle.ctx);
     }
+    syncGraphLive(view, win, bundle.ctx);
   }
 }
 
@@ -1693,6 +1824,46 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beljar:active-editor-view', (e) => {
     rebindGraphWindowsToActiveEditor(e?.detail?.view);
   });
+}
+
+export function collectFloatingGraphWindows(fileId, out) {
+  if (!Array.isArray(out.floating)) out.floating = [];
+  const g = typeof window !== 'undefined' ? window : self;
+  for (const win of openGraphWindows.values()) {
+    const bundle = win._graphBundle;
+    if (!bundle?.view || typeof win.getGeometry !== 'function') continue;
+    const fid = editorFileId(g, bundle.view);
+    if (fid !== fileId) continue;
+    const cur = navCurrent(win._graphNav);
+    const geom = win.getGeometry();
+    const anchor = (cur?.mode === 'global' || bundle.ctx?.mode === 'global')
+      ? { mode: 'global' }
+      : {
+        mode: 'neighborhood',
+        rootId: cur?.rootId || bundle.ctx?.selectedNodeId || null,
+        posHint: bundle.view.state.selection.main.head,
+      };
+    out.floating.push({
+      id: win._graphKey || `graph:${fid}`,
+      kind: 'graph',
+      geom,
+      fileId: fid,
+      anchor,
+      followEditor: !!bundle.ctx?.followEditor,
+      zOrder: Number(win.el?.style?.zIndex) || 0,
+    });
+  }
+}
+
+export function restoreFloatingGraphWindow(entry, view) {
+  if (!entry || entry.kind !== 'graph' || !view) return false;
+  const anchor = entry.anchor || {};
+  const opts = { geom: entry.geom, followEditor: entry.followEditor };
+  if (anchor.mode === 'global') return openGlobalGraphWindow(view, opts);
+  if (anchor.rootId) {
+    return openLocalGraphWindow(view, anchor.posHint, { ...opts, rootId: anchor.rootId });
+  }
+  return openLocalGraphWindow(view, anchor.posHint, opts);
 }
 
 export function renderMiniGraph(container, view, pos, opts = {}) {

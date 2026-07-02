@@ -68,10 +68,15 @@
     var verb = parsed.verb;
 
     if (typeof BelJarReplOutput !== 'undefined') {
-      BelJarReplOutput.appendOutput('# ' + formatShownCmd(rawForHistory), 'cmd');
+      var echoOn = typeof BelJarPersist === 'undefined' || BelJarPersist.readStoredReplEcho();
+      if (echoOn) BelJarReplOutput.appendOutput('# ' + formatShownCmd(rawForHistory), 'cmd');
     }
     cmdInputEl.value = '';
     replHistory.push(rawForHistory);
+    var cap = typeof BelJarPersist !== 'undefined' ? BelJarPersist.readStoredReplHistoryCap() : 0;
+    if (cap > 0 && replHistory.length > cap) {
+      replHistory.splice(0, replHistory.length - cap);
+    }
 
     if (isHelp) {
       if (typeof BelJarReplOutput !== 'undefined') BelJarReplOutput.appendReplHelp();
@@ -97,7 +102,8 @@
       }
       var belugaMode = typeof BelJarBelugaRun !== 'undefined' ? BelJarBelugaRun.getBelugaMode() : 'stable';
       var progressHook = typeof BelJarBelugaRun !== 'undefined' ? BelJarBelugaRun.belugaProgressHook : null;
-      if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') {
+      if (typeof RunProgress !== 'undefined' && typeof BelJarBelugaRun !== 'undefined'
+        && BelJarBelugaRun.shouldShowRunProgress()) {
         RunProgress.start({ op: 'run', lineCount: 1 });
       }
       var raw = await BelugaClient.run(cmd, { onProgress: progressHook });

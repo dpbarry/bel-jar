@@ -5,23 +5,18 @@
   var EXPLORER_CHEVRON_SVG =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
 
-  var EXPLORER_CFG_STAR_OUTLINE_SVG =
-    '<svg class="explorer-default-cfg-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
-
-  var EXPLORER_CFG_STAR_FILLED_SVG =
-    '<svg class="explorer-default-cfg-star explorer-default-cfg-star--filled" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
-
   function explorerFileBucket(name) {
+    var PS = global.BelJarProjectSource;
+    if (PS && PS.isCfgPath(name)) return 0;
+    if (PS && PS.isSignaturePath(name)) return 1;
     var low = String(name).toLowerCase();
     if (low.endsWith('.cfg')) return 0;
     if (low.endsWith('.bel')) return 1;
     return 2;
   }
 
-  // `orderedNames` is the active suite's load order for this folder (or null).
-  // Members are listed right after the .cfg files, IN that order — the order is
-  // what governs cross-file visibility. Everything else stays alphabetical.
-  function sortExplorerFiles(files, orderedNames) {
+  // Legacy fallback when no suite layout resolver is wired (tests / bare model).
+  function sortExplorerFilesLegacy(files, orderedNames) {
     var orderIndex = {};
     if (orderedNames) for (var k = 0; k < orderedNames.length; k++) orderIndex[orderedNames[k]] = k;
     var cfg = [];
@@ -44,12 +39,19 @@
     return cfg.concat(members, bel, other);
   }
 
-  function sortExplorerNode(node, orderForDir, dir) {
-    node.files = sortExplorerFiles(node.files, orderForDir ? orderForDir(dir || '') : null);
-    node.folders.forEach(function (folder) { sortExplorerNode(folder, orderForDir, folder.path); });
+  function sortExplorerNode(node, layoutForDir, dir) {
+    if (layoutForDir) {
+      var layout = layoutForDir(dir || '', node.files);
+      node.files = layout && layout.orderedFiles ? layout.orderedFiles : node.files;
+      node.suiteByFile = layout && layout.suiteByFile ? layout.suiteByFile : {};
+    } else {
+      node.files = sortExplorerFilesLegacy(node.files, null);
+      node.suiteByFile = {};
+    }
+    node.folders.forEach(function (folder) { sortExplorerNode(folder, layoutForDir, folder.path); });
   }
 
-  function buildExplorerModel(files, emptyFolders, orderForDir) {
+  function buildExplorerModel(files, emptyFolders, layoutForDir) {
     var root = { folders: new Map(), files: [] };
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
@@ -80,7 +82,7 @@
         node2 = node2.folders.get(segs[m]);
       }
     }
-    sortExplorerNode(root, orderForDir, '');
+    sortExplorerNode(root, layoutForDir, '');
     return root;
   }
 
@@ -480,6 +482,9 @@
       saveTimer = setTimeout(function () {
         saveTimer = null;
         saveCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project', collapsed);
+        if (global.BelJarWorkspaceState && global.BelJarWorkspaceState.scheduleSave) {
+          global.BelJarWorkspaceState.scheduleSave();
+        }
       }, 120);
     }
 
@@ -878,9 +883,7 @@
         if (!isCollapsed) renderNode(treeEl, folder, depth + 1, folder.path);
       });
 
-      var suiteOrder = opts.getSuiteOrderForDir ? opts.getSuiteOrderForDir(zonePath) : null;
-      var suitePos = {};
-      if (suiteOrder) for (var so = 0; so < suiteOrder.length; so++) suitePos[suiteOrder[so]] = so + 1;
+      var suiteByFile = node.suiteByFile || {};
 
       for (var i = 0; i < node.files.length; i++) {
         var file = node.files[i];
@@ -890,15 +893,18 @@
         var low = file.name.toLowerCase();
         var isCfg = low.endsWith('.cfg');
         var isElf = low.endsWith('.elf');
-        var isBel = low.endsWith('.bel');
         var activeId = opts.getActiveId ? opts.getActiveId() : null;
-        var activeCfg = opts.getActiveCfgForDir ? opts.getActiveCfgForDir(zonePath) : null;
+        var suiteMeta = suiteByFile[file.name];
         btn.className = 'explorer-file-item'
           + (file.id === activeId ? ' is-active' : '')
           + (selectedFiles.has(file.id) ? ' is-selected' : '')
-          + (isBel ? ' explorer-file-item--bel' : '')
           + (isCfg ? ' explorer-file-item--cfg' : '')
           + (isElf ? ' explorer-file-item--elf' : '')
+          + (suiteMeta && (suiteMeta.role === 'head' || suiteMeta.role === 'solo')
+            ? ' explorer-file-item--suite-cfg' : '')
+          + (suiteMeta && (suiteMeta.role === 'mid' || suiteMeta.role === 'tail')
+            ? ' explorer-file-item--suite' : '')
+          + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === 'head' ? ' explorer-suite-block-sep' : '')
           + (editingFile ? ' is-renaming' : '');
         btn.style.paddingLeft = indent(depth);
         btn.setAttribute('role', 'treeitem');
@@ -921,17 +927,6 @@
           nameSpan.textContent = file.baseName;
           fileLabel.appendChild(nameSpan);
           if (typeof Tooltips !== 'undefined') Tooltips.bindOverflow(nameSpan, function () { return file.baseName; });
-          var pos = suitePos[file.name];
-          if (pos && (isBel || isElf)) {
-            var posMark = document.createElement('span');
-            posMark.className = 'explorer-suite-pos';
-            posMark.textContent = String(pos);
-            posMark.setAttribute('aria-hidden', 'true');
-            if (typeof opts.applyTip === 'function') {
-              opts.applyTip(posMark, 'Position ' + pos + ' in the active suite');
-            }
-            fileLabel.appendChild(posMark);
-          }
           btn.appendChild(fileLabel);
 
           var diag = opts.getFileDiag ? opts.getFileDiag(file.id, file.name) : null;
@@ -940,39 +935,8 @@
             var diagDot = document.createElement('span');
             diagDot.className = 'explorer-file-diag explorer-file-diag--' + diag;
             diagDot.setAttribute('aria-hidden', 'true');
-            if (typeof opts.applyTip === 'function') {
-              opts.applyTip(diagDot, diag === 'error' ? 'Has errors' : 'Has warnings');
-            }
+            applyFileDiagTip(diagDot, file.id, file.name, diag);
             btn.appendChild(diagDot);
-          }
-
-          if (isCfg) {
-            var isActiveCfg = file.name === activeCfg;
-            var starMark = document.createElement('span');
-            starMark.className = 'explorer-default-cfg-mark'
-              + (isActiveCfg ? ' explorer-default-cfg-mark--active' : ' explorer-default-cfg-mark--inactive');
-            if (isActiveCfg) {
-              starMark.setAttribute('aria-label', 'Active');
-              starMark.innerHTML = EXPLORER_CFG_STAR_FILLED_SVG;
-              if (typeof opts.applyTip === 'function') opts.applyTip(starMark, 'Active');
-            } else {
-              starMark.setAttribute('role', 'button');
-              starMark.setAttribute('tabindex', '-1');
-              starMark.setAttribute('aria-label', 'Make active');
-              starMark.innerHTML = EXPLORER_CFG_STAR_OUTLINE_SVG;
-              if (typeof opts.applyTip === 'function') opts.applyTip(starMark, 'Make active');
-              starMark.addEventListener('pointerdown', function (e) {
-                e.stopPropagation();
-              });
-              starMark.addEventListener('click', function (cfgPath) {
-                return function (e) {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  if (typeof opts.onMakeActiveCfg === 'function') opts.onMakeActiveCfg(cfgPath);
-                };
-              }(file.name));
-            }
-            btn.appendChild(starMark);
           }
 
           btn.addEventListener('click', function (fileRow) {
@@ -992,8 +956,17 @@
       var shiftPending = pendingShiftSelect;
       container.innerHTML = '';
 
-      var model = buildExplorerModel(files, listEmptyFolders(), opts.getSuiteOrderForDir || null);
-      renderNode(container, model, 0, '');
+      var model = buildExplorerModel(files, listEmptyFolders(), opts.getSuiteLayoutForDir || null);
+      var isEmpty = model.files.length === 0 && model.folders.size === 0;
+      container.classList.toggle('is-project-empty', isEmpty);
+      if (isEmpty) {
+        var emptyNote = document.createElement('p');
+        emptyNote.className = 'explorer-empty';
+        emptyNote.textContent = 'Project empty';
+        container.appendChild(emptyNote);
+      } else {
+        renderNode(container, model, 0, '');
+      }
 
       var rootPad = document.createElement('div');
       rootPad.className = 'explorer-tree-root-pad';
@@ -1113,6 +1086,22 @@
 
     // Update error/warning dots in place without a full re-render (which would
     // disrupt focus/selection). Called when lint state changes.
+    function applyFileDiagTip(el, fileId, fileName, diag) {
+      if (!el || !diag) return;
+      if (typeof opts.bindFileDiagTip === 'function') {
+        opts.bindFileDiagTip(el, fileId, fileName, diag);
+      } else if (typeof opts.applyTip === 'function') {
+        opts.applyTip(el, diag === 'error' ? 'Has errors' : 'Has warnings');
+      }
+    }
+
+    function clearFileDiagTip(el) {
+      if (!el) return;
+      el.removeAttribute('data-tooltip-errors');
+      el.removeAttribute('data-tooltip-head');
+      el.removeAttribute('data-tooltip');
+    }
+
     function refreshDiags() {
       if (!opts.getFileDiag) return;
       var rows = container.querySelectorAll('.explorer-file-item[data-file-id]');
@@ -1127,26 +1116,36 @@
         row.classList.toggle('has-diag--error', diag === 'error');
         row.classList.toggle('has-diag--warning', diag === 'warning');
         if (!diag) {
-          if (dot) dot.remove();
+          if (dot) {
+            clearFileDiagTip(dot);
+            dot.remove();
+          }
           continue;
         }
         if (!dot) {
           dot = document.createElement('span');
           dot.setAttribute('aria-hidden', 'true');
-          var starEl = row.querySelector('.explorer-default-cfg-mark');
-          if (starEl) row.insertBefore(dot, starEl);
-          else row.appendChild(dot);
+          row.appendChild(dot);
         }
         dot.className = 'explorer-file-diag explorer-file-diag--' + diag;
-        if (typeof opts.applyTip === 'function') {
-          opts.applyTip(dot, diag === 'error' ? 'Has errors' : 'Has warnings');
-        }
+        applyFileDiagTip(dot, fid, fname, diag);
       }
+    }
+
+    function refreshActiveAndDiags() {
+      var activeId = opts.getActiveId ? opts.getActiveId() : null;
+      var rows = container.querySelectorAll('.explorer-file-item[data-file-id]');
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        row.classList.toggle('is-active', row.getAttribute('data-file-id') === activeId);
+      }
+      refreshDiags();
     }
 
     return {
       refresh: refresh,
       refreshDiags: refreshDiags,
+      refreshActiveAndDiags: refreshActiveAndDiags,
       toggleFolder: toggleFolder,
       collapseSubtree: collapseSubtree,
       expandSubtree: expandSubtree,
@@ -1158,6 +1157,36 @@
       clearSelection: clearSelection,
       setSelection: setSelection,
       shouldKeepSelectionOnOpen: function () { return suppressClearSelection; },
+      collectWorkspaceExplorer: function (out) {
+        if (!out.sidebar) return;
+        out.sidebar.explorer = {
+          revealActiveFile: true,
+          scrollActiveIntoView: true,
+        };
+      },
+      restoreWorkspaceExplorer: function (sidebar) {
+        if (!sidebar || !sidebar.explorer || !sidebar.explorer.revealActiveFile) return;
+        var activeId = opts.getActiveId ? opts.getActiveId() : null;
+        if (!activeId) return;
+        var files = opts.listFiles ? opts.listFiles() : [];
+        var file = null;
+        for (var fi = 0; fi < files.length; fi++) {
+          if (files[fi].id === activeId) { file = files[fi]; break; }
+        }
+        if (!file) return;
+        var parent = parentDirFromName(file.name);
+        if (parent) {
+          expandParentChain(parent);
+          scheduleSave();
+        }
+        refresh();
+        if (sidebar.explorer.scrollActiveIntoView) {
+          requestAnimationFrame(function () {
+            var row = container.querySelector('.explorer-file-item[data-file-id="' + activeId + '"]');
+            if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+          });
+        }
+      },
       reloadFoldState: function () {
         collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project');
       },

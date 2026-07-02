@@ -44,6 +44,18 @@
         if (localStorage.getItem('beljar-theme') === 'light') {
           document.documentElement.classList.add('light');
         }
+        var uiFontScales = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
+        var uiFontStored = localStorage.getItem('beljar-ui-font-size');
+        document.documentElement.style.setProperty(
+          '--ui-font-scale',
+          String(uiFontScales[uiFontStored] || 1)
+        );
+        var uiTextContrast = { normal: 1, low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
+        var uiTextContrastStored = localStorage.getItem('beljar-ui-text-contrast');
+        document.documentElement.style.setProperty(
+          '--ui-text-contrast',
+          String(uiTextContrast[uiTextContrastStored] || uiTextContrast.medium)
+        );
         applySplitVars(clampSplit(parseFloat(localStorage.getItem(SPLIT_KEY))));
         function applyStoredPanelPx(key, cssVar) {
           var n = parseFloat(localStorage.getItem(key));
@@ -52,9 +64,11 @@
         applyStoredPanelPx('beljar-explorer-w', '--explorer-w');
         applyStoredPanelPx('beljar-inspector-w', '--inspector-w');
         applyStoredPanelPx('beljar-library-w', '--library-w');
+        applyStoredPanelPx('beljar-harpoon-w', '--harpoon-w');
         applyStoredPanelPx('beljar-explorer-h', '--explorer-h');
         applyStoredPanelPx('beljar-inspector-h', '--inspector-h');
         applyStoredPanelPx('beljar-library-h', '--library-h');
+        applyStoredPanelPx('beljar-harpoon-h', '--harpoon-h');
       } catch (_) {}
     })();
 
@@ -149,6 +163,9 @@
           <path d="m12.85 11.6-1.7 6"/>
         </svg>
       </button>
+      <button id="btn-harpoon" type="button" class="icon-btn icon-btn-lg" data-tooltip="Harpoon" aria-pressed="false" aria-controls="harpoon-panel">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="1.6"/><path d="M6.20 6.20 21.00 21.00"/><path d="M18.74 18.74 20.45 12.36"/><path d="M18.74 18.74 12.36 20.45"/></svg>
+      </button>
       <div class="sidebar-fill" aria-hidden="true"></div>
       <button id="btn-settings" type="button" class="icon-btn icon-btn-lg" data-tooltip="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -181,29 +198,37 @@
 
     <div id="inspector-panel" class="panel inspector-panel" aria-hidden="true">
       <div class="panel-header inspector-header-bar">
+        <button id="inspector-nav-home" type="button" class="icon-btn" data-tooltip="File overview" aria-label="File overview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>
+            <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+        </button>
         <div class="inspector-nav-group">
-          <button id="inspector-nav-back" type="button" class="icon-btn inspector-nav-btn" data-tooltip="Back" aria-label="Back" disabled>
+          <button id="inspector-nav-back" type="button" class="icon-btn" data-tooltip="Back" aria-label="Back" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
-          <button id="inspector-nav-fwd" type="button" class="icon-btn inspector-nav-btn" data-tooltip="Forward" aria-label="Forward" disabled>
+          <button id="inspector-nav-fwd" type="button" class="icon-btn" data-tooltip="Forward" aria-label="Forward" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
           </button>
         </div>
+        <span class="panel-label inspector-panel-label">Inspector</span>
         <div class="hsearch inspector-search" id="inspector-search">
           <span class="hsearch__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           </span>
           <input id="inspector-search-input" class="hsearch__input" type="text" placeholder="Search symbols..." aria-label="Search symbols in suite" role="combobox" aria-expanded="false" aria-controls="inspector-search-ac" autocomplete="off" spellcheck="false">
         </div>
-        <div class="inspector-header-actions">
-          <button id="inspector-sync-toggle" type="button" class="icon-btn inspector-nav-btn" data-tooltip="Not following editor selection" aria-label="Not following editor selection" aria-pressed="false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="miter" aria-hidden="true"><path d="M4 4l7.07 16.97 2.51-7.39 7.39-2.51z"/></svg>
-          </button>
-        </div>
+        <button id="inspector-sync-toggle" type="button" class="icon-btn" data-tooltip="Not following editor selection" aria-label="Not following editor selection" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="miter" aria-hidden="true"><path d="M4 4l7.07 16.97 2.51-7.39 7.39-2.51z"/></svg>
+        </button>
         <div class="inspector-search-ac" id="inspector-search-ac" role="listbox" hidden></div>
       </div>
       <div class="inspector-body">
         <p class="inspector-empty-note">Place the cursor on a symbol.</p>
+      </div>
+      <div id="inspector-project-empty" class="panel-empty" hidden aria-live="polite">
+        <p class="panel-empty__note">Project empty</p>
       </div>
     </div>
 
@@ -220,12 +245,25 @@
       <div class="library-tree" role="tree" aria-label="Code library"></div>
     </div>
 
+    <div id="harpoon-panel" class="panel harpoon-panel" aria-hidden="true">
+      <div class="panel-header harpoon-panel-header">
+        <button type="button" class="icon-btn harpoon-panel-home" data-tooltip="Goals" aria-label="Goals">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>
+            <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+        </button>
+        <span class="panel-label">Harpoon</span>
+      </div>
+      <div class="harpoon-panel-body" id="harpoon-panel-body"></div>
+    </div>
+
     <div class="workspace-panes">
     <div class="panel editor-panel">
       <div class="editor-topbar">
         <div class="editor-tabs" id="editor-tabs" role="tablist" aria-label="Open files"></div>
         <div class="editor-topbar-controls">
-          <span class="ide-status-dot" id="ide-status-dot" role="status" tabindex="0" data-tooltip-head data-tooltip="Lint has not run" aria-label="Lint has not run"></span>
+          <span class="ide-status-dot" id="ide-status-dot" role="status" tabindex="0" data-tooltip-no-track data-tooltip="Not checked" aria-label="Not checked"></span>
           <button id="btn-load" type="button" class="icon-btn" data-tooltip="Run suite to here&#10;Ctrl+click: run suite" aria-label="Run suite to here">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 3 20 12 5 21V3Z"/>
@@ -272,36 +310,42 @@
         try {
           var ws = document.querySelector('.workspace');
           if (!ws) return;
-          var explorerOpen = localStorage.getItem('beljar-explorer-open') === '1';
-          var inspectorOpen = localStorage.getItem('beljar-inspector-open') === '1';
-          var libraryOpen = localStorage.getItem('beljar-library-open') === '1';
-          if (libraryOpen) {
+          if (localStorage.getItem('beljar-restore-panels') === 'off') return;
+          var proj = localStorage.getItem('beljar-active-project') || 'default';
+          var panelKey = proj === 'default'
+            ? 'beljar-active-side-panel'
+            : 'beljar-proj:' + proj.replace(/[^a-zA-Z0-9._-]/g, '_') + ':active-side-panel';
+          var activePanel = localStorage.getItem(panelKey);
+          if (!activePanel) {
+            if (localStorage.getItem('beljar-harpoon-open') === '1') activePanel = 'harpoon';
+            else if (localStorage.getItem('beljar-library-open') === '1') activePanel = 'library';
+            else if (localStorage.getItem('beljar-inspector-open') === '1') activePanel = 'inspector';
+            else if (localStorage.getItem('beljar-explorer-open') === '1') activePanel = 'explorer';
+          }
+          if (activePanel === 'harpoon') {
+            ws.classList.add('is-harpoon-open');
+            var pp = document.getElementById('harpoon-panel');
+            if (pp) pp.setAttribute('aria-hidden', 'false');
+            var pb = document.getElementById('btn-harpoon');
+            if (pb) { pb.classList.add('is-active'); pb.setAttribute('aria-pressed', 'true'); }
+          } else if (activePanel === 'library') {
             ws.classList.add('is-library-open');
             var lp = document.getElementById('library-panel');
             if (lp) lp.setAttribute('aria-hidden', 'false');
             var lb = document.getElementById('btn-library');
-            if (lb) {
-              lb.classList.add('is-active');
-              lb.setAttribute('aria-pressed', 'true');
-            }
-          } else if (inspectorOpen) {
+            if (lb) { lb.classList.add('is-active'); lb.setAttribute('aria-pressed', 'true'); }
+          } else if (activePanel === 'inspector') {
             ws.classList.add('is-inspector-open');
             var ip = document.getElementById('inspector-panel');
             if (ip) ip.setAttribute('aria-hidden', 'false');
             var ib = document.getElementById('btn-inspector');
-            if (ib) {
-              ib.classList.add('is-active');
-              ib.setAttribute('aria-pressed', 'true');
-            }
-          } else if (explorerOpen) {
+            if (ib) { ib.classList.add('is-active'); ib.setAttribute('aria-pressed', 'true'); }
+          } else if (activePanel === 'explorer') {
             ws.classList.add('is-explorer-open');
             var ep = document.getElementById('explorer-panel');
             if (ep) ep.setAttribute('aria-hidden', 'false');
             var fb = document.getElementById('btn-files');
-            if (fb) {
-              fb.classList.add('is-active');
-              fb.setAttribute('aria-pressed', 'true');
-            }
+            if (fb) { fb.classList.add('is-active'); fb.setAttribute('aria-pressed', 'true'); }
           }
         } catch (_) {}
       })();
@@ -325,10 +369,18 @@
     };
   </script>
   <script src="js/run-progress.js"></script>
+  <script src="js/check-trace.js"></script>
+  <script src="js/perf-hud.js"></script>
   <script src="js/beluga-client.js"></script>
+  <script src="js/harpoon-client.js"></script>
+  <script src="js/harpoon-icon.js"></script>
+  <script src="js/harpoon-lab.js"></script>
+  <script src="js/harpoon-project-goals.js"></script>
+  <script src="js/harpoon-panel.js"></script>
   <script src="js/beluga-text.js"></script>
   <script src="js/editor-cm.bundle.js"></script>
   <script src="js/persist.js"></script>
+  <script src="js/workspace-state.js"></script>
   <script src="js/project-source.js"></script>
   <script src="js/workspace-split.js"></script>
   <script src="js/side-panel-resize.js"></script>
@@ -340,12 +392,15 @@
   <script src="js/scroll-fade.js"></script>
   <script src="js/text-slide.js"></script>
   <script src="js/dialog.js"></script>
+  <script src="js/prompt-dialog.js"></script>
+  <script src="js/confirm-dialog.js"></script>
   <script src="js/name-prompt.js"></script>
   <script src="js/name-conflicts.js"></script>
   <script src="js/conflict-dialog.js"></script>
   <script src="js/tree-dnd.js"></script>
   <script src="js/header-search.js"></script>
   <script src="js/explorer-inline-name.js"></script>
+  <script src="js/explorer-suite-layout.js"></script>
   <script src="js/explorer-tree.js"></script>
   <script src="js/library-suites.js"></script>
   <script src="js/library-search.js"></script>
@@ -357,6 +412,7 @@
   <script src="js/repl-output.js"></script>
   <script src="js/beluga-run.js"></script>
   <script src="js/repl-commands.js"></script>
+  <script src="js/bj-toggle.js"></script>
   <script src="js/settings-ui.js"></script>
   <script src="js/app.js"></script>
 </body>

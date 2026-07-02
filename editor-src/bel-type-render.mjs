@@ -89,7 +89,17 @@ export function normalizeType(typeStr) {
     // in a real type; when the checker's pretty-printer emits one around a
     // generated name (e.g. tm K1[] "i[]") it is a spurious artifact, so drop it.
     .replace(/"/g, '')
+    // Canonicalise ASCII operators to the editor's display GLYPHS, so a goal type
+    // from Beluga's text output reads exactly like the editor (which accepts both
+    // forms — grammar `Turnstile { "|-" | "⊢" }` etc.). Order: hashed turnstile and
+    // fat-arrow before their shorter prefixes.
+    .replace(/\|-#/g, '⊢#')
+    .replace(/\|-/g, '⊢')
+    .replace(/=>/g, '⇒')
     .replace(/->/g, '→')
+    // Dependent binders in source signatures often omit the space before the
+    // following type head (`{x:name}linear`); the display formatter inserts it.
+    .replace(/\}([A-Za-z_#])/g, '} $1')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }

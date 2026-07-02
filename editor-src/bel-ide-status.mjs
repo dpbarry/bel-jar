@@ -1,4 +1,5 @@
 import { syntaxTree } from '@codemirror/language';
+import { forEachDiagnostic } from '@codemirror/lint';
 
 export function computeParseCoverage(state) {
   const docLen = state.doc.length;
@@ -15,6 +16,18 @@ export function computeParseCoverage(state) {
   };
 }
 
+// Engine snapshot is authoritative for both syntax and Beluga findings — Beluga
+// squiggles are decorations, not CM lint, and the checker store leads CM while
+// settling.
+export function collectStatusDiagnostics(view, engine) {
+  if (engine && typeof engine.documentDiagnostics === 'function') {
+    return engine.documentDiagnostics();
+  }
+  const diags = [];
+  if (view?.state) forEachDiagnostic(view.state, (d) => diags.push(d));
+  return diags;
+}
+
 export function buildIdeStatusPresentation({
   diagnostics,
   parseCoverage = null,
@@ -23,21 +36,25 @@ export function buildIdeStatusPresentation({
   const diags = diagnostics || [];
   const errors = diags.filter((d) => d.severity === 'error').length;
   const warnings = diags.filter((d) => d.severity === 'warning').length;
+  const staleErrors = diags.some((d) => d.severity === 'error' && d.stale);
   const parsing = !!(parseCoverage && !parseCoverage.complete);
   const parsePercent = parsing ? parseCoverage.percent : null;
+  const checking = parsing || belugaPending;
+  const recheckingErrors = belugaPending && (errors > 0 || staleErrors);
 
   const parts = [];
   if (parsing) parts.push(`Parsing ${parsePercent}%`);
-  if (belugaPending) parts.push('Beluga checking…');
+  if (belugaPending) parts.push('Checking…');
   if (errors > 0) parts.push(errors === 1 ? '1 error' : `${errors} errors`);
+  else if (staleErrors && belugaPending) parts.push('1 error');
   else if (warnings > 0) parts.push(warnings === 1 ? '1 warning' : `${warnings} warnings`);
-  if (!parts.length) parts.push('No errors');
+  if (!parts.length) parts.push('Checked');
 
-  let liveState = 'clean';
-  if (errors > 0) liveState = 'error';
+  let liveState = 'checked';
+  if (recheckingErrors) liveState = 'error-checking';
+  else if (errors > 0) liveState = 'error';
   else if (warnings > 0) liveState = 'warning';
-  else if (parsing) liveState = 'parsing';
-  else if (belugaPending) liveState = 'checking';
+  else if (checking) liveState = 'checking';
 
   const tooltip = parts.join(' · ');
   return {
@@ -67,7 +84,7 @@ export function buildAuxStatusPresentation({ diagnostics, fileCount = 0 } = {}) 
     parts.push('Empty suite');
   }
 
-  let liveState = 'clean';
+  let liveState = 'checked';
   if (errors > 0) liveState = 'error';
   else if (warnings > 0) liveState = 'warning';
 
@@ -83,6 +100,34 @@ export function buildAuxStatusPresentation({ diagnostics, fileCount = 0 } = {}) 
   };
 }
 
+function statusLintItems(lintItems) {
+  if (!Array.isArray(lintItems)) return [];
+  return lintItems.filter((d) => d && (d.kind === 'error' || d.kind === 'warning'));
+}
+
+function applyStatusDotTooltip(dot, pres, lintItems) {
+  if (!dot) return;
+  const T = typeof window !== 'undefined' ? window.Tooltips : null;
+  const items = statusLintItems(lintItems);
+  dot.setAttribute('aria-label', pres.ariaLabel || pres.tooltip || '');
+  if (items.length) {
+    dot.setAttribute('data-tooltip', pres.tooltip || '');
+    dot.setAttribute('data-tooltip-head', '');
+    dot.setAttribute('data-tooltip-errors', JSON.stringify(items));
+    dot.removeAttribute('title');
+    if (T?.bind) T.bind(dot);
+    return;
+  }
+  dot.removeAttribute('data-tooltip-head');
+  dot.removeAttribute('data-tooltip-errors');
+  if (T?.set) {
+    T.set(dot, pres.tooltip || '', { ariaLabel: pres.ariaLabel || pres.tooltip || '' });
+  } else {
+    dot.setAttribute('data-tooltip', pres.tooltip || '');
+    if (T?.bind) T.bind(dot);
+  }
+}
+
 export function updateAuxStatusDot(dot, diagnostics, options = {}) {
   if (!dot) return null;
   const pres = buildAuxStatusPresentation({
@@ -90,8 +135,7 @@ export function updateAuxStatusDot(dot, diagnostics, options = {}) {
     fileCount: options.fileCount ?? 0,
   });
   dot.setAttribute('data-live-state', pres.liveState);
-  dot.setAttribute('data-tooltip', pres.tooltip);
-  dot.setAttribute('aria-label', pres.ariaLabel);
+  applyStatusDotTooltip(dot, pres, options.lintItems);
   dot.removeAttribute('data-parsing');
   dot.removeAttribute('data-beluga-checking');
   return pres;
@@ -105,8 +149,7 @@ export function updateIdeStatusDot(dot, diagnostics, options = {}) {
     belugaPending: options.belugaPending ?? false,
   });
   dot.setAttribute('data-live-state', pres.liveState);
-  dot.setAttribute('data-tooltip', pres.tooltip);
-  dot.setAttribute('aria-label', pres.ariaLabel);
+  applyStatusDotTooltip(dot, pres, options.lintItems);
   if (pres.parsing) dot.setAttribute('data-parsing', `${pres.parsePercent}%`);
   else dot.removeAttribute('data-parsing');
   if (pres.belugaPending) dot.setAttribute('data-beluga-checking', '');
@@ -119,7 +162,7 @@ export function updateIdeStatusDot(dot, diagnostics, options = {}) {
 // yet. We deliberately do NOT surface the engine's internal `dirty` frontier here
 // (it over-reports, never cleanly hits zero, and contradicts a green status dot —
 // the same reason it's hidden from the inspector). When parse is complete, no
-// banner; the green dot is the source of truth for "settled".
+// banner; the green dot is the source of truth for "checked".
 export function formatGlobalGraphStaleBanner({ parseCoverage, symbolCount }) {
   if (!parseCoverage || parseCoverage.complete) return '';
   const parts = [

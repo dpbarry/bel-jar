@@ -24,6 +24,6 @@ expect(info, 'parses query command failure');
 expect(info.label === 'Query failed', 'query label');
 expect(!/Failed to execute command/.test(info.detail), 'strips wrapper noise');
 expect(info.detail.includes('column 24'), 'keeps location');
-expect(info.detail.includes('parse. Expected'), 'polishes parse message');
+expect(info.detail.includes('unexpected text here'), 'polishes parse message');
 
 console.log('OK beluga command error parse');

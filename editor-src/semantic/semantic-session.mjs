@@ -3,6 +3,21 @@ export function createSemanticSession(belugaClient) {
   let loadPromise = null;
   let lastCode = '';
 
+  function traceIntel(phase, fn) {
+    const g = typeof globalThis !== 'undefined' ? globalThis : null;
+    const perf = g?.BelJarPerf;
+    const span = perf?.enabled ? perf.spanStart(phase) : null;
+    const t0 = perf?.enabled ? null : (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    return Promise.resolve(fn()).then((r) => {
+      if (span && perf) perf.spanEnd(span);
+      else if (perf && t0 != null) perf.record(phase, (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      return r;
+    }).catch((err) => {
+      if (span && perf) perf.spanEnd(span, { ok: false });
+      throw err;
+    });
+  }
+
   async function ensureLoaded(code) {
     const requestCode = String(code != null ? code : '');
     const fp = belugaClient.fingerprint(requestCode);
@@ -49,7 +64,8 @@ export function createSemanticSession(belugaClient) {
 
     try {
       const spec = positionsSpec(positions);
-      const rawResult = await belugaClient.ideElaborate(lastCode, startLine, endLine, spec);
+      const rawResult = await traceIntel('intel:elaborate', () =>
+        belugaClient.ideElaborate(lastCode, startLine, endLine, spec));
       const result = JSON.parse(rawResult);
 
       if (result.ok === false && result.fallback === 'use-ideTypeAtJson') {
@@ -83,7 +99,8 @@ export function createSemanticSession(belugaClient) {
     const implicits = (await Promise.all(
       (positions || []).map(async (pos) => {
         try {
-          const rawType = await belugaClient.ideType(lastCode, pos.line, pos.col);
+          const rawType = await traceIntel('intel:typeAt', () =>
+            belugaClient.ideType(lastCode, pos.line, pos.col));
           const typeResult = JSON.parse(rawType);
           if (typeResult.ok && typeResult.type) {
             return {
@@ -114,7 +131,8 @@ export function createSemanticSession(belugaClient) {
 
   async function typeAt(code, line, col) {
     await ensureLoaded(code);
-    const rawResult = await belugaClient.ideType(lastCode, line, col);
+    const rawResult = await traceIntel('intel:typeAt', () =>
+      belugaClient.ideType(lastCode, line, col));
 
     try {
       return JSON.parse(rawResult);
@@ -126,7 +144,8 @@ export function createSemanticSession(belugaClient) {
   async function ideDeclType(code, name) {
     await ensureLoaded(code);
     try {
-      return JSON.parse(await belugaClient.ideDeclType(lastCode, name));
+      return JSON.parse(await traceIntel('intel:declType', () =>
+        belugaClient.ideDeclType(lastCode, name)));
     } catch (e) {
       return { ok: false, reason: 'parse-error' };
     }

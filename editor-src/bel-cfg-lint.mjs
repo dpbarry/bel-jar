@@ -2,6 +2,7 @@
 // an existing sibling file; a dangling or misspelled entry is otherwise silently
 // dropped by resolveCfgOrder's pathSet filter (development.mjs), so a broken cfg
 // looks identical to a correct one. This surfaces the problem on the bad line.
+import { isCfgEntryToken, isCfgSourceEntry } from './bel-paths.mjs';
 import { linter } from '@codemirror/lint';
 import { dirOf, joinPath } from './development.mjs';
 import { analyzeSuite, findingMessage } from './bel-suite-lint.mjs';
@@ -38,6 +39,11 @@ function makeRegistryGetText() {
     }
     const id = byName.get(String(fullPath));
     if (!id) return '';
+    const ed = g.BelJarCurrentEditor;
+    const activeId = typeof P.getActiveFileId === 'function' ? P.getActiveFileId() : null;
+    if (ed && activeId === id && typeof ed.getValue === 'function') {
+      return String(ed.getValue() ?? '');
+    }
     try { return String(P.getFileText(id) ?? ''); } catch (_) { return ''; }
   };
 }
@@ -87,23 +93,18 @@ export function cfgDiagnosticsFor(text, cfgPath, names, getText = null) {
     pos += rawLine.length + 1; // + newline
     const t = rawLine.trim();
     if (!t || t.charAt(0) === '%') continue;
-    const low = t.toLowerCase();
-    const isEntry = low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg');
+    const isEntry = isCfgEntryToken(t);
     const from = lineStart + rawLine.indexOf(t);
     const to = from + t.length;
-    if (!isEntry) {
-      diags.push({ from, to, severity: 'warning', source: 'cfg',
-        message: `"${t}" is not a .bel, .elf, or .cfg entry.` });
-      continue;
-    }
+    if (!isEntry) continue;
     const full = cfgDir ? joinPath(cfgDir, t) : t;
     if (!names.has(full)) {
-      diags.push({ from, to, severity: 'error', source: 'cfg',
+      diags.push({ from, to, severity: 'warning', source: 'cfg',
         message: `No file "${full}" in this project. This entry is ignored.` });
       continue;
     }
     // Source entries feed the cross-file checks; nested .cfg includes don't.
-    if (!low.endsWith('.cfg')) entries.push({ name: t, full, from, to });
+    if (isCfgSourceEntry(t)) entries.push({ name: t, full, from, to });
   }
   for (const d of suiteCompositionDiagnostics(entries, getText)) diags.push(d);
   return diags;

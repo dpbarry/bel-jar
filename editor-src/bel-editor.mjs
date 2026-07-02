@@ -13,16 +13,15 @@ import {
   rectangularSelection,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
-import { openSearchPanel, findNext, findPrevious, highlightSelectionMatches } from '@codemirror/search';
+import { openSearchPanel, findNext, findPrevious } from '@codemirror/search';
 import { belSearch } from './bel-search-panel.mjs';
-import { bracketMatching, ensureSyntaxTree, foldGutter, foldKeymap, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { ensureSyntaxTree, foldKeymap, indentRange, indentUnit, syntaxTree } from '@codemirror/language';
 import { diagnosticCount, forceLinting, forEachDiagnostic, linter } from '@codemirror/lint';
-import { beluga, belCodeFolding } from './bel-language.mjs';
+import { beluga } from './bel-language.mjs';
 import { formatCommand } from './bel-format.mjs';
 import {
   scheduleJumpToRange, scheduleViewportRestore, viewportCenterLine,
-  resolveJumpRange,
+  resolveJumpRange, captureFormatViewportAnchor, captureViewportLocal,
 } from './bel-viewport.mjs';
 import { belAliases, maybeExpandBelAliases } from './bel-aliases.mjs';
 
@@ -32,21 +31,56 @@ export {
 } from './bel-jump-log.mjs';
 export { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
 export { highlightSourceFragment, renderSourceInto } from './bel-source-render.mjs';
+export { normalizeType, renderTypeInto } from './bel-type-render.mjs';
+export { buildProofProgram, commitProof, parseDecl, declRangeWithSemicolon } from './bel-harpoon.mjs';
+export { proveProgram, theoremUnderProof, theoremDeclRange, candidateMoves, proveOrchestrationCode } from './bel-prover-bridge.mjs';
+export { normalizeProofModel, normalizeSubgoal, parseBinders, applicableTactics, splitTargets } from './harpoon-model.mjs';
+export { createCachedGoalHintIcon, bindCachedGoalHintTooltip, CACHED_GOAL_TIP, CACHED_GOAL_HINT_SVG } from './cached-goal-hint.mjs';
+export { holeHostFile, scanFileHoles, hitsFromHoles } from './harpoon-project-goals.mjs';
+export {
+  collectWorkspaceInspector,
+  restoreWorkspaceInspector,
+  collectFloatingInspectorWindows,
+  restoreFloatingInspectorWindow,
+} from './bel-inspector.mjs';
+export {
+  collectFloatingGraphWindows,
+  restoreFloatingGraphWindow,
+} from './bel-graph-view.mjs';
 import { syntaxLint } from './bel-lint.mjs';
-import { createBelugaLinter } from './bel-beluga-lint.mjs';
-import { cfgLinter, cfgDiagnostics } from './bel-cfg-lint.mjs';
+import { belugaDiagnosticDecorations } from './bel-beluga-squiggles.mjs';
+import { cfgLinter, cfgDiagnostics, resolveCfgDocumentPath } from './bel-cfg-lint.mjs';
 import { cfgEditorExtensions, countCfgEntries, goToCfgEntry } from './bel-cfg-editor.mjs';
-import { computeParseCoverage, updateAuxStatusDot, updateIdeStatusDot } from './bel-ide-status.mjs';
+import { collectStatusDiagnostics, computeParseCoverage, updateAuxStatusDot, updateIdeStatusDot } from './bel-ide-status.mjs';
 import { lintLinterOptions, lintPresentation } from './bel-lint-presentation.mjs';
+import { lintTooltipItemsFromDiagnostics } from './bel-diag-gutter.mjs';
 import { checkerSnapshot } from './checker-snapshot.mjs';
 import { computeLintBlocks } from './bel-units.mjs';
 import { belHoverTooltip } from './bel-hover.mjs';
-import { diagnosticRowHighlight, diagnosticGutterTooltips } from './bel-diag-gutter.mjs';
+import { holeCycleKeymap } from './bel-hole-decorations.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
 import { assembleCheckerCode, buildPrelude, preludeFilesFor, listGroupSymbols } from './project-prelude.mjs';
 import { analyzeSuite, suiteFileDiagnostics } from './bel-suite-lint.mjs';
-import { developmentForFile } from './development.mjs';
-import { belNavigation, belNavSemanticTick } from './bel-nav.mjs';
+import {
+  isSuitePreludeBannerDiag,
+  suitePreludeBannerForActive,
+} from './suite-prelude-banner.mjs';
+import { developmentForFile, listDevelopmentMembers } from './development.mjs';
+import { getDevelopmentChecker, findMemberHole, fileContentSig, developmentSignature } from './development-check.mjs';
+import {
+  belugaDiagsToFileHealth,
+  devCheckCacheLookup,
+  notifyExplorerHealthChanged,
+  resolveExplorerFileHealth,
+} from './file-health-store.mjs';
+import { getCheckTrace } from './perf/check-trace.mjs';
+import { computeSettleDelayMs, noteTypingVelocity, SETTLE_DELAY_MS } from './semantic/settle-delay.mjs';
+import {
+  syncHoleGoalsFromDevelopment,
+  syncHoleGoalsFromSettlement,
+  getHoleGoalsStore,
+} from './hole-goals-store.mjs';
+import { belNavSemanticTick } from './bel-nav.mjs';
 import { belRename, startRename } from './bel-rename.mjs';
 import { belContextMenu } from './bel-context-menu.mjs';
 import { findReferences } from './bel-refs-panel.mjs';
@@ -54,13 +88,32 @@ import {
   flashExtension, goToDefinition, jumpToRange, jumpToReference, jumpToNextError, revealInInspector,
   peekRange,
 } from './bel-ide-actions.mjs';
-import { openLocalGraphWindow, openGlobalGraphWindow } from './bel-graph-view.mjs';
+import { openLocalGraphWindow, openGlobalGraphWindow, belGraphLive } from './bel-graph-view.mjs';
 import { belInspector } from './bel-inspector.mjs';
 import { belEditorFollow } from './bel-follow-sync.mjs';
 import { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
+import {
+  readEditorPrefs,
+  buildEditorChromeTheme,
+  buildToggleableExtensions,
+  buildBracketKeymap,
+} from './editor-prefs.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
+
+let activeEditorPrefsApplier = null;
+let activeEditorView = null;
+
+export function applyEditorPrefs() {
+  const prefs = readEditorPrefs();
+  if (activeEditorPrefsApplier) {
+    activeEditorPrefsApplier(prefs);
+    if (activeEditorView) {
+      activeEditorView.requestMeasure();
+    }
+  }
+}
 
 const settlementUpdated = StateEffect.define();
 const settlementTickField = StateField.define({
@@ -176,7 +229,6 @@ function belEditorChrome() {
   return EditorView.baseTheme({
     '&': {
       height: '100%',
-      fontSize: '0.8125rem',
     },
     '&.cm-focused': { outline: 'none' },
     '.cm-editor': {
@@ -198,7 +250,6 @@ function belEditorChrome() {
       fontVariantLigatures: 'none',
       fontFeatureSettings: '"liga" 0, "calt" 0',
       fontSize: 'inherit',
-      lineHeight: '1.65',
       backgroundColor: 'var(--bg)',
       color: 'var(--base-highest)',
     },
@@ -222,16 +273,6 @@ function belEditorChrome() {
       backgroundColor: 'light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.038))',
       color: 'var(--editor-gutter-fg-active)',
     },
-    '.cm-diagRow-warning': {
-      backgroundColor: 'light-dark(rgba(217, 119, 6, 0.16), rgba(251, 191, 36, 0.16))',
-      color: 'light-dark(rgb(180, 83, 9), rgb(252, 211, 77))',
-      transition: 'background-color 80ms ease-out, color 80ms ease-out',
-    },
-    '.cm-diagRow-error': {
-      backgroundColor: 'light-dark(rgba(220, 38, 38, 0.18), rgba(248, 113, 113, 0.24))',
-      color: 'light-dark(rgb(185, 28, 28), rgb(252, 165, 165))',
-      transition: 'background-color 80ms ease-out, color 80ms ease-out',
-    },
     '.cm-content': {
       caretColor: 'var(--accent-high)',
       paddingTop: '0',
@@ -240,7 +281,6 @@ function belEditorChrome() {
     '.cm-line': {
       paddingLeft: '6px',
       paddingRight: 'var(--pad-editor-x)',
-      whiteSpace: 'pre',
     },
     '.cm-placeholder': { color: 'var(--base-high)' },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent-high)' },
@@ -263,6 +303,86 @@ function belEditorChrome() {
   });
 }
 
+function belCompletionChrome() {
+  const selectedRow = {
+    backgroundColor: 'var(--editor-ac-row-bg)',
+    color: 'var(--editor-ac-row-fg)',
+    borderLeftColor: 'var(--editor-ac-row-accent)',
+  };
+  return EditorView.baseTheme({
+    '.cm-tooltip.cm-tooltip-autocomplete': {
+      backgroundColor: 'transparent',
+      border: 'none',
+      color: 'inherit',
+      padding: 0,
+    },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul': {
+      fontFamily: 'var(--mono, ui-monospace, monospace)',
+      fontSize: '0.78rem',
+      minWidth: '0',
+      maxWidth: 'min(28rem, 90vw)',
+      width: 'max-content',
+      maxHeight: '17rem',
+      padding: '2px 0',
+      backgroundColor: 'var(--search-drop-bg)',
+      border: '1px solid var(--search-drop-border)',
+      borderRadius: 'var(--editor-ac-radius)',
+      boxShadow: 'var(--search-drop-shadow)',
+      scrollbarWidth: 'thin',
+      scrollbarColor: 'color-mix(in srgb, var(--base-mid) 50%, transparent) transparent',
+      '& > li, & > completion-section': {
+        padding: '0.3rem 0.62rem',
+        lineHeight: 1.3,
+      },
+      '& > li': {
+        borderLeft: '2px solid transparent',
+        transition: 'background 100ms ease, border-color 100ms ease',
+      },
+      '& > completion-section': {
+        borderBottom: '1px solid var(--menu-separator)',
+        paddingLeft: '0.62rem',
+        opacity: 0.7,
+        fontFamily: 'var(--sans)',
+        fontSize: '0.64rem',
+        letterSpacing: '0.03em',
+        textTransform: 'uppercase',
+      },
+    },
+    '&light .cm-tooltip-autocomplete ul li[aria-selected], &dark .cm-tooltip-autocomplete ul li[aria-selected]': selectedRow,
+    '&light .cm-tooltip-autocomplete-disabled ul li[aria-selected], &dark .cm-tooltip-autocomplete-disabled ul li[aria-selected]': {
+      backgroundColor: 'var(--editor-ac-row-bg)',
+      color: 'var(--editor-ac-row-fg)',
+      borderLeftColor: 'transparent',
+    },
+    '.cm-completionMatchedText': {
+      textDecoration: 'none',
+      fontWeight: '600',
+      color: 'inherit',
+    },
+    '.cm-completionIcon': {
+      display: 'none',
+    },
+    '.cm-completionDetail': {
+      marginLeft: '0.5em',
+      fontStyle: 'normal',
+      fontSize: '0.64rem',
+      color: 'var(--muted-high)',
+      opacity: 0.7,
+    },
+    '.cm-tooltip.cm-completionInfo': {
+      padding: '0.34rem 0.55rem',
+      backgroundColor: 'light-dark(var(--base-lowest), var(--base-lower))',
+      color: 'var(--base-highest)',
+      border: '1px solid light-dark(var(--muted-mid), var(--base-higher))',
+      borderRadius: 'var(--radius-sm)',
+      boxShadow: '0 0.06rem 0.16rem var(--tooltip-shadow-near)',
+      fontFamily: 'var(--sans)',
+      fontSize: '0.65rem',
+      lineHeight: 1.35,
+    },
+  });
+}
+
 function isDocumentDarkTheme() {
   return typeof document !== 'undefined' && !document.documentElement.classList.contains('light');
 }
@@ -281,44 +401,34 @@ function cmThemeExtensions(dark) {
   return dark ? [EditorView.darkTheme.of(true)] : [];
 }
 
-function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLinterExt) {
+function buildDiagLintExtensions(semanticEngine, prefs, getOverlayDiags = null) {
+  if (!prefs.diagGutter) return [];
+  return lintPresentation({
+    getEngine: semanticEngine ? () => semanticEngine : null,
+    getOverlayDiags,
+    settlementTickField: semanticEngine ? settlementTickField : null,
+  });
+}
+
+function refreshSettlementLint(view) {
+  if (!view?.dom?.isConnected) return;
+  // One tick transaction rebuilds Beluga squiggles + gutter synchronously from
+  // the checker store. Syntax lint stays on CM's own doc-change scheduler.
+  view.dispatch({
+    effects: [settlementUpdated.of(null), belNavSemanticTick.of(null)],
+  });
+}
+
+function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bracketKeymapCompartment, getOverlayDiags = null) {
   return [
     settlementTickField,
-    indentUnit.of(INDENT),
-    EditorState.tabSize.of(TAB_SIZE),
     beluga(),
     belAliases(),
     EditorView.clipboardInputFilter.of((text) =>
       text == null || text === '' ? text ?? '' : sanitizePastedPlainText(text)
     ),
-    EditorView.updateListener.of((update) => {
-      if (!update.docChanged) return;
-      const indentTrigger = update.transactions.some((tr) => {
-        const ue = tr.annotation(Transaction.userEvent);
-        return ue === 'input.paste' || ue === 'input.drop' || ue === 'move.drop';
-      });
-      if (!indentTrigger) return;
-      queueMicrotask(() => reindentWholeDocument(update.view));
-    }),
     ...safeScrollPastEnd(),
-    lineNumbers(),
-    highlightActiveLineGutter(),
-    highlightActiveLine(),
-    bracketMatching(),
-    closeBrackets(),
-    belCodeFolding(),
-    foldGutter({
-      markerDOM(open) {
-        const el = document.createElement('span');
-        el.className = 'cm-bel-foldmarker' + (open ? ' is-open' : ' is-folded');
-        el.innerHTML = open
-          ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6.5 4 4 4-4"/></svg>'
-          : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4.5 4 4-4 4"/></svg>';
-        return el;
-      },
-    }),
     belSearch(),
-    highlightSelectionMatches({ minSelectionLength: 2 }),
     history(),
     drawSelection(),
     dropCursor(),
@@ -332,22 +442,25 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, belugaLint
       { key: 'Mod-/', run: toggleComment },
       { key: 'F12', run: (view) => goToDefinition(view) },
       { key: 'Shift-F12', run: (view) => findReferences(view) },
-      ...closeBracketsKeymap, indentWithTab, ...defaultKeymap, ...historyKeymap, ...foldKeymap,
+      ...holeCycleKeymap(semanticEngine),
+      indentWithTab, ...defaultKeymap, ...historyKeymap, ...foldKeymap,
     ]),
+    bracketKeymapCompartment.of(keymap.of(buildBracketKeymap(prefs))),
     placeholder(placeholderText),
     belEditorChrome(),
-    ...lintPresentation(),
+    belugaDiagnosticDecorations({
+      getEngine: () => semanticEngine,
+      getOverlayDiags,
+      settlementTickField,
+    }),
     belSyntaxLinter(),
-    belugaLinterExt,
-    diagnosticRowHighlight(),
-    diagnosticGutterTooltips(),
-    belHoverTooltip(semanticEngine),
+    belHoverTooltip(semanticEngine, getOverlayDiags),
     flashExtension(),
-    belNavigation(),
     belRename(),
     belContextMenu(),
     belInspector(),
     belEditorFollow(),
+    belGraphLive(),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onDocChange(update.state.doc.toString());
     }),
@@ -382,13 +495,13 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
     ]),
     placeholder(placeholderText),
     belEditorChrome(),
-    ...lintPresentation(),
     EditorView.contentAttributes.of({ class: 'cm-aux-file' }),
     themeCompartment.of(cmThemeExtensions(dark)),
     ...(cfgDocumentId ? [
       cfgLinter(cfgDocumentId),
       ...cfgEditorExtensions(cfgDocumentId),
     ] : []),
+    belCompletionChrome(),
     belInspector(),
     belEditorFollow(),
     EditorView.updateListener.of((update) => {
@@ -406,7 +519,7 @@ function wireStatusDotErrorNav(ideStatusDot) {
   const g = typeof globalThis !== 'undefined' ? globalThis : window;
   const navigable = () => {
     const s = ideStatusDot.getAttribute('data-live-state');
-    return s === 'error' || s === 'warning';
+    return s === 'error' || s === 'error-checking' || s === 'warning';
   };
   ideStatusDot._belErrorNavClick = () => {
     if (!navigable()) return;
@@ -429,6 +542,9 @@ function wireStatusDotErrorNav(ideStatusDot) {
 function mountAuxEditor(parentEl, options, documentId, docPath) {
   const initialDark = options.dark ?? isDocumentDarkTheme();
   const themeCompartment = new Compartment();
+  const chromeCompartment = new Compartment();
+  const diagCompartment = new Compartment();
+  const editorPrefs = readEditorPrefs();
   const ph = auxFilePlaceholder();
   const initialDoc = sanitizePastedPlainText(options.doc ?? '');
   const isCfg = /\.cfg$/i.test(String(docPath || ''));
@@ -442,6 +558,8 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
     doc: initialDoc,
     extensions: [
       ...auxFileExtensions(ph, handleDocChange, initialDark, themeCompartment, isCfg ? documentId : null),
+      diagCompartment.of(buildDiagLintExtensions(null, editorPrefs)),
+      chromeCompartment.of(buildEditorChromeTheme(editorPrefs)),
       EditorView.updateListener.of((update) => {
         if (diagnosticCount(update.state) !== diagnosticCount(update.startState)) {
           refreshStatusDot();
@@ -451,6 +569,15 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
   });
   const view = new EditorView({ parent: parentEl, state });
   view.dom.classList.add('bel-editor--aux', 'bel-editor--cfg');
+  activeEditorView = view;
+  activeEditorPrefsApplier = (prefs) => {
+    view.dispatch({
+      effects: [
+        chromeCompartment.reconfigure(buildEditorChromeTheme(prefs)),
+        diagCompartment.reconfigure(buildDiagLintExtensions(null, prefs)),
+      ],
+    });
+  };
 
   const ideStatusDot = typeof document !== 'undefined'
     ? document.getElementById('ide-status-dot')
@@ -473,20 +600,26 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
       fileCount: countCfgEntries(view.state.doc),
     };
   }
+  function collectLintTooltipItems() {
+    return cfgDiagnostics(view.state.doc, documentId).map((d) => {
+      const line = view.state.doc.lineAt(d.from);
+      return { line: d.from - line.from + 1, msg: d.message || '', kind: d.severity };
+    });
+  }
   function refreshStatusDot() {
     const { diags, fileCount } = cfgStatus();
-    updateAuxStatusDot(ideStatusDot, diags, { fileCount });
+    updateAuxStatusDot(ideStatusDot, diags, { fileCount, lintItems: collectLintTooltipItems() });
     const g = typeof globalThis !== 'undefined' ? globalThis : window;
     if (typeof g.dispatchEvent === 'function') {
       const { errors, warnings } = cfgStatus();
       g.dispatchEvent(new CustomEvent('beljar:file-lint', {
-        detail: { errors, warnings },
+        detail: { errors, warnings, items: collectLintTooltipItems() },
       }));
     }
   }
   refreshStatusDot();
   if (isCfg) queueMicrotask(() => forceLinting(view));
-  if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal);
+  if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal, { focus: true });
 
   return {
     getDocumentId() { return documentId; },
@@ -494,6 +627,7 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
       const { errors, warnings } = cfgStatus();
       return { errors, warnings };
     },
+    getLintTooltipItems: collectLintTooltipItems,
     getValue: () => view.state.doc.toString(),
     setValue(text) {
       const doc = sanitizePastedPlainText(text ?? '');
@@ -523,7 +657,11 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
     setDarkTheme(dark) {
       view.dispatch({ effects: themeCompartment.reconfigure(cmThemeExtensions(dark)) });
     },
-    destroy() { view.destroy(); },
+    destroy() {
+      activeEditorPrefsApplier = null;
+      activeEditorView = null;
+      view.destroy();
+    },
     refreshLint() {
       if (isCfg) forceLinting(view);
       refreshStatusDot();
@@ -535,11 +673,7 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
       return resolved ? peekRange(view, resolved) : false;
     },
     getViewport() {
-      const sel = view.state.selection.main;
-      return {
-        selection: { anchor: sel.anchor, head: sel.head },
-        centerLine: viewportCenterLine(view),
-      };
+      return captureViewportLocal(view);
     },
     applyViewport(local) { scheduleViewportRestore(view, local); },
     scheduleJumpToRange(jumpAt) { scheduleJumpToRange(view, jumpAt); },
@@ -563,6 +697,299 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
   };
 }
 
+function persistDevOptsFromGlobal() {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!P) return {};
+  return {
+    getActiveCfgsForDir: typeof P.getActiveCfgsForDir === 'function'
+      ? (dir) => P.getActiveCfgsForDir(dir)
+      : undefined,
+    getActiveCfgForDir: typeof P.getActiveCfgForDir === 'function'
+      ? (dir) => P.getActiveCfgForDir(dir)
+      : undefined,
+  };
+}
+
+// Members of the development containing [fileId]. Live editor text is spliced in
+// only when [fileId] is the file currently open — never from another buffer.
+function developmentMembersForFile(view, fileId) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!P || !fileId) return { members: [], paths: [] };
+  const files = P.listFiles();
+  const editorActiveId = P.getActiveFileId();
+  const live = view?.state?.doc ? view.state.doc.toString() : null;
+  const getText = (id) => (id === editorActiveId && live != null ? live : P.getFileText(id));
+  const liveFor = fileId === editorActiveId ? live : null;
+  return listDevelopmentMembers(
+    files, fileId, getText, persistDevOptsFromGlobal(), liveFor,
+  );
+}
+
+function developmentMembersPersisted(fileId) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!P || !fileId) return { members: [], paths: [] };
+  const files = P.listFiles();
+  return listDevelopmentMembers(
+    files, fileId, (id) => P.getFileText(id), persistDevOptsFromGlobal(), null,
+  );
+}
+
+function dispatchDevelopmentChecked() {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  g.dispatchEvent(new CustomEvent('beljar:development-checked'));
+}
+
+let devCheckInflight = null;
+let devCheckInflightSig = '';
+let lastSettledNonActiveDevSig = '';
+
+// Explorer/tab health dots ask fileHealthFor() for EVERY file row on every
+// navigation, settlement pass, and dev-check completion. Each raw computation
+// resolves the whole development (reading + JSON-parsing every member's stored
+// state twice) and syntax-parses the file — O(files²) JSON parses per refresh,
+// which froze navigation as suites grew. Health only actually changes at a few
+// discrete moments, so memoize by fileId and invalidate wholesale when any of
+// them fire (notifyExplorerHealthChanged funnels dev-check + settlement; a file
+// switch and the active file's own edits are folded into the key below).
+const fileHealthCache = new Map(); // fileId -> { key, value }
+let fileHealthGeneration = 0;
+
+export function invalidateFileHealthCache() {
+  fileHealthGeneration += 1;
+  fileHealthCache.clear();
+}
+
+// Health changes only when a CHECK produces new results: dev-check completion
+// (the event below) and settlement-ready (explicit call in
+// syncSettlementFileHealth). Never invalidate on 'explorer-health-changed' —
+// that event also rides UI refresh paths, and wiring invalidation to it made
+// every keystroke recompute health for the whole project. The active file's
+// cache key already includes its live-text hash, so its own dot stays honest
+// between checks without any global invalidation.
+(function registerFileHealthInvalidation() {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  if (!g || typeof g.addEventListener !== 'function') return;
+  g.addEventListener('beljar:development-checked', invalidateFileHealthCache);
+})();
+
+function runDevelopmentCheck(dc, members) {
+  const perf = getCheckTrace();
+  const span = perf.enabled ? perf.spanStart('dev-check:total', { members: members.length }) : null;
+  const getText = (id) => members.find((m) => m.id === id)?.text ?? '';
+  return dc.check(members).then((result) => {
+    if (span) perf.spanEnd(span, { ok: result?.ok });
+    syncHoleGoalsFromDevelopment(members, result?.memberHoles);
+    notifyExplorerHealthChanged();
+    dispatchDevelopmentChecked();
+    return result;
+  }).catch((err) => {
+    if (span) perf.spanEnd(span, { ok: false });
+    throw err;
+  });
+}
+
+export function fileHealthFor(fileId, liveText = null) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!P || !fileId) return { errors: 0, warnings: 0, items: [] };
+  // A non-active file's health comes from the (shared) dev-check cache and its
+  // own stored text — neither depends on which file is active — so it stays
+  // cached across navigation and is invalidated only by a generation bump. The
+  // ACTIVE file additionally tracks its LIVE buffer + live Beluga, so fold the
+  // live text into its key and mark it active so switching files recomputes it.
+  const activeIdForKey = typeof P.getActiveFileId === 'function' ? P.getActiveFileId() : null;
+  const isActiveForKey = fileId === activeIdForKey;
+  const liveKey = (isActiveForKey && liveText != null)
+    ? `${liveText.length}:${fileContentSig(liveText)}`
+    : '';
+  const cacheKey = `${fileHealthGeneration}|${isActiveForKey ? 'A' : '-'}|${liveKey}`;
+  const cached = fileHealthCache.get(fileId);
+  if (cached && cached.key === cacheKey) return cached.value;
+  const value = computeFileHealth(fileId, liveText, P);
+  fileHealthCache.set(fileId, { key: cacheKey, value });
+  return value;
+}
+
+function computeFileHealth(fileId, liveText, P) {
+  const file = P.getFileById(fileId);
+  if (!file) return { errors: 0, warnings: 0, items: [] };
+  const text = liveText != null ? liveText : String(P.getFileText(fileId) ?? '');
+  const activeId = P.getActiveFileId();
+  const view = activeEditorView;
+  const { members } = developmentMembersForFile(view, fileId);
+  const { members: persistedMembers } = developmentMembersPersisted(fileId);
+  const dc = getDevelopmentChecker();
+  const cached = members.length
+    ? devCheckCacheLookup(dc, members, persistedMembers)
+    : null;
+  const isActive = fileId === activeId;
+
+  let activeBelugaHealth = null;
+  if (isActive && view?.state) {
+    const eng = view._belSemanticEngine;
+    const settle = eng?.settleState?.();
+    if (eng && settle && settle !== 'idle' && settle !== 'failed') {
+      const diags = collectStatusDiagnostics(view, eng)
+        .filter((d) => !isSuitePreludeBannerDiag(d));
+      activeBelugaHealth = belugaDiagsToFileHealth(diags, view.state.doc);
+    }
+  }
+
+  if (members.length) {
+    return resolveExplorerFileHealth({
+      file,
+      text,
+      memberDiagnostics: cached?.memberDiagnostics,
+      devCheckCached: !!cached,
+      activeBelugaHealth,
+      isActiveFile: isActive,
+    });
+  }
+  return resolveExplorerFileHealth({
+    file,
+    text,
+    devCheckCached: false,
+    activeBelugaHealth,
+    isActiveFile: isActive,
+  });
+}
+
+export function ensureDevelopmentChecked(view) {
+  const dc = getDevelopmentChecker();
+  const P = typeof window !== 'undefined' ? window : globalThis;
+  const persist = P.BelJarPersist;
+  if (!dc || !persist || !view) return;
+  const activeId = persist.getActiveFileId();
+  const { members } = developmentMembersForFile(view, activeId);
+  if (!members.length) return;
+  const sig = developmentSignature(members);
+  if (dc.cachedFor(members)) return;
+  if (devCheckInflight && devCheckInflightSig === sig) return devCheckInflight;
+  devCheckInflightSig = sig;
+  devCheckInflight = runDevelopmentCheck(dc, members).finally(() => {
+    devCheckInflight = null;
+    devCheckInflightSig = '';
+  });
+  return devCheckInflight;
+}
+
+export function ensureDevelopmentCheckedForFile(view, fileId) {
+  const dc = getDevelopmentChecker();
+  if (!dc || !view || !fileId) return;
+  const { members } = developmentMembersForFile(view, fileId);
+  if (!members.length || dc.cachedFor(members)) return;
+  runDevelopmentCheck(dc, members).catch(() => {});
+}
+
+// Run (or reuse) the development-scoped check for the development containing
+// [fileId] and return the reconstructed hole at (line, col), if any.
+export async function computeHoleGoalOnDemand(view, fileId, line, col) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const dc = getDevelopmentChecker();
+  const P = g.BelJarPersist;
+  if (!dc || !P || !fileId) return null;
+  const files = P.listFiles();
+  const file = files.find((f) => f.id === fileId);
+  if (!file) return null;
+  const { members } = developmentMembersForFile(view, fileId);
+  if (!members.length) return null;
+
+  const holesFor = (map) => findMemberHole(map?.[file.name], line, col);
+
+  const api = g.BelJarCurrentEditor;
+  const eng = api && typeof api.getSemanticEngine === 'function' ? api.getSemanticEngine() : null;
+  if (eng && typeof eng.memberHoles === 'function') {
+    const settled = holesFor(eng.memberHoles());
+    if (settled) return settled;
+  }
+
+  let result = dc.cachedFor(members);
+  if (result?.memberHoles) syncHoleGoalsFromDevelopment(members, result.memberHoles);
+  if (!result) {
+    try {
+      result = await runDevelopmentCheck(dc, members);
+    } catch (_) {
+      return null;
+    }
+  }
+  const fromDev = holesFor(result?.memberHoles);
+  if (fromDev) return fromDev;
+
+  if (eng && typeof eng.memberHoles === 'function') {
+    return holesFor(eng.memberHoles());
+  }
+  return null;
+}
+
+export function cachedDevelopmentMemberHoles(view) {
+  const dc = getDevelopmentChecker();
+  const P = typeof window !== 'undefined' ? window : globalThis;
+  const persist = P.BelJarPersist;
+  if (!dc || !persist) return {};
+  const { members } = developmentMembersForFile(view, persist.getActiveFileId());
+  const cached = dc.cachedFor(members);
+  if (cached?.memberHoles) syncHoleGoalsFromDevelopment(members, cached.memberHoles);
+  return getHoleGoalsStore().freshMap(members.map((m) => ({ name: m.name, text: m.text })));
+}
+
+export function cachedMemberHolesForFile(view, fileId) {
+  const dc = getDevelopmentChecker();
+  if (!dc || !fileId) return {};
+  const { members } = developmentMembersForFile(view, fileId);
+  const cached = dc.cachedFor(members);
+  if (cached?.memberHoles) syncHoleGoalsFromDevelopment(members, cached.memberHoles);
+  return getHoleGoalsStore().freshMap(members.map((m) => ({ name: m.name, text: m.text })));
+}
+
+export function freshHoleGoalsForProject(view) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!P || typeof P.listFiles !== 'function') return {};
+  const files = P.listFiles();
+  const activeId = P.getActiveFileId();
+  const live = view?.state?.doc ? view.state.doc.toString() : null;
+  const entries = files.map((f) => ({
+    name: f.name,
+    text: (f.id === activeId && live != null) ? live : String(P.getFileText(f.id) ?? ''),
+  }));
+  return getHoleGoalsStore().freshMap(entries);
+}
+
+export function freshHoleGoalsForDevelopment(view) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!P) return {};
+  const activeId = P.getActiveFileId();
+  const { members } = developmentMembersForFile(view, activeId);
+  return getHoleGoalsStore().freshMap(members.map((m) => ({ name: m.name, text: m.text })));
+}
+
+export function freshHoleGoalsForFile(view, fileId) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!P || !fileId) return {};
+  const files = P.listFiles();
+  const file = files.find((f) => f.id === fileId);
+  if (!file) return {};
+  const activeId = P.getActiveFileId();
+  const live = view?.state?.doc ? view.state.doc.toString() : null;
+  const text = (file.id === activeId && live != null) ? live : String(P.getFileText(file.id) ?? '');
+  const holes = getHoleGoalsStore().fresh(file.name, fileContentSig(text));
+  return holes?.length ? { [file.name]: holes } : {};
+}
+
+export function developmentMemberPaths(view) {
+  const P = typeof window !== 'undefined' ? window : globalThis;
+  if (!P.BelJarPersist) return [];
+  const activeId = P.BelJarPersist.getActiveFileId();
+  const { members, paths } = developmentMembersForFile(view, activeId);
+  if (paths.length) return paths;
+  return members.map((m) => m.name);
+}
+
 export function mount(parentEl, options = {}) {
   if (!parentEl) return null;
   if (typeof options.onDocChange !== 'function') {
@@ -570,15 +997,19 @@ export function mount(parentEl, options = {}) {
   }
   const g = typeof window !== 'undefined' ? window : self;
   const docId = options.documentId || '';
-  const docPath = String(docId).replace(/^workspace:\/\//, '');
+  const docPath = options.filePath || resolveCfgDocumentPath(docId);
   const isCfgFile = /\.cfg$/i.test(docPath);
   parentEl.replaceChildren();
   if (isCfgFile) return mountAuxEditor(parentEl, options, docId, docPath);
 
   const ph = options.placeholder ?? 'Write Beluga code here...';
   const themeCompartment = new Compartment();
+  const chromeCompartment = new Compartment();
   const ideCompartment = new Compartment();
+  const bracketKeymapCompartment = new Compartment();
+  const diagCompartment = new Compartment();
   const initialDark = options.dark ?? isDocumentDarkTheme();
+  const editorPrefs = readEditorPrefs();
 
   let semanticView = null;
 
@@ -588,8 +1019,20 @@ export function mount(parentEl, options = {}) {
     return checkerSnapshot(syntaxTree(semanticView.state), doc).code;
   }
 
+  // The background scheduler ticks every ~50ms while deriving types and calls
+  // getCheckerCode() (→ this) each tick; settlement + hole actions call it too.
+  // Rebuilding the whole prelude + suite analysis on each call reassembled and
+  // reparsed the ENTIRE development on the main thread continuously — the "never
+  // improves, worse deeper in the suite" lag. The result depends only on the
+  // live doc (stable between edits) + the sibling files' stored text, so cache
+  // by doc identity + generation (bumped when a sibling changes or a check
+  // lands); consecutive same-doc calls become O(1).
+  let checkContextCache = { doc: null, gen: -1, value: null };
   function buildCheckContext(doc) {
     if (!g.BelJarPersist || !doc) return null;
+    if (checkContextCache.doc === doc && checkContextCache.gen === suiteOverlayGeneration) {
+      return checkContextCache.value;
+    }
     const files = g.BelJarPersist.listFiles();
     const activeId = g.BelJarPersist.getActiveFileId();
     const getText = (id) => (id === activeId ? doc.toString() : g.BelJarPersist.getFileText(id));
@@ -598,7 +1041,52 @@ export function mount(parentEl, options = {}) {
       ? checkerSnapshot(syntaxTree(semanticView.state), doc).code
       : doc.toString();
     const suite = suiteAnalysisFor(files, activeId, getText, doc);
-    return { doc, prelude, fileCode, suiteDiagnostics: suite.diagnostics, suiteFindings: suite.findings };
+    const active = files.find((f) => f.id === activeId);
+    const value = {
+      doc,
+      prelude,
+      fileCode,
+      activeFileName: active ? active.name : null,
+      suiteDiagnostics: suite.diagnostics,
+      suiteFindings: suite.findings,
+    };
+    checkContextCache = { doc, gen: suiteOverlayGeneration, value };
+    return value;
+  }
+
+  function nonActiveDevSignature(view, activeId) {
+    const { members } = developmentMembersForFile(view, activeId);
+    const nonActive = members.filter((m) => m.id !== activeId);
+    return developmentSignature(nonActive);
+  }
+
+  function scheduleDevelopmentCheckIfNeeded(view) {
+    const activeId = g.BelJarPersist?.getActiveFileId?.();
+    if (!activeId) return;
+    const sig = nonActiveDevSignature(view, activeId);
+    if (sig === lastSettledNonActiveDevSig) return;
+    lastSettledNonActiveDevSig = sig;
+    ensureDevelopmentChecked(view);
+  }
+
+  function scheduleDevelopmentCheck(view) {
+    ensureDevelopmentChecked(view);
+  }
+
+  let devCheckDebounceTimer = null;
+
+  function scheduleDebouncedDevelopmentCheck(view) {
+    if (devCheckDebounceTimer != null) clearTimeout(devCheckDebounceTimer);
+    devCheckDebounceTimer = setTimeout(() => {
+      devCheckDebounceTimer = null;
+      // Gate on the NON-ACTIVE members' signature (scheduleDevelopmentCheckIfNeeded),
+      // never unconditionally: the live active text is spliced into the members,
+      // so an ungated call re-ran the WHOLE-development Beluga check after every
+      // typing pause — permanently saturating the checker worker. The active
+      // file's own results come from the settlement; the whole-dev pass only
+      // needs to re-run when some OTHER member actually changed.
+      if (view.dom?.isConnected) scheduleDevelopmentCheckIfNeeded(view);
+    }, SETTLE_DELAY_MS);
   }
 
   // Suite-composition analysis for the active development: diagnostics surfaced in
@@ -633,6 +1121,23 @@ export function mount(parentEl, options = {}) {
     return ctx ? assembleCheckerCode(ctx.fileCode, ctx.prelude).code : healthySnapshotForView();
   }
 
+  // Code + prelude line-offset for driving interactive hole commands. The hole's
+  // doc line L appears in the assembled program at line L + offsetLines (holes
+  // only surface on a CLEAN reconstruction, where fileCode === the live snapshot,
+  // so no block masking shifts positions). Built from the LIVE doc so a command
+  // runs against exactly what the user sees.
+  function holeActionContext() {
+    if (!semanticView) return null;
+    const ctx = buildCheckContext(semanticView.state.doc);
+    if (!ctx) return { code: healthySnapshotForView(), offsetLines: 0 };
+    const assembled = assembleCheckerCode(ctx.fileCode, ctx.prelude);
+    return {
+      code: assembled.code,
+      offsetLines: assembled.prelude ? assembled.prelude.offsetLines : 0,
+      fileStart: assembled.fileOffset != null ? assembled.fileOffset : 0,
+    };
+  }
+
   let refreshIdeStatusRef = () => {};
 
   function currentScopeKey() {
@@ -644,12 +1149,86 @@ export function mount(parentEl, options = {}) {
     ).scopeKey;
   }
 
-  const semanticEngine = createSemanticEngine({
+  let semanticEngine;
+  // Bumped whenever the checked results feeding the suite-prelude banner change
+  // (settlement lands, whole-development check completes). Invalidates the
+  // per-doc suiteOverlayDiagnostics memo below without re-hashing every member.
+  let suiteOverlayGeneration = 0;
+  const bumpSuiteOverlay = () => { suiteOverlayGeneration += 1; };
+
+  function mergedMemberDiagnostics(members) {
+    const dc = getDevelopmentChecker();
+    const fromDev = dc?.cachedFor(members)?.memberDiagnostics || {};
+    const fromSettled = semanticEngine?.memberDiagnostics?.() || {};
+    const out = { ...fromDev };
+    for (const [name, list] of Object.entries(fromSettled)) {
+      if (!list?.length || out[name]?.length) continue;
+      out[name] = list;
+    }
+    return out;
+  }
+
+  function syncSettlementFileHealth(view, checkerSnap) {
+    if (!view?.state || !checkerSnap || checkerSnap.state !== 'ready') return;
+    // Settlement landed real diagnostics — this IS a health change, so drop the
+    // memo before announcing it (the announce triggers the rAF'd dot refresh).
+    invalidateFileHealthCache();
+    notifyExplorerHealthChanged();
+  }
+
+  function computeSuitePreludeBanner(view) {
+    const P = g.BelJarPersist;
+    if (!P || !view?.state) return null;
+    const activeId = P.getActiveFileId();
+    const { members } = developmentMembersForFile(view, activeId);
+    if (members.length < 2) return null;
+    const live = view.state.doc.toString();
+    const getText = (id) => (id === activeId ? live : P.getFileText(id));
+    const files = P.listFiles();
+    const suite = suiteAnalysisFor(files, activeId, getText, view.state.doc);
+    return suitePreludeBannerForActive({
+      doc: view.state.doc,
+      members,
+      activeId,
+      memberDiagnostics: mergedMemberDiagnostics(members),
+      getText,
+      suiteFindings: suite.findings,
+    });
+  }
+
+  // The lint decorations, gutter wash, and tooltips each call this several times
+  // per editor update, and computeSuitePreludeBanner reparses EVERY development
+  // member — so an un-memoized call reparsed the whole suite ~5×/keystroke,
+  // scaling with prelude depth (the navigation/typing lag). Cache by the live
+  // doc identity (stable within an update) + a generation bumped whenever member
+  // diagnostics change, so repeated calls reuse one computation and it only
+  // recomputes when the doc or the checked results actually change.
+  // The banner is anchored at line 1 ("an earlier suite file is broken") and its
+  // content depends ONLY on the members' checked results — never on the active
+  // doc's live text — so it is safe to reuse across keystrokes and refresh only
+  // when a check lands (the generation bump). This keeps the whole-suite reparse
+  // it performs OFF the per-keystroke path entirely (at HEAD there was no overlay
+  // in the gutter decorations at all; this restores that cost profile).
+  let suiteOverlayCache = { gen: -1, value: [] };
+  function suiteOverlayDiagnostics() {
+    if (!semanticView?.state) return [];
+    if (suiteOverlayCache.gen === suiteOverlayGeneration) return suiteOverlayCache.value;
+    const banner = computeSuitePreludeBanner(semanticView);
+    const value = banner ? [banner] : [];
+    suiteOverlayCache = { gen: suiteOverlayGeneration, value };
+    return value;
+  }
+
+  semanticEngine = createSemanticEngine({
     documentId: options.documentId || 'workspace://main.bel',
     belugaClient: g.BelugaClient,
     getCheckContext: (syntaxSnap) => (syntaxSnap?.doc ? buildCheckContext(syntaxSnap.doc) : null),
+    getSuiteOverlayDiagnostics: suiteOverlayDiagnostics,
     getScopeKey: currentScopeKey,
     onTypeObserved: () => {
+      noteTypingVelocity();
+      const perf = getCheckTrace();
+      if (perf.enabled) perf.beginEdit();
       if (options.persist && typeof options.persist.scheduleCheckpointSave === 'function') {
         options.persist.scheduleCheckpointSave();
       }
@@ -660,24 +1239,41 @@ export function mount(parentEl, options = {}) {
         });
       }
     },
-    onSettlement: () => {
-      if (semanticView) {
-        queueMicrotask(() => {
-          if (!semanticView.dom.isConnected) return;
-          semanticView.dispatch({
-            effects: [settlementUpdated.of(null), belNavSemanticTick.of(null)],
-          });
-          forceLinting(semanticView);
+    getSettleDelay: (syntaxSnap) => {
+      const files = g.BelJarPersist?.listFiles?.() || [];
+      const activeId = g.BelJarPersist?.getActiveFileId?.();
+      const pre = preludeFilesFor(files, activeId, (id) => g.BelJarPersist.getFileText(id));
+      return computeSettleDelayMs(syntaxSnap, { preludePaths: pre.length });
+    },
+    onSettlement: (checkerSnap) => {
+      if (semanticView && checkerSnap) {
+        const doc = semanticView.state.doc;
+        const ctx = buildCheckContext(doc);
+        const files = g.BelJarPersist?.listFiles?.() || [];
+        const activeId = g.BelJarPersist?.getActiveFileId?.();
+        const byName = new Map(files.map((f) => [f.name, f]));
+        syncHoleGoalsFromSettlement(ctx, checkerSnap, (name) => {
+          const f = byName.get(name);
+          if (!f) return '';
+          if (f.id === activeId) return doc.toString();
+          return String(g.BelJarPersist.getFileText(f.id) ?? '');
         });
+      }
+      if (semanticView) {
+        bumpSuiteOverlay();
+        scheduleDevelopmentCheckIfNeeded(semanticView);
+        const code = healthyCodeWithPrelude();
+        if (g.BelugaClient?.warmIntel) g.BelugaClient.warmIntel(code).catch(() => {});
+        refreshSettlementLint(semanticView);
+        refreshIdeStatusRef(semanticView);
+        syncSettlementFileHealth(semanticView, checkerSnap);
       }
     },
     onSettlementChecking: () => {
       if (!semanticView) return;
+      bumpSuiteOverlay();
       refreshIdeStatusRef(semanticView);
-      queueMicrotask(() => {
-        if (!semanticView.dom.isConnected) return;
-        semanticView.dispatch({ effects: belNavSemanticTick.of(null) });
-      });
+      refreshSettlementLint(semanticView);
     },
   });
 
@@ -707,14 +1303,7 @@ export function mount(parentEl, options = {}) {
   if (options.persist && typeof options.persist.setCheckpointProviders === 'function') {
     options.persist.setCheckpointProviders({
       getSemantic: () => semanticEngine.exportCheckpoint(),
-      getViewport: () => {
-        if (!semanticView) return {};
-        const sel = semanticView.state.selection.main;
-        return {
-          selection: { anchor: sel.anchor, head: sel.head },
-          centerLine: viewportCenterLine(semanticView),
-        };
-      },
+      getViewport: () => captureViewportLocal(semanticView),
       getDocFp: (text) => docFingerprint(text != null ? text : semanticView?.state.doc.toString() || ''),
       getBelugaBuild: () => (
         typeof g.BelJarPersist !== 'undefined' ? g.BelJarPersist.readStoredBelugaMode() : 'stable'
@@ -731,13 +1320,33 @@ export function mount(parentEl, options = {}) {
     wireStatusDotErrorNav(ideStatusDot);
   }
 
+  function checkerSettling() {
+    const s = semanticEngine.settleState?.();
+    if (s === 'checking' || s === 'stale') return true;
+    const ver = semanticEngine.getSnapshot?.()?.syntax?.version;
+    if (ver != null && semanticEngine.isSettledFor && !semanticEngine.isSettledFor(ver)) {
+      const parse = computeParseCoverage(semanticView.state);
+      if (!parse.complete) return false;
+      if (semanticEngine.isSettlementPending?.()) return true;
+      semanticEngine.ensureSettled?.();
+      return semanticEngine.isSettlementPending?.();
+    }
+    return false;
+  }
+
+  function statusLintTooltipItems(view) {
+    const diags = collectStatusDiagnostics(view, semanticEngine);
+    return lintTooltipItemsFromDiagnostics(diags, view.state.doc);
+  }
+
   function refreshIdeStatus(view) {
-    const diags = [];
-    forEachDiagnostic(view.state, (d) => diags.push(d));
-    const settling = semanticEngine.settleState?.() === 'checking';
+    const settling = checkerSettling();
+    const diags = collectStatusDiagnostics(view, semanticEngine);
+    const lintItems = lintTooltipItemsFromDiagnostics(diags, view.state.doc);
     updateIdeStatusDot(ideStatusDot, diags, {
       parseCoverage: computeParseCoverage(view.state),
       belugaPending: settling,
+      lintItems,
     });
     const g = typeof globalThis !== 'undefined' ? globalThis : window;
     if (typeof g.dispatchEvent === 'function') {
@@ -745,19 +1354,19 @@ export function mount(parentEl, options = {}) {
         detail: {
           errors: diags.filter((d) => d.severity === 'error').length,
           warnings: diags.filter((d) => d.severity === 'warning').length,
+          items: lintItems,
         },
       }));
     }
   }
 
   function collectIdeStatus() {
-    const diags = [];
-    forEachDiagnostic(view.state, (d) => diags.push(d));
+    const diags = collectStatusDiagnostics(view, semanticEngine);
     const parse = computeParseCoverage(view.state);
     const snap = semanticEngine.getSnapshot?.() || null;
     return {
       parse,
-      belugaChecking: semanticEngine.settleState?.() === 'checking',
+      belugaChecking: checkerSettling(),
       errors: diags.filter((d) => d.severity === 'error').length,
       warnings: diags.filter((d) => d.severity === 'warning').length,
       syntaxVersion: snap?.syntax?.version ?? null,
@@ -765,12 +1374,6 @@ export function mount(parentEl, options = {}) {
       dirtyCount: snap?.graph?.dirty?.size ?? snap?.summary?.dirty ?? 0,
     };
   }
-
-  const belugaLinter = createBelugaLinter({
-    getEngine: () => semanticEngine,
-    settlementTickField,
-    delay: 400,
-  });
 
   refreshIdeStatusRef = refreshIdeStatus;
 
@@ -783,12 +1386,15 @@ export function mount(parentEl, options = {}) {
     sched.seedFromFrontier();
   }
 
-  function syncSemanticFromView(view) {
+  function syncSemanticFromView(view, opts = {}) {
     const tree = syntaxTree(view.state);
     semanticEngine.update(tree, view.state.doc, {
       cursorPos: view.state.selection.main.head,
       visibleRanges: view.visibleRanges,
+      changes: opts.changes ?? null,
+      deferSettlement: opts.deferSettlement,
     });
+    if (!opts.deferSettlement) semanticEngine.ensureSettled?.();
     refreshIdeStatus(view);
   }
 
@@ -805,7 +1411,7 @@ export function mount(parentEl, options = {}) {
       if (newLen > this.treeLength || milestone > this.parseMilestone) {
         this.treeLength = newLen;
         this.parseMilestone = milestone;
-        syncSemanticFromView(update.view);
+        syncSemanticFromView(update.view, { deferSettlement: milestone < 100 });
         seedSemanticScheduler(update.view);
         const v = update.view;
         queueMicrotask(() => {
@@ -825,10 +1431,24 @@ export function mount(parentEl, options = {}) {
       refreshIdeStatus(update.view);
     }
     if (update.docChanged) {
-      syncSemanticFromView(update.view);
+      syncSemanticFromView(update.view, { changes: update.changes });
       semanticEngine.onDocChange(update.changes);
       seedSemanticScheduler(update.view);
+      refreshIdeStatus(update.view);
+      scheduleDebouncedDevelopmentCheck(update.view);
+      // NO notifyExplorerHealthChanged() here: health dots reflect CHECKED
+      // results, which a keystroke doesn't change. Firing it per keystroke made
+      // the explorer re-derive health for EVERY project file on every edit —
+      // the systemic typing/navigation lag. Settlement + dev-check completion
+      // fire it (with fresh results) within a second anyway.
       if (options.persist) options.persist.scheduleCheckpointSave();
+      // The engine tree is now current — holes are known syntactically. Let
+      // hole-list surfaces (Harpoon panel, inspector global view) refresh
+      // without waiting for the Beluga checker to settle.
+      const gg = typeof globalThis !== 'undefined' ? globalThis : window;
+      if (typeof gg.dispatchEvent === 'function') {
+        gg.dispatchEvent(new CustomEvent('beljar:doc-changed'));
+      }
     }
     if (update.selectionSet || update.viewportChanged) {
       if (options.persist) options.persist.scheduleCheckpointSave();
@@ -845,11 +1465,13 @@ export function mount(parentEl, options = {}) {
   });
 
   const extensions = [
-    ...baseExtensions(ph, options.onDocChange, semanticEngine, belugaLinter),
+    ...baseExtensions(ph, options.onDocChange, semanticEngine, editorPrefs, bracketKeymapCompartment, suiteOverlayDiagnostics),
+    diagCompartment.of(buildDiagLintExtensions(semanticEngine, editorPrefs, suiteOverlayDiagnostics)),
     docSyncExt,
     treeWatchPlugin,
     themeCompartment.of(cmThemeExtensions(initialDark)),
-    ideCompartment.of([]),
+    chromeCompartment.of(buildEditorChromeTheme(editorPrefs)),
+    ideCompartment.of(buildToggleableExtensions(editorPrefs, { semanticEngine })),
   ];
 
   const initialDoc = prepareEditorDoc(options.doc ?? '', docPath);
@@ -862,6 +1484,8 @@ export function mount(parentEl, options = {}) {
     state,
   });
   semanticView = view;
+  if (g.BelugaClient?.setIntelKeepWarm) g.BelugaClient.setIntelKeepWarm(true);
+  activeEditorView = view;
   // Let the IDE action layer reach the engine straight off the view, before the
   // global BelJarCurrentEditor handle is assigned by app.js.
   view._belSemanticEngine = semanticEngine;
@@ -871,7 +1495,19 @@ export function mount(parentEl, options = {}) {
   semanticEngine.setCheckerCode(() => healthyCodeWithPrelude());
   hydrateSemanticCheckpoint(initialDoc);
   syncSemanticFromView(view);
-  if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal);
+  semanticEngine.ensureSettled?.();
+  queueMicrotask(() => {
+    if (view.dom?.isConnected) ensureDevelopmentChecked(view);
+  });
+  if (typeof g.addEventListener === 'function') {
+    g.addEventListener('beljar:development-checked', () => {
+      if (!semanticView?.dom?.isConnected) return;
+      bumpSuiteOverlay();
+      refreshIdeStatusRef(semanticView);
+      refreshSettlementLint(semanticView);
+    });
+  }
+  if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal, { focus: true });
   seedSemanticScheduler(view);
   if (semanticEngine.scheduler && semanticEngine.scheduler.startBackground) {
     semanticEngine.scheduler.startBackground();
@@ -911,6 +1547,18 @@ export function mount(parentEl, options = {}) {
       requestAnimationFrame(() => view.requestMeasure());
     });
   }
+
+  activeEditorPrefsApplier = (prefs) => {
+    view.dispatch({
+      effects: [
+        chromeCompartment.reconfigure(buildEditorChromeTheme(prefs)),
+        ideCompartment.reconfigure(buildToggleableExtensions(prefs, { semanticEngine })),
+        bracketKeymapCompartment.reconfigure(keymap.of(buildBracketKeymap(prefs))),
+        diagCompartment.reconfigure(buildDiagLintExtensions(semanticEngine, prefs, suiteOverlayDiagnostics)),
+      ],
+    });
+    refreshSettlementLint(view);
+  };
 
   return {
     getValue() {
@@ -981,13 +1629,18 @@ export function mount(parentEl, options = {}) {
     setIdeExtensions(exts) {
       view.dispatch({ effects: ideCompartment.reconfigure(exts) });
     },
+    setChromeTheme(theme) {
+      view.dispatch({ effects: chromeCompartment.reconfigure(theme) });
+    },
     setDarkTheme(dark) {
       view.dispatch({ effects: themeCompartment.reconfigure(cmThemeExtensions(!!dark)) });
     },
 
     getSemanticEngine() { return semanticEngine; },
+    getHoleActionContext() { return holeActionContext(); },
     getParseCoverage() { return computeParseCoverage(view.state); },
     getIdeStatus() { return collectIdeStatus(); },
+    getLintTooltipItems() { return statusLintTooltipItems(view); },
 
     remoduleContext() {
       if (!semanticView) return;
@@ -1005,10 +1658,7 @@ export function mount(parentEl, options = {}) {
       if (sched?.invalidateAll) sched.invalidateAll();
       syncSemanticFromView(semanticView);
       if (sched?.seedFromFrontier) sched.seedFromFrontier({ includeCleanViewport: true });
-      semanticView.dispatch({
-        effects: [settlementUpdated.of(null), belNavSemanticTick.of(null)],
-      });
-      forceLinting(semanticView);
+      refreshSettlementLint(semanticView);
       refreshIdeStatusRef(semanticView);
     },
 
@@ -1022,11 +1672,7 @@ export function mount(parentEl, options = {}) {
       return resolved ? peekRange(view, resolved) : false;
     },
     getViewport() {
-      const sel = view.state.selection.main;
-      return {
-        selection: { anchor: sel.anchor, head: sel.head },
-        centerLine: viewportCenterLine(view),
-      };
+      return captureViewportLocal(view);
     },
     applyViewport(local) { scheduleViewportRestore(view, local); },
     scheduleJumpToRange(jumpAt) { scheduleJumpToRange(view, jumpAt); },
@@ -1069,6 +1715,9 @@ export function mount(parentEl, options = {}) {
     // Tear the editor down for a document switch: halt background semantic
     // work permanently and detach the CodeMirror view from the DOM.
     destroy() {
+      activeEditorPrefsApplier = null;
+      activeEditorView = null;
+      if (g.BelugaClient?.setIntelKeepWarm) g.BelugaClient.setIntelKeepWarm(false);
       if (semanticEngine.scheduler && semanticEngine.scheduler.stop) {
         semanticEngine.scheduler.stop();
       }

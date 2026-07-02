@@ -11,7 +11,8 @@
     "vendor-fonts": "node scripts/vendor-fonts.mjs",
     "lint": "eslint js/ editor-src/",
     "test": "node tests/run-all.mjs",
-    "test:semantic": "node tests/run-all.mjs semantic"
+    "test:semantic": "node tests/run-all.mjs semantic",
+    "prover:probe": "node scripts/prover-probes.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.0.0",

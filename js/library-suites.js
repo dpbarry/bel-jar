@@ -7,11 +7,22 @@
     return i === -1 ? '' : path.slice(0, i);
   }
 
+  function activeCfgsForDir(opts, dirKey) {
+    if (typeof opts.getActiveCfgsForDir === 'function') {
+      return opts.getActiveCfgsForDir(dirKey) || [];
+    }
+    if (typeof opts.getActiveCfgForDir === 'function') {
+      var one = opts.getActiveCfgForDir(dirKey);
+      return one ? [one] : [];
+    }
+    return [];
+  }
+
   function listActiveSuites(opts) {
     opts = opts || {};
     var listFiles = opts.listFiles;
-    var getActiveCfgForDir = opts.getActiveCfgForDir;
-    if (typeof listFiles !== 'function' || typeof getActiveCfgForDir !== 'function') return [];
+    if (typeof listFiles !== 'function') return [];
+    if (typeof opts.getActiveCfgsForDir !== 'function' && typeof opts.getActiveCfgForDir !== 'function') return [];
 
     var files = listFiles();
     var cfgDirs = {};
@@ -28,11 +39,14 @@
     var out = [];
     for (var dirKey in cfgDirs) {
       if (!Object.prototype.hasOwnProperty.call(cfgDirs, dirKey)) continue;
-      var cfgPath = getActiveCfgForDir(dirKey);
-      if (!cfgPath || !names.has(cfgPath)) continue;
-      var base = cfgPath.slice(cfgPath.lastIndexOf('/') + 1).replace(/\.cfg$/i, '');
-      var label = dirKey ? dirKey + ' / ' + base : base;
-      out.push({ dir: dirKey, cfgPath: cfgPath, label: label });
+      var cfgs = activeCfgsForDir(opts, dirKey);
+      for (var c = 0; c < cfgs.length; c++) {
+        var cfgPath = cfgs[c];
+        if (!cfgPath || !names.has(cfgPath)) continue;
+        var base = cfgPath.slice(cfgPath.lastIndexOf('/') + 1).replace(/\.cfg$/i, '');
+        var label = dirKey ? dirKey + ' / ' + base : base;
+        out.push({ dir: dirKey, cfgPath: cfgPath, label: label });
+      }
     }
 
     out.sort(function (a, b) { return a.label.localeCompare(b.label); });

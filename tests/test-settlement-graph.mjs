@@ -81,7 +81,9 @@ const engine = createSemanticEngine({
 engine.update(tree, doc);
 await new Promise((r) => setTimeout(r, 450));
 expect(settled, 'engine should complete settlement');
-expect(checkCalls === 2, `engine settlement should check twice, got ${checkCalls}`);
+// Scoped fast-path may add one check before the multipass find+verify pair.
+expect(checkCalls >= 2 && checkCalls <= 3,
+  `engine settlement should check 2–3 times (scoped + multipass), got ${checkCalls}`);
 
 const engSnap = engine.getSnapshot();
 const oEng = engSnap.symbols.globalSymbols.find((s) => s.name === 'o');
@@ -95,5 +97,24 @@ expect(erring.every((n) => n.name !== 'o'), 'o must not be ERRORING');
 const good = engSnap.symbols.globalSymbols.find((s) => s.name === 'good');
 const intel = engine.intelSyncAt(good.nameRange.from);
 expect(intel && intel.userStatus.state === 'error', 'intelSyncAt should report error on affected decl');
+
+// Mount resync: a second cosmetic update (same Beluga substrate, new syntax version)
+// must not cancel the first scheduled settlement — that was the green-dot-on-refresh bug.
+checkCalls = 0;
+settled = false;
+const mountEngine = createSemanticEngine({
+  belugaClient: client,
+  onSettlement: () => { settled = true; },
+});
+mountEngine.update(tree, doc);
+const resyncSyntax = mountEngine.getSnapshot().syntax;
+mountEngine.update(resyncSyntax.tree, doc);
+await new Promise((r) => setTimeout(r, 450));
+expect(settled, 'cosmetic mount resync must not cancel initial settlement');
+expect(checkCalls >= 1, 'beluga should run after cosmetic mount resync');
+expect(
+  mountEngine.documentDiagnostics().some((d) => d.severity === 'error'),
+  'beluga errors visible after cosmetic mount resync',
+);
 
 console.log('OK settlement graph (beluga diags scoped per decl, ERRORING status)');

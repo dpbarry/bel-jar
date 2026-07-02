@@ -101,6 +101,51 @@
     return i === -1 ? '' : s.slice(0, i);
   }
 
+  function fileBase(name) {
+    var s = String(name || '');
+    return s.slice(s.lastIndexOf('/') + 1);
+  }
+
+  function isExtensionless(name) {
+    return fileBase(name).indexOf('.') === -1;
+  }
+
+  function isCfgPath(name) {
+    return String(name || '').toLowerCase().endsWith('.cfg');
+  }
+
+  function isElfPath(name) {
+    return String(name || '').toLowerCase().endsWith('.elf');
+  }
+
+  function isBelPath(name) {
+    var low = String(name || '').toLowerCase();
+    if (isCfgPath(name) || isElfPath(name)) return false;
+    if (low.endsWith('.bel')) return true;
+    return isExtensionless(name);
+  }
+
+  function isSignaturePath(name) {
+    return isBelPath(name) || isElfPath(name);
+  }
+
+  function isProjectSourcePath(name) {
+    return isSignaturePath(name) || isCfgPath(name);
+  }
+
+  function isCfgEntryToken(text) {
+    var t = String(text || '').trim();
+    if (!t || t.charAt(0) === '%') return false;
+    var low = t.toLowerCase();
+    if (low.endsWith('.cfg') || low.endsWith('.elf') || low.endsWith('.bel')) return true;
+    var base = t.indexOf('/') === -1 ? t : t.slice(t.lastIndexOf('/') + 1);
+    return base.indexOf('.') === -1;
+  }
+
+  function isCfgSourceEntry(text) {
+    return isCfgEntryToken(text) && !String(text || '').trim().toLowerCase().endsWith('.cfg');
+  }
+
   // Beluga .cfg: one file path per line; lines starting with % are comments.
   // Entries may be .bel or nested .cfg (resolved relative to the cfg's directory).
   function parseCfg(text) {
@@ -142,7 +187,7 @@
             if (!seenBel.has(sub[j])) { seenBel.add(sub[j]); ordered.push(sub[j]); }
           }
         }
-      } else if (low.endsWith('.bel') || low.endsWith('.elf')) {
+      } else if (isCfgSourceEntry(entry)) {
         var full = joinPath(cfgDir, entry);
         if (belSet[full] && !seenBel.has(full)) {
           seenBel.add(full);
@@ -183,7 +228,7 @@
     for (var i = 0; i < paths.length; i++) {
       var p = paths[i];
       var low = p.toLowerCase();
-      if (dirOf(p) === dir && (low.endsWith('.bel') || low.endsWith('.elf'))) out.push(p);
+      if (dirOf(p) === dir && isSignaturePath(p)) out.push(p);
     }
     return out;
   }
@@ -374,6 +419,45 @@
     return defaultActiveCfgForDir;
   }
 
+  function defaultActiveCfgsForDir(dir) {
+    var d = dir != null ? String(dir) : '';
+    var g = typeof window !== 'undefined' ? window : globalThis;
+    var P = g.BelJarPersist;
+    if (P && typeof P.getActiveCfgsForDir === 'function') {
+      var list = P.getActiveCfgsForDir(d);
+      if (list && list.length) {
+        if (typeof P.listFiles === 'function') {
+          var names = {};
+          var files = P.listFiles();
+          for (var i = 0; i < files.length; i++) names[files[i].name] = true;
+          var out = [];
+          for (var j = 0; j < list.length; j++) {
+            if (names[list[j]]) out.push(list[j]);
+          }
+          if (out.length) return out;
+        } else return list.slice();
+      }
+    }
+    var one = defaultActiveCfgForDir(d);
+    return one ? [one] : [];
+  }
+
+  function resolveActiveCfgsForDir(options) {
+    if (options && typeof options.activeCfgsForDir === 'function') return options.activeCfgsForDir;
+    return defaultActiveCfgsForDir;
+  }
+
+  function resolveOwningActiveCfg(files, filePath, getText, activeCfgs) {
+    if (!activeCfgs || !activeCfgs.length) return null;
+    var owning = [];
+    for (var i = 0; i < activeCfgs.length; i++) {
+      var paths = resolveActiveChain(files, activeCfgs[i], getText);
+      if (paths.indexOf(filePath) >= 0) owning.push(activeCfgs[i]);
+    }
+    if (owning.length === 1) return owning[0];
+    return null;
+  }
+
   function standaloneResult(active) {
     return {
       kind: 'standalone',
@@ -387,6 +471,7 @@
 
   function developmentForFile(files, activeId, getText, options) {
     options = options || {};
+    var activeCfgsForDir = resolveActiveCfgsForDir(options);
     var activeCfgForDir = resolveActiveCfgForDir(options);
     var active = null;
     for (var i = 0; i < files.length; i++) {
@@ -406,10 +491,12 @@
         scopeKey: 'module:' + active.name,
       };
     }
-    if (!/\.(?:bel|elf)$/i.test(String(active.name))) {
+    if (!isSignaturePath(active.name)) {
       return { kind: 'standalone', cfg: null, paths: [], activeIndex: -1, preludePaths: [], scopeKey: 'standalone:' };
     }
-    var cfgPath = activeCfgForDir(dirOf(active.name));
+    var dir = dirOf(active.name);
+    var cfgPath = resolveOwningActiveCfg(files, active.name, getText, activeCfgsForDir(dir));
+    if (!cfgPath) cfgPath = activeCfgForDir(dir);
     if (!cfgPath) return standaloneResult(active);
     var paths = resolveActiveChain(files, cfgPath, getText);
     var activeIndex = paths.indexOf(active.name);
@@ -451,7 +538,7 @@
     for (var j = 0; j < files.length; j++) {
       var fn = String(files[j].name || '');
       var low = fn.toLowerCase();
-      if (dirOf(fn) === dir && (low.endsWith('.bel') || low.endsWith('.elf'))) paths.push(fn);
+      if (dirOf(fn) === dir && isSignaturePath(fn)) paths.push(fn);
     }
     var cfgByDir = cfgByDirFromFiles(files, getText);
     var map = cfgByDir[dir];
@@ -477,7 +564,7 @@
     for (var i = 0; i < files.length; i++) {
       var fn = String(files[i].name || '');
       var low = fn.toLowerCase();
-      if (low.endsWith('.bel') || low.endsWith('.elf')) out.push(fn);
+      if (isSignaturePath(fn)) out.push(fn);
     }
     return out;
   }
@@ -549,7 +636,7 @@
     for (var j = 0; j < files.length; j++) {
       var fn = String(files[j].name || '');
       var low = fn.toLowerCase();
-      if (low.endsWith('.bel') || low.endsWith('.elf')) sigPaths.push(fn);
+      if (isSignaturePath(fn)) sigPaths.push(fn);
     }
     var best = null;
     var bestCount = -1;
@@ -856,12 +943,22 @@
     remapLocations: remapLocations,
     reorder: reorder,
     dirOf: dirOf,
+    fileBase: fileBase,
+    isExtensionless: isExtensionless,
+    isCfgPath: isCfgPath,
+    isElfPath: isElfPath,
+    isBelPath: isBelPath,
+    isSignaturePath: isSignaturePath,
+    isProjectSourcePath: isProjectSourcePath,
+    isCfgEntryToken: isCfgEntryToken,
+    isCfgSourceEntry: isCfgSourceEntry,
     parseCfg: parseCfg,
     orderBelPaths: orderBelPaths,
     orderSignaturePaths: orderSignaturePaths,
     pickCfgForDir: pickCfgForDir,
     cfgByDirFromFiles: cfgByDirFromFiles,
     developmentForFile: developmentForFile,
+    resolveOwningActiveCfg: resolveOwningActiveCfg,
     activeCfgResolver: activeCfgResolver,
     defaultActiveCfgForDir: defaultActiveCfgForDir,
     orderedDevelopmentPaths: orderedDevelopmentPaths,

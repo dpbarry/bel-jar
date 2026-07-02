@@ -1,11 +1,19 @@
 // .cfg editor affordances: entry spans, open-on-click, hover, completion, suite reorder.
 
+import {
+  isBelPath,
+  isCfgEntryToken,
+  isCfgPath,
+  isElfPath,
+  isProjectSourcePath,
+  isSignaturePath,
+} from './bel-paths.mjs';
 import { autocompletion } from '@codemirror/autocomplete';
 import { EditorView, hoverTooltip } from '@codemirror/view';
 import { forEachDiagnostic } from '@codemirror/lint';
 import { dirOf, joinPath } from './development.mjs';
 import { resolveCfgDocumentPath } from './bel-cfg-lint.mjs';
-import { buildDiagnosticTip, buildTipHead, buildTipBody } from './bel-hover.mjs';
+import { buildDiagnosticTip, buildTipHead, buildTipBody, showSymbolTooltips } from './bel-hover.mjs';
 import { armDefLink, clearDefLink, defLinkDecoration } from './bel-nav.mjs';
 
 function persist() {
@@ -14,8 +22,7 @@ function persist() {
 }
 
 function isEntryToken(text) {
-  const low = String(text || '').toLowerCase();
-  return low.endsWith('.bel') || low.endsWith('.elf') || low.endsWith('.cfg');
+  return isCfgEntryToken(text);
 }
 
 export function resolveCfgEntryPath(cfgPath, entry) {
@@ -142,8 +149,7 @@ function filesInCfgDir(cfgPath) {
   for (const f of P.listFiles()) {
     const n = String(f.name || '');
     if (dirOf(n) !== cfgDir) continue;
-    const low = n.toLowerCase();
-    if (!low.endsWith('.bel') && !low.endsWith('.elf') && !low.endsWith('.cfg')) continue;
+    if (!isProjectSourcePath(n)) continue;
     out.push(n.slice(n.lastIndexOf('/') + 1));
   }
   out.sort((a, b) => a.localeCompare(b));
@@ -177,22 +183,13 @@ function cfgEntryNote(entry, exists) {
   return note;
 }
 
-function cfgInvalidEntryNote(entry) {
-  const note = document.createElement('div');
-  note.className = 'beljar-tip bel-type-tip';
-  note.appendChild(buildTipHead('Invalid entry', entry.text, null));
-  const body = buildTipBody('Not a .bel, .elf, or .cfg entry.');
-  body.classList.add('beljar-tip-body--warn');
-  note.appendChild(body);
-  return note;
-}
-
 // Hover for a cfg entry: render any lint warnings/errors in the SAME styled
 // frame as .bel tooltips, then the suite-position note — not the bare default
 // editor tooltip. Stacked in a .bel-hover-stack so chrome/spout match exactly.
 function cfgHover(documentId) {
   const cfgPath = resolveCfgDocumentPath(documentId);
   return hoverTooltip((view, pos) => {
+    const g = typeof window !== 'undefined' ? window : globalThis;
     const entry = cfgEntryAt(view.state, pos, cfgPath);
     if (!entry) return null;
 
@@ -206,17 +203,24 @@ function cfgHover(documentId) {
       stack.appendChild(tip);
     }
 
-    if (entry.index >= 0) {
-      const exists = !!fileIdForPath(entry.fullPath);
-      if (!diags.length || exists) stack.appendChild(cfgEntryNote(entry, exists));
-    } else if (!diags.length) {
-      stack.appendChild(cfgInvalidEntryNote(entry));
+    if (showSymbolTooltips(g)) {
+      if (entry.index >= 0) {
+        const exists = !!fileIdForPath(entry.fullPath);
+        if (!diags.length || exists) stack.appendChild(cfgEntryNote(entry, exists));
+      }
     }
 
     if (!stack.childNodes.length) return null;
 
     return { pos: entry.from, end: entry.to, above: true, create: () => ({ dom: stack }) };
   }, { hoverTime: 280 });
+}
+
+function completionTypeForFile(name) {
+  if (isCfgPath(name)) return 'cfg';
+  if (isElfPath(name)) return 'elf';
+  if (isBelPath(name)) return 'bel';
+  return 'file';
 }
 
 function cfgCompletion(documentId) {
@@ -229,7 +233,7 @@ function cfgCompletion(documentId) {
       if (!word || (word.from === word.to && !context.explicit)) return null;
       const options = filesInCfgDir(cfgPath)
         .filter((name) => name.toLowerCase().startsWith(word.text.toLowerCase()))
-        .map((label) => ({ label, type: 'file' }));
+        .map((label) => ({ label, type: completionTypeForFile(label) }));
       if (!options.length && !context.explicit) return null;
       return { from: word.from, to: word.to, options };
     }],

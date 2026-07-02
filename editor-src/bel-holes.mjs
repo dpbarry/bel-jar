@@ -1,0 +1,103 @@
+// Hole extraction — Beluga prints a `## Holes ##` report DURING reconstruction, so
+// every check/load output already carries it (no prover command, no rebuild; see
+// the Theme C plan). This module parses that report into structured holes. The
+// reported line/col are 1-based and point AT the `?` (matching the grammar's
+// `Hole` node). Positions are doc-relative once the caller has line-shifted the
+// text (settlement's shiftCheckerOutput), exactly as for diagnostics.
+
+function stripAnsi(s) {
+  return String(s != null ? s : '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\[[0-9;]*m/g, '');
+}
+
+const HOLE_HEAD =
+  /^File\s+"([^"]*)"\s*,\s*line\s+(\d+)\s*,\s*column\s+(\d+)\s*:\s*Hole number\s+(\d+)\s*,\s*(.*)$/i;
+const CTX_ENTRY = /^([^\s:]+)\s*:\s*(.+)$/;
+
+// Parse the `## Holes ##` report into [{ file, line, col, number, name, goal,
+// ctx:[{name,type}], meta:[{name,type}], index }] in source order. `number` is
+// Beluga's session-global counter (NOT 0-based per check) — `index` renumbers by
+// source order for the UI.
+export function parseHoles(rawOutput) {
+  const lines = stripAnsi(rawOutput).split('\n');
+  const holes = [];
+  let cur = null;
+  let section = null; // 'meta' | 'comp' | null
+  const flush = () => { if (cur) holes.push(cur); cur = null; section = null; };
+
+  for (const raw of lines) {
+    const head = raw.match(HOLE_HEAD);
+    if (head) {
+      flush();
+      const name = head[5].trim();
+      cur = {
+        file: head[1],
+        line: parseInt(head[2], 10),
+        col: parseInt(head[3], 10),
+        number: parseInt(head[4], 10),
+        name: !name || name === '<anonymous>' ? null : name,
+        goal: null,
+        ctx: [],
+        meta: [],
+      };
+      continue;
+    }
+    if (!cur) continue;
+    const t = raw.trim();
+    if (/^Meta-context:/i.test(t)) { section = 'meta'; continue; }
+    if (/^Computation context:/i.test(t)) { section = 'comp'; continue; }
+    const goal = t.match(/^Goal:\s*(.*)$/i);
+    if (goal) { cur.goal = goal[1].trim() || null; section = null; continue; }
+    if (/^Variable of this type:/i.test(t)) { section = null; continue; }
+    if (t.startsWith('##')) { flush(); continue; } // left the holes section
+    if ((section === 'meta' || section === 'comp') && t) {
+      const e = t.match(CTX_ENTRY);
+      if (e) (section === 'meta' ? cur.meta : cur.ctx).push({ name: e[1], type: e[2].trim() });
+    }
+  }
+  flush();
+  // Source order, then renumber 0..N-1 for the UI (stable across checks).
+  holes.sort((a, b) => a.line - b.line || a.col - b.col);
+  holes.forEach((h, i) => { h.index = i; });
+  return holes;
+}
+
+// True when the raw output even has a holes section (cheap pre-check).
+export function hasHoleReport(rawOutput) {
+  return /##\s*Holes:/.test(String(rawOutput || ''));
+}
+
+// SYNTACTIC holes from the parse tree — known the instant the `?` is parsed, with
+// NO checker round-trip. A `?` is a `Hole` grammar node, so we just walk for it.
+// Returns [{ line, col, from, to, name, index }] in source order (doc-relative,
+// 1-based line/col like the checker report) — but WITHOUT goal/ctx/meta (those need
+// reconstruction; the engine merges the checker's rich data in when it settles).
+// Memoized per Lezer tree so repeated calls (gutter, inspector, panel) are free.
+const treeHoleCache = new WeakMap();
+export function parseHolesFromTree(tree, doc) {
+  if (!tree || !doc) return [];
+  const cached = treeHoleCache.get(tree);
+  if (cached) return cached;
+  const holes = [];
+  const cursor = tree.cursor();
+  do {
+    if (cursor.name !== 'Hole') continue;
+    const from = cursor.from;
+    const to = cursor.to;
+    let lineObj;
+    try { lineObj = doc.lineAt(from); } catch (_) { continue; }
+    const name = doc.sliceString(from + 1, to).trim(); // text after `?`
+    holes.push({
+      line: lineObj.number,
+      col: from - lineObj.from + 1, // 1-based column of the `?`
+      from,
+      to,
+      name: name ? '?' + name : null,
+    });
+  } while (cursor.next());
+  holes.sort((a, b) => a.from - b.from);
+  holes.forEach((h, i) => { h.index = i; });
+  treeHoleCache.set(tree, holes);
+  return holes;
+}

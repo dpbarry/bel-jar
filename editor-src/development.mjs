@@ -1,5 +1,10 @@
 // Canonical module scope — cross-file state only through the active .cfg in a folder.
 
+import {
+  isCfgSourceEntry,
+  isSignaturePath,
+} from './bel-paths.mjs';
+
 export function dirOf(name) {
   const i = String(name || '').lastIndexOf('/');
   return i === -1 ? '' : name.slice(0, i);
@@ -46,7 +51,7 @@ export function allSignaturePaths(files) {
   for (const f of files) {
     const fn = String(f.name || '');
     const low = fn.toLowerCase();
-    if (low.endsWith('.bel') || low.endsWith('.elf')) out.push(fn);
+    if (isSignaturePath(fn)) out.push(fn);
   }
   return out;
 }
@@ -86,7 +91,7 @@ export function resolveCfgOrder(cfgDir, cfgText, cfgByDir, pathSet, seenCfg) {
           if (!seen.has(p)) { seen.add(p); ordered.push(p); }
         }
       }
-    } else if (low.endsWith('.bel') || low.endsWith('.elf')) {
+    } else if (isCfgSourceEntry(entry)) {
       const full = joinPath(cfgDir, entry);
       if (pathSet[full] && !seen.has(full)) {
         seen.add(full);
@@ -190,6 +195,35 @@ function resolveActiveCfgForDir(options) {
   return defaultActiveCfgForDir;
 }
 
+export function defaultActiveCfgsForDir(dir) {
+  const d = dir != null ? String(dir) : '';
+  const g = typeof globalThis !== 'undefined' ? globalThis : {};
+  const P = g.BelJarPersist;
+  if (P && typeof P.getActiveCfgsForDir === 'function') {
+    const list = P.getActiveCfgsForDir(d);
+    if (list?.length) {
+      if (typeof P.listFiles === 'function') {
+        const names = new Set(P.listFiles().map((f) => f.name));
+        const out = list.filter((p) => names.has(p));
+        if (out.length) return out;
+      } else return list.slice();
+    }
+  }
+  const one = defaultActiveCfgForDir(d);
+  return one ? [one] : [];
+}
+
+function resolveActiveCfgsForDir(options) {
+  if (typeof options?.activeCfgsForDir === 'function') return options.activeCfgsForDir;
+  return defaultActiveCfgsForDir;
+}
+
+export function resolveOwningActiveCfg(files, filePath, getText, activeCfgs) {
+  if (!activeCfgs?.length) return null;
+  const owning = activeCfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(filePath));
+  return owning.length === 1 ? owning[0] : null;
+}
+
 function standaloneResult(active) {
   return {
     kind: 'standalone',
@@ -212,6 +246,7 @@ function standaloneResult(active) {
  * }}
  */
 export function developmentForFile(files, activeId, getText, options = {}) {
+  const activeCfgsForDir = resolveActiveCfgsForDir(options);
   const activeCfgForDir = resolveActiveCfgForDir(options);
   const active = files.find((f) => f.id === activeId);
   if (!active) {
@@ -237,7 +272,7 @@ export function developmentForFile(files, activeId, getText, options = {}) {
     };
   }
 
-  if (!/\.(?:bel|elf)$/i.test(String(active.name))) {
+  if (!isSignaturePath(active.name)) {
     return {
       kind: 'standalone',
       cfg: null,
@@ -248,7 +283,8 @@ export function developmentForFile(files, activeId, getText, options = {}) {
     };
   }
 
-  const cfgPath = activeCfgForDir(dirOf(active.name));
+  let cfgPath = resolveOwningActiveCfg(files, active.name, getText, activeCfgsForDir(dirOf(active.name)));
+  if (!cfgPath) cfgPath = activeCfgForDir(dirOf(active.name));
   if (!cfgPath) return standaloneResult(active);
 
   const paths = resolveActiveChain(files, cfgPath, getText);
@@ -323,4 +359,31 @@ export function orderedDevelopmentPaths(files, activeId, getText, options = {}) 
 
 export function preludePathsFor(files, activeId, getText, options = {}) {
   return developmentForFile(files, activeId, getText, options).preludePaths;
+}
+
+// Members of the development containing activeId, in load order, with live text
+// for the active file spliced in when provided.
+export function listDevelopmentMembers(files, activeId, getText, options = {}, liveActiveText = null) {
+  const dev = developmentForFile(files, activeId, getText, options);
+  const byName = new Map(files.map((f) => [f.name, f]));
+  const members = [];
+  for (const path of dev.paths) {
+    const f = byName.get(path);
+    if (!f) continue;
+    const text = (f.id === activeId && liveActiveText != null)
+      ? liveActiveText
+      : String(getText(f.id) ?? '');
+    members.push({ id: f.id, name: f.name, text });
+  }
+  if (!members.length) {
+    const f = files.find((x) => x.id === activeId);
+    if (f) {
+      members.push({
+        id: f.id,
+        name: f.name,
+        text: String((liveActiveText != null && f.id === activeId) ? liveActiveText : (getText(f.id) ?? '')),
+      });
+    }
+  }
+  return { members, paths: dev.paths };
 }

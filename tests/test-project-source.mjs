@@ -289,6 +289,7 @@ Persist.replaceProject([
   { name: 'cps/sources.cfg', text: 'p.bel' },
 ], { activeCfgByDir: { grp: 'grp/long.cfg', cps: 'cps/sources.cfg' } });
 expect(Persist.getActiveCfgForDir('grp') === 'grp/long.cfg', 'per-folder active cfg stored');
+expect(Persist.getActiveCfgsForDir('grp').join('|') === 'grp/long.cfg', 'active cfg list migrated');
 expect(Persist.getActiveCfgForDir('cps') === 'cps/sources.cfg', 'second folder active cfg stored');
 expect(Persist.getDefaultCfgPath() === 'grp/long.cfg', 'getDefaultCfgPath reflects active file folder cfg');
 
@@ -335,5 +336,17 @@ expect(Persist.getOpenFileIds().length === 2, 'opening an unknown id is a no-op'
 Persist.deleteFile(idC);
 expect(Persist.getOpenFileIds().indexOf(idC) === -1, 'deleteFile removes the file from the open list');
 expect(Persist.listFiles().length === 2, 'registry shrank after delete');
+
+Persist.replaceProject([
+  { name: 'grp/a.bel', text: 'LF a : type;' },
+  { name: 'grp/b.bel', text: 'LF b : type;' },
+  { name: 'grp/one.cfg', text: 'a.bel' },
+  { name: 'grp/two.cfg', text: 'b.bel' },
+]);
+Persist.addActiveCfgForDir('grp', 'grp/one.cfg');
+Persist.addActiveCfgForDir('grp', 'grp/two.cfg');
+expect(Persist.getActiveCfgsForDir('grp').length === 2, 'two disjoint active cfgs in one dir');
+Persist.removeActiveCfgForDir('grp', 'grp/two.cfg');
+expect(Persist.getActiveCfgsForDir('grp').join('|') === 'grp/one.cfg', 'remove one active cfg');
 
 console.log('OK project source (concat, remap, cfg order, prelude shift, reorder, persist, open tabs)');

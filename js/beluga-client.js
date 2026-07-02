@@ -6,9 +6,21 @@
   var cfg = { thread: 'worker', build: 'stable' };
   var onProgress = null;
 
+  // The SEMANTIC CHECKER must NEVER run on the main thread. Fast mode
+  // (thread:'main', build:'fast') is a deliberate trade for the explicit Run
+  // action only — the user accepts a freeze when they press Run. But the editor's
+  // background type-checking (hover types, settlement, hole goals) must stay off
+  // the main thread, or merely refreshing/navigating freezes the UI while Beluga
+  // runs behind the scenes. So the checker slot is ALWAYS a stable web worker,
+  // regardless of `cfg`. Only `load`/`run` (the primary slot) honour `cfg`.
+  var CHECKER_THREAD = 'worker';
+  var CHECKER_BUILD = 'stable';
+
   var primarySlot = null;
   var primaryStandby = null;
   var checkerSlot = null;
+  var intelSlot = null;
+  var intelKeepWarm = false;
   var checkerIdleTimer = null;
 
   var mainReady = false;
@@ -23,6 +35,14 @@
 
   var LOAD_CANCELLED_MSG = 'Beluga load cancelled';
   var CHECK_CANCELLED_MSG = 'Beluga check cancelled';
+
+  function shouldFallbackStable() {
+    return !global.BelJarPersist || global.BelJarPersist.readStoredBelugaFallbackStable();
+  }
+
+  function shouldCancelOnEdit() {
+    return !global.BelJarPersist || global.BelJarPersist.readStoredBelugaCancelOnEdit();
+  }
   var RECONFIGURED_MSG = 'BelugaClient reconfigured';
   var LONG_LOAD_THRESHOLD_MS = 1200;
   var CHECKER_IDLE_TTL_MS = 5 * 60 * 1000;
@@ -117,7 +137,9 @@
   }
 
   function scheduleCheckerIdleShutdown() {
-    if (cfg.thread !== 'worker') return;
+    // The checker is ALWAYS a worker now (independent of cfg.thread / fast mode),
+    // so this no longer gates on cfg.thread — it must run even in fast mode.
+    if (CHECKER_THREAD !== 'worker') return;
     clearCheckerIdleTimer();
     if (!checkerSlot || checkerSlot.pending.size > 0) return;
     checkerIdleTimer = setTimeout(function () {
@@ -182,15 +204,24 @@
       if (slot === primarySlot) primarySlot = null;
       if (slot === primaryStandby) primaryStandby = null;
       if (slot === checkerSlot) checkerSlot = null;
+      if (slot === intelSlot) intelSlot = null;
       terminateSlot(slot, err);
     };
   }
 
   function postWorker(slot, type, payload, hooks, meta) {
     var id = slot.nextId++;
+    var perf = global.BelJarPerf;
+    var queuedAt = (perf && typeof performance !== 'undefined') ? performance.now() : 0;
+  var slotLabel = slot && slot.label ? slot.label : 'worker';
     return new Promise(function (resolve, reject) {
       slot.pending.set(id, {
-        resolve: resolve,
+        resolve: function (result) {
+          if (perf && perf.workerJob && queuedAt) {
+            perf.workerJob(type, performance.now() - queuedAt, { slot: slotLabel, jobId: id });
+          }
+          resolve(result);
+        },
         reject: reject,
         onProgress: hooks && hooks.onProgress,
         forwardGlobalProgress: !!(meta && meta.forwardGlobalProgress),
@@ -246,6 +277,38 @@
       checkerSlot = createWorkerSlot(build, 'checker');
     }
     return ensureWorkerSlotReady(checkerSlot);
+  }
+
+  function ensureIntelReady(build) {
+    if (!intelSlot || intelSlot.build !== build) {
+      if (intelSlot) terminateSlot(intelSlot, makeCancelledError(CHECK_CANCELLED_MSG));
+      intelSlot = createWorkerSlot(build, 'intel');
+    }
+    return ensureWorkerSlotReady(intelSlot);
+  }
+
+  function cancelCheckerWorkload() {
+    clearCheckerIdleTimer();
+    if (!checkerSlot) return;
+    if (checkerSlot.pending.size > 0) {
+      terminateSlot(checkerSlot, makeCancelledError(CHECK_CANCELLED_MSG));
+      checkerSlot = null;
+    }
+  }
+
+  function intelLoadThen(slot, requestCode, requestFP, jobType, payload) {
+    if (slot.committedFingerprint === requestFP) {
+      return postWorker(slot, jobType, payload, null, { slot: 'intel' });
+    }
+    return postWorker(slot, 'load', requestCode, null, { slot: 'intel' })
+      .then(function (loadResult) {
+        if (!loadResult || !loadResult.ok) {
+          slot.committedFingerprint = '';
+          return null;
+        }
+        slot.committedFingerprint = requestFP;
+        return postWorker(slot, jobType, payload, null, { slot: 'intel' });
+      });
   }
 
   function loadScript(url) {
@@ -349,6 +412,8 @@
     disposePrimaryStandby(new Error(RECONFIGURED_MSG));
     terminateSlot(checkerSlot, new Error(RECONFIGURED_MSG));
     checkerSlot = null;
+    terminateSlot(intelSlot, new Error(RECONFIGURED_MSG));
+    intelSlot = null;
     clearCheckerIdleTimer();
     mainReady = false;
     mainReadyPromise = null;
@@ -461,6 +526,7 @@
     }
 
     if (!activeLoad) return;
+    if (!shouldCancelOnEdit()) return;
     activeLoad.stale = !activeLoad.pinned
       && activeLoad.requestFingerprint !== editorFingerprint;
     if (!activeLoad.stale) return;
@@ -479,64 +545,30 @@
 
   function syncCheckerFingerprintFromCheck(code, result, slot) {
     if (!result || !result.ok) return;
-    var fp = fingerprintCode(code);
-    if (cfg.thread === 'worker' && slot) {
-      slot.committedFingerprint = fp;
-    } else if (cfg.thread !== 'worker') {
-      mainCheckerFingerprint = fp;
-    }
+    // The checker is always a worker slot now; sync the slot's committed
+    // fingerprint so a subsequent get-type/decl-type can skip the reload.
+    if (slot) slot.committedFingerprint = fingerprintCode(code);
   }
 
   function dispatchCheckResult(code, hooks) {
     var requestCode = String(code != null ? code : '');
-    if (cfg.thread === 'worker') {
-      clearCheckerIdleTimer();
-      return ensureCheckerReady(cfg.build)
-        .then(function (slot) {
-          return postWorker(slot, 'check', requestCode, hooks, null)
-            .then(function (result) {
-              syncCheckerFingerprintFromCheck(requestCode, result, slot);
-              return result;
-            });
-        })
-        .then(function (result) {
-          scheduleCheckerIdleShutdown();
-          return checkResultOf(result);
-        })
-        .catch(function (err) {
-          scheduleCheckerIdleShutdown();
-          throw err;
-        });
-    }
-
-    function run(build) {
-      return ensureMainReady(build).then(function () {
-        return callMain('check', requestCode);
-      });
-    }
-
-    return run(cfg.build)
-      .then(function (result) {
-        if (cfg.build === 'fast' && isOverflowValue(result)) {
-          if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
-          switchToStable();
-          return run('stable').then(function (fallback) {
-            syncCheckerFingerprintFromCheck(requestCode, fallback, null);
-            return checkResultOf(fallback);
+    // Checker ALWAYS on the worker (never freeze the main thread for background
+    // type-checking — see CHECKER_THREAD).
+    clearCheckerIdleTimer();
+    return ensureCheckerReady(CHECKER_BUILD)
+      .then(function (slot) {
+        return postWorker(slot, 'check', requestCode, hooks, null)
+          .then(function (result) {
+            syncCheckerFingerprintFromCheck(requestCode, result, slot);
+            return result;
           });
-        }
-        syncCheckerFingerprintFromCheck(requestCode, result, null);
+      })
+      .then(function (result) {
+        scheduleCheckerIdleShutdown();
         return checkResultOf(result);
       })
       .catch(function (err) {
-        if (cfg.build === 'fast' && isOverflowError(err)) {
-          if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
-          switchToStable();
-          return run('stable').then(function (fallback) {
-            syncCheckerFingerprintFromCheck(requestCode, fallback, null);
-            return checkResultOf(fallback);
-          });
-        }
+        scheduleCheckerIdleShutdown();
         throw err;
       });
   }
@@ -549,48 +581,91 @@
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
 
-    if (cfg.thread === 'worker') {
-      clearCheckerIdleTimer();
-      return ensureCheckerReady(cfg.build)
-        .then(function (slot) {
-          if (slot.committedFingerprint === requestFP) {
-            return postWorker(slot, 'run', cmd, null, null);
-          }
-          return postWorker(slot, 'load', requestCode, null, null)
-            .then(function (loadResult) {
-              if (!loadResult || !loadResult.ok) {
-                slot.committedFingerprint = '';
-                return '';
-              }
-              slot.committedFingerprint = requestFP;
-              return postWorker(slot, 'run', cmd, null, null);
-            });
-        })
-        .then(function (result) {
-          scheduleCheckerIdleShutdown();
-          return resultText(result) || '';
-        })
-        .catch(function (err) {
-          scheduleCheckerIdleShutdown();
-          if (checkerSlot) checkerSlot.committedFingerprint = '';
-          throw err;
-        });
-    }
-
-    return ensureMainReady(cfg.build)
-      .then(function () {
-        if (mainCheckerFingerprint !== requestFP) {
-          var lr = global.Beluga.loadFromString(requestCode);
-          if (!lr || !lr.ok) { mainCheckerFingerprint = ''; return ''; }
-          mainCheckerFingerprint = requestFP;
+    return ensureIntelReady(CHECKER_BUILD)
+      .then(function (slot) {
+        if (slot.committedFingerprint === requestFP) {
+          return postWorker(slot, 'run', cmd, null, { slot: 'intel' });
         }
-        return global.Beluga.runCommand(cmd);
+        return postWorker(slot, 'load', requestCode, null, { slot: 'intel' })
+          .then(function (loadResult) {
+            if (!loadResult || !loadResult.ok) {
+              slot.committedFingerprint = '';
+              return '';
+            }
+            slot.committedFingerprint = requestFP;
+            return postWorker(slot, 'run', cmd, null, { slot: 'intel' });
+          });
       })
-      .then(function (result) { return resultText(result) || ''; });
+      .then(function (result) {
+        return resultText(result) || '';
+      })
+      .catch(function (err) {
+        if (intelSlot) intelSlot.committedFingerprint = '';
+        throw err;
+      });
   }
 
   function dispatchGetType(code, line, col) {
     return dispatchCheckerCommand(code, '%:get-type ' + line + ' ' + col);
+  }
+
+  // Find the Beluga hole NUMBER reported at (line, col) in a fresh load's
+  // `## Holes ##` section. Lines/cols are 1-based and point AT the `?`.
+  function holeNumberAt(loadOutput, line, col) {
+    var re = /File\s+"[^"]*"\s*,\s*line\s+(\d+)\s*,\s*column\s+(\d+)\s*:\s*Hole number\s+(\d+)/g;
+    var m;
+    while ((m = re.exec(String(loadOutput || ''))) !== null) {
+      if (parseInt(m[1], 10) === line && parseInt(m[2], 10) === col) {
+        return parseInt(m[3], 10);
+      }
+    }
+    return null;
+  }
+
+  // Atomic load + interactive hole command — the STEP-2 FALLBACK transport only
+  // (BelJar generates split/intro skeletons from its own model first; this is used
+  // when it can't, and the editor TRANSFORMS the printed answer into our grammar,
+  // never inserting raw printer text — see editor-src/bel-hole-actions.mjs). `cmd`
+  // is the action ('split n' / 'intro'); we resolve the drifting session-global
+  // hole number from a fresh load's `## Holes ##` report by position and run
+  // `%:<verb> <number> <arg>`. Resolves `{ ok, output }` (output = raw command text).
+  function dispatchHoleAction(code, line, col, cmd) {
+    var requestCode = String(code != null ? code : '');
+    var action = String(cmd != null ? cmd : '').trim();
+
+    function build(loadOutput, runCmd) {
+      var number = holeNumberAt(loadOutput, line, col);
+      if (number == null) {
+        return Promise.resolve({ ok: false, output: '', error: 'hole-not-found' });
+      }
+      var parts = action.split(/\s+/);
+      var verb = parts.shift();
+      var full = '%:' + verb + ' ' + number + (parts.length ? ' ' + parts.join(' ') : '');
+      return runCmd(full).then(function (out) {
+        return { ok: true, output: resultText(out) || '' };
+      });
+    }
+
+    clearCheckerIdleTimer();
+    return ensureCheckerReady(CHECKER_BUILD)
+      .then(function (slot) {
+        // Always reload — a prior committed load may carry drifted hole numbers.
+        return postWorker(slot, 'load', requestCode, null, null).then(function (loadResult) {
+          slot.committedFingerprint = '';
+          if (!loadResult || !loadResult.ok) {
+            return { ok: false, output: resultText(loadResult) || '', error: 'load-failed' };
+          }
+          return build(resultText(loadResult) || '', function (full) {
+            return postWorker(slot, 'run', full, null, null);
+          });
+        });
+      })
+      .then(function (r) { scheduleCheckerIdleShutdown(); return r; })
+      .catch(function (err) {
+        scheduleCheckerIdleShutdown();
+        if (checkerSlot) checkerSlot.committedFingerprint = '';
+        throw err;
+      });
   }
 
   function dispatchIdeType(code, line, col) {
@@ -598,44 +673,17 @@
     var requestFP = fingerprintCode(requestCode);
     var payload = { line: line, col: col };
 
-    if (cfg.thread === 'worker') {
-      clearCheckerIdleTimer();
-      return ensureCheckerReady(cfg.build)
-        .then(function (slot) {
-          if (slot.committedFingerprint === requestFP) {
-            return postWorker(slot, 'ide-type', payload, null, null);
-          }
-          return postWorker(slot, 'load', requestCode, null, null)
-            .then(function (loadResult) {
-              if (!loadResult || !loadResult.ok) {
-                slot.committedFingerprint = '';
-                return '';
-              }
-              slot.committedFingerprint = requestFP;
-              return postWorker(slot, 'ide-type', payload, null, null);
-            });
-        })
-        .then(function (result) {
-          scheduleCheckerIdleShutdown();
-          return resultText(result) || '';
-        })
-        .catch(function (err) {
-          scheduleCheckerIdleShutdown();
-          if (checkerSlot) checkerSlot.committedFingerprint = '';
-          throw err;
-        });
-    }
-
-    return ensureMainReady(cfg.build)
-      .then(function () {
-        if (mainCheckerFingerprint !== requestFP) {
-          var lr = global.Beluga.loadFromString(requestCode);
-          if (!lr || !lr.ok) { mainCheckerFingerprint = ''; return ''; }
-          mainCheckerFingerprint = requestFP;
-        }
-        return global.Beluga.ideTypeAtJson(line, col);
+    return ensureIntelReady(CHECKER_BUILD)
+      .then(function (slot) {
+        return intelLoadThen(slot, requestCode, requestFP, 'ide-type', payload);
       })
-      .then(function (result) { return resultText(result) || ''; });
+      .then(function (result) {
+        return resultText(result) || '';
+      })
+      .catch(function (err) {
+        if (intelSlot) intelSlot.committedFingerprint = '';
+        throw err;
+      });
   }
 
   function dispatchIdeDeclType(code, name) {
@@ -643,85 +691,47 @@
     var requestFP = fingerprintCode(requestCode);
     var payload = { name: name };
 
-    if (cfg.thread === 'worker') {
-      clearCheckerIdleTimer();
-      return ensureCheckerReady(cfg.build)
-        .then(function (slot) {
-          if (slot.committedFingerprint === requestFP) {
-            return postWorker(slot, 'ide-decl-type', payload, null, null);
-          }
-          return postWorker(slot, 'load', requestCode, null, null)
-            .then(function (loadResult) {
-              if (!loadResult || !loadResult.ok) {
-                slot.committedFingerprint = '';
-                return '';
-              }
-              slot.committedFingerprint = requestFP;
-              return postWorker(slot, 'ide-decl-type', payload, null, null);
-            });
-        })
-        .then(function (result) {
-          scheduleCheckerIdleShutdown();
-          return resultText(result) || '';
-        })
-        .catch(function (err) {
-          scheduleCheckerIdleShutdown();
-          if (checkerSlot) checkerSlot.committedFingerprint = '';
-          throw err;
-        });
-    }
-
-    return ensureMainReady(cfg.build)
-      .then(function () {
-        if (mainCheckerFingerprint !== requestFP) {
-          var lr = global.Beluga.loadFromString(requestCode);
-          if (!lr || !lr.ok) { mainCheckerFingerprint = ''; return ''; }
-          mainCheckerFingerprint = requestFP;
-        }
-        return global.Beluga.ideDeclType(name);
+    return ensureIntelReady(CHECKER_BUILD)
+      .then(function (slot) {
+        return intelLoadThen(slot, requestCode, requestFP, 'ide-decl-type', payload);
       })
-      .then(function (result) { return resultText(result) || ''; });
+      .then(function (result) {
+        return resultText(result) || '';
+      })
+      .catch(function (err) {
+        if (intelSlot) intelSlot.committedFingerprint = '';
+        throw err;
+      });
   }
 
   function dispatchLoadChecker(code) {
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
 
-    if (cfg.thread === 'worker') {
-      clearCheckerIdleTimer();
-      return ensureCheckerReady(cfg.build)
-        .then(function (slot) {
-          if (slot.committedFingerprint === requestFP) {
-            return '';
-          }
-          return postWorker(slot, 'load', requestCode, null, null)
-            .then(function (loadResult) {
-              if (!loadResult || !loadResult.ok) {
-                slot.committedFingerprint = '';
-              } else {
-                slot.committedFingerprint = requestFP;
-              }
-              return resultText(loadResult) || '';
-            });
-        })
-        .then(function (result) {
-          scheduleCheckerIdleShutdown();
-          return result;
-        })
-        .catch(function (err) {
-          scheduleCheckerIdleShutdown();
-          if (checkerSlot) checkerSlot.committedFingerprint = '';
-          throw err;
-        });
-    }
-
-    return ensureMainReady(cfg.build)
-      .then(function () {
-        if (mainCheckerFingerprint === requestFP) return '';
-        var lr = global.Beluga.loadFromString(requestCode);
-        if (!lr || !lr.ok) { mainCheckerFingerprint = ''; }
-        else { mainCheckerFingerprint = requestFP; }
-        return resultText(lr) || '';
+    clearCheckerIdleTimer();
+    return ensureCheckerReady(CHECKER_BUILD)
+      .then(function (slot) {
+        if (slot.committedFingerprint === requestFP) {
+          return '';
+        }
+        return postWorker(slot, 'load', requestCode, null, null)
+          .then(function (loadResult) {
+            if (!loadResult || !loadResult.ok) {
+              slot.committedFingerprint = '';
+            } else {
+              slot.committedFingerprint = requestFP;
+            }
+            return resultText(loadResult) || '';
+          });
+      })
+      .then(function (result) {
+        scheduleCheckerIdleShutdown();
+        return result;
+      })
+      .catch(function (err) {
+        scheduleCheckerIdleShutdown();
+        if (checkerSlot) checkerSlot.committedFingerprint = '';
+        throw err;
       });
   }
 
@@ -740,7 +750,7 @@
         requestFingerprint: requestFingerprint,
         startedAt: Date.now(),
         pinned: pinned,
-        stale: !pinned && requestFingerprint !== editorFingerprint && currentEditorCode !== '',
+        stale: shouldCancelOnEdit() && !pinned && requestFingerprint !== editorFingerprint && currentEditorCode !== '',
         longTimer: null,
       };
       activeLoad = loadInfo;
@@ -778,7 +788,7 @@
 
     return run(cfg.build)
       .then(function (result) {
-        if (cfg.build === 'fast' && isOverflowValue(result)) {
+        if (cfg.build === 'fast' && isOverflowValue(result) && shouldFallbackStable()) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
           return run('stable').then(function (fallback) {
@@ -790,7 +800,7 @@
         return resultText(result) || '';
       })
       .catch(function (err) {
-        if (cfg.build === 'fast' && isOverflowError(err)) {
+        if (cfg.build === 'fast' && isOverflowError(err) && shouldFallbackStable()) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
           return run('stable').then(function (fallback) {
@@ -823,7 +833,7 @@
 
     return run(cfg.build)
       .then(function (result) {
-        if (cfg.build === 'fast' && isOverflowValue(result)) {
+        if (cfg.build === 'fast' && isOverflowValue(result) && shouldFallbackStable()) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
           return run('stable').then(function (fallback) { return resultText(fallback) || ''; });
@@ -832,7 +842,7 @@
         return resultText(result) || '';
       })
       .catch(function (err) {
-        if (cfg.build === 'fast' && isOverflowError(err)) {
+        if (cfg.build === 'fast' && isOverflowError(err) && shouldFallbackStable()) {
           if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
           switchToStable();
           return run('stable').then(function (fallback) { return resultText(fallback) || ''; });
@@ -918,54 +928,64 @@
       var requestCode = String(code != null ? code : '');
       var requestFP = fingerprintCode(requestCode);
       var posSpec = String(positionsSpec != null ? positionsSpec : '');
+      var payload = { start: startLine, end: endLine, positions: posSpec };
 
-      if (cfg.thread === 'worker') {
-        clearCheckerIdleTimer();
-        return ensureCheckerReady(cfg.build)
-          .then(function (slot) {
-            if (slot.committedFingerprint !== requestFP) {
-              return postWorker(slot, 'load', requestCode, null, null)
-                .then(function (loadResult) {
-                  if (!loadResult || !loadResult.ok) {
-                    slot.committedFingerprint = '';
-                    return '{"ok":false,"reason":"load-failed"}';
-                  }
-                  slot.committedFingerprint = requestFP;
-                  return postWorker(slot, 'ide-elaborate', { start: startLine, end: endLine, positions: posSpec }, null, null);
-                });
-            }
-            return postWorker(slot, 'ide-elaborate', { start: startLine, end: endLine, positions: posSpec }, null, null);
-          })
-          .then(function (result) {
-            scheduleCheckerIdleShutdown();
-            return resultText(result) || '{"ok":false,"reason":"empty-response"}';
-          })
-          .catch(function (err) {
-            scheduleCheckerIdleShutdown();
-            if (checkerSlot) checkerSlot.committedFingerprint = '';
-            throw err;
-          });
-      }
-
-      return ensureMainReady(cfg.build)
-        .then(function () {
-          if (mainCheckerFingerprint !== requestFP) {
-            var lr = global.Beluga.loadFromString(requestCode);
-            if (!lr || !lr.ok) {
-              mainCheckerFingerprint = '';
-              return '{"ok":false,"reason":"load-failed"}';
-            }
-            mainCheckerFingerprint = requestFP;
-          }
-          return global.Beluga.ideElaborateDecl(startLine, endLine, posSpec);
+      return ensureIntelReady(CHECKER_BUILD)
+        .then(function (slot) {
+          return intelLoadThen(slot, requestCode, requestFP, 'ide-elaborate', payload);
         })
-        .then(function (result) { return resultText(result) || '{"ok":false,"reason":"empty-response"}'; });
+        .then(function (result) {
+          return resultText(result) || '{"ok":false,"reason":"empty-response"}';
+        })
+        .catch(function (err) {
+          if (intelSlot) intelSlot.committedFingerprint = '';
+          throw err;
+        });
     },
 
     runCheckerCommand: function (code, cmd) {
       return dispatchCheckerCommand(code, cmd);
     },
 
+    // Interactive hole action (split/intro) — the STEP-2 FALLBACK only; BelJar
+    // generates skeletons from its own model first (bel-hole-split.mjs), and when
+    // it falls back here the editor TRANSFORMS the printed answer into our grammar
+    // rather than inserting it raw. Beluga's hole NUMBER is a session-global
+    // counter that drifts across loads, so this does the load + command ATOMICALLY:
+    // a fresh load of `code` re-prints `## Holes ##` with numbers valid for THAT
+    // session, we resolve the target hole by position, then run `%:<cmd> <number>
+    // <arg>`. The worker serialises jobs, so nothing interleaves. Resolves to
+    // { ok, output } — output is the raw command text.
+    holeAction: function (code, line, col, cmd) {
+      return dispatchHoleAction(code, line, col, cmd);
+    },
+
     isCancelledError: isCancelledError,
+
+    cancelCheckerWorkload: cancelCheckerWorkload,
+
+    setIntelKeepWarm: function (on) {
+      intelKeepWarm = !!on;
+      if (intelKeepWarm && !intelSlot) {
+        ensureIntelReady(CHECKER_BUILD).catch(function () {});
+      }
+    },
+
+    warmIntel: function (code) {
+      var requestCode = String(code != null ? code : '');
+      var requestFP = fingerprintCode(requestCode);
+      return ensureIntelReady(CHECKER_BUILD).then(function (slot) {
+        if (slot.committedFingerprint === requestFP) return true;
+        return postWorker(slot, 'load', requestCode, null, { slot: 'intel' })
+          .then(function (loadResult) {
+            if (loadResult && loadResult.ok) {
+              slot.committedFingerprint = requestFP;
+              return true;
+            }
+            slot.committedFingerprint = '';
+            return false;
+          });
+      });
+    },
   };
 })(typeof window !== 'undefined' ? window : self);

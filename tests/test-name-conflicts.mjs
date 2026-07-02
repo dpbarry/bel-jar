@@ -45,13 +45,23 @@ expect(fileConflict[0].suggestedPath === 'main-1.bel', 'file conflict gets sugge
 const noConflict = NC.detectUploadConflicts(existing, [{ name: 'util.bel', text: 'x' }]);
 expect(noConflict.length === 0, 'no conflict when only basename matches in another folder');
 
-const folderConflict = NC.detectUploadConflicts(existing, [
+const folderIncoming = [
   { name: 'pkg/a.bel', text: '1' },
   { name: 'pkg/c.bel', text: '2' },
-]);
+];
+const folderConflict = NC.detectUploadConflicts(existing, folderIncoming);
 expect(folderConflict.length === 1 && folderConflict[0].kind === 'folder', 'folder conflict when tree collides');
 expect(folderConflict[0].path === 'pkg', 'folder conflict path is folder prefix');
 expect(folderConflict[0].suggestedPath === 'pkg-1', 'folder conflict suggests numbered folder');
+
+const libraryBatchRoots = NC.uploadFolderBatchRoots(folderIncoming);
+expect(libraryBatchRoots.length === 1 && libraryBatchRoots[0] === 'pkg',
+  'library folder insert shares one batch root');
+const libraryFolderConflict = NC.detectUploadConflicts(existing, folderIncoming, {
+  folderBatchRoots: libraryBatchRoots,
+});
+expect(libraryFolderConflict.length === 1 && libraryFolderConflict[0].kind === 'folder',
+  'library bulk insert uses folder conflict when root collides');
 
 const multiFileConflict = NC.detectUploadConflicts(
   existing,

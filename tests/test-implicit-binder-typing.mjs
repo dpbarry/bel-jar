@@ -154,4 +154,28 @@ LF holds : type =
   assert.equal(pUse.label, 'LF Type Family', 'use of `p` labelled LF Type Family');
 }
 
-console.log('OK implicit binder typing (arg slot, cross-file head, sibling sharing, no fabrication, mutual LF heads)');
+// ── contextual judgment pattern: implicit typed under l_pcomp2 ───────────────
+{
+  const F1 = `l_pcomp2: ({x:name}linear (\\z. Q x z))
+        → linear (\\z. pcomp A P (\\x. Q x z)).`;
+  const F2 = `rec lin_s≡ : T =
+fn lP => case lP of
+| [g |- l_pcomp2 (\\y. linR)] =>
+  [g |- l_pcomp2 (\\x. l_pcomp2 (\\y. linR[..,y]))]
+;`;
+  const files = {
+    list: [
+      { id: 'linear', name: 'p/cp_linear.bel' },
+      { id: 'thrm', name: 'p/cp_thrm.bel' },
+      { id: 'cfg', name: 'p/cp.cfg' },
+    ],
+    tx: { linear: F1, thrm: F2, cfg: 'cp_linear.bel\ncp_thrm.bel\n' },
+    activeCfg: { p: 'p/cp.cfg' },
+  };
+  const r = typeAt(F2, at(F2, 'linR'), files, 'thrm');
+  assert.equal(r.kind, 'implicit');
+  assert.equal(r.type, '{x:name}linear (\\z. Q x z)',
+    'linR in a contextual pattern is typed from l_pcomp2\'s domain (classical-processes case)');
+}
+
+console.log('OK implicit binder typing (arg slot, cross-file head, sibling sharing, no fabrication, mutual LF heads, contextual pattern)');

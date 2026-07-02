@@ -253,9 +253,13 @@ export function formatString(src, tree, opts = {}) {
 export function formatDocument(state, opts = {}) {
   const tree = syntaxTree(state);
   const oldText = state.doc.toString();
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const printWidth = opts.printWidth
+    ?? g.BelJarPersist?.readStoredEditorFormatWidth?.()
+    ?? 80;
   let newText;
   try {
-    newText = formatString(oldText, tree, opts);
+    newText = formatString(oldText, tree, { ...opts, printWidth });
   } catch (e) {
     if (e && e.code === 'FORMAT_SHRINK_GUARD') {
       showFormatToast('Format refused. The result would drop too much content.', 'warn');

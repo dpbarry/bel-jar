@@ -538,6 +538,9 @@ function nearestArgApp(ident) {
     const isType = TYPE_APP.has(p.name);
     const isTerm = TERM_APP.has(p.name);
     if (!isType && !isTerm) continue;
+    // A head-only app (bare atom spine) is not a real application — skip it so
+    // `linR` in `l_pcomp2 (\y. linR)` reaches the outer head, not the atom wrap.
+    if (isType ? isHeadOnlyTypeApp(p) : isHeadOnlyTermApp(p)) continue;
     const arg = isType ? typeAppArgChild(p) : termAppArgChild(p);
     if (arg && ident.from >= arg.from && ident.to <= arg.to) {
       return { app: p, kind: isType ? 'type' : 'term' };
@@ -603,6 +606,131 @@ function argIndexInTermApp(ident) {
     node = node.firstChild;
   }
   return index;
+}
+
+function isKnownGlobalName(tree, doc, name, isUpper) {
+  if (findGlobalDeclarationIdent(tree, doc, name, isUpper)) return true;
+  if (externalSignatureFor(name)) return true;
+  if (externalDefinedName(name)) return true;
+  return false;
+}
+
+function plainLowerName(name) {
+  return /^[a-z][a-z0-9']*$/.test(name);
+}
+
+// A juxtaposed pair of plain lowercase atoms (`t p` for `tp`) is almost never a
+// genuine type application. Infix heads like `↦*` fail plainLowerName, so
+// `t ↦* t` still reads as an implicit binder.
+function looksLikeTypoJuxtaposition(app, isType, doc) {
+  const headChild = app.firstChild;
+  if (!headChild) return false;
+  if (isType ? !isHeadOnlyTypeApp(headChild) : !isHeadOnlyTermApp(headChild)) return false;
+  const head = isType ? headIdentOfTypeApp(app) : headIdentOfTermApp(app);
+  const arg = isType ? typeAppArgChild(app) : termAppArgChild(app);
+  if (!head || !arg) return false;
+  const headName = doc.sliceString(head.from, head.to);
+  const argId = firstIdentChild(arg);
+  if (!argId || argId.name !== 'LowerIdentifier') return false;
+  const argName = doc.sliceString(argId.from, argId.to);
+  return plainLowerName(headName) && plainLowerName(argName);
+}
+
+function typoJuxtapositionSite(tree, doc, app, isType) {
+  if (!looksLikeTypoJuxtaposition(app, isType, doc)) return null;
+  const head = isType ? headIdentOfTypeApp(app) : headIdentOfTermApp(app);
+  if (projectionTailOf(head)) return null;
+  const arg = isType ? typeAppArgChild(app) : termAppArgChild(app);
+  const headName = doc.sliceString(head.from, head.to);
+  const argName = doc.sliceString(firstIdentChild(arg).from, firstIdentChild(arg).to);
+  const merged = headName + argName;
+  if (isKnownGlobalName(tree, doc, merged, false)) {
+    return { headName, merged };
+  }
+  return null;
+}
+
+function identInMetaVar(ident) {
+  for (let q = ident; q; q = q.parent) {
+    if (q.name === 'ParameterVariable' || q.name === 'SubstitutionVariable') return true;
+  }
+  return false;
+}
+
+function applicationHeadIsBound(tree, doc, app, isType) {
+  const head = isType ? headIdentOfTypeApp(app) : headIdentOfTermApp(app);
+  if (!head || identInMetaVar(head)) return true;
+  const name = doc.sliceString(head.from, head.to);
+  if (findEnclosingLocalBinder(head, doc, name) !== null) return true;
+  return isKnownGlobalName(tree, doc, name, head.name === 'UpperIdentifier');
+}
+
+// Juxtaposed application (`t p`, `dual A`) is valid only when the head names a
+// defined constant. A typo like `t p` for `tp` parses as application but must
+// not fall through to the implicit-binder guess — neither atom is reconstructible.
+function undefinedApplicationSite(tree, doc, ident) {
+  const name = doc.sliceString(ident.from, ident.to);
+  if (projectionTailOf(ident)) return null;
+  if (isSubstitutionVariable(ident)) return null;
+  for (let q = ident.parent; q; q = q.parent) {
+    if (q.name === 'ParameterVariable' || q.name === 'SubstitutionVariable') return null;
+  }
+  if (findEnclosingLocalBinder(ident, doc, name) !== null) return null;
+  if (ascribedTypeForIdent(ident, doc)) return null;
+  for (let p = ident.parent; p; p = p.parent) {
+    const isType = TYPE_APP.has(p.name);
+    const isTerm = TERM_APP.has(p.name);
+    if (!isType && !isTerm) continue;
+    const family = isType ? TYPE_APP : TERM_APP;
+    if (!hasNestedApp(p, family)) continue;
+    const head = isType ? headIdentOfTypeApp(p) : headIdentOfTermApp(p);
+    if (!head) continue;
+    const headName = doc.sliceString(head.from, head.to);
+    const headKnown = applicationHeadIsBound(tree, doc, p, isType);
+    const arg = isType ? typeAppArgChild(p) : termAppArgChild(p);
+    const isHead = head.from === ident.from && head.to === ident.to;
+    const isArg = arg && ident.from >= arg.from && ident.to <= arg.to;
+    if (!isHead && !isArg) continue;
+    if (headKnown) {
+      if (isArg) return null;
+      return null;
+    }
+    const typo = typoJuxtapositionSite(tree, doc, p, isType);
+    if (typo) {
+      return { role: isHead ? 'head' : 'arg', headName: typo.headName, merged: typo.merged };
+    }
+    return null;
+  }
+  return null;
+}
+
+function undefinedApplicationMessage(name, site) {
+  if (site.role === 'head') return `Type family '${name}' is not defined`;
+  return `Type family '${site.headName}' is not defined`;
+}
+
+export function collectUndefinedApplicationDiags(tree, doc) {
+  const diags = [];
+  const seen = new Set();
+  tree.iterate({
+    enter(ref) {
+      if (!IDENT.has(ref.name)) return;
+      const ident = ref.node;
+      const site = undefinedApplicationSite(tree, doc, ident);
+      if (!site) return;
+      const key = `${ident.from}:${ident.to}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const name = doc.sliceString(ident.from, ident.to);
+      diags.push({
+        from: ident.from,
+        to: ident.to,
+        severity: 'error',
+        message: undefinedApplicationMessage(name, site),
+      });
+    },
+  });
+  return diags;
 }
 
 function splitArrowType(typeStr) {
@@ -1047,6 +1175,8 @@ export function referenceKind(tree, doc, from) {
   // Defined by an earlier file in the project group → a global reference.
   if (externalSignatureFor(name)) return 'global';
 
+  if (undefinedApplicationSite(tree, doc, ident)) return 'unbound';
+
   const encl = findEnclosingGlobalDecl(ident);
   if (encl) {
     const enclIdent = firstIdentChild(encl);
@@ -1176,6 +1306,19 @@ export function resolveHoverDoc(tree, doc, from) {
       sourceText: null,
       sourceType: null,
       needsElaboration: true,
+    };
+  }
+
+  const badApp = undefinedApplicationSite(tree, doc, ident);
+  if (badApp) {
+    const { line, col } = lineColAt(doc, ident.from);
+    return {
+      kind: 'unbound',
+      line, col,
+      name, displayName,
+      label: 'Unbound Identifier',
+      sourceType: null,
+      message: undefinedApplicationMessage(name, badApp),
     };
   }
 

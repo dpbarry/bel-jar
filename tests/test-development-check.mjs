@@ -72,6 +72,26 @@ const C = 'LF c : type =\n  | mc : badC\n;';
   expect(Object.keys(res.memberDiagnostics).length === 0, 'clean development has no member diagnostics');
 }
 
+// ── hole attribution: per-file paths and assembled line numbers ───────────────
+{
+  const members = [
+    { id: 'a', name: 'a.bel', text: A },
+    { id: 'b', name: 'b.bel', text: 'rec g : [ |- nat] =\n?\n;' },
+  ];
+  const { code, spans } = assembleProjectCode(members);
+  const holeOut = `## Holes: a.bel ##
+File "b.bel", line 2, column 17: Hole number 1, <anonymous>
+  Meta-context:
+  Computation context:
+  Goal: [ |- nat]
+`;
+  const runCheck = async () => ({ ok: true, output: holeOut });
+  const res = await checkDevelopmentCode(code, spans, runCheck);
+  expect(res.memberHoles['b.bel']?.length === 1, 'attributes holes by member file path');
+  expect(res.memberHoles['b.bel'][0].goal === '[ |- nat]', 'goal preserved');
+  expect(res.memberHoles['b.bel'][0].line === 2, 'file-relative line');
+}
+
 // ── signature changes with content; checker memoizes per signature ───────────
 {
   const base = [

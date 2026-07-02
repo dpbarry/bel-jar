@@ -11,7 +11,7 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
-const text = '% prelude\nbase.bel\n\nuse.bel\njunk\n';
+const text = '% prelude\nbase.bel\n\nuse.bel\njunk.txt\n';
 const doc = EditorState.create({ doc: text }).doc;
 
 const entries = iterCfgEntries(doc);

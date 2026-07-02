@@ -48,6 +48,15 @@ function runBelugaJob(type, payload) {
   }
   if (type === 'ide-command') return Beluga.ideCommandJson(payload);
   if (type === 'fingerprint') return Beluga.getCommittedFingerprint();
+  // Harpoon — a stateful interactive proof on THIS worker's Beluga instance.
+  // The session persists across jobs (Beluga holds it in a ref), so all proof
+  // jobs for one proof must go to the same (dedicated) worker slot.
+  if (type === 'harpoon-start') return Beluga.ideProofStart(payload.code, payload.line, payload.col);
+  if (type === 'harpoon-state') return Beluga.ideProofState();
+  if (type === 'harpoon-tactic') return Beluga.ideProofTactic(payload.subgoal, payload.tactic);
+  if (type === 'harpoon-undo') return Beluga.ideProofUndo();
+  if (type === 'harpoon-redo') return Beluga.ideProofRedo();
+  if (type === 'harpoon-translate') return Beluga.ideProofTranslate();
   throw new Error('Unknown job type: ' + type);
 }
 

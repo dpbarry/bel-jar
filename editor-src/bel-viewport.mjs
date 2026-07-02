@@ -25,6 +25,31 @@ export function scrollIntoViewCenter(pos) {
   return EditorView.scrollIntoView(anchor, { y: 'center', x: 'nearest' });
 }
 
+function scrollIntoViewNearest(pos) {
+  const p = Math.max(0, Math.floor(Number(pos)));
+  const anchor = Number.isFinite(p) ? p : 0;
+  return EditorView.scrollIntoView(anchor, { y: 'nearest', x: 'nearest' });
+}
+
+function afterEditorLayout(view, fn) {
+  view.requestMeasure();
+  const run = () => {
+    view.requestMeasure();
+    requestAnimationFrame(() => requestAnimationFrame(fn));
+  };
+  const fontsReady = typeof document !== 'undefined' && document.fonts?.ready;
+  if (fontsReady) fontsReady.then(run);
+  else run();
+}
+
+function shouldRestoreFocus(view, focus) {
+  if (!focus) return false;
+  if (view.hasFocus) return true;
+  if (typeof document === 'undefined') return true;
+  const active = document.activeElement;
+  return !active || active === document.body || active === document.documentElement;
+}
+
 function isSigChar(c) {
   return c !== ' ' && c !== '\t' && c !== '\n' && c !== '\r';
 }
@@ -118,7 +143,7 @@ export function resolveFormatViewportAnchor(anchor, state, newText) {
   return 0;
 }
 
-export function scheduleScrollToCenter(view, pos, { selection, onApplied } = {}) {
+export function scheduleScrollToCenter(view, pos, { selection, onApplied, focus = false } = {}) {
   if (pos == null || !isFinite(pos)) return;
 
   function apply() {
@@ -134,52 +159,104 @@ export function scheduleScrollToCenter(view, pos, { selection, onApplied } = {})
         head: Math.max(0, Math.min(selection.head, docLen)),
       };
     }
+    const restoreFocus = shouldRestoreFocus(view, focus);
     view.dispatch(tr);
+    if (restoreFocus) view.focus();
     if (onApplied) onApplied(tr.selection ? tr.selection.head : clamped);
   }
 
-  view.requestMeasure();
-  const afterLayout = () => {
-    view.requestMeasure();
-    requestAnimationFrame(() => requestAnimationFrame(apply));
-  };
-  const fontsReady = typeof document !== 'undefined' && document.fonts?.ready;
-  if (fontsReady) fontsReady.then(afterLayout);
-  else afterLayout();
+  afterEditorLayout(view, apply);
 }
 
-export function scheduleViewportRestore(view, local) {
+export function captureViewportLocal(view) {
+  if (!view) return {};
+  const sel = view.state.selection.main;
+  const scroller = view.scrollDOM;
+  const local = {
+    selection: { anchor: sel.anchor, head: sel.head },
+    centerLine: viewportCenterLine(view),
+    scrollTop: scroller.scrollTop,
+    scrollLeft: scroller.scrollLeft,
+  };
+  const anchor = captureFormatViewportAnchor(view);
+  if (anchor) local.viewportAnchor = anchor;
+  return local;
+}
+
+// Re-affirm the selection and scroll it into view. Used when a side panel steals
+// focus (e.g. enabling “follow editor”) so the caret is visible at the position
+// the inspector resolved.
+export function revealEditorCursor(view, { focus = true, pos = null } = {}) {
+  if (!view?.state) return;
+  const docLen = view.state.doc.length;
+  const head = pos != null && isFinite(pos)
+    ? Math.max(0, Math.min(pos, docLen))
+    : view.state.selection.main.head;
+  const anchor = pos != null && isFinite(pos)
+    ? head
+    : view.state.selection.main.anchor;
+  view.dispatch({
+    selection: { anchor, head },
+    effects: scrollIntoViewNearest(head),
+    annotations: Transaction.addToHistory.of(false),
+  });
+  if (focus) view.focus();
+}
+
+export function scheduleViewportRestore(view, local, { focus = false } = {}) {
   if (!local || typeof local !== 'object') return;
 
-  const doc = view.state.doc;
-  const docLen = doc.length;
-  let pos = null;
-  const centerLine = Number(local.centerLine);
-  if (isFinite(centerLine) && centerLine >= 1 && doc.lines > 0) {
-    const line = doc.line(Math.min(Math.max(1, Math.floor(centerLine)), doc.lines));
-    pos = line.from;
-  }
-
-  const selection = local.selection && isFinite(local.selection.anchor) && isFinite(local.selection.head)
-    ? {
-        anchor: Math.max(0, Math.min(local.selection.anchor, docLen)),
-        head: Math.max(0, Math.min(local.selection.head, docLen)),
-      }
-    : undefined;
-
-  if (pos != null) {
-    scheduleScrollToCenter(view, pos, { selection });
-    return;
-  }
-  if (!selection) return;
-
   function apply() {
-    view.dispatch({
-      selection,
-      annotations: Transaction.addToHistory.of(false),
-    });
+    const doc = view.state.doc;
+    const docLen = doc.length;
+    const text = doc.toString();
+
+    const selection = local.selection && isFinite(local.selection.anchor) && isFinite(local.selection.head)
+      ? {
+          anchor: Math.max(0, Math.min(local.selection.anchor, docLen)),
+          head: Math.max(0, Math.min(local.selection.head, docLen)),
+        }
+      : undefined;
+
+    if (selection) {
+      view.dispatch({
+        selection,
+        annotations: Transaction.addToHistory.of(false),
+      });
+    }
+
+    const scroller = view.scrollDOM;
+    const scrollTop = Number(local.scrollTop);
+    if (isFinite(scrollTop) && scrollTop >= 0) {
+      scroller.scrollTop = scrollTop;
+      const scrollLeft = Number(local.scrollLeft);
+      if (isFinite(scrollLeft) && scrollLeft >= 0) scroller.scrollLeft = scrollLeft;
+    } else {
+      // Legacy checkpoints: keep the cursor visible without re-centering.
+      let pos = selection ? selection.head : null;
+      if (pos == null && local.viewportAnchor) {
+        const resolved = resolveFormatViewportAnchor(local.viewportAnchor, view.state, text);
+        if (resolved != null && isFinite(resolved)) pos = resolved;
+      }
+      if (pos == null) {
+        const centerLine = Number(local.centerLine);
+        if (isFinite(centerLine) && centerLine >= 1 && doc.lines > 0) {
+          const line = doc.line(Math.min(Math.max(1, Math.floor(centerLine)), doc.lines));
+          pos = line.from;
+        }
+      }
+      if (pos != null) {
+        view.dispatch({
+          effects: scrollIntoViewNearest(pos),
+          annotations: Transaction.addToHistory.of(false),
+        });
+      }
+    }
+
+    if (shouldRestoreFocus(view, focus)) view.focus();
   }
-  requestAnimationFrame(() => requestAnimationFrame(apply));
+
+  afterEditorLayout(view, apply);
 }
 
 export function resolveJumpRange(doc, jumpAt) {

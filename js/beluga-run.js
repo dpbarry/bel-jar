@@ -26,6 +26,10 @@
 
   function getBelugaMode() { return belugaMode; }
 
+  function shouldShowRunProgress() {
+    return belugaMode !== 'fast';
+  }
+
   function setBelugaMode(m) {
     belugaMode = m;
     if (typeof BelJarPersist !== 'undefined') BelJarPersist.writeStoredBelugaMode(m);
@@ -38,6 +42,7 @@
 
   function belugaProgressHook(msg) {
     if (msg && msg.phase === 'build-fallback') {
+      if (typeof BelJarPersist !== 'undefined' && !BelJarPersist.readStoredBelugaFallbackStable()) return;
       if (typeof BelJarToasts !== 'undefined') {
         BelJarToasts.warn(
           'Fast build hit the stack limit. Retrying with Stable; switch to Stable in Settings to avoid this.',
@@ -89,14 +94,9 @@
   function resolveDefaultCfgPath(files, getText) {
     if (typeof BelJarPersist === 'undefined' || typeof BelJarProjectSource === 'undefined') return null;
     var activeId = BelJarPersist.getActiveFileId();
-    var active = null;
-    for (var i = 0; i < files.length; i++) {
-      if (files[i].id === activeId) { active = files[i]; break; }
-    }
-    if (!active) return null;
-    var path = BelJarPersist.getActiveCfgForDir(BelJarProjectSource.dirOf(active.name));
-    if (path && files.some(function (f) { return f.name === path; })) return path;
-    return null;
+    if (!activeId) return null;
+    var dev = BelJarProjectSource.developmentForFile(files, activeId, getText);
+    return dev.kind === 'module' && dev.cfg ? dev.cfg : null;
   }
 
   function baseName(p) {
@@ -212,21 +212,20 @@
       }
       projectSpans = null;
     }
-    if (!code.trim()) return;
     var bundle = buildActiveFileSource();
     var loadCode = bundle && bundle.prelude ? bundle.code : code;
     var loadPinned = !!(bundle && bundle.prelude);
     if (editorMatchesCommitted(loadCode)) return;
     var lineCount = loadCode.split('\n').length;
     var t0 = performance.now();
-    if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') {
+    if (typeof RunProgress !== 'undefined' && shouldShowRunProgress()) {
       RunProgress.start({ op: 'load', lineCount: lineCount });
     }
     try {
       var hooks = { onProgress: belugaProgressHook };
       if (loadPinned) hooks.pinned = true;
       await BelugaClient.load(loadCode, hooks);
-      if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') {
+      if (typeof RunProgress !== 'undefined' && shouldShowRunProgress()) {
         void RunProgress.complete({ lines: lineCount, ms: performance.now() - t0 });
       }
     } catch (e) {
@@ -244,7 +243,6 @@
   // for whole-project remapping (null for single-file / prelude runs).
   async function runLoad(code, spans, opts) {
     opts = opts || {};
-    if (!code.trim()) return;
     if (typeof BelugaClient === 'undefined') {
       if (typeof BelJarToasts !== 'undefined') BelJarToasts.error('Beluga is not available.');
       return;
@@ -253,7 +251,7 @@
     var lineCount = code.split('\n').length;
     var t0 = performance.now();
     setBelugaBusy(true);
-    if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') {
+    if (typeof RunProgress !== 'undefined' && shouldShowRunProgress()) {
       RunProgress.start({ op: 'load', lineCount: lineCount });
     }
     var hooks = { onProgress: belugaProgressHook };
@@ -263,6 +261,10 @@
       // applyOutputNaming already remaps via `spans`; appendRunOutput (unlike
       // appendBelugaResponse) does NOT remap again, so naming happens once.
       raw = applyOutputNaming(raw, spans, opts.prelude, opts.displayName);
+      if (!String(raw).trim()) {
+        var name = opts.displayName || 'input.bel';
+        raw = '## Type Reconstruction begin: ' + name + ' ##\n## Type Reconstruction done:  ' + name + ' ##';
+      }
       if (typeof BelJarReplOutput !== 'undefined') BelJarReplOutput.appendRunOutput(raw);
       setBelugaBusy(false);
       if (typeof RunProgress !== 'undefined') {
@@ -378,7 +380,7 @@
     }
     var paths = [];
     for (var j = 0; j < files.length; j++) {
-      if (dirOf(files[j].name) === folderPath && /\.(?:bel|elf)$/i.test(files[j].name)) paths.push(files[j].name);
+      if (dirOf(files[j].name) === folderPath && BelJarProjectSource.isSignaturePath(files[j].name)) paths.push(files[j].name);
     }
     if (!paths.length) return;
     var entries = entriesForPaths(paths, files, makeGetText());
@@ -416,7 +418,7 @@
 
     setBelugaBusy(true);
     var t0 = performance.now();
-    if (typeof RunProgress !== 'undefined' && belugaMode !== 'fast') RunProgress.start({ op: 'load' });
+    if (typeof RunProgress !== 'undefined' && shouldShowRunProgress()) RunProgress.start({ op: 'load' });
     var failures = 0;
     var lines = 0;
     for (var j = 0; j < jobs.length; j++) {
@@ -427,6 +429,9 @@
         var raw = await BelugaClient.load(job.code, { onProgress: belugaProgressHook, pinned: true });
         projectSpans = job.spans; // last development stays the REPL context
         raw = applyOutputNaming(raw, job.spans, null, job.dev.name);
+        if (!String(raw).trim()) {
+          raw = '## Type Reconstruction begin: ' + job.dev.name + ' ##\n## Type Reconstruction done:  ' + job.dev.name + ' ##';
+        }
         if (typeof BelJarReplOutput !== 'undefined') {
           BelJarReplOutput.appendRichMsg('muted', '── ' + label + ' ──');
           BelJarReplOutput.appendRunOutput(raw);
@@ -481,6 +486,7 @@
     setBelugaBusy: setBelugaBusy,
     isBelugaBusy: isBelugaBusy,
     getBelugaMode: getBelugaMode,
+    shouldShowRunProgress: shouldShowRunProgress,
     setBelugaMode: setBelugaMode,
     belugaProgressHook: belugaProgressHook,
     runFile: runFile,

@@ -85,6 +85,26 @@ function getText(id) {
   expect(orphanPre.length === 0 && dev.kind === 'standalone', 'file not in active cfg → standalone, no prelude');
 }
 
+// ── two disjoint active suites in one folder ─────────────────────────────────
+{
+  seed([
+    { name: 'grp/a.bel', text: 'LF a : type;' },
+    { name: 'grp/b.bel', text: 'LF b : type;' },
+    { name: 'grp/one.cfg', text: 'a.bel\n' },
+    { name: 'grp/two.cfg', text: 'b.bel\n' },
+  ]);
+  P.addActiveCfgForDir('grp', 'grp/one.cfg');
+  P.addActiveCfgForDir('grp', 'grp/two.cfg');
+  const files = P.listFiles();
+  const aId = files.find((f) => f.name === 'grp/a.bel').id;
+  const bId = files.find((f) => f.name === 'grp/b.bel').id;
+  const activeCfgsForDir = (d) => P.getActiveCfgsForDir(d);
+  const devA = PS.developmentForFile(files, aId, getText, { activeCfgsForDir });
+  const devB = PS.developmentForFile(files, bId, getText, { activeCfgsForDir });
+  expect(devA.kind === 'module' && devA.cfg === 'grp/one.cfg', 'a.bel resolves to one.cfg');
+  expect(devB.kind === 'module' && devB.cfg === 'grp/two.cfg', 'b.bel resolves to two.cfg');
+}
+
 // ── unassociated .bel: not in any cfg ───────────────────────────────────────
 {
   seed([
@@ -110,7 +130,7 @@ function getText(id) {
   seed([
     { name: 'grp/old.bel', text: 'LF a : type;' },
     { name: 'grp/suite.cfg', text: 'old.bel\n' },
-  ]);
+  ], { grp: 'grp/suite.cfg' });
   const id = P.listFiles().find((f) => f.name === 'grp/old.bel').id;
   P.renameFile(id, 'grp/new.bel');
   const cfgText = textOf('grp/suite.cfg');
@@ -127,7 +147,7 @@ function getText(id) {
     { name: 'grp/suite.cfg', text: 'base.bel\ninner.cfg\n' },
   ]);
   const diags = cfgDiagnosticsFor(textOf('grp/inner.cfg'), 'grp/inner.cfg', names());
-  expect(diags.some((d) => d.severity === 'error'), 'nested cfg missing entry errors');
+  expect(diags.some((d) => d.severity === 'warning'), 'nested cfg missing entry warns');
 }
 
 // ── delete active cfg clears active pointer ───────────────────────────────────
@@ -138,7 +158,7 @@ function getText(id) {
   ], { grp: 'grp/suite.cfg' });
   const cfgId = P.listFiles().find((f) => f.name === 'grp/suite.cfg').id;
   P.deleteFile(cfgId);
-  expect(P.getActiveCfgForDir('grp') === null, 'deleting active cfg clears pointer');
+  expect(P.getActiveCfgsForDir('grp').length === 0, 'deleting active cfg clears pointer');
   expect(P.listFiles().length === 1, 'cfg file removed from registry');
 }
 
@@ -192,11 +212,11 @@ function getText(id) {
   expect(remapped.includes('f2.bel'), 'error remapped to second file');
 }
 
-// ── cfg junk line is warning not throw ────────────────────────────────────────
+// ── cfg non-entry lines are silently skipped ──────────────────────────────────
 {
-  seed([{ name: 'grp/suite.cfg', text: 'not-a-real-entry\n' }]);
+  seed([{ name: 'grp/suite.cfg', text: 'not-a-real-entry.txt\n' }]);
   const diags = cfgDiagnosticsFor(textOf('grp/suite.cfg'), 'grp/suite.cfg', names());
-  expect(diags.length === 1 && diags[0].severity === 'warning', 'junk cfg line → warning');
+  expect(diags.length === 0, 'non-entry cfg line → no diagnostic');
 }
 
 // ── prepend does not validate file exists; cfg lint surfaces dangling entry ───
@@ -207,7 +227,7 @@ function getText(id) {
   ]);
   expect(P.prependEntryToCfg('grp/suite.cfg', 'grp/missing.bel') === true, 'prepend accepts path (file may be added later)');
   const diags = cfgDiagnosticsFor(textOf('grp/suite.cfg'), 'grp/suite.cfg', names());
-  expect(diags.some((d) => d.severity === 'error' && d.message.includes('missing.bel')), 'cfg lint flags prepended missing file');
+  expect(diags.some((d) => d.severity === 'warning' && d.message.includes('missing.bel')), 'cfg lint flags prepended missing file');
 }
 
 console.log('OK project chaos (suites, cfg, silos, remap, lint)');

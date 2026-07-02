@@ -11,7 +11,12 @@ import {
   delimitedIndent,
 } from '@codemirror/language';
 import { Prec } from '@codemirror/state';
-import { styleTags, tags as t } from '@lezer/highlight';
+import { styleTags, tags as t, Tag } from '@lezer/highlight';
+
+// Holes (`?` / `?name`) are their OWN highlight tag, not a generic atom — so the
+// `?` carries the hole identity colour (see the highlight style below; also mapped
+// in bel-source-render.mjs for the Library preview).
+export const holeTag = Tag.define();
 import { parser } from './beluga-parser.js';
 import { belParseErrorHighlightExtensions } from './bel-invalid-highlight.mjs';
 import { belugaScopeHighlight } from './bel-scope-highlight.mjs';
@@ -308,7 +313,7 @@ const belugaHighlight = styleTags({
   UpperIdentifier: t.typeName,
 
   Number:          t.number,
-  Hole:            t.atom,
+  Hole:            holeTag,
   UnderscoreHole:  t.atom,
 
   LineComment:     t.lineComment,
@@ -353,6 +358,7 @@ const c = {
   number:       'light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%))',
   comment:      'light-dark(hsl(221, 10%, 40%), var(--muted-high))',
   control:      'light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%))',
+  hole:         'var(--ide-hole-border)',
   punct:        'light-dark(var(--muted-higher), var(--muted-highest))',
   cyan:         'light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%))',
 };
@@ -393,6 +399,7 @@ export const defaultBelugaHighlightStyle = HighlightStyle.define([
   { tag: t.propertyName,       color: c.property },
   { tag: t.number,             color: c.number },
   { tag: t.atom,               color: c.number },
+  { tag: holeTag,              color: c.hole, fontWeight: '700' },
   { tag: [t.lineComment, t.blockComment],
                                color: c.comment, fontStyle: 'italic' },
   { tag: t.controlKeyword,     color: c.control, fontWeight: '600' },
@@ -451,10 +458,19 @@ export const belugaLanguage = LRLanguage.define({
 });
 
 export function beluga() {
-  return new LanguageSupport(belugaLanguage, [
-    belPercentLineCommentFold,
-    syntaxHighlighting(defaultBelugaHighlightStyle),
-    Prec.highest(belugaScopeHighlight),
-    ...belParseErrorHighlightExtensions,
-  ]);
+  return new LanguageSupport(belugaLanguage, [belPercentLineCommentFold]);
+}
+
+export function belugaHighlightExtensions(opts = {}) {
+  const exts = [];
+  if (opts.syntaxHighlight !== false) {
+    exts.push(syntaxHighlighting(defaultBelugaHighlightStyle));
+  }
+  if (opts.semanticHighlight !== false) {
+    exts.push(Prec.highest(belugaScopeHighlight));
+  }
+  if (opts.parseHighlight !== false) {
+    exts.push(...belParseErrorHighlightExtensions);
+  }
+  return exts;
 }

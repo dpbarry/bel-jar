@@ -1,0 +1,272 @@
+% Basic shared definitions of CP
+% Defines types, duality, processes, and equality predicates on types/processes
+
+name : type.      % channel names
+
+tp : type.        % channel types
+① : tp.           % termination ("provider")
+⊥ : tp.           % termination ("client")
+⊗ : tp → tp → tp. % channel output
+⅋ : tp → tp → tp. % channel input
+& : tp → tp → tp. % receive choice
+⊕ : tp → tp → tp. % send choice
+
+--infix ⊗ 5 left.
+--infix ⅋ 5 left.
+--infix ⊕ 4 left.
+--infix & 4 left.
+
+eq : tp → tp → type.
+refl : eq A A.
+
+% duality condition
+dual : tp → tp → type.
+D1 : dual ① ⊥.
+D⊥ : dual ⊥ ①.
+D⊗ : dual A A' → dual B B' → dual (A ⊗ B) (A' ⅋ B').
+D⅋ : dual A A' → dual B B' → dual (A ⅋ B) (A' ⊗ B').
+D& : dual A A' → dual B B' → dual (A & B) (A' ⊕ B').
+D⊕ : dual A A' → dual B B' → dual (A ⊕ B) (A' & B').
+
+% processes
+proc : type.
+
+eq_proc : proc → proc → type.
+refl_proc : eq_proc P P.
+
+fwd : name → name → proc.                             % fwd x y
+pcomp : tp → (name → proc) → (name → proc) → proc.    % nu x:A (P | Q)
+
+close : name → proc.                                  % close x
+wait : name → proc → proc.                            % wait x; P
+
+out : name → (name → proc) → (name → proc) → proc.    % out x; (y.P | w.Q)
+inp : name → (name → name → proc) → proc.             % inp x; w.y.P
+
+inl : name → (name → proc) → proc.                    % x[inl]; w.P
+inr : name → (name → proc) → proc.                    % x[inr]; w.P
+choice : name → (name → proc) → (name → proc) → proc. % case x {w.P | w.Q}
+
+
+
+% linearity predicate: check that name occurs linearly in proc
+linear: (name → proc) → type.
+
+% Most constructs (except close and cut) have a "principle" case, where the abstracted channel is being used in the
+% process, and some "congruence" cases, where the abstracted channel is not immediately being used and therefore need to
+% be passed.
+
+% principle cases: Aside from close and wait, where the channel continuation does not exist, all other cases require
+% that the appropriate continuation process are themselves linear in the "new" channel
+
+% axioms
+l_fwd   : linear (\x. fwd x Y).
+l_fwd2  : linear (\x. fwd Y x).
+l_close : linear (\x. close x).
+l_wait  : linear (\x. wait x P).
+
+l_out   : linear Q → linear (\x. out x P Q).
+l_inp   : ({y:name} linear (\x. P x y)) →  linear (\x. inp x P).
+l_inl   : linear P → linear (\x. inl x P).
+l_inr   : linear P → linear (\x. inr x P).
+l_choice: linear P → linear Q → linear (\x. choice x P Q).
+
+% congruence cases
+
+% note that pcomp only has congruence
+l_pcomp1: ({x:name}linear  (\z. P x z))
+        → linear  (\z. pcomp A (\x. P x z)  Q).
+l_pcomp2: ({x:name}linear  (\z. Q x z))
+        → linear  (\z. pcomp A P (\x. Q x z)).
+
+% (no congruence case for close)
+l_wait2: linear P → linear (\z. wait X (P z)).
+
+% z can appear in either the P or Q, so we need two congruence rules for out
+l_out2 : ({y:name} linear (\z. P z y))
+       → linear (\z. out X (P z) Q).
+l_out3 : ({x':name}linear (\z. Q z x'))
+       → linear (\z. out X P (Q z)).
+l_inp2 : ({x:name}{y:name} linear (\z. P z x y))
+       → linear (\z. inp X (P z)).
+
+
+l_inl2   : ({x':name}linear (\z. P z x')) → linear (\z. inl X (P z)).
+l_inr2   : ({x':name}linear (\z. P z x')) → linear (\z. inr X (P z)).
+% case is additive, so z must appear linearly in both branches
+l_choice2: ({x':name}linear (\z. P z x'))
+         → ({x':name}linear (\z. Q z x'))
+         → linear (\z. choice X (P z) (Q z)).
+
+
+
+% Typing -- with linearity enforced.
+% Linearity is introduced every time a fresh channel is being bound to some process. Linearity of continuation channels
+% (which technically can be interpreted as fresh) are checked already inside the linearity predicate, so we only need to
+% introduce linearity conditions for when a fresh channel is being made on paper.
+
+% Hypothesis -- encodes typing assumptions of form x:A
+hyp : name → tp → type.
+% wtp P means that P is well-typed with respect to some context
+wtp : proc → type.
+
+wtp_fwd   : dual A A'
+          → {X:name}hyp X A → {Y:name}hyp Y A'
+          → wtp (fwd X Y).
+wtp_pcomp :  dual A A'
+          → ({x:name} hyp x A → wtp (P x))
+          → ({x:name} hyp x A' → wtp (Q x))
+          → linear P
+          → linear Q
+          → wtp (pcomp A P Q).
+
+wtp_close : {X:name}hyp X one
+          → wtp (close X).
+wtp_wait  : {X:name}hyp X bot
+          → wtp P
+          → wtp (wait X P).
+
+wtp_out   : linear P % y is fresh and being bound to P, so check that it's linear
+          → {X:name}hyp X (A ⊗ B)
+	  → ({y:name}hyp y A → wtp (P y))
+	  → ({x:name}hyp x B → wtp (Q x))
+	  → wtp (out X P Q).
+wtp_inp   : ({x:name}linear (P x)) % check linearity for the input channel y
+          → {X:name}hyp X (A ⅋ B)
+          → ({x:name}hyp x B → {y:name}hyp y A → wtp (P x y))
+          → wtp (inp X P).
+
+wtp_inl   : {X:name}hyp X (A ⊕ B)
+          → ({x:name}hyp x A → wtp (P x))
+          → wtp (inl X P).
+wtp_inr   : {X:name}hyp X (A ⊕ B)
+          → ({x:name}hyp x B → wtp (P x))
+          → wtp (inr X P).
+wtp_choice: {X:name}hyp X (A & B)
+             → ({x:name}hyp x A → wtp (P x))
+             → ({x:name}hyp x B → wtp (Q x))
+             → wtp (choice X P Q).
+
+
+
+% Dynamics of CP
+
+% Structural Equivalences
+≡ : proc → proc → type.
+--infix ≡ 10 left.
+≡comm : dual A A' → (pcomp A  P Q) ≡ (pcomp A' Q  P).
+≡assoc: (pcomp B (\y. pcomp A P (\x. Q x y)) R)
+      ≡ (pcomp A P (\x. pcomp B (Q x) R)).
+
+% Beta reductions, commuting conversions, and congruence for pcomp
+⇛ : proc → proc → type.
+--infix ⇛ 10 left.
+
+% Note: keep in mind ⇛ is an infix type constructor and is therefore unrelated to
+% →, which constructs LF functions
+% principal reductions
+βfwd : (pcomp A (\x. fwd x Y) P)
+     ⇛ (P Y).
+β1⊥  : (pcomp ① (\x. close x) (\x. wait x P))
+     ⇛ P.
+β⊗⅋  : (pcomp (A ⊗ B) (\x. (out x P Q)) (\x. inp x R))
+     ⇛ (pcomp A P (\y. pcomp B Q (\x. R x y))).
+β⊕&1 : (pcomp (A ⊕ B) (\x. inl x P) (\x. choice x Q R))
+     ⇛ (pcomp A P Q).
+β⊕&2 : (pcomp (A ⊕ B) (\x. inr x P) (\x. choice x Q R))
+     ⇛ (pcomp B P R).
+
+% commuting conversions
+κ⊥  : (pcomp C (\z. wait X (P z)) R)
+    ⇛ (wait X (pcomp C P R)).
+κ⊗1 : (pcomp C (\z. out X (\y. P y z) Q) R)
+    ⇛ (out X (\y. pcomp C (\z. P y z) R) Q).
+κ⊗2 : (pcomp C (\z. out X P (\x. Q x z)) R)
+    ⇛ (out X P (\x. pcomp C (\z. Q x z) R)).
+κ⅋  : (pcomp C (\z. inp X (\x.\y. P x y z)) Q)
+    ⇛ (inp X (\x.\y. pcomp C (\z. P x y z) Q)).
+κ⊕1 : (pcomp C (\z. inl X (\x. P x z)) Q)
+    ⇛ (inl X (\x. pcomp C (\z. P x z) Q)).
+κ⊕2 : (pcomp C (\z. inr X (\x. P x z)) Q)
+    ⇛ (inr X (\x. pcomp C (\z. P x z) Q)).
+κ&  : (pcomp C (\z. choice X (\x. P x z) (\x. Q x z)) R)
+    ⇛ (choice X (\x. pcomp C (\z. (P x z)) R) (\x. pcomp C (\z. Q x z) R)).
+
+% reduction under cut
+β∥1 : ({x:name} ((P x) ⇛ (P' x)))
+    → (pcomp A P Q) ⇛ (pcomp A P' Q).
+β∥2 : ({x:name}((Q x) ⇛ (Q' x)))
+    → (pcomp A P Q) ⇛ (pcomp A P Q').
+
+% Reductions commute with equivalences
+β≡: (P ≡ Q) → (Q ⇛ R) → (R ≡ S) → P ⇛ S.
+
+
+
+schema nctx = name;
+schema ctx = some [A:tp] block x : name, h : hyp x A;
+
+
+
+% encode existentials for strengthening in reductions
+inductive Result : (g : ctx){P : [g ⊢ proc]}{Q : [g, x:name ⊢ proc]} → ctype =
+| Res : {Q' : [g ⊢ proc]}
+      → [g, x:name ⊢ eq_proc Q Q'[..]]
+      → [g ⊢ P ⇛ Q']
+      → Result [g ⊢ P] [g, x:name ⊢ Q]
+;
+
+% encode existentials for strengthening in equivalences
+inductive Result' : (g : ctx){P : [g ⊢ proc]}{Q : [g, x:name ⊢ proc]} → ctype =
+| Res' : {Q' : [g ⊢ proc]}
+       → [g, x:name ⊢ eq_proc Q Q'[..]]
+       → [g ⊢ P ≡ Q']
+       → Result' [g ⊢ P] [g, x:name ⊢ Q]
+;
+
+
+
+
+rec str_step' : (g : ctx) [g, x:name, h:hyp x A[] ⊢ P[..,x] ⇛ Q[..,x]] → [g, x:name ⊢ P ⇛ Q] =
+fn _ => ?;
+rec str_equiv : (g : ctx) [g, x:name ⊢ P[..] ≡ Q] → Result' [g ⊢ P] [g, x:name ⊢ Q] =
+fn _ => ?;
+
+rec str_step : (g : ctx) [g, x:name ⊢ P[..] ⇛ Q] → Result [g ⊢ P] [g, x:name ⊢ Q] =
+/ total 1 /
+fn f => case f of
+  | [g, x:name |- βfwd] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- βfwd]
+  | [g, x:name |- β1⊥] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- β1⊥]
+  | [g, x:name |- β⊗⅋] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- β⊗⅋]
+  | [g, x:name |- β⊕&1] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- β⊕&1]
+  | [g, x:name |- β⊕&2] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- β⊕&2]
+  | [g, x:name |- κ⊥] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- κ⊥]
+  | [g, x:name |- κ⊗1] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- κ⊗1]
+  | [g, x:name |- κ⊗2] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- κ⊗2]
+  | [g, x:name |- κ⅋] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- κ⅋]
+  | [g, x:name |- κ⊕1] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- κ⊕1]
+  | [g, x:name |- κ⊕2] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- κ⊕2]
+  | [g, x:name |- κ&] =>
+    Res [g |- _] [g, x:name |- refl_proc] [g |- κ&]
+  | [g, x:name |- β∥1 (\d. X[.., d, x])] =>
+    let Res [g, b:block (x:name, h:hyp x ⊥) |- R1[.., b.x]] [g, b:block (x:name, h:hyp x ⊥), x:name |- refl_proc] [g, b:block (x:name, h:hyp x ⊥) |- R2] = str_step [g, b:block (x:name, h:hyp x ⊥), x:name |- X[.., b.x, x]] in
+    let [g, y:name |- R2'] = str_step' [g, y:name, hy:hyp y ⊥ |- R2[..,<y;hy>]] in
+    Res [g |- _] [g, x:name |- refl_proc] [g |- β∥1 (\y. R2'[.., y])]
+  | [g, x:name |- β∥2 (\d. X5[.., d, x])] =>
+    let Res [g, b:block (x:name, h:hyp x ⊥) |- R1[.., b.x]] [g, b:block (x:name, h:hyp x ⊥), x:name |- refl_proc] [g, b:block (x:name, h:hyp x ⊥) |- R2] = str_step [g, b:block (x:name, h:hyp x ⊥), x:name |- X5[.., b.x, x]] in
+    let [g, y:name |- R2'] = str_step' [g, y:name, hy:hyp y ⊥ |- R2[..,<y;hy>]] in
+    Res [g |- _] [g, x:name |- refl_proc] [g |- β∥2 (\y. R2'[.., y])]
+  | [g, x:name |- β≡ X10 X11 X12] =>
+  ?
+;

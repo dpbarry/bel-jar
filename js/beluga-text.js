@@ -15,7 +15,15 @@
   function polishBelugaErrorDetail(detail) {
     return String(detail != null ? detail : '')
       .replace(/;\s*$/, '')
-      .replace(/parse Expected/, 'parse. Expected')
+      .replace(
+        /Failed to parse Expected the parser input to end here\.?/gi,
+        'Failed to parse: unexpected text here.',
+      )
+      .replace(/parse Expected/g, 'parse.\nExpected')
+      .replace(
+        /Expected the parser input to end here\.?/gi,
+        'Unexpected text here — remove stray tokens or finish the declaration.',
+      )
       .trim();
   }
 

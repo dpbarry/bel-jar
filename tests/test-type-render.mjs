@@ -47,11 +47,20 @@ function leaves(node, out = []) {
 // --- normalizeType ---
 expect(normalizeType('  a  →  b ') === 'a → b', 'normalizeType collapses spaces');
 expect(normalizeType('a -> b') === 'a → b', 'normalizeType converts -> to →');
+// Canonicalise ASCII operators to the editor's display glyphs (a goal type from
+// Beluga's text output should read exactly like the editor, which accepts both).
+expect(normalizeType('[ |- nat]') === '[ ⊢ nat]', 'normalizeType converts |- to ⊢');
+expect(normalizeType('[ |- dual A A\'] -> [ |- dual A\' A]') === '[ ⊢ dual A A\'] → [ ⊢ dual A\' A]',
+  'normalizeType: turnstiles + arrow glyphs, spaces preserved');
+expect(normalizeType('fn x => y') === 'fn x ⇒ y', 'normalizeType converts => to ⇒');
+expect(normalizeType('#[ |-# p]') === '#[ ⊢# p]', 'normalizeType converts hashed turnstile |-# to ⊢#');
 expect(normalizeType('a →\n   b') === 'a → b', 'normalizeType joins wrapped lines');
 expect(normalizeType('block (x:tm m/q _,\n neux:neu x)') === 'block (x:tm m/q _, neux:neu x)',
   'normalizeType joins schema comma breaks without space before comma');
 expect(normalizeType('block (\n x:tm m/q _)') === 'block (x:tm m/q _)',
   'normalizeType joins schema paren breaks without space after open paren');
+expect(normalizeType('{x:name}linear (\\z. Q x z)') === '{x:name} linear (\\z. Q x z)',
+  'normalizeType inserts space after dependent binder before type head');
 expect(normalizeType(null) === '', 'normalizeType tolerates null');
 
 // --- a realistic comp type (from the screenshots) ---

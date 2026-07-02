@@ -108,6 +108,7 @@
   }
 
   function scrollReplBottom() {
+    if (typeof BelJarPersist !== 'undefined' && !BelJarPersist.readStoredReplAutoscroll()) return;
     output.scrollTop = output.scrollHeight;
   }
 
@@ -575,7 +576,19 @@
         if (/##\s*Holes:/i.test(trText)) {
           var detailLines = [];
           while (i < lines.length && !/^##\s/.test(lines[i].trim())) { detailLines.push(lines[i]); i++; }
-          segs.push({ type: 'type-recon', text: (trText + '\n' + detailLines.join('\n')).trim() });
+          // Split one message into a green success part (## Type Reconstruction …)
+          // and a violet hole part (## Holes + its detail) — rendered as two
+          // connected blocks (no divider) in appendRunOutput.
+          var allTr = trLines.concat(detailLines);
+          var holeStart = 0;
+          for (var k = 0; k < allTr.length; k++) {
+            if (/##\s*Holes:/i.test(allTr[k].trim())) { holeStart = k; break; }
+          }
+          segs.push({
+            type: 'type-recon-holes',
+            statusText: allTr.slice(0, holeStart).join('\n').trim(),
+            holesText: allTr.slice(holeStart).join('\n').trim(),
+          });
         } else {
           segs.push({ type: 'type-recon', text: trText });
         }
@@ -615,7 +628,10 @@
         continue;
       }
 
-      if (!trimmed || trimmed === '[]' || trimmed === '^.' || trimmed === '^' || trimmed === ';') { i++; continue; }
+      if (!trimmed || trimmed === '[]' || trimmed === '^.' || trimmed === '^' || trimmed === ';') {
+        var filterChatter = typeof BelJarPersist === 'undefined' || BelJarPersist.readStoredReplFilterChatter();
+        if (filterChatter) { i++; continue; }
+      }
 
       otherLines.push(lines[i]);
       i++;
@@ -730,6 +746,24 @@
       }
       if (seg.type === 'warning') {
         renderCoverageWarning(seg.text);
+        return;
+      }
+      if (seg.type === 'type-recon-holes') {
+        // One message, two connected blocks: green success on top, violet holes
+        // below. `.repl-rich--stacked` merges the seam (no dividing line).
+        appendRichShell((seg.statusText + '\n' + seg.holesText).trim(), function (shell) {
+          shell.classList.add('repl-rich--stacked');
+          if (seg.statusText) {
+            var sp = document.createElement('pre');
+            sp.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-success';
+            sp.textContent = seg.statusText;
+            shell.appendChild(sp);
+          }
+          var hp = document.createElement('pre');
+          hp.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes';
+          hp.textContent = seg.holesText;
+          shell.appendChild(hp);
+        });
         return;
       }
       var text = seg.text;
@@ -862,6 +896,7 @@
   }
 
   function insertWelcomeBanner() {
+    if (typeof BelJarPersist !== 'undefined' && !BelJarPersist.readStoredReplWelcome()) return;
     var wrap = document.createElement('div');
     wrap.className = 'repl-welcome';
 

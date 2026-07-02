@@ -5,6 +5,7 @@ import {
   referenceId,
   structuralSymbolId,
 } from './ids.mjs';
+import { semanticDeclText } from './check-gate.mjs';
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
 const NOTATION_PRAGMA = new Set(['InfixPragma', 'PrefixPragma']);
@@ -655,20 +656,21 @@ function registerNotationPragma(ctx, node) {
 }
 
 function makeSymbol({
-  documentId, doc, namespace, name, displayName, nameRange, definingNode, declarationNode,
+  documentId, doc, tree, namespace, name, displayName, nameRange, definingNode, declarationNode,
   baseKey, structuralKey, isGlobal,
 }) {
   const declarationText = slice(doc, declarationNode.from, declarationNode.to);
-  const eq = declarationText.indexOf('=');
-  const semi = declarationText.indexOf(';');
-  const boundary = eq >= 0 ? eq : (semi >= 0 ? semi : declarationText.length);
+  const semanticText = semanticDeclText(doc, declarationNode, tree);
+  const eq = semanticText.indexOf('=');
+  const semi = semanticText.indexOf(';');
+  const boundary = eq >= 0 ? eq : (semi >= 0 ? semi : semanticText.length);
   return {
     id: structuralSymbolId(documentId, namespace, structuralKey),
     baseKey,
     structuralKey,
-    fingerprint: fingerprintOf(declarationText),
-    signatureHash: fingerprintOf(declarationText.slice(0, boundary)),
-    bodyHash: fingerprintOf(declarationText.slice(boundary)),
+    fingerprint: fingerprintOf(semanticText),
+    signatureHash: fingerprintOf(semanticText.slice(0, boundary)),
+    bodyHash: fingerprintOf(semanticText.slice(boundary)),
     astNodeId: astNodeId(documentId, definingNode),
     documentId,
     namespace,

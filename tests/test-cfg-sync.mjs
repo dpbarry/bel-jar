@@ -1,8 +1,9 @@
-// Suite authoring API (js/persist.js): a within-suite-dir file op keeps the .cfg
-// in sync — an in-place rename rewrites the entry, a delete removes it — but a
-// move to a DIFFERENT directory never touches the cfg (the dangling entry is
-// surfaced by the cfg lint; the user owns cross-dir moves). Explicit
-// add/remove/reorder remains the suite authoring surface.
+// Suite authoring API (js/persist.js): when auto-sync is on, active-suite .cfg
+// files (including nested .cfg chains) track their listed project files —
+// same-folder rename rewrites the entry, delete removes it, folder move leaves
+// the entry (cfg lint surfaces dangling). Inactive .cfg files and auto-sync-off
+// leave entries untouched. Explicit add/remove/reorder remains the suite
+// authoring surface.
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
@@ -35,30 +36,92 @@ function idByName(P, name) {
   return f ? f.id : null;
 }
 
-// ── in-dir rename rewrites; cross-dir move leaves the entry; delete removes it ─
+function activateCfg(P, dir, cfgPath) {
+  P.setActiveCfgForDir(dir, cfgPath);
+}
+
+// ── active cfg: same-folder rename, folder move leaves entry, delete removes ──
 {
   const P = freshPersist();
   P.replaceProject([
     { name: 'grp/base.bel', text: 'LF a : type;' },
     { name: 'grp/use.bel', text: 'LF b : type;' },
     { name: 'grp/sources.cfg', text: '% load order\nbase.bel\nuse.bel\n' },
+    { name: 'grp/inactive.cfg', text: 'base.bel\nuse.bel\n' },
   ], { projectName: 'CfgSync' });
+  activateCfg(P, 'grp', 'grp/sources.cfg');
   const cfgId = idByName(P, 'grp/sources.cfg');
+  const inactiveId = idByName(P, 'grp/inactive.cfg');
 
   P.renameFile(idByName(P, 'grp/base.bel'), 'grp/foundation.bel');
   const afterRename = P.getFileText(cfgId);
-  expect(afterRename.includes('foundation.bel'), 'in-dir rename rewrites the cfg entry');
-  expect(!afterRename.includes('base.bel'), 'old cfg entry name is gone');
+  expect(afterRename.includes('foundation.bel'), 'same-folder rename rewrites the active cfg entry');
+  expect(!afterRename.includes('base.bel'), 'old active cfg entry name is gone');
+  expect(P.getFileText(inactiveId).includes('foundation.bel'), 'any listing cfg is updated on rename');
+  expect(!P.getFileText(inactiveId).includes('base.bel'), 'old entry is gone from inactive cfg too');
 
   P.renameFile(idByName(P, 'grp/use.bel'), 'other/use.bel');
   const afterMove = P.getFileText(cfgId);
-  expect(afterMove.includes('use.bel'), 'move to a different dir leaves the entry (cfg lint surfaces it; user owns cross-dir moves)');
+  expect(afterMove.includes('use.bel'), 'cross-dir move leaves the cfg entry unchanged');
+  expect(!afterMove.includes('other/'), 'cfg entry is not rewritten to the new path');
   expect(afterMove.includes('foundation.bel'), 'unaffected entries remain');
+  expect(P.getFileText(inactiveId).includes('use.bel'), 'inactive cfg keeps entry after cross-dir move');
 
   P.deleteFile(idByName(P, 'grp/foundation.bel'));
   const afterDelete = P.getFileText(cfgId);
   expect(!afterDelete.includes('foundation.bel'), 'delete removes the cfg entry');
-  expect(afterDelete.includes('use.bel'), 'the moved-out (dangling) entry is left untouched');
+}
+
+// ── folder move into subfolder leaves cfg entry (no path rewrite) ─────────────
+{
+  const P = freshPersist();
+  P.replaceProject([
+    { name: 'grp/base.bel', text: 'LF a : type;' },
+    { name: 'grp/sources.cfg', text: 'base.bel\n' },
+  ], { projectName: 'CfgSubMove' });
+  activateCfg(P, 'grp', 'grp/sources.cfg');
+  const cfgId = idByName(P, 'grp/sources.cfg');
+
+  P.renameFile(idByName(P, 'grp/base.bel'), 'grp/sub/base.bel');
+  const afterSubMove = P.getFileText(cfgId);
+  expect(afterSubMove.trim() === 'base.bel', 'move into subfolder leaves basename entry');
+  expect(!afterSubMove.includes('sub/'), 'cfg entry is not rewritten to nested path');
+}
+
+// ── nested .cfg in active chain: rename syncs the child cfg ───────────────────
+{
+  const P = freshPersist();
+  P.replaceProject([
+    { name: 'grp/base.bel', text: 'LF a : type;' },
+    { name: 'grp/inner.cfg', text: 'base.bel\n' },
+    { name: 'grp/sources.cfg', text: 'inner.cfg\n' },
+  ], { projectName: 'CfgNested' });
+  activateCfg(P, 'grp', 'grp/sources.cfg');
+  const innerId = idByName(P, 'grp/inner.cfg');
+
+  P.renameFile(idByName(P, 'grp/base.bel'), 'grp/core.bel');
+  const innerText = P.getFileText(innerId);
+  expect(innerText.includes('core.bel'), 'nested cfg in active chain rewrites on rename');
+  expect(!innerText.includes('base.bel'), 'old nested cfg entry is gone');
+}
+
+// ── auto-sync off: cfgs never change on file ops ─────────────────────────────
+{
+  const P = freshPersist();
+  P.writeStoredCfgAutoSync(false);
+  P.replaceProject([
+    { name: 'grp/base.bel', text: 'LF a : type;' },
+    { name: 'grp/sources.cfg', text: 'base.bel\n' },
+  ], { projectName: 'CfgSyncOff' });
+  activateCfg(P, 'grp', 'grp/sources.cfg');
+  const cfgId = idByName(P, 'grp/sources.cfg');
+  const before = P.getFileText(cfgId);
+
+  P.renameFile(idByName(P, 'grp/base.bel'), 'grp/renamed.bel');
+  expect(P.getFileText(cfgId) === before, 'auto-sync off leaves cfg unchanged on rename');
+
+  P.deleteFile(idByName(P, 'grp/renamed.bel'));
+  expect(P.getFileText(cfgId) === before, 'auto-sync off leaves cfg unchanged on delete');
 }
 
 // ── suite authoring: explicit add / remove entries (C2) ───────────────────────
@@ -80,7 +143,6 @@ function idByName(P, name) {
   expect(P.removeEntryFromCfg('grp/sources.cfg', 'grp/use.bel') === true, 'remove a member succeeds');
   expect(!/\buse\.bel\b/.test(P.getFileText(cfgId)), 'cfg no longer lists the removed member');
   expect(P.removeEntryFromCfg('grp/sources.cfg', 'grp/use.bel') === false, 'removing an absent member is a no-op');
-  // Comments and remaining order are preserved by the rewrite.
   expect(/\bbase\.bel\b/.test(P.getFileText(cfgId)), 'untouched members survive a remove');
 }
 
@@ -103,4 +165,4 @@ function idByName(P, name) {
   expect(/^% order$/m.test(P.getFileText(cfgId)), 'comment line holds its position across reorders');
 }
 
-console.log('OK cfg authoring (in-dir rename/delete sync the cfg; cross-dir move left for lint; explicit add/remove/reorder)');
+console.log('OK cfg sync (active suite tracks renames/deletes; moves leave entries; nested cfg chain)');

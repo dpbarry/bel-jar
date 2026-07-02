@@ -132,4 +132,34 @@ const sameBase = NC.computeMoveTargets(
 );
 expect(sameBase.length === 0, 'batch move rejects internal basename collision');
 
+const emptyMove = NC.computeEmptyFolderMoves(
+  FILES,
+  { kind: 'folder', folderPath: 'scratch' },
+  { kind: 'folder', folderPath: 'lib' },
+  ['scratch'],
+);
+expect(emptyMove.length === 1 && emptyMove[0].from === 'scratch' && emptyMove[0].to === 'lib/scratch',
+  'empty folder move targets destination');
+
+expect(NC.canDropMove(
+  { kind: 'folder', folderPath: 'scratch' },
+  { kind: 'folder', folderPath: 'lib' },
+  FILES,
+  ['scratch'],
+), 'empty folder can drop into another folder');
+
+expect(!NC.canDropMove(
+  { kind: 'folder', folderPath: 'scratch' },
+  { kind: 'folder', folderPath: 'scratch' },
+  FILES,
+  ['scratch'],
+), 'empty folder cannot drop onto itself');
+
+expect(!NC.canDropMove(
+  { kind: 'folder', folderPath: 'scratch' },
+  { kind: 'folder', folderPath: 'lib' },
+  FILES,
+  ['scratch', 'lib/scratch'],
+), 'empty folder blocked when destination name exists');
+
 console.log('OK explorer-move');

@@ -52,4 +52,10 @@ const stale = listActiveSuites({
 });
 expect(stale.length === 0, 'stale active cfg path excluded');
 
+const multi = listActiveSuites({
+  listFiles: () => files,
+  getActiveCfgsForDir: (dir) => (dir === 'grp' ? ['grp/one.cfg', 'grp/two.cfg'] : ['other/suite.cfg']),
+});
+expect(multi.length === 3, 'multi-active per dir lists each cfg');
+
 console.log('OK library suites');

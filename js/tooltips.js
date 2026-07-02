@@ -42,7 +42,7 @@
     tip.style.removeProperty('--tooltip-arrow-y');
   }
 
-  function applySpout(tip, anchor, placement, x, y, tw, th, tr) {
+  function applySpout(tip, anchor, placement, x, y, tw, th, tr, arrowBox = null) {
     clearSpout(tip);
     if (anchor.hasAttribute('data-tooltip-no-spout')) {
       tip.classList.add('tooltip-spout-none');
@@ -58,10 +58,14 @@
     const cx = tr.left + tr.width / 2;
     const cy = tr.top + tr.height / 2;
     const min = TOOLTIP_ARROW_MIN;
+    const ax = arrowBox?.left ?? x;
+    const ay = arrowBox?.top ?? y;
+    const aw = arrowBox?.width ?? tw;
+    const ah = arrowBox?.height ?? th;
     if (side === 'above' || side === 'below') {
-      tip.style.setProperty('--tooltip-arrow-x', `${clamp(cx - x, min, tw - min)}px`);
+      tip.style.setProperty('--tooltip-arrow-x', `${clamp(cx - ax, min, aw - min)}px`);
     } else {
-      tip.style.setProperty('--tooltip-arrow-y', `${clamp(cy - y, min, th - min)}px`);
+      tip.style.setProperty('--tooltip-arrow-y', `${clamp(cy - ay, min, ah - min)}px`);
     }
   }
 
@@ -125,12 +129,54 @@
     }
   }
 
+  function isStackedLintErrors(anchor) {
+    return !!parseLintErrors(anchor) && !anchor.hasAttribute('data-tooltip-head');
+  }
+
+  function anchorHasTooltip(anchor) {
+    if (!anchor) return false;
+    return !!(
+      anchor.getAttribute('data-tooltip')
+      || anchor.getAttribute('data-tooltip-tone')
+      || anchor.hasAttribute('data-tooltip-head')
+      || parseLintErrors(anchor)
+    );
+  }
+
+  function fillDiagnosticTooltip(tip, message, severity) {
+    tip.classList.add('tooltip-inner--diagnostic', `tooltip-inner--${severity}`);
+    tip.replaceChildren();
+    const frame = document.createElement('div');
+    frame.className = `cm-diagnostic cm-diagnostic-${severity}`;
+    const head = document.createElement('div');
+    head.className = 'beljar-tip-head';
+    const kind = document.createElement('span');
+    kind.className = 'beljar-tip-kind';
+    kind.textContent = severity === 'warning' ? 'Warning' : 'Error';
+    head.appendChild(kind);
+    const body = document.createElement('div');
+    body.className = 'beljar-tip-body';
+    body.textContent = message || '';
+    frame.append(head, body);
+    tip.appendChild(frame);
+  }
+
   function fillTooltipContent(tip, anchor) {
     const text = anchor.getAttribute('data-tooltip');
+    const tone = anchor.getAttribute('data-tooltip-tone');
     const items = parseLintErrors(anchor);
     const headed = anchor.hasAttribute('data-tooltip-head');
-    tip.classList.remove('tooltip-inner--lint-errors');
-    if (headed || items) {
+    tip.classList.remove(
+      'tooltip-inner--lint-errors',
+      'tooltip-inner--diagnostic',
+      'tooltip-inner--error',
+      'tooltip-inner--warning',
+    );
+    if (tone === 'error' || tone === 'warning') {
+      fillDiagnosticTooltip(tip, text, tone);
+      return;
+    }
+    if (headed) {
       tip.classList.add('tooltip-inner--lint-errors');
       tip.replaceChildren();
       const head = document.createElement('div');
@@ -138,22 +184,28 @@
       head.textContent = text || 'Errors detected';
       tip.appendChild(head);
       if (items) {
+        const body = document.createElement('div');
+        body.className = 'tooltip-lint-body';
         const list = document.createElement('ul');
         list.className = 'tooltip-lint-list';
         for (const item of items) {
           const li = document.createElement('li');
           li.className = 'tooltip-lint-item'
             + (item.kind === 'warning' ? ' tooltip-lint-item--warning' : '');
+          const loc = item.prefix
+            ? `${item.prefix}${item.line ?? '?'}`
+            : String(item.line ?? '?');
           const line = document.createElement('span');
           line.className = 'tooltip-lint-line';
-          line.textContent = String(item.line ?? '?');
+          line.textContent = loc;
           const msg = document.createElement('span');
           msg.className = 'tooltip-lint-msg';
           msg.textContent = item.msg || item.message || 'Error';
           li.append(line, msg);
           list.appendChild(li);
         }
-        tip.appendChild(list);
+        body.appendChild(list);
+        tip.appendChild(body);
       }
       return;
     }
@@ -174,17 +226,98 @@
     return !!(anchor && anchor.isConnected);
   }
 
+  function clearTooltipRoot() {
+    tooltipRoot.replaceChildren();
+  }
+
+  function tooltipAnimatedEl() {
+    return tooltipRoot.querySelector('.tooltip-stack') || tooltipRoot.querySelector('.tooltip-inner');
+  }
+
+  function buildStackedDiagnosticTooltips(anchor) {
+    const items = parseLintErrors(anchor);
+    clearTooltipRoot();
+    const stack = document.createElement('div');
+    stack.className = 'tooltip-stack';
+    for (const item of items) {
+      const tip = document.createElement('div');
+      tip.className = 'tooltip-inner';
+      const severity = item.kind === 'warning' ? 'warning' : 'error';
+      fillDiagnosticTooltip(tip, item.msg || item.message || '', severity);
+      stack.appendChild(tip);
+    }
+    tooltipRoot.appendChild(stack);
+    return stack;
+  }
+
+  function verticallyClosestStackInner(inners, tr) {
+    if (!inners.length) return null;
+    if (inners.length === 1) return inners[0];
+    const acy = tr.top + tr.height / 2;
+    let best = inners[0];
+    let bestDist = Infinity;
+    for (let i = 0; i < inners.length; i++) {
+      const r = inners[i].getBoundingClientRect();
+      const icy = r.top + r.height / 2;
+      const dist = Math.abs(icy - acy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = inners[i];
+      }
+    }
+    return best;
+  }
+
+  function stackSpoutTarget(inners, placement, tr) {
+    if (!inners.length) return null;
+    if (placement === 'top') return inners[inners.length - 1];
+    if (placement === 'bottom') return inners[0];
+    return verticallyClosestStackInner(inners, tr);
+  }
+
+  function applyStackSpout(stack, anchor, placement, x, y, tw, th, tr) {
+    const inners = [...stack.querySelectorAll('.tooltip-inner')];
+    for (let i = 0; i < inners.length; i++) clearSpout(inners[i]);
+    if (anchor.hasAttribute('data-tooltip-no-spout')) {
+      for (let i = 0; i < inners.length; i++) inners[i].classList.add('tooltip-spout-none');
+      return;
+    }
+    let side = PLACEMENT_SPOUT[placement];
+    if (!side && placement === 'fallback') side = inferSpoutSide(x, y, tw, th, tr);
+    if (!side) {
+      for (let i = 0; i < inners.length; i++) inners[i].classList.add('tooltip-spout-none');
+      return;
+    }
+    const target = stackSpoutTarget(inners, placement, tr);
+    if (!target) return;
+    const targetRect = target.getBoundingClientRect();
+    applySpout(target, anchor, placement, x, y, tw, th, tr, {
+      left: targetRect.left,
+      top: targetRect.top,
+      width: targetRect.width,
+      height: targetRect.height,
+    });
+  }
+
   function layoutTooltip(anchor) {
     if (!anchorConnected(anchor)) {
       hideTooltip();
       return;
     }
-    const tip = tooltipRoot.firstElementChild;
-    if (!tip || tooltipRoot.hidden) return;
+    if (!anchorHasTooltip(anchor) || tooltipRoot.hidden) return;
 
-    const text = anchor.getAttribute('data-tooltip');
-    if (!text && !parseLintErrors(anchor) && !anchor.hasAttribute('data-tooltip-head')) return;
-    fillTooltipContent(tip, anchor);
+    const stacked = isStackedLintErrors(anchor);
+    let tip;
+    if (stacked) tip = buildStackedDiagnosticTooltips(anchor);
+    else {
+      tip = tooltipRoot.querySelector('.tooltip-inner');
+      if (!tip) {
+        ensureTooltipInner();
+        tip = tooltipRoot.querySelector('.tooltip-inner');
+      }
+      fillTooltipContent(tip, anchor);
+    }
+    if (!tip) return;
 
     tooltipRoot.classList.add('is-measuring');
 
@@ -203,7 +336,8 @@
     tooltipRoot.classList.remove('is-measuring');
     tooltipRoot.style.left = `${pos.x}px`;
     tooltipRoot.style.top = `${pos.y}px`;
-    applySpout(tip, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
+    if (stacked) applyStackSpout(tip, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
+    else applySpout(tip, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
     tooltipRoot.classList.add('is-visible');
   }
 
@@ -214,8 +348,7 @@
       return;
     }
     if (tooltipRoot.hidden || tooltipRoot.classList.contains('is-leaving')) return;
-    const text = target.getAttribute('data-tooltip');
-    if (!text) {
+    if (!anchorHasTooltip(target)) {
       hideTooltip();
       return;
     }
@@ -223,6 +356,7 @@
   }
 
   function ensureTooltipInner() {
+    if (tooltipRoot.querySelector('.tooltip-stack')) return;
     if (!tooltipRoot.querySelector('.tooltip-inner')) {
       const inner = document.createElement('div');
       inner.className = 'tooltip-inner';
@@ -234,10 +368,14 @@
     opts = opts || {};
     if (suppressedTooltipAnchors.has(anchor)) return;
     if (!anchorConnected(anchor)) return;
-    const text = anchor.getAttribute('data-tooltip');
-    if (!text) return;
+    if (!anchorHasTooltip(anchor)) return;
     cancelTooltipHideAnim();
-    ensureTooltipInner();
+    if (tooltipAnchor === anchor && !tooltipRoot.hidden && !tooltipRoot.classList.contains('is-leaving')) {
+      layoutTooltip(anchor);
+      return;
+    }
+    clearTooltipRoot();
+    if (!isStackedLintErrors(anchor)) ensureTooltipInner();
     tooltipRoot.classList.remove('is-leaving');
     tooltipAnchor = anchor;
     tooltipRoot.hidden = false;
@@ -254,7 +392,7 @@
     const finishGen = tooltipLeaveGen;
     const fallbackMs = FRP.OVERLAY_TRANSITION_FALLBACK_MS;
 
-    const inner = tooltipRoot.querySelector('.tooltip-inner');
+    const inner = tooltipAnimatedEl();
     if (!inner) {
       tooltipRoot.classList.remove('is-visible', 'is-measuring', 'is-leaving');
       tooltipRoot.hidden = true;
@@ -263,7 +401,9 @@
       return;
     }
 
-    clearSpout(inner);
+    if (inner.classList.contains('tooltip-stack')) {
+      for (const tip of inner.querySelectorAll('.tooltip-inner')) clearSpout(tip);
+    } else clearSpout(inner);
     tooltipRoot.classList.remove('is-visible', 'is-measuring');
     tooltipRoot.classList.add('is-leaving');
     void inner.offsetHeight;
@@ -294,8 +434,10 @@
     tooltipAnchor = null;
     if (!tooltipRoot) return;
     cancelTooltipHideAnim();
-    const inner = tooltipRoot.querySelector('.tooltip-inner');
-    if (inner) clearSpout(inner);
+    const inner = tooltipAnimatedEl();
+    if (inner?.classList.contains('tooltip-stack')) {
+      for (const tip of inner.querySelectorAll('.tooltip-inner')) clearSpout(tip);
+    } else if (inner) clearSpout(inner);
     tooltipRoot.classList.remove('is-visible', 'is-measuring', 'is-leaving');
     tooltipRoot.hidden = true;
     tooltipRoot.style.left = '';
@@ -309,7 +451,7 @@
     el._belTooltipBound = true;
       el.addEventListener('mouseenter', () => {
         if (!FRP.prefersFineHover()) return;
-        showTooltip(el, { trackPointer: true });
+        showTooltip(el, { trackPointer: !el.hasAttribute('data-tooltip-no-track') });
       });
       el.addEventListener('mouseleave', () => {
         if (!FRP.prefersFineHover()) return;
@@ -401,7 +543,8 @@
         const r = records[i];
         if (
           r.type !== 'attributes' ||
-          (r.attributeName !== 'data-tooltip' && r.attributeName !== 'data-tooltip-errors')
+          (r.attributeName !== 'data-tooltip' && r.attributeName !== 'data-tooltip-errors'
+            && r.attributeName !== 'data-tooltip-tone' && r.attributeName !== 'data-tooltip-head')
         ) continue;
         const el = r.target;
         if (el && el.nodeType === 1) refreshTooltipIfAnchored(el);
@@ -410,7 +553,7 @@
     tooltipAttrObserver.observe(document.documentElement, {
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-tooltip', 'data-tooltip-errors'],
+      attributeFilter: ['data-tooltip', 'data-tooltip-errors', 'data-tooltip-tone', 'data-tooltip-head'],
     });
   }
 

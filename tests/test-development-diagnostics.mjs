@@ -10,6 +10,7 @@ import { parser } from '../editor-src/beluga-parser.js';
 import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
 import { createSettlement } from '../editor-src/semantic/settlement.mjs';
 import { createCheckerStore } from '../editor-src/semantic/checker-store.mjs';
+import { suitePreludeBannerForActive } from '../editor-src/suite-prelude-banner.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -86,8 +87,18 @@ function haltingMock(rules) {
   // the genuine earlier-file fault still raises the banner alongside.
   const msgs = snap.belugaDiagnostics.map((d) => d.message);
   expect(msgs.some((m) => /badA/.test(m)), `active file's own error still surfaces, got: ${msgs.join(' | ')}`);
-  expect(msgs.some((m) => /earlier file base\.bel/.test(m)),
-    `the earlier-file banner still appears, got: ${msgs.join(' | ')}`);
+  const banner = suitePreludeBannerForActive({
+    doc: syntax.doc,
+    members: [
+      { id: 'base', name: 'base.bel', text: prelude.code },
+      { id: 'active', name: 'use.bel', text: 'LF q : type =\n  | mkQ : badA\n;' },
+    ],
+    activeId: 'active',
+    memberDiagnostics: member,
+    getText: (id) => (id === 'active' ? syntax.doc.toString() : prelude.code),
+  });
+  expect(banner && /earlier suite file base\.bel/.test(banner.message),
+    `the earlier-file banner comes from the suite overlay, got: ${banner?.message || '(none)'}`);
 }
 
 // ── A clean prelude attributes nothing (no false health reports) ──────────────

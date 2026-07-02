@@ -146,7 +146,6 @@
     function onPointerDown(e) {
       if (e.button !== 0 || drag) return;
       if (e.target.closest('.explorer-folder-chevron')) return;
-      if (e.target.closest('.explorer-default-cfg-mark--inactive')) return;
       var row = e.target.closest('[data-draggable]');
       if (!row || !container.contains(row)) return;
       if (typeof opts.getDragPayload !== 'function') return;

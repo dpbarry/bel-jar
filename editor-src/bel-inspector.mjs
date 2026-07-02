@@ -4,8 +4,9 @@ import { EditorView } from '@codemirror/view';
 import { Text } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { forEachDiagnostic } from '@codemirror/lint';
-import { getEngine } from './bel-ide-actions.mjs';
+import { crossFileDefinitionAt, getEngine, navInfoAt, termRangeAt } from './bel-ide-actions.mjs';
 import {
+  canFindReferences,
   gatherReferenceGroups,
   referenceFileHeaderLabel,
   shouldShowReferenceFileHeader,
@@ -24,6 +25,18 @@ import { listGroupSymbols, defsOf, sourceSignatureOf } from './project-prelude.m
 import { fuzzySearchNodes } from './graph/graph-nav.mjs';
 import { dependencyGraph } from './workspace-index.mjs';
 import { belNavSemanticTick } from './bel-nav.mjs';
+import { resolveReferenceJump, revealEditorCursor } from './bel-viewport.mjs';
+import { setShimmerPhase } from './bel-hover.mjs';
+import { scanFileHoles } from './harpoon-project-goals.mjs';
+import {
+  buildHoleDisplayRows,
+  fileInActiveDevelopment,
+  holesBannerFromRows,
+  resolveGoalNearPos,
+  resolveGoalStateNearPos,
+  settlementGoalsByPos,
+} from './hole-goal-display.mjs';
+import { createCachedGoalHintIcon, CACHED_GOAL_TIP } from './cached-goal-hint.mjs';
 
 const KIND_LABEL = {
   signature: 'In signature',
@@ -80,6 +93,36 @@ export function groupByKind(edges) {
   return out;
 }
 
+// True when the inspector can show a symbol at `pos` — definitions and uses share
+// the same identity (nav.symbolId is definition-only; references carry symbolId
+// separately or may be unresolved-but-named).
+export function canInspectAt(view, pos) {
+  const at = pos ?? view.state.selection.main.head;
+  const nav = navInfoAt(view, at);
+  if (nav?.symbolId || nav?.reference) return true;
+  return canFindReferences(view, at);
+}
+
+function crossFileInspectTarget(view, at) {
+  const cross = crossFileDefinitionAt(view, at);
+  if (!cross) return null;
+  const range = termRangeAt(view, at);
+  const name = range ? view.state.sliceDoc(range.from, range.to) : '';
+  if (!name) return null;
+  return { ...cross, name, pos: cross.from };
+}
+
+export function resolveInspectModel(view, pos) {
+  const at = pos ?? view.state.selection.main.head;
+  const engine = getEngine(view);
+  if (!engine) return null;
+  const live = buildLiveModel(engine, at, view);
+  if (live) return live;
+  const g = typeof window !== 'undefined' ? window : self;
+  const target = crossFileInspectTarget(view, at);
+  return target ? buildCrossFileModel(g, target, view) : null;
+}
+
 export function buildInspectorModel(engine, pos) {
   if (!engine || typeof engine.intelSyncAt !== 'function') return null;
   let intel = null;
@@ -89,7 +132,7 @@ export function buildInspectorModel(engine, pos) {
     return null;
   }
   if (!intel || !intel.name) return null;
-  const userStatus = intel.userStatus || { state: 'settled', detail: '' };
+  const userStatus = intel.userStatus || { state: 'checked', detail: '' };
   return {
     name: intel.name,
     label: intel.label,
@@ -147,15 +190,55 @@ export function enrichWithGroupGraph(model, view) {
   return model;
 }
 
+// A `?` at `pos` is a HOLE first — its model carries the goal, and short-circuits
+// the symbol resolver (which would otherwise bias back to a neighbouring binder).
+function holeModelAt(engine, view, pos) {
+  const doc = view?.state?.doc;
+  if (!doc || pos == null) return null;
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const ctx = holeGoalContext(g, view, null, doc.toString());
+  const P = persistOf(g);
+  if (P && typeof P.getActiveFileId === 'function') {
+    const active = P.listFiles?.()?.find((f) => f.id === P.getActiveFileId());
+    if (active) ctx.fileName = active.name;
+  }
+  const goal = holeGoalNear(engine, doc, pos, ctx);
+  const goalHit = resolveGoalStateNearPos(engine, doc, pos, ctx);
+  if (goal == null && !holeTokenContains(engine, doc, pos)) return null;
+  return {
+    isHole: true,
+    label: 'HOLE',
+    token: '?',
+    goal,
+    goalState: goalHit?.state || (goal ? 'live' : 'pending'),
+  };
+}
+
+// True when `pos` sits within some hole's `?` token (goal may still be pending).
+function holeTokenContains(engine, doc, pos) {
+  if (!engine || typeof engine.getHoles !== 'function') return false;
+  for (const h of engine.getHoles()) {
+    if (!h || h.line < 1 || h.line > doc.lines) continue;
+    const off = doc.line(h.line).from + Math.max(0, (h.col || 1) - 1);
+    if (off >= doc.length || doc.sliceString(off, off + 1) !== '?') continue;
+    let end = off + 1;
+    while (end < doc.length && /[^\s([{<:.,;|]/.test(doc.sliceString(end, end + 1))) end += 1;
+    if (pos >= off && pos <= end) return true;
+  }
+  return false;
+}
+
 // buildInspectorModel + cross-file enrichment — the live render path.
 function buildLiveModel(engine, pos, view) {
+  const hole = holeModelAt(engine, view, pos);
+  if (hole) return hole;
   return enrichWithGroupGraph(buildInspectorModel(engine, pos), view);
 }
 
 // Built-in token explainer — keyword / operator / pragma under the cursor that
 // is NOT a user symbol. Pure given a view + pos; null when nothing builtin sits
 // there. Surfaced only via cursor follow (these never appear in outline/search).
-export function buildBuiltinModel(view, pos) {
+export function buildBuiltinModel(view, pos, engine = null) {
   if (!view || pos == null) return null;
   let tree;
   let doc;
@@ -167,7 +250,73 @@ export function buildBuiltinModel(view, pos) {
   }
   const hit = builtinTooltipAt(tree, doc, pos);
   if (!hit) return null;
-  return { label: hit.label, desc: hit.desc, token: hit.token };
+  // A `?` the checker has typed shows its GOAL instead of the generic blurb.
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const ctx = holeGoalContext(g, view, null, doc.toString());
+  const P = persistOf(g);
+  if (P && typeof P.getActiveFileId === 'function') {
+    const active = P.listFiles?.()?.find((f) => f.id === P.getActiveFileId());
+    if (active) ctx.fileName = active.name;
+  }
+  const goal = hit.label === 'HOLE' ? holeGoalNear(engine, doc, pos, ctx) : null;
+  const goalHit = hit.label === 'HOLE' ? resolveGoalStateNearPos(engine, doc, pos, ctx) : null;
+  return {
+    label: hit.label,
+    desc: hit.desc,
+    token: hit.token,
+    goal,
+    goalState: goalHit?.state || (goal ? 'live' : undefined),
+  };
+}
+
+function activeDevelopmentPaths(g, view) {
+  const P = persistOf(g);
+  if (!P || typeof P.listFiles !== 'function') return [];
+  try {
+    const files = P.listFiles();
+    const activeId = activeFileId(g);
+    const live = view?.state?.doc ? view.state.doc.toString() : null;
+    const getText = (id) => (id === activeId && live != null ? live : String(P.getFileText(id) ?? ''));
+    const dev = developmentForFile(files, activeId, getText, persistDevOpts(P));
+    if (dev.paths?.length) return dev.paths.slice();
+    const active = files.find((f) => f.id === activeId);
+    return active ? [active.name] : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function appendCachedHint(head, actionsEl, tip = CACHED_GOAL_TIP) {
+  const icon = createCachedGoalHintIcon(tip);
+  if (!icon) return;
+  const stop = (e) => e.stopPropagation();
+  icon.addEventListener('click', stop);
+  icon.addEventListener('mousedown', stop);
+  if (actionsEl) head.insertBefore(icon, actionsEl);
+  else head.appendChild(icon);
+  setTip(icon, tip);
+}
+
+function holeGoalContext(g, view, fileName, fileText) {
+  const engine = view ? getEngine(view) : null;
+  const devPaths = activeDevelopmentPaths(g, view);
+  const inDevelopment = fileInActiveDevelopment(fileName, devPaths);
+  const P = persistOf(g);
+  const activeId = activeFileId(g);
+  const active = P?.listFiles?.()?.find((f) => f.id === activeId);
+  const liveFile = inDevelopment && active && fileName === active.name;
+  return {
+    fileName,
+    fileText,
+    inDevelopment,
+    settleState: liveFile && engine ? engine.settleState?.() : null,
+  };
+}
+
+// Goal of the hole whose `?` token contains `pos`, or null.
+function holeGoalNear(engine, doc, pos, ctx) {
+  if (!ctx) return null;
+  return resolveGoalNearPos(engine, doc, pos, ctx);
 }
 
 function cfgBaseName(cfgPath) {
@@ -190,6 +339,8 @@ export function assembleGlobalModel({
   fileName = null,
   outline = [],
   diagnostics = [],
+  holes = [],
+  holesCachedHint = false,
   settle = null,
   development = null,
   projectFileCount = 0,
@@ -197,6 +348,7 @@ export function assembleGlobalModel({
 } = {}) {
   const errors = diagnostics.filter((d) => d.severity === 'error').length;
   const warnings = diagnostics.filter((d) => d.severity === 'warning').length;
+  const hasStaleErrors = diagnostics.some((d) => d.severity === 'error' && d.stale);
   const diagList = diagnostics
     .filter((d) => d.severity === 'error' || d.severity === 'warning')
     .map((d) => ({ severity: d.severity, message: d.message || d.text || '', from: d.from, to: d.to }))
@@ -222,8 +374,11 @@ export function assembleGlobalModel({
     fileName,
     errors,
     warnings,
+    hasStaleErrors,
     diagnostics: diagList,
-    checking: settle === 'checking',
+    holes: holes || [],
+    holesCachedHint: !!holesCachedHint,
+    checking: settle === 'checking' || settle === 'stale',
     outline: outline || [],
     suite,
     projectFileCount,
@@ -260,9 +415,49 @@ export function buildGlobalModel(engine, view) {
       } catch (_) { /* lint not ready */ }
     }
   }
+  const rows = holeRows(g, engine, view);
+  const ctx = holeGoalContext(g, view, fileName, view?.state?.doc?.toString() || '');
   return assembleGlobalModel({
-    fileName, outline, diagnostics, settle, development, projectFileCount, files,
+    fileName,
+    outline,
+    diagnostics,
+    holes: rows,
+    holesCachedHint: !!holesBannerFromRows(rows, { inDevelopment: ctx.inDevelopment }),
+    settle,
+    development,
+    projectFileCount,
+    files,
   });
+}
+
+function holeRows(g, engine, view, fileId = null) {
+  const P = persistOf(g);
+  if (!P) return [];
+  const doc = view?.state?.doc;
+  const files = P.listFiles();
+  const activeId = activeFileId(g);
+  const targetId = fileId || activeId;
+  const file = files.find((f) => f.id === targetId);
+  if (!file) return [];
+  const isActiveFile = targetId === activeId;
+  if (isActiveFile && !doc) return [];
+  const fileText = isActiveFile ? doc.toString() : String(P.getFileText(targetId) ?? '');
+  const ctx = holeGoalContext(g, view, file.name, fileText);
+  const syntactic = isActiveFile && engine?.getHoles
+    ? engine.getHoles().map((h) => ({ ...h }))
+    : scanFileHoles(fileText);
+  if (!syntactic.length) return [];
+  const settle = ctx.settleState;
+  const rows = buildHoleDisplayRows({
+    fileName: file.name,
+    fileText,
+    doc: isActiveFile ? doc : null,
+    inDevelopment: ctx.inDevelopment,
+    settleState: settle,
+    syntacticHoles: syntactic,
+    settlementGoalsByPos: isActiveFile ? settlementGoalsByPos(engine, settle) : new Map(),
+  });
+  return rows;
 }
 
 // Headline declaration namespaces shown in the outline (mirrors the engine's).
@@ -408,9 +603,11 @@ function buildCrossFileModel(g, target, view = null) {
   const hasError = crossFileDiagnostics.some((d) => d.severity === 'error');
   // Honest status: green only when we actually know it's clean (checked, here or
   // in its development); a yet-to-be-checked other development reads as unknown.
-  let statusState = hasError ? 'error' : 'settled';
-  if (crossDevState === 'unchecked') statusState = 'unknown';
-  else if (crossDevState === 'checking') statusState = 'recalculating';
+  let statusState = 'checked';
+  if (hasError && crossDevState === 'checking') statusState = 'error-checking';
+  else if (hasError) statusState = 'error';
+  else if (crossDevState === 'unchecked') statusState = 'unknown';
+  else if (crossDevState === 'checking') statusState = 'checking';
 
   return {
     name: node.name,
@@ -544,10 +741,16 @@ function buildGlobalModelForFile(g, fileId, view) {
       }));
     development = developmentForFile(files, fileId, getText, persistDevOpts(P));
   } catch (_) { /* leave empties */ }
+  const engine = view ? getEngine(view) : null;
+  const rows = holeRows(g, engine, view, fileId);
+  const fileText = file ? getText(fileId) : '';
+  const ctx = holeGoalContext(g, view, file?.name || null, fileText);
   return assembleGlobalModel({
     fileName: file ? file.name : null,
     outline,
     diagnostics: [],
+    holes: rows,
+    holesCachedHint: !!holesBannerFromRows(rows, { inDevelopment: ctx.inDevelopment }),
     settle: null,
     development,
     projectFileCount: files.length,
@@ -834,7 +1037,7 @@ function section(title, count, sectionKey) {
     }
   }
   head.addEventListener('click', (e) => {
-    if (e.target.closest('.inspector-graph-popout')) return;
+    if (e.target.closest('.inspector-graph-popout') || e.target.closest('.bel-cached-hint')) return;
     toggle();
   });
   head.addEventListener('keydown', (e) => {
@@ -859,6 +1062,13 @@ function inlineSpinner(tip) {
   return s;
 }
 
+function typeRecalcShimmer(text = 'Reconstructing type…') {
+  const sh = el('span', 'inspector-type-recalc beljar-tip-shimmer');
+  sh.textContent = text;
+  setShimmerPhase(sh);
+  return sh;
+}
+
 function rangeForId(engine, id) {
   if (!engine || typeof engine.symbolRangeById !== 'function') return null;
   try {
@@ -869,14 +1079,15 @@ function rangeForId(engine, id) {
 }
 
 const STATUS_WORD = {
-  settled: 'Settled',
-  recalculating: 'Recalculating',
+  checked: 'Checked',
+  checking: 'Checking',
+  'error-checking': 'Checking',
   error: 'Error',
   unknown: 'Not checked here',
 };
 function statusDot(state, detail) {
-  const dot = el('span', `inspector-status-dot is-${state || 'settled'}`);
-  const word = STATUS_WORD[state] || 'Settled';
+  const dot = el('span', `inspector-status-dot is-${state || 'checked'}`);
+  const word = STATUS_WORD[state] || 'Checked';
   setTip(dot, detail ? `${word}: ${detail}` : word);
   return dot;
 }
@@ -900,11 +1111,25 @@ export function renderInspector(bodyEl, model, view, engine, opts = {}) {
   bodyEl.textContent = '';
   const scrollInner = el('div', 'inspector-scroll-inner');
   bodyEl.appendChild(scrollInner);
+  // A `?` under the RAW cursor is a HOLE first — show its goal regardless of how
+  // `model` was resolved (the symbol resolver / probeIntelPos may have biased past
+  // the `?`; a settlement refresh may hand us a global model). Single authoritative
+  // hole gate, keyed off the cursor head so a jump that lands ON a `?` always wins.
+  const cursorHead = view?.state?.selection?.main?.head;
+  const holeModel = (model && model.isHole)
+    ? model
+    : (view && cursorHead != null && !opts.forceGlobal && !isCfgEditorView(view)
+      ? holeModelAt(engine, view, cursorHead)
+      : null);
+  if (holeModel) {
+    renderBuiltinView(scrollInner, holeModel);
+    return;
+  }
   if (!model || isGlobalOverviewModel(model)) {
     // Never a dead end: a built-in token under the cursor gets a one-line
     // explainer; otherwise the global (file / suite / project) overview.
     if (!model && !opts.forceGlobal && view && activePos != null && !isCfgEditorView(view)) {
-      const builtin = buildBuiltinModel(view, activePos);
+      const builtin = buildBuiltinModel(view, activePos, engine);
       if (builtin) {
         renderBuiltinView(scrollInner, builtin);
         return;
@@ -975,14 +1200,18 @@ export function renderInspector(bodyEl, model, view, engine, opts = {}) {
     const srcLabel = model.typeSource && TYPE_SOURCE_LABEL[model.typeSource];
     if (srcLabel) setTip(typeEl, srcLabel);
     renderTypeInto(typeEl.appendChild(el('span', 'bel-type-text')), model.type, model.namespace);
-    // Source signature shown while the reconstructed (implicits-expanded) type is
-    // still resolving — a quiet spinner, not a placeholder (the type is usable).
-    if (model.typeUpgrading) typeEl.appendChild(inlineSpinner('Reconstructing type…'));
+    if (model.typeUpgrading) typeEl.appendChild(typeRecalcShimmer());
+    if (model.typeSource === 'stale-cache') {
+      const hint = createCachedGoalHintIcon(TYPE_SOURCE_LABEL['stale-cache']);
+      if (hint) {
+        typeEl.appendChild(hint);
+        setTip(hint, TYPE_SOURCE_LABEL['stale-cache']);
+      }
+    }
     scrollInner.appendChild(typeEl);
-  } else if (model.typePending || model.statusState === 'recalculating') {
+  } else if (model.typePending || model.statusState === 'checking') {
     const typeEl = el('div', 'inspector-type bel-type is-pending');
-    typeEl.appendChild(el('span', 'inspector-type-pending', 'reconstructing type…'));
-    typeEl.appendChild(inlineSpinner('Reconstructing type…'));
+    typeEl.appendChild(typeRecalcShimmer());
     scrollInner.appendChild(typeEl);
   }
 
@@ -1113,7 +1342,17 @@ function renderBuiltinView(scrollInner, model) {
   header.appendChild(scrollFadeLine('inspector-name', model.token || ''));
   if (model.label) header.appendChild(el('span', 'inspector-kind-pill', model.label));
   scrollInner.appendChild(header);
-  if (model.desc) scrollInner.appendChild(el('p', 'inspector-builtin-desc', model.desc));
+  if (model.goal != null) {
+    const row = el('div', 'inspector-builtin-goal');
+    const head = el('div', 'inspector-builtin-goal-head');
+    head.appendChild(el('span', 'inspector-builtin-goal-label', 'Goal'));
+    if (model.goalState === 'cached') appendCachedHint(head, null);
+    row.appendChild(head);
+    renderTypeInto(row.appendChild(el('span', 'inspector-builtin-goal-type')), model.goal, 'comp');
+    scrollInner.appendChild(row);
+  } else if (model.desc) {
+    scrollInner.appendChild(el('p', 'inspector-builtin-desc', model.desc));
+  }
 }
 
 function outlineRow(g, item, jumpOpts) {
@@ -1122,8 +1361,10 @@ function outlineRow(g, item, jumpOpts) {
   node.setAttribute('role', 'button');
   node.tabIndex = 0;
   node.appendChild(el('span', 'inspector-outline-glyph', NS_GLYPH[item.namespace] || '•'));
-  node.appendChild(scrollFadeLine('inspector-row-label', item.name));
-  if (item.label) node.appendChild(el('span', 'inspector-outline-kind', item.label));
+  const main = el('div', 'inspector-outline-main');
+  main.appendChild(scrollFadeLine('inspector-row-label', item.name));
+  if (item.label) main.appendChild(el('span', 'inspector-outline-kind', item.label));
+  node.appendChild(main);
   const jump = (event) => {
     if (!item.nameRange) return;
     const fileId = item.fileId || editorFileId(g);
@@ -1158,19 +1399,29 @@ function renderGlobalView(scrollInner, model, view, engine, opts = {}) {
   // Health strip — the file name is the star; status is a quiet dot, with a
   // small count only when something actually needs attention.
   const health = el('div', 'inspector-global-health');
-  const dotState = model.errors > 0 ? 'is-error'
+  const showError = model.errors > 0 || (model.checking && model.hasStaleErrors);
+  const dotState = showError
+    ? (model.checking ? 'is-error-checking' : 'is-error')
     : model.warnings > 0 ? 'is-warning'
-      : model.checking ? 'is-checking' : 'is-clean';
+      : model.checking ? 'is-checking' : 'is-checked';
   const dot = el('span', `inspector-global-dot ${dotState}`);
-  setTip(dot, model.errors > 0 ? (model.errors === 1 ? '1 error' : `${model.errors} errors`)
+  const errTip = model.errors === 1 ? '1 error' : `${model.errors} errors`;
+  setTip(dot, showError
+    ? (model.checking ? `Checking… · ${errTip}` : errTip)
     : model.warnings > 0 ? (model.warnings === 1 ? '1 warning' : `${model.warnings} warnings`)
       : model.checking ? 'Checking…' : 'Checked');
   health.appendChild(dot);
   if (model.fileName) health.appendChild(el('span', 'inspector-global-file', model.fileName));
-  if (model.errors || model.warnings) {
+  const holeCount = model.holes ? model.holes.length : 0;
+  if (model.errors || model.warnings || holeCount) {
     const counts = el('span', 'inspector-global-counts');
     if (model.errors) counts.appendChild(el('span', 'inspector-global-count is-error', String(model.errors)));
     if (model.warnings) counts.appendChild(el('span', 'inspector-global-count is-warning', String(model.warnings)));
+    if (holeCount) {
+      const hc = el('span', 'inspector-global-count is-holes', `?${holeCount}`);
+      setTip(hc, holeCount === 1 ? '1 hole' : `${holeCount} holes`);
+      counts.appendChild(hc);
+    }
     health.appendChild(counts);
   }
   scrollInner.appendChild(health);
@@ -1194,6 +1445,14 @@ function renderGlobalView(scrollInner, model, view, engine, opts = {}) {
     const { sec: outlineSec, body: outlineBody } = section('Outline', model.outline.length, 'outline');
     for (const item of model.outline) outlineBody.appendChild(outlineRow(g, item, jumpOpts));
     scrollInner.appendChild(outlineSec);
+  }
+
+  // Holes — incomplete `?` spots with their goal type; click jumps to the `?`.
+  if (model.holes && model.holes.length) {
+    const { sec: holesSec, body: holesBody, head: holesHead, actions: holesActions } = section('Holes', model.holes.length, 'holes');
+    if (model.holesCachedHint) appendCachedHint(holesHead, holesActions);
+    for (const hole of model.holes) holesBody.appendChild(holeRow(g, hole, view, opts));
+    scrollInner.appendChild(holesSec);
   }
 
   if (model.suite) {
@@ -1261,6 +1520,67 @@ function diagnosticRow(g, d, view, opts) {
   return node;
 }
 
+// Hole row in the global view: source-order number + goal type (signature-fresh).
+function holeRow(g, hole, view, opts) {
+  const node = el('div', 'inspector-row inspector-hole-row');
+  node.setAttribute('role', 'button');
+  node.tabIndex = 0;
+  const state = hole.goalState || (hole.goal ? 'live' : 'pending');
+  if (state === 'pending' || state === 'rechecking') node.classList.add('is-pending');
+  if (state === 'cached') node.classList.add('is-cached');
+  if (state === 'out-of-scope') node.classList.add('is-unfocused');
+  const id = el('span', 'harpoon-hole-id');
+  id.appendChild(el('span', 'harpoon-hole-num', `?${hole.index}`));
+  if (hole.line != null) {
+    const ln = el('span', 'harpoon-hole-line', String(hole.line));
+    setTip(id, `Jump to ?${hole.index} at line ${hole.line}`);
+    id.appendChild(ln);
+  }
+  node.appendChild(id);
+  const goal = el('span', 'inspector-hole-goal harpoon-hole-goal');
+  if (hole.goal && state !== 'out-of-scope') {
+    renderTypeInto(goal, hole.goal, 'comp');
+    if (state === 'rechecking') {
+      const tag = el('span', 'inspector-hole-rechecking', 'Rechecking…');
+      setShimmerPhase(tag);
+      tag.classList.add('beljar-tip-shimmer');
+      goal.appendChild(tag);
+    }
+  } else if (state === 'out-of-scope') {
+    goal.appendChild(el('span', 'harpoon-hole-unfocused', 'Out of scope: click to compute'));
+  } else {
+    const recalc = el('span', 'harpoon-hole-recalc beljar-tip-shimmer');
+    recalc.textContent = 'Recalculating…';
+    setShimmerPhase(recalc);
+    goal.appendChild(recalc);
+  }
+  node.appendChild(goal);
+  const jumpFileId = opts.boundFile || editorFileId(g, view);
+  const jump = () => {
+    if (state === 'out-of-scope' && jumpFileId) {
+      const ed = g.BelJarEditor;
+      if (ed && typeof ed.computeHoleGoalOnDemand === 'function' && view) {
+        ed.computeHoleGoalOnDemand(view, jumpFileId, hole.line, hole.col || 1)
+          .then(() => {
+            g.dispatchEvent(new CustomEvent('beljar:inspector-refresh', { detail: { live: true } }));
+          })
+          .catch(() => {});
+        return;
+      }
+    }
+    suppressInspectorFollow();
+    opts.onBeforeJump?.();
+    dispatchOpenFileAt(g, jumpFileId, { from: hole.from, to: hole.to }, null);
+  };
+  node.addEventListener('click', jump);
+  node.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    jump();
+  });
+  return node;
+}
+
 // Diagnostic row for an in-development cross-file symbol: same chrome as
 // diagnosticRow, but its finding is a member-file (line, message) so the location
 // is a bare line number and the jump opens the MEMBER file at that line.
@@ -1315,7 +1635,7 @@ function refreshInspectorAsync(entry, pos) {
     const next = buildLiveModel(engine, pos, entry.view);
     if (next && next.type == null && type != null) {
       next.type = type;
-      next.statusState = 'settled';
+      next.statusState = 'checked';
       next.needsAsync = false;
     }
     if (next) {
@@ -1343,20 +1663,22 @@ function syncPinnedInspector(entry) {
   if (model?.needsAsync) refreshInspectorAsync(entry, pos);
 }
 
-export function openInspectorWindow(view, pos) {
+export function openInspectorWindow(view, pos, opts = {}) {
   const g = typeof window !== 'undefined' ? window : self;
   if (typeof g.FloatingWindow === 'undefined') return false;
   const at = pos ?? view.state.selection.main.head;
   const engine = getEngine(view);
   if (!engine) return false;
-  const model = buildLiveModel(engine, at, view);
+  const model = resolveInspectModel(view, at);
   if (!model) return false;
 
   const key = model.name + '@' + at;
-  const existing = openWindows.get(key);
-  if (existing) {
-    existing.win.raise();
-    return true;
+  if (!opts.forceNew) {
+    const existing = openWindows.get(key);
+    if (existing) {
+      existing.win.raise();
+      return true;
+    }
   }
 
   const bodyEl = document.createElement('div');
@@ -1365,9 +1687,10 @@ export function openInspectorWindow(view, pos) {
 
   const title = inspectorWindowTitle();
   const { ref: followRef, action: followAction } = createFollowWindowAction((on) => setInspectorFollow(on));
+  const fileId = editorFileId(g, view);
   const pinned = {
     view, engine, win: null, bodyEl, followEditor: false, lastPos: at, renderToken: 0,
-    _followFromInspector: false,
+    _followFromInspector: false, fileId, persistId: opts.persistId || null,
   };
   let unregisterInspectorFollow = null;
 
@@ -1385,7 +1708,9 @@ export function openInspectorWindow(view, pos) {
         sync: () => syncPinnedInspector(pinned),
       });
       syncPinnedInspector(pinned);
+      revealEditorCursor(view, { pos: pinned.lastPos });
     }
+    if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave();
   }
 
   let coords = null;
@@ -1394,26 +1719,33 @@ export function openInspectorWindow(view, pos) {
   } catch (_) {
     coords = null;
   }
+  const geom = opts.geom;
   const win = g.FloatingWindow.open({
     title,
     content: bodyEl,
     className: 'inspector-window',
-    x: coords ? Math.round(coords.right + 12) : undefined,
-    y: coords ? Math.round(coords.top) : undefined,
-    width: 340,
-    height: 420,
+    x: geom?.x ?? (coords ? Math.round(coords.right + 12) : undefined),
+    y: geom?.y ?? (coords ? Math.round(coords.top) : undefined),
+    width: geom?.w ?? 340,
+    height: geom?.h ?? 420,
     actions: [followAction],
+    onGeometryChange: () => { if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave(); },
     onClose: () => {
       openWindows.delete(key);
       if (unregisterInspectorFollow) unregisterInspectorFollow();
+      if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave();
     },
   });
   pinned.win = win;
+  if (!pinned.persistId) pinned.persistId = `inspector:${fileId}:${at}`;
   openWindows.set(key, pinned);
+
+  if (opts.followEditor) setInspectorFollow(true);
 
   if (model.needsAsync && typeof engine.intelTypePromise === 'function') {
     refreshInspectorAsync(pinned, at);
   }
+  if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave();
   return true;
 }
 
@@ -1439,6 +1771,8 @@ function shouldRefreshInspectorContent(g, view) {
 
 function liveRerenderOpts(view) {
   const g = typeof window !== 'undefined' ? window : self;
+  // Re-inspect the pinned hole at its `?` (rerender rebuilds the hole model there).
+  if (lastRenderedTarget?.kind === 'hole') return { pos: lastRenderedTarget.pos };
   if (lastRenderedTarget?.kind === 'symbol') {
     if (lastRenderedTarget.fileId && lastRenderedTarget.fileId !== activeFileId(g)) {
       const model = buildCrossFileModel(g, lastRenderedTarget, view);
@@ -1642,6 +1976,8 @@ function pushTarget(target) {
   if (history.length > 50) history = history.slice(history.length - 50);
   histIndex = history.length - 1;
   updateNavButtons();
+  const g = typeof window !== 'undefined' ? window : self;
+  if (g.BelJarWorkspaceState?.scheduleSave) g.BelJarWorkspaceState.scheduleSave();
 }
 
 function updateNavButtons() {
@@ -1788,6 +2124,17 @@ function goForward() {
   goToTarget(history[histIndex], { moveEditor: followEditor });
 }
 
+function goHome() {
+  const view = dockView();
+  if (!view) return;
+  const g = typeof window !== 'undefined' ? window : self;
+  const fileId = activeFileId(g);
+  if (fileId == null) return;
+  const target = { kind: 'global', fileId };
+  pushTarget(target);
+  goToTarget(target, { moveEditor: false });
+}
+
 function hydrateFollowEditor() {
   if (followEditorHydrated) return;
   followEditorHydrated = true;
@@ -1798,6 +2145,13 @@ function hydrateFollowEditor() {
   }
 }
 
+function activateEditorFollow(view) {
+  if (!view) return;
+  const head = view.state.selection.main.head;
+  rerender(view, { pos: head });
+  revealEditorCursor(view, { pos: lastPos });
+}
+
 function setFollowEditor(on) {
   followEditor = !!on;
   updateSyncButton();
@@ -1806,10 +2160,12 @@ function setFollowEditor(on) {
   if (P && typeof P.writeStoredInspectorFollow === 'function') {
     P.writeStoredInspectorFollow(followEditor);
   }
+  if (g.BelJarSettingsUI && typeof g.BelJarSettingsUI.syncFromState === 'function') {
+    g.BelJarSettingsUI.syncFromState();
+  }
   if (followEditor) {
     clearInspectorFollowSuppress();
-    const view = dockView();
-    if (view) rerender(view);
+    activateEditorFollow(dockView());
   }
 }
 
@@ -1982,12 +2338,15 @@ function ensureHeaderWired() {
   if (!panel) return;
   const back = panel.querySelector('#inspector-nav-back');
   const fwd = panel.querySelector('#inspector-nav-fwd');
+  const home = panel.querySelector('#inspector-nav-home');
   const syncToggle = panel.querySelector('#inspector-sync-toggle');
   const input = panel.querySelector('#inspector-search-input');
   if (!back || !fwd || !syncToggle) return;
   headerWired = true;
+  home?.addEventListener('click', goHome);
   back.addEventListener('click', goBack);
   fwd.addEventListener('click', goForward);
+  syncToggle.addEventListener('mousedown', (e) => e.preventDefault());
   syncToggle.addEventListener('click', () => setFollowEditor(!followEditor));
   const searchWrap = panel.querySelector('#inspector-search');
   searchWrap?.addEventListener('mousedown', (e) => {
@@ -2042,9 +2401,17 @@ function ensureHeaderWired() {
   updateSyncButton();
 }
 
+function clearInspectorProjectEmptyOverlay() {
+  const overlay = document.getElementById('inspector-project-empty');
+  if (overlay) overlay.hidden = true;
+  const body = inspectorBody();
+  if (body) body.hidden = false;
+}
+
 function rerender(view, opts = {}) {
   const body = inspectorBody();
   if (!body || !view?.dom?.isConnected) return;
+  clearInspectorProjectEmptyOverlay();
   lastView = view;
   ensureHeaderWired();
   const g = typeof window !== 'undefined' ? window : self;
@@ -2060,9 +2427,18 @@ function rerender(view, opts = {}) {
     pos = opts.pos != null ? opts.pos : lastPos;
   } else {
     const hinted = opts.pos != null ? opts.pos : lastPos;
-    pos = probeIntelPos(engine, view, hinted);
-    lastPos = pos;
-    model = forceGlobal ? null : (engine ? buildLiveModel(engine, pos, view) : null);
+    // Check the RAW cursor for a hole BEFORE probeIntelPos biases it to a nearby
+    // symbol (a `?` sits next to binders that would otherwise win).
+    const hole = !forceGlobal && engine ? holeModelAt(engine, view, hinted) : null;
+    if (hole) {
+      pos = hinted;
+      lastPos = pos;
+      model = hole;
+    } else {
+      pos = probeIntelPos(engine, view, hinted);
+      lastPos = pos;
+      model = forceGlobal ? null : (engine ? buildLiveModel(engine, pos, view) : null);
+    }
   }
   boundFile = opts.boundFile != null ? opts.boundFile : editorFileId(g, view);
   // The ACTIVE editor file at render time — distinct from boundFile (the
@@ -2075,12 +2451,17 @@ function rerender(view, opts = {}) {
     ...scrollOpts,
     activePos: pos,
     forceGlobal,
+    boundFile,
     navigate: dockedNavigate,
     onBeforeJump: () => suppressInspectorFollow(),
   };
   renderInspector(body, model, view, engine, renderOpts);
 
-  if (model && model.name) {
+  if (model && model.isHole) {
+    // A hole isn't a symbol, but it IS a pinned target — so a background re-lint
+    // re-inspects the `?` at this position instead of falling back to global.
+    lastRenderedTarget = { kind: 'hole', pos };
+  } else if (model && model.name) {
     // Remember the pinned symbol so a later file switch can re-evaluate its
     // cross-file staleness against the new active file (same symbol, fresh banner).
     lastRenderedTarget = {
@@ -2091,6 +2472,14 @@ function rerender(view, opts = {}) {
       fileId: model.fileId || editorFileId(g, view),
     };
     if (!historySuppressed()) pushTarget(lastRenderedTarget);
+  } else if (forceGlobal || isGlobalOverviewModel(model)) {
+    const fileId = boundFile || editorFileId(g, view);
+    if (fileId != null) {
+      lastRenderedTarget = { kind: 'global', fileId };
+      if (!historySuppressed()) pushTarget(lastRenderedTarget);
+    } else {
+      lastRenderedTarget = null;
+    }
   } else if (model && model.fileName) {
     lastRenderedTarget = null;
   } else {
@@ -2110,7 +2499,7 @@ function rerender(view, opts = {}) {
       const next = buildLiveModel(engine, pos, view);
       if (next && next.type == null && type != null) {
         next.type = type;
-        next.statusState = 'settled';
+        next.statusState = 'checked';
         next.needsAsync = false;
       }
       renderInspector(body, next, view, engine, renderOpts);
@@ -2173,6 +2562,13 @@ export function belInspector() {
       g.addEventListener('beljar:active-editor-view', (e) => {
         rebindPinnedInspectorWindows(e?.detail?.view);
       });
+      g.addEventListener('beljar:development-checked', () => {
+        const view = activeView();
+        if (!view || !panelOpen() || inspectorRenderSuppressed()) return;
+        if (shouldRefreshInspectorContent(g, view)) {
+          rerender(view, liveRerenderOpts(view));
+        }
+      });
       g.addEventListener('beljar:inspector-refresh', (e) => {
         const view = activeView();
         if (!view) return;
@@ -2215,7 +2611,9 @@ export function belInspector() {
     if (update.docChanged) lastDiagSig = diagSignature(update.state);
     if (update.docChanged && shouldRefreshInspectorContent(g, update.view)) {
       if (followEditor) lastPos = update.state.selection.main.head;
-      scheduleRerender(followEditor ? 120 : 150);
+      const settle = getEngine(update.view)?.settleState?.();
+      const settling = settle === 'checking' || settle === 'stale';
+      scheduleRerender(settling ? 0 : (followEditor ? 120 : 150));
       return;
     }
     if (update.selectionSet) {
@@ -2241,5 +2639,128 @@ export function belInspector() {
     if (sig === lastDiagSig) return;
     lastDiagSig = sig;
     if (shouldRefreshInspectorContent(g, update.view)) scheduleRerender(150);
+  });
+}
+
+(function registerInspectorFollowListener() {
+  const g = typeof globalThis !== 'undefined' ? globalThis : null;
+  if (!g || typeof g.addEventListener !== 'function') return;
+  g.addEventListener('beljar:inspector-follow-changed', (e) => {
+    setFollowEditor(!!(e && e.detail && e.detail.on));
+  });
+})();
+
+function serializeInspectorTarget(t) {
+  if (!t) return null;
+  const out = { kind: t.kind };
+  if (t.name) out.name = t.name;
+  if (t.fileId) out.fileId = t.fileId;
+  if (t.pos != null) out.posHint = t.pos;
+  else if (t.posHint != null) out.posHint = t.posHint;
+  return out;
+}
+
+function resolveInspectorAnchorPos(view, anchor) {
+  if (!anchor || !view) return null;
+  const doc = view.state.doc;
+  const hint = Number(anchor.posHint);
+  if (anchor.kind === 'symbol' && anchor.name) {
+    const from = isFinite(hint) ? hint : 0;
+    const resolved = resolveReferenceJump(doc, { from, to: from }, anchor.name);
+    return resolved?.from ?? (isFinite(hint) ? Math.max(0, Math.min(hint, doc.length)) : null);
+  }
+  if (isFinite(hint)) return Math.max(0, Math.min(hint, doc.length));
+  return null;
+}
+
+export function collectWorkspaceInspector(out) {
+  if (!out.sidebar) return;
+  const body = inspectorBody();
+  out.sidebar.inspector = {
+    target: serializeInspectorTarget(lastRenderedTarget),
+    histIndex,
+    scrollTop: body ? body.scrollTop : 0,
+  };
+}
+
+export function restoreWorkspaceInspector(sidebar, deps = {}) {
+  const view = deps.view;
+  if (!view || !sidebar?.inspector) return;
+  const g = typeof window !== 'undefined' ? window : self;
+  if (g.BelJarPersist?.readStoredInspectorFollow?.()) return;
+  if (!panelOpen()) return;
+  const target = sidebar.inspector.target;
+  if (!target) return;
+
+  if (target.kind === 'global') {
+    if (target.fileId && target.fileId !== editorFileId(g, view)) {
+      rerender(view, {
+        model: buildGlobalModelForFile(g, target.fileId, view),
+        boundFile: target.fileId,
+        pos: 0,
+      });
+    } else {
+      rerender(view, { forceGlobal: true, pos: lastPos });
+    }
+  } else if (target.kind === 'hole') {
+    const pos = resolveInspectorAnchorPos(view, target);
+    if (pos != null) rerender(view, { pos, afterJump: true });
+  } else {
+    const pos = resolveInspectorAnchorPos(view, target);
+    if (target.kind === 'symbol' && target.fileId && target.fileId !== editorFileId(g, view)) {
+      dockedNavigate({
+        kind: 'symbol',
+        name: target.name,
+        fileId: target.fileId,
+        pos: pos ?? target.posHint ?? 0,
+      }, null);
+    } else if (pos != null) {
+      rerender(view, { pos, afterJump: true });
+    }
+  }
+
+  const st = Number(sidebar.inspector.scrollTop);
+  if (isFinite(st) && st > 0) {
+    requestAnimationFrame(() => {
+      const b = inspectorBody();
+      if (b) b.scrollTop = st;
+    });
+  }
+}
+
+export function collectFloatingInspectorWindows(fileId, out) {
+  if (!Array.isArray(out.floating)) out.floating = [];
+  const g = typeof window !== 'undefined' ? window : self;
+  for (const pinned of openWindows.values()) {
+    const fid = pinned.fileId || editorFileId(g, pinned.view);
+    if (fid !== fileId || !pinned.win?.getGeometry) continue;
+    const geom = pinned.win.getGeometry();
+    const at = pinned.lastPos;
+    let name = '';
+    try {
+      const m = pinned.engine ? buildLiveModel(pinned.engine, at, pinned.view) : null;
+      name = m?.name || '';
+    } catch (_) { /* ignore */ }
+    out.floating.push({
+      id: pinned.persistId || `inspector:${fid}:${at}`,
+      kind: 'inspector',
+      geom,
+      fileId: fid,
+      anchor: { kind: 'symbol', name, posHint: at },
+      followEditor: !!pinned.followEditor,
+      zOrder: Number(pinned.win.el?.style?.zIndex) || 0,
+    });
+  }
+}
+
+export function restoreFloatingInspectorWindow(entry, view) {
+  if (!entry?.anchor || entry.kind !== 'inspector') return false;
+  const at = resolveInspectorAnchorPos(view, entry.anchor);
+  if (at == null) return false;
+  return openInspectorWindow(view, at, {
+    geom: entry.geom,
+    followEditor: entry.followEditor,
+    persistId: entry.id,
+    forceNew: true,
   });
 }

@@ -1,5 +1,6 @@
 import { syntaxTree } from '@codemirror/language';
 import { walkTree } from './bel-walk.mjs';
+import { collectUndefinedApplicationDiags } from './bel-resolve.mjs';
 import { lintQueryPragmaBounds, mergeDiagnostics as mergeDiagLists } from './bel-query-diag.mjs';
 
 const _lintCache = new WeakMap();
@@ -9,7 +10,8 @@ export function syntaxLintTree(tree, doc) {
   if (cached) return cached;
   const { blockAt, parseDiags } = walkTree(tree, doc);
   const queryDiags = lintQueryPragmaBounds(tree, doc);
-  const merged = mergeDiagLists(parseDiags, queryDiags);
+  const appDiags = collectUndefinedApplicationDiags(tree, doc);
+  const merged = mergeDiagLists(mergeDiagLists(parseDiags, queryDiags), appDiags);
   for (const d of merged) {
     const hit = blockAt(d.from);
     if (hit) d.blockIndex = hit.index;

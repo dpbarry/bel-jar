@@ -113,6 +113,61 @@
     return out;
   }
 
+  function emptyFoldersUnderPrefix(emptyFolders, prefix) {
+    var out = [];
+    for (var i = 0; i < (emptyFolders || []).length; i++) {
+      var p = emptyFolders[i];
+      if (p === prefix || p.indexOf(prefix + '/') === 0) out.push(p);
+    }
+    return out;
+  }
+
+  function isEmptyFolderSubtree(prefix, existingFiles, emptyFolders) {
+    if (filesUnderPrefix(existingFiles, prefix).length > 0) return false;
+    return emptyFoldersUnderPrefix(emptyFolders, prefix).length > 0;
+  }
+
+  function emptyFolderMoveTarget(fromPrefix, destDir, existingFiles, emptyFolders) {
+    var prefix = String(fromPrefix || '');
+    if (!prefix) return null;
+    var folderName = baseName(prefix);
+    var to = joinPath(destDir, folderName);
+    if (to === prefix) return null;
+    for (var i = 0; i < existingFiles.length; i++) {
+      var n = existingFiles[i].name;
+      if (isDescendantPath(prefix, n)) continue;
+      if (n === to || n.indexOf(to + '/') === 0) return null;
+    }
+    for (var j = 0; j < (emptyFolders || []).length; j++) {
+      var ef = emptyFolders[j];
+      if (isDescendantPath(prefix, ef)) continue;
+      if (ef === to || ef.indexOf(to + '/') === 0) return null;
+    }
+    return to;
+  }
+
+  function computeEmptyFolderMoves(existingFiles, payload, dropTarget, emptyFolders) {
+    if (!payload || !dropTarget) return [];
+    var destDir = dropTarget.kind === 'root' ? '' : String(dropTarget.folderPath || '');
+    var folderPaths = [];
+    if (payload.kind === 'folder') {
+      folderPaths = [payload.folderPath];
+    } else if (payload.kind === 'selection') {
+      folderPaths = payload.folderPaths || [];
+    } else {
+      return [];
+    }
+    var out = [];
+    for (var i = 0; i < folderPaths.length; i++) {
+      var fp = String(folderPaths[i] || '');
+      if (!fp || !isEmptyFolderSubtree(fp, existingFiles, emptyFolders)) continue;
+      var to = emptyFolderMoveTarget(fp, destDir, existingFiles, emptyFolders);
+      if (!to) return [];
+      out.push({ from: fp, to: to });
+    }
+    return out;
+  }
+
   function computeMoveTargets(existingFiles, payload, dropTarget, getText) {
     if (!payload || !dropTarget) return [];
     var destDir = dropTarget.kind === 'root' ? '' : String(dropTarget.folderPath || '');
@@ -202,7 +257,8 @@
     return moves;
   }
 
-  function canDropMove(payload, dropTarget, existingFiles) {
+  function canDropMove(payload, dropTarget, existingFiles, emptyFolders) {
+    emptyFolders = emptyFolders || [];
     if (!payload || !dropTarget) return false;
     if (payload.kind === 'folder') {
       var prefix = payload.folderPath;
@@ -211,7 +267,8 @@
         if (isDescendantPath(prefix, dropTarget.folderPath)) return false;
       }
       var moves = computeMoveTargets(existingFiles, payload, dropTarget, function () { return ''; });
-      return moves.length > 0;
+      if (moves.length > 0) return true;
+      return computeEmptyFolderMoves(existingFiles, payload, dropTarget, emptyFolders).length > 0;
     }
     if (payload.kind === 'file') {
       var movesF = computeMoveTargets(existingFiles, payload, dropTarget, function () { return ''; });
@@ -243,7 +300,15 @@
         }
       }
       var movesSel = computeMoveTargets(existingFiles, payload, dropTarget, function () { return ''; });
-      return movesSel.length > 0;
+      var emptyMoves = computeEmptyFolderMoves(existingFiles, payload, dropTarget, emptyFolders);
+      if (movesSel.length > 0) {
+        var emptyOnly = (payload.folderPaths || []).filter(function (fp) {
+          return isEmptyFolderSubtree(fp, existingFiles, emptyFolders);
+        });
+        if (emptyOnly.length && emptyMoves.length !== emptyOnly.length) return false;
+        return true;
+      }
+      return emptyMoves.length > 0;
     }
     return false;
   }
@@ -613,6 +678,7 @@
     uploadFolderBatchRoots: uploadFolderBatchRoots,
     folderMoveBatchRoot: folderMoveBatchRoot,
     computeMoveTargets: computeMoveTargets,
+    computeEmptyFolderMoves: computeEmptyFolderMoves,
     canDropMove: canDropMove,
     detectMoveConflicts: detectMoveConflicts,
     applyMoveResolutions: applyMoveResolutions,

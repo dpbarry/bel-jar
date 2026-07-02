@@ -2,11 +2,7 @@
 (function (global) {
   'use strict';
 
-  function el(tag, className) {
-    var node = document.createElement(tag);
-    if (className) node.className = className;
-    return node;
-  }
+  var PD = function () { return global.BelJarPromptDialog; };
 
   function defaultNormalize(raw) {
     return String(raw || '').trim();
@@ -36,10 +32,11 @@
 
   function open(opts) {
     opts = opts || {};
-    if (typeof BelJarDialog === 'undefined') {
+    if (typeof BelJarDialog === 'undefined' || typeof BelJarPromptDialog === 'undefined') {
       return Promise.resolve(null);
     }
 
+    var el = PD().el;
     var normalize = typeof opts.normalize === 'function' ? opts.normalize : defaultNormalize;
     var validate = typeof opts.validate === 'function' ? opts.validate : defaultValidate;
     var initialValue = opts.value != null ? String(opts.value) : '';
@@ -48,6 +45,8 @@
 
     return new Promise(function (resolve) {
       var wrap = el('div', 'bj-name-prompt');
+      var leadEl = opts.message ? el('p', 'bj-name-prompt__message', opts.message) : null;
+
       var input = el('input', 'bj-name-prompt__input');
       input.type = 'text';
       input.value = initialValue;
@@ -67,15 +66,13 @@
         wrap.appendChild(hint);
       }
 
-      var actions = el('div', 'bj-name-prompt__actions');
-      var cancelBtn = el('button', 'bj-name-prompt__btn is-ghost');
-      cancelBtn.type = 'button';
-      cancelBtn.textContent = opts.cancelLabel || 'Cancel';
-      var confirmBtn = el('button', 'bj-name-prompt__btn is-primary');
-      confirmBtn.type = 'button';
-      confirmBtn.textContent = opts.confirmLabel || 'Create';
-      actions.appendChild(cancelBtn);
-      actions.appendChild(confirmBtn);
+      var actions = PD().buildRowActions([
+        { action: 'cancel', label: opts.cancelLabel || 'Cancel', variant: 'ghost' },
+        { action: 'confirm', label: opts.confirmLabel || 'Create', variant: 'primary' },
+      ]);
+      actions.classList.add('bj-name-prompt__actions');
+      var cancelBtn = actions.querySelector('[data-action="cancel"]');
+      var confirmBtn = actions.querySelector('[data-action="confirm"]');
       wrap.appendChild(actions);
 
       function finish(value) {
@@ -133,12 +130,18 @@
       });
 
       var dialogEl = BelJarDialog.createDialog({
-        title: opts.title || 'Name',
+        ariaLabel: opts.ariaLabel || 'Name',
         content: wrap,
         className: 'bj-name-prompt-dialog',
-        cardClass: 'bj-dialog__card bj-name-prompt__card',
+        cardClass: PD().CARD_CLASS,
         removeOnClose: true,
       });
+
+      if (leadEl) {
+        var card = dialogEl.querySelector('.bj-dialog__card');
+        var body = dialogEl.querySelector('.bj-dialog__body');
+        if (card && body) card.insertBefore(leadEl, body);
+      }
 
       dialogEl.addEventListener('close', function () {
         if (!settled) finish(null);

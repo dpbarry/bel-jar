@@ -2,18 +2,7 @@
 (function (global) {
   'use strict';
 
-  function el(tag, className, text) {
-    var node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  }
-
-  function markName(name) {
-    var span = el('span', 'bj-conflict-dialog__mono');
-    span.textContent = name;
-    return span;
-  }
+  var PD = function () { return global.BelJarPromptDialog; };
 
   function suggestedBase(conflict) {
     var path = conflict.suggestedPath;
@@ -24,64 +13,56 @@
     return slash === -1 ? path : path.slice(slash + 1);
   }
 
-  function actionButton(label, action, variant, opts) {
-    opts = opts || {};
-    var btn = el('button', 'bj-conflict-dialog__btn' + (variant ? ' is-' + variant : ''));
-    btn.type = 'button';
-    btn.dataset.action = action;
-    if (opts.monoSuffix) {
-      btn.appendChild(el('span', 'bj-conflict-dialog__btn-prefix', 'Save as '));
-      var mono = el('span', 'bj-conflict-dialog__btn-mono');
-      mono.textContent = opts.monoSuffix;
-      btn.appendChild(mono);
-    } else {
-      btn.textContent = label;
-    }
-    return btn;
-  }
-
   function buildConflictBody(conflict, total, index) {
+    var el = PD().el;
     var wrap = el('div', 'bj-conflict-dialog__panel');
 
     if (total > 1) {
-      wrap.appendChild(el('p', 'bj-conflict-dialog__step', (index + 1) + ' of ' + total));
+      wrap.appendChild(el('p', 'bj-prompt-dialog__step', (index + 1) + ' of ' + total));
     }
 
-    var intro = el('p', 'bj-conflict-dialog__intro');
-    intro.appendChild(markName(conflict.kind === 'folder' ? conflict.label : conflict.label));
-    intro.appendChild(document.createTextNode(' already exists.'));
-    wrap.appendChild(intro);
+    var subject = el('p', 'bj-prompt-dialog__subject');
+    subject.appendChild(PD().markMono(conflict.label));
+    wrap.appendChild(subject);
+
+    var message = el('p', 'bj-prompt-dialog__message');
+    message.textContent = conflict.kind === 'folder'
+      ? 'A folder with this name is already in the project.'
+      : 'A file with this name is already in the project.';
+    wrap.appendChild(message);
 
     return wrap;
   }
 
   function buildActions(conflict, total) {
-    var actions = el('div', 'bj-conflict-dialog__actions');
-
-    actions.appendChild(actionButton(
-      'Save as ' + suggestedBase(conflict),
-      'rename',
-      'primary',
-      { monoSuffix: suggestedBase(conflict) },
-    ));
-    actions.appendChild(actionButton(
-      conflict.kind === 'folder' ? 'Replace folder' : 'Replace',
-      'replace',
-      'danger',
-    ));
-    actions.appendChild(actionButton(
-      total === 1 ? 'Cancel' : 'Skip',
-      total === 1 ? 'cancel' : 'skip',
-      'ghost',
-    ));
-
-    return actions;
+    var suggested = suggestedBase(conflict);
+    return PD().buildActions([
+      {
+        action: 'rename',
+        label: 'Keep as ' + suggested,
+        labelPrefix: 'Keep as',
+        monoSuffix: suggested,
+        variant: 'primary',
+      },
+      {
+        action: 'replace',
+        label: conflict.kind === 'folder' ? 'Replace existing folder' : 'Replace existing file',
+        variant: 'secondary',
+      },
+      {
+        action: total === 1 ? 'cancel' : 'skip',
+        label: total === 1 ? 'Cancel' : 'Skip',
+        variant: 'ghost',
+      },
+    ]);
   }
 
   function resolveConflicts(conflicts, options) {
     options = options || {};
     if (!conflicts || !conflicts.length) return Promise.resolve([]);
-    if (typeof BelJarDialog === 'undefined') return Promise.resolve(null);
+    if (typeof BelJarDialog === 'undefined' || typeof BelJarPromptDialog === 'undefined') {
+      return Promise.resolve(null);
+    }
 
     return new Promise(function (resolve) {
       var index = 0;
@@ -95,13 +76,13 @@
         BelJarDialog.requestDialogClose(dialogEl);
       }
 
-      var shell = el('div', 'bj-conflict-dialog');
+      var shell = PD().el('div', 'bj-prompt-dialog');
 
       var dialogEl = BelJarDialog.createDialog({
         ariaLabel: 'Name conflict',
         content: shell,
-        className: 'bj-conflict-dialog-wrap',
-        cardClass: 'bj-dialog__card bj-conflict-dialog__card',
+        className: PD().WRAP_CLASS,
+        cardClass: PD().CARD_CLASS,
         removeOnClose: true,
       });
 

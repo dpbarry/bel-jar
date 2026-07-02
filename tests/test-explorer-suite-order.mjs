@@ -1,8 +1,5 @@
-// Phase 4 / C1: the explorer lists a folder's active-suite members in LOAD order
-// (the order governs cross-file visibility), right after the .cfg files, with
-// non-members alphabetical below. buildExplorerModel is pure (no DOM), so the
-// ordering is unit-testable. Loads explorer-tree.js against a fake window, same
-// pattern as test-project-source.
+// Phase 4 / C1: the explorer lists active-suite blocks (cfg → members in load
+// order), then inactive cfgs and orphans. buildExplorerModel is pure (no DOM).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -14,41 +11,63 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, '..', 'js', 'explorer-tree.js'), 'utf8');
-const win = {};
-// eslint-disable-next-line no-new-func
-new Function('window', src)(win);
-const EX = win.BelJarExplorer;
+const root = join(here, '..');
+
+function loadScript(path) {
+  const src = readFileSync(join(root, path), 'utf8');
+  // eslint-disable-next-line no-new-func
+  new Function('window', src)(globalThis);
+}
+
+loadScript('js/project-source.js');
+loadScript('js/explorer-suite-layout.js');
+loadScript('js/explorer-tree.js');
+
+const EX = globalThis.BelJarExplorer;
+const PS = globalThis.BelJarProjectSource;
 expect(EX && typeof EX.buildExplorerModel === 'function', 'BelJarExplorer.buildExplorerModel exported');
 
 const files = [
   { id: 'cfg', name: 'grp/sources.cfg' },
   { id: 'a', name: 'grp/base.bel' },
   { id: 'b', name: 'grp/use.bel' },
-  { id: 'z', name: 'grp/zzz.bel' },   // not a member
-  { id: 'p', name: 'grp/prelude.elf' }, // .elf member, listed first
+  { id: 'z', name: 'grp/zzz.bel' },
+  { id: 'p', name: 'grp/prelude.elf' },
+  { id: 'alt', name: 'grp/alt.cfg' },
 ];
-// Active suite lists: prelude.elf, then use.bel, then base.bel (NOT alphabetical).
-const order = (dir) => (dir === 'grp'
-  ? ['grp/prelude.elf', 'grp/use.bel', 'grp/base.bel']
-  : null);
 
-// With suite order: cfg first, then members in load order, then non-members.
+const texts = {
+  cfg: 'prelude.elf\nuse.bel\nbase.bel',
+  alt: 'zzz.bel',
+  p: '', a: '', b: '', z: '',
+};
+const getText = (id) => texts[id] || '';
+const resolveMembers = (all, cfgPath, gt) => PS.orderedPathsForCfg(all, cfgPath, gt || getText);
+
+const layoutForDir = (dir, filesInDir) => {
+  const active = dir === 'grp' ? ['grp/sources.cfg'] : [];
+  return globalThis.BelJarExplorerSuiteLayout.computeDirLayout(
+    filesInDir, active, resolveMembers, files, getText,
+  );
+};
+
 {
-  const model = EX.buildExplorerModel(files, [], order);
+  const model = EX.buildExplorerModel(files, [], layoutForDir);
   const grp = model.folders.get('grp');
   const names = grp.files.map((f) => f.name);
-  expect(names.join('|') === 'grp/sources.cfg|grp/prelude.elf|grp/use.bel|grp/base.bel|grp/zzz.bel',
-    `members in load order after cfg, non-member last; got: ${names.join('|')}`);
+  expect(names.join('|') === 'grp/sources.cfg|grp/prelude.elf|grp/use.bel|grp/base.bel|grp/alt.cfg|grp/zzz.bel',
+    `stacked suite then inactive cfg then orphan; got: ${names.join('|')}`);
+  expect(grp.suiteByFile['grp/sources.cfg'].role === 'head', 'cfg is spine head');
+  expect(grp.suiteByFile['grp/base.bel'].role === 'tail', 'last member is tail');
+  expect(grp.suiteByFile['grp/alt.cfg'] === undefined, 'inactive cfg has no spine');
 }
 
-// Without a suite order resolver: plain alphabetical buckets (cfg, bel, other).
 {
   const model = EX.buildExplorerModel(files, [], null);
   const grp = model.folders.get('grp');
   const names = grp.files.map((f) => f.name);
-  expect(names.join('|') === 'grp/sources.cfg|grp/base.bel|grp/use.bel|grp/zzz.bel|grp/prelude.elf',
-    `no suite → alphabetical buckets, got: ${names.join('|')}`);
+  expect(names.join('|') === 'grp/alt.cfg|grp/sources.cfg|grp/base.bel|grp/prelude.elf|grp/use.bel|grp/zzz.bel',
+    `no layout → legacy alphabetical buckets, got: ${names.join('|')}`);
 }
 
-console.log('OK explorer suite order (members in cfg load order, alphabetical fallback)');
+console.log('OK explorer suite order (stacked blocks, alphabetical fallback)');

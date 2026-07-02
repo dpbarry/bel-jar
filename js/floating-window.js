@@ -102,6 +102,21 @@
     root.style.left = x + 'px';
     root.style.top = y + 'px';
 
+    function notifyGeometryChange() {
+      if (typeof opts.onGeometryChange === 'function') {
+        try { opts.onGeometryChange(getGeometry()); } catch (_) { /* ignore */ }
+      }
+    }
+
+    function getGeometry() {
+      return {
+        x: Math.round(parseFloat(root.style.left) || x),
+        y: Math.round(parseFloat(root.style.top) || y),
+        w: root.offsetWidth,
+        h: root.offsetHeight,
+      };
+    }
+
     function raise() {
       zTop += 1;
       root.style.zIndex = String(zTop);
@@ -126,6 +141,7 @@
       global.removeEventListener('pointerup', onDragUp);
       global.removeEventListener('pointercancel', onDragUp);
       document.body.classList.remove('floating-window-dragging');
+      notifyGeometryChange();
     }
     bar.addEventListener('pointerdown', (e) => {
       if (e.target === closeBtn || closeBtn.contains(e.target)) return;
@@ -158,6 +174,7 @@
       global.removeEventListener('pointerup', onRezUp);
       global.removeEventListener('pointercancel', onRezUp);
       document.body.classList.remove('floating-window-resizing');
+      notifyGeometryChange();
     }
     grip.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
@@ -197,6 +214,7 @@
       el: root,
       body,
       close,
+      getGeometry,
       setContent(node) {
         body.textContent = '';
         if (node) body.appendChild(node);

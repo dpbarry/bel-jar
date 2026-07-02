@@ -74,6 +74,8 @@ expect(again.prelude.offsetLines === first.prelude.offsetLines,
   const schemaAsm = lineOf(asm.code, 'schema');
   expect(schemaAsm - asm.prelude.offsetLines === 2,
     `with-prelude: schema maps back to doc line 2, got ${schemaAsm - asm.prelude.offsetLines}`);
+  expect(asm.fileOffset > 0 && asm.code.slice(asm.fileOffset).includes('schema'),
+    'fileOffset points at the active file body, not the prelude');
   // The blanked-in-place pragma keeps the body's line COUNT identical to the doc.
   const bodyTail = asm.code.split('\n').slice(asm.prelude.offsetLines);
   expect(bodyTail.length === src.split('\n').length,

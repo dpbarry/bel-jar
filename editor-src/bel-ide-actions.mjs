@@ -196,7 +196,7 @@ export function pickNextErrorStop(stops, headLine) {
 // the status dot navigates a warning-only file too, not just errors.
 export function jumpToNextError(view) {
   const errors = [];
-  forEachDiagnostic(view.state, (d, from, to) => {
+  const push = (d, from, to) => {
     if (d.severity !== 'error' && d.severity !== 'warning') return;
     const f = Number.isFinite(from) ? from : d.from;
     const t = Number.isFinite(to) ? to : f;
@@ -206,7 +206,12 @@ export function jumpToNextError(view) {
       to: t,
       line: view.state.doc.lineAt(f).number,
     });
-  });
+  };
+  forEachDiagnostic(view.state, (d, from, to) => push(d, from, to));
+  const eng = getEngine(view);
+  if (eng?.getBelugaDiagnostics) {
+    for (const d of eng.getBelugaDiagnostics()) push(d, d.from, d.to);
+  }
   const stops = collapseErrorNavStops(errors);
   const headLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   const next = pickNextErrorStop(stops, headLine);

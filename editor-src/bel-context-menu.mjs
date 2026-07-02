@@ -6,13 +6,14 @@ import { openSearchPanel } from '@codemirror/search';
 import { EditorView } from '@codemirror/view';
 import {
   navInfoAt, termRangeAt, goToDefinition, revealBinder,
-  crossFileDefinitionAt,
+  crossFileDefinitionAt, getEngine,
 } from './bel-ide-actions.mjs';
 import { formatCommand } from './bel-format.mjs';
-import { openInspectorWindow } from './bel-inspector.mjs';
+import { canInspectAt, openInspectorWindow } from './bel-inspector.mjs';
 import { openLocalGraphWindow } from './bel-graph-view.mjs';
 import { startRename, renameReachAt, renameReachTooltip } from './bel-rename.mjs';
 import { findReferences, canFindReferences } from './bel-refs-panel.mjs';
+import { holeAt, splitTargetsOf, canIntro, runIntro, runFill, runSplit } from './bel-hole-actions.mjs';
 
 function canGoToDefinition(view, pos, nav) {
   if (nav?.symbolId && !nav.onDefinition) return true;
@@ -90,11 +91,59 @@ function buildEditMenuItems(view) {
   ];
 }
 
+// A hole under the click (the `?` token), or null. Engine-backed.
+function holeMenuContext(view, pos) {
+  const engine = getEngine(view);
+  if (!engine) return null;
+  try {
+    return holeAt(engine, view.state.doc, pos);
+  } catch (_) {
+    return null;
+  }
+}
+
+// The "Prove" group for a hole: open the interactive Harpoon, or apply a single
+// verified tactic in place. This is the one entry point for proving — the old
+// floating toolbar is gone; right-click is the discoverable, non-intrusive surface.
+function buildProveMenuItems(view, hit) {
+  const g = typeof window !== 'undefined' ? window : self;
+  const engine = getEngine(view);
+  const lab = g.BelJarHarpoon;
+  const items = [{ type: 'separator' }];
+
+  if (lab && typeof lab.openFromHole === 'function') {
+    items.push({
+      label: 'Open in Harpoon…',
+      onSelect: () => lab.openFromHole(view, engine, hit),
+    });
+  }
+  if (canIntro(hit.hole)) {
+    items.push({ label: 'Introduce', onSelect: () => runIntro(view, engine, hit) });
+  }
+  const vars = splitTargetsOf(hit.hole);
+  if (vars.length === 1) {
+    items.push({ label: `Split on ${vars[0]}`, onSelect: () => runSplit(view, engine, hit, vars[0]) });
+  } else if (vars.length > 1) {
+    items.push({
+      label: 'Split on…',
+      submenu: vars.map((v) => ({ label: v, onSelect: () => runSplit(view, engine, hit, v) })),
+    });
+  }
+  items.push({ label: 'Fill', tooltip: 'Prove the goal with an inhabiting term', onSelect: () => runFill(view, engine, hit) });
+  return items;
+}
+
 // Assemble the menu items for the position clicked. `pos` is the document
 // offset under the pointer (already resolved to the click point).
 function buildMenuItems(view, pos) {
   const nav = navInfoAt(view, pos);
   const items = buildEditMenuItems(view);
+
+  // --- Hole-scoped proving (a `?` under the cursor) ---
+  const hit = holeMenuContext(view, pos);
+  if (hit) {
+    for (const it of buildProveMenuItems(view, hit)) items.push(it);
+  }
 
   // --- Identifier-scoped actions ---
   if (hasSymbolMenuContext(view, pos, nav)) {
@@ -133,12 +182,14 @@ function buildMenuItems(view, pos) {
       });
     }
 
-    // --- Inspect: open a pinned floating inspector for this term. ---
-    if (nav?.symbolId) {
+    if (canInspectAt(view, pos)) {
       items.push({
         label: 'Inspect',
         onSelect: () => openInspectorWindow(view, pos),
       });
+    }
+
+    if (nav?.symbolId) {
       items.push({
         label: 'Show Dependency Graph',
         onSelect: () => openLocalGraphWindow(view, pos),

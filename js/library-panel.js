@@ -52,6 +52,22 @@
     var searchWrap = document.getElementById('library-search-wrap');
     var LS = global.BelJarLibrarySearch;
 
+    function readExpandDefault() {
+      return typeof global.BelJarPersist !== 'undefined' && global.BelJarPersist.readStoredLibraryExpandDefault();
+    }
+
+    function isCategoryExpanded(foldKey, forceOpen) {
+      if (forceOpen) return true;
+      var inSet = expanded.has(foldKey);
+      return readExpandDefault() ? !inSet : inSet;
+    }
+
+    function toggleCategoryExpanded(foldKey) {
+      if (expanded.has(foldKey)) expanded.delete(foldKey);
+      else expanded.add(foldKey);
+      writeExpanded(expanded);
+    }
+
     function applyTip(el, tip) {
       if (typeof opts.applyTip === 'function') opts.applyTip(el, tip);
     }
@@ -207,7 +223,12 @@
         });
         return Promise.resolve(NC.applyResolutions(existingFiles, resolved, [], []));
       }
-      var conflicts = NC.detectUploadConflicts(existingFiles, incoming, { folderBatchRoots: [] });
+      var batchRoots = typeof NC.uploadFolderBatchRoots === 'function'
+        ? NC.uploadFolderBatchRoots(incoming)
+        : [];
+      var conflicts = NC.detectUploadConflicts(existingFiles, incoming, {
+        folderBatchRoots: batchRoots,
+      });
       if (!conflicts.length) {
         return Promise.resolve(NC.applyResolutions(existingFiles, incoming, [], []));
       }
@@ -304,6 +325,21 @@
       if (!plan) return;
       var count = 0;
 
+      if (plan.replaceFolder) {
+        for (var rf = 0; rf < plan.replaceFolder.length; rf++) {
+          var folder = plan.replaceFolder[rf];
+          var deleteIds = folder.deleteIds || [];
+          for (var di = 0; di < deleteIds.length; di++) {
+            P.deleteFile(deleteIds[di]);
+          }
+          var folderEntries = folder.entries || [];
+          for (var fe = 0; fe < folderEntries.length; fe++) {
+            var newId = P.createFile(folderEntries[fe].name);
+            P.setFileText(newId, folderEntries[fe].text);
+            count += 1;
+          }
+        }
+      }
       if (plan.replace) {
         for (var i = 0; i < plan.replace.length; i++) {
           P.setFileText(plan.replace[i].id, plan.replace[i].text);
@@ -902,7 +938,7 @@
 
       if (folder.name) {
         var foldKey = section.id + '/' + folder.id;
-        var isCollapsed = !forceOpen && !expanded.has(foldKey);
+        var isCollapsed = !isCategoryExpanded(foldKey, forceOpen);
         var visibleCount = countVisibleFiles(folder, ctx);
 
         var catRow = document.createElement('div');
@@ -927,9 +963,7 @@
         if (folder.description) applyTip(toggleBtn, folder.description);
 
         toggleBtn.addEventListener('click', function () {
-          if (expanded.has(foldKey)) expanded.delete(foldKey);
-          else expanded.add(foldKey);
-          writeExpanded(expanded);
+          toggleCategoryExpanded(foldKey);
           render();
         });
 

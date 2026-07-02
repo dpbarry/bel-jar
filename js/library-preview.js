@@ -83,6 +83,37 @@
     gutterEl.textContent = lines.map(function (_, i) { return String(i + 1); }).join('\n');
   }
 
+  function suiteClassesForMeta(meta) {
+    if (!meta) return '';
+    if (meta.role === 'head' || meta.role === 'solo') return ' library-preview-tree-file--suite-cfg';
+    if (meta.role === 'mid' || meta.role === 'tail') return ' library-preview-tree-file--suite';
+    return '';
+  }
+
+  function suiteByFileForFolderChildren(children, cfgTextByLabel) {
+    var SL = global.BelJarExplorerSuiteLayout;
+    if (!SL || typeof SL.computeDirLayout !== 'function') return {};
+    var fileChildren = [];
+    var activeCfgs = [];
+    for (var i = 0; i < children.length; i++) {
+      var c = children[i];
+      if (c.type !== 'file') continue;
+      fileChildren.push({ id: c.id, name: c.label, baseName: c.label });
+      if (String(c.ext || '').toLowerCase() === 'cfg') activeCfgs.push(c.label);
+    }
+    if (!activeCfgs.length) return {};
+    activeCfgs.sort(function (a, b) { return a.localeCompare(b); });
+    var textById = Object.create(null);
+    for (var j = 0; j < fileChildren.length; j++) {
+      var fc = fileChildren[j];
+      if (String(fc.name).toLowerCase().endsWith('.cfg')) {
+        textById[fc.id] = cfgTextByLabel[fc.name] || '';
+      }
+    }
+    var getText = function (id) { return textById[id] || ''; };
+    return SL.computeDirLayout(fileChildren, activeCfgs, null, fileChildren, getText).suiteByFile;
+  }
+
   function open(opts) {
     opts = opts || {};
     if (!opts.scopeFolder || typeof global.BelJarDialog === 'undefined') return;
@@ -108,6 +139,7 @@
     var treeRows = [];
     var selectedId = null;
     var loadToken = 0;
+    var cfgTextCache = Object.create(null);
 
     if (opts.focusFolder && folderContainsFolder(scopeFolder, opts.focusFolder)) {
       ancestorFolderIds(scopeFolder, opts.focusFolder).forEach(function (id) { expanded.add(id); });
@@ -476,13 +508,21 @@
       }
 
       if (!folder.children) return;
+      var suiteByFile = suiteByFileForFolderChildren(folder.children, cfgTextCache);
       for (var i = 0; i < folder.children.length; i++) {
         var child = folder.children[i];
         if (child.type === 'folder') {
           renderTreeFolder(child, depth, pathLabel ? pathLabel + '/' + child.name : child.name);
         } else {
+          var childExt = String(child.ext || 'bel').toLowerCase();
+          var suiteMeta = suiteByFile[child.label];
           var fileRow = document.createElement('div');
-          fileRow.className = 'library-preview-tree-file library-preview-tree-file--' + (child.ext || 'bel');
+          fileRow.className = 'library-preview-tree-file'
+            + (childExt === 'cfg' ? ' library-preview-tree-file--cfg' : '')
+            + (childExt === 'elf' ? ' library-preview-tree-file--elf' : '')
+            + suiteClassesForMeta(suiteMeta)
+            + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === 'head'
+              ? ' library-preview-tree-file--suite-block-sep' : '');
           if (child.id === selectedId) fileRow.classList.add('is-selected');
           fileRow.setAttribute('role', 'treeitem');
           fileRow.style.setProperty('--library-depth', String(depth));
@@ -523,6 +563,19 @@
           treeRows.push(fileRow);
         }
       }
+    }
+
+    function ensureCfgTextsLoaded() {
+      if (typeof fetchContent !== 'function') return Promise.resolve();
+      var pending = [];
+      for (var i = 0; i < searchFiles.length; i++) {
+        var entry = searchFiles[i];
+        if (entry.ext !== 'cfg' || cfgTextCache[entry.label] != null) continue;
+        pending.push(fetchContent(entry.path).then(function (label, text) {
+          cfgTextCache[label] = text;
+        }.bind(null, entry.label)));
+      }
+      return Promise.all(pending);
     }
 
     function renderTree() {
@@ -608,17 +661,19 @@
     dialogEl.addEventListener('keydown', handleDialogKeydown, true);
 
     global.BelJarDialog.openDialog(dialogEl);
-    renderTree();
+    ensureCfgTextsLoaded().then(function () {
+      renderTree();
 
-    if (selectedId && fileIndex[selectedId]) {
-      selectFile(fileIndex[selectedId].item, { skipScroll: false });
-    } else {
-      showEmpty();
-    }
+      if (selectedId && fileIndex[selectedId]) {
+        selectFile(fileIndex[selectedId].item, { skipScroll: false });
+      } else {
+        showEmpty();
+      }
 
-    requestAnimationFrame(function () {
-      var sel = treePane.querySelector('.library-preview-tree-file.is-selected');
-      if (sel) sel.scrollIntoView({ block: 'nearest' });
+      requestAnimationFrame(function () {
+        var sel = treePane.querySelector('.library-preview-tree-file.is-selected');
+        if (sel) sel.scrollIntoView({ block: 'nearest' });
+      });
     });
   }
 

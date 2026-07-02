@@ -8,7 +8,7 @@ function stripAnsi(s) {
 const FILE_LOC =
   /^File\s+"[^"]*"\s*,\s*line\s+(\d+)\s*(?:,\s*column\s+(\d+)|,\s*characters?\s+(\d+)(?:-(\d+))?)?\s*:?\s*$/i;
 
-// Any location marker ï¿½ used to find where a message ends (i.e. the next marker).
+// Any location marker  used to find where a message ends (i.e. the next marker).
 const ANY_LOC = /(?:[^\s:"]+\.bel:\d+\.\d+)|(?:File\s+"[^"]*"\s*,\s*line\s+\d+)|(?:\bat line\s+\d+,\s*characters?)/;
 
 function trimMessageLines(parts) {
@@ -18,6 +18,23 @@ function trimMessageLines(parts) {
     out.push(p);
   }
   return out;
+}
+
+// Beluga's menhir wrapper uses Format `@[Failed to parse %t@]`, which prints the
+// detail flush on the same line  "Failed to parse Expected the parser input".
+export function polishBelugaMessage(message) {
+  return String(message != null ? message : '')
+    .replace(/;\s*$/, '')
+    .replace(
+      /Failed to parse Expected the parser input to end here\.?/gi,
+      'Failed to parse: unexpected text here.',
+    )
+    .replace(/parse Expected/g, 'parse.\nExpected')
+    .replace(
+      /Expected the parser input to end here\.?/gi,
+      'Unexpected text here — remove stray tokens or finish the declaration.',
+    )
+    .trim();
 }
 
 function cleanMessage(parts) {
@@ -34,7 +51,7 @@ function cleanMessage(parts) {
       }
     }
   }
-  return lines.join('\n').trim();
+  return polishBelugaMessage(lines.join('\n'));
 }
 
 function expandToToken(lineText, offset) {
@@ -190,7 +207,7 @@ export function parseBelugaDiagnostics(raw, doc) {
 }
 
 // Many location-less errors name the offending identifier in their text
-// ("Identifier ï¿½ is unbound"). Pull that name out so we can point the squiggle
+// ("Identifier  is unbound"). Pull that name out so we can point the squiggle
 // at the real token instead of the top of the file. Also used by the
 // settlement to recognize INDUCED unbound errors (the named culprit is defined
 // in a block that was masked out).
@@ -258,7 +275,7 @@ export function belugaOutputLooksLikeFailure(raw) {
   return false;
 }
 
-// A failed check that produced no locatable diagnostic must still surface ï¿½ a
+// A failed check that produced no locatable diagnostic must still surface  a
 // red squiggle beats a silent green. Point it at the named culprit token when
 // the message identifies one; otherwise anchor to the first meaningful line.
 // Returns a single diagnostic, or null if the output has nothing to say.
@@ -271,21 +288,22 @@ function firstErrorLine(raw) {
 export function fallbackDiagnostic(raw, doc) {
   const short = firstErrorLine(raw);
   if (!short) return null;
-  const message = short.length > 200 ? short.slice(0, 200) + '...' : short;
+  const polished = polishBelugaMessage(short);
+  const message = polished.length > 200 ? polished.slice(0, 200) + '...' : polished;
   const span = locateToken(doc, namedCulprit(short)) || firstMeaningfulLineAnchor(doc);
   return { from: span.from, to: span.to, severity: 'error', message };
 }
 
 // General rule, NOT a one-off: any diagnostic that starts on the first line must
 // cover the WHOLE first line. A short or near-empty line 1 otherwise leaves a
-// 1-char (or tiny-token) target that is misery to hover â€” the classic
+// 1-char (or tiny-token) target that is misery to hover — the classic
 // start-of-file lint nobody can hit. Mutates+returns the diag for convenience.
 // Applied at the single display funnel so every source (Beluga, fallback,
 // banner, cfg, suite-composition) obeys it without each re-implementing it.
 export function spanFirstLineDiagnostic(diag, doc) {
   if (!diag || !doc || !doc.length) return diag;
   const line1 = doc.line(1);
-  // Only when the diagnostic actually begins on line 1 â€” we don't stretch a
+  // Only when the diagnostic actually begins on line 1 — we don't stretch a
   // line-3 error up to the top.
   if (diag.from > line1.to) return diag;
   diag.from = line1.from;

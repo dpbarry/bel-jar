@@ -1,4 +1,5 @@
 import { mergeDiagnostics } from '../bel-query-diag.mjs';
+import { parseHolesFromTree } from '../bel-holes.mjs';
 import { checkerSnapshotFromSyntax } from '../checker-snapshot.mjs';
 import { hasTypeProjection, projectHoverType, resolveHoverDoc } from '../bel-resolve.mjs';
 import { createCheckerStore } from './checker-store.mjs';
@@ -10,7 +11,11 @@ import { createSymbolStore } from './symbol-store.mjs';
 import { createSyntaxStore } from './syntax-store.mjs';
 import { createSemanticSession } from './semantic-session.mjs';
 import { createSemanticScheduler } from './semantic-scheduler.mjs';
+import { topDeclSpans } from './scoped-check.mjs';
 import { belugaDiagnosticsFromOutput, createSettlement } from './settlement.mjs';
+import { polishBelugaMessage } from '../bel-beluga-diag.mjs';
+import { settlementTrigger } from './check-gate.mjs';
+import { getCheckTrace } from '../perf/check-trace.mjs';
 import {
   declSignatureAnnotation,
   mergeDeclSignatures,
@@ -93,22 +98,78 @@ export function createSemanticEngine(options = {}) {
     if (onSettlement) onSettlement(checkerSnap);
   }
 
-  // Mid-settlement: diagnostics from completed passes land in the graph and
-  // the lint UI immediately; the session/scheduler side waits for completion.
   function onSettlementProgress(checkerSnap) {
     applySettlementToGraph();
-    if (onSettlement) onSettlement(checkerSnap);
+    if (onSettlementChecking) onSettlementChecking(checkerSnap);
   }
 
   const getCheckContext = typeof options.getCheckContext === 'function'
     ? options.getCheckContext
     : null;
   const getScopeKey = typeof options.getScopeKey === 'function' ? options.getScopeKey : null;
+  const getSettleDelay = typeof options.getSettleDelay === 'function' ? options.getSettleDelay : null;
+  const getSuiteOverlayDiagnostics = typeof options.getSuiteOverlayDiagnostics === 'function'
+    ? options.getSuiteOverlayDiagnostics
+    : null;
+
+  function isLegacyPreludeBanner(d) {
+    return d?.source === 'suite-prelude'
+      || /Error in earlier (suite )?file .+\./.test(d?.message || '');
+  }
+
+  function belugaDiagnosticsForDisplay(checker) {
+    const raw = checkerShowsBeluga(checker.state) ? (checker.belugaDiagnostics || []) : [];
+    const filtered = !getSuiteOverlayDiagnostics
+      ? raw
+      : raw.filter((d) => !isLegacyPreludeBanner(d));
+    return filtered.map((d) => (d.message
+      ? { ...d, message: polishBelugaMessage(d.message) }
+      : d));
+  }
+
+  // Dirty declaration ranges plus any declaration currently hosting a Beluga
+  // diagnostic (incl. stale carry-over). The dirty set alone can be empty on a
+  // fix-backspace even while stale squiggles remain — that was the 10s clear bug.
+  function getScopedFrontier(syntaxSnap) {
+    if (!snapshot || !syntaxSnap || snapshot.version !== syntaxSnap.version) return [];
+    const g = snapshot.graph;
+    const symbols = snapshot.symbols;
+    const ranges = [];
+    const seen = new Set();
+    const add = (r) => {
+      if (!r || r.from == null || r.to == null) return;
+      const k = `${r.from}:${r.to}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      ranges.push({ from: r.from, to: r.to });
+    };
+
+    if (g?.dirty?.size && symbols) {
+      for (const id of g.dirty) {
+        const sym = symbols.symbolsById.get(id);
+        if (sym?.range) add(sym.range);
+      }
+    }
+
+    const checker = checkerStore.getSnapshot();
+    if (checker.syntaxVersion === syntaxSnap.version && syntaxSnap.tree) {
+      const decls = topDeclSpans(syntaxSnap.tree);
+      for (const d of checker.belugaDiagnostics || []) {
+        if (d.from == null) continue;
+        for (const decl of decls) {
+          if (d.from >= decl.from && d.from < decl.to) { add(decl); break; }
+        }
+      }
+    }
+    return ranges;
+  }
 
   const settlement = belugaClient ? createSettlement({
     belugaClient,
     checkerStore,
     getCheckContext,
+    getScopedFrontier,
+    getSettleDelay,
     onComplete: onSettlementComplete,
     onChecking: onSettlementChecking,
     onProgress: onSettlementProgress,
@@ -257,6 +318,13 @@ export function createSemanticEngine(options = {}) {
       return { type: null, source: null, status: STATUS.UNKNOWN, kind, needsAsync: false, definitive: true };
     }
 
+    if (resolved && resolved.kind === 'unbound') {
+      return {
+        type: null, source: null, status: STATUS.UNKNOWN, kind: 'unbound-ref',
+        needsAsync: false, definitive: true, message: resolved.message,
+      };
+    }
+
     // 1. A resolved source type. For a known symbol prefer its best cached decl
     //    type (reconstructed > hydrated > annotation) over the raw source text,
     //    so a derived/persisted type wins. Fall back to the literal sourceType
@@ -384,10 +452,10 @@ export function createSemanticEngine(options = {}) {
   }
 
   // Kind-aware user-facing status for ANY position (the inspector's source of
-  // truth). Three honest states; mirrors what the tooltip would show:
-  //   'error'         — real diagnostics overlap the owning declaration.
-  //   'recalculating' — a type is genuinely being awaited (needsAsync, none yet).
-  //   'settled'       — a type is available now, OR provably none is coming.
+  // truth). Four honest states; mirrors what the tooltip would show:
+  //   'error'           — real diagnostics overlap the owning declaration.
+  //   'checking'        — a type is genuinely being awaited (needsAsync, none yet).
+  //   'checked'         — a type is available now, OR provably none is coming.
   function userStatusAt(pos, sync) {
     const r = sync || syncResolveType(pos);
     // Real failure on the owning declaration.
@@ -400,13 +468,16 @@ export function createSemanticEngine(options = {}) {
     )) {
       return { state: 'error', detail: 'Declaration has an error' };
     }
+    if (r.kind === 'unbound-ref') {
+      return { state: 'error', detail: r.message || 'Identifier is not defined' };
+    }
     if (r.type != null) {
-      return { state: 'settled', detail: 'Type known' };
+      return { state: 'checked', detail: 'Type known' };
     }
     if (r.needsAsync) {
-      return { state: 'recalculating', detail: 'Reconstructing type…' };
+      return { state: 'checking', detail: 'Reconstructing type…' };
     }
-    return { state: 'settled', detail: 'No type' };
+    return { state: 'checked', detail: 'No type' };
   }
 
   function metavarContext(pos, resolved, symbols) {
@@ -477,17 +548,40 @@ export function createSemanticEngine(options = {}) {
     getCheckerCode = typeof fn === 'function' ? fn : null;
   }
 
+  function checkerShowsBeluga(state) {
+    return state === 'ready' || state === 'stale' || state === 'checking' || state === 'failed';
+  }
+
   function belugaDiagnosticsForVersion(syntaxVersion) {
     const checker = checkerStore.getSnapshot();
     if (checker.syntaxVersion !== syntaxVersion) return [];
-    if (checker.state !== 'ready' && checker.state !== 'stale' && checker.state !== 'checking') {
-      return [];
-    }
+    if (!checkerShowsBeluga(checker.state)) return [];
     return checker.belugaDiagnostics;
   }
 
   function update(tree, doc, updateOptions = {}) {
+    const prevSyntax = syntaxStore.getSnapshot();
     const syntax = syntaxStore.update(tree, doc, { ...updateOptions, documentId });
+    const trigger = settlementTrigger(prevSyntax, syntax);
+    const perf = getCheckTrace();
+    if (perf.enabled) {
+      perf.record('edit:trigger', 0, { trigger, version: syntax.version });
+    }
+    const parseIncomplete = syntax.doc.length > 0 && syntax.tree.length < syntax.doc.length;
+    const deferSettlement = !!updateOptions.deferSettlement
+      || (parseIncomplete && !updateOptions.changes);
+    if (trigger === 'cosmetic' && settlement) {
+      const preChecker = checkerStore.getSnapshot();
+      if (preChecker.state === 'ready' || preChecker.state === 'stale') {
+        settlement.cancelPending();
+        checkerStore.adoptSyntaxVersion(syntax.version);
+        checkerStore.holdVerdict();
+        if (updateOptions.changes) checkerStore.remapDiagnostics(updateOptions.changes);
+      } else if (preChecker.state === 'checking') {
+        checkerStore.adoptSyntaxVersion(syntax.version);
+        if (updateOptions.changes) checkerStore.remapDiagnostics(updateOptions.changes);
+      }
+    }
     const symbols = symbolStore.update(syntax);
     const belugaDiags = belugaDiagnosticsForVersion(syntax.version);
     const graph = semanticGraph.update(symbols, syntax, {
@@ -516,16 +610,74 @@ export function createSemanticEngine(options = {}) {
         dirty: graph.dirty.size,
       },
     };
-    if (settlement) settlement.schedule(syntax);
+    if (settlement && !deferSettlement) {
+      if (trigger === 'cosmetic') {
+        const checkerNow = checkerStore.getSnapshot();
+        if (checkerNow.state === 'ready' || checkerNow.state === 'stale') {
+          if (perf.enabled) perf.record('settle:skip', 0, { trigger, version: syntax.version });
+        } else if (checkerNow.state === 'checking') {
+          if (perf.enabled) perf.record('settle:skip', 0, { trigger: 'cosmetic-midcheck', version: syntax.version });
+        } else {
+          settlement.schedule(syntax, { trigger: 'semantic' });
+        }
+      } else if (trigger === 'syntax-only') {
+        if (perf.enabled) perf.record('settle:skip', 0, { trigger, version: syntax.version });
+        applySettlementToGraph();
+        if (!settlement.isSettledFor(syntax.version)) {
+          settlement.schedule(syntax, { trigger: 'semantic' });
+        }
+      } else {
+        settlement.schedule(syntax, { trigger });
+      }
+    } else if (settlement && deferSettlement && perf.enabled) {
+      perf.record('settle:defer', 0, { trigger, version: syntax.version, parseIncomplete });
+    }
     return snapshot;
   }
 
+  function ensureSettled() {
+    const syntax = syntaxStore.getSnapshot();
+    if (!syntax || !settlement) return;
+    if (settlement.isSettledFor(syntax.version)) return;
+    if (syntax.doc.length > 0 && syntax.tree.length < syntax.doc.length) return;
+    if (settlement.isPending()) return;
+    settlement.schedule(syntax, { trigger: 'semantic' });
+  }
+
   function getBelugaDiagnostics() {
-    const checker = checkerStore.getSnapshot();
-    if (checker.state !== 'ready' && checker.state !== 'stale' && checker.state !== 'checking') {
-      return [];
+    return belugaDiagnosticsForDisplay(checkerStore.getSnapshot());
+  }
+
+  // Holes — known the INSTANT the `?` is parsed, NOT after a Beluga round-trip.
+  // A `?` is a syntactic fact (the grammar's `Hole` node), so we enumerate holes
+  // from the live parse tree immediately and ENRICH each with the checker's goal /
+  // ctx / meta when reconstruction settles (matched by line/col). This means the
+  // gutter / inspector / Proof-Lab list see holes as soon as syntax highlighting
+  // shows them, instead of lagging seconds behind the checker. The checker store
+  // still carries the rich data across invalidation (stale) and clears it on
+  // failure — but its absence no longer hides a hole's existence.
+  function getHoles() {
+    const syntax = syntaxStore.getSnapshot();
+    const parsed = syntax && syntax.tree
+      ? parseHolesFromTree(syntax.tree, syntax.doc)
+      : [];
+    const checked = checkerStore.getSnapshot().holes || [];
+    if (!parsed.length) {
+      // No tree yet (first paint) — fall back to whatever the checker carries.
+      return checked;
     }
-    return checker.belugaDiagnostics || [];
+    // Index checker holes by line:col for O(1) enrichment.
+    const byPos = new Map();
+    for (const h of checked) byPos.set(h.line + ':' + h.col, h);
+    return parsed.map((p) => {
+      const rich = byPos.get(p.line + ':' + p.col);
+      if (!rich) {
+        // Syntactic-only (checker hasn't typed it yet): bare hole, no goal.
+        return { ...p, goal: null, ctx: [], meta: [] };
+      }
+      // Keep the live syntactic position/index; layer the checker's type data on.
+      return { ...rich, line: p.line, col: p.col, from: p.from, to: p.to, index: p.index, name: rich.name || p.name };
+    });
   }
 
   function applyBelugaOutput(rawOutput, { ok } = {}) {
@@ -563,10 +715,11 @@ export function createSemanticEngine(options = {}) {
     const syntax = syntaxStore.getSnapshot();
     const checker = checkerStore.getSnapshot();
     const syntaxDiags = syntax?.syntaxDiagnostics || [];
-    const belugaDiags = (checker.state === 'ready' || checker.state === 'stale' || checker.state === 'checking')
-      ? (checker.belugaDiagnostics || [])
-      : [];
-    return mergeDiagnostics(syntaxDiags, belugaDiags);
+    const belugaDiags = belugaDiagnosticsForDisplay(checker);
+    const merged = mergeDiagnostics(syntaxDiags, belugaDiags);
+    const overlay = getSuiteOverlayDiagnostics?.() || [];
+    if (!overlay.length) return merged;
+    return mergeDiagnostics(overlay, merged);
   }
 
   // Cross-file diagnostics for development members OTHER than the active file:
@@ -581,6 +734,14 @@ export function createSemanticEngine(options = {}) {
       return {};
     }
     return checker.memberDiagnostics || {};
+  }
+
+  function memberHoles() {
+    const checker = checkerStore.getSnapshot();
+    if (checker.state !== 'ready' && checker.state !== 'stale' && checker.state !== 'checking') {
+      return {};
+    }
+    return checker.memberHoles || {};
   }
 
   function diagnosticsForSymbol(symbolId) {
@@ -1187,6 +1348,7 @@ export function createSemanticEngine(options = {}) {
 
   function classifyHover(resolved, ref, query) {
     if (resolved && resolved.kind === 'local') return 'explicit-binder';
+    if (resolved && resolved.kind === 'unbound') return 'unbound-ref';
     if (resolved && resolved.kind === 'implicit') return 'implicit-metavar';
     // A name defined by an earlier project file: a global reference — must win
     // over the unresolved-ref implicit-metavar guess below.
@@ -1406,9 +1568,9 @@ export function createSemanticEngine(options = {}) {
       type: sync.type,
       typeSource: sync.source,
       typeStatus: sync.status,
-      typePending: userStatus.state === 'recalculating',
+      typePending: userStatus.state === 'checking',
       needsAsync: sync.needsAsync,
-      // User-facing status (settled / recalculating / error) + tooltip detail —
+      // User-facing status (checked / checking / error) + tooltip detail —
       // kind-aware, position-based, identical basis to the hover tooltip.
       userStatus,
       // Internal graph status retained for debugging, not shown raw.
@@ -1611,10 +1773,15 @@ export function createSemanticEngine(options = {}) {
     graphFor: (selection) => semanticGraph.graphFor(selection),
     getSnapshot: () => snapshot,
     getBelugaDiagnostics,
+    getHoles,
     applyBelugaOutput,
     settleState,
+    isSettledFor: (version) => (settlement ? settlement.isSettledFor(version) : true),
+    isSettlementPending: () => (settlement ? settlement.isPending() : false),
+    ensureSettled,
     documentDiagnostics,
     memberDiagnostics,
+    memberHoles,
     diagnosticsForSymbol,
     diagnosticsAt,
     debugSnapshot,
@@ -1628,6 +1795,7 @@ export function createSemanticEngine(options = {}) {
     session,
     scheduler: getScheduler(),
     setCheckerCode,
+    getCheckerCode: () => checkerCodeFromSyntax(syntaxStore.getSnapshot()),
     onCursorMove: (pos) => getScheduler()?.onCursorMove(pos),
     onViewportChange: (range) => getScheduler()?.onViewportChange(range),
     onDocChange: () => {

@@ -1,10 +1,12 @@
 // Project prelude — Beluga .cfg lists .elf (LF) and .bel files in load order.
 // Cross-file visibility is governed by editor-src/development.mjs.
+import { isSignaturePath } from './bel-paths.mjs';
 import { Text } from '@codemirror/state';
 import { parser } from './beluga-parser.js';
 import { walkTree } from './bel-walk.mjs';
 import { expandBelAliases, readAliasActivationMode } from './bel-aliases.mjs';
 import { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
+import { parseHoles } from './bel-holes.mjs';
 import {
   developmentForFile,
   dirOf,
@@ -124,11 +126,11 @@ function signatureFromDecl(src, declParent, ident) {
 
 // Match bel-editor mount: sanitize, alias expand, auto-indent for .bel/.elf.
 export function editorTextForIndexing(text, fileName) {
-  if (fileName && /\.(bel|elf)$/i.test(fileName)) {
+  if (fileName && isSignaturePath(fileName)) {
     return prepareEditorDoc(text, fileName);
   }
   let src = sanitizeEditorText(text);
-  if (fileName && readAliasActivationMode() === 'greedy' && /\.(bel|elf)$/i.test(fileName)) {
+  if (fileName && readAliasActivationMode() === 'greedy' && isSignaturePath(fileName)) {
     src = expandBelAliases(src);
   }
   return src;
@@ -500,7 +502,7 @@ export function assembleCheckerCode(fileCode, prelude) {
   // is what was previously broken: peeling+rejoining shifted the body down, so an
   // error on the schema landed on the blank line below it.
   if (!prelude) {
-    return { code: String(fileCode ?? ''), prelude: null };
+    return { code: String(fileCode ?? ''), prelude: null, fileOffset: 0 };
   }
   // With a prelude, the pragma must jump AHEAD of it (Beluga only honours global
   // pragmas at the very top). Blank the pragma in place rather than deleting it,
@@ -508,7 +510,10 @@ export function assembleCheckerCode(fileCode, prelude) {
   // maps body line N straight back to doc line N.
   const { hoisted, body } = peelGlobalFilePragmasInPlace(fileCode);
   if (!hoisted) {
-    return { code: joinCheckerParts([prelude.code, body]), prelude };
+    const prefix = joinCheckerParts([prelude.code]);
+    const code = joinCheckerParts([prelude.code, body]);
+    const fileOffset = prefix ? prefix.length + 2 : 0;
+    return { code, prelude, fileOffset };
   }
   const hoistOffset = hoisted.split('\n').length + 1; // pragma lines + the join blank
   const adjustedPrelude = {
@@ -520,9 +525,13 @@ export function assembleCheckerCode(fileCode, prelude) {
     })),
     offsetLines: prelude.offsetLines + hoistOffset,
   };
+  const prefix = joinCheckerParts([hoisted, prelude.code]);
+  const code = joinCheckerParts([hoisted, prelude.code, body]);
+  const fileOffset = prefix ? prefix.length + 2 : 0;
   return {
-    code: joinCheckerParts([hoisted, prelude.code, body]),
+    code,
     prelude: adjustedPrelude,
+    fileOffset,
   };
 }
 
@@ -594,6 +603,45 @@ function preludeFileAt(spans, line) {
     }
   }
   return null;
+}
+
+function renumberHoles(list) {
+  list.sort((a, b) => a.line - b.line || a.col - b.col);
+  list.forEach((h, i) => { h.index = i; });
+  return list;
+}
+
+// Split a clean checker holes report into active-file holes (doc-relative) and
+// per-member holes for prelude files. Beluga reports assembled line numbers.
+export function attributeCheckerHoles(rawOutput, { prelude, activeFileName } = {}) {
+  const parsed = parseHoles(rawOutput || '');
+  const activeHoles = [];
+  const memberHoles = {};
+  if (!parsed.length) return { activeHoles, memberHoles };
+
+  const offset = prelude ? prelude.offsetLines : 0;
+  for (const h of parsed) {
+    const hole = {
+      line: h.line,
+      col: h.col,
+      goal: h.goal,
+      ctx: h.ctx || [],
+      meta: h.meta || [],
+      name: h.name,
+    };
+    if (!prelude || h.line > offset) {
+      if (activeFileName) {
+        activeHoles.push({ ...hole, line: prelude ? h.line - offset : h.line });
+      }
+      continue;
+    }
+    const hit = preludeFileAt(prelude.spans, h.line);
+    if (!hit) continue;
+    (memberHoles[hit.name] || (memberHoles[hit.name] = [])).push({ ...hole, line: hit.line });
+  }
+  renumberHoles(activeHoles);
+  for (const name of Object.keys(memberHoles)) renumberHoles(memberHoles[name]);
+  return { activeHoles, memberHoles };
 }
 
 // The Beluga location ("File ..., line N") and the message sit on separate

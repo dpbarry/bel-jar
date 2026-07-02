@@ -238,6 +238,14 @@ const occurrenceScheduler = ViewPlugin.fromClass(
   },
 );
 
+export function belOccurrenceHighlight() {
+  return [occurrenceField, occurrenceScheduler];
+}
+
+export function belNavigationGestures() {
+  return [defLinkGestures];
+}
+
 export function belNavigation() {
   return [linkField, defLinkGestures, occurrenceField, occurrenceScheduler];
 }

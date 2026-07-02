@@ -3,6 +3,7 @@ import {
   cfgPathForActive,
   developmentForFile,
   inferActiveCfgByDir,
+  listDevelopmentMembers,
   workspaceDevelopments,
   preludePathsFor,
   visibilityPaths,
@@ -114,5 +115,23 @@ expect(cfgDev.kind === 'module' && cfgDev.cfg === 'church/ord.cfg',
 expect(cfgDev.paths.join('|') === 'church/lam.elf|church/ord-red.elf|church/par-red.elf|church/par-lemmas.bel',
   'cfg file development paths follow load order');
 expect(cfgDev.activeIndex === -1, 'cfg file is not a suite member');
+
+{
+  const files = [
+    { id: 'a', name: 'grp/a.bel' },
+    { id: 'b', name: 'grp/b.bel' },
+  ];
+  const texts = { a: 'rec inA : [ |- nat] = ?;', b: 'rec inB : [ |- nat] = ?;' };
+  const getText = (id) => texts[id] || '';
+  const { members: wrong } = listDevelopmentMembers(files, 'b', getText, {}, 'LIVE FROM OTHER FILE');
+  const bWrong = wrong.find((m) => m.name === 'grp/b.bel');
+  expect(bWrong?.text === 'LIVE FROM OTHER FILE',
+    'legacy misuse: live text splices into the anchor file unconditionally');
+
+  const { members: right } = listDevelopmentMembers(files, 'b', getText, {}, null);
+  const bRight = right.find((m) => m.name === 'grp/b.bel');
+  expect(bRight?.text === 'rec inB : [ |- nat] = ?;',
+    'no live splice when the anchor file is not the open editor buffer');
+}
 
 console.log('OK development module (active cfg, standalone isolation)');

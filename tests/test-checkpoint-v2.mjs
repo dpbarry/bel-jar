@@ -39,7 +39,12 @@ const ndPos = SAMPLE.indexOf('LF nd') + 3;
       identity: [['sym-k', 'id-1']],
       deriveAttempted: [['sym-k', 'fp1']],
     }),
-    getViewport: () => ({ selection: { anchor: 5, head: 5 }, centerLine: 42 }),
+    getViewport: () => ({
+      selection: { anchor: 5, head: 5 },
+      centerLine: 42,
+      scrollTop: 120,
+      scrollLeft: 8,
+    }),
     getDocFp: (text) => fp(text),
     getBelugaBuild: () => 'stable',
   });
@@ -48,10 +53,12 @@ const ndPos = SAMPLE.indexOf('LF nd') + 3;
   p.flushCheckpoint();
 
   const snap = p.getInitialCheckpoint();
-  expect(snap.v === 2, 'checkpoint schema v2');
+  expect(snap.v === 3, 'checkpoint schema v3');
   expect(snap.editor.text === SAMPLE, 'text round-trips');
   expect(snap.editor.local.selection.anchor === 5, 'selection round-trips');
   expect(snap.editor.local.centerLine === 42, 'centerLine round-trips');
+  expect(snap.editor.local.scrollTop === 120, 'scrollTop round-trips');
+  expect(snap.editor.local.scrollLeft === 8, 'scrollLeft round-trips');
   expect(snap.meta.revision >= 1, 'revision bumped');
   expect(snap.semantic && snap.semantic.types.decls.length === 1, 'semantic types saved');
   expect(snap.semantic.identity.length === 1, 'identity saved');

@@ -13,8 +13,24 @@ export function createHoleGoalsStore() {
   const byFile = new Map();
 
   function set(fileName, sig, holes) {
-    if (!fileName || !sig || !holes?.length) return;
-    byFile.set(fileName, { sig, holes: cloneHoles(holes) });
+    if (!fileName || !sig || !holes?.length) return false;
+    const next = cloneHoles(holes);
+    const hit = byFile.get(fileName);
+    if (hit && hit.sig === sig && JSON.stringify(hit.holes) === JSON.stringify(next)) return false;
+    byFile.set(fileName, { sig, holes: next });
+    return true;
+  }
+
+  function merge(fileName, sig, patchHoles) {
+    if (!fileName || !sig || !patchHoles?.length) return false;
+    const hit = byFile.get(fileName);
+    const base = (hit && hit.sig === sig) ? cloneHoles(hit.holes) : [];
+    const byPos = new Map(base.map((h) => [`${h.line}:${h.col || 1}`, h]));
+    for (const h of patchHoles) byPos.set(`${h.line}:${h.col || 1}`, { ...h });
+    const merged = [...byPos.values()].sort((a, b) =>
+      a.line - b.line || (a.col || 1) - (b.col || 1));
+    merged.forEach((h, i) => { h.index = i; });
+    return set(fileName, sig, merged);
   }
 
   function fresh(fileName, sig) {
@@ -42,7 +58,7 @@ export function createHoleGoalsStore() {
     }
   }
 
-  return { set, fresh, freshMap, applyDevelopment, clear: () => byFile.clear() };
+  return { set, merge, fresh, freshMap, applyDevelopment, clear: () => byFile.clear() };
 }
 
 let shared = null;

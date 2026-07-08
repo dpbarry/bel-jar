@@ -33,10 +33,35 @@ export { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
 export { highlightSourceFragment, renderSourceInto } from './bel-source-render.mjs';
 export { normalizeType, renderTypeInto } from './bel-type-render.mjs';
 export { buildProofProgram, commitProof, parseDecl, declRangeWithSemicolon } from './bel-harpoon.mjs';
-export { proveProgram, theoremUnderProof, theoremDeclRange, candidateMoves, proveOrchestrationCode } from './bel-prover-bridge.mjs';
+export { formatProofBody } from './bel-proof-format.mjs';
+export { captureHarpoonAnchor, assessHarpoonAnchor, textFingerprint, holeKeyFromHit } from './harpoon-anchor.mjs';
+export {
+  proveProgram,
+  theoremUnderProof,
+  theoremDeclRange,
+  candidateMoves,
+  proveOrchestrationCode,
+  movePrefilterOk,
+  stepLead,
+  stepMeta,
+} from './bel-prover-bridge.mjs';
+export {
+  buildCommitCheckCodes,
+  needsFullCommitCheck,
+  countSiblingHoledDecls,
+} from './harpoon-commit.mjs';
+export { parseHoles } from './bel-holes.mjs';
+export { fillCandidates } from './bel-hole-split.mjs';
 export { normalizeProofModel, normalizeSubgoal, parseBinders, applicableTactics, splitTargets } from './harpoon-model.mjs';
-export { createCachedGoalHintIcon, bindCachedGoalHintTooltip, CACHED_GOAL_TIP, CACHED_GOAL_HINT_SVG } from './cached-goal-hint.mjs';
+export { createCachedGoalHintIcon, createApproxGoalHintIcon, bindCachedGoalHintTooltip, CACHED_GOAL_TIP, APPROXIMATE_GOAL_TIP, RECHECKING_GOAL_TIP, CHECKING_GOAL_TIP, CACHED_GOAL_HINT_SVG } from './cached-goal-hint.mjs';
+export { mountHoleGoalTier } from './hole-goal-pending-ui.mjs';
 export { holeHostFile, scanFileHoles, hitsFromHoles } from './harpoon-project-goals.mjs';
+export {
+  buildHoleDisplayRows,
+  settlementGoalsByPos,
+  fileInActiveDevelopment,
+  resolveHoleGoalForPosition,
+} from './hole-goal-display.mjs';
 export {
   collectWorkspaceInspector,
   restoreWorkspaceInspector,
@@ -66,6 +91,7 @@ import {
   suitePreludeBannerForActive,
 } from './suite-prelude-banner.mjs';
 import { developmentForFile, listDevelopmentMembers } from './development.mjs';
+import { textFingerprint } from './harpoon-anchor.mjs';
 import { getDevelopmentChecker, findMemberHole, fileContentSig, developmentSignature } from './development-check.mjs';
 import {
   belugaDiagsToFileHealth,
@@ -80,8 +106,17 @@ import {
   syncHoleGoalsFromSettlement,
   getHoleGoalsStore,
 } from './hole-goals-store.mjs';
+import {
+  buildHoleDisplayRows,
+  settlementGoalsByPos,
+  fileInActiveDevelopment,
+  resolveHoleGoalForPosition,
+} from './hole-goal-display.mjs';
+import { parseHoles } from './bel-holes.mjs';
+import { proveOrchestrationCode, mapProveHolesToDocHits } from './bel-prover-bridge.mjs';
+import { parseDecl } from './bel-harpoon.mjs';
 import { belNavSemanticTick } from './bel-nav.mjs';
-import { belRename, startRename } from './bel-rename.mjs';
+import { belRename, startRename, cancelRenameIfActive, isRenaming, renameSessionChanged } from './bel-rename.mjs';
 import { belContextMenu } from './bel-context-menu.mjs';
 import { findReferences } from './bel-refs-panel.mjs';
 import {
@@ -98,6 +133,7 @@ import {
   buildToggleableExtensions,
   buildBracketKeymap,
 } from './editor-prefs.mjs';
+import { belFoldPersistence, flushFoldKeys } from './bel-fold-persist.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
@@ -462,16 +498,22 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     belEditorFollow(),
     belGraphLive(),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged) onDocChange(update.state.doc.toString());
+      if (renameSessionChanged(update)) {
+        forceLinting(update.view);
+        refreshSettlementLint(update.view);
+      }
+      if (update.docChanged && !isRenaming(update.state)) {
+        onDocChange(update.state.doc.toString());
+      }
     }),
   ];
 }
 
 function belSyntaxLinter() {
-  // Syntax diagnostics are a synchronous Lezer tree walk — keep them on a small
-  // fixed delay so parser-level errors show fast on files of any size, decoupled
-  // from the Beluga checker's own adaptive debounce.
-  return linter((view) => syntaxLint(view), lintLinterOptions({ delay: 80 }));
+  return linter((view) => {
+    if (isRenaming(view.state)) return [];
+    return syntaxLint(view);
+  }, lintLinterOptions({ delay: 80 }));
 }
 
 function auxFilePlaceholder() {
@@ -990,6 +1032,211 @@ export function developmentMemberPaths(view) {
   return members.map((m) => m.name);
 }
 
+function declSpanAt(view, pos) {
+  if (!view?.state) return null;
+  const tree = syntaxTree(view.state);
+  let node = tree.resolveInner(pos, 1);
+  while (node && node.parent && node.parent.name !== 'Program') {
+    node = node.parent;
+  }
+  if (!node || node.name === 'Program') return null;
+  return { from: node.from, to: node.to };
+}
+
+export function enrichHoleHitsWithGoalState(view, hits, fileName, engine, opts = {}) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  const activeId = P?.getActiveFileId?.();
+  const isActive = opts.isActiveFile != null
+    ? opts.isActiveFile
+    : !!(view && P && opts.fileId && opts.fileId === activeId);
+  const doc = isActive && view?.state?.doc ? view.state.doc : null;
+  const fileText = doc
+    ? doc.toString()
+    : String(opts.fileText ?? '');
+  const devPaths = opts.developmentPaths
+    || (view && typeof developmentMemberPaths === 'function' ? developmentMemberPaths(view) : []);
+  const inDevelopment = opts.inDevelopment != null
+    ? opts.inDevelopment
+    : fileInActiveDevelopment(fileName, devPaths);
+  const settle = isActive && engine ? engine.settleState?.() : null;
+  const goalsByPos = isActive ? settlementGoalsByPos(engine, settle) : new Map();
+  const syntactic = (hits || []).map((hit, i) => ({
+    index: hit.hole?.index ?? i,
+    line: hit.hole?.line,
+    col: hit.hole?.col || 1,
+    from: hit.from,
+    to: hit.to,
+  }));
+  const rows = buildHoleDisplayRows({
+    fileName,
+    fileText,
+    doc,
+    inDevelopment,
+    settleState: settle,
+    syntacticHoles: syntactic,
+    settlementGoalsByPos: goalsByPos,
+  });
+  const byKey = new Map(rows.map((r) => [`${r.line}:${r.col}`, r]));
+  return (hits || []).map((hit) => {
+    const key = `${hit.hole.line}:${hit.hole.col || 1}`;
+    const row = byKey.get(key);
+    if (!row) return hit;
+    return {
+      ...hit,
+      hole: {
+        ...hit.hole,
+        goal: row.goal ?? hit.hole.goal ?? null,
+        goalState: row.goalState,
+        loadingLive: row.loadingLive,
+      },
+    };
+  });
+}
+
+let certifyHoleGoalsTimer = null;
+let certifyHoleGoalsInflight = null;
+let certifyHoleGoalsAttemptKey = null;
+
+function certifyHoleGoalsNeedKey(view, hits) {
+  const P = typeof window !== 'undefined' ? window.BelJarPersist : null;
+  if (!view?.state?.doc || !P || !hits?.length) return '';
+  const need = hits.filter((h) => {
+    const st = h.hole?.goalState;
+    return st === 'pending' || st === 'approximate';
+  });
+  if (!need.length) return '';
+  const sig = fileContentSig(view.state.doc.toString());
+  const pos = need.map((h) => `${h.hole.line}:${h.hole.col || 1}`).sort().join(',');
+  return `${sig}|${pos}`;
+}
+
+export function scheduleCertifyHoleGoalsScoped(view, hits) {
+  const attemptKey = certifyHoleGoalsNeedKey(view, hits);
+  if (!attemptKey) return;
+  if (attemptKey === certifyHoleGoalsAttemptKey && (certifyHoleGoalsInflight || certifyHoleGoalsTimer)) return;
+  if (certifyHoleGoalsTimer) clearTimeout(certifyHoleGoalsTimer);
+  certifyHoleGoalsTimer = setTimeout(() => {
+    certifyHoleGoalsTimer = null;
+    if (!view?.state?.doc) return;
+    const liveHits = hits.filter((h) => {
+      if (h.from == null || h.from >= view.state.doc.length) return false;
+      if (view.state.doc.sliceString(h.from, h.from + 1) !== '?') return false;
+      const st = h.hole?.goalState;
+      return st === 'pending' || st === 'approximate';
+    });
+    if (!liveHits.length) return;
+    const freshKey = certifyHoleGoalsNeedKey(view, liveHits);
+    if (!freshKey || freshKey !== attemptKey) return;
+    certifyHoleGoalsScoped(view, liveHits, freshKey).catch(() => {});
+  }, 150);
+}
+
+export async function certifyHoleGoalsScoped(view, hits, attemptKey) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const client = g.BelugaClient;
+  const P = g.BelJarPersist;
+  if (!view || !client || !P || !hits?.length) return;
+  const need = hits.filter((h) => {
+    const st = h.hole?.goalState;
+    return st === 'pending' || st === 'approximate';
+  });
+  if (!need.length) return;
+  const key = attemptKey || certifyHoleGoalsNeedKey(view, hits);
+  if (!key) return;
+  if (key === certifyHoleGoalsAttemptKey && certifyHoleGoalsInflight) return certifyHoleGoalsInflight;
+  if (certifyHoleGoalsInflight) return certifyHoleGoalsInflight;
+
+  const activeId = P.getActiveFileId();
+  const files = P.listFiles();
+  const active = files.find((f) => f.id === activeId);
+  if (!active) return;
+
+  const doc = view.state.doc;
+  const fileCode = checkerSnapshot(syntaxTree(view.state), doc).code;
+  const getText = (id) => (id === activeId ? doc.toString() : P.getFileText(id));
+  const prelude = buildPrelude(files, activeId, getText);
+  const assembled = assembleCheckerCode(fileCode, prelude);
+  const assembledCode = assembled.code;
+  const fileStart = assembled.fileOffset != null ? assembled.fileOffset : 0;
+
+  const byDecl = new Map();
+  for (const hit of need) {
+    const span = declSpanAt(view, hit.from);
+    if (!span) continue;
+    const decl = parseDecl(doc.sliceString(span.from, span.to));
+    if (!decl) continue;
+    const key = decl.kw + ':' + decl.name;
+    if (!byDecl.has(key)) {
+      const re = new RegExp('(^|\\n)\\s*(rec|proof)\\s+' + decl.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:');
+      const match = re.exec(assembledCode);
+      if (!match) continue;
+      const declStart = match.index + match[1].length;
+      const semi = assembledCode.indexOf(';', declStart);
+      const declEnd = semi === -1 ? assembledCode.length : semi + 1;
+      byDecl.set(key, { decl, declStart, declEnd, hits: [] });
+    }
+    byDecl.get(key).hits.push(hit);
+  }
+  if (!byDecl.size) return;
+
+  const contentSig = fileContentSig(doc.toString());
+  certifyHoleGoalsInflight = (async () => {
+    let changed = false;
+    try {
+      if (client.beginProverSession) await client.beginProverSession();
+      for (const { decl, declStart, declEnd, hits: declHits } of byDecl.values()) {
+        const proveCode = proveOrchestrationCode(assembledCode, decl.name, declStart, declEnd, fileStart);
+        if (client.loadProverChecker) await client.loadProverChecker(proveCode);
+        const res = client.checkResultForProver
+          ? await client.checkResultForProver(proveCode)
+          : await client.checkResult(proveCode);
+        if (!res?.ok || !res.output) continue;
+        const parsed = parseHoles(res.output);
+        if (!parsed.length) continue;
+        const docHoles = mapProveHolesToDocHits(parsed, proveCode, decl.name, declHits);
+        if (!docHoles.length) continue;
+        if (getHoleGoalsStore().merge(active.name, contentSig, docHoles)) changed = true;
+      }
+      if (changed) g.dispatchEvent?.(new CustomEvent('beljar:hole-goals-updated'));
+    } finally {
+      certifyHoleGoalsAttemptKey = key;
+      if (client.endProverSession) client.endProverSession();
+      certifyHoleGoalsInflight = null;
+    }
+  })();
+  return certifyHoleGoalsInflight;
+}
+
+export function resolveHoleGoalForHit(view, engine, hit) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  const P = g.BelJarPersist;
+  if (!view?.state?.doc || !hit?.hole || !P) {
+    return { goal: null, state: 'pending', loadingLive: true };
+  }
+  const active = P.listFiles?.()?.find((f) => f.id === P.getActiveFileId());
+  if (!active) return { goal: null, state: 'pending', loadingLive: true };
+  const settle = engine?.settleState?.() ?? null;
+  let settlementGoal = null;
+  if (settle === 'ready' && typeof engine.getHoles === 'function') {
+    for (const h of engine.getHoles()) {
+      if (h.line === hit.hole.line && (h.col || 1) === (hit.hole.col || 1)) {
+        settlementGoal = h.goal || null;
+        break;
+      }
+    }
+  }
+  return resolveHoleGoalForPosition({
+    fileName: active.name,
+    fileText: view.state.doc.toString(),
+    line: hit.hole.line,
+    col: hit.hole.col,
+    inDevelopment: true,
+    settleState: settle,
+    settlementGoal,
+  });
+}
+
 export function mount(parentEl, options = {}) {
   if (!parentEl) return null;
   if (typeof options.onDocChange !== 'function') {
@@ -1393,6 +1640,7 @@ export function mount(parentEl, options = {}) {
       visibleRanges: view.visibleRanges,
       changes: opts.changes ?? null,
       deferSettlement: opts.deferSettlement,
+      forceResettle: opts.forceResettle,
     });
     if (!opts.deferSettlement) semanticEngine.ensureSettled?.();
     refreshIdeStatus(view);
@@ -1404,6 +1652,7 @@ export function mount(parentEl, options = {}) {
       this.parseMilestone = 0;
     }
     update(update) {
+      if (isRenaming(update.state)) return;
       const newLen = syntaxTree(update.state).length;
       const docLen = update.state.doc.length;
       const pct = docLen ? Math.floor((newLen / docLen) * 100) : 100;
@@ -1430,28 +1679,43 @@ export function mount(parentEl, options = {}) {
       || diagnosticCount(update.state) !== diagnosticCount(update.startState)) {
       refreshIdeStatus(update.view);
     }
+    const renameEnded = renameSessionChanged(update) && !isRenaming(update.state);
+    if (renameEnded) {
+      bumpSuiteOverlay();
+      checkContextCache = { doc: null, gen: -1, value: null };
+      lastSettledNonActiveDevSig = '';
+    }
     if (update.docChanged) {
-      syncSemanticFromView(update.view, { changes: update.changes });
-      semanticEngine.onDocChange(update.changes);
-      seedSemanticScheduler(update.view);
+      if (!isRenaming(update.state)) {
+        if (renameEnded) syncSemanticFromView(update.view, { forceResettle: true });
+        else syncSemanticFromView(update.view, { changes: update.changes });
+        semanticEngine.onDocChange();
+        seedSemanticScheduler(update.view);
+        if (renameEnded) scheduleDevelopmentCheck(update.view);
+        else scheduleDebouncedDevelopmentCheck(update.view);
+      }
       refreshIdeStatus(update.view);
-      scheduleDebouncedDevelopmentCheck(update.view);
-      // NO notifyExplorerHealthChanged() here: health dots reflect CHECKED
-      // results, which a keystroke doesn't change. Firing it per keystroke made
-      // the explorer re-derive health for EVERY project file on every edit —
-      // the systemic typing/navigation lag. Settlement + dev-check completion
-      // fire it (with fresh results) within a second anyway.
-      if (options.persist) options.persist.scheduleCheckpointSave();
+      if (!isRenaming(update.state) && options.persist) {
+        options.persist.scheduleCheckpointSave();
+      }
       // The engine tree is now current — holes are known syntactically. Let
       // hole-list surfaces (Harpoon panel, inspector global view) refresh
-      // without waiting for the Beluga checker to settle.
+      // without waiting for the Beluga checker to settle. Skip during rename:
+      // preview edits do not update the semantic engine or persisted doc.
       const gg = typeof globalThis !== 'undefined' ? globalThis : window;
-      if (typeof gg.dispatchEvent === 'function') {
+      if (!isRenaming(update.state) && typeof gg.dispatchEvent === 'function') {
         gg.dispatchEvent(new CustomEvent('beljar:doc-changed'));
       }
+    } else if (renameEnded) {
+      syncSemanticFromView(update.view, { forceResettle: true });
+      semanticEngine.onDocChange();
+      seedSemanticScheduler(update.view);
+      scheduleDevelopmentCheck(update.view);
     }
     if (update.selectionSet || update.viewportChanged) {
-      if (options.persist) options.persist.scheduleCheckpointSave();
+      if (!isRenaming(update.state) && options.persist) {
+        options.persist.scheduleCheckpointSave();
+      }
     }
     if (update.selectionSet) {
       semanticEngine.onCursorMove(update.state.selection.main.head);
@@ -1473,6 +1737,9 @@ export function mount(parentEl, options = {}) {
     chromeCompartment.of(buildEditorChromeTheme(editorPrefs)),
     ideCompartment.of(buildToggleableExtensions(editorPrefs, { semanticEngine })),
   ];
+  if (editorPrefs.foldGutter && docId) {
+    extensions.push(belFoldPersistence(docId));
+  }
 
   const initialDoc = prepareEditorDoc(options.doc ?? '', docPath);
   let state = EditorState.create({ doc: initialDoc, extensions });
@@ -1638,6 +1905,26 @@ export function mount(parentEl, options = {}) {
 
     getSemanticEngine() { return semanticEngine; },
     getHoleActionContext() { return holeActionContext(); },
+    harpoonSuiteFingerprints(fileId) {
+      const P = g.BelJarPersist;
+      if (!P || !fileId) return {};
+      const files = P.listFiles();
+      const activeId = P.getActiveFileId();
+      const live = semanticView && activeId === fileId
+        ? semanticView.state.doc.toString()
+        : null;
+      const getText = (id) => (id === activeId && live != null ? live : (P.getFileText(id) || ''));
+      const { paths } = listDevelopmentMembers(
+        files, fileId, getText, persistDevOptsFromGlobal(), live,
+      );
+      const out = {};
+      for (const path of paths) {
+        const f = files.find((row) => row.name === path);
+        if (!f) continue;
+        out[path] = textFingerprint(getText(f.id));
+      }
+      return out;
+    },
     getParseCoverage() { return computeParseCoverage(view.state); },
     getIdeStatus() { return collectIdeStatus(); },
     getLintTooltipItems() { return statusLintTooltipItems(view); },
@@ -1704,6 +1991,7 @@ export function mount(parentEl, options = {}) {
     jumpToNextError() { return jumpToNextError(view); },
     findReferences(pos) { return findReferences(view, pos); },
     rename(pos) { return startRename(view, pos); },
+    cancelRename() { return cancelRenameIfActive(view); },
     revealInInspector(pos) { return revealInInspector(view, pos); },
     // Dependency graph: with a pos → local neighborhood; without → whole-file.
     openDependencyGraph(pos) {
@@ -1715,6 +2003,8 @@ export function mount(parentEl, options = {}) {
     // Tear the editor down for a document switch: halt background semantic
     // work permanently and detach the CodeMirror view from the DOM.
     destroy() {
+      cancelRenameIfActive(view);
+      if (editorPrefs.foldGutter && docId) flushFoldKeys(view, docId);
       activeEditorPrefsApplier = null;
       activeEditorView = null;
       if (g.BelugaClient?.setIntelKeepWarm) g.BelugaClient.setIntelKeepWarm(false);

@@ -684,6 +684,7 @@ export function createGraph3D(canvas, sim, opts = {}) {
 
   // --- interaction ---
   let drag = null;
+  let toolbarPress = false;
   let lastClickIdx = -1;
   let lastClickT = 0;
 
@@ -691,7 +692,11 @@ export function createGraph3D(canvas, sim, opts = {}) {
     if (disposed) return;
     // The toolbar + its search field share the stage — let them behave normally
     // rather than starting an orbit. Everything else (canvas AND labels) drags.
-    if (ev.target?.closest?.('.bel-graph3d-toolbar')) return;
+    if (ev.target?.closest?.('.bel-graph3d-toolbar')) {
+      toolbarPress = true;
+      return;
+    }
+    toolbarPress = false;
     cancelFly();
     const labelEl = ev.target?.closest?.('.bel-graph3d-label');
     const li = labelEl ? Number(labelEl.dataset.idx) : -1;
@@ -729,6 +734,13 @@ export function createGraph3D(canvas, sim, opts = {}) {
   }
   function onPointerUp(ev) {
     if (disposed) return;
+    // pointerdown on the toolbar skips drag setup; without this guard the bubbled
+    // pointerup reads as an empty-canvas click and clears global-view focus before
+    // toolbar buttons (e.g. "Open neighborhood view") handle their click.
+    if (toolbarPress || ev.target?.closest?.('.bel-graph3d-toolbar')) {
+      toolbarPress = false;
+      return;
+    }
     const wasDrag = drag && drag.moved;
     const downLabelIdx = drag ? drag.labelIdx : -1;
     drag = null;
@@ -990,6 +1002,12 @@ export function createGraph3D(canvas, sim, opts = {}) {
     labelEls.clear();
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    // CRITICAL: release the WebGL context. Browsers cap live WebGL contexts
+    // (~16 in Chrome); without an explicit loseContext, every closed graph window
+    // leaks its context until getContext('webgl') returns null on the next open —
+    // at which point createGraph3D bails and the caller drops to the ugly, shell-less
+    // 2D fallback. Losing the context here keeps reopens on the real 3D renderer.
+    try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch (_) { /* ignore */ }
   }
 
   // Track the sim's settle floor for the idle check.

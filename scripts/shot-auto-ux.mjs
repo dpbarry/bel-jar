@@ -83,16 +83,43 @@ try {
       const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>';
       const STOP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>';
       const box = el('div', 'harpoon-lab-auto is-' + (st.complete ? 'solved' : 'stuck'));
-      const head = el('div', 'harpoon-lab-auto-head');
-      const badge = el('span', 'harpoon-lab-auto-badge ' + (st.complete ? 'is-solved' : 'is-stuck'));
+      const stage = (node, i) => { node.classList.add('harpoon-lab-stage'); node.style.setProperty('--stage-index', String(i)); return node; };
+      const head = stage(
+        el('div', 'harpoon-lab-auto-head harpoon-lab-strip harpoon-lab-banner tone-' + (st.complete ? 'success' : 'warn') + ' ' + (st.complete ? 'is-solved' : 'is-stuck')),
+        0
+      );
+      const badge = el('span', 'harpoon-lab-banner-badge harpoon-lab-auto-badge ' + (st.complete ? 'is-solved' : 'is-stuck'));
       badge.innerHTML = st.complete ? CHECK : STOP;
       head.appendChild(badge);
-      const hc = el('div', 'harpoon-lab-auto-head-copy');
-      hc.appendChild(el('span', 'harpoon-lab-auto-title', st.complete ? 'Proof found' : 'Search stopped'));
-      hc.appendChild(el('span', 'harpoon-lab-auto-sub', st.complete ? (st.steps.length + ' steps') : 'No tactic available'));
+      const hc = el('div', 'harpoon-lab-banner-copy harpoon-lab-auto-head-copy');
+      hc.appendChild(el('span', 'harpoon-lab-banner-title harpoon-lab-auto-title', st.complete ? `Proven in ${st.steps.length} steps` : 'Search stopped'));
+      hc.appendChild(el('span', 'harpoon-lab-banner-sub harpoon-lab-auto-sub', st.complete ? 'Ready to place in the file' : 'No tactic available'));
       head.appendChild(hc);
       box.appendChild(head);
-      const trail = el('ol', 'harpoon-lab-auto-trail');
+
+      if (!st.complete && st.stuck) {
+        const sw = stage(el('div', 'harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-warn'), 1);
+        sw.appendChild(el('span', 'harpoon-lab-auto-stuck-label', 'Open goal'));
+        sw.appendChild(el('div', 'harpoon-hole-goal harpoon-lab-auto-stuck-goal', st.stuck.goal));
+        box.appendChild(sw);
+      }
+      if (st.complete) {
+        const place = stage(el('button', 'harpoon-lab-place harpoon-lab-auto-place harpoon-lab-strip harpoon-lab-banner tone-action'), 1);
+        const ck = el('span', 'harpoon-lab-banner-badge harpoon-lab-place-arrow'); ck.innerHTML = ARROW; place.appendChild(ck);
+        const co = el('span', 'harpoon-lab-banner-copy harpoon-lab-place-copy');
+        co.appendChild(el('span', 'harpoon-lab-banner-title harpoon-lab-place-title', 'Place the proof'));
+        co.appendChild(el('span', 'harpoon-lab-banner-sub harpoon-lab-place-sub', 'Insert into the file'));
+        place.appendChild(co); box.appendChild(place);
+
+        const solution = stage(el('div', 'harpoon-lab-auto-solution harpoon-lab-auto-panel'), 2);
+        solution.appendChild(el('span', 'harpoon-lab-auto-solution-label harpoon-lab-section-label is-solution', 'Solution'));
+        solution.appendChild(el('div', 'harpoon-lab-auto-solution-body', st.code));
+        box.appendChild(solution);
+      }
+
+      const stepsLabel = stage(el('div', 'harpoon-lab-auto-steps-label harpoon-lab-section-label is-steps', 'Steps'), st.complete ? 3 : 2);
+      box.appendChild(stepsLabel);
+      const trail = stage(el('ol', 'harpoon-lab-auto-trail'), st.complete ? 4 : 3);
       st.steps.forEach((s, i) => {
         const li = el('li', 'harpoon-lab-auto-step'); li.style.setProperty('--i', String(i));
         li.appendChild(el('span', 'harpoon-lab-auto-node'));
@@ -102,21 +129,6 @@ try {
         li.appendChild(cp); trail.appendChild(li);
       });
       box.appendChild(trail);
-      if (!st.complete && st.stuck) {
-        const sw = el('div', 'harpoon-lab-auto-stuck');
-        sw.appendChild(el('span', 'harpoon-lab-auto-stuck-label', 'Open goal'));
-        sw.appendChild(el('div', 'harpoon-hole-goal harpoon-lab-auto-stuck-goal', st.stuck.goal));
-        box.appendChild(sw);
-      }
-      if (st.complete) {
-        const place = el('button', 'harpoon-lab-place harpoon-lab-auto-place');
-        place.style.setProperty('--i', String(st.steps.length));
-        const ck = el('span', 'harpoon-lab-place-arrow'); ck.innerHTML = ARROW; place.appendChild(ck);
-        const co = el('span', 'harpoon-lab-place-copy');
-        co.appendChild(el('span', 'harpoon-lab-place-title', 'Place the proof'));
-        co.appendChild(el('span', 'harpoon-lab-place-sub', 'Swaps the hole for the proven term · re-checks clean'));
-        place.appendChild(co); box.appendChild(place);
-      }
       body.appendChild(box);
     }, state);
     await new Promise((r) => setTimeout(r, 900)); // let the cascade settle

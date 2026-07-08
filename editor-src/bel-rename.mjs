@@ -1,36 +1,91 @@
-// Inline rename (F2): edit the declaration; references sync in the document on each keystroke.
+// Inline rename (F2): live mirror to all symbol occurrences while drafting.
 
 import { EditorView, ViewPlugin, keymap, Decoration } from '@codemirror/view';
+import { forceLinting } from '@codemirror/lint';
 import { EditorState, Prec, RangeSetBuilder, StateEffect, StateField, Transaction, Annotation } from '@codemirror/state';
-import { getEngine, navInfoAt, crossFileDefinitionAt } from './bel-ide-actions.mjs';
+import { getEngine, navInfoAt, crossFileDefinitionAt, termRangeAt } from './bel-ide-actions.mjs';
 import { scrollIntoViewCenter } from './bel-viewport.mjs';
 import {
-  defsOf, usesOf, groupDefinesName, groupRenameEdits, applyTextEdits, groupReferencesFor,
+  defsOf, usesOf, developmentDefinesName, groupRenameEdits, applyGroupRenameToFile,
+  groupReferencesFor,
 } from './project-prelude.mjs';
 
 const setRenameSession = StateEffect.define();
-const renameSync = Annotation.define();
+export const renameSync = Annotation.define();
 const renameInternal = Annotation.define();
 
-function mapRanges(ranges, changes) {
-  return ranges.map((r) => ({
-    from: changes.mapPos(r.from, 1),
-    to: changes.mapPos(r.to, -1),
-  }));
+function clampSite(site, docLen) {
+  const from = Math.max(0, Math.min(site.from, docLen));
+  const to = Math.max(from, Math.min(site.to, docLen));
+  return { from, to };
+}
+
+function sanitizeSites(sites, docLen) {
+  return sites.map((s) => clampSite(s, docLen));
+}
+
+function mapSites(sites, changes, anchorSite, docLen) {
+  const mapped = sites.map((s, i) => {
+    if (i === anchorSite) {
+      return {
+        from: changes.mapPos(s.from, -1),
+        to: changes.mapPos(s.to, 1),
+      };
+    }
+    return {
+      from: changes.mapPos(s.from, 1),
+      to: changes.mapPos(s.to, -1),
+    };
+  });
+  return docLen != null ? sanitizeSites(mapped, docLen) : mapped;
+}
+
+function normalizeSession(session) {
+  if (!session) return null;
+  if (session.sites) return session;
+  const anchor = { from: session.anchorFrom, to: session.anchorTo };
+  if (session.refRanges?.length) {
+    const sites = session.refRanges.map((r) => ({ from: r.from, to: r.to }));
+    let anchorSite = sites.findIndex((s) => s.from === anchor.from && s.to === anchor.to);
+    if (anchorSite < 0) {
+      sites.push(anchor);
+      sites.sort((a, b) => a.from - b.from || a.to - b.to);
+      anchorSite = sites.findIndex((s) => s.from === anchor.from && s.to === anchor.to);
+    }
+    return { ...session, sites, anchorSite: anchorSite >= 0 ? anchorSite : 0 };
+  }
+  const span = anchor.to - anchor.from;
+  const sites = [
+    anchor,
+    ...(session.refFroms || []).map((from) => ({ from, to: from + span })),
+  ].sort((a, b) => a.from - b.from || a.to - b.to);
+  const anchorSite = sites.findIndex((s) => s.from === anchor.from && s.to === anchor.to);
+  return { ...session, sites, anchorSite: anchorSite >= 0 ? anchorSite : 0 };
+}
+
+function anchorSiteOf(session) {
+  session = normalizeSession(session);
+  return session.sites[session.anchorSite] ?? session.sites[0];
+}
+
+function anchorFrom(session) {
+  return anchorSiteOf(session).from;
+}
+
+function anchorTo(session) {
+  return anchorSiteOf(session).to;
 }
 
 const renameSessionField = StateField.define({
   create: () => null,
   update(session, tr) {
     for (const e of tr.effects) {
-      if (e.is(setRenameSession)) return e.value;
+      if (e.is(setRenameSession)) return normalizeSession(e.value);
     }
     if (!session || !tr.docChanged) return session;
     return {
       ...session,
-      anchorFrom: tr.changes.mapPos(session.anchorFrom, -1),
-      anchorTo: tr.changes.mapPos(session.anchorTo, 1),
-      refRanges: mapRanges(session.refRanges || [], tr.changes),
+      sites: mapSites(session.sites, tr.changes, session.anchorSite, tr.state.doc.length),
     };
   },
 });
@@ -61,30 +116,43 @@ function persistEnv() {
   return { g, P };
 }
 
-// Would `trimmed` collide with a definition elsewhere in the project group
-// (or, for cross-file sessions where the engine isn't consulted, with a
-// definition in this document)?
-function groupConflict(view, session, trimmed) {
+function localDefNameConflict(session, trimmed, docText) {
+  if (!trimmed) return false;
+  session = normalizeSession(session);
+  for (const d of defsOf(docText)) {
+    if (d.name !== trimmed) continue;
+    const atRenameSite = session.sites.some(
+      (s) => d.from >= s.from && d.to <= s.to,
+    );
+    if (!atRenameSite) return true;
+  }
+  return false;
+}
+
+function developmentConflict(view, session, trimmed) {
+  const docText = view.state.doc.toString();
+  if (localDefNameConflict(session, trimmed, docText)) return true;
   const env = persistEnv();
   if (!env) return false;
   try {
     const files = env.P.listFiles();
     const activeId = env.P.getActiveFileId();
-    if (groupDefinesName(files, activeId, trimmed, (id) => env.P.getFileText(id))) return true;
-    if (session.crossFile) {
-      return defsOf(view.state.doc.toString()).some((d) => d.name === trimmed);
-    }
+    const opts = session.crossFile ? { defFileId: session.crossFile.defFileId } : {};
+    if (developmentDefinesName(files, activeId, trimmed, (id) => env.P.getFileText(id), opts)) return true;
   } catch (_) { /* conflict check is best-effort */ }
   return false;
 }
 
-// Is `trimmed` an acceptable target name for this rename session? Shared by the
-// live preview and by conflict-aware suggestion (which probes candidate names).
-function evaluateName(view, session, trimmed) {
+function nameHasInvalidWhitespace(draft) {
+  return /\s/.test(draft);
+}
+
+function evaluateName(view, session, draft, trimmed) {
   if (trimmed === session.originalName) return true;
   if (!trimmed) return false;
+  if (nameHasInvalidWhitespace(draft)) return false;
 
-  const conflict = groupConflict(view, session, trimmed);
+  const conflict = developmentConflict(view, session, trimmed);
 
   if (session.crossFile) return VALID_IDENT.test(trimmed) && !conflict;
 
@@ -97,14 +165,36 @@ function evaluateName(view, session, trimmed) {
 }
 
 function previewState(view, session) {
-  const draft = view.state.doc.sliceString(session.anchorFrom, session.anchorTo);
+  const anchor = anchorSiteOf(session);
+  const draft = view.state.doc.sliceString(anchor.from, anchor.to);
   const trimmed = draft.trim();
-  return { draft, trimmed, ok: evaluateName(view, session, trimmed) };
+  return { draft, trimmed, ok: evaluateName(view, session, draft, trimmed) };
 }
 
-// First free name near `base`: a primed variant (idiomatic in Beluga), then
-// base1, base2, … `isTaken(candidate)` reports whether a candidate is invalid or
-// already in use. Returns null if nothing is free within `limit`.
+function commitRejectMessage(view, session, { draft, trimmed }) {
+  if (!trimmed) return 'Enter a name to rename to.';
+  if (nameHasInvalidWhitespace(draft)) return 'Name cannot contain whitespace.';
+  if (!VALID_IDENT.test(trimmed)) {
+    return `"${trimmed}" is not a valid name.`;
+  }
+  if (developmentConflict(view, session, trimmed)) {
+    return `"${trimmed}" is already defined in this development.`;
+  }
+  if (!session.crossFile) {
+    const eng = getEngine(view);
+    const preview = eng && typeof eng.renamePreview === 'function'
+      ? eng.renamePreview(session.symbolId, trimmed)
+      : null;
+    if (preview && preview.reason === 'name-conflict') {
+      return `"${trimmed}" is already in use.`;
+    }
+    if (preview && preview.reason === 'invalid-name') {
+      return `"${trimmed}" is not a valid name.`;
+    }
+  }
+  return `"${trimmed}" cannot be used.`;
+}
+
 export function suggestRenameName(base, isTaken, limit = 50) {
   if (!base) return null;
   const prime = `${base}'`;
@@ -116,8 +206,6 @@ export function suggestRenameName(base, isTaken, limit = 50) {
   return null;
 }
 
-// One-line preview of a rename's reach: occurrences in this file plus, when the
-// symbol is global, occurrences across the rest of the suite.
 export function renamePreviewMessage(name, here, group) {
   const occ = (n) => `${n} occurrence${n === 1 ? '' : 's'}`;
   let msg = `Renaming "${name}" — ${occ(here)} here`;
@@ -130,7 +218,6 @@ export function renameReachTooltip(total) {
   return `${total} occurrence${total === 1 ? '' : 's'} across the suite`;
 }
 
-// How many occurrences of the renamed name live in the rest of the group.
 function countGroupReferences(name, crossFile) {
   const env = persistEnv();
   if (!env) return 0;
@@ -145,18 +232,18 @@ function countGroupReferences(name, crossFile) {
   }
 }
 
-// Suite-wide occurrence count for a rename at `pos` (context-menu preview).
 export function renameReachAt(view, pos) {
   const at = pos ?? view.state.selection.main.head;
   const nav = navInfoAt(view, at);
-  if (nav && nav.symbolId && nav.nameRange) {
-    const { from } = nav.nameRange;
+  if (nav && nav.symbolId && nav.name) {
+    const range = termRangeAt(view, at);
+    if (!range) return null;
     const eng = getEngine(view);
     const preview = eng && typeof eng.renamePreview === 'function'
       ? eng.renamePreview(nav.symbolId, nav.name || '')
       : null;
     const refCount = preview && preview.ok
-      ? preview.edits.filter((e) => e.from !== from).length
+      ? preview.edits.filter((e) => e.from !== range.from || e.to !== range.to).length
       : 0;
     const here = 1 + refCount;
     const sym = eng && eng.getSnapshot && eng.getSnapshot()
@@ -187,15 +274,9 @@ export function resolveRenameOk(session, trimmed, preview, conflict) {
   return identOk && !conflict && engineLost;
 }
 
-// ── Group-rename history: Ctrl+Z must undo the WHOLE rename ──────────────────
-// The editor's history only covers this document; the other files' before/after
-// texts are recorded here, and undo/redo of the local rename step replays them.
 const groupRenameHistory = [];
 const GROUP_HISTORY_CAP = 20;
 
-// Pure matcher (exported for tests): which stack entry does this undo/redo
-// correspond to? An UNDO of a rename re-inserts the original name; a REDO
-// re-inserts the new name. Most recent first.
 export function matchGroupRename(stack, direction, insertedTexts) {
   for (let i = stack.length - 1; i >= 0; i--) {
     const e = stack[i];
@@ -237,9 +318,6 @@ function watchGroupRenameHistory(update) {
   }
 }
 
-// After the local commit, rewrite the rest of the group: free uses everywhere
-// (plus the definition tokens when it lives in another file). Files defining
-// the same name themselves are untouched — their occurrences bind locally.
 function propagateGroupRename(session, newName) {
   const env = persistEnv();
   if (!env) return;
@@ -255,7 +333,9 @@ function propagateGroupRename(session, newName) {
     const fileChanges = [];
     for (const plan of plans) {
       const before = env.P.getFileText(plan.fileId);
-      const after = applyTextEdits(before, plan.edits, newName);
+      const after = applyGroupRenameToFile(
+        before, plan.fileName, plan.edits, newName, session.originalName,
+      );
       env.P.setFileText(plan.fileId, after);
       fileChanges.push({ fileId: plan.fileId, before, after });
       refs += plan.edits.length;
@@ -279,17 +359,28 @@ function propagateGroupRename(session, newName) {
   } catch (_) { /* group propagation is best-effort; the local rename stands */ }
 }
 
+function draftLooksInvalid(view, session, state) {
+  const { draft, trimmed } = state;
+  if (!trimmed) return false;
+  if (trimmed === session.originalName) return false;
+  if (nameHasInvalidWhitespace(draft)) return true;
+  if (!VALID_IDENT.test(trimmed)) return true;
+  if (developmentConflict(view, session, trimmed)) return true;
+  if (!state.ok) return true;
+  return false;
+}
+
 function buildRenameDecorations(view, session) {
-  const { ok, trimmed } = previewState(view, session);
-  const invalid = !ok && !!trimmed;
+  const state = previewState(view, session);
+  const invalid = draftLooksInvalid(view, session, state);
   const mark = invalid ? renameInvalidMark : renameMark;
+  const docLen = view.state.doc.length;
   const items = [];
-  if (session.anchorFrom < session.anchorTo) {
-    items.push({ from: session.anchorFrom, to: session.anchorTo, deco: mark });
-  }
-  for (const r of session.refRanges || []) {
-    if (r.from >= r.to) continue;
-    items.push({ from: r.from, to: r.to, deco: mark });
+  for (const site of sanitizeSites(session.sites, docLen)) {
+    if (site.from > site.to) continue;
+    const to = site.from === site.to ? Math.min(site.from + 1, docLen) : site.to;
+    if (site.from >= docLen) continue;
+    items.push({ from: site.from, to, deco: mark });
   }
   items.sort((a, b) => a.from - b.from || a.to - b.to);
   const builder = new RangeSetBuilder();
@@ -336,48 +427,100 @@ function sortedChanges(changes) {
   return changes.sort((a, b) => a.from - b.from || a.to - b.to);
 }
 
+function docLenOf(doc, session) {
+  if (typeof doc.length === 'number') return doc.length;
+  return normalizeSession(session).sites.reduce((n, s) => Math.max(n, s.to), 0);
+}
+
 function buildRevertAllChanges(session, doc) {
+  session = normalizeSession(session);
+  const docLen = docLenOf(doc, session);
   const changes = [];
-  const anchorText = doc.sliceString(session.anchorFrom, session.anchorTo);
-  if (anchorText !== session.originalName) {
-    changes.push({
-      from: session.anchorFrom,
-      to: session.anchorTo,
-      insert: session.originalName,
-    });
-  }
-  for (const r of session.refRanges || []) {
-    if (r.from >= r.to) continue;
-    if (doc.sliceString(r.from, r.to) !== session.originalName) {
-      changes.push({ from: r.from, to: r.to, insert: session.originalName });
+  for (const site of sanitizeSites(session.sites, docLen)) {
+    if (site.from > site.to) continue;
+    if (doc.sliceString(site.from, site.to) !== session.originalName) {
+      changes.push({ from: site.from, to: site.to, insert: session.originalName });
     }
   }
   return sortedChanges(changes);
 }
 
-function buildRenameCommitChanges(session, trimmed) {
-  const changes = [{
-    from: session.anchorFrom,
-    to: session.anchorTo,
+export function buildRenameCommitChanges(session, trimmed, doc) {
+  session = normalizeSession(session);
+  const docLen = docLenOf(doc, session);
+  return sortedChanges(sanitizeSites(session.sites, docLen).map((site) => ({
+    from: site.from,
+    to: site.to,
     insert: trimmed,
-  }];
-  for (const r of session.refRanges || []) {
-    if (r.from >= r.to) continue;
-    changes.push({ from: r.from, to: r.to, insert: trimmed });
+  })));
+}
+
+export function buildReferenceSyncChanges(doc, session, draft) {
+  session = normalizeSession(session);
+  const docLen = typeof doc.length === 'number' ? doc.length : doc.doc.length;
+  const slice = (from, to) => (
+    typeof doc.sliceString === 'function' ? doc.sliceString(from, to) : doc.doc.sliceString(from, to)
+  );
+  const text = draft ?? slice(anchorFrom(session), anchorTo(session));
+  const changes = [];
+  for (let i = 0; i < session.sites.length; i++) {
+    if (i === session.anchorSite) continue;
+    const site = clampSite(session.sites[i], docLen);
+    if (site.from > site.to) continue;
+    if (site.from > docLen) continue;
+    if (slice(site.from, site.to) !== text) {
+      changes.push({ from: site.from, to: site.to, insert: text });
+    }
   }
   return sortedChanges(changes);
 }
 
-function cancelRename(view) {
+export function planReferenceSync(state, session) {
+  const norm = normalizeSession(session);
+  const anchor = anchorSiteOf(norm);
+  const draft = state.doc.sliceString(anchor.from, anchor.to);
+  const changes = buildReferenceSyncChanges(state.doc, norm, draft);
+  if (!changes.length) return null;
+  return { changes };
+}
+
+function renameSyncExtender(tr) {
+  if (!tr.docChanged) return null;
+  if (tr.annotation(renameSync) || tr.annotation(renameInternal)) return null;
+  if (tr.annotation(Transaction.userEvent) === 'rename') return null;
+  const session = tr.startState.field(renameSessionField, false);
+  if (!session) return null;
+
+  const anchor = anchorSiteOf(session);
+  let anchorEdited = false;
+  tr.changes.iterChanges((fromA, toA) => {
+    if (fromA < anchor.to && toA > anchor.from) anchorEdited = true;
+  });
+  if (!anchorEdited) return null;
+
+  const mappedSession = {
+    ...session,
+    sites: mapSites(session.sites, tr.changes, session.anchorSite, tr.changes.newLength),
+  };
+  const newDoc = tr.changes.apply(tr.startState.doc);
+  const anchorMapped = mappedSession.sites[mappedSession.anchorSite];
+  const draft = newDoc.sliceString(anchorMapped.from, anchorMapped.to);
+  const syncChanges = buildReferenceSyncChanges(newDoc, mappedSession, draft);
+  if (!syncChanges.length) return null;
+  return { changes: syncChanges, annotations: renameSync.of(true) };
+}
+
+export function cancelRename(view) {
   const session = view.state.field(renameSessionField, false);
   if (!session) return false;
   const changes = buildRevertAllChanges(session, view.state.doc);
+  const anchor = anchorSiteOf(session);
   view.dispatch({
     changes: changes.length ? changes : undefined,
     effects: setRenameSession.of(null),
     selection: {
-      anchor: session.anchorFrom,
-      head: session.anchorFrom + session.originalName.length,
+      anchor: anchor.from,
+      head: anchor.from + session.originalName.length,
     },
     annotations: [Transaction.addToHistory.of(false), renameInternal.of(true)],
   });
@@ -385,48 +528,34 @@ function cancelRename(view) {
   return true;
 }
 
+export function cancelRenameIfActive(view) {
+  if (!renameActive(view)) return false;
+  return cancelRename(view);
+}
+
+export function cancelRenameIfFocusLost(view) {
+  if (!view.dom?.isConnected) return false;
+  if (view.hasFocus) return false;
+  return cancelRenameIfActive(view);
+}
+
 function commitRename(view) {
   const session = view.state.field(renameSessionField, false);
   if (!session) return false;
-  const { trimmed, ok } = previewState(view, session);
+  const state = previewState(view, session);
+  const { trimmed, ok } = state;
   if (trimmed === session.originalName) return cancelRename(view);
   if (!ok || !trimmed) {
-    if (!trimmed) {
-      showRenameToast('Enter a name to rename to.', 'warn');
-    } else if (!VALID_IDENT.test(trimmed)) {
-      showRenameToast(`Rename blocked: "${trimmed}" is not a valid name.`, 'warn');
-    } else {
-      const suggestion = suggestRenameName(
-        session.originalName, (c) => !evaluateName(view, session, c),
-      );
-      showRenameToast(
-        `Rename blocked: "${trimmed}" is already in use`
-        + (suggestion ? `. Try "${suggestion}"?` : '.'),
-        'warn',
-      );
-    }
+    showRenameToast(commitRejectMessage(view, session, state), 'error');
     return true;
   }
 
-  const revert = buildRevertAllChanges(session, view.state.doc);
-  if (revert.length) {
-    view.dispatch({
-      changes: revert,
-      annotations: [Transaction.addToHistory.of(false), renameInternal.of(true)],
-    });
-  }
-
-  const ready = view.state.field(renameSessionField, false);
-  if (!ready) return true;
-
+  if (session.propagate || session.crossFile) propagateGroupRename(session, trimmed);
   view.dispatch({
-    changes: buildRenameCommitChanges(ready, trimmed),
-    effects: [setRenameSession.of(null), scrollIntoViewCenter(ready.anchorFrom)],
+    changes: buildRenameCommitChanges(session, trimmed, view.state.doc),
+    effects: [setRenameSession.of(null), scrollIntoViewCenter(anchorFrom(session))],
     userEvent: 'rename',
   });
-  // Global symbols ripple through the rest of the project group. (Other files
-  // are updated in storage — the editor's undo only covers this document.)
-  if (ready.propagate || ready.crossFile) propagateGroupRename(ready, trimmed);
   view.focus();
   return true;
 }
@@ -438,51 +567,12 @@ function renameChangeFilter(tr) {
   if (tr.annotation(renameInternal)) return true;
   const session = tr.startState.field(renameSessionField, false);
   if (!session) return true;
+  const anchor = anchorSiteOf(session);
   let allowed = true;
   tr.changes.iterChanges((fromA, toA) => {
-    if (fromA < session.anchorFrom || toA > session.anchorTo) allowed = false;
+    if (fromA < anchor.from || toA > anchor.to) allowed = false;
   });
   return allowed;
-}
-
-function buildReferenceSyncChanges(state, session) {
-  const draft = state.doc.sliceString(session.anchorFrom, session.anchorTo);
-  const changes = [];
-  for (const r of session.refRanges || []) {
-    if (r.from >= r.to) continue;
-    if (state.doc.sliceString(r.from, r.to) !== draft) {
-      changes.push({ from: r.from, to: r.to, insert: draft });
-    }
-  }
-  return sortedChanges(changes);
-}
-
-function anchorEditedInTransactions(transactions) {
-  return transactions.some((tr) => {
-    if (!tr.docChanged) return false;
-    const s = tr.startState.field(renameSessionField, false);
-    if (!s) return false;
-    let hit = false;
-    tr.changes.iterChanges((fromA, toA) => {
-      if (fromA >= s.anchorFrom && toA <= s.anchorTo) hit = true;
-    });
-    return hit;
-  });
-}
-
-function syncReferences(update) {
-  if (!update.docChanged) return;
-  if (update.transactions.some((tr) => tr.annotation(renameSync))) return;
-  if (update.transactions.some((tr) => tr.annotation(renameInternal))) return;
-  if (update.transactions.some((tr) => tr.annotation(Transaction.userEvent) === 'rename')) return;
-  const session = update.state.field(renameSessionField, false);
-  if (!session || !anchorEditedInTransactions(update.transactions)) return;
-  const changes = buildReferenceSyncChanges(update.state, session);
-  if (!changes.length) return;
-  update.view.dispatch({
-    changes,
-    annotations: [Transaction.addToHistory.of(false), renameSync.of(true)],
-  });
 }
 
 function deferRename(fn, view) {
@@ -491,19 +581,64 @@ function deferRename(fn, view) {
   });
 }
 
+function findAnchorSite(sites, anchorFrom, anchorTo) {
+  let idx = sites.findIndex((s) => s.from === anchorFrom && s.to === anchorTo);
+  if (idx >= 0) return idx;
+  idx = sites.findIndex((s) => anchorFrom >= s.from && anchorTo <= s.to);
+  return idx >= 0 ? idx : 0;
+}
+
+function sitesForSymbol(view, symbolId, name, anchorFromPos, anchorToPos) {
+  const eng = getEngine(view);
+  const preview = eng && typeof eng.renamePreview === 'function'
+    ? eng.renamePreview(symbolId, name)
+    : null;
+  if (!preview || !preview.ok) {
+    return {
+      sites: [{ from: anchorFromPos, to: anchorToPos }],
+      anchorSite: 0,
+    };
+  }
+  const sites = preview.edits.map((e) => ({ from: e.from, to: e.to }));
+  return {
+    sites,
+    anchorSite: findAnchorSite(sites, anchorFromPos, anchorToPos),
+  };
+}
+
+function sitesForCrossFile(doc, name, anchorFromPos, anchorToPos) {
+  const anchor = { from: anchorFromPos, to: anchorToPos };
+  const refs = usesOf(doc)
+    .filter((u) => (
+      u.name === name
+      && (u.from !== anchorFromPos || u.to !== anchorToPos)
+      && u.to - u.from === name.length
+    ))
+    .map((u) => ({ from: u.from, to: u.to }));
+  const sites = [anchor, ...refs].sort((a, b) => a.from - b.from || a.to - b.to);
+  return {
+    sites,
+    anchorSite: findAnchorSite(sites, anchorFromPos, anchorToPos),
+  };
+}
+
 export const renameActiveField = renameSessionField;
-export { buildRenameCommitChanges, buildReferenceSyncChanges, renameInternal, setRenameSession as renameSessionEffect };
+export { renameInternal, setRenameSession as renameSessionEffect };
 
 export function isRenaming(state) {
   return !!state.field(renameSessionField, false);
+}
+
+export function renameLocalDefConflict(session, trimmed, docText) {
+  return localDefNameConflict(session, trimmed, docText);
 }
 
 export function renamePreviewState(view, session) {
   return previewState(view, session);
 }
 
-export function renameDraftIsInvalid(session, state) {
-  return !state.ok && !!state.trimmed;
+export function renameDraftIsInvalid(view, session, state) {
+  return draftLooksInvalid(view, session, state);
 }
 
 export function renameSessionChanged(update) {
@@ -528,60 +663,57 @@ export function startRename(view, pos) {
   }
   const at = pos ?? view.state.selection.main.head;
   const nav = navInfoAt(view, at);
-  if (!nav || !nav.symbolId || !nav.nameRange) {
-    return startCrossFileRename(view, at);
+  const range = termRangeAt(view, at);
+  if (!range) return false;
+  const { from, to } = range;
+  const name = view.state.sliceDoc(from, to);
+  if (!name) return false;
+
+  if (!nav || !nav.symbolId) {
+    return startCrossFileRename(view, range, name);
   }
-  const { from, to } = nav.nameRange;
+
+  const { sites, anchorSite } = sitesForSymbol(view, nav.symbolId, nav.name || name, from, to);
   const eng = getEngine(view);
-  const preview = eng && typeof eng.renamePreview === 'function'
-    ? eng.renamePreview(nav.symbolId, nav.name || '')
-    : null;
-  const refRanges = preview && preview.ok
-    ? preview.edits.filter((e) => e.from !== from).map((e) => ({ from: e.from, to: e.to }))
-    : [];
-  // Renaming a GLOBAL ripples to the rest of the project group on commit.
   const sym = eng && eng.getSnapshot && eng.getSnapshot()
     ? eng.getSnapshot().symbols?.symbolsById?.get(nav.symbolId)
     : null;
   const session = {
     symbolId: nav.symbolId,
-    originalName: nav.name || '',
-    anchorFrom: from,
-    anchorTo: to,
-    refRanges,
+    originalName: nav.name || name,
+    sites,
+    anchorSite,
     propagate: !!(sym && sym.isGlobal),
   };
   view.dispatch({
     effects: setRenameSession.of(session),
     selection: { anchor: from, head: to },
   });
+  queueMicrotask(() => {
+    if (view.dom.isConnected) forceLinting(view);
+  });
   view.focus();
   return true;
 }
 
-// F2 on a name DEFINED IN ANOTHER FILE: rename it across the whole group. The
-// inline session edits this document's free occurrences live; the defining
-// file and the rest of the group are rewritten on commit.
-function startCrossFileRename(view, at) {
-  const cross = crossFileDefinitionAt(view, at);
-  if (!cross || !cross.sourceRange) return false;
-  const { from, to } = cross.sourceRange;
-  const name = view.state.sliceDoc(from, to);
-  if (!name) return false;
-  const refRanges = usesOf(view.state.doc.toString())
-    .filter((u) => u.name === name && u.from !== from)
-    .map((u) => ({ from: u.from, to: u.to }));
+function startCrossFileRename(view, range, name) {
+  const cross = crossFileDefinitionAt(view, view.state.selection.main.head);
+  if (!cross) return false;
+  const { from, to } = range;
+  const { sites, anchorSite } = sitesForCrossFile(view.state.doc.toString(), name, from, to);
   const session = {
     symbolId: null,
     originalName: name,
-    anchorFrom: from,
-    anchorTo: to,
-    refRanges,
+    sites,
+    anchorSite,
     crossFile: { defFileId: cross.fileId },
   };
   view.dispatch({
     effects: setRenameSession.of(session),
     selection: { anchor: from, head: to },
+  });
+  queueMicrotask(() => {
+    if (view.dom.isConnected) forceLinting(view);
   });
   view.focus();
   return true;
@@ -592,8 +724,8 @@ export function belRename() {
     renameSessionField,
     renameHighlighter,
     EditorState.changeFilter.of(renameChangeFilter),
-    EditorView.updateListener.of(syncReferences),
     EditorView.updateListener.of(watchGroupRenameHistory),
+    EditorState.transactionExtender.of(renameSyncExtender),
     EditorState.transactionExtender.of((tr) => {
       if (!tr.docChanged) return null;
       if (tr.annotation(renameSync)) return null;
@@ -610,10 +742,18 @@ export function belRename() {
           if (!renameActive(view)) return;
           const session = view.state.field(renameSessionField, false);
           if (!session) return;
+          const anchor = anchorSiteOf(session);
           const sel = view.state.selection.main;
-          if (sel.from < session.anchorFrom || sel.to > session.anchorTo) {
+          if (sel.from < anchor.from || sel.to > anchor.to) {
             cancelRename(view);
           }
+        });
+        return false;
+      },
+      blur(_e, view) {
+        if (!renameActive(view)) return false;
+        requestAnimationFrame(() => {
+          cancelRenameIfFocusLost(view);
         });
         return false;
       },
@@ -622,14 +762,27 @@ export function belRename() {
       if (!update.selectionSet || update.docChanged) return;
       const session = update.state.field(renameSessionField, false);
       if (!session) return;
+      const anchor = anchorSiteOf(session);
       const sel = update.state.selection.main;
-      if (sel.from < session.anchorFrom || sel.to > session.anchorTo) {
+      if (sel.from < anchor.from || sel.to > anchor.to) {
         deferRename(cancelRename, update.view);
       }
     }),
     Prec.highest(keymap.of([
       { key: 'Enter', run: (view) => renameActive(view) && commitRename(view) },
       { key: 'Escape', run: (view) => renameActive(view) && cancelRename(view) },
+      {
+        key: 'Backspace',
+        run(view) {
+          const session = view.state.field(renameSessionField, false);
+          if (!session) return false;
+          const sel = view.state.selection.main;
+          if (!sel.empty) return false;
+          const anchor = anchorSiteOf(session);
+          if (anchor.from < anchor.to) return false;
+          return cancelRename(view);
+        },
+      },
       { key: 'F2', run: (view) => startRename(view) },
     ])),
     EditorView.editorAttributes.of((view) => (

@@ -605,6 +605,15 @@
       function () { return p0 ? p0.readStoredEditorFoldGutter() : true; },
       function (p, on) { p.writeStoredEditorFoldGutter(on); }
     );
+    addDropdownRow(panelBodies.editor, 'editor-fold-persist', 'Remember folds', 'Where to store which blocks are folded per file.',
+      [
+        { value: 'none', label: 'Don\'t remember' },
+        { value: 'session', label: 'This session' },
+        { value: 'local', label: 'Always (local)' },
+      ],
+      function () { return p0 ? p0.readStoredEditorFoldPersist() : 'none'; },
+      function (p, v) { p.writeStoredEditorFoldPersist(v); }
+    );
     addSwitchRow(panelBodies.editor, 'editor-active-line', 'Active line highlight', 'Background on the current line.',
       function () { return p0 ? p0.readStoredEditorActiveLine() : true; },
       function (p, on) { p.writeStoredEditorActiveLine(on); }

@@ -24,7 +24,33 @@ export function parseHoles(rawOutput) {
   const holes = [];
   let cur = null;
   let section = null; // 'meta' | 'comp' | null
-  const flush = () => { if (cur) holes.push(cur); cur = null; section = null; };
+  // A DEEP type wraps across report lines (`X :` then an indented multi-line
+  // `(g, x : name, … |-` continuation). Accumulate until brackets balance —
+  // otherwise the entry is dropped AND its tail line parses as a bogus entry.
+  let pending = null; // { name, type, section }
+  let goalOpen = false;
+  const depth = (s) => {
+    let d = 0;
+    for (const ch of String(s)) {
+      if (ch === '(' || ch === '[' || ch === '{') d += 1;
+      else if (ch === ')' || ch === ']' || ch === '}') d -= 1;
+    }
+    return d;
+  };
+  const commitPending = () => {
+    if (pending && cur && pending.type.trim()) {
+      (pending.section === 'meta' ? cur.meta : cur.ctx)
+        .push({ name: pending.name, type: pending.type.replace(/\s+/g, ' ').trim() });
+    }
+    pending = null;
+  };
+  const flush = () => {
+    commitPending();
+    goalOpen = false;
+    if (cur) holes.push(cur);
+    cur = null;
+    section = null;
+  };
 
   for (const raw of lines) {
     const head = raw.match(HOLE_HEAD);
@@ -45,15 +71,39 @@ export function parseHoles(rawOutput) {
     }
     if (!cur) continue;
     const t = raw.trim();
-    if (/^Meta-context:/i.test(t)) { section = 'meta'; continue; }
-    if (/^Computation context:/i.test(t)) { section = 'comp'; continue; }
+    if (goalOpen && t) {
+      cur.goal = `${cur.goal || ''} ${t}`.replace(/\s+/g, ' ').trim();
+      if (depth(cur.goal) <= 0) goalOpen = false;
+      continue;
+    }
+    if (/^Meta-context:/i.test(t)) { commitPending(); section = 'meta'; continue; }
+    if (/^Computation context:/i.test(t)) { commitPending(); section = 'comp'; continue; }
     const goal = t.match(/^Goal:\s*(.*)$/i);
-    if (goal) { cur.goal = goal[1].trim() || null; section = null; continue; }
-    if (/^Variable of this type:/i.test(t)) { section = null; continue; }
+    if (goal) {
+      commitPending();
+      cur.goal = goal[1].trim() || null;
+      section = null;
+      goalOpen = !!cur.goal && depth(cur.goal) > 0;
+      continue;
+    }
+    if (/^Variable of this type:/i.test(t)) { commitPending(); section = null; continue; }
     if (t.startsWith('##')) { flush(); continue; } // left the holes section
     if ((section === 'meta' || section === 'comp') && t) {
+      if (pending) {
+        pending.type += ` ${t}`;
+        if (pending.type.trim() && depth(pending.type) <= 0) commitPending();
+        continue;
+      }
       const e = t.match(CTX_ENTRY);
-      if (e) (section === 'meta' ? cur.meta : cur.ctx).push({ name: e[1], type: e[2].trim() });
+      if (e) {
+        const type = e[2].trim();
+        if (depth(type) > 0) pending = { name: e[1], type, section };
+        else (section === 'meta' ? cur.meta : cur.ctx).push({ name: e[1], type });
+        continue;
+      }
+      // `X :` alone — the whole type follows on continuation lines.
+      const open = t.match(/^([^\s:]+)\s*:\s*$/);
+      if (open) pending = { name: open[1], type: '', section };
     }
   }
   flush();

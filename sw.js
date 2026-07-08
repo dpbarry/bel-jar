@@ -1,9 +1,15 @@
 'use strict';
 
-var CACHE_NAME = 'beluga-runtime-20260701053244';
+var CACHE_NAME = 'beluga-runtime-20260708-hpt-redesign';
 
 function isBelugaRuntime(url) {
   return /\/beluga_web\.bc(\.dt)?\.js$/.test(new URL(url).pathname);
+}
+
+function stashInCache(cache, request, response) {
+  try {
+    cache.put(request, response.clone()).catch(function () {});
+  } catch (_) { /* clone/quota must never break the live response */ }
 }
 
 self.addEventListener('install', function () {
@@ -28,15 +34,12 @@ self.addEventListener('fetch', function (event) {
   event.respondWith(
     caches.open(CACHE_NAME).then(function (cache) {
       return cache.match(event.request).then(function (cached) {
-        var networkPromise = fetch(event.request).then(function (response) {
-          if (response.ok) cache.put(event.request, response.clone());
-          return response;
-        }).catch(function (err) {
-          if (cached) return cached;
-          throw err;
-        });
+        if (cached) return cached;
 
-        return cached || networkPromise;
+        return fetch(event.request).then(function (response) {
+          if (response.ok) stashInCache(cache, event.request, response);
+          return response;
+        });
       });
     })
   );

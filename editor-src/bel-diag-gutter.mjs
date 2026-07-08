@@ -3,6 +3,7 @@ import { Decoration, EditorView, GutterMarker, ViewPlugin, gutterLineClass } fro
 import { diagnosticCount, forEachDiagnostic } from '@codemirror/lint';
 import { bindHoleGutterTip } from './bel-hole-decorations.mjs';
 import { isSuitePreludeBannerDiag } from './suite-prelude-banner.mjs';
+import { isRenaming } from './bel-rename.mjs';
 
 class DiagRowMarker extends GutterMarker {
   constructor(cls) {
@@ -40,16 +41,19 @@ function buildRowMarkers(state, getBelugaDiags = null, getOverlayDiags = null) {
     preludeLines.add(line.from);
     severityByLine.set(line.from, 'error');
   }
-  forEachDiagnostic(state, (d, from) => {
-    if (d.severity !== 'error' && d.severity !== 'warning') return;
-    mergeSeverity(severityByLine, state.doc.lineAt(from).from, d.severity);
-  });
-  if (typeof getBelugaDiags === 'function') {
-    for (const d of getBelugaDiags()) {
-      if (isSuitePreludeBannerDiag(d)) continue;
-      if (d.severity !== 'error' && d.severity !== 'warning') continue;
-      if (d.from == null) continue;
-      mergeSeverity(severityByLine, state.doc.lineAt(d.from).from, d.severity);
+  if (!isRenaming(state)) {
+    forEachDiagnostic(state, (d, from) => {
+      if (d.severity !== 'error' && d.severity !== 'warning') return;
+      if (from < 0 || from > state.doc.length) return;
+      mergeSeverity(severityByLine, state.doc.lineAt(from).from, d.severity);
+    });
+    if (typeof getBelugaDiags === 'function') {
+      for (const d of getBelugaDiags()) {
+        if (isSuitePreludeBannerDiag(d)) continue;
+        if (d.severity !== 'error' && d.severity !== 'warning') continue;
+        if (d.from == null || d.from < 0 || d.from > state.doc.length) continue;
+        mergeSeverity(severityByLine, state.doc.lineAt(d.from).from, d.severity);
+      }
     }
   }
 
@@ -336,7 +340,23 @@ export function bindStackedDiagnosticTip(el, diags, { placement = 'right', T = n
   tooltips?.bind?.(el);
 }
 
+function clearGutterTips(view) {
+  const T = typeof window !== 'undefined' && window.Tooltips;
+  const cells = view.dom.querySelectorAll('.cm-lineNumbers .cm-gutterElement');
+  cells.forEach((cell) => {
+    if (cell.hasAttribute('data-tooltip-errors')) {
+      for (const a of TIP_ATTRS) cell.removeAttribute(a);
+      bindHoleGutterTip(cell);
+    }
+  });
+  T?.hideImmediate?.();
+}
+
 function applyGutterTips(view, getBelugaDiags = null) {
+  if (isRenaming(view.state)) {
+    clearGutterTips(view);
+    return;
+  }
   const g = typeof window !== 'undefined' ? window : null;
   const T = g && g.Tooltips;
   const byLine = diagnosticsByLine(view.state, getBelugaDiags);

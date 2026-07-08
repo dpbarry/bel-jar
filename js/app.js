@@ -1175,6 +1175,8 @@ function ensureLibrary() {
     applyTip: (el, tip) => setBelJarTip(el, tip, { ariaLabel: false }),
     showToast,
     afterSuiteEdit,
+    applyFileReplacement: (id, text) => applyFileReplacement(id, text),
+    applyUploadPlan: (plan) => executeUploadPlan(plan, { openTabs: false }),
     onProjectChanged: ({ modifiedActive } = {}) => {
       renderTabs();
       renderExplorerTree();
@@ -1295,6 +1297,7 @@ function switchToFile(id, openOpts) {
     rememberCfgLint(leavingId, { ...snap, items: lintItems });
   }
   if (typeof BelJarWorkspaceState !== 'undefined') BelJarWorkspaceState.flushWorkspace();
+  if (editor && typeof editor.cancelRename === 'function') editor.cancelRename();
   // Order matters: switchFile flushes the OLD file while its engine/providers
   // are still alive, then loads the new state and drops the stale providers.
   const snapshot = persist.switchFile(id);
@@ -1999,9 +2002,10 @@ if (harpoonBtn && workspaceEl) {
     harpoonRefreshTimer = setTimeout(refreshHarpoonPanelIfOpen, 120);
   };
   window.addEventListener('beljar:doc-changed', debouncedHarpoonRefresh);
-  window.addEventListener('beljar:file-lint', refreshHarpoonPanelIfOpen);
-  window.addEventListener('beljar:active-editor-view', refreshHarpoonPanelIfOpen);
-  window.addEventListener('beljar:development-checked', refreshHarpoonPanelIfOpen);
+  window.addEventListener('beljar:file-lint', debouncedHarpoonRefresh);
+  window.addEventListener('beljar:active-editor-view', debouncedHarpoonRefresh);
+  window.addEventListener('beljar:development-checked', debouncedHarpoonRefresh);
+  window.addEventListener('beljar:hole-goals-updated', debouncedHarpoonRefresh);
 
   // Restored-open on page load: the inline boot script adds `is-harpoon-open`
   // but never inits the body, so initialize it here (mirrors ensureLibrary()'s
@@ -2186,6 +2190,30 @@ async function exportLibraryAsNewProject(payload) {
   });
 }
 
+// Conflict-resolution replace writes storage directly; cancel any debounced autosave
+// on the active checkpoint first so it cannot stomp the new body afterward.
+function applyFileReplacement(id, text) {
+  if (!id || text == null || typeof BelJarPersist === 'undefined') return;
+  const activeId = persist ? persist.getCurrentFileId() : null;
+  const registryActiveId = BelJarPersist.getActiveFileId();
+  const isActive = !!(
+    editor && persist
+    && (id === activeId || id === registryActiveId)
+  );
+  if (isActive && persist.cancelPendingSave) persist.cancelPendingSave();
+  BelJarPersist.setFileText(id, text);
+  if (!isActive) return;
+  const stored = BelJarPersist.getFileText(id);
+  if (stored == null) return;
+  if (persist.replaceEditorText) persist.replaceEditorText(stored);
+  editor.setValue(stored);
+  ensureEditorMatchesFileKind();
+  const file = BelJarPersist.getFileById(id);
+  if (file && /\.cfg$/i.test(file.name) && typeof editor.refreshLint === 'function') {
+    editor.refreshLint();
+  }
+}
+
 function deleteProjectFilesById(ids) {
   const unique = [...new Set(ids)];
   if (!unique.length || typeof BelJarPersist === 'undefined') return;
@@ -2200,6 +2228,15 @@ function deleteProjectFilesById(ids) {
   for (const id of unique) {
     BelJarPersist.deleteFile(id);
     cfgTabLint.delete(id);
+  }
+  if (persist) {
+    const cur = persist.getCurrentFileId();
+    if (cur && unique.includes(cur) && !BelJarPersist.getFileById(cur)) {
+      const open = BelJarPersist.getOpenFileIds().find((openId) => BelJarPersist.getFileById(openId));
+      if (open) switchToFile(open);
+      else if (projectIsEmpty()) enterEmptyProjectView();
+      else enterCanvasIdleView();
+    }
   }
   if (projectIsEmpty()) enterEmptyProjectView();
 }
@@ -2239,7 +2276,7 @@ function executeUploadPlan(plan, options) {
   }
 
   for (const item of plan.replace || []) {
-    BelJarPersist.setFileText(item.id, item.text);
+    applyFileReplacement(item.id, item.text);
     replaced += 1;
   }
 
@@ -2294,14 +2331,19 @@ function reloadActiveEditorFromPersist() {
   const id = persist.getCurrentFileId();
   if (!id) return;
   const file = BelJarPersist.getFileById(id);
+  if (!file) {
+    const fallback = BelJarPersist.getOpenFileIds().find((openId) => BelJarPersist.getFileById(openId));
+    if (fallback) switchToFile(fallback);
+    else if (!projectIsEmpty()) enterCanvasIdleView();
+    return;
+  }
   const stored = BelJarPersist.getFileText(id);
   if (stored == null) return;
   const live = editor.getValue();
   if (live === stored) return;
-  const checkpoint = typeof persist.getEditorText === 'function' ? persist.getEditorText() : null;
-  if (checkpoint != null && live === checkpoint && checkpoint !== stored) return;
+  if (persist.cancelPendingSave) persist.cancelPendingSave();
+  if (persist.replaceEditorText) persist.replaceEditorText(stored);
   editor.setValue(stored);
-  persist.scheduleEditorPersist(stored);
   ensureEditorMatchesFileKind();
   if (file && /\.cfg$/i.test(file.name) && typeof editor.refreshLint === 'function') {
     editor.refreshLint();
@@ -2352,7 +2394,7 @@ function applyMovePlan(plan) {
     for (const r of folder.renames || []) recordMove(r.id, r.to);
   }
   for (const rep of plan.replaces || []) {
-    BelJarPersist.setFileText(rep.targetId, rep.text);
+    applyFileReplacement(rep.targetId, rep.text);
     deleteProjectFilesById([rep.deleteId]);
   }
   for (const r of plan.renames || []) recordMove(r.id, r.to);

@@ -58,8 +58,39 @@
   var proving = false;
   var backHandler = null;
   var provingDecl = null;
+  var panelSession = null;
   var pendingProve = null;
   var computingKeys = {};
+  var lastListRenderKey = '';
+
+  function goalRenderToken(goal, goalState) {
+    var st = goalState || '';
+    if (st === 'approximate' || st === 'rechecking' || st === 'pending') st = 'loading';
+    var g = goal || '';
+    if (g) g = displayType(g).replace(/\s+/g, '');
+    return st + ':' + g;
+  }
+
+  function modelRenderKey(model) {
+    if (!model || !model.totalCount) return '';
+    var parts = [String(model.totalCount)];
+    for (var si = 0; si < model.sections.length; si++) {
+      var sec = model.sections[si];
+      for (var ei = 0; ei < sec.entries.length; ei++) {
+        var entry = sec.entries[ei];
+        var hit = entry.hit;
+        var h = hit.hole;
+        var key = entryKey(entry);
+        parts.push([
+          key,
+          entry.inDevelopment === false ? '0' : '1',
+          goalRenderToken(h.goal, h.goalState),
+          computingKeys[key] ? '1' : '0',
+        ].join(':'));
+      }
+    }
+    return parts.join('|');
+  }
 
   function jumpToEntry(entry) {
     var hit = entry.hit;
@@ -141,6 +172,61 @@
       n.addEventListener('click', function (ev) { ev.stopPropagation(); });
     }
     return n;
+  }
+
+  function mountTieredGoal(goalEl, goalState, goalType) {
+    var ed = E();
+    if (ed && typeof ed.mountHoleGoalTier === 'function') {
+      ed.mountHoleGoalTier(goalEl, {
+        surface: 'harpoon-card',
+        goalState: goalState,
+        goal: goalType,
+      });
+      return;
+    }
+    goalEl.appendChild(el('span', 'harpoon-hole-recalc beljar-tip-shimmer', 'Recalculating\u2026'));
+  }
+
+  function applyGoalStateToModel(model, view) {
+    var ed = E();
+    var api = global.BelJarCurrentEditor;
+    var eng = api && typeof api.getSemanticEngine === 'function' ? api.getSemanticEngine() : null;
+    var P = typeof global.BelJarPersist !== 'undefined' ? global.BelJarPersist : null;
+    if (!ed || typeof ed.enrichHoleHitsWithGoalState !== 'function' || !view) return model;
+    var activeId = activeFileId();
+    var getText = P && typeof P.getFileText === 'function'
+      ? function (id) { return P.getFileText(id); }
+      : function () { return ''; };
+    for (var si = 0; si < model.sections.length; si++) {
+      var sec = model.sections[si];
+      for (var ei = 0; ei < sec.entries.length; ei++) {
+        var entry = sec.entries[ei];
+        var enriched = ed.enrichHoleHitsWithGoalState(view, [entry.hit], entry.filePath, eng, {
+          fileId: entry.fileId,
+          isActiveFile: entry.fileId === activeId,
+          inDevelopment: entry.inDevelopment !== false,
+          fileText: String(getText(entry.fileId) ?? ''),
+        });
+        entry.hit = enriched[0];
+      }
+    }
+    return model;
+  }
+
+  function maybeCertifyVisibleGoals(model, view) {
+    var ed = E();
+    if (!ed || typeof ed.scheduleCertifyHoleGoalsScoped !== 'function' || !view) return;
+    var activeId = activeFileId();
+    var hits = [];
+    for (var si = 0; si < model.sections.length; si++) {
+      var sec = model.sections[si];
+      for (var ei = 0; ei < sec.entries.length; ei++) {
+        var entry = sec.entries[ei];
+        if (entry.fileId !== activeId || entry.inDevelopment === false) continue;
+        hits.push(entry.hit);
+      }
+    }
+    if (hits.length) ed.scheduleCertifyHoleGoalsScoped(view, hits);
   }
 
   function mergeHitGoal(hit, richHoles) {
@@ -257,8 +343,11 @@
     var hit = entry.hit;
     var key = entryKey(entry);
     var goalType = hit.hole.goal || null;
+    var goalState = hit.hole.goalState || (goalType ? 'live' : 'pending');
     var outOfScope = entry.inDevelopment === false;
     var computing = !!computingKeys[key];
+    var tiered = !computing && !outOfScope
+      && (goalState === 'pending' || goalState === 'approximate' || goalState === 'rechecking');
 
     var row = el('div', 'harpoon-panel-hole');
     row.setAttribute('role', 'button');
@@ -290,29 +379,25 @@
     row.appendChild(el('div', 'harpoon-panel-hole-rule'));
 
     var goal = el('div', 'harpoon-hole-goal');
-    if (goalType) {
+    if (goalState === 'live' || (goalState === 'cached' && goalType)) {
       row.dataset.goalState = outOfScope ? 'cached' : 'ready';
       renderType(goal, goalType);
     } else if (computing) {
       row.classList.add('is-pending');
       row.dataset.goalState = 'computing';
-      var sh0 = el('span', 'harpoon-hole-recalc beljar-tip-shimmer', 'Recalculating\u2026');
-      var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      sh0.style.setProperty('--shimmer-pulse-delay', '-' + (t0 % 1400) + 'ms');
-      sh0.style.setProperty('--shimmer-spin-delay', '-' + (t0 % 700) + 'ms');
-      goal.appendChild(sh0);
+      mountTieredGoal(goal, 'pending', null);
     } else if (outOfScope) {
       row.classList.add('is-unfocused');
       row.dataset.goalState = 'inactive';
       goal.appendChild(el('span', 'harpoon-hole-unfocused', 'Out of scope: click to compute'));
+    } else if (tiered) {
+      row.classList.add('is-pending');
+      row.dataset.goalState = goalState;
+      mountTieredGoal(goal, goalState, goalType);
     } else {
       row.classList.add('is-pending');
       row.dataset.goalState = 'pending';
-      var sh = el('span', 'harpoon-hole-recalc beljar-tip-shimmer', 'Recalculating\u2026');
-      var t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      sh.style.setProperty('--shimmer-pulse-delay', '-' + (t % 1400) + 'ms');
-      sh.style.setProperty('--shimmer-spin-delay', '-' + (t % 700) + 'ms');
-      goal.appendChild(sh);
+      mountTieredGoal(goal, 'pending', null);
     }
     row.appendChild(goal);
 
@@ -357,10 +442,17 @@
       });
   }
 
-  function renderList() {
+  function renderList(opts) {
     if (!bodyEl) return;
     exitProofMode();
+    var view = curView();
     var model = collectProjectSections();
+    applyGoalStateToModel(model, view);
+    if (opts && opts.certify) maybeCertifyVisibleGoals(model, view);
+
+    var renderKey = modelRenderKey(model);
+    if (model.totalCount && renderKey === lastListRenderKey && bodyEl.querySelector('.harpoon-panel-list')) return;
+    lastListRenderKey = renderKey;
 
     if (!model.totalCount) {
       bodyEl.textContent = '';
@@ -406,17 +498,22 @@
     bodyEl.appendChild(host);
 
     backHandler = function () {
+      if (panelSession && typeof panelSession.disposeSession === 'function') {
+        panelSession.disposeSession();
+        panelSession = null;
+        return;
+      }
       var proof = global.BelJarHarpoonEngine;
       if (proof && proof.dispose) proof.dispose();
       provingDecl = null;
       renderList();
     };
 
-    lab.proveInPanel(view, eng, hit, host, {
+    panelSession = lab.proveInPanel(view, eng, hit, host, {
       onSessionStart: function () { enterProofMode(); },
-      onSessionEnd: function () { provingDecl = null; renderList(); },
+      onSessionEnd: function () { panelSession = null; provingDecl = null; renderList(); },
       onBack: backHandler,
-      onDone: function () { provingDecl = null; renderList(); },
+      onDone: function () { panelSession = null; provingDecl = null; renderList(); },
     });
   }
 
@@ -481,12 +578,12 @@
         });
       }
     }
-    renderList();
+    renderList({ certify: true });
   }
 
   function refresh() {
     if (bodyEl && !proving) {
-      renderList();
+      renderList({ certify: true });
       tryPendingProve();
     }
   }

@@ -2,13 +2,20 @@
 'use strict';
 
 var params = new URLSearchParams(self.location.search);
-var BELUGA_JS = params.get('build') === 'fast'
-  ? '../beluga_web.bc.dt.js'
-  : '../beluga_web.bc.js';
+
+function belugaScriptUrl() {
+  var fromParam = params.get('script');
+  if (fromParam) return fromParam;
+  var rel = params.get('build') === 'fast' ? '../beluga_web.bc.dt.js' : '../beluga_web.bc.js';
+  return new URL(rel, self.location.href).href;
+}
+
+var BELUGA_JS = belugaScriptUrl();
 
 var currentJob = null;
 var jobQueue = [];
 var belugaReady = false;
+var belugaLoadError = null;
 var progressPending = null;
 var progressScheduled = false;
 
@@ -48,9 +55,6 @@ function runBelugaJob(type, payload) {
   }
   if (type === 'ide-command') return Beluga.ideCommandJson(payload);
   if (type === 'fingerprint') return Beluga.getCommittedFingerprint();
-  // Harpoon — a stateful interactive proof on THIS worker's Beluga instance.
-  // The session persists across jobs (Beluga holds it in a ref), so all proof
-  // jobs for one proof must go to the same (dedicated) worker slot.
   if (type === 'harpoon-start') return Beluga.ideProofStart(payload.code, payload.line, payload.col);
   if (type === 'harpoon-state') return Beluga.ideProofState();
   if (type === 'harpoon-tactic') return Beluga.ideProofTactic(payload.subgoal, payload.tactic);
@@ -60,8 +64,24 @@ function runBelugaJob(type, payload) {
   throw new Error('Unknown job type: ' + type);
 }
 
+function rejectJob(job, message) {
+  if (!job) return;
+  self.postMessage({ id: job.id, type: 'error', message: message });
+}
+
 function runNext() {
   if (currentJob || !jobQueue.length) return;
+
+  if (belugaLoadError) {
+    currentJob = jobQueue.shift();
+    rejectJob(currentJob, belugaLoadError);
+    currentJob = null;
+    runNext();
+    return;
+  }
+
+  if (!belugaReady) return;
+
   currentJob = jobQueue.shift();
   progressPending = null;
   progressScheduled = false;
@@ -69,14 +89,12 @@ function runNext() {
   try {
     if (currentJob.type === 'init') {
       if (typeof Beluga === 'undefined') throw new Error('Beluga failed to load in worker');
-      belugaReady = true;
       self.postMessage({ id: currentJob.id, type: 'ready' });
       currentJob = null;
       runNext();
       return;
     }
 
-    if (!belugaReady) throw new Error('Beluga worker not initialized');
     self.postMessage({
       id: currentJob.id,
       type: 'result',
@@ -106,4 +124,42 @@ self.onmessage = function (e) {
   enqueueJob(msg);
 };
 
-importScripts(BELUGA_JS);
+function importBelugaFromBlob(buffer) {
+  var blob = new Blob([buffer], { type: 'text/javascript' });
+  var url = URL.createObjectURL(blob);
+  try {
+    importScripts(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function loadBelugaScript() {
+  return fetch(BELUGA_JS, { credentials: 'same-origin' }).then(function (res) {
+    if (!res.ok) {
+      throw new Error('Beluga fetch HTTP ' + res.status + ' for ' + BELUGA_JS);
+    }
+    return res.arrayBuffer();
+  }).then(function (buf) {
+    if (!buf || !buf.byteLength) throw new Error('Beluga script was empty: ' + BELUGA_JS);
+    importBelugaFromBlob(buf);
+    if (typeof Beluga === 'undefined') throw new Error('Beluga global missing after load');
+  }).catch(function (fetchErr) {
+    try {
+      importScripts(BELUGA_JS);
+      if (typeof Beluga === 'undefined') throw new Error('Beluga global missing after load');
+    } catch (syncErr) {
+      var detail = fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr);
+      var syncDetail = syncErr && syncErr.message ? syncErr.message : String(syncErr);
+      throw new Error('Could not load Beluga (' + detail + '; importScripts: ' + syncDetail + ')');
+    }
+  });
+}
+
+loadBelugaScript().then(function () {
+  belugaReady = true;
+  runNext();
+}).catch(function (err) {
+  belugaLoadError = err && err.message ? err.message : String(err);
+  runNext();
+});

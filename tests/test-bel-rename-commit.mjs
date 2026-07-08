@@ -1,10 +1,11 @@
 import { EditorState, Transaction } from '@codemirror/state';
 import {
   belRename,
-  buildReferenceSyncChanges,
   buildRenameCommitChanges,
+  planReferenceSync,
   renameActiveField,
   renameSessionEffect,
+  renameSync,
 } from '../editor-src/bel-rename.mjs';
 
 function expect(cond, msg) {
@@ -13,46 +14,81 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
-const setRenameSession = renameSessionEffect;
-
 const session = {
   symbolId: 'sym:foo',
   originalName: 'foo',
-  anchorFrom: 0,
-  anchorTo: 3,
-  refRanges: [{ from: 8, to: 11 }],
+  sites: [{ from: 0, to: 3 }, { from: 8, to: 11 }],
+  anchorSite: 0,
 };
 
-const edits = buildRenameCommitChanges(session, 'baz');
+const mirrored = 'baz bar baz';
+const edits = buildRenameCommitChanges(session, 'baz', { sliceString: (f, t) => mirrored.slice(f, t) });
 expect(edits.length === 2, 'commit should touch anchor + one reference');
 expect(edits.every((e) => e.insert === 'baz'), 'both sites get the new name');
+expect(edits[0].from === 0 && edits[0].to === 3, 'anchor site exact range');
+expect(edits[1].from === 8 && edits[1].to === 11, 'ref site exact range');
 
-const state = EditorState.create({
+let state = EditorState.create({
   doc: 'foo bar foo',
   extensions: belRename(),
 });
 
-const withSession = state.update({
-  effects: setRenameSession.of(session),
+state = state.update({
+  effects: renameSessionEffect.of(session),
 }).state;
 
-expect(withSession.field(renameActiveField, false), 'rename session installed');
+expect(state.field(renameActiveField, false), 'rename session installed');
 
-const blocked = withSession.update({
+const blocked = state.update({
   changes: [{ from: 8, to: 11, insert: 'baz' }],
 });
 expect(blocked.state.doc.toString() === 'foo bar foo', 'reference-only edit blocked during rename');
 
-const committed = withSession.update({
-  changes: buildRenameCommitChanges(session, 'baz'),
+state = state.update({
+  changes: [{ from: 0, to: 3, insert: 'baz' }],
+}).state;
+const live = planReferenceSync(state, state.field(renameActiveField, false));
+state = state.update({
+  changes: live.changes,
+  annotations: [renameSync.of(true), Transaction.addToHistory.of(false)],
+}).state;
+expect(state.doc.toString() === 'baz bar baz', 'draft mirrors to all references while typing');
+
+const committed = state.update({
+  changes: buildRenameCommitChanges(
+    state.field(renameActiveField, false),
+    'baz',
+    state.doc,
+  ),
   annotations: Transaction.userEvent.of('rename'),
 });
 expect(committed.state.doc.toString() === 'baz bar baz', 'all occurrences rewritten on commit');
 
-const midRename = EditorState.create({ doc: 'ton bar foo' });
-const sync = buildReferenceSyncChanges(midRename, session);
-expect(sync.length === 1 && sync[0].insert === 'ton', 'sync picks up anchor draft');
-const synced = midRename.update({ changes: sync }).state;
-expect(synced.doc.toString() === 'ton bar ton', 'reference sync rewrites refs to match anchor');
+// Length change: foo -> longername must not mangle on commit after live mirror
+const longSession = {
+  symbolId: 'sym:foo',
+  originalName: 'foo',
+  sites: [{ from: 0, to: 3 }, { from: 8, to: 11 }],
+  anchorSite: 0,
+};
+let longState = EditorState.create({ doc: 'foo bar foo', extensions: belRename() });
+longState = longState.update({ effects: renameSessionEffect.of(longSession) }).state;
+longState = longState.update({ changes: [{ from: 0, to: 3, insert: 'longername' }] }).state;
+const longPlan = planReferenceSync(longState, longState.field(renameActiveField, false));
+longState = longState.update({
+  changes: longPlan.changes,
+  annotations: [renameSync.of(true), Transaction.addToHistory.of(false)],
+}).state;
+expect(longState.doc.toString() === 'longername bar longername', 'longer draft mirrors correctly');
+const longCommit = buildRenameCommitChanges(
+  longState.field(renameActiveField, false),
+  'longername',
+  longState.doc,
+);
+let longDoc = longState.doc.toString();
+for (const e of [...longCommit].sort((a, b) => b.from - a.from)) {
+  longDoc = longDoc.slice(0, e.from) + e.insert + longDoc.slice(e.to);
+}
+expect(longDoc === 'longername bar longername', 'length-change commit does not mangle');
 
-console.log('OK bel-rename commit (anchor + refs, rename userEvent allowed)');
+console.log('OK bel-rename commit (live mirror + symbol commit)');

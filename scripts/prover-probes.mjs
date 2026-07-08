@@ -90,11 +90,11 @@ const probes = [
     ].join('\n'),
   },
   {
-    // tp_uniq closes the t_app branch generally but its t_lam branch needs recursion
-    // under a `block`-extended context (block-schema projection) — a KNOWN capability
-    // GAP, honest-declined rather than faked. Optional until block-schema is general.
+    // Exercises the whole context-schema move set: t_app (invert + multi-arg IH),
+    // t_lam (block-schema IH under a binder — the schema-conformant context
+    // extension `[g, b:block (…) |- D[.., b.1, b.2]]`), and the parameter branch
+    // (parameter inversion `let [g |- #q.u[..]] = f in`). A HARD gate.
     name: 'tp_uniq',
-    optional: true,
     maxSteps: 90,
     prelude: [
       'tp : type.',
@@ -113,6 +113,52 @@ const probes = [
     decl: [
       "rec tp_uniq : (g:tctx)[g |- oft M T[]] -> [g |- oft M T'[]] -> [ |- eq T T'] =",
       '/ total d (tp_uniq g m t t\' d) /',
+      '?',
+      ';',
+    ].join('\n'),
+  },
+  {
+    // HELD-OUT generality validation (the anti-overfit bar): a library-corpus
+    // lemma the engine was never developed against — eq-proof.bel's transitivity.
+    // Exercises: param branch closed by the SECOND premise, inversion + two-arg
+    // recursion, block repackaging shared across both args, and the tuple-
+    // substitution re-lambda `eq_lam (\x. \u. E[.., <x;u>])`.
+    // HELD-OUT: eq-proof.bel's reflexivity — a Pi-PREMISE theorem (`mlam g =>
+    // mlam U => case [g |- U] of …` with the IH instantiating the Pi binders:
+    // `eq_ref [g, b:block (…)] [g, b |- L[.., b.1]]`).
+    name: 'eq_ref',
+    maxSteps: 80,
+    prelude: [
+      'exp: type.',
+      'app: exp -> exp -> exp.',
+      'lam: (exp -> exp) -> exp.',
+      'eq: exp -> exp -> type.',
+      'eq_app : eq E1 F1 -> eq E2 F2 -> eq (app E1 E2) (app F1 F2).',
+      'eq_lam :  ({x : exp} eq x x -> eq (E x) (F x)) -> eq (lam (\\x. E x)) (lam (\\x. F x)).',
+      'schema eqCtx = block x:exp, _t:eq x x;',
+    ].join('\n'),
+    decl: [
+      'rec eq_ref : {g:eqCtx} {U:[g |- exp]} [g |- eq U U] =',
+      '/ total u (eq_ref g u) /',
+      '?',
+      ';',
+    ].join('\n'),
+  },
+  {
+    name: 'eq_trans',
+    maxSteps: 80,
+    prelude: [
+      'exp: type.',
+      'app: exp -> exp -> exp.',
+      'lam: (exp -> exp) -> exp.',
+      'eq: exp -> exp -> type.',
+      'eq_app : eq E1 F1 -> eq E2 F2 -> eq (app E1 E2) (app F1 F2).',
+      'eq_lam :  ({x : exp} eq x x -> eq (E x) (F x)) -> eq (lam (\\x. E x)) (lam (\\x. F x)).',
+      'schema eqCtx = block x:exp, _t:eq x x;',
+    ].join('\n'),
+    decl: [
+      'rec eq_trans: (g:eqCtx) [g |- eq TT RR] -> [g |- eq RR SS] -> [g |- eq TT SS] =',
+      '/ total e1 (eq_trans g t r s e1) /',
       '?',
       ';',
     ].join('\n'),
@@ -178,8 +224,11 @@ const probes = [
     ].join('\n'),
   },
   {
+    // The full 20-constructor context-strengthening lemma: nullary fills + 14
+    // strengthening recursions (`let [g, y:name |- R] = str_lin [g, y:name, x:name
+    // |- X] in [g |- l_* (\y. R)]`). Exercises the under-binder call form + the
+    // instantiated result context. A HARD gate.
     name: 'str_lin',
-    optional: true,
     maxSteps: 250,
     prelude: [
       'name : type.',
@@ -223,8 +272,11 @@ const probes = [
     ].join('\n'),
   },
   {
+    // The deepest strengthening lemma: dependency-annotated split patterns
+    // (`wtp_fwd D[] …`, `linP1[.., z]`), block+strengthening combined IH calls
+    // with projected results, interleaved str_hyp/str_lin support-lemma calls,
+    // and pair-channel reassembly fills. A HARD gate.
     name: 'str_wtp',
-    optional: true,
     maxSteps: 80,
     prelude: [
       'name : type.',
@@ -345,11 +397,69 @@ const probes = [
     ].join('\n'),
   },
   {
+    // The Result-ctype strengthening lemma, all 15 branches: comp-constructor
+    // fills with the boxed existential witness (`Res [g ⊢ _] [g, x:name ⊢
+    // refl_proc] [g ⊢ β…]`), ctype LET-patterns destructuring recursive results
+    // (schema some-var instantiated per nullary-ctor variant — `hyp x ⊥`),
+    // block-slot expansion helper calls (`str_step' […, <y;hy>]`), and
+    // constructor reassembly from strengthened results. A HARD gate.
     name: 'str_step',
-    optional: true,
     maxSteps: 200,
     prelude: cpStrStepPrelude(root),
     decl: strStepDecl,
+  },
+  {
+    // HELD-OUT stretch: big-step determinism — the LAST term-former residue:
+    // nested second-premise analysis, `impossible [g |- NL]` on a boxed meta,
+    // dep-filtered result projections (`E1[.., b.1, b.4]`), tail IH calls, and
+    // cross-lemma substitution reasoning (`E1[.., N, E2]` — the known residue).
+    // HARD gate since 2026-07-05: closed by the SYNTHESIS engine (bel-synth) —
+    // the app1×app1 arm by the backward-chained 5-deep helper chain, the cross
+    // arms by refutation closing (destructure + impossible), app2×app2 by the
+    // two-IH eq_app composition. 13 steps / 67 checks / ~9s. Pins the synthesis
+    // closers + arm annotations + the closure-aware re-split guard.
+    name: 'bigstep_det',
+    maxSteps: 30,
+    prelude: [
+      'LF exp : type =',
+      '  | app : exp -> exp -> exp',
+      '  | lam : (exp -> exp) -> exp',
+      ';',
+      '--name exp M.',
+      'LF eq : exp -> exp -> type =',
+      '  | eq_lam : ({x:exp} eq x x -> eq (M x) (N x)) -> eq (lam M) (lam N)',
+      "  | eq_app : eq M M' -> eq N N' -> eq (app M N) (app M' N')",
+      ';',
+      '--name eq D.',
+      'LF notLam : exp -> type =',
+      "  | notLam' : notLam (app M N)",
+      ';',
+      'LF eval : exp -> exp -> type =',
+      '  | eval_lam : ({x:exp} eval x x -> notLam x -> eval (M x) (N x)) -> eval (lam M) (lam N)',
+      "  | eval_app1 : eval M (lam M') -> eval (M' N) R -> eval (app M N) R",
+      "  | eval_app2 : eval M M' -> notLam M' -> eval N N' -> eval (app M N) (app M' N')",
+      ';',
+      '--name eval E.',
+      'schema evctx = block x:exp, u:eval x x, t:notLam x, v:eq x x;',
+      'rec eq_refl : {g:evctx}{M:[g |- exp]} [g |- eq M M] =',
+      '/ total m (eq_refl _ m) /',
+      '?;',
+      'rec eq_sym : (g:evctx) [g |- eq M N] -> [g |- eq N M] =',
+      '/ total e (eq_sym _ _ _ e) /',
+      '?;',
+      "rec subst_respects_eq : {g:evctx}{M:[g, x:exp |- exp]} [g |- eq N N'] -> [g |- eq M[.., N] M[.., N']] =",
+      '/ trust /',
+      '?;',
+      'rec eval_respects_eq : (g:evctx) [g |- eq M N] -> [g |- eval M R] -> [g |- eval N R] =',
+      '/ total f (eval_respects_eq g m n r e f ) /',
+      '?;',
+    ].join('\n'),
+    decl: [
+      "rec deterministic : (g:evctx) [g |- eval M R] -> [g |- eval M R'] -> [g |- eq R R'] =",
+      "/ total d (deterministic g m r r' d)/",
+      '?',
+      ';',
+    ].join('\n'),
   },
 ];
 
@@ -362,11 +472,20 @@ try {
     const code = `${probe.prelude}\n\n${probe.decl}\n`;
     const result = await page.evaluate(async (c, d, maxSteps) => {
       const ed = window.BelJarEditor;
+      const cl = window.BelugaClient;
       const thm = ed.theoremUnderProof(d);
-      const r = await ed.proveProgram(c, thm, (x) => window.BelugaClient.checkResult(x), { maxSteps });
-      return { complete: r.complete, steps: r.steps.map((s) => s.move), stuck: r.stuck || null };
+      // WARM prover session (the path the real lab uses): one worker, delta checks,
+      // no per-call prelude reload. `checks` counts oracle round-trips so the
+      // pre-filter's reduction is measurable.
+      let checks = 0;
+      const t0 = Date.now();
+      if (cl.beginProverSession) await cl.beginProverSession();
+      const oracle = (x) => { checks += 1; return cl.checkResultForProver ? cl.checkResultForProver(x) : cl.checkResult(x); };
+      const r = await ed.proveProgram(c, thm, oracle, { maxSteps });
+      if (cl.endProverSession) cl.endProverSession();
+      return { complete: r.complete, steps: r.steps.map((s) => s.move), stuck: r.stuck || null, checks, ms: Date.now() - t0 };
     }, code, probe.decl, probe.maxSteps);
-    console.log(`${probe.name}: ${result.complete ? 'COMPLETE' : 'STUCK'} ${result.steps.join(' -> ')}`);
+    console.log(`${probe.name}: ${result.complete ? 'COMPLETE' : 'STUCK'} [${result.checks} checks, ${(result.ms / 1000).toFixed(1)}s] ${result.steps.join(' -> ')}`);
     if (!result.complete) {
       console.log(JSON.stringify(result.stuck));
       if (!probe.optional) process.exitCode = 1;

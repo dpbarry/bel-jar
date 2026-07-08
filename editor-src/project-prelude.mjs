@@ -430,10 +430,33 @@ export function applyTextEdits(text, edits, insert) {
   return out;
 }
 
+export function filterRenameEdits(text, edits, originalName) {
+  return edits.filter((e) => (
+    e.from < e.to && String(text).slice(e.from, e.to) === originalName
+  ));
+}
+
+// Group rename indexes positions on editor-normalized text; apply there, not on raw storage.
+export function applyGroupRenameToFile(raw, fileName, edits, newName, originalName) {
+  const basis = editorTextForIndexing(raw, fileName);
+  const valid = filterRenameEdits(basis, edits, originalName);
+  return applyTextEdits(basis, valid, newName);
+}
+
 // Would `name` collide with a definition somewhere in the group (other files)?
 export function groupDefinesName(files, activeId, name, getText, options = {}) {
   if (!name) return false;
   for (const f of groupFilesFor(files, activeId, getText, options)) {
+    if (f.id === activeId) continue;
+    if (parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name).names.has(name)) return true;
+  }
+  return false;
+}
+
+// Would `name` collide with a definition in another file of the active development?
+export function developmentDefinesName(files, activeId, name, getText, options = {}) {
+  if (!name) return false;
+  for (const f of developmentFilesFor(files, activeId, getText, options)) {
     if (f.id === activeId) continue;
     if (parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name).names.has(name)) return true;
   }

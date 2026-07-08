@@ -41,11 +41,13 @@ export function decomposeContextual(typeStr) {
 }
 
 // Head type-family name of an LF conclusion type, e.g. `nat` from `nat`,
-// `tm` from `tm`, `term A` → `term`, `hyp X A` → `hyp`. Null if we can't read one.
+// `tm` from `tm`, `term A` → `term`, `hyp X A` → `hyp`. Symbol-headed families
+// count too — the checker PREFIX-prints infix applications (`⇛ (P1…) (Q…)`), and
+// `⇛` is a math Symbol, not a Letter. Null if we can't read one.
 export function headOfConclusion(conclStr) {
   const t = String(conclStr == null ? '' : conclStr).trim();
   if (!t) return null;
-  const m = t.match(/^([\p{L}_][^\s(]*)/u);
+  const m = t.match(/^([\p{L}\p{S}_][^\s(]*)/u);
   return m ? m[1] : null;
 }
 
@@ -77,7 +79,10 @@ function familyOfConstructorName(code, ctorName) {
 
 function isDeclaredTypeFamily(code, fam) {
   if (!fam) return false;
-  const re = new RegExp(`^\\s*${fam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`, 'm');
+  const esc = fam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Cover every declaration form: plain `f : …`, block `LF f : type =`, mutual
+  // `and f : …`, and the ctype keywords.
+  const re = new RegExp(`^\\s*(?:(?:LF|and|inductive|stratified|coinductive)\\s+)?${esc}\\s*:`, 'm');
   return re.test(String(code || ''));
 }
 
@@ -232,14 +237,47 @@ export function enumerateLFConstructors(code, headName) {
 // is ANY declaration whose type's RESULT head is `family`.
 //
 // Returns [{ name, argTypes:[string], result:{ head, indices:[string] } }] or [].
+// ── Model-query memoization ──────────────────────────────────────────────────
+// The move generators query the SAME program text hundreds of times per hole
+// (constructor enumeration, schema info — each a full Lezer parse). One program
+// version is live at a time during a search, so a single-entry cache keyed by
+// the code string amortizes the parse and the per-family walks.
+let memoSrc = null;
+let memoTree;
+let memoCtors = null;
+let memoSchemas = null;
+function memoFor(src) {
+  if (src !== memoSrc) {
+    memoSrc = src;
+    memoTree = undefined; // parsed lazily
+    memoCtors = new Map();
+    memoSchemas = new Map();
+  }
+  return { ctors: memoCtors, schemas: memoSchemas };
+}
+function parseTreeFor(src) {
+  memoFor(src);
+  if (memoTree === undefined) {
+    try { memoTree = parser.parse(src); } catch (_) { memoTree = null; }
+  }
+  return memoTree;
+}
+
 export function enumerateConstructorsTyped(code, family) {
   if (!family) return [];
   const src = String(code == null ? '' : code);
-  let tree;
-  try { tree = parser.parse(src); } catch (_) { return []; }
+  const memo = memoFor(src);
+  if (memo.ctors.has(family)) return memo.ctors.get(family);
+  const done = (result) => { memo.ctors.set(family, result); return result; };
+  const tree = parseTreeFor(src);
+  if (!tree) return done([]);
   const slice = (n) => src.slice(n.from, n.to).trim();
   const out = [];
   const seen = new Set();
+  // A family we enumerate constructors for must be DECLARED — a bare metavariable
+  // must never pose as one (`refl_proc : eq_proc P P` is NOT a constructor of
+  // "family P", and the AST spine misreads an infix result `P ⇛ S` as headed by P).
+  if (!isDeclaredTypeFamily(src, family)) return done([]);
 
   const cur = tree.cursor();
   do {
@@ -278,7 +316,7 @@ export function enumerateConstructorsTyped(code, family) {
       out.push(c);
     }
   }
-  return out;
+  return done(out);
 }
 
 function ctypeCtorArms(body) {
@@ -453,8 +491,11 @@ export function schemaInfo(code, schemaName) {
   const info = { elements: [] };
   if (!schemaName) return info;
   const src = String(code == null ? '' : code);
-  let tree;
-  try { tree = parser.parse(src); } catch (_) { return info; }
+  const memo = memoFor(src);
+  if (memo.schemas.has(schemaName)) return memo.schemas.get(schemaName);
+  const tree = parseTreeFor(src);
+  if (!tree) return info;
+  memo.schemas.set(schemaName, info); // filled in place below
   const cur = tree.cursor();
   do {
     if (cur.name !== 'SchemaDeclaration') continue;
@@ -499,6 +540,52 @@ export function schemaAdmittedTypes(code, schemaName) {
     else if (el.head) out.add(el.head);
   }
   return out;
+}
+
+// ── Dependency closure ───────────────────────────────────────────────────────
+// The type-family heads REACHABLE from `family` through its constructors: argument
+// types (including Pi binder types) plus the families of term constructors used in
+// argument/result indices. Decides what a derivation of the family can possibly
+// contain — a metavariable of a family whose closure never reaches any context
+// type is CLOSED there (the `D[]` pattern annotation); one that reaches `name` but
+// not `hyp` keeps name binders and drops hyp ones (`linP1[.., z]`). A sound
+// over-approximation from OUR AST; the checker certifies the final pattern.
+export function reachableTypeHeads(code, family) {
+  const seen = new Set();
+  const queue = [String(family || '')];
+  const enqueue = (fam) => { if (fam && !seen.has(fam) && !queue.includes(fam)) queue.push(fam); };
+  const famOfToken = new Map();
+  const tokenFamily = (tok) => {
+    if (!famOfToken.has(tok)) {
+      let fam = null;
+      if (enumerateConstructorsTyped(code, tok).length) fam = tok;
+      else fam = familyOfConstructorName(code, tok);
+      famOfToken.set(tok, fam);
+    }
+    return famOfToken.get(tok);
+  };
+  const indexTokens = (text) => [...String(text || '').matchAll(/[\p{L}\p{S}_][\p{L}\p{N}\p{S}_']*/gu)]
+    .map((m) => m[0]).filter((t) => !/^[A-Z]/.test(t));
+  let guard = 64;
+  while (queue.length && guard-- > 0) {
+    const fam = queue.shift();
+    if (!fam || seen.has(fam)) continue;
+    seen.add(fam);
+    for (const ctor of enumerateConstructorsTyped(code, fam)) {
+      for (const at of ctor.argTypes) {
+        for (const part of splitArrowSpineText(stripOneOuterParen(at))) {
+          const pi = parsePiBinder(part);
+          const target = pi ? pi.type : part;
+          enqueue(headOfConclusion(target));
+          for (const tok of indexTokens(target)) enqueue(tokenFamily(tok));
+        }
+      }
+      for (const idx of ((ctor.result && ctor.result.indices) || [])) {
+        for (const tok of indexTokens(idx)) enqueue(tokenFamily(tok));
+      }
+    }
+  }
+  return seen;
 }
 
 // The PARAMETER-VARIABLE LF term that matches a context variable of `head` type in
@@ -617,8 +704,11 @@ function splitArrowSpineText(text) {
     else if (c === ')' || c === ']') depth -= 1;
     else if (c === '{' && depth === 0) {
       const close = s.indexOf('}', i);
-      if (close >= 0 && start === i) {
-        out.push(s.slice(start, close + 1).trim());
+      // A Pi binder is its own spine segment whenever nothing but whitespace
+      // precedes it in the current segment (`-> {y:name}hyp y A ->` carries a
+      // leading space — the binder still starts the segment).
+      if (close >= 0 && !s.slice(start, i).trim()) {
+        out.push(s.slice(i, close + 1).trim());
         start = close + 1;
         i = close;
       }
@@ -656,7 +746,7 @@ function metaProjectionSuffix(lambdaBinders, ctxNames) {
   return idx.length ? `[.., ${idx.join(', ')}]` : '[..]';
 }
 
-function isHypArgType(typeText) {
+export function isHypArgType(typeText) {
   return /^hyp\s+/.test(String(typeText || '').trim());
 }
 
@@ -746,7 +836,9 @@ function branchBodyBefore(code, hole) {
   const qi = ln.indexOf('?');
   if (qi >= 0) col = qi + 1;
   let off = 0;
-  for (let l = 1; l < hole.line; l += 1) off += lines[l - 1].length + 1;
+  // Guard a hole line past the doc end (a stale hole against a shrunken program).
+  const upto = Math.min(hole.line, lines.length + 1);
+  for (let l = 1; l < upto; l += 1) off += (lines[l - 1] || '').length + 1;
   off += col - 1;
   const prefix = code.slice(0, off);
   const lastArm = Math.max(prefix.lastIndexOf('=>'), prefix.lastIndexOf('⇒'));
@@ -755,15 +847,95 @@ function branchBodyBefore(code, hole) {
 
 // Names bound by `let [Γ |- R] = … in` in the case branch above a hole.
 export function branchLetNames(code, hole) {
+  return branchLetBindings(code, hole).map((b) => b.name);
+}
+
+// TYPED let bindings in the branch above a hole: each `let [Γ |- R…] = fn … in`
+// recovers the bound name, the let's context, AND the conclusion family head of
+// the applied function (looked up from its `rec`/`proof` signature) — so fills can
+// pick the RIGHT recursion/lemma result by type instead of blind enumeration.
+export function branchLetBindings(code, hole) {
   const body = branchBodyBefore(code, hole);
   const out = [];
-  for (const m of body.matchAll(/let\s+(\[[\s\S]*?\])\s*=/g)) {
+  for (const m of body.matchAll(/let\s+(\[[\s\S]*?\])\s*=\s*([A-Za-z_][A-Za-z0-9_']*)/g)) {
     const d = decomposeContextual(m[1]);
     if (!d) continue;
     const bind = String(d.concl || '').trim().split(/\s+/)[0].replace(/\[.*/, '');
-    if (bind && /^[A-Za-z_][A-Za-z0-9_']*$/.test(bind)) out.push(bind);
+    if (!bind || !/^[A-Za-z_][A-Za-z0-9_']*$/.test(bind)) continue;
+    out.push({ name: bind, ctx: d.ctx, head: declConclusionHead(code, m[2]) });
+  }
+  // CTYPE-pattern lets `let Res [b1] [b2] … = fn …` — each box binding a fresh
+  // metavar is typed by the corresponding constructor argument's family (the
+  // wildcard/constant boxes bind nothing).
+  const re2 = /let\s+([A-Za-z_][A-Za-z0-9_']*)\s*\[/g;
+  let m2;
+  while ((m2 = re2.exec(body)) !== null) {
+    const boxes = [];
+    let i = body.indexOf('[', m2.index + 3);
+    while (i >= 0 && body[i] === '[') {
+      let depth = 0;
+      let j = i;
+      for (; j < body.length; j += 1) {
+        if (body[j] === '[') depth += 1;
+        else if (body[j] === ']') { depth -= 1; if (depth === 0) break; }
+      }
+      if (depth !== 0) { boxes.length = 0; break; }
+      boxes.push(body.slice(i, j + 1));
+      i = j + 1;
+      while (i < body.length && /\s/.test(body[i])) i += 1;
+    }
+    if (boxes.length < 2 || body[i] !== '=') continue;
+    const fnm = /^=\s*([A-Za-z_][A-Za-z0-9_']*)/.exec(body.slice(i));
+    if (!fnm) continue;
+    const conclHead = declConclusionHead(code, fnm[1]);
+    if (!conclHead) continue;
+    const ctors = enumerateConstructorsTyped(code, conclHead);
+    const ctor = ctors.find((c) => c.name === m2[1]) || (ctors.length === 1 ? ctors[0] : null);
+    if (!ctor) continue;
+    boxes.forEach((bx, k) => {
+      const bd = decomposeContextual(bx);
+      if (!bd) return;
+      const tok = String(bd.concl || '').trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_']*$/.test(tok) || tok === '_') return; // GENERAL: `_` is the wildcard token, not a name
+      // a declared constant in the pattern (refl_proc) binds nothing
+      if (enumerateConstructorsTyped(code, tok).length || familyOfConstructorName(code, tok)) return;
+      const at = ctor.argTypes[k];
+      if (!at) return;
+      const t = String(at).trim();
+      const pim = t.startsWith('{') ? /^\{\s*[A-Za-z_][A-Za-z0-9_']*\s*:\s*([\s\S]*)\}$/.exec(t) : null;
+      const abox = decomposeContextual(pim ? pim[1].trim() : t);
+      const nota = abox ? typeFamilyHead(abox.concl, code) : null;
+      const head = (nota && nota !== 'type') ? nota : (abox ? headOfConclusion(abox.concl) : null);
+      out.push({ name: tok, ctx: bd.ctx, head });
+    });
   }
   return out;
+}
+
+// The conclusion family head of a declared `rec`/`proof` signature (null when the
+// name isn't a declared theorem — e.g. a constructor RHS). Notation-aware: an
+// infix conclusion `[g, x:name ⊢ P ⇛ Q]` is family `⇛`, not `P`.
+function declConclusionHead(code, fnName) {
+  if (!fnName) return null;
+  const esc = String(fnName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`\\b(?:rec|proof)\\s+${esc}\\s*:\\s*([\\s\\S]*?)=`).exec(String(code || ''));
+  if (!m) return null;
+  const parts = splitArrowSpineText(m[1].trim());
+  if (!parts.length) return null;
+  const concl = conclusionOf(parts[parts.length - 1]);
+  const nota = typeFamilyHead(concl, code);
+  return (nota && nota !== 'type') ? nota : headOfConclusion(concl);
+}
+
+// The name-channel PAIR the branch pattern used for a fused `{X:name}`+hyp
+// constructor argument (`… x[..] hx …`): the fill in the strengthened body reuses
+// the name metavar; the hyp slot takes a strengthened result. Null when the branch
+// pattern carries no such pair.
+export function branchPairChannel(code, hole) {
+  const box = branchPatternBox(code, hole);
+  if (!box) return null;
+  const m = /\b([a-z][A-Za-z0-9_']*)\[\.\.\]\s+(h[A-Za-z0-9_']*)/.exec(box);
+  return m ? { nameVar: m[1], hypVar: m[2] } : null;
 }
 
 function fillScope(hole, code) {
@@ -776,15 +948,17 @@ function fillScope(hole, code) {
   };
   for (const c of (hole.ctx || [])) add(c.name, c.type);
   for (const m of (hole.meta || [])) add(m.name, m.type);
-  for (const n of branchLetNames(code, hole)) add(n, '');
+  for (const b of branchLetBindings(code, hole)) {
+    add(b.name, b.head ? `[${b.ctx} |- ${b.head} _]` : '');
+  }
   return out;
 }
 
-// Wrap `term` in the `\`-binders a higher-order argument expects. A hypothesis-typed
-// binder (`hyp v A`) is named by prefixing `h` to the variable it witnesses; other
+// The `\`-binder names a higher-order argument expects. A hypothesis-typed binder
+// (`hyp v A`) is named by prefixing `h` to the variable it witnesses; other
 // binders keep their descriptor name. General: derived from binder TYPES, no fixed
 // variable names.
-function hoLamTerm(desc, term) {
+function hoLamBinderNames(desc) {
   const bs = (desc.binderCtx || []).map((b, i) => {
     if (/^hyp\b/.test(String(b.type || ''))) {
       const prev = (desc.binderCtx[i - 1] || {}).name;
@@ -795,7 +969,34 @@ function hoLamTerm(desc, term) {
   for (let i = bs.length; i < desc.binders; i += 1) {
     bs.push('v' + i);
   }
+  return bs;
+}
+
+// Wrap `term` in the `\`-binders a higher-order argument expects.
+function hoLamTerm(desc, term) {
+  const bs = hoLamBinderNames(desc);
   return '(' + bs.map((b) => '\\' + b + '. ').join('') + term + ')';
+}
+
+// A result bound over a trailing BLOCK slot whose field count equals the binder
+// arity re-lambdas via the TUPLE substitution (`eq_lam \x.\u. E[.., <x;u>]` — the
+// binders pack into the block slot). Null when the shape doesn't apply.
+function hoLamTupleTerm(desc, entry) {
+  const d = decomposeContextual(entry && entry.type);
+  if (!d || !d.ctx) return null;
+  const parts = splitTopLevel(d.ctx, ',').map((p) => p.trim()).filter(Boolean);
+  const last = parts[parts.length - 1] || '';
+  const bi = last.indexOf('block');
+  if (bi < 0) return null;
+  let rest = last.slice(bi + 5).trim();
+  if (rest[0] === '(') {
+    const close = rest.lastIndexOf(')');
+    rest = rest.slice(1, close < 0 ? rest.length : close);
+  }
+  const fields = splitTopLevel(rest, ',').filter((f) => f.trim());
+  const bs = hoLamBinderNames(desc);
+  if (!fields.length || fields.length !== bs.length) return null;
+  return '(' + bs.map((b) => '\\' + b + '. ').join('') + `${entry.name}[.., <${bs.join(';')}>])`;
 }
 
 function hoLamTermFromPattern(code, hole, desc, term) {
@@ -888,30 +1089,142 @@ function resultGoalParts(hole) {
 //   • hypothesis arg (`hyp …`)→ the block/param projection that inhabits it
 //   • otherwise               → each in-scope hypothesis of a compatible type
 // No lemma/family/variable name is hardcoded; the checker certifies each choice.
+// Is `fam` a COMPUTATION-level family (declared `inductive`/`stratified`/…)? Its
+// constructor fills are BARE applications over boxed arguments, never LF-boxed.
+export function isCTypeFamily(code, fam) {
+  if (!fam) return false;
+  const esc = String(fam).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b(?:inductive|stratified|coinductive)\\s+${esc}\\s*:`).test(String(code || ''));
+}
+
 function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
-  if (/^\s*\{/.test(rawType)) return ['_'];
+  if (/^\s*\{/.test(rawType)) {
+    // An explicit Pi whose type is a BOX is a comp-level witness the checker can
+    // infer — offer the boxed wildcard (`Res [g ⊢ _] …`, the existential idiom).
+    const pi = parsePiBinder(String(rawType).trim());
+    const bd = pi && decomposeContextual(pi.type);
+    if (bd) return [bd.ctx ? `[${bd.ctx} |- _]` : '[ |- _]', '_'];
+    return ['_'];
+  }
+  // A BOXED comp-constructor argument `[Γ ⊢ fam idx…]`: candidates are boxed terms
+  // in the argument's OWN declared context — the branch pattern's matched term
+  // (the strengthened scrutinee) first, then in-scope hyps of the family, then the
+  // family's nullary constructors (the `refl_proc` witness idiom).
+  const boxedArg = String(rawType || '').trim().startsWith('[') ? decomposeContextual(rawType) : null;
+  if (boxedArg) {
+    // Notation-aware family head: an infix conclusion (`P ⇛ Q'`) must resolve to
+    // the operator family, not the left operand.
+    const famHead = typeFamilyHead(boxedArg.concl, code);
+    const fam = (famHead && famHead !== 'type') ? famHead : headOfConclusion(boxedArg.concl);
+    const bbox = (t) => (boxedArg.ctx ? `[${boxedArg.ctx} |- ${t}]` : `[ |- ${t}]`);
+    const out = [];
+    const pat = branchPatternBox(code, hole);
+    const pd = pat && decomposeContextual(pat);
+    if (pd && pd.concl && fam && typeFamilyHead(pd.concl, code) === fam) {
+      out.push(bbox(pd.concl.trim()));
+      // REASSEMBLE the pattern's constructor from strengthened let-results: each
+      // argument slot takes the (unconsumed) result whose conclusion family
+      // matches (`β≡ ≡PQ' ⇛QR' ≡RS'`); a higher-order slot re-lambdas it.
+      const patHead = headOfConclusion(pd.concl);
+      const pctor = enumerateConstructorsTyped(code, fam).find((c) => c.name === patHead);
+      if (pctor && pctor.argTypes.length) {
+        const pool = scope.filter((s) => /^R\d*$/.test(s.name));
+        const perSlot = pctor.argTypes.map((at) => {
+          const d2 = constructorArgDescriptor(at, []);
+          const c2 = conclusionOf(d2.higherOrder ? d2.bodyType : at);
+          const nota2 = typeFamilyHead(c2, code);
+          const f2 = (nota2 && nota2 !== 'type') ? nota2 : headOfConclusion(c2);
+          return pool.filter((s) => headOfConclusion(s.concl) === f2).map((s) => {
+            if (!d2.higherOrder) return s.name;
+            const bs = d2.binderCtx.map((b) => b.name);
+            return '(' + bs.map((b) => `\\${b}. `).join('') + `${s.name}[.., ${bs.join(', ')}])`;
+          });
+        });
+        if (perSlot.every((l) => l.length)) {
+          // small combo budget; a result must not fill two slots
+          for (const combo of cartesianArgCombos(perSlot, 4, (c3) => new Set(c3).size === c3.length)) {
+            out.push(bbox(`${patHead} ${combo.join(' ')}`));
+          }
+        }
+      }
+    }
+    for (const s of scope) {
+      if (fam && headOfConclusion(s.concl) === fam) out.push(bbox(s.name));
+    }
+    for (const c of enumerateConstructorsTyped(code, fam)) {
+      if (!c.argTypes.length) out.push(bbox(c.name));
+    }
+    if (out.length) return [...new Set(out)];
+  }
   if (desc.higherOrder) {
-    const pool = scope.map((s) => s.name).filter((n) => n && /^R\d*$/.test(n));
-    return [...new Set(pool)].map((n) => hoLamTermFromPattern(code, hole, desc, n));
+    // Recursion results whose conclusion family matches the argument's BODY family
+    // first (typed let bindings make this precise); the whole R-pool only when no
+    // typed match exists.
+    const bodyHead = headOfConclusion(conclusionOf(desc.bodyType || ''));
+    let pool = scope.filter((s) => s.name && /^R\d*$/.test(s.name));
+    if (bodyHead) {
+      const typed = pool.filter((s) => headOfConclusion(s.concl) === bodyHead);
+      if (typed.length) pool = typed;
+    }
+    // The descriptor's OWN binder arity leads; the branch pattern's deeper binder
+    // chain is only a fallback variant (the checker picks — a 1-binder `linear`
+    // slot must not be wrapped in the sibling wtp-arg's 4 binders). A result bound
+    // over a matching BLOCK slot re-lambdas via the tuple substitution first.
+    const out = [];
+    const seenNames = new Set();
+    for (const s of pool) {
+      if (seenNames.has(s.name)) continue;
+      seenNames.add(s.name);
+      const tuple = hoLamTupleTerm(desc, s);
+      if (tuple) out.push(tuple);
+      const plain = hoLamTerm(desc, s.name);
+      const chained = hoLamTermFromPattern(code, hole, desc, s.name);
+      out.push(plain);
+      if (chained !== plain) out.push(chained);
+    }
+    return out;
   }
   if (isHypArgType(rawType) || isHypArgType(desc.bodyType)) {
     const ht = hypFillTerms(rawType, hole.meta) || hypFillTerms(desc.bodyType, hole.meta);
     if (ht) return [ht.join(' ')];
+    // The branch pattern matched this fused `{X:name}`+hyp argument with a
+    // name-channel pair (`x[..] hx`): reuse the name metavar; the hyp slot takes a
+    // strengthened result of the same family, else the pattern's own witness.
+    const pair = branchPairChannel(code, hole);
+    if (pair) {
+      const wantHead = headOfConclusion(rawType) || headOfConclusion(desc.bodyType);
+      const hypPool = [
+        ...scope.filter((s) => headOfConclusion(s.concl) === wantHead).map((s) => s.name),
+        pair.hypVar,
+      ];
+      return [...new Set(hypPool)].map((p) => `${pair.nameVar} ${p}`);
+    }
     return scope.map((s) => s.name);
   }
   const pool = scope.filter((s) => !needsWeakening(s.type, goalBox));
   const ordered = pool.length ? pool : scope;
-  return ordered.map((s) => fillTermForHyp(s, goalBox, rawType));
+  // Candidates whose conclusion family matches the wanted type's head come first —
+  // keeps the right choice inside the bounded combo enumeration.
+  const wantHead = headOfConclusion(rawType);
+  const ranked = wantHead
+    ? [...ordered].sort((a, b) => ((headOfConclusion(b.concl) === wantHead) ? 1 : 0) - ((headOfConclusion(a.concl) === wantHead) ? 1 : 0))
+    : ordered;
+  return ranked.map((s) => fillTermForHyp(s, goalBox, rawType));
 }
 
-function cartesianArgCombos(lists, max = 64) {
+// Bounded cartesian enumeration. `validPrefix` prunes DURING the walk — without
+// it the cap fills with prefixes a later filter rejects wholesale (e.g. every
+// combo carrying duplicate higher-order bodies), starving the viable ones.
+function cartesianArgCombos(lists, max = 64, validPrefix = null) {
   let acc = [[]];
   for (const list of lists) {
     const next = [];
     for (const pref of acc) {
       for (const item of list) {
         if (next.length >= max) break;
-        next.push([...pref, item]);
+        const cand = [...pref, item];
+        if (validPrefix && !validPrefix(cand)) continue;
+        next.push(cand);
       }
       if (next.length >= max) break;
     }
@@ -976,14 +1289,21 @@ export function constructorTerm(ctor, fresh, opts = {}) {
   for (let ai = 0; ai < ctor.args.length; ai += 1) {
     const arg = ctor.args[ai];
     if (arg.higherOrder && arg.binders > 0) {
+      // Reserve each chosen binder name so a context-colliding binder's rename
+      // can't duplicate a sibling binder (`\x. \d. \y. \d.` was the bug).
       const bs = (arg.binderCtx || []).map((b) => {
         if (!project) return b.name;
-        return ctxNames.includes(b.name) ? lower.next() : b.name;
+        if (ctxNames.includes(b.name)) return lower.next();
+        lower.reserve(b.name);
+        return b.name;
       });
       for (let i = bs.length; i < arg.binders; i += 1) {
         bs.push(project ? lower.next() : ('x' + (i === 0 ? '' : i)));
       }
-      const body = project ? `${fresh()}${metaProjectionSuffix(bs, ctxNames)}` : fresh();
+      // Dependency-closure annotation: the body metavar depends only on the context
+      // binders whose types its family can reach (`linP'[.., x, z]` drops hz).
+      const keepNames = arg.dep ? arg.dep.keep : ctxNames;
+      const body = project ? `${fresh()}${metaProjectionSuffix(bs, keepNames)}` : fresh();
       parts.push('(' + bs.map((b) => '\\' + b + '. ').join('') + body + ')');
     } else if (isHypArgType(arg.bodyType)) {
       // A hypothesis argument: inhabit it with a block projection `#b.x[..] #b.h[..]`
@@ -995,6 +1315,15 @@ export function constructorTerm(ctor, fresh, opts = {}) {
         const n = lower ? lower.next() : 'x';
         parts.push(`${n}[..]`, 'h' + n);
       }
+    } else if (arg.dep && arg.dep.closed) {
+      // The arg family's dependency closure reaches NOTHING the context admits —
+      // the metavar is necessarily closed there; pin it (`wtp_fwd D[] …`) so the
+      // strengthened body can reuse it verbatim.
+      parts.push(`${fresh()}[]`);
+    } else if (arg.dep) {
+      // Partial dependency: keep only the reachable-typed tail binders (plus the
+      // context variable via `..`) — `linP1[.., z]` in a (…, z:name, hz:hyp …) ctx.
+      parts.push(`${fresh()}[..${arg.dep.keep.length ? ', ' + arg.dep.keep.join(', ') : ''}]`);
     } else {
       parts.push(fresh());
     }
@@ -1045,6 +1374,48 @@ function patternMetavars(term) {
   return [...out];
 }
 
+// The refined-result TYPE ANNOTATION for a constructor arm: the ctor's result
+// with each schematic index variable renamed to a name that BINDS in this arm —
+// the declaration's own name when free, else a fresh variant. Null when the
+// result carries no index variables (nothing to bind), or when any of them is
+// HIGHER-ORDER — the ctor's declared type APPLIES it, `(M x)` — since a bare HO
+// metavariable in an annotation is rejected ("Higher-order meta-variables not
+// supported"); the reference proofs annotate exactly the first-order arms.
+function armAnnotation(ctor, ctxStr, used) {
+  if (!ctor || !ctor.result || !ctor.result.indices || !ctor.result.indices.length) return null;
+  const vars = new Set();
+  for (const idx of ctor.result.indices) {
+    for (const m of String(idx).match(/[A-Z][A-Za-z0-9_']*/g) || []) vars.add(m);
+  }
+  if (!vars.size) return null;
+  // A result index containing a LAMBDA puts its metavariables under local
+  // binders — a bare annotation variable cannot express that dependency and the
+  // check degenerates to constraints outside the decidable pattern fragment
+  // ("[forceGlobalCnstr] … could not be solved"). Skip; the bare variant covers.
+  if (ctor.result.indices.some((idx) => String(idx).includes('\\'))) return null;
+  // HO detection: `(V a …)` anywhere in the ctor's declared type marks V.
+  const declTexts = [
+    ...ctor.result.indices.map(String),
+    ...(ctor.args || []).map((a) => String((a && (a.rawType || a.bodyType)) || '')),
+  ];
+  for (const t of declTexts) {
+    for (const m of t.matchAll(/\(\s*([A-Z][A-Za-z0-9_']*)\s+[a-z]/g)) {
+      if (vars.has(m[1])) return null; // an HO index var — skip this annotation
+    }
+  }
+  const ren = new Map();
+  for (const v of vars) {
+    let name = v;
+    let k = 0;
+    while (used.includes(name)) { k += 1; name = v + k; }
+    ren.set(v, name);
+    used.push(name);
+  }
+  const indices = ctor.result.indices.map((idx) => String(idx)
+    .replace(/[A-Z][A-Za-z0-9_']*/g, (m) => ren.get(m) || m));
+  return boxPattern(ctxStr, `${ctor.result.head} ${indices.join(' ')}`);
+}
+
 // Beluga shares metavars across sibling case arms; inversion on an earlier arm can
 // allocate X1, X2, … that would collide with pattern names on later arms unless we
 // leave a gap after each arm's pattern.
@@ -1079,7 +1450,17 @@ export function buildSplitSkeleton(scrutVar, ctxStr, ctors, opts = {}) {
     const metas = patternMetavars(pat);
     for (const n of metas) if (!used.includes(n)) used.push(n);
     if (metas.length) reserveArmSlack(used);
-    branches.push(`${indent}| ${boxPattern(ctxStr, pat)} =>\n${indent}  ?`);
+    // ANNOTATE the arm with the constructor's refined result type: the annotation
+    // BINDS the pattern's implicit index metavariables (Beluga's discipline — an
+    // index not named by the pattern/annotation is "an illegal free meta-variable"
+    // in the branch body). The reference proofs write exactly this
+    // (`| [g |- eval_app1 D1 D2] : [g |- eval (app M N) R] =>`); sharing with the
+    // argument types is by unification, so the names only need to be fresh.
+    // Suppressed via opts.annotate === false: an annotation's bare index vars
+    // depend on the WHOLE context, which strengthening/block shapes reject — the
+    // caller offers BOTH variants and the checker arbitrates.
+    const ann = opts.annotate === false ? null : armAnnotation(ctor, ctxStr, used);
+    branches.push(`${indent}| ${boxPattern(ctxStr, pat)}${ann ? ` : ${ann}` : ''} =>\n${indent}  ?`);
   }
   if (paramBranch) branches.push(paramBranch);
 
@@ -1118,17 +1499,45 @@ export function introBinders(goalStr) {
   return { kind: 'arrows', arrows, mlam: 0 };
 }
 
-// Build `fn X => fn X1 => ?` for an N-arrow comp goal we can model. Returns the
-// expression text (no trailing `;`), or null when we don't model the goal shape.
-// Optional `binderNames` supplies explicit binder ids (e.g. from totality).
+// Build the intro binders for a comp goal: leading EXPLICIT Pi binders
+// (`{g:eqCtx} {U:[g ⊢ exp]} …`) introduce via `mlam`, implicit `(g:ctx)` groups
+// introduce nothing, and boxed premises via `fn`. Returns the expression text
+// (no trailing `;`), or null when we don't model the goal shape.
+// Optional `binderNames` supplies explicit fn binder ids (e.g. from totality).
 export function buildIntroSkeleton(goalStr, opts = {}) {
   const info = introBinders(goalStr);
-  if (!info || info.arrows < 1) return null;
+  if (!info) return null;
   if (info.kind !== 'arrows' && info.kind !== 'dependent') return null;
+  const t = String(goalStr == null ? '' : goalStr).trim();
+  const mlams = [];
+  let rest = t;
+  for (let guard = 0; guard < 16; guard += 1) {
+    if (rest[0] === '{') {
+      const close = rest.indexOf('}');
+      if (close < 0) break;
+      const nm = rest.slice(1, close).split(':')[0].trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_']*$/.test(nm)) break;
+      mlams.push(nm);
+      rest = rest.slice(close + 1).trim();
+      continue;
+    }
+    if (rest[0] === '(') {
+      let depth = 0;
+      let i = 0;
+      for (; i < rest.length; i += 1) {
+        if (rest[i] === '(') depth += 1;
+        else if (rest[i] === ')') { depth -= 1; if (!depth) break; }
+      }
+      rest = rest.slice(i + 1).trim();
+      continue;
+    }
+    break;
+  }
+  if (info.arrows < 1 && !mlams.length) return null;
   const used = opts.usedNames || [];
   const fresh = freshNamer(used);
   const preset = Array.isArray(opts.binderNames) ? opts.binderNames : null;
-  const binders = [];
+  const binders = mlams.map((n) => 'mlam ' + n);
   for (let i = 0; i < info.arrows; i += 1) {
     const nm = preset && preset[i] ? preset[i] : fresh();
     binders.push('fn ' + nm);
@@ -1191,17 +1600,59 @@ export function fillCandidates(hole, code) {
     if (!ctor.argTypes.length) push(box(ctor.name));
   }
 
+  // A COMPUTATION-family goal (`Result [g ⊢ P] …`) is filled by a BARE comp
+  // constructor application over boxed arguments — never re-boxed.
+  const compFamily = isCTypeFamily(code, goalHead);
+
   // (4) Type-directed CONSTRUCTOR SYNTHESIS — inhabit the goal from constructors of
   //     its head, filling arguments with in-scope hypotheses (index-matched).
-  for (const term of synthesizeFills(decomp.concl, hole, code)) push(box(term));
+  if (!compFamily) {
+    for (const term of synthesizeFills(decomp.concl, hole, code)) push(box(term));
+  }
 
   // (5) Apply constructors of the goal head to in-scope names, index-matched.
   {
   const scope = fillScope(hole, code);
   const goalApp = parseAppType(decomp.concl);
+  // Memoized "is this token a DECLARED constructor?" — the rigid-head conflict
+  // pruner must never mistake a bound variable for a constructor.
+  const ctorMemo = new Map();
+  const isDeclaredCtor = (tok) => {
+    if (!ctorMemo.has(tok)) {
+      ctorMemo.set(tok, !!(enumerateConstructorsTyped(code, tok).length || familyOfConstructorName(code, tok)));
+    }
+    return ctorMemo.get(tok);
+  };
+  const rigidHeadOf = (text) => {
+    let t = norm(text);
+    for (let guard = 0; guard < 8; guard += 1) {
+      t = stripParens(t);
+      const toks = tokenizeTerm(t);
+      if (!toks.length) return null;
+      if (/^\\/.test(toks[0])) { t = toks.slice(1).join(' '); continue; }
+      const h = toks[0];
+      if (/^[A-Z#_]/.test(h) || h.includes('[')) return null; // flexible / projection
+      return isDeclaredCtor(h) ? h : null;
+    }
+    return null;
+  };
+  // A constructor whose result index has a DIFFERENT rigid constructor head than
+  // the goal's can never inhabit it (`out …` vs `inp …`) — skip without paying a
+  // checker call. Flexible heads (metavars, variables) are never pruned.
+  const rigidConflict = (ctorIdx, goalIdx) => {
+    if (ctorIdx.length !== goalIdx.length) return true;
+    for (let i = 0; i < ctorIdx.length; i += 1) {
+      const a = rigidHeadOf(ctorIdx[i]);
+      const b = rigidHeadOf(goalIdx[i]);
+      if (a && b && a !== b) return true;
+    }
+    return false;
+  };
+  const emit = (t) => push(compFamily ? t : box(t));
   for (const ctor of enumerateConstructorsTyped(code, goalHead)) {
     const descs = ctor.argTypes.map((at) => constructorArgDescriptor(at, []));
     const subst = goalApp ? matchIndices(ctor.result.indices, goalApp.indices) : null;
+    if (goalApp && goalApp.indices.length && rigidConflict(ctor.result.indices, goalApp.indices)) continue;
     const perArg = ctor.argTypes.map((at, i) => {
       const want = subst ? applySubst(at, subst) : at;
       return argFillChoices(descs[i], want, hole, scope, hole.goal, code);
@@ -1209,12 +1660,11 @@ export function fillCandidates(hole, code) {
     if (perArg.some((opts) => !opts.length)) continue;
     if (perArg.every((opts) => opts.length === 1)) {
       const args = perArg.map((opts) => opts[0]);
-      if (distinctHoBodies(args)) push(box(`${ctor.name} ${args.join(' ')}`));
+      if (distinctHoBodies(args)) emit(`${ctor.name} ${args.join(' ')}`);
       continue;
     }
-    for (const args of cartesianArgCombos(perArg, 12)) {
-      if (!distinctHoBodies(args)) continue;
-      push(box(`${ctor.name} ${args.join(' ')}`));
+    for (const args of cartesianArgCombos(perArg, 12, distinctHoBodies)) {
+      emit(`${ctor.name} ${args.join(' ')}`);
     }
   }
   }
@@ -1275,6 +1725,17 @@ export function synthesizeFills(goalConcl, hole, code) {
           if (m) hypUsed.push(m[1]);
         }
         continue;
+      }
+      // Fused `{X:name}`+hyp argument matched by the pattern's name channel: reuse
+      // the name metavar and a strengthened hyp result (arity TWO, like the pattern).
+      if (isHypArgType(want)) {
+        const pair = branchPairChannel(code, hole);
+        if (pair) {
+          const wantHead = headOfConclusion(want);
+          const hl = scope.find((s) => /^R\d*$/.test(s.name) && headOfConclusion(s.concl) === wantHead);
+          argTerms.push(pair.nameVar, hl ? hl.name : pair.hypVar);
+          continue;
+        }
       }
       const hyp = findScopeForArg(want, scope, hole.goal);
       if (hyp) {
@@ -1344,6 +1805,45 @@ export function invertCandidates(hyp, code, used, scope) {
   return out;
 }
 
+// ── Parameter inversion: destructure a hypothesis to a schema-block PROJECTION ─
+// When a hypothesis' conclusion mentions a parameter (a `#`-headed projection or
+// context variable), no constructor result can produce it — its only possible
+// origin is the matching field of a context block, so the inversion is
+// `let [Γ |- #q.field[..]] = h in ?` (the unique3 `let [g |- #r.2] = f in` idiom;
+// unification then equates the fresh parameter with the one in the indices,
+// refining the goal). Schema-driven and name-agnostic: the field is the block
+// element whose type-family head equals the hypothesis' conclusion head; the
+// checker certifies the refinement. Returns the `let … in` lines (no trailing `?`).
+export function paramInvertCandidates(hyp, schema, used) {
+  if (!hyp || !hyp.name || !schema || !Array.isArray(schema.elements)) return [];
+  const concl = conclusionOf(hyp.type);
+  // Only a parameter-mentioning conclusion is NECESSARILY block-born; anything else
+  // is constructor territory (handled by invertCandidates/split).
+  if (!concl.includes('#')) return [];
+  const head = headOfConclusion(concl);
+  const ctx = contextOf(hyp.type);
+  if (!head || !ctx) return [];
+  const out = [];
+  for (const el of schema.elements) {
+    if (!el.block) continue;
+    const field = (el.fields || []).find((f) => f.head === head && f.name);
+    if (!field) continue;
+    const p = freshParamName(used);
+    out.push(`let [${ctx} |- #${p}.${field.name}[..]] = ${hyp.name} in`);
+  }
+  return out;
+}
+
+// A fresh parameter-variable name (for `#q`, `#r`, …) avoiding names in scope
+// (scope names may carry their `#` prefix).
+function freshParamName(used) {
+  const taken = new Set((used || []).map((n) => String(n).replace(/^#/, '')));
+  for (const n of ['q', 'r', 's']) if (!taken.has(n)) return n;
+  let i = 1;
+  while (taken.has('q' + i)) i += 1;
+  return 'q' + i;
+}
+
 // Apply a unify-substitution (the `a`-side of unifyIndices) to an arg-type text.
 function applySubstU(typeText, subst) {
   return String(typeText).replace(/[A-Z][A-Za-z0-9_']*/g, (m) => (subst[m] != null ? subst[m] : m));
@@ -1401,18 +1901,29 @@ function matchIndices(patternIdx, goalIdx) {
 // sequence of atoms/operators (parens stripped, infix ops kept as tokens) and
 // matches position-wise: a bare uppercase pattern token binds; anything else must
 // align with the goal token (recursing if the token is itself parenthesised).
-function matchTerm(patternText, goalText, subst) {
+function matchTerm(patternText, goalText, subst, alpha = new Map()) {
   const p = tokenizeTerm(patternText);
   const g = tokenizeTerm(goalText);
   if (p.length !== g.length) return false;
   for (let i = 0; i < p.length; i += 1) {
     const pt = p[i];
     const gt = g[i];
+    // Lambda binders match up to ALPHA (`\x.` vs `\y.`): record the renaming so a
+    // later occurrence of the bound name compares through it.
+    const pb = /^\\([\w']+)\.$/.exec(pt);
+    const gb = /^\\([\w']+)\.$/.exec(gt);
+    if (pb || gb) {
+      if (!pb || !gb) return false;
+      alpha.set(pb[1], gb[1]);
+      continue;
+    }
     if (/^[A-Z][A-Za-z0-9_']*$/.test(pt)) {
       if (subst[pt] != null && norm(subst[pt]) !== norm(gt)) return false;
       subst[pt] = gt;
     } else if (pt[0] === '(' || gt[0] === '(') {
-      if (!matchTerm(stripParens(pt), stripParens(gt), subst)) return false;
+      if (!matchTerm(stripParens(pt), stripParens(gt), subst, alpha)) return false;
+    } else if (alpha.has(pt)) {
+      if (alpha.get(pt) !== gt) return false;
     } else if (norm(pt) !== norm(gt)) {
       return false;
     }
@@ -1435,18 +1946,45 @@ function unifyIndices(aIdx, bIdx) {
   }
   return { a: sa, b: sb };
 }
-function unifyTerm(aText, bText, sa, sb) {
-  const a = tokenizeTerm(aText);
-  const b = tokenizeTerm(bText);
-  const isVar = (t) => /^[A-Z][A-Za-z0-9_']*$/.test(t);
-  // If exactly one whole side is a single variable token, bind it to the other.
-  if (a.length === 1 && isVar(a[0]) && !(b.length === 1 && isVar(b[0]))) {
-    if (sa[a[0]] != null && norm(sa[a[0]]) !== norm(bText)) return false;
-    sa[a[0]] = bText; return true;
+function unifyTerm(aText, bText, sa, sb, alpha = new Map()) {
+  let a = tokenizeTerm(aText);
+  let b = tokenizeTerm(bText);
+  // A substitution-closed metavariable (`T'[]`, `X[..]`, `P[.., y]`) is still a
+  // VARIABLE for unification — the bracket suffix is a closure, not term structure.
+  const isVar = (t) => /^[A-Z][A-Za-z0-9_']*(\[[^[\]]*\])?$/.test(t);
+  const lamTok = (t) => /^\\([\w']+)\.$/.exec(t);
+  // Matched leading lambda binders unify up to ALPHA — record the renaming so
+  // later occurrences of the bound names compare through it.
+  while (a.length && b.length) {
+    const la = lamTok(a[0]);
+    const lb = lamTok(b[0]);
+    if (!la || !lb) break;
+    alpha.set(la[1], lb[1]);
+    alpha.set(lb[1], la[1]);
+    a = a.slice(1);
+    b = b.slice(1);
   }
-  if (b.length === 1 && isVar(b[0])) {
-    if (sb[b[0]] != null && norm(sb[b[0]]) !== norm(aText)) return false;
-    sb[b[0]] = aText; return true;
+  // A FLEXIBLE side — a metavariable head applied to bound variables (`E x`) —
+  // binds wholesale: it is the eta-variant of the bare metavar (`\x. E x` vs the
+  // report's `\x. F`).
+  const isFlex = (toks) => toks.length >= 1 && isVar(toks[0])
+    && toks.slice(1).every((t) => /^[a-z][A-Za-z0-9_']*$/.test(t));
+  const flexA = isFlex(a);
+  const flexB = isFlex(b);
+  if (flexA && (!flexB || a.length !== b.length)) {
+    if (flexB && b.length > a.length) {
+      const at = a.join(' ');
+      if (sb[b[0]] != null && norm(sb[b[0]]) !== norm(at)) return false;
+      sb[b[0]] = at; return true;
+    }
+    const bt = b.join(' ');
+    if (sa[a[0]] != null && norm(sa[a[0]]) !== norm(bt)) return false;
+    sa[a[0]] = bt; return true;
+  }
+  if (flexB && !flexA) {
+    const at = a.join(' ');
+    if (sb[b[0]] != null && norm(sb[b[0]]) !== norm(at)) return false;
+    sb[b[0]] = at; return true;
   }
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -1464,8 +2002,8 @@ function unifyTerm(aText, bText, sa, sb) {
       if (sb[bt] != null && norm(sb[bt]) !== norm(at)) return false;
       sb[bt] = at;
     } else if (at[0] === '(' || bt[0] === '(') {
-      if (!unifyTerm(stripParens(at), stripParens(bt), sa, sb)) return false;
-    } else if (norm(at) !== norm(bt)) {
+      if (!unifyTerm(stripParens(at), stripParens(bt), sa, sb, alpha)) return false;
+    } else if (norm(at) !== norm(bt) && alpha.get(at) !== bt) {
       return false;
     }
   }

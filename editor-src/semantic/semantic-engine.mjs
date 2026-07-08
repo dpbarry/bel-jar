@@ -562,7 +562,8 @@ export function createSemanticEngine(options = {}) {
   function update(tree, doc, updateOptions = {}) {
     const prevSyntax = syntaxStore.getSnapshot();
     const syntax = syntaxStore.update(tree, doc, { ...updateOptions, documentId });
-    const trigger = settlementTrigger(prevSyntax, syntax);
+    let trigger = settlementTrigger(prevSyntax, syntax);
+    if (updateOptions.forceResettle) trigger = 'semantic';
     const perf = getCheckTrace();
     if (perf.enabled) {
       perf.record('edit:trigger', 0, { trigger, version: syntax.version });

@@ -341,6 +341,14 @@
     tooltipRoot.classList.add('is-visible');
   }
 
+  function isPlainTextTooltip(anchor) {
+    if (!anchor.getAttribute('data-tooltip')) return false;
+    if (anchor.getAttribute('data-tooltip-tone')) return false;
+    if (anchor.hasAttribute('data-tooltip-head')) return false;
+    if (parseLintErrors(anchor)) return false;
+    return true;
+  }
+
   function refreshTooltipIfAnchored(target) {
     if (!tooltipRoot || tooltipAnchor !== target) return;
     if (!anchorConnected(target)) {
@@ -351,6 +359,14 @@
     if (!anchorHasTooltip(target)) {
       hideTooltip();
       return;
+    }
+    if (isPlainTextTooltip(target) && !tooltipRoot.querySelector('.tooltip-stack')) {
+      const tip = tooltipRoot.querySelector('.tooltip-inner');
+      if (tip) {
+        const text = target.getAttribute('data-tooltip') || '';
+        if (tip.textContent !== text) tip.textContent = text;
+        return;
+      }
     }
     layoutTooltip(target);
   }
@@ -569,7 +585,8 @@
       if (opts.ariaLabel !== false) el.removeAttribute('aria-label');
       return;
     }
-    el.setAttribute('data-tooltip', tip);
+    const prev = el.getAttribute('data-tooltip');
+    if (prev !== tip) el.setAttribute('data-tooltip', tip);
     if (opts.ariaLabel !== false) el.setAttribute('aria-label', tip);
     bindTooltipEl(el);
   }

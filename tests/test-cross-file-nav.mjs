@@ -174,7 +174,17 @@ expect(refs.length === 0,
   expect(plain, 'CRLF and LF yields agree on term offset');
 }
 
-// ── groupRenameEdits + applyTextEdits ────────────────────────────────────────
+// CRLF storage must rename on the same normalized basis as groupRenameEdits.
+{
+  const { applyGroupRenameToFile } = await import('../editor-src/project-prelude.mjs');
+  const crlf = EQUIV.replace(/\n/g, '\r\n');
+  const crlfPlans = groupRenameEdits(FILES, 'cr/lam', 'term', (id) => (id === 'cr/equiv' ? crlf : getText(id)), crRosserOpts);
+  expect(crlfPlans.length === 1 && crlfPlans[0].fileId === 'cr/equiv', 'CRLF rename plan on equiv');
+  const crlfRenamed = applyGroupRenameToFile(crlf, 'church-rosser/equiv.bel', crlfPlans[0].edits, 'tm', 'term');
+  expect(!/\bterm\b/.test(crlfRenamed), 'CRLF group rename rewrites free uses');
+  expect(crlfRenamed.includes('block x:tm'), 'CRLF rename lands at the right spot');
+}
+
 // Renaming `term` FROM lam.bel (active owns def): only equiv.bel's free uses.
 let plans = groupRenameEdits(FILES, 'cr/lam', 'term', getText, crRosserOpts);
 expect(plans.length === 1 && plans[0].fileId === 'cr/equiv', 'rename plan touches only the using file');

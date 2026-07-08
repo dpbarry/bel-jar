@@ -467,6 +467,17 @@
       scheduleSave();
     }
 
+    function cancelPendingSave() {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+
+    // Sync in-memory checkpoint text without scheduling a save (storage already updated).
+    function replaceEditorText(text) {
+      cancelPendingSave();
+      state.editor.text = String(text != null ? text : '');
+    }
+
     function flushCheckpoint() {
       persistNow();
     }
@@ -524,6 +535,8 @@
       },
       getInitialCheckpoint: exportSnapshot,
       scheduleEditorPersist: scheduleEditorPersist,
+      cancelPendingSave: cancelPendingSave,
+      replaceEditorText: replaceEditorText,
       scheduleCheckpointSave: scheduleSave,
       flushCheckpoint: flushCheckpoint,
       flushEditor: flushEditor,
@@ -701,6 +714,7 @@
   var EDITOR_TAB_SIZE_KEY = 'beljar-editor-tab-size';
   var EDITOR_LINE_NUMBERS_KEY = 'beljar-editor-line-numbers';
   var EDITOR_FOLD_GUTTER_KEY = 'beljar-editor-fold-gutter';
+  var EDITOR_FOLD_PERSIST_KEY = 'beljar-editor-fold-persist';
   var EDITOR_ACTIVE_LINE_KEY = 'beljar-editor-active-line';
   var EDITOR_DIAG_GUTTER_KEY = 'beljar-editor-diag-gutter';
   var EDITOR_HOLE_GUTTER_KEY = 'beljar-editor-hole-gutter';
@@ -850,6 +864,21 @@
 
   function readStoredEditorFoldGutter() { return readBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY); }
   function writeStoredEditorFoldGutter(on) { writeBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY, on); }
+
+  function readStoredEditorFoldPersist() {
+    try {
+      var v = backendLoad(EDITOR_FOLD_PERSIST_KEY);
+      if (v === 'session' || v === 'local') return v;
+      return 'none';
+    } catch (_) {
+      return 'none';
+    }
+  }
+
+  function writeStoredEditorFoldPersist(mode) {
+    if (mode === 'session' || mode === 'local') backendSave(EDITOR_FOLD_PERSIST_KEY, mode);
+    else backendRemove(EDITOR_FOLD_PERSIST_KEY);
+  }
 
   function readStoredEditorActiveLine() { return readBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY); }
   function writeStoredEditorActiveLine(on) { writeBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY, on); }
@@ -2197,6 +2226,7 @@
     state.meta.updatedAt = Date.now();
     state.meta.revision = (state.meta.revision || 0) + 1;
     backendSave(stateKeyFor(id), JSON.stringify(state));
+    fileTextCache.delete(id);
   }
 
   // Project name lives in the projects registry (single source of truth).
@@ -2494,6 +2524,8 @@
     writeStoredEditorLineNumbers: writeStoredEditorLineNumbers,
     readStoredEditorFoldGutter: readStoredEditorFoldGutter,
     writeStoredEditorFoldGutter: writeStoredEditorFoldGutter,
+    readStoredEditorFoldPersist: readStoredEditorFoldPersist,
+    writeStoredEditorFoldPersist: writeStoredEditorFoldPersist,
     readStoredEditorActiveLine: readStoredEditorActiveLine,
     writeStoredEditorActiveLine: writeStoredEditorActiveLine,
     readStoredEditorDiagGutter: readStoredEditorDiagGutter,

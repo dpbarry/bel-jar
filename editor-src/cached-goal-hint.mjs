@@ -2,6 +2,14 @@
 
 export const CACHED_GOAL_TIP = 'Not in active development: may be out of date.';
 
+export const APPROXIMATE_GOAL_TIP =
+  'Approximate goal from the declaration. Beluga is still checking the real goal at this hole.';
+
+export const RECHECKING_GOAL_TIP =
+  'Previous goal from the last check. Beluga is rechecking.';
+
+export const CHECKING_GOAL_TIP = 'Checking goal type…';
+
 export const CACHED_GOAL_HINT_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.75"/><rect x="11" y="10" width="2" height="7.5" rx="0.5" fill="currentColor" stroke="none"/><circle cx="12" cy="7.25" r="1.15" fill="currentColor" stroke="none"/></svg>';
 
 export function bindCachedGoalHintTooltip(el, tip = CACHED_GOAL_TIP) {
@@ -20,6 +28,14 @@ export function bindCachedGoalHintTooltip(el, tip = CACHED_GOAL_TIP) {
 }
 
 export function createCachedGoalHintIcon(tip = CACHED_GOAL_TIP) {
+  return createGoalHintIcon(tip);
+}
+
+export function createApproxGoalHintIcon(tip = APPROXIMATE_GOAL_TIP) {
+  return createGoalHintIcon(tip);
+}
+
+function createGoalHintIcon(tip) {
   if (typeof document === 'undefined') return null;
   const icon = document.createElement('span');
   icon.className = 'bel-cached-hint';

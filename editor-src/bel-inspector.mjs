@@ -36,7 +36,11 @@ import {
   resolveGoalStateNearPos,
   settlementGoalsByPos,
 } from './hole-goal-display.mjs';
-import { createCachedGoalHintIcon, CACHED_GOAL_TIP } from './cached-goal-hint.mjs';
+import {
+  createCachedGoalHintIcon,
+  CACHED_GOAL_TIP,
+} from './cached-goal-hint.mjs';
+import { mountHoleGoalTier } from './hole-goal-pending-ui.mjs';
 
 const KIND_LABEL = {
   signature: 'In signature',
@@ -1526,7 +1530,11 @@ function holeRow(g, hole, view, opts) {
   node.setAttribute('role', 'button');
   node.tabIndex = 0;
   const state = hole.goalState || (hole.goal ? 'live' : 'pending');
-  if (state === 'pending' || state === 'rechecking') node.classList.add('is-pending');
+  const loadingLive = hole.loadingLive
+    || state === 'pending'
+    || state === 'approximate'
+    || state === 'rechecking';
+  if (loadingLive || state === 'pending') node.classList.add('is-pending');
   if (state === 'cached') node.classList.add('is-cached');
   if (state === 'out-of-scope') node.classList.add('is-unfocused');
   const id = el('span', 'harpoon-hole-id');
@@ -1538,21 +1546,20 @@ function holeRow(g, hole, view, opts) {
   }
   node.appendChild(id);
   const goal = el('span', 'inspector-hole-goal harpoon-hole-goal');
-  if (hole.goal && state !== 'out-of-scope') {
-    renderTypeInto(goal, hole.goal, 'comp');
-    if (state === 'rechecking') {
-      const tag = el('span', 'inspector-hole-rechecking', 'Rechecking…');
-      setShimmerPhase(tag);
-      tag.classList.add('beljar-tip-shimmer');
-      goal.appendChild(tag);
-    }
-  } else if (state === 'out-of-scope') {
+  if (state === 'out-of-scope') {
     goal.appendChild(el('span', 'harpoon-hole-unfocused', 'Out of scope: click to compute'));
+  } else if (state === 'live' || state === 'cached') {
+    if (hole.goal) renderTypeInto(goal, hole.goal, 'comp');
+    if (state === 'cached') {
+      const hint = createCachedGoalHintIcon();
+      if (hint) goal.appendChild(hint);
+    }
   } else {
-    const recalc = el('span', 'harpoon-hole-recalc beljar-tip-shimmer');
-    recalc.textContent = 'Recalculating…';
-    setShimmerPhase(recalc);
-    goal.appendChild(recalc);
+    mountHoleGoalTier(goal, {
+      surface: 'inspector',
+      goalState: state,
+      goal: hole.goal,
+    });
   }
   node.appendChild(goal);
   const jumpFileId = opts.boundFile || editorFileId(g, view);
@@ -2457,6 +2464,14 @@ function rerender(view, opts = {}) {
   };
   renderInspector(body, model, view, engine, renderOpts);
 
+  if (isGlobalOverviewModel(model) && model.holes?.length) {
+    const ed = g.BelJarEditor;
+    if (ed && typeof ed.scheduleCertifyHoleGoalsScoped === 'function') {
+      const hits = model.holes.map((h) => ({ hole: h, from: h.from, to: h.to }));
+      ed.scheduleCertifyHoleGoalsScoped(view, hits);
+    }
+  }
+
   if (model && model.isHole) {
     // A hole isn't a symbol, but it IS a pinned target — so a background re-lint
     // re-inspects the `?` at this position instead of falling back to global.
@@ -2563,6 +2578,13 @@ export function belInspector() {
         rebindPinnedInspectorWindows(e?.detail?.view);
       });
       g.addEventListener('beljar:development-checked', () => {
+        const view = activeView();
+        if (!view || !panelOpen() || inspectorRenderSuppressed()) return;
+        if (shouldRefreshInspectorContent(g, view)) {
+          rerender(view, liveRerenderOpts(view));
+        }
+      });
+      g.addEventListener('beljar:hole-goals-updated', () => {
         const view = activeView();
         if (!view || !panelOpen() || inspectorRenderSuppressed()) return;
         if (shouldRefreshInspectorContent(g, view)) {

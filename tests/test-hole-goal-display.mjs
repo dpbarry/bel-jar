@@ -1,12 +1,14 @@
 import {
   buildHoleDisplayRows,
   fileInActiveDevelopment,
+  goalsSemanticallyEqual,
   holesBannerFromRows,
   resolveHoleGoalDisplay,
   storedGoalAt,
 } from '../editor-src/hole-goal-display.mjs';
 import { getHoleGoalsStore } from '../editor-src/hole-goals-store.mjs';
 import { fileContentSig } from '../editor-src/development-check.mjs';
+import { approximateHoleGoal } from '../editor-src/bel-prover-bridge.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -26,15 +28,14 @@ expect(storedGoalAt('a.bel', src + ' ', 2, 1) === null, 'edited text misses stor
 const otherSig = fileContentSig(src);
 getHoleGoalsStore().set('other.bel', otherSig, [{ line: 2, col: 1, goal: '[ |- nat]', index: 0 }]);
 
-expect(
-  resolveHoleGoalDisplay({
-    inDevelopment: true,
-    settleState: 'checking',
-    storedGoal: '[ |- nat]',
-    settlementGoal: '[ |- bool]',
-  }).state === 'rechecking',
-  'in-dev checking prefers store over carried settlement',
-);
+const rechecking = resolveHoleGoalDisplay({
+  inDevelopment: true,
+  settleState: 'checking',
+  storedGoal: '[ |- nat]',
+  settlementGoal: '[ |- bool]',
+});
+expect(rechecking.state === 'rechecking', 'in-dev checking prefers store over carried settlement');
+expect(rechecking.loadingLive === true, 'rechecking is loading');
 
 expect(
   resolveHoleGoalDisplay({
@@ -70,6 +71,29 @@ expect(fileInActiveDevelopment('a.bel', ['a.bel', 'b.bel']), 'member in active d
 expect(!fileInActiveDevelopment('c.bel', ['a.bel']), 'non-member excluded');
 expect(fileInActiveDevelopment('a.bel', ['a.bel']), 'standalone member in its dev');
 
+const approx = resolveHoleGoalDisplay({
+  inDevelopment: true,
+  settleState: 'checking',
+  storedGoal: null,
+  settlementGoal: null,
+  approximateGoal: '[ |- nat]',
+});
+expect(approx.state === 'approximate' && approx.goal === '[ |- nat]' && approx.loadingLive, 'approximate tier');
+
+expect(
+  resolveHoleGoalDisplay({
+    inDevelopment: true,
+    settleState: 'ready',
+    storedGoal: '[ |- nat]',
+    settlementGoal: '[ |- bool]',
+    approximateGoal: '[ |- nat]',
+  }).state === 'live',
+  'store wins over approximate when not checking',
+);
+
+expect(approximateHoleGoal(src, 2, 1) === '[ |- nat]', 'top-level approximate goal');
+expect(approximateHoleGoal('rec f : [ |- nat] =\nfn x => ?\n;', 2, 1) === null, 'nested hole has no approximate');
+
 const rows = buildHoleDisplayRows({
   fileName: 'other.bel',
   fileText: src,
@@ -79,5 +103,36 @@ const rows = buildHoleDisplayRows({
 });
 expect(rows.length === 1 && rows[0].goalState === 'cached', 'cross-dev row uses cached store');
 expect(holesBannerFromRows(rows, { inDevelopment: false }) === true, 'hint flag when out of dev');
+
+const approxRows = buildHoleDisplayRows({
+  fileName: 'fresh.bel',
+  fileText: src,
+  inDevelopment: true,
+  settleState: 'idle',
+  syntacticHoles: [{ line: 2, col: 1, index: 0, from: 0, to: 1 }],
+});
+expect(approxRows[0].goalState === 'approximate', 'build rows picks approximate when pending');
+
+expect(goalsSemanticallyEqual('[ |- nat]', '[⊢ nat]'), 'cosmetic bracket spacing compares equal');
+expect(
+  resolveHoleGoalDisplay({
+    inDevelopment: true,
+    settleState: 'ready',
+    storedGoal: null,
+    settlementGoal: '[⊢ nat]',
+    approximateGoal: '[ |- nat]',
+  }).goal === '[ |- nat]',
+  'ready keeps approximate display when settlement only differs cosmetically',
+);
+expect(
+  resolveHoleGoalDisplay({
+    inDevelopment: true,
+    settleState: 'checking',
+    storedGoal: '[⊢ nat]',
+    settlementGoal: null,
+    approximateGoal: '[ |- nat]',
+  }).goal === '[ |- nat]',
+  'rechecking keeps approximate display when store only differs cosmetically',
+);
 
 console.log('OK hole-goal-display');

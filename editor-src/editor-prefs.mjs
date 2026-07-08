@@ -4,7 +4,7 @@ import { bracketMatching, indentRange, indentUnit } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches } from '@codemirror/search';
 import { Transaction } from '@codemirror/state';
-import { belugaHighlightExtensions, belCodeFolding } from './bel-language.mjs';
+import { belugaHighlightExtensions, belCodeFolding, belFoldGutter } from './bel-language.mjs';
 import { belOccurrenceHighlight, defLinkDecoration, belNavigationGestures } from './bel-nav.mjs';
 import { holeGutterHighlight, holeGutterInteraction } from './bel-hole-decorations.mjs';
 
@@ -37,6 +37,7 @@ export function readEditorPrefs() {
     reindentPaste: p?.readStoredEditorReindentPaste?.() ?? true,
     lineNumbers: p?.readStoredEditorLineNumbers?.() ?? true,
     foldGutter: p?.readStoredEditorFoldGutter?.() ?? true,
+    foldPersist: p?.readStoredEditorFoldPersist?.() ?? 'none',
     activeLine: p?.readStoredEditorActiveLine?.() ?? true,
     diagGutter: p?.readStoredEditorDiagGutter?.() ?? true,
     holeGutter: p?.readStoredEditorHoleGutter?.() ?? true,
@@ -106,7 +107,10 @@ export function buildToggleableExtensions(prefs, deps) {
   }
   if (prefs.bracketMatch) exts.push(bracketMatching());
   if (prefs.autoCloseBrackets) exts.push(closeBrackets());
-  if (prefs.foldGutter) exts.push(belCodeFolding());
+  if (prefs.foldGutter) {
+    exts.push(belCodeFolding());
+    exts.push(belFoldGutter());
+  }
   if (prefs.selectionMatches) exts.push(highlightSelectionMatches({ minSelectionLength: 2 }));
   if (prefs.wordWrap) exts.push(EditorView.lineWrapping);
 

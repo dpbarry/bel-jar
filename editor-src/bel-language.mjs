@@ -5,9 +5,10 @@ import {
   syntaxHighlighting,
   indentNodeProp,
   foldNodeProp,
-  foldInside,
   foldService,
   codeFolding,
+  foldGutter,
+  unfoldEffect,
   delimitedIndent,
 } from '@codemirror/language';
 import { Prec } from '@codemirror/state';
@@ -18,14 +19,17 @@ import { styleTags, tags as t, Tag } from '@lezer/highlight';
 // in bel-source-render.mjs for the Library preview).
 export const holeTag = Tag.define();
 import { parser } from './beluga-parser.js';
+import {
+  foldBlockComment,
+  foldPercentLineCommentRun,
+  foldTopLevelDeclaration,
+  isPercentLineComment,
+  isPercentLineCommentFold,
+  percentLineCommentFoldFrom,
+  percentLineCommentFoldHasLeadingGap,
+} from './bel-fold.mjs';
 import { belParseErrorHighlightExtensions } from './bel-invalid-highlight.mjs';
 import { belugaScopeHighlight } from './bel-scope-highlight.mjs';
-
-function parenDelimitedNoAlign(cx) {
-  const open = cx.node.firstChild;
-  if (!open || cx.state.doc.sliceString(open.from, open.to) !== '(') return cx.continue();
-  return delimitedIndent({ closing: ')', align: false })(cx);
-}
 
 function lineStartsClosingSemi(doc, pos) {
   return /^\s*;\s*$/.test(doc.lineAt(pos).text);
@@ -62,71 +66,10 @@ function indentBracketRhsAfterDeclHeader(cx) {
   return cx.continue();
 }
 
-function foldBlockComment(node, state) {
-  const doc = state.doc;
-  if (doc.lineAt(node.from).number === doc.lineAt(node.to).number) return null;
-  const text = doc.sliceString(node.from, node.to);
-  let openLen = 2;
-  let closeLen = 2;
-  if (text.startsWith('%{{')) {
-    openLen = 3;
-    closeLen = 3;
-  } else if (!text.startsWith('%{')) {
-    return null;
-  }
-  if (!text.endsWith(closeLen === 3 ? '}}%' : '}%')) return null;
-  return { from: node.from + openLen, to: node.to - closeLen };
-}
-
-// Mirror beluga.grammar LineComment: "%%" … | "%" ![{%\n] … | "%" alone.
-function isPercentLineComment(text) {
-  const t = text.trimStart();
-  if (!t.startsWith('%') || t.startsWith('%{')) return false;
-  if (t.startsWith('%%') || t === '%') return true;
-  const ch = t.charCodeAt(1);
-  return ch !== 123 && ch !== 37 && ch !== 10;
-}
-
-function percentLineCommentFoldFrom(line) {
-  const text = line.text;
-  const t = text.trimStart();
-  const lead = text.length - t.length;
-  const prefixLen = t.startsWith('%%') ? 2 : 1;
-  let from = line.from + lead + prefixLen;
-  const rel = from - line.from;
-  if (rel < line.text.length && (line.text[rel] === ' ' || line.text[rel] === '\t')) {
-    from += 1;
-  }
-  return from;
-}
-
-function percentLineCommentFoldHasLeadingGap(state, from) {
-  if (from <= 0) return false;
-  const ch = state.doc.sliceString(from - 1, from);
-  return ch === ' ' || ch === '\t';
-}
-
-function foldPercentLineCommentRun(state, lineStart) {
-  const doc = state.doc;
-  const line = doc.lineAt(lineStart);
-  if (!isPercentLineComment(line.text)) return null;
-
-  let startLine = line.number;
-  while (startLine > 1 && isPercentLineComment(doc.line(startLine - 1).text)) startLine -= 1;
-  if (line.number !== startLine) return null;
-
-  let endLine = startLine;
-  while (endLine < doc.lines && isPercentLineComment(doc.line(endLine + 1).text)) endLine += 1;
-  if (endLine === startLine) return null;
-
-  const first = doc.line(startLine);
-  const last = doc.line(endLine);
-  return { from: percentLineCommentFoldFrom(first), to: last.to };
-}
-
-function isPercentLineCommentFold(state, { from }) {
-  const line = state.doc.lineAt(from);
-  return isPercentLineComment(line.text) && from === percentLineCommentFoldFrom(line);
+function parenDelimitedNoAlign(cx) {
+  const open = cx.node.firstChild;
+  if (!open || cx.state.doc.sliceString(open.from, open.to) !== '(') return cx.continue();
+  return delimitedIndent({ closing: ')', align: false })(cx);
 }
 
 const belPercentLineCommentFold = foldService.of((state, lineStart, lineEnd) => {
@@ -135,22 +78,48 @@ const belPercentLineCommentFold = foldService.of((state, lineStart, lineEnd) => 
   return range;
 });
 
+export function belFoldGutter() {
+  return foldGutter({
+    markerDOM(open) {
+      const el = document.createElement('span');
+      el.className = `cm-bel-foldmarker${open ? ' is-open' : ' is-folded'}`;
+      el.innerHTML = open
+        ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6.5 4 4 4-4"/></svg>'
+        : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4.5 4 4-4 4"/></svg>';
+      return el;
+    },
+  });
+}
+
 export function belCodeFolding() {
   return codeFolding({
     placeholderText: '⋯',
     preparePlaceholder(state, range) {
-      if (!isPercentLineCommentFold(state, range)) return null;
-      return percentLineCommentFoldHasLeadingGap(state, range.from) ? 'comment-space' : 'comment-margin';
+      const comment = isPercentLineCommentFold(state, range);
+      return {
+        from: range.from,
+        to: range.to,
+        variant: comment
+          ? (percentLineCommentFoldHasLeadingGap(state, range.from) ? 'comment-space' : 'comment-margin')
+          : 'decl',
+      };
     },
-    placeholderDOM(view, onclick, prepared) {
+    placeholderDOM(view, _onclick, prepared) {
       const el = document.createElement('span');
-      const isComment = prepared === 'comment-space' || prepared === 'comment-margin';
+      const variant = prepared?.variant;
+      const isComment = variant === 'comment-space' || variant === 'comment-margin';
       el.textContent = isComment ? '...' : '⋯';
       el.className = 'cm-foldPlaceholder';
-      if (prepared === 'comment-space') el.classList.add('cm-foldPlaceholder--gap-space');
+      if (variant === 'comment-space') el.classList.add('cm-foldPlaceholder--gap-space');
       el.setAttribute('aria-label', view.state.phrase('folded code'));
       el.title = view.state.phrase('unfold');
-      el.onclick = onclick;
+      el.onmousedown = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (prepared?.from != null) {
+          view.dispatch({ effects: unfoldEffect.of({ from: prepared.from, to: prepared.to }) });
+        }
+      };
       return el;
     },
   });
@@ -436,12 +405,17 @@ const belugaParser = parser.configure({
       CaseBranch: cx => cx.baseIndent + cx.unit,
     }),
     foldNodeProp.add({
-      ModuleDeclaration: foldInside,
-      InductiveDeclaration: foldInside,
-      StratifiedDeclaration: foldInside,
-      LFDatatypeDeclaration: foldInside,
-      RecDeclaration: foldInside,
-      SchemaDeclaration: foldInside,
+      ModuleDeclaration: foldTopLevelDeclaration,
+      InductiveDeclaration: foldTopLevelDeclaration,
+      StratifiedDeclaration: foldTopLevelDeclaration,
+      CoinductiveDeclaration: foldTopLevelDeclaration,
+      LFDatatypeDeclaration: foldTopLevelDeclaration,
+      LFDeclaration: foldTopLevelDeclaration,
+      RecDeclaration: foldTopLevelDeclaration,
+      SchemaDeclaration: foldTopLevelDeclaration,
+      TypedefDeclaration: foldTopLevelDeclaration,
+      LetDeclaration: foldTopLevelDeclaration,
+      ProofDeclaration: foldTopLevelDeclaration,
       BlockComment: foldBlockComment,
     }),
   ],

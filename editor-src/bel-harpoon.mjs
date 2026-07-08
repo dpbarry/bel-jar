@@ -11,6 +11,7 @@
 // prose — translate output is re-checked before it lands.
 
 import { indentRange } from '@codemirror/language';
+import { formatProofBody } from './bel-proof-format.mjs';
 
 // Parse `<kw> name : <type> = <body>` from a top-level declaration's text.
 // Returns { kw:'rec'|'proof', name, type, bodyStart } (bodyStart = offset of the
@@ -76,16 +77,28 @@ export function commitProof(view, declFrom, declTo, source) {
   const docText = view.state.doc.sliceString(range.from, range.to);
   const decl = parseDecl(docText);
   if (!decl) return false;
-  const body = String(source == null ? '' : source).replace(/;\s*$/, '').trimEnd();
-  const newDecl = `rec ${decl.name} : ${decl.type} =\n${body}\n;`;
+  const raw = String(source == null ? '' : source).replace(/;\s*$/, '').trimEnd();
+  // Canonically-glyph + re-layout the proof body so what lands in the file is
+  // idiomatic Beluga, not the search's concatenated sprawl. Type-correctness is
+  // preserved (verified): this is a layout + `|-`→`⊢`, `->`→`→`, `=>`→`⇒` change.
+  const canonType = expandTypeGlyphs(decl.type);
+  const body = formatProofBody(raw);
+  const newDecl = `rec ${decl.name} : ${canonType} =\n${body}\n;`;
   view.dispatch({
     changes: { from: range.from, to: range.to, insert: newDecl },
     userEvent: 'input.complete',
   });
-  const ir = indentRange(view.state, range.from, range.from + newDecl.length);
-  if (!ir.empty) view.dispatch({ changes: ir });
   view.focus();
   return true;
+}
+
+// Canonicalize the glyphs of a TYPE signature (`[ |- …] -> …` → `[ ⊢ …] → …`)
+// without disturbing its own layout. Turnstile + arrow only; a type carries no
+// `=>` case arms.
+function expandTypeGlyphs(typeText) {
+  return String(typeText == null ? '' : typeText)
+    .split('|-').join('⊢')
+    .replace(/->/g, '→');
 }
 
 // Extend a declaration range to swallow the trailing `;` if the node range

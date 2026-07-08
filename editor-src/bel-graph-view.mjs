@@ -20,6 +20,15 @@ import { belNavSemanticTick } from './bel-nav.mjs';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let markerSeq = 0;
 
+function graphToast(message, kind) {
+  const g = typeof window !== 'undefined' ? window : self;
+  const T = g.BelJarToasts;
+  if (!T) return;
+  if (kind === 'warn' && T.warn) T.warn(message);
+  else if (kind === 'error' && T.error) T.error(message);
+  else if (T.info) T.info(message);
+}
+
 function nodeMeta(engine, id, fallbackName) {
   const snap = engine.getSnapshot && engine.getSnapshot();
   const gnode = snap && snap.graph && snap.graph.nodeMap.get(id);
@@ -767,8 +776,14 @@ function applyGraphPrefsToWindow(win, prefs = loadGraphPrefs()) {
   const cur = navCurrent(win._graphNav);
 
   // Force ↔ flat are now two different renderers (WebGL galaxy vs. 2D SVG diagram),
-  // so a layout change re-mounts rather than morphing one controller in place.
+  // so a layout change re-mounts rather than morphing one controller in place. This
+  // fires on an EXPLICIT user toggle (prefs.layout ≠ what's applied), so honor it —
+  // including retrying 3D after a prior WebGL failure (e.g. the user fixed their GPU
+  // driver / relaunched Chrome). Clear the degraded flags so the retry is genuine and
+  // a fresh failure re-warns.
   if (win._graph3d && win._graphAppliedLayout !== prefs.layout) {
+    ctx._degradedFlat = false;
+    if (prefs.layout === 'force') win._webglWarned = false;
     const cur = navCurrent(win._graphNav);
     if (cur && win._graph3d.getCameraState) {
       cur.camera = win._graph3d.getCameraState();
@@ -1148,7 +1163,7 @@ function buildGraphToolbar({ sidebar } = {}) {
       reflectScopeBtn(cur?.mode === 'global');
       reflectActions();
     },
-    wire(getCtrl, { onReset, onExplore, onGlobal } = {}) {
+    wire(getCtrl, { onReset, onExplore, onGlobal, getSelectedId } = {}) {
       ctrlRef = getCtrl;
       reflectActions();
       search.addEventListener('input', () => {
@@ -1186,8 +1201,12 @@ function buildGraphToolbar({ sidebar } = {}) {
 
       scopeBtn.addEventListener('click', () => {
         if (scopeMode === 'explore') {
-          const f = ctrlRef()?.getFocusedNode?.();
-          if (f?.node) onExplore?.(f.node, f.idx);
+          const ctrl = ctrlRef();
+          const f = ctrl?.getFocusedNode?.();
+          const id = f?.node?.id ?? getSelectedId?.() ?? null;
+          if (id == null) return;
+          const node = f?.node ?? ctrl?.getNodes?.().find((n) => n.id === id);
+          if (node) onExplore?.(node, f?.idx ?? ctrl?.indexOfId?.(id) ?? -1);
         } else {
           onGlobal?.();
         }
@@ -1391,9 +1410,15 @@ function mountGraph3DRenderer(view, engine, ctx) {
 
   let ctrl;
 
+  // If 3D was requested but WebGL already proved unavailable for THIS window (and the
+  // user hasn't explicitly re-toggled to 3D, which clears the flag), don't re-attempt
+  // createGraph3D on every live re-mount — go straight to flat. Avoids thrash while
+  // WebGL stays broken; an explicit 3D toggle resets _webglWarned so it retries.
+  const wantFlat = prefs.layout === 'flat' || (prefs.layout === 'force' && win._webglWarned);
+
   // The flat view is its own 2D SVG renderer with an x/y camera — not the galaxy
   // seen head-on. It hides the WebGL canvas/labels and draws an SVG into the stage.
-  if (prefs.layout === 'flat') {
+  if (wantFlat) {
     stage.classList.add('is-flat');
     canvas.style.display = 'none';
     labels.style.display = 'none';
@@ -1425,6 +1450,36 @@ function mountGraph3DRenderer(view, engine, ctx) {
       onBeforeFocusChange,
       onFocus,
     });
+    // If WebGL is unavailable (e.g. the browser's live-context cap was hit),
+    // createGraph3D returns null. Rather than let the caller nuke the whole window
+    // shell and drop to the ancient curved-bézier SVG fallback, degrade to the GOOD
+    // flat (Sugiyama) renderer IN PLACE — the shell (toolbar/sidebar) stays intact.
+    if (!ctrl) {
+      stage.classList.add('is-flat');
+      canvas.style.display = 'none';
+      labels.style.display = 'none';
+      ctrl = createFlatGraph(stage, model, null, {
+        implVisibility: prefs.impl,
+        skipInitialFrame: true,
+        onJump: (node) => jumpToNode(view, engine, node),
+        onDrill: mode === 'neighborhood' ? drill : null,
+        onFly: fly,
+        onActivate,
+        onBeforeFocusChange,
+        onFocus,
+      });
+      if (ctrl) {
+        win._graphAppliedLayout = 'flat';
+        ctx._degradedFlat = true;
+        // Tell the user WHY they're not getting 3D — once per window, not on every
+        // live re-mount. WebGL being unavailable is a browser/GPU condition (e.g.
+        // Chrome's GPU process failing to bind a context), not a BelJar error.
+        if (!win._webglWarned) {
+          win._webglWarned = true;
+          graphToast('3D graph unavailable — WebGL is disabled in your browser. Showing the flat view.', 'warn');
+        }
+      }
+    }
   }
   ctx._mountingCtrl = ctrl;
   if (!ctrl) return null;
@@ -1719,6 +1774,7 @@ function open3DGraph(view, engine, key, model, titleNode, {
   });
 
   toolbar.wire(() => win._graph3d, {
+    getSelectedId: () => ctx.selectedNodeId,
     onReset: () => {
       const ctrl = win._graph3d;
       const cur = navCurrent(win._graphNav);

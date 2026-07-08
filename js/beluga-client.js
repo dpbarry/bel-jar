@@ -19,9 +19,12 @@
   var primarySlot = null;
   var primaryStandby = null;
   var checkerSlot = null;
+  var proverSlot = null;
+  var proverSessionCount = 0;
   var intelSlot = null;
   var intelKeepWarm = false;
   var checkerIdleTimer = null;
+  var proverIdleTimer = null;
 
   var mainReady = false;
   var mainReadyPromise = null;
@@ -85,7 +88,9 @@
   function workerUrl(build) {
     var base = SCRIPT_SRC ? new URL('beluga-worker.js', SCRIPT_SRC).href
       : new URL('js/beluga-worker.js', document.baseURI).href;
-    return base + '?build=' + build;
+    return base
+      + '?build=' + encodeURIComponent(build)
+      + '&script=' + encodeURIComponent(mainScriptUrl(build));
   }
 
   function mainScriptUrl(build) {
@@ -149,6 +154,32 @@
     }, CHECKER_IDLE_TTL_MS);
   }
 
+  function clearProverIdleTimer() {
+    if (!proverIdleTimer) return;
+    clearTimeout(proverIdleTimer);
+    proverIdleTimer = null;
+  }
+
+  function proverPoolBusy() {
+    for (var i = 0; i < proverPool.length; i += 1) {
+      if (proverPool[i].pending.size > 0) return true;
+    }
+    return false;
+  }
+
+  function scheduleProverIdleShutdown() {
+    if (proverSessionCount > 0) return;
+    clearProverIdleTimer();
+    if ((!proverSlot && !proverPool.length) || (proverSlot && proverSlot.pending.size > 0) || proverPoolBusy()) return;
+    proverIdleTimer = setTimeout(function () {
+      if (proverSessionCount > 0) return;
+      if ((proverSlot && proverSlot.pending.size > 0) || proverPoolBusy()) return;
+      if (proverSlot) terminateSlot(proverSlot, makeCancelledError(CHECK_CANCELLED_MSG));
+      proverSlot = null;
+      terminateProverPool(makeCancelledError(CHECK_CANCELLED_MSG));
+    }, CHECKER_IDLE_TTL_MS);
+  }
+
   function warmBelugaScriptCache(build) {
     return fetch(mainScriptUrl(build), { credentials: 'omit' }).catch(function () {});
   }
@@ -195,10 +226,20 @@
 
     slot.worker.onerror = function (ev) {
       var msg = ev.message || '';
+      var loc = ev.filename
+        ? (' (' + ev.filename + (ev.lineno ? ':' + ev.lineno : '') + ')')
+        : '';
       var isOvf = /stack.?overflow|maximum call stack|too much recursion/i.test(msg);
       if (isOvf) ev.preventDefault();
-      var err = new Error(msg || 'Beluga worker crashed');
+      var err = new Error((msg || 'Beluga worker crashed') + loc);
       err.isStackOverflow = isOvf;
+      if (!isOvf && global.BelJarToasts && global.BelJarToasts.error) {
+        global.BelJarToasts.error(
+          'Beluga checker failed to load' + loc
+          + '. Hard-refresh the page; if it persists, check that beluga_web.bc.js downloads fully in the Network tab.',
+          { duration: 12000 },
+        );
+      }
       slot.ready = false;
       slot.readyPromise = null;
       if (slot === primarySlot) primarySlot = null;
@@ -285,6 +326,62 @@
       intelSlot = createWorkerSlot(build, 'intel');
     }
     return ensureWorkerSlotReady(intelSlot);
+  }
+
+  function ensureProverReady(build) {
+    if (!proverSlot || proverSlot.build !== build) {
+      if (proverSlot) terminateSlot(proverSlot, makeCancelledError(CHECK_CANCELLED_MSG));
+      proverSlot = createWorkerSlot(build, 'prover');
+    }
+    return ensureWorkerSlotReady(proverSlot);
+  }
+
+  // Prover CHECK pool. A prover `check` job is STATELESS on the worker side
+  // (checkFromString builds a fresh trial session per call), so any worker can
+  // serve any check and the search may fire several candidate checks CONCURRENTLY
+  // (wave-parallel generate-and-verify). Slot 0 stays `proverSlot` — the session
+  // slot for load/fingerprint ops — and overflow checks spill onto extra pooled
+  // workers created on demand, least-loaded first.
+  var proverPool = [];
+  var PROVER_POOL_MAX = 2; // extra workers beyond the session slot
+
+  function ensureProverCheckReady(build) {
+    // Drop wrong-build pool workers.
+    for (var i = proverPool.length - 1; i >= 0; i -= 1) {
+      if (proverPool[i].build !== build) {
+        terminateSlot(proverPool[i], makeCancelledError(CHECK_CANCELLED_MSG));
+        proverPool.splice(i, 1);
+      }
+    }
+    if (!proverSlot || proverSlot.build !== build) return ensureProverReady(build);
+    // Least-loaded among the session slot + pool; spawn a pool worker only when
+    // every existing one is busy and the pool has room.
+    var all = [proverSlot].concat(proverPool);
+    var best = all[0];
+    for (var j = 1; j < all.length; j += 1) {
+      if (all[j].pending.size < best.pending.size) best = all[j];
+    }
+    if (best.pending.size > 0 && proverPool.length < PROVER_POOL_MAX) {
+      best = createWorkerSlot(build, 'prover');
+      proverPool.push(best);
+    }
+    return ensureWorkerSlotReady(best);
+  }
+
+  function terminateProverPool(err) {
+    for (var i = 0; i < proverPool.length; i += 1) terminateSlot(proverPool[i], err);
+    proverPool = [];
+  }
+
+  function beginProverSession() {
+    proverSessionCount += 1;
+    clearProverIdleTimer();
+    return ensureProverReady(CHECKER_BUILD);
+  }
+
+  function endProverSession() {
+    if (proverSessionCount > 0) proverSessionCount -= 1;
+    if (proverSessionCount === 0) scheduleProverIdleShutdown();
   }
 
   function cancelCheckerWorkload() {
@@ -397,7 +494,14 @@
       terminateSlot(checkerSlot, new Error('Beluga switched to stable build'));
       checkerSlot = null;
     }
+    if (proverSlot) {
+      terminateSlot(proverSlot, new Error('Beluga switched to stable build'));
+      proverSlot = null;
+    }
+    terminateProverPool(new Error('Beluga switched to stable build'));
+    proverSessionCount = 0;
     clearCheckerIdleTimer();
+    clearProverIdleTimer();
     mainReady = false;
     mainReadyPromise = null;
     mainActiveBuild = null;
@@ -414,7 +518,12 @@
     checkerSlot = null;
     terminateSlot(intelSlot, new Error(RECONFIGURED_MSG));
     intelSlot = null;
+    terminateSlot(proverSlot, new Error(RECONFIGURED_MSG));
+    proverSlot = null;
+    terminateProverPool(new Error(RECONFIGURED_MSG));
+    proverSessionCount = 0;
     clearCheckerIdleTimer();
+    clearProverIdleTimer();
     mainReady = false;
     mainReadyPromise = null;
     mainActiveBuild = null;
@@ -550,12 +659,10 @@
     if (slot) slot.committedFingerprint = fingerprintCode(code);
   }
 
-  function dispatchCheckResult(code, hooks) {
+  function dispatchCheckResultOnSlot(code, hooks, ensureReady, onIdle) {
     var requestCode = String(code != null ? code : '');
-    // Checker ALWAYS on the worker (never freeze the main thread for background
-    // type-checking — see CHECKER_THREAD).
-    clearCheckerIdleTimer();
-    return ensureCheckerReady(CHECKER_BUILD)
+    onIdle.clear();
+    return ensureReady(CHECKER_BUILD)
       .then(function (slot) {
         return postWorker(slot, 'check', requestCode, hooks, null)
           .then(function (result) {
@@ -564,13 +671,27 @@
           });
       })
       .then(function (result) {
-        scheduleCheckerIdleShutdown();
+        onIdle.schedule();
         return checkResultOf(result);
       })
       .catch(function (err) {
-        scheduleCheckerIdleShutdown();
+        onIdle.schedule();
         throw err;
       });
+  }
+
+  function dispatchCheckResult(code, hooks) {
+    return dispatchCheckResultOnSlot(code, hooks, ensureCheckerReady, {
+      clear: clearCheckerIdleTimer,
+      schedule: scheduleCheckerIdleShutdown,
+    });
+  }
+
+  function dispatchCheckResultForProver(code, hooks) {
+    return dispatchCheckResultOnSlot(code, hooks, ensureProverCheckReady, {
+      clear: clearProverIdleTimer,
+      schedule: scheduleProverIdleShutdown,
+    });
   }
 
   function dispatchCheck(code, hooks) {
@@ -704,12 +825,12 @@
       });
   }
 
-  function dispatchLoadChecker(code) {
+  function dispatchLoadOnSlot(code, ensureReady, onIdle) {
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
 
-    clearCheckerIdleTimer();
-    return ensureCheckerReady(CHECKER_BUILD)
+    onIdle.clear();
+    return ensureReady(CHECKER_BUILD)
       .then(function (slot) {
         if (slot.committedFingerprint === requestFP) {
           return '';
@@ -725,14 +846,33 @@
           });
       })
       .then(function (result) {
-        scheduleCheckerIdleShutdown();
+        onIdle.schedule();
         return result;
       })
       .catch(function (err) {
-        scheduleCheckerIdleShutdown();
-        if (checkerSlot) checkerSlot.committedFingerprint = '';
+        onIdle.schedule();
         throw err;
       });
+  }
+
+  function dispatchLoadChecker(code) {
+    return dispatchLoadOnSlot(code, ensureCheckerReady, {
+      clear: clearCheckerIdleTimer,
+      schedule: scheduleCheckerIdleShutdown,
+    }).catch(function (err) {
+      if (checkerSlot) checkerSlot.committedFingerprint = '';
+      throw err;
+    });
+  }
+
+  function dispatchLoadProverChecker(code) {
+    return dispatchLoadOnSlot(code, ensureProverReady, {
+      clear: clearProverIdleTimer,
+      schedule: scheduleProverIdleShutdown,
+    }).catch(function (err) {
+      if (proverSlot) proverSlot.committedFingerprint = '';
+      throw err;
+    });
   }
 
   function dispatchLoad(code, hooks) {
@@ -906,6 +1046,17 @@
 
     loadChecker: function (code) {
       return dispatchLoadChecker(code);
+    },
+
+    beginProverSession: beginProverSession,
+    endProverSession: endProverSession,
+
+    checkResultForProver: function (code, hooks) {
+      return dispatchCheckResultForProver(code, hooks);
+    },
+
+    loadProverChecker: function (code) {
+      return dispatchLoadProverChecker(code);
     },
 
     run: function (cmd, hooks) {

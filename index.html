@@ -72,9 +72,19 @@
       } catch (_) {}
     })();
 
-    if ('serviceWorker' in navigator) {
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
+      var host = location.hostname;
+      var isLocalDev = host === 'localhost' || host === '127.0.0.1';
+      if (isLocalDev) {
+        // Live Server / local dev: a stale SW can break the 25MB Beluga worker load.
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister(); });
+        });
+        return;
+      }
       navigator.serviceWorker.register('sw.js');
-    }
+    })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
   <title>BelJar</title>
@@ -374,6 +384,7 @@
   <script src="js/beluga-client.js"></script>
   <script src="js/harpoon-client.js"></script>
   <script src="js/harpoon-icon.js"></script>
+  <script src="js/harpoon-tree.js"></script>
   <script src="js/harpoon-lab.js"></script>
   <script src="js/harpoon-project-goals.js"></script>
   <script src="js/harpoon-panel.js"></script>

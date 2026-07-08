@@ -14,11 +14,21 @@
 (function (global) {
   var SCRIPT_SRC = document.currentScript && document.currentScript.src;
 
+  function belugaScriptUrl(build) {
+    var base = SCRIPT_SRC ? new URL('../', SCRIPT_SRC).href : document.baseURI;
+    return build === 'fast'
+      ? new URL('beluga_web.bc.dt.js', base).href
+      : new URL('beluga_web.bc.js', base).href;
+  }
+
   function workerUrl(build) {
     var base = SCRIPT_SRC
       ? new URL('beluga-worker.js', SCRIPT_SRC).href
       : new URL('js/beluga-worker.js', document.baseURI).href;
-    return base + (build === 'fast' ? '?build=fast' : '?build=stable');
+    var b = build === 'fast' ? 'fast' : 'stable';
+    return base
+      + '?build=' + encodeURIComponent(b)
+      + '&script=' + encodeURIComponent(belugaScriptUrl(b));
   }
 
   // Match BelugaClient's build preference when discoverable, else stable.

@@ -183,14 +183,24 @@ function decreasingPremise(thm) {
 // The conclusion head of a boxed type `[ Γ |- head … ]` (or bare `[ |- head ]`).
 // Reused matcher primitive — kept here (not imported) so this module stays a pure
 // leaf; the richer decomposition lives in bel-hole-split.mjs for the split layer.
+// The turnstile is searched OUTSIDE nested boxes (a ctype application
+// `Result' [g ⊢ P] [g, x:name ⊢ Q]` has no top-level turnstile — its head is the
+// family, not the P inside its first index), and a Symbol head (`⇛`) counts.
 export function boxedConclusionHead(boxedTypeStr) {
   const t = String(boxedTypeStr == null ? '' : boxedTypeStr).trim();
   if (!t) return null;
   const inner = (t[0] === '[' && t[t.length - 1] === ']') ? t.slice(1, -1) : t;
-  const m = inner.match(/(?:\|-|⊢|\|)\s*([A-Za-z_][A-Za-z0-9_'.]*)/);
-  if (m) return m[1];
-  // No turnstile: the whole thing is the conclusion (bare LF type).
-  const h = inner.trim().match(/^([A-Za-z_][A-Za-z0-9_'.]*)/);
+  let masked = inner;
+  for (let guard = 0; guard < 4 && /\[[^\][]*\]/.test(masked); guard += 1) {
+    masked = masked.replace(/\[[^\][]*\]/g, (s) => ' '.repeat(s.length));
+  }
+  const mi = masked.search(/\|-|⊢|\|/);
+  if (mi >= 0) {
+    const m = inner.slice(mi).match(/(?:\|-|⊢|\|)\s*([\p{L}\p{S}_][\p{L}\p{N}\p{S}_'.]*)/u);
+    if (m) return m[1];
+  }
+  // No top-level turnstile: the whole thing is the conclusion (bare LF/ctype).
+  const h = inner.trim().match(/^([\p{L}\p{S}_][\p{L}\p{N}\p{S}_'.]*)/u);
   return h ? h[1] : null;
 }
 

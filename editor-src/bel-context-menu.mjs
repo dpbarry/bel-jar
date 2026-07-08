@@ -21,6 +21,10 @@ function canGoToDefinition(view, pos, nav) {
   return !!crossFileDefinitionAt(view, pos);
 }
 
+function canRenameSymbol(view, pos, nav) {
+  return !!(nav?.symbolId || renameReachAt(view, pos));
+}
+
 function hasSymbolMenuContext(view, pos, nav) {
   if (nav && (nav.symbolId || nav.reference)) return true;
   return canFindReferences(view, pos);
@@ -171,7 +175,7 @@ function buildMenuItems(view, pos) {
       });
     }
 
-    if (nav?.symbolId) {
+    if (canRenameSymbol(view, pos, nav)) {
       const reach = renameReachAt(view, pos);
       items.push({
         label: 'Rename Symbol',

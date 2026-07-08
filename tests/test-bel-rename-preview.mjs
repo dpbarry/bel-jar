@@ -24,18 +24,33 @@ function viewWithDoc(text) {
 const session = {
   symbolId: 'sym:foo',
   originalName: 'foo',
-  anchorFrom: 4,
-  anchorTo: 4,
+  sites: [{ from: 4, to: 4 }],
+  anchorSite: 0,
   propagate: false,
 };
 
 const empty = renamePreviewState(viewWithDoc('let  = 1'), session);
 expect(!empty.ok && empty.trimmed === '', 'empty draft is not committable');
-expect(!renameDraftIsInvalid(session, empty), 'empty draft is not styled invalid');
+expect(!renameDraftIsInvalid(viewWithDoc('let  = 1'), session, empty), 'empty draft is not styled invalid');
+
+const restored = renamePreviewState(viewWithDoc('let foo = 1'), {
+  ...session,
+  sites: [{ from: 4, to: 7 }],
+});
+expect(restored.trimmed === 'foo' && restored.ok, 'restored original name is committable (cancel)');
+expect(
+  !renameDraftIsInvalid(viewWithDoc('let foo = 1'), { ...session, sites: [{ from: 4, to: 7 }] }, restored),
+  'restored original name is not styled invalid',
+);
 
 const typing = renamePreviewState(
   viewWithDoc('let bar = 1'),
-  { ...session, anchorFrom: 4, anchorTo: 7, crossFile: { defFileId: 'other' }, symbolId: null },
+  {
+    ...session,
+    sites: [{ from: 4, to: 7 }],
+    crossFile: { defFileId: 'other' },
+    symbolId: null,
+  },
 );
 expect(typing.trimmed === 'bar' && typing.ok, 'draft reads typed name (cross-file path)');
 

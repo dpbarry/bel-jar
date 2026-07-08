@@ -278,7 +278,11 @@
       if (plan.replace && plan.replace.length === 1) {
         targetId = plan.replace[0].id;
         targetPath = plan.replace[0].name;
-        P.setFileText(targetId, plan.replace[0].text);
+        if (typeof opts.applyFileReplacement === 'function') {
+          opts.applyFileReplacement(targetId, plan.replace[0].text);
+        } else {
+          P.setFileText(targetId, plan.replace[0].text);
+        }
       } else if (plan.create && plan.create.length === 1) {
         targetPath = plan.create[0].name;
         targetId = P.createFile(targetPath);
@@ -323,6 +327,26 @@
     function applyBulkPlan(plan) {
       var P = global.BelJarPersist;
       if (!plan) return;
+
+      if (typeof opts.applyUploadPlan === 'function') {
+        var count = 0;
+        if (plan.replaceFolder) {
+          for (var rfi = 0; rfi < plan.replaceFolder.length; rfi++) {
+            count += (plan.replaceFolder[rfi].entries || []).length;
+          }
+        }
+        if (plan.replace) count += plan.replace.length;
+        if (plan.create) count += plan.create.length;
+        opts.applyUploadPlan(plan);
+        syncActiveCfgsAfterBulk();
+        if (typeof opts.afterSuiteEdit === 'function') {
+          var dir = activeFileDir();
+          opts.afterSuiteEdit(dir != null ? dir : '');
+        }
+        toast('Inserted ' + count + ' file' + (count === 1 ? '' : 's'));
+        return;
+      }
+
       var count = 0;
 
       if (plan.replaceFolder) {
@@ -342,7 +366,11 @@
       }
       if (plan.replace) {
         for (var i = 0; i < plan.replace.length; i++) {
-          P.setFileText(plan.replace[i].id, plan.replace[i].text);
+          if (typeof opts.applyFileReplacement === 'function') {
+            opts.applyFileReplacement(plan.replace[i].id, plan.replace[i].text);
+          } else {
+            P.setFileText(plan.replace[i].id, plan.replace[i].text);
+          }
           count += 1;
         }
       }

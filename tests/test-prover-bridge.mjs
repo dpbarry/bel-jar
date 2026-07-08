@@ -12,6 +12,8 @@ import {
   theoremDeclRange,
   proveProgram,
   proveOrchestrationCode,
+  stepMeta,
+  stepLead,
 } from '../editor-src/bel-prover-bridge.mjs';
 
 function expect(cond, msg) {
@@ -101,6 +103,40 @@ const linComp = candidateMoves({
 expect(linComp.some((m) => m.kind === 'fill' && m.text === 'lin_name_must_appear [g |- linQ]'),
   'pattern-bound comp subderiv closes imposs branch directly');
 
+// ── 3b. Strengthening IH under a binder (the str_lin l_inp shape) ─────────────
+// A pattern metavar annotated `X[.., y, x]` recurses by re-binding the binder into
+// the context BEFORE the strengthened variable, referencing X bare, and binding the
+// result in the INSTANTIATED conclusion context (g := g, y:name):
+//   let [g, y:name |- R] = str_lin [g, y:name, x:name |- X] in ?
+const STRLIN = [
+  'name : type.',
+  'schema nctx = name;',
+  'proc : type.',
+  'inp : name -> (name -> name -> proc) -> proc.',
+  'linear: (name -> proc) -> type.',
+  'l_inp   : ({y:name} linear (\\x. P x y)) ->  linear (\\x. inp x P).',
+].join('\n');
+const strLinDecl2 = [
+  'rec str_lin2 : (g : nctx) [g, x:name |- linear (\\y. P[.., y])] -> [g |- linear (\\y. P)] =',
+  '/ total 1 /',
+  'fn f => case f of',
+  '| [g, x:name |- l_inp (\\y. X[.., y, x])] =>',
+  '  ?',
+  ';',
+].join('\n');
+const strLinCode2 = `${STRLIN}\n${strLinDecl2}\n`;
+const strLinThm2 = theoremUnderProof(strLinDecl2);
+const strLinHoleLine = strLinCode2.split('\n').findIndex((l) => l.trim() === '?') + 1;
+const strLinRec = recurseTexts({
+  line: strLinHoleLine,
+  col: 3,
+  goal: '[g |- linear (\\y. inp y (\\a. \\b. Q[.., a, b]))]',
+  meta: [{ name: 'g', type: 'nctx' }],
+  ctx: [],
+}, strLinThm2, strLinCode2);
+expect(strLinRec.some((t) => t.includes('let [g, y:name |- R] = str_lin2 [g, y:name, x:name |- X] in')),
+  `strengthening IH re-binds the binder + instantiates the result context (got ${JSON.stringify(strLinRec.slice(0, 3))})`);
+
 // ── 4. Intro at a top-level hole ─────────────────────────────────────────────
 const strLinDecl = [
   "rec str_lin : (g : nctx) [g, x:name |- linear (\\y. P[.., y])] -> [g |- linear (\\y. P)] =",
@@ -186,5 +222,50 @@ const slim = proveOrchestrationCode(suite, 'dual_uniq', uniqStart, uniqEnd, file
 expect(!slim.includes('dual_sym'), 'orchestration drops holed sibling theorems');
 expect(slim.includes('rec dual_uniq'), 'orchestration keeps the target theorem');
 expect(slim.includes('tp : type.'), 'orchestration keeps suite prelude');
+
+// ── 10. Move leads — brief prose; structured facts stay in meta facets ───────
+const holeDual = { goal: '[ |- dual A B]', meta: [], ctx: [{ name: 'f', type: '[ |- dual A B]' }] };
+const synthText = 'let [ |- x] = dual_sym [ |- f] in\ndual_sym [ |- x]';
+const synthMv = { kind: 'synth', text: synthText };
+const synthMeta = stepMeta(synthMv, synthText, holeDual);
+const synthLeadStr = stepLead(synthMv, synthMeta, holeDual);
+expect(synthLeadStr === '2-step chain closing dual', `synth lead: ${synthLeadStr}`);
+expect(!synthLeadStr.includes('dual_sym'), 'synth lead omits rule names');
+expect(synthMeta.chain.length === 2, 'synth meta records chain');
+
+const fillMv = { kind: 'fill', text: '[ |- D⊥]' };
+const fillHole = { goal: '[ |- dual A B]', meta: [], ctx: [] };
+const fillMeta = stepMeta(fillMv, '[ |- D⊥]', fillHole);
+expect(fillMeta.filler === '[ |- D⊥]', 'fill meta records filler');
+expect(fillMeta.goalHead === 'dual', 'fill meta records goal head');
+const fillLeadStr = stepLead(fillMv, fillMeta, fillHole);
+expect(fillLeadStr === 'closed dual', `fill lead: ${fillLeadStr}`);
+expect(!fillLeadStr.includes('D'), 'fill lead omits filler term');
+
+const splitText = 'case f of\n| [ |- D1] =>\n  ?\n| [ |- D2] => ?';
+const splitMv = { kind: 'split', scrutinee: 'f', text: splitText };
+const splitMeta = stepMeta(splitMv, splitText, { goal: '[ |- dual A B]', meta: [], ctx: [{ name: 'f' }] });
+expect(splitMeta.arms === 2, 'split meta records arm count');
+const splitLeadStr = stepLead(splitMv, splitMeta, { goal: '[ |- dual A B]' });
+expect(splitLeadStr === 'case on f', `split lead: ${splitLeadStr}`);
+expect(!splitLeadStr.includes('arm'), 'split lead omits arm count');
+
+const introText = 'fn d => mlam x => ?';
+const introMv = { kind: 'intro', text: introText };
+const introMeta = stepMeta(introMv, introText, { goal: '[ |- dual A B]', meta: [], ctx: [] });
+expect(introMeta.introduced.length === 2 && introMeta.introduced[0] === 'd', 'intro meta records binders');
+expect(stepLead(introMv, introMeta, { goal: '[ |- dual A B]' }) === "opened the goal's binders", 'intro lead');
+
+const recurseHole = { goal: '[ |- dual A B]', meta: [], ctx: [{ name: 'Dl' }, { name: 'Dr' }] };
+const recurseText = 'let [ |- l] = dual_sym [ |- Dl] in\nlet [ |- r] = dual_sym [ |- Dr] in\n[ |- D⊗ l r]';
+const recurseMv = { kind: 'recurse', text: recurseText };
+const recurseMeta = stepMeta(recurseMv, recurseText, recurseHole);
+expect(stepLead(recurseMv, recurseMeta, recurseHole) === 'induction hypothesis', 'recurse lead');
+expect(recurseMeta.uses.includes('Dl'), 'recurse meta records uses');
+
+const impMv = { kind: 'impossible', text: 'impossible [ |- X14]' };
+const impMeta = stepMeta(impMv, 'impossible [ |- X14]', { goal: '[ |- eq A B]', meta: [], ctx: [{ name: 'X14' }] });
+expect(impMeta.refuted === 'X14', 'impossible meta records refuted hyp');
+expect(stepLead(impMv, impMeta, { goal: '[ |- eq A B]' }) === 'refuted X14', 'impossible lead');
 
 console.log('OK test-prover-bridge (general IH / support-lemma / intro moves)');

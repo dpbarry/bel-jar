@@ -104,20 +104,20 @@ Edit → parse (instant) → symbolStore + semanticGraph.update
 
 ### Phase A — Stop the bleeding (JS only, no OCaml)
 
-- [ ] **A1. Graph-first diagnostics for dirty decls** — Surface DIRTY/BLOCKED in beluga-lint / gutter before Beluga returns; do not leave UI blank for 10s
-- [ ] **A2. Decouple intel from monolithic settle** — Scheduler may run `deriveFrontier` / `ideDeclType` on dirty frontier when session fp matches, without waiting for `settleNow` to finish
-- [ ] **A3. Narrow default settle** — Default path: bootstrap if needed, then certify dirty frontier; reserve full `checkResult` for explicit Run + prelude-change + first mount
-- [ ] **A4. Cursor-first ordering** — Dirty decl under cursor certified first (scheduler priority already exists; wire to certification)
-- [ ] **A5. Measure** — `BelJarPerfHud` + `docs/perf-baseline.md`: p50/p95 for “break type in decl” &lt; 500ms target on classical-processes active file
+- [x] **A1. Graph-first diagnostics for dirty decls** — `graphStatusDiagnostics` in `documentDiagnostics`
+- [x] **A2. Decouple intel from monolithic settle** — Scheduler ready on frontier progress / settle
+- [x] **A3. Narrow default settle** — Compressed frontier certify; full on preludeFp change / `forceFull`
+- [x] **A4. Cursor-first ordering** — `getScopedFrontier` sorts by caret distance
+- [ ] **A5. Measure** — Live `BelJarPerfHud` capture on classical-processes (harness extended in `measure-check-scaling.mjs`)
 
 **Acceptance:** Edit breaks type in one theorem → squiggle or graph ERRORING within **&lt;1s** on dev machine (not 10s); full-file check not invoked on every key.
 
 ### Phase B — Frontier-certified settlement
 
-- [ ] **B1. Replace `runCheck(wholeCode)` as default** in `settlement.mjs` with `certifyFrontier(dirtyIds, session)`
-- [ ] **B2. Merge per-decl Beluga diagnostics** onto `semantic-graph` nodes (line-local, not whole-file parse of stdout)
-- [ ] **B3. Prelude policy** — `project-prelude.mjs`: bootstrap fingerprint per development; active-file edits do not re-send prelude text unless a member changed
-- [ ] **B4. Multipass only on full-check fallback** — MAX_PASSES masking applies when forced full check runs, not on per-decl certify
+- [x] **B1. Replace `runCheck(wholeCode)` as default** — frontier path via `compress-development.mjs`
+- [x] **B2. Merge per-decl Beluga diagnostics** — outside-frontier diags retained across frontier settles
+- [x] **B3. Prelude policy** — `preludeFp` + content-hash checkContext; re-full when prelude text changes
+- [x] **B4. Multipass only on full-check / compressed frontier** — uncompressed whole-program not the edit default
 
 **Acceptance:** `npm test` green; new test: dirty single decl edit does not call `checkResult` (mock client call counts).
 
@@ -142,7 +142,8 @@ Edit → parse (instant) → symbolStore + semanticGraph.update
 |------|------|
 | Edit → graph | `editor-src/semantic/semantic-engine.mjs` (`update`, `dirtyFrontier`) |
 | Dirty / status | `editor-src/semantic/semantic-graph.mjs` |
-| Monolithic check (to narrow) | `editor-src/semantic/settlement.mjs` |
+| Signature compression | `editor-src/semantic/compress-development.mjs` |
+| Settlement (frontier default) | `editor-src/semantic/settlement.mjs` |
 | Session bootstrap | `editor-src/semantic/semantic-session.mjs` |
 | Background elaboration | `editor-src/semantic/semantic-scheduler.mjs` |
 | Prelude assembly | `editor-src/project-prelude.mjs` |
@@ -182,11 +183,14 @@ Debug perf (console): `BelJarPerfHud.enable()`
 | Item | State |
 |------|--------|
 | Beluga core checkpoint path | **Reverted** |
-| Graph dirty frontier | **Exists**, not driving settle |
-| Surgical intel (`ideDeclType` etc.) | **Exists**, gated on monolithic settle ready |
+| Graph dirty frontier | **Exists**, drives default settlement |
+| Signature-compressed development | **Landed** — `compress-development.mjs`; prelude bodies stubbed on edit path |
+| Surgical intel (`ideDeclType` etc.) | Unlocks on frontier progress / settle ready |
 | Syntax-only gate | **Fixed** (`prevSyntax` before snapshot overwrite) |
-| User-visible fast type errors | **Not done** — still blocked on full settle |
-| This plan | **Accurate as of 2026-07-01** |
+| Content-hash checkContext cache | **Landed** — no longer keyed on `Text` identity |
+| Immediate DIRTY/BLOCKED UI | **Landed** — `graphStatusDiagnostics` in `documentDiagnostics` |
+| User-visible fast type errors | Frontier certify default; full multipass on prelude change / forceFull |
+| This plan | Updated 2026-07-13 |
 
 ---
 

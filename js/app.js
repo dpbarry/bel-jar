@@ -10,6 +10,10 @@ if (typeof BelJarPersist !== 'undefined') {
   ensureProjectActiveCfgs();
 }
 
+if (typeof BelJarEditHistoryBridge !== 'undefined') {
+  BelJarEditHistoryBridge.init();
+}
+
 const openFileIds =
   typeof BelJarPersist !== 'undefined' ? BelJarPersist.getOpenFileIds() : [];
 const activeFileId = openFileIds.length
@@ -39,7 +43,7 @@ function mountEditorFor(snapshot, openOpts) {
   const file = docId && typeof BelJarPersist !== 'undefined'
     ? BelJarPersist.getFileById(docId)
     : null;
-  return BelJarEditor.mount(editorMount, {
+  const ed = BelJarEditor.mount(editorMount, {
     doc: snapshot ? snapshot.editor.text : (persist ? persist.getEditorText() : ''),
     initialLocal,
     semanticCheckpoint: snapshot ? snapshot.semantic : null,
@@ -48,10 +52,26 @@ function mountEditorFor(snapshot, openOpts) {
     jumpAt: openOpts && openOpts.jumpAt,
     persist,
     onDocChange: function (text) {
-      if (persist) persist.scheduleEditorPersist(text);
+      // text === null on the main editor's input path: persist materializes the
+      // live doc lazily at save time (getText provider), so we only mark dirty.
+      if (persist) {
+        if (text == null && typeof persist.markEditorDirty === 'function') {
+          persist.markEditorDirty();
+        } else {
+          persist.scheduleEditorPersist(text);
+        }
+      }
       if (file && /\.cfg$/i.test(file.name)) scheduleCfgExplorerRefresh(file.name);
     },
   });
+  if (ed && typeof BelJarEditHistory !== 'undefined') {
+    queueMicrotask(() => {
+      const id = ed.getCurrentFileId?.();
+      const text = ed.getValue?.();
+      if (id != null && text != null) BelJarEditHistory.reconcileActiveFile(id, text);
+    });
+  }
+  return ed;
 }
 
 // ── Workspace state restore ───────────────────────────────────────────────────
@@ -219,6 +239,9 @@ function remountActiveEditor(openOpts) {
   if (!persist || !editor) return;
   const id = persist.getCurrentFileId();
   if (!id) return;
+  // Flush while the live-text provider still points at the current editor, so
+  // the snapshot below carries the up-to-date doc (text is now pulled lazily).
+  persist.flushCheckpoint();
   const snapshot = persist.getInitialCheckpoint();
   editor.destroy();
   editor = mountEditorFor(snapshot, openOpts || {});
@@ -1271,6 +1294,7 @@ function switchToFile(id, openOpts) {
   const editorDocId = typeof editor.getDocumentId === 'function' ? editor.getDocumentId() : null;
   const persistId = persist.getCurrentFileId();
   if (id === persistId && editorDocId === id) {
+    BelJarPersist.setActiveFileId(id);
     renderTabs();
     if (peekAt && editor && typeof editor.peekRange === 'function') editor.peekRange(peekAt);
     else if (jumpAt) applyEditorJump(jumpAt);
@@ -1279,6 +1303,7 @@ function switchToFile(id, openOpts) {
     } else if (shouldClearSelection && explorerController && explorerController.clearSelection) {
       explorerController.clearSelection();
     }
+    notifyActiveEditorView();
     return;
   }
   if (typeof BelJarPersist !== 'undefined' && typeof BelJarProjectSource !== 'undefined') {
@@ -1333,6 +1358,17 @@ function switchToFile(id, openOpts) {
     }
   });
 }
+
+window.belJarSwitchToFileForHistory = function (id) {
+  switchToFile(id);
+};
+
+window.addEventListener('beljar:edit-history-applied', function () {
+  renderTabs();
+  if (typeof renderExplorerTree === 'function') renderExplorerTree();
+  refreshExplorerActiveAndDiags();
+  updateHeaderContext();
+});
 
 // Find-references hover preview: switch tabs to peek cross-file rows, then
 // restore the pre-menu editor state when the menu closes without a click.
@@ -1424,6 +1460,7 @@ function openFileAt(fileId, from, to, opts) {
   } else if (typeof editor.scheduleJumpToRange === 'function') {
     editor.scheduleJumpToRange(jumpAt);
   }
+  notifyActiveEditorView();
 }
 
 // Fired by the editor layer (bel-ide-actions) when go-to-definition resolves
@@ -1547,23 +1584,28 @@ async function deleteFilesInteractive(ids) {
         ariaLabel: 'Delete files',
       };
   if (!(await BelJarConfirmDialog.confirm(confirmOpts))) return;
-  if (persist && unique.includes(persist.getCurrentFileId())) {
-    const fallback = BelJarPersist.getOpenFileIds().find((x) => !unique.includes(x))
-      || (files.find((f) => !unique.includes(f.id)) || {}).id;
-    if (fallback) switchToFile(fallback);
-  }
-  for (const id of unique) {
-    BelJarPersist.deleteFile(id);
-    cfgTabLint.delete(id);
-  }
-  if (explorerController && explorerController.clearSelection) explorerController.clearSelection();
-  if (projectIsEmpty()) {
-    enterEmptyProjectView();
-    return;
-  }
-  renderTabs();
-  renderExplorerTree();
-  updateHeaderContext();
+  const H = typeof BelJarEditHistory !== 'undefined' ? BelJarEditHistory : null;
+  const performDelete = function () {
+    if (persist && unique.includes(persist.getCurrentFileId())) {
+      const fallback = BelJarPersist.getOpenFileIds().find((x) => !unique.includes(x))
+        || (files.find((f) => !unique.includes(f.id)) || {}).id;
+      if (fallback) switchToFile(fallback);
+    }
+    for (const id of unique) {
+      BelJarPersist.deleteFile(id);
+      cfgTabLint.delete(id);
+    }
+    if (explorerController && explorerController.clearSelection) explorerController.clearSelection();
+    if (projectIsEmpty()) {
+      enterEmptyProjectView();
+      return;
+    }
+    renderTabs();
+    renderExplorerTree();
+    updateHeaderContext();
+  };
+  if (H && typeof H.transact === 'function') H.transact('file-delete', performDelete);
+  else performDelete();
 }
 
 function closeTabsForFiles(ids) {
@@ -2206,7 +2248,8 @@ function applyFileReplacement(id, text) {
   const stored = BelJarPersist.getFileText(id);
   if (stored == null) return;
   if (persist.replaceEditorText) persist.replaceEditorText(stored);
-  editor.setValue(stored);
+  if (editor.setValueNonUndoable) editor.setValueNonUndoable(stored);
+  else editor.setValue(stored);
   ensureEditorMatchesFileKind();
   const file = BelJarPersist.getFileById(id);
   if (file && /\.cfg$/i.test(file.name) && typeof editor.refreshLint === 'function') {
@@ -2243,7 +2286,16 @@ function deleteProjectFilesById(ids) {
 
 function executeUploadPlan(plan, options) {
   if (!plan || typeof BelJarPersist === 'undefined') return { added: 0, replaced: 0 };
-  options = options || {};
+  const H = typeof BelJarEditHistory !== 'undefined' ? BelJarEditHistory : null;
+  const run = () => executeUploadPlanInner(plan, options || {});
+  if (H && typeof H.transact === 'function') {
+    const r = H.transact('file-batch', run);
+    return r.ok ? (r.result || { added: 0, replaced: 0 }) : { added: 0, replaced: 0 };
+  }
+  return run();
+}
+
+function executeUploadPlanInner(plan, options) {
   let added = 0;
   let replaced = 0;
   let lastCreatedId = null;
@@ -2343,7 +2395,8 @@ function reloadActiveEditorFromPersist() {
   if (live === stored) return;
   if (persist.cancelPendingSave) persist.cancelPendingSave();
   if (persist.replaceEditorText) persist.replaceEditorText(stored);
-  editor.setValue(stored);
+  if (editor.setValueNonUndoable) editor.setValueNonUndoable(stored);
+  else editor.setValue(stored);
   ensureEditorMatchesFileKind();
   if (file && /\.cfg$/i.test(file.name) && typeof editor.refreshLint === 'function') {
     editor.refreshLint();

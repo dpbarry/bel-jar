@@ -1,4 +1,4 @@
-import { Compartment, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField, Transaction, EditorSelection } from '@codemirror/state';
 import {
   EditorView,
   ViewPlugin,
@@ -72,6 +72,13 @@ export {
   collectFloatingGraphWindows,
   restoreFloatingGraphWindow,
 } from './bel-graph-view.mjs';
+export {
+  createEditHistory,
+  dispatchEdit,
+  belEditHistoryKeymap,
+  belEditHistoryListener,
+  editHistoryTxn,
+} from './bel-edit-history.mjs';
 import { syntaxLint } from './bel-lint.mjs';
 import { belugaDiagnosticDecorations } from './bel-beluga-squiggles.mjs';
 import { cfgLinter, cfgDiagnostics, resolveCfgDocumentPath } from './bel-cfg-lint.mjs';
@@ -84,6 +91,7 @@ import { computeLintBlocks } from './bel-units.mjs';
 import { belHoverTooltip } from './bel-hover.mjs';
 import { holeCycleKeymap } from './bel-hole-decorations.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
+import { preludeCacheMatches } from './semantic/prelude-cache-key.mjs';
 import { assembleCheckerCode, buildPrelude, preludeFilesFor, listGroupSymbols } from './project-prelude.mjs';
 import { analyzeSuite, suiteFileDiagnostics } from './bel-suite-lint.mjs';
 import {
@@ -99,7 +107,7 @@ import {
   notifyExplorerHealthChanged,
   resolveExplorerFileHealth,
 } from './file-health-store.mjs';
-import { getCheckTrace } from './perf/check-trace.mjs';
+import { getCheckTrace, timeSync } from './perf/check-trace.mjs';
 import { computeSettleDelayMs, noteTypingVelocity, SETTLE_DELAY_MS } from './semantic/settle-delay.mjs';
 import {
   syncHoleGoalsFromDevelopment,
@@ -134,6 +142,11 @@ import {
   buildBracketKeymap,
 } from './editor-prefs.mjs';
 import { belFoldPersistence, flushFoldKeys } from './bel-fold-persist.mjs';
+import {
+  belEditHistoryKeymap,
+  belEditHistoryListener,
+  dispatchEdit,
+} from './bel-edit-history.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
@@ -216,6 +229,42 @@ function smartEnter(view) {
 
 function sanitizePastedPlainText(text) {
   return sanitizeEditorText(text);
+}
+
+function globalRef() {
+  return typeof globalThis !== 'undefined' ? globalThis : window;
+}
+
+function replaceDocNonUndoable(view, text, opts = {}) {
+  const H = globalRef().BelJarEditHistory;
+  H?.markNonUndoable?.(opts.markMs ?? 2000);
+  const doc = sanitizePastedPlainText(text ?? '');
+  const len = doc.length;
+  let anchor = opts.selection?.anchor;
+  let head = opts.selection?.head;
+  if (anchor == null || head == null) {
+    anchor = head = len;
+  } else {
+    anchor = Math.max(0, Math.min(anchor, len));
+    head = Math.max(0, Math.min(head, len));
+  }
+  const anns = [Transaction.addToHistory.of(false)];
+  if (opts.userEvent) anns.push(Transaction.userEvent.of(opts.userEvent));
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: doc },
+    selection: EditorSelection.single(anchor, head),
+    annotations: anns,
+  });
+}
+
+function runEditHistoryUndo() {
+  const H = globalRef().BelJarEditHistory;
+  return H?.undo?.() ?? false;
+}
+
+function runEditHistoryRedo() {
+  const H = globalRef().BelJarEditHistory;
+  return H?.redo?.() ?? false;
 }
 
 function reindentWholeDocument(view) {
@@ -479,6 +528,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
       { key: 'F12', run: (view) => goToDefinition(view) },
       { key: 'Shift-F12', run: (view) => findReferences(view) },
       ...holeCycleKeymap(semanticEngine),
+      ...belEditHistoryKeymap(),
       indentWithTab, ...defaultKeymap, ...historyKeymap, ...foldKeymap,
     ]),
     bracketKeymapCompartment.of(keymap.of(buildBracketKeymap(prefs))),
@@ -503,7 +553,10 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
         refreshSettlementLint(update.view);
       }
       if (update.docChanged && !isRenaming(update.state)) {
-        onDocChange(update.state.doc.toString());
+        // No whole-buffer toString() here: persist pulls the live doc lazily at
+        // debounced save time via its getText provider. Passing null signals
+        // "dirty, materialize later" (see app.js onDocChange).
+        onDocChange(null);
       }
     }),
   ];
@@ -533,6 +586,7 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
       { key: 'F12', run: (view) => goToCfgEntry(view, cfgDocumentId) },
       { key: 'Mod-f', run: openSearchPanel },
       { key: 'F3', run: findNext, shift: findPrevious },
+      ...belEditHistoryKeymap(),
       ...defaultKeymap, ...historyKeymap,
     ]),
     placeholder(placeholderText),
@@ -543,6 +597,7 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
       cfgLinter(cfgDocumentId),
       ...cfgEditorExtensions(cfgDocumentId),
     ] : []),
+    ...(cfgDocumentId ? [belEditHistoryListener(cfgDocumentId)] : []),
     belCompletionChrome(),
     belInspector(),
     belEditorFollow(),
@@ -672,9 +727,12 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
     getLintTooltipItems: collectLintTooltipItems,
     getValue: () => view.state.doc.toString(),
     setValue(text) {
-      const doc = sanitizePastedPlainText(text ?? '');
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      replaceDocNonUndoable(view, text);
     },
+    setValueNonUndoable(text) {
+      replaceDocNonUndoable(view, text);
+    },
+    getCurrentFileId() { return documentId; },
     focus: () => view.focus(),
     insertTop(text) {
       const block = sanitizePastedPlainText(text ?? '') + '\n\n';
@@ -731,8 +789,8 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
       }
     },
     jumpToNextError() { return jumpToNextError(view); },
-    undo() { return undo(view); },
-    redo() { return redo(view); },
+    undo() { return runEditHistoryUndo(); },
+    redo() { return runEditHistoryRedo(); },
     selectAll() { return selectAll(view); },
     openSearch() { return openSearchPanel(view); },
     toggleComment() { return toggleComment(view); },
@@ -1268,25 +1326,81 @@ export function mount(parentEl, options = {}) {
 
   // The background scheduler ticks every ~50ms while deriving types and calls
   // getCheckerCode() (→ this) each tick; settlement + hole actions call it too.
-  // Rebuilding the whole prelude + suite analysis on each call reassembled and
-  // reparsed the ENTIRE development on the main thread continuously — the "never
-  // improves, worse deeper in the suite" lag. The result depends only on the
-  // live doc (stable between edits) + the sibling files' stored text, so cache
-  // by doc identity + generation (bumped when a sibling changes or a check
-  // lands); consecutive same-doc calls become O(1).
-  let checkContextCache = { doc: null, gen: -1, value: null };
+  // Cache by CONTENT fingerprints (prelude siblings + active snapshot), not doc
+  // object identity — CodeMirror allocates a new Text every keystroke, which
+  // previously forced O(suite) reassembly on every call ("worse deeper in the suite").
+  // Prelude is cached independently of the active file: editing the open buffer
+  // must NOT re-join / re-hash every predecessor on each keystroke.
+  // NOTE: this cache must NOT be keyed on suiteOverlayGeneration. Its value
+  // (prelude + suite text-analysis) is a pure function of the sibling texts and
+  // the active text — nothing here depends on checker RESULTS. Tying it to the
+  // overlay generation (bumped on every settle start/complete) invalidated the
+  // prelude on every settlement tick, so the LAST file in a suite — the one with
+  // the biggest prelude and the most checker churn — re-joined + re-parsed all of
+  // its predecessors many times per second while typing. That was the late-file
+  // latency. The suite-prelude BANNER (a separate cache) is what legitimately
+  // tracks the generation.
+  let checkContextCache = {
+    preludeIds: null,
+    preludeTexts: null,
+    prelude: null,
+    preludeFp: '',
+    activeDoc: null,
+    activeFp: '',
+    value: null,
+  };
+
+  function fnv1a(text) {
+    let h = 0x811c9dc5;
+    const s = String(text ?? '');
+    for (let i = 0; i < s.length; i += 1) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return `${s.length.toString(16)}:${h.toString(16).padStart(8, '0')}`;
+  }
+
   function buildCheckContext(doc) {
     if (!g.BelJarPersist || !doc) return null;
-    if (checkContextCache.doc === doc && checkContextCache.gen === suiteOverlayGeneration) {
-      return checkContextCache.value;
-    }
     const files = g.BelJarPersist.listFiles();
     const activeId = g.BelJarPersist.getActiveFileId();
     const getText = (id) => (id === activeId ? doc.toString() : g.BelJarPersist.getFileText(id));
-    const prelude = buildPrelude(files, activeId, getText);
+    const pre = preludeFilesFor(files, activeId, getText);
+    const preludeIds = pre.map((f) => f.id);
+    // Prefer string-identity equality (persist returns stable refs for untouched
+    // siblings) so we never scan prelude bytes while typing the active file.
+    const preludeTexts = pre.map((f) => String(g.BelJarPersist.getFileText(f.id) ?? ''));
+    const preludeSame = preludeCacheMatches(checkContextCache, preludeIds, preludeTexts);
+
+    if (preludeSame && checkContextCache.activeDoc === doc && checkContextCache.value) {
+      return checkContextCache.value;
+    }
+
+    let prelude = checkContextCache.prelude;
+    let preludeFp = checkContextCache.preludeFp;
+    if (!preludeSame) {
+      prelude = buildPrelude(files, activeId, getText);
+      preludeFp = prelude ? fnv1a(prelude.code) : '';
+    }
+
+    const activeText = doc.toString();
+    const activeFp = fnv1a(activeText);
+    if (preludeSame
+      && checkContextCache.activeFp === activeFp
+      && checkContextCache.value) {
+      // Same content, new Text object — reuse value but retarget doc.
+      const reused = { ...checkContextCache.value, doc };
+      checkContextCache = {
+        ...checkContextCache,
+        activeDoc: doc,
+        value: reused,
+      };
+      return reused;
+    }
+
     const fileCode = semanticView
       ? checkerSnapshot(syntaxTree(semanticView.state), doc).code
-      : doc.toString();
+      : activeText;
     const suite = suiteAnalysisFor(files, activeId, getText, doc);
     const active = files.find((f) => f.id === activeId);
     const value = {
@@ -1296,8 +1410,18 @@ export function mount(parentEl, options = {}) {
       activeFileName: active ? active.name : null,
       suiteDiagnostics: suite.diagnostics,
       suiteFindings: suite.findings,
+      preludeFp,
+      contentKey: `${preludeIds.join(',')}|${activeFp}`,
     };
-    checkContextCache = { doc, gen: suiteOverlayGeneration, value };
+    checkContextCache = {
+      preludeIds,
+      preludeTexts,
+      prelude,
+      preludeFp,
+      activeDoc: doc,
+      activeFp,
+      value,
+    };
     return value;
   }
 
@@ -1398,10 +1522,28 @@ export function mount(parentEl, options = {}) {
 
   let semanticEngine;
   // Bumped whenever the checked results feeding the suite-prelude banner change
-  // (settlement lands, whole-development check completes). Invalidates the
-  // per-doc suiteOverlayDiagnostics memo below without re-hashing every member.
+  // (settlement lands, whole-development check completes).
+  //
+  // CRITICAL: the banner recompute (computeSuitePreludeBanner) re-parses EVERY
+  // prelude member — it must NEVER run inside a keystroke transaction. It used to:
+  // the diag-gutter StateField reads getOverlayDiags() on every docChanged, and a
+  // lazy cache keyed on this generation meant the FIRST keystroke after any settle
+  // tick paid the whole-suite reparse synchronously, before paint. On a late suite
+  // file settles fire constantly, so nearly every keystroke paid it — literal
+  // typing lag that scales with prelude depth. Fix: recompute EAGERLY here (bump
+  // fires only from settlement async callbacks, off the input path) and cache the
+  // RESULT, so getOverlayDiags() during a keystroke is always a pure read.
   let suiteOverlayGeneration = 0;
-  const bumpSuiteOverlay = () => { suiteOverlayGeneration += 1; };
+  let suiteOverlayValue = [];
+  function recomputeSuiteOverlay() {
+    if (!semanticView?.state) { suiteOverlayValue = []; return; }
+    const banner = computeSuitePreludeBanner(semanticView);
+    suiteOverlayValue = banner ? [banner] : [];
+  }
+  const bumpSuiteOverlay = () => {
+    suiteOverlayGeneration += 1;
+    recomputeSuiteOverlay();
+  };
 
   function mergedMemberDiagnostics(members) {
     const dc = getDevelopmentChecker();
@@ -1456,14 +1598,11 @@ export function mount(parentEl, options = {}) {
   // when a check lands (the generation bump). This keeps the whole-suite reparse
   // it performs OFF the per-keystroke path entirely (at HEAD there was no overlay
   // in the gutter decorations at all; this restores that cost profile).
-  let suiteOverlayCache = { gen: -1, value: [] };
+  // Pure read of the eagerly-computed banner (see recomputeSuiteOverlay). NEVER
+  // recomputes — so the diag-gutter StateField calling this on every keystroke's
+  // docChanged costs O(1), never a whole-suite reparse.
   function suiteOverlayDiagnostics() {
-    if (!semanticView?.state) return [];
-    if (suiteOverlayCache.gen === suiteOverlayGeneration) return suiteOverlayCache.value;
-    const banner = computeSuitePreludeBanner(semanticView);
-    const value = banner ? [banner] : [];
-    suiteOverlayCache = { gen: suiteOverlayGeneration, value };
-    return value;
+    return suiteOverlayValue;
   }
 
   semanticEngine = createSemanticEngine({
@@ -1509,8 +1648,12 @@ export function mount(parentEl, options = {}) {
       if (semanticView) {
         bumpSuiteOverlay();
         scheduleDevelopmentCheckIfNeeded(semanticView);
-        const code = healthyCodeWithPrelude();
-        if (g.BelugaClient?.warmIntel) g.BelugaClient.warmIntel(code).catch(() => {});
+        // Prefer the code settlement actually certified (often compressed).
+        // Reloading the full prelude+file into intel after every settle undoes
+        // the frontier win.
+        const code = (checkerSnap && checkerSnap.checkedCode)
+          || healthyCodeWithPrelude();
+        if (code && g.BelugaClient?.warmIntel) g.BelugaClient.warmIntel(code).catch(() => {});
         refreshSettlementLint(semanticView);
         refreshIdeStatusRef(semanticView);
         syncSettlementFileHealth(semanticView, checkerSnap);
@@ -1550,6 +1693,10 @@ export function mount(parentEl, options = {}) {
   if (options.persist && typeof options.persist.setCheckpointProviders === 'function') {
     options.persist.setCheckpointProviders({
       getSemantic: () => semanticEngine.exportCheckpoint(),
+      // Lazy live-text provider: persistNow() materializes the doc string at
+      // debounced save time, so we never toString() the whole buffer on the
+      // input critical path.
+      getText: () => (semanticView?.state?.doc ? semanticView.state.doc.toString() : ''),
       getViewport: () => captureViewportLocal(semanticView),
       getDocFp: (text) => docFingerprint(text != null ? text : semanticView?.state.doc.toString() || ''),
       getBelugaBuild: () => (
@@ -1587,6 +1734,10 @@ export function mount(parentEl, options = {}) {
   }
 
   function refreshIdeStatus(view) {
+    return timeSync('ideStatus', () => refreshIdeStatusInner(view));
+  }
+
+  function refreshIdeStatusInner(view) {
     const settling = checkerSettling();
     const diags = collectStatusDiagnostics(view, semanticEngine);
     const lintItems = lintTooltipItemsFromDiagnostics(diags, view.state.doc);
@@ -1634,6 +1785,10 @@ export function mount(parentEl, options = {}) {
   }
 
   function syncSemanticFromView(view, opts = {}) {
+    return timeSync('semanticUpdate', () => syncSemanticFromViewInner(view, opts));
+  }
+
+  function syncSemanticFromViewInner(view, opts = {}) {
     const tree = syntaxTree(view.state);
     semanticEngine.update(tree, view.state.doc, {
       cursorPos: view.state.selection.main.head,
@@ -1644,6 +1799,98 @@ export function mount(parentEl, options = {}) {
     });
     if (!opts.deferSettlement) semanticEngine.ensureSettled?.();
     refreshIdeStatus(view);
+  }
+
+  let semanticSyncGen = 0;
+  let pendingSemanticSync = null;
+  let semanticSyncRaf = 0;
+  let semanticSyncTimer = 0;
+  let semanticSyncFirstQueuedAt = 0;
+
+  // The heavy per-keystroke main-thread work is symbolStore.update + graph
+  // rebuild inside syncSemanticFromView (~23 ms on an 18 KB late-suite file):
+  // it re-resolves every identifier in the file even though the user changed one
+  // declaration. That whole snapshot only feeds hover / nav / occurrence
+  // highlight / rename / dependency graph / settlement scheduling — none of which
+  // is observed MID-BURST; it's what you consult when you PAUSE. So while keys
+  // are arriving faster than a frame, coalesce the rebuild into a short idle
+  // window instead of running it every keystroke (which also pushes out the next
+  // paint). Incremental Lezer parse + syntax highlighting stay live (they run off
+  // CM's own tree, not this snapshot), so typing feels like a plain textarea.
+  //
+  // MAX_SEMANTIC_STALENESS caps how long the snapshot may lag even under
+  // continuous typing, so nav/settlement never starve; IDLE_SYNC_MS is the quiet
+  // gap that triggers an immediate flush (the common "typed a bit, paused" case).
+  const IDLE_SYNC_MS = 45;
+  const MAX_SEMANTIC_STALENESS_MS = 220;
+
+  function flushPendingSemanticSync() {
+    if (semanticSyncTimer) { clearTimeout(semanticSyncTimer); semanticSyncTimer = 0; }
+    if (semanticSyncRaf) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(semanticSyncRaf);
+      else clearTimeout(semanticSyncRaf);
+      semanticSyncRaf = 0;
+    }
+    semanticSyncFirstQueuedAt = 0;
+    const job = pendingSemanticSync;
+    pendingSemanticSync = null;
+    if (!job || job.gen !== semanticSyncGen) return;
+    const { view, changes, renameEnded, deferSettlement } = job;
+    if (!view.dom?.isConnected || isRenaming(view.state)) return;
+    if (renameEnded) syncSemanticFromView(view, { forceResettle: true });
+    else syncSemanticFromView(view, { changes, deferSettlement });
+    semanticEngine.onDocChange();
+    seedSemanticScheduler(view);
+    if (renameEnded) scheduleDevelopmentCheck(view);
+    else scheduleDebouncedDevelopmentCheck(view);
+    refreshIdeStatus(view);
+  }
+
+  function scheduleSemanticSync(view, opts = {}) {
+    const nextChanges = opts.changes ?? null;
+    let changes = nextChanges;
+    if (pendingSemanticSync?.changes && nextChanges) {
+      try {
+        changes = pendingSemanticSync.changes.compose(nextChanges);
+      } catch (_) {
+        changes = nextChanges;
+      }
+    } else if (pendingSemanticSync?.changes && !nextChanges) {
+      changes = pendingSemanticSync.changes;
+    }
+    pendingSemanticSync = {
+      gen: ++semanticSyncGen,
+      view,
+      changes,
+      renameEnded: !!(opts.renameEnded || pendingSemanticSync?.renameEnded),
+      deferSettlement: opts.deferSettlement != null
+        ? !!opts.deferSettlement
+        : !!pendingSemanticSync?.deferSettlement,
+    };
+    // Rename-end must land promptly (it re-settles the corrected doc) — flush on
+    // the next frame, no idle coalescing.
+    if (pendingSemanticSync.renameEnded) {
+      if (semanticSyncTimer) { clearTimeout(semanticSyncTimer); semanticSyncTimer = 0; }
+      if (semanticSyncRaf) return;
+      const kick = () => { semanticSyncRaf = 0; flushPendingSemanticSync(); };
+      semanticSyncRaf = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame(kick) : setTimeout(kick, 0);
+      return;
+    }
+    const now = Date.now();
+    if (!semanticSyncFirstQueuedAt) semanticSyncFirstQueuedAt = now;
+    // Hard staleness cap: if the snapshot has been dirty too long under
+    // continuous typing, flush now rather than deferring again.
+    if (now - semanticSyncFirstQueuedAt >= MAX_SEMANTIC_STALENESS_MS) {
+      flushPendingSemanticSync();
+      return;
+    }
+    // Otherwise (re)arm the idle window: the rebuild runs once typing pauses.
+    if (semanticSyncTimer) clearTimeout(semanticSyncTimer);
+    semanticSyncTimer = setTimeout(() => {
+      semanticSyncTimer = 0;
+      flushPendingSemanticSync();
+    }, IDLE_SYNC_MS);
   }
 
   const treeWatchPlugin = ViewPlugin.fromClass(class {
@@ -1660,8 +1907,7 @@ export function mount(parentEl, options = {}) {
       if (newLen > this.treeLength || milestone > this.parseMilestone) {
         this.treeLength = newLen;
         this.parseMilestone = milestone;
-        syncSemanticFromView(update.view, { deferSettlement: milestone < 100 });
-        seedSemanticScheduler(update.view);
+        scheduleSemanticSync(update.view, { deferSettlement: milestone < 100 });
         const v = update.view;
         queueMicrotask(() => {
           if (v.dom.isConnected) v.dispatch({ effects: belNavSemanticTick.of(null) });
@@ -1671,46 +1917,50 @@ export function mount(parentEl, options = {}) {
   });
 
   const docSyncExt = EditorView.updateListener.of((update) => {
+    const H = globalRef().BelJarEditHistory;
+    const historyApplying = H?.isApplying?.() ?? false;
     // Keep the status dot in lock-step with the rendered diagnostics: whenever
     // the lint set changes (syntax pass, Beluga check landing), refresh it.
     const settlementTicked = update.transactions.some((tr) =>
       tr.effects.some((e) => e.is(settlementUpdated)));
-    if (settlementTicked
-      || diagnosticCount(update.state) !== diagnosticCount(update.startState)) {
+    if (!historyApplying && (settlementTicked
+      || diagnosticCount(update.state) !== diagnosticCount(update.startState))) {
       refreshIdeStatus(update.view);
     }
     const renameEnded = renameSessionChanged(update) && !isRenaming(update.state);
     if (renameEnded) {
       bumpSuiteOverlay();
-      checkContextCache = { doc: null, gen: -1, value: null };
+      // Rename rewrites the doc: drop the check-context cache so the next build
+      // re-reads texts. (Not gen-keyed anymore; clear by nulling the keys.)
+      checkContextCache = {
+        preludeIds: null,
+        preludeTexts: null,
+        prelude: null,
+        preludeFp: '',
+        activeDoc: null,
+        activeFp: '',
+        value: null,
+      };
       lastSettledNonActiveDevSig = '';
     }
     if (update.docChanged) {
       if (!isRenaming(update.state)) {
-        if (renameEnded) syncSemanticFromView(update.view, { forceResettle: true });
-        else syncSemanticFromView(update.view, { changes: update.changes });
-        semanticEngine.onDocChange();
-        seedSemanticScheduler(update.view);
-        if (renameEnded) scheduleDevelopmentCheck(update.view);
-        else scheduleDebouncedDevelopmentCheck(update.view);
+        scheduleSemanticSync(update.view, {
+          changes: update.changes,
+          renameEnded,
+        });
       }
-      refreshIdeStatus(update.view);
       if (!isRenaming(update.state) && options.persist) {
         options.persist.scheduleCheckpointSave();
       }
-      // The engine tree is now current — holes are known syntactically. Let
-      // hole-list surfaces (Harpoon panel, inspector global view) refresh
-      // without waiting for the Beluga checker to settle. Skip during rename:
+      // Hole-list surfaces refresh without waiting for Beluga. Skip during rename:
       // preview edits do not update the semantic engine or persisted doc.
       const gg = typeof globalThis !== 'undefined' ? globalThis : window;
       if (!isRenaming(update.state) && typeof gg.dispatchEvent === 'function') {
         gg.dispatchEvent(new CustomEvent('beljar:doc-changed'));
       }
     } else if (renameEnded) {
-      syncSemanticFromView(update.view, { forceResettle: true });
-      semanticEngine.onDocChange();
-      seedSemanticScheduler(update.view);
-      scheduleDevelopmentCheck(update.view);
+      scheduleSemanticSync(update.view, { renameEnded: true });
     }
     if (update.selectionSet || update.viewportChanged) {
       if (!isRenaming(update.state) && options.persist) {
@@ -1718,6 +1968,10 @@ export function mount(parentEl, options = {}) {
       }
     }
     if (update.selectionSet) {
+      // A selection change with no edit means the user stopped typing and is now
+      // navigating (click / arrow / jump) — flush any coalesced semantic rebuild
+      // so hover / go-to-def / occurrence highlight see the current doc at once.
+      if (!update.docChanged && pendingSemanticSync) flushPendingSemanticSync();
       semanticEngine.onCursorMove(update.state.selection.main.head);
       seedSemanticScheduler(update.view);
     }
@@ -1740,11 +1994,20 @@ export function mount(parentEl, options = {}) {
   if (editorPrefs.foldGutter && docId) {
     extensions.push(belFoldPersistence(docId));
   }
+  if (docId) {
+    extensions.push(belEditHistoryListener(docId));
+  }
 
   const initialDoc = prepareEditorDoc(options.doc ?? '', docPath);
   let state = EditorState.create({ doc: initialDoc, extensions });
+  globalRef().BelJarEditHistory?.markNonUndoable?.();
   const ir0 = indentRange(state, 0, state.doc.length);
-  if (!ir0.empty) state = state.update({ changes: ir0 }).state;
+  if (!ir0.empty) {
+    state = state.update({
+      changes: ir0,
+      annotations: Transaction.addToHistory.of(false),
+    }).state;
+  }
 
   const view = new EditorView({
     parent: parentEl,
@@ -1775,6 +2038,9 @@ export function mount(parentEl, options = {}) {
     });
   }
   if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal, { focus: true });
+  if (typeof options.onDocChange === 'function') {
+    options.onDocChange(view.state.doc.toString());
+  }
   seedSemanticScheduler(view);
   if (semanticEngine.scheduler && semanticEngine.scheduler.startBackground) {
     semanticEngine.scheduler.startBackground();
@@ -1832,16 +2098,28 @@ export function mount(parentEl, options = {}) {
       return view.state.doc.toString();
     },
     setValue(text) {
-      const doc = sanitizePastedPlainText(text ?? '');
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+      replaceDocNonUndoable(view, text);
       queueMicrotask(() => reindentWholeDocument(view));
+    },
+    setValueNonUndoable(text, opts) {
+      replaceDocNonUndoable(view, text, opts);
+    },
+    replaceDocumentNonUndoable(text, opts) {
+      replaceDocNonUndoable(view, text, opts);
+    },
+    getCurrentFileId() { return docId; },
+    flushCheckpoint() {
+      if (options.persist?.flushCheckpoint) options.persist.flushCheckpoint();
     },
     focus() {
       view.focus();
     },
     insertTop(text) {
       const block = sanitizePastedPlainText(text ?? '') + '\n\n';
-      view.dispatch({ changes: { from: 0, to: 0, insert: block } });
+      dispatchEdit(view, { changes: { from: 0, to: 0, insert: block } }, {
+        fileId: docId,
+        kind: 'library-insert',
+      });
       queueMicrotask(() => {
         reindentWholeDocument(view);
         view.focus();
@@ -1851,8 +2129,11 @@ export function mount(parentEl, options = {}) {
       const cur = view.state.doc.toString();
       const prefix = cur ? cur.replace(/\s*$/, '') + '\n\n' : '';
       const block = sanitizePastedPlainText(text ?? '');
-      view.dispatch({
+      dispatchEdit(view, {
         changes: { from: 0, to: view.state.doc.length, insert: prefix + block },
+      }, {
+        fileId: docId,
+        kind: 'library-insert',
       });
       queueMicrotask(() => {
         reindentWholeDocument(view);
@@ -1860,7 +2141,9 @@ export function mount(parentEl, options = {}) {
       });
     },
     insertAtSelection(text) {
-      view.dispatch(view.state.replaceSelection(sanitizePastedPlainText(text ?? '')), {
+      dispatchEdit(view, view.state.replaceSelection(sanitizePastedPlainText(text ?? '')), {
+        fileId: docId,
+        kind: 'library-insert',
         userEvent: 'input.paste',
       });
       view.focus();
@@ -2015,8 +2298,8 @@ export function mount(parentEl, options = {}) {
     },
 
     // Edit-menu commands — these work even when the editor isn't focused.
-    undo() { return undo(view); },
-    redo() { return redo(view); },
+    undo() { return runEditHistoryUndo(); },
+    redo() { return runEditHistoryRedo(); },
     selectAll() { return selectAll(view); },
     openSearch() { return openSearchPanel(view); },
     toggleComment() { return toggleComment(view); },

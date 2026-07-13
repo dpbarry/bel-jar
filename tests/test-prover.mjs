@@ -47,7 +47,10 @@ eq(parseTotality('/ total 1 /'), { kind: 'index', index: 1 }, 'positional measur
 eq(parseTotality('/ total 2 /'), { kind: 'index', index: 2 }, 'positional measure (2nd arg)');
 expect(parseTotality('/ total /').kind === 'bare', 'bare total');
 eq(parseTotality('/ total f x /'), { kind: 'named', name: 'x', fn: 'f' }, 'named measure f x');
-eq(parseTotality('/ total d (tp_uniq g m t t\' d) /'), { kind: 'named', name: 'd' }, 'named measure with index list');
+// The application pattern's argument list is KEPT — decreasingBoxIndex aligns it
+// against the premise spine to resolve WHICH premise decreases (spec §3).
+eq(parseTotality('/ total d (tp_uniq g m t t\' d) /'),
+  { kind: 'named', name: 'd', args: ['g', 'm', 't', "t'", 'd'] }, 'named measure with index list');
 eq(parseTotality('/ total linP /'), { kind: 'named', name: 'linP' }, 'single-name decreasing argument');
 expect(parseTotality('rec foo : T = ?') === null, 'no annotation ⇒ null (no blind recursion)');
 

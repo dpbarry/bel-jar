@@ -71,10 +71,25 @@ export function parseHoles(rawOutput) {
     }
     if (!cur) continue;
     const t = raw.trim();
-    if (goalOpen && t) {
-      cur.goal = `${cur.goal || ''} ${t}`.replace(/\s+/g, ' ').trim();
-      if (depth(cur.goal) <= 0) goalOpen = false;
-      continue;
+    if (goalOpen) {
+      // 'block' mode: the goal STARTED on the line AFTER `Goal:` (multi-line Pi
+      // types print that way — `{g : ctx}\n {h : ctx}\n {$W : …} [g ⊢ …] -> …`).
+      // Each line may be bracket-balanced on its own, so depth can't close the
+      // block; a blank line or a new section/hole marker does.
+      if (goalOpen === 'block') {
+        if (!t || /^(Meta-context:|Computation context:|Variable of this type:)/i.test(t) || t.startsWith('##')) {
+          goalOpen = false;
+          if (!t) continue;
+        } else {
+          cur.goal = `${cur.goal || ''} ${t}`.replace(/\s+/g, ' ').trim();
+          continue;
+        }
+      } else if (t) {
+        // 'depth' mode: a single-line goal that opened brackets — close on balance.
+        cur.goal = `${cur.goal || ''} ${t}`.replace(/\s+/g, ' ').trim();
+        if (depth(cur.goal) <= 0) goalOpen = false;
+        continue;
+      }
     }
     if (/^Meta-context:/i.test(t)) { commitPending(); section = 'meta'; continue; }
     if (/^Computation context:/i.test(t)) { commitPending(); section = 'comp'; continue; }
@@ -83,7 +98,7 @@ export function parseHoles(rawOutput) {
       commitPending();
       cur.goal = goal[1].trim() || null;
       section = null;
-      goalOpen = !!cur.goal && depth(cur.goal) > 0;
+      goalOpen = cur.goal ? (depth(cur.goal) > 0 ? 'depth' : false) : 'block';
       continue;
     }
     if (/^Variable of this type:/i.test(t)) { commitPending(); section = null; continue; }

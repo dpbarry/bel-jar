@@ -668,6 +668,35 @@ function applicationHeadIsBound(tree, doc, app, isType) {
 // Juxtaposed application (`t p`, `dual A`) is valid only when the head names a
 // defined constant. A typo like `t p` for `tp` parses as application but must
 // not fall through to the implicit-binder guess — neither atom is reconstructible.
+//
+// The site (head + optional typo-merge) for ONE application node. Extracted so
+// the lint pass can visit application nodes directly, instead of probing every
+// identifier in the file (which called findEnclosingLocalBinder thousands of
+// times per keystroke — O(idents × depth) on large proofs).
+function siteForApp(tree, doc, app, isType) {
+  const family = isType ? TYPE_APP : TERM_APP;
+  if (!hasNestedApp(app, family)) return null;
+  const head = isType ? headIdentOfTypeApp(app) : headIdentOfTermApp(app);
+  if (!head) return null;
+  if (projectionTailOf(head)) return null;
+  if (isSubstitutionVariable(head)) return null;
+  for (let q = head.parent; q; q = q.parent) {
+    if (q.name === 'ParameterVariable' || q.name === 'SubstitutionVariable') return null;
+  }
+  if (ascribedTypeForIdent(head, doc)) return null;
+  if (applicationHeadIsBound(tree, doc, app, isType)) return null;
+  const typo = typoJuxtapositionSite(tree, doc, app, isType);
+  if (!typo) return null;
+  return {
+    ident: head,
+    role: 'head',
+    headName: typo.headName,
+    merged: typo.merged,
+  };
+}
+
+// Per-ident probe (hover / implicit typing). The hot lint path uses siteForApp
+// over application nodes only — see collectUndefinedApplicationDiags.
 function undefinedApplicationSite(tree, doc, ident) {
   const name = doc.sliceString(ident.from, ident.to);
   if (projectionTailOf(ident)) return null;
@@ -681,25 +710,18 @@ function undefinedApplicationSite(tree, doc, ident) {
     const isType = TYPE_APP.has(p.name);
     const isTerm = TERM_APP.has(p.name);
     if (!isType && !isTerm) continue;
-    const family = isType ? TYPE_APP : TERM_APP;
-    if (!hasNestedApp(p, family)) continue;
-    const head = isType ? headIdentOfTypeApp(p) : headIdentOfTermApp(p);
-    if (!head) continue;
-    const headName = doc.sliceString(head.from, head.to);
-    const headKnown = applicationHeadIsBound(tree, doc, p, isType);
+    const site = siteForApp(tree, doc, p, isType);
+    if (!site) continue;
+    const head = site.ident;
     const arg = isType ? typeAppArgChild(p) : termAppArgChild(p);
     const isHead = head.from === ident.from && head.to === ident.to;
     const isArg = arg && ident.from >= arg.from && ident.to <= arg.to;
     if (!isHead && !isArg) continue;
-    if (headKnown) {
-      if (isArg) return null;
-      return null;
-    }
-    const typo = typoJuxtapositionSite(tree, doc, p, isType);
-    if (typo) {
-      return { role: isHead ? 'head' : 'arg', headName: typo.headName, merged: typo.merged };
-    }
-    return null;
+    return {
+      role: isHead ? 'head' : 'arg',
+      headName: site.headName,
+      merged: site.merged,
+    };
   }
   return null;
 }
@@ -712,22 +734,34 @@ function undefinedApplicationMessage(name, site) {
 export function collectUndefinedApplicationDiags(tree, doc) {
   const diags = [];
   const seen = new Set();
+  // Only visit application nodes — never every identifier in the file.
+  // The old per-ident walk called findEnclosingLocalBinder ~thousands of times
+  // per keystroke (O(idents × depth) on large proofs).
   tree.iterate({
     enter(ref) {
-      if (!IDENT.has(ref.name)) return;
-      const ident = ref.node;
-      const site = undefinedApplicationSite(tree, doc, ident);
+      const isType = TYPE_APP.has(ref.name);
+      const isTerm = TERM_APP.has(ref.name);
+      if (!isType && !isTerm) return;
+      const site = siteForApp(tree, doc, ref.node, isType);
       if (!site) return;
-      const key = `${ident.from}:${ident.to}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      const name = doc.sliceString(ident.from, ident.to);
-      diags.push({
-        from: ident.from,
-        to: ident.to,
-        severity: 'error',
-        message: undefinedApplicationMessage(name, site),
-      });
+      const head = site.ident;
+      const arg = isType ? typeAppArgChild(ref.node) : termAppArgChild(ref.node);
+      const argIdent = arg ? firstIdentChild(arg) : null;
+      const targets = [head];
+      if (argIdent) targets.push(argIdent);
+      for (const ident of targets) {
+        const key = `${ident.from}:${ident.to}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const name = doc.sliceString(ident.from, ident.to);
+        const role = ident.from === head.from && ident.to === head.to ? 'head' : 'arg';
+        diags.push({
+          from: ident.from,
+          to: ident.to,
+          severity: 'error',
+          message: undefinedApplicationMessage(name, { role, headName: site.headName }),
+        });
+      }
     },
   });
   return diags;

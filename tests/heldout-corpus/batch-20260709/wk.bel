@@ -1,0 +1,38 @@
+tp : type.
+unit : tp.
+arr  : tp -> tp -> tp.
+
+tm : type.
+lam : tp -> (tm -> tm) -> tm.
+app : tm -> tm -> tm.
+triv : tm.
+
+oft : tm -> tp -> type.
+t_triv : oft triv unit.
+t_lam  : ({x:tm} oft x A -> oft (M x) B)
+         -> oft (lam A M) (arr A B).
+t_app  : oft M (arr A B) -> oft N A -> oft (app M N) B.
+
+schema ctx = block (x:tm, u:oft x A);
+
+rec wk : {g:ctx}{h:ctx}{$W:$[h |- g]} [g |- oft M[..] T[]] -> [h |- oft M[$W] T[]] =
+  / total d (wk g h w m t d) /
+  mlam g => mlam h => mlam $W => fn d => case d of
+  | [g |- t_triv] => [h |- t_triv]
+
+  | [g |- t_lam \x.\u. D] =>
+    let [h, b:block (y:tm, v:oft y _) |- D'[..,b.1,b.2]] =
+        wk [g, x:block (x0:tm, u0:oft x0 _)]
+           [h, b:block (y:tm, v:oft y _)]
+           $[h, b:block (y:tm, v:oft y _) |- $W[..], b]
+           [g, x:block (x0:tm, u0:oft x0 _) |- D[.., x.1, x.2]]
+    in
+    [h |- t_lam \x.\u. D'[.., x, u]]
+
+  | [g |- t_app D1 D2] =>
+    let [h |- D1'] = wk [g] [h] $[h |- $W] [g |- D1] in
+    let [h |- D2'] = wk [g] [h] $[h |- $W] [g |- D2] in
+    [h |- t_app D1' D2']
+
+  | [g |- #p.2] => [h |- #p.2[$W]]
+;

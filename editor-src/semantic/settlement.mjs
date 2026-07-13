@@ -9,12 +9,15 @@ import { blockDependents, walkTree } from '../bel-walk.mjs';
 import { getCheckTrace } from '../perf/check-trace.mjs';
 import { computeSettleDelayMs, SETTLE_DELAY_MS } from './settle-delay.mjs';
 import {
-  buildScopedSource,
   declIndicesForRanges,
   declRangesForIndices,
   diagnosticOverlapsRange,
   diagnosticsOutsideRanges,
+  topDeclSpans,
 } from './scoped-check.mjs';
+import {
+  buildCompressedCheckerCode,
+} from './compress-development.mjs';
 
 // Beluga halts at the first error it meets. A single check therefore yields at
 // most ONE diagnostic per settle — antithetical to the engine's whole design.
@@ -103,10 +106,31 @@ export function createSettlement({
   onChecking = null,
   onProgress = null,
   maxPasses = MAX_PASSES,
+  /** When true, default settle uses full uncompressed multipass. */
+  preferFullCheck = false,
 } = {}) {
   let scheduled = null;
   let inflight = null;
+  let inflightStartedAt = 0;
   let generation = 0;
+  /** Last prelude content fingerprint that was fully (uncompressed) certified. */
+  let lastFullPreludeFp = null;
+
+  // Terminating the checker worker mid-run forces a full Beluga runtime
+  // re-eval on the next check. Doing that on EVERY keystroke while a check is
+  // in flight (the norm late in a suite, where checks outlive the typing
+  // cadence) churns a worker per keystroke and saturates the CPU — the
+  // late-suite keystroke lag. Superseded results are already discarded by the
+  // generation guard, so a warm worker is only killed when it is genuinely
+  // stuck on a heavy stale job.
+  const STALE_INFLIGHT_MS = 4000;
+  function cancelInflightIfStale() {
+    if (inflight === null) return;
+    if (Date.now() - inflightStartedAt < STALE_INFLIGHT_MS) return;
+    if (belugaClient && typeof belugaClient.cancelCheckerWorkload === 'function') {
+      belugaClient.cancelCheckerWorkload();
+    }
+  }
 
   function fingerprint(code) {
     if (belugaClient && typeof belugaClient.fingerprint === 'function') {
@@ -315,86 +339,144 @@ export function createSettlement({
       ? maskBlocksByIndex(snap.code, syntaxSnap.doc, snap.blocks, masked)
       : snap.code;
 
-    // Scoped fast-path: hand Beluga only the dirty declarations' neighborhood so
-    // an error on the edited decl surfaces in ~1s instead of after the whole-file
-    // multipass. Best-effort and purely additive — errors found here are
-    // published as PROGRESS; the authoritative full pass below still runs and
-    // refreshes holes/types/members. Stubs are line-preserving so diagnostics
-    // attribute against the full doc unchanged (proven by tests/scope-parity.mjs).
-    // Skipped when nothing is scopable (syntax faults, empty/whole-file frontier).
-    if (typeof getScopedFrontier === 'function' && !masked.size && !snap.hasSyntaxFault) {
-      try {
-        const frontier = getScopedFrontier(syntaxSnap) || [];
-        const keepIdx = frontier.length ? declIndicesForRanges(syntaxSnap.tree, frontier) : null;
-        const scopedActive = keepIdx && keepIdx.size
-          ? buildScopedSource(snap.code, keepIdx, syntaxSnap.tree)
-          : null;
-        if (scopedActive) {
-          const scopedCode = withPrelude(scopedActive);
-          if (scopedCode.trim()) {
-            const res = await runCheck(scopedCode);
-            if (gen !== generation) { releaseStaleChecking(gen); return null; }
-            const keepRanges = declRangesForIndices(syntaxSnap.tree, keepIdx);
-            // Transient early publish ONLY — never seed the multipass state, so
-            // the full pass below still masks erroring blocks and harvests
-            // holes/types for the healthy remainder exactly as before.
-            if (res && !res.ok && res.output) {
-              const { diags } = processCheckerOutput(res.output, false);
-              if (diags.length) {
-                checkerStore.applyProgress({
-                  syntaxVersion: syntaxSnap.version,
-                  checkerFp: canonicalFp,
-                  belugaDiagnostics: [...diags, ...suiteDiags],
-                  rawOutput: res.output,
-                });
-                if (typeof onProgress === 'function') onProgress(checkerStore.getSnapshot());
-              }
-            } else if (res && res.ok) {
-              // Symmetric fast-path: scoped green means the edited neighborhood
-              // is authoritative — drop its Beluga squiggles now. Without this
-              // we wait for a full successful check (~10s on large files) because
-              // Beluga fails fast on errors but reconstructs slowly on success.
-              const prev = checkerStore.getSnapshot().belugaDiagnostics || [];
-              const kept = diagnosticsOutsideRanges(prev, keepRanges);
-              const hadInFrontier = prev.some((d) => keepRanges.some((r) => diagnosticOverlapsRange(d, r)));
-              if (hadInFrontier) {
-                checkerStore.applyProgress({
-                  syntaxVersion: syntaxSnap.version,
-                  checkerFp: canonicalFp,
-                  belugaDiagnostics: [...kept, ...suiteDiags],
-                  replace: true,
-                  rawOutput: res.output || '',
-                });
-                if (typeof onProgress === 'function') onProgress(checkerStore.getSnapshot());
+    const forceFull = !!(traceOptions.forceFull
+      || traceOptions.trigger === 'full'
+      || preferFullCheck);
+    const frontierRanges = (!forceFull && typeof getScopedFrontier === 'function')
+      ? (getScopedFrontier(syntaxSnap) || [])
+      : null;
+    let keepIdx = frontierRanges && frontierRanges.length
+      ? declIndicesForRanges(syntaxSnap.tree, frontierRanges)
+      : null;
+    const preludeFp = rawPrelude?.code != null ? fingerprint(rawPrelude.code) : '';
+    // Only treat as "prelude changed" when we already certified a different
+    // prelude. A null lastFullPreludeFp must NOT force full — otherwise every
+    // cancelled settle while typing restarts an O(suite) bootstrap and the
+    // frontier path never engages (the late-suite lag we just shipped around).
+    const preludeChanged = lastFullPreludeFp != null
+      && !!preludeFp
+      && preludeFp !== lastFullPreludeFp;
+    // Frontier path when we have a dirty neighborhood to certify. Empty frontier
+    // with a prior ready verdict for this version → nothing for Beluga. Otherwise
+    // bootstrap by certifying the whole active file (still compressed).
+    // Prelude fingerprint change forces a one-shot full multipass to re-certify.
+    const useFrontier = !forceFull
+      && !preludeChanged
+      && typeof getScopedFrontier === 'function'
+      && !snap.hasSyntaxFault;
+
+    function withCompressed(activeCode, idx) {
+      const assembled = buildCompressedCheckerCode({
+        fileCode: activeCode,
+        prelude: currentPrelude(),
+        keepIdx: idx,
+        tree: syntaxSnap.tree,
+        activeSrc: activeCode,
+      });
+      if (!assembled) return null;
+      shiftPrelude = assembled.prelude;
+      return assembled.code;
+    }
+
+    let assemblePass = withPrelude;
+    let code;
+    let lastOk = false;
+    let checkedOkCode = null;
+    let settledHoles = [];
+    let settledMemberHoles = {};
+    let passLimit;
+
+    if (useFrontier && (!keepIdx || !keepIdx.size)) {
+      const prev = checkerStore.getSnapshot();
+      const priorForVersion = (prev.state === 'ready' || prev.state === 'stale')
+        && prev.syntaxVersion === syntaxSnap.version;
+      if (priorForVersion) {
+        if (perf.enabled) perf.record('settle:mode', 0, { mode: 'frontier-empty' });
+        if (preludeFp) lastFullPreludeFp = preludeFp;
+        const prevDiags = (prev.belugaDiagnostics || []).filter((d) => d.source !== 'suite');
+        return finish({
+          syntaxVersion: syntaxSnap.version,
+          checkerFp: canonicalFp,
+          ok: prev.ok,
+          belugaDiagnostics: [...prevDiags, ...suiteDiags],
+          rawOutput: prev.rawOutput || '',
+          holes: prev.holes || [],
+          checkedCode: prev.checkedCode || '',
+          checkedFp: prev.checkedFp || '',
+          settleMode: 'frontier-empty',
+        }, gen);
+      }
+      // Mount / first check: no dirty set yet — certify every top-level decl.
+      const all = topDeclSpans(syntaxSnap.tree);
+      keepIdx = new Set(all.map((_, i) => i));
+    }
+
+    if (useFrontier && keepIdx && keepIdx.size) {
+      assemblePass = (activeCode) => withCompressed(activeCode, keepIdx) || '';
+      code = assemblePass(fileCode);
+      passLimit = Math.max(maxPasses, keepIdx.size + 2);
+      if (perf.enabled) {
+        perf.record('settle:mode', 0, { mode: 'frontier', keep: keepIdx.size });
+      }
+    } else {
+      // Full uncompressed multipass (tests without frontier, forceFull, prelude change).
+      if (typeof getScopedFrontier === 'function' && !masked.size && !snap.hasSyntaxFault) {
+        try {
+          const frontier = getScopedFrontier(syntaxSnap) || [];
+          const earlyIdx = frontier.length ? declIndicesForRanges(syntaxSnap.tree, frontier) : null;
+          if (earlyIdx && earlyIdx.size) {
+            const earlyCode = withCompressed(snap.code, earlyIdx);
+            if (earlyCode && earlyCode.trim()) {
+              const res = await runCheck(earlyCode);
+              if (gen !== generation) { releaseStaleChecking(gen); return null; }
+              const keepRanges = declRangesForIndices(syntaxSnap.tree, earlyIdx);
+              if (res && !res.ok && res.output) {
+                const { diags } = processCheckerOutput(res.output, false);
+                if (diags.length) {
+                  checkerStore.applyProgress({
+                    syntaxVersion: syntaxSnap.version,
+                    checkerFp: canonicalFp,
+                    belugaDiagnostics: [...diags, ...suiteDiags],
+                    rawOutput: res.output,
+                  });
+                  if (typeof onProgress === 'function') onProgress(checkerStore.getSnapshot());
+                }
+              } else if (res && res.ok) {
+                const prev = checkerStore.getSnapshot().belugaDiagnostics || [];
+                const kept = diagnosticsOutsideRanges(prev, keepRanges);
+                const hadInFrontier = prev.some((d) => keepRanges.some((r) => diagnosticOverlapsRange(d, r)));
+                if (hadInFrontier) {
+                  checkerStore.applyProgress({
+                    syntaxVersion: syntaxSnap.version,
+                    checkerFp: canonicalFp,
+                    belugaDiagnostics: [...kept, ...suiteDiags],
+                    replace: true,
+                    rawOutput: res.output || '',
+                  });
+                  if (typeof onProgress === 'function') onProgress(checkerStore.getSnapshot());
+                }
               }
             }
           }
-        }
-      } catch (_) { /* full pass is authoritative; scoped fast-path is optional */ }
+        } catch (_) { /* full pass is authoritative */ }
+      }
+
+      assemblePass = withPrelude;
+      code = assemblePass(fileCode);
+      const preludeBlockData = ensurePreludeBlocks();
+      const preludeBlockCount = preludeBlockData && preludeBlockData !== false
+        ? preludeBlockData.blocks.length
+        : 0;
+      passLimit = Math.max(maxPasses, MAX_PASSES_PRELUDE_FLOOR, preludeBlockCount + maxPasses);
+      if (perf.enabled) {
+        perf.record('settle:mode', 0, {
+          mode: forceFull ? 'full-forced' : (preludeChanged ? 'full-prelude' : 'full'),
+        });
+      }
     }
 
-    let code = withPrelude(fileCode);
-    let lastOk = false;
-    // The code of the last pass that actually loaded clean — what the checker
-    // slot really holds afterwards. Stays null if no pass came back ok.
-    let checkedOkCode = null;
-    // Holes from the clean pass (Beluga prints them only on a completed
-    // reconstruction). Active-file holes are doc-relative; prelude members ride
-    // memberHoles keyed by project path.
-    let settledHoles = [];
-    let settledMemberHoles = {};
-
-    const preludeBlockData = ensurePreludeBlocks();
-    const preludeBlockCount = preludeBlockData && preludeBlockData !== false
-      ? preludeBlockData.blocks.length
-      : 0;
-    const passLimit = Math.max(maxPasses, MAX_PASSES_PRELUDE_FLOOR, preludeBlockCount + maxPasses);
-
     try {
-      // Everything checkable was carved out by syntax faults — the JS lint
-      // owns those errors; there is nothing for Beluga to add. Suite-composition
-      // warnings are independent of that, so they still ride along.
-      if (!code.trim()) {
+      if (!code || !String(code).trim()) {
         return finish({
           syntaxVersion: syntaxSnap.version,
           checkerFp: canonicalFp,
@@ -437,17 +519,8 @@ export function createSettlement({
           const k = `${iss.name}:${iss.line}`;
           if (!preludeIssuesSeen.has(k)) preludeIssuesSeen.set(k, iss);
         }
-        // An error inside an earlier suite file halts Beluga before the active
-        // file is reached. Carve out that prelude block and re-check so the
-        // active file's own results still surface (its types for anything not
-        // depending on the masked block included).
         const preludeAdded = maskPreludeIssues(preludeIssues);
 
-        // Attribute this pass's findings to blocks. Anything pointing into a
-        // block we already masked is an echo of a prior error (the checker
-        // mock or a stale message), not new information — drop it. An induced
-        // unbound (its culprit's definition was masked away) still ADVANCES
-        // the loop — its block gets carved out — but is never shown.
         const newBlocks = new Set();
         for (const d of diags) {
           const idx = d.blockIndex != null
@@ -465,24 +538,18 @@ export function createSettlement({
           if (idx != null) newBlocks.add(idx);
         }
 
-        // No fresh active block AND no fresh prelude block → no progress.
         if (!newBlocks.size && !preludeAdded) break;
 
-        // Mask the erroring blocks AND everything impacted by them: dependent
-        // blocks can only produce induced "unbound identifier" noise once
-        // their dependency is gone, so they're carved out of the next pass.
         if (newBlocks.size) for (const idx of impactOf([...newBlocks])) masked.add(idx);
         fileCode = masked.size
           ? maskBlocksByIndex(snap.code, syntaxSnap.doc, snap.blocks, masked)
           : snap.code;
-        code = withPrelude(fileCode);
-        if (!code.trim()) {
+        code = assemblePass(fileCode);
+        if (!code || !String(code).trim()) {
           lastOk = true;
           break;
         }
 
-        // Publish what we have so far — errors appear in the editor pass by
-        // pass instead of all-or-nothing at the end.
         checkerStore.applyProgress({
           syntaxVersion: syntaxSnap.version,
           checkerFp: canonicalFp,
@@ -495,13 +562,19 @@ export function createSettlement({
       }
 
       collected.sort((a, b) => a.from - b.from);
-      // One non-blocking banner for the earlier-file errors that were masked to
-      // reach the active file. It rides alongside (not instead of) the active
-      // file's own diagnostics.
       const preludeIssuesAll = [...preludeIssuesSeen.values()];
-      // Line-1 "fix earlier file" banner is a fast JS overlay (suite-prelude-banner.mjs)
-      // from suite order + dev-check / syntax — not gated on this slow multipass.
-      const finalDiags = [...collected, ...suiteDiags];
+      let finalDiags = [...collected, ...suiteDiags];
+      if (useFrontier && keepIdx && keepIdx.size) {
+        const keepRanges = declRangesForIndices(syntaxSnap.tree, keepIdx);
+        const prev = checkerStore.getSnapshot();
+        const outside = diagnosticsOutsideRanges(prev.belugaDiagnostics || [], keepRanges)
+          .filter((d) => d.source !== 'suite');
+        finalDiags = [...outside, ...collected, ...suiteDiags];
+        finalDiags.sort((a, b) => (a.from || 0) - (b.from || 0));
+      }
+      // Record whatever prelude we settled against so the NEXT edit can use the
+      // frontier path; only a real prelude content change forces full again.
+      if (preludeFp) lastFullPreludeFp = preludeFp;
       return finish({
         syntaxVersion: syntaxSnap.version,
         checkerFp: canonicalFp,
@@ -513,6 +586,7 @@ export function createSettlement({
         holes: settledHoles,
         checkedCode: checkedOkCode || '',
         checkedFp: checkedOkCode ? fingerprint(checkedOkCode) : '',
+        settleMode: useFrontier && keepIdx && keepIdx.size ? 'frontier' : 'full',
       }, gen);
     } catch (_) {
       if (gen !== generation) { releaseStaleChecking(gen); return null; }
@@ -526,7 +600,6 @@ export function createSettlement({
 
   function schedule(syntaxSnap, options = {}) {
     const trigger = options.trigger || 'semantic';
-    const hadInflight = inflight !== null;
     generation += 1;
     const gen = generation;
 
@@ -535,9 +608,7 @@ export function createSettlement({
       scheduled = null;
     }
 
-    if (hadInflight && belugaClient && typeof belugaClient.cancelCheckerWorkload === 'function') {
-      belugaClient.cancelCheckerWorkload();
-    }
+    cancelInflightIfStale();
 
     checkerStore.invalidate(syntaxSnap.version);
 
@@ -549,6 +620,7 @@ export function createSettlement({
 
     scheduled = setTimeout(() => {
       scheduled = null;
+      inflightStartedAt = Date.now();
       inflight = settleNow(syntaxSnap, gen, { trigger }).finally(() => {
         inflight = null;
       });
@@ -556,15 +628,12 @@ export function createSettlement({
   }
 
   function cancelPending() {
-    const hadInflight = inflight !== null;
     generation += 1;
     if (scheduled) {
       clearTimeout(scheduled);
       scheduled = null;
     }
-    if (hadInflight && belugaClient && typeof belugaClient.cancelCheckerWorkload === 'function') {
-      belugaClient.cancelCheckerWorkload();
-    }
+    cancelInflightIfStale();
   }
 
   function isSettledFor(version) {

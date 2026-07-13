@@ -47,6 +47,9 @@ import {
   parseCompType,
   parseTotality,
   boxedConclusionHead,
+  decreasingBoxIndex,
+  measureDesignation,
+  implicitMetaCount,
 } from './bel-prover.mjs';
 
 // Fresh-name helper mirroring bel-hole-split's, kept local so move-gen is pure.
@@ -182,6 +185,7 @@ function splitTextForBox(code, hole, scrutText, boxedType, splitOpts = {}) {
     head, schema, schemaTypes, usedNames: usedNamesOf(hole),
     contextProjection: hasHoCtor || ctxHasNames,
     annotate: splitOpts.annotate,
+    code, // fixity source: arm annotations must respect --infix declarations
   });
   dbg('skeleton', sk ? 'ok' : 'null');
   return sk;
@@ -217,7 +221,7 @@ function resultBoxFor(thm, decArgCtx) {
   const ctxParam = theoremContextParam(thm);
   if (ctxParam && ctx === ctxParam.var && decArgCtx) {
     const boxes = thm.compType.premises.filter((p) => p.kind === 'box');
-    const decIdx = (thm.totality && thm.totality.kind === 'index') ? thm.totality.index - 1 : 0;
+    const decIdx = decreasingBoxIndex(thm);
     let raw = (boxes[decIdx] || boxes[0] || {}).raw || '';
     if (raw && !raw.startsWith('[')) raw = `[${raw}]`;
     const tail = Math.max(0, splitCtx(boxOf(raw).ctx).length - 1);
@@ -314,9 +318,18 @@ function decreasingHyps(hole, thm, decHead, code = '') {
     const nota = typeFamilyHead(c, code);
     return (nota && nota !== 'type') ? nota : headOfConclusion(c);
   };
-  const fromBranch = branchPatternMetas(code, hole).filter((h) =>
+  const rawBranchMetas = branchPatternMetas(code, hole);
+  const fromBranch = rawBranchMetas.filter((h) =>
     famHeadOf(h.type) === decHead && isPremiseShapedSubderiv(h, thm),
   );
+  // Debug hook (no-op unless a harness installs it): the dec-candidate sources.
+  if (globalThis.__decDebug) {
+    globalThis.__decDebug({
+      decHead,
+      rawBranchMetas: rawBranchMetas.map((h) => ({ name: h.name, type: h.type })),
+      fromBranch: fromBranch.map((h) => h.name),
+    });
+  }
   if (fromBranch.length) return fromBranch;
   const fromGoal = innerSubderivFromBranchGoal(hole, code, decHead);
   if (fromGoal) return [fromGoal];
@@ -340,6 +353,18 @@ function contextualHead(typeStr) {
   return headOfConclusion(conclusionOf(typeStr));
 }
 
+// Compare two context-entry spellings up to the checker's round-trip prints:
+// identity substitutions elided (`pure A[..]` ⇄ `pure A`) and redundant parens
+// (`pure (B[..])` ⇄ `pure B[..]`). Over-accepting here only widens the
+// candidate pool — certification still arbitrates.
+function normCtxPartSpelling(part) {
+  return normCtxPart(part)
+    .replace(/\[\.\.\]/g, '')
+    .replace(/[()]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function isPremiseShapedSubderiv(h, thm) {
   if (h.underBinder || isBlockSubderiv(h)) return true;
   const t = String(h && h.type || '').trim();
@@ -348,8 +373,8 @@ function isPremiseShapedSubderiv(h, thm) {
   if (!prem) return true;
   let raw = prem.raw;
   if (!raw.startsWith('[')) raw = `[${raw}]`;
-  const premCtx = boxOf(raw).ctx.split(',').map(normCtxPart).filter(Boolean);
-  const hypCtx = boxOf(h.type).ctx.split(',').map(normCtxPart).filter(Boolean);
+  const premCtx = boxOf(raw).ctx.split(',').map(normCtxPartSpelling).filter(Boolean);
+  const hypCtx = boxOf(h.type).ctx.split(',').map(normCtxPartSpelling).filter(Boolean);
   if (hypCtx.length < premCtx.length) return false;
   for (let i = 0; i < premCtx.length; i += 1) {
     if (hypCtx[i] !== premCtx[i]) {
@@ -379,7 +404,7 @@ function isIntroducedPremise(h, thm) {
   if (!boxes.length) return false;
   // No totality annotation ⇒ no designated decreasing premise; the introduced
   // premise defaults to the first box (recursion is separately refused upstream).
-  const decIdx = (thm.totality && thm.totality.kind === 'index') ? thm.totality.index - 1 : 0;
+  const decIdx = decreasingBoxIndex(thm);
   let prem = boxes[decIdx] ? boxes[decIdx].raw : boxes[0].raw;
   if (!prem.startsWith('[')) prem = `[${prem}]`;
   const a = boxOf(h.type);
@@ -501,32 +526,46 @@ function synthMoves(hole, code, thm) {
 
   const boxes = thm.compType.premises.filter((p) => p.kind === 'box');
   if (!boxes.length) return [];
-  const decIdxThm = (thm.totality.kind === 'index') ? thm.totality.index - 1 : 0;
+  const decIdxThm = decreasingBoxIndex(thm);
   const decNames = decSubderivNames(code, hole, decIdxThm);
 
   const facts = [];
-  const pushFact = (name, type) => {
+  const pushFact = (name, type, viaComp = false) => {
     if (!name || !type || !/^[A-Za-z_][A-Za-z0-9_']*$/.test(name)) return;
     let t = String(type).trim();
     if (t[0] === '(' && t[t.length - 1] === ')') t = `[${t.slice(1, -1)}]`;
     const b = decomposeContextual(t);
     if (!b) return; // schema-typed / non-boxed — not a synthesis fact
     const hp = splitCtx(b.ctx);
-    if (hp.length < goalParts.length) return;
-    for (let i = 0; i < goalParts.length; i += 1) {
-      if (normCtxPart(hp[i]) !== normCtxPart(goalParts[i])) return;
+    // A fact whose context is a strict PREFIX of the goal's weakens into it
+    // (spec §2 / D7) — spelled `X[..]` at use sites. A comp variable cannot.
+    let weaken = false;
+    if (hp.length < goalParts.length) {
+      if (viaComp) return;
+      for (let i = 0; i < hp.length; i += 1) {
+        if (normCtxPart(hp[i]) !== normCtxPart(goalParts[i])) return;
+      }
+      weaken = true;
+    } else {
+      for (let i = 0; i < goalParts.length; i += 1) {
+        if (normCtxPart(hp[i]) !== normCtxPart(goalParts[i])) return;
+      }
     }
     const extras = hp.slice(goalParts.length).map((e) => {
       const c = e.indexOf(':');
       return c < 0 ? null : { name: e.slice(0, c).trim(), type: e.slice(c + 1).trim() };
     });
     if (extras.some((e) => !e || /\bblock\b/.test(e.type))) return; // block extras — outside fragment
+    if (viaComp && extras.length) return; // a comp variable has no binder telescope
     facts.push({
-      name, extras, concl: String(b.concl || '').trim(), original: true, decOk: decNames.has(name),
+      name, extras, concl: String(b.concl || '').trim(), original: true, decOk: decNames.has(name), viaComp, weaken,
     });
   };
   for (const m of (hole.meta || [])) pushFact(m && m.name, m && m.type);
-  for (const c of (hole.ctx || [])) pushFact(c && c.name, c && c.type);
+  // Comp-context hypotheses are facts too (spec §2 synthesis): usable as
+  // rec/lemma arguments or the whole tail — provenance-marked so they are never
+  // spelled inside an LF term.
+  for (const c of (hole.ctx || [])) pushFact(c && c.name, c && c.type, true);
   if (!facts.length) return [];
 
   // A theorem/lemma as an engine rule: box premises' conclusions, explicit-brace
@@ -534,7 +573,17 @@ function synthMoves(hole, code, thm) {
   // (they take no call argument). Flex = the schematic (uppercase) names.
   const mkRule = (name, compType, isIH, totality) => {
     const conclBox = decomposeContextual(compType.conclusion);
-    if (!conclBox) return null; // ctype conclusion — outside the fragment
+    // A CTYPE conclusion (`Reassoc [ ⊢ N1] …`) enters the planning domain with
+    // its boxed indices normalized to parenthesized terms — its single-ctor
+    // products saturate deterministically into facts (spec §7 invariant 3c).
+    let ctypeResult = false;
+    let ctypeConcl = null;
+    if (!conclBox) {
+      const lead = (String(compType.conclusion).trim().match(/^[A-Za-z_][A-Za-z0-9_']*/) || [])[0];
+      if (!lead || !enumerateConstructorsTyped(code, lead).length) return null;
+      ctypeResult = true;
+      ctypeConcl = String(compType.conclusion).trim().replace(/\[\s*\|-\s*([^\]]+)\]/g, '($1)');
+    }
     const premises = [];
     const pis = [];
     for (const p of compType.premises) {
@@ -550,19 +599,33 @@ function synthMoves(hole, code, thm) {
         if (ci < 0) return null;
         const vn = inner.slice(0, ci).trim();
         const vt = inner.slice(ci + 1).trim();
-        if (vt.includes('[') || vt.includes('⊢') || vt.includes('|-')) pis.push({ kind: 'obj', varName: vn });
+        if (vt.startsWith('$')) pis.push({ kind: 'subst', varName: vn }); // vn keeps its `$` — that IS the spelling
+        else if (vt.includes('[') || vt.includes('⊢') || vt.includes('|-')) pis.push({ kind: 'obj', varName: vn });
         else pis.push({ kind: 'ctx' });
       }
       // kind 'ctx' (implicit `(g:schema)` binder): no call argument — skip
     }
     const flex = new Set();
     const scan = (t) => {
-      for (const w of String(t).match(/[A-Z][A-Za-z0-9_']*/g) || []) flex.add(w);
+      const s = String(t);
+      const re = /[A-Z][A-Za-z0-9_']*/g;
+      let m;
+      while ((m = re.exec(s))) {
+        // `$W` is a substitution VARIABLE, not a schematic — treating its `W` as
+        // flex would let applyTheta rewrite inside substitution tokens (capture).
+        const prev = m.index > 0 ? s[m.index - 1] : ' ';
+        if (prev === '$') continue;
+        flex.add(m[0]);
+      }
     };
     premises.forEach(scan);
-    scan(conclBox.concl);
+    if (conclBox) scan(conclBox.concl);
     for (const pi of pis) if (pi.kind === 'obj') flex.add(pi.varName); // GENERAL: 'obj' is this adapter's own pi-kind tag, not a name
-    const decI = (totality && totality.kind === 'index') ? totality.index - 1 : 0;
+    const decI = decreasingBoxIndex({ compType, totality });
+    if (ctypeResult) {
+      for (const w of ctypeConcl.match(/[A-Z][A-Za-z0-9_']*/g) || []) flex.add(w);
+      return { name, isIH, decIdx: isIH ? decI : -1, flex, pis, premises, result: ctypeConcl, ctypeResult: true };
+    }
     return {
       name, isIH, decIdx: isIH ? decI : -1, flex, pis, premises, result: String(conclBox.concl || '').trim(),
     };
@@ -574,7 +637,11 @@ function synthMoves(hole, code, thm) {
     const r = mkRule(lem.name, lem.compType, false, null);
     if (r) rules.push(r);
   }
-  const ihRule = mkRule(thm.name, thm.compType, true, thm.totality);
+  // The IH enters synthesis only when a BOX premise decreases (decOk gating is
+  // box-slot–keyed). A Pi-designating measure recurses via piRecurseTexts with
+  // its own structural guard — an ungated IH rule here would let backward
+  // chaining spiral on the recursive theorem (§7 invariant discipline).
+  const ihRule = decIdxThm >= 0 ? mkRule(thm.name, thm.compType, true, thm.totality) : null;
   if (ihRule) rules.push(ihRule);
   if (!rules.length) return [];
 
@@ -593,8 +660,18 @@ function synthMoves(hole, code, thm) {
     if (fh && /^[A-Za-z_]/.test(fh)) fams.add(fh);
   }
   const ctorsMap = new Map();
+  const planNorm = (t) => String(t).replace(/\[\s*\|-\s*([^\]]+)\]/g, '($1)');
   for (const fam of fams) {
-    const cs = enumerateConstructorsTyped(code, fam);
+    let cs = enumerateConstructorsTyped(code, fam);
+    if (cs.length && isCTypeFamily(code, fam)) {
+      // Normalize boxed argument/index spellings into the planning domain.
+      cs = cs.map((c) => ({
+        ...c,
+        argTypes: c.argTypes.map(planNorm),
+        result: { head: c.result.head, indices: c.result.indices.map(planNorm) },
+        isCType: true,
+      }));
+    }
     if (cs.length) ctorsMap.set(fam, cs);
   }
 
@@ -609,13 +686,30 @@ function synthMoves(hole, code, thm) {
   if (globalThis.__synthDebug) {
     globalThis.__synthDebug({ goal, facts, rules, ctors: [...ctorsMap.keys()], decNames: [...decNames] });
   }
-  const out = synthesize(goal, facts, rules, ctorsMap, { maxDepth: 5, metaVars });
-  if (!out || !out.text) return [];
+  const stats = {};
+  const out = synthesize(goal, facts, rules, ctorsMap, { maxDepth: 5, metaVars, stats });
+  if (!out || !out.text) {
+    const none = [];
+    if (stats.boundHit) none.searchBounded = true; // honesty: a bound was hit, not "no move"
+    return none;
+  }
   const moves = [{
     kind: 'synth',
     text: out.text,
     rationale: 'goal-directed synthesis: backward chaining from the goal type',
   }];
+  // Inferred-argument spelling (spec §2, the writability dimension): explicit
+  // object-Pi instantiations may mention metas the checker INVENTED for unnamed
+  // implicit pattern arguments — in the hole report but bound nowhere in source,
+  // so the named spelling is rejected "free meta-variable is illegal" while the
+  // `[ |- _]` spelling certifies. Both variants, checker arbitrates (D3 doctrine).
+  if (out.textU) {
+    moves.push({
+      kind: 'synth',
+      text: out.textU,
+      rationale: 'goal-directed synthesis: inferred (`_`) object-argument spelling',
+    });
+  }
   for (const alt of (out.alts || []).slice(0, 3)) {
     moves.push({ kind: 'synth', text: alt, rationale: 'goal-directed synthesis: refutation closing' });
   }
@@ -637,7 +731,12 @@ export function recurseTexts(hole, thm, code) {
   const boxes = thm.compType.premises.filter((p) => p.kind === 'box');
   if (!boxes.length) return piRecurseTexts(hole, thm, code);
   if (!thm.totality) return [];
-  const decIdx = (thm.totality.kind === 'index') ? thm.totality.index - 1 : 0;
+  // A measure designating a Pi BINDER (`/ total m (f _ m _) /` on a mixed
+  // theorem): recursion is by case analysis on that meta, with the box
+  // premises passed as extra call arguments — the piRecurseTexts route.
+  const desig = measureDesignation(thm);
+  if (desig && desig.kind === 'pi') return piRecurseTexts(hole, thm, code);
+  const decIdx = decreasingBoxIndex(thm);
   const decHead = premiseDecHead(boxes[decIdx] ? boxes[decIdx].raw : boxes[0].raw, code);
   if (!decHead) return [];
 
@@ -647,20 +746,124 @@ export function recurseTexts(hole, thm, code) {
   if (!rawDecCands.length) return [];
   const premHeads = boxes.map((b) => premiseDecHead(b.raw, code));
   // Candidate hypotheses for premise `i`: the decreasing premise is filled by the
-  // chosen sub-derivation `dec`; every OTHER premise draws from in-scope hyps of the
-  // matching family head, ranked so index-consistent pairings come first.
+  // chosen sub-derivation `dec`; every OTHER premise draws from in-scope hyps of
+  // the matching family head — cD metavariables AND comp-context hypotheses
+  // (spec §2: a non-decreasing slot may pass an ORIGINAL premise through
+  // unchanged, the transitivity shape `trans s1 [⊢ S2']`). Ranked so
+  // index-consistent pairings come first.
   const candsFor = (i, dec) => {
     if (i === decIdx) return [dec];
     let cs = ctxParam
       ? all.filter((h) => ihMetaCand(h, premHeads[i]))
       : all.filter((h) => h.where === 'meta' && contextualHead(h.type) === premHeads[i]);
     if (ctxParam?.schema) cs = subderivMetas(cs);
-    return rankBySubject(cs, dec);
+    const comps = all.filter((h) => h.where === 'comp' && h.name !== (dec && dec.name)
+      && boxedConclusionHead(h.type) === premHeads[i]);
+    return [...rankBySubject(cs, dec), ...comps];
   };
 
   const fresh = freshName(usedNamesOf(hole));
   const out = [];
   const seen = new Set();
+
+  // Leading EXPLICIT Pi binders take call arguments BEFORE the box premises
+  // (spec §2 / D5). Context Pi → its context, extended in parallel with the
+  // decreasing argument's extension; substitution Pi `$W : $[h ⊢ g]` →
+  // `$[h' ⊢ $W]` pass-through, or `$[h', b… ⊢ $W[..], b…]` when extended.
+  // An object Pi mixed with box premises is outside this generator — null bails.
+  const piPrefixCore = (decArgCtx) => {
+    const prems = thm.compType.premises;
+    let decRaw = (boxes[decIdx] || boxes[0]).raw || '';
+    if (decRaw && !decRaw.startsWith('[')) decRaw = `[${decRaw}]`;
+    const decParts = splitCtx(boxOf(decRaw).ctx);
+    const decVar = (decParts[0] || '').trim();
+    const argParts = splitCtx(decArgCtx || '');
+    const suffix = (decVar && argParts[0] && argParts[0].trim() === decVar) ? argParts.slice(1) : [];
+    const prefix = [];
+    const extOf = new Map(); // ctx binder -> { ctx, names } of its (possibly extended) spelling
+    const usedB = [...usedNamesOf(hole)];
+    for (const p of prems) {
+      if (p.kind === 'box') break;
+      if (p.kind === 'ctx') continue; // implicit (g:schema) — no call argument
+      const m = /^\{\s*([$#]?[A-Za-z_][A-Za-z0-9_']*)\s*:\s*([\s\S]*)\}$/.exec(String(p.raw).trim());
+      if (!m) return null;
+      const vn = m[1];
+      const vt = m[2].trim();
+      if (vt.startsWith('$')) {
+        const dm = /^\$\[\s*([\s\S]*?)\s*(?:\|-|⊢)\s*[\s\S]*\]$/.exec(vt);
+        if (!dm) return null;
+        const domVar = dm[1].trim();
+        const domExt = extOf.get(domVar);
+        if (domExt && domExt.names.length) {
+          prefix.push(`$[${domExt.ctx} |- ${vn}[..], ${domExt.names.join(', ')}]`);
+        } else {
+          prefix.push(`$[${(domExt && domExt.ctx) || domVar} |- ${vn}]`);
+        }
+        continue;
+      }
+      if (vt.includes('[') || vt.includes('|-') || vt.includes('⊢')) {
+        // An OBJECT Pi binder is in scope (intro mlam'd it) — pass it through,
+        // spelled in its own declared context (`ceq_plus [ |- N] [ |- D]`).
+        const ob = decomposeContextual(vt);
+        if (!ob) return null;
+        prefix.push(ob.ctx ? `[${ob.ctx} |- ${vn}]` : `[ |- ${vn}]`);
+        continue;
+      }
+      if (vn === decVar) {
+        prefix.push(`[${decArgCtx || vn}]`);
+        extOf.set(vn, { ctx: decArgCtx || vn, names: suffix.map((s2) => s2.split(':')[0].trim()) });
+      } else if (suffix.length) {
+        const renamed = suffix.map((s2) => {
+          const ci = s2.indexOf(':');
+          const nm2 = freshBlockVarName(usedB);
+          usedB.push(nm2);
+          return { decl: ci >= 0 ? `${nm2}:${s2.slice(ci + 1).trim()}` : nm2, name: nm2 };
+        });
+        const ctxTxt = [vn, ...renamed.map((r2) => r2.decl)].join(', ');
+        prefix.push(`[${ctxTxt}]`);
+        extOf.set(vn, { ctx: ctxTxt, names: renamed.map((r2) => r2.name) });
+      } else {
+        prefix.push(`[${vn}]`);
+        extOf.set(vn, { ctx: vn, names: [] });
+      }
+    }
+    return { prefix, extOf };
+  };
+  const piPrefixFor = (decArgCtx) => {
+    const core = piPrefixCore(decArgCtx);
+    return core === null ? null : core.prefix;
+  };
+  const piPrefixExtOf = (decArgCtx) => {
+    const core = piPrefixCore(decArgCtx);
+    return core === null ? null : core.extOf;
+  };
+  const withPiPrefix = (decArgCtx, argTexts) => {
+    const prefix = piPrefixFor(decArgCtx);
+    if (prefix === null) return null;
+    return `${thm.name} ${[...prefix, ...argTexts].join(' ')}`;
+  };
+  // When the conclusion's OWN context variable was extended in parallel by the
+  // Pi prefix (the under-binder arm of a context-morphism theorem), the result
+  // binds over the EXTENDED conclusion context with block projections —
+  // `let [h, b:block(y:tm, v:oft y _) ⊢ R[.., b.1, b.2]] = wk … in` — so the
+  // closing fill can re-lambda it. Returns null when no extension applies.
+  const extendedResultBind = (decArgCtx, r) => {
+    const prefixInfo = piPrefixExtOf(decArgCtx);
+    if (!prefixInfo) return null;
+    const conclBox = decomposeContextual(thm.compType.conclusion);
+    const conclVar = conclBox && String(conclBox.ctx || '').trim();
+    if (!conclVar || conclVar.includes(',')) return null;
+    const ext = prefixInfo.get(conclVar);
+    if (!ext || !ext.names.length) return null;
+    const projs = [];
+    for (const n of ext.names) {
+      const decl = splitCtx(ext.ctx).find((p2) => p2.split(':')[0].trim() === n);
+      const bm = decl && /:\s*block\s*\(?([\s\S]*?)\)?\s*$/.exec(decl);
+      if (bm) for (let k = 1; k <= splitCtx(bm[1]).length; k += 1) projs.push(`${n}.${k}`);
+      else projs.push(n);
+    }
+    return `[${ext.ctx} |- ${r}[.., ${projs.join(', ')}]]`;
+  };
 
   // Single-premise theorem: recurse on EVERY decreasing sub-derivation at once (the
   // dual_sym shape: l from Dl, r from Dr → fill from both).
@@ -676,28 +879,41 @@ export function recurseTexts(hole, thm, code) {
       const varLets = [];
       for (const someInst of insts) {
         const args = callArgs([d], boxes, thm, code, usedNamesOf(hole), someInst);
-        const call = `${thm.name} ${args.map((a) => a.text).join(' ')}`;
-        if (letSeen.has(call)) continue;
-        letSeen.add(call);
-        if (direct) { out.push(call); continue; }
-        // A CTYPE conclusion destructures via its constructor pattern
-        // (`let Res [g ⊢ _] [g, x:name ⊢ refl_proc] [g ⊢ R] = str_step … in`).
-        const ctypePat = ctypeResultPattern(thm, code, fresh, args[0].ctx);
-        if (ctypePat) {
-          varLets.push(`let ${ctypePat} = ${call} in`);
-          continue;
+        const texts = args.map((a) => a.text);
+        const altTexts = args.map((a) => a.alt || a.text);
+        const calls = [withPiPrefix(args[0].ctx, texts)];
+        // Comp-arg spelling variant (boxed vs bare) — checker-arbitrated.
+        if (altTexts.some((t, k) => t !== texts[k])) calls.push(withPiPrefix(args[0].ctx, altTexts));
+        for (const call of calls) {
+          if (call === null || letSeen.has(call)) continue;
+          letSeen.add(call);
+          if (direct) { out.push(call); continue; }
+          // A CTYPE conclusion destructures via its constructor pattern
+          // (`let Res [g ⊢ _] [g, x:name ⊢ refl_proc] [g ⊢ R] = str_step … in`).
+          const ctypePat = ctypeResultPattern(thm, code, fresh, args[0].ctx);
+          if (ctypePat) {
+            varLets.push(`let ${ctypePat} = ${call} in`);
+            continue;
+          }
+          const r = fresh();
+          // A conclusion-context extension (context-morphism theorems) binds the
+          // result over the EXTENDED conclusion context (D5).
+          const extBind = extendedResultBind(args[0].ctx, r);
+          if (extBind) {
+            varLets.push(`let ${extBind} = ${call} in`);
+            continue;
+          }
+          // A block-repackaged call binds its result ANNOTATED with the same
+          // projections — declaring it over the raw binder slots so the final fill can
+          // re-lambda it (`let [g, b:block (…) |- R[.., b.1, b.2]] = … in … (\y.\hy. R)`).
+          const rbox1 = resultBoxFor(thm, args[0].ctx);
+          const rctx1 = (decomposeContextual(rbox1('X0')) || {}).ctx || '';
+          const projs1 = args[0].resultProjs
+            ? (depResultProjs(thm, code, rctx1) || args[0].resultProjs)
+            : null;
+          const bound = projs1 ? `${r}[.., ${projs1.join(', ')}]` : r;
+          varLets.push(`let ${rbox1(bound)} = ${call} in`);
         }
-        const r = fresh();
-        // A block-repackaged call binds its result ANNOTATED with the same
-        // projections — declaring it over the raw binder slots so the final fill can
-        // re-lambda it (`let [g, b:block (…) |- R[.., b.1, b.2]] = … in … (\y.\hy. R)`).
-        const rbox1 = resultBoxFor(thm, args[0].ctx);
-        const rctx1 = (decomposeContextual(rbox1('X0')) || {}).ctx || '';
-        const projs1 = args[0].resultProjs
-          ? (depResultProjs(thm, code, rctx1) || args[0].resultProjs)
-          : null;
-        const bound = projs1 ? `${r}[.., ${projs1.join(', ')}]` : r;
-        varLets.push(`let ${rbox1(bound)} = ${call} in`);
       }
       if (varLets.length) perDec.push(varLets);
     }
@@ -730,30 +946,42 @@ export function recurseTexts(hole, thm, code) {
       if (seen.has(key)) continue;
       seen.add(key);
       const args = callArgs(tuple, boxes, thm, code, usedNamesOf(hole));
-      const call = `${thm.name} ${args.map((a) => a.text).join(' ')}`;
       const decCtx = args[decIdx] ? args[decIdx].ctx : args[0].ctx;
-      const ctypePat = ctypeResultPattern(thm, code, fresh, decCtx);
-      if (ctypePat) {
-        out.push(`let ${ctypePat} = ${call} in\n?`);
-        continue;
+      const texts = args.map((a) => a.text);
+      const altTexts = args.map((a) => a.alt || a.text);
+      const calls = [withPiPrefix(decCtx, texts)];
+      // Comp-arg spelling variant (boxed vs bare) — checker-arbitrated.
+      if (altTexts.some((t, k) => t !== texts[k])) calls.push(withPiPrefix(decCtx, altTexts));
+      for (const call of calls) {
+        if (call === null) continue;
+        const ctypePat = ctypeResultPattern(thm, code, fresh, decCtx);
+        if (ctypePat) {
+          out.push(`let ${ctypePat} = ${call} in\n?`);
+          continue;
+        }
+        const extBind = extendedResultBind(decCtx, fresh());
+        if (extBind) {
+          out.push(`let ${extBind} = ${call} in\n?`);
+          continue;
+        }
+        const rbox = resultBoxFor(thm, decCtx);
+        // When the conclusion family reaches only SOME of the result context's
+        // block fields, the bound result must carry the dep-filtered projection
+        // annotation (`E1[.., b.1, b.4]`); when it reaches all of them the bare
+        // binding stands (the eq_trans shape — its tuple fill relies on it).
+        const rctx = (decomposeContextual(rbox('X0')) || {}).ctx || '';
+        let inner = null;
+        if (/:\s*block\b/.test(rctx)) {
+          const projs = depResultProjs(thm, code, rctx);
+          const total = splitCtx(rctx).reduce((n, p) => {
+            const bm = /:\s*block\s*\(?([\s\S]*?)\)?\s*$/.exec(p);
+            return n + (bm ? splitCtx(bm[1]).length : 0);
+          }, 0);
+          if (projs && projs.length < total) inner = `${fresh()}[.., ${projs.join(', ')}]`;
+        }
+        if (!inner) inner = resultPattern(thm, code, fresh);
+        out.push(`let ${rbox(inner)} = ${call} in\n?`);
       }
-      const rbox = resultBoxFor(thm, decCtx);
-      // When the conclusion family reaches only SOME of the result context's
-      // block fields, the bound result must carry the dep-filtered projection
-      // annotation (`E1[.., b.1, b.4]`); when it reaches all of them the bare
-      // binding stands (the eq_trans shape — its tuple fill relies on it).
-      const rctx = (decomposeContextual(rbox('X0')) || {}).ctx || '';
-      let inner = null;
-      if (/:\s*block\b/.test(rctx)) {
-        const projs = depResultProjs(thm, code, rctx);
-        const total = splitCtx(rctx).reduce((n, p) => {
-          const bm = /:\s*block\s*\(?([\s\S]*?)\)?\s*$/.exec(p);
-          return n + (bm ? splitCtx(bm[1]).length : 0);
-        }, 0);
-        if (projs && projs.length < total) inner = `${fresh()}[.., ${projs.join(', ')}]`;
-      }
-      if (!inner) inner = resultPattern(thm, code, fresh);
-      out.push(`let ${rbox(inner)} = ${call} in\n?`);
     }
   }
   return out;
@@ -768,13 +996,20 @@ function piRecurseTexts(hole, thm, code) {
   const pis = thm.compType.premises.filter((p) => p.kind === 'pi');
   if (!pis.length) return [];
   const parsed = pis.map((p) => {
-    const m = /^\{\s*([A-Za-z_][A-Za-z0-9_']*)\s*:\s*([\s\S]*)\}$/.exec(String(p.raw).trim());
+    const m = /^\{\s*([$#]?[A-Za-z_][A-Za-z0-9_']*)\s*:\s*([\s\S]*)\}$/.exec(String(p.raw).trim());
     return m ? { name: m[1], type: m[2].trim() } : null;
   });
   if (parsed.some((p) => !p)) return [];
-  // The decreasing subject: the LAST Pi whose type is a box.
+  // The decreasing subject: the measure's designated Pi when it names one
+  // (mixed pi+box theorems route here with desig.kind === 'pi'), else the
+  // LAST Pi whose type is a box (the classic no-box pi-recursion shape).
+  const desig = measureDesignation(thm);
   let decI = -1;
-  for (let i = parsed.length - 1; i >= 0; i -= 1) {
+  if (desig && desig.kind === 'pi' && parsed[desig.piIdx]
+    && decomposeContextual(parsed[desig.piIdx].type)) {
+    decI = desig.piIdx;
+  }
+  for (let i = parsed.length - 1; decI < 0 && i >= 0; i -= 1) {
     if (decomposeContextual(parsed[i].type)) { decI = i; break; }
   }
   if (decI < 0) return [];
@@ -783,6 +1018,28 @@ function piRecurseTexts(hole, thm, code) {
   const rawDecCands = decreasingHyps(hole, thm, decHead, code);
   if (!rawDecCands.length) return [];
   const decs = subderivMetas(rawDecCands, false, thm);
+  // Box premises of a MIXED theorem take call arguments AFTER the Pi args:
+  // per premise, in-scope comp hypotheses (bare — the pass-through original
+  // premise) and cD metas of the matching family (boxed). Checker-arbitrated;
+  // no candidates for some premise ⇒ no emittable call.
+  const boxPrems = thm.compType.premises.filter((p) => p.kind === 'box');
+  let boxTuples = [[]];
+  if (boxPrems.length) {
+    const all = expandedHypsOf(hole, code);
+    const perSlot = boxPrems.map((b) => {
+      let raw = b.raw;
+      if (raw && !raw.startsWith('[')) raw = `[${raw}]`;
+      const head = premiseDecHead(raw, code);
+      if (!head) return [];
+      const comps = all.filter((h) => h.where === 'comp' && boxedConclusionHead(h.type) === head)
+        .slice(0, 2).map((h) => h.name);
+      const metas = all.filter((h) => h.where === 'meta' && !h.term && contextualHead(h.type) === head)
+        .slice(0, 2).map((h) => `[${boxOf(h.type).ctx} |- ${h.name}]`);
+      return [...comps, ...metas];
+    });
+    if (perSlot.some((l) => !l.length)) return [];
+    boxTuples = perSlot.reduce((acc, l) => acc.flatMap((t) => l.map((x) => [...t, x])), [[]]).slice(0, 8);
+  }
   const out = [];
   const seen = new Set();
   const fresh = freshForHole(hole, code);
@@ -802,11 +1059,35 @@ function piRecurseTexts(hole, thm, code) {
         if (decomposeContextual(p2.type)) return `[${ctxTxt} |- _]`;
         return ctxTxt ? `[${ctxTxt}]` : '[]';
       });
-      const call = `${thm.name} ${args.join(' ')}`;
-      if (seen.has(call)) continue;
-      seen.add(call);
-      const bound = arg.resultProjs ? `${fresh()}[.., ${arg.resultProjs.join(', ')}]` : fresh();
-      out.push(`let ${resultBoxFor(thm, ctxTxt)(bound)} = ${call} in\n?`);
+      for (const tuple of boxTuples) {
+        const call = `${thm.name} ${[...args, ...tuple].join(' ')}`;
+        if (seen.has(call)) continue;
+        seen.add(call);
+        // A CTYPE conclusion binds BARE or destructures via its unique
+        // constructor (`let ExWkV/c tr = … in`) — never inside a box.
+        const conclB = decomposeContextual(thm.compType.conclusion);
+        if (!conclB) {
+          const head = (String(thm.compType.conclusion).trim().match(/^[A-Za-z_][A-Za-z0-9_']*/) || [])[0];
+          const ctors = head ? enumerateConstructorsTyped(code, head) : [];
+          if (ctors.length === 1 && ctors[0].argTypes.length) {
+            // Component spellings follow the ctor's own arg raws: an (explicit-
+            // Pi or premise) BOX binds `[<its ctx> |- fresh]`; a ctype premise
+            // binds bare (`let ExWk/c [h |- M1] tr = … in`, the reference idiom).
+            const comps = ctors[0].argTypes.map((at) => {
+              let raw = String(at).trim();
+              const pm = /^\{\s*[^:]+:\s*([\s\S]*)\}$/.exec(raw);
+              if (pm) raw = pm[1].trim();
+              const b = decomposeContextual(raw);
+              return b ? `[${b.ctx || ''} |- ${fresh()}]` : fresh();
+            });
+            out.push(`let ${ctors[0].name} ${comps.join(' ')} = ${call} in\n?`);
+          }
+          out.push(`let ${fresh()} = ${call} in\n?`);
+          continue;
+        }
+        const bound = arg.resultProjs ? `${fresh()}[.., ${arg.resultProjs.join(', ')}]` : fresh();
+        out.push(`let ${resultBoxFor(thm, ctxTxt)(bound)} = ${call} in\n?`);
+      }
     }
   }
   return out;
@@ -883,26 +1164,69 @@ function supportLemmaTexts(hole, currentThm, code) {
         const box = (inner) => (b.ctx ? `[${b.ctx} |- ${inner}]` : `[ |- ${inner}]`);
         return box(termOf(h));
       });
-      const key = lemma.name + '|' + args.join('|') + '|' + goal.ctx;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const call = `${lemma.name} ${args.join(' ')}`;
-      out.push({ name: lemma.name, text: `let ${goalBox(resultPattern(lemma, code, fresh))} = ${call} in\n?` });
+      // Comp-hypothesis spelling variant: a true fn-bound premise passes BARE
+      // (`lem6 [ |- Pd] cq`); provenance is unrecoverable, checker arbitrates
+      // (spec §2 / D3 — same discipline as IH calls).
+      const altArgs = tuple.map((h, ti) => (h.where === 'comp' ? h.name : args[ti]));
+      const calls = [`${lemma.name} ${args.join(' ')}`];
+      if (altArgs.some((t, k) => t !== args[k])) calls.push(`${lemma.name} ${altArgs.join(' ')}`);
+      for (const call of calls) {
+        const key = lemma.name + '|' + call + '|' + goal.ctx;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ name: lemma.name, text: `let ${goalBox(resultPattern(lemma, code, fresh))} = ${call} in\n?` });
+      }
     }
   }
   return out;
 }
 
+// The index of a decl's BODY `=`: the first standalone `=` TOKEN at bracket
+// depth 0 from `from` (comment-skipping); -1 when the decl ends (`;`) first.
+// Beluga identifiers may CONTAIN or END WITH `=` (church-rosser's `pred=`
+// family, 2026-07-12) and an infix `=` type lives inside boxes at depth > 0 —
+// a lazy first-`=` regex truncates the type mid-identifier in both cases.
+function declBodyEqIndex(s, from) {
+  let depth = 0;
+  for (let i = from; i < s.length; i += 1) {
+    const c = s[i];
+    if (c === '%') {
+      if (s[i + 1] === '{') {
+        let d = 1;
+        let j = i + 2;
+        while (j < s.length && d > 0) {
+          if (s[j] === '%' && s[j + 1] === '{') { d += 1; j += 2; continue; }
+          if (s[j] === '}' && s[j + 1] === '%') { d -= 1; j += 2; continue; }
+          j += 1;
+        }
+        i = j - 1;
+        continue;
+      }
+      while (i < s.length && s[i] !== '\n') i += 1;
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && c === ';') return -1;
+    else if (depth === 0 && c === '='
+      && (i === from || /\s/.test(s[i - 1]))
+      && (i + 1 >= s.length || /\s/.test(s[i + 1]))) return i;
+  }
+  return -1;
+}
+
 function theoremIndex(code) {
   const src = String(code || '');
   const out = [];
-  const re = /\b(?:and\s+)?(?:rec|proof)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:\s*([\s\S]*?)=/g;
+  const re = /\b(?:and\s+)?(?:rec|proof)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:/g;
   let m;
   while ((m = re.exec(src)) !== null) {
-    const header = src.slice(m.index, re.lastIndex);
+    const eq = declBodyEqIndex(src, re.lastIndex);
+    if (eq < 0) continue;
+    const header = src.slice(m.index, eq + 1);
     out.push({
       name: m[1],
-      compType: parseCompType(m[2].trim()),
+      compType: parseCompType(src.slice(re.lastIndex, eq).trim()),
       totality: parseTotality(header),
     });
   }
@@ -929,7 +1253,7 @@ function ctypeResultPattern(lemma, code, fresh, decArgCtx) {
   let inst = ctxParam ? ctxParam.var : null;
   if (ctxParam && decArgCtx) {
     const boxes = lemma.compType.premises.filter((p) => p.kind === 'box');
-    const decIdx = (lemma.totality && lemma.totality.kind === 'index') ? lemma.totality.index - 1 : 0;
+    const decIdx = decreasingBoxIndex(lemma);
     let raw = (boxes[decIdx] || boxes[0] || {}).raw || '';
     if (raw && !raw.startsWith('[')) raw = `[${raw}]`;
     const tail = Math.max(0, splitCtx(boxOf(raw).ctx).length - 1);
@@ -1074,9 +1398,23 @@ function holeByteOffset(code, hole) {
   return off;
 }
 
+// The byte offset where the CURRENT declaration starts (the nearest preceding
+// `rec`/`proof` head). All branch-relative reasoning must be scoped to it — an
+// unclamped upward scan leaks into the PREVIOUS theorem's case arms, making a
+// top-level hole look mid-branch (blocking its primary split).
+function declStartOffset(code, off) {
+  const upto = String(code || '').slice(0, Math.max(0, off));
+  const re = /(^|\n)\s*(?:rec|proof)\s+[A-Za-z_]/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(upto))) last = m.index + (m[1] ? 1 : 0);
+  return last;
+}
+
 function branchPatternBox(code, hole) {
   const off = holeByteOffset(code, hole);
-  const prefix = off >= 0 ? code.slice(0, off) : code;
+  const declFrom = declStartOffset(code, off >= 0 ? off : code.length);
+  const prefix = (off >= 0 ? code.slice(0, off) : code).slice(declFrom);
   const lastArm = Math.max(prefix.lastIndexOf('=>'), prefix.lastIndexOf('⇒'));
   const body = lastArm >= 0 ? prefix.slice(lastArm) : prefix;
   const armLine = body.split('\n').find((l) => /^\s*\|/.test(l));
@@ -1084,6 +1422,7 @@ function branchPatternBox(code, hole) {
     const lines = String(code || '').split('\n');
     for (let i = hole.line - 1; i >= 0; i -= 1) {
       const ln = lines[i];
+      if (/^\s*(?:rec|proof)\b/.test(ln)) break; // never scan past the current decl
       if (!/^\s*\|/.test(ln)) continue;
       const start = ln.indexOf('[');
       const end = ln.lastIndexOf(']');
@@ -1317,7 +1656,7 @@ function helperLemmaTexts(hole, currentThm, code) {
       return [...bas, ...ext];
     });
     if (perPremise.some((cs) => !cs.length)) continue;
-    const decI = (lemma.totality && lemma.totality.kind === 'index') ? lemma.totality.index - 1 : 0;
+    const decI = decreasingBoxIndex(lemma);
     const usedN = usedNamesOf(hole);
     for (const tuple of cartesian(perPremise)) {
       const args = tuple.map((h, ti) => {
@@ -1362,15 +1701,24 @@ function helperLemmaTexts(hole, currentThm, code) {
       const key = lemma.name + '|' + args.map((a) => a.text).join('|') + '|' + goal.ctx;
       if (seen.has(key)) continue;
       seen.add(key);
-      const call = `${lemma.name} ${args.map((a) => a.text).join(' ')}`;
+      // A COMP hypothesis in a tuple slot has two possible spellings (boxed for a
+      // pattern-bound sub-derivation, BARE for a true fn-bound premise variable —
+      // `reassoc [ |- P] q`); provenance is not syntactically recoverable, so both
+      // variant calls are proposed and the checker arbitrates (spec §2 / D3).
+      const texts = args.map((a) => a.text);
+      const altTexts = args.map((a, ti) => (tuple[ti] && tuple[ti].where === 'comp' ? tuple[ti].name : a.text));
+      const calls = [`${lemma.name} ${texts.join(' ')}`];
+      if (altTexts.some((t, k) => t !== texts[k])) calls.push(`${lemma.name} ${altTexts.join(' ')}`);
       // Bind the result in the lemma's conclusion context INSTANTIATED the way the
       // decreasing argument instantiates it (a strengthening lemma called at
       // `[g, x:name, z:name |- X]` yields its result in `[g, x:name |- R]`); a
       // CTYPE conclusion destructures via its constructor pattern instead.
       const decCtx = (args[decI] || args[0]).ctx;
-      const ctypePat = ctypeResultPattern(lemma, code, fresh, decCtx);
-      const lhs = ctypePat || resultBoxFor(lemma, decCtx)(fresh());
-      out.push({ name: lemma.name, text: `let ${lhs} = ${call} in\n?` });
+      for (const call of calls) {
+        const ctypePat = ctypeResultPattern(lemma, code, fresh, decCtx);
+        const lhs = ctypePat || resultBoxFor(lemma, decCtx)(fresh());
+        out.push({ name: lemma.name, text: `let ${lhs} = ${call} in\n?` });
+      }
     }
   }
   out.sort((a, b) => a.name.localeCompare(b.name));
@@ -1465,8 +1813,24 @@ function schemaSomeVars(code, schemaName) {
   if (!schemaName) return [];
   const esc = String(schemaName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const m = new RegExp(`schema\\s+${esc}\\s*=\\s*some\\s*\\[([^\\]]*)\\]`).exec(String(code || ''));
-  if (!m) return [];
-  return m[1].split(',').map((p) => p.split(':')[0].trim()).filter(Boolean);
+  if (m) return m[1].split(',').map((p) => p.split(':')[0].trim()).filter(Boolean);
+  // IMPLICIT some-abstraction (`schema ctx = block (x:tm, u:oft x A);`): Beluga
+  // some-binds any identifier free in a field type that is neither a field name
+  // nor a declared family/constructor. Those leak as "free meta-variable is
+  // illegal" at IH call sites unless erased exactly like explicit some-vars.
+  const b = new RegExp(`schema\\s+${esc}\\s*=\\s*([^;]*);`).exec(String(code || ''));
+  if (!b) return [];
+  const body = b[1];
+  const fieldNames = new Set();
+  for (const fm of body.matchAll(/([A-Za-z_][A-Za-z0-9_']*)\s*:/g)) fieldNames.add(fm[1]);
+  const out = new Set();
+  for (const tok of body.match(/[A-Za-z_][A-Za-z0-9_']*/g) || []) {
+    if (fieldNames.has(tok)) continue;
+    if (tok === 'block' || tok === 'some') continue; // GENERAL: schema syntax keywords
+    if (isDeclaredTypeFamily(code, tok)) continue;
+    out.add(tok);
+  }
+  return [...out];
 }
 
 function eraseSomeVars(typeText, someVars, inst = '_') {
@@ -1664,7 +2028,16 @@ function callArgs(tuple, boxes, thm, code, used, someInst = null) {
         return { text: `[${ext} |- ${h.name}]`, ctx: ext };
       }
     }
-    return { text: premiseBoxArg(h, thm, code), ctx: boxOf(h.type).ctx };
+    // A comp-context hypothesis has TWO possible spellings: boxed (a
+    // pattern-bound sub-derivation reported in the comp context) or BARE (a true
+    // fn-bound computation variable — `trans s1 [⊢ S2']`). The syntactic model
+    // cannot distinguish provenance, so both variants are proposed and the
+    // checker arbitrates (generate-and-verify; a wrong spelling merely rejects).
+    return {
+      text: premiseBoxArg(h, thm, code),
+      ctx: boxOf(h.type).ctx,
+      alt: h.where === 'comp' ? h.name : undefined,
+    };
   });
 }
 
@@ -1904,10 +2277,30 @@ export function candidateMoves(hole, code, thm) {
   const piNames = (((thm && thm.compType && thm.compType.premises) || [])
     .filter((p) => p.kind === 'pi').map((p) => p.binder)).filter(Boolean);
   const normScrut = (s) => String(s || '').replace(/\s+/g, '');
+  const piBoxes = ((thm && thm.compType && thm.compType.premises) || []).filter((p) => p.kind === 'box');
+  const totName = (thm && thm.totality && thm.totality.kind === 'named') ? String(thm.totality.name).toLowerCase() : null;
   for (const m2 of (hole.meta || [])) {
     if (!m2 || !m2.name || !piNames.includes(m2.name)) continue;
     const d2 = decomposeContextual(m2.type);
     if (!d2 || !d2.concl) continue;
+    // A Pi-bound OBJECT meta is case-able only when the split can matter:
+    // it is the totality measure's named argument (eq_ref — induction ON it),
+    // there are no box premises (the Pi IS the induction subject), or some
+    // HYPOTHESIS's type depends on it (its shape gates coverage). Splitting a
+    // meta only the GOAL mentions specializes the theorem vacuously — the
+    // ceq-congruence `case [ ⊢ N] of zero/succ/…` regress (spec §7 inv. 3).
+    {
+      const measureDriven = totName && totName === m2.name.toLowerCase();
+      let hypDepends = false;
+      if (!measureDriven && piBoxes.length) {
+        const dep = new RegExp(`(^|[^A-Za-z0-9_'])${m2.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9_']|$)`);
+        for (const o of [...(hole.meta || []), ...(hole.ctx || [])]) {
+          if (!o || o === m2 || !o.type) continue;
+          if (dep.test(String(o.type))) { hypDepends = true; break; }
+        }
+        if (!hypDepends) continue;
+      }
+    }
     const scrutText = d2.ctx ? `[${d2.ctx} |- ${m2.name}]` : `[ |- ${m2.name}]`;
     if ([...caseScrutSet].some((cs) => normScrut(scrutText) === normScrut(cs) || normScrut(m2.name) === normScrut(cs))) continue;
     const boxedType = d2.ctx ? `[${d2.ctx} |- ${d2.concl}]` : `[ |- ${d2.concl}]`;
@@ -1923,6 +2316,54 @@ export function candidateMoves(hole, code, thm) {
       });
     }
   }
+  // A general cD METAVARIABLE splits too (spec §2 / D6) when its family has ≥2
+  // constructors and no unique inversion applies (unique ⇒ invert owns it;
+  // zero ⇒ impossible owns it). Guarded like every split against re-analysing
+  // an already-destructured subject; ranked after the comp-hypothesis splits.
+  for (const m4 of (hole.meta || [])) {
+    if (!m4 || !m4.name || m4.name[0] === '#' || m4.name[0] === '"' || m4.name[0] === '$') continue;
+    if (piNames.includes(m4.name)) continue; // handled above
+    const d4 = decomposeContextual(m4.type);
+    if (!d4 || !d4.concl || String(d4.concl).includes('#')) continue;
+    const fam4 = typeFamilyHead(d4.concl, code);
+    if (!fam4 || fam4 === 'type' || enumerateConstructorsTyped(code, fam4).length < 2) continue;
+    if (invertCandidates({ name: m4.name, type: m4.type }, code, usedNamesOf(hole), []).length === 1) continue;
+    // A LET-BOUND result (a speculative lemma/recursion's output) is DERIVED
+    // structure — the producing move can regenerate it one level up, so casing
+    // on it consumes no finite resource and its sub-derivations are never
+    // decOk (the ceq-congruence `case [ ⊢ R1] of` regress; spec §7 inv. 3).
+    // Derived results are destructured via `let` patterns, never case-split.
+    if (letsInBranch(code, hole).includes(m4.name)) continue;
+    // An INDEX metavariable — one the goal or another hypothesis's type DEPENDS
+    // on — is never a D6 scrutinee: splitting it specializes the theorem
+    // (vacuous over-specialization; the proof must stay uniform in it). A
+    // derivation you case on is CONSUMED by the analysis, not depended upon.
+    {
+      const esc4 = m4.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const dep = new RegExp(`(^|[^A-Za-z0-9_'])${esc4}([^A-Za-z0-9_']|$)`);
+      let isIndex = dep.test(String(hole.goal || ''));
+      if (!isIndex) {
+        for (const o of [...(hole.meta || []), ...(hole.ctx || [])]) {
+          if (!o || o === m4 || !o.type) continue;
+          if (dep.test(String(o.type))) { isIndex = true; break; }
+        }
+      }
+      if (isIndex) continue;
+    }
+    const scrutText4 = d4.ctx ? `[${d4.ctx} |- ${m4.name}]` : `[ |- ${m4.name}]`;
+    if ([...caseScrutSet].some((cs) => normScrut(scrutText4) === normScrut(cs) || normScrut(m4.name) === normScrut(cs))) continue;
+    if (branchBodyBefore(code, hole).includes(`= ${scrutText4}`)) continue;
+    const boxedType4 = d4.ctx ? `[${d4.ctx} |- ${d4.concl}]` : `[ |- ${d4.concl}]`;
+    const t4 = splitTextForBox(code, hole, scrutText4, boxedType4);
+    if (t4) {
+      splits.push({
+        kind: 'split',
+        text: splitDone ? `(${t4})` : t4,
+        rationale: 'case-analyse the sub-derivation ' + m4.name,
+        scrutinee: scrutText4,
+      });
+    }
+  }
   const topLevel = splits.length && !branchPatternBox(code, hole);
 
   const introInfo = introBinders(hole.goal);
@@ -1931,6 +2372,36 @@ export function candidateMoves(hole, code, thm) {
     binderNames: introInfo ? introBinderNames(thm, introInfo.arrows) : null,
   });
   const intros = intro ? [{ kind: 'intro', text: intro, rationale: 'introduce the goal’s binders' }] : [];
+  // IMPLICIT CONTEXT VARIABLES (writability, the ctx form of invariant 11): a
+  // theorem type may mention context variables it never binds (`Crel [l] [h]`
+  // with free l, h — Beluga quantifies them implicitly). They are UNWRITABLE in
+  // the body until NAMED, so splits/fills spelling them are rejected "free
+  // context variable is illegal" while the checker prints the goal's contexts
+  // as `[_]`. Beluga's own idiom binds them: a type-annotating re-let of a
+  // premise whose declared type spells the names (`fn cr =>
+  // let (cr : Crel [l] [h]) = cr in …`). Emit that as a SECOND intro variant,
+  // ranked FIRST when the goal shows unnamed contexts — it strictly dominates
+  // (same state, names bound); if it fails to certify, the plain intro stands.
+  if (intro && /\[_/.test(String(hole.goal || '')) && thm && thm.compType) {
+    const fnNames = [...intro.matchAll(/\bfn\s+([A-Za-z_][A-Za-z0-9_']*)/g)].map((m5) => m5[1]);
+    const boxPrems = thm.compType.premises.filter((p) => p && p.kind === 'box');
+    const lets = [];
+    for (let i = 0; i < fnNames.length && i < boxPrems.length; i += 1) {
+      const raw = String(boxPrems[i].raw || '').trim();
+      // only premises that actually SPELL a context name (a bracketed group
+      // whose ctx part is a bare identifier) can bind one
+      if (/\[\s*[A-Za-z_][A-Za-z0-9_']*\s*(\||\])/.test(raw)) {
+        lets.push(`let (${fnNames[i]} : ${raw}) = ${fnNames[i]} in`);
+      }
+    }
+    if (lets.length) {
+      intros.unshift({
+        kind: 'intro',
+        text: intro.replace(/\?\s*$/, `${lets.join('\n')}\n?`),
+        rationale: 'introduce the goal’s binders, naming the implicit context variables',
+      });
+    }
+  }
 
   // A fill that CLOSES the goal (no `?`) is the most decisive — try those first. A
   // fill that leaves sub-holes is speculative, so it ranks AFTER the induction
@@ -1947,9 +2418,11 @@ export function candidateMoves(hole, code, thm) {
   // worse than a speculative refinement of the same hole. Single-step closing
   // fills still lead (prefer the shortest certified closer).
   const synths = synthMoves(hole, code, thm);
-  return topLevel
+  const ordered = topLevel
     ? [...splits, ...closingFills, ...synths, ...impossibles, ...recurses, ...openFills, ...inverts, ...lemmas, ...intros]
     : [...closingFills, ...synths, ...impossibles, ...recurses, ...openFills, ...inverts, ...lemmas, ...splits, ...intros];
+  if (synths.searchBounded) ordered.searchBounded = true;
+  return ordered;
 }
 
 // ── Sound syntactic PRE-FILTER (E2b) ─────────────────────────────────────────
@@ -1966,6 +2439,14 @@ export function candidateMoves(hole, code, thm) {
 // metavariable/parameter head, an infix-notation head, or a non-boxed goal all
 // pass through untouched.
 export function movePrefilterOk(mv, hole, code) {
+  // Universal lexical guard: checker-internal `"`-quoted names (the renumbered
+  // anonymous metas of invariant §5.1) are not lexable Beluga source — a
+  // candidate carrying one is unparseable BY CONSTRUCTION ("Unlexable
+  // character") and can never certify. Generated candidates never contain a
+  // legitimate `"` (Beluga terms have no string literals). Found live: hole
+  // hypotheses named `"i2` leaked into fills and burned 8/31 checks on
+  // bs_in_rew_par1 (2026-07-12).
+  if (mv && /"/.test(String(mv.text || ''))) return false;
   if (!mv || mv.kind !== 'fill') return true;
   const t = String(mv.text || '').trim();
   if (/\?/.test(t)) return true;               // open fill — not a closing inhabitant
@@ -2118,13 +2599,193 @@ function familyOfConstructorNameBridge(code, name) {
 
 // Parse the theorem under proof from its decl text (name + comp type + totality).
 export function theoremUnderProof(declText) {
-  const m = /^\s*(?:rec|proof)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:\s*([\s\S]*?)=/.exec(String(declText || ''));
+  const s = String(declText || '');
+  const m = /^\s*(?:rec|proof)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:/.exec(s);
   if (!m) return null;
+  const eq = declBodyEqIndex(s, m[0].length);
+  if (eq < 0) return null;
   return {
     name: m[1],
-    compType: parseCompType(m[2].trim()),
-    totality: parseTotality(declText),
+    compType: parseCompType(s.slice(m[0].length, eq).trim()),
+    totality: parseTotality(s),
   };
+}
+
+// ── Fragment classification for honest STUCK verdicts ───────────────────────
+// The move space is CLOSED over Beluga's inductive expression formers (plan
+// §1); the copattern `fun` former — the only way to CONSTRUCT an inhabitant of
+// a `coinductive`-declared ctype — is deliberately out of scope. So a no-move
+// stuck state whose goal CONCLUDES in a coinductive family is not a search
+// gap: it is out of fragment BY CONSTRUCTION, and the verdict must say so
+// instead of a bare "no-move". Purely syntax-directed — keyed on the
+// `coinductive` declaration KEYWORD, never on a family or theorem name.
+export function coinductiveFamiliesOf(code) {
+  const s = String(code || '');
+  // Blank out comments so a commented-out declaration never counts.
+  let clean = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === '%') {
+      if (s[i + 1] === '{') {
+        let depth = 1;
+        let j = i + 2;
+        while (j < s.length && depth > 0) {
+          if (s[j] === '%' && s[j + 1] === '{') { depth += 1; j += 2; continue; }
+          if (s[j] === '}' && s[j + 1] === '%') { depth -= 1; j += 2; continue; }
+          j += 1;
+        }
+        clean += ' '.repeat(j - i);
+        i = j;
+        continue;
+      }
+      let j = i + 1;
+      while (j < s.length && s[j] !== '\n') j += 1;
+      clean += ' '.repeat(j - i);
+      i = j;
+      continue;
+    }
+    clean += s[i];
+    i += 1;
+  }
+  const out = new Set();
+  const re = /(?:^|[\s;.])(?:and\s+)?coinductive\s+([A-Za-z_][A-Za-z0-9_']*)\s*:/g;
+  let m;
+  while ((m = re.exec(clean)) !== null) out.add(m[1]);
+  return out;
+}
+
+// Does this goal type CONCLUDE in one of the given (coinductive) families?
+// Strips leading Pi/implicit binder groups `{…}`/`(g:ctx)`, then takes the
+// final segment of the top-level arrow spine and reads its head token.
+export function goalConcludesInFamily(goalText, families) {
+  if (!families || !families.size) return null;
+  let t = String(goalText || '').trim();
+  // Peel leading binder groups at depth 0: `{X:…}`, `(g:ctx)`.
+  for (;;) {
+    const c = t[0];
+    if (c !== '{' && c !== '(') break;
+    const close = c === '{' ? '}' : ')';
+    let depth = 0;
+    let j = 0;
+    for (; j < t.length; j += 1) {
+      if (t[j] === c) depth += 1;
+      else if (t[j] === close) { depth -= 1; if (depth === 0) break; }
+    }
+    if (depth !== 0) break;
+    t = t.slice(j + 1).trim();
+  }
+  // Last segment of the top-level arrow spine.
+  let depth = 0;
+  let lastCut = 0;
+  for (let j = 0; j < t.length; j += 1) {
+    const c = t[j];
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && (c === '→' || (c === '-' && t[j + 1] === '>'))) {
+      lastCut = j + (c === '→' ? 1 : 2);
+    }
+  }
+  const concl = t.slice(lastCut).trim();
+  const head = /^([A-Za-z_][A-Za-z0-9_']*)/.exec(concl);
+  return head && families.has(head[1]) ? head[1] : null;
+}
+
+// ── Measure synthesis (the no-totality-measure class, 178/823 of the library
+// corpus) ─────────────────────────────────────────────────────────────────────
+// A theorem with boxed premises but NO `/ total … /` never receives IH moves
+// (unguarded recursion is unsound), so recursive theorems in that class decline
+// honestly. But the measure is PROOF METADATA, not part of the theorem: if the
+// search COMPLETES under a hypothetical `/ total N /`, Beluga's own totality
+// checker validates that measure when it certifies the final program — sound by
+// generate-and-verify, like every other move. So: run the plain search first
+// (non-recursive proofs need no pragma); on a no-totality-measure decline, fork
+// over hypothetical measures (one per boxed-premise position) and return the
+// first completion, whose code carries the pragma. No completion ⇒ the original
+// verdict, with the attempted measures recorded.
+function spliceTotalityPragma(code, name, pragmaText) {
+  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const head = new RegExp('(?:^|\\n|\\s)(?:rec|proof|and)\\s+' + esc + '\\s*:');
+  const hm = head.exec(String(code || ''));
+  if (!hm) return null;
+  const eq = declBodyEqIndex(String(code), hm.index + hm[0].length);
+  if (eq < 0) return null;
+  return `${code.slice(0, eq + 1)}\n${pragmaText}${code.slice(eq + 1)}`;
+}
+
+// Candidate hypothetical measures, as { pragma, totality } descriptors.
+// `/ total N /` counts EXPLICIT arguments — Pi binders AND box premises
+// uniformly; implicit `(g:ctx)`-style paren groups don't number. (Ground truth
+// established 2026-07-12 by native experiment: `/ total 1 /` on
+// `copy : {n:[ |- nat]} [ |- unit] -> [ |- nat]` designates n and certifies;
+// `/ total 2 /` is rejected; the named `_`-spine `/ total n (copy n _) /` also
+// certifies.) Positions proposed: every boxed premise (index form) AND every
+// explicit OBJECT-Pi binder (`{M : [Ψ ⊢ A]}` — induction on a Pi-bound term is
+// the standard idiom; measured 22/148 of the residual no-totality class recurse
+// there). Pi positions use the NAMED `_`-spine form because the D6 pi-object
+// split gate keys on the measure NAMING the binder; the spine convention
+// (non-box premises + implicit metas + box premises) mirrors measureDesignation
+// exactly, and Beluga arbitrates validity at each fork's base check (cheap).
+// Context and substitution binders are not measure positions. Cap 4.
+function hypotheticalMeasures(thm) {
+  const prem = (thm && thm.compType && thm.compType.premises) || [];
+  const out = [];
+  const nonBox = prem.filter((p) => p && p.kind !== 'box');
+  const boxCount = prem.filter((p) => p && p.kind === 'box').length;
+  let n = 0;
+  for (const p of prem) {
+    const raw = String((p && p.raw) || '').trim();
+    if (raw.startsWith('(')) continue; // implicit group — not numbered
+    n += 1;
+    if (!p) continue;
+    if (p.kind === 'box') {
+      out.push({ pragma: `/ total ${n} /`, totality: { kind: 'index', index: n } });
+      continue;
+    }
+    if (p.kind !== 'pi') continue;
+    const ci = raw.indexOf(':');
+    if (ci < 0) continue;
+    const vn = raw.slice(1, ci).trim();
+    const vt = raw.slice(ci + 1).trim();
+    if (!vt.startsWith('[') || vn.startsWith('$') || vn.startsWith('#')) continue;
+    const lc = vn.toLowerCase();
+    if (!/^[a-z][A-Za-z0-9_']*$/.test(lc)) continue; // non-ASCII binders: out of scope here
+    const spineLen = nonBox.length + implicitMetaCount(thm.compType) + boxCount;
+    const spineIdx = nonBox.indexOf(p);
+    if (spineIdx < 0 || spineIdx >= spineLen) continue;
+    const args = new Array(spineLen).fill('_');
+    args[spineIdx] = lc;
+    out.push({
+      pragma: `/ total ${lc} (${thm.name} ${args.join(' ')}) /`,
+      totality: { kind: 'named', name: lc, args },
+    });
+  }
+  return out.slice(0, 4);
+}
+
+export async function proveProgram(initialCode, thm, oracle, opts = {}) {
+  const first = await proveProgramCore(initialCode, thm, oracle, opts);
+  if (first.complete || opts.noMeasureSynthesis) return first;
+  if (!first.stuck || first.stuck.reason !== 'no-totality-measure') return first;
+  const measures = hypotheticalMeasures(thm);
+  const tried = [];
+  // Fork attempts run with live callbacks SUPPRESSED: streamed entries must
+  // mirror the RETURNED trace (pinned in test-prover-trace), and the plain
+  // run already streamed. A winning fork returns its own steps/trace whole.
+  const quiet = { ...opts, onStep: undefined, onTraceEntry: undefined, onPulse: undefined };
+  for (const d of measures) {
+    if (opts.shouldCancel && opts.shouldCancel()) break;
+    const forked = spliceTotalityPragma(initialCode, thm && thm.name, d.pragma);
+    if (!forked) break;
+    tried.push(d.pragma);
+    const thm2 = { ...thm, totality: d.totality };
+    const res = await proveProgramCore(forked, thm2, oracle, quiet);
+    if (res.complete) {
+      res.synthesizedMeasure = d.pragma; // the emitted code carries the pragma
+      return res;
+    }
+  }
+  first.stuck.measuresTried = tried;
+  return first;
 }
 
 // ── Live orchestration: BelJar drives, the checker certifies ─────────────────
@@ -2138,7 +2799,7 @@ export function theoremUnderProof(declText) {
 // this is testable with a stub). Returns
 //   { complete, code, steps:[{move, rationale, goal}], stuck? }.
 // Pure orchestration over the injected oracle + the pure model move-gen.
-export async function proveProgram(initialCode, thm, oracle, opts = {}) {
+async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
   const maxSteps = opts.maxSteps || 200;
   let code = String(initialCode);
   const steps = [];
@@ -2210,6 +2871,15 @@ export async function proveProgram(initialCode, thm, oracle, opts = {}) {
   const specBudget = Math.max(4, 2 * ((thm && thm.compType && thm.compType.premises.length) || 1));
   const specCount = new Map(); // hole fingerprint → speculative additions so far
 
+  // §7 INVARIANT 2 — per-path state canonicity. The junk-free state at each
+  // enclosing SPLIT point of the current path, depth-pruned every iteration
+  // (leftmost/DFS focus order makes nesting depth a sufficient path key). A
+  // candidate that creates a hole STRICTLY DEEPER than an ancestor with an
+  // α-EQUAL junk-free state re-poses that ancestor's obligation with nothing
+  // consumed — refuted. Sibling arms sit at EQUAL depth and are never compared,
+  // so legitimate α-repeats across arms stay legal.
+  const pathAnc = []; // [{ depth, sig }]
+
   // Carry the accepting candidate's oracle result into the next step: the loop-top
   // check of `code` is byte-identical to the check that just accepted it (and, on
   // the first iteration, to `base`), so re-running it is a pure waste of one full
@@ -2276,6 +2946,44 @@ export async function proveProgram(initialCode, thm, oracle, opts = {}) {
         moves = retryMoves;
       }
     }
+    // WRITABILITY (ctx-var rename drift): a re-elaboration may REPORT an
+    // implicit context variable under a fresh name (l → g) while the SOURCE
+    // still binds the original (the annotating let / theorem header spells l).
+    // A candidate referencing the reported name is then rejected "free context
+    // variable is illegal". When exactly ONE reported ctx name is
+    // source-unbound and exactly ONE source-spelled ctx name is missing from
+    // the report, they denote the same variable — offer the source spelling as
+    // an additional checker-arbitrated variant of each affected candidate.
+    {
+      const srcText = pathBodyBefore(code, hole) + '\n' + (thm && thm.compType
+        ? [...thm.compType.premises.map((p) => String(p.raw || '')), String(thm.compType.conclusion || '')].join('\n')
+        : '');
+      const srcCtxNames = new Set();
+      for (const mm of srcText.matchAll(/\[\s*([a-z][A-Za-z0-9_']*)\s*(?:\||\])/g)) srcCtxNames.add(mm[1]);
+      const reportedNames = new Set([...(hole.meta || []), ...(hole.ctx || [])]
+        .map((b) => b && b.name).filter(Boolean));
+      const reportedCtx = (hole.meta || []).filter((b) => b && b.name && b.type
+        && /^[a-z]/.test(String(b.name))
+        && /^[A-Za-z_][A-Za-z0-9_']*$/.test(String(b.type).trim().replace(/^\(\s*\|-\s*/, '').replace(/\)\s*$/, '')))
+        .map((b) => String(b.name));
+      const unbound = reportedCtx.filter((n2) => !srcCtxNames.has(n2));
+      const missing = [...srcCtxNames].filter((n2) => !reportedNames.has(n2));
+      if (unbound.length === 1 && missing.length === 1) {
+        const re = new RegExp(`(^|[^A-Za-z0-9_'])${unbound[0]}([^A-Za-z0-9_']|$)`, 'g');
+        moves = moves.flatMap((mv) => {
+          if (!mv || !mv.text || !re.test(mv.text)) { re.lastIndex = 0; return [mv]; }
+          re.lastIndex = 0;
+          const mapped = mv.text.replace(re, `$1${missing[0]}$2`).replace(re, `$1${missing[0]}$2`);
+          re.lastIndex = 0;
+          return [mv, { ...mv, text: mapped, rationale: `${mv.rationale || ''} (source ctx spelling)` }];
+        });
+      }
+    }
+    // Per-path canonicity bookkeeping for the (final) focused hole: prune stack
+    // entries not on this hole's ancestor chain, snapshot its junk-free state.
+    const holeDepth = openCasesAt(code, hole).length;
+    while (pathAnc.length && pathAnc[pathAnc.length - 1].depth >= holeDepth) pathAnc.pop();
+    const holeSigJF = junkFreeSig(code, hole);
 
     // Cheap pre-guards, hoisted: they read only step-invariant state (`code`,
     // `hole`), so evaluating them up front is identical to the old lazy order.
@@ -2319,13 +3027,46 @@ export async function proveProgram(initialCode, thm, oracle, opts = {}) {
       }
     };
     for (const mv of moves) {
+      // PROGRESS DISCIPLINE (search control, E1): a speculative lemma-let leaves
+      // the goal unchanged, so an unbounded run of them is junk that certifies —
+      // each costs a checker call and a step while starving the move that
+      // actually analyses the goal. Legitimate chains (str_wtp's
+      // recurse→lemma→lemma→fill) use at most TWO in a row; cap there.
+      if (mv.kind === 'lemma') {
+        let run = 0;
+        for (let k = steps.length - 1; k >= 0; k -= 1) {
+          if (steps[k].move === 'lemma' && (steps[k].branch || null) === (branchAtHole || null)) run += 1;
+          else break;
+        }
+        if (run >= 2) { traceSkip(mv, 'speculative-let chain cap (no goal progress)'); continue; }
+      }
       if (mv.kind === 'recurse' || mv.kind === 'lemma') {
         const rhs = letRhsOf(mv.text);
-        if (rhs && branchBodyBefore(code, hole).includes(rhs)) { traceSkip(mv, 'duplicate call already in this branch'); continue; }
+        // PATH-scoped (§7 per-path discipline): an ancestor arm's binding is in
+        // scope here, so re-deriving the same call anywhere on the ancestor
+        // chain is redundant — a nested split must not launder this guard.
+        if (rhs && pathBodyBefore(code, hole).includes(rhs)) { traceSkip(mv, 'duplicate call already on this path'); continue; }
+        // SELF-CHAINING guard (search control, E1): a lemma applied to a result
+        // that the SAME lemma produced earlier in this branch derives an orbit,
+        // not progress — each application's fresh result defeats the exact-
+        // duplicate guard and floods the step budget (ceq-closure shapes).
+        // Chaining DIFFERENT lemmas (str_wtp/str_step) is untouched.
+        if (rhs) {
+          const callee = rhs.split(/\s+/)[0];
+          const argNames = new Set((rhs.match(/[A-Za-z_][A-Za-z0-9_']*/g) || []).slice(1));
+          const body = pathBodyBefore(code, hole);
+          const re = new RegExp(`let\\s+\\[[^\\]]*\\|-\\s*([A-Za-z_][A-Za-z0-9_']*)[^\\]]*\\]\\s*=\\s*${callee.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s`, 'g');
+          let selfChain = false;
+          let mm;
+          while ((mm = re.exec(body))) {
+            if (argNames.has(mm[1])) { selfChain = true; break; }
+          }
+          if (selfChain) { traceSkip(mv, 'self-chaining: argument is this call’s own earlier result'); continue; }
+        }
       }
       if (mv.kind === 'invert') {
         const rhs = letRhsOf(mv.text);
-        if (rhs && branchBodyBefore(code, hole).includes(`= ${rhs} in`)) { traceSkip(mv, 'hypothesis already destructured here'); continue; }
+        if (rhs && pathBodyBefore(code, hole).includes(`= ${rhs} in`)) { traceSkip(mv, 'hypothesis already destructured on this path'); continue; }
       }
       if (!movePrefilterOk(mv, hole, code)) { traceSkip(mv, 'pre-filter: constructor/argument family cannot match'); continue; }
       const spliced = spliceAtHole(code, hole, mv.text);
@@ -2408,6 +3149,26 @@ export async function proveProgram(initialCode, thm, oracle, opts = {}) {
         reportVerdict(mv, 'guard', 'revisits an already-seen proof state');
         continue;
       }
+      // §7 invariant 2 — refute an ancestor-obligation repeat. Scoped to the
+      // candidate's OWN product (holes it created, strictly deeper than here):
+      // pending holes elsewhere belong to other subtrees and are not compared.
+      {
+        const mvLines = String(effText || '').split('\n').length;
+        let regress = null;
+        for (const h of nextHoles) {
+          if (h.line < hole.line || h.line > hole.line + mvLines) continue;
+          const d = openCasesAt(spliced, h).length;
+          if (d <= holeDepth) continue;
+          const anc = [...pathAnc, { depth: holeDepth, sig: holeSigJF }].filter((a) => a.depth < d);
+          if (!anc.length) continue;
+          const s = junkFreeSig(spliced, h);
+          if (anc.some((a) => a.sig === s)) { regress = h; break; }
+        }
+        if (regress) {
+          reportVerdict(mv, 'guard', 'per-path canonicity: re-poses an enclosing obligation (α-regress)');
+          continue;
+        }
+      }
       // Speculative-`let` guard: if this move left the leftmost goal alpha-unchanged
       // (a `let … in ?` that only added a hypothesis), spend from the per-goal
       // budget; once exhausted, reject it so the search must change the goal.
@@ -2448,6 +3209,9 @@ export async function proveProgram(initialCode, thm, oracle, opts = {}) {
       carried = { forCode: spliced, res };
       baseErrors = errs;
       seen.add(fp);
+      // An accepted split makes this hole an ancestor point of everything
+      // inside its arms — record its junk-free state for the canonicity refute.
+      if (mv.kind === 'split') pathAnc.push({ depth: holeDepth, sig: holeSigJF });
       const meta = stepMeta(mv, effText, hole);
       const checksUsed = oracleCalls - oracleCallsAtStep;
       oracleCallsAtStep = oracleCalls;
@@ -2490,8 +3254,27 @@ export async function proveProgram(initialCode, thm, oracle, opts = {}) {
       if (opts.onTraceEntry) opts.onTraceEntry(traceEntry, trace.length - 1);
     }
     if (!advanced) {
+      // Classify the decline before reporting — a bare "no-move" hides causes
+      // that are ANSWERS, not search gaps:
+      //  - a goal concluding in a coinductive family needs the copattern
+      //    former, out of the inductive fragment by construction;
+      //  - a theorem with boxed premises but NO `/ total … /` measure never
+      //    receives IH-recursion candidates (unguarded recursion is unsound;
+      //    the generators return [] without a measure) — the `/ trust /` and
+      //    unannotated classes, where adding a measure may unblock the search.
+      const coFam = moves.searchBounded
+        ? null : goalConcludesInFamily(hole.goal, coinductiveFamiliesOf(code));
+      // Measure-position source of truth is hypotheticalMeasures: a theorem
+      // with NO measure but ≥1 candidate position (box premise or explicit
+      // object-Pi binder) is in the synthesizable class.
+      const totalityBlocked = !moves.searchBounded && !coFam
+        && (!thm || !thm.totality)
+        && !!(thm && thm.compType && hypotheticalMeasures(thm).length);
+      const reason = moves.searchBounded ? 'search-bound'
+        : coFam ? 'coinductive-out-of-fragment'
+          : totalityBlocked ? 'no-totality-measure' : 'no-move';
       return {
-        complete: false, code, steps, trace: trace || undefined, stuck: { goal: hole.goal, reason: 'no-move', hole: { line: hole.line, col: hole.col, name: hole.name || null } },
+        complete: false, code, steps, trace: trace || undefined, stuck: { goal: hole.goal, reason, family: coFam || undefined, hole: { line: hole.line, col: hole.col, name: hole.name || null } },
       };
     }
   }
@@ -2631,6 +3414,47 @@ function branchBodyBefore(code, hole) {
   return lastArm >= 0 ? prefix.slice(lastArm) : prefix;
 }
 
+// ANCESTOR-CHAIN body before the hole (§7 per-path discipline): the concatenated
+// bodies of every ENCLOSING case-arm up to the hole, with CLOSED SIBLING arms
+// excluded. branchBodyBefore sees only the innermost arm, so any guard scoped to
+// it is laundered by a nested split (the measured eval_add_comm path re-accepted
+// the same lemma call at three nesting depths). Bindings in an ancestor arm are
+// in scope at the hole — re-deriving them is redundant on the WHOLE path — while
+// a sibling arm's bindings are not, so repeats across siblings stay legal.
+// Structure: nested cases are parenthesized (engine invariant 6), so the
+// enclosing scopes are exactly the unclosed `(` groups; within each level the
+// containing arm starts at the last depth-0 `=>`.
+export function pathBodyBefore(code, hole) {
+  const off = holeByteOffset(code, hole);
+  if (off < 0) return code;
+  const dStart = declStartOffset(code, off);
+  const region = code.slice(dStart, off);
+  const opens = [];
+  for (let i = 0; i < region.length; i += 1) {
+    const ch = region[i];
+    if (ch === '(') opens.push(i);
+    else if (ch === ')') opens.pop();
+  }
+  // Segment boundaries: decl start, then just AFTER each unclosed `(` (so each
+  // segment's own text sits at relative paren depth 0), then the hole.
+  const bounds = [0, ...opens.map((i) => i + 1), region.length];
+  const segs = [];
+  for (let b = 0; b + 1 < bounds.length; b += 1) {
+    const seg = region.slice(bounds[b], bounds[b + 1]);
+    let depth = 0;
+    let lastArm = -1;
+    for (let i = 0; i < seg.length; i += 1) {
+      const ch = seg[i];
+      if (ch === '(') depth += 1;
+      else if (ch === ')') depth = Math.max(0, depth - 1);
+      else if (depth === 0 && ch === '>' && seg[i - 1] === '=') lastArm = i + 1;
+      else if (depth === 0 && ch === '⇒') lastArm = i + 1; // GENERAL: the arm-marker glyph (syntax, not a constructor name)
+    }
+    segs.push(lastArm >= 0 ? seg.slice(lastArm) : seg);
+  }
+  return segs.join('\n');
+}
+
 export function theoremDeclRange(code, name) {
   if (!name) return null;
   const lines = String(code || '').split('\n');
@@ -2763,7 +3587,15 @@ function firstErrorLoc(output) {
   const lines = String(output || '').split('\n');
   for (let i = 0; i < lines.length - 1; i += 1) {
     const m = /File\s+"[^"]*",\s*line\s+(\d+)/.exec(lines[i]);
-    if (m && /error/i.test(lines[i + 1])) return { line: parseInt(m[1], 10) };
+    if (!m) continue;
+    // The web shim puts `Error: …` on the next line; the native CLI interleaves
+    // a source excerpt + caret line first. Scan a few lines for a real Error
+    // (ANSI-tolerant, line-anchored so excerpt text can't false-match).
+    for (let j = i + 1; j < Math.min(i + 8, lines.length); j += 1) {
+      const plain = lines[j].replace(/\[[0-9;]*m/g, '').trim();
+      if (/^error\b/i.test(plain)) return { line: parseInt(m[1], 10) };
+      if (/File\s+"[^"]*",\s*line\s+\d+/.test(lines[j])) break; // next location block
+    }
   }
   return null;
 }
@@ -2852,6 +3684,54 @@ function alphaGoal(goalStr) {
       if (!map.has(m)) { map.set(m, '#' + n); n += 1; }
       return map.get(m);
     });
+}
+
+// Hypothesis names bound as CALL RESULTS on a path (a `let` whose RHS applies a
+// lemma/IH — ≥2 top-level tokens; an inversion's RHS is a bare hypothesis name).
+// Call results are REGENERABLE from the structural state by re-issuing the same
+// calls, so per-path state identity must quotient them out — otherwise junk-fact
+// accumulation fakes state novelty and masks an α-regress (§7 invariant 2).
+function derivedLetNamesIn(body) {
+  const out = new Set();
+  const re = /let\s+([^=\n]+?)\s*=\s*([^\n]+?)\s+in\b/g;
+  let m;
+  while ((m = re.exec(String(body || '')))) {
+    if (m[2].trim().split(/\s+/).length < 2) continue;
+    for (const t of m[1].match(/[A-Z][A-Za-z0-9_']*/g) || []) out.add(t);
+  }
+  return out;
+}
+
+// α-canonical PER-PATH state signature, quotiented by regenerable facts (§7
+// invariant 2): the goal + hypothesis types, EXCLUDING (i) call-result bindings
+// anywhere on the ancestor chain and (ii) bare object metas (`N : ( |- nat)` —
+// index sorts don't individuate obligations; their occurrences inside judgment
+// facts and the goal carry the information, and a refining split consumes the
+// entry itself). Justification of the quotient: derived facts are regenerable
+// from the structural facts by the same calls, so two states with equal
+// junk-free signatures have the same derivable closure — the same obligation.
+// `"`-names and uppercase metas normalize positionally like alphaGoal/ctxSig.
+export function junkFreeSig(codeStr, h) {
+  const derived = derivedLetNamesIn(pathBodyBefore(codeStr, h));
+  const map = new Map();
+  let n = 0;
+  const nrm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
+    .replace(/"[A-Za-z][A-Za-z0-9_']*|[A-Z][A-Za-z0-9_']*/g, (t) => {
+      if (!map.has(t)) { map.set(t, '#' + n); n += 1; }
+      return map.get(t);
+    });
+  const head = nrm(h.goal);
+  const types = [];
+  for (const b of [...(h.meta || []), ...(h.ctx || [])]) {
+    if (!b || !b.name || !b.type || derived.has(String(b.name))) continue;
+    const inner = String(b.type).trim().replace(/^[([]\s*/, '').replace(/[)\]]\s*$/, '');
+    const parts = inner.split(/\|-|⊢/);
+    const concl = (parts.length > 1 ? parts[parts.length - 1] : parts[0]).trim();
+    const ctxPart = parts.length > 1 ? parts[0].trim() : '';
+    if (!ctxPart && !/\s/.test(concl)) continue; // bare object meta
+    types.push(nrm(b.type));
+  }
+  return head + '⊢' + types.sort().join(',');
 }
 
 function ctxSig(hole) {

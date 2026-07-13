@@ -274,9 +274,6 @@ export function resolveRenameOk(session, trimmed, preview, conflict) {
   return identOk && !conflict && engineLost;
 }
 
-const groupRenameHistory = [];
-const GROUP_HISTORY_CAP = 20;
-
 export function matchGroupRename(stack, direction, insertedTexts) {
   for (let i = stack.length - 1; i >= 0; i--) {
     const e = stack[i];
@@ -286,36 +283,9 @@ export function matchGroupRename(stack, direction, insertedTexts) {
   return null;
 }
 
-function insertedTextsOf(tr) {
-  const out = [];
-  tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
-    const s = inserted.toString();
-    if (s) out.push(s);
-  });
-  return out;
-}
-
-function watchGroupRenameHistory(update) {
-  if (!update.docChanged || !groupRenameHistory.length) return;
-  for (const tr of update.transactions) {
-    const dir = tr.isUserEvent('undo') ? 'undo' : (tr.isUserEvent('redo') ? 'redo' : null);
-    if (!dir) continue;
-    const entry = matchGroupRename(groupRenameHistory, dir, insertedTextsOf(tr));
-    if (!entry) continue;
-    const env = persistEnv();
-    if (!env || typeof env.P.setFileText !== 'function') continue;
-    try {
-      for (const f of entry.files) {
-        env.P.setFileText(f.fileId, dir === 'undo' ? f.before : f.after);
-      }
-      entry.undone = dir === 'undo';
-      showRenameToast(
-        `${dir === 'undo' ? 'Undid' : 'Redid'} rename ${entry.originalName} → ${entry.newName}`
-        + ` across ${entry.files.length} other file${entry.files.length === 1 ? '' : 's'}.`,
-        'info',
-      );
-    } catch (_) { /* keep the local undo even if the group replay fails */ }
-  }
+function editHistory() {
+  const g = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : null);
+  return g?.BelJarEditHistory ?? null;
 }
 
 function propagateGroupRename(session, newName) {
@@ -330,24 +300,13 @@ function propagateGroupRename(session, newName) {
       session.crossFile ? session.crossFile.defFileId : null
     );
     let refs = 0;
-    const fileChanges = [];
     for (const plan of plans) {
       const before = env.P.getFileText(plan.fileId);
       const after = applyGroupRenameToFile(
         before, plan.fileName, plan.edits, newName, session.originalName,
       );
       env.P.setFileText(plan.fileId, after);
-      fileChanges.push({ fileId: plan.fileId, before, after });
       refs += plan.edits.length;
-    }
-    if (fileChanges.length) {
-      groupRenameHistory.push({
-        originalName: session.originalName,
-        newName,
-        files: fileChanges,
-        undone: false,
-      });
-      if (groupRenameHistory.length > GROUP_HISTORY_CAP) groupRenameHistory.shift();
     }
     if (plans.length) {
       showRenameToast(
@@ -550,12 +509,33 @@ function commitRename(view) {
     return true;
   }
 
+  const H = editHistory();
+  const env = persistEnv();
+  if (H) {
+    H.beginEntry('rename');
+    H.captureStructuralBefore();
+    if (env) {
+      const activeId = env.P.getActiveFileId();
+      if (activeId) H.touchFile(activeId);
+      if (session.propagate || session.crossFile) {
+        const plans = groupRenameEdits(
+          env.P.listFiles(), activeId, session.originalName,
+          (id) => env.P.getFileText(id),
+          session.crossFile ? session.crossFile.defFileId : null,
+        );
+        for (const plan of plans) H.touchFile(plan.fileId);
+      }
+    }
+  }
+
   if (session.propagate || session.crossFile) propagateGroupRename(session, trimmed);
   view.dispatch({
     changes: buildRenameCommitChanges(session, trimmed, view.state.doc),
     effects: [setRenameSession.of(null), scrollIntoViewCenter(anchorFrom(session))],
     userEvent: 'rename',
+    annotations: [Transaction.addToHistory.of(false)],
   });
+  if (H) H.commitEntry();
   view.focus();
   return true;
 }
@@ -724,7 +704,6 @@ export function belRename() {
     renameSessionField,
     renameHighlighter,
     EditorState.changeFilter.of(renameChangeFilter),
-    EditorView.updateListener.of(watchGroupRenameHistory),
     EditorState.transactionExtender.of(renameSyncExtender),
     EditorState.transactionExtender.of((tr) => {
       if (!tr.docChanged) return null;

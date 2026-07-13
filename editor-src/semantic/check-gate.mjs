@@ -38,9 +38,13 @@ export function semanticDeclText(doc, declarationNode, tree) {
     const lo = declarationNode.from;
     const hi = declarationNode.to;
     const spans = [];
+    // Bound the walk to [lo, hi]. An unbounded tree.iterate here used to
+    // re-scan the ENTIRE file for every binder/decl (O(n²) on large proofs —
+    // ~300ms/keystroke on cp_thrm.bel).
     tree.iterate({
+      from: lo,
+      to: hi,
       enter(node) {
-        if (node.from < lo || node.to > hi) return;
         if (node.name === 'LineComment' || node.name === 'BlockComment') {
           spans.push({ from: node.from - lo, to: node.to - lo });
         }

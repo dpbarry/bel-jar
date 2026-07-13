@@ -1,6 +1,6 @@
 // Navigation gestures: Ctrl/Cmd-click jumps to definition, Ctrl-hover underlines
-// the jumpable token, and on cursor rest every occurrence of the symbol gets a
-// subtle tint. All read the engine via bel-ide-actions.
+// the jumpable token, and on cursor rest other occurrences of the symbol get a
+// subtle tint (skipped when it is the only occurrence in the file).
 
 import { EditorView, Decoration, ViewPlugin } from '@codemirror/view';
 import { StateEffect, StateField, RangeSetBuilder, Transaction } from '@codemirror/state';
@@ -224,7 +224,7 @@ const occurrenceScheduler = ViewPlugin.fromClass(
         const occ = eng && typeof eng.occurrencesAt === 'function'
           ? eng.occurrencesAt(sel.head)
           : [];
-        if (!occ || !occ.length) {
+        if (!occ || occ.length < 2) {
           this.clear(view);
           return;
         }

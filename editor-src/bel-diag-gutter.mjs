@@ -4,6 +4,7 @@ import { diagnosticCount, forEachDiagnostic } from '@codemirror/lint';
 import { bindHoleGutterTip } from './bel-hole-decorations.mjs';
 import { isSuitePreludeBannerDiag } from './suite-prelude-banner.mjs';
 import { isRenaming } from './bel-rename.mjs';
+import { timeSync } from './perf/check-trace.mjs';
 
 class DiagRowMarker extends GutterMarker {
   constructor(cls) {
@@ -26,8 +27,10 @@ function mergeSeverity(severityByLine, lineFrom, severity) {
 function suitePreludeRows(state, getOverlayDiags) {
   const rows = [];
   if (typeof getOverlayDiags !== 'function') return rows;
+  const len = state.doc.length;
   for (const d of getOverlayDiags() || []) {
     if (!isSuitePreludeBannerDiag(d) || d.from == null) continue;
+    if (d.from < 0 || d.from > len) continue;
     const line = state.doc.lineAt(d.from);
     rows.push({ line, message: d.message || '', severity: d.severity || 'error' });
   }
@@ -91,7 +94,7 @@ export function diagnosticRowHighlight({ getBelugaDiags = null, getOverlayDiags 
         && diagnosticCount(tr.startState) === diagnosticCount(tr.state)) {
         return value;
       }
-      return buildRowMarkers(tr.state, getBelugaDiags, getOverlayDiags);
+      return timeSync('diagRowMarkers', () => buildRowMarkers(tr.state, getBelugaDiags, getOverlayDiags));
     },
     provide: (f) => gutterLineClass.from(f),
   });
@@ -115,8 +118,10 @@ export function suitePreludeRowWash({ getOverlayDiags = null, settlementTickFiel
 // ── Gutter hover tooltip: all diagnostics on a line, anchored to its cell ─────
 function diagnosticsByLine(state, getBelugaDiags = null) {
   const map = new Map();
+  const len = state.doc.length;
   const push = (d, from) => {
     if (d.severity !== 'error' && d.severity !== 'warning') return;
+    if (from < 0 || from > len) return;
     const line = state.doc.lineAt(from);
     const arr = map.get(line.number) || [];
     arr.push({ severity: d.severity, message: d.message || '', col: from - line.from + 1 });
@@ -149,9 +154,10 @@ export function lintTooltipItemsFromDiagnostics(diags, doc) {
   if (!doc || !diags?.length) return [];
   const items = [];
   const seen = new Set();
+  const len = doc.length;
   for (const d of diags) {
     if (d.severity !== 'error' && d.severity !== 'warning') continue;
-    if (d.from == null) continue;
+    if (d.from == null || d.from < 0 || d.from > len) continue;
     const lineInfo = doc.lineAt(d.from);
     const key = `${lineInfo.number}:${d.severity}:${d.message}`;
     if (seen.has(key)) continue;

@@ -91,4 +91,10 @@ assert.equal(P.readStoredHarpoonHeight(), P.DEFAULT_SIDE_PANEL_HEIGHT);
 assert.equal(P.DEFAULT_SIDE_PANEL_WIDTH, 250);
 assert.equal(P.DEFAULT_SIDE_PANEL_HEIGHT, 190);
 
+assert.equal(P.readStoredInspectorFollow(), true);
+P.writeStoredInspectorFollow(false);
+assert.equal(P.readStoredInspectorFollow(), false);
+P.writeStoredInspectorFollow(true);
+assert.equal(P.readStoredInspectorFollow(), true);
+
 console.log('OK settings persist');

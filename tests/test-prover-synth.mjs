@@ -118,4 +118,32 @@ expect(synthesize({ ctx: 'g', concl: 'wtp X Y' }, facts, rules, ctors) === null,
 const direct = synthesize({ ctx: 'g', concl: `eval (M'[.., N]) "i` }, facts, rules, ctors);
 expect(direct && direct.text === `[g |- X6]`, 'a direct fact closes as a bare fill');
 
-console.log('OK test-prover-synth (backward chaining derives the eval_app1 reference chain; termination + honesty pinned)');
+// ── explicit object-Pi args: named spelling + inferred `[ |- _]` variant ─────
+// The determined object may be a meta the checker INVENTED for an unnamed
+// implicit pattern argument: present in the hole report, bound NOWHERE in
+// source, so the named spelling is unwritable by construction ("This free
+// meta-variable is illegal") while `_` certifies. Both variants must be
+// offered (checker arbitrates, D3 doctrine), and the internal marker must
+// never leak into either text.
+const piRules = [
+  {
+    name: 'k_comm', isIH: false, decIdx: -1,
+    flex: new Set(['A', 'B', 'C']),
+    pis: [{ kind: 'obj', varName: 'A' }, { kind: 'obj', varName: 'B' }],
+    premises: ['rel A B C'], result: 'rel B A C',
+  },
+];
+const piCtors = new Map([
+  ['pack', [{ name: 'mk', argTypes: ['rel B A C'], result: { head: 'pack', indices: ['A', 'B', 'C'] } }]],
+  ['rel', []],
+]);
+const piFacts = [{ name: 'X2', extras: [], concl: 'rel N2 N1 P', original: true, decOk: false }];
+const pi = synthesize({ ctx: '', concl: 'pack N2 N1 P' }, piFacts, piRules, piCtors, {});
+expect(pi && /k_comm \[\s*\|- N2\] \[\s*\|- N1\]/.test(pi.text),
+  'named object-Pi spelling stays the primary text');
+expect(pi && typeof pi.textU === 'string' && /k_comm \[\s*\|- _\] \[\s*\|- _\]/.test(pi.textU),
+  'the inferred `[ |- _]` variant is offered when object-Pi args exist');
+expect(pi && !pi.text.includes('¦') && !pi.textU.includes('¦'),
+  'the internal object-arg marker never leaks into emitted text');
+
+console.log('OK test-prover-synth (backward chaining derives the eval_app1 reference chain; termination + honesty + object-Pi dual spelling pinned)');

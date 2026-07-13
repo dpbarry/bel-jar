@@ -1,0 +1,27 @@
+% Reflexive-transitive closure of an abstract one-step relation, proved transitive.
+
+LF world : type =
+  | init : world
+  | tick : world -> world
+;
+
+% primitive one-step relation (two distinct step forms)
+LF step : world -> world -> type =
+  | advance : step W (tick W)
+  | reset   : step (tick W) W
+;
+
+% reflexive-transitive closure, built up on the right
+LF steps : world -> world -> type =
+  | refl : steps W W
+  | snoc : steps W1 W2 -> step W2 W3 -> steps W1 W3
+;
+
+rec trans : [ |- steps A B] -> [ |- steps B C] -> [ |- steps A C] =
+/ total s2 (trans _ _ _ s1 s2) /
+fn s1 => fn s2 => case s2 of
+  | [ |- refl ] => s1
+  | [ |- snoc S2' ST ] =>
+    let [ |- R ] = trans s1 [ |- S2' ] in
+    [ |- snoc R ST ]
+;

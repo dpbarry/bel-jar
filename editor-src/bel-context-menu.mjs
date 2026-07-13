@@ -1,7 +1,7 @@
 // Right-click context menu: classifies the click via engine.navAt and assembles
 // actions from the shared IDE action layer. Built on Menu.openContext.
 
-import { undo, redo, selectAll, undoDepth, redoDepth } from '@codemirror/commands';
+import { selectAll } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
 import { EditorView } from '@codemirror/view';
 import {
@@ -45,23 +45,28 @@ function runClipboard(view, action) {
   } catch (_) {}
 }
 
+function editHistoryApi() {
+  const g = typeof globalThis !== 'undefined' ? globalThis : window;
+  return g.BelJarEditHistory;
+}
+
 function buildEditMenuItems(view) {
   const editable = isEditable(view);
   const hasSel = hasStandardSelection(view);
-  const state = view.state;
+  const H = editHistoryApi();
 
   return [
     {
       label: 'Undo',
       shortcut: 'Ctrl+Z',
-      disabled: undoDepth(state) === 0,
-      onSelect: () => undo(view),
+      disabled: !(H && H.canUndo && H.canUndo()),
+      onSelect: () => { H?.undo?.(); },
     },
     {
       label: 'Redo',
       shortcut: 'Ctrl+Y',
-      disabled: redoDepth(state) === 0,
-      onSelect: () => redo(view),
+      disabled: !(H && H.canRedo && H.canRedo()),
+      onSelect: () => { H?.redo?.(); },
     },
     { type: 'separator' },
     {

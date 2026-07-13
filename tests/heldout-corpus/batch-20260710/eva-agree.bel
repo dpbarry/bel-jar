@@ -1,0 +1,68 @@
+% Two semantics for a tiny arithmetic language: a direct big-step
+% relation `ev` and an accumulator-passing evaluator `eva`.
+% Main theorem: they agree (ev E N implies eva E z N).
+
+LF nat : type =
+| z : nat
+| s : nat -> nat
+;
+
+LF plus : nat -> nat -> nat -> type =
+| plus/z : plus z N N
+| plus/s : plus M N K -> plus (s M) N (s K)
+;
+
+LF exp : type =
+| num : nat -> exp
+| add : exp -> exp -> exp
+;
+
+LF ev : exp -> nat -> type =
+| ev/num : ev (num N) N
+| ev/add : ev E1 N1 -> ev E2 N2 -> plus N1 N2 N -> ev (add E1 E2) N
+;
+
+LF eva : exp -> nat -> nat -> type =
+| eva/num : plus N A R -> eva (num N) A R
+| eva/add : eva E2 A R1 -> eva E1 R1 R -> eva (add E1 E2) A R
+;
+
+% Reassociation: (N1 + N2) + A = R  yields  R1 with N2 + A = R1 and N1 + R1 = R.
+inductive Reassoc : [ |- nat] -> [ |- nat] -> [ |- nat] -> [ |- nat] -> ctype =
+| Re : [ |- plus N2 A R1] -> [ |- plus N1 R1 R] -> Reassoc [ |- N1] [ |- N2] [ |- A] [ |- R]
+;
+
+rec reassoc : [ |- plus N1 N2 N] -> [ |- plus N A R] -> Reassoc [ |- N1] [ |- N2] [ |- A] [ |- R] =
+/ total p (reassoc n1 n2 n a r p q) /
+fn p => fn q => case p of
+| [ |- plus/z] => Re q [ |- plus/z]
+| [ |- plus/s P] =>
+  let [ |- plus/s Q] = q in
+  let Re [ |- S1] [ |- S2] = reassoc [ |- P] [ |- Q] in
+  Re [ |- S1] [ |- plus/s S2]
+;
+
+rec plus_z : {N : [ |- nat]} [ |- plus N z N] =
+/ total n (plus_z n) /
+mlam N => case [ |- N] of
+| [ |- z] => [ |- plus/z]
+| [ |- s M] => let [ |- D] = plus_z [ |- M] in [ |- plus/s D]
+;
+
+% Soundness: a big-step derivation transports along any accumulator.
+rec sound : [ |- ev E N] -> [ |- plus N A R] -> [ |- eva E A R] =
+/ total d (sound e n a r d q) /
+fn d => fn q => case d of
+| [ |- ev/num] => let [ |- Q] = q in [ |- eva/num Q]
+| [ |- ev/add D1 D2 P] =>
+  let Re [ |- S1] [ |- S2] = reassoc [ |- P] q in
+  let [ |- F2] = sound [ |- D2] [ |- S1] in
+  let [ |- F1] = sound [ |- D1] [ |- S2] in
+  [ |- eva/add F2 F1]
+;
+
+% Agreement: started at accumulator z, `eva` computes exactly `ev`'s value.
+rec agree : {N : [ |- nat]} [ |- ev E N] -> [ |- eva E z N] =
+/ total d (agree e n d) /
+mlam N => fn d => sound d (plus_z [ |- N])
+;

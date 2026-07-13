@@ -70,14 +70,31 @@ export function buildEditorChromeTheme(prefs) {
   });
 }
 
-function reindentWholeDocument(view) {
-  const ir = indentRange(view.state, 0, view.state.doc.length);
+// Reindent only [from,to] (expanded to whole lines), not the whole document.
+// Pasting into a late region of a large file must not re-indent the prefix.
+function reindentRange(view, from, to) {
+  const doc = view.state.doc;
+  const lo = doc.lineAt(Math.max(0, Math.min(from, doc.length))).from;
+  const hi = doc.lineAt(Math.max(0, Math.min(to, doc.length))).to;
+  const ir = indentRange(view.state, lo, hi);
   if (!ir.empty) {
     view.dispatch({
       changes: ir,
       annotations: Transaction.addToHistory.of(false),
     });
   }
+}
+
+// Span the paste/drop touched in the RESULTING document (mapped through the
+// change) so we know which lines to reindent.
+function insertedSpan(changes) {
+  let from = null;
+  let to = null;
+  changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+    if (from == null || fromB < from) from = fromB;
+    if (to == null || toB > to) to = toB;
+  });
+  return from == null ? null : { from, to };
 }
 
 export function buildPasteReindentListener() {
@@ -88,7 +105,14 @@ export function buildPasteReindentListener() {
       return ue === 'input.paste' || ue === 'input.drop' || ue === 'move.drop';
     });
     if (!indentTrigger) return;
-    queueMicrotask(() => reindentWholeDocument(update.view));
+    const span = insertedSpan(update.changes);
+    if (!span) return;
+    // After paint (rAF), so the pasted text renders on the current frame; and
+    // scoped to the pasted lines so cost is O(paste), not O(doc).
+    const view = update.view;
+    requestAnimationFrame(() => {
+      if (view.dom?.isConnected) reindentRange(view, span.from, span.to);
+    });
   });
 }
 

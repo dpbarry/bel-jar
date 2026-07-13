@@ -12,8 +12,7 @@ export function countSiblingHoledDecls(docText, declName) {
   return count;
 }
 
-export function needsFullCommitCheck({ compromise, docText, declName }) {
-  if (compromise?.level === 'warn') return true;
+export function needsFullCommitCheck({ docText, declName }) {
   return countSiblingHoledDecls(docText, declName) > 0;
 }
 

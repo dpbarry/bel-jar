@@ -20,6 +20,8 @@
 import { showTooltip } from '@codemirror/view';
 import { StateField } from '@codemirror/state';
 import { indentRange } from '@codemirror/language';
+import { Transaction } from '@codemirror/state';
+import { dispatchEdit } from './bel-edit-history.mjs';
 import {
   decomposeContextual,
   headOfConclusion,
@@ -122,6 +124,11 @@ function usedNamesAt(hole) {
   return names;
 }
 
+function currentFileId() {
+  const ed = editorApi();
+  return ed?.getCurrentFileId?.() ?? null;
+}
+
 // Replace the hole's `?` with `text`, re-resolving the `?` against the CURRENT doc
 // (it may have shifted while an async step ran) and reindenting the insert.
 function insertOverHole(view, engine, hit, text) {
@@ -131,12 +138,18 @@ function insertOverHole(view, engine, hit, text) {
     decline('Hole moved — re-check and retry');
     return false;
   }
-  view.dispatch({
+  const fileId = currentFileId();
+  dispatchEdit(view, {
     changes: { from: target.from, to: target.to, insert: text },
     userEvent: 'input.complete',
+  }, {
+    fileId,
+    kind: 'hole',
+    followUp: (v) => {
+      const ir = indentRange(v.state, target.from, target.from + text.length);
+      return ir.empty ? null : { changes: ir, annotations: [Transaction.addToHistory.of(false)] };
+    },
   });
-  const ir = indentRange(view.state, target.from, target.from + text.length);
-  if (!ir.empty) view.dispatch({ changes: ir });
   view.focus();
   return true;
 }
@@ -205,6 +218,7 @@ function belJarSplit(code, hole, varName, info) {
     schema,
     schemaTypes,
     usedNames: usedNamesAt(hole),
+    code, // fixity source: arm annotations must respect --infix declarations
   });
   if (!text) note.reason = ctors.length ? 'no-pattern' : 'no-constructors-no-param';
   return text;

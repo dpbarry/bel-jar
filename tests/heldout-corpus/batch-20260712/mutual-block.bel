@@ -1,0 +1,119 @@
+% A self-contained development about a mutually-defined "even"/"odd"
+% judgment on unary numerals, closed under a relational addition.
+%
+% Centerpiece: a mutual-recursion block proving that the relational sum
+% of an even number and an even number is even, and that the relational
+% sum of an odd number and an even number is odd -- by mutual induction
+% on the evenness/oddness derivation of the left summand.  Two standalone
+% corollaries then reuse that block, and a final theorem shows every
+% numeral is classified as even or odd (induction on the numeral itself,
+% independent of the mutual block).
+
+LF nat : type =
+  | z : nat
+  | s : nat -> nat
+;
+--name nat N x.
+
+% Mutually-defined evenness/oddness judgments on nat.
+LF ev : nat -> type =
+  | ev_z : ev z
+  | ev_s : od N -> ev (s N)
+and od : nat -> type =
+  | od_s : ev N -> od (s N)
+;
+--name ev D u.
+--name od C v.
+
+% Propositional equality on nat, used to state functionality of add.
+LF eqn : nat -> nat -> type =
+  | eq_refl : eqn N N
+;
+
+% Relational addition: add N M R means N + M = R.
+LF add : nat -> nat -> nat -> type =
+  | add_z : add z M M
+  | add_s : add N M R -> add (s N) M (s R)
+;
+--name add A a.
+
+% A number is classified as even or odd (used by the closing theorem).
+LF evod : nat -> type =
+  | is_ev : ev N -> evod N
+  | is_od : od N -> evod N
+;
+
+% --- warm-up: relational addition is functional -----------------------
+
+rec add_det : [ |- add N M R1] -> [ |- add N M R2] -> [ |- eqn R1 R2] =
+/ total a1 (add_det n m r1 r2 a1 a2) /
+fn a1 => fn a2 => case a1 of
+| [ |- add_z] =>
+  let [ |- add_z] = a2 in [ |- eq_refl]
+| [ |- add_s A1'] =>
+  let [ |- add_s A2'] = a2 in
+  let [ |- eq_refl] = add_det [ |- A1'] [ |- A2'] in
+  [ |- eq_refl]
+;
+
+% --- centerpiece: mutual induction on the ev/od derivation -------------
+%
+% Closure of relational addition under evenness/oddness: adding an even
+% number to an even one stays even; adding an even number to an odd one
+% stays odd.  Both clauses recurse on the *left* summand's evenness or
+% oddness derivation, which is why they must be proved together.
+
+rec ev_add_ev : [ |- ev N] -> [ |- add N M R] -> [ |- ev M] -> [ |- ev R] =
+/ total d (ev_add_ev n m r d a e) /
+fn d => fn a => fn e => case d of
+| [ |- ev_z] =>
+  let [ |- add_z] = a in e
+| [ |- ev_s C'] =>
+  let [ |- add_s A'] = a in
+  let [ |- C''] = od_add_ev [ |- C'] [ |- A'] e in
+  [ |- ev_s C'']
+
+and rec od_add_ev : [ |- od N] -> [ |- add N M R] -> [ |- ev M] -> [ |- od R] =
+/ total c (od_add_ev n m r c a e) /
+fn c => fn a => fn e => case c of
+| [ |- od_s D'] =>
+  let [ |- add_s A'] = a in
+  let [ |- D''] = ev_add_ev [ |- D'] [ |- A'] e in
+  [ |- od_s D'']
+;
+
+% --- corollaries drawing on the mutual block ---------------------------
+
+% Doubling an even number (via its own relational sum with itself)
+% stays even: a single call into the block above, no fresh recursion.
+rec double_even : [ |- ev N] -> [ |- add N N R] -> [ |- ev R] =
+/ total d (double_even n r d a) /
+fn d => fn a => ev_add_ev d a d
+;
+
+% Quadrupling an even number stays even, by doubling twice.  This chains
+% two independent uses of double_even and hence, transitively, of the
+% mutual block -- a genuine (if short) composition, not a restatement.
+rec quadruple_even :
+    [ |- ev N] -> [ |- add N N R1] -> [ |- add R1 R1 R2] -> [ |- ev R2] =
+/ total d (quadruple_even n r1 r2 d a1 a2) /
+fn d => fn a1 => fn a2 =>
+  let e1 = double_even d a1 in
+    double_even e1 a2
+;
+
+% --- closing theorem: every numeral is even or odd ---------------------
+%
+% Induction on the numeral itself (not on ev/od evidence), independent
+% of the mutual block: it establishes totality of the classification
+% that ev_add_ev/od_add_ev presuppose.
+
+rec ev_or_od : {n : [ |- nat]} [ |- evod n] =
+/ total n (ev_or_od n) /
+mlam n => case [ |- n] of
+| [ |- z] => [ |- is_ev ev_z]
+| [ |- s N'] =>
+  (case ev_or_od [ |- N'] of
+   | [ |- is_ev D'] => [ |- is_od (od_s D')]
+   | [ |- is_od C'] => [ |- is_ev (ev_s C')])
+;

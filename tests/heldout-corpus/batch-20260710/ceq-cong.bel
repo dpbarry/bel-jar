@@ -1,0 +1,44 @@
+% Equational theory on arithmetic terms is compatible with succ and plus.
+LF tm : type =
+  | zero : tm
+  | succ : tm -> tm
+  | plus : tm -> tm -> tm
+;
+
+LF step : tm -> tm -> type =
+  | s_plz : step (plus zero N) N
+  | s_pls : step (plus (succ M) N) (succ (plus M N))
+  | s_scg : step M M' -> step (succ M) (succ M')
+  | s_plc : step M M' -> step (plus M N) (plus M' N)
+;
+
+LF equ : tm -> tm -> type =
+  | e_rfl : equ M M
+  | e_stp : step M M' -> equ M M'
+  | e_sym : equ M M' -> equ M' M
+  | e_tra : equ M M' -> equ M' M'' -> equ M M''
+;
+
+rec ceq_succ : [ |- equ M M'] -> [ |- equ (succ M) (succ M')] =
+/ total d (ceq_succ m m' d) /
+fn d => case d of
+| [ |- e_rfl] => [ |- e_rfl]
+| [ |- e_stp S] => [ |- e_stp (s_scg S)]
+| [ |- e_sym D] => let [ |- E] = ceq_succ [ |- D] in [ |- e_sym E]
+| [ |- e_tra D1 D2] =>
+  let [ |- E1] = ceq_succ [ |- D1] in
+  let [ |- E2] = ceq_succ [ |- D2] in
+  [ |- e_tra E1 E2]
+;
+
+rec ceq_plus : {N : [ |- tm]} [ |- equ M M'] -> [ |- equ (plus M N) (plus M' N)] =
+/ total d (ceq_plus m m' n d) /
+mlam N => fn d => case d of
+| [ |- e_rfl] => [ |- e_rfl]
+| [ |- e_stp S] => [ |- e_stp (s_plc S)]
+| [ |- e_sym D] => let [ |- E] = ceq_plus [ |- N] [ |- D] in [ |- e_sym E]
+| [ |- e_tra D1 D2] =>
+  let [ |- E1] = ceq_plus [ |- N] [ |- D1] in
+  let [ |- E2] = ceq_plus [ |- N] [ |- D2] in
+  [ |- e_tra E1 E2]
+;

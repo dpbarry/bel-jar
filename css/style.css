@@ -337,8 +337,8 @@
   --harpoon-card-border: light-dark(hsla(220, 13%, 72%, 0.72), hsla(214, 18%, 72%, 0.18));
   --harpoon-card-border-strong: light-dark(hsla(220, 18%, 58%, 0.7), hsla(214, 25%, 78%, 0.3));
   --harpoon-goal-bg: light-dark(hsla(320, 78%, 56%, 0.045), hsla(318, 84%, 74%, 0.055));
-  --harpoon-goal-border: light-dark(hsla(320, 60%, 58%, 0.24), hsla(318, 74%, 76%, 0.14));
   --harpoon-divider: light-dark(hsla(220, 12%, 74%, 0.46), hsla(214, 18%, 74%, 0.12));
+  --harpoon-goal-border: color-mix(in srgb, var(--repl-holes-accent) 30%, var(--harpoon-divider));
   --harpoon-card-shadow: light-dark(
     0 1px 2px hsla(220, 24%, 28%, 0.07),
     0 1px 0 hsla(0, 0%, 100%, 0.035), 0 12px 28px hsla(224, 38%, 4%, 0.18)
@@ -391,6 +391,36 @@ html.light {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* Touch — suppress tap flash and accidental chrome selection; editor/inputs opt back in */
+@media (hover: none), (pointer: coarse) {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body :where(
+    .cm-scroller,
+    .cm-content,
+    input,
+    textarea,
+    [contenteditable='true'],
+    .repl-log,
+    .library-preview__pre,
+    .library-match-context,
+    .header-context.is-renaming,
+    .header-context-inline-name
+  ) {
+    -webkit-touch-callout: default;
+    user-select: text;
+    -webkit-user-select: text;
+  }
 }
 
 /* Do NOT set `color` here: on the editor it would override every token's syntax
@@ -854,6 +884,58 @@ html.light body {
 
 .tooltip-root .tooltip-inner--diagnostic .cm-diagnostic-warning .beljar-tip-kind {
   color: color-mix(in oklab, var(--ide-warn-squiggle) 62%, var(--muted-high));
+}
+
+/* Rich tooltips — a custom DOM fragment (e.g. syntax-highlighted Beluga) built
+   lazily by the caller. Used by graph nodes and any code/type-bearing hint. */
+.tooltip-root .tooltip-inner--rich {
+  white-space: normal;
+  max-width: min(28rem, calc(100vw - 1rem));
+  padding: 0.4rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
+}
+.tooltip-inner--rich .hpt-tip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.tooltip-inner--rich .hpt-tip-kind {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-high);
+  padding: 0.05rem 0.32rem;
+  border-radius: var(--radius-xs, 3px);
+  background: color-mix(in srgb, var(--base-high) 16%, transparent);
+}
+.tooltip-inner--rich .hpt-tip-kind--ghost { opacity: 0.8; }
+.tooltip-inner--rich .hpt-tip-title {
+  font-weight: 600;
+  color: var(--base-highest);
+}
+.tooltip-inner--rich .hpt-tip-note {
+  font-size: 0.62rem;
+  color: var(--muted-high);
+  line-height: 1.4;
+}
+.tooltip-inner--rich .hpt-tip-note--dim { color: var(--muted-mid); }
+.tooltip-inner--rich .hpt-tip-code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.64rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.28rem 0.4rem;
+  border-radius: var(--radius-xs, 3px);
+  background: color-mix(in srgb, var(--base-high) 10%, transparent);
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 /* -- Menus -- */
@@ -2905,7 +2987,7 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
   pointer-events: auto;
 }
 
-.library-c\ategory-item.is-menu-open .library-category-insert,
+.library-category-item.is-menu-open .library-category-insert,
 .library-category-item.is-menu-open .library-category-preview {
   opacity: 1;
   pointer-events: auto;
@@ -3091,6 +3173,17 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
 .library-actions:focus-within {
   opacity: 1;
   pointer-events: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .library-category-insert,
+  .library-category-preview,
+  .library-actions,
+  .library-preview-tree-file .library-actions,
+  .library-preview-tree-folder .library-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .library-action-btn {
@@ -8834,16 +8927,20 @@ html.light .bj-dialog::backdrop {
   --harpoon-strip-accent: var(--repl-holes-accent);
   --harpoon-strip-fill: var(--harpoon-card-bg);
   --harpoon-strip-border: color-mix(in srgb, var(--harpoon-strip-accent) 24%, var(--harpoon-divider));
+  --harpoon-strip-sep-width: 0.5px;
+  --harpoon-strip-sep: color-mix(in srgb, var(--harpoon-strip-accent) 34%, var(--harpoon-divider));
   position: relative;
   overflow: hidden;
   border-radius: 0;
+  border-bottom: none;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--harpoon-strip-accent) 7%, transparent), transparent 52%),
     var(--harpoon-strip-fill);
-  box-shadow:
-    inset 1px 0 0 var(--harpoon-strip-border),
-    inset 0 -1px 0 var(--harpoon-strip-border),
-    inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+  box-shadow: inset 0 calc(-1 * var(--harpoon-strip-sep-width)) 0 0 var(--harpoon-strip-sep);
+}
+/* Last banner: quieter separator, same tone as the full-width rule above. */
+.harpoon-lab-strip:not(:has(~ .harpoon-lab-strip)) {
+  box-shadow: inset 0 -0.5px 0 0 var(--harpoon-strip-sep);
 }
 .harpoon-lab-strip::before {
   content: '';
@@ -8857,7 +8954,7 @@ html.light .bj-dialog::backdrop {
 .harpoon-lab-strip.tone-goal {
   --harpoon-strip-accent: var(--repl-holes-accent);
   --harpoon-strip-fill: var(--harpoon-goal-bg);
-  --harpoon-strip-border: var(--harpoon-goal-border);
+  --harpoon-strip-border: color-mix(in srgb, var(--repl-holes-accent) 30%, var(--harpoon-divider));
 }
 .harpoon-lab-strip.tone-success {
   --harpoon-strip-accent: var(--ide-status-clean);
@@ -8897,6 +8994,13 @@ html.light .bj-dialog::backdrop {
   color: var(--ui-fg-on-accent);
 }
 .harpoon-lab-banner-badge svg { width: 0.95rem; height: 0.95rem; }
+.harpoon-lab-banner-warn-glyph {
+  font-family: var(--sans);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
 .harpoon-lab-banner-copy {
   display: flex;
   flex: 1 1 auto;
@@ -9161,7 +9265,6 @@ button.harpoon-lab-banner:focus-visible {
 /* ── The goal hero ── the type to inhabit, the focal point. */
 .harpoon-lab-goal {
   --harpoon-strip-fill: var(--harpoon-goal-bg);
-  --harpoon-strip-border: var(--harpoon-goal-border);
   padding: 0.65rem 0.75rem 0.7rem;
   border-bottom: 1px solid var(--harpoon-goal-border);
 }
@@ -9362,10 +9465,6 @@ button.harpoon-lab-banner:focus-visible {
   box-shadow: none;
   overflow: visible;
 }
-@keyframes harpoon-auto-in {
-  from { opacity: 0; transform: translateY(-0.25rem); }
-  to { opacity: 1; transform: none; }
-}
 
 /* ── Act I — searching: goal hero + status line + pause/resume. */
 .harpoon-lab-auto.is-searching {
@@ -9373,7 +9472,6 @@ button.harpoon-lab-banner:focus-visible {
 }
 .harpoon-lab-auto-goal {
   --harpoon-strip-fill: var(--harpoon-goal-bg);
-  --harpoon-strip-border: var(--harpoon-goal-border);
   padding: 0.65rem 0.75rem 0.7rem;
 }
 .harpoon-lab-auto-goal-name {
@@ -9393,7 +9491,6 @@ button.harpoon-lab-banner:focus-visible {
   align-items: center;
   gap: 0.45rem;
   padding: 0.55rem 0.65rem 0.6rem;
-  border-bottom: 1px solid var(--harpoon-divider);
 }
 .harpoon-lab-auto-searching {
   flex: 1 1 auto;
@@ -9684,25 +9781,30 @@ button.harpoon-lab-banner:focus-visible {
   --harpoon-auto-panel-fill: color-mix(in srgb, var(--harpoon-card-bg) 91%, var(--ide-status-error) 9%);
   --harpoon-auto-panel-border: color-mix(in srgb, var(--ide-status-error) 24%, var(--harpoon-divider));
 }
+
+/* Grey section blocks — no top rule; bottom rule only when another sibling follows. */
+.harpoon-lab-auto-controls,
+.harpoon-reel,
+.harpoon-lab-auto-solution,
+.harpoon-deriv {
+  border-top: none;
+  border-bottom: none;
+  box-shadow: none;
+}
+.harpoon-lab-auto-controls:has(~ *),
+.harpoon-reel:has(~ *),
+.harpoon-lab-auto-solution:has(~ *),
+.harpoon-deriv:has(~ *) {
+  border-bottom: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-auto-solution.harpoon-lab-auto-panel {
+  box-shadow: none;
+}
+
 .harpoon-lab-auto-solution {
   margin: 0;
 }
-.harpoon-lab-auto-goal + .harpoon-lab-auto-head,
-.harpoon-lab-auto-head + .harpoon-lab-auto-place,
-.harpoon-lab-auto-head + .harpoon-lab-auto-commit,
-.harpoon-lab-manual-head + .harpoon-lab-place,
-.harpoon-lab-manual-head + .harpoon-lab-auto-commit,
-.harpoon-lab-auto-compromise + .harpoon-lab-auto-goal,
-.harpoon-lab-auto-place + .harpoon-lab-auto-solution,
-.harpoon-lab-auto-commit + .harpoon-lab-auto-solution,
-.harpoon-lab-auto-head + .harpoon-lab-auto-stuck,
-.harpoon-lab-auto-head + .harpoon-lab-auto-panel,
-.harpoon-lab-auto-panel + .harpoon-lab-auto-steps-label,
-.harpoon-lab-auto-place + .harpoon-lab-auto-steps-label,
-.harpoon-lab-auto-commit + .harpoon-lab-auto-steps-label,
-.harpoon-lab-auto-stuck + .harpoon-lab-auto-steps-label {
-  margin-top: -1px;
-}
+
 .harpoon-lab-auto-solution-label {
   margin-bottom: 0.35rem;
 }
@@ -9728,7 +9830,6 @@ button.harpoon-lab-banner:focus-visible {
 
 .harpoon-lab-auto-steps-label {
   padding: 0.72rem 0.75rem 0.35rem;
-  border-top: 1px solid var(--harpoon-divider);
 }
 
 /* ── Proof tree: steps grouped under their case-branch pattern. */
@@ -9797,7 +9898,8 @@ button.harpoon-lab-banner:focus-visible {
 
 /* ── Header — verdict + certified count. */
 .harpoon-lab-auto-head,
-.harpoon-lab-manual-head {
+.harpoon-lab-manual-head,
+.harpoon-lab-auto-compromise {
   padding: 0.62rem 0.75rem;
 }
 @keyframes harpoon-auto-pop {
@@ -9807,8 +9909,7 @@ button.harpoon-lab-banner:focus-visible {
 }
 .harpoon-lab-auto-head-copy { min-width: 0; }
 .harpoon-lab-stage {
-  animation: harpoon-auto-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--stage-index, 0) * 55ms + 20ms);
+  animation: none;
 }
 .harpoon-lab-auto-head.is-solved .harpoon-lab-banner-badge,
 .harpoon-lab-manual-head .harpoon-lab-banner-badge,
@@ -9816,6 +9917,9 @@ button.harpoon-lab-banner:focus-visible {
   animation: harpoon-auto-pop 0.42s cubic-bezier(0.2, 1.2, 0.2, 1) both;
   animation-delay: calc(var(--stage-index, 0) * 55ms + 60ms);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--harpoon-strip-accent) 18%, transparent);
+}
+.harpoon-lab-auto-head.is-solved.is-verdict-seen .harpoon-lab-banner-badge {
+  animation: none;
 }
 
 /* ── Act II — derivation trail. --step-gap = vertical space between every stack item. */
@@ -10057,14 +10161,12 @@ button.harpoon-lab-banner:focus-visible {
   transform: none;
   transition:
     opacity 220ms ease,
-    transform 240ms ease,
     max-height 260ms ease,
     padding-top 260ms ease,
     padding-bottom 260ms ease;
 }
 .harpoon-lab-auto-commit.is-dismissing {
   opacity: 0;
-  transform: translateY(-0.18rem);
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
@@ -10073,6 +10175,15 @@ button.harpoon-lab-banner:focus-visible {
   font-size: 0.78rem;
 }
 .harpoon-lab-commit-sub {
+  word-break: break-word;
+}
+.harpoon-lab-commit-tech {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--base-mid) 72%, transparent);
   word-break: break-word;
 }
 .harpoon-lab-commit-actions {
@@ -10103,38 +10214,24 @@ button.harpoon-lab-banner:focus-visible {
   outline-offset: 1px;
 }
 
-/* ── Compromise strip — same full-bleed hero shape as the goal, yellow tint ── */
+/* ── Compromise strip — same layout as the place strip, yellow when warned. */
 .harpoon-lab-auto-compromise {
+  width: 100%;
   margin: 0;
-  padding: 0.62rem 0.75rem;
+}
+.harpoon-lab-compromise-title {
+  font-size: 0.78rem;
+}
+.harpoon-lab-compromise-sub {
+  font-size: 0.68rem;
 }
 .harpoon-lab-auto-compromise[hidden] { display: none; }
-.harpoon-lab-auto-compromise.tone-warn {
-  --harpoon-strip-fill: color-mix(in srgb, var(--harpoon-card-bg) 82%, var(--ide-status-warning) 18%);
-  --harpoon-strip-border: color-mix(in srgb, var(--ide-status-warning) 44%, var(--harpoon-divider));
-}
-.harpoon-lab-auto-compromise + .harpoon-lab-auto-goal {
-  border-top: 0;
-}
-.harpoon-lab-auto-compromise .harpoon-lab-banner-title { font-size: 0.74rem; }
+
 .harpoon-lab-auto-compromise.tone-warn .harpoon-lab-banner-title {
   color: color-mix(in srgb, var(--ide-status-warning) 88%, white 12%);
 }
 .harpoon-lab-auto-compromise.tone-warn .harpoon-lab-banner-sub {
   color: color-mix(in srgb, var(--ide-status-warning) 48%, var(--base-high));
-}
-.harpoon-lab-auto-compromise.tone-warn .harpoon-lab-banner-badge {
-  width: auto;
-  height: auto;
-  min-width: 0;
-  padding: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--ide-status-warning);
-  font-family: var(--sans);
-  font-size: 1.2rem;
-  font-weight: 800;
-  line-height: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -11167,17 +11264,97 @@ button.harpoon-lab-banner:focus-visible {
 .hpt-split-tree .hpt-host { height: 100%; }
 .hpt-split-tree .hpt-svg { height: 100% !important; }
 .hpt-split-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 0 0 clamp(248px, 36%, 340px);
+  width: clamp(248px, 36%, 340px);
+  min-width: 0;
   border-left: 1px solid color-mix(in srgb, var(--harpoon-divider) 50%, transparent);
-  overflow-y: auto;
   background: var(--harpoon-card-bg);
+  transition:
+    width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    flex-basis 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 180ms ease;
 }
+
+.hpt-rail-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.65rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--harpoon-divider) 45%, transparent);
+  background: color-mix(in srgb, var(--harpoon-card-bg) 88%, var(--chrome-bg));
+}
+
+.hpt-rail-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-mid);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 180ms ease;
+}
+
+.hpt-rail-toggle {
+  flex: 0 0 auto;
+}
+
+.hpt-rail-toggle svg {
+  pointer-events: none;
+}
+
+.hpt-split-rail .hpt-card.is-rail {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.hpt-split.is-rail-collapsed .hpt-split-rail {
+  flex: 0 0 var(--icon-btn);
+  width: var(--icon-btn);
+  border-left-color: color-mix(in srgb, var(--harpoon-divider) 35%, transparent);
+}
+.hpt-split-rail.is-collapsed .hpt-rail-head {
+  justify-content: center;
+  padding: 0.45rem 0;
+  border-bottom: 0;
+  min-height: 0;
+  background: transparent;
+}
+.hpt-split-rail.is-collapsed .hpt-rail-title {
+  display: none;
+}
+.hpt-split.is-rail-collapsed .hpt-card.is-rail {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hpt-split-rail,
+  .hpt-rail-title,
+  .hpt-rail-toggle,
+  .hpt-split-rail .hpt-card.is-rail {
+    transition: none;
+  }
+}
+
 .hpt-card.is-rail {
   border-top: 0;
   animation: none;
   padding: 0;
   gap: 0;
-  min-height: 100%;
+  min-height: 0;
 }
 
 /* Pop-out detail rail — inspector-like sections, one calm hierarchy. */
@@ -11252,6 +11429,14 @@ button.harpoon-lab-banner:focus-visible {
   border-top: 1px solid color-mix(in srgb, var(--harpoon-divider) 35%, transparent);
   font-family: var(--sans);
   font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--muted-mid);
+}
+/* A short in-context gloss under a section (e.g. one-arm case = let). */
+.hpt-detail-note {
+  margin: 0.4rem 0 0;
+  font-family: var(--sans);
+  font-size: 0.66rem;
   line-height: 1.45;
   color: var(--muted-mid);
 }
@@ -11494,16 +11679,16 @@ button.harpoon-lab-banner:focus-visible {
 
 .hpt-edge {
   fill: none;
-  stroke: color-mix(in srgb, var(--muted-low, #64748b) 38%, transparent);
-  stroke-width: 1.25;
+  stroke: color-mix(in srgb, var(--muted-low, #64748b) 62%, transparent);
+  stroke-width: 1.4;
   stroke-linecap: round;
   opacity: 0;
   transition: opacity 360ms ease;
 }
 .hpt-svg.is-revealed .hpt-edge { opacity: 1; }
 .hpt-edge--branch {
-  stroke: color-mix(in srgb, var(--hpt-arm) 32%, var(--muted-low));
-  stroke-width: 1;
+  stroke: color-mix(in srgb, var(--hpt-arm) 50%, var(--muted-low));
+  stroke-width: 1.15;
 }
 
 .hpt-node {
@@ -11540,12 +11725,6 @@ button.harpoon-lab-banner:focus-visible {
   font-family: var(--mono, ui-monospace, monospace);
   font-weight: 400;
 }
-.hpt-tag {
-  fill: var(--muted-mid);
-  font-size: 8px;
-  font-family: var(--mono, ui-monospace, monospace);
-  pointer-events: none;
-}
 .hpt-status { stroke: none; }
 .hpt-status--done { fill: var(--hpt-fill); }
 .hpt-status--open { fill: color-mix(in srgb, var(--hpt-split) 75%, #f59e0b); }
@@ -11581,7 +11760,7 @@ button.harpoon-lab-banner:focus-visible {
 .hpt-node.is-ghost.is-selected .hpt-shape { stroke-dasharray: none; }
 .hpt-edge--ghost {
   stroke-dasharray: 3 2;
-  stroke: color-mix(in srgb, var(--muted-low, #64748b) 55%, transparent);
+  stroke: color-mix(in srgb, var(--muted-low, #64748b) 68%, transparent);
 }
 .hpt-svg.is-revealed .hpt-edge--ghost { opacity: 0.55; }
 
@@ -11626,9 +11805,8 @@ button.harpoon-lab-banner:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  animation: hpt-card-in 200ms ease;
+  animation: none;
 }
-@keyframes hpt-card-in { from { opacity: 0; transform: translateY(4px); } }
 .hpt-card-head { display: flex; align-items: baseline; gap: 0.45rem; min-width: 0; }
 .hpt-card-kind {
   flex: 0 0 auto;

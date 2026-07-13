@@ -106,6 +106,28 @@ const tweaked = assessHarpoonAnchor(anchor, {
 });
 expect(tweaked.level === 'warn' && tweaked.reason === 'file-changed', 'body tweak with hole intact → warn');
 
+const withBlankLines = '\n\n' + assembledCode;
+const blankOff = withBlankLines.indexOf('?');
+const blankBefore = withBlankLines.slice(0, blankOff);
+const blankHit = {
+  hole: {
+    line: blankBefore.split('\n').length,
+    col: blankOff - (blankBefore.lastIndexOf('\n') + 1) + 1,
+  },
+  from: blankOff,
+  to: blankOff + 1,
+};
+const blankLines = assessHarpoonAnchor(anchor, {
+  fileAvailable: true,
+  fileText: withBlankLines,
+  fileTextFingerprint: textFingerprint(withBlankLines),
+  memberFingerprints: anchor.memberFingerprints,
+  liveHit: blankHit,
+  parseDecl,
+});
+expect(blankLines.level === 'warn' && blankLines.reason === 'file-changed', 'blank lines elsewhere → warn');
+expect(blankLines.liveHit != null, 'blank lines retain liveHit');
+
 const suiteDrift = assessHarpoonAnchor(anchor, {
   fileAvailable: true,
   fileText: assembledCode,

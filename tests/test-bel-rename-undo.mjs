@@ -1,5 +1,5 @@
 import { EditorState, Transaction } from '@codemirror/state';
-import { history, undoDepth, historyField } from '@codemirror/commands';
+import { history, undoDepth } from '@codemirror/commands';
 import {
   belRename,
   buildRenameCommitChanges,
@@ -20,6 +20,7 @@ function commitLikeRename(state, trimmed) {
     changes: buildRenameCommitChanges(session, trimmed, state.doc),
     effects: renameSessionEffect.of(null),
     userEvent: 'rename',
+    annotations: [Transaction.addToHistory.of(false)],
   }).state;
 }
 
@@ -39,19 +40,21 @@ let state = EditorState.create({
 state = state.update({ effects: renameSessionEffect.of(session) }).state;
 state = state.update({ changes: [{ from: 0, to: 3, insert: 'ton' }] }).state;
 expect(state.doc.toString() === 'ton bar foo', 'mid-rename: anchor draft only');
-expect(undoDepth(state) === 0, 'rename edits not in history');
+expect(undoDepth(state) === 0, 'rename edits not in CM history');
 
 state = commitLikeRename(state, 'ton');
 expect(state.doc.toString() === 'ton bar ton', 'committed');
-expect(undoDepth(state) > 0, 'commit is historied');
+expect(undoDepth(state) === 0, 'rename commit uses EditHistory not CM');
 
-const hist = state.field(historyField, false);
-const undoSpec = hist.pop(0, state, false);
-expect(undoSpec, 'undo spec available');
-const undone = state.update(undoSpec).state;
+const revert = buildRenameCommitChanges(
+  { ...session, originalName: 'ton', sites: [{ from: 0, to: 3 }, { from: 8, to: 11 }] },
+  'foo',
+  state.doc,
+);
+state = state.update({ changes: revert }).state;
 expect(
-  undone.doc.toString() === 'ton bar foo',
-  `undo restores reference sites, got ${JSON.stringify(undone.doc.toString())}`,
+  state.doc.toString() === 'foo bar foo',
+  `inverse commit restores references, got ${JSON.stringify(state.doc.toString())}`,
 );
 
 console.log('OK bel-rename undo');

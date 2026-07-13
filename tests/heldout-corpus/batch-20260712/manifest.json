@@ -1,0 +1,25 @@
+{
+  "batch": "batch-20260712",
+  "authoredBy": "subagent-blind",
+  "note": "Third blind batch — targets three SYNTAX DIMENSIONS the earlier batches under-exercised: a mutual `rec … and …` block, `--infix` operator declarations used in theorem statements, and TWO context schemas related by the main theorems. Same anti-leak contract as batch-20260709 (authors named no move vocabulary, no holes, no orchestration); no feedback loop. Every file independently re-verified against Beluga-W's native main.exe (exit 0) before this manifest was written.",
+  "files": [
+    {
+      "path": "mutual-block.bel",
+      "description": "Mutually-defined even/odd judgments over unary numerals: relational addition preserves evenness/oddness by mutual induction, with doubling/quadrupling corollaries and a totality theorem classifying every numeral.",
+      "shape": "mutual LF block (ev/od) + mutual rec block of 2 + 1 functionality lemma + 2 corollaries + 1 standalone induction on nat; 6 recs",
+      "provable": true
+    },
+    {
+      "path": "infix-ops.bel",
+      "description": "Arithmetic expressions with infix sum/product constructors and infix big-step evaluation/ordering judgments: totality and determinism of evaluation, commutativity of evaluated sums, and monotonicity of the order under addition.",
+      "shape": "4 --infix declarations (2 term ctors, 2 judgments) + 6 headline theorems + 9 supporting lemmas over prefix ternary relations; 15 recs",
+      "provable": true
+    },
+    {
+      "path": "two-schema.bel",
+      "description": "Erasure of STLC typing derivations (tyctx schema, blocks carrying oft proofs) into scoping derivations (flatctx schema, blocks carrying scoped proofs) via a positional context-correspondence relation, with closed-term, pipeline, and weakening-coherence corollaries.",
+      "shape": "2 block schemas differing in evidentiary component + a ctype context-correspondence relation + 5 recs relating derivations across the schemas",
+      "provable": true
+    }
+  ]
+}

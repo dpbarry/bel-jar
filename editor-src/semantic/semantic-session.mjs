@@ -2,6 +2,7 @@ export function createSemanticSession(belugaClient) {
   let loadedFingerprint = null;
   let loadPromise = null;
   let lastCode = '';
+  let loadedPreludeFp = null;
 
   function traceIntel(phase, fn) {
     const g = typeof globalThis !== 'undefined' ? globalThis : null;
@@ -18,11 +19,13 @@ export function createSemanticSession(belugaClient) {
     });
   }
 
-  async function ensureLoaded(code) {
+  async function ensureLoaded(code, opts = {}) {
     const requestCode = String(code != null ? code : '');
     const fp = belugaClient.fingerprint(requestCode);
+    const preludeFp = opts.preludeFp != null ? String(opts.preludeFp) : null;
 
     if (loadedFingerprint === fp) {
+      if (preludeFp != null) loadedPreludeFp = preludeFp;
       return { ok: true, cached: true, fingerprint: fp };
     }
 
@@ -34,6 +37,7 @@ export function createSemanticSession(belugaClient) {
     loadPromise = belugaClient.loadChecker(requestCode)
       .then((output) => {
         loadedFingerprint = fp;
+        if (preludeFp != null) loadedPreludeFp = preludeFp;
         loadPromise = null;
         return {
           ok: true,
@@ -50,6 +54,10 @@ export function createSemanticSession(belugaClient) {
       });
 
     return loadPromise;
+  }
+
+  function isLoadedForPrelude(preludeFp) {
+    return !!loadedFingerprint && loadedPreludeFp != null && loadedPreludeFp === String(preludeFp || '');
   }
 
   function positionsSpec(positions) {
@@ -151,9 +159,10 @@ export function createSemanticSession(belugaClient) {
     }
   }
 
-  function markLoaded(fp, code) {
+  function markLoaded(fp, code, opts = {}) {
     loadedFingerprint = fp;
     if (code != null) lastCode = String(code);
+    if (opts.preludeFp != null) loadedPreludeFp = String(opts.preludeFp);
     loadPromise = null;
   }
 
@@ -161,10 +170,15 @@ export function createSemanticSession(belugaClient) {
     loadedFingerprint = null;
     loadPromise = null;
     lastCode = '';
+    loadedPreludeFp = null;
   }
 
   function getFingerprint() {
     return loadedFingerprint;
+  }
+
+  function getPreludeFingerprint() {
+    return loadedPreludeFp;
   }
 
   function parseDiagnostics(output) {
@@ -195,5 +209,7 @@ export function createSemanticSession(belugaClient) {
     markLoaded,
     invalidate,
     getFingerprint,
+    getPreludeFingerprint,
+    isLoadedForPrelude,
   };
 }

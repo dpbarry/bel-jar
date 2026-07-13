@@ -139,6 +139,7 @@
       anchor.getAttribute('data-tooltip')
       || anchor.getAttribute('data-tooltip-tone')
       || anchor.hasAttribute('data-tooltip-head')
+      || (anchor.hasAttribute('data-tooltip-rich') && typeof anchor._belTooltipRich === 'function')
       || parseLintErrors(anchor)
     );
   }
@@ -171,7 +172,21 @@
       'tooltip-inner--diagnostic',
       'tooltip-inner--error',
       'tooltip-inner--warning',
+      'tooltip-inner--rich',
     );
+    if (anchor.hasAttribute('data-tooltip-rich') && typeof anchor._belTooltipRich === 'function') {
+      tip.classList.add('tooltip-inner--rich');
+      tip.replaceChildren();
+      let frag = null;
+      try {
+        frag = anchor._belTooltipRich(anchor);
+      } catch (_) {
+        frag = null;
+      }
+      if (frag) tip.appendChild(frag);
+      else if (text) tip.textContent = text;
+      return;
+    }
     if (tone === 'error' || tone === 'warning') {
       fillDiagnosticTooltip(tip, text, tone);
       return;
@@ -345,6 +360,7 @@
     if (!anchor.getAttribute('data-tooltip')) return false;
     if (anchor.getAttribute('data-tooltip-tone')) return false;
     if (anchor.hasAttribute('data-tooltip-head')) return false;
+    if (anchor.hasAttribute('data-tooltip-rich')) return false;
     if (parseLintErrors(anchor)) return false;
     return true;
   }
@@ -591,6 +607,26 @@
     bindTooltipEl(el);
   }
 
+  // Set a RICH (custom DOM) BelJar-native tooltip on a (possibly dynamic)
+  // element. buildFragment(anchor) is called lazily on each show and must
+  // return a DocumentFragment / Node (e.g. a syntax-highlighted code fragment)
+  // or a falsy value to fall back to plain data-tooltip text. `ariaText` is an
+  // optional accessible label (rich DOM can't be an aria-label).
+  function setRichTooltip(el, buildFragment, ariaText) {
+    if (!el || el.nodeType !== 1) return;
+    el.removeAttribute('title');
+    if (typeof buildFragment !== 'function') {
+      el._belTooltipRich = null;
+      el.removeAttribute('data-tooltip-rich');
+      return;
+    }
+    el._belTooltipRich = buildFragment;
+    el.setAttribute('data-tooltip-rich', '');
+    const aria = ariaText != null ? String(ariaText).trim() : '';
+    if (aria) el.setAttribute('aria-label', aria);
+    bindTooltipEl(el);
+  }
+
   // Show a tooltip with the element's full text only when its content overflows
   // (scrollWidth > clientWidth). getText() defaults to the element's textContent.
   // Must be called before any other bindTooltipEl call on the same element so
@@ -613,6 +649,7 @@
     hide: hideTooltip,
     hideImmediate: hideTooltipImmediate,
     set: setTooltip,
+    setRich: setRichTooltip,
     show: showTooltip,
     // Wire a dynamically-created element (with data-tooltip) for custom tooltips.
     bind: bindTooltipEl,

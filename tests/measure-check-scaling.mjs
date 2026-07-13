@@ -18,6 +18,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { parser } from '../editor-src/beluga-parser.js';
 import { pathsFromSourcesCfg } from './_library-cfg.mjs';
+import { assembleCheckerCode } from '../editor-src/project-prelude.mjs';
+import {
+  compressPrelude,
+  buildCompressedCheckerCode,
+  keepIndicesForFrontier,
+  topDeclSpans,
+} from '../editor-src/semantic/compress-development.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -170,3 +177,73 @@ for (const frac of [0.25, 0.5, 0.75]) {
 }
 console.log('\nok=true means earlier signatures stayed in scope while their proofs were');
 console.log('skipped — a normal mid-file edit rechecks in a fraction of the 25s full pass.');
+
+// --- Late-suite lever: full prelude+active vs signature-compressed frontier ---
+// Editing the LAST file of a suite (or the last decl of a concat) currently
+// hands Beluga the entire development. Compression stubs every body outside
+// the dirty frontier (all of prelude + earlier active decls).
+function splitSuiteAsPreludeActive(fullSrc, paths) {
+  if (!paths || paths.length < 2) {
+    // Single-file: treat first 75% of decls as "prelude", last 25% as active.
+    const d = topDecls(fullSrc);
+    if (d.length < 4) return null;
+    const cut = d[Math.floor(d.length * 0.75) - 1].to;
+    return {
+      preludeCode: fullSrc.slice(0, cut),
+      activeCode: fullSrc.slice(cut).replace(/^\n+/, ''),
+      label: 'synthetic-75/25-split',
+    };
+  }
+  const prePaths = paths.slice(0, -1);
+  const activePath = paths[paths.length - 1];
+  return {
+    preludeCode: prePaths.map((p) => readFileSync(join(dataRoot, p), 'utf8')).join('\n\n'),
+    activeCode: readFileSync(join(dataRoot, activePath), 'utf8'),
+    label: `suite-last=${activePath}`,
+  };
+}
+
+const suitePaths = isSuite ? pathsFromSourcesCfg(dataRoot, arg) : null;
+const split = splitSuiteAsPreludeActive(src, suitePaths);
+if (split) {
+  const { preludeCode, activeCode, label } = split;
+  const prelude = {
+    code: preludeCode,
+    spans: [{ id: 'pre', name: 'prelude.bel', startLine: 1, endLine: preludeCode.split('\n').length }],
+    offsetLines: preludeCode.split('\n').length + 1,
+    names: new Set(),
+  };
+  const activeTree = parser.parse(activeCode);
+  const activeDecls = topDeclSpans(activeTree);
+  const lastIdx = Math.max(0, activeDecls.length - 1);
+  const keepIdx = keepIndicesForFrontier(activeTree, activeDecls.length
+    ? [activeDecls[lastIdx]]
+    : []);
+
+  const fullAssembled = assembleCheckerCode(activeCode, prelude).code;
+  const compressed = buildCompressedCheckerCode({
+    fileCode: activeCode,
+    prelude,
+    keepIdx,
+    tree: activeTree,
+    activeSrc: activeCode,
+  });
+
+  console.log(`\n--- late-suite compression (${label}) ---`);
+  console.log(`prelude bytes: ${preludeCode.length}  active bytes: ${activeCode.length}`);
+  console.log(`full assembled bytes: ${fullAssembled.length}`);
+  if (compressed) {
+    console.log(`compressed bytes:    ${compressed.code.length}`);
+    const fullT = timeCheck(fullAssembled);
+    const compT = timeCheck(compressed.code);
+    const stubPre = compressPrelude(prelude);
+    console.log(`full check:       ${fullT.ms.toFixed(1)} ms  ok=${fullT.ok}`);
+    console.log(`compressed check: ${compT.ms.toFixed(1)} ms  ok=${compT.ok}`);
+    if (compT.ms > 0) {
+      console.log(`speedup:          ${(fullT.ms / compT.ms).toFixed(1)}x`);
+    }
+    console.log(`prelude stubbed:  ${stubPre.code.length} bytes (was ${preludeCode.length})`);
+  } else {
+    console.log('compressed: (null — empty frontier)');
+  }
+}

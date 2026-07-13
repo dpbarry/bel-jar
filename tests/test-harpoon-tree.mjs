@@ -9,9 +9,11 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
+const glyphSrc = fs.readFileSync(new URL('../js/harpoon-glyphs.js', import.meta.url), 'utf8');
 const src = fs.readFileSync(new URL('../js/harpoon-tree.js', import.meta.url), 'utf8');
 const sandbox = { window: undefined, globalThis: {} };
 vm.createContext(sandbox);
+vm.runInContext(glyphSrc, sandbox);
 vm.runInContext(src, sandbox);
 const HT = sandbox.globalThis.HarpoonTree;
 expect(HT && typeof HT.buildModel === 'function', 'HarpoonTree loads in a bare context');
@@ -82,9 +84,13 @@ expect(intro.step && intro.step.lead === "opened the goal's binders", 'move carr
 const split = intro.children[0];
 expect(split.kind === 'split' && split.children.length === 2, 'split fans into 2 arms');
 expect(split.altCount === 1, 'split has alt count from rejected fill');
-expect(split.effectBadge === '2', 'split shows arm count on model');
+// Arm count is an inspector detail now (no corner badge on the node); the count
+// remains available structurally as the number of arm children.
+expect(split.effectBadge === undefined, 'split node carries no arm-count badge');
+expect(split.children.length === 2, 'arm count available from split children');
 const [arm1, arm2] = split.children;
 expect(arm1.type === 'arm' && /c1 X/.test(arm1.label), 'arm 1 labeled by its pattern');
+expect(arm1.label.includes('⊢') && !arm1.label.includes('|-'), 'arm label uses turnstile glyph');
 expect(arm1.children[0] && arm1.children[0].kind === 'synth', 'synth attaches to its arm');
 expect(arm2.children[0] && arm2.children[0].kind === 'fill' && arm2.children[0].closed === true,
   'fill attaches to arm 2 and is marked closed');

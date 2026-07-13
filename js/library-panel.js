@@ -128,9 +128,11 @@
           });
         },
         onInsertFile: function (anchor, item) {
+          var row = beginLibraryMenuIntent(anchor);
           fetchContent(item.path).then(function (code) {
             openInsertMenu(anchor, code, item);
           }).catch(function () {
+            cancelLibraryMenuIntent(row);
             toast('Could not load library sample.', { kind: 'warn' });
           });
         },
@@ -571,6 +573,16 @@
         || anchor.closest('.library-preview-tree-file');
     }
 
+    function beginLibraryMenuIntent(anchor) {
+      var row = libraryMenuRow(anchor);
+      if (row) row.classList.add('is-menu-open');
+      return row;
+    }
+
+    function cancelLibraryMenuIntent(row) {
+      if (row) row.classList.remove('is-menu-open');
+    }
+
     function openLibraryMenu(anchor, menuOpts) {
       if (typeof global.Menu === 'undefined') return;
       var row = libraryMenuRow(anchor);
@@ -920,9 +932,11 @@
       });
 
       var insertBtn = actionBtn('', 'Insert', ICON_INSERT, false, function (btn) {
+        var row = beginLibraryMenuIntent(btn);
         fetchContent(item.path).then(function (code) {
           openInsertMenu(btn, code, item);
         }).catch(function () {
+          cancelLibraryMenuIntent(row);
           toast('Could not load library sample.', { kind: 'warn' });
         });
       });

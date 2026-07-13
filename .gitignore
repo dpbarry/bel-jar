@@ -3,6 +3,9 @@
 .cursor/
 node_modules/
 
+# Corpus masking-harness run outputs (regenerate via `npm run corpus`/`heldout`)
+results/corpus/
+
 _debug-*.mjs
 tests/_scratch-*.mjs
 

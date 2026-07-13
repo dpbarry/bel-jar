@@ -110,4 +110,11 @@ updateIdeStatusDot(dot, [
 expect(dot.getAttribute('data-live-state') === 'error-checking', 'lint list wired on error-checking dot');
 expect(dot.getAttribute('data-tooltip-errors')?.includes('Type mismatch'), 'error-checking dot carries lint JSON');
 
+const shortDoc = Text.of(['ab']);
+const staleItems = lintTooltipItemsFromDiagnostics([
+  { severity: 'error', message: 'stale', from: 10 },
+  { severity: 'warning', message: 'ok', from: 1 },
+], shortDoc);
+expect(staleItems.length === 1 && staleItems[0].msg === 'ok', 'stale diag positions skipped after doc shrink');
+
 console.log('OK ide status (parse/check dot, aux suite dot, stale banner, coverage)');

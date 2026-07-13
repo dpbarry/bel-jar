@@ -26,6 +26,8 @@ import {
   synthesizeFills,
   invertCandidates,
   parseAppType,
+  infixDeclaredOps,
+  renderApp,
 } from '../editor-src/bel-hole-split.mjs';
 import { transformBelugaStep, scrutineeIsParameterDetermined } from '../editor-src/bel-hole-actions.mjs';
 
@@ -419,5 +421,26 @@ expect(alreadyDestructured.length === 0,
 // But WITHOUT the sub-derivations in scope, the same hypothesis IS inverted.
 const notYet = invertCandidates({ name: 'h', type: "[ |- dl (arr A1 B1) (arr A2 B2)]" }, INV, [], []);
 expect(notYet.length === 1, 'the same hypothesis inverts when its sub-derivations are absent');
+
+// ── Fixity-aware emission (renderApp + infixDeclaredOps) ─────────────────────
+// A `--infix` head is illegal in prefix position; emitted applications must
+// respect the declared fixity (invented names; the pragma is the only signal).
+{
+  const CODE = 'tn : type.\nta : tn.\nbop : tn -> tn -> tn.\n--infix bop 6 left.\n';
+  const ops = infixDeclaredOps(CODE);
+  expect(ops.has('bop') && !ops.has('ta'), 'infixDeclaredOps reads the pragma, nothing else');
+  expect(renderApp(CODE, 'bop', ['ta', 'ta']) === 'ta bop ta',
+    '2-ary infix head renders infix');
+  expect(renderApp(CODE, 'bop', ['ta', 'bop2 ta ta']) === 'ta bop (bop2 ta ta)',
+    'compound operand is parenthesized');
+  expect(renderApp(CODE, 'bop', ['(f a)', '[x |- b]']) === '(f a) bop [x |- b]',
+    'already-grouped operands stay unwrapped');
+  expect(renderApp(CODE, 'bop', ['(a) c (b)', 'ta']) === '((a) c (b)) bop ta',
+    'balance-aware grouping: (a) c (b) is NOT one group');
+  expect(renderApp(CODE, 'other', ['ta', 'ta']) === 'other ta ta',
+    'non-infix heads stay prefix');
+  expect(renderApp(CODE, 'bop', ['ta']) === 'bop ta',
+    'partial application stays prefix (checker arbitrates)');
+}
 
 console.log('OK  hole-split — BelJar builds well-typed split/intro skeletons, fill candidates, TYPED constructor enumeration (both decl forms), and type-directed term SYNTHESIS (constructor application unifying under operators) — all from its OWN model');

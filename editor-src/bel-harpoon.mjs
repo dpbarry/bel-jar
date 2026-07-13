@@ -12,6 +12,7 @@
 
 import { indentRange } from '@codemirror/language';
 import { formatProofBody } from './bel-proof-format.mjs';
+import { dispatchEdit } from './bel-edit-history.mjs';
 
 // Parse `<kw> name : <type> = <body>` from a top-level declaration's text.
 // Returns { kw:'rec'|'proof', name, type, bodyStart } (bodyStart = offset of the
@@ -84,10 +85,11 @@ export function commitProof(view, declFrom, declTo, source) {
   const canonType = expandTypeGlyphs(decl.type);
   const body = formatProofBody(raw);
   const newDecl = `rec ${decl.name} : ${canonType} =\n${body}\n;`;
-  view.dispatch({
+  const fileId = (typeof globalThis !== 'undefined' ? globalThis : window).BelJarCurrentEditor?.getCurrentFileId?.() ?? null;
+  dispatchEdit(view, {
     changes: { from: range.from, to: range.to, insert: newDecl },
     userEvent: 'input.complete',
-  });
+  }, { fileId, kind: 'proof-commit' });
   view.focus();
   return true;
 }

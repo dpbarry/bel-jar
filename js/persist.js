@@ -446,11 +446,25 @@
       return state.editor.local || {};
     }
 
+    // Materialize the live document string. Prefer a lazy provider (the editor's
+    // live doc) so the whole-buffer toString() happens HERE — at debounced save
+    // time, off the input critical path — instead of on every keystroke.
+    function collectEditorText() {
+      if (providers && typeof providers.getText === 'function') {
+        try {
+          var live = providers.getText();
+          if (live != null) return String(live);
+        } catch (_) { /* fall through to last-known text */ }
+      }
+      return state.editor.text;
+    }
+
     function persistNow() {
       clearTimeout(saveTimer);
       saveTimer = null;
       state.meta.updatedAt = Date.now();
       state.meta.revision += 1;
+      state.editor.text = collectEditorText();
       state.editor.local = collectLocal();
       state.semantic = collectSemantic();
       writeState(backend, state);
@@ -462,8 +476,16 @@
       saveTimer = global.setTimeout(persistNow, delay);
     }
 
+    // Legacy push path: callers that already hold the string can still hand it
+    // over. The lazy getText provider (when set) supersedes this at save time.
     function scheduleEditorPersist(text) {
-      state.editor.text = String(text != null ? text : '');
+      if (text != null) state.editor.text = String(text);
+      scheduleSave();
+    }
+
+    // Input-path entry point: mark the buffer dirty and schedule a save WITHOUT
+    // materializing the whole document. persistNow() pulls the live text lazily.
+    function markEditorDirty() {
       scheduleSave();
     }
 
@@ -535,6 +557,7 @@
       },
       getInitialCheckpoint: exportSnapshot,
       scheduleEditorPersist: scheduleEditorPersist,
+      markEditorDirty: markEditorDirty,
       cancelPendingSave: cancelPendingSave,
       replaceEditorText: replaceEditorText,
       scheduleCheckpointSave: scheduleSave,
@@ -1316,16 +1339,16 @@
         writeStoredInspectorFollow(true);
         return true;
       }
-      return false;
+      return true;
     } catch (_) {
-      return false;
+      return true;
     }
   }
 
   function writeStoredInspectorFollow(on) {
     try {
       if (on) backendSave(INSPECTOR_FOLLOW_KEY, '1');
-      else backendRemove(INSPECTOR_FOLLOW_KEY);
+      else backendSave(INSPECTOR_FOLLOW_KEY, 'off');
       if (global.sessionStorage) global.sessionStorage.removeItem(INSPECTOR_FOLLOW_KEY);
     } catch (_) {}
   }
@@ -1354,6 +1377,19 @@
   function writeStoredHarpoonOpen(open) {
     if (open) backendSave('beljar-harpoon-open', '1');
     else backendRemove('beljar-harpoon-open');
+  }
+
+  function readStoredHarpoonDetailsCollapsed() {
+    try {
+      return backendLoad('beljar-harpoon-details-collapsed') === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeStoredHarpoonDetailsCollapsed(collapsed) {
+    if (collapsed) backendSave('beljar-harpoon-details-collapsed', '1');
+    else backendRemove('beljar-harpoon-details-collapsed');
   }
 
   function readStoredLibraryWidth() {
@@ -1938,6 +1974,22 @@
     return changed ? out.join('\n') : null;
   }
 
+  function restoreDeletedFile(id, name, text) {
+    var files = ensureProject();
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].id === id) return false;
+    }
+    files.push({ id: id, name: name });
+    writeProjectFiles(files);
+    var state = emptyState(id);
+    state.editor.text = expandAliasesForStorage(text, name);
+    state.meta.updatedAt = Date.now();
+    state.meta.revision = 1;
+    backendSave(stateKeyFor(id), JSON.stringify(state));
+    pruneEmptyFoldersForFile(name);
+    return true;
+  }
+
   function deleteFile(id) {
     var files = ensureProject();
     var idx = -1;
@@ -2136,6 +2188,10 @@
 
   function writeOpenFileIds(ids) {
     backendSave(projKey('open-files'), JSON.stringify(ids));
+  }
+
+  function setOpenFileIds(ids) {
+    writeOpenFileIds(ids || []);
   }
 
   function getOpenFileIds() {
@@ -2461,6 +2517,8 @@
     writeStoredLibraryOpen: writeStoredLibraryOpen,
     readStoredHarpoonOpen: readStoredHarpoonOpen,
     writeStoredHarpoonOpen: writeStoredHarpoonOpen,
+    readStoredHarpoonDetailsCollapsed: readStoredHarpoonDetailsCollapsed,
+    writeStoredHarpoonDetailsCollapsed: writeStoredHarpoonDetailsCollapsed,
     readStoredLibraryWidth: readStoredLibraryWidth,
     writeStoredLibraryWidth: writeStoredLibraryWidth,
     readStoredLibraryHeight: readStoredLibraryHeight,
@@ -2582,6 +2640,7 @@
     setActiveFileId: setActiveFileId,
     replaceProject: replaceProject,
     createFile: createFile,
+    restoreDeletedFile: restoreDeletedFile,
     deleteFile: deleteFile,
     renameFile: renameFile,
     addEntryToCfg: addEntryToCfg,
@@ -2600,6 +2659,7 @@
     getFileText: getFileText,
     setFileText: setFileText,
     getOpenFileIds: getOpenFileIds,
+    setOpenFileIds: setOpenFileIds,
     openFile: openFile,
     closeOpenFile: closeOpenFile,
     getProjectName: getProjectName,

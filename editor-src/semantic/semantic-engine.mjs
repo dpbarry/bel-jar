@@ -52,6 +52,7 @@ export function createSemanticEngine(options = {}) {
   // Populated in the background by deriveFrontier; read via reconstructedTypeOf/At and bestDeclType.
   let derivationStore = new Map();
   const elaborationInflight = new Map();
+  let lastCursorPos = 0;
   
   function applySettlementToGraph() {
     const syntax = syntaxStore.getSnapshot();
@@ -83,12 +84,16 @@ export function createSemanticEngine(options = {}) {
     applySettlementToGraph();
     const syntax = syntaxStore.getSnapshot();
     if (session && typeof session.markLoaded === 'function') {
+      const ctx = typeof getCheckContext === 'function' && syntax
+        ? getCheckContext(syntax)
+        : null;
+      const preludeFp = ctx?.preludeFp || (ctx?.prelude?.code != null
+        ? String(ctx.prelude.code.length)
+        : '');
       if (checkerSnap.checkedFp) {
-        // Multi-pass settlement: the checker slot holds the maximal-healthy
-        // masked code (erroring blocks blanked), not the canonical snapshot.
-        session.markLoaded(checkerSnap.checkedFp, checkerSnap.checkedCode);
+        session.markLoaded(checkerSnap.checkedFp, checkerSnap.checkedCode, { preludeFp });
       } else if (checkerSnap.checkerFp) {
-        session.markLoaded(checkerSnap.checkerFp, checkerCodeFromSyntax(syntax));
+        session.markLoaded(checkerSnap.checkerFp, checkerCodeFromSyntax(syntax), { preludeFp });
       }
     }
     const sched = getScheduler();
@@ -161,6 +166,15 @@ export function createSemanticEngine(options = {}) {
         }
       }
     }
+
+    // Cursor-first: certify the declaration under the caret before the rest.
+    if (lastCursorPos != null && ranges.length > 1) {
+      ranges.sort((a, b) => {
+        const da = Math.min(Math.abs(a.from - lastCursorPos), Math.abs(a.to - lastCursorPos));
+        const db = Math.min(Math.abs(b.from - lastCursorPos), Math.abs(b.to - lastCursorPos));
+        return da - db;
+      });
+    }
     return ranges;
   }
 
@@ -187,6 +201,10 @@ export function createSemanticEngine(options = {}) {
         deriveFrontier,
         getCheckerCode: () => checkerCodeFromSyntax(syntaxStore.getSnapshot()),
         isSettlementReady: () => {
+          // STRICT gate: intel must never run while settlement is in flight —
+          // an unsettled version would make the scheduler assemble+load the
+          // full development into the intel worker on every tick while the
+          // user is typing (main-thread string builds + megabyte postMessages).
           const syntax = syntaxStore.getSnapshot();
           if (!syntax || !settlement) return true;
           return settlement.isSettledFor(syntax.version);
@@ -560,6 +578,7 @@ export function createSemanticEngine(options = {}) {
   }
 
   function update(tree, doc, updateOptions = {}) {
+    if (updateOptions.cursorPos != null) lastCursorPos = updateOptions.cursorPos;
     const prevSyntax = syntaxStore.getSnapshot();
     const syntax = syntaxStore.update(tree, doc, { ...updateOptions, documentId });
     let trigger = settlementTrigger(prevSyntax, syntax);
@@ -717,6 +736,10 @@ export function createSemanticEngine(options = {}) {
     const checker = checkerStore.getSnapshot();
     const syntaxDiags = syntax?.syntaxDiagnostics || [];
     const belugaDiags = belugaDiagnosticsForDisplay(checker);
+    // NOTE: graph DIRTY/BLOCKED must never surface as diagnostics — cross-file
+    // names (schemas/types defined in earlier suite members) are unresolved in
+    // the LOCAL symbol store by design, so BLOCKED is a scheduling state, not a
+    // user-facing error.
     const merged = mergeDiagnostics(syntaxDiags, belugaDiags);
     const overlay = getSuiteOverlayDiagnostics?.() || [];
     if (!overlay.length) return merged;

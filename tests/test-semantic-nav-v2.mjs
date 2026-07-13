@@ -56,6 +56,10 @@ const occ = e.occurrencesAt(useOfImp + 2);
 expect(occ.length === 2, `⊃ should have 2 occurrences (def + 1 use), got ${occ.length}`);
 expect(occ[0].from < occ[1].from, 'occurrences sorted by position');
 
+// --- occurrencesAt: a symbol with no other uses returns a single range ---
+const occSingle = e.occurrencesAt(sym('⊤I').nameRange.from);
+expect(occSingle.length === 1, `⊤I should have 1 occurrence (def only), got ${occSingle.length}`);
+
 // --- navAt tolerates a non-identifier position without throwing ---
 const navNone = e.navAt(0); // 'LF' keyword start, not an ident
 expect(navNone === null || typeof navNone === 'object',

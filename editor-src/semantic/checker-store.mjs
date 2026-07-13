@@ -87,6 +87,7 @@ export function createCheckerStore() {
     holes = [],
     checkedCode = '',
     checkedFp = '',
+    settleMode = null,
   }) {
     snapshot = {
       syntaxVersion,
@@ -100,6 +101,7 @@ export function createCheckerStore() {
       holes: holes || [],
       checkedCode,
       checkedFp,
+      settleMode: settleMode || null,
     };
   }
 

@@ -1,0 +1,25 @@
+{
+  "batch": "batch-20260710",
+  "authoredBy": "subagent-blind",
+  "note": "Second blind batch — authored AFTER the completeness spec + coverage matrix landed, as FALSIFICATION of those instruments (spec §6): a failure here means both a coverage gap AND a missing matrix row. Same anti-leak contract as batch-20260709; no feedback loop.",
+  "files": [
+    {
+      "path": "eva-agree.bel",
+      "description": "A direct big-step arithmetic semantics agrees with an accumulator-passing evaluator, via a ctype reassociation lemma, a right-identity lemma, and a generalized soundness induction.",
+      "shape": "two LF lemmas + a ctype-producing lemma feeding a generalized induction plus corollary; 4 recs",
+      "provable": true
+    },
+    {
+      "path": "ceq-cong.bel",
+      "description": "The refl-sym-trans equational closure of a small-step arithmetic reduction is compatible with succ and plus.",
+      "shape": "two 4-case inductions over an equivalence relation; one with a Pi premise",
+      "provable": true
+    },
+    {
+      "path": "exch-pure.bel",
+      "description": "Exchange: a purity derivation stays valid when the two topmost independent context hypotheses are swapped.",
+      "shape": "schema context with a NAMED double extension [g, u:…, v:… ⊢ …]; variable arms + #p case + recursion under the swapped context",
+      "provable": true
+    }
+  ]
+}

@@ -54,8 +54,15 @@ export function astPathFor(node) {
   return parts.reverse().join('/');
 }
 
+// A node's (name, from, to) is unique within a document — two distinct nodes
+// cannot share an identical span AND type — so it identifies the node without
+// the ancestor/sibling walk astPathFor does. astPathFor was O(depth × siblings)
+// PER node; called for every reference (thousands on a large file) it was the
+// dominant per-keystroke cost in symbolStore.update (~13 ms on cp_thrm). These
+// ids are snapshot-local (rebuilt each update; not persisted), so the cheaper
+// key is a drop-in. astPathFor is kept for any positional-path consumer.
 export function astNodeId(documentId, node) {
-  return `${normalizeDocumentId(documentId)}#ast:${astPathFor(node)}:${node.name}`;
+  return `${normalizeDocumentId(documentId)}#ast:${node.name}:${node.from}-${node.to}`;
 }
 
 export function structuralSymbolId(documentId, namespace, structuralKey) {
@@ -63,5 +70,5 @@ export function structuralSymbolId(documentId, namespace, structuralKey) {
 }
 
 export function referenceId(documentId, node) {
-  return `${normalizeDocumentId(documentId)}#ref:${astPathFor(node)}:${node.from}-${node.to}`;
+  return `${normalizeDocumentId(documentId)}#ref:${node.name}:${node.from}-${node.to}`;
 }

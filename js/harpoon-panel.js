@@ -24,6 +24,8 @@
   }
 
   function normalizeGlyphs(text) {
+    var g = global.HarpoonGlyphs;
+    if (g) return g.fallbackNormalize(text);
     return String(text == null ? '' : text)
       .replace(/\|-#/g, '⊢#')
       .replace(/\|-/g, '⊢')
@@ -32,6 +34,8 @@
   }
 
   function displayType(typeStr) {
+    var g = global.HarpoonGlyphs;
+    if (g) return g.displayBeluga(typeStr);
     var ed = E();
     if (ed && typeof ed.normalizeType === 'function') return ed.normalizeType(typeStr);
     return normalizeGlyphs(typeStr);

@@ -1,0 +1,73 @@
+% Object language: unary-numeral arithmetic with addition and predecessor.
+LF nat : type =
+  | z : nat
+  | s : nat -> nat
+;
+
+LF exp : type =
+  | num : nat -> exp
+  | plus : exp -> exp -> exp
+  | pred : exp -> exp
+;
+
+% add N M R  :  N + M = R  (functional in R)
+LF add : nat -> nat -> nat -> type =
+  | add_z : add z M M
+  | add_s : add N M R -> add (s N) M (s R)
+;
+
+% prd N R : predecessor of N is R (pred of z is z)
+LF prd : nat -> nat -> type =
+  | prd_z : prd z z
+  | prd_s : prd (s N) N
+;
+
+% big-step evaluation of exp to a nat value
+LF eval : exp -> nat -> type =
+  | ev_num  : eval (num N) N
+  | ev_plus : eval E1 N1 -> eval E2 N2 -> add N1 N2 R -> eval (plus E1 E2) R
+  | ev_pred : eval E N -> prd N R -> eval (pred E) R
+;
+
+% propositional equality on nat
+LF eqn : nat -> nat -> type =
+  | refl : eqn N N
+;
+
+% --- uniqueness lemmas for the auxiliary relations ---
+
+rec add_det : [ |- add N M R1] -> [ |- add N M R2] -> [ |- eqn R1 R2] =
+/ total 1 /
+fn a1 => fn a2 => case a1 of
+  | [ |- add_z] =>
+    let [ |- add_z] = a2 in [ |- refl]
+  | [ |- add_s D1] =>
+    let [ |- add_s D2] = a2 in
+    let [ |- refl] = add_det [ |- D1] [ |- D2] in
+    [ |- refl]
+;
+
+rec prd_det : [ |- prd N R1] -> [ |- prd N R2] -> [ |- eqn R1 R2] =
+/ total 1 /
+fn p1 => fn p2 => case p1 of
+  | [ |- prd_z] => let [ |- prd_z] = p2 in [ |- refl]
+  | [ |- prd_s] => let [ |- prd_s] = p2 in [ |- refl]
+;
+
+% --- main theorem: big-step evaluation is deterministic ---
+
+rec eval_det : [ |- eval E V1] -> [ |- eval E V2] -> [ |- eqn V1 V2] =
+/ total 1 /
+fn d1 => fn d2 => case d1 of
+  | [ |- ev_num] =>
+    let [ |- ev_num] = d2 in [ |- refl]
+  | [ |- ev_plus D1a D1b A1] =>
+    let [ |- ev_plus D2a D2b A2] = d2 in
+    let [ |- refl] = eval_det [ |- D1a] [ |- D2a] in
+    let [ |- refl] = eval_det [ |- D1b] [ |- D2b] in
+    add_det [ |- A1] [ |- A2]
+  | [ |- ev_pred D1 P1] =>
+    let [ |- ev_pred D2 P2] = d2 in
+    let [ |- refl] = eval_det [ |- D1] [ |- D2] in
+    prd_det [ |- P1] [ |- P2]
+;

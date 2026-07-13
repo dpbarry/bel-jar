@@ -119,11 +119,17 @@ export function parseTotality(declOrBodyText) {
   // `/ total 1 /` — positional.
   const num = /^(\d+)$/.exec(arg);
   if (num) return { kind: 'index', index: parseInt(num[1], 10) };
-  // `/ total d (unique3 g e t t' d) /` — name then parenthesized index list.
+  // `/ total d (unique3 g e t t' d) /` — name then the application pattern. The
+  // pattern's ARGUMENT LIST is kept: the decreasing argument is by convention the
+  // LAST one, and resolving WHICH premise it names requires aligning that spine
+  // (see decreasingBoxIndex) — defaulting to premise 0 silently inverts the IH
+  // slot discipline for every multi-premise named-measure theorem.
   const paren = arg.indexOf('(');
   if (paren > 0) {
     const name = arg.slice(0, paren).trim();
-    if (name) return { kind: 'named', name };
+    const inner = arg.slice(paren + 1).replace(/\)\s*$/, '').trim();
+    const toks = inner.split(/\s+/).filter(Boolean);
+    if (name) return { kind: 'named', name, args: toks.slice(1) }; // drop the theorem name
   }
   // `/ total f x /` (function-name then the decreasing argument) or `/ total x /`.
   const toks = arg.split(/\s+/).filter(Boolean);
@@ -167,17 +173,109 @@ export function inductionApplications(thm, subgoalHyps) {
   return out;
 }
 
-// The premise of the theorem that the totality measure says decreases. For an
-// index measure it's the N-th BOX premise; for a named measure we fall back to
-// the first box premise whose binder matches (the signature rarely names box
-// premises, so index is the common path); bare ⇒ first box premise (best-effort,
-// still guarded by fromScrutinee at application).
+// The distinct implicit metavariables of a computation type: the free uppercase
+// identifiers of its premises + conclusion, excluding explicit Pi binder names.
+// This is Beluga's own implicit-quantification rule, and it is what aligns a
+// named totality pattern's argument spine against the premises. `$`-prefixed
+// names ($W) and slash-qualified constructors (T/s) are not implicit metas.
+export function implicitMetaCount(compType) {
+  const names = new Set();
+  const scan = (t) => {
+    const s = String(t == null ? '' : t);
+    const re = /[A-Z][A-Za-z0-9_']*/g;
+    let m;
+    while ((m = re.exec(s))) {
+      const prev = m.index > 0 ? s[m.index - 1] : ' ';
+      const next = s[m.index + m[0].length] || ' ';
+      if (/[A-Za-z0-9_'$/]/.test(prev)) continue; // mid-identifier / $W / T-in-x/T
+      if (next === '/') continue;                 // slash-qualified constructor head
+      names.add(m[0]);
+    }
+  };
+  const piBinders = new Set();
+  for (const p of compType.premises) {
+    if (p.kind === 'pi' && p.binder) piBinders.add(p.binder.replace(/^[$#]/, ''));
+    scan(p.raw);
+  }
+  scan(compType.conclusion);
+  for (const b of piBinders) names.delete(b);
+  return names.size;
+}
+
+// Where the totality measure POINTS, in premise terms:
+//   { kind: 'box', boxIdx } — the boxIdx-th box premise decreases (classic);
+//   { kind: 'pi',  piIdx }  — the piIdx-th Pi binder decreases: recursion is by
+//                             case analysis ON that (object) meta;
+//   null                    — no measure, or nothing designatable.
+// `/ total N /` counts EXPLICIT arguments uniformly — Pi binders AND box
+// premises; implicit paren groups don't number. (Native ground truth
+// 2026-07-12: `/ total 1 /` on `copy : {n:[ |- nat]} [ |- unit] -> [ |- nat]`
+// designates n and certifies; `/ total 2 /` is rejected.)
+// Named `/ total x (f a1 …) /`: the spine is the non-box premises (in order) +
+// implicit metas + box premises; the position spelled `x` designates.
+export function measureDesignation(thm) {
+  if (!thm || !thm.compType || !thm.totality) return null;
+  const prem = thm.compType.premises || [];
+  const boxes = prem.filter((p) => p.kind === 'box');
+  const tot = thm.totality;
+  if (tot.kind === 'index') {
+    let n = 0;
+    let piN = 0;
+    let boxN = 0;
+    for (const p of prem) {
+      const raw = String((p && p.raw) || '').trim();
+      if (raw.startsWith('(')) continue; // implicit group — not numbered
+      n += 1;
+      if (n === tot.index) {
+        if (p.kind === 'box') return { kind: 'box', boxIdx: boxN };
+        if (p.kind === 'pi') return { kind: 'pi', piIdx: piN };
+        return boxes.length ? { kind: 'box', boxIdx: 0 } : null;
+      }
+      if (p.kind === 'pi') piN += 1;
+      if (p.kind === 'box') boxN += 1;
+    }
+    return boxes.length
+      ? { kind: 'box', boxIdx: Math.min(Math.max(0, tot.index - 1), boxes.length - 1) }
+      : null;
+  }
+  if (tot.kind === 'named' && Array.isArray(tot.args) && tot.args.length) {
+    const nonBox = prem.filter((p) => p.kind !== 'box');
+    // The decreasing argument is the NAMED one at its spine position — patterns
+    // may end at it (`… x1 x2)`) or spell the full spine (`… d q)`).
+    const pos = tot.args.lastIndexOf(tot.name);
+    const spineIdx = pos >= 0 ? pos : tot.args.length - 1;
+    const boxIdx = spineIdx - nonBox.length - implicitMetaCount(thm.compType);
+    if (boxIdx >= 0 && boxIdx < boxes.length) return { kind: 'box', boxIdx };
+    if (spineIdx < nonBox.length && nonBox[spineIdx] && nonBox[spineIdx].kind === 'pi') {
+      let piN = 0;
+      for (const q of prem) {
+        if (q === nonBox[spineIdx]) return { kind: 'pi', piIdx: piN };
+        if (q.kind === 'pi') piN += 1;
+      }
+    }
+    return boxes.length ? { kind: 'box', boxIdx: 0 } : null;
+  }
+  return boxes.length ? { kind: 'box', boxIdx: 0 } : null;
+}
+
+// Resolve the totality measure to a BOX-premise index. Returns -1 when there
+// are no box premises OR when the measure designates a Pi binder (recursion by
+// case analysis on the binder — the piRecurseTexts route, never a box slot).
+export function decreasingBoxIndex(thm) {
+  const boxes = thm.compType.premises.filter((p) => p.kind === 'box');
+  if (!boxes.length) return -1;
+  if (!thm.totality) return 0;
+  const d = measureDesignation(thm);
+  if (!d) return 0;
+  return d.kind === 'box' ? d.boxIdx : -1;
+}
+
+// The premise of the theorem that the totality measure says decreases.
 function decreasingPremise(thm) {
   const boxes = thm.compType.premises.filter((p) => p.kind === 'box');
   if (!boxes.length) return null;
-  const tot = thm.totality;
-  if (tot && tot.kind === 'index') return boxes[Math.max(0, tot.index - 1)] || boxes[0];
-  return boxes[0];
+  const i = decreasingBoxIndex(thm);
+  return boxes[i] || boxes[0];
 }
 
 // The conclusion head of a boxed type `[ Γ |- head … ]` (or bare `[ |- head ]`).

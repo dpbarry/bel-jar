@@ -3,6 +3,7 @@ import { tags as hlTags } from '@lezer/highlight';
 import { Decoration, ViewPlugin } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { walkTree } from './bel-walk.mjs';
+import { timeSync } from './perf/check-trace.mjs';
 
 const tagBoundLower = hlTags.local(hlTags.variableName);
 const tagBoundUpper = hlTags.local(hlTags.typeName);
@@ -87,7 +88,7 @@ export const belugaScopeHighlight = ViewPlugin.fromClass(
         u.viewportChanged ||
         syntaxTree(u.startState) !== syntaxTree(u.state)
       ) {
-        this.decorations = buildDecorations(u.view, this.markCache);
+        this.decorations = timeSync('scopeHighlight', () => buildDecorations(u.view, this.markCache));
       }
     }
   },

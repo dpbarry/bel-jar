@@ -43,7 +43,10 @@ export function belugaDiagnosticDecorations({ getEngine, getOverlayDiags = null,
       if (isRenaming(tr.state)) return Decoration.none;
       const tick = settlementTickField ? (tr.state.field(settlementTickField, false) ?? 0) : 0;
       const prevTick = settlementTickField ? (tr.startState.field(settlementTickField, false) ?? 0) : 0;
-      if (!tr.docChanged && tick === prevTick) return deco.map(tr.changes);
+      // Only a settlement tick changes the diagnostic SET; a plain edit merely
+      // shifts positions, so map the existing marks (O(marks)) instead of
+      // rebuilding. Squiggles track the edit until the next settlement lands.
+      if (tick === prevTick) return deco.map(tr.changes);
       return build(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),

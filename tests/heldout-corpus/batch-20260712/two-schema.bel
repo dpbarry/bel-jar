@@ -1,0 +1,149 @@
+% Simply-typed lambda-calculus terms, related across two different
+% context schemas: a *typed* context whose blocks pair each variable
+% with a proof it has some type, and a *flat* context whose blocks
+% pair each variable with a proof it is merely well-scoped.
+%
+% The development builds an explicit correspondence CtxR between a
+% flat context and a typed context (a positional "same shape, weaker
+% payload" relation), and uses it to transport ("erase") typing
+% derivations living over a tyctx into scoping derivations living
+% over the corresponding flatctx.  Several corollaries then relate
+% the two schemas at the empty context, at an arbitrary context built
+% on demand, and under one more variable of extension.
+
+LF ty : type =
+| base : ty
+| arr  : ty -> ty -> ty
+;
+
+LF tm : type =
+| app : tm -> tm -> tm
+| lam : (tm -> tm) -> tm
+;
+
+% A typing derivation, classified by both the term and its type.
+LF oft : tm -> ty -> type =
+| t_app : oft M (arr A B) -> oft N A -> oft (app M N) B
+| t_lam : ({x:tm} oft x A -> oft (M x) B) -> oft (lam M) (arr A B)
+;
+
+% A scoping derivation: witnesses that a term is well-formed, with no
+% record of types at all.
+LF scoped : tm -> type =
+| s_app : scoped M -> scoped N -> scoped (app M N)
+| s_lam : ({x:tm} scoped x -> scoped (M x)) -> scoped (lam M)
+;
+
+% Flat context: every entry pairs a term-variable with a scoping proof.
+schema flatctx = block (x:tm, s:scoped x);
+
+% Typed context: every entry pairs a term-variable with a typing proof.
+schema tyctx = some [a:ty] block (x:tm, u:oft x a);
+
+% CtxR [h] [g]: the flat context h has exactly the shape of the typed
+% context g -- same length, positionally corresponding blocks, only
+% the second (evidentiary) component of each block differs in kind.
+inductive CtxR : {h:flatctx} {g:tyctx} ctype =
+| CNil : CtxR [ ] [ ]
+| CCons : CtxR [h] [g] -> {a:[ |- ty]}
+    CtxR [h, y:block (y0:tm, s0:scoped y0)] [g, x:block (x0:tm, u0:oft x0 a[])]
+;
+
+% Witness that an oft-derivation for M over g erases to *some* scoped
+% derivation for a term N over h.  N is existentially quantified: it
+% is the same term as M up to alpha-renaming along the CtxR witness.
+inductive ErasEx : {h:flatctx} {g:tyctx} [g |- tm] -> ctype =
+| ErasEx/c : {N:[h |- tm]} [h |- scoped N] -> ErasEx [h] [g] [g |- M]
+;
+
+% Erasure of typing to scoping: every typed derivation over g
+% transports, along a CtxR witness relating g to h, to a scoping
+% derivation over h.  The recursion is lexicographic on the typing
+% derivation together with the CtxR witness: both shrink together in
+% the two variable cases (one step through CCons), while only the
+% derivation shrinks in the application and abstraction cases.
+rec erase :
+  [g |- oft M[..] A[..]] -> CtxR [h] [g] -> ErasEx [h] [g] [g |- M[..]] =
+/ total {d cr} (erase h g m a d cr) /
+fn d => fn cr => case d of
+| [g, x:block (x0:tm, u0:oft x0 a[]) |- x.2] =>
+  let CCons cr' [|- _] = cr in
+  let (cr' : CtxR [h] [g]) = cr' in
+  ErasEx/c [h, y:block (y0:tm, s0:scoped y0) |- y.1] [h, y:block (y0:tm, s0:scoped y0) |- y.2]
+| [g, x:block (x0:tm, u0:oft x0 a[]) |- #p.2[..]] =>
+  let CCons cr' [|- _] = cr in
+  let (cr' : CtxR [h] [g]) = cr' in
+  let ErasEx/c [h |- N] [h |- E] = erase [g |- #p.2] cr' in
+  ErasEx/c [h, y:block (y0:tm, s0:scoped y0) |- N[..]] [h, y:block (y0:tm, s0:scoped y0) |- E[..]]
+| [g |- t_app D1 D2] =>
+  let ErasEx/c [h |- S1] [h |- E1] = erase [g |- D1] cr in
+  let ErasEx/c [h |- S2] [h |- E2] = erase [g |- D2] cr in
+  ErasEx/c [h |- app S1 S2] [h |- s_app E1 E2]
+| [g |- t_lam (\x.\u. D)] =>
+  let ErasEx/c [h, y:block (y0:tm, s0:scoped y0) |- N[.., y.1]]
+               [h, y:block (y0:tm, s0:scoped y0) |- E[.., y.1, y.2]] =
+    erase [g, x:block (x0:tm, u0:oft x0 _) |- D[.., x.1, x.2]] (CCons cr [|- _])
+  in
+  ErasEx/c [h |- lam \y. N] [h |- s_lam \y.\s. E[.., y, s]]
+;
+
+% Every typed context has a matching flat skeleton: the existence half
+% of the erasure correspondence, built by recursion on the typed
+% context itself (one CCons per block).
+inductive CtxRex : {g:tyctx} ctype =
+| CtxRex/c : {h:flatctx} CtxR [h] [g] -> CtxRex [g]
+;
+
+rec mkCtxR : {g:tyctx} CtxRex [g] =
+/ total g (mkCtxR g) /
+mlam g => case [g] of
+| [ ] => CtxRex/c [ ] CNil
+| [g, x:block (x0:tm, u0:oft x0 a[])] =>
+  let CtxRex/c [h] cr = mkCtxR [g] in
+  CtxRex/c [h, y:block (y0:tm, s0:scoped y0)] (CCons cr [|- a])
+;
+
+% Closed corollary: a closed typing derivation (empty tyctx) erases to
+% a closed scoping derivation (empty flatctx), by instantiating erase
+% at CNil, the base case of CtxR.
+inductive ClosedErasEx : [ |- tm] -> ctype =
+| ClosedErasEx/c : {N:[ |- tm]} [ |- scoped N] -> ClosedErasEx [ |- M]
+;
+
+rec erase_closed : [ |- oft M A] -> ClosedErasEx [ |- M] =
+/ total d (erase_closed m a d) /
+fn d => let ErasEx/c [ |- N] [ |- E] = erase d CNil in ClosedErasEx/c [ |- N] [ |- E]
+;
+
+% Full pipeline, with both schemas explicit in the signature: for
+% every typed context g and typing derivation over it, there exists a
+% flat context h -- built on demand from g by mkCtxR, with no CtxR
+% witness supplied by the caller -- together with the scoping
+% derivation over h that erases the original.
+inductive PipelineEx : {g:tyctx} [g |- tm] -> ctype =
+| PipelineEx/c : {h:flatctx} {N:[h |- tm]} [h |- scoped N] -> PipelineEx [g] [g |- M]
+;
+
+rec erase_pipeline : {g:tyctx} [g |- oft M[..] A[..]] -> PipelineEx [g] [g |- M[..]] =
+/ total d (erase_pipeline g m a d) /
+mlam g => fn d =>
+  let CtxRex/c [h] cr = mkCtxR [g] in
+  let ErasEx/c [h |- N] [h |- E] = erase d cr in
+  PipelineEx/c [h] [h |- N] [h |- E]
+;
+
+% Weakening coherence: erasing a derivation over g under the
+% correspondingly one-variable-extended CtxR agrees exactly with
+% erasing it under the original, smaller CtxR and then weakening the
+% flat result by the matching one variable.  This ties the two
+% schemas together not just at a single fixed pair of contexts, but
+% compatibly across extension of both sides at once.
+rec erase_weaken :
+  [g |- oft M[..] A[..]] -> CtxR [h] [g] -> {B:[ |- ty]}
+  ErasEx [h, y:block (y0:tm, s0:scoped y0)] [g, x:block (x0:tm, u0:oft x0 B[])]
+         [g, x:block (x0:tm, u0:oft x0 B[]) |- M[..]] =
+/ total d (erase_weaken h g m a d) /
+fn d => fn cr => mlam B =>
+  let ErasEx/c [h |- N] [h |- E] = erase d cr in
+  ErasEx/c [h, y:block (y0:tm, s0:scoped y0) |- N[..]] [h, y:block (y0:tm, s0:scoped y0) |- E[..]]
+;

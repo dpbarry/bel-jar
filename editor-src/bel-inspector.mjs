@@ -1928,7 +1928,7 @@ function inspectorScrollOpts(body, model, opts = {}) {
 // a live lens. Passive editor signals (cursor, file switch, background re-lint)
 // only move it when follow is ON; otherwise it changes only via explicit acts
 // (open/inspect, panel clicks, search, back/forward, go-to-def jumps).
-let followEditor = false;
+let followEditor = true;
 let followEditorHydrated = false;
 // The file id whose content the panel currently shows. Passive re-lint refreshes
 // are honored only for THIS file, so switching tabs (follow off) leaves it be.

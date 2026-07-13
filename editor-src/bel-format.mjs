@@ -9,6 +9,7 @@ import {
   resolveFormatViewportAnchor,
   scheduleScrollToCenter,
 } from './bel-viewport.mjs';
+import { dispatchEdit } from './bel-edit-history.mjs';
 
 function showFormatToast(message, kind) {
   const T = typeof window !== 'undefined' ? window.BelJarToasts : null;
@@ -285,11 +286,16 @@ export function formatCommand(view) {
   const newText = change.changes.insert;
   const newLen = newText.length;
   const selHead = Math.min(sel.head, newLen);
+  const fileId = (typeof globalThis !== 'undefined' ? globalThis : window).BelJarCurrentEditor?.getCurrentFileId?.() ?? null;
 
-  view.dispatch({
+  dispatchEdit(view, {
     ...change,
     selection: EditorSelection.cursor(selHead),
     userEvent: 'format',
+  }, {
+    fileId,
+    kind: 'format',
+    editorLocal: anchor,
   });
 
   const resolvedPos = resolveFormatViewportAnchor(anchor, view.state, newText) ?? selHead;

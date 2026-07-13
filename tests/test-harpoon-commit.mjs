@@ -40,8 +40,8 @@ expect(countSiblingHoledDecls('rec a : T = ?;', 'a') === 0, 'no sibling for lone
 
 expect(needsFullCommitCheck({ compromise: { level: 'none' }, docText: 'rec a : T = x;', declName: 'a' }) === false,
   'clean anchor no full check');
-expect(needsFullCommitCheck({ compromise: { level: 'warn' }, docText: 'rec a : T = x;', declName: 'a' }) === true,
-  'warn triggers full check');
+expect(needsFullCommitCheck({ compromise: { level: 'warn' }, docText: 'rec a : T = x;', declName: 'a' }) === false,
+  'warn alone does not trigger orchestration check');
 expect(needsFullCommitCheck({
   compromise: { level: 'none' },
   docText: 'rec a : T = ?;\nrec b : T = x;',

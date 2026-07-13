@@ -8,18 +8,27 @@
 
   function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
 
+  function glyphs() { return global.HarpoonGlyphs || null; }
+  function displayBeluga(text) {
+    var g = glyphs();
+    return g ? g.displayBeluga(text) : String(text == null ? '' : text);
+  }
+  function compactTypeLabel(box) {
+    var g = glyphs();
+    return g ? g.compactTypeLabel(box) : norm(box);
+  }
+
   function trunc(s, max) {
     s = String(s == null ? '' : s);
     return s.length > max ? s.slice(0, max - 1) + '…' : s;
   }
 
   function shortPattern(box) {
-    var m = /(?:\|-|⊢)\s*([\s\S]*?)\]?$/.exec(norm(box));
-    return m ? m[1].replace(/\]$/, '').trim() : norm(box);
+    return compactTypeLabel(box);
   }
 
   function shortGoal(goal) {
-    return trunc(shortPattern(goal), 28);
+    return trunc(compactTypeLabel(goal), 28);
   }
 
   function binderChip(ctx, meta) {
@@ -46,14 +55,6 @@
       case 'intro': return 'intro';
       default: return step.move;
     }
-  }
-
-  function effectBadge(st) {
-    if (!st) return '';
-    if (st.move === 'split' && st.meta && st.meta.armPatterns && st.meta.armPatterns.length) {
-      return String(st.meta.armPatterns.length);
-    }
-    return '';
   }
 
   function altCount(frontier) {
@@ -119,7 +120,6 @@
         binderChip: binderChip(holeCtx, holeMeta),
         closed: st.status === 'solved',
         open: st.status === 'open',
-        effectBadge: effectBadge(st),
         frontier: frontier,
         altCount: altCount(frontier),
         state: { goal: st.goal || '', ctx: holeCtx, meta: holeMeta },
@@ -176,7 +176,7 @@
     var cur = n;
     while (cur) {
       if (cur.type === 'theorem') parts.unshift(cur.label || 'theorem');
-      else if (cur.type === 'arm') parts.unshift(trunc(cur.pattern || cur.label, 20));
+      else if (cur.type === 'arm') parts.unshift(trunc(displayBeluga(cur.pattern || cur.label), 20));
       else if (cur.type === 'move') parts.unshift(cur.label);
       cur = cur.parent;
     }
@@ -267,7 +267,7 @@
             id: 'ghost-' + n.id + '-' + i,
             type: 'ghost',
             kind: gh.kind,
-            label: trunc(gh.head || gh.kind || 'candidate', 12),
+            label: trunc(displayBeluga(gh.head || gh.kind || 'candidate'), 12),
             ghost: gh,
             children: [],
           });
@@ -328,7 +328,7 @@
       x: -pw / 2, y: -h / 2, width: pw, height: h, rx: rx,
       class: isArm ? 'hpt-shape hpt-shape--branch' : 'hpt-shape',
     }));
-    var label = trunc(n.label || '', labelMax(n));
+    var label = trunc(displayBeluga(n.label || ''), labelMax(n));
     var text = el('text', {
       y: isArm ? 4 : 4,
       class: isArm ? 'hpt-text hpt-text--branch' : 'hpt-text',
@@ -346,13 +346,110 @@
         cx: pw / 2 - 9, cy: -h / 2 + 9, r: 3, class: 'hpt-status hpt-status--open',
       }));
     }
-    if (n.effectBadge && n.type === 'move') {
-      var tag = el('text', {
-        x: pw / 2 - 9, y: h / 2 - 6, class: 'hpt-tag', 'text-anchor': 'end',
-      });
-      tag.textContent = n.effectBadge;
-      g.appendChild(tag);
+  }
+
+  // A goal/type string still carrying a `[g |- T]` box or `|-`/⊢ is a Beluga
+  // TYPE; a proof-step body is Beluga SOURCE. Highlight each with the matching
+  // renderer, falling back to plain text (rich tooltips accept any DOM).
+  function looksLikeType(s) {
+    var g = glyphs();
+    if (g && typeof g.looksLikeBeluga === 'function') return g.looksLikeBeluga(s);
+    return /(\|-|⊢|\[)/.test(String(s || ''));
+  }
+  function highlightInto(host, text, kind) {
+    var ed = global.BelJarEditor || null;
+    var shown = displayBeluga(String(text == null ? '' : text).trim());
+    if (!shown) return false;
+    try {
+      if (kind === 'type' && ed && typeof ed.renderTypeInto === 'function') {
+        ed.renderTypeInto(host, shown, 'comp');
+        return true;
+      }
+      if (ed && typeof ed.highlightSourceFragment === 'function') {
+        host.appendChild(ed.highlightSourceFragment(shown));
+        return true;
+      }
+    } catch (_) { /* fall through to plain */ }
+    host.textContent = shown;
+    return true;
+  }
+
+  // Rich, BelJar-native tooltip fragment for a graph node: a compact header
+  // (move kind + label), the goal/rationale, and a syntax-highlighted code or
+  // pattern snippet where the step carries one.
+  function buildNodeTipFragment(n, mode) {
+    var frag = document.createDocumentFragment();
+    var head = document.createElement('div');
+    head.className = 'hpt-tip-head';
+
+    if (n.type === 'ghost' && n.ghost) {
+      var gk = document.createElement('span');
+      gk.className = 'hpt-tip-kind hpt-tip-kind--ghost';
+      gk.textContent = n.ghost.kind || 'candidate';
+      head.appendChild(gk);
+      var gl = document.createElement('span');
+      gl.className = 'hpt-tip-title';
+      gl.textContent = displayBeluga(n.ghost.head || n.ghost.kind || 'candidate');
+      head.appendChild(gl);
+      frag.appendChild(head);
+      if (n.ghost.text && n.ghost.text !== n.ghost.head) {
+        var gcode = document.createElement('div');
+        gcode.className = 'hpt-tip-code';
+        highlightInto(gcode, n.ghost.text, looksLikeType(n.ghost.text) ? 'type' : 'source');
+        frag.appendChild(gcode);
+      }
+      var gr = document.createElement('div');
+      gr.className = 'hpt-tip-note';
+      gr.textContent = (n.ghost.verdict === 'guard' ? 'skipped — ' : 'not taken — ')
+        + (n.ghost.reason || 'did not certify');
+      frag.appendChild(gr);
+      return frag;
     }
+
+    var kind = n.kind || (n.type === 'arm' ? 'arm' : n.type);
+    if (kind) {
+      var k = document.createElement('span');
+      k.className = 'hpt-tip-kind';
+      k.textContent = kind;
+      head.appendChild(k);
+    }
+    var title = document.createElement('span');
+    title.className = 'hpt-tip-title';
+    title.textContent = displayBeluga(n.label || kind || 'move');
+    head.appendChild(title);
+    frag.appendChild(head);
+
+    var st = n.step;
+    var rationale = (st && st.rationale) || '';
+    if (rationale && rationale !== n.label) {
+      var r = document.createElement('div');
+      r.className = 'hpt-tip-note';
+      r.textContent = rationale;
+      frag.appendChild(r);
+    }
+    // Goal being worked (types), or the arm's branch pattern.
+    var goalText = (st && st.goal) || n.sub || (n.type === 'arm' ? n.pattern : '') || '';
+    if (goalText) {
+      var goal = document.createElement('div');
+      goal.className = 'hpt-tip-code';
+      highlightInto(goal, goalText, 'type');
+      frag.appendChild(goal);
+    }
+    // The move's actual source fragment (what it splices in).
+    var body = st && st.text;
+    if (body && body !== goalText) {
+      var code = document.createElement('div');
+      code.className = 'hpt-tip-code';
+      highlightInto(code, body, looksLikeType(body) ? 'type' : 'source');
+      frag.appendChild(code);
+    }
+    if (mode !== 'space' && n.altCount) {
+      var alt = document.createElement('div');
+      alt.className = 'hpt-tip-note hpt-tip-note--dim';
+      alt.textContent = n.altCount + ' other candidate' + (n.altCount === 1 ? '' : 's') + ' considered';
+      frag.appendChild(alt);
+    }
+    return frag;
   }
 
   function render(container, root, opts) {
@@ -478,18 +575,26 @@
         g.appendChild(chip);
       }
 
-      var title = document.createElementNS(SVGNS, 'title');
-      var tip;
+      // Native BelJar tooltip (syntax-highlighted), not an SVG <title>. Aria
+      // fallback stays plain text for screen readers.
+      var ariaTip;
       if (n.type === 'ghost' && n.ghost) {
-        tip = (n.ghost.head || n.ghost.kind || 'candidate') + '\n' + (n.ghost.reason || 'not taken');
+        ariaTip = displayBeluga(n.ghost.head || n.ghost.kind || 'candidate')
+          + ' — ' + (n.ghost.reason || 'not taken');
       } else {
-        tip = (n.step && n.step.rationale) || n.label;
-        if (n.sub) tip += '\n' + n.sub;
-        if (n.binderChip) tip += '\n' + n.binderChip;
-        if (mode !== 'space' && n.altCount) tip += '\n' + n.altCount + ' other candidate(s)';
+        ariaTip = (n.step && n.step.rationale) || n.label || '';
       }
-      title.textContent = tip;
-      g.appendChild(title);
+      if (global.Tooltips && typeof global.Tooltips.setRich === 'function') {
+        (function (node) {
+          global.Tooltips.setRich(g, function () {
+            return buildNodeTipFragment(node, mode);
+          }, ariaTip);
+        })(n);
+      } else {
+        var title = document.createElementNS(SVGNS, 'title');
+        title.textContent = ariaTip;
+        g.appendChild(title);
+      }
 
       g.addEventListener('click', function () { select(n, g); });
       g.addEventListener('keydown', function (ev) {

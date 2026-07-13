@@ -1,0 +1,80 @@
+LF ty : type =
+  | nat  : ty
+  | bool : ty
+  | prod : ty -> ty -> ty
+;
+
+LF tm : type =
+  | z    : tm
+  | s    : tm -> tm
+  | plus : tm -> tm -> tm
+  | tt   : tm
+  | ff   : tm
+  | ite  : tm -> tm -> tm -> tm
+  | pair : tm -> tm -> tm
+  | pr1  : tm -> tm
+  | pr2  : tm -> tm
+;
+
+LF oft : tm -> ty -> type =
+  | T/z    : oft z nat
+  | T/s    : oft M nat -> oft (s M) nat
+  | T/plus : oft M nat -> oft N nat -> oft (plus M N) nat
+  | T/tt   : oft tt bool
+  | T/ff   : oft ff bool
+  | T/ite  : oft C bool -> oft M A -> oft N A -> oft (ite C M N) A
+  | T/pair : oft M A -> oft N B -> oft (pair M N) (prod A B)
+  | T/pr1  : oft M (prod A B) -> oft (pr1 M) A
+  | T/pr2  : oft M (prod A B) -> oft (pr2 M) B
+;
+
+LF step : tm -> tm -> type =
+  | S/plusZ : step (plus z N) N
+  | S/plusS : step (plus (s M) N) (s (plus M N))
+  | S/iteT  : step (ite tt M N) M
+  | S/iteF  : step (ite ff M N) N
+  | S/pr1   : step (pr1 (pair M N)) M
+  | S/pr2   : step (pr2 (pair M N)) N
+  | S/s     : step M M' -> step (s M) (s M')
+  | S/plusL : step M M' -> step (plus M N) (plus M' N)
+  | S/iteC  : step C C' -> step (ite C M N) (ite C' M N)
+  | S/pr1c  : step M M' -> step (pr1 M) (pr1 M')
+  | S/pr2c  : step M M' -> step (pr2 M) (pr2 M')
+;
+
+rec preserve : [ |- oft M A] -> [ |- step M M'] -> [ |- oft M' A] =
+/ total s (preserve _ _ _ _ s) /
+fn d => fn r => case r of
+  | [ |- S/plusZ] =>
+    let [ |- T/plus _ DN] = d in [ |- DN]
+  | [ |- S/plusS] =>
+    let [ |- T/plus (T/s DM) DN] = d in [ |- T/s (T/plus DM DN)]
+  | [ |- S/iteT] =>
+    let [ |- T/ite _ DM _] = d in [ |- DM]
+  | [ |- S/iteF] =>
+    let [ |- T/ite _ _ DN] = d in [ |- DN]
+  | [ |- S/pr1] =>
+    let [ |- T/pr1 (T/pair DM _)] = d in [ |- DM]
+  | [ |- S/pr2] =>
+    let [ |- T/pr2 (T/pair _ DN)] = d in [ |- DN]
+  | [ |- S/s R'] =>
+    let [ |- T/s DM] = d in
+    let [ |- DM'] = preserve [ |- DM] [ |- R'] in
+      [ |- T/s DM']
+  | [ |- S/plusL R'] =>
+    let [ |- T/plus DM DN] = d in
+    let [ |- DM'] = preserve [ |- DM] [ |- R'] in
+      [ |- T/plus DM' DN]
+  | [ |- S/iteC R'] =>
+    let [ |- T/ite DC DM DN] = d in
+    let [ |- DC'] = preserve [ |- DC] [ |- R'] in
+      [ |- T/ite DC' DM DN]
+  | [ |- S/pr1c R'] =>
+    let [ |- T/pr1 DM] = d in
+    let [ |- DM'] = preserve [ |- DM] [ |- R'] in
+      [ |- T/pr1 DM']
+  | [ |- S/pr2c R'] =>
+    let [ |- T/pr2 DM] = d in
+    let [ |- DM'] = preserve [ |- DM] [ |- R'] in
+      [ |- T/pr2 DM']
+;

@@ -98,17 +98,59 @@ export function createCheckTrace(enabled = false) {
 
 let shared = null;
 
+// Enable flag is SEPARATE from the trace object. Earlier both lived at
+// `window.BelJarPerf`, so `window.BelJarPerf = true` clobbered the object and
+// lost lastEditBreakdown(). Now:
+//   • window.BelJarPerf        — the trace object (methods live here), always.
+//   • window.__belPerfOn       — the enable flag (set by BelJarPerf.enable()).
+//   • window.BelJarPerfDebug   — legacy: also enables + console.debug spam.
+function perfFlagOn(g) {
+  return !!(g && (g.__belPerfOn || g.BelJarPerfDebug));
+}
+
 export function getCheckTrace() {
   if (!shared) {
     const g = typeof globalThis !== 'undefined' ? globalThis : null;
-    const enabled = !!(g && (g.BelJarPerf || g.BelJarPerfDebug));
-    shared = createCheckTrace(enabled);
-    if (g) g.BelJarPerf = shared;
+    shared = createCheckTrace(perfFlagOn(g));
+    if (g) {
+      // Attach enable/disable so `BelJarPerf.enable()` turns tracing on WITHOUT
+      // overwriting the object.
+      shared.enable = () => { g.__belPerfOn = true; shared.enabled = true; return 'perf tracing ON — type, then BelJarPerf.report()'; };
+      shared.disable = () => { g.__belPerfOn = false; shared.enabled = false; return 'perf tracing OFF'; };
+      // One-shot summary of every synchronous per-keystroke phase, sorted by p95.
+      shared.report = () => {
+        const phases = ['sync:semanticUpdate', 'sync:syntaxLint', 'sync:scopeHighlight',
+          'sync:parseErrorHighlight', 'sync:diagRowMarkers', 'sync:ideStatus',
+          'sync:sym.collectGlobals', 'sync:sym.collectRefs',
+          'sync:walkTree', 'sync:undefAppDiags'];
+        const rows = phases.map((p) => {
+          const s = shared.statsForPhase(p);
+          return s ? { phase: p.replace('sync:', ''), count: s.count, p50: Math.round(s.p50 * 10) / 10, p95: Math.round(s.p95 * 10) / 10 } : null;
+        }).filter(Boolean).sort((a, b) => b.p95 - a.p95);
+        if (typeof console !== 'undefined' && console.table) console.table(rows);
+        return rows;
+      };
+      g.BelJarPerf = shared;
+    }
   }
   return shared;
 }
 
 export function perfEnabled() {
   const g = typeof globalThis !== 'undefined' ? globalThis : null;
-  return !!(g && (g.BelJarPerf || g.BelJarPerfDebug));
+  return perfFlagOn(g);
+}
+
+// Time a synchronous fn and record it under `sync:<phase>` — but ONLY when perf
+// tracing is enabled, so it's genuinely zero-cost (no now() calls) in normal use.
+// Instruments work that runs INSIDE a CodeMirror transaction (before paint), which
+// nothing else measures. Enable with BelJarPerf.enable(); read with BelJarPerf.report().
+export function timeSync(phase, fn, meta = {}) {
+  const g = typeof globalThis !== 'undefined' ? globalThis : null;
+  if (!perfFlagOn(g)) return fn();
+  const trace = getCheckTrace();
+  const t0 = now();
+  const r = fn();
+  trace.record(`sync:${phase}`, now() - t0, meta);
+  return r;
 }

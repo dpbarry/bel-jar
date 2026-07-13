@@ -31,6 +31,19 @@ const MAX_DEPTH = 5;
 const MAX_NODES = 400;
 const MAX_PRODUCTS = 12;
 
+// Internal marker around explicit object-Pi argument boxes (like the `¿`
+// namespace: a character neither Beluga source nor checker output contains).
+// Assembly strips it from the primary text and derives the `[ |- _]`-spelled
+// alternative from it — see the pi-argument rendering in applyRule.
+const OBJ_MARK = '¦';
+const stripObjMarks = (s) => String(s).split(OBJ_MARK).join('');
+const underscoreObjMarks = (s) => String(s)
+  .replace(new RegExp(`${OBJ_MARK}\\[([^${OBJ_MARK}]*)\\]${OBJ_MARK}`, 'g'), (whole, inner) => {
+    const cut = Math.max(inner.lastIndexOf('|-'), inner.lastIndexOf('⊢'));
+    return cut >= 0 ? `[${inner.slice(0, cut)}|- _]` : '[ |- _]';
+  })
+  .split(OBJ_MARK).join('');
+
 // ── term utilities (substitution-form token domain) ──────────────────────────
 
 function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
@@ -274,8 +287,13 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
         patParts.push(c.pattern);
       }
       if (!ok || !comps.length) continue;
-      const args = refs.map((r) => box(r.name)).join(' ');
-      const satText = `let ${box(patParts.join(' '))} = ${rule.name} ${args} in`;
+      const args = refs.map((r) => (r.viaComp ? r.name : box(r.name))).join(' ');
+      // A CTYPE-result product destructures via the BARE constructor pattern
+      // over boxed components (`let Re [ ⊢ S1] [ ⊢ S2] = reassoc [ ⊢ P] q in`);
+      // an LF product destructures inside one box as before.
+      const satText = rule.ctypeResult
+        ? `let ${patParts[0]} ${patParts.slice(1).map((pp) => box(pp)).join(' ')} = ${rule.name} ${args} in`
+        : `let ${box(patParts.join(' '))} = ${rule.name} ${args} in`;
       saturationLets.push({ text: satText, provides: comps.map((c) => c.name) });
       for (const c of comps) allFacts.push(c);
       // REFUTATION closing (the reference's `let [g ⊢ eq_lam …] = … in
@@ -313,14 +331,52 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
     }
   }
 
+  // ---- FACT-INVERSION SATURATION (spec §2 invert): a base fact whose (refined)
+  // type admits exactly ONE unifying constructor destructures deterministically —
+  // `let [Γ ⊢ ctor c1 c2] = F in` — no choice, no information loss. Components
+  // are strict subterms, so decOk is INHERITED (the totality checker's criterion
+  // descends through subterms). Bounded fixpoint so an inversion CHAIN
+  // (`oft (s (plus M N)) nat` needing two levels) saturates too.
+  for (let round = 0; round < 3; round += 1) {
+    let added = false;
+    for (const f of [...allFacts]) {
+      if (f.extras.length || f.inverted) continue;
+      const inv = uniqueInversion(f.concl, ctors);
+      if (!inv) continue;
+      f.inverted = true;
+      const comps = [];
+      const patParts = [inv.ctor.name];
+      let ok = true;
+      for (const at of inv.ctor.argTypes) {
+        const c = componentOf(at, inv.flex, inv.theta, fresh);
+        if (!c) { ok = false; break; }
+        c.fact.decOk = !!f.decOk;
+        comps.push(c.fact);
+        patParts.push(c.pattern);
+      }
+      if (!ok || !comps.length) continue;
+      const rhs = f.viaComp ? f.name : box(f.name);
+      saturationLets.push({
+        text: `let ${box(patParts.join(' '))} = ${rhs} in`,
+        provides: comps.map((c) => c.name),
+      });
+      for (const c of comps) allFacts.push(c);
+      added = true;
+    }
+    if (!added) break;
+  }
+
   // ---- BACKWARD SOLVER ----
   // solve → { argText, lets } (argText goes inside a box at the use site) | null.
   // `path` is the SLD loop check: the normalized goals on the current derivation
   // path — a rule may not re-derive a goal it is already trying to derive (kills
   // the eq_sym ping-pong without forbidding a single legitimate symmetric step).
-  function solve(concl, depth, path = []) {
+  function solve(concl, depth, path = [], lfOnly = false) {
     nodes += 1;
-    if (nodes > (opts.maxNodes || MAX_NODES)) return null;
+    if (nodes > (opts.maxNodes || MAX_NODES)) {
+      if (opts.stats) opts.stats.boundHit = true; // honesty: a bound, not "no move"
+      return null;
+    }
     const goalKey = norm(concl);
     if (path.includes(goalKey)) return null;
     const key = `${depth}§${goalKey}`;
@@ -331,7 +387,13 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
     // binder types — the `E1[.., N, E2]` instantiation, derived, not guessed.
     for (const f of allFacts) {
       if (!f.extras.length) {
-        if (norm(f.concl) === norm(concl)) return { argText: f.name, lets: [] };
+        // An LF-constructor consumer cannot take a comp variable — skip it here
+        // so the constructor derivation below is still reachable (a comp fact
+        // must never SHADOW a derivable LF term).
+        if (lfOnly && f.viaComp) continue;
+        if (norm(f.concl) === norm(concl)) {
+          return { argText: f.weaken ? `${f.name}[..]` : f.name, lets: [], viaComp: !!f.viaComp };
+        }
         continue;
       }
       const slotFlex = new Set(f.extras.map((e) => e.name));
@@ -352,7 +414,11 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
             ty = applyTheta(ty, new Set([prev]), new Map([[prev, pv]]));
           }
         }
-        if (depth <= 0) { ok = false; break; }
+        if (depth <= 0) {
+          if (opts.stats) opts.stats.boundHit = true;
+          ok = false;
+          break;
+        }
         const sub = solve(ty, depth - 1, [...path, goalKey]);
         if (!sub) { ok = false; break; }
         lets.push(...sub.lets);
@@ -362,7 +428,11 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
       return { argText: `${f.name}[.., ${slotTerms.join(', ')}]`, lets };
     }
 
-    if (depth <= 0) { failMemo.add(key); return null; }
+    if (depth <= 0) {
+      if (opts.stats) opts.stats.boundHit = true;
+      failMemo.add(key);
+      return null;
+    }
 
     // 2. RULES (IH, lemmas, first-order constructors): unify the RESULT with the
     // goal; premises are resolved most-ground-first, each by fact-matching (which
@@ -370,6 +440,7 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
     // the unifier cannot ground fails the rule — no blind instantiation.
     const subPath = [...path, goalKey];
     for (const rule of rules) {
+      if (rule.ctypeResult) continue; // saturation-only (spec §7 invariant 3c)
       const app = applyRule(freshenRule(rule), concl, depth, subPath);
       if (app) return app;
     }
@@ -395,63 +466,83 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
   }
 
   function applyRule(rule, concl, depth, path = []) {
-    const theta = new Map();
-    if (!matchT(rule.result, concl, rule.flex, theta)) return null;
-    let pending = rule.premises.map((p, i) => ({ i, text: p }));
-    const resolved = new Array(rule.premises.length).fill(null);
-    const lets = [];
-    let guardNodes = (pending.length + 1) * (allFacts.length + 2);
-    while (pending.length && guardNodes-- > 0) {
-      // Most-ground first, but resolution tries EVERY pending premise before
-      // failing: a later premise's fact match may be what grounds an earlier
-      // one (eval_respects_eq: premise 2 matches F2, which grounds premise 1).
-      pending.sort((a, b) => unboundIn(applyTheta(a.text, rule.flex, theta), rule.flex, theta).size
+    const theta0 = new Map();
+    if (!matchT(rule.result, concl, rule.flex, theta0)) return null;
+    // Premise resolution is a bounded DFS over CHOICES (spec §2: fair argument
+    // enumeration). The old greedy loop took the first matching fact per premise
+    // with no backtracking — one wrong early binding (two facts matching the
+    // same premise) killed derivable chains. Each level resolves the most-ground
+    // pending premise, trying every base fact then (once ground) recursion.
+    let choiceBudget = 64;
+    const dfs = (theta, pending, resolved, lets) => {
+      if (choiceBudget <= 0) return null;
+      if (!pending.length) return { theta, resolved, lets };
+      // Most-ground first, but EVERY pending premise is tried as the pick: a
+      // later premise's fact match may be what grounds an earlier one
+      // (eval_respects_eq: premise 2 matches F2, which grounds premise 1).
+      const ranked = [...pending].sort((a, b) =>
+        unboundIn(applyTheta(a.text, rule.flex, theta), rule.flex, theta).size
         - unboundIn(applyTheta(b.text, rule.flex, theta), rule.flex, theta).size);
-      let done = null;
-      let chosen = -1;
-      // (a) base-fact resolution — may instantiate remaining rule vars. The IH's
-      // decreasing premise must be a decOk fact (a sub-derivation exposed by the
-      // decreasing scrutinee's split — the totality checker's criterion).
-      for (let pi = 0; pi < pending.length && !done; pi += 1) {
-        const inst = applyTheta(pending[pi].text, rule.flex, theta);
+      for (const pick of ranked) {
+        const rest = pending.filter((p) => p !== pick);
+        const inst = applyTheta(pick.text, rule.flex, theta);
+        // (a) every base-fact resolution of this premise. The IH's decreasing
+        // premise must be a decOk fact (the totality checker's criterion); a
+        // comp fact never resolves an LF constructor argument.
         for (const f of allFacts) {
           if (f.extras.length) continue;
-          if (rule.isIH && pending[pi].i === rule.decIdx && !f.decOk) continue;
+          if (rule.isCtor && f.viaComp) continue;
+          if (rule.isIH && pick.i === rule.decIdx && !f.decOk) continue;
           const t2 = new Map(theta);
-          if (matchT(inst, f.concl, rule.flex, t2)) {
-            for (const [k, v] of t2) theta.set(k, v);
-            done = { argText: f.name, lets: [] };
-            chosen = pi;
-            break;
+          if (!matchT(inst, f.concl, rule.flex, t2)) continue;
+          choiceBudget -= 1;
+          if (choiceBudget <= 0) return null;
+          const r2 = resolved.slice();
+          r2[pick.i] = { text: f.weaken ? `${f.name}[..]` : f.name, viaComp: !!f.viaComp };
+          const deep = dfs(t2, rest, r2, lets);
+          if (deep) return deep;
+        }
+        // (b) a GROUND premise recurses (under-binder facts + deeper rules). Never
+        // the IH's decreasing premise — a derived term is not structurally smaller.
+        if (!(rule.isIH && pick.i === rule.decIdx)
+            && !unboundIn(inst, rule.flex, theta).size) {
+          const sub = solve(inst, depth - 1, path, !!rule.isCtor);
+          if (sub && !(rule.isCtor && sub.viaComp)) {
+            choiceBudget -= 1;
+            if (choiceBudget <= 0) return null;
+            const r2 = resolved.slice();
+            r2[pick.i] = { text: sub.argText, viaComp: !!sub.viaComp };
+            const deep = dfs(theta, rest, r2, [...lets, ...sub.lets]);
+            if (deep) return deep;
           }
         }
       }
-      // (b) a GROUND premise recurses (under-binder facts + deeper rules). Never
-      // the IH's decreasing premise — a derived term is not structurally smaller.
-      for (let pi = 0; pi < pending.length && !done; pi += 1) {
-        if (rule.isIH && pending[pi].i === rule.decIdx) continue;
-        const inst = applyTheta(pending[pi].text, rule.flex, theta);
-        if (unboundIn(inst, rule.flex, theta).size) continue;
-        const sub = solve(inst, depth - 1, path);
-        if (sub) { done = sub; chosen = pi; }
-      }
-      if (!done) return null;
-      lets.push(...done.lets);
-      resolved[pending[chosen].i] = done.argText;
-      pending = pending.filter((_, k) => k !== chosen);
-    }
-    if (pending.length) return null;
-    // Pi arguments: the context, and object binders the result-match determined.
+      return null;
+    };
+    const hit = dfs(theta0, rule.premises.map((p, i) => ({ i, text: p })),
+      new Array(rule.premises.length).fill(null), []);
+    if (!hit) return null;
+    const theta = hit.theta;
+    const resolved = hit.resolved;
+    const lets = hit.lets;
+    // Pi arguments: the context, substitution variables (passed through bare —
+    // `$[Γ ⊢ $W]`), and object binders the result-match determined. Object args
+    // are MARKED (OBJ_MARK) so assembly can also emit an inferred `[ |- _]`
+    // spelling: the determined term may mention metas the checker INVENTED for
+    // unnamed implicit pattern arguments — present in the hole report, bound
+    // nowhere in source, so the named spelling is unwritable by construction
+    // ("free meta-variable is illegal"). The checker arbitrates between the two.
     const args = [];
     for (const pi of rule.pis) {
       if (pi.kind === 'ctx') { args.push(`[${goal.ctx}]`); continue; }
+      if (pi.kind === 'subst') { args.push(`$[${goal.ctx} |- ${pi.varName}]`); continue; }
       const v = theta.get(pi.varName);
       if (v == null) return null;
-      args.push(box(stripParens(v)));
+      args.push(OBJ_MARK + box(stripParens(v)) + OBJ_MARK);
     }
-    for (const r of resolved) args.push(box(r));
+    for (const r of resolved) args.push(r.viaComp ? r.text : box(r.text));
     if (rule.isCtor) {
-      const inner = `${rule.name}${resolved.length ? ' ' + resolved.map((r) => (toks(r).length > 1 ? `(${r})` : r)).join(' ') : ''}`;
+      const inner = `${rule.name}${resolved.length ? ' ' + resolved.map((r) => (toks(r.text).length > 1 ? `(${r.text})` : r.text)).join(' ') : ''}`;
       return { argText: inner, lets };
     }
     const r = fresh();
@@ -558,7 +649,9 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
   const root = solve(norm(goal.concl), maxDepth);
   if (!root) {
     // No inhabiting chain — a REFUTATION (destructure + impossible) also closes.
-    return refutations.length ? { text: refutations[0], alts: refutations.slice(1) } : null;
+    return refutations.length
+      ? { text: stripObjMarks(refutations[0]), alts: refutations.slice(1).map(stripObjMarks) }
+      : null;
   }
   // Tail form: when the root is a rule call, emit it as the tail expression;
   // when it is a bare/instantiated fact, emit the boxed fill.
@@ -567,6 +660,8 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
   if (root.callText && lets.length && lets[lets.length - 1].includes(root.callText)) {
     lets = lets.slice(0, -1);
     tail = root.callText;
+  } else if (root.viaComp) {
+    tail = root.argText; // a comp variable IS the proof term — never boxed
   } else {
     tail = box(root.argText);
   }
@@ -574,8 +669,18 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
   const usedText = [...lets, tail].join('\n');
   const satNeeded = saturationLets.filter((s) => s.provides.some((n) =>
     new RegExp(`(^|[^A-Za-z0-9_'])${n}([^A-Za-z0-9_']|$)`).test(usedText)));
-  const text = [...satNeeded.map((s) => s.text), ...lets, tail].join('\n');
-  return { text, alts: refutations };
+  const raw = [...satNeeded.map((s) => s.text), ...lets, tail].join('\n');
+  const text = stripObjMarks(raw);
+  // The inferred-argument alternative (`[ |- _]` for every object-Pi arg): the
+  // NAMED spelling stays primary — it is more constrained and load-bearing when
+  // a call has no box premises to infer from — but when it references invented
+  // (source-unbound) metas only this variant is certifiable.
+  const textU = underscoreObjMarks(raw);
+  return {
+    text,
+    textU: textU !== text ? textU : undefined,
+    alts: refutations.map(stripObjMarks),
+  };
 }
 
 function splitArrows(s) {

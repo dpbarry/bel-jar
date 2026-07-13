@@ -1,0 +1,291 @@
+% ---------------------------------------------------------------------------
+% Arithmetic expressions with infix constructors, big-step evaluation,
+% and an infix ordering on the resulting naturals.
+%
+% This development is self-contained: it fixes its own naturals, its own
+% relational addition/multiplication (auxiliary, used prefix, since Beluga
+% requires infix heads to have exactly arity 2), an expression language
+% built from an infix sum and an infix product constructor, a big-step
+% evaluation judgment written infix, and an infix "at most" ordering on
+% naturals. It proves totality and determinism of relational addition and
+% of evaluation, commutativity of evaluated (infix) sums, and monotonicity
+% of the (infix) ordering under relational addition.
+% ---------------------------------------------------------------------------
+
+LF nat : type =
+  | z : nat
+  | s : nat -> nat
+;
+--name nat N n.
+
+% Own equality on naturals, needed to state determinism results.
+LF eq : nat -> nat -> type =
+  | refl : eq N N
+;
+
+% Relational addition and multiplication on naturals. These are ternary
+% families (two summands plus a result), so they are kept prefix: Beluga's
+% `--infix` pragma only accepts head symbols of arity exactly 2.
+LF plus : nat -> nat -> nat -> type =
+  | padd_z : plus z N N
+  | padd_s : plus N M P -> plus (s N) M (s P)
+;
+--name plus D d.
+
+LF times : nat -> nat -> nat -> type =
+  | tmul_z : times z N z
+  | tmul_s : times N M P -> plus P M Q -> times (s N) M Q
+;
+--name times T t.
+
+% Expression language: literals, an infix sum, and an infix product.
+LF exp : type =
+  | lit : nat -> exp
+  | add : exp -> exp -> exp
+  | mul : exp -> exp -> exp
+;
+--infix add 6 left.
+--infix mul 7 left.
+--name exp E e.
+
+% Big-step evaluation. Declared prefix here (a family cannot use its own
+% infix notation inside its own defining block, since the pragma can only
+% be issued once the family constant already exists); later statements
+% use it infix as `E evalto N`, meaning E evaluates to N.
+LF evalto : exp -> nat -> type =
+  | ev_lit : evalto (lit N) N
+  | ev_add : evalto E1 N1 -> evalto E2 N2 -> plus N1 N2 P
+             -> evalto (E1 add E2) P
+  | ev_mul : evalto E1 N1 -> evalto E2 N2 -> times N1 N2 P
+             -> evalto (E1 mul E2) P
+;
+--infix evalto 4 none.
+--name evalto V v.
+
+% An "at most" ordering on naturals. Declared prefix here for the same
+% reason as `evalto` above; used infix (`N leq M`) in every statement below.
+LF leq : nat -> nat -> type =
+  | leq_z : leq z N
+  | leq_s : leq N M -> leq (s N) (s M)
+;
+--infix leq 5 none.
+--name leq L l.
+
+% Existential packages, in the style of the standard "append is total"
+% idiom: the result index of a relation cannot be left as a free implicit
+% metavariable in a `rec`'s return type (Beluga would treat it as an
+% input, supplied by the caller, rather than as something the proof gets
+% to choose), so totality results package their witness explicitly.
+inductive ExPlus : [ |- nat] -> [ |- nat] -> ctype =
+  | ExPlus/c : [ |- plus N M P] -> ExPlus [ |- N] [ |- M]
+;
+
+inductive ExTimes : [ |- nat] -> [ |- nat] -> ctype =
+  | ExTimes/c : [ |- times N M P] -> ExTimes [ |- N] [ |- M]
+;
+
+inductive ExEval : [ |- exp] -> ctype =
+  | ExEval/c : [ |- E evalto N] -> ExEval [ |- E]
+;
+
+% ---------------------------------------------------------------------------
+% Totality and determinism of relational addition.
+% ---------------------------------------------------------------------------
+
+rec plus_total : {n:[ |- nat]}{m:[ |- nat]} ExPlus [ |- n] [ |- m] =
+/ total n (plus_total n m) /
+mlam n, m => case [ |- n] of
+| [ |- z] => ExPlus/c [ |- padd_z]
+| [ |- s N] =>
+  let ExPlus/c [ |- D] = plus_total [ |- N] [ |- m] in
+    ExPlus/c [ |- padd_s D]
+;
+
+rec plus_det : [ |- plus n m P1] -> [ |- plus n m P2]
+             -> [ |- eq P1 P2] =
+/ total d1 (plus_det n m p1 p2 d1) /
+fn d1, d2 => case d1 of
+| [ |- padd_z] =>
+  let [ |- padd_z] = d2 in [ |- refl]
+| [ |- padd_s D1] =>
+  let [ |- padd_s D2] = d2 in
+  let [ |- refl] = plus_det [ |- D1] [ |- D2] in
+    [ |- refl]
+;
+
+% ---------------------------------------------------------------------------
+% Totality and determinism of relational multiplication.
+% ---------------------------------------------------------------------------
+
+rec times_total : {n:[ |- nat]}{m:[ |- nat]} ExTimes [ |- n] [ |- m] =
+/ total n (times_total n m) /
+mlam n, m => case [ |- n] of
+| [ |- z] => ExTimes/c [ |- tmul_z]
+| [ |- s N] =>
+  let ExTimes/c ([ |- D] : [ |- times N m P]) = times_total [ |- N] [ |- m] in
+  let ExPlus/c [ |- D2] = plus_total [ |- P] [ |- m] in
+    ExTimes/c [ |- tmul_s D D2]
+;
+
+rec times_det : [ |- times n m P1] -> [ |- times n m P2]
+              -> [ |- eq P1 P2] =
+/ total d1 (times_det n m p1 p2 d1) /
+fn d1, d2 => case d1 of
+| [ |- tmul_z] =>
+  let [ |- tmul_z] = d2 in [ |- refl]
+| [ |- tmul_s D1 D1'] =>
+  let [ |- tmul_s D2 D2'] = d2 in
+  let [ |- refl] = times_det [ |- D1] [ |- D2] in
+  let [ |- refl] = plus_det [ |- D1'] [ |- D2'] in
+    [ |- refl]
+;
+
+% ---------------------------------------------------------------------------
+% Evaluation is total and deterministic. The statements themselves are
+% phrased over the infix expression former `add`/`mul` and the infix
+% evaluation judgment `evalto`.
+% ---------------------------------------------------------------------------
+
+rec eval_total : {e:[ |- exp]} ExEval [ |- e] =
+/ total e (eval_total e) /
+mlam e => case [ |- e] of
+| [ |- lit N] => ExEval/c [ |- ev_lit]
+| [ |- E1 add E2] =>
+  let ExEval/c ([ |- V1] : [ |- E1 evalto N1]) = eval_total [ |- E1] in
+  let ExEval/c ([ |- V2] : [ |- E2 evalto N2]) = eval_total [ |- E2] in
+  let ExPlus/c [ |- D]  = plus_total [ |- N1] [ |- N2] in
+    ExEval/c [ |- ev_add V1 V2 D]
+| [ |- E1 mul E2] =>
+  let ExEval/c ([ |- V1] : [ |- E1 evalto N1]) = eval_total [ |- E1] in
+  let ExEval/c ([ |- V2] : [ |- E2 evalto N2]) = eval_total [ |- E2] in
+  let ExTimes/c [ |- D]  = times_total [ |- N1] [ |- N2] in
+    ExEval/c [ |- ev_mul V1 V2 D]
+;
+
+rec eval_det : [ |- e evalto N1] -> [ |- e evalto N2]
+             -> [ |- eq N1 N2] =
+/ total v1 (eval_det e n1 n2 v1 v2) /
+fn v1, v2 => case v1 of
+| [ |- ev_lit] =>
+  let [ |- ev_lit] = v2 in [ |- refl]
+| [ |- ev_add V1a V2a Da] =>
+  let [ |- ev_add V1b V2b Db] = v2 in
+  let [ |- refl] = eval_det [ |- V1a] [ |- V1b] in
+  let [ |- refl] = eval_det [ |- V2a] [ |- V2b] in
+  let [ |- refl] = plus_det [ |- Da] [ |- Db] in
+    [ |- refl]
+| [ |- ev_mul V1a V2a Da] =>
+  let [ |- ev_mul V1b V2b Db] = v2 in
+  let [ |- refl] = eval_det [ |- V1a] [ |- V1b] in
+  let [ |- refl] = eval_det [ |- V2a] [ |- V2b] in
+  let [ |- refl] = times_det [ |- Da] [ |- Db] in
+    [ |- refl]
+;
+
+% ---------------------------------------------------------------------------
+% Commutativity of relational addition, hence of evaluated (infix) sums.
+% ---------------------------------------------------------------------------
+
+rec plus_z_unit : {n:[ |- nat]} [ |- plus n z n] =
+/ total n (plus_z_unit n) /
+mlam n => case [ |- n] of
+| [ |- z] => [ |- padd_z]
+| [ |- s N] =>
+  let [ |- D] = plus_z_unit [ |- N] in
+    [ |- padd_s D]
+;
+
+rec plus_s_shift : {n:[ |- nat]}{m:[ |- nat]} [ |- plus n m P]
+                  -> [ |- plus n (s m) (s P)] =
+/ total d (plus_s_shift n m d) /
+mlam n, m => fn d => case d of
+| [ |- padd_z] => [ |- padd_z]
+| [ |- padd_s D] =>
+  let [ |- D'] = plus_s_shift [ |- _] [ |- m] [ |- D] in
+    [ |- padd_s D']
+;
+
+rec plus_comm : {n:[ |- nat]}{m:[ |- nat]} [ |- plus n m P]
+              -> [ |- plus m n P] =
+/ total d (plus_comm n m p d) /
+mlam n, m => fn d => case d of
+| [ |- padd_z] => plus_z_unit [ |- m]
+| [ |- padd_s D] =>
+  let [ |- D'] = plus_comm [ |- _] [ |- m] [ |- D] in
+    plus_s_shift [ |- m] [ |- _] [ |- D']
+;
+
+% Statement: swapping the two sides of an infix `add` expression preserves
+% the evaluation result.
+rec eval_add_comm : [ |- (E1 add E2) evalto N]
+                   -> [ |- (E2 add E1) evalto N] =
+/ total v (eval_add_comm e1 e2 n v) /
+fn v => case v of
+| [ |- ev_add V1 V2 D] =>
+  let [ |- D'] = plus_comm [ |- _] [ |- _] [ |- D] in
+    [ |- ev_add V2 V1 D']
+;
+
+% ---------------------------------------------------------------------------
+% The (infix) ordering `leq` is reflexive, transitive, and monotone under
+% relational addition.
+% ---------------------------------------------------------------------------
+
+rec leq_refl : {n:[ |- nat]} [ |- n leq n] =
+/ total n (leq_refl n) /
+mlam n => case [ |- n] of
+| [ |- z] => [ |- leq_z]
+| [ |- s N] =>
+  let [ |- L] = leq_refl [ |- N] in
+    [ |- leq_s L]
+;
+
+rec leq_trans : [ |- n1 leq n2] -> [ |- n2 leq n3]
+              -> [ |- n1 leq n3] =
+/ total l1 (leq_trans n1 n2 n3 l1 l2) /
+fn l1, l2 => case l1 of
+| [ |- leq_z] => [ |- leq_z]
+| [ |- leq_s L1] =>
+  let [ |- leq_s L2] = l2 in
+  let [ |- L3] = leq_trans [ |- L1] [ |- L2] in
+    [ |- leq_s L3]
+;
+
+% Helper: if `k leq P` then `k leq (s P)`.
+rec leq_widen : [ |- k leq P] -> [ |- k leq (s P)] =
+/ total l (leq_widen k p l) /
+fn l => case l of
+| [ |- leq_z] => [ |- leq_z]
+| [ |- leq_s L] =>
+  let [ |- L'] = leq_widen [ |- L] in
+    [ |- leq_s L']
+;
+
+% `k` is always at most `n plus k` (needed for the base case of
+% monotonicity below).
+rec leq_plus_left : {n:[ |- nat]}{k:[ |- nat]} [ |- plus n k P]
+                   -> [ |- k leq P] =
+/ total d (leq_plus_left n k p d) /
+mlam n, k => fn d => case d of
+| [ |- padd_z] => leq_refl [ |- k]
+| [ |- padd_s D] =>
+  let [ |- L] = leq_plus_left [ |- _] [ |- k] [ |- D] in
+    leq_widen [ |- L]
+;
+
+% Statement: `leq` is monotone under relational addition on the left,
+% phrased with `leq` used infix throughout.
+rec leq_plus_mono : {k:[ |- nat]} [ |- n1 leq n2]
+                     -> [ |- plus n1 k P1] -> [ |- plus n2 k P2]
+                   -> [ |- P1 leq P2] =
+/ total d1 (leq_plus_mono k n1 n2 l p1 d1) /
+mlam k => fn l, d1, d2 => case d1 of
+| [ |- padd_z] =>
+  let [ |- leq_z] = l in
+    leq_plus_left [ |- _] [ |- k] d2
+| [ |- padd_s D1] =>
+  let [ |- leq_s L] = l in
+  let [ |- padd_s D2] = d2 in
+  let [ |- L'] = leq_plus_mono [ |- k] [ |- L] [ |- D1] [ |- D2] in
+    [ |- leq_s L']
+;

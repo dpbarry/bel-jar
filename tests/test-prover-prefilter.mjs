@@ -121,4 +121,14 @@ expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app d g]' },
   'a ctx-var passed into an eq arg slot is soundly dropped (bonus rejection)');
 void thm;
 
+// ── 5. Lexical guard: checker-internal `"`-quoted names are unparseable by
+// construction — any candidate text carrying one is rejected, for EVERY move
+// kind (they leaked into fills live and can kill the wasm checker outright). ──
+expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app " i2 D2]' }, H('[g |- eq N M]'), CODE) === false,
+  'a fill referencing a checker-internal "-name is rejected without a check');
+expect(movePrefilterOk({ kind: 'recurse', text: 'let X = f [g |- " i1] in ?' }, H('[g |- eq N M]'), CODE) === false,
+  'the "-name guard applies to non-fill kinds too');
+expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app D1 D2]' }, H('[g |- eq N M]'), CODE) === true,
+  'quote-free candidates are untouched by the lexical guard');
+
 console.log('OK test-prover-prefilter (sound head + argument-family rules; 75% fill drop measured)');

@@ -1,0 +1,37 @@
+{
+  "batch": "batch-20260709",
+  "authoredBy": "subagent-blind",
+  "note": "Each file was authored by an independent Beluga-expert subagent with NO knowledge of Harpoon/BelJar's prover, its move vocabulary, or which shapes it handles. This isolation is what makes the masked solve-rate a trustworthy generality metric — no example was fitted to the engine. Do NOT feed harness outcomes back into future authoring prompts.",
+  "files": [
+    {
+      "path": "eval-det.bel",
+      "description": "Big-step evaluation of a small arithmetic language (numerals, addition, predecessor) is deterministic.",
+      "shape": "case on first derivation + inversion on second; one inductive call per subterm plus add_det/prd_det functionality lemmas; no schema, closed context",
+      "provable": true
+    },
+    {
+      "path": "mir-sym.bel",
+      "description": "A mirror-convertibility relation on binary trees (congruence + child-flip) is symmetric.",
+      "shape": "case over 4 constructors, 2 base + 2 congruence recursions (flip swaps subproofs)",
+      "provable": true
+    },
+    {
+      "path": "steps-trans.bel",
+      "description": "A right-nested reflexive-transitive closure over a two-form step relation on worlds is transitive.",
+      "shape": "induct on second derivation; refl returns first arg, snoc recurses then re-snocs",
+      "provable": true
+    },
+    {
+      "path": "preserve.bel",
+      "description": "A binder-free typed calculus (naturals, booleans, pairs) has small-step type preservation.",
+      "shape": "invert the typing derivation, six base reductions, five congruence recursions; no binders/schema",
+      "provable": true
+    },
+    {
+      "path": "wk.bel",
+      "description": "A weakening/subsumption lemma: a typing derivation transports along a weakening substitution between related contexts.",
+      "shape": "schema-block context with a substitution variable $W, parameter #p.2 case, inductive calls under the t_lam binder extending both contexts and the substitution",
+      "provable": true
+    }
+  ]
+}

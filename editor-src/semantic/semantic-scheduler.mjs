@@ -263,8 +263,21 @@ export function createSemanticScheduler(engine, session) {
     requeue();
   }
 
+  // At mount, seed intel only for what the user can SEE (the visible decls) plus
+  // the dirty frontier — NOT every implicit-bearing decl in the file. Seeding the
+  // whole file eagerly warmed 1k-line files at load and kept the intel worker
+  // saturated shipping the whole program up front. The on-demand paths keep intel
+  // complete without the upfront cost:
+  //   • scroll → onViewportChange + seedFromFrontier({includeCleanViewport}) in
+  //     the editor enqueues newly-visible decls (see seedSemanticScheduler);
+  //   • cursor move → reprioritises them to the front of the queue;
+  //   • hover / type-resolution → ensureElaborated elaborates on demand if a decl
+  //     was somehow not queued yet, and awaits it.
+  // So intel is never missing — at most a beat behind for a decl the instant it
+  // scrolls into view, and hover blocks on it. A deliberate "warm the whole
+  // project" action can still call seedAllImplicitDeclarations().
   function startBackground() {
-    seedAllImplicitDeclarations();
+    seedFromFrontier({ includeCleanViewport: true });
     scheduleRun();
   }
 

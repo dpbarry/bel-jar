@@ -1,0 +1,29 @@
+LF gem : type =
+| opal : gem
+| weld : gem -> gem -> gem;
+
+LF pure : gem -> type =
+| pure_opal : pure opal
+| pure_weld : pure M -> pure N -> pure (weld M N);
+
+schema pctx = some [x:gem] pure x;
+
+rec exch_pure : (g:pctx)
+  [g, u:pure A[..], v:pure B[..] |- pure M[..]]
+  -> [g, v:pure B[..], u:pure A[..] |- pure M[..]] =
+/ total d (exch_pure g a b m d) /
+fn d => case d of
+| [g, u:pure A[..], v:pure B[..] |- u] =>
+  [g, v:pure B[..], u:pure A[..] |- u]
+| [g, u:pure A[..], v:pure B[..] |- v] =>
+  [g, v:pure B[..], u:pure A[..] |- v]
+| [g, u:pure A[..], v:pure B[..] |- #p[..]] =>
+  [g, v:pure B[..], u:pure A[..] |- #p[..]]
+| [g, u:pure A[..], v:pure B[..] |- pure_opal] =>
+  [g, v:pure B[..], u:pure A[..] |- pure_opal]
+| [g, u:pure A[..], v:pure B[..] |- pure_weld D1 D2] =>
+  let [g, v:pure B[..], u:pure A[..] |- E1] =
+      exch_pure [g, u:pure A[..], v:pure B[..] |- D1] in
+  let [g, v:pure B[..], u:pure A[..] |- E2] =
+      exch_pure [g, u:pure A[..], v:pure B[..] |- D2] in
+  [g, v:pure B[..], u:pure A[..] |- pure_weld E1 E2];

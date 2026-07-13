@@ -431,7 +431,7 @@
     attachPanelReset(main.querySelector('[data-category="workspace"]'), function () {
       runCategoryReset(function (p) {
         p.resetWorkspacePrefs();
-        global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: false } }));
+        global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: true } }));
       }, 'workspace-reset');
     });
 

@@ -6,6 +6,7 @@ import {
   structuralSymbolId,
 } from './ids.mjs';
 import { semanticDeclText } from './check-gate.mjs';
+import { timeSync } from '../perf/check-trace.mjs';
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
 const NOTATION_PRAGMA = new Set(['InfixPragma', 'PrefixPragma']);
@@ -332,9 +333,9 @@ export function createSymbolStore() {
     const defByNameRange = new Map();
     const keyCounts = new Map();
 
-    collectGlobalSymbols({ documentId, tree, doc, symbols, globalSymbols, defByNameRange, keyCounts });
+    timeSync('sym.collectGlobals', () => collectGlobalSymbols({ documentId, tree, doc, symbols, globalSymbols, defByNameRange, keyCounts }));
     reconcileIdentity(globalSymbols, previous, identityRegistry);
-    collectReferencesAndLocals({
+    timeSync('sym.collectRefs', () => collectReferencesAndLocals({
       documentId,
       tree,
       doc,
@@ -345,7 +346,7 @@ export function createSymbolStore() {
       referencesBySymbolId,
       defByNameRange,
       keyCounts,
-    });
+    }));
 
     identityRegistry = new Map();
     for (const symbol of globalSymbols) identityRegistry.set(symbol.structuralKey, symbol.id);
@@ -660,17 +661,28 @@ function makeSymbol({
   baseKey, structuralKey, isGlobal,
 }) {
   const declarationText = slice(doc, declarationNode.from, declarationNode.to);
-  const semanticText = semanticDeclText(doc, declarationNode, tree);
-  const eq = semanticText.indexOf('=');
-  const semi = semanticText.indexOf(';');
-  const boundary = eq >= 0 ? eq : (semi >= 0 ? semi : semanticText.length);
+  let fingerprint;
+  let signatureHash;
+  let bodyHash;
+  if (isGlobal) {
+    const semanticText = semanticDeclText(doc, declarationNode, tree);
+    const eq = semanticText.indexOf('=');
+    const semi = semanticText.indexOf(';');
+    const boundary = eq >= 0 ? eq : (semi >= 0 ? semi : semanticText.length);
+    fingerprint = fingerprintOf(semanticText);
+    signatureHash = fingerprintOf(semanticText.slice(0, boundary));
+    bodyHash = fingerprintOf(semanticText.slice(boundary));
+  } else {
+    // Locals are not identity-reconciled; position-stable ids are enough.
+    fingerprint = signatureHash = bodyHash = `${nameRange.from}`;
+  }
   return {
     id: structuralSymbolId(documentId, namespace, structuralKey),
     baseKey,
     structuralKey,
-    fingerprint: fingerprintOf(semanticText),
-    signatureHash: fingerprintOf(semanticText.slice(0, boundary)),
-    bodyHash: fingerprintOf(semanticText.slice(boundary)),
+    fingerprint,
+    signatureHash,
+    bodyHash,
     astNodeId: astNodeId(documentId, definingNode),
     documentId,
     namespace,
@@ -689,6 +701,13 @@ function makeSymbol({
 
 function collectReferencesAndLocals(ctx) {
   const localStack = [];
+  const localsByName = new Map();
+  const globalsByName = new Map();
+  for (const symbol of ctx.globalSymbols) {
+    const list = globalsByName.get(symbol.name);
+    if (list) list.push(symbol);
+    else globalsByName.set(symbol.name, [symbol]);
+  }
 
   function pushLocal(node, ident) {
     const nameRange = extendedRange(ident);
@@ -712,12 +731,18 @@ function collectReferencesAndLocals(ctx) {
     ctx.symbols.push(symbol);
     ctx.localSymbols.push(symbol);
     ctx.defByNameRange.set(`${nameRange.from}:${nameRange.to}`, symbol);
-    localStack.push({ symbol, from: scope.from, to: scope.to });
+    const entry = { symbol, from: scope.from, to: scope.to };
+    localStack.push(entry);
+    const bucket = localsByName.get(name);
+    if (bucket) bucket.push(entry);
+    else localsByName.set(name, [entry]);
   }
 
   function popLocalsEndingAt(to) {
     while (localStack.length && localStack[localStack.length - 1].to <= to) {
-      localStack.pop();
+      const entry = localStack.pop();
+      const bucket = localsByName.get(entry.symbol.name);
+      if (bucket && bucket.length) bucket.pop();
     }
   }
 
@@ -736,7 +761,9 @@ function collectReferencesAndLocals(ctx) {
 
       const name = slice(ctx.doc, range.from, range.to);
       const refKind = refKindForNode(node);
-      const symbol = resolveReference(ctx.globalSymbols, localStack, name, refKind, range.from, node);
+      const symbol = resolveReference(
+        ctx.globalSymbols, localStack, name, refKind, range.from, node, globalsByName, localsByName,
+      );
       const reference = {
         id: referenceId(ctx.documentId, node),
         documentId: ctx.documentId,
@@ -770,10 +797,20 @@ function collectReferencesAndLocals(ctx) {
   }
 }
 
-function resolveReference(globalSymbols, localStack, name, refKind, from, node) {
-  for (let i = localStack.length - 1; i >= 0; i--) {
-    const { symbol, to, from: scopeFrom } = localStack[i];
-    if (scopeFrom <= from && from <= to && symbol.name === name) return symbol;
+function resolveReference(
+  globalSymbols, localStack, name, refKind, from, node, globalsByName = null, localsByName = null,
+) {
+  const localBucket = localsByName?.get(name);
+  if (localBucket && localBucket.length) {
+    for (let i = localBucket.length - 1; i >= 0; i--) {
+      const { symbol, to, from: scopeFrom } = localBucket[i];
+      if (scopeFrom <= from && from <= to) return symbol;
+    }
+  } else {
+    for (let i = localStack.length - 1; i >= 0; i--) {
+      const { symbol, to, from: scopeFrom } = localStack[i];
+      if (scopeFrom <= from && from <= to && symbol.name === name) return symbol;
+    }
   }
 
   const expected = expectedNamespaces(node, refKind);
@@ -781,16 +818,29 @@ function resolveReference(globalSymbols, localStack, name, refKind, from, node) 
     ? (symbol) => expected.has(symbol.namespace)
     : (symbol) => isCompatibleGlobal(refKind, symbol.namespace);
 
-  const candidates = globalSymbols
-    .filter((symbol) => symbol.name === name)
-    .filter((symbol) => nameVisible(symbol, from))
-    .filter(allowed)
-    .sort((a, b) => b.nameRange.from - a.nameRange.from);
-  return candidates[0] || null;
+  const pool = globalsByName?.get(name) || globalSymbols.filter((symbol) => symbol.name === name);
+  let best = null;
+  let bestFrom = -1;
+  for (const symbol of pool) {
+    if (!nameVisible(symbol, from) || !allowed(symbol)) continue;
+    if (symbol.nameRange.from > bestFrom) {
+      best = symbol;
+      bestFrom = symbol.nameRange.from;
+    }
+  }
+  return best;
 }
 
 function nearestDeclarationAt(globalSymbols, from, to) {
-  return globalSymbols
-    .filter((symbol) => spanContains(symbol.range, from, to))
-    .sort((a, b) => (a.range.to - a.range.from) - (b.range.to - b.range.from))[0] || null;
+  let best = null;
+  let bestSize = Infinity;
+  for (const symbol of globalSymbols) {
+    if (!spanContains(symbol.range, from, to)) continue;
+    const size = symbol.range.to - symbol.range.from;
+    if (size < bestSize) {
+      best = symbol;
+      bestSize = size;
+    }
+  }
+  return best;
 }

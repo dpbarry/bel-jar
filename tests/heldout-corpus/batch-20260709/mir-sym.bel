@@ -1,0 +1,30 @@
+% Mirror-convertibility on a tiny binary-tree syntax, proved symmetric.
+
+LF tree : type =
+  | leaf : tree
+  | tip  : tree
+  | node : tree -> tree -> tree
+;
+
+% mir T S :  T and S are mirror-convertible.
+LF mir : tree -> tree -> type =
+  | m/leaf : mir leaf leaf
+  | m/tip  : mir tip tip
+  | m/cong : mir A C -> mir B D -> mir (node A B) (node C D)
+  | m/flip : mir A C -> mir B D -> mir (node A B) (node D C)
+;
+
+rec sym : [ |- mir T S] -> [ |- mir S T] =
+/ total m (sym _ _ m) /
+fn m => case m of
+  | [ |- m/leaf] => [ |- m/leaf]
+  | [ |- m/tip ] => [ |- m/tip ]
+  | [ |- m/cong M1 M2] =>
+      let [ |- N1] = sym [ |- M1] in
+      let [ |- N2] = sym [ |- M2] in
+        [ |- m/cong N1 N2]
+  | [ |- m/flip M1 M2] =>
+      let [ |- N1] = sym [ |- M1] in
+      let [ |- N2] = sym [ |- M2] in
+        [ |- m/flip N2 N1]
+;

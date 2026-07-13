@@ -46,6 +46,22 @@
     + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
     + '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/>'
     + '</svg>';
+  function compromiseBannerIcon(c) {
+    if (c && c.level === 'warn') {
+      return '<span class="harpoon-lab-banner-warn-glyph" aria-hidden="true">!</span>';
+    }
+    return ICON_ALERT;
+  }
+  var ICON_CHEVRON_RIGHT =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="m9 6 6 6-6 6"/>'
+    + '</svg>';
+  var ICON_CHEVRON_LEFT =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="m15 18-6-6 6-6"/>'
+    + '</svg>';
   // A calm "stopped" glyph (a horizontal bar in a circle) — an honest halt, NOT an
   // error cross. Auto-solve declining is a valid outcome, not a failure.
   var ICON_STOP =
@@ -88,21 +104,52 @@
     }
   }
 
-  function stepGoalTip(goal) {
-    if (!goal) return '';
-    return 'Goal at this step: ' + displayType(goal);
+  // Build a rich tooltip fragment: a small label above a syntax-highlighted
+  // type/source fragment. `kind` is 'type' (comp type) or 'source'.
+  function buildLabeledCodeTip(label, code, kind) {
+    var frag = document.createDocumentFragment();
+    if (label) {
+      var lab = el('div', 'hpt-tip-note');
+      lab.textContent = label;
+      frag.appendChild(lab);
+    }
+    var host = el('div', 'hpt-tip-code');
+    if (kind === 'source') renderSource(host, code);
+    else renderType(host, code);
+    frag.appendChild(host);
+    return frag;
   }
 
   function bindStepGoalTip(host, goal) {
     if (!host) return;
-    var tip = stepGoalTip(goal);
-    if (!tip) {
+    var shown = goal ? displayType(goal) : '';
+    if (!shown) {
+      if (global.Tooltips && global.Tooltips.setRich) global.Tooltips.setRich(host, null);
       setTip(host, '', { ariaLabel: false });
       host.removeAttribute('data-tooltip-placement');
       return;
     }
     host.setAttribute('data-tooltip-placement', 'below');
-    setTip(host, tip, { ariaLabel: false });
+    if (global.Tooltips && typeof global.Tooltips.setRich === 'function') {
+      global.Tooltips.setRich(host, function () {
+        return buildLabeledCodeTip('Goal at this step', goal, 'type');
+      }, 'Goal at this step: ' + shown);
+    } else {
+      setTip(host, 'Goal at this step: ' + shown, { ariaLabel: false });
+    }
+  }
+
+  function bindChipTip(el, tip, richCode, richKind) {
+    if (!el || !tip) return;
+    el.setAttribute('data-tooltip-placement', 'below');
+    el.setAttribute('data-tooltip-no-track', '');
+    if (richCode && global.Tooltips && typeof global.Tooltips.setRich === 'function') {
+      global.Tooltips.setRich(el, function () {
+        return buildLabeledCodeTip(tip, richCode, richKind || 'type');
+      }, tip);
+    } else {
+      setTip(el, tip, { ariaLabel: false });
+    }
   }
 
   function iconBtn(className, svg, label, tip, onClick, disabled) {
@@ -137,12 +184,27 @@
     global.addEventListener('beljar:active-editor-view', scheduleAnchorProbeAll);
   }
 
+  // Prefer the mounted editor's document id — BelJarPersist.getActiveFileId can
+  // lag behind the open tab (tabs use persist.getCurrentFileId).
+  function liveEditorFileId() {
+    var api = global.BelJarCurrentEditor;
+    if (api && typeof api.getDocumentId === 'function') {
+      var docId = api.getDocumentId();
+      if (docId) return docId;
+    }
+    if (api && typeof api.getActiveFileId === 'function') {
+      var edId = api.getActiveFileId();
+      if (edId) return edId;
+    }
+    var P = global.BelJarPersist;
+    return P && P.getActiveFileId ? P.getActiveFileId() : null;
+  }
+
   function liveFileText(fileId) {
     var P = global.BelJarPersist;
     if (!P || !fileId) return '';
-    var activeId = P.getActiveFileId ? P.getActiveFileId() : null;
     var api = global.BelJarCurrentEditor;
-    if (fileId === activeId && api && typeof api.getValue === 'function') {
+    if (fileId === liveEditorFileId() && api && typeof api.getValue === 'function') {
       return api.getValue();
     }
     return typeof P.getFileText === 'function' ? (P.getFileText(fileId) || '') : '';
@@ -197,6 +259,8 @@
   }
 
   function normalizeGlyphs(text) {
+    var g = global.HarpoonGlyphs;
+    if (g) return g.fallbackNormalize(text);
     return String(text == null ? '' : text)
       .replace(/\|-#/g, '⊢#')
       .replace(/\|-/g, '⊢')
@@ -205,6 +269,8 @@
   }
 
   function displayType(typeStr) {
+    var g = global.HarpoonGlyphs;
+    if (g) return g.displayBeluga(typeStr);
     var ed = E();
     if (ed && typeof ed.normalizeType === 'function') return ed.normalizeType(typeStr);
     return normalizeGlyphs(typeStr);
@@ -213,9 +279,8 @@
   function displaySource(text) {
     var ed = E();
     var s = String(text || '');
-    if (ed && typeof ed.normalizeType === 'function') return ed.normalizeType(s);
     if (ed && typeof ed.expandBelAliases === 'function') s = ed.expandBelAliases(s);
-    return normalizeGlyphs(s);
+    return displayType(s);
   }
 
   function renderType(host, typeStr) {
@@ -348,9 +413,8 @@
     this.userCancelled = false;
     this.pendingCommitSource = null;
     this._compromiseBanner = null;
-    this._commitPlacedFadeTimer = null;
-    this._commitPlacedHideTimer = null;
     this.commitState = defaultCommitState();
+    this._verdictPopPlayed = false;
   }
 
   Session.prototype.getCommitState = function () {
@@ -364,7 +428,6 @@
 
   Session.prototype.beginCommitUi = function (phase) {
     var st = this.getCommitState();
-    this.clearCommitSuccessDismiss();
     st.status = 'checking';
     st.phase = phase || 'verify';
     st.detail = '';
@@ -411,57 +474,39 @@
     return this.getCommitState().status === 'placed';
   };
 
-  Session.prototype.clearCommitSuccessDismiss = function () {
-    if (this._commitPlacedFadeTimer != null) {
-      global.clearTimeout(this._commitPlacedFadeTimer);
-      this._commitPlacedFadeTimer = null;
-    }
-    if (this._commitPlacedHideTimer != null) {
-      global.clearTimeout(this._commitPlacedHideTimer);
-      this._commitPlacedHideTimer = null;
-    }
-  };
-
-  Session.prototype.queueCommitSuccessDismiss = function () {
-    var self = this;
-    var st = this.getCommitState();
-    this.clearCommitSuccessDismiss();
-    if (!st || st.status !== 'placed' || st.dismissed) return;
-    this._commitPlacedFadeTimer = global.setTimeout(function () {
-      self._commitPlacedFadeTimer = null;
-      var live = self.getCommitState();
-      if (!live || live.status !== 'placed' || live.dismissed) return;
-      var banner = self.bodyEl && self.bodyEl.querySelector('.harpoon-lab-auto-commit.is-placed');
-      if (banner) banner.classList.add('is-dismissing');
-      self._commitPlacedHideTimer = global.setTimeout(function () {
-        self._commitPlacedHideTimer = null;
-        var cur = self.getCommitState();
-        if (!cur || cur.status !== 'placed') return;
-        cur.dismissed = true;
-        self.render();
-      }, 260);
-    }, 900);
-  };
-
   Session.prototype.finishCommitSuccess = function () {
     var st = this.getCommitState();
-    this.clearCommitSuccessDismiss();
     st.status = 'placed';
     st.phase = null;
     st.detail = '';
-    st.dismissed = false;
+    st.dismissed = true;
     this.unbindProbe();
     this.compromise = { level: 'none', reason: '', detail: '' };
-    this.render();
-    this.queueCommitSuccessDismiss();
+    var body = this.bodyEl;
+    if (!body) return;
+    var box = body.querySelector('.harpoon-lab-auto');
+    if (box) box.classList.add('is-frozen');
+    var place = body.querySelector('.harpoon-lab-place');
+    if (place) place.remove();
+    if (this._compromiseBanner) this._compromiseBanner.hidden = true;
+    this.updateCompromiseBanner();
   };
 
-  Session.prototype.finishCommitFailure = function (detail, canRetry) {
+  Session.prototype.finishCommitFailure = function (detail, canRetry, opts) {
+    opts = opts || {};
     var st = this.getCommitState();
-    this.clearCommitSuccessDismiss();
+    var raw = String(detail || 'The proof did not re-check.');
+    var checkerReject = opts.kind === 'checker';
     st.status = 'failed';
     st.phase = null;
-    st.detail = String(detail || 'The proof did not re-check.');
+    if (checkerReject) {
+      st.detail = commitFailureUserMessage();
+      st.detailRaw = raw;
+      toast(st.detail, 'error');
+    } else {
+      st.detail = raw;
+      st.detailRaw = '';
+    }
     st.canRetry = !!canRetry;
     st.dismissed = false;
     this.render();
@@ -469,14 +514,31 @@
 
   Session.prototype.resetCommitForRetry = function () {
     var st = this.getCommitState();
-    this.clearCommitSuccessDismiss();
     st.status = 'idle';
     st.phase = null;
     st.detail = '';
+    st.detailRaw = '';
     st.usedFullCheck = false;
     st.canRetry = false;
     st.dismissed = false;
     this.render();
+  };
+
+  Session.prototype.abortCommitChecking = function (detail, canRetry) {
+    if (canRetry) this.resetCommitForRetry();
+    else this.finishCommitFailure(detail, false);
+  };
+
+  Session.prototype.clearPendingCommitNav = function () {
+    if (this._pendingCommitNavTimer != null) {
+      global.clearTimeout(this._pendingCommitNavTimer);
+      this._pendingCommitNavTimer = null;
+    }
+    if (this._pendingCommitNavListener) {
+      global.removeEventListener('beljar:active-editor-view', this._pendingCommitNavListener);
+      this._pendingCommitNavListener = null;
+    }
+    this.pendingCommitSource = null;
   };
 
   Session.prototype.bindProbe = function () {
@@ -490,9 +552,8 @@
 
   Session.prototype.resolveView = function () {
     var api = global.BelJarCurrentEditor;
-    var P = global.BelJarPersist;
-    if (!api || !P || !this.fileId) return this.view;
-    if (P.getActiveFileId && P.getActiveFileId() === this.fileId && typeof api.getView === 'function') {
+    if (!api || !this.fileId) return this.view;
+    if (liveEditorFileId() === this.fileId && typeof api.getView === 'function') {
       var v = api.getView();
       if (v) this.view = v;
     }
@@ -539,8 +600,7 @@
     var fileId = this.fileId || this.anchor.fileId;
     if (!fileId) return;
     var api = global.BelJarCurrentEditor;
-    var P = global.BelJarPersist;
-    var active = P && P.getActiveFileId && P.getActiveFileId() === fileId;
+    var active = liveEditorFileId() === fileId;
     this.resolveView();
     var view = active ? this.view : null;
     var fileText = liveFileText(fileId);
@@ -629,13 +689,16 @@
     }
     var na = this.nativeAuto;
     var c = this.compromise || { level: 'none' };
-    banner.className = 'harpoon-lab-auto-compromise harpoon-lab-strip harpoon-lab-banner is-' + c.level
+    var tone = c.level === 'block' ? ' tone-error' : (c.level === 'warn' ? ' tone-warn' : '');
+    banner.className = 'harpoon-lab-auto-compromise harpoon-lab-strip harpoon-lab-banner is-' + c.level + tone
       + (na && na.phase === 'searching' ? ' is-searching' : '');
     if (c.level === 'none') {
       banner.hidden = true;
       return;
     }
     banner.hidden = false;
+    var badge = banner.querySelector('.harpoon-lab-compromise-badge');
+    if (badge) badge.innerHTML = compromiseBannerIcon(c);
     var titleEl = banner.querySelector('.harpoon-lab-compromise-title');
     if (titleEl) titleEl.textContent = compromiseBannerTitle(c);
     var subEl = banner.querySelector('.harpoon-lab-compromise-sub');
@@ -651,7 +714,7 @@
       if (sub && na && na.complete && commit.status !== 'checking') {
         sub.textContent = blocked
           ? 'The hole changed — restart to insert'
-          : (c.level === 'warn' ? 'Re-checks before insert' : 'Insert into the file');
+          : 'Insert into the file';
       }
     }
   };
@@ -666,7 +729,7 @@
       className: 'harpoon-lab-auto-compromise harpoon-lab-strip harpoon-lab-banner is-' + c.level
         + (na && na.phase === 'searching' ? ' is-searching' : ''),
       tone: c.level === 'block' ? 'error' : 'warn',
-      icon: c.level === 'warn' ? '!' : ICON_ALERT,
+      icon: compromiseBannerIcon(c),
       badgeClass: 'harpoon-lab-compromise-badge',
       copyClass: 'harpoon-lab-compromise-copy',
       titleClass: 'harpoon-lab-compromise-title',
@@ -764,6 +827,7 @@
       ? ed.resolveHoleGoalForHit(this.view, eng, prep.hit)
       : { goal: thm.compType && thm.compType.raw ? thm.compType.raw : '', state: 'approximate', loadingLive: true };
     this.userCancelled = false;
+    this._verdictPopPlayed = false;
     this.captureAnchor(this.view, prep);
     this.bindProbe();
     this.clearNativeAutoShell();
@@ -964,7 +1028,14 @@
   };
 
   function defaultCommitState() {
-    return { status: 'idle', phase: null, detail: '', usedFullCheck: false, canRetry: false, dismissed: false };
+    return {
+      status: 'idle', phase: null, detail: '', detailRaw: '',
+      usedFullCheck: false, canRetry: false, dismissed: false,
+    };
+  }
+
+  function commitFailureUserMessage() {
+    return 'The proof no longer fits this file. Symbols or context may have changed since it was solved.';
   }
 
   function firstCheckerErrorLine(output) {
@@ -1034,16 +1105,15 @@
   function buildPlaceStrip(self, opts) {
     opts = opts || {};
     var blocked = !!opts.blocked;
-    var warned = !!opts.warned;
     var title = opts.title || 'Place the proof';
     var sub = opts.sub || (blocked
       ? 'The hole changed — restart to insert'
-      : (warned ? 'Re-checks before insert' : 'Insert into the file'));
+      : 'Insert into the file');
     var extraCls = opts.extraCls || '';
     return buildBannerShell({
       tag: 'button',
       className: 'harpoon-lab-place harpoon-lab-strip harpoon-lab-banner'
-        + extraCls + (warned && !blocked ? ' is-warned' : '') + (blocked ? ' is-blocked' : ''),
+        + extraCls + (blocked ? ' is-blocked' : ''),
       disabled: blocked,
       tone: blocked ? 'error' : 'action',
       icon: ICON_ARROW_RIGHT,
@@ -1071,6 +1141,10 @@
       title: placed ? 'Placed in file' : 'Could not place',
       sub: placed ? (declName || '') : (commit.detail || 'The proof did not re-check.'),
     });
+    if (!placed && commit.detailRaw) {
+      var copy = banner.querySelector('.harpoon-lab-banner-copy');
+      if (copy) copy.appendChild(el('span', 'harpoon-lab-commit-tech', commit.detailRaw));
+    }
     if (!placed && typeof onRetry === 'function') {
       var actions = el('div', 'harpoon-lab-commit-actions');
       var retryBtn = el('button', 'harpoon-lab-commit-retry');
@@ -1092,15 +1166,56 @@
     return m ? m[1].trim() : '';
   }
 
+  var COMMIT_CHECK_TIMEOUT_MS = 45000;
+  var COMMIT_NAV_TIMEOUT_MS = 8000;
+
+  function withCommitTimeout(promise, ms, message) {
+    return new Promise(function (resolve, reject) {
+      var timer = global.setTimeout(function () {
+        reject(new Error(message || 'Timed out.'));
+      }, ms);
+      Promise.resolve(promise).then(function (v) {
+        global.clearTimeout(timer);
+        resolve(v);
+      }).catch(function (e) {
+        global.clearTimeout(timer);
+        reject(e);
+      });
+    });
+  }
+
   Session.prototype.pendingCommitAfterNav = function (source) {
     var self = this;
     var fileId = this.fileId || (this.anchor && this.anchor.fileId);
-    var hit = this.compromise && this.compromise.liveHit;
+    this.clearPendingCommitNav();
+
+    var view = this.resolveView();
+    var api = global.BelJarCurrentEditor;
+    var eng = api && typeof api.getSemanticEngine === 'function' ? api.getSemanticEngine() : null;
+    var hit = this.findLiveHit(view, eng) || (this.compromise && this.compromise.liveHit);
+
     if (!fileId || !hit) {
       toast('Open the file to place the proof.', 'error');
+      this.resetCommitForRetry();
       return Promise.resolve(false);
     }
+
+    // File already mounted — skip the nav wait (openFileAt notifies synchronously
+    // before a late listener would see it).
+    if (liveEditorFileId() === fileId) {
+      return this.verifyAndCommit(source, { skipBeginUi: true });
+    }
+
     this.pendingCommitSource = source;
+    var onActive = function () {
+      if (!self.pendingCommitSource) return;
+      var src = self.pendingCommitSource;
+      self.clearPendingCommitNav();
+      self.verifyAndCommit(src, { skipBeginUi: true });
+    };
+    self._pendingCommitNavListener = onActive;
+    global.addEventListener('beljar:active-editor-view', onActive);
+
     global.dispatchEvent(new CustomEvent('beljar:open-file-at', {
       detail: {
         fileId: fileId,
@@ -1110,14 +1225,19 @@
         col: hit.hole && hit.hole.col,
       },
     }));
-    var onActive = function () {
-      global.removeEventListener('beljar:active-editor-view', onActive);
+
+    if (liveEditorFileId() === fileId && self.pendingCommitSource) {
+      onActive();
+      return Promise.resolve(false);
+    }
+
+    self._pendingCommitNavTimer = global.setTimeout(function () {
       if (!self.pendingCommitSource) return;
-      var src = self.pendingCommitSource;
-      self.pendingCommitSource = null;
-      self.verifyAndCommit(src);
-    };
-    global.addEventListener('beljar:active-editor-view', onActive);
+      self.clearPendingCommitNav();
+      self.resetCommitForRetry();
+      toast('Could not open the file to place the proof.', 'error');
+    }, COMMIT_NAV_TIMEOUT_MS);
+
     return Promise.resolve(false);
   };
 
@@ -1126,7 +1246,6 @@
     var ed = E();
     var self = this;
     var client = global.BelugaClient;
-    var P = global.BelJarPersist;
     if (!ed) return Promise.resolve(false);
     if (!opts.skipBeginUi) this.beginCommitUi('verify');
 
@@ -1137,7 +1256,8 @@
     }
 
     var fileId = this.fileId || (this.anchor && this.anchor.fileId);
-    if (P && fileId && P.getActiveFileId && P.getActiveFileId() !== fileId) {
+    var liveId = liveEditorFileId();
+    if (fileId && liveId && liveId !== fileId) {
       return this.pendingCommitAfterNav(source);
     }
 
@@ -1156,7 +1276,10 @@
     }
 
     var prep = prepareForHole(view, hit);
-    if (!prep) return Promise.resolve(false);
+    if (!prep) {
+      this.resetCommitForRetry();
+      return Promise.resolve(false);
+    }
     this.prep = prep;
     this.declFrom = prep.span.from;
     this.declTo = prep.span.to;
@@ -1188,15 +1311,23 @@
           ? prep.assembledCode.slice(0, prep.assembledDeclFrom) + newDecl + prep.assembledCode.slice(prep.assembledDeclTo)
           : docText.slice(0, declFrom) + newDecl + docText.slice(declTo),
       };
-    var needsFull = ed.needsFullCommitCheck
-      ? ed.needsFullCommitCheck({ compromise: self.compromise, docText: docText, declName: decl.name })
-      : true;
+    var needsOrchestration = ed.countSiblingHoledDecls
+      ? ed.countSiblingHoledDecls(docText, decl.name) > 0
+      : (ed.needsFullCommitCheck
+        ? ed.needsFullCommitCheck({ docText: docText, declName: decl.name })
+        : false);
 
     function endProver() {
       if (client && client.endProverSession) client.endProverSession();
     }
 
-    function runTieredCheck() {
+    function commitNow() {
+      ed.commitProof(view, declFrom, declTo, source);
+      self.finishCommitSuccess();
+      return true;
+    }
+
+    function runOrchestrationCheck() {
       var chain = client && client.beginProverSession
         ? client.beginProverSession()
         : Promise.resolve();
@@ -1210,36 +1341,30 @@
         }
         return client.checkResult(codes.orchestration);
       }).then(function (res) {
-        if (!res || !res.ok) {
-          return { ok: false, output: res && res.output, stage: 'orchestration' };
-        }
-        if (!needsFull) return { ok: true };
-        self.getCommitState().usedFullCheck = true;
-        self.updateCommitPlace();
-        return client.checkResult(codes.patched).then(function (fullRes) {
-          return {
-            ok: !!(fullRes && fullRes.ok),
-            output: fullRes && fullRes.output,
-            stage: 'full',
-          };
-        });
+        return {
+          ok: !!(res && res.ok),
+          output: res && res.output,
+          stage: 'orchestration',
+        };
       });
     }
 
-    if (!client || (typeof client.checkResult !== 'function' && typeof client.checkResultForProver !== 'function')) {
-      ed.commitProof(view, declFrom, declTo, source);
-      self.finishCommitSuccess();
-      return Promise.resolve(true);
+    if (!needsOrchestration) {
+      return Promise.resolve(commitNow());
     }
 
-    return runTieredCheck().then(function (result) {
+    if (!client || (typeof client.checkResult !== 'function' && typeof client.checkResultForProver !== 'function')) {
+      return Promise.resolve(commitNow());
+    }
+
+    return withCommitTimeout(
+      runOrchestrationCheck(),
+      COMMIT_CHECK_TIMEOUT_MS,
+      'Proof verification timed out.'
+    ).then(function (result) {
       endProver();
-      if (result && result.ok) {
-        ed.commitProof(view, declFrom, declTo, source);
-        self.finishCommitSuccess();
-        return true;
-      }
-      self.finishCommitFailure(firstCheckerErrorLine(result && result.output), true);
+      if (result && result.ok) return commitNow();
+      self.finishCommitFailure(firstCheckerErrorLine(result && result.output), true, { kind: 'checker' });
       return false;
     }).catch(function (err) {
       endProver();
@@ -1247,13 +1372,13 @@
         self.resetCommitForRetry();
         return false;
       }
-      self.finishCommitFailure(err && err.message ? err.message : 'Checker error.', true);
+      self.finishCommitFailure(err && err.message ? err.message : 'Checker error.', true, { kind: 'checker' });
       return false;
     });
   };
 
   Session.prototype.disposeSession = function () {
-    this.clearCommitSuccessDismiss();
+    this.clearPendingCommitNav();
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
@@ -1499,11 +1624,12 @@
     return (s && MOVE_GLOSS[s.move]) || 'made a move';
   }
 
-  function facetChip(text, extraClass) {
+  function facetChip(text, extraClass, tip, richKind) {
     var chip = el('span', 'hpt-move-facet-chip' + (extraClass ? ' ' + extraClass : ''));
     var code = el('code', 'hpt-move-facet-code');
-    code.textContent = text;
+    renderSource(code, text);
     chip.appendChild(code);
+    if (tip) bindChipTip(chip, tip, richKind ? text : null, richKind);
     return chip;
   }
 
@@ -1522,43 +1648,47 @@
       var introNames = (meta.introduced && meta.introduced.length)
         ? meta.introduced : introducedFromText(step.text);
       introNames.forEach(function (n) {
-        wrap.appendChild(facetChip(n));
+        wrap.appendChild(facetChip(n, '', 'Binder introduced for the assumed input'));
         has = true;
       });
     } else if (move === 'split') {
       if (meta.arms) {
-        wrap.appendChild(facetChip(meta.arms + ' arm' + (meta.arms === 1 ? '' : 's')));
+        var armTip = meta.arms === 1
+          ? 'Opened one branch with a single hole'
+          : 'Opened ' + meta.arms + ' branches, each with its own hole';
+        wrap.appendChild(facetChip(meta.arms + ' arm' + (meta.arms === 1 ? '' : 's'), '', armTip));
         has = true;
       }
       if (meta.annotated) {
-        wrap.appendChild(facetChip('typed', 'is-muted'));
+        wrap.appendChild(facetChip('typed', 'is-muted', 'Arms carry explicit type annotations'));
         has = true;
       }
     } else if (move === 'fill') {
       var filler = meta.filler
         || (step.text && String(step.text).split('\n')[0].replace(/\s+/g, ' ').trim());
       if (filler) {
-        wrap.appendChild(facetChip(filler));
+        wrap.appendChild(facetChip(filler, '', 'Proof term written in place of the hole', 'type'));
         has = true;
       }
     } else if (move === 'recurse' || move === 'lemma') {
       (meta.uses || []).forEach(function (u) {
-        wrap.appendChild(facetChip(u));
+        wrap.appendChild(facetChip(u, '', 'Used from the local context'));
         has = true;
       });
       (meta.binds || []).forEach(function (b) {
-        wrap.appendChild(facetChip(b, 'is-binds'));
+        wrap.appendChild(facetChip(b, 'is-binds', 'New witness bound by this move'));
         has = true;
       });
     } else if (move === 'invert') {
       if (meta.uses && meta.uses[0]) {
         var arrow = el('span', 'hpt-move-facet-arrow');
         arrow.textContent = meta.uses[0] + ' → ' + ((meta.binds || []).join(', ') || '…');
+        bindChipTip(arrow, 'Hypothesis inverted into pattern variables');
         wrap.appendChild(arrow);
         has = true;
       }
     } else if (move === 'impossible' && meta.refuted) {
-      wrap.appendChild(facetChip(meta.refuted));
+      wrap.appendChild(facetChip(meta.refuted, '', 'Shown to be contradictory'));
       has = true;
     }
     return has ? wrap : null;
@@ -1753,8 +1883,9 @@
     var head = el('div', 'harpoon-lab-auto-branch-head');
     head.appendChild(el('span', 'harpoon-lab-auto-branch-label', 'case'));
     var pat = el('code', 'harpoon-lab-auto-branch-pat');
-    pat.textContent = branch;
+    renderType(pat, branch);
     head.appendChild(pat);
+    bindChipTip(head, 'Case pattern; nested steps solve this branch', branch, 'type');
     caseRow.appendChild(head);
     group.appendChild(caseRow);
     var host = el('ol', 'harpoon-lab-auto-branch-steps');
@@ -2193,7 +2324,8 @@
     var sub = autoSubtext(na);
     var head = buildBannerShell({
       className: 'harpoon-lab-auto-head harpoon-lab-strip harpoon-lab-banner '
-        + (na.complete ? 'is-solved' : 'is-stuck'),
+        + (na.complete ? 'is-solved' : 'is-stuck')
+        + (self._verdictPopPlayed ? ' is-verdict-seen' : ''),
       tone: autoVerdictTone(na),
       icon: na.complete ? ICON_CHECK : ICON_STOP,
       badgeClass: 'harpoon-lab-auto-badge' + (na.complete ? ' is-solved' : ' is-stuck'),
@@ -2206,6 +2338,7 @@
     stageNode(head, stage);
     stage += 1;
     box.appendChild(head);
+    if (na.complete) self._verdictPopPlayed = true;
 
     // ── The STUCK card (diagnostic): the open goal + every candidate the search
     //    tried at that hole with the checker's objection. This card should never
@@ -2238,10 +2371,8 @@
         stage += 1;
       } else if (commit.status !== 'placed') {
         var blocked = self.compromise && self.compromise.level === 'block';
-        var warned = self.compromise && self.compromise.level === 'warn';
         var place = buildPlaceStrip(self, {
           blocked: blocked,
-          warned: warned,
           extraCls: ' harpoon-lab-auto-place is-instant',
           title: 'Place the proof',
           onClick: function () { self.commitNativeAuto(); },
@@ -2294,7 +2425,10 @@
   var STUCK_REASON = {
     'no-move': 'no move certified',
     'step-bound': 'step limit',
+    'search-bound': 'search bound hit',
     'file-errors': 'file errors',
+    'coinductive-out-of-fragment': 'coinductive goal — out of fragment',
+    'no-totality-measure': 'no totality measure — recursion unavailable',
     stopped: 'stopped',
     cancelled: 'cancelled',
   };
@@ -2345,7 +2479,7 @@
         var li = el('li', 'harpoon-stuck-tried-row is-' + v.verdict);
         li.appendChild(el('span', 'hpt-card-kind hpt-kind--' + v.kind, v.kind));
         var hd = el('code', 'harpoon-stuck-tried-head');
-        hd.textContent = v.head;
+        renderSource(hd, v.head);
         li.appendChild(hd);
         var reason = stuckReason(v.reason);
         if (reason) {
@@ -2518,7 +2652,7 @@
       wrap.appendChild(treeHost);
       wrap.appendChild(card);
     } else {
-      // Roomy: tree on the left, detail card in a persistent side rail.
+      // Roomy: tree on the left, detail card in a collapsible side rail.
       var split = el('div', 'hpt-split');
       var left = el('div', 'hpt-split-tree');
       left.appendChild(treeHost);
@@ -2527,7 +2661,39 @@
       card.classList.add('is-rail');
       card._hptEverSelected = false;
       self.renderTreeDetail(card, null, detailCtx(mode));
+
+      // Collapse / reopen the inspector rail — header toggle with a slim strip
+      // when collapsed (never a zero-width rail or edge-straddling chevron).
+      // State persists across redraws and app sessions via BelJarPersist.
+      var persist = global.BelJarPersist;
+      var collapsed = !!(persist && persist.readStoredHarpoonDetailsCollapsed
+        && persist.readStoredHarpoonDetailsCollapsed());
+      var railHead = el('div', 'hpt-rail-head');
+      var railTitle = el('span', 'hpt-rail-title', 'Details');
+      var toggle = el('button', 'icon-btn hpt-rail-toggle');
+      toggle.type = 'button';
+      railHead.appendChild(railTitle);
+      railHead.appendChild(toggle);
+      function applyCollapsed() {
+        split.classList.toggle('is-rail-collapsed', collapsed);
+        rail.classList.toggle('is-collapsed', collapsed);
+        toggle.innerHTML = collapsed ? ICON_CHEVRON_LEFT : ICON_CHEVRON_RIGHT;
+        var tip = collapsed ? 'Show details panel' : 'Hide details panel';
+        setTip(toggle, tip);
+        toggle.setAttribute('aria-label', tip);
+        toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }
+      toggle.addEventListener('click', function () {
+        collapsed = !collapsed;
+        if (persist && persist.writeStoredHarpoonDetailsCollapsed) {
+          persist.writeStoredHarpoonDetailsCollapsed(collapsed);
+        }
+        applyCollapsed();
+      });
+      rail.appendChild(railHead);
       rail.appendChild(card);
+      applyCollapsed();
+
       split.appendChild(left);
       split.appendChild(rail);
       wrap.appendChild(split);
@@ -2602,28 +2768,39 @@
             + ' step' + (links.length === 1 ? '' : 's')));
     }
     var seq = el('div', 'hpt-chain-seq');
+    var linkTotal = links.length;
     links.forEach(function (name, i) {
       if (i > 0) seq.appendChild(el('span', 'hpt-chain-arrow', '→'));
+      var stepNum = i + 1;
+      var isClose = i === links.length - 1 && !refutation;
+      var stepTip = isClose
+        ? 'Calls ' + name + ' and closes this subgoal (' + stepNum + ' of ' + linkTotal + ')'
+        : 'Calls ' + name + ' (' + stepNum + ' of ' + linkTotal + ')';
       if (variant === 'rail') {
         var railNm = el('code', 'hpt-chain-name');
         railNm.textContent = name;
+        bindChipTip(railNm, stepTip);
         seq.appendChild(railNm);
         return;
       }
-      var last = i === links.length - 1;
-      var link = el('span', 'hpt-chain-link' + (last && !refutation ? ' is-close' : ''));
-      link.appendChild(el('span', 'hpt-chain-idx', String(i + 1)));
+      var link = el('span', 'hpt-chain-link' + (isClose ? ' is-close' : ''));
+      link.appendChild(el('span', 'hpt-chain-idx', String(stepNum)));
       var nm = el('code', 'hpt-chain-name');
       nm.textContent = name;
       link.appendChild(nm);
+      bindChipTip(link, stepTip);
       seq.appendChild(link);
     });
     if (refutation) {
       seq.appendChild(el('span', 'hpt-chain-arrow', '→'));
       if (variant === 'rail') {
-        seq.appendChild(el('code', 'hpt-chain-name is-impossible', 'impossible'));
+        var railImp = el('code', 'hpt-chain-name is-impossible', 'impossible');
+        bindChipTip(railImp, 'This branch is impossible (contradiction)');
+        seq.appendChild(railImp);
       } else {
-        seq.appendChild(el('span', 'hpt-chain-link is-impossible', 'impossible'));
+        var impLink = el('span', 'hpt-chain-link is-impossible', 'impossible');
+        bindChipTip(impLink, 'This branch is impossible (contradiction)');
+        seq.appendChild(impLink);
       }
     }
     wrap.appendChild(seq);
@@ -2758,7 +2935,7 @@
     var li = el('li', 'hpt-tried is-' + v.verdict);
     li.appendChild(el('span', (rail ? 'harpoon-lab-auto-move' : 'hpt-card-kind') + ' move-' + v.kind, v.kind));
     var head = el('code', 'hpt-tried-head');
-    head.textContent = v.head || v.kind;
+    renderSource(head, v.head || v.kind);
     li.appendChild(head);
     if (v.rationale) {
       var rat = el('span', 'hpt-tried-rationale');
@@ -2767,7 +2944,7 @@
     }
     if (v.text && v.text !== v.head) {
       var full = el('pre', 'hpt-tried-text');
-      full.textContent = v.text;
+      renderSource(full, v.text);
       li.appendChild(full);
     }
     if (v.reason) {
@@ -2782,16 +2959,22 @@
     opts = opts || {};
     if (!tried || !tried.length) return null;
     var groups = [
-      { key: 'guard', label: 'Skipped (guard)' },
-      { key: 'rejected', label: 'Rejected (checker)' },
-      { key: 'accepted', label: 'Accepted' },
+      { key: 'guard', label: 'Skipped (guard)',
+        tip: 'Ruled out by BelJar’s own soundness guards before ever calling Beluga — '
+          + 'no checker time spent.' },
+      { key: 'rejected', label: 'Rejected (checker)',
+        tip: 'Tried against Beluga, which reported a type error, so it was discarded.' },
+      { key: 'accepted', label: 'Accepted',
+        tip: 'Certified clean by Beluga and spliced into the proof.' },
     ];
     var wrap = el('div', 'hpt-alt-tray');
     groups.forEach(function (g) {
       var rows = tried.filter(function (v) { return v.verdict === g.key; });
       if (!rows.length) return;
       var sec = el('div', 'hpt-alt-group is-' + g.key);
-      sec.appendChild(el('div', 'hpt-alt-group-label', g.label + ' (' + rows.length + ')'));
+      var groupLabel = el('div', 'hpt-alt-group-label', g.label + ' (' + rows.length + ')');
+      if (g.tip) setTip(groupLabel, g.tip);
+      sec.appendChild(groupLabel);
       var list = el('ul', 'hpt-detail-tried');
       rows.forEach(function (v) { list.appendChild(renderAltRow(v, opts.rail)); });
       sec.appendChild(list);
@@ -2833,7 +3016,10 @@
       where.appendChild(el('div', 'hpt-detail-branch', 'in branch: ' + st.branch));
     }
     if (st && typeof st.checks === 'number' && st.checks > 0) {
-      where.appendChild(el('div', 'hpt-detail-checks', st.checks + ' checker call' + (st.checks === 1 ? '' : 's')));
+      var checksEl = el('div', 'hpt-detail-checks', st.checks + ' checker call' + (st.checks === 1 ? '' : 's'));
+      setTip(checksEl, 'Times BelJar asked Beluga to certify a candidate move at this hole '
+        + 'before one type-checked clean.');
+      where.appendChild(checksEl);
     }
     return where.childNodes.length ? where : null;
   }
@@ -2965,13 +3151,27 @@
       if (chainEl) mount.appendChild(detailSection('Chain', chainEl));
     }
     if (st.move === 'split' && meta.armPatterns && meta.armPatterns.length) {
+      if (meta.scrutinee) {
+        var scrut = el('div', 'hpt-detail-goal');
+        renderType(scrut, meta.scrutinee);
+        mount.appendChild(detailSection('Scrutinee', scrut));
+      }
+      var armCount = meta.armPatterns.length;
       var arms = el('ul', 'hpt-detail-arms');
       meta.armPatterns.forEach(function (pat) {
         var li = el('li', 'hpt-detail-arm');
         renderType(li, pat);
         arms.appendChild(li);
       });
-      mount.appendChild(detailSection('Arms (' + meta.armPatterns.length + ')', arms));
+      var armsSection = detailSection('Arms (' + armCount + ')', arms);
+      // A single-arm case has no choice to make — it just names the one shape
+      // the scrutinee can take, i.e. it acts as a `let`/inversion, not a branch.
+      if (armCount === 1) {
+        var note = el('p', 'hpt-detail-note',
+          'One arm — this case only binds the scrutinee’s components (it acts as a let).');
+        armsSection.querySelector('.hpt-detail-section-body').appendChild(note);
+      }
+      mount.appendChild(armsSection);
     }
     var foot = renderDetailMeta(meta, st.checks);
     if (foot) mount.appendChild(foot);

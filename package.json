@@ -12,7 +12,12 @@
     "lint": "eslint js/ editor-src/",
     "test": "node tests/run-all.mjs",
     "test:semantic": "node tests/run-all.mjs semantic",
-    "prover:probe": "node scripts/prover-probes.mjs"
+    "prover:probe": "node scripts/prover-probes.mjs",
+    "corpus:plan": "node scripts/corpus-plan.mjs",
+    "corpus:run": "node scripts/corpus-harness.mjs",
+    "corpus:report": "node scripts/corpus-report.mjs",
+    "corpus": "npm run corpus:plan && npm run corpus:run && npm run corpus:report",
+    "heldout": "node scripts/corpus-plan.mjs --corpus tests/heldout-corpus && node scripts/corpus-harness.mjs --corpus tests/heldout-corpus && node scripts/corpus-report.mjs --corpus tests/heldout-corpus"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.0.0",

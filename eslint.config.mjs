@@ -40,6 +40,8 @@ export default [
         BelJarReplCommands: 'readonly',
         BelJarSettingsUI: 'readonly',
         BelJarCurrentEditor: 'readonly',
+        BelJarEditHistory: 'readonly',
+        BelJarEditHistoryBridge: 'readonly',
         LiveIntel: 'readonly',
         BelugaClient: 'readonly',
         RunProgress: 'readonly',

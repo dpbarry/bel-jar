@@ -54,6 +54,15 @@ export function headOfConclusion(conclStr) {
 function familyOfConstructorName(code, ctorName) {
   if (!ctorName) return null;
   const esc = ctorName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // LF/inductive BLOCK form: `LF fam : K = | c1 : T1 | c2 : T2 ;` — a constructor
+  // declared as an alternative of the block belongs to the block's head family.
+  {
+    const blockRe = /(?:^|\n)\s*(?:LF|inductive|stratified|coinductive)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:[^=;]*=([\s\S]*?);/g;
+    let bm;
+    while ((bm = blockRe.exec(String(code || '')))) {
+      if (new RegExp(`\\|\\s*${esc}\\s*:`).test(bm[2])) return bm[1];
+    }
+  }
   let acc = '';
   for (const raw of String(code || '').split('\n')) {
     const line = raw.trim();
@@ -922,7 +931,13 @@ function declConclusionHead(code, fnName) {
   if (!m) return null;
   const parts = splitArrowSpineText(m[1].trim());
   if (!parts.length) return null;
-  const concl = conclusionOf(parts[parts.length - 1]);
+  const last = parts[parts.length - 1].trim();
+  // An UNBOXED ctype conclusion (`Reassoc [ ⊢ N1] …`) leads with the family
+  // constant itself; its boxed INDEX arguments carry `|-`s that would misdirect
+  // conclusionOf. Resolve the leading identifier as a declared family first.
+  const lead = (last.match(/^[A-Za-z_][A-Za-z0-9_']*/) || [])[0];
+  if (lead && enumerateConstructorsTyped(code, lead).length) return lead;
+  const concl = conclusionOf(last);
   const nota = typeFamilyHead(concl, code);
   return (nota && nota !== 'type') ? nota : headOfConclusion(concl);
 }
@@ -946,11 +961,14 @@ function fillScope(hole, code) {
     seen.add(name);
     out.push({ name, type: type || '', concl: conclusionOf(type || name) });
   };
-  for (const c of (hole.ctx || [])) add(c.name, c.type);
-  for (const m of (hole.meta || [])) add(m.name, m.type);
+  // Let-bound results FIRST: the freshest derivations (a just-destructured
+  // recursion's components) are the highest-signal fill arguments, and the
+  // bounded combo enumeration must reach them before the cap.
   for (const b of branchLetBindings(code, hole)) {
     add(b.name, b.head ? `[${b.ctx} |- ${b.head} _]` : '');
   }
+  for (const c of (hole.ctx || [])) add(c.name, c.type);
+  for (const m of (hole.meta || [])) add(m.name, m.type);
   return out;
 }
 
@@ -1381,7 +1399,55 @@ function patternMetavars(term) {
 // HIGHER-ORDER — the ctor's declared type APPLIES it, `(M x)` — since a bare HO
 // metavariable in an annotation is rejected ("Higher-order meta-variables not
 // supported"); the reference proofs annotate exactly the first-order arms.
-function armAnnotation(ctor, ctxStr, used) {
+// ── Fixity-aware application rendering ───────────────────────────────────────
+// A `--infix name …` pragma makes prefix use of the head ILLEGAL ("operator is
+// missing its left argument") — every EMITTED application must respect the
+// declared fixity. Parsing already understands infix input (infixFamilySpine,
+// typeFamilyHead's operator fallback); this is the emission dual. Pragma names
+// are read from the program text, never hardcoded. Cached per code text.
+let _infixOpsSrc = null;
+let _infixOpsSet = null;
+export function infixDeclaredOps(code) {
+  const src = String(code || '');
+  if (src !== _infixOpsSrc) {
+    _infixOpsSrc = src;
+    _infixOpsSet = new Set();
+    for (const m of src.matchAll(/(?:^|\n)\s*--infix\s+(\S+)/g)) _infixOpsSet.add(m[1]);
+  }
+  return _infixOpsSet;
+}
+
+// Is `s` already ONE grouped operand (fully wrapped by a single bracket pair)?
+function isOneGroup(s) {
+  const open = s[0];
+  const close = open === '(' ? ')' : open === '[' ? ']' : null;
+  if (!close || s[s.length - 1] !== close) return false;
+  let depth = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    if (s[i] === open) depth += 1;
+    else if (s[i] === close) { depth -= 1; if (depth === 0) return i === s.length - 1; }
+  }
+  return false;
+}
+
+function wrapOperand(t) {
+  const s = String(t == null ? '' : t).trim();
+  if (!s || !/\s/.test(s) || isOneGroup(s)) return s;
+  return `(${s})`;
+}
+
+// Render `head idx…` respecting fixity: a 2-ary application of an infix-
+// declared head becomes `lhs head rhs` (compound operands parenthesized);
+// everything else stays prefix (the checker arbitrates the leftovers).
+export function renderApp(code, head, indices) {
+  const idx = (indices || []).map((x) => String(x == null ? '' : x).trim());
+  if (idx.length === 2 && infixDeclaredOps(code).has(String(head))) {
+    return `${wrapOperand(idx[0])} ${head} ${wrapOperand(idx[1])}`;
+  }
+  return idx.length ? `${head} ${idx.join(' ')}` : String(head);
+}
+
+function armAnnotation(ctor, ctxStr, used, code) {
   if (!ctor || !ctor.result || !ctor.result.indices || !ctor.result.indices.length) return null;
   const vars = new Set();
   for (const idx of ctor.result.indices) {
@@ -1399,8 +1465,12 @@ function armAnnotation(ctor, ctxStr, used) {
     ...(ctor.args || []).map((a) => String((a && (a.rawType || a.bodyType)) || '')),
   ];
   for (const t of declTexts) {
-    for (const m of t.matchAll(/\(\s*([A-Z][A-Za-z0-9_']*)\s+[a-z]/g)) {
-      if (vars.has(m[1])) return null; // an HO index var — skip this annotation
+    for (const m of t.matchAll(/\(\s*([A-Z][A-Za-z0-9_']*)\s+([a-z][^\s)]*)/g)) {
+      if (!vars.has(m[1])) continue;
+      // `(X op Y)` with an infix-declared op is an OPERAND position, not an
+      // HO application of X — only a true application marks X higher-order.
+      if (infixDeclaredOps(code).has(m[2])) continue;
+      return null; // an HO index var — skip this annotation
     }
   }
   const ren = new Map();
@@ -1413,7 +1483,7 @@ function armAnnotation(ctor, ctxStr, used) {
   }
   const indices = ctor.result.indices.map((idx) => String(idx)
     .replace(/[A-Z][A-Za-z0-9_']*/g, (m) => ren.get(m) || m));
-  return boxPattern(ctxStr, `${ctor.result.head} ${indices.join(' ')}`);
+  return boxPattern(ctxStr, renderApp(code, ctor.result.head, indices));
 }
 
 // Beluga shares metavars across sibling case arms; inversion on an earlier arm can
@@ -1429,6 +1499,20 @@ function reserveArmSlack(used, count = ARM_PATTERN_SLACK) {
   }
 }
 
+// Split a context string on TOP-LEVEL commas (block/paren internals intact).
+function splitCtxParts(ctxStr) {
+  const out = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of String(ctxStr || '')) {
+    if (ch === '(' || ch === '[') depth += 1;
+    else if (ch === ')' || ch === ']') depth -= 1;
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
 export function buildSplitSkeleton(scrutVar, ctxStr, ctors, opts = {}) {
   const list = Array.isArray(ctors) ? ctors : [];
   const indent = opts.indent || '';
@@ -1439,6 +1523,36 @@ export function buildSplitSkeleton(scrutVar, ctxStr, ctors, opts = {}) {
   const paramBranch = paramTerm
     ? `${indent}| ${boxPattern(ctxStr, paramTerm)} =>\n${indent}  ?`
     : null;
+
+  // NAMED context entries (a context `g, u:fam A[..], v:fam B[..]` extends the
+  // schema part by explicit declarations): Beluga's coverage demands an arm per
+  // named entry whose type-family matches the scrutinee's — `#p[..]` ranges only
+  // over the schema part. (spec §2 split; the exchange-lemma shape.)
+  const namedEntryBranches = [];
+  if (opts.head) {
+    const parts = splitCtxParts(ctxStr);
+    const entryNames = parts
+      .map((p) => (p.includes(':') ? p.slice(0, p.indexOf(':')).trim() : ''))
+      .filter((n) => /^[a-z][A-Za-z0-9_']*$/.test(n));
+    for (const part of parts) {
+      const ci = part.indexOf(':');
+      if (ci < 0) continue;
+      const nm = part.slice(0, ci).trim();
+      const ty = part.slice(ci + 1).trim();
+      if (!/^[a-z][A-Za-z0-9_']*$/.test(nm)) continue; // entries, not schema vars/blocks
+      if (/\bblock\b/.test(ty)) continue; // block entries destructure by projection, not by name
+      if (headOfConclusion(ty) !== opts.head) continue;
+      // A DEPENDENT entry — its type mentions another entry of this extension
+      // (`hz : hyp z C[]`) — is excluded by the scrutinee's strengthened indices
+      // (`hyp X[..] A[]`: X over the base can never be the extension binder z),
+      // so coverage does not demand its arm. An INDEPENDENT entry
+      // (`u : pure A[..]`, indices strengthened over the base) is demanded.
+      const dependsOnEntry = entryNames.some((other) => other !== nm
+        && new RegExp(`(^|[^A-Za-z0-9_'])${other}([^A-Za-z0-9_']|$)`).test(ty));
+      if (dependsOnEntry) continue;
+      namedEntryBranches.push(`${indent}| ${boxPattern(ctxStr, nm)} =>\n${indent}  ?`);
+    }
+  }
 
   for (const ctor of list) {
     const fresh = freshNamer(used);
@@ -1459,9 +1573,10 @@ export function buildSplitSkeleton(scrutVar, ctxStr, ctors, opts = {}) {
     // Suppressed via opts.annotate === false: an annotation's bare index vars
     // depend on the WHOLE context, which strengthening/block shapes reject — the
     // caller offers BOTH variants and the checker arbitrates.
-    const ann = opts.annotate === false ? null : armAnnotation(ctor, ctxStr, used);
+    const ann = opts.annotate === false ? null : armAnnotation(ctor, ctxStr, used, opts.code || '');
     branches.push(`${indent}| ${boxPattern(ctxStr, pat)}${ann ? ` : ${ann}` : ''} =>\n${indent}  ?`);
   }
+  for (const nb of namedEntryBranches) branches.push(nb);
   if (paramBranch) branches.push(paramBranch);
 
   if (!branches.length) return null;
@@ -1513,10 +1628,18 @@ export function buildIntroSkeleton(goalStr, opts = {}) {
   let rest = t;
   for (let guard = 0; guard < 16; guard += 1) {
     if (rest[0] === '{') {
-      const close = rest.indexOf('}');
-      if (close < 0) break;
+      // Depth-scan to the MATCHING close (a dependent binder type may nest braces).
+      let depth = 0;
+      let close = -1;
+      for (let i = 0; i < rest.length; i += 1) {
+        if (rest[i] === '{') depth += 1;
+        else if (rest[i] === '}') { depth -= 1; if (!depth) { close = i; break; } }
+      }
+      if (close < 0) return null; // malformed — no partial skeleton, ever
       const nm = rest.slice(1, close).split(':')[0].trim();
-      if (!/^[A-Za-z_][A-Za-z0-9_']*$/.test(nm)) break;
+      // The binder-name grammar covers EVERY meta-object sort (spec §2 intro):
+      // plain names, substitution variables `$W`, parameter variables `#p`.
+      if (!/^[$#]?[A-Za-z_][A-Za-z0-9_']*$/.test(nm)) return null;
       mlams.push(nm);
       rest = rest.slice(close + 1).trim();
       continue;
@@ -1577,15 +1700,51 @@ export function fillCandidates(hole, code) {
   // (1) A context parameter projection `#p.field[..]` whose field type-head matches
   //     the goal head — the str_hyp case. We read the parameter variable + its block
   //     type from the meta-context (`#p : #(g |- block (x : name, h : hyp x A1[]))`).
+  // In-scope substitution variables ($W : $[h ⊢ g]): a parameter living in g is
+  // transported into the goal context h by projecting UNDER the substitution —
+  // `#p.2[$W]` (spec §2 fill: identity `[..]` OR the substitution variable when
+  // the goal context differs). Both named and positional spellings are proposed;
+  // the checker arbitrates.
+  const substVars = (hole.meta || [])
+    .map((sv) => sv && sv.name)
+    .filter((n) => n && n[0] === '$');
   for (const m of (hole.meta || [])) {
     if (!m || !m.name || m.name[0] !== '#') continue;
     const fields = parseBlockFields(m.type);
     if (fields) {
-      for (const f of fields) if (f.head === goalHead && f.name) push(box(`${m.name}.${f.name}[..]`));
-    } else if (headOfBindingType(':' + String(m.type || '')) === goalHead) {
-      // A bare parameter variable of the goal type.
-      push(box(`${m.name}[..]`));
+      fields.forEach((f, fi) => {
+        if (f.head !== goalHead) return;
+        if (f.name) push(box(`${m.name}.${f.name}[..]`));
+        for (const sv of substVars) {
+          if (f.name) push(box(`${m.name}.${f.name}[${sv}]`));
+          push(box(`${m.name}.${fi + 1}[${sv}]`));
+        }
+      });
+    } else {
+      // A bare parameter variable of the goal type. The reported spelling may be
+      // `#(g |- pure X)` / `#(g ⊢ …)` — decompose, don't string-match.
+      const pd = decomposeContextual(String(m.type || '').replace(/^#\s*/, ''));
+      const pHead = pd && pd.concl ? headOfConclusion(pd.concl)
+        : headOfBindingType(':' + String(m.type || ''));
+      if (pHead === goalHead) {
+        push(box(`${m.name}[..]`));
+        for (const sv of substVars) push(box(`${m.name}[${sv}]`));
+      }
     }
+  }
+
+  // (1b) A NAMED entry of the goal's own context whose declared type-family
+  //      matches the goal head — the variable itself is the derivation
+  //      (`[g, v:pure B[..], u:pure A[..] ⊢ u]`, the exchange u/v arms). The
+  //      checker arbitrates the exact indices.
+  for (const part of splitCtxParts(ctxStr)) {
+    const ci = part.indexOf(':');
+    if (ci < 0) continue;
+    const nm = part.slice(0, ci).trim();
+    const ty = part.slice(ci + 1).trim();
+    if (!/^[a-z][A-Za-z0-9_']*$/.test(nm)) continue;
+    if (/\bblock\b/.test(ty)) continue; // block entries fill by projection
+    if (headOfConclusion(ty) === goalHead) push(box(nm));
   }
 
   // (2) A computation-context variable whose boxed type IS the goal — return it
@@ -1655,16 +1814,63 @@ export function fillCandidates(hole, code) {
     if (goalApp && goalApp.indices.length && rigidConflict(ctor.result.indices, goalApp.indices)) continue;
     const perArg = ctor.argTypes.map((at, i) => {
       const want = subst ? applySubst(at, subst) : at;
-      return argFillChoices(descs[i], want, hole, scope, hole.goal, code);
+      const choices = argFillChoices(descs[i], want, hole, scope, hole.goal, code);
+      // A COMPUTATION-family constructor takes comp expressions as arguments —
+      // a comp-context variable of a matching boxed family passes BARE
+      // (`Re q [ ⊢ plus/z]`), never spelled inside a box (spec §2 fill / D3).
+      if (compFamily && /^\s*\[/.test(String(want).trim())) {
+        const wantHead = headOfConclusion((decomposeContextual(want) || {}).concl || '');
+        // Highest-signal first: (a) recently let-bound components of the same
+        // family (a just-destructured recursion's pieces — `Re [⊢S1] [⊢plus/s S2]`),
+        // then (b) comp variables of the matching family (the theorem's own
+        // premises, passed bare). The DIAGONAL enumeration below keeps deeper
+        // combinations reachable despite the prepends.
+        for (const c2 of (hole.ctx || [])) {
+          if (!c2 || !c2.name || !c2.type) continue;
+          const cd2 = decomposeContextual(c2.type);
+          if (cd2 && wantHead && headOfConclusion(cd2.concl) === wantHead) choices.unshift(c2.name);
+        }
+        for (const b2 of branchLetBindings(code, hole)) {
+          if (!b2 || !b2.name || b2.head !== wantHead) continue;
+          choices.unshift(b2.ctx ? `[${b2.ctx} |- ${b2.name}]` : `[ |- ${b2.name}]`);
+        }
+      }
+      return choices;
     });
     if (perArg.some((opts) => !opts.length)) continue;
     if (perArg.every((opts) => opts.length === 1)) {
       const args = perArg.map((opts) => opts[0]);
-      if (distinctHoBodies(args)) emit(`${ctor.name} ${args.join(' ')}`);
+      if (distinctHoBodies(args)) emit(renderApp(code, ctor.name, args));
       continue;
     }
-    for (const args of cartesianArgCombos(perArg, 12, distinctHoBodies)) {
-      emit(`${ctor.name} ${args.join(' ')}`);
+    // Comp-family constructors mix meta/comp/nested-ctor argument sources; a
+    // lexicographic walk starves later slot-1 choices under the cap, so combos
+    // are enumerated FAIRLY (by increasing index sum — diagonal), cap 24.
+    if (compFamily && perArg.length > 1) {
+      const cap = 48;
+      const emitted = new Set();
+      const maxSum = perArg.reduce((a, o) => a + o.length - 1, 0);
+      outer: for (let s = 0; s <= maxSum; s += 1) {
+        const walk = (slot, left, acc) => {
+          if (emitted.size >= cap) return true;
+          if (slot === perArg.length) {
+            if (left !== 0) return false;
+            if (!distinctHoBodies(acc)) return false;
+            const t = renderApp(code, ctor.name, acc);
+            if (!emitted.has(t)) { emitted.add(t); emit(t); }
+            return false;
+          }
+          for (let k = 0; k <= Math.min(left, perArg[slot].length - 1); k += 1) {
+            if (walk(slot + 1, left - k, [...acc, perArg[slot][k]])) return true;
+          }
+          return false;
+        };
+        if (walk(0, s, [])) break outer;
+      }
+    } else {
+      for (const args of cartesianArgCombos(perArg, 12, distinctHoBodies)) {
+        emit(renderApp(code, ctor.name, args));
+      }
     }
   }
   }
@@ -1751,7 +1957,7 @@ export function synthesizeFills(goalConcl, hole, code) {
       break;
     }
     if (!ok) continue;
-    out.push(argTerms.length ? `${ctor.name} ${argTerms.join(' ')}` : ctor.name);
+    out.push(argTerms.length ? renderApp(code, ctor.name, argTerms) : ctor.name);
   }
   return out;
 }

@@ -327,12 +327,25 @@ function sourceSignatureForGlobal(declParent, ident, doc) {
   return text || null;
 }
 
+// Per-pass memo: within one lint pass a deeply-nested application re-asks the
+// SAME head node's enclosing binder at every nesting level (measured ~12k calls
+// for the same handful of positions). The answer depends only on (node position,
+// doc), both fixed within a synchronous pass, so key by position. Cleared at each
+// collectUndefinedApplicationDiags entry (every keystroke), alongside the external
+// name memo.
+let _localBinderMemo = new Map();
+function resetLocalBinderMemo() { _localBinderMemo = new Map(); }
+
 function findEnclosingLocalBinder(ident, doc, name) {
+  const memoKey = `${ident.from}:${ident.to}`;
+  if (_localBinderMemo.has(memoKey)) return _localBinderMemo.get(memoKey);
+  let result = null;
   for (let p = ident.parent; p; p = p.parent) {
     const matched = scanFrameForName(p, doc, name);
-    if (matched) return matched;
+    if (matched) { result = matched; break; }
   }
-  return null;
+  _localBinderMemo.set(memoKey, result);
+  return result;
 }
 
 function hit(text, binderKind) { return { text, binderKind }; }
@@ -608,11 +621,29 @@ function argIndexInTermApp(ident) {
   return index;
 }
 
+// Per-name memo for the EXTERNAL (prelude/group) half of the answer. The lint
+// pass asks the same ~36 names ~250× each per keystroke (deeply-nested apps
+// re-ask the same head at every nesting level) — measured 9,451 external-prelude
+// scans collapsing to just 36 distinct names. The external answer depends only
+// on (name, prelude contents), and the prelude is fixed within a synchronous
+// lint pass, so a pass-scoped memo (cleared at collectUndefinedApplicationDiags
+// entry) turns those thousands of prelude scans into ~36. The local half
+// (findGlobalDeclarationIdent) is tree-dependent and stays direct.
+let _extKnownMemo = new Map();      // name -> boolean, valid within the current lint pass
+
+function resetExternalKnownMemo() { _extKnownMemo = new Map(); }
+
+function externalKnownName(name) {
+  const hit = _extKnownMemo.get(name);
+  if (hit !== undefined) return hit;
+  const known = !!externalSignatureFor(name) || externalDefinedName(name);
+  _extKnownMemo.set(name, known);
+  return known;
+}
+
 function isKnownGlobalName(tree, doc, name, isUpper) {
   if (findGlobalDeclarationIdent(tree, doc, name, isUpper)) return true;
-  if (externalSignatureFor(name)) return true;
-  if (externalDefinedName(name)) return true;
-  return false;
+  return externalKnownName(name);
 }
 
 function plainLowerName(name) {
@@ -732,6 +763,11 @@ function undefinedApplicationMessage(name, site) {
 }
 
 export function collectUndefinedApplicationDiags(tree, doc) {
+  // Prelude + doc positions are fixed for this synchronous pass; memoize the
+  // external name lookups and local-binder scans so a deeply-nested app that
+  // re-asks the same head at every nesting level pays each lookup once.
+  resetExternalKnownMemo();
+  resetLocalBinderMemo();
   const diags = [];
   const seen = new Set();
   // Only visit application nodes — never every identifier in the file.

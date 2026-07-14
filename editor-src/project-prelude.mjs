@@ -312,21 +312,48 @@ export function listGroupSymbols(files, activeId, getText, options = {}) {
 
 // Source signature (": T" of the declaration head) for a name defined in
 // another group file — the cross-file hover payload. Closest prelude wins.
+// findGroupSignature / groupDefinesName are called PER undefined-application
+// candidate during lint — thousands of times per keystroke on a late suite file.
+// Resolving the group (developmentForFile) and looping every prelude file on each
+// call was ~40 ms/keystroke of pure repetition (the group's contents don't change
+// while you type the active file). Cache the group's merged {sigByName, names}
+// per (activeId + the group's text identities); a keystroke in the active file
+// leaves siblings' text refs unchanged, so it's one cheap cache hit + Map.get.
+let _groupLookupCache = { key: null, value: null };
+
+function groupLookup(files, activeId, getText, options) {
+  const group = groupFilesFor(files, activeId, getText, options);
+  // Key on the ordered non-active member ids + their current text (string ref
+  // identity, which persist keeps stable for untouched files).
+  const parts = [];
+  const others = [];
+  for (const f of group) {
+    if (f.id === activeId) continue;
+    others.push(f);
+    parts.push(f.id, getText(f.id) ?? '');
+  }
+  const key = `${activeId}${parts.length}${parts.join('')}`;
+  if (_groupLookupCache.key === key) return _groupLookupCache.value;
+  // sigByName: LATEST-defining prelude file wins (the old loop set best = hit for
+  // every prelude file in load order, so the last one iterated stuck). names:
+  // union. group is prelude-prefix order (active last, excluded here).
+  const sigByName = new Map();
+  const names = new Set();
+  for (const f of others) {
+    const parsed = parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name);
+    for (const n of parsed.names) names.add(n);
+    for (const [n, sig] of parsed.sigByName) {
+      sigByName.set(n, { fileName: f.name, type: sig.type, label: sig.label });
+    }
+  }
+  const value = { sigByName, names };
+  _groupLookupCache = { key, value };
+  return value;
+}
+
 export function findGroupSignature(files, activeId, name, getText, options = {}) {
   if (!name) return null;
-  const group = groupFilesFor(files, activeId, getText, options);
-  const activeIdx = group.findIndex((f) => f.id === activeId);
-  let best = null;
-  for (let i = 0; i < group.length; i++) {
-    const f = group[i];
-    if (f.id === activeId) continue;
-    const sig = parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name).sigByName.get(name);
-    if (!sig) continue;
-    const hit = { fileName: f.name, type: sig.type, label: sig.label };
-    if (activeIdx === -1 || i < activeIdx) best = hit;
-    else if (!best) best = hit;
-  }
-  return best;
+  return groupLookup(files, activeId, getText, options).sigByName.get(name) || null;
 }
 
 function posToLineCol(text, from) {
@@ -444,13 +471,12 @@ export function applyGroupRenameToFile(raw, fileName, edits, newName, originalNa
 }
 
 // Would `name` collide with a definition somewhere in the group (other files)?
+// Uses the same cached merged lookup as findGroupSignature (see groupLookup) so
+// the per-candidate lint calls collapse to one Set.has instead of re-scanning
+// every prelude file.
 export function groupDefinesName(files, activeId, name, getText, options = {}) {
   if (!name) return false;
-  for (const f of groupFilesFor(files, activeId, getText, options)) {
-    if (f.id === activeId) continue;
-    if (parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name).names.has(name)) return true;
-  }
-  return false;
+  return groupLookup(files, activeId, getText, options).names.has(name);
 }
 
 // Would `name` collide with a definition in another file of the active development?

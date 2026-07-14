@@ -1944,6 +1944,20 @@ if (headerContextEl) {
   });
 }
 
+// Cheaply reflect the ACTIVE file's own error state on its tab, straight from
+// the live status detail — NO fileHealthFor()/whole-development read. Typing the
+// active file can only change the active file's own dot; every other tab/row
+// reflects CHECKED results and refreshes on beljar:development-checked. The old
+// code called scheduleTabLintStyles() here, which recomputed whole-development
+// health (developmentMembersForFile does view.doc.toString() + reads every
+// member, twice) on EVERY keystroke — ~57 ms on a late suite file, the dominant
+// typing lag.
+function setActiveTabErrorDot(id, hasErrors) {
+  if (!editorTabsEl) return;
+  const tab = editorTabsEl.querySelector('.editor-tab[data-file-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+  if (tab) tab.classList.toggle('has-errors', !!hasErrors);
+}
+
 window.addEventListener('beljar:file-lint', (ev) => {
   const id = persist ? persist.getCurrentFileId() : null;
   if (!id || !ev.detail) return;
@@ -1951,9 +1965,21 @@ window.addEventListener('beljar:file-lint', (ev) => {
   if (!file) return;
   if (/\.cfg$/i.test(file.name)) {
     rememberCfgLint(id, ev.detail);
-  }
-  if (/\.cfg$/i.test(file.name) || BelJarProjectSource.isSignaturePath(file.name)) {
     scheduleTabLintStyles();
+    return;
+  }
+  if (BelJarProjectSource.isSignaturePath(file.name)) {
+    // Active .bel file: update its OWN dot (tab + explorer row) cheaply from the
+    // live lint detail; do NOT recompute the whole development (fileHealthFor →
+    // developmentMembersForFile twice, ~57ms/keystroke). Other files' health
+    // reflects checked results and refreshes on beljar:development-checked.
+    const errs = ev.detail.errors || 0;
+    const warns = ev.detail.warnings || 0;
+    setActiveTabErrorDot(id, errs > 0);
+    if (explorerController && typeof explorerController.setFileDiag === 'function') {
+      explorerController.setFileDiag(id, errs > 0 ? 'error' : (warns > 0 ? 'warning' : null));
+    }
+    return;
   }
 });
 

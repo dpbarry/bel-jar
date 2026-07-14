@@ -1102,6 +1102,29 @@
       el.removeAttribute('data-tooltip');
     }
 
+    // Update one row's diag dot in place (no re-render). `diag` is 'error',
+    // 'warning', or falsy.
+    function applyRowDiag(row, fid, fname, diag) {
+      var dot = row.querySelector('.explorer-file-diag');
+      row.classList.toggle('has-diag', !!diag);
+      row.classList.toggle('has-diag--error', diag === 'error');
+      row.classList.toggle('has-diag--warning', diag === 'warning');
+      if (!diag) {
+        if (dot) {
+          clearFileDiagTip(dot);
+          dot.remove();
+        }
+        return;
+      }
+      if (!dot) {
+        dot = document.createElement('span');
+        dot.setAttribute('aria-hidden', 'true');
+        row.appendChild(dot);
+      }
+      dot.className = 'explorer-file-diag explorer-file-diag--' + diag;
+      applyFileDiagTip(dot, fid, fname, diag);
+    }
+
     function refreshDiags() {
       if (!opts.getFileDiag) return;
       var rows = container.querySelectorAll('.explorer-file-item[data-file-id]');
@@ -1110,26 +1133,18 @@
         if (row.classList.contains('is-renaming')) continue;
         var fid = row.getAttribute('data-file-id');
         var fname = row.getAttribute('data-file-name');
-        var diag = opts.getFileDiag(fid, fname);
-        var dot = row.querySelector('.explorer-file-diag');
-        row.classList.toggle('has-diag', !!diag);
-        row.classList.toggle('has-diag--error', diag === 'error');
-        row.classList.toggle('has-diag--warning', diag === 'warning');
-        if (!diag) {
-          if (dot) {
-            clearFileDiagTip(dot);
-            dot.remove();
-          }
-          continue;
-        }
-        if (!dot) {
-          dot = document.createElement('span');
-          dot.setAttribute('aria-hidden', 'true');
-          row.appendChild(dot);
-        }
-        dot.className = 'explorer-file-diag explorer-file-diag--' + diag;
-        applyFileDiagTip(dot, fid, fname, diag);
+        applyRowDiag(row, fid, fname, opts.getFileDiag(fid, fname));
       }
+    }
+
+    // Set a SINGLE file's diag dot directly (e.g. the active file's live error
+    // state from a lint event) without recomputing the whole development. `diag`
+    // is 'error' | 'warning' | null.
+    function setFileDiag(fileId, diag) {
+      if (!fileId) return;
+      var row = container.querySelector('.explorer-file-item[data-file-id="' + (window.CSS && CSS.escape ? CSS.escape(fileId) : fileId) + '"]');
+      if (!row || row.classList.contains('is-renaming')) return;
+      applyRowDiag(row, fileId, row.getAttribute('data-file-name'), diag);
     }
 
     function refreshActiveAndDiags() {
@@ -1145,6 +1160,7 @@
     return {
       refresh: refresh,
       refreshDiags: refreshDiags,
+      setFileDiag: setFileDiag,
       refreshActiveAndDiags: refreshActiveAndDiags,
       toggleFolder: toggleFolder,
       collapseSubtree: collapseSubtree,

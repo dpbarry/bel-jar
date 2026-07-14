@@ -17,17 +17,9 @@ const BAD_DOUBLE_DASH_LINE = /^\s*--/;
 
 const _summaryCache = new WeakMap();
 
-// Diagnostic counters (read via window.__belWalk) — proves whether the
-// tree-identity cache is thrashing (a miss means a full O(tree) doWalk). If
-// misses ≫ distinct keystrokes, some caller is passing a fresh tree object each
-// time and forcing repeated whole-tree walks.
-const _walkStats = { hits: 0, misses: 0 };
-if (typeof globalThis !== 'undefined') globalThis.__belWalk = _walkStats;
-
 export function walkTree(tree, doc) {
   let s = _summaryCache.get(tree);
-  if (s) { _walkStats.hits += 1; return s; }
-  _walkStats.misses += 1;
+  if (s) return s;
   s = doWalk(tree, doc);
   _summaryCache.set(tree, s);
   return s;

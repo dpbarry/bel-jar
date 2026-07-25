@@ -1,7 +1,7 @@
 // Phase 1b: a .cfg whose entry does not resolve to a project file is otherwise
 // silently dropped by resolveCfgOrder's pathSet filter — a broken cfg looks
 // identical to a correct one. cfgDiagnosticsFor surfaces it on the bad line.
-import { cfgDiagnosticsFor, resolveCfgDocumentPath } from '../editor-src/bel-cfg-lint.mjs';
+import { cfgDiagnosticsFor, resolveCfgDocumentPath } from '../js/editor-src/ide/cfg-lint.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -68,7 +68,7 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
 // Renamed cfg: stable id still points at file via registry lookup.
 {
   const g = globalThis;
-  g.BelJarPersist = {
+  g.Persist = {
     getFileById(id) {
       if (id === 'workspace://bisimulation/sources.cfg') return { name: 'sources.cfg' };
       return null;
@@ -79,7 +79,7 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
   const rootNames = new Set(['sources.cfg', 'picalc.bel', 'invariant.bel']);
   const d = cfgDiagnosticsFor('picalc.bel\ninvariant.bel\n', 'sources.cfg', rootNames);
   expect(d.length === 0, 'root cfg entries resolve after suite move to project root');
-  delete g.BelJarPersist;
+  delete g.Persist;
 }
 
 // ── Cross-file suite-composition lints (need a getText resolver) ─────────────
@@ -160,8 +160,8 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
 }
 
 {
-  const prev = globalThis.BelJarPersist;
-  globalThis.BelJarPersist = {
+  const prev = globalThis.Persist;
+  globalThis.Persist = {
     getFileById(id) {
       if (id === 'workspace://untitled.bel') return { id, name: 'grp/a.cfg' };
       return null;
@@ -169,7 +169,7 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
   };
   expect(resolveCfgDocumentPath('workspace://untitled.bel') === 'grp/a.cfg',
     'document path follows live registry name after rename');
-  globalThis.BelJarPersist = prev;
+  globalThis.Persist = prev;
 }
 
 console.log('OK cfg lint (resolves entries, flags dangling warnings, '

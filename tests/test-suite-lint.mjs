@@ -4,7 +4,7 @@
 // shadowing in Beluga and harmless on its own; the error only appears when a
 // LATER file uses a constructor the redefinition shadowed away. We must flag the
 // VICTIM at its use, never the (innocent) redefiner.
-import { analyzeSuite, suiteFileDiagnostics, leadingGlobalPragma, fileShadowInfo } from '../editor-src/bel-suite-lint.mjs';
+import { analyzeSuite, suiteFileDiagnostics, leadingGlobalPragma, fileShadowInfo } from '../js/editor-src/ide/suite-lint.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

@@ -4,12 +4,12 @@
 import { Text } from '@codemirror/state';
 import { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
-import { parser } from '../editor-src/beluga-parser.js';
-import { beluga } from '../editor-src/bel-language.mjs';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
-import { checkerCodeForView } from '../editor-src/bel-beluga-lint.mjs';
-import { checkerSnapshot } from '../editor-src/checker-snapshot.mjs';
-import { computeLintBlocks } from '../editor-src/bel-units.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { beluga } from '../js/editor-src/language.mjs';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
+import { checkerCodeForView } from '../js/editor-src/ide/syntax-lint.mjs';
+import { checkerSnapshot } from '../js/editor-src/semantic/checker-snapshot.mjs';
+import { computeLintBlocks } from '../js/editor-src/lint-units.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

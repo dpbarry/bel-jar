@@ -1,9 +1,11 @@
 // Pragma lines are a distinct selection target: inspector + graph treat the whole
-// pragma as one entity, not the operator symbol embedded in it.
+// pragma as one entity, not the operator symbol embedded in it. Fixity pragmas
+// depend on their operator but are not themselves referable — no used-by / impact / graph.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { NAMESPACE } from '../editor-src/semantic/ids.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { NAMESPACE } from '../js/editor-src/semantic/ids.mjs';
+import { buildInspectorModel, isNotationPragmaModel } from '../js/editor-src/ide/inspector.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -50,5 +52,15 @@ const pragmaSym = e.debugSnapshot().symbols.find((s) => s.namespace === NAMESPAC
 const nav = e.navAt(opPos);
 expect(nav && nav.symbolId === pragmaSym.id,
   'navAt on the operator inside a pragma resolves to the pragma symbol');
+
+const infixModel = buildInspectorModel(e, infixPos);
+expect(isNotationPragmaModel(infixModel), 'infix pragma is a notation-pragma inspector model');
+expect(infixModel.dependsOn.some((g) => g.items.some((i) => i.name === '⊃')),
+  'infix pragma Depends on the operator it annotates');
+expect(!isNotationPragmaModel(buildInspectorModel(e, SRC.indexOf('⊃ : o'))),
+  'the LF constructor itself is not a notation pragma');
+
+const prefixModel = buildInspectorModel(e, prefixMid);
+expect(isNotationPragmaModel(prefixModel), 'prefix pragma is a notation-pragma inspector model');
 
 console.log('OK pragma selection (inspector identity, no type, graph root suppressed)');

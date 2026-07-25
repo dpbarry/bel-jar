@@ -16,8 +16,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assembleCfgProgram, maskByName } from '../editor-src/bel-corpus-decls.mjs';
-import { proveProgram, theoremUnderProof } from '../editor-src/bel-prover-bridge.mjs';
+import { assembleCfgProgram, maskByName } from '../js/editor-src/prover/prover-corpus-decls.mjs';
+import { proveProgram, theoremUnderProof } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 const root = process.cwd();
 const args = process.argv.slice(2);
@@ -75,6 +75,10 @@ const oracle = async (src) => {
 
 const t0 = Date.now();
 const r = await proveProgram(masked.code, thm, oracle, {
+  // E.9 certify-trim is a browser cost transform (bytes dominate wasm checks);
+  // native main.exe cost is per-CALL, which the trim's fail-open re-runs would
+  // inflate. Verdicts/steps are identical either way — only checkCount differs.
+  certifyTrim: false,
   maxSteps,
   collectTrace: wantTrace,
   onStep: ({ last }) => console.log(`STEP ${last.move}: ${(last.text || '').replace(/\n/g, ' ').slice(0, 100)}`),

@@ -1,7 +1,7 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
-import { referenceKind } from '../editor-src/bel-resolve.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
+import { referenceKind } from '../js/editor-src/name-resolve.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

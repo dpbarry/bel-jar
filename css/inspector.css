@@ -1,0 +1,799 @@
+/* -- Symbol Inspector panel (shares the sidebar slot with Explorer) -- */
+
+.inspector-panel {
+  position: relative;
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chrome-bg-panel);
+  border-right: none;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  container-name: inspector-panel;
+}
+
+.workspace.is-inspector-open .inspector-panel .panel-resize-hit {
+  cursor: ew-resize;
+}
+
+.workspace.is-inspector-open .inspector-panel {
+  flex: 0 0 var(--inspector-w);
+  width: var(--inspector-w);
+  border-right: 1px solid var(--chrome-divider);
+  overflow: visible;
+}
+
+/* -- Global overview: diagnostics — full-message boxes, nude list -- */
+.inspector-diag-list {
+  margin: 0.1rem 0 0.4rem;
+}
+
+.inspector-diag-item {
+  --diag-strip-w: var(--edge-strip-w-callout);
+  position: relative;
+  overflow: hidden;
+  display: block;
+  width: 100%;
+  margin: 0.3rem 0;
+  padding: 0.4rem 0.55rem 0.4rem calc(0.55rem + var(--diag-strip-w));
+  text-align: left;
+  border: 0;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--diag-color, var(--base-high)) 9%, transparent);
+  cursor: pointer;
+}
+/* Edge strip (callout): clipped ::before — thicker than row strips */
+.inspector-diag-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--diag-strip-w);
+  background: var(--diag-color, var(--base-high));
+  pointer-events: none;
+}
+.inspector-diag-item.is-error { --diag-color: var(--ide-status-error, hsl(0, 68%, 56%)); }
+.inspector-diag-item.is-warning { --diag-color: var(--ide-status-warning, hsl(38, 92%, 50%)); }
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-diag-item:hover {
+    background: color-mix(in srgb, var(--diag-color, var(--base-high)) 16%, transparent);
+  }
+}
+.inspector-diag-item:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: 1px;
+}
+
+.inspector-diag-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+.inspector-diag-tag {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--diag-color, var(--base-high));
+}
+.inspector-diag-loc {
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-high);
+}
+.inspector-diag-text {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--base-highest);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inspector-row-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.inspector-row.is-ref-active {
+  position: relative;
+  overflow: hidden;
+  background: light-dark(rgba(37, 99, 235, 0.1), rgba(96, 165, 250, 0.12));
+  color: light-dark(#1e40af, #bfdbfe);
+  padding-left: 0.55rem;
+}
+.inspector-row.is-ref-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  border-radius: var(--edge-strip-radius) 0 0 var(--edge-strip-radius);
+  background: var(--accent-mid);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector-row.is-ref-active:hover {
+    background: light-dark(rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.16));
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-row:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+.inspector-row:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+}
+
+/* -- Inspector header control bar (home · nav · label · search/sync) -- */
+
+.inspector-header-bar {
+  position: relative;
+  justify-content: flex-start;
+  --panel-header-pad-start: var(--panel-header-pad-control);
+  --panel-header-pad-end: var(--panel-header-pad-control);
+}
+
+.inspector-header-bar > .icon-btn,
+.inspector-header-bar .inspector-nav-group,
+.inspector-header-bar .hsearch {
+  position: relative;
+  z-index: 1;
+}
+
+.inspector-header-bar > .icon-btn {
+  flex: 0 0 auto;
+  transition: opacity 170ms ease;
+}
+
+.inspector-header-bar .hsearch {
+  position: absolute;
+  right: calc(var(--panel-header-pad-end) + var(--icon-btn));
+  margin-left: 0;
+  z-index: 2;
+}
+
+.inspector-header-bar .hsearch.is-open {
+  width: calc(100% - var(--panel-header-pad-start) - var(--panel-header-pad-end) - var(--icon-btn));
+}
+
+.inspector-panel-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 7rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 170ms ease;
+}
+
+.inspector-header-bar.is-search-open .inspector-panel-label {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@container inspector-panel (max-width: 15.5rem) {
+  .inspector-panel-label {
+    display: none;
+  }
+}
+
+.inspector-nav-group {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.inspector-header-bar .inspector-nav-group {
+  transition: opacity 170ms ease;
+}
+
+.inspector-header-bar.is-search-open .inspector-nav-group,
+.inspector-header-bar.is-search-open > #inspector-nav-home {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.inspector-header-bar .inspector-breadcrumb {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 7rem);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-size: 0.72rem;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.inspector-search-ac {
+  position: absolute;
+  top: calc(100% + var(--search-drop-offset));
+  left: var(--panel-header-pad-control);
+  right: calc(var(--panel-header-pad-control) + var(--icon-btn));
+  max-height: 17rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 40;
+  padding: var(--search-drop-pad) 0;
+  background: var(--search-drop-bg);
+  border: 1px solid var(--search-drop-border);
+  border-radius: var(--search-drop-radius);
+  box-shadow: var(--search-drop-shadow);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
+  animation: search-drop-in 0.14s ease;
+}
+
+.inspector-search-ac[hidden] {
+  display: none;
+}
+
+@keyframes search-drop-in {
+  from { opacity: 0; transform: translateY(-0.2rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.inspector-search-ac::-webkit-scrollbar {
+  width: 6px;
+}
+.inspector-search-ac::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--base-mid) 50%, transparent);
+  border-radius: 3px;
+}
+
+.inspector-search-ac-item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  --row-pill-gutter-x: var(--search-row-pad-x);
+  padding: 0.34rem var(--search-row-pad-x);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--base-highest);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.inspector-search-ac-item::before {
+  content: '';
+  position: absolute;
+  left: var(--row-pill-inset-x);
+  top: var(--row-pill-inset-y);
+  bottom: var(--row-pill-inset-y);
+  width: var(--row-pill-w);
+  border-radius: var(--row-pill-radius);
+  background: var(--search-row-active-accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.inspector-search-ac-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
+.inspector-search-ac-hl {
+  background: none;
+  color: var(--accent-high);
+  font-weight: 600;
+}
+
+.inspector-search-ac-file,
+.inspector-search-ac-kind {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 0.64rem;
+  color: var(--muted-high);
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.inspector-search-ac-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-search-ac-item:hover {
+    background: var(--search-row-hover-bg);
+    color: var(--search-row-hover-fg);
+  }
+}
+.inspector-search-ac-item.is-active {
+  background: var(--search-row-active-bg);
+  color: var(--search-row-active-fg);
+}
+.inspector-search-ac-item.is-active::before {
+  opacity: var(--row-pill-opacity);
+}
+
+.inspector-search-ac-empty {
+  padding: 0.5rem 0.7rem;
+  font-size: 0.75rem;
+  color: var(--base-high);
+}
+
+/* -- Built-in token explainer -- */
+
+.inspector-builtin-desc {
+  margin: 0.2rem 0.1rem 0.55rem;
+  padding: 0.15rem 0.15rem 0;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--base-high);
+  text-align: left;
+}
+
+/* Hole goal in the builtin (cursor-on-`?`) view: "Goal" tag + the colored type. */
+.inspector-builtin-goal {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0.35rem 0.15rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.inspector-builtin-goal-label {
+  flex: 0 0 auto;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-high);
+  transform: translateY(-0.05em);
+}
+.inspector-builtin-goal-type {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* -- Cross-development inspect banner ("not checked here" → opt-in Check) -- */
+.inspector-xfile-note {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0.1rem 0.55rem;
+  padding: 0.26rem 0.3rem 0.26rem 0.5rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--accent-mid) 8%, transparent);
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+.inspector-xfile-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted-high);
+}
+.inspector-xfile-check {
+  flex: 0 0 auto;
+  padding: 0.08rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--accent-mid) 35%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--accent-mid) 12%, transparent);
+  color: var(--accent-mid);
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector-xfile-check:hover {
+    background: color-mix(in srgb, var(--accent-mid) 22%, transparent);
+    border-color: color-mix(in srgb, var(--accent-mid) 55%, transparent);
+    color: var(--base-high);
+  }
+}
+.inspector-xfile-check:focus-visible {
+  outline: 1px solid var(--accent-mid);
+  outline-offset: 1px;
+}
+.inspector-xfile-open {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--muted-high);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.inspector-xfile-open svg {
+  display: block;
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector-xfile-open:hover {
+    background: color-mix(in srgb, var(--accent-mid) 18%, transparent);
+    color: var(--base-high);
+  }
+}
+.inspector-xfile-open:focus-visible {
+  outline: 1px solid var(--accent-mid);
+  outline-offset: 1px;
+}
+
+/* Inline loading spinner — async type reconstruction / on-demand dev check. */
+.inspector-spinner {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 0.72rem;
+  height: 0.72rem;
+  border: 1.5px solid color-mix(in srgb, var(--muted-mid) 35%, transparent);
+  border-top-color: var(--accent-mid);
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: inspector-spin 0.7s linear infinite;
+}
+@keyframes inspector-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* -- Global overview: health strip -- */
+
+.inspector-global-health {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.1rem;
+}
+
+/* Flat 6px dot — matches the editor's .ide-status-dot, no extra glow. */
+.inspector-global-dot {
+  flex: 0 0 auto;
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--base-high);
+}
+.inspector-global-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 260deg,
+    color-mix(in oklab, var(--ide-status-checking) 80%, white) 320deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    radial-gradient(circle, transparent 55%, #000 58%, #000 100%);
+          mask:
+    radial-gradient(circle, transparent 55%, #000 58%, #000 100%);
+  opacity: 0;
+  pointer-events: none;
+  animation: ide-status-shimmer 1.6s linear infinite;
+}
+.inspector-global-dot.is-checked {
+  background: var(--ide-status-clean, hsl(140, 48%, 50%));
+}
+.inspector-global-dot.is-checking {
+  background: var(--ide-status-checking);
+}
+.inspector-global-dot.is-checking::after {
+  opacity: 1;
+}
+.inspector-global-dot.is-warning {
+  background: var(--ide-status-warning, hsl(38, 92%, 52%));
+}
+.inspector-global-dot.is-error {
+  background: var(--ide-status-error, hsl(0, 68%, 56%));
+}
+.inspector-global-dot.is-error-checking {
+  background: var(--ide-status-error, hsl(0, 68%, 56%));
+}
+.inspector-global-dot.is-error-checking::after {
+  opacity: 1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 260deg,
+    color-mix(in oklab, var(--ide-status-error, hsl(0, 68%, 56%)) 80%, white) 320deg,
+    transparent 360deg
+  );
+}
+
+.inspector-global-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--base-higher);
+}
+
+.inspector-global-counts {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  align-self: center;
+}
+.inspector-global-count {
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  padding: 0.05rem 0.36rem;
+  border-radius: 0.55rem;
+}
+.inspector-global-count.is-warning {
+  color: hsl(38, 92%, 42%);
+  background: color-mix(in srgb, hsl(38, 92%, 52%) 18%, transparent);
+}
+.inspector-global-count.is-error {
+  color: var(--ide-status-error, hsl(0, 68%, 56%));
+  background: color-mix(in srgb, hsl(0, 68%, 56%) 18%, transparent);
+}
+.inspector-global-count.is-holes {
+  color: color-mix(in oklab, var(--accent-mid) 70%, var(--muted-high));
+  background: color-mix(in srgb, var(--accent-mid) 15%, transparent);
+}
+
+/* ── Hole goal tiers (pending / approximate / rechecking) ── */
+.hole-goal-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.hole-goal-inline .hole-goal-type.bel-type {
+  min-width: 0;
+}
+.hole-goal-type.bel-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--mono);
+  color: var(--base-highest);
+}
+.harpoon-hole-goal--tiered {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  width: 100%;
+}
+.hole-goal-status {
+  font-family: var(--sans);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+
+/* Hole rows in the global view: ?N + the GOAL type (click jumps to the `?`). */
+.inspector-hole-row {
+  gap: 0.28rem;
+  align-items: baseline;
+}
+/* Inspector hole goal: the unified type look, but kept to ONE ellipsised line so
+   the global list stays compact (the panel/tooltip wrap; the inspector list does not). */
+.inspector-hole-goal.harpoon-hole-goal:not(.inspector-hole-goal--tiered) {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspector-type.bel-type {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.inspector-type.bel-type .bel-cached-hint {
+  flex: 0 0 auto;
+  margin-top: 0.12rem;
+}
+.inspector-builtin-goal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.2rem;
+}
+.bel-cached-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 1.15rem;
+  min-height: 1.15rem;
+  padding: 0.12rem;
+  color: #e6b422;
+  opacity: 0.92;
+  line-height: 0;
+  pointer-events: auto;
+}
+.bel-cached-hint svg {
+  display: block;
+  pointer-events: none;
+}
+.inspector-section-head .bel-cached-hint {
+  margin-left: 0.15rem;
+}
+.harpoon-panel-hole-head-end .bel-cached-hint {
+  margin-right: 0.1rem;
+}
+.inspector-hole-rechecking {
+  margin-left: 0.35rem;
+  font-size: 0.68rem;
+  color: var(--muted-high);
+}
+
+.inspector-hole-row .inspector-hole-goal {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.inspector-hole-row .inspector-hole-goal--tiered {
+  display: block;
+  overflow: hidden;
+}
+.inspector-hole-row .hole-goal-inline .bel-type-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.inspector-global-note {
+  margin: 0.2rem 0.1rem;
+  font-size: 0.75rem;
+  color: var(--muted-high);
+}
+
+/* -- Global overview: outline rows -- */
+
+.inspector-outline-row {
+  gap: 0.35rem;
+}
+
+.inspector-outline-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.35rem;
+  align-items: baseline;
+}
+
+.inspector-outline-row .inspector-row-label {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--base-highest);
+}
+
+.inspector-outline-glyph {
+  flex: 0 0 auto;
+  width: 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--ns-color, var(--muted-high));
+}
+
+.inspector-outline-kind {
+  justify-self: end;
+  text-align: right;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ns-color, var(--muted-high));
+  opacity: 0.62;
+  white-space: nowrap;
+}
+
+/* Soft, lower-saturation take on the editor's bel-hl palette. */
+.inspector-outline-row[data-ns="lf-type-family"] { --ns-color: light-dark(hsl(266, 48%, 52%), hsl(264, 52%, 77%)); }
+.inspector-outline-row[data-ns="typedef"]        { --ns-color: light-dark(hsl(272, 50%, 50%), hsl(266, 58%, 79%)); }
+.inspector-outline-row[data-ns="comp-type"]      { --ns-color: light-dark(hsl(212, 58%, 47%), hsl(210, 60%, 74%)); }
+.inspector-outline-row[data-ns="rec-function"]   { --ns-color: light-dark(hsl(224, 52%, 53%), hsl(220, 62%, 80%)); }
+.inspector-outline-row[data-ns="schema"]         { --ns-color: light-dark(hsl(188, 52%, 40%), hsl(186, 52%, 71%)); }
+.inspector-outline-row[data-ns="module"]         { --ns-color: light-dark(hsl(221, 60%, 48%), var(--accent-mid)); }
+
+.inspector-outline-row.is-error .inspector-outline-glyph {
+  color: var(--ide-status-error, hsl(0, 65%, 55%));
+}
+
+/* -- Global overview: suite load-order rows -- */
+
+/* Suite name lives in the section header, beside the SUITE title. */
+.inspector-section-sub {
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-high);
+}
+
+.inspector-suite-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.16rem 0.3rem;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-suite-row:hover {
+    background: var(--accent-lower);
+  }
+}
+
+.inspector-suite-row:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+}
+
+.inspector-suite-pos {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  background: var(--accent-lowest);
+  color: var(--muted-high);
+}
+
+.inspector-suite-name {
+  min-width: 0;
+  font-size: 0.76rem;
+  color: var(--base-higher);
+}
+
+/* Active file: a gentle nudge, not a loud blue — low contrast to its peers. */
+.inspector-suite-row.is-current .inspector-suite-name {
+  color: var(--base-highest);
+  font-weight: 500;
+}
+.inspector-suite-row.is-current .inspector-suite-pos {
+  background: color-mix(in srgb, var(--accent-mid) 22%, transparent);
+  color: var(--accent-high);
+}

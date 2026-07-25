@@ -2,8 +2,8 @@
 // Pins that renamePreview rewrites exactly the definition name plus its
 // resolved references (nothing else), and refuses same-namespace collisions.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

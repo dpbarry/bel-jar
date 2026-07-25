@@ -2,9 +2,11 @@ import assert from 'node:assert';
 import { Text } from '@codemirror/state';
 import {
   belugaOutputLooksLikeFailure,
+  fallbackDiagnostic,
+  formatBelugaErrorReport,
   parseBelugaDiagnostics,
   spanFirstLineDiagnostic,
-} from '../editor-src/bel-beluga-diag.mjs';
+} from '../js/editor-src/ide/beluga-diag.mjs';
 
 const sample = `rec sec3 : (stepBind : pf o) → pf o =
   fn _ => stepBind
@@ -60,6 +62,25 @@ assert.equal(belugaOutputLooksLikeFailure(raw), true);
 assert.equal(
   belugaOutputLooksLikeFailure('## Type Reconstruction done: input.bel ##\n## Holes: input.bel ##'),
   false,
+);
+assert.equal(
+  belugaOutputLooksLikeFailure('Identifier & is unbound.'),
+  true,
+  'Beluga Unbound_identifier printer (no Error: prefix) is still a failure',
+);
+
+{
+  const ampDoc = Text.of(['LF v : &.']);
+  const fb = fallbackDiagnostic('Identifier & is unbound.\n', ampDoc, { fileName: 'cp_base.bel' });
+  assert.ok(fb, 'unlocated unbound message becomes a fallback diagnostic');
+  assert.equal(fb.severity, 'error');
+  assert.match(fb.message, /^File "cp_base\.bel", line 1, column \d+\nError: Identifier & is unbound\./);
+  assert.equal(ampDoc.sliceString(fb.from, fb.to), '&', 'squiggle lands on &');
+}
+
+assert.equal(
+  formatBelugaErrorReport('Identifier & is unbound.', { file: 'cp_base.bel', line: 10, column: 4 }),
+  'File "cp_base.bel", line 10, column 4\nError: Identifier & is unbound.',
 );
 
 // spanFirstLineDiagnostic — the GENERAL first-line rule (not a one-off): a diag

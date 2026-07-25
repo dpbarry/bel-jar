@@ -1,6 +1,6 @@
 // Hole parsing from the `## Holes ##` reconstruction report (real shim output).
-import { parseHoles, hasHoleReport, parseHolesFromTree } from '../editor-src/bel-holes.mjs';
-import { parser } from '../editor-src/beluga-parser.js';
+import { parseHoles, hasHoleReport, parseHolesFromTree } from '../js/editor-src/prover/hole-report.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import { Text } from '@codemirror/state';
 
 function expect(cond, msg) {

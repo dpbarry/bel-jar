@@ -1,0 +1,235 @@
+/* -- Header -- */
+
+header {
+  position: relative;
+  z-index: 10;
+  height: var(--header-h);
+  flex-shrink: 0;
+  padding: 0 calc(var(--pad-inline) - 0.0625rem) 0 0;
+  background: var(--chrome-bg-header);
+  border-bottom: 1px solid var(--chrome-divider);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.25rem;
+}
+
+@media (min-width: 48.01rem) {
+  header {
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  }
+}
+
+.header-start {
+  grid-column: 1;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Match the sidebar column so the first menu button's left edge lands on the
+   sidebar's right border (border is inside --sidebar-w via border-box). */
+.header-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--sidebar-w);
+}
+
+.header-logo {
+  width: var(--header-logo-size);
+  height: var(--header-logo-size);
+  flex-shrink: 0;
+  color: var(--accent-high);
+}
+
+.header-menu {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-left: 0;
+}
+
+.header-menu-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--header-menu-fg);
+  font-family: system-ui, var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: 0.005em;
+  line-height: 1;
+  padding: 0 0.625rem;
+  height: var(--header-h);
+  cursor: pointer;
+  border-radius: 0;
+  transition: color var(--transition), background var(--transition);
+  user-select: none;
+  white-space: nowrap;
+  -webkit-font-smoothing: antialiased;
+}
+
+.header-menu-btn:focus-visible {
+  outline: none;
+  color: var(--header-menu-fg-active);
+  box-shadow: inset 0 0 0 1px var(--accent-mid);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .header-menu-btn:hover {
+    color: var(--header-menu-fg-active);
+    background: var(--header-menu-bg-hover);
+  }
+}
+
+.header-menu-btn.is-active,
+.header-menu-btn[aria-expanded="true"] {
+  color: var(--header-menu-fg-active);
+  background: var(--header-menu-bg-active);
+}
+
+/* -- Header project title -- */
+
+.header-context {
+  grid-column: 2;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: var(--header-h);
+  padding: 0 0.25rem;
+  color: var(--header-menu-fg);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  line-height: 1;
+  user-select: none;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+@media (min-width: 48.01rem) {
+  .header-context {
+    width: auto;
+    justify-self: center;
+    overflow: visible;
+  }
+}
+
+.header-context-name {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--header-menu-fg-active);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  cursor: text;
+}
+
+.header-context.is-renaming {
+  user-select: auto;
+}
+
+.header-context-inline-name {
+  display: block;
+  max-width: min(24rem, 70vw);
+  margin: 0;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--accent-mid);
+  border-radius: 3px;
+  background: light-dark(hsl(220, 10%, 98%), hsl(220, 8%, 12%));
+  color: var(--header-menu-fg-active);
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-align: center;
+  outline: none;
+  box-shadow: var(--focus-ring);
+  flex-shrink: 0;
+}
+
+.header-context-inline-name.is-invalid {
+  border-color: var(--warn-mid, hsl(0, 52%, 52%));
+  animation: explorer-inline-shake 0.35s ease;
+}
+
+/* Theme toggle: icon = destination (sun → light, moon → dark) */
+.theme-toggle .icon-sun {
+  display: block;
+}
+
+.theme-toggle .icon-moon {
+  display: none;
+}
+
+html.light .theme-toggle .icon-sun {
+  display: none;
+}
+
+html.light .theme-toggle .icon-moon {
+  display: block;
+}
+
+/* -- Header actions (notifications, theme) -- */
+
+.header-end {
+  grid-column: 3;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.0625rem;
+  flex-shrink: 0;
+}
+
+@media (min-width: 48.01rem) {
+  .header-end {
+    justify-self: end;
+  }
+}
+
+.notif-bell svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.notif-badge {
+  position: absolute;
+  top: 0.12rem;
+  right: 0.1rem;
+  min-width: 0.85rem;
+  height: 0.85rem;
+  padding: 0 0.18rem;
+  border-radius: 999px;
+  background: var(--accent-mid);
+  color: var(--ui-fg-on-accent);
+  font-size: 0.52rem;
+  font-weight: 600;
+  line-height: 0.85rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px var(--chrome-bg-header);
+}
+
+.notif-bell[data-has-notifications] {
+  color: var(--accent-high);
+}
+
+.header-end .icon-btn.is-active {
+  color: var(--accent-high);
+}
+
+.header-end .icon-btn.is-active::before {
+  opacity: 1;
+}

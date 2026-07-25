@@ -1,8 +1,8 @@
 import assert from 'node:assert';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { referenceKind, resolveHoverDoc } from '../editor-src/bel-resolve.mjs';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { referenceKind, resolveHoverDoc } from '../js/editor-src/name-resolve.mjs';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
 
 const TYPO = `name : type.
 tp : type.

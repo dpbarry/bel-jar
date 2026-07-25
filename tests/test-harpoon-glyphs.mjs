@@ -9,13 +9,13 @@ function expect(cond, msg) {
 
 function loadScript(url) {
   const src = fs.readFileSync(url, 'utf8');
-  const sandbox = { window: undefined, globalThis: {}, self: {} };
+  const sandbox = { window: undefined, self: {} };
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox);
-  return sandbox.globalThis;
+  return sandbox;
 }
 
-const g = loadScript(new URL('../js/harpoon-glyphs.js', import.meta.url));
+const g = loadScript(new URL('../js/harpoon/harpoon-ui.js', import.meta.url));
 const HG = g.HarpoonGlyphs;
 expect(HG && typeof HG.displayBeluga === 'function', 'HarpoonGlyphs loads');
 

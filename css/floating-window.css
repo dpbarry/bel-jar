@@ -1,0 +1,198 @@
+/* -- FloatingWindow (generic draggable/resizable panel) -- */
+
+.floating-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  min-height: 8rem;
+  background: var(--chrome-bg-panel);
+  border: 1px solid var(--chrome-divider);
+  border-radius: 0.5rem;
+  box-shadow: var(--floating-window-shadow);
+  overflow: hidden;
+}
+
+.floating-window-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2rem;
+  padding: 0 0.35rem 0 0.65rem;
+  background: var(--chrome-bg-sidebar);
+  border-bottom: 1px solid var(--chrome-divider);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.floating-window-dragging .floating-window-bar {
+  cursor: grabbing;
+}
+
+body.floating-window-dragging,
+body.floating-window-resizing {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.floating-window-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
+  color: var(--base-highest);
+}
+
+.floating-window-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--base-high);
+  cursor: pointer;
+}
+
+.floating-window-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: auto;
+}
+
+.floating-window-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--base-high);
+  cursor: pointer;
+}
+
+.floating-window-action svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-action:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+.floating-window-action:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-action.is-on:hover {
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}
+
+.floating-window-close svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-close:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+.floating-window-close:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+.floating-window-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.floating-window-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0.9rem;
+  height: 0.9rem;
+  cursor: nwse-resize;
+  touch-action: none;
+  background:
+    linear-gradient(135deg, transparent 0 55%, var(--base-high) 55% 62%,
+      transparent 62% 70%, var(--base-high) 70% 77%, transparent 77%);
+  opacity: 0.5;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .floating-window-grip:hover {
+    opacity: 0.9;
+  }
+}
+
+/* Pinned inspector window: one scrollport on the window body (not nested). */
+.inspector-window .floating-window-body {
+  padding: 0.5rem 0 1rem 0.85rem;
+  font-size: 0.8125rem;
+}
+
+.inspector-window .inspector-body {
+  overflow: visible;
+  padding: 0;
+  flex: none;
+  min-height: auto;
+  min-width: 0;
+  width: 100%;
+  container-type: inline-size;
+  container-name: inspector;
+}
+
+.inspector-window-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.inspector-window-kind {
+  flex: 0 0 auto;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--accent-high);
+}
+
+.inspector-window-name {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--base-highest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

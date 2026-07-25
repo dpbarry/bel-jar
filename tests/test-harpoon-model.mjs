@@ -7,7 +7,7 @@ import {
   normalizeProofModel,
   applicableTactics,
   splitTargets,
-} from '../editor-src/harpoon-model.mjs';
+} from '../js/editor-src/harpoon/harpoon-model.mjs';
 
 let n = 0;
 function expect(cond, msg) {

@@ -1,6 +1,6 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { onlySyntaxFaultBlocksChanged } from '../editor-src/semantic/syntax-only-gate.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { onlySyntaxFaultBlocksChanged } from '../js/editor-src/semantic/syntax-only-gate.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

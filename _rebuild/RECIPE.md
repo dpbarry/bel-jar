@@ -396,7 +396,11 @@ The build scripts (`rebuild.ps1` / `rebuild.sh`) just run `dune build` in `Belug
 
 ## Frontend
 
-[index.html](file:///c:/Users/Dean/Documents/Coding/bel-jar/index.html) is a shell that loads [css/style.css](file:///c:/Users/Dean/Documents/Coding/bel-jar/css/style.css) and [js/app.js](file:///c:/Users/Dean/Documents/Coding/bel-jar/js/app.js).
+[`index.html`](../index.html) boots Beluga clients, the editor bundle, then the product shell:
+
+`beluga-client.js` → `harpoon-client.js` → `editor-cm.bundle.js` → `shell.js`
+
+(see [`docs/CODEMAP.md`](../docs/CODEMAP.md)). Styles load via [`css/style.css`](../css/style.css) (import cascade).
 
 ### JS API
 
@@ -413,27 +417,27 @@ Beluga.reset()                      // -> string ("Session reset.")
 ```mermaid
 sequenceDiagram
     participant User
-    participant Editor as textarea#editor
-    participant JS as app.js / beluga-client.js
+    participant Editor as CodeMirror
+    participant JS as shell / beluga-client
     participant Bel as Beluga (compiled OCaml)
 
     User->>Editor: Types Beluga code
     JS->>JS: fingerprint current editor text
-    JS->>Bel: Beluga.checkFromString(editor.value)
+    JS->>Bel: Beluga.checkFromString(editor text)
     Bel-->>JS: { output, ok }
     JS->>User: Updates lint / diagnostics only
 
-    User->>JS: Clicks "Load"
-    JS->>Bel: Beluga.loadFromString(editor.value)
+    User->>JS: Clicks "Load" / Run
+    JS->>Bel: Beluga.loadFromString(editor text)
     Bel-->>JS: { output, ok, fingerprint }
-    JS->>User: Appends to output div
+    JS->>User: Appends to REPL output
 
     User->>JS: Types "help" in command input
     JS->>Bel: Beluga.getCommittedFingerprint()
     Bel-->>JS: fingerprint of committed session
     JS->>Bel: Beluga.runCommand("%:help")
     Bel-->>JS: List of available commands
-    JS->>User: Appends to output div
+    JS->>User: Appends to REPL output
 ```
 
 The command input auto-prepends `%:` so users can type `help` instead of `%:help`.

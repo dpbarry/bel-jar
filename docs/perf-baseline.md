@@ -1,5 +1,8 @@
 # BelJar perf baseline
 
+> **Synthetic seed only** (2026-07-01). Not a live product SoT.  
+> Replace with a real `classical-processes` browser capture before trusting numbers.
+
 Captured: 2026-07-01T06:26:50.970Z
 
 | Phase | p50 ms | p95 ms | n |

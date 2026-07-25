@@ -28,8 +28,9 @@ import {
   parseAppType,
   infixDeclaredOps,
   renderApp,
-} from '../editor-src/bel-hole-split.mjs';
-import { transformBelugaStep, scrutineeIsParameterDetermined } from '../editor-src/bel-hole-actions.mjs';
+  familyIndexSorts,
+} from '../js/editor-src/prover/hole-split.mjs';
+import { transformBelugaStep, scrutineeIsParameterDetermined } from '../js/editor-src/prover/hole-actions.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -311,6 +312,12 @@ expect(blockCtors.length === 2, 'block-form: both constructors enumerated');
 expect(blockCtors.find((c) => c.name === 'z' && c.argTypes.length === 0), 'z is nullary');
 expect(blockCtors.find((c) => c.name === 's' && c.argTypes.length === 1 && c.argTypes[0] === 'nat'),
   's takes one nat arg (typed)');
+expect(JSON.stringify(familyIndexSorts('LF nat : type =\n| z : nat\n;', 'nat')) === '[]',
+  'F.5 familyIndexSorts: nullary kind → []');
+expect(JSON.stringify(familyIndexSorts('LF ev : tm → tm → type =\n| e_z : ev z z\n;', 'ev')) === '["tm","tm"]',
+  'F.5 familyIndexSorts: two FO index sorts');
+expect(familyIndexSorts('LF weird : {x:tm} tm → type =\n;', 'weird') == null,
+  'F.5 familyIndexSorts: Pi binder → fail-closed');
 
 // (b) The top-level `c : … -> F …` form (the cp-suite style that was the GAP).
 const DECL = [
@@ -390,9 +397,13 @@ const i1 = invertCandidates({ name: 'h', type: '[ |- dl base X]' }, INV, []);
 expect(i1.length === 1 && i1[0] === 'let [ |- d_base] = h in',
   `determined (base) hypothesis inverts to the unique nullary constructor (got ${JSON.stringify(i1)})`);
 // A hypothesis determined to arr-shape → the unique d_arr inversion with FRESH vars.
+// Phase F.1: annotation binds index metas when present.
 const i2 = invertCandidates({ name: 'h', type: '[ |- dl (arr A1 B1) X]' }, INV, []);
-expect(i2.length === 1 && /^let \[ \|- d_arr \w+ \w+\] = h in$/.test(i2[0]),
-  `determined (arr) hypothesis inverts to d_arr with fresh pattern vars (got ${JSON.stringify(i2)})`);
+expect(i2.length === 1 && /^let \[ \|- d_arr \w+ \w+\] : \[ \|- dl \(arr [\w']+ [\w']+\) \(arr [\w']+ [\w']+\)\] = h in$/.test(i2[0]),
+  `determined (arr) hypothesis inverts to annotated d_arr (got ${JSON.stringify(i2)})`);
+const i2bare = invertCandidates({ name: 'h', type: '[ |- dl (arr A1 B1) X]' }, INV, [], undefined, { annotate: false });
+expect(i2bare.length === 1 && /^let \[ \|- d_arr \w+ \w+\] = h in$/.test(i2bare[0]),
+  `annotate:false keeps bare d_arr invert (got ${JSON.stringify(i2bare)})`);
 // A fully-abstract hypothesis is NOT determined → many candidates (left to split).
 expect(invertCandidates({ name: 'h', type: '[ |- dl A X]' }, INV, []).length === 2,
   'an undetermined hypothesis yields multiple inversions (not a unique inversion)');

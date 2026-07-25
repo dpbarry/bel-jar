@@ -1,4 +1,4 @@
-import { createSemanticSession } from '../editor-src/semantic/semantic-session.mjs';
+import { createSemanticSession } from '../js/editor-src/semantic/semantic-session.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

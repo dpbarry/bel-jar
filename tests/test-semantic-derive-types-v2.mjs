@@ -5,8 +5,8 @@
 // outranks hydrated + source-annotation types, survives export/import, and is
 // fp-gated so a changed declaration never shows a stale reconstruction.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

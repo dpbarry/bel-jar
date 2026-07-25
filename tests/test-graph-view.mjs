@@ -2,9 +2,9 @@
 // model BFS-expands deps (down) and dependents (up) from a root; the layout places
 // the root centered with dependents above and dependencies below.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { buildNeighborhood, buildGlobalModel, layoutGraph, demoteNotation } from '../editor-src/bel-graph-view.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { buildNeighborhood, buildGlobalModel, layoutGraph, demoteNotation } from '../js/editor-src/graph/graph-view.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

@@ -1,4 +1,4 @@
-import { createEditHistory, normalizeEntry, newEntryId, SESSION_KEY_PREFIX, editHistoryTxn } from '../editor-src/bel-edit-history.mjs';
+import { createEditHistory, normalizeEntry, newEntryId, SESSION_KEY_PREFIX, editHistoryTxn } from '../js/editor-src/edit-history.mjs';
 import { Transaction } from '@codemirror/state';
 
 function expect(cond, msg) {
@@ -321,12 +321,16 @@ function snapTexts(adapter) {
   const editor = {
     _text: 'hello',
     _sel: null,
+    _scroll: false,
+    _viewport: null,
     getValue() { return this._text; },
     getCurrentFileId() { return 'a'; },
     replaceDocumentNonUndoable(t, opts) {
       this._text = t;
       this._sel = opts?.selection ?? null;
+      this._scroll = !!opts?.scrollIntoView;
     },
+    applyViewport(local) { this._viewport = local; },
   };
   adapter._state.editor = editor;
   adapter.getActiveEditor = () => editor;
@@ -344,12 +348,115 @@ function snapTexts(adapter) {
         after: 'hello',
         beforeSel: { anchor: 1, head: 1 },
         afterSel: { anchor: 5, head: 5 },
+        beforeLocal: { selection: { anchor: 1, head: 1 }, scrollTop: 240 },
+        afterLocal: { selection: { anchor: 5, head: 5 }, scrollTop: 240 },
       },
     },
     structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
   }));
   expect(H.undo(), 'undo with selection snapshot');
   expect(editor._sel?.anchor === 1 && editor._sel?.head === 1, 'cursor restored to beforeSel');
+  expect(editor._scroll, 'undo requests scrollIntoView');
+  expect(editor._viewport?.scrollTop === 240, 'viewport restored for typing undo');
+}
+
+// hole-shaped entry without prior sels still reveals on undo (EOF fallback + scroll)
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }],
+    texts: { a: 'filled' },
+    activeFileId: 'a',
+  });
+  const editor = {
+    _text: 'filled',
+    _sel: null,
+    _scroll: false,
+    _viewport: null,
+    getValue() { return this._text; },
+    getCurrentFileId() { return 'a'; },
+    replaceDocumentNonUndoable(t, opts) {
+      this._text = t;
+      this._sel = opts?.selection ?? null;
+      this._scroll = !!opts?.scrollIntoView;
+    },
+    applyViewport(local) { this._viewport = local; },
+  };
+  adapter._state.editor = editor;
+  adapter.getActiveEditor = () => editor;
+  adapter.syncActiveEditorCheckpoint = (text) => {
+    adapter.setFileText('a', text);
+    editor._text = text;
+  };
+
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'hole', kind: 'hole',
+    files: { a: { before: '?', after: 'filled' } },
+    structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
+  }));
+  expect(H.undo(), 'hole undo');
+  expect(editor._text === '?', 'hole text restored');
+  expect(editor._sel?.anchor === 1 && editor._sel?.head === 1, 'missing sel falls back to EOF of restored text');
+  expect(editor._scroll, 'hole undo still scrolls');
+  expect(editor._viewport?.selection?.anchor === 1, 'viewport reveal applied for non-format kind');
+}
+
+// beginEntry/commitEntry records selection snapshots for non-typing edits
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }],
+    texts: { a: 'hello' },
+    activeFileId: 'a',
+  });
+  adapter.captureViewport = () => ({
+    selection: { anchor: 2, head: 2 },
+    scrollTop: 120,
+  });
+  adapter.captureSelection = () => ({ anchor: 2, head: 2 });
+
+  const H = createEditHistory(adapter);
+  H.beginEntry('hole');
+  H.touchFile('a');
+  adapter.setFileText('a', 'hello!');
+  adapter.captureViewport = () => ({
+    selection: { anchor: 6, head: 6 },
+    scrollTop: 120,
+  });
+  expect(H.commitEntry(), 'commit hole-shaped entry');
+  const entry = H.getUndoStack()[0];
+  expect(entry.files.a.beforeSel?.anchor === 2, 'beforeSel captured');
+  expect(entry.files.a.afterSel?.anchor === 6, 'afterSel captured');
+  expect(entry.files.a.beforeLocal?.scrollTop === 120, 'beforeLocal captured');
+  expect(entry.files.a.afterLocal?.scrollTop === 120, 'afterLocal captured');
+}
+
+// reconcileActiveFile preserves selection/local fields
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }],
+    texts: { a: 'two-indented' },
+    activeFileId: 'a',
+  });
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'e', kind: 'typing',
+    files: {
+      a: {
+        before: 'one',
+        after: 'two',
+        beforeSel: { anchor: 1, head: 1 },
+        afterSel: { anchor: 3, head: 3 },
+        beforeLocal: { selection: { anchor: 1, head: 1 }, scrollTop: 50 },
+      },
+    },
+    structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
+  }));
+  H.reconcileActiveFile('a', 'two-indented');
+  const entry = H.getUndoStack()[0];
+  expect(entry.files.a.after === 'two-indented', 'after text updated');
+  expect(entry.files.a.beforeSel?.anchor === 1, 'beforeSel preserved');
+  expect(entry.files.a.afterSel?.anchor === 3, 'afterSel preserved');
+  expect(entry.files.a.beforeLocal?.scrollTop === 50, 'beforeLocal preserved');
 }
 
 console.log('OK edit-history');

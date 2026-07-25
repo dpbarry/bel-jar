@@ -1,7 +1,7 @@
 // Pure 3D force-directed simulation (force-sim.mjs). No DOM. Pins the physics
 // that makes the dependency galaxy good: determinism, NaN-freedom, signature
 // edges stiffer than body edges, hubs settling toward the centroid, pinning.
-import { createForceSim } from '../editor-src/graph/force-sim.mjs';
+import { createForceSim } from '../js/editor-src/graph/force-sim.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

@@ -1,8 +1,8 @@
 import assert from 'node:assert';
-import { readHoverScope, showSymbolTooltips, diagnosticMatchesPos } from '../editor-src/bel-hover.mjs';
+import { readHoverScope, showSymbolTooltips, diagnosticMatchesPos } from '../js/editor-src/ide/hover.mjs';
 
 function scope(v) {
-  return { BelJarPersist: { readStoredHoverScope: () => v } };
+  return { Persist: { readStoredHoverScope: () => v } };
 }
 
 assert.equal(readHoverScope(scope('all')), 'all');

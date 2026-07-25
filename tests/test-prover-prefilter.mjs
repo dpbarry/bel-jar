@@ -1,7 +1,7 @@
 // SOUND pre-filter (E2b): reject a closing fill the checker would provably reject,
 // WITHOUT a checker round-trip — but NEVER reject one it would accept. This test
 // pins soundness (the load-bearing property) and the intended rejections, purely.
-import { movePrefilterOk, candidateMoves, theoremUnderProof } from '../editor-src/bel-prover-bridge.mjs';
+import { movePrefilterOk, candidateMoves, theoremUnderProof } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -120,6 +120,27 @@ expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app d g]' },
   H('[g |- eq N M]', [{ name: 'd', type: '[g |- eq M N]' }], [{ name: 'g', type: 'ctx' }]), full) === false,
   'a ctx-var passed into an eq arg slot is soundly dropped (bonus rejection)');
 void thm;
+
+// ── 4b. trustScope SCOPE check (live move loop only, real+complete hole.meta):
+// an UPPERCASE arg that is neither a bound metavar/comp-var NOR a declared ctor
+// is unbound → rejected. Pure callers (default) must NOT apply it. ──
+const scopeCode = `${CODE}\nschema ctx = block x:exp, _t:eq x x;`;
+// (a) unbound uppercase arg — rejected ONLY under trustScope.
+expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app X3 X3]' },
+  H('[g |- eq N M]', [], [{ name: 'g', type: 'ctx' }]), scopeCode) === true,
+  'pure caller (no trustScope) never rejects on scope — eq_app X3 X3 passes');
+expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app X3 X3]' },
+  H('[g |- eq N M]', [], [{ name: 'g', type: 'ctx' }]), scopeCode, { trustScope: true }) === false,
+  'trustScope rejects an unbound uppercase arg (eq_app X3 X3, X3 not in scope)');
+// (b) uppercase arg that IS in scope (meta or ctx) — must PASS under trustScope.
+expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app D1 D2]' },
+  H('[g |- eq N M]', [{ name: 'D1', type: '[g |- eq A B]' }, { name: 'D2', type: '[g |- eq C D]' }],
+    [{ name: 'g', type: 'ctx' }]), scopeCode, { trustScope: true }) === true,
+  'trustScope passes uppercase args bound as comp-vars (soundness — no false prune)');
+expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app M1 M2]' },
+  H('[g |- eq N M]', [], [{ name: 'g', type: 'ctx' }, { name: 'M1', type: '[g |- eq A B]' }, { name: 'M2', type: '[g |- eq C D]' }]),
+  scopeCode, { trustScope: true }) === true,
+  'trustScope passes uppercase args bound as metavars (soundness)');
 
 // ── 5. Lexical guard: checker-internal `"`-quoted names are unparseable by
 // construction — any candidate text carrying one is rejected, for EVERY move

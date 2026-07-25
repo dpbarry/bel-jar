@@ -8,9 +8,9 @@
 //     recovery echoes;
 //  4. a clean file stays diagnostic-free.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
-import { computeLintBlocks } from '../editor-src/bel-units.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
+import { computeLintBlocks } from '../js/editor-src/lint-units.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

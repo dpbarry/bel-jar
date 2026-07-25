@@ -1,8 +1,8 @@
 // Reference jump routing: resolve by name+line on prepared doc; local rows carry fileId.
 import { EditorState } from '@codemirror/state';
-import { resolveReferenceJump } from '../editor-src/bel-viewport.mjs';
-import { prepareEditorDoc } from '../editor-src/editor-doc-prep.mjs';
-import { gatherReferenceGroups } from '../editor-src/bel-refs-panel.mjs';
+import { resolveReferenceJump } from '../js/editor-src/ide/viewport.mjs';
+import { prepareEditorDoc } from '../js/editor-src/editor-doc-prep.mjs';
+import { gatherReferenceGroups } from '../js/editor-src/ide/refs-panel.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -37,8 +37,8 @@ expect(
 );
 
 const g = {
-  BelJarCurrentEditor: { getDocumentId: () => 'f1' },
-  BelJarPersist: {
+  CurrentEditor: { getDocumentId: () => 'f1' },
+  Persist: {
     getActiveFileId: () => 'f1',
     listFiles: () => [{ id: 'f1', name: 'group/test.bel' }],
     getFileText: (id) => (id === 'f1' ? SRC : ''),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { parser } from '../editor-src/beluga-parser.js';
-import { formatString } from '../editor-src/bel-format.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { formatString } from '../js/editor-src/format/document-format.mjs';
 
 const src = `rec f : [ ⊢ tm] → [ ⊢ tm] =
   let LrmRmP'Q = LR/clo (LRc/M/p [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ _] LrmP'Q) in

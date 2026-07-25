@@ -1,5 +1,9 @@
 import assert from 'node:assert';
-import { collapseErrorNavStops, pickNextErrorStop } from '../editor-src/bel-ide-actions.mjs';
+import {
+  collapseErrorNavStops,
+  pickNextErrorStop,
+  pickPrevErrorStop,
+} from '../js/editor-src/ide/ide-actions.mjs';
 
 const paired = collapseErrorNavStops([
   { from: 10, to: 12, line: 1 },
@@ -18,6 +22,13 @@ next = pickNextErrorStop(paired, 1);
 assert.equal(next.line, 5);
 next = pickNextErrorStop(paired, 5);
 assert.equal(next.line, 1);
+
+let prev = pickPrevErrorStop(paired, 5);
+assert.equal(prev.line, 1);
+prev = pickPrevErrorStop(paired, 1);
+assert.equal(prev.line, 5);
+prev = pickPrevErrorStop(paired, 3);
+assert.equal(prev.line, 1);
 
 const sameBlockDiffLine = collapseErrorNavStops([
   { from: 10, to: 12, line: 1 },

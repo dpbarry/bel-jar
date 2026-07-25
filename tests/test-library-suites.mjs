@@ -12,13 +12,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 function loadModule(path) {
   const src = readFileSync(join(here, '..', path), 'utf8');
-  const fakeWindow = {};
   // eslint-disable-next-line no-new-func
-  new Function('window', src)(fakeWindow);
-  return fakeWindow;
+  new Function(src)();
+  return globalThis;
 }
 
-const { listActiveSuites } = loadModule('js/library-suites.js').BelJarLibrarySuites;
+const { listActiveSuites } = loadModule('js/library/library.js').LibrarySuites;
 
 const files = [
   { id: 'a', name: 'grp/a.bel' },

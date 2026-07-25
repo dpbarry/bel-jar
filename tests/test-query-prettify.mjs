@@ -5,8 +5,9 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ctx = vm.createContext({ self: {} });
-vm.runInContext(readFileSync(join(root, 'js/beluga-text.js'), 'utf8'), ctx);
-const { prettifyQueryBindings } = ctx.self.BelugaText;
+vm.runInContext(readFileSync(join(root, 'js/beluga/beluga-text.js'), 'utf8'), ctx);
+const BT = ctx.BelugaText || ctx.self.BelugaText;
+const { prettifyQueryBindings } = BT;
 
 function expect(cond, msg) {
   if (!cond) { console.error('FAIL:', msg); process.exit(1); }

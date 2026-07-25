@@ -1,11 +1,11 @@
 import { EditorState, Transaction } from '@codemirror/state';
 import { history, undoDepth } from '@codemirror/commands';
 import {
-  belRename,
+  rename,
   buildRenameCommitChanges,
   renameActiveField,
   renameSessionEffect,
-} from '../editor-src/bel-rename.mjs';
+} from '../js/editor-src/ide/rename.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -34,7 +34,7 @@ const session = {
 
 let state = EditorState.create({
   doc: 'foo bar foo',
-  extensions: [history(), ...belRename()],
+  extensions: [history(), ...rename()],
 });
 
 state = state.update({ effects: renameSessionEffect.of(session) }).state;

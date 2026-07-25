@@ -2,12 +2,15 @@
 
 BelJar is a browser IDE for the Beluga proof assistant. The AST/semantic engine is the substrate; Beluga is invoked surgically, not as a text blob checker.
 
+**Where things live:** [`docs/CODEMAP.md`](docs/CODEMAP.md) — two-layer runtime, domain folders, satellites, vocabulary, partition targets.
+
 ## Rules (`.cursor/rules/`)
 
 | Rule | Scope |
 |------|-------|
 | `beljar-architecture.mdc` | Always — AST-first, not a Beluga wrapper, security boundary |
 | `beljar-workflow.mdc` | Always — builds, `npm test`, checker worker, communication |
+| `beljar-codemap.mdc` | Always — new modules go in domain folders; root `js/editor-src/` is legacy |
 | `beljar-prover.mdc` | Prover / Harpoon files |
 | `beljar-css.mdc` | `css/` |
 | `beljar-cfg-suites.mdc` | Suite cfg sync |
@@ -17,25 +20,35 @@ BelJar is a browser IDE for the Beluga proof assistant. The AST/semantic engine 
 
 ```bash
 npm test                  # full test suite (one invocation)
-npm run build             # editor + library (not OCaml compiler)
+npm run build             # editor + shell ESM leaves + library (not OCaml)
 node scripts/build-editor.mjs   # editor bundle only
+node scripts/build-shell.mjs    # shell ESM → IIFE (tooltips, dialogs, workspace, …)
 npm run prover:probe      # optional live prover gates (Chrome)
 ```
 
 OCaml shim rebuild (rare): `_rebuild/rebuild.ps1` — only when `Beluga-W/src/web/beluga_web.ml` changes.
 
-## Edit history (undo / redo)
+## Doc sources of truth (do not start from the wrong one)
 
-All undoable edits go through **EditHistory** (`docs/edit-history.md`). Ctrl+Z is atomic and session-persisted; never roll a feature-local undo stack.
+| Thread | Start here | Also (narrower) |
+|--------|------------|-----------------|
+| **Structure / where code lives** | [`docs/CODEMAP.md`](docs/CODEMAP.md) | Archive only: [`docs/design-quality-refactoring-handoff.md`](docs/design-quality-refactoring-handoff.md) (thread closed) |
+| **Native prover** | [`docs/prover-master-plan.md`](docs/prover-master-plan.md) | Kickoff paste: [`docs/prover-agent-kickoff.md`](docs/prover-agent-kickoff.md). Completeness audit text: [`docs/prover-completeness.md`](docs/prover-completeness.md) (appendix only) |
+| **Input lag / incremental symbols** | [`docs/incremental-semantics-execution-handoff.md`](docs/incremental-semantics-execution-handoff.md) (Phase 1 keystone) | Context: [`docs/input-and-incremental-intelligence-handoff.md`](docs/input-and-incremental-intelligence-handoff.md). Beluga settlement principles: [`docs/fast-incremental-checking.md`](docs/fast-incremental-checking.md) |
+| **Undo** | [`docs/edit-history.md`](docs/edit-history.md) | — |
 
-## Active work: native prover
+## Active work: two threads
 
-BelJar's own proof-search engine (`bel-prover*.mjs`, `bel-hole-split.mjs`) generates steps; the Beluga checker certifies each. Harpoon is demoted to oracle. Context-lemma probes **`str_hyp`**, **`str_lin`**, and **`str_wtp`** are engine-complete (`npm run prover:probe`). Next gap: **`str_step`** / full cp-suite automation; recursion under binders for lemmas like `tp_uniq` (`t_lam`).
+**1. Native prover / Harpoon autosolve engine (the frontier).** BelJar's own proof-search engine (`js/editor-src/prover/`) generates each proof step; the Beluga checker certifies it. Harpoon is demoted to oracle. The machinery ships (plan-driven focused search, phases B–I); the work is late-game — grinding the biggest residue classes to maximize corpus autosolve, and making found proofs QUICK + ELEGANT (a completion that costs 30 min / thousands of checks is a *defect*, not a win). North star: make the search a decision procedure by construction — never per-failure budgets or name-keyed branches.
 
-**`str_wtp` reference:** [`docs/prover-str-wtp-handoff.md`](docs/prover-str-wtp-handoff.md) (architecture, landed fixes, speed discipline).
+- Direction: [`docs/prover-master-plan.md`](docs/prover-master-plan.md).
+- Fresh-agent paste: [`docs/prover-agent-kickoff.md`](docs/prover-agent-kickoff.md) §0.
+- Instruments: `npm run prover:probe`, `npm run prover:diff`, `node scripts/prover-native-oracle.mjs`.
 
-**Fast checking (BelJar-first):** [`docs/fast-incremental-checking.md`](docs/fast-incremental-checking.md) — graph-driven minimal Beluga; tail/checkpoint path **reverted**.
+**2. Input performance — no lag, no lost power.** Kill typing latency in large files / large preludes via smarter behind-the-scenes scheduling; never underpower lint/parse/checks to fake speed. Per keystroke the main thread does Text + incremental Lezer only — never a whole-doc `toString`/rebuild. Prefix-closed settlement is built. The open keystone is making the JS symbol/lint layer incremental-per-decl to match the already-incremental checker.
 
-**Immediate input + incremental intelligence (active):** [`docs/input-and-incremental-intelligence-handoff.md`](docs/input-and-incremental-intelligence-handoff.md) — main-thread input hygiene, semantic worker, prefix-closed settlement (later edits must not reprocess unchanged earlier files/blocks). Capacity is sacred; do not underpower lint/parse to fake speed.
+- Execution SoT: [`docs/incremental-semantics-execution-handoff.md`](docs/incremental-semantics-execution-handoff.md).
+- Input-path history/context: [`docs/input-and-incremental-intelligence-handoff.md`](docs/input-and-incremental-intelligence-handoff.md).
+- Graph-driven Beluga (not the typing-lag thread): [`docs/fast-incremental-checking.md`](docs/fast-incremental-checking.md).
 
-General prover handoff detail lives in Claude project memory (`~/.claude/plans/HANDOFF-harpoon-prover.md`) if you have access; the `beljar-prover` rule captures the essentials.
+Durable prover laws also live in [`.cursor/rules/beljar-prover.mdc`](.cursor/rules/beljar-prover.mdc) (local to Cursor checkouts).

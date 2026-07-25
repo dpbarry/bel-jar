@@ -1,8 +1,8 @@
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
 
 const src = '%% Twelf-style header\n% normal comment\nLF o : type = ;\n';
 const diags = syntaxLintTree(parser.parse(src), Text.of(src.split('\n')));

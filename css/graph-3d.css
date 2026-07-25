@@ -1,0 +1,712 @@
+/* -- 3D dependency galaxy (WebGL canvas + projected label overlay) -- */
+
+.bel-graph3d-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* WebGL edge palette — light mode: muted structure lines; comets carry contrast. */
+  --graph3d-edge-body: light-dark(hsla(222, 12%, 40%, 0.48), hsla(220, 14%, 70%, 0.7));
+  --graph3d-edge-sig: light-dark(hsla(214, 78%, 42%, 0.88), hsla(214, 70%, 70%, 0.8));
+  --graph3d-comet-body: light-dark(hsl(212, 92%, 56%), hsl(202, 100%, 78%));
+  --graph3d-comet-sig: light-dark(hsl(200, 55%, 96%), hsl(200, 100%, 97%));
+  background:
+    radial-gradient(ellipse at 50% 34%,
+      light-dark(hsl(220 28% 98%), hsl(226 26% 9%)),
+      light-dark(hsl(222 20% 93%), hsl(230 32% 4.5%)));
+}
+
+.bel-graph-stale-banner {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: light-dark(hsl(248, 52%, 32%), hsl(248, 58%, 82%));
+  background: light-dark(
+    color-mix(in oklab, hsl(248 58% 52%) 10%, var(--bg)),
+    color-mix(in oklab, hsl(248 62% 68%) 14%, var(--bg))
+  );
+  border-bottom: 1px solid light-dark(
+    color-mix(in srgb, hsl(248 58% 52%) 22%, transparent),
+    color-mix(in srgb, hsl(248 62% 68%) 24%, transparent)
+  );
+}
+
+.bel-graph3d-container > .bel-graph3d-propbar {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.bel-graph3d-propbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  font-weight: 400;
+  color: var(--base-high);
+  background: color-mix(in srgb, var(--chrome-bg-panel) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--chrome-divider) 55%, transparent);
+}
+
+.bel-graph3d-propbar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 0.25rem;
+}
+
+.bel-graph3d-propbar-text.is-focus {
+  color: var(--base-highest);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: -0.01em;
+}
+
+.bel-graph3d-propbar-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.bel-graph3d-navbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  border-radius: 0.2rem;
+  cursor: pointer;
+}
+
+.bel-graph3d-navbtn svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.bel-graph3d-navbtn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-navbtn:hover:not(:disabled) {
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}
+
+.bel-graph3d-main {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.bel-graph3d-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bel-graph3d-container > .bel-graph-container {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ── Flat view: a 2D layered Sugiyama diagram with its own visual language ──
+   Foundational symbols at top, dependents below; orthogonal elbow edges; chips
+   coloured by namespace. Pure x/y pan + zoom (the SVG fills the stage). */
+.bel-graph3d-stage.is-flat {
+  background:
+    radial-gradient(120% 90% at 50% -10%,
+      color-mix(in srgb, var(--accent-lower) 22%, transparent), transparent 60%),
+    var(--editor-bg, var(--chrome-bg-panel));
+}
+
+.bel-flat-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.bel-flat-svg.is-panning { cursor: grabbing; }
+
+/* Inspector miniature: in-flow, fits its card via viewBox; no pan affordance.
+   Edge hairlines keep 1 device px regardless of the viewBox scale. */
+.bel-flat-svg--mini {
+  position: static;
+  cursor: default;
+}
+
+.bel-flat-svg--mini .bel-flat-edge:not(.bel-flat-edge--head) {
+  vector-effect: non-scaling-stroke;
+}
+
+/* Edges: hairline structural lines that recede behind the chips, with a baked
+   filled arrowhead (.--head) at each tip. The kind colour lives in --edge-col so
+   the LINE path uses it as stroke and the HEAD path uses it as fill. */
+.bel-flat-edge {
+  --edge-col: var(--base-high);
+  fill: none;
+  stroke: var(--edge-col);
+  /* World-unit width is 1/scale (set in JS) so hairlines stay 1 device px. */
+  stroke-width: var(--flat-stroke-w, 1);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.24;
+  /* No transition: focus toggles classes on hundreds of edges at once; animating
+     them all would storm the compositor. Instant is snappier here. */
+}
+
+/* Arrowhead: a filled triangle baked into the path (no SVG marker). Drawn a touch
+   stronger than the faint lines so direction reads at a glance. */
+.bel-flat-edge--head {
+  fill: var(--edge-col);
+  stroke: none;
+  opacity: 0.7;
+}
+
+.bel-flat-edge--signature,
+.bel-flat-edge--coverage { --edge-col: var(--accent-mid); opacity: 0.36; }
+.bel-flat-edge--signature.bel-flat-edge--head,
+.bel-flat-edge--coverage.bel-flat-edge--head { opacity: 0.8; }
+.bel-flat-edge--notation { --edge-col: light-dark(hsl(280, 45%, 55%), hsl(280, 50%, 68%)); }
+.bel-flat-edge--module { --edge-col: light-dark(hsl(190, 55%, 42%), hsl(190, 55%, 60%)); }
+.bel-flat-edge--implicit { stroke-dasharray: var(--flat-edge-dash, 3 3); }
+
+/* While a node is focused, the bulk edges recede; the focused node's incident
+   edges (line + heads) are drawn bright by the separate overlay paths. */
+.bel-flat-edges.is-focusing .bel-flat-edge:not(.is-active) { opacity: 0.06; }
+
+/* Focus overlay: brighten incident edges but keep each kind's hue (body ≠ signature). */
+.bel-flat-edge.is-active {
+  stroke-width: var(--flat-stroke-w-active, 1.75);
+}
+.bel-flat-edge--body.is-active { opacity: 0.72; }
+.bel-flat-edge--body.bel-flat-edge--head.is-active { opacity: 0.85; }
+.bel-flat-edge--signature.is-active,
+.bel-flat-edge--coverage.is-active { opacity: 0.95; }
+.bel-flat-edge--signature.bel-flat-edge--head.is-active,
+.bel-flat-edge--coverage.bel-flat-edge--head.is-active { opacity: 1; }
+.bel-flat-edge--notation.is-active,
+.bel-flat-edge--module.is-active,
+.bel-flat-edge--implicit.is-active { opacity: 0.82; }
+.bel-flat-edge--notation.bel-flat-edge--head.is-active,
+.bel-flat-edge--module.bel-flat-edge--head.is-active,
+.bel-flat-edge--implicit.bel-flat-edge--head.is-active { opacity: 0.95; }
+
+/* Chips: compact outlined rectangles — near-stage fill, with the namespace
+   colour carried by a crisp 1px border AND the label itself (the inspector
+   card language). One --ns-col custom prop drives border, text, and tint. */
+.bel-flat-node {
+  cursor: pointer;
+  transition: opacity var(--transition);
+  --ns-col: light-dark(hsl(220, 10%, 42%), hsl(217, 9%, 62%));
+}
+.bel-flat-node.ns-type    { --ns-col: light-dark(hsl(210, 68%, 42%), hsl(210, 66%, 66%)); }
+.bel-flat-node.ns-const   { --ns-col: light-dark(hsl(158, 52%, 33%), hsl(158, 48%, 56%)); }
+.bel-flat-node.ns-fn      { --ns-col: light-dark(hsl(262, 54%, 48%), hsl(262, 58%, 72%)); }
+.bel-flat-node.ns-schema  { --ns-col: light-dark(hsl(36, 76%, 36%), hsl(40, 72%, 60%)); }
+.bel-flat-node.ns-typedef { --ns-col: light-dark(hsl(188, 52%, 33%), hsl(188, 50%, 56%)); }
+
+.bel-flat-node rect {
+  fill: light-dark(
+    color-mix(in oklab, var(--ns-col) 5%, hsl(220, 18%, 99%)),
+    color-mix(in oklab, var(--ns-col) 8%, hsl(223, 13%, 9%))
+  );
+  stroke: var(--ns-col);
+  stroke-width: 1;
+  paint-order: stroke;
+  transition: fill var(--transition), stroke var(--transition), stroke-width var(--transition);
+}
+
+.bel-flat-node text {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  fill: var(--ns-col);
+  pointer-events: none;
+  user-select: none;
+  transition: fill var(--transition);
+}
+
+/* Root: accent-framed centre of the local view. */
+.bel-flat-node.is-root rect {
+  stroke: var(--accent-mid);
+  stroke-width: 1.5;
+  fill: light-dark(
+    color-mix(in oklab, var(--accent-mid) 9%, hsl(220, 18%, 99%)),
+    color-mix(in oklab, var(--accent-mid) 14%, hsl(223, 13%, 9%))
+  );
+}
+.bel-flat-node.is-root text {
+  fill: light-dark(var(--accent-high), var(--accent-higher));
+  font-weight: 600;
+}
+
+/* Focus: bright accent frame + lifted fill; neighbours recede via .is-dimmed. */
+.bel-flat-node.is-focused rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+  fill: light-dark(
+    color-mix(in oklab, var(--accent-mid) 14%, hsl(220, 18%, 99%)),
+    color-mix(in oklab, var(--accent-mid) 22%, hsl(223, 13%, 9%))
+  );
+}
+.bel-flat-node.is-focused text {
+  fill: light-dark(var(--accent-high), var(--accent-highest));
+  font-weight: 600;
+}
+.bel-flat-node.is-dimmed { opacity: 0.42; }
+/* (the focused chip is re-appended in JS so it paints above neighbours — SVG has
+   no z-index, so paint order = DOM order) */
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-flat-node:hover:not(.is-focused):not(.is-dimmed) rect {
+    stroke: var(--ns-col);
+    fill: light-dark(
+      color-mix(in oklab, var(--ns-col) 10%, hsl(220, 18%, 99%)),
+      color-mix(in oklab, var(--ns-col) 16%, hsl(223, 13%, 9%))
+    );
+  }
+  .bel-flat-node:hover:not(.is-focused):not(.is-dimmed) text {
+    fill: color-mix(in oklab, var(--ns-col) 78%, light-dark(black, white));
+  }
+}
+
+/* SVG <g tabindex> gets a harsh rectangular browser outline on click — suppress it;
+   selection is driven by .is-focused; keyboard users get the same accent frame. */
+.bel-flat-node:focus { outline: none; }
+.bel-flat-node:focus-visible:not(.is-focused) rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+  fill: light-dark(
+    color-mix(in oklab, var(--accent-lower) 60%, white),
+    color-mix(in oklab, var(--accent-low) 40%, hsl(222, 12%, 16%))
+  );
+}
+.bel-flat-node:focus-visible:not(.is-focused) text {
+  fill: light-dark(var(--accent-high), var(--accent-highest));
+}
+
+.bel-graph3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.bel-graph3d-canvas:active {
+  cursor: grabbing;
+}
+
+.bel-graph3d-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 1; /* stacking context: label paint-order z-index stays below toolbar */
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Labels float just above their node with a short leader tail pointing down to
+   it (so the label↔dot link is unambiguous). Translucent so they don't occlude
+   the graph; a soft shadow keeps them legible over dense edges. */
+.bel-graph3d-label {
+  position: absolute;
+  z-index: 1;
+  /* anchor point is the node; lift the chip above it and leave room for the tail */
+  transform: translate(-50%, calc(-100% - 7px));
+  pointer-events: auto;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  line-height: 1;
+  color: var(--base-highest);
+  background: color-mix(in srgb, var(--chrome-bg-panel) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-divider) 70%, transparent);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.32rem;
+  cursor: pointer;
+  backdrop-filter: blur(3px);
+  transition: color 90ms ease, border-color 90ms ease, background-color 90ms ease;
+}
+
+/* Leader tail: a short line from the chip's bottom down to the node anchor. */
+.bel-graph3d-label::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 7px;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom,
+    color-mix(in srgb, var(--chrome-divider) 70%, transparent), transparent);
+}
+
+.bel-graph3d-label.is-focus {
+  font-weight: 600;
+  color: var(--ui-fg-on-solid);
+  background: light-dark(var(--accent-mid), hsl(215, 58%, 38%));
+  border-color: light-dark(var(--accent-high), hsl(215, 52%, 50%));
+  backdrop-filter: none;
+}
+
+.bel-graph3d-label.is-focus::after {
+  background: linear-gradient(to bottom,
+    light-dark(var(--accent-mid), hsl(215, 58%, 38%)),
+    transparent);
+  height: 9px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-label:hover {
+    border-color: var(--accent-mid);
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--chrome-bg-panel) 90%, transparent);
+  }
+}
+
+/* Bottom toolbar: compact icon strip over the canvas. */
+.bel-graph3d-toolbar {
+  --graph-search-w: 4.85rem;
+  --graph-search-w-expanded: 14rem;
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.45rem;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.2rem;
+  align-items: center;
+  pointer-events: auto;
+  z-index: 5;
+  padding: 0.2rem 0.3rem;
+  border-radius: var(--search-drop-radius);
+  background: color-mix(in srgb, var(--chrome-bg-panel) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-divider) 50%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.bel-graph3d-iconbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.bel-graph3d-search-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--graph-search-w);
+  margin-right: 0.15rem;
+  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bel-graph3d-search-wrap:focus-within,
+.bel-graph3d-toolbar.is-search-expanded .bel-graph3d-search-wrap {
+  width: var(--graph-search-w-expanded);
+}
+
+.bel-graph3d-autocomplete {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--search-drop-offset));
+  width: var(--graph-search-w-expanded);
+  min-width: 100%;
+  max-height: 11rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--search-drop-pad) 0;
+  background: var(--search-drop-bg);
+  border: 1px solid var(--search-drop-border);
+  border-radius: var(--search-drop-radius);
+  box-shadow: var(--search-drop-shadow);
+  z-index: 6;
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
+  animation: search-drop-in 0.14s ease;
+}
+
+.bel-graph3d-autocomplete::-webkit-scrollbar {
+  width: 6px;
+}
+
+.bel-graph3d-autocomplete::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--base-mid) 50%, transparent);
+  border-radius: 3px;
+}
+
+.bel-graph3d-ac-item {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  --row-pill-gutter-x: var(--search-row-pad-x);
+  padding: 0.38rem var(--search-row-pad-x);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: var(--base-highest);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.bel-graph3d-ac-item::before {
+  content: '';
+  position: absolute;
+  left: var(--row-pill-inset-x);
+  top: var(--row-pill-inset-y);
+  bottom: var(--row-pill-inset-y);
+  width: var(--row-pill-w);
+  border-radius: var(--row-pill-radius);
+  background: var(--search-row-active-accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-ac-item:hover {
+    background: var(--search-row-hover-bg);
+    color: var(--search-row-hover-fg);
+  }
+}
+
+.bel-graph3d-ac-item.is-active {
+  background: var(--search-row-active-bg);
+  color: var(--search-row-active-fg);
+}
+.bel-graph3d-ac-item.is-active::before {
+  opacity: var(--row-pill-opacity);
+}
+
+.bel-graph3d-ac-kind {
+  font-size: 0.62rem;
+  color: var(--base-mid);
+}
+
+.bel-graph3d-sidebar {
+  flex: 0 0 11rem;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid color-mix(in srgb, var(--chrome-divider) 70%, transparent);
+  background: color-mix(in srgb, var(--chrome-bg-panel) 82%, transparent);
+  min-height: 0;
+}
+
+.bel-graph3d-sidebar-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: light-dark(var(--muted-higher), var(--muted-high));
+  border-bottom: 1px solid color-mix(in srgb, var(--chrome-divider) 60%, transparent);
+  user-select: none;
+}
+
+.bel-graph3d-sidebar-head-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bel-graph3d-sidebar-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  border-radius: 0.2rem;
+  cursor: pointer;
+}
+
+.bel-graph3d-sidebar-toggle svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-sidebar-toggle:hover {
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}
+
+.bel-graph3d-sidebar.is-collapsed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  flex: none;
+  width: auto;
+  min-width: 0;
+  border-right: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-head {
+  border-bottom: none;
+  padding: 0.25rem;
+  pointer-events: auto;
+}
+
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-toggle {
+  background: color-mix(in srgb, var(--chrome-bg-panel) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-divider) 50%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-list,
+.bel-graph3d-sidebar.is-collapsed .bel-graph3d-sidebar-head-label {
+  display: none;
+}
+
+.bel-graph3d-sidebar-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 0.25rem 0;
+}
+
+.bel-graph3d-sidebar-group {
+  padding: 0.35rem 0.5rem 0.15rem;
+  font-size: 0.58rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--base-mid);
+}
+
+.bel-graph3d-sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-size: 0.7rem;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bel-graph3d-sidebar-item.is-active,
+.bel-graph3d-sidebar-item:hover {
+  background: color-mix(in srgb, var(--accent-lower) 45%, transparent);
+  color: var(--accent-high);
+}
+
+.bel-graph3d-sidebar-item.is-root {
+  font-weight: 600;
+}
+
+.bel-graph3d-depth {
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+}
+
+.bel-graph3d-depth-label {
+  font-size: 0.62rem;
+  color: var(--base-mid);
+  min-width: 0.85rem;
+  text-align: center;
+}
+
+.bel-graph3d-search {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.5rem 0.15rem 0.4rem;
+  color: var(--base-highest);
+  background: transparent;
+  border: none;
+  border-right: 1px solid color-mix(in srgb, var(--chrome-divider) 45%, transparent);
+  border-radius: 0;
+  outline: none;
+  transition: color 120ms ease;
+}
+
+.bel-graph3d-search-wrap:focus-within .bel-graph3d-search {
+  color: var(--base-highest);
+}
+
+.bel-graph3d-search:focus-visible {
+  outline: none;
+}
+
+.bel-graph3d-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  color: var(--base-high);
+  background: transparent;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.bel-graph3d-iconbtn svg {
+  width: 0.88rem;
+  height: 0.88rem;
+}
+
+.bel-graph3d-scopebtn svg {
+  width: 1.02rem;
+  height: 1.02rem;
+}
+
+.bel-graph3d-iconbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph3d-iconbtn:hover:not(:disabled) {
+    color: var(--accent-high);
+    background: color-mix(in srgb, var(--accent-lower) 35%, transparent);
+  }
+}

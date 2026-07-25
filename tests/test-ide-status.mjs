@@ -5,9 +5,9 @@ import {
   computeParseCoverage,
   formatGlobalGraphStaleBanner,
   updateIdeStatusDot,
-} from '../editor-src/bel-ide-status.mjs';
-import { lintTooltipItemsFromDiagnostics } from '../editor-src/bel-diag-gutter.mjs';
-import { beluga } from '../editor-src/bel-language.mjs';
+} from '../js/editor-src/ide/ide-status.mjs';
+import { lintTooltipItemsFromDiagnostics } from '../js/editor-src/ide/diag-gutter.mjs';
+import { beluga } from '../js/editor-src/language.mjs';
 
 function expect(cond, msg) {
   if (!cond) { console.error('FAIL:', msg); process.exit(1); }

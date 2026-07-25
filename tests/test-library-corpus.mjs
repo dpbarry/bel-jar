@@ -5,9 +5,9 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
-import { cfgDiagnosticsFor } from '../editor-src/bel-cfg-lint.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
+import { cfgDiagnosticsFor } from '../js/editor-src/ide/cfg-lint.mjs';
 import { suiteCfgNames } from './_library-cfg.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));

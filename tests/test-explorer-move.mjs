@@ -10,11 +10,10 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, '..', 'js', 'name-conflicts.js'), 'utf8');
-const fakeWindow = {};
+const src = readFileSync(join(here, '..', 'js', 'ui', 'name-conflicts.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-new Function('window', src)(fakeWindow);
-const NC = fakeWindow.BelJarNameConflicts;
+new Function(src)();
+const NC = globalThis.NameConflicts;
 
 const FILES = [
   { id: 'a', name: 'main.bel' },
@@ -78,26 +77,25 @@ const conflicts = NC.detectMoveConflicts(
 expect(conflicts.length === 1 && conflicts[0].kind === 'file', 'move detects file conflict');
 expect(conflicts[0].moveId === 'y', 'move conflict carries source id');
 
-const exSrc = readFileSync(join(here, '..', 'js', 'explorer-tree.js'), 'utf8');
-const fake2 = {};
+const exSrc = readFileSync(join(here, '..', 'js', 'explorer', 'explorer.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-new Function('window', exSrc)(fake2);
-expect(fake2.BelJarExplorer && fake2.BelJarExplorer.buildExplorerModel, 'explorer module exports model');
+new Function(exSrc)();
+expect(globalThis.Explorer && globalThis.Explorer.buildExplorerModel, 'explorer module exports model');
 
-const model = fake2.BelJarExplorer.buildExplorerModel([
+const model = globalThis.Explorer.buildExplorerModel([
   { id: '1', name: 'pkg/a.bel' },
   { id: '2', name: 'lib/x.bel' },
   { id: '3', name: 'lib/sub/b.bel' },
 ]);
-const paths = fake2.BelJarExplorer.collectFolderPaths(model);
+const paths = globalThis.Explorer.collectFolderPaths(model);
 expect(Array.isArray(paths) && paths.indexOf('pkg') !== -1 && paths.indexOf('lib') !== -1,
   'collectFolderPaths returns array of folder paths');
 
-expect(fake2.BelJarExplorer.rootZoneTopFromLastRow('file', 0, 100, 130) === 100,
+expect(globalThis.Explorer.rootZoneTopFromLastRow('file', 0, 100, 130) === 100,
   'top-level file: root zone starts at row top');
-expect(fake2.BelJarExplorer.rootZoneTopFromLastRow('folder', 0, 100, 130) === 130,
+expect(globalThis.Explorer.rootZoneTopFromLastRow('folder', 0, 100, 130) === 130,
   'top-level folder: root zone starts below row');
-expect(fake2.BelJarExplorer.rootZoneTopFromLastRow('file', 2, 200, 230) === 230,
+expect(globalThis.Explorer.rootZoneTopFromLastRow('file', 2, 200, 230) === 230,
   'nested file: root zone starts below row');
 
 const multiMove = NC.computeMoveTargets(

@@ -2,7 +2,8 @@
 import {
   proveProgram,
   theoremUnderProof,
-} from '../editor-src/bel-prover-bridge.mjs';
+  certifyWaveSize,
+} from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -13,8 +14,10 @@ function expect(cond, msg) {
 const topDecl = 'rec top : [ |- a] -> [ |- b] =\n?\n;';
 const thm = theoremUnderProof(topDecl);
 const traceEntries = [];
+let oracleCalls = 0;
 
 const holeReportingOracle = async (c) => {
+  oracleCalls += 1;
   const rep = [];
   c.split('\n').forEach((ln, i) => {
     const j = ln.indexOf('?');
@@ -49,5 +52,19 @@ if (te.tried.length) {
 }
 
 expect(traceEntries.length === res.trace.length, 'onTraceEntry streams live');
+
+// Phase E instrument: checkCount equals Beluga certifications (spy), not guard skips.
+expect(Number.isFinite(res.checkCount) && res.checkCount >= 1,
+  `checkCount reported and ≥1 baseline (got ${res.checkCount})`);
+expect(res.checkCount === oracleCalls,
+  `checkCount mirrors oracle spy (${res.checkCount} vs ${oracleCalls})`);
+
+// Phase E.1 — closing heads certify alone (wave does not inflate).
+expect(certifyWaveSize({ text: '[ |- refl]' }, 5) === 1,
+  'hole-free fill ⇒ wave 1');
+expect(certifyWaveSize({ text: 'case x of\n| z => ?\n', closingPlan: false }, 5) === 5,
+  'open hole ⇒ default wave');
+expect(certifyWaveSize({ text: 'case x of\n| z => [ |- refl]\n', closingPlan: true }, 5) === 1,
+  'closingPlan tag ⇒ wave 1');
 
 console.log('OK test-prover-trace');

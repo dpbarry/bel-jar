@@ -3,7 +3,7 @@ import {
   usesOf,
   applyTextEdits,
   applyGroupRenameToFile,
-} from '../editor-src/project-prelude.mjs';
+} from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

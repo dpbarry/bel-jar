@@ -1,0 +1,477 @@
+/* -- Explorer panel -- */
+
+.explorer-panel .panel-header {
+  position: relative;
+  --panel-header-pad-start: var(--pad-inline);
+  --panel-header-pad-end: var(--panel-header-pad-control);
+}
+
+/* Trailing header buttons must not shrink or the open search field stops at the label edge. */
+.explorer-panel .panel-header > .icon-btn {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.explorer-panel {
+  position: relative;
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chrome-bg-panel);
+  border-right: none;
+}
+
+.workspace.is-explorer-open .explorer-panel .panel-resize-hit {
+  cursor: ew-resize;
+}
+
+.workspace.is-explorer-open .explorer-panel {
+  flex: 0 0 var(--explorer-w);
+  width: var(--explorer-w);
+  border-right: 1px solid var(--chrome-divider);
+  overflow: visible;
+}
+
+.explorer-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.explorer-tree-root-pad {
+  flex: 1 0 4.5rem;
+  min-height: 4.5rem;
+}
+
+.explorer-tree-root-pad.is-drop-target {
+  background: light-dark(hsla(217, 60%, 50%, 0.08), hsla(215, 60%, 66%, 0.1));
+}
+
+.explorer-tree.is-project-empty {
+  position: relative;
+  justify-content: center;
+  align-items: center;
+}
+
+.explorer-tree.is-project-empty .explorer-tree-root-pad {
+  position: absolute;
+  inset: 0;
+  flex: none;
+  min-height: 0;
+}
+
+.explorer-empty {
+  margin: 0;
+  max-width: 24rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--base-high);
+  user-select: none;
+}
+
+.panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem max(1.5rem, env(safe-area-inset-right)) 2rem max(1.5rem, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.panel-empty[hidden] {
+  display: none !important;
+}
+
+.panel-empty__note {
+  margin: 0;
+  max-width: 24rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--base-high);
+  user-select: none;
+}
+
+.inspector-panel > .panel-empty {
+  flex: 1;
+  min-height: 0;
+}
+
+.explorer-file-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.3rem 0.875rem;
+  border: none;
+  background: transparent;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  --file-fg: var(--base-higher);
+  --file-accent: var(--muted-mid);
+  --file-hover-bg: var(--file-row-hover-bg);
+  --file-active-bg: var(--file-row-active-bg);
+  color: var(--file-fg);
+  transition: background var(--transition);
+}
+
+.explorer-file-item-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  overflow: hidden;
+}
+
+.explorer-file-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .explorer-file-item:hover {
+    background: var(--file-hover-bg);
+  }
+
+  .explorer-file-item.is-active:hover {
+    background: var(--file-active-bg);
+  }
+
+  .explorer-file-item.is-selected:hover,
+  .explorer-file-item.is-active.is-selected:hover {
+    background: light-dark(hsla(217, 55%, 50%, 0.11), hsla(215, 55%, 66%, 0.13));
+  }
+}
+
+.explorer-file-item--cfg,
+.explorer-file-item--elf {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+}
+
+.explorer-file-item--suite,
+.explorer-file-item--suite-cfg {
+  --file-fg: var(--file-suite-fg);
+  --file-accent: var(--file-suite-accent);
+}
+
+.explorer-file-item--suite-cfg .explorer-file-item-name {
+  font-weight: 600;
+}
+
+.explorer-suite-block-sep {
+  margin-top: 0.35rem;
+  box-shadow: inset 0 1px 0 var(--file-suite-sep);
+}
+
+/* Error/warning indicator on an explorer row: a .cfg with a dangling entry
+   (computed project-wide) or a checked file that reported problems. */
+.explorer-file-diag {
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  margin-left: 0.15rem;
+}
+
+.explorer-file-diag--error {
+  background: var(--ide-error-squiggle, #e5484d);
+}
+
+.explorer-file-diag--warning {
+  background: var(--ide-status-warning, hsl(38, 80%, 52%));
+}
+
+.explorer-file-item.is-active {
+  background: var(--file-active-bg);
+  font-weight: 500;
+}
+
+.explorer-file-item.is-selected,
+.explorer-folder-item.is-selected {
+  background: light-dark(hsla(217, 55%, 50%, 0.07), hsla(215, 55%, 66%, 0.09));
+}
+
+.explorer-file-item.is-active.is-selected {
+  background: light-dark(hsla(217, 55%, 50%, 0.09), hsla(215, 55%, 66%, 0.11));
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.explorer-file-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--edge-strip-w);
+  border-radius: var(--edge-strip-radius) 0 0 var(--edge-strip-radius);
+  background: var(--file-accent);
+  opacity: 0.8;
+}
+
+.explorer-file-item.is-active.is-selected::before {
+  opacity: 0.95;
+}
+
+/* Folder rows in the explorer tree (folder-imported files carry path names) */
+.explorer-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.3rem 0.875rem;
+  border: none;
+  background: transparent;
+  color: var(--muted-higher);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .explorer-folder-item:hover {
+    background: var(--file-row-hover-bg);
+    color: var(--base-highest);
+  }
+}
+
+.explorer-folder-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0.1rem;
+  margin: -0.1rem 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.explorer-folder-chevron svg {
+  width: 0.7rem;
+  height: 0.7rem;
+  opacity: 0.65;
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.explorer-folder-item.is-collapsed .explorer-folder-chevron svg {
+  transform: rotate(0deg);
+}
+
+.explorer-folder-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.explorer-folder-item.is-renaming,
+.explorer-file-item.is-renaming {
+  background: light-dark(
+    color-mix(in srgb, var(--accent-glow) 35%, transparent),
+    hsla(215, 58%, 66%, 0.14)
+  );
+}
+
+.explorer-inline-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0.05rem 0.2rem;
+  border: 1px solid var(--accent-mid);
+  border-radius: 3px;
+  background: light-dark(hsl(220, 10%, 98%), hsl(220, 8%, 12%));
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.explorer-file-item--cfg .explorer-inline-name,
+.explorer-file-item--elf .explorer-inline-name {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.explorer-inline-name.is-invalid {
+  border-color: var(--warn-mid, hsl(0, 52%, 52%));
+  animation: explorer-inline-shake 0.35s ease;
+}
+
+@keyframes explorer-inline-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+.explorer-folder-item,
+.explorer-file-item {
+  flex-shrink: 0;
+  outline: none;
+}
+
+.explorer-folder-item:focus-visible,
+.explorer-file-item:focus-visible {
+  box-shadow: inset var(--focus-ring);
+}
+
+.explorer-folder-item.is-drop-target,
+.explorer-file-item.is-drop-target {
+  background: light-dark(hsla(217, 60%, 50%, 0.09), hsla(215, 60%, 66%, 0.11));
+}
+
+.explorer-folder-item.is-dragging,
+.explorer-file-item.is-dragging {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.tree-dnd-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 5000;
+  pointer-events: none;
+  max-width: 14rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: var(--radius-md);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  box-shadow: var(--shadow-popover);
+  font-size: 0.75rem;
+  font-weight: 520;
+  color: var(--base-highest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.tree-dnd-active {
+  cursor: grabbing;
+  user-select: none;
+}
+
+body.tree-dnd-active .explorer-tree,
+body.tree-dnd-active .explorer-file-item,
+body.tree-dnd-active .explorer-folder-item,
+body.tree-dnd-active .explorer-tree-root-pad {
+  cursor: grabbing;
+}
+
+body.tree-dnd-active.tree-dnd-invalid,
+body.tree-dnd-active.tree-dnd-invalid .explorer-tree,
+body.tree-dnd-active.tree-dnd-invalid .explorer-file-item,
+body.tree-dnd-active.tree-dnd-invalid .explorer-folder-item,
+body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
+  cursor: no-drop;
+}
+
+/* -- Shared type presentation: the "type-of" flourish + syntax highlighting --
+   Used by hover tooltips, the inspector panel, and the pinned inspector window,
+   so every surface renders a term's type identically. */
+
+/* .bel-type is the container; .bel-type-text holds the highlighted type. The
+   leading glyph (∷, a styled supercolon meaning "has type") is decorative — it
+   is NOT literal text, so it never collides with real colons inside the type. */
+.bel-type {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--mono);
+}
+
+/* ── Hole hover (Theme C) ─────────────────────────────────────────────────── */
+/* The `?` mark itself is styled in the IDE-hole block below. The goal type is
+   shown in the hover body (no "Goal:" label — the HOLE head is enough). */
+.beljar-tip-goal {
+  display: flex;
+  align-items: baseline;
+  font-family: var(--mono);
+}
+.beljar-tip-goal .bel-type-text {
+  white-space: pre-wrap;
+}
+.beljar-tip-goal:has(.beljar-tip-goal-pending) .beljar-tip-shimmer {
+  --shimmer-accent: var(--repl-holes-accent);
+}
+/* Hole tooltip goal still reconstructing: the "Recalculating…" shimmer text in the
+   goal slot, replaced in place by the real type when the checker settles. */
+/* The pending goal in the hover tooltip uses the shared shimmer treatment as-is
+   (weighted, dot-led, NOT italic). No per-site overrides — keep it unified. */
+
+.bel-type::before {
+  content: '\2237'; /* ∷ PROPORTION — reads as "has type" */
+  flex: 0 0 auto;
+  font-size: 1.35em;
+  line-height: 1;
+  transform: translateY(0.06em);
+  color: var(--muted-highest);
+  opacity: 0.45;
+  user-select: none;
+}
+
+.bel-type-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bel-type.is-pending::before {
+  opacity: 0.3;
+}
+
+/* Syntax-highlight classes for rendered type strings (bel-type-render.mjs).
+   Mirrors the editor's defaultBelugaHighlightStyle palette (bel-language.mjs),
+   theme-aware via light-dark(). */
+/* `html *` sets --sans with SELECTOR specificity, which beats plain inheritance —
+   without this, every bel-hl-* token silently renders in Inter while the bare
+   text nodes between them (spaces, brackets) take the container's mono, giving
+   mixed-font types whose spacing shifts with the DOM shape. Tokens and the
+   .bel-type-text host must always take the surrounding container's font. */
+.bel-type-text,
+[class^='bel-hl-'],
+[class*=' bel-hl-'] { font-family: inherit; }
+.bel-hl-keyword  { color: light-dark(hsl(221, 82%, 34%), var(--accent-mid)); font-weight: 600; }
+.bel-hl-control  { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); font-weight: 600; }
+.bel-hl-arrow    { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); }
+.bel-hl-op       { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
+.bel-hl-type     { color: light-dark(hsl(268, 70%, 37%), hsl(264, 78%, 74%)); }
+.bel-hl-type-def { color: light-dark(hsl(270, 78%, 32%), hsl(264, 88%, 78%)); font-weight: 600; }
+.bel-hl-metatype { color: light-dark(hsl(195, 64%, 30%), hsl(190, 70%, 74%)); font-weight: 600; }
+.bel-hl-meta     { color: light-dark(hsl(194, 70%, 32%), hsl(190, 76%, 76%)); }
+.bel-hl-var      { color: var(--base-highest); }
+.bel-hl-var-def  { color: light-dark(hsl(220, 88%, 30%), hsl(215, 92%, 82%)); font-weight: 600; }
+.bel-hl-local    { color: light-dark(hsl(272, 64%, 38%), hsl(280, 50%, 80%)); }
+.bel-hl-local-def { color: light-dark(hsl(276, 82%, 33%), hsl(280, 80%, 80%)); font-weight: 600; }
+.bel-hl-ctor     { color: light-dark(hsl(221, 84%, 31%), hsl(215, 92%, 82%)); }
+.bel-hl-number   { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
+.bel-hl-atom     { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
+.bel-hl-hole     { color: var(--ide-hole-border); font-weight: 700; }
+.bel-hl-prop     { color: light-dark(hsl(213, 82%, 34%), hsl(210, 78%, 72%)); }
+.bel-hl-meta-pragma { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
+.bel-hl-punct    { color: light-dark(var(--muted-higher), var(--muted-highest)); }
+.bel-hl-comment  { color: light-dark(hsl(221, 10%, 40%), var(--muted-high)); font-style: italic; }
+
+.bel-hl-source--elf { color: light-dark(hsl(221, 8%, 38%), var(--muted-higher)); }

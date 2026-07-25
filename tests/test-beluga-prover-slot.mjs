@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const src = readFileSync(join(root, 'js', 'beluga-client.js'), 'utf8');
+const src = readFileSync(join(root, 'js', 'beluga', 'beluga-client.js'), 'utf8');
 
 let n = 0;
 function expect(cond, msg) {
@@ -18,6 +18,9 @@ expect(/function beginProverSession/.test(src), 'beginProverSession exists');
 expect(/function endProverSession/.test(src), 'endProverSession exists');
 expect(/checkResultForProver/.test(src), 'checkResultForProver exported');
 expect(/loadProverChecker/.test(src), 'loadProverChecker exported');
+expect(/function dispatchIdeDeclTypeForProver/.test(src), 'prover decl-type dispatcher exists');
+expect(/ideDeclTypeForProver:\s*function/.test(src),
+  'ideDeclTypeForProver registered on the public API (dispatcher alone is unreachable)');
 
 const noteEditorChange = src.slice(src.indexOf('function noteEditorChange'), src.indexOf('function dispatchCheckResult'));
 expect(noteEditorChange.includes('checkerSlot'), 'noteEditorChange still manages checkerSlot');

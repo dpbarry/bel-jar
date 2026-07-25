@@ -1,5 +1,5 @@
 import { EditorState } from '@codemirror/state';
-import { referenceRowMatchesPos } from '../editor-src/bel-refs-panel.mjs';
+import { referenceRowMatchesPos } from '../js/editor-src/ide/refs-panel.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

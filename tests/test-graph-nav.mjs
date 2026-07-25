@@ -2,11 +2,11 @@ import {
   buildNavEntry, createNavState, navPush, navBack, navForward, navGoTo,
   navCurrent, navCanBack, navCanForward, navBreadcrumbLabel, applyNavJump,
   fuzzySearchNodes, graphKeyForEntry, navEntriesEqual,
-} from '../editor-src/graph/graph-nav.mjs';
-import { buildNeighborhood, buildGlobalModel } from '../editor-src/bel-graph-view.mjs';
+} from '../js/editor-src/graph/graph-nav.mjs';
+import { buildNeighborhood, buildGlobalModel } from '../js/editor-src/graph/graph-view.mjs';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

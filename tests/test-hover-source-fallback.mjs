@@ -1,6 +1,6 @@
 import { EditorState } from '@codemirror/state';
-import { resolveHover } from '../editor-src/bel-resolve.mjs';
-import { beluga } from '../editor-src/bel-language.mjs';
+import { resolveHover } from '../js/editor-src/name-resolve.mjs';
+import { beluga } from '../js/editor-src/language.mjs';
 
 const SAMPLE = `% Natural Deduction
 LF o : type =

@@ -1,0 +1,165 @@
+/* -- Coachmark / hint balloons -- */
+
+.hint-root {
+  --hint-bg: light-dark(var(--base-lowest), var(--base-lower));
+  --hint-border: light-dark(var(--muted-mid), var(--base-high));
+  --hint-spout-size: 7px;
+  --hint-duration: 10s;
+  position: fixed;
+  z-index: 10040;
+  max-width: min(17.5rem, calc(100vw - 1.25rem));
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: scale(0.94);
+  transform-origin: left center;
+  transition:
+    transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    opacity calc(var(--overlay-pop-ms-in) * 0.82) ease-out,
+    visibility 0s var(--overlay-pop-ms-in);
+}
+
+.hint-root.is-visible {
+  pointer-events: auto;
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    opacity calc(var(--overlay-pop-ms-in) * 0.82) ease-out,
+    visibility 0s 0s;
+}
+
+.hint-root.is-leaving {
+  pointer-events: none;
+  visibility: visible;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    transform var(--overlay-pop-ms-out) var(--overlay-pop-ease-out),
+    opacity var(--overlay-pop-ms-out) ease-in,
+    visibility 0s var(--overlay-pop-ms-out);
+}
+
+.hint-card {
+  position: relative;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.75rem 0.8rem;
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  color: var(--base-highest);
+  background: var(--hint-bg);
+  border: 1px solid var(--hint-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.hint-card::before {
+  content: '';
+  position: absolute;
+  width: var(--hint-spout-size);
+  height: var(--hint-spout-size);
+  left: calc(var(--hint-spout-size) * -0.55);
+  top: var(--hint-arrow-y, 50%);
+  background: var(--hint-bg);
+  border: 1px solid var(--hint-border);
+  border-right: 0;
+  border-top: 0;
+  transform: translateY(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+.hint-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.hint-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 0.05rem;
+}
+
+.hint-close {
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: -0.15rem -0.2rem 0 0;
+  color: var(--muted-mid);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hint-close:hover {
+    color: var(--base-highest);
+  }
+}
+
+.hint-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 0 0 calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px);
+  pointer-events: none;
+}
+
+.hint-progress-bar {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(1);
+  border-radius: 0 1px 1px 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-mid) 62%, transparent),
+    color-mix(in oklab, var(--accent-high) 78%, var(--accent-mid))
+  );
+  box-shadow:
+    0 0 5px color-mix(in srgb, var(--accent-mid) 22%, transparent),
+    0 0 1px color-mix(in srgb, var(--accent-mid) 32%, transparent);
+}
+
+.hint-root.is-visible .hint-progress-bar {
+  animation: hint-countdown var(--hint-duration) linear forwards;
+}
+
+html.light .hint-progress-bar {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-mid) 48%, transparent),
+    color-mix(in oklab, var(--accent-high) 65%, var(--accent-mid))
+  );
+  box-shadow:
+    0 0 4px color-mix(in srgb, var(--accent-mid) 14%, transparent),
+    0 0 1px color-mix(in srgb, var(--accent-mid) 22%, transparent);
+}
+
+@keyframes hint-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hint-root,
+  .hint-root.is-visible,
+  .hint-root.is-leaving {
+    transform: none;
+    transition: opacity 80ms ease, visibility 0s;
+  }
+
+  .hint-root.is-visible .hint-progress-bar {
+    animation: none;
+    transition: transform var(--hint-duration) linear;
+    transform: scaleX(0);
+  }
+}

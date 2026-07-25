@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -12,19 +13,18 @@ function expect(cond, msg) {
 const here = dirname(fileURLToPath(import.meta.url));
 
 function loadOnWindow(files) {
-  const fakeWindow = {};
   for (const f of files) {
     const src = readFileSync(join(here, '..', f), 'utf8');
     // eslint-disable-next-line no-new-func
-    new Function('window', src)(fakeWindow);
+    new Function(src)();
   }
-  return fakeWindow;
+  return globalThis;
 }
 
-const win = loadOnWindow(['js/name-conflicts.js', 'js/explorer-inline-name.js', 'js/explorer-tree.js']);
-const EX = win.BelJarExplorer;
-const IL = win.BelJarExplorerInlineName;
-const NC = win.BelJarNameConflicts;
+const win = loadOnWindow(['js/ui/name-conflicts.js', 'js/explorer/explorer.js']);
+const EX = win.Explorer;
+const IL = win.ExplorerInlineName;
+const NC = win.NameConflicts;
 
 expect(EX.resolveCreateParentDir({ kind: 'folder', folderPath: 'lib/pkg' }) === 'lib/pkg',
   'folder target → folder path');
@@ -80,7 +80,6 @@ const folderDup = IL.validateFolderCommit('lib', '', FILES, [], null);
 expect(!folderDup.ok, 'duplicate folder rejected');
 
 // persist empty-folder APIs
-const persistSrc = readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8');
 function loadPersist(seed) {
   const store = new Map(Object.entries(seed || {}));
   const localStorage = {
@@ -90,8 +89,8 @@ function loadPersist(seed) {
   };
   const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage });
   ctx.globalThis = ctx;
-  vm.runInContext(persistSrc, ctx);
-  return ctx.BelJarPersist;
+  runPersistStackInContext(ctx);
+  return ctx.Persist;
 }
 
 const P = loadPersist({});

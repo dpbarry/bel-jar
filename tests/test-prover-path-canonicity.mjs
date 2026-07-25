@@ -5,7 +5,7 @@
 // re-accepted at three nesting depths, and junk-fact accumulation faked state
 // novelty past the seen-fingerprint. All shapes below are INVENTED (no corpus
 // names) per the anti-overfit law.
-import { pathBodyBefore, junkFreeSig } from '../editor-src/bel-prover-bridge.mjs';
+import { pathBodyBefore, junkFreeSig } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

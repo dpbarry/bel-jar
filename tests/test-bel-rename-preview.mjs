@@ -2,7 +2,7 @@ import {
   renamePreviewState,
   renameDraftIsInvalid,
   resolveRenameOk,
-} from '../editor-src/bel-rename.mjs';
+} from '../js/editor-src/ide/rename.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

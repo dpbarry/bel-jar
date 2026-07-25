@@ -11,12 +11,12 @@ import {
   candidateMoves,
   recurseTexts,
   theoremUnderProof,
-} from '../editor-src/bel-prover-bridge.mjs';
+} from '../js/editor-src/prover/prover-orchestrator.mjs';
 import {
   fillCandidates,
   paramInvertCandidates,
   schemaInfo,
-} from '../editor-src/bel-hole-split.mjs';
+} from '../js/editor-src/prover/hole-split.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

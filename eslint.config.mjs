@@ -3,10 +3,10 @@ import globals from 'globals';
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   {
-    ignores: ['js/editor-cm.bundle.js'],
+    ignores: ['js/editor-cm.bundle.js', 'js/ui/tooltips.js'],
   },
   {
-    files: ['js/beluga-worker.js'],
+    files: ['js/beluga/beluga-worker.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
@@ -18,8 +18,8 @@ export default [
     },
   },
   {
-    files: ['js/*.js'],
-    ignores: ['js/beluga-worker.js'],
+    files: ['js/**/*.js'],
+    ignores: ['js/beluga/beluga-worker.js', 'js/editor-cm.bundle.js', 'js/ui/tooltips.js', 'js/editor-src/**'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
@@ -41,7 +41,7 @@ export default [
         BelJarSettingsUI: 'readonly',
         BelJarCurrentEditor: 'readonly',
         BelJarEditHistory: 'readonly',
-        BelJarEditHistoryBridge: 'readonly',
+        BelJarEditHistoryInstall: 'readonly',
         LiveIntel: 'readonly',
         BelugaClient: 'readonly',
         RunProgress: 'readonly',
@@ -62,6 +62,7 @@ export default [
         BelJarExplorerSuiteLayout: 'readonly',
         BelJarHeaderSearch: 'readonly',
         BelJarLibrary: 'readonly',
+        BelJarLibraryPreview: 'readonly',
         BelJarLibrarySearch: 'readonly',
         BelJarLibrarySuites: 'readonly',
         BelJarNamePrompt: 'readonly',
@@ -77,7 +78,7 @@ export default [
     },
   },
   {
-    files: ['editor-src/**/*.mjs'],
+    files: ['js/editor-src/**/*.mjs', 'js/ui/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

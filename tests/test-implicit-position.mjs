@@ -1,6 +1,6 @@
 import assert from 'node:assert';
-import { parser } from '../editor-src/beluga-parser.js';
-import { resolveHoverDoc } from '../editor-src/bel-resolve.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { resolveHoverDoc } from '../js/editor-src/name-resolve.mjs';
 import { Text } from '@codemirror/state';
 
 function check(SRC, needle, expected, label, body = false, posFn = null) {

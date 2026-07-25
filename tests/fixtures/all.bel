@@ -1,0 +1,2137 @@
+%{{
+## A mode structure for two languages
+
+Proto-Quipper-A is formed of two languages, a functional and a circuit language, and it is parametrized by a mode structure that governs the use of resources.
+
+We don't actually need to track the language anywhere: tracking modes is sufficient.
+Indeed, a term belongs to the circuit language iff its mode is Q, and otherwise it belongs to the functional language.
+
+We actually mechanize a super-language of Proto-Quipper: the full adjoint system on modes U > L > Q with Q > L, where U is unrestricted, L and Q are linear, and where we reduce under binders in mode Q.
+We do not restrict shifting or tensors.
+We can recover Proto-Quipper-A by considering the relevant sublanguage.
+}}%
+mode : type. --name mode K.
+
+m/u : mode.
+m/l : mode.
+m/q : mode.
+m/c : mode. % runtime
+
+
+%{{
+The mode pre-order is given by the relation `≻`.
+}}%
+% \succ
+≻ : mode → mode → type.
+
+≻/ul : ≻ m/u m/l.
+≻/uq : ≻ m/u m/q.
+≻/lq : ≻ m/l m/q.
+≻/ql : ≻ m/q m/l.
+
+≻/qc : ≻ m/q m/c.
+≻/lc : ≻ m/l m/c.
+≻/uc : ≻ m/u m/c.
+≻/refl : ≻ K K.
+
+%{{
+The following predicate specifies the preordered modes we can directly upshift between.
+In particular, we allow from Q to L and from L to U.
+We need to prevent upshifting from L to Q if we are to maintain the canonical forms theorem.
+}}%
+↑ok : ≻ K K' → type.
+
+↑ok/ul : ↑ok ≻/ul.
+↑ok/lq : ↑ok ≻/lq.
+↑ok/lc : ↑ok ≻/lc.
+
+↓ok : ≻ K K' → type.
+↓ok/lu : ↓ok ≻/ul.
+↓ok/cq : ↓ok ≻/qc.
+
+%{{
+## Types
+
+Types in ProtoQuipper-Adj include explicit shift operators.
+}}%
+tp : mode → type. --name tp A.
+
+% \Bbb{1}, \Bbb{Q}, \otimes, \multimap, \uparrow, \downarrow
+𝟙 : {K:mode} tp K.
+ℚ : tp m/q.
+⊗ : tp K → tp K → tp K.
+⊸ : tp K → tp K → tp K.
+↑ : ↑ok (_ : ≻ K K') → tp K' → tp K.
+↓ : ↓ok (_ : ≻ K K') → tp K → tp K'.
+bit : tp m/c.
+
+
+%{{
+## Terms and mode safety predicates
+
+Terms are intrinsically typed, and the mode safety of free and bound variables are respectively verified by predicates `msf` and `bmsf`.
+
+### Terms
+
+Terms of type `A` inhabit the LF type `tp A`.
+
+The term language involves gate constants `gc`.
+Because the term language is intrinsically typed, we relate gate constants to their input and output types using the relation `goft`.
+A collection of hypotheses of type `gc g A B` corresponds to the signature Σ in the paper.
+}}%
+
+gc : type. --name gc G.
+goft : gc → tp m/q → tp m/q → type.
+
+gc/H : gc.
+goft/H : goft gc/H ℚ ℚ.
+
+tm : {K:mode} tp K → type. --name tm P.
+pat : {K:mode} tp K → {K':mode} tp K' → type. --name pat Pat.
+
+lam : (tm K A → tm K B) → tm K (⊸ A B).
+app : tm K (⊸ A B) → tm K A → tm K B.
+triv : tm K (𝟙 K).
+pair : tm K A → tm K B → tm K (⊗ A B).
+down : {O:↓ok (≻KK' : ≻ K K')} → tm K A → tm K' (↓ O A).
+match : tm K A → pat K A K' B → tm K' B.
+susp : tm _ A → tm _ (↑ _ A).
+force : tm  _ (↑ _ A) → tm _ A.
+gate : goft G A B → tm m/q (⊸ A B).
+meas: tm m/q ℚ → tm m/c bit.
+ifc : tm m/c bit → tm m/c A → tm m/c A → tm m/c A.
+
+%{{
+The first argument to each pattern ensures that any pattern binds variables in a way that respects the independence principle.
+This check is handled inductively by the hypothetical judgments in our paper.
+We must enforce it explicitly, because we are encoding our hypothetical judgments using Beluga's structural function spaces.
+}}%
+pat/unit : tm K' A → pat K (𝟙 K) K' A.
+pat/pair : (tm K A → tm K B → tm K' C) → pat K (⊗ A B) K' C.
+pat/down : {O:↓ok (≻KK' : ≻ K K')}(tm K A → tm K'' B) → pat K' (↓ O A) K'' B.
+
+%{{
+### Mode safety
+
+To ensure mode safety, we define a predicate  `msf : (tm K A → tm K B) → type.` that ensures that a free variable of type `tm K A` is used in a mode safe manner in the term of type `B`.
+To verify the mode safety of bound variables in terms, we define a predicate `bmsf : tm K A → type.` that traverses the structure of a `tm K A`, using `msf` to check each bound variable.
+The definition of `msf` uses an auxiliary judgment `pmsf` that checks that a variable is used safely in a pattern.
+
+Our encoding of `msf` explicitly relies on higher-order unification to ensure that variables are not shared across subterms.
+For example, in the constructor `msf/app/1`, we know by higher-order unification that the term `N` does not depend on `x`, because `N` is implicitly universally quantified outside of the scope of the binder `\x.`
+}}%
+pmsf : (tm Ka A → pat Kb B Kc C) → type.
+msf : (tm Ka A → tm Kb B) → type.
+
+pmsf/unit : msf M
+	    → pmsf (\z. (pat/unit (M z) : pat K (𝟙 K) K' _)).
+pmsf/pair : ({x:tm K _} {y:tm K _} msf (\z. M z x y))
+	    → pmsf (\z. pat/pair (M z)).
+pmsf/down :  ({x:tm K A} msf (\z. M z x))
+	    → pmsf (\z. pat/down _ (\x.M z x)).
+
+
+% Base case for variables of all modes
+msf/var : msf (\x.x).
+
+
+% Base case/escape case for unrestricted variables -- they can be used anywhere
+% without any restriction
+% This rule also absorbs msf/triv, msf/gate; they are special cases of msf/var/U
+msf/var/U : {f:tm m/u A → tm K B} msf f.
+
+
+msf/lam : ({x:tm K _} msf (\y . M y x))
+	  → msf (\y. lam (\x. M y x)).
+
+msf/app/1 : msf M
+	    → msf (\x. app (M x) N).
+msf/app/2 : msf N
+	    → msf (\x. app M (N x)).
+msf/pair/1 : msf M
+	     → msf (\x. pair (M x) N).
+msf/pair/2 : msf N
+	     → msf (\x. pair M (N x)).
+msf/match/1 :    {P: pat K' B K'' C} (≻ K' K'')
+              → msf (M : tm K A → tm K' B)
+	      → msf (\x. match (M x) P).
+msf/match/2 : pmsf P
+	      → msf (\x. match M (P x)).
+msf/down :   msf M
+	   → msf ((\x. down O (M x)) : tm K'' A → tm K' (↓ O B)).
+msf/susp : ≻ K'' K  % A ≫ (↑ _ B) 
+	   → msf M
+	   → msf ((\x. susp (M x)) : tm K'' A → tm K (↑ _ B)).
+msf/force : msf M
+	    → msf (\x. force (M x)).
+msf/meas :   msf M
+	   → msf (\x. meas (M x)).
+msf/ifc1 : msf M → msf (\x. ifc (M x) N R).
+msf/ifc2 : msf N → msf R → msf (\x. ifc M (N x) (R x)).
+
+
+
+%{{
+The predicate `bmsf P` on terms and circuits holds whenever every bound variable in `P` is mode safe.
+Its definition is given by recursing on the structure of `P` and checking each binder using `msf`.
+It relies on an auxiliary definition `bpmsf` for patterns.
+}}%
+
+bmsf : tm K A → type.
+bpmsf : pat Ka A Kb B → type.
+
+bmsf/lam : msf (M : tm K A → tm K B)
+	   → ({x:tm K A}bmsf x → bmsf (M x))
+	   → bmsf (lam M).
+bmsf/app : bmsf M
+	   → bmsf N
+	   → bmsf (app M N).
+bmsf/triv : bmsf triv.
+bmsf/pair : bmsf M
+	    → bmsf N
+	    → bmsf (pair M N).
+bmsf/match : ≻ K K'
+	     → bmsf M
+	     → bpmsf (π : pat K A K' B)
+	     → bmsf (match M π).
+bmsf/down : bmsf (M : tm K A)
+	    → bmsf (down O M).
+bmsf/susp : bmsf (M : tm K A)
+	    → bmsf (susp M : tm K (↑ _ A)).
+bmsf/force : bmsf M
+	     → bmsf (force M).
+bmsf/gate : bmsf (gate _).
+bmsf/meas : bmsf M
+      → bmsf (meas M).
+bmsf/ifc : bmsf M → bmsf N → bmsf R
+     → bmsf (ifc M N R).
+
+bpmsf/pat/unit : bmsf (N : tm K' A)
+		 → bpmsf ((pat/unit N) : pat K (𝟙 K) K' A).
+bpmsf/pat/pair : ({y:tm K B} msf (\x. N x y))
+		 → ({x:tm K A} msf (\y. N x y))
+		 → ({x:tm K A}bmsf x → {y:tm K B}bmsf y → bmsf (N x y))
+		 → bpmsf (pat/pair N).
+bpmsf/pat/down : msf (N : tm K' A → tm K B)
+		  → ({x:tm K' A}bmsf x → bmsf (N x))
+		  → bpmsf (pat/down _ N).
+
+%{{ We encode falsehood using an empty type void. }}%
+void : type.
+
+%{{
+## Dynamics
+
+Each language has its own dynamics.
+The functional language's dynamics are independent of the circuit language's dynamics, while the circuit layer's dynamics depends on the functional language's.
+
+### Normal Forms
+
+The judgments `norm`, `can`, and `neu` are as in the write-up, and specify whether a term is normal, a canonical value, or neutral.
+The auxiliary judgment `pnorm` specifies when the body of a pattern is normal, assuming that any bound variables are neutral.
+}}%
+
+norm : tm K A → type.
+pnorm : pat m/q A Kb B → type.
+can : tm K A → type.
+
+% neutrals are only circuits, making this restriction here helps ensure that
+% our definitions guarantee this property
+neu : tm m/q A  → type.
+
+norm/match : neu R
+	    → pnorm P
+	    → norm (match R P).
+norm/can : can K
+	   → norm K.
+norm/neu : neu R
+	   → norm R.
+
+pnorm/unit : norm N
+	     → pnorm (pat/unit N).
+pnorm/pair : ({x:tm m/q A} neu x → {y:tm m/q B} neu y → norm (N x y))
+	     → pnorm (pat/pair N).
+
+can/triv : can triv.
+can/pair : norm V₁
+	   → norm V₂
+	   → can (pair V₁ V₂).
+can/lam : can (lam V) .
+can/down : norm V
+	   → can (down _ V).
+can/susp : can (susp P).
+can/meas: norm V
+     → can (meas V).
+can/ifc: norm V1 → norm V2 → norm V3 → can (ifc V1 V2 V3).
+
+neu/gate : neu (gate G).
+neu/app/neu : neu R
+	      → neu R'
+	      → neu (app R R').
+neu/app/can : neu R
+	      → can K
+	      → neu (app R K).
+
+
+%{{
+### β-reductions for circuit language
+
+We group all of the commuting conversions at the end.
+The rules are identical for both languages, except that we explicitly check that λx.P is normal in the circuit language because it is not automatic, and we add a rule to reduce under lambdas in the circuit language.
+We node that ↦/app/cc/2/* will only ever apply to circuit terms because only the circuit language has neutral terms.
+}}%
+
+ ↦ :  tm K A → tm K A → type.
+ ▷ : tm Ka A → pat Ka A Kb B → tm Kb B → type.
+
+
+%↦/lam : ({x:tm m/q A} neu x → ↦ (P x) (P' x))
+%	→ ↦ (lam P) (lam P').
+↦/app/1 : ↦ P P'
+	  → ↦ (app P Q) (app P' Q).
+↦/app/2 : norm V
+	  → ↦ Q Q'
+	  → ↦ (app V Q) (app V Q').
+↦/app/beta : norm (lam V)
+	     → norm W
+	     → ↦ (app (lam V) W) (V W).
+↦/app/cc/1/unit : norm (match R (pat/unit V))
+		  → norm W
+		  → ↦ (app (match R (pat/unit V)) W) (match R (pat/unit (app V W))).
+↦/app/cc/1/down : norm (match R (pat/down O V))
+		  → norm W
+		  → ↦ (app (match R (pat/down O V)) W) (match R (pat/down O (\x. app (V x) W))).
+↦/app/cc/1/pair : norm (match R (pat/pair V))
+		  → norm W
+		  → ↦ (app (match R (pat/pair V)) W) (match R (pat/pair (\x.\y. app (V x y) W))).
+↦/app/cc/1/ifc : norm (ifc V1 V2 V3)
+               → norm W
+               → ↦ (app (ifc V1 V2 V3) W) (ifc V1 (app V2 W) (app V3 W)).
+↦/app/cc/2/unit : neu R₁
+		  → norm (match R₂ (pat/unit V))
+		  → ↦ (app R₁ (match R₂ (pat/unit V))) (match R₂ (pat/unit (app R₁ V))).
+
+↦/app/cc/2/pair : neu R₁
+		  → norm (match R₂ (pat/pair V))
+		  → ↦ (app R₁ (match R₂ (pat/pair V))) (match R₂ (pat/pair (\x.\y. app R₁ (V x y)))).
+↦/force : {OK: ↑ok ≻KK'}{C: tm K' A}
+	  ↦ (force
+	      ((susp C) : tm K (↑ OK A)))
+	  C.
+
+↦/force/1 :   ↦ P P'
+	    → ↦  (force P) (force P').
+↦/force/cc/unit : norm (match R (pat/unit V))
+		  → ↦  (force (match R (pat/unit V))) (match R (pat/unit (force V))).
+↦/force/cc/pair : norm (match R (pat/pair V))
+		  → ↦ (force (match R (pat/pair V))) (match R (pat/pair (\x.\y. force (V x y)))).
+↦/pair/1 : ↦  P P'
+	   → ↦  (pair P Q) (pair P' Q).
+↦/pair/2 : norm V
+	   → ↦  P P'
+	   → ↦  (pair V P) (pair V P').
+↦/down : ↦  P P'
+	 → ↦  (down O P) (down O P').
+↦/match : ↦  P P'
+	  → ↦  (match P p) (match P' p).
+↦/match/K : can K
+	    → ▷ K p P
+	    → ↦  (match K p) P.
+↦/match/R/unit : neu R
+		 → ↦ P P'
+		 → ↦ (match R (pat/unit P)) (match R (pat/unit P')).
+↦/match/R/pair : neu R
+		 → ({x:tm m/q A} neu x → {y:tm m/q B} neu y → ↦ (P x y) (P' x y))
+		 → ↦  (match R (pat/pair (\x.\y. P x y))) (match R (pat/pair (\x.\y.P' x y))).
+↦/match/cc/unit : norm (match R (pat/unit P))
+		  → ↦ (match (match R (pat/unit P)) p) (match R (pat/unit (match P p))).
+↦/match/cc/pair : norm (match R (pat/pair P))
+		  → ↦  (match (match R (pat/pair P)) p) (match R (pat/pair (\x.\y. match (P x y) p))).
+↦/meas: ↦ P Q → ↦ (meas P) (meas Q).
+↦/ifc1: ↦ P P' → ↦ (ifc P Q R) (ifc P' Q R).
+↦/ifc2: norm V → ↦ Q Q' → ↦ (ifc V Q R) (ifc V Q' R).
+↦/ifc3: norm V → norm W → ↦ R R' → ↦ (ifc V W R) (ifc V W R').
+
+▷/unit : ▷ triv (pat/unit P) P.
+▷/down : ▷ (down O V) (pat/down O W) (W V).
+▷/pair : ▷ (pair V₁ V₂) (pat/pair W) (W V₁ V₂).
+
+
+% Reflexive/transitive closure of ↦
+↦*: tm K A → tm K A → type.
+↦*/refl: ↦* M M.
+↦*/step: ↦ (M : tm K A) (M' : tm K A) → ↦* M' N → ↦* M N.
+%{{
+### Schemas
+The schema `ctx` gives ordinary contexts, and
+the schema `nctx` gives typed neutral variable contexts.
+}}%
+
+% Note: Removed goft and assume that gates are axiomatically defined elsewhere.
+schema ctx  = some [K:mode, A:tp K] tm K A;
+
+schema nctx = some [A:tp m/q] block (x:tm m/q A, rx:neu x);
+
+% Used for mode-safety related theorems
+schema mctx = some [K:mode, A:tp K] block (x:tm K A, mx:bmsf x)
+            + some [A:tp m/q] block (x:tm m/q A, rx:neu x)
+            + some [A:tp m/q] block (x:tm m/q A, mx:bmsf x, rx:neu x);
+
+
+%{{
+Equality on terms.
+}}%
+
+eq/tm : tm K A → tm K A → type.
+
+eq/tm/i : eq/tm M M.
+
+rec ≻/trans : [⊢ ≻ K1 K2] → [⊢ ≻ K2 K3] → [⊢ ≻ K1 K3] =
+fun x, y ⇒
+case (x, y) of
+  | ([⊢ ≻/ul], [⊢ ≻/lq]) ⇒ [⊢ ≻/uq]
+  | ([⊢ ≻/uq], [⊢ ≻/ql]) ⇒ [⊢ ≻/ul]
+  | ([⊢ ≻/lq], [⊢ ≻/ql]) ⇒ [⊢ ≻/refl]
+  | ([⊢ ≻/ql], [⊢ ≻/lq]) ⇒ [⊢ ≻/refl]
+  | ([⊢ ≻/refl], _) ⇒ y
+  | (_, [⊢ ≻/refl]) ⇒ x
+;
+% Helper/basic Lemmas Regarding Dynamics
+
+% concat↦* : if P ↦* Q and Q ↦* R then P ↦* R
+rec concat↦*: (Ψ:nctx)
+  (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]]) (R:[Ψ ⊢ tm K[] A[]])
+  [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* Q R]
+→ [Ψ ⊢ ↦* P R] =
+/ total 1 /
+fn StepsPQ ⇒ fn StepsQR ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P: tm K[] A[]) P)] ⇒ StepsQR
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (P: tm K[] A[]) W) stepsWQ] ⇒
+    let [Ψ ⊢ stepsWR] = concat↦* [Ψ ⊢ stepsWQ] StepsQR in
+    [Ψ ⊢ ↦*/step stepPW stepsWR]
+;
+
+% down↦* : if P ↦* Q then down P ↦* down Q
+rec down↦*: (Ψ:nctx) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]])
+  {O: [ ⊢ ↓ok (≻KK': ≻ K K')]}
+→ [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (down O[] P) (down O[] Q)] =
+/ total 1 /
+mlam O ⇒ fn StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ ↦*/refl] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step stepPW stepsWQ] ⇒
+    let [Ψ ⊢ stepsdWdQ] = down↦* [ ⊢ O] [Ψ ⊢ stepsWQ] in
+    [Ψ ⊢ ↦*/step (↦/down stepPW) stepsdWdQ]
+;
+
+% force↦* : if P ↦* Q then force P ↦* force Q
+rec force↦*: (Ψ:nctx)  (A : [⊢ tp K']) (OK: [ ⊢ ↑ok (≻KK': ≻ K K')])
+(P:[Ψ ⊢ tm K[] (↑ OK[] A[])]) (Q:[Ψ ⊢ tm K[] (↑ OK[] A[])])
+  [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (force P) (force Q)] =
+/ total 1 /
+fn StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P: tm _ A[]) P)] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (P: tm _  A[]) W) stepsWQ] ⇒
+    let [Ψ ⊢ stepsdWdQ] = force↦* [Ψ ⊢ stepsWQ] in
+    [Ψ ⊢ ↦*/step (↦/force/1 stepPW) stepsdWdQ]
+;
+
+% meas↦* : if P ↦* Q then meas P ↦* meas Q
+rec meas↦*: (Ψ:nctx) (P:[Ψ ⊢ tm m/q ℚ]) (Q:[Ψ ⊢ tm m/q ℚ])
+  [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (meas P) (meas Q)] =
+/ total 1 /
+fn StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ ↦*/refl] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step stepPW stepsWQ] ⇒
+    let [Ψ ⊢ stepsmWmQ] = meas↦* [Ψ ⊢ stepsWQ] in
+    [Ψ ⊢ ↦*/step (↦/meas stepPW) stepsmWmQ]
+;
+
+% ifc1↦* : if P ↦* P' then ifc P Q R ↦* ifc P' Q R for any Q, R
+rec ifc1↦*: (Ψ:nctx) (P:[Ψ ⊢ tm m/c bit]) (P':[Ψ ⊢ tm m/c bit])
+  [Ψ ⊢ ↦* P P']
+→ {Q:[Ψ ⊢ tm m/c A[]]} {R:[Ψ ⊢ tm m/c A[]]}
+  [Ψ ⊢ ↦* (ifc P Q R) (ifc P' Q R)] =
+/ total 1 /
+fn StepsPP' ⇒ mlam Q R ⇒ case StepsPP' of
+  | [Ψ ⊢ ↦*/refl] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step stepPP'' stepsP''P'] ⇒
+    let [Ψ ⊢ stepsifcP''P'] = ifc1↦* [Ψ ⊢ stepsP''P'] [Ψ ⊢ Q] [Ψ ⊢ R] in
+    [Ψ ⊢ ↦*/step (↦/ifc1 stepPP'') stepsifcP''P']
+;
+
+% ifc2↦*: if P norm and Q ↦* Q' then ifc P Q R ↦* ifc P Q' R for any R
+rec ifc2↦*: (Ψ:nctx) 
+  {P:[Ψ ⊢ tm m/c bit]}[Ψ ⊢ norm P]
+→ [Ψ ⊢ ↦* Q Q']
+→ {R:[Ψ ⊢ tm m/c A[]]}
+  [Ψ ⊢ ↦* (ifc P Q R) (ifc P Q' R)] =
+/ total 3 /
+mlam P ⇒ fn NormP StepsQQ' ⇒ mlam R ⇒ case StepsQQ' of
+  | [Ψ ⊢ ↦*/refl] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step stepQQ'' stepsQ''Q'] ⇒
+    let [Ψ ⊢ stepsifcQ''Q'] = ifc2↦* [Ψ ⊢ P] NormP [Ψ ⊢ stepsQ''Q'] [Ψ ⊢ R] in
+    let [Ψ ⊢ normP] = NormP in
+    [Ψ ⊢ ↦*/step (↦/ifc2 normP stepQQ'') stepsifcQ''Q']
+;
+
+% ifc3↦*: if P norm and Q norm and R ↦* R' then ifc P Q R ↦* ifc P Q R'
+rec ifc3↦*: (Ψ:nctx) 
+  {P:[Ψ ⊢ tm m/c bit]}[Ψ ⊢ norm P]
+→ {Q:[Ψ ⊢ tm m/c A[]]}[Ψ ⊢ norm Q]
+→ [Ψ ⊢ ↦* R R']
+→ [Ψ ⊢ ↦* (ifc P Q R) (ifc P Q R')] =
+/ total 5 /
+mlam P ⇒ fn NormP ⇒ mlam Q ⇒ fn NormQ StepsRR' ⇒ case StepsRR' of
+  | [Ψ ⊢ ↦*/refl] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step stepRR'' stepsR''R'] ⇒
+    let [Ψ ⊢ stepsifcR''R'] = ifc3↦* [Ψ ⊢ P] NormP [Ψ ⊢ Q] NormQ [Ψ ⊢ stepsR''R'] in
+    let [Ψ ⊢ normP] = NormP in
+    let [Ψ ⊢ normQ] = NormQ in
+    [Ψ ⊢ ↦*/step (↦/ifc3 normP normQ stepRR'') stepsifcR''R']
+;
+
+
+% pair1↦* : if P ↦* Q then pair P S ↦* down Q S for any S
+rec pair1↦*: (Ψ:nctx)
+  (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]]) {S:[Ψ ⊢ tm K[] B[]]}
+  [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (pair P S) (pair Q S)] =
+/ total 2 /
+mlam S ⇒ fn StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] A[]) P)] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (P: tm K[] A[]) W) stepsWQ] ⇒
+    let [Ψ ⊢ stepspWQ] = pair1↦* [Ψ ⊢ S] [Ψ ⊢ stepsWQ] in
+    [Ψ ⊢ ↦*/step (↦/pair/1 stepPW) stepspWQ]
+;
+
+% pair2↦* : if P ↦* Q then pair V P ↦* pair V Q for any V such that V norm
+rec pair2↦*: (Ψ:nctx)
+  {V:[Ψ ⊢ tm K[] A[]]} (P:[Ψ ⊢ tm K[] B[]]) (Q:[Ψ ⊢ tm K[] B[]])
+  [Ψ ⊢ norm V]
+→ [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (pair V P) (pair V Q)] =
+/ total 3 /
+mlam V ⇒ fn NormV StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] B[]) P)] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (P: tm K[] B[]) W) stepsWQ] ⇒
+    let [Ψ ⊢ stepspWQ] = pair2↦* [Ψ ⊢ V] NormV [Ψ ⊢ stepsWQ] in
+    let [Ψ ⊢ normV] = NormV in
+    [Ψ ⊢ ↦*/step (↦/pair/2 normV stepPW) stepspWQ]
+;
+
+% match1↦* : if P ↦* Q then match P π ↦* match Q π for any pattern π
+rec match1↦*: (Ψ:nctx)
+  (P:[Ψ ⊢ tm K[] C[]]) (Q:[Ψ ⊢ tm K[] C[]])
+  {π:[Ψ ⊢ pat K[] C[] K'[] D[]]}
+  [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (match P π) (match Q π)] =
+/ total 2 /
+mlam π ⇒ fn StepsPQ ⇒ case StepsPQ of
+| [Ψ ⊢ ↦*/refl] ⇒ [Ψ ⊢ ↦*/refl]
+| [Ψ ⊢ ↦*/step stepPW stepsWQ] ⇒
+  let [Ψ ⊢ stepsmWQ] = match1↦* [Ψ ⊢ π] [Ψ ⊢ stepsWQ] in
+  [Ψ ⊢ ↦*/step (↦/match stepPW) stepsmWQ]
+;
+
+% matchRunit↦* : if P ↦* Q then match R (pat/unit P) ↦* match R (pat/unit Q) for any neu R
+rec matchRunit↦*: (Ψ:nctx)
+  (P:[Ψ ⊢ tm K[] C[]]) (Q:[Ψ ⊢ tm K[] C[]])
+  {R:[Ψ ⊢ tm m/q (𝟙 m/q)]} [Ψ ⊢ neu R]
+→ [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (match R (pat/unit P)) (match R (pat/unit Q))] =
+/ total 3 /
+mlam R ⇒ fn NeuR StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] C[]) P)] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (P: tm K[] C[]) W) stepsWQ] ⇒
+    let [Ψ ⊢ stepsmWQ] = matchRunit↦* [Ψ ⊢ R] NeuR [Ψ ⊢ stepsWQ] in
+    let [Ψ ⊢ neuR] = NeuR in
+    [Ψ ⊢ ↦*/step (↦/match/R/unit neuR stepPW) stepsmWQ]
+;
+
+
+% matchRpair↦* : if (\x.y. (P x y ↦* Q x y)) then match R (pat/pair P) ↦* match R (pat/pair Q) for any neu R
+rec matchRpair↦*: (Ψ:nctx)
+  (P:[Ψ, x:tm m/q A[], y:tm m/q B[] ⊢ tm K[] C[]])
+  (Q:[Ψ, x:tm m/q A[], y:tm m/q B[] ⊢ tm K[] C[]])
+  {R:[Ψ ⊢ tm m/q (⊗ A[] B[])]} [Ψ ⊢ neu R]
+→ [Ψ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y)
+    ⊢ ↦* P[.., blx.1, bly.1] Q[.., blx.1, bly.1]]
+→ [Ψ ⊢ ↦* (match R (pat/pair (\x.\y.P))) (match R (pat/pair (\x.\y.Q)))] =
+/ total 3 /
+mlam R ⇒ fn NeuR StepsPQ ⇒ case StepsPQ of
+| [_, blx:block(x:tm m/q _, nx:neu x), bly:block(y:tm m/q _, ny:neu y) ⊢ ↦*/refl] ⇒
+  [_ ⊢ ↦*/refl]
+| [_, blx:block(x:tm m/q _, nx:neu x), bly:block(y:tm m/q _, ny:neu y) ⊢ ↦*/step stepPW stepsWQ] ⇒
+  let [_ ⊢ stepsmWQ] = matchRpair↦* [_ ⊢ R] NeuR [_, blx:block(x:tm m/q _, nx:neu x), bly:block(y:tm m/q _, ny:neu y)
+    ⊢ stepsWQ] in
+  let [_ ⊢ neuR] = NeuR in
+  [_ ⊢ ↦*/step (↦/match/R/pair neuR (\x.\nx.\y.\ny.stepPW[.., <x;nx>, <y;ny>])) stepsmWQ]
+;
+
+% app1↦* : if P ↦* Q then app P S ↦* down Q S for any S
+rec app1↦*: (Ψ:nctx)
+  (P:[Ψ ⊢ tm K[] (⊸ A[] B[])]) (Q:[Ψ ⊢ tm K[] (⊸ A[] B[])]) {S:[Ψ ⊢ tm K[] A[]]}
+  [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (app P S) (app Q S)] =
+/ total 2 /
+mlam S ⇒ fn StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] A[]) P)] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (P: tm K[] A[]) W) stepsWQ] ⇒
+    let [Ψ ⊢ stepspWQ] = app1↦* [Ψ ⊢ S] [Ψ ⊢ stepsWQ] in
+    [Ψ ⊢ ↦*/step (↦/app/1 stepPW) stepspWQ]
+;
+
+% app2↦* : if P ↦* Q then app V P ↦* app V Q for any V such that V norm
+rec app2↦*: (Ψ:nctx)
+  {V:[Ψ ⊢ tm K[] (⊸ A[] B[])]} (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]])
+  [Ψ ⊢ norm V]
+→ [Ψ ⊢ ↦* P Q]
+→ [Ψ ⊢ ↦* (app V P) (app V Q)] =
+/ total 3 /
+mlam V ⇒ fn NormV StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] B[]) P)] ⇒ [Ψ ⊢ ↦*/refl]
+  | [Ψ ⊢ ↦*/step (stepPW: ↦ (P: tm K[] B[]) W) stepsWQ] ⇒
+    let [Ψ ⊢ stepspWQ] = app2↦* [Ψ ⊢ V] NormV [Ψ ⊢ stepsWQ] in
+    let [Ψ ⊢ normV] = NormV in
+    [Ψ ⊢ ↦*/step (↦/app/2 normV stepPW) stepspWQ]
+;
+
+rec not-neu-can : (Ψ : nctx) (P : [Ψ ⊢ tm m/q A[]])
+		  [Ψ ⊢ neu P] → [Ψ ⊢ can P] → [Ψ ⊢ void] =
+/ total 1 /
+fn neuP canP ⇒
+case neuP of
+  | [Ψ ⊢ #p.2] ⇒ impossible canP
+  | [Ψ ⊢ neu/gate] ⇒ impossible canP
+  | [Ψ ⊢ neu/app/neu neuR1 neuR2] ⇒ impossible canP
+  | [Ψ ⊢ neu/app/can neuR1 canR2] ⇒ impossible canP
+;
+
+
+% Lemmas Used in Preservation Proof
+
+% Strengthening of reductions
+% If P steps to Q and x does not appear in Q, then there exists a term
+% Q' where x does not appear such that Q = Q' and P steps to Q'
+
+% Encode existential
+inductive StrStep : (Δ: mctx)
+  {P: [Δ ⊢ tm K[] A[]]}{Q: [Δ, z:tm K'[] C[] ⊢ tm K[] A[]]} ctype =
+| SS/c : {Q' : [Δ ⊢ tm K[] A[]]}
+       → [Δ , x:tm K'[] C[] ⊢ eq/tm Q Q'[..]]
+       → [Δ ⊢ ↦ P Q']
+       → StrStep [Δ ⊢ P] [Δ, x:tm K'[] C[] ⊢ Q]
+;
+
+rec str_norm : (Δ:mctx) (V: [Δ ⊢ tm K[] A[]])
+  [Δ , z:tm K'[] C[] ⊢ norm V[..]]
+→ [Δ ⊢ norm V] =
+%/ total 1 /
+fn NormV ⇒ case NormV of
+| [_, z:tm _ _ ⊢ norm/match neuR (pnorm/unit normN)] ⇒
+  let [_ ⊢ neuR'] = str_neu [_ , z:tm _ _ ⊢ neuR] in
+  let [_ ⊢ normN'] = str_norm [_ , z:tm _ _ ⊢ normN] in
+  [_ ⊢ norm/match neuR' (pnorm/unit normN')]
+| [_, z:tm _ _ ⊢ norm/match neuR (pnorm/pair (\x.\nx.\y.\ny. normN[..,x,nx,y,ny,z]))] ⇒
+  let [_ ⊢ neuR'] = str_neu [_ , z:tm _ _ ⊢ neuR] in
+  let [_, b1:block (x:tm m/q _, nx:neu x), b2:block (y:tm m/q _, ny:neu y) ⊢ normN'] =
+    str_norm [_, b1:block (x:tm m/q _, nx:neu x), b2:block (y:tm m/q _, ny:neu y), z:tm _ _ ⊢ normN[.., b1.1, b1.2, b2.1, b2.2, z]] in
+  [_ ⊢ norm/match neuR' (pnorm/pair (\x.\nx.\y.\ny. normN'[.., <x;nx>, <y;ny>]))]
+| [_, z:tm _ _ ⊢ norm/can canP] ⇒
+  let [_ ⊢ canP'] = str_can [_ , z:tm _ _ ⊢ canP] in
+  [_ ⊢ norm/can canP']
+| [_, z:tm _ _ ⊢ norm/neu neuR] ⇒
+  let [_ ⊢ neuR'] = str_neu [_ , z:tm _ _ ⊢ neuR] in
+  [_ ⊢ norm/neu neuR']
+and rec str_neu : (Δ:mctx) (R: [Δ ⊢ tm m/q A[]])
+  [Δ , z:tm K'[] C[] ⊢ neu R[..]]
+→ [Δ ⊢ neu R] =
+%/ total 1 /
+% Unfortunately, totality cannot be checked due to the presence of multiple
+% potential parameters in the definition of our context
+fn NeuR ⇒ case NeuR of
+| [_, z:tm _ _ ⊢ #p.3[..]] ⇒ [_ ⊢ #p.3]
+%| {#p:#[_ ⊢ block (x:tm m/q _, nx:neu x)]} [_, z:tm _ _ ⊢ #p.2[..]] ⇒ [_ ⊢ #p.2]
+| [_, z:tm _ _ ⊢ neu/gate] ⇒ [_ ⊢ neu/gate]
+| [_, z:tm _ _ ⊢ neu/app/neu neuR1 neuR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu [_ , z:tm _ _ ⊢ neuR1] in
+  let [_ ⊢ neuR2'] = str_neu [_ , z:tm _ _ ⊢ neuR2] in
+  [_ ⊢ neu/app/neu neuR1' neuR2']
+| [_, z:tm _ _ ⊢ neu/app/can neuR1 canR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu [_ , z:tm _ _ ⊢ neuR1] in
+  let [_ ⊢ canR2'] = str_can [_ , z:tm _ _ ⊢ canR2] in
+  [_ ⊢ neu/app/can neuR1' canR2']
+and rec str_can : (Δ:mctx) (P: [Δ ⊢ tm K[] A[]])
+  [Δ , z:tm K'[] C[] ⊢ can P[..]]
+→ [Δ ⊢ can P] =
+%/ total 1 /
+fn CanP ⇒ case CanP of
+| [_, z:tm _ _ ⊢ can/triv] ⇒ [_ ⊢ can/triv]
+| [_, z:tm _ _ ⊢ can/pair normV1 normV2] ⇒
+  let [_ ⊢ normV1'] = str_norm [_ , z:tm _ _ ⊢ normV1] in
+  let [_ ⊢ normV2'] = str_norm [_ , z:tm _ _ ⊢ normV2] in
+  [_ ⊢ can/pair normV1' normV2']
+| [_, z:tm _ _ ⊢ can/lam] ⇒ [_ ⊢ can/lam]
+| [_, z:tm _ _ ⊢ can/down normV] ⇒
+  let [_ ⊢ normV'] = str_norm [_, z:tm _ _ ⊢ normV] in
+  [_ ⊢ can/down normV']
+| [_, z:tm _ _ ⊢ can/susp] ⇒ [_ ⊢ can/susp]
+| [_, z:tm _ _ ⊢ can/meas normV] ⇒
+  let [_ ⊢ normV'] = str_norm [_, z:tm _ _ ⊢ normV] in
+  [_ ⊢ can/meas normV']
+| [_, z:tm _ _ ⊢ can/ifc normV1 normV2 normV3] ⇒
+  let [_ ⊢ normV1'] = str_norm [_, z:tm _ _ ⊢ normV1] in
+  let [_ ⊢ normV2'] = str_norm [_, z:tm _ _ ⊢ normV2] in
+  let [_ ⊢ normV3'] = str_norm [_, z:tm _ _ ⊢ normV3] in
+  [_ ⊢ can/ifc normV1' normV2' normV3']
+;
+
+rec str_step : (Δ:mctx) (P: [Δ ⊢ tm K[] A[]]) (Q: [Δ, z:tm K'[] C[] ⊢ tm K[] A[]])
+  [Δ, z:tm K'[] C[] ⊢ ↦ P[..] Q]
+→ StrStep [Δ ⊢ P] [Δ, z:tm K'[] C[] ⊢ Q] =
+/ total 1 /
+fn StepPQ ⇒ case StepPQ of
+| [_, z:tm _ _ ⊢ ↦/app/1 stepP'Q'] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'Q''] =
+    str_step [_, z:tm _ _ ⊢ stepP'Q'] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/1 stepP'Q'']
+| [_, z:tm _ _ ⊢ ↦/app/2 normV stepQ'R'] ⇒
+  let [_ ⊢ normV'] = str_norm [_, z:tm _ _ ⊢ normV] in
+  let SS/c [_ ⊢ R''] [_ ⊢ eq/tm/i] [_ ⊢ stepQ'R''] =
+    str_step [_, z:tm _ _ ⊢ stepQ'R'] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/2 normV' stepQ'R'']
+| [_, z:tm _ _ ⊢ ↦/app/beta normLamV normW] ⇒
+  let [_ ⊢ normLamV'] = str_norm [_, z:tm _ _ ⊢ normLamV] in
+  let [_ ⊢ normW'] = str_norm [_, z:tm _ _ ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/beta normLamV' normW']
+| [_, z:tm _ _ ⊢ ↦/app/cc/1/unit normMatchR normW] ⇒
+  let [_ ⊢ normMatchR'] = str_norm [_, z:tm _ _ ⊢ normMatchR] in
+  let [_ ⊢ normW'] = str_norm [_, z:tm _ _ ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/unit normMatchR' normW']
+| [_, z:tm _ _ ⊢ ↦/app/cc/1/down normMatchR normW] ⇒
+  let [_ ⊢ normMatchR'] = str_norm [_, z:tm _ _ ⊢ normMatchR] in
+  let [_ ⊢ normW'] = str_norm [_, z:tm _ _ ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/down normMatchR' normW']
+| [_, z:tm _ _ ⊢ ↦/app/cc/1/pair normMatchR normW] ⇒
+  let [_ ⊢ normMatchR'] = str_norm [_, z:tm _ _ ⊢ normMatchR] in
+  let [_ ⊢ normW'] = str_norm [_, z:tm _ _ ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/pair normMatchR' normW']
+| [_, z:tm _ _ ⊢ ↦/app/cc/1/ifc normIf normW] ⇒
+  let [_ ⊢ normIf'] = str_norm [_, z:tm _ _ ⊢ normIf] in
+  let [_ ⊢ normW'] = str_norm [_, z:tm _ _ ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/ifc normIf' normW']
+| [_, z:tm _ _ ⊢ ↦/app/cc/2/unit neuR1 normMatchR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu [_, z:tm _ _ ⊢ neuR1] in
+  let [_ ⊢ normMatchR2'] = str_norm [_, z:tm _ _ ⊢ normMatchR2] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/2/unit neuR1' normMatchR2']
+| [_, z:tm _ _ ⊢ ↦/app/cc/2/pair neuR1 normMatchR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu [_, z:tm _ _ ⊢ neuR1] in
+  let [_ ⊢ normMatchR2'] = str_norm [_, z:tm _ _ ⊢ normMatchR2] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/2/pair neuR1' normMatchR2']
+| [_, z:tm _ _ ⊢ ↦/force OK[] C[..]] ⇒
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force OK[] C[..]]
+| [_, z:tm _ _ ⊢ ↦/force/1 stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step [_, z:tm _ _ ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force/1 stepP'P''']
+| [_, z:tm _ _ ⊢ ↦/force/cc/unit normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm [_, z:tm _ _ ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force/cc/unit normMatchR']
+| [_, z:tm _ _ ⊢ ↦/force/cc/pair normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm [_, z:tm _ _ ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force/cc/pair normMatchR']
+| [_, z:tm _ _ ⊢ ↦/pair/1 stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step [_, z:tm _ _ ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/pair/1 stepP'P''']
+| [_, z:tm _ _ ⊢ ↦/pair/2 normV stepP'P''] ⇒
+  let [_ ⊢ normV'] = str_norm [_, z:tm _ _ ⊢ normV] in
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step [_, z:tm _ _ ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/pair/2 normV' stepP'P''']
+| [_, z:tm _ _ ⊢ ↦/down stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step [_, z:tm _ _ ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/down stepP'P''']
+| [_, z:tm _ _ ⊢ ↦/match stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step [_, z:tm _ _ ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match stepP'P''']
+| [_, z:tm _ _ ⊢ ↦/match/K canV ▷/unit] ⇒
+  let [_ ⊢ canV'] = str_can [_, z:tm _ _ ⊢ canV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/K canV' ▷/unit]
+| [_, z:tm _ _ ⊢ ↦/match/K canV ▷/down] ⇒
+  let [_ ⊢ canV'] = str_can [_, z:tm _ _ ⊢ canV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/K canV' ▷/down]
+| [_, z:tm _ _ ⊢ ↦/match/K canV ▷/pair] ⇒
+  let [_ ⊢ canV'] = str_can [_, z:tm _ _ ⊢ canV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/K canV' ▷/pair]
+| [_, z:tm _ _ ⊢ ↦/match/R/unit neuR stepP'P''] ⇒
+  let [_ ⊢ neuR'] = str_neu [_, z:tm _ _ ⊢ neuR] in
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step [_, z:tm _ _ ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/R/unit neuR' stepP'P''']
+| [_, z:tm _ _ ⊢ ↦/match/R/pair neuR (\x.\nx.\y.\ny.stepP'P''[..,x,nx,y,ny,z])] ⇒
+  let [_ ⊢ neuR'] = str_neu [_, z:tm _ _ ⊢ neuR] in
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step [_, blx:block(x:tm _ _, nx:neu x), bly:block(y:tm _ _, ny:neu y),
+              z:tm _ _ ⊢ stepP'P''[..,blx.1,blx.2,bly.1,bly.2,z]] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/R/pair neuR' (\x.\nx.\y.\ny.stepP'P'''[.., <x;nx>, <y;ny>])]
+| [_, z:tm _ _ ⊢ ↦/match/cc/unit normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm [_, z:tm _ _ ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/cc/unit normMatchR']
+| [_, z:tm _ _ ⊢ ↦/match/cc/pair normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm [_, z:tm _ _ ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/cc/pair normMatchR']
+| [_, z:tm _ _ ⊢ ↦/meas stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step [_, z:tm _ _ ⊢ stepPQ] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/meas stepPQ']
+| [_, z:tm _ _ ⊢ ↦/ifc1 stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step [_, z:tm _ _ ⊢ stepPQ] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/ifc1 stepPQ']
+| [_, z:tm _ _ ⊢ ↦/ifc2 normV stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step [_, z:tm _ _ ⊢ stepPQ] in
+  let [_ ⊢ normV'] = str_norm [_, z:tm _ _ ⊢ normV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/ifc2 normV' stepPQ']
+| [_, z:tm _ _ ⊢ ↦/ifc3 normV normW stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step [_, z:tm _ _ ⊢ stepPQ] in
+  let [_ ⊢ normV'] = str_norm [_, z:tm _ _ ⊢ normV] in
+  let [_ ⊢ normW'] = str_norm [_, z:tm _ _ ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/ifc3 normV' normW' stepPQ']
+;
+
+% str_* that also removes neutrality
+rec str_norm2 : (Δ:mctx) (V: [Δ ⊢ tm K[] A[]])
+  [Δ , z:tm m/q C[], nz:neu z ⊢ norm V[..]]
+→ [Δ ⊢ norm V] =
+%/ total 1 /
+fn NormV ⇒ case NormV of
+| [_, z:tm m/q _, nz:neu z ⊢ norm/match neuR (pnorm/unit normN)] ⇒
+  let [_ ⊢ neuR'] = str_neu2 [_ , z:tm m/q _, nz:neu z ⊢ neuR] in
+  let [_ ⊢ normN'] = str_norm2 [_ , z:tm m/q _, nz:neu z ⊢ normN] in
+  [_ ⊢ norm/match neuR' (pnorm/unit normN')]
+| [_, z:tm m/q _, nz:neu z ⊢ norm/match neuR (pnorm/pair (\x.\nx.\y.\ny. normN[..,x,nx,y,ny,z,nz]))] ⇒
+  let [_ ⊢ neuR'] = str_neu2 [_ , z:tm m/q _, nz:neu z ⊢ neuR] in
+  let [_, b1:block (x:tm m/q _, nx:neu x), b2:block (y:tm m/q _, ny:neu y) ⊢ normN'] =
+    str_norm2 [_, b1:block (x:tm m/q _, nx:neu x), b2:block (y:tm m/q _, ny:neu y), z:tm m/q _, nz:neu z ⊢ normN[.., b1.1, b1.2, b2.1, b2.2, z, nz]] in
+  [_ ⊢ norm/match neuR' (pnorm/pair (\x.\nx.\y.\ny. normN'[.., <x;nx>, <y;ny>]))]
+| [_, z:tm m/q _, nz:neu z ⊢ norm/can canP] ⇒
+  let [_ ⊢ canP'] = str_can2 [_ , z:tm m/q _, nz:neu z ⊢ canP] in
+  [_ ⊢ norm/can canP']
+| [_, z:tm m/q _, nz:neu z ⊢ norm/neu neuR] ⇒
+  let [_ ⊢ neuR'] = str_neu2 [_ , z:tm m/q _, nz:neu z ⊢ neuR] in
+  [_ ⊢ norm/neu neuR']
+and rec str_neu2 : (Δ:mctx) (R: [Δ ⊢ tm m/q A[]])
+  [Δ , z:tm m/q C[], nz:neu z ⊢ neu R[..]]
+→ [Δ ⊢ neu R] =
+%/ total 1 /
+% Unfortunately, totality cannot be checked due to the presence of multiple
+% potential parameters in the definition of our context
+fn NeuR ⇒ case NeuR of
+| [_, z:tm m/q _, nz:neu z ⊢ #p.3[..]] ⇒ [_ ⊢ #p.3]
+%| {#p:#[_ ⊢ block (x:tm m/q _, nx:neu x)]} [_, z:tm m/q _, nz:neu z ⊢ #p.2[..]] ⇒ [_ ⊢ #p.2]
+| [_, z:tm m/q _, nz:neu z ⊢ neu/gate] ⇒ [_ ⊢ neu/gate]
+| [_, z:tm m/q _, nz:neu z ⊢ neu/app/neu neuR1 neuR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu2 [_ , z:tm m/q _, nz:neu z ⊢ neuR1] in
+  let [_ ⊢ neuR2'] = str_neu2 [_ , z:tm m/q _, nz:neu z ⊢ neuR2] in
+  [_ ⊢ neu/app/neu neuR1' neuR2']
+| [_, z:tm m/q _, nz:neu z ⊢ neu/app/can neuR1 canR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu2 [_ , z:tm m/q _, nz:neu z ⊢ neuR1] in
+  let [_ ⊢ canR2'] = str_can2 [_ , z:tm m/q _, nz:neu z ⊢ canR2] in
+  [_ ⊢ neu/app/can neuR1' canR2']
+and rec str_can2 : (Δ:mctx) (P: [Δ ⊢ tm K[] A[]])
+  [Δ , z:tm m/q C[], nz:neu z ⊢ can P[..]]
+→ [Δ ⊢ can P] =
+%/ total 1 /
+fn CanP ⇒ case CanP of
+| [_, z:tm m/q _, nz:neu z ⊢ can/triv] ⇒ [_ ⊢ can/triv]
+| [_, z:tm m/q _, nz:neu z ⊢ can/pair normV1 normV2] ⇒
+  let [_ ⊢ normV1'] = str_norm2 [_ , z:tm m/q _, nz:neu z ⊢ normV1] in
+  let [_ ⊢ normV2'] = str_norm2 [_ , z:tm m/q _, nz:neu z ⊢ normV2] in
+  [_ ⊢ can/pair normV1' normV2']
+| [_, z:tm m/q _, nz:neu z ⊢ can/lam] ⇒ [_ ⊢ can/lam]
+| [_, z:tm m/q _, nz:neu z ⊢ can/down normV] ⇒
+  let [_ ⊢ normV'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normV] in
+  [_ ⊢ can/down normV']
+| [_, z:tm m/q _, nz:neu z ⊢ can/susp] ⇒ [_ ⊢ can/susp]
+;
+
+rec str_step2 : (Δ:mctx) (P: [Δ ⊢ tm K[] A[]]) (Q: [Δ, z:tm m/q C[] ⊢ tm K[] A[]])
+  [Δ, z:tm m/q C[], nz:neu z ⊢ ↦ P[..] Q[.., z]]
+→ StrStep [Δ ⊢ P] [Δ, z:tm m/q C[] ⊢ Q] =
+/ total 1 /
+fn StepPQ ⇒ case StepPQ of
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/1 stepP'Q'] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'Q''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepP'Q'] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/1 stepP'Q'']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/2 normV stepQ'R'] ⇒
+  let [_ ⊢ normV'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normV] in
+  let SS/c [_ ⊢ R''] [_ ⊢ eq/tm/i] [_ ⊢ stepQ'R''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepQ'R'] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/2 normV' stepQ'R'']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/beta normLamV normW] ⇒
+  let [_ ⊢ normLamV'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normLamV] in
+  let [_ ⊢ normW'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/beta normLamV' normW']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/cc/1/unit normMatchR normW] ⇒
+  let [_ ⊢ normMatchR'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR] in
+  let [_ ⊢ normW'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/unit normMatchR' normW']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/cc/1/down normMatchR normW] ⇒
+  let [_ ⊢ normMatchR'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR] in
+  let [_ ⊢ normW'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/down normMatchR' normW']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/cc/1/pair normMatchR normW] ⇒
+  let [_ ⊢ normMatchR'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR] in
+  let [_ ⊢ normW'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/pair normMatchR' normW']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/cc/1/ifc normIf normW] ⇒
+  let [_ ⊢ normIf'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normIf] in
+  let [_ ⊢ normW'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/1/ifc normIf' normW']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/cc/2/unit neuR1 normMatchR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu2 [_, z:tm m/q _, nz:neu z ⊢ neuR1] in
+  let [_ ⊢ normMatchR2'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR2] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/2/unit neuR1' normMatchR2']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/app/cc/2/pair neuR1 normMatchR2] ⇒
+  let [_ ⊢ neuR1'] = str_neu2 [_, z:tm m/q _, nz:neu z ⊢ neuR1] in
+  let [_ ⊢ normMatchR2'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR2] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/app/cc/2/pair neuR1' normMatchR2']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/force OK[] C[..]] ⇒
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force OK[] C[..]]
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/force/1 stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force/1 stepP'P''']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/force/cc/unit normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force/cc/unit normMatchR']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/force/cc/pair normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/force/cc/pair normMatchR']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/pair/1 stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/pair/1 stepP'P''']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/pair/2 normV stepP'P''] ⇒
+  let [_ ⊢ normV'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normV] in
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/pair/2 normV' stepP'P''']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/down stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/down stepP'P''']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match stepP'P''] ⇒
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match stepP'P''']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match/K canV ▷/unit] ⇒
+  let [_ ⊢ canV'] = str_can2 [_, z:tm m/q _, nz:neu z ⊢ canV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/K canV' ▷/unit]
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match/K canV ▷/down] ⇒
+  let [_ ⊢ canV'] = str_can2 [_, z:tm m/q _, nz:neu z ⊢ canV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/K canV' ▷/down]
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match/K canV ▷/pair] ⇒
+  let [_ ⊢ canV'] = str_can2 [_, z:tm m/q _, nz:neu z ⊢ canV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/K canV' ▷/pair]
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match/R/unit neuR stepP'P''] ⇒
+  let [_ ⊢ neuR'] = str_neu2 [_, z:tm m/q _, nz:neu z ⊢ neuR] in
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepP'P''] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/R/unit neuR' stepP'P''']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match/R/pair neuR (\x.\nx.\y.\ny.stepP'P''[..,x,nx,y,ny,z,nz])] ⇒
+  let [_ ⊢ neuR'] = str_neu2 [_, z:tm m/q _, nz:neu z ⊢ neuR] in
+  let SS/c [_ ⊢ P'''] [_ ⊢ eq/tm/i] [_ ⊢ stepP'P'''] =
+    str_step2 [_, blx:block(x:tm _ _, nx:neu x), bly:block(y:tm _ _, ny:neu y),
+              z:tm m/q _, nz:neu z ⊢ stepP'P''[..,blx.1,blx.2,bly.1,bly.2,z,nz]] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/R/pair neuR' (\x.\nx.\y.\ny.stepP'P'''[.., <x;nx>, <y;ny>])]
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match/cc/unit normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/cc/unit normMatchR']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/match/cc/pair normMatchR] ⇒
+  let [_ ⊢ normMatchR'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normMatchR] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/match/cc/pair normMatchR']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/meas stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepPQ] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/meas stepPQ']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/ifc1 stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepPQ] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/ifc1 stepPQ']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/ifc2 normV stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepPQ] in
+  let [_ ⊢ normV'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normV] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/ifc2 normV' stepPQ']
+| [_, z:tm m/q _, nz:neu z ⊢ ↦/ifc3 normV normW stepPQ] ⇒
+  let SS/c [_ ⊢ Q''] [_ ⊢ eq/tm/i] [_ ⊢ stepPQ'] =
+    str_step2 [_, z:tm m/q _, nz:neu z ⊢ stepPQ] in
+  let [_ ⊢ normV'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normV] in
+  let [_ ⊢ normW'] = str_norm2 [_, z:tm m/q _, nz:neu z ⊢ normW] in
+  SS/c [_ ⊢ _] [_ ⊢ eq/tm/i] [_ ⊢ ↦/ifc3 normV' normW' stepPQ']
+;
+
+
+% Independence Principle:
+% If msf (\z. P), then the mode of z is greater or eq than the mode of (P z).
+rec ind-princ: (Δ:ctx) {P:[Δ, z:tm K[] A[] ⊢ tm K'[] B[]]}
+  [Δ ⊢ msf (\z. P)]
+→ [ ⊢ ≻ K K'] =
+/ total 2 /
+mlam P ⇒ fn mP ⇒
+case mP of
+| [Δ ⊢ msf/var] ⇒ [ ⊢ ≻/refl]
+| {P:[Δ, z:tm _ _ ⊢ tm K'[] _]} [Δ ⊢ msf/var/U (\x.P)] : [Δ ⊢ msf (\z. P)] ⇒
+  (case [ ⊢ K'] of
+   | [ ⊢ m/u] ⇒ [ ⊢ ≻/refl]
+   | [ ⊢ m/l] ⇒ [ ⊢ ≻/ul]
+   | [ ⊢ m/q] ⇒ [ ⊢ ≻/uq]
+   | [ ⊢ m/c] ⇒ [ ⊢ ≻/uc]
+ )
+| [Δ ⊢ msf/lam (\x. mP')] ⇒ ind-princ [Δ, x:tm _ _, z:tm _ _ ⊢ _] [Δ, x:tm _ _ ⊢ mP']
+| [Δ ⊢ msf/app/1 mP1] ⇒ ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP1]
+| [Δ ⊢ msf/app/2 mP2] ⇒ ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP2]
+| [Δ ⊢ msf/pair/1 mP1] ⇒ ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP1]
+| [Δ ⊢ msf/pair/2 mP2] ⇒ ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP2]
+| [Δ ⊢ msf/match/1 _ ≻K'K''[] mP1] ⇒
+  ≻/trans (ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP1]) [ ⊢ ≻K'K'']
+| [Δ ⊢ msf/match/2 pmP2] ⇒ ind-princ-p [Δ, z:tm _ _ ⊢ _] [Δ ⊢ pmP2]
+| [Δ ⊢ msf/down mP'] : [Δ ⊢ msf (\z. down O[] P')] ⇒
+  let [ ⊢ ≻KK''] = ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP'] in
+  (case [ ⊢ O] of
+  | [ ⊢ ↓ok/lu] ⇒ ≻/trans (ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP']) [ ⊢ ≻/ul]
+  | [ ⊢ ↓ok/cq] ⇒ ≻/trans (ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP']) [ ⊢ ≻/qc]
+  )
+| [Δ ⊢ msf/susp ≻K''K[] mP'] ⇒ [ ⊢ ≻K''K[]]
+| [Δ ⊢ msf/force mP'] : [Δ ⊢ msf (\z. force P')] ⇒ 
+  let [Δ, z:tm K[] C[] ⊢ P'] : [Δ, z:tm K[] C[] ⊢ tm K'[] (↑ OK[] A[])] = [Δ, z:tm _ _ ⊢ P'] in
+  (case [ ⊢ OK] of
+  | [ ⊢ ↑ok/ul] ⇒ ≻/trans (ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP']) [ ⊢ ≻/ul]
+  | [ ⊢ ↑ok/lq] ⇒ ≻/trans (ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP']) [ ⊢ ≻/lq]
+  | [ ⊢ ↑ok/lc] ⇒ ≻/trans (ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP']) [ ⊢ ≻/lc]
+  )
+| [Δ ⊢ msf/meas mP'] ⇒ ≻/trans (ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP']) [ ⊢ ≻/qc]
+| [Δ ⊢ msf/ifc1 mP1] ⇒ ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP1]
+| [Δ ⊢ msf/ifc2 mP2 mP3] ⇒ ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP2]
+and rec ind-princ-p: (Δ:ctx) {π:[Δ, z:tm K[] A[] ⊢ pat K'[] B[] K''[] C[]]}
+  [Δ ⊢ pmsf (\z. π)]
+→ [ ⊢ ≻ K K''] =
+/ total 2 /
+mlam π ⇒ fn mπ ⇒ case mπ of
+| [Δ ⊢ pmsf/unit mP] ⇒ ind-princ [Δ, z:tm _ _ ⊢ _] [Δ ⊢ mP]
+| [Δ ⊢ pmsf/pair (\x.\y.mP)] ⇒
+  ind-princ [Δ, x:tm _ _, y:tm _ _, z:tm _ _ ⊢ _] [Δ, x:tm _ _, y:tm _ _ ⊢ mP]
+| [Δ ⊢ pmsf/down (\x.mP)] ⇒ ind-princ [Δ, x:tm _ _, z:tm _ _ ⊢ _] [Δ, x:tm _ _ ⊢ mP]
+;
+
+% Finality
+%{{
+Normal forms do not reduce
+}}%
+
+rec finality: (Ψ:nctx)
+  (V:  [Ψ ⊢ tm K[] A[]]) (V': [Ψ ⊢ tm K[] A[]])
+  [Ψ ⊢ norm V] → [Ψ ⊢ ↦ V V']
+	      → [Ψ ⊢ void] =
+/ total 2 /
+fn normV stepVV' ⇒ case normV of
+| [Ψ ⊢ norm/match neuR pnormπ]  ⇒
+  (case stepVV' of
+  | [Ψ ⊢ ↦/match stepP1P2] ⇒ finality [Ψ ⊢ norm/neu neuR] [Ψ ⊢ stepP1P2]
+  | [Ψ ⊢ ↦/match/K canP1 tri] ⇒ not-neu-can [Ψ ⊢ neuR] [Ψ ⊢ canP1]
+  | [Ψ ⊢ ↦/match/R/unit neuR stepP1P2] ⇒
+    (case [Ψ ⊢ pnormπ] of
+    | [Ψ ⊢ pnorm/unit normP1] ⇒ finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1P2]
+    )
+  | [Ψ ⊢  ↦/match/R/pair neuR (\x. \nx. \y. \ny. stepP1P2)] ⇒
+    (case [Ψ ⊢ pnormπ] of
+    | [Ψ ⊢ pnorm/pair (\x. \nx. \y. \ny. normP1)] ⇒
+      impossible (finality
+        [Ψ, b:block( x:tm m/q _, neux:neu x), c:block(y:tm m/q _, neuy : neu y) ⊢ normP1[..,b.1,b.2,c.1,c.2]]
+        [Ψ, b:block( x:tm m/q _, neux:neu x), c:block(y:tm m/q _, neuy : neu y) ⊢ stepP1P2[..,b.1,b.2,c.1,c.2]])
+    )
+  )
+| [Ψ ⊢ norm/can canV] ⇒
+  (case [Ψ ⊢ canV] of
+  | [Ψ ⊢ can/triv] ⇒ impossible stepVV'
+  | [Ψ ⊢ can/pair normP normQ] ⇒
+    (case stepVV' of
+      | [Ψ ⊢ ↦/pair/1 stepPP'] ⇒ finality [Ψ ⊢ normP] [Ψ ⊢ stepPP']
+      | [Ψ ⊢ ↦/pair/2 normP stepQQ'] ⇒ finality [Ψ ⊢ normQ] [Ψ ⊢ stepQQ']
+    )
+  | [Ψ ⊢ can/lam] ⇒ impossible stepVV'
+  | [Ψ ⊢ can/down normP] ⇒
+    let [Ψ ⊢ ↦/down stepPP'] = stepVV' in
+    finality [Ψ ⊢ normP] [Ψ ⊢ stepPP']
+  | [Ψ ⊢ can/susp] ⇒ impossible stepVV'
+  | [Ψ ⊢ can/meas normQ] ⇒
+    let [Ψ ⊢ ↦/meas stepQQ'] = stepVV' in
+    finality [Ψ ⊢ normQ] [Ψ ⊢ stepQQ']
+  | [Ψ ⊢ can/ifc normV1 normV2 normV3] ⇒
+    (case stepVV' of
+    | [Ψ ⊢ ↦/ifc1 stepV1V1'] ⇒ finality [Ψ ⊢ normV1] [Ψ ⊢ stepV1V1']
+    | [Ψ ⊢ ↦/ifc2 normV1 stepV2V2'] ⇒ finality [Ψ ⊢ normV2] [Ψ ⊢ stepV2V2']
+    | [Ψ ⊢ ↦/ifc3 normV1 normV2 stepV3V3'] ⇒ finality [Ψ ⊢ normV3] [Ψ ⊢ stepV3V3']
+    )
+  )
+| [Ψ ⊢ norm/neu neuV] ⇒
+  (case [Ψ ⊢ neuV] of
+  | [Ψ ⊢ #p.2] ⇒ impossible stepVV'
+  | [Ψ ⊢ neu/gate] ⇒ impossible stepVV'
+  | [Ψ ⊢ neu/app/neu neuP neuQ] ⇒
+    (case stepVV' of
+      | [Ψ ⊢ ↦/app/1 stepPP'] ⇒ finality [Ψ ⊢ norm/neu neuP] [Ψ ⊢ stepPP']
+      | [Ψ ⊢ ↦/app/2 normP stepQQ'] ⇒ finality [Ψ ⊢ norm/neu neuQ] [Ψ ⊢ stepQQ']
+    )
+  | [Ψ ⊢ neu/app/can neuP canQ] ⇒  (case stepVV' of
+    | [Ψ ⊢ ↦/app/1 stepP1Q1] ⇒ finality [Ψ ⊢ norm/neu neuP] [Ψ ⊢ stepP1Q1]
+    |  [Ψ ⊢ ↦/app/2 normP1 stepQ2P2] ⇒ finality [Ψ ⊢ norm/can canQ] [Ψ ⊢ stepQ2P2]
+    )
+  )
+;
+
+%{{
+## Determinism
+
+We show that the reduction semantics are deterministic.
+}}%
+
+rec determinism: (Ψ:nctx)
+  (P: [Ψ ⊢ tm K[] A[]]) (Q: [Ψ ⊢ tm K[] A[]]) (R: [Ψ ⊢ tm K[] A[]])
+  [Ψ ⊢ ↦ P Q] → [Ψ ⊢ ↦ P R]
+→ [Ψ ⊢ eq/tm Q R] =
+/ total 1 /
+fn stepPQ stepPR ⇒ case stepPQ of
+| [Ψ ⊢ ↦/app/1 stepP1Q1] ⇒  (case stepPR of
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP1Q1] [Ψ ⊢ stepP1R1] in
+    [_ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒
+    impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/app/beta normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/app/cc/1/unit normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/app/cc/1/down normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/app/cc/1/pair normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/app/cc/1/ifc normIf normW] ⇒
+    impossible (finality [Ψ ⊢ normIf] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/app/cc/2/unit neuP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/app/cc/2/pair neuP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1Q1])
+  )
+| [Ψ ⊢ ↦/app/2 normP1 stepP2Q2] ⇒  (case stepPR of
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒
+    impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP2Q2] [Ψ ⊢ stepP2R2] in
+    [_ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/beta normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  | [Ψ ⊢ ↦/app/cc/1/unit normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  | [Ψ ⊢ ↦/app/cc/1/down normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  | [Ψ ⊢ ↦/app/cc/1/pair normP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  | [Ψ ⊢ ↦/app/cc/1/ifc normIf normW] ⇒
+    impossible (finality [Ψ ⊢ normW] [Ψ ⊢ stepP2Q2])
+  | [Ψ ⊢ ↦/app/cc/2/unit neuP1 normP2] ⇒
+    impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  | [Ψ ⊢ ↦/app/cc/2/pair neuP1 normP2] ⇒
+     impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  )
+| [Ψ ⊢ ↦/app/beta normP1 normP2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/app/beta normP1 normP2] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2R2])
+  )
+| [Ψ ⊢ ↦/app/cc/1/unit normP1 normP2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/app/cc/1/unit normP1 normP2] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2R2])
+  )
+| [Ψ ⊢ ↦/app/cc/1/down normP1 normP2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/app/cc/1/down normP1 normP2] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2R2])
+  )
+| [Ψ ⊢ ↦/app/cc/1/pair normP1 normP2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/app/cc/1/pair normP1 normP2] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2R2])
+  )
+| [Ψ ⊢ ↦/app/cc/1/ifc normIf normW] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/app/cc/1/ifc _ _] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normIf] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 _ stepP2R2] ⇒ impossible (finality [Ψ ⊢ normW] [Ψ ⊢ stepP2R2])
+  )
+| [Ψ ⊢ ↦/app/cc/2/unit neuP1 normP2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/app/cc/2/unit neuP1 normP2] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2R2])
+  )
+| [Ψ ⊢ ↦/app/cc/2/pair neuP1 normP2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/app/cc/2/pair neuP1 normP2] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/app/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/app/2 normP1 stepP2R2] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2R2])
+  )
+| [Ψ ⊢ ↦/force OK C] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/force OK C] ⇒ [Ψ ⊢ eq/tm/i]
+  )
+| [Ψ ⊢ ↦/force/1 stepP1Q1] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/force/1 stepP1R1] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP1Q1] [Ψ ⊢ stepP1R1]
+    in  [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/force/cc/unit normP1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/force/cc/pair normP1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  )
+| [Ψ ⊢ ↦/force/cc/unit normP1] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/force/cc/unit normP1] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/force/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  )
+| [Ψ ⊢ ↦/force/cc/pair normP1] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/force/cc/pair normP1] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/force/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  )
+| [Ψ ⊢ ↦/pair/1 stepP1Q1] ⇒  (case stepPR of
+  | [Ψ ⊢ ↦/pair/1 stepP1R1] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP1Q1] [Ψ ⊢ stepP1R1]
+    in  [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/pair/2 normP1 stepP2R2] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  )
+| [Ψ ⊢ ↦/pair/2 normP1 stepP2Q2] ⇒  (case stepPR of
+  | [Ψ ⊢ ↦/pair/1 stepP1R1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/pair/2 normP1 stepP2R2] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP2Q2] [Ψ ⊢ stepP2R2]
+    in  [Ψ ⊢ eq/tm/i]
+  )
+| [Ψ ⊢ ↦/down stepP1Q1] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/down stepP1R1] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP1Q1] [Ψ ⊢ stepP1R1] in
+    [Ψ ⊢ eq/tm/i]
+  )
+| [Ψ ⊢ ↦/match stepP1Q1] ⇒  (case stepPR of
+  | [Ψ ⊢ ↦/match stepP1R1] ⇒ 
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP1Q1] [Ψ ⊢ stepP1R1] in
+    [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/match/K canP1 _] ⇒ impossible (finality [Ψ ⊢ norm/can canP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/match/R/unit neuP1 _] ⇒ impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/match/R/pair neuP1 (\x.\nx.\y.\ny. stepP1R1)] ⇒ impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/match/cc/unit normP1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/match/cc/pair normP1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  )
+| [Ψ ⊢ ↦/match/K canP1 tri1] ⇒  (case stepPR of
+  | [Ψ ⊢ ↦/match/K canP1 tri2] ⇒
+    (case ([Ψ ⊢ tri1], [Ψ ⊢ tri2])  of
+    | ([Ψ ⊢ ▷/unit], [Ψ ⊢ ▷/unit])  ⇒  [Ψ ⊢ eq/tm/i]
+    | ([Ψ ⊢ ▷/down], [Ψ ⊢ ▷/down])  ⇒  [Ψ ⊢ eq/tm/i]
+    | ([Ψ ⊢ ▷/pair], [Ψ ⊢ ▷/pair])  ⇒  [Ψ ⊢ eq/tm/i]
+    )
+  | [Ψ ⊢ ↦/match stepP1R1] ⇒ impossible (finality [Ψ ⊢ norm/can canP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/match/R/unit neuP1 stepP2R2] ⇒ impossible (not-neu-can [Ψ ⊢ neuP1] [Ψ ⊢ canP1])
+  |  [Ψ ⊢ ↦/match/R/pair neuP1 (\x. \x1. \y. \x2. stepP2Q2)] ⇒ impossible (not-neu-can [Ψ ⊢ neuP1] [Ψ ⊢ canP1])
+  )
+| [Ψ ⊢ ↦/match/R/unit neuP1 stepP2Q2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/match/R/unit neuP1 stepP2R2] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP2Q2] [Ψ ⊢ stepP2R2] in  [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/match stepP1R1] ⇒ impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/match/K canP1 tri1] ⇒ impossible (not-neu-can [Ψ ⊢ neuP1] [Ψ ⊢ canP1])
+  )
+| [Ψ ⊢ ↦/match/R/pair neuP1 (\x.\nx.\y.\ny. stepP2Q2)] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/match/R/pair neuP1 (\x.\nx.\y.\ny. stepP2R2)] ⇒
+  let [Ψ, b:block(x: tm m/q A[], nx: neu x), c:block(y: tm m/q B[], ny: neu y) ⊢ eq/tm/i] =
+    determinism [Ψ, b:block(x: tm m/q _ , nx : neu x), c:block(y: tm m/q _ , ny: neu y) ⊢ stepP2Q2[..,b.1,b.2,c.1,c.2]] [Ψ, b:block(x: tm m/q _ , nx: neu x), c:block(y: tm m/q _ , ny: neu y) ⊢ stepP2R2[..,b.1,b.2,c.1,c.2]] in
+  [_ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/match stepP1R1] ⇒ impossible (finality [Ψ ⊢ norm/neu neuP1] [Ψ ⊢ stepP1R1])
+  | [Ψ ⊢ ↦/match/K canP1 tri] ⇒ impossible (not-neu-can [Ψ ⊢ neuP1] [Ψ ⊢ canP1])
+  )
+| [Ψ ⊢ ↦/match/cc/unit normP1] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/match/cc/unit normP1] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/match stepP1P2] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1P2])
+  )
+| [Ψ ⊢ ↦/match/cc/pair normP1] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/match/cc/pair normP1] ⇒ [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/match stepP1P2] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1P2])
+  )
+| [Ψ ⊢ ↦/meas stepP'Q'] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/meas stepP'R'] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP'Q'] [Ψ ⊢ stepP'R'] in
+    [Ψ ⊢ eq/tm/i]
+  )
+| [Ψ ⊢ ↦/ifc1 stepP1Q1] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/ifc1 stepP1R1] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP1Q1] [Ψ ⊢ stepP1R1] in
+    [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/ifc2 normP1 _] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/ifc3 normP1 _ _] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  )
+| [Ψ ⊢ ↦/ifc2 normP1 stepP2Q2] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/ifc2 normP1 stepP2R2] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP2Q2] [Ψ ⊢ stepP2R2] in
+    [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/ifc1 stepP1Q1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/ifc3 _ normP2 _] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  )
+| [Ψ ⊢ ↦/ifc3 normP1 normP2 stepP3Q3] ⇒ (case stepPR of
+  | [Ψ ⊢ ↦/ifc3 normP1 normP2 stepP3R3] ⇒
+    let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepP3Q3] [Ψ ⊢ stepP3R3] in
+    [Ψ ⊢ eq/tm/i]
+  | [Ψ ⊢ ↦/ifc1 stepP1Q1] ⇒ impossible (finality [Ψ ⊢ normP1] [Ψ ⊢ stepP1Q1])
+  | [Ψ ⊢ ↦/ifc2 _ stepP2Q2] ⇒ impossible (finality [Ψ ⊢ normP2] [Ψ ⊢ stepP2Q2])
+  )
+;
+
+% TODO: revisit paper and match thrm/lemma numbers
+
+inductive Halts : (Ψ:nctx) {A:[⊢ tp K]}{P:[Ψ ⊢ tm K[] A[]]} ctype =
+| Halts/c: {V:[Ψ ⊢ tm K[] A[]]} [Ψ ⊢ ↦* P V] → [Ψ ⊢ norm V]
+  → Halts [⊢ A] [Ψ ⊢ P];
+
+stratified LR : (Ψ:nctx) {A:[⊢ tp K]} {P:[Ψ ⊢ tm K[] A[]]} ctype =
+| LR/⊸:      Halts [⊢ ⊸ (A : tp K) B] [Ψ ⊢ P]
+  → ({Φ:nctx} {$S: $[Φ ⊢ Ψ]} {Q:[Φ ⊢ tm K[] A[]]}
+    LR [⊢ A] [Φ ⊢ Q] → LR [⊢ B] [Φ ⊢ app P[$S] Q])
+  → LR [⊢ ⊸ A B] [Ψ ⊢ P]
+| LR/↑:      LR [⊢ A] [Ψ ⊢ force M]
+  → LR [⊢ ↑ _ A] [Ψ ⊢ M]
+| LR/clo: LRc [⊢ A] [Ψ ⊢ P]
+→ LR [⊢ A] [Ψ ⊢ P]
+and inductive LRc: (Ψ:nctx) {A:[⊢ tp K]} {P:[Ψ ⊢ tm K[] A[]]} ctype =
+| LRc/↓:   LR [⊢ A] [Ψ ⊢ M]
+ → LRc [⊢ ↓ O[] A] [Ψ ⊢ down O[] M]
+| LRc/𝟙:   LRc [⊢ 𝟙 K] [Ψ ⊢ triv]
+| LRc/bit: LR [ ⊢ ℚ] [Ψ ⊢ M]
+ → LRc [ ⊢ bit] [Ψ ⊢ meas M]
+| LRc/ifc: LR [ ⊢ bit] [Ψ ⊢ M] → LR [ ⊢ A] [Ψ ⊢ N] → LR [ ⊢ A] [Ψ ⊢ O]
+ → LRc [⊢ A] [Ψ ⊢ ifc M N O]
+| LRc/⊗:   LR [⊢ A] [Ψ ⊢ M] → LR [⊢ B] [Ψ ⊢ N]
+ → LRc [⊢ ⊗ A B] [Ψ ⊢ pair M N]
+| LRc/neu: {R:[Ψ ⊢ tm m/q A[]]} [Ψ ⊢ neu R]
+ → LRc [⊢ A] [Ψ ⊢ R]
+| LRc/step:(P:[Ψ ⊢ tm K[] A[]]) [Ψ ⊢ ↦ P P'] → LRc [⊢ A] [Ψ ⊢ P']
+ → LRc [⊢ A] [Ψ ⊢ P]
+| LRc/M/u: (Ψ:nctx) (C: [⊢ tp K])
+  {R:[Ψ ⊢ tm m/q (𝟙 m/q)]} [Ψ ⊢ neu R]
+→ {P:[Ψ ⊢ tm K[] C[]]} LR [⊢ C] [Ψ ⊢ P]
+  → LRc [⊢ C] [Ψ ⊢ match R (pat/unit P)]
+| LRc/M/p : (Ψ:nctx) (C: [⊢ tp K])
+  {R:[Ψ ⊢ tm m/q (⊗ A[] B[])]} [Ψ ⊢ neu R]
+→ {P:[Ψ, x:tm m/q A[], y:tm m/q B[] ⊢ tm K[] C[]]}
+  LR [⊢ C] [Ψ, blx:block(x:tm m/q A[], nx:neu x), bly:block (y:tm m/q B[], ny:neu y) ⊢ P[.., blx.1, bly.1]]
+→  LRc [⊢ C] [Ψ ⊢ match R (pat/pair (\x.\y.P))]
+;
+
+% Lemma 3: If force M halts, then M halts
+
+% Helper for helper...
+% force M norm → contradiction
+rec lem3-helper2: (Ψ:nctx) (OK: [ ⊢ ↑ok (≻KK': ≻ K K')]) (A:[⊢ tp K'])
+  (M:[Ψ ⊢ tm K[] (↑ OK[] A[])]) [Ψ ⊢ norm (force M)]
+→ [Ψ ⊢ void] =
+/ total 1 /
+fn normM ⇒ case normM of
+| [Ψ ⊢ norm/neu neuV] : [Ψ ⊢ norm V] ⇒
+  let [Ψ ⊢ V] : [Ψ ⊢ tm m/q (↑ OK[] A[])] = [Ψ ⊢ V] in
+  impossible [⊢ OK]
+;
+
+rec lem3-helper: (Ψ:nctx) {A:[⊢ tp K']} {OK: [ ⊢ ↑ok (≻KK': ≻ K K')]}
+  {P:[Ψ ⊢ tm K[] (↑ OK[] A[])]} {V:[Ψ ⊢ tm K'[] A[]]}
+  [Ψ ⊢ ↦* (force P) V] → [Ψ ⊢ norm V]
+% then exists W such that P ↦* W and W norm
+→ Halts [ ⊢ (↑ OK A)] [Ψ ⊢ P] =
+/ total 4 /
+mlam A OK P V ⇒ fn stepsPV normV ⇒
+  case stepsPV of
+  | [Ψ ⊢ ↦*/refl] ⇒ impossible (lem3-helper2 normV)
+  | [Ψ ⊢ (↦*/step stepfPW stepsWV : ↦* (force (P : tm K[] (↑ OK[] A[]))) V)] ⇒
+    (case [Ψ ⊢ stepfPW] of
+    | [Ψ ⊢ ↦/force OK[] W] ⇒
+      Halts/c [Ψ ⊢ susp W] [Ψ ⊢ ↦*/refl] [Ψ ⊢ norm/can can/susp]
+    | [Ψ ⊢ ↦/force/1 stepfPfW] : [Ψ ⊢ ↦ (force P) (force W)] ⇒
+      let Halts/c [Ψ ⊢ V'] [Ψ ⊢ stepsfWV'] normV' =  lem3-helper [⊢ A] [⊢ OK] [Ψ ⊢ _] [Ψ ⊢ V] [Ψ ⊢ stepsWV] normV in
+      Halts/c [Ψ ⊢ V'] [Ψ ⊢ ↦*/step stepfPfW stepsfWV'] normV'
+    | [Ψ ⊢ ↦/force/cc/unit normP] : [Ψ ⊢ ↦ (force (match R (pat/unit P'))) (match R (pat/unit (force P')))] ⇒
+      Halts/c [Ψ ⊢ P] [Ψ ⊢ ↦*/refl] [Ψ ⊢ normP]
+    | [Ψ ⊢ ↦/force/cc/pair normP] : [Ψ ⊢ ↦ (force (match R (pat/pair (\x.\y.P')))) (match R (pat/pair (\x.\y. force P')))] ⇒
+      Halts/c [Ψ ⊢ P] [Ψ ⊢ ↦*/refl] [Ψ ⊢ normP]
+    )
+;
+
+rec lem3-force: (Ψ:nctx) {A:[⊢ tp K']} {OK: [ ⊢ ↑ok (≻KK': ≻ K K')]} {P:[Ψ ⊢ tm K[] (↑ OK[] A[])]}
+  Halts [⊢ A] [Ψ ⊢ force P]
+→ Halts [⊢ ↑ OK[] A] [Ψ ⊢ (P : tm K[] (↑ OK[] A[]))] =
+/ total 4 /
+mlam A OK P ⇒ fn h ⇒
+  let Halts/c [Ψ ⊢ V] [Ψ ⊢ steps] [Ψ ⊢ normV] = h in
+  let Halts/c [Ψ ⊢ W] [Ψ ⊢ stepsPW] [Ψ ⊢ normW] = lem3-helper [⊢ A] [⊢ OK] [Ψ ⊢ P] [Ψ ⊢ V] [Ψ ⊢ steps] [Ψ ⊢ normV] in
+  Halts/c [Ψ ⊢ W] [Ψ ⊢ stepsPW] [Ψ ⊢ normW]
+;
+
+% Proposition 7: If P is in LR, then P halts
+rec prop8-halts: (Ψ:nctx) (A:[⊢ tp K]) (P:[Ψ ⊢ tm K[] A[]])
+  LR [⊢ A] [Ψ ⊢ P]
+→ Halts [⊢ A] [Ψ ⊢ P] =
+/ total 1 /
+fn LrP ⇒ case LrP of
+  | LR/⊸ HaltsP f ⇒ HaltsP
+  | LR/↑ LrM ⇒ lem3-force [⊢ _] [⊢ _] [_ ⊢ _] (prop8-halts LrM)
+  | LR/clo LRcP ⇒ prop8-halts-c LRcP
+and rec prop8-halts-c: (Ψ:nctx) (A:[⊢ tp K]) (P:[Ψ ⊢ tm K[] A[]])
+  LRc [⊢ A] [Ψ ⊢ P]
+→ Halts [⊢ A] [Ψ ⊢ P] =
+/ total 1 /
+fn LrcP ⇒ case LrcP of
+  | LRc/↓ LrP' ⇒
+    let LrcP : LRc [ ⊢ ↓ O _] [_ ⊢ _] = LrcP in
+    let Halts/c [Ψ ⊢ V] [Ψ ⊢ stepsP'V] [Ψ ⊢ normV] = prop8-halts LrP' in
+    let [Ψ ⊢ stepsPdV] = down↦* [ ⊢ O] [Ψ ⊢ stepsP'V] in
+    Halts/c [Ψ ⊢ down O[] V] [Ψ ⊢ stepsPdV] [Ψ ⊢ norm/can (can/down normV)]
+  | LRc/𝟙 ⇒ Halts/c [_ ⊢ triv] [_ ⊢ ↦*/refl] [_ ⊢ norm/can can/triv]
+  | LRc/bit LrP ⇒
+    let Halts/c [Ψ ⊢ V] [Ψ ⊢ stepsPV] [Ψ ⊢ normV] = prop8-halts LrP in
+    let [Ψ ⊢ stepsPV] : [Ψ ⊢ ↦* P V] = [Ψ ⊢ stepsPV] in
+    Halts/c [Ψ ⊢ meas V] (meas↦* [Ψ ⊢ stepsPV]) [Ψ ⊢ norm/can (can/meas normV)]
+  | LRc/ifc LrP1 LrP2 LrP3 ⇒
+    let Halts/c [Ψ ⊢ V1] [Ψ ⊢ stepsP1V1] [Ψ ⊢ normV1] = prop8-halts LrP1 in
+    let Halts/c [Ψ ⊢ V2] [Ψ ⊢ stepsP2V2] [Ψ ⊢ normV2] = prop8-halts LrP2 in
+    let Halts/c [Ψ ⊢ V3] [Ψ ⊢ stepsP3V3] [Ψ ⊢ normV3] = prop8-halts LrP3 in
+    let [Ψ ⊢ stepsP2V2] : [Ψ ⊢ ↦* P2 V2] = [Ψ ⊢ stepsP2V2] in
+    let [Ψ ⊢ stepsP3V3] : [Ψ ⊢ ↦* P3 V3] = [Ψ ⊢ stepsP3V3] in
+    let [Ψ ⊢ stepsPV] =
+      concat↦*
+        (concat↦*
+          (ifc1↦* [Ψ ⊢ stepsP1V1] [Ψ ⊢ P2] [Ψ ⊢ P3])
+          (ifc2↦* [Ψ ⊢ V1] [Ψ ⊢ normV1] [Ψ ⊢ stepsP2V2] [Ψ ⊢ P3]))
+        (ifc3↦* [Ψ ⊢ V1] [Ψ ⊢ normV1] [Ψ ⊢ V2] [Ψ ⊢ normV2] [Ψ ⊢ stepsP3V3])
+    in
+    Halts/c [Ψ ⊢ ifc V1 V2 V3] [Ψ ⊢ stepsPV] [Ψ ⊢ norm/can (can/ifc normV1 normV2 normV3)]
+        
+  | LRc/⊗ LrP1 LrP2 ⇒
+    let Halts/c [Ψ ⊢ V1] [Ψ ⊢ stepsP1V1] [Ψ ⊢ normV1] = prop8-halts LrP1 in
+    let Halts/c [Ψ ⊢ V2] [Ψ ⊢ stepsP2V2] [Ψ ⊢ normV2] = prop8-halts LrP2 in
+    let [Ψ ⊢ stepsP1V1] : [Ψ ⊢ ↦* P1 V1] = [Ψ ⊢ stepsP1V1] in
+    let [Ψ ⊢ stepsP2V2] : [Ψ ⊢ ↦* P2 V2] = [Ψ ⊢ stepsP2V2] in
+    let [Ψ ⊢ stepsPV] =
+      concat↦*
+        (pair1↦* [Ψ ⊢ P2] [Ψ ⊢ stepsP1V1])
+        (pair2↦* [Ψ ⊢ V1] [Ψ ⊢ normV1] [Ψ ⊢ stepsP2V2])
+    in
+    Halts/c [Ψ ⊢ pair V1 V2] [Ψ ⊢ stepsPV] [Ψ ⊢ norm/can (can/pair normV1 normV2)]
+  | LRc/neu [Ψ ⊢ R] [Ψ ⊢ neuR] ⇒ Halts/c [Ψ ⊢ R] [_ ⊢ ↦*/refl] [_ ⊢ norm/neu neuR]
+  | LRc/step [Ψ ⊢ stepPP'] LRcP' ⇒
+    let Halts/c [Ψ ⊢ V] [Ψ ⊢ stepsP'V] [Ψ ⊢ normV] = prop8-halts-c LRcP' in
+    Halts/c [Ψ ⊢ V] [Ψ ⊢ (↦*/step stepPP' stepsP'V)] [Ψ ⊢ normV]
+  | LRc/M/u [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ ⊢ P'] LrP' ⇒
+    let Halts/c [Ψ ⊢ V] [Ψ ⊢ stepsP'V] [Ψ ⊢ normV] = prop8-halts LrP' in
+    let [Ψ ⊢ stepsPmRV] = matchRunit↦* [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ ⊢ stepsP'V] in
+    Halts/c [Ψ ⊢ match R (pat/unit V)]
+            [Ψ ⊢ stepsPmRV]
+            [Ψ ⊢ norm/match neuR (pnorm/unit (normV))]
+  | LRc/M/p [Ψ ⊢ R] [Ψ ⊢ neuR]
+      [Ψ, x:tm m/q A[], x:tm m/q B[] ⊢ P'] LrP' ⇒
+    let Halts/c [Ψ, blx:block(x:tm m/q A[], nx:neu x),
+                 bly:block (y:tm m/q B[], ny:neu y) ⊢ V[.., blx.1, bly.1]]
+                [Ψ, blx:block(x:tm m/q A[], nx:neu x),
+                 bly:block (y:tm m/q B[], ny:neu y) ⊢ stepsP'V]
+                [Ψ, blx:block(x:tm m/q A[], nx:neu x),
+                 bly:block (y:tm m/q B[], ny:neu y) ⊢ normV] =
+      prop8-halts LrP' in
+    let [Ψ ⊢ stepsPmRV] =
+      matchRpair↦* [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ, blx:block(x:tm m/q A[], nx:neu x),
+                                       bly:block (y:tm m/q B[], ny:neu y) ⊢ stepsP'V] in
+    Halts/c [Ψ ⊢ match R (pat/pair (\x.\y.V))]
+            [Ψ ⊢ stepsPmRV]
+            [Ψ ⊢ norm/match neuR (pnorm/pair (\x.\nx.\y.\ny.normV[.., <x;nx>, <y;ny>]))]
+;
+
+% Helper for Lemma 4
+% Closure w.r.t one step
+rec lem4-closure-exp1: (Ψ:nctx)
+  {A: [⊢ tp K]}
+  {P: [Ψ ⊢ tm K[] A[]]}
+  {Q: [Ψ ⊢ tm K[] A[]]}
+  LR [⊢ A] [Ψ ⊢ Q]
+→ [Ψ ⊢ ↦ P Q]
+→ LR [⊢ A] [Ψ ⊢ P] =
+/ total LRQ (lem4-closure-exp1 Ψ K A P Q LRQ STEPPQ) /
+mlam A P Q ⇒ fn LrQ StepPQ ⇒
+  let [Ψ ⊢ stepPQ] = StepPQ in
+  case LrQ of
+  | LR/↑ LrfQ ⇒
+   LR/↑ (lem4-closure-exp1 [⊢ _] [_ ⊢ _] [_ ⊢ _]
+     LrfQ [_ ⊢ ↦/force/1 stepPQ])
+  | LR/clo LRcQ ⇒ LR/clo (LRc/step [_ ⊢ stepPQ] LRcQ)
+;
+
+rec lem4-closure-exp: (Ψ:nctx) (A:[⊢ tp K]) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]])
+  LR [⊢ A] [Ψ ⊢ Q]
+→ [Ψ ⊢ ↦* P Q]
+→ LR [⊢ A] [Ψ ⊢ P] =
+/ total 2 /
+fn LrQ StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] A[]) P)] ⇒ LrQ
+  | [Ψ ⊢ (↦*/step stepPP' stepsP'Q : ↦* (P : tm K[] A[]) Q)] ⇒
+    let LrP' = lem4-closure-exp LrQ [Ψ ⊢ stepsP'Q] in
+    lem4-closure-exp1 [⊢ _] [_ ⊢ _] [_ ⊢ _] LrP' [Ψ ⊢ stepPP']
+;
+
+rec lem4-closure-exp-c: (Ψ:nctx) (A:[⊢ tp K]) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]])
+  LRc [⊢ A] [Ψ ⊢ Q]
+→ [Ψ ⊢ ↦* P Q]
+→ LRc [⊢ A] [Ψ ⊢ P] =
+/ total 2 /
+fn LrcQ StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] A[]) P)] ⇒ LrcQ
+  | [Ψ ⊢ (↦*/step stepPP' stepsP'Q : ↦* (P : tm K[] A[]) Q)] ⇒
+    let LrcP' = lem4-closure-exp-c LrcQ [Ψ ⊢ stepsP'Q] in
+    LRc/step [Ψ ⊢ stepPP'] LrcP'
+;
+
+% Helper for Lemma 5
+% Closure w.r.t one step
+rec lem5-closure-red1: (Ψ:nctx) (A: [⊢ tp K])
+  (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]])
+  LR [⊢ A] [Ψ ⊢ P]
+→ [Ψ ⊢ ↦ P Q]
+→ LR [⊢ A] [Ψ ⊢ Q] =
+%/ total A (lem5-closure-red1 _ _ A)  /
+fn LrP StepPQ ⇒
+let [Ψ ⊢ (stepPQ : ↦ (P : tm K[] (A[] : tp K[])) Q)] = StepPQ in
+case LrP of
+  | LR/⊸ (Halts/c [Ψ ⊢ V] [Ψ ⊢ stepsPV] [Ψ ⊢ normV]) f ⇒
+    (case [Ψ ⊢ stepsPV] of
+    | [Ψ ⊢ ↦*/refl] ⇒ impossible (finality [Ψ ⊢ normV] StepPQ)
+    | [Ψ ⊢ ↦*/step stepPP' stepsP'V] ⇒
+      let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepPQ] [Ψ ⊢ stepPP'] in
+      let [Ψ ⊢ eq/tm/i] = determinism [Ψ ⊢ stepPP'] [Ψ ⊢ stepPQ] in
+      LR/⊸ (Halts/c [Ψ ⊢ V] [Ψ ⊢ (stepsP'V)] [Ψ ⊢ normV])
+        (mlam Φ, $S, Q ⇒ fn LrQ ⇒
+          let Lr'P = f [Φ] $[Φ ⊢ $S] [Φ ⊢ Q] LrQ in
+          lem5-closure-red1 Lr'P [Φ ⊢ ↦/app/1 stepPP'[$S]])
+    )
+| LR/↑ LrM ⇒ LR/↑ (lem5-closure-red1 LrM [Ψ ⊢ ↦/force/1 stepPQ])
+| LR/clo LRcP ⇒ LR/clo (lem5-closure-red1-c LRcP StepPQ)
+and rec lem5-closure-red1-c: (Ψ:nctx) (A: [⊢ tp K])
+  (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]])
+  LRc [⊢ A] [Ψ ⊢ P]
+→ [Ψ ⊢ ↦ P Q]
+→ LRc [⊢ A] [Ψ ⊢ Q] =
+%/ total 1 /
+fn LrcP StepPQ ⇒ case LrcP of
+| LRc/↓ LrP' ⇒ (case StepPQ of
+  | [Ψ ⊢ ↦/down stepP'P''] ⇒
+    let LrQ' = lem5-closure-red1 LrP' [Ψ ⊢ stepP'P''] in
+    LRc/↓ LrQ'
+  )
+| LRc/𝟙 ⇒ impossible StepPQ
+| LRc/⊗ LrP1 LrP2 ⇒
+  (case StepPQ of
+  | [Ψ ⊢ ↦/pair/1 stepP1Q1] ⇒
+    let LrQ1 = lem5-closure-red1 LrP1 [Ψ ⊢ stepP1Q1] in
+    LRc/⊗ LrQ1 LrP2
+  | [Ψ ⊢ ↦/pair/2 _ stepP2Q2] ⇒
+    let LrQ2 = lem5-closure-red1 LrP2 [Ψ ⊢ stepP2Q2] in
+    LRc/⊗ LrP1 LrQ2
+  )
+| LRc/neu [Ψ ⊢ R] [Ψ ⊢ neuR] ⇒ impossible (finality [Ψ ⊢ norm/neu neuR] StepPQ)
+| LRc/step StepPW LrcW ⇒
+  let [Ψ ⊢ eq/tm/i] = determinism StepPQ StepPW in LrcW
+| LRc/M/u [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ ⊢ P'] LrP' ⇒
+  (case StepPQ of
+  | [Ψ ⊢ ↦/match stepRR'] ⇒ impossible (finality [Ψ ⊢ norm/neu neuR] [Ψ ⊢ stepRR'])
+  | [Ψ ⊢ ↦/match/K canL pstepLP'] ⇒ impossible (not-neu-can [Ψ ⊢ neuR] [Ψ ⊢ canL])
+  | [Ψ ⊢ ↦/match/R/unit neuR stepP'Q'] : [Ψ ⊢ ↦ (match R (pat/unit P')) (match R (pat/unit Q'))] ⇒
+    LRc/M/u _ [Ψ ⊢ neuR]  _ (lem5-closure-red1 LrP' [Ψ ⊢ stepP'Q'])
+  )
+| LRc/M/p [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ, x : tm m/q A[], y : tm m/q B[] ⊢ P'] LrP' ⇒
+  (case StepPQ of
+  | [Ψ ⊢ ↦/match stepRR'] ⇒ impossible (finality [Ψ ⊢ norm/neu neuR] [Ψ ⊢ stepRR'])
+  | [Ψ ⊢ ↦/match/K canL pstepLP'] ⇒ impossible (not-neu-can [Ψ ⊢ neuR] [Ψ ⊢ canL])
+  | [Ψ ⊢ ↦/match/R/pair X (\x. \nx. \y. \ny. stepP'Q')] ⇒
+    LRc/M/p _ [Ψ ⊢ neuR] _
+      (lem5-closure-red1 LrP' [Ψ, blx: block (x: tm m/q _ , nx: neu x),
+                               bly: block (y: tm m/q _ , ny: neu y) ⊢ stepP'Q'[..,blx.1,blx.2,bly.1,bly.2]])
+  )
+;
+
+rec lem5-closure-red: (Ψ:nctx) (A:[⊢ tp K]) (P:[Ψ ⊢ tm K[] A[]]) (Q:[Ψ ⊢ tm K[] A[]])
+  LR [⊢ A] [Ψ ⊢ P]
+→ [Ψ ⊢ ↦* P Q]
+→ LR [⊢ A] [Ψ ⊢ Q] =
+/ total 2 /
+fn LrP StepsPQ ⇒ case StepsPQ of
+  | [Ψ ⊢ (↦*/refl : ↦* (P : tm K[] A[]) P)] ⇒ LrP
+  | [Ψ ⊢ (↦*/step stepPP' stepsP'Q : ↦* (P : tm K[] A[]) Q)] ⇒
+    let LrP' = lem5-closure-red1 LrP [Ψ ⊢ stepPP'] in
+    lem5-closure-red LrP' [Ψ ⊢ stepsP'Q]
+;
+
+inductive LogSub : {Δ:ctx} (Φ:nctx) {$ρ: $[Φ ⊢ Δ]} ctype =
+| LS/nil: LogSub [] $[Φ ⊢ ^]
+| LS/cons: LogSub [Δ] $[Φ ⊢ $ρ] → LR [⊢ A] [Φ ⊢ P]
+→ LogSub [Δ, x:tm K[] A[]] $[Φ ⊢ $ρ, P]
+;
+
+
+% Lemma 6 part 1
+rec lem6-monotone : (Ψ:nctx) {Φ:nctx} {$S:$[Ψ ⊢ Φ]}
+  (A: [ ⊢ tp K]) (P:[Φ ⊢ tm K[] A[]]) LR [ ⊢ A] [Φ ⊢ P]
+→ LR [ ⊢ A] [Ψ ⊢ P[$S]] =
+/ total 3 /
+mlam Φ $S ⇒ fn LrP ⇒ case LrP of
+| LR/⊸ (Halts/c [_ ⊢ v] [_ ⊢ steps] [_ ⊢ normV]) f ⇒
+    LR/⊸ (Halts/c [_ ⊢ v[$S]] [_ ⊢ steps[$S]] [_ ⊢ normV[$S]])
+      (mlam Φ', $S', Q ⇒ fn LrQ ⇒
+       f [Φ'] $[Φ' ⊢ $S[$S']] [Φ' ⊢ Q] LrQ)
+| LR/↑ LrM ⇒ LR/↑ (lem6-monotone [_] $[_ ⊢ $S] LrM)
+| LR/clo LrcP ⇒ LR/clo (lem6-monotone-c [_] $[_ ⊢ $S] LrcP)
+and rec lem6-monotone-c: (Ψ:nctx) {Φ:nctx} {$S:$[Ψ ⊢ Φ]}
+  (A: [ ⊢ tp K]) (P:[Φ ⊢ tm K[] A[]]) LRc [ ⊢ A] [Φ ⊢ P]
+→ LRc [ ⊢ A] [Ψ ⊢ P[$S]] =
+/ total 3 /
+mlam Φ $S ⇒ fn LrcP ⇒ case LrcP of
+| LRc/↓ LrM ⇒ LRc/↓ (lem6-monotone [_] $[_ ⊢ $S] LrM)
+| LRc/𝟙 ⇒ LRc/𝟙
+| LRc/bit LrM ⇒ LRc/bit (lem6-monotone [_] $[_ ⊢ $S] LrM)
+| LRc/ifc LrP1 LrP2 LrP3 ⇒
+  let LrP1' = lem6-monotone [_] $[_ ⊢ $S] LrP1 in
+  let LrP2' = lem6-monotone [_] $[_ ⊢ $S] LrP2 in
+  let LrP3' = lem6-monotone [_] $[_ ⊢ $S] LrP3 in
+  LRc/ifc LrP1' LrP2' LrP3'
+| LRc/⊗ LrP1 LrP2 ⇒
+  let LrP1' = lem6-monotone [_] $[_ ⊢ $S] LrP1 in
+  let LrP2' = lem6-monotone [_] $[_ ⊢ $S] LrP2 in
+  LRc/⊗ LrP1' LrP2'
+| LRc/neu [Ψ ⊢ R] [Ψ ⊢ neuR] ⇒ LRc/neu [_ ⊢ R[$S]] [_ ⊢ neuR[$S]]
+| LRc/step [Ψ ⊢ stepPP'] LrcP' ⇒
+  LRc/step [_ ⊢ stepPP'[$S]] (lem6-monotone-c [_] $[_ ⊢ $S] LrcP')
+| LRc/M/u [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ ⊢ P] LrP ⇒
+  LRc/M/u [_ ⊢ R[$S]] [_ ⊢ neuR[$S]] [_ ⊢ P[$S]] (lem6-monotone [_] $[_ ⊢ $S] LrP)
+| LRc/M/p [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ, x:tm _ A[], y:tm _ B[] ⊢ P] LrP ⇒
+  LRc/M/p [_ ⊢ R[$S]] [_ ⊢ neuR[$S]]
+    [_, x:tm _ A[], y:tm _ B[] ⊢ P[$S[..], x, y]]
+    (lem6-monotone
+      [_, blx:block(x:tm _ A[], nx:neu x), bly:block (y:tm _ B[], ny:neu y)]
+      $[_, blx:block(x:tm _ A[], nx:neu x), bly:block (y:tm _ B[], ny:neu y) ⊢ $S[..], blx, bly]
+      LrP)
+;
+
+% Lemma 6 part 2
+rec lem6-monotone-sub: {$S:$[Ψ ⊢ Φ]}
+  LogSub [Δ] $[Φ ⊢ $ρ]
+→ LogSub [Δ] $[Ψ ⊢ $ρ[$S]] =
+/ total 2 /
+mlam $S ⇒ fn ls ⇒ case ls of
+| LS/nil ⇒ LS/nil
+| LS/cons ls' lrp ⇒
+    let ls'' = lem6-monotone-sub $[_ ⊢ $S] ls' in
+    let lrp' = lem6-monotone [_] $[_ ⊢ $S] lrp in
+    LS/cons ls'' lrp'
+;
+
+rec wk-logsub: {Δ:ctx} (Φ:nctx) LogSub [Δ] $[Φ ⊢ $ρ]
+→ {A:[ ⊢ tp m/q]}
+LogSub [Δ, x:tm m/q A[]] $[Φ, b:block (x:tm m/q A[], nx:neu x) ⊢ $ρ[..], b.1] =
+mlam Δ ⇒ fn ls ⇒ mlam A ⇒ case ls of
+| LS/nil ⇒  LS/cons LS/nil
+    (LR/clo (LRc/neu [_, b:block (x:tm m/q _, nx:neu x) ⊢ b.1]      [_, b:block (x:tm m/q _, nx:neu x) ⊢ b.2]))
+| LS/cons ls' LrP ⇒
+  let (ls' : LogSub [Δ'] $[Φ ⊢ $ρ]) = ls' in
+  let LS/cons ls'' LrP'' = wk-logsub [Δ'] ls' [⊢ A] in
+  LS/cons
+    (LS/cons ls''
+      (lem6-monotone
+        [Φ]
+        $[_, b:block(x:tm m/q A[], nx:neu x) ⊢ ..]
+        LrP))
+    LrP''
+;
+
+% Lemma 7: Closure under application
+
+rec lem7-special : (Ψ: nctx) (V : [Ψ ⊢ tm m/q U[]]) (N :[Ψ ⊢  tm _ (⊸ U[] S[])])
+  LR [⊢ U] [Ψ ⊢ V] → [Ψ ⊢ norm V] → [Ψ ⊢ neu N]
+→ LRc [⊢ S] [Ψ ⊢ app N V]
+=
+/ total 1 /
+fn LrV nV neuN ⇒
+case nV of
+| [Ψ ⊢ norm/can K] ⇒ let [Ψ ⊢ neuN] = neuN in
+  LRc/neu _  [Ψ ⊢ neu/app/can neuN K]
+| [Ψ ⊢ norm/neu N] ⇒ let [Ψ ⊢ neuN] = neuN in
+  LRc/neu _  [Ψ ⊢ neu/app/neu neuN N]
+| [Ψ ⊢ norm/match neuR noP] ⇒
+  (case LrV of
+  | LR/clo (LRc/M/u [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ ⊢ P] LrV') ⇒
+    let [Ψ ⊢ pnorm/unit nP] = [Ψ ⊢ noP] in
+    let [Ψ ⊢ neuN] = neuN in
+    let [Ψ ⊢ nV] = nV in
+    let LrA = lem7-special  LrV' [Ψ ⊢ nP] [Ψ ⊢neuN] in
+    let LrA' = LRc/M/u [Ψ ⊢ R] [Ψ ⊢ neuR] _ (LR/clo LrA) in
+    LRc/step [Ψ ⊢ ↦/app/cc/2/unit neuN  nV] LrA'
+  | LR/clo (LRc/M/p [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ, x:tm m/q A[], y:tm m/q B[] ⊢ P] LrV' ) ⇒
+    let [Ψ ⊢ pnorm/pair (\x. \nx. \y. \ny. nP)] = [Ψ ⊢ noP] in
+    let [Ψ ⊢ neuN] = neuN in
+    let [Ψ ⊢ nV] = nV in
+    let LrA = lem7-special LrV'
+      [Ψ, b:block(x : tm _ _, nx:neu x),  c:block(y : tm _ _, nx:neu y) ⊢ nP[..,b.1,b.2,c.1,c.2]]
+      [Ψ,  b:block(x : tm _ _, nx:neu x),  c:block(y : tm _ _, nx:neu y) ⊢neuN[..]] in
+    let LrA' = LRc/M/p [Ψ ⊢ R] [Ψ ⊢ neuR] _ (LR/clo LrA) in
+    LRc/step [Ψ ⊢ ↦/app/cc/2/pair neuN  nV] LrA'
+  | LR/clo (LRc/step  [Ψ ⊢ ↦mP'] LrV' ) ⇒
+    impossible (finality [Ψ ⊢ norm/match neuR noP] [Ψ ⊢ ↦mP'])
+  )
+;
+
+rec lem7-clo-app: (Ψ:nctx) {Φ:nctx} {$S:$[Ψ ⊢ Φ]}
+  (A: [ ⊢ tp K]) (B: [ ⊢ tp K])
+  (P:[Φ ⊢ tm K[] (⊸ A[] B[])]) (Q:[Ψ ⊢ tm K[] A[]])
+  LR [⊢ (⊸ A B)] [Φ ⊢ P]
+→ LR [⊢ A] [Ψ ⊢ Q]
+→ LR [⊢ B] [Ψ ⊢ app P[$S] Q] =
+/ total 3 /
+mlam Φ ⇒ mlam $S ⇒ fn LrP LrQ ⇒
+let (LrQ: LR [⊢ A] [Ψ ⊢ Q]) = LrQ in
+case LrP of
+| LR/⊸ (Halts/c [_ ⊢ V] [_ ⊢ Steps] [_ ⊢ NormV]) f ⇒
+  f [Ψ] $[Ψ ⊢ $S] [Ψ ⊢ Q] LrQ
+% LR/↑ impossible
+| LR/clo LRcP ⇒ LR/clo (lem7-clo-app-c $[_ ⊢ $S] LRcP LrQ)
+and rec lem7-clo-app-c: (Ψ:nctx) (Φ:nctx) {$S:$[Ψ ⊢ Φ]}
+  (A: [ ⊢ tp K]) (B: [ ⊢ tp K]) (P:[Φ ⊢ tm K[] (⊸ A[] B[])]) (Q:[Ψ ⊢ tm K[] A[]])
+  LRc [⊢ (⊸ A B)] [Φ ⊢ P]
+→ LR [⊢ A] [Ψ ⊢ Q]
+→ LRc [⊢ B] [Ψ ⊢ app P[$S] Q] =
+/ total 2 /
+mlam $S ⇒ fn LrcP LrQ ⇒ case LrcP of
+% LRc/↓ , 𝟙, bit, ⊗  impossible
+| LRc/ifc LrP1 LrP2 LrP3 ⇒
+  let LrP2' = lem7-clo-app [_] $[_ ⊢ $S] LrP2 LrQ in
+  let LrP3' = lem7-clo-app [_] $[_ ⊢ $S] LrP3 LrQ in
+  let Halts/c [Φ ⊢ V1] [Φ ⊢ stepsP1V1] [Φ ⊢ normV1] = prop8-halts LrP1 in
+  let Halts/c [Ψ ⊢ V2] [Ψ ⊢ stepsP2V2] [Ψ ⊢ normV2] = prop8-halts LrP2' in
+  let Halts/c [Ψ ⊢ V3] [Ψ ⊢ stepsP3V3] [Ψ ⊢ normV3] = prop8-halts LrP3' in
+  ?
+  %LRc/ifc LrP1 LrP2' LrP3'
+| LRc/neu [Φ ⊢ R] [Φ ⊢ neuR] ⇒
+  let Halts/c [Ψ ⊢ V] [Ψ ⊢ steps*QV] [Ψ ⊢ normV] = prop8-halts LrQ in
+  let LrV = lem5-closure-red LrQ [Ψ ⊢ steps*QV]  in
+  let LrA = lem7-special LrV [Ψ ⊢ normV] [Ψ ⊢ neuR[$S]] in
+  lem4-closure-exp-c LrA (app2↦* _ [Ψ ⊢ norm/neu neuR[$S]] [Ψ ⊢ steps*QV])
+| LRc/step [Φ ⊢ stepPP'] LrcP' ⇒
+  let LrcP'' = lem7-clo-app-c $[_ ⊢ $S] LrcP' LrQ in
+  LRc/step [_ ⊢ ↦/app/1 (stepPP'[$S])] LrcP''
+| LRc/M/u [Φ ⊢ R] [Φ ⊢ neuR] [Φ ⊢ P'] LrP' ⇒
+  let LrP'Q = lem7-clo-app [_] $[_ ⊢ $S] LrP' LrQ in
+  % TODO Ryan -- I think there's a typo on paper proof for the 2 steps below
+  % (steps 7 and step 8 in case LR/M)
+  % It says by lemma 5, but it should be by prop 7 I think?
+  let Halts/c [Φ ⊢ V] [Φ ⊢ stepsP'V] [Φ ⊢ normV] = prop8-halts LrP' in
+  let Halts/c [Ψ ⊢ W] [Ψ ⊢ stepsQW] [Ψ ⊢ normW] = prop8-halts LrQ in
+  let [Ψ ⊢ stepsQW] : [Ψ ⊢ ↦* Q W] = [Ψ ⊢ stepsQW] in
+  let [Ψ ⊢ stepsP'Q_VW] =
+  concat↦*
+    (app1↦* [Ψ ⊢ Q] [Ψ ⊢ stepsP'V[$S]])
+    (app2↦* [Ψ ⊢ V[$S]] [Ψ ⊢ normV[$S]] [Ψ ⊢ stepsQW])
+  in
+  let LrVW = lem5-closure-red LrP'Q [Ψ ⊢ stepsP'Q_VW] in
+  % LRc (match R (app V W))
+  let LrcmRVW = LRc/M/u [_ ⊢ R[$S]] [_ ⊢ neuR[$S]] [Ψ ⊢ (app V[$S] W)] LrVW in
+  % LRc (app (match R V) W)
+  let LrcmRV_W =
+    LRc/step [_ ⊢ ↦/app/cc/1/unit
+      (norm/match neuR[$S] (pnorm/unit normV[$S])) normW]
+    LrcmRVW
+  in
+  % Now construct ↦* (app (match R P) Q) (app (match R V) W)
+  let StepsmRPmRV = matchRunit↦* [_ ⊢ R[$S]] [_ ⊢ neuR[$S]] [_ ⊢ stepsP'V[$S]] in
+  let StepsmRP_QmRV_Q = (app1↦* [_ ⊢ Q] StepsmRPmRV) in
+  let StepsmRV_QmRV_W = (app2↦* [_ ⊢ _] [Ψ ⊢ norm/match neuR[$S] (pnorm/unit normV[$S])] [Ψ ⊢ stepsQW]) in
+  let StepsmRP_QmRV_W = concat↦* StepsmRP_QmRV_Q StepsmRV_QmRV_W in
+  lem4-closure-exp-c LrcmRV_W StepsmRP_QmRV_W
+  % TODO M/p case, should be mostly identical to M/u
+  | LRc/M/p [Φ ⊢ R] [Φ ⊢ neuR] [Φ, x:tm m/q A[], y:tm m/q B[] ⊢ P'] LrP' ⇒
+  let LrQwk = lem6-monotone [_] $[_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ ..] LrQ in
+  let LrP'Q = lem7-clo-app
+    [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y)]
+    $[_, blx:block(x:tm m/q A[], nx:neu x),
+       bly:block(y:tm m/q B[], ny:neu y) ⊢ $S[..], blx, bly]
+    LrP'
+    LrQwk
+   in
+  let Halts/c
+    [Φ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ V[.., blx.1, bly.1]]
+    [Φ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V]
+    [Φ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ normV]
+    = prop8-halts LrP' in
+  let Halts/c [Ψ ⊢ W] [Ψ ⊢ stepsQW] [Ψ ⊢ normW] = prop8-halts LrQ in
+  let [Ψ ⊢ stepsQW] : [Ψ ⊢ ↦* Q W] = [Ψ ⊢ stepsQW] in
+  let StepsP'Q_VW = concat↦*
+    (app1↦*
+      [Ψ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ Q[..]]
+      [Ψ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V[$S[..], blx, bly]])
+    (app2↦*
+      [Ψ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ V[$S[..], blx.1, bly.1]]
+      [Ψ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ normV[$S[..], blx, bly]]
+      [Ψ, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsQW[..]])
+  in
+  let LrVW = lem5-closure-red LrP'Q StepsP'Q_VW in
+  let LrcmRVW = LRc/M/p [_ ⊢ R[$S]] [_ ⊢ neuR[$S]]
+    [Ψ, x:tm m/q A[], y:tm m/q B[] ⊢ (app V[$S[..], x,y] W[..])] LrVW in
+  let LrcmRV_W =
+    LRc/step [_ ⊢ ↦/app/cc/1/pair
+      (norm/match neuR[$S] (pnorm/pair (\x.\nx.\y.\ny. normV[$S[..],<x;nx>,<y;ny>]))) normW]
+    LrcmRVW
+  in
+  let StepsmRPmRV = matchRpair↦* [_ ⊢ R[$S]] [_ ⊢ neuR[$S]]
+    [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V[$S[..], blx, bly]] in
+  let StepsmRP_QmRV_Q = (app1↦* [_ ⊢ Q] StepsmRPmRV) in
+  let StepsmRV_QmRV_W = (app2↦* [_ ⊢ _] [Ψ ⊢ norm/match neuR[$S] (pnorm/pair (\x.\nx.\y.\ny.normV[$S[..],<x;nx>,<y;ny>]))] [Ψ ⊢ stepsQW]) in
+  let StepsmRP_QmRV_W = concat↦* StepsmRP_QmRV_Q StepsmRV_QmRV_W in
+  lem4-closure-exp-c LrcmRV_W StepsmRP_QmRV_W
+;
+
+
+rec lem8-clo-force: (Φ:nctx) (A: [ ⊢ tp K']) (OK: [ ⊢ ↑ok (≻KK': ≻ K K')])
+		    (P:[Φ ⊢ tm K[] (↑ OK[] A[])])
+		    LR [⊢ ↑ OK A] [Φ ⊢ P]
+		    → LR [⊢ A] [Φ ⊢ force P] =
+/ total 1 /
+fn LrP ⇒ case LrP of
+  % LR/⊸ impossible
+  | LR/↑ LrP' ⇒ LrP'
+  | LR/clo LrcP ⇒ LR/clo (lem8-clo-force-c LrcP)
+
+and rec lem8-clo-force-c: (Φ:nctx) (A: [ ⊢ tp K']) (OK: [ ⊢ ↑ok (≻KK': ≻ K K')])
+			  (P:[Φ ⊢ tm K[] (↑ OK[] A[])])
+			  LRc [⊢ ↑ OK A] [Φ ⊢ P]
+			  → LRc [⊢ A] [Φ ⊢ force P] =
+/ total 1 /
+fn LrcP ⇒ case LrcP of
+% LRc/↓, 𝟙, ⊗ impossible
+| LRc/neu [Φ ⊢ R] [Φ ⊢ neuR] ⇒
+  let [Φ ⊢ R] : [Φ ⊢ tm m/q (↑ OK[] A[])] = [Φ ⊢ R] in
+  impossible [ ⊢ OK]
+| LRc/step [Φ ⊢ stepPP'] LrcP' ⇒
+  let LrcP'' = lem8-clo-force-c LrcP' in
+  LRc/step [_ ⊢ ↦/force/1 (stepPP')] LrcP''
+| LRc/M/u [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ ⊢ (P' : tm K[] (↑ OK[] A[]))] LrP' ⇒
+  let LrP'' = lem8-clo-force LrP' in
+  let Halts/c [Ψ ⊢ P'] [Ψ ⊢ (steps)] [Ψ ⊢ normP'] = prop8-halts LrP' in
+  let LrFM = LRc/M/u  [Ψ ⊢ R] [Ψ ⊢ neuR] _ (lem5-closure-red LrP'' (force↦* [Ψ ⊢ steps])) in
+  let [Ψ ⊢ stepf] = [Ψ ⊢ (↦/force/cc/unit (norm/match neuR (pnorm/unit normP')))] in
+  let [Ψ ⊢ stepsm] = matchRunit↦* [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ ⊢ steps] in
+  let [Ψ ⊢ fstepsm] = force↦* [Ψ ⊢ stepsm] in
+  %TODO RYAN: Lemma 5 in the paper, should instead be Lemma 4 backwards closure
+  lem4-closure-exp-c ( LrFM) (concat↦* [Ψ ⊢ fstepsm]  [Ψ ⊢ ↦*/step stepf ↦*/refl] )
+| LRc/M/p [Ψ ⊢ R] [Ψ ⊢ neuR] [Ψ, x:tm m/q A[], y:tm m/q B[] ⊢ P'] LrP' ⇒
+  let LrP'' = lem8-clo-force LrP' in
+  let Halts/c [Ψ, blx: block (x: tm m/q _ , nx: neu x),
+               bly: block (y: tm m/q _ , ny: neu y) ⊢ P'[..,blx.1,bly.1]]
+    [Ψ, blx: block (x: tm m/q _ , nx: neu x),
+     bly: block (y: tm m/q _ , ny: neu y) ⊢ (steps[..,blx,bly])]
+    [Ψ, blx: block (x: tm m/q _ , nx: neu x),
+     bly : block (y : tm m/q _ , ny : neu y) ⊢ normP'] = prop8-halts LrP' in
+  let LrFM = LRc/M/p [Ψ ⊢ R] [Ψ ⊢ neuR] _
+    (lem5-closure-red LrP''
+      (force↦* [Ψ, blx: block (x: tm m/q _ , nx: neu x),
+	        bly: block (y: tm m/q _ , ny: neu y) ⊢ steps[..,blx,bly]])) in
+  let [Ψ ⊢ stepsm] = matchRpair↦* [Ψ ⊢ R] [Ψ  ⊢ neuR]
+    [Ψ, blx: block (x: tm m/q _ , nx: neu x),
+     bly : block (y : tm m/q _ , ny : neu y) ⊢ steps[..,blx,bly]] in
+  let [Ψ ⊢ fstepsm] = force↦* [Ψ ⊢ stepsm] in
+  lem4-closure-exp-c LrFM
+    (concat↦* [Ψ ⊢ fstepsm]
+      [Ψ ⊢ ↦*/step (↦/force/cc/pair (norm/match neuR (pnorm/pair
+        (\x.\nx.\y.\ny. normP'[..,<x;nx>,<y;ny>])
+        ))) ↦*/refl] )
+;
+
+
+%---------- main theorem/fundamental theorem ----------%
+% Lemma to handle variable case in main thm
+rec redVar: {Δ:ctx}
+  {#p:#[Δ ⊢ tm K[] A[]]} LogSub [Δ] $[Φ ⊢ $ρ]
+→ LR [ ⊢ A] [Φ ⊢ #p[$ρ]] =
+mlam Δ #p ⇒ fn ls ⇒ case [Δ] of
+| [] ⇒ impossible [ ⊢ #p]
+| [Δ', x:tm K'[] B[]] ⇒
+  (case [Δ', x:tm K'[] B[] ⊢ #p[.., x]] of
+    | [Δ', x:tm K[] A[] ⊢ x] ⇒ let LS/cons _ lrp = ls in lrp
+    | [Δ', x:tm K'[] B[] ⊢ #q[..]] ⇒ let LS/cons ls' _ = ls in redVar [Δ'] [Δ' ⊢ #q] ls'
+  )
+;
+
+% Main theorem
+rec main: (Δ:ctx) (Φ:nctx)
+  {P:[Δ ⊢ tm K[] A[]]}
+  LogSub [Δ] $[Φ ⊢ $ρ]
+→ LR [ ⊢ A] [Φ ⊢ P[$ρ]] =
+/ total 1 /
+mlam P ⇒ fn ls ⇒
+  let (ls : LogSub [Δ] $[Φ ⊢ $ρ]) = ls in
+  case [Δ ⊢ P] of
+  | [Δ ⊢ #p] ⇒ redVar [Δ] [Δ ⊢ #p] ls
+  | [Δ ⊢ lam (\x. P')] : [Δ ⊢ tm K[] (⊸ A[] B[])] ⇒
+    LR/⊸
+      (Halts/c [Φ ⊢ P[$ρ]] [Φ ⊢ ↦*/refl] [Φ ⊢ norm/can can/lam])
+      (mlam Ψ $S M ⇒ fn LrM ⇒
+        let (Halts/c [Ψ ⊢ V] [Ψ ⊢ stepsMV] [Ψ ⊢ normV]) = prop8-halts LrM in
+        let LrV = lem5-closure-red LrM [Ψ ⊢ stepsMV] in
+        let LrP'V = main [Δ, x:tm _ A[] ⊢ P']
+          (LS/cons (lem6-monotone-sub $[Ψ ⊢ $S] ls) LrV) in
+        lem4-closure-exp LrP'V
+          (concat↦*
+            (app2↦* [Ψ ⊢ P[$ρ[$S]]] [Ψ ⊢ norm/can (can/lam)] [Ψ ⊢ stepsMV])
+            [Ψ ⊢ ↦*/step (↦/app/beta (norm/can (can/lam)) normV) ↦*/refl])
+      )
+  | [Δ ⊢ app P1 P2] : [Δ ⊢ tm K[] B[]] ⇒
+    let LrP1 = main [Δ ⊢ P1] ls in
+    let LrP2 = main [Δ ⊢ P2] ls in
+    lem7-clo-app [_] $[Φ ⊢ ..] LrP1 LrP2
+  | [Δ ⊢ triv] ⇒ LR/clo LRc/𝟙
+  | [Δ ⊢ (pair P1 P2)]:[Δ ⊢ tm K[] (⊗ A[] B[])] ⇒
+    LR/clo (LRc/⊗ (main [Δ ⊢ P1] ls) (main [Δ ⊢ P2] ls))
+  | [Δ ⊢ (down _ P')] ⇒ LR/clo (LRc/↓ (main [Δ ⊢ P'] ls))
+  | [Δ ⊢ match P' π] ⇒
+    let LrP' = main [Δ ⊢ P'] ls in
+    (case [Δ ⊢ π] of
+    | [Δ ⊢ pat/unit Q'] ⇒
+      let LR/clo LrcP' = LrP' in
+      clo-match1-1 [Φ ⊢ P'[$ρ]] LrcP' [Δ ⊢ Q'] ls
+    | [Δ ⊢ pat/pair (\x.\y.Q')] ⇒
+      let LR/clo LrcP' = LrP' in
+      clo-match1-⊗ [Φ ⊢ P'[$ρ]] LrcP' [Δ, x:tm _ _, y:tm _ _ ⊢ Q'] ls
+    % similarly to the unit case, we defer to a helper lemma
+    | [Δ ⊢ pat/down O[] (\x.Q')] ⇒
+      let LR/clo LrcP' = LrP' in
+      clo-match1-↓ [ ⊢ O] [Φ ⊢ P'[$ρ]] LrcP' [Δ, x:tm _ _ ⊢ Q'] ls
+    )
+  | [Δ ⊢ susp P'] : [Δ ⊢ tm K[] (↑ OK[] A[])] ⇒
+    let LrP' = main [Δ ⊢ P'] ls in
+    let LrP'' = lem4-closure-exp LrP' [_ ⊢ ↦*/step (↦/force OK[] P'[$ρ]) (↦*/refl)] in
+    LR/↑ LrP''
+  | [Δ ⊢ force P'] : [Δ ⊢ tm K[] A[]] ⇒
+    let LrP' = main [Δ ⊢ P'] ls in
+    lem8-clo-force LrP'
+  | [Δ ⊢ gate G[]] : [Δ ⊢ tm m/q (⊸ A[] B[])] ⇒
+    LR/clo (LRc/neu [_ ⊢ gate G[]] [_ ⊢ neu/gate])
+  | [Δ ⊢ meas P'] ⇒
+    let LrP' = main [Δ ⊢ P'] ls in
+    LR/clo (LRc/bit LrP')
+  | [Δ ⊢ ifc P1 P2 P3] ⇒
+    let LrP1 = main [Δ ⊢ P1] ls in
+    let LrP2 = main [Δ ⊢ P2] ls in
+    let LrP3 = main [Δ ⊢ P3] ls in
+    LR/clo (LRc/ifc LrP1 LrP2 LrP3)
+
+% If P norm and Q in LR, then match P (pat/unit Q) in LR
+% The following lemmas correspond to lemma 9 and part 2 of the theorem:
+% Given R neutral, π in LR, and π' in LR, then
+% match (match R π) π' in LR
+% Unfortunately, it is easier to expand the pattern cases, so we end up with
+% 3 cases based on the the type of π:
+% Case 1: π: patt _ ⇒ 𝟙 _
+% Case 2: π: patt _ ⇒ ⊗ _ _
+% Case 3: π: patt _ ⇒ ↓ _
+
+% Case 1: π: patt (𝟙 m/q) ⇒ 𝟙 _
+and rec clo-match1-1: (Δ:ctx) (Ψ:nctx)
+  {P:[Ψ ⊢ tm K[] (𝟙 K[])]}
+  LRc [ ⊢ 𝟙 K] [Ψ ⊢ P]
+→ {Q:[Δ ⊢ tm K'[] C[]]}
+→ LogSub [Δ] $[Ψ ⊢ $ρ]
+→ LR [⊢ C] [Ψ ⊢ match P (pat/unit Q[$ρ])] =
+% Note: totality of LrcP
+/ total 3 /
+mlam P ⇒ fn LrcP ⇒ mlam Q ⇒ fn ls ⇒
+let (ls : LogSub [Δ] $[Φ ⊢ $ρ]) = ls in
+let LrQ = main [Δ ⊢ Q] ls in
+case LrcP of
+| LRc/neu [_ ⊢ _] [Ψ ⊢ neuP] ⇒
+  LR/clo (LRc/M/u [_ ⊢ _] [_ ⊢ neuP] [_ ⊢ Q[$ρ]] LrQ)
+| LRc/𝟙 ⇒
+  lem4-closure-exp LrQ
+    [_ ⊢ ↦*/step (↦/match/K (can/triv) ▷/unit) ↦*/refl]
+| LRc/ifc LrP1 LrP2 LrP3 ⇒
+  ?
+| LRc/step [Ψ ⊢ stepPP'] LrcP' ⇒
+  let LrmP'Q = clo-match1-1 [_ ⊢ _] LrcP' [_ ⊢ Q] ls in
+  lem4-closure-exp LrmP'Q [_ ⊢ ↦*/step (↦/match stepPP') ↦*/refl]
+| LRc/M/u [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ P'] LrP' ⇒
+  let LR/clo LrcP' = LrP' in
+  let LrmP'Q = clo-match1-1 [_ ⊢ _] LrcP' [_ ⊢ Q] ls in
+  let Halts/c [_ ⊢ V] [_ ⊢ stepsP'V] [_ ⊢ normV] = prop8-halts LrP' in
+  let LrmRmP'Q = LR/clo (LRc/M/u [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ _] LrmP'Q) in
+  let LrmRmVQ = lem5-closure-red LrmRmP'Q
+    (matchRunit↦* [_ ⊢ _] [_ ⊢ neuR] (match1↦* [_ ⊢ pat/unit _] [_ ⊢ stepsP'V]))
+  in
+  lem4-closure-exp LrmRmVQ
+    (concat↦* (match1↦* [_ ⊢ pat/unit Q[$ρ]] (matchRunit↦* [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ stepsP'V]))
+      [_ ⊢ ↦*/step (↦/match/cc/unit (norm/match neuR (pnorm/unit normV))) ↦*/refl])
+| LRc/M/p [_ ⊢ _] [_ ⊢ neuR] [_ , x:tm m/q A[], y:tm m/q B[] ⊢ P'] LrP' ⇒
+  let LR/clo LrcP' = LrP' in
+  let LrmP'Q = clo-match1-1 [_ , blx:block(x:tm m/q _, nx:neu x), bly:block(y:tm m/q _, ny:neu y) ⊢ _] LrcP' [_ ⊢ Q]
+    (lem6-monotone-sub $[_, blx:block (x:tm m/q _, nx:neu x), bly:block (y:tm m/q _, ny:neu y) ⊢ ..] ls) in
+  let Halts/c [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ V[.., blx.1, bly.1]]
+              [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V]
+              [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ normV] =
+    prop8-halts LrP' in
+  let LrmRmP'Q = LR/clo (LRc/M/p [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ _] LrmP'Q) in
+  let LrmRmVQ = lem5-closure-red LrmRmP'Q
+    (matchRpair↦* [_ ⊢ _] [_ ⊢ neuR]
+      (match1↦*
+        [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ pat/unit Q[$ρ[..]]]
+        [_ ⊢ stepsP'V]))
+  in
+  lem4-closure-exp LrmRmVQ
+    (concat↦*
+      (match1↦* [_ ⊢ pat/unit Q[$ρ]]
+        (matchRpair↦* [_ ⊢ _] [_ ⊢ neuR]
+          [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V]))
+    [_ ⊢ ↦*/step (↦/match/cc/pair (norm/match neuR (pnorm/pair \x.\nx.\y.\ny. normV[..,<x;nx>, <y;ny>]))) ↦*/refl])
+
+
+% Case 2: π: patt (𝟙 m/q) ⇒ ↓ _
+and rec clo-match1-↓: (Δ:ctx) (Ψ:nctx)
+  (≻KK': [ ⊢ ≻ K K'])
+  {O : [ ⊢ ↓ok ≻KK']}
+  {P:[Ψ ⊢ tm K'[] (↓ O[] A[])]}
+  LRc [ ⊢ ↓ O[] A] [Ψ ⊢ P]
+→ {Q:[Δ, x:tm K[] A[] ⊢ tm K''[] C[]]}
+→ LogSub [Δ] $[Ψ ⊢ $ρ]
+→ LR [⊢ C] [Ψ ⊢ match P (pat/down O[] (\x. Q[$ρ[..], x]))] =
+% Note: totality checker on LrcP
+/ total 4 /
+mlam O P ⇒ fn LrcP ⇒ mlam Q ⇒ fn ls ⇒
+let (ls : LogSub [Δ] $[Φ ⊢ $ρ]) = ls in
+case LrcP of
+| LRc/↓ LrP' ⇒ 
+  let (Halts/c [Φ ⊢ V] [Φ ⊢ stepsP'V] [Φ ⊢ normV]) = prop8-halts LrP' in
+  let LrV = lem5-closure-red LrP' [Φ ⊢ stepsP'V] in
+  let LrQV = main [_, x:tm _ _ ⊢ Q] (LS/cons ls LrV) in
+  lem4-closure-exp LrQV
+    (concat↦*
+      (match1↦* [Φ ⊢ pat/down O[] (\x.Q[$ρ[..], x])] (down↦* [ ⊢ O] [Φ ⊢ stepsP'V]))
+      [Φ ⊢ ↦*/step (↦/match/K (can/down normV) ▷/down) ↦*/refl])
+| LRc/ifc LrP1 LrP2 LrP3 ⇒
+  ?
+| LRc/step [Ψ ⊢ stepPP'] LrcP' ⇒
+  let LrmP'Q = clo-match1-↓ [ ⊢ O] [_ ⊢ _] LrcP' [_ ⊢ Q] ls in
+  lem4-closure-exp LrmP'Q [_ ⊢ ↦*/step (↦/match stepPP') ↦*/refl]
+| LRc/M/u [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ P'] LrP' ⇒
+  let LR/clo LrcP' = LrP' in
+  let LrmP'Q = clo-match1-↓ [ ⊢ O] [_ ⊢ _] LrcP' [_ ⊢ Q] ls in
+  let Halts/c [_ ⊢ V] [_ ⊢ stepsP'V] [_ ⊢ normV] = prop8-halts LrP' in
+  let LrmRmP'Q = LR/clo (LRc/M/u [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ _] LrmP'Q) in
+  let LrmRmVQ = lem5-closure-red LrmRmP'Q
+    (matchRunit↦* [_ ⊢ _] [_ ⊢ neuR] (match1↦* [_ ⊢ pat/down O[] (\x. Q[$ρ[..], x])] [_ ⊢ stepsP'V]))
+  in
+  lem4-closure-exp LrmRmVQ
+    (concat↦* (match1↦* [_ ⊢ pat/down O[] (\x. Q[$ρ[..], x])] (matchRunit↦* [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ stepsP'V]))
+      [_ ⊢ ↦*/step (↦/match/cc/unit (norm/match neuR (pnorm/unit normV))) ↦*/refl])
+| LRc/M/p [_ ⊢ _] [_ ⊢ neuR] [_ , x:tm m/q A[], y:tm m/q B[] ⊢ P'] LrP' ⇒
+  let LR/clo LrcP' = LrP' in
+  let LrmP'Q = clo-match1-↓ [ ⊢ O] [_ , blx:block(x:tm m/q _, nx:neu x), bly:block(y:tm m/q _, ny:neu y) ⊢ _] LrcP' [_ ⊢ Q]
+    (lem6-monotone-sub $[_, blx:block (x:tm m/q _, nx:neu x), bly:block (y:tm m/q _, ny:neu y) ⊢ ..] ls)
+  in
+  let Halts/c [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ V[.., blx.1, bly.1]]
+              [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V]
+              [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ normV] =
+    prop8-halts LrP' in
+  let LrmRmP'Q = LR/clo (LRc/M/p [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ _] LrmP'Q) in
+  let LrmRmVQ = lem5-closure-red LrmRmP'Q
+    (matchRpair↦* [_ ⊢ _] [_ ⊢ neuR]
+      (match1↦*
+        [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ pat/down O[] (\x. Q[$ρ[..], x])]
+        [_ ⊢ stepsP'V]))
+  in
+  lem4-closure-exp LrmRmVQ
+    (concat↦*
+      (match1↦* [_ ⊢ pat/down O[] (\x. Q[$ρ[..], x])]
+        (matchRpair↦* [_ ⊢ _] [_ ⊢ neuR]
+          [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V]))
+    [_ ⊢ ↦*/step (↦/match/cc/pair (norm/match neuR (pnorm/pair \x.\nx.\y.\ny. normV[..,<x;nx>, <y;ny>]))) ↦*/refl])
+
+% Case 3: π: patt (𝟙 m/q) ⇒ _ ⊗ _
+and rec clo-match1-⊗: (Δ:ctx) (Ψ:nctx)
+  {P:[Ψ ⊢ tm K[] (⊗ A[] B[])]}
+  LRc [ ⊢ ⊗ A B] [Ψ ⊢ P]
+→ {Q:[Δ, a:tm K[] A[], b:tm K[] B[] ⊢ tm K'[] C[]]}
+→ LogSub [Δ] $[Ψ ⊢ $ρ]
+→ LR [⊢ C] [Ψ ⊢ match P (pat/pair (\x.\y. Q[$ρ[..], x,y]))] =
+/ total 3 /
+mlam P ⇒ fn LrcP ⇒ mlam Q ⇒ fn ls ⇒
+let (ls : LogSub [Δ] $[Φ ⊢ $ρ]) = ls in
+case LrcP of
+| LRc/neu [_ ⊢ _] [_ ⊢ neuP] ⇒
+  LR/clo (LRc/M/p [_ ⊢ _] [_ ⊢ neuP] [_ ⊢ _] (main [Δ, a:tm _ _, b:tm _ _ ⊢ Q]
+    (wk-logsub [Δ, a:tm _ _] (wk-logsub [Δ] ls [ ⊢ _]) [ ⊢ _])))
+| LRc/ifc LrP1 LrP2 LrP3 ⇒
+  ?
+| LRc/⊗ LrP1 LrP2 ⇒
+  let (Halts/c [Φ ⊢ V] [Φ ⊢ stepsP1V1] [Φ ⊢ normV1]) = prop8-halts LrP1 in
+  let LrV1 = lem5-closure-red LrP1 [Φ ⊢ stepsP1V1] in
+  let (Halts/c [Φ ⊢ V] [Φ ⊢ stepsP2V2] [Φ ⊢ normV2]) = prop8-halts LrP2 in
+  let LrV2 = lem5-closure-red LrP2 [Φ ⊢ stepsP2V2] in
+  let LrQV1V2 = main [_, x:tm _ _, y:tm _ _ ⊢ Q] (LS/cons (LS/cons ls LrV1) LrV2) in
+  lem4-closure-exp LrQV1V2
+    (concat↦*
+      (match1↦* [Φ ⊢ pat/pair (\x.\y.Q[$ρ[..], x,y])] (pair1↦* [Φ ⊢ _] [Φ ⊢ stepsP1V1]))
+      (concat↦*
+        (match1↦* [Φ ⊢ pat/pair (\x.\y.Q[$ρ[..], x,y])] (pair2↦* [Φ ⊢ _] [Φ ⊢ normV1] [Φ ⊢ stepsP2V2]))
+        [Φ ⊢ ↦*/step (↦/match/K (can/pair normV1 normV2) ▷/pair) ↦*/refl]))
+| LRc/step [_ ⊢ stepPP'] LrcP' ⇒
+  let LrmP'Q = clo-match1-⊗ [_ ⊢ _] LrcP' [_ ⊢ Q] ls in
+  lem4-closure-exp LrmP'Q [_ ⊢ ↦*/step (↦/match stepPP') ↦*/refl]
+| LRc/M/u [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ P'] LrP' ⇒
+  let LR/clo LrcP' = LrP' in
+  let LrmP'Q = clo-match1-⊗ [_ ⊢ _] LrcP' [_ ⊢ Q] ls in
+  let Halts/c [_ ⊢ V] [_ ⊢ stepsP'V] [_ ⊢ normV] = prop8-halts LrP' in
+  let LrmRmP'Q = LR/clo (LRc/M/u [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ _] LrmP'Q) in
+  let LrmRmVQ = lem5-closure-red LrmRmP'Q
+    (matchRunit↦* [_ ⊢ _] [_ ⊢ neuR] (match1↦* [_ ⊢ pat/pair (\x.\y. Q[$ρ[..], x,y])] [_ ⊢ stepsP'V]))
+  in
+  lem4-closure-exp LrmRmVQ
+    (concat↦* (match1↦* [_ ⊢ pat/pair (\x.\y. Q[$ρ[..], x,y])] (matchRunit↦* [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ stepsP'V]))
+      [_ ⊢ ↦*/step (↦/match/cc/unit (norm/match neuR (pnorm/unit normV))) ↦*/refl])
+| LRc/M/p [_ ⊢ _] [_ ⊢ neuR] [_ , x:tm m/q A[], y:tm m/q B[] ⊢ P'] LrP' ⇒
+  let LR/clo LrcP' = LrP' in
+  let LrmP'Q = clo-match1-⊗ [_ , blx:block(x:tm m/q _, nx:neu x), bly:block(y:tm m/q _, ny:neu y) ⊢ _] LrcP' [_ ⊢ Q]
+    (lem6-monotone-sub $[_, blx:block (x:tm m/q _, nx:neu x), bly:block (y:tm m/q _, ny:neu y) ⊢ ..] ls)
+  in
+  let Halts/c [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ V[.., blx.1, bly.1]]
+              [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V]
+              [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ normV] =
+    prop8-halts LrP' in
+  let LrmRmP'Q = LR/clo (LRc/M/p [_ ⊢ _] [_ ⊢ neuR] [_ ⊢ _] LrmP'Q) in
+  let LrmRmVQ = lem5-closure-red LrmRmP'Q
+    (matchRpair↦* [_ ⊢ _] [_ ⊢ neuR]
+      (match1↦*
+        [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ pat/pair (\x.\y. Q[$ρ[..], x, y])]
+        [_ ⊢ stepsP'V]))
+  in
+  lem4-closure-exp LrmRmVQ
+    (concat↦*
+      (match1↦* [_ ⊢ pat/pair (\x.\y. Q[$ρ[..], x,y])]
+        (matchRpair↦* [_ ⊢ _] [_ ⊢ neuR]
+          [_, blx:block(x:tm m/q A[], nx:neu x), bly:block(y:tm m/q B[], ny:neu y) ⊢ stepsP'V]))
+    [_ ⊢ ↦*/step (↦/match/cc/pair (norm/match neuR (pnorm/pair \x.\nx.\y.\ny. normV[..,<x;nx>, <y;ny>]))) ↦*/refl])
+;
+

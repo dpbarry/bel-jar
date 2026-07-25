@@ -3,17 +3,23 @@
 .cursor/
 node_modules/
 
+# Accidental / local dumps (not product code — see docs/CODEMAP.md)
+3/
+scratch/*
+!scratch/README.md
+
+# Separate Beluga marketing site (not BelJar) — keep local, don't ship here
+beluga-site/
+
 # Corpus masking-harness run outputs (regenerate via `npm run corpus`/`heldout`)
 results/corpus/
 
 _debug-*.mjs
 tests/_scratch-*.mjs
 
+# One-off local copies (Beluga site hosts the real PDFs)
 tutorial.pdf
 userguide.pdf
-
-all.bel
-all-formatted.bel
 
 # Prover session scratch (regenerate locally)
 scripts/debug-wtp-*.mjs
@@ -23,26 +29,6 @@ scripts/.str-wtp-*
 scripts/.shots/
 scripts/*.log
 
-# str_step scratch (handoff kit negated below)
-scripts/debug-str-step-*.mjs
-!scripts/debug-str-step-prime.mjs
-!scripts/debug-str-step-recurse-check.mjs
-!scripts/debug-str-step-recurse-variants.mjs
+# Prover debug probes + local fixtures (not product)
+scripts/debug-*.mjs
 scripts/.str-step-*.bel
-!scripts/.str-step-14.bel
-!scripts/.str-step-15.bel
-!scripts/.str-step-20.bel
-
-# Other one-off prover debug
-scripts/debug-branch-moves.mjs
-scripts/debug-ctor-fam.mjs
-scripts/debug-dual-uniq.mjs
-scripts/debug-lam-moves.mjs
-scripts/debug-out-lemma.mjs
-scripts/debug-prove-step.mjs
-scripts/debug-split-pat.mjs
-scripts/debug-step-prime-moves.mjs
-scripts/debug-step-prime-why.mjs
-scripts/debug-tp-prove.mjs
-scripts/debug-wait-step.mjs
-scripts/debug-str-step-15.mjs

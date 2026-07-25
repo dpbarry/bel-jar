@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { parser } from '../editor-src/beluga-parser.js';
-import { formatString } from '../editor-src/bel-format.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { formatString } from '../js/editor-src/format/document-format.mjs';
 
 const src = `and rec clo-match1-⊗: (Δ:ctx) (Ψ:nctx)
   {P:[Ψ ⊢ tm K[] (⊗ A[] B[])]}

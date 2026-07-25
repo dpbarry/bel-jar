@@ -4,7 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { createCheckTrace } from '../editor-src/perf/check-trace.mjs';
+import { createCheckTrace } from '../js/editor-src/perf/check-trace.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');

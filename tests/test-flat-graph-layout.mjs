@@ -4,10 +4,10 @@
 // trunks, no intra-layer overlap, compactness, and long-edge dummy routing.
 import { readFileSync } from 'node:fs';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { buildGlobalModel } from '../editor-src/bel-graph-view.mjs';
-import { computeFlatLayout } from '../editor-src/graph/flat-graph.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { buildGlobalModel } from '../js/editor-src/graph/graph-view.mjs';
+import { computeFlatLayout } from '../js/editor-src/graph/flat-graph.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -224,7 +224,7 @@ function expectNoChipOverlap(layout) {
 
 // --- whole-file regression: BK block alignment must not leave colliding chips
 {
-  const bel = readFileSync(new URL('../all.bel', import.meta.url), 'utf8');
+  const bel = readFileSync(new URL('./fixtures/all.bel', import.meta.url), 'utf8');
   const engine = createSemanticEngine();
   engine.update(parser.parse(bel), Text.of(bel.split('\n')));
   const model = buildGlobalModel(engine);

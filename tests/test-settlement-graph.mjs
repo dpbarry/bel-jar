@@ -1,12 +1,12 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
-import { createSymbolStore } from '../editor-src/semantic/symbol-store.mjs';
-import { createSemanticGraph } from '../editor-src/semantic/semantic-graph.mjs';
-import { createSettlement } from '../editor-src/semantic/settlement.mjs';
-import { createCheckerStore } from '../editor-src/semantic/checker-store.mjs';
-import { STATUS } from '../editor-src/semantic/ids.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { createSyntaxStore } from '../js/editor-src/semantic/syntax-store.mjs';
+import { createSymbolStore } from '../js/editor-src/semantic/symbol-store.mjs';
+import { createSemanticGraph } from '../js/editor-src/semantic/semantic-graph.mjs';
+import { createSettlement } from '../js/editor-src/semantic/settlement.mjs';
+import { createCheckerStore } from '../js/editor-src/semantic/checker-store.mjs';
+import { STATUS } from '../js/editor-src/semantic/ids.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

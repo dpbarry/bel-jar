@@ -4,8 +4,8 @@ import {
   healthForMember,
   resolveExplorerFileHealth,
   syntaxHealthForText,
-} from '../editor-src/file-health-store.mjs';
-import { createDevelopmentChecker, developmentSignature } from '../editor-src/development-check.mjs';
+} from '../js/editor-src/semantic/file-health-store.mjs';
+import { createDevelopmentChecker, developmentSignature } from '../js/editor-src/semantic/development-check.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

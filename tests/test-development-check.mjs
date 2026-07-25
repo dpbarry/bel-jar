@@ -5,8 +5,8 @@
 // attributed to its own file by span. Cached by content signature.
 import {
   checkDevelopmentCode, createDevelopmentChecker, developmentSignature,
-} from '../editor-src/development-check.mjs';
-import { assembleProjectCode } from '../editor-src/project-prelude.mjs';
+} from '../js/editor-src/semantic/development-check.mjs';
+import { assembleProjectCode } from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -58,6 +58,29 @@ const C = 'LF c : type =\n  | mc : badC\n;';
     'findings are file-relative to their own member');
   expect(m['b.bel'][0].severity === 'error', 'halting findings are errors');
   expect(res.ok === false, 'a development with member errors is not ok');
+}
+
+// ── a cascade from a masked block is NOT a second member error ───────────────
+// b.bel carries the real error; masking its block makes `b` unbound wherever
+// Beluga still sees a dependency our walk missed (the mock reports one in
+// d.bel). That unbound is INDUCED by the masking, not an independent fault —
+// only b.bel may carry a diagnostic. This is what inflated the suite banner to
+// "(+1 more in prelude)" once the development check's cache took precedence.
+{
+  const members = [
+    { id: 'b', name: 'b.bel', text: B },
+    { id: 'd', name: 'd.bel', text: 'LF d : type =\n  | md : d\n;' },
+  ];
+  const { code, spans } = assembleProjectCode(members);
+  const runCheck = haltingMock([
+    { marker: 'badB', message: 'Identifier badB is unbound' },
+    { marker: 'md : d', message: 'Identifier b is unbound' },
+  ]);
+  const res = await checkDevelopmentCode(code, spans, runCheck);
+  const files = Object.keys(res.memberDiagnostics);
+  expect(files.length === 1 && files[0] === 'b.bel',
+    `only the real culprit member carries a diagnostic, got: ${files.join(', ')}`);
+  expect(res.ok === false, 'the development still is not ok');
 }
 
 // ── an all-clean development is ok with no findings ──────────────────────────

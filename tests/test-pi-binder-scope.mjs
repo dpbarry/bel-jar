@@ -1,6 +1,6 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { walkTree } from '../editor-src/bel-walk.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { walkTree } from '../js/editor-src/tree-walk.mjs';
 
 const src = '| ¬I : ({p:o} nd A -> nd p) -> nd (¬ A)';
 const doc = Text.of([src]);

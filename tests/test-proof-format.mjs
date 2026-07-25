@@ -1,7 +1,7 @@
 // The committed-proof pretty-printer: canonical glyphs + structural re-indent.
 // A layout/glyph transform only — must never change the proof's TOKENS (verified
 // live in the prover probes; here we pin the pure text contract).
-import { formatProofBody } from '../editor-src/bel-proof-format.mjs';
+import { formatProofBody } from '../js/editor-src/format/proof-format.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

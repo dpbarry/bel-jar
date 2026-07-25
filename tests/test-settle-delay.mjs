@@ -1,4 +1,4 @@
-import { computeSettleDelayMs, noteTypingVelocity, resetSettleDelayState } from '../editor-src/semantic/settle-delay.mjs';
+import { computeSettleDelayMs, noteTypingVelocity, resetSettleDelayState } from '../js/editor-src/semantic/settle-delay.mjs';
 import { Text } from '@codemirror/state';
 
 function expect(cond, msg) {

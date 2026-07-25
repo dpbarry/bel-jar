@@ -9,12 +9,11 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, '..', 'js', 'toasts.js'), 'utf8');
-const fakeWindow = {};
+const src = readFileSync(join(here, '..', 'js', 'ui', 'toasts.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-new Function('window', src)(fakeWindow);
-const T = fakeWindow.BelJarToasts;
-expect(T && T._pure, 'BelJarToasts._pure exported');
+new Function(src)();
+const T = globalThis.Toasts;
+expect(T && T._pure, 'Toasts._pure exported');
 
 const { normalizeDuration, parseOpts, shouldNotify, DEFAULT_DURATION_MS } = T._pure;
 

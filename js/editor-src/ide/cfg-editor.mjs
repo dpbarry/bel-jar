@@ -1,0 +1,345 @@
+// .cfg editor affordances: entry spans, open-on-click, hover, completion, suite reorder.
+
+import {
+  isBelPath,
+  isCfgEntryToken,
+  isCfgPath,
+  isElfPath,
+  isProjectSourcePath,
+  isSignaturePath,
+} from '../project-paths.mjs';
+import { autocompletion } from '@codemirror/autocomplete';
+import { EditorView, hoverTooltip } from '@codemirror/view';
+import { forEachDiagnostic } from '@codemirror/lint';
+import { dirOf, joinPath } from '../semantic/development.mjs';
+import { resolveCfgDocumentPath } from './cfg-lint.mjs';
+import { buildDiagnosticTip, buildTipHead, buildTipBody, showSymbolTooltips } from './hover.mjs';
+import { armDefLink, clearDefLink, defLinkDecoration } from './navigation.mjs';
+
+function persist() {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  return g.Persist || null;
+}
+
+function isEntryToken(text) {
+  return isCfgEntryToken(text);
+}
+
+export function resolveCfgEntryPath(cfgPath, entry) {
+  const cfgDir = dirOf(String(cfgPath || ''));
+  return cfgDir ? joinPath(cfgDir, entry) : entry;
+}
+
+export function iterCfgEntries(doc) {
+  const entries = [];
+  let pos = 0;
+  let entryIndex = 0;
+  for (const rawLine of doc.toString().split('\n')) {
+    const lineStart = pos;
+    pos += rawLine.length + 1;
+    const t = rawLine.trim();
+    if (!t || t.charAt(0) === '%') continue;
+    const from = lineStart + rawLine.indexOf(t);
+    const to = from + t.length;
+    if (isEntryToken(t)) {
+      entries.push({ from, to, text: t, index: entryIndex++ });
+    } else {
+      entries.push({ from, to, text: t, index: -1 });
+    }
+  }
+  return entries;
+}
+
+export function cfgEntryAt(state, pos, cfgPath) {
+  for (const e of iterCfgEntries(state.doc)) {
+    if (pos >= e.from && pos <= e.to) {
+      return {
+        ...e,
+        cfgPath,
+        fullPath: resolveCfgEntryPath(cfgPath, e.text),
+      };
+    }
+  }
+  return null;
+}
+
+export function countCfgEntries(doc) {
+  return iterCfgEntries(doc).filter((e) => e.index >= 0).length;
+}
+
+function fileIdForPath(path) {
+  const P = persist();
+  if (!P || typeof P.listFiles !== 'function') return null;
+  for (const f of P.listFiles()) {
+    if (f.name === path) return f.id;
+  }
+  return null;
+}
+
+function openCfgEntry(entry) {
+  if (!entry || entry.index < 0) return false;
+  const fileId = fileIdForPath(entry.fullPath);
+  if (!fileId) return false;
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  if (typeof g.dispatchEvent !== 'function') return false;
+  g.dispatchEvent(new CustomEvent('beljar:open-file-at', {
+    detail: { fileId, from: 0, to: 0 },
+  }));
+  return true;
+}
+
+function modPressed(event) {
+  return event.metaKey || event.ctrlKey;
+}
+
+function cfgJumpTargetAt(state, pos, cfgPath) {
+  const entry = cfgEntryAt(state, pos, cfgPath);
+  if (!entry || entry.index < 0 || !fileIdForPath(entry.fullPath)) return null;
+  return entry;
+}
+
+function entryLines(view) {
+  return iterCfgEntries(view.state.doc).filter((e) => e.index >= 0);
+}
+
+function swapEntryLines(view, at, neighbor) {
+  const entries = entryLines(view);
+  if (at < 0 || neighbor < 0 || at >= entries.length || neighbor >= entries.length) return false;
+  const lineA = view.state.doc.lineAt(entries[at].from);
+  const lineB = view.state.doc.lineAt(entries[neighbor].from);
+  view.dispatch({
+    changes: [
+      { from: lineA.from, to: lineA.to, insert: lineB.text },
+      { from: lineB.from, to: lineB.to, insert: lineA.text },
+    ],
+    selection: { anchor: entries[neighbor].from },
+  });
+  return true;
+}
+
+export function moveCfgEntry(view, documentId, delta) {
+  const cfgPath = resolveCfgDocumentPath(documentId);
+  const pos = view.state.selection.main.head;
+  const entry = cfgEntryAt(view.state, pos, cfgPath);
+  if (!entry || entry.index < 0) return false;
+  const entries = entryLines(view);
+  const at = entries.findIndex((e) => e.index === entry.index);
+  return swapEntryLines(view, at, at + (delta < 0 ? -1 : 1));
+}
+
+export function removeCfgEntryLine(view, documentId) {
+  const cfgPath = resolveCfgDocumentPath(documentId);
+  const pos = view.state.selection.main.head;
+  const entry = cfgEntryAt(view.state, pos, cfgPath);
+  if (!entry || entry.index < 0) return false;
+  const line = view.state.doc.lineAt(entry.from);
+  const to = line.to < view.state.doc.length ? line.to + 1 : line.to;
+  view.dispatch({
+    changes: { from: line.from, to, insert: '' },
+    selection: { anchor: Math.min(line.from, view.state.doc.length) },
+  });
+  return true;
+}
+
+function filesInCfgDir(cfgPath) {
+  const P = persist();
+  if (!P || typeof P.listFiles !== 'function') return [];
+  const cfgDir = dirOf(String(cfgPath || ''));
+  const out = [];
+  for (const f of P.listFiles()) {
+    const n = String(f.name || '');
+    if (dirOf(n) !== cfgDir) continue;
+    if (!isProjectSourcePath(n)) continue;
+    out.push(n.slice(n.lastIndexOf('/') + 1));
+  }
+  out.sort((a, b) => a.localeCompare(b));
+  return out;
+}
+
+// Lint diagnostics overlapping the hovered entry's line. Whole-line warnings
+// (suite-composition) and token-span errors (dangling entry) both qualify.
+function diagnosticsOnEntry(view, entry) {
+  const line = view.state.doc.lineAt(entry.from);
+  const out = [];
+  forEachDiagnostic(view.state, (d, dFrom, dTo) => {
+    if (dTo >= line.from && dFrom <= line.to) out.push(d);
+  });
+  return out;
+}
+
+function cfgEntryNote(entry, exists) {
+  const baseName = entry.fullPath.split('/').pop() || entry.fullPath;
+  const note = document.createElement('div');
+  note.className = 'beljar-tip bel-type-tip';
+  note.appendChild(buildTipHead('Suite entry', baseName, null));
+
+  const bodyLines = [];
+  if (entry.fullPath !== baseName) bodyLines.push(entry.fullPath);
+  if (!exists) bodyLines.push('Not found in project');
+  bodyLines.push(`Position ${entry.index + 1} in suite`);
+  const body = buildTipBody(bodyLines.join('\n'));
+  if (!exists) body.classList.add('beljar-tip-body--warn');
+  note.appendChild(body);
+  return note;
+}
+
+// Hover for a cfg entry: render any lint warnings/errors in the SAME styled
+// frame as .bel tooltips, then the suite-position note — not the bare default
+// editor tooltip. Stacked in a .bel-hover-stack so chrome/spout match exactly.
+function cfgHover(documentId) {
+  const cfgPath = resolveCfgDocumentPath(documentId);
+  return hoverTooltip((view, pos) => {
+    const g = typeof window !== 'undefined' ? window : globalThis;
+    const entry = cfgEntryAt(view.state, pos, cfgPath);
+    if (!entry) return null;
+
+    const stack = document.createElement('div');
+    stack.className = 'bel-hover-stack';
+
+    const diags = diagnosticsOnEntry(view, entry);
+    for (const d of diags) {
+      const tip = buildDiagnosticTip(d);
+      tip.classList.add('beljar-tip');
+      stack.appendChild(tip);
+    }
+
+    if (showSymbolTooltips(g)) {
+      if (entry.index >= 0) {
+        const exists = !!fileIdForPath(entry.fullPath);
+        if (!diags.length || exists) stack.appendChild(cfgEntryNote(entry, exists));
+      }
+    }
+
+    if (!stack.childNodes.length) return null;
+
+    return { pos: entry.from, end: entry.to, above: true, create: () => ({ dom: stack }) };
+  }, { hoverTime: 280 });
+}
+
+function completionTypeForFile(name) {
+  if (isCfgPath(name)) return 'cfg';
+  if (isElfPath(name)) return 'elf';
+  if (isBelPath(name)) return 'bel';
+  return 'file';
+}
+
+function cfgCompletion(documentId) {
+  const cfgPath = resolveCfgDocumentPath(documentId);
+  return autocompletion({
+    activateOnTyping: true,
+    maxRenderedOptions: 24,
+    override: [(context) => {
+      const word = context.matchBefore(/[\w.\-]+/);
+      if (!word || (word.from === word.to && !context.explicit)) return null;
+      const options = filesInCfgDir(cfgPath)
+        .filter((name) => name.toLowerCase().startsWith(word.text.toLowerCase()))
+        .map((label) => ({ label, type: completionTypeForFile(label) }));
+      if (!options.length && !context.explicit) return null;
+      return { from: word.from, to: word.to, options };
+    }],
+  });
+}
+
+const cfgNavGestures = (documentId) => {
+  const cfgPath = resolveCfgDocumentPath(documentId);
+  return EditorView.domEventHandlers({
+    mousemove(event, view) {
+      if (!modPressed(event)) {
+        clearDefLink(view);
+        return false;
+      }
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      const entry = pos == null ? null : cfgJumpTargetAt(view.state, pos, cfgPath);
+      if (entry) armDefLink(view, entry.from, entry.to);
+      else clearDefLink(view);
+      return false;
+    },
+    mouseleave(event, view) {
+      clearDefLink(view);
+      return false;
+    },
+    mousedown(event, view) {
+      const foldCell = event.target?.closest?.('.cm-foldGutter .cm-gutterElement');
+      // Chevron strip without a fold marker proxies the line-number click; with a
+      // chevron, leave the event alone so folding still toggles.
+      if (foldCell?.querySelector?.('.cm-bel-foldmarker')) return false;
+      const inGutter = !!event.target?.closest?.('.cm-lineNumbers, .cm-foldGutter');
+      if (inGutter) {
+        if (event.button !== 0) return false;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos == null) return false;
+        const entry = cfgEntryAt(view.state, pos, cfgPath);
+        if (!entry || entry.index < 0) return false;
+        event.preventDefault();
+        return openCfgEntry(entry);
+      }
+      if (event.button !== 0 || !modPressed(event)) return false;
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos == null) return false;
+      const entry = cfgJumpTargetAt(view.state, pos, cfgPath);
+      if (!entry) return false;
+      event.preventDefault();
+      clearDefLink(view);
+      return openCfgEntry(entry);
+    },
+  });
+};
+
+function cfgContextMenu(documentId) {
+  const cfgPath = resolveCfgDocumentPath(documentId);
+  return EditorView.domEventHandlers({
+    contextmenu(event, view) {
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos == null) return false;
+      const entry = cfgEntryAt(view.state, pos, cfgPath);
+      if (!entry || entry.index < 0) return false;
+      const g = typeof window !== 'undefined' ? window : globalThis;
+      if (!g.Menu || typeof g.Menu.openContext !== 'function') return false;
+      event.preventDefault();
+      const entries = entryLines(view);
+      const at = entries.findIndex((e) => e.index === entry.index);
+      const items = [];
+      if (fileIdForPath(entry.fullPath)) {
+        items.push({
+          label: 'Open file',
+          onSelect: () => openCfgEntry(entry),
+        });
+      }
+      if (at > 0) {
+        items.push({
+          label: 'Move up in suite',
+          onSelect: () => moveCfgEntry(view, documentId, -1),
+        });
+      }
+      if (at >= 0 && at < entries.length - 1) {
+        items.push({
+          label: 'Move down in suite',
+          onSelect: () => moveCfgEntry(view, documentId, 1),
+        });
+      }
+      items.push({
+        label: 'Remove from suite',
+        onSelect: () => removeCfgEntryLine(view, documentId),
+      });
+      g.Menu.openContext({ x: event.clientX, y: event.clientY, items });
+      return true;
+    },
+  });
+}
+
+export function cfgEditorExtensions(documentId) {
+  return [
+    defLinkDecoration(),
+    cfgHover(documentId),
+    cfgCompletion(documentId),
+    cfgNavGestures(documentId),
+    cfgContextMenu(documentId),
+  ];
+}
+
+export function goToCfgEntry(view, documentId, pos) {
+  const cfgPath = resolveCfgDocumentPath(documentId);
+  const entry = cfgEntryAt(view.state, pos ?? view.state.selection.main.head, cfgPath);
+  if (!entry || entry.index < 0) return false;
+  return openCfgEntry(entry);
+}

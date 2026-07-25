@@ -6,9 +6,9 @@
 // Regression guard for the "IMPLICIT BINDER ctx / s3" misclassification.
 import assert from 'node:assert';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { resolveHoverDoc, referenceKind } from '../editor-src/bel-resolve.mjs';
-import { findGroupSignature, defsOf } from '../editor-src/project-prelude.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { resolveHoverDoc, referenceKind } from '../js/editor-src/name-resolve.mjs';
+import { findGroupSignature, defsOf } from '../js/editor-src/semantic/project-prelude.mjs';
 
 const at = (src, needle, occ = 1) => {
   let i = -1;
@@ -106,7 +106,7 @@ fn x => case x of
   assert.ok(sig && sig.type === 'n' && sig.label === 'schema',
     `schema is in the signature index too, got ${JSON.stringify(sig)}`);
 
-  globalThis.BelJarPersist = {
+  globalThis.Persist = {
     listFiles: () => FILES,
     getActiveFileId: () => 'b',
     getFileText: getText,
@@ -119,7 +119,7 @@ fn x => case x of
     assert.equal(r.externalFile, 'm/a.bel');
     assert.notEqual(r.label, 'Implicit Binder');
   } finally {
-    delete globalThis.BelJarPersist;
+    delete globalThis.Persist;
   }
 }
 

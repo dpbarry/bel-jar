@@ -1,0 +1,366 @@
+/* -- Tooltips -- */
+
+.tooltip-root {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 100000;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.tooltip-root.is-measuring {
+  visibility: visible !important;
+  left: -9999px !important;
+  top: 0 !important;
+}
+
+.tooltip-root.is-visible,
+.tooltip-root.is-leaving {
+  visibility: visible;
+}
+
+.tooltip-root .tooltip-inner {
+  --tooltip-bg: light-dark(var(--base-lowest), var(--base-lower));
+  --tooltip-border: light-dark(var(--muted-mid), var(--base-high));
+  --tooltip-spout-size: 6px;
+  position: relative;
+  overflow: visible;
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  white-space: pre-line;
+  color: var(--base-highest);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0.06rem 0.16rem var(--tooltip-shadow-near);
+  padding: 0.3rem 0.55rem;
+  max-width: min(18rem, calc(100vw - 1rem));
+  word-wrap: break-word;
+  transform-origin: center center;
+  transform: scale(0.93);
+  opacity: 0;
+  transition:
+    transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    opacity calc(var(--overlay-pop-ms-in) * 0.82) ease-out;
+}
+
+.tooltip-root .tooltip-inner::before {
+  content: none;
+  position: absolute;
+  width: var(--tooltip-spout-size);
+  height: var(--tooltip-spout-size);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-above::before {
+  content: '';
+  bottom: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 50%);
+  transform: translateX(-50%) rotate(45deg);
+  border-left: 0;
+  border-top: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-below::before {
+  content: '';
+  top: calc(var(--tooltip-spout-size) * -0.55);
+  left: var(--tooltip-arrow-x, 50%);
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-left::before {
+  content: '';
+  right: calc(var(--tooltip-spout-size) * -0.55);
+  top: var(--tooltip-arrow-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-left: 0;
+  border-bottom: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-right::before {
+  content: '';
+  left: calc(var(--tooltip-spout-size) * -0.55);
+  top: var(--tooltip-arrow-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-right: 0;
+  border-top: 0;
+}
+
+.tooltip-root .tooltip-inner.tooltip-spout-none::before {
+  display: none;
+}
+
+.tooltip-root .tooltip-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.1rem;
+  transform-origin: center center;
+  transform: scale(0.93);
+  opacity: 0;
+  transition:
+    transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    opacity calc(var(--overlay-pop-ms-in) * 0.82) ease-out;
+}
+
+.tooltip-root.is-visible:not(.is-measuring) .tooltip-stack {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.tooltip-root.is-leaving .tooltip-stack {
+  transform: scale(0.96);
+  opacity: 0;
+  transition:
+    transform var(--overlay-pop-ms-out) var(--overlay-pop-ease-out),
+    opacity var(--overlay-pop-ms-out) ease-in;
+}
+
+.tooltip-root .tooltip-stack > .tooltip-inner {
+  transform: none;
+  opacity: 1;
+  transition: none;
+}
+
+.tooltip-root.is-measuring .tooltip-stack {
+  transition: none;
+}
+
+.tooltip-root.is-measuring .tooltip-stack > .tooltip-inner {
+  transition: none;
+}
+
+.tooltip-root.is-measuring .tooltip-inner {
+  transition: none;
+}
+
+.tooltip-root.is-visible:not(.is-measuring) .tooltip-inner {
+  transform: scale(1);
+  opacity: 1;
+}
+
+/* Re-layout of an already-open tooltip (content refresh while hovered) must not
+   replay the pop-in: keep it at rest during the measuring pass. First show is
+   unaffected — is-visible is only added after measuring. */
+.tooltip-root.is-visible.is-measuring .tooltip-inner,
+.tooltip-root.is-visible.is-measuring .tooltip-stack {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.tooltip-root.is-leaving .tooltip-inner {
+  transform: scale(0.96);
+  opacity: 0;
+  transition:
+    transform var(--overlay-pop-ms-out) var(--overlay-pop-ease-out),
+    opacity var(--overlay-pop-ms-out) ease-in;
+}
+
+.tooltip-root .tooltip-inner.tooltip-inner--lint-errors {
+  --lint-pad-x: 1.05rem;
+  --lint-pad-y-outer: 0.18rem;
+  --lint-pad-y-inner: 0.16rem;
+  white-space: normal;
+  padding: 0;
+  overflow: visible;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 1rem));
+}
+
+.tooltip-lint-head {
+  font-weight: 600;
+  font-size: 0.62rem;
+  line-height: 1.28;
+  padding: calc(var(--lint-pad-y-inner) + var(--lint-pad-y-outer)) var(--lint-pad-x) var(--lint-pad-y-inner);
+  border-bottom: 1px solid var(--tooltip-border);
+  background: color-mix(in srgb, var(--base-high) 5%, var(--tooltip-bg));
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.tooltip-inner--lint-errors:not(:has(.tooltip-lint-list)) .tooltip-lint-head {
+  border-bottom: none;
+  padding-bottom: calc(var(--lint-pad-y-inner) + var(--lint-pad-y-outer));
+  border-radius: var(--radius-sm);
+}
+
+.tooltip-lint-body {
+  padding: 0;
+}
+
+.tooltip-lint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tooltip-lint-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.32rem;
+  line-height: 1.32;
+  padding: var(--lint-pad-y-inner) var(--lint-pad-x);
+  background: var(--tooltip-bg);
+}
+
+.tooltip-lint-item:last-child {
+  padding-bottom: calc(var(--lint-pad-y-inner) + var(--lint-pad-y-outer));
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.tooltip-lint-item + .tooltip-lint-item {
+  border-top: 1px solid var(--tooltip-border);
+}
+
+.tooltip-lint-item--warning .tooltip-lint-line {
+  color: var(--ide-status-warning, hsl(38, 92%, 50%));
+}
+
+.tooltip-lint-line {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-high);
+  white-space: nowrap;
+}
+
+.tooltip-lint-line::after {
+  content: ':';
+  margin-left: 0.05rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--muted-high) 72%, transparent);
+}
+
+.tooltip-lint-msg {
+  flex: 1 1 auto;
+  font-weight: 500;
+  min-width: 0;
+  color: var(--base-highest);
+}
+
+.tooltip-root .tooltip-inner.tooltip-inner--diagnostic {
+  --diag-accent-w: var(--edge-strip-w-callout);
+  position: relative;
+  padding: 0;
+  overflow: visible;
+  max-width: min(22rem, calc(100vw - 1rem));
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
+  border-left: var(--diag-accent-w) solid var(--diag-accent);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0.06rem 0.16rem var(--tooltip-shadow-near);
+  white-space: pre-line;
+  word-wrap: break-word;
+}
+
+.tooltip-root .tooltip-inner.tooltip-inner--diagnostic.tooltip-spout-right::before {
+  width: calc(var(--tooltip-spout-size) * 0.72);
+  height: var(--tooltip-spout-size);
+  left: calc(-1px - var(--tooltip-spout-size) * 0.72);
+  background: var(--diag-accent);
+  border: none;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+  transform: translateY(-50%);
+}
+
+.tooltip-root .tooltip-inner.tooltip-inner--diagnostic.tooltip-inner--error {
+  --diag-accent: var(--ide-error-squiggle);
+  --tooltip-bg: light-dark(hsl(355, 92%, 98%), hsl(355, 55%, 22%));
+  --tooltip-border: light-dark(hsl(355, 70%, 78%), hsl(355, 50%, 48%));
+}
+
+.tooltip-root .tooltip-inner.tooltip-inner--diagnostic.tooltip-inner--warning {
+  --diag-accent: var(--ide-warn-squiggle);
+  --tooltip-bg: light-dark(hsl(40, 92%, 97%), hsl(40, 50%, 20%));
+  --tooltip-border: light-dark(hsl(40, 70%, 70%), hsl(40, 45%, 50%));
+}
+
+.tooltip-root .tooltip-inner--diagnostic .cm-diagnostic {
+  position: relative;
+  overflow: visible;
+  background: transparent;
+  color: var(--base-highest);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  padding: 0;
+  white-space: pre-line;
+  word-wrap: break-word;
+}
+
+.tooltip-root .tooltip-inner--diagnostic .cm-diagnostic-error .beljar-tip-kind {
+  color: color-mix(in oklab, var(--ide-error-squiggle) 62%, var(--muted-high));
+}
+
+.tooltip-root .tooltip-inner--diagnostic .cm-diagnostic-warning .beljar-tip-kind {
+  color: color-mix(in oklab, var(--ide-warn-squiggle) 62%, var(--muted-high));
+}
+
+/* Rich tooltips — a custom DOM fragment (e.g. syntax-highlighted Beluga) built
+   lazily by the caller. Used by graph nodes and any code/type-bearing hint. */
+.tooltip-root .tooltip-inner--rich {
+  white-space: normal;
+  max-width: min(28rem, calc(100vw - 1rem));
+  padding: 0.4rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
+}
+.tooltip-inner--rich .hpt-tip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.tooltip-inner--rich .hpt-tip-kind {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-high);
+  padding: 0.05rem 0.32rem;
+  border-radius: var(--radius-xs, 3px);
+  background: color-mix(in srgb, var(--base-high) 16%, transparent);
+}
+.tooltip-inner--rich .hpt-tip-kind--ghost { opacity: 0.8; }
+.tooltip-inner--rich .hpt-tip-title {
+  font-weight: 600;
+  color: var(--base-highest);
+}
+.tooltip-inner--rich .hpt-tip-note {
+  font-size: 0.62rem;
+  color: var(--muted-high);
+  line-height: 1.4;
+}
+.tooltip-inner--rich .hpt-tip-note--dim { color: var(--muted-mid); }
+.tooltip-inner--rich .hpt-tip-code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.64rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.28rem 0.4rem;
+  border-radius: var(--radius-xs, 3px);
+  background: color-mix(in srgb, var(--base-high) 10%, transparent);
+  overflow-x: auto;
+  max-width: 100%;
+}

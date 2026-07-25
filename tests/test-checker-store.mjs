@@ -1,5 +1,5 @@
 import { ChangeSet } from '@codemirror/state';
-import { createCheckerStore } from '../editor-src/semantic/checker-store.mjs';
+import { createCheckerStore } from '../js/editor-src/semantic/checker-store.mjs';
 
 function expect(cond, msg) {
   if (!cond) { console.error('FAIL:', msg); process.exit(1); }

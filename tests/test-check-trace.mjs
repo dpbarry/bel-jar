@@ -1,4 +1,4 @@
-import { createCheckTrace } from '../editor-src/perf/check-trace.mjs';
+import { createCheckTrace } from '../js/editor-src/perf/check-trace.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

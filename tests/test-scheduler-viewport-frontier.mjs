@@ -8,7 +8,7 @@
 // onViewportChange + seedFromFrontier (what the editor calls on scroll) must
 // queue the decls that scroll into view.
 
-import { createSemanticScheduler } from '../editor-src/semantic/semantic-scheduler.mjs';
+import { createSemanticScheduler } from '../js/editor-src/semantic/semantic-scheduler.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

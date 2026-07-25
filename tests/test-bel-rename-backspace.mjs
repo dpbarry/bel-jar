@@ -1,9 +1,9 @@
 import { EditorState, Transaction } from '@codemirror/state';
 import {
-  belRename,
+  rename,
   renameActiveField,
   renameSessionEffect,
-} from '../editor-src/bel-rename.mjs';
+} from '../js/editor-src/ide/rename.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -21,7 +21,7 @@ const session = {
 
 let state = EditorState.create({
   doc: 'x bar x',
-  extensions: belRename(),
+  extensions: rename(),
 });
 
 state = state.update({

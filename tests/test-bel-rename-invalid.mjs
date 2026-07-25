@@ -1,11 +1,11 @@
 import { EditorState, Transaction } from '@codemirror/state';
 import {
-  belRename,
+  rename,
   planReferenceSync,
   renameActiveField,
   renameSessionEffect,
   renameSync,
-} from '../editor-src/bel-rename.mjs';
+} from '../js/editor-src/ide/rename.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -32,7 +32,7 @@ const session = {
 
 let state = EditorState.create({
   doc: 'foo bar foo',
-  extensions: belRename(),
+  extensions: rename(),
 });
 
 state = state.update({ effects: renameSessionEffect.of(session) }).state;
@@ -47,7 +47,7 @@ expect(state.doc.toString() === 'foo! bar foo!', 'illegal draft mirrors to refer
 
 let restore = EditorState.create({
   doc: 'foo bar foo',
-  extensions: belRename(),
+  extensions: rename(),
 });
 restore = restore.update({ effects: renameSessionEffect.of(session) }).state;
 restore = restore.update({ changes: [{ from: 0, to: 3, insert: 'baz' }] }).state;

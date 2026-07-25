@@ -3,11 +3,11 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const persistSrc = readFileSync(join(here, '../js/persist.js'), 'utf8');
 const ctx = vm.createContext({
   globalThis: {},
   clearTimeout,
@@ -15,8 +15,7 @@ const ctx = vm.createContext({
   TextEncoder,
 });
 ctx.globalThis = ctx;
-vm.runInContext(persistSrc, ctx);
-const BelJarPersist = ctx.BelJarPersist;
+const Persist = runPersistStackInContext(ctx);
 
 function expect(cond, msg) {
   if (cond) return;
@@ -24,14 +23,14 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
-const fp = BelJarPersist.documentFingerprint;
+const fp = Persist.documentFingerprint;
 const SAMPLE = `LF o : type =\n  | imp : o → o → o\n;\nLF nd : o → type =\n  | impI : nd → nd\n;\n`;
 const ndPos = SAMPLE.indexOf('LF nd') + 3;
 
 // --- persist v2 round-trip via memory backend --------------------------------
 {
-  const backend = BelJarPersist.createMemoryBackend();
-  const p = BelJarPersist.createPersist({ backend, debounceMs: 1 });
+  const backend = Persist.createMemoryBackend();
+  const p = Persist.createPersist({ backend, debounceMs: 1 });
 
   p.setCheckpointProviders({
     getSemantic: () => ({
@@ -66,10 +65,10 @@ const ndPos = SAMPLE.indexOf('LF nd') + 3;
 
 // --- legacy v1 migration -------------------------------------------------------
 {
-  const backend = BelJarPersist.createMemoryBackend({
-    [BelJarPersist.LEGACY_STATE_KEY]: JSON.stringify({ v: 1, editor: { text: 'legacy text' } }),
+  const backend = Persist.createMemoryBackend({
+    [Persist.LEGACY_STATE_KEY]: JSON.stringify({ v: 1, editor: { text: 'legacy text' } }),
   });
-  const p = BelJarPersist.createPersist({ backend });
+  const p = Persist.createPersist({ backend });
   expect(p.getEditorText() === 'legacy text', 'v1 text migrates');
 }
 
@@ -113,8 +112,8 @@ const ndPos = SAMPLE.indexOf('LF nd') + 3;
 
 // --- reconstructed-only checkpoint payload -------------------------------------
 {
-  const backend = BelJarPersist.createMemoryBackend();
-  const p = BelJarPersist.createPersist({ backend });
+  const backend = Persist.createMemoryBackend();
+  const p = Persist.createPersist({ backend });
   p.setCheckpointProviders({
     getSemantic: () => ({
       types: { v: 1, decls: [], metavars: [], reconstructed: [['sk-nd', 'R(nd)', 'fp-1']] },

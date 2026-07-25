@@ -4,10 +4,10 @@
 // declaration kinds resolve to the right hover label, and that newly-supported
 // symbols carry a builtin tooltip.
 
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import { Text } from '@codemirror/state';
-import { resolveHoverDoc } from '../editor-src/bel-resolve.mjs';
-import { BUILTIN_TOOLTIPS } from '../editor-src/bel-builtins.mjs';
+import { resolveHoverDoc } from '../js/editor-src/name-resolve.mjs';
+import { BUILTIN_TOOLTIPS } from '../js/editor-src/ide/builtins.mjs';
 
 let failed = false;
 function fail(msg) { console.error('FAIL:', msg); failed = true; }

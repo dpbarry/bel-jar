@@ -1,9 +1,9 @@
 // Grammar construct matrix — features present in beluga.grammar / library but
 // lightly covered by test-grammar-corpus.mjs.
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import { Text } from '@codemirror/state';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
-import { resolveHoverDoc } from '../editor-src/bel-resolve.mjs';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
+import { resolveHoverDoc } from '../js/editor-src/name-resolve.mjs';
 
 let failed = false;
 function fail(msg) { console.error('FAIL:', msg); failed = true; }

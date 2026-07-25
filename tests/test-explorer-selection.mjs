@@ -9,11 +9,10 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const exSrc = readFileSync(join(here, '..', 'js', 'explorer-tree.js'), 'utf8');
-const fake = {};
+const exSrc = readFileSync(join(here, '..', 'js', 'explorer', 'explorer.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-new Function('window', exSrc)(fake);
-const EX = fake.BelJarExplorer;
+new Function(exSrc)();
+const EX = globalThis.Explorer;
 
 const ROWS = [
   { kind: 'folder', key: 'lib' },

@@ -1,8 +1,8 @@
 // Stale implicit types after signature edit (⊃E repro) and scope-gated checkpoints.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { STATUS } from '../editor-src/semantic/ids.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { STATUS } from '../js/editor-src/semantic/ids.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

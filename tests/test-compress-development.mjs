@@ -1,12 +1,12 @@
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import {
   stubAllBodies,
   compressPrelude,
   buildCompressedCheckerCode,
   keepIndicesForFrontier,
   topDeclSpans,
-} from '../editor-src/semantic/compress-development.mjs';
-import { assembleCheckerCode } from '../editor-src/project-prelude.mjs';
+} from '../js/editor-src/semantic/compress-development.mjs';
+import { assembleCheckerCode } from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

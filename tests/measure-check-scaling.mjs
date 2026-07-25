@@ -16,15 +16,15 @@ import vm from 'node:vm';
 import { TextDecoder, TextEncoder } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import { pathsFromSourcesCfg } from './_library-cfg.mjs';
-import { assembleCheckerCode } from '../editor-src/project-prelude.mjs';
+import { assembleCheckerCode } from '../js/editor-src/semantic/project-prelude.mjs';
 import {
   compressPrelude,
   buildCompressedCheckerCode,
   keepIndicesForFrontier,
   topDeclSpans,
-} from '../editor-src/semantic/compress-development.mjs';
+} from '../js/editor-src/semantic/compress-development.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');

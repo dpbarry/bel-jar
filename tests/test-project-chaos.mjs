@@ -1,18 +1,15 @@
 // Adversarial project / suite / cfg scenarios — must not throw, must surface
 // correct diagnostics and consistent assembly order.
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { cfgDiagnosticsFor } from '../editor-src/bel-cfg-lint.mjs';
+import { cfgDiagnosticsFor } from '../js/editor-src/ide/cfg-lint.mjs';
+import { runPersistStackInContext } from './persist-stack.mjs';
+import { loadProjectSource } from './project-source-stack.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
   console.error('FAIL:', msg);
   process.exit(1);
 }
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 function loadPersist() {
   const storage = new Map();
@@ -23,15 +20,12 @@ function loadPersist() {
   };
   const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage });
   ctx.globalThis = ctx;
-  vm.runInContext(readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8'), ctx);
-  return { P: ctx.BelJarPersist, storage };
+  runPersistStackInContext(ctx);
+  return { P: ctx.Persist, storage };
 }
 
 function loadPS() {
-  const fakeWindow = {};
-  // eslint-disable-next-line no-new-func
-  new Function('window', readFileSync(join(here, '..', 'js', 'project-source.js'), 'utf8'))(fakeWindow);
-  return fakeWindow.BelJarProjectSource;
+  return loadProjectSource({});
 }
 
 const { P } = loadPersist();

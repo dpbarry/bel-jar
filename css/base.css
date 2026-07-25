@@ -1,0 +1,154 @@
+/* -- Scrollbar -- */
+/* Padding on an overflow:auto scrollport creates a dead strip beside the thumb
+   (padding-inline-end sits between content and the scrollbar). Use start/block
+   padding on the scrollport; put inline-end inset on inner content if needed. */
+
+*::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+}
+
+/* -- Body -- */
+html * {font-family: var(--sans);}
+body {
+  background: var(--bg);
+  color: var(--base-highest);
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color-scheme: dark;
+}
+
+html.light body {
+  color-scheme: light;
+}
+
+/* -- Icon Buttons -- */
+
+.icon-btn {
+  position: relative;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--base-high);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color var(--transition), box-shadow var(--transition);
+}
+
+.icon-btn::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 95%;
+  height: 95%;
+  transform: translate(-50%, -50%);
+  border-radius: inherit;
+  background: var(--accent-glow);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity var(--transition), background var(--transition);
+}
+
+.icon-btn svg {
+  position: relative;
+  z-index: 1;
+  width: var(--icon-svg);
+  height: var(--icon-svg);
+}
+
+.icon-btn:focus-visible,
+.icon-btn:active,
+.sidebar .icon-btn.is-active {
+  color: var(--accent-high);
+}
+
+.icon-btn:focus-visible::before,
+.icon-btn:active::before,
+.sidebar .icon-btn.is-active::before {
+  opacity: 1;
+}
+
+.icon-btn:active::before {
+  background: color-mix(in oklab, var(--accent-glow) 100%, var(--accent-lowest));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .icon-btn:hover {
+    color: var(--accent-high);
+  }
+
+  .icon-btn:hover::before {
+    opacity: 1;
+  }
+}
+
+.icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.icon-btn-lg {
+  width: var(--icon-btn-lg);
+  height: var(--icon-btn-lg);
+  border-radius: var(--radius-md);
+}
+
+.icon-btn-lg svg {
+  width: var(--icon-svg-lg);
+  height: var(--icon-svg-lg);
+}
+
+/* Toggle-on — standard pressed state for icon toggles. Icon ink + fill; hover keeps bg wash. */
+#inspector-sync-toggle.is-on,
+#btn-repl-timestamps.is-on,
+.floating-window-action.is-on,
+.bel-graph3d-iconbtn.is-on {
+  color: var(--toggle-on-fg);
+}
+
+#inspector-sync-toggle.is-on svg path,
+#btn-repl-timestamps.is-on svg path,
+#btn-repl-timestamps.is-on svg circle,
+#btn-repl-timestamps.is-on svg polyline,
+.floating-window-action.is-on svg path,
+.bel-graph3d-iconbtn.is-on svg path {
+  fill: var(--toggle-on-icon-fill);
+  stroke: currentColor;
+  stroke-width: 2;
+  paint-order: stroke fill;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #inspector-sync-toggle.is-on:not(:disabled):hover,
+  #btn-repl-timestamps.is-on:not(:disabled):hover,
+  .floating-window-action.is-on:hover,
+  .bel-graph3d-iconbtn.is-on:hover:not(:disabled) {
+    color: var(--toggle-on-fg);
+  }
+}
+
+

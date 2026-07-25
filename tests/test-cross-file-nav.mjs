@@ -1,10 +1,11 @@
 // Cross-file project intelligence: the definition index over a file's
 // development group (project-prelude.mjs) and the project-wide text scan
-// (js/project-source.js). These power Ctrl+click/F12 across files, the
-// palette's "@" group symbols, and "#" project search.
+// (js/workspace/project-source.js). These power Ctrl+click/F12 across files, the
+// palette's "@" group symbols, and "%" project search.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { loadProjectSource } from './project-source-stack.mjs';
 import {
   defsOf,
   usesOf,
@@ -20,7 +21,7 @@ import {
   buildPrelude,
   preludeFilesFor,
   activeCfgResolver,
-} from '../editor-src/project-prelude.mjs';
+} from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -176,7 +177,7 @@ expect(refs.length === 0,
 
 // CRLF storage must rename on the same normalized basis as groupRenameEdits.
 {
-  const { applyGroupRenameToFile } = await import('../editor-src/project-prelude.mjs');
+  const { applyGroupRenameToFile } = await import('../js/editor-src/semantic/project-prelude.mjs');
   const crlf = EQUIV.replace(/\n/g, '\r\n');
   const crlfPlans = groupRenameEdits(FILES, 'cr/lam', 'term', (id) => (id === 'cr/equiv' ? crlf : getText(id)), crRosserOpts);
   expect(crlfPlans.length === 1 && crlfPlans[0].fileId === 'cr/equiv', 'CRLF rename plan on equiv');
@@ -218,10 +219,10 @@ expect(groupDefinesName(FILES, 'cr/equiv', 'k', getText, crRosserOpts) === false
 // global WITH its signature — never as an implicit-binder guess.
 {
   const { Text } = await import('@codemirror/state');
-  const { parser } = await import('../editor-src/beluga-parser.js');
-  const { resolveHoverDoc, referenceKind } = await import('../editor-src/bel-resolve.mjs');
+  const { parser } = await import('../js/editor-src/beluga-parser.js');
+  const { resolveHoverDoc, referenceKind } = await import('../js/editor-src/name-resolve.mjs');
 
-  globalThis.BelJarPersist = {
+  globalThis.Persist = {
     listFiles: () => FILES,
     getActiveFileId: () => 'cr/equiv',
     getFileText: (id) => TEXTS[id] || '',
@@ -239,18 +240,18 @@ expect(groupDefinesName(FILES, 'cr/equiv', 'k', getText, crRosserOpts) === false
     expect(resolved.externalFile === 'church-rosser/lam.bel', 'carries the defining file');
     expect(referenceKind(tree, doc, at) === 'global', 'referenceKind sees a global');
   } finally {
-    delete globalThis.BelJarPersist;
+    delete globalThis.Persist;
   }
   // Without project context the old behavior stands (no false externals).
   const tree2 = parser.parse(EQUIV);
   const doc2 = Text.of(EQUIV.split('\n'));
   const r2 = resolveHoverDoc(tree2, doc2, EQUIV.indexOf('term'));
-  expect(!r2 || r2.kind !== 'external', 'no BelJarPersist → no external classification');
+  expect(!r2 || r2.kind !== 'external', 'no Persist → no external classification');
 }
 
 // ── rename suggestion + preview message (pure helpers) ───────────────────────
 {
-  const { suggestRenameName, renamePreviewMessage, renameReachTooltip } = await import('../editor-src/bel-rename.mjs');
+  const { suggestRenameName, renamePreviewMessage, renameReachTooltip } = await import('../js/editor-src/ide/rename.mjs');
   // Prime variant offered first when free.
   expect(suggestRenameName('term', () => false) === "term'", 'first suggestion is the primed name');
   // When the prime is taken, fall through to numbered variants.
@@ -279,7 +280,7 @@ expect(groupDefinesName(FILES, 'cr/equiv', 'k', getText, crRosserOpts) === false
     fileReferenceSectionLabel,
     shouldShowReferenceFileHeader,
     referenceFileHeaderLabel,
-  } = await import('../editor-src/bel-refs-panel.mjs');
+  } = await import('../js/editor-src/ide/refs-panel.mjs');
 
   expect(fileReferenceSectionLabel('church/lam.bel', 3) === 'lam.bel (3)',
     'basename + count');
@@ -303,13 +304,13 @@ expect(groupDefinesName(FILES, 'cr/equiv', 'k', getText, crRosserOpts) === false
 
 // ── gatherReferenceGroups cfg order ───────────────────────────────────────────
 {
-  const { gatherReferenceGroups } = await import('../editor-src/bel-refs-panel.mjs');
+  const { gatherReferenceGroups } = await import('../js/editor-src/ide/refs-panel.mjs');
   const { EditorState } = await import('@codemirror/state');
   const doc = EditorState.create({ doc: EQUIV });
   const view = { state: doc };
   const g = {
-    BelJarCurrentEditor: { getDocumentId: () => 'cr/equiv' },
-    BelJarPersist: {
+    CurrentEditor: { getDocumentId: () => 'cr/equiv' },
+    Persist: {
       getActiveFileId: () => 'cr/equiv',
       listFiles: () => FILES,
       getFileText: getText,
@@ -325,8 +326,8 @@ expect(groupDefinesName(FILES, 'cr/equiv', 'k', getText, crRosserOpts) === false
   const lamDoc = EditorState.create({ doc: LAM });
   const lamView = { state: lamDoc };
   const gLam = {
-    BelJarCurrentEditor: { getDocumentId: () => 'cr/lam' },
-    BelJarPersist: {
+    CurrentEditor: { getDocumentId: () => 'cr/lam' },
+    Persist: {
       getActiveFileId: () => 'cr/lam',
       listFiles: () => FILES,
       getFileText: getText,
@@ -342,7 +343,7 @@ expect(groupDefinesName(FILES, 'cr/equiv', 'k', getText, crRosserOpts) === false
 
 // ── group-rename undo matcher ────────────────────────────────────────────────
 {
-  const { matchGroupRename } = await import('../editor-src/bel-rename.mjs');
+  const { matchGroupRename } = await import('../js/editor-src/ide/rename.mjs');
   const stack = [
     { originalName: 'term', newName: 'tm', undone: false, files: [] },
     { originalName: 'pred', newName: 'rel', undone: false, files: [] },
@@ -358,11 +359,7 @@ expect(groupDefinesName(FILES, 'cr/equiv', 'k', getText, crRosserOpts) === false
 
 // ── scanProjectText (js IIFE) ────────────────────────────────────────────────
 const here = dirname(fileURLToPath(import.meta.url));
-const psSrc = readFileSync(join(here, '..', 'js', 'project-source.js'), 'utf8');
-const fakeWindow = {};
-// eslint-disable-next-line no-new-func
-new Function('window', psSrc)(fakeWindow);
-const PS = fakeWindow.BelJarProjectSource;
+const PS = loadProjectSource({});
 
 const scanFiles = [
   { id: 'a', name: 'a.bel', text: 'LF term : type =\n  | lam : term\n;' },
@@ -379,16 +376,17 @@ expect(PS.scanProjectText(scanFiles, 'TERM', 60).length === 6, 'query is case-in
 expect(PS.scanProjectText(scanFiles, 'term', 3).length === 3, 'cap respected');
 expect(PS.scanProjectText(scanFiles, '', 60).length === 0, 'empty query → no results');
 
-// ── palette '#' mode ─────────────────────────────────────────────────────────
-const cpSrc = readFileSync(join(here, '..', 'js', 'command-palette.js'), 'utf8');
-const cpWindow = {};
+// ── palette search modes (% primary, # soft-redirect) ────────────────────────
+const cpSrc = readFileSync(join(here, '..', 'js', 'ui', 'command-palette.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-new Function('window', cpSrc)(cpWindow);
-const parseInput = cpWindow.CommandPalette._pure.parseInput;
-expect(parseInput('#foo').mode === 'search' && parseInput('#foo').query === 'foo',
-  '# prefix → search mode, prefix stripped');
-expect(parseInput('#').mode === 'search' && parseInput('#').query === '',
-  'bare # → search mode, empty query');
+new Function(cpSrc)();
+const parseInput = globalThis.CommandPalette._pure.parseInput;
+expect(parseInput('%foo').mode === 'search' && parseInput('%foo').query === 'foo',
+  '% prefix → search mode, prefix stripped');
+expect(parseInput('%').mode === 'search' && parseInput('%').query === '',
+  'bare % → search mode, empty query');
+expect(parseInput('#foo').mode === 'search' && parseInput('#foo').legacyHash === true,
+  '# soft-redirects to search mode');
 
 // ── cfg members get prelude; unlisted same-level files stay isolated ────────────
 {
@@ -416,4 +414,4 @@ expect(parseInput('#').mode === 'search' && parseInput('#').query === '',
   expect(psPre('rb').length === 0, 'Run path: unlisted par-red.bel stays isolated');
 }
 
-console.log('OK cross-file nav (defs index, group isolation, project def lookup, group symbols, text scan, # mode, prelude .elf/orphan)');
+console.log('OK cross-file nav (defs index, group isolation, project def lookup, group symbols, text scan, % mode, prelude .elf/orphan)');

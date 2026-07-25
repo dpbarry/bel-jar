@@ -8,12 +8,12 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { createSemanticScheduler } from '../editor-src/semantic/semantic-scheduler.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { createSemanticScheduler } from '../js/editor-src/semantic/semantic-scheduler.mjs';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const persistSrc = readFileSync(join(here, '../js/persist.js'), 'utf8');
 const ctx = vm.createContext({
   globalThis: {},
   clearTimeout,
@@ -21,8 +21,7 @@ const ctx = vm.createContext({
   TextEncoder,
 });
 ctx.globalThis = ctx;
-vm.runInContext(persistSrc, ctx);
-const BelJarPersist = ctx.BelJarPersist;
+const Persist = runPersistStackInContext(ctx);
 
 function expect(cond, msg) {
   if (cond) return;
@@ -30,16 +29,16 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
-const fp = BelJarPersist.documentFingerprint;
+const fp = Persist.documentFingerprint;
 const TEXT_A = `LF o : type =\n  | imp : o → o → o\n;\n`;
 const TEXT_B = `LF tm : type =\n  | lam : (tm → tm) → tm\n;\n`;
-const FILE_A = BelJarPersist.DEFAULT_DOCUMENT_ID; // workspace://main.bel
+const FILE_A = Persist.DEFAULT_DOCUMENT_ID; // workspace://main.bel
 const FILE_B = 'workspace://second.bel';
 
 function keyFor(id, backend) {
   // stateKeyFor is private; recover the key by writing a sentinel state and
   // finding which backend key holds it.
-  const probe = BelJarPersist.createPersist({ backend, documentId: id });
+  const probe = Persist.createPersist({ backend, documentId: id });
   probe.scheduleEditorPersist('__probe__' + id);
   probe.flushCheckpoint();
   const dump = backend._dump();
@@ -52,12 +51,12 @@ function keyFor(id, backend) {
 
 // --- switchFile isolates the two files' stored state ---------------------------
 {
-  const backend = BelJarPersist.createMemoryBackend();
+  const backend = Persist.createMemoryBackend();
   const KEY_A = keyFor(FILE_A, backend);
   const KEY_B = keyFor(FILE_B, backend);
   expect(KEY_A && KEY_B && KEY_A !== KEY_B, 'A and B persist under distinct keys');
 
-  const p = BelJarPersist.createPersist({ backend, documentId: FILE_A, debounceMs: 1 });
+  const p = Persist.createPersist({ backend, documentId: FILE_A, debounceMs: 1 });
 
   // Simulate the mounted editor for A: providers reflect engine A.
   p.setCheckpointProviders({
@@ -75,7 +74,7 @@ function keyFor(id, backend) {
 
   // Pre-seed B's slot with its own text (as if created earlier).
   {
-    const pb = BelJarPersist.createPersist({ backend, documentId: FILE_B });
+    const pb = Persist.createPersist({ backend, documentId: FILE_B });
     pb.scheduleEditorPersist(TEXT_B);
     pb.flushCheckpoint();
   }

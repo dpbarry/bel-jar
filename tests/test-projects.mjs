@@ -3,10 +3,10 @@
 // flat-keyed data → default project), siloing (a new project's files/state are
 // isolated), active-project switching, and delete. vm-loaded with a fake
 // localStorage like test-multifile-switch / test-project-source.
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -15,7 +15,6 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const persistSrc = readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8');
 
 // A fresh persist instance over a given localStorage seed.
 function loadPersist(seed) {
@@ -27,8 +26,8 @@ function loadPersist(seed) {
   };
   const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage });
   ctx.globalThis = ctx;
-  vm.runInContext(persistSrc, ctx);
-  return { P: ctx.BelJarPersist, store };
+  runPersistStackInContext(ctx);
+  return { P: ctx.Persist, store };
 }
 
 // ── migration: existing flat-keyed data becomes the default project ──────────

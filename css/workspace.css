@@ -1,0 +1,140 @@
+/* -- Workspace -- */
+
+.workspace {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-panes {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(
+    --workspace-split-cols,
+    minmax(0, 1fr) minmax(0, 1fr)
+  );
+  overflow: hidden;
+  background: var(--chrome-bg-app, var(--bg));
+}
+
+.editor-panel {
+  position: relative;
+  border-right: 1px solid var(--chrome-divider);
+  min-width: 0;
+  overflow: hidden;
+  background: var(--chrome-bg-panel);
+}
+
+.editor-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--chrome-bg-editor, var(--chrome-bg-panel));
+}
+
+.editor-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem max(1.5rem, env(safe-area-inset-right)) 2rem max(1.5rem, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.editor-empty[hidden] {
+  display: none !important;
+}
+
+.editor-empty__note {
+  margin: 0;
+  max-width: 24rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--base-high);
+  user-select: none;
+}
+
+#editor.editor-cm-host.is-inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.workspace-resize-hit {
+  position: absolute;
+  z-index: 50;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+  /* Stay in the first cell so auto-placement never invents a third track. */
+  grid-column: 1;
+  grid-row: 1;
+}
+
+body.workspace-resizing,
+body.workspace-resizing * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.panel-resize-hit {
+  position: absolute;
+  z-index: 50;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+}
+
+/* -- Sidebar -- */
+
+.sidebar {
+  flex: 0 0 var(--sidebar-w);
+  width: var(--sidebar-w);
+  min-width: 0;
+  background: var(--chrome-bg-sidebar);
+  border-right: 1px solid var(--chrome-divider);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4375rem 0;
+}
+
+.sidebar-fill {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.sidebar .icon-btn svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.sidebar .icon-btn-lg svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.sidebar .icon-btn.is-active {
+  color: var(--accent-high);
+}
+
+

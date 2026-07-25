@@ -1,4 +1,4 @@
-import { attributeCheckerHoles } from '../editor-src/project-prelude.mjs';
+import { attributeCheckerHoles } from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

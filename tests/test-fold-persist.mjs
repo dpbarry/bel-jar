@@ -1,16 +1,16 @@
-import { beluga, belCodeFolding } from '../editor-src/bel-language.mjs';
+import { beluga, editorCodeFolding } from '../js/editor-src/language.mjs';
 import {
   readFileFoldKeys,
   readFoldPersistMode,
   reconcileStoredFoldKeys,
   writeFileFoldKeys,
-} from '../editor-src/bel-fold-persist.mjs';
+} from '../js/editor-src/ide/fold-persist.mjs';
 import {
   enumerateFoldables,
   foldKeyForRange,
   matchStoredFoldKeys,
   resolveFoldKeys,
-} from '../editor-src/bel-fold-keys.mjs';
+} from '../js/editor-src/ide/fold-keys.mjs';
 import {
   ensureSyntaxTree,
   foldEffect,
@@ -31,7 +31,7 @@ globalThis.sessionStorage = {
 };
 globalThis.localStorage = globalThis.sessionStorage;
 
-globalThis.BelJarPersist = {
+globalThis.Persist = {
   readStoredEditorFoldPersist: () => 'session',
   readStoredEditorFoldGutter: () => true,
 };
@@ -40,7 +40,7 @@ function editorState(src) {
   const doc = Text.of(src.split('\n'));
   return EditorState.create({
     doc,
-    extensions: [beluga(), belCodeFolding()],
+    extensions: [beluga(), editorCodeFolding()],
   });
 }
 
@@ -84,7 +84,7 @@ expect(key === 'decl:RecDeclaration:f', 'folded range maps back to key');
 writeFileFoldKeys('file-b', ['bad'], 'none');
 expect(readFileFoldKeys('file-b', 'none').length === 0, 'none mode does not store');
 
-expect(readFoldPersistMode() === 'session', 'reads persist mode from BelJarPersist');
+expect(readFoldPersistMode() === 'session', 'reads persist mode from Persist');
 
 store.set('beljar-fold-session-v1', '{not json');
 expect(readFileFoldKeys('file-a', 'session').length === 0, 'corrupt store fails gracefully');

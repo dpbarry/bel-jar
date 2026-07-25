@@ -8,7 +8,7 @@
 
 ## 0. One paragraph
 
-**BelJar is the checker; Beluga is the certifier.** The semantic graph (`editor-src/semantic/`) already knows which declarations are dirty, blocked, or syntax-faulted. The goal is to **use that graph to call Beluga as little as possible**: one bootstrap load per stable checker fingerprint, then **surgical** `ideDeclType` / `ideElaborate` / fragment queries on the dirty frontier — not whole-file `checkResult` on every keystroke. Full-program Beluga reload should be rare (session start, prelude change, explicit user Run), not the default edit path. A prior implementation went the wrong way (Beluga-core checkpoints + text tail reconstruction); **that path was reverted**. What remains is mostly plumbing; the real work is **rewiring settlement** around `dirtyFrontier()`.
+**BelJar is the checker; Beluga is the certifier.** The semantic graph (`js/editor-src/semantic/`) already knows which declarations are dirty, blocked, or syntax-faulted. The goal is to **use that graph to call Beluga as little as possible**: one bootstrap load per stable checker fingerprint, then **surgical** `ideDeclType` / `ideElaborate` / fragment queries on the dirty frontier — not whole-file `checkResult` on every keystroke. Full-program Beluga reload should be rare (session start, prelude change, explicit user Run), not the default edit path. A prior implementation went the wrong way (Beluga-core checkpoints + text tail reconstruction); **that path was reverted**. What remains is mostly plumbing; the real work is **rewiring settlement** around `dirtyFrontier()`.
 
 ---
 
@@ -35,8 +35,8 @@
 
 ### Removed — JS tail-check wiring
 
-- `editor-src/semantic/checkpoint-ladder.mjs`
-- `editor-src/semantic/incremental-checking.mjs`
+- `js/editor-src/semantic/checkpoint-ladder.mjs`
+- `js/editor-src/semantic/incremental-checking.mjs`
 - `beluga-client.js` / `beluga-worker.js` checkpoint message types
 - Persist `beljar-incremental-checking` flag
 - Tests: `test-checkpoint-ladder.mjs`, `test-incremental-guards.mjs`
@@ -45,12 +45,12 @@
 
 | Piece | Location | Role |
 |-------|----------|------|
-| Intel worker slot | `js/beluga-client.js` | `ideType`, `ideDeclType`, `ideElaborate` off hot checker path |
+| Intel worker slot | `js/beluga/beluga-client.js` | `ideType`, `ideDeclType`, `ideElaborate` off hot checker path |
 | Hard cancel | `beluga-client.js`, `settlement.mjs` | Superseded settlement drops in-flight checker work |
-| Adaptive debounce | `editor-src/semantic/settle-delay.mjs` | 120–350ms before settle (still too slow for type errors alone) |
-| Dev-check dedupe | `editor-src/bel-editor.mjs` | Development check only when non-active member changes |
+| Adaptive debounce | `js/editor-src/semantic/settle-delay.mjs` | 120–350ms before settle (still too slow for type errors alone) |
+| Dev-check dedupe | `js/editor-src/editor.mjs` | Development check only when non-active member changes |
 | Syntax-only gate | `syntax-only-gate.mjs` + `semantic-engine.mjs` | Skip Beluga when only parse-fault blocks changed (**`prevSyntax` bug fixed** 2026-07-01) |
-| Check trace / perf HUD | `editor-src/perf/`, `js/perf-hud.js` | Opt-in: `BelJarPerfHud.enable()` in console |
+| Check trace / perf HUD | `js/editor-src/perf/`, `js/ui/perf-hud.mjs` | Opt-in: `PerfHud.enable()` in console |
 | Graph + scheduler | `semantic-graph.mjs`, `semantic-scheduler.mjs` | `dirtyFrontier`, `deriveFrontier`, cursor/viewport priority — **not yet driving settlement scope** |
 
 ---
@@ -108,7 +108,7 @@ Edit → parse (instant) → symbolStore + semanticGraph.update
 - [x] **A2. Decouple intel from monolithic settle** — Scheduler ready on frontier progress / settle
 - [x] **A3. Narrow default settle** — Compressed frontier certify; full on preludeFp change / `forceFull`
 - [x] **A4. Cursor-first ordering** — `getScopedFrontier` sorts by caret distance
-- [ ] **A5. Measure** — Live `BelJarPerfHud` capture on classical-processes (harness extended in `measure-check-scaling.mjs`)
+- [ ] **A5. Measure** — Live `PerfHud` capture on classical-processes (harness extended in `measure-check-scaling.mjs`)
 
 **Acceptance:** Edit breaks type in one theorem → squiggle or graph ERRORING within **&lt;1s** on dev machine (not 10s); full-file check not invoked on every key.
 
@@ -140,15 +140,15 @@ Edit → parse (instant) → symbolStore + semanticGraph.update
 
 | Area | Path |
 |------|------|
-| Edit → graph | `editor-src/semantic/semantic-engine.mjs` (`update`, `dirtyFrontier`) |
-| Dirty / status | `editor-src/semantic/semantic-graph.mjs` |
-| Signature compression | `editor-src/semantic/compress-development.mjs` |
-| Settlement (frontier default) | `editor-src/semantic/settlement.mjs` |
-| Session bootstrap | `editor-src/semantic/semantic-session.mjs` |
-| Background elaboration | `editor-src/semantic/semantic-scheduler.mjs` |
-| Prelude assembly | `editor-src/project-prelude.mjs` |
-| Worker routing | `js/beluga-client.js` (checkerSlot vs intelSlot) |
-| Editor wiring | `editor-src/bel-editor.mjs` |
+| Edit → graph | `js/editor-src/semantic/semantic-engine.mjs` (`update`, `dirtyFrontier`) |
+| Dirty / status | `js/editor-src/semantic/semantic-graph.mjs` |
+| Signature compression | `js/editor-src/semantic/compress-development.mjs` |
+| Settlement (frontier default) | `js/editor-src/semantic/settlement.mjs` |
+| Session bootstrap | `js/editor-src/semantic/semantic-session.mjs` |
+| Background elaboration | `js/editor-src/semantic/semantic-scheduler.mjs` |
+| Prelude assembly | `js/editor-src/semantic/project-prelude.mjs` |
+| Worker routing | `js/beluga/beluga-client.js` (checkerSlot vs intelSlot) |
+| Editor wiring | `js/editor-src/editor.mjs` |
 | Beluga shim (if new API) | `Beluga-W/src/web/beluga_web.ml` only |
 
 ---
@@ -157,13 +157,13 @@ Edit → parse (instant) → symbolStore + semanticGraph.update
 
 ```bash
 npm test                              # full suite — one invocation
-node scripts/build-editor.mjs         # after editor-src/*.mjs edits
+node scripts/build-editor.mjs         # after js/editor-src/*.mjs edits
 _rebuild/rebuild.ps1                  # ONLY if beluga_web.ml changes
 ```
 
 Hard-refresh browser after WASM rebuild (SW cache version in `_rebuild/rebuild.ps1` output).
 
-Debug perf (console): `BelJarPerfHud.enable()`
+Debug perf (console): `PerfHud.enable()`
 
 ---
 

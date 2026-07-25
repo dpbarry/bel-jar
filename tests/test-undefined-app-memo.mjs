@@ -1,4 +1,4 @@
-// Guard for the per-lint-pass memoization in bel-resolve.mjs
+// Guard for the per-lint-pass memoization in name-resolve.mjs
 // (externalKnownName + findEnclosingLocalBinder). Both memos are cleared at the
 // top of every collectUndefinedApplicationDiags call and keyed by node position.
 // Risks audited: (a) a memo returning a WRONG answer within a pass (e.g. a
@@ -9,8 +9,8 @@
 
 import assert from 'node:assert';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
 
 function undefDiags(src) {
   const doc = Text.of(src.split('\n'));

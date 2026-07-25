@@ -1,5 +1,5 @@
 // ScrollFade.computeSides — the pure edge-decision function behind the generic
-// scroll-fade utility (js/scroll-fade.js). Given scroll metrics it returns which
+// scroll-fade utility (js/ui/scroll-fade.js). Given scroll metrics it returns which
 // edges overflow (and thus should fade). DOM-shimmed: the file is an IIFE that
 // attaches to a global, so we provide a `window` and import for side effects.
 import { readFileSync } from 'node:fs';
@@ -14,11 +14,10 @@ function expect(cond, msg) {
 
 // Load the IIFE against a fake global.
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, '..', 'js', 'scroll-fade.js'), 'utf8');
-const fakeWindow = {};
+const src = readFileSync(join(here, '..', 'js', 'ui', 'scroll-fade.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-new Function('window', src)(fakeWindow);
-const SF = fakeWindow.ScrollFade;
+new Function(src)();
+const SF = globalThis.ScrollFade;
 expect(SF && typeof SF.computeSides === 'function', 'ScrollFade.computeSides is exported');
 
 const sides = (m) => SF.computeSides(m);

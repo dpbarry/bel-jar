@@ -4,11 +4,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import {
   belugaCheckFingerprint,
   settlementTrigger,
-} from '../editor-src/semantic/check-gate.mjs';
+} from '../js/editor-src/semantic/check-gate.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dataRoot = join(here, '..', 'library', 'data');

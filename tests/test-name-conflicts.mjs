@@ -10,12 +10,11 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, '..', 'js', 'name-conflicts.js'), 'utf8');
-const fakeWindow = {};
+const src = readFileSync(join(here, '..', 'js', 'ui', 'name-conflicts.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-new Function('window', src)(fakeWindow);
-const NC = fakeWindow.BelJarNameConflicts;
-expect(NC && typeof NC.detectUploadConflicts === 'function', 'BelJarNameConflicts exported');
+new Function(src)();
+const NC = globalThis.NameConflicts;
+expect(NC && typeof NC.detectUploadConflicts === 'function', 'NameConflicts exported');
 
 const existing = [
   { id: 'a', name: 'main.bel' },

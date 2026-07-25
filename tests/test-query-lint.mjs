@@ -1,10 +1,10 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
 import {
   lintQueryPragmaBounds,
   parseQueryRuntimeDiagnostics,
-} from '../editor-src/bel-query-diag.mjs';
+} from '../js/editor-src/ide/query-diag.mjs';
 
 function expect(cond, msg) {
   if (!cond) { console.error('FAIL:', msg); process.exit(1); }

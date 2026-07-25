@@ -2,8 +2,8 @@ import {
   captureHarpoonAnchor,
   assessHarpoonAnchor,
   textFingerprint,
-} from '../editor-src/harpoon-anchor.mjs';
-import { parseDecl } from '../editor-src/bel-harpoon.mjs';
+} from '../js/editor-src/harpoon/harpoon-anchor.mjs';
+import { parseDecl } from '../js/editor-src/harpoon/harpoon-program.mjs';
 
 let n = 0;
 function expect(cond, msg) {

@@ -4,9 +4,9 @@
 // the operator occurrence is tracked as a reference (so rename rewrites it),
 // and a pragma for a defined operator does not become blocked.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { EDGE_KIND, NAMESPACE, STATUS } from '../editor-src/semantic/ids.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { EDGE_KIND, NAMESPACE, STATUS } from '../js/editor-src/semantic/ids.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

@@ -1,4 +1,4 @@
-// Corpus decl primitives (editor-src/bel-corpus-decls.mjs) + a structural
+// Corpus decl primitives (js/editor-src/prover-corpus-decls.mjs) + a structural
 // anti-overfit guard extended to the masking-harness files. The harness must
 // never branch on a Beluga identifier/constructor name — it measures generality,
 // so it can't be allowed to "help" a specific lemma pass.
@@ -11,7 +11,8 @@ import {
   maskableTargets,
   maskByName,
   offsetToFileLine,
-} from '../editor-src/bel-corpus-decls.mjs';
+} from '../js/editor-src/prover/prover-corpus-decls.mjs';
+import { theoremUnderProof } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -164,13 +165,30 @@ function expect(cond, msg) {
   expect(/and g : \[ \|- tp\] =\s*\n\/ total \/\s*\n\?/.test(m.code), 'member g masked in place with its pragma');
   expect(m.boundary === ';', 'g is the last member (terminates at ;)');
 }
+{
+  // (g) A commented-out same-name decl must not steal the head match.
+  const code = '% rec f : [ |- tp] = [ |- z] ;\n'
+    + 'rec f : [ |- tp] -> [ |- tp] =\n/ total 1 /\nfn x => x\n;\n';
+  const m = maskByName(code, 'f');
+  expect(!!m, 'live decl found despite earlier commented twin');
+  expect(/\/ total 1 \/\s*\n\?/.test(m.code) && !/fn x => x/.test(m.code),
+    'masks the live body, not the commented-out stub');
+}
+{
+  // (h) Trailing `%` type-line comment: declText must put `=` on a NEW line so
+  // theoremUnderProof's comment-skip cannot swallow the body marker.
+  const code = 'rec f : [ |- tp]     % result : tp\n=\n/ total 1 /\nfn x => x\n;\n';
+  const m = maskByName(code, 'f');
+  expect(m && /\n=\n/.test(m.declText), 'declText isolates = from the trailing type comment');
+  expect(!!theoremUnderProof(m.declText), 'masked declText re-parses after a trailing type comment');
+}
 
 // ── STRUCTURAL anti-overfit guard on the harness files ──────────────────────
 // Same rules as tests/test-prover-no-overfit.mjs, applied to the corpus harness
 // so nobody can smuggle a per-lemma hint into the measurement apparatus.
 {
   const HARNESS_FILES = [
-    'editor-src/bel-corpus-decls.mjs',
+    'js/editor-src/prover-corpus-decls.mjs',
     'scripts/corpus-plan.mjs',
     'scripts/corpus-harness.mjs',
     'scripts/corpus-report.mjs',

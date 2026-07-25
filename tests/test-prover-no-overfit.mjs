@@ -25,9 +25,9 @@ import path from 'node:path';
 // and it's exempt. If you can't honestly write that comment, it's overfit.
 
 const ENGINE_FILES = [
-  'editor-src/bel-prover.mjs',
-  'editor-src/bel-prover-bridge.mjs',
-  'editor-src/bel-hole-split.mjs',
+  'js/editor-src/prover/prover-comp-type.mjs',
+  'js/editor-src/prover/prover-orchestrator.mjs',
+  'js/editor-src/prover/hole-split.mjs',
 ];
 
 // Tokens that are legitimately general (not theorem-specific), so a literal compare
@@ -41,9 +41,15 @@ const SYNTACTIC = new Set([
   'rec', 'proof', 'fn', 'mlam', 'let', 'in', 'case', 'of', 'type', 'block',
   'some', 'schema', 'total', 'fun', 'and', 'ttrue', 'impossible',
   // our own enum tags (premise kinds, move kinds, node status)
-  'box', 'pi', 'ctx', 'meta', 'comp', 'fill', 'intro', 'split', 'recurse',
+  'box', 'pi', 'ctx', 'ctype', 'meta', 'comp', 'fill', 'intro', 'split', 'recurse',
   'invert', 'lemma', 'solved', 'open', 'stuck', 'fwd', 'back',
   'index', 'named', 'bare', 'none', 'dependent', 'arrows',
+  'vacuous', 'demanded', // demand-oracle verdict tags (Phase D Stage 1)
+  'disproved', // Phase-I counterexample stuck reason
+  'cancelled', 'search-bound', 'step-bound', 'no-move', 'no-moves',
+  'no-totality-measure', 'file-errors', 'coinductive-out-of-fragment',
+  'rejected', 'guard', // tried-row verdict tags (Phase G.1 closest hint)
+  'lf', // enumerateDecls kind tag (flat LF family/ctor) — Phase E.6 prelude trim
   '→', // GENERAL: the arrow operator — syntactic, not a constructor
 ]);
 

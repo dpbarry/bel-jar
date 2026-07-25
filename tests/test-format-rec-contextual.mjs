@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { parser } from '../editor-src/beluga-parser.js';
-import { formatString } from '../editor-src/bel-format.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { formatString } from '../js/editor-src/format/document-format.mjs';
 
 const src = `rec nex4 : [ ⊢ nd ((A ∨ ¬ A) ⊃ (¬ ¬ A) ⊃ A) ] =
   [ ⊢  ⊃I (\\u. %  (A ∨ ¬ A) true

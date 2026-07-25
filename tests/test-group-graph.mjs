@@ -1,7 +1,7 @@
 // Cross-file (suite-wide) dependency graph — edges that span files, which the
 // single-document semantic-graph cannot see.
-import { buildGroupGraph } from '../editor-src/group-graph.mjs';
-import { activeCfgResolver } from '../editor-src/project-prelude.mjs';
+import { buildGroupGraph } from '../js/editor-src/graph/group-graph.mjs';
+import { activeCfgResolver } from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -109,5 +109,25 @@ expect(solo.dependentsOf(soloPred.id).some((d) => d.name === 'beta'),
     `u's dependents span BOTH later files regardless of active file (got ${a})`);
 }
 
+// Opening from the .cfg itself must yield the same suite graph as opening from
+// a member file (the cfg is the development root, not a standalone empty doc).
+{
+  const fromCfg = buildGroupGraph(FILES, 'cr/cfg', getText, opts);
+  expect(fromCfg.nodes.size === graph.nodes.size,
+    `cfg-active suite graph has same node count as member-active (got ${fromCfg.nodes.size} vs ${graph.nodes.size})`);
+  expect(fromCfg.edges.length === graph.edges.length,
+    `cfg-active suite graph has same edge count (got ${fromCfg.edges.length} vs ${graph.edges.length})`);
+  expect([...fromCfg.nodes.values()].some((n) => n.name === 'pred'),
+    'cfg-active suite graph still includes prelude symbols');
+}
+
+// Empty suite (cfg with no members / empty members) → valid empty graph.
+{
+  const emptyFiles = [{ id: 'e/cfg', name: 'empty/s.cfg' }];
+  const empty = buildGroupGraph(emptyFiles, 'e/cfg', () => '', {});
+  expect(empty.nodes.size === 0 && empty.edges.length === 0,
+    'empty suite yields an empty (but valid) graph');
+}
+
 console.log('ok   test-group-graph.mjs  cross-file dependency graph (edges span files, impact, standalone, '
-  + 'development-wide view-independence)');
+  + 'development-wide view-independence, cfg-active, empty suite)');

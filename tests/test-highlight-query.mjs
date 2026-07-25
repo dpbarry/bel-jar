@@ -1,4 +1,4 @@
-import { belugaLanguage } from '../editor-src/bel-language.mjs';
+import { belugaLanguage } from '../js/editor-src/language.mjs';
 import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
 
 const parser = belugaLanguage.parser;

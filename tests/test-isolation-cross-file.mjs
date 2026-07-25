@@ -1,5 +1,5 @@
-import { activeCfgResolver } from '../editor-src/development.mjs';
-import { findGroupSignature } from '../editor-src/project-prelude.mjs';
+import { activeCfgResolver } from '../js/editor-src/semantic/development.mjs';
+import { findGroupSignature } from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

@@ -21,7 +21,7 @@ import {
   assembleCfgProgram,
   maskableTargets,
   offsetToFileLine,
-} from '../editor-src/bel-corpus-decls.mjs';
+} from '../js/editor-src/prover/prover-corpus-decls.mjs';
 
 const root = process.cwd();
 const args = process.argv.slice(2);

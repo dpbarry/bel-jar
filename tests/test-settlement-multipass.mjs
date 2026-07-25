@@ -7,11 +7,11 @@
 //  3. A checker that keeps reporting into already-masked blocks terminates.
 //  4. The final snapshot records the maximal-healthy code actually loaded.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
-import { createSettlement, impactedBlocks } from '../editor-src/semantic/settlement.mjs';
-import { createCheckerStore } from '../editor-src/semantic/checker-store.mjs';
-import { blockDependents } from '../editor-src/bel-walk.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSyntaxStore } from '../js/editor-src/semantic/syntax-store.mjs';
+import { createSettlement, impactedBlocks } from '../js/editor-src/semantic/settlement.mjs';
+import { createCheckerStore } from '../js/editor-src/semantic/checker-store.mjs';
+import { blockDependents } from '../js/editor-src/tree-walk.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

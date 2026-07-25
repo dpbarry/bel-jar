@@ -8,13 +8,17 @@
 import {
   candidateMoves,
   recurseTexts,
+  schemaSomeVars,
   theoremUnderProof,
   theoremDeclRange,
   proveProgram,
   proveOrchestrationCode,
+  withWritableRiskDominated,
+  deferDominated,
+  trimForCertify,
   stepMeta,
   stepLead,
-} from '../editor-src/bel-prover-bridge.mjs';
+} from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -222,6 +226,553 @@ const slim = proveOrchestrationCode(suite, 'dual_uniq', uniqStart, uniqEnd, file
 expect(!slim.includes('dual_sym'), 'orchestration drops holed sibling theorems');
 expect(slim.includes('rec dual_uniq'), 'orchestration keeps the target theorem');
 expect(slim.includes('tp : type.'), 'orchestration keeps suite prelude');
+
+// Phase E.6 — unused flat LF dropped from suite prelude; sibling recs untouched.
+{
+  const prelude = [
+    'nat : type.',
+    'z : nat.',
+    's : nat -> nat.',
+    'vec : type.',
+    'vnil : vec.',
+    'vcons : nat -> vec -> vec.',
+    'tp : type.',
+    'unit : tp.',
+  ].join('\n');
+  const fileBody = [
+    'rec helper : [ |- nat] -> [ |- nat] =',
+    'fn x => x',
+    ';',
+    'rec id : [ |- nat] -> [ |- nat] =',
+    'fn x => ?',
+    ';',
+  ].join('\n');
+  const fat = `${prelude}\n${fileBody}`;
+  const fs = fat.indexOf('rec helper');
+  const idStart = fat.indexOf('rec id');
+  const idEnd = fat.indexOf(';', idStart) + 1;
+  const trimmed = proveOrchestrationCode(fat, 'id', idStart, idEnd, fs);
+  expect(trimmed.includes('nat : type.') && trimmed.includes('z : nat.'),
+    'E.6 keeps LF families/ctors in the seed closure');
+  expect(!trimmed.includes('vec : type.') && !trimmed.includes('vnil'),
+    'E.6 drops unused LF families outside the seed');
+  expect(!trimmed.includes('tp : type.') && !trimmed.includes('unit : tp.'),
+    'E.6 drops unrelated LF (tp) when unused by the target');
+  expect(trimmed.includes('rec helper'),
+    'E.6 never strips complete sibling recs (lemma pool)');
+  expect(trimmed.includes('rec id'), 'E.6 keeps the target theorem');
+  expect(trimmed.length < fat.length, 'E.6 orchestration is strictly smaller');
+}
+
+// E.6/E.7 FAIL-OPEN + real-lexer identifiers (the file-errors spike,
+// 2026-07-17 sweep, 26 targets): (a) ctor names with symbol chars (`is_@`) and
+// (b) `%`-comment lines INSIDE multi-line decls broke the narrow parsers, and
+// unparseable meant DROPPED — load-bearing typing rules vanished and sibling
+// recs went unbound. A trim is an optimization: uncertainty must KEEP.
+{
+  const prelude = [
+    'obj : type.',
+    'judge : obj -> obj -> type.',
+    'j_@ : judge X X.', // symbol char in ctor name — real Beluga lexer accepts
+    'j_step : judge X Y ->',
+    '       % ----------',   // comment INSIDE the decl, inference-rule style
+    '         judge Y X.',
+    'ghost : type.',          // genuinely unused — must STILL be trimmed
+    'gh1 : ghost.',
+  ].join('\n');
+  const fileBody = [
+    'rec use : [ |- judge M N] -> [ |- judge N M] =',
+    'fn x => ?',
+    ';',
+  ].join('\n');
+  const fat = `${prelude}\n${fileBody}`;
+  const fs2 = fat.indexOf('rec use');
+  const useEnd = fat.indexOf(';', fs2) + 1;
+  const trimmed = proveOrchestrationCode(fat, 'use', fs2, useEnd, fs2);
+  expect(trimmed.includes('j_@'),
+    'trim keeps symbol-char ctor names (fail-open on the real lexer)');
+  expect(trimmed.includes('j_step'),
+    'trim keeps multi-line decls with embedded % comments');
+  expect(trimmed.includes('judge :'), 'trim keeps the cited family');
+  expect(!trimmed.includes('ghost') && !trimmed.includes('gh1'),
+    'trim still drops the genuinely unused family (effectiveness intact)');
+}
+
+// Phase E.7 — unused flat LF dropped from the active-file kept prefix too.
+{
+  const body = [
+    'nat : type.',
+    'z : nat.',
+    's : nat -> nat.',
+    'vec : type.',
+    'vnil : vec.',
+    'vcons : nat -> vec -> vec.',
+    'rec helper : [ |- nat] -> [ |- nat] =',
+    'fn x => x',
+    ';',
+    'rec id : [ |- nat] -> [ |- nat] =',
+    'fn x => ?',
+    ';',
+  ].join('\n');
+  const idStart = body.indexOf('rec id');
+  const idEnd = body.indexOf(';', idStart) + 1;
+  const trimmed = proveOrchestrationCode(body, 'id', idStart, idEnd, 0);
+  expect(trimmed.includes('nat : type.') && trimmed.includes('z : nat.'),
+    'E.7 keeps active-file LF in the seed closure');
+  expect(!trimmed.includes('vec : type.') && !trimmed.includes('vnil'),
+    'E.7 drops unused LF from the active-file prefix');
+  expect(trimmed.includes('rec helper'),
+    'E.7 still keeps complete sibling recs');
+  expect(trimmed.includes('rec id'), 'E.7 keeps the target theorem');
+}
+
+// E.9 — certify-closure trim: certification needs the candidate's dependency
+// closure, not the world (the measured timeout mechanism). Fail-open: any
+// unparseable decl is kept; the target always survives; mutual blocks keep
+// whole when any member is cited; genuinely unrelated recs drop.
+{
+  const prog = [
+    'fam_a : type.',
+    'mk_a : fam_a.',
+    'fam_c : type.',
+    'mk_c : fam_c.',
+    'rec used_lemma : [ |- fam_a] -> [ |- fam_a] =',
+    'fn x => x',
+    ';',
+    'rec unrelated : [ |- fam_c] -> [ |- fam_c] =',
+    'fn x => x',
+    ';',
+    'rec mutA : [ |- fam_c] -> [ |- fam_c] =',
+    'fn x => x',
+    'and rec mutB : [ |- fam_c] -> [ |- fam_c] =',
+    'fn x => x',
+    ';',
+    'rec tgt9 : [ |- fam_a] -> [ |- fam_a] =',
+    'fn d => used_lemma d',
+    ';',
+  ].join('\n');
+  const t = trimForCertify(prog, 'tgt9');
+  expect(t && t.code.includes('rec tgt9'), 'E.9 target survives');
+  expect(t.code.includes('used_lemma') && t.code.includes('fam_a : type.'),
+    'E.9 cited sibling + its families kept (closure)');
+  expect(!t.code.includes('rec unrelated') && !t.code.includes('mutA'),
+    'E.9 uncited recs and mutual blocks dropped');
+  const lines = t.code.split('\n');
+  expect(/rec tgt9/.test(lines[t.targetStartLine - 1]),
+    `E.9 target line range accurate (start ${t.targetStartLine}: ${lines[t.targetStartLine - 1]})`);
+  // A cited mutual MEMBER keeps the whole block.
+  const t2 = trimForCertify(prog.replace('used_lemma d', 'mutB d'), 'tgt9');
+  expect(t2 && t2.code.includes('and rec mutB') && t2.code.includes('rec mutA'),
+    'E.9 citing one mutual member keeps the whole block');
+  expect(trimForCertify(prog, 'no_such_rec') === null, 'E.9 unlocatable target fails open (null)');
+  // Block-form LF (`LF fam : type = | ctor : …;`) has a BARE head — citing the
+  // FAMILY name (not a ctor) must keep the block (the red_rew_impl_fstepcong
+  // `cong`-unbound near-miss, caught by native validation before shipping).
+  const prog2 = [
+    'LF bfam : type =',
+    '| bmk : bfam;',
+    'ghost2 : type.',
+    'rec u1 : [ |- bfam] -> [ |- bfam] =', 'fn x => x', ';',
+    'rec u2 : [ |- ghost2] -> [ |- ghost2] =', 'fn x => x', ';',
+    'rec tgt10 : [ |- bfam] -> [ |- bfam] =', 'fn d => u1 d', ';',
+  ].join('\n');
+  const t3 = trimForCertify(prog2, 'tgt10');
+  expect(t3 && t3.code.includes('LF bfam') && t3.code.includes('rec u1'),
+    'E.9 block-form LF family cited by FAMILY name is kept (+ cited sibling)');
+  expect(!t3.code.includes('ghost2') && !t3.code.includes('rec u2'),
+    'E.9 unrelated block + rec still dropped');
+}
+
+// §6.2 №4 (scoped) — CHRONOLOGICAL BACKTRACKING: an accepted move that leads
+// to a dead end is popped, its text joins the code-state's skip set, and the
+// NEXT candidate at that hole gets its turn (unique_eval's measured pattern:
+// the eager invert accepted first, the winning alternative buried behind it).
+// (2026-07-19 redesign: mk_a1 is UNARY over an INDEXED family so the invert
+// binds a judgment component — the original nullary/no-refinement candidates
+// are now correctly refused as zero-progress no-ops by the inv-3 refute
+// (its own pin below), and a bare-sort component would trip the α-regress
+// exclusion (ii) instead.)
+{
+  const code = [
+    'dx : type.',
+    'kx : dx.',
+    'fam_c : dx -> type.',
+    'fam_a : type.',
+    'mk_a1 : fam_c kx -> fam_a.',
+    'fam_b : type.',
+    'rec helper : [ |- fam_c kx] -> [ |- fam_b] =',
+    'fn x => x',
+    ';',
+    'rec bttgt : [ |- fam_a] -> [ |- fam_b] =',
+    '/ total 1 /',
+    '?',
+    ';',
+  ].join('\n');
+  const decl = code.slice(code.indexOf('rec bttgt'));
+  const report = (src, goal, ctxLines) => {
+    let ln = 1; let col = 1;
+    src.split('\n').forEach((l, i) => { const j = l.indexOf('?'); if (j >= 0 && ln === 1 && i > src.split('\n').findIndex((x) => /rec bttgt/.test(x))) { ln = i + 1; col = j + 1; } });
+    return {
+      ok: true,
+      output: ['## Holes ##', `File "input.bel", line ${ln}, column ${col}: Hole number 0, <anonymous>`,
+        'Computation context:', ...ctxLines, `Goal: ${goal}`].join('\n'),
+    };
+  };
+  let first = true;
+  const oracle = async (src) => {
+    if (first) { first = false; return { ok: true, output: '## Type Reconstruction done ##' }; }
+    const body = src.slice(src.indexOf('rec bttgt'));
+    if (/=>\s*\n?\s*\?/.test(body) && /\bfn\b/.test(body) && !/let/.test(body) && !/case/.test(body)) {
+      return report(src, '[ |- fam_b]', ['x : [ |- fam_a]']); // intro accepted
+    }
+    // Candidate A: the unique INVERT on x — binds the component X1 (real
+    // progress), certifies, then every continuation under it rejects (the
+    // dead end that must be POPPED, not terminal).
+    const mA = /let \[ \|- mk_a1 ([^\s\]]+)\] = x in\s*\n?\s*\?\s*\n;/.exec(body);
+    if (mA) {
+      return report(src, '[ |- fam_b]', ['x : [ |- fam_a]', `${mA[1]} : [ |- fam_c kx]`]);
+    }
+    // Candidate B (after backtracking): the SPLIT on x — its arm binds a
+    // component and the arm's helper-fill closes the branch. Only accepted
+    // as the TOP move (never under the abandoned invert).
+    const underInvert = /let \[ \|- mk_a1/.test(body);
+    const inArm = !underInvert && /case x of[\s\S]*\?/.test(body);
+    if (inArm) {
+      const mP = /case x of\s*\|\s*\[ \|- mk_a1 ([^\s\]]+)\]/.exec(body);
+      if (mP) return report(src, '[ |- fam_b]', ['x : [ |- fam_a]', `${mP[1]} : [ |- fam_c kx]`]);
+    }
+    if (!underInvert && /case x of[\s\S]*helper/.test(body) && !/\?/.test(body)) {
+      return { ok: true, output: '' }; // arm closed by the helper fill — complete
+    }
+    return { ok: false, output: 'File "input.bel", line 1, column 1:\nError: rejected' };
+  };
+  const r = await proveProgram(code, theoremUnderProof(decl), oracle, { maxSteps: 25, certifyTrim: false });
+  expect(r.complete === true,
+    `backtracking recovers the buried alternative (stuck=${r.stuck && r.stuck.reason} steps=${(r.steps || []).map((s) => s.move).join(',')})`);
+  expect((r.steps || []).some((s) => s.move === 'split') && !(r.steps || []).some((s) => /^let \[ \|- mk_a1/.test(s.text || '')),
+    'the abandoned invert is not in the final step list');
+}
+
+// Inv-3 ZERO-PROGRESS budget (2026-07-19) — a certified move whose successor
+// hole carries the SAME junk-free signature re-poses the identical obligation
+// (the batch-09 eval_det runaway: 80 junk `let [ |- refl] = det X X in`
+// acceptances, zero backtracks). NOT a hard refusal — today's synth does not
+// regenerate every load-bearing let (eqfun measured) — but a PATH-scoped
+// budget: a few no-ops are afforded, then the chain dies. The stub offers an
+// endless supply of certifying no-ops (six distinct helper lemmas — distinct
+// callees evade the 2-lemma chain cap via interleaved nullary inverts on
+// three premises); the run must refuse the overflow and never fake a proof.
+{
+  const helpers = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  const code = [
+    'fam_a : type.',
+    'mk_a1 : fam_a.',
+    'fam_b : type.',
+    ...helpers.flatMap((h) => [
+      `rec ${h} : [ |- fam_a] -> [ |- fam_b] =`,
+      'fn x => x',
+      ';',
+    ]),
+    'rec zptgt : [ |- fam_a] -> [ |- fam_a] -> [ |- fam_a] -> [ |- fam_b] =',
+    '/ total 1 /',
+    '?',
+    ';',
+  ].join('\n');
+  const decl = code.slice(code.indexOf('rec zptgt'));
+  const baseCtx = ['xa : [ |- fam_a]', 'xb : [ |- fam_a]', 'xc : [ |- fam_a]'];
+  const report = (src, goal, ctxLines) => {
+    let ln = 1; let col = 1;
+    src.split('\n').forEach((l, i) => { const j = l.indexOf('?'); if (j >= 0 && ln === 1 && i > src.split('\n').findIndex((x) => /rec zptgt/.test(x))) { ln = i + 1; col = j + 1; } });
+    return {
+      ok: true,
+      output: ['## Holes ##', `File "input.bel", line ${ln}, column ${col}: Hole number 0, <anonymous>`,
+        'Computation context:', ...ctxLines, `Goal: ${goal}`].join('\n'),
+    };
+  };
+  let first = true;
+  const oracle = async (src) => {
+    if (first) { first = false; return { ok: true, output: '## Type Reconstruction done ##' }; }
+    const body = src.slice(src.indexOf('rec zptgt'));
+    if (/=>\s*\n?\s*\?/.test(body) && /\bfn\b/.test(body) && !/let/.test(body)) {
+      return report(src, '[ |- fam_b]', baseCtx);
+    }
+    // Every nullary invert and every helper-let CERTIFIES with a state-
+    // identical report (derived results excluded from the signature) — an
+    // endless certifying no-op supply.
+    const binds = [];
+    const reB = /let \[ \|- ([^\s\]]+)\] = h\d[^\n]*in\b/g;
+    let mm;
+    while ((mm = reB.exec(body))) binds.push(`${mm[1]} : [ |- fam_b]`);
+    if (/\?/.test(body)) {
+      return report(src, '[ |- fam_b]', [...baseCtx, ...binds]);
+    }
+    return { ok: false, output: 'File "input.bel", line 1, column 1:\nError: rejected' };
+  };
+  const r = await proveProgram(code, theoremUnderProof(decl), oracle, {
+    maxSteps: 30, certifyTrim: false, collectTrace: true, triedCap: 80,
+  });
+  expect(r.complete === false,
+    'no-op acceptances cannot fake a proof');
+  const zp = (r.trace || []).flatMap((t) => t.tried || [])
+    .filter((c) => c.verdict === 'guard' && /zero-progress budget/.test(c.reason || ''));
+  expect(zp.length >= 1,
+    `the no-op overflow is refused by the zero-progress budget (got ${zp.length} refusals)`);
+}
+
+// §6.2 №4 (extension, 2026-07-18; reshaped 2026-07-19 for the zero-progress
+// refute) — a SEARCH-BOUND dead end backtracks like a no-move (the bound
+// truncated that PATH, not the tree; aborting buried live alternatives —
+// measured on unique_eval). The bounded leaf taints the run: if the tree then
+// exhausts without a proof the verdict is an honest `search-bound`, never a
+// no-move, and never a NO-CUT-FREE-PROOF certificate. The bound is tripped
+// for real: inverting x by the 5-ary mk_a5 binds five fam_c components
+// (source-writable pattern binders) against sibling `pairup`'s two fam_c
+// premises ⇒ 20 distinct saturation tuples > MAX_PRODUCTS at the deep hole;
+// the root hole has zero fam_c facts, so scenario 2 pins the final
+// no-move → search-bound override exactly.
+{
+  const code = [
+    'dx : type.',
+    'kx : dx.',
+    'fam_c : dx -> type.',
+    'fam_a : type.',
+    'mk_a5 : fam_c kx -> fam_c kx -> fam_c kx -> fam_c kx -> fam_c kx -> fam_a.',
+    'fam_b : type.',
+    'fam_d : type.',
+    'fam_e : type.',
+    'rec pairup : [ |- fam_c kx] -> [ |- fam_c kx] -> [ |- fam_d] =',
+    'fn x => fn y => x',
+    ';',
+    'rec helper : [ |- fam_c kx] -> [ |- fam_b] =',
+    'fn x => x',
+    ';',
+    'rec sbtgt : [ |- fam_a] -> [ |- fam_b] =',
+    '/ total 1 /',
+    '?',
+    ';',
+  ].join('\n');
+  const decl = code.slice(code.indexOf('rec sbtgt'));
+  const report = (src, goal, ctxLines) => {
+    let ln = 1; let col = 1;
+    src.split('\n').forEach((l, i) => { const j = l.indexOf('?'); if (j >= 0 && ln === 1 && i > src.split('\n').findIndex((x) => /rec sbtgt/.test(x))) { ln = i + 1; col = j + 1; } });
+    return {
+      ok: true,
+      output: ['## Holes ##', `File "input.bel", line ${ln}, column ${col}: Hole number 0, <anonymous>`,
+        'Computation context:', ...ctxLines, `Goal: ${goal}`].join('\n'),
+    };
+  };
+  const mkOracle = (acceptSplit) => {
+    let first = true;
+    return async (src) => {
+      if (first) { first = false; return { ok: true, output: '## Type Reconstruction done ##' }; }
+      const body = src.slice(src.indexOf('rec sbtgt'));
+      const underInvert = /let \[ \|- mk_a5/.test(body);
+      if (/=>\s*\n?\s*\?/.test(body) && !/let/.test(body) && !/case/.test(body)) {
+        return report(src, '[ |- fam_b]', ['x : [ |- fam_a]']); // intro accepted
+      }
+      // Candidate A: the bare invert on x binds five fam_c components (real
+      // progress — accepted) whose 20 pairup tuples blow the saturation
+      // budget at its successor: a searchBounded leaf where everything else
+      // rejects.
+      const mA = /let \[ \|- mk_a5 ([^\]]+)\] = x in\s*\n?\s*\?\s*\n;/.exec(body);
+      if (mA) {
+        const comps = mA[1].trim().split(/\s+/).map((n) => `${n} : [ |- fam_c kx]`);
+        // fam_e has no producer, so synth cannot close — it exhausts through
+        // the 20-tuple pairup saturation and surfaces the bound.
+        return report(src, '[ |- fam_e]', ['x : [ |- fam_a]', ...comps]);
+      }
+      if (underInvert) {
+        return { ok: false, output: 'File "input.bel", line 1, column 1:\nError: rejected' };
+      }
+      // Candidate B (reachable only if the bounded leaf BACKTRACKS): the
+      // SPLIT on x — its arm binds the components, and the arm closes by the
+      // helper fill.
+      if (acceptSplit && /case x of[\s\S]*\?/.test(body)) {
+        const mP = /case x of\s*\|\s*\[ \|- mk_a5 ([^\]]+)\]/.exec(body);
+        if (mP) {
+          const comps = mP[1].trim().split(/\s+/).map((n) => `${n} : [ |- fam_c kx]`);
+          return report(src, '[ |- fam_b]', ['x : [ |- fam_a]', ...comps]);
+        }
+      }
+      if (acceptSplit && /case x of[\s\S]*helper/.test(body) && !/\?/.test(body)) {
+        return { ok: true, output: '' }; // arm closed by the helper fill — complete
+      }
+      return { ok: false, output: 'File "input.bel", line 1, column 1:\nError: rejected' };
+    };
+  };
+  const r1 = await proveProgram(code, theoremUnderProof(decl), mkOracle(true), { maxSteps: 40, certifyTrim: false });
+  expect(r1.complete === true,
+    `search-bound leaf backtracks to the buried alternative (stuck=${r1.stuck && r1.stuck.reason} steps=${(r1.steps || []).map((s) => s.move).join(',')})`);
+  const r2 = await proveProgram(code, theoremUnderProof(decl), mkOracle(false), { maxSteps: 40, certifyTrim: false });
+  expect(r2.complete === false && r2.stuck && r2.stuck.reason === 'search-bound',
+    `tree with a bounded leaf reports search-bound, never no-move (got ${r2.stuck && r2.stuck.reason})`);
+  expect(!(r2.stuck && r2.stuck.noCutFree),
+    'no exhaustion certificate survives a bounded leaf');
+}
+
+// P17 (2026-07-18) — a NULLARY ctor arm whose result DEFINITELY rigid-clashes
+// the scrutinee's indices is never emitted: the checker does not reject such
+// an arm — a bare-identifier pattern whose ctor cannot type elaborates as a
+// fresh catch-all VARIABLE binder, a certifying arm that re-poses the WHOLE
+// pre-split obligation (natval_dont_step's wander fuel). Flexible indices
+// keep every arm (fail-open).
+{
+  const code = [
+    'd : type.',
+    'k1 : d.',
+    'k2 : d.',
+    'rel : d -> type.',
+    'r_one : rel k1.',
+    'r_oneb : rel k1.',
+    'r_two : rel k2.',
+    'rec p17tgt : [ |- rel k1] -> [ |- d] =',
+    '/ total 1 /', '?', ';',
+  ].join('\n');
+  const p17thm = theoremUnderProof(code.slice(code.indexOf('rec p17tgt')));
+  const mv = candidateMoves({
+    goal: '[ |- d]',
+    meta: [],
+    ctx: [{ name: 'x', type: '[ |- rel k1]' }],
+  }, code, p17thm);
+  const splits = mv.filter((m) => m.kind === 'split' && /case x of/.test(m.text)); // GENERAL: move-kind tag
+  expect(splits.length > 0 && splits.every((m) => /r_one\b/.test(m.text) && !/r_two/.test(m.text)),
+    `rigid-clash nullary arm dropped from split (got ${splits.map((m) => m.text.replace(/\n/g, ' ').slice(0, 80)).join(' || ')})`);
+  const mv2 = candidateMoves({
+    goal: '[ |- d]',
+    meta: [{ name: 'N', type: '( |- d)' }],
+    ctx: [{ name: 'x', type: '[ |- rel N]' }],
+  }, code, p17thm);
+  const splits2 = mv2.filter((m) => m.kind === 'split' && /case x of/.test(m.text)); // GENERAL: move-kind tag
+  expect(splits2.length > 0 && splits2.some((m) => /r_one\b/.test(m.text) && /r_two/.test(m.text)),
+    'flexible scrutinee index keeps every nullary arm (fail-open)');
+}
+
+// Comment-aware schema scanning (2026-07-18) — a COMMENTED-OUT alternative
+// schema declaration must not be scanned as real: eq-proof-tuple's
+// `% schema w = some [x:exp] eq x x;` made schemaSomeVars return ['x'] for the
+// LIVE block schema, eraseSomeVars rewrote its own field references to
+// `eq _ _`, and every block-extension IH call failed "Expression is not
+// closed". Scanners obey the same law as trims (P5): parse comment-free text.
+{
+  const code = [
+    'tmx : type.',
+    'eqx : tmx -> tmx -> type.',
+    '% schema wx = some [y:tmx] eqx y y;',
+    'schema wx = block y:tmx, _u:eqx y y;',
+  ].join('\n');
+  expect(schemaSomeVars(code, 'wx').length === 0,
+    `commented-out some-schema is not scanned (got [${schemaSomeVars(code, 'wx')}])`);
+  const code2 = [
+    'tmx : type.',
+    'eqx : tmx -> tmx -> type.',
+    'schema wx = some [a:tmx] block y:tmx, _u:eqx y a;',
+  ].join('\n');
+  expect(schemaSomeVars(code2, 'wx').join(',') === 'a',
+    `live some-schema still scanned (got [${schemaSomeVars(code2, 'wx')}])`);
+}
+
+// E.9 wire-up — rejection scans certify against the trimmed closure (small
+// programs); an acceptance re-runs the FULL program (bookkeeping coordinates);
+// certifyTrim:false opts out entirely (the native oracle's cost model).
+{
+  const pad = [];
+  for (let i = 0; i < 6; i += 1) {
+    pad.push(`padfam${i} : type.`, `padmk${i} : padfam${i}.`,
+      `rec padlemma${i} : [ |- padfam${i}] -> [ |- padfam${i}] =\nfn x => x\n;`);
+  }
+  const decl = 'rec tgt9w : [ |- fam_a] -> [ |- fam_a] =\n/ total 1 /\n?\n;';
+  const code = ['fam_a : type.', 'mk_a : fam_a.', ...pad, decl].join('\n');
+  const mkOracle = (sizes) => {
+    let first = true;
+    return async (src) => {
+      sizes.push(src.length);
+      if (first) {
+        first = false;
+        let ln = 1; let col = 1;
+        src.split('\n').forEach((l, i) => { const j = l.indexOf('?'); if (j >= 0 && ln === 1) { ln = i + 1; col = j + 1; } });
+        return {
+          ok: true,
+          output: ['## Holes ##', `File "input.bel", line ${ln}, column ${col}: Hole number 0, <anonymous>`, 'Goal: [ |- fam_a]'].join('\n'),
+        };
+      }
+      // accept any hole-free target body; reject the rest at the target's line
+      if (/tgt9w[\s\S]*?=[\s\S]*?mk_a/.test(src) && !/\?/.test(src.slice(src.indexOf('tgt9w')))) {
+        return { ok: true, output: '' };
+      }
+      const tl = src.split('\n').findIndex((l) => /rec tgt9w/.test(l)) + 2;
+      return { ok: false, output: `File "input.bel", line ${tl}, column 1:\nError: rejected` };
+    };
+  };
+  const sizesOn = [];
+  const rOn = await proveProgram(code, theoremUnderProof(decl), mkOracle(sizesOn), { maxSteps: 6 });
+  expect(rOn.complete === true, `E.9 wire: still completes with trim on (stuck=${rOn.stuck && rOn.stuck.reason})`);
+  const full = code.length;
+  expect(sizesOn.some((s) => s < full * 0.8),
+    `E.9 wire: some certifies ran against the TRIMMED closure (sizes ${JSON.stringify(sizesOn)})`);
+  expect(sizesOn.some((s) => s >= full * 0.9),
+    'E.9 wire: the acceptance re-ran the full program');
+  const sizesOff = [];
+  const rOff = await proveProgram(code, theoremUnderProof(decl), mkOracle(sizesOff), { maxSteps: 6, certifyTrim: false });
+  expect(rOff.complete === true && sizesOff.every((s) => s >= full * 0.9),
+    `E.9 wire: certifyTrim:false keeps every check full-size (sizes ${JSON.stringify(sizesOff)})`);
+}
+
+// P8 — "a certified complete chain is never worse than a speculative
+// refinement" holds at the TOP LEVEL: closing fills rank before open splits.
+// (Split-first ordering, unmasked by the P6 demand fixes, sent todbruijn into
+// an 8-deep split spiral where one closer ends the proof.)
+{
+  const ordSig = [
+    'fam : type.',
+    'mkA : fam.',
+    'mkB : fam.',
+    'gate : fam -> type.',
+    'gA : gate mkA.',
+    'gB : gate mkB.',
+    'rec pick : [ |- gate F] -> [ |- fam] =',
+    '/ total 1 /',
+    'fn d => ?',
+    ';',
+  ].join('\n');
+  const ordMoves = candidateMoves({
+    goal: '[ |- fam]',
+    meta: [],
+    ctx: [{ name: 'd', type: '[ |- gate F]' }],
+  }, ordSig, theoremUnderProof(ordSig.slice(ordSig.indexOf('rec pick'))));
+  const iClose = ordMoves.findIndex((m) => m && m.text && !/\?/.test(m.text));
+  const iSplit = ordMoves.findIndex((m) => m && m.kind === 'split');
+  expect(iClose >= 0 && iSplit >= 0 && iClose < iSplit,
+    `P8 closers rank before open splits at top level (close@${iClose} split@${iSplit})`);
+}
+
+// G.3b — dominated moves defer to the queue's tail; never dropped, never
+// tried before a live candidate. Order preserved within each class.
+{
+  const a = { kind: 'synth', text: 'x' };
+  const b = { kind: 'invert', text: 'y', dominated: true };
+  const c = { kind: 'split', text: 'z' };
+  const d = { kind: 'split', text: 'w', dominated: true };
+  const out = deferDominated([a, b, c, d]);
+  expect(out.length === 4 && out[0] === a && out[1] === c && out[2] === b && out[3] === d,
+    'G.3b deferDominated: live first (order kept), dominated last (order kept)');
+  const plain = [a, c];
+  expect(deferDominated(plain) === plain, 'G.3b no dominated ⇒ identity (no realloc)');
+  expect(deferDominated([]).length === 0, 'G.3b empty stays empty');
+}
+
+// Phase E.8 — writableRisk synth dominated when a clean closing synth exists.
+{
+  const clean = { kind: 'synth', text: '[ |- z]', rationale: 'clean' };
+  const risk = { kind: 'synth', text: '[ |- X1]', rationale: 'risky', writableRisk: true };
+  const onlyRisk = withWritableRiskDominated([risk]);
+  expect(onlyRisk.length === 1 && !onlyRisk[0].dominated,
+    'E.8 keeps writableRisk when it is the only closer');
+  const both = withWritableRiskDominated([clean, risk]);
+  expect(both[0].dominated !== true, 'E.8 clean synth stays live');
+  expect(both[1].dominated === true && /writable synth/.test(both[1].rationale),
+    `E.8 dominates writableRisk beside clean (got ${JSON.stringify(both[1])})`);
+  expect(withWritableRiskDominated([]).length === 0, 'E.8 empty stays empty');
+}
 
 // ── 10. Move leads — brief prose; structured facts stay in meta facets ───────
 const holeDual = { goal: '[ |- dual A B]', meta: [], ctx: [{ name: 'f', type: '[ |- dual A B]' }] };

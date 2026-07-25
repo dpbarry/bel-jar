@@ -16,9 +16,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { walkTree } from '../editor-src/bel-walk.mjs';
-import { buildPrelude, editorTextForIndexing } from '../editor-src/project-prelude.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { walkTree } from '../js/editor-src/tree-walk.mjs';
+import { buildPrelude, editorTextForIndexing } from '../js/editor-src/semantic/project-prelude.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dataRoot = join(here, '..', 'library', 'data');

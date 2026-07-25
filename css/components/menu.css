@@ -1,0 +1,281 @@
+/* -- Menus -- */
+
+.menu-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10100;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.menu {
+  position: fixed;
+  left: 0;
+  top: 0;
+  min-width: 10rem;
+  max-width: min(18rem, calc(100vw - 1rem));
+  padding: var(--menu-pad);
+  font-family: var(--sans);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  box-shadow: var(--menu-shadow);
+  transform-origin: top center;
+  transform: scale(0.96);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    opacity calc(var(--overlay-pop-ms-in) * 0.8) ease-out,
+    visibility 0s var(--overlay-pop-ms-in);
+  pointer-events: auto;
+}
+
+.menu.is-submenu { min-width: 8rem; }
+
+/* Pop grows out of the edge nearest the trigger */
+.menu.is-drop-down { transform-origin: top left; }
+.menu.is-drop-down.is-align-end { transform-origin: top right; }
+.menu.is-flyout { transform-origin: left center; }
+
+.menu.is-measuring {
+  visibility: visible !important;
+  transform: none !important;
+  opacity: 0 !important;
+  transition: none !important;
+  left: -9999px !important;
+  top: 0 !important;
+}
+
+.menu.is-visible:not(.is-measuring) {
+  transform: scale(1);
+  opacity: 1;
+  visibility: visible;
+}
+
+.menu.is-leaving {
+  transform: scale(0.97);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--overlay-pop-ms-out) var(--overlay-pop-ease-out),
+    opacity var(--overlay-pop-ms-out) ease-in;
+}
+
+.menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  width: 100%;
+  --row-pill-gutter-x: 0.65rem;
+  --row-pill-surface-pad: var(--menu-pad);
+  padding: 0.34rem 0.7rem 0.34rem var(--row-pill-gutter-x);
+  border: none;
+  border-radius: var(--menu-item-radius);
+  background: transparent;
+  color: var(--menu-item-fg);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+/* Overlay-row pill: floating capsule inset in the wash (not a flush edge strip) */
+.menu-item::before {
+  content: '';
+  position: absolute;
+  left: var(--row-pill-inset-x);
+  top: 50%;
+  width: var(--row-pill-w);
+  height: 0.1rem;
+  transform: translateY(-50%);
+  opacity: 0;
+  border-radius: var(--row-pill-radius);
+  background: var(--accent-mid);
+  transition:
+    height 140ms var(--overlay-pop-ease-in),
+    opacity 15ms var(--overlay-pop-ease-in);
+  pointer-events: none;
+}
+
+.menu-item:disabled {
+  color: var(--menu-item-fg-disabled);
+  cursor: default;
+}
+
+/* Active = focus / parent of an open submenu (hover added in @media below) */
+.menu-item:not(:disabled):focus-visible,
+.menu-item:not(:disabled).is-submenu-open {
+  outline: none;
+  color: var(--menu-item-fg-hover);
+  background: var(--menu-item-hover-wash);
+}
+.menu-item:not(:disabled):focus-visible::before,
+.menu-item:not(:disabled).is-submenu-open::before {
+  opacity: var(--row-pill-opacity);
+  height: calc(100% - 2 * var(--row-pill-inset-y));
+}
+.menu-item:not(:disabled):focus-visible .menu-item-chevron,
+.menu-item.is-submenu-open .menu-item-chevron { opacity: 1; color: var(--accent-mid); }
+
+@media (hover: hover) and (pointer: fine) {
+  .menu-item:not(:disabled):hover {
+    color: var(--menu-item-fg-hover);
+    background: var(--menu-item-hover-wash);
+  }
+  .menu-item:not(:disabled):hover::before {
+    opacity: var(--row-pill-opacity);
+    height: calc(100% - 2 * var(--row-pill-inset-y));
+  }
+  .menu-item:not(:disabled):hover .menu-item-chevron { opacity: 1; color: var(--accent-mid); }
+}
+
+/* Leading icon / check gutter — only reserved when the menu uses it */
+.menu-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 0.7rem;
+  height: 0.7rem;
+  opacity: 0.75;
+}
+.menu-item-icon svg { width: 100%; height: 100%; }
+.menu--has-icons .menu-item-icon { margin-right: 0.05rem; }
+.menu--has-icons .menu-item:not(.menu-item-has-icon) .menu-item-label {
+  margin-left: calc(0.7rem + 0.05rem);
+}
+.menu-item.is-checked .menu-item-icon { opacity: 1; color: var(--accent-mid); }
+
+.menu-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-item-chevron {
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-left: auto;
+  opacity: 0.5;
+  transition: opacity var(--transition);
+}
+
+.menu-item-shortcut {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--menu-shortcut-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.menu-item:not(.menu-item-has-submenu):not(.menu-item-has-shortcut) .menu-item-label {
+  padding-right: 0.875rem;
+}
+
+/* Non-interactive rows */
+.menu-separator {
+  height: 1px;
+  margin: 0.3rem 0.45rem;
+  background: var(--menu-separator);
+  pointer-events: none;
+}
+
+.menu-section {
+  padding: 0.5rem 0.6rem 0.25rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--menu-section-fg);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* First child shouldn't carry the section's extra top pad */
+.menu > .menu-section:first-child {
+  padding-top: 0.3rem;
+}
+
+/* Find-references list: keep it a short, scrolling stack rather than a tall
+   panel — capped height with its own scrollbar (scoped to ref menus only). */
+.menu:has(.menu-item-ref) {
+  max-height: min(42vh, 20rem);
+  overflow-y: auto;
+}
+
+/* Find-references rows: a def/use badge, a tabular line:col, then the source
+   snippet in a monospace, dimmed tail. */
+.menu-item-ref {
+  gap: 0.45rem;
+  font-variant-numeric: tabular-nums;
+}
+.menu-ref-badge {
+  flex-shrink: 0;
+  min-width: 1.9rem;
+  text-align: center;
+  padding: 0.04rem 0.28rem;
+  border-radius: 3px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.menu-ref-badge--def {
+  color: var(--accent-high);
+  background: color-mix(in srgb, var(--accent-lower) 55%, transparent);
+}
+.menu-ref-badge--read {
+  color: var(--menu-section-fg);
+  background: var(--menu-separator);
+}
+.menu-ref-loc {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--menu-shortcut-fg);
+}
+.menu-ref-snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+/* Row where find-refs was invoked: plain background; line:col marks the spot. */
+.menu-item-ref.is-ref-active,
+.menu-item-ref.is-ref-active:focus-visible {
+  background: transparent;
+  color: inherit;
+}
+.menu-item-ref.is-ref-active::before,
+.menu-item-ref.is-ref-active:focus-visible::before {
+  opacity: 0;
+}
+.menu-item-ref.is-ref-active .menu-ref-loc {
+  color: var(--accent-mid);
+}
+@media (hover: hover) and (pointer: fine) {
+  .menu-item-ref.is-ref-active:hover,
+  .menu-item-ref.is-ref-active:focus-visible:hover {
+    color: var(--menu-item-fg-hover);
+    background: var(--menu-item-hover-wash);
+  }
+  .menu-item-ref.is-ref-active:hover::before,
+  .menu-item-ref.is-ref-active:focus-visible:hover::before {
+    opacity: var(--row-pill-opacity);
+    height: calc(100% - 2 * var(--row-pill-inset-y));
+  }
+}

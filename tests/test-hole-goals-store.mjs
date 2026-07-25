@@ -3,8 +3,8 @@ import {
   getHoleGoalsStore,
   syncHoleGoalsFromDevelopment,
   syncHoleGoalsFromSettlement,
-} from '../editor-src/hole-goals-store.mjs';
-import { fileContentSig } from '../editor-src/development-check.mjs';
+} from '../js/editor-src/prover/hole-goals-store.mjs';
+import { fileContentSig } from '../js/editor-src/semantic/development-check.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

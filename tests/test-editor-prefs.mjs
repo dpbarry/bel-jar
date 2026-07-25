@@ -3,12 +3,12 @@ import {
   readEditorPrefs,
   buildToggleableExtensions,
   buildEditorChromeTheme,
-} from '../editor-src/editor-prefs.mjs';
+} from '../js/editor-src/editor-prefs.mjs';
 import { EditorView } from '@codemirror/view';
 
 function withPersist(fn) {
-  const prev = globalThis.BelJarPersist;
-  globalThis.BelJarPersist = {
+  const prev = globalThis.Persist;
+  globalThis.Persist = {
     readStoredEditorFontSize: () => 'lg',
     readStoredEditorLineHeight: () => 'compact',
     readStoredEditorWordWrap: () => true,
@@ -31,7 +31,7 @@ function withPersist(fn) {
   try {
     fn();
   } finally {
-    globalThis.BelJarPersist = prev;
+    globalThis.Persist = prev;
   }
 }
 

@@ -1,0 +1,453 @@
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/inter-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/inter-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/inter-latin-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-latin-700-normal.woff2') format('woff2');
+}
+
+:root {
+  --bg: light-dark(hsl(220, 20%, 98.5%), hsl(224, 17%, 4.2%));
+
+  --base-lowest: light-dark(hsl(220, 20%, 98%), hsl(224, 18%, 5%));
+  --base-lower: light-dark(hsl(220, 16%, 94%), hsl(223, 16%, 8%));
+  --base-low: light-dark(hsl(220, 12%, 89%), hsl(222, 14%, 12%));
+  --base-mid: light-dark(hsl(220, 10%, 82%), hsl(220, 12%, 18%));
+  --ui-text-contrast-step: calc(var(--ui-text-contrast, 1) - 1);
+
+  --base-high: light-dark(
+    hsl(220, 8%, clamp(0%, calc(52% - (14% * var(--ui-text-contrast-step))), 100%)),
+    hsl(218, 9%, clamp(0%, calc(38% + (18% * var(--ui-text-contrast-step))), 100%))
+  );
+  --base-higher: light-dark(
+    hsl(221, 10%, clamp(0%, calc(30% - (8% * var(--ui-text-contrast-step))), 100%)),
+    hsl(216, 7%, clamp(0%, calc(58% + (14% * var(--ui-text-contrast-step))), 100%))
+  );
+  --base-highest: light-dark(
+    hsl(222, 16%, clamp(0%, calc(10% - (4% * var(--ui-text-contrast-step))), 100%)),
+    hsl(213, 9%, clamp(0%, calc(82% + (8% * var(--ui-text-contrast-step))), 100%))
+  );
+
+  --accent-lowest: light-dark(hsl(217, 50%, 95%), hsl(218, 22%, 8.5%));
+  --accent-lower: light-dark(hsl(217, 48%, 86%), hsl(217, 28%, 14.5%));
+  --accent-low: light-dark(hsl(217, 50%, 72%), hsl(216, 42%, 27.5%));
+  --accent-mid: light-dark(hsl(217, 72%, 52%), hsl(215, 58%, 66%));
+  --accent-high: light-dark(hsl(217, 68%, 38%), hsl(214, 54%, 75.5%));
+  --accent-higher: light-dark(hsl(217, 62%, 26%), hsl(213, 46%, 86%));
+  --accent-highest: light-dark(hsl(217, 55%, 14%), hsl(212, 32%, 94%));
+  --accent-glow: light-dark(
+    hsla(217, 72%, 52%, 0.12),
+    hsla(215, 58%, 66%, 0.2)
+  );
+
+  --muted-lowest: light-dark(hsl(220, 14%, 94%), hsl(220, 12%, 9%));
+  --muted-lower: light-dark(hsl(220, 10%, 86%), hsl(220, 10%, 18%));
+  --muted-low: light-dark(hsl(219, 8%, 74%), hsl(219, 8%, 27%));
+  --muted-mid: light-dark(
+    hsl(218, 7%, clamp(0%, calc(58% - (12% * var(--ui-text-contrast-step))), 100%)),
+    hsl(218, 6%, clamp(0%, calc(38% + (16% * var(--ui-text-contrast-step))), 100%))
+  );
+  --muted-high: light-dark(
+    hsl(218, 8%, clamp(0%, calc(42% - (10% * var(--ui-text-contrast-step))), 100%)),
+    hsl(216, 5%, clamp(0%, calc(50% + (14% * var(--ui-text-contrast-step))), 100%))
+  );
+  --muted-higher: light-dark(
+    hsl(219, 9%, clamp(0%, calc(28% - (8% * var(--ui-text-contrast-step))), 100%)),
+    hsl(214, 5%, clamp(0%, calc(62% + (12% * var(--ui-text-contrast-step))), 100%))
+  );
+  --muted-highest: light-dark(
+    hsl(220, 12%, clamp(0%, calc(16% - (6% * var(--ui-text-contrast-step))), 100%)),
+    hsl(212, 5%, clamp(0%, calc(72% + (10% * var(--ui-text-contrast-step))), 100%))
+  );
+
+  --ui-fg-subtle: var(--base-high);
+  --ui-fg: var(--base-higher);
+  --ui-fg-strong: var(--base-highest);
+  --ui-fg-muted: var(--muted-high);
+  --ui-fg-faint: var(--muted-mid);
+  --ui-fg-on-accent: light-dark(hsl(0, 0%, 100%), hsl(222, 20%, 8%));
+  --ui-fg-on-solid: light-dark(hsl(0, 0%, 100%), hsl(214, 40%, 96%));
+
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Inter', system-ui, sans-serif;
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  --transition-fast: 75ms ease;
+  --transition: 150ms ease;
+  --transition-slow: 200ms ease;
+
+  --overlay-pop-ms-in: 190ms;
+  --overlay-pop-ms-out: 125ms;
+  --overlay-pop-ease-in: cubic-bezier(0.175, 0.885, 0.32, 1.06);
+  --overlay-pop-ease-out: cubic-bezier(0.4, 0, 1, 1);
+
+  --dialog-ms-in: var(--overlay-pop-ms-in);
+  --dialog-ms-out: 132ms;
+  --dialog-ease-in: cubic-bezier(0.33, 1.02, 0.37, 1.08);
+  --dialog-ease-out: var(--overlay-pop-ease-out);
+  --dialog-overlay-in-alpha: 0.26;
+  --dialog-overlay-out-alpha: 0.34;
+
+  --sidebar-w: 2.625rem;
+  --side-panel-w: 15.625rem;
+  --side-panel-h: 11.875rem;
+  --explorer-w: var(--side-panel-w);
+  --inspector-w: var(--side-panel-w);
+  --library-w: var(--side-panel-w);
+  --harpoon-w: var(--side-panel-w);
+  --explorer-h: var(--side-panel-h);
+  --inspector-h: var(--side-panel-h);
+  --library-h: var(--side-panel-h);
+  --harpoon-h: var(--side-panel-h);
+  --header-h: 2rem;
+  --panel-header-h: 1.875rem;
+  --icon-btn: 1.625rem;
+  --icon-btn-lg: 2rem;
+  --icon-svg: 0.8125rem;
+  --icon-svg-lg: 1rem;
+  --header-logo-size: 1.1rem;
+  --pad-inline: 0.75rem;
+  --panel-header-pad-control: 0.4rem;
+  --pad-block: 0.875rem;
+  --pad-editor-x: 1rem;
+  --focus-ring: light-dark(
+    0 0 0 0.125rem var(--base-mid),
+    0 0 0 0.125rem var(--accent-glow)
+  );
+
+  --menu-shadow-near: light-dark(hsla(222, 18%, 12%, 0.12), hsla(0, 0%, 0%, 0.28));
+  --tooltip-shadow-near: light-dark(hsla(222, 18%, 12%, 0.1), hsla(0, 0%, 0%, 0.24));
+  --shadow-edge:
+    0 0 0.5px 0.5px light-dark(hsla(222, 18%, 16%, 0.1), hsla(0, 0%, 10%));
+  --shadow-popover:
+    var(--shadow-edge),
+    0 2px 4px -2px light-dark(hsla(222, 18%, 12%, 0.1), hsla(0, 0%, 0%, 0.62)),
+    0 7px 12px -8px light-dark(hsla(222, 18%, 12%, 0.18), hsla(0, 0%, 0%, 0.78));
+  --shadow-panel:
+    var(--shadow-edge),
+    0 5px 8px -3px light-dark(hsla(222, 18%, 12%, 0.1), hsla(0, 0%, 0%, 0.9)),
+    0 0 8px -2px light-dark(hsla(222, 18%, 12%, 0.2), hsla(0, 0%, 0%, 0.9));
+  --shadow-dialog:
+    var(--shadow-edge),
+    0 6px 10px -5px light-dark(hsla(222, 18%, 12%, 0.14), hsla(0, 0%, 0%, 0.72)),
+    0 18px 32px -22px light-dark(hsla(222, 18%, 12%, 0.22), hsla(0, 0%, 0%, 0.86));
+  --floating-window-shadow: var(--shadow-panel);
+  --surface-highlight: light-dark(
+    hsla(0, 0%, 100%, 0.78),
+    hsla(0, 0%, 100%, 0.08)
+  );
+
+  /* Menu surface (shared by .menu and the settings .bj-dropdown). Opaque, IDE
+     style: a notch above the panels, never bright; tight contained shadow. */
+  --menu-radius: var(--radius-sm);
+  --menu-item-radius: 2px;
+  --menu-pad: 0.3rem;
+  --menu-bg: light-dark(hsl(220, 22%, 99%), hsl(222, 15%, 8%));
+  --menu-border: light-dark(hsl(220, 13%, 75%), hsl(220, 10%, 30%));
+  --menu-shadow: var(--shadow-popover);
+  --menu-item-fg: var(--ui-fg);
+  --menu-item-fg-hover: var(--accent-high);
+  --menu-item-hover-wash: light-dark(hsla(217, 60%, 50%, 0.07), hsla(215, 60%, 66%, 0.09));
+  --menu-item-fg-disabled: var(--ui-fg-faint);
+  --menu-section-fg: var(--ui-fg-muted);
+  --menu-separator: light-dark(hsla(220, 10%, 50%, 0.14), hsla(220, 10%, 70%, 0.1));
+  --menu-shortcut-fg: var(--ui-fg-faint);
+
+  /* Search UI — shared chrome for inputs & result dropdowns. Sizing stays local;
+     recess vs well variants, border-only focus accent, dropdown shadow, and row hover align. */
+  --search-recess-radius: var(--radius-sm);
+  --search-recess-border: light-dark(hsla(220, 10%, 78%, 0.28), hsla(217, 10%, 28%, 0.45));
+  --search-recess-bg: light-dark(hsla(220, 12%, 90%, 0.22), hsla(220, 10%, 10%, 0.35));
+  --search-recess-border-hover: light-dark(hsla(220, 10%, 76%, 0.42), hsla(217, 10%, 32%, 0.58));
+  --search-recess-bg-hover: light-dark(hsla(220, 12%, 92%, 0.3), hsla(220, 10%, 10%, 0.44));
+  --search-recess-focus-border: color-mix(in oklab, var(--accent-mid) 38%, light-dark(hsla(220, 10%, 78%, 0.4), hsla(217, 10%, 30%, 0.55)));
+  --search-recess-focus-bg: light-dark(hsla(220, 12%, 94%, 0.38), hsla(220, 10%, 11%, 0.5));
+  --search-field-transition: border-color 120ms ease, background 120ms ease;
+
+  --search-well-radius: var(--radius-sm);
+  --search-well-bg: light-dark(hsl(220, 14%, 94.5%), hsl(224, 13%, 6.5%));
+  --search-well-bg-bright: light-dark(hsl(220, 14%, 99%), hsl(223, 12%, 7.5%));
+  --search-well-focus-border: var(--accent-mid);
+  --search-icon-opacity: clamp(0.55, calc(0.45 + (0.18 * var(--ui-text-contrast, 1))), 1);
+  --search-icon-opacity-active: clamp(0.7, calc(0.6 + (0.16 * var(--ui-text-contrast, 1))), 1);
+
+  --search-drop-radius: var(--radius-md);
+  --search-drop-offset: 0.3rem;
+  --search-drop-bg: var(--menu-bg);
+  --search-drop-border: var(--menu-border);
+  --search-drop-shadow: var(--shadow-popover);
+  --search-drop-pad: 0.25rem;
+
+  --search-row-radius: var(--menu-item-radius);
+  --search-row-hover-bg: var(--menu-item-hover-wash);
+  --search-row-hover-fg: var(--menu-item-fg-hover);
+  --search-row-active-bg: color-mix(in srgb, var(--accent-lower) 65%, transparent);
+  --search-row-active-accent: var(--accent-mid);
+  --search-row-active-fg: var(--accent-high);
+
+  /* Edge strip — flush-left ::before accent on rails, explorer, callouts.
+     Left corners may match the host radius; right corners stay square.
+     row: explorer / settings rail
+     callout: toasts / diag cards / REPL banners / hero lab strips
+
+     Pill — floating capsule inset from the wash, for interactive list rows:
+     menus / palettes / dropdowns / all autocomplete / search hits. */
+  --edge-strip-w: 2.5px;
+  --edge-strip-w-callout: 3px;
+  --edge-strip-radius: var(--menu-item-radius);
+  --row-pill-w: 2.5px;
+  --row-pill-radius: 1.5px;
+  /* Pill sits centered in the left gutter (row pad), accounting for any
+     surface pad outside the row (e.g. --menu-pad on context menus). */
+  --row-pill-gutter-x: 0.65rem;
+  --row-pill-surface-pad: 0.1rem;
+  --row-pill-inset-x: calc((var(--row-pill-gutter-x) - var(--row-pill-surface-pad) - var(--row-pill-w)) / 2);
+  --row-pill-inset-y: 0.3rem;
+  --row-pill-opacity: 1;
+  --search-row-pad-x: 0.9rem;
+
+  /* Editor autocomplete — restrained; avoid saturated fill on single-item lists. */
+  --editor-ac-radius: 2px;
+  --editor-ac-row-bg: var(--menu-item-hover-wash);
+  --editor-ac-row-fg: var(--ui-fg-strong);
+  --editor-ac-row-accent: color-mix(in srgb, var(--accent-mid) 55%, transparent);
+
+  /* Toggle-on — pressed icon toggles (follow sync, etc.). No bg fill; hover keeps wash. */
+  --toggle-on-fg: var(--accent-mid);
+  --toggle-on-icon-fill: light-dark(
+    color-mix(in srgb, var(--accent-mid) 24%, transparent),
+    color-mix(in srgb, var(--accent-mid) 32%, transparent)
+  );
+
+  --chrome-bg-app: light-dark(hsl(220, 16%, 98%), hsl(222, 11%, 12.5%));
+  --chrome-bg-header:  light-dark(hsl(220, 10%, 94.5%), hsl(225, 12%, 8.5%));
+  --header-menu-fg: var(--ui-fg);
+  --header-menu-fg-active: var(--ui-fg-strong);
+  --header-menu-bg-hover: light-dark(hsla(220, 10%, 40%, 0.07), hsla(0, 0%, 100%, 0.055));
+  --header-menu-bg-active: light-dark(hsla(220, 10%, 40%, 0.1), hsla(0, 0%, 100%, 0.08));
+  --chrome-bg-sidebar: light-dark(hsl(220, 10%, 94.5%), hsl(225, 12%, 8.5%));
+  --chrome-bg-panel: light-dark(hsl(220, 12%, 96.5%), hsl(223, 10%, 10.5%));
+  --editor-gutter-bg: light-dark(hsl(220, 16%, 98.2%), hsl(224, 14%, 4.8%));
+  --editor-gutter-fg: light-dark(hsla(220, 6%, 48%, 0.38), hsla(216, 5%, 58%, 0.26));
+  --editor-gutter-fg-active: light-dark(hsla(220, 7%, 36%, 0.55), hsla(213, 5%, 68%, 0.4));
+  --editor-gutter-edge: light-dark(hsla(220, 10%, 72%, 0.18), hsla(217, 8%, 22%, 0.35));
+
+  --chrome-divider: light-dark(hsla(220, 9%, 80%, 1), hsla(217, 10%, 24%, 1));
+
+  /* Explorer file rows — muted type tints, shared hover/active treatment */
+  --file-bel-fg: light-dark(
+    hsl(218, 24%, clamp(0%, calc(44% - (6% * var(--ui-text-contrast-step))), 100%)),
+    hsl(216, 20%, clamp(0%, calc(62% + (10% * var(--ui-text-contrast-step))), 100%))
+  );
+  --file-bel-accent: light-dark(
+    hsl(218, 30%, clamp(0%, calc(48% - (6% * var(--ui-text-contrast-step))), 100%)),
+    hsl(216, 24%, clamp(0%, calc(52% + (12% * var(--ui-text-contrast-step))), 100%))
+  );
+  --file-suite-fg: var(--file-bel-fg);
+  --file-suite-accent: var(--file-bel-accent);
+  --file-suite-sep: light-dark(hsla(218, 24%, 44%, 0.14), hsla(216, 20%, 62%, 0.16));
+  --file-cfg-fg: light-dark(
+    hsl(156, 20%, clamp(0%, calc(38% - (6% * var(--ui-text-contrast-step))), 100%)),
+    hsl(154, 18%, clamp(0%, calc(58% + (12% * var(--ui-text-contrast-step))), 100%))
+  );
+  --file-cfg-accent: light-dark(
+    hsl(156, 24%, clamp(0%, calc(44% - (6% * var(--ui-text-contrast-step))), 100%)),
+    hsl(154, 22%, clamp(0%, calc(52% + (12% * var(--ui-text-contrast-step))), 100%))
+  );
+  --file-elf-fg: light-dark(
+    hsl(26, 38%, clamp(0%, calc(36% - (6% * var(--ui-text-contrast-step))), 100%)),
+    hsl(34, 24%, clamp(0%, calc(63% + (10% * var(--ui-text-contrast-step))), 100%))
+  );
+  --file-elf-accent: light-dark(
+    hsl(26, 42%, clamp(0%, calc(42% - (6% * var(--ui-text-contrast-step))), 100%)),
+    hsl(34, 28%, clamp(0%, calc(54% + (12% * var(--ui-text-contrast-step))), 100%))
+  );
+  --file-row-hover-bg: var(--header-menu-bg-hover);
+  --file-row-active-bg: var(--header-menu-bg-active);
+
+  --scrollbar-thumb: color-mix(in srgb, var(--muted-lower) 80%, transparent);
+  --scrollbar-thumb-hover: var(--muted-low);
+
+  --repl-bg: light-dark(hsl(220, 18%, 97%), hsl(228, 14%, 5.5%));
+  --repl-scrollbar-thumb: light-dark(
+    color-mix(in srgb, hsl(220, 10%, 72%) 65%, transparent),
+    color-mix(in srgb, hsl(220, 10%, 38%) 55%, transparent)
+  );
+  --repl-out: var(--ui-fg-strong);
+  --repl-muted: var(--ui-fg-muted);
+  --repl-meta: light-dark(hsl(265, 35%, 42%), hsl(265, 45%, 74%));
+  --repl-meta-begin: light-dark(hsl(200, 55%, 38%), hsl(198, 72%, 62%));
+  --repl-meta-done: light-dark(hsl(152, 49%, 34%), hsl(152, 52%, 52%));
+  --repl-cmd: light-dark(hsl(217, 62%, 38%), hsl(217, 78%, 72%));
+  --repl-chevron: light-dark(hsl(217, 68%, 42%), hsl(217, 82%, 62%));
+  --repl-error: light-dark(hsl(0, 58%, 42%), hsl(0, 72%, 62%));
+  --repl-holes-accent: light-dark(hsl(320, 60%, 54%), hsl(320, 78%, 74%));
+  --repl-warn: light-dark(hsl(32, 90%, 38%), hsl(38, 92%, 58%));
+  --repl-welcome-edge: light-dark(hsla(217, 55%, 42%, 0.35), hsla(217, 65%, 48%, 0.35));
+  --repl-welcome-fill: light-dark(hsla(217, 55%, 94%, 0.85), hsla(217, 40%, 14%, 0.55));
+  --repl-kbd-bg: light-dark(hsla(220, 12%, 88%, 1), hsla(220, 12%, 18%, 1));
+  --repl-kbd-fg: var(--ui-fg);
+  --repl-input-well: light-dark(hsl(220, 16%, 99%), hsl(226, 13%, 8.2%));
+  --repl-input-shell-bg: light-dark(
+    hsla(220, 18%, 99%, 0.94),
+    hsla(226, 14%, 11%, 0.92)
+  );
+  --repl-input-float-gap: 0.55rem;
+  --repl-input-float-lift: 1rem;
+  --repl-input-shell-outer-h: 2.75rem;
+  --repl-rule-edge: light-dark(
+    color-mix(in oklab, hsl(220, 12%, 78%) 92%, hsl(220, 14%, 42%)),
+    color-mix(in oklab, hsl(220, 10%, 22%) 85%, hsl(220, 14%, 40%))
+  );
+  --repl-rule-highlight: light-dark(
+    hsla(0, 0%, 100%, 0.72),
+    hsla(220, 14%, 38%, 0.35)
+  );
+
+  /* Holes get their own identity colour — a vivid magenta/pink (hue 320),
+     deliberately NOT the red/green/yellow that mean error/ok/warning. Shared by
+     the `?` glyph, its gutter cell, and the REPL hole block. Change the hue here
+     (all four vars) to re-theme; the S% is the chroma. */
+  --ide-hole-bg: light-dark(hsla(320, 72%, 56%, 0.10), hsla(320, 80%, 70%, 0.16));
+  --ide-hole-border: light-dark(hsl(320, 62%, 52%), hsl(320, 78%, 74%));
+  --ide-hole-gutter: light-dark(hsla(320, 72%, 56%, 0.22), hsla(320, 80%, 70%, 0.26));
+
+  --ide-error-gutter: light-dark(hsla(0, 72%, 46%, 0.22), hsla(0, 75%, 60%, 0.26));
+  --ide-error-gutter-fg: light-dark(hsl(0, 68%, 42%), hsl(0, 75%, 60%));
+  --ide-error-row-wash: light-dark(hsla(0, 72%, 46%, 0.09), hsla(0, 75%, 60%, 0.11));
+  --ide-warn-gutter: light-dark(hsla(38, 88%, 42%, 0.22), hsla(38, 90%, 56%, 0.26));
+  --ide-warn-gutter-fg: light-dark(hsl(38, 84%, 38%), hsl(38, 90%, 56%));
+
+  --harpoon-card-bg: light-dark(hsl(220, 22%, 99.2%), hsl(224, 14%, 11.2%));
+  --harpoon-card-bg-raised: light-dark(hsl(0, 0%, 100%), hsl(224, 14%, 12.8%));
+  --harpoon-card-border: light-dark(hsla(220, 13%, 72%, 0.72), hsla(214, 18%, 72%, 0.18));
+  --harpoon-card-border-strong: light-dark(hsla(220, 18%, 58%, 0.7), hsla(214, 25%, 78%, 0.3));
+  --harpoon-goal-bg: light-dark(hsla(320, 78%, 56%, 0.045), hsla(318, 84%, 74%, 0.055));
+  --harpoon-divider: light-dark(hsla(220, 12%, 74%, 0.46), hsla(214, 18%, 74%, 0.12));
+  --harpoon-goal-border: color-mix(in srgb, var(--repl-holes-accent) 30%, var(--harpoon-divider));
+  --harpoon-card-shadow: light-dark(
+    0 1px 2px hsla(220, 24%, 28%, 0.07),
+    0 1px 0 hsla(0, 0%, 100%, 0.035), 0 12px 28px hsla(224, 38%, 4%, 0.18)
+  );
+  --harpoon-card-inner: light-dark(
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.86),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.045)
+  );
+  /* Unified move-kind palette — ONE language for the reel, the step record, the SVG
+     tree, and the detail card. Theme-aware; derived to sit in the app's accent family
+     (magenta search / blue structure / green closure / amber recursion / teal
+     inversion), replacing the tree's old hardcoded hex vars. */
+  --harpoon-move-synth: light-dark(hsl(266, 62%, 52%), hsl(264, 78%, 76%));
+  --harpoon-move-split: light-dark(hsl(214, 70%, 50%), hsl(212, 80%, 70%));
+  --harpoon-move-fill: var(--ide-status-clean);
+  --harpoon-move-recurse: light-dark(hsl(38, 82%, 46%), hsl(40, 88%, 64%));
+  --harpoon-move-invert: light-dark(hsl(174, 62%, 38%), hsl(172, 66%, 60%));
+  --harpoon-move-lemma: light-dark(hsl(300, 58%, 52%), hsl(300, 74%, 76%));
+  --harpoon-move-intro: light-dark(hsl(220, 10%, 46%), hsl(216, 14%, 66%));
+  --harpoon-move-impossible: var(--ide-status-error);
+  --harpoon-move-stuck: var(--ide-status-error);
+  --harpoon-move-theorem: var(--accent-mid);
+  --harpoon-move-arm: var(--muted-high);
+  --ide-error-squiggle: light-dark(hsl(0, 72%, 46%), hsl(0, 75%, 60%));
+  --ide-warn-squiggle: light-dark(hsl(38, 88%, 42%), hsl(38, 90%, 56%));
+  --ide-type-tip-bg: light-dark(hsl(220, 20%, 18%), hsl(220, 22%, 10%));
+  --ide-type-tip-fg: light-dark(hsl(210, 18%, 90%), hsl(210, 20%, 88%));
+  --ide-type-tip-border: light-dark(hsl(220, 16%, 30%), hsl(220, 18%, 22%));
+  --ide-status-clean: light-dark(hsl(145, 55%, 38%), hsl(145, 52%, 52%));
+  --ide-status-checking: light-dark(hsl(217, 72%, 52%), hsl(215, 58%, 66%));
+  --ide-status-warning: light-dark(hsl(38, 80%, 52%), hsl(42, 85%, 62%));
+  --ide-status-error: light-dark(hsl(0, 68%, 50%), hsl(0, 72%, 60%));
+}
+
+html {
+  --ui-font-scale: 1;
+  --ui-text-contrast: 1.6;
+  color-scheme: dark;
+  font-size: calc(var(--ui-font-scale) * clamp(87.5%, 0.9vw + 81%, 100%));
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+  overflow-x: hidden;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Touch — suppress tap flash and accidental chrome selection; editor/inputs opt back in */
+@media (hover: none), (pointer: coarse) {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body :where(
+    .cm-scroller,
+    .cm-content,
+    input,
+    textarea,
+    [contenteditable='true'],
+    .repl-log,
+    .library-preview__pre,
+    .library-match-context,
+    .header-context.is-renaming,
+    .header-context-inline-name
+  ) {
+    -webkit-touch-callout: default;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+}
+
+/* Do NOT set `color` here: on the editor it would override every token's syntax
+   colour during selection (washing the highlighting out). Leaving it unset keeps
+   each glyph its own colour, with the selection a translucent wash on top — the
+   professional IDE behaviour. (The selection bg is faint enough that UI text stays
+   readable without forcing a colour.) */
+::selection {
+  background: light-dark(var(--accent-lowest), var(--accent-low));
+}

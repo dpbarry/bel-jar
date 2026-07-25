@@ -5,7 +5,7 @@ import {
   parseHoleCommandResult,
   splitTargetsOf,
   canIntro,
-} from '../editor-src/bel-hole-actions.mjs';
+} from '../js/editor-src/prover/hole-actions.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

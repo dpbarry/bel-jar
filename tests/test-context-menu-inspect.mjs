@@ -1,8 +1,8 @@
 // Context menu Inspect gate: must appear on references, not only definitions.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { canInspectAt, buildInspectorModel } from '../editor-src/bel-inspector.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { canInspectAt, buildInspectorModel } from '../js/editor-src/ide/inspector.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

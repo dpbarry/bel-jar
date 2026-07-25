@@ -9,13 +9,11 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
-const glyphSrc = fs.readFileSync(new URL('../js/harpoon-glyphs.js', import.meta.url), 'utf8');
-const src = fs.readFileSync(new URL('../js/harpoon-tree.js', import.meta.url), 'utf8');
-const sandbox = { window: undefined, globalThis: {} };
+const src = fs.readFileSync(new URL('../js/harpoon/harpoon-ui.js', import.meta.url), 'utf8');
+const sandbox = { window: undefined, self: {} };
 vm.createContext(sandbox);
-vm.runInContext(glyphSrc, sandbox);
 vm.runInContext(src, sandbox);
-const HT = sandbox.globalThis.HarpoonTree;
+const HT = sandbox.HarpoonTree;
 expect(HT && typeof HT.buildModel === 'function', 'HarpoonTree loads in a bare context');
 
 const steps = [

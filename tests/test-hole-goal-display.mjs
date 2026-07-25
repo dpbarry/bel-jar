@@ -5,10 +5,10 @@ import {
   holesBannerFromRows,
   resolveHoleGoalDisplay,
   storedGoalAt,
-} from '../editor-src/hole-goal-display.mjs';
-import { getHoleGoalsStore } from '../editor-src/hole-goals-store.mjs';
-import { fileContentSig } from '../editor-src/development-check.mjs';
-import { approximateHoleGoal } from '../editor-src/bel-prover-bridge.mjs';
+} from '../js/editor-src/prover/hole-goal-display.mjs';
+import { getHoleGoalsStore } from '../js/editor-src/prover/hole-goals-store.mjs';
+import { fileContentSig } from '../js/editor-src/semantic/development-check.mjs';
+import { approximateHoleGoal } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -64,7 +64,21 @@ expect(
     storedGoal: null,
     settlementGoal: '[ |- bool]',
   }).state === 'out-of-scope',
-  'out-of-dev without store is out-of-scope',
+  'out-of-dev without store or approx is out-of-scope',
+);
+
+const outApprox = resolveHoleGoalDisplay({
+  inDevelopment: false,
+  settleState: null,
+  storedGoal: null,
+  settlementGoal: null,
+  approximateGoal: '[ |- nat]',
+});
+expect(
+  outApprox.goal === '[ |- nat]'
+    && outApprox.state === 'approximate'
+    && outApprox.loadingLive === false,
+  'out-of-dev still shows syntactic approximate without Beluga',
 );
 
 expect(fileInActiveDevelopment('a.bel', ['a.bel', 'b.bel']), 'member in active dev paths');
@@ -103,6 +117,20 @@ const rows = buildHoleDisplayRows({
 });
 expect(rows.length === 1 && rows[0].goalState === 'cached', 'cross-dev row uses cached store');
 expect(holesBannerFromRows(rows, { inDevelopment: false }) === true, 'hint flag when out of dev');
+
+const freshOut = buildHoleDisplayRows({
+  fileName: 'fresh-out.bel',
+  fileText: src,
+  inDevelopment: false,
+  settleState: null,
+  syntacticHoles: [{ line: 2, col: 1, index: 0, from: 0, to: 1 }],
+});
+expect(
+  freshOut[0].goalState === 'approximate'
+    && freshOut[0].goal === '[ |- nat]'
+    && freshOut[0].loadingLive === false,
+  'out-of-dev row shows syntactic approximate without Beluga',
+);
 
 const approxRows = buildHoleDisplayRows({
   fileName: 'fresh.bel',

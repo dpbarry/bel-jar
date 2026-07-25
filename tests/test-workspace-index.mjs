@@ -5,8 +5,8 @@
 import {
   getDevelopment, dependencyGraph, symbolsIn, definitionOf, referencesOf,
   sourceTypeOf, renameEdits, clearWorkspaceIndexCache,
-} from '../editor-src/workspace-index.mjs';
-import { activeCfgResolver } from '../editor-src/project-prelude.mjs';
+} from '../js/editor-src/semantic/workspace-index.mjs';
+import { activeCfgResolver } from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

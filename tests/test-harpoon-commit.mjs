@@ -2,7 +2,7 @@ import {
   buildCommitCheckCodes,
   needsFullCommitCheck,
   countSiblingHoledDecls,
-} from '../editor-src/harpoon-commit.mjs';
+} from '../js/editor-src/harpoon/harpoon-program.mjs';
 
 let n = 0;
 function expect(cond, msg) {

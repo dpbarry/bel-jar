@@ -3,10 +3,10 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import assert from 'node:assert';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const persistSrc = readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8');
-const wsSrc = readFileSync(join(here, '..', 'js', 'workspace-state.js'), 'utf8');
+const wsSrc = readFileSync(join(here, '..', 'js', 'workspace', 'workspace.js'), 'utf8');
 
 function freshCtx() {
   const storage = new Map();
@@ -24,14 +24,14 @@ function freshCtx() {
     sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   });
   ctx.globalThis = ctx;
-  vm.runInContext(persistSrc, ctx);
+  runPersistStackInContext(ctx);
   vm.runInContext(wsSrc, ctx);
   return ctx;
 }
 
 const ctx = freshCtx();
-const P = ctx.BelJarPersist;
-const W = ctx.BelJarWorkspaceState;
+const P = ctx.Persist;
+const W = ctx.WorkspaceState;
 
 assert.equal(P.workspaceKeyFor('default'), 'beljar-workspace-v1');
 assert.equal(P.workspaceKeyFor('my-proj'), 'beljar-proj:my-proj:workspace-v1');
@@ -110,6 +110,51 @@ const merged = W.mergeFloatingSnapshots(
 assert.equal(merged.length, 2);
 assert.equal(merged[0].id, 'b');
 assert.equal(merged[1].id, 'c');
+
+// Shared graph closed on the active file must not leave other tabs' graph floats
+// (that was reopening the dependency graph when switching back).
+const closedGraph = W.mergeFloatingSnapshots(
+  [
+    { id: 'graph:__global__', fileId: 'workspace://main.bel', kind: 'graph' },
+    { id: 'insp', fileId: 'workspace://main.bel', kind: 'inspector' },
+  ],
+  'workspace://suite.bel',
+  ['workspace://main.bel', 'workspace://suite.bel'],
+  [],
+);
+assert.equal(closedGraph.length, 1);
+assert.equal(closedGraph[0].id, 'insp');
+
+const graphMoved = W.mergeFloatingSnapshots(
+  [{ id: 'graph:__global__', fileId: 'workspace://main.bel', kind: 'graph' }],
+  'workspace://suite.bel',
+  ['workspace://main.bel', 'workspace://suite.bel'],
+  [{ id: 'graph:__global__', fileId: 'workspace://suite.bel', kind: 'graph' }],
+);
+assert.equal(graphMoved.length, 1);
+assert.equal(graphMoved[0].fileId, 'workspace://suite.bel');
+
+// Closed Harpoon on another tab must not leave a stale float (reopened on focus).
+const closedHarpoon = W.mergeFloatingSnapshots(
+  [
+    { id: 'harp', fileId: 'workspace://main.bel', kind: 'harpoon' },
+    { id: 'insp2', fileId: 'workspace://main.bel', kind: 'inspector' },
+  ],
+  'workspace://suite.bel',
+  ['workspace://main.bel', 'workspace://suite.bel'],
+  [],
+);
+assert.equal(closedHarpoon.length, 1);
+assert.equal(closedHarpoon[0].id, 'insp2');
+
+const liveHarpoonKept = W.mergeFloatingSnapshots(
+  [{ id: 'harp', fileId: 'workspace://main.bel', kind: 'harpoon' }],
+  'workspace://suite.bel',
+  ['workspace://main.bel', 'workspace://suite.bel'],
+  [{ id: 'harp', fileId: 'workspace://main.bel', kind: 'harpoon' }],
+);
+assert.equal(liveHarpoonKept.length, 1);
+assert.equal(liveHarpoonKept[0].id, 'harp');
 
 P.writeStoredWorkspace({ v: 1, projectId: 'default', activeSidePanel: null, floating: [] });
 assert.equal(P.readStoredActiveSidePanel(), null);

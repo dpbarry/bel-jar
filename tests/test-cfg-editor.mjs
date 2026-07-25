@@ -3,7 +3,7 @@ import {
   countCfgEntries,
   iterCfgEntries,
   resolveCfgEntryPath,
-} from '../editor-src/bel-cfg-editor.mjs';
+} from '../js/editor-src/ide/cfg-editor.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

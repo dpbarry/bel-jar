@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { referenceKind } from '../editor-src/bel-resolve.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { referenceKind } from '../js/editor-src/name-resolve.mjs';
 
 const SRC = `LF o : type =
   | imp : o → o → o

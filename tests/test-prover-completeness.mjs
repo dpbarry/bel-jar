@@ -1,9 +1,9 @@
 // Generation-level completeness pins (docs/prover-completeness.md §5).
 // Every fix is pinned on INVENTED shapes — never a corpus/held-out lemma name —
 // so green means "the mechanism is general", not "a lemma passes".
-import { parseCompType, parseTotality, decreasingBoxIndex } from '../editor-src/bel-prover.mjs';
-import { synthesize } from '../editor-src/bel-synth.mjs';
-import { buildIntroSkeleton } from '../editor-src/bel-hole-split.mjs';
+import { parseCompType, parseTotality, decreasingBoxIndex } from '../js/editor-src/prover/prover-comp-type.mjs';
+import { synthesize } from '../js/editor-src/prover/prover-synth.mjs';
+import { buildIntroSkeleton } from '../js/editor-src/prover/hole-split.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -132,7 +132,7 @@ function expect(cond, msg) {
 
 // ── D10: multi-line hole GOALS (the report puts a Pi goal on FOLLOWING lines) ─
 {
-  const { parseHoles } = await import('../editor-src/bel-holes.mjs');
+  const { parseHoles } = await import('../js/editor-src/prover/hole-report.mjs');
   const report = [
     '## Holes: input.bel  ##',
     'File "input.bel", line 20, column 1: Hole number 0, <anonymous>',

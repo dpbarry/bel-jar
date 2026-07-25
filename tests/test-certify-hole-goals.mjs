@@ -1,6 +1,6 @@
-import { mapProveHolesToDocHits, proveOrchestrationCode } from '../editor-src/bel-prover-bridge.mjs';
-import { getHoleGoalsStore } from '../editor-src/hole-goals-store.mjs';
-import { fileContentSig } from '../editor-src/development-check.mjs';
+import { mapProveHolesToDocHits, proveOrchestrationCode } from '../js/editor-src/prover/prover-orchestrator.mjs';
+import { getHoleGoalsStore } from '../js/editor-src/prover/hole-goals-store.mjs';
+import { fileContentSig } from '../js/editor-src/semantic/development-check.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -9,7 +9,7 @@ function expect(cond, msg) {
 }
 
 const suite = [
-  'tp : type.',
+  'bool : type.',
   'rec dual_sym : [ |- nat] =',
   '?',
   ';',
@@ -17,7 +17,7 @@ const suite = [
   '?',
   ';',
 ].join('\n');
-const fileStart = suite.indexOf('tp : type.');
+const fileStart = suite.indexOf('bool : type.');
 const uniqStart = suite.indexOf('rec dual_uniq');
 const uniqEnd = suite.indexOf(';', uniqStart) + 1;
 const proveCode = proveOrchestrationCode(suite, 'dual_uniq', uniqStart, uniqEnd, fileStart);

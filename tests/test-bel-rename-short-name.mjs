@@ -1,12 +1,12 @@
 import { EditorState, Transaction } from '@codemirror/state';
 import {
-  belRename,
+  rename,
   buildRenameCommitChanges,
   planReferenceSync,
   renameActiveField,
   renameSessionEffect,
   renameSync,
-} from '../editor-src/bel-rename.mjs';
+} from '../js/editor-src/ide/rename.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -26,7 +26,7 @@ const session = {
   anchorSite: 0,
 };
 
-let state = EditorState.create({ doc: SNIPPET, extensions: belRename() });
+let state = EditorState.create({ doc: SNIPPET, extensions: rename() });
 state = state.update({ effects: renameSessionEffect.of(session) }).state;
 state = state.update({ changes: [{ from: 14, to: 18, insert: 'arthichoke' }] }).state;
 const syncPlan = planReferenceSync(state, state.field(renameActiveField, false));

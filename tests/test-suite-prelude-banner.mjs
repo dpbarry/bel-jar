@@ -1,10 +1,10 @@
 import { Text } from '@codemirror/state';
-import { healthForMember } from '../editor-src/file-health-store.mjs';
+import { healthForMember } from '../js/editor-src/semantic/file-health-store.mjs';
 import {
   firstBrokenMemberBefore,
   firstSyntaxErrorInText,
   suitePreludeBannerForActive,
-} from '../editor-src/suite-prelude-banner.mjs';
+} from '../js/editor-src/semantic/suite-prelude-banner.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -34,6 +34,9 @@ const banner = suitePreludeBannerForActive({
 });
 expect(banner && /earlier suite file base\.bel, line 2/.test(banner.message), 'following file gets line-1 banner');
 expect(banner.source === 'suite-prelude', 'banner is suite overlay not beluga settlement');
+// Click surfaces route through the banner's target — the ACTUAL error location.
+expect(banner.target && banner.target.fileId === 'a' && banner.target.line === 2,
+  `banner carries the earlier file's id + line as jump target, got ${JSON.stringify(banner.target)}`);
 
 const pathMembers = [
   { id: 'a', name: 'classical-processes/cp_base.bel', text: 'LF p : type =\n  | mk : bad\n;' },
@@ -61,6 +64,30 @@ expect(!suitePreludeBannerForActive({
 
 const syntaxHit = firstSyntaxErrorInText('LF p : type =\n  | mk : ???\n;');
 expect(syntaxHit && syntaxHit.line >= 1, 'syntax errors in prelude members are detected synchronously');
+
+// A syntax fault (e.g. `type =f`) is located by OUR lint on the faulty token's
+// line; Beluga halts on the NEXT token, one line down. The banner (and its jump
+// target) must use our location, not Beluga's.
+{
+  const faultMembers = [
+    { id: 'a', name: 'defs.bel', text: 'LF proc: type =f\n  | p_zero: proc\n;' },
+    { id: 'b', name: 'use.bel', text: 'LF r : type =\n  | mkR : r\n;' },
+  ];
+  const ourLine = firstSyntaxErrorInText(faultMembers[0].text)?.line;
+  expect(ourLine === 1, `our lint pins the =f fault to line 1, got ${ourLine}`);
+  const faultDoc = Text.of(faultMembers[1].text.split('\n'));
+  const faultBanner = suitePreludeBannerForActive({
+    doc: faultDoc,
+    members: faultMembers,
+    activeId: 'b',
+    // Beluga's location: the `|` token on the NEXT line.
+    memberDiagnostics: { 'defs.bel': [{ line: 2, severity: 'error', message: 'Expected the token `=`, but got the token `|`.' }] },
+    getText: (id) => faultMembers.find((m) => m.id === id).text,
+  });
+  expect(faultBanner && /defs\.bel, line 1/.test(faultBanner.message),
+    `banner uses OUR token-accurate line, got: ${faultBanner?.message}`);
+  expect(faultBanner.target?.line === 1, `jump target uses our line too, got ${faultBanner.target?.line}`);
+}
 
 const memberDiag = {
   'base.bel': [{ line: 2, severity: 'error', message: 'Identifier bad is unbound' }],

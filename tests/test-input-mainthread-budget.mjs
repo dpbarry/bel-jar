@@ -9,7 +9,7 @@
 // (a small constant), independent of the keystroke count — i.e. cost is O(edits
 // flushed), not O(keystrokes) and not O(doc size).
 
-import { createEditHistory } from '../editor-src/bel-edit-history.mjs';
+import { createEditHistory } from '../js/editor-src/edit-history.mjs';
 import { Transaction } from '@codemirror/state';
 
 function expect(cond, msg) {
@@ -80,7 +80,7 @@ function countingDoc(text, counter, label) {
 // on each key. Verify markEditorDirty does not pull text, and persistNow (save)
 // pulls exactly once via the provider.
 {
-  // Load persist as a CommonJS-ish global module (js/persist.js attaches to a
+  // Load persist as a CommonJS-ish global module (js/persist/persist.js attaches to a
   // global). It's browser-oriented; emulate the minimal globals it needs.
   const g = globalThis;
   g.window = g;
@@ -96,9 +96,9 @@ function countingDoc(text, counter, label) {
     };
   })();
 
-  await import('../js/persist.js');
-  const P = g.BelJarPersist;
-  expect(P && typeof P.createPersist === 'function', 'BelJarPersist loaded');
+  await import('./persist-stack.mjs').then((m) => m.importPersistStack(g));
+  const P = g.Persist;
+  expect(P && typeof P.createPersist === 'function', 'Persist loaded');
 
   const persist = P.createPersist({ documentId: 'doc-budget', debounceMs: 5 });
 

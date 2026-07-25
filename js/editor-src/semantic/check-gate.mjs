@@ -1,0 +1,88 @@
+import { checkerSnapshotFromSyntax } from './checker-snapshot.mjs';
+import { onlySyntaxFaultBlocksChanged } from './syntax-only-gate.mjs';
+
+function commentSpans(tree) {
+  const spans = [];
+  if (!tree) return spans;
+  tree.iterate({
+    enter(node) {
+      if (node.name === 'LineComment' || node.name === 'BlockComment') {
+        spans.push({ from: node.from, to: node.to });
+      }
+    },
+  });
+  return spans;
+}
+
+function stripSpans(text, spans) {
+  const sorted = [...spans].sort((a, b) => b.from - a.from);
+  let out = text;
+  for (const { from, to } of sorted) {
+    out = out.slice(0, from) + out.slice(to);
+  }
+  return out;
+}
+
+// Whitespace and blank-line edits that Beluga treats as immaterial for checking.
+function normalizeCosmeticWhitespace(text) {
+  return text
+    .split('\n')
+    .map((line) => line.trim().replace(/\s+/g, ' '))
+    .join('\n')
+    .replace(/\n{2,}/g, '\n');
+}
+
+export function semanticDeclText(doc, declarationNode, tree) {
+  let text = doc.sliceString(declarationNode.from, declarationNode.to);
+  if (tree && declarationNode) {
+    const lo = declarationNode.from;
+    const hi = declarationNode.to;
+    const spans = [];
+    // Bound the walk to [lo, hi]. An unbounded tree.iterate here used to
+    // re-scan the ENTIRE file for every binder/decl (O(n²) on large proofs —
+    // ~300ms/keystroke on cp_thrm.bel).
+    tree.iterate({
+      from: lo,
+      to: hi,
+      enter(node) {
+        if (node.name === 'LineComment' || node.name === 'BlockComment') {
+          spans.push({ from: node.from - lo, to: node.to - lo });
+        }
+      },
+    });
+    text = stripSpans(text, spans);
+  }
+  return normalizeCosmeticWhitespace(text);
+}
+
+// Memoized by snapshot identity. settlementTrigger fingerprints BOTH prev and
+// next every update, and `prev` is just the previous update's `next` — so without
+// this cache the fingerprint of the unchanged prior doc is recomputed from
+// scratch every keystroke (a whole-doc walk + normalize for nothing).
+const _fpCache = new WeakMap();
+
+export function belugaCheckFingerprint(syntax) {
+  if (!syntax?.doc) return '';
+  const cached = _fpCache.get(syntax);
+  if (cached !== undefined) return cached;
+  const snap = checkerSnapshotFromSyntax(syntax);
+  const stripped = stripSpans(snap.code, commentSpans(syntax.tree));
+  const fp = normalizeCosmeticWhitespace(stripped);
+  _fpCache.set(syntax, fp);
+  return fp;
+}
+
+// cosmetic — comments / insignificant whitespace only: keep checker verdict, no schedule
+// syntax-only — broken-block edits only: refresh graph, no Beluga
+// semantic — schedule settlement
+export function settlementTrigger(prevSyntax, syntax) {
+  if (!prevSyntax?.doc || !syntax?.doc) return 'semantic';
+
+  if (belugaCheckFingerprint(prevSyntax) === belugaCheckFingerprint(syntax)) {
+    return 'cosmetic';
+  }
+  if (onlySyntaxFaultBlocksChanged(prevSyntax, syntax)) {
+    return 'syntax-only';
+  }
+  return 'semantic';
+}

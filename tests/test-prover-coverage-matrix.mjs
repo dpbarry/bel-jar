@@ -14,7 +14,7 @@
 // bound honesty) are pinned in test-prover-completeness.mjs; this matrix covers
 // the candidateMoves surface.
 import fs from 'node:fs';
-import { candidateMoves, recurseTexts, theoremUnderProof } from '../editor-src/bel-prover-bridge.mjs';
+import { candidateMoves, recurseTexts, theoremUnderProof } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -25,6 +25,50 @@ function expect(cond, msg) {
 // ── The matrix ───────────────────────────────────────────────────────────────
 // Shared invented signature pieces per row keep classes independent.
 const ROWS = [
+  {
+    name: 'intro: Greek / unicode letter Pi binders ($σ, Γ, φ)',
+    spec: '§2 intro (Phase B letter-ident class)',
+    code: 'tm9 : type.\nff9 : tm9 -> type.\nschema sc9 = block (x:tm9, u:ff9 x);',
+    thm: 'rec tgreek : {Γ:sc9}{$σ:$[ |- Γ]}{φ:[|- tm9]} [Γ |- ff9 M[..]] -> [ |- ff9 φ] =\n/ total d (tgreek g s p m d) /\n?\n;',
+    hole: {
+      goal: '{Γ:sc9}{$σ:$[ |- Γ]}{φ:[|- tm9]} [Γ |- ff9 M[..]] -> [ |- ff9 φ]',
+      ctx: [],
+      meta: [],
+    },
+    want: (ms) => ms.some((m) => m.kind === 'intro'
+      && /mlam Γ => mlam \$σ => mlam φ => fn \w+ => \?/.test(m.text)),
+  },
+  {
+    name: 'synth facts: Greek meta names admitted',
+    spec: '§2 fill/synth (Phase B pushFact letter class)',
+    code: 'qq9 : type.\nr9 : qq9 -> type.\nc9 : r9 Z.',
+    thm: 'rec tpsi : [ |- r9 A] -> [ |- r9 A] =\n/ total 1 /\n?\n;',
+    hole: {
+      goal: '[ |- r9 A]',
+      ctx: [],
+      meta: [{ name: 'ψ', type: '( |- r9 A)' }],
+    },
+    want: (ms) => ms.some((m) => (m.kind === 'fill' || m.kind === 'synth')
+      && /ψ/.test(m.text)),
+  },
+  {
+    name: 'synth: ctype hypothesis admitted as fact (Phase C)',
+    spec: '§2 synth (ctype facts)',
+    code: [
+      'tmC : type.',
+      'inductive RelC : [ |- tmC] -> [ |- tmC] -> ctype =',
+      '| RelC0 : RelC [ |- X] [ |- X];',
+      'uC : type.',
+      'unitC : uC.',
+    ].join('\n'),
+    thm: 'rec tctype : RelC [ |- A] [ |- B] -> [ |- uC] =\n/ total 1 /\n?\n;',
+    hole: {
+      goal: '[ |- uC]',
+      ctx: [{ name: 'r1', type: 'RelC [ |- A] [ |- B]' }],
+      meta: [],
+    },
+    want: (ms) => ms.some((m) => /r1|unitC|synth|fill/.test(m.kind + m.text)),
+  },
   {
     // The DECLARATION-FIXITY dimension (2026-07-12, found live on real corpora):
     // a family declared `--infix` is illegal in prefix position, so split-arm

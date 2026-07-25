@@ -3,7 +3,7 @@
 // exercised against a minimal fake EditorView (it only needs doc.sliceString +
 // dispatch + indentRange-tolerant state), so we test parseDecl + buildProofProgram
 // directly and commit's text construction via a stub.
-import { parseDecl, buildProofProgram } from '../editor-src/bel-harpoon.mjs';
+import { parseDecl, buildProofProgram } from '../js/editor-src/harpoon/harpoon-program.mjs';
 
 let n = 0;
 function expect(cond, msg) {

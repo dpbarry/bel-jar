@@ -1,12 +1,13 @@
-// Whole-project run support (js/project-source.js): ordered concatenation with
+// Whole-project run support (js/workspace/project-source.js): ordered concatenation with
 // a 1-based line map, mapping project lines back to files, rewriting all three
 // Beluga error-location grammars, and the pure reorder helper. Also pins the
 // persist registry's moveFile/getFileText/setFileText (vm-loaded with a fake
 // localStorage, same pattern as test-multifile-switch).
-import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+import { runPersistStackInContext } from './persist-stack.mjs';
+import { loadProjectSource } from './project-source-stack.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -16,13 +17,10 @@ function expect(cond, msg) {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// ── load project-source.js against a fake window ─────────────────────────────
-const psSrc = readFileSync(join(here, '..', 'js', 'project-source.js'), 'utf8');
+// ── load project-source core + adapter against a fake window ─────────────────
 const fakeWindow = {};
-// eslint-disable-next-line no-new-func
-new Function('window', psSrc)(fakeWindow);
-const PS = fakeWindow.BelJarProjectSource;
-expect(PS && typeof PS.concat === 'function', 'BelJarProjectSource is exported');
+const PS = loadProjectSource(fakeWindow);
+expect(PS && typeof PS.concat === 'function', 'ProjectSource is exported');
 
 // ── concat + spans ────────────────────────────────────────────────────────────
 const FILES = [
@@ -254,7 +252,6 @@ expect(PS.reorder(order, 'a', +2).map((f) => f.id).join('') === 'bca', 'multi-st
 expect(order.map((f) => f.id).join('') === 'abc', 'reorder does not mutate its input');
 
 // ── persist registry: moveFile / setFileText / getFileText ──────────────────
-const persistSrc = readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8');
 const storage = new Map();
 const fakeLocalStorage = {
   getItem: (k) => (storage.has(k) ? storage.get(k) : null),
@@ -269,8 +266,8 @@ const ctx = vm.createContext({
   localStorage: fakeLocalStorage,
 });
 ctx.globalThis = ctx;
-vm.runInContext(persistSrc, ctx);
-const Persist = ctx.BelJarPersist;
+runPersistStackInContext(ctx);
+const Persist = ctx.Persist;
 
 Persist.replaceProject([
   { name: 'one.bel', text: 'LF a : type;' },

@@ -1,13 +1,13 @@
-// Suite authoring API (js/persist.js): when auto-sync is on, active-suite .cfg
+// Suite authoring API (js/persist/persist.js): when auto-sync is on, active-suite .cfg
 // files (including nested .cfg chains) track their listed project files —
 // same-folder rename rewrites the entry, delete removes it, folder move leaves
 // the entry (cfg lint surfaces dangling). Inactive .cfg files and auto-sync-off
 // leave entries untouched. Explicit add/remove/reorder remains the suite
 // authoring surface.
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -16,7 +16,6 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const persistSrc = readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8');
 
 function freshPersist() {
   const storage = new Map();
@@ -27,8 +26,8 @@ function freshPersist() {
   };
   const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage: fakeLocalStorage });
   ctx.globalThis = ctx;
-  vm.runInContext(persistSrc, ctx);
-  return ctx.BelJarPersist;
+  runPersistStackInContext(ctx);
+  return ctx.Persist;
 }
 
 function idByName(P, name) {

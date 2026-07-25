@@ -128,6 +128,7 @@ LFAtomicType {
   | UpperIdentifier Substitution?
   | ParameterVariable
   | SubstitutionVariable
+  | UnderscoreHole
   | "(" LFType ")"
   | "(" LFType !ann ":" LFType ")"
 }
@@ -171,7 +172,6 @@ projection { ProjectionTail | NamedProjection }
 
 // Sigma (block) tuple: <M1; M2; ...; Mn>, semicolon-separated (clf_parser.ml).
 Tuple           { "<" LFTerm (";" LFTerm)* ">" }
-UnderscoreHole  { "_" }
 
 LFBlock {
     BlockKeyword LFBlockField (!app "," LFBlockField)*
@@ -196,14 +196,14 @@ SubstHead { "^" | ".." | "…" }
 
 ParameterVariable {
     "#" LowerIdentifier projection* Substitution?
-  | "#" "_"
+  | "#" UnderscoreHole
 }
 
 SubstitutionVariable {
     "#" UpperIdentifier Substitution?
   | "$" UpperIdentifier Substitution?
   | "$" LowerIdentifier Substitution?
-  | "$" "_"
+  | "$" UnderscoreHole
 }
 
 SubstitutionType {
@@ -425,7 +425,7 @@ ContextPart {
 
 ContextHead {
     LowerIdentifier
-  | "_"
+  | UnderscoreHole
 }
 
 ContextEntry {
@@ -437,7 +437,7 @@ ContextEntry {
 ContextTailEntry {
     ContextEntry
   | LowerIdentifier
-  | "_"
+  | UnderscoreHole
 }
 
 //  Recursive and non-recursive function declarations
@@ -478,7 +478,7 @@ TotalityCall {
 TotalityArg {
     LowerIdentifier
   | UpperIdentifier
-  | "_"
+  | UnderscoreHole
   | Number
 }
 
@@ -523,6 +523,7 @@ AtomicExpression {
   | TupleOrParenExpression
   | ContextApplication
   | Hole
+  | UnderscoreHole
 }
 
 TupleOrParenExpression {
@@ -569,6 +570,7 @@ MLamExpression {
 MLamParam {
     UpperIdentifier
   | LowerIdentifier
+  | UnderscoreHole
   | ParameterVariable
   | SubstitutionVariable
 }
@@ -674,7 +676,7 @@ TupleOrParenPattern {
 
   "->" "<-" "←" "=>" "⇒" "::" ".." "…"
   "(" ")" "[" "]" "{" "}" "<" ">"
-  "." "," ":" ";" "|" "*" "+" "=" "_" "^" "#" "$" "/"
+  "." "," ":" ";" "|" "*" "+" "=" "^" "#" "$" "/"
   "|-" "|-#" "⊢#"
   "\\"
   "→"
@@ -696,7 +698,6 @@ TupleOrParenPattern {
     Hole,
     "^", "+", "*", "=", "/",
     LowerIdentifier, UpperIdentifier,
-    "_",
     "<", ">",
     ".",
     whitespace
@@ -737,6 +738,7 @@ EndKeyword { @specialize<LowerIdentifier, "end"> }
 NoneKeyword { @extend<LowerIdentifier, "none"> }
 LeftKeyword { @extend<LowerIdentifier, "left"> }
 RightKeyword { @extend<LowerIdentifier, "right"> }
+UnderscoreHole { @specialize<LowerIdentifier, "_"> }
 
 TrustKeyword { @specialize<LowerIdentifier, "trust"> }
 CoinductiveKeyword { @specialize<LowerIdentifier, "coinductive"> }

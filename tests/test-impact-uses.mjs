@@ -1,7 +1,7 @@
 // Impact = type-level CASCADE (transitive, signature/notation) ∪ terminal body
 // USES (a decl that calls the symbol in its body; a leaf, never propagated).
 // Pins the two-tier model for both the cross-file graph and the single-file engine.
-import { buildGroupGraph } from '../editor-src/group-graph.mjs';
+import { buildGroupGraph } from '../js/editor-src/graph/group-graph.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

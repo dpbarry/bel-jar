@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { beluga } from '../editor-src/bel-language.mjs';
-import { formatString } from '../editor-src/bel-format.mjs';
-import { resolveFormatViewportAnchor } from '../editor-src/bel-viewport.mjs';
-import { childrenArr } from '../editor-src/format/tree.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { beluga } from '../js/editor-src/language.mjs';
+import { formatString } from '../js/editor-src/format/document-format.mjs';
+import { resolveFormatViewportAnchor } from '../js/editor-src/ide/viewport.mjs';
+import { childrenArr } from '../js/editor-src/format/basics.mjs';
 
 const src = `a : type.
 

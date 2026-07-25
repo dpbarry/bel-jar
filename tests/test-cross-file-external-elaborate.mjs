@@ -6,17 +6,17 @@
 // fast syntactic path is unchanged for names that DO have a signature.
 import assert from 'node:assert';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { resolveHoverDoc } from '../editor-src/bel-resolve.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { resolveHoverDoc } from '../js/editor-src/name-resolve.mjs';
 
 function withProject(files, activeId, fn) {
-  globalThis.BelJarPersist = {
+  globalThis.Persist = {
     listFiles: () => files.list,
     getActiveFileId: () => activeId,
     getFileText: (id) => files.tx[id] || '',
     getActiveCfgForDir: (dir) => files.activeCfg?.[dir] || null,
   };
-  try { return fn(); } finally { delete globalThis.BelJarPersist; }
+  try { return fn(); } finally { delete globalThis.Persist; }
 }
 
 function resolveAt(src, pos, files, activeId) {

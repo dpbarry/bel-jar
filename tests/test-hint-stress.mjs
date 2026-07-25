@@ -1,10 +1,10 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
-import { parser } from '../editor-src/beluga-parser.js';
-import { resolveHoverDoc } from '../editor-src/bel-resolve.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { resolveHoverDoc } from '../js/editor-src/name-resolve.mjs';
 import { Text } from '@codemirror/state';
 
-const SRC = fs.readFileSync(new URL('../hint-stress.bel', import.meta.url), 'utf8');
+const SRC = fs.readFileSync(new URL('./fixtures/hint-stress.bel', import.meta.url), 'utf8');
 const doc = Text.of(SRC.split('\n'));
 const tree = parser.parse(SRC);
 

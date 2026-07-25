@@ -24,19 +24,15 @@
 
       function applySplitVars(ratio) {
         var root = document.documentElement.style;
-        var rest = 1 - ratio;
+        var a = Math.round(ratio * 1e6) / 1e6;
+        var b = Math.round((1 - ratio) * 1e6) / 1e6;
+        // Plain fr tracks — minmax(Nrem, Xfr) leaves a black void when Xfr < Nrem.
         if (window.matchMedia(STACK_MQ).matches) {
           root.removeProperty('--workspace-split-cols');
-          root.setProperty(
-            '--workspace-split-rows',
-            'minmax(8rem, ' + ratio + 'fr) minmax(8rem, ' + rest + 'fr)'
-          );
+          root.setProperty('--workspace-split-rows', a + 'fr ' + b + 'fr');
         } else {
           root.removeProperty('--workspace-split-rows');
-          root.setProperty(
-            '--workspace-split-cols',
-            'minmax(12rem, ' + ratio + 'fr) minmax(12rem, ' + rest + 'fr)'
-          );
+          root.setProperty('--workspace-split-cols', a + 'fr ' + b + 'fr');
         }
       }
 
@@ -149,7 +145,7 @@
     <p id="notif-panel-empty" class="notif-panel-empty">No notifications</p>
   </aside>
 
-  <div id="toast-stack" class="toast-stack" aria-live="polite" aria-relevant="additions"></div>
+  <div id="toast-stack" class="toast-stack" popover="manual" aria-live="polite" aria-relevant="additions"></div>
 
   <div class="workspace">
     <aside class="sidebar">
@@ -237,7 +233,7 @@
       <div class="inspector-body">
         <p class="inspector-empty-note">Place the cursor on a symbol.</p>
       </div>
-      <div id="inspector-project-empty" class="panel-empty" hidden aria-live="polite">
+      <div id="inspector-project-empty" class="panel-empty" hidden aria-hidden="true" aria-live="polite">
         <p class="panel-empty__note">Project empty</p>
       </div>
     </div>
@@ -257,13 +253,13 @@
 
     <div id="harpoon-panel" class="panel harpoon-panel" aria-hidden="true">
       <div class="panel-header harpoon-panel-header">
-        <button type="button" class="icon-btn harpoon-panel-home" data-tooltip="Goals" aria-label="Goals">
+        <span class="panel-label">Harpoon</span>
+        <button type="button" class="icon-btn harpoon-panel-back" data-tooltip="Cancel proof and return to goals" aria-label="Back to goals" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>
-            <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <path d="M19 12H5"/>
+            <path d="m12 19-7-7 7-7"/>
           </svg>
         </button>
-        <span class="panel-label">Harpoon</span>
       </div>
       <div class="harpoon-panel-body" id="harpoon-panel-body"></div>
     </div>
@@ -274,7 +270,7 @@
         <div class="editor-tabs" id="editor-tabs" role="tablist" aria-label="Open files"></div>
         <div class="editor-topbar-controls">
           <span class="ide-status-dot" id="ide-status-dot" role="status" tabindex="0" data-tooltip-no-track data-tooltip="Not checked" aria-label="Not checked"></span>
-          <button id="btn-load" type="button" class="icon-btn" data-tooltip="Run suite to here&#10;Ctrl+click: run suite" aria-label="Run suite to here">
+          <button id="btn-load" type="button" class="icon-btn" data-tooltip="Run" aria-label="Run">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 3 20 12 5 21V3Z"/>
             </svg>
@@ -282,7 +278,7 @@
         </div>
       </div>
       <div class="editor-body">
-        <div id="editor-empty" class="editor-empty" hidden aria-live="polite">
+        <div id="editor-empty" class="editor-empty" hidden aria-hidden="true" aria-live="polite">
           <p class="editor-empty__note">No file open</p>
         </div>
         <div id="editor" class="editor-cm-host" aria-label="Beluga source editor"></div>
@@ -295,24 +291,21 @@
         <span class="panel-label" id="output-panel-label">
           Output<span class="output-header-status" id="output-header-status" aria-hidden="true"> (running)</span>
         </span>
-        <button id="btn-clear" class="icon-btn" data-tooltip="Clear" aria-label="Clear output">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 5h18"/><path d="M19 5v15c0 1-1 2-2 2H7c-1 0-2-1-2-2V5"/><path d="M8 5V3c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-          </svg>
-        </button>
-      </div>
-      <div id="output" class="repl-log" role="log" aria-live="polite" aria-relevant="additions"></div>
-      <div class="repl-bar">
-        <div class="repl-input-shell">
-          <span class="repl-prompt" aria-hidden="true">&#x276F;</span>
-          <input id="command-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="REPL command…" aria-label="REPL command">
-          <button id="btn-run" type="button" class="repl-send" data-tooltip="Run command">
+        <div class="panel-header-actions">
+          <button id="btn-repl-timestamps" type="button" class="icon-btn" data-tooltip="Show timestamps" aria-label="Show timestamps" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </button>
+          <button id="btn-clear" class="icon-btn" data-tooltip="Clear" aria-label="Clear output">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <line x1="12" y1="21" x2="12" y2="3"/><polyline points="4 12 12 4 20 12"/>
+              <path d="M3 5h18"/><path d="M19 5v15c0 1-1 2-2 2H7c-1 0-2-1-2-2V5"/><path d="M8 5V3c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
             </svg>
           </button>
         </div>
       </div>
+      <div id="output" class="repl-log repl-stream" role="log" aria-live="polite" aria-relevant="additions"></div>
     </div>
     </div>
     <script>
@@ -363,70 +356,38 @@
   </div>
 
   <div id="tooltip-root" class="tooltip-root" role="tooltip" hidden></div>
+  <div id="hint-root" class="hint-root" role="status" aria-live="polite" aria-hidden="true" hidden>
+    <div class="hint-card">
+      <div class="hint-top">
+        <div class="hint-body"></div>
+        <button type="button" class="icon-btn hint-close" aria-label="Dismiss">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="hint-progress" aria-hidden="true"><span class="hint-progress-bar"></span></div>
+    </div>
+  </div>
   <div id="menu-root" class="menu-root"></div>
 
   <script>
     window.onerror = function (msg, url, line) {
       var lineMsg = msg + ' (line ' + line + ')';
-      if (window.BelJarToasts && BelJarToasts.error) {
-        BelJarToasts.error('[JS ERROR] ' + lineMsg, { duration: 0, closable: true });
-      } else if (window.BelJarRepl && BelJarRepl.appendBuffered) {
-        BelJarRepl.appendBuffered('[JS ERROR] ' + lineMsg, 'error');
+      if (window.Toasts && Toasts.error) {
+        Toasts.error('[JS ERROR] ' + lineMsg, { duration: 0, closable: true });
+      } else if (window.Repl && Repl.appendBuffered) {
+        Repl.appendBuffered('[JS ERROR] ' + lineMsg, 'error');
       } else {
         var o = document.getElementById('output');
         o.textContent = (o.textContent ? o.textContent + '\n' : '') + '[JS ERROR] ' + lineMsg;
       }
     };
   </script>
-  <script src="js/run-progress.js"></script>
-  <script src="js/check-trace.js"></script>
-  <script src="js/perf-hud.js"></script>
-  <script src="js/beluga-client.js"></script>
-  <script src="js/harpoon-client.js"></script>
-  <script src="js/harpoon-icon.js"></script>
-  <script src="js/harpoon-tree.js"></script>
-  <script src="js/harpoon-lab.js"></script>
-  <script src="js/harpoon-project-goals.js"></script>
-  <script src="js/harpoon-panel.js"></script>
-  <script src="js/beluga-text.js"></script>
+  <script src="js/beluga/beluga-client.js"></script>
+  <script src="js/harpoon/harpoon-client.js"></script>
   <script src="js/editor-cm.bundle.js"></script>
-  <script src="js/persist.js"></script>
-  <script src="js/edit-history.js"></script>
-  <script src="js/workspace-state.js"></script>
-  <script src="js/project-source.js"></script>
-  <script src="js/workspace-split.js"></script>
-  <script src="js/side-panel-resize.js"></script>
-  <script src="js/float-placement.js"></script>
-  <script src="js/tooltips.js"></script>
-  <script src="js/menu.js"></script>
-  <script src="js/command-palette.js"></script>
-  <script src="js/floating-window.js"></script>
-  <script src="js/scroll-fade.js"></script>
-  <script src="js/text-slide.js"></script>
-  <script src="js/dialog.js"></script>
-  <script src="js/prompt-dialog.js"></script>
-  <script src="js/confirm-dialog.js"></script>
-  <script src="js/name-prompt.js"></script>
-  <script src="js/name-conflicts.js"></script>
-  <script src="js/conflict-dialog.js"></script>
-  <script src="js/tree-dnd.js"></script>
-  <script src="js/header-search.js"></script>
-  <script src="js/explorer-inline-name.js"></script>
-  <script src="js/explorer-suite-layout.js"></script>
-  <script src="js/explorer-tree.js"></script>
-  <script src="js/library-suites.js"></script>
-  <script src="js/library-search.js"></script>
-  <script src="js/explorer-search.js"></script>
-  <script src="js/library-preview.js"></script>
-  <script src="js/library-panel.js"></script>
-  <script src="js/toasts.js"></script>
-  <script src="js/notifications.js"></script>
-  <script src="js/repl-output.js"></script>
-  <script src="js/beluga-run.js"></script>
-  <script src="js/repl-commands.js"></script>
-  <script src="js/bj-toggle.js"></script>
-  <script src="js/settings-ui.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/shell.js"></script>
 </body>
 
 </html>

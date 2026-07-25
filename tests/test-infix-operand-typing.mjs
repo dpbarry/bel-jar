@@ -4,8 +4,8 @@
 // right-assoc chains, and cross-file pragmas.
 import assert from 'node:assert';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { resolveHoverDoc } from '../editor-src/bel-resolve.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { resolveHoverDoc } from '../js/editor-src/name-resolve.mjs';
 
 const at = (src, needle, occ = 1) => {
   let i = -1;
@@ -15,7 +15,7 @@ const at = (src, needle, occ = 1) => {
 const infixB = (src, span) => src.indexOf('B', src.indexOf(span));
 const typeAt = (src, pos, files, activeId) => {
   if (files) {
-    globalThis.BelJarPersist = {
+    globalThis.Persist = {
       listFiles: () => files.list,
       getActiveFileId: () => activeId,
       getFileText: (id) => files.tx[id] || '',
@@ -26,7 +26,7 @@ const typeAt = (src, pos, files, activeId) => {
     const r = resolveHoverDoc(parser.parse(src), Text.of(src.split('\n')), pos);
     return r && { kind: r.kind, label: r.label, type: r.sourceType };
   } finally {
-    if (files) delete globalThis.BelJarPersist;
+    if (files) delete globalThis.Persist;
   }
 };
 

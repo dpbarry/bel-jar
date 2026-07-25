@@ -8,7 +8,7 @@ import {
   inductionApplications,
   searchProof,
   stitchProof,
-} from '../editor-src/bel-prover.mjs';
+} from '../js/editor-src/prover/prover-comp-type.mjs';
 
 let n = 0;
 function expect(cond, msg) {

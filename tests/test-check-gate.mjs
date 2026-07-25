@@ -1,9 +1,9 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import {
   belugaCheckFingerprint,
   settlementTrigger,
-} from '../editor-src/semantic/check-gate.mjs';
+} from '../js/editor-src/semantic/check-gate.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

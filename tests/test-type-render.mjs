@@ -1,8 +1,8 @@
-// Shared type renderer (bel-type-render.mjs): pins that a Beluga type STRING is
+// Shared type renderer (type-render.mjs): pins that a Beluga type STRING is
 // parsed-and-highlighted into spans with stable bel-hl-* classes, and that the
 // literal text round-trips (no characters dropped or reordered). Uses a tiny DOM
 // shim so the renderer's document.* calls run under node.
-import { normalizeType, highlightTypeFragment } from '../editor-src/bel-type-render.mjs';
+import { normalizeType, highlightTypeFragment } from '../js/editor-src/format/type-render.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -49,11 +49,21 @@ expect(normalizeType('  a  →  b ') === 'a → b', 'normalizeType collapses spa
 expect(normalizeType('a -> b') === 'a → b', 'normalizeType converts -> to →');
 // Canonicalise ASCII operators to the editor's display glyphs (a goal type from
 // Beluga's text output should read exactly like the editor, which accepts both).
-expect(normalizeType('[ |- nat]') === '[ ⊢ nat]', 'normalizeType converts |- to ⊢');
-expect(normalizeType('[ |- dual A A\'] -> [ |- dual A\' A]') === '[ ⊢ dual A A\'] → [ ⊢ dual A\' A]',
-  'normalizeType: turnstiles + arrow glyphs, spaces preserved');
+expect(normalizeType('[ |- nat]') === '[⊢ nat]', 'normalizeType converts |- to ⊢ and hugs brackets');
+expect(normalizeType('[ |- dual A A\'] -> [ |- dual A\' A]') === '[⊢ dual A A\'] → [⊢ dual A\' A]',
+  'normalizeType: turnstiles + arrow glyphs, hugged brackets');
+// Canonical bracket hug: every spelling of the same type renders identically,
+// so the reconstructed type never jiggles against the source-derived display.
+expect(normalizeType('[ ⊢ dual A A\' ]') === '[⊢ dual A A\']',
+  'source spelling with padded brackets hugs');
+expect(normalizeType('[ ⊢ dual A A\']') === '[⊢ dual A A\']',
+  'Beluga printer spelling with orphan space hugs');
+expect(normalizeType('{A : ( |- tp)}') === '{A : (⊢ tp)}',
+  'meta-type parens hug');
+expect(normalizeType('[ g, x:name ⊢ P ]') === '[g, x:name ⊢ P]',
+  'non-empty context hugs both ends');
 expect(normalizeType('fn x => y') === 'fn x ⇒ y', 'normalizeType converts => to ⇒');
-expect(normalizeType('#[ |-# p]') === '#[ ⊢# p]', 'normalizeType converts hashed turnstile |-# to ⊢#');
+expect(normalizeType('#[ |-# p]') === '#[⊢# p]', 'normalizeType converts hashed turnstile |-# to ⊢# and hugs');
 expect(normalizeType('a →\n   b') === 'a → b', 'normalizeType joins wrapped lines');
 expect(normalizeType('block (x:tm m/q _,\n neux:neu x)') === 'block (x:tm m/q _, neux:neu x)',
   'normalizeType joins schema comma breaks without space before comma');
@@ -122,5 +132,22 @@ expect(clsOf(compLeaves, 'A') === 'bel-hl-type',
 expect(clsOf(lfLeaves, 'nd') === 'bel-hl-type', 'LF head nd is a type name');
 // Text round-trips regardless of hint.
 expect(lfLeaves.map((l) => l.text).join('') === normalizeType(LFT), 'LF-hinted text round-trips');
+
+// --- binder-position hint: a bare `(g:ctx)` (goal priors) parses as a binder,
+// so `g` keeps the editor's local-definition colour instead of degrading to a
+// parenthesized type where both names read as type names.
+const bLeaves = leaves(highlightTypeFragment('(g:ctx)', 'binder'));
+expect(bLeaves.map((l) => l.text).join('') === '(g:ctx)', 'binder text round-trips');
+expect(clsOf(bLeaves, 'g') === 'bel-hl-local-def',
+  `binder hint colours g as a local definition (got ${clsOf(bLeaves, 'g')})`);
+expect(clsOf(bLeaves, 'ctx') === 'bel-hl-type',
+  `binder hint colours ctx as a type name (got ${clsOf(bLeaves, 'ctx')})`);
+
+// --- in a full goal type the binder g matches the editor (local def), not the
+// generic var-def blue it used to fall back to.
+const G1 = '(g:ctx) [g ⊢ ex_red_rew P Q] → [g ⊢ ex_fstepcong P P f_tau Q]';
+const gLeaves = leaves(highlightTypeFragment(G1, 'comp'));
+expect(clsOf(gLeaves, 'g') === 'bel-hl-local-def',
+  `goal binder g colours as a local definition (got ${clsOf(gLeaves, 'g')})`);
 
 console.log('OK type render (normalizeType, highlight spans, round-trip, kind-aware LF vs comp colouring)');

@@ -1,10 +1,10 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 import {
   applySyntaxFaultMask,
   computeLintBlocks,
   maskBelugaBlockContext,
-} from '../editor-src/bel-units.mjs';
+} from '../js/editor-src/lint-units.mjs';
 
 const sample = `% Natural Deduction
 LF o : type =

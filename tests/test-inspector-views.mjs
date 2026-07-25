@@ -1,10 +1,10 @@
 // Inspector non-symbol views: built-in token explainer resolver, the global
 // overview model assembly, and the engine outline accessor that backs it.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { builtinTooltipAt } from '../editor-src/bel-builtins.mjs';
-import { assembleGlobalModel, isGlobalOverviewModel, crossFileSymbolDiagnostics } from '../editor-src/bel-inspector.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { builtinTooltipAt } from '../js/editor-src/ide/builtins.mjs';
+import { assembleGlobalModel, isGlobalOverviewModel, crossFileSymbolDiagnostics } from '../js/editor-src/ide/inspector.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -10,7 +10,6 @@ function expect(cond, msg) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const persistSrc = readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8');
 const storage = new Map();
 const fakeLocalStorage = {
   getItem: (k) => (storage.has(k) ? storage.get(k) : null),
@@ -25,8 +24,8 @@ const ctx = vm.createContext({
   localStorage: fakeLocalStorage,
 });
 ctx.globalThis = ctx;
-vm.runInContext(persistSrc, ctx);
-const Persist = ctx.BelJarPersist;
+runPersistStackInContext(ctx);
+const Persist = ctx.Persist;
 
 Persist.replaceProject([
   { name: 'grp/base.bel', text: 'LF a : type;' },

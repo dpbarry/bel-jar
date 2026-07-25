@@ -1,4 +1,4 @@
-import { beluga, belCodeFolding } from '../editor-src/bel-language.mjs';
+import { beluga, editorCodeFolding } from '../js/editor-src/language.mjs';
 import { ensureSyntaxTree, foldable } from '@codemirror/language';
 import { EditorState, Text } from '@codemirror/state';
 
@@ -9,7 +9,7 @@ function expect(cond, msg) {
 
 function foldOnLine(src, lineNo) {
   const doc = Text.of(src.split('\n'));
-  const state = EditorState.create({ doc, extensions: [beluga(), belCodeFolding()] });
+  const state = EditorState.create({ doc, extensions: [beluga(), editorCodeFolding()] });
   ensureSyntaxTree(state, doc.length);
   const line = doc.line(lineNo);
   return foldable(state, line.from, line.to);

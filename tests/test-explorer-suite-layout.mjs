@@ -17,11 +17,10 @@ function loadScript(path) {
   new Function('window', src)(globalThis);
 }
 
-loadScript('js/project-source.js');
-loadScript('js/explorer-suite-layout.js');
+loadScript('js/workspace/workspace.js');
 
-const L = globalThis.BelJarExplorerSuiteLayout;
-const PS = globalThis.BelJarProjectSource;
+const L = globalThis.ExplorerSuiteLayout;
+const PS = globalThis.ProjectSource;
 expect(L && typeof L.computeDirLayout === 'function', 'layout module loaded');
 
 const files = [

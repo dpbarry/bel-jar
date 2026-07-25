@@ -1,12 +1,12 @@
 import { EditorState, Transaction } from '@codemirror/state';
 import {
-  belRename,
+  rename,
   buildRenameCommitChanges,
   planReferenceSync,
   renameActiveField,
   renameSessionEffect,
   renameSync,
-} from '../editor-src/bel-rename.mjs';
+} from '../js/editor-src/ide/rename.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -30,7 +30,7 @@ expect(edits[1].from === 8 && edits[1].to === 11, 'ref site exact range');
 
 let state = EditorState.create({
   doc: 'foo bar foo',
-  extensions: belRename(),
+  extensions: rename(),
 });
 
 state = state.update({
@@ -71,7 +71,7 @@ const longSession = {
   sites: [{ from: 0, to: 3 }, { from: 8, to: 11 }],
   anchorSite: 0,
 };
-let longState = EditorState.create({ doc: 'foo bar foo', extensions: belRename() });
+let longState = EditorState.create({ doc: 'foo bar foo', extensions: rename() });
 longState = longState.update({ effects: renameSessionEffect.of(longSession) }).state;
 longState = longState.update({ changes: [{ from: 0, to: 3, insert: 'longername' }] }).state;
 const longPlan = planReferenceSync(longState, longState.field(renameActiveField, false));

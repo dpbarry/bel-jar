@@ -4,9 +4,9 @@
 // upper-case implicits never block, and a syntax error is syntax-fault
 // (not blocked). Independent declarations stay queryable throughout.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
-import { STATUS } from '../editor-src/semantic/ids.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
+import { STATUS } from '../js/editor-src/semantic/ids.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

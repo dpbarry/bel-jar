@@ -19,8 +19,8 @@ import vm from 'node:vm';
 import { TextDecoder, TextEncoder } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { parser } from '../editor-src/beluga-parser.js';
-import { buildScopedSource, declIndicesForRanges, topDeclSpans } from '../editor-src/semantic/scoped-check.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { buildScopedSource, declIndicesForRanges, topDeclSpans } from '../js/editor-src/semantic/scoped-check.mjs';
 import { pathsFromSourcesCfg } from './_library-cfg.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -42,7 +42,7 @@ function check(code) {
   return { ok: !!(r && r.ok), out: String((r && r.output) || '') };
 }
 
-// Same location patterns the production parser (bel-beluga-diag.mjs) uses.
+// Same location patterns the production parser (beluga-diag.mjs) uses.
 function errorLines(raw) {
   const text = String(raw || '').replace(/\r\n/g, '\n').replace(/\u001b?\[[0-9;]*m/g, '');
   const lines = new Set();

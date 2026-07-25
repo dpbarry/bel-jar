@@ -1,9 +1,9 @@
 // semanticDeclText must not re-walk the whole file per binder (O(n²) keystroke lag).
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { semanticDeclText } from '../editor-src/semantic/check-gate.mjs';
-import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
-import { createSymbolStore } from '../editor-src/semantic/symbol-store.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { semanticDeclText } from '../js/editor-src/semantic/check-gate.mjs';
+import { createSyntaxStore } from '../js/editor-src/semantic/syntax-store.mjs';
+import { createSymbolStore } from '../js/editor-src/semantic/symbol-store.mjs';
 import { performance } from 'perf_hooks';
 
 function expect(cond, msg) {

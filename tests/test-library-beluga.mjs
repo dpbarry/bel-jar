@@ -67,7 +67,7 @@ for (const rel of TIER_A) {
   runCheck(fatal, `A:${rel}`, readRel(rel));
 }
 
-runCheck(fatal, 'hint-stress.bel', readFileSync(join(root, 'hint-stress.bel'), 'utf8'));
+runCheck(fatal, 'hint-stress.bel', readFileSync(join(root, 'tests/fixtures/hint-stress.bel'), 'utf8'));
 
 for (const relDir of OPTIONAL_SUITES) {
   const paths = pathsFromSuiteCfg(relDir);

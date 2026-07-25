@@ -1,0 +1,146 @@
+/* -- Dependency graph view (SVG: local neighborhood + global) -- */
+
+.bel-graph-container {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center,
+      color-mix(in srgb, var(--chrome-divider) 30%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.bel-graph-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.bel-graph-svg.is-panning {
+  cursor: grabbing;
+}
+
+.bel-graph-empty {
+  margin: 1rem;
+  font-size: 0.8125rem;
+  color: var(--base-high);
+}
+
+/* Nodes */
+.bel-graph-node {
+  cursor: pointer;
+}
+
+.bel-graph-node rect {
+  fill: var(--chrome-bg-panel);
+  stroke: var(--chrome-divider);
+  stroke-width: 1;
+}
+
+.bel-graph-node text {
+  font-family: var(--mono);
+  font-size: 12px;
+  fill: var(--base-highest);
+  pointer-events: none;
+}
+
+.bel-graph-node.is-root rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-graph-node:hover rect {
+    fill: var(--accent-lower);
+    stroke: var(--accent-mid);
+  }
+}
+
+.bel-graph-node:focus-visible {
+  outline: none;
+}
+
+.bel-graph-node:focus-visible rect {
+  stroke: var(--accent-mid);
+  stroke-width: 2;
+}
+
+/* Edges, coloured by dependency kind. */
+.bel-graph-edge {
+  fill: none;
+  stroke: var(--base-high);
+  stroke-width: 1.5;
+  opacity: 0.75;
+}
+
+.bel-graph-edge--signature { stroke: var(--accent-mid); }
+.bel-graph-edge--body { stroke: var(--base-high); }
+.bel-graph-edge--notation { stroke: light-dark(hsl(280, 45%, 55%), hsl(280, 50%, 68%)); }
+.bel-graph-edge--module { stroke: light-dark(hsl(190, 55%, 42%), hsl(190, 55%, 60%)); }
+.bel-graph-edge--implicit { stroke-dasharray: 3 3; }
+.bel-graph-edge--coverage { stroke: var(--ide-status-checking, hsl(42, 90%, 55%)); }
+
+.bel-graph-arrowhead {
+  fill: var(--base-high);
+}
+
+/* Mini graph inside the inspector panel. */
+.bel-graph-mini {
+  height: 9.5rem;
+  border: 1px solid var(--chrome-divider);
+  border-radius: 0.375rem;
+  margin-top: 0.25rem;
+}
+
+.bel-graph-mini .bel-graph-svg {
+  cursor: default;
+}
+
+.inspector-graph-popout {
+  width: 1.3rem;
+  height: 1.3rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--base-high);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-graph-popout:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+/* Graph FloatingWindow title. */
+.bel-graph-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.bel-graph-title-kind {
+  flex: 0 0 auto;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--accent-high);
+}
+
+.bel-graph-title-name {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--base-highest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

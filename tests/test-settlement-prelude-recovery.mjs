@@ -6,11 +6,11 @@
 // (and types for everything not depending on the masked block) still surface,
 // with the prelude error reported as a NON-blocking banner alongside.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
-import { createSettlement } from '../editor-src/semantic/settlement.mjs';
-import { createCheckerStore } from '../editor-src/semantic/checker-store.mjs';
-import { suitePreludeBannerForActive } from '../editor-src/suite-prelude-banner.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSyntaxStore } from '../js/editor-src/semantic/syntax-store.mjs';
+import { createSettlement } from '../js/editor-src/semantic/settlement.mjs';
+import { createCheckerStore } from '../js/editor-src/semantic/checker-store.mjs';
+import { suitePreludeBannerForActive } from '../js/editor-src/semantic/suite-prelude-banner.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -277,6 +277,124 @@ expect(banner.from === 0 && banner.to === line1End,
   const msgs6 = store6.getSnapshot().belugaDiagnostics.map((d) => d.message);
   expect(msgs6.some((m) => /Identifier tp is unbound/.test(m)),
     `active-file error naming a prelude symbol must surface, got: ${msgs6.join(' | ')}`);
+}
+
+// Unlocated Beluga unbound (no File/line) in the prelude must become the suite
+// banner — not a fake "Identifier & is unbound" squiggle on the active file's
+// first line.
+{
+  const prelude = {
+    code: 'LF v : &.\n',
+    spans: [{ id: 'base', name: 'cp_base.bel', startLine: 1, endLine: 1 }],
+    offsetLines: 2,
+    names: new Set(['v']),
+  };
+  const activeSyntax = syntaxFor(`% linearity predicate\nlinear: (name -> proc) -> type.\n`);
+  const clientU = {
+    fingerprint: (c) => `fp:${c.length}`,
+    checkResult: async (code) => {
+      if (code.includes('&')) {
+        return { ok: false, output: 'Identifier & is unbound.\n' };
+      }
+      return { ok: true, output: '' };
+    },
+  };
+  const storeU = createCheckerStore();
+  const settlementU = createSettlement({
+    belugaClient: clientU,
+    checkerStore: storeU,
+    getCheckContext: () => ({ doc: activeSyntax.doc, prelude }),
+  });
+  await settlementU.settleNow(activeSyntax, 0);
+  const snapU = storeU.getSnapshot();
+  const localUnbound = (snapU.belugaDiagnostics || []).filter((d) =>
+    /Identifier\s+&\s+is\s+unbound/i.test(d.message || '') && d.source !== 'suite-prelude');
+  expect(localUnbound.length === 0,
+    `active file must not get a local unbound-& fallback, got: ${localUnbound.map((d) => d.message).join(' | ')}`);
+  const bannerU = suitePreludeBannerForActive({
+    doc: activeSyntax.doc,
+    members: [
+      { id: 'base', name: 'cp_base.bel', text: prelude.code },
+      { id: 'lin', name: 'cp_linear.bel', text: activeSyntax.doc.toString() },
+    ],
+    activeId: 'lin',
+    memberDiagnostics: snapU.memberDiagnostics,
+    getText: (id) => (id === 'lin' ? activeSyntax.doc.toString() : prelude.code),
+  });
+  expect(bannerU && /earlier suite file cp_base\.bel/.test(bannerU.message),
+    `unlocated prelude unbound becomes suite banner, got: ${bannerU?.message || '(none)'}`);
+}
+
+// ONE real prelude error must be reported as ONE. Masking the erroring block
+// induces an unbound in a LATER prelude file that uses the masked definition —
+// a cascade of the same fault, not a second error. It must not inflate the
+// banner to "(+1 more in prelude)".
+{
+  const preludeCode = [
+    'LF p : type =',
+    '  | mkP : badP',
+    ';',
+    'LF q : type =',
+    '  | mkQ : p',
+    ';',
+  ].join('\n');
+  const prelude = {
+    code: preludeCode,
+    spans: [
+      { id: 'defs', name: '1_definitions.bel', startLine: 1, endLine: 3 },
+      { id: 'use', name: '2_use.bel', startLine: 4, endLine: 6 },
+    ],
+    offsetLines: 7,
+    names: new Set(['p', 'mkP', 'q', 'mkQ']),
+  };
+  const activeSyntax = syntaxFor(`LF up : type =\n  | u : up\n;`);
+  const clientC = {
+    fingerprint: (c) => `fp:${c.length}`,
+    checkResult: async (code) => {
+      const lines = code.split('\n');
+      const at = (marker, message) => {
+        const i = lines.findIndex((l) => l.includes(marker));
+        return { ok: false, output: `File "input.bel", line ${i + 1}, column 1:\nError: ${message}` };
+      };
+      if (code.includes('badP')) return at('badP', 'Identifier badP is unbound');
+      // Definition of p masked away → its use site now reads unbound (cascade).
+      if (!code.includes('LF p : type') && code.includes('mkQ : p')) {
+        return at('mkQ : p', 'Identifier p is unbound');
+      }
+      return { ok: true, output: '' };
+    },
+  };
+  const storeC = createCheckerStore();
+  const settlementC = createSettlement({
+    belugaClient: clientC,
+    checkerStore: storeC,
+    getCheckContext: () => ({ doc: activeSyntax.doc, prelude }),
+  });
+  await settlementC.settleNow(activeSyntax, 0);
+  const snapC = storeC.getSnapshot();
+  const brokenFiles = Object.keys(snapC.memberDiagnostics || {});
+  expect(brokenFiles.length === 1 && brokenFiles[0] === '1_definitions.bel',
+    `only the real culprit file carries a diagnostic, got: ${brokenFiles.join(', ')}`);
+  const bannerC = suitePreludeBannerForActive({
+    doc: activeSyntax.doc,
+    members: [
+      { id: 'defs', name: '1_definitions.bel', text: preludeCode.split('\n').slice(0, 3).join('\n') },
+      { id: 'use', name: '2_use.bel', text: preludeCode.split('\n').slice(3).join('\n') },
+      { id: 'active', name: 'use.bel', text: activeSyntax.doc.toString() },
+    ],
+    activeId: 'active',
+    memberDiagnostics: snapC.memberDiagnostics,
+    getText: (id) => {
+      if (id === 'active') return activeSyntax.doc.toString();
+      if (id === 'defs') return preludeCode.split('\n').slice(0, 3).join('\n');
+      return preludeCode.split('\n').slice(3).join('\n');
+    },
+  });
+  expect(bannerC && /earlier suite file 1_definitions\.bel, line 2/.test(bannerC.message),
+    `banner names the real culprit, got: ${bannerC?.message || '(none)'}`);
+  expect(bannerC && !/more in prelude/.test(bannerC.message),
+    `a single prelude error must not read "(+N more in prelude)", got: ${bannerC.message}`);
+  expect(snapC.ok === false, 'the suite still does not read ok');
 }
 
 console.log('OK settlement prelude recovery (earlier-file error masked, active file still linted, '

@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
-import { referenceKind } from '../editor-src/bel-resolve.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
+import { referenceKind } from '../js/editor-src/name-resolve.mjs';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,11 +69,11 @@ for (const name of [
 }
 
 for (const name of ['hint-stress.bel']) {
-  const src = fs.readFileSync(path.join(__dir, '..', name), 'utf8');
+  const src = fs.readFileSync(path.join(__dir, 'fixtures', name), 'utf8');
   lintCorpus(name, src);
 }
 
-const allBel = fs.readFileSync(path.join(__dir, '..', 'all.bel'), 'utf8');
+const allBel = fs.readFileSync(path.join(__dir, 'fixtures', 'all.bel'), 'utf8');
 lintCorpus('all.bel (no parse or undefined-name lint)', allBel);
 
 const taplDoc = Text.of(TAPL.split('\n'));

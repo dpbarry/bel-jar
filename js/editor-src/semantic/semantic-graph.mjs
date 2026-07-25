@@ -1,0 +1,264 @@
+import { mergeDiagnostics } from '../ide/query-diag.mjs';
+import { EDGE_KIND, NAMESPACE, STATUS } from './ids.mjs';
+
+function edgeId(from, to, kind) {
+  return `${from}->${to}:${kind}`;
+}
+
+function rangesOverlap(a, b) {
+  return a.from < b.to && b.from < a.to;
+}
+
+function signatureBoundary(symbol) {
+  const text = symbol.declarationText || '';
+  const eq = text.indexOf('=');
+  const semi = text.indexOf(';');
+  if (eq >= 0) return symbol.range.from + eq;
+  if (semi >= 0) return symbol.range.from + semi;
+  return symbol.range.to;
+}
+
+function edgeKindFor(ref, owner) {
+  if (!owner) return EDGE_KIND.BODY;
+  if (owner.namespace === NAMESPACE.PRAGMA) return EDGE_KIND.NOTATION;
+  return ref.from <= signatureBoundary(owner) ? EDGE_KIND.SIGNATURE : EDGE_KIND.BODY;
+}
+
+function buildInterfaceReverseDeps(edgeMap) {
+  const rev = new Map();
+  for (const edge of edgeMap.values()) {
+    if (edge.kind !== EDGE_KIND.SIGNATURE && edge.kind !== EDGE_KIND.NOTATION) continue;
+    let set = rev.get(edge.to);
+    if (!set) { set = new Set(); rev.set(edge.to, set); }
+    set.add(edge.from);
+  }
+  return rev;
+}
+
+function cascade(seeds, reverseDeps, into) {
+  const queue = [...seeds];
+  while (queue.length) {
+    const id = queue.shift();
+    const dependents = reverseDeps.get(id);
+    if (!dependents) continue;
+    for (const dep of dependents) {
+      if (into.has(dep)) continue;
+      into.add(dep);
+      queue.push(dep);
+    }
+  }
+}
+
+function classifyChanges(nodeMap, previous) {
+  const changes = new Map();
+  for (const [id, node] of nodeMap) {
+    const old = previous && previous.nodeMap.get(id);
+    if (!old) changes.set(id, 'added');
+    else if (old.signatureHash !== node.signatureHash) changes.set(id, 'signature');
+    else if (old.bodyHash !== node.bodyHash) changes.set(id, 'body');
+    else changes.set(id, 'unchanged');
+  }
+  return changes;
+}
+
+function computeDirty(nodeMap, edgeMap, previous, changes) {
+  const dirty = new Set();
+  const cascadeSeeds = [];
+  for (const [id, kind] of changes) {
+    if (kind === 'unchanged') continue;
+    dirty.add(id);
+    if (kind === 'added' || kind === 'signature') cascadeSeeds.push(id);
+  }
+  cascade(cascadeSeeds, buildInterfaceReverseDeps(edgeMap), dirty);
+
+  const removed = previous
+    ? [...previous.nodeMap.keys()].filter((id) => !nodeMap.has(id))
+    : [];
+  if (removed.length) {
+    cascade(removed, buildInterfaceReverseDeps(previous.edgeMap), dirty);
+    for (const id of removed) dirty.delete(id);
+  }
+  return { dirty, removed };
+}
+
+export function createSemanticGraph() {
+  let snapshot = null;
+
+  function update(symbolSnapshot, syntaxSnapshot, options = {}) {
+    const previous = options.previous !== undefined ? options.previous : snapshot;
+    const belugaDiagnostics = options.belugaDiagnostics || [];
+    const nodeMap = new Map();
+    const edgeMap = new Map();
+    const syntaxDiagnostics = syntaxSnapshot.syntaxDiagnostics || [];
+    const unresolvedByOwner = new Map();
+
+    for (const ref of symbolSnapshot.references) {
+      if (ref.symbolId || ref.kind !== 'lower' || !ref.enclosingDeclarationId) continue;
+      const list = unresolvedByOwner.get(ref.enclosingDeclarationId) || [];
+      list.push(ref);
+      unresolvedByOwner.set(ref.enclosingDeclarationId, list);
+    }
+
+    const meta = new Map();
+    for (const symbol of symbolSnapshot.globalSymbols) {
+      const syntaxDiags = syntaxDiagnostics.filter((diag) => rangesOverlap(symbol.range, diag));
+      const belugaDiags = belugaDiagnostics.filter((diag) => rangesOverlap(symbol.range, diag));
+      const diags = mergeDiagnostics(syntaxDiags, belugaDiags);
+      const blockedRefs = unresolvedByOwner.get(symbol.id) || [];
+      const old = previous && previous.nodeMap.get(symbol.id);
+      const safeOld = old
+        && old.status !== STATUS.SYNTAX_FAULT
+        && old.status !== STATUS.ERRORING
+        ? old
+        : null;
+      meta.set(symbol.id, {
+        diags, syntaxDiags, belugaDiags, blockedRefs, safeOld,
+      });
+      nodeMap.set(symbol.id, {
+        id: symbol.id,
+        symbolId: symbol.id,
+        documentId: symbol.documentId,
+        name: symbol.name,
+        namespace: symbol.namespace,
+        label: symbol.label,
+        range: symbol.range,
+        nameRange: symbol.nameRange,
+        signatureHash: symbol.signatureHash,
+        bodyHash: symbol.bodyHash,
+        status: STATUS.UNKNOWN,
+        blocking: blockedRefs.length ? blockedRefs[0] : null,
+        diagnostics: diags,
+        cachedType: safeOld ? safeOld.cachedType : symbol.sourceText,
+        sourceText: symbol.sourceText,
+      });
+    }
+
+    for (const ref of symbolSnapshot.references) {
+      if (!ref.symbolId || ref.resolution !== 'global') continue;
+      const ownerId = ref.enclosingDeclarationId;
+      if (!ownerId || ownerId === ref.symbolId) continue;
+      const owner = symbolSnapshot.symbolsById.get(ownerId);
+      if (!owner) continue;
+      const kind = edgeKindFor(ref, owner);
+      const id = edgeId(ownerId, ref.symbolId, kind);
+      const existing = edgeMap.get(id);
+      if (existing) {
+        existing.references.push(ref);
+      } else {
+        edgeMap.set(id, {
+          id,
+          from: ownerId,
+          to: ref.symbolId,
+          kind,
+          references: [ref],
+        });
+      }
+    }
+
+    const changes = classifyChanges(nodeMap, previous);
+    const { dirty, removed } = computeDirty(nodeMap, edgeMap, previous, changes);
+    for (const [id, node] of nodeMap) {
+      const { diags, syntaxDiags, belugaDiags, blockedRefs, safeOld } = meta.get(id);
+      node.diagnostics = diags;
+      node.status = syntaxDiags.length
+        ? STATUS.SYNTAX_FAULT
+        : belugaDiags.length
+          ? STATUS.ERRORING
+          : blockedRefs.length
+            ? STATUS.BLOCKED
+            : dirty.has(id)
+              ? STATUS.DIRTY
+              : (safeOld ? STATUS.STALE_KNOWN : STATUS.UNKNOWN);
+    }
+
+    snapshot = {
+      documentId: syntaxSnapshot.documentId,
+      version: syntaxSnapshot.version,
+      nodes: [...nodeMap.values()],
+      edges: [...edgeMap.values()],
+      nodeMap,
+      edgeMap,
+      changes,
+      dirty,
+      removed,
+    };
+    return snapshot;
+  }
+
+  function statusForSymbol(symbolId) {
+    return snapshot?.nodeMap.get(symbolId)?.status || STATUS.UNKNOWN;
+  }
+
+  const named = (id) => ({ id, name: snapshot.nodeMap.get(id)?.name || null });
+
+  function dependenciesOf(symbolId) {
+    if (!snapshot) return [];
+    return snapshot.edges
+      .filter((edge) => edge.from === symbolId)
+      .map((edge) => ({ ...named(edge.to), kind: edge.kind }));
+  }
+
+  function dependentsOf(symbolId) {
+    if (!snapshot) return [];
+    return snapshot.edges
+      .filter((edge) => edge.to === symbolId)
+      .map((edge) => ({ ...named(edge.from), kind: edge.kind }));
+  }
+
+  // Impact = the full blast radius of changing this declaration, in two tiers:
+  //  • 'cascade' — transitive over INTERFACE (signature/notation) edges: changing
+  //    this signature restructures each of these types in turn (recursively).
+  //  • 'uses'    — a decl that calls this (or a cascaded decl) in its BODY: its
+  //    proof/implementation needs re-checking, but its OWN type is unchanged, so it
+  //    is a LEAF — never propagated further (a body-user's dependents are NOT hit).
+  // Cascade membership wins over a 'uses' tag.
+  function impactOf(symbolId) {
+    if (!snapshot) return [];
+    const cascadeSet = new Set();
+    cascade([symbolId], buildInterfaceReverseDeps(snapshot.edgeMap), cascadeSet);
+    const usesSet = new Set();
+    for (const edge of snapshot.edges) {
+      if (edge.kind !== EDGE_KIND.BODY) continue;
+      if (edge.to !== symbolId && !cascadeSet.has(edge.to)) continue;
+      if (edge.from === symbolId || cascadeSet.has(edge.from)) continue;
+      usesSet.add(edge.from);
+    }
+    return [
+      ...[...cascadeSet].map((id) => ({ ...named(id), kind: 'cascade' })),
+      ...[...usesSet].map((id) => ({ ...named(id), kind: 'uses' })),
+    ];
+  }
+
+  // Subgraph (nodes + typed edges) overlapping a document range, or the whole
+  // graph when no selection. The data backbone for a dependency/diagram view —
+  // not consumed by the UI yet, but the natural substrate for one.
+  function graphFor(selection = null) {
+    if (!snapshot) return { nodes: [], edges: [] };
+    if (!selection || selection.from == null || selection.to == null) {
+      return { nodes: snapshot.nodes.slice(), edges: snapshot.edges.slice() };
+    }
+    const selected = new Set(snapshot.nodes
+      .filter((node) => rangesOverlap(node.range, selection))
+      .map((node) => node.id));
+    for (const edge of snapshot.edges) {
+      if (selected.has(edge.from) || selected.has(edge.to)) {
+        selected.add(edge.from);
+        selected.add(edge.to);
+      }
+    }
+    return {
+      nodes: snapshot.nodes.filter((node) => selected.has(node.id)),
+      edges: snapshot.edges.filter((edge) => selected.has(edge.from) && selected.has(edge.to)),
+    };
+  }
+
+  return {
+    update,
+    statusForSymbol,
+    dependenciesOf,
+    dependentsOf,
+    impactOf,
+    graphFor,
+    getSnapshot: () => snapshot,
+  };
+}

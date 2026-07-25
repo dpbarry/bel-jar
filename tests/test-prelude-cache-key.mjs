@@ -3,7 +3,7 @@
 // the code did) makes the last file in a suite re-parse its whole prelude on
 // every settlement tick while typing → the late-file latency.
 
-import { preludeCacheMatches } from '../editor-src/semantic/prelude-cache-key.mjs';
+import { preludeCacheMatches } from '../js/editor-src/semantic/prelude-cache-key.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

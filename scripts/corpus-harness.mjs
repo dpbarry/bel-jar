@@ -55,7 +55,7 @@ function appendResult(rec) {
 // maskByName is the SHARED masker (self-contained; unit-tested in
 // tests/test-corpus-decls.mjs) — its source is injected into the page below so
 // the browser runs the exact function the tests pin.
-import { assembleCfgProgram, maskByName } from '../editor-src/bel-corpus-decls.mjs';
+import { assembleCfgProgram, maskByName } from '../js/editor-src/prover/prover-corpus-decls.mjs';
 function assembleProgram(prog) {
   const corpusRoot = path.resolve(root, plan.corpusRoot);
   if (prog.cfg) {
@@ -208,7 +208,7 @@ try {
     try {
       res = await page.evaluate(async (src, tName, from, to, maxSteps, timeoutMs, maskSrc) => {
         const ed = window.BelJarEditor, cl = window.BelugaClient;
-        // The shared masker (editor-src/bel-corpus-decls.mjs maskByName),
+        // The shared masker (js/editor-src/prover-corpus-decls.mjs maskByName),
         // reconstituted from source — masks IN PLACE keeping `rec` + the body's
         // leading pragmas (`/ total … /` or `/ trust /`), comment-aware.
         const maskByName = (0, eval)(`(${maskSrc})`);
@@ -238,7 +238,7 @@ try {
             moveKinds: (r.steps || []).map((s) => s.move) };
         }
         return { outcome: 'STUCK', ms, checks, steps: (r.steps || []).length,
-          reason: (r.stuck && (r.stuck.reason || r.stuck.kind)) || 'no move',
+          reason: (r.stuck && (r.stuck.reason || r.stuck.kind)) || 'no-move',
           moveKinds: (r.steps || []).map((s) => s.move) };
       }, assembled, target.name, target.from, target.to, target.maxSteps, perTargetMs, maskByName.toString());
     } catch (e) {

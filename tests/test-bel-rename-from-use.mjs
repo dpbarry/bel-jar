@@ -1,14 +1,14 @@
 import { EditorState, Transaction } from '@codemirror/state';
-import { defsOf, usesOf } from '../editor-src/project-prelude.mjs';
+import { defsOf, usesOf } from '../js/editor-src/semantic/project-prelude.mjs';
 import {
-  belRename,
+  rename,
   buildRenameCommitChanges,
   planReferenceSync,
   renameActiveField,
   renameLocalDefConflict,
   renameSessionEffect,
   renameSync,
-} from '../editor-src/bel-rename.mjs';
+} from '../js/editor-src/ide/rename.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -30,7 +30,7 @@ const session = {
   anchorSite: 1,
 };
 
-let state = EditorState.create({ doc, extensions: belRename() });
+let state = EditorState.create({ doc, extensions: rename() });
 state = state.update({ effects: renameSessionEffect.of(session) }).state;
 
 state = state.update({

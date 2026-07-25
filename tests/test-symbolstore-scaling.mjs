@@ -10,10 +10,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
-import { createSymbolStore } from '../editor-src/semantic/symbol-store.mjs';
-import { referenceId } from '../editor-src/semantic/ids.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSyntaxStore } from '../js/editor-src/semantic/syntax-store.mjs';
+import { createSymbolStore } from '../js/editor-src/semantic/symbol-store.mjs';
+import { referenceId } from '../js/editor-src/semantic/ids.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

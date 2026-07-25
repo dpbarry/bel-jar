@@ -1,11 +1,11 @@
 // Dirty single-decl edit uses compressed frontier certify — not full
 // uncompressed prelude+file checkResult (when getScopedFrontier is wired).
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSyntaxStore } from '../editor-src/semantic/syntax-store.mjs';
-import { createSettlement } from '../editor-src/semantic/settlement.mjs';
-import { createCheckerStore } from '../editor-src/semantic/checker-store.mjs';
-import { topDeclSpans } from '../editor-src/semantic/scoped-check.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSyntaxStore } from '../js/editor-src/semantic/syntax-store.mjs';
+import { createSettlement } from '../js/editor-src/semantic/settlement.mjs';
+import { createCheckerStore } from '../js/editor-src/semantic/checker-store.mjs';
+import { topDeclSpans } from '../js/editor-src/semantic/scoped-check.mjs';
 
 function expect(cond, msg) {
   if (cond) return;

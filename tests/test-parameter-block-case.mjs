@@ -1,4 +1,4 @@
-import { parser } from '../editor-src/beluga-parser.js';
+import { parser } from '../js/editor-src/beluga-parser.js';
 
 function expect(cond, msg) {
   if (!cond) { console.error('FAIL:', msg); process.exit(1); }

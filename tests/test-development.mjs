@@ -6,8 +6,9 @@ import {
   listDevelopmentMembers,
   workspaceDevelopments,
   preludePathsFor,
+  resolveCfgOrder,
   visibilityPaths,
-} from '../editor-src/development.mjs';
+} from '../js/editor-src/semantic/development.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -132,6 +133,33 @@ expect(cfgDev.activeIndex === -1, 'cfg file is not a suite member');
   const bRight = right.find((m) => m.name === 'grp/b.bel');
   expect(bRight?.text === 'rec inB : [ |- nat] = ?;',
     'no live splice when the anchor file is not the open editor buffer');
+}
+
+// Same-length sibling nested cfgs: cycle key must be cfgHash (not text length).
+{
+  const aText = 'b.cfg\nx.bel'; // length 11
+  const bText = 'y.bel\n#....'; // length 11
+  expect(aText.length === bText.length, 'fixture lengths equal');
+  const files = [
+    { id: 'ca', name: 'nested/a.cfg', text: aText },
+    { id: 'cb', name: 'nested/b.cfg', text: bText },
+    { id: 'x', name: 'nested/x.bel', text: 'LF x : type;' },
+    { id: 'y', name: 'nested/y.bel', text: 'LF y : type;' },
+  ];
+  const getText = (id) => files.find((f) => f.id === id).text;
+  const cfgByDir = {
+    nested: { 'a.cfg': aText, 'b.cfg': bText },
+  };
+  const pathSet = { 'nested/x.bel': true, 'nested/y.bel': true };
+  const ord = resolveCfgOrder('nested', aText, cfgByDir, pathSet, new Set());
+  expect(JSON.stringify(ord) === JSON.stringify(['nested/y.bel', 'nested/x.bel']),
+    `hash key must include nested members, got ${JSON.stringify(ord)}`);
+  const nestedDev = developmentForFile(files, 'x', getText, {
+    activeCfgForDir: activeCfgResolver({ nested: 'nested/a.cfg' }),
+  });
+  expect(nestedDev.kind === 'module' && nestedDev.paths.includes('nested/y.bel')
+    && nestedDev.paths.includes('nested/x.bel'),
+    'development same-length nested surfaces both members');
 }
 
 console.log('OK development module (active cfg, standalone isolation)');

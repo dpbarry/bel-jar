@@ -1,33 +1,38 @@
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import assert from 'node:assert';
+import { runPersistStackInContext } from './persist-stack.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const persistSrc = readFileSync(join(here, '..', 'js', 'persist.js'), 'utf8');
 
-function freshPersist() {
+function makeStorage() {
   const storage = new Map();
-  const fakeLocalStorage = {
+  return {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: (k) => storage.delete(k),
+    _map: storage,
   };
+}
+
+function freshPersist() {
+  const fakeLocalStorage = makeStorage();
+  const fakeSessionStorage = makeStorage();
   const ctx = vm.createContext({
     globalThis: {},
     clearTimeout,
     setTimeout,
     TextEncoder,
     localStorage: fakeLocalStorage,
-    sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    sessionStorage: fakeSessionStorage,
   });
   ctx.globalThis = ctx;
-  vm.runInContext(persistSrc, ctx);
-  return ctx.BelJarPersist;
+  runPersistStackInContext(ctx);
+  return { P: ctx.Persist, localStorage: fakeLocalStorage, sessionStorage: fakeSessionStorage };
 }
 
-const P = freshPersist();
+const { P } = freshPersist();
 
 assert.equal(P.readStoredReplAutoscroll(), true);
 P.writeStoredReplAutoscroll(false);
@@ -36,6 +41,65 @@ assert.equal(P.readStoredReplAutoscroll(), false);
 assert.equal(P.readStoredReplHistoryCap(), 0);
 P.writeStoredReplHistoryCap(500);
 assert.equal(P.readStoredReplHistoryCap(), 500);
+
+assert.equal(P.readStoredReplHistoryPersist(), 'local');
+P.writeStoredReplHistoryPersist('session');
+assert.equal(P.readStoredReplHistoryPersist(), 'session');
+P.writeStoredReplHistoryPersist('none');
+assert.equal(P.readStoredReplHistoryPersist(), 'none');
+P.writeStoredReplHistoryPersist('local');
+assert.equal(P.readStoredReplHistoryPersist(), 'local');
+
+assert.equal(P.readStoredReplTimestamps(), false);
+P.writeStoredReplTimestamps(true);
+assert.equal(P.readStoredReplTimestamps(), true);
+P.writeStoredReplTimestamps(false);
+assert.equal(P.readStoredReplTimestamps(), false);
+
+assert.equal(P.readStoredReplTranscript(), null);
+P.writeStoredReplTranscript({ html: '<div class="repl-banner"></div>', scrollTop: 12, savedAt: 99 });
+{
+  const snap = P.readStoredReplTranscript();
+  assert.ok(snap);
+  assert.equal(snap.v, 1);
+  assert.equal(snap.html, '<div class="repl-banner"></div>');
+  assert.equal(snap.scrollTop, 12);
+  assert.equal(snap.savedAt, 99);
+}
+P.writeStoredReplTranscript(null);
+assert.equal(P.readStoredReplTranscript(), null);
+
+assert.deepEqual(P.readStoredReplCommandHistory(), []);
+P.writeStoredReplCommandHistory(['types', 'help', 'query 1 * D : nat']);
+assert.deepEqual(P.readStoredReplCommandHistory(), ['types', 'help', 'query 1 * D : nat']);
+P.writeStoredReplCommandHistory([]);
+assert.deepEqual(P.readStoredReplCommandHistory(), []);
+
+{
+  const { P: P2, localStorage: ls, sessionStorage: ss } = freshPersist();
+  P2.writeStoredReplHistoryPersist('local');
+  P2.writeStoredReplTranscript({ html: '<div>local</div>', scrollTop: 0, savedAt: 1 });
+  P2.writeStoredReplCommandHistory(['local-cmd']);
+  assert.ok(ls.getItem('beljar-repl-transcript-v1'));
+  assert.equal(ss.getItem('beljar-repl-transcript-v1'), null);
+
+  P2.writeStoredReplHistoryPersist('session');
+  assert.ok(ss.getItem('beljar-repl-transcript-v1'));
+  assert.equal(ls.getItem('beljar-repl-transcript-v1'), null);
+  assert.deepEqual(P2.readStoredReplCommandHistory(), ['local-cmd']);
+  assert.equal(P2.readStoredReplTranscript().html, '<div>local</div>');
+
+  P2.writeStoredReplHistoryPersist('none');
+  assert.equal(P2.readStoredReplTranscript(), null);
+  assert.deepEqual(P2.readStoredReplCommandHistory(), []);
+  assert.equal(ls.getItem('beljar-repl-transcript-v1'), null);
+  assert.equal(ss.getItem('beljar-repl-transcript-v1'), null);
+
+  P2.writeStoredReplTranscript({ html: '<div>ignored</div>', scrollTop: 0, savedAt: 2 });
+  P2.writeStoredReplCommandHistory(['ignored']);
+  assert.equal(P2.readStoredReplTranscript(), null);
+  assert.deepEqual(P2.readStoredReplCommandHistory(), []);
+}
 
 assert.equal(P.readStoredBelugaFallbackStable(), true);
 P.writeStoredBelugaFallbackStable(false);

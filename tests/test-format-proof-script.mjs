@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { parser } from '../editor-src/beluga-parser.js';
-import { formatString } from '../editor-src/bel-format.mjs';
-import { reindentProofBlock } from '../editor-src/format/proof-script.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { formatString } from '../js/editor-src/format/document-format.mjs';
+import { reindentProofBlock } from '../js/editor-src/format/proof-script.mjs';
 
 const raw = `⊃I (\\u. % (A v A) true
     ⊃I (\\v. % (B) true

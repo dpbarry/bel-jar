@@ -1,7 +1,7 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { computeLintBlocks } from '../editor-src/bel-units.mjs';
-import { syntaxLintTree } from '../editor-src/bel-lint.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { computeLintBlocks } from '../js/editor-src/lint-units.mjs';
+import { syntaxLintTree } from '../js/editor-src/ide/syntax-lint.mjs';
 
 const sample = `--prefix ¬ 10.
 --inhfix ∧ 5 right.

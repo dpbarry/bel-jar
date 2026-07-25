@@ -1,6 +1,6 @@
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { computeLintBlocks } from '../editor-src/bel-units.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { computeLintBlocks } from '../js/editor-src/lint-units.mjs';
 
 const sample = `module M = struct
   LF a : type.

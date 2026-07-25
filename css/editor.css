@@ -1,0 +1,650 @@
+/* -- Panels -- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.panel-header {
+  height: var(--panel-header-h);
+  flex-shrink: 0;
+  padding: 0 var(--panel-header-pad-end, var(--pad-inline)) 0 var(--panel-header-pad-start, var(--pad-inline));
+  background: var(--chrome-bg-panel);
+  border-bottom: 1px solid var(--chrome-divider);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-header.output-panel-header {
+  position: relative;
+  overflow: hidden;
+  --panel-header-pad-end: var(--panel-header-pad-control);
+}
+
+.output-panel-header[data-running]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  z-index: 1;
+  pointer-events: none;
+  background: color-mix(in oklab, var(--accent-mid) 12%, var(--chrome-divider));
+}
+
+html.light .output-panel-header[data-running]::before {
+  background: color-mix(in oklab, var(--accent-low) 18%, var(--chrome-divider));
+}
+
+.output-header-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  z-index: 2;
+  pointer-events: none;
+  transform-origin: left center;
+  transform: scaleX(0);
+  opacity: 1;
+  border-radius: 0 1px 1px 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-mid) 62%, transparent),
+    color-mix(in oklab, var(--accent-high) 78%, var(--accent-mid))
+  );
+  box-shadow:
+    0 0 5px color-mix(in srgb, var(--accent-mid) 22%, transparent),
+    0 0 1px color-mix(in srgb, var(--accent-mid) 32%, transparent);
+}
+
+html.light .output-header-progress {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-mid) 48%, transparent),
+    color-mix(in oklab, var(--accent-high) 65%, var(--accent-mid))
+  );
+  box-shadow:
+    0 0 4px color-mix(in srgb, var(--accent-mid) 14%, transparent),
+    0 0 1px color-mix(in srgb, var(--accent-mid) 22%, transparent);
+}
+
+.output-header-status {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+}
+
+.output-panel-header[data-running] .output-header-status {
+  opacity: 0.55;
+  transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.output-panel-header .panel-label,
+.output-panel-header .icon-btn {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .output-header-status {
+    transition: none;
+  }
+
+  .output-panel-header[data-running] .output-header-status {
+    opacity: 0.7;
+  }
+}
+
+.panel-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: light-dark(var(--muted-higher), var(--muted-high));
+  user-select: none;
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.1875rem;
+}
+
+.icon-btn:disabled,
+.repl-send:disabled {
+  opacity: 0.42;
+  pointer-events: none;
+  cursor: default;
+}
+
+/* -- Editor top bar: file tabs (scrollable) + controls (status dot, run) -- */
+
+.editor-topbar {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  height: var(--panel-header-h);
+  background: var(--chrome-bg-panel);
+  border-bottom: 1px solid var(--chrome-divider);
+}
+
+.editor-topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding: 0 var(--pad-inline);
+  border-left: 1px solid var(--chrome-divider);
+}
+
+.editor-topbar-controls .ide-status-dot {
+  margin-left: 0;
+  align-self: center;
+}
+
+.editor-tabs {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.editor-tabs::-webkit-scrollbar { display: none; }
+
+.editor-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.375rem 0 0.625rem;
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 14rem;
+  border: none;
+  background: transparent;
+  color: var(--base-high);
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+  transition: background 0.1s, color 0.1s;
+}
+
+.editor-tab + .editor-tab {
+  box-shadow: inset 1px 0 0 light-dark(
+    hsla(220, 9%, 80%, 0.4),
+    hsla(220, 10%, 70%, 0.07)
+  );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .editor-tab:not(.is-active):hover {
+    background: light-dark(
+      hsla(220, 10%, 40%, 0.04),
+      hsla(0, 0%, 100%, 0.022)
+    );
+    color: var(--ui-fg);
+  }
+}
+
+.editor-tab.is-active {
+  background: light-dark(hsl(0, 0%, 100%), hsl(222, 11%, 15%));
+  color: var(--header-menu-fg-active);
+}
+
+/* Error files: a thin bottom rule only — no background tint. */
+.editor-tab.has-errors::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  background: var(--ide-error-squiggle);
+  pointer-events: none;
+}
+
+.editor-tab.has-errors:not(.is-active)::after {
+  opacity: 0.65;
+}
+
+.editor-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.editor-tab-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.editor-tab-close svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  display: block;
+}
+
+.editor-tab.is-active .editor-tab-close {
+  opacity: 0.72;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .editor-tab:not(.is-active):hover .editor-tab-close {
+    opacity: 0.42;
+  }
+
+  .editor-tab-close:hover {
+    background: light-dark(
+      hsla(220, 10%, 40%, 0.06),
+      hsla(0, 0%, 100%, 0.035)
+    );
+  }
+
+  .editor-tab:not(.is-active) .editor-tab-close:hover {
+    opacity: 0.52;
+  }
+
+  .editor-tab.is-active .editor-tab-close:hover {
+    opacity: 0.82;
+  }
+}
+
+.editor-tab-close:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+  opacity: 1;
+}
+
+.editor-tab-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: 2rem;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--ui-fg-subtle);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+  box-shadow: inset 1px 0 0 light-dark(
+    hsla(220, 9%, 80%, 0.4),
+    hsla(220, 10%, 70%, 0.07)
+  );
+}
+
+.editor-tab-new svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  display: block;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .editor-tab-new:hover {
+    background: light-dark(
+      hsla(220, 10%, 40%, 0.04),
+      hsla(0, 0%, 100%, 0.022)
+    );
+    color: var(--ui-fg);
+  }
+}
+
+.editor-tab-new:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+/* -- Find/Replace panel (custom, replaces CM's default search panel) -- */
+
+/* Dock the panel to the editor's top-right edge; no content reflow. */
+#editor.editor-cm-host .cm-panels.cm-panels-top {
+  position: absolute;
+  top: 1px;
+  right: 0.875rem;
+  left: auto;
+  width: auto;
+  z-index: 20;
+  background: transparent;
+  border: none;
+}
+
+/* VS Code-style widget: slides down flush from the top edge, bottom corners
+   rounded, a slim expand strip on the left spanning both rows. */
+.bel-search {
+  display: flex;
+  align-items: stretch;
+  gap: 0.2rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.15rem;
+  background: var(--menu-bg);
+  border: 1px solid var(--chrome-divider);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  box-shadow: var(--menu-shadow);
+  animation: bel-search-in 140ms ease-out;
+}
+
+@keyframes bel-search-in {
+  from {
+    transform: translateY(-0.35rem);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.bel-search-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.bel-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+/* display:flex would defeat the hidden attribute on the collapsed replace row */
+.bel-search-row[hidden] {
+  display: none;
+}
+
+/* Fixed-basis inputs so the find and replace fields align exactly. */
+.bel-search-inputwrap {
+  flex: 0 0 13.5rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: var(--search-well-bg);
+  border: 1px solid transparent;
+  border-radius: var(--search-well-radius);
+  padding: 0 0.2rem 0 0.45rem;
+  transition: var(--search-field-transition);
+}
+
+.bel-search-inputwrap:focus-within {
+  border-color: var(--search-well-focus-border);
+}
+
+.bel-search.is-no-results .bel-search-inputwrap:not(.bel-search-inputwrap--replace) {
+  border-color: var(--ide-error-squiggle);
+}
+
+.bel-search .bel-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--base-highest);
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  padding: 0.27rem 0;
+}
+
+.bel-search .bel-search-input::placeholder {
+  color: var(--base-high);
+}
+
+/* Input well is ~94% L in light mode; global ::selection (--accent-lowest) vanishes on it. */
+.bel-search .bel-search-input::selection {
+  background: light-dark(rgba(37, 99, 235, 0.35), var(--accent-low));
+  color: var(--base-highest);
+}
+
+.bel-search-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.bel-search-chip {
+  border: none;
+  background: transparent;
+  color: var(--muted-mid);
+  font-size: 0.58rem;
+  font-weight: 600;
+  font-family: var(--mono);
+  padding: 0.18rem 0.26rem;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 100ms ease, color 100ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-search-chip:hover {
+    background: var(--accent-lowest);
+    color: var(--base-higher);
+  }
+}
+
+.bel-search-chip.is-on {
+  background: var(--accent-lower);
+  color: var(--accent-high);
+}
+
+.bel-search-count {
+  flex-shrink: 0;
+  font-size: 0.64rem;
+  color: var(--muted-mid);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.bel-search.is-no-results .bel-search-count {
+  color: var(--ide-error-squiggle);
+}
+
+/* No reserved gap before a search has been typed. */
+.bel-search-count:empty {
+  display: none;
+}
+
+.bel-search-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted-higher);
+  cursor: pointer;
+  padding: 0;
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.bel-search-btn svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bel-search-btn:hover {
+    background: var(--accent-lowest);
+    color: var(--accent-high);
+  }
+}
+
+/* The expand strip stretches the panel's full height. */
+.bel-search > .bel-search-expand {
+  width: 0.9rem;
+  height: auto;
+  align-self: stretch;
+  color: var(--muted-mid);
+}
+
+.bel-search > .bel-search-expand svg {
+  width: 0.62rem;
+  height: 0.62rem;
+}
+
+/* Theme-aware match highlights (CM defaults are an unthemed orange). */
+#editor.editor-cm-host .cm-searchMatch {
+  background: light-dark(hsla(217, 80%, 60%, 0.16), hsla(215, 70%, 60%, 0.22));
+  outline: 1px solid light-dark(hsla(217, 70%, 50%, 0.32), hsla(215, 60%, 65%, 0.35));
+  border-radius: 2px;
+}
+
+#editor.editor-cm-host .cm-searchMatch-selected {
+  background: light-dark(hsla(217, 85%, 55%, 0.32), hsla(215, 75%, 62%, 0.4));
+  outline: 1px solid var(--accent-mid);
+}
+
+/* Selection-match highlight (highlightSelectionMatches) — quieter than search. */
+#editor.editor-cm-host .cm-selectionMatch {
+  background: light-dark(hsla(217, 60%, 60%, 0.1), hsla(215, 50%, 60%, 0.14));
+  border-radius: 2px;
+}
+
+/* -- Code folding -- */
+
+#editor.editor-cm-host .cm-foldGutter {
+  width: 1rem;
+}
+
+#editor.editor-cm-host .cm-foldGutter .cm-gutterElement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cm-bel-foldmarker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  color: var(--editor-gutter-fg, var(--base-high));
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.cm-bel-foldmarker svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+/* VS Code behavior: open-fold chevrons appear only while the gutter area is
+   hovered; collapsed markers stay visible so folds are discoverable. */
+.cm-bel-foldmarker.is-open {
+  opacity: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #editor.editor-cm-host .cm-gutters:hover .cm-bel-foldmarker.is-open {
+    opacity: 0.7;
+  }
+
+  .cm-bel-foldmarker:hover {
+    color: var(--accent-mid);
+    opacity: 1;
+  }
+}
+
+.cm-bel-foldmarker.is-folded {
+  opacity: 1;
+  color: var(--accent-mid);
+}
+
+#editor.editor-cm-host .cm-foldPlaceholder {
+  display: inline-block;
+  background: var(--accent-lowest);
+  border: 1px solid var(--accent-low);
+  border-radius: 3px;
+  color: var(--accent-high);
+  padding: 0 0.4rem;
+  margin: 0 0.2rem;
+  cursor: pointer;
+  font-size: 0.7rem;
+  vertical-align: baseline;
+  pointer-events: auto;
+  user-select: none;
+}
+
+#editor.editor-cm-host .cm-foldPlaceholder--gap-space {
+  margin-left: 0;
+}
+
+/* -- Editor -- */
+
+#editor.editor-cm-host {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+#editor.editor-cm-host .cm-editor {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+#editor.editor-cm-host,
+#editor.editor-cm-host * {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+#editor.editor-cm-host .cm-scroller,
+#editor.editor-cm-host .cm-content,
+#editor.editor-cm-host .cm-gutters {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+#editor.editor-cm-host .cm-gutters {
+  position: relative;
+  z-index: 2;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#editor.editor-cm-host .cm-gutters .cm-gutterElement {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #editor.editor-cm-host .cm-lineNumbers .cm-gutterElement,
+  #editor.editor-cm-host .cm-lineNumbers .cm-diagRow-error,
+  #editor.editor-cm-host .cm-lineNumbers .cm-diagRow-warning {
+    transition: none;
+  }
+}

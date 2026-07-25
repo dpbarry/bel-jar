@@ -3,8 +3,8 @@
 // in the BACKGROUND (deriveFrontier), so the hover is instant instead of firing
 // an on-demand elaboration. Mirrors test-semantic-derive-types-v2's harness.
 import { Text } from '@codemirror/state';
-import { parser } from '../editor-src/beluga-parser.js';
-import { createSemanticEngine } from '../editor-src/semantic/semantic-engine.mjs';
+import { parser } from '../js/editor-src/beluga-parser.js';
+import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -21,7 +21,7 @@ const ACTIVE = 'let use = x;';
 const xPos = ACTIVE.indexOf('x;');
 
 function installProject() {
-  globalThis.BelJarPersist = {
+  globalThis.Persist = {
     listFiles: () => [
       { id: 'a', name: 'p/a.bel' },
       { id: 'b', name: 'p/b.bel' },
@@ -69,7 +69,7 @@ try {
   expect(calls === callsAfter, `cached use must not be re-elaborated, got ${calls} vs ${callsAfter}`);
   expect(more2 === false, 'no remaining cross-file work after everything is cached');
 } finally {
-  delete globalThis.BelJarPersist;
+  delete globalThis.Persist;
 }
 
 console.log('OK cross-file pre-warm (settled suite background-elaborates B1 uses → instant hover)');

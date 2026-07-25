@@ -19,13 +19,12 @@ function loadScript(path) {
   new Function('window', src)(globalThis);
 }
 
-loadScript('js/project-source.js');
-loadScript('js/explorer-suite-layout.js');
-loadScript('js/explorer-tree.js');
+loadScript('js/workspace/workspace.js');
+loadScript('js/explorer/explorer.js');
 
-const EX = globalThis.BelJarExplorer;
-const PS = globalThis.BelJarProjectSource;
-expect(EX && typeof EX.buildExplorerModel === 'function', 'BelJarExplorer.buildExplorerModel exported');
+const EX = globalThis.Explorer;
+const PS = globalThis.ProjectSource;
+expect(EX && typeof EX.buildExplorerModel === 'function', 'Explorer.buildExplorerModel exported');
 
 const files = [
   { id: 'cfg', name: 'grp/sources.cfg' },
@@ -46,7 +45,7 @@ const resolveMembers = (all, cfgPath, gt) => PS.orderedPathsForCfg(all, cfgPath,
 
 const layoutForDir = (dir, filesInDir) => {
   const active = dir === 'grp' ? ['grp/sources.cfg'] : [];
-  return globalThis.BelJarExplorerSuiteLayout.computeDirLayout(
+  return globalThis.ExplorerSuiteLayout.computeDirLayout(
     filesInDir, active, resolveMembers, files, getText,
   );
 };

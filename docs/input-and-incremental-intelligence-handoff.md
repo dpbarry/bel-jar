@@ -1,11 +1,16 @@
 # Kickoff: immediate input + incremental intelligence
 
-> **Audience:** Next high-capability agent session.  
-> **Date:** 2026-07-13  
-> **Owner intent:** Fix the family of “late suite / large file editing is laggy” issues **without** neutering BelJar’s parse, lint, or semantic power.  
-> **Supersedes (for this mission):** ad-hoc “defer and hope” patches from 2026-07-13 that traded capacity for the illusion of speed. Prefer this document over improvising another debounce.
+> **Companion / history — not the Phase 1 execution SoT.**  
+> For the open keystone (incremental-per-decl symbols/lint), start at  
+> [`incremental-semantics-execution-handoff.md`](./incremental-semantics-execution-handoff.md).  
+> This file records the 2026-07-13 input-path cost-cutting work and constraints  
+> (never underpower lint/parse). Prefer that execution handoff for new coding.
 
-Related background (still valid for Beluga-surgery principles, not for input-path tactics): [`fast-incremental-checking.md`](./fast-incremental-checking.md).
+> **Audience:** Agents needing context on why late-suite lag was attacked.  
+> **Date:** 2026-07-13  
+> **Owner intent:** Fix “late suite / large file editing is laggy” **without** neutering parse, lint, or semantic power.
+
+Related Beluga-surgery principles (settlement graph, not typing tactics): [`fast-incremental-checking.md`](./fast-incremental-checking.md).
 
 ---
 
@@ -14,7 +19,7 @@ Related background (still valid for Beluga-surgery principles, not for input-pat
 ### 2026-07-13 (d) — the LAST-FILE latency: prelude cache invalidated by settlement
 
 Measured the last-file case directly (active = `cp_thrm`, 5-file prelude).
-`buildCheckContext` (bel-editor.mjs) — called per keystroke by the scheduler tick,
+`buildCheckContext` (editor.mjs) — called per keystroke by the scheduler tick,
 settlement, and hole actions — keyed its prelude cache on `suiteOverlayGeneration`,
 which `bumpSuiteOverlay()` bumps on **every settle start AND complete**. So while
 typing the last file (biggest prelude, most checker churn), the prelude cache
@@ -25,7 +30,7 @@ many times per second. That is the late-file lag.
 Fix: the check-context value is a **pure function of sibling texts + active
 fingerprint** — nothing in it depends on checker RESULTS — so the generation key
 was spurious and harmful. Removed it; cache identity is now texts-only. Extracted
-the decision into [`semantic/prelude-cache-key.mjs`](../editor-src/semantic/prelude-cache-key.mjs)
+the decision into [`semantic/prelude-cache-key.mjs`](../js/editor-src/semantic/prelude-cache-key.mjs)
 (`preludeCacheMatches`, no generation param) so the invariant is explicit and
 guarded by [test-prelude-cache-key.mjs](../tests/test-prelude-cache-key.mjs). The
 suite-prelude BANNER keeps its own generation-keyed cache (that one legitimately
@@ -60,11 +65,11 @@ keystroke): `symbolStore.update` = **~23 ms**, of which `referenceId`'s
 keystroke in the rAF sync) pushes out the next paint → the `worrrkkkk` drops.
 
 Two fixes:
-1. **`referenceId` / `astNodeId` are now O(1)** ([semantic/ids.mjs](../editor-src/semantic/ids.mjs)):
+1. **`referenceId` / `astNodeId` are now O(1)** ([semantic/ids.mjs](../js/editor-src/semantic/ids.mjs)):
    a node's `(name, from, to)` already identifies it uniquely within a doc, so the
    `astPathFor` walk is gone. These ids are snapshot-local (rebuilt each update,
    never persisted), so it's a drop-in. `symbolStore.update` 23 ms → **~9 ms**.
-2. **Semantic rebuild coalesced under active typing** ([bel-editor.mjs](../editor-src/bel-editor.mjs)
+2. **Semantic rebuild coalesced under active typing** ([editor.mjs](../js/editor-src/editor.mjs)
    `scheduleSemanticSync`): the symbol/graph rebuild only feeds hover / nav /
    occurrence / rename / graph / settlement-scheduling — none observed
    mid-burst — so instead of one rAF **per keystroke** it runs once on a ~45 ms
@@ -91,7 +96,7 @@ reference resolution to fake speed.
 Removed the concrete per-keystroke whole-buffer offenders named in §3.3. All 190
 tests pass; new guard `tests/test-input-mainthread-budget.mjs` pins the win.
 
-- **Host persist `toString()` gone from `docChanged`.** `js/persist.js` now pulls
+- **Host persist `toString()` gone from `docChanged`.** `js/persist/persist.js` now pulls
   the live doc lazily via a `getText` provider at debounced save time
   (`collectEditorText` + new `markEditorDirty()`); the editor's `docChanged`
   listener calls `onDocChange(null)` and `app.js` calls `markEditorDirty()` (no
@@ -99,15 +104,15 @@ tests pass; new guard `tests/test-input-mainthread-budget.mjs` pins the win.
   the lazy text is captured. Consistent with the pre-existing invariant "storage
   lags the live buffer; active file always uses the live doc" (`getFileText`
   comment in persist.js).
-- **Edit-history `toString()` deferred.** `bel-edit-history.mjs` `onDocChange` no
+- **Edit-history `toString()` deferred.** `edit-history.mjs` `onDocChange` no
   longer stringifies per keystroke; it holds cheap CM `Text`/view references and
   materializes `before`/`after` once in `flushTypingGroup` (~150 ms after typing
   stops). Budget test: ≤5 whole-doc toStrings across 500 keystrokes (was ~1000).
-- **Parse-error highlight bounded to viewport.** `bel-invalid-highlight.mjs`
+- **Parse-error highlight bounded to viewport.** `invalid-highlight.mjs`
   `buildDecorations` iterated the whole Lezer tree per `docChanged`; now iterates
   only `view.visibleRanges` (output was already viewport-gated), O(viewport) not
   O(doc).
-- **Beluga squiggles map instead of rebuild.** `bel-beluga-squiggles.mjs` only
+- **Beluga squiggles map instead of rebuild.** (historical: former `bel-beluga-squiggles.mjs`; settlement / diag path now owns this)
   rebuilds on a settlement tick; a plain edit maps existing marks (`deco.map`).
 - **Paste reindent off the critical path.** `editor-prefs.mjs` reindents only the
   pasted line span (`iterChangedRanges`) after paint (`requestAnimationFrame`),
@@ -122,7 +127,7 @@ The prefix-closed settlement machinery is **already implemented and tested**
 signatures, tracks `lastFullPreludeFp` so a stable prelude never forces a full
 re-cert, and returns the cached verdict with **zero** Beluga calls on an empty
 frontier. `buildPrelude` excludes the active file, so typing it does not perturb
-`preludeFp`. `checkContextCache` (bel-editor.mjs) caches the prelude by sibling
+`preludeFp`. `checkContextCache` (editor.mjs) caches the prelude by sibling
 string-identity so it is not re-hashed per keystroke.
 
 `node tests/measure-check-scaling.mjs case-studies/classical-processes` (baseline,
@@ -222,7 +227,7 @@ Measure on `library/data/case-studies/classical-processes/` (`cp_thrm.bel` ~18KB
 | Deferring semantic sync to `requestAnimationFrame` felt “better but still laggy” | Sync decoration/`toString` path remained; rAF work **stole subsequent frames** under fast typing |
 | Fake “Unresolved reference \`ctx\`” from graph BLOCKED | Cross-file names unresolved in **local** store ≠ user-facing error |
 
-**Perf HUD:** `BelJarPerfHud.enable()` in the browser console. Prefer measuring *sync work inside CM `updateListener` / StateField.update* separately from worker Beluga time.
+**Perf HUD:** `PerfHud.enable()` in the browser console. Prefer measuring *sync work inside CM `updateListener` / StateField.update* separately from worker Beluga time.
 
 ---
 
@@ -276,8 +281,8 @@ Concrete offenders to remove from sync `docChanged` (as of investigation):
 
 | Site | Problem | Direction |
 |------|---------|-----------|
-| `bel-editor.mjs` `baseExtensions` | `onDocChange(doc.toString())` every key | Defer; persist from worker snapshot or debounced read **after** paint |
-| `bel-edit-history.mjs` | `toString()` every key for typing group | Store before once; apply `ChangeSet` or flush-after string once |
+| `editor.mjs` `baseExtensions` | `onDocChange(doc.toString())` every key | Defer; persist from worker snapshot or debounced read **after** paint |
+| `edit-history.mjs` | `toString()` every key for typing group | Store before once; apply `ChangeSet` or flush-after string once |
 | Hole gutter StateField | Rebuild + `getHoles()` every docChanged | `RangeSet.map(changes)` when tree/holes unchanged; recompute async |
 | Parse-error highlight plugin | Full leaf iterate every docChanged | Map or viewport-bounded; heavy rebuild off critical path |
 | Diag gutter StateField | Rebuild on every docChanged | Map when only positions shift; rebuild on settlement tick |
@@ -329,7 +334,7 @@ Add / extend:
 - Scaling: `node tests/measure-check-scaling.mjs` (or successor) on classical-processes — record full vs frontier; frontier must not grow with prelude size after bootstrap.
 - Capacity: `test-undefined-type-app`, settlement multipass, suite prelude recovery, semantic hover/nav — must not regress.
 
-Build: `node scripts/build-editor.mjs` after `editor-src/` changes. Beluga OCaml rebuild only if `beluga_web.ml` shim changes.
+Build: `node scripts/build-editor.mjs` after `js/editor-src/` changes. Beluga OCaml rebuild only if `beluga_web.ml` shim changes.
 
 ---
 
@@ -364,13 +369,13 @@ Start with Phase A (main-thread hygiene inventory + remove sync toString/full re
 
 | Area | Paths |
 |------|--------|
-| Input / CM wiring | `editor-src/bel-editor.mjs`, `editor-src/bel-edit-history.mjs`, `editor-src/editor-prefs.mjs` |
-| Decorations sync | `bel-hole-decorations.mjs`, `bel-invalid-highlight.mjs`, `bel-diag-gutter.mjs`, `bel-beluga-squiggles.mjs` |
-| Semantic core | `semantic/semantic-engine.mjs`, `symbol-store.mjs`, `semantic-graph.mjs`, `check-gate.mjs`, `bel-resolve.mjs` |
+| Input / CM wiring | `js/editor-src/editor.mjs`, `js/editor-src/edit-history.mjs`, `js/editor-src/editor-prefs.mjs` |
+| Decorations sync | `hole-decorations.mjs`, `invalid-highlight.mjs`, `diag-gutter.mjs`, settlement / Beluga diags |
+| Semantic core | `semantic/semantic-engine.mjs`, `symbol-store.mjs`, `semantic-graph.mjs`, `check-gate.mjs`, `name-resolve.mjs` |
 | Settlement | `semantic/settlement.mjs`, `compress-development.mjs`, `scoped-check.mjs`, `project-prelude.mjs` |
-| Workers | `js/beluga-client.js`, `js/beluga-worker.js`, possibly new `semantic-worker` |
-| Persist | `js/persist.js` (`scheduleEditorPersist` / checkpoint) |
-| Measure | `tests/measure-check-scaling.mjs`, `editor-src/perf/`, `js/perf-hud.js` |
+| Workers | `js/beluga/beluga-client.js`, `js/beluga/beluga-worker.js`, possibly new `semantic-worker` |
+| Persist | `js/persist/persist.js` (`scheduleEditorPersist` / checkpoint) |
+| Measure | `tests/measure-check-scaling.mjs`, `js/editor-src/perf/`, `js/ui/perf-hud.mjs` |
 
 ---
 

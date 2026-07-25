@@ -1,11 +1,11 @@
 // Unlisted same-level files are isolated — no prelude visibility.
 import { EditorState } from '@codemirror/state';
 import { ensureSyntaxTree } from '@codemirror/language';
-import { beluga } from '../editor-src/bel-language.mjs';
-import { prepareEditorDoc } from '../editor-src/editor-doc-prep.mjs';
-import { activeCfgResolver } from '../editor-src/development.mjs';
-import { canFindReferences } from '../editor-src/bel-refs-panel.mjs';
-import { findProjectDefinition, findGroupDefinition } from '../editor-src/project-prelude.mjs';
+import { beluga } from '../js/editor-src/language.mjs';
+import { prepareEditorDoc } from '../js/editor-src/editor-doc-prep.mjs';
+import { activeCfgResolver } from '../js/editor-src/semantic/development.mjs';
+import { canFindReferences } from '../js/editor-src/ide/refs-panel.mjs';
+import { findProjectDefinition, findGroupDefinition } from '../js/editor-src/semantic/project-prelude.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -41,13 +41,13 @@ ensureSyntaxTree(state, useDoc.length, 5000);
 const view = { state };
 
 globalThis.window = globalThis;
-globalThis.BelJarPersist = {
+globalThis.Persist = {
   getActiveFileId: () => 'rb',
   listFiles: () => cr,
   getFileText: getText,
   getActiveCfgForDir: churchOpts.activeCfgForDir,
 };
-globalThis.BelJarCurrentEditor = { getDocumentId: () => 'rb' };
+globalThis.CurrentEditor = { getDocumentId: () => 'rb' };
 
 expect(
   !canFindReferences(view, usePos),

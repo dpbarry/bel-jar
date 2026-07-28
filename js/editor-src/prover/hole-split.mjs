@@ -23,12 +23,27 @@ import { reIdentDollarHashExact } from './ident.mjs';
 // or a bare `nat`. Split it into the context part (before the turnstile, may be
 // empty) and the conclusion (after). Returns { ctx, concl } or null when there's
 // no contextual wrapper (a plain computation type we don't case-split here).
+// Does the bracket opening `t` close exactly at the final character?
+function closesAtEnd(t, open, close) {
+  if (t[0] !== open) return false;
+  let depth = 0;
+  for (let i = 0; i < t.length; i += 1) {
+    if (t[i] === open) depth += 1;
+    else if (t[i] === close) {
+      depth -= 1;
+      if (depth === 0) return i === t.length - 1;
+    }
+  }
+  return false;
+}
+
 export function decomposeContextual(typeStr) {
   const t = String(typeStr == null ? '' : typeStr).trim();
   if (!t) return null;
-  // Strip one outer [ … ] (computation) or ( … ) (meta) box when a turnstile is present.
-  const boxed = (t[0] === '[' && t[t.length - 1] === ']')
-    || (t[0] === '(' && t[t.length - 1] === ')');
+  // Strip one outer [ … ] (computation) or ( … ) (meta) box when a turnstile is
+  // present. The opener must CLOSE at the last char: `[|- nat] -> [|- nat]` opens
+  // and ends with brackets but is an arrow between two boxes, not one box.
+  const boxed = closesAtEnd(t, '[', ']') || closesAtEnd(t, '(', ')');
   if (boxed) {
     const inner = t.slice(1, -1);
     const turn = inner.search(/[|⊢]|\|-/);
@@ -50,6 +65,37 @@ export function headOfConclusion(conclStr) {
   if (!t) return null;
   const m = t.match(/^([\p{L}\p{S}_][^\s(]*)/u);
   return m ? m[1] : null;
+}
+
+// Result type-head of a signature (last segment of the arrow spine).
+export function resultHeadOfType(typeStr) {
+  const t = String(typeStr || '').trim();
+  if (!t) return null;
+  const boxed = decomposeContextual(t);
+  const inner = boxed ? boxed.concl : t;
+  const parts = splitArrowSpineText(inner);
+  const last = parts.length ? parts[parts.length - 1] : inner;
+  return headOfConclusion(last);
+}
+
+// Domain type at arrow index (fn-param peeling from a comp signature).
+export function domainAtArrowIndex(typeStr, index) {
+  const parts = splitArrowSpineText(String(typeStr || '').trim());
+  if (!parts.length) return index === 0 ? String(typeStr || '').trim() || null : null;
+  if (index < 0 || index >= parts.length - 1) return null;
+  return parts[index];
+}
+
+// True / false / null (unknown). Null keeps the candidate at J2 — never drops.
+export function typeCompatibleWithGoal(candidateType, goalType) {
+  const cand = String(candidateType || '').trim();
+  const goal = String(goalType || '').trim();
+  if (!cand || !goal) return null;
+  if (assumptionCompatible(cand, goal)) return true;
+  const gh = resultHeadOfType(goal);
+  const ch = resultHeadOfType(cand);
+  if (!gh || !ch) return null;
+  return gh === ch;
 }
 
 function familyOfConstructorName(code, ctorName) {
@@ -297,11 +343,32 @@ function parseTreeFor(src) {
   return memoTree;
 }
 
+// SCOPE of the declaration under proof. Beluga's signature is SEQUENTIAL: the
+// proof under repair sees exactly the declarations that PRECEDE it, and a family
+// declared twice resolves to the last one before that point (a corpus file really
+// does refine `LF eq` mid-file, with proofs on both sides of the boundary). The
+// search runs on ONE declaration at a time, so the scope is a property of the run:
+// `proveProgram` announces it here, and every model query is answered in it.
+let ctorScopeDecl = null;
+export function setConstructorScopeDecl(name) {
+  const n = name ? String(name) : null;
+  if (n !== ctorScopeDecl) { ctorScopeDecl = n; memoCtors = new Map(); }
+}
+// Byte offset where the scope decl starts, or Infinity when there is none / it
+// cannot be located (FAIL OPEN — the whole program stays visible, as before).
+function ctorScopeLimit(src) {
+  if (!ctorScopeDecl) return Infinity;
+  const esc = ctorScopeDecl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`(?:^|\\n)\\s*(?:rec|proof|and\\s+rec|and)\\s+${esc}\\s*:`, 'u').exec(src);
+  return m ? m.index : Infinity;
+}
+
 export function enumerateConstructorsTyped(code, family) {
   if (!family) return [];
   const src = String(code == null ? '' : code);
   const memo = memoFor(src);
   if (memo.ctors.has(family)) return memo.ctors.get(family);
+  const scopeLimit = ctorScopeLimit(src);
   const done = (result) => { memo.ctors.set(family, result); return result; };
   const tree = parseTreeFor(src);
   if (!tree) return done([]);
@@ -329,7 +396,22 @@ export function enumerateConstructorsTyped(code, family) {
     // returning [], multiple Pi binders glommed into one string, or garbage
     // spilling in from the next mutual-block decl) — zero regressions.
     const isCompCtorNode = cur.name === 'CompConstructor';
+    // SHADOWING: a program may DECLARE the same family twice (a refined variant
+    // later in the same file, or in a later file of an assembly). Beluga's scope
+    // rule is last-wins — the proof under repair sees the LAST declaration — but
+    // this walker kept the FIRST (`seen` holds the earliest key), so it enumerated
+    // the SHADOWED family's constructors: wrong arities, wrong arms, and every
+    // split on that family rejected. When a new declaration of `family` opens,
+    // drop what the previous one contributed.
+    if (cur.name === 'LFDatatypeDeclaration' || cur.name === 'InductiveDeclaration'
+      || cur.name === 'StratifiedDeclaration' || cur.name === 'CoinductiveDeclaration') {
+      if (cur.from >= scopeLimit) continue;
+      const hid = firstIdentChild(cur.node);
+      if (hid && slice(hid) === family && out.length) { out.length = 0; seen.clear(); }
+      continue;
+    }
     if (!isCtorNode && !isDecl && !isCompCtorNode) continue;
+    if (cur.from >= scopeLimit) continue;
     const node = cur.node;
     const id = firstIdentChild(node);
     if (!id) continue;
@@ -356,7 +438,9 @@ export function enumerateConstructorsTyped(code, family) {
     const key = name + '::' + spine.result.indices.join(',');
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ name, argTypes: spine.argTypes, result: spine.result });
+    out.push({
+      name, argTypes: spine.argTypes, result: spine.result, piArgIdx: spine.piArgIdx || [],
+    });
   } while (cur.next());
   if (!out.length) {
     for (const c of enumerateInfixLfDeclsText(src, family)) {
@@ -428,12 +512,22 @@ function enumerateInfixLfDeclsText(src, family) {
   return out;
 }
 
-// Walk an LFType's top-level arrow spine, returning explicit argument TYPE texts
-// and the result type decomposed into { head, indices:[arg texts] }. Skips leading
-// `{Pi}` implicit binders (index variables, not term args). `slice` reads node text.
+// Walk an LFType's top-level arrow spine, returning argument TYPE texts and the
+// result type decomposed into { head, indices:[arg texts] }. `slice` reads node
+// text.
+//
+// A `{A:tp}` binder that is WRITTEN in the source is an EXPLICIT argument of the
+// constructor — Beluga's implicit arguments come from FREE uppercase variables
+// and are never spelled — so it must appear in `argTypes`, in position, exactly
+// as the comp-level twin (`compArrowSpineTree`) already does. This walker used to
+// drop them ("index variables, not term args"), which silently built every
+// pattern and every application of such a constructor with the wrong ARITY
+// (`lam (\x. X)` for `lam : {A:tp}(value A -> exp B) -> value (arr A B)`), so the
+// checker rejected the whole case and the theorem had no first move at all.
 function lfArrowSpineTyped(typeNode, slice) {
   const argTypes = [];
-  let node = typeNode;
+  const piArgIdx = [];
+  let node = unwrapParenLFType(typeNode);
   for (let guard = 0; node && guard < 256; guard += 1) {
     const children = [];
     for (let c = node.firstChild; c; c = c.nextSibling) children.push(c);
@@ -443,19 +537,49 @@ function lfArrowSpineTyped(typeNode, slice) {
       const close = children.findIndex((c) => c.name === '}');
       const body = close >= 0 ? children.slice(close + 1).find((c) => c.name === 'LFType') : null;
       if (!body) return null;
-      node = body;
+      piArgIdx.push(argTypes.length);
+      argTypes.push(slice({ from: brace.from, to: children[close].to }));
+      node = unwrapParenLFType(body);
       continue;
     }
     if (!arrow) break; // atomic result
     const lf = children.filter((c) => c.name === 'LFType');
     if (lf.length < 2) break;
     argTypes.push(slice(lf[0]));
-    node = lf[lf.length - 1];
+    node = unwrapParenLFType(lf[lf.length - 1]);
   }
   // `node` is now the (atomic) result type — read its head + index args.
   const result = appHeadAndIndices(node, slice);
   if (!result || !result.head) return null;
-  return { argTypes, result };
+  return { argTypes, result, piArgIdx };
+}
+
+// REDUNDANT GROUPING in the TAIL of an arrow spine: `axiom : (hyp A -> conc A)`
+// and `impl : conc A -> (hyp B -> conc C) -> (hyp (imp A B) -> conc C)` wrap the
+// continuation of the spine in parentheses. Those parens are grouping, not a
+// higher-order argument — the arrows inside them are still the constructor's own
+// arguments. Unwrapping ONLY the tail keeps a genuine HO argument (which is read
+// from the ARGUMENT slot, parens and all) untouched, while recovering the args a
+// parenthesized tail was hiding (the model reported `axiom` as NULLARY).
+function unwrapParenLFType(node) {
+  let n = node;
+  for (let guard = 0; n && guard < 16; guard += 1) {
+    const children = [];
+    for (let c = n.firstChild; c; c = c.nextSibling) children.push(c);
+    if (children.some((c) => c.name === 'ArrowOp' || c.name === '{')) return n;
+    // Descend the single-child LFAppType/LFAtomicType chain to the `( … )` group.
+    let inner = n;
+    let body = null;
+    for (let d = 0; inner && d < 8; d += 1) {
+      const kids = [];
+      for (let c = inner.firstChild; c; c = c.nextSibling) kids.push(c);
+      if (kids.some((c) => c.name === '(')) { body = kids.find((c) => c.name === 'LFType'); break; }
+      inner = kids.find((c) => c.name === 'LFAppType') || kids.find((c) => c.name === 'LFAtomicType');
+    }
+    if (!body) return n;
+    n = body;
+  }
+  return n;
 }
 
 // Decompose an applicative LF type `head a1 a2 …` into { head, indices:[a1,a2,…] }
@@ -646,6 +770,47 @@ export function schemaInfo(code, schemaName) {
   return info;
 }
 
+// Every schema NAME the program declares, in source order.
+export function declaredSchemaNames(code) {
+  const src = String(code == null ? '' : code);
+  const tree = parseTreeFor(src);
+  const out = [];
+  if (!tree) return out;
+  const cur = tree.cursor();
+  do {
+    if (cur.name !== 'SchemaDeclaration') continue;
+    const id = firstChildNamed(cur.node, 'LowerIdentifier');
+    if (id) {
+      const n = src.slice(id.from, id.to);
+      if (n && !out.includes(n)) out.push(n);
+    }
+  } while (cur.next());
+  return out;
+}
+
+// The schema of a context we could NOT name. A theorem may leave its context
+// variables FREE (Beluga quantifies them implicitly — `nsubst : … [g |- neut S[]]
+// → [h |- neut S[]]` never writes `(g:ctx)`), and the checker then reports the
+// context as `g` or `_` with no binder anywhere to read a schema from. Without a
+// schema the split emits no PARAMETER arm, so every case on a family the context
+// admits is coverage-incomplete and is rejected outright — measured as the
+// dominant COVERAGE FAILURE sub-cause.
+//
+// The family alone decides it: if exactly ONE declared schema admits `head`, that
+// is the context's schema. Ambiguity (two schemas admitting the same family) is
+// not guessed — we return null and behave as before.
+export function soleSchemaAdmitting(code, head) {
+  if (!head) return null;
+  let found = null;
+  for (const name of declaredSchemaNames(code)) {
+    const info = schemaInfo(code, name);
+    if (!parameterTermFor(head, info)) continue;
+    if (found) return null; // ambiguous — do not guess
+    found = info;
+  }
+  return found;
+}
+
 // The set of LF type-family heads a schema admits (derived from schemaInfo) — a
 // quick membership check. `ctx = tm` → {tm}; block schema → its field heads.
 export function schemaAdmittedTypes(code, schemaName) {
@@ -779,12 +944,16 @@ export function constructorArgDescriptor(typeText, usedNames = []) {
     }
     bodyType = parts[parts.length - 1].trim();
   }
+  // A WHOLE argument that is itself an explicit `{n:T}` binder (lfArrowSpineTyped
+  // now keeps those in position — they are real, spelled arguments).
+  const wholePi = parsePiBinder(unwrapped);
   return {
     higherOrder: binders.length > 0,
     binders: binders.length,
     binderCtx: binders,
     bodyType,
     explicitPi,
+    piBinder: wholePi,
   };
 }
 
@@ -808,7 +977,27 @@ function parsePiBinder(text) {
   return m ? { name: m[1], type: m[2].trim() } : null;
 }
 
-function splitArrowSpineText(text) {
+// Which explicit `{X:T}` argument positions are ALREADY supplied by a later
+// hypothesis argument's block-projection PAIR? The `{X:name} hyp X A -> …` idiom
+// (str_wtp's `wtp_fwd`) fills BOTH slots from one block (`#b.x #b.h` — the name
+// and its derivation), so emitting the binder separately over-applies the
+// constructor. Returns a Set of indices into `argTypes`.
+function piArgsCoveredByHyp(argTypes) {
+  const covered = new Set();
+  const list = (argTypes || []).map((t) => String(t == null ? '' : t));
+  for (let i = 0; i < list.length; i += 1) {
+    const pi = parsePiBinder(stripOneOuterParen(list[i]));
+    if (!pi || !pi.name) continue;
+    const esc = pi.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(^|[^\\p{L}\\p{N}_'])${esc}([^\\p{L}\\p{N}_']|$)`, 'u');
+    for (let j = i + 1; j < list.length; j += 1) {
+      if (isHypArgType(list[j]) && re.test(list[j])) { covered.add(i); break; }
+    }
+  }
+  return covered;
+}
+
+export function splitArrowSpineText(text) {
   const s = String(text || '').trim();
   const out = [];
   let start = 0;
@@ -1464,8 +1653,10 @@ export function constructorTerm(ctor, fresh, opts = {}) {
   const project = !!(opts.contextProjection && ctxNames.length);
   const lower = project ? freshLowerNamer([...(opts.usedNames || []), ...ctxNames]) : null;
   const blockFresh = freshBlockNamer(opts.usedNames || []);
+  const piCovered = piArgsCoveredByHyp(ctor.args.map((a) => (a && a.piBinder ? `{${a.piBinder.name}:${a.piBinder.type}}` : (a && a.bodyType) || '')));
   for (let ai = 0; ai < ctor.args.length; ai += 1) {
     const arg = ctor.args[ai];
+    if (piCovered.has(ai)) continue;
     if (arg.higherOrder && arg.binders > 0) {
       // Reserve each chosen binder name so a context-colliding binder's rename
       // can't duplicate a sibling binder (`\x. \d. \y. \d.` was the bug).
@@ -1784,48 +1975,91 @@ export function buildIntroSkeleton(goalStr, opts = {}) {
   if (!info) return null;
   if (info.kind !== 'arrows' && info.kind !== 'dependent') return null;
   const t = String(goalStr == null ? '' : goalStr).trim();
-  const mlams = [];
-  let rest = t;
-  for (let guard = 0; guard < 16; guard += 1) {
-    if (rest[0] === '{') {
-      // Depth-scan to the MATCHING close (a dependent binder type may nest braces).
-      let depth = 0;
-      let close = -1;
-      for (let i = 0; i < rest.length; i += 1) {
-        if (rest[i] === '{') depth += 1;
-        else if (rest[i] === '}') { depth -= 1; if (!depth) { close = i; break; } }
-      }
-      if (close < 0) return null; // malformed — no partial skeleton, ever
-      const nm = rest.slice(1, close).split(':')[0].trim();
-      // The binder-name grammar covers EVERY meta-object sort (spec §2 intro):
-      // plain names, substitution variables `$W`, parameter variables `#p`.
-      if (!reIdentDollarHashExact.test(nm)) return null;
-      mlams.push(nm);
-      rest = rest.slice(close + 1).trim();
-      continue;
-    }
-    if (rest[0] === '(') {
-      let depth = 0;
-      let i = 0;
-      for (; i < rest.length; i += 1) {
-        if (rest[i] === '(') depth += 1;
-        else if (rest[i] === ')') { depth -= 1; if (!depth) break; }
-      }
-      rest = rest.slice(i + 1).trim();
-      continue;
-    }
-    break;
-  }
-  if (info.arrows < 1 && !mlams.length) return null;
+  // Walk the goal's SPINE and emit one binder per segment, IN SOURCE ORDER. The
+  // inhabitant's shape is dictated by the type: an explicit `{n:…}` Pi binds with
+  // `mlam n`, an implicit `(g:ctx)` group binds nothing, and every ordinary
+  // premise binds with `fn`. The old skeleton only collected LEADING `{…}`s and
+  // then appended N `fn`s, so a Pi binder that appears MID-SPINE
+  // (`… -> {T:[⊢tp]} TmVar [g,x] [⊢T] -> Sem …`, the `extend`/`weaken` shape)
+  // produced `fn … fn … fn …` — an expression of the wrong shape that the
+  // checker rejects, leaving the theorem with no first move at all.
+  const segs = introSpineSegments(t);
+  if (!segs) return null;
+  if (segs.length < 2) return null; // conclusion only — nothing to introduce
   const used = opts.usedNames || [];
   const fresh = freshNamer(used);
   const preset = Array.isArray(opts.binderNames) ? opts.binderNames : null;
-  const binders = mlams.map((n) => 'mlam ' + n);
-  for (let i = 0; i < info.arrows; i += 1) {
-    const nm = preset && preset[i] ? preset[i] : fresh();
+  const binders = [];
+  let fnIdx = 0;
+  let sawMlam = false;
+  for (const seg of segs.slice(0, -1)) {
+    if (seg.kind === 'implicit') continue; // GENERAL: spine-segment kind tag, not a Beluga name
+    if (seg.kind === 'pi') { // GENERAL: spine-segment kind tag, not a Beluga name
+      if (!reIdentDollarHashExact.test(seg.binder)) return null; // malformed — no partial skeleton, ever
+      binders.push('mlam ' + seg.binder);
+      sawMlam = true;
+      continue;
+    }
+    const nm = preset && preset[fnIdx] ? preset[fnIdx] : fresh();
+    fnIdx += 1;
     binders.push('fn ' + nm);
   }
+  if (!binders.length) return null;
+  if (fnIdx < 1 && !sawMlam) return null;
   return binders.join(' => ') + ' => ?';
+}
+
+// Segment a comp type into its spine: leading/mid-spine dependent binders and
+// ordinary premises, ending with the conclusion. Bracket/brace/paren aware, so
+// arrows inside a boxed or parenthesized premise never split. Returns
+// [{kind:'pi'|'implicit'|'premise', text, binder}] or null when unreadable.
+function introSpineSegments(typeText) {
+  const s = String(typeText == null ? '' : typeText).trim();
+  if (!s) return null;
+  const raw = [];
+  let dSq = 0;
+  let dPar = 0;
+  let dBr = 0;
+  let start = 0;
+  const flush = (end) => { const seg = s.slice(start, end).trim(); if (seg) raw.push(seg); };
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (c === '[') dSq += 1;
+    else if (c === ']') dSq -= 1;
+    else if (c === '(') dPar += 1;
+    else if (c === ')') dPar -= 1;
+    else if (c === '{') dBr += 1;
+    else if (c === '}') dBr -= 1;
+    const top = dSq === 0 && dPar === 0 && dBr === 0;
+    // A dependent binder group that just CLOSED at depth 0 and OPENED this
+    // segment is its own segment (`{T:…} rest` and `(g:ctx) rest` carry no arrow).
+    if (top && (c === '}' || c === ')')) {
+      const head = s.slice(start).trimStart();
+      if (head[0] === '{' || head[0] === '(') { flush(i + 1); start = i + 1; continue; }
+    }
+    if (!top) continue;
+    if (c === '-' && s[i + 1] === '>') { flush(i); start = i + 2; i += 1; } else if (c === '→') { flush(i); start = i + 1; }
+  }
+  flush(s.length);
+  if (!raw.length) return null;
+  return raw.map((text) => {
+    if (text[0] === '{') {
+      const close = text.indexOf('}');
+      const binder = (close > 0 ? text.slice(1, close) : text.slice(1)).split(':')[0].trim();
+      return { kind: 'pi', text, binder };
+    }
+    // A `(…)` group is an IMPLICIT binder (`(g:ctx)`) only when it declares a
+    // name of a bare schema/type — no arrow, no box, no turnstile inside. A
+    // parenthesized FUNCTION premise (`({T:…} TmVar … -> Sem …)`) is a premise
+    // and must get its own `fn`.
+    if (text[0] === '(' && text[text.length - 1] === ')') {
+      const inner = text.slice(1, -1);
+      if (inner.includes(':') && !/->|→|\||⊢|\[/.test(inner)) {
+        return { kind: 'implicit', text, binder: (inner.split(':')[0] || '').trim() };
+      }
+    }
+    return { kind: 'premise', text };
+  });
 }
 
 // ── fill: candidate inhabiting terms for a hole's GOAL ──────────────────────
@@ -1840,22 +2074,119 @@ export function buildIntroSkeleton(goalStr, opts = {}) {
 // `hole` is the parsed hole ({ goal, ctx, meta }). `code` is the assembled program
 // (for constructor lookup). Returns an array of boxed term strings (e.g.
 // `[g |- #p.h[..]]`), possibly empty.
+// Byte offset of a hole's (1-based line, 1-based col).
+function offsetOfLineCol(code, line, col) {
+  if (!(line > 0)) return -1;
+  const lines = String(code || '').split('\n');
+  if (line > lines.length) return -1;
+  let off = 0;
+  for (let i = 0; i < line - 1; i += 1) off += lines[i].length + 1;
+  return off + Math.max(0, (col || 1) - 1);
+}
+
+// Is the LEAD context variable of `ctxStr` bound in the proof BODY before the
+// hole? Only a body binder makes it writable: an `mlam g`, or a case-arm pattern
+// (a pattern's context is a binding occurrence). An occurrence in the theorem's
+// TYPE does not count — that is exactly the implicit-binder case. Fail-open:
+// when the body region cannot be located, treat the name as writable (the old
+// behaviour), so this can only ever remove a spelling we know to be dead.
+function contextWritableAt(code, hole, ctxStr) {
+  const lead = String(ctxStr || '').split(',')[0].trim();
+  if (!lead || !/^[\p{L}_][\p{L}\p{N}_']*$/u.test(lead)) return true;
+  const src = String(code || '');
+  const off = offsetOfLineCol(src, hole && hole.line, hole && hole.col);
+  if (off < 0) return true;
+  // The enclosing declaration's BODY starts after its `=`; scan back to the decl
+  // head, then forward to the first standalone `=`.
+  const head = src.lastIndexOf('\nrec ', off);
+  const head2 = src.lastIndexOf('\nproof ', off);
+  const start = Math.max(head, head2);
+  if (start < 0) return true;
+  const eq = src.indexOf('=', start);
+  if (eq < 0 || eq > off) return true;
+  // The TOTALITY PRAGMA is not part of the proof term and routinely names the
+  // context (`/ total d (ndhil g a d) /`) — counting it would call every such
+  // context writable, which is exactly the case this guard exists for. Comments
+  // likewise (invariant 18).
+  const body = src.slice(eq + 1, off)
+    .replace(/%\{[\s\S]*?\}%/g, ' ')
+    .replace(/%[^\n]*/g, ' ')
+    .replace(/^\s*\/[^/]*\//, ' ');
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}_'])${lead.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\p{L}\\p{N}_']|$)`, 'u');
+  return re.test(body);
+}
+
+// Replace the LEAD context variable with `_`, keeping any declared tail binders
+// (`g, x:tm A` → `_, x:tm A`). An empty context stays empty.
+function underscoreLeadCtx(ctxStr) {
+  const s = String(ctxStr || '').trim();
+  if (!s) return s;
+  const parts = s.split(',');
+  const lead = parts[0].trim();
+  if (!/^[\p{L}_][\p{L}\p{N}_']*$/u.test(lead)) return s;
+  parts[0] = '_';
+  return parts.join(',');
+}
+
 export function fillCandidates(hole, code) {
   const out = [];
   const seen = new Set();
   const push = (t) => { if (t && !seen.has(t)) { seen.add(t); out.push(t); } };
 
   const goalStr = unwrapExtraGoalBox(hole && hole.goal);
+
+  // THE AXIOM RULE comes FIRST and is independent of the goal's box structure —
+  // a bare ctype goal (`Extends [g] [h]`) has no contextual decomposition at
+  // all, so it used to fall out of this function before any candidate was
+  // proposed. See assumptionCompatible: exact spellings first, then the ones
+  // compatible only up to the goal's inferred (`_`) slots.
+  // An EXACT assumption is certain and leads; one that matches only up to the
+  // goal's inferred (`_`) slots is a guess and is appended LAST (`looseAxioms`),
+  // after every structurally-derived fill.
+  const looseAxioms = [];
+  for (const c of (hole.ctx || [])) {
+    if (c && c.name && typesMatchModuloSpacing(c.type, goalStr)) push(c.name);
+  }
+  for (const c of (hole.ctx || [])) {
+    if (c && c.name && !seen.has(c.name) && assumptionCompatible(c.type, goalStr)) looseAxioms.push(c.name);
+  }
+
   let decomp = decomposeContextual(goalStr);
   if (!decomp) {
     const rg = resultGoalParts(hole);
     if (rg) decomp = { ctx: rg.ctx, concl: goalStr, boxed: false };
   }
-  if (!decomp) return out;
-  const ctxStr = decomp.ctx;
+  if (!decomp) { looseAxioms.forEach(push); return out; }
+  // WRITABILITY of the goal's CONTEXT (invariant 11, the context half). A theorem
+  // may bind its context IMPLICITLY — `rec ndhil : (g:ndhilCtx) [g |- nd A] → …`
+  // binds `g` in the TYPE but not in the BODY. The hole report still prints the
+  // context as `g`, so every fill we spell `[g |- …]` is rejected outright ("This
+  // free context variable is illegal") — measured as 121 rejections over 35
+  // targets, and it kills every fill at a PRE-SPLIT hole. A case ARM binds the
+  // name (its pattern is a binding occurrence), which is why the same spelling
+  // works after a split. `_` is the writable spelling for a context the checker
+  // will infer: verified natively — at a pre-split hole `[g |- k]` dies on the
+  // free-context error while `[_ |- k]` gets through to ordinary type checking.
+  const ctxStr = contextWritableAt(code, hole, decomp.ctx) ? decomp.ctx : underscoreLeadCtx(decomp.ctx);
   const goalHead = headOfConclusion(decomp.concl);
   if (!goalHead) return out;
   const box = (term) => boxPattern(ctxStr, term);
+
+  // (0) THE AXIOM RULE, META-CONTEXT HALF. Every case-split puts its
+  //     sub-derivations in cD, so a goal is very often inhabited by one of them
+  //     (`[g ⊢ aeq M N]` closed by `X1 : (g ⊢ aeq M N)` — spelled `[g ⊢ X1]`).
+  //     Same discipline as the comp half above: exact spellings lead, spellings
+  //     compatible only up to the goal's inferred `_` slots go last. Parameter
+  //     and substitution variables are handled by (1) below, not here.
+  //     (A meta's type is printed with `( … )`, the goal's with `[ … ]`, so
+  //     "exact" is compared on the DECOMPOSED parts, not the raw text.)
+  for (const m of (hole.meta || [])) {
+    if (!m || !m.name || !/^[\p{L}_]/u.test(m.name)) continue;
+    const md = decomposeContextual(m.type);
+    if (md && typesMatchModuloSpacing(md.concl, decomp.concl)
+      && typesMatchModuloSpacing(md.ctx || '_', ctxStr || '_')) push(box(m.name));
+    else if (assumptionCompatible(m.type, goalStr)) looseAxioms.push(box(m.name));
+  }
 
   // (1) A context parameter projection `#p.field[..]` whose field type-head matches
   //     the goal head — the str_hyp case. We read the parameter variable + its block
@@ -1909,19 +2240,24 @@ export function fillCandidates(hole, code) {
 
   // (2) A computation-context variable whose boxed type IS the goal — return it
   //     directly (e.g. `fn n => n`). The comp var holds a contextual object.
+  //     (Subsumed by the axiom rule above; `push` dedupes.)
   for (const c of (hole.ctx || [])) {
     if (c && c.name && typesMatchModuloSpacing(c.type, hole.goal)) push(c.name);
-  }
-
-  // (3) Nullary constructors of the goal head — closes str_lin base cases where the
-  //     checker has unfolded the goal to a concrete index (Y[..] vs bare Y).
-  for (const ctor of enumerateConstructorsTyped(code, goalHead)) {
-    if (!ctor.argTypes.length) push(box(ctor.name));
   }
 
   // A COMPUTATION-family goal (`Result [g ⊢ P] …`) is filled by a BARE comp
   // constructor application over boxed arguments — never re-boxed.
   const compFamily = isCTypeFamily(code, goalHead);
+
+  // (3) Nullary constructors of the goal head — closes str_lin base cases where the
+  //     checker has unfolded the goal to a concrete index (Y[..] vs bare Y).
+  //     A CTYPE constructor is a COMP-level value and must NEVER be boxed (the
+  //     M3/M4 rule): the engine was emitting `[_ ⊢ Ae_v]` for the nullary ctype
+  //     constructor `Ae_v`, which is ill-formed by construction and cost a
+  //     checker round-trip at every ctype goal that has one.
+  for (const ctor of enumerateConstructorsTyped(code, goalHead)) {
+    if (!ctor.argTypes.length) push(compFamily ? ctor.name : box(ctor.name));
+  }
 
   // (4) Type-directed CONSTRUCTOR SYNTHESIS — inhabit the goal from constructors of
   //     its head, filling arguments with in-scope hypotheses (index-matched).
@@ -2035,6 +2371,7 @@ export function fillCandidates(hole, code) {
   }
   }
 
+  looseAxioms.forEach(push);
   return out;
 }
 
@@ -2061,10 +2398,12 @@ export function synthesizeFills(goalConcl, hole, code) {
     const descs = ctor.argTypes.map((at) => constructorArgDescriptor(at, []));
     const ctorHasHo = descs.some((d) => d.higherOrder);
     const hypUsed = [...(hole.meta || []).map((m) => m.name), ...(hole.ctx || []).map((c) => c.name)];
+    const piCovered = piArgsCoveredByHyp(ctor.argTypes);
     const argTerms = [];
     let ok = true;
     for (let ai = 0; ai < ctor.argTypes.length; ai += 1) {
       const at = ctor.argTypes[ai];
+      if (piCovered.has(ai)) continue;
       if (/^\s*\{/.test(at)) {
         argTerms.push('_');
         continue;
@@ -2449,4 +2788,57 @@ function splitTopLevel(s, sep) {
 function typesMatchModuloSpacing(a, b) {
   const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
   return !!norm(a) && norm(a) === norm(b);
+}
+
+// ── The INIT / ASSUMPTION rule, up to unifiability ──────────────────────────
+// Sequent calculus's axiom — `Γ, x:A ⊢ A` closes by `x` — is the cheapest and
+// most decisive move any proof search has. The engine carried it only as STRING
+// equality, which is strictly weaker than the rule: the checker prints a hole's
+// goal with `_` wherever it will still INFER an index or a context, so a
+// hypothesis reported `Extends [g] [g1]` never matched a goal printed
+// `Extends [_] [g1]`, and every branch that closes by an assumption produced NO
+// candidate at all.
+//
+// We cannot decide the checker's unification inside our model, so the rule is
+// stated as an OVER-APPROXIMATION of unifiability and the checker arbitrates the
+// candidate — the same dual-spelling doctrine the split annotations use. Two
+// types are compatible when they have the same shape (both boxed or both bare,
+// neither a function type), the same rigid family head, the same arity, and no
+// index position where BOTH sides are RIGID-GROUND and different. Everything
+// flexible (a `_`, a metavariable, a parameter/substitution variable, a
+// context) is unjudgeable and therefore passes.
+const RIGID_GROUND_RE = /(^|[^\p{L}\p{N}_'])\p{Lu}/u;
+function rigidGroundIndex(text) {
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return false;
+  if (/[_?[\]#$\\]/.test(t)) return false; // inferred slot, box/context, parameter, subst, binder
+  return !RIGID_GROUND_RE.test(t);         // no metavariable occurrence
+}
+const hasFunctionArrow = (s) => /->|→|\{/.test(String(s == null ? '' : s));
+
+export function assumptionCompatible(hypType, goalType) {
+  const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  const h0 = norm(hypType);
+  const g0 = norm(goalType);
+  if (!h0 || !g0) return false;
+  if (h0 === g0) return true;
+  // A function/Pi-typed hypothesis does not inhabit an atomic goal (it would
+  // need arguments — that is the LEMMA move, not the axiom), and vice versa.
+  if (hasFunctionArrow(h0) || hasFunctionArrow(g0)) return false;
+  const hb = decomposeContextual(h0);
+  const gb = decomposeContextual(g0);
+  if (!hb !== !gb) return false; // boxed object vs bare comp value — different shapes
+  const ha = parseAppType(hb ? hb.concl : h0);
+  const ga = parseAppType(gb ? gb.concl : g0);
+  if (!ha || !ga) return false;
+  if (ha.head !== ga.head) return false;
+  if (!/^[\p{L}\p{S}_]/u.test(ha.head)) return false; // flexible head — not a family
+  if (ha.indices.length !== ga.indices.length) return false;
+  for (let i = 0; i < ha.indices.length; i += 1) {
+    const a = norm(ha.indices[i]);
+    const b = norm(ga.indices[i]);
+    if (a === b) continue;
+    if (rigidGroundIndex(a) && rigidGroundIndex(b)) return false;
+  }
+  return true;
 }

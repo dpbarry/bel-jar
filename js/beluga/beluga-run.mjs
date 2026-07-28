@@ -129,7 +129,9 @@ var belugaBusy = false;
 
   // Remap locations back to real files/lines, then rename the synthetic
   // "input.bel" the checker echoes (status lines, single-file references).
-  function applyOutputNaming(raw, spans, prelude, displayName) {
+  // `statusName` (e.g. &a.bel) stamps Type Reconstruction / Holes chatter only —
+  // File "…" paths keep the plain displayName.
+  function applyOutputNaming(raw, spans, prelude, displayName, statusName) {
     var out = String(raw == null ? '' : raw);
     if (spans) {
       out = ProjectSource.remapLocations(out, spans);
@@ -137,7 +139,28 @@ var belugaBusy = false;
       out = ProjectSource.shiftCheckerOutput(out, prelude).text;
     }
     if (displayName) out = out.replace(/input\.bel/g, displayName);
+    if (statusName && typeof ReplRunCmd !== 'undefined' && ReplRunCmd.rewriteRunStatusLabel) {
+      out = ReplRunCmd.rewriteRunStatusLabel(out, displayName || 'input.bel', statusName);
+    } else if (statusName && displayName && statusName !== displayName) {
+      out = out.replace(
+        new RegExp(
+          '(##\\s*(?:Type Reconstruction (?:begin|done)|Holes)\\s*:\\s*)'
+            + displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            + '(\\s*##)',
+          'gi',
+        ),
+        '$1' + statusName + '$2',
+      );
+    }
     return out;
+  }
+
+  function statusNameForFilePath(absPath, amalgam) {
+    if (typeof ReplRunCmd !== 'undefined' && ReplRunCmd.formatRunStatusName) {
+      return ReplRunCmd.formatRunStatusName(absPath, activeCwd(), !!amalgam);
+    }
+    var shown = absPath ? baseName(absPath) : 'input.bel';
+    return amalgam ? '&' + shown : shown;
   }
 
   function makeGetText() {
@@ -238,14 +261,35 @@ var belugaBusy = false;
 
   function formatLoadError(e, spans, prelude, displayName) {
     var msg = e && e.message ? String(e.message) : String(e);
-    return applyOutputNaming(msg, spans, prelude, displayName);
+    // Errors stay on real paths — never stamp amalgam `&` into File "…" lines.
+    return applyOutputNaming(msg, spans, prelude, displayName, null);
   }
 
   function suiteNameFromCfg(cfgPath) {
     return baseName(cfgPath).replace(/\.cfg$/i, '') || 'suite';
   }
 
+  function activeCwd() {
+    var id = Persist.getActiveFileId && Persist.getActiveFileId();
+    var path = id ? filePathOf(id) : null;
+    return path && typeof ProjectSource !== 'undefined' && ProjectSource.dirOf
+      ? ProjectSource.dirOf(path)
+      : '';
+  }
+
+  function captionForFilePath(absPath, amalgam) {
+    if (typeof ReplRunCmd !== 'undefined' && ReplRunCmd.formatRunCaption) {
+      return ReplRunCmd.formatRunCaption(absPath, activeCwd(), !!amalgam);
+    }
+    var shown = absPath ? baseName(absPath) : 'input.bel';
+    return amalgam ? 'run &' + shown : 'run ' + shown;
+  }
+
   function beginRunTurn(caption) {
+    var text = caption != null ? String(caption).trim() : '';
+    if (text && typeof ReplCommands !== 'undefined' && ReplCommands.recordHistory) {
+      ReplCommands.recordHistory(text);
+    }
     if (typeof ReplStream !== 'undefined' && ReplStream.beginTurn) {
       ReplStream.beginTurn(caption);
     }
@@ -267,6 +311,9 @@ var belugaBusy = false;
     }
     var caption = opts.caption || ('run ' + (opts.displayName || 'input.bel'));
     beginRunTurn(caption);
+    if (typeof ReplOutput !== 'undefined' && ReplOutput.beginRunSkeleton) {
+      ReplOutput.beginRunSkeleton();
+    }
     projectSpans = spans || null;
     var lineCount = code.split('\n').length;
     var t0 = performance.now();
@@ -278,11 +325,11 @@ var belugaBusy = false;
     if (opts.pinned) hooks.pinned = true;
     try {
       var raw = await BelugaClient.load(code, hooks);
-      // applyOutputNaming already remaps via `spans`; appendRunOutput (unlike
+      // applyOutputNaming already remaps via `spans`; resolveRunOutput (unlike
       // appendBelugaResponse) does NOT remap again, so naming happens once.
-      raw = applyOutputNaming(raw, spans, opts.prelude, opts.displayName);
+      raw = applyOutputNaming(raw, spans, opts.prelude, opts.displayName, opts.statusName);
       if (!String(raw).trim()) {
-        var name = opts.displayName || 'input.bel';
+        var name = opts.statusName || opts.displayName || 'input.bel';
         raw = '## Type Reconstruction begin: ' + name + ' ##\n## Type Reconstruction done:  ' + name + ' ##';
       } else if (typeof BelEditor !== 'undefined'
           && typeof BelEditor.normalizeUnlocatedBelugaRunOutput === 'function') {
@@ -293,12 +340,19 @@ var belugaBusy = false;
           prelude: opts.prelude || null,
         });
       }
-      ReplOutput.appendRunOutput(raw);
+      if (typeof ReplOutput !== 'undefined' && ReplOutput.resolveRunOutput) {
+        await ReplOutput.resolveRunOutput(raw);
+      } else {
+        ReplOutput.appendRunOutput(raw);
+      }
       setBelugaBusy(false);
       void RunProgress.complete({ lines: lineCount, ms: performance.now() - t0 });
     } catch (e) {
       setBelugaBusy(false);
       RunProgress.fail();
+      if (typeof ReplOutput !== 'undefined' && ReplOutput.dismissRunSkeleton) {
+        await ReplOutput.dismissRunSkeleton();
+      }
       if (!isCancelled(e)) {
         Toasts.error(formatLoadError(e, spans, opts.prelude, opts.displayName), { duration: 0, closable: true });
       }
@@ -348,13 +402,15 @@ var belugaBusy = false;
     var cfgPath = cfgPathForId(id);
     if (cfgPath) return runModuleCfg(cfgPath);
     var name = fileNameOf(id);
+    var path = filePathOf(id) || name;
     var assembled = ProjectSource.assembleCheckerCode(makeGetText()(id), null);
     // pinned: explicit run scope — code may differ from the active editor buffer
     // (explorer/tab context menu). Without this, worker loads are cancelled as stale.
     return runLoad(assembled.code, null, {
       pinned: true,
       displayName: name,
-      caption: 'run ' + name,
+      statusName: statusNameForFilePath(path, false),
+      caption: captionForFilePath(path, false),
     });
   }
 
@@ -368,17 +424,15 @@ var belugaBusy = false;
     var files = Persist.listFiles();
     var getText = makeGetText();
     var name = fileNameOf(id);
-    var suiteCfg = ProjectSource.cfgPathForActive(files, id, getText);
-    var caption = suiteCfg
-      ? 'run suite ' + suiteNameFromCfg(suiteCfg) + ' up to ' + name
-      : 'run up to ' + name;
+    var path = filePathOf(id) || name;
     var prelude = ProjectSource.buildPrelude(files, id, getText);
     var assembled = ProjectSource.assembleCheckerCode(getText(id), prelude);
     return runLoad(assembled.code, null, {
       pinned: true,
       prelude: assembled.prelude,
       displayName: name,
-      caption: caption,
+      statusName: statusNameForFilePath(path, true),
+      caption: captionForFilePath(path, true),
     });
   }
 
@@ -483,6 +537,9 @@ var belugaBusy = false;
         : 'run ' + job.dev.name;
       lines += job.code.split('\n').length;
       beginRunTurn(caption);
+      if (typeof ReplOutput !== 'undefined' && ReplOutput.beginRunSkeleton) {
+        ReplOutput.beginRunSkeleton();
+      }
       try {
         var raw = await BelugaClient.load(job.code, { onProgress: belugaProgressHook, pinned: true });
         projectSpans = job.spans; // last development stays the REPL context
@@ -490,15 +547,26 @@ var belugaBusy = false;
         if (!String(raw).trim()) {
           raw = '## Type Reconstruction begin: ' + job.dev.name + ' ##\n## Type Reconstruction done:  ' + job.dev.name + ' ##';
         }
-        ReplOutput.appendRunOutput(raw);
+        if (typeof ReplOutput !== 'undefined' && ReplOutput.resolveRunOutput) {
+          await ReplOutput.resolveRunOutput(raw);
+        } else {
+          ReplOutput.appendRunOutput(raw);
+        }
       } catch (e) {
         if (isCancelled(e)) {
+          if (typeof ReplOutput !== 'undefined' && ReplOutput.dismissRunSkeleton) {
+            await ReplOutput.dismissRunSkeleton();
+          }
           endRunTurn();
           break;
         }
         failures++;
         var msg = applyOutputNaming(e && e.message ? String(e.message) : String(e), job.spans, null, job.dev.name);
-        ReplOutput.appendRunOutput(msg);
+        if (typeof ReplOutput !== 'undefined' && ReplOutput.resolveRunOutput) {
+          await ReplOutput.resolveRunOutput(msg);
+        } else {
+          ReplOutput.appendRunOutput(msg);
+        }
       } finally {
         endRunTurn();
       }

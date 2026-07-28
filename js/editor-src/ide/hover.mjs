@@ -435,11 +435,16 @@ const closeHoverOffToken = ViewPlugin.fromClass(class {
       if (!hasHoverTooltips(view.state)) return;
       if (pointerLeftHoverTarget(view, event)) view.dispatch({ effects: closeHoverTooltips });
     };
+    this.onScroll = () => {
+      if (hasHoverTooltips(view.state)) view.dispatch({ effects: closeHoverTooltips });
+    };
     view.dom.addEventListener('mousemove', this.onMove);
+    view.scrollDOM.addEventListener('scroll', this.onScroll);
   }
 
   destroy() {
     this.view.dom.removeEventListener('mousemove', this.onMove);
+    this.view.scrollDOM.removeEventListener('scroll', this.onScroll);
   }
 });
 

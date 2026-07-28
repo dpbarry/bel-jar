@@ -177,7 +177,7 @@
   --menu-item-radius: 2px;
   --menu-pad: 0.3rem;
   --menu-bg: light-dark(hsl(220, 22%, 99%), hsl(222, 15%, 8%));
-  --menu-border: light-dark(hsl(220, 13%, 75%), hsl(220, 10%, 30%));
+  --menu-border: light-dark(hsl(220, 13%, 75%), hsl(220, 10%, 25%));
   --menu-shadow: var(--shadow-popover);
   --menu-item-fg: var(--ui-fg);
   --menu-item-fg-hover: var(--accent-high);

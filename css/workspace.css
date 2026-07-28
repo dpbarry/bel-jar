@@ -137,4 +137,8 @@ body.workspace-resizing * {
   color: var(--accent-high);
 }
 
+.sidebar a.icon-btn {
+  text-decoration: none;
+}
+
 

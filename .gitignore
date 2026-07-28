@@ -8,9 +8,6 @@ node_modules/
 scratch/*
 !scratch/README.md
 
-# Separate Beluga marketing site (not BelJar) — keep local, don't ship here
-beluga-site/
-
 # Corpus masking-harness run outputs (regenerate via `npm run corpus`/`heldout`)
 results/corpus/
 

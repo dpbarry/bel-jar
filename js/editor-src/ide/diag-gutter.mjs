@@ -249,14 +249,17 @@ export function suitePreludeLineTooltips({ getOverlayDiags = null, settlementTic
       view.dom.appendChild(this.anchor);
       this.onMove = (e) => this.handleMove(e);
       this.onLeave = () => this.clearHover();
+      this.onScroll = () => this.clearHover();
       view.dom.addEventListener('mousemove', this.onMove);
       view.dom.addEventListener('mouseleave', this.onLeave);
+      view.scrollDOM.addEventListener('scroll', this.onScroll);
     }
 
     destroy() {
       if (this._refreshRaf) cancelAnimationFrame(this._refreshRaf);
       this.view.dom.removeEventListener('mousemove', this.onMove);
       this.view.dom.removeEventListener('mouseleave', this.onLeave);
+      this.view.scrollDOM.removeEventListener('scroll', this.onScroll);
       this.clearHover();
       this.anchor.remove();
     }
@@ -312,7 +315,11 @@ export function suitePreludeLineTooltips({ getOverlayDiags = null, settlementTic
           return;
         }
       }
-      if (u.viewportChanged || u.geometryChanged || tickChanged) this.scheduleRefresh();
+      if (u.viewportChanged) {
+        this.clearHover();
+        return;
+      }
+      if (u.geometryChanged || tickChanged) this.scheduleRefresh();
     }
   });
 }

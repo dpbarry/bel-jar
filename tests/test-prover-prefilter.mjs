@@ -152,4 +152,30 @@ expect(movePrefilterOk({ kind: 'recurse', text: 'let X = f [g |- " i1] in ?' }, 
 expect(movePrefilterOk({ kind: 'fill', text: '[g |- eq_app D1 D2]' }, H('[g |- eq N M]'), CODE) === true,
   'quote-free candidates are untouched by the lexical guard');
 
+// ── 6. Lexical guard #2: a PARAMETER (`#p`) or SUBSTITUTION (`$S`) variable is a
+// META object. Cited bare in a computation-level argument slot it is a PARSE
+// error, never a type error, so such a candidate can never certify (measured:
+// 171 wasted checks across 26 targets, `Ae_a X #p`-shaped). The guard must reject
+// exactly those, and must NOT touch the many legal bare-looking positions:
+// inside a box, a projection, an `mlam` binder list, or a `{#p : …}` binder. ──
+const G = H('[g |- eq N M]', [], [{ name: 'g', type: 'ctx' }]);
+for (const [text, reject] of [
+  ['Ae_a X #p', true],           // the measured shape
+  ['Ae_a #p #p', true],
+  ['lemma #p', true],
+  ['f $S', true],
+  ['[g |- #p]', false],          // boxed — legal
+  ['[g |- #p.1]', false],        // projection inside a box — legal
+  ['mlam g, #p => ?', false],    // binder list — legal
+  ['mlam #p => let [g |- #q] = e in ?', false],
+  ['let [g |- #p.2] = e in [g |- H]', false],
+  ['{#p : #[g |- tm A[]]} foo', false],
+  ['case [g |- #p] of | [g |- x] => ?', false],
+  ['[g |- M[$S]]', false],       // substitution APPLIED inside a box — legal
+  ['trans [g] e1 e2', false],    // no meta objects at all
+]) {
+  expect(movePrefilterOk({ kind: 'lemma', text }, G, CODE) === !reject,
+    `bare-meta-object guard: ${JSON.stringify(text)} must ${reject ? 'REJECT' : 'PASS'}`);
+}
+
 console.log('OK test-prover-prefilter (sound head + argument-family rules; 75% fill drop measured)');

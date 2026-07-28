@@ -120,6 +120,7 @@ function restore() {
   var output = getOutput();
   if (!output || !stream) return false;
 
+  var ok = false;
   restoring = true;
   try {
     if (stream.endTurn) stream.endTurn();
@@ -144,15 +145,21 @@ function restore() {
     if (typeof snap.scrollTop === 'number') {
       output.scrollTop = snap.scrollTop;
     }
+    if (stream.rebindStamps) stream.rebindStamps(output);
+    else if (stream.migrateLegacyStamps) stream.migrateLegacyStamps(output);
     if (stream.endTurn) stream.endTurn();
-    return collectPersistableNodes(output).length > 0;
+    ok = collectPersistableNodes(output).length > 0;
+    return ok;
   } catch (_) {
     try {
       if (stream && stream.clearExceptLive) stream.clearExceptLive();
     } catch (__) {}
+    ok = false;
     return false;
   } finally {
     restoring = false;
+    // Rewrite snapshot with rebound/retargeted stamp attrs while still deferred.
+    if (ok) scheduleSave();
   }
 }
 

@@ -31,11 +31,31 @@ header {
 /* Match the sidebar column so the first menu button's left edge lands on the
    sidebar's right border (border is inside --sidebar-w via border-box). */
 .header-brand {
+  appearance: none;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   width: var(--sidebar-w);
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.header-brand:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .header-brand:hover .header-logo {
+    color: var(--accent-highest);
+  }
 }
 
 .header-logo {
@@ -43,6 +63,7 @@ header {
   height: var(--header-logo-size);
   flex-shrink: 0;
   color: var(--accent-high);
+  transition: color var(--transition);
 }
 
 .header-menu {
@@ -181,7 +202,7 @@ html.light .theme-toggle .icon-moon {
   display: block;
 }
 
-/* -- Header actions (notifications, theme) -- */
+/* -- Header actions (GitHub, notifications, theme) -- */
 
 .header-end {
   grid-column: 3;
@@ -196,6 +217,16 @@ html.light .theme-toggle .icon-moon {
   .header-end {
     justify-self: end;
   }
+}
+
+.header-end a.icon-btn {
+  text-decoration: none;
+  color: var(--base-high);
+}
+
+.header-github svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
 }
 
 .notif-bell svg {

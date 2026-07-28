@@ -25,6 +25,23 @@ var replHistory = [];
     return replHistory.slice();
   }
 
+  /** Record a transmitted command for ↑/↓ (typed REPL or shell actions like Run). */
+  function recordHistory(raw) {
+    if (raw == null) return;
+    var s = String(raw).trim();
+    if (!s) return;
+    loadHistory();
+    replHistoryIndex = null;
+    replHistory.push(s);
+    var cap = typeof Persist !== 'undefined' ? Persist.readStoredReplHistoryCap() : 0;
+    if (cap > 0 && replHistory.length > cap) {
+      replHistory.splice(0, replHistory.length - cap);
+    } else if (!cap && replHistory.length > 500) {
+      replHistory.splice(0, replHistory.length - 500);
+    }
+    persistHistory();
+  }
+
   function getCmdInput() {
     if (typeof ReplStream !== 'undefined' && ReplStream.getCommandInput) {
       return ReplStream.getCommandInput();
@@ -103,26 +120,57 @@ var replHistory = [];
 
     var rawForHistory = cmd;
     if (!cmd.startsWith('%:')) cmd = '%:' + cmd;
-    replHistoryIndex = null;
 
-    var bareCmd = rawForHistory.replace(/^%:\s*/, '').trim().toLowerCase();
+    var bareText = rawForHistory.replace(/^%:\s*/, '').trim();
+    var bareCmd = bareText.toLowerCase();
     var isHelp = bareCmd === 'help';
     var parsed = parseBelugaCmd(cmd);
     var verb = parsed.verb;
 
     var echoOn = typeof Persist === 'undefined' || Persist.readStoredReplEcho();
+
+    // BelJar-local `run` — BelugaRun owns turn + history on success.
+    if (/^run$/i.test(verb)) {
+      cmdInputEl.value = '';
+      replHistoryIndex = null;
+      var runResult = { ok: false, error: 'Run is not available.' };
+      try {
+        if (typeof ReplRunCmd !== 'undefined' && ReplRunCmd.executeRunCommand) {
+          runResult = await ReplRunCmd.executeRunCommand(bareText);
+        }
+      } catch (runErr) {
+        runResult = {
+          ok: false,
+          error: runErr && runErr.message ? String(runErr.message) : String(runErr),
+        };
+      }
+      if (runResult && runResult.ok) {
+        if (typeof ReplStream !== 'undefined' && ReplStream.focusLive) {
+          ReplStream.focusLive();
+        }
+        return;
+      }
+      beginCmdTurn(echoOn ? formatShownCmd(rawForHistory) : '');
+      recordHistory(rawForHistory);
+      try {
+        if (typeof ReplOutput !== 'undefined') {
+          ReplOutput.appendOutput(runResult && runResult.error
+            ? String(runResult.error)
+            : 'Run failed.', 'error');
+        }
+      } finally {
+        endCmdTurn();
+        if (typeof ReplStream !== 'undefined' && ReplStream.focusLive) {
+          ReplStream.focusLive();
+        }
+      }
+      return;
+    }
+
     beginCmdTurn(echoOn ? formatShownCmd(rawForHistory) : '');
 
     cmdInputEl.value = '';
-    loadHistory();
-    replHistory.push(rawForHistory);
-    var cap = typeof Persist !== 'undefined' ? Persist.readStoredReplHistoryCap() : 0;
-    if (cap > 0 && replHistory.length > cap) {
-      replHistory.splice(0, replHistory.length - cap);
-    } else if (!cap && replHistory.length > 500) {
-      replHistory.splice(0, replHistory.length - 500);
-    }
-    persistHistory();
+    recordHistory(rawForHistory);
 
     try {
       if (isHelp) {
@@ -201,5 +249,6 @@ var replHistory = [];
     historyUp: historyUp,
     historyDown: historyDown,
     getHistory: getHistory,
+    recordHistory: recordHistory,
   };
   global.BelJarReplCommands = global.ReplCommands;

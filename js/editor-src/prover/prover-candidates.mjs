@@ -40,6 +40,7 @@ import {
   boxedConclusionHead,
   normalizeCtypeSpelling,
   isCtypeApplication,
+  decreasingArgIndex,
 } from './prover-comp-type.mjs';
 import { withWritableRiskDominated } from './prover-policy.mjs';
 import { letRhsOf } from './prover-captions.mjs';
@@ -481,6 +482,31 @@ export function candidateMoves(hole, code, thm) {
   // descent is the unbounded №1 dimension outside the demand discipline —
   // acceptance is what poisons, so vacuous is vocabulary-only: skipCertify,
   // never accepted, counted as the exhaustion certificate's split taint.
+  // THE INDUCTION SUBJECT IS NEVER VACUOUS. A `/ total v (f _ v) /` measure is the
+  // author DECLARING which argument the induction is on, so a case analysis of that
+  // argument is the induction itself — whatever the demand probe concludes about it.
+  // Measured on `vself` (tapl ch3+arith): with the pragma present the ONLY split,
+  // `case v of`, was tagged vacuous and therefore never certified, so the theorem
+  // reported "no move" with 5 checks; comment the pragma out and the identical split
+  // is accepted and the search runs 6 steps. Adding a totality measure must never
+  // REMOVE the move that measure licenses. Derived from the theorem's own measure —
+  // no name literal, nothing corpus-specific.
+  // WHICH hypothesis is the declared induction subject. Matching the measure's
+  // NAME is useless: `introBinderNames` only supplies source names when the
+  // premise count lines up, so the engine's binders are usually fresh (`X`, `X1`)
+  // and never equal `v`/`e`. The measure designates a POSITION, and the intro
+  // binds the argument premises in declaration order — so the subject is the
+  // decreasing-index entry of the hole's comp context, guarded by the arity
+  // lining up (anything else: no subject, no reordering).
+  const measureSubject = (() => {
+    if (!thm || !thm.compType) return null;
+    const decI = decreasingArgIndex(thm);
+    if (!(decI >= 0)) return null;
+    const argPrems = (thm.compType.premises || []).filter((p) => p && (p.kind === 'box' || p.kind === 'ctype'));
+    const ctx = (hole.ctx || []).filter((c) => c && c.name);
+    if (ctx.length !== argPrems.length || decI >= ctx.length) return null;
+    return String(ctx[decI].name).trim();
+  })();
   let splitDrops = 0;
   for (const sp of splits) {
     if (!demandObs.length) { openSplits.push(sp); continue; }
@@ -504,6 +530,35 @@ export function candidateMoves(hole, code, thm) {
     }
     if (v === 'demanded') demanded.push(sp); // GENERAL: demand-oracle verdict tag, not a Beluga name
     else openSplits.push(sp);
+  }
+  // NOTE (2026-07-27, tried and REVERTED): promoting the measure's declared
+  // induction subject to the FRONT of the split order is sound in principle
+  // (ordering only, nothing dropped) but cost `tapl/ch3+arith+leq#mstep_leq_2`
+  // COMPLETE → a >10-minute search: leading with a different scrutinee changes
+  // which subtree the greedy loop commits to, and this one commits badly. The
+  // wrong-subject evidence that motivated it was ALSO a measurement artifact
+  // (comparing reference binder indices that count `mlam`s against the engine's
+  // numbering over `fn` binders only — corrected, 8/66 differ, not 19). Any retry
+  // needs a real wrong-subject measurement AND a bound on the resulting search.
+  // A vacuous verdict may REORDER the split vocabulary, never EMPTY it (§5.2).
+  // `skipCertify` does empty it in practice: if every split at this hole is tagged
+  // vacuous, no case analysis is ever sent to the checker and the hole reports
+  // "no move" even though the induction the theorem DECLARES is sitting right
+  // there. Measured on tapl `vself`: with `/ total v (vself _ v) /` present the
+  // only split, `case v of`, was dropped vacuous → no-move in 5 checks; with the
+  // pragma commented out the identical split is accepted. Adding a measure must
+  // not remove the move that measure licenses.
+  // Strictly ADDITIVE by construction: this fires only when nothing else is
+  // certifiable, so it can never reorder a hole that already had a live split
+  // (an unrestricted exemption did, and cost `tps` on the differential).
+  if (measureSubject && !demanded.length && openSplits.length
+    && openSplits.every((s) => s.skipCertify)) {
+    const i = openSplits.findIndex((s) => String(s.scrutinee || '').trim() === measureSubject);
+    if (i >= 0) {
+      const { skipCertify, dominated, ...revived } = openSplits[i];
+      openSplits[i] = { ...revived, rationale: `${revived.rationale || ''} (declared induction subject: vacuous probe overridden)` };
+      splitDrops = Math.max(0, splitDrops - 1);
+    }
   }
   // Phase D Stage 2: for a demanded split, try filling arms via synth under each
   // arm's metaTheta. One candidate, one certify — fail-open if nothing fills.
@@ -708,6 +763,14 @@ export function movePrefilterOk(mv, hole, code, pfOpts = {}) {
   // hypotheses named `"i2` leaked into fills and burned 8/31 checks on
   // bs_in_rew_par1 (2026-07-12).
   if (mv && /"/.test(String(mv.text || ''))) return false;
+  // Universal lexical guard #2 (2026-07-25, measured): a PARAMETER (`#p`) or
+  // SUBSTITUTION (`$S`) variable is a META object — it may only be cited inside a
+  // box (`[g |- #p]`) or bound in a binder list (`mlam g, #p =>`, `{#p : …}`).
+  // Written bare in a computation-level argument slot it is not even parseable
+  // ("Failed to parse (mutual) recursive function declaration(s)"), so such a
+  // candidate can NEVER certify. The reject census measured 171 of these across
+  // 26 targets — `Ae_a X #p`, `Ae_a #p #p`, `Ae_a g1 #p` — pure wasted checks.
+  if (mv && bareMetaObjectOutsideBox(String(mv.text || ''))) return false;
   if (!mv || mv.kind !== 'fill') return true;
   const t = String(mv.text || '').trim();
   if (/\?/.test(t)) return true;               // open fill — not a closing inhabitant
@@ -741,9 +804,18 @@ export function movePrefilterOk(mv, hole, code, pfOpts = {}) {
   // Pi-typed constructor shifts the alignment and judging would be UNSOUND. Only
   // judge when the ctor's declaration provably has no `{` and the arity matches
   // exactly; any doubt (decl not found, `{` anywhere in it) → pass to the checker.
+  // POSITIONAL-ALIGNMENT guard. Invariant 5 forbade judging a Pi-typed
+  // constructor because `argTypes` DROPPED explicit `{Pi}` binders, so the term's
+  // args and the declared args were off by one and judging was unsound. Since
+  // 2026-07-25 the binders are kept IN POSITION, so alignment holds and the guard
+  // narrows to what it must still cover: a declaration we cannot locate at all.
+  // The two remaining misalignment sources are already handled — the exact-arity
+  // requirement below catches a term that OMITS a Pi arg supplied by a hyp pair
+  // (`piArgsCoveredByHyp`), and each Pi/HO slot is skipped individually when the
+  // per-argument family check runs.
   const argToks = splitTopLevelArgs(box.concl).slice(1); // drop the head
   if (argToks.length && argToks.length === ctor.argTypes.length
-    && !ctorDeclHasPi(code, termHead)) {
+    && !ctorDeclMissing(code, termHead)) {
     const scope = scopeFamilyMap(hole);
     // S3 pre-filter (2026-07-22, measured): a bare CONTEXT VARIABLE in a
     // first-order LF constructor argument slot is provably dead — a context is
@@ -791,6 +863,28 @@ export function movePrefilterOk(mv, hole, code, pfOpts = {}) {
   return true;
 }
 
+// Is there a `#`/`$`-headed name at BRACKET DEPTH 0 that is not a binder? Those
+// are the only positions where a meta object is unwritable-by-construction:
+//   legal   `[g |- #p]` · `[g |- #p.1]` · `mlam g, #p =>` · `{#p : #[g |- tm]}`
+//   illegal `Ae_a X #p` · `lemma #p` — a parse error, never a type error
+// Sound and cheap: purely lexical, no model lookup, mirrors the `"`-name guard.
+function bareMetaObjectOutsideBox(text) {
+  const s = String(text || '');
+  let depth = 0;      // [ ] and { } — both open a meta/binder context
+  let inBinders = false; // inside an `mlam …` binder list, until `=>`
+  const tok = /(\bmlam\b|=>|⇒|[[\]{}]|[#$][\p{L}\p{N}_'.]*)/gu;
+  let m;
+  while ((m = tok.exec(s)) !== null) {
+    const t = m[0];
+    if (t === '[' || t === '{') { depth += 1; continue; }
+    if (t === ']' || t === '}') { depth = Math.max(0, depth - 1); continue; }
+    if (t === 'mlam') { inBinders = true; continue; } // GENERAL: Beluga's meta-binder keyword, not a name
+    if (t === '=>' || t === '⇒') { inBinders = false; continue; }
+    if (depth === 0 && !inBinders) return true; // a bare `#…`/`$…`
+  }
+  return false;
+}
+
 // Does constructor `name`'s DECLARATION contain an explicit `{Pi}` binder? Any `{`
 // before the declaration's terminator (a depth-agnostic, conservative scan), or a
 // declaration we cannot locate at all, answers TRUE — which makes the caller skip
@@ -801,7 +895,14 @@ let _ctorPiSrc = null;
 let _ctorPiMap = null;
 
 
-function ctorDeclHasPi(code, name) {
+// Can we not even LOCATE `name`'s declaration? Then nothing about it may be
+// judged positionally. (The old `ctorDeclHasPi` also answered true for a Pi-
+// carrying declaration; that half is obsolete — see the call site.)
+function ctorDeclMissing(code, name) {
+  return ctorDeclScan(code, name).missing;
+}
+
+function ctorDeclScan(code, name) {
   const src = String(code || '');
   if (src !== _ctorPiSrc) { _ctorPiSrc = src; _ctorPiMap = new Map(); }
   if (_ctorPiMap.has(name)) return _ctorPiMap.get(name);
@@ -822,7 +923,7 @@ function ctorDeclHasPi(code, name) {
     }
     if (rest.slice(0, end).includes('{')) hasPi = true;
   }
-  const out = !found || hasPi;
+  const out = { missing: !found, hasPi };
   _ctorPiMap.set(name, out);
   return out;
 }

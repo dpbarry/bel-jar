@@ -1,0 +1,7 @@
+{"id":"data/examples/cpp13/cc.bel#cc'","verdict":"STUCK:no-totality-measure","steps":3,"checks":75,"secs":6.7}
+{"id":"data/examples/cpp13/cchoist.bel#weakenEnv1","verdict":"STUCK:no-totality-measure","steps":5,"checks":197,"secs":21}
+{"id":"data/examples/equal/alg-equal-datatypes-adeq.bel#aeq_str","verdict":"STUCK:step-bound","steps":8,"checks":1259,"secs":85.9}
+{"id":"data/examples/equal/alg-equal-datatypes-adeq.bel#aeq_wk","verdict":"STUCK:step-bound","steps":8,"checks":1259,"secs":86.8}
+{"id":"data/examples/logrel/algeq-simplified.bel#thm","verdict":"STUCK:no-move","steps":0,"checks":25,"secs":3.6}
+{"id":"data/examples/logrel/algeq-simplified1.bel#thm","verdict":"STUCK:no-move","steps":0,"checks":25,"secs":3.7}
+{"id":"data/examples/popl12/normeval.bel#nsubst","verdict":"STUCK:no-move","steps":0,"checks":24,"secs":1.7}

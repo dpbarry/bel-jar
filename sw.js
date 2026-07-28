@@ -1,6 +1,6 @@
 'use strict';
 
-var CACHE_NAME = 'beluga-runtime-20260722f-shell-graph';
+var CACHE_NAME = 'beluga-runtime-20260725a-prover-model-fidelity';
 
 function isBelugaRuntime(url) {
   return /\/beluga_web\.bc(\.dt)?\.js$/.test(new URL(url).pathname);

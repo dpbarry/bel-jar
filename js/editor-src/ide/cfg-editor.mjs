@@ -227,6 +227,7 @@ function cfgCompletion(documentId) {
   const cfgPath = resolveCfgDocumentPath(documentId);
   return autocompletion({
     activateOnTyping: true,
+    icons: false,
     maxRenderedOptions: 24,
     override: [(context) => {
       const word = context.matchBefore(/[\w.\-]+/);

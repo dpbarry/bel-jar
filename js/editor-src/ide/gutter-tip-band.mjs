@@ -37,15 +37,18 @@ export function gutterTooltipBand() {
       this.onMove = (e) => this.handleMove(e);
       this.onLeave = () => this.release();
       this.onDown = () => this.release();
+      this.onScroll = () => this.release();
       view.dom.addEventListener('mousemove', this.onMove);
       view.dom.addEventListener('mouseleave', this.onLeave);
       view.dom.addEventListener('mousedown', this.onDown, true);
+      view.scrollDOM.addEventListener('scroll', this.onScroll);
     }
 
     destroy() {
       this.view.dom.removeEventListener('mousemove', this.onMove);
       this.view.dom.removeEventListener('mouseleave', this.onLeave);
       this.view.dom.removeEventListener('mousedown', this.onDown, true);
+      this.view.scrollDOM.removeEventListener('scroll', this.onScroll);
       this.release();
     }
 

@@ -1,0 +1,14 @@
+{"id":"data/case-studies/classical-processes/cp.cfg#str_wtp","verdict":"STUCK:step-bound","steps":32,"checks":456,"secs":115.4}
+{"id":"data/examples/church-rosser/test-crec.cfg#dia","verdict":"CANCELLED","secs":240.028}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#abs_sn","verdict":"STUCK:no-move","steps":0,"checks":49,"secs":12}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#app_snb","verdict":"STUCK:no-move","steps":0,"checks":11,"secs":2.6}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#bc_aux_sum","verdict":"STUCK:no-move","steps":0,"checks":23,"secs":7.6}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#case_snb","verdict":"STUCK:no-move","steps":0,"checks":17,"secs":3.9}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#case_snc","verdict":"STUCK:no-move","steps":0,"checks":17,"secs":4}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#caser_sn","verdict":"STUCK:no-move","steps":0,"checks":17,"secs":4.6}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#inl_sn","verdict":"STUCK:no-move","steps":0,"checks":11,"secs":3.3}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#inr_sn","verdict":"STUCK:no-move","steps":0,"checks":11,"secs":3.2}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#match_sn","verdict":"STUCK:no-move","steps":0,"checks":21,"secs":4.6}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#app_snb","verdict":"STUCK:no-move","steps":0,"checks":11,"secs":1.6}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#confluence","verdict":"STUCK:no-move","steps":0,"checks":15,"secs":2.1}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#mstep_sn","verdict":"STUCK:no-move","steps":0,"checks":78,"secs":9.8}

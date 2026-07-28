@@ -21,6 +21,7 @@ import {
   resolveCfgOrder,
   visibilityPaths,
 } from './development.mjs';
+import { NAMESPACE } from './ids.mjs';
 
 export { cfgByDirFromFiles, dirOf, parseCfg, developmentForFile, activeCfgResolver } from './development.mjs';
 
@@ -131,6 +132,26 @@ function signatureFromDecl(src, declParent, ident) {
   return clampSignature(body);
 }
 
+// Mirror symbol-store.namespaceForGlobal — peers need namespace for completion filters.
+function namespaceFromDefEntry(e, src) {
+  if (!e || !e.declParent) return null;
+  const name = e.declParent.name;
+  if (name === 'LFDatatypeDeclaration') return NAMESPACE.LF_TYPE_FAMILY;
+  if (name === 'LFConstructor') return NAMESPACE.LF_CONSTRUCTOR;
+  if (name === 'SchemaDeclaration') return NAMESPACE.SCHEMA;
+  if (name === 'TypedefDeclaration') return NAMESPACE.TYPEDEF;
+  if (name === 'LetDeclaration' || name === 'RecBody') return NAMESPACE.REC_FUNCTION;
+  if (name === 'ModuleDeclaration') return NAMESPACE.MODULE;
+  if (name === 'InductiveBody' || name === 'CoinductiveBody') return NAMESPACE.COMP_TYPE;
+  if (name === 'CompConstructor' || name === 'CompDestructor') return NAMESPACE.COMP_CONSTRUCTOR;
+  if (name === 'LFDeclaration') {
+    const type = signatureFromDecl(src, e.declParent, e.ident);
+    if (type && /\btype\b/.test(type)) return NAMESPACE.LF_TYPE_FAMILY;
+    return NAMESPACE.LF_CONSTANT;
+  }
+  return e.isUpper ? NAMESPACE.COMP_TYPE : NAMESPACE.LF_CONSTANT;
+}
+
 // Match bel-editor mount: sanitize, alias expand, auto-indent for .bel/.elf.
 export function editorTextForIndexing(text, fileName) {
   if (fileName && isSignaturePath(fileName)) {
@@ -156,7 +177,16 @@ function parsedDefsOfSrc(src) {
       const key = `${d.from}:${d.name}`;
       if (seenDef.has(key)) continue;
       seenDef.add(key);
-      entry.defs.push({ name: d.name, from: d.from, to: d.from + d.name.length });
+      const entries = walk.defMap.get(d.name);
+      const defEntry = (entries && entries.find((e) => e.ident && e.ident.from === d.from))
+        || (entries && entries[0])
+        || null;
+      entry.defs.push({
+        name: d.name,
+        from: d.from,
+        to: d.from + d.name.length,
+        namespace: namespaceFromDefEntry(defEntry, src),
+      });
       entry.names.add(d.name);
     }
     // Only FREE occurrences — a locally-bound use (binder shadowing) never
@@ -303,17 +333,39 @@ export function findProjectDefinitions(files, activeId, name, getText, options =
 
 // Every definition in the group's OTHER files (the engine owns the active
 // file's symbols) — palette "@" fodder. Deduped per file by name.
+// Peer-symbol list is rebuilt on every completion activateOnTyping tick without
+// this memo — key on active id + sibling text identity (same shape as groupLookup).
+let _groupSymbolsCache = { key: null, value: null };
+
 export function listGroupSymbols(files, activeId, getText, options = {}) {
-  const out = [];
-  for (const f of groupFilesFor(files, activeId, getText, options)) {
+  const group = groupFilesFor(files, activeId, getText, options);
+  const parts = [];
+  const peers = [];
+  for (const f of group) {
     if (f.id === activeId) continue;
+    peers.push(f);
+    parts.push(f.id, getText(f.id) ?? '');
+  }
+  const key = `${activeId}\x01${parts.length}\x01${parts.join('\x02')}`;
+  if (_groupSymbolsCache.key === key) return _groupSymbolsCache.value;
+
+  const out = [];
+  for (const f of peers) {
     const seen = new Set();
     for (const d of defsOf(String(getText(f.id) ?? ''), f.name)) {
       if (seen.has(d.name)) continue;
       seen.add(d.name);
-      out.push({ name: d.name, fileId: f.id, fileName: f.name, from: d.from, to: d.to });
+      out.push({
+        name: d.name,
+        fileId: f.id,
+        fileName: f.name,
+        from: d.from,
+        to: d.to,
+        namespace: d.namespace || null,
+      });
     }
   }
+  _groupSymbolsCache = { key, value: out };
   return out;
 }
 

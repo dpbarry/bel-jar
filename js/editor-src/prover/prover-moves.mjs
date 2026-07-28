@@ -24,6 +24,7 @@ import {
   schemaInfo,
   schemaAdmittedTypes,
   parameterTermFor,
+  soleSchemaAdmitting,
   introBinders,
   familyIndexSorts,
 } from './hole-split.mjs';
@@ -73,6 +74,7 @@ import {
   textReferencesNames,
   declBodyEqIndex,
   theoremIndex,
+  theoremInScope,
   hypsOf,
   expandedHypsOf,
   declStartOffset,
@@ -171,7 +173,29 @@ export function splitTextForCtype(code, hole, scrutText, ctypeType) {
       const t = String(at).trim();
       const pm = /^\{\s*[\p{L}_][\p{L}\p{N}_']*\s*:\s*([\p{L}_][\p{L}\p{N}_']*)\s*\}$/u.exec(t);
       if (pm && isSchema(pm[1])) { args.push(`[${lowerFresh()}]`); continue; }
-      if (t[0] === '{') { ok = false; break; }
+      // An OBJECT-Pi ctor argument (`{A:[⊢ty]}`, `{M:[Γ⊢tm A[]]}`) is a
+      // META-OBJECT, so it binds as a BOX in pattern position — it is not out
+      // of fragment, and skipping the ctor for it silently removed the ONLY
+      // constructor of every accessibility-style family (`Sn`'s `Acc`, the
+      // whole poplmark-reloaded SN development), leaving those theorems with
+      // no first move at all. Checker-arbitrated, 2026-07-28: for `Acc`,
+      // `| Acc [_] [ |- A1] [_ |- M1] R => ?` is ACCEPTED while the bare
+      // spelling is rejected ("Expected a meta-object; Found a
+      // computation-level pattern"). The context is spelled `_` (the corpus
+      // idiom, and D11-safe — the ctor's declared context variable need not be
+      // writable at this hole); a structural extension keeps its tail.
+      const pib = /^\{\s*[\p{L}_][\p{L}\p{N}_']*\s*:\s*([\s\S]*)\}$/u.exec(t);
+      const pibType = pib && pib[1].trim();
+      const box = pibType && pibType[0] === '[' ? decomposeContextual(pibType) : null;
+      if (box) {
+        const parts = splitCtx(box.ctx || '');
+        // A CLOSED declared box (`[⊢ ty]`) keeps its empty context; an open one
+        // replaces the leading context variable with `_` and keeps its tail.
+        const ctxTxt = parts.length ? ['_', ...parts.slice(1)].join(', ') : '';
+        args.push(`[${ctxTxt} |- ${fresh()}]`);
+        continue;
+      }
+      if (t[0] === '{') { ok = false; break; } // a non-box Pi binder — still out of fragment
       args.push(fresh());
     }
     if (!ok) continue;
@@ -210,6 +234,12 @@ export function splitTextForBox(code, hole, scrutText, boxedType, splitOpts = {}
     if (parameterTermFor(head, info)) { schema = info; break; }
   }
   if (!schema && candidates.length) schema = schemaInfo(code, candidates[0]);
+  // The context variable named no schema we could resolve (an IMPLICITLY
+  // quantified `g` — the theorem never writes `(g:ctx)` and the checker reports
+  // it bare or as `_`). Only a context VARIABLE can hold a parameter, so this
+  // never fires for a closed `[ |- …]` scrutinee; when exactly one declared
+  // schema admits the scrutinee's family, that settles it.
+  if (!schema && lead) schema = soleSchemaAdmitting(code, head);
   const schemaTypes = candidates.length ? schemaAdmittedTypes(code, candidates[0]) : null;
   // Dependency annotations for a strengthening-shaped context (a declared binder
   // tail after the context variable): a pattern metavar depends only on the tail
@@ -525,8 +555,10 @@ export function synthMoves(hole, code, thm) {
   };
 
   let rules = [];
-  for (const lem of theoremIndex(code)) {
+  const thmIdx = theoremIndex(code);
+  for (const lem of thmIdx) {
     if (!lem || !lem.compType || (thm && lem.name === thm.name)) continue;
+    if (!theoremInScope(lem, thm, thmIdx)) continue; // sequential signature
     const r = mkRule(lem.name, lem.compType, false, null);
     if (r) rules.push(r);
   }
@@ -1073,7 +1105,14 @@ function piRecurseTexts(hole, thm, code) {
               let raw = String(at).trim();
               const pm = /^\{\s*[^:]+:\s*([\s\S]*)\}$/.exec(raw);
               if (pm) raw = pm[1].trim();
-              const b = decomposeContextual(raw);
+              // Only a genuine `[Γ ⊢ A]` box binds boxed. A HIGHER-ORDER argument
+              // (`({M':[Γ⊢tm A[]]} {S:…} Sn [Γ⊢M'])`, `Acc`'s accessibility
+              // function) is a COMP-level value and binds bare — and running it
+              // through decomposeContextual split it at its FIRST turnstile, which
+              // is inside the nested Pi, emitting the unparseable
+              // `[{M':[Γ |- R3]` (measured on poplmark-reloaded+#inl_sn: "Failed
+              // to parse (mutual) recursive function declaration(s)").
+              const b = raw[0] === '[' ? decomposeContextual(raw) : null;
               return b ? `[${b.ctx || ''} |- ${fresh()}]` : fresh();
             });
             out.push(`let ${ctors[0].name} ${comps.join(' ')} = ${call} in\n?`);
@@ -1143,8 +1182,10 @@ export function supportLemmaTexts(hole, currentThm, code) {
   const fresh = freshForHole(hole, code);
   const out = [];
   const seen = new Set();
-  for (const lemma of theoremIndex(code)) {
+  const thmIdx = theoremIndex(code);
+  for (const lemma of thmIdx) {
     if (!lemma || !lemma.compType || (currentThm && lemma.name === currentThm.name)) continue;
+    if (!theoremInScope(lemma, currentThm, thmIdx)) continue; // sequential signature
     const conclHead = boxedConclusionHead(lemma.compType.conclusion);
     if (conclHead !== goalHead) continue;
     const boxes = lemma.compType.premises.filter((p) => p.kind === 'box');
@@ -1367,8 +1408,10 @@ export function helperLemmaTexts(hole, currentThm, code) {
   const fresh = freshForHole(hole, code);
   const out = [];
   const seen = new Set();
-  for (const lemma of theoremIndex(code)) {
+  const thmIdx = theoremIndex(code);
+  for (const lemma of thmIdx) {
     if (!lemma || !lemma.compType || (currentThm && lemma.name === currentThm.name)) continue;
+    if (!theoremInScope(lemma, currentThm, thmIdx)) continue; // sequential signature
     const conclHead = boxedConclusionHead(lemma.compType.conclusion);
     if (!conclHead || conclHead === goalHead) continue;
     const lemGoal = decomposeContextual(lemma.compType.conclusion);

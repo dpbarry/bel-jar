@@ -7,7 +7,7 @@ import { createHoverTrace, hoverTraceEnabled } from './hover-trace.mjs';
 import { createMetavarStore } from './metavar-store.mjs';
 import { DEFAULT_DOCUMENT_ID, NAMESPACE, normalizeDocumentId, STATUS } from './ids.mjs';
 import { createSemanticGraph } from './semantic-graph.mjs';
-import { createSymbolStore } from './symbol-store.mjs';
+import { createSymbolStore, expectedNamespacesAt } from './symbol-store.mjs';
 import { createSyntaxStore } from './syntax-store.mjs';
 import { createSemanticSession } from './semantic-session.mjs';
 import { createSemanticScheduler } from './semantic-scheduler.mjs';
@@ -1770,6 +1770,12 @@ export function createSemanticEngine(options = {}) {
   return {
     update,
     queryAt,
+    visibleSymbolsAt: (pos, opts) => symbolStore.visibleSymbolsAt(pos, opts),
+    expectedNamespacesAt: (pos, refKind) => {
+      const syntax = syntaxStore.getSnapshot();
+      if (!syntax?.tree) return null;
+      return expectedNamespacesAt(syntax.tree, pos, refKind);
+    },
     definitionAt: (pos) => symbolStore.definitionAt(pos),
     referencesOf: (symbolId) => symbolStore.referencesOf(symbolId),
     renamePreview: (symbolId, newName) => symbolStore.renamePreview(symbolId, newName),

@@ -260,7 +260,7 @@ function refKindForNode(node) {
   return node.name === 'UpperIdentifier' ? 'upper' : 'lower';
 }
 
-function isCompatibleGlobal(refKind, namespace) {
+export function isCompatibleGlobal(refKind, namespace) {
   if (refKind === 'upper') return UPPER_GLOBAL_NAMESPACES.has(namespace);
   return LOWER_GLOBAL_NAMESPACES.has(namespace);
 }
@@ -273,13 +273,24 @@ const COMP_TYPE_LOWER = Object.freeze(new Set([
 const COMP_TYPE_UPPER = Object.freeze(new Set([
   NAMESPACE.COMP_TYPE, NAMESPACE.COMP_CONSTRUCTOR, NAMESPACE.TYPEDEF, NAMESPACE.MODULE,
 ]));
+const PATTERN_HEAD = Object.freeze(new Set([
+  NAMESPACE.LF_CONSTRUCTOR, NAMESPACE.COMP_CONSTRUCTOR,
+]));
+const REC_HEAD = Object.freeze(new Set([NAMESPACE.REC_FUNCTION]));
+const OBSERVATION_HEAD = Object.freeze(new Set([NAMESPACE.COMP_CONSTRUCTOR]));
+const EXPR_LOWER = Object.freeze(new Set([NAMESPACE.REC_FUNCTION]));
+const EXPR_UPPER = Object.freeze(new Set([NAMESPACE.COMP_CONSTRUCTOR]));
+// Empty set: no globals. Paired with allowLocals in classify (context variables).
+export const LOCALS_ONLY_NAMESPACES = Object.freeze(new Set());
 const FIXITY_PRAGMA = new Set(['InfixPragma', 'PrefixPragma', 'OpaquePragma']);
 
-function expectedNamespaces(node, refKind) {
-  const parent = node.parent;
-  const ctx = parent ? parent.name : '';
+// Syntactic namespace filter for a Lezer parent context (LF type vs term vs
+ // comp type). Null = no hard filter (case-compatible globals only).
+export function expectedNamespacesForContext(ctx, refKind) {
   switch (ctx) {
     case 'LFAtomicType':
+    case 'ParameterFieldAtom':
+    case 'ParameterFieldTypeArg':
       // Uppercase in LF type position is normally a metavariable, but Beluga
       // also permits uppercase LF type-family constants. Allow resolution to a
       // defined LF head; if none exists the ref stays unresolved (a metavar).
@@ -290,14 +301,118 @@ function expectedNamespaces(node, refKind) {
       return LF_TERM_HEAD;
     case 'CompAtomicType':
       return refKind === 'upper' ? COMP_TYPE_UPPER : COMP_TYPE_LOWER;
+    case 'AtomicPattern':
+      return PATTERN_HEAD;
+    case 'ContextHead':
+    case 'ContextTailEntry':
+      return LOCALS_ONLY_NAMESPACES;
+    case 'TotalityCall':
+    case 'TotalityArg':
+    case 'TotalityMeasure':
+      return REC_HEAD;
+    case 'Observation':
+      return OBSERVATION_HEAD;
+    case 'AtomicExpression':
+      // Comp-level expression heads: rec/let functions + inductive ctors as values.
+      // Locals (fn/mlam/let params) are admitted separately via allowLocals.
+      return refKind === 'upper' ? EXPR_UPPER : EXPR_LOWER;
     default:
       if (FIXITY_PRAGMA.has(ctx)) return LF_TERM_HEAD;
       return null;
   }
 }
 
+export function expectedNamespacesForNode(node, refKind) {
+  const parent = node && node.parent;
+  return expectedNamespacesForContext(parent ? parent.name : '', refKind);
+}
+
+// Contexts whose predicted globals still admit in-scope locals (bound vars).
+export function contextAllowsLocals(ctx) {
+  return ctx === 'LFAtomicTerm'
+    || ctx === 'AtomicExpression'
+    || ctx === 'ContextHead'
+    || ctx === 'ContextTailEntry';
+}
+
+// Resolve the expected global namespaces at a document offset. Prefers an Ident
+// under the cursor and climbs ITS ancestors; only if no Ident is found do we
+// climb from the raw inner node (avoids ContextHead `g` being misclassified
+// via CompAtomicType when resolveInner(-1) lands on `[`).
+export function expectedNamespacesAt(tree, pos, refKind = 'lower') {
+  if (!tree || pos == null) return null;
+  for (const bias of [-1, 1, 0]) {
+    const n = tree.resolveInner(pos, bias);
+    if (n && IDENT.has(n.name)) {
+      const kind = refKind ?? refKindForNode(n);
+      for (let cur = n.parent; cur; cur = cur.parent) {
+        const ns = expectedNamespacesForContext(cur.name, kind);
+        if (ns) return ns;
+      }
+      return null;
+    }
+  }
+  let cur = tree.resolveInner(pos, -1);
+  for (; cur; cur = cur.parent) {
+    const ns = expectedNamespacesForContext(cur.name, refKind);
+    if (ns) return ns;
+  }
+  return null;
+}
+
+// Nearest predicted context name at pos (for allowLocals / binder policy).
+export function predictedContextAt(tree, pos, refKind = 'lower') {
+  if (!tree || pos == null) return null;
+  for (const bias of [-1, 1, 0]) {
+    const n = tree.resolveInner(pos, bias);
+    if (n && IDENT.has(n.name)) {
+      const kind = refKind ?? refKindForNode(n);
+      for (let cur = n.parent; cur; cur = cur.parent) {
+        if (expectedNamespacesForContext(cur.name, kind)) return cur.name;
+      }
+      return null;
+    }
+  }
+  for (let cur = tree.resolveInner(pos, -1); cur; cur = cur.parent) {
+    if (expectedNamespacesForContext(cur.name, refKind)) return cur.name;
+  }
+  return null;
+}
+
+function expectedNamespaces(node, refKind) {
+  return expectedNamespacesForNode(node, refKind);
+}
+
 function nameVisible(symbol, from) {
   return symbol.nameRange.from < from;
+}
+
+// Direct exports of a module: globals whose structural key is exactly one
+// qualifier segment under `ModName/` (nested `Mod/Inner/…` are not direct).
+export function moduleMembersOf(snapshot, moduleSym) {
+  if (!snapshot || !moduleSym || moduleSym.namespace !== NAMESPACE.MODULE) return null;
+  const prefix = `${moduleSym.name}/`;
+  const out = [];
+  for (const sym of snapshot.globalSymbols) {
+    if (!sym || sym.id === moduleSym.id) continue;
+    const key = sym.baseKey || '';
+    if (!key.startsWith(prefix)) continue;
+    if (key.slice(prefix.length).includes('/')) continue;
+    out.push(sym);
+  }
+  return out;
+}
+
+// Nearest MODULE named `name` declared before `pos` (prefix-closed visibility).
+export function resolveModuleNamed(snapshot, name, pos) {
+  if (!snapshot || !name) return null;
+  let best = null;
+  for (const sym of snapshot.globalSymbols) {
+    if (sym.namespace !== NAMESPACE.MODULE || sym.name !== name) continue;
+    if (pos != null && !nameVisible(sym, pos)) continue;
+    if (!best || sym.nameRange.from > best.nameRange.from) best = sym;
+  }
+  return best;
 }
 
 function sortByRange(a, b) {
@@ -740,11 +855,52 @@ export function createSymbolStore() {
     };
   }
 
+  // In-scope locals + earlier globals at `pos`. Optional `namespaces` (Set) hard-
+  // filters globals the way reference resolution does; locals are always kept
+  // when their scope covers `pos` (optionally case-filtered via `refKind`).
+  function visibleSymbolsAt(pos, opts = {}) {
+    if (!snapshot || pos == null) return [];
+    const namespaces = opts.namespaces || null;
+    const refKind = opts.refKind || null;
+    const out = [];
+    const seen = new Set();
+
+    for (const sym of snapshot.localSymbols) {
+      const scope = sym.scope;
+      if (!scope || scope.from > pos || pos > scope.to) continue;
+      if (refKind === 'upper' && sym.namespace === NAMESPACE.LOCAL_LOWER) continue;
+      if (refKind === 'lower' && sym.namespace === NAMESPACE.LOCAL_UPPER) continue;
+      out.push(sym);
+      seen.add(sym.id);
+    }
+
+    for (const sym of snapshot.globalSymbols) {
+      if (!nameVisible(sym, pos)) continue;
+      if (namespaces) {
+        if (!namespaces.has(sym.namespace)) continue;
+      } else if (refKind && !isCompatibleGlobal(refKind, sym.namespace)) {
+        continue;
+      }
+      if (seen.has(sym.id)) continue;
+      out.push(sym);
+      seen.add(sym.id);
+    }
+    return out;
+  }
+
   function exportIdentity() {
     return [...identityRegistry];
   }
   function importIdentity(entries) {
     identityRegistry = new Map(entries || []);
+  }
+
+  function membersOfModule(moduleNameOrSym, pos) {
+    if (!snapshot) return null;
+    const mod = typeof moduleNameOrSym === 'string'
+      ? resolveModuleNamed(snapshot, moduleNameOrSym, pos)
+      : moduleNameOrSym;
+    return moduleMembersOf(snapshot, mod);
   }
 
   return {
@@ -758,6 +914,9 @@ export function createSymbolStore() {
     implicitSitesForDeclaration,
     renamePreview,
     queryAt,
+    visibleSymbolsAt,
+    membersOfModule,
+    resolveModuleNamed: (name, pos) => resolveModuleNamed(snapshot, name, pos),
     exportIdentity,
     importIdentity,
     getSnapshot: () => snapshot,

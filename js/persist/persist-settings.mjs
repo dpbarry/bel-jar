@@ -54,6 +54,7 @@ export function create(deps) {
     }
 
     var ALIAS_ACTIVATION_KEY = 'beljar-alias-activation';
+    var ALIAS_PAIRS_KEY = 'beljar-alias-pairs';
     var CFG_AUTO_SYNC_KEY = 'beljar-cfg-auto-sync';
 
     function readStoredCfgAutoSync() {
@@ -84,6 +85,27 @@ export function create(deps) {
       else backendRemove(ALIAS_ACTIVATION_KEY);
     }
 
+    function readStoredAliasPairs() {
+      try {
+        var raw = backendLoad(ALIAS_PAIRS_KEY);
+        if (raw == null || raw === '') return null;
+        var parsed = tryParse(raw);
+        if (!Array.isArray(parsed)) return null;
+        return parsed;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function writeStoredAliasPairs(pairs) {
+      if (pairs == null) {
+        backendRemove(ALIAS_PAIRS_KEY);
+        return;
+      }
+      if (!Array.isArray(pairs)) return;
+      backendSave(ALIAS_PAIRS_KEY, JSON.stringify(pairs));
+    }
+
     // ── User settings (REPL, Beluga run, workspace, editor) ───────────────────
 
     var REPL_AUTOSCROLL_KEY = 'beljar-repl-autoscroll';
@@ -92,7 +114,6 @@ export function create(deps) {
     var REPL_FILTER_CHATTER_KEY = 'beljar-repl-filter-chatter';
     var REPL_HISTORY_CAP_KEY = 'beljar-repl-history-cap';
     var REPL_HISTORY_PERSIST_KEY = 'beljar-repl-history-persist';
-    var REPL_TIMESTAMPS_KEY = 'beljar-repl-timestamps';
     var REPL_TRANSCRIPT_KEY = 'beljar-repl-transcript-v1';
     var REPL_CMD_HISTORY_KEY = 'beljar-repl-cmd-history-v1';
     var REPL_CMD_HISTORY_DEFAULT_CAP = 500;
@@ -255,9 +276,6 @@ export function create(deps) {
         clearReplHistoryPayload(prev);
       }
     }
-
-    function readStoredReplTimestamps() { return readBoolDefaultOff(REPL_TIMESTAMPS_KEY); }
-    function writeStoredReplTimestamps(on) { writeBoolDefaultOff(REPL_TIMESTAMPS_KEY, on); }
 
     function readStoredReplTranscript() {
       try {
@@ -547,7 +565,6 @@ export function create(deps) {
       backendRemove(REPL_FILTER_CHATTER_KEY);
       backendRemove(REPL_HISTORY_CAP_KEY);
       backendRemove(REPL_HISTORY_PERSIST_KEY);
-      backendRemove(REPL_TIMESTAMPS_KEY);
       clearReplHistoryPayload();
     }
 
@@ -593,6 +610,7 @@ export function create(deps) {
 
     function resetAliasesPrefs() {
       backendRemove(ALIAS_ACTIVATION_KEY);
+      backendRemove(ALIAS_PAIRS_KEY);
     }
 
     function isAliasExpandablePath(name) {
@@ -671,6 +689,8 @@ export function create(deps) {
       writeStoredCfgAutoSync: writeStoredCfgAutoSync,
       readStoredAliasActivation: readStoredAliasActivation,
       writeStoredAliasActivation: writeStoredAliasActivation,
+      readStoredAliasPairs: readStoredAliasPairs,
+      writeStoredAliasPairs: writeStoredAliasPairs,
       readBoolDefaultOn: readBoolDefaultOn,
       writeBoolDefaultOn: writeBoolDefaultOn,
       readBoolDefaultOff: readBoolDefaultOff,
@@ -687,8 +707,6 @@ export function create(deps) {
       writeStoredReplHistoryCap: writeStoredReplHistoryCap,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist,
       writeStoredReplHistoryPersist: writeStoredReplHistoryPersist,
-      readStoredReplTimestamps: readStoredReplTimestamps,
-      writeStoredReplTimestamps: writeStoredReplTimestamps,
       readStoredReplTranscript: readStoredReplTranscript,
       writeStoredReplTranscript: writeStoredReplTranscript,
       readStoredReplCommandHistory: readStoredReplCommandHistory,

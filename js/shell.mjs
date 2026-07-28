@@ -30,6 +30,8 @@ import './ui/toasts.mjs';
 import './ui/notifications.mjs';
 import './repl/repl-stream.mjs';
 import './repl/repl-output.mjs';
+import './repl/repl-run-cmd.mjs';
+import './repl/repl-autocomplete.mjs';
 import './repl/repl-commands.mjs';
 import './repl/repl-persist.mjs';
 import './ui/bj-toggle.mjs';

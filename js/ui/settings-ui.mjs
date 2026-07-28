@@ -2,7 +2,10 @@
 
 const global = globalThis;
   var settingsDialogEl = null;
+  var keybindingsSheetEl = null;
+  var aliasesSheetEl = null;
   var keybindingsApi = null;
+  var aliasesApi = null;
   var controls = {};
 
   function persist() {
@@ -83,60 +86,102 @@ const global = globalThis;
     head.appendChild(makeResetLink(onReset));
   }
 
-  function mountKeybindingsPanel(body) {
-    body.classList.add('bj-settings__panel-body--kb');
+  function addActionRow(parent, labelText, descText, actionLabel, onClick) {
+    var row = document.createElement('div');
+    row.className = 'bj-dialog__setting bj-settings__action-row';
+    var main = document.createElement('div');
+    main.className = 'bj-dialog__setting-main';
+    var lbl = document.createElement('span');
+    lbl.className = 'bj-dialog__setting-label';
+    lbl.textContent = labelText;
+    var dsc = document.createElement('span');
+    dsc.className = 'bj-dialog__setting-desc';
+    dsc.textContent = descText;
+    main.appendChild(lbl);
+    main.appendChild(dsc);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bj-settings__action-btn';
+    btn.textContent = actionLabel;
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    row.appendChild(main);
+    row.appendChild(btn);
+    parent.appendChild(row);
+    return row;
+  }
 
-    var root = document.createElement('div');
-    root.className = 'bj-kb';
-
-    var filterWrap = document.createElement('div');
-    filterWrap.className = 'bj-kb__filter';
-
-    var hint = document.createElement('p');
-    hint.className = 'bj-kb__hint';
-    hint.textContent = 'Click a row to change the keybindings.';
-
-    var searchSlot = document.createElement('div');
-    searchSlot.className = 'bj-kb__search-slot';
+  function makeSearchField(opts) {
+    var slot = document.createElement('div');
+    slot.className = opts.slotClass;
 
     var inputWrap = document.createElement('div');
-    inputWrap.className = 'bel-palette-inputwrap bj-kb__search';
+    inputWrap.className = 'library-find library-find--preview ' + opts.wrapClass;
 
     var iconHost = document.createElement('span');
-    iconHost.className = 'bel-palette-icon';
+    iconHost.className = 'library-find__icon';
     iconHost.setAttribute('aria-hidden', 'true');
     iconHost.innerHTML =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
 
     var input = document.createElement('input');
     input.type = 'search';
-    input.className = 'bel-palette-input';
-    input.placeholder = 'Search commands';
-    input.setAttribute('aria-label', 'Search commands');
-    input.setAttribute('aria-autocomplete', 'list');
-    input.setAttribute('aria-controls', 'bj-kb-search-results');
+    input.className = 'library-find__input';
+    input.placeholder = opts.placeholder;
+    input.setAttribute('aria-label', opts.ariaLabel);
     input.autocomplete = 'off';
     input.spellcheck = false;
+    if (opts.ariaControls) {
+      input.setAttribute('aria-autocomplete', 'list');
+      input.setAttribute('aria-controls', opts.ariaControls);
+    }
+
+    input.addEventListener('focus', function () {
+      inputWrap.classList.add('is-focused');
+    });
+    input.addEventListener('blur', function () {
+      inputWrap.classList.remove('is-focused');
+    });
+
+    inputWrap.appendChild(iconHost);
+    inputWrap.appendChild(input);
+    slot.appendChild(inputWrap);
+    return { slot: slot, inputWrap: inputWrap, input: input };
+  }
+
+  function mountKeybindingsSheet(searchSlot, body) {
+    var search = makeSearchField({
+      slotClass: 'bj-kb__search-slot',
+      wrapClass: 'bj-kb__search',
+      placeholder: 'Search commands',
+      ariaLabel: 'Search commands',
+      ariaControls: 'bj-kb-search-results',
+    });
+    // Reuse provided slot element so createDialog headerExtra keeps the same node.
+    searchSlot.className = search.slot.className;
+    searchSlot.replaceChildren();
+    var inputWrap = search.inputWrap;
+    var input = search.input;
+    searchSlot.appendChild(inputWrap);
+
+    var root = document.createElement('div');
+    root.className = 'bj-kb';
+
+    var list = document.createElement('div');
+    list.className = 'bj-kb__list';
+    list.setAttribute('role', 'list');
+
+    root.appendChild(list);
+    body.appendChild(root);
 
     var results = document.createElement('div');
     results.className = 'bj-kb__results';
     results.id = 'bj-kb-search-results';
     results.setAttribute('role', 'listbox');
     results.hidden = true;
-
-    inputWrap.appendChild(iconHost);
-    inputWrap.appendChild(input);
-    searchSlot.appendChild(inputWrap);
-    filterWrap.appendChild(hint);
-    filterWrap.appendChild(searchSlot);
-
-    var list = document.createElement('div');
-    list.className = 'bj-kb__list';
-    list.setAttribute('role', 'list');
-
-    root.appendChild(filterWrap);
-    root.appendChild(list);
-    body.appendChild(root);
 
     var recordingChord = null;
     var invalidTimer = null;
@@ -268,7 +313,7 @@ const global = globalThis;
 
       searchHits = hits;
       for (var h = 0; h < hits.length; h++) {
-        (function (hit, index) {
+        (function (hit) {
           var btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'bj-kb__result';
@@ -297,7 +342,7 @@ const global = globalThis;
             jumpToCommand(hit.id);
           });
           results.appendChild(btn);
-        })(hits[h], h);
+        })(hits[h]);
       }
       openSearchResultsPanel();
       setSearchActive(0);
@@ -571,8 +616,365 @@ const global = globalThis;
         refresh();
       },
       clearRecording: clearRecording,
+      closeSearch: closeSearchResults,
       filterInput: input,
     };
+  }
+
+  function mountAliasesSheet(searchSlot, body) {
+    var search = makeSearchField({
+      slotClass: 'bj-alias__search-slot',
+      wrapClass: 'bj-alias__search',
+      placeholder: 'Search aliases',
+      ariaLabel: 'Search aliases',
+    });
+    searchSlot.className = search.slot.className;
+    searchSlot.replaceChildren();
+    var filterInput = search.input;
+    searchSlot.appendChild(search.inputWrap);
+
+    var root = document.createElement('div');
+    root.className = 'bj-alias';
+
+    var list = document.createElement('div');
+    list.className = 'bj-alias__list';
+    list.setAttribute('role', 'list');
+
+    var footer = document.createElement('div');
+    footer.className = 'bj-alias__footer';
+
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'bj-alias__add';
+    addBtn.textContent = 'Add alias';
+    footer.appendChild(addBtn);
+
+    root.appendChild(list);
+    root.appendChild(footer);
+    body.appendChild(root);
+
+    var nextRowId = 1;
+    var rows = [];
+    var filterQuery = '';
+    var CLOSE_SVG =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
+    function toastWarn(message) {
+      if (global.Toasts && typeof global.Toasts.warn === 'function') {
+        global.Toasts.warn(message);
+      } else if (global.Toasts && typeof global.Toasts.show === 'function') {
+        global.Toasts.show(message, { kind: 'warn' });
+      }
+    }
+
+    function setTip(el, text) {
+      if (global.Tooltips && typeof global.Tooltips.set === 'function') {
+        global.Tooltips.set(el, text);
+      } else {
+        el.setAttribute('aria-label', text);
+      }
+    }
+
+    function normalizePairs(raw) {
+      if (typeof BelEditor !== 'undefined' && typeof BelEditor.normalizeAliasPairs === 'function') {
+        return BelEditor.normalizeAliasPairs(raw);
+      }
+      var seen = Object.create(null);
+      var out = [];
+      (Array.isArray(raw) ? raw : []).forEach(function (item) {
+        var from = '';
+        var to = '';
+        if (Array.isArray(item)) {
+          from = String(item[0] || '');
+          to = String(item[1] || '');
+        }
+        from = from.trim();
+        if (!from || to === '' || seen[from]) return;
+        seen[from] = true;
+        out.push([from, to]);
+      });
+      return out.sort(function (a, b) {
+        return b[0].length - a[0].length || a[0].localeCompare(b[0]);
+      });
+    }
+
+    function defaultPairs() {
+      if (typeof BelEditor !== 'undefined' && typeof BelEditor.defaultAliasPairs === 'function') {
+        return BelEditor.defaultAliasPairs();
+      }
+      if (typeof BelEditor !== 'undefined' && Array.isArray(BelEditor.ALIAS_PAIRS)) {
+        return BelEditor.ALIAS_PAIRS.slice();
+      }
+      return [];
+    }
+
+    function loadPairs() {
+      var p = persist();
+      var stored = p && typeof p.readStoredAliasPairs === 'function' ? p.readStoredAliasPairs() : null;
+      return stored == null ? defaultPairs() : normalizePairs(stored);
+    }
+
+    function pairsFromRows() {
+      return normalizePairs(rows.map(function (r) { return [r.from, r.to]; }));
+    }
+
+    function rowsFromPairs(pairs) {
+      var sorted = pairs.slice().sort(function (a, b) {
+        return a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]);
+      });
+      return sorted.map(function (pair) {
+        return { id: nextRowId++, from: pair[0], to: pair[1] };
+      });
+    }
+
+    function commit(notifyKey) {
+      writePersist(notifyKey || 'alias-pairs', function (p) {
+        if (typeof p.writeStoredAliasPairs === 'function') {
+          p.writeStoredAliasPairs(pairsFromRows());
+        }
+      });
+    }
+
+    function findDuplicate(from, exceptId) {
+      var needle = String(from || '').trim();
+      if (!needle) return null;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].id === exceptId) continue;
+        if (rows[i].from.trim() === needle) return rows[i];
+      }
+      return null;
+    }
+
+    function buildRow(row) {
+      var el = document.createElement('div');
+      el.className = 'bj-alias__row';
+      el.setAttribute('role', 'listitem');
+      el.dataset.rowId = String(row.id);
+
+      var trigger = document.createElement('input');
+      trigger.type = 'text';
+      trigger.className = 'bj-alias__input bj-alias__input--trigger';
+      trigger.value = row.from;
+      trigger.placeholder = 'trigger';
+      trigger.spellcheck = false;
+      trigger.autocomplete = 'off';
+      trigger.setAttribute('aria-label', 'Alias trigger');
+
+      var arrow = document.createElement('span');
+      arrow.className = 'bj-alias__arrow';
+      arrow.textContent = '\u2192';
+      arrow.setAttribute('aria-hidden', 'true');
+
+      var expansion = document.createElement('input');
+      expansion.type = 'text';
+      expansion.className = 'bj-alias__input bj-alias__input--expansion';
+      expansion.value = row.to;
+      expansion.placeholder = 'expansion';
+      expansion.spellcheck = false;
+      expansion.autocomplete = 'off';
+      expansion.setAttribute('aria-label', 'Alias expansion');
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'icon-btn bj-alias__delete';
+      del.innerHTML = CLOSE_SVG;
+      setTip(del, 'Delete alias');
+
+      var touchedFrom = false;
+      var touchedTo = false;
+
+      function refreshInvalid() {
+        var hasFrom = !!row.from.trim();
+        var hasTo = row.to !== '';
+        if (!hasFrom && !hasTo) {
+          trigger.classList.remove('is-invalid');
+          expansion.classList.remove('is-invalid');
+          return;
+        }
+        trigger.classList.toggle('is-invalid', touchedFrom && !hasFrom);
+        expansion.classList.toggle('is-invalid', touchedTo && !hasTo);
+      }
+
+      function applyField(field, value) {
+        var prevFrom = row.from;
+        var prevTo = row.to;
+        if (field === 'from') {
+          touchedFrom = true;
+          var nextFrom = String(value || '').trim();
+          if (nextFrom && findDuplicate(nextFrom, row.id)) {
+            toastWarn('Alias "' + nextFrom + '" already exists');
+            trigger.value = row.from;
+            refreshInvalid();
+            return false;
+          }
+          row.from = nextFrom;
+          trigger.value = nextFrom;
+        } else {
+          touchedTo = true;
+          row.to = String(value || '');
+        }
+        refreshInvalid();
+        if (row.from === prevFrom && row.to === prevTo) return false;
+        if (row.from.trim() && row.to !== '') commit();
+        return true;
+      }
+
+      trigger.addEventListener('input', function () {
+        if (String(trigger.value || '').trim()) trigger.classList.remove('is-invalid');
+      });
+      expansion.addEventListener('input', function () {
+        if (expansion.value !== '') expansion.classList.remove('is-invalid');
+      });
+      trigger.addEventListener('change', function () {
+        applyField('from', trigger.value);
+      });
+      trigger.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applyField('from', trigger.value);
+          expansion.focus();
+          expansion.select();
+        }
+      });
+      expansion.addEventListener('change', function () {
+        applyField('to', expansion.value);
+      });
+      expansion.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applyField('to', expansion.value);
+          expansion.blur();
+        }
+      });
+
+      del.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        rows = rows.filter(function (r) { return r.id !== row.id; });
+        commit();
+        render();
+      });
+
+      el.appendChild(trigger);
+      el.appendChild(arrow);
+      el.appendChild(expansion);
+      el.appendChild(del);
+      return el;
+    }
+
+    function rowMatches(row, q) {
+      if (!q) return true;
+      return row.from.toLowerCase().indexOf(q) >= 0 || row.to.toLowerCase().indexOf(q) >= 0;
+    }
+
+    function render() {
+      list.replaceChildren();
+      var q = filterQuery;
+      var visible = rows.filter(function (r) { return rowMatches(r, q); });
+
+      if (!rows.length) {
+        var emptyAll = document.createElement('p');
+        emptyAll.className = 'bj-settings__empty bj-alias__empty';
+        emptyAll.textContent = 'No aliases. Add one to expand text while typing.';
+        list.appendChild(emptyAll);
+        return;
+      }
+
+      if (!visible.length) {
+        var emptyFilter = document.createElement('p');
+        emptyFilter.className = 'bj-settings__empty bj-alias__empty';
+        emptyFilter.textContent = 'No aliases match.';
+        list.appendChild(emptyFilter);
+        return;
+      }
+
+      visible.forEach(function (row) {
+        list.appendChild(buildRow(row));
+      });
+    }
+
+    function reload() {
+      rows = rowsFromPairs(loadPairs());
+      render();
+    }
+
+    addBtn.addEventListener('click', function () {
+      filterInput.value = '';
+      filterQuery = '';
+      var row = { id: nextRowId++, from: '', to: '' };
+      rows.push(row);
+      render();
+      var triggerEl = list.querySelector('[data-row-id="' + row.id + '"] .bj-alias__input--trigger');
+      if (triggerEl) triggerEl.focus();
+    });
+
+    filterInput.addEventListener('input', function () {
+      filterQuery = String(filterInput.value || '').trim().toLowerCase();
+      render();
+    });
+
+    reload();
+
+    return {
+      refresh: function () {
+        filterInput.value = '';
+        filterQuery = '';
+        reload();
+      },
+      filterInput: filterInput,
+    };
+  }
+
+  function ensureKeybindingsSheet() {
+    if (keybindingsSheetEl) return keybindingsSheetEl;
+    var searchSlot = document.createElement('div');
+    keybindingsSheetEl = Dialog.createDialog({
+      title: 'Keybindings',
+      headerExtra: searchSlot,
+      content: '',
+      cardClass: 'bj-dialog__card--action-sheet',
+      removeOnClose: false,
+    });
+    var body = keybindingsSheetEl.querySelector('.bj-dialog__body');
+    keybindingsApi = mountKeybindingsSheet(searchSlot, body);
+    keybindingsSheetEl.addEventListener('close', function () {
+      if (!keybindingsApi) return;
+      keybindingsApi.clearRecording();
+      if (typeof keybindingsApi.closeSearch === 'function') keybindingsApi.closeSearch();
+      if (keybindingsApi.filterInput) keybindingsApi.filterInput.value = '';
+    });
+    return keybindingsSheetEl;
+  }
+
+  function openKeybindingsSheet() {
+    ensureKeybindingsSheet();
+    if (keybindingsApi) keybindingsApi.refresh();
+    Dialog.openDialog(keybindingsSheetEl);
+  }
+
+  function ensureAliasesSheet() {
+    if (aliasesSheetEl) return aliasesSheetEl;
+    var searchSlot = document.createElement('div');
+    aliasesSheetEl = Dialog.createDialog({
+      title: 'Aliases',
+      headerExtra: searchSlot,
+      content: '',
+      cardClass: 'bj-dialog__card--action-sheet',
+      removeOnClose: false,
+    });
+    var body = aliasesSheetEl.querySelector('.bj-dialog__body');
+    aliasesApi = mountAliasesSheet(searchSlot, body);
+    aliasesSheetEl.addEventListener('close', function () {
+      if (!aliasesApi || !aliasesApi.filterInput) return;
+      aliasesApi.filterInput.value = '';
+    });
+    return aliasesSheetEl;
+  }
+
+  function openAliasesSheet() {
+    ensureAliasesSheet();
+    if (aliasesApi) aliasesApi.refresh();
+    Dialog.openDialog(aliasesSheetEl);
   }
 
   function addSwitchRow(parent, id, labelText, descText, readFn, writeFn) {
@@ -667,8 +1069,7 @@ const global = globalThis;
         el.hidden = !on;
         el.classList.toggle('is-active', on);
       });
-      if (id === 'keybindings' && keybindingsApi) keybindingsApi.refresh();
-      else if (keybindingsApi) keybindingsApi.clearRecording();
+      if (id !== 'keybindings' && keybindingsApi) keybindingsApi.clearRecording();
     }
 
     categories.forEach(function (cat) {
@@ -733,7 +1134,7 @@ const global = globalThis;
 
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function () {
       Keybindings.resetAll();
-      if (keybindingsApi) keybindingsApi.refresh();
+      if (keybindingsApi && keybindingsSheetEl && keybindingsSheetEl.open) keybindingsApi.refresh();
     });
 
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function () {
@@ -756,6 +1157,7 @@ const global = globalThis;
 
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function () {
       runCategoryReset(function (p) { p.resetAliasesPrefs(); }, 'aliases-reset');
+      if (aliasesApi && aliasesSheetEl && aliasesSheetEl.open) aliasesApi.refresh();
     });
 
     // Appearance
@@ -946,8 +1348,14 @@ const global = globalThis;
       function (p, on) { p.writeStoredEditorHoleGutter(on); }
     );
 
-    // Keybindings (UX shell — remapping wired later)
-    keybindingsApi = mountKeybindingsPanel(panelBodies.keybindings);
+    // Keybindings
+    addActionRow(
+      panelBodies.keybindings,
+      'Customize keybindings',
+      'Remap commands and chords.',
+      'Edit\u2026',
+      openKeybindingsSheet
+    );
 
     // Beluga
     addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Engine',
@@ -1022,27 +1430,18 @@ const global = globalThis;
       function (p, on) { p.writeStoredLibraryExpandDefault(on); }
     );
 
-    var resetRow = document.createElement('div');
-    resetRow.className = 'bj-dialog__setting bj-settings__action-row';
-    var resetMain = document.createElement('div');
-    resetMain.className = 'bj-dialog__setting-main';
-    var resetLbl = document.createElement('span');
-    resetLbl.className = 'bj-dialog__setting-label';
-    resetLbl.textContent = 'Reset panel layout';
-    var resetDesc = document.createElement('span');
-    resetDesc.className = 'bj-dialog__setting-desc';
-    resetDesc.textContent = 'Reset split panes and side panel sizes.';
-    resetMain.appendChild(resetLbl);
-    resetMain.appendChild(resetDesc);
-    var resetBtn = makeResetLink(function () {
-      if (!persist()) return;
-      persist().resetLayoutPrefs();
-      postSettingsApply('layout-reset');
-      if (typeof global.location !== 'undefined') global.location.reload();
-    });
-    resetRow.appendChild(resetMain);
-    resetRow.appendChild(resetBtn);
-    panelBodies.workspace.appendChild(resetRow);
+    addActionRow(
+      panelBodies.workspace,
+      'Reset panel layout',
+      'Reset split panes and side panel sizes.',
+      'Reset',
+      function () {
+        if (!persist()) return;
+        persist().resetLayoutPrefs();
+        postSettingsApply('layout-reset');
+        if (typeof global.location !== 'undefined') global.location.reload();
+      }
+    );
 
     // Aliases
     addDropdownRow(panelBodies.aliases, 'alias-activation', 'Alias expansion',
@@ -1065,6 +1464,13 @@ const global = globalThis;
         if (next !== cur) ed.setValue(next);
       }
     );
+    addActionRow(
+      panelBodies.aliases,
+      'Customize aliases',
+      'Define trigger \u2192 expansion pairs used while typing.',
+      'Edit\u2026',
+      openAliasesSheet
+    );
 
     selectCategory(activeCategory);
 
@@ -1083,7 +1489,6 @@ const global = globalThis;
   function open() {
     ensureSettingsDialog();
     syncFromState();
-    if (keybindingsApi) keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
   }
 

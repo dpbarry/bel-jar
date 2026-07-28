@@ -124,16 +124,12 @@ html.light body {
 
 /* Toggle-on — standard pressed state for icon toggles. Icon ink + fill; hover keeps bg wash. */
 #inspector-sync-toggle.is-on,
-#btn-repl-timestamps.is-on,
 .floating-window-action.is-on,
 .bel-graph3d-iconbtn.is-on {
   color: var(--toggle-on-fg);
 }
 
 #inspector-sync-toggle.is-on svg path,
-#btn-repl-timestamps.is-on svg path,
-#btn-repl-timestamps.is-on svg circle,
-#btn-repl-timestamps.is-on svg polyline,
 .floating-window-action.is-on svg path,
 .bel-graph3d-iconbtn.is-on svg path {
   fill: var(--toggle-on-icon-fill);
@@ -144,7 +140,6 @@ html.light body {
 
 @media (hover: hover) and (pointer: fine) {
   #inspector-sync-toggle.is-on:not(:disabled):hover,
-  #btn-repl-timestamps.is-on:not(:disabled):hover,
   .floating-window-action.is-on:hover,
   .bel-graph3d-iconbtn.is-on:hover:not(:disabled) {
     color: var(--toggle-on-fg);

@@ -9,7 +9,6 @@ var btnRunEl = null;
 var openTurnEl = null;
 var openTurnBody = null;
 var focusBound = false;
-var timestampsOn = false;
 
 function getOutput() {
   if (!outputEl) outputEl = document.getElementById('output');
@@ -34,42 +33,147 @@ function formatTs(ms) {
   );
 }
 
-function stampHost(host, ms) {
-  if (!host || !host.appendChild) return null;
-  var t = ms != null ? ms : Date.now();
-  var el = null;
-  for (var i = 0; i < host.children.length; i++) {
-    if (host.children[i].classList && host.children[i].classList.contains('repl-ts')) {
-      el = host.children[i];
-      break;
+function setStampTooltip(host, tip) {
+  host.setAttribute('data-tooltip-placement', 'above');
+  host.setAttribute('data-tooltip-no-track', '');
+  if (typeof Tooltips !== 'undefined' && Tooltips.set) {
+    Tooltips.set(host, tip, { ariaLabel: false });
+  } else {
+    host.setAttribute('data-tooltip', tip);
+  }
+}
+
+function clearStamp(el) {
+  if (!el || el.nodeType !== 1) return;
+  if (el.dataset) delete el.dataset.ms;
+  el.removeAttribute('data-ms');
+  el.removeAttribute('data-tooltip');
+  el.removeAttribute('data-tooltip-placement');
+  el.removeAttribute('data-tooltip-no-track');
+}
+
+/** Prefer the visible card/prompt content over full-width stream wrappers. */
+function resolveStampTarget(host) {
+  if (!host || host.nodeType !== 1) return null;
+
+  if (host.classList.contains('repl-turn-cmd')) {
+    return host;
+  }
+
+  if (host.classList.contains('repl-block')) {
+    var rich = null;
+    for (var i = 0; i < host.children.length; i++) {
+      var child = host.children[i];
+      if (child.classList && child.classList.contains('repl-rich')) {
+        rich = child;
+        break;
+      }
+    }
+    if (rich) {
+      var prefer = [
+        'repl-rich-error',
+        'repl-rich-pre',
+        'repl-rich-msg',
+        'repl-query-result',
+        'repl-rich-countholes',
+        'repl-help',
+        'repl-line',
+      ];
+      for (var p = 0; p < prefer.length; p++) {
+        for (var c = 0; c < rich.children.length; c++) {
+          var kid = rich.children[c];
+          if (kid.classList && kid.classList.contains(prefer[p])) return kid;
+        }
+      }
+      for (var j = 0; j < rich.children.length; j++) {
+        var ch = rich.children[j];
+        if (ch.classList && ch.classList.contains('repl-rich-title')) continue;
+        return ch;
+      }
+      return rich;
+    }
+    for (var k = 0; k < host.children.length; k++) {
+      var line = host.children[k];
+      if (line.classList && (line.classList.contains('repl-line') || line.classList.contains('repl-help'))) {
+        return line;
+      }
     }
   }
-  if (!el) {
-    el = document.createElement('time');
-    el.className = 'repl-ts';
-    el.setAttribute('aria-hidden', 'true');
-    host.appendChild(el);
+
+  return host;
+}
+
+function stampHost(host, ms) {
+  if (!host || host.nodeType !== 1) return null;
+  var t = ms != null ? ms : Date.now();
+  var target = resolveStampTarget(host) || host;
+
+  for (var i = host.children.length - 1; i >= 0; i--) {
+    var child = host.children[i];
+    if (child.classList && child.classList.contains('repl-ts')) {
+      host.removeChild(child);
+    }
   }
-  el.dateTime = new Date(t).toISOString();
-  el.dataset.ms = String(t);
-  el.textContent = formatTs(t);
-  return el;
+  if (target !== host) {
+    for (var j = target.children.length - 1; j >= 0; j--) {
+      var tc = target.children[j];
+      if (tc.classList && tc.classList.contains('repl-ts')) {
+        target.removeChild(tc);
+      }
+    }
+    if (host.dataset && host.dataset.ms) clearStamp(host);
+  }
+
+  target.dataset.ms = String(t);
+  setStampTooltip(target, formatTs(t));
+  return target;
 }
 
-function applyTimestampsClass() {
-  var output = getOutput();
-  if (!output) return;
-  output.classList.toggle('is-timestamps', !!timestampsOn);
+/** Lift legacy visible `<time class="repl-ts">` nodes into host tooltips. */
+function migrateLegacyStamps(root) {
+  var scope = root || getOutput();
+  if (!scope || !scope.querySelectorAll) return;
+  var stamps = scope.querySelectorAll('.repl-ts');
+  for (var i = 0; i < stamps.length; i++) {
+    var el = stamps[i];
+    var parent = el.parentElement;
+    var ms = NaN;
+    if (el.dataset && el.dataset.ms) ms = Number(el.dataset.ms);
+    if (!Number.isFinite(ms) && el.dateTime) ms = Date.parse(el.dateTime);
+    if (el.parentNode) el.parentNode.removeChild(el);
+    if (parent) stampHost(parent, Number.isFinite(ms) ? ms : Date.now());
+  }
 }
 
-function setTimestampsVisible(on) {
-  timestampsOn = !!on;
-  applyTimestampsClass();
-  return timestampsOn;
-}
+/**
+ * After transcript restore (or legacy HTML), retarget oversized hosts and
+ * rebind native tooltips — `data-ms`/`data-tooltip` survive in outerHTML, but
+ * Tooltips.bind does not auto-wire inserted nodes.
+ */
+function rebindStamps(root) {
+  var scope = root || getOutput();
+  if (!scope || !scope.querySelectorAll) return;
 
-function isTimestampsVisible() {
-  return !!timestampsOn;
+  migrateLegacyStamps(scope);
+
+  var blocks = scope.querySelectorAll('.repl-block[data-ms]');
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i];
+    var ms = Number(block.dataset.ms);
+    var target = resolveStampTarget(block);
+    if (target && target !== block && Number.isFinite(ms)) {
+      clearStamp(block);
+      stampHost(target, ms);
+    }
+  }
+
+  var stamped = scope.querySelectorAll('[data-ms]');
+  for (var j = 0; j < stamped.length; j++) {
+    var el = stamped[j];
+    var t = Number(el.dataset.ms);
+    if (!Number.isFinite(t)) continue;
+    setStampTooltip(el, formatTs(t));
+  }
 }
 
 function buildLiveLine() {
@@ -120,7 +224,6 @@ function ensureLiveLine() {
     output.appendChild(liveEl);
   }
 
-  applyTimestampsClass();
   bindFocusDelegation();
   return liveEl;
 }
@@ -264,7 +367,7 @@ global.ReplStream = {
   beginTurn: beginTurn,
   endTurn: endTurn,
   currentTurnBody: currentTurnBody,
-  setTimestampsVisible: setTimestampsVisible,
-  isTimestampsVisible: isTimestampsVisible,
+  migrateLegacyStamps: migrateLegacyStamps,
+  rebindStamps: rebindStamps,
 };
 global.BelJarReplStream = global.ReplStream;

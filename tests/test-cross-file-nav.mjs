@@ -127,6 +127,10 @@ const syms = listGroupSymbols(FILES, 'cr/equiv', getText, crRosserOpts);
 expect(syms.every((s) => s.fileId !== 'cr/equiv'), 'active file excluded (engine owns it)');
 expect(syms.some((s) => s.name === 'beta' && s.fileId === 'cr/lam'), 'group symbols carry file ids');
 expect(syms.every((s) => s.fileId !== 'other/defs'), 'group symbols stay in the group');
+expect(syms.every((s) => s.namespace == null || typeof s.namespace === 'string'),
+  'group symbols carry optional namespace for completion filters');
+const symsAgain = listGroupSymbols(FILES, 'cr/equiv', getText, crRosserOpts);
+expect(symsAgain === syms, 'listGroupSymbols memo returns same array on suite-identity hit');
 
 // ── usesOf: free occurrences only ────────────────────────────────────────────
 const uses = usesOf(EQUIV);

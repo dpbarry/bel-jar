@@ -29,6 +29,14 @@
 // (oracle calls, insertion) lives in the action layer; the search takes an
 // injected `verify` oracle so it is fully unit-testable.
 
+// Beluga comments: `%{ … }%` blocks and `%` to end of line. Kept local so this
+// module stays a leaf (no imports) — the same discipline as stripLfComments.
+function stripComments(text) {
+  return String(text == null ? '' : text)
+    .replace(/%\{[\s\S]*?\}%/g, ' ')
+    .replace(/%[^\n]*/g, ' ');
+}
+
 // ── Computation-type signature parsing ───────────────────────────────────────
 // A theorem's type is a computation type: a (possibly dependent) chain of
 // premises to a conclusion, e.g.
@@ -38,7 +46,12 @@
 // arrows inside boxes/braces don't split. Dependent binders ({x:T}, (g:ctx)) are
 // captured as premises tagged `dependent` (they bind a meta/context variable).
 export function parseCompType(typeStr) {
-  const s = String(typeStr == null ? '' : typeStr).trim();
+  // Invariant 18 (comment-awareness) applies to the TYPE SIGNATURE too. Corpus
+  // authors annotate premises inline (`[g |- eq T R]     % e1 : eq T R`); the
+  // comment text was carried into the premise's `raw`, so every downstream
+  // consumer — decomposeContextual, splitTextFor, the IH matcher — saw a
+  // corrupted type and silently produced NO split/recurse/lemma candidate at all.
+  const s = stripComments(String(typeStr == null ? '' : typeStr)).trim();
   if (!s) return null;
   const parts = splitArrowSpine(s);
   if (!parts.length) return null;
@@ -93,6 +106,15 @@ function classifyPremise(seg) {
     const name = (inner.split(':')[0] || '').trim();
     return { kind: 'pi', raw: t, binder: name };
   }
+  // NOTE (2026-07-27, tried and REVERTED): a PARENTHESISED FUNCTION premise
+  // (`({T:[⊢tp]} TmVar [g] [⊢T] -> Sem [h] [⊢T])`, the `extend`/`nsubst` shape) is
+  // really an ordinary argument, not an implicit `(g:ctx)` binder, and tagging it
+  // `ctx` shifts every downstream argument index. Narrowing this branch the way
+  // `introSpineSegments` does (a `( … )` is a binder only with no arrow/turnstile/
+  // box inside) is CORRECT in isolation but blew up `tapl/ch3+arith+leq#mstep_leq_2`
+  // from COMPLETE to a >10-minute search — the extra premise widens the IH/rule
+  // arity and the lemma pool explodes. It also moved no split subject. Do not
+  // re-apply without first bounding that search cost.
   if (t[0] === '(') {
     const inner = t.slice(1, t.lastIndexOf(')') >= 0 ? t.lastIndexOf(')') : t.length);
     const name = (inner.split(':')[0] || '').trim();
@@ -114,6 +136,14 @@ function classifyPremise(seg) {
 // Returns { kind: 'none'|'index'|'named'|'bare', index?, name? } or null when
 // there is no totality annotation at all (then we must NOT recurse blindly).
 export function parseTotality(declOrBodyText) {
+  // DELIBERATELY NOT comment-stripped (measured 2026-07-25). 93 corpus decls
+  // carry a `%`-commented-out `/ total … /`; 27 of them currently COMPLETE.
+  // Invariant 18's concern is scanners misreading program STRUCTURE — but the
+  // pragma is not structure here: the engine never EMITS a pragma, and the real
+  // recursion guard is decOk's structural case-component descent, not the
+  // measure. A commented pragma is therefore the author's INTENT about which
+  // argument decreases — free, already-verified guidance. Discarding it buys no
+  // correctness and costs completions.
   const s = String(declOrBodyText == null ? '' : declOrBodyText);
   const m = /\/\s*total\b([^/]*)\//.exec(s);
   if (!m) return null;
@@ -127,6 +157,19 @@ export function parseTotality(declOrBodyText) {
   // LAST one, and resolving WHICH premise it names requires aligning that spine
   // (see decreasingBoxIndex) — defaulting to premise 0 silently inverts the IH
   // slot discipline for every multi-premise named-measure theorem.
+  // `/ total (f) /` and `/ total (f x) /` — the measure written as ONLY the call
+  // pattern, 64 declarations corpus-wide (plus the `str_hyp` gate). The parens
+  // used to stay glued to the token, so the measure's "decreasing argument" came
+  // out as `(neutral_mstep` or `h)`; `introBinderNames` then named a binder that
+  // way and the intro emitted `fn (neutral_mstep => …`, which does not parse — the
+  // theorem had NO first move at all and bailed at step 0 in 3 checks.
+  // A lone function name designates no argument, which is exactly `bare`.
+  if (arg[0] === '(' && arg[arg.length - 1] === ')') {
+    const inner = arg.slice(1, -1).trim();
+    const its = inner.split(/\s+/).filter(Boolean);
+    if (its.length <= 1) return { kind: 'bare' };
+    return { kind: 'named', name: its[its.length - 1], fn: its[0] };
+  }
   const paren = arg.indexOf('(');
   if (paren > 0) {
     const name = arg.slice(0, paren).trim();

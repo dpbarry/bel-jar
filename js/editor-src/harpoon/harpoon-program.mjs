@@ -14,13 +14,17 @@ import { indentRange } from '@codemirror/language';
 import { formatProofBody } from '../format/proof-format.mjs';
 import { dispatchEdit } from '../edit-history.mjs';
 import { proveOrchestrationCode } from '../prover/prover-orchestrator.mjs';
+import { DECL_IDENT } from '../prover/ident.mjs';
+
+const DECL_HEAD = new RegExp(String.raw`^\s*(rec|proof)\b\s+(${DECL_IDENT})\s*:`, 'u');
+const DECL_HEAD_G = new RegExp(String.raw`\b(?:rec|proof)\s+(${DECL_IDENT})\s*:[\s\S]*?;`, 'gu');
 
 // Parse `<kw> name : <type> = <body>` from a top-level declaration's text.
 // Returns { kw:'rec'|'proof', name, type, bodyStart } (bodyStart = offset of the
 // body within declText, after the top-level `=`), or null when it doesn't match.
 export function parseDecl(declText) {
   const s = String(declText == null ? '' : declText);
-  const m = /^\s*(rec|proof)\b\s+([A-Za-z_][A-Za-z0-9_']*)\s*:/.exec(s);
+  const m = DECL_HEAD.exec(s);
   if (!m) return null;
   const kw = m[1];
   const name = m[2];
@@ -121,7 +125,7 @@ export function declRangeWithSemicolon(doc, from, to) {
 }
 
 export function countSiblingHoledDecls(docText, declName) {
-  const re = /\b(?:rec|proof)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:[\s\S]*?;/g;
+  const re = new RegExp(DECL_HEAD_G.source, 'gu');
   let count = 0;
   let m;
   const target = String(declName || '');

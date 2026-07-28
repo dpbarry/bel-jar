@@ -130,6 +130,7 @@
       }
     }
     var ALIAS_ACTIVATION_KEY = "beljar-alias-activation";
+    var ALIAS_PAIRS_KEY = "beljar-alias-pairs";
     var CFG_AUTO_SYNC_KEY = "beljar-cfg-auto-sync";
     function readStoredCfgAutoSync2() {
       try {
@@ -155,13 +156,31 @@
       if (mode === "greedy") backendSave2(ALIAS_ACTIVATION_KEY, "greedy");
       else backendRemove2(ALIAS_ACTIVATION_KEY);
     }
+    function readStoredAliasPairs2() {
+      try {
+        var raw = backendLoad2(ALIAS_PAIRS_KEY);
+        if (raw == null || raw === "") return null;
+        var parsed = tryParse2(raw);
+        if (!Array.isArray(parsed)) return null;
+        return parsed;
+      } catch (_) {
+        return null;
+      }
+    }
+    function writeStoredAliasPairs2(pairs) {
+      if (pairs == null) {
+        backendRemove2(ALIAS_PAIRS_KEY);
+        return;
+      }
+      if (!Array.isArray(pairs)) return;
+      backendSave2(ALIAS_PAIRS_KEY, JSON.stringify(pairs));
+    }
     var REPL_AUTOSCROLL_KEY = "beljar-repl-autoscroll";
     var REPL_WELCOME_KEY = "beljar-repl-welcome";
     var REPL_ECHO_KEY = "beljar-repl-echo";
     var REPL_FILTER_CHATTER_KEY = "beljar-repl-filter-chatter";
     var REPL_HISTORY_CAP_KEY = "beljar-repl-history-cap";
     var REPL_HISTORY_PERSIST_KEY = "beljar-repl-history-persist";
-    var REPL_TIMESTAMPS_KEY = "beljar-repl-timestamps";
     var REPL_TRANSCRIPT_KEY = "beljar-repl-transcript-v1";
     var REPL_CMD_HISTORY_KEY = "beljar-repl-cmd-history-v1";
     var REPL_CMD_HISTORY_DEFAULT_CAP = 500;
@@ -324,12 +343,6 @@
         }
         clearReplHistoryPayload(prev);
       }
-    }
-    function readStoredReplTimestamps2() {
-      return readBoolDefaultOff(REPL_TIMESTAMPS_KEY);
-    }
-    function writeStoredReplTimestamps2(on) {
-      writeBoolDefaultOff(REPL_TIMESTAMPS_KEY, on);
     }
     function readStoredReplTranscript2() {
       try {
@@ -654,7 +667,6 @@
       backendRemove2(REPL_FILTER_CHATTER_KEY);
       backendRemove2(REPL_HISTORY_CAP_KEY);
       backendRemove2(REPL_HISTORY_PERSIST_KEY);
-      backendRemove2(REPL_TIMESTAMPS_KEY);
       clearReplHistoryPayload();
     }
     var KEYBINDINGS_KEY = "beljar-keybindings";
@@ -696,6 +708,7 @@
     }
     function resetAliasesPrefs2() {
       backendRemove2(ALIAS_ACTIVATION_KEY);
+      backendRemove2(ALIAS_PAIRS_KEY);
     }
     function isAliasExpandablePath(name) {
       var PS = typeof ProjectSource !== "undefined" ? ProjectSource : null;
@@ -767,6 +780,8 @@
       writeStoredCfgAutoSync: writeStoredCfgAutoSync2,
       readStoredAliasActivation: readStoredAliasActivation2,
       writeStoredAliasActivation: writeStoredAliasActivation2,
+      readStoredAliasPairs: readStoredAliasPairs2,
+      writeStoredAliasPairs: writeStoredAliasPairs2,
       readBoolDefaultOn,
       writeBoolDefaultOn,
       readBoolDefaultOff,
@@ -783,8 +798,6 @@
       writeStoredReplHistoryCap: writeStoredReplHistoryCap2,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist2,
       writeStoredReplHistoryPersist: writeStoredReplHistoryPersist2,
-      readStoredReplTimestamps: readStoredReplTimestamps2,
-      writeStoredReplTimestamps: writeStoredReplTimestamps2,
       readStoredReplTranscript: readStoredReplTranscript2,
       writeStoredReplTranscript: writeStoredReplTranscript2,
       readStoredReplCommandHistory: readStoredReplCommandHistory2,
@@ -2945,6 +2958,12 @@
   function writeStoredAliasActivation() {
     return _settingsApi.writeStoredAliasActivation.apply(_settingsApi, arguments);
   }
+  function readStoredAliasPairs() {
+    return _settingsApi.readStoredAliasPairs.apply(_settingsApi, arguments);
+  }
+  function writeStoredAliasPairs() {
+    return _settingsApi.writeStoredAliasPairs.apply(_settingsApi, arguments);
+  }
   function readStoredReplAutoscroll() {
     return _settingsApi.readStoredReplAutoscroll.apply(_settingsApi, arguments);
   }
@@ -2980,12 +2999,6 @@
   }
   function writeStoredReplHistoryPersist() {
     return _settingsApi.writeStoredReplHistoryPersist.apply(_settingsApi, arguments);
-  }
-  function readStoredReplTimestamps() {
-    return _settingsApi.readStoredReplTimestamps.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplTimestamps() {
-    return _settingsApi.writeStoredReplTimestamps.apply(_settingsApi, arguments);
   }
   function readStoredReplTranscript() {
     return _settingsApi.readStoredReplTranscript.apply(_settingsApi, arguments);
@@ -3723,6 +3736,8 @@
     writeStoredHoverScope,
     readStoredAliasActivation,
     writeStoredAliasActivation,
+    readStoredAliasPairs,
+    writeStoredAliasPairs,
     readStoredCfgAutoSync,
     writeStoredCfgAutoSync,
     readStoredReplAutoscroll,
@@ -3737,8 +3752,6 @@
     writeStoredReplHistoryCap,
     readStoredReplHistoryPersist,
     writeStoredReplHistoryPersist,
-    readStoredReplTimestamps,
-    writeStoredReplTimestamps,
     readStoredReplTranscript,
     writeStoredReplTranscript,
     readStoredReplCommandHistory,

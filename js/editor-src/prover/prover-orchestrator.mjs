@@ -22,6 +22,7 @@ import {
   introBinders,
   familyIndexSorts,
   patternMetavars,
+  setConstructorScopeDecl,
 } from './hole-split.mjs';
 import { synthesize, demandSplitVerdict, fillSplitPlan, fillIntroPlan, fillInvertPlan, fillInvertChainPlan } from './prover-synth.mjs';
 import { findCounterexample, certifyCounterexample } from './prover-counterexample.mjs';
@@ -363,6 +364,20 @@ function attachStuckHint(stuck, thm) {
 
 
 export async function proveProgram(initialCode, thm, oracle, opts = {}) {
+  // Announce the SIGNATURE SCOPE for the whole run: Beluga's signature is
+  // sequential, so the model must answer every constructor query with the
+  // declarations that precede THIS theorem (a family declared twice resolves to
+  // the last one before it). Cleared in `finally` so the editor's own queries,
+  // which have no decl under proof, keep seeing the whole program.
+  setConstructorScopeDecl(thm && thm.name);
+  try {
+    return await proveProgramWithScope(initialCode, thm, oracle, opts);
+  } finally {
+    setConstructorScopeDecl(null);
+  }
+}
+
+async function proveProgramWithScope(initialCode, thm, oracle, opts = {}) {
   const first = await proveProgramCore(initialCode, thm, oracle, opts);
   if (first.complete || opts.noMeasureSynthesis) return first;
   if (!first.stuck || first.stuck.reason !== 'no-totality-measure') return first;

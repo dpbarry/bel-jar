@@ -5,16 +5,3 @@
 It is currently in its beginning stages. In the future, it can be a staging ground for experimental Beluga features.
 
 Live at [dpbarry.github.io/bel-jar/](https://dpbarry.github.io/bel-jar/)
-
-
-
-For contributors:
-**Map of the codebase:** [`docs/CODEMAP.md`](docs/CODEMAP.md)
-
-```bash
-npm test                  # full suite
-npm run build             # editor bundle + library
-npm run build:shell       # product shell (+ leaf graphs for tests)
-```
-
-Product boot (`index.html`): `beluga-client.js` → `harpoon-client.js` → `editor-cm.bundle.js` → `shell.js` (from `js/shell.mjs`).

@@ -30,7 +30,7 @@ import {
   isCtypeApplication,
 } from './prover-comp-type.mjs';
 import { holeByteOffset, theoremDeclRange, stripLfComments } from './prover-certify.mjs';
-import { reIdentExact } from './ident.mjs';
+import { DECL_IDENT, reIdentExact } from './ident.mjs';
 
 // Fresh-name helper mirroring hole-split's, kept local so move-gen is pure.
 
@@ -281,19 +281,44 @@ export function decreasingHyps(hole, thm, decHead, code = '') {
       fromBranch: fromBranch.map((h) => h.name),
     });
   }
-  if (fromBranch.length) return fromBranch;
-  const fromGoal = innerSubderivFromBranchGoal(hole, code, decHead);
-  if (fromGoal) return [fromGoal];
   const all = expandedHypsOf(hole, code);
   const ctxParam = theoremContextParam(thm);
-  if (!ctxParam) {
-    return all.filter((h) => h.where === 'meta' && boxedConclusionHead(h.type) === decHead);
+  const widePool = () => (ctxParam
+    ? all.filter((h) => {
+      if (ihMetaCand(h, decHead)) return isPremiseShapedSubderiv(h, thm);
+      if (h.where !== 'comp' || boxedConclusionHead(h.type) !== decHead) return false;
+      return !isIntroducedPremise(h, thm);
+    })
+    : all.filter((h) => h.where === 'meta' && boxedConclusionHead(h.type) === decHead));
+  if (fromBranch.length) {
+    // POISONED DECREASING SLOT. `fromBranch` is the INNERMOST enclosing arm's
+    // pattern metavariables, family-filtered only — so when that arm destructured
+    // a premise that is NOT descended from the MEASURED one (the uniqueness /
+    // determinacy / confluence idiom: two derivations of the same family, split
+    // one after the other), every call it generates is rejected by the totality
+    // checker with "Recursive call not structurally smaller", and the call the
+    // proof actually needs — decreasing argument from the OUTER split on the
+    // measured premise — is never generated at all (measured on
+    // logrel/algeq-simplified#determinacy: `determinacy [g ⊢ X1] [g ⊢ X]`
+    // proposed 4×, `determinacy [g ⊢ X] [g ⊢ X1]` never).
+    //
+    // `decSubderivNames` is the totality checker's OWN criterion (the fixpoint
+    // over enclosing cases whose scrutinee is decreasing-descended) and already
+    // gates the synthesis engine's decOk facts. Apply it here: when the innermost
+    // arm binds NO eligible sub-derivation, lead with the eligible ones that ARE
+    // in scope. Nothing is dropped (the criterion is blind to a subderivation
+    // bound by a `let`-inversion rather than a case) — the pool is only widened
+    // and reordered, so a hole whose innermost arm IS eligible is untouched.
+    const decNames = decSubderivNames(code, hole, decreasingArgIndex(thm));
+    if (!decNames.size || fromBranch.some((h) => decNames.has(h.name))) return fromBranch;
+    const eligible = widePool().filter((h) => decNames.has(h.name)
+      && !fromBranch.some((b) => b.name === h.name));
+    if (eligible.length) return [...eligible, ...fromBranch];
+    return fromBranch;
   }
-  return all.filter((h) => {
-    if (ihMetaCand(h, decHead)) return isPremiseShapedSubderiv(h, thm);
-    if (h.where !== 'comp' || boxedConclusionHead(h.type) !== decHead) return false;
-    return !isIntroducedPremise(h, thm);
-  });
+  const fromGoal = innerSubderivFromBranchGoal(hole, code, decHead);
+  if (fromGoal) return [fromGoal];
+  return widePool();
 }
 
 
@@ -520,10 +545,31 @@ export function decSubderivNames(code, hole, decIdxThm) {
   const decBinder = decreasingBinderNameAt(code, hole, decIdxThm);
   if (!decBinder) return new Set();
   const cases = openCasesAt(code, hole);
+  // A `let`-INVERSION is a ONE-BRANCH CASE: `let [g ⊢ ctor S] = d in` destructures
+  // `d` exactly as an arm would, and Beluga's totality checker accepts a recursive
+  // call on `S` whenever `d` is decreasing-descended. Walking `openCasesAt` alone
+  // made every such sub-derivation invisible — to the decOk facts AND to the
+  // recurse pool — for the whole "invert, then call" idiom. Matched only when the
+  // RHS is a bare identifier (a hypothesis, never a call result) and the pattern
+  // sits on one line: both restrictions UNDER-approximate, so a miss costs a
+  // candidate, never a wrong one.
+  const lets = [...pathBodyBefore(code, hole)
+    .matchAll(/\blet\b([^=\n]*)=\s*([\p{L}_][\p{L}\p{N}_']*)\s+in\b/gu)];
   const dec = new Set([decBinder]);
-  for (const c of cases) {
-    if (!c.arm || !dec.has(c.scrut)) continue;
-    for (const v of c.arm.match(/\p{Lu}[\p{L}\p{N}_']*/gu) || []) dec.add(v);
+  // One fixpoint over BOTH forms: a case may scrutinise a let-bound sub-derivation
+  // and a let may invert a case-bound one, in either order.
+  for (let pass = 0; pass <= cases.length + lets.length; pass += 1) {
+    let grew = false;
+    const add = (v) => { if (v && !dec.has(v)) { dec.add(v); grew = true; } };
+    for (const c of cases) {
+      if (!c.arm || !dec.has(c.scrut)) continue;
+      for (const v of c.arm.match(/\p{Lu}[\p{L}\p{N}_']*/gu) || []) add(v);
+    }
+    for (const m of lets) {
+      if (!dec.has(m[2])) continue;
+      for (const v of m[1].match(/\p{Lu}[\p{L}\p{N}_']*/gu) || []) add(v);
+    }
+    if (!grew) break;
   }
   dec.delete(decBinder); // the binder itself is not smaller than itself
   return dec;
@@ -643,22 +689,46 @@ export function declBodyEqIndex(s, from) {
 }
 
 
+// Every `rec`/`proof` in the program, with the two facts a CALLER needs to know
+// whether it may cite one: `at` (where the declaration starts) and `block` (which
+// mutual `and`-chain it belongs to). Beluga's signature is SEQUENTIAL — see
+// `theoremInScope`.
 export function theoremIndex(code) {
   const src = String(code || '');
   const out = [];
-  const re = /\b(?:and\s+)?(?:rec|proof)\s+([\p{L}_][\p{L}\p{N}_']*)\s*:/gu;
+  const re = new RegExp(String.raw`\b(and\s+)?(?:rec|proof)\s+(${DECL_IDENT})\s*:`, 'gu');
   let m;
+  let block = 0;
   while ((m = re.exec(src)) !== null) {
+    if (!m[1]) block += 1; // a head `rec`/`proof` opens a new mutual block
     const eq = declBodyEqIndex(src, re.lastIndex);
     if (eq < 0) continue;
     const header = src.slice(m.index, eq + 1);
     out.push({
-      name: m[1],
+      name: m[2],
+      at: m.index,
+      block,
       compType: parseCompType(src.slice(re.lastIndex, eq).trim()),
       totality: parseTotality(header),
     });
   }
   return out;
+}
+
+// May the theorem under proof CITE `lemma`? Beluga's signature is sequential: a
+// `rec` declared AFTER the one being proved is not in scope, and citing it is
+// rejected outright ("Identifier <name> is unbound"). Mutual `and`-chain members
+// see each other regardless of order. Measured 2026-07-25: without this filter
+// ~15% of ALL checker traffic on the stuck residue was spent on out-of-scope
+// lemma calls — candidates that can never succeed, in some targets hundreds of
+// them (`confluence` 88 rejections, `determinacy'` 88, `mstep_trans` 86).
+// FAIL OPEN: when the caller cannot be located in the index, nothing is filtered.
+export function theoremInScope(lemma, currentThm, index) {
+  if (!lemma || !currentThm || !Array.isArray(index)) return true;
+  const self = index.find((t) => t && t.name === currentThm.name);
+  if (!self || typeof self.at !== 'number' || typeof lemma.at !== 'number') return true;
+  if (lemma.block === self.block) return true; // same mutual block — mutually visible
+  return lemma.at < self.at;
 }
 
 // The comp-LET pattern destructuring a CTYPE result: the conclusion family's
@@ -708,7 +778,7 @@ export function expandedHypsOf(hole, code) {
 
 export function declStartOffset(code, off) {
   const upto = String(code || '').slice(0, Math.max(0, off));
-  const re = /(^|\n)\s*(?:rec|proof)\s+[\p{L}_]/gu;
+  const re = new RegExp(String.raw`(^|\n)\s*(?:rec|proof)\s+${DECL_IDENT}`, 'gu');
   let last = 0;
   let m;
   while ((m = re.exec(upto))) last = m.index + (m[1] ? 1 : 0);
@@ -1167,7 +1237,7 @@ export function familyOfConstructorNameBridge(code, name) {
 
 export function theoremUnderProof(declText) {
   const s = String(declText || '');
-  const m = /^\s*(?:rec|proof)\s+([\p{L}_][\p{L}\p{N}_']*)\s*:/u.exec(s);
+  const m = new RegExp(String.raw`^\s*(?:rec|proof)\s+(${DECL_IDENT})\s*:`, 'u').exec(s);
   if (!m) return null;
   const eq = declBodyEqIndex(s, m[0].length);
   if (eq < 0) return null;

@@ -1,5 +1,6 @@
 /** Certify / orchestration / splice substrate for the prover bridge. */
 import { enumerateDecls } from './prover-corpus-decls.mjs';
+import { DECL_IDENT } from './ident.mjs';
 
 export function theoremDeclRange(code, name) {
   if (!name) return null;
@@ -14,7 +15,7 @@ export function theoremDeclRange(code, name) {
   let end = lines.length;
   for (let i = start; i < lines.length; i += 1) {
     if (/^\s*;\s*$/.test(lines[i])) { end = i + 1; break; }
-    if (i > start && /^\s*(?:(?:and\s+)?rec|proof)\s+[\p{L}_]/u.test(lines[i])) {
+    if (i > start && new RegExp(String.raw`^\s*(?:(?:and\s+)?rec|proof)\s+${DECL_IDENT}`, 'u').test(lines[i])) {
       end = i;
       break;
     }
@@ -104,6 +105,13 @@ function trimUnusedLfPrelude(prelude, seedText) {
   if (!decls.length) return src;
   const S = freeIdents(seedText);
   const keep = decls.map((d) => d.kind !== 'lf');
+  // Kept non-LF decls (schemas, recs, …) stay in the program; seed their free
+  // names so LF deps they mention (e.g. `imposs` under `lin_name_must_appear`)
+  // are not trimmed out from under them.
+  for (let i = 0; i < decls.length; i += 1) {
+    if (!keep[i]) continue;
+    for (const id of freeIdents(decls[i].text)) S.add(id);
+  }
   const heads = decls.map((d, i) => (keep[i] ? null : lfDeclHead(d.text)));
   const resIdents = decls.map((d, i) => (keep[i] ? null : lfResultIdents(d.text)));
   for (let i = 0; i < decls.length; i += 1) {
@@ -147,7 +155,9 @@ export function trimForCertify(spliced, thmName) {
   if (decls.length < 4) return null;
   const recNamesOf = (text) => {
     const out = [];
-    for (const m of String(text).matchAll(/(?:^|\band\s+)(?:rec|proof)\s+([\p{L}_][\p{L}\p{N}_']*)/gu)) out.push(m[1]);
+    for (const m of String(text).matchAll(new RegExp(String.raw`(?:^|\band\s+)(?:rec|proof)\s+(${DECL_IDENT})`, 'gu'))) {
+      out.push(m[1]);
+    }
     return out;
   };
   const definedNamesOf = (d) => {
@@ -156,12 +166,15 @@ export function trimForCertify(spliced, thmName) {
       case 'rec': case 'proof': case 'and-rec':
         return recNamesOf(t);
       case 'schema': {
-        const m = /^\s*schema\s+([\p{L}_][\p{L}\p{N}_']*)/u.exec(t);
+        const m = new RegExp(String.raw`^\s*schema\s+(${DECL_IDENT})`, 'u').exec(t);
         return m ? [m[1]] : null;
       }
       case 'inductive': case 'coinductive': case 'stratified': case 'typedef': case 'and-inductive': {
         const out = [];
-        for (const m of t.matchAll(/(?:^|\band\s+)(?:LF\s+)?(?:inductive\s+|coinductive\s+|stratified\s+|typedef\s+)?([\p{L}_][\p{L}\p{N}_']*)\s*:/gu)) out.push(m[1]);
+        for (const m of t.matchAll(new RegExp(
+          String.raw`(?:^|\band\s+)(?:LF\s+)?(?:inductive\s+|coinductive\s+|stratified\s+|typedef\s+)?(${DECL_IDENT})\s*:`,
+          'gu',
+        ))) out.push(m[1]);
         for (const m of t.matchAll(/(?:^|\n)\s*\|\s*(\S+)\s*:/g)) out.push(m[1]);
         return out.length ? out : null;
       }
@@ -227,7 +240,7 @@ function nonLfSeedText(prefix, decl) {
 }
 
 function stripHoledSiblingDecls(filePrefix, targetName) {
-  const re = /\b(?:rec|proof)\s+([\p{L}_][\p{L}\p{N}_']*)\s*:[\s\S]*?;\s*/gu;
+  const re = new RegExp(String.raw`\b(?:rec|proof)\s+(${DECL_IDENT})\s*:[\s\S]*?;\s*`, 'gu');
   return String(filePrefix || '').replace(re, (block, name) => {
     if (name === targetName) return block;
     return /\?/.test(block) ? '' : block;

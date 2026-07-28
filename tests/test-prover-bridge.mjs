@@ -264,6 +264,36 @@ expect(slim.includes('tp : type.'), 'orchestration keeps suite prelude');
   expect(trimmed.length < fat.length, 'E.6 orchestration is strictly smaller');
 }
 
+// E.6 must keep LF deps of KEPT non-LF prelude decls (lemma pool), not only
+// names free in the target — else `lin_name_must_appear : … → [ ⊢ imposs]`
+// survives while `imposs : type.` is trimmed out from under it.
+{
+  const preludeOk = [
+    'imposs : type.',
+    'nat : type.',
+    'z : nat.',
+    'orphan : type.',
+    'rec need_imposs : [ |- imposs] =',
+    '[ |- z]',
+    ';',
+  ].join('\n');
+  const fileBody = [
+    'rec id : [ |- nat] -> [ |- nat] =',
+    'fn x => ?',
+    ';',
+  ].join('\n');
+  const fat = `${preludeOk}\n${fileBody}`;
+  const fs = fat.indexOf('rec id');
+  const idEnd = fat.indexOf(';', fs) + 1;
+  const trimmed = proveOrchestrationCode(fat, 'id', fs, idEnd, fs);
+  expect(trimmed.includes('imposs : type.'),
+    'E.6 keeps LF named only by a kept prelude lemma');
+  expect(trimmed.includes('rec need_imposs'),
+    'E.6 keeps the prelude lemma itself');
+  expect(!trimmed.includes('orphan : type.'),
+    'E.6 still drops LF unused by target and by kept lemmas');
+}
+
 // E.6/E.7 FAIL-OPEN + real-lexer identifiers (the file-errors spike,
 // 2026-07-17 sweep, 26 targets): (a) ctor names with symbol chars (`is_@`) and
 // (b) `%`-comment lines INSIDE multi-line decls broke the narrow parsers, and

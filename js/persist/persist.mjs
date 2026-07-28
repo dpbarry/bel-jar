@@ -699,6 +699,14 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.writeStoredAliasActivation.apply(_settingsApi, arguments);
   }
 
+  function readStoredAliasPairs() {
+    return _settingsApi.readStoredAliasPairs.apply(_settingsApi, arguments);
+  }
+
+  function writeStoredAliasPairs() {
+    return _settingsApi.writeStoredAliasPairs.apply(_settingsApi, arguments);
+  }
+
   function readBoolDefaultOn() {
     return _settingsApi.readBoolDefaultOn.apply(_settingsApi, arguments);
   }
@@ -761,14 +769,6 @@ var SCHEMA_VERSION = 3;
 
   function writeStoredReplHistoryPersist() {
     return _settingsApi.writeStoredReplHistoryPersist.apply(_settingsApi, arguments);
-  }
-
-  function readStoredReplTimestamps() {
-    return _settingsApi.readStoredReplTimestamps.apply(_settingsApi, arguments);
-  }
-
-  function writeStoredReplTimestamps() {
-    return _settingsApi.writeStoredReplTimestamps.apply(_settingsApi, arguments);
   }
 
   function readStoredReplTranscript() {
@@ -1780,6 +1780,8 @@ var SCHEMA_VERSION = 3;
     writeStoredHoverScope: writeStoredHoverScope,
     readStoredAliasActivation: readStoredAliasActivation,
     writeStoredAliasActivation: writeStoredAliasActivation,
+    readStoredAliasPairs: readStoredAliasPairs,
+    writeStoredAliasPairs: writeStoredAliasPairs,
     readStoredCfgAutoSync: readStoredCfgAutoSync,
     writeStoredCfgAutoSync: writeStoredCfgAutoSync,
     readStoredReplAutoscroll: readStoredReplAutoscroll,
@@ -1794,8 +1796,6 @@ var SCHEMA_VERSION = 3;
     writeStoredReplHistoryCap: writeStoredReplHistoryCap,
     readStoredReplHistoryPersist: readStoredReplHistoryPersist,
     writeStoredReplHistoryPersist: writeStoredReplHistoryPersist,
-    readStoredReplTimestamps: readStoredReplTimestamps,
-    writeStoredReplTimestamps: writeStoredReplTimestamps,
     readStoredReplTranscript: readStoredReplTranscript,
     writeStoredReplTranscript: writeStoredReplTranscript,
     readStoredReplCommandHistory: readStoredReplCommandHistory,

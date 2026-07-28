@@ -105,13 +105,25 @@
       });
       card.appendChild(btn);
     }
-    if (title) {
-      const h = document.createElement("div");
-      h.className = "bj-dialog__title";
-      h.id = "bj-dialog-title-" + Math.random().toString(36).slice(2);
-      h.textContent = title;
-      dialogEl.setAttribute("aria-labelledby", h.id);
-      card.appendChild(h);
+    const headerExtra = opts.headerExtra instanceof Node ? opts.headerExtra : null;
+    if (title || headerExtra) {
+      let titleEl = null;
+      if (title) {
+        titleEl = document.createElement("div");
+        titleEl.className = "bj-dialog__title";
+        titleEl.id = "bj-dialog-title-" + Math.random().toString(36).slice(2);
+        titleEl.textContent = title;
+        dialogEl.setAttribute("aria-labelledby", titleEl.id);
+      }
+      if (headerExtra) {
+        const header = document.createElement("div");
+        header.className = "bj-dialog__header";
+        if (titleEl) header.appendChild(titleEl);
+        header.appendChild(headerExtra);
+        card.appendChild(header);
+      } else {
+        card.appendChild(titleEl);
+      }
     } else if (opts.ariaLabel) {
       dialogEl.setAttribute("aria-label", opts.ariaLabel);
     }

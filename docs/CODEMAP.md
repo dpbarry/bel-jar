@@ -40,7 +40,7 @@ index.html
 | **Semantic / checking** | [`semantic-engine.mjs`](../js/editor-src/semantic/semantic-engine.mjs) | `semantic/*` |
 | **Prover / holes** | [`prover-orchestrator.mjs`](../js/editor-src/prover/prover-orchestrator.mjs) | `prover/*` (hyp, moves, candidates, synth, certify, hole-*) |
 | **Harpoon (dual)** | [Harpoon dual](#harpoon-dual) | Shell lab UI vs editor-src model — globals only |
-| **IDE chrome** | [`ide/`](../js/editor-src/ide/) | Rename, fold, hover, lint, inspector, cfg/suite |
+| **IDE chrome** | [`ide/`](../js/editor-src/ide/) | Rename, fold, hover, lint, inspector, cfg/suite, [`completion/`](../js/editor-src/ide/completion/) (`classify` → `contributors` → `weigh`; holes use assembled code + `offsetLines`) |
 | **Graph** | [`graph-view.mjs`](../js/editor-src/graph/graph-view.mjs) | `graph/*` |
 | **Format** | [`document-format.mjs`](../js/editor-src/format/document-format.mjs) | `format/*` |
 | **Shell UI** | [`app.mjs`](../js/app/app.mjs) → generated `app.js` | `app-*.mjs` peels; explorer / library / settings |
@@ -88,7 +88,7 @@ Owners publish system nouns next to their module (`Persist`, `BelEditor`, `Toast
 | `js/editor-src/beluga-parser.js` | Generated from `beluga.grammar` |
 | `js/editor-cm.bundle.js` | Generated — `node scripts/build-editor.mjs` |
 | `js/**/*.js` leaves + `js/shell.js` | Generated from `.mjs` — `npm run build:shell`; never hand-edit |
-| `beluga-site/` | Marketing satellite — not the IDE (gitignored) |
+| `beluga-site/` | Marketing satellite — not the IDE |
 | `scratch/`, `scripts/debug-*.mjs`, `scripts/.str-step-*.bel` | Local experiments (gitignored) — not product |
 | `tests/fixtures/`, `results/` | Test samples / harness outputs |
 

@@ -20,8 +20,15 @@ var output = document.getElementById('output');
   }
 
   // BelJar-useful subset of Beluga's classic %: interpreter. Help + allowlist.
+  // `run` is a BelJar shell verb (never sent to Beluga) — see repl-run-cmd.mjs.
   var REPL_HELP_ROWS = [
     { cmd: 'help', desc: 'Show this command reference.' },
+    { cmd: 'run', desc: 'Type-check the active file (alone if orphan; suite-to-here if in a suite).' },
+    { cmd: 'run PATH', desc: 'Type-check one file alone (BelJar).' },
+    { cmd: 'run &PATH', desc: 'Type-check file with its suite prelude (amalgamation).' },
+    { cmd: 'run suite NAME', desc: 'Type-check a whole .cfg suite.' },
+    { cmd: 'run folder PATH', desc: 'Type-check a folder development.' },
+    { cmd: 'run project', desc: 'Type-check every workspace development.' },
     { cmd: 'constructors IDENTIFIER', desc: 'LF constructors for the given type.' },
     { cmd: 'constructors-comp IDENTIFIER', desc: 'Computational constructors for the given datatype.' },
     { cmd: 'countholes', desc: 'Print how many holes are open.' },
@@ -793,50 +800,261 @@ var output = document.getElementById('output');
     return 'error';
   }
 
+  var pendingRunBlock = null;
+  var pendingRunStartedAt = 0;
+  var MIN_PENDING_MS = 180;
+
+  function prefersReducedMotion() {
+    return typeof matchMedia === 'function'
+      && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function waitMs(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function nextFrame() {
+    return new Promise(function (resolve) {
+      requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+    });
+  }
+
+  function runKindClass(kind) {
+    if (kind === 'success') return 'repl-rich-pre--run-success';
+    if (kind === 'holes') return 'repl-rich-pre--run-holes';
+    return 'repl-rich-pre--run-error';
+  }
+
+  function isMorphableRunSeg(seg) {
+    if (!seg) return false;
+    if (seg.type === 'type-recon-holes') return true;
+    if (seg.type === 'query' || seg.type === 'warning') return false;
+    return !!(seg.text && String(seg.text).trim());
+  }
+
+  function ensureMinPendingDwell() {
+    if (!pendingRunStartedAt) return Promise.resolve();
+    var left = MIN_PENDING_MS - (performance.now() - pendingRunStartedAt);
+    return left > 0 ? waitMs(left) : Promise.resolve();
+  }
+
+  function beginRunSkeleton() {
+    if (pendingRunBlock && pendingRunBlock.isConnected) {
+      pendingRunBlock.remove();
+    }
+    pendingRunBlock = null;
+    pendingRunStartedAt = 0;
+
+    var block = createReplBlock();
+    block.setAttribute('data-repl-run-pending', '');
+    block.classList.add('repl-block--run-enter');
+
+    var shell = document.createElement('div');
+    shell.className = 'repl-rich';
+
+    var pre = document.createElement('pre');
+    pre.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-pending';
+    pre.setAttribute('aria-busy', 'true');
+    pre.setAttribute('aria-live', 'polite');
+
+    var skel = document.createElement('span');
+    skel.className = 'repl-run-skel';
+    skel.setAttribute('aria-hidden', 'true');
+    [72, 46].forEach(function (w) {
+      var line = document.createElement('span');
+      line.className = 'repl-run-skel-line';
+      line.style.setProperty('--w', w + '%');
+      skel.appendChild(line);
+    });
+    pre.appendChild(skel);
+    shell.appendChild(pre);
+    block.appendChild(shell);
+    streamAppend(block);
+
+    pendingRunBlock = block;
+    pendingRunStartedAt = performance.now();
+    requestAnimationFrame(function () {
+      if (block.isConnected) block.classList.add('repl-block--run-entered');
+    });
+    scrollReplBottom();
+  }
+
+  function dismissRunSkeleton() {
+    var block = pendingRunBlock;
+    pendingRunBlock = null;
+    pendingRunStartedAt = 0;
+    if (!block) return Promise.resolve();
+    if (!block.isConnected) return Promise.resolve();
+
+    var reduce = prefersReducedMotion();
+    if (reduce) {
+      block.remove();
+      return Promise.resolve();
+    }
+
+    block.classList.remove('repl-block--run-enter', 'repl-block--run-entered');
+    block.classList.add('repl-block--run-dismiss');
+    return new Promise(function (resolve) {
+      var settled = false;
+      function finish() {
+        if (settled) return;
+        settled = true;
+        if (block.isConnected) block.remove();
+        resolve();
+      }
+      block.addEventListener('transitionend', finish, { once: true });
+      setTimeout(finish, 220);
+    });
+  }
+
+  async function morphPendingPre(pre, kind, text) {
+    if (!pre) return;
+    var reduce = prefersReducedMotion();
+    pre.classList.add('repl-rich-pre--run-resolving');
+    if (!reduce) await waitMs(120);
+
+    pre.classList.remove(
+      'repl-rich-pre--run-pending',
+      'repl-rich-pre--run-resolving',
+      'repl-rich-pre--run-success',
+      'repl-rich-pre--run-holes',
+      'repl-rich-pre--run-error'
+    );
+    pre.classList.add(runKindClass(kind));
+    pre.removeAttribute('aria-busy');
+    pre.replaceChildren();
+
+    var body = document.createElement('span');
+    body.className = 'repl-run-body';
+    body.textContent = text;
+    if (!reduce) body.classList.add('repl-run-body--enter');
+    pre.appendChild(body);
+
+    if (!reduce) {
+      await nextFrame();
+      body.classList.add('repl-run-body--shown');
+    }
+  }
+
+  async function morphPendingStacked(block, statusText, holesText) {
+    var shell = block.querySelector('.repl-rich');
+    var pre = block.querySelector('.repl-rich-pre--run-pending');
+    if (!shell || !pre) return;
+
+    shell.classList.add('repl-rich--stacked');
+    if (statusText) {
+      await morphPendingPre(pre, 'success', statusText);
+    } else {
+      await morphPendingPre(pre, 'holes', holesText);
+      return;
+    }
+
+    var reduce = prefersReducedMotion();
+    var hp = document.createElement('pre');
+    hp.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes';
+    if (!reduce) hp.classList.add('repl-rich-pre--run-stack-enter');
+    var body = document.createElement('span');
+    body.className = 'repl-run-body';
+    body.textContent = holesText;
+    hp.appendChild(body);
+    shell.appendChild(hp);
+
+    if (reduce) {
+      hp.classList.add('repl-rich-pre--run-stack-shown');
+    } else {
+      await nextFrame();
+      hp.classList.add('repl-rich-pre--run-stack-shown');
+    }
+  }
+
+  function appendRunSegment(seg) {
+    if (seg.type === 'query') {
+      buildQueryDom(seg.query);
+      return;
+    }
+    if (seg.type === 'warning') {
+      renderCoverageWarning(seg.text);
+      return;
+    }
+    if (seg.type === 'type-recon-holes') {
+      // One message, two connected blocks: green success on top, violet holes
+      // below. `.repl-rich--stacked` merges the seam (no dividing line).
+      appendRichShell((seg.statusText + '\n' + seg.holesText).trim(), function (shell) {
+        shell.classList.add('repl-rich--stacked');
+        if (seg.statusText) {
+          var sp = document.createElement('pre');
+          sp.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-success';
+          sp.textContent = seg.statusText;
+          shell.appendChild(sp);
+        }
+        var hp = document.createElement('pre');
+        hp.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes';
+        hp.textContent = seg.holesText;
+        shell.appendChild(hp);
+      });
+      return;
+    }
+    var text = seg.text;
+    if (!text || !String(text).trim()) return;
+    appendRichShell(text, function (shell) {
+      var pre = document.createElement('pre');
+      pre.className = 'repl-rich-pre repl-rich-pre--run';
+      var kind = classifyRunOtherKind(text);
+      if (kind === 'success') pre.classList.add('repl-rich-pre--run-success');
+      else if (kind === 'holes') pre.classList.add('repl-rich-pre--run-holes');
+      else pre.classList.add('repl-rich-pre--run-error');
+      pre.textContent = text;
+      shell.appendChild(pre);
+    });
+  }
+
   function appendRunOutput(raw) {
     var clean = stripAnsi(raw).replace(/\n+$/, '');
     if (!clean.trim()) return;
     var segs = attachQuerySourceLines(segmentRunOutput(clean), collectEditorQuerySourceLines());
-    segs.forEach(function (seg) {
-      if (seg.type === 'query') {
-        buildQueryDom(seg.query);
-        return;
+    segs.forEach(appendRunSegment);
+  }
+
+  async function resolveRunOutput(raw) {
+    await ensureMinPendingDwell();
+    var clean = stripAnsi(raw).replace(/\n+$/, '');
+    if (!clean.trim()) {
+      await dismissRunSkeleton();
+      return;
+    }
+    var segs = attachQuerySourceLines(segmentRunOutput(clean), collectEditorQuerySourceLines());
+    var pending = pendingRunBlock && pendingRunBlock.isConnected ? pendingRunBlock : null;
+    var morphIdx = -1;
+    if (pending) {
+      for (var i = 0; i < segs.length; i++) {
+        if (isMorphableRunSeg(segs[i])) {
+          morphIdx = i;
+          break;
+        }
       }
-      if (seg.type === 'warning') {
-        renderCoverageWarning(seg.text);
-        return;
+    }
+
+    if (pending && morphIdx === 0) {
+      pendingRunBlock = null;
+      pendingRunStartedAt = 0;
+      pending.removeAttribute('data-repl-run-pending');
+      pending.classList.remove('repl-block--run-enter');
+      pending.classList.add('repl-block--run-entered');
+
+      var seg0 = segs[0];
+      if (seg0.type === 'type-recon-holes') {
+        await morphPendingStacked(pending, seg0.statusText, seg0.holesText);
+      } else {
+        var pre = pending.querySelector('.repl-rich-pre--run-pending');
+        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), seg0.text);
       }
-      if (seg.type === 'type-recon-holes') {
-        // One message, two connected blocks: green success on top, violet holes
-        // below. `.repl-rich--stacked` merges the seam (no dividing line).
-        appendRichShell((seg.statusText + '\n' + seg.holesText).trim(), function (shell) {
-          shell.classList.add('repl-rich--stacked');
-          if (seg.statusText) {
-            var sp = document.createElement('pre');
-            sp.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-success';
-            sp.textContent = seg.statusText;
-            shell.appendChild(sp);
-          }
-          var hp = document.createElement('pre');
-          hp.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes';
-          hp.textContent = seg.holesText;
-          shell.appendChild(hp);
-        });
-        return;
-      }
-      var text = seg.text;
-      if (!text.trim()) return;
-      appendRichShell(text, function (shell) {
-        var pre = document.createElement('pre');
-        pre.className = 'repl-rich-pre repl-rich-pre--run';
-        var kind = classifyRunOtherKind(text);
-        if (kind === 'success') pre.classList.add('repl-rich-pre--run-success');
-        else if (kind === 'holes') pre.classList.add('repl-rich-pre--run-holes');
-        else pre.classList.add('repl-rich-pre--run-error');
-        pre.textContent = text;
-        shell.appendChild(pre);
-      });
-    });
+      scrollReplBottom();
+      for (var j = 1; j < segs.length; j++) appendRunSegment(segs[j]);
+      return;
+    }
+
+    if (pending) await dismissRunSkeleton();
+    segs.forEach(appendRunSegment);
   }
 
   function appendOutput(text, forcedKind) {
@@ -966,6 +1184,8 @@ var output = document.getElementById('output');
   }
 
   function clearOutput() {
+    pendingRunBlock = null;
+    pendingRunStartedAt = 0;
     if (typeof ReplStream !== 'undefined' && ReplStream.clearExceptLive) {
       ReplStream.clearExceptLive();
     } else {
@@ -997,6 +1217,9 @@ var output = document.getElementById('output');
     appendOutput: appendOutput,
     appendReplHelp: appendReplHelp,
     appendRunOutput: appendRunOutput,
+    beginRunSkeleton: beginRunSkeleton,
+    resolveRunOutput: resolveRunOutput,
+    dismissRunSkeleton: dismissRunSkeleton,
     appendBelugaResponse: appendBelugaResponse,
     appendBuildFallbackNotice: appendBuildFallbackNotice,
     appendRichMsg: appendRichMsg,
@@ -1012,5 +1235,18 @@ var output = document.getElementById('output');
     isKnownReplVerb: isKnownReplVerb,
     isUnavailableReplVerb: isUnavailableReplVerb,
     unavailableReplVerbMessage: unavailableReplVerbMessage,
+    listReplVerbs: function () {
+      var seen = Object.create(null);
+      var out = [];
+      for (var i = 0; i < REPL_HELP_ROWS.length; i++) {
+        var v = String(REPL_HELP_ROWS[i].cmd || '').split(/\s+/)[0];
+        if (!v) continue;
+        var key = v.toLowerCase();
+        if (seen[key]) continue;
+        seen[key] = true;
+        out.push(v);
+      }
+      return out;
+    },
   };
   global.BelJarReplOutput = global.ReplOutput;

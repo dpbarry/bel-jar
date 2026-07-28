@@ -716,8 +716,10 @@
     });
     window.addEventListener(
       "scroll",
-      () => {
-        if (tooltipAnchor) layoutTooltip(tooltipAnchor);
+      (e) => {
+        if (!tooltipAnchor) return;
+        if (tooltipRoot && e.target instanceof Node && tooltipRoot.contains(e.target)) return;
+        hideTooltipImmediate();
       },
       true
     );

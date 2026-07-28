@@ -25,7 +25,17 @@ import {
 } from './ide/viewport.mjs';
 import { aliases, maybeExpandBelAliases } from './aliases.mjs';
 
-export { expandBelAliases, maybeExpandBelAliases, readAliasActivationMode } from './aliases.mjs';
+export {
+  expandBelAliases,
+  maybeExpandBelAliases,
+  readAliasActivationMode,
+  getAliasPairs,
+  defaultAliasPairs,
+  normalizeAliasPairs,
+  invalidateAliasPairs,
+  ALIAS_PAIRS,
+  DEFAULT_ALIAS_MAP,
+} from './aliases.mjs';
 export {
   enableJumpLog, jumpLogEnabled, logJumpMount, logJumpRequest, logJumpResult,
 } from './ide/jump-log.mjs';
@@ -112,6 +122,7 @@ import { lintTooltipItemsFromDiagnostics } from './ide/diag-gutter.mjs';
 import { checkerSnapshot } from './semantic/checker-snapshot.mjs';
 import { computeLintBlocks } from './lint-units.mjs';
 import { hoverTooltip } from './ide/hover.mjs';
+import { belAutocompletion, completionChrome } from './ide/completion/index.mjs';
 import { holeCycleKeymap, cycleHole } from './prover/hole-decorations.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
 import { createEditorCheckHost } from './semantic/editor-check-host.mjs';
@@ -417,84 +428,6 @@ function editorChrome() {
   });
 }
 
-function completionChrome() {
-  const selectedRow = {
-    backgroundColor: 'var(--editor-ac-row-bg)',
-    color: 'var(--editor-ac-row-fg)',
-  };
-  return EditorView.baseTheme({
-    '.cm-tooltip.cm-tooltip-autocomplete': {
-      backgroundColor: 'transparent',
-      border: 'none',
-      color: 'inherit',
-      padding: 0,
-    },
-    '.cm-tooltip.cm-tooltip-autocomplete > ul': {
-      fontFamily: 'var(--mono, ui-monospace, monospace)',
-      fontSize: '0.78rem',
-      minWidth: '0',
-      maxWidth: 'min(28rem, 90vw)',
-      width: 'max-content',
-      maxHeight: '17rem',
-      padding: '2px 0',
-      backgroundColor: 'var(--search-drop-bg)',
-      border: '1px solid var(--search-drop-border)',
-      borderRadius: 'var(--editor-ac-radius)',
-      boxShadow: 'var(--search-drop-shadow)',
-      scrollbarWidth: 'thin',
-      scrollbarColor: 'color-mix(in srgb, var(--base-mid) 50%, transparent) transparent',
-      '& > li, & > completion-section': {
-        padding: '0.3rem 0.62rem',
-        lineHeight: 1.3,
-      },
-      '& > li': {
-        position: 'relative',
-        transition: 'background 100ms ease',
-      },
-      '& > completion-section': {
-        borderBottom: '1px solid var(--menu-separator)',
-        paddingLeft: '0.62rem',
-        opacity: 0.7,
-        fontFamily: 'var(--sans)',
-        fontSize: '0.64rem',
-        letterSpacing: '0.03em',
-        textTransform: 'uppercase',
-      },
-    },
-    '&light .cm-tooltip-autocomplete ul li[aria-selected], &dark .cm-tooltip-autocomplete ul li[aria-selected]': selectedRow,
-    '&light .cm-tooltip-autocomplete-disabled ul li[aria-selected], &dark .cm-tooltip-autocomplete-disabled ul li[aria-selected]': {
-      backgroundColor: 'var(--editor-ac-row-bg)',
-      color: 'var(--editor-ac-row-fg)',
-    },
-    '.cm-completionMatchedText': {
-      textDecoration: 'none',
-      fontWeight: '600',
-      color: 'inherit',
-    },
-    '.cm-completionIcon': {
-      display: 'none',
-    },
-    '.cm-completionDetail': {
-      marginLeft: '0.5em',
-      fontStyle: 'normal',
-      fontSize: '0.64rem',
-      color: 'var(--muted-high)',
-      opacity: 0.7,
-    },
-    '.cm-tooltip.cm-completionInfo': {
-      padding: '0.34rem 0.55rem',
-      backgroundColor: 'light-dark(var(--base-lowest), var(--base-lower))',
-      color: 'var(--base-highest)',
-      border: '1px solid light-dark(var(--muted-mid), var(--base-higher))',
-      borderRadius: 'var(--radius-sm)',
-      boxShadow: '0 0.06rem 0.16rem var(--tooltip-shadow-near)',
-      fontFamily: 'var(--sans)',
-      fontSize: '0.65rem',
-      lineHeight: 1.35,
-    },
-  });
-}
-
 function isDocumentDarkTheme() {
   return typeof document !== 'undefined' && !document.documentElement.classList.contains('light');
 }
@@ -604,6 +537,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     }),
     syntaxLinter(),
     hoverTooltip(semanticEngine, getOverlayDiags),
+    ...belAutocompletion(semanticEngine),
     flashExtension(),
     rename(),
     contextMenu(),
@@ -809,6 +743,7 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
       replaceDocNonUndoable(view, text);
     },
     getCurrentFileId() { return documentId; },
+    getFilePath() { return docPath; },
     focus: () => view.focus(),
     insertTop(text) {
       const block = sanitizePastedPlainText(text ?? '') + '\n\n';
@@ -1449,6 +1384,7 @@ export function mount(parentEl, options = {}) {
       replaceDocNonUndoable(view, text, opts);
     },
     getCurrentFileId() { return docId; },
+    getFilePath() { return docPath; },
     flushCheckpoint() {
       if (options.persist?.flushCheckpoint) options.persist.flushCheckpoint();
     },
@@ -1600,11 +1536,13 @@ export function mount(parentEl, options = {}) {
     listProjectSymbols() {
       const P = g.Persist;
       if (!P || typeof P.listFiles !== 'function' || typeof P.getFileText !== 'function') return [];
+      // Mount documentId wins — Persist active can lag the open tab.
+      const id = options.documentId || docId || P.getActiveFileId();
       try {
         return listGroupSymbols(
           P.listFiles(),
-          options.documentId || P.getActiveFileId(),
-          (id) => P.getFileText(id)
+          id,
+          (fid) => P.getFileText(fid)
         );
       } catch (_) {
         return [];

@@ -225,6 +225,7 @@
 .repl-rich-pre--run-error,
 .repl-rich-pre--run-success,
 .repl-rich-pre--run-holes,
+.repl-rich-pre--run-pending,
 .repl-rich-pre--warning,
 .repl-query-result,
 .repl-line--warn,
@@ -243,6 +244,7 @@
 .repl-rich-pre--run-error::before,
 .repl-rich-pre--run-success::before,
 .repl-rich-pre--run-holes::before,
+.repl-rich-pre--run-pending::before,
 .repl-rich-pre--warning::before,
 .repl-query-result::before,
 .repl-line--warn::before,
@@ -257,6 +259,29 @@
   width: var(--repl-strip-w);
   background: var(--repl-strip-accent);
   pointer-events: none;
+}
+
+.repl-rich-pre--run-pending,
+.repl-rich-pre--run-error,
+.repl-rich-pre--run-success,
+.repl-rich-pre--run-holes {
+  transition:
+    background 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.repl-rich-pre--run-pending::before,
+.repl-rich-pre--run-error::before,
+.repl-rich-pre--run-success::before,
+.repl-rich-pre--run-holes::before {
+  transition: background 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.repl-rich-pre--run-pending {
+  --repl-strip-accent: color-mix(in oklab, var(--muted-mid) 65%, var(--chrome-divider));
+  padding-left: calc(0.75rem + var(--repl-strip-w));
+  background: color-mix(in oklab, var(--repl-input-well) 93%, var(--muted-mid) 7%);
+  border-color: color-mix(in oklab, var(--chrome-divider) 78%, var(--muted-mid));
 }
 
 .repl-rich-pre--run-error {
@@ -278,6 +303,136 @@
   padding-left: calc(0.75rem + var(--repl-strip-w));
   background: color-mix(in oklab, var(--repl-input-well) 91%, var(--repl-holes-accent) 9%);
   border-color: color-mix(in oklab, var(--repl-holes-accent) 28%, var(--chrome-divider));
+}
+
+/* Run skeleton: same card silhouette; bars stand in for output text. */
+.repl-run-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.48em;
+  padding: 0.08em 0;
+  transition: opacity 120ms ease;
+}
+
+.repl-rich-pre--run-resolving .repl-run-skel {
+  opacity: 0;
+}
+
+.repl-run-skel-line {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  height: 0.7em;
+  width: var(--w, 60%);
+  max-width: 100%;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--muted-low) 32%, transparent);
+}
+
+.repl-run-skel-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--muted-mid) 55%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateX(-120%);
+  animation: repl-run-skel-shimmer 1.35s linear infinite;
+}
+
+.repl-run-skel-line:nth-child(2)::after {
+  animation-delay: 0.18s;
+}
+
+@keyframes repl-run-skel-shimmer {
+  to { transform: translateX(120%); }
+}
+
+.repl-run-body {
+  display: block;
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+  word-break: inherit;
+}
+
+.repl-run-body--enter {
+  opacity: 0;
+}
+
+.repl-run-body--shown {
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+.repl-block--run-enter {
+  opacity: 0;
+  transform: translateY(3px);
+}
+
+.repl-block--run-entered {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.repl-block--run-dismiss {
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.repl-rich-pre--run-stack-enter {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.repl-rich-pre--run-stack-shown {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .repl-rich-pre--run-pending,
+  .repl-rich-pre--run-error,
+  .repl-rich-pre--run-success,
+  .repl-rich-pre--run-holes,
+  .repl-rich-pre--run-pending::before,
+  .repl-rich-pre--run-error::before,
+  .repl-rich-pre--run-success::before,
+  .repl-rich-pre--run-holes::before,
+  .repl-run-skel,
+  .repl-run-body--shown,
+  .repl-block--run-entered,
+  .repl-block--run-dismiss,
+  .repl-rich-pre--run-stack-shown {
+    transition: none;
+  }
+
+  .repl-run-skel-line::after {
+    animation: none;
+    transform: none;
+    opacity: 0.45;
+  }
+
+  .repl-block--run-enter {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Success-with-holes = a green block + a violet block, CONNECTED into one message:
@@ -751,36 +906,9 @@
 
 .repl-turn-cmd {
   margin-bottom: var(--repl-stream-gap);
-  position: relative;
-}
-
-/* Absolute in the stream gap — never affects layout height. */
-.repl-ts {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.18rem);
-  z-index: 1;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  font-family: var(--mono);
-  font-variant-ligatures: none;
-  font-feature-settings: "liga" 0, "calt" 0;
-  font-size: 0.625rem;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  color: var(--repl-muted);
-  white-space: nowrap;
-  pointer-events: none;
-  user-select: none;
-  opacity: 0;
-  visibility: hidden;
-}
-
-.repl-stream.is-timestamps .repl-ts {
-  opacity: 1;
-  visibility: visible;
+  /* Shrink to prompt text so timestamp tooltip hits only the command, not the row. */
+  width: fit-content;
+  max-width: 100%;
 }
 
 .repl-turn-cmd .repl-chevron,
@@ -867,5 +995,125 @@
 
 .repl-send {
   display: none !important;
+}
+
+/* -- REPL autocomplete (body portal; fixed above the live prompt) -- */
+
+.repl-ac {
+  position: fixed;
+  z-index: 1200;
+  max-height: 12rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  /* Horizontal pad matches .menu so the row pill centers in the gutter. */
+  padding: var(--search-drop-pad, 0.25rem) var(--menu-pad);
+  background: var(--search-drop-bg);
+  border: 1px solid var(--search-drop-border);
+  border-radius: var(--search-drop-radius);
+  box-shadow: var(--search-drop-shadow);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
+  animation: search-drop-in 0.14s ease;
+  box-sizing: border-box;
+}
+
+.repl-ac[hidden] {
+  display: none;
+}
+
+.repl-ac::-webkit-scrollbar {
+  width: 6px;
+}
+
+.repl-ac::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--base-mid) 50%, transparent);
+  border-radius: 3px;
+}
+
+.repl-ac-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  text-align: left;
+  --row-pill-gutter-x: 0.65rem;
+  --row-pill-surface-pad: var(--menu-pad);
+  padding: 0.32rem 0.7rem 0.32rem var(--row-pill-gutter-x);
+  border: none;
+  border-radius: var(--menu-item-radius);
+  background: transparent;
+  color: var(--base-highest);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-variant-ligatures: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+/* Overlay-row pill — same grow-from-center strip as .menu-item */
+.repl-ac-item::before {
+  content: '';
+  position: absolute;
+  left: var(--row-pill-inset-x);
+  top: 50%;
+  width: var(--row-pill-w);
+  height: 0.1rem;
+  transform: translateY(-50%);
+  opacity: 0;
+  border-radius: var(--row-pill-radius);
+  background: var(--search-row-active-accent, var(--editor-ac-row-accent));
+  transition:
+    height 140ms var(--overlay-pop-ease-in),
+    opacity 15ms var(--overlay-pop-ease-in);
+  pointer-events: none;
+}
+
+.repl-ac-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.repl-ac-name {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.repl-ac-name-scroll {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.repl-ac-item--bel .repl-ac-name { color: var(--file-bel-fg, var(--accent-high)); }
+.repl-ac-item--elf .repl-ac-name { color: var(--file-elf-fg, var(--accent-high)); }
+.repl-ac-item--cfg .repl-ac-name { color: var(--file-cfg-fg, var(--muted-higher)); }
+
+.repl-ac-item.is-active {
+  background: var(--search-row-active-bg, var(--editor-ac-row-bg));
+  color: var(--search-row-active-fg, var(--editor-ac-row-fg, var(--base-highest)));
+}
+
+.repl-ac-item.is-active::before {
+  opacity: var(--row-pill-opacity, 1);
+  height: calc(100% - 2 * var(--row-pill-inset-y));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .repl-ac-item:hover:not(.is-active) {
+    background: var(--search-row-hover-bg);
+  }
+  .repl-ac-item:hover:not(.is-active)::before {
+    opacity: var(--row-pill-opacity, 1);
+    height: calc(100% - 2 * var(--row-pill-inset-y));
+  }
 }
 

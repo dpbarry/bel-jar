@@ -2,6 +2,10 @@ import {
   expandBelAliases,
   maybeExpandBelAliases,
   readAliasActivationMode,
+  getAliasPairs,
+  invalidateAliasPairs,
+  normalizeAliasPairs,
+  defaultAliasPairs,
 } from '../js/editor-src/aliases.mjs';
 
 function expect(cond, msg) {
@@ -39,6 +43,25 @@ globalThis.Persist = { readStoredAliasActivation() { return 'greedy'; } };
 expect(maybeExpandBelAliases('\\lor') === '∨', 'greedy expands text');
 globalThis.Persist = undefined;
 expect(readAliasActivationMode() === 'strict', 'default strict');
+
+invalidateAliasPairs();
+expect(defaultAliasPairs().length > 10, 'defaults exist');
+expect(normalizeAliasPairs([['zz', '1'], ['z', '2'], ['zz', 'dup']])[0][0] === 'zz', 'normalize longest first + dedupe');
+
+let stored = [['hello', 'world'], ['->', '→']];
+globalThis.Persist = {
+  readStoredAliasActivation() { return 'strict'; },
+  readStoredAliasPairs() { return stored; },
+};
+invalidateAliasPairs();
+expect(expandBelAliases('hello -> x') === 'world → x', 'custom pairs expand');
+expect(getAliasPairs().some(([f]) => f === 'hello'), 'custom pair listed');
+expect(!getAliasPairs().some(([f]) => f === '\\lambda'), 'defaults replaced when custom stored');
+
+stored = null;
+invalidateAliasPairs();
+expect(expandBelAliases('\\lambda') === 'λ', 'null storage restores defaults');
+
 globalThis.Persist = prev;
 
 console.log('OK bel-aliases');

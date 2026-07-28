@@ -402,6 +402,7 @@
       }
     }
     var ALIAS_ACTIVATION_KEY = "beljar-alias-activation";
+    var ALIAS_PAIRS_KEY = "beljar-alias-pairs";
     var CFG_AUTO_SYNC_KEY = "beljar-cfg-auto-sync";
     function readStoredCfgAutoSync2() {
       try {
@@ -427,13 +428,31 @@
       if (mode === "greedy") backendSave2(ALIAS_ACTIVATION_KEY, "greedy");
       else backendRemove2(ALIAS_ACTIVATION_KEY);
     }
+    function readStoredAliasPairs2() {
+      try {
+        var raw = backendLoad2(ALIAS_PAIRS_KEY);
+        if (raw == null || raw === "") return null;
+        var parsed = tryParse2(raw);
+        if (!Array.isArray(parsed)) return null;
+        return parsed;
+      } catch (_) {
+        return null;
+      }
+    }
+    function writeStoredAliasPairs2(pairs) {
+      if (pairs == null) {
+        backendRemove2(ALIAS_PAIRS_KEY);
+        return;
+      }
+      if (!Array.isArray(pairs)) return;
+      backendSave2(ALIAS_PAIRS_KEY, JSON.stringify(pairs));
+    }
     var REPL_AUTOSCROLL_KEY = "beljar-repl-autoscroll";
     var REPL_WELCOME_KEY = "beljar-repl-welcome";
     var REPL_ECHO_KEY = "beljar-repl-echo";
     var REPL_FILTER_CHATTER_KEY = "beljar-repl-filter-chatter";
     var REPL_HISTORY_CAP_KEY = "beljar-repl-history-cap";
     var REPL_HISTORY_PERSIST_KEY = "beljar-repl-history-persist";
-    var REPL_TIMESTAMPS_KEY = "beljar-repl-timestamps";
     var REPL_TRANSCRIPT_KEY = "beljar-repl-transcript-v1";
     var REPL_CMD_HISTORY_KEY = "beljar-repl-cmd-history-v1";
     var REPL_CMD_HISTORY_DEFAULT_CAP = 500;
@@ -596,12 +615,6 @@
         }
         clearReplHistoryPayload(prev);
       }
-    }
-    function readStoredReplTimestamps2() {
-      return readBoolDefaultOff(REPL_TIMESTAMPS_KEY);
-    }
-    function writeStoredReplTimestamps2(on) {
-      writeBoolDefaultOff(REPL_TIMESTAMPS_KEY, on);
     }
     function readStoredReplTranscript2() {
       try {
@@ -926,7 +939,6 @@
       backendRemove2(REPL_FILTER_CHATTER_KEY);
       backendRemove2(REPL_HISTORY_CAP_KEY);
       backendRemove2(REPL_HISTORY_PERSIST_KEY);
-      backendRemove2(REPL_TIMESTAMPS_KEY);
       clearReplHistoryPayload();
     }
     var KEYBINDINGS_KEY = "beljar-keybindings";
@@ -968,6 +980,7 @@
     }
     function resetAliasesPrefs2() {
       backendRemove2(ALIAS_ACTIVATION_KEY);
+      backendRemove2(ALIAS_PAIRS_KEY);
     }
     function isAliasExpandablePath(name) {
       var PS = typeof ProjectSource !== "undefined" ? ProjectSource : null;
@@ -1039,6 +1052,8 @@
       writeStoredCfgAutoSync: writeStoredCfgAutoSync2,
       readStoredAliasActivation: readStoredAliasActivation2,
       writeStoredAliasActivation: writeStoredAliasActivation2,
+      readStoredAliasPairs: readStoredAliasPairs2,
+      writeStoredAliasPairs: writeStoredAliasPairs2,
       readBoolDefaultOn,
       writeBoolDefaultOn,
       readBoolDefaultOff,
@@ -1055,8 +1070,6 @@
       writeStoredReplHistoryCap: writeStoredReplHistoryCap2,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist2,
       writeStoredReplHistoryPersist: writeStoredReplHistoryPersist2,
-      readStoredReplTimestamps: readStoredReplTimestamps2,
-      writeStoredReplTimestamps: writeStoredReplTimestamps2,
       readStoredReplTranscript: readStoredReplTranscript2,
       writeStoredReplTranscript: writeStoredReplTranscript2,
       readStoredReplCommandHistory: readStoredReplCommandHistory2,
@@ -1361,8 +1374,8 @@
       } catch (_) {
       }
     }
-    function writeStoredExplorerOpen2(open8) {
-      if (open8) backendSave2(EXPLORER_OPEN_KEY2, "1");
+    function writeStoredExplorerOpen2(open9) {
+      if (open9) backendSave2(EXPLORER_OPEN_KEY2, "1");
       else backendRemove2(EXPLORER_OPEN_KEY2);
     }
     function readStoredInspectorOpen2() {
@@ -1372,8 +1385,8 @@
         return false;
       }
     }
-    function writeStoredInspectorOpen2(open8) {
-      if (open8) backendSave2(INSPECTOR_OPEN_KEY2, "1");
+    function writeStoredInspectorOpen2(open9) {
+      if (open9) backendSave2(INSPECTOR_OPEN_KEY2, "1");
       else backendRemove2(INSPECTOR_OPEN_KEY2);
     }
     function readStoredInspectorFollow2() {
@@ -1405,8 +1418,8 @@
         return false;
       }
     }
-    function writeStoredLibraryOpen2(open8) {
-      if (open8) backendSave2(LIBRARY_OPEN_KEY2, "1");
+    function writeStoredLibraryOpen2(open9) {
+      if (open9) backendSave2(LIBRARY_OPEN_KEY2, "1");
       else backendRemove2(LIBRARY_OPEN_KEY2);
     }
     function readStoredHarpoonOpen2() {
@@ -1416,8 +1429,8 @@
         return false;
       }
     }
-    function writeStoredHarpoonOpen2(open8) {
-      if (open8) backendSave2("beljar-harpoon-open", "1");
+    function writeStoredHarpoonOpen2(open9) {
+      if (open9) backendSave2("beljar-harpoon-open", "1");
       else backendRemove2("beljar-harpoon-open");
     }
     function readStoredHarpoonDetailsCollapsed2() {
@@ -1957,11 +1970,11 @@
       backendSave2(projKey2("active-file"), DEFAULT_DOCUMENT_ID2);
       return files;
     }
-    function listFiles2() {
+    function listFiles3() {
       return ensureProject2();
     }
     function getActiveFileId2() {
-      var files = listFiles2();
+      var files = listFiles3();
       if (!files.length) return null;
       var id = backendLoad2(projKey2("active-file"));
       if (id && files.some(function(f) {
@@ -2299,7 +2312,7 @@
       return true;
     }
     function getFileById2(id) {
-      var files = listFiles2();
+      var files = listFiles3();
       for (var i = 0; i < files.length; i++) {
         if (files[i].id === id) return files[i];
       }
@@ -2366,7 +2379,7 @@
       inferRelocatedFolderPrefixes,
       preserveEmptyFoldersAfterMoves: preserveEmptyFoldersAfterMoves2,
       ensureProject: ensureProject2,
-      listFiles: listFiles2,
+      listFiles: listFiles3,
       getActiveFileId: getActiveFileId2,
       setActiveFileId: setActiveFileId2,
       uniqueFileId,
@@ -2403,7 +2416,7 @@
     var backendRemove2 = deps.backendRemove;
     var tryParse2 = deps.tryParse;
     var projKey2 = deps.projKey;
-    var listFiles2 = deps.listFiles;
+    var listFiles3 = deps.listFiles;
     var getFileById2 = deps.getFileById;
     var readProjectFiles2 = deps.readProjectFiles;
     var getActiveProject2 = deps.getActiveProject;
@@ -2420,7 +2433,7 @@
       writeOpenFileIds2(ids || []);
     }
     function getOpenFileIds2() {
-      var files = listFiles2();
+      var files = listFiles3();
       if (!files.length) return [];
       var valid = {};
       for (var i = 0; i < files.length; i++) valid[files[i].id] = true;
@@ -3217,6 +3230,12 @@
   function writeStoredAliasActivation() {
     return _settingsApi.writeStoredAliasActivation.apply(_settingsApi, arguments);
   }
+  function readStoredAliasPairs() {
+    return _settingsApi.readStoredAliasPairs.apply(_settingsApi, arguments);
+  }
+  function writeStoredAliasPairs() {
+    return _settingsApi.writeStoredAliasPairs.apply(_settingsApi, arguments);
+  }
   function readStoredReplAutoscroll() {
     return _settingsApi.readStoredReplAutoscroll.apply(_settingsApi, arguments);
   }
@@ -3252,12 +3271,6 @@
   }
   function writeStoredReplHistoryPersist() {
     return _settingsApi.writeStoredReplHistoryPersist.apply(_settingsApi, arguments);
-  }
-  function readStoredReplTimestamps() {
-    return _settingsApi.readStoredReplTimestamps.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplTimestamps() {
-    return _settingsApi.writeStoredReplTimestamps.apply(_settingsApi, arguments);
   }
   function readStoredReplTranscript() {
     return _settingsApi.readStoredReplTranscript.apply(_settingsApi, arguments);
@@ -3995,6 +4008,8 @@
     writeStoredHoverScope,
     readStoredAliasActivation,
     writeStoredAliasActivation,
+    readStoredAliasPairs,
+    writeStoredAliasPairs,
     readStoredCfgAutoSync,
     writeStoredCfgAutoSync,
     readStoredReplAutoscroll,
@@ -4009,8 +4024,6 @@
     writeStoredReplHistoryCap,
     readStoredReplHistoryPersist,
     writeStoredReplHistoryPersist,
-    readStoredReplTimestamps,
-    writeStoredReplTimestamps,
     readStoredReplTranscript,
     writeStoredReplTranscript,
     readStoredReplCommandHistory,
@@ -5084,14 +5097,14 @@
     if (!cfgPath) cfgPath = activeCfgForDir2(dirOf2(active.name));
     if (!cfgPath) return standaloneResult(active);
     const paths = resolveActiveChain(files, cfgPath, getText);
-    const activeIndex2 = paths.indexOf(active.name);
-    if (activeIndex2 >= 0) {
+    const activeIndex3 = paths.indexOf(active.name);
+    if (activeIndex3 >= 0) {
       return {
         kind: "module",
         cfg: cfgPath,
         paths,
-        activeIndex: activeIndex2,
-        preludePaths: activeIndex2 > 0 ? paths.slice(0, activeIndex2) : [],
+        activeIndex: activeIndex3,
+        preludePaths: activeIndex3 > 0 ? paths.slice(0, activeIndex3) : [],
         scopeKey: `module:${cfgPath}`
       };
     }
@@ -5815,17 +5828,17 @@
     }
   }
   function mergeFloatingSnapshots(priorFloating, activeFileId3, openFileIds2, liveFloating) {
-    var open8 = openFileIds2 || [];
+    var open9 = openFileIds2 || [];
     var live2 = Array.isArray(liveFloating) ? liveFloating : [];
     var kept = (priorFloating || []).filter(function(entry) {
       if (!entry || entry.fileId === activeFileId3) return false;
-      if (open8.indexOf(entry.fileId) === -1) return false;
+      if (open9.indexOf(entry.fileId) === -1) return false;
       if (entry.kind === "graph" || entry.kind === "harpoon") return false;
       return true;
     });
     var merged = kept.concat(live2);
     return merged.filter(function(entry) {
-      return entry && open8.indexOf(entry.fileId) !== -1;
+      return entry && open9.indexOf(entry.fileId) !== -1;
     }).slice(0, MAX_FLOATING);
   }
   function collectWorkspace() {
@@ -5857,10 +5870,10 @@
   }
   function filterFloatingForFile(floating, fileId, openFileIds2) {
     if (!Array.isArray(floating)) return [];
-    var open8 = openFileIds2 || [];
+    var open9 = openFileIds2 || [];
     return floating.filter(function(entry) {
       if (!entry || entry.fileId !== fileId) return false;
-      return open8.indexOf(entry.fileId) !== -1;
+      return open9.indexOf(entry.fileId) !== -1;
     });
   }
   function applyWorkspace(snapshot, deps) {
@@ -6091,7 +6104,7 @@
       hitStrip.setAttribute("aria-hidden", "true");
       hitStrip.tabIndex = -1;
       panel2.appendChild(hitStrip);
-      function isOpen2() {
+      function isOpen3() {
         return workspace.classList.contains(config.openClass);
       }
       function applySize(save) {
@@ -6110,7 +6123,7 @@
         return isStacked() ? config.seamStacked : config.seam;
       }
       function positionHitStrip() {
-        if (!isOpen2()) {
+        if (!isOpen3()) {
           hitStrip.style.display = "none";
           return;
         }
@@ -6171,7 +6184,7 @@
         globalThis.removeEventListener("pointercancel", endDrag);
       }
       function startDrag(ev) {
-        if (!isOpen2() || ev.button !== 0) return;
+        if (!isOpen3() || ev.button !== 0) return;
         ev.preventDefault();
         setDragging(true);
         size = pointerSize(ev);
@@ -6752,8 +6765,8 @@
     const raw = anchor.getAttribute("data-tooltip-errors");
     if (!raw) return null;
     try {
-      const items2 = JSON.parse(raw);
-      return Array.isArray(items2) && items2.length ? items2 : null;
+      const items3 = JSON.parse(raw);
+      return Array.isArray(items3) && items3.length ? items3 : null;
     } catch (_) {
       return null;
     }
@@ -6785,7 +6798,7 @@
   function fillTooltipContent(tip, anchor) {
     const text = anchor.getAttribute("data-tooltip");
     const tone = anchor.getAttribute("data-tooltip-tone");
-    const items2 = parseLintErrors(anchor);
+    const items3 = parseLintErrors(anchor);
     const headed = anchor.hasAttribute("data-tooltip-head");
     tip.classList.remove(
       "tooltip-inner--lint-errors",
@@ -6818,12 +6831,12 @@
       head.className = "tooltip-lint-head";
       head.textContent = text || "Errors detected";
       tip.appendChild(head);
-      if (items2) {
+      if (items3) {
         const body = document.createElement("div");
         body.className = "tooltip-lint-body";
         const list2 = document.createElement("ul");
         list2.className = "tooltip-lint-list";
-        for (const item of items2) {
+        for (const item of items3) {
           const li = document.createElement("li");
           li.className = "tooltip-lint-item" + (item.kind === "warning" ? " tooltip-lint-item--warning" : "");
           const loc = item.prefix ? `${item.prefix}${item.line ?? "?"}` : String(item.line ?? "?");
@@ -6870,11 +6883,11 @@
     return tooltipRoot.querySelector(".tooltip-stack") || tooltipRoot.querySelector(".tooltip-inner");
   }
   function buildStackedDiagnosticTooltips(anchor) {
-    const items2 = parseLintErrors(anchor);
+    const items3 = parseLintErrors(anchor);
     clearTooltipRoot();
     const stack = document.createElement("div");
     stack.className = "tooltip-stack";
-    for (const item of items2) {
+    for (const item of items3) {
       const tip = document.createElement("div");
       tip.className = "tooltip-inner";
       const severity = item.kind === "warning" ? "warning" : "error";
@@ -7155,8 +7168,10 @@
     });
     window.addEventListener(
       "scroll",
-      () => {
-        if (tooltipAnchor) layoutTooltip(tooltipAnchor);
+      (e) => {
+        if (!tooltipAnchor) return;
+        if (tooltipRoot && e.target instanceof Node && tooltipRoot.contains(e.target)) return;
+        hideTooltipImmediate();
       },
       true
     );
@@ -7599,7 +7614,7 @@
       });
     }
     const controller = { menuRoot };
-    function isOpen2() {
+    function isOpen3() {
       return openMenus.length > 0;
     }
     function rootAnchor() {
@@ -7698,9 +7713,9 @@
       }
     }
     function rovingTabIndexForPanel(menuEl) {
-      const items2 = focusableMenuItems(menuEl);
-      for (let i = 0; i < items2.length; i++) {
-        items2[i].tabIndex = i === 0 ? 0 : -1;
+      const items3 = focusableMenuItems(menuEl);
+      for (let i = 0; i < items3.length; i++) {
+        items3[i].tabIndex = i === 0 ? 0 : -1;
       }
     }
     function focusableMenuItems(menuEl) {
@@ -7709,29 +7724,29 @@
       );
     }
     function focusMenuItem(menuEl, index) {
-      const items2 = focusableMenuItems(menuEl);
-      if (!items2.length) return;
-      const i = Math.max(0, Math.min(index, items2.length - 1));
-      for (let j = 0; j < items2.length; j++) {
-        items2[j].tabIndex = j === i ? 0 : -1;
+      const items3 = focusableMenuItems(menuEl);
+      if (!items3.length) return;
+      const i = Math.max(0, Math.min(index, items3.length - 1));
+      for (let j = 0; j < items3.length; j++) {
+        items3[j].tabIndex = j === i ? 0 : -1;
       }
-      items2[i].focus();
+      items3[i].focus();
     }
     function handlePanelKeydown(e, wrap, level) {
       if (e.defaultPrevented) return;
       const key = e.key;
-      const items2 = focusableMenuItems(wrap);
-      if (!items2.length) return;
-      let idx = items2.indexOf(document.activeElement);
+      const items3 = focusableMenuItems(wrap);
+      if (!items3.length) return;
+      let idx = items3.indexOf(document.activeElement);
       if (idx < 0) idx = 0;
       if (key === "ArrowDown") {
         e.preventDefault();
-        focusMenuItem(wrap, idx + 1 >= items2.length ? 0 : idx + 1);
+        focusMenuItem(wrap, idx + 1 >= items3.length ? 0 : idx + 1);
         return;
       }
       if (key === "ArrowUp") {
         e.preventDefault();
-        focusMenuItem(wrap, idx - 1 < 0 ? items2.length - 1 : idx - 1);
+        focusMenuItem(wrap, idx - 1 < 0 ? items3.length - 1 : idx - 1);
         return;
       }
       if (key === "Home") {
@@ -7741,11 +7756,11 @@
       }
       if (key === "End") {
         e.preventDefault();
-        focusMenuItem(wrap, items2.length - 1);
+        focusMenuItem(wrap, items3.length - 1);
         return;
       }
       if (key === "ArrowRight") {
-        const cur = items2[idx];
+        const cur = items3[idx];
         if (cur && cur.classList.contains("menu-item-has-submenu")) {
           e.preventDefault();
           const itemData = cur._menuItemData;
@@ -7773,7 +7788,7 @@
         return;
       }
       if (key === "Enter" || key === " ") {
-        const cur = items2[idx];
+        const cur = items3[idx];
         if (!cur) return;
         e.preventDefault();
         if (cur.classList.contains("menu-item-has-submenu")) {
@@ -7982,11 +7997,11 @@
       sec.textContent = item.label ?? "";
       return sec;
     }
-    function normalizeMenuItems(items2) {
-      if (!items2 || !items2.length) return [];
+    function normalizeMenuItems(items3) {
+      if (!items3 || !items3.length) return [];
       var out = [];
-      for (var i = 0; i < items2.length; i++) {
-        var item = items2[i];
+      for (var i = 0; i < items3.length; i++) {
+        var item = items3[i];
         var rowType = item.type || "item";
         if (rowType === "separator") {
           if (!out.length) continue;
@@ -7999,19 +8014,19 @@
       if (out.length && (out[out.length - 1].type || "item") === "separator") out.pop();
       return out;
     }
-    function buildMenu(items2, level) {
-      items2 = normalizeMenuItems(items2);
+    function buildMenu(items3, level) {
+      items3 = normalizeMenuItems(items3);
       const wrap = document.createElement("div");
       wrap.className = level > 0 ? "menu is-submenu" : "menu";
       wrap.setAttribute("role", "menu");
       wrap.addEventListener("keydown", (e) => handlePanelKeydown(e, wrap, level));
       let hasIcons = false;
-      const usesCheckGutter = items2.some((item) => {
+      const usesCheckGutter = items3.some((item) => {
         const rowType = item.type || "item";
         return rowType === "item" && item.checked;
       });
-      for (let i = 0; i < items2.length; i++) {
-        const item = items2[i];
+      for (let i = 0; i < items3.length; i++) {
+        const item = items3[i];
         const rowType = item.type || "item";
         if (rowType === "separator") {
           wrap.appendChild(buildSeparator());
@@ -8049,11 +8064,11 @@
         submenuOpenTimer = null;
       }
     }
-    function scheduleOpenSubmenu(items2, anchorRowEl, parentLevel) {
+    function scheduleOpenSubmenu(items3, anchorRowEl, parentLevel) {
       cancelScheduledSubmenuOpen();
       submenuOpenTimer = setTimeout(() => {
         submenuOpenTimer = null;
-        if (anchorRowEl.isConnected) openSubmenu(items2, anchorRowEl, parentLevel);
+        if (anchorRowEl.isConnected) openSubmenu(items3, anchorRowEl, parentLevel);
       }, SUBMENU_OPEN_DELAY_MS);
     }
     function scheduleCloseSubmenus() {
@@ -8063,7 +8078,7 @@
         closeFromLevel(1);
       }, SUBMENU_OPEN_DELAY_MS);
     }
-    function openSubmenu(items2, anchorRowEl, parentLevel) {
+    function openSubmenu(items3, anchorRowEl, parentLevel) {
       cancelScheduledSubmenuOpen();
       if (isSubmenuOpenForRow(anchorRowEl, parentLevel)) return;
       closeFromLevel(parentLevel + 1, () => {
@@ -8071,7 +8086,7 @@
         anchorRowEl.classList.add("is-submenu-open");
         const level = parentLevel + 1;
         const placed = submenuPlacementAnchor(anchorRowEl);
-        const menuEl = buildMenu(items2, level);
+        const menuEl = buildMenu(items3, level);
         menuEl.classList.add("is-flyout");
         menuRoot.appendChild(menuEl);
         openMenus.push({
@@ -8088,16 +8103,16 @@
         focusMenuItem(menuEl, 0);
       });
     }
-    function open8(opts) {
+    function open9(opts) {
       closeOtherControllers();
-      const items2 = opts.items;
+      const items3 = opts.items;
       const anchor = opts.anchor;
       const side = opts.side;
       const align = opts.align ?? "start";
       const launch = () => {
         rootOnClose = opts.onClose || null;
         rootAnchorEl = anchor instanceof Element ? anchor : null;
-        const menuEl = buildMenu(items2, 0);
+        const menuEl = buildMenu(items3, 0);
         if (side === "bottom") {
           menuEl.classList.add("is-drop-down");
           if (align === "end") menuEl.classList.add("is-align-end");
@@ -8129,7 +8144,7 @@
     function openContext(opts) {
       const x = opts.x;
       const y = opts.y;
-      open8({
+      open9({
         anchor: { left: x, right: x, top: y, bottom: y },
         side: opts.side || "bottom",
         align: opts.align || "start",
@@ -8143,13 +8158,13 @@
         throw new TypeError("bindContextMenu(targetEl, items): targetEl must be an element");
       }
       const handler = (e) => {
-        const items2 = typeof itemsOrFn === "function" ? itemsOrFn(e) : itemsOrFn;
-        if (!items2 || !items2.length) return;
+        const items3 = typeof itemsOrFn === "function" ? itemsOrFn(e) : itemsOrFn;
+        if (!items3 || !items3.length) return;
         e.preventDefault();
         openContext({
           x: e.clientX,
           y: e.clientY,
-          items: items2,
+          items: items3,
           side: opts && opts.side,
           align: opts && opts.align,
           onClose: opts && opts.onClose
@@ -8163,11 +8178,11 @@
       if (activeController === controller) setActiveController(null);
       forceCloseSync();
     }
-    controller.open = open8;
+    controller.open = open9;
     controller.openContext = openContext;
     controller.bindContextMenu = bindContextMenu;
     controller.closeAll = closeAll3;
-    controller.isOpen = isOpen2;
+    controller.isOpen = isOpen3;
     controller.rootAnchor = rootAnchor;
     controller.relayoutAll = relayoutAll;
     controller.forceCloseSync = forceCloseSync;
@@ -8286,14 +8301,14 @@
     if (s.startsWith("?")) return { mode: "help", query: s.slice(1).trim() };
     return { mode: "anywhere", query: s.trim() };
   }
-  function rankItems(items2, query, limit) {
+  function rankItems(items3, query, limit) {
     const cap = limit || 50;
     if (!query) {
-      return items2.slice(0, cap).map((item) => ({ ...item, _match: null }));
+      return items3.slice(0, cap).map((item) => ({ ...item, _match: null }));
     }
     const scored = [];
-    for (let i = 0; i < items2.length; i++) {
-      const item = items2[i];
+    for (let i = 0; i < items3.length; i++) {
+      const item = items3[i];
       const onTitle = fuzzyScore(query, item.title);
       if (onTitle) {
         scored.push({ item, score: onTitle.score, positions: onTitle.positions, index: i });
@@ -9292,13 +9307,25 @@
       });
       card.appendChild(btn);
     }
-    if (title) {
-      const h = document.createElement("div");
-      h.className = "bj-dialog__title";
-      h.id = "bj-dialog-title-" + Math.random().toString(36).slice(2);
-      h.textContent = title;
-      dialogEl.setAttribute("aria-labelledby", h.id);
-      card.appendChild(h);
+    const headerExtra = opts.headerExtra instanceof Node ? opts.headerExtra : null;
+    if (title || headerExtra) {
+      let titleEl = null;
+      if (title) {
+        titleEl = document.createElement("div");
+        titleEl.className = "bj-dialog__title";
+        titleEl.id = "bj-dialog-title-" + Math.random().toString(36).slice(2);
+        titleEl.textContent = title;
+        dialogEl.setAttribute("aria-labelledby", titleEl.id);
+      }
+      if (headerExtra) {
+        const header = document.createElement("div");
+        header.className = "bj-dialog__header";
+        if (titleEl) header.appendChild(titleEl);
+        header.appendChild(headerExtra);
+        card.appendChild(header);
+      } else {
+        card.appendChild(titleEl);
+      }
     } else if (opts.ariaLabel) {
       dialogEl.setAttribute("aria-label", opts.ariaLabel);
     }
@@ -10756,25 +10783,25 @@
     var header = opts.header || host.closest(".panel-header, .inspector-header-bar");
     var openClass = opts.openClass || "is-search-open";
     var blurDelay = opts.blurDelay != null ? opts.blurDelay : 140;
-    var isOpen2 = false;
+    var isOpen3 = false;
     function emit(name, arg) {
       if (typeof opts[name] === "function") opts[name](arg);
     }
-    function open8() {
-      if (isOpen2) return;
-      isOpen2 = true;
+    function open9() {
+      if (isOpen3) return;
+      isOpen3 = true;
       host.classList.add("is-open");
       if (header) header.classList.add(openClass);
       input.setAttribute("aria-expanded", "true");
       requestAnimationFrame(function() {
-        if (isOpen2) input.focus();
+        if (isOpen3) input.focus();
       });
       emit("onOpen");
     }
     function close3(force) {
-      if (!isOpen2) return;
+      if (!isOpen3) return;
       if (!force && input.value) return;
-      isOpen2 = false;
+      isOpen3 = false;
       host.classList.remove("is-open");
       if (header) header.classList.remove(openClass);
       input.setAttribute("aria-expanded", "false");
@@ -10785,16 +10812,16 @@
       emit("onClose");
     }
     function toggle3() {
-      if (isOpen2) close3(true);
-      else open8();
+      if (isOpen3) close3(true);
+      else open9();
     }
     host.addEventListener("mousedown", function(e) {
       if (e.target === input) return;
       e.preventDefault();
-      if (isOpen2) input.focus();
-      else open8();
+      if (isOpen3) input.focus();
+      else open9();
     });
-    input.addEventListener("focus", open8);
+    input.addEventListener("focus", open9);
     input.addEventListener("input", function() {
       emit("onInput", input.value);
     });
@@ -10821,18 +10848,18 @@
     });
     if (typeof opts.keepOpenFor === "function") {
       document.addEventListener("pointerdown", function(e) {
-        if (!isOpen2) return;
+        if (!isOpen3) return;
         if (host.contains(e.target)) return;
         if (opts.keepOpenFor(e.target)) return;
         close3(true);
       }, true);
     }
     return {
-      open: open8,
+      open: open9,
       close: close3,
       toggle: toggle3,
       isOpen: function() {
-        return isOpen2;
+        return isOpen3;
       },
       input,
       host
@@ -11349,13 +11376,13 @@
       selectedFolders.clear();
       inlineSession = session;
       if (session.parentDir) expandParentChain(session.parentDir);
-      refresh2();
+      refresh3();
     }
     function cancelInlineName() {
       if (!inlineSession) return;
       if (typeof opts.onInlineCancel === "function") opts.onInlineCancel(inlineSession);
       clearInlineSession();
-      refresh2();
+      refresh3();
     }
     function commitInlineName(rawName) {
       if (!inlineSession) return false;
@@ -11363,7 +11390,7 @@
       var ok = opts.onInlineCommit(inlineSession, rawName);
       if (ok) {
         clearInlineSession();
-        refresh2();
+        refresh3();
       } else if (inlineInputEl) {
         inlineInputEl.classList.add("is-invalid");
         inlineInputEl.focus();
@@ -11443,7 +11470,7 @@
       else if (collapsed.has(path)) collapsed.delete(path);
       else collapsed.add(path);
       scheduleSave3();
-      refresh2();
+      refresh3();
     }
     function collapseSubtree(folderPath) {
       var files = opts.listFiles ? opts.listFiles() : [];
@@ -11459,7 +11486,7 @@
         });
       }
       scheduleSave3();
-      refresh2();
+      refresh3();
     }
     function expandSubtree(folderPath) {
       if (!folderPath) {
@@ -11472,7 +11499,7 @@
         });
       }
       scheduleSave3();
-      refresh2();
+      refresh3();
     }
     function indent(depth) {
       return 0.6 + depth * 0.75 + "rem";
@@ -11652,7 +11679,7 @@
             endKey: key
           };
           scheduleSave3();
-          refresh2();
+          refresh3();
           return;
         }
         applyShiftSelect(anchorKey, key);
@@ -11719,8 +11746,8 @@
         clearSelection();
       }
     }
-    function endsWithSeparator(items2) {
-      return items2.length && items2[items2.length - 1].type === "separator";
+    function endsWithSeparator(items3) {
+      return items3.length && items3[items3.length - 1].type === "separator";
     }
     function withLeadingItems(extra, base) {
       if (extra && extra.length) {
@@ -11842,7 +11869,7 @@
         treeEl.appendChild(btn);
       }
     }
-    function refresh2() {
+    function refresh3() {
       if (!opts.listFiles) return;
       var files = opts.listFiles();
       pruneSelection(files);
@@ -12021,7 +12048,7 @@
       refreshDiags();
     }
     return {
-      refresh: refresh2,
+      refresh: refresh3,
       refreshDiags,
       setFileDiag,
       refreshActiveAndDiags,
@@ -12067,7 +12094,7 @@
           expandParentChain(parent);
           scheduleSave3();
         }
-        refresh2();
+        refresh3();
         if (sidebar.explorer.scrollActiveIntoView) {
           requestAnimationFrame(function() {
             var row = container.querySelector('.explorer-file-item[data-file-id="' + activeId2 + '"]');
@@ -12120,10 +12147,10 @@
   }
   function listActiveSuites(opts) {
     opts = opts || {};
-    var listFiles2 = opts.listFiles;
-    if (typeof listFiles2 !== "function") return [];
+    var listFiles3 = opts.listFiles;
+    if (typeof listFiles3 !== "function") return [];
     if (typeof opts.getActiveCfgsForDir !== "function" && typeof opts.getActiveCfgForDir !== "function") return [];
-    var files = listFiles2();
+    var files = listFiles3();
     var cfgDirs = {};
     for (var i = 0; i < files.length; i++) {
       var name = files[i].name;
@@ -12344,11 +12371,11 @@
     var LS = global19.LibrarySearch;
     var HS = global19.HeaderSearch;
     var hits = [];
-    var activeIndex2 = -1;
+    var activeIndex3 = -1;
     var token = 0;
     var timer2 = null;
     var controller = null;
-    function listFiles2() {
+    function listFiles3() {
       return typeof opts.listFiles === "function" ? opts.listFiles() || [] : [];
     }
     function getText(id) {
@@ -12359,7 +12386,7 @@
       }
     }
     function buildEntries() {
-      var files = listFiles2();
+      var files = listFiles3();
       var byPath = /* @__PURE__ */ Object.create(null);
       var entries = [];
       for (var i = 0; i < files.length; i++) {
@@ -12388,13 +12415,13 @@
       ac.hidden = true;
       ac.textContent = "";
       hits = [];
-      activeIndex2 = -1;
+      activeIndex3 = -1;
     }
     function renderHitRow(hit, index) {
       var entry = hit.entry;
       var item = document.createElement("button");
       item.type = "button";
-      item.className = "hsearch-ac-item hsearch-ac-item--" + (entry.ext || "bel") + (index === activeIndex2 ? " is-active" : "");
+      item.className = "hsearch-ac-item hsearch-ac-item--" + (entry.ext || "bel") + (index === activeIndex3 ? " is-active" : "");
       item.setAttribute("role", "option");
       var head = document.createElement("span");
       head.className = "hsearch-ac-head";
@@ -12443,10 +12470,10 @@
     }
     function setActiveIndex(i) {
       if (!hits.length) return;
-      activeIndex2 = (i % hits.length + hits.length) % hits.length;
+      activeIndex3 = (i % hits.length + hits.length) % hits.length;
       var rows = ac.querySelectorAll(".hsearch-ac-item");
-      for (var k = 0; k < rows.length; k++) rows[k].classList.toggle("is-active", k === activeIndex2);
-      if (rows[activeIndex2]) rows[activeIndex2].scrollIntoView({ block: "nearest" });
+      for (var k = 0; k < rows.length; k++) rows[k].classList.toggle("is-active", k === activeIndex3);
+      if (rows[activeIndex3]) rows[activeIndex3].scrollIntoView({ block: "nearest" });
     }
     function pick(hit) {
       if (!hit) return;
@@ -12470,14 +12497,14 @@
         }).slice(0, 24).map(function(en) {
           return { entry: en, snippet: null, line: null };
         });
-        activeIndex2 = hits.length ? 0 : -1;
+        activeIndex3 = hits.length ? 0 : -1;
         renderAc();
         return;
       }
       LS.searchEntries(built.entries, q, fetchContentFor(built.byPath), { limit: 24 }).then(function(res) {
         if (myToken !== token) return;
         hits = res;
-        activeIndex2 = hits.length ? 0 : -1;
+        activeIndex3 = hits.length ? 0 : -1;
         renderAc();
       });
     }
@@ -12498,13 +12525,13 @@
         if (!hits.length) return;
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setActiveIndex(activeIndex2 + 1);
+          setActiveIndex(activeIndex3 + 1);
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
-          setActiveIndex(activeIndex2 - 1);
+          setActiveIndex(activeIndex3 - 1);
         } else if (e.key === "Enter") {
           e.preventDefault();
-          pick(activeIndex2 >= 0 ? hits[activeIndex2] : hits[0]);
+          pick(activeIndex3 >= 0 ? hits[activeIndex3] : hits[0]);
         }
       }
     }) : null;
@@ -13191,7 +13218,7 @@
         searchPending = false;
         searchToken += 1;
       }
-      render3();
+      render4();
     }
     function applyTip(el5, tip) {
       if (typeof opts.applyTip === "function") opts.applyTip(el5, tip);
@@ -13711,7 +13738,7 @@
       refreshSuites();
       var ed = typeof opts.getEditor === "function" ? opts.getEditor() : null;
       var editorReady = !!(ed && hasEditor());
-      var items2 = [
+      var items3 = [
         { type: "section", label: "Create" },
         {
           label: "Insert at root",
@@ -13772,7 +13799,7 @@
       openLibraryMenu(anchor, {
         side: "right",
         align: "start",
-        items: items2
+        items: items3
       });
     }
     function openInsertMenu(anchor, code, item) {
@@ -13934,7 +13961,7 @@
         searchSnippets = null;
         searchPending = false;
         if (searchWrap) searchWrap.classList.remove("is-searching");
-        render3();
+        render4();
         return;
       }
       var token = ++searchToken;
@@ -13947,7 +13974,7 @@
       searchSnippets = /* @__PURE__ */ Object.create(null);
       searchPending = true;
       if (searchWrap) searchWrap.classList.add("is-searching");
-      render3();
+      render4();
       LS.searchEntries(allFileEntries, q, fetchContent, { limit: 0 }).then(function(hits) {
         if (token !== searchToken) return;
         searchPending = false;
@@ -13961,7 +13988,7 @@
             searchSnippets[h.entry.id] = { snippet: h.snippet, line: h.line };
           }
         }
-        render3();
+        render4();
       });
     }
     var searchTimer = null;
@@ -14076,7 +14103,7 @@
         if (folder.description) applyTip(toggleBtn, folder.description);
         toggleBtn.addEventListener("click", function() {
           toggleCategoryExpanded(foldKey);
-          render3();
+          render4();
         });
         catRow.appendChild(toggleBtn);
         var previewBtn = actionBtn2("library-category-preview", "Preview", ICON_PREVIEW, false, function() {
@@ -14117,7 +14144,7 @@
       }
       return rendered;
     }
-    function render3() {
+    function render4() {
       container.innerHTML = "";
       if (!manifest || !manifest.sections || !manifest.sections.length) {
         var empty = document.createElement("p");
@@ -14161,11 +14188,11 @@
       }).then(function(data) {
         manifest = data;
         rebuildFileIndex();
-        render3();
+        render4();
       }).catch(function() {
         manifest = null;
         allFileEntries = [];
-        render3();
+        render4();
       });
     }
     if (searchEl && searchWrap && global21.HeaderSearch) {
@@ -14181,7 +14208,7 @@
     return {
       refresh: function() {
         refreshSuites();
-        render3();
+        render4();
       },
       collapseFolders,
       reload: loadManifest
@@ -14578,7 +14605,6 @@
   var openTurnEl = null;
   var openTurnBody = null;
   var focusBound = false;
-  var timestampsOn = false;
   function getOutput() {
     if (!outputEl2) outputEl2 = document.getElementById("output");
     return outputEl2;
@@ -14593,39 +14619,127 @@
     var d = new Date(ms);
     return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + "." + pad3(d.getMilliseconds());
   }
-  function stampHost(host, ms) {
-    if (!host || !host.appendChild) return null;
-    var t = ms != null ? ms : Date.now();
-    var el5 = null;
-    for (var i = 0; i < host.children.length; i++) {
-      if (host.children[i].classList && host.children[i].classList.contains("repl-ts")) {
-        el5 = host.children[i];
-        break;
+  function setStampTooltip(host, tip) {
+    host.setAttribute("data-tooltip-placement", "above");
+    host.setAttribute("data-tooltip-no-track", "");
+    if (typeof Tooltips !== "undefined" && Tooltips.set) {
+      Tooltips.set(host, tip, { ariaLabel: false });
+    } else {
+      host.setAttribute("data-tooltip", tip);
+    }
+  }
+  function clearStamp(el5) {
+    if (!el5 || el5.nodeType !== 1) return;
+    if (el5.dataset) delete el5.dataset.ms;
+    el5.removeAttribute("data-ms");
+    el5.removeAttribute("data-tooltip");
+    el5.removeAttribute("data-tooltip-placement");
+    el5.removeAttribute("data-tooltip-no-track");
+  }
+  function resolveStampTarget(host) {
+    if (!host || host.nodeType !== 1) return null;
+    if (host.classList.contains("repl-turn-cmd")) {
+      return host;
+    }
+    if (host.classList.contains("repl-block")) {
+      var rich = null;
+      for (var i = 0; i < host.children.length; i++) {
+        var child = host.children[i];
+        if (child.classList && child.classList.contains("repl-rich")) {
+          rich = child;
+          break;
+        }
+      }
+      if (rich) {
+        var prefer = [
+          "repl-rich-error",
+          "repl-rich-pre",
+          "repl-rich-msg",
+          "repl-query-result",
+          "repl-rich-countholes",
+          "repl-help",
+          "repl-line"
+        ];
+        for (var p = 0; p < prefer.length; p++) {
+          for (var c = 0; c < rich.children.length; c++) {
+            var kid = rich.children[c];
+            if (kid.classList && kid.classList.contains(prefer[p])) return kid;
+          }
+        }
+        for (var j = 0; j < rich.children.length; j++) {
+          var ch = rich.children[j];
+          if (ch.classList && ch.classList.contains("repl-rich-title")) continue;
+          return ch;
+        }
+        return rich;
+      }
+      for (var k = 0; k < host.children.length; k++) {
+        var line = host.children[k];
+        if (line.classList && (line.classList.contains("repl-line") || line.classList.contains("repl-help"))) {
+          return line;
+        }
       }
     }
-    if (!el5) {
-      el5 = document.createElement("time");
-      el5.className = "repl-ts";
-      el5.setAttribute("aria-hidden", "true");
-      host.appendChild(el5);
+    return host;
+  }
+  function stampHost(host, ms) {
+    if (!host || host.nodeType !== 1) return null;
+    var t = ms != null ? ms : Date.now();
+    var target = resolveStampTarget(host) || host;
+    for (var i = host.children.length - 1; i >= 0; i--) {
+      var child = host.children[i];
+      if (child.classList && child.classList.contains("repl-ts")) {
+        host.removeChild(child);
+      }
     }
-    el5.dateTime = new Date(t).toISOString();
-    el5.dataset.ms = String(t);
-    el5.textContent = formatTs(t);
-    return el5;
+    if (target !== host) {
+      for (var j = target.children.length - 1; j >= 0; j--) {
+        var tc = target.children[j];
+        if (tc.classList && tc.classList.contains("repl-ts")) {
+          target.removeChild(tc);
+        }
+      }
+      if (host.dataset && host.dataset.ms) clearStamp(host);
+    }
+    target.dataset.ms = String(t);
+    setStampTooltip(target, formatTs(t));
+    return target;
   }
-  function applyTimestampsClass() {
-    var output2 = getOutput();
-    if (!output2) return;
-    output2.classList.toggle("is-timestamps", !!timestampsOn);
+  function migrateLegacyStamps(root) {
+    var scope = root || getOutput();
+    if (!scope || !scope.querySelectorAll) return;
+    var stamps = scope.querySelectorAll(".repl-ts");
+    for (var i = 0; i < stamps.length; i++) {
+      var el5 = stamps[i];
+      var parent = el5.parentElement;
+      var ms = NaN;
+      if (el5.dataset && el5.dataset.ms) ms = Number(el5.dataset.ms);
+      if (!Number.isFinite(ms) && el5.dateTime) ms = Date.parse(el5.dateTime);
+      if (el5.parentNode) el5.parentNode.removeChild(el5);
+      if (parent) stampHost(parent, Number.isFinite(ms) ? ms : Date.now());
+    }
   }
-  function setTimestampsVisible(on) {
-    timestampsOn = !!on;
-    applyTimestampsClass();
-    return timestampsOn;
-  }
-  function isTimestampsVisible() {
-    return !!timestampsOn;
+  function rebindStamps(root) {
+    var scope = root || getOutput();
+    if (!scope || !scope.querySelectorAll) return;
+    migrateLegacyStamps(scope);
+    var blocks = scope.querySelectorAll(".repl-block[data-ms]");
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i];
+      var ms = Number(block.dataset.ms);
+      var target = resolveStampTarget(block);
+      if (target && target !== block && Number.isFinite(ms)) {
+        clearStamp(block);
+        stampHost(target, ms);
+      }
+    }
+    var stamped = scope.querySelectorAll("[data-ms]");
+    for (var j = 0; j < stamped.length; j++) {
+      var el5 = stamped[j];
+      var t = Number(el5.dataset.ms);
+      if (!Number.isFinite(t)) continue;
+      setStampTooltip(el5, formatTs(t));
+    }
   }
   function buildLiveLine() {
     var live2 = document.createElement("div");
@@ -14666,7 +14780,6 @@
     } else if (output2.lastElementChild !== liveEl) {
       output2.appendChild(liveEl);
     }
-    applyTimestampsClass();
     bindFocusDelegation();
     return liveEl;
   }
@@ -14785,8 +14898,8 @@
     beginTurn,
     endTurn,
     currentTurnBody,
-    setTimestampsVisible,
-    isTimestampsVisible
+    migrateLegacyStamps,
+    rebindStamps
   };
   global24.BelJarReplStream = global24.ReplStream;
 
@@ -14807,6 +14920,12 @@
   }
   var REPL_HELP_ROWS = [
     { cmd: "help", desc: "Show this command reference." },
+    { cmd: "run", desc: "Type-check the active file (alone if orphan; suite-to-here if in a suite)." },
+    { cmd: "run PATH", desc: "Type-check one file alone (BelJar)." },
+    { cmd: "run &PATH", desc: "Type-check file with its suite prelude (amalgamation)." },
+    { cmd: "run suite NAME", desc: "Type-check a whole .cfg suite." },
+    { cmd: "run folder PATH", desc: "Type-check a folder development." },
+    { cmd: "run project", desc: "Type-check every workspace development." },
     { cmd: "constructors IDENTIFIER", desc: "LF constructors for the given type." },
     { cmd: "constructors-comp IDENTIFIER", desc: "Computational constructors for the given datatype." },
     { cmd: "countholes", desc: "Print how many holes are open." },
@@ -15509,48 +15628,233 @@
     if (/##\s*Holes:/i.test(text)) return "holes";
     return "error";
   }
+  var pendingRunBlock = null;
+  var pendingRunStartedAt = 0;
+  var MIN_PENDING_MS = 180;
+  function prefersReducedMotion() {
+    return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  function waitMs(ms) {
+    return new Promise(function(resolve2) {
+      setTimeout(resolve2, ms);
+    });
+  }
+  function nextFrame() {
+    return new Promise(function(resolve2) {
+      requestAnimationFrame(function() {
+        requestAnimationFrame(resolve2);
+      });
+    });
+  }
+  function runKindClass(kind) {
+    if (kind === "success") return "repl-rich-pre--run-success";
+    if (kind === "holes") return "repl-rich-pre--run-holes";
+    return "repl-rich-pre--run-error";
+  }
+  function isMorphableRunSeg(seg) {
+    if (!seg) return false;
+    if (seg.type === "type-recon-holes") return true;
+    if (seg.type === "query" || seg.type === "warning") return false;
+    return !!(seg.text && String(seg.text).trim());
+  }
+  function ensureMinPendingDwell() {
+    if (!pendingRunStartedAt) return Promise.resolve();
+    var left = MIN_PENDING_MS - (performance.now() - pendingRunStartedAt);
+    return left > 0 ? waitMs(left) : Promise.resolve();
+  }
+  function beginRunSkeleton() {
+    if (pendingRunBlock && pendingRunBlock.isConnected) {
+      pendingRunBlock.remove();
+    }
+    pendingRunBlock = null;
+    pendingRunStartedAt = 0;
+    var block = createReplBlock();
+    block.setAttribute("data-repl-run-pending", "");
+    block.classList.add("repl-block--run-enter");
+    var shell = document.createElement("div");
+    shell.className = "repl-rich";
+    var pre = document.createElement("pre");
+    pre.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-pending";
+    pre.setAttribute("aria-busy", "true");
+    pre.setAttribute("aria-live", "polite");
+    var skel = document.createElement("span");
+    skel.className = "repl-run-skel";
+    skel.setAttribute("aria-hidden", "true");
+    [72, 46].forEach(function(w) {
+      var line = document.createElement("span");
+      line.className = "repl-run-skel-line";
+      line.style.setProperty("--w", w + "%");
+      skel.appendChild(line);
+    });
+    pre.appendChild(skel);
+    shell.appendChild(pre);
+    block.appendChild(shell);
+    streamAppend(block);
+    pendingRunBlock = block;
+    pendingRunStartedAt = performance.now();
+    requestAnimationFrame(function() {
+      if (block.isConnected) block.classList.add("repl-block--run-entered");
+    });
+    scrollReplBottom();
+  }
+  function dismissRunSkeleton() {
+    var block = pendingRunBlock;
+    pendingRunBlock = null;
+    pendingRunStartedAt = 0;
+    if (!block) return Promise.resolve();
+    if (!block.isConnected) return Promise.resolve();
+    var reduce = prefersReducedMotion();
+    if (reduce) {
+      block.remove();
+      return Promise.resolve();
+    }
+    block.classList.remove("repl-block--run-enter", "repl-block--run-entered");
+    block.classList.add("repl-block--run-dismiss");
+    return new Promise(function(resolve2) {
+      var settled = false;
+      function finish() {
+        if (settled) return;
+        settled = true;
+        if (block.isConnected) block.remove();
+        resolve2();
+      }
+      block.addEventListener("transitionend", finish, { once: true });
+      setTimeout(finish, 220);
+    });
+  }
+  async function morphPendingPre(pre, kind, text) {
+    if (!pre) return;
+    var reduce = prefersReducedMotion();
+    pre.classList.add("repl-rich-pre--run-resolving");
+    if (!reduce) await waitMs(120);
+    pre.classList.remove(
+      "repl-rich-pre--run-pending",
+      "repl-rich-pre--run-resolving",
+      "repl-rich-pre--run-success",
+      "repl-rich-pre--run-holes",
+      "repl-rich-pre--run-error"
+    );
+    pre.classList.add(runKindClass(kind));
+    pre.removeAttribute("aria-busy");
+    pre.replaceChildren();
+    var body = document.createElement("span");
+    body.className = "repl-run-body";
+    body.textContent = text;
+    if (!reduce) body.classList.add("repl-run-body--enter");
+    pre.appendChild(body);
+    if (!reduce) {
+      await nextFrame();
+      body.classList.add("repl-run-body--shown");
+    }
+  }
+  async function morphPendingStacked(block, statusText, holesText) {
+    var shell = block.querySelector(".repl-rich");
+    var pre = block.querySelector(".repl-rich-pre--run-pending");
+    if (!shell || !pre) return;
+    shell.classList.add("repl-rich--stacked");
+    if (statusText) {
+      await morphPendingPre(pre, "success", statusText);
+    } else {
+      await morphPendingPre(pre, "holes", holesText);
+      return;
+    }
+    var reduce = prefersReducedMotion();
+    var hp = document.createElement("pre");
+    hp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
+    if (!reduce) hp.classList.add("repl-rich-pre--run-stack-enter");
+    var body = document.createElement("span");
+    body.className = "repl-run-body";
+    body.textContent = holesText;
+    hp.appendChild(body);
+    shell.appendChild(hp);
+    if (reduce) {
+      hp.classList.add("repl-rich-pre--run-stack-shown");
+    } else {
+      await nextFrame();
+      hp.classList.add("repl-rich-pre--run-stack-shown");
+    }
+  }
+  function appendRunSegment(seg) {
+    if (seg.type === "query") {
+      buildQueryDom(seg.query);
+      return;
+    }
+    if (seg.type === "warning") {
+      renderCoverageWarning(seg.text);
+      return;
+    }
+    if (seg.type === "type-recon-holes") {
+      appendRichShell((seg.statusText + "\n" + seg.holesText).trim(), function(shell) {
+        shell.classList.add("repl-rich--stacked");
+        if (seg.statusText) {
+          var sp = document.createElement("pre");
+          sp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-success";
+          sp.textContent = seg.statusText;
+          shell.appendChild(sp);
+        }
+        var hp = document.createElement("pre");
+        hp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
+        hp.textContent = seg.holesText;
+        shell.appendChild(hp);
+      });
+      return;
+    }
+    var text = seg.text;
+    if (!text || !String(text).trim()) return;
+    appendRichShell(text, function(shell) {
+      var pre = document.createElement("pre");
+      pre.className = "repl-rich-pre repl-rich-pre--run";
+      var kind = classifyRunOtherKind(text);
+      if (kind === "success") pre.classList.add("repl-rich-pre--run-success");
+      else if (kind === "holes") pre.classList.add("repl-rich-pre--run-holes");
+      else pre.classList.add("repl-rich-pre--run-error");
+      pre.textContent = text;
+      shell.appendChild(pre);
+    });
+  }
   function appendRunOutput(raw) {
     var clean = stripAnsi(raw).replace(/\n+$/, "");
     if (!clean.trim()) return;
     var segs = attachQuerySourceLines(segmentRunOutput(clean), collectEditorQuerySourceLines());
-    segs.forEach(function(seg) {
-      if (seg.type === "query") {
-        buildQueryDom(seg.query);
-        return;
+    segs.forEach(appendRunSegment);
+  }
+  async function resolveRunOutput(raw) {
+    await ensureMinPendingDwell();
+    var clean = stripAnsi(raw).replace(/\n+$/, "");
+    if (!clean.trim()) {
+      await dismissRunSkeleton();
+      return;
+    }
+    var segs = attachQuerySourceLines(segmentRunOutput(clean), collectEditorQuerySourceLines());
+    var pending = pendingRunBlock && pendingRunBlock.isConnected ? pendingRunBlock : null;
+    var morphIdx = -1;
+    if (pending) {
+      for (var i = 0; i < segs.length; i++) {
+        if (isMorphableRunSeg(segs[i])) {
+          morphIdx = i;
+          break;
+        }
       }
-      if (seg.type === "warning") {
-        renderCoverageWarning(seg.text);
-        return;
+    }
+    if (pending && morphIdx === 0) {
+      pendingRunBlock = null;
+      pendingRunStartedAt = 0;
+      pending.removeAttribute("data-repl-run-pending");
+      pending.classList.remove("repl-block--run-enter");
+      pending.classList.add("repl-block--run-entered");
+      var seg0 = segs[0];
+      if (seg0.type === "type-recon-holes") {
+        await morphPendingStacked(pending, seg0.statusText, seg0.holesText);
+      } else {
+        var pre = pending.querySelector(".repl-rich-pre--run-pending");
+        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), seg0.text);
       }
-      if (seg.type === "type-recon-holes") {
-        appendRichShell((seg.statusText + "\n" + seg.holesText).trim(), function(shell) {
-          shell.classList.add("repl-rich--stacked");
-          if (seg.statusText) {
-            var sp = document.createElement("pre");
-            sp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-success";
-            sp.textContent = seg.statusText;
-            shell.appendChild(sp);
-          }
-          var hp = document.createElement("pre");
-          hp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
-          hp.textContent = seg.holesText;
-          shell.appendChild(hp);
-        });
-        return;
-      }
-      var text = seg.text;
-      if (!text.trim()) return;
-      appendRichShell(text, function(shell) {
-        var pre = document.createElement("pre");
-        pre.className = "repl-rich-pre repl-rich-pre--run";
-        var kind = classifyRunOtherKind(text);
-        if (kind === "success") pre.classList.add("repl-rich-pre--run-success");
-        else if (kind === "holes") pre.classList.add("repl-rich-pre--run-holes");
-        else pre.classList.add("repl-rich-pre--run-error");
-        pre.textContent = text;
-        shell.appendChild(pre);
-      });
-    });
+      scrollReplBottom();
+      for (var j = 1; j < segs.length; j++) appendRunSegment(segs[j]);
+      return;
+    }
+    if (pending) await dismissRunSkeleton();
+    segs.forEach(appendRunSegment);
   }
   function appendOutput(text, forcedKind) {
     if (text == null || text === "" || !String(text).trim()) return;
@@ -15661,6 +15965,8 @@
     streamAppend(wrap);
   }
   function clearOutput() {
+    pendingRunBlock = null;
+    pendingRunStartedAt = 0;
     if (typeof ReplStream !== "undefined" && ReplStream.clearExceptLive) {
       ReplStream.clearExceptLive();
     } else {
@@ -15690,6 +15996,9 @@
     appendOutput,
     appendReplHelp,
     appendRunOutput,
+    beginRunSkeleton,
+    resolveRunOutput,
+    dismissRunSkeleton,
     appendBelugaResponse,
     appendBuildFallbackNotice,
     appendRichMsg,
@@ -15704,12 +16013,986 @@
     createReplBlock,
     isKnownReplVerb,
     isUnavailableReplVerb,
-    unavailableReplVerbMessage
+    unavailableReplVerbMessage,
+    listReplVerbs: function() {
+      var seen = /* @__PURE__ */ Object.create(null);
+      var out = [];
+      for (var i = 0; i < REPL_HELP_ROWS.length; i++) {
+        var v = String(REPL_HELP_ROWS[i].cmd || "").split(/\s+/)[0];
+        if (!v) continue;
+        var key = v.toLowerCase();
+        if (seen[key]) continue;
+        seen[key] = true;
+        out.push(v);
+      }
+      return out;
+    }
   };
   global25.BelJarReplOutput = global25.ReplOutput;
 
-  // js/repl/repl-commands.mjs
+  // js/repl/repl-run-cmd.mjs
   var global26 = globalThis;
+  function baseName3(path) {
+    var s = String(path || "");
+    var i = s.lastIndexOf("/");
+    return i === -1 ? s : s.slice(i + 1);
+  }
+  function formatRunPath(absPath, cwd) {
+    var p = String(absPath || "");
+    if (!p) return p;
+    if (dirOf2(p) === String(cwd != null ? cwd : "")) return baseName3(p);
+    return p;
+  }
+  function formatRunCaption(absPath, cwd, amalgam) {
+    var shown = formatRunPath(absPath, cwd);
+    return amalgam ? "run &" + shown : "run " + shown;
+  }
+  function formatRunStatusName(absPath, cwd, amalgam) {
+    var shown = formatRunPath(absPath, cwd);
+    return amalgam ? "&" + shown : shown;
+  }
+  function rewriteRunStatusLabel(raw, fromLabel, toLabel) {
+    var from = String(fromLabel || "");
+    var to = String(toLabel || "");
+    if (!from || !to || from === to) return String(raw == null ? "" : raw);
+    var esc = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return String(raw).replace(
+      new RegExp("(##\\s*(?:Type Reconstruction (?:begin|done)|Holes)\\s*:\\s*)" + esc + "(\\s*##)", "gi"),
+      "$1" + to + "$2"
+    );
+  }
+  function collapseSegments(baseDir, rel) {
+    var parts = [];
+    var base = String(baseDir != null ? baseDir : "");
+    if (base) {
+      var baseSegs = base.split("/");
+      for (var b = 0; b < baseSegs.length; b++) {
+        if (baseSegs[b]) parts.push(baseSegs[b]);
+      }
+    }
+    var segs = String(rel != null ? rel : "").split("/");
+    for (var i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      if (!seg || seg === ".") continue;
+      if (seg === "..") {
+        if (!parts.length) return { error: "Path escapes workspace root." };
+        parts.pop();
+        continue;
+      }
+      parts.push(seg);
+    }
+    return { path: parts.join("/") };
+  }
+  function hasDotSegment(s) {
+    var segs = String(s || "").split("/");
+    for (var i = 0; i < segs.length; i++) {
+      if (segs[i] === "." || segs[i] === "..") return true;
+    }
+    return false;
+  }
+  function normalizeWorkspacePath(arg, cwd) {
+    var s = String(arg != null ? arg : "").trim().replace(/\\/g, "/");
+    if (!s) return null;
+    if (s.charAt(0) === "~") {
+      if (s !== "~" && s.slice(0, 2) !== "~/") {
+        return { error: "Only ~ and ~/\u2026 are supported (not ~user)." };
+      }
+      var rest = s === "~" ? "" : s.slice(2);
+      return collapseSegments("", rest);
+    }
+    if (s === "." || s === ".." || s.slice(0, 2) === "./" || s.slice(0, 3) === "../") {
+      return collapseSegments(cwd != null ? cwd : "", s);
+    }
+    if (hasDotSegment(s)) {
+      return collapseSegments("", s);
+    }
+    return null;
+  }
+  function lookupFileByPath(files, path) {
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].name === path) return { path: files[i].name, id: files[i].id };
+    }
+    return null;
+  }
+  function parseRunCommand(bare) {
+    var s = String(bare != null ? bare : "").replace(/^%:\s*/, "").trim();
+    if (!/^run\b/i.test(s)) return { error: "Not a run command." };
+    var rest = s.replace(/^run\b/i, "").trim();
+    if (!rest) return { kind: "fileActive" };
+    if (rest === "&") return { kind: "hereActive" };
+    if (/^&\s/.test(rest)) {
+      return { error: "Use run &path with no space after &." };
+    }
+    if (rest.charAt(0) === "&") {
+      var herePath = rest.slice(1);
+      if (!herePath) return { kind: "hereActive" };
+      if (/\s/.test(herePath)) {
+        return { error: "Unexpected arguments after run &path." };
+      }
+      return { kind: "here", path: herePath };
+    }
+    if (/^project$/i.test(rest)) return { kind: "project" };
+    if (/^suite\b/i.test(rest)) {
+      var suiteArg = rest.replace(/^suite\b/i, "").trim();
+      if (!suiteArg) return { error: "Missing suite name." };
+      if (/\s/.test(suiteArg)) return { error: "Unexpected arguments after suite name." };
+      return { kind: "suite", suite: suiteArg.replace(/\.cfg$/i, "") };
+    }
+    if (/^folder\b/i.test(rest)) {
+      var folderArg = rest.replace(/^folder\b/i, "").trim();
+      if (/\s/.test(folderArg)) return { error: "Unexpected arguments after folder path." };
+      if (folderArg === "(root)") return { kind: "folder", path: "" };
+      return { kind: "folder", path: folderArg };
+    }
+    if (/\s/.test(rest)) return { error: "Unrecognized run form." };
+    return { kind: "file", path: rest };
+  }
+  function resolveRunTarget(arg, opts) {
+    opts = opts || {};
+    var files = opts.files || [];
+    var cwd = opts.cwd != null ? opts.cwd : "";
+    var want = String(arg || "").trim();
+    if (!want) return { error: "Missing path." };
+    var nav = normalizeWorkspacePath(want, cwd);
+    if (nav && nav.error) return { error: nav.error };
+    if (nav && nav.path != null) {
+      var navHit = lookupFileByPath(files, nav.path);
+      if (navHit) return navHit;
+      return { error: 'No file matching "' + want + '".' };
+    }
+    var i;
+    for (i = 0; i < files.length; i++) {
+      if (files[i].name === want) return { path: files[i].name, id: files[i].id };
+    }
+    var joined = joinPath(cwd, want);
+    if (joined !== want) {
+      for (i = 0; i < files.length; i++) {
+        if (files[i].name === joined) return { path: files[i].name, id: files[i].id };
+      }
+    }
+    var baseWant = baseName3(want);
+    var hits = [];
+    for (i = 0; i < files.length; i++) {
+      var bn = baseName3(files[i].name);
+      if (bn === baseWant || bn === want) hits.push(files[i]);
+    }
+    if (hits.length === 1) return { path: hits[0].name, id: hits[0].id };
+    if (hits.length > 1) {
+      return {
+        error: 'Ambiguous path "' + want + '": ' + hits.map(function(f) {
+          return f.name;
+        }).join(", ")
+      };
+    }
+    return { error: 'No file matching "' + want + '".' };
+  }
+  function resolveSuiteCfg(suite, files, cwd) {
+    var name = String(suite || "").trim();
+    if (!name) return { error: "Missing suite name." };
+    var nav = normalizeWorkspacePath(name, cwd);
+    if (nav && nav.error) return { error: nav.error };
+    if (nav && nav.path != null) {
+      var navPath = nav.path;
+      if (navPath && !/\.cfg$/i.test(navPath)) navPath = navPath + ".cfg";
+      for (var n = 0; n < files.length; n++) {
+        if (files[n].name === navPath) return { path: files[n].name };
+      }
+      return { error: 'No suite matching "' + suite + '".' };
+    }
+    var cfgBase = /\.cfg$/i.test(name) ? name : name + ".cfg";
+    var candidates = [cfgBase, joinPath(cwd, cfgBase)];
+    var i;
+    for (i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      for (var j = 0; j < files.length; j++) {
+        if (files[j].name === c) return { path: files[j].name };
+      }
+    }
+    var hits = [];
+    for (i = 0; i < files.length; i++) {
+      var fn = files[i].name || "";
+      if (!/\.cfg$/i.test(fn)) continue;
+      var bn = baseName3(fn);
+      if (bn === cfgBase || bn.replace(/\.cfg$/i, "") === name.replace(/\.cfg$/i, "")) {
+        hits.push(fn);
+      }
+    }
+    if (hits.length === 1) return { path: hits[0] };
+    if (hits.length > 1) {
+      return { error: 'Ambiguous suite "' + name + '": ' + hits.join(", ") };
+    }
+    return { error: 'No suite matching "' + name + '".' };
+  }
+  function resolveFolderPath(arg, files, cwd) {
+    var want = arg == null ? "" : String(arg);
+    if (want === "(root)") want = "";
+    if (want === "") return { path: "" };
+    var nav = normalizeWorkspacePath(want, cwd);
+    if (nav && nav.error) return { error: nav.error };
+    if (nav && nav.path != null) {
+      want = nav.path;
+      if (want === "") return { path: "" };
+    }
+    var dirs = /* @__PURE__ */ Object.create(null);
+    for (var i = 0; i < files.length; i++) {
+      dirs[dirOf2(files[i].name)] = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(dirs, want)) return { path: want };
+    if (!(nav && nav.path != null)) {
+      var joined = joinPath(cwd, want);
+      if (Object.prototype.hasOwnProperty.call(dirs, joined)) return { path: joined };
+    }
+    return { error: 'No folder matching "' + arg + '".' };
+  }
+  function activeCwd(files, activeId2) {
+    if (!activeId2) return "";
+    for (var i = 0; i < (files || []).length; i++) {
+      if (files[i].id === activeId2) return dirOf2(files[i].name);
+    }
+    return "";
+  }
+  function fileTextForResolve(fileId, activeId2) {
+    if (fileId === activeId2 && typeof CurrentEditor !== "undefined" && CurrentEditor && typeof CurrentEditor.getValue === "function") {
+      return CurrentEditor.getValue();
+    }
+    if (typeof Persist !== "undefined" && Persist.getFileText) {
+      return Persist.getFileText(fileId) || "";
+    }
+    return "";
+  }
+  function activeFileInSuite(files, activeId2) {
+    if (!activeId2 || typeof ProjectSource === "undefined" || !ProjectSource.cfgPathForActive) {
+      return false;
+    }
+    return !!ProjectSource.cfgPathForActive(files, activeId2, function(id) {
+      return fileTextForResolve(id, activeId2);
+    });
+  }
+  async function executeRunCommand(bare) {
+    var parsed = parseRunCommand(bare);
+    if (parsed.error) return { ok: false, error: parsed.error };
+    return dispatchRunCommand(parsed);
+  }
+  async function dispatchRunCommand(parsed) {
+    if (!parsed || parsed.error) {
+      return { ok: false, error: parsed && parsed.error || "Invalid run command." };
+    }
+    if (typeof BelugaRun === "undefined") {
+      return { ok: false, error: "Run is not available." };
+    }
+    var files = typeof Persist !== "undefined" && Persist.listFiles ? Persist.listFiles() || [] : [];
+    var activeId2 = typeof Persist !== "undefined" && Persist.getActiveFileId ? Persist.getActiveFileId() : null;
+    var cwd = activeCwd(files, activeId2);
+    switch (parsed.kind) {
+      case "fileActive":
+        if (!activeId2) return { ok: false, error: "No active file." };
+        if (activeFileInSuite(files, activeId2)) await BelugaRun.runToHere();
+        else await BelugaRun.runFile();
+        return { ok: true };
+      case "hereActive":
+        if (!activeId2) return { ok: false, error: "No active file." };
+        await BelugaRun.runToHere();
+        return { ok: true };
+      case "project":
+        await BelugaRun.runProject();
+        return { ok: true };
+      case "file": {
+        var fileHit = resolveRunTarget(parsed.path, { files, cwd });
+        if (fileHit.error) return { ok: false, error: fileHit.error };
+        await BelugaRun.runFile(fileHit.id);
+        return { ok: true };
+      }
+      case "here": {
+        var hereHit = resolveRunTarget(parsed.path, { files, cwd });
+        if (hereHit.error) return { ok: false, error: hereHit.error };
+        await BelugaRun.runToHere(hereHit.id);
+        return { ok: true };
+      }
+      case "suite": {
+        var suiteHit = resolveSuiteCfg(parsed.suite, files, cwd);
+        if (suiteHit.error) return { ok: false, error: suiteHit.error };
+        await BelugaRun.runModuleCfg(suiteHit.path);
+        return { ok: true };
+      }
+      case "folder": {
+        var folderHit = resolveFolderPath(parsed.path, files, cwd);
+        if (folderHit.error) return { ok: false, error: folderHit.error };
+        await BelugaRun.runFolder(folderHit.path);
+        return { ok: true };
+      }
+      default:
+        return { ok: false, error: "Unrecognized run form." };
+    }
+  }
+  var api = {
+    dirOf: dirOf2,
+    joinPath,
+    baseName: baseName3,
+    formatRunPath,
+    formatRunCaption,
+    formatRunStatusName,
+    rewriteRunStatusLabel,
+    collapseSegments,
+    normalizeWorkspacePath,
+    parseRunCommand,
+    resolveRunTarget,
+    resolveSuiteCfg,
+    resolveFolderPath,
+    activeCwd,
+    dispatchRunCommand,
+    executeRunCommand
+  };
+  global26.ReplRunCmd = api;
+  global26.BelJarReplRunCmd = api;
+
+  // js/repl/repl-ac-suggest.mjs
+  var MAX_ITEMS = 16;
+  var DEFAULT_VERBS = [
+    "run",
+    "help",
+    "constructors",
+    "constructors-comp",
+    "countholes",
+    "fdef",
+    "fsig",
+    "lookuphole",
+    "printhole",
+    "query",
+    "type",
+    "types"
+  ];
+  function basenameCounts(paths) {
+    var counts = /* @__PURE__ */ Object.create(null);
+    for (var i = 0; i < paths.length; i++) {
+      var bn = baseName3(paths[i]);
+      counts[bn] = (counts[bn] || 0) + 1;
+    }
+    return counts;
+  }
+  function suggestPathLabel(absPath, cwd, counts) {
+    var bn = baseName3(absPath);
+    if ((counts[bn] || 0) > 1) return absPath;
+    var formatted = formatRunPath(absPath, cwd);
+    if (formatted === bn && dirOf2(absPath) !== String(cwd != null ? cwd : "")) {
+      return absPath;
+    }
+    if (!dirOf2(absPath) && String(cwd || "") !== "") return "~/" + bn;
+    return formatted;
+  }
+  function isNavToken(token) {
+    var t = String(token || "");
+    return t === "." || t === ".." || t === "~" || t.slice(0, 2) === "./" || t.slice(0, 3) === "../" || t.slice(0, 2) === "~/";
+  }
+  function matchesToken(absPath, label, token, cwd) {
+    var t = String(token || "").replace(/\\/g, "/");
+    if (!t) return true;
+    var tl = t.toLowerCase();
+    var labelL = String(label || "").toLowerCase();
+    var pathL = String(absPath || "").toLowerCase();
+    var bnL = baseName3(absPath).toLowerCase();
+    if (!isNavToken(t)) {
+      return labelL.indexOf(tl) === 0 || bnL.indexOf(tl) === 0 || pathL.indexOf(tl) !== -1;
+    }
+    if (labelL.indexOf(tl) === 0) return true;
+    var lastSlash = t.lastIndexOf("/");
+    var dirTyped = lastSlash >= 0 ? t.slice(0, lastSlash) : t;
+    var filter = lastSlash >= 0 ? t.slice(lastSlash + 1).toLowerCase() : "";
+    var dirNorm = normalizeWorkspacePath(
+      dirTyped === "~" ? "~" : dirTyped || ".",
+      cwd
+    );
+    if (dirNorm && dirNorm.error) return false;
+    if (dirNorm && dirNorm.path != null) {
+      var base = dirNorm.path;
+      if (base === "") {
+        if (dirOf2(absPath) !== "") return false;
+      } else if (absPath !== base && absPath.indexOf(base + "/") !== 0 && dirOf2(absPath) !== base) {
+        return false;
+      }
+      if (filter && bnL.indexOf(filter) !== 0 && pathL.indexOf(filter) === -1) return false;
+      return true;
+    }
+    return labelL.indexOf(tl) === 0;
+  }
+  function compareByPath(aPath, bPath, cwd) {
+    var aDir = dirOf2(aPath);
+    var bDir = dirOf2(bPath);
+    var aCwd = aDir === String(cwd || "") ? 0 : 1;
+    var bCwd = bDir === String(cwd || "") ? 0 : 1;
+    if (aCwd !== bCwd) return aCwd - bCwd;
+    return String(aPath).localeCompare(String(bPath), void 0, {
+      sensitivity: "base",
+      numeric: true
+    });
+  }
+  function parseCompletionContext(line) {
+    var raw = String(line != null ? line : "");
+    var s = raw.replace(/^%:\s*/, "");
+    var offset = raw.length - s.length;
+    if (!/\s/.test(s) && !/^run&/i.test(s)) {
+      return {
+        kind: "verb",
+        token: s,
+        replaceFrom: offset
+      };
+    }
+    var m;
+    if (m = /^run&([\s\S]*)$/i.exec(s)) {
+      return {
+        kind: "runPath",
+        token: m[1],
+        replaceFrom: offset + (s.length - m[1].length),
+        amalgam: true
+      };
+    }
+    if (m = /^run\s+suite\s+([\s\S]*)$/i.exec(s)) {
+      return {
+        kind: "runSuite",
+        token: m[1],
+        replaceFrom: offset + (s.length - m[1].length)
+      };
+    }
+    if (m = /^run\s+folder\s+([\s\S]*)$/i.exec(s)) {
+      return {
+        kind: "runFolder",
+        token: m[1],
+        replaceFrom: offset + (s.length - m[1].length)
+      };
+    }
+    if (/^run\s+project\b/i.test(s)) return null;
+    if (m = /^run\s+&([\s\S]*)$/i.exec(s)) {
+      return {
+        kind: "runPath",
+        token: m[1],
+        replaceFrom: offset + (s.length - m[1].length),
+        amalgam: true
+      };
+    }
+    if (m = /^run\s+([\s\S]*)$/i.exec(s)) {
+      var rest = m[1];
+      if (/^(suite|folder)(\s|$)/i.test(rest)) return null;
+      return {
+        kind: "runPath",
+        token: rest,
+        replaceFrom: offset + (s.length - rest.length),
+        amalgam: false
+      };
+    }
+    return null;
+  }
+  function suggestVerbs(token, verbs) {
+    var list2 = verbs && verbs.length ? verbs : DEFAULT_VERBS;
+    var t = String(token || "").toLowerCase();
+    var seen = /* @__PURE__ */ Object.create(null);
+    var out = [];
+    for (var i = 0; i < list2.length; i++) {
+      var v = String(list2[i] || "");
+      if (!v) continue;
+      var key = v.toLowerCase();
+      if (seen[key]) continue;
+      seen[key] = true;
+      if (t && key.indexOf(t) !== 0) continue;
+      out.push({
+        label: v,
+        insert: v,
+        kind: "verb",
+        ext: ""
+      });
+    }
+    return out.slice(0, MAX_ITEMS);
+  }
+  function suggestRunPaths(files, cwd, token) {
+    var paths = [];
+    for (var i = 0; i < files.length; i++) {
+      var n = files[i] && files[i].name;
+      if (!n) continue;
+      if (isSignaturePath(n) || isCfgPath(n)) paths.push(n);
+    }
+    var counts = basenameCounts(paths);
+    var items3 = [];
+    for (var j = 0; j < paths.length; j++) {
+      var p = paths[j];
+      var label = suggestPathLabel(p, cwd, counts);
+      if (!matchesToken(p, label, token, cwd)) continue;
+      items3.push({
+        label,
+        insert: label,
+        kind: "path",
+        ext: isCfgPath(p) ? "cfg" : isElfPath(p) ? "elf" : "bel",
+        absPath: p
+      });
+    }
+    items3.sort(function(a, b) {
+      return compareByPath(a.absPath, b.absPath, cwd);
+    });
+    return items3.slice(0, MAX_ITEMS).map(function(it) {
+      delete it.absPath;
+      return it;
+    });
+  }
+  function suggestRunSuites(files, cwd, token) {
+    var paths = [];
+    for (var i = 0; i < files.length; i++) {
+      var n = files[i] && files[i].name;
+      if (n && isCfgPath(n)) paths.push(n);
+    }
+    var counts = basenameCounts(paths.map(function(p2) {
+      return baseName3(p2).replace(/\.cfg$/i, "");
+    }));
+    counts = /* @__PURE__ */ Object.create(null);
+    for (var c = 0; c < paths.length; c++) {
+      var sn = baseName3(paths[c]).replace(/\.cfg$/i, "");
+      counts[sn] = (counts[sn] || 0) + 1;
+    }
+    var items3 = [];
+    for (var j = 0; j < paths.length; j++) {
+      var p = paths[j];
+      var suite = baseName3(p).replace(/\.cfg$/i, "");
+      var label = (counts[suite] || 0) > 1 ? p.replace(/\.cfg$/i, "") : suite;
+      if (dirOf2(p) !== String(cwd || "") && (counts[suite] || 0) <= 1) {
+        label = suggestPathLabel(p, cwd, basenameCounts(paths)).replace(/\.cfg$/i, "");
+      }
+      if (!matchesToken(p, label, token, cwd) && !matchesToken(p, suite, token, cwd)) continue;
+      items3.push({
+        label,
+        insert: label,
+        kind: "suite",
+        ext: "cfg",
+        absPath: p
+      });
+    }
+    items3.sort(function(a, b) {
+      return compareByPath(a.absPath, b.absPath, cwd);
+    });
+    return items3.slice(0, MAX_ITEMS).map(function(it) {
+      delete it.absPath;
+      return it;
+    });
+  }
+  function suggestRunFolders(files, cwd, token) {
+    var dirs = /* @__PURE__ */ Object.create(null);
+    dirs[""] = true;
+    for (var i = 0; i < files.length; i++) {
+      var n = files[i] && files[i].name;
+      if (!n) continue;
+      var d = dirOf2(n);
+      dirs[d] = true;
+      if (d) {
+        var parts = d.split("/");
+        var acc = "";
+        for (var p = 0; p < parts.length; p++) {
+          if (!parts[p]) continue;
+          acc = acc ? acc + "/" + parts[p] : parts[p];
+          dirs[acc] = true;
+        }
+      }
+    }
+    var keys = Object.keys(dirs);
+    var items3 = [];
+    for (var j = 0; j < keys.length; j++) {
+      var folder = keys[j];
+      var label;
+      if (folder === "") label = "~";
+      else if (folder === String(cwd || "")) label = ".";
+      else if (dirOf2(folder) === String(cwd || "")) label = baseName3(folder);
+      else if (!dirOf2(folder) && String(cwd || "")) label = "~/" + folder;
+      else label = folder;
+      var t = String(token || "").replace(/\\/g, "/");
+      if (t) {
+        var tl = t.toLowerCase();
+        if (label.toLowerCase().indexOf(tl) !== 0 && folder.toLowerCase().indexOf(tl) !== 0 && !(t.charAt(0) === "~" && ("~/" + folder).toLowerCase().indexOf(tl) === 0) && !matchesToken(folder || "~", label, t, cwd)) {
+          continue;
+        }
+      }
+      items3.push({
+        label,
+        insert: label,
+        kind: "folder",
+        ext: "",
+        absPath: folder
+      });
+    }
+    items3.sort(function(a, b) {
+      var aCwd = a.absPath === String(cwd || "") ? 0 : 1;
+      var bCwd = b.absPath === String(cwd || "") ? 0 : 1;
+      if (aCwd !== bCwd) return aCwd - bCwd;
+      return String(a.absPath).localeCompare(String(b.absPath), void 0, {
+        sensitivity: "base",
+        numeric: true
+      });
+    });
+    return items3.slice(0, MAX_ITEMS).map(function(it) {
+      delete it.absPath;
+      return it;
+    });
+  }
+  function suggestReplCompletions(opts) {
+    opts = opts || {};
+    var ctx = parseCompletionContext(opts.line);
+    if (!ctx) return null;
+    var files = opts.files || [];
+    var cwd = opts.cwd != null ? opts.cwd : "";
+    var items3 = [];
+    if (ctx.kind === "verb") {
+      items3 = suggestVerbs(ctx.token, opts.verbs);
+    } else if (ctx.kind === "runPath") {
+      items3 = suggestRunPaths(files, cwd, ctx.token);
+    } else if (ctx.kind === "runSuite") {
+      items3 = suggestRunSuites(files, cwd, ctx.token);
+    } else if (ctx.kind === "runFolder") {
+      items3 = suggestRunFolders(files, cwd, ctx.token);
+    }
+    if (!items3.length) return null;
+    return {
+      items: items3,
+      replaceFrom: ctx.replaceFrom,
+      token: ctx.token,
+      amalgam: !!ctx.amalgam
+    };
+  }
+
+  // js/repl/repl-autocomplete.mjs
+  var global27 = globalThis;
+  var inputEl = null;
+  var popupEl = null;
+  var items2 = [];
+  var activeIndex2 = -1;
+  var replaceFrom = 0;
+  var open7 = false;
+  var debounceTimer = null;
+  var marqueeTimer = null;
+  var marqueeRaf = null;
+  var repositionBound = false;
+  var MARQUEE_PX_PER_SEC = 36;
+  var MARQUEE_PAUSE_MS = 700;
+  var POPUP_GAP_PX = 6;
+  function getInput() {
+    if (inputEl && inputEl.isConnected) return inputEl;
+    if (typeof ReplStream !== "undefined" && ReplStream.getCommandInput) {
+      inputEl = ReplStream.getCommandInput();
+    }
+    if (!inputEl) inputEl = document.getElementById("command-input");
+    return inputEl;
+  }
+  function getLiveLine2() {
+    if (typeof ReplStream !== "undefined" && ReplStream.getLiveLine) {
+      var live2 = ReplStream.getLiveLine();
+      if (live2 && live2.isConnected) return live2;
+    }
+    var output2 = document.getElementById("output");
+    return output2 ? output2.querySelector(".repl-live") : null;
+  }
+  function ensurePopup() {
+    if (popupEl && popupEl.isConnected) return popupEl;
+    if (typeof document === "undefined" || !document.body) return null;
+    popupEl = document.createElement("div");
+    popupEl.className = "repl-ac";
+    popupEl.hidden = true;
+    popupEl.setAttribute("role", "listbox");
+    popupEl.setAttribute("aria-label", "Command completions");
+    document.body.appendChild(popupEl);
+    return popupEl;
+  }
+  function positionPopup() {
+    if (!popupEl || popupEl.hidden || !open7) return;
+    var anchor = getLiveLine2() || getInput();
+    if (!anchor) return;
+    var rect = anchor.getBoundingClientRect();
+    var roomAbove = Math.max(72, rect.top - 8);
+    var maxH = Math.min(12 * 16, roomAbove);
+    popupEl.style.left = Math.max(8, rect.left) + "px";
+    popupEl.style.width = Math.max(12 * 16, rect.width) + "px";
+    popupEl.style.maxHeight = maxH + "px";
+    popupEl.style.top = "auto";
+    popupEl.style.bottom = window.innerHeight - rect.top + POPUP_GAP_PX + "px";
+  }
+  function onReposition() {
+    if (open7) positionPopup();
+  }
+  function bindReposition(on) {
+    var output2 = document.getElementById("output");
+    if (on && !repositionBound) {
+      repositionBound = true;
+      window.addEventListener("resize", onReposition);
+      if (output2) output2.addEventListener("scroll", onReposition, { passive: true });
+    } else if (!on && repositionBound) {
+      repositionBound = false;
+      window.removeEventListener("resize", onReposition);
+      if (output2) output2.removeEventListener("scroll", onReposition);
+    }
+  }
+  function listFiles2() {
+    return typeof Persist !== "undefined" && Persist.listFiles ? Persist.listFiles() || [] : [];
+  }
+  function currentCwd() {
+    var files = listFiles2();
+    var id = typeof Persist !== "undefined" && Persist.getActiveFileId ? Persist.getActiveFileId() : null;
+    if (typeof activeCwd === "function") return activeCwd(files, id);
+    if (!id) return "";
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].id === id) return dirOf2(files[i].name);
+    }
+    return "";
+  }
+  function listVerbs() {
+    if (typeof ReplOutput !== "undefined" && typeof ReplOutput.listReplVerbs === "function") {
+      return ReplOutput.listReplVerbs();
+    }
+    return DEFAULT_VERBS.slice();
+  }
+  function stopMarquee() {
+    if (marqueeTimer) {
+      clearTimeout(marqueeTimer);
+      marqueeTimer = null;
+    }
+    if (marqueeRaf) {
+      cancelAnimationFrame(marqueeRaf);
+      marqueeRaf = null;
+    }
+    if (!popupEl) return;
+    var scrolls = popupEl.querySelectorAll(".repl-ac-name-scroll");
+    for (var i = 0; i < scrolls.length; i++) {
+      scrolls[i].style.transform = "";
+      scrolls[i].classList.remove("is-marquee");
+    }
+  }
+  function startMarqueeOn(nameEl) {
+    stopMarquee();
+    if (!nameEl) return;
+    var scroll = nameEl.querySelector(".repl-ac-name-scroll");
+    if (!scroll) return;
+    var overflow = scroll.scrollWidth - nameEl.clientWidth;
+    if (overflow <= 1) return;
+    scroll.classList.add("is-marquee");
+    var pos = 0;
+    var dir = 1;
+    var last = performance.now();
+    var pausing = true;
+    function tick2(now) {
+      marqueeRaf = null;
+      if (!scroll.isConnected || !nameEl.closest(".repl-ac-item.is-active")) {
+        stopMarquee();
+        return;
+      }
+      var dt = Math.min(48, now - last);
+      last = now;
+      if (pausing) {
+        marqueeRaf = requestAnimationFrame(tick2);
+        return;
+      }
+      pos += dir * (MARQUEE_PX_PER_SEC * dt) / 1e3;
+      if (pos >= overflow) {
+        pos = overflow;
+        dir = -1;
+        pausing = true;
+        marqueeTimer = setTimeout(function() {
+          marqueeTimer = null;
+          pausing = false;
+          last = performance.now();
+          marqueeRaf = requestAnimationFrame(tick2);
+        }, MARQUEE_PAUSE_MS);
+        scroll.style.transform = "translateX(" + -pos + "px)";
+        return;
+      }
+      if (pos <= 0) {
+        pos = 0;
+        dir = 1;
+        pausing = true;
+        marqueeTimer = setTimeout(function() {
+          marqueeTimer = null;
+          pausing = false;
+          last = performance.now();
+          marqueeRaf = requestAnimationFrame(tick2);
+        }, MARQUEE_PAUSE_MS);
+        scroll.style.transform = "translateX(0)";
+        return;
+      }
+      scroll.style.transform = "translateX(" + -pos + "px)";
+      marqueeRaf = requestAnimationFrame(tick2);
+    }
+    marqueeTimer = setTimeout(function() {
+      marqueeTimer = null;
+      pausing = false;
+      last = performance.now();
+      marqueeRaf = requestAnimationFrame(tick2);
+    }, MARQUEE_PAUSE_MS);
+  }
+  function hide() {
+    stopMarquee();
+    open7 = false;
+    items2 = [];
+    activeIndex2 = -1;
+    bindReposition(false);
+    if (popupEl) {
+      popupEl.hidden = true;
+      popupEl.textContent = "";
+      popupEl.style.left = "";
+      popupEl.style.width = "";
+      popupEl.style.maxHeight = "";
+      popupEl.style.top = "";
+      popupEl.style.bottom = "";
+    }
+  }
+  function isOpen2() {
+    return open7 && items2.length > 0;
+  }
+  function setActive2(idx) {
+    if (!popupEl || !items2.length) return;
+    stopMarquee();
+    activeIndex2 = Math.max(0, Math.min(items2.length - 1, idx));
+    var kids = popupEl.querySelectorAll(".repl-ac-item");
+    for (var i = 0; i < kids.length; i++) {
+      kids[i].classList.toggle("is-active", i === activeIndex2);
+      if (i === activeIndex2) kids[i].setAttribute("aria-selected", "true");
+      else kids[i].removeAttribute("aria-selected");
+    }
+    var active = kids[activeIndex2];
+    if (active && active.scrollIntoView) {
+      active.scrollIntoView({ block: "nearest" });
+    }
+    if (active) {
+      var nameEl = active.querySelector(".repl-ac-name");
+      requestAnimationFrame(function() {
+        startMarqueeOn(nameEl);
+      });
+    }
+  }
+  function accept(idx) {
+    var input = getInput();
+    if (!input || idx < 0 || idx >= items2.length) return false;
+    var item = items2[idx];
+    var val = String(input.value || "");
+    var before = val.slice(0, replaceFrom);
+    var next = before + item.insert;
+    input.value = next;
+    input.focus();
+    try {
+      var pos = next.length;
+      input.setSelectionRange(pos, pos);
+    } catch (_) {
+    }
+    hide();
+    if (typeof ReplCommands !== "undefined" && ReplCommands.resetHistoryIndex) {
+      ReplCommands.resetHistoryIndex();
+    }
+    return true;
+  }
+  function render2(result) {
+    var popup = ensurePopup();
+    if (!popup) return;
+    if (!result || !result.items || !result.items.length) {
+      hide();
+      return;
+    }
+    stopMarquee();
+    items2 = result.items;
+    replaceFrom = result.replaceFrom || 0;
+    activeIndex2 = 0;
+    open7 = true;
+    popup.textContent = "";
+    popup.hidden = false;
+    for (var i = 0; i < items2.length; i++) {
+      var it = items2[i];
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "repl-ac-item";
+      if (it.ext) btn.classList.add("repl-ac-item--" + it.ext);
+      btn.setAttribute("role", "option");
+      btn.dataset.index = String(i);
+      var head = document.createElement("div");
+      head.className = "repl-ac-head";
+      var name = document.createElement("span");
+      name.className = "repl-ac-name";
+      var scroll = document.createElement("span");
+      scroll.className = "repl-ac-name-scroll";
+      scroll.textContent = it.label;
+      name.appendChild(scroll);
+      head.appendChild(name);
+      btn.appendChild(head);
+      btn.addEventListener("mousedown", function(e) {
+        e.preventDefault();
+        var ix = parseInt(e.currentTarget.dataset.index, 10);
+        accept(ix);
+      });
+      popup.appendChild(btn);
+    }
+    setActive2(0);
+    positionPopup();
+    bindReposition(true);
+    requestAnimationFrame(positionPopup);
+  }
+  function compute() {
+    var input = getInput();
+    if (!input) return null;
+    return suggestReplCompletions({
+      line: input.value || "",
+      files: listFiles2(),
+      cwd: currentCwd(),
+      verbs: listVerbs()
+    });
+  }
+  function refresh() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(function() {
+      debounceTimer = null;
+      render2(compute());
+    }, 20);
+  }
+  function onKeyDown(e) {
+    if (!e) return false;
+    if (!isOpen2()) {
+      if (e.key === "Tab") {
+        var result = compute();
+        if (result && result.items && result.items.length) {
+          render2(result);
+          e.preventDefault();
+          return true;
+        }
+      }
+      return false;
+    }
+    if (e.key === "ArrowDown") {
+      setActive2(activeIndex2 + 1);
+      return true;
+    }
+    if (e.key === "ArrowUp") {
+      setActive2(activeIndex2 - 1);
+      return true;
+    }
+    if (e.key === "Escape") {
+      hide();
+      return true;
+    }
+    if (e.key === "Tab") {
+      accept(activeIndex2);
+      return true;
+    }
+    if (e.key === "Enter") {
+      accept(activeIndex2);
+      return false;
+    }
+    return false;
+  }
+  function bind2(input) {
+    inputEl = input || getInput();
+    ensurePopup();
+    hide();
+  }
+  var api2 = {
+    bind: bind2,
+    refresh,
+    hide,
+    isOpen: isOpen2,
+    onKeyDown,
+    // test / advanced
+    _compute: compute,
+    _suggest: suggestReplCompletions
+  };
+  global27.ReplAutocomplete = api2;
+  global27.BelJarReplAutocomplete = api2;
+
+  // js/repl/repl-commands.mjs
+  var global28 = globalThis;
   var replHistory = [];
   var replHistoryIndex = null;
   var historyLoaded = false;
@@ -15731,6 +17014,21 @@
     loadHistory();
     return replHistory.slice();
   }
+  function recordHistory(raw) {
+    if (raw == null) return;
+    var s = String(raw).trim();
+    if (!s) return;
+    loadHistory();
+    replHistoryIndex = null;
+    replHistory.push(s);
+    var cap = typeof Persist !== "undefined" ? Persist.readStoredReplHistoryCap() : 0;
+    if (cap > 0 && replHistory.length > cap) {
+      replHistory.splice(0, replHistory.length - cap);
+    } else if (!cap && replHistory.length > 500) {
+      replHistory.splice(0, replHistory.length - 500);
+    }
+    persistHistory();
+  }
   function getCmdInput() {
     if (typeof ReplStream !== "undefined" && ReplStream.getCommandInput) {
       return ReplStream.getCommandInput();
@@ -15738,7 +17036,7 @@
     return document.getElementById("command-input");
   }
   function parseBelugaCmd(prefixed) {
-    var norm2 = global26.BelugaText ? global26.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
+    var norm2 = global28.BelugaText ? global28.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
     var inner = norm2.replace(/^%:/, "").trim();
     if (!inner) return { verb: "", args: "" };
     var sp = inner.search(/\s/);
@@ -15793,23 +17091,49 @@
     if (!cmd) return;
     var rawForHistory = cmd;
     if (!cmd.startsWith("%:")) cmd = "%:" + cmd;
-    replHistoryIndex = null;
-    var bareCmd = rawForHistory.replace(/^%:\s*/, "").trim().toLowerCase();
+    var bareText = rawForHistory.replace(/^%:\s*/, "").trim();
+    var bareCmd = bareText.toLowerCase();
     var isHelp = bareCmd === "help";
     var parsed = parseBelugaCmd(cmd);
     var verb = parsed.verb;
     var echoOn = typeof Persist === "undefined" || Persist.readStoredReplEcho();
+    if (/^run$/i.test(verb)) {
+      cmdInputEl3.value = "";
+      replHistoryIndex = null;
+      var runResult = { ok: false, error: "Run is not available." };
+      try {
+        if (typeof ReplRunCmd !== "undefined" && ReplRunCmd.executeRunCommand) {
+          runResult = await ReplRunCmd.executeRunCommand(bareText);
+        }
+      } catch (runErr) {
+        runResult = {
+          ok: false,
+          error: runErr && runErr.message ? String(runErr.message) : String(runErr)
+        };
+      }
+      if (runResult && runResult.ok) {
+        if (typeof ReplStream !== "undefined" && ReplStream.focusLive) {
+          ReplStream.focusLive();
+        }
+        return;
+      }
+      beginCmdTurn(echoOn ? formatShownCmd(rawForHistory) : "");
+      recordHistory(rawForHistory);
+      try {
+        if (typeof ReplOutput !== "undefined") {
+          ReplOutput.appendOutput(runResult && runResult.error ? String(runResult.error) : "Run failed.", "error");
+        }
+      } finally {
+        endCmdTurn();
+        if (typeof ReplStream !== "undefined" && ReplStream.focusLive) {
+          ReplStream.focusLive();
+        }
+      }
+      return;
+    }
     beginCmdTurn(echoOn ? formatShownCmd(rawForHistory) : "");
     cmdInputEl3.value = "";
-    loadHistory();
-    replHistory.push(rawForHistory);
-    var cap = typeof Persist !== "undefined" ? Persist.readStoredReplHistoryCap() : 0;
-    if (cap > 0 && replHistory.length > cap) {
-      replHistory.splice(0, replHistory.length - cap);
-    } else if (!cap && replHistory.length > 500) {
-      replHistory.splice(0, replHistory.length - 500);
-    }
-    persistHistory();
+    recordHistory(rawForHistory);
     try {
       if (isHelp) {
         if (typeof ReplOutput !== "undefined") ReplOutput.appendReplHelp();
@@ -15864,17 +17188,18 @@
       }
     }
   }
-  global26.ReplCommands = {
+  global28.ReplCommands = {
     runCmd,
     resetHistoryIndex,
     historyUp,
     historyDown,
-    getHistory
+    getHistory,
+    recordHistory
   };
-  global26.BelJarReplCommands = global26.ReplCommands;
+  global28.BelJarReplCommands = global28.ReplCommands;
 
   // js/repl/repl-persist.mjs
-  var global27 = globalThis;
+  var global29 = globalThis;
   var SAVE_DEBOUNCE_MS2 = 300;
   var HTML_CAP = 400 * 1024;
   var saveTimer2 = null;
@@ -15970,6 +17295,7 @@
     var stream = getStream();
     var output2 = getOutput2();
     if (!output2 || !stream) return false;
+    var ok = false;
     restoring = true;
     try {
       if (stream.endTurn) stream.endTurn();
@@ -15991,27 +17317,32 @@
       if (typeof snap.scrollTop === "number") {
         output2.scrollTop = snap.scrollTop;
       }
+      if (stream.rebindStamps) stream.rebindStamps(output2);
+      else if (stream.migrateLegacyStamps) stream.migrateLegacyStamps(output2);
       if (stream.endTurn) stream.endTurn();
-      return collectPersistableNodes(output2).length > 0;
+      ok = collectPersistableNodes(output2).length > 0;
+      return ok;
     } catch (_) {
       try {
         if (stream && stream.clearExceptLive) stream.clearExceptLive();
       } catch (__) {
       }
+      ok = false;
       return false;
     } finally {
       restoring = false;
+      if (ok) scheduleSave2();
     }
   }
-  global27.ReplPersist = {
+  global29.ReplPersist = {
     scheduleSave: scheduleSave2,
     saveNow,
     restore
   };
-  global27.BelJarReplPersist = global27.ReplPersist;
+  global29.BelJarReplPersist = global29.ReplPersist;
 
   // js/ui/bj-toggle.mjs
-  var global28 = globalThis;
+  var global30 = globalThis;
   function createParts(opts) {
     opts = opts || {};
     var input = document.createElement("input");
@@ -16045,11 +17376,11 @@
     parts.element = wrap;
     return parts;
   }
-  global28.Toggle = { create: create8, createParts };
-  global28.BelJarToggle = global28.Toggle;
+  global30.Toggle = { create: create8, createParts };
+  global30.BelJarToggle = global30.Toggle;
 
   // js/ui/bj-dropdown.mjs
-  var global29 = globalThis;
+  var global31 = globalThis;
   var openDropdowns = [];
   function closeAll2() {
     for (var i = openDropdowns.length - 1; i >= 0; i--) {
@@ -16144,7 +17475,7 @@
       panel2.style.top = pos.y + "px";
       panel2.style.left = pos.x + "px";
     }
-    function open8() {
+    function open9() {
       var el5 = container.parentElement;
       while (el5 && el5.tagName !== "DIALOG") el5 = el5.parentElement;
       var mountEl = el5 || document.body;
@@ -16178,7 +17509,7 @@
         return o.value === selected;
       });
       updateFocus();
-      if (openDropdowns.indexOf(api) === -1) openDropdowns.push(api);
+      if (openDropdowns.indexOf(api3) === -1) openDropdowns.push(api3);
     }
     function close3() {
       container.classList.remove("is-open");
@@ -16186,19 +17517,19 @@
       trigger.setAttribute("aria-expanded", "false");
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
-      var idx = openDropdowns.indexOf(api);
+      var idx = openDropdowns.indexOf(api3);
       if (idx !== -1) openDropdowns.splice(idx, 1);
     }
     trigger.addEventListener("click", function() {
       if (container.classList.contains("is-open")) close3();
-      else open8();
+      else open9();
     });
     trigger.addEventListener("keydown", function(e) {
-      var isOpen2 = container.classList.contains("is-open");
-      if (!isOpen2) {
+      var isOpen3 = container.classList.contains("is-open");
+      if (!isOpen3) {
         if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          open8();
+          open9();
         }
         return;
       }
@@ -16229,23 +17560,26 @@
       if (container.classList.contains("is-open") && !container.contains(e.target) && !panel2.contains(e.target)) close3();
     });
     setValue(currentValue);
-    var api = { element: container, setValue, close: close3 };
-    return api;
+    var api3 = { element: container, setValue, close: close3 };
+    return api3;
   }
-  global29.Dropdown = { create: create9, closeAll: closeAll2 };
-  global29.BelJarDropdown = global29.Dropdown;
+  global31.Dropdown = { create: create9, closeAll: closeAll2 };
+  global31.BelJarDropdown = global31.Dropdown;
 
   // js/ui/settings-ui.mjs
-  var global30 = globalThis;
+  var global32 = globalThis;
   var settingsDialogEl = null;
+  var keybindingsSheetEl = null;
+  var aliasesSheetEl = null;
   var keybindingsApi = null;
+  var aliasesApi = null;
   var controls = {};
   function persist() {
     return Persist;
   }
   function notifySettingsChanged(key) {
     try {
-      global30.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
+      global32.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
     } catch (_) {
     }
   }
@@ -16255,7 +17589,7 @@
     });
   }
   function applyLiveSettings(key) {
-    if (typeof global30.beljarApplyLiveSettings === "function") global30.beljarApplyLiveSettings(key);
+    if (typeof global32.beljarApplyLiveSettings === "function") global32.beljarApplyLiveSettings(key);
   }
   function writePersist(key, fn) {
     var p = persist();
@@ -16309,58 +17643,99 @@
     if (!head || !onReset) return;
     head.appendChild(makeResetLink(onReset));
   }
-  function mountKeybindingsPanel(body) {
-    body.classList.add("bj-settings__panel-body--kb");
-    var root = document.createElement("div");
-    root.className = "bj-kb";
-    var filterWrap = document.createElement("div");
-    filterWrap.className = "bj-kb__filter";
-    var hint = document.createElement("p");
-    hint.className = "bj-kb__hint";
-    hint.textContent = "Click a row to change the keybindings.";
-    var searchSlot = document.createElement("div");
-    searchSlot.className = "bj-kb__search-slot";
+  function addActionRow(parent, labelText, descText, actionLabel, onClick) {
+    var row = document.createElement("div");
+    row.className = "bj-dialog__setting bj-settings__action-row";
+    var main = document.createElement("div");
+    main.className = "bj-dialog__setting-main";
+    var lbl = document.createElement("span");
+    lbl.className = "bj-dialog__setting-label";
+    lbl.textContent = labelText;
+    var dsc = document.createElement("span");
+    dsc.className = "bj-dialog__setting-desc";
+    dsc.textContent = descText;
+    main.appendChild(lbl);
+    main.appendChild(dsc);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "bj-settings__action-btn";
+    btn.textContent = actionLabel;
+    btn.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    row.appendChild(main);
+    row.appendChild(btn);
+    parent.appendChild(row);
+    return row;
+  }
+  function makeSearchField(opts) {
+    var slot = document.createElement("div");
+    slot.className = opts.slotClass;
     var inputWrap = document.createElement("div");
-    inputWrap.className = "bel-palette-inputwrap bj-kb__search";
+    inputWrap.className = "library-find library-find--preview " + opts.wrapClass;
     var iconHost = document.createElement("span");
-    iconHost.className = "bel-palette-icon";
+    iconHost.className = "library-find__icon";
     iconHost.setAttribute("aria-hidden", "true");
     iconHost.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
     var input = document.createElement("input");
     input.type = "search";
-    input.className = "bel-palette-input";
-    input.placeholder = "Search commands";
-    input.setAttribute("aria-label", "Search commands");
-    input.setAttribute("aria-autocomplete", "list");
-    input.setAttribute("aria-controls", "bj-kb-search-results");
+    input.className = "library-find__input";
+    input.placeholder = opts.placeholder;
+    input.setAttribute("aria-label", opts.ariaLabel);
     input.autocomplete = "off";
     input.spellcheck = false;
+    if (opts.ariaControls) {
+      input.setAttribute("aria-autocomplete", "list");
+      input.setAttribute("aria-controls", opts.ariaControls);
+    }
+    input.addEventListener("focus", function() {
+      inputWrap.classList.add("is-focused");
+    });
+    input.addEventListener("blur", function() {
+      inputWrap.classList.remove("is-focused");
+    });
+    inputWrap.appendChild(iconHost);
+    inputWrap.appendChild(input);
+    slot.appendChild(inputWrap);
+    return { slot, inputWrap, input };
+  }
+  function mountKeybindingsSheet(searchSlot, body) {
+    var search = makeSearchField({
+      slotClass: "bj-kb__search-slot",
+      wrapClass: "bj-kb__search",
+      placeholder: "Search commands",
+      ariaLabel: "Search commands",
+      ariaControls: "bj-kb-search-results"
+    });
+    searchSlot.className = search.slot.className;
+    searchSlot.replaceChildren();
+    var inputWrap = search.inputWrap;
+    var input = search.input;
+    searchSlot.appendChild(inputWrap);
+    var root = document.createElement("div");
+    root.className = "bj-kb";
+    var list2 = document.createElement("div");
+    list2.className = "bj-kb__list";
+    list2.setAttribute("role", "list");
+    root.appendChild(list2);
+    body.appendChild(root);
     var results = document.createElement("div");
     results.className = "bj-kb__results";
     results.id = "bj-kb-search-results";
     results.setAttribute("role", "listbox");
     results.hidden = true;
-    inputWrap.appendChild(iconHost);
-    inputWrap.appendChild(input);
-    searchSlot.appendChild(inputWrap);
-    filterWrap.appendChild(hint);
-    filterWrap.appendChild(searchSlot);
-    var list2 = document.createElement("div");
-    list2.className = "bj-kb__list";
-    list2.setAttribute("role", "list");
-    root.appendChild(filterWrap);
-    root.appendChild(list2);
-    body.appendChild(root);
     var recordingChord = null;
     var invalidTimer = null;
     var searchHits = [];
     var searchActive = -1;
     var flashTimer = null;
     function toastWarn(message) {
-      if (global30.Toasts && typeof global30.Toasts.warn === "function") {
-        global30.Toasts.warn(message);
-      } else if (global30.Toasts && typeof global30.Toasts.show === "function") {
-        global30.Toasts.show(message, { kind: "warn" });
+      if (global32.Toasts && typeof global32.Toasts.warn === "function") {
+        global32.Toasts.warn(message);
+      } else if (global32.Toasts && typeof global32.Toasts.show === "function") {
+        global32.Toasts.show(message, { kind: "warn" });
       }
     }
     function kb() {
@@ -16417,12 +17792,12 @@
       window.addEventListener("scroll", positionSearchResults, true);
     }
     function setSearchActive(idx) {
-      var items2 = results.querySelectorAll(".bj-kb__result");
+      var items3 = results.querySelectorAll(".bj-kb__result");
       searchActive = idx;
-      for (var i = 0; i < items2.length; i++) {
-        items2[i].classList.toggle("is-active", i === idx);
-        if (i === idx) items2[i].setAttribute("aria-selected", "true");
-        else items2[i].removeAttribute("aria-selected");
+      for (var i = 0; i < items3.length; i++) {
+        items3[i].classList.toggle("is-active", i === idx);
+        if (i === idx) items3[i].setAttribute("aria-selected", "true");
+        else items3[i].removeAttribute("aria-selected");
       }
     }
     function jumpToCommand(commandId) {
@@ -16469,7 +17844,7 @@
       }
       searchHits = hits;
       for (var h = 0; h < hits.length; h++) {
-        (function(hit, index) {
+        (function(hit) {
           var btn = document.createElement("button");
           btn.type = "button";
           btn.className = "bj-kb__result";
@@ -16494,7 +17869,7 @@
             jumpToCommand(hit.id);
           });
           results.appendChild(btn);
-        })(hits[h], h);
+        })(hits[h]);
       }
       openSearchResultsPanel();
       setSearchActive(0);
@@ -16544,10 +17919,10 @@
       chordBtn.classList.add("is-recording");
       chordBtn.classList.remove("is-empty", "bj-kb__chord--conflict");
       chordBtn.replaceChildren();
-      var hint2 = document.createElement("span");
-      hint2.className = "bj-kb__record-hint";
-      hint2.textContent = "Press keys\u2026";
-      chordBtn.appendChild(hint2);
+      var hint = document.createElement("span");
+      hint.className = "bj-kb__record-hint";
+      hint.textContent = "Press keys\u2026";
+      chordBtn.appendChild(hint);
     }
     function showRefuse(chordBtn, message) {
       toastWarn(message);
@@ -16602,7 +17977,7 @@
       }
       recordingChord = null;
       chordBtn.classList.remove("is-recording", "is-invalid");
-      refresh2();
+      refresh3();
     }
     function unbindRecording(chordBtn) {
       var K = kb();
@@ -16610,7 +17985,7 @@
       if (K && id) K.clearBinding(id);
       recordingChord = null;
       chordBtn.classList.remove("is-recording", "is-invalid");
-      refresh2();
+      refresh3();
     }
     function buildRow2(cmd) {
       var row = document.createElement("div");
@@ -16670,7 +18045,7 @@
       row.appendChild(chord);
       return row;
     }
-    function refresh2() {
+    function refresh3() {
       clearRecording();
       list2.replaceChildren();
       var K = kb();
@@ -16733,16 +18108,337 @@
         closeSearchResults();
       }, 0);
     });
-    refresh2();
+    refresh3();
     return {
       refresh: function() {
         closeSearchResults();
         input.value = "";
-        refresh2();
+        refresh3();
       },
       clearRecording,
+      closeSearch: closeSearchResults,
       filterInput: input
     };
+  }
+  function mountAliasesSheet(searchSlot, body) {
+    var search = makeSearchField({
+      slotClass: "bj-alias__search-slot",
+      wrapClass: "bj-alias__search",
+      placeholder: "Search aliases",
+      ariaLabel: "Search aliases"
+    });
+    searchSlot.className = search.slot.className;
+    searchSlot.replaceChildren();
+    var filterInput = search.input;
+    searchSlot.appendChild(search.inputWrap);
+    var root = document.createElement("div");
+    root.className = "bj-alias";
+    var list2 = document.createElement("div");
+    list2.className = "bj-alias__list";
+    list2.setAttribute("role", "list");
+    var footer = document.createElement("div");
+    footer.className = "bj-alias__footer";
+    var addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "bj-alias__add";
+    addBtn.textContent = "Add alias";
+    footer.appendChild(addBtn);
+    root.appendChild(list2);
+    root.appendChild(footer);
+    body.appendChild(root);
+    var nextRowId = 1;
+    var rows = [];
+    var filterQuery = "";
+    var CLOSE_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    function toastWarn(message) {
+      if (global32.Toasts && typeof global32.Toasts.warn === "function") {
+        global32.Toasts.warn(message);
+      } else if (global32.Toasts && typeof global32.Toasts.show === "function") {
+        global32.Toasts.show(message, { kind: "warn" });
+      }
+    }
+    function setTip3(el5, text) {
+      if (global32.Tooltips && typeof global32.Tooltips.set === "function") {
+        global32.Tooltips.set(el5, text);
+      } else {
+        el5.setAttribute("aria-label", text);
+      }
+    }
+    function normalizePairs(raw) {
+      if (typeof BelEditor !== "undefined" && typeof BelEditor.normalizeAliasPairs === "function") {
+        return BelEditor.normalizeAliasPairs(raw);
+      }
+      var seen = /* @__PURE__ */ Object.create(null);
+      var out = [];
+      (Array.isArray(raw) ? raw : []).forEach(function(item) {
+        var from = "";
+        var to = "";
+        if (Array.isArray(item)) {
+          from = String(item[0] || "");
+          to = String(item[1] || "");
+        }
+        from = from.trim();
+        if (!from || to === "" || seen[from]) return;
+        seen[from] = true;
+        out.push([from, to]);
+      });
+      return out.sort(function(a, b) {
+        return b[0].length - a[0].length || a[0].localeCompare(b[0]);
+      });
+    }
+    function defaultPairs() {
+      if (typeof BelEditor !== "undefined" && typeof BelEditor.defaultAliasPairs === "function") {
+        return BelEditor.defaultAliasPairs();
+      }
+      if (typeof BelEditor !== "undefined" && Array.isArray(BelEditor.ALIAS_PAIRS)) {
+        return BelEditor.ALIAS_PAIRS.slice();
+      }
+      return [];
+    }
+    function loadPairs() {
+      var p = persist();
+      var stored = p && typeof p.readStoredAliasPairs === "function" ? p.readStoredAliasPairs() : null;
+      return stored == null ? defaultPairs() : normalizePairs(stored);
+    }
+    function pairsFromRows() {
+      return normalizePairs(rows.map(function(r) {
+        return [r.from, r.to];
+      }));
+    }
+    function rowsFromPairs(pairs) {
+      var sorted = pairs.slice().sort(function(a, b) {
+        return a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]);
+      });
+      return sorted.map(function(pair) {
+        return { id: nextRowId++, from: pair[0], to: pair[1] };
+      });
+    }
+    function commit(notifyKey) {
+      writePersist(notifyKey || "alias-pairs", function(p) {
+        if (typeof p.writeStoredAliasPairs === "function") {
+          p.writeStoredAliasPairs(pairsFromRows());
+        }
+      });
+    }
+    function findDuplicate(from, exceptId) {
+      var needle = String(from || "").trim();
+      if (!needle) return null;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].id === exceptId) continue;
+        if (rows[i].from.trim() === needle) return rows[i];
+      }
+      return null;
+    }
+    function buildRow2(row) {
+      var el5 = document.createElement("div");
+      el5.className = "bj-alias__row";
+      el5.setAttribute("role", "listitem");
+      el5.dataset.rowId = String(row.id);
+      var trigger = document.createElement("input");
+      trigger.type = "text";
+      trigger.className = "bj-alias__input bj-alias__input--trigger";
+      trigger.value = row.from;
+      trigger.placeholder = "trigger";
+      trigger.spellcheck = false;
+      trigger.autocomplete = "off";
+      trigger.setAttribute("aria-label", "Alias trigger");
+      var arrow = document.createElement("span");
+      arrow.className = "bj-alias__arrow";
+      arrow.textContent = "\u2192";
+      arrow.setAttribute("aria-hidden", "true");
+      var expansion = document.createElement("input");
+      expansion.type = "text";
+      expansion.className = "bj-alias__input bj-alias__input--expansion";
+      expansion.value = row.to;
+      expansion.placeholder = "expansion";
+      expansion.spellcheck = false;
+      expansion.autocomplete = "off";
+      expansion.setAttribute("aria-label", "Alias expansion");
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "icon-btn bj-alias__delete";
+      del.innerHTML = CLOSE_SVG2;
+      setTip3(del, "Delete alias");
+      var touchedFrom = false;
+      var touchedTo = false;
+      function refreshInvalid() {
+        var hasFrom = !!row.from.trim();
+        var hasTo = row.to !== "";
+        if (!hasFrom && !hasTo) {
+          trigger.classList.remove("is-invalid");
+          expansion.classList.remove("is-invalid");
+          return;
+        }
+        trigger.classList.toggle("is-invalid", touchedFrom && !hasFrom);
+        expansion.classList.toggle("is-invalid", touchedTo && !hasTo);
+      }
+      function applyField(field, value) {
+        var prevFrom = row.from;
+        var prevTo = row.to;
+        if (field === "from") {
+          touchedFrom = true;
+          var nextFrom = String(value || "").trim();
+          if (nextFrom && findDuplicate(nextFrom, row.id)) {
+            toastWarn('Alias "' + nextFrom + '" already exists');
+            trigger.value = row.from;
+            refreshInvalid();
+            return false;
+          }
+          row.from = nextFrom;
+          trigger.value = nextFrom;
+        } else {
+          touchedTo = true;
+          row.to = String(value || "");
+        }
+        refreshInvalid();
+        if (row.from === prevFrom && row.to === prevTo) return false;
+        if (row.from.trim() && row.to !== "") commit();
+        return true;
+      }
+      trigger.addEventListener("input", function() {
+        if (String(trigger.value || "").trim()) trigger.classList.remove("is-invalid");
+      });
+      expansion.addEventListener("input", function() {
+        if (expansion.value !== "") expansion.classList.remove("is-invalid");
+      });
+      trigger.addEventListener("change", function() {
+        applyField("from", trigger.value);
+      });
+      trigger.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyField("from", trigger.value);
+          expansion.focus();
+          expansion.select();
+        }
+      });
+      expansion.addEventListener("change", function() {
+        applyField("to", expansion.value);
+      });
+      expansion.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyField("to", expansion.value);
+          expansion.blur();
+        }
+      });
+      del.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        rows = rows.filter(function(r) {
+          return r.id !== row.id;
+        });
+        commit();
+        render4();
+      });
+      el5.appendChild(trigger);
+      el5.appendChild(arrow);
+      el5.appendChild(expansion);
+      el5.appendChild(del);
+      return el5;
+    }
+    function rowMatches(row, q) {
+      if (!q) return true;
+      return row.from.toLowerCase().indexOf(q) >= 0 || row.to.toLowerCase().indexOf(q) >= 0;
+    }
+    function render4() {
+      list2.replaceChildren();
+      var q = filterQuery;
+      var visible2 = rows.filter(function(r) {
+        return rowMatches(r, q);
+      });
+      if (!rows.length) {
+        var emptyAll = document.createElement("p");
+        emptyAll.className = "bj-settings__empty bj-alias__empty";
+        emptyAll.textContent = "No aliases. Add one to expand text while typing.";
+        list2.appendChild(emptyAll);
+        return;
+      }
+      if (!visible2.length) {
+        var emptyFilter = document.createElement("p");
+        emptyFilter.className = "bj-settings__empty bj-alias__empty";
+        emptyFilter.textContent = "No aliases match.";
+        list2.appendChild(emptyFilter);
+        return;
+      }
+      visible2.forEach(function(row) {
+        list2.appendChild(buildRow2(row));
+      });
+    }
+    function reload() {
+      rows = rowsFromPairs(loadPairs());
+      render4();
+    }
+    addBtn.addEventListener("click", function() {
+      filterInput.value = "";
+      filterQuery = "";
+      var row = { id: nextRowId++, from: "", to: "" };
+      rows.push(row);
+      render4();
+      var triggerEl = list2.querySelector('[data-row-id="' + row.id + '"] .bj-alias__input--trigger');
+      if (triggerEl) triggerEl.focus();
+    });
+    filterInput.addEventListener("input", function() {
+      filterQuery = String(filterInput.value || "").trim().toLowerCase();
+      render4();
+    });
+    reload();
+    return {
+      refresh: function() {
+        filterInput.value = "";
+        filterQuery = "";
+        reload();
+      },
+      filterInput
+    };
+  }
+  function ensureKeybindingsSheet() {
+    if (keybindingsSheetEl) return keybindingsSheetEl;
+    var searchSlot = document.createElement("div");
+    keybindingsSheetEl = Dialog.createDialog({
+      title: "Keybindings",
+      headerExtra: searchSlot,
+      content: "",
+      cardClass: "bj-dialog__card--action-sheet",
+      removeOnClose: false
+    });
+    var body = keybindingsSheetEl.querySelector(".bj-dialog__body");
+    keybindingsApi = mountKeybindingsSheet(searchSlot, body);
+    keybindingsSheetEl.addEventListener("close", function() {
+      if (!keybindingsApi) return;
+      keybindingsApi.clearRecording();
+      if (typeof keybindingsApi.closeSearch === "function") keybindingsApi.closeSearch();
+      if (keybindingsApi.filterInput) keybindingsApi.filterInput.value = "";
+    });
+    return keybindingsSheetEl;
+  }
+  function openKeybindingsSheet() {
+    ensureKeybindingsSheet();
+    if (keybindingsApi) keybindingsApi.refresh();
+    Dialog.openDialog(keybindingsSheetEl);
+  }
+  function ensureAliasesSheet() {
+    if (aliasesSheetEl) return aliasesSheetEl;
+    var searchSlot = document.createElement("div");
+    aliasesSheetEl = Dialog.createDialog({
+      title: "Aliases",
+      headerExtra: searchSlot,
+      content: "",
+      cardClass: "bj-dialog__card--action-sheet",
+      removeOnClose: false
+    });
+    var body = aliasesSheetEl.querySelector(".bj-dialog__body");
+    aliasesApi = mountAliasesSheet(searchSlot, body);
+    aliasesSheetEl.addEventListener("close", function() {
+      if (!aliasesApi || !aliasesApi.filterInput) return;
+      aliasesApi.filterInput.value = "";
+    });
+    return aliasesSheetEl;
+  }
+  function openAliasesSheet() {
+    ensureAliasesSheet();
+    if (aliasesApi) aliasesApi.refresh();
+    Dialog.openDialog(aliasesSheetEl);
   }
   function addSwitchRow(parent, id, labelText, descText, readFn, writeFn) {
     var inputId = "bj-setting-" + id;
@@ -16833,8 +18529,7 @@
         el5.hidden = !on;
         el5.classList.toggle("is-active", on);
       });
-      if (id === "keybindings" && keybindingsApi) keybindingsApi.refresh();
-      else if (keybindingsApi) keybindingsApi.clearRecording();
+      if (id !== "keybindings" && keybindingsApi) keybindingsApi.clearRecording();
     }
     categories.forEach(function(cat) {
       var btn = document.createElement("button");
@@ -16887,7 +18582,7 @@
         document.documentElement.classList.remove("light");
         if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
         if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
-        if (typeof global30.syncEditorCmTheme === "function") global30.syncEditorCmTheme();
+        if (typeof global32.syncEditorCmTheme === "function") global32.syncEditorCmTheme();
       }, "appearance-reset");
     });
     attachPanelReset(main.querySelector('[data-category="editor"]'), function() {
@@ -16897,7 +18592,7 @@
     });
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function() {
       Keybindings.resetAll();
-      if (keybindingsApi) keybindingsApi.refresh();
+      if (keybindingsApi && keybindingsSheetEl && keybindingsSheetEl.open) keybindingsApi.refresh();
     });
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function() {
       runCategoryReset(function(p) {
@@ -16913,13 +18608,14 @@
     attachPanelReset(main.querySelector('[data-category="workspace"]'), function() {
       runCategoryReset(function(p) {
         p.resetWorkspacePrefs();
-        global30.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: true } }));
+        global32.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: true } }));
       }, "workspace-reset");
     });
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function() {
       runCategoryReset(function(p) {
         p.resetAliasesPrefs();
       }, "aliases-reset");
+      if (aliasesApi && aliasesSheetEl && aliasesSheetEl.open) aliasesApi.refresh();
     });
     addDropdownRow(
       panelBodies.appearance,
@@ -16934,7 +18630,7 @@
         var isLight = v === "light";
         document.documentElement.classList.toggle("light", isLight);
         p.writeStoredTheme(isLight ? "light" : "dark");
-        if (typeof global30.syncEditorCmTheme === "function") global30.syncEditorCmTheme();
+        if (typeof global32.syncEditorCmTheme === "function") global32.syncEditorCmTheme();
       }
     );
     addDropdownRow(
@@ -17275,7 +18971,13 @@
         p.writeStoredEditorHoleGutter(on);
       }
     );
-    keybindingsApi = mountKeybindingsPanel(panelBodies.keybindings);
+    addActionRow(
+      panelBodies.keybindings,
+      "Customize keybindings",
+      "Remap commands and chords.",
+      "Edit\u2026",
+      openKeybindingsSheet
+    );
     addDropdownRow(
       panelBodies.beluga,
       "beluga-mode",
@@ -17420,27 +19122,18 @@
         p.writeStoredLibraryExpandDefault(on);
       }
     );
-    var resetRow = document.createElement("div");
-    resetRow.className = "bj-dialog__setting bj-settings__action-row";
-    var resetMain = document.createElement("div");
-    resetMain.className = "bj-dialog__setting-main";
-    var resetLbl = document.createElement("span");
-    resetLbl.className = "bj-dialog__setting-label";
-    resetLbl.textContent = "Reset panel layout";
-    var resetDesc = document.createElement("span");
-    resetDesc.className = "bj-dialog__setting-desc";
-    resetDesc.textContent = "Reset split panes and side panel sizes.";
-    resetMain.appendChild(resetLbl);
-    resetMain.appendChild(resetDesc);
-    var resetBtn = makeResetLink(function() {
-      if (!persist()) return;
-      persist().resetLayoutPrefs();
-      postSettingsApply("layout-reset");
-      if (typeof global30.location !== "undefined") global30.location.reload();
-    });
-    resetRow.appendChild(resetMain);
-    resetRow.appendChild(resetBtn);
-    panelBodies.workspace.appendChild(resetRow);
+    addActionRow(
+      panelBodies.workspace,
+      "Reset panel layout",
+      "Reset split panes and side panel sizes.",
+      "Reset",
+      function() {
+        if (!persist()) return;
+        persist().resetLayoutPrefs();
+        postSettingsApply("layout-reset");
+        if (typeof global32.location !== "undefined") global32.location.reload();
+      }
+    );
     addDropdownRow(
       panelBodies.aliases,
       "alias-activation",
@@ -17453,7 +19146,7 @@
       function(p, v) {
         p.writeStoredAliasActivation(v);
         if (v !== "greedy") return;
-        var ed = global30.CurrentEditor;
+        var ed = global32.CurrentEditor;
         if (ed && typeof ed.getValue === "function") {
           var activeId2 = p.getActiveFileId();
           if (activeId2) p.setFileText(activeId2, ed.getValue());
@@ -17466,6 +19159,13 @@
         if (next !== cur) ed.setValue(next);
       }
     );
+    addActionRow(
+      panelBodies.aliases,
+      "Customize aliases",
+      "Define trigger \u2192 expansion pairs used while typing.",
+      "Edit\u2026",
+      openAliasesSheet
+    );
     selectCategory(activeCategory);
     shell.appendChild(nav);
     shell.appendChild(main);
@@ -17477,22 +19177,21 @@
     });
     return settingsDialogEl;
   }
-  function open7() {
+  function open8() {
     ensureSettingsDialog();
     syncFromState();
-    if (keybindingsApi) keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
   }
-  global30.SettingsUI = {
+  global32.SettingsUI = {
     syncFromState,
     ensureSettingsDialog,
-    open: open7,
+    open: open8,
     notifySettingsChanged
   };
-  global30.BelJarSettingsUI = global30.SettingsUI;
+  global32.BelJarSettingsUI = global32.SettingsUI;
 
   // js/harpoon/harpoon-icon.mjs
-  var global31 = globalThis;
+  var global33 = globalThis;
   var MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="1.6"/><path d="M6.2 6.2 16.5 16.5"/><path d="M20.5 20.5 19.5 12 16.5 16.5 12 19.5Z"/></svg>';
   function appendGlyph(parent, className) {
     var span = document.createElement("span");
@@ -17501,16 +19200,16 @@
     parent.appendChild(span);
     return span;
   }
-  global31.HarpoonIcon = { markup: MARKUP, appendGlyph };
-  global31.BelJarHarpoonIcon = global31.HarpoonIcon;
+  global33.HarpoonIcon = { markup: MARKUP, appendGlyph };
+  global33.BelJarHarpoonIcon = global33.HarpoonIcon;
 
   // js/harpoon/harpoon-glyphs.mjs
-  var global32 = globalThis;
+  var global34 = globalThis;
   function fallbackNormalize(text) {
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192").replace(/([[({])[ \t]+/g, "$1").replace(/[ \t]+([\])}])/g, "$1");
   }
   function displayBeluga(text) {
-    var ed = global32.BelEditor || null;
+    var ed = global34.BelEditor || null;
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(text);
     return fallbackNormalize(text);
   }
@@ -17523,7 +19222,7 @@
   function looksLikeBeluga(s) {
     return /(\|-|⊢|\[|=>|->)/.test(String(s || ""));
   }
-  global32.HarpoonGlyphs = {
+  global34.HarpoonGlyphs = {
     displayBeluga,
     compactTypeLabel,
     looksLikeBeluga,
@@ -17531,12 +19230,12 @@
   };
 
   // js/harpoon/harpoon-lab-tree.mjs
-  var global33 = globalThis;
+  var global35 = globalThis;
   function norm(s) {
     return String(s == null ? "" : s).replace(/\s+/g, " ").trim();
   }
   function glyphs() {
-    return global33.HarpoonGlyphs || null;
+    return global35.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
     var g14 = glyphs();
@@ -17861,7 +19560,7 @@
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
   function highlightInto(host, text, kind) {
-    var ed = global33.BelEditor || null;
+    var ed = global35.BelEditor || null;
     var shown = displayBeluga2(String(text == null ? "" : text).trim());
     if (!shown) return false;
     try {
@@ -17946,7 +19645,7 @@
     }
     return frag;
   }
-  function render2(container, root, opts) {
+  function render3(container, root, opts) {
     opts = opts || {};
     var mode = opts.mode || "path";
     if (mode === "space") expandGhosts(root);
@@ -18044,9 +19743,9 @@
       } else {
         ariaTip = n.step && n.step.rationale || n.label || "";
       }
-      if (global33.Tooltips && typeof global33.Tooltips.setRich === "function") {
+      if (global35.Tooltips && typeof global35.Tooltips.setRich === "function") {
         (function(node) {
-          global33.Tooltips.setRich(g14, function() {
+          global35.Tooltips.setRich(g14, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
@@ -18140,15 +19839,15 @@
     }
     return svg;
   }
-  global33.HarpoonTree = {
+  global35.HarpoonTree = {
     buildModel,
-    render: render2,
+    render: render3,
     breadcrumb,
     findById
   };
 
   // js/harpoon/harpoon-lab-display.mjs
-  var global34 = globalThis;
+  var global36 = globalThis;
   function createDisplay(deps) {
     var el5 = deps.el;
     var E3 = deps.E;
@@ -18160,12 +19859,12 @@
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g14 = global34.HarpoonGlyphs;
+      var g14 = global36.HarpoonGlyphs;
       if (g14) return g14.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g14 = global34.HarpoonGlyphs;
+      var g14 = global36.HarpoonGlyphs;
       if (g14) return g14.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
@@ -18228,8 +19927,8 @@
       if (!ed || !prep || typeof ed.resolveHoleGoalForHit !== "function") {
         return { goalType: na.goalType, goalState: na.goalState || "live" };
       }
-      var api = global34.CurrentEditor;
-      var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+      var api3 = global36.CurrentEditor;
+      var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = ed.resolveHoleGoalForHit(session.view, eng, prep.hit);
       if (!hit || !hit.goal) {
         return { goalType: na.goalType, goalState: na.goalState || "live" };
@@ -18247,8 +19946,8 @@
       var from = session ? session.declFrom : null;
       if (!view || !name || from == null) return cached || sourceType;
       if (session.fileId && liveEditorFileId2() !== session.fileId) return cached || sourceType;
-      var api = global34.CurrentEditor;
-      var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+      var api3 = global36.CurrentEditor;
+      var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       if (!eng || typeof eng.intelSyncAt !== "function") return cached || sourceType;
       var to = session.declTo != null ? session.declTo : Math.min(from + 400, view.state.doc.length);
       var idx = view.state.doc.sliceString(from, to).indexOf(name);
@@ -18498,7 +20197,7 @@
     }
     function moveLead(s) {
       if (s && s.lead) return s.lead;
-      var ed = global34.BelEditor;
+      var ed = global36.BelEditor;
       if (ed && typeof ed.stepLead === "function" && s && s.meta) {
         var fromEd = ed.stepLead({ kind: s.move }, s.meta, { goal: s.goal });
         if (fromEd) return fromEd;
@@ -18665,7 +20364,7 @@
   }
 
   // js/harpoon/harpoon-lab-commit.mjs
-  var global35 = globalThis;
+  var global37 = globalThis;
   function createCommit(deps) {
     var E3 = deps.E;
     var toast3 = deps.toast;
@@ -18708,14 +20407,14 @@
     var COMMIT_NAV_TIMEOUT_MS = 8e3;
     function withCommitTimeout(promise, ms, message) {
       return new Promise(function(resolve2, reject) {
-        var timer2 = global35.setTimeout(function() {
+        var timer2 = global37.setTimeout(function() {
           reject(new Error(message || "Timed out."));
         }, ms);
         Promise.resolve(promise).then(function(v) {
-          global35.clearTimeout(timer2);
+          global37.clearTimeout(timer2);
           resolve2(v);
         }).catch(function(e) {
-          global35.clearTimeout(timer2);
+          global37.clearTimeout(timer2);
           reject(e);
         });
       });
@@ -18725,8 +20424,8 @@
       var fileId = this.fileId || this.anchor && this.anchor.fileId;
       this.clearPendingCommitNav();
       var view = this.resolveView();
-      var api = global35.CurrentEditor;
-      var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+      var api3 = global37.CurrentEditor;
+      var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng) || this.compromise && this.compromise.liveHit;
       if (!fileId || !hit) {
         toast3("Open the file to place the proof.", "error");
@@ -18744,8 +20443,8 @@
         self.verifyAndCommit(src, { skipBeginUi: true });
       };
       self._pendingCommitNavListener = onActive;
-      global35.addEventListener("beljar:active-editor-view", onActive);
-      global35.dispatchEvent(new CustomEvent("beljar:open-file-at", {
+      global37.addEventListener("beljar:active-editor-view", onActive);
+      global37.dispatchEvent(new CustomEvent("beljar:open-file-at", {
         detail: {
           fileId,
           from: hit.from,
@@ -18758,7 +20457,7 @@
         onActive();
         return Promise.resolve(false);
       }
-      self._pendingCommitNavTimer = global35.setTimeout(function() {
+      self._pendingCommitNavTimer = global37.setTimeout(function() {
         if (!self.pendingCommitSource) return;
         self.clearPendingCommitNav();
         self.resetCommitForRetry();
@@ -18770,7 +20469,7 @@
       opts = opts || {};
       var ed = E3();
       var self = this;
-      var client = global35.BelugaClient;
+      var client = global37.BelugaClient;
       if (!ed) return Promise.resolve(false);
       if (!opts.skipBeginUi) this.beginCommitUi("verify");
       this.probeAnchor();
@@ -18788,8 +20487,8 @@
         this.finishCommitFailure("Open the file to place the proof.", false);
         return Promise.resolve(false);
       }
-      var api = global35.CurrentEditor;
-      var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+      var api3 = global37.CurrentEditor;
+      var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng);
       if (!hit) {
         this.finishCommitFailure("The proof hole is no longer there.", false);
@@ -18888,7 +20587,7 @@
   }
 
   // js/harpoon/harpoon-lab-reel.mjs
-  var global36 = globalThis;
+  var global38 = globalThis;
   function createReel(deps) {
     var el5 = deps.el;
     var setTip3 = deps.setTip;
@@ -18940,8 +20639,8 @@
         var node = targets[i];
         if (!node) continue;
         if (node.getAttribute("data-tooltip") === tip) continue;
-        if (global36.Tooltips && global36.Tooltips.set) {
-          global36.Tooltips.set(node, tip, { ariaLabel: false });
+        if (global38.Tooltips && global38.Tooltips.set) {
+          global38.Tooltips.set(node, tip, { ariaLabel: false });
         } else if (tip) {
           node.setAttribute("data-tooltip", tip);
         }
@@ -18982,7 +20681,7 @@
       bindStepGoalTip2(copy.querySelector(".harpoon-lab-auto-move"), step.goal);
     }
     function reelMotionOk() {
-      return !(global36.matchMedia && global36.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      return !(global38.matchMedia && global38.matchMedia("(prefers-reduced-motion: reduce)").matches);
     }
     function reelClearMotion(el6) {
       if (!el6) return;
@@ -19147,8 +20846,8 @@
         btn._belPauseState = paused;
         btn.innerHTML = paused ? ICON_PLAY2 : ICON_PAUSE2;
         btn.setAttribute("aria-label", paused ? "Resume search" : "Pause search");
-        if (global36.Tooltips && global36.Tooltips.set) {
-          global36.Tooltips.set(btn, paused ? "Resume" : "Pause");
+        if (global38.Tooltips && global38.Tooltips.set) {
+          global38.Tooltips.set(btn, paused ? "Resume" : "Pause");
         }
       }
       if (this._autoSearchBox) {
@@ -19667,7 +21366,7 @@
   }
 
   // js/harpoon/harpoon-lab-tree-ui.mjs
-  var global37 = globalThis;
+  var global39 = globalThis;
   function createTreeUi(deps) {
     var el5 = deps.el;
     var iconBtn2 = deps.iconBtn;
@@ -19756,9 +21455,9 @@
         return opts.live ? self.nativeAuto || na : na;
       }
       function draw() {
-        if (!global37.HarpoonTree) return;
+        if (!global39.HarpoonTree) return;
         var n = cur();
-        var root = global37.HarpoonTree.buildModel({
+        var root = global39.HarpoonTree.buildModel({
           steps: n.steps || [],
           trace: n.trace || null,
           complete: !!n.complete,
@@ -19767,7 +21466,7 @@
           goalType: n.goalType || "",
           theoremSnapshot: n.theoremSnapshot || null
         });
-        global37.HarpoonTree.render(treeHost, root, {
+        global39.HarpoonTree.render(treeHost, root, {
           mode,
           instant: !!opts.live,
           selectedId: selectedNodeId,
@@ -19797,8 +21496,8 @@
           treeMode: treeMode || mode
         };
       }
-      if (global37.Menu && global37.Menu.bindContextMenu) {
-        global37.Menu.bindContextMenu(treeHost, function() {
+      if (global39.Menu && global39.Menu.bindContextMenu) {
+        global39.Menu.bindContextMenu(treeHost, function() {
           var hasTrace = !!(cur().trace && cur().trace.length);
           return [
             {
@@ -19835,7 +21534,7 @@
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
-        var persist3 = global37.Persist;
+        var persist3 = global39.Persist;
         var collapsed = !!(persist3 && persist3.readStoredHarpoonDetailsCollapsed && persist3.readStoredHarpoonDetailsCollapsed());
         var railHead = el5("div", "hpt-rail-head");
         var railTitle = el5("span", "hpt-rail-title", "Details");
@@ -20055,8 +21754,8 @@
       mount.appendChild(el5("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
-      if (!n || !global37.HarpoonTree || typeof global37.HarpoonTree.breadcrumb !== "function") return null;
-      var parts = global37.HarpoonTree.breadcrumb(n);
+      if (!n || !global39.HarpoonTree || typeof global39.HarpoonTree.breadcrumb !== "function") return null;
+      var parts = global39.HarpoonTree.breadcrumb(n);
       if (!parts.length) return null;
       function truncPart(s) {
         s = String(s || "");
@@ -20146,8 +21845,8 @@
       var text = liveFileText2(fileId);
       if (!text) return;
       var from = lineColToOffset2(text, hole.line, hole.col);
-      if (typeof global37.openFileAt === "function") {
-        global37.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
+      if (typeof global39.openFileAt === "function") {
+        global39.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
       }
     }
     ;
@@ -20340,18 +22039,18 @@
   }
 
   // js/harpoon/harpoon-lab.mjs
-  var global38 = globalThis;
+  var global40 = globalThis;
   function E() {
-    return global38.BelEditor || null;
+    return global40.BelEditor || null;
   }
   function P2() {
-    return global38.HarpoonEngine || null;
+    return global40.HarpoonEngine || null;
   }
   function FW() {
-    return global38.FloatingWindow || null;
+    return global40.FloatingWindow || null;
   }
   function toast2(msg, kind) {
-    var T = global38.Toasts;
+    var T = global40.Toasts;
     if (!T) return;
     if (kind === "error" && T.error) T.error(msg);
     else if (kind === "success" && T.success) T.success(msg);
@@ -20383,8 +22082,8 @@
   var ICON_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c.3 3.1 1.4 4.2 4.5 4.5-3.1.3-4.2 1.4-4.5 4.5-.3-3.1-1.4-4.2-4.5-4.5 3.1-.3 4.2-1.4 4.5-4.5Z"/><path d="M18.5 12.5c.2 2 .9 2.7 2.9 2.9-2 .2-2.7.9-2.9 2.9-.2-2-.9-2.7-2.9-2.9 2-.2 2.7-.9 2.9-2.9Z"/></svg>';
   function setTip(el5, text, opts) {
     if (!el5) return;
-    if (global38.Tooltips && global38.Tooltips.set) {
-      global38.Tooltips.set(el5, text, opts);
+    if (global40.Tooltips && global40.Tooltips.set) {
+      global40.Tooltips.set(el5, text, opts);
     } else {
       el5.removeAttribute("title");
       var tip = text != null ? String(text).trim() : "";
@@ -20409,14 +22108,14 @@
     if (!host) return;
     var shown = goal ? displayType(goal) : "";
     if (!shown) {
-      if (global38.Tooltips && global38.Tooltips.setRich) global38.Tooltips.setRich(host, null);
+      if (global40.Tooltips && global40.Tooltips.setRich) global40.Tooltips.setRich(host, null);
       setTip(host, "", { ariaLabel: false });
       host.removeAttribute("data-tooltip-placement");
       return;
     }
     host.setAttribute("data-tooltip-placement", "below");
-    if (global38.Tooltips && typeof global38.Tooltips.setRich === "function") {
-      global38.Tooltips.setRich(host, function() {
+    if (global40.Tooltips && typeof global40.Tooltips.setRich === "function") {
+      global40.Tooltips.setRich(host, function() {
         return buildLabeledCodeTip("Goal at this step", goal, "type");
       }, "Goal at this step: " + shown);
     } else {
@@ -20427,8 +22126,8 @@
     if (!el5 || !tip) return;
     el5.setAttribute("data-tooltip-placement", placement || "below");
     el5.setAttribute("data-tooltip-no-track", "");
-    if (richCode && global38.Tooltips && typeof global38.Tooltips.setRich === "function") {
-      global38.Tooltips.setRich(el5, function() {
+    if (richCode && global40.Tooltips && typeof global40.Tooltips.setRich === "function") {
+      global40.Tooltips.setRich(el5, function() {
         return buildLabeledCodeTip(tip, richCode, richKind || "type");
       }, tip);
     } else {
@@ -20460,31 +22159,31 @@
       }
     }, 300);
   }
-  if (typeof global38.addEventListener === "function") {
-    global38.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
-    global38.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
-    global38.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
-    global38.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
+  if (typeof global40.addEventListener === "function") {
+    global40.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
+    global40.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
+    global40.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
+    global40.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
   }
   function liveEditorFileId() {
-    var api = global38.CurrentEditor;
-    if (api && typeof api.getDocumentId === "function") {
-      var docId = api.getDocumentId();
+    var api3 = global40.CurrentEditor;
+    if (api3 && typeof api3.getDocumentId === "function") {
+      var docId = api3.getDocumentId();
       if (docId) return docId;
     }
-    if (api && typeof api.getActiveFileId === "function") {
-      var edId = api.getActiveFileId();
+    if (api3 && typeof api3.getActiveFileId === "function") {
+      var edId = api3.getActiveFileId();
       if (edId) return edId;
     }
-    var P3 = global38.Persist;
+    var P3 = global40.Persist;
     return P3 && P3.getActiveFileId ? P3.getActiveFileId() : null;
   }
   function liveFileText(fileId) {
-    var P3 = global38.Persist;
+    var P3 = global40.Persist;
     if (!P3 || !fileId) return "";
-    var api = global38.CurrentEditor;
-    if (fileId === liveEditorFileId() && api && typeof api.getValue === "function") {
-      return api.getValue();
+    var api3 = global40.CurrentEditor;
+    if (fileId === liveEditorFileId() && api3 && typeof api3.getValue === "function") {
+      return api3.getValue();
     }
     return typeof P3.getFileText === "function" ? P3.getFileText(fileId) || "" : "";
   }
@@ -20702,11 +22401,11 @@
   };
   Session.prototype.clearPendingCommitNav = function() {
     if (this._pendingCommitNavTimer != null) {
-      global38.clearTimeout(this._pendingCommitNavTimer);
+      global40.clearTimeout(this._pendingCommitNavTimer);
       this._pendingCommitNavTimer = null;
     }
     if (this._pendingCommitNavListener) {
-      global38.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
+      global40.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
       this._pendingCommitNavListener = null;
     }
     this.pendingCommitSource = null;
@@ -20719,10 +22418,10 @@
     if (idx !== -1) probeSessions.splice(idx, 1);
   };
   Session.prototype.resolveView = function() {
-    var api = global38.CurrentEditor;
-    if (!api || !this.fileId) return this.view;
-    if (liveEditorFileId() === this.fileId && typeof api.getView === "function") {
-      var v = api.getView();
+    var api3 = global40.CurrentEditor;
+    if (!api3 || !this.fileId) return this.view;
+    if (liveEditorFileId() === this.fileId && typeof api3.getView === "function") {
+      var v = api3.getView();
       if (v) this.view = v;
     }
     return this.view;
@@ -20730,8 +22429,8 @@
   Session.prototype.captureAnchor = function(view, prep) {
     var ed = E();
     if (!ed || typeof ed.captureHarpoonAnchor !== "function" || !prep) return;
-    var api = global38.CurrentEditor;
-    var P3 = global38.Persist;
+    var api3 = global40.CurrentEditor;
+    var P3 = global40.Persist;
     var fileId = this.fileId || (P3 && P3.getActiveFileId ? P3.getActiveFileId() : null);
     var fileText = view ? view.state.doc.toString() : prep.fileText != null ? prep.fileText : liveFileText(fileId);
     var declSlice = prep.span ? view ? view.state.doc.sliceString(prep.span.from, prep.span.to) : fileText.slice(prep.span.from, prep.span.to) : "";
@@ -20739,7 +22438,7 @@
       fileId,
       fileText,
       declSlice,
-      memberFingerprints: api && api.harpoonSuiteFingerprints ? api.harpoonSuiteFingerprints(fileId) : {}
+      memberFingerprints: api3 && api3.harpoonSuiteFingerprints ? api3.harpoonSuiteFingerprints(fileId) : {}
     });
   };
   Session.prototype.findLiveHit = function(view, engine) {
@@ -20760,14 +22459,14 @@
     if (!ed || typeof ed.assessHarpoonAnchor !== "function" || !this.anchor || !this.nativeAuto) return;
     var fileId = this.fileId || this.anchor.fileId;
     if (!fileId) return;
-    var api = global38.CurrentEditor;
+    var api3 = global40.CurrentEditor;
     var active = liveEditorFileId() === fileId;
     this.resolveView();
     var view = active ? this.view : null;
     var fileText = liveFileText(fileId);
-    var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+    var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var liveHit = this.findLiveHit(view, eng);
-    var memberFp = api && typeof api.harpoonSuiteFingerprints === "function" ? api.harpoonSuiteFingerprints(fileId) : {};
+    var memberFp = api3 && typeof api3.harpoonSuiteFingerprints === "function" ? api3.harpoonSuiteFingerprints(fileId) : {};
     var next = ed.assessHarpoonAnchor(this.anchor, {
       fileAvailable: fileText != null,
       fileText,
@@ -20813,8 +22512,8 @@
     }
     this.userCancelled = false;
     var view = this.resolveView();
-    var api = global38.CurrentEditor;
-    var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+    var api3 = global40.CurrentEditor;
+    var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var hit = this.findLiveHit(view, eng);
     if (!hit) {
       toast2("The proof hole is no longer there.", "error");
@@ -20963,7 +22662,7 @@
     );
     if (this._autoGoalWrap) {
       var goalHost = this._autoGoalWrap.querySelector(".harpoon-hole-goal");
-      var ed = typeof global38.BelEditor !== "undefined" ? global38.BelEditor : null;
+      var ed = typeof global40.BelEditor !== "undefined" ? global40.BelEditor : null;
       if (goalHost && ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goalHost, { surface: "lab", goalState: "live", goal: match.goal });
       } else if (goalHost) {
@@ -20975,7 +22674,7 @@
   Session.prototype.resolveFullDeclSignature = function(proveCode, sourceType) {
     var self = this;
     var ed = E();
-    var client = global38.BelugaClient;
+    var client = global40.BelugaClient;
     var name = this.prep && this.prep.name;
     if (!ed || !client || typeof client.ideDeclTypeForProver !== "function" || !name || !proveCode) return;
     if (this._fullDeclSigRequested === name) return;
@@ -21000,7 +22699,7 @@
   };
   Session.prototype.runNativeAuto = function() {
     var ed = E();
-    var client = global38.BelugaClient;
+    var client = global40.BelugaClient;
     var prep = this.prep;
     var self = this;
     if (!ed || !client || !prep || typeof ed.proveProgram !== "function" || typeof ed.theoremUnderProof !== "function") {
@@ -21014,8 +22713,8 @@
       return Promise.resolve(false);
     }
     var proveCode = prep.proveCode || prep.assembledCode;
-    var api = global38.CurrentEditor;
-    var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+    var api3 = global40.CurrentEditor;
+    var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var goalHit = typeof ed.resolveHoleGoalForHit === "function" ? ed.resolveHoleGoalForHit(this.view, eng, prep.hit) : { goal: thm.compType && thm.compType.raw ? thm.compType.raw : "", state: "approximate", loadingLive: true };
     if ((!goalHit || !goalHit.goal) && prep.hit && prep.hit.hole && prep.hit.hole.goal) {
       goalHit = { goal: prep.hit.hole.goal, state: prep.hit.hole.goalState || "approximate" };
@@ -21257,7 +22956,7 @@
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
-    var client = global38.BelugaClient;
+    var client = global40.BelugaClient;
     if (client && client.endProverSession) client.endProverSession();
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
@@ -21277,21 +22976,21 @@
     var self = this;
     var body = this.bodyEl;
     if (!body) return;
-    var open8 = m.subgoals && m.subgoals.length || 0;
+    var open9 = m.subgoals && m.subgoals.length || 0;
     var bar = el3("div", "harpoon-lab-bar");
     var status = el3("div", "harpoon-lab-status");
     var dot = el3("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
     dot.setAttribute("data-tooltip", m.complete ? "Proven" : "Unproven");
     dot.setAttribute("aria-label", m.complete ? "Proven" : "Unproven");
-    if (global38.Tooltips && global38.Tooltips.bind) global38.Tooltips.bind(dot);
+    if (global40.Tooltips && global40.Tooltips.bind) global40.Tooltips.bind(dot);
     status.appendChild(dot);
     var label = el3("span", "harpoon-lab-status-text");
     if (m.complete) {
       label.textContent = "Proven";
-    } else if (open8 === 1) {
+    } else if (open9 === 1) {
       label.textContent = "1 goal";
     } else {
-      label.textContent = open8 + " goals";
+      label.textContent = open9 + " goals";
     }
     status.appendChild(label);
     bar.appendChild(status);
@@ -21358,7 +23057,7 @@
       autoBtn.appendChild(spark);
       autoBtn.appendChild(el3("span", "harpoon-lab-auto-btn-label", "Auto-solve"));
       autoBtn.setAttribute("data-tooltip", "Let BelJar search for the whole proof");
-      if (global38.Tooltips && global38.Tooltips.bind) global38.Tooltips.bind(autoBtn);
+      if (global40.Tooltips && global40.Tooltips.bind) global40.Tooltips.bind(autoBtn);
       autoBtn.addEventListener("click", function(e) {
         e.preventDefault();
         self.runTactic({ kind: "auto" });
@@ -21375,7 +23074,7 @@
         if (mv.arg) b.appendChild(el3("span", "harpoon-lab-tac-arg", mv.arg));
         if (mv.tip) {
           b.setAttribute("data-tooltip", mv.tip);
-          if (global38.Tooltips && global38.Tooltips.bind) global38.Tooltips.bind(b);
+          if (global40.Tooltips && global40.Tooltips.bind) global40.Tooltips.bind(b);
         }
         b.addEventListener("click", function(e) {
           e.preventDefault();
@@ -21690,13 +23389,13 @@
   }
   function prepareForHole(view, hit) {
     var ed = E();
-    var api = global38.CurrentEditor;
-    var ctx = api && typeof api.getHoleActionContext === "function" ? api.getHoleActionContext() : null;
+    var api3 = global40.CurrentEditor;
+    var ctx = api3 && typeof api3.getHoleActionContext === "function" ? api3.getHoleActionContext() : null;
     if (!ctx || !ctx.code) {
       toast2("Harpoon: no checkable program.", "error");
       return null;
     }
-    var span = api.getDeclSpan ? api.getDeclSpan(hit.from) : null;
+    var span = api3.getDeclSpan ? api3.getDeclSpan(hit.from) : null;
     if (!span) {
       toast2("Harpoon: couldn\u2019t find the enclosing declaration.", "error");
       return null;
@@ -21738,8 +23437,8 @@
   function removeFloatSession(session) {
     var idx = floatSessions.indexOf(session);
     if (idx !== -1) floatSessions.splice(idx, 1);
-    if (global38.WorkspaceState && global38.WorkspaceState.scheduleSave) {
-      global38.WorkspaceState.scheduleSave();
+    if (global40.WorkspaceState && global40.WorkspaceState.scheduleSave) {
+      global40.WorkspaceState.scheduleSave();
     }
   }
   function listHoleHits(view, engine) {
@@ -21778,7 +23477,7 @@
   function runSession(view, prep, host) {
     var session = new Session(view, prep.span.from, prep.span.to, host);
     session.prep = prep;
-    var persist3 = global38.Persist;
+    var persist3 = global40.Persist;
     session.fileId = host.fileId || (persist3 && persist3.getActiveFileId ? persist3.getActiveFileId() : null);
     session.captureAnchor(view, prep);
     session.bindProbe();
@@ -21799,7 +23498,7 @@
     }
     var prep = prepareForHole(view, hit);
     if (!prep) return;
-    var persist3 = global38.Persist;
+    var persist3 = global40.Persist;
     var fileId = persist3 && persist3.getActiveFileId ? persist3.getActiveFileId() : null;
     var session = runSession(view, prep, {
       kind: "float",
@@ -21817,8 +23516,8 @@
           x: geom.x,
           y: geom.y,
           onGeometryChange: function() {
-            if (global38.WorkspaceState && global38.WorkspaceState.scheduleSave) {
-              global38.WorkspaceState.scheduleSave();
+            if (global40.WorkspaceState && global40.WorkspaceState.scheduleSave) {
+              global40.WorkspaceState.scheduleSave();
             }
           },
           onClose: function() {
@@ -21830,8 +23529,8 @@
           }
         });
         floatSessions.push(s);
-        if (global38.WorkspaceState && global38.WorkspaceState.scheduleSave) {
-          global38.WorkspaceState.scheduleSave();
+        if (global40.WorkspaceState && global40.WorkspaceState.scheduleSave) {
+          global40.WorkspaceState.scheduleSave();
         }
       }
     });
@@ -21840,7 +23539,7 @@
   function labTitle(name) {
     var wrap = document.createElement("span");
     wrap.className = "harpoon-lab-title";
-    if (global38.HarpoonIcon) global38.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
+    if (global40.HarpoonIcon) global40.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
     wrap.appendChild(el3("span", "harpoon-lab-title-text", name ? "Harpoon \xB7 " + name : "Harpoon"));
     return wrap;
   }
@@ -21916,35 +23615,35 @@
     openFromHole(view, engine, hit, { geom: entry.geom });
     return true;
   }
-  global38.Harpoon = {
+  global40.Harpoon = {
     openFromHole,
     proveInPanel,
     proveInPanelForFile,
     collectFloatingHarpoonWindows,
     restoreFloatingHarpoonWindow
   };
-  global38.BelJarHarpoon = global38.Harpoon;
+  global40.BelJarHarpoon = global40.Harpoon;
 
   // js/harpoon/harpoon-goal-sections.mjs
-  var global39 = globalThis;
+  var global41 = globalThis;
   function dirOf5(name) {
-    var PS = global39.ProjectSource;
+    var PS = global41.ProjectSource;
     if (PS && typeof PS.dirOf === "function") return PS.dirOf(name);
     var i = String(name || "").lastIndexOf("/");
     return i === -1 ? "" : name.slice(0, i);
   }
-  function baseName3(name) {
+  function baseName4(name) {
     var s = String(name || "");
     var i = s.lastIndexOf("/");
     return i === -1 ? s : s.slice(i + 1);
   }
   function cfgBaseLabel(cfgPath) {
-    var base = baseName3(cfgPath);
+    var base = baseName4(cfgPath);
     var dot = base.lastIndexOf(".");
     return dot === -1 ? base : base.slice(0, dot);
   }
   function holeHostFile(name) {
-    var PS = global39.ProjectSource;
+    var PS = global41.ProjectSource;
     if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
     var low = String(name || "").toLowerCase();
     if (low.endsWith(".cfg") || low.endsWith(".elf")) return false;
@@ -21953,7 +23652,7 @@
     return base.indexOf(".") === -1;
   }
   function scanFileHoles(text) {
-    var ed = global39.BelEditor;
+    var ed = global41.BelEditor;
     if (ed && typeof ed.scanFileHoles === "function") return ed.scanFileHoles(text);
     return [];
   }
@@ -21998,7 +23697,7 @@
     return {
       id: file.id,
       name: file.name,
-      baseName: file.baseName || baseName3(file.name)
+      baseName: file.baseName || baseName4(file.name)
     };
   }
   function buildSections(opts) {
@@ -22015,8 +23714,8 @@
     var activeHits = opts.activeHits || null;
     var memberHoles = opts.memberHoles || {};
     var developmentPaths = opts.developmentPaths || null;
-    var SL = global39.ExplorerSuiteLayout;
-    var PS = global39.ProjectSource;
+    var SL = global41.ExplorerSuiteLayout;
+    var PS = global41.ProjectSource;
     var resolveMembers = opts.resolveMembers || (PS && typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath2, gt) {
       return PS.orderedPathsForCfg(all, cfgPath2, gt);
     } : null);
@@ -22081,7 +23780,7 @@
             dirEntries.push({
               fileId: f.id,
               filePath: f.name,
-              fileBaseName: f.baseName || baseName3(f.name),
+              fileBaseName: f.baseName || baseName4(f.name),
               inDevelopment: !developmentPaths || developmentPaths.indexOf(f.name) !== -1,
               suiteLabel,
               suiteHue,
@@ -22098,7 +23797,7 @@
           dirEntries.push({
             fileId: file.id,
             filePath: file.name,
-            fileBaseName: file.baseName || baseName3(file.name),
+            fileBaseName: file.baseName || baseName4(file.name),
             inDevelopment: !developmentPaths || developmentPaths.indexOf(file.name) !== -1,
             suiteLabel: null,
             suiteHue: null,
@@ -22117,15 +23816,15 @@
     }
     return { sections, totalCount };
   }
-  global39.HarpoonGoalSections = {
+  global41.HarpoonGoalSections = {
     buildSections
   };
-  global39.BelJarHarpoonGoalSections = global39.HarpoonGoalSections;
+  global41.BelJarHarpoonGoalSections = global41.HarpoonGoalSections;
 
   // js/harpoon/harpoon-panel.mjs
-  var global40 = globalThis;
+  var global42 = globalThis;
   function E2() {
-    return global40.BelEditor || null;
+    return global42.BelEditor || null;
   }
   var el4 = function(tag, cls, text) {
     var n = document.createElement(tag);
@@ -22134,8 +23833,8 @@
     return n;
   };
   function curView() {
-    var api = global40.CurrentEditor;
-    return api && typeof api.getView === "function" ? api.getView() : null;
+    var api3 = global42.CurrentEditor;
+    return api3 && typeof api3.getView === "function" ? api3.getView() : null;
   }
   function activeSyntacticHits(view) {
     var ed = E2();
@@ -22145,12 +23844,12 @@
     });
   }
   function normalizeGlyphs(text) {
-    var g14 = global40.HarpoonGlyphs;
+    var g14 = global42.HarpoonGlyphs;
     if (g14) return g14.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g14 = global40.HarpoonGlyphs;
+    var g14 = global42.HarpoonGlyphs;
     if (g14) return g14.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
@@ -22243,12 +23942,12 @@
     return decl.kw + ":" + decl.name;
   }
   function activeFileId() {
-    var p = typeof global40.Persist !== "undefined" ? global40.Persist : null;
+    var p = typeof global42.Persist !== "undefined" ? global42.Persist : null;
     if (!p) return null;
     return typeof p.getActiveFileId === "function" ? p.getActiveFileId() : null;
   }
   function activeFilePath() {
-    var p = typeof global40.Persist !== "undefined" ? global40.Persist : null;
+    var p = typeof global42.Persist !== "undefined" ? global42.Persist : null;
     if (!p) return "";
     var id = typeof p.getActiveFileId === "function" ? p.getActiveFileId() : typeof p.getCurrentFileId === "function" ? p.getCurrentFileId() : null;
     if (!id || typeof p.getFileById !== "function") return "";
@@ -22275,9 +23974,9 @@
   }
   function applyGoalStateToModel(model, view) {
     var ed = E2();
-    var api = global40.CurrentEditor;
-    var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
-    var P3 = typeof global40.Persist !== "undefined" ? global40.Persist : null;
+    var api3 = global42.CurrentEditor;
+    var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
+    var P3 = typeof global42.Persist !== "undefined" ? global42.Persist : null;
     if (!ed || typeof ed.enrichHoleHitsWithGoalState !== "function" || !view) return model;
     var activeId2 = activeFileId();
     var getText = P3 && typeof P3.getFileText === "function" ? function(id) {
@@ -22351,8 +24050,8 @@
     return Object.assign({}, entry, { hit: mergeHitGoal(entry.hit, rich) });
   }
   function collectProjectSections() {
-    var P3 = typeof global40.Persist !== "undefined" ? global40.Persist : null;
-    var PG = typeof global40.HarpoonGoalSections !== "undefined" ? global40.HarpoonGoalSections : null;
+    var P3 = typeof global42.Persist !== "undefined" ? global42.Persist : null;
+    var PG = typeof global42.HarpoonGoalSections !== "undefined" ? global42.HarpoonGoalSections : null;
     var holeGoals = collectInScopeHoleGoals();
     var view = curView();
     var ed = E2();
@@ -22390,8 +24089,8 @@
     } : function() {
       return "";
     };
-    var PS = typeof global40.ProjectSource !== "undefined" ? global40.ProjectSource : null;
-    var SL = typeof global40.ExplorerSuiteLayout !== "undefined" ? global40.ExplorerSuiteLayout : null;
+    var PS = typeof global42.ProjectSource !== "undefined" ? global42.ProjectSource : null;
+    var SL = typeof global42.ExplorerSuiteLayout !== "undefined" ? global42.ExplorerSuiteLayout : null;
     var model = PG.buildSections({
       files,
       getText,
@@ -22536,8 +24235,8 @@
   function beginPanelSession(fileId, declKey, start) {
     enterProofMode();
     if (declKey && fileId) provingDecl = { fileId, declKey };
-    if (global40.WorkspaceState && global40.WorkspaceState.scheduleSave) {
-      global40.WorkspaceState.scheduleSave();
+    if (global42.WorkspaceState && global42.WorkspaceState.scheduleSave) {
+      global42.WorkspaceState.scheduleSave();
     }
     bodyEl2.textContent = "";
     var host = el4("div", "harpoon-panel-session");
@@ -22548,7 +24247,7 @@
         panelSession = null;
         return;
       }
-      var proof = global40.HarpoonEngine;
+      var proof = global42.HarpoonEngine;
       if (proof && proof.dispose) proof.dispose();
       provingDecl = null;
       renderList2();
@@ -22571,7 +24270,7 @@
     });
   }
   function proveHit(view, eng, hit, fileId) {
-    var lab = global40.Harpoon;
+    var lab = global42.Harpoon;
     if (!lab || typeof lab.proveInPanel !== "function") return;
     var fid = fileId || activeFileId();
     beginPanelSession(fid, declKeyForHit(view, hit), function(host, opts) {
@@ -22580,7 +24279,7 @@
   }
   function declKeyInFileText(fileId, from) {
     var ed = E2();
-    var P3 = global40.Persist;
+    var P3 = global42.Persist;
     if (!ed || !P3 || typeof ed.declSpanInText !== "function") return null;
     var text = String(P3.getFileText(fileId) || "");
     var span = ed.declSpanInText(text, from);
@@ -22589,7 +24288,7 @@
   }
   function proveEntry(entry) {
     var fid = entry.fileId;
-    var lab = global40.Harpoon;
+    var lab = global42.Harpoon;
     if (fid !== activeFileId()) {
       if (!lab || typeof lab.proveInPanelForFile !== "function") return;
       beginPanelSession(fid, declKeyInFileText(fid, entry.hit.from), function(host, opts) {
@@ -22598,8 +24297,8 @@
       return;
     }
     var view = curView();
-    var api = global40.CurrentEditor;
-    var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
+    var api3 = global42.CurrentEditor;
+    var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     if (view && eng) proveHit(view, eng, entry.hit, fid);
   }
   function init11(container, opts) {
@@ -22617,7 +24316,7 @@
     }
     renderList2({ certify: true });
   }
-  function refresh() {
+  function refresh2() {
     if (bodyEl2 && !proving) renderList2({ certify: true });
   }
   function collectWorkspaceHarpoon(out) {
@@ -22631,7 +24330,7 @@
     var eng = deps && deps.engine;
     if (!view || !eng) return;
     if (decl.fileId && decl.fileId !== activeFileId()) return;
-    var lab = global40.Harpoon;
+    var lab = global42.Harpoon;
     if (!lab) return;
     var hit = null;
     if (typeof lab.restoreFloatingHarpoonWindow === "function") {
@@ -22651,16 +24350,16 @@
     }
     if (hit) proveHit(view, eng, hit, decl.fileId);
   }
-  global40.HarpoonPanel = {
+  global42.HarpoonPanel = {
     init: init11,
-    refresh,
+    refresh: refresh2,
     collectWorkspaceHarpoon,
     restoreWorkspaceHarpoon
   };
-  global40.BelJarHarpoonPanel = global40.HarpoonPanel;
+  global42.BelJarHarpoonPanel = global42.HarpoonPanel;
 
   // js/beluga/beluga-text.mjs
-  var global41 = globalThis;
+  var global43 = globalThis;
   function normalizeBelugaRaw(s) {
     return String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
@@ -22747,7 +24446,7 @@
     }
     return out;
   }
-  global41.BelugaText = {
+  global43.BelugaText = {
     normalizeBelugaRaw,
     stripBelugaAnsi,
     isBelugaCommandError,
@@ -22757,7 +24456,7 @@
   };
 
   // js/beluga/beluga-run.mjs
-  var global42 = globalThis;
+  var global44 = globalThis;
   var belugaBusy = false;
   var belugaMode = Persist.readStoredBelugaMode();
   var btnLoad = null;
@@ -22839,23 +24538,23 @@
     var dev = ProjectSource.developmentForFile(files, activeId2, getText);
     return dev.kind === "module" && dev.cfg ? dev.cfg : null;
   }
-  function baseName4(p) {
+  function baseName5(p) {
     var s = String(p || "");
     return s.slice(s.lastIndexOf("/") + 1);
   }
   function projectDisplayName(cfgPath) {
-    if (cfgPath) return baseName4(cfgPath).replace(/\.cfg$/i, "");
+    if (cfgPath) return baseName5(cfgPath).replace(/\.cfg$/i, "");
     return activeFileName();
   }
   function activeFileName() {
     var id = Persist.getActiveFileId();
     var files = Persist.listFiles() || [];
     for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return baseName4(files[i].name);
+      if (files[i].id === id) return baseName5(files[i].name);
     }
     return "input.bel";
   }
-  function applyOutputNaming(raw, spans, prelude, displayName) {
+  function applyOutputNaming(raw, spans, prelude, displayName, statusName) {
     var out = String(raw == null ? "" : raw);
     if (spans) {
       out = ProjectSource.remapLocations(out, spans);
@@ -22863,7 +24562,25 @@
       out = ProjectSource.shiftCheckerOutput(out, prelude).text;
     }
     if (displayName) out = out.replace(/input\.bel/g, displayName);
+    if (statusName && typeof ReplRunCmd !== "undefined" && ReplRunCmd.rewriteRunStatusLabel) {
+      out = ReplRunCmd.rewriteRunStatusLabel(out, displayName || "input.bel", statusName);
+    } else if (statusName && displayName && statusName !== displayName) {
+      out = out.replace(
+        new RegExp(
+          "(##\\s*(?:Type Reconstruction (?:begin|done)|Holes)\\s*:\\s*)" + displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\s*##)",
+          "gi"
+        ),
+        "$1" + statusName + "$2"
+      );
+    }
     return out;
+  }
+  function statusNameForFilePath(absPath, amalgam) {
+    if (typeof ReplRunCmd !== "undefined" && ReplRunCmd.formatRunStatusName) {
+      return ReplRunCmd.formatRunStatusName(absPath, activeCwd2(), !!amalgam);
+    }
+    var shown = absPath ? baseName5(absPath) : "input.bel";
+    return amalgam ? "&" + shown : shown;
   }
   function makeGetText() {
     var activeId2 = Persist.getActiveFileId();
@@ -22953,12 +24670,28 @@
   }
   function formatLoadError(e, spans, prelude, displayName) {
     var msg = e && e.message ? String(e.message) : String(e);
-    return applyOutputNaming(msg, spans, prelude, displayName);
+    return applyOutputNaming(msg, spans, prelude, displayName, null);
   }
   function suiteNameFromCfg(cfgPath) {
-    return baseName4(cfgPath).replace(/\.cfg$/i, "") || "suite";
+    return baseName5(cfgPath).replace(/\.cfg$/i, "") || "suite";
+  }
+  function activeCwd2() {
+    var id = Persist.getActiveFileId && Persist.getActiveFileId();
+    var path = id ? filePathOf(id) : null;
+    return path && typeof ProjectSource !== "undefined" && ProjectSource.dirOf ? ProjectSource.dirOf(path) : "";
+  }
+  function captionForFilePath(absPath, amalgam) {
+    if (typeof ReplRunCmd !== "undefined" && ReplRunCmd.formatRunCaption) {
+      return ReplRunCmd.formatRunCaption(absPath, activeCwd2(), !!amalgam);
+    }
+    var shown = absPath ? baseName5(absPath) : "input.bel";
+    return amalgam ? "run &" + shown : "run " + shown;
   }
   function beginRunTurn(caption) {
+    var text = caption != null ? String(caption).trim() : "";
+    if (text && typeof ReplCommands !== "undefined" && ReplCommands.recordHistory) {
+      ReplCommands.recordHistory(text);
+    }
     if (typeof ReplStream !== "undefined" && ReplStream.beginTurn) {
       ReplStream.beginTurn(caption);
     }
@@ -22976,6 +24709,9 @@
     }
     var caption = opts.caption || "run " + (opts.displayName || "input.bel");
     beginRunTurn(caption);
+    if (typeof ReplOutput !== "undefined" && ReplOutput.beginRunSkeleton) {
+      ReplOutput.beginRunSkeleton();
+    }
     projectSpans = spans || null;
     var lineCount2 = code.split("\n").length;
     var t0 = performance.now();
@@ -22987,9 +24723,9 @@
     if (opts.pinned) hooks.pinned = true;
     try {
       var raw = await BelugaClient.load(code, hooks);
-      raw = applyOutputNaming(raw, spans, opts.prelude, opts.displayName);
+      raw = applyOutputNaming(raw, spans, opts.prelude, opts.displayName, opts.statusName);
       if (!String(raw).trim()) {
-        var name = opts.displayName || "input.bel";
+        var name = opts.statusName || opts.displayName || "input.bel";
         raw = "## Type Reconstruction begin: " + name + " ##\n## Type Reconstruction done:  " + name + " ##";
       } else if (typeof BelEditor !== "undefined" && typeof BelEditor.normalizeUnlocatedBelugaRunOutput === "function") {
         raw = BelEditor.normalizeUnlocatedBelugaRunOutput(raw, {
@@ -22999,12 +24735,19 @@
           prelude: opts.prelude || null
         });
       }
-      ReplOutput.appendRunOutput(raw);
+      if (typeof ReplOutput !== "undefined" && ReplOutput.resolveRunOutput) {
+        await ReplOutput.resolveRunOutput(raw);
+      } else {
+        ReplOutput.appendRunOutput(raw);
+      }
       setBelugaBusy(false);
       void RunProgress.complete({ lines: lineCount2, ms: performance.now() - t0 });
     } catch (e) {
       setBelugaBusy(false);
       RunProgress.fail();
+      if (typeof ReplOutput !== "undefined" && ReplOutput.dismissRunSkeleton) {
+        await ReplOutput.dismissRunSkeleton();
+      }
       if (!isCancelled2(e)) {
         Toasts.error(formatLoadError(e, spans, opts.prelude, opts.displayName), { duration: 0, closable: true });
       }
@@ -23018,7 +24761,7 @@
   function fileNameOf(id) {
     var files = Persist.listFiles() || [];
     for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return baseName4(files[i].name);
+      if (files[i].id === id) return baseName5(files[i].name);
     }
     return "input.bel";
   }
@@ -23040,11 +24783,13 @@
     var cfgPath = cfgPathForId(id);
     if (cfgPath) return runModuleCfg(cfgPath);
     var name = fileNameOf(id);
+    var path = filePathOf(id) || name;
     var assembled = ProjectSource.assembleCheckerCode(makeGetText()(id), null);
     return runLoad(assembled.code, null, {
       pinned: true,
       displayName: name,
-      caption: "run " + name
+      statusName: statusNameForFilePath(path, false),
+      caption: captionForFilePath(path, false)
     });
   }
   async function runToHere(targetId) {
@@ -23056,15 +24801,15 @@
     var files = Persist.listFiles();
     var getText = makeGetText();
     var name = fileNameOf(id);
-    var suiteCfg = ProjectSource.cfgPathForActive(files, id, getText);
-    var caption = suiteCfg ? "run suite " + suiteNameFromCfg(suiteCfg) + " up to " + name : "run up to " + name;
+    var path = filePathOf(id) || name;
     var prelude = ProjectSource.buildPrelude(files, id, getText);
     var assembled = ProjectSource.assembleCheckerCode(getText(id), prelude);
     return runLoad(assembled.code, null, {
       pinned: true,
       prelude: assembled.prelude,
       displayName: name,
-      caption
+      statusName: statusNameForFilePath(path, true),
+      caption: captionForFilePath(path, true)
     });
   }
   async function runModule(targetId) {
@@ -23152,6 +24897,9 @@
       var caption = job.dev.kind === "config" ? "run suite " + job.dev.name : "run " + job.dev.name;
       lines += job.code.split("\n").length;
       beginRunTurn(caption);
+      if (typeof ReplOutput !== "undefined" && ReplOutput.beginRunSkeleton) {
+        ReplOutput.beginRunSkeleton();
+      }
       try {
         var raw = await BelugaClient.load(job.code, { onProgress: belugaProgressHook, pinned: true });
         projectSpans = job.spans;
@@ -23159,15 +24907,26 @@
         if (!String(raw).trim()) {
           raw = "## Type Reconstruction begin: " + job.dev.name + " ##\n## Type Reconstruction done:  " + job.dev.name + " ##";
         }
-        ReplOutput.appendRunOutput(raw);
+        if (typeof ReplOutput !== "undefined" && ReplOutput.resolveRunOutput) {
+          await ReplOutput.resolveRunOutput(raw);
+        } else {
+          ReplOutput.appendRunOutput(raw);
+        }
       } catch (e) {
         if (isCancelled2(e)) {
+          if (typeof ReplOutput !== "undefined" && ReplOutput.dismissRunSkeleton) {
+            await ReplOutput.dismissRunSkeleton();
+          }
           endRunTurn();
           break;
         }
         failures++;
         var msg = applyOutputNaming(e && e.message ? String(e.message) : String(e), job.spans, null, job.dev.name);
-        ReplOutput.appendRunOutput(msg);
+        if (typeof ReplOutput !== "undefined" && ReplOutput.resolveRunOutput) {
+          await ReplOutput.resolveRunOutput(msg);
+        } else {
+          ReplOutput.appendRunOutput(msg);
+        }
       } finally {
         endRunTurn();
       }
@@ -23199,7 +24958,7 @@
       });
     });
   }
-  global42.BelugaRun = {
+  global44.BelugaRun = {
     init: init12,
     setBelugaBusy,
     isBelugaBusy,
@@ -23219,7 +24978,7 @@
     ensureEditorLoadedForRun,
     getProjectSpans
   };
-  global42.BelJarBelugaRun = global42.BelugaRun;
+  global44.BelJarBelugaRun = global44.BelugaRun;
 
   // js/app/app-empty-state.mjs
   function create10(opts) {
@@ -23280,18 +25039,18 @@
       }
       return null;
     }
-    function setSidePanelOpen2(id, open8) {
+    function setSidePanelOpen2(id, open9) {
       var cfg = panels[id];
       if (!workspaceEl2 || !cfg) return;
-      workspaceEl2.classList.toggle(cfg.openClass, open8);
+      workspaceEl2.classList.toggle(cfg.openClass, open9);
       if (cfg.btn) {
-        cfg.btn.classList.toggle("is-active", open8);
-        cfg.btn.setAttribute("aria-pressed", open8 ? "true" : "false");
+        cfg.btn.classList.toggle("is-active", open9);
+        cfg.btn.setAttribute("aria-pressed", open9 ? "true" : "false");
       }
-      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open8 ? "false" : "true");
-      if (typeof cfg.writeOpen === "function") cfg.writeOpen(open8);
+      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open9 ? "false" : "true");
+      if (typeof cfg.writeOpen === "function") cfg.writeOpen(open9);
       if (typeof Persist !== "undefined" && Persist.writeStoredActiveSidePanel) {
-        if (open8) Persist.writeStoredActiveSidePanel(id);
+        if (open9) Persist.writeStoredActiveSidePanel(id);
         else if (!getOpenSidePanelId()) Persist.writeStoredActiveSidePanel(null);
       }
       scheduleWorkspaceSave();
@@ -23308,11 +25067,11 @@
     function toggleSidePanel2(id) {
       var cfg = panels[id];
       if (!workspaceEl2 || !cfg) return false;
-      var open8 = !workspaceEl2.classList.contains(cfg.openClass);
-      if (open8) closeOtherSidePanels2(id);
-      setSidePanelOpen2(id, open8);
+      var open9 = !workspaceEl2.classList.contains(cfg.openClass);
+      if (open9) closeOtherSidePanels2(id);
+      setSidePanelOpen2(id, open9);
       notifySidePanelLayout2();
-      return open8;
+      return open9;
     }
     function wireSidebarOpenTooltip2(btn) {
       if (!btn || typeof Tooltips === "undefined") return function() {
@@ -23357,13 +25116,13 @@
         tab.className = "editor-tab" + (file.id === activeId2 ? " is-active" : "") + (fileHasErrors(file.id) ? " has-errors" : "");
         tab.setAttribute("aria-selected", file.id === activeId2 ? "true" : "false");
         tab.setAttribute("data-file-id", file.id);
-        var baseName5 = file.name.split("/").pop();
-        tab.setAttribute("aria-label", baseName5);
+        var baseName6 = file.name.split("/").pop();
+        tab.setAttribute("aria-label", baseName6);
         var nameSpan = document.createElement("span");
         nameSpan.className = "editor-tab-name";
-        nameSpan.textContent = baseName5;
+        nameSpan.textContent = baseName6;
         if (typeof Tooltips !== "undefined") Tooltips.bindOverflow(nameSpan, function() {
-          return baseName5;
+          return baseName6;
         });
         var closeBtn2 = document.createElement("button");
         closeBtn2.type = "button";
@@ -23770,8 +25529,8 @@
       if (getPersist2()) {
         const cur = getPersist2().getCurrentFileId();
         if (cur && unique.includes(cur) && !Persist.getFileById(cur)) {
-          const open8 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
-          if (open8) switchToFile2(open8);
+          const open9 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
+          if (open9) switchToFile2(open9);
           else if (projectIsEmpty2()) enterEmptyProjectView2();
           else enterCanvasIdleView2();
         }
@@ -24022,7 +25781,7 @@
         }
       });
     });
-    function baseName5(path) {
+    function baseName6(path) {
       const s = String(path || "");
       const i = s.lastIndexOf("/");
       return i === -1 ? s : s.slice(i + 1);
@@ -24040,7 +25799,7 @@
       const file = Persist.getFileById(fileId);
       if (!file) return;
       const text = typeof projectFileText2 === "function" ? projectFileText2(fileId) : Persist.getFileText(fileId) || "";
-      DownloadZip.downloadTextFile(text, baseName5(file.name) || "download.bel");
+      DownloadZip.downloadTextFile(text, baseName6(file.name) || "download.bel");
     }
     function downloadCurrentFile2() {
       const id = Persist.getActiveFileId && Persist.getActiveFileId();
@@ -24078,10 +25837,10 @@
         if (!coveredByFile) entries.push({ path: dirPath + "/", directory: true });
       });
       entries.sort((a, b) => String(a.path).localeCompare(String(b.path)));
-      DownloadZip.downloadZip(entries, (baseName5(folderPath) || "folder") + ".zip");
+      DownloadZip.downloadZip(entries, (baseName6(folderPath) || "folder") + ".zip");
     }
     function suiteStem(cfgPath) {
-      return String(baseName5(cfgPath) || "suite").replace(/\.cfg$/i, "") || "suite";
+      return String(baseName6(cfgPath) || "suite").replace(/\.cfg$/i, "") || "suite";
     }
     function suiteMemberPaths(cfgPath, cfgText) {
       const PS = ProjectSource;
@@ -24128,7 +25887,7 @@
       const pack = [];
       const enc = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
       pack.push({
-        path: stem + "/" + baseName5(cfgFile.name),
+        path: stem + "/" + baseName6(cfgFile.name),
         data: enc ? enc.encode(cfgText) : cfgText
       });
       for (let j = 0; j < members.length; j++) {
@@ -24411,8 +26170,8 @@
       syncCfgEditorsAfterRewrite(ids);
     });
     async function newFile2(name) {
-      var baseName5 = name;
-      if (!baseName5) {
+      var baseName6 = name;
+      if (!baseName6) {
         var def = "untitled.bel";
         var stemEnd = 8;
         {
@@ -24420,7 +26179,7 @@
           var dot = def.lastIndexOf(".");
           stemEnd = dot > 0 ? dot : def.length;
         }
-        baseName5 = await NamePrompt.open({
+        baseName6 = await NamePrompt.open({
           ariaLabel: "New file",
           message: "New file",
           value: def,
@@ -24437,12 +26196,12 @@
           confirmLabel: "Create"
         });
       }
-      if (!baseName5) return;
-      if (NameConflicts.nameConflict(Persist.listFiles(), baseName5)) {
+      if (!baseName6) return;
+      if (NameConflicts.nameConflict(Persist.listFiles(), baseName6)) {
         showToast2("A file with that name already exists in this folder.", { kind: "warn" });
         return;
       }
-      const id = Persist.createFile(baseName5);
+      const id = Persist.createFile(baseName6);
       switchToFile2(id);
     }
     function closeFile2(id) {
@@ -24966,9 +26725,9 @@
     function wireMenuTrigger(btn, menuOpts) {
       if (!btn) return;
       let suppressNextClick = false;
-      function setOpen2(open8) {
-        btn.classList.toggle("is-active", open8);
-        btn.setAttribute("aria-expanded", open8 ? "true" : "false");
+      function setOpen2(open9) {
+        btn.classList.toggle("is-active", open9);
+        btn.setAttribute("aria-expanded", open9 ? "true" : "false");
       }
       function runMenuInteraction() {
         if (typeof Menu !== "undefined" && Menu.isOpen() && Menu.rootAnchor() === btn) {
@@ -24976,12 +26735,12 @@
           return;
         }
         if (typeof Menu === "undefined") return;
-        const items2 = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
+        const items3 = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
         Menu.open({
           anchor: btn,
           side: menuOpts.side,
           align: menuOpts.align,
-          items: items2,
+          items: items3,
           onClose: () => setOpen2(false)
         });
         setOpen2(true);
@@ -25114,10 +26873,10 @@
         if (folderPaths.length === 1) return explorerFolderContextItems2(folderPaths[0]);
         return null;
       }
-      const items2 = [];
+      const items3 = [];
       const deleteCount = selectionDeleteFileIds2(fileIds, folderPaths).length;
       if (deleteCount > 0) {
-        items2.push({
+        items3.push({
           label: deleteCount === 1 ? "Delete file\u2026" : `Delete ${deleteCount} files\u2026`,
           disabled: selectionDeleteDisabled2(fileIds, folderPaths),
           onSelect: () => deleteSelectionInteractive2(fileIds, folderPaths)
@@ -25126,12 +26885,12 @@
       const openIds = Persist.getOpenFileIds();
       const openSelected = fileIds.filter((id) => openIds.includes(id));
       if (openSelected.length) {
-        items2.push({
+        items3.push({
           label: openSelected.length === 1 ? "Close tab" : `Close ${openSelected.length} tabs`,
           onSelect: () => closeTabsForFiles2(openSelected)
         });
       }
-      return items2;
+      return items3;
     }
     function fileContextItems2(fileId, opts) {
       const fromTab = !!(opts && opts.fromTab);
@@ -25546,20 +27305,20 @@
           if (st === "blocked") return "\u2298 ";
           return "";
         }
-        const items2 = symbols.map((s) => ({
+        const items3 = symbols.map((s) => ({
           title: statusPrefix(s.id) + s.name,
           detail: s.label || "",
           run: () => ed.jumpToRange(s.nameRange || s.range)
         }));
         const cross = ed && typeof ed.listProjectSymbols === "function" ? ed.listProjectSymbols() : [];
         for (const s of cross) {
-          items2.push({
+          items3.push({
             title: s.name,
             detail: s.fileName.split("/").pop(),
             run: () => openFileAt2(s.fileId, s.from, s.to)
           });
         }
-        return items2;
+        return items3;
       });
       CommandPalette.setProvider("search", (query) => {
         if (!query || query.length < 2) return [];
@@ -25942,25 +27701,25 @@
       btn: filesBtn,
       panel: explorerPanelEl,
       openClass: "is-explorer-open",
-      writeOpen: (open8) => {
-        Persist.writeStoredExplorerOpen(open8);
+      writeOpen: (open9) => {
+        Persist.writeStoredExplorerOpen(open9);
       }
     },
     inspector: {
       btn: inspectorBtn,
       panel: inspectorPanelEl,
       openClass: "is-inspector-open",
-      writeOpen: (open8) => {
-        Persist.writeStoredInspectorOpen(open8);
+      writeOpen: (open9) => {
+        Persist.writeStoredInspectorOpen(open9);
       }
     },
     library: {
       btn: libraryBtn,
       panel: libraryPanelEl,
       openClass: "is-library-open",
-      writeOpen: (open8) => {
-        Persist.writeStoredLibraryOpen(open8);
-        if (!open8) {
+      writeOpen: (open9) => {
+        Persist.writeStoredLibraryOpen(open9);
+        if (!open9) {
           const lib = getLibraryController();
           if (lib && typeof lib.collapseFolders === "function") lib.collapseFolders();
         }
@@ -25970,9 +27729,9 @@
       btn: harpoonBtn,
       panel: harpoonPanelEl,
       openClass: "is-harpoon-open",
-      writeOpen: (open8) => {
+      writeOpen: (open9) => {
         if (Persist.writeStoredHarpoonOpen) {
-          Persist.writeStoredHarpoonOpen(open8);
+          Persist.writeStoredHarpoonOpen(open9);
         }
       }
     }
@@ -26019,10 +27778,10 @@
       items: Array.isArray(lint.items) ? lint.items : cfgTabLint.get(fileId)?.items
     });
   }
-  function lintTooltipHead(items2) {
-    if (!items2 || !items2.length) return "";
-    const errs = items2.filter((d) => d.kind === "error").length;
-    const warns = items2.length - errs;
+  function lintTooltipHead(items3) {
+    if (!items3 || !items3.length) return "";
+    const errs = items3.filter((d) => d.kind === "error").length;
+    const warns = items3.length - errs;
     const parts = [];
     if (errs) parts.push(errs === 1 ? "1 error" : `${errs} errors`);
     if (warns) parts.push(warns === 1 ? "1 warning" : `${warns} warnings`);
@@ -26048,11 +27807,11 @@
   function bindExplorerDiagTip(el5, fileId, fileName, diag) {
     if (!el5 || !diag) return;
     el5.removeAttribute("title");
-    const items2 = explorerFileDiagItems(fileId, fileName);
-    if (items2 && items2.length) {
-      el5.setAttribute("data-tooltip", lintTooltipHead(items2));
+    const items3 = explorerFileDiagItems(fileId, fileName);
+    if (items3 && items3.length) {
+      el5.setAttribute("data-tooltip", lintTooltipHead(items3));
       el5.setAttribute("data-tooltip-head", "");
-      el5.setAttribute("data-tooltip-errors", JSON.stringify(items2));
+      el5.setAttribute("data-tooltip-errors", JSON.stringify(items3));
       if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el5);
       return;
     }
@@ -26725,8 +28484,8 @@
     inspectorBtn.addEventListener("click", () => {
       const wasOpen = workspaceEl.classList.contains("is-inspector-open");
       if (!wasOpen) hideInspectorTooltipUntilLeave();
-      const open8 = toggleSidePanel("inspector");
-      if (open8) refreshInspector({ live: true });
+      const open9 = toggleSidePanel("inspector");
+      if (open9) refreshInspector({ live: true });
     });
     window.addEventListener("beljar:open-inspector", openInspector);
   }
@@ -26738,8 +28497,8 @@
       }
       const wasOpen = workspaceEl.classList.contains("is-library-open");
       if (!wasOpen) hideLibraryTooltipUntilLeave();
-      const open8 = toggleSidePanel("library");
-      if (open8) {
+      const open9 = toggleSidePanel("library");
+      if (open9) {
         ensureLibrary();
         if (getLibraryController() && typeof getLibraryController().refresh === "function") {
           getLibraryController().refresh();
@@ -26777,8 +28536,8 @@
     harpoonBtn.addEventListener("click", () => {
       const wasOpen = workspaceEl.classList.contains("is-harpoon-open");
       if (!wasOpen) hideProofTooltipUntilLeave();
-      const open8 = toggleSidePanel("harpoon");
-      if (open8) {
+      const open9 = toggleSidePanel("harpoon");
+      if (open9) {
         ensureHarpoonPanel();
         refreshHarpoonPanelIfOpen();
       }
@@ -26804,6 +28563,12 @@
       SettingsUI.open();
     });
   }
+  var reloadBtn = document.getElementById("btn-reload");
+  if (reloadBtn) {
+    reloadBtn.addEventListener("click", () => {
+      window.location.reload();
+    });
+  }
   document.getElementById("btn-theme").addEventListener("click", toggleTheme);
   document.getElementById("btn-load").addEventListener("click", (e) => {
     const file = activeFileRecord();
@@ -26822,44 +28587,32 @@
     ReplOutput.clearOutput();
     ReplCommands.resetHistoryIndex();
   });
-  (function wireReplTimestamps() {
-    var btn = document.getElementById("btn-repl-timestamps");
-    if (!btn) return;
-    function tip(on) {
-      return on ? "Hide timestamps" : "Show timestamps";
-    }
-    function apply(on) {
-      btn.classList.toggle("is-on", !!on);
-      btn.setAttribute("aria-pressed", on ? "true" : "false");
-      var t = tip(on);
-      btn.setAttribute("aria-label", t);
-      if (typeof Tooltips !== "undefined" && Tooltips.set) Tooltips.set(btn, t);
-      else btn.setAttribute("data-tooltip", t);
-      if (typeof ReplStream !== "undefined" && ReplStream.setTimestampsVisible) {
-        ReplStream.setTimestampsVisible(on);
-      }
-    }
-    var initial = typeof Persist !== "undefined" && Persist.readStoredReplTimestamps ? Persist.readStoredReplTimestamps() : false;
-    apply(initial);
-    btn.addEventListener("click", function() {
-      var next = !btn.classList.contains("is-on");
-      apply(next);
-      if (typeof Persist !== "undefined" && Persist.writeStoredReplTimestamps) {
-        Persist.writeStoredReplTimestamps(next);
-      }
-    });
-  })();
   if (btnRun2) {
     btnRun2.addEventListener("click", () => {
       ReplCommands.runCmd();
     });
   }
   if (cmdInput) {
+    if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.bind) {
+      ReplAutocomplete.bind(cmdInput);
+    }
     cmdInput.addEventListener("input", () => {
       ReplCommands.resetHistoryIndex();
+      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.refresh) {
+        ReplAutocomplete.refresh();
+      }
     });
     cmdInput.addEventListener("keydown", (e) => {
+      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.onKeyDown) {
+        if (ReplAutocomplete.onKeyDown(e)) {
+          e.preventDefault();
+          return;
+        }
+      }
       if (e.key === "Enter") {
+        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
+          ReplAutocomplete.hide();
+        }
         ReplCommands.runCmd();
         return;
       }
@@ -26870,6 +28623,13 @@
       if (e.key === "ArrowDown") {
         if (ReplCommands.historyDown()) e.preventDefault();
       }
+    });
+    cmdInput.addEventListener("blur", () => {
+      setTimeout(() => {
+        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
+          ReplAutocomplete.hide();
+        }
+      }, 120);
     });
   }
   window.addEventListener("beforeunload", () => {

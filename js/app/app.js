@@ -3582,6 +3582,12 @@
       SettingsUI.open();
     });
   }
+  var reloadBtn = document.getElementById("btn-reload");
+  if (reloadBtn) {
+    reloadBtn.addEventListener("click", () => {
+      window.location.reload();
+    });
+  }
   document.getElementById("btn-theme").addEventListener("click", toggleTheme);
   document.getElementById("btn-load").addEventListener("click", (e) => {
     const file = activeFileRecord();
@@ -3600,44 +3606,32 @@
     ReplOutput.clearOutput();
     ReplCommands.resetHistoryIndex();
   });
-  (function wireReplTimestamps() {
-    var btn = document.getElementById("btn-repl-timestamps");
-    if (!btn) return;
-    function tip(on) {
-      return on ? "Hide timestamps" : "Show timestamps";
-    }
-    function apply(on) {
-      btn.classList.toggle("is-on", !!on);
-      btn.setAttribute("aria-pressed", on ? "true" : "false");
-      var t = tip(on);
-      btn.setAttribute("aria-label", t);
-      if (typeof Tooltips !== "undefined" && Tooltips.set) Tooltips.set(btn, t);
-      else btn.setAttribute("data-tooltip", t);
-      if (typeof ReplStream !== "undefined" && ReplStream.setTimestampsVisible) {
-        ReplStream.setTimestampsVisible(on);
-      }
-    }
-    var initial = typeof Persist !== "undefined" && Persist.readStoredReplTimestamps ? Persist.readStoredReplTimestamps() : false;
-    apply(initial);
-    btn.addEventListener("click", function() {
-      var next = !btn.classList.contains("is-on");
-      apply(next);
-      if (typeof Persist !== "undefined" && Persist.writeStoredReplTimestamps) {
-        Persist.writeStoredReplTimestamps(next);
-      }
-    });
-  })();
   if (btnRun) {
     btnRun.addEventListener("click", () => {
       ReplCommands.runCmd();
     });
   }
   if (cmdInput) {
+    if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.bind) {
+      ReplAutocomplete.bind(cmdInput);
+    }
     cmdInput.addEventListener("input", () => {
       ReplCommands.resetHistoryIndex();
+      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.refresh) {
+        ReplAutocomplete.refresh();
+      }
     });
     cmdInput.addEventListener("keydown", (e) => {
+      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.onKeyDown) {
+        if (ReplAutocomplete.onKeyDown(e)) {
+          e.preventDefault();
+          return;
+        }
+      }
       if (e.key === "Enter") {
+        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
+          ReplAutocomplete.hide();
+        }
         ReplCommands.runCmd();
         return;
       }
@@ -3648,6 +3642,13 @@
       if (e.key === "ArrowDown") {
         if (ReplCommands.historyDown()) e.preventDefault();
       }
+    });
+    cmdInput.addEventListener("blur", () => {
+      setTimeout(() => {
+        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
+          ReplAutocomplete.hide();
+        }
+      }, 120);
     });
   }
   window.addEventListener("beforeunload", () => {

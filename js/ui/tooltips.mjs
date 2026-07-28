@@ -581,10 +581,15 @@ function bindTooltips() {
   window.addEventListener('resize', () => {
     if (tooltipAnchor) layoutTooltip(tooltipAnchor);
   });
+  // Any scroll (editor scroller, panels, window) dismisses — anchors move under a
+  // still pointer, so mouseleave never fires. Repositioning would chase ghosts.
+  // Scrolls inside the tip itself (e.g. overflow-x on rich code) do not dismiss.
   window.addEventListener(
     'scroll',
-    () => {
-      if (tooltipAnchor) layoutTooltip(tooltipAnchor);
+    (e) => {
+      if (!tooltipAnchor) return;
+      if (tooltipRoot && e.target instanceof Node && tooltipRoot.contains(e.target)) return;
+      hideTooltipImmediate();
     },
     true
   );

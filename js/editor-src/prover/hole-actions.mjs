@@ -102,15 +102,35 @@ function holeOffset(doc, hole) {
   return doc.sliceString(off, off + 1) === '?' ? off : null;
 }
 
-// The hole (from engine.getHoles) whose `?` token contains `pos`, or null.
+// Scan past `?` / `?name` the same way the Hole grammar spans the token.
+function holeTokenEnd(doc, from) {
+  const len = doc.length;
+  const at = typeof doc.sliceString === 'function'
+    ? (i) => doc.sliceString(i, i + 1)
+    : (i) => doc.charAt(i);
+  let end = from + 1;
+  while (end < len && /[^\s([{<:.,;|]/.test(at(end))) end += 1;
+  return end;
+}
+
+// The hole (from engine.getHoles) whose `?` / `?name` token contains `pos`, or null.
+// Replace range is the FULL hole span — accepting on `?foo` must not leave `foo`.
 export function holeAt(engine, doc, pos) {
   if (!engine || typeof engine.getHoles !== 'function') return null;
   for (const h of engine.getHoles()) {
-    const off = holeOffset(doc, h);
-    if (off == null) continue;
-    let end = off + 1;
-    while (end < doc.length && /[^\s([{<:.,;|]/.test(doc.sliceString(end, end + 1))) end += 1;
-    if (pos >= off && pos <= end) return { hole: h, from: off, to: off + 1 };
+    let from;
+    let to;
+    if (Number.isFinite(h.from) && Number.isFinite(h.to) && h.to > h.from
+        && doc.sliceString(h.from, h.from + 1) === '?') {
+      from = h.from;
+      to = h.to;
+    } else {
+      const off = holeOffset(doc, h);
+      if (off == null) continue;
+      from = off;
+      to = holeTokenEnd(doc, off);
+    }
+    if (pos >= from && pos <= to) return { hole: h, from, to };
   }
   return null;
 }
@@ -129,12 +149,13 @@ function currentFileId() {
   return ed?.getCurrentFileId?.() ?? null;
 }
 
-// Replace the hole's `?` with `text`, re-resolving the `?` against the CURRENT doc
-// (it may have shifted while an async step ran) and reindenting the insert.
+// Replace the hole's `?` / `?name` with `text`, re-resolving against the CURRENT
+// doc (it may have shifted while an async step ran) and reindenting the insert.
 function insertOverHole(view, engine, hit, text) {
   const live = holeAt(engine, view.state.doc, hit.from);
   const target = live || hit;
-  if (view.state.doc.sliceString(target.from, target.to) !== '?') {
+  const span = view.state.doc.sliceString(target.from, target.to);
+  if (!span.startsWith('?')) {
     decline('Hole moved — re-check and retry');
     return false;
   }
@@ -240,6 +261,14 @@ function offsetOfLineCol(code, line, col) {
   return idx + (col - 1);
 }
 
+// Holes carry editor-doc line/col; assembled checker code prepends the suite
+// prelude — shift line so fillCandidates / splits see the right prefix.
+export function holeInAssembledCoords(hole, ctx) {
+  const offset = (ctx && ctx.offsetLines) || 0;
+  if (!hole || !offset) return hole;
+  return { ...hole, line: hole.line + offset };
+}
+
 // VERIFY a generated step against the REAL hole before inserting — BelJar checking
 // BelJar's own work (NOT outsourcing generation to Beluga). Splice `text` over the
 // hole's `?` in the assembled `ctx.code` and type-check the whole program; insertion
@@ -248,12 +277,13 @@ function offsetOfLineCol(code, line, col) {
 // hole's REAL reconstructed context (e.g. a nested split where the scrutinee is
 // already parameter-determined) is caught here and declined instead of inserted.
 // Resolves true/false; true (fail-open) only if the checker is unavailable.
-async function verifyAtHole(client, ctx, hole, text) {
+export async function verifyAtHole(client, ctx, hole, text) {
   if (!client || typeof client.checkResult !== 'function') return true;
   const assembledLine = hole.line + (ctx.offsetLines || 0);
   const off = offsetOfLineCol(ctx.code, assembledLine, hole.col);
   if (off < 0 || off >= ctx.code.length || ctx.code.charAt(off) !== '?') return true;
-  const spliced = ctx.code.slice(0, off) + text + ctx.code.slice(off + 1);
+  const end = holeTokenEnd(ctx.code, off);
+  const spliced = ctx.code.slice(0, off) + text + ctx.code.slice(end);
   try {
     const r = await client.checkResult(spliced);
     return !!(r && r.ok);
@@ -339,7 +369,8 @@ function splitDeclineMessage(varName, note, extra) {
 // This is how a goal that's directly provable (a hypothesis projection, a returned
 // variable, a nullary constructor) gets COMPLETED rather than declined.
 async function tryFill(view, engine, hit, ctx, client) {
-  const cands = fillCandidates(hit.hole, ctx.code);
+  const hole = holeInAssembledCoords(hit.hole, ctx);
+  const cands = fillCandidates(hole, ctx.code);
   for (const term of cands) {
     if (await verifyAtHole(client, ctx, hit.hole, term)) {
       insertOverHole(view, engine, hit, term);
@@ -376,7 +407,7 @@ export async function runSplit(view, engine, hit, varName) {
 
   // 1. BelJar generates from its own model, then verifies it at the REAL hole.
   const note = {};
-  const own = belJarSplit(ctx.code, hole, varName, note);
+  const own = belJarSplit(ctx.code, holeInAssembledCoords(hole, ctx), varName, note);
   if (own) {
     if (await verifyAtHole(client, ctx, hole, own)) { insertOverHole(view, engine, hit, own); return; }
     note.verifyFailed = true;
@@ -436,11 +467,10 @@ export async function runIntro(view, engine, hit) {
   decline('Can’t introduce binders here yet — logged to notifications to teach BelJar');
 }
 
-// The assembled checker code (for constructor lookup in fill candidates), or ''.
-function holeCtxCode() {
+  // The assembled checker code context (for constructor lookup in fill candidates).
+function holeCtx() {
   const api = editorApi();
-  const ctx = api && typeof api.getHoleActionContext === 'function' ? api.getHoleActionContext() : null;
-  return (ctx && ctx.code) || '';
+  return api && typeof api.getHoleActionContext === 'function' ? api.getHoleActionContext() : null;
 }
 
 // ── Floating toolbar (a CM tooltip anchored on the focused hole) ────────────
@@ -486,7 +516,8 @@ function buildToolbar(view, engine, hit) {
   // term is verified at click time; the button just signals "this goal looks
   // directly provable". A `?`-determined scrutinee makes split degenerate, so fill
   // is the meaningful action there (the str_hyp inner hole).
-  if (fillCandidates(hole, holeCtxCode()).length) {
+  const fillCtx = holeCtx();
+  if (fillCandidates(holeInAssembledCoords(hole, fillCtx), (fillCtx && fillCtx.code) || '').length) {
     dom.appendChild(mkBtn('fill', 'Prove this goal with an inhabiting term', () => {
       runFill(view, engine, hit);
     }));

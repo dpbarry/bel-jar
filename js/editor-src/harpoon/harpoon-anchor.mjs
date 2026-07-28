@@ -2,6 +2,7 @@
 // "is the hole still safe to insert into?" without cancelling live search.
 
 import { parseDecl } from './harpoon-program.mjs';
+import { DECL_IDENT } from '../prover/ident.mjs';
 
 export function textFingerprint(text) {
   const s = String(text == null ? '' : text);
@@ -73,7 +74,7 @@ function memberFingerprintsDrifted(anchor, live) {
 function findDeclByKey(docText, declKey, getDeclSpan, parseDeclFn) {
   if (!declKey || !docText) return null;
   const parse = parseDeclFn || parseDecl;
-  const re = /\b(rec|proof)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:/g;
+  const re = new RegExp(String.raw`\b(rec|proof)\s+(${DECL_IDENT})\s*:`, 'gu');
   let m;
   while ((m = re.exec(docText)) !== null) {
     const from = m.index;

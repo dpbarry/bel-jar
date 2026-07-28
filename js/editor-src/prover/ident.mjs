@@ -10,6 +10,11 @@ export const IDENT_DOLLAR_HASH = String.raw`[$#]?${IDENT}`;
 export const UPPER_IDENT = String.raw`\p{Lu}[\p{L}\p{N}_']*`;
 export const LOWER_IDENT = String.raw`\p{Ll}[\p{L}\p{N}_']*`;
 
+// Decl / constructor names as Beluga's lexer sees them (beluga.grammar
+// identChar / Lower|UpperIdentifier). May contain or end with symbols
+// (`lin_s≡`, `pred=`, `m/q`) — letter-only IDENT is for binders/metas.
+export const DECL_IDENT = String.raw`[^\s\u007F.,:;%|"\\(){}\[\]<>\u22A20-9#$?][^\s\u007F.,:;%|"\\(){}\[\]<>\u22A2]*`;
+
 // Fresh-name / α-normalize internals: quoted `"i17` or bare uppercase metas.
 export const QUOTED_IDENT = String.raw`"[A-Za-z][A-Za-z0-9_']*`;
 export const ALPHA_META = String.raw`(?:${QUOTED_IDENT}|${UPPER_IDENT})`;

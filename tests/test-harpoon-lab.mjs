@@ -4,6 +4,7 @@
 // dispatch + indentRange-tolerant state), so we test parseDecl + buildProofProgram
 // directly and commit's text construction via a stub.
 import { parseDecl, buildProofProgram } from '../js/editor-src/harpoon/harpoon-program.mjs';
+import { theoremUnderProof } from '../js/editor-src/prover/prover-hyp.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -36,6 +37,16 @@ eq(nested.type, '[ |- eq z z]', 'type with bracketed content');
 expect(parseDecl('LF nat : type =') === null || parseDecl('LF nat : type =').kw !== 'rec',
   'LF declaration is not a rec/proof');
 expect(parseDecl('schema ctx = some [t:tp] block x:tm') === null, 'schema is not rec/proof');
+
+// Beluga decl names may contain/end with symbols (classical-processes `lin_s≡`).
+const unicodeSrc =
+  'rec lin_s≡ : (g : ctx) [g |- P ≡ P\'] → [g |- linear (\\x. P)] =\n?\n;';
+const unicodeName = parseDecl(unicodeSrc);
+expect(unicodeName && unicodeName.kw === 'rec', 'parses rec with symbol suffix');
+eq(unicodeName.name, 'lin_s≡', 'keeps ≡ in decl name');
+expect(unicodeName.type.includes('linear'), 'type after symbol-suffixed name');
+const thm = theoremUnderProof(unicodeSrc);
+expect(thm && thm.name === 'lin_s≡', 'theoremUnderProof reads symbol-suffixed name');
 
 // --- buildProofProgram ------------------------------------------------------
 const assembled = [

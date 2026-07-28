@@ -1560,6 +1560,11 @@ button.harpoon-lab-banner:focus-visible {
   box-shadow: var(--harpoon-card-shadow), var(--harpoon-card-inner);
   transition: border-color 0.12s ease;
 }
+.harpoon-panel-hole.is-unfocused {
+  background: transparent;
+  box-shadow: none;
+  border-color: light-dark(hsla(0, 0%, 0%, 0.1), hsla(0, 0%, 100%, 0.1));
+}
 .harpoon-panel-hole::after {
   content: '';
   position: absolute;
@@ -1569,6 +1574,9 @@ button.harpoon-lab-banner:focus-visible {
   opacity: 0;
   transition: opacity 0.18s ease;
   pointer-events: none;
+}
+.harpoon-panel-hole.is-unfocused::after {
+  display: none;
 }
 .harpoon-panel-hole:not(.is-unfocused) .harpoon-hole-goal {
   margin: 0;
@@ -1584,11 +1592,8 @@ button.harpoon-lab-banner:focus-visible {
   .harpoon-panel-hole:hover::after {
     opacity: 1;
   }
-  .harpoon-panel-hole.is-indeterminate:hover {
-    border-color: color-mix(in oklab, var(--repl-holes-accent) 18%, var(--harpoon-card-border-strong));
-  }
-  .harpoon-panel-hole.is-indeterminate:hover::after {
-    opacity: 0.55;
+  .harpoon-panel-hole.is-unfocused:hover {
+    border-color: light-dark(hsla(0, 0%, 0%, 0.18), hsla(0, 0%, 100%, 0.18));
   }
 }
 .harpoon-panel-hole:focus-visible {
@@ -1598,6 +1603,10 @@ button.harpoon-lab-banner:focus-visible {
     var(--harpoon-card-shadow),
     var(--harpoon-card-inner),
     0 0 0 2px color-mix(in srgb, var(--repl-holes-accent) 18%, transparent);
+}
+.harpoon-panel-hole.is-unfocused:focus-visible {
+  border-color: light-dark(hsla(0, 0%, 0%, 0.28), hsla(0, 0%, 100%, 0.28));
+  box-shadow: 0 0 0 2px light-dark(hsla(0, 0%, 0%, 0.12), hsla(0, 0%, 100%, 0.12));
 }
 
 .harpoon-panel-hole .harpoon-panel-hole-rule {

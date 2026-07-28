@@ -19,6 +19,7 @@
 // a Beluga identifier/constructor name — it reasons purely from syntax.
 
 import { theoremUnderProof } from './prover-hyp.mjs';
+import { DECL_IDENT } from './ident.mjs';
 
 // Parse a `sources.cfg`: non-blank, non-`%` lines are member filenames (in
 // order). `.cfg` entries recurse into another cfg. Mirrors parseCfgEntries in
@@ -209,15 +210,18 @@ export function enumerateDecls(code) {
 
 function declName(text, kind) {
   if (kind === 'rec' || kind === 'proof' || kind === 'and-rec') {
-    const m = /^\s*(?:and\s+)?(?:rec|proof)\s+([A-Za-z_][A-Za-z0-9_']*)/.exec(text);
+    const m = new RegExp(String.raw`^\s*(?:and\s+)?(?:rec|proof)\s+(${DECL_IDENT})`, 'u').exec(text);
     return m ? m[1] : null;
   }
   if (kind === 'schema') {
-    const m = /^\s*schema\s+([A-Za-z_][A-Za-z0-9_']*)/.exec(text);
+    const m = new RegExp(String.raw`^\s*schema\s+(${DECL_IDENT})`, 'u').exec(text);
     return m ? m[1] : null;
   }
   if (kind === 'inductive' || kind === 'coinductive' || kind === 'stratified' || kind === 'and-inductive') {
-    const m = /^\s*(?:and\s+)?(?:LF\s+)?(?:inductive|coinductive|stratified)?\s*([A-Za-z_][A-Za-z0-9_']*)\s*:/.exec(text);
+    const m = new RegExp(
+      String.raw`^\s*(?:and\s+)?(?:LF\s+)?(?:inductive|coinductive|stratified)?\s*(${DECL_IDENT})\s*:`,
+      'u',
+    ).exec(text);
     return m ? m[1] : null;
   }
   return null;
@@ -312,7 +316,7 @@ export function mutualMembers(blockText) {
   const out = [];
   for (let k = 0; k < cuts.length - 1; k += 1) {
     const seg = s.slice(cuts[k], cuts[k + 1]).trim().replace(/;\s*$/, '');
-    const m = /^(?:rec|proof|and)\s+([A-Za-z_][A-Za-z0-9_']*)\s*:([\s\S]*)$/.exec(seg);
+    const m = new RegExp(String.raw`^(?:rec|proof|and)\s+(${DECL_IDENT})\s*:([\s\S]*)$`, 'u').exec(seg);
     if (!m) continue;
     out.push({ name: m[1], declish: `rec ${m[1]} :${m[2]}\n;` });
   }
@@ -446,7 +450,7 @@ export function maskByName(text, name) {
 // may contain `=`; a first-`=` regex misreads `pred=`-style families).
 function parseSingle(declText) {
   const s = String(declText || '');
-  const m = /^\s*(rec|proof)\s+[A-Za-z_][A-Za-z0-9_']*\s*:/.exec(s);
+  const m = new RegExp(String.raw`^\s*(rec|proof)\s+${DECL_IDENT}\s*:`, 'u').exec(s);
   if (!m) return null;
   let depth = 0;
   let eq = -1;

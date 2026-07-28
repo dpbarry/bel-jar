@@ -61,6 +61,26 @@ js/editor-src/prover/prover-orchestrator.mjs.
 
 ---
 
+## 0.5 READ FIRST (2026-07-25) — how to pick the next class, and the instrument
+
+Two things changed the map. **(a) The mass question has a direct answer in the ledger:**
+`steps === 0` on a STUCK row means the search accepted NOTHING — 400 of 533 STUCK targets.
+Classify those by the FIRST MOVE the target's own reference proof makes (pure text,
+seconds) and the real ranking appears: `case` on a comp hypothesis **194**, `let` 63,
+`fun` 43, `case` on a box 40, direct term 36, **`case` on a context variable 18**. The
+"leading" context-induction slice below is an 18-target class; it is NOT the mass.
+**(b) The 194 were not a search problem — the MODEL was misreading the program**
+(comment-blind signature parse, dropped explicit `{Pi}` constructor arguments, family
+shadowing resolved first-wins, no `mlam`/`fn` interleaving, parenthesised arrow tails,
+and a missing axiom rule). See the master plan's "MODEL-FIDELITY SLICE" entry.
+
+**The lesson to carry: before adding a MOVE, verify the model can READ the program.**
+The cheapest instrument for that is the **arity audit** (master plan, same entry): compare
+every constructor's modelled arity against the arities the corpus's own proofs apply it
+with — text only, no oracle, ~1 minute, and it falsifies the model without running a
+search. It went 47/1831 mismatches → 2/1844 (both artifacts). Run it after ANY change to
+constructor enumeration or term/pattern construction.
+
 ## 1. Where we are (2026-07-22)
 
 - **The machinery ships.** Phases A–G, the ctype-composition + ctype-split build
@@ -80,7 +100,19 @@ js/editor-src/prover/prover-orchestrator.mjs.
 
 ## 2. Do next — pick ONE, declare its stake first (all detailed in the master plan)
 
-1. **Context-structural induction (LEADING).** `candidateMoves` (prover-orchestrator.mjs)
+0. **⭐ PARTIAL RE-BASELINE DONE (2026-07-28) — use it, and finish it.**
+   `results/corpus/library.native-rebaseline-20260728.jsonl` holds a NATIVE re-run of
+   all **331 standalone-`.bel`** targets the 2026-07-19 ledger records as not
+   COMPLETE (40 steps, 40s/target cap; coinductive developments excluded).
+   **31 of them COMPLETE today** — so true library COMPLETE is **≥230, not the 199
+   `library.jsonl` still says**, and that file is what every class count in this doc
+   was computed from. Current residue over those 331: no-move 163, no-totality 69,
+   step-bound 32, cancelled-at-40s 33, search-bound 4.
+   **Still owed:** the `.cfg` assemblies (each check costs 10–30s there, so budget a
+   long unattended run) and a fold of both into `library.jsonl` — archive BY RENAME
+   first (harness law), never truncate.
+
+1. **Context-structural induction (18 targets — NOT the mass; see §0.5).** `candidateMoves` (prover-orchestrator.mjs)
    fills, recurses, and splits comp-context hypotheses — but NEVER splits a context
    variable. So `case [g] of | [ ] => ? | [g', x:A] => ?` is a MISSING MOVE TYPE — the
    confirmed root cause of the "step-0 bail" class (`reify`/`str`/`lookup`/`redVar`/

@@ -1256,6 +1256,54 @@ export function referenceKind(tree, doc, from) {
   return 'unbound';
 }
 
+// Type of a named binder in a signature prefix: `(g : nctx) …` / `{g:ctx} …`.
+export function signatureBinderType(sig, name) {
+  return implicitBinderInTypePrefix(String(sig || '').trim(), name);
+}
+
+function codomainAfterArgCount(sig, n) {
+  let cur = String(sig || '').trim();
+  for (let i = 0; i < n; i += 1) {
+    const split = splitArrowType(cur);
+    if (!split) return cur;
+    cur = split.codomain;
+  }
+  return cur;
+}
+
+// Expected type of an LF/comp application slot at `pos` (not the bound type of
+// the ident being completed). Used by autocomplete J3 filtering.
+export function slotExpectedType(tree, doc, pos) {
+  const ident = identAt(tree, pos);
+  if (!ident) return null;
+  return ascribedTypeForIdent(ident, doc)
+    || inferImplicitArgType(tree, doc, ident);
+}
+
+// Result type of a fully-applied LF term application spanning [exprFrom, exprTo].
+export function applicationExprType(tree, doc, exprFrom, exprTo) {
+  const id = identAt(tree, exprFrom);
+  if (!id) return null;
+  let app = null;
+  for (let p = id; p && p.from >= exprFrom && p.to <= exprTo; p = p.parent) {
+    if (p.name === 'LFAppTerm') app = p;
+  }
+  if (!app) return null;
+  const head = headIdentOfTermApp(app);
+  if (!head) return null;
+  const headName = doc.sliceString(head.from, head.to);
+  const sig = headTypeSignature(tree, doc, headName, head.name === 'UpperIdentifier');
+  if (!sig) return null;
+  let count = 0;
+  let node = app.firstChild;
+  while (node) {
+    if (!TERM_APP.has(node.name)) break;
+    if (!isHeadOnlyTermApp(node)) count += 1;
+    node = node.firstChild;
+  }
+  return codomainAfterArgCount(sig, count);
+}
+
 export function resolveHoverDoc(tree, doc, from) {
   const ident = identAt(tree, from);
   if (!ident) return null;

@@ -50,12 +50,6 @@ assert.equal(P.readStoredReplHistoryPersist(), 'none');
 P.writeStoredReplHistoryPersist('local');
 assert.equal(P.readStoredReplHistoryPersist(), 'local');
 
-assert.equal(P.readStoredReplTimestamps(), false);
-P.writeStoredReplTimestamps(true);
-assert.equal(P.readStoredReplTimestamps(), true);
-P.writeStoredReplTimestamps(false);
-assert.equal(P.readStoredReplTimestamps(), false);
-
 assert.equal(P.readStoredReplTranscript(), null);
 P.writeStoredReplTranscript({ html: '<div class="repl-banner"></div>', scrollTop: 12, savedAt: 99 });
 {

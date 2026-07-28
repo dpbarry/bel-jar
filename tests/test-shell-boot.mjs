@@ -158,7 +158,7 @@ function getEl(id) {
 [
   'editor', 'editor-empty', 'inspector-project-empty', 'output',
   'btn-files', 'btn-inspector', 'btn-library', 'btn-harpoon', 'btn-settings',
-  'btn-theme', 'btn-load', 'btn-clear', 'btn-repl-timestamps',
+  'btn-theme', 'btn-load', 'btn-clear',
   'explorer-panel', 'inspector-panel', 'library-panel', 'harpoon-panel',
   'editor-tabs', 'header-context', 'header-context-name',
   'output-panel-header', 'output-header-progress', 'output-header-status',

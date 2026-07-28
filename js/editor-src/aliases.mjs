@@ -4,7 +4,7 @@ import { EditorView } from '@codemirror/view';
 
 const aliasTxn = Annotation.define();
 
-export const ALIAS_PAIRS = Object.entries({
+export const DEFAULT_ALIAS_MAP = {
   '\\Leftrightarrow': '⇔',
   '\\rightarrow': '→',
   '\\Rightarrow': '⇒',
@@ -75,12 +75,72 @@ export const ALIAS_PAIRS = Object.entries({
   '\\dashv': '⊣',
   '|-': '⊢',
   '->': '→',
-  '=>': '⇒'
-}).sort((a, b) => b[0].length - a[0].length);
+  '=>': '⇒',
+};
 
-const MAX_ALIAS_LEN = ALIAS_PAIRS[0][0].length;
+export const ALIAS_PAIRS = Object.entries(DEFAULT_ALIAS_MAP)
+  .sort((a, b) => b[0].length - a[0].length || a[0].localeCompare(b[0]));
 
 const GREEDY_BLOCKED_EVENTS = new Set(['input.alias', 'rename', 'format', 'undo', 'redo']);
+
+let cachedPairs = null;
+let cachedMaxLen = 0;
+
+export function normalizeAliasPairs(raw) {
+  const seen = new Set();
+  const out = [];
+  const list = Array.isArray(raw) ? raw : [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    let from = '';
+    let to = '';
+    if (Array.isArray(item)) {
+      from = String(item[0] ?? '');
+      to = String(item[1] ?? '');
+    } else if (item && typeof item === 'object') {
+      from = String(item.from ?? item.trigger ?? '');
+      to = String(item.to ?? item.replacement ?? item.glyph ?? '');
+    }
+    from = from.trim();
+    if (!from || to === '') continue;
+    if (seen.has(from)) continue;
+    seen.add(from);
+    out.push([from, to]);
+  }
+  return out.sort((a, b) => b[0].length - a[0].length || a[0].localeCompare(b[0]));
+}
+
+export function defaultAliasPairs() {
+  return ALIAS_PAIRS.slice();
+}
+
+export function invalidateAliasPairs() {
+  cachedPairs = null;
+  cachedMaxLen = 0;
+}
+
+function loadStoredPairs() {
+  const persist = typeof globalThis !== 'undefined' ? globalThis.Persist : null;
+  if (!persist || typeof persist.readStoredAliasPairs !== 'function') return null;
+  try {
+    return persist.readStoredAliasPairs();
+  } catch (_) {
+    return null;
+  }
+}
+
+export function getAliasPairs() {
+  if (cachedPairs) return cachedPairs;
+  const stored = loadStoredPairs();
+  cachedPairs = stored == null ? defaultAliasPairs() : normalizeAliasPairs(stored);
+  cachedMaxLen = cachedPairs.length ? cachedPairs[0][0].length : 0;
+  return cachedPairs;
+}
+
+function maxAliasLen() {
+  getAliasPairs();
+  return cachedMaxLen;
+}
 
 export function readAliasActivationMode() {
   const persist = typeof globalThis !== 'undefined' ? globalThis.Persist : null;
@@ -92,7 +152,7 @@ export function readAliasActivationMode() {
 
 export function expandBelAliases(text) {
   let out = String(text ?? '');
-  for (const [seq, glyph] of ALIAS_PAIRS) {
+  for (const [seq, glyph] of getAliasPairs()) {
     if (!out.includes(seq)) continue;
     out = out.split(seq).join(glyph);
   }
@@ -115,9 +175,10 @@ function isStrictTypingInsert(tr, state) {
 }
 
 function aliasScanWindow(state, fromB, toB) {
-  const from = Math.max(0, fromB - MAX_ALIAS_LEN + 1);
+  const maxLen = maxAliasLen() || 1;
+  const from = Math.max(0, fromB - maxLen + 1);
   const lineEnd = state.doc.lineAt(toB).to;
-  const to = Math.max(toB, Math.min(lineEnd, toB + MAX_ALIAS_LEN - 1));
+  const to = Math.max(toB, Math.min(lineEnd, toB + maxLen - 1));
   return { from, to };
 }
 
@@ -159,7 +220,7 @@ function expandAtCursor(view, state) {
   const line = state.doc.lineAt(head);
   const before = state.doc.sliceString(line.from, head);
 
-  for (const [seq, glyph] of ALIAS_PAIRS) {
+  for (const [seq, glyph] of getAliasPairs()) {
     if (!before.endsWith(seq)) continue;
     const from = head - seq.length;
     view.dispatch({
@@ -203,5 +264,12 @@ export function aliases() {
 
     if (!update.transactions.some(isGreedyTrigger)) return;
     applyGreedyEdits(view, update.state, update.changes);
+  });
+}
+
+if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
+  globalThis.addEventListener('beljar:settings-changed', (e) => {
+    const key = e && e.detail ? e.detail.key : '';
+    if (/^alias/.test(key) || key === 'aliases-reset') invalidateAliasPairs();
   });
 }

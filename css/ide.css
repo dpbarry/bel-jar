@@ -440,27 +440,9 @@
 }
 
 /* Beat CodeMirror's default selected-row fill (injected at runtime). */
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li {
-  position: relative;
-}
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li::before {
-  content: '';
-  position: absolute;
-  left: var(--row-pill-inset-x);
-  top: var(--row-pill-inset-y);
-  bottom: var(--row-pill-inset-y);
-  width: var(--row-pill-w);
-  border-radius: var(--row-pill-radius);
-  background: var(--editor-ac-row-accent);
-  opacity: 0;
-  pointer-events: none;
-}
 .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
   background: var(--editor-ac-row-bg) !important;
   color: var(--editor-ac-row-fg) !important;
-}
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]::before {
-  opacity: var(--row-pill-opacity);
 }
 
 .cm-editor .cm-tooltip.cm-tooltip-autocomplete .cm-completionMatchedText {
@@ -483,30 +465,6 @@
     background: var(--search-row-hover-bg);
     color: var(--base-highest);
   }
-}
-
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete .cm-completionIcon-bel + .cm-completionLabel {
-  color: var(--file-bel-fg);
-}
-
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete .cm-completionIcon-elf + .cm-completionLabel {
-  color: var(--file-elf-fg);
-}
-
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete .cm-completionIcon-cfg + .cm-completionLabel {
-  color: var(--file-cfg-fg);
-}
-
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionIcon-bel + .cm-completionLabel {
-  color: var(--file-bel-fg);
-}
-
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionIcon-elf + .cm-completionLabel {
-  color: var(--file-elf-fg);
-}
-
-.cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionIcon-cfg + .cm-completionLabel {
-  color: var(--file-cfg-fg);
 }
 
 @media (prefers-reduced-motion: reduce) {

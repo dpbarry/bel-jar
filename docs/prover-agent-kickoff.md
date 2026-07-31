@@ -38,6 +38,19 @@ HOW TO WORK (the laws that were bought with burned sessions):
 - MASS, not tail. Target the LARGEST tractable class, with a NUMERIC STAKE declared
   BEFORE coding ("this must move >=1/3 of its bench reps, else abandon it"). A
   micro-fix is never a milestone. (feedback-optimize-mass-not-tail)
+- ROI LAW (measured over ~20 gated attempts, 2026-07-31): every gain came from a
+  MISSING MOVE or MIS-EMITTED TEXT; every candidate-pruning / rank-ordering idea
+  returned 0 or negative. Ask of any slice: does it ADD a move the fragment needs, or
+  FIX text we emit wrongly? If neither, expect zero. No completion has ever come from
+  pruning — a no-move search EXHAUSTED, so cheaper candidates cannot help it.
+- SIZE BY TOGGLE, never by counting. A signature/reference-shape census says what proofs
+  NEED, not what the SEARCH REACHES (overstated reach 4x in one session). Put the
+  mechanism behind an env toggle and A/B ~10 members BEFORE building the rest.
+- When a mechanism you verified against the checker measures ZERO, read the EMITTED
+  TEXT (--dump-candidates) before doubting the mechanism, and census its gates. Three
+  correct mechanisms once measured zero because one predicate mangled their output.
+- The ledger: use results/corpus/library.native-merged-20260729.jsonl (269 COMPLETE) for
+  class sizing; frozen library.jsonl (199) stays the prover:diff --ref.
 - Answer residue questions with TEXT first: `node scripts/prover-residue-audit.mjs`
   classifies every stuck target by its own reference proof — seconds, no oracle.
 - Inner loop = a STRATIFIED NATIVE BENCH (1-2 reps/class, minutes). FIRST TOOL:
@@ -61,80 +74,88 @@ js/editor-src/prover/prover-orchestrator.mjs.
 
 ---
 
-## 0.5 READ FIRST (2026-07-25) — how to pick the next class, and the instrument
+## 0.5 READ FIRST (2026-07-31) — state, the ROI law, and the next problem
 
-Two things changed the map. **(a) The mass question has a direct answer in the ledger:**
-`steps === 0` on a STUCK row means the search accepted NOTHING — 400 of 533 STUCK targets.
-Classify those by the FIRST MOVE the target's own reference proof makes (pure text,
-seconds) and the real ranking appears: `case` on a comp hypothesis **194**, `let` 63,
-`fun` 43, `case` on a box 40, direct term 36, **`case` on a context variable 18**. The
-"leading" context-induction slice below is an 18-target class; it is NOT the mass.
-**(b) The 194 were not a search problem — the MODEL was misreading the program**
-(comment-blind signature parse, dropped explicit `{Pi}` constructor arguments, family
-shadowing resolved first-wins, no `mlam`/`fn` interleaving, parenthesised arrow tails,
-and a missing axiom rule). See the master plan's "MODEL-FIDELITY SLICE" entry.
+**⭐ LEDGER.** `results/corpus/library.jsonl` is FROZEN at 2026-07-19 and says 199
+COMPLETE — it **under-counts by ~70**. Every class number in older doc sections derives
+from it. Use **`results/corpus/library.native-merged-20260729.jsonl` (269 COMPLETE)** for
+class sizing and for `--ledger` on the audit scripts; keep using the frozen file as
+`--ref` for `npm run prover:diff` (a fixed baseline is what makes the differential mean
+anything). Class map on the honest numbers: `case` comp-hyp **267** (197 step-0) · `let`
+**88** (79) · fun/copattern 77 (out of fragment) · `case` box 62 (50) · DIRECT 50 (38) ·
+`case` ctx-var 18 · tuple 4.
 
-**The lesson to carry: before adding a MOVE, verify the model can READ the program.**
-The cheapest instrument for that is the **arity audit** (master plan, same entry): compare
-every constructor's modelled arity against the arities the corpus's own proofs apply it
-with — text only, no oracle, ~1 minute, and it falsifies the model without running a
-search. It went 47/1831 mismatches → 2/1844 (both artifacts). Run it after ANY change to
-constructor enumeration or term/pattern construction.
+**⛔⛔ THE ROI LAW — read before choosing a slice.** ~20 mechanisms were built and gated
+in the 2026-07-30/31 session. The split is one-directional:
 
-## 1. Where we are (2026-07-22)
+- **Everything that paid was a MISSING MOVE or MIS-EMITTED TEXT** — poisoned decreasing
+  slot (+3), higher-order ctype construction and the accessibility chain (+6),
+  type-ascription re-binding (+2), inferred-index variants (+1, and 713→37 checks on
+  `closed`), ctype inversion + all-ctype recursion + nested-case parens (+3).
+- **Everything that was PRUNING or RANKING returned 0 or negative** — unwritable-context
+  variants (instant loss), the rewrite form (inert), invented-name guard (failed a
+  soundness pin), comp-application family check (0), ctype-ctor θ (0), relaxed ascription
+  limiter (+11% checks), inverts-before-recurses (+35% checks). Only two pruning ideas
+  paid, and only in SPEED (bare-meta guard −18.6%, rigid-index −0.8%). **No completion
+  ever came from pruning** — a no-move target's search EXHAUSTED; cheaper candidates
+  cannot help it.
 
-- **The machinery ships.** Phases A–G, the ctype-composition + ctype-split build
-  (C1–C8), and the depth-2 ctype invert-rebuild slice are all in. This is late-game
-  engine work, not plumbing.
-- **Ledger is STALE — true COMPLETE ≥ 219** (frozen `library.jsonl` says 199). A
-  targeted native re-baseline of the ctype-heavy devs banked 20 recoveries the ledger
-  never recorded (the ctype build had solved far more than the ledger showed). Suite
-  198/198; differential 198/199 (only the pre-existing `tapl/ch3+arith#tps`
-  path-sensitivity loss). **First housekeeping job: a clean, unattended full re-sweep
-  — archive `library.jsonl` by rename first, no parallel native work (it contends and
-  produces false timeouts), then update the ledger of record.**
-- **The clean one-session quick wins are EXHAUSTED.** Every remaining tractable class
-  needs a genuinely NEW mechanism (a new move type or matcher), each ≈ C1–C8-scale.
-  This is expected and correct per the principle: these blockers mean the algorithm
-  isn't sharp enough yet — they are the work, not a wall.
+Ask of any proposed slice: *does it ADD a move the fragment needs, or FIX text we emit
+wrongly?* If neither, expect zero and demand a very cheap test first.
 
-## 2. Do next — pick ONE, declare its stake first (all detailed in the master plan)
+**Two corollaries, each paid for:**
+1. **Read the emitted text before doubting a mechanism.** Three correct mechanisms
+   measured zero because one predicate destroyed their output: `splitDone` keys on
+   `branchPatternBox`, which needs a `[…]`-bracketed arm, and a CTYPE arm is a bare
+   constructor pattern — so every ctype split nested in a ctype arm went out
+   UNPARENTHESISED and the outer case's arms were swallowed. One line turned three "dead"
+   mechanisms into `equal#trans` COMPLETE. Use `--dump-candidates` and run the checker.
+2. **A limiter can be the load-bearing part.** The ascription's "first move only" rule
+   looks arbitrary; removing it cost +11% checks for 0 gains.
 
-0. **⭐ PARTIAL RE-BASELINE DONE (2026-07-28) — use it, and finish it.**
-   `results/corpus/library.native-rebaseline-20260728.jsonl` holds a NATIVE re-run of
-   all **331 standalone-`.bel`** targets the 2026-07-19 ledger records as not
-   COMPLETE (40 steps, 40s/target cap; coinductive developments excluded).
-   **31 of them COMPLETE today** — so true library COMPLETE is **≥230, not the 199
-   `library.jsonl` still says**, and that file is what every class count in this doc
-   was computed from. Current residue over those 331: no-move 163, no-totality 69,
-   step-bound 32, cancelled-at-40s 33, search-bound 4.
-   **Still owed:** the `.cfg` assemblies (each check costs 10–30s there, so budget a
-   long unattended run) and a fold of both into `library.jsonl` — archive BY RENAME
-   first (harness law), never truncate.
+**METHOD (non-negotiable, each clause bought with a burned attempt):** class list by text
+audit → **toggle A/B on ~10 members BEFORE building the rest** → build → `npm test` +
+`npm run prover:diff` (ZERO regressions or revert) → measure on the class → record the
+number. A signature or reference-shape census sizes what proofs NEED, never what the
+SEARCH REACHES; it overstated reach 4× in one session. And read the suite's reported
+TIME every run — a catch-all parser rule once passed 203/203 while making `npm test` take
+4.9h instead of 110s, on the editor's input path.
 
-1. **Context-structural induction (18 targets — NOT the mass; see §0.5).** `candidateMoves` (prover-orchestrator.mjs)
-   fills, recurses, and splits comp-context hypotheses — but NEVER splits a context
-   variable. So `case [g] of | [ ] => ? | [g', x:A] => ?` is a MISSING MOVE TYPE — the
-   confirmed root cause of the "step-0 bail" class (`reify`/`str`/`lookup`/`redVar`/
-   `idRedSub`, ~18–20 targets, mostly `$`-subst-free). Substrate is ready: `schemaInfo`
-   gives clean cons-arm data for bare + block schemas (only `some [Ω] block …` needs
-   parsing hardening). Analytic / Tier-1 (decidable), NOT the cut. Two layers, like the
-   ctype-split build: emit the split, then refined-context arm handling (base arm =
-   existing fill, cons arm = existing recurse+IH). Stake ≥1/3 as quick proofs.
-2. **Joint / diagonal tuple split.** `unique`/`unique'` (uniqueness/determinism idiom:
-   two derivations of a shared subject) wander through an independent-split cross-product
-   (step-bound ~104ck) instead of `case (a,b) of (C,C) | …` matched-diagonal arms. New
-   split move; recurs across the corpus.
-3. **Synth-site lemma composition.** `weakNorm ×8` = `cr1 (eval [] [⊢M] Nil)` — apply a
-   lemma whose premise is proved by ANOTHER lemma. Here `eval` is the fundamental
-   theorem; needs explicit `{g:ctx}:=[]` + a `Nil` premise + `$S` subst — hardest, +
-   `$`-subst.
-4. **`$`-subst flex** (`matchT`/`substTok`, capture-safe) — the standing wall under many
-   logrel/equal targets. Design, don't improvise.
+**Instruments** live in `scratchpad/` (rebuild if cleared, ~40 lines each):
+`run-class.mjs` (batch native A/B runner, writes `.partial` incrementally),
+`diverge-one.mjs` (dead-end holes with offered move kinds + each candidate's
+verdict/reason — FIRST thing to run on a no-move target), plus the reach-check and
+gate-census patterns described in the master plan entries 33 and 36.
 
-Deferred with cost (defer≠discard): the TIMEOUT / step-bound check-count class
-(`closed` 510ck, `ref` 394ck …) — real, but slow; the fix is a search that finds the
-proof cheaply, never a bigger budget.
+## 1. Where we are (2026-07-31)
+
+- **Library 269 COMPLETE measured.** Suite 203/203; differential 199/199.
+- **The machinery ships.** Phases A–G, the ctype composition/split build (C1–C8), the
+  accessibility chain (split → `mlam` construction → invert → applied HO hypothesis), and
+  the model-fidelity waves are all in.
+- **The prefilter axis is CLOSED with evidence** (master plan entry 34). Every cheap
+  sound prune is found; `movePrefilterOk` structurally only sees closing, boxed,
+  `let`-free LF fills while 76% of rejected candidates are bare comp applications. Do not
+  open a seventh prefilter front.
+
+## 2. Do next — the best-posed open problem
+
+**Per-path search behaviour in the ctype family.** `equal/alg-equal-ctxrel#trans` and
+`alg-equal-datatypes#ceq` reach **18–22 accepted steps** and run out of budget;
+`alg-equal-datatypes#trans` completes at 203 checks. All the needed moves now exist
+(entry 37), and global RANK is not the problem — ranking inverts before recurses left
+those three targets byte-identical while costing +35% elsewhere (entry 39). So the
+question is the DECISION TREE: which acceptances are made and later backtracked over.
+Probe that before touching rank again.
+
+Also live, with their evidence in the master plan:
+- **The step-bound cost the new moves added** — 60 of 253 in the ctype residue. The
+  vocabulary opens searches that do not close.
+- **Context-structural induction** (18 targets), **joint/diagonal tuple split**,
+  **`$`-subst flex** — all still unbuilt, all sized.
+- Deferred WITH cost (defer≠discard): the check-count tail; re-running the 70
+  cancelled-at-60s `.cfg` targets found 0/23 convert at 240s, so those are genuinely
+  stuck, not cap artifacts.
 
 ## 3. Key paths (current — files were refactored; these are correct)
 

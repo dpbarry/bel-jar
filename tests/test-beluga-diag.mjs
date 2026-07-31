@@ -4,6 +4,7 @@ import {
   belugaOutputLooksLikeFailure,
   fallbackDiagnostic,
   formatBelugaErrorReport,
+  locateToken,
   parseBelugaDiagnostics,
   spanFirstLineDiagnostic,
 } from '../js/editor-src/ide/beluga-diag.mjs';
@@ -103,4 +104,31 @@ assert.equal(
   assert.doesNotThrow(() => spanFirstLineDiagnostic({ from: 0, to: 0 }, Text.of([''])));
 }
 
-console.log('OK bel-beluga-diag parses File/line/column errors + first-line span rule');
+// locateToken — uses the Lezer tree, not raw text search, so comments are ignored.
+{
+  // Identifier in code is found.
+  const codeDoc = Text.of(['LF foo : type.']);
+  const found = locateToken(codeDoc, 'foo');
+  assert.ok(found, 'locateToken finds an identifier in code');
+  assert.equal(codeDoc.sliceString(found.from, found.to), 'foo');
+
+  // Identifier inside a BLOCK comment is NOT found.
+  const blockCommentDoc = Text.of(['%{', 'Multi-step relation is the reflexive transitive closure.', '}%', 'LF other : type.']);
+  const notInBlockComment = locateToken(blockCommentDoc, 'is');
+  assert.equal(notInBlockComment, null, 'locateToken ignores text inside block comments');
+
+  // Identifier inside a LINE comment is NOT found.
+  const lineCommentDoc = Text.of(['% This is a comment', 'LF real : type.']);
+  const notInLineComment = locateToken(lineCommentDoc, 'is');
+  assert.equal(notInLineComment, null, 'locateToken ignores text inside line comments');
+
+  // But an actual identifier after the comment IS found.
+  const realIdent = locateToken(lineCommentDoc, 'real');
+  assert.ok(realIdent, 'locateToken finds identifier after comment');
+  assert.equal(lineCommentDoc.sliceString(realIdent.from, realIdent.to), 'real');
+
+  // Nonexistent identifier returns null.
+  assert.equal(locateToken(codeDoc, 'nonexistent'), null);
+}
+
+console.log('OK bel-beluga-diag parses File/line/column errors + first-line span rule + locateToken uses AST');

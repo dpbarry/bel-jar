@@ -1,9 +1,5 @@
 'use strict';
 
-/**
- * REPL autocomplete popup — provider-driven, hsearch-ac look (not CodeMirror).
- */
-
 import { suggestReplCompletions, DEFAULT_VERBS } from './repl-ac-suggest.mjs';
 import { activeCwd, dirOf } from './repl-run-cmd.mjs';
 
@@ -11,17 +7,17 @@ const global = globalThis;
 
 var inputEl = null;
 var popupEl = null;
+var listEl = null;
+var mirrorEl = null;
 var items = [];
 var activeIndex = -1;
 var replaceFrom = 0;
+var typedToken = '';
 var open = false;
 var debounceTimer = null;
-var marqueeTimer = null;
-var marqueeRaf = null;
 var repositionBound = false;
-var MARQUEE_PX_PER_SEC = 36;
-var MARQUEE_PAUSE_MS = 700;
-var POPUP_GAP_PX = 6;
+var POPUP_GAP_PX = 4;
+var VIEW_PAD_PX = 8;
 
 function getInput() {
   if (inputEl && inputEl.isConnected) return inputEl;
@@ -32,39 +28,99 @@ function getInput() {
   return inputEl;
 }
 
-function getLiveLine() {
-  if (typeof ReplStream !== 'undefined' && ReplStream.getLiveLine) {
-    var live = ReplStream.getLiveLine();
-    if (live && live.isConnected) return live;
-  }
-  var output = document.getElementById('output');
-  return output ? output.querySelector('.repl-live') : null;
-}
-
 function ensurePopup() {
-  if (popupEl && popupEl.isConnected) return popupEl;
+  if (popupEl && popupEl.isConnected && listEl && listEl.isConnected) return popupEl;
   if (typeof document === 'undefined' || !document.body) return null;
   popupEl = document.createElement('div');
   popupEl.className = 'repl-ac';
   popupEl.hidden = true;
-  popupEl.setAttribute('role', 'listbox');
-  popupEl.setAttribute('aria-label', 'Command completions');
+  listEl = document.createElement('ul');
+  listEl.className = 'repl-ac-list';
+  listEl.setAttribute('role', 'listbox');
+  listEl.setAttribute('aria-label', 'Command completions');
+  popupEl.appendChild(listEl);
   document.body.appendChild(popupEl);
   return popupEl;
 }
 
+function ensureMirror() {
+  if (mirrorEl && mirrorEl.isConnected) return mirrorEl;
+  if (typeof document === 'undefined' || !document.body) return null;
+  mirrorEl = document.createElement('div');
+  mirrorEl.setAttribute('aria-hidden', 'true');
+  mirrorEl.style.cssText =
+    'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
+    'pointer-events:none;height:auto;width:auto;';
+  document.body.appendChild(mirrorEl);
+  return mirrorEl;
+}
+
+function tokenAnchor(input, tokenFrom) {
+  var rect = input.getBoundingClientRect();
+  if (!rect || rect.width < 1 || rect.height < 1) return null;
+  var cs = window.getComputedStyle(input);
+  var padL = parseFloat(cs.paddingLeft) || 0;
+  var borderL = parseFloat(cs.borderLeftWidth) || 0;
+  var mirror = ensureMirror();
+  var xInInput = padL + borderL;
+
+  if (mirror) {
+    mirror.style.font = cs.font;
+    mirror.style.fontSize = cs.fontSize;
+    mirror.style.fontFamily = cs.fontFamily;
+    mirror.style.fontWeight = cs.fontWeight;
+    mirror.style.fontStyle = cs.fontStyle;
+    mirror.style.letterSpacing = cs.letterSpacing;
+    mirror.style.textTransform = cs.textTransform;
+    mirror.style.wordSpacing = cs.wordSpacing;
+    mirror.style.fontVariantLigatures = cs.fontVariantLigatures;
+    mirror.style.fontFeatureSettings = cs.fontFeatureSettings;
+    mirror.textContent = String(input.value || '').slice(0, Math.max(0, tokenFrom));
+    xInInput += mirror.offsetWidth;
+  }
+
+  return {
+    left: rect.left + xInInput - (input.scrollLeft || 0),
+    top: rect.top,
+    bottom: rect.bottom,
+  };
+}
+
 function positionPopup() {
-  if (!popupEl || popupEl.hidden || !open) return;
-  var anchor = getLiveLine() || getInput();
+  if (!popupEl || popupEl.hidden || !open || !listEl) return;
+  var input = getInput();
+  if (!input) return;
+
+  var anchor = tokenAnchor(input, replaceFrom);
   if (!anchor) return;
-  var rect = anchor.getBoundingClientRect();
-  var roomAbove = Math.max(72, rect.top - 8);
-  var maxH = Math.min(12 * 16, roomAbove);
-  popupEl.style.left = Math.max(8, rect.left) + 'px';
-  popupEl.style.width = Math.max(12 * 16, rect.width) + 'px';
-  popupEl.style.maxHeight = maxH + 'px';
-  popupEl.style.top = 'auto';
-  popupEl.style.bottom = (window.innerHeight - rect.top + POPUP_GAP_PX) + 'px';
+
+  listEl.style.maxHeight = '';
+  var popW = popupEl.offsetWidth || 0;
+  var popH = popupEl.offsetHeight || 0;
+  if (popH < 1) return;
+
+  var roomBelow = window.innerHeight - anchor.bottom - VIEW_PAD_PX;
+  var roomAbove = anchor.top - VIEW_PAD_PX;
+  var placeBelow = roomBelow >= popH + POPUP_GAP_PX || roomBelow >= roomAbove;
+
+  var avail = placeBelow ? roomBelow : roomAbove;
+  if (avail > 0 && popH > avail - POPUP_GAP_PX) {
+    listEl.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + 'px';
+    popH = popupEl.offsetHeight || popH;
+  }
+
+  var maxLeft = window.innerWidth - VIEW_PAD_PX - popW;
+  var left = Math.max(VIEW_PAD_PX, Math.min(anchor.left, maxLeft));
+  var top = placeBelow
+    ? anchor.bottom + POPUP_GAP_PX
+    : anchor.top - popH - POPUP_GAP_PX;
+  if (top < VIEW_PAD_PX) top = VIEW_PAD_PX;
+  if (top + popH > window.innerHeight - VIEW_PAD_PX) {
+    top = Math.max(VIEW_PAD_PX, window.innerHeight - VIEW_PAD_PX - popH);
+  }
+
+  popupEl.style.left = left + 'px';
+  popupEl.style.top = top + 'px';
 }
 
 function onReposition() {
@@ -108,102 +164,21 @@ function listVerbs() {
   return DEFAULT_VERBS.slice();
 }
 
-function stopMarquee() {
-  if (marqueeTimer) {
-    clearTimeout(marqueeTimer);
-    marqueeTimer = null;
-  }
-  if (marqueeRaf) {
-    cancelAnimationFrame(marqueeRaf);
-    marqueeRaf = null;
-  }
-  if (!popupEl) return;
-  var scrolls = popupEl.querySelectorAll('.repl-ac-name-scroll');
-  for (var i = 0; i < scrolls.length; i++) {
-    scrolls[i].style.transform = '';
-    scrolls[i].classList.remove('is-marquee');
-  }
-}
-
-function startMarqueeOn(nameEl) {
-  stopMarquee();
-  if (!nameEl) return;
-  var scroll = nameEl.querySelector('.repl-ac-name-scroll');
-  if (!scroll) return;
-  var overflow = scroll.scrollWidth - nameEl.clientWidth;
-  if (overflow <= 1) return;
-
-  scroll.classList.add('is-marquee');
-  var pos = 0;
-  var dir = 1;
-  var last = performance.now();
-  var pausing = true;
-
-  function tick(now) {
-    marqueeRaf = null;
-    if (!scroll.isConnected || !nameEl.closest('.repl-ac-item.is-active')) {
-      stopMarquee();
-      return;
-    }
-    var dt = Math.min(48, now - last);
-    last = now;
-    if (pausing) {
-      marqueeRaf = requestAnimationFrame(tick);
-      return;
-    }
-    pos += dir * (MARQUEE_PX_PER_SEC * dt) / 1000;
-    if (pos >= overflow) {
-      pos = overflow;
-      dir = -1;
-      pausing = true;
-      marqueeTimer = setTimeout(function () {
-        marqueeTimer = null;
-        pausing = false;
-        last = performance.now();
-        marqueeRaf = requestAnimationFrame(tick);
-      }, MARQUEE_PAUSE_MS);
-      scroll.style.transform = 'translateX(' + (-pos) + 'px)';
-      return;
-    }
-    if (pos <= 0) {
-      pos = 0;
-      dir = 1;
-      pausing = true;
-      marqueeTimer = setTimeout(function () {
-        marqueeTimer = null;
-        pausing = false;
-        last = performance.now();
-        marqueeRaf = requestAnimationFrame(tick);
-      }, MARQUEE_PAUSE_MS);
-      scroll.style.transform = 'translateX(0)';
-      return;
-    }
-    scroll.style.transform = 'translateX(' + (-pos) + 'px)';
-    marqueeRaf = requestAnimationFrame(tick);
-  }
-
-  marqueeTimer = setTimeout(function () {
-    marqueeTimer = null;
-    pausing = false;
-    last = performance.now();
-    marqueeRaf = requestAnimationFrame(tick);
-  }, MARQUEE_PAUSE_MS);
-}
-
 function hide() {
-  stopMarquee();
   open = false;
   items = [];
   activeIndex = -1;
+  typedToken = '';
   bindReposition(false);
   if (popupEl) {
     popupEl.hidden = true;
-    popupEl.textContent = '';
+    popupEl.style.visibility = '';
     popupEl.style.left = '';
-    popupEl.style.width = '';
-    popupEl.style.maxHeight = '';
     popupEl.style.top = '';
-    popupEl.style.bottom = '';
+  }
+  if (listEl) {
+    listEl.textContent = '';
+    listEl.style.maxHeight = '';
   }
 }
 
@@ -211,27 +186,25 @@ function isOpen() {
   return open && items.length > 0;
 }
 
+function scrollActiveIntoView(li) {
+  if (!listEl || !li) return;
+  var top = li.offsetTop;
+  var bottom = top + li.offsetHeight;
+  var viewTop = listEl.scrollTop;
+  var viewBottom = viewTop + listEl.clientHeight;
+  if (top < viewTop) listEl.scrollTop = top;
+  else if (bottom > viewBottom) listEl.scrollTop = bottom - listEl.clientHeight;
+}
+
 function setActive(idx) {
-  if (!popupEl || !items.length) return;
-  stopMarquee();
+  if (!listEl || !items.length) return;
   activeIndex = Math.max(0, Math.min(items.length - 1, idx));
-  var kids = popupEl.querySelectorAll('.repl-ac-item');
+  var kids = listEl.children;
   for (var i = 0; i < kids.length; i++) {
-    kids[i].classList.toggle('is-active', i === activeIndex);
     if (i === activeIndex) kids[i].setAttribute('aria-selected', 'true');
     else kids[i].removeAttribute('aria-selected');
   }
-  var active = kids[activeIndex];
-  if (active && active.scrollIntoView) {
-    active.scrollIntoView({ block: 'nearest' });
-  }
-  if (active) {
-    var nameEl = active.querySelector('.repl-ac-name');
-    // Next frame so layout reflects selection styles / width.
-    requestAnimationFrame(function () {
-      startMarqueeOn(nameEl);
-    });
-  }
+  scrollActiveIntoView(kids[activeIndex]);
 }
 
 function accept(idx) {
@@ -239,13 +212,11 @@ function accept(idx) {
   if (!input || idx < 0 || idx >= items.length) return false;
   var item = items[idx];
   var val = String(input.value || '');
-  var before = val.slice(0, replaceFrom);
-  var next = before + item.insert;
+  var next = val.slice(0, replaceFrom) + item.insert;
   input.value = next;
   input.focus();
   try {
-    var pos = next.length;
-    input.setSelectionRange(pos, pos);
+    input.setSelectionRange(next.length, next.length);
   } catch (_) {}
   hide();
   if (typeof ReplCommands !== 'undefined' && ReplCommands.resetHistoryIndex) {
@@ -254,48 +225,61 @@ function accept(idx) {
   return true;
 }
 
+function fillItem(li, item, token) {
+  var text = String(item.label || '');
+  var t = String(token || '');
+  if (t && text.toLowerCase().indexOf(t.toLowerCase()) === 0) {
+    var match = document.createElement('span');
+    match.className = 'repl-ac-matched';
+    match.textContent = text.slice(0, t.length);
+    li.appendChild(match);
+    if (t.length < text.length) {
+      li.appendChild(document.createTextNode(text.slice(t.length)));
+    }
+  } else {
+    li.appendChild(document.createTextNode(text));
+  }
+  if (item.detail) {
+    var detail = document.createElement('span');
+    detail.className = 'repl-ac-detail';
+    detail.textContent = item.detail;
+    li.appendChild(detail);
+  }
+}
+
 function render(result) {
   var popup = ensurePopup();
-  if (!popup) return;
+  if (!popup || !listEl) return;
   if (!result || !result.items || !result.items.length) {
     hide();
     return;
   }
-  stopMarquee();
   items = result.items;
   replaceFrom = result.replaceFrom || 0;
+  typedToken = result.token || '';
   activeIndex = 0;
   open = true;
-  popup.textContent = '';
-  popup.hidden = false;
+  listEl.textContent = '';
+
   for (var i = 0; i < items.length; i++) {
     var it = items[i];
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'repl-ac-item';
-    if (it.ext) btn.classList.add('repl-ac-item--' + it.ext);
-    btn.setAttribute('role', 'option');
-    btn.dataset.index = String(i);
-
-    var head = document.createElement('div');
-    head.className = 'repl-ac-head';
-    var name = document.createElement('span');
-    name.className = 'repl-ac-name';
-    var scroll = document.createElement('span');
-    scroll.className = 'repl-ac-name-scroll';
-    scroll.textContent = it.label;
-    name.appendChild(scroll);
-    head.appendChild(name);
-    btn.appendChild(head);
-    btn.addEventListener('mousedown', function (e) {
+    var li = document.createElement('li');
+    li.className = 'repl-ac-item';
+    li.setAttribute('role', 'option');
+    li.dataset.index = String(i);
+    fillItem(li, it, typedToken);
+    li.addEventListener('mousedown', function (e) {
       e.preventDefault();
-      var ix = parseInt(e.currentTarget.dataset.index, 10);
-      accept(ix);
+      accept(parseInt(e.currentTarget.dataset.index, 10));
     });
-    popup.appendChild(btn);
+    listEl.appendChild(li);
   }
+
+  popup.hidden = false;
+  popup.style.visibility = 'hidden';
   setActive(0);
   positionPopup();
+  popup.style.visibility = '';
   bindReposition(true);
   requestAnimationFrame(positionPopup);
 }
@@ -350,7 +334,7 @@ function onKeyDown(e) {
   }
   if (e.key === 'Enter') {
     accept(activeIndex);
-    return false; // let app submit the completed line
+    return false;
   }
   return false;
 }
@@ -367,7 +351,6 @@ var api = {
   hide: hide,
   isOpen: isOpen,
   onKeyDown: onKeyDown,
-  // test / advanced
   _compute: compute,
   _suggest: suggestReplCompletions,
 };

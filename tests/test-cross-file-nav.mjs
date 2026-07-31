@@ -129,6 +129,8 @@ expect(syms.some((s) => s.name === 'beta' && s.fileId === 'cr/lam'), 'group symb
 expect(syms.every((s) => s.fileId !== 'other/defs'), 'group symbols stay in the group');
 expect(syms.every((s) => s.namespace == null || typeof s.namespace === 'string'),
   'group symbols carry optional namespace for completion filters');
+expect(syms.some((s) => s.name === 'beta' && typeof s.sourceText === 'string'),
+  'group symbols carry source signatures for completion detail');
 const symsAgain = listGroupSymbols(FILES, 'cr/equiv', getText, crRosserOpts);
 expect(symsAgain === syms, 'listGroupSymbols memo returns same array on suite-identity hit');
 

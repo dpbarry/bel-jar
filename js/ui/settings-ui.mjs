@@ -1305,6 +1305,21 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredEditorSelectionMatches() : true; },
       function (p, on) { p.writeStoredEditorSelectionMatches(on); }
     );
+    addDropdownRow(panelBodies.editor, 'editor-autocomplete-trigger', 'Autocomplete',
+      'When the completion popup opens. Ctrl+Space and Tab still open it explicitly.',
+      [
+        { value: 'none', label: 'Nowhere' },
+        { value: 'typing', label: 'Only after keystroke' },
+        { value: 'always', label: 'Always at token end' },
+      ],
+      function () { return p0 ? p0.readStoredEditorAutocompleteTrigger() : 'typing'; },
+      function (p, v) { p.writeStoredEditorAutocompleteTrigger(v); }
+    );
+    addSwitchRow(panelBodies.editor, 'editor-autocomplete-continue', 'Continue after accept',
+      'Keep showing completions after Tab or click when more options remain.',
+      function () { return p0 ? p0.readStoredEditorAutocompleteContinue() : false; },
+      function (p, on) { p.writeStoredEditorAutocompleteContinue(on); }
+    );
     addDropdownRow(panelBodies.editor, 'hover-scope', 'Hover tooltips',
       'Which symbols get hover tooltips. UI tooltips are unaffected.',
       [
@@ -1388,14 +1403,10 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredReplWelcome() : true; },
       function (p, on) { p.writeStoredReplWelcome(on); }
     );
-    addSwitchRow(panelBodies.repl, 'repl-echo', 'Echo commands in output', 'Log each REPL command as # %:… before it runs.',
-      function () { return p0 ? p0.readStoredReplEcho() : true; },
-      function (p, on) { p.writeStoredReplEcho(on); }
-    );
-    addSwitchRow(panelBodies.repl, 'repl-filter-chatter', 'Filter run noise',
-      'Hide empty [] and caret lines in output.',
-      function () { return p0 ? p0.readStoredReplFilterChatter() : true; },
-      function (p, on) { p.writeStoredReplFilterChatter(on); }
+    addSwitchRow(panelBodies.repl, 'repl-hover-timestamp', 'Hover for timestamp',
+      'Show the time a command or output was logged when hovering it.',
+      function () { return p0 ? p0.readStoredReplHoverTimestamp() : true; },
+      function (p, on) { p.writeStoredReplHoverTimestamp(on); }
     );
     addDropdownRow(panelBodies.repl, 'repl-history-persist', 'Remember history',
       'Transcript and ↑/↓ commands: this session (sessionStorage), until reset (localStorage), or never.',
@@ -1409,12 +1420,12 @@ const global = globalThis;
     );
     addDropdownRow(panelBodies.repl, 'repl-history-cap', 'Command history size', 'Commands remembered for ↑/↓.',
       [
-        { value: '0', label: 'Unlimited' },
         { value: '100', label: '100 commands' },
         { value: '250', label: '250 commands' },
         { value: '500', label: '500 commands' },
+        { value: '1000', label: '1000 commands' },
       ],
-      function () { return p0 ? String(p0.readStoredReplHistoryCap()) : '0'; },
+      function () { return p0 ? String(p0.readStoredReplHistoryCap()) : '1000'; },
       function (p, v) { p.writeStoredReplHistoryCap(parseInt(v, 10)); }
     );
 

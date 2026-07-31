@@ -31,7 +31,8 @@ const bisimOpts = { activeCfgForDir: activeCfgResolver({ bisimulation: 'bisimula
 
 expect(cfgPathForActive(WS, 'bis', wsText, bisimOpts) === 'bisimulation/sources.cfg',
   'module member → active cfg');
-expect(cfgPathForActive(WS, 'bis', wsText) === null, 'no active cfg → null');
+expect(cfgPathForActive(WS, 'bis', wsText) === 'bisimulation/sources.cfg',
+  'no preferred cfg → still owns via listing cfg');
 expect(cfgPathForActive(WS, 'howe', wsText) === null, 'subdir without folder active cfg → null');
 expect(cfgPathForActive(WS, 'tofte', wsText) === null, 'root standalone → null');
 expect(cfgPathForActive(WS, 'untitled', wsText) === null, 'untitled root → null');
@@ -83,6 +84,28 @@ expect(cfgPathForActive(cr, 'rb', crText, churchOpts) === null, 'unlisted file h
 const noBorrow = developmentForFile(cr, 'rb', crText);
 expect(noBorrow.preludePaths.length === 0, 'no prelude without active cfg');
 
+// Multi-cfg folder: preferred/best cfg does not list the open file, but a sibling
+// cfg does — fall back to owningCfgForFile so peers still load.
+{
+  const files = [
+    { id: 'cover', name: 'multi/cover.cfg', text: 'lam.elf\nother.bel' },
+    { id: 'suite', name: 'multi/suite.cfg', text: 'lam.elf\nactive.bel' },
+    { id: 'lam', name: 'multi/lam.elf', text: 'LF term : type;' },
+    { id: 'other', name: 'multi/other.bel', text: 'LF other : type;' },
+    { id: 'active', name: 'multi/active.bel', text: 'LF use : term → type;' },
+  ];
+  const getText = (id) => files.find((f) => f.id === id).text;
+  const wrongPreferred = {
+    activeCfgForDir: activeCfgResolver({ multi: 'multi/cover.cfg' }),
+  };
+  const owned = developmentForFile(files, 'active', getText, wrongPreferred);
+  expect(owned.kind === 'module' && owned.cfg === 'multi/suite.cfg',
+    `wrong preferred still owns via suite.cfg (got ${owned.cfg})`);
+  expect(owned.preludePaths.includes('multi/lam.elf'),
+    'owning fallback keeps .elf prelude');
+  expect(cfgPathForActive(files, 'active', getText, wrongPreferred) === 'multi/suite.cfg',
+    'cfgPathForActive follows owning fallback');
+}
 const orphanDir = [
   { id: 'cfg', name: 'grp/order.cfg', text: 'base.bel\nuse.bel' },
   { id: 'a', name: 'grp/base.bel', text: 'LF o : type;' },

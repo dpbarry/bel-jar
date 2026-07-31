@@ -155,6 +155,15 @@
     if (!map?.[base]) return [];
     return resolveCfgOrder(dir, map[base], cfgByDir, allSet, /* @__PURE__ */ new Set());
   }
+  function owningCfgForFile(files, fileName, getText, preferredCfg = null) {
+    const dir = dirOf(fileName);
+    const cfgs = files.filter((f) => /\.cfg$/i.test(String(f.name || "")) && dirOf(f.name) === dir).map((f) => f.name);
+    if (!cfgs.length) return null;
+    const owning = cfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(fileName));
+    if (!owning.length) return null;
+    if (preferredCfg && owning.includes(preferredCfg)) return preferredCfg;
+    return owning[0];
+  }
   function bestCfgInDir(files, getText, dir) {
     const cfgByDir = cfgByDirFromFiles(files, getText);
     const map = cfgByDir[dir != null ? String(dir) : ""];
@@ -283,20 +292,23 @@
     }
     let cfgPath = resolveOwningActiveCfg(files, active.name, getText, activeCfgsForDir(dirOf(active.name)));
     if (!cfgPath) cfgPath = activeCfgForDir(dirOf(active.name));
-    if (!cfgPath) return standaloneResult(active);
-    const paths = resolveActiveChain(files, cfgPath, getText);
-    const activeIndex = paths.indexOf(active.name);
-    if (activeIndex >= 0) {
-      return {
-        kind: "module",
-        cfg: cfgPath,
-        paths,
-        activeIndex,
-        preludePaths: activeIndex > 0 ? paths.slice(0, activeIndex) : [],
-        scopeKey: `module:${cfgPath}`
-      };
+    let paths = cfgPath ? resolveActiveChain(files, cfgPath, getText) : [];
+    let activeIndex = paths.indexOf(active.name);
+    if (activeIndex < 0) {
+      cfgPath = owningCfgForFile(files, active.name, getText, cfgPath);
+      if (!cfgPath) return standaloneResult(active);
+      paths = resolveActiveChain(files, cfgPath, getText);
+      activeIndex = paths.indexOf(active.name);
+      if (activeIndex < 0) return standaloneResult(active);
     }
-    return standaloneResult(active);
+    return {
+      kind: "module",
+      cfg: cfgPath,
+      paths,
+      activeIndex,
+      preludePaths: activeIndex > 0 ? paths.slice(0, activeIndex) : [],
+      scopeKey: `module:${cfgPath}`
+    };
   }
   function cfgPathForActive(files, activeId, getText, options = {}) {
     const dev = developmentForFile(files, activeId, getText, options);

@@ -33,7 +33,28 @@ function formatTs(ms) {
   );
 }
 
+function hoverTimestampOn() {
+  return typeof Persist === 'undefined'
+    || typeof Persist.readStoredReplHoverTimestamp !== 'function'
+    || Persist.readStoredReplHoverTimestamp();
+}
+
+function clearStampTooltip(el) {
+  if (!el || el.nodeType !== 1) return;
+  if (typeof Tooltips !== 'undefined' && Tooltips.set) {
+    Tooltips.set(el, '', { ariaLabel: false });
+  } else {
+    el.removeAttribute('data-tooltip');
+  }
+  el.removeAttribute('data-tooltip-placement');
+  el.removeAttribute('data-tooltip-no-track');
+}
+
 function setStampTooltip(host, tip) {
+  if (!hoverTimestampOn()) {
+    clearStampTooltip(host);
+    return;
+  }
   host.setAttribute('data-tooltip-placement', 'above');
   host.setAttribute('data-tooltip-no-track', '');
   if (typeof Tooltips !== 'undefined' && Tooltips.set) {
@@ -47,9 +68,29 @@ function clearStamp(el) {
   if (!el || el.nodeType !== 1) return;
   if (el.dataset) delete el.dataset.ms;
   el.removeAttribute('data-ms');
-  el.removeAttribute('data-tooltip');
-  el.removeAttribute('data-tooltip-placement');
-  el.removeAttribute('data-tooltip-no-track');
+  clearStampTooltip(el);
+}
+
+function syncStampHoverPref(root) {
+  var scope = root || getOutput();
+  if (!scope || !scope.querySelectorAll) return;
+  if (hoverTimestampOn()) {
+    var stamped = scope.querySelectorAll('[data-ms]');
+    for (var i = 0; i < stamped.length; i++) {
+      var el = stamped[i];
+      var t = Number(el.dataset.ms);
+      if (!Number.isFinite(t)) continue;
+      setStampTooltip(el, formatTs(t));
+    }
+    return;
+  }
+  var nodes = scope.querySelectorAll('[data-ms]');
+  for (var j = 0; j < nodes.length; j++) clearStampTooltip(nodes[j]);
+  if (typeof Tooltips !== 'undefined' && Tooltips.hideImmediate) {
+    Tooltips.hideImmediate();
+  } else if (typeof Tooltips !== 'undefined' && Tooltips.hide) {
+    Tooltips.hide();
+  }
 }
 
 /** Prefer the visible card/prompt content over full-width stream wrappers. */
@@ -356,6 +397,13 @@ function currentTurnBody() {
 
 ensureLiveLine();
 
+if (typeof global.addEventListener === 'function') {
+  global.addEventListener('beljar:settings-changed', function (e) {
+    var key = e && e.detail ? e.detail.key : '';
+    if (key === 'repl-hover-timestamp' || key === 'repl-reset') syncStampHoverPref();
+  });
+}
+
 global.ReplStream = {
   ensureLiveLine: ensureLiveLine,
   getLiveLine: getLiveLine,
@@ -369,5 +417,6 @@ global.ReplStream = {
   currentTurnBody: currentTurnBody,
   migrateLegacyStamps: migrateLegacyStamps,
   rebindStamps: rebindStamps,
+  syncStampHoverPref: syncStampHoverPref,
 };
 global.BelJarReplStream = global.ReplStream;

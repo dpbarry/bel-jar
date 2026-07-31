@@ -451,11 +451,12 @@
     var REPL_WELCOME_KEY = "beljar-repl-welcome";
     var REPL_ECHO_KEY = "beljar-repl-echo";
     var REPL_FILTER_CHATTER_KEY = "beljar-repl-filter-chatter";
+    var REPL_HOVER_TIMESTAMP_KEY = "beljar-repl-hover-timestamp";
     var REPL_HISTORY_CAP_KEY = "beljar-repl-history-cap";
     var REPL_HISTORY_PERSIST_KEY = "beljar-repl-history-persist";
     var REPL_TRANSCRIPT_KEY = "beljar-repl-transcript-v1";
     var REPL_CMD_HISTORY_KEY = "beljar-repl-cmd-history-v1";
-    var REPL_CMD_HISTORY_DEFAULT_CAP = 500;
+    var REPL_CMD_HISTORY_DEFAULT_CAP = 1e3;
     var BELUGA_FALLBACK_STABLE_KEY = "beljar-beluga-fallback-stable";
     var BELUGA_CANCEL_ON_EDIT_KEY = "beljar-beluga-cancel-on-edit";
     var LIBRARY_EXPAND_DEFAULT_KEY = "beljar-library-expand-default";
@@ -485,6 +486,8 @@
     var EDITOR_SELECTION_MATCHES_KEY = "beljar-editor-selection-matches";
     var EDITOR_REINDENT_PASTE_KEY = "beljar-editor-reindent-paste";
     var EDITOR_FORMAT_WIDTH_KEY = "beljar-editor-format-width";
+    var EDITOR_AUTOCOMPLETE_TRIGGER_KEY = "beljar-editor-autocomplete-trigger";
+    var EDITOR_AUTOCOMPLETE_CONTINUE_KEY = "beljar-editor-autocomplete-continue";
     function readBoolDefaultOn(key) {
       try {
         return backendLoad2(key) !== "off";
@@ -531,13 +534,19 @@
     function writeStoredReplFilterChatter2(on) {
       writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on);
     }
+    function readStoredReplHoverTimestamp2() {
+      return readBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY);
+    }
+    function writeStoredReplHoverTimestamp2(on) {
+      writeBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY, on);
+    }
     function readStoredReplHistoryCap2() {
       try {
         var v = parseInt(backendLoad2(REPL_HISTORY_CAP_KEY), 10);
-        if (v === 100 || v === 250 || v === 500) return v;
-        return 0;
+        if (v === 100 || v === 250 || v === 500 || v === 1e3) return v;
+        return REPL_CMD_HISTORY_DEFAULT_CAP;
       } catch (_) {
-        return 0;
+        return REPL_CMD_HISTORY_DEFAULT_CAP;
       }
     }
     function writeStoredReplHistoryCap2(cap) {
@@ -887,6 +896,25 @@
       else if (n === 100 || n === 120) backendSave2(EDITOR_FORMAT_WIDTH_KEY, String(n));
       else backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
     }
+    function readStoredEditorAutocompleteTrigger2() {
+      try {
+        var v = backendLoad2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+        if (v === "none" || v === "always") return v;
+        return "typing";
+      } catch (_) {
+        return "typing";
+      }
+    }
+    function writeStoredEditorAutocompleteTrigger2(mode) {
+      if (mode === "none" || mode === "always") backendSave2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY, mode);
+      else backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+    }
+    function readStoredEditorAutocompleteContinue2() {
+      return readBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
+    }
+    function writeStoredEditorAutocompleteContinue2(on) {
+      writeBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY, on);
+    }
     function resetAppearancePrefs2() {
       backendRemove2(THEME_STORAGE_KEY2);
       backendRemove2(UI_FONT_SIZE_KEY2);
@@ -913,6 +941,8 @@
       backendRemove2(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
       backendRemove2(EDITOR_SELECTION_MATCHES_KEY);
       backendRemove2(HOVER_SCOPE_KEY);
+      backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+      backendRemove2(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
     }
     function resetEditorGutterPrefs2() {
       backendRemove2(EDITOR_LINE_NUMBERS_KEY);
@@ -937,6 +967,7 @@
       backendRemove2(REPL_WELCOME_KEY);
       backendRemove2(REPL_ECHO_KEY);
       backendRemove2(REPL_FILTER_CHATTER_KEY);
+      backendRemove2(REPL_HOVER_TIMESTAMP_KEY);
       backendRemove2(REPL_HISTORY_CAP_KEY);
       backendRemove2(REPL_HISTORY_PERSIST_KEY);
       clearReplHistoryPayload();
@@ -1066,6 +1097,8 @@
       writeStoredReplEcho: writeStoredReplEcho2,
       readStoredReplFilterChatter: readStoredReplFilterChatter2,
       writeStoredReplFilterChatter: writeStoredReplFilterChatter2,
+      readStoredReplHoverTimestamp: readStoredReplHoverTimestamp2,
+      writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp2,
       readStoredReplHistoryCap: readStoredReplHistoryCap2,
       writeStoredReplHistoryCap: writeStoredReplHistoryCap2,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist2,
@@ -1126,6 +1159,10 @@
       writeStoredEditorReindentPaste: writeStoredEditorReindentPaste2,
       readStoredEditorFormatWidth: readStoredEditorFormatWidth2,
       writeStoredEditorFormatWidth: writeStoredEditorFormatWidth2,
+      readStoredEditorAutocompleteTrigger: readStoredEditorAutocompleteTrigger2,
+      writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger2,
+      readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue2,
+      writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue2,
       resetAppearancePrefs: resetAppearancePrefs2,
       resetEditorTypographyPrefs: resetEditorTypographyPrefs2,
       resetEditorIndentPrefs: resetEditorIndentPrefs2,
@@ -3260,6 +3297,12 @@
   function writeStoredReplFilterChatter() {
     return _settingsApi.writeStoredReplFilterChatter.apply(_settingsApi, arguments);
   }
+  function readStoredReplHoverTimestamp() {
+    return _settingsApi.readStoredReplHoverTimestamp.apply(_settingsApi, arguments);
+  }
+  function writeStoredReplHoverTimestamp() {
+    return _settingsApi.writeStoredReplHoverTimestamp.apply(_settingsApi, arguments);
+  }
   function readStoredReplHistoryCap() {
     return _settingsApi.readStoredReplHistoryCap.apply(_settingsApi, arguments);
   }
@@ -3439,6 +3482,18 @@
   }
   function writeStoredEditorFormatWidth() {
     return _settingsApi.writeStoredEditorFormatWidth.apply(_settingsApi, arguments);
+  }
+  function readStoredEditorAutocompleteTrigger() {
+    return _settingsApi.readStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+  function writeStoredEditorAutocompleteTrigger() {
+    return _settingsApi.writeStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+  function readStoredEditorAutocompleteContinue() {
+    return _settingsApi.readStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
+  }
+  function writeStoredEditorAutocompleteContinue() {
+    return _settingsApi.writeStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
   }
   function resetAppearancePrefs() {
     return _settingsApi.resetAppearancePrefs.apply(_settingsApi, arguments);
@@ -4020,6 +4075,8 @@
     writeStoredReplEcho,
     readStoredReplFilterChatter,
     writeStoredReplFilterChatter,
+    readStoredReplHoverTimestamp,
+    writeStoredReplHoverTimestamp,
     readStoredReplHistoryCap,
     writeStoredReplHistoryCap,
     readStoredReplHistoryPersist,
@@ -4088,6 +4145,10 @@
     writeStoredEditorReindentPaste,
     readStoredEditorFormatWidth,
     writeStoredEditorFormatWidth,
+    readStoredEditorAutocompleteTrigger,
+    writeStoredEditorAutocompleteTrigger,
+    readStoredEditorAutocompleteContinue,
+    writeStoredEditorAutocompleteContinue,
     resetLayoutPrefs,
     resetAppearancePrefs,
     resetEditorTypographyPrefs,
@@ -4967,6 +5028,15 @@
     if (!map?.[base]) return [];
     return resolveCfgOrder(dir, map[base], cfgByDir, allSet, /* @__PURE__ */ new Set());
   }
+  function owningCfgForFile(files, fileName, getText, preferredCfg = null) {
+    const dir = dirOf2(fileName);
+    const cfgs = files.filter((f) => /\.cfg$/i.test(String(f.name || "")) && dirOf2(f.name) === dir).map((f) => f.name);
+    if (!cfgs.length) return null;
+    const owning = cfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(fileName));
+    if (!owning.length) return null;
+    if (preferredCfg && owning.includes(preferredCfg)) return preferredCfg;
+    return owning[0];
+  }
   function bestCfgInDir(files, getText, dir) {
     const cfgByDir = cfgByDirFromFiles(files, getText);
     const map = cfgByDir[dir != null ? String(dir) : ""];
@@ -5095,20 +5165,23 @@
     }
     let cfgPath = resolveOwningActiveCfg(files, active.name, getText, activeCfgsForDir3(dirOf2(active.name)));
     if (!cfgPath) cfgPath = activeCfgForDir2(dirOf2(active.name));
-    if (!cfgPath) return standaloneResult(active);
-    const paths = resolveActiveChain(files, cfgPath, getText);
-    const activeIndex3 = paths.indexOf(active.name);
-    if (activeIndex3 >= 0) {
-      return {
-        kind: "module",
-        cfg: cfgPath,
-        paths,
-        activeIndex: activeIndex3,
-        preludePaths: activeIndex3 > 0 ? paths.slice(0, activeIndex3) : [],
-        scopeKey: `module:${cfgPath}`
-      };
+    let paths = cfgPath ? resolveActiveChain(files, cfgPath, getText) : [];
+    let activeIndex3 = paths.indexOf(active.name);
+    if (activeIndex3 < 0) {
+      cfgPath = owningCfgForFile(files, active.name, getText, cfgPath);
+      if (!cfgPath) return standaloneResult(active);
+      paths = resolveActiveChain(files, cfgPath, getText);
+      activeIndex3 = paths.indexOf(active.name);
+      if (activeIndex3 < 0) return standaloneResult(active);
     }
-    return standaloneResult(active);
+    return {
+      kind: "module",
+      cfg: cfgPath,
+      paths,
+      activeIndex: activeIndex3,
+      preludePaths: activeIndex3 > 0 ? paths.slice(0, activeIndex3) : [],
+      scopeKey: `module:${cfgPath}`
+    };
   }
   function cfgPathForActive(files, activeId2, getText, options = {}) {
     const dev = developmentForFile(files, activeId2, getText, options);
@@ -14619,7 +14692,24 @@
     var d = new Date(ms);
     return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + "." + pad3(d.getMilliseconds());
   }
+  function hoverTimestampOn() {
+    return typeof Persist === "undefined" || typeof Persist.readStoredReplHoverTimestamp !== "function" || Persist.readStoredReplHoverTimestamp();
+  }
+  function clearStampTooltip(el5) {
+    if (!el5 || el5.nodeType !== 1) return;
+    if (typeof Tooltips !== "undefined" && Tooltips.set) {
+      Tooltips.set(el5, "", { ariaLabel: false });
+    } else {
+      el5.removeAttribute("data-tooltip");
+    }
+    el5.removeAttribute("data-tooltip-placement");
+    el5.removeAttribute("data-tooltip-no-track");
+  }
   function setStampTooltip(host, tip) {
+    if (!hoverTimestampOn()) {
+      clearStampTooltip(host);
+      return;
+    }
     host.setAttribute("data-tooltip-placement", "above");
     host.setAttribute("data-tooltip-no-track", "");
     if (typeof Tooltips !== "undefined" && Tooltips.set) {
@@ -14632,9 +14722,28 @@
     if (!el5 || el5.nodeType !== 1) return;
     if (el5.dataset) delete el5.dataset.ms;
     el5.removeAttribute("data-ms");
-    el5.removeAttribute("data-tooltip");
-    el5.removeAttribute("data-tooltip-placement");
-    el5.removeAttribute("data-tooltip-no-track");
+    clearStampTooltip(el5);
+  }
+  function syncStampHoverPref(root) {
+    var scope = root || getOutput();
+    if (!scope || !scope.querySelectorAll) return;
+    if (hoverTimestampOn()) {
+      var stamped = scope.querySelectorAll("[data-ms]");
+      for (var i = 0; i < stamped.length; i++) {
+        var el5 = stamped[i];
+        var t = Number(el5.dataset.ms);
+        if (!Number.isFinite(t)) continue;
+        setStampTooltip(el5, formatTs(t));
+      }
+      return;
+    }
+    var nodes = scope.querySelectorAll("[data-ms]");
+    for (var j = 0; j < nodes.length; j++) clearStampTooltip(nodes[j]);
+    if (typeof Tooltips !== "undefined" && Tooltips.hideImmediate) {
+      Tooltips.hideImmediate();
+    } else if (typeof Tooltips !== "undefined" && Tooltips.hide) {
+      Tooltips.hide();
+    }
   }
   function resolveStampTarget(host) {
     if (!host || host.nodeType !== 1) return null;
@@ -14887,6 +14996,12 @@
     return openTurnBody;
   }
   ensureLiveLine();
+  if (typeof global24.addEventListener === "function") {
+    global24.addEventListener("beljar:settings-changed", function(e) {
+      var key = e && e.detail ? e.detail.key : "";
+      if (key === "repl-hover-timestamp" || key === "repl-reset") syncStampHoverPref();
+    });
+  }
   global24.ReplStream = {
     ensureLiveLine,
     getLiveLine,
@@ -14899,7 +15014,8 @@
     endTurn,
     currentTurnBody,
     migrateLegacyStamps,
-    rebindStamps
+    rebindStamps,
+    syncStampHoverPref
   };
   global24.BelJarReplStream = global24.ReplStream;
 
@@ -16655,17 +16771,17 @@
   var global27 = globalThis;
   var inputEl = null;
   var popupEl = null;
+  var listEl2 = null;
+  var mirrorEl = null;
   var items2 = [];
   var activeIndex2 = -1;
   var replaceFrom = 0;
+  var typedToken = "";
   var open7 = false;
   var debounceTimer = null;
-  var marqueeTimer = null;
-  var marqueeRaf = null;
   var repositionBound = false;
-  var MARQUEE_PX_PER_SEC = 36;
-  var MARQUEE_PAUSE_MS = 700;
-  var POPUP_GAP_PX = 6;
+  var POPUP_GAP_PX = 4;
+  var VIEW_PAD_PX = 8;
   function getInput() {
     if (inputEl && inputEl.isConnected) return inputEl;
     if (typeof ReplStream !== "undefined" && ReplStream.getCommandInput) {
@@ -16674,37 +16790,84 @@
     if (!inputEl) inputEl = document.getElementById("command-input");
     return inputEl;
   }
-  function getLiveLine2() {
-    if (typeof ReplStream !== "undefined" && ReplStream.getLiveLine) {
-      var live2 = ReplStream.getLiveLine();
-      if (live2 && live2.isConnected) return live2;
-    }
-    var output2 = document.getElementById("output");
-    return output2 ? output2.querySelector(".repl-live") : null;
-  }
   function ensurePopup() {
-    if (popupEl && popupEl.isConnected) return popupEl;
+    if (popupEl && popupEl.isConnected && listEl2 && listEl2.isConnected) return popupEl;
     if (typeof document === "undefined" || !document.body) return null;
     popupEl = document.createElement("div");
     popupEl.className = "repl-ac";
     popupEl.hidden = true;
-    popupEl.setAttribute("role", "listbox");
-    popupEl.setAttribute("aria-label", "Command completions");
+    listEl2 = document.createElement("ul");
+    listEl2.className = "repl-ac-list";
+    listEl2.setAttribute("role", "listbox");
+    listEl2.setAttribute("aria-label", "Command completions");
+    popupEl.appendChild(listEl2);
     document.body.appendChild(popupEl);
     return popupEl;
   }
+  function ensureMirror() {
+    if (mirrorEl && mirrorEl.isConnected) return mirrorEl;
+    if (typeof document === "undefined" || !document.body) return null;
+    mirrorEl = document.createElement("div");
+    mirrorEl.setAttribute("aria-hidden", "true");
+    mirrorEl.style.cssText = "position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;pointer-events:none;height:auto;width:auto;";
+    document.body.appendChild(mirrorEl);
+    return mirrorEl;
+  }
+  function tokenAnchor(input, tokenFrom) {
+    var rect = input.getBoundingClientRect();
+    if (!rect || rect.width < 1 || rect.height < 1) return null;
+    var cs = window.getComputedStyle(input);
+    var padL = parseFloat(cs.paddingLeft) || 0;
+    var borderL = parseFloat(cs.borderLeftWidth) || 0;
+    var mirror = ensureMirror();
+    var xInInput = padL + borderL;
+    if (mirror) {
+      mirror.style.font = cs.font;
+      mirror.style.fontSize = cs.fontSize;
+      mirror.style.fontFamily = cs.fontFamily;
+      mirror.style.fontWeight = cs.fontWeight;
+      mirror.style.fontStyle = cs.fontStyle;
+      mirror.style.letterSpacing = cs.letterSpacing;
+      mirror.style.textTransform = cs.textTransform;
+      mirror.style.wordSpacing = cs.wordSpacing;
+      mirror.style.fontVariantLigatures = cs.fontVariantLigatures;
+      mirror.style.fontFeatureSettings = cs.fontFeatureSettings;
+      mirror.textContent = String(input.value || "").slice(0, Math.max(0, tokenFrom));
+      xInInput += mirror.offsetWidth;
+    }
+    return {
+      left: rect.left + xInInput - (input.scrollLeft || 0),
+      top: rect.top,
+      bottom: rect.bottom
+    };
+  }
   function positionPopup() {
-    if (!popupEl || popupEl.hidden || !open7) return;
-    var anchor = getLiveLine2() || getInput();
+    if (!popupEl || popupEl.hidden || !open7 || !listEl2) return;
+    var input = getInput();
+    if (!input) return;
+    var anchor = tokenAnchor(input, replaceFrom);
     if (!anchor) return;
-    var rect = anchor.getBoundingClientRect();
-    var roomAbove = Math.max(72, rect.top - 8);
-    var maxH = Math.min(12 * 16, roomAbove);
-    popupEl.style.left = Math.max(8, rect.left) + "px";
-    popupEl.style.width = Math.max(12 * 16, rect.width) + "px";
-    popupEl.style.maxHeight = maxH + "px";
-    popupEl.style.top = "auto";
-    popupEl.style.bottom = window.innerHeight - rect.top + POPUP_GAP_PX + "px";
+    listEl2.style.maxHeight = "";
+    var popW = popupEl.offsetWidth || 0;
+    var popH = popupEl.offsetHeight || 0;
+    if (popH < 1) return;
+    var roomBelow = window.innerHeight - anchor.bottom - VIEW_PAD_PX;
+    var roomAbove = anchor.top - VIEW_PAD_PX;
+    var placeBelow = roomBelow >= popH + POPUP_GAP_PX || roomBelow >= roomAbove;
+    var avail = placeBelow ? roomBelow : roomAbove;
+    if (avail > 0 && popH > avail - POPUP_GAP_PX) {
+      listEl2.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + "px";
+      popH = popupEl.offsetHeight || popH;
+    }
+    var maxLeft = window.innerWidth - VIEW_PAD_PX - popW;
+    var left = Math.max(VIEW_PAD_PX, Math.min(anchor.left, maxLeft));
+    var top = placeBelow ? anchor.bottom + POPUP_GAP_PX : anchor.top - popH - POPUP_GAP_PX;
+    if (top < VIEW_PAD_PX) top = VIEW_PAD_PX;
+    if (top + popH > window.innerHeight - VIEW_PAD_PX) {
+      top = Math.max(VIEW_PAD_PX, window.innerHeight - VIEW_PAD_PX - popH);
+    }
+    popupEl.style.left = left + "px";
+    popupEl.style.top = top + "px";
   }
   function onReposition() {
     if (open7) positionPopup();
@@ -16740,135 +16903,55 @@
     }
     return DEFAULT_VERBS.slice();
   }
-  function stopMarquee() {
-    if (marqueeTimer) {
-      clearTimeout(marqueeTimer);
-      marqueeTimer = null;
-    }
-    if (marqueeRaf) {
-      cancelAnimationFrame(marqueeRaf);
-      marqueeRaf = null;
-    }
-    if (!popupEl) return;
-    var scrolls = popupEl.querySelectorAll(".repl-ac-name-scroll");
-    for (var i = 0; i < scrolls.length; i++) {
-      scrolls[i].style.transform = "";
-      scrolls[i].classList.remove("is-marquee");
-    }
-  }
-  function startMarqueeOn(nameEl) {
-    stopMarquee();
-    if (!nameEl) return;
-    var scroll = nameEl.querySelector(".repl-ac-name-scroll");
-    if (!scroll) return;
-    var overflow = scroll.scrollWidth - nameEl.clientWidth;
-    if (overflow <= 1) return;
-    scroll.classList.add("is-marquee");
-    var pos = 0;
-    var dir = 1;
-    var last = performance.now();
-    var pausing = true;
-    function tick2(now) {
-      marqueeRaf = null;
-      if (!scroll.isConnected || !nameEl.closest(".repl-ac-item.is-active")) {
-        stopMarquee();
-        return;
-      }
-      var dt = Math.min(48, now - last);
-      last = now;
-      if (pausing) {
-        marqueeRaf = requestAnimationFrame(tick2);
-        return;
-      }
-      pos += dir * (MARQUEE_PX_PER_SEC * dt) / 1e3;
-      if (pos >= overflow) {
-        pos = overflow;
-        dir = -1;
-        pausing = true;
-        marqueeTimer = setTimeout(function() {
-          marqueeTimer = null;
-          pausing = false;
-          last = performance.now();
-          marqueeRaf = requestAnimationFrame(tick2);
-        }, MARQUEE_PAUSE_MS);
-        scroll.style.transform = "translateX(" + -pos + "px)";
-        return;
-      }
-      if (pos <= 0) {
-        pos = 0;
-        dir = 1;
-        pausing = true;
-        marqueeTimer = setTimeout(function() {
-          marqueeTimer = null;
-          pausing = false;
-          last = performance.now();
-          marqueeRaf = requestAnimationFrame(tick2);
-        }, MARQUEE_PAUSE_MS);
-        scroll.style.transform = "translateX(0)";
-        return;
-      }
-      scroll.style.transform = "translateX(" + -pos + "px)";
-      marqueeRaf = requestAnimationFrame(tick2);
-    }
-    marqueeTimer = setTimeout(function() {
-      marqueeTimer = null;
-      pausing = false;
-      last = performance.now();
-      marqueeRaf = requestAnimationFrame(tick2);
-    }, MARQUEE_PAUSE_MS);
-  }
   function hide() {
-    stopMarquee();
     open7 = false;
     items2 = [];
     activeIndex2 = -1;
+    typedToken = "";
     bindReposition(false);
     if (popupEl) {
       popupEl.hidden = true;
-      popupEl.textContent = "";
+      popupEl.style.visibility = "";
       popupEl.style.left = "";
-      popupEl.style.width = "";
-      popupEl.style.maxHeight = "";
       popupEl.style.top = "";
-      popupEl.style.bottom = "";
+    }
+    if (listEl2) {
+      listEl2.textContent = "";
+      listEl2.style.maxHeight = "";
     }
   }
   function isOpen2() {
     return open7 && items2.length > 0;
   }
+  function scrollActiveIntoView(li) {
+    if (!listEl2 || !li) return;
+    var top = li.offsetTop;
+    var bottom = top + li.offsetHeight;
+    var viewTop = listEl2.scrollTop;
+    var viewBottom = viewTop + listEl2.clientHeight;
+    if (top < viewTop) listEl2.scrollTop = top;
+    else if (bottom > viewBottom) listEl2.scrollTop = bottom - listEl2.clientHeight;
+  }
   function setActive2(idx) {
-    if (!popupEl || !items2.length) return;
-    stopMarquee();
+    if (!listEl2 || !items2.length) return;
     activeIndex2 = Math.max(0, Math.min(items2.length - 1, idx));
-    var kids = popupEl.querySelectorAll(".repl-ac-item");
+    var kids = listEl2.children;
     for (var i = 0; i < kids.length; i++) {
-      kids[i].classList.toggle("is-active", i === activeIndex2);
       if (i === activeIndex2) kids[i].setAttribute("aria-selected", "true");
       else kids[i].removeAttribute("aria-selected");
     }
-    var active = kids[activeIndex2];
-    if (active && active.scrollIntoView) {
-      active.scrollIntoView({ block: "nearest" });
-    }
-    if (active) {
-      var nameEl = active.querySelector(".repl-ac-name");
-      requestAnimationFrame(function() {
-        startMarqueeOn(nameEl);
-      });
-    }
+    scrollActiveIntoView(kids[activeIndex2]);
   }
   function accept(idx) {
     var input = getInput();
     if (!input || idx < 0 || idx >= items2.length) return false;
     var item = items2[idx];
     var val = String(input.value || "");
-    var before = val.slice(0, replaceFrom);
-    var next = before + item.insert;
+    var next = val.slice(0, replaceFrom) + item.insert;
     input.value = next;
     input.focus();
     try {
-      var pos = next.length;
-      input.setSelectionRange(pos, pos);
+      input.setSelectionRange(next.length, next.length);
     } catch (_) {
     }
     hide();
@@ -16877,47 +16960,58 @@
     }
     return true;
   }
+  function fillItem(li, item, token) {
+    var text = String(item.label || "");
+    var t = String(token || "");
+    if (t && text.toLowerCase().indexOf(t.toLowerCase()) === 0) {
+      var match = document.createElement("span");
+      match.className = "repl-ac-matched";
+      match.textContent = text.slice(0, t.length);
+      li.appendChild(match);
+      if (t.length < text.length) {
+        li.appendChild(document.createTextNode(text.slice(t.length)));
+      }
+    } else {
+      li.appendChild(document.createTextNode(text));
+    }
+    if (item.detail) {
+      var detail = document.createElement("span");
+      detail.className = "repl-ac-detail";
+      detail.textContent = item.detail;
+      li.appendChild(detail);
+    }
+  }
   function render2(result) {
     var popup = ensurePopup();
-    if (!popup) return;
+    if (!popup || !listEl2) return;
     if (!result || !result.items || !result.items.length) {
       hide();
       return;
     }
-    stopMarquee();
     items2 = result.items;
     replaceFrom = result.replaceFrom || 0;
+    typedToken = result.token || "";
     activeIndex2 = 0;
     open7 = true;
-    popup.textContent = "";
-    popup.hidden = false;
+    listEl2.textContent = "";
     for (var i = 0; i < items2.length; i++) {
       var it = items2[i];
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "repl-ac-item";
-      if (it.ext) btn.classList.add("repl-ac-item--" + it.ext);
-      btn.setAttribute("role", "option");
-      btn.dataset.index = String(i);
-      var head = document.createElement("div");
-      head.className = "repl-ac-head";
-      var name = document.createElement("span");
-      name.className = "repl-ac-name";
-      var scroll = document.createElement("span");
-      scroll.className = "repl-ac-name-scroll";
-      scroll.textContent = it.label;
-      name.appendChild(scroll);
-      head.appendChild(name);
-      btn.appendChild(head);
-      btn.addEventListener("mousedown", function(e) {
+      var li = document.createElement("li");
+      li.className = "repl-ac-item";
+      li.setAttribute("role", "option");
+      li.dataset.index = String(i);
+      fillItem(li, it, typedToken);
+      li.addEventListener("mousedown", function(e) {
         e.preventDefault();
-        var ix = parseInt(e.currentTarget.dataset.index, 10);
-        accept(ix);
+        accept(parseInt(e.currentTarget.dataset.index, 10));
       });
-      popup.appendChild(btn);
+      listEl2.appendChild(li);
     }
+    popup.hidden = false;
+    popup.style.visibility = "hidden";
     setActive2(0);
     positionPopup();
+    popup.style.visibility = "";
     bindReposition(true);
     requestAnimationFrame(positionPopup);
   }
@@ -16984,7 +17078,6 @@
     hide,
     isOpen: isOpen2,
     onKeyDown,
-    // test / advanced
     _compute: compute,
     _suggest: suggestReplCompletions
   };
@@ -18878,6 +18971,35 @@
     );
     addDropdownRow(
       panelBodies.editor,
+      "editor-autocomplete-trigger",
+      "Autocomplete",
+      "When the completion popup opens. Ctrl+Space and Tab still open it explicitly.",
+      [
+        { value: "none", label: "Nowhere" },
+        { value: "typing", label: "Only after keystroke" },
+        { value: "always", label: "Always at token end" }
+      ],
+      function() {
+        return p0 ? p0.readStoredEditorAutocompleteTrigger() : "typing";
+      },
+      function(p, v) {
+        p.writeStoredEditorAutocompleteTrigger(v);
+      }
+    );
+    addSwitchRow(
+      panelBodies.editor,
+      "editor-autocomplete-continue",
+      "Continue after accept",
+      "Keep showing completions after Tab or click when more options remain.",
+      function() {
+        return p0 ? p0.readStoredEditorAutocompleteContinue() : false;
+      },
+      function(p, on) {
+        p.writeStoredEditorAutocompleteContinue(on);
+      }
+    );
+    addDropdownRow(
+      panelBodies.editor,
       "hover-scope",
       "Hover tooltips",
       "Which symbols get hover tooltips. UI tooltips are unaffected.",
@@ -19041,26 +19163,14 @@
     );
     addSwitchRow(
       panelBodies.repl,
-      "repl-echo",
-      "Echo commands in output",
-      "Log each REPL command as # %:\u2026 before it runs.",
+      "repl-hover-timestamp",
+      "Hover for timestamp",
+      "Show the time a command or output was logged when hovering it.",
       function() {
-        return p0 ? p0.readStoredReplEcho() : true;
+        return p0 ? p0.readStoredReplHoverTimestamp() : true;
       },
       function(p, on) {
-        p.writeStoredReplEcho(on);
-      }
-    );
-    addSwitchRow(
-      panelBodies.repl,
-      "repl-filter-chatter",
-      "Filter run noise",
-      "Hide empty [] and caret lines in output.",
-      function() {
-        return p0 ? p0.readStoredReplFilterChatter() : true;
-      },
-      function(p, on) {
-        p.writeStoredReplFilterChatter(on);
+        p.writeStoredReplHoverTimestamp(on);
       }
     );
     addDropdownRow(
@@ -19086,13 +19196,13 @@
       "Command history size",
       "Commands remembered for \u2191/\u2193.",
       [
-        { value: "0", label: "Unlimited" },
         { value: "100", label: "100 commands" },
         { value: "250", label: "250 commands" },
-        { value: "500", label: "500 commands" }
+        { value: "500", label: "500 commands" },
+        { value: "1000", label: "1000 commands" }
       ],
       function() {
-        return p0 ? String(p0.readStoredReplHistoryCap()) : "0";
+        return p0 ? String(p0.readStoredReplHistoryCap()) : "1000";
       },
       function(p, v) {
         p.writeStoredReplHistoryCap(parseInt(v, 10));

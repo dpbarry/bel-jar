@@ -38,9 +38,17 @@ assert.equal(P.readStoredReplAutoscroll(), true);
 P.writeStoredReplAutoscroll(false);
 assert.equal(P.readStoredReplAutoscroll(), false);
 
-assert.equal(P.readStoredReplHistoryCap(), 0);
+assert.equal(P.readStoredReplHoverTimestamp(), true);
+P.writeStoredReplHoverTimestamp(false);
+assert.equal(P.readStoredReplHoverTimestamp(), false);
+P.writeStoredReplHoverTimestamp(true);
+assert.equal(P.readStoredReplHoverTimestamp(), true);
+
+assert.equal(P.readStoredReplHistoryCap(), 1000);
 P.writeStoredReplHistoryCap(500);
 assert.equal(P.readStoredReplHistoryCap(), 500);
+P.writeStoredReplHistoryCap(1000);
+assert.equal(P.readStoredReplHistoryCap(), 1000);
 
 assert.equal(P.readStoredReplHistoryPersist(), 'local');
 P.writeStoredReplHistoryPersist('session');

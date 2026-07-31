@@ -219,10 +219,6 @@ html.light .theme-toggle .icon-moon {
   }
 }
 
-.header-end a.icon-btn {
-  text-decoration: none;
-  color: var(--base-high);
-}
 
 .header-github svg {
   width: 0.8125rem;

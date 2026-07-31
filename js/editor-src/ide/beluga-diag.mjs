@@ -1,3 +1,5 @@
+import { parser } from '../beluga-parser.js';
+
 function stripAnsi(s) {
   return String(s != null ? s : '')
     .replace(/\r\n/g, '\n')
@@ -229,23 +231,18 @@ export function namedCulprit(message) {
   return null;
 }
 
-const TOKEN_SEP = /[\s(){}\[\];:,.|]/;
-
-// First whole-token occurrence of `name` outside a comment line.
-export function locateToken(doc, name) {
+// First actual identifier token matching `name` in the Lezer tree.
+// Uses the AST so comments, strings, and non-identifier occurrences are ignored.
+export function locateToken(doc, name, tree = null) {
   if (!name) return null;
-  const text = doc.toString();
-  let idx = text.indexOf(name);
-  while (idx >= 0) {
-    const before = idx > 0 ? text[idx - 1] : ' ';
-    const after = idx + name.length < text.length ? text[idx + name.length] : ' ';
-    const whole = (idx === 0 || TOKEN_SEP.test(before))
-      && (idx + name.length === text.length || TOKEN_SEP.test(after));
-    if (whole && !doc.lineAt(idx).text.trim().startsWith('%')) {
-      return { from: idx, to: idx + name.length };
+  const t = tree || parser.parse(doc.toString());
+  const cursor = t.cursor();
+  do {
+    if (cursor.name !== 'LowerIdentifier' && cursor.name !== 'UpperIdentifier') continue;
+    if (doc.sliceString(cursor.from, cursor.to) === name) {
+      return { from: cursor.from, to: cursor.to };
     }
-    idx = text.indexOf(name, idx + name.length);
-  }
+  } while (cursor.next());
   return null;
 }
 

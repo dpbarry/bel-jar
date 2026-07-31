@@ -4,6 +4,7 @@
 import {
   decomposeContextual,
   headOfConclusion,
+  parseAppType,
   typeFamilyHead,
   enumerateConstructorsTyped,
   splitConstructorsForGoal,
@@ -142,7 +143,7 @@ export function splitTextFor(code, hole, varName, splitOpts) {
 // premises are themselves plain ctype/LF values, not context extensions
 // other hypotheses depend on.
 
-export function splitTextForCtype(code, hole, scrutText, ctypeType) {
+export function splitTextForCtype(code, hole, scrutText, ctypeType, ctOpts = {}) {
   const headM = /^[\p{L}_][\p{L}\p{N}_']*/u.exec(normalizeCtypeSpelling(ctypeType).trim());
   const head = headM && headM[0];
   if (!head || !isDeclaredTypeFamily(code, head)) return null;
@@ -166,7 +167,9 @@ export function splitTextForCtype(code, hole, scrutText, ctypeType) {
   // checker infers its type from the ctor signature.
   const isSchema = (name) => new RegExp(`(^|\\n)\\s*schema\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(String(code || ''));
   const branches = [];
-  for (const ctor of ctors) {
+  // `only` restricts to a single constructor — the CTYPE INVERSION caller, which has
+  // already established that the hypothesis' indices leave exactly one possible.
+  for (const ctor of (ctOpts.only ? ctors.filter((c) => c.name === ctOpts.only) : ctors)) {
     const args = [];
     let ok = true;
     for (const at of (ctor.argTypes || [])) {
@@ -751,6 +754,52 @@ export function synthMoves(hole, code, thm) {
 export function recurseTexts(hole, thm, code) {
   if (!thm || !thm.compType) return [];
   const boxes = thm.compType.premises.filter((p) => p.kind === 'box');
+  // ⭐ ALL-CTYPE RECURSION. `boxes` is box-only, so a theorem whose argument premises
+  // are ALL ctype fell through to `piRecurseTexts`, which needs a Pi binder to pick a
+  // decreasing subject — with none it bails and the theorem gets NO recursion at all.
+  // `equal#trans : Aeq [g ⊢ E] [g ⊢ F] → Aeq [g ⊢ F] [g ⊢ L] → Aeq [g ⊢ E] [g ⊢ L]` is
+  // exactly that shape, and its trace shows the deepest hole offering only fill+split:
+  // no IH existed to offer. This is the M1b rule ("a ctype premise IS a premise")
+  // reaching `recurseTexts`' entry, the last emitter that still filtered to boxes.
+  //
+  // Arguments are spelled BARE — a ctype value is a computation expression and must
+  // never be boxed (the M3/M4 law). The decreasing slot is restricted to
+  // `decSubderivNames`, the totality checker's own criterion, so no call is proposed
+  // that the checker would refuse for termination.
+  if (!boxes.length && thm.totality) {
+    const ctypePrems = thm.compType.premises.filter((p) => p.kind === 'ctype');
+    if (ctypePrems.length) {
+      const decI2 = decreasingArgIndex(thm);
+      const decNames2 = decSubderivNames(code, hole, decI2);
+      if (decNames2.size && decI2 >= 0 && decI2 < ctypePrems.length) {
+        const headOfPrem = (p) => {
+          const a = parseAppType(normalizeCtypeSpelling(String(p.raw || '').trim()));
+          return a && a.head;
+        };
+        const scope = (hole.ctx || []).filter((h) => h && h.name && h.type);
+        const perSlot = ctypePrems.map((p, i) => {
+          const want = headOfPrem(p);
+          const cands = scope.filter((h) => {
+            const a = parseAppType(normalizeCtypeSpelling(String(h.type).trim()));
+            return a && a.head === want;
+          }).map((h) => h.name);
+          return i === decI2 ? cands.filter((n) => decNames2.has(n)) : cands.slice(0, 3);
+        });
+        if (!perSlot.some((l) => !l.length)) {
+          const tuples = perSlot.reduce((acc, l) => acc.flatMap((t) => l.map((x) => [...t, x])), [[]]).slice(0, 8);
+          const fresh2 = freshForHole(hole, code);
+          const out2 = [];
+          for (const t of tuples) {
+            if (new Set(t).size !== t.length) continue; // a slot may not reuse another's argument
+            const call = `${thm.name} ${t.join(' ')}`;
+            out2.push(`let ${fresh2()} = ${call} in\n?`);
+            out2.push(call);
+          }
+          if (out2.length) return out2;
+        }
+      }
+    }
+  }
   if (!boxes.length) return piRecurseTexts(hole, thm, code);
   if (!thm.totality) return [];
   // A measure designating a Pi BINDER (`/ total m (f _ m _) /` on a mixed
@@ -1019,6 +1068,107 @@ export function recurseTexts(hole, thm, code) {
 // decreasing argument's (possibly block-extended) context, the boxed Pi gets the
 // structural sub-term: `ref [g, e:block (q:exp, _t:eq q q)] [g, e |- L[.., e.1]]`.
 
+// APPLICATIONS of an in-scope HIGHER-ORDER hypothesis concluding in `wantHead`.
+// A comp hypothesis may itself be a Pi telescope — `X3 : {M':(h ⊢ tm A[])}
+// {S:(h ⊢ step X2 M')} Sn [h ⊢ M']`, the accessibility function bound by an `Acc`
+// pattern. It is a RULE, and nothing in the move vocabulary applied it, so the
+// idiom stopped one step from the end. Each binder slot is filled by an in-scope
+// meta of the matching family, or `_`; the all-`_` spelling is emitted LAST
+// because it is the one the checker rejects for leftover metavariables. Bounded
+// hard (telescopes are short and this sits inside a cartesian product).
+function hoHypApplications(hole, wantHead, code) {
+  const out = [];
+  const parenBox = (t) => {
+    const s = String(t || '').trim();
+    const m = /^\(\s*([\s\S]*?)\s*(?:\|-|⊢)\s*([\s\S]*)\)$/.exec(s)
+      || /^\[\s*([\s\S]*?)\s*(?:\|-|⊢)\s*([\s\S]*)\]$/.exec(s);
+    return m ? { ctx: m[1].trim(), concl: m[2].trim() } : null;
+  };
+  for (const c of (hole.ctx || [])) {
+    if (!c || !c.name || !c.type) continue;
+    let s = String(c.type).trim();
+    if (s[0] !== '{') continue;
+    const binders = [];
+    let bad = false;
+    while (s[0] === '{') {
+      let d = 0;
+      let j = 0;
+      for (; j < s.length; j += 1) {
+        if (s[j] === '{') d += 1;
+        else if (s[j] === '}') { d -= 1; if (d === 0) break; }
+      }
+      if (j >= s.length) { bad = true; break; }
+      const inner = s.slice(1, j);
+      const ci = inner.indexOf(':');
+      if (ci < 0) { bad = true; break; }
+      binders.push(inner.slice(ci + 1).trim());
+      s = s.slice(j + 1).trim();
+      if (binders.length > 4) { bad = true; break; }
+    }
+    if (bad || !binders.length) continue;
+    const concl = parseAppType(normalizeCtypeSpelling(s));
+    if (!concl || concl.head !== wantHead) continue;
+    const perBinder = binders.map((bt) => {
+      const b = parenBox(bt);
+      const ctx = b ? b.ctx : '';
+      const fam = b ? headOfConclusion(b.concl) : null;
+      const named = [];
+      for (const m of (hole.meta || [])) {
+        if (!m || !m.name || !m.type) continue;
+        const mb = parenBox(m.type);
+        if (mb && fam && headOfConclusion(mb.concl) === fam) named.push(`[${ctx} |- ${m.name}]`);
+      }
+      // ONE-CONSTRUCTOR REBUILDS. The accessibility function is routinely applied to a
+      // derivation the caller must BUILD, not one already in scope —
+      // `r [_ ⊢ _] [_ ⊢ rappr S]` (app_snb/case_snb/case_snc): the bound `S` steps the
+      // sub-term, and the slot wants the step of the WHOLE term. So offer, per slot,
+      // each constructor of the slot's family that takes exactly ONE argument of that
+      // same family, applied to an in-scope meta of it. The `nestedCtorArgFills`
+      // limiter: it fires exactly at a rebuild point, never as generic breadth.
+      // Checker-arbitrated (2026-07-28, app_snb): with `rappr X5` in this slot and `_`
+      // everywhere else the proof is ACCEPTED; with the bare meta it is "Ill-typed".
+      const rebuilt = [];
+      if (fam && named.length) {
+        for (const ctor of enumerateConstructorsTyped(code, fam)) {
+          if (!ctor.argTypes || ctor.argTypes.length !== 1) continue;
+          const at = String(ctor.argTypes[0]).trim();
+          if (/[{\\]/.test(at)) continue; // Pi / higher-order argument — not this shape
+          const ab = parenBox(at);
+          if (headOfConclusion(ab ? ab.concl : at) !== fam) continue;
+          for (const n of named.slice(0, 1)) {
+            const inner = /\|-\s*([\s\S]*)\]$/.exec(n);
+            if (inner) rebuilt.push(`[${ctx} |- ${ctor.name} ${inner[1].trim()}]`);
+          }
+        }
+      }
+      return [...named.slice(0, 2), ...rebuilt.slice(0, 5), `[${ctx} |- _]`];
+    });
+    // SUPPLY THE DERIVATION, INFER THE INDICES. A telescope's leading slots are the
+    // index arguments and its LAST slot is the derivation that determines them, so the
+    // shape that checks is `r [_ ⊢ _] … [_ ⊢ <derivation>]` — verified both ways:
+    // `X3 [h ⊢ _] [h ⊢ X21]` closes inl_sn, and for app_snb every fully-concrete
+    // spelling of the leading slot is "Ill-typed" while the inferred one is accepted.
+    // (An earlier cut ranked tuples by fewest underscores and sorted the winning shape
+    // out of the cap entirely.) Fully-concrete tuples still follow, capped, as the
+    // fallback for telescopes whose indices are not inferable.
+    const lastI = perBinder.length - 1;
+    const inferredLead = perBinder.map((opts) => opts[opts.length - 1]); // the `_` entry
+    for (const cand of perBinder[lastI]) {
+      if (cand === inferredLead[lastI]) continue; // all-`_`: leftover metavariables
+      const t = inferredLead.slice(0, lastI).concat([cand]);
+      out.push(`(${c.name} ${t.join(' ')})`);
+    }
+    let tuples = [[]];
+    for (const opts of perBinder) {
+      tuples = tuples.flatMap((t) => opts.map((o) => [...t, o]));
+      if (tuples.length > 12) { tuples = tuples.slice(0, 12); break; }
+    }
+    for (const t of tuples) out.push(`(${c.name} ${t.join(' ')})`);
+  }
+  // All-`_` applications last: they are the ones that fail "leftover metavariables".
+  return [...new Set(out)].slice(0, 10);
+}
+
 function piRecurseTexts(hole, thm, code) {
   if (!thm.totality) return [];
   const pis = thm.compType.premises.filter((p) => p.kind === 'pi');
@@ -1040,21 +1190,38 @@ function piRecurseTexts(hole, thm, code) {
   for (let i = parsed.length - 1; decI < 0 && i >= 0; i -= 1) {
     if (decomposeContextual(parsed[i].type)) { decI = i; break; }
   }
-  if (decI < 0) return [];
-  const decHead = premiseDecHead(parsed[decI].type, code);
-  if (!decHead) return [];
-  const rawDecCands = decreasingHyps(hole, thm, decHead, code);
-  if (!rawDecCands.length) return [];
-  const decs = subderivMetas(rawDecCands, false, thm);
+  const decGateOk = decI >= 0;
   // Box premises of a MIXED theorem take call arguments AFTER the Pi args:
   // per premise, in-scope comp hypotheses (bare — the pass-through original
   // premise) and cD metas of the matching family (boxed). Checker-arbitrated;
   // no candidates for some premise ⇒ no emittable call.
-  const boxPrems = thm.compType.premises.filter((p) => p.kind === 'box');
+  // ARGUMENT premises of a MIXED theorem take call arguments AFTER the Pi args.
+  // CTYPE premises count (the M1b rule: a ctype premise IS a premise) — filtering
+  // to `box` alone emitted the call with that argument slot simply MISSING, so a
+  // theorem whose only premise is `Sn [Γ ⊢ M]` could never be applied to anything
+  // (measured on poplmark-reloaded+#inl_sn: `inl_sn [ |- _] [ |- X1]`, two args for
+  // a three-argument theorem).
+  const boxPrems = thm.compType.premises.filter((p) => p.kind === 'box' || p.kind === 'ctype');
   let boxTuples = [[]];
   if (boxPrems.length) {
     const all = expandedHypsOf(hole, code);
     const perSlot = boxPrems.map((b) => {
+      if (b.kind === 'ctype') {
+        const want = parseAppType(normalizeCtypeSpelling(String(b.raw || '').trim()));
+        const wantHead = want && want.head;
+        if (!wantHead) return [];
+        // A ctype argument is a COMP value: an in-scope comp hypothesis of that
+        // family, bare — plus an APPLICATION of an in-scope higher-order
+        // hypothesis concluding in it. The latter is the accessibility idiom's
+        // last link (`r [_ ⊢ _] [_ ⊢ S']`): the totality checker accepts the
+        // recursion ONLY with that application written INLINE in the argument
+        // slot — probed on inl_sn, where binding it to a `let` first is rejected
+        // "Recursive call not structurally smaller".
+        const bare = all.filter((h) => h.where === 'comp' && !/^\s*\{/.test(String(h.type || ''))
+          && (parseAppType(normalizeCtypeSpelling(String(h.type || '').trim())) || {}).head === wantHead)
+          .slice(0, 2).map((h) => h.name);
+        return [...hoHypApplications(hole, wantHead, code), ...bare].slice(0, 8);
+      }
       let raw = b.raw;
       if (raw && !raw.startsWith('[')) raw = `[${raw}]`;
       const head = premiseDecHead(raw, code);
@@ -1071,6 +1238,38 @@ function piRecurseTexts(hole, thm, code) {
   const out = [];
   const seen = new Set();
   const fresh = freshForHole(hole, code);
+  // CTYPE-SUBJECT RECURSION. When the induction subject is a CTYPE premise rather
+  // than a Pi, `decI` above still points at the last box Pi, so the emitted call
+  // recurses on the wrong argument (`inl_sn [ |- _] [ |- X1]` — induction on the
+  // TYPE `B`). The reference shape leaves every Pi argument inferred and carries
+  // the decrease in the argument itself:
+  // `inl_sn [_ ⊢ _] [ ⊢ _] (r [_ ⊢ _] [_ ⊢ S'])`, where `r` is the higher-order
+  // hypothesis bound by the constructor pattern. Emit exactly that family —
+  // additive (the decI-driven calls above are untouched), and only when the
+  // ctype slot has a candidate, which `hoHypApplications` bounds hard.
+  if (boxPrems.some((p) => p.kind === 'ctype') && boxTuples.length) {
+    const inferredPi = parsed.map((p2) => {
+      const b = decomposeContextual(p2.type);
+      if (!b) return '[]';
+      const c = String(b.ctx || '').trim();
+      return c ? '[_ |- _]' : '[ |- _]';
+    });
+    for (const tuple of boxTuples) {
+      if (!tuple.some((x) => /^\(/.test(String(x)))) continue; // needs the HO application
+      const call = `${thm.name} ${[...inferredPi, ...tuple].join(' ')}`;
+      if (seen.has(call)) continue;
+      seen.add(call);
+      out.push(call);
+      out.push(`let ${fresh()} = ${call} in\n?`);
+    }
+  }
+  const decHead = decGateOk ? premiseDecHead(parsed[decI].type, code) : null;
+  const rawDecCands = decHead ? decreasingHyps(hole, thm, decHead, code) : [];
+  // The decI-driven Pi recursion is skipped when its subject has no candidate in
+  // scope — but the ctype-subject calls above are already emitted, so bail to
+  // `out`, never to `[]`.
+  if (!rawDecCands.length) return out;
+  const decs = subderivMetas(rawDecCands, false, thm);
   for (const d of decs) {
     for (const someInst of someInstVariants(thm, code)) {
       const arg = callArgs([d], [{ raw: parsed[decI].type }], thm, code, usedNamesOf(hole), someInst)[0];

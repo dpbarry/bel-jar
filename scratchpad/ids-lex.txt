@@ -1,0 +1,12 @@
+data/examples/poplmark-reloaded+/sources.cfg#match_sn
+data/examples/poplmark-reloaded+/sources.cfg#casel_sn
+data/examples/poplmark-reloaded+/sources.cfg#caser_sn
+data/examples/poplmark-reloaded+/sources.cfg#bc_aux_sum
+data/examples/poplmark-reloaded+/sources.cfg#bc_aux_app
+data/examples/poplmark-reloaded+/sources.cfg#app_sn
+data/examples/poplmark-reloaded+/sources.cfg#app_abs_sn
+data/examples/poplmark-reloaded/sources.cfg#app_sn
+data/examples/poplmark-reloaded/sources.cfg#app_abs_sn
+data/examples/poplmark-reloaded/sources.cfg#bc_aux
+data/examples/small-step/system-f-iso.bel#prog_@_lemma
+data/examples/small-step/system-f-iso.bel#prog_roll_lemma

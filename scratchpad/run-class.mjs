@@ -37,6 +37,8 @@ for (let i = 0; i < ids.length; i += 1) {
     });
   });
   rows.push(row);
+  // Append as we go: a long sweep that is interrupted still leaves its measurements.
+  if (out) fs.appendFileSync(path.resolve(root, out + '.partial'), JSON.stringify(row) + '\n');
   const mark = row.verdict === 'COMPLETE' ? '✔' : ' ';
   console.log(`${String(i + 1).padStart(3)}/${ids.length} ${mark} ${String(row.verdict).padEnd(28)} ck=${String(row.checks ?? '-').padStart(5)} ${String(row.secs ?? '-').padStart(6)}s  ${id}`);
 }

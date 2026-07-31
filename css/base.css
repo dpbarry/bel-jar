@@ -101,6 +101,11 @@ html.light body {
     color: var(--accent-high);
   }
 
+  .icon-btn#btn-beluga:hover {
+    color: var(--accent-high);
+    filter: saturate(0.85);
+  }
+
   .icon-btn:hover::before {
     opacity: 1;
   }

@@ -109,6 +109,21 @@ export function parseHoles(rawOutput) {
         if (pending.type.trim() && depth(pending.type) <= 0) commitPending();
         continue;
       }
+      // NOTE (2026-07-28, tried and REVERTED — do not re-derive it blind). A context
+      // entry's NAME is always an identifier, but `[^\s:]+` also matches a Pi binder's
+      // opening `{S`, so the second line of a multi-line TELESCOPE type
+      // (`X3 : {M' : (h ⊢ tm A[])}` / `{S : (h ⊢ step … M')} Sn [h ⊢ M']`) is read as a
+      // NEW entry named `{S`, splitting one hypothesis into two broken ones — and the
+      // first line is bracket-BALANCED, so the `depth > 0` continuation test cannot
+      // catch it. Requiring an identifier name and folding genuine continuations into
+      // the previous entry DOES fix it (verified on poplmark-reloaded+#case_snb: the
+      // accessibility hypothesis then arrives whole, 33 → 75 checks) but it bought ZERO
+      // completions and cost `tapl/ch3+arith+leq#mstep_leq_2` COMPLETE → step-bound on
+      // the differential — the same fragile target Wave 6 records. Reverted under the
+      // zero-regressions law; deferred WITH its cost, not discarded. Re-attempt only
+      // together with whatever makes mstep_leq_2 robust to a wider hypothesis pool.
+      // (A catch-all continuation is additionally a PERF trap: it made `npm test` take
+      // 4.9h instead of 110s through quadratic string growth on large reports.)
       const e = t.match(CTX_ENTRY);
       if (e) {
         const type = e[2].trim();

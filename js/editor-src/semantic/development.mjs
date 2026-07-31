@@ -121,7 +121,7 @@ function topLevelCfgPaths(files, getText) {
   return cfgPaths.filter((p) => !referenced[p]);
 }
 
-function resolveActiveChain(files, cfgPath, getText) {
+export function resolveActiveChain(files, cfgPath, getText) {
   if (!cfgPath) return [];
   const allSet = pathSetFrom(allSignaturePaths(files));
   const cfgByDir = cfgByDirFromFiles(files, getText);
@@ -130,6 +130,19 @@ function resolveActiveChain(files, cfgPath, getText) {
   const map = cfgByDir[dir];
   if (!map?.[base]) return [];
   return resolveCfgOrder(dir, map[base], cfgByDir, allSet, new Set());
+}
+
+/** Cfg in `fileName`'s folder that lists the file; prefers `preferredCfg` when it owns it. */
+export function owningCfgForFile(files, fileName, getText, preferredCfg = null) {
+  const dir = dirOf(fileName);
+  const cfgs = files
+    .filter((f) => /\.cfg$/i.test(String(f.name || '')) && dirOf(f.name) === dir)
+    .map((f) => f.name);
+  if (!cfgs.length) return null;
+  const owning = cfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(fileName));
+  if (!owning.length) return null;
+  if (preferredCfg && owning.includes(preferredCfg)) return preferredCfg;
+  return owning[0];
 }
 
 function bestCfgInDir(files, getText, dir) {
@@ -285,22 +298,25 @@ export function developmentForFile(files, activeId, getText, options = {}) {
 
   let cfgPath = resolveOwningActiveCfg(files, active.name, getText, activeCfgsForDir(dirOf(active.name)));
   if (!cfgPath) cfgPath = activeCfgForDir(dirOf(active.name));
-  if (!cfgPath) return standaloneResult(active);
 
-  const paths = resolveActiveChain(files, cfgPath, getText);
-  const activeIndex = paths.indexOf(active.name);
-  if (activeIndex >= 0) {
-    return {
-      kind: 'module',
-      cfg: cfgPath,
-      paths,
-      activeIndex,
-      preludePaths: activeIndex > 0 ? paths.slice(0, activeIndex) : [],
-      scopeKey: `module:${cfgPath}`,
-    };
+  let paths = cfgPath ? resolveActiveChain(files, cfgPath, getText) : [];
+  let activeIndex = paths.indexOf(active.name);
+  if (activeIndex < 0) {
+    cfgPath = owningCfgForFile(files, active.name, getText, cfgPath);
+    if (!cfgPath) return standaloneResult(active);
+    paths = resolveActiveChain(files, cfgPath, getText);
+    activeIndex = paths.indexOf(active.name);
+    if (activeIndex < 0) return standaloneResult(active);
   }
 
-  return standaloneResult(active);
+  return {
+    kind: 'module',
+    cfg: cfgPath,
+    paths,
+    activeIndex,
+    preludePaths: activeIndex > 0 ? paths.slice(0, activeIndex) : [],
+    scopeKey: `module:${cfgPath}`,
+  };
 }
 
 /** Module cfg when the file is a listed member of the folder's active cfg. */

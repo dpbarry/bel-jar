@@ -57,9 +57,115 @@ const SCOPE_DELIMITERS = Object.freeze({
   ContextEntry: ['ContextualType', 'ContextualObject', 'SubstitutionType', 'ParameterType'],
   LFBlockField: ['LFBlock'],
   SchemaElement: ['SchemaDeclaration'],
+  PatternBinder: ['CaseBranch', 'LetExpression', 'CofunctionBranch'],
+  ContextHead: ['CaseBranch', 'LetExpression', 'CofunctionBranch',
+    'ContextualType', 'ContextualObject', 'SubstitutionType', 'ParameterType'],
 });
 
+function enclosingPatternOwner(node) {
+  for (let cur = node; cur; cur = cur.parent) {
+    if (cur.name === 'CaseBranch' || cur.name === 'LetExpression'
+        || cur.name === 'CofunctionBranch') {
+      return cur;
+    }
+    if (cur.name === 'RecBody' || cur.name === 'FnExpression' || cur.name === 'MLamExpression'
+        || cur.name === 'Program' || GLOBAL_DECL_PARENT.has(cur.name)) {
+      return null;
+    }
+  }
+  return null;
+}
+
+function underPattern(node) {
+  for (let cur = node; cur; cur = cur.parent) {
+    if (cur.name === 'Pattern' || cur.name === 'AppPattern') return true;
+    if (cur.name === 'CaseBranch' || cur.name === 'LetExpression' || cur.name === 'CofunctionBranch'
+        || cur.name === 'Expression' || cur.name === 'AppExpression' || cur.name === 'RecBody') {
+      return false;
+    }
+  }
+  return false;
+}
+
+// `Pattern` with a type ascription (`y : T` / `(t : T)`).
+function underAscribedPattern(node) {
+  for (let cur = node; cur; cur = cur.parent) {
+    if (cur.name === 'Pattern') {
+      let sawColon = false;
+      for (let c = cur.firstChild; c; c = c.nextSibling) {
+        if (c.name === ':') sawColon = true;
+        if (sawColon && (c.name === 'CompType' || c.name === 'CompAppType' || c.name === 'CompAtomicType')) {
+          return true;
+        }
+      }
+    }
+    if (cur.name === 'CaseBranch' || cur.name === 'LetExpression' || cur.name === 'CofunctionBranch'
+        || cur.name === 'Copattern' || cur.name === 'Expression' || cur.name === 'RecBody') {
+      return false;
+    }
+  }
+  return false;
+}
+
+// Unknown lowercase pattern heads bind in let / fun / ascribed sites; bare
+// unknown case heads stay unbound (likely mistyped constructors).
+function shouldBindLowerPatternHead(atom, owner) {
+  if (!owner) return false;
+  if (owner.name === 'LetExpression' || owner.name === 'CofunctionBranch') return true;
+  return underAscribedPattern(atom);
+}
+
+// Shim so scopeSpanFor can climb PatternBinder → CaseBranch/LetExpression.
+function patternBinderShim(owner) {
+  return { name: 'PatternBinder', parent: owner, from: owner.from, to: owner.to };
+}
+
+function totalityBinderShim(owner, annotation) {
+  return {
+    name: 'TotalityBinder',
+    parent: owner,
+    from: annotation.from,
+    to: annotation.to,
+  };
+}
+
+function totalityAnnotationOf(recBody) {
+  for (let c = recBody.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'TotalityAnnotation') return c;
+  }
+  return null;
+}
+
+function leadingFnParams(recBody, out = []) {
+  function walk(node) {
+    if (!node) return;
+    if (node.name === 'FnParam' || node.name === 'MLamParam') {
+      out.push(node);
+      return;
+    }
+    if (node !== recBody
+        && node.name !== 'Expression'
+        && node.name !== 'FnExpression'
+        && node.name !== 'MLamExpression') {
+      return;
+    }
+    for (let c = node.firstChild; c; c = c.nextSibling) walk(c);
+  }
+  walk(recBody);
+  return out;
+}
+
 function scopeSpanFor(binderNode, identNode) {
+  if (binderNode.name === 'CompTypeBinder') {
+    for (let cur = binderNode.parent; cur; cur = cur.parent) {
+      if (cur.name === 'CompConstructor' || cur.name === 'CompDestructor') break;
+      if (cur.name === 'InductiveBody' || cur.name === 'CoinductiveBody'
+          || cur.name === 'RecBody') {
+        return { from: identNode.to, to: cur.to, kind: binderNode.name };
+      }
+      if (cur.name === 'Program') break;
+    }
+  }
   const kinds = SCOPE_DELIMITERS[binderNode.name];
   let construct = binderNode.parent || binderNode;
   if (kinds) {
@@ -67,7 +173,212 @@ function scopeSpanFor(binderNode, identNode) {
       if (kinds.includes(cur.name)) { construct = cur; break; }
     }
   }
+  if ((binderNode.name === 'PatternBinder' || binderNode.name === 'ContextHead')
+      && (construct.name === 'CaseBranch' || construct.name === 'LetExpression'
+        || construct.name === 'CofunctionBranch')) {
+    if (construct.name === 'CaseBranch' || construct.name === 'CofunctionBranch') {
+      let arrow = null;
+      for (let c = construct.firstChild; c; c = c.nextSibling) {
+        if (c.name === 'FatArrow') arrow = c;
+      }
+      return { from: arrow ? arrow.to : identNode.to, to: construct.to, kind: binderNode.name };
+    }
+    let inKw = null;
+    let body = null;
+    for (let c = construct.firstChild; c; c = c.nextSibling) {
+      if (c.name === 'InKeyword') inKw = c;
+      if (inKw && !body && (c.name === 'Expression' || c.name === 'AppExpression')) body = c;
+    }
+    return {
+      from: body ? body.from : (inKw ? inKw.to : identNode.to),
+      to: construct.to,
+      kind: binderNode.name,
+    };
+  }
   return { from: identNode.to, to: construct.to, kind: binderNode.name };
+}
+
+function flattenAppPatternAtoms(node, out = []) {
+  if (!node) return out;
+  if (node.name === 'AtomicPattern') {
+    out.push(node);
+    return out;
+  }
+  if (node.name === 'AppPattern') {
+    for (let c = node.firstChild; c; c = c.nextSibling) {
+      if (c.name === 'AppPattern' || c.name === 'AtomicPattern') flattenAppPatternAtoms(c, out);
+    }
+  }
+  return out;
+}
+
+function isKnownCtorName(name, globalsByName) {
+  const list = globalsByName && globalsByName.get(name);
+  if (!list || !list.length) return false;
+  for (const sym of list) {
+    if (sym.namespace === NAMESPACE.LF_CONSTRUCTOR
+        || sym.namespace === NAMESPACE.COMP_CONSTRUCTOR
+        || sym.namespace === NAMESPACE.COMP_DESTRUCTOR
+        || sym.namespace === NAMESPACE.LF_CONSTANT) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const LF_PATTERN_SKIP_BINDER = new Set([
+  'LFLambdaBinder',
+  'PiBinder',
+  'ImplicitPiBinder',
+]);
+
+const LF_PATTERN_TERM = new Set([
+  'LFTerm',
+  'LFAppTerm',
+  'LFAtomicTerm',
+  'LFLambda',
+  'LFPi',
+  'LFType',
+]);
+
+// Yields { ident, binderNode } for pattern-bound names inside a Pattern.
+// Constructor heads are skipped; AppPattern args, fresh vars, boxed LF vars
+// (including nested under λ/Π), and pattern ContextHeads are binders.
+function collectPatternBinders(patternNode, doc, globalsByName, out = []) {
+  if (!patternNode) return out;
+  const owner = enclosingPatternOwner(patternNode);
+  if (!owner) return out;
+  const shim = patternBinderShim(owner);
+
+  function add(ident, binderNode) {
+    if (!ident || !IDENT.has(ident.name)) return;
+    out.push({ ident, binderNode: binderNode || shim });
+  }
+
+  // Descend boxed LF after ⊢: skip known ctor heads; bind free idents,
+  // including those nested under LFLambda / LFPi bodies.
+  function walkLfPatternTerm(node, isAppHead) {
+    if (!node) return;
+    if (LF_PATTERN_SKIP_BINDER.has(node.name)) return;
+
+    if (node.name === 'LFAtomicTerm') {
+      let inner = null;
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (LF_PATTERN_TERM.has(c.name)) inner = c;
+      }
+      if (inner) {
+        walkLfPatternTerm(inner, false);
+        return;
+      }
+      const id = firstIdentChild(node);
+      if (!id) return;
+      const name = slice(doc, id.from, id.to);
+      if (isAppHead && isKnownCtorName(name, globalsByName)) return;
+      add(id, shim);
+      return;
+    }
+
+    if (node.name === 'LFLambda' || node.name === 'LFPi') {
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (LF_PATTERN_SKIP_BINDER.has(c.name)) continue;
+        if (LF_PATTERN_TERM.has(c.name)) walkLfPatternTerm(c, false);
+      }
+      return;
+    }
+
+    if (node.name === 'LFAppTerm' || node.name === 'LFTerm' || node.name === 'LFType') {
+      let first = true;
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (!LF_PATTERN_TERM.has(c.name)) continue;
+        walkLfPatternTerm(c, isAppHead && first);
+        first = false;
+      }
+    }
+  }
+
+  function walkContextual(box) {
+    for (let c = box.firstChild; c; c = c.nextSibling) {
+      if (c.name === 'ContextPart') {
+        for (let p = c.firstChild; p; p = p.nextSibling) {
+          if (p.name === 'ContextHead') {
+            const id = firstIdentChild(p);
+            if (id) add(id, p);
+          }
+        }
+      }
+    }
+    let after = false;
+    for (let c = box.firstChild; c; c = c.nextSibling) {
+      if (c.name === 'Turnstile') { after = true; continue; }
+      if (!after) continue;
+      if (!LF_PATTERN_TERM.has(c.name)) continue;
+      walkLfPatternTerm(c, true);
+    }
+  }
+
+  function walkAtomic(atom, isHead) {
+    let box = null;
+    let paren = null;
+    for (let c = atom.firstChild; c; c = c.nextSibling) {
+      if (c.name === 'ContextualObject' || c.name === 'ContextualType') box = c;
+      if (c.name === 'TupleOrParenPattern') paren = c;
+    }
+    if (box) {
+      walkContextual(box);
+      return;
+    }
+    if (paren) {
+      for (let c = paren.firstChild; c; c = c.nextSibling) {
+        if (c.name === 'Pattern' || c.name === 'AppPattern' || c.name === 'AtomicPattern') {
+          walk(c);
+        }
+      }
+      return;
+    }
+    const id = firstIdentChild(atom);
+    if (!id) return;
+    if (!isHead) {
+      add(id, shim);
+      return;
+    }
+    const name = slice(doc, id.from, id.to);
+    if (isKnownCtorName(name, globalsByName)) return;
+    // Bare unknown name in a pattern: uppercase → binder (meta); lowercase →
+    // binder only for let / fun / ascribed sites (not bare mistyped case ctors).
+    if (id.name === 'UpperIdentifier' || shouldBindLowerPatternHead(atom, owner)) {
+      add(id, shim);
+    }
+  }
+
+  function walk(node) {
+    if (!node) return;
+    if (node.name === 'AppPattern') {
+      const atoms = flattenAppPatternAtoms(node, []);
+      for (let i = 0; i < atoms.length; i++) walkAtomic(atoms[i], i === 0);
+      return;
+    }
+    if (node.name === 'AtomicPattern') {
+      walkAtomic(node, true);
+      return;
+    }
+    if (node.name === 'Copattern') {
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (c.name === 'AppPattern' || c.name === 'Pattern') walk(c);
+        else if (c.name === 'AtomicPattern') walkAtomic(c, false);
+      }
+      return;
+    }
+    if (node.name === 'Pattern') {
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (c.name === 'AppPattern' || c.name === 'AtomicPattern' || c.name === 'Pattern') {
+          walk(c);
+        }
+      }
+    }
+  }
+
+  walk(patternNode);
+  return out;
 }
 
 const LOWER_GLOBAL_NAMESPACES = new Set([
@@ -329,10 +640,15 @@ export function expectedNamespacesForNode(node, refKind) {
 
 // Contexts whose predicted globals still admit in-scope locals (bound vars).
 export function contextAllowsLocals(ctx) {
-  return ctx === 'LFAtomicTerm'
+  return ctx === 'LFAtomicType'
+    || ctx === 'LFAtomicTerm'
+    || ctx === 'CompAtomicType'
     || ctx === 'AtomicExpression'
+    || ctx === 'AtomicPattern'
     || ctx === 'ContextHead'
-    || ctx === 'ContextTailEntry';
+    || ctx === 'ContextTailEntry'
+    || ctx === 'TotalityArg'
+    || ctx === 'TotalityMeasure';
 }
 
 // Resolve the expected global namespaces at a document offset. Prefers an Ident
@@ -384,7 +700,34 @@ function expectedNamespaces(node, refKind) {
 }
 
 function nameVisible(symbol, from) {
-  return symbol.nameRange.from < from;
+  const start = symbol.visibleFrom != null ? symbol.visibleFrom : symbol.nameRange.from;
+  return start < from;
+}
+
+// Mutual `LF a … and b …` / `rec f … and rec g …` / `inductive … and …`:
+// Beluga makes every head visible from the start of the mutual block, not
+// only after its own name (forward refs inside the block are legal).
+function mutualVisibleFrom(declarationNode) {
+  if (!declarationNode) return null;
+  if (declarationNode.name === 'LFDatatypeDeclaration') return declarationNode.from;
+  if (declarationNode.name === 'RecBody') {
+    for (let cur = declarationNode.parent; cur; cur = cur.parent) {
+      if (cur.name === 'RecDeclaration') return cur.from;
+      if (cur.name === 'Program' || GLOBAL_DECL_PARENT.has(cur.name)) break;
+    }
+  }
+  if (declarationNode.name === 'InductiveBody' || declarationNode.name === 'CoinductiveBody') {
+    let cur = declarationNode.parent;
+    // Continuation bodies (`and inductive …`) nest under DatatypeContinuation;
+    // climb to the mutual block's leading declaration for block-start visibility.
+    while (cur && cur.name === 'DatatypeContinuation') cur = cur.parent;
+    if (cur && (cur.name === 'InductiveDeclaration'
+        || cur.name === 'StratifiedDeclaration'
+        || cur.name === 'CoinductiveDeclaration')) {
+      return cur.from;
+    }
+  }
+  return null;
 }
 
 // Direct exports of a module: globals whose structural key is exactly one
@@ -956,6 +1299,7 @@ function shiftSymbol(sym, delta, documentId) {
     defNodeFrom: sym.defNodeFrom + delta,
     defNodeTo: sym.defNodeTo + delta,
     astNodeId: astNodeIdAt(documentId, sym.definingNodeKind, sym.defNodeFrom + delta, sym.defNodeTo + delta),
+    visibleFrom: (sym.visibleFrom != null ? sym.visibleFrom : sym.nameRange.from) + delta,
   };
   if (sym.scope) {
     out.scope = { from: sym.scope.from + delta, to: sym.scope.to + delta, kind: sym.scope.kind };
@@ -1173,6 +1517,7 @@ function collectGlobalSymbols(ctx) {
           baseKey: base,
           structuralKey: disambiguate(base, keyCounts),
           isGlobal: true,
+          visibleFrom: mutualVisibleFrom(node) ?? nameRange.from,
         });
         ctx.symbols.push(symbol);
         ctx.globalSymbols.push(symbol);
@@ -1209,7 +1554,7 @@ function registerNotationPragma(ctx, node) {
 
 function makeSymbol({
   documentId, doc, tree, namespace, name, displayName, nameRange, definingNode, declarationNode,
-  baseKey, structuralKey, isGlobal,
+  baseKey, structuralKey, isGlobal, visibleFrom,
 }) {
   const declarationText = slice(doc, declarationNode.from, declarationNode.to);
   let fingerprint;
@@ -1251,6 +1596,8 @@ function makeSymbol({
     sourceText: sourceSignature(declarationNode, definingNode, doc),
     declarationText,
     isGlobal,
+    // Mutual blocks: visible from block start; otherwise from the name itself.
+    visibleFrom: visibleFrom != null ? visibleFrom : nameRange.from,
   };
 }
 
@@ -1268,7 +1615,7 @@ function collectReferencesAndLocals(ctx) {
     }
   }
 
-  function pushLocal(node, ident) {
+  function pushLocal(node, ident, scopeOverride, recordDefinition = true) {
     const nameRange = extendedRange(ident);
     const name = slice(ctx.doc, nameRange.from, nameRange.to);
     const namespace = ident.name === 'UpperIdentifier' ? NAMESPACE.LOCAL_UPPER : NAMESPACE.LOCAL_LOWER;
@@ -1284,12 +1631,12 @@ function collectReferencesAndLocals(ctx) {
       structuralKey: disambiguate(base, ctx.keyCounts),
       isGlobal: false,
     });
-    const scope = scopeSpanFor(node, ident);
+    const scope = scopeOverride || scopeSpanFor(node, ident);
     symbol.scope = scope;
     symbol.range = { from: scope.from, to: scope.to };
     ctx.symbols.push(symbol);
     ctx.localSymbols.push(symbol);
-    ctx.defByNameRange.set(`${nameRange.from}:${nameRange.to}`, symbol);
+    if (recordDefinition) ctx.defByNameRange.set(`${nameRange.from}:${nameRange.to}`, symbol);
     const entry = { symbol, from: scope.from, to: scope.to };
     localStack.push(entry);
     const bucket = localsByName.get(name);
@@ -1309,12 +1656,54 @@ function collectReferencesAndLocals(ctx) {
     enter(ref) {
       const node = ref.node;
 
+      if (ref.name === 'RecBody') {
+        const annotation = totalityAnnotationOf(node);
+        if (annotation) {
+          const shim = totalityBinderShim(node, annotation);
+          const scope = { from: annotation.from, to: annotation.to, kind: 'TotalityBinder' };
+          for (const param of leadingFnParams(node)) {
+            const ident = firstIdentChild(param);
+            if (ident) pushLocal(shim, ident, scope, false);
+          }
+        }
+      }
+
       if (LOCAL_BINDER.has(ref.name)) {
         const ident = firstIdentChild(node);
-        if (ident) pushLocal(node, ident);
+        if (ident) {
+          if (ref.name === 'ContextEntry' && underPattern(node)) {
+            // Keep in-box uses after the entry; extend through case/let body.
+            const owner = enclosingPatternOwner(node);
+            const scope = owner
+              ? { from: ident.to, to: owner.to, kind: 'ContextEntry' }
+              : null;
+            pushLocal(node, ident, scope);
+          } else {
+            pushLocal(node, ident);
+          }
+        }
+      }
+
+      if (ref.name === 'CaseBranch' || ref.name === 'LetExpression'
+          || ref.name === 'CofunctionBranch') {
+        for (let c = node.firstChild; c; c = c.nextSibling) {
+          if (c.name !== 'Pattern' && c.name !== 'Copattern') continue;
+          const binders = collectPatternBinders(c, ctx.doc, globalsByName);
+          for (const { ident, binderNode } of binders) {
+            const key = `${ident.from}:${ident.to}`;
+            if (ctx.defByNameRange.has(key)) continue;
+            pushLocal(binderNode, ident);
+          }
+        }
       }
 
       if (!IDENT.has(ref.name)) return;
+      // `--name nat N x.` — preferred aliases are pretty-print names, not symbols.
+      // Keep the constant (`nat`) as a normal reference.
+      for (let p = node; p; p = p.parent) {
+        if (p.name === 'NamePreferred') return;
+        if (p.name === 'NamePragma' || p.name === 'Program' || GLOBAL_DECL_PARENT.has(p.name)) break;
+      }
       const range = extendedRange(node);
       if (ctx.defByNameRange.has(`${range.from}:${range.to}`)) return;
 

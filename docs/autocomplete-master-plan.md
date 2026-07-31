@@ -24,9 +24,9 @@ Pipeline (all under `js/editor-src/ide/completion/`):
 |---|---|
 | `classify.mjs` | `classifyCompletionSite(state, pos, engine)` → `{kind: 'ident'|'structure'|'none', …}`. Sync, Lezer-only, never forces settlement. Holes (`?`) are declined — Harpoon owns them. Structure slots (`case-arm`, `top-decl`, `expr-head`) gate what may appear. |
 | `contributors.mjs` | `contributeIdents` (in-file scope via `symbolStore.visibleSymbolsAt` + cfg peers via `getPeerSymbols`). **No hole fills.** |
-| `snippets.mjs` | Structural scaffolds (`LF`/`rec`/`case`/`| … ⇒`) keyed by structure slot. Separate CM section. Tab accepts. |
-| `weigh.mjs` | `rankLookupItems(items, query, limit)` — fuzzy is admission *and* rank when query nonempty; empty query preserves contributor order via `scoreHints.base`. |
-| `source.mjs` | CM glue: `belCompletionSource`, `belAutocompletion` (`activateOnTyping: true`, `MAX_OPTIONS = 24`), fills payload from `getHoleActionContext()` (assembled code + `offsetLines`). |
+| `snippets.mjs` | Structural scaffolds (`LF`/`rec`/`case`/`| … ⇒`) keyed by structure slot. Ranked above idents via `scoreHints.base` (no CM section headers). Tab accepts. |
+| `weigh.mjs` | `rankLookupItems(items, query, limit)` — ranks an already-justified set; `limit: 0` keeps the complete pool. |
+| `source.mjs` | CM glue: builds the full justified empty-query pool once, then BelJar filters and re-ranks its surviving members on each token edit without re-gathering candidates. |
 | `fuzzy.mjs`, `chrome.mjs` | Scoring + popup theme. |
 
 Semantic substrate: `semantic/symbol-store.mjs` — `visibleSymbolsAt(pos, {namespaces, refKind})`,
@@ -159,6 +159,19 @@ Gate to close Phase 0: harness runs the full corpus in one invocation and report
 a **baseline** (expect: soundness violations > 0 today via the soft peer filter and
 null-namespace bag — that number is the point).
 
+**How to read the audit numbers (do not confuse these):**
+
+| Metric | What it means | Good looks like |
+|---|---|---|
+| **Soundness violations** | Offered item fails its claimed J-level (unresolvable / wrong namespace / falsely tagged J3) | **0** — this is the correctness bar |
+| **Illegal implicit J1** | Implicit popup offered J1-only items | **0** |
+| **J2 coverage** | Fraction of sites where grammar predicts a namespace set | High (we sit ~99%) |
+| **J3 coverage** | Fraction of sites where an *expected type* is statically known, so ranking *can* boost type-compatible names | Mid (~47%) is **normal**, not a failure — most references sit where no goal type is known yet |
+| **recall@10 / MRR** | Was the true token in the top 10 / how high did it rank | Higher is better; utility, not correctness |
+
+J3 coverage is *opportunity for better ranking*, not a pass/fail grade. Raising it
+means teaching `expectedGoalType` about more sites — never by inventing types.
+
 Non-goals: no engine changes in this phase.
 
 ### Phase 1 — Soundness hardening (shrink to guaranteed)
@@ -288,24 +301,253 @@ Hand-authored table in `completion/snippets.mjs`, keyed by structure slot:
 Rules:
 - Snippet bodies parse-clean in a host (tested). Expression holes may be `?`
   (Harpoon takes over); patterns use `_`, not `?` (holes are not legal patterns).
-- Snippets live in a CM `Structure` section, ranked above idents so **Tab**
-  accepts the scaffold at empty-query structure slots.
+- Snippets rank above idents via `scoreHints.base` so **Tab** accepts the
+  scaffold at empty-query structure slots (no section title row in the popup).
 - After `|` opens an arm, the slot ends — pattern constructors resume.
 
 ### Phase 6 — Scoped growth: module members, then ranking polish
 
-1. **Module member access** (`Foo.bar`): ~~extend the symbol store with per-module
-   member tables~~ **done** — `membersOfModule` / `moduleMembersOf` over structural
-   keys (`Mod/Decl#name`); `classify` detects `Ident . partial` (Observation or
-   type-position error recovery); offer set = that module's **direct** exports with
-   J2. Unknown module head → fall through (not a fabricated path). Nested
-   `Mod/Inner/…` symbols are withheld until `Inner.` is typed.
-2. **Ranking polish, audit-driven only.** With soundness pinned at 0, tune
-   `weigh.mjs` weights (fuzzy vs `just` vs proximity vs peer penalty) against
-   MRR on the Phase 0 harness. Every weight change lands with its before/after
-   MRR table in the commit message. No intuition-only tuning.
+1. **Module member access** (`Foo.bar`): **done** — `membersOfModule` /
+   `moduleMembersOf` over structural keys (`Mod/Decl#name`); `classify` detects
+   `Ident . partial` (Observation or type-position error recovery); offer set =
+   that module's **direct** exports with J2. Unknown module head → fall through.
+   Nested `Mod/Inner/…` symbols are withheld until `Inner.` is typed.
+2. **Ranking polish, audit-driven only.** **done** — `weigh.mjs` exports
+   `WEIGHTS`; sweep via `scripts/autocomplete-weigh-sweep.mjs`.
 
-Gate: MRR reported; soundness still 0; latency budget held.
+| config | MRR | recall@10 |
+|---|---:|---:|
+| baseline (pre-6.2: fuzzy×100 + just×80) | 0.380 | 48.6% |
+| **prefix-heavy (shipped)** | **0.383** | **48.7%** |
+| just-heavy / peer-soft | 0.383 | 48.7% |
+
+Shipped knobs: `prefixBonus=400`, `exactBonus=600`, `lengthFitScale=40`,
+`peerPenalty=30`, `justStep=80`. Soundness stayed 0; p95 stayed under budget.
+Snippets no longer use a CM `section` header (flat suggestion rows only).
+
+Gate: MRR reported; soundness still 0; latency budget held. **Phase 6 closed.**
+
+### Phase 7 — Kind keywords + utility (done)
+
+Keyword/`type` gap was never a weigh bug: `type`/`ctype`/`prop` are grammar
+keywords, not symbols, and empty `: ` was binder-over-declined. Phase 7 adds
+grammar-gated kind slots and hardens incomplete-decl classification.
+
+1. **Kind structure slots** — `lf-kind` / `comp-kind` in `snippets.mjs`, detected
+   via `LFKind`/`CompKind`, after-`:` spans in LF/datatype/inductive/typedef
+   decls, and Program-level incomplete debris (`inductive Box : c`). Snippets:
+   `type` (LF); `ctype`/`prop` (comp). Kind slots keep `idents: true` with
+   `LFAtomicType` / `CompAtomicType` namespaces so `nat → type` still works.
+2. **Binder hygiene** — `isBinderSite` no longer declines past `:` / `=` inside
+   `BINDER_PARENT` decls (same idea as RecBody-after-`=`). Kind/type nodes short-
+   circuit the empty-token climb.
+3. **Top-decl hygiene** — `isTopDeclSlot` rejects Program-level incomplete debris;
+   kind slots are checked *before* `top-decl` in `structureSlotAt`.
+4. **Wider top-decl scaffolds** — `coinductive`, `stratified`, `typedef`, `module`
+   (parse-clean hosts, same Phase 5 contract).
+5. **J3 opportunity** — `expectedGoalType` climbs when `ctxName` is missing, covers
+   `CompAtomicType`, and peels rec signatures at `expr-head` (including empty
+   `fn x ⇒` / `mlam x ⇒` bodies). Still reorder-only; `plus` regression held.
+
+Gate: unit tests for kind/top-decl positives + negatives; soundness 0 on
+`npm run ac:audit`; latency budget held. Keyword sites are not ground-truth in
+the reference-token audit (by construction) — certified by
+`tests/test-autocomplete.mjs`. Audit treats structure+idents slots as utility
+sites and ignores snippets in soundness checks.
+
+Post-Phase-7 audit figures were from the old per-prefix gather path and are
+not runtime MRR/recall figures after the retained-pool change.
+
+**Phase 7 closed.**
+
+### Phase 8 — Retained pool semantics (done)
+
+Autocomplete now gathers the complete justified pool at activation, rather than
+a display-sized or prefix-shrunk list. While the token remains in the same
+semantic site, BelJar re-filters and re-ranks **only members of that pool**;
+membership therefore cannot increase as the prefix grows. Each edit revisits
+the source but does not rescan symbols or peers. A kind/namespace/locality/
+module-site change changes the pool key, so a structural scaffold cannot leak
+into a later ident site.
+
+`ac:audit` certifies soundness plus retained-pool recall; it deliberately no
+longer reports MRR because production ranking is the retained-pool filter/rank
+path. The weight sweep is labelled offline prefix-rank analysis, not a runtime
+score.
+
+### Phase 9 — Pattern-binder depth (done)
+
+Boxed LF patterns bind variables nested under λ/Π, not only top-level app atoms.
+`collectPatternBinders` walks `LFTerm` / `LFAppTerm` / `LFAtomicTerm` /
+`LFLambda` / `LFPi` after `⊢`, skips known constructor heads and λ/Π binder
+idents, and registers free pattern vars (e.g. `linQ` in
+`| [g ⊢ l_out2 (\y. linQ)]`) as `PatternBinder` scoped to the enclosing
+`CaseBranch` / `LetExpression`. Bare `| [g ⊢ linQ]` still binds. Classify
+declines nested binder sites in the pattern; branch-body uses complete normally.
+
+`ContextEntry` binders inside a pattern keep in-box visibility after the entry
+and extend through the case/let body; expression-box `ContextEntry`s (RHS of
+`let`, app args) keep ordinary `ContextualObject` scope — they are not remapped
+to `PatternBinder` (that remap previously hid uses like `bly.x` in the same box).
+
+Audit miss classification no longer uses `name.length <= 2` as the primary
+`patternLocal` signal. Unresolved binderish contexts (`AtomicPattern` /
+`ContextHead` / `ContextTailEntry`, and `LFAtomicTerm` still under a `Pattern`)
+count as pattern-local; true cross-file gaps remain `peers`.
+
+Post-fix metrics (`npm run ac:audit`, 212 files): soundness **0/0/0**;
+retained-pool recall ~66%; adjusted pool recall **~91%** (excl. declined /
+ns-filter / metavar / pattern-local); `missedPeers` ~14k (down from the
+flat-collector ~15–53k era). LFAtomicTerm context-recall ~60% (was ~53%).
+ContextHead / AtomicPattern rates stay low largely because binder sites
+decline by design. Residual `peers` are mostly true cross-file gaps
+(`str_equiv`, `bstep`, …), not nested pattern LF vars.
+
+### Phase 10 — Mutual-block visibility (done)
+
+Beluga mutual blocks (`LF a … and b …`, `rec f … and rec g …`, inductive
+`and` chains) make every head visible from the **start of the mutual block**,
+not only after its own name. Prefix-closed `nameVisible` previously hid
+forward refs inside the block, so in-file uses of `bstep` / `str_equiv'` /
+`wtp_s` audited as `missedPeers`.
+
+Symbols now carry `visibleFrom` (block start for mutual heads; name start
+otherwise). `shiftSymbol` keeps it delta-correct on the incremental path.
+
+Post-fix (`npm run ac:audit`): soundness **0/0/0**; adjusted pool recall
+**~91.3%** (was ~90.9%); `missedPeers` ~13.6k (was ~14.1k). Forward mutual
+refs (`bstep`, `str_equiv'`, `wtp_s`) resolve in-file. Remaining peer samples
+skew toward totality pragma args (`/ total …`) and a few unresolved lowers
+(`one`, `bot`) — not mutual-block gaps.
+
+**Phase 10 closed.**
+
+### Phase 11 — Local-scope completion closeout (done)
+
+The full miss census (grouped by reason / name / file / Lezer context) exposed
+three remaining local-scope classes that the capped 40-sample list obscured:
+
+- totality annotations refer to the later leading `fn` / `mlam` parameters;
+- inductive/coinductive header binders scope through their constructor block
+  (including parameter/substitution variables such as `#p` / `$S`);
+- `fun` cofunction copatterns bind branch-local arguments.
+
+The symbol store now models all three. Type positions admit visible locals;
+sigiled prefixes derive case from the identifier after `#` / `$`; cofunction
+binder sites decline while their branch-body uses complete. The audit report
+retains the top 200 full-corpus miss groups so future work starts from dominant
+classes rather than a sample accident.
+
+Post-fix (`npm run ac:audit`, 212 files): soundness **0/0/0**; retained-pool
+recall **71.1%**; adjusted pool recall **93.8%** (target ≥93%); `missedPeers`
+~10.2k; LFAtomicType **83%**, AtomicExpression **93%**, ContextHead **51%**,
+CompAtomicType **81%**. Full suite: **203/203**.
+
+**Phase 11 closed.**
+
+### Phase 12 — Suite cfg ownership + signature totality (done)
+
+Two actionable residue classes, without inventing free LF metavariables in the
+symbol store (that path wrongly turns cross-file uses like `wa u` into locals
+and drops graph edges / breaks unresolved-metavar doctrine):
+
+1. **Multi-cfg directories.** Audit (and any caller) picks the cfg that *lists*
+   the active file via `owningCfgForFile`, not only the largest/best cfg in the
+   folder. Fixes `.elf` peers (`term` / `pred` from `lam.elf`) when a sibling
+   cfg (e.g. cover tests) outranks the real suite.
+2. **Signature binders in `/ total …`.** `CompTypeBinder` scope extends through
+   the enclosing `RecBody`, so `{g:ctx}` is visible in totality annotations
+   before the leading `mlam`/`fn` params.
+
+Free uppercase / reconstructed LF vars (`N`, `A`, `sigma`-class implicits with
+no in-file def) stay unresolved and audit as `metavar` / honest peer noise —
+completing them would invent binders.
+
+Post-fix (`npm run ac:audit`, 212 files): soundness **0/0/0**; adjusted pool
+recall **94.8%** (was 93.8%); `missedPeers` ~8.9k (was ~10.2k); retained-pool
+recall **75.7%**. Full suite: **203/203**.
+
+**Phase 12 closed.**
+
+### Phase 13 — Live suite ownership + peer census (done)
+
+Phase 12’s `owningCfgForFile` lived in the audit only. Live completion called
+`listGroupSymbols` with empty opts, so `developmentForFile` returned standalone
+whenever Persist/best cfg did not list the open file (multi-cfg dirs like
+church-rosser → missing `.elf` peers).
+
+1. **`developmentForFile`** now falls back to `owningCfgForFile` when the
+   preferred cfg’s chain does not include the active file. Preferred still wins
+   when it owns; true orphans stay standalone.
+2. **Audit** exercises that same seam (preferred = `inferActiveCfgByDir`, no
+   special owning override). Emits `recallBreakdown.peerGroups` (top 50 peer
+   clusters). Unresolved free names in LF term/type slots — lower or upper —
+   classify as `metavar` (doctrine: never invent reconstructed implicits).
+
+Post-fix (`npm run ac:audit`, 212 files): soundness **0/0/0**; adjusted pool
+recall **96.2%** (was 94.8%); `missedPeers` ~6.4k (was ~8.9k); metavar bucket
+absorbs lowercase LF free implicits. Full suite: **203/203**.
+
+**Phase 13 closed.**
+
+### Phase 14 — Pattern precision + totality audit (done)
+
+Phase 13’s peer census was ~80% totality argument labels and ~20% a real scope
+bug: binders inside `(Ctor …)` never entered the symbol store. Separately,
+`isPatternArgBinder` treated every identifier after `⊢` in a pattern box as a
+fresh binder, so substitution uses (`F1[..,x]`) and known ctor heads declined.
+
+1. **`collectPatternBinders`** descends through `TupleOrParenPattern` into nested
+   pattern/app atoms (same ctor-head vs arg rules).
+2. **`isPatternArgBinder`** exempts `Substitution`/`SubstBody` uses and known
+   LF ctor/constant heads after `⊢`; free boxed vars (incl. nested `linQ`) still
+   decline at their binding occurrence.
+3. **Audit** buckets unresolved `TotalityArg` as `totalityLabel` and excludes it
+   from adjusted actionable recall (alongside metavar / pattern-local).
+
+Post-fix (`npm run ac:audit`, 212 files): soundness **0/0/0**; adjusted pool
+recall **98.8%** (was 96.2%); `missedPeers` ~2.1k (was ~6.4k); totality-label
+~3.9k honest; LFAtomicTerm raw **67%** (was 62%); declined **4.6k** (was 14k from
+false binder declines). Full suite: **203/203**.
+
+**Phase 14 closed.**
+
+### Phase 15 — Let / ascribed pattern binders (done)
+
+Phase 14’s leftover peers were mostly untracked `let` / ascribed `fun` locals
+(`ms`, `sn'`, `conf`, `t`), not cfg gaps. Unknown lowercase pattern **heads**
+were skipped to avoid inventing mistyped case constructors — correct for bare
+case arms, wrong for let LHS and ascribed fun params.
+
+1. **`collectPatternBinders`** binds lowercase heads under `LetExpression`,
+   `CofunctionBranch`, or ascribed `Pattern` (`y : T`).
+2. **`isPatternArgBinder`** declines those binding occurrences; body uses still
+   complete. Bare unknown case heads stay unbound.
+3. **Audit** treats unresolved `$`/`#` in `CompAtomicType` as `metavar`.
+
+Post-fix (`npm run ac:audit`, 212 files): soundness **0/0/0**; adjusted pool
+recall **99.5%** (was 98.8%); `missedPeers` ~0.9k (was ~2.1k); AtomicExpression
+context recall **99%**. Full suite: **203/203**.
+
+**Phase 15 closed.**
+
+### Phase 16 — Mutual continuation visibility + name-pragma hygiene (done)
+
+Phase 15’s leftover peers were ~90% `--name` preferred aliases (`ctx=unknown`)
+and ~5% mutual co/inductive forward refs under `DatatypeContinuation`.
+
+1. **`mutualVisibleFrom`** climbs `DatatypeContinuation` to the enclosing
+   inductive/coinductive/stratified declaration so continuation heads share
+   block-start visibility.
+2. **Reference walk** skips identifiers under `NamePreferred` (pretty-print
+   aliases); the `--name` constant itself still resolves.
+3. **Audit** buckets residual name-preferred unresolved as `namePragma`.
+
+Post-fix (`npm run ac:audit`, 212 files): soundness **0/0/0**; retained-pool
+**77.6%**; adjusted pool recall **100.0%** (peers **10**, name-pragma **0**,
+symbol-store **0**). Full suite: **203/203**.
+
+**Phase 16 closed.**
 
 ---
 

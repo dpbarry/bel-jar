@@ -1264,6 +1264,779 @@ lying to it.
     stake before starting, and size it by TOGGLE on a sample — not by counting
     signatures or reference shapes, both of which misled this session.**
 
+17. **HIGHER-ORDER CTYPE CONSTRUCTION (`mlam` skeletons) — BUILT, guarded, and UNPAID.**
+    Rule (3) emitted only NULLARY constructors for a comp-family goal and rule (4)
+    (type-directed constructor synthesis) is LF-only, so a ctype goal could never be
+    built by APPLYING its constructor — `Acc` was unreachable as a term. Added rule (3b)
+    in `fillCandidates`: schema Pi → `[_]`, box Pi → `[<underscored ctx> ⊢ _]`,
+    higher-order argument → `(mlam b1, … ⇒ ?)`, one binder per Pi in the argument's own
+    declared type. Spelling **checker-arbitrated before coding**:
+    `Acc [_] [ |- _] [_ |- _] (mlam M2, S => ?)` ACCEPTED; dropping the explicit Pi
+    arguments REJECTED ("Expected: function type").
+
+    **A REAL ORBIT, caught and fixed, not shipped.** The `mlam` body has the SAME family
+    goal as the constructor that opened it, so the first cut re-applied `Acc` into its
+    own body forever — 25 accepted steps, step-bound at 261 checks on `inl_sn`. Guard:
+    refuse while an emitted `(mlam` is still OPEN at this hole with NO intervening
+    `case`/`let` — a structural non-progress test (the speculative-let chain cap's shape),
+    not a budget. After it: 74 checks, orbit gone.
+
+    **MEASURED BY TOGGLE, 44-target spread over 22 programs (2 per program) drawn from
+    the 140 stuck targets whose ctype goal family has a higher-order constructor
+    argument: 1/44 → 1/44. GAIN 0, LOSS 0, checks 6,174 → 6,178 (+4).** The only
+    verdict changes are two HONEST relabels (`howe`/`howe-total#howe_osim`,
+    no-move → coinductive-out-of-fragment). **Gates: suite 203/203 (one flake in the
+    unrelated `test-settings-persist`, green standalone and on re-run), differential
+    199/199 — zero regressions.**
+
+    **Why it is inert, stated plainly:** the limiter requires EVERY argument to be a
+    schema Pi, box Pi, or higher-order, and most ctype constructors with an HO argument
+    also carry plain ctype premises (`SnCInl : Sn … → Sn … → Sn … → SnRed …`). So it
+    fires essentially only on the accessibility shape — where, as 16 already records, the
+    proof still needs two more mechanisms. **KEPT as the construction half of the SN
+    build** (cost measured at ~zero, two verdicts made honest), explicitly NOT banked.
+
+18. **⭐ THE ACCESSIBILITY CHAIN CLOSED — `inl_sn` / `inr_sn` COMPLETE.** Three further
+    defects, each found by probing the checker rather than reasoning about it:
+
+    (a) **Rule (3b) was emitting a VACUOUS ACCEPTANCE.** `Acc [_] [ |- _] [_ |- _]
+    (mlam …)` type-checks, but leaves the constructor's explicit Pi arguments
+    undetermined — the meta-context reads `S : (FREE CtxVar 5 |- step (?X…) M')`, so the
+    skeleton certifies and the NEXT move on `S` dies "Expression is not closed". Rule (3b)
+    now instantiates those arguments by unifying the constructor's RESULT against the
+    goal (`Acc [_] [ |- _] [_ |- inl B[] X2] …`). Probed both ways: instantiated
+    ACCEPTED, all-underscore REJECTED. **A move that certifies but poisons its own
+    continuation is the P12 pathology — check the move AFTER the one you are adding.**
+
+    (b) **Metas bound by an `mlam` WE emitted were unsplittable.** The pi-meta split loop
+    keys on `piNames`, the THEOREM's Pi binders, so the derivation bound inside our own
+    skeleton could never be analysed. `piNames` now also carries the binders of any
+    `mlam` on the path to the hole (membership in `hole.meta` — the checker's own report —
+    remains the authority on scope). The split then collapses to the single possible arm:
+    `(case [h |- X5] of | [h |- rinl X21] => ?)`.
+
+    (c) **The recursion emitter dropped the CTYPE argument slot, and recursed on the
+    wrong subject.** `piRecurseTexts` filtered premises to `box`, so `inl_sn` was called
+    as `inl_sn [ |- _] [ |- X1]` — two arguments for a three-argument theorem — and its
+    `decI` picked the last box Pi (`B : ty`), i.e. induction on a TYPE. Fixed: ctype
+    premises are argument slots (M1b, one more emitter), and a CTYPE-SUBJECT call family
+    is emitted with every Pi argument inferred, carrying the decrease in the argument
+    itself. The slot's candidates come from `hoHypApplications` — **applying an in-scope
+    HIGHER-ORDER hypothesis as a rule**, the last missing move: `X3` is bound by the `Acc`
+    pattern and is itself a Pi telescope, and nothing in the vocabulary applied it.
+    Probed: `let R = X3 … in inl_sn … R` is REJECTED ("Recursive call not structurally
+    smaller") — the totality checker accepts it ONLY inline in the argument slot, so the
+    nested form is the one to generate. The decI gating now bails to `out`, never `[]`,
+    so these calls survive a Pi subject with no candidate in scope.
+
+    **MEASURED: the 14-target SN list 0/14 → 2/14** — `poplmark-reloaded+#inl_sn` and
+    `#inr_sn`, each **COMPLETE[5 steps, 106 checks, ~18s]**, quick proofs:
+    `case X of | Acc [h] [ |- X1] [_ |- X2] X3 ⇒ Acc [_] [ |- _] [_ |- inl B[] X2]
+    (mlam X4, X5 ⇒ (case [h |- X5] of | [h |- rinl X21] ⇒
+    inl_sn [_ |- _] [ |- _] (X3 [h |- _] [h |- X21])))` — split, higher-order
+    construction, invert, and a recursion through an applied accessibility function,
+    end to end from our model. **Gates: suite 203/203, differential 199/199 — zero
+    regressions.** On the 44-target cross-development HO sample the delta is 0 (that
+    sample takes 2 targets per program and is mostly standalone `.bel`; the SN wins are
+    `.cfg`), so the honest reach so far is the accessibility shape, not all 140.
+
+19. **WIDENED, same mechanism — the SN list 0/14 -> 4/14.** Three further increments,
+    each probe-first:
+
+    (a) **One-constructor REBUILDS in the HO application's slots.** The accessibility
+    function is routinely applied to a derivation the caller must BUILD:
+    `r [_ | - _] [_ | - rappr S]` — the bound `S` steps the sub-term, the slot wants the
+    step of the WHOLE term. Per slot, each constructor of the slot's family taking exactly
+    ONE argument of that same family, applied to an in-scope meta (the
+    `nestedCtorArgFills` limiter — a rebuild point, never generic breadth). Probed on
+    app_snb: with `rappr X5` ACCEPTED, with the bare meta "Ill-typed".
+
+    (b) **SUPPLY THE DERIVATION, INFER THE INDICES — and a ranking that hid the answer.**
+    A telescope's leading slots are index arguments and its LAST slot is the derivation
+    that determines them, so the shape that checks is inferred-leading-slots plus a
+    concrete final one. The first cut ranked tuples by FEWEST underscores (a guess, made
+    to dodge "leftover metavariables") and sorted the winning shape out of the cap
+    entirely — every emitted application filled the LEADING slot concretely and every one
+    was "Ill-typed". The rejected-candidate dump showed it immediately: 60+ variants, none
+    of them the one form the probe had already proven. **When a probe says a spelling
+    works and the engine never emits it, look at the RANKING before the generator.**
+
+    (c) **Instantiated slots take the GOAL's context, not the constructor's.** A goal over
+    an EXTENDED context needs the extended spelling; rule (3b) used the declared context.
+
+    **MEASURED, same 14-target list, same 240s cap, before the whole build vs after:
+    0/14 -> 4/14** — `inl_sn`, `inr_sn` (143 ck), `app_snb` in BOTH poplmark-reloaded and
+    poplmark-reloaded+ (54 ck, 4 steps). **Gates: suite 203/203, differential 199/199 —
+    zero regressions.**
+
+    **THE COST, reported not buried:** the mechanism opens searches that do not close.
+    `abs_sn` no-move[49] -> step-bound[239], `confluence` no-move[15] -> step-bound[821],
+    `mstep_sn` no-move[78] -> step-bound[397], and **three go no-move -> CANCELLED at
+    240s** (`bc_aux_sum`, `caser_sn`, `match_sn`). Against the sprint contract's
+    quick+reliable half that is a real debit on 6 targets for 4 completions. It is
+    contained to this family's shape and the differential is clean, so it ships — but the
+    next increment here should be CHEAPENING those searches, not widening further.
+
+    **`case_snb`/`case_snc` are blocked ELSEWHERE — a hole-report defect, not this
+    mechanism.** At the post-split hole the report splits the accessibility hypothesis's
+    Pi telescope across TWO context entries (one holding only the first binder, a second
+    holding the rest plus the conclusion) because the type contains a lambda.
+    `hoHypApplications` then sees a telescope with no conclusion and skips it, so no
+    recursion is ever offered. The fix belongs in the hole report's context-entry
+    splitter (lambda-aware), and it is worth doing: it silently corrupts every hypothesis
+    whose type carries a lambda binder.
+
+    **Residue of the 14:** 4 COMPLETE, 3 step-bound, 3 cancelled@240s, 2 no-move
+    (case_snb/case_snc, blocked by the report defect above), 2 other.
+
+21. **⭐ THE `.cfg` RE-BASELINE — the ledger owed since Wave 6, now paid.**
+    Ran all **209 `.cfg` targets the 2026-07-19 ledger records as non-COMPLETE**
+    natively (40 steps / 60s cap), incremental-write so an interrupted sweep keeps its
+    measurements. Recorded as
+    `results/corpus/library.native-rebaseline-cfg-20260729.jsonl` (kept SEPARATE, like
+    the 07-28 standalone sweep — different cap and step budget from the browser
+    harness, so it must not be silently merged).
+
+    **24 COMPLETE.** Residue: 70 cancelled@60s, 66 no-move, 36 no-totality, 7
+    step-bound, 6 coinductive.
+
+    **⭐ TRUE LIBRARY COMPLETE ≈ 254** (199 frozen ledger + 31 standalone-`.bel`
+    recoveries from the 07-28 sweep + 24 here). The frozen ledger under-counts by ~55,
+    which is exactly why four class estimates went wrong this session — EVERY residue
+    number in these docs derives from it. Fold both sweeps into `library.jsonl`
+    (archive by rename first) before staking anything on a class size again.
+
+    **6 of the 24 are attributable to this session's accessibility build**, each
+    verified by reading the emitted proof rather than assumed: `app_sna` and `app_snb`
+    in BOTH poplmark-reloaded and poplmark-reloaded+, plus `inl_sn`/`inr_sn`. `app_sna`
+    was NOT in the 14-target SN bench and would have gone uncounted without this sweep
+    — its proof is the same chain (`Acc` split → `Acc [...] (mlam ...)` construction
+    → HO application with a `rappl` rebuild). The other 18 are pre-existing recoveries
+    the ledger never recorded (church-rosser `eq3`/`eq6`/`sym_pconv`/`appd`/`append`,
+    lincx `is_unr_join*`/`lemma1_6b`/`unr_uniqueness`, cp `str_hyp`/`str_lin`,
+    bisimulation `invsym`, tapl `vsound`/`lemma_val_1`, poplmark `eq_red`).
+
+    **The 70 cancelled@60s are NOT verdicts** — the cap is well under what a big
+    assembly needs (`str_lin` took 55.7s to SUCCEED). They are unmeasured, not stuck.
+
+22. **⭐ THE LEDGER OF RECORD, REBUILT — and the class map redrawn on real numbers.**
+    The 70 targets that cancelled at the 60s cap were re-run at **240s**. **0/70
+    COMPLETE** on the 23 measured before this entry was written (6 step-bound, 8 still
+    cancelled, 7 no-totality, 2 no-move). **This FALSIFIES the natural reading that the
+    cap was hiding completions** — it was hiding VERDICTS. Quadrupling it converts
+    nothing; it only turns TIMEOUT rows into honest no-move/no-totality ones. So **254
+    stands** and the deep re-run is a classifier-honesty instrument, not a corpus-%
+    one. (Recorded before the sweep finished because the signal was unambiguous at
+    23/70; per the sprint contract a completion bought with a 240s search would be a
+    deferred defect anyway.)
+
+    **`results/corpus/library.native-merged-20260729.jsonl`** — the frozen 2026-07-19
+    ledger with **541 rows overridden** by the two native sweeps (07-28 standalone
+    `.bel`, 07-29 `.cfg`). `library.jsonl` is UNTOUCHED (the archive-by-rename law
+    applies before any real fold); this is a derived VIEW, and the right input for
+    class sizing until someone does the fold properly.
+
+    | outcome | n |
+    |---|---|
+    | COMPLETE | **254** |
+    | no-move | 275 |
+    | no-totality-measure | 107 |
+    | TIMEOUT (unswept residue) | 103 |
+    | step-bound | 39 |
+    | coinductive (out of fragment) | 39 |
+    | PRECHECK_FAIL / FAIL | 29 |
+
+    **The class map, rebuilt on it** (`npm run prover:firstmove --ledger <the merged
+    file>`) — compare against the stale map in the MODEL-FIDELITY entry, which is what
+    everything before this was sized from:
+
+    | reference's first move | targets | of which step-0 |
+    |---|---|---|
+    | `case` on a COMP hypothesis | **267** | **197** |
+    | `let` (invert / call-then-use) | 88 | **79** |
+    | `fun`/copattern (out of fragment) | 77 | 48 |
+    | `case` on an LF box | 62 | 50 |
+    | DIRECT term | 50 | 38 |
+    | `case` on a CONTEXT VARIABLE | 18 | 18 |
+    | joint/diagonal tuple `case` | 4 | 4 |
+
+    The shape survives the correction — `case` on a comp hypothesis is still the mass —
+    but note the LET class's step-0 count went 63 → **79**: native verdicts replaced
+    TIMEOUT rows with honest step-0 bails, so that class is denser than it looked. Any
+    future stake is sized from THIS table, and then confirmed by toggle on a sample
+    ([[feedback-size-classes-by-toggle]]) before a line of code is written.
+
+23. **⭐ TYPE-ASCRIPTION RE-BINDING — a missing move, found by reading the LET class.**
+    With the ledger honest (entry 22), the `let` class is the second mass: 88 targets,
+    **79 accepting nothing**. Reading its references showed one distinctive first move
+    repeated across whole families (`existsEq`/`existsEqV`/`exTRel`/`exTRelV`,
+    `ctx_member`, `strengthen`/`extend`, `env_ext`): **`let (cr : Crel [l] [h]) = cr in`**.
+
+    A premise routinely quantifies its context and substitution parameters IMPLICITLY —
+    bound in the TYPE, not in the body — so every later move that spells one dies with
+    "This free context variable is illegal". Re-binding the hypothesis AT ITS DECLARED
+    TYPE brings those names into scope for the whole body. Probed before building, on
+    `equal#exTRelV`: the split the proof needs is **REJECTED without the ascription and
+    ACCEPTED with it** — productive, not cosmetic.
+
+    Emitted alongside inverts, limited to stay a FIRST move: only at a hole with no
+    enclosing case, only for a premise whose declared type carries an implicit
+    lower-case context or `$`-substitution name, only when the family head identifies
+    the premise uniquely, never twice for the same name on a path.
+
+    **A trap on the way in, worth its own line:** the "no enclosing case" test used
+    `openCasesAt(code, hole)`, which defaults to scanning from offset 0 — and a sibling
+    `rec`'s unparenthesised top-level `case` NEVER closes, so every hole in a multi-decl
+    file read as already inside a case and the move never fired. Scope it with
+    `declStartOffset` (the same trap the split-depth budget documents). Symptom was
+    silence, not an error.
+
+    **MEASURED BY EXACT TOGGLE on the 32-target class: 0/32 → 2/32. +2, 0 losses** —
+    `equal#exTRel` no-totality[34ck] → COMPLETE[45ck], `equal#exTRel'`
+    no-totality[24ck] → COMPLETE[31ck], both quick. **Gates: suite 203/203 in 149s,
+    differential 199/199 — zero regressions.** 6% conversion, below a ⅓ stake: the
+    ascription is the first move of all 32 but most need a SECOND missing move on top
+    (`exTRelV` still no-move at 10 checks — it needs a parameter-variable split,
+    `case [l ⊢ #p] of` with `#p`/`#p[..]` patterns, which is the next thing to scope in
+    this class).
+
+24. **PARAMETER-VARIABLE SPLIT — a genuinely missing move, and UNPAID.**
+    `case [l ⊢ #p] of | [l, x:term ⊢ x] | [l, x:term ⊢ #p[..]]`. A theorem quantified
+    over a PARAMETER (`{#p : #[l ⊢ term]}`) is proved by asking whether that variable is
+    the context's NEWEST binding or an earlier one. The engine split constructors,
+    boxes and comp hypotheses but never a parameter, so the whole idiom
+    (`exTRelV`, `existsEqV`, `ctx_member`, `lookupVars`) had no move at all. Arms come
+    from the context's SCHEMA via `schemaInfo` — the "newest binding" arm (the element's
+    own variable, or a block PROJECTION) and the "earlier one" arm, whose spelling
+    `parameterTermFor` already knew (`#p[..]` / `#p.f[..]`). Both arms present the
+    context EXTENDED by that element, which is what makes the refinement visible.
+
+    Checker-arbitrated on equal#exTRelV (only reachable AFTER the type ascription of
+    entry 23 — without it every spelling dies on "free context variable"): the two-arm
+    split is ACCEPTED, and the element's type must be spelled CONCRETELY — `[l, x:_ ⊢ x]`
+    is rejected with "Holes may not appear as contextual LF types".
+
+    **MEASURED: 0/26 on the class of stuck targets carrying a Pi-bound parameter
+    (poplmark± 8, literate 4, equal 2, cpp13 2, logrel 7, …), and +0 on the 32-target
+    ascription class (still 2/32).** The move is generated and ACCEPTED — `exTRelV`
+    now takes it and goes 10 → 22 checks — but no target closes on it yet. **Gates:
+    suite 203/203 in 160s, differential 199/199 — zero regressions. KEPT** as
+    vocabulary (refusing a move the fragment genuinely needs bakes a deterrent in, the
+    standing law), reported as NULL, not banked.
+
+    **What `exTRelV` still needs, traced not guessed:** after the parameter split its
+    arms need `let Crel_xa (cr' : Crel [l0] [h0]) = cr in` — an inversion of the ctype
+    hypothesis whose bound sub-hypothesis is itself TYPE-ASCRIBED (entry 23's move, one
+    level in, at a non-first position). That is the third move in this family's chain
+    and the next thing to scope here.
+
+25. **⭐⭐ INFERRED-INDEX VARIANTS — the first GENERAL mechanism of this arc, and the
+    one that should have come first.**
+
+    Every family-specific slice this session converted at 0–15% of its class. Reading
+    back across ALL the traces, one cause repeats everywhere: an application whose SHAPE
+    is right and whose INDEX arguments are the wrong terms — "Ill-typed expression" on
+    `f [g ⊢ M] [g ⊢ N] d` where `f [g ⊢ _] [g ⊢ _] d` checks. Beluga RECONSTRUCTS those
+    slots from the derivation argument, and the corpus writes them that way
+    (`inl_sn [_ ⊢ _] [ ⊢ _] (r …)`). The engine instead ENUMERATES concrete terms for
+    every slot and loses on all of them — which is also why the reject census kept
+    reading as "wrong TYPE for the slot" and got parked as needing model-side LF type
+    inference. It does not: it needs us to stop guessing what the checker will infer.
+
+    **The mechanism (post-pass over the ordered move list, ~25 lines):** for each
+    application-shaped move (`fill`/`recurse`/`lemma`), offer ONE extra variant with
+    every boxed argument except the LAST spelled `_` — the same "supply the derivation,
+    infer the indices" rule that was checker-proven for higher-order hypothesis
+    application (entry 19b). Purely additive, ranked immediately after its original, so
+    the concrete spelling still leads and no accepted move changes order.
+
+    **MEASURED BY EXACT TOGGLE on a broad 60-target sample (2 per program, drawn across
+    the WHOLE standalone residue — not a hand-picked class): 5/60 → 6/60. +1, 0
+    losses.** The gain is also a SPEED result, which is the sprint contract's other
+    half: `logrel/weak-norm-closed-ideal#closed` step-bound[**713 checks**] →
+    **COMPLETE[37 checks]** — 19× cheaper AND decided. **Gates: suite 203/203 in 134s,
+    differential 199/199 — zero regressions.**
+
+    **This is the shape of mechanism to look for from here.** It is not tied to a
+    family, a schema, or a constructor; it applies at every application site in the
+    corpus. One general rule beat four targeted builds on breadth per line of code.
+
+26. **FULL STANDALONE RE-SWEEP on the shipped engine — TRUE LIBRARY COMPLETE ≈ 266.**
+    All **382** standalone-`.bel` targets the merged ledger calls non-COMPLETE, native,
+    40 steps / 60s. **12 COMPLETE**, folded into
+    `results/corpus/library.native-merged-20260729.jsonl`. Residue: 174 no-move, 65
+    no-totality, 44 cancelled@60s, 43 coinductive, 39 step-bound, 5 search-bound.
+
+    **Attribution, checked and NOT assumed:** 6 of the 12 are this session's
+    (`determinacy` ×3, `exTRel`, `exTRel'`, `closed`). The other 6 are the
+    `howe`/`howe-total` pair `ev_val`/`ev_value`/`sim_howe` — I read their proofs and
+    they use plain intro/split/synth with NONE of this session's moves, so they are
+    pre-existing recoveries the 07-28 sweep missed because it EXCLUDED coinductive
+    developments. Newly recorded, not claimed.
+
+    **Session total, all toggle- or proof-verified: +12** — `determinacy` ×3,
+    `inl_sn`, `inr_sn`, `app_snb` ×2, `app_sna` ×2, `exTRel`, `exTRel'`, `closed`.
+    Ledger 199 (frozen) → **266** measured, of which +12 is engine work this session and
+    the rest was already true and unrecorded.
+
+27. **THE DEEPEST-HOLE CENSUS on the shipped engine, and two general post-passes —
+    one shipped, two reverted. The DISCRIMINATOR is what to carry forward.**
+
+    Ran the divergence prober over a 34-target sample of the no-move residue (one per
+    program, 48 programs) and aggregated the checker's objection at the DEEPEST hole
+    reached — not the root the search backtracked to:
+
+    | n | objection |
+    |---|---|
+    | 269 | `Type-checking error.` (generic) |
+    | ~220 | **`Expected <name> to be a program constant or constructor`** (`h` 140, `M` 32, `g` 20, `A` 18, `E1` 10) |
+    | ~115 | **`Identifier <name> is unbound`** (`g` 73, `N1` 32, `g1` 10) |
+    | 44 | `Expected an LF term-level constant.` |
+    | 18 | `Ill-typed expression.` |
+
+    Move kinds present at that hole: fill 31, split 18, recurse 10, lemma 10, invert 7 —
+    the vocabulary is rich, so this is generation QUALITY, not missing moves.
+
+    **⛔ THE DISCRIMINATOR FOR A GENERAL POST-PASS: does it change the candidate COUNT?**
+    Two were tried on the same day with the same predicate quality and opposite results:
+    - **Inferred-index variants (entry 25) — SHIPPED.** Adds ONE variant per
+      APPLICATION-shaped move. +1 measured, 0 losses, and a 19× speedup on `closed`.
+    - **Unwritable-context variants — REVERTED, instant loss.** Adds a variant to EVERY
+      move kind. `equal#exTRel` COMPLETE[47 checks] → STUCK[645] on the first smoke test.
+    - **Unwritable-context REWRITE (bounded, in place, no count change) — REVERTED,
+      measured INERT.** Canary identical; 0 gain / 0 loss / 4,996 → 4,988 checks on the
+      60-target broad sample.
+
+    So: a post-pass bounded by application SITES is safe; one that fires on nearly every
+    move is not, however sound its predicate. Reasoning left at both code sites.
+
+    **⭐ AND THE INERT RESULT IS THE USEFUL ONE.** If those ~115 `Identifier <name> is
+    unbound` rejections were unwritable CONTEXTS, the rewrite would have moved the check
+    count. It did not. `N1` is uppercase and `g1` is report-shaped, so that mass is the
+    engine citing **CHECKER-INVENTED METAVARIABLE names absent from source** — exactly
+    what `inventedReportNames` / `sourceWritableNames` guard for SYNTH fact admission
+    (Phase F.7) and nothing else. **Aim the next attempt at the META side, in the
+    split/lemma/recurse emitters, not the context side.** The `Expected <name> to be a
+    program constant` row (~220) is its sibling: a meta-context entry used BARE in a
+    computation-level argument slot, which is refusable with certainty from our own
+    model — a sound PREFILTER (removes candidates, so bounded by construction).
+
+28. **⭐ LEXICAL GUARD #3 — bare META NAMES at computation level. −18.6% checks
+    corpus-wide, zero risk.** Straight off entry 27's census: the second-largest
+    objection (~220: `h` 140, `M` 32, `g` 20, `A` 18, `E1` 10) is
+    `Expected <name> to be a program constant or constructor` — a meta-context entry
+    (context variable or LF metavariable) written BARE in a computation-level argument
+    slot. That is the exact sibling of guard #2, which already covers `#p`/`$S`: a meta
+    object may be cited inside a box or bound in a binder list, never bare at comp
+    level. `hole.meta` is the CHECKER's own meta context, so a name in it that is not
+    also a computation binding can never head a comp argument — sound by construction.
+    Fails OPEN with no meta context; never judges `split`/`intro` (binding occurrences).
+
+    **MEASURED on the 60-target broad sample: checks 4,996 → 4,069 (−18.6%), 0 gains,
+    0 losses.** Canaries got cheaper with identical proofs (`exTRel` 47 → 33 checks,
+    `exTRel'` 31 → 24, `determinacy` unchanged at 73). **Gates: suite 203/203,
+    differential 199/199.** Pinned with 13 contract cases in `test-prover-prefilter`
+    (reject + legal-and-must-pass, plus the fail-open and never-judge-a-split rules).
+
+    **It buys SPEED, not corpus % — verified, not assumed.** Re-ran the 88
+    budget-limited standalone targets (TIMEOUT / step-bound / search-bound) with the
+    18.6%-cheaper search: **0 conversions**. Those targets wander; they do not narrowly
+    miss, so a constant-factor saving cannot flip them. This is the S3 finding holding
+    exactly as recorded — and it is why the prefilter is banked against the sprint
+    contract's quick+reliable half and NOT against its corpus-% half.
+
+29. **Guard #4 (checker-invented names) — TRIED, REVERTED BY A SOUNDNESS PIN.**
+    The census's third row (~115: `Identifier <name> is unbound`, `g` 73, `N1` 32,
+    `g1` 10) is the engine citing metavariables the hole report reconstructed but the
+    SOURCE never binds. Phase F.7 keeps those out of SYNTH's fact pool; the
+    fill/lemma/recurse emitters had no guard (all three helpers —
+    `inventedReportNames`, `sourceWritableNames`, `textReferencesNames` — were imported
+    into prover-candidates and UNUSED). Rejecting any move citing one measured −1.3%
+    checks, 0 gains, 0 losses, all canaries clean.
+
+    **It FAILED the existing pin** "trustScope passes uppercase args bound as comp-vars
+    (soundness — no false prune)". Cause: `sourceWritableNames` measures SOURCE binding,
+    so a name legitimately in scope via the engine's OWN emitted text — or any hole whose
+    source position will not resolve — reads as invented and the candidate is wrongly
+    pruned. That is the same unsound direction S3 recorded when a meta-only prune cut
+    `trans` 544 → 343 by dropping valid in-scope names. Reverted; reasoning at the code
+    site. **A correct version needs a scope notion unioning source bindings with the
+    engine's emitted binders — not `sourceWritableNames` alone.**
+
+    **The pin did its job.** It was written by an earlier session against exactly this
+    mistake, and it caught a change whose every empirical signal (canaries, check count,
+    zero losses) said ship. Numbers do not detect unsoundness; pins do.
+
+30. **THE GENERIC `Type-checking error.` ROW, SUB-CLASSIFIED — and it is NOT a defect
+    class. The census instrument is now exhausted.** It was the largest row (269) and
+    the plan flagged it as "needs sub-classification before it is actionable". Done:
+    dumped every candidate the engine submits for four no-move targets
+    (`exTRelV`, `cc#lookup`, `algeq-simplified#thm`, `normeval#nsubst`), re-ran the
+    checker on each, and bucketed the DETAIL lines the engine never records (it stores
+    only the headline). Result:
+
+    | n | detail |
+    |---|---|
+    | 12 | `Expected type: [?g ⊢ algeq (?M) (?N)]` … genuine INDEX mismatch |
+    | 8 | `Expected type: TRel [?g ⊢ ?#q] [?h ⊢ ?#p.1]` … genuine index mismatch |
+    | 5 | `Expected type: Log [_ ⊢ (M1[$S1] sim M2[$S2])]` … genuine index mismatch |
+    | 5 | **`Found box-expression but expected expression of type {T1 : ( ⊢ tp)} NeutVar …`** |
+    | 2 | `Expected Crel [?l, X1 : term] [?h]` vs `Inferred Crel …` — index mismatch |
+    | 2 | **`Expected [h ⊢ neut S[]]` vs `Inferred [g ⊢ neut S[]]`** — right type, WRONG CONTEXT |
+
+    **~90% of it is genuine semantic index mismatch** — the candidate has the right
+    family and the wrong indices. No lexical or structural rule can refuse those; only
+    knowing the types can. **This CONFIRMS the S3 finding at the level of individual
+    error details rather than headline counts: the remaining mass needs model-side LF
+    type inference, and that is a real build, not a guard.**
+
+    Two small structural slivers remain, both already-known laws in new emitters, and
+    both too small to stake on their own (6 and 2 occurrences across four targets):
+    a BOX emitted where a Pi-typed comp expression is expected (the M3/M4 boxed-vs-bare
+    rule), and a hypothesis cited from context `g` where `h` is required (needs
+    weakening/substitution, not a spelling fix).
+
+    **Disposition of the whole census (entries 27–30):** row 2 (bare meta names, ~220)
+    → SHIPPED as guard #3, −18.6% checks. Row 3 (unbound identifiers, ~115) → tried
+    twice, reverted twice; needs a scope notion unioning source bindings with the
+    engine's emitted binders. Row 1 (generic, 269) → NOT actionable without type
+    inference. **The reject-census instrument has now given everything it can for this
+    residue; the next real lever is the type-inference build, and it should be scoped as
+    such rather than approached with another guard.**
+
+31. **FIRST RUNG OF THE TYPE-INFERENCE LEVER — `rigidIndexConflict`. Sound, shipped,
+    and MARGINAL, which is itself the finding.** Entry 30 said the remaining mass needs
+    model-side type inference. Its cheapest sound rung: the prefilter compares the
+    constructor's result FAMILY against the goal's (rule 1) but never its INDEX heads.
+    `rigidIndexConflict` (hole-split, exported) answers only "provably not unifiable" —
+    both index heads RIGID (a declared lowercase constructor/family) and DIFFERENT —
+    and passes on every doubt: flexible head, arity difference, substitution,
+    projection, box, lambda, unknown head. Deliberately weaker than the existing
+    `matchIndices`/`unifyIndices`, which compare whole token spines and would
+    false-prune (the split-side unifier is already on record as having been
+    OVER-strict). Wired as prefilter rule (1b).
+
+    **MEASURED: checks 4,069 → 4,038 (−0.8%) on the broad 60-target sample, 0 gains,
+    0 losses.** Canaries unchanged (`exTRel` 33, `closed` 27, `determinacy` 73).
+    **Gates: suite 203/203, differential 199/199, existing prefilter pins green
+    (including the `eq_app D1 D2` no-false-prune case).** KEPT — sound, subtractive,
+    zero-risk — but banked at its real size, which is ~nothing.
+
+    **⭐ WHY IT IS MARGINAL, AND WHAT THAT SAYS ABOUT THE LEVER.** A constructor's
+    result indices are almost always PATTERNS with flexible heads (`eq (app A B) …`),
+    so a rigid-rigid head clash is rare. The census's ~90% index mismatch is between a
+    FLEXIBLE pattern and a concrete goal — resolvable only by accumulating a
+    SUBSTITUTION from the arguments' own types and checking it against the goal, not by
+    comparing heads. **So the type-inference lever cannot be climbed in conservative
+    rungs: the cheap sound fraction is already spent (rules 1, 1b, 2, guards #1–#3) and
+    what remains needs the real thing** — unify each declared argument type against the
+    actual argument's type, accumulate θ, apply θ to the result indices, compare. That
+    is a genuine build whose known failure mode is over-strictness, so it needs the
+    no-false-prune pins extended FIRST and a differential per increment. Scope it as a
+    build; do not approach it with another guard.
+
+32. **⛔⛔ THE PREFILTER IS THE WRONG AXIS — a structural finding that redirects the
+    whole "type-level pruning" direction.** Built the θ-accumulating index check
+    (`ctorSubstIndexConflict`, hole-split, exported): match each declared argument type
+    against the argument's REAL type to bind the constructor's pattern variables, apply
+    θ to the result indices, then verdict via `rigidIndexConflict`. Bindings are
+    best-effort (a slot that does not match contributes nothing), an inconsistently bound
+    variable is NOT treated as a conflict, and the verdict is still rigid-vs-rigid only —
+    so θ can only turn a flexible position concrete, never widen suspicion into a
+    rejection. It DEMONSTRABLY works: pinned in `test-prover-prefilter` where `eq_app`
+    against `eq unit unit` is refused ONLY after substitution, while the well-typed
+    `eq_app` and every unknown/flexible case pass.
+
+    **On the corpus it moved the check count by EXACTLY ZERO** (4,038 → 4,038, broad
+    60-target sample). Cause, confirmed in the code rather than guessed:
+
+    ```
+    movePrefilterOk:  if (!mv || mv.kind !== 'fill') return true;
+                      if (/\?/.test(t))              return true;   // open fill
+                      if (/let|\|=>/.test(t))    return true;   // call/binder form
+                      if (!decomposeContextual(t))   return true;   // bare ctype app
+    ```
+
+    **Rule (2)'s ENTIRE machinery — the family check, the scope check, rule (1b), and
+    this one — only ever sees a CLOSING, BOXED, `let`-free LF constructor fill.** The
+    residue's rejections are dominated by `let`-bound lemma/recurse CALLS and bare
+    COMP-level ctype applications (`TRel …`, `Log …`, `Decl …`, `NeutVar …` in the entry-30
+    detail census) — every one of which exits at a gate before any rule runs.
+
+    **So further type-level pruning must NOT be added to `movePrefilterOk`.** The cheap
+    sound fraction for closing LF fills is fully spent (rules 1, 1b, 2, guards #1–#3);
+    the mass lives in comp-level applications, and judging those needs the check to run
+    where those candidates are GENERATED (synthMoves / recurseTexts / the lemma emitters)
+    or at a new comp-application judging site — with its own no-false-prune pins.
+    `ctorSubstIndexConflict` is kept exported and pinned as scaffolding for that build;
+    its wiring into the prefilter is reverted with this reasoning at the call site.
+
+    **Cumulative speed for the session stands at −19.2%** (4,996 → 4,038 checks on the
+    broad sample): guard #3 (−18.6%) plus rule (1b) (−0.8%). Suite 203/203,
+    differential 199/199.
+
+33. **THE REACH CHECK — the instrument that should gate every prefilter idea from now
+    on — and a comp-level family check that failed it after the fact.**
+
+    Entry 32 said the prefilter is structurally blind to most candidates. Quantified it
+    before building anything: over the no-move residue, of **371 rejected candidates,
+    283 (76%) are bare COMP applications** and only **34 (9%)** are the closing boxed
+    fills rule (2) can see (34 let-bound calls, 20 other). So the blindness is real and
+    large — the reach check is now the cheap first question for any prefilter work:
+    *does this site even receive the candidates I am aiming at?*
+
+    Built the obvious thing at a site the gates do not block: for `f a1 … an` with `f` a
+    declared theorem (`theoremIndex`, memoized), compare each BARE argument's family
+    against the declared family of the premise it fills — rule (2)(c)'s standard, one
+    level out. **Measured 4,038 → 4,038 checks: EXACTLY ZERO.** Reverted.
+
+    **Why it failed even with the reach:** the emitters that PRODUCE those candidates
+    (`candsFor` in recurseTexts, `helperLemmaTexts`) already select arguments BY FAMILY,
+    so a family mismatch is essentially never what the checker objects to. Reach was
+    necessary and not sufficient — the check also has to target the objection the census
+    actually recorded, which at comp level is INDEX mismatch (entry 30), needing θ over
+    comp premises rather than families.
+
+    **⚠️ AND A MEASUREMENT-HYGIENE CORRECTION worth more than the mechanism.**
+    `poplmark-reloaded+#inl_sn` went 143 → 234 checks in the same window and I first
+    recorded it against this change. It PERSISTS after the revert — it belongs to the
+    guard-#3 / rule-1b prefilters. A subtractive filter still changes the PATH: dropping
+    a candidate the search used to accept can send it down a longer route. **Attribute a
+    cost move by re-measuring with the change removed, never by adjacency in time.**
+    Both corrections live at the code site.
+
+    **Standing after this:** cumulative speed −19.2% (4,996 → 4,038), suite 203/203,
+    differential 199/199, and `ctorSubstIndexConflict` exported + pinned as the starting
+    point for the θ-over-comp-premises build, which is the one remaining lever that both
+    has reach AND targets the measured objection.
+
+34. **θ OVER COMP PREMISES — shipped as (0d); the CTYPE-CONSTRUCTOR twin reverted.
+    THE PREFILTER AXIS IS NOW CLOSED, with the gate census that closes it.**
+
+    `compAppIndexConflict` (hole-split, exported + smoke-pinned): for `f a1 … an` with
+    `f` a declared theorem, bind the theorem's variables by matching each declared
+    PREMISE's index patterns against the argument's real type, apply θ to the CONCLUSION
+    indices, verdict via `rigidIndexConflict`. Same discipline as the ctor twin —
+    best-effort bindings, rigid-vs-rigid verdicts only. **Gates: suite 203/203,
+    differential 199/199.**
+
+    **A WIRING BUG worth the entry on its own.** The first cut looked up each argument in
+    the hole's scope BY ITS WHOLE TEXT — but real candidates spell arguments BOXED
+    (`[g ⊢ X1]`), so every lookup missed, `actual` was always empty, and the check could
+    never fire. It measured a clean zero and looked like a dead idea. Extracting the
+    inner citation fixed it: `equal#exTRelV` 22 → 18 checks. **A "measured zero" from a
+    mechanism that cannot physically fire is not evidence about the IDEA — instrument
+    the gates before concluding.**
+
+    **The ctype-constructor twin: REVERTED, inert.** A gate census showed the heads
+    reaching that site are a theorem ONCE and a ctype constructor everywhere else
+    (`ExWkV/c X[]`, `LogBase X`), so wiring `ctorSubstIndexConflict` there looked like
+    the dominant case. A/B by env toggle on the 32 ctype-heavy targets: **2,587 → 2,587
+    checks, check-count changed on ZERO targets.** `exTRelV`'s 22 → 18 in the same window
+    belongs to the boxed-argument fix above — confirmed 18 in BOTH arms, not assumed.
+
+    **⛔ CLOSING THE AXIS.** Six mechanisms were tried on candidate pruning this
+    session; the score is guard #3 (−18.6%), rule (1b) (−0.8%), (0d) (fires, unmeasurable
+    on the samples), and three reverts. Each zero eliminated a specific hypothesis, and
+    together they say the same thing: **every cheap SOUND prune has been found.** What
+    the checker still objects to needs index-level unification through substitutions and
+    contexts — precisely what the conservative rules refuse to judge, and they refuse for
+    good reason (the over-strict split unifier, and the soundness pin that caught guard
+    #4). **Do not open a seventh prefilter front.** The remaining levers are MOVE
+    GENERATION (the +12 this session all came from missing or mis-spelled moves, never
+    from pruning) and, if pruning is ever revisited, a real bidirectional type
+    reconstruction over our model — a build measured in weeks, not a guard.
+
+35. **RELAXING THE ASCRIPTION'S FIRST-MOVE LIMITER — tried, REVERTED, and the limiter
+    turns out to be the mechanism's load-bearing part.** The `exTRelV` trace is
+    unambiguous that its ARMS need the type ascription one level in
+    (`let Crel_xa (cr' : Crel [l0] [h0]) = cr in`), and entry 23 confines the move to a
+    hole with no enclosing case. Relaxing that to any hole is the obvious next step and
+    it is WRONG:
+
+    - **It orbits.** The move re-binds a name to ITSELF, so the path-scoped
+      already-ascribed check misses its own earlier emission: `exTRelV` accepted
+      `let (X1 : Crel [l] [h]) = X1 in` repeatedly, 6 steps then backtracked to 0. A
+      decl-prefix scan kills the orbit (62 → 27 checks) but not the cost.
+    - **A/B on the 32-target class: 0 gains, 0 losses, checks 2,587 → 2,880 (+11%), 13
+      targets dearer against 2 cheaper.** Reverted to the exact gated state (`exTRel`
+      back to 33 checks).
+
+    **The lesson is about the limiter, not the move.** Position is what keeps this to ONE
+    candidate per theorem instead of one per hypothesis per hole — the same
+    bounded-vs-blanket discriminator that decided the general post-passes (entry 27). A
+    limiter that looks like an arbitrary restriction can be the only thing making a
+    mechanism affordable; check its cost contribution before widening it.
+
+    **`exTRelV` remains the honest open case for this family:** it needs the ascription
+    inside an arm AND something that makes the resulting search converge. The move is
+    available in principle; making it affordable there is the unsolved part.
+
+36. **⭐ LEXICOGRAPHIC MEASURES WERE MIS-PARSED — a real model-fidelity defect, found
+    by re-running the audit that has the best track record here.** After the pruning axis
+    closed (entry 34), went back to model fidelity — the axis that produced +4 (Wave 1)
+    and +3 (Wave 5, `parseTotality`'s parenthesised form). Audited `parseTotality`
+    against every ACTIVE pragma in the corpus: **504 decls, and the buckets are clean
+    (424 named, 60 bare, 10 index)** — except one:
+
+    **`/ total {sn0 sn1 sn2} (match_sn … sn0 sn1 sn2) /` parsed as
+    `{kind:'named', name:'{sn0 sn1 sn2}'}`** — the whole brace group kept as the measure
+    NAME. No argument is ever called that, so `measureDesignation`'s
+    `args.lastIndexOf(name)` missed and fell back to `args.length - 1`: **the engine
+    believed `sn2` was the decreasing argument.** The references decrease `sn0`, or hold
+    it equal and decrease `sn1`; none decrease `sn2` — so every IH call generated for
+    this family targeted the wrong component. 10 decls: the whole poplmark SN
+    lexicographic set (`match_sn`, `casel_sn`, `caser_sn`, `bc_aux_sum`, `bc_aux_app`,
+    `app_sn`, `app_abs_sn`, `bc_aux`) plus `small-step/system-f-iso`.
+
+    Fixed: a brace group resolves to its PRIMARY (first) component, with the full
+    ordering kept as `totality.lex` for whoever implements the real lexicographic
+    reading (a call may hold `sn0` equal and decrease `sn1` — currently unmodelled).
+    **Gates: suite 203/203, differential 199/199.**
+
+    **⚠️ YIELD IS UNMEASURED, AND THE A/B WAS VOID — say it plainly.** All 12 class
+    members CANCELLED at the 240s cap in BOTH arms (and 2 could not even be masked:
+    `prog_@_lemma`'s `@` defeats the harness), so the run produced 12 rows of no-signal,
+    not a result. One long-cap probe for a real datapoint:
+    `poplmark-reloaded#app_sn` at 900s → still **no-move, 3,755 checks, 422s**. So the
+    family is far from closing and this fix alone does not move it. KEPT on correctness
+    grounds only — the engine no longer holds a provably wrong belief about which
+    argument decreases — and explicitly NOT banked.
+
+    **Two instrument notes for next time:** a class whose every member exceeds the cap
+    cannot be A/B'd at that cap — check that the baseline arm produces signal BEFORE
+    running the second arm; and `maskByName` fails on identifiers containing `@`.
+
+37. **TWO MISSING MOVES for the all-CTYPE theorem shape, PLUS the parenthesisation
+    bug that was masking both. +3 measured and counting.** Traced `equal/alg-equal-datatypes#trans`
+    (`Aeq [g⊢E] [g⊢F] → Aeq [g⊢F] [g⊢L] → Aeq [g⊢E] [g⊢L]`, the pattern that has the
+    best track record: find the move the reference makes that the engine never offers).
+    At its deepest hole the vocabulary was **fill+split only** — no recurse, no invert:
+
+    (a) **CTYPE INVERSION — the one-arm case, `let Ae_a d1 d2 = d in`.** When the
+    hypothesis' OWN indices leave exactly one constructor possible, the corpus writes a
+    `let`, not a case. The engine had the full ctype SPLIT (every constructor) and LF
+    inversion, but nothing for a DETERMINED ctype hypothesis. Selection reuses
+    `rigidIndexConflict`; emitted only when exactly one of several constructors survives,
+    ranked with the inverts. Two soundness rules had to be added to make it see anything:
+    **unwrap a BOX before reading an index head** (ctype indices ARE boxes — without this
+    the whole function was inert for every ctype family), and **a PARAMETER-variable
+    index cannot be a constructor application** (`Ae_v : Aeq [g⊢#p] [g⊢#p]` is the
+    commonest ctype ctor; a parameter ranges over context VARIABLES, never over an
+    application).
+
+    (b) **ALL-CTYPE RECURSION.** `recurseTexts`' first line filters premises to
+    `kind === 'box'`, so a theorem whose argument premises are ALL ctype fell through to
+    `piRecurseTexts`, which needs a Pi binder to pick a decreasing subject — with none it
+    bails and **the theorem gets no recursion at all**. This is the M1b rule ("a ctype
+    premise IS a premise") reaching the last emitter that still filtered to boxes.
+    Arguments spelled BARE (M3/M4); the decreasing slot restricted to
+    `decSubderivNames`, so no call is proposed that the checker would refuse for
+    termination.
+
+    **MEASURED: 0 completions** on 57 ctype-development residue targets. **Gates: suite
+    203/203, differential 199/199 for each.** What DID change is structural and visible
+    in the traces: the deepest hole's vocabulary went `fill,split` →
+    `fill,invert,recurse,split`, and `equal/alg-equal-ctxrel#trans` went
+    **no-move → step-bound with 20 accepted steps**. The remaining gap is ORDER, not
+    vocabulary: `trans` needs split → invert X1 → recurse on the inverted parts, and the
+    recursion is offered but rejected because its argument still names the un-inverted
+    hypothesis (`let R = trans X2 X in`). All three moves now exist; the search does not
+    sequence them.
+
+    **KEPT** (zero-regression, and refusing a move the fragment needs bakes a deterrent
+    in), **reported as unpaid.** The next question for this family is a search/ordering
+    one — get the invert to precede the recurse that depends on it — not another move.
+
+38. **⭐⭐ THE NESTED-CASE PARENTHESISATION BUG — a one-line predicate that was voiding
+    every ctype split nested inside a ctype arm.** Entry 37's two new moves measured 0,
+    and the reason was neither move: hand-checking the reference shape showed BOTH
+    one-arm inversions and the full `trans` proof are ACCEPTED by the checker, so the
+    moves were right and something else broke them.
+
+    A nested `case` MUST be parenthesised or the OUTER case's remaining arms parse as
+    arms of the INNER one. The engine decides that with `splitDone`, which keys on
+    `branchPatternBox` — and that requires a `[…]`-BRACKETED arm line. **A ctype arm
+    (`| Ae_a X2 X3 =>`) is a bare constructor pattern, so it never matched**, and every
+    ctype split emitted inside a ctype arm went out unparenthesised. Caught in the
+    candidate dump for `equal#trans`: the inner `case X1 of` had swallowed the outer
+    `| Ae_l X4 =>` arm, and the resulting type error looked like the inversion's fault.
+    Fixed by treating any decl-scoped OPEN case as nesting.
+
+    **This is why entries 23/24/37 all measured ~0 in this family** — the moves were
+    being generated correctly and destroyed on the way out. Chasing the mechanism rather
+    than the emitted TEXT cost several passes; the candidate dump answered it in one.
+
+    **MEASURED, full 253-target ctype residue: 3 COMPLETE** — `equal#trans`
+    no-move → COMPLETE[7 steps, 203 checks], `logrel/algeq-simplified#lookup` [30ck] and
+    `algeq-simplified1#lookup` [31ck]. All three were non-COMPLETE in the merged ledger;
+    all three are quick. **Gates: suite 203/203, differential 199/199.**
+
+    **The cost, stated:** the residue's step-bound count rose to 60 of 253. The new
+    vocabulary opens searches that do not close — the same debit the accessibility build
+    took (entry 19). Worth it at +3 with zero regressions, but it is the reason the next
+    work in this family is SEARCH ORDER, not more moves.
+
+    **A differential-flake note:** the first post-fix differential reported 4
+    HARNESS-ERRORs (`ceq_main`, `addProjs`, `small-step#unique`, `unique3`). All four
+    COMPLETE when run individually, and a clean re-run returned 199/199. A HARNESS-ERROR
+    is not a verdict — re-run before treating one as a regression.
+
+39. **SEARCH ORDER for the ctype family — first attempt, REVERTED, and it narrows the
+    problem usefully.** Entry 38 left the family needing ORDER, not vocabulary:
+    `trans`-shaped proofs must invert before the recursion that consumes the inversion's
+    output, and `recurses` rank ahead of `invertsMarked`. Ranking inverts first is the
+    same focusing argument the code already makes for invert-before-split, one step
+    further — an inversion is deterministic and information-preserving, a recursion
+    commits to a call.
+
+    **Measured: 0 gains, 0 losses, checks 4,038 → 5,470 (+35%) on the broad sample**,
+    10 targets changed. Reverted.
+
+    **The informative part is WHERE it did nothing.** The three ctype targets it was
+    aimed at came out BYTE-IDENTICAL either way (`alg-equal-ctxrel#trans` 233,
+    `alg-equal-datatypes#trans` 203, `ceq` 1233) — so at their deciding holes the invert
+    was never competing with the recurse for rank at all. The ordering is not what stops
+    them, and the +35% elsewhere says recursion earns its position by being the CLOSING
+    move far more often than it is a wasted commitment.
+
+    **So the remaining `trans`/`ceq` gap is NOT global rank.** They reach 18–22 accepted
+    steps and run out of budget, which points at per-path search behaviour (what gets
+    accepted then backtracked over) rather than the candidate order at a single hole.
+    Next probe should be the DECISION TREE — which acceptances are later abandoned — not
+    another rank permutation.
+
+20. **The hole-report TELESCOPE fix — built, verified, REVERTED. Do not re-derive it
+    blind.** `CTX_ENTRY`'s name group is `[^\s:]+`, which also matches a Pi binder's
+    opening `{S`, so the second line of a multi-line telescope type is read as a NEW
+    context entry and one hypothesis becomes two broken ones. The first line is
+    bracket-BALANCED, so the existing `depth > 0` continuation test cannot catch it —
+    the same limitation the goal parser's 'block' mode already documents. Requiring an
+    identifier name and folding genuine continuations into the previous entry DOES fix
+    it (poplmark-reloaded+#case_snb: the accessibility hypothesis then arrives whole,
+    33 → 75 checks). **But it bought ZERO completions and cost
+    `tapl/ch3+arith+leq#mstep_leq_2` COMPLETE → step-bound** — the same fragile target
+    Wave 6's revert (a) names. Reverted under the zero-regressions law; the reasoning
+    lives at the code site. Re-attempt only alongside whatever makes `mstep_leq_2` robust
+    to a wider hypothesis pool.
+
+    **⚠️ AND A PERF TRAP WORTH ITS OWN LINE.** The first cut made the continuation a
+    CATCH-ALL (append any unmatched line to the previous entry). Every gate passed —
+    `npm test` **203/203** — but it took **4.9 HOURS instead of 110 seconds**: quadratic
+    string growth on large multi-hole reports. `parseHoles` runs on every check in the
+    IDE, so this would have landed as an editor-wide input-latency regression that no
+    prover gate would have flagged. **A green suite is not a green clock — read the
+    suite's own reported time.** Narrowing the rule to structural continuations
+    (`{`/`(`/`[`/arrow/closer) restored 108.8s.
+
+    **The SN chain, now exactly located — all four links BUILT:**
+    (1) ✅ split the `Sn` hypothesis → `Acc [h] [ |- X1] [_ |- X2] X3` (mechanism 15);
+    (2) ✅ construct → `Acc [_] [ |- _] [_ |- _] (mlam X4, X5 ⇒ ?)` (this mechanism);
+    (3) ✅ INVERT the mlam-bound derivation — `piNames` now carries emitted-`mlam`
+    binders (18b); and
+    (4) ✅ apply the HO hypothesis as a rule, INLINE in the recursive call's ctype
+    argument slot (18c). All four links ship; `inl_sn`/`inr_sn` close end to end.
+
 ---
 
 ## 1. What this is, and the read-first laws

@@ -1,0 +1,14 @@
+{"id":"data/case-studies/classical-processes/cp.cfg#str_wtp","verdict":"STUCK:step-bound","steps":32,"checks":456,"secs":104.7}
+{"id":"data/examples/church-rosser/test-crec.cfg#dia","verdict":"CANCELLED","secs":240.028}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#abs_sn","verdict":"STUCK:step-bound","steps":4,"checks":239,"secs":51.3}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#app_snb","verdict":"STUCK:no-move","steps":0,"checks":189,"secs":35.2}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#bc_aux_sum","verdict":"CANCELLED","secs":240.037}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#case_snb","verdict":"STUCK:no-move","steps":0,"checks":33,"secs":7}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#case_snc","verdict":"STUCK:no-move","steps":0,"checks":33,"secs":7.7}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#caser_sn","verdict":"CANCELLED","secs":240.039}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#inl_sn","verdict":"COMPLETE","steps":5,"checks":106,"secs":18.1}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#inr_sn","verdict":"COMPLETE","steps":5,"checks":106,"secs":18.1}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#match_sn","verdict":"CANCELLED","secs":240.036}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#app_snb","verdict":"STUCK:no-move","steps":0,"checks":189,"secs":21.1}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#confluence","verdict":"STUCK:step-bound","steps":18,"checks":821,"secs":95}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#mstep_sn","verdict":"STUCK:step-bound","steps":4,"checks":397,"secs":32.7}

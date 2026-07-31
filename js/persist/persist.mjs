@@ -755,6 +755,14 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.writeStoredReplFilterChatter.apply(_settingsApi, arguments);
   }
 
+  function readStoredReplHoverTimestamp() {
+    return _settingsApi.readStoredReplHoverTimestamp.apply(_settingsApi, arguments);
+  }
+
+  function writeStoredReplHoverTimestamp() {
+    return _settingsApi.writeStoredReplHoverTimestamp.apply(_settingsApi, arguments);
+  }
+
   function readStoredReplHistoryCap() {
     return _settingsApi.readStoredReplHistoryCap.apply(_settingsApi, arguments);
   }
@@ -993,6 +1001,22 @@ var SCHEMA_VERSION = 3;
 
   function writeStoredEditorFormatWidth() {
     return _settingsApi.writeStoredEditorFormatWidth.apply(_settingsApi, arguments);
+  }
+
+  function readStoredEditorAutocompleteTrigger() {
+    return _settingsApi.readStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+
+  function writeStoredEditorAutocompleteTrigger() {
+    return _settingsApi.writeStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+
+  function readStoredEditorAutocompleteContinue() {
+    return _settingsApi.readStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
+  }
+
+  function writeStoredEditorAutocompleteContinue() {
+    return _settingsApi.writeStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
   }
 
   function resetAppearancePrefs() {
@@ -1792,6 +1816,8 @@ var SCHEMA_VERSION = 3;
     writeStoredReplEcho: writeStoredReplEcho,
     readStoredReplFilterChatter: readStoredReplFilterChatter,
     writeStoredReplFilterChatter: writeStoredReplFilterChatter,
+    readStoredReplHoverTimestamp: readStoredReplHoverTimestamp,
+    writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp,
     readStoredReplHistoryCap: readStoredReplHistoryCap,
     writeStoredReplHistoryCap: writeStoredReplHistoryCap,
     readStoredReplHistoryPersist: readStoredReplHistoryPersist,
@@ -1860,6 +1886,10 @@ var SCHEMA_VERSION = 3;
     writeStoredEditorReindentPaste: writeStoredEditorReindentPaste,
     readStoredEditorFormatWidth: readStoredEditorFormatWidth,
     writeStoredEditorFormatWidth: writeStoredEditorFormatWidth,
+    readStoredEditorAutocompleteTrigger: readStoredEditorAutocompleteTrigger,
+    writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger,
+    readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue,
+    writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue,
     resetLayoutPrefs: resetLayoutPrefs,
     resetAppearancePrefs: resetAppearancePrefs,
     resetEditorTypographyPrefs: resetEditorTypographyPrefs,

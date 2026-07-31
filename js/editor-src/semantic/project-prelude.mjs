@@ -352,9 +352,11 @@ export function listGroupSymbols(files, activeId, getText, options = {}) {
   const out = [];
   for (const f of peers) {
     const seen = new Set();
-    for (const d of defsOf(String(getText(f.id) ?? ''), f.name)) {
+    const parsed = parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name);
+    for (const d of parsed.defs) {
       if (seen.has(d.name)) continue;
       seen.add(d.name);
+      const signature = parsed.sigByName.get(d.name);
       out.push({
         name: d.name,
         fileId: f.id,
@@ -362,6 +364,7 @@ export function listGroupSymbols(files, activeId, getText, options = {}) {
         from: d.from,
         to: d.to,
         namespace: d.namespace || null,
+        sourceText: signature?.type || null,
       });
     }
   }

@@ -112,11 +112,12 @@ export function create(deps) {
     var REPL_WELCOME_KEY = 'beljar-repl-welcome';
     var REPL_ECHO_KEY = 'beljar-repl-echo';
     var REPL_FILTER_CHATTER_KEY = 'beljar-repl-filter-chatter';
+    var REPL_HOVER_TIMESTAMP_KEY = 'beljar-repl-hover-timestamp';
     var REPL_HISTORY_CAP_KEY = 'beljar-repl-history-cap';
     var REPL_HISTORY_PERSIST_KEY = 'beljar-repl-history-persist';
     var REPL_TRANSCRIPT_KEY = 'beljar-repl-transcript-v1';
     var REPL_CMD_HISTORY_KEY = 'beljar-repl-cmd-history-v1';
-    var REPL_CMD_HISTORY_DEFAULT_CAP = 500;
+    var REPL_CMD_HISTORY_DEFAULT_CAP = 1000;
     var BELUGA_FALLBACK_STABLE_KEY = 'beljar-beluga-fallback-stable';
     var BELUGA_CANCEL_ON_EDIT_KEY = 'beljar-beluga-cancel-on-edit';
     var LIBRARY_EXPAND_DEFAULT_KEY = 'beljar-library-expand-default';
@@ -146,6 +147,8 @@ export function create(deps) {
     var EDITOR_SELECTION_MATCHES_KEY = 'beljar-editor-selection-matches';
     var EDITOR_REINDENT_PASTE_KEY = 'beljar-editor-reindent-paste';
     var EDITOR_FORMAT_WIDTH_KEY = 'beljar-editor-format-width';
+    var EDITOR_AUTOCOMPLETE_TRIGGER_KEY = 'beljar-editor-autocomplete-trigger';
+    var EDITOR_AUTOCOMPLETE_CONTINUE_KEY = 'beljar-editor-autocomplete-continue';
 
     function readBoolDefaultOn(key) {
       try {
@@ -185,13 +188,16 @@ export function create(deps) {
     function readStoredReplFilterChatter() { return readBoolDefaultOn(REPL_FILTER_CHATTER_KEY); }
     function writeStoredReplFilterChatter(on) { writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on); }
 
+    function readStoredReplHoverTimestamp() { return readBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY); }
+    function writeStoredReplHoverTimestamp(on) { writeBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY, on); }
+
     function readStoredReplHistoryCap() {
       try {
         var v = parseInt(backendLoad(REPL_HISTORY_CAP_KEY), 10);
-        if (v === 100 || v === 250 || v === 500) return v;
-        return 0;
+        if (v === 100 || v === 250 || v === 500 || v === 1000) return v;
+        return REPL_CMD_HISTORY_DEFAULT_CAP;
       } catch (_) {
-        return 0;
+        return REPL_CMD_HISTORY_DEFAULT_CAP;
       }
     }
 
@@ -505,6 +511,29 @@ export function create(deps) {
       else backendRemove(EDITOR_FORMAT_WIDTH_KEY);
     }
 
+    function readStoredEditorAutocompleteTrigger() {
+      try {
+        var v = backendLoad(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+        if (v === 'none' || v === 'always') return v;
+        return 'typing';
+      } catch (_) {
+        return 'typing';
+      }
+    }
+
+    function writeStoredEditorAutocompleteTrigger(mode) {
+      if (mode === 'none' || mode === 'always') backendSave(EDITOR_AUTOCOMPLETE_TRIGGER_KEY, mode);
+      else backendRemove(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+    }
+
+    function readStoredEditorAutocompleteContinue() {
+      return readBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
+    }
+
+    function writeStoredEditorAutocompleteContinue(on) {
+      writeBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY, on);
+    }
+
 
     function resetAppearancePrefs() {
       backendRemove(THEME_STORAGE_KEY);
@@ -535,6 +564,8 @@ export function create(deps) {
       backendRemove(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
       backendRemove(EDITOR_SELECTION_MATCHES_KEY);
       backendRemove(HOVER_SCOPE_KEY);
+      backendRemove(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+      backendRemove(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
     }
 
     function resetEditorGutterPrefs() {
@@ -563,6 +594,7 @@ export function create(deps) {
       backendRemove(REPL_WELCOME_KEY);
       backendRemove(REPL_ECHO_KEY);
       backendRemove(REPL_FILTER_CHATTER_KEY);
+      backendRemove(REPL_HOVER_TIMESTAMP_KEY);
       backendRemove(REPL_HISTORY_CAP_KEY);
       backendRemove(REPL_HISTORY_PERSIST_KEY);
       clearReplHistoryPayload();
@@ -703,6 +735,8 @@ export function create(deps) {
       writeStoredReplEcho: writeStoredReplEcho,
       readStoredReplFilterChatter: readStoredReplFilterChatter,
       writeStoredReplFilterChatter: writeStoredReplFilterChatter,
+      readStoredReplHoverTimestamp: readStoredReplHoverTimestamp,
+      writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp,
       readStoredReplHistoryCap: readStoredReplHistoryCap,
       writeStoredReplHistoryCap: writeStoredReplHistoryCap,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist,
@@ -763,6 +797,10 @@ export function create(deps) {
       writeStoredEditorReindentPaste: writeStoredEditorReindentPaste,
       readStoredEditorFormatWidth: readStoredEditorFormatWidth,
       writeStoredEditorFormatWidth: writeStoredEditorFormatWidth,
+      readStoredEditorAutocompleteTrigger: readStoredEditorAutocompleteTrigger,
+      writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger,
+      readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue,
+      writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue,
       resetAppearancePrefs: resetAppearancePrefs,
       resetEditorTypographyPrefs: resetEditorTypographyPrefs,
       resetEditorIndentPrefs: resetEditorIndentPrefs,

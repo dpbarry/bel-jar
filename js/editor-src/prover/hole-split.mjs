@@ -1078,6 +1078,43 @@ function needsWeakening(hypType, goalBox) {
   return tc.startsWith(gc) && (tc.length === gc.length || tc[gc.length] === ',');
 }
 
+// ── WEAKENING a meta hypothesis into an EXTENDED context ────────────────────
+// The dual of `needsWeakening` above, and the direction that was missing. A
+// metavariable `X : [Ψ ⊢ A]` is well-typed only under its OWN context Ψ; used
+// inside a box whose context extends Ψ with further binders, Beluga demands the
+// weakening substitution EXPLICITLY. Bare `X` is not merely unlikely — it is a
+// hard error, verified natively on cpp13/cc.bel#weaken:
+//   Error: Ill-typed substitution.
+//          Does not take context: h  to context: h, x : target _
+// while `X[..]` type-checks. This is the map-over-structure idiom that recurs
+// across the residue — split a ctype, rebuild it one binder deeper:
+//   `M_dot (weaken σ) [h, x:target _ ⊢ M[..]]`   (cc.bel#weaken)
+//   `Cons (wknVarSub r') (IsVar [h, x:tm _ ⊢ #p[..]])`  (weak-norm-under-binders)
+// Structural and family-blind: it keys only on one context TEXT being a proper
+// prefix of the other, never on a family, constructor or theorem name.
+function ctxProperlyExtends(outerCtx, innerCtx) {
+  const o = normCtxText(outerCtx);
+  const i = normCtxText(innerCtx);
+  if (!o || o === i) return false;
+  if (i && o.startsWith(i) && o[i.length] === ',') return true;
+  // Invariant 11: a context the body cannot write is spelled `_`, so the HEADS of
+  // the two texts need not match even when one really does extend the other.
+  // Compare structurally instead — a single-variable inner context (no binder of
+  // its own) is extended by any outer that carries binders past its head.
+  const op = splitCtxParts(o);
+  const ip = splitCtxParts(i);
+  return ip.length === 1 && op.length > ip.length && !ip[0].includes(':');
+}
+
+// The spelling of `name` for use under `targetCtx`, or null when no weakening is
+// called for (contexts agree, or neither extends the other — then the caller's
+// existing bare spelling stands).
+function weakenedSpelling(name, hypType, targetCtx) {
+  if (!name || !/^[#$]?[\p{L}_]/u.test(String(name))) return null;
+  if (/\[/.test(String(name))) return null; // already carries a substitution
+  return ctxProperlyExtends(targetCtx, contextOf(hypType)) ? `${name}[..]` : null;
+}
+
 function fillTermForHyp(hyp, goalBox, want) {
   const term = hyp.name;
   // A hypothesis whose context strictly extends the goal's must be weakened to the
@@ -1511,7 +1548,17 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
       }
     }
     for (const s of scope) {
-      if (fam && headOfConclusion(s.concl) === fam) out.push(bbox(s.name));
+      if (fam && headOfConclusion(s.concl) === fam) {
+        out.push(bbox(s.name));
+        // The argument's declared context may extend the hypothesis' own — then the
+        // bare spelling above is an ill-typed substitution and `s[..]` is the one
+        // that checks. APPENDED, never substituted: the bare form keeps its place
+        // in the order, so no proof that relies on it can change.
+        if (!globalThis.__proverNoWeaken) {
+          const w = weakenedSpelling(s.name, s.type, boxedArg.ctx);
+          if (w) out.push(bbox(w));
+        }
+      }
     }
     for (const c of enumerateConstructorsTyped(code, fam)) {
       if (!c.argTypes.length) out.push(bbox(c.name));
@@ -2090,7 +2137,7 @@ function offsetOfLineCol(code, line, col) {
 // TYPE does not count — that is exactly the implicit-binder case. Fail-open:
 // when the body region cannot be located, treat the name as writable (the old
 // behaviour), so this can only ever remove a spelling we know to be dead.
-function contextWritableAt(code, hole, ctxStr) {
+export function contextWritableAt(code, hole, ctxStr) {
   const lead = String(ctxStr || '').split(',')[0].trim();
   if (!lead || !/^[\p{L}_][\p{L}\p{N}_']*$/u.test(lead)) return true;
   const src = String(code || '');
@@ -2185,7 +2232,16 @@ export function fillCandidates(hole, code) {
     const md = decomposeContextual(m.type);
     if (md && typesMatchModuloSpacing(md.concl, decomp.concl)
       && typesMatchModuloSpacing(md.ctx || '_', ctxStr || '_')) push(box(m.name));
-    else if (assumptionCompatible(m.type, goalStr)) looseAxioms.push(box(m.name));
+    else if (assumptionCompatible(m.type, goalStr)) {
+      looseAxioms.push(box(m.name));
+      // Same conclusion, but the GOAL's context extends the hypothesis' — the axiom
+      // rule still applies, weakened. Kept in the loose tier alongside the bare
+      // spelling it accompanies, so candidate ORDER is untouched.
+      if (!globalThis.__proverNoWeaken) {
+        const w = weakenedSpelling(m.name, m.type, ctxStr);
+        if (w) looseAxioms.push(box(w));
+      }
+    }
   }
 
   // (1) A context parameter projection `#p.field[..]` whose field type-head matches
@@ -2244,6 +2300,12 @@ export function fillCandidates(hole, code) {
   for (const c of (hole.ctx || [])) {
     if (c && c.name && typesMatchModuloSpacing(c.type, hole.goal)) push(c.name);
   }
+  // ⚠️ NOT here: weakening a COMPUTATION variable into the goal box. A comp
+  // variable of boxed type is a comp-level VALUE, not an LF term, so `[Ψ, x:B ⊢ c[..]]`
+  // is ill-formed by construction — the checker answers "Expected an LF term-level
+  // constant" (measured on popl12/nbe.bel#weak_neut). Such a hypothesis must be
+  // UNBOXED first (`let [Ψ ⊢ R] = c in`), after which R is a meta and the weakening
+  // in rule (0) above applies to it. Tried and reverted 2026-07-31; do not re-add.
 
   // A COMPUTATION-family goal (`Result [g ⊢ P] …`) is filled by a BARE comp
   // constructor application over boxed arguments — never re-boxed.
@@ -2257,6 +2319,159 @@ export function fillCandidates(hole, code) {
   //     checker round-trip at every ctype goal that has one.
   for (const ctor of enumerateConstructorsTyped(code, goalHead)) {
     if (!ctor.argTypes.length) push(compFamily ? ctor.name : box(ctor.name));
+  }
+
+  // (3b) HIGHER-ORDER CTYPE CONSTRUCTION — build the goal with a constructor whose
+  //      argument is itself a FUNCTION, emitting the `mlam` skeleton that abstracts
+  //      its Pi binders and leaving ONE hole for the body.
+  //
+  //      This is the accessibility idiom, and without it a whole development has no
+  //      way to CONSTRUCT its goal at all. `Sn`'s sole constructor is
+  //      `Acc : {Γ:cxt} {A:[⊢ty]} {M:[Γ⊢tm A[]]} ({M':…} {S:…} Sn [Γ⊢M']) → Sn [Γ⊢M]`,
+  //      and rule (3) only ever emits NULLARY constructors for a comp family while
+  //      rule (4) is LF-only — so `Acc` was never applied. The skeleton is fully
+  //      DERIVABLE from the constructor's declared argument type (one binder per Pi,
+  //      hole at the body): analytic term construction, not invention.
+  //
+  //      Checker-arbitrated before it was written (2026-07-28, poplmark-reloaded+
+  //      inl_sn): `Acc [_] [ |- _] [_ |- _] (mlam M2, S => ?)` is ACCEPTED. Dropping
+  //      the explicit Pi arguments is REJECTED ("Expected: function type"), so they
+  //      must be spelled; `_` witnesses suffice and keep the fill D11-writable.
+  //
+  //      LIMITER (the `nestedCtorArgFills` discipline): fires only when EVERY argument
+  //      is a schema Pi, a box Pi, or higher-order, AND at least one is higher-order —
+  //      so this is the rebuild point for an accessibility-shaped family, never generic
+  //      search breadth. Anything else fails open and emits nothing.
+  // PROGRESS DISCIPLINE for (3b). The body of an `mlam` skeleton has the SAME family
+  // goal as the constructor that opened it, so re-applying the constructor there is an
+  // orbit that certifies — measured on inl_sn before this guard: 25 accepted steps of
+  // `Acc [_] [ |- _] [_ |- _] (mlam …)` nested into each other, step-bound at 261
+  // checks. A second construction is legitimate only AFTER the binders it introduced
+  // have been analysed, so: refuse while an emitted `(mlam` is still OPEN at this hole
+  // with no intervening `case`/`let`. Same shape as the orchestrator's speculative-let
+  // chain cap — a structural non-progress test, not a budget.
+  const insideUnanalysedMlam = () => {
+    if (!hole || !hole.line) return false;
+    const lines = String(code || '').split('\n');
+    const ln = lines[hole.line - 1] || '';
+    const qi = ln.indexOf('?');
+    const col = qi >= 0 ? qi + 1 : (hole.col || 1);
+    let off = 0;
+    const upto = Math.min(hole.line, lines.length + 1);
+    for (let l = 1; l < upto; l += 1) off += (lines[l - 1] || '').length + 1;
+    const prefix = String(code || '').slice(0, off + col - 1);
+    for (let i = prefix.indexOf('(mlam'); i >= 0; i = prefix.indexOf('(mlam', i + 1)) {
+      let d = 0;
+      let closed = false;
+      for (let j = i; j < prefix.length; j += 1) {
+        if (prefix[j] === '(') d += 1;
+        else if (prefix[j] === ')') { d -= 1; if (d === 0) { closed = true; break; } }
+      }
+      if (closed) continue;                       // that construction already finished
+      if (!/\b(case|let)\b/.test(prefix.slice(i))) return true; // open, nothing analysed
+    }
+    return false;
+  };
+  if (compFamily && !insideUnanalysedMlam()) {
+    const usedArr = [...(hole.ctx || []), ...(hole.meta || [])]
+      .map((b) => b && b.name).filter(Boolean);
+    const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const isSchemaName = (n) => new RegExp(`(^|\\n)\\s*schema\\s+${escRe(n)}\\b`).test(String(code || ''));
+    // The binder names of a higher-order argument `({A:…} {B:…} Concl)`, or null.
+    const hoBinderCount = (raw) => {
+      let s = String(raw).trim();
+      if (s[0] !== '(') return 0;
+      let d = 0;
+      let end = -1;
+      for (let i = 0; i < s.length; i += 1) {
+        if (s[i] === '(') d += 1;
+        else if (s[i] === ')') { d -= 1; if (d === 0) { end = i; break; } }
+      }
+      if (end !== s.length - 1) return 0;
+      s = s.slice(1, end).trim();
+      let n = 0;
+      while (/^\{/.test(s)) {
+        let bd = 0;
+        let j = 0;
+        for (; j < s.length; j += 1) {
+          if (s[j] === '{') bd += 1;
+          else if (s[j] === '}') { bd -= 1; if (bd === 0) break; }
+        }
+        if (j >= s.length) return 0;
+        n += 1;
+        s = s.slice(j + 1).trim();
+      }
+      return n;
+    };
+    // Instantiate the constructor's EXPLICIT Pi arguments by unifying its RESULT
+    // against the goal. Emitting `_` for all of them type-checks but leaves the
+    // higher-order argument's own binders UNDETERMINED — the checker's meta-context
+    // then reads `S : (FREE CtxVar 5 |- step (?X…) M')`, so the skeleton certifies
+    // and the very next move on `S` dies "Expression is not closed". That is a
+    // VACUOUS ACCEPTANCE (the P12 pathology), not a fill. Probed on inl_sn:
+    // `Acc [_] [ |- _] [_ |- inl B[] X2] (mlam M2, S ⇒ case [h ⊢ S] of …)` is
+    // ACCEPTED where the all-underscore spelling is REJECTED.
+    const goalApp = parseAppType(String(hole.goal || '').trim());
+    const boxParts = (s) => {
+      const m = /^\[\s*([\s\S]*?)\s*(?:\|-|⊢)\s*([\s\S]*)\]$/.exec(String(s).trim());
+      return m ? { ctx: m[1].trim(), term: m[2].trim() } : null;
+    };
+    for (const ctor of enumerateConstructorsTyped(code, goalHead)) {
+      if (!ctor.argTypes.length) continue;
+      // binder name -> the goal text that instantiates it.
+      const inst = new Map();
+      const rIdx = (ctor.result && ctor.result.indices) || [];
+      const gIdx = (goalApp && goalApp.indices) || [];
+      if (rIdx.length === gIdx.length) {
+        for (let i = 0; i < rIdx.length; i += 1) {
+          const rp = boxParts(rIdx[i]);
+          const gp = boxParts(gIdx[i]);
+          if (!rp || !gp) continue;
+          // Carry the goal's CONTEXT alongside its term: a goal over an EXTENDED
+          // context (`Sn [Γ, x:tm A[] ⊢ N1]`, case_snb) needs the slot spelled
+          // `[_, x:tm A[] |- N1]`, not in the constructor's declared context.
+          if (/^[\p{L}_][\p{L}\p{N}_']*$/u.test(rp.term)) inst.set(rp.term, { term: gp.term, ctx: gp.ctx });
+          if (/^[\p{L}_][\p{L}\p{N}_']*$/u.test(rp.ctx)) inst.set(rp.ctx, { term: null, ctx: gp.ctx });
+        }
+      }
+      const fresh = freshNamer([...usedArr]);
+      const args = [];
+      let ok = true;
+      let sawHO = false;
+      for (const at of ctor.argTypes) {
+        const t = String(at).trim();
+        const pim = /^\{\s*([\p{L}_][\p{L}\p{N}_']*)\s*:\s*([\s\S]*)\}$/u.exec(t);
+        if (pim) {
+          const binder = pim[1];
+          const inner = pim[2].trim();
+          if (inner[0] === '[') {
+            const b = decomposeContextual(inner);
+            if (!b) { ok = false; break; }
+            // The goal fixes this binder ⇒ spell it, IN THE GOAL'S CONTEXT;
+            // otherwise a `_` witness in the declared one.
+            const g = inst.get(binder);
+            const w = g && g.term ? g.term : '_';
+            const cx = g && g.ctx != null ? g.ctx : (b.ctx || '');
+            args.push(`[${underscoreLeadCtx(cx)} |- ${w}]`);
+          } else if (/^[\p{L}_][\p{L}\p{N}_']*$/u.test(inner) && isSchemaName(inner)) {
+            const g = inst.get(binder);
+            args.push(g && g.ctx ? `[${underscoreLeadCtx(g.ctx)}]` : '[_]');
+          } else { ok = false; break; }
+          continue;
+        }
+        const nb = hoBinderCount(t);
+        if (nb > 0) {
+          sawHO = true;
+          const binders = [];
+          for (let k = 0; k < nb; k += 1) binders.push(fresh());
+          args.push(`(mlam ${binders.join(', ')} => ?)`);
+          continue;
+        }
+        ok = false;
+        break;
+      }
+      if (ok && sawHO) push(`${ctor.name} ${args.join(' ')}`);
+    }
   }
 
   // (4) Type-directed CONSTRUCTOR SYNTHESIS — inhabit the goal from constructors of
@@ -2458,6 +2673,7 @@ export function synthesizeFills(goalConcl, hole, code) {
     if (!ok) continue;
     out.push(argTerms.length ? renderApp(code, ctor.name, argTerms) : ctor.name);
   }
+  if (globalThis.__sfDebug) globalThis.__sfDebug({ goal: goalConcl, head: goal.head, ctors: ctors.map((c) => c.name), out });
   return out;
 }
 
@@ -2607,6 +2823,144 @@ export function parseAppType(text) {
 // SAME shape, recursing into the parts (so `A⊗B` vs `A'⊗B'` ⇒ A:=A', B:=B'). The
 // checker certifies the final term, so we match structurally, not semantically.
 // Returns the substitution { VAR: text } or null.
+// RIGID-INDEX CONFLICT — the conservative core of "does this constructor
+// application even have the goal's type?", one level below the family check the
+// prefilter already applies.
+//
+// A constructor's RESULT carries index patterns (`eq (app A B) (app C D)`); the goal
+// carries index terms. Two index terms whose HEADS are both RIGID (a declared
+// lowercase constructor) and DIFFERENT can never unify, so the application is dead
+// without asking the checker. Everything else passes: a flexible head (uppercase
+// metavariable, `_`, a projection, a substitution), an arity difference, an unknown
+// head, or any doubt at all.
+//
+// Deliberately weaker than `matchIndices`/`unifyIndices`: those compare whole token
+// spines and would false-prune on spacing/paren/`_` differences, and the plan already
+// records the split-side unifier being OVER-strict and dropping legitimate arms.
+// This only ever answers "provably not unifiable", which is what a prefilter may act on.
+export function rigidIndexConflict(code, patternIdx, goalIdx) {
+  if (!Array.isArray(patternIdx) || !Array.isArray(goalIdx)) return false;
+  if (patternIdx.length !== goalIdx.length) return false; // arity doubt → pass
+  const rigidHead = (text) => {
+    let t = stripParens(String(text || '').trim());
+    // A CTYPE family's indices are BOXES (`Aeq [g ⊢ app F2 F1] [g ⊢ L]`), so read the
+    // head of the box's CONCLUSION — without this the whole function is inert for every
+    // ctype family, which is exactly where the determined-hypothesis inversion needs it.
+    const bx = decomposeContextual(t);
+    if (bx && bx.concl != null) t = stripParens(String(bx.concl).trim());
+    // A substitution/projection/remaining box makes the head opaque → no judgement.
+    if (!t || /[[\]$#]/.test(t) || t.startsWith('\\')) return null;
+    const toks = tokenizeTerm(t);
+    if (!toks.length) return null;
+    const h = stripParens(toks[0]);
+    if (!/^\p{Ll}[\p{L}\p{N}_']*$/u.test(h)) return null;   // flexible or non-name head
+    if (!familyOfConstructorName(code, h) && !isDeclaredTypeFamily(code, h)) return null;
+    return h;
+  };
+  // A bare PARAMETER variable index (`[g ⊢ #p]`, optionally with a substitution or a
+  // projection). A parameter ranges over the context's VARIABLES, never over a
+  // constructor application — so `#p` and a constructor-headed term provably cannot be
+  // the same object. Without this the rule is blind to the commonest ctype constructor
+  // (`Ae_v : Aeq [g ⊢ #p] [g ⊢ #p]`), which is what keeps a determined hypothesis from
+  // looking determined.
+  const paramIndex = (text) => {
+    let t = stripParens(String(text || '').trim());
+    const bx = decomposeContextual(t);
+    if (bx && bx.concl != null) t = stripParens(String(bx.concl).trim());
+    return /^#[\p{L}\p{N}_']*(\.[\p{L}\p{N}_']+)?(\[[^\]]*\])?$/u.test(t);
+  };
+  for (let i = 0; i < patternIdx.length; i += 1) {
+    const a = rigidHead(patternIdx[i]);
+    const b = rigidHead(goalIdx[i]);
+    if (a && b && a !== b) return true;
+    // Constructor-headed on one side, a parameter variable on the other.
+    if (a && !b && paramIndex(goalIdx[i]) && familyOfConstructorName(code, a)) return true;
+    if (b && !a && paramIndex(patternIdx[i]) && familyOfConstructorName(code, b)) return true;
+  }
+  return false;
+}
+
+// θ-ACCUMULATING INDEX CHECK — the real rung of the type-inference lever.
+//
+// `rigidIndexConflict` alone is near-inert because a constructor's result indices are
+// almost always PATTERNS with flexible heads (`eq (app A B) …`), so they rarely clash
+// head-on with a concrete goal. What determines the application's actual type is the
+// SUBSTITUTION its arguments induce: matching each declared argument type against the
+// argument's REAL type binds the constructor's pattern variables, and only then can the
+// result be compared with the goal.
+//
+// Soundness discipline (this is the S1b/over-strict-unifier risk zone):
+//   * bindings are gathered BEST-EFFORT — a slot that does not match cleanly simply
+//     contributes nothing, it never causes a rejection;
+//   * a variable bound inconsistently by two slots is NOT treated as a conflict here
+//     (the matcher is approximate); it just stops refining;
+//   * the verdict still comes from `rigidIndexConflict`, i.e. rigid-vs-rigid heads only.
+// So θ can only ever turn a flexible position into a concrete one — it widens what is
+// PROVABLY dead without widening what is merely suspicious.
+// θ over COMP PREMISES — the same idea as `ctorSubstIndexConflict`, aimed at the
+// candidates that actually dominate the residue. The 2026-07-29/30 measurements found
+// (a) 76% of rejected candidates are bare COMP applications the fill-gates never judge,
+// and (b) their objection is an INDEX mismatch, not a family one. So: match each of the
+// theorem's declared PREMISE index patterns against the corresponding argument's real
+// type to bind the theorem's variables, apply θ to its CONCLUSION indices, and verdict
+// with `rigidIndexConflict`.
+//
+// `premRaws`/`conclRaw` come straight from a parsed compType, so both may be boxed
+// (`[g ⊢ tm A]`) or a bare ctype application (`Sn [g ⊢ M]`); `conclusionOf` normalises
+// the first and leaves the second alone. Same soundness discipline as the ctor twin:
+// bindings are best-effort, an inconsistently bound variable is not a conflict, and the
+// verdict is rigid-vs-rigid heads only — θ can only make a flexible position concrete.
+export function compAppIndexConflict(code, premRaws, conclRaw, actualArgTypes, goalText) {
+  if (!Array.isArray(premRaws) || !Array.isArray(actualArgTypes)) return false;
+  if (premRaws.length !== actualArgTypes.length || !premRaws.length) return false;
+  const goalConcl = (decomposeContextual(goalText) || {}).concl || String(goalText || '');
+  const g = parseAppType(goalConcl);
+  const c = parseAppType(conclusionOf(String(conclRaw || '')));
+  if (!g || !c || !g.head || g.head !== c.head) return false; // family differs → not ours
+  const subst = {};
+  for (let i = 0; i < premRaws.length; i += 1) {
+    const act = actualArgTypes[i];
+    if (!act) continue;
+    const a = parseAppType(conclusionOf(String(premRaws[i] || '')));
+    const b = parseAppType(conclusionOf(String(act)));
+    if (!a || !b || a.head !== b.head) continue;
+    if (a.indices.length !== b.indices.length) continue;
+    for (let k = 0; k < a.indices.length; k += 1) matchTerm(a.indices[k], b.indices[k], subst);
+  }
+  if (!Object.keys(subst).length) return false;
+  const applied = c.indices.map((ix) => substituteIndexVars(ix, subst));
+  return rigidIndexConflict(code, applied, g.indices);
+}
+
+export function ctorSubstIndexConflict(code, ctor, actualArgTypes, goalIndices) {
+  if (!ctor || !ctor.result || !Array.isArray(ctor.argTypes)) return false;
+  if (!Array.isArray(actualArgTypes) || ctor.argTypes.length !== actualArgTypes.length) return false;
+  const subst = {};
+  for (let i = 0; i < ctor.argTypes.length; i += 1) {
+    const act = actualArgTypes[i];
+    if (!act) continue;                                   // unknown-typed argument
+    const declRaw = String(ctor.argTypes[i] || '');
+    if (/^\s*\{/.test(declRaw)) continue;                  // Pi binder — not a value slot
+    const a = parseAppType(conclusionOf(declRaw));
+    const b = parseAppType(conclusionOf(String(act)));
+    if (!a || !b || a.head !== b.head) continue;          // different family → rule (2) owns it
+    if (a.indices.length !== b.indices.length) continue;  // arity doubt
+    for (let k = 0; k < a.indices.length; k += 1) {
+      // Best-effort: a failed match leaves `subst` as it was.
+      matchTerm(a.indices[k], b.indices[k], subst);
+    }
+  }
+  if (!Object.keys(subst).length) return false;           // learned nothing → no judgement
+  const applied = ctor.result.indices.map((ix) => substituteIndexVars(ix, subst));
+  return rigidIndexConflict(code, applied, goalIndices);
+}
+
+// Replace bound uppercase pattern variables by their θ-images, whole tokens only.
+function substituteIndexVars(text, subst) {
+  return String(text || '').replace(/\p{Lu}[\p{L}\p{N}_']*/gu,
+    (tok) => (subst[tok] != null ? String(subst[tok]) : tok));
+}
+
 function matchIndices(patternIdx, goalIdx) {
   if (patternIdx.length !== goalIdx.length) return null;
   const subst = {};

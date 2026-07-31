@@ -433,7 +433,39 @@
   border-bottom: 0;
 }
 
-/* ---- IDE: editor autocomplete ---- */
+/* ---- IDE: editor autocomplete (signatures) ---- */
+
+.editor-ac-signature {
+  display: inline-block;
+  min-width: 0;
+  max-width: 64ch;
+  margin-left: 0.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-family: inherit;
+  font-size: 0.64rem;
+  line-height: 1.3;
+}
+
+.editor-ac-signature-prefix {
+  color: var(--muted-high);
+  opacity: 0.75;
+}
+
+/* html * forces --sans; tokens must follow the popup mono (see explorer.css). */
+.editor-ac [class^='bel-hl-'],
+.editor-ac [class*=' bel-hl-'] {
+  font-family: inherit;
+}
+
+.editor-ac-item [class*='bel-hl-'] {
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+/* ---- IDE: cfg-editor CodeMirror autocomplete ---- */
 
 .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul {
   animation: search-drop-in 0.14s ease;

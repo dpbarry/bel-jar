@@ -172,10 +172,31 @@ export function parseTotality(declOrBodyText) {
   }
   const paren = arg.indexOf('(');
   if (paren > 0) {
-    const name = arg.slice(0, paren).trim();
+    let name = arg.slice(0, paren).trim();
     const inner = arg.slice(paren + 1).replace(/\)\s*$/, '').trim();
     const toks = inner.split(/\s+/).filter(Boolean);
-    if (name) return { kind: 'named', name, args: toks.slice(1) }; // drop the theorem name
+    // `/ total {sn0 sn1 sn2} (match_sn … sn0 sn1 sn2) /` — a LEXICOGRAPHIC measure.
+    // The brace group used to be kept whole as the measure NAME, and since no argument
+    // is ever called `{sn0 sn1 sn2}`, `measureDesignation`'s `args.lastIndexOf(name)`
+    // missed and silently fell back to the LAST spine argument — so the engine believed
+    // `sn2` was the decreasing one. The references decrease `sn0` (or hold it equal and
+    // decrease `sn1`); none decrease `sn2`, so every IH call generated for this family
+    // targeted the wrong component. 10 corpus decls, all in the poplmark SN development
+    // (`match_sn`, `casel_sn`, `caser_sn`, `bc_aux_sum`, `app_sn`, …) plus
+    // small-step/system-f-iso. Resolve to the PRIMARY (first) component and keep the
+    // full ordering for anyone who wants the real lexicographic reading.
+    let lex = null;
+    // GENERAL: brace-group totality measure syntax `{a b c}`, not a name-keyed branch
+    const brace = /^\{\s*([^}]*)\}$/.exec(name);
+    if (brace) {
+      lex = brace[1].split(/\s+/).filter(Boolean);
+      name = lex[0] || '';
+    }
+    if (name) {
+      const out = { kind: 'named', name, args: toks.slice(1) }; // drop the theorem name
+      if (lex && lex.length > 1) out.lex = lex;
+      return out;
+    }
   }
   // `/ total f x /` (function-name then the decreasing argument) or `/ total x /`.
   const toks = arg.split(/\s+/).filter(Boolean);

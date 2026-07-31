@@ -19,6 +19,7 @@
     "prover:firstmove": "node scripts/prover-firstmove-audit.mjs",
     "prover:intro": "node scripts/prover-intro-audit.mjs",
     "ac:audit": "node scripts/autocomplete-audit.mjs",
+    "ac:weigh": "node scripts/autocomplete-weigh-sweep.mjs",
     "corpus:plan": "node scripts/corpus-plan.mjs",
     "corpus:run": "node scripts/corpus-harness.mjs",
     "corpus:report": "node scripts/corpus-report.mjs",

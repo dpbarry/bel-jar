@@ -2,6 +2,7 @@
 // WITHOUT a checker round-trip — but NEVER reject one it would accept. This test
 // pins soundness (the load-bearing property) and the intended rejections, purely.
 import { movePrefilterOk, candidateMoves, theoremUnderProof } from '../js/editor-src/prover/prover-orchestrator.mjs';
+import { ctorSubstIndexConflict, enumerateConstructorsTyped } from '../js/editor-src/prover/hole-split.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -177,5 +178,92 @@ for (const [text, reject] of [
   expect(movePrefilterOk({ kind: 'lemma', text }, G, CODE) === !reject,
     `bare-meta-object guard: ${JSON.stringify(text)} must ${reject ? 'REJECT' : 'PASS'}`);
 }
+
+// ── 7. Lexical guard #3: the SIBLING of #2 for ORDINARY meta names. A context
+// variable (`g`, `h`) or an LF metavariable (`M`, `A`) is a META object exactly
+// like `#p`/`$S`: cited BARE in a computation-level argument slot the checker
+// refuses it outright ("Expected h to be a program constant or constructor" —
+// measured at ~220 across the no-move residue's deepest holes, 2026-07-29).
+// It must reject those and leave every legal position alone, and it must FAIL
+// OPEN when the hole carries no meta context (synthetic holes, pre-report probes). ──
+const M3 = H('[g |- eq N M]',
+  [{ name: 'd', type: '[g |- eq N M]' }],                    // comp context
+  [{ name: 'g', type: 'ctx' }, { name: 'M', type: '(g |- tm)' }]); // meta context
+for (const [text, reject] of [
+  ['ExWkV/c g', true],                 // context variable bare at comp level
+  ['ExWkV/c M', true],                 // LF metavariable bare at comp level
+  ['lemma d g', true],                 // mixed: legal comp var, illegal meta
+  ['[g |- M]', false],                 // boxed — legal
+  ['[g |- eq_app M M]', false],        // inside a box — legal
+  ['lemma d', false],                  // comp variable only — legal
+  ['lemma [g |- M] d', false],         // boxed argument — legal
+  ['mlam g, M => ?', false],           // binder list — legal
+  ['let M = f d in ?', false],         // binding occurrence — legal
+  ['{M : [g |- tm]} foo', false],      // Pi binder — legal
+  ['case d of | [g |- eq_r] => ?', false],
+]) {
+  expect(movePrefilterOk({ kind: 'lemma', text }, M3, CODE) === !reject,
+    `bare-meta-NAME guard: ${JSON.stringify(text)} must ${reject ? 'REJECT' : 'PASS'}`);
+}
+// Fails OPEN with no meta context, and never judges binding-occurrence kinds.
+expect(movePrefilterOk({ kind: 'lemma', text: 'ExWkV/c g' }, H('[g |- eq N M]'), CODE) === true,
+  'bare-meta-NAME guard fails open when the hole has no meta context');
+expect(movePrefilterOk({ kind: 'split', text: 'case [g |- M] of | [g, x:tm |- x] => ?' }, M3, CODE) === true,
+  'bare-meta-NAME guard never judges a split (arm patterns are binding occurrences)');
+
+// ── 8. Rules (1b)/(2d): INDEX-level checks. (1b) compares the ctor's result index
+// HEADS with the goal's; (2d) first binds the ctor's pattern variables from the
+// ARGUMENTS' real types. Both may verdict ONLY on rigid-vs-rigid heads. Over-strictness
+// is the known failure mode of index unification here (the split-side unifier is on
+// record as having dropped legitimate arms), so the PASS cases matter more than the
+// rejects. ──
+const IDXCODE = [
+  'exp: type.',
+  'app: exp -> exp -> exp.',
+  'unit: exp.',
+  'eq: exp -> exp -> type.',
+  'eq_app : eq E1 F1 -> eq E2 F2 -> eq (app E1 E2) (app F1 F2).',
+  'eq_u : eq unit unit.',
+].join(String.fromCharCode(10));
+// (a) rigid head clash between ctor result index and goal index → provably dead.
+expect(movePrefilterOk({ kind: 'fill', text: '[ |- eq_u]' },
+  H('[ |- eq (app X Y) (app Z W)]'), IDXCODE) === false,
+  'rule 1b: eq_u results in `eq unit unit`; goal indices are `app …` — rigid clash, reject');
+// (b) the SAME ctor against a goal it can inhabit must PASS.
+expect(movePrefilterOk({ kind: 'fill', text: '[ |- eq_u]' },
+  H('[ |- eq unit unit]'), IDXCODE) === true,
+  'rule 1b: eq_u against `eq unit unit` must PASS');
+// (c) flexible goal indices — no judgement possible, must PASS.
+expect(movePrefilterOk({ kind: 'fill', text: '[ |- eq_u]' },
+  H('[ |- eq A B]'), IDXCODE) === true,
+  'rule 1b: flexible goal indices must PASS (no rigid clash)');
+// (d) pattern-headed ctor result vs concrete goal — flexible, must PASS.
+expect(movePrefilterOk({ kind: 'fill', text: '[ |- eq_app D1 D2]' },
+  H('[ |- eq (app P Q) (app R S)]',
+    [{ name: 'D1', type: '[ |- eq P R]' }, { name: 'D2', type: '[ |- eq Q S]' }]),
+  IDXCODE) === true,
+  'rule 2d: a well-typed eq_app must PASS after θ (no false prune)');
+// (d2) θ-ACCUMULATING check, pinned DIRECTLY (it is exported scaffolding, not wired
+// into movePrefilterOk — on the corpus it moved the check count by exactly zero, see
+// the note at its former call site). `eq_app`'s arguments force `app`-headed result
+// indices while the goal is `unit`: a rigid clash visible ONLY after substitution.
+{
+  const eqCtors = enumerateConstructorsTyped(IDXCODE, 'eq');
+  const eqApp = eqCtors.find((c) => c.name === 'eq_app');
+  expect(!!eqApp, 'θ pin fixture: eq_app must enumerate');
+  expect(ctorSubstIndexConflict(IDXCODE, eqApp,
+    ['[ |- eq P R]', '[ |- eq Q S]'], ['unit', 'unit']) === true,
+    'ctorSubstIndexConflict: eq_app cannot inhabit `eq unit unit` — θ exposes the clash');
+  expect(ctorSubstIndexConflict(IDXCODE, eqApp,
+    ['[ |- eq P R]', '[ |- eq Q S]'], ['(app P Q)', '(app R S)']) === false,
+    'ctorSubstIndexConflict: the well-typed eq_app must PASS (no false prune)');
+  expect(ctorSubstIndexConflict(IDXCODE, eqApp,
+    [null, null], ['unit', 'unit']) === false,
+    'ctorSubstIndexConflict: unknown argument types → θ empty → no judgement');
+}
+// (e) unknown-typed arguments — θ learns nothing, must PASS.
+expect(movePrefilterOk({ kind: 'fill', text: '[ |- eq_app D1 D2]' },
+  H('[ |- eq (app P Q) (app R S)]'), IDXCODE) === true,
+  'rule 2d: unknown argument types must PASS (θ empty → no judgement)');
 
 console.log('OK test-prover-prefilter (sound head + argument-family rules; 75% fill drop measured)');

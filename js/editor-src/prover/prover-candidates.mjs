@@ -27,6 +27,11 @@ import {
   parameterTermFor,
   introBinders,
   familyIndexSorts,
+  contextWritableAt,
+  rigidIndexConflict,
+  ctorSubstIndexConflict,
+  compAppIndexConflict,
+  parseAppType,
 } from './hole-split.mjs';
 import {
   synthesize,
@@ -60,6 +65,7 @@ import {
   branchPatternBox,
   branchPatternMetas,
   branchBodyBefore,
+  pathBodyBefore,
   boxOf,
   splitCtx,
   enrichHoleFromTheorem,
@@ -73,6 +79,8 @@ import {
   theoremContextParam,
   resultBoxFor,
   holeByteOffsetBridge,
+  declStartOffset,
+  theoremIndex,
   freshForHole,
   freshName,
   letsInBranch,
@@ -180,6 +188,68 @@ export function candidateMoves(hole, code, thm) {
   };
   const inverts = [];
   const impossibles = [];
+  // ⭐ TYPE-ASCRIPTION RE-BINDING — `let (cr : Crel [l] [h]) = cr in ?`.
+  //
+  // A theorem's premise routinely quantifies its context and substitution parameters
+  // IMPLICITLY (`Crel [l] [h]`, `Ctx_xaR [φ] [ψ] $[ψ ⊢ $σ]`): they are bound in the
+  // TYPE but not in the body, so any later move that spells one is rejected outright
+  // with "This free context variable is illegal". Beluga's idiom for that — and the
+  // FIRST move of 32 stuck targets across 6 developments (equal, literate, cpp13,
+  // popl12, logrel) — is to re-bind the hypothesis at its declared type, which brings
+  // those names into scope for the whole body.
+  //
+  // Verified on equal#exTRelV: the split the proof needs is REJECTED
+  // ("free context variable") without the ascription and ACCEPTED with it, so this is
+  // productive, not cosmetic.
+  //
+  // Limiters, so this stays a first move and not search breadth: only at a hole with
+  // NO enclosing case (the corpus idiom is intro-time), only for a premise whose
+  // declared type carries an implicit lower-case context or `$`-substitution name,
+  // only when the family head identifies the premise UNIQUELY, and never twice for the
+  // same name on a path.
+  // NOTE: openCasesAt defaults to scanning from offset 0, and a sibling `rec`'s
+  // unparenthesised top-level `case` never closes — so the count must be scoped to
+  // THIS declaration or every hole in a multi-decl file reads as already inside a
+  // case (the same trap the split-depth budget documents).
+  const declScopedCases = () => openCasesAt(
+    code, hole, declStartOffset(code, holeByteOffsetBridge(code, hole)),
+  );
+  // FIRST-MOVE LIMITER — tried relaxing it (2026-07-30) and REVERTED. exTRelV's arms
+  // do need this move one level in (`let Crel_xa (cr' : Crel [l0] [h0]) = cr in`), so
+  // allowing it at any hole looked right. Measured on the 32-target class: 0 gains,
+  // 0 losses, checks 2,587 → 2,880 (+11%), 13 targets dearer vs 2 cheaper — and en
+  // route it ORBITED (the move re-binds a name to ITSELF, so a path-scoped
+  // already-ascribed check misses its own earlier emission; a decl-prefix scan fixed
+  // the orbit but not the cost). The position limiter is doing real work: it is what
+  // keeps this to one candidate per theorem instead of one per hypothesis per hole.
+  if (thm && thm.compType && !declScopedCases().length) {
+    const argPrems = (thm.compType.premises || [])
+      .filter((p) => p && (p.kind === 'box' || p.kind === 'ctype'));
+    const declaredBinders = new Set((thm.compType.premises || [])
+      .map((p) => p && p.binder).filter(Boolean));
+    const before = branchBodyBefore(code, hole);
+    for (const c of (hole.ctx || [])) {
+      if (!c || !c.name || !c.type) continue;
+      if (new RegExp(`\\(\\s*${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`).test(before)) continue;
+      const head = (String(c.type).trim().match(/^[\p{L}_][\p{L}\p{N}_']*/u) || [])[0];
+      if (!head) continue;
+      const matches = argPrems.filter((p) => {
+        const h = (String(p.raw || '').trim().match(/^[\p{L}_][\p{L}\p{N}_']*/u) || [])[0];
+        return h === head;
+      });
+      if (matches.length !== 1) continue;
+      const raw = String(matches[0].raw || '').trim();
+      // Implicit meta-parameters the body cannot otherwise name.
+      const implicits = [...raw.matchAll(/[[$]\s*(\p{Ll}[\p{L}\p{N}_']*)/gu)]
+        .map((m) => m[1]).filter((n2) => !declaredBinders.has(n2));
+      if (!implicits.length) continue;
+      inverts.push({
+        kind: 'invert', // GENERAL: move-kind tag — a let-binding, ranked with inverts
+        text: `let (${c.name} : ${raw}) = ${c.name} in\n?`,
+        rationale: `re-bind ${c.name} at its declared type (binds ${[...new Set(implicits)].join(', ')})`,
+      });
+    }
+  }
   for (const c of (hole.ctx || [])) {
     if (!c || !c.name) continue;
     if (caseScrutSet.has(c.name)) continue;
@@ -294,22 +364,155 @@ export function candidateMoves(hole, code, thm) {
         && !ctypeScrutsOpen().has(c.name)) {
       const ctypeText = splitTextForCtype(code, hole, c.name, c.type);
       if (ctypeText) {
+        // NESTING PARENS: a nested `case` MUST be parenthesised or the OUTER case's
+        // remaining arms parse as arms of the INNER one. `splitDone` keys on
+        // `branchPatternBox`, which requires a `[…]`-bracketed arm line — and a CTYPE
+        // arm (`| Ae_a X2 X3 =>`) is a bare constructor pattern, so it never matched and
+        // every ctype split nested inside a ctype arm was emitted unparenthesised.
+        // Measured on equal#trans: the inner `case X1 of` swallowed the outer
+        // `| Ae_l X4 =>` arm, and the candidate died with a type error that looked like
+        // the inversion's fault. Any decl-scoped OPEN case means we are nested.
+        const nested = splitDone || declScopedCases().length > 0;
         splits.push({
           kind: 'split',
-          text: splitDone ? `(${ctypeText})` : ctypeText,
+          text: nested ? `(${ctypeText})` : ctypeText,
           rationale: 'case-analyse ' + c.name,
           scrutinee: c.name,
         });
+        // ⭐ CTYPE INVERSION — the one-arm case, i.e. `let Ae_a d1 d2 = d in`.
+        //
+        // When the hypothesis' OWN indices leave exactly one constructor possible, the
+        // corpus writes a `let`, not a full case: `equal#trans`'s second premise is
+        // `Aeq [g ⊢ app F2 F1] [g ⊢ L]`, so only `Ae_a` can have built it. The engine had
+        // the full ctype SPLIT (every constructor, coverage-rejected or needing
+        // `impossible` arms) and LF inversion, but nothing for a DETERMINED ctype
+        // hypothesis — so this idiom had no move. Selection is by `rigidIndexConflict`,
+        // the same provably-not-unifiable test as the prefilter: a constructor survives
+        // unless its result indices rigid-clash with the hypothesis'. Emitted only when
+        // EXACTLY ONE survives out of several (that is what makes it an inversion rather
+        // than a guess) and ranked with the inverts, ahead of branching splits.
+        const cd = parseAppType(normalizeCtypeSpelling(String(c.type).trim()));
+        const fam = cd && cd.head;
+        const ctors = fam ? enumerateConstructorsTyped(code, fam) : [];
+        if (cd && ctors.length > 1) {
+          const live = ctors.filter((k) => !(k.result && Array.isArray(k.result.indices)
+            && rigidIndexConflict(code, k.result.indices, cd.indices)));
+          if (live.length === 1) {
+            const oneArm = splitTextForCtype(code, hole, c.name, c.type, { only: live[0].name });
+            if (oneArm && oneArm !== ctypeText) {
+              inverts.push({
+                kind: 'invert', // GENERAL: move-kind tag — a determined hypothesis ⇒ a let
+                text: nested ? `(${oneArm})` : oneArm,
+                rationale: `invert the determined ctype hypothesis ${c.name} (only ${live[0].name} can apply)`,
+                scrutinee: c.name,
+              });
+            }
+          }
+        }
       }
     }
   }
   // The theorem's OWN Pi-bound metas (mlam binders) split as CONSTRUCTED boxes
   // (`case [g |- U] of …`) — never arbitrary sub-derivation metas.
+  // PLUS the binders of any `mlam` the engine ITSELF emitted on the path to this
+  // hole. A higher-order constructor argument is built as `(mlam M', S ⇒ ?)`
+  // (hole-split rule 3b), and its binders are universally-quantified meta
+  // ARGUMENTS — exactly what a theorem Pi binder is, just introduced by us rather
+  // than by the signature. Keying this loop on the theorem's premises alone meant
+  // the derivation bound inside our own skeleton could never be analysed, so the
+  // accessibility idiom stopped one move after it was constructed (measured on
+  // poplmark-reloaded+#inl_sn: at the `mlam` body hole the engine offers
+  // fill/lemma/recurse and nothing at all on the bound step derivation).
+  // Membership in `hole.meta` is the authority on scope — the checker's own hole
+  // report — so a stale or out-of-scope binder name simply never matches.
   const piNames = (((thm && thm.compType && thm.compType.premises) || [])
     .filter((p) => p.kind === 'pi').map((p) => p.binder)).filter(Boolean);
+  {
+    const off = holeByteOffsetBridge(code, hole);
+    if (off > 0) {
+      const re = /(^|\n)[ \t]*(?:rec|proof|and)\s/g;
+      let declStart = 0;
+      let dm;
+      const upto = String(code).slice(0, off);
+      while ((dm = re.exec(upto))) declStart = dm.index;
+      for (const mm of upto.slice(declStart).matchAll(/\bmlam\s+([^=⇒]*?)(?:=>|⇒)/gu)) {
+        for (const raw of String(mm[1]).split(',')) {
+          const nm = raw.trim();
+          if (/^[\p{L}_][\p{L}\p{N}_']*$/u.test(nm) && !piNames.includes(nm)) piNames.push(nm);
+        }
+      }
+    }
+  }
   const normScrut = (s) => String(s || '').replace(/\s+/g, '');
   const piBoxes = ((thm && thm.compType && thm.compType.premises) || []).filter((p) => p.kind === 'box');
   const totName = (thm && thm.totality && thm.totality.kind === 'named') ? String(thm.totality.name).toLowerCase() : null;
+  // ⭐ PARAMETER-VARIABLE SPLIT — `case [l ⊢ #p] of | [l, x:term ⊢ x] | [l, x:term ⊢ #p[..]]`.
+  //
+  // A theorem quantified over a PARAMETER (`{#p : #[l ⊢ term]}`) is proved by asking
+  // whether that variable is the context's NEWEST binding or an earlier one. The engine
+  // splits constructors and context hypotheses but never a parameter, so this whole
+  // idiom (`exTRelV`, `existsEqV`, `ctx_member`, `lookupVars`, the cpp13/literate/equal
+  // families) had no move at all — and the split is what a parameter's own type makes
+  // decidable, so it is analytic, not a heuristic.
+  //
+  // The arms come from the context's SCHEMA: one pair per element — the "is the newest
+  // binding" arm (the element's own variable, or a block PROJECTION) and the "is an
+  // earlier one" arm (`parameterTermFor`, which already spells `#p[..]` / `#p.f[..]`).
+  // Both arms present the context EXTENDED by that element, which is what makes the
+  // refinement visible to the continuation.
+  //
+  // Checker-arbitrated on equal#exTRelV (after the type ascription above, without which
+  // every spelling dies on "free context variable"): the two-arm split is ACCEPTED, and
+  // the element's type must be spelled CONCRETELY — `[l, x:_ ⊢ x]` is rejected with
+  // "Holes may not appear as contextual LF types".
+  for (const m2 of (hole.meta || [])) {
+    if (!m2 || !m2.name || !m2.name.startsWith('#')) continue;
+    if (!piNames.includes(m2.name)) continue;
+    const pm = /^#\s*[([]\s*([\s\S]*?)\s*(?:\|-|⊢)\s*([\s\S]*)[)\]]$/.exec(String(m2.type || '').trim());
+    if (!pm) continue;
+    const pctx = pm[1].trim();
+    const phead = headOfConclusion(pm[2].trim());
+    if (!pctx || !phead) continue;
+    if (caseScrutSet.has(m2.name) || caseScrutSet.has(`[${pctx} |- ${m2.name}]`)) continue;
+    // The context variable's schema (reported meta type, else the theorem's binder).
+    const ctxLead = pctx.split(',')[0].trim();
+    const ctxMeta = (hole.meta || []).find((x) => x && x.name === ctxLead);
+    const schemaName = ctxMeta && /^[\p{L}_][\p{L}\p{N}_']*$/u.test(String(ctxMeta.type || '').trim())
+      ? String(ctxMeta.type).trim()
+      : (candidateSchemasFor(hole, thm, code)[0] || null);
+    if (!schemaName) continue;
+    const info = schemaInfo(code, schemaName);
+    if (!info || !info.elements || !info.elements.length) continue;
+    const older = parameterTermFor(phead, info);
+    if (!older) continue;
+    const usedP = usedNamesOf(hole);
+    const freshP = freshNamer([...usedP]);
+    const arms = [];
+    for (const el of info.elements) {
+      if (el.block) {
+        const field = (el.fields || []).find((f) => f.head === phead && f.name);
+        if (!field) continue;
+        const bv = freshP();
+        const decl = `${bv}: block ${(el.fields || []).map((f) => `${f.name}:${f.type}`).join(', ')}`;
+        arms.push(`| [${pctx}, ${decl} |- ${bv}.${field.name}] =>\n  ?`);
+        arms.push(`| [${pctx}, ${decl} |- ${older.replace(/^#p/, m2.name)}] =>\n  ?`);
+      } else {
+        if (el.head !== phead) continue;
+        const xv = freshP();
+        const decl = `${xv}:${el.type || el.head}`;
+        arms.push(`| [${pctx}, ${decl} |- ${xv}] =>\n  ?`);
+        arms.push(`| [${pctx}, ${decl} |- ${older.replace(/^#p/, m2.name)}] =>\n  ?`);
+      }
+    }
+    if (arms.length < 2) continue;
+    const text = `case [${pctx} |- ${m2.name}] of\n${arms.join('\n')}`;
+    splits.push({
+      kind: 'split',
+      text: splitDone ? `(${text})` : text,
+      rationale: `case-analyse the parameter ${m2.name} (newest binding vs earlier)`,
+      scrutinee: m2.name,
+    });
+  }
   for (const m2 of (hole.meta || [])) {
     if (!m2 || !m2.name || !piNames.includes(m2.name)) continue;
     const d2 = decomposeContextual(m2.type);
@@ -714,7 +917,80 @@ export function candidateMoves(hole, code, thm) {
     // split of the same subject is the same content at strictly higher cost,
     // and accepting it first sent unique_eval's search into the nested-split
     // wander). Ranking only — everything stays in the vocabulary.
+    // TRIED AND REVERTED (2026-07-31) — ranking invertsMarked BEFORE recurses. The
+    // focusing argument is real (an inversion is deterministic and
+    // information-preserving; a recursion commits to a call) and in the all-ctype
+    // shape the recursion's argument is PRODUCED by the inversion. It is still
+    // wrong empirically: 0 gains, 0 losses, and checks 4,038 → 5,470 (+35%) on the
+    // 60-target broad sample, with the three ctype targets it was aimed at
+    // BYTE-IDENTICAL (233/203/1233 checks either way) — the invert was never
+    // competing with the recurse at their deciding holes. Recursion earns its rank
+    // by being the CLOSING move far more often than it is a wasted commitment.
     : [...closingFills, ...synthsMarked, ...introPlans, ...invertPlans, ...impossibles, ...recurses, ...invertsMarked, ...planMoves, ...demandedRest, ...openFills, ...lemmas, ...openSplitsRest, ...introsRest];
+  // ⭐ INFERRED-INDEX VARIANTS — supply the derivation, let Beluga infer the indices.
+  //
+  // The single most repeated cause of a rejected candidate across this engine's traces
+  // is an application whose SHAPE is right and whose INDEX arguments are wrong terms:
+  // "Ill-typed expression" on `f [g |- M] [g |- N] d` where `f [g |- _] [g |- _] d`
+  // checks. Beluga reconstructs those slots from the derivation argument, and the
+  // corpus writes them that way (`inl_sn [_ ⊢ _] [ ⊢ _] (r …)`, `app_snb [_ ⊢ M] …`).
+  // The engine instead ENUMERATES concrete terms for every slot and loses on all of
+  // them.
+  //
+  // So for each application-shaped move, offer ONE extra variant with every boxed
+  // argument except the LAST spelled `_` — the same "supply the derivation, infer the
+  // indices" rule that was checker-proven for higher-order hypothesis application.
+  // Purely additive and ranked immediately after its original, so the concrete
+  // spelling still leads and nothing already accepted changes order.
+  {
+    const boxArg = /\[([^\]]*?)(\|-|⊢)\s*([^\]]*)\]/g;
+    const inferVariant = (text) => {
+      const spans = [...String(text).matchAll(boxArg)];
+      if (spans.length < 2) return null;
+      const drop = spans.slice(0, -1).filter((m) => m[3].trim() && m[3].trim() !== '_');
+      if (!drop.length) return null;
+      let out2 = '';
+      let at = 0;
+      for (const m of drop) {
+        out2 += text.slice(at, m.index) + `[${m[1]}${m[2]} _]`;
+        at = m.index + m[0].length;
+      }
+      return out2 + text.slice(at);
+    };
+    for (let i = ordered.length - 1; i >= 0; i -= 1) {
+      const mv = ordered[i];
+      if (!mv || !mv.text) continue;
+      if (mv.kind !== 'fill' && mv.kind !== 'recurse' && mv.kind !== 'lemma') continue; // GENERAL: move-kind tags
+      const v = inferVariant(mv.text);
+      if (!v || v === mv.text) continue;
+      ordered.splice(i + 1, 0, {
+        ...mv,
+        text: v,
+        rationale: `${mv.rationale || ''} (indices inferred)`.trim(),
+      });
+    }
+  }
+  // TRIED AND REVERTED (2026-07-29) — the general UNWRITABLE-CONTEXT variant.
+  // Invariant 11's context half still bites the split/lemma/synth emitters (Wave 3
+  // fixed `fillCandidates` only and named this as the follow-on). Offering, for EVERY
+  // move citing a context that `contextWritableAt` says is unbound in the body, an
+  // additive `[_ ⊢ …]` variant is correct in principle and was an instant, decisive
+  // LOSS in practice: `equal#exTRel` COMPLETE[47 checks] → STUCK[645 checks] on the
+  // first smoke test — a ~14× cost blow-up from doubling the candidate list at every
+  // move kind at once. If retried, it must be scoped to ONE emitter at a time and
+  // gated on the bench before the differential, not applied as a blanket post-pass.
+  //
+  // The BOUNDED form (REWRITE in place, no candidate-count change) was then tried too:
+  // canary-clean (`exTRel` identical at 47 checks) but MEASURED INERT — 0 gain, 0 loss,
+  // 4,996 → 4,988 checks on the 60-target broad sample. Reverted as well, and the null
+  // is the informative part: the 2026-07-29 deepest-hole census attributes ~115
+  // rejections to `Identifier <name> is unbound`, and if those were unwritable CONTEXTS
+  // the rewrite would have moved the check count. They are not. `N1` is uppercase and
+  // `g1` is report-shaped, so that mass is the engine citing CHECKER-INVENTED
+  // METAVARIABLE names absent from source — the `inventedReportNames` /
+  // `sourceWritableNames` guard that Phase F.7 applies to SYNTH fact admission but not
+  // to the other emitters. That is where to aim next, on the META side, not the context
+  // side.
   if (synths.searchBounded) ordered.searchBounded = true;
   if (synths.synthExhausted) ordered.synthExhausted = true;
   if (splitDrops) ordered.splitDrops = splitDrops;
@@ -771,6 +1047,98 @@ export function movePrefilterOk(mv, hole, code, pfOpts = {}) {
   // candidate can NEVER certify. The reject census measured 171 of these across
   // 26 targets — `Ae_a X #p`, `Ae_a #p #p`, `Ae_a g1 #p` — pure wasted checks.
   if (mv && bareMetaObjectOutsideBox(String(mv.text || ''))) return false;
+  // Universal lexical guard #3 (2026-07-29, measured) — the SIBLING of #2 for ORDINARY
+  // meta names. A meta-context entry (a context variable `g`/`h`, or an LF metavariable
+  // `M`/`A`/`E1`) is a META object exactly like `#p`/`$S`: it may be cited inside a box
+  // or bound in a binder list, but written BARE in a computation-level argument slot the
+  // checker refuses it outright — "Expected h to be a program constant or constructor".
+  // The deepest-hole census over the no-move residue measured ~220 of these (`h` 140,
+  // `M` 32, `g` 20, `A` 18, `E1` 10), the second-largest objection after the generic
+  // type error. Sound by construction: hole.meta is the checker's OWN meta context, and
+  // a name in it that is not also a computation binding can never head a comp argument.
+  // Removes candidates, so it is bounded — the discriminator that decided the two
+  // general post-passes tried this session.
+  if (mv && mv.kind !== 'split' && mv.kind !== 'intro' // GENERAL: move-kind tags — binding occurrences
+    && bareMetaNameOutsideBox(String(mv.text || ''), hole)) return false;
+  // TRIED AND REVERTED (2026-07-29) — guard #4, CHECKER-INVENTED names. The hole
+  // report names metavariables the SOURCE never binds (`N1`, `g1`), and citing one is
+  // `Identifier N1 is unbound` before any typing — ~115 of the deepest-hole reject
+  // volume. Rejecting any move that `textReferencesNames(inventedReportNames(hole,
+  // sourceWritableNames(...)))` measured −1.3% checks with 0 gains / 0 losses on the
+  // broad sample and all canaries clean — but it FAILED the existing soundness pin
+  // "trustScope passes uppercase args bound as comp-vars (no false prune)". Cause:
+  // `sourceWritableNames` measures SOURCE binding, so a name legitimately in scope via
+  // the engine's OWN emitted text (or any hole whose source position won't resolve)
+  // reads as invented and the candidate is wrongly pruned. That is the same unsound
+  // direction S3 recorded when a meta-only prune cut `trans` 544→343 by dropping valid
+  // in-scope names. A correct version needs a scope notion that unions source bindings
+  // with the engine's emitted binders — not `sourceWritableNames` alone. Do not retry
+  // without that, and keep the pin.
+  // TRIED AND REVERTED (2026-07-30) — a COMP-APPLICATION argument-family check at a
+  // site the fill gates do not block. The REACH CHECK that motivated it is SOUND and
+  // worth keeping: of 371 rejected candidates sampled over the no-move residue, **283
+  // (76%) are bare COMP applications** vs only 34 closing boxed fills — so rule (2)'s
+  // machinery is structurally blind to three quarters of the waste. But judging those
+  // by ARGUMENT FAMILY buys nothing: the emitters that produce them (`candsFor`,
+  // `helperLemmaTexts`) already select arguments BY FAMILY, so a family mismatch is
+  // essentially never what the checker is objecting to. Measured 4,038 → 4,038 checks
+  // (exactly zero) on the broad sample. (`inl_sn` 143 → 234 checks was measured in the
+  // same window and initially blamed here — WRONG: it persists after this revert, so
+  // it belongs to the guard-#3 / rule-1b prefilters. A subtractive filter still
+  // changes the PATH — dropping a candidate the search used to accept can send it
+  // down a longer route — so attribute cost moves by re-measuring, not by adjacency.)
+  // The residue's comp-level objections are
+  // INDEX mismatches (entry 30), so a useful check here needs θ over comp premises,
+  // not families — which is (0d) immediately below.
+  //
+  // ⭐ (0d) COMP-APPLICATION θ-INDEX check — the lever with BOTH reach and the right
+  // target. Same site as the reverted family check (76% of rejected candidates are bare
+  // comp applications), but it judges what the checker actually objects to: bind the
+  // theorem's variables from the ARGUMENTS' real types, apply θ to its CONCLUSION
+  // indices, and reject only a rigid-vs-rigid clash with the goal. Everything uncertain
+  // — unknown argument type, differing family, arity mismatch, flexible head — passes.
+  if (mv && code && hole && mv.kind !== 'split' && mv.kind !== 'intro') { // GENERAL: move-kind tags
+    const ct = String(mv.text || '').trim();
+    const LAMBDA = String.fromCharCode(92);
+    if (!/^[[({]/.test(ct) && !/\?|=>|⇒/.test(ct)
+      && ct.indexOf(LAMBDA) < 0 && !/(^|\s)let(\s|$)/.test(ct)) {
+      const toks = splitTopLevelArgs(ct);
+      if (toks.length >= 2) {
+        const decl = theoremIndexFor(code).find((x) => x && x.name === toks[0]);
+        const prem = decl && decl.compType
+          ? decl.compType.premises.filter((p) => p && (p.kind === 'box' || p.kind === 'ctype'))
+          : null;
+        const args = toks.slice(1);
+        if (prem && prem.length === args.length && decl.compType.conclusion) {
+          const scopeTy = new Map();
+          for (const b of [...(hole.ctx || []), ...(hole.meta || [])]) {
+            if (b && b.name && b.type) scopeTy.set(b.name, String(b.type));
+          }
+          // A real candidate spells its arguments BOXED (`[g ⊢ X1]`), not as bare
+          // names — looking the bracketed text up in scope finds nothing and the check
+          // silently never fires. Resolve the inner citation instead.
+          const actual = args.map((a) => {
+            const raw = String(a).trim();
+            const inner = /^\[[^\]]*?(?:\|-|⊢)\s*([\p{L}_][\p{L}\p{N}_']*)\s*(?:\[[^\]]*\])?\]$/u.exec(raw);
+            const nm = inner ? inner[1] : raw;
+            return scopeTy.get(nm) || null;
+          });
+          if (actual.some(Boolean) && compAppIndexConflict(
+            code, prem.map((p) => p.raw), decl.compType.conclusion, actual, hole.goal,
+          )) return false;
+        }
+        // TRIED AND REVERTED (2026-07-30) — the same theta judge for a bare CTYPE
+        // CONSTRUCTOR application. A gate census showed the heads reaching here are a
+        // theorem ONCE and a ctype constructor everywhere else (`ExWkV/c X[]`,
+        // `LogBase X`), so this looked like the dominant case. Wiring
+        // `ctorSubstIndexConflict` to it changed the check count on ZERO of the 32
+        // ctype-heavy targets (2,587 → 2,587, A/B by env toggle) and zero on the broad
+        // sample. `exTRelV`'s 22 → 18 drop in the same window belongs to (0d)'s
+        // boxed-argument fix below, not to this — verified by the A/B showing 18 in
+        // BOTH arms. Reverted; `ctorSubstIndexConflict` stays exported and pinned.
+      }
+    }
+  }
   if (!mv || mv.kind !== 'fill') return true;
   const t = String(mv.text || '').trim();
   if (/\?/.test(t)) return true;               // open fill — not a closing inhabitant
@@ -790,6 +1158,20 @@ export function movePrefilterOk(mv, hole, code, pfOpts = {}) {
   // (1) HEAD check: reject when both heads are rigid declared families and differ.
   if (goalHead && /^[\p{L}_]/u.test(goalHead) && isDeclaredTypeFamily(code, goalHead)
     && ctor.result.head !== goalHead) return false;
+
+  // (1b) RIGID-INDEX check — the family check one level down. Rule (1) compares the
+  // constructor's result FAMILY against the goal's; this compares their INDEX heads.
+  // The 2026-07-29 detail census showed the generic `Type-checking error.` row is
+  // ~90% genuine index mismatch ("Expected [?g ⊢ algeq ?M ?N] / Inferred …"), i.e. the
+  // right family with the wrong indices — invisible to every check the prefilter had.
+  // `rigidIndexConflict` answers only "provably not unifiable" (both index heads rigid
+  // and different) and passes on any doubt, which is the standard a prefilter must meet:
+  // the existing pin `eq_app D1 D2` must still PASS, and the split-side unifier is
+  // already on record as having been OVER-strict.
+  {
+    const gApp = parseAppType(gd.concl);
+    if (gApp && ctor.result && rigidIndexConflict(code, ctor.result.indices, gApp.indices)) return false;
+  }
 
   // (2) ARGUMENT-FAMILY check (the high-yield one): each explicit constructor arg
   // has a declared family; if the fill passes a BARE in-scope hypothesis whose own
@@ -859,6 +1241,15 @@ export function movePrefilterOk(mv, hole, code, pfOpts = {}) {
       if (!wantFam || !isDeclaredTypeFamily(code, wantFam)) continue;
       if (aFam !== wantFam) return false; // rigid family mismatch — dead fill
     }
+
+    // TRIED AND REVERTED (2026-07-29) — the θ-ACCUMULATING index check. Binding the
+    // ctor's pattern variables from the ARGUMENTS' real types, then comparing the
+    // substituted result indices with the goal, is correct and is pinned in
+    // test-prover-prefilter (case d2: `eq_app` against `eq unit unit` is refused ONLY
+    // after θ, while the well-typed `eq_app` and every unknown/flexible case pass).
+    // On the corpus it moved the check count by EXACTLY ZERO (4,038 → 4,038 on the
+    // 60-target broad sample). `ctorSubstIndexConflict` is kept exported and pinned as
+    // scaffolding for whoever builds the real thing.
   }
   return true;
 }
@@ -868,6 +1259,35 @@ export function movePrefilterOk(mv, hole, code, pfOpts = {}) {
 //   legal   `[g |- #p]` · `[g |- #p.1]` · `mlam g, #p =>` · `{#p : #[g |- tm]}`
 //   illegal `Ae_a X #p` · `lemma #p` — a parse error, never a type error
 // Sound and cheap: purely lexical, no model lookup, mirrors the `"`-name guard.
+// Guard #3's walker: is a name from the hole's META context cited BARE at
+// computation level? Mirrors `bareMetaObjectOutsideBox` exactly, but for ordinary
+// identifiers, which need the hole to tell them apart from constructors and comp
+// variables. Fails OPEN when the hole carries no meta context (synthetic holes in
+// tests, pre-report probes) — it may only ever reject on the checker's own data.
+function bareMetaNameOutsideBox(text, hole) {
+  const metaNames = new Set(((hole && hole.meta) || [])
+    .map((m) => m && m.name).filter((n) => n && /^[\p{L}_][\p{L}\p{N}_']*$/u.test(n)));
+  if (!metaNames.size) return false;
+  const compNames = new Set(((hole && hole.ctx) || []).map((c) => c && c.name).filter(Boolean));
+  const s = String(text || '');
+  let depth = 0;         // [ ] and { } — a meta/binder context
+  let inBinders = false; // inside an `mlam …`/`fn …` binder list, until `=>`
+  let bindNext = false;  // the name right after `let` is a BINDING occurrence
+  const tok = /(\bmlam\b|\bfn\b|\blet\b|=>|⇒|[[\]{}]|[\p{L}_][\p{L}\p{N}_']*)/gu;
+  let m;
+  while ((m = tok.exec(s)) !== null) {
+    const t = m[0];
+    if (t === '[' || t === '{') { depth += 1; continue; }
+    if (t === ']' || t === '}') { depth = Math.max(0, depth - 1); continue; }
+    if (t === 'mlam' || t === 'fn') { inBinders = true; continue; } // GENERAL: Beluga binder keywords
+    if (t === 'let') { bindNext = true; continue; }                 // GENERAL: Beluga binder keyword
+    if (t === '=>' || t === '⇒') { inBinders = false; continue; }
+    if (bindNext) { bindNext = false; continue; }
+    if (depth === 0 && !inBinders && metaNames.has(t) && !compNames.has(t)) return true;
+  }
+  return false;
+}
+
 function bareMetaObjectOutsideBox(text) {
   const s = String(text || '');
   let depth = 0;      // [ ] and { } — both open a meta/binder context
@@ -955,6 +1375,15 @@ function scopeFamilyMap(hole) {
 
 // Split the goal/term conclusion into top-level tokens (head + args), parens kept
 // whole. `eq_app d M1` → ['eq_app','d','M1']; `eq_app (foo x) M1` → 3 toks.
+
+let _tiCode = null;
+let _tiVal = null;
+function theoremIndexFor(code) {
+  if (_tiCode === code) return _tiVal;
+  _tiCode = code;
+  _tiVal = theoremIndex(code) || [];
+  return _tiVal;
+}
 
 function splitTopLevelArgs(concl) {
   const s = String(concl || '').trim();

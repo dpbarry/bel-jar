@@ -1,7 +1,7 @@
 import { typeCompatibleWithGoal } from '../../prover/hole-split.mjs';
 import { NAMESPACE } from '../../semantic/ids.mjs';
-import { dirOf } from '../../semantic/development.mjs';
 import { isCompatibleGlobal } from '../../semantic/symbol-store.mjs';
+import { firstIdentChild } from '../../tree-helpers.mjs';
 
 const CM_TYPE = Object.freeze({
   [NAMESPACE.LF_TYPE_FAMILY]: 'type',
@@ -22,22 +22,40 @@ function cmTypeFor(namespace) {
   return CM_TYPE[namespace] || 'text';
 }
 
-function truncateDetail(text, max = 48) {
-  const t = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!t) return undefined;
-  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+function signatureKindFor(namespace) {
+  return namespace === NAMESPACE.LF_TYPE_FAMILY
+    || namespace === NAMESPACE.LF_CONSTANT
+    || namespace === NAMESPACE.LF_CONSTRUCTOR
+    ? 'lf'
+    : 'comp';
 }
 
-// Peer path label relative to the active file's folder: same dir → basename (or
-// nested relative); elsewhere → full project path as stored.
-export function peerFileDetail(fileName, activePath) {
-  const file = String(fileName || '').replace(/\\/g, '/');
-  if (!file) return undefined;
-  const cwd = dirOf(String(activePath || '').replace(/\\/g, '/'));
-  if (cwd && (file === cwd || file.startsWith(`${cwd}/`))) {
-    return file.slice(cwd.length + 1);
+function dirOf(filePath) {
+  const s = String(filePath || '').replaceAll('\\', '/');
+  const i = s.lastIndexOf('/');
+  return i < 0 ? '' : s.slice(0, i);
+}
+
+// Asymmetric proximity: prefer already-defined (above) slightly, but keep
+// co-recursive helpers below the cursor competitive.
+function proximityScore(symFrom, pos) {
+  const delta = pos - (symFrom || 0);
+  if (delta >= 0) return Math.max(0, 15 - Math.floor(delta / 200));
+  return Math.max(0, 12 - Math.floor(Math.abs(delta) / 250));
+}
+
+function enclosingRecName(engine, pos) {
+  const snap = engine?.stores?.syntax?.getSnapshot?.();
+  const tree = snap?.tree;
+  const doc = snap?.doc;
+  if (!tree || !doc || pos == null) return null;
+  for (let p = tree.resolveInner(pos, -1); p; p = p.parent) {
+    if (p.name === 'RecBody') {
+      const id = firstIdentChild(p);
+      return id ? doc.sliceString(id.from, id.to) : null;
+    }
   }
-  return file;
+  return null;
 }
 
 // In-file scope + optional suite peers. Never scans the corpus — peers come from
@@ -61,6 +79,8 @@ export function contributeIdents(site, engine, opts = {}) {
   });
 
   const goal = site.expectedType || null;
+  const recName = enclosingRecName(engine, pos);
+  const activeDir = dirOf(opts.activePath || '');
 
   const items = [];
   const seen = new Set();
@@ -69,7 +89,7 @@ export function contributeIdents(site, engine, opts = {}) {
     if (!sym?.name || seen.has(sym.name)) continue;
     seen.add(sym.name);
     const isLocal = !sym.isGlobal;
-    const detail = truncateDetail(sym.sourceText) || sym.label || undefined;
+    const signature = sym.sourceText || null;
     // J3 REORDERS, it never removes. Type text is matched by string surgery, so a
     // `false` verdict is not proof of ill-typedness — `plus : [|- nat] -> [|- nat]`
     // is a legal head at goal `[|- nat]` once applied. Withholding a name the user
@@ -78,29 +98,29 @@ export function contributeIdents(site, engine, opts = {}) {
     if (goal && sym.sourceText && typeCompatibleWithGoal(sym.sourceText, goal) === true) {
       just = 3;
     }
-    // Do not set `info` — CM opens a side completionInfo panel for it, and a
-    // role label / truncated type already lives in `detail`.
+    let proximity = isLocal ? 20 : proximityScore(sym.nameRange?.from, pos);
+    // Recursive call inside its own body — the most common proof completion.
+    if (recName && sym.name === recName) proximity += 25;
+    // Do not set `info` — CM opens a side completionInfo panel. The row carries
+    // a syntax-highlighted signature when source text is available.
     items.push({
       label: sym.name,
       insert: sym.name,
       kind: isLocal ? 'local' : 'global',
-      detail,
+      signature,
+      signatureKind: signature ? signatureKindFor(sym.namespace) : null,
       source: 'ident',
       cmType: cmTypeFor(sym.namespace),
       just,
       scoreHints: {
         base: isLocal ? 80 : 40,
-        // Nearer decls beat farther ones (cursor distance, not later-in-file).
-        proximity: isLocal
-          ? 20
-          : Math.max(0, 15 - Math.min(15, Math.floor(Math.abs((sym.nameRange?.from || 0) - pos) / 200))),
+        proximity,
       },
       _index: i,
     });
   }
 
   const peers = typeof opts.getPeerSymbols === 'function' ? opts.getPeerSymbols() : null;
-  const activePath = opts.activePath || '';
   if (!localsOnly && peers && peers.length) {
     for (const p of peers) {
       const name = p && p.name;
@@ -108,16 +128,18 @@ export function contributeIdents(site, engine, opts = {}) {
       if (site.namespaces && !site.namespaces.has(p.namespace)) continue;
       if (!site.namespaces && !isCompatibleGlobal(site.refKind, p.namespace)) continue;
       seen.add(name);
-      const pathLabel = peerFileDetail(p.fileName, activePath);
+      const signature = p.sourceText || null;
+      const sameDir = activeDir && dirOf(p.fileName || p.path || '') === activeDir;
       items.push({
         label: name,
         insert: name,
         kind: 'peer',
-        detail: pathLabel ? truncateDetail(pathLabel, 32) : undefined,
+        signature,
+        signatureKind: signature ? signatureKindFor(p.namespace) : null,
         source: 'peer',
         cmType: cmTypeFor(p.namespace),
         just: site.namespaces ? 2 : 1,
-        scoreHints: { base: 10, proximity: 0 },
+        scoreHints: { base: sameDir ? 25 : 10, proximity: 0 },
       });
     }
   }
@@ -143,7 +165,8 @@ export function contributeModuleMembers(site, engine) {
       label: sym.name,
       insert: sym.name,
       kind: 'member',
-      detail: truncateDetail(sym.sourceText) || sym.label || undefined,
+      signature: sym.sourceText || null,
+      signatureKind: sym.sourceText ? signatureKindFor(sym.namespace) : null,
       source: 'module-member',
       cmType: cmTypeFor(sym.namespace),
       just: 2,

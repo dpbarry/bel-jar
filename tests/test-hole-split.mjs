@@ -454,4 +454,31 @@ expect(notYet.length === 1, 'the same hypothesis inverts when its sub-derivation
     'partial application stays prefix (checker arbitrates)');
 }
 
+// ── WEAKENING a meta hypothesis into an EXTENDED context ────────────────────
+// A metavariable `X : (Ψ ⊢ A)` used inside a box whose context extends Ψ must
+// carry the weakening substitution. Bare `X` is not merely unlikely — Beluga
+// rejects it outright ("Ill-typed substitution. Does not take context: h to
+// context: h, x : target _", verified natively on cpp13/cc.bel#weaken), and
+// `X[..]` is the spelling that checks.
+{
+  const WK = [
+    'LF tm : type =', '| app : tm -> tm -> tm', '| lam : (tm -> tm) -> tm', ';',
+    'schema ctx = tm;',
+    'rec f : [g |- tm] -> [g |- tm] =', 'fn r => ?', ';',
+  ].join('\n');
+  const wkHole = { goal: '[g, x : tm |- tm]', line: 7, meta: [{ name: 'X', type: '(g |- tm)' }], ctx: [] };
+  const wk = fillCandidates(wkHole, WK).map((c) => String(c && c.text != null ? c.text : c));
+  expect(wk.some((t) => /\[\s*_?,?[^\]]*x : tm \|- X\[\.\.\]\]/.test(t)),
+    `weakened spelling X[..] offered when the goal context extends the meta's (got ${JSON.stringify(wk)})`);
+  // WIDENING, not substitution: the bare spelling keeps its place, so no proof
+  // that relied on candidate ORDER can shift under this mechanism.
+  const bare = wk.findIndex((t) => /\|- X\]/.test(t));
+  const weak = wk.findIndex((t) => /\|- X\[\.\.\]\]/.test(t));
+  expect(bare >= 0 && weak > bare, 'the bare spelling is kept and still leads the weakened one');
+  // SOUNDNESS: contexts that agree need no substitution — nothing is added there.
+  const same = fillCandidates({ goal: '[g |- tm]', line: 7, meta: [{ name: 'X', type: '(g |- tm)' }], ctx: [] }, WK)
+    .map((c) => String(c && c.text != null ? c.text : c));
+  expect(!same.some((t) => /X\[\.\.\]/.test(t)), 'no weakening proposed when the two contexts are equal');
+}
+
 console.log('OK  hole-split — BelJar builds well-typed split/intro skeletons, fill candidates, TYPED constructor enumeration (both decl forms), and type-directed term SYNTHESIS (constructor application unifying under operators) — all from its OWN model');

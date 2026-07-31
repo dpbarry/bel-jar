@@ -14,6 +14,10 @@ import { execFileSync } from 'node:child_process';
 import { assembleCfgProgram, maskByName } from '../js/editor-src/prover/prover-corpus-decls.mjs';
 import { proveProgram, theoremUnderProof } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
+// A/B toggle: NO_WEAKEN=1 disables the extended-context weakening spelling, so the
+// same binary measures both arms (read at call time, not import time).
+if (process.env.NO_WEAKEN) globalThis.__proverNoWeaken = true;
+
 const root = process.cwd();
 const args = process.argv.slice(2);
 function arg(n, d) { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; }
@@ -71,6 +75,8 @@ const entries = (r.trace || []).map((t, i) => ({
   armLine: t.focus ? t.focus.armLine : null,
   kinds: [...new Set((t.tried || []).map((x) => x.kind))].sort(),
   nTried: (t.tried || []).length,
+  meta: (t.holeMeta || []).map((b) => `${b.name}:${String(b.type).slice(0, 70)}`),
+  hctx: (t.holeCtx || []).map((b) => `${b.name}:${String(b.type).slice(0, 70)}`),
   rows: (t.tried || []).map((x) => ({
     kind: x.kind,
     verdict: x.verdict,

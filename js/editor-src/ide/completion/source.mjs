@@ -1,45 +1,25 @@
-import { acceptCompletion, autocompletion, closeCompletion, moveCompletionSelection, startCompletion } from '@codemirror/autocomplete';
 import { Prec } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import { classifyCompletionSite, isIdentChar } from './classify.mjs';
 import { contributeIdents, contributeModuleMembers } from './contributors.mjs';
-import { contributeSnippets } from './snippets.mjs';
+import {
+  contributeSnippets,
+  isCompKindSlot,
+  isLfKindSlot,
+} from './snippets.mjs';
 import { rankLookupItems } from './weigh.mjs';
-import { completionChrome } from './chrome.mjs';
 
 const MAX_OPTIONS = 24;
-
-const IDENT_VALID = /^[\p{L}\p{N}_'#$\u0080-\uFFFF]*$/u;
+// Sentinel for rankLookupItems: keep every justified item. The popup still
+// renders at most MAX_OPTIONS; truncating the *pool* would make later letters
+// unable to surface names ranked outside top-N.
+const POOL_UNCAPPED = 0;
 
 export function permitsImplicitCompletion(site) {
   if (!site) return false;
   if (site.kind === 'structure' || site.kind === 'module-member') return true;
   return site.kind === 'ident' && site.maxJust >= 2;
-}
-
-// Same as CM's completionKeymap, but Tab accepts (Enter inserts a newline).
-// Structure snippets are ranked first so Tab at `case e of` inserts `| … ⇒`.
-const belCompletionKeymap = [
-  { key: 'Ctrl-Space', run: startCompletion },
-  { mac: 'Alt-`', run: startCompletion },
-  { mac: 'Alt-i', run: startCompletion },
-  { key: 'Escape', run: closeCompletion },
-  { key: 'ArrowDown', run: moveCompletionSelection(true) },
-  { key: 'ArrowUp', run: moveCompletionSelection(false) },
-  { key: 'PageDown', run: moveCompletionSelection(true, 'page') },
-  { key: 'PageUp', run: moveCompletionSelection(false, 'page') },
-  { key: 'Tab', run: acceptCompletion },
-];
-
-function lookupToCmOption(item) {
-  const opt = {
-    label: item.label,
-    apply: item.insert != null ? item.insert : item.label,
-    type: item.cmType || 'text',
-    detail: item.detail,
-  };
-  if (item.info && item.info !== item.detail) opt.info = item.info;
-  return opt;
 }
 
 function shellEditor() {
@@ -55,24 +35,93 @@ function peerSymbolsFromShell() {
   return [];
 }
 
-function activeDocumentPath() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  const ed = shellEditor();
-  const P = g.Persist;
-  if (ed && typeof ed.getFilePath === 'function') {
-    const path = ed.getFilePath();
-    if (path) return String(path).replace(/\\/g, '/').replace(/^workspace:\/\//, '');
+function treeForGather(state, engine, pos) {
+  const snap = engine?.stores?.syntax?.getSnapshot?.();
+  if (snap?.tree && snap.doc && snap.doc.length === state.doc.length) {
+    return snap.tree;
   }
-  const id = (ed && typeof ed.getCurrentFileId === 'function' && ed.getCurrentFileId())
-    || (P && typeof P.getActiveFileId === 'function' && P.getActiveFileId())
-    || '';
-  if (!id) return '';
-  if (P && typeof P.listFiles === 'function') {
-    for (const f of P.listFiles()) {
-      if (f.id === id && f.name) return String(f.name);
+  const need = Math.min(state.doc.length, Math.max((pos || 0) + 512, 0));
+  return ensureSyntaxTree(state, need, 100)
+    || ensureSyntaxTree(state, state.doc.length, 5000)
+    || syntaxTree(state);
+}
+
+function kindStructureAt(state, engine, pos) {
+  const tree = treeForGather(state, engine, pos);
+  if (!tree) return null;
+  if (isLfKindSlot(tree, state.doc, pos)) return 'lf-kind';
+  if (isCompKindSlot(tree, state.doc, pos)) return 'comp-kind';
+  return null;
+}
+
+function sitePoolKey(site) {
+  if (!site || site.kind === 'none') return '';
+  const namespaces = site.namespaces ? [...site.namespaces].sort().join(',') : '';
+  return [
+    site.kind,
+    site.structure || '',
+    namespaces,
+    site.refKind || '',
+    site.allowLocals ? 'locals' : '',
+    site.localsOnly ? 'locals-only' : '',
+    site.moduleName || '',
+  ].join('|');
+}
+
+function kindSnippetsFor(site, engine, state) {
+  const existing = contributeSnippets(site);
+  if (existing.length) return existing;
+  if (!state || site?.idents === false) return [];
+  const pos = site.from != null ? site.from : 0;
+  const structure = kindStructureAt(state, engine, pos);
+  if (!structure) return [];
+  return contributeSnippets({ ...site, structure });
+}
+
+function resolvedSite(state, pos, engine) {
+  let site = classifyCompletionSite(state, pos, engine);
+  if (!site || site.kind === 'none') return site;
+  if (!site.structure && site.idents !== false) {
+    const structure = kindStructureAt(state, engine, pos);
+    if (structure) {
+      site = {
+        ...site,
+        kind: 'structure',
+        structure,
+        maxJust: Math.max(site.maxJust || 1, 2),
+        idents: true,
+      };
     }
   }
-  return String(id).replace(/^workspace:\/\//, '');
+  return site;
+}
+
+function shouldOffer(site, explicit) {
+  if (!site || site.kind === 'none') return false;
+  if (site.kind === 'ident') {
+    if (site.from === site.to && !explicit) return false;
+    if (!explicit && !permitsImplicitCompletion(site)) return false;
+    if (!explicit && site.query) {
+      const last = site.query[site.query.length - 1];
+      if (!isIdentChar(last)) return false;
+    }
+  }
+  if (site.kind === 'structure' || site.kind === 'module-member') {
+    if (!explicit && !permitsImplicitCompletion(site)) return false;
+  }
+  return true;
+}
+
+function shellActivePath() {
+  const ed = shellEditor();
+  if (ed && typeof ed.getActivePath === 'function') {
+    try { return ed.getActivePath() || ''; } catch (_) { return ''; }
+  }
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  if (g.Persist && typeof g.Persist.getActiveFileName === 'function') {
+    try { return g.Persist.getActiveFileName() || ''; } catch (_) { return ''; }
+  }
+  return '';
 }
 
 export function gatherCompletions(site, engine, state, opts = {}) {
@@ -82,11 +131,12 @@ export function gatherCompletions(site, engine, state, opts = {}) {
     return rankLookupItems(
       contributeModuleMembers(site, engine),
       site.query || '',
-      opts.limit || MAX_OPTIONS,
+      opts.limit != null ? opts.limit : MAX_OPTIONS,
+      opts.weights,
     );
   }
 
-  const snippets = contributeSnippets(site);
+  const snippets = kindSnippetsFor(site, engine, state);
   let idents = [];
   if (site.idents !== false && (site.kind === 'ident' || site.kind === 'structure')) {
     idents = contributeIdents(
@@ -94,61 +144,123 @@ export function gatherCompletions(site, engine, state, opts = {}) {
       engine,
       {
         getPeerSymbols: opts.getPeerSymbols || peerSymbolsFromShell,
-        activePath: opts.activePath != null ? opts.activePath : activeDocumentPath(),
+        activePath: opts.activePath || shellActivePath(),
       },
     );
   }
 
-  // Structure snippets first (scoreHints.base), then idents. case-arm has idents:false so
-  // only the `|` snippet remains — typing `l` after `of` yields an empty list.
   const raw = snippets.length ? [...snippets, ...idents] : idents;
-  return rankLookupItems(raw, site.query || '', opts.limit || MAX_OPTIONS);
+  return rankLookupItems(
+    raw,
+    site.query || '',
+    opts.limit != null ? opts.limit : MAX_OPTIONS,
+    opts.weights,
+  );
 }
 
-export function belCompletionSource(engine, opts = {}) {
-  return (context) => {
+export function createCompletionController(engine, opts = {}) {
+  let retainedPool = null;
+
+  function compute(state, pos, explicit) {
     if (!engine) return null;
-    const pos = context.pos;
-    const site = classifyCompletionSite(context.state, pos, engine);
-    if (!site || site.kind === 'none') return null;
+    const site = resolvedSite(state, pos, engine);
+    if (!shouldOffer(site, explicit)) return null;
 
-    if (site.kind === 'ident') {
-      if (site.from === site.to && !context.explicit) return null;
-      if (!context.explicit && !permitsImplicitCompletion(site)) return null;
-      if (!context.explicit && site.query) {
-        const last = site.query[site.query.length - 1];
-        if (!isIdentChar(last)) return null;
-      }
+    const poolKey = sitePoolKey(site);
+    if (!retainedPool
+        || retainedPool.from !== site.from
+        || retainedPool.key !== poolKey) {
+      retainedPool = {
+        from: site.from,
+        key: poolKey,
+        items: gatherCompletions(
+          { ...site, query: '' },
+          engine,
+          state,
+          { ...opts, limit: opts.poolLimit != null ? opts.poolLimit : POOL_UNCAPPED },
+        ),
+      };
     }
 
-    if (site.kind === 'structure' || site.kind === 'module-member') {
-      if (!context.explicit && !permitsImplicitCompletion(site)) return null;
-      // Empty-query structure / `Foo.` slots must fire so Tab can accept.
+    const items = rankLookupItems(
+      retainedPool.items,
+      site.query || '',
+      opts.limit != null ? opts.limit : MAX_OPTIONS,
+      opts.weights,
+    );
+    if (!items.length && !explicit) return null;
+    const query = site.query || '';
+    // Finished token: sole exact-label row is a no-op — hide the popup.
+    if (items.length === 1
+        && query
+        && String(items[0].label || '').toLowerCase() === query.toLowerCase()) {
+      return null;
     }
-
-    const items = gatherCompletions(site, engine, context.state, opts);
-    if (!items.length && !context.explicit) return null;
     return {
       from: site.from,
       to: site.to,
-      options: items.map(lookupToCmOption),
-      validFor: IDENT_VALID,
+      query,
+      items,
     };
+  }
+
+  function computeUpdate(state, _from, to, explicit) {
+    const site = resolvedSite(state, to, engine);
+    if (!site
+        || site.kind === 'none'
+        || !retainedPool
+        || site.from !== retainedPool.from
+        || sitePoolKey(site) !== retainedPool.key) {
+      retainedPool = null;
+      return null;
+    }
+    return compute(state, to, explicit);
+  }
+
+  function resetPool() {
+    retainedPool = null;
+  }
+
+  return { compute, computeUpdate, resetPool };
+}
+
+function lookupToCmOption(item) {
+  const opt = {
+    label: item.label,
+    apply: item.insert != null ? item.insert : item.label,
+    type: item.cmType || 'text',
+    detail: item.detail,
+    signature: item.signature,
+    signatureKind: item.signatureKind,
   };
+  if (item.info && item.info !== item.detail) opt.info = item.info;
+  return opt;
 }
 
-export function belAutocompletion(engine, opts = {}) {
-  return [
-    autocompletion({
-      activateOnTyping: true,
-      defaultKeymap: false,
-      icons: false,
-      maxRenderedOptions: opts.maxRenderedOptions || MAX_OPTIONS,
-      override: [belCompletionSource(engine, opts)],
-    }),
-    Prec.highest(keymap.of(belCompletionKeymap)),
-    completionChrome(),
-  ];
+export function belCompletionSource(engine, opts = {}) {
+  const controller = createCompletionController(engine, opts);
+  let sharedResult = null;
+
+  function toCmResult(result) {
+    if (!result) return null;
+    if (!sharedResult) {
+      sharedResult = {
+        from: result.from,
+        to: result.to,
+        options: [],
+        filter: false,
+        update(_current, from, to, nextContext) {
+          return toCmResult(controller.computeUpdate(nextContext.state, from, to, false));
+        },
+      };
+    }
+    sharedResult.from = result.from;
+    sharedResult.to = result.to;
+    sharedResult.options = result.items.map(lookupToCmOption);
+    return sharedResult;
+  }
+
+  return (context) => toCmResult(controller.compute(context.state, context.pos, context.explicit));
 }
 
-export { completionChrome };
+export { MAX_OPTIONS as COMPLETION_MAX_OPTIONS };

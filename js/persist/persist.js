@@ -179,11 +179,12 @@
     var REPL_WELCOME_KEY = "beljar-repl-welcome";
     var REPL_ECHO_KEY = "beljar-repl-echo";
     var REPL_FILTER_CHATTER_KEY = "beljar-repl-filter-chatter";
+    var REPL_HOVER_TIMESTAMP_KEY = "beljar-repl-hover-timestamp";
     var REPL_HISTORY_CAP_KEY = "beljar-repl-history-cap";
     var REPL_HISTORY_PERSIST_KEY = "beljar-repl-history-persist";
     var REPL_TRANSCRIPT_KEY = "beljar-repl-transcript-v1";
     var REPL_CMD_HISTORY_KEY = "beljar-repl-cmd-history-v1";
-    var REPL_CMD_HISTORY_DEFAULT_CAP = 500;
+    var REPL_CMD_HISTORY_DEFAULT_CAP = 1e3;
     var BELUGA_FALLBACK_STABLE_KEY = "beljar-beluga-fallback-stable";
     var BELUGA_CANCEL_ON_EDIT_KEY = "beljar-beluga-cancel-on-edit";
     var LIBRARY_EXPAND_DEFAULT_KEY = "beljar-library-expand-default";
@@ -213,6 +214,8 @@
     var EDITOR_SELECTION_MATCHES_KEY = "beljar-editor-selection-matches";
     var EDITOR_REINDENT_PASTE_KEY = "beljar-editor-reindent-paste";
     var EDITOR_FORMAT_WIDTH_KEY = "beljar-editor-format-width";
+    var EDITOR_AUTOCOMPLETE_TRIGGER_KEY = "beljar-editor-autocomplete-trigger";
+    var EDITOR_AUTOCOMPLETE_CONTINUE_KEY = "beljar-editor-autocomplete-continue";
     function readBoolDefaultOn(key) {
       try {
         return backendLoad2(key) !== "off";
@@ -259,13 +262,19 @@
     function writeStoredReplFilterChatter2(on) {
       writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on);
     }
+    function readStoredReplHoverTimestamp2() {
+      return readBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY);
+    }
+    function writeStoredReplHoverTimestamp2(on) {
+      writeBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY, on);
+    }
     function readStoredReplHistoryCap2() {
       try {
         var v = parseInt(backendLoad2(REPL_HISTORY_CAP_KEY), 10);
-        if (v === 100 || v === 250 || v === 500) return v;
-        return 0;
+        if (v === 100 || v === 250 || v === 500 || v === 1e3) return v;
+        return REPL_CMD_HISTORY_DEFAULT_CAP;
       } catch (_) {
-        return 0;
+        return REPL_CMD_HISTORY_DEFAULT_CAP;
       }
     }
     function writeStoredReplHistoryCap2(cap) {
@@ -615,6 +624,25 @@
       else if (n === 100 || n === 120) backendSave2(EDITOR_FORMAT_WIDTH_KEY, String(n));
       else backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
     }
+    function readStoredEditorAutocompleteTrigger2() {
+      try {
+        var v = backendLoad2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+        if (v === "none" || v === "always") return v;
+        return "typing";
+      } catch (_) {
+        return "typing";
+      }
+    }
+    function writeStoredEditorAutocompleteTrigger2(mode) {
+      if (mode === "none" || mode === "always") backendSave2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY, mode);
+      else backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+    }
+    function readStoredEditorAutocompleteContinue2() {
+      return readBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
+    }
+    function writeStoredEditorAutocompleteContinue2(on) {
+      writeBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY, on);
+    }
     function resetAppearancePrefs2() {
       backendRemove2(THEME_STORAGE_KEY2);
       backendRemove2(UI_FONT_SIZE_KEY2);
@@ -641,6 +669,8 @@
       backendRemove2(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
       backendRemove2(EDITOR_SELECTION_MATCHES_KEY);
       backendRemove2(HOVER_SCOPE_KEY);
+      backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
+      backendRemove2(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
     }
     function resetEditorGutterPrefs2() {
       backendRemove2(EDITOR_LINE_NUMBERS_KEY);
@@ -665,6 +695,7 @@
       backendRemove2(REPL_WELCOME_KEY);
       backendRemove2(REPL_ECHO_KEY);
       backendRemove2(REPL_FILTER_CHATTER_KEY);
+      backendRemove2(REPL_HOVER_TIMESTAMP_KEY);
       backendRemove2(REPL_HISTORY_CAP_KEY);
       backendRemove2(REPL_HISTORY_PERSIST_KEY);
       clearReplHistoryPayload();
@@ -794,6 +825,8 @@
       writeStoredReplEcho: writeStoredReplEcho2,
       readStoredReplFilterChatter: readStoredReplFilterChatter2,
       writeStoredReplFilterChatter: writeStoredReplFilterChatter2,
+      readStoredReplHoverTimestamp: readStoredReplHoverTimestamp2,
+      writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp2,
       readStoredReplHistoryCap: readStoredReplHistoryCap2,
       writeStoredReplHistoryCap: writeStoredReplHistoryCap2,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist2,
@@ -854,6 +887,10 @@
       writeStoredEditorReindentPaste: writeStoredEditorReindentPaste2,
       readStoredEditorFormatWidth: readStoredEditorFormatWidth2,
       writeStoredEditorFormatWidth: writeStoredEditorFormatWidth2,
+      readStoredEditorAutocompleteTrigger: readStoredEditorAutocompleteTrigger2,
+      writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger2,
+      readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue2,
+      writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue2,
       resetAppearancePrefs: resetAppearancePrefs2,
       resetEditorTypographyPrefs: resetEditorTypographyPrefs2,
       resetEditorIndentPrefs: resetEditorIndentPrefs2,
@@ -2988,6 +3025,12 @@
   function writeStoredReplFilterChatter() {
     return _settingsApi.writeStoredReplFilterChatter.apply(_settingsApi, arguments);
   }
+  function readStoredReplHoverTimestamp() {
+    return _settingsApi.readStoredReplHoverTimestamp.apply(_settingsApi, arguments);
+  }
+  function writeStoredReplHoverTimestamp() {
+    return _settingsApi.writeStoredReplHoverTimestamp.apply(_settingsApi, arguments);
+  }
   function readStoredReplHistoryCap() {
     return _settingsApi.readStoredReplHistoryCap.apply(_settingsApi, arguments);
   }
@@ -3167,6 +3210,18 @@
   }
   function writeStoredEditorFormatWidth() {
     return _settingsApi.writeStoredEditorFormatWidth.apply(_settingsApi, arguments);
+  }
+  function readStoredEditorAutocompleteTrigger() {
+    return _settingsApi.readStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+  function writeStoredEditorAutocompleteTrigger() {
+    return _settingsApi.writeStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+  function readStoredEditorAutocompleteContinue() {
+    return _settingsApi.readStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
+  }
+  function writeStoredEditorAutocompleteContinue() {
+    return _settingsApi.writeStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
   }
   function resetAppearancePrefs() {
     return _settingsApi.resetAppearancePrefs.apply(_settingsApi, arguments);
@@ -3748,6 +3803,8 @@
     writeStoredReplEcho,
     readStoredReplFilterChatter,
     writeStoredReplFilterChatter,
+    readStoredReplHoverTimestamp,
+    writeStoredReplHoverTimestamp,
     readStoredReplHistoryCap,
     writeStoredReplHistoryCap,
     readStoredReplHistoryPersist,
@@ -3816,6 +3873,10 @@
     writeStoredEditorReindentPaste,
     readStoredEditorFormatWidth,
     writeStoredEditorFormatWidth,
+    readStoredEditorAutocompleteTrigger,
+    writeStoredEditorAutocompleteTrigger,
+    readStoredEditorAutocompleteContinue,
+    writeStoredEditorAutocompleteContinue,
     resetLayoutPrefs,
     resetAppearancePrefs,
     resetEditorTypographyPrefs,

@@ -20,8 +20,13 @@ export function computeSettleDelayMs(syntaxSnap, { preludePaths = 0 } = {}) {
   const suiteFactor = preludePaths > 0 ? 0.25 : 0;
   const fastTyping = typingVelocity > 0 && typingVelocity < 180;
   const base = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * (sizeFactor + suiteFactor);
-  const delay = fastTyping ? Math.max(MIN_DELAY, base * 0.75) : base;
-  return Math.round(Math.min(MAX_DELAY, Math.max(MIN_DELAY, delay)));
+  let delay = fastTyping ? Math.max(MIN_DELAY, base * 0.75) : base;
+  try {
+    const g = typeof window !== 'undefined' ? window : globalThis;
+    const scale = g.Persist?.checkAggressivenessScale?.();
+    if (typeof scale === 'number' && isFinite(scale) && scale > 0) delay *= scale;
+  } catch (_) {}
+  return Math.round(Math.min(MAX_DELAY * 2, Math.max(MIN_DELAY * 0.5, delay)));
 }
 
 export function resetSettleDelayState() {

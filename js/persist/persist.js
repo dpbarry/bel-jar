@@ -216,6 +216,26 @@
     var EDITOR_FORMAT_WIDTH_KEY = "beljar-editor-format-width";
     var EDITOR_AUTOCOMPLETE_TRIGGER_KEY = "beljar-editor-autocomplete-trigger";
     var EDITOR_AUTOCOMPLETE_CONTINUE_KEY = "beljar-editor-autocomplete-continue";
+    var EDITOR_CURSOR_BLINK_KEY = "beljar-editor-cursor-blink";
+    var EDITOR_SCROLL_PAST_END_KEY = "beljar-editor-scroll-past-end";
+    var EDITOR_WHITESPACE_KEY = "beljar-editor-whitespace";
+    var EDITOR_RULERS_KEY = "beljar-editor-rulers";
+    var EDITOR_LIGATURES_KEY = "beljar-editor-ligatures";
+    var EDITOR_FONT_FAMILY_KEY = "beljar-editor-font-family";
+    var EDITOR_HOLE_EMPHASIS_KEY = "beljar-editor-hole-emphasis";
+    var MOTION_PREF_KEY = "beljar-motion-pref";
+    var TOAST_DURATION_KEY = "beljar-toast-duration";
+    var CHECK_AGGRESSIVENESS_KEY = "beljar-check-aggressiveness";
+    var AUTOSOLVE_FOCUS_NEXT_KEY = "beljar-autosolve-focus-next";
+    var AUTOSOLVE_SHOW_STATS_KEY = "beljar-autosolve-show-stats";
+    var QUIET_WHILE_TYPING_KEY = "beljar-quiet-while-typing";
+    var DIAG_PRESENTATION_KEY = "beljar-diag-presentation";
+    var DIAG_SEVERITY_KEY = "beljar-diag-severity";
+    var FORMAT_ON_SAVE_KEY = "beljar-format-on-save";
+    var TRIM_TRAILING_WS_KEY = "beljar-trim-trailing-ws";
+    var STICKY_DECL_HEADER_KEY = "beljar-sticky-decl-header";
+    var SUITE_CHECK_KEY = "beljar-suite-check";
+    var HOVER_STICKY_KEY = "beljar-hover-sticky";
     function readBoolDefaultOn(key) {
       try {
         return backendLoad2(key) !== "off";
@@ -643,15 +663,376 @@
     function writeStoredEditorAutocompleteContinue2(on) {
       writeBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY, on);
     }
+    function readStoredEditorCursorBlink() {
+      try {
+        var v = backendLoad2(EDITOR_CURSOR_BLINK_KEY);
+        if (v === "off" || v === "fast") return v;
+        return "blink";
+      } catch (_) {
+        return "blink";
+      }
+    }
+    function writeStoredEditorCursorBlink(mode) {
+      if (mode === "off" || mode === "fast") backendSave2(EDITOR_CURSOR_BLINK_KEY, mode);
+      else backendRemove2(EDITOR_CURSOR_BLINK_KEY);
+    }
+    function readStoredEditorScrollPastEnd() {
+      return readBoolDefaultOn(EDITOR_SCROLL_PAST_END_KEY);
+    }
+    function writeStoredEditorScrollPastEnd(on) {
+      writeBoolDefaultOn(EDITOR_SCROLL_PAST_END_KEY, on);
+    }
+    function readStoredEditorWhitespace() {
+      try {
+        var v = backendLoad2(EDITOR_WHITESPACE_KEY);
+        if (v === "trailing" || v === "all" || v === "selection") return v;
+        return "none";
+      } catch (_) {
+        return "none";
+      }
+    }
+    function writeStoredEditorWhitespace(mode) {
+      if (mode === "trailing" || mode === "all" || mode === "selection") backendSave2(EDITOR_WHITESPACE_KEY, mode);
+      else backendRemove2(EDITOR_WHITESPACE_KEY);
+    }
+    function readStoredEditorRulers() {
+      return readBoolDefaultOff(EDITOR_RULERS_KEY);
+    }
+    function writeStoredEditorRulers(on) {
+      writeBoolDefaultOff(EDITOR_RULERS_KEY, on);
+    }
+    function readStoredEditorLigatures() {
+      return readBoolDefaultOn(EDITOR_LIGATURES_KEY);
+    }
+    function writeStoredEditorLigatures(on) {
+      writeBoolDefaultOn(EDITOR_LIGATURES_KEY, on);
+    }
+    function readStoredEditorFontFamily() {
+      try {
+        var v = backendLoad2(EDITOR_FONT_FAMILY_KEY);
+        if (v === "system") return "system";
+        return "jetbrains";
+      } catch (_) {
+        return "jetbrains";
+      }
+    }
+    function writeStoredEditorFontFamily(family) {
+      if (family === "system") backendSave2(EDITOR_FONT_FAMILY_KEY, "system");
+      else backendRemove2(EDITOR_FONT_FAMILY_KEY);
+    }
+    function readStoredEditorHoleEmphasis() {
+      try {
+        var v = backendLoad2(EDITOR_HOLE_EMPHASIS_KEY);
+        if (v === "subtle" || v === "loud") return v;
+        return "normal";
+      } catch (_) {
+        return "normal";
+      }
+    }
+    function writeStoredEditorHoleEmphasis(mode) {
+      if (mode === "subtle" || mode === "loud") backendSave2(EDITOR_HOLE_EMPHASIS_KEY, mode);
+      else backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
+    }
+    function readStoredMotionPref() {
+      try {
+        var v = backendLoad2(MOTION_PREF_KEY);
+        if (v === "reduce" || v === "full") return v;
+        return "system";
+      } catch (_) {
+        return "system";
+      }
+    }
+    function writeStoredMotionPref(mode) {
+      if (mode === "reduce" || mode === "full") backendSave2(MOTION_PREF_KEY, mode);
+      else backendRemove2(MOTION_PREF_KEY);
+    }
+    function applyStoredMotionPref(doc) {
+      var root = doc && doc.documentElement ? doc.documentElement : null;
+      if (!root && typeof document !== "undefined") root = document.documentElement;
+      if (!root) return;
+      var mode = readStoredMotionPref();
+      root.classList.toggle("bj-motion-reduce", mode === "reduce");
+      root.classList.toggle("bj-motion-full", mode === "full");
+    }
+    function prefersReducedMotion() {
+      var mode = readStoredMotionPref();
+      if (mode === "reduce") return true;
+      if (mode === "full") return false;
+      try {
+        return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      } catch (_) {
+        return false;
+      }
+    }
+    function readStoredToastDuration() {
+      try {
+        var v = backendLoad2(TOAST_DURATION_KEY);
+        if (v === "short" || v === "long") return v;
+        return "normal";
+      } catch (_) {
+        return "normal";
+      }
+    }
+    function writeStoredToastDuration(mode) {
+      if (mode === "short" || mode === "long") backendSave2(TOAST_DURATION_KEY, mode);
+      else backendRemove2(TOAST_DURATION_KEY);
+    }
+    function toastDurationMs() {
+      var mode = readStoredToastDuration();
+      if (mode === "short") return 2e3;
+      if (mode === "long") return 6e3;
+      return 3500;
+    }
+    function readStoredCheckAggressiveness() {
+      try {
+        var v = backendLoad2(CHECK_AGGRESSIVENESS_KEY);
+        if (v === "responsive" || v === "thorough") return v;
+        return "balanced";
+      } catch (_) {
+        return "balanced";
+      }
+    }
+    function writeStoredCheckAggressiveness(mode) {
+      if (mode === "responsive" || mode === "thorough") backendSave2(CHECK_AGGRESSIVENESS_KEY, mode);
+      else backendRemove2(CHECK_AGGRESSIVENESS_KEY);
+    }
+    function checkAggressivenessScale() {
+      var mode = readStoredCheckAggressiveness();
+      if (mode === "responsive") return 0.7;
+      if (mode === "thorough") return 1.45;
+      return 1;
+    }
+    function readStoredAutosolveFocusNext() {
+      return readBoolDefaultOn(AUTOSOLVE_FOCUS_NEXT_KEY);
+    }
+    function writeStoredAutosolveFocusNext(on) {
+      writeBoolDefaultOn(AUTOSOLVE_FOCUS_NEXT_KEY, on);
+    }
+    function readStoredAutosolveShowStats() {
+      return readBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY);
+    }
+    function writeStoredAutosolveShowStats(on) {
+      writeBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY, on);
+    }
+    function readStoredQuietWhileTyping() {
+      return readBoolDefaultOff(QUIET_WHILE_TYPING_KEY);
+    }
+    function writeStoredQuietWhileTyping(on) {
+      writeBoolDefaultOff(QUIET_WHILE_TYPING_KEY, on);
+    }
+    function readStoredDiagPresentation() {
+      try {
+        var v = backendLoad2(DIAG_PRESENTATION_KEY);
+        if (v === "underlines" || v === "gutter" || v === "none" || v === "both") return v;
+        if (backendLoad2(EDITOR_DIAG_GUTTER_KEY) === "off") return "underlines";
+        return "both";
+      } catch (_) {
+        return "both";
+      }
+    }
+    function writeStoredDiagPresentation(mode) {
+      if (mode === "underlines" || mode === "gutter" || mode === "none") {
+        backendSave2(DIAG_PRESENTATION_KEY, mode);
+      } else {
+        backendRemove2(DIAG_PRESENTATION_KEY);
+      }
+      if (mode === "underlines" || mode === "none") writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, false);
+      else writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, true);
+    }
+    function readStoredDiagSeverity() {
+      try {
+        var v = backendLoad2(DIAG_SEVERITY_KEY);
+        if (v === "errors") return "errors";
+        return "all";
+      } catch (_) {
+        return "all";
+      }
+    }
+    function writeStoredDiagSeverity(mode) {
+      if (mode === "errors") backendSave2(DIAG_SEVERITY_KEY, "errors");
+      else backendRemove2(DIAG_SEVERITY_KEY);
+    }
+    function readStoredFormatOnSave() {
+      return readBoolDefaultOff(FORMAT_ON_SAVE_KEY);
+    }
+    function writeStoredFormatOnSave(on) {
+      writeBoolDefaultOff(FORMAT_ON_SAVE_KEY, on);
+    }
+    function readStoredTrimTrailingWs() {
+      return readBoolDefaultOff(TRIM_TRAILING_WS_KEY);
+    }
+    function writeStoredTrimTrailingWs(on) {
+      writeBoolDefaultOff(TRIM_TRAILING_WS_KEY, on);
+    }
+    function readStoredStickyDeclHeader() {
+      return readBoolDefaultOff(STICKY_DECL_HEADER_KEY);
+    }
+    function writeStoredStickyDeclHeader(on) {
+      writeBoolDefaultOff(STICKY_DECL_HEADER_KEY, on);
+    }
+    function readStoredSuiteCheck() {
+      try {
+        var v = backendLoad2(SUITE_CHECK_KEY);
+        if (v === "active") return "active";
+        return "suite";
+      } catch (_) {
+        return "suite";
+      }
+    }
+    function writeStoredSuiteCheck(mode) {
+      if (mode === "active") backendSave2(SUITE_CHECK_KEY, "active");
+      else backendRemove2(SUITE_CHECK_KEY);
+    }
+    function readStoredHoverSticky() {
+      return readBoolDefaultOff(HOVER_STICKY_KEY);
+    }
+    function writeStoredHoverSticky(on) {
+      writeBoolDefaultOff(HOVER_STICKY_KEY, on);
+    }
+    function applyStoredEditorChrome(doc) {
+      var root = doc && doc.documentElement ? doc.documentElement : null;
+      if (!root && typeof document !== "undefined") root = document.documentElement;
+      if (!root) return;
+      var family = readStoredEditorFontFamily();
+      root.style.setProperty(
+        "--editor-mono",
+        family === "system" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "'JetBrains Mono', monospace"
+      );
+      root.style.setProperty(
+        "--editor-ligatures",
+        readStoredEditorLigatures() ? "common-ligatures" : "none"
+      );
+      var emph = readStoredEditorHoleEmphasis();
+      root.classList.toggle("bj-hole-subtle", emph === "subtle");
+      root.classList.toggle("bj-hole-loud", emph === "loud");
+    }
+    var USER_SETTINGS_EXPORT_KEYS = [
+      "beljar-theme",
+      "beljar-ui-font-size",
+      "beljar-ui-text-contrast",
+      "beljar-motion-pref",
+      "beljar-toast-duration",
+      "beljar-beluga-mode",
+      "beljar-beluga-fallback-stable",
+      "beljar-beluga-cancel-on-edit",
+      "beljar-check-aggressiveness",
+      "beljar-hover-scope",
+      "beljar-alias-activation",
+      "beljar-alias-pairs",
+      "beljar-cfg-auto-sync",
+      "beljar-repl-autoscroll",
+      "beljar-repl-welcome",
+      "beljar-repl-echo",
+      "beljar-repl-filter-chatter",
+      "beljar-repl-hover-timestamp",
+      "beljar-repl-history-cap",
+      "beljar-repl-history-persist",
+      "beljar-library-expand-default",
+      "beljar-restore-panels",
+      "beljar-inspector-follow",
+      "beljar-autosave-delay",
+      "beljar-autosolve-focus-next",
+      "beljar-autosolve-show-stats",
+      QUIET_WHILE_TYPING_KEY,
+      DIAG_PRESENTATION_KEY,
+      DIAG_SEVERITY_KEY,
+      FORMAT_ON_SAVE_KEY,
+      TRIM_TRAILING_WS_KEY,
+      STICKY_DECL_HEADER_KEY,
+      SUITE_CHECK_KEY,
+      HOVER_STICKY_KEY,
+      "beljar-keybindings",
+      EDITOR_FONT_SIZE_KEY,
+      EDITOR_LINE_HEIGHT_KEY,
+      EDITOR_WORD_WRAP_KEY,
+      EDITOR_TAB_SIZE_KEY,
+      EDITOR_LINE_NUMBERS_KEY,
+      EDITOR_FOLD_GUTTER_KEY,
+      EDITOR_FOLD_PERSIST_KEY,
+      EDITOR_ACTIVE_LINE_KEY,
+      EDITOR_DIAG_GUTTER_KEY,
+      EDITOR_HOLE_GUTTER_KEY,
+      EDITOR_SYNTAX_HIGHLIGHT_KEY,
+      EDITOR_SEMANTIC_HIGHLIGHT_KEY,
+      EDITOR_PARSE_HIGHLIGHT_KEY,
+      EDITOR_OCCURRENCE_HIGHLIGHT_KEY,
+      EDITOR_BRACKET_MATCH_KEY,
+      EDITOR_AUTO_CLOSE_BRACKETS_KEY,
+      EDITOR_SELECTION_MATCHES_KEY,
+      EDITOR_REINDENT_PASTE_KEY,
+      EDITOR_FORMAT_WIDTH_KEY,
+      EDITOR_AUTOCOMPLETE_TRIGGER_KEY,
+      EDITOR_AUTOCOMPLETE_CONTINUE_KEY,
+      EDITOR_CURSOR_BLINK_KEY,
+      EDITOR_SCROLL_PAST_END_KEY,
+      EDITOR_WHITESPACE_KEY,
+      EDITOR_RULERS_KEY,
+      EDITOR_LIGATURES_KEY,
+      EDITOR_FONT_FAMILY_KEY,
+      EDITOR_HOLE_EMPHASIS_KEY
+    ];
+    function exportUserSettings() {
+      var prefs = {};
+      for (var i = 0; i < USER_SETTINGS_EXPORT_KEYS.length; i++) {
+        var key = USER_SETTINGS_EXPORT_KEYS[i];
+        try {
+          var v = backendLoad2(key);
+          if (v != null && v !== "") prefs[key] = v;
+        } catch (_) {
+        }
+      }
+      try {
+        if (typeof globalThis !== "undefined" && globalThis.localStorage) {
+          var kb = globalThis.localStorage.getItem("beljar-keybindings");
+          if (kb) prefs["beljar-keybindings"] = kb;
+        }
+      } catch (_) {
+      }
+      return { v: 1, exportedAt: Date.now(), prefs };
+    }
+    function importUserSettings(bundle) {
+      if (!bundle || typeof bundle !== "object" || !bundle.prefs || typeof bundle.prefs !== "object") {
+        return { ok: false, reason: "invalid" };
+      }
+      var prefs = bundle.prefs;
+      var applied = 0;
+      Object.keys(prefs).forEach(function(key) {
+        if (USER_SETTINGS_EXPORT_KEYS.indexOf(key) < 0 && key !== "beljar-keybindings") return;
+        var val = prefs[key];
+        if (typeof val !== "string") return;
+        try {
+          if (key === "beljar-keybindings") {
+            if (typeof globalThis !== "undefined" && globalThis.localStorage) {
+              if (!val || val === "{}") globalThis.localStorage.removeItem(key);
+              else globalThis.localStorage.setItem(key, val);
+              applied += 1;
+            }
+            return;
+          }
+          backendSave2(key, val);
+          applied += 1;
+        } catch (_) {
+        }
+      });
+      return { ok: true, applied };
+    }
     function resetAppearancePrefs2() {
       backendRemove2(THEME_STORAGE_KEY2);
       backendRemove2(UI_FONT_SIZE_KEY2);
       backendRemove2(UI_TEXT_CONTRAST_KEY2);
+      backendRemove2(MOTION_PREF_KEY);
+      backendRemove2(TOAST_DURATION_KEY);
     }
     function resetEditorTypographyPrefs2() {
       backendRemove2(EDITOR_FONT_SIZE_KEY);
       backendRemove2(EDITOR_LINE_HEIGHT_KEY);
       backendRemove2(EDITOR_WORD_WRAP_KEY);
+      backendRemove2(EDITOR_LIGATURES_KEY);
+      backendRemove2(EDITOR_FONT_FAMILY_KEY);
+      backendRemove2(EDITOR_CURSOR_BLINK_KEY);
+      backendRemove2(EDITOR_SCROLL_PAST_END_KEY);
+      backendRemove2(EDITOR_WHITESPACE_KEY);
+      backendRemove2(EDITOR_RULERS_KEY);
     }
     function resetEditorIndentPrefs2() {
       backendRemove2(EDITOR_TAB_SIZE_KEY);
@@ -659,6 +1040,8 @@
       backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
       backendRemove2(EDITOR_REINDENT_PASTE_KEY);
       backendRemove2(CFG_AUTO_SYNC_KEY);
+      backendRemove2(FORMAT_ON_SAVE_KEY);
+      backendRemove2(TRIM_TRAILING_WS_KEY);
     }
     function resetEditorCodeInsightPrefs2() {
       backendRemove2(EDITOR_SYNTAX_HIGHLIGHT_KEY);
@@ -671,13 +1054,20 @@
       backendRemove2(HOVER_SCOPE_KEY);
       backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
       backendRemove2(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
+      backendRemove2(QUIET_WHILE_TYPING_KEY);
+      backendRemove2(HOVER_STICKY_KEY);
     }
     function resetEditorGutterPrefs2() {
       backendRemove2(EDITOR_LINE_NUMBERS_KEY);
       backendRemove2(EDITOR_FOLD_GUTTER_KEY);
+      backendRemove2(EDITOR_FOLD_PERSIST_KEY);
       backendRemove2(EDITOR_ACTIVE_LINE_KEY);
       backendRemove2(EDITOR_DIAG_GUTTER_KEY);
+      backendRemove2(DIAG_PRESENTATION_KEY);
+      backendRemove2(DIAG_SEVERITY_KEY);
       backendRemove2(EDITOR_HOLE_GUTTER_KEY);
+      backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
+      backendRemove2(STICKY_DECL_HEADER_KEY);
     }
     function resetEditorPrefs2() {
       resetEditorTypographyPrefs2();
@@ -689,6 +1079,10 @@
       backendRemove2(BELUGA_MODE_STORAGE_KEY2);
       backendRemove2(BELUGA_FALLBACK_STABLE_KEY);
       backendRemove2(BELUGA_CANCEL_ON_EDIT_KEY);
+      backendRemove2(CHECK_AGGRESSIVENESS_KEY);
+      backendRemove2(SUITE_CHECK_KEY);
+      backendRemove2(AUTOSOLVE_FOCUS_NEXT_KEY);
+      backendRemove2(AUTOSOLVE_SHOW_STATS_KEY);
     }
     function resetReplPrefs2() {
       backendRemove2(REPL_AUTOSCROLL_KEY);
@@ -891,6 +1285,53 @@
       writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger2,
       readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue2,
       writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue2,
+      readStoredEditorCursorBlink,
+      writeStoredEditorCursorBlink,
+      readStoredEditorScrollPastEnd,
+      writeStoredEditorScrollPastEnd,
+      readStoredEditorWhitespace,
+      writeStoredEditorWhitespace,
+      readStoredEditorRulers,
+      writeStoredEditorRulers,
+      readStoredEditorLigatures,
+      writeStoredEditorLigatures,
+      readStoredEditorFontFamily,
+      writeStoredEditorFontFamily,
+      readStoredEditorHoleEmphasis,
+      writeStoredEditorHoleEmphasis,
+      readStoredMotionPref,
+      writeStoredMotionPref,
+      applyStoredMotionPref,
+      prefersReducedMotion,
+      readStoredToastDuration,
+      writeStoredToastDuration,
+      toastDurationMs,
+      readStoredCheckAggressiveness,
+      writeStoredCheckAggressiveness,
+      checkAggressivenessScale,
+      readStoredAutosolveFocusNext,
+      writeStoredAutosolveFocusNext,
+      readStoredAutosolveShowStats,
+      writeStoredAutosolveShowStats,
+      readStoredQuietWhileTyping,
+      writeStoredQuietWhileTyping,
+      readStoredDiagPresentation,
+      writeStoredDiagPresentation,
+      readStoredDiagSeverity,
+      writeStoredDiagSeverity,
+      readStoredFormatOnSave,
+      writeStoredFormatOnSave,
+      readStoredTrimTrailingWs,
+      writeStoredTrimTrailingWs,
+      readStoredStickyDeclHeader,
+      writeStoredStickyDeclHeader,
+      readStoredSuiteCheck,
+      writeStoredSuiteCheck,
+      readStoredHoverSticky,
+      writeStoredHoverSticky,
+      applyStoredEditorChrome,
+      exportUserSettings,
+      importUserSettings,
       resetAppearancePrefs: resetAppearancePrefs2,
       resetEditorTypographyPrefs: resetEditorTypographyPrefs2,
       resetEditorIndentPrefs: resetEditorIndentPrefs2,
@@ -3223,6 +3664,61 @@
   function writeStoredEditorAutocompleteContinue() {
     return _settingsApi.writeStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
   }
+  var _settingsExtraNames = [
+    "readStoredEditorCursorBlink",
+    "writeStoredEditorCursorBlink",
+    "readStoredEditorScrollPastEnd",
+    "writeStoredEditorScrollPastEnd",
+    "readStoredEditorWhitespace",
+    "writeStoredEditorWhitespace",
+    "readStoredEditorRulers",
+    "writeStoredEditorRulers",
+    "readStoredEditorLigatures",
+    "writeStoredEditorLigatures",
+    "readStoredEditorFontFamily",
+    "writeStoredEditorFontFamily",
+    "readStoredEditorHoleEmphasis",
+    "writeStoredEditorHoleEmphasis",
+    "readStoredMotionPref",
+    "writeStoredMotionPref",
+    "applyStoredMotionPref",
+    "prefersReducedMotion",
+    "readStoredToastDuration",
+    "writeStoredToastDuration",
+    "toastDurationMs",
+    "readStoredCheckAggressiveness",
+    "writeStoredCheckAggressiveness",
+    "checkAggressivenessScale",
+    "readStoredAutosolveFocusNext",
+    "writeStoredAutosolveFocusNext",
+    "readStoredAutosolveShowStats",
+    "writeStoredAutosolveShowStats",
+    "readStoredQuietWhileTyping",
+    "writeStoredQuietWhileTyping",
+    "readStoredDiagPresentation",
+    "writeStoredDiagPresentation",
+    "readStoredDiagSeverity",
+    "writeStoredDiagSeverity",
+    "readStoredFormatOnSave",
+    "writeStoredFormatOnSave",
+    "readStoredTrimTrailingWs",
+    "writeStoredTrimTrailingWs",
+    "readStoredStickyDeclHeader",
+    "writeStoredStickyDeclHeader",
+    "readStoredSuiteCheck",
+    "writeStoredSuiteCheck",
+    "readStoredHoverSticky",
+    "writeStoredHoverSticky",
+    "applyStoredEditorChrome",
+    "exportUserSettings",
+    "importUserSettings"
+  ];
+  var _settingsExtra = {};
+  _settingsExtraNames.forEach(function(name) {
+    _settingsExtra[name] = function() {
+      return _settingsApi[name].apply(_settingsApi, arguments);
+    };
+  });
   function resetAppearancePrefs() {
     return _settingsApi.resetAppearancePrefs.apply(_settingsApi, arguments);
   }
@@ -3877,6 +4373,7 @@
     writeStoredEditorAutocompleteTrigger,
     readStoredEditorAutocompleteContinue,
     writeStoredEditorAutocompleteContinue,
+    ..._settingsExtra,
     resetLayoutPrefs,
     resetAppearancePrefs,
     resetEditorTypographyPrefs,

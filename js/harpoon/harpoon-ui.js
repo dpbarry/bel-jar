@@ -1490,6 +1490,9 @@
       bindStepGoalTip2(copy.querySelector(".harpoon-lab-auto-move"), step.goal);
     }
     function reelMotionOk() {
+      if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
+        return !Persist.prefersReducedMotion();
+      }
       return !(global6.matchMedia && global6.matchMedia("(prefers-reduced-motion: reduce)").matches);
     }
     function reelClearMotion(el5) {
@@ -2677,9 +2680,12 @@
         where.appendChild(el4("div", "hpt-detail-branch", "in branch: " + st.branch));
       }
       if (st && typeof st.checks === "number" && st.checks > 0) {
-        var checksEl = el4("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
-        setTip2(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
-        where.appendChild(checksEl);
+        var showStats = typeof Persist === "undefined" || Persist.readStoredAutosolveShowStats();
+        if (showStats) {
+          var checksEl = el4("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
+          setTip2(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
+          where.appendChild(checksEl);
+        }
       }
       return where.childNodes.length ? where : null;
     }
@@ -3166,13 +3172,21 @@
     this.unbindProbe();
     this.compromise = { level: "none", reason: "", detail: "" };
     var body = this.bodyEl;
-    if (!body) return;
-    var box = body.querySelector(".harpoon-lab-auto");
-    if (box) box.classList.add("is-frozen");
-    var place2 = body.querySelector(".harpoon-lab-place");
-    if (place2) place2.remove();
-    if (this._compromiseBanner) this._compromiseBanner.hidden = true;
-    this.updateCompromiseBanner();
+    if (body) {
+      var box = body.querySelector(".harpoon-lab-auto");
+      if (box) box.classList.add("is-frozen");
+      var place2 = body.querySelector(".harpoon-lab-place");
+      if (place2) place2.remove();
+      if (this._compromiseBanner) this._compromiseBanner.hidden = true;
+      this.updateCompromiseBanner();
+    }
+    try {
+      var focusNext = typeof Persist === "undefined" || Persist.readStoredAutosolveFocusNext();
+      if (focusNext && global8.CurrentEditor && typeof global8.CurrentEditor.cycleHole === "function") {
+        global8.CurrentEditor.cycleHole(1);
+      }
+    } catch (_) {
+    }
   };
   Session.prototype.finishCommitFailure = function(detail, canRetry, opts) {
     opts = opts || {};

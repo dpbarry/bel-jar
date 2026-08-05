@@ -12,7 +12,7 @@ import {
   placeholder,
   rectangularSelection,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentLess, indentMore, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel, findNext, findPrevious } from '@codemirror/search';
 import { searchPanel } from './ide/search-panel.mjs';
 import { ensureSyntaxTree, foldAll, foldKeymap, indentRange, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language';
@@ -177,7 +177,9 @@ import {
   buildEditorChromeTheme,
   buildToggleableExtensions,
   buildBracketKeymap,
+  buildSelectionExtensions,
 } from './editor-prefs.mjs';
+import { applySaveTransforms } from './ide/save-transforms.mjs';
 import { foldPersistence, flushFoldKeys } from './ide/fold-persist.mjs';
 import {
   editHistoryKeymap,
@@ -351,6 +353,10 @@ function safeScrollPastEnd() {
   ];
 }
 
+function scrollPastEndExtensions(prefs) {
+  return prefs.scrollPastEnd === false ? [] : safeScrollPastEnd();
+}
+
 function editorChrome() {
   return EditorView.baseTheme({
     '&': {
@@ -448,12 +454,29 @@ function cmThemeExtensions(dark) {
 }
 
 function buildDiagLintExtensions(semanticEngine, prefs, getOverlayDiags = null) {
-  if (!prefs.diagGutter) return [];
-  return lintPresentation({
-    getEngine: semanticEngine ? () => semanticEngine : null,
-    getOverlayDiags,
-    settlementTickField: semanticEngine ? settlementTickField : null,
-  });
+  const presentation = prefs.diagPresentation || 'both';
+  if (presentation === 'none') return [];
+  const severity = prefs.diagSeverity === 'errors' ? 'errors' : 'all';
+  const showUnderlines = presentation === 'both' || presentation === 'underlines';
+  const showGutter = presentation === 'both' || presentation === 'gutter';
+  const exts = [];
+  if (showUnderlines) {
+    exts.push(belugaDiagnosticDecorations({
+      getEngine: semanticEngine ? () => semanticEngine : null,
+      getOverlayDiags,
+      settlementTickField: semanticEngine ? settlementTickField : null,
+      severity,
+    }));
+  }
+  if (showGutter) {
+    exts.push(...lintPresentation({
+      getEngine: semanticEngine ? () => semanticEngine : null,
+      getOverlayDiags,
+      settlementTickField: semanticEngine ? settlementTickField : null,
+      severity,
+    }));
+  }
+  return exts;
 }
 
 function refreshSettlementLint(view) {
@@ -504,7 +527,28 @@ function buildRemappableEditorKeymap(semanticEngine) {
   });
 }
 
-function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bracketKeymapCompartment, remappableKeymapCompartment, getOverlayDiags = null) {
+/** Tab: insert indent at caret; indent lines when something is selected. */
+function insertIndentAtCursor(view) {
+  if (view.state.readOnly) return false;
+  if (view.state.selection.ranges.some((r) => !r.empty)) return indentMore(view);
+  const unit = view.state.facet(indentUnit);
+  let insert = unit;
+  if (unit !== '\t' && unit.length > 0) {
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head);
+    const col = head - line.from;
+    insert = ' '.repeat(unit.length - (col % unit.length));
+  }
+  view.dispatch(view.state.update(
+    view.state.replaceSelection(insert),
+    { scrollIntoView: true, userEvent: 'input' },
+  ));
+  return true;
+}
+
+const indentOrInsertTab = { key: 'Tab', run: insertIndentAtCursor, shift: indentLess };
+
+function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bracketKeymapCompartment, remappableKeymapCompartment, selectionCompartment, scrollPastEndCompartment, getOverlayDiags = null) {
   return [
     settlementTickField,
     beluga(),
@@ -512,10 +556,10 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     EditorView.clipboardInputFilter.of((text) =>
       text == null || text === '' ? text ?? '' : sanitizePastedPlainText(text)
     ),
-    ...safeScrollPastEnd(),
+    scrollPastEndCompartment.of(scrollPastEndExtensions(prefs)),
     searchPanel(),
     history(),
-    drawSelection(),
+    selectionCompartment.of(buildSelectionExtensions(prefs)),
     dropCursor(),
     rectangularSelection(),
     crosshairCursor(),
@@ -525,17 +569,12 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     keymap.of([
       { key: 'Enter', run: smartEnter },
       { key: 'F3', run: findNext, shift: findPrevious },
-      indentWithTab, ...defaultKeymap, ...historyKeymap, ...foldKeymap,
+      indentOrInsertTab, ...defaultKeymap, ...historyKeymap, ...foldKeymap,
     ]),
     bracketKeymapCompartment.of(keymap.of(buildBracketKeymap(prefs))),
     placeholder(placeholderText),
     editorChrome(),
     gutterTooltipBand(),
-    belugaDiagnosticDecorations({
-      getEngine: () => semanticEngine,
-      getOverlayDiags,
-      settlementTickField,
-    }),
     syntaxLinter(),
     hoverTooltip(semanticEngine, getOverlayDiags),
     ...belAutocompletion(semanticEngine),
@@ -831,6 +870,8 @@ export function mount(parentEl, options = {}) {
   const ideCompartment = new Compartment();
   const bracketKeymapCompartment = new Compartment();
   const remappableKeymapCompartment = new Compartment();
+  const selectionCompartment = new Compartment();
+  const scrollPastEndCompartment = new Compartment();
   const diagCompartment = new Compartment();
   const initialDark = options.dark ?? isDocumentDarkTheme();
   const editorPrefs = readEditorPrefs();
@@ -907,12 +948,23 @@ export function mount(parentEl, options = {}) {
   }
 
   if (options.persist && typeof options.persist.setCheckpointProviders === 'function') {
+    let applyingSaveTransforms = false;
     options.persist.setCheckpointProviders({
       getSemantic: () => semanticEngine.exportCheckpoint(),
       // Lazy live-text provider: persistNow() materializes the doc string at
       // debounced save time, so we never toString() the whole buffer on the
-      // input critical path.
-      getText: () => (semanticView?.state?.doc ? semanticView.state.doc.toString() : ''),
+      // input critical path. Optionally format/trim the live doc first.
+      getText: () => {
+        if (!applyingSaveTransforms && semanticView?.dom?.isConnected) {
+          applyingSaveTransforms = true;
+          try {
+            applySaveTransforms(semanticView, docPath);
+          } finally {
+            applyingSaveTransforms = false;
+          }
+        }
+        return semanticView?.state?.doc ? semanticView.state.doc.toString() : '';
+      },
       getViewport: () => captureViewportLocal(semanticView),
       getDocFp: (text) => docFingerprint(text != null ? text : semanticView?.state.doc.toString() || ''),
       getBelugaBuild: () => (
@@ -1248,7 +1300,7 @@ export function mount(parentEl, options = {}) {
   });
 
   const extensions = [
-    ...baseExtensions(ph, options.onDocChange, semanticEngine, editorPrefs, bracketKeymapCompartment, remappableKeymapCompartment, suiteOverlayDiagnostics),
+    ...baseExtensions(ph, options.onDocChange, semanticEngine, editorPrefs, bracketKeymapCompartment, remappableKeymapCompartment, selectionCompartment, scrollPastEndCompartment, suiteOverlayDiagnostics),
     diagCompartment.of(buildDiagLintExtensions(semanticEngine, editorPrefs, suiteOverlayDiagnostics)),
     docSyncExt,
     treeWatchPlugin,
@@ -1352,10 +1404,14 @@ export function mount(parentEl, options = {}) {
         chromeCompartment.reconfigure(buildEditorChromeTheme(prefs)),
         ideCompartment.reconfigure(buildToggleableExtensions(prefs, { semanticEngine })),
         bracketKeymapCompartment.reconfigure(keymap.of(buildBracketKeymap(prefs))),
+        selectionCompartment.reconfigure(buildSelectionExtensions(prefs)),
+        scrollPastEndCompartment.reconfigure(scrollPastEndExtensions(prefs)),
         diagCompartment.reconfigure(buildDiagLintExtensions(semanticEngine, prefs, suiteOverlayDiagnostics)),
       ],
     });
     refreshSettlementLint(view);
+    const p = typeof window !== 'undefined' ? window.Persist : null;
+    if (p?.applyStoredEditorChrome) p.applyStoredEditorChrome();
   };
 
   function reconfigureRemappableKeymap() {

@@ -17,6 +17,8 @@ import { proveProgram, theoremUnderProof } from '../js/editor-src/prover/prover-
 // A/B toggle: NO_WEAKEN=1 disables the extended-context weakening spelling, so the
 // same binary measures both arms (read at call time, not import time).
 if (process.env.NO_WEAKEN) globalThis.__proverNoWeaken = true;
+if (process.env.NO_MIXREC) globalThis.__proverNoMixRec = true;
+if (process.env.NO_CTFACTS) globalThis.__proverNoCtypeFacts = true;
 
 const root = process.cwd();
 const args = process.argv.slice(2);

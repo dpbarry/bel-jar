@@ -1,4 +1,4 @@
-import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine } from '@codemirror/view';
+import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine, highlightWhitespace, highlightTrailingWhitespace, drawSelection } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { bracketMatching, indentRange, indentUnit } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -7,6 +7,8 @@ import { Transaction } from '@codemirror/state';
 import { belugaHighlightExtensions, editorCodeFolding, editorFoldGutter } from './language.mjs';
 import { occurrenceHighlight, defLinkDecoration, navigationGestures } from './ide/navigation.mjs';
 import { holeGutterHighlight, holeGutterInteraction } from './prover/hole-decorations.mjs';
+import { stickyDeclHeader } from './ide/sticky-decl.mjs';
+import { highlightWhitespaceInSelection } from './ide/whitespace-selection.mjs';
 
 const FONT_SIZES = {
   sm: '0.75rem',
@@ -19,6 +21,12 @@ const LINE_HEIGHTS = {
   compact: '1.5',
   normal: '1.65',
   relaxed: '1.8',
+};
+
+const CURSOR_BLINK_MS = {
+  off: 0,
+  blink: 1200,
+  fast: 700,
 };
 
 function persistApi() {
@@ -39,7 +47,12 @@ export function readEditorPrefs() {
     foldGutter: p?.readStoredEditorFoldGutter?.() ?? true,
     foldPersist: p?.readStoredEditorFoldPersist?.() ?? 'none',
     activeLine: p?.readStoredEditorActiveLine?.() ?? true,
-    diagGutter: p?.readStoredEditorDiagGutter?.() ?? true,
+    diagPresentation: p?.readStoredDiagPresentation?.() ?? 'both',
+    diagSeverity: p?.readStoredDiagSeverity?.() ?? 'all',
+    diagGutter: (() => {
+      const pres = p?.readStoredDiagPresentation?.() ?? 'both';
+      return pres === 'both' || pres === 'gutter';
+    })(),
     holeGutter: p?.readStoredEditorHoleGutter?.() ?? true,
     syntaxHighlight: p?.readStoredEditorSyntaxHighlight?.() ?? true,
     semanticHighlight: p?.readStoredEditorSemanticHighlight?.() ?? true,
@@ -48,6 +61,18 @@ export function readEditorPrefs() {
     bracketMatch: p?.readStoredEditorBracketMatch?.() ?? true,
     autoCloseBrackets: p?.readStoredEditorAutoCloseBrackets?.() ?? true,
     selectionMatches: p?.readStoredEditorSelectionMatches?.() ?? true,
+    quietWhileTyping: p?.readStoredQuietWhileTyping?.() ?? false,
+    formatOnSave: p?.readStoredFormatOnSave?.() ?? false,
+    trimTrailingWs: p?.readStoredTrimTrailingWs?.() ?? false,
+    stickyDeclHeader: p?.readStoredStickyDeclHeader?.() ?? false,
+    hoverSticky: p?.readStoredHoverSticky?.() ?? false,
+    cursorBlink: p?.readStoredEditorCursorBlink?.() ?? 'blink',
+    scrollPastEnd: p?.readStoredEditorScrollPastEnd?.() ?? true,
+    whitespace: p?.readStoredEditorWhitespace?.() ?? 'none',
+    rulers: p?.readStoredEditorRulers?.() ?? false,
+    ligatures: p?.readStoredEditorLigatures?.() ?? true,
+    fontFamily: p?.readStoredEditorFontFamily?.() ?? 'jetbrains',
+    holeEmphasis: p?.readStoredEditorHoleEmphasis?.() ?? 'normal',
   };
 }
 
@@ -59,15 +84,37 @@ function editorFontSizeCSSValue(prefSize) {
 export function buildEditorChromeTheme(prefs) {
   const fs = editorFontSizeCSSValue(prefs.fontSize);
   const lh = LINE_HEIGHTS[prefs.lineHeight] || LINE_HEIGHTS.normal;
-  return EditorView.baseTheme({
-    '&': { fontSize: fs },
-    '.cm-editor': { fontSize: fs },
-    '.cm-scroller': { lineHeight: lh, fontSize: 'inherit' },
-    '.cm-content': { fontSize: 'inherit' },
+  const mono = prefs.fontFamily === 'system'
+    ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+    : 'var(--editor-mono, var(--mono))';
+  const ligatures = prefs.ligatures === false ? 'none' : 'common-ligatures';
+  const rules = {
+    '&': { fontSize: fs, fontFamily: mono },
+    '.cm-editor': { fontSize: fs, fontFamily: mono },
+    '.cm-scroller': { lineHeight: lh, fontSize: 'inherit', fontFamily: 'inherit' },
+    '.cm-content': {
+      fontSize: 'inherit',
+      fontFamily: 'inherit',
+      fontVariantLigatures: ligatures,
+    },
     '.cm-line': prefs.wordWrap
       ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word' }
       : { whiteSpace: 'pre' },
-  });
+  };
+  if (prefs.rulers) {
+    const cols = prefs.formatWidth === 100 || prefs.formatWidth === 120 ? prefs.formatWidth : 80;
+    rules['.cm-content'] = {
+      ...rules['.cm-content'],
+      backgroundImage: `linear-gradient(to right, transparent ${cols}ch, var(--base-mid) ${cols}ch, var(--base-mid) calc(${cols}ch + 1px), transparent calc(${cols}ch + 1px))`,
+      backgroundAttachment: 'local',
+    };
+  }
+  return EditorView.baseTheme(rules);
+}
+
+export function buildSelectionExtensions(prefs) {
+  const rate = CURSOR_BLINK_MS[prefs.cursorBlink] ?? CURSOR_BLINK_MS.blink;
+  return [drawSelection({ cursorBlinkRate: rate })];
 }
 
 // Reindent only [from,to] (expanded to whole lines), not the whole document.
@@ -138,6 +185,10 @@ export function buildToggleableExtensions(prefs, deps) {
   if (prefs.selectionMatches) exts.push(highlightSelectionMatches({ minSelectionLength: 2 }));
   if (prefs.wordWrap) exts.push(EditorView.lineWrapping);
 
+  if (prefs.whitespace === 'all') exts.push(highlightWhitespace());
+  else if (prefs.whitespace === 'trailing') exts.push(highlightTrailingWhitespace());
+  else if (prefs.whitespace === 'selection') exts.push(highlightWhitespaceInSelection());
+
   exts.push(...belugaHighlightExtensions({
     syntaxHighlight: prefs.syntaxHighlight,
     semanticHighlight: prefs.semanticHighlight,
@@ -148,6 +199,8 @@ export function buildToggleableExtensions(prefs, deps) {
   if (prefs.occurrenceHighlight) exts.push(...occurrenceHighlight());
 
   exts.push(defLinkDecoration());
+
+  if (prefs.stickyDeclHeader) exts.push(stickyDeclHeader());
 
   if (prefs.holeGutter && semanticEngine) {
     exts.push(holeGutterHighlight(semanticEngine));

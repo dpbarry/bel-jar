@@ -151,4 +151,12 @@ html.light body {
   }
 }
 
-
+/* Forced reduce-motion (Settings → Appearance → Motion). */
+html.bj-motion-reduce *,
+html.bj-motion-reduce *::before,
+html.bj-motion-reduce *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

@@ -617,9 +617,9 @@ html.light .output-header-progress {
 
 #editor.editor-cm-host,
 #editor.editor-cm-host * {
-  font-family: var(--mono);
-  font-variant-ligatures: none;
-  font-feature-settings: "liga" 0, "calt" 0;
+  font-family: var(--editor-mono, var(--mono));
+  font-variant-ligatures: var(--editor-ligatures, common-ligatures);
+  font-feature-settings: normal;
 }
 
 #editor.editor-cm-host .cm-scroller,

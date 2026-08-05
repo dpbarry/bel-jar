@@ -12,11 +12,18 @@
     return "toast-" + seq;
   }
   function normalizeDuration(opts) {
-    if (!opts || opts.duration === void 0) return DEFAULT_DURATION_MS;
+    var fallback = DEFAULT_DURATION_MS;
+    try {
+      if (typeof Persist !== "undefined" && typeof Persist.toastDurationMs === "function") {
+        fallback = Persist.toastDurationMs();
+      }
+    } catch (_) {
+    }
+    if (!opts || opts.duration === void 0) return fallback;
     const d = opts.duration;
     if (d === false || d === null || d === 0 || d === Infinity) return null;
     if (typeof d === "number" && d > 0) return d;
-    return DEFAULT_DURATION_MS;
+    return fallback;
   }
   function parseOpts(message, opts) {
     const o = opts && typeof opts === "object" ? opts : {};

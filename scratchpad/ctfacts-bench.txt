@@ -1,0 +1,16 @@
+data/examples/poplmark-reloaded/sources.cfg#confluence
+data/examples/poplmark-reloaded/sources.cfg#rename_red
+data/examples/poplmark-reloaded+/sources.cfg#abs_sn
+data/examples/poplmark-reloaded+/sources.cfg#app_sn
+data/examples/poplmark-reloaded+/sources.cfg#neutralSNe
+data/examples/poplmark-reloaded+/sources.cfg#cr1
+data/examples/equal/alg-equal-datatypes-adeq.bel#atrans_c
+data/examples/literate_beluga/2Advanced/Normalization_by_Evaluation.bel#eval
+data/examples/logrel/algeq-simplified1.bel#reflect
+data/examples/logrel/algeq-simplified1.bel#thm
+data/examples/logrel/algeq-typing.bel#logEqSubTrans
+data/examples/logrel/weak-norm-under-binders-beta-only.bel#weakNorm
+data/examples/logrel/weak-norm-under-binders.bel#closed
+data/examples/popl12/nbe-sub.bel#reflect
+data/examples/popl12/normeval-abbrev.bel#eval
+data/examples/popl12/normeval-total.bel#reflect

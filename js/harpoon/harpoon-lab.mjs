@@ -385,13 +385,20 @@ function E() { return global.BelEditor || null; }
     this.unbindProbe();
     this.compromise = { level: 'none', reason: '', detail: '' };
     var body = this.bodyEl;
-    if (!body) return;
-    var box = body.querySelector('.harpoon-lab-auto');
-    if (box) box.classList.add('is-frozen');
-    var place = body.querySelector('.harpoon-lab-place');
-    if (place) place.remove();
-    if (this._compromiseBanner) this._compromiseBanner.hidden = true;
-    this.updateCompromiseBanner();
+    if (body) {
+      var box = body.querySelector('.harpoon-lab-auto');
+      if (box) box.classList.add('is-frozen');
+      var place = body.querySelector('.harpoon-lab-place');
+      if (place) place.remove();
+      if (this._compromiseBanner) this._compromiseBanner.hidden = true;
+      this.updateCompromiseBanner();
+    }
+    try {
+      var focusNext = typeof Persist === 'undefined' || Persist.readStoredAutosolveFocusNext();
+      if (focusNext && global.CurrentEditor && typeof global.CurrentEditor.cycleHole === 'function') {
+        global.CurrentEditor.cycleHole(1);
+      }
+    } catch (_) {}
   };
 
   Session.prototype.finishCommitFailure = function (detail, canRetry, opts) {

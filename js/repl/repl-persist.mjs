@@ -142,6 +142,11 @@ function restore() {
     if (liveEl && liveEl.parentNode === output) output.insertBefore(frag, liveEl);
     else output.appendChild(frag);
 
+    // Mid-run ghost cards cannot finish after a reload — freeze them.
+    if (typeof ReplOutput !== 'undefined' && ReplOutput.settleInterruptedPendingRuns) {
+      ReplOutput.settleInterruptedPendingRuns(output);
+    }
+
     if (typeof snap.scrollTop === 'number') {
       output.scrollTop = snap.scrollTop;
     }

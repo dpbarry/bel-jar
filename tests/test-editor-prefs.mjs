@@ -27,6 +27,13 @@ function withPersist(fn) {
     readStoredEditorBracketMatch: () => false,
     readStoredEditorAutoCloseBrackets: () => false,
     readStoredEditorSelectionMatches: () => false,
+    readStoredEditorCursorBlink: () => 'off',
+    readStoredEditorScrollPastEnd: () => false,
+    readStoredEditorWhitespace: () => 'trailing',
+    readStoredEditorRulers: () => true,
+    readStoredEditorLigatures: () => false,
+    readStoredEditorFontFamily: () => 'system',
+    readStoredEditorHoleEmphasis: () => 'subtle',
   };
   try {
     fn();

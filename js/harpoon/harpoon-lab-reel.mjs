@@ -107,6 +107,9 @@ function createReel(deps) {
       }
 
       function reelMotionOk() {
+        if (typeof Persist !== 'undefined' && typeof Persist.prefersReducedMotion === 'function') {
+          return !Persist.prefersReducedMotion();
+        }
         return !(global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches);
       }
 

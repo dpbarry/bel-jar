@@ -141,6 +141,8 @@ export function foldDeclKey(doc, node) {
   return `decl:${node.name}@${line}`;
 }
 
+export { declarationHeadName };
+
 export function foldBlockCommentKey(doc, node) {
   return `block:${normalizeFoldLine(doc.lineAt(node.from).text)}`;
 }

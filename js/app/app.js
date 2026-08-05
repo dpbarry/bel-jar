@@ -2652,19 +2652,32 @@
   BelugaRun.init();
   Toasts.init();
   Notifications.init();
+  if (typeof Persist !== "undefined") {
+    if (Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
+    if (Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
+  }
   function shouldApplyEditorPrefs(key) {
     if (!key || key === "layout-reset") return false;
     if (key === "theme") return false;
     if (/^repl-/.test(key) || key === "repl-reset") return false;
     if (/^beluga-/.test(key) || key === "beluga-reset") return false;
-    if (key === "workspace-reset" || key === "restore-panels" || key === "library-expand-default") return false;
+    if (key === "check-aggressiveness" || key === "suite-check") return false;
+    if (/^autosolve-/.test(key)) return false;
+    if (key === "workspace-reset" || key === "restore-panels" || key === "library-expand-default" || key === "inspector-follow") return false;
+    if (key === "motion-pref" || key === "toast-duration") return false;
     if (/^alias/.test(key) || key === "aliases-reset") return false;
     return true;
   }
   function applyLiveSettings(key) {
     if (!key || key === "layout-reset") return;
-    if (key === "theme" || key === "appearance-reset") syncEditorCmTheme();
-    if (shouldApplyEditorPrefs(key)) {
+    if (key === "theme" || key === "appearance-reset" || key === "settings-import") syncEditorCmTheme();
+    if (key === "appearance-reset" || key === "motion-pref" || key === "settings-import") {
+      if (typeof Persist !== "undefined" && Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
+    }
+    if (key === "appearance-reset" || key === "editor-reset" || key === "settings-import" || key === "editor-font-family" || key === "editor-ligatures" || key === "editor-hole-emphasis") {
+      if (typeof Persist !== "undefined" && Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
+    }
+    if (shouldApplyEditorPrefs(key) || key === "editor-reset" || key === "settings-import") {
       if (typeof BelEditor !== "undefined" && typeof BelEditor.applyEditorPrefs === "function") {
         BelEditor.applyEditorPrefs();
       }

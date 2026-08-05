@@ -729,6 +729,12 @@
   var pendingRunStartedAt = 0;
   var MIN_PENDING_MS = 180;
   function prefersReducedMotion() {
+    try {
+      if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
+        return Persist.prefersReducedMotion();
+      }
+    } catch (_) {
+    }
     return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
   function waitMs(ms) {
@@ -793,6 +799,50 @@
       if (block.isConnected) block.classList.add("repl-block--run-entered");
     });
     scrollReplBottom();
+  }
+  function markPendingPreInterrupted(pre) {
+    if (!pre) return;
+    pre.removeAttribute("aria-busy");
+    pre.replaceChildren();
+    var body = document.createElement("span");
+    body.className = "repl-run-body";
+    body.textContent = "Run interrupted.";
+    pre.appendChild(body);
+  }
+  function markPendingBlockInterrupted(block) {
+    if (!block) return;
+    if (pendingRunBlock === block) {
+      pendingRunBlock = null;
+      pendingRunStartedAt = 0;
+    }
+    block.removeAttribute("data-repl-run-pending");
+    block.classList.remove("repl-block--run-enter");
+    block.classList.add("repl-block--run-entered");
+    var pre = block.querySelector(".repl-rich-pre--run-pending");
+    markPendingPreInterrupted(pre);
+  }
+  function settleInterruptedPendingRuns(root) {
+    var host = root || output;
+    if (!host || !host.querySelectorAll) return 0;
+    var n = 0;
+    var blocks = host.querySelectorAll("[data-repl-run-pending]");
+    for (var i = 0; i < blocks.length; i++) {
+      markPendingBlockInterrupted(blocks[i]);
+      n++;
+    }
+    var ores = host.querySelectorAll(".repl-rich-pre--run-pending");
+    for (var j = 0; j < ores.length; j++) {
+      var pre = ores[j];
+      if (pre.querySelector(".repl-run-skel")) {
+        markPendingPreInterrupted(pre);
+        var blk = pre.closest(".repl-block") || pre.parentElement;
+        if (blk && blk.hasAttribute && blk.hasAttribute("data-repl-run-pending")) {
+          blk.removeAttribute("data-repl-run-pending");
+        }
+        n++;
+      }
+    }
+    return n;
   }
   function dismissRunSkeleton() {
     var block = pendingRunBlock;
@@ -1096,6 +1146,7 @@
     beginRunSkeleton,
     resolveRunOutput,
     dismissRunSkeleton,
+    settleInterruptedPendingRuns,
     appendBelugaResponse,
     appendBuildFallbackNotice,
     appendRichMsg,

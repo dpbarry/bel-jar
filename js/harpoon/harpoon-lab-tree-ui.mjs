@@ -541,10 +541,13 @@ function createTreeUi(deps) {
           where.appendChild(el('div', 'hpt-detail-branch', 'in branch: ' + st.branch));
         }
         if (st && typeof st.checks === 'number' && st.checks > 0) {
-          var checksEl = el('div', 'hpt-detail-checks', st.checks + ' checker call' + (st.checks === 1 ? '' : 's'));
-          setTip(checksEl, 'Times BelJar asked Beluga to certify a candidate move at this hole '
-            + 'before one type-checked clean.');
-          where.appendChild(checksEl);
+          var showStats = typeof Persist === 'undefined' || Persist.readStoredAutosolveShowStats();
+          if (showStats) {
+            var checksEl = el('div', 'hpt-detail-checks', st.checks + ' checker call' + (st.checks === 1 ? '' : 's'));
+            setTip(checksEl, 'Times BelJar asked Beluga to certify a candidate move at this hole '
+              + 'before one type-checked clean.');
+            where.appendChild(checksEl);
+          }
         }
         return where.childNodes.length ? where : null;
       }

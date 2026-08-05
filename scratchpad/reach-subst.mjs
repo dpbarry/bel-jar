@@ -17,7 +17,7 @@ const out = arg('--out', null);
 const capSecs = Number(arg('--cap', '60')) || 60;
 const maxSteps = arg('--max-steps', '40');
 
-const RX = /Ill-typed substitution|Does not take context/;
+const RX = new RegExp(process.env.HIT_RX || "Ill-typed substitution|Does not take context");
 const rows = [];
 for (let i = 0; i < ids.length; i += 1) {
   const id = ids[i];

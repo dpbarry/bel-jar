@@ -407,6 +407,18 @@ export function synthMoves(hole, code, thm) {
       });
       return;
     }
+    // ⛔ CONTEXTUAL FACTS AT A CTYPE GOAL — admitting them was TRIED and REVERTED
+    // (master plan entry 42, 2026-07-31). The drop below is real and broad: the planner
+    // is single-context, so at a ctype goal (empty ambient context) a boxed fact's own
+    // context becomes an unparseable "extra" and the fact is discarded — measured on 16
+    // of 40 sampled stuck targets, 160 drops, 7 of them STUCK:no-move. Admitting such
+    // facts with their own spelling (`[h1 |- X2]`), PLUS weakening-aware subgoal
+    // matching, measured **0 completions and 0 verdict changes on those same 16**
+    // (1 row moved 34→27 checks). Reaching the site is not the same as being able to
+    // COMPLETE the term: the family needs a 3-part composite move (ctype-ctor
+    // application + INLINE IH call in an argument slot + weakened box), and building
+    // two of the three pays exactly nothing. Do not re-add the admission alone.
+    // `__factDropDebug` below is the instrument that measured this; it is a no-op.
     const hp = splitCtx(b.ctx);
     // A fact whose context is a strict PREFIX of the goal's weakens into it
     // (spec §2 / D7) — spelled `X[..]` at use sites. A comp variable cannot.
@@ -426,7 +438,10 @@ export function synthMoves(hole, code, thm) {
       const c = e.indexOf(':');
       return c < 0 ? null : { name: e.slice(0, c).trim(), type: e.slice(c + 1).trim() };
     });
-    if (extras.some((e) => !e || /\bblock\b/.test(e.type))) return; // block extras — outside fragment
+    if (extras.some((e) => !e || /\bblock\b/.test(e.type))) {
+      if (globalThis.__factDropDebug) globalThis.__factDropDebug({ name, type: t, ctx: b.ctx, concl: b.concl, goalParts, reason: 'unparseable-extra' });
+      return; // block extras — outside fragment
+    }
     if (viaComp && extras.length) return; // a comp variable has no binder telescope
     // Ctype concl inside a meta box `( |- TRel …)` — normalize like bare ctype facts.
     const concl = isCtypeApplication(b.concl)
@@ -796,6 +811,66 @@ export function recurseTexts(hole, thm, code) {
             out2.push(call);
           }
           if (out2.length) return out2;
+        }
+      }
+    }
+  }
+  // ⭐ MIXED ctype+box RECURSION. The branch above is gated on `!boxes.length`, so a
+  // theorem whose DECREASING premise is a ctype while it ALSO carries box premises
+  // matched neither emitter: the box path below picks its decreasing subject with
+  // `decreasingBoxIndex` (which is -1 once the measure names a ctype), so it bails
+  // and the theorem gets NO induction hypothesis at all. `weak_neut :
+  // (g:ctx)(h:ctx) Extends [g] [h] → [g ⊢ neut A[]] → [h ⊢ neut A[]]` with
+  // `/ total e (weak_neut g h a e r) /` is exactly that shape — its trace offered
+  // fill/intro/invert/split/synth and never one recurse.
+  //
+  // Same discipline as the all-ctype branch: the decreasing slot is restricted to
+  // `decSubderivNames` (the totality checker's own criterion) so no call is proposed
+  // that would be refused for termination, and ctype arguments are spelled BARE
+  // (M3/M4 — a ctype value is a computation expression, never boxed). A BOX slot is
+  // filled from comp-context hypotheses, which already hold contextual objects and
+  // so are also passed bare.
+  if (boxes.length && thm.totality && !globalThis.__proverNoMixRec) {
+    const argPrems = thm.compType.premises.filter((p) => p.kind === 'box' || p.kind === 'ctype');
+    const decI3 = decreasingArgIndex(thm);
+    if (argPrems[decI3] && argPrems[decI3].kind === 'ctype') {
+      const decNames3 = decSubderivNames(code, hole, decI3);
+      if (decNames3.size) {
+        const scope3 = (hole.ctx || []).filter((h) => h && h.name && h.type);
+        const ctypeHead = (t) => {
+          const a = parseAppType(normalizeCtypeSpelling(String(t || '').trim()));
+          return a && a.head;
+        };
+        const perSlot3 = argPrems.map((p, i) => {
+          if (p.kind === 'ctype') {
+            const want = ctypeHead(p.raw);
+            const cands = scope3.filter((h) => ctypeHead(h.type) === want).map((h) => h.name);
+            return i === decI3 ? cands.filter((n) => decNames3.has(n)) : cands.slice(0, 3);
+          }
+          const want = premiseDecHead(p.raw, code);
+          return scope3
+            .filter((h) => String(h.type || '').trim().startsWith('[')
+              && premiseDecHead(h.type, code) === want)
+            .map((h) => h.name)
+            .slice(0, 3);
+        });
+        if (!perSlot3.some((l) => !l.length)) {
+          const tuples3 = perSlot3.reduce((acc, l) => acc.flatMap((t) => l.map((x) => [...t, x])), [[]]).slice(0, 8);
+          const fresh3 = freshForHole(hole, code);
+          const out3 = [];
+          for (const t of tuples3) {
+            if (new Set(t).size !== t.length) continue; // a slot may not reuse another's argument
+            const call = `${thm.name} ${t.join(' ')}`;
+            // The result is UNBOXED into a meta when the conclusion is a box, so a
+            // later fill can weaken it into a deeper context (`[h, x:_ ⊢ R[..]]`).
+            const rbox = resultBoxFor(thm, null);
+            const r3 = fresh3();
+            const bound = rbox ? rbox(r3) : r3;
+            out3.push(`let ${bound} = ${call} in\n?`);
+            out3.push(`let ${r3} = ${call} in\n?`);
+            out3.push(call);
+          }
+          if (out3.length) return out3;
         }
       }
     }

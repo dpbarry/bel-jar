@@ -1,12 +1,14 @@
 import { syntaxTree, ensureSyntaxTree } from '@codemirror/language';
 import { forEachDiagnostic } from '@codemirror/lint';
-import { ViewPlugin, closeHoverTooltips, hasHoverTooltips, hoverTooltip as cmHoverTooltip, repositionTooltips } from '@codemirror/view';
+import { ViewPlugin, closeHoverTooltips, hasHoverTooltips, hoverTooltip as cmHoverTooltip, repositionTooltips, keymap } from '@codemirror/view';
 import { resolveHover } from '../name-resolve.mjs';
 import { renderTypeInto } from '../format/type-render.mjs';
 import { findGroupSignature } from '../semantic/project-prelude.mjs';
 import { BUILTIN_TOOLTIPS } from './builtins.mjs';
 import { isSuitePreludeBannerDiag } from '../semantic/suite-prelude-banner.mjs';
 import { polishBelugaMessage } from './beluga-diag.mjs';
+import { isQuietTypingActiveForView } from './quiet-typing.mjs';
+import { Prec } from '@codemirror/state';
 
 export const HOVER_OPEN_MS = 60;
 
@@ -425,28 +427,78 @@ function pointerLeftHoverTarget(view, event) {
   return onRow && offText;
 }
 
+function hoverStickyEnabled() {
+  try {
+    const P = typeof window !== 'undefined' ? window.Persist : globalThis.Persist;
+    return !!P?.readStoredHoverSticky?.();
+  } catch (_) {
+    return false;
+  }
+}
+
+function pointerOverTipOrToken(view, event, tipHost) {
+  const x = event.clientX;
+  const y = event.clientY;
+  if (tipHost) {
+    const r = tipHost.getBoundingClientRect();
+    const margin = 4;
+    if (x >= r.left - margin && x <= r.right + margin
+      && y >= r.top - margin && y <= r.bottom + margin) {
+      return true;
+    }
+  }
+  const pos = view.posAtCoords({ x, y });
+  if (pos == null) return false;
+  // Token under the active hover tooltips: any tooltip-anchored range covers pos.
+  // Fall back: treat positions inside content as "on token" only when still over text.
+  const c = view.coordsAtPos(pos);
+  if (!c) return false;
+  return y >= c.top && y <= c.bottom && x >= c.left && x <= c.right + (view.defaultCharacterWidth || 8);
+}
+
 // Listens on the whole editor DOM (content + gutters + the in-DOM tooltip), not
 // just the content — so sliding from a line-start token onto its gutter cell
 // dismisses the hover instead of letting it linger.
+// When sticky hover is on: dismiss only on Escape or click outside tip/token;
+// leave/scroll/doc/selection changes do not dismiss.
 const closeHoverOffToken = ViewPlugin.fromClass(class {
   constructor(view) {
     this.view = view;
     this.onMove = (event) => {
+      if (hoverStickyEnabled()) return;
       if (!hasHoverTooltips(view.state)) return;
       if (pointerLeftHoverTarget(view, event)) view.dispatch({ effects: closeHoverTooltips });
     };
     this.onScroll = () => {
+      if (hoverStickyEnabled()) return;
       if (hasHoverTooltips(view.state)) view.dispatch({ effects: closeHoverTooltips });
+    };
+    this.onDown = (event) => {
+      if (!hoverStickyEnabled() || !hasHoverTooltips(view.state)) return;
+      const tipHost = view.dom.querySelector('.cm-tooltip-hover');
+      if (pointerOverTipOrToken(view, event, tipHost)) return;
+      view.dispatch({ effects: closeHoverTooltips });
     };
     view.dom.addEventListener('mousemove', this.onMove);
     view.scrollDOM.addEventListener('scroll', this.onScroll);
+    view.dom.addEventListener('mousedown', this.onDown, true);
   }
 
   destroy() {
     this.view.dom.removeEventListener('mousemove', this.onMove);
     this.view.scrollDOM.removeEventListener('scroll', this.onScroll);
+    this.view.dom.removeEventListener('mousedown', this.onDown, true);
   }
 });
+
+const stickyHoverEscKeymap = Prec.highest(keymap.of([{
+  key: 'Escape',
+  run(view) {
+    if (!hoverStickyEnabled() || !hasHoverTooltips(view.state)) return false;
+    view.dispatch({ effects: closeHoverTooltips });
+    return true;
+  },
+}]));
 
 // A bare "#" / "$" sigil that is NOT part of a #p / $S variable (those are
 // caught earlier as user symbols) heads a parameter type "#[Γ ⊢ A]" or a
@@ -604,10 +656,11 @@ export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
 
       let typeTip = null;
       const symbolTips = showSymbolTooltips(g);
-      if (symbolTips && region.term) {
+      const eng = engineFor(g, semanticEngine);
+      const quiet = isQuietTypingActiveForView(eng, view.state);
+      if (symbolTips && region.term && !quiet) {
         const range = { from: region.from, to: region.to };
         const resolved = resolveHover(view.state, range.from);
-        const eng = engineFor(g, semanticEngine);
         if (resolved && eng && typeof eng.hoverAt === 'function') {
           const hover = eng.hoverAt(range.from, {
             fallback: resolved.fallback
@@ -638,7 +691,7 @@ export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
 
       // Cross-file: a name this document can't explain but the project group
       // defines — show the source signature from the defining file.
-      if (symbolTips && !typeTip && region.term) {
+      if (symbolTips && !typeTip && region.term && !quiet) {
         const name = view.state.sliceDoc(region.from, region.to);
         const sig = crossFileSignature(g, name);
         if (sig) {
@@ -647,7 +700,7 @@ export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
       }
 
       let kwHit = null;
-      if (symbolTips && !typeTip && showBuiltinTooltips(g)) {
+      if (symbolTips && !typeTip && !quiet && showBuiltinTooltips(g)) {
         kwHit = keywordAt(view.state, pos);
         if (kwHit) {
           const range = { from: kwHit.from, to: kwHit.to };
@@ -671,8 +724,12 @@ export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
         : { from: diagHit.from, to: diagHit.to };
       return liveTooltip(anchor, region, typeTip, diagSources, view);
     },
-    { hideOnChange: true, hoverTime: HOVER_OPEN_MS }
-  ), closeHoverOffToken];
+    {
+      hideOnChange: false,
+      hideOn: (tr) => !hoverStickyEnabled() && (tr.docChanged || !!tr.selection),
+      hoverTime: HOVER_OPEN_MS,
+    }
+  ), closeHoverOffToken, stickyHoverEscKeymap];
 }
 
 function crossFileSignature(g, name) {

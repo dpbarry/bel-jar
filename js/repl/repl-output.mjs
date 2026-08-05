@@ -805,6 +805,11 @@ var output = document.getElementById('output');
   var MIN_PENDING_MS = 180;
 
   function prefersReducedMotion() {
+    try {
+      if (typeof Persist !== 'undefined' && typeof Persist.prefersReducedMotion === 'function') {
+        return Persist.prefersReducedMotion();
+      }
+    } catch (_) {}
     return typeof matchMedia === 'function'
       && matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
@@ -877,6 +882,59 @@ var output = document.getElementById('output');
       if (block.isConnected) block.classList.add('repl-block--run-entered');
     });
     scrollReplBottom();
+  }
+
+  /** Freeze a mid-run ghost card after reload — same silhouette, no shimmer. */
+  function markPendingPreInterrupted(pre) {
+    if (!pre) return;
+    pre.removeAttribute('aria-busy');
+    pre.replaceChildren();
+    var body = document.createElement('span');
+    body.className = 'repl-run-body';
+    body.textContent = 'Run interrupted.';
+    pre.appendChild(body);
+  }
+
+  function markPendingBlockInterrupted(block) {
+    if (!block) return;
+    if (pendingRunBlock === block) {
+      pendingRunBlock = null;
+      pendingRunStartedAt = 0;
+    }
+    block.removeAttribute('data-repl-run-pending');
+    block.classList.remove('repl-block--run-enter');
+    block.classList.add('repl-block--run-entered');
+    var pre = block.querySelector('.repl-rich-pre--run-pending');
+    markPendingPreInterrupted(pre);
+  }
+
+  /**
+   * After transcript restore, any in-flight run skeleton can never finish —
+   * turn it into a static ghost that says "Run interrupted."
+   */
+  function settleInterruptedPendingRuns(root) {
+    var host = root || output;
+    if (!host || !host.querySelectorAll) return 0;
+    var n = 0;
+    var blocks = host.querySelectorAll('[data-repl-run-pending]');
+    for (var i = 0; i < blocks.length; i++) {
+      markPendingBlockInterrupted(blocks[i]);
+      n++;
+    }
+    // Orphans: pending styling without the attribute (legacy / partial HTML).
+    var ores = host.querySelectorAll('.repl-rich-pre--run-pending');
+    for (var j = 0; j < ores.length; j++) {
+      var pre = ores[j];
+      if (pre.querySelector('.repl-run-skel')) {
+        markPendingPreInterrupted(pre);
+        var blk = pre.closest('.repl-block') || pre.parentElement;
+        if (blk && blk.hasAttribute && blk.hasAttribute('data-repl-run-pending')) {
+          blk.removeAttribute('data-repl-run-pending');
+        }
+        n++;
+      }
+    }
+    return n;
   }
 
   function dismissRunSkeleton() {
@@ -1220,6 +1278,7 @@ var output = document.getElementById('output');
     beginRunSkeleton: beginRunSkeleton,
     resolveRunOutput: resolveRunOutput,
     dismissRunSkeleton: dismissRunSkeleton,
+    settleInterruptedPendingRuns: settleInterruptedPendingRuns,
     appendBelugaResponse: appendBelugaResponse,
     appendBuildFallbackNotice: appendBuildFallbackNotice,
     appendRichMsg: appendRichMsg,

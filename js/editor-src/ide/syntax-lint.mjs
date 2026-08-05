@@ -47,7 +47,7 @@ export function lintLinterOptions(extra = {}) {
   return { tooltipFilter: LINT_TOOLTIP_FILTER, ...extra };
 }
 
-export function lintPresentation({ getEngine = null, getOverlayDiags = null, settlementTickField = null } = {}) {
+export function lintPresentation({ getEngine = null, getOverlayDiags = null, settlementTickField = null, severity = 'all' } = {}) {
   const getBelugaDiags = getEngine
     ? () => getEngine()?.getBelugaDiagnostics?.() || []
     : null;
@@ -55,11 +55,12 @@ export function lintPresentation({ getEngine = null, getOverlayDiags = null, set
   const allDiags = () => {
     const base = getBelugaDiags ? getBelugaDiags() : [];
     const extra = overlay ? (overlay() || []) : [];
-    if (!extra.length) return base;
-    return [...extra, ...base];
+    const merged = !extra.length ? base : [...extra, ...base];
+    if (severity !== 'errors') return merged;
+    return merged.filter((d) => d.severity === 'error' || isSuitePreludeBannerDiag(d));
   };
   return [
-    diagnosticRowHighlight({ getBelugaDiags: allDiags, getOverlayDiags: overlay, settlementTickField }),
+    diagnosticRowHighlight({ getBelugaDiags: allDiags, getOverlayDiags: overlay, settlementTickField, severity }),
     suitePreludeRowWash({ getOverlayDiags: overlay, settlementTickField }),
     suitePreludeLineTooltips({ getOverlayDiags: overlay, settlementTickField }),
     diagnosticGutterTooltips(allDiags),
@@ -97,16 +98,17 @@ export function createBelugaLinter({
   return ext;
 }
 
-function marksFromDiags(diags, docLen) {
+function marksFromDiags(diags, docLen, severity = 'all') {
   const b = new RangeSetBuilder();
   const len = docLen ?? Infinity;
   const sorted = (diags || []).slice().sort((a, b) => a.from - b.from || a.to - b.to);
   for (const d of sorted) {
     if (d.from == null || d.to == null || d.to <= d.from) continue;
+    if (d.severity !== 'error' && d.severity !== 'warning') continue;
+    if (severity === 'errors' && d.severity !== 'error') continue;
     const from = Math.max(0, Math.min(d.from, len));
     const to = Math.max(from, Math.min(d.to, len));
     if (to <= from) continue;
-    if (d.severity !== 'error' && d.severity !== 'warning') continue;
     b.add(from, to, Decoration.mark({
       class: `cm-lintRange cm-lintRange-${d.severity}`,
     }));
@@ -119,13 +121,13 @@ export function belugaDiagnosticsFromEngine(getEngine) {
   return eng?.getBelugaDiagnostics?.() || [];
 }
 
-export function belugaDiagnosticDecorations({ getEngine, getOverlayDiags = null, settlementTickField }) {
+export function belugaDiagnosticDecorations({ getEngine, getOverlayDiags = null, settlementTickField, severity = 'all' }) {
   const build = (state) => {
     if (isRenaming(state)) return Decoration.none;
     const extra = typeof getOverlayDiags === 'function' ? (getOverlayDiags() || []) : [];
     const base = belugaDiagnosticsFromEngine(getEngine);
     const overlay = extra.filter((d) => !isSuitePreludeBannerDiag(d));
-    return marksFromDiags(overlay.length ? [...overlay, ...base] : base, state.doc.length);
+    return marksFromDiags(overlay.length ? [...overlay, ...base] : base, state.doc.length, severity);
   };
 
   return StateField.define({

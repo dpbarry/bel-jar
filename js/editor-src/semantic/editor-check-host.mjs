@@ -186,7 +186,9 @@ export function createEditorCheckHost(deps) {
   }
 
   function scheduleDevelopmentCheckIfNeeded(view) {
-    const activeId = persist()?.getActiveFileId?.();
+    const P = persist();
+    if (P?.readStoredSuiteCheck?.() === 'active') return;
+    const activeId = P?.getActiveFileId?.();
     if (!activeId) return;
     const sig = nonActiveDevSignature(view, activeId);
     if (sig === lastSettledNonActiveDevSig) return;
@@ -195,6 +197,7 @@ export function createEditorCheckHost(deps) {
   }
 
   function scheduleDevelopmentCheck(view) {
+    if (persist()?.readStoredSuiteCheck?.() === 'active') return;
     ensureDevelopmentChecked(view);
   }
 

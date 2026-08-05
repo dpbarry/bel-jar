@@ -5,6 +5,7 @@
 import { EditorView, Decoration, ViewPlugin } from '@codemirror/view';
 import { StateEffect, StateField, RangeSetBuilder, Transaction } from '@codemirror/state';
 import { getEngine, navInfoAt, goToDefinition, crossFileDefinitionAt } from './ide-actions.mjs';
+import { isQuietTypingActiveForView } from './quiet-typing.mjs';
 import { renameActiveField } from './rename.mjs';
 
 function modPressed(event) {
@@ -215,12 +216,16 @@ const occurrenceScheduler = ViewPlugin.fromClass(
           this.clear(view);
           return;
         }
+        const eng = getEngine(view);
+        if (isQuietTypingActiveForView(eng, view.state)) {
+          this.clear(view);
+          return;
+        }
         const sel = view.state.selection.main;
         if (!sel.empty) {
           this.clear(view);
           return;
         }
-        const eng = getEngine(view);
         const occ = eng && typeof eng.occurrencesAt === 'function'
           ? eng.occurrencesAt(sel.head)
           : [];

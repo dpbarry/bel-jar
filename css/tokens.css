@@ -102,6 +102,8 @@
 
   --mono: 'JetBrains Mono', monospace;
   --sans: 'Inter', system-ui, sans-serif;
+  --editor-mono: var(--mono);
+  --editor-ligatures: common-ligatures;
 
   --radius-sm: 3px;
   --radius-md: 6px;

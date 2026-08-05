@@ -1019,6 +1019,37 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.writeStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
   }
 
+  var _settingsExtraNames = [
+    'readStoredEditorCursorBlink', 'writeStoredEditorCursorBlink',
+    'readStoredEditorScrollPastEnd', 'writeStoredEditorScrollPastEnd',
+    'readStoredEditorWhitespace', 'writeStoredEditorWhitespace',
+    'readStoredEditorRulers', 'writeStoredEditorRulers',
+    'readStoredEditorLigatures', 'writeStoredEditorLigatures',
+    'readStoredEditorFontFamily', 'writeStoredEditorFontFamily',
+    'readStoredEditorHoleEmphasis', 'writeStoredEditorHoleEmphasis',
+    'readStoredMotionPref', 'writeStoredMotionPref',
+    'applyStoredMotionPref', 'prefersReducedMotion',
+    'readStoredToastDuration', 'writeStoredToastDuration', 'toastDurationMs',
+    'readStoredCheckAggressiveness', 'writeStoredCheckAggressiveness', 'checkAggressivenessScale',
+    'readStoredAutosolveFocusNext', 'writeStoredAutosolveFocusNext',
+    'readStoredAutosolveShowStats', 'writeStoredAutosolveShowStats',
+    'readStoredQuietWhileTyping', 'writeStoredQuietWhileTyping',
+    'readStoredDiagPresentation', 'writeStoredDiagPresentation',
+    'readStoredDiagSeverity', 'writeStoredDiagSeverity',
+    'readStoredFormatOnSave', 'writeStoredFormatOnSave',
+    'readStoredTrimTrailingWs', 'writeStoredTrimTrailingWs',
+    'readStoredStickyDeclHeader', 'writeStoredStickyDeclHeader',
+    'readStoredSuiteCheck', 'writeStoredSuiteCheck',
+    'readStoredHoverSticky', 'writeStoredHoverSticky',
+    'applyStoredEditorChrome', 'exportUserSettings', 'importUserSettings',
+  ];
+  var _settingsExtra = {};
+  _settingsExtraNames.forEach(function (name) {
+    _settingsExtra[name] = function () {
+      return _settingsApi[name].apply(_settingsApi, arguments);
+    };
+  });
+
   function resetAppearancePrefs() {
     return _settingsApi.resetAppearancePrefs.apply(_settingsApi, arguments);
   }
@@ -1890,6 +1921,7 @@ var SCHEMA_VERSION = 3;
     writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger,
     readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue,
     writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue,
+    ..._settingsExtra,
     resetLayoutPrefs: resetLayoutPrefs,
     resetAppearancePrefs: resetAppearancePrefs,
     resetEditorTypographyPrefs: resetEditorTypographyPrefs,

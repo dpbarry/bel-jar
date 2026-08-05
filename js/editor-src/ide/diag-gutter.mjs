@@ -37,7 +37,7 @@ function suitePreludeRows(state, getOverlayDiags) {
   return rows;
 }
 
-function buildRowMarkers(state, getBelugaDiags = null, getOverlayDiags = null) {
+function buildRowMarkers(state, getBelugaDiags = null, getOverlayDiags = null, severity = 'all') {
   const severityByLine = new Map();
   const preludeLines = new Set();
   for (const { line } of suitePreludeRows(state, getOverlayDiags)) {
@@ -47,6 +47,7 @@ function buildRowMarkers(state, getBelugaDiags = null, getOverlayDiags = null) {
   if (!isRenaming(state)) {
     forEachDiagnostic(state, (d, from) => {
       if (d.severity !== 'error' && d.severity !== 'warning') return;
+      if (severity === 'errors' && d.severity !== 'error') return;
       if (from < 0 || from > state.doc.length) return;
       mergeSeverity(severityByLine, state.doc.lineAt(from).from, d.severity);
     });
@@ -54,6 +55,7 @@ function buildRowMarkers(state, getBelugaDiags = null, getOverlayDiags = null) {
       for (const d of getBelugaDiags()) {
         if (isSuitePreludeBannerDiag(d)) continue;
         if (d.severity !== 'error' && d.severity !== 'warning') continue;
+        if (severity === 'errors' && d.severity !== 'error') continue;
         if (d.from == null || d.from < 0 || d.from > state.doc.length) continue;
         mergeSeverity(severityByLine, state.doc.lineAt(d.from).from, d.severity);
       }
@@ -82,10 +84,10 @@ function buildSuitePreludeRowWash(state, getOverlayDiags) {
   return builder.finish();
 }
 
-export function diagnosticRowHighlight({ getBelugaDiags = null, getOverlayDiags = null, settlementTickField = null } = {}) {
+export function diagnosticRowHighlight({ getBelugaDiags = null, getOverlayDiags = null, settlementTickField = null, severity = 'all' } = {}) {
   return StateField.define({
     create(state) {
-      return buildRowMarkers(state, getBelugaDiags, getOverlayDiags);
+      return buildRowMarkers(state, getBelugaDiags, getOverlayDiags, severity);
     },
     update(value, tr) {
       const tickChanged = settlementTickField
@@ -94,7 +96,7 @@ export function diagnosticRowHighlight({ getBelugaDiags = null, getOverlayDiags 
         && diagnosticCount(tr.startState) === diagnosticCount(tr.state)) {
         return value;
       }
-      return timeSync('diagRowMarkers', () => buildRowMarkers(tr.state, getBelugaDiags, getOverlayDiags));
+      return timeSync('diagRowMarkers', () => buildRowMarkers(tr.state, getBelugaDiags, getOverlayDiags, severity));
     },
     provide: (f) => gutterLineClass.from(f),
   });

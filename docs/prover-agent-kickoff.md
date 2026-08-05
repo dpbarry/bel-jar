@@ -44,8 +44,18 @@ HOW TO WORK (the laws that were bought with burned sessions):
   FIX text we emit wrongly? If neither, expect zero. No completion has ever come from
   pruning — a no-move search EXHAUSTED, so cheaper candidates cannot help it.
 - SIZE BY TOGGLE, never by counting. A signature/reference-shape census says what proofs
-  NEED, not what the SEARCH REACHES (overstated reach 4x in one session). Put the
-  mechanism behind an env toggle and A/B ~10 members BEFORE building the rest.
+  NEED, not what the SEARCH REACHES (overstated reach 4x in one session, 24x in another).
+  Put the mechanism behind an env toggle and A/B ~10 members BEFORE building the rest.
+- COMPOSITE MOVES ARE ATOMIC, and REACH IS NOT PAYOFF (entry 42). Write the target term
+  out longhand and COUNT the independent pieces the engine must supply. If >1, build ALL
+  of them behind one toggle or do not start: a 3-part move built 2/3 of the way measured
+  0 completions even at a verified 40% reach (16/40 targets, 160 hits, 7 of them no-move).
+  Arriving at the hole is not the same as being able to COMPLETE the term.
+- TWO HARNESS TRAPS that each nearly produced a false verdict (entry 40):
+  (1) `npm run prover:diff` DEFAULTS to --ref library.20260715.jsonl (183). ALWAYS pass
+      `--ref results/corpus/library.jsonl` explicitly or the gate measures a stale baseline.
+  (2) A CANCELLED is NOT a verdict. Never run an A/B beside a differential/sweep — a
+      contended arm faked a clean-looking 2x regression that vanished on a quiet re-run.
 - When a mechanism you verified against the checker measures ZERO, read the EMITTED
   TEXT (--dump-candidates) before doubting the mechanism, and census its gates. Three
   correct mechanisms once measured zero because one predicate mangled their output.
@@ -127,6 +137,26 @@ TIME every run — a catch-all parser rule once passed 203/203 while making `npm
 verdict/reason — FIRST thing to run on a no-move target), plus the reach-check and
 gate-census patterns described in the master plan entries 33 and 36.
 
+Added 2026-07-31 (entries 40–42), all reusable:
+- `class-dump.mjs --match "<bucket substring>" [--ids out.txt]` — full member list of a
+  residue-audit bucket, grouped BY DEVELOPMENT, so a "mass" class can be checked for being
+  one shape replicated across files (which is what Wave 7's +3 turned out to be).
+- `reach-drop.mjs --ids <file> --sample N` — REACH census: runs a deterministic stride
+  sample and counts targets where the search actually hits a defect site. This is the
+  instrument shape to copy when sizing ANY new slice; it is what a text census cannot tell
+  you. Pairs with the `__factDropDebug` hook in prover-moves.
+- `decidx-blast.mjs` — offline blast radius of a `decreasingArgIndex` change over every
+  corpus theorem (old formula vs new). Run this before touching the spine arithmetic.
+- `ctorapp-census.mjs`, `mixed-rec-census.mjs`, `weaken-census.mjs` — structural censuses
+  for the ctor-application, mixed-recursion and weakening shapes.
+
+**Live env toggles** (all default to the mechanism ON; set the var to disable, which is
+the OFF arm of an A/B). `diverge-one.mjs` reads them: `NO_WEAKEN` (entry 40a weakening
+spelling), `NO_MIXREC` (entry 40d mixed ctype+box recursion). Debug hooks, no-ops unless a
+harness installs them: `globalThis.__factDropDebug` (prover-moves, entry 42),
+`globalThis.__sfDebug` (hole-split `synthesizeFills`), `globalThis.__synthDebug`
+(prover-moves, pre-existing — note it takes a DIFFERENT payload shape).
+
 ## 1. Where we are (2026-07-31)
 
 - **Library 269 COMPLETE measured.** Suite 203/203; differential 199/199.
@@ -138,9 +168,55 @@ gate-census patterns described in the master plan entries 33 and 36.
   `let`-free LF fills while 76% of rejected candidates are bare comp applications. Do not
   open a seventh prefilter front.
 
-## 2. Do next — the best-posed open problem
+## 1.5 UPDATE 2026-07-31b — the decreasing-slot repair, and two harness traps
 
-**Per-path search behaviour in the ctype family.** `equal/alg-equal-ctxrel#trans` and
+Master plan **entry 40**. Suite 202/203 (the one failure, `test-project-chaos.mjs`, has no
+prover import — pre-existing). Differential **199/199, zero regressions**.
+
+- **Fixed a real model defect:** `decreasingArgIndex` was short one spine position per
+  implicit CONTEXT binder, so a ctype-decreasing theorem that also has box premises
+  resolved its decreasing slot to the wrong premise and got **no induction hypothesis at
+  all**. Two compensating errors hid it (a ctype premise's family head was counted as an
+  implicit meta; `ctx` binders were not subtracted). 5 of 273 corpus theorems change slot,
+  all five hand-verified as corrections. The spine model is *more* correct, not correct —
+  conclusion family heads are still counted, `$`-subst vars still are not.
+- **Two mechanisms built, both UNPAID (0 completions, 0 losses, kept):** the weakening
+  spelling `X[..]` for a meta used in an extended context, and mixed ctype+box recursion.
+- ⛔ **Two harness traps that nearly produced false verdicts:**
+  1. `npm run prover:diff` **defaults to `--ref library.20260715.jsonl` (183)**, not the
+     frozen `library.jsonl` (199) the laws name. **Always pass `--ref` explicitly.**
+  2. **A `CANCELLED` is not a verdict** — an A/B arm sharing the machine with a running
+     sweep reported a bogus 2× regression that vanished on an uncontended re-run. Never
+     run an A/B concurrently with a differential.
+
+⛔ **THE ctype-CONSTRUCTOR FAMILY IS CLOSED FOR NOW — entries 41 and 42.** The planner is
+single-context, so at a CTYPE goal every boxed fact is DROPPED from the planning domain.
+That defect is REAL and BROAD — measured reach **16/40 sampled stuck targets, 160 drops,
+7 of them no-move**. Admitting those facts (with own-context spelling AND weakening-aware
+matching) was built and measured anyway: **0 completions, 0 verdict changes on those same
+16.** Reverted. The family needs a THREE-part composite move — ctype-ctor application +
+INLINE IH call in an argument slot + weakened box — and 2 of 3 pays exactly nothing
+([[composite-moves-are-atomic]]). ⛔ Do not re-add the fact admission alone. ⛔ Do not try
+"annotate the let" — checker-killed three ways (41c); the INLINE spelling is the only
+well-typed one. The missing third piece is an inline-IH argument source
+(`nestedCtorArgFills` gives depth-2 CONSTRUCTOR witnesses only). All three, one toggle,
+or leave it alone. `__factDropDebug` is the no-op hook that sizes any future attempt.
+
+**So pick a DIFFERENT class next.** The residue audit's untouched mass is the place to
+look — `STUCK:no-totality-measure` (99 across all sizes) and the `TIMEOUT` families have
+never had a dedicated slice, and neither has been sized by reach.
+
+## 2. The open leads — read §1.5 FIRST, it re-ranks these
+
+> ⚠️ **Two different "ctype families" live in this file — do not conflate them.**
+> §1.5/entry 42 closes the ctype-**CONSTRUCTOR-APPLICATION** family (the `M_dot`/`weaken`
+> shape: build a ctype value from an inline IH call + a weakened box). The lead directly
+> below is the ctype-**TRANS/CEQ** decision-tree question — still genuinely open, but it
+> is **3 targets, i.e. TAIL, not mass** ([[feedback-optimize-mass-not-tail]]). It was
+> written when it was the best-posed problem; it is not the best-VALUE one. Prefer an
+> unsized mass class (see the end of §1.5) unless you specifically want a hard tail probe.
+
+**Per-path search behaviour in the trans/ceq shape.** `equal/alg-equal-ctxrel#trans` and
 `alg-equal-datatypes#ceq` reach **18–22 accepted steps** and run out of budget;
 `alg-equal-datatypes#trans` completes at 203 checks. All the needed moves now exist
 (entry 37), and global RANK is not the problem — ranking inverts before recurses left

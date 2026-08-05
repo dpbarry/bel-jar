@@ -3,6 +3,8 @@ import { EditorView, keymap, ViewPlugin } from '@codemirror/view';
 import { fuzzyScore } from './fuzzy.mjs';
 import { renderTypeInto } from '../../format/type-render.mjs';
 import { createCompletionController } from './source.mjs';
+import { isQuietTypingActiveForView } from '../quiet-typing.mjs';
+import { getEngine } from '../ide-actions.mjs';
 
 const POPUP_GAP_PX = 4;
 const VIEW_PAD_PX = 8;
@@ -127,6 +129,7 @@ function createEditorAcPlugin(engine, opts) {
   return ViewPlugin.fromClass(class {
     constructor(view) {
       this.view = view;
+      this.engine = engine;
       this.popup = null;
       this.listEl = null;
       this.items = [];
@@ -304,17 +307,19 @@ function createEditorAcPlugin(engine, opts) {
       this.refresh();
     }
 
-    handleTab() {
-      if (!this.isOpen()) {
-        this.explicit = true;
-        const result = this.compute();
-        this.explicit = false;
-        if (result?.items?.length) {
-          this.render(result);
-          return true;
-        }
-        return false;
+    /** Ctrl-Space: open if closed; dismiss if open (typing can reopen). */
+    toggleExplicit() {
+      if (this.isOpen()) {
+        this.hide();
+        return true;
       }
+      this.requestExplicit();
+      return true;
+    }
+
+    handleTab() {
+      // Tab only accepts an already-open menu. Closed → indentOrInsertTab at caret.
+      if (!this.isOpen()) return false;
       return this.accept(this.activeIndex);
     }
 
@@ -359,6 +364,11 @@ function createEditorAcPlugin(engine, opts) {
           if (this.isOpen()) this.hide();
           return;
         }
+        const eng = getEngine(u.view) || this.engine;
+        if (isQuietTypingActiveForView(eng, u.state)) {
+          if (this.isOpen()) this.hide();
+          return;
+        }
         this.scheduleRefresh();
         return;
       }
@@ -369,6 +379,11 @@ function createEditorAcPlugin(engine, opts) {
       }
 
       if (trigger === 'always' && u.selectionSet && !u.docChanged) {
+        const eng = getEngine(u.view) || this.engine;
+        if (isQuietTypingActiveForView(eng, u.state)) {
+          if (this.isOpen()) this.hide();
+          return;
+        }
         const pos = u.state.selection.main.head;
         if (atTokenEndBeforeSpace(u.state.doc, pos)) this.scheduleRefresh();
         else if (this.isOpen()) {
@@ -395,12 +410,17 @@ export function belEditorAutocomplete(engine, opts = {}) {
     return inst ? inst.handleKey(key) : false;
   };
 
+  const runToggle = (view) => {
+    const inst = view.plugin(plugin);
+    return inst ? inst.toggleExplicit() : false;
+  };
+
   return [
     plugin,
     Prec.highest(keymap.of([
-      { key: 'Ctrl-Space', run: (view) => { view.plugin(plugin)?.requestExplicit(); return true; } },
-      { mac: 'Alt-`', run: (view) => { view.plugin(plugin)?.requestExplicit(); return true; } },
-      { mac: 'Alt-i', run: (view) => { view.plugin(plugin)?.requestExplicit(); return true; } },
+      { key: 'Ctrl-Space', run: runToggle },
+      { mac: 'Alt-`', run: runToggle },
+      { mac: 'Alt-i', run: runToggle },
       { key: 'Escape', run: (view) => runKey(view, 'Escape') },
       { key: 'ArrowDown', run: (view) => runKey(view, 'ArrowDown') },
       { key: 'ArrowUp', run: (view) => runKey(view, 'ArrowUp') },

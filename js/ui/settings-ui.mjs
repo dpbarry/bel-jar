@@ -1124,12 +1124,16 @@ const global = globalThis;
         document.documentElement.classList.remove('light');
         if (typeof p.applyStoredUiFontSize === 'function') p.applyStoredUiFontSize();
         if (typeof p.applyStoredUiTextContrast === 'function') p.applyStoredUiTextContrast();
+        if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
         if (typeof global.syncEditorCmTheme === 'function') global.syncEditorCmTheme();
       }, 'appearance-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="editor"]'), function () {
-      runCategoryReset(function (p) { p.resetEditorPrefs(); }, 'editor-reset');
+      runCategoryReset(function (p) {
+        p.resetEditorPrefs();
+        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+      }, 'editor-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function () {
@@ -1151,7 +1155,8 @@ const global = globalThis;
     attachPanelReset(main.querySelector('[data-category="workspace"]'), function () {
       runCategoryReset(function (p) {
         p.resetWorkspacePrefs();
-        global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: true } }));
+        var on = typeof p.readStoredInspectorFollow === 'function' ? p.readStoredInspectorFollow() : true;
+        global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: on } }));
       }, 'workspace-reset');
     });
 
@@ -1214,8 +1219,50 @@ const global = globalThis;
       }
     );
 
+    addDropdownRow(
+      panelBodies.appearance,
+      'motion-pref',
+      'Motion',
+      'Respect OS reduced-motion, always reduce, or keep animations on.',
+      [
+        { value: 'system', label: 'Follow system' },
+        { value: 'reduce', label: 'Reduce' },
+        { value: 'full', label: 'Full' },
+      ],
+      function () { return p0 ? p0.readStoredMotionPref() : 'system'; },
+      function (p, v) {
+        p.writeStoredMotionPref(v);
+        if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
+      }
+    );
+
+    addDropdownRow(
+      panelBodies.appearance,
+      'toast-duration',
+      'Toast duration',
+      'How long ephemeral toasts stay visible.',
+      [
+        { value: 'short', label: 'Short' },
+        { value: 'normal', label: 'Default' },
+        { value: 'long', label: 'Long' },
+      ],
+      function () { return p0 ? p0.readStoredToastDuration() : 'normal'; },
+      function (p, v) { p.writeStoredToastDuration(v); }
+    );
+
     // Editor — Typography
     addSectionHead(panelBodies.editor, 'Typography');
+    addDropdownRow(panelBodies.editor, 'editor-font-family', 'Font', 'Editor monospace face.',
+      [
+        { value: 'jetbrains', label: 'JetBrains Mono' },
+        { value: 'system', label: 'System monospace' },
+      ],
+      function () { return p0 ? p0.readStoredEditorFontFamily() : 'jetbrains'; },
+      function (p, v) {
+        p.writeStoredEditorFontFamily(v);
+        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+      }
+    );
     addDropdownRow(panelBodies.editor, 'editor-font-size', 'Font size', '',
       [
         { value: 'sm', label: 'Small (12px)' },
@@ -1238,6 +1285,40 @@ const global = globalThis;
     addSwitchRow(panelBodies.editor, 'editor-word-wrap', 'Word wrap', 'Wraps lines that would be longer than the viewport.',
       function () { return p0 ? p0.readStoredEditorWordWrap() : false; },
       function (p, on) { p.writeStoredEditorWordWrap(on); }
+    );
+    addSwitchRow(panelBodies.editor, 'editor-ligatures', 'Font ligatures', 'Join operators like -> and => when the font supports it.',
+      function () { return p0 ? p0.readStoredEditorLigatures() : true; },
+      function (p, on) {
+        p.writeStoredEditorLigatures(on);
+        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+      }
+    );
+    addDropdownRow(panelBodies.editor, 'editor-cursor-blink', 'Cursor blink', '',
+      [
+        { value: 'blink', label: 'Blink' },
+        { value: 'fast', label: 'Fast' },
+        { value: 'off', label: 'Solid' },
+      ],
+      function () { return p0 ? p0.readStoredEditorCursorBlink() : 'blink'; },
+      function (p, v) { p.writeStoredEditorCursorBlink(v); }
+    );
+    addSwitchRow(panelBodies.editor, 'editor-scroll-past-end', 'Scroll past end', 'Allow scrolling the last line to mid-viewport.',
+      function () { return p0 ? p0.readStoredEditorScrollPastEnd() : true; },
+      function (p, on) { p.writeStoredEditorScrollPastEnd(on); }
+    );
+    addDropdownRow(panelBodies.editor, 'editor-whitespace', 'Show whitespace', '',
+      [
+        { value: 'none', label: 'Nowhere' },
+        { value: 'trailing', label: 'Trailing only' },
+        { value: 'selection', label: 'In selection' },
+        { value: 'all', label: 'All' },
+      ],
+      function () { return p0 ? p0.readStoredEditorWhitespace() : 'none'; },
+      function (p, v) { p.writeStoredEditorWhitespace(v); }
+    );
+    addSwitchRow(panelBodies.editor, 'editor-rulers', 'Print-width ruler', 'Vertical guide at the format print width.',
+      function () { return p0 ? p0.readStoredEditorRulers() : false; },
+      function (p, on) { p.writeStoredEditorRulers(on); }
     );
 
     // Editor — Indentation & saving
@@ -1273,6 +1354,16 @@ const global = globalThis;
       'Rewrite suite .cfg entries on same-folder rename or delete. Moves leave entries for cfg lint.',
       function () { return p0 ? p0.readStoredCfgAutoSync() : true; },
       function (p, on) { p.writeStoredCfgAutoSync(on); }
+    );
+    addSwitchRow(panelBodies.editor, 'format-on-save', 'Format on save',
+      'Run Alt+Shift+F formatting when auto-save flushes a .bel file.',
+      function () { return p0 ? p0.readStoredFormatOnSave() : false; },
+      function (p, on) { p.writeStoredFormatOnSave(on); }
+    );
+    addSwitchRow(panelBodies.editor, 'trim-trailing-ws', 'Trim trailing whitespace on save',
+      'Strip spaces and tabs at line ends when auto-save flushes a .bel file.',
+      function () { return p0 ? p0.readStoredTrimTrailingWs() : false; },
+      function (p, on) { p.writeStoredTrimTrailingWs(on); }
     );
 
     // Editor — Code insight
@@ -1330,6 +1421,16 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredHoverScope() : 'all'; },
       function (p, v) { p.writeStoredHoverScope(v); }
     );
+    addSwitchRow(panelBodies.editor, 'hover-sticky', 'Sticky hover',
+      'Keep type hover open until Escape or click outside. Scroll and pointer leave do not dismiss.',
+      function () { return p0 ? p0.readStoredHoverSticky() : false; },
+      function (p, on) { p.writeStoredHoverSticky(on); }
+    );
+    addSwitchRow(panelBodies.editor, 'quiet-while-typing', 'Quiet while typing',
+      'Hold hover, occurrence highlight, and auto-complete until checking settles. Explicit Ctrl+Space still works.',
+      function () { return p0 ? p0.readStoredQuietWhileTyping() : false; },
+      function (p, on) { p.writeStoredQuietWhileTyping(on); }
+    );
 
     // Editor — Gutter
     addSectionHead(panelBodies.editor, 'Gutter');
@@ -1354,13 +1455,42 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredEditorActiveLine() : true; },
       function (p, on) { p.writeStoredEditorActiveLine(on); }
     );
-    addSwitchRow(panelBodies.editor, 'editor-diag-gutter', 'Diagnostic gutter marks', 'Mark lines with errors or warnings.',
-      function () { return p0 ? p0.readStoredEditorDiagGutter() : true; },
-      function (p, on) { p.writeStoredEditorDiagGutter(on); }
+    addSwitchRow(panelBodies.editor, 'sticky-decl-header', 'Structure path',
+      'Show the enclosing declaration path (a > b > c) at the top of the editor, driven by the cursor.',
+      function () { return p0 ? p0.readStoredStickyDeclHeader() : false; },
+      function (p, on) { p.writeStoredStickyDeclHeader(on); }
+    );
+    addDropdownRow(panelBodies.editor, 'diag-presentation', 'Diagnostics',
+      'Where errors and warnings appear in the editor.',
+      [
+        { value: 'both', label: 'Underlines and gutter' },
+        { value: 'underlines', label: 'Underlines only' },
+        { value: 'gutter', label: 'Gutter only' },
+        { value: 'none', label: 'Nowhere' },
+      ],
+      function () { return p0 ? p0.readStoredDiagPresentation() : 'both'; },
+      function (p, v) { p.writeStoredDiagPresentation(v); }
+    );
+    addSwitchRow(panelBodies.editor, 'diag-show-warnings', 'Show warnings',
+      'When off, only errors appear as underlines and gutter marks.',
+      function () { return p0 ? p0.readStoredDiagSeverity() !== 'errors' : true; },
+      function (p, on) { p.writeStoredDiagSeverity(on ? 'all' : 'errors'); }
     );
     addSwitchRow(panelBodies.editor, 'editor-hole-gutter', 'Hole gutter marks', 'Mark lines with proof holes.',
       function () { return p0 ? p0.readStoredEditorHoleGutter() : true; },
       function (p, on) { p.writeStoredEditorHoleGutter(on); }
+    );
+    addDropdownRow(panelBodies.editor, 'editor-hole-emphasis', 'Hole gutter emphasis', 'How strongly hole lines stand out.',
+      [
+        { value: 'subtle', label: 'Subtle' },
+        { value: 'normal', label: 'Default' },
+        { value: 'loud', label: 'Loud' },
+      ],
+      function () { return p0 ? p0.readStoredEditorHoleEmphasis() : 'normal'; },
+      function (p, v) {
+        p.writeStoredEditorHoleEmphasis(v);
+        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+      }
     );
 
     // Keybindings
@@ -1373,8 +1503,8 @@ const global = globalThis;
     );
 
     // Beluga
-    addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Engine',
-      'Stable: background worker. Fast: main thread, blocks the UI.',
+    addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Run / Load',
+      'Stable: worker (non-blocking). Fast: main thread for Run/Load only — background checking always stays on the Stable worker.',
       [{ value: 'stable', label: 'Stable' }, { value: 'fast', label: 'Fast' }],
       function () {
         return BelugaRun.getBelugaMode()
@@ -1393,6 +1523,36 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredBelugaCancelOnEdit() : true; },
       function (p, on) { p.writeStoredBelugaCancelOnEdit(on); }
     );
+    addDropdownRow(panelBodies.beluga, 'check-aggressiveness', 'Check aggressiveness',
+      'How quickly background checking settles after edits. Modes only — not raw timers.',
+      [
+        { value: 'responsive', label: 'Responsive' },
+        { value: 'balanced', label: 'Balanced' },
+        { value: 'thorough', label: 'Thorough' },
+      ],
+      function () { return p0 ? p0.readStoredCheckAggressiveness() : 'balanced'; },
+      function (p, v) { p.writeStoredCheckAggressiveness(v); }
+    );
+    addDropdownRow(panelBodies.beluga, 'suite-check', 'Suite check',
+      'Settlement always checks the active file (with prelude). Suite mode also type-checks sibling files for explorer/inspector health.',
+      [
+        { value: 'suite', label: 'Active + suite' },
+        { value: 'active', label: 'Active file only' },
+      ],
+      function () { return p0 ? p0.readStoredSuiteCheck() : 'suite'; },
+      function (p, v) { p.writeStoredSuiteCheck(v); }
+    );
+    addSectionHead(panelBodies.beluga, 'Autosolve');
+    addSwitchRow(panelBodies.beluga, 'autosolve-focus-next', 'Focus next hole after place',
+      'After placing a solved proof, jump the editor to the next open hole.',
+      function () { return p0 ? p0.readStoredAutosolveFocusNext() : true; },
+      function (p, on) { p.writeStoredAutosolveFocusNext(on); }
+    );
+    addSwitchRow(panelBodies.beluga, 'autosolve-show-stats', 'Show checker call counts',
+      'Show how many Beluga certifies ran per hole in the proof tree.',
+      function () { return p0 ? p0.readStoredAutosolveShowStats() : true; },
+      function (p, on) { p.writeStoredAutosolveShowStats(on); }
+    );
 
     // REPL
     addSwitchRow(panelBodies.repl, 'repl-autoscroll', 'Auto-scroll output', 'Scroll to new output.',
@@ -1402,6 +1562,14 @@ const global = globalThis;
     addSwitchRow(panelBodies.repl, 'repl-welcome', 'Banner after clear', 'Show the Beluga version line again after clear.',
       function () { return p0 ? p0.readStoredReplWelcome() : true; },
       function (p, on) { p.writeStoredReplWelcome(on); }
+    );
+    addSwitchRow(panelBodies.repl, 'repl-echo', 'Echo commands', 'Repeat typed commands in the transcript.',
+      function () { return p0 ? p0.readStoredReplEcho() : true; },
+      function (p, on) { p.writeStoredReplEcho(on); }
+    );
+    addSwitchRow(panelBodies.repl, 'repl-filter-chatter', 'Filter chatter', 'Hide noisy Beluga status lines in the transcript.',
+      function () { return p0 ? p0.readStoredReplFilterChatter() : true; },
+      function (p, on) { p.writeStoredReplFilterChatter(on); }
     );
     addSwitchRow(panelBodies.repl, 'repl-hover-timestamp', 'Hover for timestamp',
       'Show the time a command or output was logged when hovering it.',
@@ -1440,6 +1608,14 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredLibraryExpandDefault() : false; },
       function (p, on) { p.writeStoredLibraryExpandDefault(on); }
     );
+    addSwitchRow(panelBodies.workspace, 'inspector-follow', 'Inspector follows cursor',
+      'Update the inspector as the editor cursor moves.',
+      function () { return p0 ? p0.readStoredInspectorFollow() : true; },
+      function (p, on) {
+        p.writeStoredInspectorFollow(on);
+        global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: !!on } }));
+      }
+    );
 
     addActionRow(
       panelBodies.workspace,
@@ -1451,6 +1627,71 @@ const global = globalThis;
         persist().resetLayoutPrefs();
         postSettingsApply('layout-reset');
         if (typeof global.location !== 'undefined') global.location.reload();
+      }
+    );
+
+    addActionRow(
+      panelBodies.workspace,
+      'Export settings',
+      'Download editor, appearance, keybindings, and aliases as JSON.',
+      'Export\u2026',
+      function () {
+        var p = persist();
+        if (!p || typeof p.exportUserSettings !== 'function') return;
+        var bundle = p.exportUserSettings();
+        var blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'beljar-settings.json';
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      }
+    );
+
+    addActionRow(
+      panelBodies.workspace,
+      'Import settings',
+      'Load a previously exported settings JSON file.',
+      'Import\u2026',
+      function () {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json,.json';
+        input.addEventListener('change', function () {
+          var file = input.files && input.files[0];
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            var p = persist();
+            if (!p || typeof p.importUserSettings !== 'function') return;
+            try {
+              var bundle = JSON.parse(String(reader.result || ''));
+              var result = p.importUserSettings(bundle);
+              if (!result || !result.ok) {
+                if (global.Toasts && global.Toasts.warn) global.Toasts.warn('Could not import settings.');
+                return;
+              }
+              if (typeof p.applyStoredUiFontSize === 'function') p.applyStoredUiFontSize();
+              if (typeof p.applyStoredUiTextContrast === 'function') p.applyStoredUiTextContrast();
+              if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
+              if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+              if (p.readStoredTheme && document.documentElement) {
+                document.documentElement.classList.toggle('light', p.readStoredTheme() === 'light');
+              }
+              syncFromState();
+              applyLiveSettings('settings-import');
+              postSettingsApply('settings-import');
+              if (global.Toasts && global.Toasts.success) {
+                global.Toasts.success('Imported ' + (result.applied || 0) + ' settings.');
+              }
+            } catch (_) {
+              if (global.Toasts && global.Toasts.warn) global.Toasts.warn('Invalid settings file.');
+            }
+          };
+          reader.readAsText(file);
+        });
+        input.click();
       }
     );
 

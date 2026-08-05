@@ -163,4 +163,153 @@ assert.equal(P.readStoredInspectorFollow(), false);
 P.writeStoredInspectorFollow(true);
 assert.equal(P.readStoredInspectorFollow(), true);
 
+assert.equal(P.readStoredReplEcho(), true);
+P.writeStoredReplEcho(false);
+assert.equal(P.readStoredReplEcho(), false);
+P.writeStoredReplEcho(true);
+
+assert.equal(P.readStoredReplFilterChatter(), true);
+P.writeStoredReplFilterChatter(false);
+assert.equal(P.readStoredReplFilterChatter(), false);
+
+assert.equal(P.readStoredEditorCursorBlink(), 'blink');
+P.writeStoredEditorCursorBlink('off');
+assert.equal(P.readStoredEditorCursorBlink(), 'off');
+P.writeStoredEditorCursorBlink('blink');
+assert.equal(P.readStoredEditorCursorBlink(), 'blink');
+
+assert.equal(P.readStoredEditorScrollPastEnd(), true);
+P.writeStoredEditorScrollPastEnd(false);
+assert.equal(P.readStoredEditorScrollPastEnd(), false);
+
+assert.equal(P.readStoredEditorWhitespace(), 'none');
+P.writeStoredEditorWhitespace('trailing');
+assert.equal(P.readStoredEditorWhitespace(), 'trailing');
+P.writeStoredEditorWhitespace('selection');
+assert.equal(P.readStoredEditorWhitespace(), 'selection');
+P.writeStoredEditorWhitespace('all');
+assert.equal(P.readStoredEditorWhitespace(), 'all');
+P.writeStoredEditorWhitespace('none');
+assert.equal(P.readStoredEditorWhitespace(), 'none');
+
+assert.equal(P.readStoredEditorRulers(), false);
+P.writeStoredEditorRulers(true);
+assert.equal(P.readStoredEditorRulers(), true);
+
+assert.equal(P.readStoredEditorLigatures(), true);
+P.writeStoredEditorLigatures(false);
+assert.equal(P.readStoredEditorLigatures(), false);
+
+assert.equal(P.readStoredEditorFontFamily(), 'jetbrains');
+P.writeStoredEditorFontFamily('system');
+assert.equal(P.readStoredEditorFontFamily(), 'system');
+P.writeStoredEditorFontFamily('jetbrains');
+
+assert.equal(P.readStoredEditorHoleEmphasis(), 'normal');
+P.writeStoredEditorHoleEmphasis('loud');
+assert.equal(P.readStoredEditorHoleEmphasis(), 'loud');
+P.writeStoredEditorHoleEmphasis('normal');
+
+assert.equal(P.readStoredMotionPref(), 'system');
+P.writeStoredMotionPref('reduce');
+assert.equal(P.readStoredMotionPref(), 'reduce');
+assert.equal(P.prefersReducedMotion(), true);
+P.writeStoredMotionPref('full');
+assert.equal(P.prefersReducedMotion(), false);
+P.writeStoredMotionPref('system');
+
+assert.equal(P.readStoredToastDuration(), 'normal');
+P.writeStoredToastDuration('short');
+assert.equal(P.toastDurationMs(), 2000);
+P.writeStoredToastDuration('long');
+assert.equal(P.toastDurationMs(), 6000);
+P.writeStoredToastDuration('normal');
+assert.equal(P.toastDurationMs(), 3500);
+
+assert.equal(P.readStoredCheckAggressiveness(), 'balanced');
+assert.equal(P.checkAggressivenessScale(), 1);
+P.writeStoredCheckAggressiveness('responsive');
+assert.equal(P.checkAggressivenessScale(), 0.7);
+P.writeStoredCheckAggressiveness('thorough');
+assert.equal(P.checkAggressivenessScale(), 1.45);
+P.writeStoredCheckAggressiveness('balanced');
+
+assert.equal(P.readStoredAutosolveFocusNext(), true);
+P.writeStoredAutosolveFocusNext(false);
+assert.equal(P.readStoredAutosolveFocusNext(), false);
+P.writeStoredAutosolveFocusNext(true);
+
+assert.equal(P.readStoredAutosolveShowStats(), true);
+P.writeStoredAutosolveShowStats(false);
+assert.equal(P.readStoredAutosolveShowStats(), false);
+P.writeStoredAutosolveShowStats(true);
+
+assert.equal(P.readStoredQuietWhileTyping(), false);
+P.writeStoredQuietWhileTyping(true);
+assert.equal(P.readStoredQuietWhileTyping(), true);
+P.writeStoredQuietWhileTyping(false);
+
+assert.equal(P.readStoredDiagPresentation(), 'both');
+P.writeStoredDiagPresentation('underlines');
+assert.equal(P.readStoredDiagPresentation(), 'underlines');
+P.writeStoredDiagPresentation('gutter');
+assert.equal(P.readStoredDiagPresentation(), 'gutter');
+P.writeStoredDiagPresentation('both');
+assert.equal(P.readStoredDiagPresentation(), 'both');
+
+assert.equal(P.readStoredDiagSeverity(), 'all');
+P.writeStoredDiagSeverity('errors');
+assert.equal(P.readStoredDiagSeverity(), 'errors');
+P.writeStoredDiagSeverity('all');
+
+assert.equal(P.readStoredFormatOnSave(), false);
+P.writeStoredFormatOnSave(true);
+assert.equal(P.readStoredFormatOnSave(), true);
+P.writeStoredFormatOnSave(false);
+
+assert.equal(P.readStoredTrimTrailingWs(), false);
+P.writeStoredTrimTrailingWs(true);
+assert.equal(P.readStoredTrimTrailingWs(), true);
+P.writeStoredTrimTrailingWs(false);
+
+assert.equal(P.readStoredStickyDeclHeader(), false);
+P.writeStoredStickyDeclHeader(true);
+assert.equal(P.readStoredStickyDeclHeader(), true);
+P.writeStoredStickyDeclHeader(false);
+
+assert.equal(P.readStoredSuiteCheck(), 'suite');
+P.writeStoredSuiteCheck('active');
+assert.equal(P.readStoredSuiteCheck(), 'active');
+P.writeStoredSuiteCheck('suite');
+assert.equal(P.readStoredSuiteCheck(), 'suite');
+
+assert.equal(P.readStoredHoverSticky(), false);
+P.writeStoredHoverSticky(true);
+assert.equal(P.readStoredHoverSticky(), true);
+P.writeStoredHoverSticky(false);
+
+{
+  P.writeStoredEditorDiagGutter(false);
+  // Legacy gutter-off maps to underlines when presentation key unset.
+  assert.equal(P.readStoredDiagPresentation(), 'underlines');
+  P.writeStoredDiagPresentation('both');
+}
+
+{
+  P.writeStoredEditorRulers(true);
+  P.writeStoredMotionPref('reduce');
+  const bundle = P.exportUserSettings();
+  assert.equal(bundle.v, 1);
+  assert.ok(bundle.prefs['beljar-editor-rulers']);
+  assert.equal(bundle.prefs['beljar-motion-pref'], 'reduce');
+  P.writeStoredEditorRulers(false);
+  P.writeStoredMotionPref('system');
+  const result = P.importUserSettings(bundle);
+  assert.equal(result.ok, true);
+  assert.equal(P.readStoredEditorRulers(), true);
+  assert.equal(P.readStoredMotionPref(), 'reduce');
+  P.writeStoredEditorRulers(false);
+  P.writeStoredMotionPref('system');
+}
+
 console.log('OK settings persist');

@@ -262,7 +262,14 @@ export function implicitMetaCount(compType) {
   const piBinders = new Set();
   for (const p of compType.premises) {
     if (p.kind === 'pi' && p.binder) piBinders.add(p.binder.replace(/^[$#]/, ''));
-    scan(p.raw);
+    // A ctype premise's APPLICATION HEAD is a declared family, not an implicit
+    // metavariable — `Extends [g] [h]` contributes `g`,`h` (already lowercase and
+    // unscanned) and nothing else, but the uppercase-initial scan below reads
+    // `Extends` as a meta and inflates the implicit spine by one per distinct
+    // ctype family. That over-count silently CANCELLED the ctx-binder under-count
+    // in decreasingArgIndex (see there) whenever the two happened to be equal —
+    // which is why all-ctype theorems resolved correctly and mixed ones did not.
+    scan(p.kind === 'ctype' ? String(p.raw || '').trim().replace(/^\p{Lu}[\p{L}\p{N}_']*/u, '') : p.raw);
   }
   scan(compType.conclusion);
   for (const b of piBinders) names.delete(b);
@@ -395,9 +402,18 @@ export function decreasingArgIndex(thm) {
   }
   if (tot.kind === 'named' && Array.isArray(tot.args) && tot.args.length) {
     const pis = prem.filter((p) => p.kind === 'pi');
+    // IMPLICIT CONTEXT BINDERS occupy spine positions too. `/ total e (weak_neut
+    // g h a e r) /` on `(g:ctx)(h:ctx) Extends [g] [h] → [g ⊢ neut A[]] → …`
+    // spells g,h BEFORE the implicit meta a and the argument premises — but only
+    // `pi` premises were subtracted here, while measureDesignation's all-box twin
+    // subtracts its whole `nonBox` (which does include them). The ctype path was
+    // therefore short by one position per implicit context binder, landing the
+    // decreasing slot on the BOX premise `r` instead of the ctype `e`; with no
+    // eligible sub-derivation of `r`, weak_neut got NO induction hypothesis at all.
+    const ctxs = prem.filter((p) => p.kind === 'ctx');
     const pos = tot.args.lastIndexOf(tot.name);
     const spineIdx = pos >= 0 ? pos : tot.args.length - 1;
-    const argIdx = spineIdx - pis.length - implicitMetaCount(thm.compType);
+    const argIdx = spineIdx - pis.length - ctxs.length - implicitMetaCount(thm.compType);
     if (argIdx >= 0 && argIdx < args.length) return argIdx;
     if (spineIdx < pis.length) return -1; // designates a Pi binder — the mlam route
     return 0;

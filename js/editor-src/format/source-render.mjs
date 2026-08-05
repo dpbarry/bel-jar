@@ -1,6 +1,7 @@
 // Full-file Beluga source → bel-hl-* highlighted DOM (read-only preview).
 
 import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
+import { syntaxTree } from '@codemirror/language';
 import { belugaLanguage, holeTag } from '../language.mjs';
 
 import { expandBelAliases } from '../aliases.mjs';
@@ -43,22 +44,7 @@ function normalizeSource(text) {
   return expandBelAliases(String(text).replace(/\r\n?/g, '\n'));
 }
 
-export function highlightSourceFragment(text) {
-  const source = normalizeSource(text);
-  const frag = document.createDocumentFragment();
-  if (!source) return frag;
-
-  let tree = null;
-  try {
-    tree = belugaLanguage.parser.parse(source);
-  } catch (_) {
-    tree = null;
-  }
-  if (!tree) {
-    frag.appendChild(document.createTextNode(source));
-    return frag;
-  }
-
+function emitHighlighted(frag, source, tree, absBase = 0) {
   let cursor = 0;
   let emitted = false;
 
@@ -74,19 +60,62 @@ export function highlightSourceFragment(text) {
     emitted = true;
   }
 
+  const absTo = absBase + source.length;
   highlightTree(tree, SOURCE_HIGHLIGHTER, (from, to, classes) => {
     if (to <= from) return;
-    if (from > cursor) pushPlain(cursor, from);
-    pushSpan(from, to, classes);
-    cursor = to;
-  });
+    const a = Math.max(0, from - absBase);
+    const b = Math.min(source.length, to - absBase);
+    if (b <= a) return;
+    if (a > cursor) pushPlain(cursor, a);
+    pushSpan(a, b, classes);
+    cursor = b;
+  }, absBase, absTo);
 
   if (cursor < source.length) pushPlain(cursor, source.length);
-
-  if (!emitted) {
-    frag.appendChild(document.createTextNode(source));
-  }
+  if (!emitted) frag.appendChild(document.createTextNode(source));
   return frag;
+}
+
+export function highlightSourceFragment(text) {
+  const source = normalizeSource(text);
+  const frag = document.createDocumentFragment();
+  if (!source) return frag;
+
+  let tree = null;
+  try {
+    tree = belugaLanguage.parser.parse(source);
+  } catch (_) {
+    tree = null;
+  }
+  if (!tree) {
+    frag.appendChild(document.createTextNode(source));
+    return frag;
+  }
+  return emitHighlighted(frag, source, tree, 0);
+}
+
+/**
+ * Highlight `[from, to)` in an editor document using the live syntax tree so
+ * definition / local / ctor tags match the buffer (not a lone re-parse).
+ */
+export function highlightDocRange(state, from, to) {
+  const frag = document.createDocumentFragment();
+  if (!state?.doc || from == null || to == null) return frag;
+  const lo = Math.max(0, from | 0);
+  const hi = Math.min(state.doc.length, to | 0);
+  if (hi <= lo) return frag;
+  const source = state.doc.sliceString(lo, hi);
+  let tree = null;
+  try {
+    tree = syntaxTree(state);
+  } catch (_) {
+    tree = null;
+  }
+  if (!tree) {
+    frag.appendChild(document.createTextNode(source));
+    return frag;
+  }
+  return emitHighlighted(frag, source, tree, lo);
 }
 
 export function renderSourceInto(el, text, ext) {

@@ -2006,6 +2006,193 @@ lying to it.
     Next probe should be the DECISION TREE — which acceptances are later abandoned — not
     another rank permutation.
 
+40. **⭐ THE DECREASING SLOT WAS MIS-RESOLVED FOR MIXED ctype+box THEOREMS — a real
+    model-fidelity defect, plus two mechanisms around it that measured ZERO.**
+    (2026-07-31.) Followed the mass: the residue audit's biggest tractable class is
+    `STUCK:no-move` SMALL (79) + MEDIUM (73), spread over ~25 developments — not one
+    shape replicated. Reading the references, a recurring idiom is *split a ctype, then
+    rebuild it one binder deeper* (`M_dot (weaken σ) [h, x:target _ ⊢ M[..]]`).
+
+    **(a) The weakening SPELLING — built, sound, UNPAID.** A metavariable `X : [Ψ ⊢ A]`
+    used inside a box whose context extends Ψ must carry the weakening substitution.
+    Bare `X` is not merely unlikely, it is a hard checker error — verified natively on
+    `cpp13/cc.bel#weaken`: *"Ill-typed substitution. Does not take context: h to context:
+    h, x : target _"*, while `X[..]` type-checks. Added at the two sites that spell a
+    meta into a box (`fillCandidates` axiom rule; `argFillChoices`' boxed ctor argument),
+    APPENDED after the bare spelling so candidate order is untouched. Pinned in
+    `test-hole-split.mjs` (offered when the context extends; absent when contexts agree;
+    bare still leads). **MEASURED on the 24 residue targets whose reference proofs
+    contain exactly this idiom: 0 completions, 0 losses, 23 of 24 byte-identical,
+    +9 checks on one.** A text census said 24 NEED it; the search REACHES the site in
+    one. That is [[feedback-size-classes-by-toggle]] again, at 24×.
+
+    **(b) ⛔ A COMP variable can never be weakened into a box — tried, reverted, do not
+    re-add.** The obvious extension of (a) to `hole.ctx` is ill-formed by construction: a
+    comp variable of boxed type is a computation VALUE, and `[Ψ, x:B ⊢ c[..]]` earns
+    *"Expected an LF term-level constant"* (measured on `popl12/nbe.bel#weak_neut`). Such
+    a hypothesis must be UNBOXED first (`let [Ψ ⊢ R] = c in`); then R is a meta and (a)
+    applies. The revert is commented at the code site.
+
+    **(c) ⭐ THE REAL DEFECT — `decreasingArgIndex` was short one position per implicit
+    CONTEXT binder.** `weak_neut : (g:ctx)(h:ctx) Extends [g] [h] → [g ⊢ neut A[]] →
+    [h ⊢ neut A[]]` with `/ total e (weak_neut g h a e r) /` resolved its decreasing slot
+    to **1 (the box `r`)** instead of **0 (the ctype `e`)**. With no eligible
+    sub-derivation of `r`, the theorem got **no induction hypothesis at all** — its trace
+    offered fill/intro/invert/split/synth and never one recurse. Two compensating errors
+    were hiding it: `implicitMetaCount` COUNTS a ctype premise's application head
+    (`Extends`) as an implicit meta, while `decreasingArgIndex` subtracted only `pi`
+    premises and NOT the `ctx` binders — the twin `measureDesignation` subtracts its whole
+    `nonBox`, which does include them. The two cancel exactly when #distinct-ctype-heads
+    == #ctx-binders, which is why all-ctype theorems resolved correctly and mixed ones did
+    not. Fixed both halves together (skip the ctype head; subtract `ctxs.length`).
+    **Blast radius measured offline over every corpus theorem: 5 of 273 change slot**, and
+    all five were hand-verified as CORRECTIONS — `nbe#weak_neut` 1→0, `nbe#weaken` 1→0,
+    `algeq-simplified{,1}#thm` 1→0 (the measure `d` is the first premise, `fn d`), and
+    `howe-total#howe_subst` 0→1 (the measure `hr` is the LAST argument, `Howe_subst`).
+    **⚠️ The spine model is still only approximate** — a CONCLUSION's family head is
+    counted as an implicit meta and `$`-substitution variables are not counted; on
+    `howe_subst` those two errors cancel. It is more correct than before, not correct.
+
+    **(d) MIXED ctype+box RECURSION — built, KEPT, UNPAID.** `recurseTexts`' all-ctype
+    branch (entry 37b) is gated on `!boxes.length`, so a ctype-decreasing theorem that
+    also carries box premises reached neither emitter. Added the mixed branch (decreasing
+    slot restricted to `decSubderivNames`; ctype args bare per M3/M4; box slots from
+    comp-context hyps; result unboxed via `resultBoxFor` so a later fill can weaken it).
+    `weak_neut` now offers exactly the reference's move, `let [h ⊢ R1] = weak_neut X2 X1
+    in`, and goes **no-move[152 checks] → step-bound[10 steps, 574 checks]**.
+    **MEASURED on the 12-target mixed class: 0 completions, 0 losses**, one row changed
+    (weak_neut), everything else byte-identical. Kept under entry 37's precedent — a
+    theorem that had NO IH now has one, and refusing a move the fragment needs bakes a
+    deterrent in — but banked as UNPAID, not a win.
+
+    **GATES: suite 202/203, differential `--ref library.jsonl` 199/199 (zero regressions)
+    for the whole slice.** The one suite failure is `test-project-chaos.mjs`, which
+    imports only cfg-lint/persist/project-source and no prover code — pre-existing in the
+    working tree, unrelated to this slice.
+
+    **⚠️ TWO HARNESS LESSONS, both of which nearly produced a false verdict.**
+    (1) `npm run prover:diff` DEFAULTS to `--ref library.20260715.jsonl` (183 targets),
+    NOT the frozen `library.jsonl` (199) the laws name — pass `--ref` explicitly or the
+    gate silently measures a different, older baseline. (2) A `CANCELLED` is not a
+    verdict. The A/B's ON arm reported `algeq-typing#thm` step-bound[352] → CANCELLED and
+    it looked like a real 2× cost regression; re-run uncontended, **both arms are
+    identical (352 checks, ~82s)** — it was CPU contention from a differential running
+    concurrently. Entry 38's "re-run before treating a HARNESS-ERROR as a regression"
+    extends to CANCELLED, and A/B arms must not share the machine with a sweep.
+
+    **WHERE THIS LEAVES THE CLASS.** `weak_neut` still does not close: it now has the
+    recursion and the weakening spelling, and wanders at 10 accepted steps. The reference
+    is two moves — `let [h ⊢ R] = weak_neut e' r in` then `[h, x:neut _ ⊢ R[..]]` — so
+    the remaining gap is the same per-path search question entry 39 isolated, now reached
+    by a second family. The `cc.bel#weaken` shape needs one more thing neither mechanism
+    supplies: the planner (`synthesize`) compares box contexts LITERALLY, so a fact
+    `[h ⊢ A]` can never match a ctor argument `[h, x:B ⊢ A]` and `M_dot ? ?` is never
+    proposed at all. **Teaching the PLANNER that LF weakening is admissible is the named
+    next slice** — it is the one change that would supply the missing ctor-application
+    and the inline recursion together. Sized but NOT built: do not start it without an
+    A/B toggle on ~10 members first.
+
+41. **THE `weaken`/`M_dot` SHAPE, LOCALIZED EXACTLY — and one hypothesis killed by the
+    checker before any code was written.** (2026-07-31, follow-on to entry 40.) Chased
+    entry 40's named next slice and found the planner ALREADY implements weakening — but
+    it can never reach this family, for a reason worth writing down.
+
+    **(a) The planner is SINGLE-CONTEXT by construction.** `synthesize` boxes every fact
+    and goal in ONE ambient context (`const box = inner => `[${goal.ctx} |- ${inner}]``),
+    and `pushFact` forces each fact into that context: a fact whose context is a strict
+    PREFIX of the goal's already gets `weaken: true` (spelled `X[..]`, spec §2/D7 — and a
+    `viaComp` fact is correctly DROPPED there, independently confirming entry 40b). But at
+    a **CTYPE goal** the ambient context is EMPTY (`goal = { ctx: '', … }`), so a boxed
+    fact's own context becomes an unparseable "extra" and the fact is **discarded from the
+    planning domain entirely**. Instrumented on `cc.bel#weaken`: `DROP X2 : [h1 ⊢ target
+    S1[]] ctx=[h1] goalParts=[]`. That is why `M_dot ? ?` is never proposed — the box
+    argument's inhabitant is not in the fact pool at all. The debug hook
+    (`globalThis.__factDropDebug`, no-op by default) is left at the drop site.
+
+    **(b) hole-split's ctype path does not cover it either.** For a `compFamily` goal
+    `fillCandidates` offers nullary constructors and the higher-order `mlam` skeleton
+    (3b, gated on `sawHO`); the general ctype-constructor application over in-scope
+    arguments comes ONLY from the planner. `synthesizeFills` is `push(box(term))` — LF
+    goals only. So neither emitter can build `M_dot _ _`.
+
+    **(c) ⛔ "ANNOTATE THE LET" IS DEAD — killed by the checker, do not re-derive.** The
+    obvious composition is `let R = weaken σ' in M_dot R […]`, which the engine already
+    proposes and the checker already rejects (*"Leftover meta-variables… provide a type
+    annotation"*). The natural repair is an ascribed let. **It does not work**: tried
+    `let (r : Map [h, x:target _] [g]) = weaken sigma' in …` with the context spelled
+    `g`, `g1` and `_` — all three fail with *"…requires that some metavariables are
+    further restricted"*. `weaken`'s result implicit `S` is fixed only by the
+    CONTINUATION, so no ascription at the binding site can pin it. **The reference's
+    INLINE form `M_dot (weaken σ') [h, x:target _ ⊢ M[..]]` is not stylistic — it is the
+    only well-typed spelling**, because the constructor's argument position is what
+    determines the implicit.
+
+    **THE SLICE THIS DEFINES (sized, not built).** The family needs ONE composite move:
+    a ctype-constructor application at a ctype goal whose argument slots may take (i) an
+    INLINE recursive/lemma call and (ii) a weakened box `[Ψ, x:B ⊢ X[..]]` (entry 40a
+    already supplies the spelling, and `argFillChoices` already computes the per-argument
+    context `boxedArg.ctx` that the planner cannot). Two candidate homes: extend the
+    planner to per-argument contexts (correct, invasive — its single-context assumption is
+    load-bearing throughout), or add the general ctype-ctor-application path to
+    `fillCandidates`' compFamily branch reusing `argFillChoices` (bounded, but needs an
+    inline-IH argument source, which `nestedCtorArgFills` does not provide — it offers
+    depth-2 CONSTRUCTOR witnesses only). Prefer the bounded one; A/B toggle on ~10 members
+    before building the rest, and note the stake is modest — of entry 40's 24-target
+    weakening census only the ctor-argument subset lives here.
+
+42. **⛔⛔ CONTEXTUAL FACTS AT CTYPE GOALS — 40% REACH, ZERO PAYOFF. Built, measured,
+    REVERTED, and the most useful lesson of the arc.** (2026-07-31, executes entry 41's
+    named slice and kills it.)
+
+    **The stake, declared first.** Entry 41a's drop looked like the best-sized defect on
+    the board. Text census: of 532 stuck references, **256 apply a ctype constructor to a
+    parenthesised inline call** — 48% of the residue, an order of magnitude above the 15
+    that need the full `M_dot` shape. Then, per
+    [[feedback-size-classes-by-toggle]], a REACH census rather than a text one: a new
+    instrument (`scratchpad/reach-drop.mjs` + the `__factDropDebug` hook) ran a 40-target
+    stride sample and found **16/40 (40%) hit ≥1 ctype-goal fact drop, 160 drops total,
+    and 7 of the 16 were STUCK:no-move** — the exact signature of a search exhausting for
+    want of a candidate that was thrown away. That is ~24× the reach of entry 40a. Kill
+    criterion set before coding: **≥3 of the bench must move, else abandon.**
+
+    **What was built.** (i) Admit a boxed fact at a ctype goal with its FULL boxed
+    conclusion and its own per-fact spelling (`[h1 ⊢ X2]` for a cD meta; bare for a comp
+    variable, which is already a contextual object); (ii) plumb that spelling through the
+    planner's ~6 emission sites, marking such facts "bare" so the caller does not re-box
+    them into the empty ambient context; (iii) weakening-aware subgoal matching, so a fact
+    `[Ψ ⊢ C]` discharges a subgoal `[Ψ, x:B ⊢ C]` spelled `[Ψ, x:B ⊢ X[..]]` (comp
+    variables excluded per entry 40b).
+
+    **MEASURED on the 16 drop-targets, exact A/B: 0 completions, 0 verdict changes, ONE
+    row changed at all** (`Normalization_by_Evaluation#eval`, 34 → 27 checks, same
+    verdict). The motivating target `cc.bel#weaken` was byte-identical (52 checks) with
+    the mechanism fully on. **1 of 16 against a stake of 3 — reverted in full**, restoring
+    both spot-checked baselines exactly (52 / 85 checks). Suite green throughout.
+
+    **⭐⭐ THE LESSON — REACH IS NOT PAYOFF, AND A PARTIAL COMPOSITE PAYS EXACTLY ZERO.**
+    Every prior law here has been about not trusting a NEED census over a REACH
+    measurement. This slice had a genuine 40% reach measurement and still returned
+    nothing, because *arriving at the hole is not the same as being able to COMPLETE the
+    term*. The family needs a THREE-part composite move — ctype-constructor application
+    **+** an INLINE IH/lemma call in one argument slot **+** a weakened box in another —
+    and the fix supplied two of the three. A composite move is ATOMIC for measurement
+    purposes: two thirds of it is worth the same as none of it. **Before building any
+    multi-part move, write the target term out and count the independent pieces the
+    engine must supply; if it is more than one, either build all of them behind one
+    toggle or do not start.** (Entry 40's mixed recursion is the mirror image: it was ONE
+    piece, so it moved its target's verdict immediately.)
+
+    **KEPT from the attempt:** `globalThis.__factDropDebug` at the drop site (a no-op hook
+    — it is the instrument that produced the reach number and will size any future
+    attempt), plus `scratchpad/reach-drop.mjs` and `scratchpad/ctorapp-census.mjs`. The
+    drop itself is now documented in code as a KNOWN, MEASURED, NON-PAYING gap.
+
+    **If this family is ever reopened**, the missing third piece is the inline IH
+    application at a ctype argument slot — `argFillChoices`' `nestedCtorArgFills` offers
+    depth-2 CONSTRUCTOR witnesses only, never a recursive call. And note entry 41c: the
+    `let`-then-use spelling is checker-dead, so the call MUST be built inline. All three
+    pieces, one toggle, or leave it alone.
+
 20. **The hole-report TELESCOPE fix — built, verified, REVERTED. Do not re-derive it
     blind.** `CTX_ENTRY`'s name group is `[^\s:]+`, which also matches a Pi binder's
     opening `{S`, so the second line of a multi-line telescope type is read as a NEW

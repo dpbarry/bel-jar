@@ -52,6 +52,23 @@
           '--ui-text-contrast',
           String(uiTextContrast[uiTextContrastStored] || uiTextContrast.medium)
         );
+        var motion = localStorage.getItem('beljar-motion-pref');
+        document.documentElement.classList.toggle('bj-motion-reduce', motion === 'reduce');
+        document.documentElement.classList.toggle('bj-motion-full', motion === 'full');
+        var editorFont = localStorage.getItem('beljar-editor-font-family');
+        document.documentElement.style.setProperty(
+          '--editor-mono',
+          editorFont === 'system'
+            ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+            : "'JetBrains Mono', monospace"
+        );
+        document.documentElement.style.setProperty(
+          '--editor-ligatures',
+          localStorage.getItem('beljar-editor-ligatures') === 'off' ? 'none' : 'common-ligatures'
+        );
+        var holeEmph = localStorage.getItem('beljar-editor-hole-emphasis');
+        document.documentElement.classList.toggle('bj-hole-subtle', holeEmph === 'subtle');
+        document.documentElement.classList.toggle('bj-hole-loud', holeEmph === 'loud');
         applySplitVars(clampSplit(parseFloat(localStorage.getItem(SPLIT_KEY))));
         function applyStoredPanelPx(key, cssVar) {
           var n = parseFloat(localStorage.getItem(key));

@@ -412,6 +412,17 @@ function E() { return global.BelEditor || null; }
       st.detail = commitFailureUserMessage();
       st.detailRaw = raw;
       toast(st.detail, 'error');
+      var N = global.Notifications;
+      if (N && typeof N.emit === 'function') {
+        N.emit({
+          kind: 'error',
+          category: 'ops',
+          title: st.detail,
+          detail: raw,
+          source: 'harpoon.commit',
+          dedupeKey: 'harpoon.commit.checker',
+        });
+      }
     } else {
       st.detail = raw;
       st.detailRaw = '';

@@ -18,7 +18,8 @@ import { searchPanel } from './ide/search-panel.mjs';
 import { ensureSyntaxTree, foldAll, foldKeymap, indentRange, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language';
 import { diagnosticCount, forceLinting, forEachDiagnostic, linter } from '@codemirror/lint';
 import { beluga } from './language.mjs';
-import { formatCommand } from './format/document-format.mjs';
+import { formatCommand, formatSource, formatString } from './format/document-format.mjs';
+export { formatCommand, formatSource, formatString };
 import {
   scheduleJumpToRange, scheduleViewportRestore, viewportCenterLine,
   resolveJumpRange, captureFormatViewportAnchor, captureViewportLocal,

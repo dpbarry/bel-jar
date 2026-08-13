@@ -94,7 +94,14 @@ KB.clearBinding('nav.prev-hole');
 expect(KB.setBinding('edit.format', 'Shift+F8').ok === true, 'Shift+F8 ok when free');
 KB.resetBinding('nav.anywhere');
 expect(KB.resolve('nav.anywhere') === 'Mod+K', 'reset binding');
+{
+  const findEv = { key: 'f', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false };
+  expect(KB.matchesId(findEv, 'edit.find') === true, 'Mod+F matches edit.find');
+  expect(KB.matchesId(findEv, 'edit.search-project') === false, 'Mod+F is not search-project');
+  expect(KB.matchesId({ key: 'f', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true }, 'edit.find') === false, 'Mod+Shift+F is not find');
+}
 KB.clearBinding('edit.find');
+expect(KB.matchesId({ key: 'f', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false }, 'edit.find') === false, 'unbound find does not match');
 expect(KB.resolve('edit.find') == null, 'clear to unbound');
 KB.resetAll();
 expect(KB.resolve('edit.find') === 'Mod+F', 'resetAll restores');

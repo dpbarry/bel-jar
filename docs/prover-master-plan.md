@@ -2071,9 +2071,12 @@ lying to it.
     working tree, unrelated to this slice.
 
     **⚠️ TWO HARNESS LESSONS, both of which nearly produced a false verdict.**
-    (1) `npm run prover:diff` DEFAULTS to `--ref library.20260715.jsonl` (183 targets),
+    (1) ✅ **FIXED 2026-08-06 — see entry 48; the text below is the historical record.**
+    ~~`npm run prover:diff` DEFAULTS to `--ref library.20260715.jsonl` (183 targets),
     NOT the frozen `library.jsonl` (199) the laws name — pass `--ref` explicitly or the
-    gate silently measures a different, older baseline. (2) A `CANCELLED` is not a
+    gate silently measures a different, older baseline.~~ The default is now the frozen
+    `library.jsonl` and every run prints its baseline; `npm run prover:diff` is correct
+    bare. (2) ⚠️ **STILL LIVE.** A `CANCELLED` is not a
     verdict. The A/B's ON arm reported `algeq-typing#thm` step-bound[352] → CANCELLED and
     it looked like a real 2× cost regression; re-run uncontended, **both arms are
     identical (352 checks, ~82s)** — it was CPU contention from a differential running
@@ -2192,6 +2195,227 @@ lying to it.
     depth-2 CONSTRUCTOR witnesses only, never a recursive call. And note entry 41c: the
     `let`-then-use spelling is checker-dead, so the call MUST be built inline. All three
     pieces, one toggle, or leave it alone.
+
+43. **⭐ THE PER-SLOT UNDERSCORE — a MIS-EMITTED-TEXT defect in every recursive call
+    with object-Pi binders. SHIPPED.** (2026-08-05.) A third confirmation of the ROI law:
+    the gain came from text we were emitting wrongly, not from a new move or better search.
+
+    **The defect.** `recurseTexts`' `piPrefixCore` passed every explicit object-Pi binder
+    to the recursive call BY ITS SIGNATURE NAME. But a recursive call puts a
+    SUB-DERIVATION in the decreasing slot, so every Pi binder occurring in the decreasing
+    premise is re-instantiated to a reconstruction-invented term with no source name
+    (`X1 : mstep N1 M'` — `N1` is not citable). Naming it is ill-typed. The engine's only
+    other spelling underscored EVERYTHING, which is equally wrong: a binder occurring
+    only in the CONCLUSION is determined by nothing and reconstruction answers
+    "Expression is not closed". **Neither of the two spellings the engine could emit was
+    ever well-typed for this shape.**
+
+    **The law now implemented** (derived from the theorem's own type; no name branching):
+    *a Pi binder OCCURRING IN THE DECREASING PREMISE is solved from the argument → spell
+    `_`; one that does not occur there must be spelled by its in-scope name.* Emitted as
+    a variant AHEAD of the named spelling (D3/D11/D14 checker-arbitration), collapsing to
+    the old string when nothing is re-instantiated — so all-box theorems are byte-identical.
+
+    Verified against the checker in the ENGINE'S OWN SKELETON before any code
+    (`scratchpad/probe-mixed-slot.mjs`), on `poplmark-reloaded#mstep_appl`:
+    | spelling | verdict |
+    |---|---|
+    | all-named `f [g⊢M] [g⊢M'] [g⊢N] [g⊢X1]` | Ill-typed expression |
+    | all-underscore `f [g⊢_] [g⊢_] [g⊢_] [g⊢X1]` | Expression is not closed |
+    | **this rule** `f _ _ [g⊢N] [g⊢X1]` | **PASS** |
+    | `_` at slot 2 only | Ill-typed (slot 1 still named) |
+
+    **Measured A/B** (`scratchpad/ab-mixedslot.mjs`, toggle `__proverNoMixedSlot`):
+    **4 gains / 0 losses in 11** on a stride sample of the true structural class, across
+    THREE developments (`poplmark-reloaded#mstep_appl`, `poplmark-reloaded+#mstep_appl`,
+    `poplmark-reloaded+#mstep_inl`, `mini-ml/vsound-explicit#vs`) — the multi-development
+    spread is the anti-overfit evidence. Every win also got FASTER: 126→67, 136→67,
+    193→67 checks. Cost where it does not close: `mstep_abs` 115→234 (it needs a second
+    piece, a higher-order `\x.` closing), `small_to_big` 509→691.
+
+    ⚠️ **SIZING — the text census overstated reach 4×, AGAIN.** A reference-text census
+    said 214/552 targets spell a mixed-slot call (150 needing only this piece). The
+    STRUCTURAL reach — theorems where the mechanism actually changes the emitted string —
+    is **38**, of which **16** are in the exactly-verified configuration. The first A/B I
+    ran was against the text class and scored 0/5; re-running it against the structural
+    class scored 4/11. **Size by the mechanism's own predicate, never by what proofs
+    contain** ([[feedback-size-classes-by-toggle]]). `scratchpad/mixedslot-reach.mjs`
+    computes the structural class offline in seconds; copy that instrument shape.
+
+    **Note `piRecurseTexts` was already correct** — it spells non-decreasing Pi args
+    `[ctx |- _]`. The defect was unique to `recurseTexts`' Pi prefix.
+
+44. **THE RESIDUE IS A LONG TAIL, measured — no single missing move is mass.**
+    (2026-08-05.) `scratchpad/feature-census.mjs` counts, over all 552 STUCK/TIMEOUT
+    targets, which syntactic features each reference proof uses. Nothing dominates:
+    nested ctor arg in an argument slot 19% (only **18** in CLOSING position, where a
+    fill must emit it) · weakening `X[..]` 22% · nested case 21% · ctype pattern let 17% ·
+    subst-applied meta 8% · param-var Pi binder 5% · **context-structural induction 3%
+    (18 targets)** · context-block projection 2% (12).
+
+    ⚠️ **Two self-inflicted measurement errors, both caught, both worth repeating here:**
+    (a) the ledger field is **`outcome`**, not `status`/`result` — reading the wrong key
+    silently classified all 269 COMPLETEs as stuck and inflated every census; (b) the
+    first nested-ctor regex matched annotation parens `(x : T)` and parens inside TYPES,
+    reporting **90%** where the true figure is 19%. Tighten a census regex against a
+    hand-checked example before quoting it.
+
+    **Consequence for planning:** stop looking for one big missing move. The paying
+    category is MIS-EMITTED TEXT, and it is findable in BULK — every rejected candidate
+    carries the checker's own error. `scratchpad/error-census.mjs` runs a stride sample
+    and tabulates (move kind × checker error class) so a systematic spelling defect shows
+    up as a spike. Entry 43's defect took four hand probes to find; that instrument would
+    have shown it as a histogram row.
+
+    ⚠️ **A FALSE ALARM ON THE SUITE CLOCK, recorded so nobody re-raises it.** This run
+    reported `206/207 passed in 67577.1s` (18.8 h). That is NOT a regression: the laptop
+    lid was shut mid-run and the suite idled ~18 h of wall clock (user, 2026-08-06).
+    `run-all.mjs` measures `Date.now()` deltas, so it counts SLEEP as elapsed time.
+    Corroborating evidence gathered before the explanation arrived: all 13 prover tests
+    run in 0–1 s, and the two genuinely heavy tests (`test-library-beluga.mjs` ~52 s,
+    `test-symbolstore-incremental-equivalence.mjs` ~35 s) have ZERO prover imports.
+    **The green-clock law still stands** ([[feedback-green-suite-is-not-a-green-clock]])
+    — but before treating a big number as a defect, check it against the elapsed WALL
+    time of the session, because the suite's own clock cannot distinguish work from sleep.
+
+48. **✅ THE `prover:diff` DEFAULT-LEDGER TRAP IS CLOSED BY CONSTRUCTION.** (2026-08-06.)
+    Entry 40 documented it and the laws repeated it in three places: `prover:diff` defaulted
+    `--ref` to `results/corpus/library.20260715.jsonl` (**183** COMPLETE) rather than the
+    frozen `library.jsonl` (**199**) named as THE fixed baseline — and `npm run prover:diff`
+    passes no `--ref`, so a bare run silently gated against a stale, smaller ledger and
+    reported a confident `183/183`.
+
+    **A rule that must be remembered every time is a trap, not a fix.** Three changes in
+    `scripts/prover-differential.mjs`:
+    - the default `--ref` is now `results/corpus/library.jsonl`;
+    - every run PRINTS ITS BASELINE before any results —
+      `ref results\corpus\library.jsonl  (default) — 199 COMPLETE` — with `(default)`
+      shown only when `--ref` was omitted, so a wrong or stale ledger is visible at a
+      glance instead of silent. The baseline, not the target count, is what a differential
+      means;
+    - a missing `--ref` file exits **2** with a named error instead of an opaque ENOENT.
+
+    Verified on all three paths (default / explicit / missing). ⚠️ **Consequence:
+    `npm run prover:diff` is now correct BARE.** Older doc text saying "always pass `--ref`
+    explicitly" is harmless but obsolete; the operative instruction is **read the printed
+    COMPLETE count**. Entry 40's second trap (a CANCELLED under CPU contention reading as a
+    2× regression) is UNFIXED and still requires discipline: never A/B beside a sweep.
+
+47. **⭐⭐ THE DEFINITIVE RESIDUE MAP — THERE IS NO MASS CLASS LEFT. Three independent
+    instruments, one conclusion.** (2026-08-06. Read this before planning any slice; it
+    supersedes the "pick a bigger class" framing of §0.5 for the CURRENT residue.)
+
+    Every prior session assumed the residue still contained an unfound mass class and
+    that the job was to identify it. **It does not.** Three measurements built this
+    session, each cheap and each falsifiable, converge:
+
+    | instrument | scope | finding |
+    |---|---|---|
+    | `scratchpad/feature-census.mjs` | all 552 stuck, text | EVERY syntactic feature lands at **3–20%**. Top: weakening 22%, nested case 21%, nested-ctor-arg 19% (**18** in closing position), ctype-pattern-let 17%, subst-applied meta 8%, param-Pi 5%, **context induction 3%**. Nothing dominates. |
+    | `scratchpad/error-census.mjs` | 20 targets, 1341 rejections | one class IS 41% ("Expected an LF term-level constant") but is only **~4% of CHECKS** (entry 45). A rejection histogram is not a cost histogram. |
+    | `scratchpad/step-map.mjs` | 45 targets, step-weighted | **56% of stuck targets die at step 0**, consuming only **18% of checks**; the 47% that DO take steps consume **82%**. **64% are never offered a recurse candidate.** |
+
+    **And the 0-step group is not one defect either.** Its goals are wholly
+    heterogeneous — `SNe [_ ⊢ M]`, `Map [x : target …]`, `Sem [h] [ ⊢ b]`,
+    `Reduce [ ⊢ A] [ ⊢ #p[]]`, `CtxAsTup [g]`, `Aeq' …`, plus ordinary LF box goals.
+    22 of 25 ARE offered a split; it simply never certifies. "The first split fails" is
+    a symptom shared by unrelated causes, not a mechanism.
+
+    ⭐ **What this means for planning.** The treadmill the plan warned about ("add a move
+    to pass lemma N+1") is now the ONLY thing left on the analytic frontier: each
+    remaining mechanism is worth ~3% and costs a multi-piece atomic build. That is not a
+    reason to despair — it is the honest shape of a residue whose generation layer is
+    closed (§2.3). It DOES mean: stop spending sessions searching for a big class. The
+    search is over; the answer is "there isn't one."
+
+    **The best remaining slice, sized and left UNBUILT for whoever picks this up:**
+    **context-structural induction — 16 targets, EXACT type-level predicate.**
+    `scratchpad/ctxind-census.mjs` computes it: (A) an explicit `{g : <schema>}` binder,
+    (B) the measure NAMES it (`/ total g (f g) /`), (C) the reference splits `case [g] of`.
+    **A+B = A+C = A+B+C = 16** — the correlation is perfect, so the engine can identify
+    the class from the THEOREM'S TYPE ALONE, no reference proof needed (ids in
+    `scratchpad/ctxind-ids.txt`). Members die cheaply at step 0 (2–11 checks:
+    `weak-norm-under-binders#idRedSub` 3ck, `#shiftIsVarSub` 2ck,
+    `weak-norm-under-binders-simplified#redVar` 11ck), so conversions would be clean.
+    It is a 3–4 piece ATOMIC composite — split the context by its schema · emit the `[]`
+    and `[g', x:T]` arms · `measureDesignation` returning a ctx designation (it currently
+    returns box/pi/null and a ctx-named measure falls back to box 0) · recursion at `[g']`.
+    **All of it behind one toggle or do not start** ([[composite-moves-are-atomic]]).
+    Suggested stake: ≥6/16 convert, else revert whole.
+
+46. **⛔ THE "MEASURE-FORK BLIND SPOT" IS NOT A BLOCKER — falsified in 3 minutes, before
+    any code.** (2026-08-06.) A text census found a large, well-distributed class and the
+    reasoning looked airtight; it was wrong, and the check that killed it was cheap.
+
+    **The hypothesis.** `hypotheticalMeasures` (prover-orchestrator) proposes a synthesized
+    `/ total … /` for BOX premises and explicit object-Pi binders only — never for a CTYPE
+    premise. So a recursive theorem whose only induction-eligible premise is a ctype gets
+    ZERO fork candidates. `scratchpad/measure-gap-census.mjs` sized it: **115 targets, 83
+    of them in-fragment, spread over 26 developments** (not one shape replicated — the
+    entry-41 trap was checked for and cleared). It reads like the biggest missing move left.
+
+    **Why it is not.** `decreasingArgIndex` line ~390 — **`if (!thm.totality) return 0;`** —
+    is the AUTHOR-FAITHFUL UNTOTALIED RECURSION policy (user, 2026-07-21): when the author's
+    decl omits `/ total /`, recursion is allowed and the decreasing slot defaults to the
+    first argument premise. An empty measure fork therefore does NOT deny these theorems an
+    IH. Confirmed natively: `algeq-simplified1#reflect` is offered `recurse` among its move
+    kinds despite proposing zero hypothetical measures.
+    (`cc#extend` and `weak-norm-under-binders#extVarSub` are NOT offered recurse — but they
+    die at 8 and 6 checks, i.e. at step 0, where no split has yet produced a sub-derivation
+    for `decSubderivNames`. That is correct behaviour, not a measure gap.)
+
+    ⭐ **The transferable lesson.** The census question was "what does the MODEL propose?"
+    when the operative question was "what does the ENGINE ultimately offer?" — and those
+    differ wherever a downstream default (here, untotalied recursion) fills the gap. Before
+    sizing any slice on a generator returning empty, run ONE native target and read the
+    OFFERED MOVE KINDS. Same family of error as the size-by-toggle law, one level earlier:
+    reach measured at the wrong stage of the pipeline.
+
+45. **⛔⛔ THE 41% REJECTION CLASS IS ONLY 4% OF CHECKS — the error census's first
+    finding, built, measured, REVERTED.** (2026-08-06.) The most useful negative result
+    of the arc, because the premise was *correct* and the payoff still was not there.
+
+    **The instrument (KEEP — `scratchpad/error-census.mjs`).** Runs a stride sample of
+    stuck targets and tabulates (move kind × CHECKER ERROR CLASS) over every REJECTED
+    candidate. This industrialises the "read the emitted text" corollary: entry 43's
+    defect took four hand probes on one target; a histogram finds that shape in one run.
+    First run, 20 targets / 1341 rejected candidates:
+    | share | checker error | kinds |
+    |---|---|---|
+    | **41% (545)** | Expected an LF term-level constant | fill 375, lemma 113, recurse 57 |
+    | 25% (340) | Type-checking error | fill 150, lemma 78, recurse 63 |
+    | 18% (235) | Ill-typed expression | fill 138, lemma 65 |
+    | 3% (41) | Expression is not closed | recurse 26, lemma 15 |
+
+    **The diagnosis was RIGHT.** `fillScope` feeds constructor ARGUMENT slots from
+    `hole.meta` + `hole.ctx` with no well-formedness filter, so it offers (a) the schema
+    binder `g : cxt` — a context variable is not a term — and (b) comp-context
+    hypotheses (`ms : [g ⊢ mstep M M']`), a comp VALUE that is ill-formed bare inside a
+    box. The engine really was emitting `[g ⊢ m-step X g]`, `[g ⊢ m-step ms ms]`,
+    `[g, x:name ⊢ β≡ g g g]`. hole-split already states law (b) at the WEAKENING site;
+    the fill pool never applied it.
+
+    **The payoff was not.** Both filters were built, verified to FIRE, and A/B'd on the
+    same 20 targets the census measured:
+    | arm | checks | gains | losses |
+    |---|---|---|---|
+    | exclude context variable | **−1.3%** | 0 | 0 |
+    | + exclude comp-context in LF positions (`lfOnly`) | **−2.8%** more | 0 | 0 |
+    | combined | **−4.1%** (3417 → 3278) | 0 | 0 |
+    Reverted under the declared ≥20%-checks stake. Per-target it did work where the
+    census pointed (`red_impl_red_rew_par` −37%, `weakNorm` −31%), but the expensive
+    targets (`tps` 740ck, `algEqRTrans` 497ck) barely moved.
+
+    ⭐ **THE LESSON, and it generalises to every future prune:** *a share of REJECTIONS is
+    not a share of CHECKS.* Structurally-invalid candidates are CHEAP and CLUSTERED in a
+    few shallow holes; the checks that actually cost are deep, few, and individually
+    expensive. Never stake a slice on a rejection-class histogram — convert it to a
+    CHECK-WEIGHTED figure first (weight each rejected candidate by the ms its check took;
+    `diverge-one` already has the data). This is the ROI law's 22nd confirmation: **no
+    completion has ever come from removing candidates**, and now we also know the SPEED
+    argument for pruning is ~5×  weaker than the rejection histogram suggests.
+
+    The revert is documented at the `fillScope` code site so it is not re-derived.
 
 20. **The hole-report TELESCOPE fix — built, verified, REVERTED. Do not re-derive it
     blind.** `CTX_ENTRY`'s name group is `[^\s:]+`, which also matches a Pi binder's

@@ -52,7 +52,10 @@
       if (!getEditor()) {
         Persist.openFile(id);
         Persist.setActiveFileId(id);
-        const snapshot = getPersist().getInitialCheckpoint();
+        const curId = getPersist().getCurrentFileId();
+        const snapshot = curId === id
+          ? getPersist().getInitialCheckpoint()
+          : getPersist().switchFile(id);
         setEditor(mountEditorFor(snapshot, openOpts));
         syncEditorCmTheme();
         if (typeof BelugaClient !== 'undefined' && BelugaClient.noteEditorChange) {
@@ -89,6 +92,7 @@
         } else if (shouldClearSelection && getExplorerController() && getExplorerController().clearSelection) {
           getExplorerController().clearSelection();
         }
+        refreshExplorerActiveAndDiags();
         notifyActiveEditorView();
         return;
       }

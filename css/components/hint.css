@@ -60,6 +60,10 @@
   box-shadow: var(--shadow-popover);
 }
 
+.hint-card.is-action {
+  cursor: pointer;
+}
+
 .hint-card::before {
   content: '';
   position: absolute;

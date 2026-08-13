@@ -628,16 +628,6 @@ var CHEVRON_SVG =
       }
     }
 
-    function handleDialogKeydown(e) {
-      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'f') {
-        e.preventDefault();
-        e.stopPropagation();
-        searchInput.focus();
-        searchInput.select();
-        setSearchFocused(true);
-      }
-    }
-
     treePane.addEventListener('keydown', handleTreeKeydown);
 
     var dialogEl = global.Dialog.createDialog({
@@ -657,8 +647,6 @@ var CHEVRON_SVG =
         document.activeElement.blur();
       }
     });
-
-    dialogEl.addEventListener('keydown', handleDialogKeydown, true);
 
     global.Dialog.openDialog(dialogEl);
     ensureCfgTextsLoaded().then(function () {

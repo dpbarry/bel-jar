@@ -20,15 +20,32 @@ const root = process.cwd();
 const args = process.argv.slice(2);
 function arg(name, def) { const i = args.indexOf(name); return i >= 0 && args[i + 1] ? args[i + 1] : def; }
 
-const refFile = arg('--ref', path.join('results', 'corpus', 'library.20260715.jsonl'));
+// ⭐ THE DEFAULT REF IS THE FROZEN `library.jsonl` (199 COMPLETE) — the baseline the
+// laws name. It used to default to `library.20260715.jsonl` (183), which is a STALE
+// ledger nobody gates against any more: `npm run prover:diff` passes no `--ref`, so the
+// documented "always pass --ref explicitly" rule was the only thing standing between a
+// slice and a differential measured against the wrong baseline. That nearly produced a
+// false verdict twice (master plan entry 40). The trap is now closed by construction;
+// pass `--ref` only when you deliberately want a different baseline.
+const DEFAULT_REF = path.join('results', 'corpus', 'library.jsonl');
+const refExplicit = args.includes('--ref');
+const refFile = arg('--ref', DEFAULT_REF);
 const againstFile = arg('--against', null);
 const only = arg('--only', null);
 const limit = Number(arg('--limit', '0')) || 0;
 const maxSteps = arg('--max-steps', '60');
 
 function loadLedger(p) {
+  const abs = path.resolve(root, p);
+  if (!fs.existsSync(abs)) {
+    // A missing ledger used to surface as a bare ENOENT stack. Say which file and which
+    // flag, because the usual cause is a typo'd `--ref` and the usual misreading is
+    // "the differential is broken".
+    console.error(`prover:diff — ledger not found: ${p}\n  (resolved: ${abs})`);
+    process.exit(2);
+  }
   const m = new Map();
-  for (const l of fs.readFileSync(path.resolve(root, p), 'utf8').split('\n').filter(Boolean)) {
+  for (const l of fs.readFileSync(abs, 'utf8').split('\n').filter(Boolean)) {
     try { const r = JSON.parse(l); m.set(r.id, r); } catch { /* skip malformed */ }
   }
   return m;
@@ -50,7 +67,13 @@ for (const [id, r] of ref) {
   }
 }
 if (limit) targets = targets.slice(0, limit);
-console.log(`${targets.length} target(s) — ref ${refFile}${against ? ` vs ${againstFile}` : ''}`);
+// Print the BASELINE, not just the target count: the whole point of a differential is
+// the ledger it is measured against, and a stale one is invisible in a bare "199/199".
+const refComplete = [...ref.values()].filter((r) => r.outcome === 'COMPLETE').length;
+console.log(`ref ${refFile}${refExplicit ? '' : '  (default)'} — ${refComplete} COMPLETE`
+  + `${against ? `\nagainst ${againstFile}` : ''}`);
+console.log(`${targets.length} target(s)${limit ? ` (--limit ${limit})` : ''}`
+  + `${only ? ` matching "${only}"` : ''}`);
 
 let ok = 0;
 for (const { id, was } of targets) {

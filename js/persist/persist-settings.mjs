@@ -153,7 +153,6 @@ export function create(deps) {
     var EDITOR_SCROLL_PAST_END_KEY = 'beljar-editor-scroll-past-end';
     var EDITOR_WHITESPACE_KEY = 'beljar-editor-whitespace';
     var EDITOR_RULERS_KEY = 'beljar-editor-rulers';
-    var EDITOR_LIGATURES_KEY = 'beljar-editor-ligatures';
     var EDITOR_FONT_FAMILY_KEY = 'beljar-editor-font-family';
     var EDITOR_HOLE_EMPHASIS_KEY = 'beljar-editor-hole-emphasis';
     var MOTION_PREF_KEY = 'beljar-motion-pref';
@@ -208,8 +207,8 @@ export function create(deps) {
     function readStoredReplFilterChatter() { return readBoolDefaultOn(REPL_FILTER_CHATTER_KEY); }
     function writeStoredReplFilterChatter(on) { writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on); }
 
-    function readStoredReplHoverTimestamp() { return readBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY); }
-    function writeStoredReplHoverTimestamp(on) { writeBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY, on); }
+    function readStoredReplHoverTimestamp() { return readBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY); }
+    function writeStoredReplHoverTimestamp(on) { writeBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY, on); }
 
     function readStoredReplHistoryCap() {
       try {
@@ -469,15 +468,16 @@ export function create(deps) {
     function readStoredEditorFoldPersist() {
       try {
         var v = backendLoad(EDITOR_FOLD_PERSIST_KEY);
-        if (v === 'session' || v === 'local') return v;
-        return 'none';
+        if (v === 'none' || v === 'local') return v;
+        return 'session';
       } catch (_) {
-        return 'none';
+        return 'session';
       }
     }
 
     function writeStoredEditorFoldPersist(mode) {
-      if (mode === 'session' || mode === 'local') backendSave(EDITOR_FOLD_PERSIST_KEY, mode);
+      // session is the default — omit the key; persist none/local explicitly.
+      if (mode === 'none' || mode === 'local') backendSave(EDITOR_FOLD_PERSIST_KEY, mode);
       else backendRemove(EDITOR_FOLD_PERSIST_KEY);
     }
 
@@ -589,9 +589,6 @@ export function create(deps) {
 
     function readStoredEditorRulers() { return readBoolDefaultOff(EDITOR_RULERS_KEY); }
     function writeStoredEditorRulers(on) { writeBoolDefaultOff(EDITOR_RULERS_KEY, on); }
-
-    function readStoredEditorLigatures() { return readBoolDefaultOn(EDITOR_LIGATURES_KEY); }
-    function writeStoredEditorLigatures(on) { writeBoolDefaultOn(EDITOR_LIGATURES_KEY, on); }
 
     function readStoredEditorFontFamily() {
       try {
@@ -788,10 +785,8 @@ export function create(deps) {
           ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
           : "'JetBrains Mono', monospace"
       );
-      root.style.setProperty(
-        '--editor-ligatures',
-        readStoredEditorLigatures() ? 'common-ligatures' : 'none'
-      );
+      root.style.setProperty('--editor-ligatures', 'none');
+      backendRemove('beljar-editor-ligatures');
       var emph = readStoredEditorHoleEmphasis();
       root.classList.toggle('bj-hole-subtle', emph === 'subtle');
       root.classList.toggle('bj-hole-loud', emph === 'loud');
@@ -858,7 +853,6 @@ export function create(deps) {
       EDITOR_SCROLL_PAST_END_KEY,
       EDITOR_WHITESPACE_KEY,
       EDITOR_RULERS_KEY,
-      EDITOR_LIGATURES_KEY,
       EDITOR_FONT_FAMILY_KEY,
       EDITOR_HOLE_EMPHASIS_KEY,
     ];
@@ -919,7 +913,7 @@ export function create(deps) {
       backendRemove(EDITOR_FONT_SIZE_KEY);
       backendRemove(EDITOR_LINE_HEIGHT_KEY);
       backendRemove(EDITOR_WORD_WRAP_KEY);
-      backendRemove(EDITOR_LIGATURES_KEY);
+      backendRemove('beljar-editor-ligatures');
       backendRemove(EDITOR_FONT_FAMILY_KEY);
       backendRemove(EDITOR_CURSOR_BLINK_KEY);
       backendRemove(EDITOR_SCROLL_PAST_END_KEY);
@@ -1202,8 +1196,6 @@ export function create(deps) {
       writeStoredEditorWhitespace: writeStoredEditorWhitespace,
       readStoredEditorRulers: readStoredEditorRulers,
       writeStoredEditorRulers: writeStoredEditorRulers,
-      readStoredEditorLigatures: readStoredEditorLigatures,
-      writeStoredEditorLigatures: writeStoredEditorLigatures,
       readStoredEditorFontFamily: readStoredEditorFontFamily,
       writeStoredEditorFontFamily: writeStoredEditorFontFamily,
       readStoredEditorHoleEmphasis: readStoredEditorHoleEmphasis,

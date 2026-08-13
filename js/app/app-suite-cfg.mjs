@@ -223,7 +223,12 @@
       if (file && /\.cfg$/i.test(file.name)) {
         setTip(btn, 'Run suite');
       } else if (file && moduleNameFor(file.id)) {
-        setTip(btn, 'Run suite to here\nCtrl+click: run suite');
+        // First suite member has no prelude — ordinary Run, still Ctrl+click for the suite.
+        const hasPrelude = !!(ProjectSource.buildPrelude
+          && ProjectSource.buildPrelude(Persist.listFiles(), file.id, projectFileText));
+        setTip(btn, hasPrelude
+          ? 'Run suite to here\nCtrl+click: run suite'
+          : 'Run\nCtrl+click: run suite');
       } else {
         setTip(btn, 'Run');
       }

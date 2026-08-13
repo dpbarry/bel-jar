@@ -427,12 +427,15 @@ var belugaBusy = false;
     var path = filePathOf(id) || name;
     var prelude = ProjectSource.buildPrelude(files, id, getText);
     var assembled = ProjectSource.assembleCheckerCode(getText(id), prelude);
+    // First suite member has no predecessors — same as a lone file; `&` only
+    // when there is an actual amalgamation (prelude).
+    var amalgam = !!assembled.prelude;
     return runLoad(assembled.code, null, {
       pinned: true,
       prelude: assembled.prelude,
       displayName: name,
-      statusName: statusNameForFilePath(path, true),
-      caption: captionForFilePath(path, true),
+      statusName: statusNameForFilePath(path, amalgam),
+      caption: captionForFilePath(path, amalgam),
     });
   }
 
@@ -587,15 +590,26 @@ var belugaBusy = false;
 
   function init() {
     if (typeof BelugaClient === 'undefined') {
-      Toasts.error('Beluga client failed to load.', { duration: 0, closable: true });
+      Toasts.error('Beluga client failed to load.', {
+        duration: 0,
+        closable: true,
+        durable: true,
+        source: 'beluga.client',
+        dedupeKey: 'beluga.client.load',
+      });
       return;
     }
     BelugaClient.setProgressHandler(belugaProgressHook);
     BelugaClient.configure(modeToConfig(belugaMode));
     BelugaClient.warm().catch(function (e) {
-      Toasts.error('Beluga worker failed to load: ' + (e && e.message ? e.message : e), {
+      var detail = e && e.message ? e.message : String(e);
+      Toasts.error('Beluga worker failed to load.', {
         duration: 0,
         closable: true,
+        durable: true,
+        detail: detail,
+        source: 'beluga.worker',
+        dedupeKey: 'beluga.worker.load',
       });
     });
   }

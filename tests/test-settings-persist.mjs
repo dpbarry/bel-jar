@@ -38,11 +38,11 @@ assert.equal(P.readStoredReplAutoscroll(), true);
 P.writeStoredReplAutoscroll(false);
 assert.equal(P.readStoredReplAutoscroll(), false);
 
-assert.equal(P.readStoredReplHoverTimestamp(), true);
-P.writeStoredReplHoverTimestamp(false);
 assert.equal(P.readStoredReplHoverTimestamp(), false);
 P.writeStoredReplHoverTimestamp(true);
 assert.equal(P.readStoredReplHoverTimestamp(), true);
+P.writeStoredReplHoverTimestamp(false);
+assert.equal(P.readStoredReplHoverTimestamp(), false);
 
 assert.equal(P.readStoredReplHistoryCap(), 1000);
 P.writeStoredReplHistoryCap(500);
@@ -195,10 +195,6 @@ assert.equal(P.readStoredEditorWhitespace(), 'none');
 assert.equal(P.readStoredEditorRulers(), false);
 P.writeStoredEditorRulers(true);
 assert.equal(P.readStoredEditorRulers(), true);
-
-assert.equal(P.readStoredEditorLigatures(), true);
-P.writeStoredEditorLigatures(false);
-assert.equal(P.readStoredEditorLigatures(), false);
 
 assert.equal(P.readStoredEditorFontFamily(), 'jetbrains');
 P.writeStoredEditorFontFamily('system');

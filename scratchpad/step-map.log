@@ -1,0 +1,11 @@
+
+=== 45 targets ===
+bucket                      n     share   checks   share-of-checks
+0 steps (never started)     25    56%     1010      18%
+1-2 steps                    3     7%       39       1%
+3-5 steps                    6    13%     1695      31%
+6-10 steps                   8    18%     1743      32%
+11+ steps                    3     7%     1023      19%
+
+never offered a RECURSE candidate: 29/45 (64%)
+cheap deaths (<30 checks):          22/45

@@ -1,0 +1,16 @@
+data/examples/poplmark-reloaded/sources.cfg#fundVar
+data/examples/poplmark-reloaded/sources.cfg#id_red
+data/examples/cpp13/cc.bel#str
+data/examples/cpp13/cc.bel#reify
+data/examples/cpp13/cchoist.bel#str
+data/examples/cpp13/cchoist.bel#reify
+data/examples/logrel/algeq-typing.bel#lookup
+data/examples/logrel/weak-norm-closed-ideal.bel#lookup
+data/examples/logrel/weak-norm-total-mix-lf-inductive.bel#lookup
+data/examples/logrel/weak-norm-total-products.bel#lookup
+data/examples/logrel/weak-norm-total.bel#lookup
+data/examples/logrel/weak-norm-under-binders-beta-only.bel#redVar
+data/examples/logrel/weak-norm-under-binders-simplified.bel#redVar
+data/examples/logrel/weak-norm-under-binders.bel#idIsVarSub
+data/examples/logrel/weak-norm-under-binders.bel#redVar
+data/examples/logrel/weak-norm-under-binders.bel#idRedSub

@@ -1,0 +1,5 @@
+{"id":"data/case-studies/classical-processes/cp.cfg#str_wtp","off":"STUCK:step-bound","on":"STUCK:step-bound","offChecks":242,"onChecks":242,"offSecs":74.6,"onSecs":77.8}
+{"id":"data/case-studies/harmony-lemma-formalization/all.cfg#fs_com2_impl_red_base","off":"STUCK:no-move","on":"STUCK:no-move","offChecks":710,"onChecks":710,"offSecs":158.1,"onSecs":170.8}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#mstep_sn","off":"STUCK:step-bound","on":"STUCK:step-bound","offChecks":505,"onChecks":584,"offSecs":60.8,"onSecs":77.1}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#norm","off":"STUCK:no-move","on":"STUCK:no-move","offChecks":15,"onChecks":15,"offSecs":7.8,"onSecs":4.6}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#neutralSNe","off":"STUCK:no-move","on":"STUCK:no-move","offChecks":17,"onChecks":17,"offSecs":10.5,"onSecs":9.9}

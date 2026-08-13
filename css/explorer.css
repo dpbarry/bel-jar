@@ -424,9 +424,8 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
 .bel-type::before {
   content: '\2237'; /* ∷ PROPORTION — reads as "has type" */
   flex: 0 0 auto;
-  font-size: 1.35em;
-  line-height: 1;
-  transform: translateY(0.06em);
+  font-size: inherit;
+  line-height: inherit;
   color: var(--muted-highest);
   opacity: 0.45;
   user-select: none;

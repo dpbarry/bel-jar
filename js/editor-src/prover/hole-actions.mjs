@@ -13,9 +13,8 @@
 //   2. If BelJar can't model it → ask Beluga (%:split/%:intro), then TRANSFORM the
 //      printed answer into our grammar (only if it re-parses); raw printer text is
 //      NEVER inserted.
-//   3. If even that fails → HONEST-DECLINE: doc untouched + an error toast, which
-//      auto-bridges to the persistent Notifications bell (a backlog of cases to
-//      teach BelJar later). Never insert broken text.
+//   3. If even that fails → HONEST-DECLINE: doc untouched + error toast + durable
+//      Notifications.teaching backlog entry. Never insert broken text.
 
 import { showTooltip } from '@codemirror/view';
 import { StateField } from '@codemirror/state';
@@ -86,11 +85,34 @@ function toast(message, kind) {
   else if (T.info) T.info(message);
 }
 
-// Honest-decline: BelJar couldn't (and Beluga's transform couldn't) produce a
-// well-typed editable step. An error toast AUTO-BRIDGES to the Notifications bell
-// (js/toasts.js shouldNotify pushes kind:'error'), so the case becomes a durable
-// backlog entry of "something to teach BelJar." Doc is left untouched.
-function decline(message) {
+function holeLinks(hole) {
+  if (!hole) return null;
+  const fileId = currentFileId();
+  return {
+    fileId: fileId || undefined,
+    line: Number.isFinite(hole.line) ? hole.line : undefined,
+    hole: hole.name ? String(hole.name) : undefined,
+  };
+}
+
+// Honest-decline: BelJar couldn't produce a well-typed editable step. Toast for
+// the moment; Notifications.teaching for the durable teaching backlog.
+function decline(rec) {
+  if (typeof rec === 'string') {
+    toast(rec, 'error');
+    const N = g().Notifications;
+    if (N && typeof N.teaching === 'function') {
+      N.teaching({ title: rec, source: 'prover' });
+    }
+    return;
+  }
+  const title = (rec && rec.title) || 'Couldn’t complete this step';
+  toast(title, 'error');
+  const N = g().Notifications;
+  if (N && typeof N.teaching === 'function') N.teaching(rec);
+}
+
+function declineTransient(message) {
   toast(message, 'error');
 }
 
@@ -156,7 +178,7 @@ function insertOverHole(view, engine, hit, text) {
   const target = live || hit;
   const span = view.state.doc.sliceString(target.from, target.to);
   if (!span.startsWith('?')) {
-    decline('Hole moved — re-check and retry');
+    declineTransient('Hole moved — re-check and retry');
     return false;
   }
   const fileId = currentFileId();
@@ -341,11 +363,11 @@ export function transformBelugaStep(text) {
   return t;
 }
 
-// Build a DETAILED decline message so the Notifications backlog is actionable —
+// Build a DETAILED decline record so the Notifications backlog is actionable —
 // it must say WHICH split, on WHAT type, in WHAT context, and WHY BelJar couldn't
 // model it (so the case can actually be taught). `extra` describes why Beluga's
 // fallback also failed.
-function splitDeclineMessage(varName, note, extra) {
+function splitDeclineRecord(varName, note, extra, hole) {
   const head = note.head ? ` of type \`${note.head}\`` : '';
   const where = note.scrutType ? ` (\`${varName} : ${note.scrutType}\`)` : '';
   let why;
@@ -360,7 +382,15 @@ function splitDeclineMessage(varName, note, extra) {
     case 'verify-failed': why = `the generated \`${note.head}\` split didn’t type-check at this hole (its real context has dependencies the pattern doesn’t satisfy)`; break;
     default: why = `BelJar can’t model this split yet`;
   }
-  return `Split ${varName}${head}${where}: ${why}. ${extra || 'Beluga’s fallback wasn’t editable either.'} Logged to teach BelJar.`;
+  const fallback = extra || 'Beluga’s fallback wasn’t editable either.';
+  return {
+    title: `Split ${varName} declined`,
+    body: `Split ${varName}${head}${where}: ${why}. ${fallback}`,
+    detail: extra || null,
+    source: 'prover.split',
+    dedupeKey: `prover.split:${varName}:${note.reason || ''}:${note.head || ''}`,
+    links: holeLinks(hole),
+  };
 }
 
 // ── fill: prove the goal directly with a verified inhabiting term ───────────
@@ -401,7 +431,13 @@ export async function runSplit(view, engine, hit, varName) {
   //    directly provable. FILL it (the str_hyp inner-hole case: `[g |- #p.h[..]]`).
   if (entry && scrutineeIsParameterDetermined(entry.type)) {
     if (await tryFill(view, engine, hit, ctx, client)) return;
-    decline(`Split ${varName}: \`${varName}\` is already determined by a context variable, and BelJar couldn’t find an inhabiting term for the goal \`${hole.goal}\`. Logged to teach BelJar.`);
+    decline({
+      title: `Split ${varName} declined`,
+      body: `\`${varName}\` is already determined by a context variable, and BelJar couldn’t find an inhabiting term for the goal \`${hole.goal}\`.`,
+      source: 'prover.split',
+      dedupeKey: `prover.split.param:${varName}:${hole.goal || ''}`,
+      links: holeLinks(hole),
+    });
     return;
   }
 
@@ -430,9 +466,9 @@ export async function runSplit(view, engine, hit, varName) {
   //    verified fill before giving up.
   if (await tryFill(view, engine, hit, ctx, client)) return;
 
-  // 4. Honest-decline → detailed Notifications backlog entry.
+  // 4. Honest-decline → detailed Notifications teaching backlog entry.
   if (note.verifyFailed && !note.reason) note.reason = 'verify-failed';
-  decline(splitDeclineMessage(varName, note, fallbackWhy));
+  decline(splitDeclineRecord(varName, note, fallbackWhy, hole));
 }
 
 // ── Fill action (toolbar button) ────────────────────────────────────────────
@@ -443,7 +479,13 @@ export async function runFill(view, engine, hit) {
   const ctx = typeof api.getHoleActionContext === 'function' ? api.getHoleActionContext() : null;
   if (!ctx || !ctx.code) return;
   if (await tryFill(view, engine, hit, ctx, client)) return;
-  decline(`Fill: BelJar couldn’t find an inhabiting term for \`${hit.hole.goal}\`. Logged to teach BelJar.`);
+  decline({
+    title: 'Fill declined',
+    body: `BelJar couldn’t find an inhabiting term for the goal \`${hit.hole.goal}\`.`,
+    source: 'prover.fill',
+    dedupeKey: `prover.fill:${hit.hole.goal || ''}`,
+    links: holeLinks(hit.hole),
+  });
 }
 
 // ── Intro action (the cascade) ──────────────────────────────────────────────
@@ -464,7 +506,13 @@ export async function runIntro(view, engine, hit) {
     if (fb && fb.text && await verifyAtHole(client, ctx, hole, fb.text)) { insertOverHole(view, engine, hit, fb.text); return; }
   }
 
-  decline('Can’t introduce binders here yet — logged to notifications to teach BelJar');
+  decline({
+    title: 'Intro declined',
+    body: `Can’t introduce binders for goal \`${hole.goal || '?'}\` yet.`,
+    source: 'prover.intro',
+    dedupeKey: `prover.intro:${hole.goal || ''}`,
+    links: holeLinks(hole),
+  });
 }
 
   // The assembled checker code context (for constructor lookup in fill candidates).

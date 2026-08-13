@@ -76,104 +76,50 @@
   });
 })();
 
+/* Copy button on every code block. The specimen already has a chrome bar to put
+   it in; plain <pre> blocks get wrapped in a positioned container. */
 (function () {
-  var links = document.querySelectorAll("a[data-tip]");
-  if (!links.length) return;
+  var blocks = document.querySelectorAll("main pre");
+  if (!blocks.length || !navigator.clipboard) return;
 
-  var tip = document.createElement("div");
-  tip.className = "cs-tip";
-  tip.id = "cs-tip";
-  tip.setAttribute("role", "tooltip");
-  tip.hidden = true;
-  document.body.appendChild(tip);
+  Array.prototype.forEach.call(blocks, function (pre) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "copy-btn";
+    btn.textContent = "Copy";
+    btn.setAttribute("aria-label", "Copy code to clipboard");
 
-  var OFFSET_X = 12;
-  var OFFSET_Y = 14;
-  var PAD = 8;
-  var active = null;
-  var follow = false;
-  var mx = 0;
-  var my = 0;
-  var raf = 0;
-  var fine =
-    window.matchMedia &&
-    window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-
-  function place(x, y) {
-    tip.hidden = false;
-    tip.classList.add("is-on");
-    var w = tip.offsetWidth;
-    var h = tip.offsetHeight;
-    var vw = window.innerWidth;
-    var vh = window.innerHeight;
-    var left = x + OFFSET_X;
-    var top = y + OFFSET_Y;
-    if (left + w + PAD > vw) left = x - w - OFFSET_X;
-    if (top + h + PAD > vh) top = y - h - OFFSET_Y;
-    if (left < PAD) left = PAD;
-    if (top < PAD) top = PAD;
-    tip.style.transform = "translate3d(" + left + "px," + top + "px,0)";
-  }
-
-  function placeNear(el) {
-    var r = el.getBoundingClientRect();
-    place(r.left, r.bottom);
-  }
-
-  function scheduleFollow() {
-    if (raf) return;
-    raf = requestAnimationFrame(function () {
-      raf = 0;
-      if (follow && active) place(mx, my);
-    });
-  }
-
-  function show(el, mode) {
-    var text = el.getAttribute("data-tip");
-    if (!text) return;
-    active = el;
-    tip.textContent = text;
-    el.setAttribute("aria-describedby", "cs-tip");
-    if (mode === "pointer") {
-      follow = true;
-      place(mx, my);
+    var head = pre.parentNode.querySelector(":scope > .code-head");
+    if (head) {
+      head.appendChild(btn);
     } else {
-      follow = false;
-      placeNear(el);
+      var wrap = document.createElement("div");
+      wrap.className = "code-wrap";
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+      wrap.appendChild(btn);
     }
-  }
 
-  function hide(el) {
-    if (el && el !== active) return;
-    if (active) active.removeAttribute("aria-describedby");
-    active = null;
-    follow = false;
-    tip.classList.remove("is-on");
-    tip.hidden = true;
-    tip.textContent = "";
-  }
-
-  Array.prototype.forEach.call(links, function (a) {
-    if (fine) {
-      a.addEventListener("pointerenter", function (e) {
-        mx = e.clientX;
-        my = e.clientY;
-        show(a, "pointer");
-      });
-      a.addEventListener("pointermove", function (e) {
-        mx = e.clientX;
-        my = e.clientY;
-        if (follow && active === a) scheduleFollow();
-      });
-      a.addEventListener("pointerleave", function () {
-        hide(a);
-      });
-    }
-    a.addEventListener("focus", function () {
-      show(a, "focus");
-    });
-    a.addEventListener("blur", function () {
-      hide(a);
+    var timer = 0;
+    btn.addEventListener("click", function () {
+      navigator.clipboard.writeText(pre.textContent).then(
+        function () {
+          btn.textContent = "Copied";
+          btn.classList.add("is-done");
+          clearTimeout(timer);
+          timer = setTimeout(function () {
+            btn.textContent = "Copy";
+            btn.classList.remove("is-done");
+          }, 1600);
+        },
+        function () {
+          btn.textContent = "Failed";
+          clearTimeout(timer);
+          timer = setTimeout(function () {
+            btn.textContent = "Copy";
+          }, 1600);
+        }
+      );
     });
   });
 })();

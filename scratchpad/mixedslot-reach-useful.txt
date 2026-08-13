@@ -1,0 +1,16 @@
+data/examples/poplmark-reloaded/sources.cfg#mstep_appl
+data/examples/poplmark-reloaded/sources.cfg#mstep_appr
+data/examples/poplmark-reloaded/sources.cfg#subst_mred
+data/examples/poplmark-reloaded+/sources.cfg#mstep_appl
+data/examples/poplmark-reloaded+/sources.cfg#mstep_appr
+data/examples/poplmark-reloaded+/sources.cfg#mstep_inl
+data/examples/poplmark-reloaded+/sources.cfg#mstep_inr
+data/examples/poplmark-reloaded+/sources.cfg#mstep_match
+data/examples/poplmark-reloaded+/sources.cfg#mstep_matchl
+data/examples/poplmark-reloaded+/sources.cfg#mstep_matchr
+data/examples/poplmark-reloaded+/sources.cfg#subst_mred
+data/examples/logrel/weak-norm-total-products.bel#pair_mstep1
+data/examples/logrel/weak-norm-total-products.bel#pair_mstep2
+data/examples/logrel/weak-norm-total-products.bel#pair_halts
+data/examples/path/bred-nf.bel#same_paths_join_c
+data/examples/path/bred-nf.bel#same_paths_join

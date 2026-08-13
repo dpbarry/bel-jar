@@ -1658,23 +1658,6 @@ button.harpoon-lab-banner:focus-visible {
   height: 100%;
 }
 
-.harpoon-hole-mark {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.14rem;
-  height: 1.14rem;
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 0.72rem;
-  line-height: 1;
-  color: var(--repl-holes-accent);
-  background: color-mix(in srgb, var(--repl-holes-accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--repl-holes-accent) 22%, transparent);
-  border-radius: 999px;
-}
-
 .harpoon-hole-loc {
   flex: 1 1 auto;
   min-width: 0;

@@ -2,11 +2,11 @@
 
 const global = globalThis;
   var settingsDialogEl = null;
-  var keybindingsSheetEl = null;
-  var aliasesSheetEl = null;
   var keybindingsApi = null;
   var aliasesApi = null;
   var controls = {};
+  var settingsSearchInput = null;
+  var closeSettingsSearch = null;
 
   function persist() {
     return Persist
@@ -44,6 +44,37 @@ const global = globalThis;
     var key = notifyKey || 'category-reset';
     applyLiveSettings(key);
     postSettingsApply(key);
+  }
+
+  function resetAllSettings() {
+    runCategoryReset(function (p) {
+      p.resetAppearancePrefs();
+      document.documentElement.classList.remove('light');
+      if (typeof p.applyStoredUiFontSize === 'function') p.applyStoredUiFontSize();
+      if (typeof p.applyStoredUiTextContrast === 'function') p.applyStoredUiTextContrast();
+      if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
+      if (typeof global.syncEditorCmTheme === 'function') global.syncEditorCmTheme();
+
+      p.resetEditorPrefs();
+      if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+
+      p.resetBelugaPrefs();
+      BelugaRun.setBelugaMode('stable');
+
+      p.resetReplPrefs();
+
+      p.resetWorkspacePrefs();
+      var on = typeof p.readStoredInspectorFollow === 'function' ? p.readStoredInspectorFollow() : true;
+      global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: on } }));
+
+      p.resetAliasesPrefs();
+    }, 'settings-reset-all');
+    Keybindings.resetAll();
+    if (keybindingsApi) keybindingsApi.refresh();
+    if (aliasesApi) aliasesApi.refresh();
+    if (global.Toasts && typeof global.Toasts.success === 'function') {
+      global.Toasts.success('All settings reset.');
+    }
   }
 
   function syncFromState() {
@@ -152,21 +183,21 @@ const global = globalThis;
     return { slot: slot, inputWrap: inputWrap, input: input };
   }
 
-  function mountKeybindingsSheet(searchSlot, body) {
-    var search = makeSearchField({
-      slotClass: 'bj-kb__search-slot',
-      wrapClass: 'bj-kb__search',
-      placeholder: 'Search commands',
-      ariaLabel: 'Search commands',
-      ariaControls: 'bj-kb-search-results',
-    });
-    // Reuse provided slot element so createDialog headerExtra keeps the same node.
-    searchSlot.className = search.slot.className;
-    searchSlot.replaceChildren();
-    var inputWrap = search.inputWrap;
-    var input = search.input;
-    searchSlot.appendChild(inputWrap);
+  function addEditorUnit(parent, opts) {
+    var unit = document.createElement('div');
+    unit.className = 'bj-settings__unit' + (opts.kind ? ' bj-settings__unit--' + opts.kind : '');
 
+    var body = document.createElement('div');
+    body.className = 'bj-settings__unit-body';
+
+    if (opts.searchText) unit.dataset.search = opts.searchText;
+
+    unit.appendChild(body);
+    parent.appendChild(unit);
+    return { unit: unit, body: body };
+  }
+
+  function mountKeybindingsSheet(body) {
     var root = document.createElement('div');
     root.className = 'bj-kb';
 
@@ -177,17 +208,8 @@ const global = globalThis;
     root.appendChild(list);
     body.appendChild(root);
 
-    var results = document.createElement('div');
-    results.className = 'bj-kb__results';
-    results.id = 'bj-kb-search-results';
-    results.setAttribute('role', 'listbox');
-    results.hidden = true;
-
     var recordingChord = null;
     var invalidTimer = null;
-    var searchHits = [];
-    var searchActive = -1;
-    var flashTimer = null;
 
     function toastWarn(message) {
       if (global.Toasts && typeof global.Toasts.warn === 'function') {
@@ -199,153 +221,6 @@ const global = globalThis;
 
     function kb() {
       return Keybindings
-    }
-
-    function resultsMountEl() {
-      var el = searchSlot.parentElement;
-      while (el && el.tagName !== 'DIALOG') el = el.parentElement;
-      return el || document.body;
-    }
-
-    function positionSearchResults() {
-      if (results.hidden || !results.classList.contains('is-open')) return;
-      var rect = inputWrap.getBoundingClientRect();
-      var width = Math.max(Math.round(rect.width), 220);
-      results.style.width = width + 'px';
-      results.style.minWidth = width + 'px';
-      var ph = results.offsetHeight || 1;
-      if (typeof FloatingRectPlacement !== 'undefined' && FloatingRectPlacement.computePosition) {
-        var pos = FloatingRectPlacement.computePosition({
-          anchor: rect,
-          width: width,
-          height: ph,
-          mode: 'menu',
-          side: 'bottom',
-          align: 'end',
-          gap: 5,
-          margin: 8,
-        });
-        results.style.top = pos.y + 'px';
-        results.style.left = pos.x + 'px';
-      } else {
-        results.style.top = Math.round(rect.bottom + 5) + 'px';
-        results.style.left = Math.round(rect.right - width) + 'px';
-      }
-    }
-
-    function closeSearchResults() {
-      searchHits = [];
-      searchActive = -1;
-      results.replaceChildren();
-      results.hidden = true;
-      results.classList.remove('is-open');
-      input.setAttribute('aria-expanded', 'false');
-      window.removeEventListener('resize', positionSearchResults);
-      window.removeEventListener('scroll', positionSearchResults, true);
-    }
-
-    function openSearchResultsPanel() {
-      var mount = resultsMountEl();
-      if (results.parentElement !== mount) mount.appendChild(results);
-      results.hidden = false;
-      results.classList.add('is-open');
-      input.setAttribute('aria-expanded', 'true');
-      positionSearchResults();
-      window.addEventListener('resize', positionSearchResults);
-      window.addEventListener('scroll', positionSearchResults, true);
-    }
-
-    function setSearchActive(idx) {
-      var items = results.querySelectorAll('.bj-kb__result');
-      searchActive = idx;
-      for (var i = 0; i < items.length; i++) {
-        items[i].classList.toggle('is-active', i === idx);
-        if (i === idx) items[i].setAttribute('aria-selected', 'true');
-        else items[i].removeAttribute('aria-selected');
-      }
-    }
-
-    function jumpToCommand(commandId) {
-      if (!commandId) return;
-      var row = list.querySelector('.bj-kb__row[data-command-id="' + commandId.replace(/"/g, '') + '"]');
-      if (!row) return;
-      closeSearchResults();
-      input.value = '';
-      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      list.querySelectorAll('.bj-kb__row.is-flash').forEach(function (el) {
-        el.classList.remove('is-flash');
-      });
-      row.classList.add('is-flash');
-      if (flashTimer) clearTimeout(flashTimer);
-      flashTimer = setTimeout(function () {
-        flashTimer = null;
-        row.classList.remove('is-flash');
-      }, 1100);
-    }
-
-    function renderSearchResults(q) {
-      var query = String(q || '').trim().toLowerCase();
-      closeSearchResults();
-      if (!query) return;
-
-      var rows = list.querySelectorAll('.bj-kb__row');
-      var hits = [];
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        var title = row.dataset.title || '';
-        if (title.indexOf(query) < 0) continue;
-        hits.push({
-          id: row.dataset.commandId || '',
-          title: (row.querySelector('.bj-kb__title') || {}).textContent || title,
-          section: row.dataset.section || '',
-        });
-        if (hits.length >= 12) break;
-      }
-
-      if (!hits.length) {
-        var empty = document.createElement('div');
-        empty.className = 'bj-kb__results-empty';
-        empty.textContent = 'No matching commands';
-        results.appendChild(empty);
-        openSearchResultsPanel();
-        return;
-      }
-
-      searchHits = hits;
-      for (var h = 0; h < hits.length; h++) {
-        (function (hit) {
-          var btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'bj-kb__result';
-          btn.setAttribute('role', 'option');
-          btn.dataset.commandId = hit.id;
-
-          var head = document.createElement('span');
-          head.className = 'bj-kb__result-head';
-
-          var titleEl = document.createElement('span');
-          titleEl.className = 'bj-kb__result-title';
-          titleEl.textContent = hit.title;
-
-          var sectionEl = document.createElement('span');
-          sectionEl.className = 'bj-kb__result-section';
-          sectionEl.textContent = hit.section;
-
-          head.appendChild(titleEl);
-          head.appendChild(sectionEl);
-          btn.appendChild(head);
-          btn.addEventListener('mousedown', function (e) {
-            e.preventDefault();
-          });
-          btn.addEventListener('click', function (e) {
-            e.preventDefault();
-            jumpToCommand(hit.id);
-          });
-          results.appendChild(btn);
-        })(hits[h]);
-      }
-      openSearchResultsPanel();
-      setSearchActive(0);
     }
 
     function partsFor(spec) {
@@ -545,14 +420,11 @@ const global = globalThis;
       var K = kb();
       var cmds = K && typeof K.list === 'function' ? K.list() : [];
 
-      var empty = document.createElement('p');
-      empty.className = 'bj-settings__empty bj-kb__empty';
-      empty.hidden = true;
-      list.appendChild(empty);
-
       if (!cmds.length) {
-        empty.hidden = false;
+        var empty = document.createElement('p');
+        empty.className = 'bj-settings__empty bj-kb__empty';
         empty.textContent = 'No keybindings.';
+        list.appendChild(empty);
         return;
       }
 
@@ -572,67 +444,15 @@ const global = globalThis;
       }
     }
 
-    input.addEventListener('input', function () {
-      renderSearchResults(input.value);
-    });
-    input.addEventListener('keydown', function (e) {
-      if (results.hidden) {
-        if (e.key === 'Escape') input.blur();
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (!searchHits.length) return;
-        setSearchActive(Math.min(searchActive + 1, searchHits.length - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (!searchHits.length) return;
-        setSearchActive(Math.max(searchActive - 1, 0));
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (searchActive >= 0 && searchHits[searchActive]) {
-          jumpToCommand(searchHits[searchActive].id);
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        closeSearchResults();
-        input.value = '';
-      }
-    });
-    input.addEventListener('blur', function () {
-      setTimeout(function () {
-        var ae = document.activeElement;
-        if (searchSlot.contains(ae) || results.contains(ae)) return;
-        closeSearchResults();
-      }, 0);
-    });
-
     refresh();
 
     return {
-      refresh: function () {
-        closeSearchResults();
-        input.value = '';
-        refresh();
-      },
+      refresh: refresh,
       clearRecording: clearRecording,
-      closeSearch: closeSearchResults,
-      filterInput: input,
     };
   }
 
-  function mountAliasesSheet(searchSlot, body) {
-    var search = makeSearchField({
-      slotClass: 'bj-alias__search-slot',
-      wrapClass: 'bj-alias__search',
-      placeholder: 'Search aliases',
-      ariaLabel: 'Search aliases',
-    });
-    searchSlot.className = search.slot.className;
-    searchSlot.replaceChildren();
-    var filterInput = search.input;
-    searchSlot.appendChild(search.inputWrap);
-
+  function mountAliasesSheet(body) {
     var root = document.createElement('div');
     root.className = 'bj-alias';
 
@@ -655,7 +475,6 @@ const global = globalThis;
 
     var nextRowId = 1;
     var rows = [];
-    var filterQuery = '';
     var CLOSE_SVG =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
@@ -862,15 +681,9 @@ const global = globalThis;
       return el;
     }
 
-    function rowMatches(row, q) {
-      if (!q) return true;
-      return row.from.toLowerCase().indexOf(q) >= 0 || row.to.toLowerCase().indexOf(q) >= 0;
-    }
-
     function render() {
       list.replaceChildren();
-      var q = filterQuery;
-      var visible = rows.filter(function (r) { return rowMatches(r, q); });
+      footer.hidden = false;
 
       if (!rows.length) {
         var emptyAll = document.createElement('p');
@@ -880,15 +693,7 @@ const global = globalThis;
         return;
       }
 
-      if (!visible.length) {
-        var emptyFilter = document.createElement('p');
-        emptyFilter.className = 'bj-settings__empty bj-alias__empty';
-        emptyFilter.textContent = 'No aliases match.';
-        list.appendChild(emptyFilter);
-        return;
-      }
-
-      visible.forEach(function (row) {
+      rows.forEach(function (row) {
         list.appendChild(buildRow(row));
       });
     }
@@ -899,8 +704,7 @@ const global = globalThis;
     }
 
     addBtn.addEventListener('click', function () {
-      filterInput.value = '';
-      filterQuery = '';
+      if (typeof closeSettingsSearch === 'function') closeSettingsSearch(true);
       var row = { id: nextRowId++, from: '', to: '' };
       rows.push(row);
       render();
@@ -908,73 +712,18 @@ const global = globalThis;
       if (triggerEl) triggerEl.focus();
     });
 
-    filterInput.addEventListener('input', function () {
-      filterQuery = String(filterInput.value || '').trim().toLowerCase();
-      render();
-    });
-
     reload();
 
     return {
-      refresh: function () {
-        filterInput.value = '';
-        filterQuery = '';
-        reload();
+      refresh: reload,
+      list: function () {
+        return rows.filter(function (r) {
+          return !!(r.from && r.from.trim() && r.to !== '');
+        }).map(function (r) {
+          return { id: r.id, from: r.from, to: r.to };
+        });
       },
-      filterInput: filterInput,
     };
-  }
-
-  function ensureKeybindingsSheet() {
-    if (keybindingsSheetEl) return keybindingsSheetEl;
-    var searchSlot = document.createElement('div');
-    keybindingsSheetEl = Dialog.createDialog({
-      title: 'Keybindings',
-      headerExtra: searchSlot,
-      content: '',
-      cardClass: 'bj-dialog__card--action-sheet',
-      removeOnClose: false,
-    });
-    var body = keybindingsSheetEl.querySelector('.bj-dialog__body');
-    keybindingsApi = mountKeybindingsSheet(searchSlot, body);
-    keybindingsSheetEl.addEventListener('close', function () {
-      if (!keybindingsApi) return;
-      keybindingsApi.clearRecording();
-      if (typeof keybindingsApi.closeSearch === 'function') keybindingsApi.closeSearch();
-      if (keybindingsApi.filterInput) keybindingsApi.filterInput.value = '';
-    });
-    return keybindingsSheetEl;
-  }
-
-  function openKeybindingsSheet() {
-    ensureKeybindingsSheet();
-    if (keybindingsApi) keybindingsApi.refresh();
-    Dialog.openDialog(keybindingsSheetEl);
-  }
-
-  function ensureAliasesSheet() {
-    if (aliasesSheetEl) return aliasesSheetEl;
-    var searchSlot = document.createElement('div');
-    aliasesSheetEl = Dialog.createDialog({
-      title: 'Aliases',
-      headerExtra: searchSlot,
-      content: '',
-      cardClass: 'bj-dialog__card--action-sheet',
-      removeOnClose: false,
-    });
-    var body = aliasesSheetEl.querySelector('.bj-dialog__body');
-    aliasesApi = mountAliasesSheet(searchSlot, body);
-    aliasesSheetEl.addEventListener('close', function () {
-      if (!aliasesApi || !aliasesApi.filterInput) return;
-      aliasesApi.filterInput.value = '';
-    });
-    return aliasesSheetEl;
-  }
-
-  function openAliasesSheet() {
-    ensureAliasesSheet();
-    if (aliasesApi) aliasesApi.refresh();
-    Dialog.openDialog(aliasesSheetEl);
   }
 
   function addSwitchRow(parent, id, labelText, descText, readFn, writeFn) {
@@ -1037,8 +786,12 @@ const global = globalThis;
 
     var nav = document.createElement('nav');
     nav.className = 'bj-settings__nav';
-    nav.setAttribute('role', 'tablist');
-    nav.setAttribute('aria-label', 'Settings categories');
+    nav.setAttribute('aria-label', 'Settings');
+
+    var navList = document.createElement('div');
+    navList.className = 'bj-settings__nav-list';
+    navList.setAttribute('role', 'tablist');
+    navList.setAttribute('aria-label', 'Settings categories');
 
     var main = document.createElement('div');
     main.className = 'bj-settings__main';
@@ -1070,6 +823,27 @@ const global = globalThis;
         el.classList.toggle('is-active', on);
       });
       if (id !== 'keybindings' && keybindingsApi) keybindingsApi.clearRecording();
+      if (searchResults && !searchResults.hidden && settingsSearchInput && settingsSearchInput.value) {
+        runSettingsSearch(settingsSearchInput.value);
+      }
+    }
+
+    function visibleCategoryIds() {
+      return categories.map(function (c) { return c.id; }).filter(function (id) {
+        var btn = nav.querySelector('.bj-settings__nav-item[data-category="' + id + '"]');
+        return btn && !btn.hidden;
+      });
+    }
+
+    function moveCategory(fromId, delta) {
+      var ids = visibleCategoryIds();
+      var idx = ids.indexOf(fromId);
+      if (idx < 0) idx = 0;
+      var next = ids[Math.max(0, Math.min(ids.length - 1, idx + delta))];
+      if (!next) return;
+      selectCategory(next);
+      var focusBtn = nav.querySelector('[data-category="' + activeCategory + '"]');
+      if (focusBtn) focusBtn.focus();
     }
 
     categories.forEach(function (cat) {
@@ -1083,18 +857,15 @@ const global = globalThis;
       btn.tabIndex = cat.id === activeCategory ? 0 : -1;
       btn.addEventListener('click', function () { selectCategory(cat.id); });
       btn.addEventListener('keydown', function (e) {
-        var idx = categories.findIndex(function (c) { return c.id === cat.id; });
         if (e.key === 'ArrowDown') {
           e.preventDefault();
-          selectCategory(categories[Math.min(idx + 1, categories.length - 1)].id);
-          nav.querySelector('[data-category="' + activeCategory + '"]').focus();
+          moveCategory(cat.id, 1);
         } else if (e.key === 'ArrowUp') {
           e.preventDefault();
-          selectCategory(categories[Math.max(idx - 1, 0)].id);
-          nav.querySelector('[data-category="' + activeCategory + '"]').focus();
+          moveCategory(cat.id, -1);
         }
       });
-      nav.appendChild(btn);
+      navList.appendChild(btn);
 
       var panel = document.createElement('div');
       panel.className = 'bj-settings__panel';
@@ -1118,6 +889,23 @@ const global = globalThis;
       main.appendChild(panel);
     });
 
+    nav.appendChild(navList);
+
+    var navFoot = document.createElement('div');
+    navFoot.className = 'bj-settings__nav-foot';
+    var resetAllBtn = document.createElement('button');
+    resetAllBtn.type = 'button';
+    resetAllBtn.className = 'bj-settings__reset-all';
+    resetAllBtn.textContent = 'Reset all';
+    resetAllBtn.setAttribute('aria-label', 'Reset all settings');
+    resetAllBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      resetAllSettings();
+    });
+    navFoot.appendChild(resetAllBtn);
+    nav.appendChild(navFoot);
+
     attachPanelReset(main.querySelector('[data-category="appearance"]'), function () {
       runCategoryReset(function (p) {
         p.resetAppearancePrefs();
@@ -1138,7 +926,7 @@ const global = globalThis;
 
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function () {
       Keybindings.resetAll();
-      if (keybindingsApi && keybindingsSheetEl && keybindingsSheetEl.open) keybindingsApi.refresh();
+      if (keybindingsApi) keybindingsApi.refresh();
     });
 
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function () {
@@ -1162,7 +950,7 @@ const global = globalThis;
 
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function () {
       runCategoryReset(function (p) { p.resetAliasesPrefs(); }, 'aliases-reset');
-      if (aliasesApi && aliasesSheetEl && aliasesSheetEl.open) aliasesApi.refresh();
+      if (aliasesApi) aliasesApi.refresh();
     });
 
     // Appearance
@@ -1285,13 +1073,6 @@ const global = globalThis;
     addSwitchRow(panelBodies.editor, 'editor-word-wrap', 'Word wrap', 'Wraps lines that would be longer than the viewport.',
       function () { return p0 ? p0.readStoredEditorWordWrap() : false; },
       function (p, on) { p.writeStoredEditorWordWrap(on); }
-    );
-    addSwitchRow(panelBodies.editor, 'editor-ligatures', 'Font ligatures', 'Join operators like -> and => when the font supports it.',
-      function () { return p0 ? p0.readStoredEditorLigatures() : true; },
-      function (p, on) {
-        p.writeStoredEditorLigatures(on);
-        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
-      }
     );
     addDropdownRow(panelBodies.editor, 'editor-cursor-blink', 'Cursor blink', '',
       [
@@ -1448,7 +1229,7 @@ const global = globalThis;
         { value: 'session', label: 'This session' },
         { value: 'local', label: 'Always (local)' },
       ],
-      function () { return p0 ? p0.readStoredEditorFoldPersist() : 'none'; },
+      function () { return p0 ? p0.readStoredEditorFoldPersist() : 'session'; },
       function (p, v) { p.writeStoredEditorFoldPersist(v); }
     );
     addSwitchRow(panelBodies.editor, 'editor-active-line', 'Active line highlight', 'Background on the current line.',
@@ -1494,13 +1275,11 @@ const global = globalThis;
     );
 
     // Keybindings
-    addActionRow(
-      panelBodies.keybindings,
-      'Customize keybindings',
-      'Remap commands and chords.',
-      'Edit\u2026',
-      openKeybindingsSheet
-    );
+    var kbUnit = addEditorUnit(panelBodies.keybindings, {
+      kind: 'kb',
+      searchText: 'Customize keybindings Remap commands and chords',
+    });
+    keybindingsApi = mountKeybindingsSheet(kbUnit.body);
 
     // Beluga
     addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Run / Load',
@@ -1573,7 +1352,7 @@ const global = globalThis;
     );
     addSwitchRow(panelBodies.repl, 'repl-hover-timestamp', 'Hover for timestamp',
       'Show the time a command or output was logged when hovering it.',
-      function () { return p0 ? p0.readStoredReplHoverTimestamp() : true; },
+      function () { return p0 ? p0.readStoredReplHoverTimestamp() : false; },
       function (p, on) { p.writeStoredReplHoverTimestamp(on); }
     );
     addDropdownRow(panelBodies.repl, 'repl-history-persist', 'Remember history',
@@ -1716,30 +1495,336 @@ const global = globalThis;
         if (next !== cur) ed.setValue(next);
       }
     );
-    addActionRow(
-      panelBodies.aliases,
-      'Customize aliases',
-      'Define trigger \u2192 expansion pairs used while typing.',
-      'Edit\u2026',
-      openAliasesSheet
-    );
+    var aliasUnit = addEditorUnit(panelBodies.aliases, {
+      kind: 'alias',
+      searchText: 'Customize aliases Define trigger expansion pairs used while typing',
+    });
+    aliasesApi = mountAliasesSheet(aliasUnit.body);
 
     selectCategory(activeCategory);
 
     shell.appendChild(nav);
     shell.appendChild(main);
 
+    var search = makeSearchField({
+      slotClass: 'bj-settings__search-slot',
+      wrapClass: 'bj-settings__search',
+      placeholder: 'Search\u2026',
+      ariaLabel: 'Search settings',
+      ariaControls: 'bj-settings-search-results',
+    });
+    settingsSearchInput = search.input;
+    var searchWrap = search.inputWrap;
+
+    var searchHits = [];
+    var searchActive = -1;
+    var flashTimer = null;
+    var searchResults = document.createElement('div');
+    searchResults.className = 'hsearch-ac bj-settings__results';
+    searchResults.id = 'bj-settings-search-results';
+    searchResults.setAttribute('role', 'listbox');
+    searchResults.hidden = true;
+
+    function positionSearchResults() {
+      if (searchResults.hidden || !searchResults.classList.contains('is-open')) return;
+      var rect = searchWrap.getBoundingClientRect();
+      var width = Math.max(Math.round(rect.width), 220);
+      searchResults.style.width = width + 'px';
+      searchResults.style.minWidth = width + 'px';
+      var ph = searchResults.offsetHeight || 1;
+      if (typeof FloatingRectPlacement !== 'undefined' && FloatingRectPlacement.computePosition) {
+        var pos = FloatingRectPlacement.computePosition({
+          anchor: rect,
+          width: width,
+          height: ph,
+          mode: 'menu',
+          side: 'bottom',
+          align: 'end',
+          gap: 5,
+          margin: 8,
+        });
+        searchResults.style.top = pos.y + 'px';
+        searchResults.style.left = pos.x + 'px';
+      } else {
+        searchResults.style.top = Math.round(rect.bottom + 5) + 'px';
+        searchResults.style.left = Math.round(rect.right - width) + 'px';
+      }
+    }
+
+    function closeSettingsSearchPanel(clearInput) {
+      searchHits = [];
+      searchActive = -1;
+      searchResults.replaceChildren();
+      searchResults.hidden = true;
+      searchResults.classList.remove('is-open');
+      search.input.setAttribute('aria-expanded', 'false');
+      window.removeEventListener('resize', positionSearchResults);
+      window.removeEventListener('scroll', positionSearchResults, true);
+      if (clearInput && settingsSearchInput) settingsSearchInput.value = '';
+    }
+
+    closeSettingsSearch = closeSettingsSearchPanel;
+
+    function openSearchResults() {
+      var mount = settingsDialogEl || document.body;
+      if (searchResults.parentElement !== mount) mount.appendChild(searchResults);
+      searchResults.hidden = false;
+      searchResults.classList.add('is-open');
+      search.input.setAttribute('aria-expanded', 'true');
+      window.removeEventListener('resize', positionSearchResults);
+      window.removeEventListener('scroll', positionSearchResults, true);
+      positionSearchResults();
+      window.addEventListener('resize', positionSearchResults);
+      window.addEventListener('scroll', positionSearchResults, true);
+    }
+
+    function flashEl(el) {
+      if (!el) return;
+      main.querySelectorAll('.is-flash').forEach(function (node) {
+        node.classList.remove('is-flash');
+      });
+      el.classList.add('is-flash');
+      if (flashTimer) clearTimeout(flashTimer);
+      flashTimer = setTimeout(function () {
+        flashTimer = null;
+        el.classList.remove('is-flash');
+      }, 1100);
+    }
+
+    function hitRank(title, q) {
+      var t = String(title || '').toLowerCase();
+      if (t.indexOf(q) === 0) return 0;
+      if (t.indexOf(q) >= 0) return 1;
+      return 2;
+    }
+
+    function collectHits(q) {
+      var hits = [];
+      categories.forEach(function (cat) {
+        var body = panelBodies[cat.id];
+        if (!body) return;
+        var section = '';
+        Array.prototype.forEach.call(body.children, function (el) {
+          if (el.classList.contains('bj-settings__section-head')) {
+            section = String(el.textContent || '').trim();
+            return;
+          }
+          if (el.classList.contains('bj-settings__unit')) return;
+          if (!el.classList.contains('bj-dialog__setting')) return;
+          var titleEl = el.querySelector('.bj-dialog__setting-label');
+          var descEl = el.querySelector('.bj-dialog__setting-desc');
+          var title = titleEl ? String(titleEl.textContent || '') : '';
+          var desc = descEl ? String(descEl.textContent || '') : '';
+          var hay = (title + ' ' + desc + ' ' + section + ' ' + cat.label).replace(/\s+/g, ' ').toLowerCase();
+          if (hay.indexOf(q) < 0) return;
+          hits.push({
+            kind: 'setting',
+            categoryId: cat.id,
+            title: title,
+            meta: section || cat.label,
+            el: el,
+            rank: hitRank(title, q),
+          });
+        });
+      });
+
+      if (activeCategory === 'keybindings') {
+        var K = Keybindings;
+        var cmds = K && typeof K.list === 'function' ? K.list() : [];
+        cmds.forEach(function (cmd) {
+          var title = cmd.title || cmd.id || '';
+          var section = cmd.section || '';
+          var hay = (title + ' ' + section).toLowerCase();
+          if (hay.indexOf(q) < 0) return;
+          hits.push({
+            kind: 'command',
+            categoryId: 'keybindings',
+            title: title,
+            meta: 'Keybindings',
+            id: cmd.id,
+            rank: hitRank(title, q),
+          });
+        });
+      }
+
+      if (activeCategory === 'aliases' && aliasesApi && typeof aliasesApi.list === 'function') {
+        aliasesApi.list().forEach(function (pair) {
+          var from = String(pair.from || '');
+          var to = String(pair.to || '');
+          var hay = (from + ' ' + to).toLowerCase();
+          if (hay.indexOf(q) < 0) return;
+          var fromL = from.toLowerCase();
+          hits.push({
+            kind: 'alias',
+            categoryId: 'aliases',
+            title: from + ' \u2192 ' + to,
+            meta: 'Aliases',
+            rowId: pair.id,
+            focus: fromL.indexOf(q) >= 0 ? 'from' : 'to',
+            rank: hitRank(from, q) < 2 ? hitRank(from, q) : hitRank(to, q),
+          });
+        });
+      }
+
+      hits.sort(function (a, b) {
+        var aHere = a.categoryId === activeCategory ? 0 : 1;
+        var bHere = b.categoryId === activeCategory ? 0 : 1;
+        if (aHere !== bHere) return aHere - bHere;
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        return String(a.title).localeCompare(String(b.title));
+      });
+      return hits.slice(0, 20);
+    }
+
+    function setSearchActive(idx) {
+      var items = searchResults.querySelectorAll('.hsearch-ac-item');
+      searchActive = idx;
+      for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('is-active', i === idx);
+        if (i === idx) {
+          items[i].setAttribute('aria-selected', 'true');
+          items[i].scrollIntoView({ block: 'nearest' });
+        } else {
+          items[i].removeAttribute('aria-selected');
+        }
+      }
+    }
+
+    function pickHit(hit) {
+      if (!hit) return;
+      closeSettingsSearchPanel(true);
+      if (hit.categoryId) selectCategory(hit.categoryId);
+      requestAnimationFrame(function () {
+        var target = null;
+        if (hit.kind === 'setting') {
+          target = hit.el;
+        } else if (hit.kind === 'command' && hit.id) {
+          target = main.querySelector('.bj-kb__row[data-command-id="' + String(hit.id).replace(/"/g, '') + '"]');
+        } else if (hit.kind === 'alias' && hit.rowId != null) {
+          target = main.querySelector('.bj-alias__row[data-row-id="' + String(hit.rowId).replace(/"/g, '') + '"]');
+        }
+        if (!target) return;
+        target.scrollIntoView({ block: 'center' });
+        flashEl(target);
+        if (hit.kind === 'alias') {
+          var sel = hit.focus === 'to' ? '.bj-alias__input--expansion' : '.bj-alias__input--trigger';
+          var field = target.querySelector(sel);
+          if (field) field.focus();
+        }
+      });
+    }
+
+    function renderSearchResults() {
+      searchResults.replaceChildren();
+      if (!searchHits.length) {
+        var empty = document.createElement('div');
+        empty.className = 'hsearch-ac-empty';
+        empty.textContent = 'No settings match.';
+        searchResults.appendChild(empty);
+        openSearchResults();
+        return;
+      }
+      searchHits.forEach(function (hit, index) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'hsearch-ac-item' + (index === searchActive ? ' is-active' : '');
+        btn.setAttribute('role', 'option');
+        if (index === searchActive) btn.setAttribute('aria-selected', 'true');
+
+        var head = document.createElement('span');
+        head.className = 'hsearch-ac-head';
+
+        var name = document.createElement('span');
+        name.className = 'hsearch-ac-name';
+        name.textContent = hit.title;
+        head.appendChild(name);
+
+        if (hit.meta) {
+          var meta = document.createElement('span');
+          meta.className = 'hsearch-ac-path';
+          meta.textContent = hit.meta;
+          head.appendChild(meta);
+        }
+        btn.appendChild(head);
+        btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          pickHit(hit);
+        });
+        searchResults.appendChild(btn);
+      });
+      openSearchResults();
+    }
+
+    function runSettingsSearch(raw) {
+      var q = String(raw || '').trim().toLowerCase();
+      if (!q) {
+        closeSettingsSearchPanel(false);
+        return;
+      }
+      searchHits = collectHits(q);
+      searchActive = searchHits.length ? 0 : -1;
+      renderSearchResults();
+    }
+
+    search.input.setAttribute('aria-expanded', 'false');
+    search.input.addEventListener('input', function () {
+      runSettingsSearch(search.input.value);
+    });
+    search.input.addEventListener('search', function () {
+      runSettingsSearch(search.input.value);
+    });
+    search.input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') {
+        if (searchResults.hidden) return;
+        e.preventDefault();
+        if (!searchHits.length) return;
+        setSearchActive(Math.min(searchActive + 1, searchHits.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        if (searchResults.hidden) return;
+        e.preventDefault();
+        if (!searchHits.length) return;
+        setSearchActive(Math.max(searchActive - 1, 0));
+      } else if (e.key === 'Enter') {
+        if (searchResults.hidden) return;
+        e.preventDefault();
+        if (searchActive >= 0 && searchHits[searchActive]) pickHit(searchHits[searchActive]);
+      } else if (e.key === 'Escape') {
+        if (!search.input.value && searchResults.hidden) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closeSettingsSearchPanel(true);
+      }
+    });
+    search.input.addEventListener('blur', function () {
+      setTimeout(function () {
+        var ae = document.activeElement;
+        if (search.slot.contains(ae) || searchResults.contains(ae)) return;
+        closeSettingsSearchPanel(false);
+      }, 0);
+    });
+
     settingsDialogEl = Dialog.createDialog({
       title: 'Settings',
+      headerExtra: search.slot,
       content: shell,
       cardClass: 'bj-dialog__card--settings',
       removeOnClose: false,
+    });
+    settingsDialogEl.addEventListener('close', function () {
+      if (keybindingsApi) {
+        keybindingsApi.clearRecording();
+        keybindingsApi.refresh();
+      }
+      if (aliasesApi) aliasesApi.refresh();
+      closeSettingsSearchPanel(true);
     });
     return settingsDialogEl;
   }
 
   function open() {
     ensureSettingsDialog();
+    if (typeof closeSettingsSearch === 'function') closeSettingsSearch(true);
     syncFromState();
     Dialog.openDialog(settingsDialogEl);
   }

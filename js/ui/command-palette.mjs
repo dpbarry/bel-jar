@@ -243,6 +243,7 @@ const global = globalThis;
     input.placeholder = MODE_META.anywhere.placeholder;
     input.autocomplete = 'off';
     input.spellcheck = false;
+    input.setAttribute('data-surface-find', '');
     input.setAttribute('role', 'combobox');
     input.setAttribute('aria-expanded', 'true');
     input.setAttribute('aria-controls', 'bel-palette-list');

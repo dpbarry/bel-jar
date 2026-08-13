@@ -45,7 +45,7 @@ export function readEditorPrefs() {
     reindentPaste: p?.readStoredEditorReindentPaste?.() ?? true,
     lineNumbers: p?.readStoredEditorLineNumbers?.() ?? true,
     foldGutter: p?.readStoredEditorFoldGutter?.() ?? true,
-    foldPersist: p?.readStoredEditorFoldPersist?.() ?? 'none',
+    foldPersist: p?.readStoredEditorFoldPersist?.() ?? 'session',
     activeLine: p?.readStoredEditorActiveLine?.() ?? true,
     diagPresentation: p?.readStoredDiagPresentation?.() ?? 'both',
     diagSeverity: p?.readStoredDiagSeverity?.() ?? 'all',
@@ -70,7 +70,6 @@ export function readEditorPrefs() {
     scrollPastEnd: p?.readStoredEditorScrollPastEnd?.() ?? true,
     whitespace: p?.readStoredEditorWhitespace?.() ?? 'none',
     rulers: p?.readStoredEditorRulers?.() ?? false,
-    ligatures: p?.readStoredEditorLigatures?.() ?? true,
     fontFamily: p?.readStoredEditorFontFamily?.() ?? 'jetbrains',
     holeEmphasis: p?.readStoredEditorHoleEmphasis?.() ?? 'normal',
   };
@@ -87,7 +86,6 @@ export function buildEditorChromeTheme(prefs) {
   const mono = prefs.fontFamily === 'system'
     ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
     : 'var(--editor-mono, var(--mono))';
-  const ligatures = prefs.ligatures === false ? 'none' : 'common-ligatures';
   const rules = {
     '&': { fontSize: fs, fontFamily: mono },
     '.cm-editor': { fontSize: fs, fontFamily: mono },
@@ -95,7 +93,8 @@ export function buildEditorChromeTheme(prefs) {
     '.cm-content': {
       fontSize: 'inherit',
       fontFamily: 'inherit',
-      fontVariantLigatures: ligatures,
+      fontVariantLigatures: 'none',
+      fontFeatureSettings: '"liga" 0, "calt" 0',
     },
     '.cm-line': prefs.wordWrap
       ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word' }

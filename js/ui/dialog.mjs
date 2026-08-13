@@ -1,6 +1,68 @@
 const DIALOG_ROOT_CLASS = 'bj-dialog';
 const dialogs = new WeakMap();
 
+const SURFACE_SEARCH_SELECTOR = 'input[type="search"]:not([disabled]), [data-surface-find]';
+const PALETTE_PREFIXES = '/@>%#!?:';
+
+function isRecordingChordTarget(e) {
+  const t = (e && e.target) || (typeof document !== 'undefined' ? document.activeElement : null);
+  return !!(t && t.classList && t.classList.contains('bj-kb__chord') && t.classList.contains('is-recording'));
+}
+
+function isFindEvent(e) {
+  const KB = globalThis.Keybindings;
+  if (KB && typeof KB.matchesId === 'function') return KB.matchesId(e, 'edit.find');
+  if (!e || e.altKey || e.shiftKey) return false;
+  if (!(e.ctrlKey || e.metaKey)) return false;
+  return String(e.key).toLowerCase() === 'f';
+}
+
+export function findSurfaceSearchInput(root) {
+  if (!root || typeof root.querySelector !== 'function') return null;
+  const el = root.querySelector(SURFACE_SEARCH_SELECTOR);
+  if (!el || el.disabled) return null;
+  return el;
+}
+
+function capturingSearchInput() {
+  if (typeof document === 'undefined') return null;
+  const open = document.querySelectorAll('dialog.' + DIALOG_ROOT_CLASS + '[open]:not(.is-leaving)');
+  for (let i = open.length - 1; i >= 0; i--) {
+    const input = findSurfaceSearchInput(open[i]);
+    if (input) return input;
+  }
+  const palette = document.querySelector('.bel-palette.is-open');
+  return palette ? findSurfaceSearchInput(palette) : null;
+}
+
+export function focusSurfaceSearch(input) {
+  if (!input || typeof input.focus !== 'function') return false;
+  input.focus();
+  const v = String(input.value || '');
+  if (input.classList && input.classList.contains('bel-palette-input')) {
+    const start = v.length && PALETTE_PREFIXES.includes(v[0]) ? 1 : 0;
+    try { input.setSelectionRange(start, v.length); } catch (_) {}
+    return true;
+  }
+  try { input.select(); } catch (_) {}
+  return true;
+}
+
+function onCapturingFind(e) {
+  if (!e || e.isComposing || e.defaultPrevented) return;
+  if (isRecordingChordTarget(e)) return;
+  if (!isFindEvent(e)) return;
+  const input = capturingSearchInput();
+  if (!input) return;
+  e.preventDefault();
+  e.stopPropagation();
+  focusSurfaceSearch(input);
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('keydown', onCapturingFind, true);
+}
+
 function parseMs(cssValue, fallback) {
   const n = parseFloat(String(cssValue || '').trim());
   return Number.isFinite(n) ? n : fallback;
@@ -196,6 +258,8 @@ export const Dialog = {
   createDialog,
   closeAllDialogs,
   setDialogFooterError,
+  findSurfaceSearchInput,
+  focusSurfaceSearch,
 };
 
 const g = typeof window !== 'undefined' ? window : globalThis;

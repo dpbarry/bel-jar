@@ -988,15 +988,6 @@
         }
       }
     }
-    function handleDialogKeydown(e) {
-      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "f") {
-        e.preventDefault();
-        e.stopPropagation();
-        searchInput.focus();
-        searchInput.select();
-        setSearchFocused(true);
-      }
-    }
     treePane.addEventListener("keydown", handleTreeKeydown);
     var dialogEl = global4.Dialog.createDialog({
       ariaLabel: "Library preview \u2014 " + scopeLabel,
@@ -1013,7 +1004,6 @@
         document.activeElement.blur();
       }
     });
-    dialogEl.addEventListener("keydown", handleDialogKeydown, true);
     global4.Dialog.openDialog(dialogEl);
     ensureCfgTextsLoaded().then(function() {
       renderTree();

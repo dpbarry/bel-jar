@@ -1,5 +1,6 @@
 import { syntaxTree } from '@codemirror/language';
 import { EditorSelection } from '@codemirror/state';
+import { parser } from '../beluga-parser.js';
 import { render } from './doc.mjs';
 import { makePrinter } from './printer.mjs';
 import { childrenArr } from './basics.mjs';
@@ -251,13 +252,38 @@ export function formatString(src, tree, opts = {}) {
   return result;
 }
 
+function resolvePrintWidth(opts = {}) {
+  const g = typeof window !== 'undefined' ? window : globalThis;
+  return opts.printWidth
+    ?? g.Persist?.readStoredEditorFormatWidth?.()
+    ?? 80;
+}
+
+/** Format source text without a CodeMirror view. Returns new text, or null if unchanged/refused. */
+export function formatSource(src, opts = {}) {
+  const oldText = String(src ?? '');
+  const printWidth = resolvePrintWidth(opts);
+  let newText;
+  try {
+    newText = formatString(oldText, parser.parse(oldText), { ...opts, printWidth });
+  } catch (e) {
+    if (!opts.quiet) {
+      if (e && e.code === 'FORMAT_SHRINK_GUARD') {
+        showFormatToast('Format refused. The result would drop too much content.', 'warn');
+      } else {
+        showFormatToast('Format failed.', 'error');
+      }
+    }
+    return null;
+  }
+  if (newText === oldText) return null;
+  return newText;
+}
+
 export function formatDocument(state, opts = {}) {
   const tree = syntaxTree(state);
   const oldText = state.doc.toString();
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  const printWidth = opts.printWidth
-    ?? g.Persist?.readStoredEditorFormatWidth?.()
-    ?? 80;
+  const printWidth = resolvePrintWidth(opts);
   let newText;
   try {
     newText = formatString(oldText, tree, { ...opts, printWidth });

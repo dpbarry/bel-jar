@@ -409,28 +409,104 @@ var SCHEMA_VERSION = 3;
     return next;
   }
 
+  var CAPACITY_DEDUPE = 'persist.capacity';
+  var saveBlocked = false;
+  var lastSaveError = null;
+
+  function classifyPersistError(err) {
+    if (!err) return { code: 'unknown', retryable: false, detail: null };
+    if (err.name === 'QuotaExceededError' || err.code === 'capacity') {
+      return {
+        code: 'capacity',
+        retryable: false,
+        detail: String(err.message || err.name || ''),
+      };
+    }
+    if (err.code === 'network' || err.code === 'auth' || err.code === 'conflict') {
+      return {
+        code: err.code,
+        retryable: !!err.retryable,
+        detail: err.detail != null ? String(err.detail) : (err.message ? String(err.message) : null),
+      };
+    }
+    return {
+      code: 'unknown',
+      retryable: false,
+      detail: String(err.message || err),
+    };
+  }
+
+  function reportCapacityFailure(classified) {
+    saveBlocked = true;
+    lastSaveError = classified || { code: 'capacity', retryable: false, detail: null };
+    if (typeof globalThis.Toasts !== 'undefined' && globalThis.Toasts.error) {
+      globalThis.Toasts.error('Couldn’t save — storage full.', {
+        duration: 0,
+        closable: true,
+      });
+    }
+    if (typeof globalThis.Notifications !== 'undefined' && globalThis.Notifications.emit) {
+      globalThis.Notifications.emit({
+        kind: 'error',
+        category: 'ops',
+        origin: 'local',
+        title: 'Couldn’t save — storage full',
+        body: 'BelJar couldn’t write your project. The last successful save is intact; newer edits may be lost on reload until space is available.',
+        detail: classified && classified.detail ? classified.detail : null,
+        source: 'persist.capacity',
+        dedupeKey: CAPACITY_DEDUPE,
+      });
+    }
+  }
+
+  function clearCapacityFailure() {
+    if (!saveBlocked && !lastSaveError) return;
+    saveBlocked = false;
+    lastSaveError = null;
+    var N = globalThis.Notifications;
+    if (!N || typeof N.list !== 'function' || typeof N.dismiss !== 'function') return;
+    var list = N.list();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].dedupeKey === CAPACITY_DEDUPE) {
+        N.dismiss(list[i].id);
+        break;
+      }
+    }
+  }
+
+  function isSaveBlocked() {
+    return !!saveBlocked;
+  }
+
   function writeState(backend, state) {
     var b = backend || defaultBackend;
     var key = stateKeyFor(state.meta && state.meta.documentId);
     try {
       b.saveSync(key, JSON.stringify(state));
-      return true;
+      clearCapacityFailure();
+      return { ok: true };
     } catch (err) {
-      if (!err || err.name !== 'QuotaExceededError') return false;
+      var classified = classifyPersistError(err);
+      if (classified.code !== 'capacity') {
+        lastSaveError = classified;
+        return { ok: false, error: classified };
+      }
       if (state.semantic) {
         state.semantic = trimSemanticForQuota(state.semantic);
         try {
           b.saveSync(key, JSON.stringify(state));
-          return true;
-        } catch (_) {}
+          clearCapacityFailure();
+          return { ok: true };
+        } catch (err2) {
+          classified = classifyPersistError(err2);
+          if (classified.code !== 'capacity') {
+            lastSaveError = classified;
+            return { ok: false, error: classified };
+          }
+        }
       }
-      if (typeof globalThis.Toasts !== 'undefined' && globalThis.Toasts.error) {
-        globalThis.Toasts.error('Storage quota exceeded. Could not save.', {
-          duration: 0,
-          closable: true,
-        });
-      }
-      return false;
+      reportCapacityFailure(classified);
+      return { ok: false, error: classified };
     }
   }
 
@@ -1024,7 +1100,6 @@ var SCHEMA_VERSION = 3;
     'readStoredEditorScrollPastEnd', 'writeStoredEditorScrollPastEnd',
     'readStoredEditorWhitespace', 'writeStoredEditorWhitespace',
     'readStoredEditorRulers', 'writeStoredEditorRulers',
-    'readStoredEditorLigatures', 'writeStoredEditorLigatures',
     'readStoredEditorFontFamily', 'writeStoredEditorFontFamily',
     'readStoredEditorHoleEmphasis', 'writeStoredEditorHoleEmphasis',
     'readStoredMotionPref', 'writeStoredMotionPref',
@@ -1774,6 +1849,8 @@ var SCHEMA_VERSION = 3;
     createLocalStorageAdapter: createLocalStorageAdapter,
     createPersist: createPersist,
     createAsyncPersistLayer: createAsyncPersistLayer,
+    classifyPersistError: classifyPersistError,
+    isSaveBlocked: isSaveBlocked,
     readStoredTheme: readStoredTheme,
     writeStoredTheme: writeStoredTheme,
     UI_FONT_SIZE_KEY: UI_FONT_SIZE_KEY,

@@ -285,6 +285,11 @@
     var got = normalizeKeyToken(e.key);
     return got === wantKey;
   }
+  function matchesId(e, id) {
+    var spec = resolve(id);
+    if (!spec) return false;
+    return eventMatchesSpec(e, spec);
+  }
   function toCmKey(spec) {
     var n = normalizeSpec(spec);
     if (!n) return "";
@@ -410,6 +415,7 @@
     shortcutParts,
     specFromEvent,
     eventMatchesSpec,
+    matchesId,
     isBrowserReserved,
     isReservedSequence,
     titleFor,

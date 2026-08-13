@@ -4,10 +4,10 @@
  * BelJar-local `run` REPL grammar — captions and typed input share one form.
  * Never sent to Beluga; dispatches to BelugaRun.
  *
- *   run               active file: alone if orphan, else suite-to-here
- *   run &             active file with prelude (always)
+ *   run               active file: alone if orphan / first suite member, else suite-to-here
+ *   run &             active file with suite amalgamation (stamps `&` only when prelude exists)
  *   run path          file alone
- *   run &path         file + prelude (amalgamation)
+ *   run &path         file + prelude (amalgamation; `&` only when prelude exists)
  *   run suite Name    whole suite
  *   run folder path   folder development
  *   run project       every workspace development

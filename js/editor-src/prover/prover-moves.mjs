@@ -917,8 +917,41 @@ export function recurseTexts(hole, thm, code) {
   // decreasing argument's extension; substitution Pi `$W : $[h ⊢ g]` →
   // `$[h' ⊢ $W]` pass-through, or `$[h', b… ⊢ $W[..], b…]` when extended.
   // An object Pi mixed with box premises is outside this generator — null bails.
-  const piPrefixCore = (decArgCtx) => {
+  // ⭐ PER-SLOT UNDERSCORE (the MIXED call spelling). A recursive call passes a
+  // SUB-DERIVATION in the decreasing slot, so every Pi binder occurring in the
+  // decreasing premise's type is RE-INSTANTIATED by that argument — its new value
+  // is a reconstruction-invented term (`N1` in `X1 : mstep N1 M'`) with no source
+  // name, so passing the binder through BY NAME is ill-typed. Underscoring ALL
+  // slots is equally wrong: a binder that occurs only in the CONCLUSION is
+  // determined by nothing and reconstruction reports "Expression is not closed".
+  //
+  // The law, derived from the theorem's own type (no name branching): a Pi binder
+  // OCCURRING IN THE DECREASING PREMISE is solved from the argument → spell `_`;
+  // one that does not occur there must be spelled by its in-scope name.
+  //
+  // Measured on poplmark-reloaded#mstep_appl in the engine's own skeleton
+  // (scratchpad/probe-mixed-slot.mjs), `[g⊢mstep M M'] → [g⊢mstep (app M N) (app M' N)]`:
+  //   all-named          `f [g|-M] [g|-M'] [g|-N] [g|-X1]` → Ill-typed
+  //   all-underscore     `f [g|-_] [g|-_] [g|-_] [g|-X1]`  → Expression is not closed
+  //   THIS RULE (M,M' occur in the premise; N does not)
+  //                      `f _ _ [g|-N] [g|-X1]`            → PASS
+  //   `_` at slot 2 only `f [g|-M] _ [g|-N] [g|-X1]`       → Ill-typed (slot 1 still named)
+  // Emitted as a VARIANT ahead of the named spelling, checker-arbitrated (the D3/D11/D14
+  // dual-spelling doctrine) so no existing all-box theorem can regress.
+  const decIndexNames = () => {
+    let raw = (boxes[decIdx] || boxes[0]).raw || '';
+    if (raw && !raw.startsWith('[')) raw = `[${raw}]`;
+    // boxOf returns { ctx, inner } — the conclusion is `inner`.
+    const inner = String((boxOf(raw) || {}).inner || '').trim();
+    const names = new Set();
+    // Drop the leading FAMILY HEAD: only the index positions are re-instantiated.
+    const idx = inner.replace(/^[\p{L}_][\p{L}\p{N}_'-]*/u, '');
+    for (const m of idx.matchAll(/[\p{L}_][\p{L}\p{N}_']*/gu)) names.add(m[0]);
+    return names;
+  };
+  const piPrefixCore = (decArgCtx, underscoreDetermined = false) => {
     const prems = thm.compType.premises;
+    const determined = underscoreDetermined ? decIndexNames() : null;
     let decRaw = (boxes[decIdx] || boxes[0]).raw || '';
     if (decRaw && !decRaw.startsWith('[')) decRaw = `[${decRaw}]`;
     const decParts = splitCtx(boxOf(decRaw).ctx);
@@ -949,10 +982,13 @@ export function recurseTexts(hole, thm, code) {
       }
       if (vt.includes('[') || vt.includes('|-') || vt.includes('⊢')) {
         // An OBJECT Pi binder is in scope (intro mlam'd it) — pass it through,
-        // spelled in its own declared context (`ceq_plus [ |- N] [ |- D]`).
+        // spelled in its own declared context (`ceq_plus [ |- N] [ |- D]`), UNLESS
+        // the decreasing premise re-instantiates it (see decIndexNames above), in
+        // which case only `_` is well-typed.
         const ob = decomposeContextual(vt);
         if (!ob) return null;
-        prefix.push(ob.ctx ? `[${ob.ctx} |- ${vn}]` : `[ |- ${vn}]`);
+        const w = (determined && determined.has(vn)) ? '_' : vn;
+        prefix.push(ob.ctx ? `[${ob.ctx} |- ${w}]` : `[ |- ${w}]`);
         continue;
       }
       if (vn === decVar) {
@@ -975,18 +1011,31 @@ export function recurseTexts(hole, thm, code) {
     }
     return { prefix, extOf };
   };
-  const piPrefixFor = (decArgCtx) => {
-    const core = piPrefixCore(decArgCtx);
+  const piPrefixFor = (decArgCtx, underscoreDetermined = false) => {
+    const core = piPrefixCore(decArgCtx, underscoreDetermined);
     return core === null ? null : core.prefix;
   };
   const piPrefixExtOf = (decArgCtx) => {
     const core = piPrefixCore(decArgCtx);
     return core === null ? null : core.extOf;
   };
-  const withPiPrefix = (decArgCtx, argTexts) => {
-    const prefix = piPrefixFor(decArgCtx);
+  const withPiPrefix = (decArgCtx, argTexts, underscoreDetermined = false) => {
+    const prefix = piPrefixFor(decArgCtx, underscoreDetermined);
     if (prefix === null) return null;
     return `${thm.name} ${[...prefix, ...argTexts].join(' ')}`;
+  };
+  // Both spellings of one call, MIXED first (it is the well-typed one whenever the
+  // decreasing slot holds a sub-derivation; see decIndexNames). Identical strings
+  // collapse, so a theorem with no re-instantiated Pi binder is byte-identical to
+  // pre-slice — which is why every all-box theorem is unaffected.
+  const callVariants = (decArgCtx, argTexts) => {
+    const named = withPiPrefix(decArgCtx, argTexts);
+    if (globalThis.__proverNoMixedSlot) return [named];
+    const mixed = withPiPrefix(decArgCtx, argTexts, true);
+    if (globalThis.__mixedSlotDebug) {
+      globalThis.__mixedSlotDebug({ determined: [...decIndexNames()], named, mixed });
+    }
+    return (mixed !== null && mixed !== named) ? [mixed, named] : [named];
   };
   // When the conclusion's OWN context variable was extended in parallel by the
   // Pi prefix (the under-binder arm of a context-morphism theorem), the result
@@ -1027,9 +1076,9 @@ export function recurseTexts(hole, thm, code) {
         const args = callArgs([d], boxes, thm, code, usedNamesOf(hole), someInst);
         const texts = args.map((a) => a.text);
         const altTexts = args.map((a) => a.alt || a.text);
-        const calls = [withPiPrefix(args[0].ctx, texts)];
+        const calls = [...callVariants(args[0].ctx, texts)];
         // Comp-arg spelling variant (boxed vs bare) — checker-arbitrated.
-        if (altTexts.some((t, k) => t !== texts[k])) calls.push(withPiPrefix(args[0].ctx, altTexts));
+        if (altTexts.some((t, k) => t !== texts[k])) calls.push(...callVariants(args[0].ctx, altTexts));
         for (const call of calls) {
           if (call === null || letSeen.has(call)) continue;
           letSeen.add(call);
@@ -1095,9 +1144,9 @@ export function recurseTexts(hole, thm, code) {
       const decCtx = args[decIdx] ? args[decIdx].ctx : args[0].ctx;
       const texts = args.map((a) => a.text);
       const altTexts = args.map((a) => a.alt || a.text);
-      const calls = [withPiPrefix(decCtx, texts)];
+      const calls = [...callVariants(decCtx, texts)];
       // Comp-arg spelling variant (boxed vs bare) — checker-arbitrated.
-      if (altTexts.some((t, k) => t !== texts[k])) calls.push(withPiPrefix(decCtx, altTexts));
+      if (altTexts.some((t, k) => t !== texts[k])) calls.push(...callVariants(decCtx, altTexts));
       for (const call of calls) {
         if (call === null) continue;
         const ctypePat = ctypeResultPattern(thm, code, fresh, decCtx);

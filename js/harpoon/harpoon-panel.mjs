@@ -345,7 +345,6 @@ function E() { return global.BelEditor || null; }
     if (outOfScope && !goalType) row.classList.add('is-indeterminate');
 
     var head = el('div', 'harpoon-panel-hole-head');
-    head.appendChild(el('span', 'harpoon-hole-mark', '?'));
     var loc = el('span', 'harpoon-hole-loc');
     var pathLabel = entry.fileBaseName || entry.filePath;
     if (pathLabel) loc.appendChild(el('span', 'harpoon-hole-path', pathLabel));

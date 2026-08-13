@@ -1285,6 +1285,19 @@ export function branchPairChannel(code, hole) {
   return m ? { nameVar: m[1], hypVar: m[2] } : null;
 }
 
+// ⛔ MEASURED DEAD END — do not re-derive (master plan entry 45, 2026-08-06).
+// It is TRUE that this pool offers structurally-invalid LF arguments: the schema
+// binder `g : cxt` (a context variable is not a term) and comp-context hypotheses
+// (`ms : [g ⊢ mstep M M']`, a comp VALUE, ill-formed bare inside a box). Together
+// they are the largest single rejection class in the residue — "Expected an LF
+// term-level constant", 545/1341 = 41% of all rejected candidates over a 20-target
+// stride sample. Both filters were built, verified to fire, and A/B'd:
+//   context variable excluded      -1.3% checks, 0 gains, 0 losses
+//   + comp-context excluded (lfOnly) -2.8% more, 0 gains, 0 losses  (-4.1% combined)
+// A 41% share of REJECTIONS is only a 4% share of CHECKS, because those candidates
+// are cheap and clustered in a few holes, while the expensive holes are elsewhere.
+// Reverted under the declared >=20% stake. This is the ROI law again: no completion
+// has ever come from removing candidates. See `scratchpad/error-census.mjs`.
 function fillScope(hole, code) {
   const seen = new Set();
   const out = [];

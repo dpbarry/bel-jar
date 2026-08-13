@@ -3199,6 +3199,17 @@
       st.detail = commitFailureUserMessage();
       st.detailRaw = raw;
       toast(st.detail, "error");
+      var N = global8.Notifications;
+      if (N && typeof N.emit === "function") {
+        N.emit({
+          kind: "error",
+          category: "ops",
+          title: st.detail,
+          detail: raw,
+          source: "harpoon.commit",
+          dedupeKey: "harpoon.commit.checker"
+        });
+      }
     } else {
       st.detail = raw;
       st.detailRaw = "";
@@ -4957,7 +4968,6 @@
     row.dataset.entryKey = key;
     if (outOfScope && !goalType) row.classList.add("is-indeterminate");
     var head = el3("div", "harpoon-panel-hole-head");
-    head.appendChild(el3("span", "harpoon-hole-mark", "?"));
     var loc = el3("span", "harpoon-hole-loc");
     var pathLabel = entry.fileBaseName || entry.filePath;
     if (pathLabel) loc.appendChild(el3("span", "harpoon-hole-path", pathLabel));

@@ -42,6 +42,7 @@
     var ensureExplorer = deps.ensureExplorer;
     var getExplorerController = deps.getExplorerController;
     var editorTabsEl = deps.editorTabsEl;
+    var projectFileText = deps.projectFileText;
 
     // ── Header menus ──────────────────────────────────────────────────────────────
 
@@ -282,15 +283,16 @@
       } else if (Run && ProjectSource.isSignaturePath(file.name)) {
         run.push({ label: 'Run file', onSelect: () => Run.runFile(fileId) });
         const moduleName = moduleNameFor(fileId);
-        if (moduleName) {
-          run.push(
-            { label: 'Run suite to here', onSelect: () => Run.runToHere(fileId) },
-            { label: 'Run suite', onSelect: () => Run.runModule(fileId) },
-          );
-        }
         // Suite authoring: add/remove this file from its folder's active suite (.cfg)
         // without hand-editing the cfg text.
         const { cfg, member, index, count } = activeSuiteMembership(file.name);
+        if (moduleName) {
+          // "To here" only when predecessors exist; first member is already "Run file".
+          if (member && index > 0) {
+            run.push({ label: 'Run suite to here', onSelect: () => Run.runToHere(fileId) });
+          }
+          run.push({ label: 'Run suite', onSelect: () => Run.runModule(fileId) });
+        }
         const dir = ProjectSource.dirOf(file.name);
         if (cfg && member) {
           if (index > 0) {
@@ -426,23 +428,84 @@
       } catch (_) {}
     }
 
-    const editMenuItems = [
-      { label: 'Undo', onSelect: () => editorExec('undo') },
-      { label: 'Redo', onSelect: () => editorExec('redo') },
-      { type: 'separator' },
-      { label: 'Cut', onSelect: () => editorClipboard('cut') },
-      { label: 'Copy', onSelect: () => editorClipboard('copy') },
-      { label: 'Paste', onSelect: () => editorClipboard('paste') },
-      { label: 'Select All', onSelect: () => editorExec('selectAll') },
-      { type: 'separator' },
-      { label: 'Find…', onSelect: () => editorExec('openSearch') },
-      {
-        label: 'Search in project…',
-        onSelect: () => {
-          CommandPalette.open({ mode: 'search' });
+    function formatCurrentFile() {
+      const ed = getEditor();
+      if (!ed || typeof ed.format !== 'function') return;
+      ed.focus();
+      ed.format();
+    }
+
+    function formatProjectFiles() {
+      const files = (Persist.listFiles() || []).filter((f) =>
+        ProjectSource.isSignaturePath(String(f.name || ''))
+      );
+      if (!files.length) {
+        showToast('No Beluga source files to format.', { kind: 'warn' });
+        return;
+      }
+      const activeId = getPersist() ? getPersist().getCurrentFileId() : Persist.getActiveFileId();
+      const formatOffline = typeof BelEditor !== 'undefined' && typeof BelEditor.formatSource === 'function'
+        ? BelEditor.formatSource
+        : null;
+      let changed = 0;
+      for (const f of files) {
+        if (f.id === activeId && getEditor() && typeof getEditor().format === 'function') {
+          if (getEditor().format()) changed += 1;
+          continue;
+        }
+        if (!formatOffline) continue;
+        const next = formatOffline(projectFileText(f.id), { quiet: true });
+        if (next == null) continue;
+        Persist.setFileText(f.id, next);
+        changed += 1;
+      }
+      if (changed === 0) {
+        showToast('All files already formatted.', { kind: 'success' });
+      } else if (changed === 1) {
+        showToast('Formatted 1 file.', { kind: 'success' });
+      } else {
+        showToast('Formatted ' + changed + ' files.', { kind: 'success' });
+      }
+    }
+
+    function buildEditMenuItems() {
+      const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
+      const currentFile = currentId ? Persist.getFileById(currentId) : null;
+      const canFormatFile = !!(
+        currentFile
+        && ProjectSource.isSignaturePath(String(currentFile.name || ''))
+        && getEditor()
+        && typeof getEditor().format === 'function'
+      );
+      return [
+        { label: 'Undo', onSelect: () => editorExec('undo') },
+        { label: 'Redo', onSelect: () => editorExec('redo') },
+        { type: 'separator' },
+        { label: 'Cut', onSelect: () => editorClipboard('cut') },
+        { label: 'Copy', onSelect: () => editorClipboard('copy') },
+        { label: 'Paste', onSelect: () => editorClipboard('paste') },
+        { label: 'Select All', onSelect: () => editorExec('selectAll') },
+        { type: 'separator' },
+        { label: 'Find…', onSelect: () => editorExec('openSearch') },
+        {
+          label: 'Search in project…',
+          onSelect: () => {
+            CommandPalette.open({ mode: 'search' });
+          },
         },
-      },
-    ];
+        { type: 'separator' },
+        {
+          label: 'Format file',
+          disabled: !canFormatFile,
+          onSelect: formatCurrentFile,
+        },
+        {
+          label: 'Format project',
+          disabled: signatureFileCount() === 0,
+          onSelect: formatProjectFiles,
+        },
+      ];
+    }
 
     // ── Tools menu ────────────────────────────────────────────────────────────────
 
@@ -478,7 +541,7 @@
         id: 'menu-edit',
         side: 'bottom',
         align: 'start',
-        items: editMenuItems,
+        items: buildEditMenuItems,
       },
       {
         id: 'menu-tools',

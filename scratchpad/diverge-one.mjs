@@ -19,6 +19,10 @@ import { proveProgram, theoremUnderProof } from '../js/editor-src/prover/prover-
 if (process.env.NO_WEAKEN) globalThis.__proverNoWeaken = true;
 if (process.env.NO_MIXREC) globalThis.__proverNoMixRec = true;
 if (process.env.NO_CTFACTS) globalThis.__proverNoCtypeFacts = true;
+if (process.env.NO_MIXEDSLOT) globalThis.__proverNoMixedSlot = true;
+if (process.env.NO_CTXVARFILL) globalThis.__proverNoCtxVarFill = true;
+if (process.env.NO_LFSCOPE) globalThis.__proverNoLfScopeFilter = true;
+if (process.env.MIXEDSLOT_DEBUG) { const seen=new Set(); globalThis.__mixedSlotDebug=(d)=>{const k=JSON.stringify(d); if(seen.has(k))return; seen.add(k); console.error('MIXEDSLOT '+k);}; }
 
 const root = process.cwd();
 const args = process.argv.slice(2);

@@ -206,7 +206,15 @@
         container: treeEl,
         listFiles: () => Persist.listFiles(),
         listEmptyFolders: () => Persist.listEmptyFolders(),
-        getActiveId: () => (getPersist() ? getPersist().getCurrentFileId() : Persist.getActiveFileId()),
+        getActiveId: () => {
+          const open = Persist.getOpenFileIds();
+          if (!open.length) return null;
+          const cur = getPersist() ? getPersist().getCurrentFileId() : null;
+          if (cur && open.includes(cur)) return cur;
+          const active = Persist.getActiveFileId();
+          if (active && open.includes(active)) return active;
+          return open[open.length - 1] || null;
+        },
         getActiveCfgForDir: activeCfgForDir,
         getActiveCfgsForDir: activeCfgsForDir,
         getSuiteLayoutForDir: suiteLayoutForDir,

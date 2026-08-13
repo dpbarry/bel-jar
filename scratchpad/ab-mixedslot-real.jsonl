@@ -1,0 +1,11 @@
+{"id":"data/examples/poplmark-reloaded/sources.cfg#mstep_appl","off":"STUCK:no-move","on":"COMPLETE","offChecks":126,"onChecks":67,"offSecs":19.8,"onSecs":10.1}
+{"id":"data/examples/poplmark-reloaded/sources.cfg#mstep_abs","off":"STUCK:no-move","on":"STUCK:no-move","offChecks":115,"onChecks":234,"offSecs":16.6,"onSecs":29.5}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#mstep_appl","off":"STUCK:no-move","on":"COMPLETE","offChecks":136,"onChecks":67,"offSecs":31.2,"onSecs":17.8}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#mstep_inl","off":"STUCK:no-move","on":"COMPLETE","offChecks":193,"onChecks":67,"offSecs":49.4,"onSecs":23.1}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#mstep_match","off":"STUCK:no-move","on":"STUCK:no-move","offChecks":233,"onChecks":245,"offSecs":54.5,"onSecs":52}
+{"id":"data/examples/poplmark-reloaded+/sources.cfg#subst_mred","off":"STUCK:no-totality-measure","on":"STUCK:no-totality-measure","offChecks":34,"onChecks":34,"offSecs":9.3,"onSecs":8.3}
+{"id":"data/examples/tapl/ch3+arith/sources.cfg#small_to_big","off":"STUCK:step-bound","on":"STUCK:step-bound","offChecks":509,"onChecks":691,"offSecs":154.2,"onSecs":123.9}
+{"id":"data/examples/logrel/algeq-simplified1.bel#reflect","off":"STUCK:no-move","on":"STUCK:no-move","offChecks":21,"onChecks":27,"offSecs":2.9,"onSecs":3.2}
+{"id":"data/examples/logrel/algeq-typing.bel#main","off":"STUCK:no-totality-measure","on":"STUCK:no-totality-measure","offChecks":157,"onChecks":177,"offSecs":43.7,"onSecs":52.4}
+{"id":"data/examples/logrel/weak-norm-total-products.bel#pair_halts","off":"STUCK:step-bound","on":"STUCK:step-bound","offChecks":403,"onChecks":403,"offSecs":49.6,"onSecs":44.9}
+{"id":"data/examples/mini-ml/vsound-explicit.bel#vs","off":"STUCK:no-move","on":"COMPLETE","offChecks":21,"onChecks":17,"offSecs":1.5,"onSecs":0.8}

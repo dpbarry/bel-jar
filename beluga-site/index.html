@@ -3,7 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Beluga</title>
+  <title>Beluga — a language for mechanizing meta-theory</title>
+  <meta name="description"
+    content="Beluga is a functional language for reasoning about formal systems, with higher-order abstract syntax and contexts as first-class objects.">
+  <meta property="og:title" content="Beluga">
+  <meta property="og:description"
+    content="A functional language for reasoning about formal systems, with higher-order abstract syntax and contexts as first-class objects.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="bel-icon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/jetbrains-mono-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
   <script>
     try {
@@ -16,8 +25,10 @@
 </head>
 <body>
 
+  <a class="skip-link" href="#top">Skip to content</a>
+
   <header class="site-header">
-    <a class="brand" href="#top">Beluga</a>
+    <a class="brand" href="#top"><span class="brand-text">Beluga</span></a>
     <nav class="site-nav" aria-label="Primary">
       <a href="#abstract">Abstract</a>
       <a href="#install">Install</a>
@@ -59,13 +70,15 @@
       </p>
       <div class="hero-links">
         <a class="primary" href="#install">Install</a>
-        <a href="https://beluga-lang.readthedocs.io/">Manual ↗</a>
-        <a href="https://github.com/Beluga-lang/Beluga">Source ↗</a>
-        <a href="https://dpbarry.github.io/bel-jar/">Playground ↗</a>
+        <a href="https://beluga-lang.readthedocs.io/">Manual <span class="ext" aria-hidden="true">↗</span></a>
+        <a href="https://github.com/Beluga-lang/Beluga">Source <span class="ext" aria-hidden="true">↗</span></a>
+        <a href="https://dpbarry.github.io/bel-jar/">Playground <span class="ext" aria-hidden="true">↗</span></a>
       </div>
 
       <figure class="specimen">
-        <span class="tick" aria-hidden="true"></span>
+        <div class="code-head">
+          <span class="code-name">close.bel</span>
+        </div>
         <pre><code><span class="k">LF</span> <span class="td">tm</span> <span class="pu">:</span> <span class="k">type</span> <span class="op">=</span>
   <span class="pu">|</span> <span class="ct">lam</span> <span class="pu">:</span> (<span class="t">tm</span> <span class="ar">→</span> <span class="t">tm</span>) <span class="ar">→</span> <span class="t">tm</span>
   <span class="pu">|</span> <span class="ct">app</span> <span class="pu">:</span> <span class="t">tm</span> <span class="ar">→</span> <span class="t">tm</span> <span class="ar">→</span> <span class="t">tm</span><span class="pu">;</span>
@@ -209,128 +222,139 @@ make install</code></pre>
     <section id="docs">
       <div class="sec-head">
         <h2>Docs</h2>
+        <a class="sec-aside" href="https://www.cs.mcgill.ca/~bpientka/research.html">All publications</a>
       </div>
-
-      <h3>Guides</h3>
-      <ul class="link-list">
-        <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/userguide2/userguide.pdf">Beluga reference guide</a></li>
-        <li><a href="https://www.cs.mcgill.ca/~complogic/tutorial.pdf">Beginner's Guide to Programming in Beluga</a></li>
-      </ul>
-
-      <h3>Tutorials</h3>
       <ul class="link-list">
         <li>
+          <a href="https://www.cs.mcgill.ca/~complogic/beluga/userguide2/userguide.pdf">Beluga reference guide</a>
+          <span class="meta">PDF · reference manual</span>
+        </li>
+        <li>
+          <a href="https://www.cs.mcgill.ca/~complogic/tutorial.pdf">Beginner's Guide to Programming in Beluga</a>
+          <span class="meta">PDF · for readers coming from functional programming</span>
+          <p class="note">
+            This guide is mostly for users who have only a background in functional programming as
+            often taught in an undergraduate class. We show how to write some common simple
+            functional programs in Beluga and also briefly discuss how to write simple proofs.
+          </p>
+          <div class="samples">
+            <span class="samples-label">Programs from the guide</span>
+            <ul>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/nat.bel">nat.bel</a> naturals <i>§2</i></li>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/yn.bel">yn.bel</a> yes and no <i>§2</i></li>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/listnat.bel">listnat.bel</a> lists of naturals <i>§2</i></li>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/dtlist.bel">dtlist.bel</a> length indexed lists <i>§3</i></li>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/typesterms2.bel">typesterms2.bel</a> list filtering <i>§3</i></li>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/typesterms3.bel">typesterms3.bel</a> list filtering <i>§3</i></li>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/typesterms.bel">typesterms.bel</a> evaluation is deterministic <i>§4</i></li>
+              <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/lambda.bel">lambda.bel</a> preservation for the lambda-calculus <i>§5</i></li>
+            </ul>
+          </div>
+        </li>
+        <li>
           <a href="https://www.cs.mcgill.ca/~complogic/icfp2018/index.html">Beluga: Programming Proofs About Formal Systems</a>
-          (ICFP-18 Tutorial), September 2018
+          <span class="meta">ICFP-18 tutorial · September 2018</span>
         </li>
         <li>
           <a href="https://www.cs.mcgill.ca/~complogic/beluga/beluga-tutorial.pdf">Mechanizing Meta-Theory in Beluga</a>
-          (CADE-25 Tutorial), August 2015
+          <span class="meta">CADE-25 tutorial · August 2015</span>
         </li>
         <li>
           <a href="https://www.cs.mcgill.ca/~complogic/beluga/meta.pdf">Mechanizing Types and Programming Languages: A Companion</a>
-          (Draft from 24 July, 2015): This is a companion that loosely follows B. Pierce's book
-          "Types and Programming Languages" and shows how to mechanize the material in Beluga.
-          The code to the companion is available on github
-          (see <a href="https://github.com/Beluga-lang/Meta/tree/master/beluga-code">beluga-code</a>).
-          <br>
-          For an up-to-date version or to contribute see our
-          <a href="https://github.com/Beluga-lang/Meta">github</a> repository.
+          <span class="meta">Draft · 24 July 2015</span>
+          <p class="note">
+            A companion that loosely follows B. Pierce's <em>Types and Programming Languages</em>
+            and shows how to mechanize the material in Beluga. The code to the companion is on
+            github (see <a href="https://github.com/Beluga-lang/Meta/tree/master/beluga-code">beluga-code</a>).
+            For an up-to-date version, or to contribute, see our
+            <a href="https://github.com/Beluga-lang/Meta">github</a> repository.
+          </p>
+        </li>
+        <li>
+          <a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-mechanize-june15.pdf">Mechanizing Meta-Theory in Beluga</a>
+          <span class="meta">
+            2nd International Workshop on Rewriting Techniques for Program Transformations and
+            Evaluation (WPTE 2015) · June 2015
+          </span>
+        </li>
+        <li>
+          <a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-logrel.pdf">Programming logical relations proofs</a>
+          <span class="meta">
+            Brigitte Pientka ·
+            <a href="https://ihp2014.pps.univ-paris-diderot.fr/doku.php?id=workshop_5">Certification of high-level and low-level programs</a>,
+            Institut Henri Poincaré, Paris · June 2014
+          </span>
+        </li>
+        <li>
+          <a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-update-May14.pdf">Beluga-mu: Programming proofs in context</a>
+          <span class="meta">Brigitte Pientka · POP Seminar, Carnegie Mellon University · May 2014</span>
+        </li>
+        <li>
+          <a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-lfmtp12-updated.pdf">Beluga-mu: Programming proofs in context</a>
+          <span class="meta">
+            Brigitte Pientka · invited talk at
+            <a href="https://people.csail.mit.edu/adamc/lfmtp12/index.html">Logical Frameworks and Meta-Languages: Theory and Practice (LFMTP'12)</a>
+          </span>
         </li>
       </ul>
 
-      <h3>Overview Talks</h3>
-      <ul class="link-list">
-        <li>
-          <a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-mechanize-june15.pdf">Mechanizing Meta-Theory in Beluga</a>,
-          2nd International Workshop on Rewriting Techniques for Program Transformations and Evaluation (WPTE 2015),
-          June 2015
-        </li>
-        <li>
-          Programming logical relations proofs, Brigitte Pientka,
-          <a href="https://ihp2014.pps.univ-paris-diderot.fr/doku.php?id=workshop_5">Certification of high-level and low-level programs</a>,
-          Institut Henri Poincare, Paris, France, June 2014
-          (<a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-logrel.pdf">slides</a>)
-        </li>
-        <li>
-          Beluga-mu: Programming proofs in context, Brigitte Pientka, POP Seminar, Carnegie Mellon University, May 2014
-          (<a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-update-May14.pdf">slides</a>)
-        </li>
-        <li>
-          Beluga-mu: Programming proofs in context, Brigitte Pientka, Invited talk at
-          <a href="https://people.csail.mit.edu/adamc/lfmtp12/index.html">International Workshop on Logical Frameworks and Meta-Languages: Theory and Practice (LFMTP'12)</a>.
-          (<a href="https://www.cs.mcgill.ca/~bpientka/talks/beluga-lfmtp12-updated.pdf">slides</a>)
-        </li>
-      </ul>
+      <h3>Case studies</h3>
+      <div class="cs-grid">
 
-      <h3 id="publications">Publications</h3>
-      <p>
-        For more readings please visit Prof. Brigitte Pientka's publications here:
-        <a href="https://www.cs.mcgill.ca/~bpientka/research.html">https://www.cs.mcgill.ca/~bpientka/research.html</a>.
-      </p>
+        <div class="cs-item">
+          <span class="cs-plate">Beginner</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/0Beginner/Close_Terms.html">Close Terms</a></h4>
+          <p>We build a simple program that closes open terms, converting each free variable to one bound by a lambda abstraction. The example demonstrates pattern matching on contexts and Beluga's built-in mechanism for variable substitution.</p>
+        </div>
 
-      <h3 id="case-studies">Case studies</h3>
+        <div class="cs-item">
+          <span class="cs-plate">Beginner</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/0Beginner/Type_Uniqueness.html">Type Uniqueness</a></h4>
+          <p>Since Beluga does not support equality types, we implement equality using an LF type family as a dependent kind. The difficulties of defining equality via reflexivity in Twelf do not arise in Beluga. Beluga's proof is implemented as a function using pattern matching instead of relations; as we pattern match we learn more about the given derivations and information flows as expected.</p>
+        </div>
 
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/tutorial.pdf"
-            data-tip="This guide is mostly for users who have only a background in functional programming as often taught in an undergraduate class. We show how to write some common simple functional programs in Beluga and also briefly discuss how to write simple proofs in Beluga. Here are a few sample programs discussed in the tutorial to get you started.">Beginner's Guide to Programming in Beluga</a></h4>
-        <details class="cs-samples">
-          <summary>Beginner's Guide to Programming in Beluga - Examples</summary>
-          <ul>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/nat.bel">nat.bel:</a> naturals (Section 2);
-            </li>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/yn.bel">yn.bel</a> yes and no (Section 2);
-            </li>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/listnat.bel">listnat.bel:</a> Lists of
-              naturals (Section 2);</li>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/dtlist.bel">dtlist.bel:</a> length indexed
-              lists (Section 3);</li>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/typesterms2.bel">typesterms2.bel:</a> list
-              filtering (Section 3);</li>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/typesterms3.bel">typesterms3.bel:</a> list
-              filtering (Section 3);</li>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/typesterms.bel">typesterms.bel:</a>
-              evaluation is deterministic (Section 4);</li>
-            <li><a href="https://www.cs.mcgill.ca/~complogic/beluga/tutorial/lambda.bel">lambda.bel:</a> lambda-calculus
-              and proof of preservation (Section 5).</li>
-          </ul>
-        </details>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/0Beginner/Close_Terms.html"
-            data-tip="We build a simple program that closes open terms, converting each free variable to one bound by a lambda abstraction. The example demonstrates pattern matching on contexts and Beluga's built-in mechanism for variable substitution.">Close Terms</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/0Beginner/Type_Uniqueness.html"
-            data-tip="Since Beluga does not support equality types, we implement equality using an LF type family as a dependent kind. The difficulties of defining equality via reflexivity in Twelf do not arise in Beluga. Beluga's proof is implemented as a function using pattern matching instead of relations; as we pattern match we learn more about the given derivations and information flows as expected.">Type Uniqueness</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Parallel_Reduction.html"
-            data-tip="The order of assumptions in a context is important in Beluga. However, sometimes the need to reorder assumptions arises, as is illustrated in the proof of the substitution lemma for algorithmic equality. As in Twelf this kind of proof does not come for free in Beluga.">Parallel Reduction</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Polymorphic_Algorithmic_Equality.html"
-            data-tip="In order to prove algorithmic equality for a polymorphic lambda-calculus, we establish schemas with alternating assumptions, depending on the type of the variable.">Polymorphic Algorithmic Equality</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Poplmark.html"
-            data-tip="This example shows a solution of the POPLMARK Challenge Part 1A, Transitivity of Subtyping.">Poplmark</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Untyped_Algorithmic_Equality_-_Context_Relation.html"
-            data-tip="Context relationships can be defined explicitly using inductive datatypes. In this proof we use inductive datatypes to establish strengthening and weakening between contexts.">Untyped Algorithmic Equality - Context Relation</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Untyped_Algorithmic_Equality_-_Context_Subsumption.html"
-            data-tip="This example demonstrates Beluga's capacity for automatic context subsumption. If schema W is a prefix of a schema W0, then we can always use a context of schema W0 in place of a context of schema W. Essentially, we allow the user to pass a context of schema W0 where a context with schema W if W0 contains at least as much information as W.">Untyped Algorithmic Equality - Context Subsumption</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/2Advanced/Normalization_by_Evaluation.html"
-            data-tip="A normalization by evaluation algorithm for an intrinsically typed simply-typed lambda calculus.">Normalization by Evaluation</a></h4>
-      </div>
-      <div class="cs-item">
-        <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/2Advanced/Weak_Normalization.html"
-            data-tip="A proof of weak head normalization for the simply typed lambda calculus using logical relations.">Weak Normalization</a></h4>
+        <div class="cs-item">
+          <span class="cs-plate">Intermediate</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Parallel_Reduction.html">Parallel Reduction</a></h4>
+          <p>The order of assumptions in a context is important in Beluga. However, sometimes the need to reorder assumptions arises, as is illustrated in the proof of the substitution lemma for algorithmic equality. As in Twelf this kind of proof does not come for free in Beluga.</p>
+        </div>
+
+        <div class="cs-item">
+          <span class="cs-plate">Intermediate</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Polymorphic_Algorithmic_Equality.html">Polymorphic Algorithmic Equality</a></h4>
+          <p>In order to prove algorithmic equality for a polymorphic lambda-calculus, we establish schemas with alternating assumptions, depending on the type of the variable.</p>
+        </div>
+
+        <div class="cs-item">
+          <span class="cs-plate">Intermediate</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Poplmark.html">Poplmark</a></h4>
+          <p>This example shows a solution of the POPLMARK Challenge Part 1A, Transitivity of Subtyping.</p>
+        </div>
+
+        <div class="cs-item">
+          <span class="cs-plate">Intermediate</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Untyped_Algorithmic_Equality_-_Context_Relation.html">Untyped Algorithmic Equality — Context Relation</a></h4>
+          <p>Context relationships can be defined explicitly using inductive datatypes. In this proof we use inductive datatypes to establish strengthening and weakening between contexts.</p>
+        </div>
+
+        <div class="cs-item">
+          <span class="cs-plate">Intermediate</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/1Intermediate/Untyped_Algorithmic_Equality_-_Context_Subsumption.html">Untyped Algorithmic Equality — Context Subsumption</a></h4>
+          <p>This example demonstrates Beluga's capacity for automatic context subsumption. If schema W is a prefix of a schema W0, then we can always use a context of schema W0 in place of a context of schema W.</p>
+        </div>
+
+        <div class="cs-item">
+          <span class="cs-plate">Advanced</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/2Advanced/Normalization_by_Evaluation.html">Normalization by Evaluation</a></h4>
+          <p>A normalization by evaluation algorithm for an intrinsically typed simply-typed lambda calculus.</p>
+        </div>
+
+        <div class="cs-item">
+          <span class="cs-plate">Advanced</span>
+          <h4><a href="https://www.cs.mcgill.ca/~complogic/beluga/examples/literate_beluga/2Advanced/Weak_Normalization.html">Weak Normalization</a></h4>
+          <p>A proof of weak head normalization for the simply typed lambda calculus using logical relations.</p>
+        </div>
+
       </div>
     </section>
 
@@ -464,12 +488,13 @@ make install</code></pre>
   <footer class="site-footer">
     <div class="inner">
       <div>
-        Computation and Logic Group<br>
+        <span class="foot-label">Computation and Logic Group</span>
         Department of Computer Science, McGill University<br>
         3480 University Street, Montreal, Quebec, Canada, H3A 0E9
         <img class="mcgill-mark" src="MCGILL.svg" alt="McGill University" width="143" height="36">
       </div>
       <div class="funding">
+        <span class="foot-label">Funding</span>
         This research has been funded through: NSERC (Natural Science and Engineering Research Council),
         FQRNT Recherche d'Equipe, PSR-SIIRI Projets conjoints de recherche et d'innovation and
         63e session de la Commission permanente de coopération franco-québécoise by

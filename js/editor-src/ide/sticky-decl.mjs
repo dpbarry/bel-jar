@@ -275,11 +275,8 @@ function jumpToCrumb(view, crumb) {
 
 function renderStructureBar(bar, view, path) {
   bar.replaceChildren();
-  if (!path.length) {
-    bar.hidden = true;
-    return;
-  }
   bar.hidden = false;
+  if (!path.length) return;
   path.forEach((crumb, i) => {
     if (i > 0) {
       const sep = document.createElement('span');
@@ -323,9 +320,7 @@ export function stickyDeclHeader() {
       this.cache = { sig: null };
       this.bar = document.createElement('div');
       this.bar.className = 'beljar-sticky-decl beljar-structure-path';
-      this.bar.hidden = true;
       this.bar.setAttribute('aria-label', 'Structure path');
-      // Capture pointer so CM hover (content under the overlay) never sees it.
       this.onEnter = () => {
         if (hasHoverTooltips(view.state)) {
           view.dispatch({ effects: closeHoverTooltips });
@@ -335,9 +330,9 @@ export function stickyDeclHeader() {
         e.stopPropagation();
       };
       this.bar.addEventListener('mouseenter', this.onEnter);
-      // Only block mousedown from reaching CM — do NOT stop mousemove (breaks tips).
       this.bar.addEventListener('mousedown', this.onMouseDown, true);
-      view.dom.appendChild(this.bar);
+      // In-flow flex sibling above the scroller — never overlays line 1.
+      view.dom.insertBefore(this.bar, view.scrollDOM);
       syncStructureBar(view, this.bar, this.cache);
     }
 

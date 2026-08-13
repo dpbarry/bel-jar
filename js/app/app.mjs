@@ -334,11 +334,15 @@ function enterCanvasIdleView() {
   editor = null;
   window.CurrentEditor = null;
   window.BelJarCurrentEditor = window.CurrentEditor
-  if (projectIsEmpty()) persist = null;
+  // Drop the live persist handle so a later reopen binds to the clicked file,
+  // not the previously closed document.
+  persist = null;
   if (typeof FloatingWindow !== 'undefined' && FloatingWindow.closeAll) FloatingWindow.closeAll();
   if (typeof BelugaClient !== 'undefined' && BelugaClient.noteEditorChange) {
     BelugaClient.noteEditorChange('');
   }
+  const ex = getExplorerController();
+  if (ex && typeof ex.clearSelection === 'function') ex.clearSelection();
   updateEditorEmptyState();
   updateInspectorProjectEmpty();
   renderTabs();
@@ -404,7 +408,7 @@ function applyLiveSettings(key) {
     if (typeof Persist !== 'undefined' && Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
   }
   if (key === 'appearance-reset' || key === 'editor-reset' || key === 'settings-import'
-    || key === 'editor-font-family' || key === 'editor-ligatures' || key === 'editor-hole-emphasis') {
+    || key === 'editor-font-family' || key === 'editor-hole-emphasis') {
     if (typeof Persist !== 'undefined' && Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
   }
   if (shouldApplyEditorPrefs(key) || key === 'editor-reset' || key === 'settings-import') {
@@ -849,7 +853,7 @@ function __initAppPeels() {
     makeActiveCfgForFile, moduleNameFor, activeSuiteMembership, activeCfgsForDir,
     afterSuiteEdit, renderTabs, renderExplorerTree, updateHeaderContext,
     ensureEditorMatchesFileKind, showToast, ensureExplorer, getExplorerController,
-    editorTabsEl,
+    editorTabsEl, projectFileText,
   }));
 
   createCommandPalette(Object.assign({}, peelHub, {
@@ -1188,6 +1192,18 @@ if (inspectorBtn && workspaceEl) {
   window.addEventListener('beljar:open-inspector', openInspector);
 }
 
+function openLibrary() {
+  if (!workspaceEl) return;
+  if (!workspaceEl.classList.contains('is-library-open')) {
+    closeOtherSidePanels('library');
+    setSidePanelOpen('library', true);
+    notifySidePanelLayout();
+  }
+  ensureLibrary();
+  if (getLibraryController() && typeof getLibraryController().refresh === 'function') {
+    getLibraryController().refresh();
+  }
+}
 if (libraryBtn && workspaceEl) {
   const hideLibraryTooltipUntilLeave = wireSidebarOpenTooltip(libraryBtn);
   libraryBtn.addEventListener('click', () => {
@@ -1211,6 +1227,7 @@ if (libraryBtn && workspaceEl) {
           id: 'library',
           anchor: libraryBtn,
           text: 'Check the library to view or insert Beluga examples',
+          onClick: openLibrary,
         });
       });
     });

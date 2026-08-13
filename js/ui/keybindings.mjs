@@ -323,6 +323,13 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     return got === wantKey;
   }
 
+  /** True when `e` matches the currently resolved binding for `id` (unbound → false). */
+  function matchesId(e, id) {
+    var spec = resolve(id);
+    if (!spec) return false;
+    return eventMatchesSpec(e, spec);
+  }
+
   /** CodeMirror keymap key string from Mod+Shift+F → Mod-Shift-f */
   function toCmKey(spec) {
     var n = normalizeSpec(spec);
@@ -455,6 +462,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     shortcutParts: shortcutParts,
     specFromEvent: specFromEvent,
     eventMatchesSpec: eventMatchesSpec,
+    matchesId: matchesId,
     isBrowserReserved: isBrowserReserved,
     isReservedSequence: isReservedSequence,
     titleFor: titleFor,

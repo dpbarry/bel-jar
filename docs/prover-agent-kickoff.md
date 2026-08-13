@@ -51,11 +51,14 @@ HOW TO WORK (the laws that were bought with burned sessions):
   of them behind one toggle or do not start: a 3-part move built 2/3 of the way measured
   0 completions even at a verified 40% reach (16/40 targets, 160 hits, 7 of them no-move).
   Arriving at the hole is not the same as being able to COMPLETE the term.
-- TWO HARNESS TRAPS that each nearly produced a false verdict (entry 40):
-  (1) `npm run prover:diff` DEFAULTS to --ref library.20260715.jsonl (183). ALWAYS pass
-      `--ref results/corpus/library.jsonl` explicitly or the gate measures a stale baseline.
-  (2) A CANCELLED is NOT a verdict. Never run an A/B beside a differential/sweep — a
-      contended arm faked a clean-looking 2x regression that vanished on a quiet re-run.
+- HARNESS TRAPS that each nearly produced a false verdict (entry 40):
+  (1) ✅ FIXED 2026-08-06 — `prover:diff`'s default `--ref` was the stale 183 ledger; it is
+      now `results/corpus/library.jsonl` (199) and EVERY run prints its baseline first
+      (`ref … (default) — 199 COMPLETE`). `npm run prover:diff` is correct bare now.
+      Read the printed COMPLETE count; that, not the flag, tells you the baseline is right.
+  (2) ⚠️ STILL LIVE. A CANCELLED is NOT a verdict. Never run an A/B beside a
+      differential/sweep — a contended arm faked a clean-looking 2x regression that
+      vanished on a quiet re-run.
 - When a mechanism you verified against the checker measures ZERO, read the EMITTED
   TEXT (--dump-candidates) before doubting the mechanism, and census its gates. Three
   correct mechanisms once measured zero because one predicate mangled their output.
@@ -157,6 +160,60 @@ harness installs them: `globalThis.__factDropDebug` (prover-moves, entry 42),
 `globalThis.__sfDebug` (hole-split `synthesizeFills`), `globalThis.__synthDebug`
 (prover-moves, pre-existing — note it takes a DIFFERENT payload shape).
 
+## 0.6 UPDATE 2026-08-05 — the per-slot underscore, and "the residue is a long tail"
+
+Master plan **entries 43 and 44**.
+
+- **SHIPPED (entry 43): the MIXED call spelling.** `recurseTexts`' Pi prefix passed every
+  object-Pi binder to the recursive call BY NAME; a recursive call puts a SUB-DERIVATION
+  in the decreasing slot, so any Pi binder occurring in the decreasing premise is
+  re-instantiated to a reconstruction-invented term and naming it is ill-typed — while
+  underscoring EVERY slot leaves conclusion-only binders undetermined ("Expression is not
+  closed"). **Neither spelling the engine could emit was well-typed for that shape.** The
+  rule: *a Pi binder occurring in the decreasing premise → `_`; one that does not → its
+  name.* **4 gains / 0 losses in 11**, three developments, and every win got FASTER
+  (126→67, 136→67, 193→67 checks). Toggle `__proverNoMixedSlot`.
+- ⛔ **SIZE BY THE MECHANISM'S OWN PREDICATE, not by what proofs contain.** The reference-text
+  census said 214 targets; the STRUCTURAL reach is **38** (16 exactly-verified). The A/B
+  against the text class scored **0/5**; the same code against the structural class scored
+  **4/11**. `scratchpad/mixedslot-reach.mjs` computes the structural class offline in
+  seconds — copy that instrument shape before sizing anything.
+- ⛔⛔ **THERE IS NO MASS CLASS LEFT — STOP LOOKING FOR ONE (entries 44 + 47).** This is the
+  single most important thing to know before planning. Three instruments, one conclusion:
+  the feature census (all 552) puts EVERY syntactic feature at **3–20%**; the error census
+  showed its one 41% class is **4% of checks**; the step-map shows **56% die at step 0**
+  (18% of checks) while the 47% that take steps burn **82%**, and **64% are never offered a
+  recurse candidate**. The 0-step group is NOT one defect — its goals are heterogeneous
+  (`SNe`, `Map`, `Sem`, `Reduce`, `CtxAsTup`, `Aeq'`, plain LF boxes) and 22/25 ARE offered a
+  split that never certifies. Every remaining mechanism is worth ~3% and costs a multi-piece
+  atomic build. Plan accordingly; do not spend another session hunting for a big class.
+- ⭐ **THE BEST REMAINING SLICE, SIZED AND UNBUILT: context-structural induction, 16 targets,
+  EXACT type-level predicate.** `scratchpad/ctxind-census.mjs` → (A) explicit `{g:<schema>}`
+  binder, (B) measure NAMES it, (C) reference splits `case [g] of`; **A+B = A+C = A+B+C = 16**,
+  so the class is identifiable from the TYPE ALONE (ids in `scratchpad/ctxind-ids.txt`).
+  Members die cheaply at step 0 (2–11 checks). It is a 3–4 piece ATOMIC composite — context
+  split by schema · `[]` + `[g', x:T]` arms · `measureDesignation` ctx designation (today it
+  returns box/pi/null; a ctx-named measure falls back to box 0) · recursion at `[g']`. **All
+  four behind one toggle or do not start.** Suggested stake ≥6/16, else revert whole.
+- ⭐ **NEW INSTRUMENT, KEEP IT: `scratchpad/error-census.mjs`** — runs a stride sample and
+  tabulates (move kind × CHECKER ERROR CLASS) over every rejected candidate, so a systematic
+  spelling defect appears as a histogram spike instead of needing four hand probes.
+  Companion: `scratchpad/ab-toggle.mjs --env <VAR>` A/Bs any engine toggle reporting BOTH
+  verdicts and check counts.
+- ⛔⛔ **BUT: A SHARE OF REJECTIONS IS NOT A SHARE OF CHECKS (entry 45).** That census's first
+  finding — 41% of all rejected candidates are "Expected an LF term-level constant", because
+  `fillScope` offers the context variable `g` and comp-context hypotheses as LF arguments —
+  was a CORRECT diagnosis with NO payoff. Both filters were built, verified to fire, and
+  measured: **−4.1% checks, 0 gains, 0 losses**. Reverted. Invalid candidates are CHEAP and
+  clustered in shallow holes; the expensive checks are deep and few. **Convert any rejection
+  histogram to a CHECK-WEIGHTED figure before staking a slice on it.** ⛔ Do not re-add the
+  fill-pool filters (documented at the `fillScope` code site).
+- ⚠️ **Three measurement traps hit in one session** — the ledger field is **`outcome`** (not
+  `status`/`result`: reading the wrong key marks all 269 COMPLETEs as stuck); a loose census
+  regex matched annotation parens and reported 90% where the truth was 19%; and
+  `run-all.mjs` counts laptop SLEEP as elapsed time (a `67577s` suite was an 18 h closed lid,
+  not a regression).
+
 ## 1. Where we are (2026-07-31)
 
 - **Library 269 COMPLETE measured.** Suite 203/203; differential 199/199.
@@ -183,11 +240,16 @@ prover import — pre-existing). Differential **199/199, zero regressions**.
 - **Two mechanisms built, both UNPAID (0 completions, 0 losses, kept):** the weakening
   spelling `X[..]` for a meta used in an extended context, and mixed ctype+box recursion.
 - ⛔ **Two harness traps that nearly produced false verdicts:**
-  1. `npm run prover:diff` **defaults to `--ref library.20260715.jsonl` (183)**, not the
-     frozen `library.jsonl` (199) the laws name. **Always pass `--ref` explicitly.**
-  2. **A `CANCELLED` is not a verdict** — an A/B arm sharing the machine with a running
-     sweep reported a bogus 2× regression that vanished on an uncontended re-run. Never
-     run an A/B concurrently with a differential.
+  1. ~~`npm run prover:diff` **defaults to `--ref library.20260715.jsonl` (183)**, not the
+     frozen `library.jsonl` (199) the laws name. **Always pass `--ref` explicitly.**~~
+     ✅ **FIXED 2026-08-06 (entry 48).** The default is now the frozen `library.jsonl`, and
+     every run prints `ref <file> (default) — N COMPLETE` before any results, so a stale
+     baseline is visible rather than silent. A missing `--ref` file exits 2 with a named
+     error. A rule you must remember every time is a trap, not a fix — this one is closed
+     by construction.
+  2. ⚠️ **STILL LIVE — A `CANCELLED` is not a verdict** — an A/B arm sharing the machine
+     with a running sweep reported a bogus 2× regression that vanished on an uncontended
+     re-run. Never run an A/B concurrently with a differential.
 
 ⛔ **THE ctype-CONSTRUCTOR FAMILY IS CLOSED FOR NOW — entries 41 and 42.** The planner is
 single-context, so at a CTYPE goal every boxed fact is DROPPED from the planning domain.
@@ -202,9 +264,19 @@ well-typed one. The missing third piece is an inline-IH argument source
 (`nestedCtorArgFills` gives depth-2 CONSTRUCTOR witnesses only). All three, one toggle,
 or leave it alone. `__factDropDebug` is the no-op hook that sizes any future attempt.
 
-**So pick a DIFFERENT class next.** The residue audit's untouched mass is the place to
+~~**So pick a DIFFERENT class next.** The residue audit's untouched mass is the place to
 look — `STUCK:no-totality-measure` (99 across all sizes) and the `TIMEOUT` families have
-never had a dedicated slice, and neither has been sized by reach.
+never had a dedicated slice, and neither has been sized by reach.~~
+
+⛔ **SUPERSEDED 2026-08-06 by entries 46 + 47 — do not act on the struck-through advice.**
+Both named classes were investigated and neither is what it looked like:
+- **`no-totality-measure` is NOT a measure gap (entry 46).** The label only means "the
+  measure fork proposed something and it did not help"; targets where the fork proposes
+  NOTHING are labelled plain `no-move`. And an empty fork does not deny an IH anyway —
+  `decreasingArgIndex` returns 0 for untotalied theorems under the author-faithful policy,
+  which was confirmed natively (`algeq-simplified1#reflect` IS offered recurse).
+- **There is no untouched mass to find (entry 47).** Sized three ways; everything is 3–20%.
+  See §0.6 above for the map and for the one sized, unbuilt slice worth taking.
 
 ## 2. The open leads — read §1.5 FIRST, it re-ranks these
 

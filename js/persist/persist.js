@@ -220,7 +220,6 @@
     var EDITOR_SCROLL_PAST_END_KEY = "beljar-editor-scroll-past-end";
     var EDITOR_WHITESPACE_KEY = "beljar-editor-whitespace";
     var EDITOR_RULERS_KEY = "beljar-editor-rulers";
-    var EDITOR_LIGATURES_KEY = "beljar-editor-ligatures";
     var EDITOR_FONT_FAMILY_KEY = "beljar-editor-font-family";
     var EDITOR_HOLE_EMPHASIS_KEY = "beljar-editor-hole-emphasis";
     var MOTION_PREF_KEY = "beljar-motion-pref";
@@ -283,10 +282,10 @@
       writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on);
     }
     function readStoredReplHoverTimestamp2() {
-      return readBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY);
+      return readBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY);
     }
     function writeStoredReplHoverTimestamp2(on) {
-      writeBoolDefaultOn(REPL_HOVER_TIMESTAMP_KEY, on);
+      writeBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY, on);
     }
     function readStoredReplHistoryCap2() {
       try {
@@ -553,14 +552,14 @@
     function readStoredEditorFoldPersist2() {
       try {
         var v = backendLoad2(EDITOR_FOLD_PERSIST_KEY);
-        if (v === "session" || v === "local") return v;
-        return "none";
+        if (v === "none" || v === "local") return v;
+        return "session";
       } catch (_) {
-        return "none";
+        return "session";
       }
     }
     function writeStoredEditorFoldPersist2(mode) {
-      if (mode === "session" || mode === "local") backendSave2(EDITOR_FOLD_PERSIST_KEY, mode);
+      if (mode === "none" || mode === "local") backendSave2(EDITOR_FOLD_PERSIST_KEY, mode);
       else backendRemove2(EDITOR_FOLD_PERSIST_KEY);
     }
     function readStoredEditorActiveLine2() {
@@ -700,12 +699,6 @@
     }
     function writeStoredEditorRulers(on) {
       writeBoolDefaultOff(EDITOR_RULERS_KEY, on);
-    }
-    function readStoredEditorLigatures() {
-      return readBoolDefaultOn(EDITOR_LIGATURES_KEY);
-    }
-    function writeStoredEditorLigatures(on) {
-      writeBoolDefaultOn(EDITOR_LIGATURES_KEY, on);
     }
     function readStoredEditorFontFamily() {
       try {
@@ -898,10 +891,8 @@
         "--editor-mono",
         family === "system" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "'JetBrains Mono', monospace"
       );
-      root.style.setProperty(
-        "--editor-ligatures",
-        readStoredEditorLigatures() ? "common-ligatures" : "none"
-      );
+      root.style.setProperty("--editor-ligatures", "none");
+      backendRemove2("beljar-editor-ligatures");
       var emph = readStoredEditorHoleEmphasis();
       root.classList.toggle("bj-hole-subtle", emph === "subtle");
       root.classList.toggle("bj-hole-loud", emph === "loud");
@@ -967,7 +958,6 @@
       EDITOR_SCROLL_PAST_END_KEY,
       EDITOR_WHITESPACE_KEY,
       EDITOR_RULERS_KEY,
-      EDITOR_LIGATURES_KEY,
       EDITOR_FONT_FAMILY_KEY,
       EDITOR_HOLE_EMPHASIS_KEY
     ];
@@ -1027,7 +1017,7 @@
       backendRemove2(EDITOR_FONT_SIZE_KEY);
       backendRemove2(EDITOR_LINE_HEIGHT_KEY);
       backendRemove2(EDITOR_WORD_WRAP_KEY);
-      backendRemove2(EDITOR_LIGATURES_KEY);
+      backendRemove2("beljar-editor-ligatures");
       backendRemove2(EDITOR_FONT_FAMILY_KEY);
       backendRemove2(EDITOR_CURSOR_BLINK_KEY);
       backendRemove2(EDITOR_SCROLL_PAST_END_KEY);
@@ -1293,8 +1283,6 @@
       writeStoredEditorWhitespace,
       readStoredEditorRulers,
       writeStoredEditorRulers,
-      readStoredEditorLigatures,
-      writeStoredEditorLigatures,
       readStoredEditorFontFamily,
       writeStoredEditorFontFamily,
       readStoredEditorHoleEmphasis,
@@ -3193,29 +3181,99 @@
     }
     return next;
   }
+  var CAPACITY_DEDUPE = "persist.capacity";
+  var saveBlocked = false;
+  var lastSaveError = null;
+  function classifyPersistError(err) {
+    if (!err) return { code: "unknown", retryable: false, detail: null };
+    if (err.name === "QuotaExceededError" || err.code === "capacity") {
+      return {
+        code: "capacity",
+        retryable: false,
+        detail: String(err.message || err.name || "")
+      };
+    }
+    if (err.code === "network" || err.code === "auth" || err.code === "conflict") {
+      return {
+        code: err.code,
+        retryable: !!err.retryable,
+        detail: err.detail != null ? String(err.detail) : err.message ? String(err.message) : null
+      };
+    }
+    return {
+      code: "unknown",
+      retryable: false,
+      detail: String(err.message || err)
+    };
+  }
+  function reportCapacityFailure(classified) {
+    saveBlocked = true;
+    lastSaveError = classified || { code: "capacity", retryable: false, detail: null };
+    if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
+      globalThis.Toasts.error("Couldn\u2019t save \u2014 storage full.", {
+        duration: 0,
+        closable: true
+      });
+    }
+    if (typeof globalThis.Notifications !== "undefined" && globalThis.Notifications.emit) {
+      globalThis.Notifications.emit({
+        kind: "error",
+        category: "ops",
+        origin: "local",
+        title: "Couldn\u2019t save \u2014 storage full",
+        body: "BelJar couldn\u2019t write your project. The last successful save is intact; newer edits may be lost on reload until space is available.",
+        detail: classified && classified.detail ? classified.detail : null,
+        source: "persist.capacity",
+        dedupeKey: CAPACITY_DEDUPE
+      });
+    }
+  }
+  function clearCapacityFailure() {
+    if (!saveBlocked && !lastSaveError) return;
+    saveBlocked = false;
+    lastSaveError = null;
+    var N = globalThis.Notifications;
+    if (!N || typeof N.list !== "function" || typeof N.dismiss !== "function") return;
+    var list = N.list();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].dedupeKey === CAPACITY_DEDUPE) {
+        N.dismiss(list[i].id);
+        break;
+      }
+    }
+  }
+  function isSaveBlocked() {
+    return !!saveBlocked;
+  }
   function writeState(backend, state) {
     var b = backend || defaultBackend;
     var key = stateKeyFor(state.meta && state.meta.documentId);
     try {
       b.saveSync(key, JSON.stringify(state));
-      return true;
+      clearCapacityFailure();
+      return { ok: true };
     } catch (err) {
-      if (!err || err.name !== "QuotaExceededError") return false;
+      var classified = classifyPersistError(err);
+      if (classified.code !== "capacity") {
+        lastSaveError = classified;
+        return { ok: false, error: classified };
+      }
       if (state.semantic) {
         state.semantic = trimSemanticForQuota(state.semantic);
         try {
           b.saveSync(key, JSON.stringify(state));
-          return true;
-        } catch (_) {
+          clearCapacityFailure();
+          return { ok: true };
+        } catch (err2) {
+          classified = classifyPersistError(err2);
+          if (classified.code !== "capacity") {
+            lastSaveError = classified;
+            return { ok: false, error: classified };
+          }
         }
       }
-      if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
-        globalThis.Toasts.error("Storage quota exceeded. Could not save.", {
-          duration: 0,
-          closable: true
-        });
-      }
-      return false;
+      reportCapacityFailure(classified);
+      return { ok: false, error: classified };
     }
   }
   function createPersist(opts) {
@@ -3673,8 +3731,6 @@
     "writeStoredEditorWhitespace",
     "readStoredEditorRulers",
     "writeStoredEditorRulers",
-    "readStoredEditorLigatures",
-    "writeStoredEditorLigatures",
     "readStoredEditorFontFamily",
     "writeStoredEditorFontFamily",
     "readStoredEditorHoleEmphasis",
@@ -4226,6 +4282,8 @@
     createLocalStorageAdapter,
     createPersist,
     createAsyncPersistLayer,
+    classifyPersistError,
+    isSaveBlocked,
     readStoredTheme,
     writeStoredTheme,
     UI_FONT_SIZE_KEY,

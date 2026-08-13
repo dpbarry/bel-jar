@@ -34,18 +34,33 @@
       kind: o.kind || "default",
       until: typeof o.until === "function" ? o.until : null,
       onDismiss: typeof o.onDismiss === "function" ? o.onDismiss : null,
-      notify: o.notify
+      notify: o.notify,
+      durable: o.durable,
+      detail: o.detail != null ? String(o.detail) : null,
+      source: o.source != null ? String(o.source) : null,
+      dedupeKey: o.dedupeKey != null ? String(o.dedupeKey) : null,
+      category: o.category != null ? String(o.category) : null
     };
   }
-  function shouldNotify(kind, notifyOpt) {
-    if (notifyOpt === false) return false;
-    if (notifyOpt === true) return true;
-    return kind === "error";
+  function shouldNotify(kind, notifyOpt, durableOpt) {
+    if (notifyOpt === false || durableOpt === false) return false;
+    if (notifyOpt === true || durableOpt === true) return true;
+    return false;
   }
-  function pushNotification(message) {
-    if (typeof global.Notifications !== "undefined" && global.Notifications.push) {
-      global.Notifications.push(message);
+  function pushNotification(message, parsed) {
+    const N = global.Notifications;
+    if (!N) return;
+    if (typeof N.fromToast === "function") {
+      N.fromToast(message, {
+        kind: parsed.kind,
+        detail: parsed.detail,
+        source: parsed.source,
+        dedupeKey: parsed.dedupeKey,
+        category: parsed.category
+      });
+      return;
     }
+    if (typeof N.push === "function") N.push(message);
   }
   function kindClass(kind) {
     if (kind === "success" || kind === "error" || kind === "info" || kind === "warn") {
@@ -136,8 +151,8 @@
     if (!stackEl) init();
     const parsed = parseOpts(message, opts);
     if (!parsed.message) return null;
-    if (shouldNotify(parsed.kind, parsed.notify)) {
-      pushNotification(parsed.message);
+    if (shouldNotify(parsed.kind, parsed.notify, parsed.durable)) {
+      pushNotification(parsed.message, parsed);
     }
     const id = nextId();
     const el = document.createElement("div");

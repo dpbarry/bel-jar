@@ -235,9 +235,15 @@
       err.isStackOverflow = isOvf;
       if (!isOvf && global.Toasts && global.Toasts.error) {
         global.Toasts.error(
-          'Beluga checker failed to load' + loc
-          + '. Hard-refresh the page; if it persists, check that beluga_web.bc.js downloads fully in the Network tab.',
-          { duration: 12000 },
+          'Beluga checker failed to load' + loc + '.',
+          {
+            duration: 12000,
+            durable: true,
+            detail: (msg || 'Beluga worker crashed') + loc
+              + '. Hard-refresh the page; if it persists, check that beluga_web.bc.js downloads fully in the Network tab.',
+            source: 'beluga.worker',
+            dedupeKey: 'beluga.worker.onerror',
+          },
         );
       }
       slot.ready = false;

@@ -1,6 +1,6 @@
 // Ephemeral on-screen messages — slide up from the top-right workspace corner.
-// kind === 'error' also pushes to Notifications (persistent inbox) unless
-// opts.notify === false. Warnings/success/info are toast-only.
+// Inbox is opt-in: opts.durable === true or opts.notify === true. Errors alone
+// do not auto-bridge (teaching/ops durability goes through Notifications.emit).
 const global = globalThis;
 const DEFAULT_DURATION_MS = 3500;
   const ENTER_MS = 340;
@@ -40,19 +40,35 @@ const DEFAULT_DURATION_MS = 3500;
       until: typeof o.until === 'function' ? o.until : null,
       onDismiss: typeof o.onDismiss === 'function' ? o.onDismiss : null,
       notify: o.notify,
+      durable: o.durable,
+      detail: o.detail != null ? String(o.detail) : null,
+      source: o.source != null ? String(o.source) : null,
+      dedupeKey: o.dedupeKey != null ? String(o.dedupeKey) : null,
+      category: o.category != null ? String(o.category) : null,
     };
   }
 
-  function shouldNotify(kind, notifyOpt) {
-    if (notifyOpt === false) return false;
-    if (notifyOpt === true) return true;
-    return kind === 'error';
+  // Explicit only — notify:true or durable:true. Errors no longer auto-inbox.
+  function shouldNotify(kind, notifyOpt, durableOpt) {
+    if (notifyOpt === false || durableOpt === false) return false;
+    if (notifyOpt === true || durableOpt === true) return true;
+    return false;
   }
 
-  function pushNotification(message) {
-    if (typeof global.Notifications !== 'undefined' && global.Notifications.push) {
-      global.Notifications.push(message);
+  function pushNotification(message, parsed) {
+    const N = global.Notifications;
+    if (!N) return;
+    if (typeof N.fromToast === 'function') {
+      N.fromToast(message, {
+        kind: parsed.kind,
+        detail: parsed.detail,
+        source: parsed.source,
+        dedupeKey: parsed.dedupeKey,
+        category: parsed.category,
+      });
+      return;
     }
+    if (typeof N.push === 'function') N.push(message);
   }
 
   function kindClass(kind) {
@@ -151,8 +167,8 @@ const DEFAULT_DURATION_MS = 3500;
     const parsed = parseOpts(message, opts);
     if (!parsed.message) return null;
 
-    if (shouldNotify(parsed.kind, parsed.notify)) {
-      pushNotification(parsed.message);
+    if (shouldNotify(parsed.kind, parsed.notify, parsed.durable)) {
+      pushNotification(parsed.message, parsed);
     }
 
     const id = nextId();

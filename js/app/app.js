@@ -366,7 +366,8 @@
       if (file && /\.cfg$/i.test(file.name)) {
         setTip2(btn, "Run suite");
       } else if (file && moduleNameFor2(file.id)) {
-        setTip2(btn, "Run suite to here\nCtrl+click: run suite");
+        const hasPrelude = !!(ProjectSource.buildPrelude && ProjectSource.buildPrelude(Persist.listFiles(), file.id, projectFileText2));
+        setTip2(btn, hasPrelude ? "Run suite to here\nCtrl+click: run suite" : "Run\nCtrl+click: run suite");
       } else {
         setTip2(btn, "Run");
       }
@@ -998,7 +999,8 @@
       if (!getEditor()) {
         Persist.openFile(id);
         Persist.setActiveFileId(id);
-        const snapshot2 = getPersist().getInitialCheckpoint();
+        const curId = getPersist().getCurrentFileId();
+        const snapshot2 = curId === id ? getPersist().getInitialCheckpoint() : getPersist().switchFile(id);
         setEditor(mountEditorFor2(snapshot2, openOpts));
         syncEditorCmTheme2();
         if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
@@ -1032,6 +1034,7 @@
         } else if (shouldClearSelection && getExplorerController2() && getExplorerController2().clearSelection) {
           getExplorerController2().clearSelection();
         }
+        refreshExplorerActiveAndDiags2();
         notifyActiveEditorView2();
         return;
       }
@@ -1565,7 +1568,15 @@
         container: treeEl,
         listFiles: () => Persist.listFiles(),
         listEmptyFolders: () => Persist.listEmptyFolders(),
-        getActiveId: () => getPersist() ? getPersist().getCurrentFileId() : Persist.getActiveFileId(),
+        getActiveId: () => {
+          const open = Persist.getOpenFileIds();
+          if (!open.length) return null;
+          const cur = getPersist() ? getPersist().getCurrentFileId() : null;
+          if (cur && open.includes(cur)) return cur;
+          const active = Persist.getActiveFileId();
+          if (active && open.includes(active)) return active;
+          return open[open.length - 1] || null;
+        },
         getActiveCfgForDir: activeCfgForDir2,
         getActiveCfgsForDir: activeCfgsForDir2,
         getSuiteLayoutForDir: suiteLayoutForDir2,
@@ -1741,6 +1752,7 @@
     var ensureExplorer2 = deps.ensureExplorer;
     var getExplorerController2 = deps.getExplorerController;
     var editorTabsEl2 = deps.editorTabsEl;
+    var projectFileText2 = deps.projectFileText;
     function wireMenuTrigger(btn, menuOpts) {
       if (!btn) return;
       let suppressNextClick = false;
@@ -1961,13 +1973,13 @@
       } else if (Run && ProjectSource.isSignaturePath(file.name)) {
         run.push({ label: "Run file", onSelect: () => Run.runFile(fileId) });
         const moduleName = moduleNameFor2(fileId);
-        if (moduleName) {
-          run.push(
-            { label: "Run suite to here", onSelect: () => Run.runToHere(fileId) },
-            { label: "Run suite", onSelect: () => Run.runModule(fileId) }
-          );
-        }
         const { cfg, member, index, count } = activeSuiteMembership2(file.name);
+        if (moduleName) {
+          if (member && index > 0) {
+            run.push({ label: "Run suite to here", onSelect: () => Run.runToHere(fileId) });
+          }
+          run.push({ label: "Run suite", onSelect: () => Run.runModule(fileId) });
+        }
         const dir = ProjectSource.dirOf(file.name);
         if (cfg && member) {
           if (index > 0) {
@@ -2105,23 +2117,75 @@
       } catch (_) {
       }
     }
-    const editMenuItems = [
-      { label: "Undo", onSelect: () => editorExec2("undo") },
-      { label: "Redo", onSelect: () => editorExec2("redo") },
-      { type: "separator" },
-      { label: "Cut", onSelect: () => editorClipboard("cut") },
-      { label: "Copy", onSelect: () => editorClipboard("copy") },
-      { label: "Paste", onSelect: () => editorClipboard("paste") },
-      { label: "Select All", onSelect: () => editorExec2("selectAll") },
-      { type: "separator" },
-      { label: "Find\u2026", onSelect: () => editorExec2("openSearch") },
-      {
-        label: "Search in project\u2026",
-        onSelect: () => {
-          CommandPalette.open({ mode: "search" });
-        }
+    function formatCurrentFile() {
+      const ed = getEditor();
+      if (!ed || typeof ed.format !== "function") return;
+      ed.focus();
+      ed.format();
+    }
+    function formatProjectFiles() {
+      const files = (Persist.listFiles() || []).filter(
+        (f) => ProjectSource.isSignaturePath(String(f.name || ""))
+      );
+      if (!files.length) {
+        showToast2("No Beluga source files to format.", { kind: "warn" });
+        return;
       }
-    ];
+      const activeId = getPersist() ? getPersist().getCurrentFileId() : Persist.getActiveFileId();
+      const formatOffline = typeof BelEditor !== "undefined" && typeof BelEditor.formatSource === "function" ? BelEditor.formatSource : null;
+      let changed = 0;
+      for (const f of files) {
+        if (f.id === activeId && getEditor() && typeof getEditor().format === "function") {
+          if (getEditor().format()) changed += 1;
+          continue;
+        }
+        if (!formatOffline) continue;
+        const next = formatOffline(projectFileText2(f.id), { quiet: true });
+        if (next == null) continue;
+        Persist.setFileText(f.id, next);
+        changed += 1;
+      }
+      if (changed === 0) {
+        showToast2("All files already formatted.", { kind: "success" });
+      } else if (changed === 1) {
+        showToast2("Formatted 1 file.", { kind: "success" });
+      } else {
+        showToast2("Formatted " + changed + " files.", { kind: "success" });
+      }
+    }
+    function buildEditMenuItems() {
+      const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
+      const currentFile = currentId ? Persist.getFileById(currentId) : null;
+      const canFormatFile = !!(currentFile && ProjectSource.isSignaturePath(String(currentFile.name || "")) && getEditor() && typeof getEditor().format === "function");
+      return [
+        { label: "Undo", onSelect: () => editorExec2("undo") },
+        { label: "Redo", onSelect: () => editorExec2("redo") },
+        { type: "separator" },
+        { label: "Cut", onSelect: () => editorClipboard("cut") },
+        { label: "Copy", onSelect: () => editorClipboard("copy") },
+        { label: "Paste", onSelect: () => editorClipboard("paste") },
+        { label: "Select All", onSelect: () => editorExec2("selectAll") },
+        { type: "separator" },
+        { label: "Find\u2026", onSelect: () => editorExec2("openSearch") },
+        {
+          label: "Search in project\u2026",
+          onSelect: () => {
+            CommandPalette.open({ mode: "search" });
+          }
+        },
+        { type: "separator" },
+        {
+          label: "Format file",
+          disabled: !canFormatFile,
+          onSelect: formatCurrentFile
+        },
+        {
+          label: "Format project",
+          disabled: signatureFileCount2() === 0,
+          onSelect: formatProjectFiles
+        }
+      ];
+    }
     function buildToolsMenuItems() {
       return [
         {
@@ -2150,7 +2214,7 @@
         id: "menu-edit",
         side: "bottom",
         align: "start",
-        items: editMenuItems
+        items: buildEditMenuItems
       },
       {
         id: "menu-tools",
@@ -2614,11 +2678,13 @@
     editor = null;
     window.CurrentEditor = null;
     window.BelJarCurrentEditor = window.CurrentEditor;
-    if (projectIsEmpty()) persist = null;
+    persist = null;
     if (typeof FloatingWindow !== "undefined" && FloatingWindow.closeAll) FloatingWindow.closeAll();
     if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
       BelugaClient.noteEditorChange("");
     }
+    const ex = getExplorerController();
+    if (ex && typeof ex.clearSelection === "function") ex.clearSelection();
     updateEditorEmptyState();
     updateInspectorProjectEmpty();
     renderTabs();
@@ -2674,7 +2740,7 @@
     if (key === "appearance-reset" || key === "motion-pref" || key === "settings-import") {
       if (typeof Persist !== "undefined" && Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
     }
-    if (key === "appearance-reset" || key === "editor-reset" || key === "settings-import" || key === "editor-font-family" || key === "editor-ligatures" || key === "editor-hole-emphasis") {
+    if (key === "appearance-reset" || key === "editor-reset" || key === "settings-import" || key === "editor-font-family" || key === "editor-hole-emphasis") {
       if (typeof Persist !== "undefined" && Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
     }
     if (shouldApplyEditorPrefs(key) || key === "editor-reset" || key === "settings-import") {
@@ -3229,7 +3295,8 @@
       showToast,
       ensureExplorer,
       getExplorerController,
-      editorTabsEl
+      editorTabsEl,
+      projectFileText
     }));
     create9(Object.assign({}, peelHub, {
       toggleSidePanel,
@@ -3521,6 +3588,18 @@
     });
     window.addEventListener("beljar:open-inspector", openInspector);
   }
+  function openLibrary() {
+    if (!workspaceEl) return;
+    if (!workspaceEl.classList.contains("is-library-open")) {
+      closeOtherSidePanels("library");
+      setSidePanelOpen("library", true);
+      notifySidePanelLayout();
+    }
+    ensureLibrary();
+    if (getLibraryController() && typeof getLibraryController().refresh === "function") {
+      getLibraryController().refresh();
+    }
+  }
   if (libraryBtn && workspaceEl) {
     const hideLibraryTooltipUntilLeave = wireSidebarOpenTooltip(libraryBtn);
     libraryBtn.addEventListener("click", () => {
@@ -3543,7 +3622,8 @@
           Hint.show({
             id: "library",
             anchor: libraryBtn,
-            text: "Check the library to view or insert Beluga examples"
+            text: "Check the library to view or insert Beluga examples",
+            onClick: openLibrary
           });
         });
       });

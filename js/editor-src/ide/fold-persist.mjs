@@ -48,7 +48,8 @@ function writeStoreBlob(mode, blob) {
 export function readFoldPersistMode() {
   const p = typeof globalThis !== 'undefined' ? globalThis.Persist : null;
   const mode = p?.readStoredEditorFoldPersist?.();
-  return mode === 'session' || mode === 'local' ? mode : 'none';
+  if (mode === 'none' || mode === 'local') return mode;
+  return 'session';
 }
 
 export function readFileFoldKeys(fileId, mode = readFoldPersistMode()) {

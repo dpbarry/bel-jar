@@ -31,7 +31,6 @@ function withPersist(fn) {
     readStoredEditorScrollPastEnd: () => false,
     readStoredEditorWhitespace: () => 'trailing',
     readStoredEditorRulers: () => true,
-    readStoredEditorLigatures: () => false,
     readStoredEditorFontFamily: () => 'system',
     readStoredEditorHoleEmphasis: () => 'subtle',
   };

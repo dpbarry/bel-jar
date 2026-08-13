@@ -34,9 +34,9 @@ function formatTs(ms) {
 }
 
 function hoverTimestampOn() {
-  return typeof Persist === 'undefined'
-    || typeof Persist.readStoredReplHoverTimestamp !== 'function'
-    || Persist.readStoredReplHoverTimestamp();
+  return typeof Persist !== 'undefined'
+    && typeof Persist.readStoredReplHoverTimestamp === 'function'
+    && Persist.readStoredReplHoverTimestamp();
 }
 
 function clearStampTooltip(el) {

@@ -613,13 +613,20 @@ html.light .output-header-progress {
   flex: 1;
   min-height: 0;
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+#editor.editor-cm-host .cm-scroller {
+  flex: 1;
+  min-height: 0;
 }
 
 #editor.editor-cm-host,
 #editor.editor-cm-host * {
   font-family: var(--editor-mono, var(--mono));
-  font-variant-ligatures: var(--editor-ligatures, common-ligatures);
-  font-feature-settings: normal;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 
 #editor.editor-cm-host .cm-scroller,

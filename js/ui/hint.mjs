@@ -1,5 +1,5 @@
 // Lightweight coachmark balloons. One at a time; optional once-ever via id.
-// Hint.show({ id, anchor, text, duration? })
+// Hint.show({ id, anchor, text, duration?, onClick? })
 const global = globalThis;
 const DEFAULT_DURATION_MS = 10000;
   const GAP_PX = 10;
@@ -20,6 +20,7 @@ const DEFAULT_DURATION_MS = 10000;
   let visible = false;
   let dismissing = false;
   let resizeBound = false;
+  let actionFn = null;
 
   function wasDismissed(id) {
     if (!id || typeof Persist === 'undefined') return false;
@@ -113,6 +114,17 @@ const DEFAULT_DURATION_MS = 10000;
         dismiss();
       });
     }
+    if (cardEl && !cardEl._belHintActionBound) {
+      cardEl._belHintActionBound = true;
+      cardEl.addEventListener('click', (e) => {
+        if (!actionFn) return;
+        if (e.target && e.target.closest && e.target.closest('.hint-close')) return;
+        e.preventDefault();
+        const fn = actionFn;
+        dismiss();
+        fn();
+      });
+    }
     if (!resizeBound) {
       resizeBound = true;
       window.addEventListener('resize', onResize);
@@ -132,6 +144,8 @@ const DEFAULT_DURATION_MS = 10000;
     rootEl.setAttribute('aria-hidden', 'true');
     visible = false;
     dismissing = false;
+    actionFn = null;
+    if (cardEl) cardEl.classList.remove('is-action');
     releaseTooltip();
     anchorEl = null;
     activeId = null;
@@ -248,6 +262,11 @@ const DEFAULT_DURATION_MS = 10000;
 
     activeId = id;
     anchorEl = anchor;
+    actionFn = typeof o.onClick === 'function' ? o.onClick : null;
+    if (cardEl) {
+      if (actionFn) cardEl.classList.add('is-action');
+      else cardEl.classList.remove('is-action');
+    }
     bodyEl.textContent = text;
     rootEl.style.setProperty('--hint-duration', duration / 1000 + 's');
     clearProgressBarFreeze();

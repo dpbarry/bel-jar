@@ -182,6 +182,8 @@
     var REPL_HOVER_TIMESTAMP_KEY = "beljar-repl-hover-timestamp";
     var REPL_HISTORY_CAP_KEY = "beljar-repl-history-cap";
     var REPL_HISTORY_PERSIST_KEY = "beljar-repl-history-persist";
+    var REPL_AUTOCOMPLETE_TRIGGER_KEY = "beljar-repl-autocomplete-trigger";
+    var REPL_AUTOCOMPLETE_CONTINUE_KEY = "beljar-repl-autocomplete-continue";
     var REPL_TRANSCRIPT_KEY = "beljar-repl-transcript-v1";
     var REPL_CMD_HISTORY_KEY = "beljar-repl-cmd-history-v1";
     var REPL_CMD_HISTORY_DEFAULT_CAP = 1e3;
@@ -227,6 +229,8 @@
     var CHECK_AGGRESSIVENESS_KEY = "beljar-check-aggressiveness";
     var AUTOSOLVE_FOCUS_NEXT_KEY = "beljar-autosolve-focus-next";
     var AUTOSOLVE_SHOW_STATS_KEY = "beljar-autosolve-show-stats";
+    var HARPOON_MODE_KEY = "beljar-harpoon-mode";
+    var HARPOON_VERIFY_MOVES_KEY = "beljar-harpoon-verify-moves";
     var QUIET_WHILE_TYPING_KEY = "beljar-quiet-while-typing";
     var DIAG_PRESENTATION_KEY = "beljar-diag-presentation";
     var DIAG_SEVERITY_KEY = "beljar-diag-severity";
@@ -286,6 +290,25 @@
     }
     function writeStoredReplHoverTimestamp2(on) {
       writeBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY, on);
+    }
+    function readStoredReplAutocompleteTrigger2() {
+      try {
+        var v = backendLoad2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
+        if (v === "none" || v === "always") return v;
+        return "typing";
+      } catch (_) {
+        return "typing";
+      }
+    }
+    function writeStoredReplAutocompleteTrigger2(mode) {
+      if (mode === "none" || mode === "always") backendSave2(REPL_AUTOCOMPLETE_TRIGGER_KEY, mode);
+      else backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
+    }
+    function readStoredReplAutocompleteContinue2() {
+      return readBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY);
+    }
+    function writeStoredReplAutocompleteContinue2(on) {
+      writeBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY, on);
     }
     function readStoredReplHistoryCap2() {
       try {
@@ -807,6 +830,26 @@
     function writeStoredAutosolveShowStats(on) {
       writeBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY, on);
     }
+    function readStoredHarpoonMode() {
+      try {
+        var v = localStorage.getItem(HARPOON_MODE_KEY);
+        return v === "brutus" ? "brutus" : "manual";
+      } catch (e) {
+        return "manual";
+      }
+    }
+    function writeStoredHarpoonMode(mode) {
+      try {
+        localStorage.setItem(HARPOON_MODE_KEY, mode === "brutus" ? "brutus" : "manual");
+      } catch (e) {
+      }
+    }
+    function readStoredHarpoonVerifyMoves() {
+      return readBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY);
+    }
+    function writeStoredHarpoonVerifyMoves(on) {
+      writeBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY, on);
+    }
     function readStoredQuietWhileTyping() {
       return readBoolDefaultOff(QUIET_WHILE_TYPING_KEY);
     }
@@ -918,12 +961,16 @@
       "beljar-repl-hover-timestamp",
       "beljar-repl-history-cap",
       "beljar-repl-history-persist",
+      REPL_AUTOCOMPLETE_TRIGGER_KEY,
+      REPL_AUTOCOMPLETE_CONTINUE_KEY,
       "beljar-library-expand-default",
       "beljar-restore-panels",
       "beljar-inspector-follow",
       "beljar-autosave-delay",
       "beljar-autosolve-focus-next",
       "beljar-autosolve-show-stats",
+      "beljar-harpoon-mode",
+      "beljar-harpoon-verify-moves",
       QUIET_WHILE_TYPING_KEY,
       DIAG_PRESENTATION_KEY,
       DIAG_SEVERITY_KEY,
@@ -1073,6 +1120,8 @@
       backendRemove2(SUITE_CHECK_KEY);
       backendRemove2(AUTOSOLVE_FOCUS_NEXT_KEY);
       backendRemove2(AUTOSOLVE_SHOW_STATS_KEY);
+      backendRemove2(HARPOON_MODE_KEY);
+      backendRemove2(HARPOON_VERIFY_MOVES_KEY);
     }
     function resetReplPrefs2() {
       backendRemove2(REPL_AUTOSCROLL_KEY);
@@ -1082,6 +1131,8 @@
       backendRemove2(REPL_HOVER_TIMESTAMP_KEY);
       backendRemove2(REPL_HISTORY_CAP_KEY);
       backendRemove2(REPL_HISTORY_PERSIST_KEY);
+      backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
+      backendRemove2(REPL_AUTOCOMPLETE_CONTINUE_KEY);
       clearReplHistoryPayload();
     }
     var KEYBINDINGS_KEY = "beljar-keybindings";
@@ -1211,6 +1262,10 @@
       writeStoredReplFilterChatter: writeStoredReplFilterChatter2,
       readStoredReplHoverTimestamp: readStoredReplHoverTimestamp2,
       writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp2,
+      readStoredReplAutocompleteTrigger: readStoredReplAutocompleteTrigger2,
+      writeStoredReplAutocompleteTrigger: writeStoredReplAutocompleteTrigger2,
+      readStoredReplAutocompleteContinue: readStoredReplAutocompleteContinue2,
+      writeStoredReplAutocompleteContinue: writeStoredReplAutocompleteContinue2,
       readStoredReplHistoryCap: readStoredReplHistoryCap2,
       writeStoredReplHistoryCap: writeStoredReplHistoryCap2,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist2,
@@ -1299,6 +1354,10 @@
       checkAggressivenessScale,
       readStoredAutosolveFocusNext,
       writeStoredAutosolveFocusNext,
+      readStoredHarpoonMode,
+      writeStoredHarpoonMode,
+      readStoredHarpoonVerifyMoves,
+      writeStoredHarpoonVerifyMoves,
       readStoredAutosolveShowStats,
       writeStoredAutosolveShowStats,
       readStoredQuietWhileTyping,
@@ -3530,6 +3589,18 @@
   function writeStoredReplHoverTimestamp() {
     return _settingsApi.writeStoredReplHoverTimestamp.apply(_settingsApi, arguments);
   }
+  function readStoredReplAutocompleteTrigger() {
+    return _settingsApi.readStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+  function writeStoredReplAutocompleteTrigger() {
+    return _settingsApi.writeStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+  function readStoredReplAutocompleteContinue() {
+    return _settingsApi.readStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
+  }
+  function writeStoredReplAutocompleteContinue() {
+    return _settingsApi.writeStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
+  }
   function readStoredReplHistoryCap() {
     return _settingsApi.readStoredReplHistoryCap.apply(_settingsApi, arguments);
   }
@@ -3749,6 +3820,10 @@
     "writeStoredAutosolveFocusNext",
     "readStoredAutosolveShowStats",
     "writeStoredAutosolveShowStats",
+    "readStoredHarpoonMode",
+    "writeStoredHarpoonMode",
+    "readStoredHarpoonVerifyMoves",
+    "writeStoredHarpoonVerifyMoves",
     "readStoredQuietWhileTyping",
     "writeStoredQuietWhileTyping",
     "readStoredDiagPresentation",
@@ -4359,6 +4434,10 @@
     writeStoredReplFilterChatter,
     readStoredReplHoverTimestamp,
     writeStoredReplHoverTimestamp,
+    readStoredReplAutocompleteTrigger,
+    writeStoredReplAutocompleteTrigger,
+    readStoredReplAutocompleteContinue,
+    writeStoredReplAutocompleteContinue,
     readStoredReplHistoryCap,
     writeStoredReplHistoryCap,
     readStoredReplHistoryPersist,

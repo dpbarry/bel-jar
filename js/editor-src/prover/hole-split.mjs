@@ -1501,12 +1501,96 @@ function nestedCtorArgFills(rawType, scope, code) {
       perArg.push(names);
     }
     if (!ok) continue;
-    for (const combo of cartesianArgCombos(perArg, 4, (c3) => new Set(c3).size === c3.length)) {
+    for (const combo of cartesianArgCombos(perArg, capN(4, 64), (c3) => new Set(c3).size === c3.length)) {
       out.push(`(${c.name} ${combo.join(' ')})`);
-      if (out.length >= 6) return out;
+      if (out.length >= capN(6, 96)) return out;
     }
   }
   return out;
+}
+
+// Depth-1 constructor applications of an LF family, built from a given scope.
+// `nestedCtorArgFills` cannot serve here: its `compFam` accepts UPPER-case heads
+// only, so it returns [] for every LF family (`eq`, `pred`, `aeq`, `target`).
+// Deliberately depth-1 — a nested higher-order argument is left alone rather than
+// recursing, so the enumeration stays finite and cheap.
+const HO_SLOT_ARG_NAMES = 3;   // choices considered per constructor slot
+const HO_SLOT_COMBOS = 3;      // argument combos per constructor
+const HO_SLOT_CAP = 8;         // total candidates handed back for one slot
+function lfCtorAppFills(head, scope, code) {
+  const out = [];
+  let ctors = [];
+  try { ctors = enumerateConstructorsTyped(code, head) || []; } catch { return out; }
+  for (const c of ctors) {
+    if (!c.argTypes || !c.argTypes.length) { out.push(c.name); continue; }
+    const perArg = [];
+    let ok = true;
+    for (const at of c.argTypes) {
+      const d2 = constructorArgDescriptor(at, []);
+      if (d2.higherOrder) { ok = false; break; }
+      const want = headOfConclusion(conclusionOf(at));
+      const names = scope
+        .filter((s) => s && s.name && (!want || !s.concl || headOfConclusion(s.concl) === want))
+        .map((s) => s.name);
+      if (!names.length) { ok = false; break; }
+      perArg.push(names.slice(0, HO_SLOT_ARG_NAMES));
+    }
+    if (!ok) continue;
+    for (const combo of cartesianArgCombos(perArg, HO_SLOT_COMBOS, (c3) => new Set(c3).size === c3.length)) {
+      out.push(`(${c.name} ${combo.join(' ')})`);
+    }
+  }
+  return out;
+}
+
+// ⭐ HIGHER-ORDER SLOT INHABITATION (master plan entry 51).
+//
+// The `desc.higherOrder` branch of `argFillChoices` draws candidates ONLY from the
+// R-pool (let-bound recursion results) and returns [] when none exist. An empty slot
+// list makes the constructor loop drop the WHOLE constructor
+// (`perArg.some((opts) => !opts.length) → continue`), and at step 0 — where ~95% of
+// the stuck class dies — no R-binding exists yet. So every binder-taking constructor
+// was unreachable at exactly the moment it is needed. Measured over the 207-target
+// cheap-death class: **73% of constructors the reference needs but the engine never
+// proposes are higher-order, against 7.7% of those it does propose — 9.5x** — and
+// 85% of those are needed in TERM position (a fill), not as a case pattern.
+//
+// A higher-order slot is therefore inhabited by BINDER INTRODUCTION plus a body
+// built in the binder-extended scope, never by lookup alone.
+function hoSlotFills(desc, scope, code) {
+  const bs = hoLamBinderNames(desc);
+  if (!bs.length) return [];
+  const lam = (body) => '(' + bs.map((b) => '\\' + b + '. ').join('') + body + ')';
+  const bodyHead = headOfConclusion(conclusionOf(desc.bodyType || ''));
+  const out = [];
+  const add = (t) => { if (t && !out.includes(t)) out.push(t); };
+
+  // (1) a binder variable as the body — the `\x. x` / `\x.\u. u` witness.
+  for (const b of bs) add(lam(b));
+
+  // (2) in-scope hypotheses transported under the new binders. A meta used under
+  //     extra binders must carry the EXTENDED substitution (`E[.., x]`); the bare
+  //     spelling goes out too and the checker arbitrates — the D3/D11/D14 dual-spell
+  //     doctrine, never a rename.
+  for (const s of scope) {
+    if (!s || !s.name) continue;
+    if (bodyHead && s.concl && headOfConclusion(s.concl) !== bodyHead) continue;
+    add(lam(s.name));
+    add(lam(`${s.name}[.., ${bs.join(', ')}]`));
+  }
+
+  // (3) constructors of the BODY family applied in the binder-extended scope — the
+  //     binders join the scope, so they can inhabit the constructor's own slots.
+  if (bodyHead) {
+    const ext = [
+      ...scope,
+      ...(desc.binderCtx || []).map((b, i) => ({
+        name: bs[i], type: b.type, concl: conclusionOf(b.type || ''),
+      })),
+    ];
+    for (const t of lfCtorAppFills(bodyHead, ext, code)) add(lam(t));
+  }
+  return out.slice(0, HO_SLOT_CAP);
 }
 
 function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
@@ -1554,7 +1638,7 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
         });
         if (perSlot.every((l) => l.length)) {
           // small combo budget; a result must not fill two slots
-          for (const combo of cartesianArgCombos(perSlot, 4, (c3) => new Set(c3).size === c3.length)) {
+          for (const combo of cartesianArgCombos(perSlot, capN(4, 64), (c3) => new Set(c3).size === c3.length)) {
             out.push(bbox(`${patHead} ${combo.join(' ')}`));
           }
         }
@@ -1604,6 +1688,16 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
       out.push(plain);
       if (chained !== plain) out.push(chained);
     }
+    // Entry 51 — the R-pool is empty until a recursion result has been let-bound, and
+    // an empty list here DROPS the whole constructor upstream. `hoSlotFills` supplies
+    // binder introduction + a body built in the binder-extended scope.
+    //
+    // ⛔ OPT-IN, NOT DEFAULT — the declared stake was MISSED (2026-08-15). A/B over its
+    // own 31-target class: **2 gains / 0 losses, +69.9% checks** against a declared
+    // ">=8 or revert whole". Kept behind an explicit flag rather than deleted
+    // (DEFER != DISCARD) because the diagnosis is sound and the gains are real; what
+    // is missing is the REST of the composite. See entry 51 for the two pieces.
+    if (!out.length && globalThis.__proverHoSlot) return hoSlotFills(desc, scope, code);
     return out;
   }
   if (isHypArgType(rawType) || isHypArgType(desc.bodyType)) {
@@ -1642,6 +1736,34 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
 // Bounded cartesian enumeration. `validPrefix` prunes DURING the walk — without
 // it the cap fills with prefixes a later filter rejects wholesale (e.g. every
 // combo carrying duplicate higher-order bodies), starving the viable ones.
+// MEASUREMENT TOGGLE (`globalThis.__proverWideCaps`, default OFF — production
+// behaviour is byte-identical unless a harness sets it). Every argument-combo
+// enumeration below is CAPPED, and `fillScope`'s own comment concedes the risk:
+// "the bounded combo enumeration must reach them before the cap." So a rejected
+// hole has two structurally different explanations —
+//   (a) CROWD-OUT: a well-typed fill exists in the pool but sits past the cap,
+//       which the cap spent on candidates a dependent-type check would refuse;
+//   (b) ABSENCE: no well-typed fill is in the pool at all.
+// (a) says the fix is type-DIRECTED selection (unify the slot's indexed type,
+// don't just match its family head); (b) says the fix is a missing GENERATOR.
+// Widening the caps answers which, without committing to either.
+//
+// ⛔ MEASURED 2026-08-15 — THE ANSWER IS (b). CROWD-OUT IS DEAD; DO NOT RE-TEST IT.
+// A/B over the FULL in-fragment cheap-death class (207 targets, <=50 checks, 66
+// developments, `scratchpad/cheapdeath-ids.txt`), caps widened 4→64 / 6→96 / 48→512
+// / 12→128: **207/207 IDENTICAL VERDICTS, 0 changes, +4.4% checks.**
+// So the correct term is not sitting past the cap — it is ABSENT FROM THE POOL.
+// The pool is built by LOOKUP (in-scope names + nullary constructors + the branch
+// pattern + reassembled R-pool lets); a slot needing a CONSTRUCTED inhabitant (a
+// constructor application, a term under binders, an inline recursive call) can
+// never be filled from it, at any cap. Re-shaping this pool — widening, filtering,
+// or index-ranking it — is therefore predicted ZERO, consistent with the standing
+// ROI law (`feedback-generation-pays-search-control-does-not`). The fix is to make
+// slot inhabitation RECURSIVE (goal-directed synthesis threaded with the slot
+// substitution), not to curate the lookup. Toggle kept only as the instrument that
+// re-answers "is a cap binding?" for any future pool change.
+function capN(n, wide) { return globalThis.__proverWideCaps ? wide : n; }
+
 function cartesianArgCombos(lists, max = 64, validPrefix = null) {
   let acc = [[]];
   for (const list of lists) {
@@ -2571,7 +2693,7 @@ export function fillCandidates(hole, code) {
     // lexicographic walk starves later slot-1 choices under the cap, so combos
     // are enumerated FAIRLY (by increasing index sum — diagonal), cap 24.
     if (compFamily && perArg.length > 1) {
-      const cap = 48;
+      const cap = capN(48, 512);
       const emitted = new Set();
       const maxSum = perArg.reduce((a, o) => a + o.length - 1, 0);
       outer: for (let s = 0; s <= maxSum; s += 1) {
@@ -2592,7 +2714,7 @@ export function fillCandidates(hole, code) {
         if (walk(0, s, [])) break outer;
       }
     } else {
-      for (const args of cartesianArgCombos(perArg, 12, distinctHoBodies)) {
+      for (const args of cartesianArgCombos(perArg, capN(12, 128), distinctHoBodies)) {
         emit(renderApp(code, ctor.name, args));
       }
     }

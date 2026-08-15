@@ -22,6 +22,8 @@ if (process.env.NO_CTFACTS) globalThis.__proverNoCtypeFacts = true;
 if (process.env.NO_MIXEDSLOT) globalThis.__proverNoMixedSlot = true;
 if (process.env.NO_CTXVARFILL) globalThis.__proverNoCtxVarFill = true;
 if (process.env.NO_LFSCOPE) globalThis.__proverNoLfScopeFilter = true;
+if (process.env.WIDE_CAPS) globalThis.__proverWideCaps = true;
+if (process.env.HOSLOT) globalThis.__proverHoSlot = true;   // entry 51: opt-in, stake missed
 if (process.env.MIXEDSLOT_DEBUG) { const seen=new Set(); globalThis.__mixedSlotDebug=(d)=>{const k=JSON.stringify(d); if(seen.has(k))return; seen.add(k); console.error('MIXEDSLOT '+k);}; }
 
 const root = process.cwd();

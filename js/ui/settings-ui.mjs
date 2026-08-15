@@ -1178,7 +1178,7 @@ const global = globalThis;
       function (p, on) { p.writeStoredEditorSelectionMatches(on); }
     );
     addDropdownRow(panelBodies.editor, 'editor-autocomplete-trigger', 'Autocomplete',
-      'When the completion popup opens. Ctrl+Space and Tab still open it explicitly.',
+      'When the completion popup opens. Show Autocomplete still opens it explicitly.',
       [
         { value: 'none', label: 'Nowhere' },
         { value: 'typing', label: 'Only after keystroke' },
@@ -1322,6 +1322,19 @@ const global = globalThis;
       function (p, v) { p.writeStoredSuiteCheck(v); }
     );
     addSectionHead(panelBodies.beluga, 'Autosolve');
+    addDropdownRow(panelBodies.beluga, 'harpoon-mode', 'Harpoon opens in',
+      'Manual lets you pick each tactic yourself, with Brutus (the search) one click away. '
+      + 'Brutus starts searching immediately.',
+      [{ value: 'manual', label: 'Manual' }, { value: 'brutus', label: 'Brutus' }],
+      function () { return p0 ? p0.readStoredHarpoonMode() : 'manual'; },
+      function (p, v) { p.writeStoredHarpoonMode(v); }
+    );
+    addSwitchRow(panelBodies.beluga, 'harpoon-verify-moves', 'Pre-verify offered tactics',
+      'Check the top tactics against Beluga in the background so each shows whether it holds '
+      + 'before you pick it. Costs a few checker calls per goal.',
+      function () { return p0 ? p0.readStoredHarpoonVerifyMoves() : true; },
+      function (p, on) { p.writeStoredHarpoonVerifyMoves(on); }
+    );
     addSwitchRow(panelBodies.beluga, 'autosolve-focus-next', 'Focus next hole after place',
       'After placing a solved proof, jump the editor to the next open hole.',
       function () { return p0 ? p0.readStoredAutosolveFocusNext() : true; },
@@ -1337,6 +1350,21 @@ const global = globalThis;
     addSwitchRow(panelBodies.repl, 'repl-autoscroll', 'Auto-scroll output', 'Scroll to new output.',
       function () { return p0 ? p0.readStoredReplAutoscroll() : true; },
       function (p, on) { p.writeStoredReplAutoscroll(on); }
+    );
+    addDropdownRow(panelBodies.repl, 'repl-autocomplete-trigger', 'Autocomplete',
+      'When the completion popup opens. Show Autocomplete still opens it explicitly.',
+      [
+        { value: 'none', label: 'Nowhere' },
+        { value: 'typing', label: 'Only after keystroke' },
+        { value: 'always', label: 'Always at token end' },
+      ],
+      function () { return p0 ? p0.readStoredReplAutocompleteTrigger() : 'typing'; },
+      function (p, v) { p.writeStoredReplAutocompleteTrigger(v); }
+    );
+    addSwitchRow(panelBodies.repl, 'repl-autocomplete-continue', 'Continue after accept',
+      'Keep showing completions after Tab or click when more options remain.',
+      function () { return p0 ? p0.readStoredReplAutocompleteContinue() : false; },
+      function (p, on) { p.writeStoredReplAutocompleteContinue(on); }
     );
     addSwitchRow(panelBodies.repl, 'repl-welcome', 'Banner after clear', 'Show the Beluga version line again after clear.',
       function () { return p0 ? p0.readStoredReplWelcome() : true; },

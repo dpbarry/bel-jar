@@ -402,8 +402,17 @@ function createEditorAcPlugin(engine, opts) {
   });
 }
 
+let acPlugin = null;
+
+export function toggleEditorAutocomplete(view) {
+  if (!view || !acPlugin) return false;
+  const inst = view.plugin(acPlugin);
+  return inst ? inst.toggleExplicit() : false;
+}
+
 export function belEditorAutocomplete(engine, opts = {}) {
   const plugin = createEditorAcPlugin(engine, opts);
+  acPlugin = plugin;
 
   const runKey = (view, key) => {
     const inst = view.plugin(plugin);
@@ -415,10 +424,21 @@ export function belEditorAutocomplete(engine, opts = {}) {
     return inst ? inst.toggleExplicit() : false;
   };
 
+  const runToggleIfDefault = (view) => {
+    const g = typeof window !== 'undefined' ? window : globalThis;
+    const KB = g.Keybindings;
+    if (KB && typeof KB.resolve === 'function' && KB.has && KB.has('edit.autocomplete')) {
+      const spec = KB.resolve('edit.autocomplete');
+      if (!spec) return false;
+      if (typeof KB.toCmKey === 'function' && KB.toCmKey(spec) !== 'Ctrl-Space') return false;
+    }
+    return runToggle(view);
+  };
+
   return [
     plugin,
     Prec.highest(keymap.of([
-      { key: 'Ctrl-Space', run: runToggle },
+      { key: 'Ctrl-Space', run: runToggleIfDefault },
       { mac: 'Alt-`', run: runToggle },
       { mac: 'Alt-i', run: runToggle },
       { key: 'Escape', run: (view) => runKey(view, 'Escape') },

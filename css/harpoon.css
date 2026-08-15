@@ -1139,8 +1139,12 @@ button.harpoon-lab-banner:focus-visible {
 }
 
 /* ── Header — verdict + certified count. */
+/* `.harpoon-lab-strip` itself sets no padding, so every banner must claim the
+   rhythm explicitly — a <button> banner that forgets to falls back to the UA's
+   own padding and its badge drifts left of the ones above and below it. */
 .harpoon-lab-auto-head,
 .harpoon-lab-manual-head,
+.harpoon-lab-resume,
 .harpoon-lab-auto-compromise {
   padding: 0.62rem 0.75rem;
 }
@@ -1778,4 +1782,665 @@ button.harpoon-lab-banner:focus-visible {
      between them flex items and DROPS the inter-token spaces (the "[|-dualAA']"
      mash). Inline content preserves the spacing exactly like the hover tooltip. */
   display: block;
+}
+
+
+/* ═══ Manual Harpoon ═══ the DEFAULT surface: stand at a subgoal, pick a tactic.
+   Built from the vocabulary above — the goal hero, the strip tones, the move
+   palette, the reel's step rows — so a hand-built proof and a searched one read
+   as one instrument.
+
+   Two rules govern the whole section:
+     1. BANDS, not floating controls. Every block owns the panel's horizontal
+        rhythm (.75rem) and is separated by a hairline, never by a stray margin.
+     2. NOTHING OVERLAPS TEXT. Status lives in a column of its own, in the footer,
+        where truncation is natural — never parked on top of a Beluga term. ═══ */
+
+/* ── Skeletons ────────────────────────────────────────────────────────────────
+   A placeholder occupies the exact geometry of the thing it stands in for, so
+   real data never reflows the panel — only the fill changes. */
+.harpoon-skel {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  height: 0.52rem;
+  max-width: 100%;
+  border-radius: 3px;
+  /* A FLAT, faint base — the light is a separate narrow band travelling across
+     it (the REPL run-skeleton technique). Animating a wide gradient's position
+     instead makes the whole bar pulse, which reads as muddy at this scale. */
+  background: color-mix(in oklab, var(--muted-low) 30%, transparent);
+}
+.harpoon-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--muted-mid) 48%, transparent) 50%,
+    transparent 100%);
+  transform: translateX(-120%);
+  animation: harpoon-skel-sweep 1.35s linear infinite;
+}
+/* Stagger, so a stack of bars reads as one surface waking up rather than as
+   several things flashing in lockstep. */
+.harpoon-skel--d1::after { animation-delay: 0.14s; }
+.harpoon-skel--d2::after { animation-delay: 0.28s; }
+.harpoon-skel--goal { height: 0.72rem; }
+.harpoon-skel--verb { height: 0.56rem; }
+.harpoon-skel--text { height: 0.5rem; }
+@keyframes harpoon-skel-sweep {
+  to { transform: translateX(120%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-skel::after { animation: none; opacity: 0; }
+}
+
+.harpoon-lab-manual {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+.harpoon-lab-manual.is-frozen { opacity: 0.72; pointer-events: none; }
+
+/* ── Subgoal picker ───────────────────────────────────────────────────────────
+   Its own band on the panel rhythm. Previously the tabs sat flush against both
+   panel edges with no padding of their own. */
+.harpoon-lab-picker-band {
+  padding: 0.5rem 0.75rem 0.55rem;
+  border-bottom: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-picker-band .harpoon-lab-picker { gap: 0.34rem; }
+
+/* ── Brutus ───────────────────────────────────────────────────────────────────
+   Proportioned like the surface's banners — a fixed badge, then a copy column —
+   rather than a centred label, so it keeps the same rhythm as everything else.
+   The sheen is restrained on purpose: this search succeeds on a minority of
+   goals, and the control should not promise more than it delivers. */
+.harpoon-lab-brutus-band {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-brutus {
+  appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.52rem 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--repl-holes-accent) 30%, transparent);
+  border-radius: 0.55rem;
+  /* ONE border, ONE flat fill. The previous surface stacked a vertical gradient,
+     an inset top highlight and an inset 1px ring — three edge treatments that
+     read as a single thick, uneven border, most obviously in light mode where
+     the "glass" highlight has no dark ground to sit against. No outer shadow
+     either: a coloured bloom around a small control reads as cheap at any
+     radius. */
+  background: color-mix(in oklab, var(--repl-holes-accent) 9%, var(--harpoon-card-bg));
+  color: var(--base-highest);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    background 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The sheen. Present at rest — that is the "nice unhovered" — and on hover it
+   brightens and GLIDES a little across the surface. Opacity and transform are
+   the only animated properties, so it interpolates perfectly and is exactly
+   symmetric leaving and arriving. */
+.harpoon-lab-brutus::before {
+  content: '';
+  position: absolute;
+  /* OVERHANGS both sides. The glide translates this element, so at `inset: 0`
+     its own left edge slid into view on hover and drew a hard vertical line —
+     the seam was the box, not the gradient. Extending it far past the button
+     means no amount of travel can uncover it; `overflow: hidden` clips the rest.
+     (Percentages below are of THIS box, which is 180% of the button's width.) */
+  inset: -80% -40%;
+  z-index: 0;
+  /* Fully spent well before the button's edges, so the sheen never stacks onto
+     the border and thickens it. Light gathered in the middle of a surface, not
+     painted to its rim. Radii are of THIS box (1.8× the button wide, 2.6× tall),
+     chosen so the glow lands at ~18% across and spans ~1.35× the button's height. */
+  background: radial-gradient(30% 52% at 32% 50%,
+    color-mix(in srgb, var(--repl-holes-accent) 20%, transparent) 0%,
+    color-mix(in srgb, var(--repl-holes-accent) 7%, transparent) 45%,
+    transparent 78%);
+  opacity: 0.6;
+  /* The glow LEANS toward the pointer. `--glow-d{x,y}` are set per frame from
+     the cursor (see bindBrutusGlow) but only ever carry a FRACTION of the
+     distance, so the light is drawn toward you rather than pinned under you.
+     The long transition is the gravity: each new target is eased into, never
+     snapped to, so quick movements read as the glow swinging rather than
+     tracking. Releasing the pointer clears the offsets and it drifts home. */
+  transform: translate3d(var(--glow-dx, 0px), var(--glow-dy, 0px), 0);
+  pointer-events: none;
+  transition:
+    opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 520ms cubic-bezier(0.19, 1, 0.32, 1);
+}
+.harpoon-lab-brutus-badge,
+.harpoon-lab-brutus-copy { position: relative; z-index: 1; }
+.harpoon-lab-brutus-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--repl-holes-accent) 16%, transparent);
+  color: var(--repl-holes-accent);
+}
+.harpoon-lab-brutus-badge svg { width: 1.05rem; height: 1.05rem; }
+.harpoon-lab-brutus-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.07rem;
+  min-width: 0;
+}
+.harpoon-lab-brutus-title {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+.harpoon-lab-brutus-sub {
+  font-family: var(--sans);
+  font-size: 0.655rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--muted-high);
+}
+.harpoon-lab-brutus:disabled { opacity: 0.55; cursor: default; }
+/* Hover LIFTS the surface — it brightens, its edge glows, its badge warms and
+   grows a hair. All one eased curve, fully symmetric, so leaving looks exactly
+   like arriving in reverse. (A sheen sweeping across on enter and then sliding
+   back out on leave is what read as clunky: the light appeared to travel the
+   wrong way, and a half-hovered button froze it mid-pass.) */
+.harpoon-lab-brutus-badge {
+  transition:
+    background 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Hover: the surface deepens, its edge firms, it rises a hair, and the light
+   inside slides. Four small coordinated moves on one curve — tactile, and
+   symmetric on the way out. */
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-brutus:not(:disabled):hover {
+    border-color: color-mix(in srgb, var(--repl-holes-accent) 50%, transparent);
+    background: color-mix(in oklab, var(--repl-holes-accent) 15%, var(--harpoon-card-bg));
+    transform: translateY(-1px);
+  }
+  /* Only the brightness is bound to hover; WHERE the light sits is the pointer's
+     business (--glow-dx/dy), so the two never fight over `transform`. */
+  .harpoon-lab-brutus:not(:disabled):hover::before { opacity: 1; }
+  .harpoon-lab-brutus:not(:disabled):hover .harpoon-lab-brutus-badge {
+    background: color-mix(in srgb, var(--repl-holes-accent) 24%, transparent);
+  }
+}
+.harpoon-lab-brutus:not(:disabled):active {
+  transform: translateY(0);
+  transition-duration: 60ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-brutus,
+  .harpoon-lab-brutus::before,
+  .harpoon-lab-brutus-badge { transition: none; }
+  .harpoon-lab-brutus:not(:disabled):hover::before { transform: none; }
+}
+
+/* ── The tactic list ──────────────────────────────────────────────────────── */
+.harpoon-lab-moves-label { margin-bottom: 0.34rem; }
+.harpoon-lab-move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.44rem;
+}
+/* While a tactic runs, its siblings recede — the chosen row stays fully legible
+   (see .is-applying) so the user's click is visibly acknowledged. */
+.harpoon-lab-moves.is-busy .harpoon-lab-move:not(.is-applying) {
+  opacity: 0.42;
+  pointer-events: none;
+}
+.harpoon-lab-moves-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px dashed var(--harpoon-divider);
+  border-radius: 0.42rem;
+  background: color-mix(in srgb, var(--muted-high) 4%, transparent);
+}
+.harpoon-lab-moves-empty-title {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--base-higher);
+}
+.harpoon-lab-moves-empty-sub {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: var(--muted-high);
+}
+
+/* ── A tactic row ─────────────────────────────────────────────────────────────
+   HEADER applies · FOOTER expands. The kind rail on the left is the row's
+   identity; the footer carries the term, the checker's verdict and the chevron,
+   each in its own column so none can collide with the others. */
+.harpoon-lab-move {
+  --move-accent: var(--harpoon-move-intro);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-left: 0.5rem;
+  border: 1px solid var(--harpoon-card-border);
+  border-radius: 0.42rem;
+  background: var(--harpoon-card-bg);
+  overflow: hidden;
+  transition: border-color 0.12s ease, background 0.12s ease, opacity 0.14s ease;
+}
+.harpoon-lab-move::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--edge-strip-w-callout);
+  background: var(--move-accent);
+  opacity: 0.72;
+  transition: opacity 0.14s ease;
+}
+.harpoon-lab-move.move-synth { --move-accent: var(--harpoon-move-synth); }
+.harpoon-lab-move.move-split { --move-accent: var(--harpoon-move-split); }
+.harpoon-lab-move.move-fill { --move-accent: var(--harpoon-move-fill); }
+.harpoon-lab-move.move-recurse { --move-accent: var(--harpoon-move-recurse); }
+.harpoon-lab-move.move-invert { --move-accent: var(--harpoon-move-invert); }
+.harpoon-lab-move.move-lemma { --move-accent: var(--harpoon-move-lemma); }
+.harpoon-lab-move.move-intro { --move-accent: var(--harpoon-move-intro); }
+.harpoon-lab-move.move-impossible { --move-accent: var(--harpoon-move-impossible); }
+
+/* The engine's top-ranked candidate — the suggested next move. Marked by a
+   fuller rail and a breath of its own colour, not by shouting. */
+.harpoon-lab-move.is-primary {
+  border-color: color-mix(in srgb, var(--move-accent) 38%, var(--harpoon-card-border));
+  background: color-mix(in srgb, var(--move-accent) 5.5%, var(--harpoon-card-bg));
+}
+.harpoon-lab-move.is-primary::before { opacity: 1; }
+
+/* Header — the tactic itself. Nothing else is allowed in this row, so a long
+   Beluga term can use the full width and truncate on its own terms. */
+.harpoon-lab-move-main {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  width: 100%;
+  padding: 0.44rem 0.5rem 0.42rem 0.4rem;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.harpoon-lab-move-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.34rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.harpoon-lab-move-verb {
+  font-family: var(--mono);
+  font-size: 0.765rem;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--move-accent);
+  flex: none;
+}
+.harpoon-lab-move-arg {
+  font-family: var(--mono);
+  font-size: 0.715rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--base-highest);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.harpoon-lab-move-why {
+  font-family: var(--sans);
+  font-size: 0.645rem;
+  line-height: 1.4;
+  color: var(--muted-high);
+}
+
+/* Footer — term preview · verdict · chevron. A real three-column layout: the
+   preview is the only flexible cell, so it truncates and the other two never
+   move or overlap. */
+.harpoon-lab-move-foot {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.26rem 0.4rem 0.3rem 0.4rem;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--harpoon-divider) 62%, transparent);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.harpoon-lab-move-termhead {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.655rem;
+  line-height: 1.5;
+  color: var(--muted-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The verdict. Its own fixed cell and its own tooltip target — hovering it
+   answers for the verdict, not for the whole card. */
+.harpoon-lab-move-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+  border-radius: 50%;
+}
+.harpoon-lab-move-pip:empty { display: none; }
+.harpoon-lab-move-pip svg { width: 0.72rem; height: 0.72rem; }
+.harpoon-lab-move.is-verified .harpoon-lab-move-pip { color: var(--ide-status-clean); }
+.harpoon-lab-move.is-verified::before { opacity: 1; }
+.harpoon-lab-move.is-rejected .harpoon-lab-move-pip { color: var(--ide-status-error); }
+.harpoon-lab-move.is-rejected::before { opacity: 0.3; }
+
+/* A tactic the checker has REFUSED collapses to one quiet line. It keeps its
+   place in the engine's ranking (rank is information; re-sorting under the
+   reader's cursor is not) but stops spending three lines and a term preview on
+   a move that cannot be taken. Still expandable — the term is exactly what you
+   want to read when asking "why not?". */
+.harpoon-lab-move.is-rejected {
+  /* A dead option stops advertising its kind: overriding the accent takes the
+     rail, the verb, the hover and the term panel to neutral in one move, so the
+     whole card expresses "unavailable" with one voice instead of staying
+     colour-coded as though it were still a choice. The only colour left is the
+     ✕. */
+  --move-accent: var(--muted-mid);
+  flex-flow: row wrap;
+  align-items: center;
+  column-gap: 0.5rem;
+  opacity: 0.58;
+  border-style: dashed;
+}
+.harpoon-lab-move.is-rejected .harpoon-lab-move-main {
+  cursor: default;
+  pointer-events: none;
+}
+.harpoon-lab-move.is-rejected .harpoon-lab-move-verb { font-weight: 600; }
+.harpoon-lab-move.is-rejected .harpoon-lab-move-main {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  padding: 0.26rem 0.2rem 0.26rem 0.4rem;
+}
+/* The rationale goes; the TERM stays. Two candidates can share a tactic and a
+   callee (`by tp_refl` twice) and differ only in the term they would write, so
+   the term is the one line that must survive the collapse — it is also the
+   answer to "why was this refused?". */
+.harpoon-lab-move.is-rejected .harpoon-lab-move-why { display: none; }
+.harpoon-lab-move.is-rejected .harpoon-lab-move-foot {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  border-top: 0;
+  padding: 0.26rem 0.4rem 0.26rem 0;
+}
+.harpoon-lab-move.is-rejected .harpoon-lab-move-term { width: 100%; margin-top: 0.1rem; }
+/* Checking — a ring on the pip's own cell, never over the header text. In the
+   TACTIC'S colour, like every other signal this row emits; the global magenta
+   made a `split` announce itself in a `fill`-adjacent hue while it worked. */
+.harpoon-lab-move.is-checking .harpoon-lab-move-pip {
+  display: inline-flex;
+  /* Sized to the ✓ and ✕ glyphs it alternates with (0.72rem), not to the pip's
+     own 0.95rem cell — a ring drawn at cell size dwarfed its neighbours. */
+  width: 0.72rem;
+  height: 0.72rem;
+  margin: 0 0.115rem;
+  border: 1.25px solid color-mix(in srgb, var(--move-accent) 28%, transparent);
+  border-top-color: var(--move-accent);
+  animation: harpoon-move-spin 0.7s linear infinite;
+}
+@keyframes harpoon-move-spin { to { transform: rotate(360deg); } }
+
+/* The expand affordance — the reason the footer reads as a disclosure and not
+   as a second way to run the tactic. */
+.harpoon-lab-move-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  color: var(--muted-mid);
+  transition: transform 0.16s ease, color 0.12s ease;
+}
+.harpoon-lab-move-chevron svg { width: 0.68rem; height: 0.68rem; }
+.harpoon-lab-move.is-expanded .harpoon-lab-move-chevron {
+  transform: rotate(180deg);
+  color: var(--base-higher);
+}
+
+.harpoon-lab-move-term {
+  margin: 0 0.45rem 0.42rem;
+  padding: 0.38rem 0.48rem;
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--move-accent) 5%, var(--harpoon-card-bg-raised));
+  font-family: var(--mono);
+  font-size: 0.695rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.harpoon-lab-move:not(.is-expanded) .harpoon-lab-move-term { display: none; }
+
+/* Applying — the chosen row keeps full contrast and grows a progress track. */
+.harpoon-lab-move.is-applying {
+  border-color: color-mix(in srgb, var(--move-accent) 58%, var(--harpoon-card-border));
+}
+/* The applying pulse: a band of the TACTIC'S OWN colour running left→right along
+   the row's top edge.
+   Purpose-built rather than borrowed: `.harpoon-loadbar` carries the place
+   strip's hardcoded magenta, and its `::before` is absolutely positioned while
+   the bar itself is not a containing block — dropped into a row it resolved
+   against the card and painted a full-height magenta slab over the tactic. */
+.harpoon-lab-move-track {
+  /* ABSOLUTE, so appearing costs no layout: as a flex child it was 2px of new
+     content and every row below it jumped. It fades in over the row's top edge
+     instead, inside the card's own rounded clip. */
+  position: absolute;
+  top: 0;
+  left: var(--edge-strip-w-callout);
+  right: 0;
+  z-index: 2;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--move-accent) 15%, transparent);
+  animation: harpoon-move-track-in 160ms ease-out both;
+}
+@keyframes harpoon-move-track-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.harpoon-lab-move-track::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--move-accent) 62%, transparent) 38%,
+    var(--move-accent) 52%,
+    color-mix(in srgb, var(--move-accent) 62%, transparent) 66%,
+    transparent 100%);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--move-accent) 45%, transparent);
+  /* Eases out of the left edge and into the right — a breath, not a metronome. */
+  animation: harpoon-move-pulse 1.25s cubic-bezier(0.45, 0.05, 0.35, 1) infinite;
+}
+@keyframes harpoon-move-pulse {
+  0% { transform: translateX(-100%); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateX(250%); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-move-track { animation: none; }
+  .harpoon-lab-move-track::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+    box-shadow: none;
+  }
+}
+
+/* Skeleton rows hold a real row's geometry but almost none of its WEIGHT. The
+   full row chrome — border, fill, rail, three bars — turned the loading state
+   into a stack of heavy empty boxes that shouted louder than the real list. A
+   placeholder should be quiet: it is the absence of content, not content. */
+.harpoon-lab-move.is-skeleton {
+  pointer-events: none;
+  border-color: color-mix(in oklab, var(--harpoon-card-border) 45%, transparent);
+  background: none;
+}
+.harpoon-lab-move.is-skeleton::before { opacity: 0.16; }
+.harpoon-lab-move.is-skeleton .harpoon-lab-move-main {
+  gap: 0.34rem;
+  padding: 0.42rem 0.5rem 0.44rem 0.4rem;
+  cursor: default;
+}
+.harpoon-lab-move.is-skeleton .harpoon-lab-move-foot {
+  cursor: default;
+  border-top-color: color-mix(in oklab, var(--harpoon-divider) 40%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-move:not(.is-skeleton):not(.is-rejected):hover {
+    border-color: color-mix(in srgb, var(--move-accent) 52%, var(--harpoon-card-border));
+    background: color-mix(in srgb, var(--move-accent) 7.5%, var(--harpoon-card-bg));
+  }
+  .harpoon-lab-move:not(.is-skeleton):hover::before { opacity: 1; }
+  .harpoon-lab-move-foot:hover .harpoon-lab-move-chevron { color: var(--base-highest); }
+}
+
+/* Keyboard parity — every target the mouse has, the keyboard gets, visibly. */
+.harpoon-lab-move-main:focus-visible,
+.harpoon-lab-move-foot:focus-visible,
+.harpoon-lab-brutus:focus-visible,
+.harpoon-lab-picker-tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--repl-holes-accent) 62%, transparent);
+  outline-offset: -2px;
+  border-radius: 0.3rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-move.is-checking .harpoon-lab-move-pip { animation: none; }
+  .harpoon-lab-move-chevron { transition: none; }
+}
+
+/* ── "Continue by hand" — the return path out of a Brutus run. Badge sizing is
+      the shared banner default; overriding it made this banner read as a
+      different species from the verdict and place strips it sits between. ──── */
+
+/* ── The trail of accepted moves — the reel's own step rows. ───────────────── */
+.harpoon-lab-manual-trail { padding: 0.55rem 0.75rem 0.65rem; }
+.harpoon-lab-manual-trail .harpoon-lab-section-label { margin-bottom: 0.34rem; }
+
+/* ── Brutus, RUNNING ──────────────────────────────────────────────────────────
+   The search is a STATE of this panel, not a screen that replaces it. The band
+   keeps the button's silhouette — badge, copy, then actions — so starting a
+   search morphs the control in place while everything above and below it stays
+   exactly where the user left it. */
+.harpoon-lab-brutus--live {
+  cursor: default;
+  gap: 0.6rem;
+}
+.harpoon-lab-brutus--live .harpoon-lab-brutus-copy { flex: 1 1 auto; }
+.harpoon-lab-brutus-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex: none;
+  position: relative;
+  z-index: 1;
+}
+.harpoon-lab-brutus-spinner { width: 1rem; height: 1rem; }
+/* Paused reads calmer than running: the accent recedes, the badge shows the
+   gladius again rather than a spinner, and the copy invites the next move. */
+.harpoon-lab-brutus-band.is-paused .harpoon-lab-brutus--live {
+  border-color: color-mix(in srgb, var(--repl-holes-accent) 22%, transparent);
+  background: color-mix(in oklab, var(--repl-holes-accent) 5%, var(--harpoon-card-bg));
+}
+.harpoon-lab-brutus-band.is-paused .harpoon-lab-brutus::before { opacity: 0.25; }
+
+/* ── Tactics, LOCKED while Brutus works ───────────────────────────────────────
+   Readable but inert. Locking rather than hiding keeps the panel's geometry
+   stable across start/pause and lets the user see what pausing would give back. */
+.harpoon-lab-moves.is-locked .harpoon-lab-move-list {
+  opacity: 0.4;
+  pointer-events: none;
+  filter: saturate(0.5);
+  transition: opacity 220ms ease, filter 220ms ease;
+}
+
+/* The gladius WORKS while Brutus searches: it swings from its pommel like a
+   dowsing rod hunting for something. Pivoting at the pommel (83% down the
+   viewBox, where the ring sits) is what makes it read as a swing rather than a
+   wobble, and the sinusoidal curve is literal pendulum motion — slowest at the
+   extremes, fastest through the middle — so it carries real weight. `alternate`
+   means it never snaps back; it just keeps sweeping. */
+.harpoon-lab-brutus-badge.is-working svg {
+  transform-origin: 50% 83%;
+  animation: harpoon-brutus-hunt 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@keyframes harpoon-brutus-hunt {
+  from { transform: rotate(-14deg); }
+  to { transform: rotate(14deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-brutus-badge.is-working svg { animation: none; }
+}
+
+/* The lock hint sits at the far right of the Tactics label — a sentence, not a
+   pill. ("paused to use" was neither fluent nor an instruction.) */
+.harpoon-lab-moves-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.harpoon-lab-moves-lock {
+  margin-left: auto;
+  font-family: var(--sans);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-high);
+  white-space: nowrap;
 }

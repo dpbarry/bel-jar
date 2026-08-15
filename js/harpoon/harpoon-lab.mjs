@@ -6,6 +6,7 @@ import { create as createCommit } from './harpoon-lab-commit.mjs';
 import { create as createReel } from './harpoon-lab-reel.mjs';
 import { create as createAuto } from './harpoon-lab-auto.mjs';
 import { create as createTreeUi } from './harpoon-lab-tree-ui.mjs';
+import { create as createManual } from './harpoon-lab-manual.mjs';
 
 const global = globalThis;
 function E() { return global.BelEditor || null; }
@@ -98,6 +99,61 @@ function E() { return global.BelEditor || null; }
     + '<path d="M12 2.5c.3 3.1 1.4 4.2 4.5 4.5-3.1.3-4.2 1.4-4.5 4.5-.3-3.1-1.4-4.2-4.5-4.5 3.1-.3 4.2-1.4 4.5-4.5Z"/>'
     + '<path d="M18.5 12.5c.2 2 .9 2.7 2.9 2.9-2 .2-2.7.9-2.9 2.9-.2-2-.9-2.7-2.9-2.9 2-.2 2.7-.9 2.9-2.9Z"/>'
     + '</svg>';
+  // BRUTUS — a gladius, the Roman shortsword. The name is Roman and the tactic is
+  // brute force, so the glyph is both at once; it is also the one image the name
+  // already carries. Drawn vertically (a diagonal blade wastes half a square
+  // badge) from four primitives that hold their shape at 17px: a pointed blade,
+  // a crossguard, a grip and a round pommel.
+  // The blade is FILLED, not outlined: at 17px an outlined blade is two hairlines
+  // around empty space and the whole glyph reads as an anchor. Mass at the top,
+  // a wide guard, a dot for the pommel — the cruciform silhouette is what makes
+  // it legible as a sword at badge size.
+  var ICON_BRUTUS =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M12 2.2 14.4 9.4v4H9.6v-4Z" fill="currentColor" stroke="none"/>'
+    + '<path d="M6.6 13.9h10.8"/>'
+    + '<path d="M12 14.4v3.9"/>'
+    + '<circle cx="12" cy="20" r="1.5"/>'
+    + '</svg>';
+  var ICON_CHEVRON_DOWN =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="m6 9 6 6 6-6"/>'
+    + '</svg>';
+  // "This one does not work" — an X. A dash reads as "omitted" or "neutral"; a
+  // tactic the checker has refused is a definite no and should look like one.
+  var ICON_DECLINE =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M7 7 17 17"/><path d="M17 7 7 17"/>'
+    + '</svg>';
+  // "I'll take it from here" — a pointer. Sits beside pause (stop the clock) and
+  // pop-out (expand); a bare chevron said only "back", which is not the action.
+  var ICON_TAKEOVER =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M5 3.4 18.6 10.6 12.3 12.3 9.6 18.6Z"/>'
+    + '</svg>';
+
+  // ONE tactic vocabulary for the whole surface. Our engine's move kinds ARE
+  // Harpoon's tactics, so they are named as Harpoon names them — in the picker,
+  // in the manual trail, and in Brutus's solve reel alike. A proof should not
+  // change language depending on who built it.
+  var TACTIC_VERB = {
+    intro: 'intros',
+    split: 'split',
+    invert: 'invert',
+    impossible: 'impossible',
+    fill: 'solve',
+    recurse: 'by',
+    lemma: 'by',
+    synth: 'chain',
+  };
+  function tacticVerb(kind) {
+    return TACTIC_VERB[kind] || kind || 'move';
+  }
+
   function setTip(el, text, opts) {
     if (!el) return;
     if (global.Tooltips && global.Tooltips.set) {
@@ -662,7 +718,10 @@ function E() { return global.BelEditor || null; }
       onClick: function () { self.restartNativeAuto(); },
     });
     if (c.level === 'none') banner.hidden = true;
-    parent.insertBefore(banner, parent.firstChild);
+    // APPEND, so position is decided by call order rather than forced to the
+    // top. Both surfaces want it in the banner segment beneath the goal; the
+    // hard prepend put it above, splitting the goal off from its own banners.
+    parent.appendChild(banner);
     this._compromiseBanner = banner;
     this.updateCompromiseBanner();
   };
@@ -768,7 +827,9 @@ function E() { return global.BelEditor || null; }
     }).catch(function () { self._fullDeclSigRequested = null; });
   };
 
-  Session.prototype.runNativeAuto = function () {
+  // `codeOverride` lets Brutus run from the manual session's WORKING program
+  // rather than the pristine one — i.e. "finish the proof from here".
+  Session.prototype.runNativeAuto = function (codeOverride) {
     var ed = E();
     var client = global.BelugaClient;
     var prep = this.prep;
@@ -784,7 +845,7 @@ function E() { return global.BelEditor || null; }
       toast('BelJar auto-solve could not read this theorem.', 'error');
       return Promise.resolve(false);
     }
-    var proveCode = prep.proveCode || prep.assembledCode;
+    var proveCode = codeOverride || prep.proveCode || prep.assembledCode;
     var api = global.CurrentEditor;
     var eng = api && typeof api.getSemanticEngine === 'function' ? api.getSemanticEngine() : null;
     var goalHit = typeof ed.resolveHoleGoalForHit === 'function'
@@ -910,6 +971,8 @@ function E() { return global.BelEditor || null; }
           var na = self.nativeAuto;
           var prevLen = (na.steps || []).length;
           na.steps = info.steps || [];
+          // Where the search has actually got to — what "take over" inherits.
+          if (info.code) na.liveCode = info.code;
           na.checks = na.steps.reduce(function (t, s) { return t + (s.checks || 0); }, 0);
           if (!na.paused) {
             setNativeSearchLabel(na, 'Step ' + na.steps.length
@@ -927,6 +990,15 @@ function E() { return global.BelEditor || null; }
       });
     }).then(function (r) {
       self.probeAnchor();
+      // RETIRED: the user took a step by hand while paused. The manual state is
+      // already correct (synced at pause), so just let the surface settle — do
+      // not resurrect a verdict for a search nobody is waiting on.
+      if (self._retireBrutus) {
+        self._retireBrutus = false;
+        self.userCancelled = false;
+        self.render();
+        return false;
+      }
       var stuck = (r && r.stuck) || null;
       if (stuck && stuck.reason === 'cancelled' && self.userCancelled) {
         stuck = { reason: 'stopped' };
@@ -951,6 +1023,9 @@ function E() { return global.BelEditor || null; }
       self.render();
       // Final state (trace + stuck/complete): grow the pop-out tree to it if open.
       self.refreshTreeExplorer();
+      // ONE SURFACE: hand the result to the working program so the panel shows
+      // what actually happened rather than the state it started from.
+      if (self.manual) self.absorbBrutusResult(r);
       return !!(r && r.complete);
     }).catch(function (err) {
       var cancelled = client.isCancelledError && client.isCancelledError(err);
@@ -1057,6 +1132,31 @@ function E() { return global.BelEditor || null; }
 
   Session.prototype.close = function () {
     this.disposeSession();
+  };
+
+  // The derivation surfaces (list ⇄ tree, the pop-out explorer) are shared by
+  // both ways of building a proof, so they must not read `nativeAuto` directly —
+  // a hand-built proof has the same steps and deserves the same instruments.
+  // `_manualNa` is the manual session projected into that shape.
+  // Everything about the manual surface that changes its STRUCTURE rather than
+  // just its status text. Compared against what was last drawn to decide whether
+  // render() may take its in-place fast path.
+  function manualRenderSig(session) {
+    var na = session.nativeAuto;
+    var m = session.manual;
+    if (!m) return 'no-manual';
+    return [
+      na ? na.phase : 'idle',
+      na && na.paused ? 'paused' : 'live',
+      m.phase,
+      m.syncing ? 'syncing' : '',
+      m.syncFailed ? 'syncfail' : '',
+      m.busy ? 'busy' : '',
+    ].join('|');
+  }
+
+  Session.prototype.derivationNa = function () {
+    return this.nativeAuto || this._manualNa || null;
   };
 
   Session.prototype.renderBar = function (m) {
@@ -1210,6 +1310,7 @@ function E() { return global.BelEditor || null; }
   var reelApi = null;
   var autoApi = null;
   var treeUiApi = null;
+  var manualApi = null;
 
   function renderSynthChain(meta, variant) {
     return treeUiApi.renderSynthChain(meta, variant);
@@ -1237,6 +1338,7 @@ function E() { return global.BelEditor || null; }
 
     reelApi = createReel({
       el: function () { return el.apply(null, arguments); },
+      tacticVerb: tacticVerb,
       setTip: function () { return setTip.apply(null, arguments); },
       bindStepGoalTip: function () { return bindStepGoalTip.apply(null, arguments); },
       bindChipTip: function () { return bindChipTip.apply(null, arguments); },
@@ -1302,6 +1404,8 @@ function E() { return global.BelEditor || null; }
       ICON_POPOUT: ICON_POPOUT,
       ICON_CHECK: ICON_CHECK,
       ICON_STOP: ICON_STOP,
+      ICON_CHEVRON_LEFT: ICON_CHEVRON_LEFT,
+      ICON_TAKEOVER: ICON_TAKEOVER,
     });
 
     // Session methods — unbound so `this` is the session when called via prototype.
@@ -1331,6 +1435,57 @@ function E() { return global.BelEditor || null; }
 
     Session.prototype.pendingCommitAfterNav = commitApi.pendingCommitAfterNav;
     Session.prototype.verifyAndCommit = commitApi.verifyAndCommit;
+
+    // Manual Harpoon — the DEFAULT surface. Built last because it leans on the
+    // display/reel vocabulary above (the goal hero, the place strip, the
+    // committed step rows) so a hand-built proof reads exactly like a searched one.
+    manualApi = createManual({
+      el: function () { return el.apply(null, arguments); },
+      iconBtn: function () { return iconBtn.apply(null, arguments); },
+      setTip: function () { return setTip.apply(null, arguments); },
+      toast: function () { return toast.apply(null, arguments); },
+      E: E,
+      renderSource: displayApi.renderSource,
+      appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      priorGoalBinders: displayApi.priorGoalBinders,
+      buildPlaceStrip: displayApi.buildPlaceStrip,
+      renderCommitOutcome: displayApi.renderCommitOutcome,
+      stageNode: displayApi.stageNode,
+      solvedBodyOf: displayApi.solvedBodyOf,
+      appendCommittedStepRow: function () { return reelApi.appendCommittedStepRow.apply(reelApi, arguments); },
+      appendAutoSolution: displayApi.appendAutoSolution,
+      renderManualSolvedSummary: displayApi.renderManualSolvedSummary,
+      tacticVerb: tacticVerb,
+      setNativeSearchLabel: displayApi.setNativeSearchLabel,
+      nativeAutoSearchLabel: displayApi.nativeAutoSearchLabel,
+      ICON_UNDO: ICON_UNDO,
+      ICON_REDO: ICON_REDO,
+      ICON_BRUTUS: ICON_BRUTUS,
+      ICON_CHEVRON_DOWN: ICON_CHEVRON_DOWN,
+      ICON_DECLINE: ICON_DECLINE,
+      ICON_CHECK: ICON_CHECK,
+      ICON_PLAY: ICON_PLAY,
+      ICON_PAUSE: ICON_PAUSE,
+      ICON_POPOUT: ICON_POPOUT,
+      manualRenderSig: manualRenderSig,
+    });
+
+    Session.prototype.startManual = manualApi.startManual;
+    Session.prototype.renderManual = manualApi.renderManual;
+    Session.prototype.manualGoalType = manualApi.manualGoalType;
+    Session.prototype.manualApply = manualApi.manualApply;
+    Session.prototype.manualStepBack = manualApi.manualStepBack;
+    Session.prototype.manualStepForward = manualApi.manualStepForward;
+    Session.prototype.manualFocus = manualApi.manualFocus;
+    Session.prototype.sweepCandidates = manualApi.sweepCandidates;
+    Session.prototype.cancelSweep = manualApi.cancelSweep;
+    Session.prototype.runBrutus = manualApi.runBrutus;
+    Session.prototype.toggleBrutusPause = manualApi.toggleBrutusPause;
+    Session.prototype.absorbBrutusResult = manualApi.absorbBrutusResult;
+    Session.prototype.syncManualToBrutus = manualApi.syncManualToBrutus;
+    Session.prototype.scrollToDerivation = manualApi.scrollToDerivation;
+    Session.prototype.backToManual = manualApi.backToManual;
+    Session.prototype.commitManual = manualApi.commitManual;
   }
 
   __initHarpoonLabPeels();
@@ -1340,8 +1495,19 @@ function E() { return global.BelEditor || null; }
     var self = this;
     var body = this.bodyEl;
 
+    // While Brutus searches, its status line and reel are updated IN PLACE —
+    // rebuilding the panel on every pulse would thrash the DOM and destroy the
+    // user's scroll position, which now matters because the tactics stay on
+    // screen above the live derivation.
+    // …but only for STATUS changes. Pausing, resyncing after a pause, and a
+    // failed resync all change the panel's structure (they unlock the tactics,
+    // skeleton them, or replace them), and a status-only update would leave the
+    // previous structure on screen — which is how a pause once stranded the user
+    // with the tactics of a goal Brutus had already left. `_renderSig` is what
+    // renderManual last drew; anything else means rebuild.
     if (this.nativeAuto && this.nativeAuto.phase === 'searching'
-        && this._autoSearchBox && this._autoSearchBox.parentNode === body) {
+        && this._autoSearchBox && body.contains(this._autoSearchBox)
+        && this._renderSig === manualRenderSig(this)) {
       this.updateNativeAutoSearch();
       return;
     }
@@ -1351,8 +1517,15 @@ function E() { return global.BelEditor || null; }
     body.classList.remove('is-starting');
     var m = this.model;
 
-    // Native auto-solve owns the surface end-to-end (search → reveal → place); it
-    // needs no OCaml subgoal model. When it's active, render it directly.
+    // ONE SURFACE. The manual panel is the whole of Harpoon; Brutus is a STATE
+    // of it, not a screen that replaces it. While the search runs the tactics
+    // stay in place (disabled) and the derivation below streams; pausing hands
+    // the tactics straight back. `renderManual` renders every phase.
+    if (this.manual) {
+      this.renderManual(body);
+      return;
+    }
+    // No manual session (legacy/standalone Brutus) — its own surface still works.
     if (this.nativeAuto) {
       this.renderNativeAuto(body);
       return;
@@ -1527,6 +1700,15 @@ function E() { return global.BelEditor || null; }
     return null;
   }
 
+  // Which surface the lab opens into. Manual unless the user has chosen otherwise.
+  function openingMode() {
+    var persist = global.Persist;
+    if (persist && typeof persist.readStoredHarpoonMode === 'function') {
+      return persist.readStoredHarpoonMode() === 'brutus' ? 'brutus' : 'manual';
+    }
+    return 'manual';
+  }
+
   function runSession(view, prep, host) {
     var session = new Session(view, prep.span.from, prep.span.to, host);
     session.prep = prep;
@@ -1540,10 +1722,16 @@ function E() { return global.BelEditor || null; }
     host.mount(content, session);
     if (host.onSessionStart) host.onSessionStart(prep.name);
 
-    // BelJar drives: open straight into the native auto-solve (pure JS proof search,
-    // checker-certified \u2014 no OCaml Harpoon session). runNativeAuto renders its own
-    // Act I searching state, so no separate "Starting proof\u2026" bar is needed.
-    session.runNativeAuto();
+    // BelJar drives \u2014 no OCaml Harpoon session either way. MANUAL is the default:
+    // proving is an interactive act, and the search ("Brutus") is one tactic within
+    // it, one click from the manual surface. A user who wants the old
+    // straight-to-search behaviour flips the preference.
+    // Always the manual surface. Opening "in Brutus" now means the search starts
+    // itself once the goal is read — not that a different panel appears.
+    var startBrutus = openingMode() === 'brutus';
+    session.startManual().then(function (ok) {
+      if (ok && startBrutus) session.runBrutus();
+    });
     return session;
   }
 
@@ -1679,6 +1867,9 @@ function E() { return global.BelEditor || null; }
   }
 
   global.Harpoon = {
+    // Test seam: probes mount a Session over a fabricated state to drive the
+    // SHIPPED render/click paths rather than a re-implementation of them.
+    _Session: Session,
     openFromHole: openFromHole,
     proveInPanel: proveInPanel,
     proveInPanelForFile: proveInPanelForFile,

@@ -115,6 +115,8 @@ export function create(deps) {
     var REPL_HOVER_TIMESTAMP_KEY = 'beljar-repl-hover-timestamp';
     var REPL_HISTORY_CAP_KEY = 'beljar-repl-history-cap';
     var REPL_HISTORY_PERSIST_KEY = 'beljar-repl-history-persist';
+    var REPL_AUTOCOMPLETE_TRIGGER_KEY = 'beljar-repl-autocomplete-trigger';
+    var REPL_AUTOCOMPLETE_CONTINUE_KEY = 'beljar-repl-autocomplete-continue';
     var REPL_TRANSCRIPT_KEY = 'beljar-repl-transcript-v1';
     var REPL_CMD_HISTORY_KEY = 'beljar-repl-cmd-history-v1';
     var REPL_CMD_HISTORY_DEFAULT_CAP = 1000;
@@ -160,6 +162,10 @@ export function create(deps) {
     var CHECK_AGGRESSIVENESS_KEY = 'beljar-check-aggressiveness';
     var AUTOSOLVE_FOCUS_NEXT_KEY = 'beljar-autosolve-focus-next';
     var AUTOSOLVE_SHOW_STATS_KEY = 'beljar-autosolve-show-stats';
+    // Which surface the Harpoon opens into: 'manual' (default — pick tactics
+    // yourself) or 'brutus' (straight into the search, the pre-manual behaviour).
+    var HARPOON_MODE_KEY = 'beljar-harpoon-mode';
+    var HARPOON_VERIFY_MOVES_KEY = 'beljar-harpoon-verify-moves';
     var QUIET_WHILE_TYPING_KEY = 'beljar-quiet-while-typing';
     var DIAG_PRESENTATION_KEY = 'beljar-diag-presentation';
     var DIAG_SEVERITY_KEY = 'beljar-diag-severity';
@@ -209,6 +215,29 @@ export function create(deps) {
 
     function readStoredReplHoverTimestamp() { return readBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY); }
     function writeStoredReplHoverTimestamp(on) { writeBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY, on); }
+
+    function readStoredReplAutocompleteTrigger() {
+      try {
+        var v = backendLoad(REPL_AUTOCOMPLETE_TRIGGER_KEY);
+        if (v === 'none' || v === 'always') return v;
+        return 'typing';
+      } catch (_) {
+        return 'typing';
+      }
+    }
+
+    function writeStoredReplAutocompleteTrigger(mode) {
+      if (mode === 'none' || mode === 'always') backendSave(REPL_AUTOCOMPLETE_TRIGGER_KEY, mode);
+      else backendRemove(REPL_AUTOCOMPLETE_TRIGGER_KEY);
+    }
+
+    function readStoredReplAutocompleteContinue() {
+      return readBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY);
+    }
+
+    function writeStoredReplAutocompleteContinue(on) {
+      writeBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY, on);
+    }
 
     function readStoredReplHistoryCap() {
       try {
@@ -706,6 +735,20 @@ export function create(deps) {
     function readStoredAutosolveShowStats() { return readBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY); }
     function writeStoredAutosolveShowStats(on) { writeBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY, on); }
 
+    function readStoredHarpoonMode() {
+      try {
+        var v = localStorage.getItem(HARPOON_MODE_KEY);
+        return v === 'brutus' ? 'brutus' : 'manual';
+      } catch (e) { return 'manual'; }
+    }
+    function writeStoredHarpoonMode(mode) {
+      try { localStorage.setItem(HARPOON_MODE_KEY, mode === 'brutus' ? 'brutus' : 'manual'); }
+      catch (e) { /* storage unavailable */ }
+    }
+
+    function readStoredHarpoonVerifyMoves() { return readBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY); }
+    function writeStoredHarpoonVerifyMoves(on) { writeBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY, on); }
+
     function readStoredQuietWhileTyping() { return readBoolDefaultOff(QUIET_WHILE_TYPING_KEY); }
     function writeStoredQuietWhileTyping(on) { writeBoolDefaultOff(QUIET_WHILE_TYPING_KEY, on); }
 
@@ -813,12 +856,16 @@ export function create(deps) {
       'beljar-repl-hover-timestamp',
       'beljar-repl-history-cap',
       'beljar-repl-history-persist',
+      REPL_AUTOCOMPLETE_TRIGGER_KEY,
+      REPL_AUTOCOMPLETE_CONTINUE_KEY,
       'beljar-library-expand-default',
       'beljar-restore-panels',
       'beljar-inspector-follow',
       'beljar-autosave-delay',
       'beljar-autosolve-focus-next',
       'beljar-autosolve-show-stats',
+      'beljar-harpoon-mode',
+      'beljar-harpoon-verify-moves',
       QUIET_WHILE_TYPING_KEY,
       DIAG_PRESENTATION_KEY,
       DIAG_SEVERITY_KEY,
@@ -974,6 +1021,8 @@ export function create(deps) {
       backendRemove(SUITE_CHECK_KEY);
       backendRemove(AUTOSOLVE_FOCUS_NEXT_KEY);
       backendRemove(AUTOSOLVE_SHOW_STATS_KEY);
+      backendRemove(HARPOON_MODE_KEY);
+      backendRemove(HARPOON_VERIFY_MOVES_KEY);
     }
 
     function resetReplPrefs() {
@@ -984,6 +1033,8 @@ export function create(deps) {
       backendRemove(REPL_HOVER_TIMESTAMP_KEY);
       backendRemove(REPL_HISTORY_CAP_KEY);
       backendRemove(REPL_HISTORY_PERSIST_KEY);
+      backendRemove(REPL_AUTOCOMPLETE_TRIGGER_KEY);
+      backendRemove(REPL_AUTOCOMPLETE_CONTINUE_KEY);
       clearReplHistoryPayload();
     }
 
@@ -1124,6 +1175,10 @@ export function create(deps) {
       writeStoredReplFilterChatter: writeStoredReplFilterChatter,
       readStoredReplHoverTimestamp: readStoredReplHoverTimestamp,
       writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp,
+      readStoredReplAutocompleteTrigger: readStoredReplAutocompleteTrigger,
+      writeStoredReplAutocompleteTrigger: writeStoredReplAutocompleteTrigger,
+      readStoredReplAutocompleteContinue: readStoredReplAutocompleteContinue,
+      writeStoredReplAutocompleteContinue: writeStoredReplAutocompleteContinue,
       readStoredReplHistoryCap: readStoredReplHistoryCap,
       writeStoredReplHistoryCap: writeStoredReplHistoryCap,
       readStoredReplHistoryPersist: readStoredReplHistoryPersist,
@@ -1212,6 +1267,10 @@ export function create(deps) {
       checkAggressivenessScale: checkAggressivenessScale,
       readStoredAutosolveFocusNext: readStoredAutosolveFocusNext,
       writeStoredAutosolveFocusNext: writeStoredAutosolveFocusNext,
+      readStoredHarpoonMode: readStoredHarpoonMode,
+      writeStoredHarpoonMode: writeStoredHarpoonMode,
+      readStoredHarpoonVerifyMoves: readStoredHarpoonVerifyMoves,
+      writeStoredHarpoonVerifyMoves: writeStoredHarpoonVerifyMoves,
       readStoredAutosolveShowStats: readStoredAutosolveShowStats,
       writeStoredAutosolveShowStats: writeStoredAutosolveShowStats,
       readStoredQuietWhileTyping: readStoredQuietWhileTyping,

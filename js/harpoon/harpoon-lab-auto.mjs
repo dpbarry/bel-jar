@@ -27,6 +27,7 @@ function createAuto(deps) {
     var ICON_POPOUT = deps.ICON_POPOUT;
     var ICON_CHECK = deps.ICON_CHECK;
     var ICON_STOP = deps.ICON_STOP;
+    var ICON_CHEVRON_LEFT = deps.ICON_CHEVRON_LEFT;
 
       // The auto-solve panel — search → reveal → place.
       function renderNativeAuto(parent) {
@@ -37,8 +38,6 @@ function createAuto(deps) {
           + (self.isFrozenRetrospective() ? ' is-frozen' : ''));
         var stage = 0;
 
-        if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
-
         if (na.goalType) {
           var hero = resolveNativeAutoGoalDisplay(self, na);
           var heroPriors = hero.goalType === na.goalType
@@ -47,6 +46,9 @@ function createAuto(deps) {
           this._autoGoalWrap = appendAutoGoalHero(
             box, hero.goalType, na.declName, hero.goalState, heroPriors);
         }
+        // Beneath the goal, with the other banners — same rule as the manual
+        // surface, now that position follows call order.
+        if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
 
         // ── Act I — searching. Goal stays visible; status line + pause/resume only. */
         if (na.phase === 'searching') {
@@ -170,6 +172,33 @@ function createAuto(deps) {
           stageNode(errWrap, stage);
           stage += 1;
           box.appendChild(errWrap);
+        }
+
+        // ── Back to hand-proving. Brutus is a TACTIC inside the manual session,
+        //    so its result must be returnable — a stalled search hands its partial
+        //    derivation back instead of dead-ending, and a solved one can still be
+        //    inspected by hand before placing. Only shown when we came from manual. */
+        if (this.manual && !self.isFrozenRetrospective()) {
+          var backStrip = buildBannerShell({
+            tag: 'button',
+            className: 'harpoon-lab-resume harpoon-lab-strip harpoon-lab-banner',
+            tone: na.complete ? 'goal' : 'action',
+            icon: ICON_CHEVRON_LEFT,
+            badgeClass: 'harpoon-lab-resume-badge',
+            titleClass: 'harpoon-lab-resume-title',
+            subClass: 'harpoon-lab-resume-sub',
+            title: na.complete ? 'Take it back by hand' : 'Continue by hand',
+            sub: na.complete
+              ? 'Review the steps, or undo before placing'
+              : ((na.steps && na.steps.length)
+                ? 'Keep the ' + na.steps.length + ' step' + (na.steps.length === 1 ? '' : 's')
+                  + ' Brutus found and carry on'
+                : 'Pick the next move yourself'),
+            onClick: function () { self.backToManual(); },
+          });
+          stageNode(backStrip, stage);
+          stage += 1;
+          box.appendChild(backStrip);
         }
 
         // ── Place the solution (deferred commit). */

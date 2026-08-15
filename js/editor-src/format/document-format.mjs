@@ -1,4 +1,3 @@
-import { syntaxTree } from '@codemirror/language';
 import { EditorSelection } from '@codemirror/state';
 import { parser } from '../beluga-parser.js';
 import { render } from './doc.mjs';
@@ -259,13 +258,12 @@ function resolvePrintWidth(opts = {}) {
     ?? 80;
 }
 
-/** Format source text without a CodeMirror view. Returns new text, or null if unchanged/refused. */
+/** Format source text without a CodeMirror view. Returns formatted text, or null if refused. */
 export function formatSource(src, opts = {}) {
   const oldText = String(src ?? '');
   const printWidth = resolvePrintWidth(opts);
-  let newText;
   try {
-    newText = formatString(oldText, parser.parse(oldText), { ...opts, printWidth });
+    return formatString(oldText, parser.parse(oldText), { ...opts, printWidth });
   } catch (e) {
     if (!opts.quiet) {
       if (e && e.code === 'FORMAT_SHRINK_GUARD') {
@@ -276,17 +274,14 @@ export function formatSource(src, opts = {}) {
     }
     return null;
   }
-  if (newText === oldText) return null;
-  return newText;
 }
 
 export function formatDocument(state, opts = {}) {
-  const tree = syntaxTree(state);
   const oldText = state.doc.toString();
   const printWidth = resolvePrintWidth(opts);
   let newText;
   try {
-    newText = formatString(oldText, tree, { ...opts, printWidth });
+    newText = formatString(oldText, parser.parse(oldText), { ...opts, printWidth });
   } catch (e) {
     if (e && e.code === 'FORMAT_SHRINK_GUARD') {
       showFormatToast('Format refused. The result would drop too much content.', 'warn');

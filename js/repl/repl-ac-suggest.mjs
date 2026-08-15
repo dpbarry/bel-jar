@@ -332,6 +332,21 @@ function suggestRunFolders(files, cwd, token) {
 }
 
 /**
+ * True when the REPL popup should open without an explicit Show Autocomplete.
+ * Empty / whitespace (backspace into nothing) never auto-opens.
+ */
+function replAcShouldOpen(opts) {
+  opts = opts || {};
+  if (opts.explicit) return true;
+  var trigger = opts.trigger === 'none' || opts.trigger === 'always' ? opts.trigger : 'typing';
+  if (trigger === 'none') return false;
+  var line = String(opts.line || '');
+  var pos = opts.pos == null ? line.length : opts.pos;
+  if (pos <= 0 || pos > line.length) return false;
+  return !/\s/.test(line.slice(pos - 1, pos));
+}
+
+/**
  * @param {{ line: string, files?: array, cwd?: string, verbs?: string[] }} opts
  * @returns {{ items: array, replaceFrom: number, token: string } | null}
  */
@@ -365,6 +380,7 @@ export {
   DEFAULT_VERBS,
   parseCompletionContext,
   suggestReplCompletions,
+  replAcShouldOpen,
   suggestVerbs,
   suggestRunPaths,
   suggestRunSuites,

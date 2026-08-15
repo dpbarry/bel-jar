@@ -1329,7 +1329,9 @@ if (cmdInput) {
   }
   cmdInput.addEventListener('input', () => {
     ReplCommands.resetHistoryIndex();
-    if (typeof ReplAutocomplete !== 'undefined' && ReplAutocomplete.refresh) {
+    if (typeof ReplAutocomplete !== 'undefined' && ReplAutocomplete.onInput) {
+      ReplAutocomplete.onInput();
+    } else if (typeof ReplAutocomplete !== 'undefined' && ReplAutocomplete.refresh) {
       ReplAutocomplete.refresh();
     }
   });

@@ -1,0 +1,98 @@
+
+=== DEATH CENSUS — 207 targets with data (0 no data) ===
+
+DEEPEST DEAD END, by mode:
+    139 ( 67%)  MIXED
+     43 ( 21%)  ALL-REJECT
+     15 (  7%)  ALL-GUARD
+      8 (  4%)  ZERO-CAND
+      2 (  1%)  NO-DEAD-END
+
+TARGETS WITH >=1 ZERO-CANDIDATE HOLE ANYWHERE:     8 (  4%)  (none: 199)
+
+ZERO-CANDIDATE HOLE FEATURES (share of zero-cand holes):
+      6 ( 19%)  hyps:none
+      5 ( 16%)  site:inside-case-arm
+      4 ( 13%)  goal:box
+      4 ( 13%)  goal:bare-ctype
+      3 (  9%)  meta:has-ctx-var
+      3 (  9%)  site:top-level
+      2 (  6%)  goal:under-lambda
+      2 (  6%)  meta:extended-context
+      1 (  3%)  goal:cites-invented-meta
+      1 (  3%)  meta:invented-name
+      1 (  3%)  hyps:cites-invented-meta
+
+MOVE KINDS OFFERED at dead ends (a kind absent here is never generated):
+    455  fill
+    329  split
+    146  intro
+    125  recurse
+    106  invert
+     65  lemma
+     16  synth
+      8  impossible
+
+CHECKER REJECTIONS (1761 rows) — the TYPING/SPELLING gap:
+    754 ( 43%)  N-checking error
+           kinds: fill:474 recurse:168 lemma:69 split:28 impossible:8 synth:6 invert:1
+           e.g. lemma: let [g |- R1] = fs_out_rew f in
+           e.g. fill: d
+    253 ( 14%)  N an N term-level constant
+           kinds: fill:167 lemma:86
+           e.g. fill: [_ |- r_par f]
+           e.g. fill: [_ |- r_str f f f]
+    204 ( 12%)  N free context variable is illegal
+           kinds: fill:75 recurse:61 split:34 lemma:34
+           e.g. fill: ex_fstep [g,x:names |- _] [g |- fs_close2 B1 B2] [g,x:names |- frefl] [g,x:names |- prefl]
+           e.g. fill: ex_fstep [g,x:names |- _] [g |- _] [g,x:names |- _] [g,x:names |- prefl]
+    151 (  9%)  N-typed expression
+           kinds: fill:116 lemma:16 invert:10 split:6 recurse:3
+           e.g. fill: [_ |- r_com]
+           e.g. fill: [g |- fout_base X X]
+     82 (  5%)  N free meta-variable is illegal
+           kinds: fill:57 recurse:16 split:5 synth:2 lemma:2
+           e.g. fill: [_ |- r_par g]
+           e.g. fill: [_ |- r_str g g g]
+     80 (  5%)  N-typed substitution
+           kinds: fill:76 recurse:4
+           e.g. fill: [g |- eq_lam (\x. \d. R2)]
+           e.g. fill: [g |- eq_lam (\x. \d. R1)]
+     51 (  3%)  N to parse (mutual) recursive function declaration(s)
+           kinds: fill:51
+           e.g. fill: LogArr [_ |- _]]] [_ |- N1[$W[..]]] (mlam X5, X6, X7, X8 => ?)
+           e.g. fill: LogArr [_ |- _]]] [_ |- N1[$W[..]]] (mlam X5, X6, X7, X8 => ?)
+     47 (  3%)  N is not closed
+           kinds: recurse:42 lemma:5
+           e.g. lemma: let [ |- R] = cc' [x7 : source T |- X1] in
+           e.g. lemma: let [ |- _] = cc' [x7 : source T |- X1] in
+     39 (  2%)  (blank)
+           kinds: split:25 invert:14
+           e.g. invert: let [g |- bs_in] = b in
+           e.g. split: case f of
+     15 (  1%)  N few or too many arguments supplied to a type family
+           kinds: split:15
+           e.g. split: case [g |- #p] of
+           e.g. split: case [g |- #p] of
+     14 (  1%)  did not certify
+           kinds: fill:8 lemma:6
+           e.g. lemma: let [g |- _] = trans [g, b : block (x : exp, u : equal x x, _t : eq x x) |- _] [g, b : blo
+           e.g. lemma: let [g |- _] = trans [g, b : block (x : exp, u : equal x x, _t : eq x x) |- _] [g, b : blo
+     12 (  1%)  N of meta-object does not match expected context
+           kinds: recurse:6 fill:4 lemma:2
+           e.g. lemma: let [g |- R3] = bs_out_rew_res [g |- R] in
+           e.g. lemma: let [g |- _] = bs_out_rew_res [g |- R] in
+     12 (  1%)  N meta-variables in computation-level expression; provide a type annotation
+           kinds: fill:8 recurse:4
+           e.g. recurse: let R = extendEnv X1 in
+           e.g. recurse: let R = extendEnv X1 in
+     11 (  1%)  N-object type clash
+           kinds: lemma:8 recurse:2 fill:1
+           e.g. fill: fundamental_lemma [] [] [ |- M] [] X
+           e.g. recurse: let R = fundamental_lemma [] [] [ |- M] [] X in
+      9 (  1%)  N x1 is unbound
+           kinds: invert:8 split:1
+           e.g. invert: let [ |- app X7 X8] : [ |- hoas B] = x1 in
+           e.g. invert: let [ |- app X7 X8] = x1 in
+
+rows written to scratchpad\death-census-wide.jsonl

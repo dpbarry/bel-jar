@@ -2131,26 +2131,76 @@
         showToast2("No Beluga source files to format.", { kind: "warn" });
         return;
       }
-      const activeId = getPersist() ? getPersist().getCurrentFileId() : Persist.getActiveFileId();
       const formatOffline = typeof BelEditor !== "undefined" && typeof BelEditor.formatSource === "function" ? BelEditor.formatSource : null;
-      let changed = 0;
-      for (const f of files) {
-        if (f.id === activeId && getEditor() && typeof getEditor().format === "function") {
-          if (getEditor().format()) changed += 1;
-          continue;
-        }
-        if (!formatOffline) continue;
-        const next = formatOffline(projectFileText2(f.id), { quiet: true });
-        if (next == null) continue;
-        Persist.setFileText(f.id, next);
-        changed += 1;
+      if (!formatOffline) {
+        showToast2("Formatter is not available.", { kind: "error" });
+        return;
       }
-      if (changed === 0) {
-        showToast2("All files already formatted.", { kind: "success" });
-      } else if (changed === 1) {
-        showToast2("Formatted 1 file.", { kind: "success" });
+      const ed = getEditor();
+      const persist2 = getPersist();
+      if (persist2 && typeof persist2.flushCheckpoint === "function") persist2.flushCheckpoint();
+      else if (ed && typeof ed.flushCheckpoint === "function") ed.flushCheckpoint();
+      const liveId = ed && typeof ed.getCurrentFileId === "function" ? ed.getCurrentFileId() : null;
+      const applyFormatted = (id, next) => {
+        if (ed && id === liveId) {
+          const view = typeof ed.getView === "function" ? ed.getView() : null;
+          const sel = view && view.state ? view.state.selection.main : null;
+          const head = sel ? Math.min(sel.head, next.length) : next.length;
+          if (typeof ed.replaceDocumentNonUndoable === "function") {
+            ed.replaceDocumentNonUndoable(next, {
+              selection: { anchor: head, head },
+              userEvent: "format"
+            });
+          } else if (typeof ed.setValueNonUndoable === "function") {
+            ed.setValueNonUndoable(next);
+          } else if (typeof ed.setValue === "function") {
+            ed.setValue(next);
+          }
+          const applied = typeof ed.getValue === "function" ? ed.getValue() : next;
+          if (persist2 && typeof persist2.replaceEditorText === "function") persist2.replaceEditorText(applied);
+          if (persist2 && typeof persist2.flushCheckpoint === "function") persist2.flushCheckpoint();
+          else Persist.setFileText(id, applied);
+          return;
+        }
+        Persist.setFileText(id, next);
+      };
+      const run = () => {
+        let changed2 = 0;
+        let refused2 = 0;
+        for (const f of files) {
+          const src = projectFileText2(f.id);
+          const next = formatOffline(src, { quiet: true });
+          if (next == null) {
+            refused2 += 1;
+            continue;
+          }
+          if (next === src) continue;
+          applyFormatted(f.id, next);
+          changed2 += 1;
+        }
+        return { changed: changed2, refused: refused2, total: files.length };
+      };
+      let stats;
+      if (typeof EditHistory !== "undefined" && typeof EditHistory.transact === "function") {
+        stats = EditHistory.transact("format", run, "Format project").result || { changed: 0, refused: 0, total: files.length };
       } else {
-        showToast2("Formatted " + changed + " files.", { kind: "success" });
+        stats = run();
+      }
+      const { changed, refused, total } = stats;
+      if (changed === 0 && refused === 0) {
+        showToast2("All files already formatted.", { kind: "success" });
+      } else if (refused === 0) {
+        showToast2(changed === 1 ? "Formatted 1 file." : "Formatted " + changed + " files.", { kind: "success" });
+      } else if (changed === 0) {
+        showToast2(
+          refused === total ? "Format refused for every file." : "Format refused for " + refused + " file" + (refused === 1 ? "" : "s") + ".",
+          { kind: "warn" }
+        );
+      } else {
+        showToast2(
+          "Formatted " + changed + " of " + total + " files (" + refused + " refused).",
+          { kind: "warn" }
+        );
       }
     }
     function buildEditMenuItems() {
@@ -3710,7 +3760,9 @@
     }
     cmdInput.addEventListener("input", () => {
       ReplCommands.resetHistoryIndex();
-      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.refresh) {
+      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.onInput) {
+        ReplAutocomplete.onInput();
+      } else if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.refresh) {
         ReplAutocomplete.refresh();
       }
     });

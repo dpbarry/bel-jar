@@ -47,7 +47,9 @@ const {
 
 expect(normalizeSpec('mod+shift+f') === 'Mod+Shift+F', 'normalize Mod+Shift+F');
 expect(normalizeSpec('Ctrl+K') === 'Mod+K', 'Ctrl → Mod');
+expect(normalizeSpec('Control+Space') === 'Control+Space', 'Control stays Control');
 expect(toCmKey('Mod+Shift+F') === 'Mod-Shift-f', 'CM key conversion');
+expect(toCmKey('Control+Space') === 'Ctrl-Space', 'CM Control+Space');
 expect(toCmKey('Alt+Shift+F') === 'Alt-Shift-f', 'CM Alt-Shift-f');
 expect(toCmKey('F12') === 'F12', 'CM F12');
 expect(isBrowserReserved('Mod+T') === true, 'Mod+T reserved');
@@ -59,8 +61,10 @@ expect(isReservedSequence('1') === true, 'bare 1 reserved sequence');
 expect(isReservedSequence('Shift+A') === true, 'Shift+A reserved sequence');
 expect(isReservedSequence('F2') === false, 'F2 allowed');
 expect(isReservedSequence('Shift+F8') === false, 'Shift+F8 allowed');
+expect(isReservedSequence('Control+Space') === false, 'Control+Space allowed');
 
 expect(KB.resolve('nav.anywhere') === 'Mod+K', 'default anywhere');
+expect(KB.resolve('edit.autocomplete') === 'Control+Space', 'default show autocomplete');
 expect(KB.resolve('edit.redo', false) === 'Mod+Y', 'redo default on Win');
 expect(KB.resolve('edit.redo', true) === 'Mod+Shift+Z', 'redo default on Mac');
 expect(formatShortcut('Mod+Y', false) === 'Ctrl+Y', 'label Win');
@@ -99,6 +103,9 @@ expect(KB.resolve('nav.anywhere') === 'Mod+K', 'reset binding');
   expect(KB.matchesId(findEv, 'edit.find') === true, 'Mod+F matches edit.find');
   expect(KB.matchesId(findEv, 'edit.search-project') === false, 'Mod+F is not search-project');
   expect(KB.matchesId({ key: 'f', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true }, 'edit.find') === false, 'Mod+Shift+F is not find');
+  const acEv = { key: ' ', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false };
+  expect(KB.matchesId(acEv, 'edit.autocomplete') === true, 'Control+Space matches autocomplete');
+  expect(KB.matchesId(findEv, 'edit.autocomplete') === false, 'Mod+F is not autocomplete');
 }
 KB.clearBinding('edit.find');
 expect(KB.matchesId({ key: 'f', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false }, 'edit.find') === false, 'unbound find does not match');

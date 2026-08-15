@@ -88,7 +88,6 @@ Owners publish system nouns next to their module (`Persist`, `BelEditor`, `Toast
 | `js/editor-src/beluga-parser.js` | Generated from `beluga.grammar` |
 | `js/editor-cm.bundle.js` | Generated — `node scripts/build-editor.mjs` |
 | `js/**/*.js` leaves + `js/shell.js` | Generated from `.mjs` — `npm run build:shell`; never hand-edit |
-| `beluga-site/` | Marketing satellite — not the IDE |
 | `scratch/`, `scripts/debug-*.mjs`, `scripts/.str-step-*.bel` | Local experiments (gitignored) — not product |
 | `tests/fixtures/`, `results/` | Test samples / harness outputs |
 

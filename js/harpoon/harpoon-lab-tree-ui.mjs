@@ -108,7 +108,7 @@ function createTreeUi(deps) {
 
         // The live variant tracks the session's current na (reassigned when the search
         // ends); the static variant renders the snapshot it was given.
-        function cur() { return opts.live ? (self.nativeAuto || na) : na; }
+        function cur() { return opts.live ? (self.derivationNa() || na) : na; }
 
         function draw() {
           if (!global.HarpoonTree) return;
@@ -237,7 +237,7 @@ function createTreeUi(deps) {
       function openTreeExplorer() {
         var self = this;
         var fw = FW();
-        var na = this.nativeAuto;
+        var na = this.derivationNa();
         if (!fw || !na) return;
         if (this._treeWin) { this._treeWin.raise && this._treeWin.raise(); return; }
         var live = na.phase === 'searching';

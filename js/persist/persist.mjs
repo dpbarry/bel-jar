@@ -839,6 +839,22 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.writeStoredReplHoverTimestamp.apply(_settingsApi, arguments);
   }
 
+  function readStoredReplAutocompleteTrigger() {
+    return _settingsApi.readStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+
+  function writeStoredReplAutocompleteTrigger() {
+    return _settingsApi.writeStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
+  }
+
+  function readStoredReplAutocompleteContinue() {
+    return _settingsApi.readStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
+  }
+
+  function writeStoredReplAutocompleteContinue() {
+    return _settingsApi.writeStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
+  }
+
   function readStoredReplHistoryCap() {
     return _settingsApi.readStoredReplHistoryCap.apply(_settingsApi, arguments);
   }
@@ -1108,6 +1124,8 @@ var SCHEMA_VERSION = 3;
     'readStoredCheckAggressiveness', 'writeStoredCheckAggressiveness', 'checkAggressivenessScale',
     'readStoredAutosolveFocusNext', 'writeStoredAutosolveFocusNext',
     'readStoredAutosolveShowStats', 'writeStoredAutosolveShowStats',
+    'readStoredHarpoonMode', 'writeStoredHarpoonMode',
+    'readStoredHarpoonVerifyMoves', 'writeStoredHarpoonVerifyMoves',
     'readStoredQuietWhileTyping', 'writeStoredQuietWhileTyping',
     'readStoredDiagPresentation', 'writeStoredDiagPresentation',
     'readStoredDiagSeverity', 'writeStoredDiagSeverity',
@@ -1926,6 +1944,10 @@ var SCHEMA_VERSION = 3;
     writeStoredReplFilterChatter: writeStoredReplFilterChatter,
     readStoredReplHoverTimestamp: readStoredReplHoverTimestamp,
     writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp,
+    readStoredReplAutocompleteTrigger: readStoredReplAutocompleteTrigger,
+    writeStoredReplAutocompleteTrigger: writeStoredReplAutocompleteTrigger,
+    readStoredReplAutocompleteContinue: readStoredReplAutocompleteContinue,
+    writeStoredReplAutocompleteContinue: writeStoredReplAutocompleteContinue,
     readStoredReplHistoryCap: readStoredReplHistoryCap,
     writeStoredReplHistoryCap: writeStoredReplHistoryCap,
     readStoredReplHistoryPersist: readStoredReplHistoryPersist,

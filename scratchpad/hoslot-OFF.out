@@ -1,0 +1,86 @@
+
+=== DEATH CENSUS — 31 targets with data (0 no data) ===
+
+DEEPEST DEAD END, by mode:
+     22 ( 71%)  MIXED
+      6 ( 19%)  ALL-GUARD
+      2 (  6%)  ZERO-CAND
+      1 (  3%)  ALL-REJECT
+
+TARGETS WITH >=1 ZERO-CANDIDATE HOLE ANYWHERE:     2 (  6%)  (none: 29)
+
+ZERO-CANDIDATE HOLE FEATURES (share of zero-cand holes):
+      2 ( 15%)  goal:box
+      2 ( 15%)  goal:under-lambda
+      2 ( 15%)  meta:extended-context
+      2 ( 15%)  meta:has-ctx-var
+      2 ( 15%)  site:inside-case-arm
+      1 (  8%)  goal:cites-invented-meta
+      1 (  8%)  meta:invented-name
+      1 (  8%)  hyps:cites-invented-meta
+
+MOVE KINDS OFFERED at dead ends (a kind absent here is never generated):
+     44  split
+     40  fill
+     20  intro
+      9  lemma
+      6  invert
+      6  recurse
+      1  synth
+
+CHECKER REJECTIONS (134 rows) — the TYPING/SPELLING gap:
+     39 ( 29%)  N an N term-level constant
+           kinds: fill:29 lemma:10
+           e.g. fill: [_ |- eval_app1 f f]
+           e.g. fill: [_ |- eval_app1 f g]
+     21 ( 16%)  N-checking error
+           kinds: fill:11 lemma:5 recurse:3 split:2
+           e.g. fill: f
+           e.g. lemma: let [g |- R1] = eq_sym f in
+     21 ( 16%)  N-typed expression
+           kinds: fill:15 split:3 invert:3
+           e.g. split: case f of
+           e.g. fill: [_ |- r_com]
+     13 ( 10%)  (blank)
+           kinds: split:9 invert:4
+           e.g. split: (case [g |- X] of
+           e.g. split: (case [g |- X1] of
+     11 (  8%)  N free meta-variable is illegal
+           kinds: fill:7 lemma:2 split:1 recurse:1
+           e.g. fill: [_ |- eval_app1 g g]
+           e.g. fill: [_ |- eval_app2 g g g]
+      9 (  7%)  N x1 is unbound
+           kinds: invert:8 split:1
+           e.g. invert: let [ |- app X7 X8] : [ |- hoas B] = x1 in
+           e.g. invert: let [ |- app X7 X8] = x1 in
+      7 (  5%)  N
+           kinds: recurse:7
+           e.g. recurse: let [g, x : tm, q : path, x24 : jpath q x |- R] = bwd [g, x : tm, q : path, x24 : jpath q 
+           e.g. recurse: let [g, x : tm, q : path, x24 : jpath q x |- _] = bwd [g, x : tm, q : path, x24 : jpath q 
+      4 (  3%)  N is not closed
+           kinds: recurse:2 lemma:2
+           e.g. recurse: let [g, b:block (_t:nd _, u:hil _) |- R] = ndhil [g, b:block (_t:nd _, u:hil _) |- X[.., b
+           e.g. recurse: let [g, b:block (_t:nd _, u:hil _) |- _] = ndhil [g, b:block (_t:nd _, u:hil _) |- X[.., b
+      2 (  1%)  N free context variable is illegal
+           kinds: lemma:2
+           e.g. lemma: let [ |- R] = atrans_c [g1 |- #p._t[..]] in
+           e.g. lemma: let [ |- _] = atrans_c [g1 |- #p._t[..]] in
+      2 (  1%)  N-object type clash
+           kinds: lemma:2
+           e.g. lemma: let [g, k:ccont A |- R] = cpse [g, x7 : value X |- X1] in
+           e.g. lemma: let [g, k:ccont A |- _] = cpse [g, x7 : value X |- X1] in
+      2 (  1%)  N is no projection named v in type block (tp)
+           kinds: split:2
+           e.g. split: case f of
+           e.g. split: case f of
+      1 (  1%)  N-order meta-variables not (currently) supported
+           kinds: invert:1
+           e.g. invert: let [g |- bs_in] : [g |- bstep (p_in X P) (b_in X) P] = b in
+      1 (  1%)  N free parameter variable is illegal
+           kinds: fill:1
+           e.g. fill: [_ |- #p._t[..]]
+      1 (  1%)  did not certify
+           kinds: fill:1
+           e.g. fill: [g |- neut #p]
+
+rows written to scratchpad\hoslot-OFF.jsonl

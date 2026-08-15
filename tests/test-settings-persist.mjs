@@ -44,6 +44,19 @@ assert.equal(P.readStoredReplHoverTimestamp(), true);
 P.writeStoredReplHoverTimestamp(false);
 assert.equal(P.readStoredReplHoverTimestamp(), false);
 
+assert.equal(P.readStoredReplAutocompleteTrigger(), 'typing');
+P.writeStoredReplAutocompleteTrigger('none');
+assert.equal(P.readStoredReplAutocompleteTrigger(), 'none');
+P.writeStoredReplAutocompleteTrigger('always');
+assert.equal(P.readStoredReplAutocompleteTrigger(), 'always');
+P.writeStoredReplAutocompleteTrigger('typing');
+assert.equal(P.readStoredReplAutocompleteTrigger(), 'typing');
+assert.equal(P.readStoredReplAutocompleteContinue(), false);
+P.writeStoredReplAutocompleteContinue(true);
+assert.equal(P.readStoredReplAutocompleteContinue(), true);
+P.writeStoredReplAutocompleteContinue(false);
+assert.equal(P.readStoredReplAutocompleteContinue(), false);
+
 assert.equal(P.readStoredReplHistoryCap(), 1000);
 P.writeStoredReplHistoryCap(500);
 assert.equal(P.readStoredReplHistoryCap(), 500);
@@ -239,6 +252,19 @@ assert.equal(P.readStoredAutosolveShowStats(), true);
 P.writeStoredAutosolveShowStats(false);
 assert.equal(P.readStoredAutosolveShowStats(), false);
 P.writeStoredAutosolveShowStats(true);
+
+assert.equal(typeof P.readStoredHarpoonMode, 'function');
+assert.equal(P.readStoredHarpoonMode(), 'manual');
+P.writeStoredHarpoonMode('brutus');
+assert.equal(P.readStoredHarpoonMode(), 'brutus');
+P.writeStoredHarpoonMode('manual');
+assert.equal(P.readStoredHarpoonMode(), 'manual');
+
+assert.equal(typeof P.readStoredHarpoonVerifyMoves, 'function');
+assert.equal(P.readStoredHarpoonVerifyMoves(), true);
+P.writeStoredHarpoonVerifyMoves(false);
+assert.equal(P.readStoredHarpoonVerifyMoves(), false);
+P.writeStoredHarpoonVerifyMoves(true);
 
 assert.equal(P.readStoredQuietWhileTyping(), false);
 P.writeStoredQuietWhileTyping(true);

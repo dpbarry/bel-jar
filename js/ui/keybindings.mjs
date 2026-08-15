@@ -19,6 +19,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     { id: 'edit.format', title: 'Format Document', section: 'Edit', scope: 'editor', defaultSpec: 'Alt+Shift+F' },
     { id: 'edit.rename', title: 'Rename Symbol', section: 'Edit', scope: 'editor', defaultSpec: 'F2' },
     { id: 'edit.select-all', title: 'Select All', section: 'Edit', scope: 'editor', defaultSpec: 'Mod+A' },
+    { id: 'edit.autocomplete', title: 'Show Autocomplete', section: 'Edit', scope: 'editor', defaultSpec: 'Control+Space' },
     { id: 'nav.definition', title: 'Go to Definition', section: 'Navigate', scope: 'editor', defaultSpec: 'F12' },
     { id: 'nav.references', title: 'Find References', section: 'Navigate', scope: 'editor', defaultSpec: 'Shift+F12' },
     { id: 'nav.next-hole', title: 'Go to Next Hole', section: 'Navigate', scope: 'editor', defaultSpec: 'F8' },
@@ -74,6 +75,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
 
   function formatShortcutPart(part, isMac) {
     if (part === 'Mod') return isMac ? '\u2318' : 'Ctrl';
+    if (part === 'Control') return isMac ? '\u2303' : 'Ctrl';
     if (part === 'Shift') return isMac ? '\u21E7' : 'Shift';
     if (part === 'Alt') return isMac ? '\u2325' : 'Alt';
     return part;
@@ -117,13 +119,15 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     var parts = String(spec).split('+').filter(Boolean);
     if (!parts.length) return '';
     var mod = false;
+    var control = false;
     var shift = false;
     var alt = false;
     var key = '';
     for (var i = 0; i < parts.length; i++) {
       var p = parts[i];
       var pl = p.toLowerCase();
-      if (pl === 'mod' || pl === 'ctrl' || pl === 'control' || pl === 'meta' || pl === 'cmd' || p === '\u2318') mod = true;
+      if (pl === 'control' || p === '\u2303') control = true;
+      else if (pl === 'mod' || pl === 'ctrl' || pl === 'meta' || pl === 'cmd' || p === '\u2318') mod = true;
       else if (pl === 'shift' || p === '\u21E7') shift = true;
       else if (pl === 'alt' || pl === 'option' || p === '\u2325') alt = true;
       else key = normalizeKeyToken(p);
@@ -131,6 +135,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     if (!key) return '';
     var out = [];
     if (mod) out.push('Mod');
+    if (control) out.push('Control');
     if (alt) out.push('Alt');
     if (shift) out.push('Shift');
     out.push(key);
@@ -217,11 +222,13 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     var key = parts[parts.length - 1];
     var hasMod = false;
     var hasAlt = false;
+    var hasControl = false;
     for (var i = 0; i < parts.length - 1; i++) {
       if (parts[i] === 'Mod') hasMod = true;
       if (parts[i] === 'Alt') hasAlt = true;
+      if (parts[i] === 'Control') hasControl = true;
     }
-    if (hasMod || hasAlt) return false;
+    if (hasMod || hasAlt || hasControl) return false;
     if (isFunctionKey(key)) return false;
     return true;
   }
@@ -297,7 +304,8 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     if (!e || isModifierKey(e.key)) return null;
     if (e.key === 'Dead') return null;
     var parts = [];
-    if (e.ctrlKey || e.metaKey) parts.push('Mod');
+    if (e.metaKey) parts.push('Mod');
+    else if (e.ctrlKey) parts.push(IS_MAC ? 'Control' : 'Mod');
     if (e.altKey) parts.push('Alt');
     if (e.shiftKey) parts.push('Shift');
     var key = normalizeKeyToken(e.key);
@@ -316,7 +324,9 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     var hasMod = !!(e.ctrlKey || e.metaKey);
     var hasAlt = !!e.altKey;
     var hasShift = !!e.shiftKey;
-    if (!!want.Mod !== hasMod) return false;
+    if (want.Control) {
+      if (!e.ctrlKey || e.metaKey) return false;
+    } else if (!!want.Mod !== hasMod) return false;
     if (!!want.Alt !== hasAlt) return false;
     if (!!want.Shift !== hasShift) return false;
     var got = normalizeKeyToken(e.key);
@@ -336,6 +346,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     if (!n) return '';
     return n.split('+').map(function (part, idx, arr) {
       if (part === 'Mod' || part === 'Shift' || part === 'Alt') return part;
+      if (part === 'Control') return 'Ctrl';
       if (idx === arr.length - 1 && part.length === 1) return part.toLowerCase();
       return part;
     }).join('-');

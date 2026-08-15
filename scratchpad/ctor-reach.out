@@ -1,0 +1,56 @@
+
+=== CONSTRUCTOR REACH AT THE DEEPEST DEAD END — 207 targets ===
+   holes scored                       : 77
+   (skipped: no family 102, reference uses no ctor of that family 26)
+
+   REF_F ⊆ ENG_F  — we DID propose every needed constructor : 31  40.3%
+   REF_F ⊄ ENG_F  — we NEVER proposed at least one          : 46  59.7%
+
+   missing-count distribution:
+     0 missing:   31  40.3%
+     1 missing:   33  42.9%
+     2 missing:    8  10.4%
+     3 missing:    1  1.3%
+     4 missing:    4  5.2%
+
+   examples where a needed constructor was NEVER proposed:
+     bs_in_rew  family=ex_inp_rew
+        goal    [g |- ex_inp_rew (p_in X1 (\x0. "i)) X1 (\y. "i)]
+        ref uses inp_base | engine proposed (none) | MISSING inp_base
+     fstep_impl_red  family=red
+        goal    [g |- red P Q]
+        ref uses r_par, r_res, r_str | engine proposed r_com, r_par, r_str | MISSING r_res
+     eval_respects_eq  family=eval
+        goal    [g |- eval N R]
+        ref uses eval_lam, eval_app1, eval_app2 | engine proposed eval_app1, eval_app2 | MISSING eval_lam
+     eq2  family=pred
+        goal    [g |- pred (app (lam (\x0. M2)) M1) (M2[.., M1])]
+        ref uses beta, ap, lm | engine proposed ap | MISSING beta, lm
+     eq2  family=pred
+        goal    [g |- pred (lam (\x0. lam (\x1. app (app (app (M11[.., x1, x0]) (M23[.., x1, x0]
+        ref uses beta, ap, lm | engine proposed (none) | MISSING beta, ap, lm
+     helper1_6a  family=joining
+        goal    [ |- joining (cjoin (varctx (cvar nil)) (varctx (cvar nil)) (varctx (cvar nil)))
+        ref uses joining_base | engine proposed joining_empty | MISSING joining_base
+     helper1_6b  family=joining
+        goal    [ |- joining (cjoin (varctx (cvar nil)) (varctx (cvar nil)) (varctx (cvar nil)))
+        ref uses joining_base | engine proposed joining_empty | MISSING joining_base
+     terminate  family=steps_to_val
+        goal    [ |- steps_to_val true]
+        ref uses result | engine proposed (none) | MISSING result
+     terminate  family=steps_to_result
+        goal    [ |- steps_to_result true]
+        ref uses answer | engine proposed (none) | MISSING answer
+     extend  family=Map
+        goal    Map [h, x : target S[]] [x : source S]
+        ref uses M_dot | engine proposed (none) | MISSING M_dot
+     reify  family=CtxAsTup
+        goal    CtxAsTup [g]
+        ref uses EnvClo | engine proposed (none) | MISSING EnvClo
+     extendEnv  family=Map
+        goal    Map [x : target (cross Y S)] [x : source unit]
+        ref uses M_id, M_dot | engine proposed (none) | MISSING M_id, M_dot
+
+   INTERPRETATION: a high ⊆ share means the constructor is proposed and the
+   failure is in ARGUMENTS/SPELLING. A high ⊄ share means generation never
+   reaches it, and the fix is upstream (an earlier split/inversion).

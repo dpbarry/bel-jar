@@ -62,6 +62,21 @@ export {
   countSiblingHoledDecls,
 } from './harpoon/harpoon-program.mjs';
 export { parseHoles } from './prover/hole-report.mjs';
+// Manual Harpoon — the interactive session reducer (pure; the Lab injects the oracle).
+export {
+  manualState,
+  movesAt,
+  focusHole,
+  focusOn,
+  isComplete as manualIsComplete,
+  attemptMove,
+  applyMove,
+  absorbAuto,
+  undo as manualUndo,
+  redo as manualRedo,
+  canUndo as manualCanUndo,
+  canRedo as manualCanRedo,
+} from './prover/prover-manual.mjs';
 export { fillCandidates } from './prover/hole-split.mjs';
 export { normalizeProofModel, normalizeSubgoal, parseBinders, applicableTactics, splitTargets } from './harpoon/harpoon-model.mjs';
 export { createCachedGoalHintIcon, createApproxGoalHintIcon, bindCachedGoalHintTooltip, CACHED_GOAL_TIP, APPROXIMATE_GOAL_TIP, RECHECKING_GOAL_TIP, CHECKING_GOAL_TIP, CACHED_GOAL_HINT_SVG } from './prover/cached-goal-hint.mjs';
@@ -123,7 +138,7 @@ import { lintTooltipItemsFromDiagnostics } from './ide/diag-gutter.mjs';
 import { checkerSnapshot } from './semantic/checker-snapshot.mjs';
 import { computeLintBlocks } from './lint-units.mjs';
 import { hoverTooltip } from './ide/hover.mjs';
-import { belAutocompletion } from './ide/completion/index.mjs';
+import { belAutocompletion, toggleEditorAutocomplete } from './ide/completion/index.mjs';
 import { completionChrome } from './ide/completion/chrome.mjs';
 import { holeCycleKeymap, cycleHole } from './prover/hole-decorations.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
@@ -503,6 +518,7 @@ function buildRemappableEditorKeymap(semanticEngine) {
       ...editHistoryKeymap(),
       { key: 'F2', run: (view) => startRename(view) },
       { key: 'Mod-a', run: selectAll },
+      { key: 'Ctrl-Space', run: toggleEditorAutocomplete },
     ];
   }
   return KB.buildEditorKeymap({
@@ -521,6 +537,7 @@ function buildRemappableEditorKeymap(semanticEngine) {
     'edit.format': formatCommand,
     'edit.rename': (view) => startRename(view),
     'edit.select-all': selectAll,
+    'edit.autocomplete': toggleEditorAutocomplete,
     'nav.definition': (view) => goToDefinition(view),
     'nav.references': (view) => findReferences(view),
     'nav.next-hole': (view) => cycleHole(view, semanticEngine, 1),

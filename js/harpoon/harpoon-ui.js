@@ -1399,6 +1399,9 @@
   var global6 = globalThis;
   function createReel(deps) {
     var el4 = deps.el;
+    var tacticVerb2 = deps.tacticVerb || function(k) {
+      return k || "move";
+    };
     var setTip2 = deps.setTip;
     var bindStepGoalTip2 = deps.bindStepGoalTip;
     var bindChipTip2 = deps.bindChipTip;
@@ -1420,7 +1423,7 @@
       var body = el4("div", "harpoon-lab-auto-step-body");
       var rowCopy = el4("div", "harpoon-lab-auto-step-copy");
       var verb = el4("span", "harpoon-lab-auto-move move-" + (s.move || "move"));
-      verb.textContent = s.move || "move";
+      verb.textContent = tacticVerb2(s.move);
       rowCopy.appendChild(verb);
       rowCopy.appendChild(el4("span", "harpoon-lab-auto-why", moveLead(s)));
       body.appendChild(rowCopy);
@@ -1443,16 +1446,13 @@
     function syncReelStatTips(session, na) {
       if (!na) return;
       var tip = reelStatText(na);
-      var targets = [session._autoSearchText, session._autoSearchSpinner];
-      for (var i = 0; i < targets.length; i++) {
-        var node = targets[i];
-        if (!node) continue;
-        if (node.getAttribute("data-tooltip") === tip) continue;
-        if (global6.Tooltips && global6.Tooltips.set) {
-          global6.Tooltips.set(node, tip, { ariaLabel: false });
-        } else if (tip) {
-          node.setAttribute("data-tooltip", tip);
-        }
+      var node = session._statTipEl || session._autoSearchSpinner;
+      if (!node) return;
+      if (node.getAttribute("data-tooltip") === tip) return;
+      if (global6.Tooltips && global6.Tooltips.set) {
+        global6.Tooltips.set(node, tip, { ariaLabel: false });
+      } else if (tip) {
+        node.setAttribute("data-tooltip", tip);
       }
     }
     var REEL_TICK_MS = 320;
@@ -1463,7 +1463,7 @@
     function buildStepCopy(step) {
       var rowCopy = el4("div", "harpoon-lab-auto-step-copy");
       var verb = el4("span", "harpoon-lab-auto-move move-" + (step.move || "move"));
-      verb.textContent = step.move || "move";
+      verb.textContent = tacticVerb2(step.move);
       rowCopy.appendChild(verb);
       rowCopy.appendChild(el4("span", "harpoon-lab-auto-why", moveLead(step)));
       return rowCopy;
@@ -1925,13 +1925,13 @@
     var ICON_POPOUT2 = deps.ICON_POPOUT;
     var ICON_CHECK2 = deps.ICON_CHECK;
     var ICON_STOP2 = deps.ICON_STOP;
+    var ICON_CHEVRON_LEFT2 = deps.ICON_CHEVRON_LEFT;
     function renderNativeAuto(parent) {
       var na = this.nativeAuto;
       if (!na) return;
       var self = this;
       var box = el4("div", "harpoon-lab-auto is-" + na.phase + (na.paused ? " is-paused" : "") + (self.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
-      if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
       if (na.goalType) {
         var hero = resolveNativeAutoGoalDisplay(self, na);
         var heroPriors = hero.goalType === na.goalType ? na.priorBinders : priorGoalBinders2(self, na.sourceGoalType, hero.goalType);
@@ -1943,6 +1943,7 @@
           heroPriors
         );
       }
+      if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
       if (na.phase === "searching") {
         var controls = el4("div", "harpoon-lab-auto-controls");
         var searching = el4("div", "harpoon-lab-auto-searching");
@@ -2045,6 +2046,25 @@
         stageNode2(errWrap, stage);
         stage += 1;
         box.appendChild(errWrap);
+      }
+      if (this.manual && !self.isFrozenRetrospective()) {
+        var backStrip = buildBannerShell2({
+          tag: "button",
+          className: "harpoon-lab-resume harpoon-lab-strip harpoon-lab-banner",
+          tone: na.complete ? "goal" : "action",
+          icon: ICON_CHEVRON_LEFT2,
+          badgeClass: "harpoon-lab-resume-badge",
+          titleClass: "harpoon-lab-resume-title",
+          subClass: "harpoon-lab-resume-sub",
+          title: na.complete ? "Take it back by hand" : "Continue by hand",
+          sub: na.complete ? "Review the steps, or undo before placing" : na.steps && na.steps.length ? "Keep the " + na.steps.length + " step" + (na.steps.length === 1 ? "" : "s") + " Brutus found and carry on" : "Pick the next move yourself",
+          onClick: function() {
+            self.backToManual();
+          }
+        });
+        stageNode2(backStrip, stage);
+        stage += 1;
+        box.appendChild(backStrip);
       }
       if (na.complete) {
         var commit = self.getCommitState();
@@ -2264,7 +2284,7 @@
       card.hidden = true;
       var userView = null;
       function cur() {
-        return opts.live ? self.nativeAuto || na : na;
+        return opts.live ? self.derivationNa() || na : na;
       }
       function draw() {
         if (!global7.HarpoonTree) return;
@@ -2376,7 +2396,7 @@
     function openTreeExplorer() {
       var self = this;
       var fw = FW2();
-      var na = this.nativeAuto;
+      var na = this.derivationNa();
       if (!fw || !na) return;
       if (this._treeWin) {
         this._treeWin.raise && this._treeWin.raise();
@@ -2853,6 +2873,1056 @@
     };
   }
 
+  // js/harpoon/harpoon-lab-manual.mjs
+  function createManual(deps) {
+    var el4 = deps.el;
+    var iconBtn2 = deps.iconBtn;
+    var setTip2 = deps.setTip;
+    var E3 = deps.E;
+    var toast2 = deps.toast;
+    var renderSource2 = deps.renderSource;
+    var appendAutoGoalHero = deps.appendAutoGoalHero;
+    var priorGoalBinders2 = deps.priorGoalBinders;
+    var buildPlaceStrip2 = deps.buildPlaceStrip;
+    var renderCommitOutcome2 = deps.renderCommitOutcome;
+    var stageNode2 = deps.stageNode;
+    var solvedBodyOf2 = deps.solvedBodyOf;
+    var appendCommittedStepRow = deps.appendCommittedStepRow;
+    var appendAutoSolution = deps.appendAutoSolution;
+    var renderManualSolvedSummary2 = deps.renderManualSolvedSummary;
+    var tacticVerb2 = deps.tacticVerb;
+    var setNativeSearchLabel2 = deps.setNativeSearchLabel;
+    var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
+    var ICON_UNDO2 = deps.ICON_UNDO;
+    var ICON_REDO2 = deps.ICON_REDO;
+    var ICON_BRUTUS2 = deps.ICON_BRUTUS;
+    var ICON_CHEVRON_DOWN2 = deps.ICON_CHEVRON_DOWN;
+    var ICON_DECLINE2 = deps.ICON_DECLINE;
+    var ICON_CHECK2 = deps.ICON_CHECK;
+    var ICON_PLAY2 = deps.ICON_PLAY;
+    var ICON_PAUSE2 = deps.ICON_PAUSE;
+    var ICON_POPOUT2 = deps.ICON_POPOUT;
+    var manualRenderSig2 = deps.manualRenderSig;
+    var TACTIC_TIP = {
+      intro: "Introduce the goal\u2019s binders",
+      split: "Case-analyse a hypothesis",
+      invert: "Invert a hypothesis with a single applicable case",
+      impossible: "Refute a hypothesis that cannot be inhabited",
+      fill: "Close the goal with an inhabiting term",
+      recurse: "Apply the induction hypothesis",
+      lemma: "Apply a lemma",
+      synth: "Synthesised chain closing the goal"
+    };
+    function tacticOf(mv, hole) {
+      var base = { verb: tacticVerb2(mv.kind), tip: TACTIC_TIP[mv.kind] || mv.rationale || "" };
+      var arg = null;
+      var ed = E3();
+      var meta = null;
+      if (ed && typeof ed.stepMeta === "function") {
+        try {
+          meta = ed.stepMeta(mv, mv.text, hole);
+        } catch (e) {
+          meta = null;
+        }
+      }
+      if (mv.kind === "split") arg = mv.scrutinee || meta && meta.scrutinee || null;
+      else if (mv.kind === "impossible") arg = meta && meta.refuted;
+      else if (mv.kind === "recurse" || mv.kind === "lemma" || mv.kind === "invert") {
+        arg = meta && meta.callee || meta && meta.uses && meta.uses[0] || null;
+      } else if (mv.kind === "fill") arg = meta && meta.filler;
+      return { verb: base.verb, arg, tip: base.tip, meta };
+    }
+    function moveHeadText(text) {
+      return String(text || "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 90);
+    }
+    function buildMoveRow(session, mv, hole, index) {
+      var tac = tacticOf(mv, hole);
+      var row = el4("div", "harpoon-lab-move move-" + mv.kind + (index === 0 ? " is-primary" : ""));
+      row.style.setProperty("--i", String(index));
+      row._mv = mv;
+      var btn = el4("button", "harpoon-lab-move-main");
+      btn.type = "button";
+      var head = el4("span", "harpoon-lab-move-head");
+      var verb = el4("span", "harpoon-lab-move-verb", tac.verb);
+      setTip2(verb, tac.tip);
+      head.appendChild(verb);
+      if (tac.arg) {
+        var argEl = el4("span", "harpoon-lab-move-arg", tac.arg);
+        setTip2(argEl, argTip(mv.kind, tac.arg));
+        head.appendChild(argEl);
+      }
+      btn.appendChild(head);
+      if (mv.rationale) btn.appendChild(el4("span", "harpoon-lab-move-why", mv.rationale));
+      btn.setAttribute("aria-label", "Apply " + tac.verb + (tac.arg ? " " + tac.arg : ""));
+      btn.addEventListener("click", function(e) {
+        e.preventDefault();
+        session.manualApply(mv, row);
+      });
+      row.appendChild(btn);
+      var foot = el4("button", "harpoon-lab-move-foot");
+      foot.type = "button";
+      foot.setAttribute("aria-expanded", "false");
+      foot.appendChild(el4("span", "harpoon-lab-move-termhead", moveHeadText(mv.text)));
+      var pip = el4("span", "harpoon-lab-move-pip");
+      pip.setAttribute("aria-hidden", "true");
+      foot.appendChild(pip);
+      row._pip = pip;
+      var chev = el4("span", "harpoon-lab-move-chevron");
+      chev.innerHTML = ICON_CHEVRON_DOWN2;
+      foot.appendChild(chev);
+      setTip2(foot, "Show the full term");
+      foot.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var open = row.classList.toggle("is-expanded");
+        foot.setAttribute("aria-expanded", open ? "true" : "false");
+        setTip2(foot, open ? "Hide the full term" : "Show the full term");
+        var full = row.querySelector(".harpoon-lab-move-term");
+        if (open && !full) {
+          var term = el4("div", "harpoon-lab-move-term");
+          renderSource2(term, mv.text);
+          row.appendChild(term);
+        }
+      });
+      row.appendChild(foot);
+      markPip(row, null);
+      return row;
+    }
+    function argTip(kind, arg) {
+      if (kind === "split") return "Case-analyse " + arg;
+      if (kind === "impossible") return "Refute " + arg;
+      if (kind === "recurse") return "The induction hypothesis " + arg;
+      if (kind === "lemma") return "The lemma " + arg;
+      if (kind === "invert") return "Invert " + arg;
+      return arg;
+    }
+    var PIP_TIP = {
+      checking: "Checking this move with Beluga\u2026",
+      verified: "Beluga accepts this move",
+      rejected: "Beluga rejects this move"
+    };
+    function markPip(row, state, detail) {
+      if (!row || !row._pip) return;
+      row.classList.remove("is-checking", "is-verified", "is-rejected");
+      if (state) row.classList.add("is-" + state);
+      if (state === "verified") row._pip.innerHTML = ICON_CHECK2;
+      else if (state === "rejected") row._pip.innerHTML = ICON_DECLINE2;
+      else row._pip.innerHTML = "";
+      var main = row.querySelector(".harpoon-lab-move-main");
+      if (main) {
+        main.disabled = state === "rejected";
+        main.setAttribute("aria-disabled", state === "rejected" ? "true" : "false");
+      }
+      var tip = PIP_TIP[state] || "";
+      if (state === "rejected" && detail) tip += " \u2014 " + String(detail).slice(0, 180);
+      setTip2(row._pip, tip);
+      row._pip.setAttribute("aria-hidden", tip ? "false" : "true");
+      if (tip) row._pip.setAttribute("aria-label", tip);
+    }
+    function skel(cls, w) {
+      var n = el4("span", "harpoon-skel" + (cls ? " " + cls : ""));
+      if (w) n.style.width = w;
+      return n;
+    }
+    function sectionLabel(text) {
+      var n = el4("div", "harpoon-lab-section-label is-steps harpoon-lab-moves-label");
+      n.textContent = text;
+      return n;
+    }
+    function skelGoalHero(declName) {
+      var wrap = el4("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
+      var glabel = el4("div", "harpoon-lab-goal-label");
+      glabel.appendChild(el4("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+      if (declName) glabel.appendChild(el4("span", "harpoon-lab-auto-goal-name", declName));
+      wrap.appendChild(glabel);
+      var body = el4("div", "harpoon-lab-auto-goal-body");
+      body.appendChild(skel("harpoon-skel--goal", "72%"));
+      wrap.appendChild(body);
+      return wrap;
+    }
+    function skelBar() {
+      var bar = el4("div", "harpoon-lab-bar");
+      var status = el4("div", "harpoon-lab-status");
+      status.appendChild(el4("span", "harpoon-lab-status-dot"));
+      status.appendChild(skel("harpoon-skel--text", "3.6rem"));
+      bar.appendChild(status);
+      return bar;
+    }
+    function skelCtx() {
+      var wrap = el4("div", "harpoon-lab-context");
+      var sec = el4("div", "harpoon-lab-ctx");
+      sec.appendChild(el4("span", "harpoon-lab-ctx-label", "meta"));
+      var rows = el4("div", "harpoon-lab-binders");
+      ["58%", "41%"].forEach(function(w, i) {
+        var row = el4("div", "harpoon-lab-binder");
+        row.appendChild(skel("harpoon-skel--text" + (i ? " harpoon-skel--d1" : ""), w));
+        rows.appendChild(row);
+      });
+      sec.appendChild(rows);
+      wrap.appendChild(sec);
+      return wrap;
+    }
+    function skelMoveRow(i) {
+      var row = el4("div", "harpoon-lab-move is-skeleton");
+      row.style.setProperty("--i", String(i));
+      var main = el4("div", "harpoon-lab-move-main");
+      var head = el4("span", "harpoon-lab-move-head");
+      head.appendChild(skel("harpoon-skel--verb", ["2.8rem", "2.2rem", "3.4rem"][i % 3]));
+      main.appendChild(head);
+      main.appendChild(skel("harpoon-skel--text harpoon-skel--d1", ["52%", "38%", "45%"][i % 3]));
+      row.appendChild(main);
+      return row;
+    }
+    var GLOW_PULL_X = 0.55;
+    var GLOW_PULL_Y = 0.45;
+    var GLOW_CLAMP_X = 0.3;
+    var GLOW_CLAMP_Y = 0.35;
+    function bindBrutusGlow(btn) {
+      var reduce = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) return;
+      var rect = null;
+      var raf = 0;
+      var pending = null;
+      function flush() {
+        raf = 0;
+        if (!pending) return;
+        btn.style.setProperty("--glow-dx", pending.x.toFixed(1) + "px");
+        btn.style.setProperty("--glow-dy", pending.y.toFixed(1) + "px");
+        pending = null;
+      }
+      function clamp(v, lim) {
+        return v < -lim ? -lim : v > lim ? lim : v;
+      }
+      btn.addEventListener("pointerenter", function() {
+        rect = btn.getBoundingClientRect();
+      });
+      btn.addEventListener("pointermove", function(e) {
+        if (!rect || !rect.width) rect = btn.getBoundingClientRect();
+        if (!rect.width) return;
+        var restX = rect.left + rect.width * 0.18;
+        pending = {
+          x: clamp((e.clientX - restX) * GLOW_PULL_X, rect.width * GLOW_CLAMP_X),
+          y: clamp(
+            (e.clientY - (rect.top + rect.height / 2)) * GLOW_PULL_Y,
+            rect.height * GLOW_CLAMP_Y
+          )
+        };
+        if (!raf) raf = globalThis.requestAnimationFrame(flush);
+      });
+      btn.addEventListener("pointerleave", function() {
+        if (raf) {
+          globalThis.cancelAnimationFrame(raf);
+          raf = 0;
+        }
+        pending = null;
+        rect = null;
+        btn.style.removeProperty("--glow-dx");
+        btn.style.removeProperty("--glow-dy");
+      });
+    }
+    function buildBrutusRunning(session, na) {
+      var band = el4("div", "harpoon-lab-brutus-band is-running" + (na.paused ? " is-paused" : ""));
+      var shell = el4("div", "harpoon-lab-brutus harpoon-lab-brutus--live");
+      var badge = el4("span", "harpoon-lab-brutus-badge" + (na.paused ? "" : " is-working"));
+      badge.innerHTML = ICON_BRUTUS2;
+      shell.appendChild(badge);
+      session._autoSearchSpinner = badge;
+      session._statTipEl = badge;
+      var copy = el4("span", "harpoon-lab-brutus-copy");
+      copy.appendChild(el4("span", "harpoon-lab-brutus-title", na.paused ? "Brutus paused" : "Brutus"));
+      var sub = el4("span", "harpoon-lab-brutus-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
+      sub.textContent = na.paused ? "Take a step by hand, or resume" : nativeAutoSearchLabel(na);
+      if (!na.paused) sub.style.setProperty("--shimmer-accent", "var(--repl-holes-accent)");
+      copy.appendChild(sub);
+      shell.appendChild(copy);
+      session._autoSearchText = sub;
+      var actions = el4("div", "harpoon-lab-brutus-actions");
+      var pauseBtn = iconBtn2(
+        "icon-btn harpoon-lab-auto-pause",
+        na.paused ? ICON_PLAY2 : ICON_PAUSE2,
+        na.paused ? "Resume the search" : "Pause \u2014 and get the tactics back",
+        na.paused ? "Resume" : "Pause",
+        function() {
+          session.toggleBrutusPause();
+        }
+      );
+      pauseBtn._belPauseState = !!na.paused;
+      session._autoPauseBtn = pauseBtn;
+      actions.appendChild(pauseBtn);
+      actions.appendChild(iconBtn2(
+        "icon-btn harpoon-lab-auto-popout",
+        ICON_POPOUT2,
+        "Open the proof tree explorer (grows live)",
+        "Pop out tree",
+        function() {
+          session.openTreeExplorer();
+        }
+      ));
+      shell.appendChild(actions);
+      band.appendChild(shell);
+      session._autoSearchBox = band;
+      return band;
+    }
+    function buildBrutus(session, state, disabled) {
+      var band = el4("div", "harpoon-lab-brutus-band");
+      var btn = el4("button", "harpoon-lab-brutus");
+      btn.type = "button";
+      if (disabled) btn.disabled = true;
+      var badge = el4("span", "harpoon-lab-brutus-badge");
+      badge.innerHTML = ICON_BRUTUS2;
+      btn.appendChild(badge);
+      var copy = el4("span", "harpoon-lab-brutus-copy");
+      copy.appendChild(el4("span", "harpoon-lab-brutus-title", "Brutus"));
+      copy.appendChild(el4(
+        "span",
+        "harpoon-lab-brutus-sub",
+        state && state.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
+      ));
+      btn.appendChild(copy);
+      if (!disabled) {
+        btn.addEventListener("click", function(e) {
+          e.preventDefault();
+          session.runBrutus();
+        });
+        bindBrutusGlow(btn);
+      }
+      band.appendChild(btn);
+      return band;
+    }
+    function manualNa(session, m, st, complete) {
+      return {
+        phase: complete ? "solved" : "building",
+        steps: st && st.steps || [],
+        trace: null,
+        stuck: null,
+        complete: !!complete,
+        code: st && st.code,
+        goalType: session.manualGoalType(),
+        goalState: complete ? "live" : "approximate",
+        sourceGoalType: m.sourceGoalType,
+        priorBinders: m.priorBinders,
+        declName: m.declName,
+        theoremSnapshot: m.theoremSnapshot || null,
+        manual: true
+      };
+    }
+    function startManual(code, seed) {
+      var ed = E3();
+      var client = globalThis.BelugaClient;
+      var prep = this.prep;
+      var self = this;
+      if (!ed || !client || !prep || typeof ed.manualState !== "function") {
+        toast2("Manual Harpoon is unavailable.", "error");
+        return Promise.resolve(false);
+      }
+      var declText = prep.assembledCode.slice(prep.assembledDeclFrom, prep.assembledDeclTo);
+      var thm = ed.theoremUnderProof(declText);
+      if (!thm) {
+        toast2("Harpoon could not read this theorem.", "error");
+        return Promise.resolve(false);
+      }
+      this.thm = thm;
+      this.nativeAuto = null;
+      var proveCode = code || prep.proveCode || prep.assembledCode;
+      var sourceGoalType = thm.compType && thm.compType.raw || "";
+      this.manual = {
+        phase: "loading",
+        state: null,
+        declName: thm.name || prep.name || "",
+        sourceGoalType,
+        priorBinders: [],
+        busy: false,
+        error: null,
+        commit: this.commitState || null
+      };
+      this.captureAnchor(this.view, prep);
+      this.bindProbe();
+      this.render();
+      var ready = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
+      return ready.then(function() {
+        return client.loadProverChecker ? client.loadProverChecker(proveCode) : null;
+      }).then(function() {
+        return client.checkResultForProver ? client.checkResultForProver(proveCode) : client.checkResult(proveCode);
+      }).then(function(res) {
+        if (!self.manual) return false;
+        if (!res || !res.ok) {
+          self.manual.phase = "error";
+          self.manual.error = "The file has errors \u2014 fix them before proving.";
+          self.render();
+          return false;
+        }
+        self.manual.state = ed.manualState(proveCode, thm, res.output || "");
+        if (seed) {
+          self.manual.state.steps = (seed.steps || []).concat(self.manual.state.steps);
+          self.manual.state.stack = seed.stack || [];
+        }
+        self.manual.phase = "ready";
+        self.manual.priorBinders = priorGoalBinders2(self, sourceGoalType, self.manualGoalType());
+        self.render();
+        self.sweepCandidates();
+        return true;
+      }).catch(function(err) {
+        if (!self.manual) return false;
+        self.manual.phase = "error";
+        self.manual.error = err && err.message || String(err);
+        self.render();
+        return false;
+      });
+    }
+    function manualGoalType() {
+      var ed = E3();
+      var st = this.manual && this.manual.state;
+      if (!st || !ed) return this.manual ? this.manual.sourceGoalType : "";
+      var hole = ed.focusHole(st);
+      return hole && hole.goal || this.manual.sourceGoalType || "";
+    }
+    function manualOracle() {
+      var client = globalThis.BelugaClient;
+      return function(code) {
+        return client.checkResultForProver ? client.checkResultForProver(code) : client.checkResult(code);
+      };
+    }
+    function manualApply(mv, row) {
+      var ed = E3();
+      var self = this;
+      var m = this.manual;
+      if (!m || !m.state || m.busy || m.syncing) return Promise.resolve(false);
+      if (row && row.classList.contains("is-rejected")) return Promise.resolve(false);
+      var na = this.nativeAuto;
+      if (na && na.phase === "searching") {
+        if (!na.paused) return Promise.resolve(false);
+        this._retireBrutus = true;
+        this.nativeAuto = null;
+        this.userCancelled = true;
+        if (this.stopReelClock) this.stopReelClock();
+      }
+      m.busy = true;
+      this.cancelSweep();
+      markPip(row, "checking");
+      if (row) {
+        row.classList.add("is-applying");
+        if (!row.querySelector(".harpoon-lab-move-track")) {
+          row.insertBefore(el4("div", "harpoon-lab-move-track"), row.firstChild);
+        }
+      }
+      if (this._movesEl) this._movesEl.classList.add("is-busy");
+      var clearApplying = function() {
+        if (self._movesEl) self._movesEl.classList.remove("is-busy");
+        if (!row) return;
+        row.classList.remove("is-applying");
+        var t = row.querySelector(".harpoon-lab-move-track");
+        if (t) t.remove();
+      };
+      return ed.applyMove(m.state, mv, manualOracle(), this.thm, row && row._verified).then(function(r) {
+        m.busy = false;
+        if (!r.ok) {
+          clearApplying();
+          markPip(row, "rejected", r.error || "The checker did not accept this move.");
+          toast2(firstLineOf(r.error) || "That move did not type-check.", "error");
+          return false;
+        }
+        m.state = r.state;
+        m.priorBinders = priorGoalBinders2(self, m.sourceGoalType, self.manualGoalType());
+        self.render();
+        self.sweepCandidates();
+        return true;
+      }).catch(function(err) {
+        m.busy = false;
+        clearApplying();
+        markPip(row, "rejected", err && err.message || String(err));
+        toast2(firstLineOf(err && err.message) || "That move could not be checked.", "error");
+        return false;
+      });
+    }
+    function firstLineOf(detail) {
+      var t = String(detail || "").replace(/^File\s+"[^"]*",\s*line\s*\d+,\s*column\s*\d+:?\s*/i, "");
+      t = t.replace(/^Error:\s*/i, "").split("\n")[0].trim();
+      return t.length > 160 ? t.slice(0, 157) + "\u2026" : t;
+    }
+    function sweepCandidates() {
+      var ed = E3();
+      var self = this;
+      var m = this.manual;
+      if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
+      var persist = globalThis.Persist;
+      var on = !persist || typeof persist.readStoredHarpoonVerifyMoves !== "function" ? true : persist.readStoredHarpoonVerifyMoves();
+      if (!on) return;
+      var token = {};
+      this._sweepToken = token;
+      var rows = this._moveRows.slice(0, 8);
+      var i = 0;
+      var oracle = manualOracle();
+      function next() {
+        if (self._sweepToken !== token || i >= rows.length) return;
+        var row = rows[i];
+        i += 1;
+        if (!row || !row._mv) {
+          next();
+          return;
+        }
+        markPip(row, "checking");
+        ed.attemptMove(m.state, row._mv, oracle, self.thm).then(function(r) {
+          if (self._sweepToken !== token) return;
+          row._verified = r.ok ? r : null;
+          markPip(
+            row,
+            r.ok ? "verified" : "rejected",
+            r.ok ? "The checker accepts this move" : r.error || "did not certify"
+          );
+          next();
+        }).catch(function() {
+          if (self._sweepToken === token) next();
+        });
+      }
+      next();
+    }
+    function cancelSweep() {
+      this._sweepToken = null;
+    }
+    function manualStepBack() {
+      var ed = E3();
+      var m = this.manual;
+      if (!m || !m.state || !ed.manualCanUndo(m.state)) return;
+      this.cancelSweep();
+      m.state = ed.manualUndo(m.state);
+      m.lastError = null;
+      this.render();
+      this.sweepCandidates();
+    }
+    function manualStepForward() {
+      var ed = E3();
+      var m = this.manual;
+      if (!m || !m.state || !ed.manualCanRedo(m.state)) return;
+      this.cancelSweep();
+      m.state = ed.manualRedo(m.state);
+      this.render();
+      this.sweepCandidates();
+    }
+    function manualFocus(idx) {
+      var ed = E3();
+      var m = this.manual;
+      if (!m || !m.state) return;
+      this.cancelSweep();
+      m.state = ed.focusOn(m.state, idx);
+      this.render();
+      this.sweepCandidates();
+    }
+    function runBrutus() {
+      var m = this.manual;
+      var self = this;
+      if (!m || !m.state) return;
+      this.cancelSweep();
+      this.manualBefore = m.state;
+      this.runNativeAuto(m.state.code);
+      this.scrollToDerivation();
+    }
+    function scrollToDerivation() {
+      var self = this;
+      globalThis.requestAnimationFrame(function() {
+        globalThis.requestAnimationFrame(function() {
+          var target = self._derivEl;
+          if (!target || !target.scrollIntoView) return;
+          var reduce = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          try {
+            target.scrollIntoView({
+              behavior: reduce ? "auto" : "smooth",
+              block: "start",
+              inline: "nearest"
+            });
+          } catch (e) {
+            target.scrollIntoView(false);
+          }
+        });
+      });
+    }
+    function toggleBrutusPause() {
+      var na = this.nativeAuto;
+      var m = this.manual;
+      if (!m) return;
+      if (!na || na.phase !== "searching") {
+        if (m.state) this.runBrutus();
+        return;
+      }
+      var self = this;
+      na.paused = !na.paused;
+      if (na.paused) {
+        setNativeSearchLabel2(na, "Paused");
+        m.syncing = true;
+        m.syncFailed = false;
+        this.render();
+        this.syncManualToBrutus().then(function(ok) {
+          m.syncing = false;
+          m.syncFailed = !ok;
+          if (!self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
+          self.render();
+          if (ok) self.sweepCandidates();
+        });
+      } else {
+        m.syncing = false;
+        m.syncFailed = false;
+        setNativeSearchLabel2(na, "Resuming\u2026");
+        this.render();
+      }
+    }
+    function absorbBrutusResult(r) {
+      var ed = E3();
+      var self = this;
+      var m = this.manual;
+      if (!m || !ed) return Promise.resolve(false);
+      var before = this.manualBefore || m.state;
+      var na = this.nativeAuto;
+      if (this.stopReelClock) this.stopReelClock();
+      if (r && r.complete && r.code) {
+        m.state = ed.absorbAuto(
+          before,
+          { complete: true, code: r.code, steps: r.steps || [] },
+          this.thm
+        );
+        this.manualBefore = null;
+        m.priorBinders = priorGoalBinders2(this, m.sourceGoalType, this.manualGoalType());
+        this.render();
+        return Promise.resolve(true);
+      }
+      var code = r && r.code || na && na.liveCode || before && before.code;
+      if (!code || before && code === before.code) {
+        this.manualBefore = null;
+        this.render();
+        return Promise.resolve(false);
+      }
+      return manualOracle()(code).then(function(res) {
+        if (!self.manual) return false;
+        if (res && res.ok) {
+          var next = ed.manualState(code, self.thm, res.output || "");
+          next.steps = (before && before.steps || []).concat(r && r.steps || []);
+          next.stack = before && before.stack || [];
+          self.manual.state = next;
+          self.manual.priorBinders = priorGoalBinders2(
+            self,
+            self.manual.sourceGoalType,
+            self.manualGoalType()
+          );
+        }
+        self.manualBefore = null;
+        self.render();
+        self.sweepCandidates();
+        return true;
+      }).catch(function() {
+        self.manualBefore = null;
+        self.render();
+        return false;
+      });
+    }
+    function syncManualToBrutus() {
+      var self = this;
+      var ed = E3();
+      var na = this.nativeAuto;
+      var m = this.manual;
+      if (!na || !m || !m.state) return Promise.resolve(false);
+      var code = na.liveCode || na.code;
+      if (!code || code === m.state.code) return Promise.resolve(true);
+      return manualOracle()(code).then(function(res) {
+        if (!res || !res.ok || !self.manual) return false;
+        var next = ed.manualState(code, self.thm, res.output || "");
+        var before = self.manualBefore;
+        next.steps = (before && before.steps || []).concat(na.steps || []);
+        next.stack = before && before.stack || [];
+        self.manual.state = next;
+        self.manual.priorBinders = priorGoalBinders2(
+          self,
+          m.sourceGoalType,
+          self.manualGoalType()
+        );
+        return true;
+      }).catch(function() {
+        return false;
+      });
+    }
+    function backToManual() {
+      var ed = E3();
+      var na = this.nativeAuto;
+      var before = this.manualBefore || null;
+      var priorSteps = before && before.steps || [];
+      var priorStack = before && before.stack || [];
+      this.manualBefore = null;
+      this.nativeAuto = null;
+      if (na && na.complete && na.code && before && ed && typeof ed.absorbAuto === "function") {
+        this.manual.state = ed.absorbAuto(before, {
+          complete: true,
+          code: na.code,
+          steps: na.steps || []
+        }, this.thm);
+        this.render();
+        return;
+      }
+      var resumeCode = na && (na.code || na.liveCode) || before && before.code || null;
+      var seedSteps = priorSteps.concat(na && na.steps || []);
+      this.startManual(resumeCode, {
+        steps: seedSteps,
+        stack: before ? priorStack.concat([{
+          code: before.code,
+          holes: before.holes,
+          focusIdx: before.focusIdx,
+          steps: priorSteps
+        }]) : priorStack
+      });
+    }
+    function commitManual() {
+      var ed = E3();
+      var m = this.manual;
+      var st = this.getCommitState();
+      if (!m || !m.state || st.status === "checking" || st.status === "placed") {
+        return Promise.resolve(false);
+      }
+      var body = solvedBodyOf2(m.state.code, m.declName);
+      if (!body) {
+        toast2("Harpoon lost the proof body.", "error");
+        return Promise.resolve(false);
+      }
+      this.beginCommitUi("verify");
+      return this.verifyAndCommit(body, { skipBeginUi: true });
+    }
+    function renderManual(parent) {
+      var ed = E3();
+      var self = this;
+      var m = this.manual;
+      if (!m) return;
+      var st = m.state;
+      var complete = st && ed.manualIsComplete(st);
+      this._renderSig = manualRenderSig2(this);
+      var box = el4("div", "harpoon-lab-manual is-" + m.phase + (complete ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
+      var stage = 0;
+      var goalType = this.manualGoalType();
+      if (goalType) {
+        this._autoGoalWrap = appendAutoGoalHero(
+          box,
+          goalType,
+          m.declName,
+          complete ? "live" : "approximate",
+          m.priorBinders
+        );
+      }
+      if (!this.isFrozenRetrospective()) this.renderCompromiseBanner(box);
+      if (m.phase === "loading") {
+        if (!goalType) box.appendChild(skelGoalHero(m.declName));
+        box.appendChild(skelBar());
+        box.appendChild(skelCtx());
+        box.appendChild(buildBrutus(this, null, true));
+        var skelMoves = el4("div", "harpoon-lab-moves");
+        skelMoves.appendChild(sectionLabel("Tactics"));
+        var skelList = el4("div", "harpoon-lab-move-list");
+        for (var k = 0; k < 3; k += 1) skelList.appendChild(skelMoveRow(k));
+        skelMoves.appendChild(skelList);
+        box.appendChild(skelMoves);
+        parent.appendChild(box);
+        return;
+      }
+      if (m.phase === "error") {
+        var err = el4("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
+        err.appendChild(el4("span", "harpoon-lab-auto-stuck-label", "Cannot prove"));
+        err.appendChild(el4("div", "harpoon-lab-auto-stuck-goal", m.error || ""));
+        box.appendChild(err);
+        parent.appendChild(box);
+        return;
+      }
+      this._manualNa = manualNa(this, m, st, complete);
+      if (complete) {
+        var proven = renderManualSolvedSummary2(box);
+        if (proven) {
+          proven.querySelector(".harpoon-lab-auto-sub").textContent = (st.steps.length === 1 ? "1 step" : st.steps.length + " steps") + " \xB7 ready to place in the file";
+          stageNode2(proven, stage);
+          stage += 1;
+        }
+        var commit = this.getCommitState();
+        if (commit.status === "failed" || commit.status === "placed" && !commit.dismissed) {
+          stageNode2(renderCommitOutcome2(
+            box,
+            commit,
+            m.declName,
+            commit.canRetry ? function() {
+              self.resetCommitForRetry();
+            } : null
+          ), stage);
+          stage += 1;
+        } else if (commit.status !== "placed") {
+          var blocked = this.compromise && this.compromise.level === "block";
+          var place2 = buildPlaceStrip2(this, {
+            blocked,
+            extraCls: " harpoon-lab-auto-place is-instant",
+            title: "Place the proof",
+            onClick: function() {
+              self.commitManual();
+            }
+          });
+          stageNode2(place2, stage);
+          stage += 1;
+          box.appendChild(place2);
+          if (commit.status === "checking") this.updateCommitPlace();
+        }
+        var open = st ? st.holes.length : 0;
+        var bar = el4("div", "harpoon-lab-bar");
+        var status = el4("div", "harpoon-lab-status");
+        var dot = el4("span", "harpoon-lab-status-dot" + (complete ? " is-done" : ""));
+        setTip2(dot, complete ? "Proven" : "Unproven");
+        dot.setAttribute("aria-label", complete ? "Proven" : "Unproven");
+        status.appendChild(dot);
+        status.appendChild(el4(
+          "span",
+          "harpoon-lab-status-text",
+          complete ? "Proven" : open === 1 ? "1 goal" : open + " goals"
+        ));
+        bar.appendChild(status);
+        var actions = el4("div", "harpoon-lab-bar-actions");
+        var undoBtn = iconBtn2(
+          "icon-btn",
+          ICON_UNDO2,
+          "Undo the last move",
+          "Undo",
+          function() {
+            self.manualStepBack();
+          }
+        );
+        undoBtn.disabled = !(st && ed.manualCanUndo(st));
+        var redoBtn = iconBtn2(
+          "icon-btn",
+          ICON_REDO2,
+          "Redo",
+          "Redo",
+          function() {
+            self.manualStepForward();
+          }
+        );
+        redoBtn.disabled = !(st && ed.manualCanRedo(st));
+        actions.appendChild(undoBtn);
+        actions.appendChild(redoBtn);
+        bar.appendChild(actions);
+        box.appendChild(bar);
+        if (st && st.holes.length > 1) {
+          var pickBand = el4("div", "harpoon-lab-picker-band");
+          var picker = el4("div", "harpoon-lab-picker");
+          picker.setAttribute("role", "tablist");
+          picker.setAttribute("aria-label", "Subgoals");
+          st.holes.forEach(function(h, i) {
+            var tab = el4("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            tab.type = "button";
+            tab.setAttribute("role", "tab");
+            tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
+            tab.textContent = String(i + 1);
+            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + h.goal : ""));
+            tab.addEventListener("click", function(e) {
+              e.preventDefault();
+              self.manualFocus(i);
+            });
+            picker.appendChild(tab);
+          });
+          pickBand.appendChild(picker);
+          box.appendChild(pickBand);
+        }
+        var hole = st ? ed.focusHole(st) : null;
+        if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
+          var ctxWrap = el4("div", "harpoon-lab-context");
+          this.renderCtx(ctxWrap, "meta", hole.meta);
+          this.renderCtx(ctxWrap, "ctx", hole.ctx);
+          box.appendChild(ctxWrap);
+        }
+        var solved = solvedBodyOf2(st.code, m.declName);
+        if (solved) {
+          stageNode2(appendAutoSolution(box, solved), stage);
+          stage += 1;
+        }
+      } else {
+        var open = st ? st.holes.length : 0;
+        var bar = el4("div", "harpoon-lab-bar");
+        var status = el4("div", "harpoon-lab-status");
+        var dot = el4("span", "harpoon-lab-status-dot" + (complete ? " is-done" : ""));
+        setTip2(dot, complete ? "Proven" : "Unproven");
+        dot.setAttribute("aria-label", complete ? "Proven" : "Unproven");
+        status.appendChild(dot);
+        status.appendChild(el4(
+          "span",
+          "harpoon-lab-status-text",
+          complete ? "Proven" : open === 1 ? "1 goal" : open + " goals"
+        ));
+        bar.appendChild(status);
+        var actions = el4("div", "harpoon-lab-bar-actions");
+        var undoBtn = iconBtn2(
+          "icon-btn",
+          ICON_UNDO2,
+          "Undo the last move",
+          "Undo",
+          function() {
+            self.manualStepBack();
+          }
+        );
+        undoBtn.disabled = !(st && ed.manualCanUndo(st));
+        var redoBtn = iconBtn2(
+          "icon-btn",
+          ICON_REDO2,
+          "Redo",
+          "Redo",
+          function() {
+            self.manualStepForward();
+          }
+        );
+        redoBtn.disabled = !(st && ed.manualCanRedo(st));
+        actions.appendChild(undoBtn);
+        actions.appendChild(redoBtn);
+        bar.appendChild(actions);
+        box.appendChild(bar);
+        if (st && st.holes.length > 1) {
+          var pickBand = el4("div", "harpoon-lab-picker-band");
+          var picker = el4("div", "harpoon-lab-picker");
+          picker.setAttribute("role", "tablist");
+          picker.setAttribute("aria-label", "Subgoals");
+          st.holes.forEach(function(h, i) {
+            var tab = el4("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            tab.type = "button";
+            tab.setAttribute("role", "tab");
+            tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
+            tab.textContent = String(i + 1);
+            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + h.goal : ""));
+            tab.addEventListener("click", function(e) {
+              e.preventDefault();
+              self.manualFocus(i);
+            });
+            picker.appendChild(tab);
+          });
+          pickBand.appendChild(picker);
+          box.appendChild(pickBand);
+        }
+        var hole = st ? ed.focusHole(st) : null;
+        if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
+          var ctxWrap = el4("div", "harpoon-lab-context");
+          this.renderCtx(ctxWrap, "meta", hole.meta);
+          this.renderCtx(ctxWrap, "ctx", hole.ctx);
+          box.appendChild(ctxWrap);
+        }
+        var na = this.nativeAuto;
+        var running = !!(na && na.phase === "searching");
+        var searching = running && !na.paused;
+        if (running) box.appendChild(buildBrutusRunning(this, na));
+        else box.appendChild(buildBrutus(this, st, false));
+        if (na && na.phase === "stuck" && na.stuck && na.stuck.goal) {
+          var stuckCard = this.renderStuckCard(na);
+          stageNode2(stuckCard, stage);
+          stage += 1;
+          box.appendChild(stuckCard);
+        }
+        var movesWrap = el4("div", "harpoon-lab-moves" + (searching ? " is-locked" : ""));
+        this._movesEl = movesWrap;
+        this._moveRows = [];
+        var tacticsLabel = sectionLabel("Tactics");
+        if (searching) {
+          tacticsLabel.appendChild(
+            el4("span", "harpoon-lab-moves-lock", "Pause Brutus to use tactics")
+          );
+        }
+        movesWrap.appendChild(tacticsLabel);
+        var moves = [];
+        try {
+          moves = ed.movesAt(st, this.thm) || [];
+        } catch (e) {
+          moves = [];
+        }
+        var list = el4("div", "harpoon-lab-move-list");
+        if (m.busy || m.syncing) {
+          for (var sk = 0; sk < Math.min(3, Math.max(1, moves.length)); sk += 1) {
+            list.appendChild(skelMoveRow(sk));
+          }
+          movesWrap.appendChild(list);
+        } else if (m.syncFailed) {
+          var lost = el4("div", "harpoon-lab-moves-empty");
+          lost.appendChild(el4(
+            "span",
+            "harpoon-lab-moves-empty-title",
+            "Could not read the paused proof"
+          ));
+          lost.appendChild(el4(
+            "span",
+            "harpoon-lab-moves-empty-sub",
+            "Resume Brutus, or undo the last step and try again."
+          ));
+          movesWrap.appendChild(lost);
+        } else if (!moves.length) {
+          var none = el4("div", "harpoon-lab-moves-empty");
+          none.appendChild(el4("span", "harpoon-lab-moves-empty-title", "Nothing applies here"));
+          none.appendChild(el4(
+            "span",
+            "harpoon-lab-moves-empty-sub",
+            "BelJar has no move for this goal. Undo the last step, pick another subgoal, or let Brutus search."
+          ));
+          movesWrap.appendChild(none);
+        } else {
+          moves.forEach(function(mv, i) {
+            var row = buildMoveRow(self, mv, hole, i);
+            self._moveRows.push(row);
+            list.appendChild(row);
+          });
+          movesWrap.appendChild(list);
+        }
+        stageNode2(movesWrap, stage);
+        stage += 1;
+        box.appendChild(movesWrap);
+      }
+      var naNow = this.nativeAuto;
+      if (naNow && naNow.phase === "searching") {
+        var live = el4("div", "harpoon-reel harpoon-lab-manual-trail");
+        var liveHead = el4("div", "harpoon-deriv-header");
+        liveHead.appendChild(el4("span", "harpoon-lab-section-label is-steps", "Derivation"));
+        liveHead.appendChild(iconBtn2(
+          "icon-btn harpoon-deriv-popout",
+          ICON_POPOUT2,
+          "Open the proof tree explorer (grows live)",
+          "Pop out tree",
+          function() {
+            self.openTreeExplorer();
+          }
+        ));
+        live.appendChild(liveHead);
+        var record = el4("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
+        record._lastBranch = null;
+        record._branchHost = null;
+        live.appendChild(record);
+        box.appendChild(live);
+        this._reelRecord = record;
+        this._reelRecordCount = 0;
+        this._workingRow = null;
+        this._workingStrip = null;
+        this._workingChips = [];
+        this._derivEl = live;
+        var already = naNow.steps || [];
+        for (var si = 0; si < already.length; si += 1) appendCommittedStepRow(record, already[si], si);
+        this._reelRecordCount = already.length;
+        this.syncReelStatus();
+        this.startReelClock();
+      } else if (st && st.steps.length) {
+        var deriv = this.renderDerivationSection(box, this._manualNa);
+        stageNode2(deriv, stage);
+        stage += 1;
+        box.appendChild(deriv);
+        this._derivEl = deriv;
+      }
+      parent.appendChild(box);
+    }
+    return {
+      startManual,
+      renderManual,
+      manualGoalType,
+      manualApply,
+      manualStepBack,
+      manualStepForward,
+      manualFocus,
+      sweepCandidates,
+      cancelSweep,
+      runBrutus,
+      toggleBrutusPause,
+      absorbBrutusResult,
+      syncManualToBrutus,
+      scrollToDerivation,
+      backToManual,
+      commitManual
+    };
+  }
+
   // js/harpoon/harpoon-lab.mjs
   var global8 = globalThis;
   function E() {
@@ -2895,6 +3965,23 @@
   var ICON_POPOUT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>';
   var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.8v12.4c0 .8.9 1.3 1.6.9l10.2-6.2a1 1 0 0 0 0-1.7L9.6 4.9A1 1 0 0 0 8 5.8Z"/></svg>';
   var ICON_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c.3 3.1 1.4 4.2 4.5 4.5-3.1.3-4.2 1.4-4.5 4.5-.3-3.1-1.4-4.2-4.5-4.5 3.1-.3 4.2-1.4 4.5-4.5Z"/><path d="M18.5 12.5c.2 2 .9 2.7 2.9 2.9-2 .2-2.7.9-2.9 2.9-.2-2-.9-2.7-2.9-2.9 2-.2 2.7-.9 2.9-2.9Z"/></svg>';
+  var ICON_BRUTUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.2 14.4 9.4v4H9.6v-4Z" fill="currentColor" stroke="none"/><path d="M6.6 13.9h10.8"/><path d="M12 14.4v3.9"/><circle cx="12" cy="20" r="1.5"/></svg>';
+  var ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+  var ICON_DECLINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7 17 17"/><path d="M17 7 7 17"/></svg>';
+  var ICON_TAKEOVER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.4 18.6 10.6 12.3 12.3 9.6 18.6Z"/></svg>';
+  var TACTIC_VERB = {
+    intro: "intros",
+    split: "split",
+    invert: "invert",
+    impossible: "impossible",
+    fill: "solve",
+    recurse: "by",
+    lemma: "by",
+    synth: "chain"
+  };
+  function tacticVerb(kind) {
+    return TACTIC_VERB[kind] || kind || "move";
+  }
   function setTip(el4, text, opts) {
     if (!el4) return;
     if (global8.Tooltips && global8.Tooltips.set) {
@@ -3420,7 +4507,7 @@
       }
     });
     if (c.level === "none") banner.hidden = true;
-    parent.insertBefore(banner, parent.firstChild);
+    parent.appendChild(banner);
     this._compromiseBanner = banner;
     this.updateCompromiseBanner();
   };
@@ -3531,7 +4618,7 @@
       self._fullDeclSigRequested = null;
     });
   };
-  Session.prototype.runNativeAuto = function() {
+  Session.prototype.runNativeAuto = function(codeOverride) {
     var ed = E();
     var client = global8.BelugaClient;
     var prep = this.prep;
@@ -3546,7 +4633,7 @@
       toast("BelJar auto-solve could not read this theorem.", "error");
       return Promise.resolve(false);
     }
-    var proveCode = prep.proveCode || prep.assembledCode;
+    var proveCode = codeOverride || prep.proveCode || prep.assembledCode;
     var api = global8.CurrentEditor;
     var eng = api && typeof api.getSemanticEngine === "function" ? api.getSemanticEngine() : null;
     var goalHit = typeof ed.resolveHoleGoalForHit === "function" ? ed.resolveHoleGoalForHit(this.view, eng, prep.hit) : { goal: thm.compType && thm.compType.raw ? thm.compType.raw : "", state: "approximate", loadingLive: true };
@@ -3666,6 +4753,7 @@
           var na = self.nativeAuto;
           var prevLen = (na.steps || []).length;
           na.steps = info.steps || [];
+          if (info.code) na.liveCode = info.code;
           na.checks = na.steps.reduce(function(t, s) {
             return t + (s.checks || 0);
           }, 0);
@@ -3682,6 +4770,12 @@
       });
     }).then(function(r) {
       self.probeAnchor();
+      if (self._retireBrutus) {
+        self._retireBrutus = false;
+        self.userCancelled = false;
+        self.render();
+        return false;
+      }
       var stuck = r && r.stuck || null;
       if (stuck && stuck.reason === "cancelled" && self.userCancelled) {
         stuck = { reason: "stopped" };
@@ -3705,6 +4799,7 @@
       };
       self.render();
       self.refreshTreeExplorer();
+      if (self.manual) self.absorbBrutusResult(r);
       return !!(r && r.complete);
     }).catch(function(err) {
       var cancelled = client.isCancelledError && client.isCancelledError(err);
@@ -3805,6 +4900,22 @@
   };
   Session.prototype.close = function() {
     this.disposeSession();
+  };
+  function manualRenderSig(session) {
+    var na = session.nativeAuto;
+    var m = session.manual;
+    if (!m) return "no-manual";
+    return [
+      na ? na.phase : "idle",
+      na && na.paused ? "paused" : "live",
+      m.phase,
+      m.syncing ? "syncing" : "",
+      m.syncFailed ? "syncfail" : "",
+      m.busy ? "busy" : ""
+    ].join("|");
+  }
+  Session.prototype.derivationNa = function() {
+    return this.nativeAuto || this._manualNa || null;
   };
   Session.prototype.renderBar = function(m) {
     var self = this;
@@ -3946,6 +5057,7 @@
   var reelApi = null;
   var autoApi = null;
   var treeUiApi = null;
+  var manualApi = null;
   function renderSynthChain(meta, variant) {
     return treeUiApi.renderSynthChain(meta, variant);
   }
@@ -3987,6 +5099,7 @@
       el: function() {
         return el2.apply(null, arguments);
       },
+      tacticVerb,
       setTip: function() {
         return setTip.apply(null, arguments);
       },
@@ -4081,7 +5194,9 @@
       ICON_PAUSE,
       ICON_POPOUT,
       ICON_CHECK,
-      ICON_STOP
+      ICON_STOP,
+      ICON_CHEVRON_LEFT,
+      ICON_TAKEOVER
     });
     Session.prototype.refreshNativeAutoGoalDisplay = reelApi.refreshNativeAutoGoalDisplay;
     Session.prototype.clearNativeAutoShell = reelApi.clearNativeAutoShell;
@@ -4106,13 +5221,69 @@
     Session.prototype.renderTreeDetail = treeUiApi.renderTreeDetail;
     Session.prototype.pendingCommitAfterNav = commitApi.pendingCommitAfterNav;
     Session.prototype.verifyAndCommit = commitApi.verifyAndCommit;
+    manualApi = createManual({
+      el: function() {
+        return el2.apply(null, arguments);
+      },
+      iconBtn: function() {
+        return iconBtn.apply(null, arguments);
+      },
+      setTip: function() {
+        return setTip.apply(null, arguments);
+      },
+      toast: function() {
+        return toast.apply(null, arguments);
+      },
+      E,
+      renderSource: displayApi.renderSource,
+      appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      priorGoalBinders: displayApi.priorGoalBinders,
+      buildPlaceStrip: displayApi.buildPlaceStrip,
+      renderCommitOutcome: displayApi.renderCommitOutcome,
+      stageNode: displayApi.stageNode,
+      solvedBodyOf: displayApi.solvedBodyOf,
+      appendCommittedStepRow: function() {
+        return reelApi.appendCommittedStepRow.apply(reelApi, arguments);
+      },
+      appendAutoSolution: displayApi.appendAutoSolution,
+      renderManualSolvedSummary: displayApi.renderManualSolvedSummary,
+      tacticVerb,
+      setNativeSearchLabel: displayApi.setNativeSearchLabel,
+      nativeAutoSearchLabel: displayApi.nativeAutoSearchLabel,
+      ICON_UNDO,
+      ICON_REDO,
+      ICON_BRUTUS,
+      ICON_CHEVRON_DOWN,
+      ICON_DECLINE,
+      ICON_CHECK,
+      ICON_PLAY,
+      ICON_PAUSE,
+      ICON_POPOUT,
+      manualRenderSig
+    });
+    Session.prototype.startManual = manualApi.startManual;
+    Session.prototype.renderManual = manualApi.renderManual;
+    Session.prototype.manualGoalType = manualApi.manualGoalType;
+    Session.prototype.manualApply = manualApi.manualApply;
+    Session.prototype.manualStepBack = manualApi.manualStepBack;
+    Session.prototype.manualStepForward = manualApi.manualStepForward;
+    Session.prototype.manualFocus = manualApi.manualFocus;
+    Session.prototype.sweepCandidates = manualApi.sweepCandidates;
+    Session.prototype.cancelSweep = manualApi.cancelSweep;
+    Session.prototype.runBrutus = manualApi.runBrutus;
+    Session.prototype.toggleBrutusPause = manualApi.toggleBrutusPause;
+    Session.prototype.absorbBrutusResult = manualApi.absorbBrutusResult;
+    Session.prototype.syncManualToBrutus = manualApi.syncManualToBrutus;
+    Session.prototype.scrollToDerivation = manualApi.scrollToDerivation;
+    Session.prototype.backToManual = manualApi.backToManual;
+    Session.prototype.commitManual = manualApi.commitManual;
   }
   __initHarpoonLabPeels();
   Session.prototype.render = function() {
     if (!this.bodyEl) return;
     var self = this;
     var body = this.bodyEl;
-    if (this.nativeAuto && this.nativeAuto.phase === "searching" && this._autoSearchBox && this._autoSearchBox.parentNode === body) {
+    if (this.nativeAuto && this.nativeAuto.phase === "searching" && this._autoSearchBox && body.contains(this._autoSearchBox) && this._renderSig === manualRenderSig(this)) {
       this.updateNativeAutoSearch();
       return;
     }
@@ -4120,6 +5291,10 @@
     body.textContent = "";
     body.classList.remove("is-starting");
     var m = this.model;
+    if (this.manual) {
+      this.renderManual(body);
+      return;
+    }
     if (this.nativeAuto) {
       this.renderNativeAuto(body);
       return;
@@ -4308,6 +5483,13 @@
     }
     return null;
   }
+  function openingMode() {
+    var persist = global8.Persist;
+    if (persist && typeof persist.readStoredHarpoonMode === "function") {
+      return persist.readStoredHarpoonMode() === "brutus" ? "brutus" : "manual";
+    }
+    return "manual";
+  }
   function runSession(view, prep, host) {
     var session = new Session(view, prep.span.from, prep.span.to, host);
     session.prep = prep;
@@ -4319,7 +5501,10 @@
     session.bodyEl = content;
     host.mount(content, session);
     if (host.onSessionStart) host.onSessionStart(prep.name);
-    session.runNativeAuto();
+    var startBrutus = openingMode() === "brutus";
+    session.startManual().then(function(ok) {
+      if (ok && startBrutus) session.runBrutus();
+    });
     return session;
   }
   function openFromHole(view, engine, hit, opts) {
@@ -4450,6 +5635,9 @@
     return true;
   }
   global8.Harpoon = {
+    // Test seam: probes mount a Session over a fabricated state to drive the
+    // SHIPPED render/click paths rather than a re-implementation of them.
+    _Session: Session,
     openFromHole,
     proveInPanel,
     proveInPanelForFile,

@@ -1209,7 +1209,12 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
         status: nextHoles.length ? 'open' : 'solved',
         zp: mvZp || undefined,
       });
-      if (opts.onStep) opts.onStep({ steps: [...steps], last: steps[steps.length - 1] });
+      // `code` is the program AS ACCEPTED SO FAR. Reporting it lets a caller
+      // stop the search and inherit its progress (the Lab's "take over"), which
+      // is otherwise impossible: the steps alone don't reconstitute the program.
+      if (opts.onStep) {
+        opts.onStep({ steps: [...steps], last: steps[steps.length - 1], code: spliced });
+      }
       advanced = true;
       break;
       }
@@ -1486,7 +1491,7 @@ function firstErrorLoc(output) {
 // outside the span / at the case head / only one branch remains (a case needs ≥1
 // branch — full emptiness is the separate `impossible` move).
 
-function pruneOneBranch(text, output, hole) {
+export function pruneOneBranch(text, output, hole) {
   const loc = firstErrorLoc(output);
   if (!loc) return null;
   const lines = String(text).split('\n');
@@ -1524,7 +1529,7 @@ function pruneOneBranch(text, output, hole) {
 
 // First error location/message in checker output, for an honest stuck report.
 
-function firstErrorOf(output) {
+export function firstErrorOf(output) {
   const lines = String(output || '').split('\n');
   for (let i = 0; i < lines.length; i += 1) {
     if (/error/i.test(lines[i])) {
@@ -1536,7 +1541,7 @@ function firstErrorOf(output) {
 }
 
 
-function caseArmLine(code, hole) {
+export function caseArmLine(code, hole) {
   const lines = String(code || '').split('\n');
   for (let i = hole.line - 1; i >= 0; i -= 1) {
     if (/^\s*\|/.test(lines[i])) return i + 1;
@@ -1545,7 +1550,7 @@ function caseArmLine(code, hole) {
 }
 
 
-function scoreHole(hole, code) {
+export function scoreHole(hole, code) {
   let s = 0;
   const pat = branchPatternBox(code, hole);
   if (pat) s += 30;
@@ -1682,7 +1687,7 @@ function ctxSig(hole) {
 // A clean partial proof reports `ok:true` with a `## Holes ##` section and no
 // error lines. We treat ok:false OR an explicit error marker as an error signal.
 
-function countErrors(res) {
+export function countErrors(res) {
   if (!res) return 1;
   if (!res.ok) return 1;
   return 0;

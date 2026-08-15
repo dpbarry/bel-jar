@@ -1,6 +1,6 @@
 'use strict';
 
-import { suggestReplCompletions, DEFAULT_VERBS } from './repl-ac-suggest.mjs';
+import { suggestReplCompletions, replAcShouldOpen, DEFAULT_VERBS } from './repl-ac-suggest.mjs';
 import { activeCwd, dirOf } from './repl-run-cmd.mjs';
 
 const global = globalThis;
@@ -14,8 +14,11 @@ var activeIndex = -1;
 var replaceFrom = 0;
 var typedToken = '';
 var open = false;
+var explicit = false;
+var suppressRefresh = false;
 var debounceTimer = null;
 var repositionBound = false;
+var alwaysNavBound = false;
 var POPUP_GAP_PX = 4;
 var VIEW_PAD_PX = 8;
 
@@ -140,6 +143,39 @@ function bindReposition(on) {
   }
 }
 
+function persistApi() {
+  return typeof Persist !== 'undefined' ? Persist : null;
+}
+
+function autocompleteTrigger() {
+  var p = persistApi();
+  var v = p && p.readStoredReplAutocompleteTrigger ? p.readStoredReplAutocompleteTrigger() : null;
+  return v === 'none' || v === 'always' ? v : 'typing';
+}
+
+function autocompleteContinue() {
+  var p = persistApi();
+  return !!(p && p.readStoredReplAutocompleteContinue && p.readStoredReplAutocompleteContinue());
+}
+
+function caretPos(input) {
+  if (!input) return 0;
+  try {
+    var n = input.selectionStart;
+    if (typeof n === 'number') return n;
+  } catch (_) {}
+  return String(input.value || '').length;
+}
+
+function isAutocompleteToggle(e) {
+  var KB = typeof Keybindings !== 'undefined' ? Keybindings : null;
+  if (KB && typeof KB.matchesId === 'function' && KB.has && KB.has('edit.autocomplete')) {
+    return KB.matchesId(e, 'edit.autocomplete');
+  }
+  return !!(e && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
+    && (e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space'));
+}
+
 function listFiles() {
   return typeof Persist !== 'undefined' && Persist.listFiles ? Persist.listFiles() || [] : [];
 }
@@ -166,6 +202,7 @@ function listVerbs() {
 
 function hide() {
   open = false;
+  explicit = false;
   items = [];
   activeIndex = -1;
   typedToken = '';
@@ -222,6 +259,8 @@ function accept(idx) {
   if (typeof ReplCommands !== 'undefined' && ReplCommands.resetHistoryIndex) {
     ReplCommands.resetHistoryIndex();
   }
+  if (autocompleteContinue()) refresh();
+  else suppressRefresh = true;
   return true;
 }
 
@@ -295,27 +334,48 @@ function compute() {
   });
 }
 
-function refresh() {
+function refresh(opts) {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(function () {
     debounceTimer = null;
+    var forceExplicit = !!(opts && opts.explicit);
+    if (forceExplicit) explicit = true;
+    var input = getInput();
+    if (!input) {
+      hide();
+      return;
+    }
+    if (!replAcShouldOpen({
+      line: input.value || '',
+      pos: caretPos(input),
+      trigger: autocompleteTrigger(),
+      explicit: explicit,
+    })) {
+      explicit = false;
+      hide();
+      return;
+    }
+    explicit = false;
     render(compute());
   }, 20);
 }
 
+function toggleExplicit() {
+  if (isOpen()) {
+    hide();
+    return true;
+  }
+  refresh({ explicit: true });
+  return true;
+}
+
 function onKeyDown(e) {
   if (!e) return false;
-  if (!isOpen()) {
-    if (e.key === 'Tab') {
-      var result = compute();
-      if (result && result.items && result.items.length) {
-        render(result);
-        e.preventDefault();
-        return true;
-      }
-    }
-    return false;
+  if (isAutocompleteToggle(e)) {
+    toggleExplicit();
+    return true;
   }
+  if (!isOpen()) return false;
   if (e.key === 'ArrowDown') {
     setActive(activeIndex + 1);
     return true;
@@ -339,17 +399,36 @@ function onKeyDown(e) {
   return false;
 }
 
+function onInput() {
+  if (suppressRefresh) {
+    suppressRefresh = false;
+    if (!autocompleteContinue()) return;
+  }
+  refresh();
+}
+
 function bind(input) {
   inputEl = input || getInput();
   ensurePopup();
   hide();
+  if (!inputEl || alwaysNavBound) return;
+  alwaysNavBound = true;
+  inputEl.addEventListener('keyup', function (e) {
+    if (e && (e.ctrlKey || e.metaKey || e.altKey || isAutocompleteToggle(e))) return;
+    if (autocompleteTrigger() === 'always') refresh();
+  });
+  inputEl.addEventListener('click', function () {
+    if (autocompleteTrigger() === 'always') refresh();
+  });
 }
 
 var api = {
   bind: bind,
   refresh: refresh,
+  onInput: onInput,
   hide: hide,
   isOpen: isOpen,
+  toggleExplicit: toggleExplicit,
   onKeyDown: onKeyDown,
   _compute: compute,
   _suggest: suggestReplCompletions,
@@ -361,8 +440,10 @@ global.BelJarReplAutocomplete = api;
 export {
   bind,
   refresh,
+  onInput,
   hide,
   isOpen,
+  toggleExplicit,
   onKeyDown,
   suggestReplCompletions,
 };

@@ -20,4 +20,4 @@ export {
   gatherCompletions,
   createCompletionController,
 } from './source.mjs';
-export { belAutocompletion } from './editor-autocomplete.mjs';
+export { belAutocompletion, toggleEditorAutocomplete } from './editor-autocomplete.mjs';

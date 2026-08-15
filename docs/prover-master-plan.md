@@ -2278,6 +2278,245 @@ lying to it.
     — but before treating a big number as a defect, check it against the elapsed WALL
     time of the session, because the suite's own clock cannot distinguish work from sleep.
 
+51. **⭐⭐⭐ THE HIGHER-ORDER SLOT DROP — a located, single-cause MISSING MOVE worth 31
+    targets across 24 developments. The best-posed slice on the board.** (2026-08-15.)
+
+    Entry 50 asked what the other 178 cheap deaths need, since their shapes are ones the
+    lookup pool CAN express. `scratchpad/ctor-reach-census.mjs` answers it family-scoped, so
+    it needs no hole alignment: at a dead-end goal of family F, compare the constructors of
+    F the REFERENCE uses against the constructors of F the ENGINE proposed at that hole.
+
+    | at the deepest dead end (77 holes scored) | |
+    |---|---|
+    | proposed every constructor the reference needs | 31 (40.3%) |
+    | proposed some, MISSED one the reference needs (**class B**) | 26 (33.8%) |
+    | proposed NO constructor of the goal family (**class A**) | 20 (26.0%) |
+
+    ⭐ **Class B has a single signature-level cause.** Testing the missing constructors
+    against their own declared types (`scratchpad/ho-drop-check.mjs`):
+
+    > **73.0% of MISSING constructors have a HIGHER-ORDER argument slot, vs 7.7% of
+    > PROPOSED ones — a 9.5× lift.** The missing names are the binder-takers: `clet`,
+    > `klet`, `beta`, `lm`, `ae_l`, `eval_lam`, `r_res`, `ug`.
+
+    ⛔ **Class A is NOT the same defect** — only 30% of its families are all-higher-order;
+    the rest are `Map` / `CtxAsTup` ctype families, i.e. the territory entries 41–42 already
+    closed as a separate 3-part composite. Do not merge the two.
+
+    **THE CAUSE, LOCATED EXACTLY** — `hole-split.mjs`, the `desc.higherOrder` branch of
+    `argFillChoices`: a higher-order argument slot draws candidates **exclusively from the
+    R-pool** (`scope.filter(s => /^R\d*$/.test(s.name))` — let-bound recursion results), and
+    returns `[]` when no R-binding exists. The constructor loop then hits
+    `if (perArg.some((opts) => !opts.length)) continue;` and **drops the entire constructor**.
+    At step 0 — where ~95% of these targets die — there is no R-binding yet, so *every*
+    binder-taking constructor is unreachable at exactly the moment it is needed. The 9.5×
+    lift is this line.
+
+    **THE FIX AT FIRST PRINCIPLES.** A higher-order slot must be inhabited by BINDER
+    INTRODUCTION plus synthesis of the body in the extended context — `(\x. BODY)` with BODY
+    synthesized against `desc.bodyType` with the binders admitted to scope — not by lookup in
+    a pool that is empty by construction early in the proof.
+
+    **PIECES (all behind ONE toggle or do not start, [[composite-moves-are-atomic]]):**
+    (1) binder-skeleton generation when the R-pool is empty; (2) a BODY source — synthesize
+    `desc.bodyType` in the binder-extended scope; (3) substitution spelling for metas used
+    under the new binders (the corpus literally needs `\z.C1[..,z]`); (4) a bound, since the
+    new choices multiply through `cartesianArgCombos` and must not regress the other 176.
+
+    **CLASS + STAKE.** Predicate = "at the deepest dead end, a higher-order constructor of
+    the goal family that the reference uses was never proposed". **31 distinct targets across
+    24 developments** (ids: `scratchpad/ho-drop-ids.txt`) — 15.0% of the cheap-death class,
+    well-distributed, not one shape replicated. Declared stake: **≥8 of 31 convert, else
+    revert the whole composite.** Gate as always: `npm test` + `npm run prover:diff`, zero
+    regressions or revert.
+
+    ---
+
+    ### 51b. BUILT AND MEASURED — **STAKE MISSED, reverted to opt-in.** (2026-08-15.)
+
+    `hoSlotFills` + `lfCtorAppFills` were built in `hole-split.mjs`: binder introduction,
+    binder variables as bodies, in-scope hypotheses transported under the binders with the
+    extended substitution (`E[.., x]`, dual-spelled), and depth-1 constructor applications of
+    the body family in the binder-extended scope. It works — `ae_l (\x. \d. x)` is now
+    proposed on `ref'` where `ae_l` had never been generated at all.
+
+    > **A/B on its own 31-target class: 2 gains · 0 losses · +69.9% checks.**
+    > Declared stake was ≥8. **Missed decisively.** Flipped to opt-in
+    > (`globalThis.__proverHoSlot`, `HOSLOT=1` in `diverge-one`); default path is inert and
+    > byte-identical to before. Suite 208/209 (the pre-existing `test-project-chaos`).
+
+    ⭐ **WHY IT MISSED — and this is the reusable part.** The two conversions (`conv`,
+    `close1`, both previously `no-totality-measure`) are exactly the targets whose
+    higher-order body needs **no derived fact** — a binder variable or an in-scope
+    hypothesis closes them. The other 29 need a body citing a metavariable that only exists
+    after an UPSTREAM recursive call bound under binders, e.g. `ref'` needs
+    `let [h, b:block (y:term, _t:aeq y y) |- AE[.., b.1, b.2]] = ref' tr1` before
+    `ae_l \x.\u. AE[.., x, u]` can be written.
+
+    So the real move is a THREE-part composite and this built the third part only:
+    **(1) the recursive call, (2) its let-binding with an extended-context/block pattern,
+    (3) the HO-slot fill citing the result with the right substitution.**
+    [[composite-moves-are-atomic]] again, one level up — and the measured shape of the
+    failure (2/31, all of them the no-upstream-fact cases) is precisely what that law
+    predicts. ⛔ Do not re-run piece (3) alone expecting a different number. The next
+    attempt must carry (1) and (2) with it, and its stake should be re-sized against the
+    29 that need them.
+
+    ### 51c. SIZING (1)+(2) — the class subdivides again. (`scratchpad/upstream-bind-census.mjs`)
+
+    | over the 29 | |
+    |---|---|
+    | bind under an EXTENDED context | 22 (75.9%) |
+    | — of which a **BLOCK** pattern (`[h, b:block (…) ⊢ AE[.., b.1, b.2]]`) | **14 (48.3%)** |
+    | — of which a simple binder (`[g, x:T ⊢ E]`) | 8 (27.6%) |
+    | no extended-context binding at all | 7 (24.1%) |
+    | RHS is a SELF recursive call | 19 (65.5%) |
+    | bound name later cited under a `\`-binder (the `ae_l \x.\w. AE` shape) | **14 (48.3%)** |
+
+    So the coherent sub-class for a next attempt is the **14** needing
+    *recursive call → block-pattern let → HO-slot fill*, and the block pattern (with its
+    `b.1`/`b.2` projections) is itself a distinct mechanism from the simple binder case.
+
+    ⚠️ **Read the trajectory, not just the row.** 552 residue → 207 cheap deaths → 31
+    higher-order drops → 29 needing an upstream fact → 14 sharing one binding shape. The
+    class subdivides at every level of resolution and never concentrates. That IS entry 47's
+    conclusion re-confirmed at finer grain: each remaining build is worth ~1.5–3% and costs a
+    multi-piece atomic composite. Treat a further subdivision as evidence about the frontier,
+    not as a lead to chase.
+
+    ⛔ **INSTRUMENT LAW bought here: a census reporting exactly 0% or exactly 100% is a bug
+    until proven otherwise.** This one reported "bound name cited under a binder: **0/29**",
+    which contradicted the very example the hypothesis was built from. Cause: the regex was
+    assembled from an escaped string literal and the leading `\\` collapsed to `\[` — a
+    literal bracket — so it could never match. Rebuilt with `String.raw`: the true figure is
+    **14/29**. A false 0 reads exactly like a decisive negative result.
+
+50. **⭐ THE SLOT-SHAPE CENSUS — the control group cut entry 49's hypothesis down to a
+    29-target class. Nested CONSTRUCTION is real and 3.8× enriched; it is not the unlock.**
+    (2026-08-15, same session as 49. Read this WITH 49 — on its own, 49 overstates.)
+
+    Entry 49 concluded "the correct term is absent from the pool; make slot inhabitation
+    recursive." That was the right shape of question and too broad an answer. Testing it
+    needed a **control group** — if proofs the engine ALREADY completes carry the same slot
+    profile, then shape is not the discriminator. Instruments:
+    `scratchpad/slot-shape-census.mjs`, `slot-depth-census.mjs`, `nested-slot-class.mjs`
+    (all text-only, seconds, no oracle). Study = the 207 in-fragment cheap deaths;
+    control = all 269 COMPLETE.
+
+    **Two of the three "construction" shapes are MORE common in proofs that already work:**
+
+    | slot shape | study | control | verdict |
+    |---|---|---|---|
+    | LAMBDA (under a binder) | 6.5% | **7.3%** | not a discriminator |
+    | CALL (inline theorem call) | 3.7% | **5.0%** | not a discriminator |
+    | APP (nested application) | **11.0%** | 2.7% | **4.1× — the signal** |
+
+    ⛔ So "slots need construction" is FALSE as stated: the engine demonstrably handles
+    binders and inline calls. Depth confirms the narrowing — boxed applications at
+    **depth ≥2: study 22.7% vs control 6.1% (3.7×); depth ≥3: 4.4% vs 0.4% (12×)** — and the
+    examples say why. Control's depth-2 terms are ONE nested slot around an atom
+    (`ms_step (e_if S)`, `sym (red S*)`, `t_pred (t_succ D)`) — exactly the depth-2
+    constructor witness `nestedCtorArgFills` already supplies. Study's need SEVERAL
+    structured slots at once, frequently INFIX
+    (`fstep (P p_par R) (f_out X Y) (P' p_par R)`, `r_str par_comm (r_par R) par_comm`,
+    `red_ind (c_res \z.C1[..,z]) (c_res \z.C2[..,z]) \z.D2[..,z]`).
+
+    **Sized with its own predicate** (≥2 structured slots, or depth ≥3), contamination
+    measured on the control rather than assumed:
+
+    > **STUDY 29/207 (14.0%) · CONTROL 10/269 (3.7%) · lift 3.77×.**
+    > Infix constructor application present: study 31/207 (15.0%) vs control 11/269 (4.1%).
+
+    ⚠️ **Read that honestly: 29 targets is a TAIL slice**, ~5% of the 552 residue — squarely
+    inside entry 47's "everything is 3–20%" band. It is well-posed, enriched, and buildable,
+    but it is NOT a route from 32% to the ~91% analytic ceiling, and nothing in this session's
+    data suggests such a route exists. Entry 47's conclusion survives a fourth independent
+    measurement.
+
+    ⭐ **THE MORE INTERESTING RESIDUAL, UNMEASURED.** The other **178/207** cheap deaths need
+    only depth-1 applications of ATOMIC slots — shapes the lookup pool CAN already express.
+    So for the large majority the right SHAPE is available and the engine still fails, which
+    points at atom CHOICE and context SPELLING (the death census's 19% scope-error class:
+    free context variable / free meta-variable / not closed), or at a missing earlier
+    split/inversion that would have put the right atom in scope. **That is the next thing to
+    measure, and it is a bigger population than the construction class.** It needs the
+    oracle (is the needed atom in scope at the dead end?), not a text census.
+
+    **If the nested-construction slice is built anyway**, it is a 3–4 piece ATOMIC composite
+    ([[composite-moves-are-atomic]]): recursive slot synthesis · infix emission · under-binder
+    slots with substitution spelling · a bound across combined slots. All behind one toggle
+    or do not start. Stake: **≥8 of the 29 convert, else revert whole.**
+
+49. **⭐⭐ THE DEATH CENSUS — the residue is a CONSTRUCTION gap, not a coverage gap, and
+    not a search-control gap. Pool-shaping is dead by measurement.** (2026-08-15. This is
+    the first population-scale answer to "why does the search stop?"; entries 44–47 sized
+    the residue, this one names its mechanism.)
+
+    **The blind spot that invalidated the earlier histograms.** `scratchpad/error-census.mjs`
+    tallies only rows with `verdict === 'rejected'`, so it could not see the death mode where
+    `candidateMoves` returns NOTHING. Every rejection share it ever reported was therefore
+    computed against an unknown denominator. New instrument **`scratchpad/death-census.mjs`**
+    classifies EVERY dead end into `ZERO-CAND` / `ALL-REJECT` / `ALL-GUARD` / `MIXED`, and
+    sub-features the zero-candidate goals structurally.
+
+    **Population: all 207 in-fragment cheap deaths** (STUCK, ≤50 checks, coinductive excluded;
+    66 developments, max 13 from any one — not one shape replicated). Ids in
+    `scratchpad/cheapdeath-ids.txt`. Run to completion, 0 no-data.
+
+    | measurement | result |
+    |---|---|
+    | targets that EVER hit a hole with zero candidates | **8 (4%)** |
+    | deepest dead end = MIXED / ALL-REJECT | **182 (88%)** |
+    | move kinds generated at dead ends | fill **455** · split **329** · intro **146** · recurse **125** · invert **106** · lemma **65** · **synth 16** |
+    | rejections that are TYPE errors | **~72%** of 1639 |
+    | rejections that are SCOPE errors (free ctx var / free meta / not closed) | **~19%** |
+
+    ⛔ **The engine is not short of moves. It says the wrong thing, at scale.** Note also that
+    `recurse` IS offered 125 times at dead ends — the older "64% are never offered a recurse
+    candidate" (entry 47, a 45-target sample) does not hold on the full population.
+
+    ⛔⛔ **THE DECISIVE NEGATIVE — CROWD-OUT IS DEAD. DO NOT RE-TEST IT.** The obvious reading
+    of "88% die with everything rejected" is crowd-out: a correct fill exists in the pool but
+    sits past a cap (`fillScope`'s own comment concedes the risk — "the bounded combo
+    enumeration must reach them before the cap"). Tested directly with `__proverWideCaps`
+    (`WIDE_CAPS=1`, default OFF, documented at the `capN` site in `hole-split.mjs`), widening
+    every generation cap 4→64 / 6→96 / 48→512 / 12→128, same 207 targets:
+
+    > **207/207 IDENTICAL VERDICTS. 0 changes. +4.4% checks.**
+
+    The correct term is **absent from the pool**, not buried in it. The pool is built by
+    LOOKUP — in-scope names, their weakened spellings, nullary constructors, the branch
+    pattern's own term, and reassembled R-pool lets. A slot needing a **constructed**
+    inhabitant (a constructor application, a term under binders, an inline recursive call)
+    cannot be filled from it **at any cap**. So widening, filtering, or index-ranking that
+    pool is predicted ZERO — which is the standing ROI law (entry 45 measured the filtering
+    arm at −4.1% checks / 0 gains) now confirmed from the opposite direction: the widening
+    arm is also zero. **Both directions of pool-shaping are closed.**
+
+    ⭐ **Where the real gap is, stated structurally.** Fill generation is *shallow but not
+    naive*: `hole-split.mjs` DOES match the constructor's result indices against the goal
+    (`matchIndices`) and DOES push that substitution into each slot's expected type
+    (`want = applySubst(at, subst)`). Then it throws that information away — `argFillChoices`
+    inhabits the slot by comparing **family HEADS only** (`headOfConclusion(s.concl) === fam`),
+    over a finite lookup pool. There is no recursion: the procedure that inhabits a GOAL is
+    never applied to inhabit a SLOT. `prover-synth.mjs` *is* that recursive procedure (SLD
+    backward chaining, honestly fragment-scoped) but it is wired as a **sibling move kind**,
+    offered **16 times against fill's 455**.
+
+    **The reformulation this implies (unbuilt, stake below):** make slot inhabitation the
+    same goal-directed synthesis applied recursively, threading the accumulated substitution
+    through slots, under an explicit depth/termination bound — i.e. unify synth and fill
+    instead of running them as siblings. This is a GENERATION change (the only category that
+    has ever paid), not a pruning or ranking change.
+
+    ⚠️ **What this entry does NOT establish.** "88% ALL-REJECT" is near-tautological at a dead
+    end (a hole with surviving candidates is not a dead end). The load-bearing, non-tautological
+    findings are the **4% zero-candidate rate**, the **72/19 type/scope split**, and the
+    **207/207 wide-caps null**. Sizing the reformulation still requires its own reach census
+    against the mechanism's own predicate ([[feedback-size-classes-by-toggle]]) — the shape
+    census of what the reference proofs actually need at these holes is the next measurement,
+    NOT the build.
+
 48. **✅ THE `prover:diff` DEFAULT-LEDGER TRAP IS CLOSED BY CONSTRUCTION.** (2026-08-06.)
     Entry 40 documented it and the laws repeated it in three places: `prover:diff` defaulted
     `--ref` to `results/corpus/library.20260715.jsonl` (**183** COMPLETE) rather than the

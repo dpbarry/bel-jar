@@ -87,30 +87,43 @@ let tooltipAnchor = null;
 let touchShowTimer = null;
 let tooltipSuppressLeaveUntilPointerUp = null;
 
-let tooltipPointerMoveHandler = null;
-
-function anchorHitAt(anchor, x, y) {
-  const r = anchor.getBoundingClientRect();
-  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+function prepareOverflow(el) {
+  if (!el._belOverflowTipBound) return;
+  const getText = el._belOverflowGetText;
+  const text = el.scrollWidth > el.clientWidth
+    ? (getText ? getText() : (el.textContent || '').trim())
+    : '';
+  if (text) el.setAttribute('data-tooltip', text);
+  else el.removeAttribute('data-tooltip');
 }
 
-function stopTooltipPointerTracking() {
-  if (!tooltipPointerMoveHandler) return;
-  window.removeEventListener('pointermove', tooltipPointerMoveHandler);
-  tooltipPointerMoveHandler = null;
+function tooltipIsShowing() {
+  return !!(tooltipRoot && !tooltipRoot.hidden && !tooltipRoot.classList.contains('is-leaving'));
 }
 
-function startTooltipPointerTracking(anchor) {
-  stopTooltipPointerTracking();
-  tooltipPointerMoveHandler = (e) => {
-    if (tooltipAnchor !== anchor) return;
-    if (!anchorConnected(anchor)) {
-      hideTooltipImmediate();
-      return;
+function tippableAt(x, y) {
+  let n = document.elementFromPoint(x, y);
+  while (n && n.nodeType === 1) {
+    if (n._belOverflowTipBound) prepareOverflow(n);
+    if (!suppressedTooltipAnchors.has(n) && anchorHasTooltip(n)) return n;
+    n = n.parentElement;
+  }
+  return null;
+}
+
+function syncTooltipToPointer(x, y) {
+  if (!frp().prefersFineHover()) return;
+  if (!tooltipRoot) return;
+  if (tooltipSuppressLeaveUntilPointerUp) return;
+  const next = tippableAt(x, y);
+  if (next) {
+    if (next._belTooltipBound) {
+      if (tooltipAnchor === next && tooltipIsShowing()) return;
+      showTooltip(next);
     }
-    if (!anchorHitAt(anchor, e.clientX, e.clientY)) hideTooltipImmediate();
-  };
-  window.addEventListener('pointermove', tooltipPointerMoveHandler);
+    return;
+  }
+  if (tooltipAnchor && tooltipAnchor._belTooltipBound) hideTooltipImmediate();
 }
 
 function cancelTooltipHideAnim() {
@@ -431,11 +444,9 @@ function showTooltip(anchor, opts) {
   tooltipAnchor = anchor;
   tooltipRoot.hidden = false;
   layoutTooltip(anchor);
-  if (opts.trackPointer && frp().prefersFineHover()) startTooltipPointerTracking(anchor);
 }
 
 function hideTooltip() {
-  stopTooltipPointerTracking();
   tooltipAnchor = null;
   if (!tooltipRoot) return;
   if (tooltipRoot.hidden && !tooltipRoot.classList.contains('is-leaving')) return;
@@ -481,7 +492,6 @@ function hideTooltip() {
 }
 
 function hideTooltipImmediate() {
-  stopTooltipPointerTracking();
   tooltipAnchor = null;
   if (!tooltipRoot) return;
   cancelTooltipHideAnim();
@@ -500,15 +510,14 @@ function hideTooltipImmediate() {
 function bindTooltipEl(el) {
   if (!el || el.nodeType !== 1 || el._belTooltipBound) return;
   el._belTooltipBound = true;
-    el.addEventListener('mouseenter', () => {
+    el.addEventListener('mouseenter', (ev) => {
       if (!frp().prefersFineHover()) return;
-      showTooltip(el, { trackPointer: !el.hasAttribute('data-tooltip-no-track') });
+      syncTooltipToPointer(ev.clientX, ev.clientY);
     });
-    el.addEventListener('mouseleave', () => {
+    el.addEventListener('mouseleave', (ev) => {
       if (!frp().prefersFineHover()) return;
       if (tooltipSuppressLeaveUntilPointerUp === el) return;
-      if (tooltipAnchor !== el) return;
-      hideTooltipImmediate();
+      syncTooltipToPointer(ev.clientX, ev.clientY);
     });
     el.addEventListener('focusin', () => {
       if (!el.matches(':focus-visible')) return;
@@ -578,6 +587,9 @@ function bindTooltips() {
     tooltipSuppressLeaveUntilPointerUp = null;
   });
 
+  window.addEventListener('pointermove', (e) => {
+    syncTooltipToPointer(e.clientX, e.clientY);
+  });
   window.addEventListener('resize', () => {
     if (tooltipAnchor) layoutTooltip(tooltipAnchor);
   });
@@ -663,6 +675,7 @@ function setRichTooltip(el, buildFragment, ariaText) {
 function bindOverflowTip(el, getText) {
   if (!el || el.nodeType !== 1 || el._belOverflowTipBound) return;
   el._belOverflowTipBound = true;
+  el._belOverflowGetText = getText || null;
   el.addEventListener('mouseenter', function () {
     if (!frp().prefersFineHover()) return;
     const text = el.scrollWidth > el.clientWidth

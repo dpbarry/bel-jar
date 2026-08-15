@@ -2,6 +2,7 @@ import {
   parseCompletionContext,
   suggestReplCompletions,
   suggestPathLabel,
+  replAcShouldOpen,
 } from '../js/repl/repl-ac-suggest.mjs';
 
 function expect(cond, msg) {
@@ -117,5 +118,14 @@ expect(hasLabel(amalgam, 'a.bel'), 'amalgam path suggest');
 var counts = { 'b.bel': 2, 'a.bel': 1 };
 expectEq(suggestPathLabel('src/b.bel', 'src', counts), 'src/b.bel', 'ambiguous → full');
 expectEq(suggestPathLabel('src/a.bel', 'src', counts), 'a.bel', 'unique cwd → basename');
+
+expect(!replAcShouldOpen({ line: '', trigger: 'typing' }), 'empty line does not auto-open');
+expect(!replAcShouldOpen({ line: 'run ', trigger: 'typing' }), 'trailing space does not auto-open');
+expect(replAcShouldOpen({ line: 'ty', trigger: 'typing' }), 'token auto-opens');
+expect(replAcShouldOpen({ line: '', trigger: 'typing', explicit: true }), 'explicit opens empty');
+expect(!replAcShouldOpen({ line: 'ty', trigger: 'none' }), 'trigger none blocks typing');
+expect(replAcShouldOpen({ line: 'ty', trigger: 'none', explicit: true }), 'trigger none still explicit');
+expect(!replAcShouldOpen({ line: '', trigger: 'always' }), 'always still needs a token');
+expect(replAcShouldOpen({ line: 'run', trigger: 'always' }), 'always at token end');
 
 console.log('OK repl-autocomplete (suggest)');

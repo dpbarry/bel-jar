@@ -4,6 +4,7 @@
 const global = globalThis;
 function createReel(deps) {
     var el = deps.el;
+    var tacticVerb = deps.tacticVerb || function (k) { return k || 'move'; };
     var setTip = deps.setTip;
     var bindStepGoalTip = deps.bindStepGoalTip;
     var bindChipTip = deps.bindChipTip;
@@ -26,7 +27,7 @@ function createReel(deps) {
         var body = el('div', 'harpoon-lab-auto-step-body');
         var rowCopy = el('div', 'harpoon-lab-auto-step-copy');
         var verb = el('span', 'harpoon-lab-auto-move move-' + (s.move || 'move'));
-        verb.textContent = s.move || 'move';
+        verb.textContent = tacticVerb(s.move);
         rowCopy.appendChild(verb);
         rowCopy.appendChild(el('span', 'harpoon-lab-auto-why', moveLead(s)));
         body.appendChild(rowCopy);
@@ -52,16 +53,17 @@ function createReel(deps) {
       function syncReelStatTips(session, na) {
         if (!na) return;
         var tip = reelStatText(na);
-        var targets = [session._autoSearchText, session._autoSearchSpinner];
-        for (var i = 0; i < targets.length; i++) {
-          var node = targets[i];
-          if (!node) continue;
-          if (node.getAttribute('data-tooltip') === tip) continue;
-          if (global.Tooltips && global.Tooltips.set) {
-            global.Tooltips.set(node, tip, { ariaLabel: false });
-          } else if (tip) {
-            node.setAttribute('data-tooltip', tip);
-          }
+        // ONE target. Binding the checks·time tooltip to the status TEXT as well
+        // meant it fired from most of the band's width, so it read as appearing
+        // at random. `_statTipEl` lets a surface nominate the small, stable thing
+        // it belongs on — the working glyph.
+        var node = session._statTipEl || session._autoSearchSpinner;
+        if (!node) return;
+        if (node.getAttribute('data-tooltip') === tip) return;
+        if (global.Tooltips && global.Tooltips.set) {
+          global.Tooltips.set(node, tip, { ariaLabel: false });
+        } else if (tip) {
+          node.setAttribute('data-tooltip', tip);
         }
       }
 
@@ -74,7 +76,7 @@ function createReel(deps) {
       function buildStepCopy(step) {
         var rowCopy = el('div', 'harpoon-lab-auto-step-copy');
         var verb = el('span', 'harpoon-lab-auto-move move-' + (step.move || 'move'));
-        verb.textContent = step.move || 'move';
+        verb.textContent = tacticVerb(step.move);
         rowCopy.appendChild(verb);
         rowCopy.appendChild(el('span', 'harpoon-lab-auto-why', moveLead(step)));
         return rowCopy;

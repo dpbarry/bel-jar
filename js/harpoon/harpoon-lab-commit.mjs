@@ -173,7 +173,10 @@ function createCommit(deps) {
     var body = String(source).replace(/;\s*$/, '').trimEnd();
     var tot = totalityPrefixFromDecl(declSlice);
     if (tot && !/\/\s*total\b/.test(body)) body = tot + '\n' + body;
-    var newDecl = 'rec ' + decl.name + ' : ' + decl.type + ' =\n' + body + '\n;';
+    var hadSemi = /;\s*$/.test(declSlice);
+    var newDecl = ed.committedMemberText
+      ? ed.committedMemberText(decl, body, hadSemi)
+      : 'rec ' + decl.name + ' : ' + decl.type + ' =\n' + body + (hadSemi ? '\n;' : '');
 
     var codes = ed.buildCommitCheckCodes
       ? ed.buildCommitCheckCodes(prep.assembledCode, prep, newDecl)

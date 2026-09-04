@@ -364,3 +364,125 @@
   overflow-x: auto;
   max-width: 100%;
 }
+
+.tooltip-inner--rich .bj-setting-info-tip {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--base-high);
+}
+
+.tooltip-inner--rich .bj-setting-info-tip + .bj-setting-info-tip {
+  margin-top: 0.15rem;
+}
+
+/* In-dialog help popover — modal top layer blocks #tooltip-root; same chrome as .tooltip-inner */
+.bj-setting-info-popover {
+  --tooltip-bg: light-dark(var(--base-lowest), var(--base-lower));
+  --tooltip-border: light-dark(var(--muted-mid), var(--base-high));
+  --tooltip-spout-size: 6px;
+  position: fixed;
+  z-index: 20;
+  overflow: visible;
+  pointer-events: auto;
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  white-space: normal;
+  color: var(--base-highest);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0.06rem 0.16rem var(--tooltip-shadow-near);
+  padding: 0.4rem 0.55rem;
+  max-width: min(23rem, calc(100vw - 1rem));
+  /* ⛔ Bounded by the VIEWPORT, not by a guessed number. A fixed cap clipped the
+     editing-style passage mid-sentence on an ordinary window — the scroll was
+     working and it just read as truncated text. It only ever scrolls when the
+     passage genuinely cannot fit on the screen. */
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
+  word-wrap: break-word;
+  transform-origin: center center;
+  transform: scale(0.93);
+  opacity: 0;
+  transition:
+    transform var(--overlay-pop-ms-in) var(--overlay-pop-ease-in),
+    opacity calc(var(--overlay-pop-ms-in) * 0.82) ease-out;
+}
+
+.bj-setting-info-popover[hidden] {
+  display: none !important;
+}
+
+.bj-setting-info-popover.is-visible {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.bj-setting-info-popover::before {
+  content: none;
+  position: absolute;
+  width: var(--tooltip-spout-size);
+  height: var(--tooltip-spout-size);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-border);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.bj-setting-info-popover.tooltip-spout-left::before {
+  content: '';
+  left: calc(var(--tooltip-spout-size) * -0.55);
+  top: var(--tooltip-arrow-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-right: 0;
+  border-top: 0;
+}
+
+.bj-setting-info-popover.tooltip-spout-right::before {
+  content: '';
+  right: calc(var(--tooltip-spout-size) * -0.55);
+  top: var(--tooltip-arrow-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-left: 0;
+  border-bottom: 0;
+}
+
+.bj-setting-info-popover .bj-setting-info-tip {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+/* A short head over each passage. The popover carries what used to be two
+   settings rows, and six unbroken paragraphs read as a wall — heads make it a
+   reference you can scan for the one thing you came for. */
+.bj-setting-info-popover .bj-setting-info-head {
+  margin: 0;
+  font-size: 0.6rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent-high);
+}
+
+/* Tighten the gap between a head and the passage it introduces, so the pairs
+   group visually instead of floating equidistant. */
+.bj-setting-info-popover .bj-setting-info-head + .bj-setting-info-tip {
+  margin-top: -0.16rem;
+}
+
+.bj-setting-info-popover .bj-setting-info-tip + .bj-setting-info-head {
+  margin-top: 0.2rem;
+}

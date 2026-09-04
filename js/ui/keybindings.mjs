@@ -3,31 +3,38 @@
 /**
  * BelJar keybinding resolver — defaults, user overrides, reserved/conflict
  * checks, global dispatch, and CodeMirror keymap building for the bound set.
+ *
+ * The bindable set is a PROJECTION of the command registry (`keybindable: true`
+ * entries), not a list of its own — one catalogue, one truth. Everything below
+ * still works in specs, not commands.
  */
+import { Commands } from '../commands/command-registry.mjs';
+import { isEmacsEditorFocused as isEmacsFocused } from '../commands/command-context.mjs';
+
 const global = globalThis;
 var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || '');
 
-  var DEFAULTS = [
-    { id: 'nav.anywhere', title: 'Go to File…', section: 'Navigate', scope: 'global', defaultSpec: 'Mod+K' },
-    { id: 'tools.commands', title: 'Run Command…', section: 'Tools', scope: 'global', defaultSpec: 'Mod+Shift+P' },
-    { id: 'nav.symbol', title: 'Go to Symbol…', section: 'Navigate', scope: 'global', defaultSpec: 'Mod+Shift+O' },
-    { id: 'edit.search-project', title: 'Search in Project…', section: 'Edit', scope: 'global', defaultSpec: 'Mod+Shift+F' },
-    { id: 'edit.undo', title: 'Undo', section: 'Edit', scope: 'editor', defaultSpec: 'Mod+Z' },
-    { id: 'edit.redo', title: 'Redo', section: 'Edit', scope: 'editor', defaultSpec: 'Mod+Y', macDefaultSpec: 'Mod+Shift+Z' },
-    { id: 'edit.find', title: 'Find…', section: 'Edit', scope: 'editor', defaultSpec: 'Mod+F' },
-    { id: 'edit.toggle-comment', title: 'Toggle Line Comment', section: 'Edit', scope: 'editor', defaultSpec: 'Mod+/' },
-    { id: 'edit.format', title: 'Format Document', section: 'Edit', scope: 'editor', defaultSpec: 'Alt+Shift+F' },
-    { id: 'edit.rename', title: 'Rename Symbol', section: 'Edit', scope: 'editor', defaultSpec: 'F2' },
-    { id: 'edit.select-all', title: 'Select All', section: 'Edit', scope: 'editor', defaultSpec: 'Mod+A' },
-    { id: 'edit.autocomplete', title: 'Show Autocomplete', section: 'Edit', scope: 'editor', defaultSpec: 'Control+Space' },
-    { id: 'nav.definition', title: 'Go to Definition', section: 'Navigate', scope: 'editor', defaultSpec: 'F12' },
-    { id: 'nav.references', title: 'Find References', section: 'Navigate', scope: 'editor', defaultSpec: 'Shift+F12' },
-    { id: 'nav.next-hole', title: 'Go to Next Hole', section: 'Navigate', scope: 'editor', defaultSpec: 'F8' },
-    { id: 'nav.prev-hole', title: 'Go to Previous Hole', section: 'Navigate', scope: 'editor', defaultSpec: 'Shift+F8' },
-  ];
-
+  // Mutated in place, never reassigned: `Keybindings.DEFAULTS` hands this array
+  // out and callers hold the reference.
+  var DEFAULTS = [];
   var BY_ID = Object.create(null);
-  for (var i = 0; i < DEFAULTS.length; i++) BY_ID[DEFAULTS[i].id] = DEFAULTS[i];
+  var projectedVersion = -1;
+
+  /** Re-project only when the registry has actually changed. */
+  function syncDefaults() {
+    var v = Commands.version();
+    if (v === projectedVersion) return;
+    projectedVersion = v;
+    var next = Commands.defaults();
+    DEFAULTS.length = 0;
+    for (var k in BY_ID) delete BY_ID[k];
+    for (var i = 0; i < next.length; i++) {
+      DEFAULTS.push(next[i]);
+      BY_ID[next[i].id] = next[i];
+    }
+  }
+
+  syncDefaults();
 
   /** Browser / OS chords that must not be claimed. Normalized Mod+… form. */
   var RESERVED = {
@@ -43,12 +50,40 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     'Alt+F4': 1,
   };
 
-  var SECTION_ORDER = ['Edit', 'Navigate', 'Tools'];
+  // Mirrors the catalogue's section order so the sheet and the palette read alike.
+  var SECTION_ORDER = ['File', 'Edit', 'Motion', 'Navigate', 'Prover', 'Run', 'View', 'Settings', 'Tools'];
   var globalHandlers = Object.create(null);
   var listening = false;
 
   function persistApi() {
     return global.Persist || null;
+  }
+
+  // The global keydown listener runs on EVERY keypress in the app, editor typing
+  // included, and walks every global-scope command. Reading overrides inside
+  // `resolve` meant a localStorage read per command per keystroke — invisible at
+  // four global commands, real input cost at twenty-five. Callers that resolve
+  // more than one id read the map ONCE and thread it through. Nothing is cached
+  // across calls: an override written by another tab, a settings import, or a
+  // direct Persist write has to take effect immediately.
+  var scopeDefsCache = Object.create(null);
+  var scopeDefsVersion = -1;
+
+  /** Defs of one scope, rebuilt only when the registry itself changes. */
+  function defsForScope(scope) {
+    syncDefaults();
+    if (scopeDefsVersion !== projectedVersion) {
+      scopeDefsVersion = projectedVersion;
+      scopeDefsCache = Object.create(null);
+    }
+    var cached = scopeDefsCache[scope];
+    if (cached) return cached;
+    var out = [];
+    for (var i = 0; i < DEFAULTS.length; i++) {
+      if (DEFAULTS[i].scope === scope) out.push(DEFAULTS[i]);
+    }
+    scopeDefsCache[scope] = out;
+    return out;
   }
 
   function readOverrides() {
@@ -153,10 +188,10 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     return v === null || v === '';
   }
 
-  function resolve(id, isMac) {
+  /** `overrides` lets a caller resolving many ids read the map just once. */
+  function resolveWith(id, isMac, overrides) {
     var def = BY_ID[id];
     if (!def) return null;
-    var overrides = readOverrides();
     if (Object.prototype.hasOwnProperty.call(overrides, id)) {
       var ov = overrides[id];
       if (isUnboundSentinel(ov)) return null;
@@ -165,12 +200,18 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     return platformDefaultSpec(def, isMac) || null;
   }
 
+  function resolve(id, isMac) {
+    syncDefaults();
+    return resolveWith(id, isMac, readOverrides());
+  }
+
   function isUserOverride(id) {
     var overrides = readOverrides();
     return Object.prototype.hasOwnProperty.call(overrides, id);
   }
 
   function has(id) {
+    syncDefaults();
     return !!BY_ID[id];
   }
 
@@ -179,6 +220,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   }
 
   function list(isMac) {
+    syncDefaults();
     var mac = isMac != null ? isMac : IS_MAC;
     var rows = DEFAULTS.map(function (def) {
       var spec = resolve(def.id, mac);
@@ -234,17 +276,23 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   }
 
   function titleFor(id) {
+    syncDefaults();
     var def = BY_ID[id];
     return def ? def.title : '';
   }
 
+  // Called once per row while the Keybindings sheet renders, so it resolves the
+  // whole table against a single overrides read rather than one read per
+  // candidate — that product is quadratic in the catalogue size.
   function findConflict(spec, exceptId) {
+    syncDefaults();
     var n = normalizeSpec(spec);
     if (!n) return null;
+    var overrides = readOverrides();
     for (var i = 0; i < DEFAULTS.length; i++) {
       var def = DEFAULTS[i];
       if (exceptId && def.id === exceptId) continue;
-      var r = resolve(def.id);
+      var r = resolveWith(def.id, null, overrides);
       if (r && normalizeSpec(r) === n) return def.id;
     }
     return null;
@@ -352,21 +400,20 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     }).join('-');
   }
 
-  function freedDefaultsForScope(scope) {
+  function freedDefaultsForScope(scope, overrides) {
+    var ov = overrides || readOverrides();
+    var defs = defsForScope(scope);
     var freed = [];
     var claimed = Object.create(null);
-    for (var i = 0; i < DEFAULTS.length; i++) {
-      var def = DEFAULTS[i];
-      if (def.scope !== scope) continue;
-      var resolved = resolve(def.id);
-      if (resolved) claimed[normalizeSpec(resolved)] = def.id;
+    for (var i = 0; i < defs.length; i++) {
+      var resolved = resolveWith(defs[i].id, null, ov);
+      if (resolved) claimed[normalizeSpec(resolved)] = defs[i].id;
     }
-    for (var j = 0; j < DEFAULTS.length; j++) {
-      var d = DEFAULTS[j];
-      if (d.scope !== scope) continue;
+    for (var j = 0; j < defs.length; j++) {
+      var d = defs[j];
       var plat = platformDefaultSpec(d);
       if (!plat) continue;
-      var cur = resolve(d.id);
+      var cur = resolveWith(d.id, null, ov);
       if (normalizeSpec(cur) === plat) continue;
       if (claimed[plat]) continue;
       freed.push(plat);
@@ -375,33 +422,63 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     return freed;
   }
 
-  function buildEditorKeymap(runById) {
+  /**
+   * The editor half of the chord table, as CodeMirror keymap entries.
+   *
+   * `runners` names the commands that need a view-specific closure (the undo
+   * bridge, the search panel, a semantic-engine handle). `opts.fallback(id)`
+   * supplies a runner for everything else — that is how the ~60 registry-backed
+   * editor commands become real chords instead of dead ones.
+   */
+  function buildEditorKeymap(runById, opts) {
+    syncDefaults();
     var entries = [];
     var seen = Object.create(null);
     var runners = runById || {};
+    var fallback = opts && typeof opts.fallback === 'function' ? opts.fallback : null;
+    var omit = Object.create(null);
+    var omitDefaultSpecs = Object.create(null);
+    if (opts && opts.omitIds) {
+      var list = opts.omitIds;
+      for (var oi = 0; oi < list.length; oi++) {
+        omit[list[oi]] = true;
+        var omitDef = BY_ID[list[oi]];
+        if (omitDef && omitDef.scope === 'editor') {
+          var omitPlat = platformDefaultSpec(omitDef);
+          if (omitPlat) omitDefaultSpecs[normalizeSpec(omitPlat)] = true;
+        }
+      }
+    }
 
     for (var i = 0; i < DEFAULTS.length; i++) {
       var def = DEFAULTS[i];
       if (def.scope !== 'editor') continue;
+      if (omit[def.id]) continue;
       var spec = resolve(def.id);
       if (!spec) continue;
+      // ⛔ A bound chord with no runner is a DEAD KEY, and the sheet that
+      // offered the binding says nothing about it. This used to emit the entry
+      // anyway and return false from inside it, so 62 of the 74 bindable editor
+      // commands — every motion, every selection, the line edits, the nav and
+      // prover verbs — accepted a chord and did nothing.
+      //
+      // `fallback` is how the caller says "anything I did not name explicitly
+      // still runs, through the registry". Where there is neither a runner nor a
+      // fallback the entry is SKIPPED rather than emitted dead, so the chord
+      // falls through to CodeMirror instead of being swallowed.
+      var run = runners[def.id] || (fallback ? fallback(def.id) : null);
+      if (typeof run !== 'function') continue;
       var cm = toCmKey(spec);
       if (!cm || seen[cm]) continue;
       seen[cm] = true;
-      (function (commandId) {
-        entries.push({
-          key: cm,
-          run: function (view) {
-            var fn = runners[commandId];
-            if (typeof fn !== 'function') return false;
-            return !!fn(view);
-          },
-        });
-      })(def.id);
+      (function (fn) {
+        entries.push({ key: cm, run: function (view) { return !!fn(view); } });
+      })(run);
     }
 
     var freed = freedDefaultsForScope('editor');
     for (var f = 0; f < freed.length; f++) {
+      if (omitDefaultSpecs[normalizeSpec(freed[f])]) continue;
       var fcm = toCmKey(freed[f]);
       if (!fcm || seen[fcm]) continue;
       seen[fcm] = true;
@@ -415,12 +492,36 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     return !!(t && t.classList && t.classList.contains('bj-kb__chord') && t.classList.contains('is-recording'));
   }
 
+  function isEmacsEditorFocused() {
+    return isEmacsFocused();
+  }
+
+  /**
+   * When Emacs owns the focused Beluga editor, stand aside for the chords Emacs
+   * itself uses.
+   *
+   * ⛔ BOTH policies, not just `yield`. `off` means the style owns the chord
+   * outright, and until `tools.commands` moved onto `Alt+X` no global had ever
+   * declared it — so a global firing over `M-x` was a case that had never come
+   * up. `yield` and `off` differ in what the Keybindings sheet says, not in who
+   * gets the key.
+   */
+  function shouldYieldGlobalForEmacs(commandId, emacsFocused) {
+    if (!emacsFocused) return false;
+    var policy = Commands.styleFor(commandId, 'emacs');
+    return policy === 'yield' || policy === 'off';
+  }
+
   function onGlobalKeydown(e) {
     if (e.isComposing) return;
+    // Bare keys and modifier-only presses can never be a global chord; bail out
+    // before touching the tables so ordinary typing costs one branch.
+    if (!(e.ctrlKey || e.metaKey || e.altKey) && !isFunctionKey(normalizeKeyToken(e.key))) return;
     // Settings chord capture: let the focused .is-recording button own the event
     // (globals use capture and would otherwise steal Mod+K / Mod+Shift+P / …).
     if (isRecordingChordTarget(e)) return;
-    var freed = freedDefaultsForScope('global');
+    var overrides = readOverrides();
+    var freed = freedDefaultsForScope('global', overrides);
     for (var fi = 0; fi < freed.length; fi++) {
       if (eventMatchesSpec(e, freed[fi])) {
         e.preventDefault();
@@ -428,11 +529,12 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
         return;
       }
     }
-    for (var i = 0; i < DEFAULTS.length; i++) {
-      var def = DEFAULTS[i];
-      if (def.scope !== 'global') continue;
-      var spec = resolve(def.id);
+    var defs = defsForScope('global');
+    for (var i = 0; i < defs.length; i++) {
+      var def = defs[i];
+      var spec = resolveWith(def.id, null, overrides);
       if (!spec || !eventMatchesSpec(e, spec)) continue;
+      if (shouldYieldGlobalForEmacs(def.id, isEmacsEditorFocused())) return;
       var handler = globalHandlers[def.id];
       if (typeof handler !== 'function') continue;
       e.preventDefault();
@@ -487,6 +589,8 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     freedDefaultsForScope: freedDefaultsForScope,
     initGlobals: initGlobals,
     setGlobalHandler: setGlobalHandler,
+    shouldYieldGlobalForEmacs: shouldYieldGlobalForEmacs,
+    isEmacsEditorFocused: isEmacsEditorFocused,
     _pure: {
       normalizeSpec: normalizeSpec,
       formatShortcut: formatShortcut,
@@ -496,6 +600,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
       isReservedSequence: isReservedSequence,
       toCmKey: toCmKey,
       specFromEvent: specFromEvent,
+      shouldYieldGlobalForEmacs: shouldYieldGlobalForEmacs,
       DEFAULTS: DEFAULTS,
       RESERVED: RESERVED,
     },

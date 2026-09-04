@@ -38,6 +38,16 @@ expect(codes.orchestration.length < codes.patched.length,
 expect(countSiblingHoledDecls(assembled, 'id') === 1, 'one sibling holed decl');
 expect(countSiblingHoledDecls('rec a : T = ?;', 'a') === 0, 'no sibling for lone decl');
 
+const mutualHoled = [
+  'rec f : [ |- tp] = [ |- z]',
+  'and g : [ |- tp] = ?',
+  ';',
+].join('\n');
+expect(countSiblingHoledDecls(mutualHoled, 'g') === 0,
+  'complete mutual sibling is not a holed decl');
+expect(countSiblingHoledDecls(mutualHoled + '\nrec other : T = ?;', 'g') === 1,
+  'a holed rec outside the block still counts');
+
 expect(needsFullCommitCheck({ compromise: { level: 'none' }, docText: 'rec a : T = x;', declName: 'a' }) === false,
   'clean anchor no full check');
 expect(needsFullCommitCheck({ compromise: { level: 'warn' }, docText: 'rec a : T = x;', declName: 'a' }) === false,

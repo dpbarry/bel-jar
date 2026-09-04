@@ -10,7 +10,6 @@ var THRESHOLD = 4;
     var ghost = null;
     var expandTimer = null;
     var lastHighlightEls = [];
-    var lastTarget = null;
 
     function clearExpandTimer() {
       if (expandTimer) {
@@ -24,7 +23,6 @@ var THRESHOLD = 4;
         lastHighlightEls[i].classList.remove('is-drop-target');
       }
       lastHighlightEls = [];
-      lastTarget = null;
     }
 
     function cleanup() {
@@ -70,7 +68,6 @@ var THRESHOLD = 4;
         if (els[i]) els[i].classList.add('is-drop-target');
       }
       lastHighlightEls = els.filter(Boolean);
-      lastTarget = resolved.target;
       clearExpandTimer();
       if (resolved.target.kind === 'folder' && typeof opts.onAutoExpand === 'function') {
         expandTimer = setTimeout(function () {

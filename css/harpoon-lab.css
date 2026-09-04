@@ -1,0 +1,1956 @@
+/* --- The Harpoon body (shared by window + panel) --- */
+.harpoon-lab {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.harpoon-lab--panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.harpoon-lab-window .floating-window-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.harpoon-lab-window .harpoon-lab {
+  flex: none;
+  min-height: auto;
+  width: 100%;
+}
+
+.harpoon-lab-empty {
+  color: var(--muted-high);
+  padding: 1.5rem 0.75rem;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* Insert action — blue identity, arrow glyph (distinct from the green solution band). */
+.harpoon-lab-strip {
+  --harpoon-strip-accent: var(--repl-holes-accent);
+  --harpoon-strip-fill: var(--harpoon-card-bg);
+  --harpoon-strip-border: color-mix(in srgb, var(--harpoon-strip-accent) 24%, var(--harpoon-divider));
+  --harpoon-strip-sep-width: 0.5px;
+  --harpoon-strip-sep: color-mix(in srgb, var(--harpoon-strip-accent) 34%, var(--harpoon-divider));
+  position: relative;
+  overflow: hidden;
+  border-radius: 0;
+  border-bottom: none;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--harpoon-strip-accent) 7%, transparent), transparent 52%),
+    var(--harpoon-strip-fill);
+  box-shadow: inset 0 calc(-1 * var(--harpoon-strip-sep-width)) 0 0 var(--harpoon-strip-sep);
+}
+/* Last banner: quieter separator, same tone as the full-width rule above. */
+.harpoon-lab-strip:not(:has(~ .harpoon-lab-strip)) {
+  box-shadow: inset 0 -0.5px 0 0 var(--harpoon-strip-sep);
+}
+.harpoon-lab-strip::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--edge-strip-w-callout);
+  background: var(--harpoon-strip-accent);
+}
+.harpoon-lab-strip.tone-goal {
+  --harpoon-strip-accent: var(--repl-holes-accent);
+  --harpoon-strip-fill: var(--harpoon-goal-bg);
+  --harpoon-strip-border: color-mix(in srgb, var(--repl-holes-accent) 30%, var(--harpoon-divider));
+}
+.harpoon-lab-strip.tone-success {
+  --harpoon-strip-accent: var(--ide-status-clean);
+  --harpoon-strip-fill: color-mix(in srgb, var(--harpoon-card-bg) 92%, var(--ide-status-clean) 8%);
+  --harpoon-strip-border: color-mix(in srgb, var(--ide-status-clean) 26%, var(--harpoon-divider));
+}
+.harpoon-lab-strip.tone-action {
+  --harpoon-strip-accent: var(--accent-mid);
+  --harpoon-strip-fill: var(--harpoon-card-bg);
+  --harpoon-strip-border: color-mix(in srgb, var(--accent-mid) 36%, var(--harpoon-divider));
+}
+.harpoon-lab-strip.tone-warn {
+  --harpoon-strip-accent: var(--ide-status-warning);
+  --harpoon-strip-fill: color-mix(in srgb, var(--harpoon-card-bg) 90%, var(--ide-status-warning) 10%);
+  --harpoon-strip-border: color-mix(in srgb, var(--ide-status-warning) 28%, var(--harpoon-divider));
+}
+.harpoon-lab-strip.tone-error {
+  --harpoon-strip-accent: var(--ide-status-error);
+  --harpoon-strip-fill: color-mix(in srgb, var(--harpoon-card-bg) 90%, var(--ide-status-error) 10%);
+  --harpoon-strip-border: color-mix(in srgb, var(--ide-status-error) 28%, var(--harpoon-divider));
+}
+.harpoon-lab-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3rem;
+}
+.harpoon-lab-banner-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: var(--harpoon-strip-accent);
+  color: var(--ui-fg-on-accent);
+}
+.harpoon-lab-banner-badge svg { width: 0.95rem; height: 0.95rem; }
+.harpoon-lab-banner-warn-glyph {
+  font-family: var(--sans);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.harpoon-lab-banner-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+.harpoon-lab-banner-title {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--base-highest);
+}
+.harpoon-lab-strip.tone-success .harpoon-lab-banner-title { color: var(--ide-status-clean); }
+.harpoon-lab-strip.tone-action .harpoon-lab-banner-title { color: var(--accent-high); }
+.harpoon-lab-strip.tone-warn .harpoon-lab-banner-title {
+  color: color-mix(in srgb, var(--ide-status-warning) 74%, var(--base-highest));
+}
+.harpoon-lab-strip.tone-error .harpoon-lab-banner-title {
+  color: color-mix(in srgb, var(--ide-status-error) 74%, var(--base-highest));
+}
+.harpoon-lab-banner-sub {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  color: var(--muted-high);
+}
+.harpoon-lab-strip.tone-warn .harpoon-lab-banner-sub,
+.harpoon-lab-strip.tone-error .harpoon-lab-banner-sub {
+  color: color-mix(in srgb, var(--muted-high) 74%, var(--harpoon-strip-accent) 26%);
+}
+button.harpoon-lab-banner {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+button.harpoon-lab-banner:disabled { cursor: not-allowed; }
+button.harpoon-lab-banner:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--harpoon-strip-accent) 70%, white 10%);
+  outline-offset: 1px;
+}
+.harpoon-lab-section-label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.harpoon-lab-section-label.is-goal { color: var(--repl-holes-accent); }
+.harpoon-lab-section-label.is-solution { color: var(--ide-status-clean); }
+.harpoon-lab-section-label.is-steps {
+  color: var(--repl-holes-accent);
+}
+
+.harpoon-lab-place { padding: 0.62rem 0.75rem; }
+.harpoon-lab-place-title {
+  font-size: 0.78rem;
+  color: var(--accent-high);
+}
+.harpoon-lab-place-sub { font-size: 0.68rem; }
+@media (hover: hover) and (pointer: fine) {
+  button.harpoon-lab-banner:not(:disabled):hover {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--harpoon-strip-accent) 15%, transparent), transparent 58%),
+      color-mix(in srgb, var(--harpoon-strip-fill) 92%, var(--harpoon-strip-accent) 8%);
+  }
+}
+
+/* Starting: full-width REPL-style bar + status text. */
+.harpoon-lab.is-starting {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.harpoon-lab-start {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 5rem;
+}
+
+.harpoon-lab-start-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--repl-holes-accent) 12%, var(--chrome-divider));
+}
+
+.harpoon-lab-start-track .harpoon-loadbar {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.harpoon-loadbar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 38%;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--repl-holes-accent) 55%, transparent),
+    color-mix(in srgb, var(--repl-holes-accent) 88%, transparent),
+    color-mix(in srgb, var(--repl-holes-accent) 55%, transparent)
+  );
+  box-shadow:
+    0 0 5px color-mix(in srgb, var(--repl-holes-accent) 24%, transparent),
+    0 0 1px color-mix(in srgb, var(--repl-holes-accent) 34%, transparent);
+  animation: harpoon-loadbar-slide 1.1s ease-in-out infinite;
+}
+
+.harpoon-lab-start-msg {
+  margin: 0;
+  padding: 0.85rem 0.65rem 0;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted-high);
+  text-align: center;
+}
+
+@keyframes harpoon-loadbar-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(360%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-loadbar::before { animation: none; width: 100%; opacity: 0.55; }
+}
+
+.harpoon-lab-title { display: inline-flex; align-items: center; gap: 0.4rem; }
+.harpoon-lab-title-glyph {
+  display: inline-flex;
+  color: var(--repl-holes-accent);
+}
+.harpoon-lab-title-glyph svg { width: 1.05em; height: 1.05em; }
+.harpoon-lab-title-text { font-weight: 600; }
+
+/* The Harpoon body inherits the panel/window's own neutral background — NO tint
+   on the wide fill (a tinted surface stretched over the whole docked panel reads
+   as a violet panel). The magenta identity lives ONLY on the cards + goal hero. */
+.harpoon-lab { background: transparent; }
+
+/* In-session status + action strip (below the panel/window title). Lean: the
+   proof's live progress on the left, undo/redo/insert on the right. */
+.harpoon-lab-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  height: var(--panel-header-h);
+  padding: 0 0.4rem 0 0.55rem;
+  border-bottom: 1px solid var(--harpoon-divider);
+  background: transparent;
+}
+
+.harpoon-lab-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.harpoon-lab-status-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--repl-holes-accent);
+}
+.harpoon-lab-status-dot.is-done {
+  background: var(--ide-status-clean);
+}
+.harpoon-lab-status-text {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--muted-high);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harpoon-lab-bar-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.harpoon-lab-work {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.6rem 0.6rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Subgoal picker — a quiet segmented row, the focused one accented. */
+.harpoon-lab-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.harpoon-lab-picker-tab {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--harpoon-card-border);
+  border-radius: 999px;
+  background: var(--harpoon-card-bg);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted-high);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.harpoon-lab-picker-num { line-height: 1; }
+.harpoon-lab-picker-tab.is-active {
+  color: var(--repl-holes-accent);
+  border-color: var(--harpoon-goal-border);
+  background: var(--harpoon-goal-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--repl-holes-accent) 22%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-picker-tab:not(.is-active):hover {
+    color: var(--base-highest);
+    border-color: color-mix(in oklab, var(--repl-holes-accent) 30%, var(--harpoon-card-border));
+  }
+}
+
+/* The focused subgoal — a clean card holding the goal hero, the context ledger,
+   and the tactic bar, each a distinct band separated by hairlines. */
+.harpoon-lab-goal-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--harpoon-card-border);
+  border-radius: 0.72rem;
+  background: linear-gradient(180deg, var(--harpoon-card-bg-raised), var(--harpoon-card-bg));
+  box-shadow: var(--harpoon-card-shadow), var(--harpoon-card-inner);
+  overflow: hidden;
+}
+
+/* ── The goal hero ── the type to inhabit, the focal point. */
+.harpoon-lab-goal {
+  --harpoon-strip-fill: var(--harpoon-goal-bg);
+  padding: 0.65rem 0.75rem 0.7rem;
+  border-bottom: 1px solid var(--harpoon-goal-border);
+}
+.harpoon-lab-goal-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.harpoon-lab-goal-idx {
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted-mid);
+  font-variant-numeric: tabular-nums;
+}
+.harpoon-lab-goal-type,
+.harpoon-lab-goal-card .harpoon-hole-goal {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  word-break: break-word;
+  color: var(--base-highest);
+}
+
+/* ── The context ledger ── assumptions in scope, recessive beneath the goal. */
+.harpoon-lab-context {
+  padding: 0.55rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.harpoon-lab-ctx {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.6rem;
+  align-items: baseline;
+}
+.harpoon-lab-ctx-label {
+  font-family: var(--sans);
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-mid);
+  padding-top: 0.12rem;
+}
+.harpoon-lab-binders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  min-width: 0;
+}
+.harpoon-lab-binder {
+  display: flex;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  min-width: 0;
+}
+.harpoon-lab-binder-name { color: var(--base-highest); font-weight: 600; }
+.harpoon-lab-binder-sep { color: var(--muted-mid); }
+.harpoon-lab-binder-type { color: var(--muted-high); word-break: break-word; min-width: 0; }
+
+.harpoon-panel-hole-rule {
+  flex: 0 0 auto;
+  height: 0;
+  margin: 0.38rem 0 0.42rem;
+  border: 0;
+  border-top: 1px solid var(--chrome-divider);
+}
+
+/* ── The tactic action bar ── the available moves; the suggested one accented. */
+.harpoon-lab-tacs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.55rem 0.75rem 0.65rem;
+  border-top: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-tac {
+  appearance: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  padding: 0.28rem 0.62rem;
+  border: 1px solid var(--harpoon-card-border);
+  border-radius: 999px;
+  background: var(--harpoon-card-bg);
+  color: var(--base-higher);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.harpoon-lab-tac-verb { font-weight: 600; }
+.harpoon-lab-tac-arg {
+  font-size: 0.7rem;
+  color: var(--repl-holes-accent);
+  font-weight: 600;
+}
+.harpoon-lab-tac.is-primary {
+  border-color: var(--harpoon-goal-border);
+  background: var(--harpoon-goal-bg);
+  color: var(--base-highest);
+}
+.harpoon-lab-tac.is-primary .harpoon-lab-tac-verb {
+  color: var(--repl-holes-accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-tac:hover {
+    border-color: color-mix(in oklab, var(--repl-holes-accent) 38%, var(--harpoon-card-border));
+    color: var(--base-highest);
+  }
+  .harpoon-lab-tac.is-primary:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--repl-holes-accent) 28%, transparent);
+  }
+}
+
+/* ═══ Auto-solve ═══ the headline move + the search→reveal→place narrative. ═══ */
+
+/* The moves stack: the accented Auto-solve action leads; manual step tactics follow. */
+.harpoon-lab-moves {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem 0.65rem;
+  border-top: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-moves .harpoon-lab-tacs {
+  padding: 0;
+  border-top: 0;
+}
+
+/* Auto-solve — a full-width accented button, the demo centerpiece. Violet identity,
+   spark glyph, a soft moving sheen on hover to read as "intelligent search". */
+.harpoon-lab-auto-btn {
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--repl-holes-accent) 45%, transparent);
+  border-radius: 0.6rem;
+  background:
+    linear-gradient(180deg,
+      color-mix(in oklab, var(--repl-holes-accent) 20%, var(--harpoon-card-bg)),
+      color-mix(in oklab, var(--repl-holes-accent) 11%, var(--harpoon-card-bg)));
+  color: var(--base-highest);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.06s ease;
+}
+.harpoon-lab-auto-btn-glyph {
+  display: inline-flex;
+  color: var(--repl-holes-accent);
+}
+.harpoon-lab-auto-btn-glyph svg { width: 1rem; height: 1rem; }
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-auto-btn:hover {
+    border-color: color-mix(in srgb, var(--repl-holes-accent) 70%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--repl-holes-accent) 30%, transparent),
+      0 2px 12px color-mix(in srgb, var(--repl-holes-accent) 22%, transparent);
+  }
+  /* a sheen that sweeps across on hover — subtle "thinking" shimmer */
+  .harpoon-lab-auto-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 30%,
+      color-mix(in srgb, var(--repl-holes-accent) 22%, transparent) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform 0.5s ease;
+  }
+  .harpoon-lab-auto-btn:hover::after { transform: translateX(120%); }
+}
+.harpoon-lab-auto-btn:active { transform: translateY(0.5px); }
+
+/* Auto-solve fills the panel/window — one surface, no nested card. */
+.harpoon-lab-auto {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+/* ── Act I — searching: goal hero + status line + pause/resume. */
+.harpoon-lab-auto.is-searching {
+  border-color: transparent;
+}
+.harpoon-lab-auto-goal {
+  --harpoon-strip-fill: var(--harpoon-goal-bg);
+  padding: 0.65rem 0.75rem 0.7rem;
+}
+/* The declaration under proof, rendered as source rather than as a caption: mono, and
+   coloured from the shared `bel-hl-*` palette so it matches the goal beneath it. */
+.harpoon-lab-auto-goal-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4em;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.655rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.harpoon-lab-goal-decl-kw {
+  flex: 0 0 auto;
+  opacity: 0.82;
+}
+.harpoon-lab-goal-decl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.harpoon-lab-auto-goal-type,
+.harpoon-lab-auto-goal .hole-goal-type.bel-type {
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.harpoon-lab-auto-goal-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.55rem;
+  min-width: 0;
+}
+/* Priors — the binders Beluga elided from the displayed goal, unlabeled on
+   their own row beneath the type, separated by a hairline rule. */
+.harpoon-lab-auto-goal-priors {
+  min-width: 0;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-auto-goal-priors-text {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.harpoon-lab-auto-goal-body > .harpoon-hole-goal {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.harpoon-lab-auto-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem 0.6rem;
+}
+.harpoon-lab-auto-searching {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.15rem 0;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.harpoon-lab-auto-searching-spinner {
+  flex: 0 0 auto;
+  border-top-color: var(--repl-holes-accent);
+}
+.harpoon-lab-auto-searching-text {
+  min-width: 0;
+}
+.harpoon-lab-auto-searching-text.beljar-tip-shimmer::before {
+  display: none;
+}
+.harpoon-lab-auto-pause {
+  flex: 0 0 auto;
+  color: var(--muted-high);
+}
+.harpoon-lab-auto-popout {
+  flex: 0 0 auto;
+  color: var(--muted-high);
+}
+.harpoon-lab-auto-popout svg { width: 0.95rem; height: 0.95rem; }
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-auto-popout:hover { color: var(--repl-holes-accent); }
+}
+
+.harpoon-lab-auto-goal .harpoon-lab-goal-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.harpoon-lab-auto.is-paused .harpoon-lab-auto-searching-text.beljar-tip-shimmer {
+  animation: none;
+  opacity: 0.75;
+}
+.harpoon-lab-auto.is-paused .harpoon-lab-auto-searching-spinner {
+  animation: none;
+  opacity: 0.45;
+}
+.harpoon-lab-auto.is-paused .harpoon-lab-auto-searching-text {
+  color: var(--muted-high);
+}
+.harpoon-lab-auto-pause svg { width: 1rem; height: 1rem; }
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-auto-pause:hover { color: var(--repl-holes-accent); }
+}
+
+/* ── The live SOLVE REEL — ONE record; the active hole is an in-place conveyor
+   row that morphs into a committed row when its move is accepted. */
+.harpoon-reel {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.65rem 0.55rem;
+}
+.harpoon-reel-record { margin: 0; }
+
+/* The WORKING ROW: a live step whose copy area is a horizontal conveyor. It reuses
+   the step spine (.harpoon-lab-auto-step) so it sits ON the derivation, in place. */
+.harpoon-lab-auto-step.is-working > .harpoon-lab-auto-node.is-live {
+  background: var(--repl-holes-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--repl-holes-accent) 22%, transparent);
+  animation: harpoon-worknode-pulse 1.5s ease-in-out infinite;
+}
+@keyframes harpoon-worknode-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--repl-holes-accent) 16%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--repl-holes-accent) 30%, transparent); }
+}
+
+/* The conveyor lane: right-anchored strip, older chips fade off the LEFT under a
+   mask (the "physical strip" feel). */
+.harpoon-conveyor {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding-block: 2px;
+  padding-right: 0.75rem;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 3rem, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 3rem, #000 100%);
+}
+.harpoon-conveyor-strip {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: var(--reel-gap, 0.3rem);
+  justify-content: flex-end;
+  min-width: 0;
+  will-change: transform;
+}
+
+.harpoon-conveyor-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.32rem;
+  max-width: 15rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 0.35rem;
+  --reel-accent: var(--muted-high);
+  border: 1px solid color-mix(in srgb, var(--reel-accent) 34%, transparent);
+  background: color-mix(in srgb, var(--reel-accent) 7%, var(--harpoon-card-bg-raised));
+  opacity: 1;
+  transform: none;
+  transition:
+    filter var(--reel-dur, 320ms) var(--reel-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity var(--reel-dur, 320ms) var(--reel-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    background-color 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+.harpoon-conveyor-chip.move-synth { --reel-accent: var(--harpoon-move-synth); }
+.harpoon-conveyor-chip.move-split { --reel-accent: var(--harpoon-move-split); }
+.harpoon-conveyor-chip.move-fill { --reel-accent: var(--harpoon-move-fill); }
+.harpoon-conveyor-chip.move-recurse { --reel-accent: var(--harpoon-move-recurse); }
+.harpoon-conveyor-chip.move-invert { --reel-accent: var(--harpoon-move-invert); }
+.harpoon-conveyor-chip.move-lemma { --reel-accent: var(--harpoon-move-lemma); }
+.harpoon-conveyor-chip.move-intro { --reel-accent: var(--harpoon-move-intro); }
+.harpoon-conveyor-chip.move-impossible { --reel-accent: var(--harpoon-move-impossible); }
+
+@keyframes harpoon-reel-land {
+  0% { transform: none; }
+  42% { transform: scale(0.99, 0.97); }
+  100% { transform: none; }
+}
+.harpoon-conveyor-chip.is-landing {
+  animation: harpoon-reel-land 180ms cubic-bezier(0.34, 1.05, 0.64, 1) both;
+}
+.harpoon-conveyor-chip.is-rejected,
+.harpoon-conveyor-chip.is-trail {
+  animation: none !important;
+}
+
+/* The chip in focus (being checked): a quiet raised lip — slightly brighter fill,
+   hairline top highlight, marginally thicker bottom edge. No transform (clips). */
+.harpoon-conveyor-chip.is-focus {
+  border-style: solid;
+  border-width: 1px 1px 1.5px;
+  border-top-color: color-mix(in srgb, var(--reel-accent) 34%, var(--harpoon-card-bg-raised));
+  border-right-color: color-mix(in srgb, var(--reel-accent) 46%, transparent);
+  border-left-color: color-mix(in srgb, var(--reel-accent) 46%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--reel-accent) 58%, transparent);
+  background: color-mix(in srgb, var(--reel-accent) 9%, var(--harpoon-card-bg-raised));
+}
+.harpoon-conveyor-chip.is-focus .harpoon-conveyor-term {
+  animation: beljar-tip-shimmer 1.3s ease-in-out infinite;
+  --shimmer-accent: var(--reel-accent);
+}
+/* Trail: defocused chips recede — half-grayscale, still readable. */
+.harpoon-conveyor-chip.is-trail {
+  filter: grayscale(0.5);
+  opacity: 0.8;
+}
+/* Rejected: further back on the belt. */
+.harpoon-conveyor-chip.is-rejected {
+  opacity: 0.45;
+  filter: grayscale(0.72);
+  border-style: dashed;
+}
+/* Won — beat 1: selected. A decisive lock; the chip holds while the trail clears. */
+.harpoon-conveyor-chip.is-won {
+  opacity: 1;
+  filter: none;
+  border-style: solid;
+  border-width: 1px 1px 2px;
+  border-color: color-mix(in srgb, var(--reel-accent) 62%, transparent);
+  background: color-mix(in srgb, var(--reel-accent) 12%, var(--harpoon-card-bg-raised));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 2px 0 color-mix(in srgb, var(--reel-accent) 40%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--reel-accent) 18%, transparent);
+  animation: harpoon-chip-selected 300ms cubic-bezier(0.34, 1.2, 0.64, 1) both;
+}
+@keyframes harpoon-chip-selected {
+  0% { transform: none; }
+  38% { transform: scale(0.98, 0.96); }
+  100% { transform: none; }
+}
+.harpoon-conveyor-chip.is-won .harpoon-conveyor-kind {
+  opacity: 0.55;
+  transition: opacity 200ms ease;
+}
+.harpoon-conveyor-chip.is-won .harpoon-conveyor-term { animation: none; }
+
+/* Commit: reel fades out, then the record row scales in confidently. */
+.harpoon-lab-auto-step.is-committing {
+  position: relative;
+  min-height: 1.1rem;
+}
+.harpoon-lab-auto-step.is-committing > .harpoon-lab-auto-node {
+  animation: none;
+  transition: box-shadow 200ms ease;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--repl-holes-accent) 18%, transparent);
+}
+.harpoon-lab-auto-step.is-committing .harpoon-conveyor {
+  position: absolute;
+  left: calc(var(--step-node-col, 0.44rem) + var(--step-col-gap, 0.35rem));
+  right: 0;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+.harpoon-lab-auto-step.is-committing .harpoon-conveyor-chip:not(.is-won) {
+  opacity: 0;
+  visibility: hidden;
+  animation: none !important;
+  transform: none !important;
+  transition: none;
+}
+.harpoon-lab-auto-step-copy.is-reveal {
+  transform-origin: left center;
+  animation: harpoon-commit-in 240ms cubic-bezier(0.32, 0.94, 0.6, 1) both;
+}
+@keyframes harpoon-commit-in {
+  0% { opacity: 0; transform: scale(1.07); }
+  72% { opacity: 1; transform: scale(0.992); }
+  100% { opacity: 1; transform: none; }
+}
+
+.harpoon-conveyor-kind {
+  flex: 0 0 auto;
+  font-family: var(--sans);
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--reel-accent);
+}
+.harpoon-conveyor-term {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-conveyor-chip {
+    transition: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  .harpoon-conveyor-chip.is-trail { filter: grayscale(0.5); opacity: 0.8; }
+  .harpoon-conveyor-chip.is-rejected { filter: grayscale(0.72); opacity: 0.45; }
+  .harpoon-conveyor-chip.is-focus { transform: none; }
+  .harpoon-conveyor-chip.is-focus .harpoon-conveyor-term,
+  .harpoon-lab-auto-step.is-working > .harpoon-lab-auto-node.is-live { animation: none; }
+  .harpoon-conveyor-chip.is-won { animation: none; }
+  .harpoon-conveyor-chip.is-landing { animation: none; }
+  .harpoon-lab-auto-step-copy.is-reveal { animation: none; opacity: 1; transform: none; }
+}
+
+.harpoon-lab-auto-panel {
+  --harpoon-auto-panel-accent: var(--harpoon-divider);
+  --harpoon-auto-panel-fill: color-mix(in srgb, var(--harpoon-card-bg-raised) 78%, var(--harpoon-card-bg));
+  --harpoon-auto-panel-border: color-mix(in srgb, var(--harpoon-divider) 78%, transparent);
+  margin: 0;
+  padding: 0.65rem 0.75rem 0.7rem;
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--harpoon-auto-panel-accent) 6%, transparent), transparent 58%),
+    var(--harpoon-auto-panel-fill);
+  box-shadow:
+    inset 1px 0 0 var(--harpoon-auto-panel-border),
+    inset 0 -1px 0 var(--harpoon-auto-panel-border),
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+}
+.harpoon-lab-auto-panel.tone-warn {
+  --harpoon-auto-panel-accent: var(--ide-status-warning);
+  --harpoon-auto-panel-fill: color-mix(in srgb, var(--harpoon-card-bg) 91%, var(--ide-status-warning) 9%);
+  --harpoon-auto-panel-border: color-mix(in srgb, var(--ide-status-warning) 24%, var(--harpoon-divider));
+}
+.harpoon-lab-auto-panel.tone-error {
+  --harpoon-auto-panel-accent: var(--ide-status-error);
+  --harpoon-auto-panel-fill: color-mix(in srgb, var(--harpoon-card-bg) 91%, var(--ide-status-error) 9%);
+  --harpoon-auto-panel-border: color-mix(in srgb, var(--ide-status-error) 24%, var(--harpoon-divider));
+}
+
+/* Grey section blocks — no top rule; bottom rule only when another sibling follows. */
+.harpoon-lab-auto-controls,
+.harpoon-reel,
+.harpoon-lab-auto-solution,
+.harpoon-deriv {
+  border-top: none;
+  border-bottom: none;
+  box-shadow: none;
+}
+.harpoon-lab-auto-controls:has(~ *),
+.harpoon-reel:has(~ *),
+.harpoon-lab-auto-solution:has(~ *),
+.harpoon-deriv:has(~ *) {
+  border-bottom: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-auto-solution.harpoon-lab-auto-panel {
+  box-shadow: none;
+}
+
+.harpoon-lab-auto-solution {
+  margin: 0;
+}
+
+.harpoon-lab-auto-solution-label {
+  margin-bottom: 0.35rem;
+}
+.harpoon-lab-auto-solution-body {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  color: var(--base-highest);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.harpoon-lab-auto-trail.is-live .harpoon-lab-auto-step {
+  animation: none;
+  opacity: 1;
+}
+.harpoon-lab-auto-trail.is-instant .harpoon-lab-auto-step,
+.harpoon-lab-auto-place.is-instant {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+.harpoon-lab-auto-steps-label {
+  padding: 0.72rem 0.75rem 0.35rem;
+}
+
+/* ── Proof tree: steps grouped under their case-branch pattern. */
+.harpoon-lab-auto-branch {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--step-gap, 0.5rem);
+  position: relative;
+  z-index: 1;
+}
+.harpoon-lab-auto-case {
+  display: grid;
+  grid-template-columns: var(--step-node-col, 0.44rem) minmax(0, 1fr);
+  column-gap: var(--step-col-gap, 0.35rem);
+  align-items: baseline;
+}
+.harpoon-lab-auto-case-node {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  align-self: center;
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--repl-holes-accent) 18%, var(--harpoon-card-bg, #1c2431));
+  border: 1.5px solid color-mix(in srgb, var(--repl-holes-accent) 52%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--repl-holes-accent) 10%, transparent);
+  z-index: 1;
+}
+.harpoon-lab-auto-branch-head {
+  grid-column: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+  justify-self: start;
+  width: max-content;
+  max-width: 100%;
+}
+.harpoon-lab-auto-branch-label {
+  font-family: var(--sans);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-mid);
+  flex: none;
+}
+.harpoon-lab-auto-branch-pat {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted-mid);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.harpoon-lab-auto-branch-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--step-gap, 0.5rem);
+}
+
+/* ── Header — verdict + certified count. */
+/* `.harpoon-lab-strip` itself sets no padding, so every banner must claim the
+   rhythm explicitly — a <button> banner that forgets to falls back to the UA's
+   own padding and its badge drifts left of the ones above and below it. */
+.harpoon-lab-auto-head,
+.harpoon-lab-manual-head,
+.harpoon-lab-resume,
+.harpoon-lab-auto-compromise {
+  padding: 0.62rem 0.75rem;
+}
+@keyframes harpoon-auto-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.harpoon-lab-auto-head-copy { min-width: 0; }
+.harpoon-lab-stage {
+  animation: none;
+}
+.harpoon-lab-auto-head.is-solved .harpoon-lab-banner-badge,
+.harpoon-lab-manual-head .harpoon-lab-banner-badge,
+.harpoon-lab-auto-commit.is-placed .harpoon-lab-banner-badge {
+  animation: harpoon-auto-pop 0.42s cubic-bezier(0.2, 1.2, 0.2, 1) both;
+  animation-delay: calc(var(--stage-index, 0) * 55ms + 60ms);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--harpoon-strip-accent) 18%, transparent);
+}
+.harpoon-lab-auto-head.is-solved.is-verdict-seen .harpoon-lab-banner-badge {
+  animation: none;
+}
+
+/* ── Act II — derivation trail. --step-gap = vertical space between every stack item. */
+.harpoon-lab-auto-trail {
+  --step-node-col: 0.44rem;
+  --step-col-gap: 0.35rem;
+  --step-gap: 0.5rem;
+  --trail-pad-top: 0.5rem;
+  --trail-pad-right: 0.8rem;
+  --trail-pad-bot: 0.55rem;
+  --trail-pad-left: 0.85rem;
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: var(--trail-pad-top) var(--trail-pad-right) var(--trail-pad-bot) var(--trail-pad-left);
+  display: flex;
+  flex-direction: column;
+  gap: var(--step-gap);
+}
+.harpoon-lab-auto-trail::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--trail-pad-left) + var(--step-node-col) / 2 - 0.75px);
+  top: calc(var(--trail-pad-top) + 0.09rem + var(--step-node-col) / 2);
+  bottom: calc(var(--trail-pad-bot) + var(--step-node-col) / 2);
+  width: 1.5px;
+  background: color-mix(in srgb, var(--repl-holes-accent) 26%, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+.harpoon-deriv > .harpoon-lab-auto-trail {
+  --trail-pad-top: 0.18rem;
+  --trail-pad-right: 0.12rem;
+  --trail-pad-bot: 0.22rem;
+  --trail-pad-left: 0.18rem;
+}
+.harpoon-reel-record.harpoon-lab-auto-trail {
+  --trail-pad-top: 0.12rem;
+  --trail-pad-right: 0.1rem;
+  --trail-pad-bot: 0.18rem;
+  --trail-pad-left: 0.12rem;
+  padding: var(--trail-pad-top) var(--trail-pad-right) var(--trail-pad-bot) var(--trail-pad-left);
+}
+.harpoon-lab-auto-step {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--step-node-col) minmax(0, 1fr);
+  column-gap: var(--step-col-gap);
+  align-items: start;
+  animation: harpoon-step-in 0.32s ease both;
+  animation-delay: calc(var(--i, 0) * 70ms + 60ms);
+}
+@keyframes harpoon-step-in {
+  from { opacity: 0; transform: translateX(-0.35rem); }
+  to { opacity: 1; transform: none; }
+}
+.harpoon-lab-auto-node {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  margin-top: 0.09rem;
+  width: var(--step-node-col, 0.44rem);
+  height: var(--step-node-col, 0.44rem);
+  border-radius: 999px;
+  background: var(--repl-holes-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--repl-holes-accent) 18%, transparent);
+  z-index: 1;
+}
+.harpoon-lab-auto-step-body {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--step-gap);
+  min-width: 0;
+}
+.harpoon-conveyor {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.harpoon-lab-auto-step-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.harpoon-lab-auto-move {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--repl-holes-accent);
+  letter-spacing: 0.01em;
+}
+
+/* per-kind accent — a quiet legibility cue, from the ONE unified move palette */
+.harpoon-lab-auto-move.move-synth { color: var(--harpoon-move-synth); }
+.harpoon-lab-auto-move.move-split { color: var(--harpoon-move-split); }
+.harpoon-lab-auto-move.move-fill { color: var(--harpoon-move-fill); }
+.harpoon-lab-auto-move.move-recurse { color: var(--harpoon-move-recurse); }
+.harpoon-lab-auto-move.move-invert { color: var(--harpoon-move-invert); }
+.harpoon-lab-auto-move.move-lemma { color: var(--harpoon-move-lemma); }
+.harpoon-lab-auto-move.move-intro { color: var(--harpoon-move-intro); }
+.harpoon-lab-auto-move.move-impossible { color: var(--harpoon-move-impossible); }
+.harpoon-lab-auto-why {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--muted-high);
+  min-width: 0;
+}
+
+/* ── Honest-decline: the open goal, shown calmly. */
+.harpoon-lab-auto-stuck {
+  margin: 0;
+  padding: 0.62rem 0.75rem 0.68rem;
+}
+.harpoon-lab-auto-stuck-label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-high);
+  margin-bottom: 0.25rem;
+}
+.harpoon-lab-auto-stuck-goal { font-size: 0.75rem; line-height: 1.5; color: var(--base-highest); }
+
+/* ── The STUCK card (diagnostic). Never meant to show; when it does, it says what
+   the search reached and why every candidate at that hole failed. Terse. */
+.harpoon-stuck-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.harpoon-stuck-head .harpoon-lab-auto-stuck-label { margin-bottom: 0; }
+.harpoon-stuck-where {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.66rem;
+  color: var(--muted-high);
+}
+.harpoon-stuck-sub {
+  margin-top: 0.5rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-high);
+}
+.harpoon-stuck-tried {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+/* FLEX, not grid: the "+N" badge is an OPTIONAL child, and in a fixed
+   three-column grid its presence pushed the reason into an implicit fourth
+   column — so the `1fr` landed on the badge, stretching it and squashing the
+   objection it was counting. Flex places whatever children exist. */
+.harpoon-stuck-tried-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  min-width: 0;
+}
+/* The head may shrink; the objection is what must stay readable, so it gets the
+   remaining space and shrinks last. */
+.harpoon-stuck-tried-row .harpoon-stuck-tried-head { flex: 0 1 auto; }
+.harpoon-stuck-tried-row .harpoon-stuck-tried-reason { flex: 1 1 auto; }
+.harpoon-stuck-tried-head {
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--base-highest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The objection WRAPS. It is the payload of this card, and clipping it to one
+   line hid the end of every message long enough to matter ("vacuous-probe split:
+   vocabulary-o…"). The head above it still truncates, because a term is
+   identifiable from its prefix; a sentence is not. */
+.harpoon-stuck-tried-reason {
+  color: var(--ide-status-error);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+/* "+8" — the other candidates that drew this same objection. Reads as a count,
+   not a control; the full list is on hover. */
+.harpoon-stuck-tried-more {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.62rem;
+  color: var(--muted-high);
+  border: 1px solid color-mix(in srgb, var(--muted-high) 30%, transparent);
+  border-radius: 0.3rem;
+  padding: 0 0.22rem;
+  white-space: nowrap;
+  cursor: help;
+}
+/* The cause + the edit that removes it. Prose, deliberately — this is the one
+   place on the card that is a sentence rather than data, because "add a measure
+   to the declaration" is not something a code span can say. Sits above the
+   candidate list since it explains why that list looks the way it does. */
+.harpoon-stuck-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.55;
+  color: var(--base-high);
+  border-left: 2px solid color-mix(in srgb, var(--repl-holes-accent) 45%, transparent);
+  padding-left: 0.5rem;
+}
+/* Guard-skipped candidates never reached the checker — recessive completeness. */
+.harpoon-stuck-tried-row.is-guard { opacity: 0.55; }
+.harpoon-stuck-tried-row.is-guard .harpoon-stuck-tried-reason { color: var(--muted-high); }
+
+/* ── Act III — the place-the-proof strip. */
+.harpoon-lab-auto-place {
+  width: 100%;
+}
+.harpoon-lab-auto-place.is-blocked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Commit in progress — loadbar + shimmer on the place strip. */
+.harpoon-lab-place.is-committing {
+  position: relative;
+  cursor: wait;
+  pointer-events: none;
+  opacity: 0.92;
+}
+.harpoon-lab-place-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--accent-mid) 12%, var(--chrome-divider));
+}
+.harpoon-lab-place-track .harpoon-loadbar {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.harpoon-lab-place.is-committing .harpoon-lab-place-title {
+  color: var(--accent-high);
+}
+.harpoon-lab-place.is-committing .harpoon-lab-place-title.beljar-tip-shimmer {
+  --shimmer-accent: var(--accent-mid);
+  animation: beljar-tip-shimmer 1.4s ease-in-out infinite;
+}
+.harpoon-lab-place.is-committing .harpoon-lab-place-arrow {
+  opacity: 0.45;
+}
+
+/* ── Commit outcome — placed / failed (parallel to compromise strip). */
+.harpoon-lab-auto-commit {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.6rem;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  overflow: hidden;
+  max-height: 4.5rem;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 220ms ease,
+    max-height 260ms ease,
+    padding-top 260ms ease,
+    padding-bottom 260ms ease;
+}
+.harpoon-lab-auto-commit.is-dismissing {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.harpoon-lab-commit-text {
+  font-size: 0.78rem;
+}
+.harpoon-lab-commit-sub {
+  word-break: break-word;
+}
+.harpoon-lab-commit-tech {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--base-mid) 72%, transparent);
+  word-break: break-word;
+}
+.harpoon-lab-commit-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+.harpoon-lab-commit-retry {
+  padding: 0.12rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--chrome-divider) 45%, transparent);
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--chrome-bg-panel) 55%, transparent);
+  color: var(--base-high);
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-commit-retry:hover {
+    border-color: color-mix(in srgb, var(--accent-mid) 45%, transparent);
+    color: var(--accent-high);
+  }
+}
+.harpoon-lab-commit-retry:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: 1px;
+}
+
+/* ── Compromise strip — same layout as the place strip, yellow when warned. */
+.harpoon-lab-auto-compromise {
+  width: 100%;
+  margin: 0;
+}
+.harpoon-lab-compromise-title {
+  font-size: 0.78rem;
+}
+.harpoon-lab-compromise-sub {
+  font-size: 0.68rem;
+}
+.harpoon-lab-auto-compromise[hidden] { display: none; }
+
+.harpoon-lab-auto-compromise.tone-warn .harpoon-lab-banner-title {
+  color: color-mix(in srgb, var(--ide-status-warning) 88%, white 12%);
+}
+.harpoon-lab-auto-compromise.tone-warn .harpoon-lab-banner-sub {
+  color: color-mix(in srgb, var(--ide-status-warning) 48%, var(--base-high));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-auto,
+  .harpoon-lab-stage,
+  .harpoon-lab-auto-step,
+  .harpoon-lab-auto-place,
+  .harpoon-lab-auto-commit,
+  .harpoon-lab-auto-badge.is-solved,
+  .harpoon-lab-manual-head .harpoon-lab-banner-badge,
+  .harpoon-lab-auto-commit.is-placed .harpoon-lab-banner-badge { animation: none; }
+  .harpoon-lab-auto-btn::after { display: none; }
+}
+
+/* --- Docked-panel goal list --- */
+.harpoon-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.harpoon-panel-suite {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.harpoon-panel-suite-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.1rem 0.02rem 0;
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-high);
+}
+/* Active development — emphasize the name via colour and weight only; same
+   size as the rest, flanking rules untouched. */
+.harpoon-panel-suite-label.is-active-dev {
+  font-weight: 800;
+  color: var(--muted-highest);
+}
+.harpoon-panel-suite-label::before,
+.harpoon-panel-suite-label::after {
+  content: '';
+  flex: 0 0 auto;
+  height: 1px;
+  background: color-mix(in oklab, var(--harpoon-card-border) 30%, var(--harpoon-card-border-strong));
+}
+.harpoon-panel-suite-label::before {
+  width: 1rem;
+}
+.harpoon-panel-suite-label::after {
+  flex: 1 1 auto;
+  min-width: 0.5rem;
+}
+
+.harpoon-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.48rem;
+}
+
+.harpoon-panel-hole {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--harpoon-card-border);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, var(--harpoon-card-bg-raised), var(--harpoon-card-bg));
+  box-shadow: var(--harpoon-card-shadow), var(--harpoon-card-inner);
+  transition: border-color 0.12s ease;
+}
+.harpoon-panel-hole.is-unfocused {
+  background: transparent;
+  box-shadow: none;
+  border-color: light-dark(hsla(0, 0%, 0%, 0.1), hsla(0, 0%, 100%, 0.1));
+}
+.harpoon-panel-hole::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--repl-holes-accent) 9%, transparent);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+.harpoon-panel-hole.is-unfocused::after {
+  display: none;
+}
+.harpoon-panel-hole:not(.is-unfocused) .harpoon-hole-goal {
+  margin: 0;
+  padding: 0.4rem 0.62rem 0.5rem;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--repl-holes-accent) 7%, transparent), transparent 48%),
+    var(--harpoon-goal-bg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-panel-hole:hover {
+    border-color: color-mix(in oklab, var(--repl-holes-accent) 50%, var(--harpoon-card-border-strong));
+  }
+  .harpoon-panel-hole:hover::after {
+    opacity: 1;
+  }
+  .harpoon-panel-hole.is-unfocused:hover {
+    border-color: light-dark(hsla(0, 0%, 0%, 0.18), hsla(0, 0%, 100%, 0.18));
+  }
+}
+.harpoon-panel-hole:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklab, var(--repl-holes-accent) 46%, var(--harpoon-card-border-strong));
+  box-shadow:
+    var(--harpoon-card-shadow),
+    var(--harpoon-card-inner),
+    0 0 0 2px color-mix(in srgb, var(--repl-holes-accent) 18%, transparent);
+}
+.harpoon-panel-hole.is-unfocused:focus-visible {
+  border-color: light-dark(hsla(0, 0%, 0%, 0.28), hsla(0, 0%, 100%, 0.28));
+  box-shadow: 0 0 0 2px light-dark(hsla(0, 0%, 0%, 0.12), hsla(0, 0%, 100%, 0.12));
+}
+
+.harpoon-panel-hole .harpoon-panel-hole-rule {
+  margin: 0;
+  border-top-color: var(--harpoon-divider);
+}
+
+/* The header strip names the OBLIGATION on the left and its location on the right. Both
+   sides ellipsis rather than wrap, so the strip is exactly one line tall whatever the
+   theorem and file happen to be called. */
+.harpoon-panel-hole-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.44rem 0.62rem 0.36rem;
+}
+
+.harpoon-hole-decl {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 0.715rem;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.harpoon-hole-decl-kw {
+  flex: 0 0 auto;
+  opacity: 0.82;
+}
+.harpoon-hole-decl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* No enclosing declaration: the hole sits at the top level of the file, or the file text
+   was not readable. Said in words rather than left blank. */
+.harpoon-hole-decl.is-unknown .harpoon-hole-decl-name {
+  color: var(--muted-mid);
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 500;
+  font-style: italic;
+}
+
+/* Card tooltip: "suite: <name>" — the key carries the cfg/suite hue so the line reads as a
+   labelled field rather than a bare string. */
+.harpoon-tip-suite {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  white-space: nowrap;
+}
+.harpoon-tip-suite-key {
+  color: var(--base-highest);
+}
+.harpoon-tip-suite-name {
+  color: var(--file-cfg-fg);
+  font-weight: 600;
+}
+
+.harpoon-hole-snapshot-warn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: hsl(38 78% 58%);
+  opacity: 0.92;
+}
+.harpoon-hole-snapshot-warn svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Right-aligned, and a flex row rather than one ellipsised string: the PATH gives way when
+   space is short, the line number never does. */
+.harpoon-hole-loc {
+  flex: 0 0 auto;
+  max-width: 46%;
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  margin-left: auto;
+  font-family: var(--sans);
+  font-size: 0.655rem;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.008em;
+  color: var(--muted-mid);
+  white-space: nowrap;
+}
+
+.harpoon-hole-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted-high);
+}
+
+.harpoon-hole-ln {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-mid);
+}
+.harpoon-hole-path + .harpoon-hole-ln::before {
+  content: ':';
+  display: inline-block;
+  margin: 0 0.1em;
+  transform: translateY(-0.07em);
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+/* The goal type. It runs long far more often than not, and it never wraps: the card is one
+   line of type tall whatever the goal, and anything longer fades off the right edge.
+   Hovering slides the track to its end so the whole type is readable, without the card
+   changing size to do it -- a list of twenty holes stays a list of twenty holes.
+
+   Geometry: the WINDOW clips and holds the band padding (the same inset before ∷
+   and after the last glyph). The MASK is the visible viewport and always carries
+   a right-edge mask when the type overruns. `--hole-edge-alpha-left` and
+   `--hole-edge-alpha-right` animate each stop so both fades dissolve with the
+   slide instead of popping. The TRACK is shrink-to-content and is what moves.
+
+   `--slide` / `--slide-ms` are measured per card in harpoon-panel.mjs. */
+@property --hole-edge-alpha-left {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+
+@property --hole-edge-alpha-right {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+.harpoon-panel-hole .harpoon-hole-goal {
+  --hole-fade: 2.4rem;
+  font-size: 0.715rem;
+  line-height: 1.5;
+  color: var(--base-highest);
+  overflow: hidden;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.harpoon-hole-goal-mask {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+.harpoon-hole-goal-track {
+  display: block;
+  width: max-content;
+  max-width: none;
+  min-width: max-content;
+  transform: translateX(0);
+  transition: transform 0.34s ease;
+}
+.harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .harpoon-hole-goal-track {
+  white-space: nowrap;
+}
+/* Shared `.bel-type` / `.bel-type-text` wrap and shrink. Inside a card they must not:
+   a shrinking flex child makes overflow unmeasurable (scrollWidth ≈ viewport). */
+.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .bel-type,
+.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .hole-goal-type.bel-type,
+.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .bel-type-text {
+  flex-shrink: 0;
+  min-width: max-content;
+  width: max-content;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.harpoon-panel-hole .harpoon-hole-goal .bel-type-text {
+  white-space: pre;
+}
+
+.harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask {
+  --hole-edge-alpha-left: 1;
+  --hole-edge-alpha-right: 0;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    rgb(0 0 0 / var(--hole-edge-alpha-left)) 0%,
+    #000 var(--hole-fade),
+    #000 calc(100% - var(--hole-fade)),
+    rgb(0 0 0 / var(--hole-edge-alpha-right)) 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    rgb(0 0 0 / var(--hole-edge-alpha-left)) 0%,
+    #000 var(--hole-fade),
+    #000 calc(100% - var(--hole-fade)),
+    rgb(0 0 0 / var(--hole-edge-alpha-right)) 100%
+  );
+  transition:
+    --hole-edge-alpha-left 0.28s ease,
+    --hole-edge-alpha-right 0.28s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-track {
+    transform: translateX(var(--slide, 0px));
+    transition: transform var(--slide-ms, 2s) cubic-bezier(0.32, 0, 0.24, 1);
+  }
+  /* Left fade rises as the slide starts; right fade lifts across the ease-out. */
+  .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask {
+    --hole-edge-alpha-left: 0;
+    --hole-edge-alpha-right: 1;
+    transition:
+      --hole-edge-alpha-left calc(var(--slide-ms, 2s) * 0.42) ease 0s,
+      --hole-edge-alpha-right calc(var(--slide-ms, 2s) * 0.42) ease calc(var(--slide-ms, 2s) * 0.58);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-hole-goal-track,
+  .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-track,
+  .harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask,
+  .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask {
+    transition: none;
+  }
+  .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask {
+    --hole-edge-alpha-left: 0;
+    --hole-edge-alpha-right: 1;
+  }
+}
+
+.harpoon-panel-hole.is-unfocused .harpoon-hole-goal,
+.harpoon-panel-hole.is-pending .harpoon-hole-goal {
+  padding: 0.42rem 0.62rem;
+}
+.harpoon-panel-hole.is-unfocused .harpoon-hole-goal:not(.harpoon-hole-goal--tiered),
+.harpoon-panel-hole.is-pending .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) {
+  display: flex;
+  align-items: center;
+}
+.harpoon-panel-hole.is-pending .harpoon-hole-goal--tiered {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.harpoon-panel-hole .harpoon-hole-goal--tiered .hole-goal-type.bel-type {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.harpoon-hole-unfocused {
+  display: block;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+  color: var(--muted-high);
+}
+
+.harpoon-hole-recalc {
+  font-family: var(--sans);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+.harpoon-hole-recalc.beljar-tip-shimmer {
+  --shimmer-accent: var(--repl-holes-accent);
+}
+/* Harpoon hole cards: full-opacity recalc label; only the spinner ring animates. */
+.harpoon-hole-goal--tiered .hole-goal-status .harpoon-hole-recalc.beljar-tip-shimmer,
+.harpoon-panel-hole .harpoon-hole-recalc.beljar-tip-shimmer {
+  animation: none;
+  opacity: 1;
+  color: var(--muted-high);
+}
+.harpoon-hole-goal--tiered .hole-goal-status .harpoon-hole-recalc.beljar-tip-shimmer::before,
+.harpoon-panel-hole .harpoon-hole-recalc.beljar-tip-shimmer::before {
+  animation: inspector-spin 0.7s linear infinite;
+  animation-delay: var(--shimmer-spin-delay, 0s);
+}
+
+/* ── Inspector hole locator: ?N:line (magenta ?N, line number as anchor) ── */
+.inspector-hole-row .harpoon-hole-id {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.inspector-hole-row .harpoon-hole-num {
+  font-weight: 600;
+  color: var(--repl-holes-accent);
+}
+.inspector-hole-row .harpoon-hole-line {
+  font-weight: 600;
+  color: var(--base-high);
+}
+.inspector-hole-row .harpoon-hole-line::before {
+  content: ':';
+  color: var(--muted-high);
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.harpoon-hole-goal {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  word-break: break-word;
+  /* NOT display:flex — flex makes each type span + the whitespace text nodes
+     between them flex items and DROPS the inter-token spaces (the "[|-dualAA']"
+     mash). Inline content preserves the spacing exactly like the hover tooltip. */
+  display: block;
+}
+
+
+/* ═══ Manual Harpoon ═══ the DEFAULT surface: stand at a subgoal, pick a tactic.
+   Built from the vocabulary above — the goal hero, the strip tones, the move
+   palette, the reel's step rows — so a hand-built proof and a searched one read
+   as one instrument.
+
+   Two rules govern the whole section:
+     1. BANDS, not floating controls. Every block owns the panel's horizontal
+        rhythm (.75rem) and is separated by a hairline, never by a stray margin.
+     2. NOTHING OVERLAPS TEXT. Status lives in a column of its own, in the footer,
+        where truncation is natural — never parked on top of a Beluga term. ═══ */
+
+/* ── Skeletons ────────────────────────────────────────────────────────────────
+   A placeholder occupies the exact geometry of the thing it stands in for, so
+   real data never reflows the panel — only the fill changes. */
+.harpoon-skel {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  height: 0.52rem;
+  max-width: 100%;
+  border-radius: 3px;
+  /* A FLAT, faint base — the light is a separate narrow band travelling across
+     it (the REPL run-skeleton technique). Animating a wide gradient's position
+     instead makes the whole bar pulse, which reads as muddy at this scale. */
+  background: color-mix(in oklab, var(--muted-low) 30%, transparent);
+}
+.harpoon-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--muted-mid) 48%, transparent) 50%,
+    transparent 100%);
+  transform: translateX(-120%);
+  animation: harpoon-skel-sweep 1.35s linear infinite;
+}
+/* Stagger, so a stack of bars reads as one surface waking up rather than as
+   several things flashing in lockstep. */
+.harpoon-skel--d1::after { animation-delay: 0.14s; }
+.harpoon-skel--d2::after { animation-delay: 0.28s; }
+.harpoon-skel--goal { height: 0.72rem; }
+.harpoon-skel--verb { height: 0.56rem; }
+.harpoon-skel--text { height: 0.5rem; }
+@keyframes harpoon-skel-sweep {
+  to { transform: translateX(120%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-skel::after { animation: none; opacity: 0; }
+}
+
+.harpoon-lab-manual {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+.harpoon-lab-manual.is-frozen { opacity: 0.72; pointer-events: none; }
+
+/* ── Subgoal picker ───────────────────────────────────────────────────────────
+   Its own band on the panel rhythm. Previously the tabs sat flush against both
+   panel edges with no padding of their own. */
+.harpoon-lab-picker-band {
+  padding: 0.5rem 0.75rem 0.55rem;
+  border-bottom: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-picker-band .harpoon-lab-picker { gap: 0.34rem; }

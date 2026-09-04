@@ -11,20 +11,15 @@
     "build:grammar": "lezer-generator beluga.grammar -o js/editor-src/beluga-parser.js",
     "vendor-fonts": "node scripts/vendor-fonts.mjs",
     "lint": "eslint js/",
-    "test": "node tests/run-all.mjs",
+    "check:build": "node scripts/check-build-stale.mjs",
+    "test": "npm run check:build && node tests/run-all.mjs",
+    "test:fast": "npm run check:build && node tests/run-all.mjs --fast",
     "test:semantic": "node tests/run-all.mjs semantic",
-    "prover:probe": "node scripts/prover-probes.mjs",
-    "prover:diff": "node scripts/prover-differential.mjs",
-    "prover:arity": "node scripts/prover-arity-audit.mjs",
-    "prover:firstmove": "node scripts/prover-firstmove-audit.mjs",
-    "prover:intro": "node scripts/prover-intro-audit.mjs",
-    "ac:audit": "node scripts/autocomplete-audit.mjs",
-    "ac:weigh": "node scripts/autocomplete-weigh-sweep.mjs",
-    "corpus:plan": "node scripts/corpus-plan.mjs",
-    "corpus:run": "node scripts/corpus-harness.mjs",
-    "corpus:report": "node scripts/corpus-report.mjs",
-    "corpus": "npm run corpus:plan && npm run corpus:run && npm run corpus:report",
-    "heldout": "node scripts/corpus-plan.mjs --corpus tests/heldout-corpus && node scripts/corpus-harness.mjs --corpus tests/heldout-corpus && node scripts/corpus-report.mjs --corpus tests/heldout-corpus"
+    "probe": "npm run probe:app && npm run probe:keymap && npm run probe:harpoon && npm run probe:holes",
+    "probe:app": "node scripts/probe.mjs",
+    "probe:keymap": "node scripts/probe-keymap.mjs",
+    "probe:harpoon": "node scripts/probe-manual-harpoon.mjs",
+    "probe:holes": "node scripts/probe-harpoon-panel.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.0.0",
@@ -33,7 +28,9 @@
     "@codemirror/lint": "^6.0.0",
     "@codemirror/search": "^6.7.0",
     "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.42.1"
+    "@codemirror/view": "^6.42.1",
+    "@replit/codemirror-emacs": "^6.1.0",
+    "@replit/codemirror-vim": "^6.4.0"
   },
   "devDependencies": {
     "@fontsource/inter": "^5.2.8",

@@ -6,7 +6,6 @@
     var getEditor = deps.getEditor;
     var setEditor = deps.setEditor;
     var getPersist = deps.getPersist;
-    var setPersist = deps.setPersist;
     var mountEditorFor = deps.mountEditorFor;
     var ensurePersistForFile = deps.ensurePersistForFile;
     var syncEditorCmTheme = deps.syncEditorCmTheme;
@@ -23,7 +22,6 @@
     var rememberCfgLint = deps.rememberCfgLint;
     var cfgTabLint = deps.cfgTabLint;
     var ensureActiveCfgForDir = deps.ensureActiveCfgForDir;
-    var ensureEditorMatchesFileKind = deps.ensureEditorMatchesFileKind;
     var showToast = deps.showToast;
     var projectIsEmpty = deps.projectIsEmpty;
     var enterCanvasIdleView = deps.enterCanvasIdleView;

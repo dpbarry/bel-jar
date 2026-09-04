@@ -8,6 +8,7 @@ import {
   structuralSymbolId,
 } from './ids.mjs';
 import { semanticDeclText } from './check-gate.mjs';
+import { publishNameEnv, preludeCtorNames } from './name-env.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
@@ -25,6 +26,7 @@ const GLOBAL_DECL_PARENT = new Set([
   'CompConstructor',
   'CompDestructor',
   'RecBody',
+  'ProofDeclaration',
 ]);
 
 const TYPEISH = new Set([
@@ -212,7 +214,8 @@ function flattenAppPatternAtoms(node, out = []) {
   return out;
 }
 
-function isKnownCtorName(name, globalsByName) {
+function isKnownCtorName(name, globalsByName, preludeCtors) {
+  if (preludeCtors && preludeCtors.has(name)) return true;
   const list = globalsByName && globalsByName.get(name);
   if (!list || !list.length) return false;
   for (const sym of list) {
@@ -244,7 +247,7 @@ const LF_PATTERN_TERM = new Set([
 // Yields { ident, binderNode } for pattern-bound names inside a Pattern.
 // Constructor heads are skipped; AppPattern args, fresh vars, boxed LF vars
 // (including nested under λ/Π), and pattern ContextHeads are binders.
-function collectPatternBinders(patternNode, doc, globalsByName, out = []) {
+function collectPatternBinders(patternNode, doc, globalsByName, preludeCtors, out = []) {
   if (!patternNode) return out;
   const owner = enclosingPatternOwner(patternNode);
   if (!owner) return out;
@@ -273,7 +276,7 @@ function collectPatternBinders(patternNode, doc, globalsByName, out = []) {
       const id = firstIdentChild(node);
       if (!id) return;
       const name = slice(doc, id.from, id.to);
-      if (isAppHead && isKnownCtorName(name, globalsByName)) return;
+      if (isAppHead && isKnownCtorName(name, globalsByName, preludeCtors)) return;
       add(id, shim);
       return;
     }
@@ -342,7 +345,7 @@ function collectPatternBinders(patternNode, doc, globalsByName, out = []) {
       return;
     }
     const name = slice(doc, id.from, id.to);
-    if (isKnownCtorName(name, globalsByName)) return;
+    if (isKnownCtorName(name, globalsByName, preludeCtors)) return;
     // Bare unknown name in a pattern: uppercase → binder (meta); lowercase →
     // binder only for let / fun / ascribed sites (not bare mistyped case ctors).
     if (id.name === 'UpperIdentifier' || shouldBindLowerPatternHead(atom, owner)) {
@@ -516,7 +519,7 @@ function labelFor(namespace, nodeKind) {
     case NAMESPACE.COMP_TYPE: return nodeKind === 'CoinductiveBody' ? 'coinductive type' : 'computation type';
     case NAMESPACE.COMP_CONSTRUCTOR:
       return nodeKind === 'CompDestructor' ? 'computation destructor' : 'computation constructor';
-    case NAMESPACE.REC_FUNCTION: return 'rec. func.';
+    case NAMESPACE.REC_FUNCTION: return nodeKind === 'ProofDeclaration' ? 'proof' : 'rec. func.';
     case NAMESPACE.MODULE: return 'module';
     case NAMESPACE.PRAGMA:
       if (nodeKind === 'PrefixPragma') return 'prefix pragma';
@@ -538,7 +541,7 @@ function namespaceForGlobal(parent, ident, doc) {
   if (name === 'ModuleDeclaration') return NAMESPACE.MODULE;
   if (name === 'InductiveBody' || name === 'CoinductiveBody') return NAMESPACE.COMP_TYPE;
   if (name === 'CompConstructor' || name === 'CompDestructor') return NAMESPACE.COMP_CONSTRUCTOR;
-  if (name === 'RecBody') return NAMESPACE.REC_FUNCTION;
+  if (name === 'RecBody' || name === 'ProofDeclaration') return NAMESPACE.REC_FUNCTION;
   if (name === 'LFDeclaration') {
     const rhs = nextTypeSibling(ident);
     if (rhs && (rhs.name === 'LFKind' || /\btype\b/.test(slice(doc, rhs.from, rhs.to)))) {
@@ -553,6 +556,12 @@ function sourceSignature(parent, ident, doc) {
   const rhs = nextTypeSibling(ident);
   if (!rhs) return '';
   return slice(doc, rhs.from, rhs.to).trim();
+}
+
+function localSourceSignature(parent, ident, doc) {
+  const rhs = nextTypeSibling(ident) || (parent && nextTypeSibling(parent));
+  if (!rhs) return '';
+  return slice(doc, rhs.from, rhs.to).replace(/\s+/g, ' ').trim();
 }
 
 function extendedRange(node) {
@@ -758,6 +767,31 @@ export function resolveModuleNamed(snapshot, name, pos) {
   return best;
 }
 
+// Does any global declaration with this name exist in the snapshot, matching
+// the reference's case? Order-insensitive on purpose — parity with the defMap
+// answer tree-walk consumers rely on. Notation pragmas name operators, not
+// declarations, and never count.
+export function snapshotHasGlobalNamed(snapshot, name, isUpper) {
+  const list = snapshot && snapshot.globalsByName && snapshot.globalsByName.get(name);
+  if (!list) return false;
+  for (const symbol of list) {
+    if (symbol.namespace === NAMESPACE.PRAGMA) continue;
+    if ((symbol.definingNodeKind === 'UpperIdentifier') === isUpper) return true;
+  }
+  return false;
+}
+
+// Is a local binder with this name in scope at `pos`?
+export function snapshotHasLocalCovering(snapshot, name, pos) {
+  const list = snapshot && snapshot.localsByName && snapshot.localsByName.get(name);
+  if (!list) return false;
+  for (const symbol of list) {
+    const scope = symbol.scope;
+    if (scope && scope.from <= pos && pos <= scope.to) return true;
+  }
+  return false;
+}
+
 function sortByRange(a, b) {
   return a.range.from - b.range.from || a.range.to - b.range.to;
 }
@@ -798,7 +832,30 @@ export function createSymbolStore() {
     const symbolsById = new Map();
     for (const symbol of symbols) symbolsById.set(symbol.id, symbol);
 
+    // Per-name indexes: the substrate for O(1)-per-query name classification
+    // (undefined-app lint, bound tint, completion). Built once per snapshot.
+    const globalsByName = new Map();
+    for (const symbol of globalSymbols) {
+      const list = globalsByName.get(symbol.name);
+      if (list) list.push(symbol);
+      else globalsByName.set(symbol.name, [symbol]);
+    }
+    const localsByName = new Map();
+    for (const symbol of localSymbols) {
+      const list = localsByName.get(symbol.name);
+      if (list) list.push(symbol);
+      else localsByName.set(symbol.name, [symbol]);
+    }
+
     const declarations = globalSymbols.slice().sort(sortByRange);
+    const referencesByOwner = new Map();
+    for (const ref of references) {
+      const ownerId = ref.enclosingDeclarationId;
+      if (!ownerId) continue;
+      const list = referencesByOwner.get(ownerId);
+      if (list) list.push(ref);
+      else referencesByOwner.set(ownerId, [ref]);
+    }
     snapshot = {
       documentId,
       version: syntaxSnapshot.version,
@@ -808,10 +865,14 @@ export function createSymbolStore() {
       references,
       symbolsById,
       referencesBySymbolId,
+      referencesByOwner,
       declarations,
+      globalsByName,
+      localsByName,
       syntaxSnapshot,
     };
     incrementalIndex = buildIncrementalIndex(snapshot);
+    publishNameEnv(syntaxSnapshot.tree, snapshot);
     return snapshot;
   }
 
@@ -1593,7 +1654,9 @@ function makeSymbol({
     // after a pure position shift (incremental reuse) without holding the node.
     defNodeFrom: definingNode.from,
     defNodeTo: definingNode.to,
-    sourceText: sourceSignature(declarationNode, definingNode, doc),
+    sourceText: isGlobal
+      ? sourceSignature(declarationNode, definingNode, doc)
+      : localSourceSignature(declarationNode, definingNode, doc),
     declarationText,
     isGlobal,
     // Mutual blocks: visible from block start; otherwise from the name itself.
@@ -1614,6 +1677,7 @@ function collectReferencesAndLocals(ctx) {
       else globalsByName.set(symbol.name, [symbol]);
     }
   }
+  const preludeCtors = ctx.preludeCtors || preludeCtorNames();
 
   function pushLocal(node, ident, scopeOverride, recordDefinition = true) {
     const nameRange = extendedRange(ident);
@@ -1688,7 +1752,7 @@ function collectReferencesAndLocals(ctx) {
           || ref.name === 'CofunctionBranch') {
         for (let c = node.firstChild; c; c = c.nextSibling) {
           if (c.name !== 'Pattern' && c.name !== 'Copattern') continue;
-          const binders = collectPatternBinders(c, ctx.doc, globalsByName);
+          const binders = collectPatternBinders(c, ctx.doc, globalsByName, preludeCtors);
           for (const { ident, binderNode } of binders) {
             const key = `${ident.from}:${ident.to}`;
             if (ctx.defByNameRange.has(key)) continue;

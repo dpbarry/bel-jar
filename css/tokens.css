@@ -124,6 +124,12 @@
   --dialog-overlay-in-alpha: 0.26;
   --dialog-overlay-out-alpha: 0.34;
 
+  --strip-h: 1.625rem;
+  --strip-bg: var(--chrome-bg-panel);
+  --strip-fg: var(--ui-fg-muted);
+  --strip-border: var(--chrome-divider);
+  --strip-gap: 0.75rem;
+
   --sidebar-w: 2.625rem;
   --side-panel-w: 15.625rem;
   --side-panel-h: 11.875rem;

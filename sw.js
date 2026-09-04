@@ -1,6 +1,6 @@
 'use strict';
 
-var CACHE_NAME = 'beluga-runtime-20260815a-manual-harpoon';
+var CACHE_NAME = 'beluga-runtime-20260823172547';
 
 function isBelugaRuntime(url) {
   return /\/beluga_web\.bc(\.dt)?\.js$/.test(new URL(url).pathname);

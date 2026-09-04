@@ -10,7 +10,8 @@ import { syntaxTree } from '@codemirror/language';
 import { isCfgPath, isSignaturePath } from '../project-paths.mjs';
 import { cfgFileDiagnostics } from '../ide/cfg-lint.mjs';
 import { checkerSnapshot } from '../semantic/checker-snapshot.mjs';
-import { parseDecl } from '../harpoon/harpoon-program.mjs';
+import { parseDecl, locateMember } from '../harpoon/harpoon-program.mjs';
+import { memberSpanFromTree } from '../harpoon/scan-file-holes.mjs';
 import { listDevelopmentMembers, developmentForFile } from '../semantic/development.mjs';
 import {
   getDevelopmentChecker,
@@ -424,6 +425,8 @@ export function developmentMemberPaths(view) {
 function declSpanAt(view, pos) {
   if (!view?.state) return null;
   const tree = syntaxTree(view.state);
+  const member = memberSpanFromTree(tree, pos);
+  if (member) return member;
   let node = tree.resolveInner(pos, 1);
   while (node && node.parent && node.parent.name !== 'Program') {
     node = node.parent;
@@ -557,13 +560,11 @@ export async function certifyHoleGoalsScoped(view, hits, attemptKey) {
     if (!decl) continue;
     const declKey = decl.kw + ':' + decl.name;
     if (!byDecl.has(declKey)) {
-      const re = new RegExp('(^|\\n)\\s*(rec|proof)\\s+' + decl.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:');
-      const match = re.exec(assembledCode);
-      if (!match) continue;
-      const declStart = match.index + match[1].length;
-      const semi = assembledCode.indexOf(';', declStart);
-      const declEnd = semi === -1 ? assembledCode.length : semi + 1;
-      byDecl.set(declKey, { decl, declStart, declEnd, hits: [] });
+      const loc = locateMember(assembledCode, decl.name, fileStart);
+      if (!loc) continue;
+      const blockStart = loc.blockFrom != null ? loc.blockFrom : loc.from;
+      const blockEnd = loc.blockTo != null ? loc.blockTo : loc.to;
+      byDecl.set(declKey, { decl, declStart: blockStart, declEnd: blockEnd, hits: [] });
     }
     byDecl.get(declKey).hits.push(hit);
   }

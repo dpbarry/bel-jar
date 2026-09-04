@@ -1,0 +1,883 @@
+/* -- Editor status strip -- */
+
+/* Full width, last child of <body>: the bar reports on the session — the goal
+   at the caret, holes left, the checker, Orca — not on one pane. Its height is
+   reserved once, so nothing above it ever reflows. */
+.bj-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--strip-gap);
+  flex: 0 0 auto;
+  height: var(--strip-h);
+  padding: 0 var(--pad-inline);
+  border-bottom: none;
+  background: var(--strip-bg);
+  border-top: 1px solid var(--strip-border);
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  line-height: 1;
+  color: var(--strip-fg);
+  user-select: none;
+  /* The candidate list is absolutely positioned ABOVE the bar; clipping here
+     would swallow it. The segment row does its own clipping instead. */
+  overflow: visible;
+}
+
+/* ⛔ No edge wash. The mode is a segment you can read, in its own colour, after
+   the keymap and the position — not a stripe at the far left of the window that
+   you have to learn. */
+.bj-strip {
+  position: relative;
+}
+
+.bj-strip__spacer {
+  flex: 1 1 auto;
+  min-width: 0.5rem;
+}
+
+/* The goal line is the one segment allowed to take the slack — and the one
+   allowed to lose its tail, since its tooltip carries the full type. */
+.bj-strip__seg.is-grow {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.bj-strip__seg.is-grow .bj-strip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bj-strip__seg--holes { color: var(--repl-holes-accent); }
+.bj-strip__seg--orca { color: var(--harpoon-move-synth); }
+.bj-strip__seg--symbols { color: var(--ui-fg-faint); }
+
+.bj-strip__seg.is-hint {
+  color: var(--ui-fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.bj-strip__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.1rem 0.25rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+button.bj-strip__seg {
+  cursor: pointer;
+}
+
+/* Digits must never move their neighbours: a caret sweeping line 9 → 1000 is
+   the classic status-bar reflow, and it makes the whole app feel cheap. */
+.bj-strip__seg.is-mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.bj-strip__seg--position {
+  min-width: 4.5ch;
+  justify-content: flex-start;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.bj-strip__seg:hover {
+    background: var(--header-menu-bg-hover);
+    color: var(--ui-fg-strong);
+  }
+}
+
+.bj-strip__seg:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+/* Which keymap you are in. Stable, so no chip and no colour — it is a caption,
+   not a state. */
+.bj-strip__seg--keymap {
+  color: var(--ui-fg-muted);
+  letter-spacing: 0.02em;
+}
+
+/* A half-typed chord, in the command zone. */
+.bj-strip__seg--command {
+  font-family: var(--mono);
+  color: var(--accent-high);
+  letter-spacing: 0.02em;
+}
+
+/* Mode badge — same chip the palette uses for its mode label, one vocabulary. */
+/* The mode is a WORD in the mode's colour, not a pill. The keymap beside it is
+   plain text in the base colour, and the difference between the two facts is
+   carried by colour alone — a filled badge next to bare text made the mode look
+   like a control you could press, and the row read as two unrelated languages. */
+.bj-strip__seg--mode {
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-high);
+}
+
+/* ⛔ Four modes, four colours. `is-insert` used to resolve to the same value as
+   the base rule, so NORMAL and INSERT — the one distinction a Vim user reads at
+   a glance — were the same word in the same colour, differing only in spelling.
+   At rest it is a strong neutral; anything that changes what your keys do earns
+   a hue. */
+.bj-strip__seg--mode.is-normal { color: var(--ui-fg-strong); }
+.bj-strip__seg--mode.is-insert { color: var(--accent-high); }
+.bj-strip__seg--mode.is-visual { color: var(--repl-holes-accent); }
+.bj-strip__seg--mode.is-replace { color: var(--ide-status-warning); }
+.bj-strip__seg--mode.is-neutral { color: var(--ui-fg-muted); }
+
+.bj-strip__seg--problems.is-error { color: var(--ide-status-error); }
+.bj-strip__seg--problems.is-warning { color: var(--ide-status-warning); }
+
+.bj-strip__seg--checker.is-checked { color: var(--ide-status-clean); }
+.bj-strip__seg--checker.is-checking,
+.bj-strip__seg--checker.is-error-checking { color: var(--ide-status-checking); }
+.bj-strip__seg--checker.is-error { color: var(--ide-status-error); }
+.bj-strip__seg--checker.is-warning { color: var(--ide-status-warning); }
+
+/* Nothing but chrome showing — recede a little; never hide. */
+.bj-strip.is-resting .bj-strip__seg--position {
+  color: var(--ui-fg-faint);
+}
+
+/* ── Status parity ──────────────────────────────────────────────────────────
+   The checker segment hosts a real `.ide-status-dot`, so it inherits every
+   state, the conic checking shimmer and the rich lint tooltip from ide.css
+   rather than imitating them. Only the topbar's own spacing is undone. */
+.bj-strip .ide-status-dot {
+  margin-left: 0;
+  flex: 0 0 auto;
+}
+
+/* Exactly one status dot on screen: while the bar is up, it owns it. */
+html.bj-strip-owns-status .editor-topbar-controls .ide-status-dot {
+  display: none;
+}
+
+/* …and the strip tightens around what is left. Keeping the two-item padding
+   around a lone icon button leaves the reclaimed dot space reading as a void
+   hanging off the divider. */
+html.bj-strip-owns-status .editor-topbar-controls {
+  padding-inline: 0.45rem;
+}
+
+/* The checker reads as one control — dot and words, not two things. */
+.bj-strip__seg--checker {
+  gap: 0.4rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.bj-strip__seg--checker.is-checked { color: var(--ui-fg-muted); }
+
+@media (hover: hover) and (pointer: fine) {
+  button.bj-strip__seg--checker:hover { color: var(--ui-fg-strong); }
+}
+
+/* ── Polish ────────────────────────────────────────────────────────────────── */
+
+/* Primary facts read at full strength; the softer ones recede. One step of
+   contrast between them is enough — a bar of uniformly grey text reads dead. */
+.bj-strip__seg--position,
+.bj-strip__seg--goal,
+.bj-strip__seg--problems { color: var(--ui-fg); }
+
+.bj-strip__seg--selection { color: var(--ui-fg-muted); }
+
+.bj-strip__seg--goal .bj-strip__label { letter-spacing: -0.005em; }
+
+/* The goal is real syntax-highlighted Beluga, so it must not be tinted flat —
+   it sits in the hole identity WASH instead, which links it to the hole gutter
+   and the `?` glyph without stealing the token colours. */
+.bj-strip__seg--goal {
+  background: var(--ide-hole-bg);
+  border-radius: var(--radius-sm);
+  padding-inline: 0.4rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.bj-strip__seg--goal:hover {
+    background: color-mix(in srgb, var(--ide-hole-bg) 60%, var(--ide-hole-gutter));
+  }
+}
+
+.bj-strip__mark {
+  color: var(--ide-hole-border);
+  opacity: 0.85;
+  flex: 0 0 auto;
+}
+
+.bj-strip__seg--goal .bj-strip__label {
+  font-family: var(--mono);
+}
+
+.bj-strip__seg--holes { color: var(--repl-holes-accent); }
+
+/* Tabular digits everywhere a number can change under the cursor. */
+.bj-strip__seg--position .bj-strip__label,
+.bj-strip__seg--problems .bj-strip__label,
+.bj-strip__seg--holes .bj-strip__label,
+.bj-strip__seg--symbols .bj-strip__label { font-variant-numeric: tabular-nums; }
+
+/* ── The command line ───────────────────────────────────────────────────────
+   Inline, inside the bar: the code stays visible while you type, which is the
+   whole reason not to reuse the palette's overlay. Candidates rise ABOVE the
+   bar in their own layer so the bar's height never changes. */
+.bj-strip__segments {
+  display: flex;
+  align-items: center;
+  gap: var(--strip-gap);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ⛔ The command line does NOT take the bar over. It is one more thing happening
+   in the row, in the command zone, after the mode. Opening `:` used to wipe
+   every segment and leave a bare prompt where the strip had been. */
+.bj-strip__command {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/* Empty until something is being typed, and then it takes only the slack. */
+.bj-strip.is-line-open .bj-strip__command {
+  flex: 1 1 14rem;
+}
+
+/* The goal is the one segment that yields to a command line; the facts on the
+   left never move. */
+.bj-strip.is-line-open .bj-strip__seg--goal {
+  flex: 0 1 6rem;
+}
+
+.bj-cmdline {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.bj-cmdline[hidden] { display: none; }
+
+.bj-cmdline__field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bj-cmdline__prompt {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--accent-high);
+}
+
+.bj-cmdline__inputwrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+.bj-cmdline__input,
+.bj-cmdline__ghost {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  white-space: pre;
+}
+
+.bj-cmdline__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  outline: none;
+  color: var(--ui-fg-strong);
+  caret-color: var(--accent-mid);
+}
+
+/* A name that matches nothing, said while it is still being typed. Tinting the
+   text is enough — a red box on a one-line field would shout. */
+.bj-cmdline__input.is-unknown {
+  color: var(--ide-status-error);
+}
+
+/* Ghost text sits under the input, showing the tail the input has not typed. */
+.bj-cmdline__ghost {
+  position: absolute;
+  inset: 0;
+  color: var(--ui-fg-faint);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Anchored in JS against the bar's own rect (see status-strip-line-ui.mjs).
+   Percentage `bottom` resolves against whichever ancestor happens to be
+   positioned, which is exactly the kind of thing that quietly drifts a few
+   pixels and drops the list back inside the bar. `fixed` + a measured offset
+   cannot. */
+/* The same surface as the editor's own completion, because it answers the same
+   question — see `completionChrome()`. Tokens, metrics and scrollbar are lifted
+   from it rather than re-invented, so switching between the two does not feel
+   like switching applications.
+
+   ⛔ It shares its bottom edge with the strip's top border: no bottom border, no
+   bottom corners, no gap. Two hairlines a few pixels apart is the patchwork
+   look this replaced. */
+.bj-cmdline__list {
+  position: fixed;
+  min-width: 11rem;
+  width: max-content;
+  max-width: min(42rem, 94vw);
+  max-height: 15rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* ⛔ No padding. The first and last rows sit flush against the border — a
+     2px band above the first row reads as a gap the box forgot to close. */
+  padding: 0;
+  background: var(--search-drop-bg);
+  border: 1px solid var(--search-drop-border);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  box-shadow: var(--search-drop-shadow);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
+  z-index: 30;
+  animation: bj-cmdline-rise 140ms ease-out;
+}
+
+/* It grows, it does not slide: a translate would part the shared bottom edge
+   from the strip for the length of the animation. */
+@keyframes bj-cmdline-rise {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-cmdline__list { animation: none; }
+}
+
+/* Full-bleed rows with no radius of their own, exactly like the editor's list:
+   an inset rounded row inside a box reads as a second container.
+
+   ⛔ The name and its description sit NEXT to each other, not justified to the
+   two edges. `space-between` in a `max-content` box stretches every row to the
+   width of the longest one, so a three-word row wore a hand's width of empty
+   middle — the editor's own list puts the detail right after the label. */
+.bj-cmdline__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  padding: 0.24rem 0.6rem;
+  line-height: 1.3;
+  color: var(--menu-item-fg);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 100ms ease;
+}
+
+.bj-cmdline__item.is-active {
+  color: var(--editor-ac-row-fg);
+  background: var(--editor-ac-row-bg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bj-cmdline__item:hover {
+    background: var(--search-row-hover-bg);
+    color: var(--search-row-hover-fg);
+  }
+}
+
+/* A key hint names a key you press next; there is nothing to click and nothing
+   to complete, so it does not pretend to be a menu row. */
+.bj-cmdline__item.is-legend { cursor: default; }
+
+/* On a candidate row the second column is a hint about the first, so it is
+   quiet. On a key hint it IS the content — the left is one letter — so it
+   speaks at full strength, and the key gets the weight instead. */
+.bj-cmdline__item.is-legend .bj-cmdline__item-name {
+  font-weight: 600;
+  min-width: 1.4em;
+}
+
+.bj-cmdline__item.is-legend .bj-cmdline__item-label {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  color: var(--menu-item-fg);
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bj-cmdline__item.is-legend:hover { background: none; color: var(--menu-item-fg); }
+}
+
+/* ⛔ Not bold. The editor's completion bolds only the MATCHED substring; bolding
+   every name turns a list you scan into a wall of headings. */
+.bj-cmdline__item-name { font-weight: inherit; }
+
+.bj-cmdline__item-label {
+  font-size: 0.64rem;
+  color: var(--muted-high);
+  opacity: 0.7;
+}
+
+/* Not a row you can pick: the list saying it has nothing, in the list's place,
+   so the answer arrives where you are already looking. */
+.bj-cmdline__none {
+  padding: 0.24rem 0.6rem;
+  line-height: 1.3;
+  color: var(--muted-high);
+  opacity: 0.7;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* The echo area: transient, right-aligned, and it FADES. Something that appears
+   and vanishes without motion reads as a glitch rather than a message — and it
+   never takes the bar over, so the position and checker keep speaking. */
+.bj-strip__message {
+  /* Shrinkable and unpadded: it takes width from the spacer, never from its
+     neighbours, and ellipsises before it would push either group. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  margin-right: var(--strip-gap);
+  color: var(--ui-fg-strong);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
+  pointer-events: none;
+}
+
+.bj-strip__message:empty {
+  display: none;
+}
+
+.bj-strip__message.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-strip__message {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ── Vim's own command line ─────────────────────────────────────────────────
+   `cm.state.statusbar` points here, so the package mounts its `:` and `/`
+   inputs inside our bar. It also writes `--NORMAL--` into this node on every
+   mode change, which our own mode badge already says — so the slot only
+   becomes visible while a dialog is actually open. */
+.bj-strip__vim {
+  display: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+}
+
+/* ⛔ Vim's own ex field is mounted in the SAME command zone as ours, so it must
+   not hide the row it now lives in. It used to sit beside the segments and
+   blank them; from inside them, that rule blanked the field as well. */
+.bj-strip.is-vim-line .bj-strip__vim { display: flex; }
+.bj-strip.is-vim-line .bj-strip__command { flex: 1 1 14rem; }
+
+.bj-strip__vim input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ui-fg-strong);
+  caret-color: var(--accent-mid);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+/* The package writes `--NORMAL--`, a flex spacer, then the pending-key display
+   into this slot. The bar already has a mode badge, so only the third child —
+   the pending keys — is wanted. A `:`/`/` dialog is a <div>, so it is unaffected. */
+.bj-strip__vim > span:nth-child(1),
+.bj-strip__vim > span:nth-child(2) {
+  display: none;
+}
+
+.bj-strip__vim .cm-vim-message,
+.bj-strip__vim span {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ui-fg-muted);
+}
+
+.bj-cmdline__count {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  color: var(--ui-fg-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bj-cmdline__count.is-empty { color: var(--ide-status-error); }
+
+/* ⛔ ONE scrollport, and it is the LIST.
+   `.floating-window-body` is `display: block` with its own `overflow-y: auto`,
+   so `.bj-macros`'s `flex: 1 1 auto` was inert: the list took its full content
+   height and the BODY scrolled instead — carrying the filter strip and the
+   closing line off the top with it. Making the host a flex column hands the
+   bounded height down, so the list scrolls under a pinned filter and foot. */
+.floating-window--macros .floating-window-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bj-macros {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-size: 0.75rem;
+  color: var(--ui-fg);
+}
+
+/* Flush strip, divider below only: the search-field language twisted the same
+   way the Keybindings filter twists it. No box, no top border. */
+.bj-macros__filter {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+  padding: 0.3rem 0.65rem 0.4rem;
+  border-bottom: 1px solid var(--chrome-divider);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bj-macros__filter:hover:not(:focus-within) { background: var(--header-menu-bg-hover); }
+  .bj-macros__filter:hover .bj-macros__filter-icon { color: var(--ui-fg); }
+}
+
+.bj-macros__filter:focus-within {
+  border-bottom-color: color-mix(in srgb, var(--accent-mid) 55%, transparent);
+}
+
+.bj-macros__filter-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--ui-fg-muted);
+  transition: color 120ms ease;
+}
+
+.bj-macros__filter-icon > svg { width: 0.72rem; height: 0.72rem; }
+.bj-macros__filter:focus-within .bj-macros__filter-icon { color: var(--accent-high); }
+
+.bj-macros__filter-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.16rem 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ui-fg-strong);
+  font: inherit;
+  font-size: 0.75rem;
+  caret-color: var(--accent-mid);
+}
+
+.bj-macros__filter-input::placeholder { color: var(--ui-fg-faint); }
+.bj-macros__filter-input::-webkit-search-cancel-button { display: none; }
+
+.bj-macros__filter-count {
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  color: var(--ui-fg-faint);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.bj-macros__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* The block's closing rows used to sit flush against the window edge, under
+     the resize handle. */
+  padding-bottom: 0.5rem;
+}
+
+.bj-macros__group {
+  margin-top: 0.55rem;
+  padding: 0.6rem 0.65rem 0.25rem;
+  border-top: 1px solid var(--chrome-divider);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ui-fg-faint);
+}
+
+/* The first block needs no rule above it — the filter strip already drew one. */
+.bj-macros__list > .bj-macros__group:first-child {
+  margin-top: 0;
+  padding-top: 0.5rem;
+  border-top: none;
+}
+
+/* Label left, keys right: a menu item's shape, so the eye lands where it already
+   knows to look. No per-row rule — this is a list to read, not a table to edit,
+   and 34 hairlines read as a ladder. The block headings do the dividing. */
+.bj-macros__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.2rem 1.25rem;
+  padding: 0.24rem 0.65rem;
+}
+
+.bj-macros__what {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.bj-macros__title {
+  color: var(--ui-fg-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A quiet chip, not a warning: the chord still exists, it just belongs to the
+   editing style right now. */
+.bj-macros__tag {
+  flex: 0 0 auto;
+  padding: 0.02rem 0.28rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ui-fg-faint) 16%, transparent);
+  color: var(--ui-fg-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  cursor: help;
+}
+
+/* ⛔ Nothing here is dimmed: every chord on this list works right now. A row
+   that did not would not be on it. */
+
+.bj-macros__keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  color: var(--menu-shortcut-fg);
+}
+
+.bj-macros__chord {
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bj-macros__ex {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--accent-high);
+  white-space: nowrap;
+}
+
+/* ── taken by the browser ────────────────────────────────────────────────────
+   ⛔ The one place a dead chord appears in this window, and it is on the LEFT,
+   where every other row puts its name. The keys column means "press this" and
+   stays 100% pressable — a struck-through chord may never appear there.
+   Colour carries the pair: what is gone is a soft red, what answers is green.
+   Both are muted well below the status dot's saturation — this is a reference
+   list, not an alarm — and neither carries meaning alone: the strikethrough and
+   the arrow say the same thing without colour. */
+.bj-macros__row--reserved,
+.bj-macros__row--meta {
+  --macros-gone: color-mix(in srgb, var(--ide-status-error) 54%, var(--ui-fg-faint));
+  --macros-live: color-mix(in srgb, var(--ide-status-clean) 58%, var(--ui-fg-muted));
+}
+
+/* ⛔ No strikethrough. The red already says "gone" — striking it too is the same
+   fact twice, and a struck chord is harder to read at the exact moment you need
+   to recognise the chord you just pressed. Colour alone would be a problem if it
+   were the ONLY signal; it is not — the arrow points away from it, and the label
+   above says what the block is. */
+.bj-macros__dead {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--macros-gone);
+}
+
+/* The gloss beside it — what the chord would have done — is quieter than a
+   command title, because it names a key's meaning rather than something of
+   ours you can run. */
+.bj-macros__row--reserved .bj-macros__title {
+  color: var(--ui-fg-muted);
+  font-size: 0.7rem;
+}
+
+/* The answer. Green, and the only green in the window, so the eye finds the
+   working half of the pair without reading. */
+.bj-macros__row--reserved .bj-macros__chord {
+  color: var(--macros-live);
+}
+
+/* ⛔ These rows FLOW, they do not justify.
+   Every other row in this window is `label ……… key`, because the key is the
+   answer and the eye goes to the right edge for it. A reserved row is not that
+   shape: it is one sentence — this chord, that meaning, press this instead — and
+   pushing its tail to the right edge tore a void through the middle of it that
+   dwarfed the arrow trying to span it. So the three parts sit together with one
+   even gap between each, and the right edge is left ragged. */
+.bj-macros__row--reserved,
+.bj-macros__row--meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--macros-joint);
+}
+
+.bj-macros__row--reserved {
+  --macros-joint: 0.55rem;
+}
+
+.bj-macros__row--reserved .bj-macros__what,
+.bj-macros__row--reserved .bj-macros__keys,
+.bj-macros__row--meta .bj-macros__keys {
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  gap: var(--macros-joint);
+}
+
+/* The one thing allowed to lose its tail is the longest gloss, and only when
+   the window is genuinely too narrow for the sentence. */
+.bj-macros__row--reserved .bj-macros__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bj-macros__arrow {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--ui-fg-faint) 70%, transparent);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+/* ⛔ The mark sits beside the NAME. Against a chord it reads as part of the key —
+   `Ctrl+M*` is a chord called "Ctrl+M star" — and the one thing this column must
+   never do is misstate a key. Tight to the word it follows, so it reads as a
+   footnote marker rather than a character of the title. */
+.bj-macros__star {
+  flex: 0 0 auto;
+  margin-left: -0.2rem;
+  color: var(--macros-gone, var(--ui-fg-faint));
+  font-size: 0.72rem;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Context, not a result: one quiet line under a heading, and only at rest. */
+.bj-macros__aside {
+  margin: 0;
+  padding: 0.1rem 0.65rem 0.4rem;
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: var(--ui-fg-faint);
+  text-wrap: pretty;
+}
+
+/* ── the rows that close a block ─────────────────────────────────────────────
+   `Also taken · ⟨chips⟩` and `Reclaim them all · fullkeys`. Same grid as every
+   other row, so the block ends in the shape it is made of rather than in a
+   paragraph. */
+/* With nine chords to name — which is what Standard has, since the Emacs-only
+   substitutes are not offered there — the chips do not fit beside the label and
+   drop below it. The ROW gap must not come with them: at 0.8rem the label
+   floated away from the list it introduces. */
+.bj-macros__row--meta {
+  --macros-joint: 0.8rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  row-gap: 0.2rem;
+  padding-top: 0.34rem;
+}
+
+.bj-macros__row--meta + .bj-macros__row--meta {
+  padding-top: 0.1rem;
+}
+
+.bj-macros__meta-label {
+  font-size: 0.66rem;
+  color: var(--ui-fg-faint);
+  white-space: nowrap;
+}
+
+.bj-macros__meta-text {
+  font-size: 0.68rem;
+  color: var(--ui-fg-muted);
+}
+
+/* The chips wrap onto as many lines as they need, flowing from the label. */
+.bj-macros__row--meta .bj-macros__keys {
+  flex-wrap: wrap;
+  row-gap: 0.22rem;
+  column-gap: 0.5rem;
+}
+
+/* ⛔ Quieter than the rows above them. These chords have no answer, so they are
+   the least actionable thing in the block — at full strength five of them in a
+   row shouted over the five pairs that actually tell you what to press. */
+.bj-macros__row--meta .bj-macros__dead {
+  font-size: 0.66rem;
+  color: color-mix(in srgb, var(--macros-gone) 62%, transparent);
+}
+
+/* ⛔ `.bj-macros__foot` is gone with the row it styled — "Everything else is in
+   the command palette." was a sentence ABOUT the window occupying a row INSIDE
+   it, on every open forever. The window explains itself from the info circle in
+   its title bar now. */
+.bj-macros__empty {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.68rem;
+  color: var(--ui-fg-faint);
+}

@@ -1,0 +1,115 @@
+/* -- Global overview: outline rows -- */
+
+.inspector-outline-row {
+  gap: 0.35rem;
+}
+
+.inspector-outline-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.35rem;
+  align-items: baseline;
+}
+
+.inspector-outline-row .inspector-row-label {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--base-highest);
+}
+
+.inspector-outline-glyph {
+  flex: 0 0 auto;
+  width: 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--ns-color, var(--muted-high));
+}
+
+.inspector-outline-kind {
+  justify-self: end;
+  text-align: right;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ns-color, var(--muted-high));
+  opacity: 0.62;
+  white-space: nowrap;
+}
+
+/* Soft, lower-saturation take on the editor's bel-hl palette. */
+.inspector-outline-row[data-ns="lf-type-family"] { --ns-color: light-dark(hsl(266, 48%, 52%), hsl(264, 52%, 77%)); }
+.inspector-outline-row[data-ns="typedef"]        { --ns-color: light-dark(hsl(272, 50%, 50%), hsl(266, 58%, 79%)); }
+.inspector-outline-row[data-ns="comp-type"]      { --ns-color: light-dark(hsl(212, 58%, 47%), hsl(210, 60%, 74%)); }
+.inspector-outline-row[data-ns="rec-function"]   { --ns-color: light-dark(hsl(224, 52%, 53%), hsl(220, 62%, 80%)); }
+.inspector-outline-row[data-ns="schema"]         { --ns-color: light-dark(hsl(188, 52%, 40%), hsl(186, 52%, 71%)); }
+.inspector-outline-row[data-ns="module"]         { --ns-color: light-dark(hsl(221, 60%, 48%), var(--accent-mid)); }
+
+.inspector-outline-row.is-error .inspector-outline-glyph {
+  color: var(--ide-status-error, hsl(0, 65%, 55%));
+}
+
+/* -- Global overview: suite load-order rows -- */
+
+/* Suite name lives in the section header, beside the SUITE title. */
+.inspector-section-sub {
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-high);
+}
+
+.inspector-suite-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.16rem 0.3rem;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-suite-row:hover {
+    background: var(--accent-lower);
+  }
+}
+
+.inspector-suite-row:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+}
+
+.inspector-suite-pos {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  background: var(--accent-lowest);
+  color: var(--muted-high);
+}
+
+.inspector-suite-name {
+  min-width: 0;
+  font-size: 0.76rem;
+  color: var(--base-higher);
+}
+
+/* Active file: a gentle nudge, not a loud blue — low contrast to its peers. */
+.inspector-suite-row.is-current .inspector-suite-name {
+  color: var(--base-highest);
+  font-weight: 500;
+}
+.inspector-suite-row.is-current .inspector-suite-pos {
+  background: color-mix(in srgb, var(--accent-mid) 22%, transparent);
+  color: var(--accent-high);
+}

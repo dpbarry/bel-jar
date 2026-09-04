@@ -35,9 +35,6 @@
     var activeCfgsForDir = deps.activeCfgsForDir;
     var afterSuiteEdit = deps.afterSuiteEdit;
     var renderTabs = deps.renderTabs;
-    var renderExplorerTree = deps.renderExplorerTree;
-    var updateHeaderContext = deps.updateHeaderContext;
-    var ensureEditorMatchesFileKind = deps.ensureEditorMatchesFileKind;
     var showToast = deps.showToast;
     var ensureExplorer = deps.ensureExplorer;
     var getExplorerController = deps.getExplorerController;

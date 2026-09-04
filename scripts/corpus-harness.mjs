@@ -225,7 +225,10 @@ try {
         const oracle = (x) => { checks += 1; return cl.checkResultForProver ? cl.checkResultForProver(x) : cl.checkResult(x); };
         const t0 = Date.now();
         const timeout = new Promise((r) => setTimeout(() => r({ __timeout: true }), timeoutMs));
-        const run = ed.proveProgram(masked.code, thm, oracle, { maxSteps, collectTrace: true })
+        // requireProgress: this harness masked the body, so a COMPLETE with zero
+        // accepted moves means the mask did not take — a false positive, not a proof
+        // (master plan 52b; the 2026-07-29 ledger carried 52 such rows).
+        const run = ed.proveProgram(masked.code, thm, oracle, { maxSteps, collectTrace: true, requireProgress: true })
           .then((r) => ({ r }))
           .catch((e) => ({ __err: String(e && e.message || e) }));
         const outcome = await Promise.race([run, timeout]);

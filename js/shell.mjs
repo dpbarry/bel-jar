@@ -9,6 +9,8 @@
 import './repl/run-progress.mjs';
 import './persist/persist.mjs';
 import './persist/install-edit-history.mjs';
+import './commands/command-registry.mjs';
+import './status-strip/status-strip-view.mjs';
 import './ui/keybindings.mjs';
 import './ui/perf-hud.mjs';
 import './workspace/workspace.mjs';
@@ -17,6 +19,9 @@ import './ui/hint.mjs';
 import './ui/menu.mjs';
 import './ui/command-palette.mjs';
 import './ui/floating-window.mjs';
+import './ui/available-macros.mjs';
+import './ui/full-keyboard.mjs';
+import './ui/double-tap.mjs';
 import './ui/scroll-fade.mjs';
 import './ui/text-slide.mjs';
 import './ui/dialogs.mjs';

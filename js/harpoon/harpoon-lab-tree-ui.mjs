@@ -29,6 +29,12 @@ function createTreeUi(deps) {
       // tree. The roomy experience lives in the pop-out explorer.
       function renderDerivationSection(box, na) {
         var self = this;
+        // This section is being rebuilt, so any inline-tree redraw captured by a previous
+        // build now closes over a DETACHED host. `refreshTreeExplorer` calls it every frame
+        // a live search settles, which would redraw into nothing, keep the old subtree alive
+        // and run unguarded (this file carries no try/catch). Drop it; switching to Tree view
+        // re-registers a fresh one.
+        this._compactTreeRedraw = null;
         var section = el('div', 'harpoon-deriv');
         var header = el('div', 'harpoon-deriv-header');
         header.appendChild(el('span', 'harpoon-lab-section-label is-steps', 'Derivation'));
@@ -124,6 +130,9 @@ function createTreeUi(deps) {
           });
           global.HarpoonTree.render(treeHost, root, {
             mode: mode,
+            // The roomy explorer gives the graph a whole pane; the compact one gives it a
+            // fixed strip inside the panel, where filling would mean growing the panel.
+            fill: opts.compact === false,
             instant: !!opts.live,
             selectedId: selectedNodeId,
             initialView: userView,
@@ -225,6 +234,13 @@ function createTreeUi(deps) {
         }
         host.appendChild(wrap);
         draw();
+        // ⛔ The roomy explorer mounts into a dialog that has not been laid out yet, so its
+        // host measures 0 high and the graph fits itself to a height it does not have —
+        // which is why the diagram sat pinned to the top of an empty pane. One redraw on
+        // the next frame, before anything is painted, sizes it to the real pane. Safe to
+        // repeat: `draw` is idempotent, and the user's own pan/zoom is carried by
+        // `userView`, which nothing but a pointer sets.
+        if (opts.compact === false) requestAnimationFrame(draw);
         return { wrap: wrap, redraw: draw };
       };
 

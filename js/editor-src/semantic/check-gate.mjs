@@ -55,6 +55,50 @@ export function semanticDeclText(doc, declarationNode, tree) {
   return normalizeCosmeticWhitespace(text);
 }
 
+function rangeFingerprint(syntax, from, to) {
+  let text = syntax.doc.sliceString(from, to);
+  if (syntax.tree) {
+    const spans = [];
+    syntax.tree.iterate({
+      from,
+      to,
+      enter(node) {
+        if (node.name === 'LineComment' || node.name === 'BlockComment') {
+          spans.push({ from: node.from - from, to: node.to - from });
+        }
+      },
+    });
+    text = stripSpans(text, spans);
+  }
+  return normalizeCosmeticWhitespace(text);
+}
+
+function blockFingerprint(syntax, block) {
+  if (block.syntaxFault) return 'FAULT';
+  return rangeFingerprint(syntax, block.from, block.to);
+}
+
+// Per-lint-block semantic spine. When a ChangeSet is present, only the touched
+// block(s) are rehashed — earlier suite members are assumed unchanged (prefix
+// closed). Untouched inter-block whitespace is cosmetic by construction.
+export function blockSpineEqual(prevSyntax, syntax, changes) {
+  const prev = prevSyntax?.blocks;
+  const curr = syntax?.blocks;
+  if (!prev || !curr || prev.length !== curr.length) return false;
+  const canTouch = changes && typeof changes.touchesRange === 'function'
+    && changes.length === prevSyntax.doc.length;
+  for (let i = 0; i < curr.length; i += 1) {
+    const pb = prev[i];
+    const cb = curr[i];
+    if (canTouch && !changes.touchesRange(pb.from, pb.to)) {
+      if (!!pb.syntaxFault !== !!cb.syntaxFault) return false;
+      continue;
+    }
+    if (blockFingerprint(prevSyntax, pb) !== blockFingerprint(syntax, cb)) return false;
+  }
+  return true;
+}
+
 // Memoized by snapshot identity. settlementTrigger fingerprints BOTH prev and
 // next every update, and `prev` is just the previous update's `next` — so without
 // this cache the fingerprint of the unchanged prior doc is recomputed from
@@ -75,10 +119,13 @@ export function belugaCheckFingerprint(syntax) {
 // cosmetic — comments / insignificant whitespace only: keep checker verdict, no schedule
 // syntax-only — broken-block edits only: refresh graph, no Beluga
 // semantic — schedule settlement
-export function settlementTrigger(prevSyntax, syntax) {
+export function settlementTrigger(prevSyntax, syntax, opts = {}) {
   if (!prevSyntax?.doc || !syntax?.doc) return 'semantic';
 
-  if (belugaCheckFingerprint(prevSyntax) === belugaCheckFingerprint(syntax)) {
+  const changes = opts.changes || null;
+  if (prevSyntax.blocks && syntax.blocks) {
+    if (blockSpineEqual(prevSyntax, syntax, changes)) return 'cosmetic';
+  } else if (belugaCheckFingerprint(prevSyntax) === belugaCheckFingerprint(syntax)) {
     return 'cosmetic';
   }
   if (onlySyntaxFaultBlocksChanged(prevSyntax, syntax)) {

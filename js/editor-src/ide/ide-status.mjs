@@ -114,6 +114,15 @@ function setAttrIfChanged(el, name, value) {
 
 function applyStatusDotTooltip(dot, pres, lintItems) {
   if (!dot) return;
+  // The status strip spells the status out in words right beside its dot, so a
+  // tooltip repeating it is noise. The hosting segment keeps its own.
+  if (typeof dot.hasAttribute === 'function' && dot.hasAttribute('data-status-silent')) {
+    setAttrIfChanged(dot, 'aria-label', pres.ariaLabel || pres.tooltip || '');
+    dot.removeAttribute('data-tooltip');
+    dot.removeAttribute('data-tooltip-head');
+    dot.removeAttribute('data-tooltip-errors');
+    return;
+  }
   const T = typeof window !== 'undefined' ? window.Tooltips : null;
   const items = statusLintItems(lintItems);
   setAttrIfChanged(dot, 'aria-label', pres.ariaLabel || pres.tooltip || '');

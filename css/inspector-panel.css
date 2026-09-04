@@ -1,0 +1,141 @@
+/* -- Symbol Inspector panel (shares the sidebar slot with Explorer) -- */
+
+.inspector-panel {
+  position: relative;
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chrome-bg-panel);
+  border-right: none;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  container-name: inspector-panel;
+}
+
+.workspace.is-inspector-open .inspector-panel .panel-resize-hit {
+  cursor: ew-resize;
+}
+
+.workspace.is-inspector-open .inspector-panel {
+  flex: 0 0 var(--inspector-w);
+  width: var(--inspector-w);
+  border-right: 1px solid var(--chrome-divider);
+  overflow: visible;
+}
+
+/* -- Global overview: diagnostics — full-message boxes, nude list -- */
+.inspector-diag-list {
+  margin: 0.1rem 0 0.4rem;
+}
+
+.inspector-diag-item {
+  --diag-strip-w: var(--edge-strip-w-callout);
+  position: relative;
+  overflow: hidden;
+  display: block;
+  width: 100%;
+  margin: 0.3rem 0;
+  padding: 0.4rem 0.55rem 0.4rem calc(0.55rem + var(--diag-strip-w));
+  text-align: left;
+  border: 0;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--diag-color, var(--base-high)) 9%, transparent);
+  cursor: pointer;
+}
+/* Edge strip (callout): clipped ::before — thicker than row strips */
+.inspector-diag-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--diag-strip-w);
+  background: var(--diag-color, var(--base-high));
+  pointer-events: none;
+}
+.inspector-diag-item.is-error { --diag-color: var(--ide-status-error, hsl(0, 68%, 56%)); }
+.inspector-diag-item.is-warning { --diag-color: var(--ide-status-warning, hsl(38, 92%, 50%)); }
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-diag-item:hover {
+    background: color-mix(in srgb, var(--diag-color, var(--base-high)) 16%, transparent);
+  }
+}
+.inspector-diag-item:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: 1px;
+}
+
+.inspector-diag-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+.inspector-diag-tag {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--diag-color, var(--base-high));
+}
+.inspector-diag-loc {
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-high);
+}
+.inspector-diag-text {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--base-highest);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inspector-row-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.inspector-row.is-ref-active {
+  position: relative;
+  overflow: hidden;
+  background: light-dark(rgba(37, 99, 235, 0.1), rgba(96, 165, 250, 0.12));
+  color: light-dark(#1e40af, #bfdbfe);
+  padding-left: 0.55rem;
+}
+.inspector-row.is-ref-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  border-radius: var(--edge-strip-radius) 0 0 var(--edge-strip-radius);
+  background: var(--accent-mid);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector-row.is-ref-active:hover {
+    background: light-dark(rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.16));
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-row:hover {
+    background: var(--accent-lower);
+    color: var(--accent-high);
+  }
+}
+
+.inspector-row:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+}

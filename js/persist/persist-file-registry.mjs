@@ -59,6 +59,7 @@ export function create(deps) {
       list.push(p);
       list.sort();
       writeEmptyFolders(list);
+      notifyProjectTreeChanged('folder-add');
     }
 
     function removeEmptyFolder(path) {
@@ -67,10 +68,13 @@ export function create(deps) {
       var next = list.filter(function (x) { return x !== p; });
       if (next.length === list.length) return;
       writeEmptyFolders(next);
+      notifyProjectTreeChanged('folder-remove');
     }
 
     function clearEmptyFolders() {
+      if (!readEmptyFolders().length) return;
       writeEmptyFolders([]);
+      notifyProjectTreeChanged('folder-clear');
     }
 
     function pruneEmptyFoldersUnder(prefix) {
@@ -83,7 +87,10 @@ export function create(deps) {
       var kept = list.filter(function (x) {
         return x !== p && x.indexOf(p + '/') !== 0;
       });
-      if (kept.length !== list.length) writeEmptyFolders(kept);
+      if (kept.length !== list.length) {
+        writeEmptyFolders(kept);
+        notifyProjectTreeChanged('folder-prune');
+      }
     }
 
     function renameEmptyFolderPrefix(from, to) {
@@ -100,6 +107,7 @@ export function create(deps) {
         list = list.filter(function (x) { return x; });
         list.sort();
         writeEmptyFolders(list);
+        notifyProjectTreeChanged('folder-rename');
       }
     }
 
@@ -110,7 +118,10 @@ export function create(deps) {
       var next = list.filter(function (ef) {
         return name !== ef && name.indexOf(ef + '/') !== 0;
       });
-      if (next.length !== list.length) writeEmptyFolders(next);
+      if (next.length !== list.length) {
+        writeEmptyFolders(next);
+        notifyProjectTreeChanged('folder-prune');
+      }
     }
 
     function folderSubtreeOccupied(folderPath, files, emptyFolders) {
@@ -306,6 +317,7 @@ export function create(deps) {
       files.push({ id: id, name: fileName });
       writeProjectFiles(files);
       pruneEmptyFoldersForFile(fileName);
+      notifyProjectTreeChanged('create');
       return id;
     }
 
@@ -363,6 +375,13 @@ export function create(deps) {
       }
     }
 
+    function notifyProjectTreeChanged(kind) {
+      var g = typeof window !== 'undefined' ? window : null;
+      if (g && typeof g.dispatchEvent === 'function') {
+        g.dispatchEvent(new CustomEvent('beljar:project-tree-changed', { detail: { kind: kind } }));
+      }
+    }
+
     // Rewrite a single cfg body so the entry resolving to `oldName` follows the
     // file op: same-folder rename → rewrite the entry; folder move → leave it
     // (dangling until the user re-points); deleted (`newName` null) → removed.
@@ -405,6 +424,7 @@ export function create(deps) {
       state.meta.revision = 1;
       backendSave(stateKeyFor(id), JSON.stringify(state));
       pruneEmptyFoldersForFile(name);
+      notifyProjectTreeChanged('restore');
       return true;
     }
 
@@ -433,6 +453,7 @@ export function create(deps) {
         backendRemove(projKey('active-file'));
         writeOpenFileIds([]);
       }
+      notifyProjectTreeChanged('delete');
       // Return the id of the file to switch to (previous, next, or null).
       return files.length ? files[Math.max(0, idx - 1)].id : null;
     }
@@ -482,6 +503,7 @@ export function create(deps) {
           if (changed) writeActiveCfgByDir(map);
           pruneEmptyFoldersForFile(newName);
           if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
+          notifyProjectTreeChanged('rename');
           return;
         }
       }

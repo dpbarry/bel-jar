@@ -32,7 +32,7 @@ function freshPersist() {
   return { P: ctx.Persist, localStorage: fakeLocalStorage, sessionStorage: fakeSessionStorage };
 }
 
-const { P } = freshPersist();
+const { P, localStorage } = freshPersist();
 
 assert.equal(P.readStoredReplAutoscroll(), true);
 P.writeStoredReplAutoscroll(false);
@@ -255,8 +255,8 @@ P.writeStoredAutosolveShowStats(true);
 
 assert.equal(typeof P.readStoredHarpoonMode, 'function');
 assert.equal(P.readStoredHarpoonMode(), 'manual');
-P.writeStoredHarpoonMode('brutus');
-assert.equal(P.readStoredHarpoonMode(), 'brutus');
+P.writeStoredHarpoonMode('orca');
+assert.equal(P.readStoredHarpoonMode(), 'orca');
 P.writeStoredHarpoonMode('manual');
 assert.equal(P.readStoredHarpoonMode(), 'manual');
 
@@ -320,18 +320,95 @@ P.writeStoredHoverSticky(false);
 {
   P.writeStoredEditorRulers(true);
   P.writeStoredMotionPref('reduce');
+  P.writeStoredKeymapStyle('vim');
   const bundle = P.exportUserSettings();
   assert.equal(bundle.v, 1);
   assert.ok(bundle.prefs['beljar-editor-rulers']);
   assert.equal(bundle.prefs['beljar-motion-pref'], 'reduce');
+  assert.equal(bundle.prefs['beljar-keymap-style'], 'vim');
   P.writeStoredEditorRulers(false);
   P.writeStoredMotionPref('system');
+  P.writeStoredKeymapStyle('default');
   const result = P.importUserSettings(bundle);
   assert.equal(result.ok, true);
   assert.equal(P.readStoredEditorRulers(), true);
   assert.equal(P.readStoredMotionPref(), 'reduce');
+  assert.equal(P.readStoredKeymapStyle(), 'vim');
   P.writeStoredEditorRulers(false);
   P.writeStoredMotionPref('system');
+  P.writeStoredKeymapStyle('default');
 }
+
+assert.equal(P.readStoredKeymapStyle(), 'default');
+P.writeStoredKeymapStyle('emacs');
+assert.equal(P.readStoredKeymapStyle(), 'emacs');
+P.writeStoredKeymapStyle('vim');
+assert.equal(P.readStoredKeymapStyle(), 'vim');
+P.resetKeybindingPrefs();
+assert.equal(P.readStoredKeymapStyle(), 'default');
+
+assert.equal(P.readStoredStatusStrip(), null);
+P.writeStoredStatusStrip('standard');
+assert.equal(P.readStoredStatusStrip(), 'standard');
+P.writeStoredStatusStrip('compact');
+assert.equal(P.readStoredStatusStrip(), 'compact');
+P.writeStoredStatusStrip('detailed');
+assert.equal(P.readStoredStatusStrip(), 'detailed');
+P.writeStoredStatusStrip('off');
+assert.equal(P.readStoredStatusStrip(), 'off');
+// Unknown values clear the key rather than sticking.
+P.writeStoredStatusStrip('nope');
+assert.equal(P.readStoredStatusStrip(), null);
+// An unrecognised value is not a value: nothing has shipped, so there is no
+// legacy spelling to read forward.
+localStorage.setItem('beljar-status-strip', 'full');
+assert.equal(P.readStoredStatusStrip(), null);
+P.writeStoredStatusStrip('off');
+{
+  const bundle = P.exportUserSettings();
+  assert.equal(bundle.prefs['beljar-status-strip'], 'off');
+}
+P.resetKeybindingPrefs();
+assert.equal(P.readStoredStatusStrip(), null);
+
+P.writeStoredCommandLineHistory(['fmt', 'w']);
+P.writeStoredVimLeader(',');
+P.writeStoredVimInsertEscape('jk');
+P.writeStoredDoubleTapTrigger('shift');
+P.writeStoredDoubleTapCommand('nav.goto');
+P.writeStoredDoubleTapSpeed('fast');
+{
+  const bundle = P.exportUserSettings();
+  assert.equal(bundle.prefs['beljar-command-line-history'], JSON.stringify(['fmt', 'w']));
+  assert.equal(bundle.prefs['beljar-double-tap-trigger'], 'shift');
+}
+P.resetKeybindingPrefs();
+assert.deepEqual(P.readStoredCommandLineHistory(), []);
+assert.equal(P.readStoredDoubleTapTrigger(), 'off');
+
+assert.equal(typeof P.resetHarpoonPrefs, 'function');
+P.writeStoredHarpoonMode('orca');
+P.writeStoredHarpoonVerifyMoves(false);
+P.resetBelugaPrefs();
+assert.equal(P.readStoredHarpoonMode(), 'orca');
+P.resetHarpoonPrefs();
+assert.equal(P.readStoredHarpoonMode(), 'manual');
+assert.equal(P.readStoredHarpoonVerifyMoves(), true);
+
+P.writeStoredReplEcho(false);
+P.writeStoredReplTranscript({ html: '<div class="keep"></div>', scrollTop: 0, savedAt: 1 });
+P.resetReplPrefs();
+assert.equal(P.readStoredReplEcho(), true);
+{
+  const snap = P.readStoredReplTranscript();
+  assert.ok(snap);
+  assert.equal(snap.html, '<div class="keep"></div>');
+}
+
+P.writeStoredInspectorFollow(false);
+P.writeStoredWorkspace({ activeSidePanel: 'library' });
+P.resetWorkspacePrefs();
+assert.equal(P.readStoredInspectorFollow(), true);
+assert.equal(P.readStoredWorkspace().activeSidePanel, 'library');
 
 console.log('OK settings persist');

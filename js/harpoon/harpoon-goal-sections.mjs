@@ -157,9 +157,7 @@ function dirOf(name) {
         var blockNames = [cfgPath];
         for (var mi = 0; mi < memberPaths.length; mi++) blockNames.push(memberPaths[mi]);
 
-        var meta = suiteByFile[cfgPath] || {};
         var suiteLabel = cfgBaseLabel(cfgPath);
-        var suiteHue = meta.hue != null ? meta.hue : null;
 
         for (var bi = 0; bi < blockNames.length; bi++) {
           var path = blockNames[bi];
@@ -174,7 +172,6 @@ function dirOf(name) {
               fileBaseName: f.baseName || baseName(f.name),
               inDevelopment: !developmentPaths || developmentPaths.indexOf(f.name) !== -1,
               suiteLabel: suiteLabel,
-              suiteHue: suiteHue,
               hit: hits[hi],
             });
           }
@@ -192,7 +189,6 @@ function dirOf(name) {
             fileBaseName: file.baseName || baseName(file.name),
             inDevelopment: !developmentPaths || developmentPaths.indexOf(file.name) !== -1,
             suiteLabel: null,
-            suiteHue: null,
             hit: fileHits[oi],
           });
         }
@@ -203,7 +199,6 @@ function dirOf(name) {
       sections.push({
         id: 'dir:' + dir,
         label: dir || '/',
-        suiteHue: null,
         entries: dirEntries,
       });
     }

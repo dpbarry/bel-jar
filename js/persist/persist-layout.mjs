@@ -122,7 +122,6 @@ export function create(deps) {
     }
 
     function resetWorkspacePrefs() {
-      resetStoredWorkspace();
       backendRemove(INSPECTOR_FOLLOW_KEY);
       backendRemove(RESTORE_PANELS_KEY);
       backendRemove(LIBRARY_EXPAND_DEFAULT_KEY);

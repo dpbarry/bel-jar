@@ -1,0 +1,116 @@
+/* -- Stream turns + in-flow live prompt -- */
+
+.repl-turn {
+  padding: 0;
+  margin: 0 0 var(--repl-stream-gap);
+}
+
+.repl-turn-cmd,
+.repl-live {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.62;
+  color: var(--repl-cmd);
+  margin: 0;
+  min-width: 0;
+}
+
+.repl-turn-cmd {
+  margin-bottom: var(--repl-stream-gap);
+  /* Shrink to prompt text so timestamp tooltip hits only the command, not the row. */
+  width: fit-content;
+  max-width: 100%;
+}
+
+.repl-turn-cmd .repl-chevron,
+.repl-live .repl-chevron {
+  color: var(--repl-chevron);
+  font-family: var(--mono);
+  font-weight: 700;
+  flex-shrink: 0;
+  line-height: inherit;
+  user-select: none;
+  width: 0.75em;
+  transition: color var(--transition-fast), opacity var(--transition-fast);
+  opacity: 0.92;
+}
+
+.repl-live:focus-within .repl-chevron {
+  color: var(--accent-high);
+  opacity: 1;
+}
+
+.repl-turn-cmd .repl-cmd-body {
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--repl-cmd);
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.repl-turn-body {
+  min-width: 0;
+  padding-left: 0;
+  position: relative;
+}
+
+.repl-turn-body > .repl-block {
+  border-bottom: none;
+  padding: 0.25em 0 0;
+}
+
+.repl-turn-body > .repl-block:first-child {
+  padding-top: 0;
+}
+
+.repl-live {
+  margin-top: 0;
+  padding: 0;
+  background: none;
+  position: static;
+  z-index: auto;
+}
+
+.repl-live-input,
+#command-input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  font: inherit;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  color: var(--repl-cmd);
+  caret-color: var(--repl-chevron);
+}
+
+.repl-live-input::placeholder,
+#command-input::placeholder {
+  color: transparent;
+}
+
+.repl-live-input:disabled,
+#command-input:disabled {
+  opacity: 0.45;
+  color: var(--repl-muted);
+}
+
+.repl-send {
+  display: none !important;
+}

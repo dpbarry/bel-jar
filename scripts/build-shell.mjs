@@ -23,12 +23,19 @@ const SHELL_ENTRIES = [
   'harpoon/harpoon-ui.mjs',
   'app/app.mjs',
   // Focused UI/repl leaves still loaded by unit tests:
+  'commands/command-registry.mjs',
+  'ui/double-tap.mjs',
+  'status-strip/status-strip-view.mjs',
   'ui/keybindings.mjs',
   'ui/command-palette.mjs',
   'ui/scroll-fade.mjs',
   'ui/toasts.mjs',
   'ui/name-conflicts.mjs',
   'repl/repl-output.mjs',
+  // index.html head / inline boot (classic IIFE, not shell graph):
+  'boot/early-boot.mjs',
+  'boot/panel-restore.mjs',
+  'boot/error-hook.mjs',
   // Product boot (index.html):
   'shell.mjs',
 ];

@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { readHoverScope, showSymbolTooltips, diagnosticMatchesPos } from '../js/editor-src/ide/hover.mjs';
+import { readHoverScope, showSymbolTooltips, showBuiltinTooltips, diagnosticMatchesPos } from '../js/editor-src/ide/hover.mjs';
 
 function scope(v) {
   return { Persist: { readStoredHoverScope: () => v } };
@@ -12,6 +12,9 @@ assert.equal(readHoverScope({}), 'all');
 assert.equal(showSymbolTooltips(scope('all')), true);
 assert.equal(showSymbolTooltips(scope('user-only')), true);
 assert.equal(showSymbolTooltips(scope('none')), false);
+assert.equal(showBuiltinTooltips(scope('all')), true);
+assert.equal(showBuiltinTooltips(scope('user-only')), false);
+assert.equal(showBuiltinTooltips(scope('none')), false);
 
 // Single-char diagnostics: match from either boundary that covers the char.
 assert.equal(diagnosticMatchesPos(10, 1, 10, 11), true);

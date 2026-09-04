@@ -9,27 +9,109 @@
 // TRANSFORM the rec into a proof form to drive the engine, then TRANSFORM the
 // translated Comp.exp back into the rec body on commit. We never paste Beluga
 // prose — translate output is re-checked before it lands.
+//
+// Mutual `rec f … and g … ;` is one RecDeclaration. Interactive sessions target
+// the MEMBER the hole sits in: siblings stay in the program (they are the
+// mutual IH pool) and commit rewrites only that member's header+body.
 
-import { indentRange } from '@codemirror/language';
 import { formatProofBody } from '../format/proof-format.mjs';
 import { dispatchEdit } from '../edit-history.mjs';
 import { proveOrchestrationCode } from '../prover/prover-orchestrator.mjs';
 import { DECL_IDENT } from '../prover/ident.mjs';
+import { memberSpanFromTree } from './scan-file-holes.mjs';
+import { parser } from '../beluga-parser.js';
 
-const DECL_HEAD = new RegExp(String.raw`^\s*(rec|proof)\b\s+(${DECL_IDENT})\s*:`, 'u');
-const DECL_HEAD_G = new RegExp(String.raw`\b(?:rec|proof)\s+(${DECL_IDENT})\s*:[\s\S]*?;`, 'gu');
+const DECL_HEAD = new RegExp(
+  String.raw`^\s*((?:and\s+(?:rec\s+)?)|(?:rec|proof)\s+)(${DECL_IDENT})\s*:`,
+  'u',
+);
 
-// Parse `<kw> name : <type> = <body>` from a top-level declaration's text.
-// Returns { kw:'rec'|'proof', name, type, bodyStart } (bodyStart = offset of the
-// body within declText, after the top-level `=`), or null when it doesn't match.
+function memberHeadRe(name) {
+  const esc = String(name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    String.raw`(^|[\n\r])[ \t]*((?:and\s+(?:rec\s+)?)|(?:rec|proof)\s+)${esc}\s*:`,
+    'gu',
+  );
+}
+
+function normalizeLeader(raw) {
+  return String(raw || '').replace(/\s+/g, ' ').trim();
+}
+
+function skipComment(s, i) {
+  if (s[i] !== '%') return i;
+  if (s[i + 1] === '{') {
+    let depth = 1;
+    let j = i + 2;
+    while (j < s.length && depth > 0) {
+      if (s[j] === '%' && s[j + 1] === '{') { depth += 1; j += 2; continue; }
+      if (s[j] === '}' && s[j + 1] === '%') { depth -= 1; j += 2; continue; }
+      j += 1;
+    }
+    return j;
+  }
+  let j = i + 1;
+  while (j < s.length && s[j] !== '\n') j += 1;
+  return j;
+}
+
+function isTypeEq(s, i) {
+  const next = s[i + 1];
+  const prev = s[i - 1];
+  return !(next === '>' || next === '=' || prev === '<' || prev === '>' || prev === '=' || prev === '/');
+}
+
+function trimEnd(s, from, i) {
+  let end = i;
+  while (end > from && /\s/.test(s[end - 1])) end -= 1;
+  return end;
+}
+
+function memberBodyEnd(s, from) {
+  let depth = 0;
+  let seenEq = false;
+  let i = from;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '%') { i = skipComment(s, i); continue; }
+    if (c === '(' || c === '[' || c === '{') { depth += 1; i += 1; continue; }
+    if (c === ')' || c === ']' || c === '}') { depth = Math.max(0, depth - 1); i += 1; continue; }
+    if (depth === 0 && c === '=' && !seenEq && isTypeEq(s, i)) { seenEq = true; i += 1; continue; }
+    if (depth === 0 && seenEq && c === ';') return trimEnd(s, from, i);
+    if (depth === 0 && seenEq && /\s/.test(s[i - 1] || ' ') && /^and\s/.test(s.slice(i, i + 4))) {
+      return trimEnd(s, from, i);
+    }
+    i += 1;
+  }
+  return s.length;
+}
+
+function blockRangeForMember(code, memberFrom) {
+  const s = String(code ?? '');
+  try {
+    const span = memberSpanFromTree(parser.parse(s), memberFrom);
+    if (span && span.blockFrom != null) {
+      return { from: span.blockFrom, to: span.blockTo };
+    }
+  } catch (_) { /* fall through */ }
+  let i = memberFrom;
+  while (i < s.length) {
+    if (s[i] === '%') { i = skipComment(s, i); continue; }
+    if (s[i] === ';') return { from: memberFrom, to: i + 1 };
+    i += 1;
+  }
+  return { from: memberFrom, to: s.length };
+}
+
+// Parse a rec/proof member — standalone, or one arm of `rec … and …`.
+// Returns { kw:'rec'|'proof', leader, name, type, bodyStart, eqOffset }.
 export function parseDecl(declText) {
   const s = String(declText == null ? '' : declText);
   const m = DECL_HEAD.exec(s);
   if (!m) return null;
-  const kw = m[1];
+  const leader = normalizeLeader(m[1]);
   const name = m[2];
-  // Find the FIRST top-level `=` after the `:` (the type/body separator),
-  // skipping any `=` nested in brackets and the `=>`/`>=`/`<=` operators.
+  const kw = /\bproof$/.test(leader) ? 'proof' : 'rec';
   let depth = 0;
   let i = m[0].length;
   let eq = -1;
@@ -37,59 +119,86 @@ export function parseDecl(declText) {
     const c = s[i];
     if (c === '(' || c === '[' || c === '{') depth += 1;
     else if (c === ')' || c === ']' || c === '}') depth = Math.max(0, depth - 1);
-    else if (c === '=' && depth === 0) {
-      const next = s[i + 1];
-      const prev = s[i - 1];
-      if (next === '>' || next === '=' || prev === '<' || prev === '>' || prev === '=' || prev === '/') continue;
-      eq = i;
-      break;
-    }
+    else if (c === '=' && depth === 0 && isTypeEq(s, i)) { eq = i; break; }
   }
   if (eq === -1) return null;
   const type = s.slice(m[0].length, eq).trim();
   let bodyStart = eq + 1;
   while (bodyStart < s.length && /\s/.test(s[bodyStart])) bodyStart += 1;
-  return { kw, name, type, bodyStart, eqOffset: eq };
+  return { kw, leader, name, type, bodyStart, eqOffset: eq };
 }
 
-// Build the Harpoon `proof`-form program for the Lab from the assembled checker
-// code: replace the enclosing declaration's body with a single `?` and force the
-// keyword to `proof`. Returns { code, line, col } where (line,col) is the `?`
-// position in the new program (1-based), or null when the decl can't be parsed.
+export function locateMember(code, name, fromHint = 0) {
+  const s = String(code ?? '');
+  if (!name) return null;
+  const re = memberHeadRe(name);
+  const hint = Math.max(0, fromHint | 0);
+  re.lastIndex = hint;
+  let m = re.exec(s);
+  if (!m && hint) {
+    re.lastIndex = 0;
+    m = re.exec(s);
+  }
+  if (!m) return null;
+  const from = m.index + m[1].length;
+  const to = memberBodyEnd(s, from);
+  const leader = normalizeLeader(m[2]);
+  const block = blockRangeForMember(s, from);
+  return { from, to, leader, blockFrom: block.from, blockTo: block.to };
+}
+
+export function listCompMembers(docText) {
+  const s = String(docText ?? '');
+  const re = new RegExp(
+    String.raw`(^|[\n\r])[ \t]*((?:and\s+(?:rec\s+)?)|(?:rec|proof)\s+)(${DECL_IDENT})\s*:`,
+    'gu',
+  );
+  const heads = [];
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    heads.push({ from: m.index + m[1].length, name: m[3] });
+  }
+  const out = [];
+  for (let i = 0; i < heads.length; i += 1) {
+    const from = heads[i].from;
+    const to = memberBodyEnd(s, from);
+    out.push({ name: heads[i].name, from, to, text: s.slice(from, to) });
+  }
+  return out;
+}
+
 export function buildProofProgram(assembledCode, declFrom, declTo) {
   const code = String(assembledCode == null ? '' : assembledCode);
   const declText = code.slice(declFrom, declTo);
   const decl = parseDecl(declText);
   if (!decl) return null;
-  // proof name : type =\n?\n;  — the replaced range [declFrom,declTo) includes
-  // the original terminating `;`, so we must re-add one or the parser sees the
-  // proof body run to EOF ("Expected the token `;'").
-  const header = `proof ${decl.name} : ${decl.type} =`;
-  const newDecl = `${header}\n?\n;`;
+  const hadSemi = /;\s*$/.test(declText);
+  // `proof` cannot sit inside a mutual block (`and` continues a `rec`).
+  const keepRec = (decl.leader && decl.leader.startsWith('and')) || !hadSemi;
+  const header = keepRec
+    ? `${decl.leader} ${decl.name} : ${decl.type} =`
+    : `proof ${decl.name} : ${decl.type} =`;
+  const newDecl = hadSemi ? `${header}\n?\n;` : `${header}\n?`;
   const newCode = code.slice(0, declFrom) + newDecl + code.slice(declTo);
-  // The `?` sits at the start of the line after the header.
   const before = code.slice(0, declFrom) + header + '\n';
-  const line = before.split('\n').length; // 1-based line of the `?`
+  const line = before.split('\n').length;
   return { code: newCode, line, col: 1, decl };
 }
 
-// Splice the engine's translated source into the editor as the declaration's
-// body. For a `rec`, the body is replaced with the translated Comp.exp; for a
-// `proof`, the whole decl is left as a `rec` with the synthesized body (the user
-// gets an ordinary function, the idiomatic result of an interactive proof).
-// `view` is the CM EditorView; declFrom/declTo are DOC offsets of the decl.
+export function committedMemberText(decl, body, hadSemi) {
+  const leader = decl.leader && String(decl.leader).startsWith('and') ? decl.leader : 'rec';
+  const canonType = expandTypeGlyphs(decl.type);
+  const formatted = formatProofBody(String(body == null ? '' : body).replace(/;\s*$/, '').trimEnd());
+  return `${leader} ${decl.name} : ${canonType} =\n${formatted}${hadSemi ? '\n;' : ''}`;
+}
+
 export function commitProof(view, declFrom, declTo, source) {
   const range = declRangeWithSemicolon(view.state.doc, declFrom, declTo);
   const docText = view.state.doc.sliceString(range.from, range.to);
   const decl = parseDecl(docText);
   if (!decl) return false;
-  const raw = String(source == null ? '' : source).replace(/;\s*$/, '').trimEnd();
-  // Canonically-glyph + re-layout the proof body so what lands in the file is
-  // idiomatic Beluga, not the search's concatenated sprawl. Type-correctness is
-  // preserved (verified): this is a layout + `|-`→`⊢`, `->`→`→`, `=>`→`⇒` change.
-  const canonType = expandTypeGlyphs(decl.type);
-  const body = formatProofBody(raw);
-  const newDecl = `rec ${decl.name} : ${canonType} =\n${body}\n;`;
+  const hadSemi = /;\s*$/.test(docText);
+  const newDecl = committedMemberText(decl, source, hadSemi);
   const fileId = (typeof globalThis !== 'undefined' ? globalThis : window).CurrentEditor?.getCurrentFileId?.() ?? null;
   dispatchEdit(view, {
     changes: { from: range.from, to: range.to, insert: newDecl },
@@ -99,18 +208,12 @@ export function commitProof(view, declFrom, declTo, source) {
   return true;
 }
 
-// Canonicalize the glyphs of a TYPE signature (`[ |- …] -> …` → `[ ⊢ …] → …`)
-// without disturbing its own layout. Turnstile + arrow only; a type carries no
-// `=>` case arms.
 function expandTypeGlyphs(typeText) {
   return String(typeText == null ? '' : typeText)
     .split('|-').join('⊢')
     .replace(/->/g, '→');
 }
 
-// Extend a declaration range to swallow the trailing `;` if the node range
-// stopped just before it (the grammar's decl node may exclude the terminator),
-// so a re-emitted `rec … ;` doesn't leave a dangling `;`.
 export function declRangeWithSemicolon(doc, from, to) {
   let end = to;
   const n = doc.length;
@@ -125,13 +228,11 @@ export function declRangeWithSemicolon(doc, from, to) {
 }
 
 export function countSiblingHoledDecls(docText, declName) {
-  const re = new RegExp(DECL_HEAD_G.source, 'gu');
-  let count = 0;
-  let m;
   const target = String(declName || '');
-  while ((m = re.exec(String(docText ?? ''))) !== null) {
-    if (m[1] === target) continue;
-    if (/\?/.test(m[0])) count += 1;
+  let count = 0;
+  for (const mem of listCompMembers(docText)) {
+    if (mem.name === target) continue;
+    if (/\?/.test(mem.text)) count += 1;
   }
   return count;
 }
@@ -145,8 +246,11 @@ export function buildCommitCheckCodes(assembled, prep, newDecl) {
   const from = prep.assembledDeclFrom;
   const to = prep.assembledDeclTo;
   const patched = asm.slice(0, from) + newDecl + asm.slice(to);
-  const declEnd = from + String(newDecl).length;
+  const delta = String(newDecl).length - (to - from);
+  const blockFrom = prep.assembledBlockFrom != null ? prep.assembledBlockFrom : from;
+  const origBlockTo = prep.assembledBlockTo != null ? prep.assembledBlockTo : to;
+  const blockTo = origBlockTo + delta;
   const fileStart = prep.fileStart == null ? 0 : prep.fileStart;
-  const orchestration = proveOrchestrationCode(patched, prep.name, from, declEnd, fileStart);
+  const orchestration = proveOrchestrationCode(patched, prep.name, blockFrom, blockTo, fileStart);
   return { patched, orchestration };
 }

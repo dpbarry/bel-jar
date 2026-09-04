@@ -113,4 +113,22 @@ expect(KB.resolve('edit.find') == null, 'clear to unbound');
 KB.resetAll();
 expect(KB.resolve('edit.find') === 'Mod+F', 'resetAll restores');
 
+// The settings sheet emits a section header each time `section` changes while
+// walking list(); a section missing from SECTION_ORDER would sort in by title
+// and produce repeated headers.
+{
+  const rows = KB.list(false);
+  const started = new Set();
+  let last = null;
+  for (const row of rows) {
+    if (row.section === last) continue;
+    expect(!started.has(row.section), `sheet section ${row.section} is contiguous`);
+    started.add(row.section);
+    last = row.section;
+  }
+  expect(rows.length === new Set(rows.map((r) => r.id)).size, 'sheet has no duplicate rows');
+  expect(rows.length > 16, 'sheet lists the widened bindable set');
+  expect(rows.some((r) => r.isEmpty), 'sheet renders unbound commands');
+}
+
 console.log('OK keybindings');

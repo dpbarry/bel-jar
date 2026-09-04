@@ -4,7 +4,7 @@
  *
  * This is the DEFAULT way the lab opens: you stand at a hole, the engine offers
  * its ranked moves, you pick one, the checker certifies it, and the proof grows
- * a step. Auto-solve is not gone — it is one tactic here, "Brutus", one click
+ * a step. Auto-solve is not gone — it is one tactic here, "Orca", one click
  * away and runnable at ANY hole, so a proof can be half hand-built and half
  * searched without leaving the session.
  *
@@ -21,6 +21,7 @@ function createManual(deps) {
   var toast = deps.toast;
   var renderSource = deps.renderSource;
   var appendAutoGoalHero = deps.appendAutoGoalHero;
+  var appendDeclLabel = deps.appendDeclLabel;
   var priorGoalBinders = deps.priorGoalBinders;
   var buildPlaceStrip = deps.buildPlaceStrip;
   var renderCommitOutcome = deps.renderCommitOutcome;
@@ -34,7 +35,7 @@ function createManual(deps) {
   var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
   var ICON_UNDO = deps.ICON_UNDO;
   var ICON_REDO = deps.ICON_REDO;
-  var ICON_BRUTUS = deps.ICON_BRUTUS;
+  var ICON_ORCA = deps.ICON_ORCA;
   var ICON_CHEVRON_DOWN = deps.ICON_CHEVRON_DOWN;
   var ICON_DECLINE = deps.ICON_DECLINE;
   var ICON_CHECK = deps.ICON_CHECK;
@@ -45,7 +46,7 @@ function createManual(deps) {
 
   // ── Harpoon's own tactic vocabulary ────────────────────────────────────────
   // The NAMES come from the shared `tacticVerb` map (harpoon-lab.mjs) so the
-  // picker, the manual trail and Brutus's reel all speak one language. Only the
+  // picker, the manual trail and Orca's reel all speak one language. Only the
   // per-tactic explanations live here.
   var TACTIC_TIP = {
     intro: 'Introduce the goal’s binders',
@@ -72,6 +73,13 @@ function createManual(deps) {
       arg = (meta && meta.callee) || (meta && meta.uses && meta.uses[0]) || null;
     } else if (mv.kind === 'fill') arg = meta && meta.filler;
     return { verb: base.verb, arg: arg, tip: base.tip, meta: meta };
+  }
+
+  // Same shared glyph map the rows use, so a goal never shows as `|-` in a
+  // tooltip while the row beside it shows the prettified form.
+  function displayGoal(s) {
+    var g = globalThis.HarpoonGlyphs;
+    return g ? g.displayBeluga(s) : String(s == null ? '' : s);
   }
 
   function moveHeadText(text) {
@@ -189,7 +197,7 @@ function createManual(deps) {
       main.setAttribute('aria-disabled', state === 'rejected' ? 'true' : 'false');
     }
     var tip = PIP_TIP[state] || '';
-    if (state === 'rejected' && detail) tip += ' — ' + String(detail).slice(0, 180);
+    if (state === 'rejected' && detail) tip += ': ' + String(detail).slice(0, 180);
     setTip(row._pip, tip);
     row._pip.setAttribute('aria-hidden', tip ? 'false' : 'true');
     if (tip) row._pip.setAttribute('aria-label', tip);
@@ -210,11 +218,18 @@ function createManual(deps) {
     return n;
   }
 
-  function skelGoalHero(declName) {
+  // `prep.declKey` is `kw + ':' + name`, so the keyword the author actually wrote is already
+  // known here. Never default it: guessing `rec` would silently mislabel every `proof`.
+  function declKwOf(prep) {
+    var key = (prep && prep.declKey) || '';
+    var i = key.indexOf(':');
+    return i > 0 ? key.slice(0, i) : '';
+  }
+  function skelGoalHero(declName, declKw) {
     var wrap = el('div', 'harpoon-lab-auto-goal harpoon-lab-strip tone-goal');
     var glabel = el('div', 'harpoon-lab-goal-label');
     glabel.appendChild(el('span', 'harpoon-lab-goal-label-text harpoon-lab-section-label is-goal', 'Goal'));
-    if (declName) glabel.appendChild(el('span', 'harpoon-lab-auto-goal-name', declName));
+    appendDeclLabel(glabel, declName, declKw);
     wrap.appendChild(glabel);
     var body = el('div', 'harpoon-lab-auto-goal-body');
     body.appendChild(skel('harpoon-skel--goal', '72%'));
@@ -261,7 +276,7 @@ function createManual(deps) {
     return row;
   }
 
-  // ── Brutus ─────────────────────────────────────────────────────────────────
+  // ── Orca ─────────────────────────────────────────────────────────────────
   // The one control that hands the work away. Proportioned like the surface's
   // banners (fixed badge, copy column) rather than a centred label, so it sits
   // in the same rhythm as everything else. The sheen is deliberately restrained:
@@ -279,11 +294,15 @@ function createManual(deps) {
   // edge no matter where the pointer went. It now travels far enough that a
   // cursor at the right-hand end brings the light to about mid-face — still a
   // fraction of the distance, just no longer anchored.
-  var GLOW_PULL_X = 0.55;     // how far toward the cursor, horizontally
-  var GLOW_PULL_Y = 0.45;
+  // Eased down from 0.55/0.45 along with a longer CSS transition. At the old values the
+  // light arrived close enough behind the cursor to read as attached to it; the haze wants
+  // to look pulled, not carried. Still far enough that a cursor at the right-hand end
+  // brings it to about mid-face, which is what the pull was raised for.
+  var GLOW_PULL_X = 0.46;     // how far toward the cursor, horizontally
+  var GLOW_PULL_Y = 0.36;
   var GLOW_CLAMP_X = 0.3;     // ≤ the box's 40% horizontal overhang
   var GLOW_CLAMP_Y = 0.35;    // ≤ the box's 80% vertical overhang
-  function bindBrutusGlow(btn) {
+  function bindOrcaGlow(btn) {
     var reduce = globalThis.matchMedia
       && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) return;
@@ -321,29 +340,29 @@ function createManual(deps) {
     });
   }
 
-  // ── Brutus, RUNNING ────────────────────────────────────────────────────────
+  // ── Orca, RUNNING ────────────────────────────────────────────────────────
   // The same silhouette as the button it replaces — badge, copy column, actions —
   // so starting the search morphs this band rather than swapping in a new screen.
   // It keeps the reel's element handles on the session (`_autoSearchText` and
   // friends) so the existing live-status machinery drives it unchanged.
-  function buildBrutusRunning(session, na) {
-    var band = el('div', 'harpoon-lab-brutus-band is-running'
+  function buildOrcaRunning(session, na) {
+    var band = el('div', 'harpoon-lab-orca-band is-running'
       + (na.paused ? ' is-paused' : ''));
-    var shell = el('div', 'harpoon-lab-brutus harpoon-lab-brutus--live');
+    var shell = el('div', 'harpoon-lab-orca harpoon-lab-orca--live');
 
-    // The gladius STAYS and does the work — it is not swapped for a spinner.
+    // The FIN STAYS and does the work — it is not swapped for a spinner.
     // While searching it drives: a weighted thrust and slow recovery (see CSS).
-    var badge = el('span', 'harpoon-lab-brutus-badge' + (na.paused ? '' : ' is-working'));
-    badge.innerHTML = ICON_BRUTUS;
+    var badge = el('span', 'harpoon-lab-orca-badge' + (na.paused ? '' : ' is-working'));
+    badge.innerHTML = ICON_ORCA;
     shell.appendChild(badge);
     session._autoSearchSpinner = badge;
     // The checks·time readout hangs off the glyph alone — a small, fixed target
     // you can aim at, rather than most of the band.
     session._statTipEl = badge;
 
-    var copy = el('span', 'harpoon-lab-brutus-copy');
-    copy.appendChild(el('span', 'harpoon-lab-brutus-title', na.paused ? 'Brutus paused' : 'Brutus'));
-    var sub = el('span', 'harpoon-lab-brutus-sub'
+    var copy = el('span', 'harpoon-lab-orca-copy');
+    copy.appendChild(el('span', 'harpoon-lab-orca-title', na.paused ? 'Orca paused' : 'Orca'));
+    var sub = el('span', 'harpoon-lab-orca-sub'
       + (na.paused ? '' : ' beljar-tip-shimmer'));
     sub.textContent = na.paused
       ? 'Take a step by hand, or resume'
@@ -353,13 +372,13 @@ function createManual(deps) {
     shell.appendChild(copy);
     session._autoSearchText = sub;
 
-    var actions = el('div', 'harpoon-lab-brutus-actions');
+    var actions = el('div', 'harpoon-lab-orca-actions');
     var pauseBtn = iconBtn(
       'icon-btn harpoon-lab-auto-pause',
       na.paused ? ICON_PLAY : ICON_PAUSE,
-      na.paused ? 'Resume the search' : 'Pause — and get the tactics back',
+      na.paused ? 'Resume the search' : 'Pause and get the tactics back',
       na.paused ? 'Resume' : 'Pause',
-      function () { session.toggleBrutusPause(); },
+      function () { session.toggleOrcaPause(); },
     );
     pauseBtn._belPauseState = !!na.paused;
     session._autoPauseBtn = pauseBtn;
@@ -378,33 +397,33 @@ function createManual(deps) {
     return band;
   }
 
-  function buildBrutus(session, state, disabled) {
-    var band = el('div', 'harpoon-lab-brutus-band');
-    var btn = el('button', 'harpoon-lab-brutus');
+  function buildOrca(session, state, disabled) {
+    var band = el('div', 'harpoon-lab-orca-band');
+    var btn = el('button', 'harpoon-lab-orca');
     btn.type = 'button';
     if (disabled) btn.disabled = true;
-    var badge = el('span', 'harpoon-lab-brutus-badge');
-    badge.innerHTML = ICON_BRUTUS;
+    var badge = el('span', 'harpoon-lab-orca-badge');
+    badge.innerHTML = ICON_ORCA;
     btn.appendChild(badge);
-    var copy = el('span', 'harpoon-lab-brutus-copy');
-    // Always just "Brutus" — "again" is a word the user has to manage for no
+    var copy = el('span', 'harpoon-lab-orca-copy');
+    // Always just "Orca" — "again" is a word the user has to manage for no
     // gain; the sub-line already says what it will do from here.
-    copy.appendChild(el('span', 'harpoon-lab-brutus-title', 'Brutus'));
-    copy.appendChild(el('span', 'harpoon-lab-brutus-sub',
+    copy.appendChild(el('span', 'harpoon-lab-orca-title', 'Orca'));
+    copy.appendChild(el('span', 'harpoon-lab-orca-sub',
       (state && state.steps.length) ? 'Search for the rest of the proof' : 'Search for the whole proof'));
     btn.appendChild(copy);
     // No tooltip: the card already states its name and what it does. A hover
     // bubble repeating that is noise on the one control that needs none.
     if (!disabled) {
-      btn.addEventListener('click', function (e) { e.preventDefault(); session.runBrutus(); });
-      bindBrutusGlow(btn);
+      btn.addEventListener('click', function (e) { e.preventDefault(); session.runOrca(); });
+      bindOrcaGlow(btn);
     }
     band.appendChild(btn);
     return band;
   }
 
   // ── The manual session, projected into the shape the shared derivation
-  //    surfaces expect. Without this, coming back from a solved Brutus run
+  //    surfaces expect. Without this, coming back from a solved Orca run
   //    landed on a proof that HAD a solution and a full derivation but showed
   //    neither — only "Place the proof" — because those panels were wired to
   //    `nativeAuto` rather than to the proof. ────────────────────────────────
@@ -421,6 +440,7 @@ function createManual(deps) {
       sourceGoalType: m.sourceGoalType,
       priorBinders: m.priorBinders,
       declName: m.declName,
+      declKw: m.declKw || '',
       theoremSnapshot: m.theoremSnapshot || null,
       manual: true,
     };
@@ -431,7 +451,7 @@ function createManual(deps) {
   /** Open (or reopen) the manual session over `code`, checking it once to learn
       the hole set. `code` defaults to the prep's orchestration program.
       `seed` carries a trail forward (steps + the undo stack) when we are
-      resuming after a Brutus run, so the proof reads as one continuous
+      resuming after a Orca run, so the proof reads as one continuous
       derivation rather than restarting. */
   function startManual(code, seed) {
     var ed = E();
@@ -456,6 +476,7 @@ function createManual(deps) {
       phase: 'loading',
       state: null,
       declName: thm.name || prep.name || '',
+      declKw: declKwOf(prep),
       sourceGoalType: sourceGoalType,
       priorBinders: [],
       busy: false,
@@ -477,7 +498,7 @@ function createManual(deps) {
       if (!self.manual) return false;
       if (!res || !res.ok) {
         self.manual.phase = 'error';
-        self.manual.error = 'The file has errors — fix them before proving.';
+        self.manual.error = 'The file has errors. Fix them before proving.';
         self.render();
         return false;
       }
@@ -508,13 +529,60 @@ function createManual(deps) {
     return (hole && hole.goal) || this.manual.sourceGoalType || '';
   }
 
+  // How long a single check may take before we call it lost. Generous: a real
+  // check on a large suite can take seconds. The point is not to be strict, it is
+  // that a check which NEVER settles must not leave the panel shimmering forever.
+  var CHECK_TIMEOUT_MS = 45000;
+
   function manualOracle() {
     var client = globalThis.BelugaClient;
     return function (code) {
-      return client.checkResultForProver
+      var p = client.checkResultForProver
         ? client.checkResultForProver(code)
         : client.checkResult(code);
+      // ⛔ A HUNG check used to hang the panel. `manualApply` clears its busy flag
+      // in both `.then` and `.catch`, so a REJECTION recovers cleanly — but a
+      // promise that simply never settles fires neither, and the applying track
+      // and skeleton animate indefinitely with nothing to say. If the worker dies,
+      // the request is dropped, or Beluga wedges, there is no rejection to catch.
+      // Race it, so "no answer" becomes an ordinary failure the existing handlers
+      // already know how to show.
+      return new Promise(function (resolve, reject) {
+        var done = false;
+        var timer = setTimeout(function () {
+          if (done) return;
+          done = true;
+          reject(new Error('The checker did not answer within '
+            + Math.round(CHECK_TIMEOUT_MS / 1000) + 's.'));
+        }, CHECK_TIMEOUT_MS);
+        Promise.resolve(p).then(function (v) {
+          if (done) return;
+          done = true; clearTimeout(timer); resolve(v);
+        }, function (e) {
+          if (done) return;
+          done = true; clearTimeout(timer); reject(e);
+        });
+      });
     };
+  }
+
+  // ── The Tactics status tag ─────────────────────────────────────────────────
+  // Same idea as Orca's in-button status: say what is happening while it happens,
+  // in the fewest words that are still specific. Blank when idle — a tag that is
+  // always there stops being read.
+  function setTacticStatus(session, text, stalled) {
+    var host = session && session._tacticStatusEl;
+    if (!host) return;
+    // A zero-width space, never the empty string. The tag lives in the tactics
+    // header, a baseline-aligned flex row: an EMPTY inline span contributes no line
+    // box, so the first status text created one and grew the header by 1px, pushing
+    // the whole list down under the user's cursor mid-click. Keeping a line box at
+    // all times makes appearing free. Visibility is `.is-on`'s opacity, so the
+    // placeholder is invisible.
+    host.textContent = text || '​';
+    host.classList.toggle('is-on', !!text);
+    if (stalled) host.setAttribute('data-stalled', '');
+    else host.removeAttribute('data-stalled');
   }
 
   /** Apply a user-picked move. */
@@ -526,7 +594,7 @@ function createManual(deps) {
     // Already known to fail — the row is dead; nothing to do, nothing to say.
     if (row && row.classList.contains('is-rejected')) return Promise.resolve(false);
 
-    // Taking a step by hand RETIRES the running search. Brutus holds its own
+    // Taking a step by hand RETIRES the running search. Orca holds its own
     // copy of the program inside its loop; letting it resume from there would
     // silently discard the move just made. Its progress is already folded into
     // `m.state` by the pause sync, so nothing is lost — and "Resume" afterwards
@@ -535,7 +603,7 @@ function createManual(deps) {
     var na = this.nativeAuto;
     if (na && na.phase === 'searching') {
       if (!na.paused) return Promise.resolve(false);   // locked while it works
-      this._retireBrutus = true;
+      this._retireOrca = true;
       this.nativeAuto = null;      // pulses/steps no-op from here
       this.userCancelled = true;   // let the loop reach its cancel check
       if (this.stopReelClock) this.stopReelClock();
@@ -556,7 +624,17 @@ function createManual(deps) {
       }
     }
     if (this._movesEl) this._movesEl.classList.add('is-busy');
+    var applyVerb = tacticVerb(mv.kind) || 'move';
+    setTacticStatus(self, 'checking ' + applyVerb);
+    // Escalate if it is taking unusually long. The count is the transparency:
+    // "checking fill 12s" is a fact the user can act on; a shimmer is not.
+    var since = Date.now();
+    var tick = setInterval(function () {
+      var secs = Math.round((Date.now() - since) / 1000);
+      if (secs >= 3) setTacticStatus(self, 'checking ' + applyVerb + ' ' + secs + 's');
+    }, 1000);
     var clearApplying = function () {
+      clearInterval(tick);
       if (self._movesEl) self._movesEl.classList.remove('is-busy');
       if (!row) return;
       row.classList.remove('is-applying');
@@ -573,11 +651,13 @@ function createManual(deps) {
         // what is true of the panel. So it goes to a toast and the row goes
         // dead — a banner would sit there claiming to describe the goal.
         clearApplying();
+        setTacticStatus(self, 'not accepted', true);
         markPip(row, 'rejected', r.error || 'The checker did not accept this move.');
         toast(firstLineOf(r.error) || 'That move did not type-check.', 'error');
         return false;
       }
       m.state = r.state;
+      setTacticStatus(self, '');
       m.priorBinders = priorGoalBinders(self, m.sourceGoalType, self.manualGoalType());
       self.render();
       self.sweepCandidates();
@@ -587,6 +667,9 @@ function createManual(deps) {
         // Say so — a click that silently does nothing is the worst outcome.
         m.busy = false;
         clearApplying();
+        // The stall is now NAMED rather than silent: the tag says which tactic
+        // was in flight when the checker stopped answering.
+        setTacticStatus(self, 'no answer on ' + applyVerb, true);
         markPip(row, 'rejected', (err && err.message) || String(err));
         toast(firstLineOf(err && err.message) || 'That move could not be checked.', 'error');
         return false;
@@ -609,19 +692,48 @@ function createManual(deps) {
     var ed = E();
     var self = this;
     var m = this.manual;
+    // Claim the token FIRST, before any early return. Every continuation below bails on
+    // `_sweepToken !== token`, so replacing it is what orphans an in-flight sweep, and a
+    // sweep that never starts must orphan the previous one just as firmly as one that does.
+    // Returning early without claiming left the old token live, so a sweep begun for the
+    // previous goal could still mark pips after a render that produced no rows, or after
+    // move verification was switched off.
+    var token = {};
+    this._sweepToken = token;
     if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
     var persist = globalThis.Persist;
     var on = !persist || typeof persist.readStoredHarpoonVerifyMoves !== 'function'
       ? true
       : persist.readStoredHarpoonVerifyMoves();
     if (!on) return;
-    var token = {};
-    this._sweepToken = token;
     var rows = this._moveRows.slice(0, 8);
     var i = 0;
     var oracle = manualOracle();
+
+    // ── Sink the refused tactics ─────────────────────────────────────────────
+    // A tactic the checker has refused is not an option, and it already renders
+    // disabled. What it should not do is hold a place above tactics that DO
+    // apply: after a stalled Orca run the first rows are exactly the candidates
+    // the search just exhausted, so the list opened with a column of red crosses
+    // and pushed anything usable below the fold.
+    // Refused rows move to the BOTTOM, keeping their order. Nothing is hidden —
+    // the evidence stays readable, it just stops outranking live moves. Rows the
+    // sweep never reached rank above refused ones, since unknown beats refused.
+    // Done ONCE when the sweep settles, not per verdict: reordering under the
+    // pointer while the user is reading is worse than the problem it fixes.
+    function sinkRefused() {
+      if (self._sweepToken !== token || !self._moveRows) return;
+      var list = self._moveRows[0] && self._moveRows[0].parentNode;
+      if (!list) return;
+      self._moveRows.forEach(function (row) {
+        if (row && row.classList && row.classList.contains('is-rejected')) list.appendChild(row);
+      });
+    }
+
     function next() {
-      if (self._sweepToken !== token || i >= rows.length) return;
+      if (self._sweepToken !== token) return;
+      if (i >= rows.length) { sinkRefused(); setTacticStatus(self, ''); return; }
+      if (!m.busy) setTacticStatus(self, 'checking ' + (i + 1) + '/' + rows.length);
       var row = rows[i];
       i += 1;
       if (!row || !row._mv) { next(); return; }
@@ -635,7 +747,12 @@ function createManual(deps) {
         markPip(row, r.ok ? 'verified' : 'rejected',
           r.ok ? 'The checker accepts this move' : (r.error || 'did not certify'));
         next();
-      }).catch(function () { if (self._sweepToken === token) next(); });
+      }).catch(function () {
+        if (self._sweepToken !== token) return;
+        // Do not let one unanswered check stop the rest silently.
+        markPip(row, null);
+        next();
+      });
     }
     next();
   }
@@ -673,15 +790,37 @@ function createManual(deps) {
     this.sweepCandidates();
   }
 
-  /** BRUTUS — hand the current working program to the search. This is the one
+  /** ORCA — hand the current working program to the search. This is the one
       extra click, and because it runs from the LIVE state it also means "finish
       it from here" at any point mid-proof. */
-  function runBrutus() {
+  /** The pre-run state, pushed onto the undo stack EXACTLY ONCE per Orca run.
+   *
+   *  ⛔ One run is one undo. Orca's work folds into the session by three different
+   *  exits — it finishes, it stalls, or the user pauses and takes over — and each
+   *  one used to rebuild `stack` its own way. `absorbAuto` (finished) pushed the
+   *  anchor and `backToManual` (took over) pushed the anchor, but the STALLED path
+   *  and the pause/sync path both did `next.stack = before.stack`, silently
+   *  dropping it. The effect: Orca advanced three steps, got stuck, and undo could
+   *  not take you back to where you started — the steps were in the trail with no
+   *  way to leave them.
+   *  Anchoring here, once, makes all four exits agree; the flag stops a
+   *  pause→resume→pause cycle stacking one anchor per pause. */
+  function orcaStack(self, before) {
+    var prior = (before && before.stack) || [];
+    if (!before || self._orcaAnchored) return prior;
+    self._orcaAnchored = true;
+    return prior.concat([{
+      code: before.code, holes: before.holes, focusIdx: before.focusIdx, steps: before.steps,
+    }]);
+  }
+
+  function runOrca() {
     var m = this.manual;
     var self = this;
     if (!m || !m.state) return;
     this.cancelSweep();
     this.manualBefore = m.state;
+    this._orcaAnchored = false;
     this.runNativeAuto(m.state.code);
     // Take the user to where the work is about to appear. The tactics stay put
     // above — this is a scroll, not a screen change, and scrolling back is the
@@ -690,7 +829,7 @@ function createManual(deps) {
   }
 
   /** Smooth-scroll the panel to the derivation. Deferred a frame so the band has
-      actually been laid out by the render Brutus just triggered. */
+      actually been laid out by the render Orca just triggered. */
   function scrollToDerivation() {
     var self = this;
     globalThis.requestAnimationFrame(function () {
@@ -708,24 +847,24 @@ function createManual(deps) {
     });
   }
 
-  /** Pause hands the tactics back; resume gives them to Brutus again. If a
+  /** Pause hands the tactics back; resume gives them to Orca again. If a
       manual step was taken while paused the original run is already finished, so
       "resume" starts a fresh search — from the SAME working program, which is
       what makes the two indistinguishable to the user. */
-  function toggleBrutusPause() {
+  function toggleOrcaPause() {
     var na = this.nativeAuto;
     var m = this.manual;
     if (!m) return;
     if (!na || na.phase !== 'searching') {
       // The run ended (a manual step retired it). Resuming is a new search.
-      if (m.state) this.runBrutus();
+      if (m.state) this.runOrca();
       return;
     }
     var self = this;
     na.paused = !na.paused;
     if (na.paused) {
       setNativeSearchLabel(na, 'Paused');
-      // MARK SYNCING BEFORE RENDERING. Brutus has moved the proof on since the
+      // MARK SYNCING BEFORE RENDERING. Orca has moved the proof on since the
       // tactic list was built, so those moves are for a goal that no longer
       // exists — `intros` when intros has already been done. Rendering them
       // even for a moment offers steps that cannot apply, and if the sync then
@@ -734,7 +873,7 @@ function createManual(deps) {
       m.syncing = true;
       m.syncFailed = false;
       this.render();
-      this.syncManualToBrutus().then(function (ok) {
+      this.syncManualToOrca().then(function (ok) {
         m.syncing = false;
         m.syncFailed = !ok;
         if (!self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
@@ -749,18 +888,18 @@ function createManual(deps) {
     }
   }
 
-  /** Brutus FINISHED — fold its result into the one working program.
+  /** Orca FINISHED — fold its result into the one working program.
    *
    *  Without this the panel kept rendering the pre-search state: the same goal,
-   *  the same tactics, and a "Run Brutus again" button, as though nothing had
+   *  the same tactics, and a "Run Orca again" button, as though nothing had
    *  happened — because `m.state` was never told. There is no "returning from
-   *  Brutus" in a unified surface; the surface simply catches up.
+   *  Orca" in a unified surface; the surface simply catches up.
    *
    *  Solved: absorb directly (a complete proof has no holes to report), which
    *  lands the Proven banner, the solution and the derivation. Otherwise:
    *  re-check whatever program it reached so the remaining goals, their tactics
    *  and the trail are all real. */
-  function absorbBrutusResult(r) {
+  function absorbOrcaResult(r) {
     var ed = E();
     var self = this;
     var m = this.manual;
@@ -774,7 +913,7 @@ function createManual(deps) {
 
     if (r && r.complete && r.code) {
       m.state = ed.absorbAuto(
-        before, { complete: true, code: r.code, steps: (r.steps || []) }, this.thm);
+        before, { complete: true, code: r.code, steps: (r.steps || []), trace: (r.trace || null) }, this.thm);
       this.manualBefore = null;
       m.priorBinders = priorGoalBinders(this, m.sourceGoalType, this.manualGoalType());
       this.render();
@@ -793,7 +932,7 @@ function createManual(deps) {
       if (res && res.ok) {
         var next = ed.manualState(code, self.thm, res.output || '');
         next.steps = ((before && before.steps) || []).concat((r && r.steps) || []);
-        next.stack = (before && before.stack) || [];
+        next.stack = orcaStack(self, before);
         self.manual.state = next;
         self.manual.priorBinders = priorGoalBinders(
           self, self.manual.sourceGoalType, self.manualGoalType());
@@ -809,10 +948,10 @@ function createManual(deps) {
     });
   }
 
-  /** Rebuild the manual state from the program Brutus has reached, so a paused
+  /** Rebuild the manual state from the program Orca has reached, so a paused
       search offers tactics for the CURRENT goal. One check; skipped when the
       search has not advanced past where we already are. */
-  function syncManualToBrutus() {
+  function syncManualToOrca() {
     var self = this;
     var ed = E();
     var na = this.nativeAuto;
@@ -825,9 +964,14 @@ function createManual(deps) {
       if (!res || !res.ok || !self.manual) return false;
       var next = ed.manualState(code, self.thm, res.output || '');
       var before = self.manualBefore;
-      // The trail is everything that came before plus everything Brutus found.
-      next.steps = ((before && before.steps) || []).concat(na.steps || []);
-      next.stack = (before && before.stack) || [];
+      // The trail is everything that came before plus everything Orca found.
+      // Orca's steps must carry their own trace entries here too, exactly as on the
+      // finished-run path. Pausing is the commonest way a search gets folded into a manual
+      // session, so concatenating them bare would drop the alternatives from the node graph
+      // for the very case the surface exists to support.
+      next.steps = ((before && before.steps) || [])
+        .concat(ed.pairTrace ? ed.pairTrace(na.steps || [], na.trace) : (na.steps || []));
+      next.stack = orcaStack(self, before);
       self.manual.state = next;
       self.manual.priorBinders = priorGoalBinders(
         self, m.sourceGoalType, self.manualGoalType());
@@ -835,7 +979,7 @@ function createManual(deps) {
     }).catch(function () { return false; });
   }
 
-  /** Return from a Brutus run to hand-proving, KEEPING whatever it achieved.
+  /** Return from a Orca run to hand-proving, KEEPING whatever it achieved.
       This is what makes the two modes one continuum: a search that stalls
       hands its partial derivation back rather than throwing it away. */
   function backToManual() {
@@ -850,14 +994,14 @@ function createManual(deps) {
     if (na && na.complete && na.code && before && ed && typeof ed.absorbAuto === 'function') {
       // Solved: no re-check needed — a complete proof has no holes to report.
       this.manual.state = ed.absorbAuto(before, {
-        complete: true, code: na.code, steps: na.steps || [],
+        complete: true, code: na.code, steps: na.steps || [], trace: na.trace || null,
       }, this.thm);
       this.render();
       return;
     }
 
     // Stalled, cancelled or taken over: re-open manually over whatever code
-    // Brutus reached. `startManual` re-checks, which is what gives us an accurate
+    // Orca reached. `startManual` re-checks, which is what gives us an accurate
     // hole report for the new state — the search's own return carries no raw
     // output. `liveCode` is the mid-search case: the run never returned a `code`,
     // but every accepted step was reported as it landed.
@@ -865,9 +1009,7 @@ function createManual(deps) {
     var seedSteps = priorSteps.concat((na && na.steps) || []);
     this.startManual(resumeCode, {
       steps: seedSteps,
-      stack: before ? priorStack.concat([{
-        code: before.code, holes: before.holes, focusIdx: before.focusIdx, steps: priorSteps,
-      }]) : priorStack,
+      stack: orcaStack(this, before),
     });
   }
 
@@ -904,7 +1046,8 @@ function createManual(deps) {
     var goalType = this.manualGoalType();
     if (goalType) {
       this._autoGoalWrap = appendAutoGoalHero(
-        box, goalType, m.declName, complete ? 'live' : 'approximate', m.priorBinders);
+        box, goalType, m.declName, complete ? 'live' : 'approximate', m.priorBinders,
+        m.declKw);
     }
     // Banners belong to the GOAL, directly beneath it — one unbroken segment of
     // "what is true right now". Nothing from the working area may come between.
@@ -919,10 +1062,17 @@ function createManual(deps) {
       // band shows it for real (step 1 above) and only the parts we genuinely do
       // not know yet are skeletoned. A second, empty goal band here would both
       // duplicate the header and pretend we know less than we do.
-      if (!goalType) box.appendChild(skelGoalHero(m.declName));
+      if (!goalType) box.appendChild(skelGoalHero(m.declName, m.declKw));
       box.appendChild(skelBar());
-      box.appendChild(skelCtx());
-      box.appendChild(buildBrutus(this, null, true));
+      // ⛔ NO CONTEXT SKELETON. The band it stood for renders only when the focus
+      // hole actually has binders, and a hole that has had no move made at it has
+      // none — which is exactly the state the lab opens in. So the skeleton drew a
+      // "meta" section, the real data landed with no context at all, the band
+      // vanished and everything below it jumped up. That is the precise failure
+      // the skeleton exists to prevent, caused by skeletoning a band we cannot
+      // know will exist. Omitting it costs a downward settle in the rarer
+      // resume-mid-proof case, which is the cheaper of the two.
+      box.appendChild(buildOrca(this, null, true));
       var skelMoves = el('div', 'harpoon-lab-moves');
       skelMoves.appendChild(sectionLabel('Tactics'));
       var skelList = el('div', 'harpoon-lab-move-list');
@@ -949,7 +1099,7 @@ function createManual(deps) {
     if (complete) {
       // 5a. Proven. The verdict IS a permanent statement about the current
       //     state, so it earns a banner — and it reads the same whether the
-      //     steps came from your hand, from Brutus, or from both.
+      //     steps came from your hand, from Orca, or from both.
       var proven = renderManualSolvedSummary(box);
       if (proven) {
         proven.querySelector('.harpoon-lab-auto-sub').textContent =
@@ -1013,7 +1163,7 @@ function createManual(deps) {
           tab.setAttribute('role', 'tab');
           tab.setAttribute('aria-selected', i === st.focusIdx ? 'true' : 'false');
           tab.textContent = String(i + 1);
-          setTip(tab, 'Subgoal ' + (i + 1) + (h.goal ? ' · ' + h.goal : ''));
+          setTip(tab, 'Subgoal ' + (i + 1) + (h.goal ? ' · ' + displayGoal(h.goal) : ''));
           tab.addEventListener('click', function (e) { e.preventDefault(); self.manualFocus(i); });
           picker.appendChild(tab);
         });
@@ -1022,15 +1172,31 @@ function createManual(deps) {
       }
 
       // 4. The context ledger — the assumptions in scope at the focus subgoal.
-      var hole = st ? ed.focusHole(st) : null;
+      //
+      // While Orca runs this comes from the SEARCH's latest hole report, not from
+      // `st`: `st` is the pre-run state, so the panel used to show the context of a
+      // goal the search had long since left, frozen for the whole run.
+      // `na.liveHoles` is the successor report the engine already computed for its
+      // own guards and now hands over through onStep, so this costs no checker call.
+      // First hole in source order, which is where the engine's leftmost-arm focus
+      // rule goes next; an exact focus would need the reducer's scoring, and being
+      // one subgoal out beats being a whole search out of date.
+      var naRun = this.nativeAuto;
+      var liveHole = (naRun && naRun.phase === 'searching'
+        && naRun.liveHoles && naRun.liveHoles.length) ? naRun.liveHoles[0] : null;
+      var hole = liveHole || (st ? ed.focusHole(st) : null);
       if (hole && ((hole.meta && hole.meta.length) || (hole.ctx && hole.ctx.length))) {
         var ctxWrap = el('div', 'harpoon-lab-context');
         this.renderCtx(ctxWrap, 'meta', hole.meta);
         this.renderCtx(ctxWrap, 'ctx', hole.ctx);
         box.appendChild(ctxWrap);
+        // Handle for `syncLiveContext`, which refreshes this band in place while
+        // Orca runs (render() takes its fast path then and never rebuilds).
+        this._ctxWrap = ctxWrap;
+        this._ctxKey = JSON.stringify([hole.meta || [], hole.ctx || []]);
       }
       // The proof itself — exactly what commit will write. A finished proof must
-      // show its solution whether a human or Brutus produced it.
+      // show its solution whether a human or Orca produced it.
       var solved = solvedBodyOf(st.code, m.declName);
       if (solved) {
         stageNode(appendAutoSolution(box, solved), stage);
@@ -1074,7 +1240,7 @@ function createManual(deps) {
           tab.setAttribute('role', 'tab');
           tab.setAttribute('aria-selected', i === st.focusIdx ? 'true' : 'false');
           tab.textContent = String(i + 1);
-          setTip(tab, 'Subgoal ' + (i + 1) + (h.goal ? ' · ' + h.goal : ''));
+          setTip(tab, 'Subgoal ' + (i + 1) + (h.goal ? ' · ' + displayGoal(h.goal) : ''));
           tab.addEventListener('click', function (e) { e.preventDefault(); self.manualFocus(i); });
           picker.appendChild(tab);
         });
@@ -1083,24 +1249,40 @@ function createManual(deps) {
       }
 
       // 4. The context ledger — the assumptions in scope at the focus subgoal.
-      var hole = st ? ed.focusHole(st) : null;
+      //
+      // While Orca runs this comes from the SEARCH's latest hole report, not from
+      // `st`: `st` is the pre-run state, so the panel used to show the context of a
+      // goal the search had long since left, frozen for the whole run.
+      // `na.liveHoles` is the successor report the engine already computed for its
+      // own guards and now hands over through onStep, so this costs no checker call.
+      // First hole in source order, which is where the engine's leftmost-arm focus
+      // rule goes next; an exact focus would need the reducer's scoring, and being
+      // one subgoal out beats being a whole search out of date.
+      var naRun = this.nativeAuto;
+      var liveHole = (naRun && naRun.phase === 'searching'
+        && naRun.liveHoles && naRun.liveHoles.length) ? naRun.liveHoles[0] : null;
+      var hole = liveHole || (st ? ed.focusHole(st) : null);
       if (hole && ((hole.meta && hole.meta.length) || (hole.ctx && hole.ctx.length))) {
         var ctxWrap = el('div', 'harpoon-lab-context');
         this.renderCtx(ctxWrap, 'meta', hole.meta);
         this.renderCtx(ctxWrap, 'ctx', hole.ctx);
         box.appendChild(ctxWrap);
+        // Handle for `syncLiveContext`, which refreshes this band in place while
+        // Orca runs (render() takes its fast path then and never rebuilds).
+        this._ctxWrap = ctxWrap;
+        this._ctxKey = JSON.stringify([hole.meta || [], hole.ctx || []]);
       }
-      // 5b. BRUTUS — the headline action, and while it runs, the same band
+      // 5b. ORCA — the headline action, and while it runs, the same band
       //     becomes its cockpit. Never a separate screen.
       var na = this.nativeAuto;
       var running = !!(na && na.phase === 'searching');
       var searching = running && !na.paused;
       // Record what we actually drew, so render()'s in-place fast path knows
       // when a rebuild is genuinely required (see manualRenderSig).
-      if (running) box.appendChild(buildBrutusRunning(this, na));
-      else box.appendChild(buildBrutus(this, st, false));
+      if (running) box.appendChild(buildOrcaRunning(this, na));
+      else box.appendChild(buildOrca(this, st, false));
 
-      // Brutus stopped without proving it — say why, right here, then let the
+      // Orca stopped without proving it — say why, right here, then let the
       // user carry on by hand or run it again.
       if (na && na.phase === 'stuck' && na.stuck && na.stuck.goal) {
         var stuckCard = this.renderStuckCard(na);
@@ -1119,14 +1301,19 @@ function createManual(deps) {
         // Locked, not hidden: the user can still see the section, and is told
         // plainly how to get it back.
         tacticsLabel.appendChild(
-          el('span', 'harpoon-lab-moves-lock', 'Pause Brutus to use tactics'));
+          el('span', 'harpoon-lab-moves-lock', 'Pause Orca to use tactics'));
       }
+      // Where the status tag lives. Sits in the header rather than over the list,
+      // so it never covers the rows it is describing.
+      var tacStatus = el('span', 'harpoon-lab-moves-status');
+      tacticsLabel.appendChild(tacStatus);
+      this._tacticStatusEl = tacStatus;
       movesWrap.appendChild(tacticsLabel);
       var moves = [];
       try { moves = ed.movesAt(st, this.thm) || []; } catch (e) { moves = []; }
       var list = el('div', 'harpoon-lab-move-list');
       if (m.busy || m.syncing) {
-        // Applying, or catching up to where Brutus paused. NEVER show the
+        // Applying, or catching up to where Orca paused. NEVER show the
         // previous goal's tactics here: they were computed for a goal that no
         // longer exists, and offering them means offering moves that cannot
         // apply. Skeleton until we know what is actually on offer.
@@ -1141,14 +1328,14 @@ function createManual(deps) {
         lost.appendChild(el('span', 'harpoon-lab-moves-empty-title',
           'Could not read the paused proof'));
         lost.appendChild(el('span', 'harpoon-lab-moves-empty-sub',
-          'Resume Brutus, or undo the last step and try again.'));
+          'Resume Orca, or undo the last step and try again.'));
         movesWrap.appendChild(lost);
       } else if (!moves.length) {
         var none = el('div', 'harpoon-lab-moves-empty');
         none.appendChild(el('span', 'harpoon-lab-moves-empty-title', 'Nothing applies here'));
         none.appendChild(el('span', 'harpoon-lab-moves-empty-sub',
           'BelJar has no move for this goal. Undo the last step, pick another subgoal, '
-          + 'or let Brutus search.'));
+          + 'or let Orca search.'));
         movesWrap.appendChild(none);
       } else {
         moves.forEach(function (mv, i) {
@@ -1164,7 +1351,7 @@ function createManual(deps) {
     }
 
     // 7. The derivation — one place where the proof accumulates, whoever is
-    //    building it. While Brutus searches this is the LIVE reel (candidates
+    //    building it. While Orca searches this is the LIVE reel (candidates
     //    streaming, steps settling); otherwise it is the shared List ⇄ Tree
     //    section with its pop-out. Same slot, same meaning.
     var naNow = this.nativeAuto;
@@ -1191,9 +1378,27 @@ function createManual(deps) {
       this._workingStrip = null;
       this._workingChips = [];
       this._derivEl = live;
-      // Replay whatever has already been accepted, then let the reel stream.
+      // Replay the WHOLE trail, then let the reel stream.
+      //
+      // The prior hand-built steps have to be replayed here or the derivation
+      // appears to reset the instant Orca starts: it emptied to just the search's
+      // own steps and refilled when the run ended, because both `absorbOrcaResult`
+      // and `backToManual` concatenate `before.steps` with `na.steps` afterwards.
+      // Nothing was ever lost, but the panel said otherwise.
+      //
+      // ⛔ `_reelRecordCount` must keep counting ONLY `na.steps`. The reel streams
+      // new rows with `for (i = _reelRecordCount; i < na.steps.length; i++)`, so it
+      // is an INDEX INTO na.steps, not a row count. Adding the prior steps to it
+      // makes the reel believe it has already drawn search steps that have not
+      // happened, and it silently stops appending.
+      var prior = (this.manualBefore && this.manualBefore.steps) || [];
+      for (var pi = 0; pi < prior.length; pi += 1) {
+        appendCommittedStepRow(record, prior[pi], pi);
+      }
       var already = (naNow.steps || []);
-      for (var si = 0; si < already.length; si += 1) appendCommittedStepRow(record, already[si], si);
+      for (var si = 0; si < already.length; si += 1) {
+        appendCommittedStepRow(record, already[si], prior.length + si);
+      }
       this._reelRecordCount = already.length;
       this.syncReelStatus();
       this.startReelClock();
@@ -1218,10 +1423,10 @@ function createManual(deps) {
     manualFocus: manualFocus,
     sweepCandidates: sweepCandidates,
     cancelSweep: cancelSweep,
-    runBrutus: runBrutus,
-    toggleBrutusPause: toggleBrutusPause,
-    absorbBrutusResult: absorbBrutusResult,
-    syncManualToBrutus: syncManualToBrutus,
+    runOrca: runOrca,
+    toggleOrcaPause: toggleOrcaPause,
+    absorbOrcaResult: absorbOrcaResult,
+    syncManualToOrca: syncManualToOrca,
     scrollToDerivation: scrollToDerivation,
     backToManual: backToManual,
     commitManual: commitManual,

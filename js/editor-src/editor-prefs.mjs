@@ -2,6 +2,7 @@ import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine
 import { EditorState } from '@codemirror/state';
 import { bracketMatching, indentRange, indentUnit } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { relativeLineNumbers } from './ide/relative-line-numbers.mjs';
 import { highlightSelectionMatches } from '@codemirror/search';
 import { Transaction } from '@codemirror/state';
 import { belugaHighlightExtensions, editorCodeFolding, editorFoldGutter } from './language.mjs';
@@ -44,6 +45,7 @@ export function readEditorPrefs() {
     formatWidth: p?.readStoredEditorFormatWidth?.() ?? 80,
     reindentPaste: p?.readStoredEditorReindentPaste?.() ?? true,
     lineNumbers: p?.readStoredEditorLineNumbers?.() ?? true,
+    lineNumberMode: p?.readStoredEditorLineNumberMode?.() ?? 'absolute',
     foldGutter: p?.readStoredEditorFoldGutter?.() ?? true,
     foldPersist: p?.readStoredEditorFoldPersist?.() ?? 'session',
     activeLine: p?.readStoredEditorActiveLine?.() ?? true,
@@ -72,6 +74,7 @@ export function readEditorPrefs() {
     rulers: p?.readStoredEditorRulers?.() ?? false,
     fontFamily: p?.readStoredEditorFontFamily?.() ?? 'jetbrains',
     holeEmphasis: p?.readStoredEditorHoleEmphasis?.() ?? 'normal',
+    keymapStyle: p?.readStoredKeymapStyle?.() ?? 'default',
   };
 }
 
@@ -170,7 +173,14 @@ export function buildToggleableExtensions(prefs, deps) {
   exts.push(indentUnit.of(' '.repeat(tab)));
   exts.push(EditorState.tabSize.of(tab));
 
-  if (prefs.lineNumbers) exts.push(lineNumbers());
+  if (prefs.lineNumbers) {
+    // Relative numbers are a different gutter, not a formatter: see
+    // `ide/relative-line-numbers.mjs` for why the built-in cannot do it.
+    const mode = prefs.lineNumberMode;
+    exts.push(mode === 'relative' || mode === 'hybrid'
+      ? relativeLineNumbers(mode)
+      : lineNumbers());
+  }
   if (prefs.activeLine) {
     exts.push(highlightActiveLineGutter());
     exts.push(highlightActiveLine());

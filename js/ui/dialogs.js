@@ -141,6 +141,17 @@
       if (dialogEl.open) dialogEl.close();
     }, ms);
   }
+  function applyDialogBodyContent(body, opts) {
+    const c = opts.content;
+    const isNode = c != null && typeof c === "object" && typeof c.nodeType === "number";
+    if (isNode) {
+      body.appendChild(c);
+    } else if (opts.htmlContent != null) {
+      body.innerHTML = String(opts.htmlContent);
+    } else if (c != null) {
+      body.textContent = String(c);
+    }
+  }
   function createDialog(opts) {
     opts = opts || {};
     const className = opts.className || "";
@@ -189,9 +200,7 @@
     }
     const body = document.createElement("div");
     body.className = "bj-dialog__body";
-    const c = opts.content;
-    if (c instanceof Node) body.appendChild(c);
-    else body.innerHTML = c != null ? String(c) : "";
+    applyDialogBodyContent(body, opts);
     card.appendChild(body);
     dialogEl.appendChild(card);
     document.body.appendChild(dialogEl);

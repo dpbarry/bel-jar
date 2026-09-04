@@ -19,6 +19,12 @@ import { execFileSync } from 'node:child_process';
 import { assembleCfgProgram, maskByName } from '../js/editor-src/prover/prover-corpus-decls.mjs';
 import { proveProgram, theoremUnderProof } from '../js/editor-src/prover/prover-orchestrator.mjs';
 
+// Slice toggles, read from the environment so the DIFFERENTIAL (which spawns this
+// script per target) can measure an opt-in mechanism without a code edit.
+if (process.env.INLINEARG) globalThis.__proverInlineArg = true;
+if (process.env.UNIFY) globalThis.__proverUnify = true;
+if (process.env.INHABIT) { globalThis.__proverInhabit = true; globalThis.__proverUnify = true; } // step 3 (needs step 2)
+
 const root = process.cwd();
 const args = process.argv.slice(2);
 function arg(name, def) { const i = args.indexOf(name); return i >= 0 && args[i + 1] ? args[i + 1] : def; }
@@ -80,6 +86,11 @@ const r = await proveProgram(masked.code, thm, oracle, {
   // inflate. Verdicts/steps are identical either way — only checkCount differs.
   certifyTrim: false,
   maxSteps,
+  // This tool masks the target body, so a COMPLETE with zero accepted moves means
+  // the mask did not take — report it as `mask-ineffective`, never as a proof
+  // (master plan 52b). Verified safe for the gate: the frozen `library.jsonl`
+  // baseline contains 0 zero-move completions, so no existing differential moves.
+  requireProgress: true,
   collectTrace: wantTrace,
   onStep: ({ last }) => console.log(`STEP ${last.move}: ${(last.text || '').replace(/\n/g, ' ').slice(0, 100)}`),
 });

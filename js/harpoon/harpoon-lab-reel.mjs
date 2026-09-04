@@ -319,9 +319,62 @@ function createReel(deps) {
           }
           this._reelRecordCount = na.steps.length;
         }
+        this.syncLiveContext();
         this.syncReelStatus();
         this.syncAutoPauseBtn();
       };
+
+      /** Refresh the context ledger IN PLACE from the search's latest hole report.
+       *
+       *  It has to be in place: while Orca runs, `render()` takes the fast path
+       *  and returns, so a rebuild never happens — and forcing one per accepted
+       *  step is the DOM thrash (and scroll loss) the fast path exists to avoid.
+       *  Keyed on the rendered binders so an unchanged context touches nothing;
+       *  most steps do not change it. */
+      function syncLiveContext() {
+        var na = this.nativeAuto;
+        if (!na) return;
+        var hole = (na.liveHoles && na.liveHoles.length) ? na.liveHoles[0] : null;
+        var meta = (hole && hole.meta) || [];
+        var ctx = (hole && hole.ctx) || [];
+        var key = JSON.stringify([meta, ctx]);
+        if (key === this._ctxKey) return;
+
+        // ⛔ DO NOT record the key until the DOM work has actually happened.
+        // The first accepted step can land before the first search render has
+        // built the Orca band, so the anchor below is briefly null. Recording the
+        // key up here meant that call bailed WITHOUT drawing but still marked the
+        // context as rendered, and every later call short-circuited on the
+        // unchanged key. The band then never appeared until a pause forced a full
+        // rebuild — which is exactly "it only shows when I stop it".
+        var wrap = this._ctxWrap;
+        // ⛔ The band may not EXIST yet, and that is the common case rather than an
+        // edge one: it renders only when the focus hole has binders, and a hole
+        // with no move made at it has none. So on exactly the proofs where Orca
+        // introduces the first binders there was nothing on screen to update, and
+        // the context stayed blank until the run ended and a rebuild happened.
+        // Create it on first need, drop it when it empties.
+        if (!meta.length && !ctx.length) {
+          if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+          this._ctxWrap = null;
+          this._ctxKey = key;
+          return;
+        }
+        if (!wrap || !wrap.parentNode) {
+          // The Orca band is the stable anchor: the ledger sits directly above it
+          // in every branch of renderManual, so inserting before it keeps the same
+          // running order without needing the renderer.
+          var anchor = this._autoSearchBox;
+          if (!anchor || !anchor.parentNode) return;
+          wrap = el('div', 'harpoon-lab-context');
+          anchor.parentNode.insertBefore(wrap, anchor);
+          this._ctxWrap = wrap;
+        }
+        wrap.textContent = '';
+        this.renderCtx(wrap, 'meta', meta);
+        this.renderCtx(wrap, 'ctx', ctx);
+        this._ctxKey = key;
+      }
 
       // Reflect the search label + checks·time tooltip into the status row.
       function syncReelStatus() {
@@ -540,6 +593,7 @@ function createReel(deps) {
       clearNativeAutoShell: clearNativeAutoShell,
       syncAutoPauseBtn: syncAutoPauseBtn,
       updateNativeAutoSearch: updateNativeAutoSearch,
+      syncLiveContext: syncLiveContext,
       syncReelStatus: syncReelStatus,
       ensureWorkingRow: ensureWorkingRow,
       feedConveyor: feedConveyor,

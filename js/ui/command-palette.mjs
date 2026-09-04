@@ -9,6 +9,11 @@
 //   /       library
 //   ?       mode help
 // Pure logic is exposed on ._pure for DOM-free tests.
+//
+// Commands come from the shared registry (`js/commands/`), not a list of their
+// own: `register()` here is a thin front door that marks an entry palette-visible.
+import { Commands } from '../commands/command-registry.mjs';
+
 const global = globalThis;
 // ── Pure logic ──────────────────────────────────────────────────────────────
 
@@ -157,20 +162,19 @@ const global = globalThis;
 
   // ── Registry ────────────────────────────────────────────────────────────────
 
-  const commands = [];
   const providers = Object.create(null);
   for (const k of PROVIDER_KINDS) providers[k] = null;
 
+  // A palette registration is a registry entry that is runnable and marked
+  // palette-visible. Catalogue metadata already there (chord, style policy,
+  // ex/M-x names) is preserved — only the keys passed here are overwritten.
   function register(cmd) {
     if (!cmd || !cmd.id || typeof cmd.run !== 'function') return;
-    const at = commands.findIndex((c) => c.id === cmd.id);
-    if (at >= 0) commands[at] = cmd;
-    else commands.push(cmd);
+    Commands.define(Object.assign({ palette: true }, cmd));
   }
 
   function unregister(id) {
-    const at = commands.findIndex((c) => c.id === id);
-    if (at >= 0) commands.splice(at, 1);
+    Commands.unregister(id);
   }
 
   function setProvider(kind, fn) {
@@ -179,21 +183,17 @@ const global = globalThis;
   }
 
   function activeCommands() {
-    return commands.filter((c) => !c.when || safeWhen(c));
+    return Commands.list({ palette: true, runnable: true, available: true });
   }
 
   function listCommands() {
-    return commands.map((c) => ({
+    return Commands.list({ palette: true }).map((c) => ({
       id: c.id,
       title: c.title || c.id,
       section: c.section || '',
       shortcut: c.shortcut || '',
       detail: c.detail || '',
     }));
-  }
-
-  function safeWhen(c) {
-    try { return !!c.when(); } catch { return false; }
   }
 
   function providerItems(kind, arg) {
@@ -299,6 +299,7 @@ const global = globalThis;
         shortcut = formatShortcut(c.shortcut, IS_MAC);
       }
       return {
+        id: c.id,
         title: c.title,
         section: c.section || 'Commands',
         shortcut,
@@ -386,7 +387,9 @@ const global = globalThis;
         });
     }
     if (parsed.mode === 'commands') {
-      return rankItems(commandItems(), parsed.query, 50);
+      // The catalogue outgrew the old cap of 50 and silently dropped the tail
+      // (Tools) from the empty-query list. It is a scrolling list; show them all.
+      return rankItems(commandItems(), parsed.query, 300);
     }
     if (parsed.mode === 'line') {
       return lineJumpItems(parsed.query);
@@ -408,8 +411,8 @@ const global = globalThis;
 
   function emptyMessage(parsed) {
     if (parsed.legacyHash) return 'Project search is now %. Type after % to search.';
-    if (parsed.mode === 'search' && (!parsed.query || parsed.query.length < 2)) {
-      return 'Type at least 2 characters to search the project';
+    if (parsed.mode === 'search' && !parsed.query) {
+      return 'Type to search the project…';
     }
     if (parsed.mode === 'line') {
       return parsed.query ? 'Enter a line number (e.g. 42 or 42:8)' : 'Type a line number…';
@@ -584,11 +587,38 @@ const global = globalThis;
     else open(opts);
   }
 
+  /**
+   * "Run a command by name" — the palette, or the keymap's own command line.
+   *
+   * ⛔ A macro is not an editor feature. Under Emacs, `M-x` opened the M-x line
+   * inside the editor and the PALETTE everywhere else, because the Emacs keymap
+   * only exists while CodeMirror has focus and the global chord fell through to
+   * `tools.commands`. One chord, two different windows, depending on where you
+   * happened to be looking. Under a modal keymap the command line IS how you run
+   * a command by name, so that is what the chord opens — in the explorer, in
+   * settings, anywhere.
+   *
+   * ⚠ Both the global chord and `Commands.run('tools.commands')` come through
+   * here, so the two halves cannot drift into meaning different things.
+   */
+  function runCommandEntry() {
+    var style = '';
+    try {
+      if (typeof Persist !== 'undefined' && Persist.readStoredKeymapStyle) {
+        style = Persist.readStoredKeymapStyle();
+      }
+    } catch (e) { /* Standard is the honest fallback */ }
+    var line = typeof StatusStrip !== 'undefined' && StatusStrip.openCommandLine;
+    if (line && style === 'emacs') return StatusStrip.openCommandLine('', { prompt: 'M-x' });
+    if (line && style === 'vim') return StatusStrip.openCommandLine('');
+    return toggle({ mode: 'commands' });
+  }
+
   function init() {
     if (typeof Keybindings !== 'undefined' && typeof Keybindings.initGlobals === 'function') {
       Keybindings.initGlobals({
         'nav.anywhere': () => toggle({ mode: 'anywhere' }),
-        'tools.commands': () => toggle({ mode: 'commands' }),
+        'tools.commands': runCommandEntry,
         'nav.symbol': () => toggle({ mode: 'symbols' }),
         'edit.search-project': () => toggle({ mode: 'search' }),
       });
@@ -628,6 +658,7 @@ const global = globalThis;
     open,
     close,
     toggle,
+    runCommandEntry,
     init,
     isOpen: () => isOpen,
     shortcutLabel: shortcutLabelFor,

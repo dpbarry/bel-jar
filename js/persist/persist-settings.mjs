@@ -157,13 +157,23 @@ export function create(deps) {
     var EDITOR_RULERS_KEY = 'beljar-editor-rulers';
     var EDITOR_FONT_FAMILY_KEY = 'beljar-editor-font-family';
     var EDITOR_HOLE_EMPHASIS_KEY = 'beljar-editor-hole-emphasis';
+    var KEYMAP_STYLE_KEY = 'beljar-keymap-style';
+    var STATUS_STRIP_KEY = 'beljar-status-strip';
+    var COMMAND_LINE_HISTORY_KEY = 'beljar-command-line-history';
+    var DOUBLE_TAP_TRIGGER_KEY = 'beljar-double-tap-trigger';
+    var DOUBLE_TAP_COMMAND_KEY = 'beljar-double-tap-command';
+    var DOUBLE_TAP_SPEED_KEY = 'beljar-double-tap-speed';
+    var VIM_LEADER_KEY = 'beljar-vim-leader';
+    var VIM_YANK_CLIPBOARD_KEY = 'beljar-vim-yank-clipboard';
+    var EDITOR_LINE_NUMBER_MODE_KEY = 'beljar-editor-line-number-mode';
+    var VIM_INSERT_ESCAPE_KEY = 'beljar-vim-insert-escape';
     var MOTION_PREF_KEY = 'beljar-motion-pref';
     var TOAST_DURATION_KEY = 'beljar-toast-duration';
     var CHECK_AGGRESSIVENESS_KEY = 'beljar-check-aggressiveness';
     var AUTOSOLVE_FOCUS_NEXT_KEY = 'beljar-autosolve-focus-next';
     var AUTOSOLVE_SHOW_STATS_KEY = 'beljar-autosolve-show-stats';
     // Which surface the Harpoon opens into: 'manual' (default — pick tactics
-    // yourself) or 'brutus' (straight into the search, the pre-manual behaviour).
+    // yourself) or 'orca' (straight into the search, the pre-manual behaviour).
     var HARPOON_MODE_KEY = 'beljar-harpoon-mode';
     var HARPOON_VERIFY_MOVES_KEY = 'beljar-harpoon-verify-moves';
     var QUIET_WHILE_TYPING_KEY = 'beljar-quiet-while-typing';
@@ -491,6 +501,21 @@ export function create(deps) {
     function readStoredEditorLineNumbers() { return readBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY); }
     function writeStoredEditorLineNumbers(on) { writeBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY, on); }
 
+    function readStoredEditorLineNumberMode() {
+      try {
+        var v = backendLoad(EDITOR_LINE_NUMBER_MODE_KEY);
+        if (v === 'relative' || v === 'hybrid') return v;
+        return 'absolute';
+      } catch (_) {
+        return 'absolute';
+      }
+    }
+
+    function writeStoredEditorLineNumberMode(v) {
+      if (v === 'relative' || v === 'hybrid') backendSave(EDITOR_LINE_NUMBER_MODE_KEY, v);
+      else backendRemove(EDITOR_LINE_NUMBER_MODE_KEY);
+    }
+
     function readStoredEditorFoldGutter() { return readBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY); }
     function writeStoredEditorFoldGutter(on) { writeBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY, on); }
 
@@ -649,6 +674,143 @@ export function create(deps) {
       else backendRemove(EDITOR_HOLE_EMPHASIS_KEY);
     }
 
+    function readStoredKeymapStyle() {
+      try {
+        var v = backendLoad(KEYMAP_STYLE_KEY);
+        if (v === 'vim' || v === 'emacs') return v;
+        return 'default';
+      } catch (_) {
+        return 'default';
+      }
+    }
+
+    function writeStoredKeymapStyle(style) {
+      if (style === 'vim' || style === 'emacs') backendSave(KEYMAP_STYLE_KEY, style);
+      else backendRemove(KEYMAP_STYLE_KEY);
+    }
+
+    function readStoredStatusStrip() {
+      try {
+        var v = backendLoad(STATUS_STRIP_KEY);
+        if (v === 'off' || v === 'compact' || v === 'standard' || v === 'detailed') return v;
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function writeStoredStatusStrip(mode) {
+      if (mode === 'off' || mode === 'compact' || mode === 'standard' || mode === 'detailed') backendSave(STATUS_STRIP_KEY, mode);
+      else backendRemove(STATUS_STRIP_KEY);
+    }
+
+    function readStoredCommandLineHistory() {
+      try {
+        var raw = backendLoad(COMMAND_LINE_HISTORY_KEY);
+        if (!raw) return [];
+        var parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(function (x) { return typeof x === 'string' && x; }).slice(0, 50);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function writeStoredCommandLineHistory(list) {
+      if (!Array.isArray(list) || !list.length) {
+        backendRemove(COMMAND_LINE_HISTORY_KEY);
+        return;
+      }
+      var clean = list.filter(function (x) { return typeof x === 'string' && x; }).slice(0, 50);
+      backendSave(COMMAND_LINE_HISTORY_KEY, JSON.stringify(clean));
+    }
+
+    function readStoredDoubleTapTrigger() {
+      try {
+        var v = backendLoad(DOUBLE_TAP_TRIGGER_KEY);
+        return v === 'shift' || v === 'control' || v === 'alt' ? v : 'off';
+      } catch (_) {
+        return 'off';
+      }
+    }
+
+    function writeStoredDoubleTapTrigger(v) {
+      if (v === 'shift' || v === 'control' || v === 'alt') backendSave(DOUBLE_TAP_TRIGGER_KEY, v);
+      else backendRemove(DOUBLE_TAP_TRIGGER_KEY);
+    }
+
+    function readStoredDoubleTapCommand() {
+      try {
+        var v = backendLoad(DOUBLE_TAP_COMMAND_KEY);
+        return typeof v === 'string' && v ? v : 'tools.palette';
+      } catch (_) {
+        return 'tools.palette';
+      }
+    }
+
+    function writeStoredDoubleTapCommand(v) {
+      if (typeof v === 'string' && v && v !== 'tools.palette') backendSave(DOUBLE_TAP_COMMAND_KEY, v);
+      else backendRemove(DOUBLE_TAP_COMMAND_KEY);
+    }
+
+    function readStoredDoubleTapSpeed() {
+      try {
+        var v = backendLoad(DOUBLE_TAP_SPEED_KEY);
+        return v === 'fast' || v === 'relaxed' ? v : 'normal';
+      } catch (_) {
+        return 'normal';
+      }
+    }
+
+    function writeStoredDoubleTapSpeed(v) {
+      if (v === 'fast' || v === 'relaxed') backendSave(DOUBLE_TAP_SPEED_KEY, v);
+      else backendRemove(DOUBLE_TAP_SPEED_KEY);
+    }
+
+    function readStoredVimLeader() {
+      try {
+        var v = backendLoad(VIM_LEADER_KEY);
+        if (v === ',' || v === ' ') return v;
+        return String.fromCharCode(92);
+      } catch (_) {
+        return String.fromCharCode(92);
+      }
+    }
+
+    function writeStoredVimLeader(v) {
+      if (v === ',' || v === ' ') backendSave(VIM_LEADER_KEY, v);
+      else backendRemove(VIM_LEADER_KEY);
+    }
+
+    // Off by default: silently replacing what someone copied is not something
+    // to opt them into.
+    function readStoredVimYankClipboard() {
+      try {
+        return backendLoad(VIM_YANK_CLIPBOARD_KEY) === 'on';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function writeStoredVimYankClipboard(on) {
+      if (on === true) backendSave(VIM_YANK_CLIPBOARD_KEY, 'on');
+      else backendRemove(VIM_YANK_CLIPBOARD_KEY);
+    }
+
+    function readStoredVimInsertEscape() {
+      try {
+        var v = backendLoad(VIM_INSERT_ESCAPE_KEY);
+        return v === 'jk' || v === 'jj' || v === 'kj' ? v : '';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function writeStoredVimInsertEscape(v) {
+      if (v === 'jk' || v === 'jj' || v === 'kj') backendSave(VIM_INSERT_ESCAPE_KEY, v);
+      else backendRemove(VIM_INSERT_ESCAPE_KEY);
+    }
+
     function readStoredMotionPref() {
       try {
         var v = backendLoad(MOTION_PREF_KEY);
@@ -737,13 +899,14 @@ export function create(deps) {
 
     function readStoredHarpoonMode() {
       try {
-        var v = localStorage.getItem(HARPOON_MODE_KEY);
-        return v === 'brutus' ? 'brutus' : 'manual';
-      } catch (e) { return 'manual'; }
+        return backendLoad(HARPOON_MODE_KEY) === 'orca' ? 'orca' : 'manual';
+      } catch (_) {
+        return 'manual';
+      }
     }
     function writeStoredHarpoonMode(mode) {
-      try { localStorage.setItem(HARPOON_MODE_KEY, mode === 'brutus' ? 'brutus' : 'manual'); }
-      catch (e) { /* storage unavailable */ }
+      if (mode === 'orca') backendSave(HARPOON_MODE_KEY, 'orca');
+      else backendRemove(HARPOON_MODE_KEY);
     }
 
     function readStoredHarpoonVerifyMoves() { return readBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY); }
@@ -880,6 +1043,7 @@ export function create(deps) {
       EDITOR_WORD_WRAP_KEY,
       EDITOR_TAB_SIZE_KEY,
       EDITOR_LINE_NUMBERS_KEY,
+      EDITOR_LINE_NUMBER_MODE_KEY,
       EDITOR_FOLD_GUTTER_KEY,
       EDITOR_FOLD_PERSIST_KEY,
       EDITOR_ACTIVE_LINE_KEY,
@@ -902,6 +1066,15 @@ export function create(deps) {
       EDITOR_RULERS_KEY,
       EDITOR_FONT_FAMILY_KEY,
       EDITOR_HOLE_EMPHASIS_KEY,
+      KEYMAP_STYLE_KEY,
+      STATUS_STRIP_KEY,
+      COMMAND_LINE_HISTORY_KEY,
+      VIM_LEADER_KEY,
+      VIM_YANK_CLIPBOARD_KEY,
+      VIM_INSERT_ESCAPE_KEY,
+      DOUBLE_TAP_TRIGGER_KEY,
+      DOUBLE_TAP_COMMAND_KEY,
+      DOUBLE_TAP_SPEED_KEY,
     ];
 
     function exportUserSettings() {
@@ -1019,6 +1192,9 @@ export function create(deps) {
       backendRemove(BELUGA_CANCEL_ON_EDIT_KEY);
       backendRemove(CHECK_AGGRESSIVENESS_KEY);
       backendRemove(SUITE_CHECK_KEY);
+    }
+
+    function resetHarpoonPrefs() {
       backendRemove(AUTOSOLVE_FOCUS_NEXT_KEY);
       backendRemove(AUTOSOLVE_SHOW_STATS_KEY);
       backendRemove(HARPOON_MODE_KEY);
@@ -1035,7 +1211,6 @@ export function create(deps) {
       backendRemove(REPL_HISTORY_PERSIST_KEY);
       backendRemove(REPL_AUTOCOMPLETE_TRIGGER_KEY);
       backendRemove(REPL_AUTOCOMPLETE_CONTINUE_KEY);
-      clearReplHistoryPayload();
     }
 
     var KEYBINDINGS_KEY = 'beljar-keybindings';
@@ -1076,6 +1251,15 @@ export function create(deps) {
 
     function resetKeybindingPrefs() {
       writeStoredKeybindings({});
+      backendRemove(KEYMAP_STYLE_KEY);
+      backendRemove(STATUS_STRIP_KEY);
+      backendRemove(COMMAND_LINE_HISTORY_KEY);
+      backendRemove(VIM_LEADER_KEY);
+      backendRemove(VIM_YANK_CLIPBOARD_KEY);
+      backendRemove(VIM_INSERT_ESCAPE_KEY);
+      backendRemove(DOUBLE_TAP_TRIGGER_KEY);
+      backendRemove(DOUBLE_TAP_COMMAND_KEY);
+      backendRemove(DOUBLE_TAP_SPEED_KEY);
     }
 
     function resetAliasesPrefs() {
@@ -1209,6 +1393,8 @@ export function create(deps) {
       writeStoredEditorWordWrap: writeStoredEditorWordWrap,
       readStoredEditorTabSize: readStoredEditorTabSize,
       writeStoredEditorTabSize: writeStoredEditorTabSize,
+      readStoredEditorLineNumberMode: readStoredEditorLineNumberMode,
+      writeStoredEditorLineNumberMode: writeStoredEditorLineNumberMode,
       readStoredEditorLineNumbers: readStoredEditorLineNumbers,
       writeStoredEditorLineNumbers: writeStoredEditorLineNumbers,
       readStoredEditorFoldGutter: readStoredEditorFoldGutter,
@@ -1255,6 +1441,24 @@ export function create(deps) {
       writeStoredEditorFontFamily: writeStoredEditorFontFamily,
       readStoredEditorHoleEmphasis: readStoredEditorHoleEmphasis,
       writeStoredEditorHoleEmphasis: writeStoredEditorHoleEmphasis,
+      readStoredKeymapStyle: readStoredKeymapStyle,
+      writeStoredKeymapStyle: writeStoredKeymapStyle,
+      readStoredStatusStrip: readStoredStatusStrip,
+      readStoredDoubleTapTrigger: readStoredDoubleTapTrigger,
+      writeStoredDoubleTapTrigger: writeStoredDoubleTapTrigger,
+      readStoredDoubleTapCommand: readStoredDoubleTapCommand,
+      writeStoredDoubleTapCommand: writeStoredDoubleTapCommand,
+      readStoredDoubleTapSpeed: readStoredDoubleTapSpeed,
+      writeStoredDoubleTapSpeed: writeStoredDoubleTapSpeed,
+      readStoredVimYankClipboard: readStoredVimYankClipboard,
+      writeStoredVimYankClipboard: writeStoredVimYankClipboard,
+      readStoredVimLeader: readStoredVimLeader,
+      writeStoredVimLeader: writeStoredVimLeader,
+      readStoredVimInsertEscape: readStoredVimInsertEscape,
+      writeStoredVimInsertEscape: writeStoredVimInsertEscape,
+      readStoredCommandLineHistory: readStoredCommandLineHistory,
+      writeStoredCommandLineHistory: writeStoredCommandLineHistory,
+      writeStoredStatusStrip: writeStoredStatusStrip,
       readStoredMotionPref: readStoredMotionPref,
       writeStoredMotionPref: writeStoredMotionPref,
       applyStoredMotionPref: applyStoredMotionPref,
@@ -1299,6 +1503,7 @@ export function create(deps) {
       resetEditorGutterPrefs: resetEditorGutterPrefs,
       resetEditorPrefs: resetEditorPrefs,
       resetBelugaPrefs: resetBelugaPrefs,
+      resetHarpoonPrefs: resetHarpoonPrefs,
       resetReplPrefs: resetReplPrefs,
       readStoredKeybindings: readStoredKeybindings,
       writeStoredKeybindings: writeStoredKeybindings,

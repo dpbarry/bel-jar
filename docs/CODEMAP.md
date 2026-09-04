@@ -1,6 +1,6 @@
 # BelJar code map
 
-Durable atlas of where things live. Not a feature handoff — for orientation only.
+Durable atlas of where things live. Orientation only — product specs and open plans are indexed in [`README.md`](README.md).
 Commands and architecture: [`AGENTS.md`](../AGENTS.md), [`.cursor/rules/`](../.cursor/rules/).
 
 ## Two-layer runtime
@@ -11,7 +11,7 @@ BelJar is **two runtimes glued by globals**, not one modular app:
 index.html
   ├─ css/style.css         (@import cascade → css/*.css, css/components/)
   ├─ js/                   shell domains + editor-src + editor-cm.bundle.js
-  │    ├─ app/ persist/ harpoon/ beluga/ explorer/ library/ ui/ workspace/ repl/
+  │    ├─ app/ commands/ status-strip/ persist/ harpoon/ beluga/ explorer/ library/ ui/ workspace/ repl/
   │    └─ editor-src/ → bundled to editor-cm.bundle.js
   ├─ beluga_web.bc.js      Beluga (js_of_ocaml), via worker
   └─ js/shell.js           product shell after clients + editor
@@ -19,7 +19,7 @@ index.html
 
 | Layer | Path | Role |
 |-------|------|------|
-| Shell | `js/{app,persist,harpoon,beluga,explorer,library,ui,workspace,repl}/`, `js/shell.mjs` | Product boot → `shell.js` |
+| Shell | `js/{app,commands,status-strip,persist,harpoon,beluga,explorer,library,ui,workspace,repl}/`, `js/shell.mjs` | Product boot → `shell.js` |
 | Editor core | `js/editor-src/` → `js/editor-cm.bundle.js` | AST, semantics, prover, CM extensions |
 | Beluga | `beluga_web.bc.js`, `js/beluga/` | Surgical checker on a **web worker** |
 | Corpus | `library/` | Bundled examples + manifests |
@@ -27,7 +27,7 @@ index.html
 
 **Seam:** shell does **not** ES-import `js/editor-src/`. Glue is `window` system-noun globals (`Persist`, `BelEditor`, `Harpoon`, …) plus `beljar:*` events. Legacy `BelJar*` names are compat aliases ([`beljar-window-aliases.mjs`](../js/compat/beljar-window-aliases.mjs)). Soft `typeof` only at editor / Beluga / session edges; peers inside `shell.js` call each other directly.
 
-**Shipping:** edit `.mjs` → `npm run build:shell` / `node scripts/build-editor.mjs`. Import order in [`shell.mjs`](../js/shell.mjs) is load-bearing. Do not hand-edit generated `.js`. Clients (`beluga-client.js`, `harpoon-client.js`) stay classic. Design-quality ladder archive: [`design-quality-refactoring-handoff.md`](design-quality-refactoring-handoff.md) (thread closed).
+**Shipping:** edit `.mjs` → `npm run build:shell` / `node scripts/build-editor.mjs`. Import order in [`shell.mjs`](../js/shell.mjs) is load-bearing. Do not hand-edit generated `.js`. Clients (`beluga-client.js`, `harpoon-client.js`) stay classic. Doc index: [`docs/README.md`](README.md). Archive: [`docs/archive/`](archive/).
 
 **Naming (durable):** system nouns for editor-src modules and CM factories; Beluga product nouns (`beluga-parser*`, `beluga()`, …); CSS `bel-editor--*` / `bel-hl-*` stay. New modules land in domain folders — see `.cursor/rules/beljar-codemap.mdc`.
 
@@ -43,6 +43,9 @@ index.html
 | **IDE chrome** | [`ide/`](../js/editor-src/ide/) | Rename, fold, hover, lint, inspector, cfg/suite, [`completion/`](../js/editor-src/ide/completion/) (`classify` → `contributors` → `weigh`; holes use assembled code + `offsetLines`) |
 | **Graph** | [`graph-view.mjs`](../js/editor-src/graph/graph-view.mjs) | `graph/*` |
 | **Format** | [`document-format.mjs`](../js/editor-src/format/document-format.mjs) | `format/*` |
+| **Perf tracing** | [`check-trace.mjs`](../js/editor-src/perf/check-trace.mjs) | `perf/*` |
+| **Commands / keys** | [`command-registry.mjs`](../js/commands/command-registry.mjs) | `commands/*` — catalogue (metadata) + attached behaviour; `Keybindings`, the palette, the command line and Available macros are all projections of it. Modal keymaps: `editor-src/ide/modal/*`, assembled by `keymap-style.mjs`. See [`COMMANDS.md`](COMMANDS.md) |
+| **Status strip** | [`status-strip-view.mjs`](../js/status-strip/status-strip-view.mjs) | `status-strip/*` — status strip under the editor pane (shell-owned sibling of `.editor-body`, not a CM panel); fed by [`status-strip-feed.mjs`](../js/editor-src/ide/status-strip-feed.mjs) + `beljar:file-lint` |
 | **Shell UI** | [`app.mjs`](../js/app/app.mjs) → generated `app.js` | `app-*.mjs` peels; explorer / library / settings |
 | **Persist / workspace** | [`persist.mjs`](../js/persist/persist.mjs), [`workspace.mjs`](../js/workspace/workspace.mjs) | Peels + [`install-edit-history.mjs`](../js/persist/install-edit-history.mjs) |
 | **Beluga runtime** | [`beluga-client.js`](../js/beluga/beluga-client.js) | `beluga-run*`, `beluga-worker.js` (checker always on worker) |
@@ -77,7 +80,7 @@ Same product noun, two trees. **No ES import across the seam** — shell soft-ca
 
 ## Window globals
 
-Owners publish system nouns next to their module (`Persist`, `BelEditor`, `Toasts`, …). Cross-seam soft-calls: `BelEditor`, `CurrentEditor`, `EditHistory*`, `BelugaClient`, `Harpoon*`, `Persist`, `ProjectSource`. Debug flags: `Perf`, `JumpLog`, …. Full alias map: [`beljar-window-aliases.mjs`](../js/compat/beljar-window-aliases.mjs).
+Owners publish system nouns next to their module (`Persist`, `BelEditor`, `Toasts`, …). Cross-seam soft-calls: `BelEditor`, `Commands`, `CurrentEditor`, `EditHistory*`, `BelugaClient`, `Harpoon*`, `Persist`, `ProjectSource`. Debug flags: `Perf`, `JumpLog`, …. Full alias map: [`beljar-window-aliases.mjs`](../js/compat/beljar-window-aliases.mjs).
 
 ## Satellites and do-not-touch
 
@@ -88,7 +91,8 @@ Owners publish system nouns next to their module (`Persist`, `BelEditor`, `Toast
 | `js/editor-src/beluga-parser.js` | Generated from `beluga.grammar` |
 | `js/editor-cm.bundle.js` | Generated — `node scripts/build-editor.mjs` |
 | `js/**/*.js` leaves + `js/shell.js` | Generated from `.mjs` — `npm run build:shell`; never hand-edit |
-| `scratch/`, `scripts/debug-*.mjs`, `scripts/.str-step-*.bel` | Local experiments (gitignored) — not product |
+| `scratch/` | Local only: `probes/` (research), `machine-transfer/` (devops), dumps — gitignored except README |
+| `scripts/` | Committed npm-wired tools only — not scratch |
 | `tests/fixtures/`, `results/` | Test samples / harness outputs |
 
 ## Principles (structure)
@@ -107,19 +111,18 @@ Owners publish system nouns next to their module (`Persist`, `BelEditor`, `Toast
 | `app/app.mjs` | Shell mount + wiring | `app-*.mjs` peels |
 | `persist/persist.mjs` | Storage facade | `persist-*.mjs` peels |
 | `css/style.css` | Import-only cascade | Concern files under `css/` |
-| `harpoon/harpoon-lab.mjs` | Session hub | display / commit / reel / auto / tree-ui |
+| `harpoon/harpoon-lab.mjs` | Session hub | manual / display / commit / reel / auto / tree-ui |
 | `ui/settings-ui.mjs` | Settings dialog | widgets: `bj-toggle`, `bj-dropdown`; panels stay here |
 | `editor.mjs` | Mount + barrel | Live check host → `semantic/editor-check-host.mjs` |
 
-## Active feature docs
+## Feature docs
+
+Index: [`README.md`](README.md). Closed plans: [`archive/`](archive/).
 
 | Topic | Doc | Role |
 |-------|-----|------|
-| Native prover | [`prover-master-plan.md`](prover-master-plan.md) | **SoT** |
-| Prover agent paste | [`prover-agent-kickoff.md`](prover-agent-kickoff.md) | Defers to master plan |
-| Completeness audit | [`prover-completeness.md`](prover-completeness.md) | Historical appendix |
-| Incremental symbols | [`incremental-semantics-execution-handoff.md`](incremental-semantics-execution-handoff.md) | **SoT** |
-| Input path context | [`input-and-incremental-intelligence-handoff.md`](input-and-incremental-intelligence-handoff.md) | Companion to execution handoff |
-| Fast checking | [`fast-incremental-checking.md`](fast-incremental-checking.md) | Graph-driven Beluga principles |
+| **Orca (the prover)** | [`ORCA.md`](ORCA.md) | What it is, how it works, how to run it |
+| **Harpoon (the surface)** | [`HARPOON.md`](HARPOON.md) | States, invariants, how to change it |
+| **Commands / keys** | [`COMMANDS.md`](COMMANDS.md) | ⭐ **Read this before adding or changing a command.** The shape, the recipe, the invariants and the four traps |
+| Modal editing | [`modal-editing.md`](modal-editing.md) | Closed **record** of how the layer was built. §0.4 indexes the ⛔ rules; `COMMANDS.md` is the working page |
 | Edit history | [`edit-history.md`](edit-history.md) | Undo contract |
-| Design-quality archive | [`design-quality-refactoring-handoff.md`](design-quality-refactoring-handoff.md) | Thread closed — use this atlas |

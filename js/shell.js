@@ -172,12 +172,12 @@
       return;
     }
     var phase = (msg.phase || "").trim();
-    var state = (msg.state || "").trim();
+    var state2 = (msg.state || "").trim();
     if (!phase) return;
     var w = phaseWeights(phase);
-    if (state === "begin") {
+    if (state2 === "begin") {
       bumpTarget(w.begin);
-    } else if (state === "done") {
+    } else if (state2 === "done") {
       bumpTarget(w.done);
     }
   }
@@ -309,11 +309,11 @@
     function uiFontScaleForSize2(size) {
       return UI_FONT_SCALES2[size] || 1;
     }
-    function applyStoredUiFontSize2(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
-      root.style.setProperty("--ui-font-scale", String(uiFontScaleForSize2(readStoredUiFontSize2())));
+    function applyStoredUiFontSize2(doc2) {
+      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
+      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
+      if (!root2) return;
+      root2.style.setProperty("--ui-font-scale", String(uiFontScaleForSize2(readStoredUiFontSize2())));
     }
     function readStoredUiTextContrast2() {
       try {
@@ -334,11 +334,11 @@
     function uiTextContrastMultiplierForLevel2(contrast) {
       return UI_TEXT_CONTRAST_MULTIPLIERS2[contrast] || UI_TEXT_CONTRAST_MULTIPLIERS2.medium;
     }
-    function applyStoredUiTextContrast2(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
-      root.style.setProperty("--ui-text-contrast", String(uiTextContrastMultiplierForLevel2(readStoredUiTextContrast2())));
+    function applyStoredUiTextContrast2(doc2) {
+      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
+      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
+      if (!root2) return;
+      root2.style.setProperty("--ui-text-contrast", String(uiTextContrastMultiplierForLevel2(readStoredUiTextContrast2())));
     }
     return {
       readStoredTheme: readStoredTheme2,
@@ -496,6 +496,16 @@
     var EDITOR_RULERS_KEY = "beljar-editor-rulers";
     var EDITOR_FONT_FAMILY_KEY = "beljar-editor-font-family";
     var EDITOR_HOLE_EMPHASIS_KEY = "beljar-editor-hole-emphasis";
+    var KEYMAP_STYLE_KEY = "beljar-keymap-style";
+    var STATUS_STRIP_KEY = "beljar-status-strip";
+    var COMMAND_LINE_HISTORY_KEY = "beljar-command-line-history";
+    var DOUBLE_TAP_TRIGGER_KEY = "beljar-double-tap-trigger";
+    var DOUBLE_TAP_COMMAND_KEY = "beljar-double-tap-command";
+    var DOUBLE_TAP_SPEED_KEY = "beljar-double-tap-speed";
+    var VIM_LEADER_KEY = "beljar-vim-leader";
+    var VIM_YANK_CLIPBOARD_KEY = "beljar-vim-yank-clipboard";
+    var EDITOR_LINE_NUMBER_MODE_KEY = "beljar-editor-line-number-mode";
+    var VIM_INSERT_ESCAPE_KEY = "beljar-vim-insert-escape";
     var MOTION_PREF_KEY = "beljar-motion-pref";
     var TOAST_DURATION_KEY = "beljar-toast-duration";
     var CHECK_AGGRESSIVENESS_KEY = "beljar-check-aggressiveness";
@@ -703,8 +713,8 @@
       } catch (_) {
       }
     }
-    function clampReplCommandHistory(list2) {
-      var arr = Array.isArray(list2) ? list2.filter(function(s) {
+    function clampReplCommandHistory(list3) {
+      var arr = Array.isArray(list3) ? list3.filter(function(s) {
         return typeof s === "string";
       }) : [];
       var cap = readStoredReplHistoryCap2();
@@ -724,11 +734,11 @@
         return [];
       }
     }
-    function writeStoredReplCommandHistory2(list2) {
+    function writeStoredReplCommandHistory2(list3) {
       try {
         var mode = readStoredReplHistoryPersist2();
         if (mode === "none") return;
-        var arr = clampReplCommandHistory(list2);
+        var arr = clampReplCommandHistory(list3);
         if (!arr.length) replHistoryStoreRemove(mode, REPL_CMD_HISTORY_KEY);
         else replHistoryStoreSet(mode, REPL_CMD_HISTORY_KEY, JSON.stringify(arr));
       } catch (_) {
@@ -837,6 +847,19 @@
     }
     function writeStoredEditorLineNumbers2(on) {
       writeBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY, on);
+    }
+    function readStoredEditorLineNumberMode2() {
+      try {
+        var v = backendLoad2(EDITOR_LINE_NUMBER_MODE_KEY);
+        if (v === "relative" || v === "hybrid") return v;
+        return "absolute";
+      } catch (_) {
+        return "absolute";
+      }
+    }
+    function writeStoredEditorLineNumberMode2(v) {
+      if (v === "relative" || v === "hybrid") backendSave2(EDITOR_LINE_NUMBER_MODE_KEY, v);
+      else backendRemove2(EDITOR_LINE_NUMBER_MODE_KEY);
     }
     function readStoredEditorFoldGutter2() {
       return readBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY);
@@ -1021,6 +1044,127 @@
       if (mode === "subtle" || mode === "loud") backendSave2(EDITOR_HOLE_EMPHASIS_KEY, mode);
       else backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
     }
+    function readStoredKeymapStyle() {
+      try {
+        var v = backendLoad2(KEYMAP_STYLE_KEY);
+        if (v === "vim" || v === "emacs") return v;
+        return "default";
+      } catch (_) {
+        return "default";
+      }
+    }
+    function writeStoredKeymapStyle(style) {
+      if (style === "vim" || style === "emacs") backendSave2(KEYMAP_STYLE_KEY, style);
+      else backendRemove2(KEYMAP_STYLE_KEY);
+    }
+    function readStoredStatusStrip() {
+      try {
+        var v = backendLoad2(STATUS_STRIP_KEY);
+        if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+    function writeStoredStatusStrip(mode) {
+      if (mode === "off" || mode === "compact" || mode === "standard" || mode === "detailed") backendSave2(STATUS_STRIP_KEY, mode);
+      else backendRemove2(STATUS_STRIP_KEY);
+    }
+    function readStoredCommandLineHistory() {
+      try {
+        var raw = backendLoad2(COMMAND_LINE_HISTORY_KEY);
+        if (!raw) return [];
+        var parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(function(x) {
+          return typeof x === "string" && x;
+        }).slice(0, 50);
+      } catch (_) {
+        return [];
+      }
+    }
+    function writeStoredCommandLineHistory(list3) {
+      if (!Array.isArray(list3) || !list3.length) {
+        backendRemove2(COMMAND_LINE_HISTORY_KEY);
+        return;
+      }
+      var clean = list3.filter(function(x) {
+        return typeof x === "string" && x;
+      }).slice(0, 50);
+      backendSave2(COMMAND_LINE_HISTORY_KEY, JSON.stringify(clean));
+    }
+    function readStoredDoubleTapTrigger() {
+      try {
+        var v = backendLoad2(DOUBLE_TAP_TRIGGER_KEY);
+        return v === "shift" || v === "control" || v === "alt" ? v : "off";
+      } catch (_) {
+        return "off";
+      }
+    }
+    function writeStoredDoubleTapTrigger(v) {
+      if (v === "shift" || v === "control" || v === "alt") backendSave2(DOUBLE_TAP_TRIGGER_KEY, v);
+      else backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
+    }
+    function readStoredDoubleTapCommand() {
+      try {
+        var v = backendLoad2(DOUBLE_TAP_COMMAND_KEY);
+        return typeof v === "string" && v ? v : "tools.palette";
+      } catch (_) {
+        return "tools.palette";
+      }
+    }
+    function writeStoredDoubleTapCommand(v) {
+      if (typeof v === "string" && v && v !== "tools.palette") backendSave2(DOUBLE_TAP_COMMAND_KEY, v);
+      else backendRemove2(DOUBLE_TAP_COMMAND_KEY);
+    }
+    function readStoredDoubleTapSpeed() {
+      try {
+        var v = backendLoad2(DOUBLE_TAP_SPEED_KEY);
+        return v === "fast" || v === "relaxed" ? v : "normal";
+      } catch (_) {
+        return "normal";
+      }
+    }
+    function writeStoredDoubleTapSpeed(v) {
+      if (v === "fast" || v === "relaxed") backendSave2(DOUBLE_TAP_SPEED_KEY, v);
+      else backendRemove2(DOUBLE_TAP_SPEED_KEY);
+    }
+    function readStoredVimLeader() {
+      try {
+        var v = backendLoad2(VIM_LEADER_KEY);
+        if (v === "," || v === " ") return v;
+        return String.fromCharCode(92);
+      } catch (_) {
+        return String.fromCharCode(92);
+      }
+    }
+    function writeStoredVimLeader(v) {
+      if (v === "," || v === " ") backendSave2(VIM_LEADER_KEY, v);
+      else backendRemove2(VIM_LEADER_KEY);
+    }
+    function readStoredVimYankClipboard() {
+      try {
+        return backendLoad2(VIM_YANK_CLIPBOARD_KEY) === "on";
+      } catch (_) {
+        return false;
+      }
+    }
+    function writeStoredVimYankClipboard(on) {
+      if (on === true) backendSave2(VIM_YANK_CLIPBOARD_KEY, "on");
+      else backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+    }
+    function readStoredVimInsertEscape() {
+      try {
+        var v = backendLoad2(VIM_INSERT_ESCAPE_KEY);
+        return v === "jk" || v === "jj" || v === "kj" ? v : "";
+      } catch (_) {
+        return "";
+      }
+    }
+    function writeStoredVimInsertEscape(v) {
+      if (v === "jk" || v === "jj" || v === "kj") backendSave2(VIM_INSERT_ESCAPE_KEY, v);
+      else backendRemove2(VIM_INSERT_ESCAPE_KEY);
+    }
     function readStoredMotionPref() {
       try {
         var v = backendLoad2(MOTION_PREF_KEY);
@@ -1034,13 +1178,13 @@
       if (mode === "reduce" || mode === "full") backendSave2(MOTION_PREF_KEY, mode);
       else backendRemove2(MOTION_PREF_KEY);
     }
-    function applyStoredMotionPref(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
+    function applyStoredMotionPref(doc2) {
+      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
+      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
+      if (!root2) return;
       var mode = readStoredMotionPref();
-      root.classList.toggle("bj-motion-reduce", mode === "reduce");
-      root.classList.toggle("bj-motion-full", mode === "full");
+      root2.classList.toggle("bj-motion-reduce", mode === "reduce");
+      root2.classList.toggle("bj-motion-full", mode === "full");
     }
     function prefersReducedMotion2() {
       var mode = readStoredMotionPref();
@@ -1104,17 +1248,14 @@
     }
     function readStoredHarpoonMode() {
       try {
-        var v = localStorage.getItem(HARPOON_MODE_KEY);
-        return v === "brutus" ? "brutus" : "manual";
-      } catch (e) {
+        return backendLoad2(HARPOON_MODE_KEY) === "orca" ? "orca" : "manual";
+      } catch (_) {
         return "manual";
       }
     }
     function writeStoredHarpoonMode(mode) {
-      try {
-        localStorage.setItem(HARPOON_MODE_KEY, mode === "brutus" ? "brutus" : "manual");
-      } catch (e) {
-      }
+      if (mode === "orca") backendSave2(HARPOON_MODE_KEY, "orca");
+      else backendRemove2(HARPOON_MODE_KEY);
     }
     function readStoredHarpoonVerifyMoves() {
       return readBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY);
@@ -1197,20 +1338,20 @@
     function writeStoredHoverSticky(on) {
       writeBoolDefaultOff(HOVER_STICKY_KEY, on);
     }
-    function applyStoredEditorChrome(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
+    function applyStoredEditorChrome(doc2) {
+      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
+      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
+      if (!root2) return;
       var family = readStoredEditorFontFamily();
-      root.style.setProperty(
+      root2.style.setProperty(
         "--editor-mono",
         family === "system" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "'JetBrains Mono', monospace"
       );
-      root.style.setProperty("--editor-ligatures", "none");
+      root2.style.setProperty("--editor-ligatures", "none");
       backendRemove2("beljar-editor-ligatures");
       var emph = readStoredEditorHoleEmphasis();
-      root.classList.toggle("bj-hole-subtle", emph === "subtle");
-      root.classList.toggle("bj-hole-loud", emph === "loud");
+      root2.classList.toggle("bj-hole-subtle", emph === "subtle");
+      root2.classList.toggle("bj-hole-loud", emph === "loud");
     }
     var USER_SETTINGS_EXPORT_KEYS = [
       "beljar-theme",
@@ -1257,6 +1398,7 @@
       EDITOR_WORD_WRAP_KEY,
       EDITOR_TAB_SIZE_KEY,
       EDITOR_LINE_NUMBERS_KEY,
+      EDITOR_LINE_NUMBER_MODE_KEY,
       EDITOR_FOLD_GUTTER_KEY,
       EDITOR_FOLD_PERSIST_KEY,
       EDITOR_ACTIVE_LINE_KEY,
@@ -1278,7 +1420,16 @@
       EDITOR_WHITESPACE_KEY,
       EDITOR_RULERS_KEY,
       EDITOR_FONT_FAMILY_KEY,
-      EDITOR_HOLE_EMPHASIS_KEY
+      EDITOR_HOLE_EMPHASIS_KEY,
+      KEYMAP_STYLE_KEY,
+      STATUS_STRIP_KEY,
+      COMMAND_LINE_HISTORY_KEY,
+      VIM_LEADER_KEY,
+      VIM_YANK_CLIPBOARD_KEY,
+      VIM_INSERT_ESCAPE_KEY,
+      DOUBLE_TAP_TRIGGER_KEY,
+      DOUBLE_TAP_COMMAND_KEY,
+      DOUBLE_TAP_SPEED_KEY
     ];
     function exportUserSettings() {
       var prefs = {};
@@ -1390,6 +1541,8 @@
       backendRemove2(BELUGA_CANCEL_ON_EDIT_KEY);
       backendRemove2(CHECK_AGGRESSIVENESS_KEY);
       backendRemove2(SUITE_CHECK_KEY);
+    }
+    function resetHarpoonPrefs2() {
       backendRemove2(AUTOSOLVE_FOCUS_NEXT_KEY);
       backendRemove2(AUTOSOLVE_SHOW_STATS_KEY);
       backendRemove2(HARPOON_MODE_KEY);
@@ -1405,7 +1558,6 @@
       backendRemove2(REPL_HISTORY_PERSIST_KEY);
       backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
       backendRemove2(REPL_AUTOCOMPLETE_CONTINUE_KEY);
-      clearReplHistoryPayload();
     }
     var KEYBINDINGS_KEY = "beljar-keybindings";
     function readStoredKeybindings2() {
@@ -1443,6 +1595,15 @@
     }
     function resetKeybindingPrefs2() {
       writeStoredKeybindings2({});
+      backendRemove2(KEYMAP_STYLE_KEY);
+      backendRemove2(STATUS_STRIP_KEY);
+      backendRemove2(COMMAND_LINE_HISTORY_KEY);
+      backendRemove2(VIM_LEADER_KEY);
+      backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+      backendRemove2(VIM_INSERT_ESCAPE_KEY);
+      backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
+      backendRemove2(DOUBLE_TAP_COMMAND_KEY);
+      backendRemove2(DOUBLE_TAP_SPEED_KEY);
     }
     function resetAliasesPrefs2() {
       backendRemove2(ALIAS_ACTIVATION_KEY);
@@ -1482,11 +1643,11 @@
         var cur = getFileText2(f.id);
         var next = expandAliasesForStorage2(cur, f.name);
         if (next !== cur) {
-          var state = readState2(defaultBackend2, f.id);
-          state.editor.text = next;
-          state.meta.updatedAt = Date.now();
-          state.meta.revision = (state.meta.revision || 0) + 1;
-          backendSave2(stateKeyFor2(f.id), JSON.stringify(state));
+          var state2 = readState2(defaultBackend2, f.id);
+          state2.editor.text = next;
+          state2.meta.updatedAt = Date.now();
+          state2.meta.revision = (state2.meta.revision || 0) + 1;
+          backendSave2(stateKeyFor2(f.id), JSON.stringify(state2));
           changed += 1;
         }
       }
@@ -1568,6 +1729,8 @@
       writeStoredEditorWordWrap: writeStoredEditorWordWrap2,
       readStoredEditorTabSize: readStoredEditorTabSize2,
       writeStoredEditorTabSize: writeStoredEditorTabSize2,
+      readStoredEditorLineNumberMode: readStoredEditorLineNumberMode2,
+      writeStoredEditorLineNumberMode: writeStoredEditorLineNumberMode2,
       readStoredEditorLineNumbers: readStoredEditorLineNumbers2,
       writeStoredEditorLineNumbers: writeStoredEditorLineNumbers2,
       readStoredEditorFoldGutter: readStoredEditorFoldGutter2,
@@ -1614,6 +1777,24 @@
       writeStoredEditorFontFamily,
       readStoredEditorHoleEmphasis,
       writeStoredEditorHoleEmphasis,
+      readStoredKeymapStyle,
+      writeStoredKeymapStyle,
+      readStoredStatusStrip,
+      readStoredDoubleTapTrigger,
+      writeStoredDoubleTapTrigger,
+      readStoredDoubleTapCommand,
+      writeStoredDoubleTapCommand,
+      readStoredDoubleTapSpeed,
+      writeStoredDoubleTapSpeed,
+      readStoredVimYankClipboard,
+      writeStoredVimYankClipboard,
+      readStoredVimLeader,
+      writeStoredVimLeader,
+      readStoredVimInsertEscape,
+      writeStoredVimInsertEscape,
+      readStoredCommandLineHistory,
+      writeStoredCommandLineHistory,
+      writeStoredStatusStrip,
       readStoredMotionPref,
       writeStoredMotionPref,
       applyStoredMotionPref,
@@ -1658,6 +1839,7 @@
       resetEditorGutterPrefs: resetEditorGutterPrefs2,
       resetEditorPrefs: resetEditorPrefs2,
       resetBelugaPrefs: resetBelugaPrefs2,
+      resetHarpoonPrefs: resetHarpoonPrefs2,
       resetReplPrefs: resetReplPrefs2,
       readStoredKeybindings: readStoredKeybindings2,
       writeStoredKeybindings: writeStoredKeybindings2,
@@ -1785,7 +1967,6 @@
       resetStoredWorkspace2(pid);
     }
     function resetWorkspacePrefs2() {
-      resetStoredWorkspace2();
       backendRemove2(INSPECTOR_FOLLOW_KEY2);
       backendRemove2(RESTORE_PANELS_KEY);
       backendRemove2(LIBRARY_EXPAND_DEFAULT_KEY);
@@ -1899,8 +2080,8 @@
       } catch (_) {
       }
     }
-    function writeStoredExplorerOpen2(open9) {
-      if (open9) backendSave2(EXPLORER_OPEN_KEY2, "1");
+    function writeStoredExplorerOpen2(open10) {
+      if (open10) backendSave2(EXPLORER_OPEN_KEY2, "1");
       else backendRemove2(EXPLORER_OPEN_KEY2);
     }
     function readStoredInspectorOpen2() {
@@ -1910,8 +2091,8 @@
         return false;
       }
     }
-    function writeStoredInspectorOpen2(open9) {
-      if (open9) backendSave2(INSPECTOR_OPEN_KEY2, "1");
+    function writeStoredInspectorOpen2(open10) {
+      if (open10) backendSave2(INSPECTOR_OPEN_KEY2, "1");
       else backendRemove2(INSPECTOR_OPEN_KEY2);
     }
     function readStoredInspectorFollow2() {
@@ -1943,8 +2124,8 @@
         return false;
       }
     }
-    function writeStoredLibraryOpen2(open9) {
-      if (open9) backendSave2(LIBRARY_OPEN_KEY2, "1");
+    function writeStoredLibraryOpen2(open10) {
+      if (open10) backendSave2(LIBRARY_OPEN_KEY2, "1");
       else backendRemove2(LIBRARY_OPEN_KEY2);
     }
     function readStoredHarpoonOpen2() {
@@ -1954,8 +2135,8 @@
         return false;
       }
     }
-    function writeStoredHarpoonOpen2(open9) {
-      if (open9) backendSave2("beljar-harpoon-open", "1");
+    function writeStoredHarpoonOpen2(open10) {
+      if (open10) backendSave2("beljar-harpoon-open", "1");
       else backendRemove2("beljar-harpoon-open");
     }
     function readStoredHarpoonDetailsCollapsed2() {
@@ -2336,23 +2517,27 @@
     function addEmptyFolder2(path) {
       var p = String(path || "").trim();
       if (!p) return;
-      var list2 = readEmptyFolders();
-      if (list2.indexOf(p) !== -1) return;
-      list2.push(p);
-      list2.sort();
-      writeEmptyFolders(list2);
+      var list3 = readEmptyFolders();
+      if (list3.indexOf(p) !== -1) return;
+      list3.push(p);
+      list3.sort();
+      writeEmptyFolders(list3);
+      notifyProjectTreeChanged("folder-add");
     }
     function removeEmptyFolder2(path) {
       var p = String(path || "");
-      var list2 = readEmptyFolders();
-      var next = list2.filter(function(x) {
+      var list3 = readEmptyFolders();
+      var next = list3.filter(function(x) {
         return x !== p;
       });
-      if (next.length === list2.length) return;
+      if (next.length === list3.length) return;
       writeEmptyFolders(next);
+      notifyProjectTreeChanged("folder-remove");
     }
     function clearEmptyFolders2() {
+      if (!readEmptyFolders().length) return;
       writeEmptyFolders([]);
+      notifyProjectTreeChanged("folder-clear");
     }
     function pruneEmptyFoldersUnder2(prefix) {
       var p = String(prefix || "").trim();
@@ -2360,38 +2545,45 @@
         clearEmptyFolders2();
         return;
       }
-      var list2 = readEmptyFolders();
-      var kept = list2.filter(function(x) {
+      var list3 = readEmptyFolders();
+      var kept = list3.filter(function(x) {
         return x !== p && x.indexOf(p + "/") !== 0;
       });
-      if (kept.length !== list2.length) writeEmptyFolders(kept);
+      if (kept.length !== list3.length) {
+        writeEmptyFolders(kept);
+        notifyProjectTreeChanged("folder-prune");
+      }
     }
     function renameEmptyFolderPrefix2(from, to) {
-      var list2 = readEmptyFolders();
+      var list3 = readEmptyFolders();
       var changed = false;
-      for (var i = 0; i < list2.length; i++) {
-        var p = list2[i];
+      for (var i = 0; i < list3.length; i++) {
+        var p = list3[i];
         if (p === from || p.indexOf(from + "/") === 0) {
-          list2[i] = to ? to + p.slice(from.length) : p.slice(from.length + 1);
+          list3[i] = to ? to + p.slice(from.length) : p.slice(from.length + 1);
           changed = true;
         }
       }
       if (changed) {
-        list2 = list2.filter(function(x) {
+        list3 = list3.filter(function(x) {
           return x;
         });
-        list2.sort();
-        writeEmptyFolders(list2);
+        list3.sort();
+        writeEmptyFolders(list3);
+        notifyProjectTreeChanged("folder-rename");
       }
     }
     function pruneEmptyFoldersForFile(filePath) {
       var name = String(filePath || "");
       if (!name) return;
-      var list2 = readEmptyFolders();
-      var next = list2.filter(function(ef) {
+      var list3 = readEmptyFolders();
+      var next = list3.filter(function(ef) {
         return name !== ef && name.indexOf(ef + "/") !== 0;
       });
-      if (next.length !== list2.length) writeEmptyFolders(next);
+      if (next.length !== list3.length) {
+        writeEmptyFolders(next);
+        notifyProjectTreeChanged("folder-prune");
+      }
     }
     function folderSubtreeOccupied(folderPath, files, emptyFolders) {
       if (!folderPath) return files.length > 0 || emptyFolders.length > 0;
@@ -2530,17 +2722,17 @@
       }
       var used = {};
       var files = [];
-      var list2 = entries || [];
-      for (var j = 0; j < list2.length; j++) {
-        var ent = list2[j];
+      var list3 = entries || [];
+      for (var j = 0; j < list3.length; j++) {
+        var ent = list3[j];
         var name = String(ent.name || "untitled.bel");
         var id = uniqueFileId(name, used);
         files.push({ id, name });
-        var state = emptyState2(id);
-        state.editor.text = expandAliasesForStorage2(ent.text, name);
-        state.meta.updatedAt = Date.now();
-        state.meta.revision = 1;
-        backendSave2(stateKeyFor2(id), JSON.stringify(state));
+        var state2 = emptyState2(id);
+        state2.editor.text = expandAliasesForStorage2(ent.text, name);
+        state2.meta.updatedAt = Date.now();
+        state2.meta.revision = 1;
+        backendSave2(stateKeyFor2(id), JSON.stringify(state2));
       }
       writeProjectFiles(files);
       var activeId2 = options.activeId;
@@ -2575,6 +2767,7 @@
       files.push({ id, name: fileName });
       writeProjectFiles(files);
       pruneEmptyFoldersForFile(fileName);
+      notifyProjectTreeChanged("create");
       return id;
     }
     function relToCfgDir(cfgDir, fullPath) {
@@ -2618,6 +2811,12 @@
       var g14 = typeof window !== "undefined" ? window : null;
       if (g14 && typeof g14.dispatchEvent === "function") {
         g14.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
+      }
+    }
+    function notifyProjectTreeChanged(kind) {
+      var g14 = typeof window !== "undefined" ? window : null;
+      if (g14 && typeof g14.dispatchEvent === "function") {
+        g14.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
@@ -2665,12 +2864,13 @@
       }
       files.push({ id, name });
       writeProjectFiles(files);
-      var state = emptyState2(id);
-      state.editor.text = expandAliasesForStorage2(text, name);
-      state.meta.updatedAt = Date.now();
-      state.meta.revision = 1;
-      backendSave2(stateKeyFor2(id), JSON.stringify(state));
+      var state2 = emptyState2(id);
+      state2.editor.text = expandAliasesForStorage2(text, name);
+      state2.meta.updatedAt = Date.now();
+      state2.meta.revision = 1;
+      backendSave2(stateKeyFor2(id), JSON.stringify(state2));
       pruneEmptyFoldersForFile(name);
+      notifyProjectTreeChanged("restore");
       return true;
     }
     function deleteFile2(id) {
@@ -2697,6 +2897,7 @@
         backendRemove2(projKey2("active-file"));
         writeOpenFileIds2([]);
       }
+      notifyProjectTreeChanged("delete");
       return files.length ? files[Math.max(0, idx - 1)].id : null;
     }
     function rewriteCfgsForOp(oldName, newName) {
@@ -2730,18 +2931,19 @@
           var changed = false;
           for (var k in map) {
             if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
-            var list2 = normalizeActiveCfgList2(map[k]);
-            for (var j = 0; j < list2.length; j++) {
-              if (list2[j] === oldName) {
-                list2[j] = newName;
+            var list3 = normalizeActiveCfgList2(map[k]);
+            for (var j = 0; j < list3.length; j++) {
+              if (list3[j] === oldName) {
+                list3[j] = newName;
                 changed = true;
               }
             }
-            if (list2.length) map[k] = list2;
+            if (list3.length) map[k] = list3;
           }
           if (changed) writeActiveCfgByDir2(map);
           pruneEmptyFoldersForFile(newName);
           if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
+          notifyProjectTreeChanged("rename");
           return;
         }
       }
@@ -2865,18 +3067,18 @@
       var raw = defaultBackend2.loadSync(stateKeyFor2(id));
       var hit = fileTextCache.get(id);
       if (hit && hit.raw === raw) return hit.text;
-      var state = readState2(defaultBackend2, id);
-      var text = state && state.editor && typeof state.editor.text === "string" ? state.editor.text : "";
+      var state2 = readState2(defaultBackend2, id);
+      var text = state2 && state2.editor && typeof state2.editor.text === "string" ? state2.editor.text : "";
       if (fileTextCache.size > 512) fileTextCache.clear();
       fileTextCache.set(id, { raw, text });
       return text;
     }
     function setFileText2(id, text) {
-      var state = readState2(defaultBackend2, id);
-      state.editor.text = expandAliasesForStorage2(text, fileNameForId2(id));
-      state.meta.updatedAt = Date.now();
-      state.meta.revision = (state.meta.revision || 0) + 1;
-      backendSave2(stateKeyFor2(id), JSON.stringify(state));
+      var state2 = readState2(defaultBackend2, id);
+      state2.editor.text = expandAliasesForStorage2(text, fileNameForId2(id));
+      state2.meta.updatedAt = Date.now();
+      state2.meta.revision = (state2.meta.revision || 0) + 1;
+      backendSave2(stateKeyFor2(id), JSON.stringify(state2));
       fileTextCache.delete(id);
       try {
         if (typeof BelEditor !== "undefined" && typeof BelEditor.invalidateFileHealthAfterChange === "function") {
@@ -3042,8 +3244,8 @@
       var keys = Object.keys(map || {});
       for (var i = 0; i < keys.length; i++) {
         var k = keys[i];
-        var list2 = normalizeActiveCfgList2(map[k]);
-        if (list2.length) out[k] = list2;
+        var list3 = normalizeActiveCfgList2(map[k]);
+        if (list3.length) out[k] = list3;
       }
       if (!Object.keys(out).length) {
         backendRemove2(projKey2("active-cfg-by-dir"));
@@ -3057,14 +3259,14 @@
       return normalizeActiveCfgList2(map[d]);
     }
     function getActiveCfgForDir2(dir) {
-      var list2 = getActiveCfgsForDir2(dir);
-      return list2.length ? list2[0] : null;
+      var list3 = getActiveCfgsForDir2(dir);
+      return list3.length ? list3[0] : null;
     }
     function setActiveCfgsForDir2(dir, paths) {
       var map = readActiveCfgByDir2();
       var d = dir != null ? String(dir) : "";
-      var list2 = normalizeActiveCfgList2(paths);
-      if (list2.length) map[d] = list2;
+      var list3 = normalizeActiveCfgList2(paths);
+      if (list3.length) map[d] = list3;
       else delete map[d];
       writeActiveCfgByDir2(map);
     }
@@ -3076,20 +3278,20 @@
     function addActiveCfgForDir2(dir, path) {
       var trimmed = String(path != null ? path : "").trim();
       if (!trimmed) return;
-      var list2 = getActiveCfgsForDir2(dir);
-      for (var i = 0; i < list2.length; i++) {
-        if (list2[i] === trimmed) return;
+      var list3 = getActiveCfgsForDir2(dir);
+      for (var i = 0; i < list3.length; i++) {
+        if (list3[i] === trimmed) return;
       }
-      list2.push(trimmed);
-      setActiveCfgsForDir2(dir, list2);
+      list3.push(trimmed);
+      setActiveCfgsForDir2(dir, list3);
     }
     function removeActiveCfgForDir2(dir, path) {
       var trimmed = String(path != null ? path : "").trim();
       if (!trimmed) return;
-      var list2 = getActiveCfgsForDir2(dir);
+      var list3 = getActiveCfgsForDir2(dir);
       var next = [];
-      for (var i = 0; i < list2.length; i++) {
-        if (list2[i] !== trimmed) next.push(list2[i]);
+      for (var i = 0; i < list3.length; i++) {
+        if (list3[i] !== trimmed) next.push(list3[i]);
       }
       setActiveCfgsForDir2(dir, next);
     }
@@ -3463,14 +3665,14 @@
     }
     return base;
   }
-  function migrateLegacySemantic(state, backend) {
-    if (state.semantic) return state;
+  function migrateLegacySemantic(state2, backend) {
+    if (state2.semantic) return state2;
     var raw = backend.loadSync(LEGACY_SEMANTIC_TYPES_KEY);
-    if (!raw) return state;
+    if (!raw) return state2;
     var types = tryParse(raw);
-    if (!types) return state;
-    state.semantic = {
-      docFp: documentFingerprint(state.editor.text),
+    if (!types) return state2;
+    state2.semantic = {
+      docFp: documentFingerprint(state2.editor.text),
       scopeKey: "legacy",
       belugaBuild: readStoredBelugaMode(),
       types,
@@ -3478,24 +3680,24 @@
       deriveAttempted: []
     };
     backend.removeSync(LEGACY_SEMANTIC_TYPES_KEY);
-    return state;
+    return state2;
   }
   function readState(backend, documentId) {
     var b = backend || defaultBackend;
     var key = stateKeyFor(documentId);
     var parsed = tryParse(b.loadSync(key));
-    var state = normalizeLoaded(parsed, documentId);
+    var state2 = normalizeLoaded(parsed, documentId);
     if (parsed && (parsed.v === SCHEMA_VERSION || parsed.v === LEGACY_CHECKPOINT_V2)) {
-      return migrateLegacySemantic(state, b);
+      return migrateLegacySemantic(state2, b);
     }
     if (key === STATE_KEY) {
       var legacy = tryParse(b.loadSync(LEGACY_STATE_KEY));
       if (legacy) {
-        state = normalizeLoaded(legacy, documentId);
+        state2 = normalizeLoaded(legacy, documentId);
         b.removeSync(LEGACY_STATE_KEY);
       }
     }
-    return migrateLegacySemantic(state, b);
+    return migrateLegacySemantic(state2, b);
   }
   var readStateForId = readState;
   function semanticHasPayload(semantic) {
@@ -3565,10 +3767,10 @@
     lastSaveError = null;
     var N = globalThis.Notifications;
     if (!N || typeof N.list !== "function" || typeof N.dismiss !== "function") return;
-    var list2 = N.list();
-    for (var i = 0; i < list2.length; i++) {
-      if (list2[i] && list2[i].dedupeKey === CAPACITY_DEDUPE) {
-        N.dismiss(list2[i].id);
+    var list3 = N.list();
+    for (var i = 0; i < list3.length; i++) {
+      if (list3[i] && list3[i].dedupeKey === CAPACITY_DEDUPE) {
+        N.dismiss(list3[i].id);
         break;
       }
     }
@@ -3576,11 +3778,11 @@
   function isSaveBlocked() {
     return !!saveBlocked;
   }
-  function writeState(backend, state) {
+  function writeState(backend, state2) {
     var b = backend || defaultBackend;
-    var key = stateKeyFor(state.meta && state.meta.documentId);
+    var key = stateKeyFor(state2.meta && state2.meta.documentId);
     try {
-      b.saveSync(key, JSON.stringify(state));
+      b.saveSync(key, JSON.stringify(state2));
       clearCapacityFailure();
       return { ok: true };
     } catch (err) {
@@ -3589,10 +3791,10 @@
         lastSaveError = classified;
         return { ok: false, error: classified };
       }
-      if (state.semantic) {
-        state.semantic = trimSemanticForQuota(state.semantic);
+      if (state2.semantic) {
+        state2.semantic = trimSemanticForQuota(state2.semantic);
         try {
-          b.saveSync(key, JSON.stringify(state));
+          b.saveSync(key, JSON.stringify(state2));
           clearCapacityFailure();
           return { ok: true };
         } catch (err2) {
@@ -3612,14 +3814,14 @@
     var backend = opts.backend || defaultBackend;
     var documentId = opts.documentId || DEFAULT_DOCUMENT_ID;
     var debounceMs = opts.debounceMs != null ? opts.debounceMs : readStoredAutosaveDelay();
-    var state = readStateForId(backend, documentId);
+    var state2 = readStateForId(backend, documentId);
     var saveTimer3 = null;
     var providers3 = null;
     function collectSemantic() {
-      if (!providers3 || typeof providers3.getSemantic !== "function") return state.semantic;
+      if (!providers3 || typeof providers3.getSemantic !== "function") return state2.semantic;
       var exported = providers3.getSemantic();
-      if (!exported) return state.semantic;
-      var text = state.editor.text;
+      if (!exported) return state2.semantic;
+      var text = state2.editor.text;
       var docFp = typeof providers3.getDocFp === "function" ? providers3.getDocFp(text) : documentFingerprint(text);
       var belugaBuild = typeof providers3.getBelugaBuild === "function" ? providers3.getBelugaBuild() : readStoredBelugaMode();
       var scopeKey = typeof exported.scopeKey === "string" ? exported.scopeKey : typeof providers3.getScopeKey === "function" ? providers3.getScopeKey() : "";
@@ -3637,7 +3839,7 @@
       if (providers3 && typeof providers3.getViewport === "function") {
         return normalizeLocal(providers3.getViewport());
       }
-      return state.editor.local || {};
+      return state2.editor.local || {};
     }
     function collectEditorText() {
       if (providers3 && typeof providers3.getText === "function") {
@@ -3647,17 +3849,17 @@
         } catch (_) {
         }
       }
-      return state.editor.text;
+      return state2.editor.text;
     }
     function persistNow() {
       clearTimeout(saveTimer3);
       saveTimer3 = null;
-      state.meta.updatedAt = Date.now();
-      state.meta.revision += 1;
-      state.editor.text = collectEditorText();
-      state.editor.local = collectLocal();
-      state.semantic = collectSemantic();
-      writeState(backend, state);
+      state2.meta.updatedAt = Date.now();
+      state2.meta.revision += 1;
+      state2.editor.text = collectEditorText();
+      state2.editor.local = collectLocal();
+      state2.semantic = collectSemantic();
+      writeState(backend, state2);
     }
     function scheduleSave3() {
       clearTimeout(saveTimer3);
@@ -3665,7 +3867,7 @@
       saveTimer3 = globalThis.setTimeout(persistNow, delay);
     }
     function scheduleEditorPersist(text) {
-      if (text != null) state.editor.text = String(text);
+      if (text != null) state2.editor.text = String(text);
       scheduleSave3();
     }
     function markEditorDirty() {
@@ -3677,7 +3879,7 @@
     }
     function replaceEditorText(text) {
       cancelPendingSave();
-      state.editor.text = String(text != null ? text : "");
+      state2.editor.text = String(text != null ? text : "");
     }
     function flushCheckpoint() {
       persistNow();
@@ -3686,10 +3888,10 @@
       flushCheckpoint();
     }
     function exportSnapshot() {
-      return JSON.parse(JSON.stringify(state));
+      return JSON.parse(JSON.stringify(state2));
     }
     function importSnapshot(snapshot, flush) {
-      state = normalizeLoaded(snapshot, documentId);
+      state2 = normalizeLoaded(snapshot, documentId);
       if (flush) persistNow();
     }
     function setCheckpointProviders(next) {
@@ -3697,14 +3899,14 @@
     }
     function setBackend(next) {
       backend = next || defaultBackend;
-      state = readStateForId(backend, documentId);
+      state2 = readStateForId(backend, documentId);
     }
     function switchFile(newId2) {
       if (!newId2) return null;
       persistNow();
       providers3 = null;
       documentId = newId2;
-      state = readStateForId(backend, documentId);
+      state2 = readStateForId(backend, documentId);
       return exportSnapshot();
     }
     function getCurrentFileId() {
@@ -3712,13 +3914,13 @@
     }
     return {
       getEditorText: function() {
-        return state.editor.text;
+        return state2.editor.text;
       },
       getEditorLocal: function() {
-        return normalizeLocal(state.editor.local);
+        return normalizeLocal(state2.editor.local);
       },
       getSemanticCheckpoint: function() {
-        return state.semantic ? JSON.parse(JSON.stringify(state.semantic)) : null;
+        return state2.semantic ? JSON.parse(JSON.stringify(state2.semantic)) : null;
       },
       getInitialCheckpoint: exportSnapshot,
       scheduleEditorPersist,
@@ -3766,8 +3968,8 @@
   function uiFontScaleForSize(size) {
     return _uiPrefsApi.uiFontScaleForSize(size);
   }
-  function applyStoredUiFontSize(doc) {
-    return _uiPrefsApi.applyStoredUiFontSize(doc);
+  function applyStoredUiFontSize(doc2) {
+    return _uiPrefsApi.applyStoredUiFontSize(doc2);
   }
   function readStoredUiTextContrast() {
     return _uiPrefsApi.readStoredUiTextContrast();
@@ -3778,8 +3980,8 @@
   function uiTextContrastMultiplierForLevel(contrast) {
     return _uiPrefsApi.uiTextContrastMultiplierForLevel(contrast);
   }
-  function applyStoredUiTextContrast(doc) {
-    return _uiPrefsApi.applyStoredUiTextContrast(doc);
+  function applyStoredUiTextContrast(doc2) {
+    return _uiPrefsApi.applyStoredUiTextContrast(doc2);
   }
   var _settingsApi = create2({
     backendLoad,
@@ -3969,6 +4171,12 @@
   function writeStoredEditorLineNumbers() {
     return _settingsApi.writeStoredEditorLineNumbers.apply(_settingsApi, arguments);
   }
+  function readStoredEditorLineNumberMode() {
+    return _settingsApi.readStoredEditorLineNumberMode.apply(_settingsApi, arguments);
+  }
+  function writeStoredEditorLineNumberMode() {
+    return _settingsApi.writeStoredEditorLineNumberMode.apply(_settingsApi, arguments);
+  }
   function readStoredEditorFoldGutter() {
     return _settingsApi.readStoredEditorFoldGutter.apply(_settingsApi, arguments);
   }
@@ -4078,6 +4286,24 @@
     "writeStoredEditorFontFamily",
     "readStoredEditorHoleEmphasis",
     "writeStoredEditorHoleEmphasis",
+    "readStoredKeymapStyle",
+    "writeStoredKeymapStyle",
+    "readStoredStatusStrip",
+    "writeStoredStatusStrip",
+    "readStoredCommandLineHistory",
+    "writeStoredCommandLineHistory",
+    "readStoredDoubleTapTrigger",
+    "writeStoredDoubleTapTrigger",
+    "readStoredDoubleTapCommand",
+    "writeStoredDoubleTapCommand",
+    "readStoredDoubleTapSpeed",
+    "writeStoredDoubleTapSpeed",
+    "readStoredVimLeader",
+    "writeStoredVimLeader",
+    "readStoredVimYankClipboard",
+    "writeStoredVimYankClipboard",
+    "readStoredVimInsertEscape",
+    "writeStoredVimInsertEscape",
     "readStoredMotionPref",
     "writeStoredMotionPref",
     "applyStoredMotionPref",
@@ -4142,6 +4368,9 @@
   }
   function resetBelugaPrefs() {
     return _settingsApi.resetBelugaPrefs.apply(_settingsApi, arguments);
+  }
+  function resetHarpoonPrefs() {
+    return _settingsApi.resetHarpoonPrefs.apply(_settingsApi, arguments);
   }
   function resetReplPrefs() {
     return _settingsApi.resetReplPrefs.apply(_settingsApi, arguments);
@@ -4748,6 +4977,8 @@
     writeStoredEditorWordWrap,
     readStoredEditorTabSize,
     writeStoredEditorTabSize,
+    readStoredEditorLineNumberMode,
+    writeStoredEditorLineNumberMode,
     readStoredEditorLineNumbers,
     writeStoredEditorLineNumbers,
     readStoredEditorFoldGutter,
@@ -4791,6 +5022,7 @@
     resetEditorGutterPrefs,
     resetEditorPrefs,
     resetBelugaPrefs,
+    resetHarpoonPrefs,
     resetReplPrefs,
     resetWorkspacePrefs,
     resetAliasesPrefs,
@@ -4944,9 +5176,9 @@
             detail: { entry, direction }
           }));
         }
-        var active = entry.structural && entry.structural.activeFileId;
-        if (active && global2.Persist) {
-          var target = direction === "undo" ? active.before : active.after;
+        var active3 = entry.structural && entry.structural.activeFileId;
+        if (active3 && global2.Persist) {
+          var target = direction === "undo" ? active3.before : active3.after;
           var cur = global2.Persist.getActiveFileId();
           if (target && target !== cur && typeof global2.belJarSwitchToFileForHistory === "function") {
             var rec = entry.files && entry.files[target];
@@ -4989,30 +5221,2830 @@
   global2.addEventListener("pagehide", onPageExit);
   global2.addEventListener("beforeunload", onPageExit);
 
-  // js/ui/keybindings.mjs
-  var global3 = globalThis;
-  var IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
-  var DEFAULTS = [
-    { id: "nav.anywhere", title: "Go to File\u2026", section: "Navigate", scope: "global", defaultSpec: "Mod+K" },
-    { id: "tools.commands", title: "Run Command\u2026", section: "Tools", scope: "global", defaultSpec: "Mod+Shift+P" },
-    { id: "nav.symbol", title: "Go to Symbol\u2026", section: "Navigate", scope: "global", defaultSpec: "Mod+Shift+O" },
-    { id: "edit.search-project", title: "Search in Project\u2026", section: "Edit", scope: "global", defaultSpec: "Mod+Shift+F" },
-    { id: "edit.undo", title: "Undo", section: "Edit", scope: "editor", defaultSpec: "Mod+Z" },
-    { id: "edit.redo", title: "Redo", section: "Edit", scope: "editor", defaultSpec: "Mod+Y", macDefaultSpec: "Mod+Shift+Z" },
-    { id: "edit.find", title: "Find\u2026", section: "Edit", scope: "editor", defaultSpec: "Mod+F" },
-    { id: "edit.toggle-comment", title: "Toggle Line Comment", section: "Edit", scope: "editor", defaultSpec: "Mod+/" },
-    { id: "edit.format", title: "Format Document", section: "Edit", scope: "editor", defaultSpec: "Alt+Shift+F" },
-    { id: "edit.rename", title: "Rename Symbol", section: "Edit", scope: "editor", defaultSpec: "F2" },
-    { id: "edit.select-all", title: "Select All", section: "Edit", scope: "editor", defaultSpec: "Mod+A" },
-    { id: "edit.autocomplete", title: "Show Autocomplete", section: "Edit", scope: "editor", defaultSpec: "Control+Space" },
-    { id: "nav.definition", title: "Go to Definition", section: "Navigate", scope: "editor", defaultSpec: "F12" },
-    { id: "nav.references", title: "Find References", section: "Navigate", scope: "editor", defaultSpec: "Shift+F12" },
-    { id: "nav.next-hole", title: "Go to Next Hole", section: "Navigate", scope: "editor", defaultSpec: "F8" },
-    { id: "nav.prev-hole", title: "Go to Previous Hole", section: "Navigate", scope: "editor", defaultSpec: "Shift+F8" }
+  // js/commands/command-settings.mjs
+  var SETTINGS = [
+    // ── layout ────────────────────────────────────────────────────────────────
+    {
+      slug: "word-wrap",
+      title: "Word wrap",
+      kind: "bool",
+      aliases: ["wrap"],
+      read: "readStoredEditorWordWrap",
+      write: "writeStoredEditorWordWrap"
+    },
+    {
+      slug: "line-numbers",
+      title: "Line numbers",
+      kind: "bool",
+      aliases: ["number", "nu"],
+      read: "readStoredEditorLineNumbers",
+      write: "writeStoredEditorLineNumbers"
+    },
+    {
+      slug: "line-number-style",
+      title: "Line number style",
+      kind: "enum",
+      values: ["absolute", "relative", "hybrid"],
+      labels: { absolute: "Absolute", relative: "Relative", hybrid: "Relative + current" },
+      aliases: ["relativenumber", "rnu"],
+      read: "readStoredEditorLineNumberMode",
+      write: "writeStoredEditorLineNumberMode"
+    },
+    {
+      slug: "fold-gutter",
+      title: "Code folding",
+      kind: "bool",
+      aliases: ["foldenable", "fen"],
+      read: "readStoredEditorFoldGutter",
+      write: "writeStoredEditorFoldGutter"
+    },
+    {
+      slug: "active-line",
+      title: "Active line highlight",
+      kind: "bool",
+      aliases: ["cursorline", "cul"],
+      read: "readStoredEditorActiveLine",
+      write: "writeStoredEditorActiveLine"
+    },
+    {
+      slug: "scroll-past-end",
+      title: "Scroll past end",
+      kind: "bool",
+      aliases: ["scrollpastend", "spe"],
+      read: "readStoredEditorScrollPastEnd",
+      write: "writeStoredEditorScrollPastEnd"
+    },
+    {
+      slug: "rulers",
+      title: "Print-width ruler",
+      kind: "bool",
+      aliases: ["colorcolumn", "cc"],
+      read: "readStoredEditorRulers",
+      write: "writeStoredEditorRulers"
+    },
+    {
+      slug: "sticky-decl",
+      title: "Structure path",
+      kind: "bool",
+      aliases: ["sticky"],
+      read: "readStoredStickyDeclHeader",
+      write: "writeStoredStickyDeclHeader"
+    },
+    {
+      slug: "tab-size",
+      title: "Tab size",
+      kind: "enum",
+      values: [2, 4],
+      aliases: ["tabstop", "ts"],
+      labels: { 2: "2 spaces", 4: "4 spaces" },
+      read: "readStoredEditorTabSize",
+      write: "writeStoredEditorTabSize"
+    },
+    {
+      slug: "format-width",
+      title: "Format print width",
+      kind: "enum",
+      values: [80, 100, 120],
+      aliases: ["textwidth", "tw"],
+      labels: { 80: "80 columns", 100: "100 columns", 120: "120 columns" },
+      read: "readStoredEditorFormatWidth",
+      write: "writeStoredEditorFormatWidth"
+    },
+    {
+      slug: "whitespace",
+      title: "Show whitespace",
+      verb: "whitespace marks",
+      kind: "enum",
+      values: ["none", "trailing", "selection", "all"],
+      on: "all",
+      off: "none",
+      aliases: ["list"],
+      labels: { none: "Off", trailing: "Trailing only", selection: "In selection", all: "All" },
+      read: "readStoredEditorWhitespace",
+      write: "writeStoredEditorWhitespace"
+    },
+    // ── type ──────────────────────────────────────────────────────────────────
+    {
+      slug: "font-size",
+      title: "Font size",
+      kind: "enum",
+      values: ["sm", "md", "lg", "xl"],
+      labels: { sm: "Small", md: "Default", lg: "Large", xl: "Larger" },
+      read: "readStoredEditorFontSize",
+      write: "writeStoredEditorFontSize"
+    },
+    {
+      slug: "line-height",
+      title: "Line height",
+      kind: "enum",
+      values: ["compact", "normal", "relaxed"],
+      labels: { compact: "Compact", normal: "Default", relaxed: "Relaxed" },
+      read: "readStoredEditorLineHeight",
+      write: "writeStoredEditorLineHeight"
+    },
+    {
+      slug: "font-family",
+      title: "Editor font",
+      kind: "enum",
+      values: ["jetbrains", "system"],
+      labels: { jetbrains: "JetBrains Mono", system: "System monospace" },
+      read: "readStoredEditorFontFamily",
+      write: "writeStoredEditorFontFamily"
+    },
+    {
+      slug: "cursor-blink",
+      title: "Cursor blink",
+      kind: "enum",
+      values: ["off", "blink", "fast"],
+      labels: { off: "Solid", blink: "Blink", fast: "Fast" },
+      read: "readStoredEditorCursorBlink",
+      write: "writeStoredEditorCursorBlink"
+    },
+    // ── highlighting ──────────────────────────────────────────────────────────
+    {
+      slug: "syntax-highlight",
+      title: "Syntax highlighting",
+      kind: "bool",
+      aliases: ["syntax"],
+      read: "readStoredEditorSyntaxHighlight",
+      write: "writeStoredEditorSyntaxHighlight"
+    },
+    {
+      slug: "semantic-highlight",
+      title: "Semantic highlighting",
+      kind: "bool",
+      read: "readStoredEditorSemanticHighlight",
+      write: "writeStoredEditorSemanticHighlight"
+    },
+    {
+      slug: "parse-highlight",
+      title: "Invalid parse styling",
+      kind: "bool",
+      read: "readStoredEditorParseHighlight",
+      write: "writeStoredEditorParseHighlight"
+    },
+    {
+      slug: "occurrence-highlight",
+      title: "Occurrence highlight",
+      kind: "bool",
+      read: "readStoredEditorOccurrenceHighlight",
+      write: "writeStoredEditorOccurrenceHighlight"
+    },
+    {
+      slug: "selection-matches",
+      title: "Selection matches",
+      kind: "bool",
+      aliases: ["hlsearch", "hls"],
+      read: "readStoredEditorSelectionMatches",
+      write: "writeStoredEditorSelectionMatches"
+    },
+    {
+      slug: "bracket-match",
+      title: "Bracket matching",
+      kind: "bool",
+      aliases: ["showmatch", "sm"],
+      read: "readStoredEditorBracketMatch",
+      write: "writeStoredEditorBracketMatch"
+    },
+    // ── editing behaviour ─────────────────────────────────────────────────────
+    {
+      slug: "auto-close-brackets",
+      title: "Auto-close brackets",
+      kind: "bool",
+      aliases: ["autoclose"],
+      read: "readStoredEditorAutoCloseBrackets",
+      write: "writeStoredEditorAutoCloseBrackets"
+    },
+    {
+      slug: "reindent-paste",
+      title: "Re-indent on paste",
+      kind: "bool",
+      read: "readStoredEditorReindentPaste",
+      write: "writeStoredEditorReindentPaste"
+    },
+    {
+      slug: "format-on-save",
+      title: "Format on save",
+      kind: "bool",
+      read: "readStoredFormatOnSave",
+      write: "writeStoredFormatOnSave"
+    },
+    {
+      slug: "trim-whitespace",
+      title: "Trim trailing whitespace on save",
+      kind: "bool",
+      read: "readStoredTrimTrailingWs",
+      write: "writeStoredTrimTrailingWs"
+    },
+    // ── proof surface ─────────────────────────────────────────────────────────
+    {
+      slug: "hole-gutter",
+      title: "Hole gutter marks",
+      kind: "bool",
+      read: "readStoredEditorHoleGutter",
+      write: "writeStoredEditorHoleGutter"
+    },
+    {
+      slug: "hole-emphasis",
+      title: "Hole gutter emphasis",
+      kind: "enum",
+      values: ["subtle", "normal", "loud"],
+      labels: { subtle: "Subtle", normal: "Default", loud: "Loud" },
+      read: "readStoredEditorHoleEmphasis",
+      write: "writeStoredEditorHoleEmphasis"
+    },
+    {
+      slug: "quiet-typing",
+      title: "Quiet while typing",
+      kind: "bool",
+      aliases: ["quiet"],
+      read: "readStoredQuietWhileTyping",
+      write: "writeStoredQuietWhileTyping"
+    },
+    {
+      slug: "hover-sticky",
+      title: "Sticky hover",
+      kind: "bool",
+      read: "readStoredHoverSticky",
+      write: "writeStoredHoverSticky"
+    }
   ];
+  function lowerFirst(text) {
+    const t = String(text || "");
+    return t.charAt(0).toLowerCase() + t.slice(1);
+  }
+  function settingId(slug) {
+    return "set." + slug;
+  }
+  function settingEntries() {
+    return SETTINGS.map((s) => ({
+      id: settingId(s.slug),
+      title: (s.kind === "bool" ? "Toggle " : "Cycle ") + lowerFirst(s.verb || s.title),
+      section: "Settings",
+      scope: "global",
+      keybindable: true,
+      palette: true
+    }));
+  }
+  function optionNames() {
+    const out = [];
+    for (const s of SETTINGS) {
+      out.push(s.slug);
+      for (const a of s.aliases || []) out.push(a);
+    }
+    return out;
+  }
+  function optionCandidates() {
+    const out = [];
+    for (const s of SETTINGS) {
+      out.push({ value: s.slug, label: s.title });
+      for (const a of s.aliases || []) out.push({ value: a, label: s.title });
+    }
+    return out;
+  }
+  function findSetting(name) {
+    const key = String(name == null ? "" : name).toLowerCase();
+    if (!key) return null;
+    const bare = key.startsWith("set.") ? key.slice(4) : key;
+    return SETTINGS.find((s) => s.slug === bare) || SETTINGS.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+  }
+  function nextValue(spec, current, requested) {
+    if (!spec) return null;
+    if (spec.kind === "bool") {
+      if (requested === true || requested === false) return requested;
+      if (requested == null || requested === "") return !current;
+      const word = String(requested).toLowerCase();
+      if (["on", "true", "yes", "1"].indexOf(word) >= 0) return true;
+      if (["off", "false", "no", "0"].indexOf(word) >= 0) return false;
+      return null;
+    }
+    const values = spec.values || [];
+    if (requested === true) return spec.on === void 0 ? null : spec.on;
+    if (requested === false) return spec.off === void 0 ? null : spec.off;
+    if (requested != null && requested !== "") {
+      const wanted = values.find((v) => String(v) === String(requested));
+      return wanted === void 0 ? null : wanted;
+    }
+    const at = values.findIndex((v) => String(v) === String(current));
+    return values[(at + 1) % values.length];
+  }
+  function nearestSetting(name) {
+    const lower = String(name || "").toLowerCase();
+    if (!lower) return null;
+    let best = null;
+    let bestLen = 0;
+    for (const n of optionNames()) {
+      let i = 0;
+      while (i < n.length && i < lower.length && n[i] === lower[i]) i += 1;
+      if (i > bestLen || i === bestLen && best && n.length > best.length) {
+        best = n;
+        bestLen = i;
+      }
+    }
+    return bestLen >= 2 ? best : null;
+  }
+  function parseSet(raw) {
+    const text = String(raw == null ? "" : raw).trim();
+    if (!text) return { error: "usage" };
+    const eq = text.indexOf("=");
+    const value = eq >= 0 ? text.slice(eq + 1).trim() : null;
+    let name = (eq >= 0 ? text.slice(0, eq) : text).trim().toLowerCase();
+    let toggle4 = false;
+    if (name.endsWith("!")) {
+      name = name.slice(0, -1);
+      toggle4 = true;
+    }
+    let negated = false;
+    if (!findSetting(name) && name.startsWith("no") && findSetting(name.slice(2))) {
+      name = name.slice(2);
+      negated = true;
+    }
+    const spec = findSetting(name);
+    if (!spec) return { error: "unknown", name, near: nearestSetting(name) };
+    if (value != null && value !== "" && spec.kind === "enum" && !(spec.values || []).some((v) => String(v) === String(value))) {
+      return { error: "value", name, spec, value };
+    }
+    if (negated && spec.kind === "enum" && spec.off === void 0) {
+      return { error: "not-boolean", name, spec };
+    }
+    let requested;
+    if (value != null && value !== "") requested = value;
+    else if (negated) requested = false;
+    else if (toggle4) requested = void 0;
+    else if (spec.kind === "bool" || spec.on !== void 0) requested = true;
+    else requested = void 0;
+    return { spec, requested };
+  }
+  function orList(values) {
+    const all = (values || []).map(String);
+    if (all.length < 2) return all.join("");
+    return all.slice(0, -1).join(", ") + " or " + all[all.length - 1];
+  }
+  function describeChange(spec, value) {
+    if (value === true) return spec.title + " on";
+    if (value === false) return spec.title + " off";
+    const labels = spec.labels || {};
+    return spec.title + ": " + (labels[value] != null ? labels[value] : String(value));
+  }
+  function applyValue(persist5, spec, requested) {
+    if (!persist5 || !spec) return { ok: false, message: "Settings are not ready yet." };
+    if (typeof persist5[spec.read] !== "function" || typeof persist5[spec.write] !== "function") {
+      return { ok: false, message: `${spec.title} cannot be changed here.` };
+    }
+    const value = nextValue(spec, persist5[spec.read](), requested);
+    if (value === null) return { ok: false, message: `${spec.title}: no such value.` };
+    persist5[spec.write](value);
+    return { ok: true, applied: true, spec, value, message: describeChange(spec, value) };
+  }
+  function runSetOn(persist5, raw) {
+    const res = parseSet(raw);
+    if (res.error === "usage") {
+      return { ok: false, message: "Usage: :set nu, :set nowrap, :set ts=4" };
+    }
+    if (res.error === "unknown") {
+      return {
+        ok: false,
+        message: res.near ? `Unknown option "${res.name}". Did you mean "${res.near}"?` : `Unknown option "${res.name}".`
+      };
+    }
+    if (res.error === "value") {
+      return { ok: false, message: `${res.name} takes ${orList(res.spec.values)}.` };
+    }
+    if (res.error === "not-boolean") {
+      return {
+        ok: false,
+        message: `${res.spec.title} is not on or off. Try :set ${res.name}=${res.spec.values[0]}.`
+      };
+    }
+    return applyValue(persist5, res.spec, res.requested);
+  }
+
+  // js/commands/command-catalog.mjs
+  var CATALOG = [
+    // ── File ───────────────────────────────────────────────────────────────────
+    { id: "project.new", title: "New Project\u2026", section: "File", scope: "global", palette: true },
+    { id: "file.new", title: "New file\u2026", section: "File", scope: "global", palette: true },
+    { id: "file.upload", title: "Upload File", section: "File", scope: "global", palette: true },
+    { id: "file.upload-folder", title: "Upload Folder", section: "File", scope: "global", palette: true },
+    { id: "file.import-folder", title: "Import Folder as New Project", section: "File", scope: "global", palette: true },
+    { id: "file.download", title: "Download Current File", section: "File", scope: "global", palette: true },
+    { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
+    { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
+    { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
+    { id: "tab.close-others", title: "Close Other Tabs", section: "File", scope: "global", palette: true, keybindable: true },
+    { id: "tab.close-right", title: "Close Tabs to the Right", section: "File", scope: "global", palette: true, keybindable: true },
+    // `:w`. BelJar autosaves, so this is "commit it NOW" — including the
+    // format-on-save and trim-trailing-whitespace transforms, which otherwise
+    // wait for the debounce. `:wa` is the same act: there is one live buffer, so
+    // a separate save-all would be a second name for one thing.
+    {
+      id: "file.save",
+      title: "Save Now",
+      section: "File",
+      scope: "global",
+      palette: true,
+      keybindable: true,
+      ex: ["w", "write", "wa", "wall"],
+      styles: { vim: "always" }
+    },
+    // `:e util.bel` — open a project file by name, with completion. Opening one
+    // that is already open just focuses its tab, which is what `:b` would do.
+    {
+      id: "file.open",
+      title: "Open File",
+      section: "File",
+      scope: "global",
+      palette: false,
+      keybindable: false,
+      ex: ["e", "edit"],
+      args: [{ kind: "file", label: "file" }]
+    },
+    // Suite membership for the current file. Gated on the file's directory having
+    // exactly ONE active suite: with two, the answer is a question, and a command
+    // that guesses would be rewriting a .cfg on the user's behalf.
+    {
+      id: "suite.add-file",
+      title: "Add to Suite",
+      section: "File",
+      scope: "global",
+      palette: true,
+      keybindable: true
+    },
+    {
+      id: "suite.remove-file",
+      title: "Remove from Suite",
+      section: "File",
+      scope: "global",
+      palette: true,
+      keybindable: true
+    },
+    // ── Edit ───────────────────────────────────────────────────────────────────
+    {
+      id: "edit.undo",
+      title: "Undo",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+Z",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only" }
+    },
+    {
+      id: "edit.redo",
+      title: "Redo",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+Y",
+      macDefaultSpec: "Mod+Shift+Z",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      id: "edit.find",
+      title: "Find\u2026",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+F",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      id: "edit.search-project",
+      title: "Search in Project\u2026",
+      section: "Edit",
+      scope: "global",
+      defaultSpec: "Mod+Shift+F",
+      keybindable: true,
+      palette: true
+    },
+    {
+      id: "edit.toggle-comment",
+      title: "Toggle Line Comment",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+/",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      id: "edit.format",
+      title: "Format Document",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Alt+Shift+F",
+      keybindable: true,
+      palette: true,
+      ex: ["fmt", "format"],
+      styles: { vim: "always" }
+    },
+    {
+      id: "edit.rename",
+      title: "Rename Symbol",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "F2",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "edit.select-all",
+      title: "Select All",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+A",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      // Chord-only: "show me completions" is meaningless from a palette you had
+      // to open with the keyboard anyway.
+      id: "edit.autocomplete",
+      title: "Show Autocomplete",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Control+Space",
+      keybindable: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    { id: "edit.delete-line", title: "Delete Line", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.move-line-up", title: "Move Line Up", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.move-line-down", title: "Move Line Down", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.duplicate-line", title: "Duplicate Line", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.duplicate-line-up", title: "Duplicate Line Up", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.indent", title: "Indent", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.dedent", title: "Dedent", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.reindent", title: "Reindent Selection", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.transpose-chars", title: "Transpose Characters", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.split-line", title: "Split Line", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.blank-line", title: "Insert Blank Line", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    { id: "edit.trim-whitespace", title: "Trim Trailing Whitespace", section: "Edit", scope: "editor", keybindable: true, palette: true, styles: { vim: "insert-only" } },
+    // ── Motion ─────────────────────────────────────────────────────────────────
+    // Bindable, but in NEITHER the palette nor the command line: nobody searches
+    // a command list for "move left", and `:motion-char-left` is not a thing
+    // anyone types. They exist so "bind anything" is true — `cmdline: false` is what
+    // keeps 31 of them out of the line's completion.
+    //
+    // ⛔ This is the only section that turns the flag off, and the reason it
+    // exists. Anything else added here must earn the same argument.
+    { id: "motion.char-left", title: "Move Left", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.char-right", title: "Move Right", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.word-left", title: "Move Word Left", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.word-right", title: "Move Word Right", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.line-up", title: "Move Up", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.line-down", title: "Move Down", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.line-start", title: "Move to Line Start", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.line-end", title: "Move to Line End", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.doc-start", title: "Move to Start of File", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.doc-end", title: "Move to End of File", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.page-up", title: "Move Page Up", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.page-down", title: "Move Page Down", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.match-bracket", title: "Move to Matching Bracket", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.syntax-left", title: "Move by Syntax Left", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "motion.syntax-right", title: "Move by Syntax Right", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.char-left", title: "Select Left", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.char-right", title: "Select Right", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.word-left", title: "Select Word Left", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.word-right", title: "Select Word Right", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.line-up", title: "Select Up", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.line-down", title: "Select Down", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.line-start", title: "Select to Line Start", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.line-end", title: "Select to Line End", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.doc-start", title: "Select to Start of File", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.doc-end", title: "Select to End of File", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.page-up", title: "Select Page Up", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.page-down", title: "Select Page Down", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.match-bracket", title: "Select to Matching Bracket", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.line", title: "Select Line", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.parent-syntax", title: "Select Enclosing Syntax", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    { id: "select.collapse", title: "Collapse Selection", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    // ── Navigate ───────────────────────────────────────────────────────────────
+    {
+      id: "nav.symbol",
+      title: "Go to Symbol\u2026",
+      section: "Navigate",
+      scope: "global",
+      defaultSpec: "Mod+Shift+O",
+      keybindable: true,
+      palette: true,
+      ex: ["sym"]
+    },
+    {
+      id: "nav.anywhere",
+      title: "Go to File\u2026",
+      section: "Navigate",
+      scope: "global",
+      defaultSpec: "Mod+K",
+      keybindable: true,
+      styles: { emacs: "yield" }
+    },
+    {
+      id: "nav.definition",
+      title: "Go to Definition",
+      section: "Navigate",
+      scope: "editor",
+      defaultSpec: "F12",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "nav.references",
+      title: "Find References",
+      section: "Navigate",
+      scope: "editor",
+      defaultSpec: "Shift+F12",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "nav.enclosing-decl",
+      title: "Go to Enclosing Declaration",
+      section: "Navigate",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "nav.binder",
+      title: "Go to Binder",
+      section: "Navigate",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "nav.inspector",
+      title: "Reveal in Inspector",
+      section: "Navigate",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    // Structure motions: a Beluga file is declarations containing case branches,
+    // so `]d` and `]c` are the two that matter.
+    { id: "nav.next-decl", title: "Go to Next Declaration", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    { id: "nav.prev-decl", title: "Go to Previous Declaration", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    { id: "nav.next-case", title: "Go to Next Case Branch", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    { id: "nav.prev-case", title: "Go to Previous Case Branch", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    // The jump list. Everything above jumps; these are the way back.
+    { id: "nav.jump-back", title: "Jump Back", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    { id: "nav.jump-forward", title: "Jump Forward", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    {
+      id: "nav.next-hole",
+      title: "Go to Next Hole",
+      section: "Navigate",
+      scope: "editor",
+      defaultSpec: "F8",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "nav.prev-hole",
+      title: "Go to Previous Hole",
+      section: "Navigate",
+      scope: "editor",
+      defaultSpec: "Shift+F8",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "nav.next-problem",
+      title: "Go to Next Problem",
+      section: "Navigate",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "nav.prev-problem",
+      title: "Go to Previous Problem",
+      section: "Navigate",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    // ── Prover ─────────────────────────────────────────────────────────────────
+    // Everything here is gated on the caret standing in a hole, so the palette
+    // stays quiet unless there is actually a goal under the cursor.
+    {
+      id: "prover.hole-intro",
+      title: "Intro at Hole",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.hole-split",
+      title: "Split at Hole",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.hole-fill",
+      title: "Fill Hole",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.open-in-harpoon",
+      title: "Open Hole in Harpoon",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      ex: ["harpoon"],
+      styles: { vim: "always" }
+    },
+    // Reading the proof state, from the editor. Not gated on standing IN a hole:
+    // "how many are left" is a question you ask from anywhere in the file.
+    {
+      id: "prover.count-holes",
+      title: "Count Holes",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      ex: ["holes"],
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.goal-at-cursor",
+      title: "Show Goal at Cursor",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      ex: ["goal"],
+      styles: { vim: "always" }
+    },
+    // Driving the Harpoon lab itself. `when()` resolves the session the user is
+    // looking at (`Harpoon.activeSession`), so with no lab open these vanish from
+    // the palette rather than reporting a failure.
+    {
+      id: "harpoon.next-goal",
+      title: "Next Goal",
+      section: "Prover",
+      scope: "global",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "harpoon.prev-goal",
+      title: "Previous Goal",
+      section: "Prover",
+      scope: "global",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "harpoon.undo-move",
+      title: "Undo Proof Move",
+      section: "Prover",
+      scope: "global",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "harpoon.redo-move",
+      title: "Redo Proof Move",
+      section: "Prover",
+      scope: "global",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "harpoon.orca-start",
+      title: "Run Orca",
+      section: "Prover",
+      scope: "global",
+      keybindable: true,
+      palette: true,
+      ex: ["orca"],
+      styles: { vim: "always" }
+    },
+    {
+      id: "harpoon.orca-pause",
+      title: "Pause Orca",
+      section: "Prover",
+      scope: "global",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "harpoon.orca-absorb",
+      title: "Take Over from Orca",
+      section: "Prover",
+      scope: "global",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    // ── Run ────────────────────────────────────────────────────────────────────
+    // What the Run button does: a suite member runs the suite up to and including
+    // itself; an isolated file runs alone. The status segment uses this so it can
+    // never be a weaker Run than the button beside it.
+    { id: "run.default", title: "Run", section: "Run", scope: "global", palette: true, keybindable: true },
+    { id: "run.file", title: "Run File", section: "Run", scope: "global", palette: true, keybindable: true, ex: ["run"] },
+    { id: "run.here", title: "Run Suite to Here", section: "Run", scope: "global", palette: true, keybindable: true },
+    { id: "run.module", title: "Run Suite", section: "Run", scope: "global", palette: true, keybindable: true, ex: ["runs"] },
+    { id: "run.project", title: "Run Project", section: "Run", scope: "global", palette: true, keybindable: true, ex: ["runp"] },
+    { id: "run.clear-output", title: "Clear Output", section: "Run", scope: "global", palette: true, keybindable: true },
+    // ── View ───────────────────────────────────────────────────────────────────
+    { id: "view.theme", title: "Toggle Theme", section: "View", scope: "global", palette: true, keybindable: true },
+    { id: "view.explorer", title: "Toggle Explorer", section: "View", scope: "global", palette: true, keybindable: true },
+    { id: "view.library", title: "Toggle Library", section: "View", scope: "global", palette: true, keybindable: true },
+    { id: "view.harpoon", title: "Toggle Harpoon", section: "View", scope: "global", palette: true, keybindable: true },
+    { id: "view.settings", title: "Open Settings\u2026", section: "View", scope: "global", palette: true, keybindable: true },
+    { id: "fold.all", title: "Fold All", section: "View", scope: "editor", palette: true, keybindable: true },
+    { id: "fold.unfold-all", title: "Unfold All", section: "View", scope: "editor", palette: true, keybindable: true },
+    // ── Settings ───────────────────────────────────────────────────────────────
+    // Generated from `command-settings.mjs`: one declaration behind the palette
+    // row, the bindable chord and Vim's `:set`.
+    ...settingEntries(),
+    // The line's way in. Not in the palette: without an argument it does nothing,
+    // and each preference already has its own palette row above.
+    {
+      id: "settings.set",
+      title: "Set Option",
+      section: "Settings",
+      scope: "global",
+      palette: false,
+      keybindable: false,
+      ex: ["set", "se"],
+      args: [{ kind: "option", label: "option" }]
+    },
+    // ── Tools ──────────────────────────────────────────────────────────────────
+    // Not keybindable: `nav.anywhere` owns Mod+K. The literal `shortcut` is the
+    // palette's own display fallback for an entry with no chord of its own.
+    // Fullscreen + `navigator.keyboard.lock()`. Measured by hand: under lock the
+    // ten reserved chords reach the page AND their browser actions do not fire.
+    { id: "keys.full-keyboard", title: "Toggle Full Keyboard", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["fullkeys"] },
+    // Generated from `describe()`, so it is the keymap rather than a copy of it.
+    // `keys.show-chords` from the original Wave G list folded in here: one sheet
+    // that answers "what can I press" beats two that answer half each.
+    { id: "keys.macros", title: "Available Macros\u2026", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["help", "macros"] },
+    { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },
+    { id: "cmdline.open", title: "Command Line", section: "Tools", scope: "global", palette: true, keybindable: true },
+    { id: "tools.palette", title: "Open Command Palette", section: "Tools", scope: "global", palette: true, shortcut: "Mod+K" },
+    { id: "tools.graph", title: "Open Dependency Graph", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["graph"] },
+    { id: "tools.inspector", title: "Open Inspector", section: "Tools", scope: "global", palette: true, keybindable: true },
+    {
+      id: "tools.commands",
+      title: "Run Command\u2026",
+      section: "Tools",
+      scope: "global",
+      // ⛔ NOT `Mod+Shift+P`. That was the shipped chord until `scripts/chord-audit.html`
+      // measured Chrome on Windows taking it before the page ever sees it — a
+      // default that simply did nothing for half our users. `Alt+X` was measured
+      // arriving, and it reads as "execute a command" to anyone who has met M-x.
+      defaultSpec: "Alt+X",
+      // ⚠ Alt is Option on a Mac and composes characters — Option+X types "≈", so
+      // the Windows chord cannot carry over. Cmd+Shift+P is free there (Chrome's
+      // incognito chord is Cmd+Shift+N) and is what every editor uses anyway.
+      macDefaultSpec: "Mod+Shift+P",
+      keybindable: true,
+      // …which is exactly what Emacs binds it to, so Emacs' own M-x wins there.
+      styles: { emacs: "off" }
+    }
+  ];
+
+  // js/commands/command-shadows.mjs
+  var STYLE_TAKES = {
+    emacs: [
+      { spec: "Mod+F", key: "C-f", runs: "forward-char" },
+      // ⛔ Not a no-op: the package binds `C-x C-p|C-x h` to selectAll, and
+      // `probe-keymap.mjs` measures it selecting the whole document. A remembered
+      // claim about a dependency once told Emacs users a working chord did not
+      // exist. Read the package's key table, do not recall it.
+      { spec: "Mod+A", key: "C-a", runs: "move-beginning-of-line" },
+      { spec: "Control+Space", key: "C-Space", runs: "set-mark-command" },
+      { spec: "Mod+Y", key: "C-y", runs: "yank" },
+      { spec: "Mod+/", key: "C-/", runs: "undo" },
+      { spec: "Mod+K", key: "C-k", runs: "kill-line" },
+      // ⛔ `M-x` IS Run Command — Emacs reaches the same command through its own
+      // binding. `sameCommand` stops it reading as a loss, because nothing is lost.
+      { spec: "Alt+X", key: "M-x", runs: "execute-extended-command", sameCommand: "tools.commands" }
+    ],
+    // Vim takes no chord for itself: what it does is make BelJar's chords
+    // Insert-only, which is a MODE caveat and carries its own tag.
+    vim: []
+  };
+  var INSERT_ALTERNATIVE = {
+    vim: {
+      "edit.undo": "u",
+      "edit.redo": "C-r",
+      "edit.find": "/"
+    }
+  };
+  var STYLE_CHORDS = {
+    emacs: {
+      "edit.find": "C-s",
+      "edit.select-all": "C-x h",
+      "edit.redo": "C-S-z",
+      "tools.commands": "M-x",
+      "nav.anywhere": "C-x C-f"
+    },
+    vim: {}
+  };
+  var STYLE_NAME = { emacs: "Emacs", vim: "Vim" };
+  function readableStyleChord(keys) {
+    const raw = String(keys == null ? "" : keys).trim();
+    if (!raw) return "";
+    if (raw.indexOf(" ") >= 0) return raw.split(/\s+/).map(readableStyleChord).join(" ");
+    if (raw.indexOf("-") < 0) return raw.length === 1 ? raw.toUpperCase() : raw;
+    const parts = raw.split("-");
+    const last = parts.pop();
+    const mods = parts.map((p) => ({ C: "Ctrl", S: "Shift", M: "Alt" })[p] || p);
+    const rank2 = { Ctrl: 0, Alt: 1, Shift: 2 };
+    mods.sort((a, b) => (rank2[a] ?? 9) - (rank2[b] ?? 9));
+    const name = last === "Space" ? "Space" : last.length === 1 ? last.toUpperCase() : last;
+    return mods.concat([name]).join("+");
+  }
+  function specFromStyleKey(key) {
+    const raw = String(key == null ? "" : key).trim();
+    if (!raw || /\s/.test(raw)) return "";
+    const sep = raw.indexOf("-") >= 0 ? "-" : "+";
+    const parts = raw.split(sep);
+    const last = parts.pop();
+    if (!last) return "";
+    const mods = { Mod: false, Alt: false, Shift: false };
+    for (const part of parts) {
+      if (part === "C" || part === "Ctrl" || part === "Mod") mods.Mod = true;
+      else if (part === "M" || part === "Alt") mods.Alt = true;
+      else if (part === "S" || part === "Shift") mods.Shift = true;
+      else return "";
+    }
+    if (!mods.Mod && !mods.Alt && !mods.Shift) return "";
+    const out = [];
+    if (mods.Mod) out.push("Mod");
+    if (mods.Alt) out.push("Alt");
+    if (mods.Shift) out.push("Shift");
+    out.push(last.length === 1 ? last.toUpperCase() : last);
+    return out.join("+");
+  }
+  function takesChord(style, spec) {
+    if (!spec) return null;
+    const table = STYLE_TAKES[style] || [];
+    for (const entry of table) {
+      if (entry.spec === spec) return entry;
+    }
+    return null;
+  }
+  function chordShadow(opts) {
+    const style = opts.style;
+    if (!STYLE_NAME[style]) return null;
+    const name = STYLE_NAME[style];
+    if (opts.policy === "insert-only") {
+      const instead = (INSERT_ALTERNATIVE[style] || {})[opts.commandId] || "";
+      return {
+        kind: "insert",
+        tag: "insert",
+        instead,
+        tip: instead ? `Only while you are typing. In Normal mode, press ${instead}.` : `Only while you are typing, not in ${name}'s Normal mode.`
+      };
+    }
+    const spec = opts.spec || "";
+    const label = opts.label || spec;
+    const taken = takesChord(style, spec);
+    if (taken && taken.sameCommand !== opts.commandId) {
+      return {
+        kind: "shadowed",
+        tag: "shadowed",
+        key: taken.key,
+        runs: taken.runs,
+        // ⛔ A statement about the CHORD, naming both claimants. Never "without
+        // Emacs this command would be…" — that describes a world you are not in.
+        tip: `${name} uses ${label} for ${taken.runs}.`
+      };
+    }
+    if (!opts.fromStyle) return null;
+    const owner = typeof opts.baseOwnerOf === "function" ? opts.baseOwnerOf(spec) : null;
+    if (owner && owner.id !== opts.commandId) {
+      return {
+        kind: "shadowing",
+        tag: "shadowing",
+        owner: owner.id,
+        tip: `${name} uses ${label} here. In Standard, ${label} is ${owner.title}.`
+      };
+    }
+    return null;
+  }
+
+  // js/commands/command-names.mjs
+  var MX_PREFIX = "beljar-";
+  function mxNameFor(id, explicit2) {
+    if (explicit2) return String(explicit2);
+    const slug = String(id == null ? "" : id).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return slug ? MX_PREFIX + slug : "";
+  }
+  function exNamesFor(ex) {
+    const raw = ex == null ? [] : Array.isArray(ex) ? ex : [ex];
+    const out = [];
+    for (const name of raw) {
+      const clean = String(name == null ? "" : name).trim().replace(/^:+/, "");
+      if (clean && out.indexOf(clean) < 0) out.push(clean);
+    }
+    return out;
+  }
+  function titleFor(id, explicit2) {
+    if (explicit2) return String(explicit2);
+    const tail = String(id == null ? "" : id).split(".").pop() || "";
+    const words = tail.replace(/[-_]+/g, " ").trim();
+    return words ? words.charAt(0).toUpperCase() + words.slice(1) : String(id || "");
+  }
+
+  // js/commands/command-registry.mjs
+  var global3 = globalThis;
+  var POLICIES = ["off", "yield", "insert-only", "always"];
+  var DEFAULT_POLICY = "always";
+  var order = [];
+  var byId = /* @__PURE__ */ Object.create(null);
+  var version = 0;
+  function normalize(record) {
+    const id = String(record.id);
+    return Object.assign({}, record, {
+      id,
+      title: titleFor(id, record.title),
+      section: record.section || "",
+      scope: record.scope || "global",
+      keybindable: !!record.keybindable,
+      palette: !!record.palette,
+      cmdline: record.cmdline === false ? false : true,
+      ex: exNamesFor(record.ex),
+      mx: mxNameFor(id, record.mx),
+      styles: record.styles || null
+    });
+  }
+  function define(desc) {
+    if (!desc || typeof desc !== "object") return false;
+    const id = desc.id == null ? "" : String(desc.id);
+    if (!id) return false;
+    const prev = byId[id];
+    if (!prev) order.push(id);
+    byId[id] = normalize(Object.assign({}, prev || {}, desc, { id }));
+    version += 1;
+    return true;
+  }
+  function defineAll(list3) {
+    if (!Array.isArray(list3)) return 0;
+    let n = 0;
+    for (const desc of list3) if (define(desc)) n += 1;
+    return n;
+  }
+  function attach(id, behaviour) {
+    if (!id || !behaviour) return false;
+    const patch = { id: String(id) };
+    if (typeof behaviour.run === "function") patch.run = behaviour.run;
+    if (typeof behaviour.when === "function") patch.when = behaviour.when;
+    if (typeof behaviour.preview === "function") patch.preview = behaviour.preview;
+    return define(patch);
+  }
+  function unregister(id) {
+    const key = String(id == null ? "" : id);
+    if (!byId[key]) return false;
+    delete byId[key];
+    const at = order.indexOf(key);
+    if (at >= 0) order.splice(at, 1);
+    version += 1;
+    return true;
+  }
+  function get(id) {
+    return byId[String(id == null ? "" : id)] || null;
+  }
+  function has(id) {
+    return !!get(id);
+  }
+  function isAvailable(cmd, ctx) {
+    if (!cmd || typeof cmd.when !== "function") return true;
+    try {
+      return !!cmd.when(ctx);
+    } catch (_) {
+      return false;
+    }
+  }
+  function list(filter) {
+    const f = filter || {};
+    const out = [];
+    for (const id of order) {
+      const cmd = byId[id];
+      if (!cmd) continue;
+      if (f.palette === true && !cmd.palette) continue;
+      if (f.keybindable === true && !cmd.keybindable) continue;
+      if (f.cmdline === true && !cmd.cmdline) continue;
+      if (f.runnable === true && typeof cmd.run !== "function") continue;
+      if (f.scope && cmd.scope !== f.scope) continue;
+      if (f.section && cmd.section !== f.section) continue;
+      if (f.available === true && !isAvailable(cmd, f.ctx)) continue;
+      out.push(cmd);
+    }
+    return out;
+  }
+  function idsWithStyle(style, policy) {
+    const out = [];
+    for (const id of order) {
+      const cmd = byId[id];
+      if (cmd && cmd.styles && cmd.styles[style] === policy) out.push(id);
+    }
+    return out;
+  }
+  function styleFor(id, style) {
+    const cmd = get(id);
+    if (!cmd || !cmd.styles) return DEFAULT_POLICY;
+    const p = cmd.styles[style];
+    return POLICIES.indexOf(p) >= 0 ? p : DEFAULT_POLICY;
+  }
+  function styleChordFor(id, style) {
+    return readableStyleChord((STYLE_CHORDS[style] || {})[id] || "");
+  }
+  function baseOwnerOf(spec, exceptId) {
+    const KB = global3.Keybindings;
+    if (!spec || !KB || typeof KB.findConflict !== "function") return null;
+    const id = KB.findConflict(spec, exceptId);
+    if (!id) return null;
+    const cmd = get(id);
+    return cmd ? { id, title: cmd.title } : null;
+  }
+  function describe(id, opts) {
+    const cmd = get(id);
+    if (!cmd) return null;
+    const o = opts || {};
+    const style = o.style || "default";
+    const KB = global3.Keybindings;
+    let spec = "";
+    let chord = "";
+    if (KB && typeof KB.has === "function" && KB.has(cmd.id)) {
+      spec = KB.resolve(cmd.id, o.isMac) || "";
+      chord = KB.labelFor(cmd.id, o.isMac) || "";
+    } else if (cmd.shortcut && KB && typeof KB.formatShortcut === "function") {
+      spec = KB.normalizeSpec ? KB.normalizeSpec(cmd.shortcut) : "";
+      chord = KB.formatShortcut(cmd.shortcut, o.isMac) || "";
+    }
+    const policy = styleFor(cmd.id, style);
+    const styleChord = styleChordFor(cmd.id, style);
+    const showingStyle = o.showing === "style" && !!styleChord;
+    const shownSpec = showingStyle ? specFromStyleKey(styleChord) : spec;
+    const shownLabel = showingStyle ? styleChord : chord;
+    return {
+      id: cmd.id,
+      title: cmd.title,
+      section: cmd.section,
+      scope: cmd.scope,
+      chord,
+      spec,
+      styleChord,
+      ex: cmd.ex.slice(),
+      mx: cmd.mx,
+      keybindable: cmd.keybindable,
+      palette: cmd.palette,
+      runnable: typeof cmd.run === "function",
+      policy,
+      availableInStyle: policy !== "off",
+      shadow: chordShadow({
+        style,
+        policy,
+        commandId: cmd.id,
+        spec: shownSpec,
+        label: shownLabel,
+        fromStyle: showingStyle,
+        baseOwnerOf: (s) => baseOwnerOf(s, cmd.id)
+      })
+    };
+  }
+  function defaults() {
+    return list({ keybindable: true }).map((c) => ({
+      id: c.id,
+      title: c.title,
+      section: c.section,
+      scope: c.scope,
+      defaultSpec: c.defaultSpec || "",
+      macDefaultSpec: c.macDefaultSpec || ""
+    }));
+  }
+  function run(id, ctx) {
+    const cmd = get(id);
+    if (!cmd || typeof cmd.run !== "function") return false;
+    if (!isAvailable(cmd, ctx)) return false;
+    return cmd.run(ctx) !== false;
+  }
+  defineAll(CATALOG);
+  var Commands2 = {
+    define,
+    defineAll,
+    attach,
+    unregister,
+    get,
+    has,
+    list,
+    describe,
+    defaults,
+    run,
+    styleFor,
+    idsWithStyle,
+    // The preference table, so the editor's `:set` resolves through the same
+    // source as the palette rows without importing across the bundle seam.
+    settings: {
+      list: () => SETTINGS.slice(),
+      find: findSetting,
+      next: nextValue,
+      nearest: nearestSetting,
+      id: settingId,
+      parse: parseSet,
+      describe: describeChange,
+      candidates: optionCandidates
+    },
+    /**
+     * The tag for an arbitrary chord shown for a command — for surfaces that
+     * render a style's OWN maps (`gd`, `C-x C-s`) rather than a catalogue chord.
+     *
+     * ⛔ One entry point, so nothing else decides when a chord is contested.
+     */
+    chordShadowFor(opts) {
+      const o = opts || {};
+      const cmd = get(o.commandId);
+      return chordShadow({
+        style: o.style,
+        policy: "always",
+        commandId: o.commandId,
+        spec: specFromStyleKey(o.keys),
+        label: o.keys,
+        // Always: this entry point only ever describes a STYLE's own map.
+        fromStyle: true,
+        baseOwnerOf: (s) => baseOwnerOf(s, cmd ? cmd.id : null)
+      });
+    },
+    isAvailable,
+    version: () => version,
+    _pure: { normalize, POLICIES, DEFAULT_POLICY, chordShadow, STYLE_TAKES, STYLE_CHORDS, specFromStyleKey, CATALOG }
+  };
+  global3.Commands = Commands2;
+
+  // js/status-strip/status-strip-segments.mjs
+  var SEGMENT_ORDER = [
+    "keymap",
+    "position",
+    "mode",
+    "command",
+    "selection",
+    "goal",
+    "holes",
+    "problems",
+    "orca",
+    "symbols",
+    "spacer",
+    "checker"
+  ];
+  var PRESETS = {
+    compact: ["keymap", "position", "mode", "command", "goal", "holes", "problems", "orca", "spacer", "checker"],
+    standard: ["keymap", "position", "mode", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "checker"],
+    detailed: SEGMENT_ORDER
+  };
+  var GOAL_MAX = 52;
+  function plural(n, one, many) {
+    return n + " " + (n === 1 ? one : many);
+  }
+  function truncate(text, max) {
+    const t = String(text || "").replace(/\s+/g, " ").trim();
+    return t.length > max ? t.slice(0, max - 1) + "\u2026" : t;
+  }
+  function vimTone(mode) {
+    const m = String(mode || "").toUpperCase();
+    if (m.indexOf("INSERT") >= 0) return "insert";
+    if (m.indexOf("VISUAL") >= 0 || m.indexOf("V-") >= 0) return "visual";
+    if (m.indexOf("REPLACE") >= 0) return "replace";
+    return "normal";
+  }
+  var BUILDERS = {
+    /**
+     * Which keymap. Stable, so it carries no colour and no chip — and gated on a
+     * file, because with no editor open there is no keymap to be in.
+     */
+    keymap(s) {
+      if (!s.hasFile) return null;
+      const name = s.style === "vim" ? "Vim" : s.style === "emacs" ? "Emacs" : "Standard";
+      return { key: "keymap", text: name, tone: "plain", title: name + " keymap" };
+    },
+    /** The mode WITHIN the keymap — only where there is one to be in. */
+    mode(s) {
+      if (s.style === "vim") {
+        const mode = s.mode || "NORMAL";
+        return { key: "mode", text: mode, tone: vimTone(mode), title: "Vim mode" };
+      }
+      if (s.style === "emacs" && s.mark) {
+        return { key: "mode", text: "MARK", tone: "visual", title: "The mark is set" };
+      }
+      return null;
+    },
+    /** A half-typed chord. The command LINE mounts beside this, same zone. */
+    command(s) {
+      if (!s.pending) return null;
+      return { key: "command", text: s.pending, tone: "pending", title: "Waiting for the next key", mono: true };
+    },
+    position(s) {
+      if (!s.hasFile || !Number.isFinite(s.line) || !Number.isFinite(s.col)) return null;
+      return {
+        key: "position",
+        text: s.line + ":" + s.col,
+        title: "Go to line",
+        action: "goto-line",
+        mono: true
+      };
+    },
+    selection(s) {
+      const chars = s.selChars || 0;
+      if (chars <= 0) return null;
+      const lines = s.selLines || 1;
+      return {
+        key: "selection",
+        text: lines > 1 ? plural(lines, "line", "lines") : plural(chars, "char", "chars"),
+        title: plural(chars, "character", "characters") + " selected"
+      };
+    },
+    /** The whole reason this bar exists: the goal under the caret, inline. */
+    goal(s) {
+      if (!s.goal) return null;
+      return {
+        key: "goal",
+        // The bare type, so it can be syntax-highlighted like everywhere else in
+        // BelJar; the turnstile is a separate marker, not part of the type.
+        text: truncate(s.goal, GOAL_MAX),
+        mark: "\u22A2",
+        render: "type",
+        title: "Open in Harpoon\n\n" + s.goal,
+        tone: "goal",
+        action: "open-harpoon",
+        mono: true,
+        grow: true
+      };
+    },
+    holes(s) {
+      const n = s.holes || 0;
+      if (!n) return null;
+      const rest = s.goal ? n - 1 : n;
+      return {
+        key: "holes",
+        text: s.goal ? rest > 0 ? "+" + rest + " more" : "last hole" : plural(n, "hole", "holes"),
+        title: "Go to the next hole",
+        tone: "holes",
+        action: "next-hole"
+      };
+    },
+    problems(s) {
+      const errors = s.errors || 0;
+      const warnings = s.warnings || 0;
+      if (errors + warnings <= 0) return null;
+      const parts = [];
+      if (errors) parts.push(errors + "\xD7");
+      if (warnings) parts.push(warnings + "\u26A0");
+      return {
+        key: "problems",
+        text: parts.join(" "),
+        title: "Go to the next problem",
+        tone: errors ? "error" : "warning",
+        action: "next-problem",
+        mono: true
+      };
+    },
+    /** Orca is a long search; while it runs, the bar is where you watch it. */
+    orca(s) {
+      if (!s.orca) return null;
+      return {
+        key: "orca",
+        text: s.orcaDetail ? "Orca \xB7 " + s.orcaDetail : "Orca searching\u2026",
+        title: "Open Harpoon",
+        tone: "busy",
+        action: "open-harpoon"
+      };
+    },
+    symbols(s) {
+      if (!Number.isFinite(s.symbols) || s.symbols <= 0) return null;
+      return { key: "symbols", text: plural(s.symbols, "decl", "decls"), title: s.symbols + " declarations in this file" };
+    },
+    spacer() {
+      return { key: "spacer", spacer: true };
+    },
+    /** Always speaks: silence about the checker reads as "is it even on?". */
+    checker(s) {
+      if (!s.hasFile) return null;
+      const errors = s.errors || 0;
+      const warnings = s.warnings || 0;
+      let tone = "checked";
+      let text = "Checked";
+      if (s.checking) {
+        tone = errors ? "error-checking" : "checking";
+        text = Number.isFinite(s.parsePercent) && s.parsePercent < 100 ? "Parsing " + s.parsePercent + "%" : "Checking\u2026";
+      } else if (errors) {
+        tone = "error";
+        text = plural(errors, "error", "errors");
+      } else if (warnings) {
+        tone = "warning";
+        text = plural(warnings, "warning", "warnings");
+      }
+      const broken = errors + warnings > 0;
+      return {
+        key: "checker",
+        text,
+        title: broken ? "Go to the next problem" : "Run",
+        tone,
+        action: broken ? "next-problem" : "run-default",
+        dot: true
+      };
+    }
+  };
+  function buildSegments(state2, detail2) {
+    const s = state2 || {};
+    const keys = PRESETS[detail2] || PRESETS.standard;
+    const out = [];
+    for (const key of keys) {
+      const seg = BUILDERS[key](s);
+      if (seg) out.push(seg);
+    }
+    while (out.length && out[out.length - 1].spacer) out.pop();
+    return out;
+  }
+  function isResting(segments) {
+    return segments.filter((s) => !s.spacer).length <= 1;
+  }
+
+  // js/status-strip/status-strip-parse.mjs
+  var LINE_RE = /^(\d+)(?::(\d+))?$/;
+  function tokenize(text) {
+    const out = [];
+    const re = /\S+/g;
+    let m;
+    while (m = re.exec(text)) out.push({ text: m[0], from: m.index, to: m.index + m[0].length });
+    return out;
+  }
+  function parseCommandLine(raw, caret) {
+    const text = String(raw == null ? "" : raw);
+    const at = Number.isFinite(caret) ? Math.max(0, Math.min(caret, text.length)) : text.length;
+    const tokens = tokenize(text);
+    const base = { raw: text, caret: at, tokens, bang: false, name: "", args: [], argText: "" };
+    if (!tokens.length) return { ...base, kind: "empty", slot: 0 };
+    const head = tokens[0].text;
+    const lineHit = LINE_RE.exec(head);
+    if (lineHit && tokens.length === 1) {
+      const line = parseInt(lineHit[1], 10);
+      const col = lineHit[2] != null ? parseInt(lineHit[2], 10) : 1;
+      return { ...base, kind: "line", line, col: Number.isFinite(col) && col > 0 ? col : 1, slot: 0 };
+    }
+    const bang = head.endsWith("!") && head.length > 1;
+    const name = bang ? head.slice(0, -1) : head;
+    const args = tokens.slice(1).map((t) => t.text);
+    const argText = tokens.length > 1 ? text.slice(tokens[1].from) : "";
+    let slot = 0;
+    for (let i = 0; i < tokens.length; i += 1) {
+      if (at >= tokens[i].from) slot = i;
+    }
+    if (at > tokens[tokens.length - 1].to) slot = tokens.length;
+    return { ...base, kind: "command", bang, name, args, argText, slot };
+  }
+  function tokenAtCaret(parsed) {
+    const { tokens, caret } = parsed;
+    for (const t of tokens) {
+      if (caret >= t.from && caret <= t.to) return t;
+    }
+    return { text: "", from: caret, to: caret };
+  }
+  function lineTarget(parsed) {
+    if (!parsed || parsed.kind !== "line") return null;
+    return { line: parsed.line, col: parsed.col };
+  }
+
+  // js/status-strip/status-strip-complete.mjs
+  function score(query2, text) {
+    const q = String(query2 || "").toLowerCase();
+    const t = String(text || "");
+    const tl = t.toLowerCase();
+    if (!q) return 0;
+    if (q.length > tl.length) return -1;
+    let s = 0;
+    let prev = -2;
+    let from = 0;
+    for (let i = 0; i < q.length; i += 1) {
+      const idx = tl.indexOf(q[i], from);
+      if (idx < 0) return -1;
+      let step2 = 1;
+      if (idx === prev + 1) step2 += 4;
+      const before = idx > 0 ? t[idx - 1] : "";
+      if (idx === 0 || before === " " || before === "-" || before === "." || before === "/") step2 += 6;
+      s += step2;
+      prev = idx;
+      from = idx + 1;
+    }
+    if (tl.startsWith(q)) s += 8;
+    return s;
+  }
+  function labelScore(query2, label) {
+    const t = String(label || "").toLowerCase();
+    const at = t.indexOf(String(query2 || "").toLowerCase());
+    if (at < 0) return -1;
+    const before = at > 0 ? t[at - 1] : "";
+    return at === 0 ? 6 : before === " " || before === "-" ? 4 : 1;
+  }
+  function rank(query2, entries, limit) {
+    if (!query2) return entries.slice(0, limit || 30);
+    const scored = [];
+    for (let i = 0; i < entries.length; i += 1) {
+      const e = entries[i];
+      let best = score(query2, e.value);
+      for (const alias of e.aliases || []) best = Math.max(best, score(query2, alias));
+      best = Math.max(best, labelScore(query2, e.label));
+      if (best >= 0) scored.push({ e, best, i });
+    }
+    scored.sort((a, b) => b.best - a.best || a.i - b.i);
+    return scored.slice(0, limit || 30).map((x) => x.e);
+  }
+  function complete(raw, caret, sources) {
+    const src = sources || {};
+    const parsed = parseCommandLine(raw, caret);
+    const token = tokenAtCaret(parsed);
+    if (parsed.kind === "line") {
+      return { parsed, kind: "line", items: [], ghost: "", token };
+    }
+    if (parsed.kind === "empty" || parsed.slot === 0) {
+      const all2 = src.commands && src.commands() || [];
+      const items4 = rank(token.text, all2, 30);
+      return { parsed, kind: "command", items: items4, ghost: ghostFor(token.text, items4), token };
+    }
+    const all = src.commands && src.commands() || [];
+    const cmd = all.find((c) => c.value === parsed.name) || all.find((c) => Array.isArray(c.aliases) && c.aliases.indexOf(parsed.name) >= 0);
+    const argKind = cmd && cmd.args && cmd.args[parsed.slot - 1] ? cmd.args[parsed.slot - 1].kind : null;
+    const pool = argKind === "file" ? src.files && src.files() || [] : argKind === "option" ? src.options && src.options() || [] : [];
+    const items3 = rank(token.text, pool, 30);
+    return { parsed, kind: argKind || "none", items: items3, ghost: ghostFor(token.text, items3), token };
+  }
+  function ghostFor(typed2, items3) {
+    const q = String(typed2 || "");
+    if (!q || !items3 || !items3.length) return "";
+    const best = items3[0].value || "";
+    if (!best.toLowerCase().startsWith(q.toLowerCase())) return "";
+    return best.slice(q.length);
+  }
+  function applyCompletion(raw, caret, value) {
+    const parsed = parseCommandLine(raw, caret);
+    const token = tokenAtCaret(parsed);
+    const text = String(raw == null ? "" : raw);
+    const next = text.slice(0, token.from) + value + text.slice(token.to);
+    return { text: next, caret: token.from + value.length };
+  }
+
+  // js/status-strip/status-strip-line-ui.mjs
+  var global4 = globalThis;
+  var HISTORY_CAP = 50;
+  var LIST_CAP = 30;
+  var LIST_STEP = { n: 1, m: 1, p: -1 };
+  var PAGE = 8;
+  var host = null;
+  var input = null;
+  var ghostEl = null;
+  var listEl = null;
+  var open = false;
+  var items = [];
+  var active = -1;
+  var chosen = false;
+  var query = "";
+  var onCloseCb = null;
+  var history2 = [];
+  var historyAt = -1;
+  var historyLoaded = false;
+  var savedScroll = null;
+  var savedSelection = null;
+  var searchDir = "";
+  var searchAnchor = 0;
+  var promptEl = null;
+  var countEl = null;
+  var previewTimer = 0;
+  var PREVIEW_MS = 90;
+  var listListeners = false;
+  var listPad = { top: 0, bottom: 0 };
+  var hinting = false;
+  var forced = false;
+  function blurRestoreOnClose(wasSearch) {
+    return !!wasSearch;
+  }
+  function loadHistory() {
+    if (historyLoaded) return;
+    historyLoaded = true;
+    const P3 = global4.Persist;
+    if (P3 && typeof P3.readStoredCommandLineHistory === "function") {
+      try {
+        history2 = P3.readStoredCommandLineHistory() || [];
+      } catch (_) {
+        history2 = [];
+      }
+    }
+  }
+  function saveHistory() {
+    const P3 = global4.Persist;
+    if (P3 && typeof P3.writeStoredCommandLineHistory === "function") {
+      try {
+        P3.writeStoredCommandLineHistory(history2);
+      } catch (_) {
+      }
+    }
+  }
+  function commandSources() {
+    const C = global4.Commands;
+    const P3 = global4.Persist;
+    return {
+      commands() {
+        if (!C || typeof C.list !== "function") return [];
+        return C.list({ cmdline: true, runnable: true, available: true }).map((c) => ({
+          value: c.ex && c.ex[0] || c.id,
+          label: c.title,
+          detail: c.section,
+          aliases: (c.ex || []).concat([c.id], c.mx ? [c.mx] : []),
+          args: c.args || [],
+          id: c.id
+        }));
+      },
+      files() {
+        if (!P3 || typeof P3.listFiles !== "function") return [];
+        return (P3.listFiles() || []).map((f) => ({ value: f.name, label: f.name }));
+      },
+      // `:set ` completes over every preference name and vi abbreviation.
+      options: () => optionCandidates()
+    };
+  }
+  function resolveCommand(name) {
+    const all = commandSources().commands();
+    const want = String(name == null ? "" : name).toLowerCase();
+    if (!want) return null;
+    return all.find((c) => String(c.value).toLowerCase() === want) || all.find((c) => c.aliases.some((a) => String(a).toLowerCase() === want)) || all.find((c) => (c.label || "").toLowerCase() === want) || null;
+  }
+  function jumpToLine(target) {
+    const ed = global4.CurrentEditor;
+    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    if (!view || !target) return false;
+    const doc2 = view.state.doc;
+    const line = doc2.line(Math.max(1, Math.min(target.line, doc2.lines)));
+    const pos = Math.min(line.from + Math.max(0, target.col - 1), line.to);
+    if (typeof ed.jumpToRange === "function") ed.jumpToRange({ from: pos, to: pos });
+    else view.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
+    if (typeof ed.focus === "function") ed.focus();
+    return true;
+  }
+  function message(text) {
+    const B = global4.StatusStrip;
+    if (B && typeof B.setMessage === "function") B.setMessage(text);
+  }
+  function runLine(raw, closing) {
+    const parsed = parseCommandLine(raw);
+    remember(raw);
+    if (parsed.kind === "empty") {
+      closing();
+      return false;
+    }
+    if (parsed.kind === "line") {
+      savedScroll = null;
+      closing();
+      if (jumpToLine(lineTarget(parsed))) return true;
+      message("No file open.");
+      return false;
+    }
+    const cmd = resolveCommand(parsed.name);
+    closing();
+    if (!cmd) {
+      const near = complete(parsed.name, parsed.name.length, commandSources()).items[0];
+      message(near ? `Unknown command "${parsed.name}". Did you mean "${near.value}"?` : `Unknown command "${parsed.name}".`);
+      return false;
+    }
+    const C = global4.Commands;
+    try {
+      const ok = C && C.run(cmd.id, { args: parsed.args, bang: parsed.bang, argText: parsed.argText });
+      if (!ok) message(`"${cmd.label}" is not available right now.`);
+      return !!ok;
+    } catch (err) {
+      if (global4.console && console.error) console.error("[cmdline]", err);
+      if (global4.Toasts && global4.Toasts.warn) {
+        const msg = err && err.message ? String(err.message) : String(err);
+        global4.Toasts.warn("Command failed: " + msg);
+      }
+      return false;
+    }
+  }
+  function submit() {
+    runLine(input ? input.value : "", () => close());
+  }
+  function remember(raw) {
+    const text = String(raw || "").trim();
+    if (!text) return;
+    loadHistory();
+    const at = history2.indexOf(text);
+    if (at >= 0) history2.splice(at, 1);
+    history2.unshift(text);
+    if (history2.length > HISTORY_CAP) history2.length = HISTORY_CAP;
+    historyAt = -1;
+    saveHistory();
+  }
+  function previewLine(parsed) {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = 0;
+    if (!parsed || parsed.kind !== "line") return;
+    previewTimer = setTimeout(() => {
+      previewTimer = 0;
+      const ed = global4.CurrentEditor;
+      const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+      if (!view || typeof ed.peekRange !== "function") return;
+      const doc2 = view.state.doc;
+      const line = doc2.line(Math.max(1, Math.min(parsed.line, doc2.lines)));
+      ed.peekRange({ from: line.from, to: line.from });
+    }, PREVIEW_MS);
+  }
+  function restoreViewport() {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = 0;
+    if (savedScroll == null) return;
+    const ed = global4.CurrentEditor;
+    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    const target = savedScroll;
+    savedScroll = null;
+    if (!view || !view.scrollDOM) return;
+    view.scrollDOM.scrollTop = target;
+    const settle = () => {
+      if (view.dom.isConnected) view.scrollDOM.scrollTop = target;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(settle);
+    setTimeout(settle, 40);
+  }
+  function fitWholeRows(cap) {
+    const first = listEl && listEl.firstElementChild;
+    if (!first || !cap) return;
+    const rowH = first.offsetHeight;
+    if (!rowH || cap < rowH * 2) return;
+    const rows = Math.max(2, Math.floor((cap - listPad.top - listPad.bottom) / rowH));
+    listEl.style.maxHeight = rows * rowH + listPad.top + listPad.bottom + "px";
+  }
+  function anchorList() {
+    const bar = host && host.closest ? host.closest(".bj-strip") : null;
+    if (!bar || !listEl) return;
+    const rect = bar.getBoundingClientRect();
+    listEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
+    const zone = host.parentNode && host.parentNode.getBoundingClientRect ? host.parentNode : null;
+    const field = (open || exInput ? zone : null) || bar.querySelector(".bj-strip__seg--command") || zone;
+    const from = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
+    const pad = 6;
+    let left = from && from.width ? from.left : rect.left + pad;
+    const width = listEl.offsetWidth || 0;
+    left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
+    listEl.style.left = Math.max(pad, Math.round(left)) + "px";
+  }
+  function activeInput() {
+    return exInput || input;
+  }
+  function listOpen() {
+    return !!listEl && !listEl.hidden && items.length > 0;
+  }
+  function syncActiveDescendant() {
+    const el6 = activeInput();
+    if (!el6 || !listEl) return;
+    if (active < 0 || listEl.hidden) {
+      el6.removeAttribute("aria-activedescendant");
+      return;
+    }
+    el6.setAttribute("aria-activedescendant", "bj-cmdline-opt-" + active);
+  }
+  function bindListListeners() {
+    if (listListeners || typeof window === "undefined") return;
+    listListeners = true;
+    window.addEventListener("resize", anchorList);
+    window.addEventListener("scroll", anchorList, { passive: true, capture: true });
+  }
+  function unbindListListeners() {
+    if (!listListeners || typeof window === "undefined") return;
+    listListeners = false;
+    window.removeEventListener("resize", anchorList);
+    window.removeEventListener("scroll", anchorList, { capture: true });
+  }
+  function scrollRowIntoView(row) {
+    if (!row || !listEl) return;
+    const top = row.offsetTop - listPad.top;
+    const bottom = row.offsetTop + row.offsetHeight + listPad.bottom;
+    if (top < listEl.scrollTop) listEl.scrollTop = Math.max(0, top);
+    else if (bottom > listEl.scrollTop + listEl.clientHeight) {
+      listEl.scrollTop = bottom - listEl.clientHeight;
+    }
+  }
+  function paintActive() {
+    if (!listEl) return;
+    for (const row of listEl.children) {
+      if (!row.dataset || row.dataset.index == null) continue;
+      const on = Number(row.dataset.index) === active;
+      row.classList.toggle("is-active", on);
+      row.setAttribute("aria-selected", on ? "true" : "false");
+      if (on) scrollRowIntoView(row);
+    }
+    syncActiveDescendant();
+  }
+  function hideList() {
+    forced = false;
+    if (!listEl) return;
+    listEl.replaceChildren();
+    listEl.hidden = true;
+    listEl.scrollTop = 0;
+    unbindListListeners();
+    syncActiveDescendant();
+  }
+  function renderList() {
+    if (!listEl) return;
+    if (searchDir || !query.trim() && !forced && !hinting) {
+      hideList();
+      return;
+    }
+    listEl.replaceChildren();
+    listEl.hidden = false;
+    listEl.scrollTop = 0;
+    bindListListeners();
+    if (!items.length) {
+      const none = document.createElement("div");
+      none.className = "bj-cmdline__none";
+      none.textContent = "No matching command";
+      listEl.appendChild(none);
+      anchorList();
+      syncActiveDescendant();
+      return;
+    }
+    listEl.style.maxHeight = "";
+    const cs = typeof getComputedStyle === "function" ? getComputedStyle(listEl) : null;
+    listPad = {
+      top: cs ? parseFloat(cs.paddingTop) || 0 : 0,
+      bottom: cs ? parseFloat(cs.paddingBottom) || 0 : 0
+    };
+    const cap = cs ? parseFloat(cs.maxHeight) || 0 : 0;
+    items.forEach((it, i) => {
+      const row = document.createElement("div");
+      row.className = "bj-cmdline__item";
+      row.id = "bj-cmdline-opt-" + i;
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", "false");
+      row.dataset.index = String(i);
+      const name = document.createElement("span");
+      name.className = "bj-cmdline__item-name";
+      name.textContent = it.value;
+      row.appendChild(name);
+      if (it.label && it.label !== it.value) {
+        const label = document.createElement("span");
+        label.className = "bj-cmdline__item-label";
+        label.textContent = it.label;
+        row.appendChild(label);
+      }
+      row.addEventListener("pointerdown", (e) => e.preventDefault());
+      if (!hinting) row.addEventListener("click", () => {
+        chosen = true;
+        accept(i);
+      });
+      else row.classList.add("is-legend");
+      listEl.appendChild(row);
+    });
+    fitWholeRows(cap);
+    anchorList();
+    paintActive();
+  }
+  function searchStep(fromCaret, forward) {
+    const ed = global4.CurrentEditor;
+    if (!ed || typeof ed.searchFrom !== "function") return;
+    const hit = ed.searchFrom(input.value, fromCaret, forward);
+    countEl.textContent = input.value ? hit ? hit.index + "/" + hit.total : "no match" : "";
+    countEl.classList.toggle("is-empty", !!input.value && !hit);
+    if (!hit) return;
+    searchAnchor = hit.from;
+    const view = typeof ed.getView === "function" ? ed.getView() : null;
+    if (!view) return;
+    view.dispatch({ selection: { anchor: hit.from, head: hit.to }, scrollIntoView: true });
+  }
+  function completeInto(el6) {
+    const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
+    const res = complete(el6.value, caret, commandSources());
+    query = el6.value;
+    items = res.items.slice(0, LIST_CAP);
+    active = -1;
+    chosen = false;
+    return res;
+  }
+  function markUnknown() {
+    if (!input) return;
+    const typed2 = query.trim();
+    input.classList.toggle("is-unknown", !!typed2 && !items.length && !/^\d/.test(typed2));
+  }
+  function forceList() {
+    const el6 = activeInput();
+    if (!el6 || searchDir) return false;
+    forced = true;
+    hinting = false;
+    if (el6 === exInput) refreshEx();
+    else refresh();
+    return true;
+  }
+  function isForceKey(e) {
+    const K = (typeof window !== "undefined" ? window : globalThis).Keybindings;
+    if (K && typeof K.matchesId === "function") return K.matchesId(e, "edit.autocomplete");
+    return e.ctrlKey && (e.key === " " || e.code === "Space");
+  }
+  function refresh() {
+    if (!open) return;
+    if (searchDir) {
+      searchStep(searchDir === "/" ? searchAnchor - 1 : searchAnchor, searchDir === "/");
+      query = "";
+      items = [];
+      active = -1;
+      hideList();
+      return;
+    }
+    const res = completeInto(input);
+    previewLine(res.parsed);
+    ghostEl.textContent = res.ghost ? input.value + res.ghost : "";
+    markUnknown();
+    renderList();
+  }
+  function accept(index) {
+    const el6 = activeInput();
+    const it = items[index == null ? Math.max(active, 0) : index];
+    if (!it || !el6) return false;
+    const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
+    const next = applyCompletion(el6.value, caret, it.value);
+    el6.value = next.text;
+    el6.setSelectionRange(next.caret, next.caret);
+    resetCycle();
+    if (el6 === exInput) refreshEx();
+    else refresh();
+    return true;
+  }
+  var wildStem = null;
+  var wildAt = -1;
+  var wildItems = [];
+  function resetCycle() {
+    wildStem = null;
+    wildAt = -1;
+    wildItems = [];
+  }
+  function tabCycle(back) {
+    const el6 = activeInput();
+    if (!el6) return false;
+    if (wildStem == null) {
+      if (!items.length) return false;
+      const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
+      const token = tokenAtCaret(parseCommandLine(el6.value, caret));
+      wildStem = { from: token.from, to: token.to };
+      wildItems = items.slice();
+      wildAt = back ? wildItems.length - 1 : 0;
+    } else {
+      wildAt = (wildAt + (back ? -1 : 1) + wildItems.length) % wildItems.length;
+    }
+    const it = wildItems[wildAt];
+    if (!it) {
+      resetCycle();
+      return false;
+    }
+    const caretAt = wildStem.from + it.value.length;
+    el6.value = el6.value.slice(0, wildStem.from) + it.value + el6.value.slice(wildStem.to);
+    el6.setSelectionRange(caretAt, caretAt);
+    wildStem = { from: wildStem.from, to: caretAt };
+    active = items.indexOf(it);
+    chosen = true;
+    if (ghostEl && el6 === input) ghostEl.textContent = "";
+    paintActive();
+    return true;
+  }
+  function step(delta) {
+    if (!items.length) return false;
+    const from = active < 0 ? delta > 0 ? -1 : 0 : active;
+    active = (from + delta + items.length * 2) % items.length;
+    chosen = true;
+    resetCycle();
+    paintActive();
+    return true;
+  }
+  var exInput = null;
+  var exOnInput = null;
+  var exOnKeydown = null;
+  var exOnBlur = null;
+  function refreshEx() {
+    if (!exInput) return;
+    if (!exInput.isConnected) {
+      detachExCompletion();
+      return;
+    }
+    completeInto(exInput);
+    renderList();
+  }
+  function attachExCompletion(el6) {
+    if (!el6) return false;
+    if (exInput === el6) {
+      refreshEx();
+      return true;
+    }
+    detachExCompletion();
+    exInput = el6;
+    exOnInput = () => {
+      resetCycle();
+      refreshEx();
+    };
+    exOnKeydown = (e) => {
+      if (isForceKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        forceList();
+        return;
+      }
+      if (e.altKey || e.metaKey) return;
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        tabCycle(e.shiftKey);
+        return;
+      }
+      if (e.ctrlKey && LIST_STEP[e.key] !== void 0) {
+        if (!step(LIST_STEP[e.key])) return;
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === "Enter" && chosen && active >= 0) {
+        accept();
+        hideList();
+        return;
+      }
+      if (e.key === "Escape") {
+        hideList();
+        return;
+      }
+      if (!listOpen()) return;
+      if (e.key === "PageDown" || e.key === "PageUp") {
+        if (!step(e.key === "PageDown" ? PAGE : -PAGE)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    exOnBlur = () => hideList();
+    el6.addEventListener("input", exOnInput);
+    el6.addEventListener("keydown", exOnKeydown, true);
+    el6.addEventListener("blur", exOnBlur);
+    refreshEx();
+    return true;
+  }
+  function detachExCompletion() {
+    if (!exInput) return false;
+    exInput.removeEventListener("input", exOnInput);
+    exInput.removeEventListener("keydown", exOnKeydown, true);
+    exInput.removeEventListener("blur", exOnBlur);
+    exInput = null;
+    exOnInput = null;
+    exOnKeydown = null;
+    exOnBlur = null;
+    items = [];
+    active = -1;
+    query = "";
+    chosen = false;
+    resetCycle();
+    hideList();
+    return true;
+  }
+  function recall(delta) {
+    loadHistory();
+    if (!history2.length) return;
+    historyAt = Math.max(-1, Math.min(history2.length - 1, historyAt + delta));
+    input.value = historyAt < 0 ? "" : history2[historyAt];
+    input.setSelectionRange(input.value.length, input.value.length);
+    resetCycle();
+    refresh();
+  }
+  function onKey(e) {
+    if (e.key === "Escape" || e.ctrlKey && e.key === "g") {
+      e.preventDefault();
+      close({ restore: true });
+      return;
+    }
+    if (searchDir) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        savedSelection = null;
+        savedScroll = null;
+        close({ restore: false });
+        return;
+      }
+      const fwd = e.ctrlKey && e.key === "s" || e.key === "ArrowDown";
+      const back = e.ctrlKey && e.key === "r" || e.key === "ArrowUp";
+      if (fwd || back) {
+        e.preventDefault();
+        searchStep(fwd ? searchAnchor : searchAnchor, fwd);
+        return;
+      }
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (chosen && active >= 0) accept();
+      submit();
+      return;
+    }
+    if (isForceKey(e)) {
+      e.preventDefault();
+      forceList();
+      return;
+    }
+    if (e.key === "Tab") {
+      e.preventDefault();
+      tabCycle(e.shiftKey);
+      return;
+    }
+    if (e.ctrlKey && LIST_STEP[e.key] !== void 0) {
+      if (step(LIST_STEP[e.key])) e.preventDefault();
+      return;
+    }
+    if (listOpen() && (e.key === "PageDown" || e.key === "PageUp")) {
+      e.preventDefault();
+      step(e.key === "PageDown" ? PAGE : -PAGE);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (input.value) step(1);
+      else recall(-1);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (input.value) step(-1);
+      else recall(1);
+      return;
+    }
+    if (e.key === "ArrowRight" && input.selectionStart === input.value.length && ghostEl.textContent) {
+      e.preventDefault();
+      accept(0);
+    }
+  }
+  function build(fieldParent, listParent) {
+    host = document.createElement("div");
+    host.className = "bj-cmdline";
+    host.hidden = true;
+    listEl = document.createElement("div");
+    listEl.className = "bj-cmdline__list";
+    listEl.setAttribute("role", "listbox");
+    listEl.hidden = true;
+    const field = document.createElement("div");
+    field.className = "bj-cmdline__field";
+    const prompt = document.createElement("span");
+    prompt.className = "bj-cmdline__prompt";
+    prompt.textContent = ":";
+    promptEl = prompt;
+    countEl = document.createElement("span");
+    countEl.className = "bj-cmdline__count";
+    ghostEl = document.createElement("span");
+    ghostEl.className = "bj-cmdline__ghost";
+    ghostEl.setAttribute("aria-hidden", "true");
+    input = document.createElement("input");
+    input.type = "text";
+    input.className = "bj-cmdline__input";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.setAttribute("aria-label", "Command line");
+    input.addEventListener("input", () => {
+      historyAt = -1;
+      resetCycle();
+      refresh();
+    });
+    input.addEventListener("keydown", onKey);
+    input.addEventListener("blur", () => {
+      if (open) close({ restore: blurRestoreOnClose(!!searchDir) });
+    });
+    const wrap = document.createElement("span");
+    wrap.className = "bj-cmdline__inputwrap";
+    wrap.append(ghostEl, input);
+    field.append(prompt, wrap, countEl);
+    host.append(field);
+    fieldParent.appendChild(host);
+    (listParent || fieldParent).appendChild(listEl);
+    return host;
+  }
+  function isOpen() {
+    return open;
+  }
+  function openSearch(forward, onClose) {
+    if (!openLine("", onClose)) return false;
+    searchDir = forward === false ? "?" : "/";
+    promptEl.textContent = searchDir;
+    countEl.textContent = "";
+    items = [];
+    active = -1;
+    query = "";
+    hideList();
+    const ed = global4.CurrentEditor;
+    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    searchAnchor = view ? view.state.selection.main.head : 0;
+    return true;
+  }
+  function openLine(prefix, onClose, opts) {
+    if (!host) return false;
+    onCloseCb = onClose || null;
+    loadHistory();
+    const ed = global4.CurrentEditor;
+    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    savedScroll = view && view.scrollDOM ? view.scrollDOM.scrollTop : null;
+    savedSelection = view ? { anchor: view.state.selection.main.anchor, head: view.state.selection.main.head } : null;
+    searchDir = "";
+    if (promptEl) promptEl.textContent = opts && opts.prompt || ":";
+    if (countEl) countEl.textContent = "";
+    hinting = false;
+    forced = false;
+    open = true;
+    host.hidden = false;
+    if (host.parentNode) host.parentNode.classList.add("is-line-open");
+    input.value = prefix || "";
+    resetCycle();
+    refresh();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    return true;
+  }
+  function close(opts) {
+    if (host && host.parentNode) host.parentNode.classList.remove("is-line-open");
+    if (!open) return;
+    open = false;
+    host.hidden = true;
+    if (host.parentNode) host.parentNode.classList.remove("is-line-open");
+    input.value = "";
+    input.classList.remove("is-unknown");
+    ghostEl.textContent = "";
+    items = [];
+    active = -1;
+    chosen = false;
+    query = "";
+    resetCycle();
+    hideList();
+    if (countEl) countEl.textContent = "";
+    const wasSearch = !!searchDir;
+    searchDir = "";
+    if (promptEl) promptEl.textContent = ":";
+    if (wasSearch && savedSelection && (!opts || opts.restore !== false)) {
+      const ed = global4.CurrentEditor;
+      const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+      if (view) view.dispatch({ selection: savedSelection });
+    }
+    savedSelection = null;
+    restoreViewport();
+    if (opts && opts.restore !== false) {
+      const ed = global4.CurrentEditor;
+      if (ed && typeof ed.focus === "function") ed.focus();
+    }
+    if (onCloseCb) onCloseCb();
+  }
+  function lastEntry() {
+    loadHistory();
+    return history2.length ? history2[0] : "";
+  }
+  function repeatLast() {
+    const text = lastEntry();
+    if (!text) {
+      message("Nothing to repeat yet.");
+      return false;
+    }
+    return runLine(text, () => {
+    });
+  }
+  function showKeyHints(rows) {
+    if (!listEl || open || exInput) return false;
+    if (!rows || !rows.length) {
+      hideKeyHints();
+      return false;
+    }
+    hinting = true;
+    query = "";
+    items = rows.map((r) => ({ value: r.key, label: r.title }));
+    active = -1;
+    chosen = false;
+    renderList();
+    return true;
+  }
+  function hideKeyHints() {
+    if (!hinting) return false;
+    hinting = false;
+    items = [];
+    active = -1;
+    query = "";
+    hideList();
+    return true;
+  }
+
+  // js/status-strip/status-strip-view.mjs
+  var global5 = globalThis;
+  var root = null;
+  var segmentHost = null;
+  var vimSlotEl = null;
+  var commandHost = null;
+  var messageText = "";
+  var messageTimer = 0;
+  var messageEl = null;
+  var MESSAGE_HOLD_MS = 3200;
+  var MESSAGE_FADE_MS = 200;
+  var mounted = false;
+  var frame = 0;
+  var inited = false;
+  var state = {
+    style: "default",
+    mode: "",
+    pending: "",
+    mark: false,
+    hasFile: false,
+    line: NaN,
+    col: NaN,
+    selChars: 0,
+    selLines: 0,
+    errors: 0,
+    warnings: 0,
+    checking: false,
+    parsePercent: NaN,
+    goal: "",
+    holes: 0,
+    symbols: NaN,
+    orca: false,
+    orcaDetail: ""
+  };
+  var detail = "standard";
+  var rendered = "";
+  function persist() {
+    return global5.Persist || null;
+  }
+  function storedMode() {
+    const p = persist();
+    try {
+      const v = p && typeof p.readStoredStatusStrip === "function" ? p.readStoredStatusStrip() : null;
+      if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
+    } catch (_) {
+    }
+    return "standard";
+  }
+  function hostPane() {
+    return document.body || null;
+  }
+  function ensureRoot() {
+    if (root && root.isConnected) return root;
+    const pane = hostPane();
+    if (!pane) return null;
+    root = document.createElement("div");
+    root.className = "bj-strip";
+    root.setAttribute("role", "status");
+    root.setAttribute("aria-live", "off");
+    segmentHost = document.createElement("div");
+    segmentHost.className = "bj-strip__segments";
+    root.appendChild(segmentHost);
+    commandHost = document.createElement("div");
+    commandHost.className = "bj-strip__command";
+    vimSlotEl = document.createElement("div");
+    vimSlotEl.className = "bj-strip__vim";
+    commandHost.appendChild(vimSlotEl);
+    build(commandHost, root);
+    pane.appendChild(root);
+    return root;
+  }
+  function ownStatusDot(owned) {
+    const root_ = typeof document !== "undefined" ? document.documentElement : null;
+    if (root_) root_.classList.toggle("bj-strip-owns-status", !!owned);
+  }
+  function unmount() {
+    close({ restore: false });
+    if (root && root.parentNode) root.parentNode.removeChild(root);
+    root = null;
+    segmentHost = null;
+    commandHost = null;
+    messageEl = null;
+    mounted = false;
+    rendered = "";
+  }
+  var dotEl = null;
+  function statusDot() {
+    if (!dotEl) {
+      dotEl = document.createElement("span");
+      dotEl.className = "ide-status-dot bj-strip__statusdot";
+      dotEl.setAttribute("data-status-silent", "");
+      dotEl.setAttribute("role", "status");
+    }
+    return dotEl;
+  }
+  function renderType(host2, text) {
+    const ed = global5.BelEditor;
+    const norm2 = ed && typeof ed.normalizeType === "function" ? ed.normalizeType(text) : String(text == null ? "" : text);
+    host2.textContent = "";
+    if (!norm2) return;
+    if (ed && typeof ed.renderTypeInto === "function") {
+      try {
+        ed.renderTypeInto(host2, norm2, "comp");
+        if (host2.textContent.indexOf("|-") < 0) return;
+      } catch (_) {
+      }
+    }
+    host2.textContent = norm2;
+  }
+  function segmentEl(seg) {
+    if (seg.spacer) {
+      const gap = document.createElement("span");
+      gap.className = "bj-strip__spacer";
+      return gap;
+    }
+    const el6 = document.createElement(seg.action ? "button" : "span");
+    el6.className = "bj-strip__seg bj-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "");
+    if (seg.action) {
+      el6.type = "button";
+      el6.dataset.action = seg.action;
+    }
+    if (seg.title) {
+      el6.setAttribute("data-tooltip", seg.title);
+      el6.setAttribute("aria-label", seg.title);
+    }
+    if (seg.dot) el6.appendChild(statusDot());
+    if (seg.mark) {
+      const mark = document.createElement("span");
+      mark.className = "bj-strip__mark";
+      mark.textContent = seg.mark;
+      el6.appendChild(mark);
+    }
+    const label = document.createElement("span");
+    label.className = "bj-strip__label";
+    if (seg.render === "type") renderType(label, seg.text);
+    else label.textContent = seg.text || "";
+    el6.appendChild(label);
+    return el6;
+  }
+  var ACTIONS = {
+    "focus-editor": () => global5.CurrentEditor?.focus?.(),
+    "goto-line": () => global5.CommandPalette?.open({ mode: "line" }),
+    "commands": () => global5.CommandPalette?.open({ mode: "commands" }),
+    "next-problem": () => global5.Commands?.run("nav.next-problem"),
+    "run-default": () => global5.Commands?.run("run.default") || global5.Commands?.run("run.file"),
+    "next-hole": () => global5.Commands?.run("nav.next-hole"),
+    "open-harpoon": () => global5.Commands?.run("prover.open-in-harpoon") || global5.Commands?.run("view.harpoon"),
+    "run": () => global5.Commands?.run("run.file")
+  };
+  function runAction(action) {
+    const fn = ACTIONS[action];
+    if (fn) fn();
+  }
+  function paint() {
+    frame = 0;
+    if (!mounted) return;
+    const host2 = ensureRoot();
+    if (!host2) return;
+    const segments = buildSegments(state, detail);
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone).join("|");
+    if (signature === rendered) return;
+    rendered = signature;
+    const els = segments.map(segmentEl);
+    const LEFT = ["keymap", "position", "mode", "command"];
+    let at = 0;
+    segments.forEach((seg, i) => {
+      if (LEFT.indexOf(seg.key) >= 0) at = i + 1;
+    });
+    placeSegments(els, at);
+    placeMessage();
+    host2.classList.toggle("is-resting", isResting(segments));
+    const modeSeg = segments.find((x) => x.key === "mode");
+    if (modeSeg) host2.dataset.mode = modeSeg.tone;
+    else delete host2.dataset.mode;
+  }
+  function messageNode() {
+    if (!messageEl) {
+      messageEl = document.createElement("span");
+      messageEl.className = "bj-strip__message";
+      messageEl.setAttribute("role", "status");
+      messageEl.setAttribute("aria-live", "polite");
+    }
+    return messageEl;
+  }
+  function placeSegments(els, at) {
+    if (commandHost.parentNode !== segmentHost) segmentHost.appendChild(commandHost);
+    for (const node of Array.from(segmentHost.childNodes)) {
+      if (node !== commandHost && node !== messageEl) segmentHost.removeChild(node);
+    }
+    for (let i = 0; i < at; i += 1) segmentHost.insertBefore(els[i], commandHost);
+    for (let i = at; i < els.length; i += 1) segmentHost.appendChild(els[i]);
+  }
+  function placeMessage() {
+    if (!segmentHost) return;
+    const node = messageNode();
+    const spacer = segmentHost.querySelector(".bj-strip__spacer");
+    if (spacer) {
+      if (node.previousSibling !== spacer) spacer.after(node);
+    } else if (node.parentNode !== segmentHost) {
+      segmentHost.appendChild(node);
+    }
+  }
+  function setMessage(text, opts) {
+    const next = String(text || "");
+    const node = messageNode();
+    placeMessage();
+    if (messageTimer) clearTimeout(messageTimer);
+    messageTimer = 0;
+    messageText = next;
+    if (!next) {
+      node.classList.remove("is-visible");
+      messageTimer = setTimeout(() => {
+        messageTimer = 0;
+        node.textContent = "";
+      }, MESSAGE_FADE_MS);
+      return;
+    }
+    node.textContent = next;
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => node.classList.add("is-visible"));
+    else node.classList.add("is-visible");
+    if (opts && opts.hold) return;
+    messageTimer = setTimeout(() => {
+      messageTimer = 0;
+      setMessage("");
+    }, MESSAGE_HOLD_MS);
+  }
+  function openCommandLine(prefix, opts) {
+    if (!mounted) {
+      detail = "standard";
+      mounted = true;
+      if (!ensureRoot()) {
+        mounted = false;
+        return false;
+      }
+      ownStatusDot(true);
+      paint();
+    }
+    return openLine(prefix || "", () => {
+      rendered = "";
+      paint();
+    }, opts);
+  }
+  function schedule() {
+    if (!mounted || frame) return;
+    frame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(paint) : setTimeout(paint, 16);
+  }
+  function setEditorState(next) {
+    if (!next) return;
+    let changed = false;
+    if (next.style && next.style !== state.style) next = { ...next, pending: "", mark: false };
+    for (const key of [
+      "style",
+      "mode",
+      "pending",
+      "mark",
+      "hasFile",
+      "line",
+      "col",
+      "selChars",
+      "selLines",
+      "goal",
+      "holes",
+      "symbols",
+      "orca",
+      "orcaDetail"
+    ]) {
+      if (!(key in next) || state[key] === next[key]) continue;
+      state[key] = next[key];
+      changed = true;
+    }
+    if (changed) schedule();
+  }
+  function setDiagnostics(next) {
+    if (!next) return;
+    const errors = Number(next.errors) || 0;
+    const warnings = Number(next.warnings) || 0;
+    const checking = !!next.checking;
+    const parsePercent = "parsePercent" in next ? next.parsePercent : state.parsePercent;
+    if (errors === state.errors && warnings === state.warnings && checking === state.checking && parsePercent === state.parsePercent) return;
+    state.errors = errors;
+    state.warnings = warnings;
+    state.checking = checking;
+    state.parsePercent = parsePercent;
+    schedule();
+  }
+  function goalAtCaret() {
+    const ed = global5.CurrentEditor;
+    if (!ed || typeof ed.holeAtCursor !== "function") return "";
+    try {
+      const hit = ed.holeAtCursor();
+      const goal = hit && hit.hole ? hit.hole.goal : null;
+      if (!goal) return "";
+      const norm2 = global5.BelEditor && typeof global5.BelEditor.normalizeType === "function" ? global5.BelEditor.normalizeType(String(goal)) : String(goal);
+      return norm2;
+    } catch (_) {
+      return "";
+    }
+  }
+  function seedFromEditor() {
+    const ed = global5.CurrentEditor;
+    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    if (!view) {
+      setEditorState({ hasFile: false, line: NaN, col: NaN, selChars: 0, selLines: 0, goal: "" });
+      return;
+    }
+    const sel = view.state.selection.main;
+    const doc2 = view.state.doc;
+    const head = doc2.lineAt(sel.head);
+    const selChars = Math.abs(sel.to - sel.from);
+    const p = persist();
+    setEditorState({
+      style: p && typeof p.readStoredKeymapStyle === "function" ? p.readStoredKeymapStyle() : "default",
+      hasFile: true,
+      line: head.number,
+      col: sel.head - head.from + 1,
+      selChars,
+      selLines: selChars ? doc2.lineAt(sel.to).number - doc2.lineAt(sel.from).number + 1 : 0,
+      goal: goalAtCaret()
+    });
+  }
+  function setOrca(running2, detailText) {
+    setEditorState({ orca: !!running2, orcaDetail: running2 ? detailText || "" : "" });
+  }
+  function apply() {
+    const mode = storedMode();
+    detail = mode === "off" ? "standard" : mode;
+    if (mode === "off") {
+      unmount();
+      ownStatusDot(false);
+      return;
+    }
+    mounted = true;
+    if (!ensureRoot()) {
+      mounted = false;
+      ownStatusDot(false);
+      return;
+    }
+    ownStatusDot(true);
+    rendered = "";
+    root.classList.remove("is-vim-line", "is-line-open");
+    root.dataset.detail = detail;
+    seedFromEditor();
+    refreshProofState();
+    paint();
+  }
+  function refreshProofState() {
+    const ed = global5.CurrentEditor;
+    if (!ed) {
+      setEditorState({ holes: 0, symbols: NaN, goal: "" });
+      return;
+    }
+    let holes = 0;
+    let symbols = NaN;
+    let checking = state.checking;
+    let parsePercent = NaN;
+    try {
+      const eng = ed.getSemanticEngine?.();
+      const list3 = eng && typeof eng.getHoles === "function" ? eng.getHoles() : null;
+      holes = list3 ? list3.length : 0;
+    } catch (_) {
+      holes = 0;
+    }
+    try {
+      const st = ed.getIdeStatus?.();
+      if (st) {
+        symbols = Number.isFinite(st.symbolCount) ? st.symbolCount : NaN;
+        checking = !!st.belugaChecking || !(st.parse?.complete ?? true);
+        parsePercent = st.parse && !st.parse.complete ? st.parse.percent : NaN;
+      }
+    } catch (_) {
+    }
+    setEditorState({ holes, symbols });
+    setDiagnostics({ errors: state.errors, warnings: state.warnings, checking, parsePercent });
+  }
+  function onLint(e) {
+    const d = e && e.detail || {};
+    setDiagnostics({ errors: d.errors, warnings: d.warnings, checking: state.checking });
+    refreshProofState();
+  }
+  function onClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest(".bj-strip__seg[data-action]") : null;
+    if (!btn) return;
+    e.preventDefault();
+    runAction(btn.dataset.action);
+  }
+  function init2() {
+    if (inited || typeof document === "undefined") return;
+    inited = true;
+    global5.addEventListener("beljar:hole-goals-updated", refreshProofState);
+    global5.addEventListener("beljar:file-lint", onLint);
+    global5.addEventListener("beljar:keybindings-changed", apply);
+    document.addEventListener("click", onClick, true);
+    apply();
+  }
+  global5.StatusStrip = {
+    init: init2,
+    apply,
+    setEditorState,
+    setDiagnostics,
+    storedMode,
+    refreshProofState,
+    /**
+     * The node Vim's own `:` and `/` inputs are mounted into. We keep the chrome;
+     * the package keeps its input, its focus handling and its ex parsing — which
+     * is the whole point of Vim mode being Vim.
+     */
+    vimSlot: () => ensureRoot() ? vimSlotEl : null,
+    setVimLine: (on) => {
+      if (!root) return;
+      root.classList.toggle("is-vim-line", !!on);
+    },
+    setMessage,
+    openCommandLine,
+    openSearchLine: (forward) => {
+      if (!mounted) {
+        detail = storedMode() === "off" ? "standard" : storedMode();
+        mounted = true;
+        if (!ensureRoot()) {
+          mounted = false;
+          return false;
+        }
+        ownStatusDot(true);
+        paint();
+      }
+      return openSearch(forward, () => {
+        rendered = "";
+        paint();
+      });
+    },
+    isCommandLineOpen: isOpen,
+    repeatLastCommand: repeatLast,
+    attachExCompletion,
+    detachExCompletion,
+    showKeyHints,
+    hideKeyHints,
+    forceList,
+    lastCommandLine: lastEntry,
+    closeCommandLine: close,
+    setOrca,
+    isMounted: () => mounted,
+    element: () => root,
+    _pure: { buildSegments, isResting }
+  };
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init2);
+    else init2();
+  }
+
+  // js/commands/command-context.mjs
+  function doc(given) {
+    if (given) return given;
+    return typeof document !== "undefined" ? document : null;
+  }
+  function activeElement(given) {
+    const d = doc(given);
+    return d && d.activeElement ? d.activeElement : null;
+  }
+  function closestFrom(el6, selector) {
+    if (!el6 || typeof el6.closest !== "function") return null;
+    try {
+      return el6.closest(selector);
+    } catch (_) {
+      return null;
+    }
+  }
+  function isEmacsEditorFocused(given) {
+    const ed = closestFrom(activeElement(given), ".cm-editor");
+    if (!ed || typeof ed.querySelector !== "function") return false;
+    try {
+      return !!ed.querySelector(".cm-emacsMode");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // js/ui/keybindings.mjs
+  var global6 = globalThis;
+  var IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
+  var DEFAULTS = [];
   var BY_ID = /* @__PURE__ */ Object.create(null);
-  for (i = 0; i < DEFAULTS.length; i++) BY_ID[DEFAULTS[i].id] = DEFAULTS[i];
-  var i;
+  var projectedVersion = -1;
+  function syncDefaults() {
+    var v = Commands2.version();
+    if (v === projectedVersion) return;
+    projectedVersion = v;
+    var next = Commands2.defaults();
+    DEFAULTS.length = 0;
+    for (var k in BY_ID) delete BY_ID[k];
+    for (var i = 0; i < next.length; i++) {
+      DEFAULTS.push(next[i]);
+      BY_ID[next[i].id] = next[i];
+    }
+  }
+  syncDefaults();
   var RESERVED = {
     "Mod+T": 1,
     "Mod+N": 1,
@@ -5025,11 +8057,28 @@
     "Mod+Shift+Delete": 1,
     "Alt+F4": 1
   };
-  var SECTION_ORDER = ["Edit", "Navigate", "Tools"];
+  var SECTION_ORDER = ["File", "Edit", "Motion", "Navigate", "Prover", "Run", "View", "Settings", "Tools"];
   var globalHandlers = /* @__PURE__ */ Object.create(null);
   var listening = false;
   function persistApi() {
-    return global3.Persist || null;
+    return global6.Persist || null;
+  }
+  var scopeDefsCache = /* @__PURE__ */ Object.create(null);
+  var scopeDefsVersion = -1;
+  function defsForScope(scope) {
+    syncDefaults();
+    if (scopeDefsVersion !== projectedVersion) {
+      scopeDefsVersion = projectedVersion;
+      scopeDefsCache = /* @__PURE__ */ Object.create(null);
+    }
+    var cached = scopeDefsCache[scope];
+    if (cached) return cached;
+    var out = [];
+    for (var i = 0; i < DEFAULTS.length; i++) {
+      if (DEFAULTS[i].scope === scope) out.push(DEFAULTS[i]);
+    }
+    scopeDefsCache[scope] = out;
+    return out;
   }
   function readOverrides() {
     var p = persistApi();
@@ -5043,10 +8092,10 @@
   }
   function notifyChanged() {
     try {
-      if (typeof global3.CustomEvent === "function") {
-        global3.dispatchEvent(new global3.CustomEvent("beljar:keybindings-changed", { detail: {} }));
-      } else if (typeof global3.dispatchEvent === "function") {
-        global3.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
+      if (typeof global6.CustomEvent === "function") {
+        global6.dispatchEvent(new global6.CustomEvent("beljar:keybindings-changed", { detail: {} }));
+      } else if (typeof global6.dispatchEvent === "function") {
+        global6.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
       }
     } catch (_) {
     }
@@ -5123,10 +8172,9 @@
   function isUnboundSentinel(v) {
     return v === null || v === "";
   }
-  function resolve(id, isMac) {
+  function resolveWith(id, isMac, overrides) {
     var def = BY_ID[id];
     if (!def) return null;
-    var overrides = readOverrides();
     if (Object.prototype.hasOwnProperty.call(overrides, id)) {
       var ov = overrides[id];
       if (isUnboundSentinel(ov)) return null;
@@ -5134,17 +8182,23 @@
     }
     return platformDefaultSpec(def, isMac) || null;
   }
+  function resolve(id, isMac) {
+    syncDefaults();
+    return resolveWith(id, isMac, readOverrides());
+  }
   function isUserOverride(id) {
     var overrides = readOverrides();
     return Object.prototype.hasOwnProperty.call(overrides, id);
   }
-  function has(id) {
+  function has2(id) {
+    syncDefaults();
     return !!BY_ID[id];
   }
   function labelFor(id, isMac) {
     return formatShortcut(resolve(id, isMac), isMac);
   }
-  function list(isMac) {
+  function list2(isMac) {
+    syncDefaults();
     var mac = isMac != null ? isMac : IS_MAC;
     var rows = DEFAULTS.map(function(def) {
       var spec = resolve(def.id, mac);
@@ -5194,17 +8248,20 @@
     if (isFunctionKey(key)) return false;
     return true;
   }
-  function titleFor(id) {
+  function titleFor2(id) {
+    syncDefaults();
     var def = BY_ID[id];
     return def ? def.title : "";
   }
   function findConflict(spec, exceptId) {
+    syncDefaults();
     var n = normalizeSpec(spec);
     if (!n) return null;
+    var overrides = readOverrides();
     for (var i = 0; i < DEFAULTS.length; i++) {
       var def = DEFAULTS[i];
       if (exceptId && def.id === exceptId) continue;
-      var r = resolve(def.id);
+      var r = resolveWith(def.id, null, overrides);
       if (r && normalizeSpec(r) === n) return def.id;
     }
     return null;
@@ -5299,21 +8356,20 @@
       return part;
     }).join("-");
   }
-  function freedDefaultsForScope(scope) {
+  function freedDefaultsForScope(scope, overrides) {
+    var ov = overrides || readOverrides();
+    var defs = defsForScope(scope);
     var freed = [];
     var claimed = /* @__PURE__ */ Object.create(null);
-    for (var i = 0; i < DEFAULTS.length; i++) {
-      var def = DEFAULTS[i];
-      if (def.scope !== scope) continue;
-      var resolved = resolve(def.id);
-      if (resolved) claimed[normalizeSpec(resolved)] = def.id;
+    for (var i = 0; i < defs.length; i++) {
+      var resolved = resolveWith(defs[i].id, null, ov);
+      if (resolved) claimed[normalizeSpec(resolved)] = defs[i].id;
     }
-    for (var j = 0; j < DEFAULTS.length; j++) {
-      var d = DEFAULTS[j];
-      if (d.scope !== scope) continue;
+    for (var j = 0; j < defs.length; j++) {
+      var d = defs[j];
       var plat = platformDefaultSpec(d);
       if (!plat) continue;
-      var cur = resolve(d.id);
+      var cur = resolveWith(d.id, null, ov);
       if (normalizeSpec(cur) === plat) continue;
       if (claimed[plat]) continue;
       freed.push(plat);
@@ -5321,31 +8377,45 @@
     }
     return freed;
   }
-  function buildEditorKeymap(runById) {
+  function buildEditorKeymap(runById, opts) {
+    syncDefaults();
     var entries = [];
     var seen = /* @__PURE__ */ Object.create(null);
     var runners = runById || {};
+    var fallback = opts && typeof opts.fallback === "function" ? opts.fallback : null;
+    var omit = /* @__PURE__ */ Object.create(null);
+    var omitDefaultSpecs = /* @__PURE__ */ Object.create(null);
+    if (opts && opts.omitIds) {
+      var list3 = opts.omitIds;
+      for (var oi = 0; oi < list3.length; oi++) {
+        omit[list3[oi]] = true;
+        var omitDef = BY_ID[list3[oi]];
+        if (omitDef && omitDef.scope === "editor") {
+          var omitPlat = platformDefaultSpec(omitDef);
+          if (omitPlat) omitDefaultSpecs[normalizeSpec(omitPlat)] = true;
+        }
+      }
+    }
     for (var i = 0; i < DEFAULTS.length; i++) {
       var def = DEFAULTS[i];
       if (def.scope !== "editor") continue;
+      if (omit[def.id]) continue;
       var spec = resolve(def.id);
       if (!spec) continue;
+      var run3 = runners[def.id] || (fallback ? fallback(def.id) : null);
+      if (typeof run3 !== "function") continue;
       var cm = toCmKey(spec);
       if (!cm || seen[cm]) continue;
       seen[cm] = true;
-      (function(commandId) {
-        entries.push({
-          key: cm,
-          run: function(view) {
-            var fn = runners[commandId];
-            if (typeof fn !== "function") return false;
-            return !!fn(view);
-          }
-        });
-      })(def.id);
+      (function(fn) {
+        entries.push({ key: cm, run: function(view) {
+          return !!fn(view);
+        } });
+      })(run3);
     }
     var freed = freedDefaultsForScope("editor");
     for (var f = 0; f < freed.length; f++) {
+      if (omitDefaultSpecs[normalizeSpec(freed[f])]) continue;
       var fcm = toCmKey(freed[f]);
       if (!fcm || seen[fcm]) continue;
       seen[fcm] = true;
@@ -5359,10 +8429,20 @@
     var t = e && e.target || (typeof document !== "undefined" ? document.activeElement : null);
     return !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording"));
   }
+  function isEmacsEditorFocused2() {
+    return isEmacsEditorFocused();
+  }
+  function shouldYieldGlobalForEmacs(commandId, emacsFocused) {
+    if (!emacsFocused) return false;
+    var policy = Commands2.styleFor(commandId, "emacs");
+    return policy === "yield" || policy === "off";
+  }
   function onGlobalKeydown(e) {
     if (e.isComposing) return;
+    if (!(e.ctrlKey || e.metaKey || e.altKey) && !isFunctionKey(normalizeKeyToken(e.key))) return;
     if (isRecordingChordTarget(e)) return;
-    var freed = freedDefaultsForScope("global");
+    var overrides = readOverrides();
+    var freed = freedDefaultsForScope("global", overrides);
     for (var fi = 0; fi < freed.length; fi++) {
       if (eventMatchesSpec(e, freed[fi])) {
         e.preventDefault();
@@ -5370,11 +8450,12 @@
         return;
       }
     }
-    for (var i = 0; i < DEFAULTS.length; i++) {
-      var def = DEFAULTS[i];
-      if (def.scope !== "global") continue;
-      var spec = resolve(def.id);
+    var defs = defsForScope("global");
+    for (var i = 0; i < defs.length; i++) {
+      var def = defs[i];
+      var spec = resolveWith(def.id, null, overrides);
       if (!spec || !eventMatchesSpec(e, spec)) continue;
+      if (shouldYieldGlobalForEmacs(def.id, isEmacsEditorFocused2())) return;
       var handler = globalHandlers[def.id];
       if (typeof handler !== "function") continue;
       e.preventDefault();
@@ -5394,16 +8475,16 @@
     }
     if (listening) return;
     listening = true;
-    global3.addEventListener("keydown", onGlobalKeydown, true);
+    global6.addEventListener("keydown", onGlobalKeydown, true);
   }
   function setGlobalHandler(id, fn) {
     globalHandlers[id] = fn;
   }
-  global3.Keybindings = {
+  global6.Keybindings = {
     DEFAULTS,
     IS_MAC,
-    has,
-    list,
+    has: has2,
+    list: list2,
     resolve,
     labelFor,
     isUserOverride,
@@ -5418,7 +8499,7 @@
     matchesId,
     isBrowserReserved,
     isReservedSequence,
-    titleFor,
+    titleFor: titleFor2,
     findConflict,
     setBinding,
     clearBinding,
@@ -5429,6 +8510,8 @@
     freedDefaultsForScope,
     initGlobals,
     setGlobalHandler,
+    shouldYieldGlobalForEmacs,
+    isEmacsEditorFocused: isEmacsEditorFocused2,
     _pure: {
       normalizeSpec,
       formatShortcut,
@@ -5438,18 +8521,19 @@
       isReservedSequence,
       toCmKey,
       specFromEvent,
+      shouldYieldGlobalForEmacs,
       DEFAULTS,
       RESERVED
     }
   };
-  global3.BelJarKeybindings = global3.Keybindings;
+  global6.BelJarKeybindings = global6.Keybindings;
 
   // js/ui/perf-hud.mjs
-  var global4 = globalThis;
+  var global7 = globalThis;
   var panel = null;
   var timer = null;
   function perf() {
-    return global4.Perf || null;
+    return global7.Perf || null;
   }
   function formatBreakdown(bd) {
     if (!bd || !bd.phases) return "(no edit trace yet \u2014 type in the editor)";
@@ -5497,8 +8581,8 @@
     return panel;
   }
   function enable() {
-    global4.PerfDebug = true;
-    global4.BelJarPerfDebug = global4.PerfDebug;
+    global7.PerfDebug = true;
+    global7.BelJarPerfDebug = global7.PerfDebug;
     var p = perf();
     if (p) p.enabled = true;
     ensurePanel();
@@ -5517,11 +8601,11 @@
     panel = null;
     var p = perf();
     if (p) p.enabled = false;
-    global4.PerfDebug = false;
-    global4.BelJarPerfDebug = global4.PerfDebug;
+    global7.PerfDebug = false;
+    global7.BelJarPerfDebug = global7.PerfDebug;
   }
-  global4.PerfHud = { enable, disable, refresh: render };
-  global4.BelJarPerfHud = global4.PerfHud;
+  global7.PerfHud = { enable, disable, refresh: render };
+  global7.BelJarPerfHud = global7.PerfHud;
 
   // js/editor-src/project-paths.mjs
   function fileBase(name) {
@@ -5748,13 +8832,13 @@
     const g14 = typeof globalThis !== "undefined" ? globalThis : {};
     const P3 = g14.Persist;
     if (P3 && typeof P3.getActiveCfgsForDir === "function") {
-      const list2 = P3.getActiveCfgsForDir(d);
-      if (list2?.length) {
+      const list3 = P3.getActiveCfgsForDir(d);
+      if (list3?.length) {
         if (typeof P3.listFiles === "function") {
           const names = new Set(P3.listFiles().map((f) => f.name));
-          const out = list2.filter((p) => names.has(p));
+          const out = list3.filter((p) => names.has(p));
           if (out.length) return out;
-        } else return list2.slice();
+        } else return list3.slice();
       }
     }
     const one = defaultActiveCfgForDir(d);
@@ -5769,21 +8853,21 @@
     const owning = activeCfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(filePath));
     return owning.length === 1 ? owning[0] : null;
   }
-  function standaloneResult(active) {
+  function standaloneResult(active3) {
     return {
       kind: "standalone",
       cfg: null,
-      paths: active ? [active.name] : [],
-      activeIndex: active ? 0 : -1,
+      paths: active3 ? [active3.name] : [],
+      activeIndex: active3 ? 0 : -1,
       preludePaths: [],
-      scopeKey: active ? `standalone:${active.name}` : "standalone:"
+      scopeKey: active3 ? `standalone:${active3.name}` : "standalone:"
     };
   }
   function developmentForFile(files, activeId2, getText, options = {}) {
     const activeCfgsForDir3 = resolveActiveCfgsForDir(options);
     const activeCfgForDir2 = resolveActiveCfgForDir(options);
-    const active = files.find((f) => f.id === activeId2);
-    if (!active) {
+    const active3 = files.find((f) => f.id === activeId2);
+    if (!active3) {
       return {
         kind: "standalone",
         cfg: null,
@@ -5793,18 +8877,18 @@
         scopeKey: "standalone:"
       };
     }
-    if (/\.cfg$/i.test(String(active.name))) {
-      const paths2 = resolveActiveChain(files, active.name, getText);
+    if (/\.cfg$/i.test(String(active3.name))) {
+      const paths2 = resolveActiveChain(files, active3.name, getText);
       return {
         kind: "module",
-        cfg: active.name,
+        cfg: active3.name,
         paths: paths2,
         activeIndex: -1,
         preludePaths: [],
-        scopeKey: `module:${active.name}`
+        scopeKey: `module:${active3.name}`
       };
     }
-    if (!isSignaturePath(active.name)) {
+    if (!isSignaturePath(active3.name)) {
       return {
         kind: "standalone",
         cfg: null,
@@ -5814,16 +8898,16 @@
         scopeKey: "standalone:"
       };
     }
-    let cfgPath = resolveOwningActiveCfg(files, active.name, getText, activeCfgsForDir3(dirOf2(active.name)));
-    if (!cfgPath) cfgPath = activeCfgForDir2(dirOf2(active.name));
+    let cfgPath = resolveOwningActiveCfg(files, active3.name, getText, activeCfgsForDir3(dirOf2(active3.name)));
+    if (!cfgPath) cfgPath = activeCfgForDir2(dirOf2(active3.name));
     let paths = cfgPath ? resolveActiveChain(files, cfgPath, getText) : [];
-    let activeIndex3 = paths.indexOf(active.name);
+    let activeIndex3 = paths.indexOf(active3.name);
     if (activeIndex3 < 0) {
-      cfgPath = owningCfgForFile(files, active.name, getText, cfgPath);
-      if (!cfgPath) return standaloneResult(active);
+      cfgPath = owningCfgForFile(files, active3.name, getText, cfgPath);
+      if (!cfgPath) return standaloneResult(active3);
       paths = resolveActiveChain(files, cfgPath, getText);
-      activeIndex3 = paths.indexOf(active.name);
-      if (activeIndex3 < 0) return standaloneResult(active);
+      activeIndex3 = paths.indexOf(active3.name);
+      if (activeIndex3 < 0) return standaloneResult(active3);
     }
     return {
       kind: "module",
@@ -5840,9 +8924,9 @@
   }
   function visibilityPaths(dev) {
     if (!dev || !dev.paths.length) return [];
-    const active = dev.paths[dev.activeIndex >= 0 ? dev.activeIndex : dev.paths.length - 1];
+    const active3 = dev.paths[dev.activeIndex >= 0 ? dev.activeIndex : dev.paths.length - 1];
     const out = [...dev.preludePaths];
-    if (active && out.indexOf(active) === -1) out.push(active);
+    if (active3 && out.indexOf(active3) === -1) out.push(active3);
     return out;
   }
   function workspaceDevelopments(files, getText) {
@@ -5942,12 +9026,12 @@
     );
     out = out.replace(
       /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
-      (whole, _fname, sl, sc, el5, ec) => {
+      (whole, _fname, sl, sc, el6, ec) => {
         const start = mapLine(spans, +sl);
         if (!start) return whole;
         let token = `${start.name}:${start.line}.${sc}`;
-        if (el5 != null) {
-          const end = mapLine(spans, +el5);
+        if (el6 != null) {
+          const end = mapLine(spans, +el6);
           if (!end || end.id !== start.id) return whole;
           token += `-${end.line}.${ec}`;
         }
@@ -6285,12 +9369,12 @@
     });
     out = out.replace(
       /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
-      (whole, fname, sl, sc, el5, ec, idx, src) => {
+      (whole, fname, sl, sc, el6, ec, idx, src) => {
         const SL = +sl;
         if (SL > offset) {
-          const EL = el5 != null ? +el5 - offset : null;
-          if (el5 != null && EL < 1) return whole;
-          return `${fname}.bel:${SL - offset}.${sc}${el5 != null ? `-${EL}.${ec}` : ""}:`;
+          const EL = el6 != null ? +el6 - offset : null;
+          if (el6 != null && EL < 1) return whole;
+          return `${fname}.bel:${SL - offset}.${sc}${el6 != null ? `-${EL}.${ec}` : ""}:`;
         }
         const hit = preludeFileAt(prelude.spans, SL);
         if (hit) noteIssue(hit, src, idx + whole.length);
@@ -6309,9 +9393,9 @@
     );
     return { text: out, preludeIssues: issues };
   }
-  function scanProjectText(files, query, limit) {
+  function scanProjectText(files, query2, limit) {
     const cap = limit || 60;
-    const q = String(query || "").toLowerCase();
+    const q = String(query2 || "").toLowerCase();
     if (!q) return [];
     const out = [];
     for (const f of files) {
@@ -6520,20 +9604,20 @@
     return base;
   }
   function readWorkspace(projectId) {
-    var persist3 = P();
-    if (!persist3 || typeof persist3.readStoredWorkspace !== "function") {
+    var persist5 = P();
+    if (!persist5 || typeof persist5.readStoredWorkspace !== "function") {
       return emptyWorkspace(projectId);
     }
-    return normalizeWorkspace(persist3.readStoredWorkspace(projectId), projectId);
+    return normalizeWorkspace(persist5.readStoredWorkspace(projectId), projectId);
   }
   function writeWorkspace(snapshot, projectId) {
-    var persist3 = P();
-    if (!persist3 || typeof persist3.writeStoredWorkspace !== "function") return false;
-    var pid = projectId || (persist3.getActiveProjectId ? persist3.getActiveProjectId() : "default");
+    var persist5 = P();
+    if (!persist5 || typeof persist5.writeStoredWorkspace !== "function") return false;
+    var pid = projectId || (persist5.getActiveProjectId ? persist5.getActiveProjectId() : "default");
     var next = normalizeWorkspace(snapshot, pid);
     next.projectId = pid;
     next.updatedAt = Date.now();
-    return persist3.writeStoredWorkspace(next, pid);
+    return persist5.writeStoredWorkspace(next, pid);
   }
   function registerProvider(name, hooks) {
     if (!name || !hooks) return;
@@ -6552,27 +9636,27 @@
     }
   }
   function mergeFloatingSnapshots(priorFloating, activeFileId3, openFileIds2, liveFloating) {
-    var open9 = openFileIds2 || [];
+    var open10 = openFileIds2 || [];
     var live2 = Array.isArray(liveFloating) ? liveFloating : [];
     var kept = (priorFloating || []).filter(function(entry) {
       if (!entry || entry.fileId === activeFileId3) return false;
-      if (open9.indexOf(entry.fileId) === -1) return false;
+      if (open10.indexOf(entry.fileId) === -1) return false;
       if (entry.kind === "graph" || entry.kind === "harpoon") return false;
       return true;
     });
     var merged = kept.concat(live2);
     return merged.filter(function(entry) {
-      return entry && open9.indexOf(entry.fileId) !== -1;
+      return entry && open10.indexOf(entry.fileId) !== -1;
     }).slice(0, MAX_FLOATING);
   }
   function collectWorkspace() {
-    var persist3 = P();
-    var pid = persist3 && persist3.getActiveProjectId ? persist3.getActiveProjectId() : "default";
+    var persist5 = P();
+    var pid = persist5 && persist5.getActiveProjectId ? persist5.getActiveProjectId() : "default";
     var prior = readWorkspace(pid);
     var snap = emptyWorkspace(pid);
-    var openIds = persist3 && persist3.getOpenFileIds ? persist3.getOpenFileIds() : [];
-    var activeFileId3 = persist3 && persist3.getActiveFileId ? persist3.getActiveFileId() : null;
-    snap.activeSidePanel = persist3 && typeof persist3.readStoredActiveSidePanel === "function" ? persist3.readStoredActiveSidePanel(pid) : null;
+    var openIds = persist5 && persist5.getOpenFileIds ? persist5.getOpenFileIds() : [];
+    var activeFileId3 = persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null;
+    snap.activeSidePanel = persist5 && typeof persist5.readStoredActiveSidePanel === "function" ? persist5.readStoredActiveSidePanel(pid) : null;
     snap.floating = [];
     collectFromProviders(snap);
     snap.floating = mergeFloatingSnapshots(prior.floating, activeFileId3, openIds, snap.floating);
@@ -6594,21 +9678,21 @@
   }
   function filterFloatingForFile(floating, fileId, openFileIds2) {
     if (!Array.isArray(floating)) return [];
-    var open9 = openFileIds2 || [];
+    var open10 = openFileIds2 || [];
     return floating.filter(function(entry) {
       if (!entry || entry.fileId !== fileId) return false;
-      return open9.indexOf(entry.fileId) !== -1;
+      return open10.indexOf(entry.fileId) !== -1;
     });
   }
   function applyWorkspace(snapshot, deps) {
     deps = deps || {};
-    var persist3 = P();
-    var pid = deps.projectId || (persist3 && persist3.getActiveProjectId ? persist3.getActiveProjectId() : "default");
+    var persist5 = P();
+    var pid = deps.projectId || (persist5 && persist5.getActiveProjectId ? persist5.getActiveProjectId() : "default");
     var ws = normalizeWorkspace(snapshot, pid);
     if (restoredForProject === pid + ":" + ws.updatedAt) return;
     restoredForProject = pid + ":" + ws.updatedAt;
-    var openIds = deps.openFileIds || (persist3 && persist3.getOpenFileIds ? persist3.getOpenFileIds() : []);
-    var activeFileId3 = deps.activeFileId || (persist3 && persist3.getActiveFileId ? persist3.getActiveFileId() : null);
+    var openIds = deps.openFileIds || (persist5 && persist5.getOpenFileIds ? persist5.getOpenFileIds() : []);
+    var activeFileId3 = deps.activeFileId || (persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null);
     if (typeof deps.applySidePanel === "function" && ws.activeSidePanel) {
       deps.applySidePanel(ws.activeSidePanel);
     }
@@ -6627,9 +9711,9 @@
     }
   }
   function resetWorkspaceState2(projectId) {
-    var persist3 = P();
-    if (persist3 && typeof persist3.resetStoredWorkspace === "function") {
-      persist3.resetStoredWorkspace(projectId);
+    var persist5 = P();
+    if (persist5 && typeof persist5.resetStoredWorkspace === "function") {
+      persist5.resetStoredWorkspace(projectId);
     }
     restoredForProject = null;
   }
@@ -6659,7 +9743,7 @@
   // js/workspace/workspace-split.mjs
   var STACK_MQ = "(max-width: 48rem)";
   var HIT_GRACE_PX = 6;
-  function init2(opts) {
+  function init3(opts) {
     opts = opts || {};
     var workspace = document.querySelector(".workspace");
     var workspacePanes = document.querySelector(".workspace-panes");
@@ -6670,8 +9754,8 @@
     var inspectorPanel = document.querySelector(".inspector-panel");
     var libraryPanel = document.querySelector(".library-panel");
     if (!workspace || !workspacePanes || !editorPanel || !outputPanel) return null;
-    var persist3 = globalThis.Persist;
-    var ratio = persist3 && persist3.readStoredEditorSplit ? persist3.readStoredEditorSplit() : 0.5;
+    var persist5 = globalThis.Persist;
+    var ratio = persist5 && persist5.readStoredEditorSplit ? persist5.readStoredEditorSplit() : 0.5;
     var stackedMq = globalThis.matchMedia(STACK_MQ);
     var dragging = false;
     var hitStrip = document.createElement("div");
@@ -6680,7 +9764,7 @@
     hitStrip.tabIndex = -1;
     workspacePanes.appendChild(hitStrip);
     function clamp3(r) {
-      return persist3 && persist3.clampEditorSplit ? persist3.clampEditorSplit(r) : Math.min(0.82, Math.max(0.18, r));
+      return persist5 && persist5.clampEditorSplit ? persist5.clampEditorSplit(r) : Math.min(0.82, Math.max(0.18, r));
     }
     function isStacked() {
       return stackedMq.matches;
@@ -6707,22 +9791,22 @@
       }
     }
     function applySplitVars(r) {
-      var root = document.documentElement.style;
+      var root2 = document.documentElement.style;
       var a = Math.round(r * 1e6) / 1e6;
       var b = Math.round((1 - r) * 1e6) / 1e6;
       if (isStacked()) {
-        root.removeProperty("--workspace-split-cols");
-        root.setProperty("--workspace-split-rows", a + "fr " + b + "fr");
+        root2.removeProperty("--workspace-split-cols");
+        root2.setProperty("--workspace-split-rows", a + "fr " + b + "fr");
       } else {
-        root.removeProperty("--workspace-split-rows");
-        root.setProperty("--workspace-split-cols", a + "fr " + b + "fr");
+        root2.removeProperty("--workspace-split-rows");
+        root2.setProperty("--workspace-split-cols", a + "fr " + b + "fr");
       }
     }
     function applyLayout(save) {
       ratio = clamp3(ratio);
       applySplitVars(ratio);
-      if (save && persist3 && persist3.writeStoredEditorSplit) {
-        persist3.writeStoredEditorSplit(ratio);
+      if (save && persist5 && persist5.writeStoredEditorSplit) {
+        persist5.writeStoredEditorSplit(ratio);
       }
       if (typeof opts.onResize === "function") opts.onResize();
       requestAnimationFrame(positionHitStrip);
@@ -6794,7 +9878,7 @@
       return ratio;
     } };
   }
-  var WorkspaceSplit2 = { init: init2 };
+  var WorkspaceSplit2 = { init: init3 };
   var g4 = typeof window !== "undefined" ? window : globalThis;
   g4.WorkspaceSplit = WorkspaceSplit2;
   g4.BelJarWorkspaceSplit = g4.WorkspaceSplit;
@@ -6804,14 +9888,14 @@
   var HIT_GRACE_PX2 = 6;
   var DEFAULT_W = 250;
   var DEFAULT_H = 190;
-  function init3(opts) {
+  function init4(opts) {
     opts = opts || {};
     var workspace = document.querySelector(".workspace");
     if (!workspace) return null;
-    var persist3 = globalThis.Persist;
-    if (persist3) {
-      DEFAULT_W = persist3.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
-      DEFAULT_H = persist3.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
+    var persist5 = globalThis.Persist;
+    if (persist5) {
+      DEFAULT_W = persist5.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
+      DEFAULT_H = persist5.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
     }
     var stackedMq = globalThis.matchMedia(STACK_MQ2);
     var resizers = [];
@@ -6828,17 +9912,17 @@
       hitStrip.setAttribute("aria-hidden", "true");
       hitStrip.tabIndex = -1;
       panel2.appendChild(hitStrip);
-      function isOpen3() {
+      function isOpen4() {
         return workspace.classList.contains(config.openClass);
       }
       function applySize(save) {
         if (save && config.write) config.write(Math.round(size), isStacked());
         size = config.read(isStacked());
-        var root2 = document.documentElement.style;
+        var root3 = document.documentElement.style;
         if (isStacked()) {
-          root2.setProperty(config.cssVarH, size + "px");
+          root3.setProperty(config.cssVarH, size + "px");
         } else {
-          root2.setProperty(config.cssVarW, size + "px");
+          root3.setProperty(config.cssVarW, size + "px");
         }
         if (typeof opts.onResize === "function") opts.onResize();
         requestAnimationFrame(positionHitStrip);
@@ -6847,7 +9931,7 @@
         return isStacked() ? config.seamStacked : config.seam;
       }
       function positionHitStrip() {
-        if (!isOpen3()) {
+        if (!isOpen4()) {
           hitStrip.style.display = "none";
           return;
         }
@@ -6908,7 +9992,7 @@
         globalThis.removeEventListener("pointercancel", endDrag);
       }
       function startDrag(ev) {
-        if (!isOpen3() || ev.button !== 0) return;
+        if (!isOpen4() || ev.button !== 0) return;
         ev.preventDefault();
         setDragging(true);
         size = pointerSize(ev);
@@ -6933,13 +10017,13 @@
         cssVarW: "--explorer-w",
         cssVarH: "--explorer-h",
         read: function(stacked) {
-          if (!persist3) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist3.readStoredExplorerHeight() : persist3.readStoredExplorerWidth();
+          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist5.readStoredExplorerHeight() : persist5.readStoredExplorerWidth();
         },
         write: function(px, stacked) {
-          if (!persist3) return;
-          if (stacked) persist3.writeStoredExplorerHeight(px);
-          else persist3.writeStoredExplorerWidth(px);
+          if (!persist5) return;
+          if (stacked) persist5.writeStoredExplorerHeight(px);
+          else persist5.writeStoredExplorerWidth(px);
         }
       },
       {
@@ -6948,13 +10032,13 @@
         cssVarW: "--inspector-w",
         cssVarH: "--inspector-h",
         read: function(stacked) {
-          if (!persist3) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist3.readStoredInspectorHeight() : persist3.readStoredInspectorWidth();
+          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist5.readStoredInspectorHeight() : persist5.readStoredInspectorWidth();
         },
         write: function(px, stacked) {
-          if (!persist3) return;
-          if (stacked) persist3.writeStoredInspectorHeight(px);
-          else persist3.writeStoredInspectorWidth(px);
+          if (!persist5) return;
+          if (stacked) persist5.writeStoredInspectorHeight(px);
+          else persist5.writeStoredInspectorWidth(px);
         }
       },
       {
@@ -6963,13 +10047,13 @@
         cssVarW: "--library-w",
         cssVarH: "--library-h",
         read: function(stacked) {
-          if (!persist3) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist3.readStoredLibraryHeight() : persist3.readStoredLibraryWidth();
+          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist5.readStoredLibraryHeight() : persist5.readStoredLibraryWidth();
         },
         write: function(px, stacked) {
-          if (!persist3) return;
-          if (stacked) persist3.writeStoredLibraryHeight(px);
-          else persist3.writeStoredLibraryWidth(px);
+          if (!persist5) return;
+          if (stacked) persist5.writeStoredLibraryHeight(px);
+          else persist5.writeStoredLibraryWidth(px);
         }
       },
       {
@@ -6978,22 +10062,22 @@
         cssVarW: "--harpoon-w",
         cssVarH: "--harpoon-h",
         read: function(stacked) {
-          if (!persist3) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist3.readStoredHarpoonHeight() : persist3.readStoredHarpoonWidth();
+          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist5.readStoredHarpoonHeight() : persist5.readStoredHarpoonWidth();
         },
         write: function(px, stacked) {
-          if (!persist3) return;
-          if (stacked) persist3.writeStoredHarpoonHeight(px);
-          else persist3.writeStoredHarpoonWidth(px);
+          if (!persist5) return;
+          if (stacked) persist5.writeStoredHarpoonHeight(px);
+          else persist5.writeStoredHarpoonWidth(px);
         }
       }
     ];
-    if (persist3) {
-      var root = document.documentElement.style;
+    if (persist5) {
+      var root2 = document.documentElement.style;
       for (var i = 0; i < panelConfigs.length; i++) {
         var cfg = panelConfigs[i];
-        root.setProperty(cfg.cssVarW, cfg.read(false) + "px");
-        root.setProperty(cfg.cssVarH, cfg.read(true) + "px");
+        root2.setProperty(cfg.cssVarW, cfg.read(false) + "px");
+        root2.setProperty(cfg.cssVarH, cfg.read(true) + "px");
       }
     }
     for (var j = 0; j < panelConfigs.length; j++) {
@@ -7023,7 +10107,7 @@
     refreshAll();
     return { refresh: refreshAll };
   }
-  var SidePanelResize2 = { init: init3 };
+  var SidePanelResize2 = { init: init4 };
   var g5 = typeof window !== "undefined" ? window : globalThis;
   g5.SidePanelResize = SidePanelResize2;
   g5.BelJarSidePanelResize = g5.SidePanelResize;
@@ -7068,8 +10152,8 @@
   }
   function canActivateCfg(cfgPath, activeCfgs, allFiles, getText, resolveMembers) {
     const nextSet = memberSet(allFiles, cfgPath, getText, resolveMembers);
-    const active = activeCfgs || [];
-    for (const other of active) {
+    const active3 = activeCfgs || [];
+    for (const other of active3) {
       if (other === cfgPath) return { ok: true };
       const existing = memberSet(allFiles, other, getText, resolveMembers);
       for (const p of Object.keys(nextSet)) {
@@ -7451,12 +10535,12 @@
   var tooltipAnchor = null;
   var touchShowTimer = null;
   var tooltipSuppressLeaveUntilPointerUp = null;
-  function prepareOverflow(el5) {
-    if (!el5._belOverflowTipBound) return;
-    const getText = el5._belOverflowGetText;
-    const text = el5.scrollWidth > el5.clientWidth ? getText ? getText() : (el5.textContent || "").trim() : "";
-    if (text) el5.setAttribute("data-tooltip", text);
-    else el5.removeAttribute("data-tooltip");
+  function prepareOverflow(el6) {
+    if (!el6._belOverflowTipBound) return;
+    const getText = el6._belOverflowGetText;
+    const text = el6.scrollWidth > el6.clientWidth ? getText ? getText() : (el6.textContent || "").trim() : "";
+    if (text) el6.setAttribute("data-tooltip", text);
+    else el6.removeAttribute("data-tooltip");
   }
   function tooltipIsShowing() {
     return !!(tooltipRoot && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving"));
@@ -7500,8 +10584,8 @@
     const raw = anchor.getAttribute("data-tooltip-errors");
     if (!raw) return null;
     try {
-      const items2 = JSON.parse(raw);
-      return Array.isArray(items2) && items2.length ? items2 : null;
+      const items3 = JSON.parse(raw);
+      return Array.isArray(items3) && items3.length ? items3 : null;
     } catch (_) {
       return null;
     }
@@ -7513,11 +10597,11 @@
     if (!anchor) return false;
     return !!(anchor.getAttribute("data-tooltip") || anchor.getAttribute("data-tooltip-tone") || anchor.hasAttribute("data-tooltip-head") || anchor.hasAttribute("data-tooltip-rich") && typeof anchor._belTooltipRich === "function" || parseLintErrors(anchor));
   }
-  function fillDiagnosticTooltip(tip, message, severity) {
+  function fillDiagnosticTooltip(tip, message2, severity) {
     tip.classList.add("tooltip-inner--diagnostic", `tooltip-inner--${severity}`);
     tip.replaceChildren();
-    const frame = document.createElement("div");
-    frame.className = `cm-diagnostic cm-diagnostic-${severity}`;
+    const frame2 = document.createElement("div");
+    frame2.className = `cm-diagnostic cm-diagnostic-${severity}`;
     const head = document.createElement("div");
     head.className = "beljar-tip-head";
     const kind = document.createElement("span");
@@ -7526,14 +10610,14 @@
     head.appendChild(kind);
     const body = document.createElement("div");
     body.className = "beljar-tip-body";
-    body.textContent = message || "";
-    frame.append(head, body);
-    tip.appendChild(frame);
+    body.textContent = message2 || "";
+    frame2.append(head, body);
+    tip.appendChild(frame2);
   }
   function fillTooltipContent(tip, anchor) {
     const text = anchor.getAttribute("data-tooltip");
     const tone = anchor.getAttribute("data-tooltip-tone");
-    const items2 = parseLintErrors(anchor);
+    const items3 = parseLintErrors(anchor);
     const headed = anchor.hasAttribute("data-tooltip-head");
     tip.classList.remove(
       "tooltip-inner--lint-errors",
@@ -7566,12 +10650,12 @@
       head.className = "tooltip-lint-head";
       head.textContent = text || "Errors detected";
       tip.appendChild(head);
-      if (items2) {
+      if (items3) {
         const body = document.createElement("div");
         body.className = "tooltip-lint-body";
-        const list2 = document.createElement("ul");
-        list2.className = "tooltip-lint-list";
-        for (const item of items2) {
+        const list3 = document.createElement("ul");
+        list3.className = "tooltip-lint-list";
+        for (const item of items3) {
           const li = document.createElement("li");
           li.className = "tooltip-lint-item" + (item.kind === "warning" ? " tooltip-lint-item--warning" : "");
           const loc = item.prefix ? `${item.prefix}${item.line ?? "?"}` : String(item.line ?? "?");
@@ -7582,9 +10666,9 @@
           msg.className = "tooltip-lint-msg";
           msg.textContent = item.msg || item.message || "Error";
           li.append(line, msg);
-          list2.appendChild(li);
+          list3.appendChild(li);
         }
-        body.appendChild(list2);
+        body.appendChild(list3);
         tip.appendChild(body);
       }
       return;
@@ -7596,9 +10680,9 @@
     const raw = (anchor.getAttribute("data-tooltip-placement") || "").trim().toLowerCase();
     if (!raw) return frp().PREFERENCE_TOOLTIP;
     const side = raw === "below" ? "bottom" : raw === "above" ? "top" : raw;
-    const order = ["bottom", "top", "right", "left"];
-    if (!order.includes(side)) return frp().PREFERENCE_TOOLTIP;
-    return [side, ...order.filter((s) => s !== side)];
+    const order2 = ["bottom", "top", "right", "left"];
+    if (!order2.includes(side)) return frp().PREFERENCE_TOOLTIP;
+    return [side, ...order2.filter((s) => s !== side)];
   }
   function anchorConnected(anchor) {
     return !!(anchor && anchor.isConnected);
@@ -7606,8 +10690,8 @@
   function tooltipRectEl(anchor) {
     const fn = anchor._belTooltipRectEl;
     if (typeof fn === "function") {
-      const el5 = fn(anchor);
-      if (el5 && el5.nodeType === 1 && el5.isConnected) return el5;
+      const el6 = fn(anchor);
+      if (el6 && el6.nodeType === 1 && el6.isConnected) return el6;
     }
     return anchor;
   }
@@ -7618,11 +10702,11 @@
     return tooltipRoot.querySelector(".tooltip-stack") || tooltipRoot.querySelector(".tooltip-inner");
   }
   function buildStackedDiagnosticTooltips(anchor) {
-    const items2 = parseLintErrors(anchor);
+    const items3 = parseLintErrors(anchor);
     clearTooltipRoot();
     const stack = document.createElement("div");
     stack.className = "tooltip-stack";
-    for (const item of items2) {
+    for (const item of items3) {
       const tip = document.createElement("div");
       tip.className = "tooltip-inner";
       const severity = item.kind === "warning" ? "warning" : "error";
@@ -7823,55 +10907,55 @@
     tooltipRoot.style.left = "";
     tooltipRoot.style.top = "";
   }
-  function bindTooltipEl(el5) {
-    if (!el5 || el5.nodeType !== 1 || el5._belTooltipBound) return;
-    el5._belTooltipBound = true;
-    el5.addEventListener("mouseenter", (ev) => {
+  function bindTooltipEl(el6) {
+    if (!el6 || el6.nodeType !== 1 || el6._belTooltipBound) return;
+    el6._belTooltipBound = true;
+    el6.addEventListener("mouseenter", (ev) => {
       if (!frp().prefersFineHover()) return;
       syncTooltipToPointer(ev.clientX, ev.clientY);
     });
-    el5.addEventListener("mouseleave", (ev) => {
+    el6.addEventListener("mouseleave", (ev) => {
       if (!frp().prefersFineHover()) return;
-      if (tooltipSuppressLeaveUntilPointerUp === el5) return;
+      if (tooltipSuppressLeaveUntilPointerUp === el6) return;
       syncTooltipToPointer(ev.clientX, ev.clientY);
     });
-    el5.addEventListener("focusin", () => {
-      if (!el5.matches(":focus-visible")) return;
-      if (tooltipAnchor === el5 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
+    el6.addEventListener("focusin", () => {
+      if (!el6.matches(":focus-visible")) return;
+      if (tooltipAnchor === el6 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
         return;
       }
-      showTooltip(el5);
+      showTooltip(el6);
     });
-    el5.addEventListener("focusout", () => {
-      if (tooltipAnchor === el5) hideTooltip();
+    el6.addEventListener("focusout", () => {
+      if (tooltipAnchor === el6) hideTooltip();
     });
-    el5.addEventListener(
+    el6.addEventListener(
       "pointerdown",
       (e) => {
         if (!frp().prefersFineHover() || !e.isPrimary || e.button !== 0) return;
         if (e.pointerType === "touch") return;
-        tooltipSuppressLeaveUntilPointerUp = el5;
+        tooltipSuppressLeaveUntilPointerUp = el6;
       },
       true
     );
-    el5.addEventListener(
+    el6.addEventListener(
       "touchstart",
       () => {
         if (frp().prefersFineHover()) return;
         clearTimeout(touchShowTimer);
-        touchShowTimer = setTimeout(() => showTooltip(el5), TOUCH_SHOW_DELAY_MS);
+        touchShowTimer = setTimeout(() => showTooltip(el6), TOUCH_SHOW_DELAY_MS);
       },
       { passive: true }
     );
-    el5.addEventListener("touchend", () => {
+    el6.addEventListener("touchend", () => {
       if (frp().prefersFineHover()) return;
       clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el5) hideTooltip();
+      if (tooltipAnchor === el6) hideTooltip();
     });
-    el5.addEventListener("touchcancel", () => {
+    el6.addEventListener("touchcancel", () => {
       if (frp().prefersFineHover()) return;
       clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el5) hideTooltip();
+      if (tooltipAnchor === el6) hideTooltip();
     });
   }
   function bindTooltips() {
@@ -7913,10 +10997,10 @@
       for (let i = 0; i < records.length; i++) {
         const r = records[i];
         if (r.type !== "attributes" || r.attributeName !== "data-tooltip" && r.attributeName !== "data-tooltip-errors" && r.attributeName !== "data-tooltip-tone" && r.attributeName !== "data-tooltip-head") continue;
-        const el5 = r.target;
-        if (!el5 || el5.nodeType !== 1) continue;
-        if (r.oldValue === el5.getAttribute(r.attributeName)) continue;
-        refreshTooltipIfAnchored(el5);
+        const el6 = r.target;
+        if (!el6 || el6.nodeType !== 1) continue;
+        if (r.oldValue === el6.getAttribute(r.attributeName)) continue;
+        refreshTooltipIfAnchored(el6);
       }
     });
     tooltipAttrObserver.observe(document.documentElement, {
@@ -7926,46 +11010,46 @@
       attributeFilter: ["data-tooltip", "data-tooltip-errors", "data-tooltip-tone", "data-tooltip-head"]
     });
   }
-  function setTooltip(el5, text, opts) {
-    if (!el5 || el5.nodeType !== 1) return;
+  function setTooltip(el6, text, opts) {
+    if (!el6 || el6.nodeType !== 1) return;
     opts = opts || {};
-    el5.removeAttribute("title");
+    el6.removeAttribute("title");
     const tip = text != null ? String(text).trim() : "";
     if (!tip) {
-      el5.removeAttribute("data-tooltip");
-      if (opts.ariaLabel !== false) el5.removeAttribute("aria-label");
+      el6.removeAttribute("data-tooltip");
+      if (opts.ariaLabel !== false) el6.removeAttribute("aria-label");
       return;
     }
-    const prev = el5.getAttribute("data-tooltip");
-    if (prev !== tip) el5.setAttribute("data-tooltip", tip);
-    if (opts.ariaLabel !== false) el5.setAttribute("aria-label", tip);
-    bindTooltipEl(el5);
+    const prev = el6.getAttribute("data-tooltip");
+    if (prev !== tip) el6.setAttribute("data-tooltip", tip);
+    if (opts.ariaLabel !== false) el6.setAttribute("aria-label", tip);
+    bindTooltipEl(el6);
   }
-  function setRichTooltip(el5, buildFragment, ariaText) {
-    if (!el5 || el5.nodeType !== 1) return;
-    el5.removeAttribute("title");
+  function setRichTooltip(el6, buildFragment, ariaText) {
+    if (!el6 || el6.nodeType !== 1) return;
+    el6.removeAttribute("title");
     if (typeof buildFragment !== "function") {
-      el5._belTooltipRich = null;
-      el5.removeAttribute("data-tooltip-rich");
+      el6._belTooltipRich = null;
+      el6.removeAttribute("data-tooltip-rich");
       return;
     }
-    el5._belTooltipRich = buildFragment;
-    el5.setAttribute("data-tooltip-rich", "");
+    el6._belTooltipRich = buildFragment;
+    el6.setAttribute("data-tooltip-rich", "");
     const aria = ariaText != null ? String(ariaText).trim() : "";
-    if (aria) el5.setAttribute("aria-label", aria);
-    bindTooltipEl(el5);
+    if (aria) el6.setAttribute("aria-label", aria);
+    bindTooltipEl(el6);
   }
-  function bindOverflowTip(el5, getText) {
-    if (!el5 || el5.nodeType !== 1 || el5._belOverflowTipBound) return;
-    el5._belOverflowTipBound = true;
-    el5._belOverflowGetText = getText || null;
-    el5.addEventListener("mouseenter", function() {
+  function bindOverflowTip(el6, getText) {
+    if (!el6 || el6.nodeType !== 1 || el6._belOverflowTipBound) return;
+    el6._belOverflowTipBound = true;
+    el6._belOverflowGetText = getText || null;
+    el6.addEventListener("mouseenter", function() {
       if (!frp().prefersFineHover()) return;
-      const text = el5.scrollWidth > el5.clientWidth ? getText ? getText() : (el5.textContent || "").trim() : "";
-      if (text) el5.setAttribute("data-tooltip", text);
-      else el5.removeAttribute("data-tooltip");
+      const text = el6.scrollWidth > el6.clientWidth ? getText ? getText() : (el6.textContent || "").trim() : "";
+      if (text) el6.setAttribute("data-tooltip", text);
+      else el6.removeAttribute("data-tooltip");
     });
-    bindTooltipEl(el5);
+    bindTooltipEl(el6);
   }
   var Tooltips2 = {
     hide: hideTooltip,
@@ -7979,19 +11063,19 @@
     bindOverflow: bindOverflowTip,
     // Position the tooltip against another element's rect (resolved lazily on
     // each show) while hover behaviour stays on `el`. Falsy result → own rect.
-    setRectEl(el5, fn) {
-      if (el5 && el5.nodeType === 1) el5._belTooltipRectEl = typeof fn === "function" ? fn : null;
+    setRectEl(el6, fn) {
+      if (el6 && el6.nodeType === 1) el6._belTooltipRectEl = typeof fn === "function" ? fn : null;
     },
     // The element the visible tooltip is anchored to (null when hidden). Lets
     // external hover controllers hide only tooltips they own.
     activeAnchor() {
       return tooltipAnchor;
     },
-    suppressAnchor(el5) {
-      suppressedTooltipAnchors.add(el5);
+    suppressAnchor(el6) {
+      suppressedTooltipAnchors.add(el6);
     },
-    releaseAnchor(el5) {
-      suppressedTooltipAnchors.delete(el5);
+    releaseAnchor(el6) {
+      suppressedTooltipAnchors.delete(el6);
     }
   };
   function installTooltips() {
@@ -8005,7 +11089,7 @@
   }
 
   // js/ui/hint.mjs
-  var global5 = globalThis;
+  var global8 = globalThis;
   var DEFAULT_DURATION_MS = 1e4;
   var GAP_PX = 10;
   var LEAVE_MS = 160;
@@ -8049,11 +11133,11 @@
     }
   }
   function releaseTooltip() {
-    if (anchorEl && global5.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
+    if (anchorEl && global8.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
   }
   function suppressTooltip() {
-    if (anchorEl && global5.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
-    if (anchorEl && global5.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
+    if (anchorEl && global8.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
+    if (anchorEl && global8.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
   }
   function progressBar() {
     return rootEl && rootEl.querySelector(".hint-progress-bar");
@@ -8256,7 +11340,7 @@
     if (!visible || dismissing) return;
     place();
   }
-  global5.Hint = {
+  global8.Hint = {
     show,
     dismiss,
     wasDismissed,
@@ -8266,11 +11350,11 @@
       return activeId === String(id);
     }
   };
-  global5.BelJarHint = global5.Hint;
+  global8.BelJarHint = global8.Hint;
 
   // js/ui/menu.mjs
-  var global6 = globalThis;
-  var FRP = global6.FloatingRectPlacement;
+  var global9 = globalThis;
+  var FRP = global9.FloatingRectPlacement;
   var MARGIN = FRP.DEFAULT_MARGIN;
   var customRowTypes = /* @__PURE__ */ Object.create(null);
   var allControllers = /* @__PURE__ */ new Set();
@@ -8336,13 +11420,13 @@
     const SUBMENU_OPEN_DELAY_MS = 90;
     const MENU_ITEM_TIP_DELAY_MS = 300;
     function hideMenuTooltips() {
-      const T = global6.Tooltips;
+      const T = global9.Tooltips;
       if (T && T.hide) T.hide();
     }
     function bindMenuItemTooltip(btn, item) {
       const text = item.tooltip;
       if (!text) return;
-      const T = global6.Tooltips;
+      const T = global9.Tooltips;
       if (!T) return;
       let timer2 = null;
       btn.addEventListener("mouseenter", () => {
@@ -8368,7 +11452,7 @@
       });
     }
     const controller = { menuRoot };
-    function isOpen3() {
+    function isOpen4() {
       return openMenus.length > 0;
     }
     function rootAnchor() {
@@ -8462,45 +11546,45 @@
     }
     function relayoutAll() {
       for (let i = 0; i < openMenus.length; i++) {
-        const { el: el5, anchorRef, side, align, isSubmenu } = openMenus[i];
-        layoutMenuEl(el5, anchorRef, side, align, isSubmenu);
+        const { el: el6, anchorRef, side, align, isSubmenu } = openMenus[i];
+        layoutMenuEl(el6, anchorRef, side, align, isSubmenu);
       }
     }
     function rovingTabIndexForPanel(menuEl) {
-      const items2 = focusableMenuItems(menuEl);
-      for (let i = 0; i < items2.length; i++) {
-        items2[i].tabIndex = i === 0 ? 0 : -1;
+      const items3 = focusableMenuItems(menuEl);
+      for (let i = 0; i < items3.length; i++) {
+        items3[i].tabIndex = i === 0 ? 0 : -1;
       }
     }
     function focusableMenuItems(menuEl) {
       return Array.from(menuEl.querySelectorAll(":scope > .menu-item")).filter(
-        (el5) => !el5.disabled && !el5.hasAttribute("data-menu-skip-focus")
+        (el6) => !el6.disabled && !el6.hasAttribute("data-menu-skip-focus")
       );
     }
     function focusMenuItem(menuEl, index) {
-      const items2 = focusableMenuItems(menuEl);
-      if (!items2.length) return;
-      const i = Math.max(0, Math.min(index, items2.length - 1));
-      for (let j = 0; j < items2.length; j++) {
-        items2[j].tabIndex = j === i ? 0 : -1;
+      const items3 = focusableMenuItems(menuEl);
+      if (!items3.length) return;
+      const i = Math.max(0, Math.min(index, items3.length - 1));
+      for (let j = 0; j < items3.length; j++) {
+        items3[j].tabIndex = j === i ? 0 : -1;
       }
-      items2[i].focus();
+      items3[i].focus();
     }
     function handlePanelKeydown(e, wrap, level) {
       if (e.defaultPrevented) return;
       const key = e.key;
-      const items2 = focusableMenuItems(wrap);
-      if (!items2.length) return;
-      let idx = items2.indexOf(document.activeElement);
+      const items3 = focusableMenuItems(wrap);
+      if (!items3.length) return;
+      let idx = items3.indexOf(document.activeElement);
       if (idx < 0) idx = 0;
       if (key === "ArrowDown") {
         e.preventDefault();
-        focusMenuItem(wrap, idx + 1 >= items2.length ? 0 : idx + 1);
+        focusMenuItem(wrap, idx + 1 >= items3.length ? 0 : idx + 1);
         return;
       }
       if (key === "ArrowUp") {
         e.preventDefault();
-        focusMenuItem(wrap, idx - 1 < 0 ? items2.length - 1 : idx - 1);
+        focusMenuItem(wrap, idx - 1 < 0 ? items3.length - 1 : idx - 1);
         return;
       }
       if (key === "Home") {
@@ -8510,11 +11594,11 @@
       }
       if (key === "End") {
         e.preventDefault();
-        focusMenuItem(wrap, items2.length - 1);
+        focusMenuItem(wrap, items3.length - 1);
         return;
       }
       if (key === "ArrowRight") {
-        const cur = items2[idx];
+        const cur = items3[idx];
         if (cur && cur.classList.contains("menu-item-has-submenu")) {
           e.preventDefault();
           const itemData = cur._menuItemData;
@@ -8542,7 +11626,7 @@
         return;
       }
       if (key === "Enter" || key === " ") {
-        const cur = items2[idx];
+        const cur = items3[idx];
         if (!cur) return;
         e.preventDefault();
         if (cur.classList.contains("menu-item-has-submenu")) {
@@ -8751,11 +11835,11 @@
       sec.textContent = item.label ?? "";
       return sec;
     }
-    function normalizeMenuItems(items2) {
-      if (!items2 || !items2.length) return [];
+    function normalizeMenuItems(items3) {
+      if (!items3 || !items3.length) return [];
       var out = [];
-      for (var i = 0; i < items2.length; i++) {
-        var item = items2[i];
+      for (var i = 0; i < items3.length; i++) {
+        var item = items3[i];
         var rowType = item.type || "item";
         if (rowType === "separator") {
           if (!out.length) continue;
@@ -8768,19 +11852,19 @@
       if (out.length && (out[out.length - 1].type || "item") === "separator") out.pop();
       return out;
     }
-    function buildMenu(items2, level) {
-      items2 = normalizeMenuItems(items2);
+    function buildMenu(items3, level) {
+      items3 = normalizeMenuItems(items3);
       const wrap = document.createElement("div");
       wrap.className = level > 0 ? "menu is-submenu" : "menu";
       wrap.setAttribute("role", "menu");
       wrap.addEventListener("keydown", (e) => handlePanelKeydown(e, wrap, level));
       let hasIcons = false;
-      const usesCheckGutter = items2.some((item) => {
+      const usesCheckGutter = items3.some((item) => {
         const rowType = item.type || "item";
         return rowType === "item" && item.checked;
       });
-      for (let i = 0; i < items2.length; i++) {
-        const item = items2[i];
+      for (let i = 0; i < items3.length; i++) {
+        const item = items3[i];
         const rowType = item.type || "item";
         if (rowType === "separator") {
           wrap.appendChild(buildSeparator());
@@ -8818,11 +11902,11 @@
         submenuOpenTimer = null;
       }
     }
-    function scheduleOpenSubmenu(items2, anchorRowEl, parentLevel) {
+    function scheduleOpenSubmenu(items3, anchorRowEl, parentLevel) {
       cancelScheduledSubmenuOpen();
       submenuOpenTimer = setTimeout(() => {
         submenuOpenTimer = null;
-        if (anchorRowEl.isConnected) openSubmenu(items2, anchorRowEl, parentLevel);
+        if (anchorRowEl.isConnected) openSubmenu(items3, anchorRowEl, parentLevel);
       }, SUBMENU_OPEN_DELAY_MS);
     }
     function scheduleCloseSubmenus() {
@@ -8832,7 +11916,7 @@
         closeFromLevel(1);
       }, SUBMENU_OPEN_DELAY_MS);
     }
-    function openSubmenu(items2, anchorRowEl, parentLevel) {
+    function openSubmenu(items3, anchorRowEl, parentLevel) {
       cancelScheduledSubmenuOpen();
       if (isSubmenuOpenForRow(anchorRowEl, parentLevel)) return;
       closeFromLevel(parentLevel + 1, () => {
@@ -8840,7 +11924,7 @@
         anchorRowEl.classList.add("is-submenu-open");
         const level = parentLevel + 1;
         const placed = submenuPlacementAnchor(anchorRowEl);
-        const menuEl = buildMenu(items2, level);
+        const menuEl = buildMenu(items3, level);
         menuEl.classList.add("is-flyout");
         menuRoot.appendChild(menuEl);
         openMenus.push({
@@ -8857,16 +11941,16 @@
         focusMenuItem(menuEl, 0);
       });
     }
-    function open9(opts) {
+    function open10(opts) {
       closeOtherControllers();
-      const items2 = opts.items;
+      const items3 = opts.items;
       const anchor = opts.anchor;
       const side = opts.side;
       const align = opts.align ?? "start";
       const launch = () => {
         rootOnClose = opts.onClose || null;
         rootAnchorEl = anchor instanceof Element ? anchor : null;
-        const menuEl = buildMenu(items2, 0);
+        const menuEl = buildMenu(items3, 0);
         if (side === "bottom") {
           menuEl.classList.add("is-drop-down");
           if (align === "end") menuEl.classList.add("is-align-end");
@@ -8898,7 +11982,7 @@
     function openContext(opts) {
       const x = opts.x;
       const y = opts.y;
-      open9({
+      open10({
         anchor: { left: x, right: x, top: y, bottom: y },
         side: opts.side || "bottom",
         align: opts.align || "start",
@@ -8912,13 +11996,13 @@
         throw new TypeError("bindContextMenu(targetEl, items): targetEl must be an element");
       }
       const handler = (e) => {
-        const items2 = typeof itemsOrFn === "function" ? itemsOrFn(e) : itemsOrFn;
-        if (!items2 || !items2.length) return;
+        const items3 = typeof itemsOrFn === "function" ? itemsOrFn(e) : itemsOrFn;
+        if (!items3 || !items3.length) return;
         e.preventDefault();
         openContext({
           x: e.clientX,
           y: e.clientY,
-          items: items2,
+          items: items3,
           side: opts && opts.side,
           align: opts && opts.align,
           onClose: opts && opts.onClose
@@ -8932,11 +12016,11 @@
       if (activeController === controller) setActiveController(null);
       forceCloseSync();
     }
-    controller.open = open9;
+    controller.open = open10;
     controller.openContext = openContext;
     controller.bindContextMenu = bindContextMenu;
     controller.closeAll = closeAll3;
-    controller.isOpen = isOpen3;
+    controller.isOpen = isOpen4;
     controller.rootAnchor = rootAnchor;
     controller.relayoutAll = relayoutAll;
     controller.forceCloseSync = forceCloseSync;
@@ -8953,13 +12037,13 @@
     if (!dlg) return defaultMenu;
     let ctrl = dialogMenuControllers.get(dlg);
     if (ctrl) return ctrl;
-    let root = dlg.querySelector(":scope > .menu-root");
-    if (!root) {
-      root = document.createElement("div");
-      root.className = "menu-root menu-root--dialog";
-      dlg.appendChild(root);
+    let root2 = dlg.querySelector(":scope > .menu-root");
+    if (!root2) {
+      root2 = document.createElement("div");
+      root2.className = "menu-root menu-root--dialog";
+      dlg.appendChild(root2);
     }
-    ctrl = createMenuController(root);
+    ctrl = createMenuController(root2);
     dialogMenuControllers.set(dlg, ctrl);
     dlg.addEventListener("close", function() {
       const c = dialogMenuControllers.get(dlg);
@@ -8971,7 +12055,7 @@
     }, { once: true });
     return ctrl;
   }
-  global6.Menu = {
+  global9.Menu = {
     open(opts) {
       const anchor = opts && opts.anchor;
       const ctrl = menuControllerForAnchor(anchor instanceof Element ? anchor : null);
@@ -9001,14 +12085,14 @@
   };
 
   // js/ui/command-palette.mjs
-  var global7 = globalThis;
-  function fuzzyScore(query, text) {
-    if (!query) return { score: 0, positions: [] };
+  var global10 = globalThis;
+  function fuzzyScore(query2, text) {
+    if (!query2) return { score: 0, positions: [] };
     const t = String(text || "");
-    const q = query.toLowerCase();
+    const q = query2.toLowerCase();
     const tl = t.toLowerCase();
     if (q.length > tl.length) return null;
-    let score = 0;
+    let score2 = 0;
     let prev = -2;
     let from = 0;
     const positions = [];
@@ -9021,20 +12105,20 @@
       const isWordStart = idx === 0 || before === " " || before === "-" || before === "_" || before === "." || before === "/" || before === ":";
       const isHump = t[idx] >= "A" && t[idx] <= "Z" && before >= "a" && before <= "z";
       if (isWordStart || isHump) s += 6;
-      score += s;
+      score2 += s;
       positions.push(idx);
       prev = idx;
       from = idx + 1;
     }
     const spread = positions[positions.length - 1] - positions[0] - (q.length - 1);
-    score -= Math.floor(spread * 0.5);
-    if (positions[0] === 0) score += 3;
-    return { score, positions };
+    score2 -= Math.floor(spread * 0.5);
+    if (positions[0] === 0) score2 += 3;
+    return { score: score2, positions };
   }
-  function substringPositions(query, text) {
-    if (!query) return null;
+  function substringPositions(query2, text) {
+    if (!query2) return null;
     const t = String(text || "");
-    const q = String(query);
+    const q = String(query2);
     const idx = t.toLowerCase().indexOf(q.toLowerCase());
     if (idx < 0) return null;
     const positions = [];
@@ -9055,21 +12139,21 @@
     if (s.startsWith("?")) return { mode: "help", query: s.slice(1).trim() };
     return { mode: "anywhere", query: s.trim() };
   }
-  function rankItems(items2, query, limit) {
+  function rankItems(items3, query2, limit) {
     const cap = limit || 50;
-    if (!query) {
-      return items2.slice(0, cap).map((item) => ({ ...item, _match: null }));
+    if (!query2) {
+      return items3.slice(0, cap).map((item) => ({ ...item, _match: null }));
     }
     const scored = [];
-    for (let i = 0; i < items2.length; i++) {
-      const item = items2[i];
-      const onTitle = fuzzyScore(query, item.title);
+    for (let i = 0; i < items3.length; i++) {
+      const item = items3[i];
+      const onTitle = fuzzyScore(query2, item.title);
       if (onTitle) {
         scored.push({ item, score: onTitle.score, positions: onTitle.positions, index: i });
         continue;
       }
       if (item.detail) {
-        const onDetail = fuzzyScore(query, item.detail);
+        const onDetail = fuzzyScore(query2, item.detail);
         if (onDetail) scored.push({ item, score: onDetail.score * 0.5, positions: null, index: i });
       }
     }
@@ -9091,8 +12175,8 @@
     const parts = shortcutParts2(spec, isMac);
     return parts.join(isMac ? "" : "+");
   }
-  function parseLineQuery(query) {
-    const m = String(query || "").match(/^(\d+)(?::(\d+))?$/);
+  function parseLineQuery(query2) {
+    const m = String(query2 || "").match(/^(\d+)(?::(\d+))?$/);
     if (!m) return null;
     const line = parseInt(m[1], 10);
     const col = m[2] != null ? parseInt(m[2], 10) : 1;
@@ -9130,41 +12214,30 @@
     help: "?"
   };
   var PROVIDER_KINDS = ["files", "symbols", "search", "problems", "library"];
-  var commands = [];
   var providers2 = /* @__PURE__ */ Object.create(null);
   for (const k of PROVIDER_KINDS) providers2[k] = null;
   function register(cmd) {
     if (!cmd || !cmd.id || typeof cmd.run !== "function") return;
-    const at = commands.findIndex((c) => c.id === cmd.id);
-    if (at >= 0) commands[at] = cmd;
-    else commands.push(cmd);
+    Commands2.define(Object.assign({ palette: true }, cmd));
   }
-  function unregister(id) {
-    const at = commands.findIndex((c) => c.id === id);
-    if (at >= 0) commands.splice(at, 1);
+  function unregister2(id) {
+    Commands2.unregister(id);
   }
   function setProvider(kind, fn) {
     if (PROVIDER_KINDS.indexOf(kind) < 0) return;
     providers2[kind] = fn;
   }
   function activeCommands() {
-    return commands.filter((c) => !c.when || safeWhen(c));
+    return Commands2.list({ palette: true, runnable: true, available: true });
   }
   function listCommands() {
-    return commands.map((c) => ({
+    return Commands2.list({ palette: true }).map((c) => ({
       id: c.id,
       title: c.title || c.id,
       section: c.section || "",
       shortcut: c.shortcut || "",
       detail: c.detail || ""
     }));
-  }
-  function safeWhen(c) {
-    try {
-      return !!c.when();
-    } catch {
-      return false;
-    }
   }
   function providerItems(kind, arg) {
     const fn = providers2[kind];
@@ -9177,7 +12250,7 @@
   }
   var IS_MAC2 = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var ui = null;
-  var isOpen = false;
+  var isOpen2 = false;
   var flatItems = [];
   var activeIndex = 0;
   var restoreFocusTo = null;
@@ -9185,7 +12258,7 @@
   function buildUi() {
     const backdrop = document.createElement("div");
     backdrop.className = "bel-palette-backdrop";
-    backdrop.addEventListener("pointerdown", close);
+    backdrop.addEventListener("pointerdown", close2);
     const panel2 = document.createElement("div");
     panel2.className = "bel-palette";
     panel2.setAttribute("role", "dialog");
@@ -9199,21 +12272,21 @@
     iconHost.className = "bel-palette-icon";
     iconHost.innerHTML = SEARCH_ICON;
     iconHost.setAttribute("aria-hidden", "true");
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "bel-palette-input";
-    input.placeholder = MODE_META.anywhere.placeholder;
-    input.autocomplete = "off";
-    input.spellcheck = false;
-    input.setAttribute("data-surface-find", "");
-    input.setAttribute("role", "combobox");
-    input.setAttribute("aria-expanded", "true");
-    input.setAttribute("aria-controls", "bel-palette-list");
-    inputWrap.append(modeChip, iconHost, input);
-    const list2 = document.createElement("div");
-    list2.className = "bel-palette-list";
-    list2.id = "bel-palette-list";
-    list2.setAttribute("role", "listbox");
+    const input2 = document.createElement("input");
+    input2.type = "text";
+    input2.className = "bel-palette-input";
+    input2.placeholder = MODE_META.anywhere.placeholder;
+    input2.autocomplete = "off";
+    input2.spellcheck = false;
+    input2.setAttribute("data-surface-find", "");
+    input2.setAttribute("role", "combobox");
+    input2.setAttribute("aria-expanded", "true");
+    input2.setAttribute("aria-controls", "bel-palette-list");
+    inputWrap.append(modeChip, iconHost, input2);
+    const list3 = document.createElement("div");
+    list3.className = "bel-palette-list";
+    list3.id = "bel-palette-list";
+    list3.setAttribute("role", "listbox");
     const empty = document.createElement("div");
     empty.className = "bel-palette-empty";
     empty.textContent = "No matching results";
@@ -9221,9 +12294,9 @@
     const hint = document.createElement("div");
     hint.className = "bel-palette-hint";
     hint.hidden = true;
-    panel2.append(inputWrap, list2, empty, hint);
-    input.addEventListener("input", renderResults);
-    input.addEventListener("keydown", (e) => {
+    panel2.append(inputWrap, list3, empty, hint);
+    input2.addEventListener("input", renderResults);
+    input2.addEventListener("keydown", (e) => {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setActive(activeIndex + 1);
@@ -9235,13 +12308,13 @@
         runActive();
       } else if (e.key === "Escape") {
         e.preventDefault();
-        close();
+        close2();
       } else if (e.key === "Tab") {
         e.preventDefault();
       }
     });
     document.body.append(backdrop, panel2);
-    ui = { backdrop, panel: panel2, input, list: list2, empty, hint, modeChip };
+    ui = { backdrop, panel: panel2, input: input2, list: list3, empty, hint, modeChip };
     return ui;
   }
   function commandItems() {
@@ -9253,6 +12326,7 @@
         shortcut = formatShortcut2(c.shortcut, IS_MAC2);
       }
       return {
+        id: c.id,
         title: c.title,
         section: c.section || "Commands",
         shortcut,
@@ -9279,29 +12353,29 @@
         shortcut,
         section: "Modes",
         run: () => {
-          open({ mode: h.prefix === "" ? "anywhere" : h.prefix === ">" ? "commands" : h.prefix === "@" ? "symbols" : h.prefix === "%" ? "search" : h.prefix === ":" ? "line" : h.prefix === "!" ? "problems" : h.prefix === "/" ? "library" : "help" });
+          open2({ mode: h.prefix === "" ? "anywhere" : h.prefix === ">" ? "commands" : h.prefix === "@" ? "symbols" : h.prefix === "%" ? "search" : h.prefix === ":" ? "line" : h.prefix === "!" ? "problems" : h.prefix === "/" ? "library" : "help" });
         }
       };
     });
   }
-  function lineJumpItems(query) {
-    const parsed = parseLineQuery(query);
+  function lineJumpItems(query2) {
+    const parsed = parseLineQuery(query2);
     if (!parsed) {
-      if (!query) return [];
+      if (!query2) return [];
       return [];
     }
     return [{
-      title: "Go to line " + parsed.line + (query.indexOf(":") >= 0 ? ", column " + parsed.col : ""),
+      title: "Go to line " + parsed.line + (query2.indexOf(":") >= 0 ? ", column " + parsed.col : ""),
       detail: "Current file",
       mono: false,
       run: () => {
-        const ed = global7.CurrentEditor;
+        const ed = global10.CurrentEditor;
         if (!ed || typeof ed.getView !== "function") return;
         const view = ed.getView();
         if (!view) return;
-        const doc = view.state.doc;
-        const line = Math.min(Math.max(1, parsed.line), doc.lines);
-        const lineObj = doc.line(line);
+        const doc2 = view.state.doc;
+        const line = Math.min(Math.max(1, parsed.line), doc2.lines);
+        const lineObj = doc2.line(line);
         const col = Math.min(Math.max(1, parsed.col), lineObj.length + 1);
         const pos = Math.min(lineObj.from + col - 1, lineObj.to);
         if (typeof ed.jumpToRange === "function") ed.jumpToRange({ from: pos, to: pos });
@@ -9323,7 +12397,7 @@
       });
     }
     if (parsed.mode === "commands") {
-      return rankItems(commandItems(), parsed.query, 50);
+      return rankItems(commandItems(), parsed.query, 300);
     }
     if (parsed.mode === "line") {
       return lineJumpItems(parsed.query);
@@ -9343,8 +12417,8 @@
   }
   function emptyMessage(parsed) {
     if (parsed.legacyHash) return "Project search is now %. Type after % to search.";
-    if (parsed.mode === "search" && (!parsed.query || parsed.query.length < 2)) {
-      return "Type at least 2 characters to search the project";
+    if (parsed.mode === "search" && !parsed.query) {
+      return "Type to search the project\u2026";
     }
     if (parsed.mode === "line") {
       return parsed.query ? "Enter a line number (e.g. 42 or 42:8)" : "Type a line number\u2026";
@@ -9414,13 +12488,13 @@
     });
     setActive(0, { scroll: true });
   }
-  function appendHighlighted(el5, text, positions) {
+  function appendHighlighted(el6, text, positions) {
     if (!positions || !positions.length) {
-      el5.textContent = text;
+      el6.textContent = text;
       return;
     }
     const set = new Set(positions);
-    let run = "";
+    let run3 = "";
     let runHit = set.has(0);
     for (let i = 0; i < text.length; i++) {
       const hit = set.has(i);
@@ -9428,19 +12502,19 @@
         flush();
         runHit = hit;
       }
-      run += text[i];
+      run3 += text[i];
     }
     flush();
     function flush() {
-      if (!run) return;
+      if (!run3) return;
       if (runHit) {
         const b = document.createElement("b");
-        b.textContent = run;
-        el5.appendChild(b);
+        b.textContent = run3;
+        el6.appendChild(b);
       } else {
-        el5.appendChild(document.createTextNode(run));
+        el6.appendChild(document.createTextNode(run3));
       }
-      run = "";
+      run3 = "";
     }
   }
   function setActive(index, opts) {
@@ -9466,23 +12540,23 @@
   function runActive() {
     const item = flatItems[activeIndex];
     if (!item) return;
-    close();
+    close2();
     try {
       item.run();
     } catch (err) {
-      if (global7.console && console.error) console.error("[palette]", err);
-      if (global7.Toasts && global7.Toasts.warn) {
+      if (global10.console && console.error) console.error("[palette]", err);
+      if (global10.Toasts && global10.Toasts.warn) {
         const msg = err && err.message ? String(err.message) : String(err);
-        global7.Toasts.warn("Command failed: " + msg);
+        global10.Toasts.warn("Command failed: " + msg);
       }
     }
   }
-  function open(opts) {
+  function open2(opts) {
     let mode = "anywhere";
     if (opts && opts.mode && MODE_PREFIX[opts.mode] != null) mode = opts.mode;
     if (!ui) buildUi();
     restoreFocusTo = document.activeElement;
-    isOpen = true;
+    isOpen2 = true;
     ui.backdrop.classList.add("is-open");
     ui.panel.classList.add("is-open");
     ui.input.value = MODE_PREFIX[mode];
@@ -9494,9 +12568,9 @@
     } catch (_) {
     }
   }
-  function close() {
-    if (!ui || !isOpen) return;
-    isOpen = false;
+  function close2() {
+    if (!ui || !isOpen2) return;
+    isOpen2 = false;
     ui.backdrop.classList.remove("is-open");
     ui.panel.classList.remove("is-open");
     const back = restoreFocusTo;
@@ -9504,14 +12578,27 @@
     if (back && typeof back.focus === "function" && document.contains(back)) back.focus();
   }
   function toggle(opts) {
-    if (isOpen) close();
-    else open(opts);
+    if (isOpen2) close2();
+    else open2(opts);
   }
-  function init4() {
+  function runCommandEntry() {
+    var style = "";
+    try {
+      if (typeof Persist !== "undefined" && Persist.readStoredKeymapStyle) {
+        style = Persist.readStoredKeymapStyle();
+      }
+    } catch (e) {
+    }
+    var line = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
+    if (line && style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });
+    if (line && style === "vim") return StatusStrip.openCommandLine("");
+    return toggle({ mode: "commands" });
+  }
+  function init5() {
     if (typeof Keybindings !== "undefined" && typeof Keybindings.initGlobals === "function") {
       Keybindings.initGlobals({
         "nav.anywhere": () => toggle({ mode: "anywhere" }),
-        "tools.commands": () => toggle({ mode: "commands" }),
+        "tools.commands": runCommandEntry,
         "nav.symbol": () => toggle({ mode: "symbols" }),
         "edit.search-project": () => toggle({ mode: "search" })
       });
@@ -9542,15 +12629,16 @@
     }
     return formatShortcut2(idOrSpec, IS_MAC2);
   }
-  global7.CommandPalette = {
+  global10.CommandPalette = {
     register,
-    unregister,
+    unregister: unregister2,
     setProvider,
-    open,
-    close,
+    open: open2,
+    close: close2,
     toggle,
-    init: init4,
-    isOpen: () => isOpen,
+    runCommandEntry,
+    init: init5,
+    isOpen: () => isOpen2,
     shortcutLabel: shortcutLabelFor,
     shortcutParts: (spec) => shortcutParts2(spec, IS_MAC2),
     listCommands,
@@ -9569,18 +12657,18 @@
   };
 
   // js/ui/floating-window.mjs
-  var global8 = globalThis;
+  var global11 = globalThis;
   var MARGIN2 = 8;
-  var open2 = /* @__PURE__ */ new Set();
+  var open3 = /* @__PURE__ */ new Set();
   var zTop = 4e3;
   function clamp2(v, lo, hi) {
     return Math.min(Math.max(v, lo), hi);
   }
   function viewportW() {
-    return typeof global8.innerWidth === "number" ? global8.innerWidth : 1024;
+    return typeof global11.innerWidth === "number" ? global11.innerWidth : 1024;
   }
   function viewportH() {
-    return typeof global8.innerHeight === "number" ? global8.innerHeight : 768;
+    return typeof global11.innerHeight === "number" ? global11.innerHeight : 768;
   }
   function makeEl(tag, cls) {
     const n = document.createElement(tag);
@@ -9593,9 +12681,9 @@
     const minHeight = opts.minHeight || 140;
     let width = clamp2(opts.width || 320, minWidth, viewportW() - MARGIN2 * 2);
     let height = clamp2(opts.height || 380, minHeight, viewportH() - MARGIN2 * 2);
-    const root = makeEl("div", "floating-window" + (opts.className ? " " + opts.className : ""));
-    root.style.width = width + "px";
-    root.style.height = height + "px";
+    const root2 = makeEl("div", "floating-window" + (opts.className ? " " + opts.className : ""));
+    root2.style.width = width + "px";
+    root2.style.height = height + "px";
     const bar = makeEl("div", "floating-window-bar");
     const titleEl = makeEl("span", "floating-window-title");
     setTitleContent(titleEl, opts.title);
@@ -9613,7 +12701,7 @@
             btn.setAttribute("aria-pressed", on ? "true" : "false");
             const t = tip(on);
             if (t) btn.setAttribute("aria-label", t);
-            if (global8.Tooltips?.set) global8.Tooltips.set(btn, t);
+            if (global11.Tooltips?.set) global11.Tooltips.set(btn, t);
           };
           setPressed(!!act.pressed);
           if (act.ref) act.ref.setPressed = setPressed;
@@ -9625,7 +12713,12 @@
           });
         } else {
           if (act.label) btn.setAttribute("aria-label", act.label);
-          if (global8.Tooltips?.set && act.label) global8.Tooltips.set(btn, act.label);
+          if (typeof act.tooltip === "function" && global11.Tooltips?.setRich) {
+            global11.Tooltips.setRich(btn, act.tooltip, act.label);
+            btn.classList.add("floating-window-action--info");
+          } else if (global11.Tooltips?.set && act.label) {
+            global11.Tooltips.set(btn, act.label);
+          }
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (typeof act.onClick === "function") act.onClick();
@@ -9644,14 +12737,14 @@
     if (opts.content) body.appendChild(opts.content);
     const grip = makeEl("div", "floating-window-grip");
     grip.setAttribute("aria-hidden", "true");
-    root.append(bar, body, grip);
-    document.body.appendChild(root);
+    root2.append(bar, body, grip);
+    document.body.appendChild(root2);
     let x = typeof opts.x === "number" ? opts.x : Math.round((viewportW() - width) / 2);
     let y = typeof opts.y === "number" ? opts.y : Math.round(viewportH() * 0.18);
     x = clamp2(x, MARGIN2, viewportW() - width - MARGIN2);
     y = clamp2(y, MARGIN2, viewportH() - height - MARGIN2);
-    root.style.left = x + "px";
-    root.style.top = y + "px";
+    root2.style.left = x + "px";
+    root2.style.top = y + "px";
     function notifyGeometryChange() {
       if (typeof opts.onGeometryChange === "function") {
         try {
@@ -9662,33 +12755,33 @@
     }
     function getGeometry() {
       return {
-        x: Math.round(parseFloat(root.style.left) || x),
-        y: Math.round(parseFloat(root.style.top) || y),
-        w: root.offsetWidth,
-        h: root.offsetHeight
+        x: Math.round(parseFloat(root2.style.left) || x),
+        y: Math.round(parseFloat(root2.style.top) || y),
+        w: root2.offsetWidth,
+        h: root2.offsetHeight
       };
     }
     function raise() {
       zTop += 1;
-      root.style.zIndex = String(zTop);
+      root2.style.zIndex = String(zTop);
     }
     raise();
-    root.addEventListener("pointerdown", raise, true);
+    root2.addEventListener("pointerdown", raise, true);
     let dragP = null;
     function onDragMove(e) {
       if (!dragP) return;
       e.preventDefault();
-      x = clamp2(dragP.startX + (e.clientX - dragP.px), MARGIN2, viewportW() - root.offsetWidth - MARGIN2);
-      y = clamp2(dragP.startY + (e.clientY - dragP.py), MARGIN2, viewportH() - root.offsetHeight - MARGIN2);
-      root.style.left = x + "px";
-      root.style.top = y + "px";
+      x = clamp2(dragP.startX + (e.clientX - dragP.px), MARGIN2, viewportW() - root2.offsetWidth - MARGIN2);
+      y = clamp2(dragP.startY + (e.clientY - dragP.py), MARGIN2, viewportH() - root2.offsetHeight - MARGIN2);
+      root2.style.left = x + "px";
+      root2.style.top = y + "px";
     }
     function onDragUp() {
       if (!dragP) return;
       dragP = null;
-      global8.removeEventListener("pointermove", onDragMove);
-      global8.removeEventListener("pointerup", onDragUp);
-      global8.removeEventListener("pointercancel", onDragUp);
+      global11.removeEventListener("pointermove", onDragMove);
+      global11.removeEventListener("pointerup", onDragUp);
+      global11.removeEventListener("pointercancel", onDragUp);
       document.body.classList.remove("floating-window-dragging");
       notifyGeometryChange();
     }
@@ -9700,9 +12793,9 @@
       if (e.button !== 0) return;
       dragP = { px: e.clientX, py: e.clientY, startX: x, startY: y };
       document.body.classList.add("floating-window-dragging");
-      global8.addEventListener("pointermove", onDragMove);
-      global8.addEventListener("pointerup", onDragUp);
-      global8.addEventListener("pointercancel", onDragUp);
+      global11.addEventListener("pointermove", onDragMove);
+      global11.addEventListener("pointerup", onDragUp);
+      global11.addEventListener("pointercancel", onDragUp);
       e.preventDefault();
     });
     let rez = null;
@@ -9711,37 +12804,37 @@
       e.preventDefault();
       width = clamp2(rez.startW + (e.clientX - rez.px), minWidth, viewportW() - x - MARGIN2);
       height = clamp2(rez.startH + (e.clientY - rez.py), minHeight, viewportH() - y - MARGIN2);
-      root.style.width = width + "px";
-      root.style.height = height + "px";
+      root2.style.width = width + "px";
+      root2.style.height = height + "px";
     }
     function onRezUp() {
       if (!rez) return;
       rez = null;
-      global8.removeEventListener("pointermove", onRezMove);
-      global8.removeEventListener("pointerup", onRezUp);
-      global8.removeEventListener("pointercancel", onRezUp);
+      global11.removeEventListener("pointermove", onRezMove);
+      global11.removeEventListener("pointerup", onRezUp);
+      global11.removeEventListener("pointercancel", onRezUp);
       document.body.classList.remove("floating-window-resizing");
       notifyGeometryChange();
     }
     grip.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
-      rez = { px: e.clientX, py: e.clientY, startW: root.offsetWidth, startH: root.offsetHeight };
+      rez = { px: e.clientX, py: e.clientY, startW: root2.offsetWidth, startH: root2.offsetHeight };
       document.body.classList.add("floating-window-resizing");
-      global8.addEventListener("pointermove", onRezMove);
-      global8.addEventListener("pointerup", onRezUp);
-      global8.addEventListener("pointercancel", onRezUp);
+      global11.addEventListener("pointermove", onRezMove);
+      global11.addEventListener("pointerup", onRezUp);
+      global11.addEventListener("pointercancel", onRezUp);
       e.preventDefault();
       e.stopPropagation();
     });
     let closed = false;
-    function close3() {
+    function close4() {
       if (closed) return;
       closed = true;
       onDragUp();
       onRezUp();
-      root.removeEventListener("pointerdown", raise, true);
-      if (root.parentNode) root.parentNode.removeChild(root);
-      open2.delete(handle);
+      root2.removeEventListener("pointerdown", raise, true);
+      if (root2.parentNode) root2.parentNode.removeChild(root2);
+      open3.delete(handle);
       if (typeof opts.onClose === "function") {
         try {
           opts.onClose();
@@ -9749,7 +12842,7 @@
         }
       }
     }
-    closeBtn2.addEventListener("click", close3);
+    closeBtn2.addEventListener("click", close4);
     function setTitleContent(target, title) {
       target.textContent = "";
       if (title == null) return;
@@ -9757,9 +12850,9 @@
       else target.textContent = String(title);
     }
     const handle = {
-      el: root,
+      el: root2,
       body,
-      close: close3,
+      close: close4,
       getGeometry,
       setContent(node) {
         body.textContent = "";
@@ -9770,16 +12863,621 @@
       },
       raise
     };
-    open2.add(handle);
+    open3.add(handle);
     return handle;
   }
   function closeAll() {
-    for (const h of [...open2]) h.close();
+    for (const h of [...open3]) h.close();
   }
-  global8.FloatingWindow = { open: openWindow, closeAll };
+  global11.FloatingWindow = { open: openWindow, closeAll };
+
+  // js/ui/available-macros.mjs
+  var global12 = globalThis;
+  var RESERVED_MARK = "*";
+  var INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
+  function aboutFragment() {
+    const frag = document.createDocumentFragment();
+    const p1 = el(
+      "p",
+      "bj-setting-info-tip",
+      "Everything you can type right now: your chords, the keys the active editing style adds, and the names the command line answers to."
+    );
+    const p2 = el(
+      "p",
+      "bj-setting-info-tip",
+      "Use the command palette to access unbound commands."
+    );
+    frag.append(p1, p2);
+    return frag;
+  }
+  var FILTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+  function rowMatches(row, query2) {
+    const q = String(query2 || "").trim().toLowerCase();
+    if (!q) return true;
+    const hay = [row.title, liveChord(row), row.search || ""].concat(row.ex || []).join(" ").toLowerCase();
+    return hay.indexOf(q.replace(/^:/, "")) >= 0;
+  }
+  function liveChord(row) {
+    if (!row) return "";
+    if (row.live) return row.chord || "";
+    if (row.styleChord) return row.styleChord;
+    if (row.shadow && row.shadow.kind === "shadowed") return "";
+    return row.chord || "";
+  }
+  function reservedGroup(facts, glossFor2, access, style) {
+    if (!facts || !facts.rows || !facts.rows.length) return null;
+    const usable = (r) => r.substitute && r.substitute !== "\u2014" && (!r.subStyle || r.subStyle === style);
+    const live2 = facts.rows.filter(usable);
+    const dead = facts.rows.filter((r) => !usable(r));
+    const rows = live2.map((r) => ({
+      id: "reserved:" + r.chord,
+      // What the chord would have done. Emacs' own meaning only where Emacs is the
+      // style — `kill-region` means nothing under Standard — otherwise the BelJar
+      // command the substitute reaches, which is how `Ctrl+Shift+P → Alt+X` says
+      // "Run Command…" rather than nothing.
+      title: style === "emacs" && r.emacs && r.emacs !== "\u2014" ? r.emacs : typeof glossFor2 === "function" ? glossFor2(r.substitute) || "" : "",
+      dead: r.chord,
+      chord: r.substitute,
+      ex: [],
+      // So the filter finds a row by the chord you were LOOKING for — the one
+      // that does not work is what you would type to look it up.
+      search: r.chord + " " + (r.emacs || "")
+    }));
+    const meta = [];
+    if (dead.length) {
+      meta.push({ label: "Also taken", chords: dead.map((r) => r.chord) });
+    }
+    meta.push({
+      label: "Reclaim them all",
+      // ⛔ `:fullkeys` is Vim's spelling; on the `M-x` line it is `fullkeys`, and
+      // under Standard with nothing bound there is no line to type it on at all.
+      text: "Full keyboard, in fullscreen",
+      name: access ? access.prefix + "fullkeys" : ""
+    });
+    return {
+      name: RESERVED_MARK + " Taken by the browser",
+      rows,
+      meta,
+      lead: rows.length ? "The browser handles these before BelJar sees them." : "Nothing BelJar binds is taken on this platform."
+    };
+  }
+  var NAMED_KEY = /^(Up|Down|Left|Right|Home|End|PageUp|PageDown|Esc|Escape|Enter|Return|Tab|Space|Backspace|Delete|Insert|F\d{1,2})$/i;
+  function keyGroupOf(keys) {
+    const raw = String(keys || "").trim();
+    if (!raw) return "Single keys";
+    const space = raw.indexOf(" ");
+    if (space > 0) return raw.slice(0, space);
+    if (NAMED_KEY.test(raw)) return "Single keys";
+    if (raw.length > 1 && raw.indexOf("+") < 0 && raw.indexOf("-") < 0) return raw[0];
+    const parts = raw.split(/[+-]/);
+    const last = parts.pop();
+    const mods = parts.filter(Boolean);
+    if (!mods.length) return /^F\d+$/i.test(last) ? "Function keys" : "Single keys";
+    const rank2 = { Ctrl: 0, Alt: 1, Shift: 2, Mod: 0, Meta: 0 };
+    return mods.slice().sort((a, b) => (rank2[a] ?? 9) - (rank2[b] ?? 9)).join("+");
+  }
+  var GROUP_RANK = [
+    // The prefix maps, in the order the styles themselves name them.
+    "Ctrl+X",
+    "Ctrl+C",
+    "g",
+    "]",
+    "[",
+    "Ctrl",
+    "Ctrl+Shift",
+    "Alt",
+    "Alt+Shift",
+    "Ctrl+Alt",
+    "Ctrl+Alt+Shift",
+    "Shift",
+    "Function keys",
+    "Single keys"
+  ];
+  function sortGroups(names) {
+    return (names || []).slice().sort((a, b) => {
+      const ia = GROUP_RANK.indexOf(a);
+      const ib = GROUP_RANK.indexOf(b);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return 1;
+      if (ib >= 0) return -1;
+      return a.localeCompare(b);
+    });
+  }
+  function macroModel(described, styleGroups3, reserved, access, note) {
+    const rows = (described || []).filter(Boolean);
+    const keys = [];
+    const at = /* @__PURE__ */ new Map();
+    const push2 = (row) => {
+      const k = String(row.chord || "").trim();
+      if (!k) return;
+      const had = at.get(k);
+      if (had === void 0) {
+        at.set(k, keys.length);
+        keys.push(row);
+        return;
+      }
+      if (row.id && !keys[had].id) keys[had] = row;
+    };
+    for (const g14 of styleGroups3 || []) {
+      for (const r of g14.rows) {
+        push2({
+          id: r.id,
+          title: r.title,
+          chord: r.keys,
+          ex: [],
+          live: true,
+          reserved: !!r.reserved,
+          shadow: r.shadow || null
+        });
+      }
+    }
+    for (const r of rows) {
+      const chord = liveChord(r);
+      if (chord) push2({ ...r, chord });
+    }
+    const byGroup = /* @__PURE__ */ new Map();
+    for (const row of keys) {
+      const name = keyGroupOf(row.chord);
+      if (!byGroup.has(name)) byGroup.set(name, []);
+      byGroup.get(name).push(row);
+    }
+    const groups = sortGroups([...byGroup.keys()]).map((name) => ({ name, rows: byGroup.get(name) }));
+    const line = access ? [{
+      name: "Command line",
+      lead: access.open,
+      prefix: access.prefix,
+      rows: rows.filter((r) => (r.ex || []).length)
+    }] : [];
+    const live2 = groups.filter((g14) => g14.rows.length);
+    if (note && live2.length) live2[live2.length - 1].closing = note;
+    const tail = reserved ? [reserved] : [];
+    return live2.concat(line.filter((g14) => g14.rows.length)).concat(tail.filter((g14) => g14 && (g14.rows.length || (g14.meta || []).length)));
+  }
+  function commandLineAccess(style, chord) {
+    if (style === "vim") return { prefix: ":", open: "Press : in Normal mode." };
+    if (style === "emacs") return { prefix: "", open: "Press M-x." };
+    if (chord) return { prefix: ":", open: "Press " + chord + "." };
+    return null;
+  }
+  function countRows(groups) {
+    return (groups || []).reduce((n, g14) => n + g14.rows.length, 0);
+  }
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function activeStyle() {
+    try {
+      const P3 = global12.Persist;
+      if (P3 && typeof P3.readStoredKeymapStyle === "function") return P3.readStoredKeymapStyle();
+    } catch (_) {
+    }
+    return "default";
+  }
+  function describeAll() {
+    const C = global12.Commands;
+    if (!C || typeof C.describe !== "function") return [];
+    const E3 = global12.BelEditor;
+    const style = activeStyle();
+    let isMac = /Mac|iPhone|iPad/.test(global12.navigator && global12.navigator.platform || "");
+    if (E3 && typeof E3.reservedChordFacts === "function") {
+      try {
+        isMac = !!E3.reservedChordFacts().isMac;
+      } catch (_) {
+      }
+    }
+    return C.list().map((c) => C.describe(c.id, { style, isMac, showing: "style" })).filter(Boolean);
+  }
+  function rowNode(row, wantChord, prefix) {
+    const r = el("div", "bj-macros__row");
+    const what = el("span", "bj-macros__what");
+    if (row.dead) {
+      r.classList.add("bj-macros__row--reserved");
+      what.appendChild(el("kbd", "bj-macros__dead", row.dead));
+    }
+    if (row.title) what.appendChild(el("span", "bj-macros__title", row.title));
+    if (row.reserved && wantChord) what.appendChild(el("span", "bj-macros__star", RESERVED_MARK));
+    const shadow = wantChord && row.shadow ? row.shadow : null;
+    if (shadow) {
+      const tag = el("span", "bj-macros__tag", shadow.tag);
+      tag.setAttribute("data-tooltip", shadow.tip);
+      if (global12.Tooltips && typeof global12.Tooltips.bind === "function") global12.Tooltips.bind(tag);
+      what.appendChild(tag);
+    }
+    r.appendChild(what);
+    const keys = el("span", "bj-macros__keys");
+    if (row.dead) keys.appendChild(el("span", "bj-macros__arrow", "\u2192"));
+    if (wantChord) {
+      keys.appendChild(el("kbd", "bj-macros__chord", liveChord(row)));
+    } else if (row.ex.length) {
+      keys.appendChild(el("code", "bj-macros__ex", (prefix == null ? ":" : prefix) + row.ex[0]));
+    }
+    r.appendChild(keys);
+    return r;
+  }
+  function metaNode(m) {
+    const r = el("div", "bj-macros__row bj-macros__row--meta");
+    r.appendChild(el("span", "bj-macros__meta-label", m.label));
+    const val = el("span", "bj-macros__keys");
+    if (m.text) val.appendChild(el("span", "bj-macros__meta-text", m.text));
+    if (m.name) val.appendChild(el("code", "bj-macros__ex", m.name));
+    for (const c of m.chords || []) val.appendChild(el("kbd", "bj-macros__dead", c));
+    r.appendChild(val);
+    return r;
+  }
+  function buildBody(groups) {
+    const wrap = el("div", "bj-macros");
+    const filter = el("div", "bj-macros__filter");
+    const icon = el("span", "bj-macros__filter-icon");
+    icon.innerHTML = FILTER_ICON;
+    icon.setAttribute("aria-hidden", "true");
+    const input2 = el("input", "bj-macros__filter-input");
+    input2.type = "search";
+    input2.placeholder = "Filter by name or key\u2026";
+    input2.setAttribute("aria-label", "Filter the available macros");
+    input2.autocomplete = "off";
+    input2.spellcheck = false;
+    const count = el("span", "bj-macros__filter-count");
+    count.setAttribute("aria-live", "polite");
+    filter.append(icon, input2, count);
+    wrap.appendChild(filter);
+    const list3 = el("div", "bj-macros__list");
+    wrap.appendChild(list3);
+    const empty = el("p", "bj-macros__empty", "No matches.");
+    empty.hidden = true;
+    wrap.appendChild(empty);
+    const total = countRows(groups);
+    const paint2 = (query2) => {
+      list3.textContent = "";
+      let shown = 0;
+      const quiet = !query2.trim();
+      for (const group of groups) {
+        const hits = group.rows.filter((r) => rowMatches(r, query2));
+        if (!hits.length && !(quiet && (group.meta || []).length)) continue;
+        list3.appendChild(el("div", "bj-macros__group", group.name));
+        if (quiet && group.lead) list3.appendChild(el("p", "bj-macros__aside", group.lead));
+        for (const row of hits) {
+          list3.appendChild(rowNode(row, group.name !== "Command line", group.prefix));
+        }
+        if (quiet) for (const m of group.meta || []) list3.appendChild(metaNode(m));
+        if (quiet && group.closing) list3.appendChild(el("p", "bj-macros__aside", group.closing));
+        shown += hits.length;
+      }
+      empty.hidden = shown > 0;
+      count.textContent = query2.trim() ? shown + " of " + total : "";
+    };
+    paint2("");
+    input2.addEventListener("input", () => paint2(input2.value));
+    return wrap;
+  }
+  function styleGroups() {
+    const E3 = global12.BelEditor;
+    const C = global12.Commands;
+    if (!E3 || typeof E3.styleMacros !== "function") return [];
+    const style = activeStyle();
+    const facts = reservedFacts();
+    const eaten = new Set((facts ? facts.rows : []).map((r) => r.chord));
+    let groups = [];
+    try {
+      groups = E3.styleMacros(style, (chord) => eaten.has(chord));
+    } catch (_) {
+      return [];
+    }
+    if (!C || typeof C.chordShadowFor !== "function") return groups;
+    return groups.map((g14) => ({
+      name: g14.name,
+      rows: g14.rows.map((r) => Object.assign({}, r, {
+        shadow: C.chordShadowFor({ style, keys: r.keys, commandId: r.id })
+      }))
+    }));
+  }
+  function reservedFacts() {
+    const E3 = global12.BelEditor;
+    if (!E3 || typeof E3.reservedChordFacts !== "function") return null;
+    try {
+      return E3.reservedChordFacts();
+    } catch (_) {
+      return null;
+    }
+  }
+  function glossFor(chord) {
+    const C = global12.Commands;
+    const KB = global12.Keybindings;
+    if (!C || !KB || typeof KB.normalizeSpec !== "function") return "";
+    const spec = KB.normalizeSpec(chord);
+    if (!spec) return "";
+    const id = typeof KB.findConflict === "function" ? KB.findConflict(spec, null) : null;
+    const cmd = id && typeof C.get === "function" ? C.get(id) : null;
+    return cmd ? cmd.title : "";
+  }
+  function lineAccess() {
+    const KB = global12.Keybindings;
+    const chord = KB && typeof KB.labelFor === "function" ? KB.labelFor("cmdline.open") : "";
+    return commandLineAccess(activeStyle(), chord);
+  }
+  function openAvailableMacros() {
+    const access = lineAccess();
+    const E3 = global12.BelEditor;
+    let note = "";
+    try {
+      note = E3 && typeof E3.packageKeyNote === "function" ? E3.packageKeyNote(activeStyle()) : "";
+    } catch (_) {
+    }
+    const groups = macroModel(
+      describeAll(),
+      styleGroups(),
+      reservedGroup(reservedFacts(), glossFor, access, activeStyle()),
+      access,
+      note
+    );
+    if (!countRows(groups)) {
+      if (global12.StatusStrip && global12.StatusStrip.setMessage) {
+        global12.StatusStrip.setMessage("The command list is not ready yet.");
+      }
+      return false;
+    }
+    if (!global12.FloatingWindow || typeof global12.FloatingWindow.open !== "function") return false;
+    global12.FloatingWindow.open({
+      title: "Available macros",
+      className: "floating-window--macros",
+      actions: [{
+        icon: INFO_ICON,
+        label: "What this window shows",
+        tooltip: aboutFragment
+      }],
+      width: 470,
+      // Tall enough that the taken-by-the-browser block is not permanently below
+      // the fold — it is the answer to a question people arrive with.
+      height: 640,
+      content: buildBody(groups)
+    });
+    return true;
+  }
+  global12.AvailableMacros = { open: openAvailableMacros };
+
+  // js/ui/full-keyboard.mjs
+  var global13 = globalThis;
+  var active2 = false;
+  var listening2 = false;
+  function strip() {
+    const B = global13.StatusStrip;
+    return B && typeof B.setMessage === "function" ? B : null;
+  }
+  function say(text) {
+    const B = strip();
+    if (B) B.setMessage(text);
+  }
+  function isSupported() {
+    const nav = global13.navigator;
+    return !!(nav && nav.keyboard && typeof nav.keyboard.lock === "function");
+  }
+  function isActive() {
+    return active2 && !!(global13.document && global13.document.fullscreenElement);
+  }
+  function watchFullscreen() {
+    if (listening2 || !global13.document) return;
+    listening2 = true;
+    global13.document.addEventListener("fullscreenchange", () => {
+      if (global13.document.fullscreenElement || !active2) return;
+      active2 = false;
+      releaseLock();
+      say("Full keyboard off.");
+    });
+  }
+  function releaseLock() {
+    const nav = global13.navigator;
+    if (nav && nav.keyboard && typeof nav.keyboard.unlock === "function") {
+      try {
+        nav.keyboard.unlock();
+      } catch (_) {
+      }
+    }
+  }
+  async function enter() {
+    if (!isSupported()) {
+      say("This browser has no Keyboard Lock, so the reserved chords stay reserved.");
+      return false;
+    }
+    const el6 = global13.document && global13.document.documentElement;
+    if (!el6 || typeof el6.requestFullscreen !== "function") {
+      say("Full keyboard needs fullscreen, which this browser will not give.");
+      return false;
+    }
+    watchFullscreen();
+    try {
+      if (!global13.document.fullscreenElement) await el6.requestFullscreen();
+      await global13.navigator.keyboard.lock();
+    } catch (err) {
+      if (global13.document.fullscreenElement && global13.document.exitFullscreen) {
+        try {
+          await global13.document.exitFullscreen();
+        } catch (_) {
+        }
+      }
+      releaseLock();
+      active2 = false;
+      say("Full keyboard could not start: " + (err && err.message || "the browser refused."));
+      return false;
+    }
+    active2 = true;
+    say("Full keyboard on \u2014 Ctrl+N, Ctrl+T, Ctrl+W and the rest are yours. Hold Esc to leave.");
+    return true;
+  }
+  async function exit() {
+    if (!active2) return false;
+    active2 = false;
+    releaseLock();
+    if (global13.document && global13.document.fullscreenElement && global13.document.exitFullscreen) {
+      try {
+        await global13.document.exitFullscreen();
+      } catch (_) {
+      }
+    }
+    say("Full keyboard off.");
+    return true;
+  }
+  function toggle2() {
+    return isActive() ? exit() : enter();
+  }
+  global13.FullKeyboard = { isSupported, isActive, enter, exit, toggle: toggle2 };
+
+  // js/ui/double-tap.mjs
+  var global14 = globalThis;
+  var TRIGGERS = {
+    off: null,
+    shift: { key: "Shift", flag: "shiftKey" },
+    control: { key: "Control", flag: "ctrlKey" },
+    alt: { key: "Alt", flag: "altKey" }
+  };
+  var SPEEDS = { fast: 250, normal: 350, relaxed: 500 };
+  var lastUpAt = 0;
+  var sawOtherKey = false;
+  var listening3 = false;
+  function persist2() {
+    return global14.Persist || null;
+  }
+  function settings() {
+    const p = persist2();
+    const read = (name, fallback) => {
+      try {
+        return p && typeof p[name] === "function" ? p[name]() : fallback;
+      } catch (_) {
+        return fallback;
+      }
+    };
+    return {
+      trigger: read("readStoredDoubleTapTrigger", "off"),
+      target: read("readStoredDoubleTapCommand", "tools.palette"),
+      windowMs: SPEEDS[read("readStoredDoubleTapSpeed", "normal")] || SPEEDS.normal
+    };
+  }
+  function shouldFire(state2) {
+    const s = state2 || {};
+    if (!s.trigger || s.trigger === "off") return false;
+    if (s.repeat) return false;
+    if (s.otherKeySeen) return false;
+    if (s.otherModifier) return false;
+    if (!(s.gap > 0)) return false;
+    return s.gap <= s.windowMs;
+  }
+  function blockReason(state2) {
+    const s = state2 || {};
+    if (s.composing) return "composing";
+    if (s.recordingChord) return "chord-recorder";
+    if (s.modalOpen) return "modal";
+    if (s.commandLineOpen) return "command-line";
+    return "";
+  }
+  function blocked(e) {
+    const doc2 = typeof document !== "undefined" ? document : null;
+    const t = e && e.target || (doc2 ? doc2.activeElement : null);
+    const B = global14.StatusStrip;
+    return !!blockReason({
+      composing: !!(e && (e.isComposing || e.keyCode === 229)),
+      recordingChord: !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording")),
+      // A modal owns the screen; opening the palette behind or over it is wrong.
+      // This also covers the settings search field, which lives inside one.
+      modalOpen: !!(doc2 && doc2.querySelector("dialog[open]")),
+      commandLineOpen: !!(B && typeof B.isCommandLineOpen === "function" && B.isCommandLineOpen())
+    });
+  }
+  function otherModifierHeld(e, flag) {
+    const held = [];
+    if (e.shiftKey) held.push("shiftKey");
+    if (e.ctrlKey) held.push("ctrlKey");
+    if (e.altKey) held.push("altKey");
+    if (e.metaKey) held.push("metaKey");
+    return held.some((f) => f !== flag);
+  }
+  function onKeyDown(e) {
+    const cfg = settings();
+    const trigger = TRIGGERS[cfg.trigger];
+    if (!trigger || e.key !== trigger.key) {
+      sawOtherKey = true;
+      return;
+    }
+    if (e.repeat) sawOtherKey = true;
+  }
+  function onKeyUp(e) {
+    const cfg = settings();
+    const trigger = TRIGGERS[cfg.trigger];
+    if (!trigger || e.key !== trigger.key) return;
+    const now = Date.now();
+    const fire = shouldFire({
+      trigger: cfg.trigger,
+      repeat: !!e.repeat,
+      otherKeySeen: sawOtherKey,
+      otherModifier: otherModifierHeld(e, trigger.flag),
+      gap: lastUpAt ? now - lastUpAt : 0,
+      windowMs: cfg.windowMs
+    });
+    if (fire && !blocked(e)) {
+      lastUpAt = 0;
+      sawOtherKey = false;
+      run2(cfg.target);
+      return;
+    }
+    lastUpAt = now;
+    sawOtherKey = false;
+  }
+  var PALETTE_OPENERS = /* @__PURE__ */ new Set([
+    "tools.palette",
+    "tools.commands",
+    "nav.anywhere",
+    "nav.symbol",
+    "edit.search-project"
+  ]);
+  function resolveAction(id, paletteOpen) {
+    if (!paletteOpen) return { close: false, run: id };
+    if (PALETTE_OPENERS.has(id)) return { close: true, run: null };
+    return { close: true, run: id };
+  }
+  function run2(id) {
+    const C = global14.Commands;
+    const P3 = global14.CommandPalette;
+    const paletteOpen = !!(P3 && typeof P3.isOpen === "function" && P3.isOpen());
+    const action = resolveAction(id, paletteOpen);
+    if (action.close && P3 && typeof P3.close === "function") P3.close();
+    if (action.run && C && typeof C.run === "function") C.run(action.run);
+  }
+  function init6() {
+    if (listening3 || typeof global14.addEventListener !== "function") return false;
+    listening3 = true;
+    global14.addEventListener("keydown", onKeyDown, true);
+    global14.addEventListener("keyup", onKeyUp, true);
+    return true;
+  }
+  var GESTURE_TARGETS = [
+    "tools.palette",
+    "tools.commands",
+    "nav.anywhere",
+    "nav.symbol",
+    "edit.search-project",
+    "cmdline.open",
+    "run.default",
+    "view.harpoon",
+    "keys.macros"
+  ];
+  global14.DoubleTap = {
+    init: init6,
+    shouldFire,
+    targets: () => GESTURE_TARGETS.slice(),
+    _pure: {
+      TRIGGERS,
+      SPEEDS,
+      shouldFire,
+      blockReason,
+      resolveAction,
+      PALETTE_OPENERS,
+      GESTURE_TARGETS
+    }
+  };
+  if (typeof document !== "undefined") init6();
 
   // js/ui/scroll-fade.mjs
-  var global9 = globalThis;
+  var global15 = globalThis;
   var EPS = 1;
   function computeSides(m) {
     var axis = m.axis || "both";
@@ -9806,17 +13504,17 @@
     var end = endFades ? "#000 calc(100% - " + size + "px), transparent 100%" : "#000 100%";
     return "linear-gradient(" + dir + ", " + start + ", " + end + ")";
   }
-  function applyMask(el5, sides, size) {
+  function applyMask(el6, sides, size) {
     var masks = [];
     var mx = axisMask("to right", sides.left, sides.right, size);
     var my = axisMask("to bottom", sides.top, sides.bottom, size);
     if (mx) masks.push(mx);
     if (my) masks.push(my);
     var value = masks.length ? masks.join(", ") : "";
-    el5.style.webkitMaskImage = value;
-    el5.style.maskImage = value;
+    el6.style.webkitMaskImage = value;
+    el6.style.maskImage = value;
     if (value) {
-      el5.setAttribute(
+      el6.setAttribute(
         "data-scroll-fade",
         [
           sides.top && "top",
@@ -9826,11 +13524,11 @@
         ].filter(Boolean).join(" ")
       );
     } else {
-      el5.removeAttribute("data-scroll-fade");
+      el6.removeAttribute("data-scroll-fade");
     }
   }
-  function attach(el5, opts) {
-    if (!el5) return { update: function() {
+  function attach2(el6, opts) {
+    if (!el6) return { update: function() {
     }, destroy: function() {
     } };
     opts = opts || {};
@@ -9838,44 +13536,44 @@
     var axis = opts.axis || "both";
     function update() {
       var sides = computeSides({
-        scrollTop: el5.scrollTop,
-        scrollLeft: el5.scrollLeft,
-        scrollWidth: el5.scrollWidth,
-        scrollHeight: el5.scrollHeight,
-        clientWidth: el5.clientWidth,
-        clientHeight: el5.clientHeight,
+        scrollTop: el6.scrollTop,
+        scrollLeft: el6.scrollLeft,
+        scrollWidth: el6.scrollWidth,
+        scrollHeight: el6.scrollHeight,
+        clientWidth: el6.clientWidth,
+        clientHeight: el6.clientHeight,
         axis
       });
-      applyMask(el5, sides, size);
+      applyMask(el6, sides, size);
     }
     var onScroll = function() {
       update();
     };
-    el5.addEventListener("scroll", onScroll, { passive: true });
+    el6.addEventListener("scroll", onScroll, { passive: true });
     var ro = null;
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(function() {
         update();
       });
-      ro.observe(el5);
+      ro.observe(el6);
     }
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(update);
     else update();
     return {
       update,
       destroy: function() {
-        el5.removeEventListener("scroll", onScroll);
+        el6.removeEventListener("scroll", onScroll);
         if (ro) ro.disconnect();
-        el5.style.webkitMaskImage = "";
-        el5.style.maskImage = "";
-        el5.removeAttribute("data-scroll-fade");
+        el6.style.webkitMaskImage = "";
+        el6.style.maskImage = "";
+        el6.removeAttribute("data-scroll-fade");
       }
     };
   }
-  global9.ScrollFade = { attach, computeSides };
+  global15.ScrollFade = { attach: attach2, computeSides };
 
   // js/ui/text-slide.mjs
-  var global10 = globalThis;
+  var global16 = globalThis;
   var SPEED_PX_PER_S = 90;
   var MIN_SLIDE_S = 0.5;
   var SLIDE_FRAC = 0.38;
@@ -9883,26 +13581,26 @@
   function prefersFineHover2() {
     return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   }
-  function bind(el5, opts) {
-    if (!el5 || el5.nodeType !== 1 || el5._textSlideBound) return;
-    el5._textSlideBound = true;
+  function bind(el6, opts) {
+    if (!el6 || el6.nodeType !== 1 || el6._textSlideBound) return;
+    el6._textSlideBound = true;
     opts = opts || {};
-    var triggerEl = opts.triggerEl && opts.triggerEl.nodeType === 1 ? opts.triggerEl : el5;
-    var inner = el5.querySelector(".text-slide-inner");
+    var triggerEl = opts.triggerEl && opts.triggerEl.nodeType === 1 ? opts.triggerEl : el6;
+    var inner = el6.querySelector(".text-slide-inner");
     if (!inner) {
       inner = document.createElement("span");
       inner.className = "text-slide-inner";
-      while (el5.firstChild) inner.appendChild(el5.firstChild);
-      el5.appendChild(inner);
+      while (el6.firstChild) inner.appendChild(el6.firstChild);
+      el6.appendChild(inner);
     }
-    var active = false;
+    var active3 = false;
     var returnHandler = null;
     function measure2() {
-      var overflow = inner.scrollWidth - el5.clientWidth;
+      var overflow = inner.scrollWidth - el6.clientWidth;
       if (overflow <= 1) return 0;
       var slideS = Math.max(MIN_SLIDE_S, overflow / SPEED_PX_PER_S);
-      el5.style.setProperty("--text-slide-offset", "-" + overflow + "px");
-      el5.style.setProperty("--text-slide-duration", (slideS / SLIDE_FRAC).toFixed(3) + "s");
+      el6.style.setProperty("--text-slide-offset", "-" + overflow + "px");
+      el6.style.setProperty("--text-slide-duration", (slideS / SLIDE_FRAC).toFixed(3) + "s");
       return overflow;
     }
     function cancelReturn() {
@@ -9912,17 +13610,17 @@
     }
     function start() {
       if (!prefersFineHover2()) return;
-      active = true;
+      active3 = true;
       cancelReturn();
       inner.style.transition = "";
       inner.style.transform = "";
-      if (measure2() > 1) el5.classList.add("text-slide--playing");
+      if (measure2() > 1) el6.classList.add("text-slide--playing");
     }
     function stop() {
-      active = false;
-      if (!el5.classList.contains("text-slide--playing")) return;
+      active3 = false;
+      if (!el6.classList.contains("text-slide--playing")) return;
       var cur = window.getComputedStyle(inner).transform;
-      el5.classList.remove("text-slide--playing");
+      el6.classList.remove("text-slide--playing");
       inner.style.transform = cur;
       void inner.offsetWidth;
       inner.style.transition = "transform " + RETURN_MS + "ms ease-out";
@@ -9930,7 +13628,7 @@
       returnHandler = function(e) {
         if (e.propertyName !== "transform") return;
         cancelReturn();
-        if (!active) {
+        if (!active3) {
           inner.style.transition = "";
           inner.style.transform = "";
         }
@@ -9941,15 +13639,15 @@
     triggerEl.addEventListener("mouseleave", stop);
     if (typeof ResizeObserver !== "undefined") {
       var ro = new ResizeObserver(function() {
-        if (active) measure2();
+        if (active3) measure2();
       });
-      ro.observe(el5);
+      ro.observe(el6);
     }
   }
   function bindAll() {
     document.querySelectorAll("[data-text-slide]").forEach(bind);
   }
-  global10.TextSlide = { bind, bindAll };
+  global16.TextSlide = { bind, bindAll };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bindAll);
   } else {
@@ -9972,36 +13670,36 @@
     if (!(e.ctrlKey || e.metaKey)) return false;
     return String(e.key).toLowerCase() === "f";
   }
-  function findSurfaceSearchInput(root) {
-    if (!root || typeof root.querySelector !== "function") return null;
-    const el5 = root.querySelector(SURFACE_SEARCH_SELECTOR);
-    if (!el5 || el5.disabled) return null;
-    return el5;
+  function findSurfaceSearchInput(root2) {
+    if (!root2 || typeof root2.querySelector !== "function") return null;
+    const el6 = root2.querySelector(SURFACE_SEARCH_SELECTOR);
+    if (!el6 || el6.disabled) return null;
+    return el6;
   }
   function capturingSearchInput() {
     if (typeof document === "undefined") return null;
-    const open9 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
-    for (let i = open9.length - 1; i >= 0; i--) {
-      const input = findSurfaceSearchInput(open9[i]);
-      if (input) return input;
+    const open10 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
+    for (let i = open10.length - 1; i >= 0; i--) {
+      const input2 = findSurfaceSearchInput(open10[i]);
+      if (input2) return input2;
     }
     const palette = document.querySelector(".bel-palette.is-open");
     return palette ? findSurfaceSearchInput(palette) : null;
   }
-  function focusSurfaceSearch(input) {
-    if (!input || typeof input.focus !== "function") return false;
-    input.focus();
-    const v = String(input.value || "");
-    if (input.classList && input.classList.contains("bel-palette-input")) {
+  function focusSurfaceSearch(input2) {
+    if (!input2 || typeof input2.focus !== "function") return false;
+    input2.focus();
+    const v = String(input2.value || "");
+    if (input2.classList && input2.classList.contains("bel-palette-input")) {
       const start = v.length && PALETTE_PREFIXES.includes(v[0]) ? 1 : 0;
       try {
-        input.setSelectionRange(start, v.length);
+        input2.setSelectionRange(start, v.length);
       } catch (_) {
       }
       return true;
     }
     try {
-      input.select();
+      input2.select();
     } catch (_) {
     }
     return true;
@@ -10010,11 +13708,11 @@
     if (!e || e.isComposing || e.defaultPrevented) return;
     if (isRecordingChordTarget2(e)) return;
     if (!isFindEvent(e)) return;
-    const input = capturingSearchInput();
-    if (!input) return;
+    const input2 = capturingSearchInput();
+    if (!input2) return;
     e.preventDefault();
     e.stopPropagation();
-    focusSurfaceSearch(input);
+    focusSurfaceSearch(input2);
   }
   if (typeof document !== "undefined") {
     document.addEventListener("keydown", onCapturingFind, true);
@@ -10098,6 +13796,17 @@
       if (dialogEl.open) dialogEl.close();
     }, ms);
   }
+  function applyDialogBodyContent(body, opts) {
+    const c = opts.content;
+    const isNode = c != null && typeof c === "object" && typeof c.nodeType === "number";
+    if (isNode) {
+      body.appendChild(c);
+    } else if (opts.htmlContent != null) {
+      body.innerHTML = String(opts.htmlContent);
+    } else if (c != null) {
+      body.textContent = String(c);
+    }
+  }
   function createDialog(opts) {
     opts = opts || {};
     const className = opts.className || "";
@@ -10146,9 +13855,7 @@
     }
     const body = document.createElement("div");
     body.className = "bj-dialog__body";
-    const c = opts.content;
-    if (c instanceof Node) body.appendChild(c);
-    else body.innerHTML = c != null ? String(c) : "";
+    applyDialogBodyContent(body, opts);
     card.appendChild(body);
     dialogEl.appendChild(card);
     document.body.appendChild(dialogEl);
@@ -10160,15 +13867,15 @@
       requestDialogClose(dlg);
     });
   }
-  function setDialogFooterError(root, message) {
-    if (!root) return;
-    const foot = root.querySelector("[data-dialog-foot]") || (root.matches && root.matches("[data-dialog-foot]") ? root : null);
+  function setDialogFooterError(root2, message2) {
+    if (!root2) return;
+    const foot = root2.querySelector("[data-dialog-foot]") || (root2.matches && root2.matches("[data-dialog-foot]") ? root2 : null);
     if (!foot) return;
     const preview = foot.querySelector("[data-dialog-foot-preview]");
     const warn = foot.querySelector("[data-dialog-foot-warning]");
     if (!preview || !warn) return;
-    if (message) {
-      warn.textContent = message;
+    if (message2) {
+      warn.textContent = message2;
       warn.hidden = false;
       preview.hidden = true;
     } else {
@@ -10194,27 +13901,27 @@
   // js/ui/prompt-dialog.mjs
   var CARD_CLASS = "bj-dialog__card bj-prompt-dialog__card";
   var WRAP_CLASS = "bj-prompt-dialog-wrap";
-  function el(tag, className, text) {
+  function el2(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
     if (text != null) node.textContent = text;
     return node;
   }
   function markMono(name) {
-    const span = el("span", "bj-prompt-dialog__mono");
+    const span = el2("span", "bj-prompt-dialog__mono");
     span.textContent = name;
     return span;
   }
   function actionButton(label, action, variant, opts) {
     opts = opts || {};
-    const btn = el("button", "bj-prompt-dialog__btn" + (variant ? ` is-${variant}` : ""));
+    const btn = el2("button", "bj-prompt-dialog__btn" + (variant ? ` is-${variant}` : ""));
     btn.type = "button";
     btn.dataset.action = action;
     if (opts.monoSuffix) {
       if (opts.labelPrefix) {
-        btn.appendChild(el("span", "bj-prompt-dialog__btn-prefix", opts.labelPrefix));
+        btn.appendChild(el2("span", "bj-prompt-dialog__btn-prefix", opts.labelPrefix));
       }
-      const mono = el("span", "bj-prompt-dialog__btn-mono");
+      const mono = el2("span", "bj-prompt-dialog__btn-mono");
       mono.textContent = opts.monoSuffix;
       btn.appendChild(mono);
     } else {
@@ -10223,7 +13930,7 @@
     return btn;
   }
   function buildActions(buttons, layout) {
-    const actions = el("div", "bj-prompt-dialog__actions");
+    const actions = el2("div", "bj-prompt-dialog__actions");
     if (layout === "row") actions.classList.add("is-row");
     for (const b of buttons) {
       const btnOpts = {};
@@ -10244,28 +13951,28 @@
       return;
     }
     if (opts.step) {
-      shell.appendChild(el("p", "bj-prompt-dialog__step", opts.step));
+      shell.appendChild(el2("p", "bj-prompt-dialog__step", opts.step));
     }
     if (opts.subject) {
-      const subject = el("p", "bj-prompt-dialog__subject");
+      const subject = el2("p", "bj-prompt-dialog__subject");
       subject.appendChild(markMono(opts.subject));
       shell.appendChild(subject);
     }
     if (opts.message != null) {
-      const intro = el("p", "bj-prompt-dialog__message");
+      const intro = el2("p", "bj-prompt-dialog__message");
       if (opts.message instanceof Node) intro.appendChild(opts.message);
       else intro.textContent = String(opts.message);
       shell.appendChild(intro);
     }
     if (opts.note) {
-      shell.appendChild(el("p", "bj-prompt-dialog__note", opts.note));
+      shell.appendChild(el2("p", "bj-prompt-dialog__note", opts.note));
     }
   }
-  function open3(opts) {
+  function open4(opts) {
     opts = opts || {};
     return new Promise((resolve2) => {
       let settled = false;
-      const shell = el("div", "bj-prompt-dialog");
+      const shell = el2("div", "bj-prompt-dialog");
       appendBody(shell, opts);
       const buttons = opts.buttons || [];
       if (buttons.length) {
@@ -10307,13 +14014,13 @@
   var PromptDialog = {
     CARD_CLASS,
     WRAP_CLASS,
-    el,
+    el: el2,
     markMono,
     actionButton,
     buildActions,
     buildRowActions,
     appendBody,
-    open: open3
+    open: open4
   };
   var g9 = typeof window !== "undefined" ? window : globalThis;
   g9.PromptDialog = PromptDialog;
@@ -10329,7 +14036,7 @@
   function confirm(messageOrOpts, maybeOpts) {
     const opts = normalizeOpts(messageOrOpts, maybeOpts);
     const danger = opts.danger !== false;
-    return open3({
+    return open4({
       ariaLabel: opts.ariaLabel || "Confirm",
       subject: opts.subject,
       message: opts.message,
@@ -10375,30 +14082,30 @@
     if (name.indexOf(".") === -1) name += ".bel";
     return name;
   }
-  function open4(opts) {
+  function open5(opts) {
     opts = opts || {};
-    const { el: el5, buildRowActions: buildRowActions2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
-    const normalize = typeof opts.normalize === "function" ? opts.normalize : defaultNormalize;
+    const { el: el6, buildRowActions: buildRowActions2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
+    const normalize2 = typeof opts.normalize === "function" ? opts.normalize : defaultNormalize;
     const validate = typeof opts.validate === "function" ? opts.validate : defaultValidate;
     const initialValue = opts.value != null ? String(opts.value) : "";
     const sel = selectionForValue(initialValue, opts.selection);
     let settled = false;
     return new Promise((resolve2) => {
-      const wrap = el5("div", "bj-name-prompt");
-      const leadEl = opts.message ? el5("p", "bj-name-prompt__message", opts.message) : null;
-      const input = el5("input", "bj-name-prompt__input");
-      input.type = "text";
-      input.value = initialValue;
-      input.spellcheck = false;
-      input.autocomplete = "off";
-      if (opts.mono) input.classList.add("is-mono");
-      if (opts.placeholder) input.placeholder = opts.placeholder;
-      wrap.appendChild(input);
-      const errorEl = el5("p", "bj-name-prompt__error");
+      const wrap = el6("div", "bj-name-prompt");
+      const leadEl = opts.message ? el6("p", "bj-name-prompt__message", opts.message) : null;
+      const input2 = el6("input", "bj-name-prompt__input");
+      input2.type = "text";
+      input2.value = initialValue;
+      input2.spellcheck = false;
+      input2.autocomplete = "off";
+      if (opts.mono) input2.classList.add("is-mono");
+      if (opts.placeholder) input2.placeholder = opts.placeholder;
+      wrap.appendChild(input2);
+      const errorEl = el6("p", "bj-name-prompt__error");
       errorEl.hidden = true;
       wrap.appendChild(errorEl);
       if (opts.hint) {
-        const hint = el5("p", "bj-name-prompt__hint");
+        const hint = el6("p", "bj-name-prompt__hint");
         hint.textContent = opts.hint;
         wrap.appendChild(hint);
       }
@@ -10427,17 +14134,17 @@
         if (msg) {
           errorEl.textContent = msg;
           errorEl.hidden = false;
-          input.classList.add("is-invalid");
+          input2.classList.add("is-invalid");
           confirmBtn.disabled = true;
         } else {
           errorEl.textContent = "";
           errorEl.hidden = true;
-          input.classList.remove("is-invalid");
+          input2.classList.remove("is-invalid");
           confirmBtn.disabled = false;
         }
       }
       function currentNormalized() {
-        return normalize(input.value);
+        return normalize2(input2.value);
       }
       function tryConfirm() {
         const name = currentNormalized();
@@ -10448,10 +14155,10 @@
         }
         finish(name);
       }
-      input.addEventListener("input", () => {
+      input2.addEventListener("input", () => {
         showError(validate(currentNormalized()));
       });
-      input.addEventListener("keydown", (e) => {
+      input2.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
           tryConfirm();
@@ -10473,14 +14180,14 @@
       });
       openDialog(dialogEl);
       requestAnimationFrame(() => {
-        input.focus();
-        input.setSelectionRange(sel.start, sel.end);
+        input2.focus();
+        input2.setSelectionRange(sel.start, sel.end);
         showError(validate(currentNormalized()));
       });
     });
   }
   var NamePrompt2 = {
-    open: open4,
+    open: open5,
     normalizeBelFileName,
     defaultNormalize,
     defaultValidate,
@@ -10501,17 +14208,17 @@
     return slash === -1 ? path : path.slice(slash + 1);
   }
   function buildConflictBody(conflict, total, index) {
-    const { el: el5, markMono: markMono2 } = PromptDialog;
-    const wrap = el5("div", "bj-conflict-dialog__panel");
+    const { el: el6, markMono: markMono2 } = PromptDialog;
+    const wrap = el6("div", "bj-conflict-dialog__panel");
     if (total > 1) {
-      wrap.appendChild(el5("p", "bj-prompt-dialog__step", `${index + 1} of ${total}`));
+      wrap.appendChild(el6("p", "bj-prompt-dialog__step", `${index + 1} of ${total}`));
     }
-    const subject = el5("p", "bj-prompt-dialog__subject");
+    const subject = el6("p", "bj-prompt-dialog__subject");
     subject.appendChild(markMono2(conflict.label));
     wrap.appendChild(subject);
-    const message = el5("p", "bj-prompt-dialog__message");
-    message.textContent = conflict.kind === "folder" ? "A folder with this name is already in the project." : "A file with this name is already in the project.";
-    wrap.appendChild(message);
+    const message2 = el6("p", "bj-prompt-dialog__message");
+    message2.textContent = conflict.kind === "folder" ? "A folder with this name is already in the project." : "A file with this name is already in the project.";
+    wrap.appendChild(message2);
     return wrap;
   }
   function buildActions2(conflict, total) {
@@ -10539,12 +14246,12 @@
   function resolveConflicts(conflicts, options) {
     options = options || {};
     if (!conflicts || !conflicts.length) return Promise.resolve([]);
-    const { el: el5, WRAP_CLASS: WRAP_CLASS2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
+    const { el: el6, WRAP_CLASS: WRAP_CLASS2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
     return new Promise((resolve2) => {
       let index = 0;
       const resolutions = [];
       let settled = false;
-      const shell = el5("div", "bj-prompt-dialog");
+      const shell = el6("div", "bj-prompt-dialog");
       const dialogEl = createDialog({
         ariaLabel: "Name conflict",
         content: shell,
@@ -10601,7 +14308,7 @@
   g12.BelJarConflictDialog = g12.ConflictDialog;
 
   // js/ui/name-conflicts.mjs
-  var global11 = globalThis;
+  var global17 = globalThis;
   function parentDir(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
@@ -10973,12 +14680,12 @@
     }
     var segs = Object.keys(roots);
     if (segs.length !== 1) return [];
-    var root = segs[0];
+    var root2 = segs[0];
     for (var j = 0; j < incomingEntries.length; j++) {
       var name = incomingEntries[j].name;
-      if (name !== root && name.indexOf(root + "/") !== 0) return [];
+      if (name !== root2 && name.indexOf(root2 + "/") !== 0) return [];
     }
-    return [root];
+    return [root2];
   }
   function detectMoveConflicts(existingFiles, moves, opts) {
     opts = opts || {};
@@ -11000,9 +14707,9 @@
         var related = moves.filter(function(m) {
           return m.from === prefix || m.from.indexOf(prefix + "/") === 0;
         });
-        var root = folderMoveBatchRoot(related, existingFiles);
-        if (root) {
-          folderRoot = root;
+        var root2 = folderMoveBatchRoot(related, existingFiles);
+        if (root2) {
+          folderRoot = root2;
           break;
         }
       }
@@ -11262,7 +14969,7 @@
     }
     return plan;
   }
-  global11.NameConflicts = {
+  global17.NameConflicts = {
     parentDir,
     baseName,
     joinPath: joinPath2,
@@ -11284,10 +14991,10 @@
     detectMoveConflicts,
     applyMoveResolutions
   };
-  global11.BelJarNameConflicts = global11.NameConflicts;
+  global17.BelJarNameConflicts = global17.NameConflicts;
 
   // js/ui/download-zip.mjs
-  var global12 = globalThis;
+  var global18 = globalThis;
   var CRC_TABLE = (function() {
     var table = new Uint32Array(256);
     for (var n = 0; n < 256; n++) {
@@ -11415,26 +15122,25 @@
   function downloadZip(entries, fileName) {
     triggerDownload(buildZip(entries), fileName || "download.zip");
   }
-  global12.DownloadZip = {
+  global18.DownloadZip = {
     buildZip,
     triggerDownload,
     downloadTextFile,
     downloadZip
   };
-  global12.BelJarDownloadZip = global12.DownloadZip;
+  global18.BelJarDownloadZip = global18.DownloadZip;
 
   // js/ui/tree-dnd.mjs
-  var global13 = globalThis;
+  var global19 = globalThis;
   var THRESHOLD = 4;
   var AUTO_EXPAND_MS = 600;
-  function attach2(container, opts) {
+  function attach3(container, opts) {
     if (!container || !opts) return function() {
     };
     var drag = null;
     var ghost = null;
     var expandTimer = null;
     var lastHighlightEls = [];
-    var lastTarget = null;
     function clearExpandTimer() {
       if (expandTimer) {
         clearTimeout(expandTimer);
@@ -11446,7 +15152,6 @@
         lastHighlightEls[i].classList.remove("is-drop-target");
       }
       lastHighlightEls = [];
-      lastTarget = null;
     }
     function cleanup() {
       clearExpandTimer();
@@ -11489,7 +15194,6 @@
         if (els[i]) els[i].classList.add("is-drop-target");
       }
       lastHighlightEls = els.filter(Boolean);
-      lastTarget = resolved.target;
       clearExpandTimer();
       if (resolved.target.kind === "folder" && typeof opts.onAutoExpand === "function") {
         expandTimer = setTimeout(function() {
@@ -11587,108 +15291,108 @@
       container.removeEventListener("pointercancel", onPointerUp);
     };
   }
-  global13.TreeDnD = { attach: attach2 };
-  global13.BelJarTreeDnD = global13.TreeDnD;
+  global19.TreeDnD = { attach: attach3 };
+  global19.BelJarTreeDnD = global19.TreeDnD;
 
   // js/ui/header-search.mjs
-  var global14 = globalThis;
-  function init5(opts) {
+  var global20 = globalThis;
+  function init7(opts) {
     opts = opts || {};
-    var host = opts.host;
-    var input = opts.input;
-    if (!host || !input) return null;
-    var header = opts.header || host.closest(".panel-header, .inspector-header-bar");
+    var host2 = opts.host;
+    var input2 = opts.input;
+    if (!host2 || !input2) return null;
+    var header = opts.header || host2.closest(".panel-header, .inspector-header-bar");
     var openClass = opts.openClass || "is-search-open";
     var blurDelay = opts.blurDelay != null ? opts.blurDelay : 140;
-    var isOpen3 = false;
+    var isOpen4 = false;
     function emit2(name, arg) {
       if (typeof opts[name] === "function") opts[name](arg);
     }
-    function open9() {
-      if (isOpen3) return;
-      isOpen3 = true;
-      host.classList.add("is-open");
+    function open10() {
+      if (isOpen4) return;
+      isOpen4 = true;
+      host2.classList.add("is-open");
       if (header) header.classList.add(openClass);
-      input.setAttribute("aria-expanded", "true");
+      input2.setAttribute("aria-expanded", "true");
       requestAnimationFrame(function() {
-        if (isOpen3) input.focus();
+        if (isOpen4) input2.focus();
       });
       emit2("onOpen");
     }
-    function close3(force) {
-      if (!isOpen3) return;
-      if (!force && input.value) return;
-      isOpen3 = false;
-      host.classList.remove("is-open");
+    function close4(force) {
+      if (!isOpen4) return;
+      if (!force && input2.value) return;
+      isOpen4 = false;
+      host2.classList.remove("is-open");
       if (header) header.classList.remove(openClass);
-      input.setAttribute("aria-expanded", "false");
-      var had = input.value;
-      input.value = "";
-      input.blur();
+      input2.setAttribute("aria-expanded", "false");
+      var had = input2.value;
+      input2.value = "";
+      input2.blur();
       if (had) emit2("onInput", "");
       emit2("onClose");
     }
-    function toggle3() {
-      if (isOpen3) close3(true);
-      else open9();
+    function toggle4() {
+      if (isOpen4) close4(true);
+      else open10();
     }
-    host.addEventListener("mousedown", function(e) {
-      if (e.target === input) return;
+    host2.addEventListener("mousedown", function(e) {
+      if (e.target === input2) return;
       e.preventDefault();
-      if (isOpen3) input.focus();
-      else open9();
+      if (isOpen4) input2.focus();
+      else open10();
     });
-    input.addEventListener("focus", open9);
-    input.addEventListener("input", function() {
-      emit2("onInput", input.value);
+    input2.addEventListener("focus", open10);
+    input2.addEventListener("input", function() {
+      emit2("onInput", input2.value);
     });
-    input.addEventListener("keydown", function(e) {
+    input2.addEventListener("keydown", function(e) {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (input.value) {
-          input.value = "";
+        if (input2.value) {
+          input2.value = "";
           emit2("onInput", "");
         } else {
-          close3(true);
+          close4(true);
         }
         emit2("onEscape", e);
         return;
       }
       emit2("onKeydown", e);
     });
-    input.addEventListener("blur", function() {
+    input2.addEventListener("blur", function() {
       setTimeout(function() {
-        if (host.contains(document.activeElement)) return;
+        if (host2.contains(document.activeElement)) return;
         if (typeof opts.keepOpenFor === "function" && opts.keepOpenFor(document.activeElement)) return;
-        close3(false);
+        close4(false);
       }, blurDelay);
     });
     if (typeof opts.keepOpenFor === "function") {
       document.addEventListener("pointerdown", function(e) {
-        if (!isOpen3) return;
-        if (host.contains(e.target)) return;
+        if (!isOpen4) return;
+        if (host2.contains(e.target)) return;
         if (opts.keepOpenFor(e.target)) return;
-        close3(true);
+        close4(true);
       }, true);
     }
     return {
-      open: open9,
-      close: close3,
-      toggle: toggle3,
+      open: open10,
+      close: close4,
+      toggle: toggle4,
       isOpen: function() {
-        return isOpen3;
+        return isOpen4;
       },
-      input,
-      host
+      input: input2,
+      host: host2
     };
   }
-  global14.HeaderSearch = { init: init5 };
-  global14.BelJarHeaderSearch = global14.HeaderSearch;
+  global20.HeaderSearch = { init: init7 };
+  global20.BelJarHeaderSearch = global20.HeaderSearch;
 
   // js/explorer/explorer-inline-name.mjs
-  var global15 = globalThis;
+  var global21 = globalThis;
   var NC = function() {
-    return global15.NameConflicts;
+    return global21.NameConflicts;
   };
   function lastSegment(path) {
     var s = String(path || "");
@@ -11798,7 +15502,7 @@
     if (target.kind === "file") return target.parentDir != null ? target.parentDir : "";
     return "";
   }
-  global15.ExplorerInlineName = {
+  global21.ExplorerInlineName = {
     lastSegment,
     parentDir: parentDir2,
     joinPath: joinPath3,
@@ -11812,13 +15516,13 @@
     resolveCreateParentFromRow,
     resolveCreateParentDir
   };
-  global15.BelJarExplorerInlineName = global15.ExplorerInlineName;
+  global21.BelJarExplorerInlineName = global21.ExplorerInlineName;
 
   // js/explorer/explorer-tree.mjs
-  var global16 = globalThis;
+  var global22 = globalThis;
   var EXPLORER_CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   function explorerFileBucket2(name) {
-    var PS = global16.ProjectSource;
+    var PS = global22.ProjectSource;
     if (PS && PS.isCfgPath(name)) return 0;
     if (PS && PS.isSignaturePath(name)) return 1;
     var low = String(name).toLowerCase();
@@ -11866,11 +15570,11 @@
     });
   }
   function buildExplorerModel(files, emptyFolders, layoutForDir) {
-    var root = { folders: /* @__PURE__ */ new Map(), files: [] };
+    var root2 = { folders: /* @__PURE__ */ new Map(), files: [] };
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
       var parts = file.name.split("/");
-      var node = root;
+      var node = root2;
       var path = "";
       for (var j = 0; j < parts.length - 1; j++) {
         path = path ? path + "/" + parts[j] : parts[j];
@@ -11886,7 +15590,7 @@
       var folderPath = empty[k];
       if (!folderPath) continue;
       var segs = folderPath.split("/");
-      var node2 = root;
+      var node2 = root2;
       var path2 = "";
       for (var m = 0; m < segs.length; m++) {
         path2 = path2 ? path2 + "/" + segs[m] : segs[m];
@@ -11896,18 +15600,18 @@
         node2 = node2.folders.get(segs[m]);
       }
     }
-    sortExplorerNode(root, layoutForDir, "");
-    return root;
+    sortExplorerNode(root2, layoutForDir, "");
+    return root2;
   }
   function resolveCreateParentFromRow2(row) {
-    var IL = global16.ExplorerInlineName;
+    var IL = global22.ExplorerInlineName;
     if (IL && IL.resolveCreateParentFromRow) return IL.resolveCreateParentFromRow(row);
     if (!row) return "";
     if (row.hasAttribute("data-folder-path")) return row.getAttribute("data-folder-path") || "";
     return row.getAttribute("data-drop-zone") || "";
   }
   function resolveCreateParentDir2(target) {
-    var IL = global16.ExplorerInlineName;
+    var IL = global22.ExplorerInlineName;
     if (IL && IL.resolveCreateParentDir) return IL.resolveCreateParentDir(target);
     if (!target) return "";
     if (target.kind === "folder") return target.folderPath || "";
@@ -12149,16 +15853,16 @@
     };
   }
   function loadCollapsed(projectName) {
-    var P3 = global16.Persist;
+    var P3 = global22.Persist;
     if (!P3) return /* @__PURE__ */ new Set();
     return new Set(P3.getExplorerFold(projectName));
   }
   function saveCollapsed(projectName, collapsed) {
-    var P3 = global16.Persist;
+    var P3 = global22.Persist;
     if (!P3) return;
     P3.setExplorerFold(projectName, [].slice.call(collapsed));
   }
-  function init6(opts) {
+  function init8(opts) {
     opts = opts || {};
     var container = opts.container;
     if (!container) return null;
@@ -12193,13 +15897,13 @@
       selectedFolders.clear();
       inlineSession = session;
       if (session.parentDir) expandParentChain(session.parentDir);
-      refresh3();
+      refresh4();
     }
     function cancelInlineName() {
       if (!inlineSession) return;
       if (typeof opts.onInlineCancel === "function") opts.onInlineCancel(inlineSession);
       clearInlineSession();
-      refresh3();
+      refresh4();
     }
     function commitInlineName(rawName) {
       if (!inlineSession) return false;
@@ -12207,7 +15911,7 @@
       var ok = opts.onInlineCommit(inlineSession, rawName);
       if (ok) {
         clearInlineSession();
-        refresh3();
+        refresh4();
       } else if (inlineInputEl) {
         inlineInputEl.classList.add("is-invalid");
         inlineInputEl.focus();
@@ -12219,11 +15923,11 @@
       return ok;
     }
     function mountInlineInput(row, initialValue) {
-      var input = document.createElement("input");
-      input.type = "text";
-      input.className = "explorer-inline-name";
-      input.value = initialValue;
-      input.spellcheck = false;
+      var input2 = document.createElement("input");
+      input2.type = "text";
+      input2.className = "explorer-inline-name";
+      input2.value = initialValue;
+      input2.spellcheck = false;
       row.classList.add("is-renaming");
       row.removeAttribute("data-draggable");
       var settled = false;
@@ -12233,12 +15937,12 @@
         settled = true;
         cancelInlineName();
       }
-      input.addEventListener("keydown", function(e) {
+      input2.addEventListener("keydown", function(e) {
         e.stopPropagation();
         if (e.key === "Enter") {
           e.preventDefault();
           suppressBlurDismiss = true;
-          if (commitInlineName(input.value)) {
+          if (commitInlineName(input2.value)) {
             settled = true;
           } else {
             setTimeout(function() {
@@ -12250,20 +15954,20 @@
           dismiss4();
         }
       });
-      input.addEventListener("click", function(e) {
+      input2.addEventListener("click", function(e) {
         e.stopPropagation();
       });
-      input.addEventListener("pointerdown", function(e) {
+      input2.addEventListener("pointerdown", function(e) {
         e.stopPropagation();
       });
-      input.addEventListener("blur", function() {
+      input2.addEventListener("blur", function() {
         if (settled) return;
         setTimeout(function() {
           if (!settled && !suppressBlurDismiss) dismiss4();
         }, 0);
       });
-      inlineInputEl = input;
-      return input;
+      inlineInputEl = input2;
+      return input2;
     }
     function isEditingFolder(folderPath) {
       return inlineSession && inlineSession.kind === "folder" && inlineSession.folderPath === folderPath;
@@ -12276,8 +15980,8 @@
       saveTimer3 = setTimeout(function() {
         saveTimer3 = null;
         saveCollapsed(opts.getProjectName ? opts.getProjectName() : "Untitled Project", collapsed);
-        if (global16.WorkspaceState && global16.WorkspaceState.scheduleSave) {
-          global16.WorkspaceState.scheduleSave();
+        if (global22.WorkspaceState && global22.WorkspaceState.scheduleSave) {
+          global22.WorkspaceState.scheduleSave();
         }
       }, 120);
     }
@@ -12287,7 +15991,7 @@
       else if (collapsed.has(path)) collapsed.delete(path);
       else collapsed.add(path);
       scheduleSave3();
-      refresh3();
+      refresh4();
     }
     function collapseSubtree(folderPath) {
       var files = opts.listFiles ? opts.listFiles() : [];
@@ -12303,7 +16007,7 @@
         });
       }
       scheduleSave3();
-      refresh3();
+      refresh4();
     }
     function expandSubtree(folderPath) {
       if (!folderPath) {
@@ -12316,7 +16020,7 @@
         });
       }
       scheduleSave3();
-      refresh3();
+      refresh4();
     }
     function indent(depth) {
       return 0.6 + depth * 0.75 + "rem";
@@ -12496,7 +16200,7 @@
             endKey: key
           };
           scheduleSave3();
-          refresh3();
+          refresh4();
           return;
         }
         applyShiftSelect(anchorKey, key);
@@ -12563,8 +16267,8 @@
         clearSelection();
       }
     }
-    function endsWithSeparator(items2) {
-      return items2.length && items2[items2.length - 1].type === "separator";
+    function endsWithSeparator(items3) {
+      return items3.length && items3[items3.length - 1].type === "separator";
     }
     function withLeadingItems(extra, base) {
       if (extra && extra.length) {
@@ -12686,7 +16390,7 @@
         treeEl.appendChild(btn);
       }
     }
-    function refresh3() {
+    function refresh4() {
       if (!opts.listFiles) return;
       var files = opts.listFiles();
       pruneSelection(files);
@@ -12730,8 +16434,8 @@
       clearSelection();
     }
     container.addEventListener("click", onBackgroundClick);
-    if (typeof global16.Menu !== "undefined") {
-      global16.Menu.bindContextMenu(container, function(e) {
+    if (typeof global22.Menu !== "undefined") {
+      global22.Menu.bindContextMenu(container, function(e) {
         var fileEl = e.target.closest("[data-file-id]");
         var folderEl = e.target.closest("[data-folder-path]");
         var hasSelection = selectedFiles.size + selectedFolders.size > 0;
@@ -12790,8 +16494,8 @@
       }
       return null;
     }
-    if (typeof global16.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
-      dndDetach = global16.TreeDnD.attach(container, {
+    if (typeof global22.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
+      dndDetach = global22.TreeDnD.attach(container, {
         getDragPayload: buildDragPayload,
         resolveDrop,
         canDrop: opts.canDrop,
@@ -12804,19 +16508,19 @@
         }
       });
     }
-    function applyFileDiagTip(el5, fileId, fileName, diag) {
-      if (!el5 || !diag) return;
+    function applyFileDiagTip(el6, fileId, fileName, diag) {
+      if (!el6 || !diag) return;
       if (typeof opts.bindFileDiagTip === "function") {
-        opts.bindFileDiagTip(el5, fileId, fileName, diag);
+        opts.bindFileDiagTip(el6, fileId, fileName, diag);
       } else if (typeof opts.applyTip === "function") {
-        opts.applyTip(el5, diag === "error" ? "Has errors" : "Has warnings");
+        opts.applyTip(el6, diag === "error" ? "Has errors" : "Has warnings");
       }
     }
-    function clearFileDiagTip(el5) {
-      if (!el5) return;
-      el5.removeAttribute("data-tooltip-errors");
-      el5.removeAttribute("data-tooltip-head");
-      el5.removeAttribute("data-tooltip");
+    function clearFileDiagTip(el6) {
+      if (!el6) return;
+      el6.removeAttribute("data-tooltip-errors");
+      el6.removeAttribute("data-tooltip-head");
+      el6.removeAttribute("data-tooltip");
     }
     function applyRowDiag(row, fid, fname, diag) {
       var dot = row.querySelector(".explorer-file-diag");
@@ -12865,7 +16569,7 @@
       refreshDiags();
     }
     return {
-      refresh: refresh3,
+      refresh: refresh4,
       refreshDiags,
       setFileDiag,
       refreshActiveAndDiags,
@@ -12911,7 +16615,7 @@
           expandParentChain(parent);
           scheduleSave3();
         }
-        refresh3();
+        refresh4();
         if (sidebar.explorer.scrollActiveIntoView) {
           requestAnimationFrame(function() {
             var row = container.querySelector('.explorer-file-item[data-file-id="' + activeId2 + '"]');
@@ -12929,7 +16633,7 @@
       }
     };
   }
-  global16.Explorer = {
+  global22.Explorer = {
     buildExplorerModel,
     collectFolderPaths,
     collectSubtreeFolderPaths,
@@ -12942,12 +16646,12 @@
     toggleCtrlSelection,
     selectionDragCapability,
     sameParentFileIdsForDrag,
-    init: init6
+    init: init8
   };
-  global16.BelJarExplorer = global16.Explorer;
+  global22.BelJarExplorer = global22.Explorer;
 
   // js/library/library-suites.mjs
-  var global17 = globalThis;
+  var global23 = globalThis;
   function dirOf3(path) {
     var i = String(path || "").lastIndexOf("/");
     return i === -1 ? "" : path.slice(0, i);
@@ -12994,11 +16698,11 @@
     });
     return out;
   }
-  global17.LibrarySuites = { listActiveSuites };
-  global17.BelJarLibrarySuites = global17.LibrarySuites;
+  global23.LibrarySuites = { listActiveSuites };
+  global23.BelJarLibrarySuites = global23.LibrarySuites;
 
   // js/library/library-search.mjs
-  var global18 = globalThis;
+  var global24 = globalThis;
   var SEARCH_ICON2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
   function normalizeQuery(q) {
     return String(q || "").trim().toLowerCase();
@@ -13012,8 +16716,8 @@
       entry.sectionLabel || ""
     ].join(" ").toLowerCase();
   }
-  function snippetFromContent(text, query) {
-    var q = normalizeQuery(query);
+  function snippetFromContent(text, query2) {
+    var q = normalizeQuery(query2);
     if (!q || text == null) return null;
     var src = String(text);
     var lower = src.toLowerCase();
@@ -13042,9 +16746,9 @@
     if (hit.metaMatch) return 2;
     return 3;
   }
-  function searchEntries(entries, query, fetchContent, opts) {
+  function searchEntries(entries, query2, fetchContent, opts) {
     opts = opts || {};
-    var q = normalizeQuery(query);
+    var q = normalizeQuery(query2);
     if (!q) return Promise.resolve([]);
     var limit = opts.limit;
     if (limit == null) limit = 24;
@@ -13154,7 +16858,7 @@
       renderHit(container, hits[i], layout, onSelect);
     }
   }
-  global18.LibrarySearch = {
+  global24.LibrarySearch = {
     SEARCH_ICON: SEARCH_ICON2,
     normalizeQuery,
     metadataHay,
@@ -13162,10 +16866,10 @@
     searchEntries,
     renderResults: renderResults2
   };
-  global18.BelJarLibrarySearch = global18.LibrarySearch;
+  global24.BelJarLibrarySearch = global24.LibrarySearch;
 
   // js/explorer/explorer-search.mjs
-  var global19 = globalThis;
+  var global25 = globalThis;
   function baseName2(name) {
     var i = String(name).lastIndexOf("/");
     return i === -1 ? String(name) : String(name).slice(i + 1);
@@ -13179,14 +16883,14 @@
     var d = b.lastIndexOf(".");
     return d === -1 ? "" : b.slice(d + 1).toLowerCase();
   }
-  function init7(opts) {
+  function init9(opts) {
     opts = opts || {};
     var wrap = opts.wrap;
-    var input = opts.input;
+    var input2 = opts.input;
     var ac = opts.ac;
-    if (!wrap || !input || !ac) return null;
-    var LS = global19.LibrarySearch;
-    var HS = global19.HeaderSearch;
+    if (!wrap || !input2 || !ac) return null;
+    var LS = global25.LibrarySearch;
+    var HS = global25.HeaderSearch;
     var hits = [];
     var activeIndex3 = -1;
     var token = 0;
@@ -13269,7 +16973,7 @@
     }
     function renderAc() {
       ac.textContent = "";
-      var q = input.value.trim();
+      var q = input2.value.trim();
       if (!hits.length) {
         if (!q) {
           clearAc();
@@ -13300,8 +17004,8 @@
       if (controller) controller.close(true);
       clearAc();
     }
-    function run() {
-      var q = LS ? LS.normalizeQuery(input.value) : String(input.value || "").trim().toLowerCase();
+    function run3() {
+      var q = LS ? LS.normalizeQuery(input2.value) : String(input2.value || "").trim().toLowerCase();
       if (!q) {
         clearAc();
         return;
@@ -13325,18 +17029,18 @@
         renderAc();
       });
     }
-    function schedule() {
+    function schedule2() {
       if (timer2) clearTimeout(timer2);
-      timer2 = setTimeout(run, 140);
+      timer2 = setTimeout(run3, 140);
     }
     controller = HS ? HS.init({
       host: wrap,
-      input,
+      input: input2,
       header: opts.header || wrap.closest(".panel-header"),
-      keepOpenFor: function(el5) {
-        return ac.contains(el5);
+      keepOpenFor: function(el6) {
+        return ac.contains(el6);
       },
-      onInput: schedule,
+      onInput: schedule2,
       onClose: clearAc,
       onKeydown: function(e) {
         if (!hits.length) return;
@@ -13352,7 +17056,7 @@
         }
       }
     }) : null;
-    if (!controller) input.addEventListener("input", schedule);
+    if (!controller) input2.addEventListener("input", schedule2);
     return {
       open: function() {
         if (controller) controller.open();
@@ -13363,16 +17067,16 @@
       }
     };
   }
-  global19.ExplorerSearch = { init: init7 };
-  global19.BelJarExplorerSearch = global19.ExplorerSearch;
+  global25.ExplorerSearch = { init: init9 };
+  global25.BelJarExplorerSearch = global25.ExplorerSearch;
 
   // js/library/library-preview.mjs
-  var global20 = globalThis;
+  var global26 = globalThis;
   var CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_INSERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
   var activeDialog = null;
-  function actionBtn(applyTip, className, label, svg, onClick) {
+  function actionBtn(applyTip, className, label, svg, onClick2) {
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "library-action-btn" + (className ? " " + className : "");
@@ -13381,7 +17085,7 @@
     applyTip(btn, label);
     btn.addEventListener("click", function(e) {
       e.stopPropagation();
-      onClick(btn);
+      onClick2(btn);
     });
     return btn;
   }
@@ -13397,11 +17101,11 @@
     }
     return null;
   }
-  function folderContainsFolder(root, target) {
-    if (!root || !target || root === target) return true;
-    if (!root.children) return false;
-    for (var i = 0; i < root.children.length; i++) {
-      var child = root.children[i];
+  function folderContainsFolder(root2, target) {
+    if (!root2 || !target || root2 === target) return true;
+    if (!root2.children) return false;
+    for (var i = 0; i < root2.children.length; i++) {
+      var child = root2.children[i];
       if (child.type === "folder" && folderContainsFolder(child, target)) return true;
     }
     return false;
@@ -13430,8 +17134,8 @@
       return;
     }
     codeEl.className = "library-preview__code-source bel-hl-source" + (ext === "elf" ? " bel-hl-source--elf" : "");
-    if (global20.BelEditor && typeof global20.BelEditor.renderSourceInto === "function") {
-      global20.BelEditor.renderSourceInto(codeEl, text, ext);
+    if (global26.BelEditor && typeof global26.BelEditor.renderSourceInto === "function") {
+      global26.BelEditor.renderSourceInto(codeEl, text, ext);
       return;
     }
     codeEl.textContent = text;
@@ -13449,7 +17153,7 @@
     return "";
   }
   function suiteByFileForFolderChildren(children, cfgTextByLabel) {
-    var SL = global20.ExplorerSuiteLayout;
+    var SL = global26.ExplorerSuiteLayout;
     if (!SL || typeof SL.computeDirLayout !== "function") return {};
     var fileChildren = [];
     var activeCfgs = [];
@@ -13475,11 +17179,11 @@
     };
     return SL.computeDirLayout(fileChildren, activeCfgs, null, fileChildren, getText).suiteByFile;
   }
-  function open5(opts) {
+  function open6(opts) {
     opts = opts || {};
-    if (!opts.scopeFolder || typeof global20.Dialog === "undefined") return;
+    if (!opts.scopeFolder || typeof global26.Dialog === "undefined") return;
     if (activeDialog && activeDialog.open) {
-      global20.Dialog.requestDialogClose(activeDialog);
+      global26.Dialog.requestDialogClose(activeDialog);
       activeDialog = null;
     }
     var scopeFolder = opts.scopeFolder;
@@ -13494,7 +17198,7 @@
     var fileIndex = /* @__PURE__ */ Object.create(null);
     var searchFiles = [];
     var searchToken = 0;
-    var LS = global20.LibrarySearch;
+    var LS = global26.LibrarySearch;
     var treeRows = [];
     var selectedId = null;
     var loadToken = 0;
@@ -13936,7 +17640,7 @@
       }
     }
     treePane.addEventListener("keydown", handleTreeKeydown);
-    var dialogEl = global20.Dialog.createDialog({
+    var dialogEl = global26.Dialog.createDialog({
       ariaLabel: "Library preview \u2014 " + scopeLabel,
       content: shell,
       className: "bj-library-preview-dialog",
@@ -13951,7 +17655,7 @@
         document.activeElement.blur();
       }
     });
-    global20.Dialog.openDialog(dialogEl);
+    global26.Dialog.openDialog(dialogEl);
     ensureCfgTextsLoaded().then(function() {
       renderTree();
       if (selectedId && fileIndex[selectedId]) {
@@ -13965,16 +17669,16 @@
       });
     });
   }
-  function close2() {
-    if (activeDialog && global20.Dialog) {
-      global20.Dialog.requestDialogClose(activeDialog);
+  function close3() {
+    if (activeDialog && global26.Dialog) {
+      global26.Dialog.requestDialogClose(activeDialog);
     }
   }
-  global20.LibraryPreview = { open: open5, close: close2 };
-  global20.BelJarLibraryPreview = global20.LibraryPreview;
+  global26.LibraryPreview = { open: open6, close: close3 };
+  global26.BelJarLibraryPreview = global26.LibraryPreview;
 
   // js/library/library-panel.mjs
-  var global21 = globalThis;
+  var global27 = globalThis;
   var CHEVRON_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_PREVIEW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -13986,7 +17690,7 @@
     var i = String(path || "").lastIndexOf("/");
     return i === -1 ? "" : path.slice(0, i);
   }
-  function init8(opts) {
+  function init10(opts) {
     opts = opts || {};
     var container = opts.container;
     var searchEl = opts.searchEl;
@@ -14002,9 +17706,9 @@
     var allFileEntries = [];
     var suitesCache = [];
     var searchWrap = document.getElementById("library-search-wrap");
-    var LS = global21.LibrarySearch;
+    var LS = global27.LibrarySearch;
     function readExpandDefault() {
-      return typeof global21.Persist !== "undefined" && global21.Persist.readStoredLibraryExpandDefault();
+      return typeof global27.Persist !== "undefined" && global27.Persist.readStoredLibraryExpandDefault();
     }
     function isCategoryExpanded(foldKey, forceOpen) {
       if (forceOpen) return true;
@@ -14027,8 +17731,8 @@
       }
       render4();
     }
-    function applyTip(el5, tip) {
-      if (typeof opts.applyTip === "function") opts.applyTip(el5, tip);
+    function applyTip(el6, tip) {
+      if (typeof opts.applyTip === "function") opts.applyTip(el6, tip);
     }
     function toast3(msg, kind) {
       if (typeof opts.showToast === "function") opts.showToast(msg, { kind: kind || "info" });
@@ -14055,8 +17759,8 @@
     function refreshSuites() {
       if (typeof opts.listActiveSuites === "function") {
         suitesCache = opts.listActiveSuites();
-      } else if (global21.LibrarySuites) {
-        suitesCache = global21.LibrarySuites.listActiveSuites({
+      } else if (global27.LibrarySuites) {
+        suitesCache = global27.LibrarySuites.listActiveSuites({
           listFiles: opts.listFiles,
           getActiveCfgForDir: opts.getActiveCfgForDir
         });
@@ -14066,8 +17770,8 @@
       return suitesCache;
     }
     function openLibraryPreview(previewOpts) {
-      if (!global21.LibraryPreview || typeof global21.LibraryPreview.open !== "function") return;
-      global21.LibraryPreview.open({
+      if (!global27.LibraryPreview || typeof global27.LibraryPreview.open !== "function") return;
+      global27.LibraryPreview.open({
         scopeFolder: previewOpts.scopeFolder,
         scopeLabel: previewOpts.scopeLabel,
         initialFile: previewOpts.initialFile || null,
@@ -14153,8 +17857,8 @@
       return d ? d + "/" + name : name;
     }
     function resolveBulkPlan(incoming, existingFiles) {
-      var NC2 = global21.NameConflicts;
-      var CD = global21.ConflictDialog;
+      var NC2 = global27.NameConflicts;
+      var CD = global27.ConflictDialog;
       if (!NC2) {
         return Promise.resolve({ create: incoming.slice(), replace: [], replaceFolder: [] });
       }
@@ -14185,8 +17889,8 @@
       });
     }
     function resolveMagicPlan(relPath, code, existingFiles) {
-      var NC2 = global21.NameConflicts;
-      var CD = global21.ConflictDialog;
+      var NC2 = global27.NameConflicts;
+      var CD = global27.ConflictDialog;
       var incoming = [{ name: relPath, text: code }];
       if (!NC2) {
         return Promise.resolve({ create: [{ name: relPath, text: code }], replace: [], replaceFolder: [] });
@@ -14216,7 +17920,7 @@
       });
     }
     function applyFilePlan(plan, suite) {
-      var P3 = global21.Persist;
+      var P3 = global27.Persist;
       if (!plan) return;
       var targetId = null;
       var targetPath = null;
@@ -14259,8 +17963,8 @@
       }
     }
     function syncActiveCfgsAfterBulk() {
-      var P3 = global21.Persist;
-      var PS = global21.ProjectSource;
+      var P3 = global27.Persist;
+      var PS = global27.ProjectSource;
       if (!P3 || !PS || typeof PS.inferActiveCfgByDir !== "function") return;
       if (typeof P3.backfillActiveCfgByDir !== "function") return;
       var files = P3.listFiles();
@@ -14270,7 +17974,7 @@
       P3.backfillActiveCfgByDir(byDir);
     }
     function applyBulkPlan(plan) {
-      var P3 = global21.Persist;
+      var P3 = global27.Persist;
       if (!plan) return;
       if (typeof opts.applyUploadPlan === "function") {
         var count = 0;
@@ -14412,7 +18116,7 @@
       });
     }
     function runInsertAtRoot(item) {
-      var P3 = global21.Persist;
+      var P3 = global27.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !isLibraryProjectFile(item)) return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -14426,7 +18130,7 @@
       });
     }
     function runInsertUnderCurrentFolder(item) {
-      var P3 = global21.Persist;
+      var P3 = global27.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !canInsertUnderCurrentFolder() || !isLibraryProjectFile(item)) return;
       var dir = activeFileDir();
       if (!dir) return;
@@ -14458,7 +18162,7 @@
       return out;
     }
     function runFolderInsert(folder, mode) {
-      var P3 = global21.Persist;
+      var P3 = global27.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       var rootPrefix = folder.name || "";
       var entries = collectFolderFiles(folder, rootPrefix);
@@ -14503,11 +18207,11 @@
       if (row) row.classList.remove("is-menu-open");
     }
     function openLibraryMenu(anchor, menuOpts) {
-      if (typeof global21.Menu === "undefined") return;
+      if (typeof global27.Menu === "undefined") return;
       var row = libraryMenuRow(anchor);
       if (row) row.classList.add("is-menu-open");
       var userOnClose = menuOpts.onClose;
-      global21.Menu.open({
+      global27.Menu.open({
         anchor: menuOpts.anchor != null ? menuOpts.anchor : anchor,
         side: menuOpts.side,
         align: menuOpts.align,
@@ -14541,11 +18245,11 @@
       });
     }
     function openFileInsertMenu(anchor, item, code) {
-      if (typeof global21.Menu === "undefined") return;
+      if (typeof global27.Menu === "undefined") return;
       refreshSuites();
       var ed = typeof opts.getEditor === "function" ? opts.getEditor() : null;
       var editorReady = !!(ed && hasEditor());
-      var items2 = [
+      var items3 = [
         { type: "section", label: "Create" },
         {
           label: "Insert at root",
@@ -14606,7 +18310,7 @@
       openLibraryMenu(anchor, {
         side: "right",
         align: "start",
-        items: items2
+        items: items3
       });
     }
     function openInsertMenu(anchor, code, item) {
@@ -14615,7 +18319,7 @@
     function runMagic(item, suite) {
       if (!suite) return;
       if (!isSuiteSourceFile(item)) return;
-      var P3 = global21.Persist;
+      var P3 = global27.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -14635,7 +18339,7 @@
         runMagic(item, suitesCache[0]);
         return;
       }
-      if (typeof global21.Menu === "undefined") return;
+      if (typeof global27.Menu === "undefined") return;
       openLibraryMenu(anchor, {
         side: "right",
         align: "start",
@@ -14649,7 +18353,7 @@
         })
       });
     }
-    function actionBtn2(className, label, svg, disabled, onClick) {
+    function actionBtn2(className, label, svg, disabled, onClick2) {
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "library-action-btn" + (className ? " " + className : "");
@@ -14659,7 +18363,7 @@
       if (disabled) btn.disabled = true;
       btn.addEventListener("click", function(e) {
         e.stopPropagation();
-        if (!btn.disabled) onClick(btn);
+        if (!btn.disabled) onClick2(btn);
       });
       return btn;
     }
@@ -14870,8 +18574,8 @@
       });
       if (item.description) {
         applyTip(row, item.description);
-      } else if (typeof global21.Tooltips !== "undefined" && global21.Tooltips.bindOverflow) {
-        global21.Tooltips.bindOverflow(nameEl, function() {
+      } else if (typeof global27.Tooltips !== "undefined" && global27.Tooltips.bindOverflow) {
+        global27.Tooltips.bindOverflow(nameEl, function() {
           return item.label;
         });
       }
@@ -14883,7 +18587,7 @@
       var ctx = { section, pathLabel };
       if (!folderMatches(folder, ctx)) return false;
       var forceOpen = !!filterText;
-      var rendered = false;
+      var rendered2 = false;
       var category = topCategory;
       if (folder.name && !topCategory) {
         category = { folder, label: folder.name };
@@ -14931,25 +18635,25 @@
         count.textContent = String(visibleCount);
         catRow.appendChild(count);
         container.appendChild(catRow);
-        rendered = true;
-        if (isCollapsed) return rendered;
+        rendered2 = true;
+        if (isCollapsed) return rendered2;
         depth += 1;
       }
       for (var i = 0; i < folder.children.length; i++) {
         var child = folder.children[i];
         if (child.type === "folder") {
           if (renderFolder(child, section, depth, pathLabel ? pathLabel + "/" + child.name : child.name, category)) {
-            rendered = true;
+            rendered2 = true;
           }
         } else if (nodeMatchesFile(child, {
           section,
           pathLabel
         })) {
           renderFileItem(child, depth, category);
-          rendered = true;
+          rendered2 = true;
         }
       }
-      return rendered;
+      return rendered2;
     }
     function render4() {
       container.innerHTML = "";
@@ -15002,8 +18706,8 @@
         render4();
       });
     }
-    if (searchEl && searchWrap && global21.HeaderSearch) {
-      global21.HeaderSearch.init({
+    if (searchEl && searchWrap && global27.HeaderSearch) {
+      global27.HeaderSearch.init({
         host: searchWrap,
         input: searchEl,
         onInput: scheduleSearch
@@ -15021,11 +18725,11 @@
       reload: loadManifest
     };
   }
-  global21.Library = { init: init8 };
-  global21.BelJarLibrary = global21.Library;
+  global27.Library = { init: init10 };
+  global27.BelJarLibrary = global27.Library;
 
   // js/ui/toasts.mjs
-  var global22 = globalThis;
+  var global28 = globalThis;
   var DEFAULT_DURATION_MS2 = 3500;
   var LEAVE_MS2 = 280;
   var UNTIL_POLL_MS = 120;
@@ -15050,10 +18754,10 @@
     if (typeof d === "number" && d > 0) return d;
     return fallback;
   }
-  function parseOpts(message, opts) {
+  function parseOpts(message2, opts) {
     const o = opts && typeof opts === "object" ? opts : {};
     return {
-      message: String(message || ""),
+      message: String(message2 || ""),
       duration: normalizeDuration(o),
       closable: !!o.closable,
       kind: o.kind || "default",
@@ -15072,11 +18776,11 @@
     if (notifyOpt === true || durableOpt === true) return true;
     return false;
   }
-  function pushNotification(message, parsed) {
-    const N = global22.Notifications;
+  function pushNotification(message2, parsed) {
+    const N = global28.Notifications;
     if (!N) return;
     if (typeof N.fromToast === "function") {
-      N.fromToast(message, {
+      N.fromToast(message2, {
         kind: parsed.kind,
         detail: parsed.detail,
         source: parsed.source,
@@ -15085,7 +18789,7 @@
       });
       return;
     }
-    if (typeof N.push === "function") N.push(message);
+    if (typeof N.push === "function") N.push(message2);
   }
   function kindClass(kind) {
     if (kind === "success" || kind === "error" || kind === "info" || kind === "warn") {
@@ -15116,7 +18820,7 @@
     try {
       if (entry.onDismiss) entry.onDismiss();
     } catch (err) {
-      if (global22.console && console.error) console.error("[toast]", err);
+      if (global28.console && console.error) console.error("[toast]", err);
     }
     removeNode(entry);
     if (live.size === 0) hideToastLayer();
@@ -15139,21 +18843,21 @@
     if (!entry || entry.leaving || entry.dismissed) return;
     entry.leaving = true;
     clearTimers2(entry);
-    const el5 = entry.el;
-    el5.classList.remove("is-visible");
-    el5.classList.add("is-leaving");
+    const el6 = entry.el;
+    el6.classList.remove("is-visible");
+    el6.classList.add("is-leaving");
     let done = false;
     const finish = () => {
       if (done) return;
       done = true;
-      el5.removeEventListener("transitionend", onEnd);
+      el6.removeEventListener("transitionend", onEnd);
       finishDismiss(id, entry);
     };
     const onEnd = (e) => {
-      if (e.target !== el5) return;
+      if (e.target !== el6) return;
       finish();
     };
-    el5.addEventListener("transitionend", onEnd);
+    el6.addEventListener("transitionend", onEnd);
     setTimeout(finish, LEAVE_MS2 + 40);
   }
   function wireUntil(id, entry, untilFn) {
@@ -15167,27 +18871,27 @@
       try {
         if (untilFn()) animateOut(id, entry);
       } catch (err) {
-        if (global22.console && console.error) console.error("[toast]", err);
+        if (global28.console && console.error) console.error("[toast]", err);
         animateOut(id, entry);
       }
     }, UNTIL_POLL_MS);
   }
-  function show2(message, opts) {
-    if (!stackEl) init9();
-    const parsed = parseOpts(message, opts);
+  function show2(message2, opts) {
+    if (!stackEl) init11();
+    const parsed = parseOpts(message2, opts);
     if (!parsed.message) return null;
     if (shouldNotify(parsed.kind, parsed.notify, parsed.durable)) {
       pushNotification(parsed.message, parsed);
     }
     const id = nextId();
-    const el5 = document.createElement("div");
-    el5.className = "toast " + kindClass(parsed.kind);
-    el5.setAttribute("role", parsed.kind === "error" ? "alert" : "status");
-    el5.dataset.toastId = id;
+    const el6 = document.createElement("div");
+    el6.className = "toast " + kindClass(parsed.kind);
+    el6.setAttribute("role", parsed.kind === "error" ? "alert" : "status");
+    el6.dataset.toastId = id;
     const body = document.createElement("div");
     body.className = "toast-body";
     body.textContent = parsed.message;
-    el5.appendChild(body);
+    el6.appendChild(body);
     if (parsed.closable) {
       const closeBtn2 = document.createElement("button");
       closeBtn2.type = "button";
@@ -15198,11 +18902,11 @@
         e.stopPropagation();
         animateOut(id, entry);
       });
-      el5.appendChild(closeBtn2);
+      el6.appendChild(closeBtn2);
     }
     const entry = {
       id,
-      el: el5,
+      el: el6,
       dismissed: false,
       leaving: false,
       onDismiss: parsed.onDismiss,
@@ -15212,9 +18916,9 @@
     };
     live.set(id, entry);
     showToastLayer();
-    stackEl.appendChild(el5);
+    stackEl.appendChild(el6);
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => el5.classList.add("is-visible"));
+      requestAnimationFrame(() => el6.classList.add("is-visible"));
     });
     if (parsed.until) {
       wireUntil(id, entry, parsed.until);
@@ -15223,10 +18927,10 @@
     }
     return id;
   }
-  function typed(kind, message, opts) {
+  function typed(kind, message2, opts) {
     const o = opts && typeof opts === "object" ? Object.assign({}, opts) : {};
     o.kind = kind;
-    return show2(message, o);
+    return show2(message2, o);
   }
   function dismiss2(id) {
     const entry = live.get(id);
@@ -15235,7 +18939,7 @@
   function dismissAll() {
     Array.from(live.keys()).forEach(dismiss2);
   }
-  function init9() {
+  function init11() {
     stackEl = document.getElementById("toast-stack");
     if (!stackEl) {
       stackEl = document.createElement("div");
@@ -15247,18 +18951,18 @@
     }
     if (!stackEl.hasAttribute("popover")) stackEl.setAttribute("popover", "manual");
   }
-  global22.Toasts = {
-    init: init9,
+  global28.Toasts = {
+    init: init11,
     show: show2,
-    error: (message, opts) => typed("error", message, opts),
-    warn: (message, opts) => typed("warn", message, opts),
-    success: (message, opts) => typed("success", message, opts),
-    info: (message, opts) => typed("info", message, opts),
+    error: (message2, opts) => typed("error", message2, opts),
+    warn: (message2, opts) => typed("warn", message2, opts),
+    success: (message2, opts) => typed("success", message2, opts),
+    info: (message2, opts) => typed("info", message2, opts),
     dismiss: dismiss2,
     dismissAll,
     _pure: { normalizeDuration, parseOpts, shouldNotify, DEFAULT_DURATION_MS: DEFAULT_DURATION_MS2 }
   };
-  global22.BelJarToasts = global22.Toasts;
+  global28.BelJarToasts = global28.Toasts;
 
   // js/ui/notification-store.mjs
   var SCHEMA_VERSION3 = 1;
@@ -15282,10 +18986,10 @@
     if (v === 1) return normalizeRecord(raw);
     return normalizeRecord(raw);
   }
-  function normalizeRecord(input) {
-    if (input == null) return null;
-    if (typeof input === "string") {
-      const title2 = String(input).trim();
+  function normalizeRecord(input2) {
+    if (input2 == null) return null;
+    if (typeof input2 === "string") {
+      const title2 = String(input2).trim();
       if (!title2) return null;
       return {
         id: newId(),
@@ -15306,49 +19010,49 @@
         expiresAt: null
       };
     }
-    if (typeof input !== "object") return null;
-    const title = String(input.title != null ? input.title : input.message || "").trim();
-    if (!title && !input.body && !input.detail) return null;
-    const kind = KINDS.has(input.kind) ? input.kind : "info";
-    const category = CATEGORIES.has(input.category) ? input.category : "ops";
-    const origin = ORIGINS.has(input.origin) ? input.origin : "local";
-    const createdAt = Number.isFinite(input.createdAt) ? input.createdAt : Number.isFinite(input.time) ? input.time : Date.now();
+    if (typeof input2 !== "object") return null;
+    const title = String(input2.title != null ? input2.title : input2.message || "").trim();
+    if (!title && !input2.body && !input2.detail) return null;
+    const kind = KINDS.has(input2.kind) ? input2.kind : "info";
+    const category = CATEGORIES.has(input2.category) ? input2.category : "ops";
+    const origin = ORIGINS.has(input2.origin) ? input2.origin : "local";
+    const createdAt = Number.isFinite(input2.createdAt) ? input2.createdAt : Number.isFinite(input2.time) ? input2.time : Date.now();
     let links = null;
-    if (input.links && typeof input.links === "object") {
+    if (input2.links && typeof input2.links === "object") {
       links = {
-        fileId: input.links.fileId != null ? String(input.links.fileId) : void 0,
-        path: input.links.path != null ? String(input.links.path) : void 0,
-        line: Number.isFinite(input.links.line) ? input.links.line : void 0,
-        hole: input.links.hole != null ? String(input.links.hole) : void 0
+        fileId: input2.links.fileId != null ? String(input2.links.fileId) : void 0,
+        path: input2.links.path != null ? String(input2.links.path) : void 0,
+        line: Number.isFinite(input2.links.line) ? input2.links.line : void 0,
+        hole: input2.links.hole != null ? String(input2.links.hole) : void 0
       };
     }
     return {
-      id: input.id && String(input.id) || newId(),
+      id: input2.id && String(input2.id) || newId(),
       v: SCHEMA_VERSION3,
       kind,
       category,
-      title: title || String(input.body || "Notification").slice(0, 120),
-      body: input.body != null ? String(input.body) : null,
-      detail: input.detail != null ? String(input.detail) : null,
-      source: input.source != null ? String(input.source) : "unknown",
+      title: title || String(input2.body || "Notification").slice(0, 120),
+      body: input2.body != null ? String(input2.body) : null,
+      detail: input2.detail != null ? String(input2.detail) : null,
+      source: input2.source != null ? String(input2.source) : "unknown",
       createdAt,
-      readAt: input.readAt != null ? Number(input.readAt) : null,
-      dismissedAt: input.dismissedAt != null ? Number(input.dismissedAt) : null,
-      dedupeKey: input.dedupeKey != null ? String(input.dedupeKey) : null,
+      readAt: input2.readAt != null ? Number(input2.readAt) : null,
+      dismissedAt: input2.dismissedAt != null ? Number(input2.dismissedAt) : null,
+      dedupeKey: input2.dedupeKey != null ? String(input2.dedupeKey) : null,
       links,
       origin,
-      remoteId: input.remoteId != null ? String(input.remoteId) : null,
-      expiresAt: input.expiresAt != null ? Number(input.expiresAt) : null
+      remoteId: input2.remoteId != null ? String(input2.remoteId) : null,
+      expiresAt: input2.expiresAt != null ? Number(input2.expiresAt) : null
     };
   }
   function createMemoryAdapter(seed) {
-    let items2 = Array.isArray(seed) ? seed.slice() : [];
+    let items3 = Array.isArray(seed) ? seed.slice() : [];
     return {
       load() {
-        return items2.slice();
+        return items3.slice();
       },
       save(next) {
-        items2 = Array.isArray(next) ? next.slice() : [];
+        items3 = Array.isArray(next) ? next.slice() : [];
       }
     };
   }
@@ -15394,15 +19098,15 @@
         if (!raw) return [];
         try {
           const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-          const list2 = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.items) ? parsed.items : [];
-          return list2.map(migrateRecord).filter(Boolean);
+          const list3 = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.items) ? parsed.items : [];
+          return list3.map(migrateRecord).filter(Boolean);
         } catch (_) {
           return [];
         }
       },
       save(next) {
-        const items2 = Array.isArray(next) ? next : [];
-        writeRaw(JSON.stringify({ v: SCHEMA_VERSION3, items: items2 }));
+        const items3 = Array.isArray(next) ? next : [];
+        writeRaw(JSON.stringify({ v: SCHEMA_VERSION3, items: items3 }));
       }
     };
   }
@@ -15411,110 +19115,110 @@
     const cap = Number.isFinite(o.cap) && o.cap > 0 ? o.cap : DEFAULT_CAP;
     const adapter = o.adapter || createMemoryAdapter();
     const listeners = /* @__PURE__ */ new Set();
-    let items2 = [];
+    let items3 = [];
     try {
-      items2 = (adapter.load() || []).map(migrateRecord).filter(Boolean);
-      items2 = prune(items2, cap);
+      items3 = (adapter.load() || []).map(migrateRecord).filter(Boolean);
+      items3 = prune(items3, cap);
     } catch (_) {
-      items2 = [];
+      items3 = [];
     }
-    function prune(list3, max) {
+    function prune(list4, max) {
       const now = Date.now();
-      let next = list3.filter((r) => !r.dismissedAt);
+      let next = list4.filter((r) => !r.dismissedAt);
       next = next.filter((r) => r.expiresAt == null || r.expiresAt > now);
       next.sort((a, b) => b.createdAt - a.createdAt);
       if (next.length > max) next = next.slice(0, max);
       return next;
     }
-    function persist3() {
+    function persist5() {
       try {
-        adapter.save(items2);
+        adapter.save(items3);
       } catch (_) {
       }
     }
     function notify() {
       for (const fn of listeners) {
         try {
-          fn(items2.slice());
+          fn(items3.slice());
         } catch (_) {
         }
       }
     }
-    function list2() {
-      return items2.slice().sort((a, b) => b.createdAt - a.createdAt);
+    function list3() {
+      return items3.slice().sort((a, b) => b.createdAt - a.createdAt);
     }
-    function get(id) {
-      return items2.find((r) => r.id === id) || null;
+    function get2(id) {
+      return items3.find((r) => r.id === id) || null;
     }
     function unreadCount() {
-      return items2.filter((r) => !r.readAt).length;
+      return items3.filter((r) => !r.readAt).length;
     }
     function count() {
-      return items2.length;
+      return items3.length;
     }
-    function upsert(input) {
-      const rec = normalizeRecord(input);
+    function upsert(input2) {
+      const rec = normalizeRecord(input2);
       if (!rec) return null;
       if (rec.dedupeKey) {
-        const idx = items2.findIndex((r) => r.dedupeKey === rec.dedupeKey && !r.dismissedAt);
+        const idx = items3.findIndex((r) => r.dedupeKey === rec.dedupeKey && !r.dismissedAt);
         if (idx >= 0) {
-          const prev = items2[idx];
+          const prev = items3[idx];
           const merged = {
             ...prev,
             ...rec,
             id: prev.id,
-            createdAt: Number.isFinite(input.createdAt) ? rec.createdAt : Date.now(),
+            createdAt: Number.isFinite(input2.createdAt) ? rec.createdAt : Date.now(),
             readAt: null,
             dismissedAt: null,
             body: rec.body != null ? rec.body : prev.body,
             detail: rec.detail != null ? rec.detail : prev.detail
           };
-          items2[idx] = merged;
-          items2 = prune(items2, cap);
-          persist3();
+          items3[idx] = merged;
+          items3 = prune(items3, cap);
+          persist5();
           notify();
           return merged;
         }
       }
-      items2.push(rec);
-      items2 = prune(items2, cap);
-      persist3();
+      items3.push(rec);
+      items3 = prune(items3, cap);
+      persist5();
       notify();
       return rec;
     }
     function dismiss4(id) {
-      const idx = items2.findIndex((r) => r.id === id);
+      const idx = items3.findIndex((r) => r.id === id);
       if (idx < 0) return false;
-      items2.splice(idx, 1);
-      persist3();
+      items3.splice(idx, 1);
+      persist5();
       notify();
       return true;
     }
     function clear2() {
-      if (items2.length === 0) return;
-      items2 = [];
-      persist3();
+      if (items3.length === 0) return;
+      items3 = [];
+      persist5();
       notify();
     }
     function markRead(id) {
-      const rec = get(id);
+      const rec = get2(id);
       if (!rec || rec.readAt) return false;
       rec.readAt = Date.now();
-      persist3();
+      persist5();
       notify();
       return true;
     }
     function markAllRead() {
       const now = Date.now();
       let changed = false;
-      for (const r of items2) {
+      for (const r of items3) {
         if (!r.readAt) {
           r.readAt = now;
           changed = true;
         }
       }
       if (changed) {
-        persist3();
+        persist5();
         notify();
       }
       return changed;
@@ -15528,8 +19232,8 @@
       };
     }
     return {
-      list: list2,
-      get,
+      list: list3,
+      get: get2,
       upsert,
       dismiss: dismiss4,
       clear: clear2,
@@ -15538,19 +19242,19 @@
       count,
       unreadCount,
       subscribe,
-      _pure: { items: () => items2 }
+      _pure: { items: () => items3 }
     };
   }
 
   // js/ui/notifications.mjs
-  var global23 = globalThis;
+  var global29 = globalThis;
   var bellBtn = null;
   var panelEl = null;
-  var listEl = null;
+  var listEl2 = null;
   var emptyEl = null;
   var badgeEl = null;
   var clearBtn = null;
-  var open6 = false;
+  var open7 = false;
   var unsub = null;
   var store = createNotificationStore({
     adapter: typeof localStorage !== "undefined" ? createLocalPersistAdapter() : createMemoryAdapter()
@@ -15587,9 +19291,9 @@
     }
     return "notif-item--system";
   }
-  function renderList() {
-    if (!listEl || !emptyEl) return;
-    listEl.textContent = "";
+  function renderList2() {
+    if (!listEl2 || !emptyEl) return;
+    listEl2.textContent = "";
     const sorted = store.list();
     for (const item of sorted) {
       const li = document.createElement("li");
@@ -15638,24 +19342,24 @@
       });
       li.appendChild(main);
       li.appendChild(dismissBtn);
-      listEl.appendChild(li);
+      listEl2.appendChild(li);
     }
     emptyEl.hidden = sorted.length > 0;
-    listEl.hidden = sorted.length === 0;
+    listEl2.hidden = sorted.length === 0;
     updateBadge();
   }
   function emit(partial) {
     const rec = store.upsert(partial);
     return rec ? rec.id : null;
   }
-  function push(message, opts) {
+  function push(message2, opts) {
     const o = opts && typeof opts === "object" ? opts : {};
-    if (typeof message === "object" && message !== null) {
-      return emit(message);
+    if (typeof message2 === "object" && message2 !== null) {
+      return emit(message2);
     }
     return emit({
       id: o.id,
-      title: String(message || ""),
+      title: String(message2 || ""),
       kind: o.kind || "info",
       category: o.category || "ops",
       source: o.source || "legacy",
@@ -15681,13 +19385,13 @@
       links: o.links || null
     });
   }
-  function fromToast(message, opts) {
+  function fromToast(message2, opts) {
     const o = opts && typeof opts === "object" ? opts : {};
     const kind = o.kind || "error";
     return emit({
       kind: kind === "default" ? "info" : kind,
       category: o.category || "ops",
-      title: String(message || ""),
+      title: String(message2 || ""),
       body: o.body || null,
       detail: o.detail || null,
       source: o.source || "toast",
@@ -15709,50 +19413,50 @@
   }
   function setOpen(next) {
     if (!panelEl || !bellBtn) return;
-    open6 = !!next;
-    if (open6) {
+    open7 = !!next;
+    if (open7) {
       positionPanel();
       store.markAllRead();
     }
-    panelEl.classList.toggle("is-open", open6);
-    panelEl.setAttribute("aria-hidden", open6 ? "false" : "true");
-    bellBtn.setAttribute("aria-expanded", open6 ? "true" : "false");
-    bellBtn.classList.toggle("is-active", open6);
-    if (open6 && typeof Tooltips !== "undefined") {
+    panelEl.classList.toggle("is-open", open7);
+    panelEl.setAttribute("aria-hidden", open7 ? "false" : "true");
+    bellBtn.setAttribute("aria-expanded", open7 ? "true" : "false");
+    bellBtn.classList.toggle("is-active", open7);
+    if (open7 && typeof Tooltips !== "undefined") {
       Tooltips.hide();
       Tooltips.suppressAnchor(bellBtn);
     }
   }
-  function toggle2() {
-    setOpen(!open6);
+  function toggle3() {
+    setOpen(!open7);
   }
   function onDocPointerDown(e) {
-    if (!open6) return;
+    if (!open7) return;
     const t = e.target;
     if (panelEl && panelEl.contains(t)) return;
     if (bellBtn && bellBtn.contains(t)) return;
     setOpen(false);
   }
   function onDocKeyDown(e) {
-    if (e.key === "Escape" && open6) {
+    if (e.key === "Escape" && open7) {
       e.preventDefault();
       setOpen(false);
       bellBtn.focus();
     }
   }
-  function init10() {
+  function init12() {
     bellBtn = document.getElementById("btn-notifications");
     panelEl = document.getElementById("notif-panel");
-    listEl = document.getElementById("notif-panel-list");
+    listEl2 = document.getElementById("notif-panel-list");
     emptyEl = document.getElementById("notif-panel-empty");
     badgeEl = document.getElementById("notif-badge");
     clearBtn = document.getElementById("btn-notif-clear");
     if (!bellBtn || !panelEl) return;
     if (unsub) unsub();
-    unsub = store.subscribe(() => renderList());
+    unsub = store.subscribe(() => renderList2());
     bellBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggle2();
+      toggle3();
     });
     if (clearBtn) {
       clearBtn.addEventListener("click", (e) => {
@@ -15763,13 +19467,13 @@
     document.addEventListener("pointerdown", onDocPointerDown, true);
     document.addEventListener("keydown", onDocKeyDown, true);
     window.addEventListener("resize", () => {
-      if (open6) positionPanel();
+      if (open7) positionPanel();
     });
     positionPanel();
-    renderList();
+    renderList2();
   }
-  global23.Notifications = {
-    init: init10,
+  global29.Notifications = {
+    init: init12,
     emit,
     push,
     teaching,
@@ -15778,18 +19482,18 @@
     clear,
     markRead: (id) => store.markRead(id),
     markAllRead: () => store.markAllRead(),
-    toggle: toggle2,
-    isOpen: () => open6,
+    toggle: toggle3,
+    isOpen: () => open7,
     count: () => store.count(),
     unreadCount: () => store.unreadCount(),
     list: () => store.list(),
     store,
     _pure: { normalizeRecord, SCHEMA_VERSION: SCHEMA_VERSION3 }
   };
-  global23.BelJarNotifications = global23.Notifications;
+  global29.BelJarNotifications = global29.Notifications;
 
   // js/repl/repl-stream.mjs
-  var global24 = globalThis;
+  var global30 = globalThis;
   var outputEl2 = null;
   var liveEl = null;
   var cmdInputEl = null;
@@ -15814,45 +19518,45 @@
   function hoverTimestampOn() {
     return typeof Persist !== "undefined" && typeof Persist.readStoredReplHoverTimestamp === "function" && Persist.readStoredReplHoverTimestamp();
   }
-  function clearStampTooltip(el5) {
-    if (!el5 || el5.nodeType !== 1) return;
+  function clearStampTooltip(el6) {
+    if (!el6 || el6.nodeType !== 1) return;
     if (typeof Tooltips !== "undefined" && Tooltips.set) {
-      Tooltips.set(el5, "", { ariaLabel: false });
+      Tooltips.set(el6, "", { ariaLabel: false });
     } else {
-      el5.removeAttribute("data-tooltip");
+      el6.removeAttribute("data-tooltip");
     }
-    el5.removeAttribute("data-tooltip-placement");
-    el5.removeAttribute("data-tooltip-no-track");
+    el6.removeAttribute("data-tooltip-placement");
+    el6.removeAttribute("data-tooltip-no-track");
   }
-  function setStampTooltip(host, tip) {
+  function setStampTooltip(host2, tip) {
     if (!hoverTimestampOn()) {
-      clearStampTooltip(host);
+      clearStampTooltip(host2);
       return;
     }
-    host.setAttribute("data-tooltip-placement", "above");
-    host.setAttribute("data-tooltip-no-track", "");
+    host2.setAttribute("data-tooltip-placement", "above");
+    host2.setAttribute("data-tooltip-no-track", "");
     if (typeof Tooltips !== "undefined" && Tooltips.set) {
-      Tooltips.set(host, tip, { ariaLabel: false });
+      Tooltips.set(host2, tip, { ariaLabel: false });
     } else {
-      host.setAttribute("data-tooltip", tip);
+      host2.setAttribute("data-tooltip", tip);
     }
   }
-  function clearStamp(el5) {
-    if (!el5 || el5.nodeType !== 1) return;
-    if (el5.dataset) delete el5.dataset.ms;
-    el5.removeAttribute("data-ms");
-    clearStampTooltip(el5);
+  function clearStamp(el6) {
+    if (!el6 || el6.nodeType !== 1) return;
+    if (el6.dataset) delete el6.dataset.ms;
+    el6.removeAttribute("data-ms");
+    clearStampTooltip(el6);
   }
-  function syncStampHoverPref(root) {
-    var scope = root || getOutput();
+  function syncStampHoverPref(root2) {
+    var scope = root2 || getOutput();
     if (!scope || !scope.querySelectorAll) return;
     if (hoverTimestampOn()) {
       var stamped = scope.querySelectorAll("[data-ms]");
       for (var i = 0; i < stamped.length; i++) {
-        var el5 = stamped[i];
-        var t = Number(el5.dataset.ms);
+        var el6 = stamped[i];
+        var t = Number(el6.dataset.ms);
         if (!Number.isFinite(t)) continue;
-        setStampTooltip(el5, formatTs(t));
+        setStampTooltip(el6, formatTs(t));
       }
       return;
     }
@@ -15864,15 +19568,15 @@
       Tooltips.hide();
     }
   }
-  function resolveStampTarget(host) {
-    if (!host || host.nodeType !== 1) return null;
-    if (host.classList.contains("repl-turn-cmd")) {
-      return host;
+  function resolveStampTarget(host2) {
+    if (!host2 || host2.nodeType !== 1) return null;
+    if (host2.classList.contains("repl-turn-cmd")) {
+      return host2;
     }
-    if (host.classList.contains("repl-block")) {
+    if (host2.classList.contains("repl-block")) {
       var rich = null;
-      for (var i = 0; i < host.children.length; i++) {
-        var child = host.children[i];
+      for (var i = 0; i < host2.children.length; i++) {
+        var child = host2.children[i];
         if (child.classList && child.classList.contains("repl-rich")) {
           rich = child;
           break;
@@ -15901,54 +19605,54 @@
         }
         return rich;
       }
-      for (var k = 0; k < host.children.length; k++) {
-        var line = host.children[k];
+      for (var k = 0; k < host2.children.length; k++) {
+        var line = host2.children[k];
         if (line.classList && (line.classList.contains("repl-line") || line.classList.contains("repl-help"))) {
           return line;
         }
       }
     }
-    return host;
+    return host2;
   }
-  function stampHost(host, ms) {
-    if (!host || host.nodeType !== 1) return null;
+  function stampHost(host2, ms) {
+    if (!host2 || host2.nodeType !== 1) return null;
     var t = ms != null ? ms : Date.now();
-    var target = resolveStampTarget(host) || host;
-    for (var i = host.children.length - 1; i >= 0; i--) {
-      var child = host.children[i];
+    var target = resolveStampTarget(host2) || host2;
+    for (var i = host2.children.length - 1; i >= 0; i--) {
+      var child = host2.children[i];
       if (child.classList && child.classList.contains("repl-ts")) {
-        host.removeChild(child);
+        host2.removeChild(child);
       }
     }
-    if (target !== host) {
+    if (target !== host2) {
       for (var j = target.children.length - 1; j >= 0; j--) {
         var tc = target.children[j];
         if (tc.classList && tc.classList.contains("repl-ts")) {
           target.removeChild(tc);
         }
       }
-      if (host.dataset && host.dataset.ms) clearStamp(host);
+      if (host2.dataset && host2.dataset.ms) clearStamp(host2);
     }
     target.dataset.ms = String(t);
     setStampTooltip(target, formatTs(t));
     return target;
   }
-  function migrateLegacyStamps(root) {
-    var scope = root || getOutput();
+  function migrateLegacyStamps(root2) {
+    var scope = root2 || getOutput();
     if (!scope || !scope.querySelectorAll) return;
     var stamps = scope.querySelectorAll(".repl-ts");
     for (var i = 0; i < stamps.length; i++) {
-      var el5 = stamps[i];
-      var parent = el5.parentElement;
+      var el6 = stamps[i];
+      var parent = el6.parentElement;
       var ms = NaN;
-      if (el5.dataset && el5.dataset.ms) ms = Number(el5.dataset.ms);
-      if (!Number.isFinite(ms) && el5.dateTime) ms = Date.parse(el5.dateTime);
-      if (el5.parentNode) el5.parentNode.removeChild(el5);
+      if (el6.dataset && el6.dataset.ms) ms = Number(el6.dataset.ms);
+      if (!Number.isFinite(ms) && el6.dateTime) ms = Date.parse(el6.dateTime);
+      if (el6.parentNode) el6.parentNode.removeChild(el6);
       if (parent) stampHost(parent, Number.isFinite(ms) ? ms : Date.now());
     }
   }
-  function rebindStamps(root) {
-    var scope = root || getOutput();
+  function rebindStamps(root2) {
+    var scope = root2 || getOutput();
     if (!scope || !scope.querySelectorAll) return;
     migrateLegacyStamps(scope);
     var blocks = scope.querySelectorAll(".repl-block[data-ms]");
@@ -15963,10 +19667,10 @@
     }
     var stamped = scope.querySelectorAll("[data-ms]");
     for (var j = 0; j < stamped.length; j++) {
-      var el5 = stamped[j];
-      var t = Number(el5.dataset.ms);
+      var el6 = stamped[j];
+      var t = Number(el6.dataset.ms);
       if (!Number.isFinite(t)) continue;
-      setStampTooltip(el5, formatTs(t));
+      setStampTooltip(el6, formatTs(t));
     }
   }
   function buildLiveLine() {
@@ -15976,16 +19680,16 @@
     prompt.className = "repl-chevron";
     prompt.setAttribute("aria-hidden", "true");
     prompt.textContent = "\u276F";
-    var input = document.createElement("input");
-    input.id = "command-input";
-    input.type = "text";
-    input.className = "repl-live-input";
-    input.autocomplete = "off";
-    input.setAttribute("autocorrect", "off");
-    input.setAttribute("autocapitalize", "off");
-    input.spellcheck = false;
-    input.placeholder = "";
-    input.setAttribute("aria-label", "Command");
+    var input2 = document.createElement("input");
+    input2.id = "command-input";
+    input2.type = "text";
+    input2.className = "repl-live-input";
+    input2.autocomplete = "off";
+    input2.setAttribute("autocorrect", "off");
+    input2.setAttribute("autocapitalize", "off");
+    input2.spellcheck = false;
+    input2.placeholder = "";
+    input2.setAttribute("aria-label", "Command");
     var btn = document.createElement("button");
     btn.id = "btn-run";
     btn.type = "button";
@@ -15993,9 +19697,9 @@
     btn.tabIndex = -1;
     btn.setAttribute("aria-label", "Run command");
     btn.hidden = true;
-    live2.append(prompt, input, btn);
+    live2.append(prompt, input2, btn);
     liveEl = live2;
-    cmdInputEl = input;
+    cmdInputEl = input2;
     btnRunEl = btn;
     return live2;
   }
@@ -16023,11 +19727,11 @@
     return ensureLiveLine();
   }
   function focusLive() {
-    var input = getCommandInput();
-    if (input && !input.disabled) input.focus();
+    var input2 = getCommandInput();
+    if (input2 && !input2.disabled) input2.focus();
   }
   function isSelectingText() {
-    var sel = global24.getSelection && global24.getSelection();
+    var sel = global30.getSelection && global30.getSelection();
     return !!(sel && !sel.isCollapsed && String(sel).length);
   }
   function bindFocusDelegation() {
@@ -16115,13 +19819,13 @@
     return openTurnBody;
   }
   ensureLiveLine();
-  if (typeof global24.addEventListener === "function") {
-    global24.addEventListener("beljar:settings-changed", function(e) {
+  if (typeof global30.addEventListener === "function") {
+    global30.addEventListener("beljar:settings-changed", function(e) {
       var key = e && e.detail ? e.detail.key : "";
       if (key === "repl-hover-timestamp" || key === "repl-reset") syncStampHoverPref();
     });
   }
-  global24.ReplStream = {
+  global30.ReplStream = {
     ensureLiveLine,
     getLiveLine,
     getCommandInput,
@@ -16136,20 +19840,20 @@
     rebindStamps,
     syncStampHoverPref
   };
-  global24.BelJarReplStream = global24.ReplStream;
+  global30.BelJarReplStream = global30.ReplStream;
 
   // js/repl/repl-output.mjs
-  var global25 = globalThis;
+  var global31 = globalThis;
   var output = document.getElementById("output");
   function normBelugaRaw(s) {
-    return global25.BelugaText ? global25.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
+    return global31.BelugaText ? global31.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
   function stripAnsi(s) {
-    return global25.BelugaText ? global25.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
+    return global31.BelugaText ? global31.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
   }
   function isInternalQueryLine(trimmed) {
-    if (global25.BelugaText && global25.BelugaText.isInternalQueryLine) {
-      return global25.BelugaText.isInternalQueryLine(trimmed);
+    if (global31.BelugaText && global31.BelugaText.isInternalQueryLine) {
+      return global31.BelugaText.isInternalQueryLine(trimmed);
     }
     return trimmed === "[]" || trimmed === "^." || trimmed === "^" || /^\[[^\]]*(?:TClo|FREE BVar|\?[A-Za-z0-9_.]+)/i.test(trimmed);
   }
@@ -16303,8 +20007,8 @@
     });
   }
   function belugaCommandErrorInfo(text) {
-    if (global25.BelugaText && typeof global25.BelugaText.parseBelugaCommandError === "function") {
-      return global25.BelugaText.parseBelugaCommandError(text);
+    if (global31.BelugaText && typeof global31.BelugaText.parseBelugaCommandError === "function") {
+      return global31.BelugaText.parseBelugaCommandError(text);
     }
     return null;
   }
@@ -16314,7 +20018,7 @@
     appendRichBelugaCommandError(text, info.detail, info.label);
     return true;
   }
-  function appendRichBelugaCommandError(rawText, detail, labelOpt) {
+  function appendRichBelugaCommandError(rawText, detail2, labelOpt) {
     appendRichShell(rawText, function(shell) {
       var card = document.createElement("div");
       card.className = "repl-rich-error";
@@ -16330,7 +20034,7 @@
       head.append(icon, ht);
       var body = document.createElement("div");
       body.className = "repl-rich-error-detail";
-      body.textContent = detail;
+      body.textContent = detail2;
       card.append(head, body);
       shell.appendChild(card);
     });
@@ -16478,7 +20182,7 @@
     });
   }
   function collectEditorQuerySourceLines() {
-    var editor2 = global25.CurrentEditor;
+    var editor2 = global31.CurrentEditor;
     if (!editor2 || typeof editor2.getValue !== "function") return [];
     var src = editor2.getValue();
     var out = [];
@@ -16564,7 +20268,7 @@
     return { solutions, isDone, queryLine, queryError };
   }
   function queryDisplayRows(bindings) {
-    return global25.BelugaText && global25.BelugaText.prettifyQueryBindings ? global25.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
+    return global31.BelugaText && global31.BelugaText.prettifyQueryBindings ? global31.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
   }
   function displayQueryBindings(container, rows) {
     container.replaceChildren();
@@ -16959,16 +20663,16 @@
     var pre = block.querySelector(".repl-rich-pre--run-pending");
     markPendingPreInterrupted(pre);
   }
-  function settleInterruptedPendingRuns(root) {
-    var host = root || output;
-    if (!host || !host.querySelectorAll) return 0;
+  function settleInterruptedPendingRuns(root2) {
+    var host2 = root2 || output;
+    if (!host2 || !host2.querySelectorAll) return 0;
     var n = 0;
-    var blocks = host.querySelectorAll("[data-repl-run-pending]");
+    var blocks = host2.querySelectorAll("[data-repl-run-pending]");
     for (var i = 0; i < blocks.length; i++) {
       markPendingBlockInterrupted(blocks[i]);
       n++;
     }
-    var ores = host.querySelectorAll(".repl-rich-pre--run-pending");
+    var ores = host2.querySelectorAll(".repl-rich-pre--run-pending");
     for (var j = 0; j < ores.length; j++) {
       var pre = ores[j];
       if (pre.querySelector(".repl-run-skel")) {
@@ -17277,7 +20981,7 @@
     streamAppend(block);
     scrollReplBottom();
   }
-  global25.ReplOutput = {
+  global31.ReplOutput = {
     appendOutput,
     appendReplHelp,
     appendRunOutput,
@@ -17314,10 +21018,10 @@
       return out;
     }
   };
-  global25.BelJarReplOutput = global25.ReplOutput;
+  global31.BelJarReplOutput = global31.ReplOutput;
 
   // js/repl/repl-run-cmd.mjs
-  var global26 = globalThis;
+  var global32 = globalThis;
   function baseName3(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
@@ -17628,8 +21332,8 @@
     dispatchRunCommand,
     executeRunCommand
   };
-  global26.ReplRunCmd = api;
-  global26.BelJarReplRunCmd = api;
+  global32.ReplRunCmd = api;
+  global32.BelJarReplRunCmd = api;
 
   // js/repl/repl-ac-suggest.mjs
   var MAX_ITEMS = 16;
@@ -17767,12 +21471,12 @@
     return null;
   }
   function suggestVerbs(token, verbs) {
-    var list2 = verbs && verbs.length ? verbs : DEFAULT_VERBS;
+    var list3 = verbs && verbs.length ? verbs : DEFAULT_VERBS;
     var t = String(token || "").toLowerCase();
     var seen = /* @__PURE__ */ Object.create(null);
     var out = [];
-    for (var i = 0; i < list2.length; i++) {
-      var v = String(list2[i] || "");
+    for (var i = 0; i < list3.length; i++) {
+      var v = String(list3[i] || "");
       if (!v) continue;
       var key = v.toLowerCase();
       if (seen[key]) continue;
@@ -17795,12 +21499,12 @@
       if (isSignaturePath(n) || isCfgPath(n)) paths.push(n);
     }
     var counts = basenameCounts(paths);
-    var items2 = [];
+    var items3 = [];
     for (var j = 0; j < paths.length; j++) {
       var p = paths[j];
       var label = suggestPathLabel(p, cwd, counts);
       if (!matchesToken(p, label, token, cwd)) continue;
-      items2.push({
+      items3.push({
         label,
         insert: label,
         kind: "path",
@@ -17808,10 +21512,10 @@
         absPath: p
       });
     }
-    items2.sort(function(a, b) {
+    items3.sort(function(a, b) {
       return compareByPath(a.absPath, b.absPath, cwd);
     });
-    return items2.slice(0, MAX_ITEMS).map(function(it) {
+    return items3.slice(0, MAX_ITEMS).map(function(it) {
       delete it.absPath;
       return it;
     });
@@ -17830,7 +21534,7 @@
       var sn = baseName3(paths[c]).replace(/\.cfg$/i, "");
       counts[sn] = (counts[sn] || 0) + 1;
     }
-    var items2 = [];
+    var items3 = [];
     for (var j = 0; j < paths.length; j++) {
       var p = paths[j];
       var suite = baseName3(p).replace(/\.cfg$/i, "");
@@ -17839,7 +21543,7 @@
         label = suggestPathLabel(p, cwd, basenameCounts(paths)).replace(/\.cfg$/i, "");
       }
       if (!matchesToken(p, label, token, cwd) && !matchesToken(p, suite, token, cwd)) continue;
-      items2.push({
+      items3.push({
         label,
         insert: label,
         kind: "suite",
@@ -17847,10 +21551,10 @@
         absPath: p
       });
     }
-    items2.sort(function(a, b) {
+    items3.sort(function(a, b) {
       return compareByPath(a.absPath, b.absPath, cwd);
     });
-    return items2.slice(0, MAX_ITEMS).map(function(it) {
+    return items3.slice(0, MAX_ITEMS).map(function(it) {
       delete it.absPath;
       return it;
     });
@@ -17874,7 +21578,7 @@
       }
     }
     var keys = Object.keys(dirs);
-    var items2 = [];
+    var items3 = [];
     for (var j = 0; j < keys.length; j++) {
       var folder = keys[j];
       var label;
@@ -17890,7 +21594,7 @@
           continue;
         }
       }
-      items2.push({
+      items3.push({
         label,
         insert: label,
         kind: "folder",
@@ -17898,7 +21602,7 @@
         absPath: folder
       });
     }
-    items2.sort(function(a, b) {
+    items3.sort(function(a, b) {
       var aCwd = a.absPath === String(cwd || "") ? 0 : 1;
       var bCwd = b.absPath === String(cwd || "") ? 0 : 1;
       if (aCwd !== bCwd) return aCwd - bCwd;
@@ -17907,7 +21611,7 @@
         numeric: true
       });
     });
-    return items2.slice(0, MAX_ITEMS).map(function(it) {
+    return items3.slice(0, MAX_ITEMS).map(function(it) {
       delete it.absPath;
       return it;
     });
@@ -17928,19 +21632,19 @@
     if (!ctx) return null;
     var files = opts.files || [];
     var cwd = opts.cwd != null ? opts.cwd : "";
-    var items2 = [];
+    var items3 = [];
     if (ctx.kind === "verb") {
-      items2 = suggestVerbs(ctx.token, opts.verbs);
+      items3 = suggestVerbs(ctx.token, opts.verbs);
     } else if (ctx.kind === "runPath") {
-      items2 = suggestRunPaths(files, cwd, ctx.token);
+      items3 = suggestRunPaths(files, cwd, ctx.token);
     } else if (ctx.kind === "runSuite") {
-      items2 = suggestRunSuites(files, cwd, ctx.token);
+      items3 = suggestRunSuites(files, cwd, ctx.token);
     } else if (ctx.kind === "runFolder") {
-      items2 = suggestRunFolders(files, cwd, ctx.token);
+      items3 = suggestRunFolders(files, cwd, ctx.token);
     }
-    if (!items2.length) return null;
+    if (!items3.length) return null;
     return {
-      items: items2,
+      items: items3,
       replaceFrom: ctx.replaceFrom,
       token: ctx.token,
       amalgam: !!ctx.amalgam
@@ -17948,16 +21652,16 @@
   }
 
   // js/repl/repl-autocomplete.mjs
-  var global27 = globalThis;
+  var global33 = globalThis;
   var inputEl = null;
   var popupEl = null;
-  var listEl2 = null;
+  var listEl3 = null;
   var mirrorEl = null;
-  var items = [];
+  var items2 = [];
   var activeIndex2 = -1;
   var replaceFrom = 0;
   var typedToken = "";
-  var open7 = false;
+  var open8 = false;
   var explicit = false;
   var suppressRefresh = false;
   var debounceTimer = null;
@@ -17974,16 +21678,16 @@
     return inputEl;
   }
   function ensurePopup() {
-    if (popupEl && popupEl.isConnected && listEl2 && listEl2.isConnected) return popupEl;
+    if (popupEl && popupEl.isConnected && listEl3 && listEl3.isConnected) return popupEl;
     if (typeof document === "undefined" || !document.body) return null;
     popupEl = document.createElement("div");
     popupEl.className = "repl-ac";
     popupEl.hidden = true;
-    listEl2 = document.createElement("ul");
-    listEl2.className = "repl-ac-list";
-    listEl2.setAttribute("role", "listbox");
-    listEl2.setAttribute("aria-label", "Command completions");
-    popupEl.appendChild(listEl2);
+    listEl3 = document.createElement("ul");
+    listEl3.className = "repl-ac-list";
+    listEl3.setAttribute("role", "listbox");
+    listEl3.setAttribute("aria-label", "Command completions");
+    popupEl.appendChild(listEl3);
     document.body.appendChild(popupEl);
     return popupEl;
   }
@@ -17996,10 +21700,10 @@
     document.body.appendChild(mirrorEl);
     return mirrorEl;
   }
-  function tokenAnchor(input, tokenFrom) {
-    var rect = input.getBoundingClientRect();
+  function tokenAnchor(input2, tokenFrom) {
+    var rect = input2.getBoundingClientRect();
     if (!rect || rect.width < 1 || rect.height < 1) return null;
-    var cs = window.getComputedStyle(input);
+    var cs = window.getComputedStyle(input2);
     var padL = parseFloat(cs.paddingLeft) || 0;
     var borderL = parseFloat(cs.borderLeftWidth) || 0;
     var mirror = ensureMirror();
@@ -18015,22 +21719,22 @@
       mirror.style.wordSpacing = cs.wordSpacing;
       mirror.style.fontVariantLigatures = cs.fontVariantLigatures;
       mirror.style.fontFeatureSettings = cs.fontFeatureSettings;
-      mirror.textContent = String(input.value || "").slice(0, Math.max(0, tokenFrom));
+      mirror.textContent = String(input2.value || "").slice(0, Math.max(0, tokenFrom));
       xInInput += mirror.offsetWidth;
     }
     return {
-      left: rect.left + xInInput - (input.scrollLeft || 0),
+      left: rect.left + xInInput - (input2.scrollLeft || 0),
       top: rect.top,
       bottom: rect.bottom
     };
   }
   function positionPopup() {
-    if (!popupEl || popupEl.hidden || !open7 || !listEl2) return;
-    var input = getInput();
-    if (!input) return;
-    var anchor = tokenAnchor(input, replaceFrom);
+    if (!popupEl || popupEl.hidden || !open8 || !listEl3) return;
+    var input2 = getInput();
+    if (!input2) return;
+    var anchor = tokenAnchor(input2, replaceFrom);
     if (!anchor) return;
-    listEl2.style.maxHeight = "";
+    listEl3.style.maxHeight = "";
     var popW = popupEl.offsetWidth || 0;
     var popH = popupEl.offsetHeight || 0;
     if (popH < 1) return;
@@ -18039,7 +21743,7 @@
     var placeBelow = roomBelow >= popH + POPUP_GAP_PX || roomBelow >= roomAbove;
     var avail = placeBelow ? roomBelow : roomAbove;
     if (avail > 0 && popH > avail - POPUP_GAP_PX) {
-      listEl2.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + "px";
+      listEl3.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + "px";
       popH = popupEl.offsetHeight || popH;
     }
     var maxLeft = window.innerWidth - VIEW_PAD_PX - popW;
@@ -18053,7 +21757,7 @@
     popupEl.style.top = top + "px";
   }
   function onReposition() {
-    if (open7) positionPopup();
+    if (open8) positionPopup();
   }
   function bindReposition(on) {
     var output2 = document.getElementById("output");
@@ -18079,14 +21783,14 @@
     var p = persistApi2();
     return !!(p && p.readStoredReplAutocompleteContinue && p.readStoredReplAutocompleteContinue());
   }
-  function caretPos(input) {
-    if (!input) return 0;
+  function caretPos(input2) {
+    if (!input2) return 0;
     try {
-      var n = input.selectionStart;
+      var n = input2.selectionStart;
       if (typeof n === "number") return n;
     } catch (_) {
     }
-    return String(input.value || "").length;
+    return String(input2.value || "").length;
   }
   function isAutocompleteToggle(e) {
     var KB = typeof Keybindings !== "undefined" ? Keybindings : null;
@@ -18115,9 +21819,9 @@
     return DEFAULT_VERBS.slice();
   }
   function hide() {
-    open7 = false;
+    open8 = false;
     explicit = false;
-    items = [];
+    items2 = [];
     activeIndex2 = -1;
     typedToken = "";
     bindReposition(false);
@@ -18127,50 +21831,50 @@
       popupEl.style.left = "";
       popupEl.style.top = "";
     }
-    if (listEl2) {
-      listEl2.textContent = "";
-      listEl2.style.maxHeight = "";
+    if (listEl3) {
+      listEl3.textContent = "";
+      listEl3.style.maxHeight = "";
     }
   }
-  function isOpen2() {
-    return open7 && items.length > 0;
+  function isOpen3() {
+    return open8 && items2.length > 0;
   }
   function scrollActiveIntoView(li) {
-    if (!listEl2 || !li) return;
+    if (!listEl3 || !li) return;
     var top = li.offsetTop;
     var bottom = top + li.offsetHeight;
-    var viewTop = listEl2.scrollTop;
-    var viewBottom = viewTop + listEl2.clientHeight;
-    if (top < viewTop) listEl2.scrollTop = top;
-    else if (bottom > viewBottom) listEl2.scrollTop = bottom - listEl2.clientHeight;
+    var viewTop = listEl3.scrollTop;
+    var viewBottom = viewTop + listEl3.clientHeight;
+    if (top < viewTop) listEl3.scrollTop = top;
+    else if (bottom > viewBottom) listEl3.scrollTop = bottom - listEl3.clientHeight;
   }
   function setActive2(idx) {
-    if (!listEl2 || !items.length) return;
-    activeIndex2 = Math.max(0, Math.min(items.length - 1, idx));
-    var kids = listEl2.children;
+    if (!listEl3 || !items2.length) return;
+    activeIndex2 = Math.max(0, Math.min(items2.length - 1, idx));
+    var kids = listEl3.children;
     for (var i = 0; i < kids.length; i++) {
       if (i === activeIndex2) kids[i].setAttribute("aria-selected", "true");
       else kids[i].removeAttribute("aria-selected");
     }
     scrollActiveIntoView(kids[activeIndex2]);
   }
-  function accept(idx) {
-    var input = getInput();
-    if (!input || idx < 0 || idx >= items.length) return false;
-    var item = items[idx];
-    var val = String(input.value || "");
+  function accept2(idx) {
+    var input2 = getInput();
+    if (!input2 || idx < 0 || idx >= items2.length) return false;
+    var item = items2[idx];
+    var val = String(input2.value || "");
     var next = val.slice(0, replaceFrom) + item.insert;
-    input.value = next;
-    input.focus();
+    input2.value = next;
+    input2.focus();
     try {
-      input.setSelectionRange(next.length, next.length);
+      input2.setSelectionRange(next.length, next.length);
     } catch (_) {
     }
     hide();
     if (typeof ReplCommands !== "undefined" && ReplCommands.resetHistoryIndex) {
       ReplCommands.resetHistoryIndex();
     }
-    if (autocompleteContinue()) refresh();
+    if (autocompleteContinue()) refresh2();
     else suppressRefresh = true;
     return true;
   }
@@ -18189,27 +21893,27 @@
       li.appendChild(document.createTextNode(text));
     }
     if (item.detail) {
-      var detail = document.createElement("span");
-      detail.className = "repl-ac-detail";
-      detail.textContent = item.detail;
-      li.appendChild(detail);
+      var detail2 = document.createElement("span");
+      detail2.className = "repl-ac-detail";
+      detail2.textContent = item.detail;
+      li.appendChild(detail2);
     }
   }
   function render2(result) {
     var popup = ensurePopup();
-    if (!popup || !listEl2) return;
+    if (!popup || !listEl3) return;
     if (!result || !result.items || !result.items.length) {
       hide();
       return;
     }
-    items = result.items;
+    items2 = result.items;
     replaceFrom = result.replaceFrom || 0;
     typedToken = result.token || "";
     activeIndex2 = 0;
-    open7 = true;
-    listEl2.textContent = "";
-    for (var i = 0; i < items.length; i++) {
-      var it = items[i];
+    open8 = true;
+    listEl3.textContent = "";
+    for (var i = 0; i < items2.length; i++) {
+      var it = items2[i];
       var li = document.createElement("li");
       li.className = "repl-ac-item";
       li.setAttribute("role", "option");
@@ -18217,9 +21921,9 @@
       fillItem(li, it, typedToken);
       li.addEventListener("mousedown", function(e) {
         e.preventDefault();
-        accept(parseInt(e.currentTarget.dataset.index, 10));
+        accept2(parseInt(e.currentTarget.dataset.index, 10));
       });
-      listEl2.appendChild(li);
+      listEl3.appendChild(li);
     }
     popup.hidden = false;
     popup.style.visibility = "hidden";
@@ -18230,29 +21934,29 @@
     requestAnimationFrame(positionPopup);
   }
   function compute() {
-    var input = getInput();
-    if (!input) return null;
+    var input2 = getInput();
+    if (!input2) return null;
     return suggestReplCompletions({
-      line: input.value || "",
+      line: input2.value || "",
       files: listFiles2(),
       cwd: currentCwd(),
       verbs: listVerbs()
     });
   }
-  function refresh(opts) {
+  function refresh2(opts) {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function() {
       debounceTimer = null;
       var forceExplicit = !!(opts && opts.explicit);
       if (forceExplicit) explicit = true;
-      var input = getInput();
-      if (!input) {
+      var input2 = getInput();
+      if (!input2) {
         hide();
         return;
       }
       if (!replAcShouldOpen({
-        line: input.value || "",
-        pos: caretPos(input),
+        line: input2.value || "",
+        pos: caretPos(input2),
         trigger: autocompleteTrigger(),
         explicit
       })) {
@@ -18265,20 +21969,20 @@
     }, 20);
   }
   function toggleExplicit() {
-    if (isOpen2()) {
+    if (isOpen3()) {
       hide();
       return true;
     }
-    refresh({ explicit: true });
+    refresh2({ explicit: true });
     return true;
   }
-  function onKeyDown(e) {
+  function onKeyDown2(e) {
     if (!e) return false;
     if (isAutocompleteToggle(e)) {
       toggleExplicit();
       return true;
     }
-    if (!isOpen2()) return false;
+    if (!isOpen3()) return false;
     if (e.key === "ArrowDown") {
       setActive2(activeIndex2 + 1);
       return true;
@@ -18292,11 +21996,11 @@
       return true;
     }
     if (e.key === "Tab") {
-      accept(activeIndex2);
+      accept2(activeIndex2);
       return true;
     }
     if (e.key === "Enter") {
-      accept(activeIndex2);
+      accept2(activeIndex2);
       return false;
     }
     return false;
@@ -18306,44 +22010,44 @@
       suppressRefresh = false;
       if (!autocompleteContinue()) return;
     }
-    refresh();
+    refresh2();
   }
-  function bind2(input) {
-    inputEl = input || getInput();
+  function bind2(input2) {
+    inputEl = input2 || getInput();
     ensurePopup();
     hide();
     if (!inputEl || alwaysNavBound) return;
     alwaysNavBound = true;
     inputEl.addEventListener("keyup", function(e) {
       if (e && (e.ctrlKey || e.metaKey || e.altKey || isAutocompleteToggle(e))) return;
-      if (autocompleteTrigger() === "always") refresh();
+      if (autocompleteTrigger() === "always") refresh2();
     });
     inputEl.addEventListener("click", function() {
-      if (autocompleteTrigger() === "always") refresh();
+      if (autocompleteTrigger() === "always") refresh2();
     });
   }
   var api2 = {
     bind: bind2,
-    refresh,
+    refresh: refresh2,
     onInput,
     hide,
-    isOpen: isOpen2,
+    isOpen: isOpen3,
     toggleExplicit,
-    onKeyDown,
+    onKeyDown: onKeyDown2,
     _compute: compute,
     _suggest: suggestReplCompletions
   };
-  global27.ReplAutocomplete = api2;
-  global27.BelJarReplAutocomplete = api2;
+  global33.ReplAutocomplete = api2;
+  global33.BelJarReplAutocomplete = api2;
 
   // js/repl/repl-commands.mjs
-  var global28 = globalThis;
+  var global34 = globalThis;
   var replHistory = [];
   var replHistoryIndex = null;
-  var historyLoaded = false;
-  function loadHistory() {
-    if (historyLoaded) return;
-    historyLoaded = true;
+  var historyLoaded2 = false;
+  function loadHistory2() {
+    if (historyLoaded2) return;
+    historyLoaded2 = true;
     if (typeof Persist === "undefined" || !Persist.readStoredReplCommandHistory) return;
     try {
       var stored = Persist.readStoredReplCommandHistory();
@@ -18356,14 +22060,14 @@
     Persist.writeStoredReplCommandHistory(replHistory);
   }
   function getHistory() {
-    loadHistory();
+    loadHistory2();
     return replHistory.slice();
   }
   function recordHistory(raw) {
     if (raw == null) return;
     var s = String(raw).trim();
     if (!s) return;
-    loadHistory();
+    loadHistory2();
     replHistoryIndex = null;
     replHistory.push(s);
     var cap = typeof Persist !== "undefined" ? Persist.readStoredReplHistoryCap() : 0;
@@ -18381,7 +22085,7 @@
     return document.getElementById("command-input");
   }
   function parseBelugaCmd(prefixed) {
-    var norm2 = global28.BelugaText ? global28.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
+    var norm2 = global34.BelugaText ? global34.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
     var inner = norm2.replace(/^%:/, "").trim();
     if (!inner) return { verb: "", args: "" };
     var sp = inner.search(/\s/);
@@ -18395,7 +22099,7 @@
     replHistoryIndex = null;
   }
   function historyUp() {
-    loadHistory();
+    loadHistory2();
     var cmdInputEl3 = getCmdInput();
     if (!replHistory.length) return false;
     if (replHistoryIndex === null) replHistoryIndex = replHistory.length - 1;
@@ -18404,7 +22108,7 @@
     return true;
   }
   function historyDown() {
-    loadHistory();
+    loadHistory2();
     var cmdInputEl3 = getCmdInput();
     if (replHistoryIndex === null) return false;
     replHistoryIndex++;
@@ -18533,7 +22237,7 @@
       }
     }
   }
-  global28.ReplCommands = {
+  global34.ReplCommands = {
     runCmd,
     resetHistoryIndex,
     historyUp,
@@ -18541,10 +22245,10 @@
     getHistory,
     recordHistory
   };
-  global28.BelJarReplCommands = global28.ReplCommands;
+  global34.BelJarReplCommands = global34.ReplCommands;
 
   // js/repl/repl-persist.mjs
-  var global29 = globalThis;
+  var global35 = globalThis;
   var SAVE_DEBOUNCE_MS2 = 300;
   var HTML_CAP = 400 * 1024;
   var saveTimer2 = null;
@@ -18575,16 +22279,16 @@
   }
   function trimOldest(nodes, html) {
     if (html.length <= HTML_CAP) return { nodes, html };
-    var list2 = nodes.slice();
+    var list3 = nodes.slice();
     var out = html;
-    while (list2.length > 1 && out.length > HTML_CAP) {
-      list2.shift();
-      out = serializeHtml(list2);
+    while (list3.length > 1 && out.length > HTML_CAP) {
+      list3.shift();
+      out = serializeHtml(list3);
     }
-    if (out.length > HTML_CAP && list2.length === 1) {
+    if (out.length > HTML_CAP && list3.length === 1) {
       return { nodes: [], html: "" };
     }
-    return { nodes: list2, html: out };
+    return { nodes: list3, html: out };
   }
   function persistCommandHistory() {
     var p = getPersist();
@@ -18682,36 +22386,36 @@
       if (ok) scheduleSave2();
     }
   }
-  global29.ReplPersist = {
+  global35.ReplPersist = {
     scheduleSave: scheduleSave2,
     saveNow,
     restore
   };
-  global29.BelJarReplPersist = global29.ReplPersist;
+  global35.BelJarReplPersist = global35.ReplPersist;
 
   // js/ui/bj-toggle.mjs
-  var global30 = globalThis;
+  var global36 = globalThis;
   function createParts(opts) {
     opts = opts || {};
-    var input = document.createElement("input");
-    input.type = "checkbox";
-    input.className = "bj-toggle__input";
-    if (opts.id) input.id = opts.id;
-    if (opts.ariaLabel) input.setAttribute("aria-label", opts.ariaLabel);
-    input.checked = !!opts.checked;
+    var input2 = document.createElement("input");
+    input2.type = "checkbox";
+    input2.className = "bj-toggle__input";
+    if (opts.id) input2.id = opts.id;
+    if (opts.ariaLabel) input2.setAttribute("aria-label", opts.ariaLabel);
+    input2.checked = !!opts.checked;
     var track = document.createElement("span");
     track.className = "bj-toggle__track";
     track.setAttribute("aria-hidden", "true");
     var thumb = document.createElement("span");
     thumb.className = "bj-toggle__thumb";
     track.appendChild(thumb);
-    input.addEventListener("change", function() {
-      if (opts.onChange) opts.onChange(input.checked);
+    input2.addEventListener("change", function() {
+      if (opts.onChange) opts.onChange(input2.checked);
     });
     function setChecked(on) {
-      input.checked = !!on;
+      input2.checked = !!on;
     }
-    return { input, track, setChecked };
+    return { input: input2, track, setChecked };
   }
   function create8(opts) {
     opts = opts || {};
@@ -18724,11 +22428,11 @@
     parts.element = wrap;
     return parts;
   }
-  global30.Toggle = { create: create8, createParts };
-  global30.BelJarToggle = global30.Toggle;
+  global36.Toggle = { create: create8, createParts };
+  global36.BelJarToggle = global36.Toggle;
 
   // js/ui/bj-dropdown.mjs
-  var global31 = globalThis;
+  var global37 = globalThis;
   var openDropdowns = [];
   function closeAll2() {
     for (var i = openDropdowns.length - 1; i >= 0; i--) {
@@ -18780,10 +22484,10 @@
       btn.addEventListener("click", function() {
         if (opt.value !== selected) {
           setValue(opt.value);
-          close3();
+          close4();
           onChange(opt.value);
         } else {
-          close3();
+          close4();
         }
       });
       panel2.appendChild(btn);
@@ -18791,8 +22495,8 @@
     });
     container.appendChild(trigger);
     function updateFocus() {
-      optionEls.forEach(function(el5, i) {
-        el5.classList.toggle("is-focused", i === focusedIdx);
+      optionEls.forEach(function(el6, i) {
+        el6.classList.toggle("is-focused", i === focusedIdx);
       });
     }
     function setValue(val) {
@@ -18801,8 +22505,8 @@
         return o.value === val;
       })[0];
       valueSpan.textContent = opt ? opt.label : val;
-      optionEls.forEach(function(el5) {
-        el5.classList.toggle("is-selected", el5.dataset.value === val);
+      optionEls.forEach(function(el6) {
+        el6.classList.toggle("is-selected", el6.dataset.value === val);
       });
     }
     function reposition() {
@@ -18823,10 +22527,10 @@
       panel2.style.top = pos.y + "px";
       panel2.style.left = pos.x + "px";
     }
-    function open9() {
-      var el5 = container.parentElement;
-      while (el5 && el5.tagName !== "DIALOG") el5 = el5.parentElement;
-      var mountEl = el5 || document.body;
+    function open10() {
+      var el6 = container.parentElement;
+      while (el6 && el6.tagName !== "DIALOG") el6 = el6.parentElement;
+      var mountEl = el6 || document.body;
       if (panel2.parentElement !== mountEl) mountEl.appendChild(panel2);
       panel2.style.visibility = "hidden";
       panel2.style.display = "block";
@@ -18859,7 +22563,7 @@
       updateFocus();
       if (openDropdowns.indexOf(api3) === -1) openDropdowns.push(api3);
     }
-    function close3() {
+    function close4() {
       container.classList.remove("is-open");
       panel2.classList.remove("is-open");
       trigger.setAttribute("aria-expanded", "false");
@@ -18869,21 +22573,21 @@
       if (idx !== -1) openDropdowns.splice(idx, 1);
     }
     trigger.addEventListener("click", function() {
-      if (container.classList.contains("is-open")) close3();
-      else open9();
+      if (container.classList.contains("is-open")) close4();
+      else open10();
     });
     trigger.addEventListener("keydown", function(e) {
-      var isOpen3 = container.classList.contains("is-open");
-      if (!isOpen3) {
+      var isOpen4 = container.classList.contains("is-open");
+      if (!isOpen4) {
         if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          open9();
+          open10();
         }
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        close3();
+        close4();
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
         focusedIdx = Math.min(focusedIdx + 1, options.length - 1);
@@ -18900,34 +22604,44 @@
             setValue(o.value);
             onChange(o.value);
           }
-          close3();
+          close4();
         }
       }
     });
     document.addEventListener("click", function(e) {
-      if (container.classList.contains("is-open") && !container.contains(e.target) && !panel2.contains(e.target)) close3();
+      if (container.classList.contains("is-open") && !container.contains(e.target) && !panel2.contains(e.target)) close4();
     });
     setValue(currentValue);
-    var api3 = { element: container, setValue, close: close3 };
+    var api3 = { element: container, setValue, close: close4 };
     return api3;
   }
-  global31.Dropdown = { create: create9, closeAll: closeAll2 };
-  global31.BelJarDropdown = global31.Dropdown;
+  global37.Dropdown = { create: create9, closeAll: closeAll2 };
+  global37.BelJarDropdown = global37.Dropdown;
 
   // js/ui/settings-ui.mjs
-  var global32 = globalThis;
+  var global38 = globalThis;
   var settingsDialogEl = null;
   var keybindingsApi = null;
   var aliasesApi = null;
   var controls = {};
   var settingsSearchInput = null;
   var closeSettingsSearch = null;
-  function persist() {
+  var styleGroups2 = {};
+  function persist3() {
     return Persist;
+  }
+  function paintStyleRows(style) {
+    for (var key in styleGroups2) {
+      if (styleGroups2[key]) styleGroups2[key].hidden = key !== style;
+    }
+  }
+  function leaveSettingsAnd(run3) {
+    if (settingsDialogEl && settingsDialogEl.open) Dialog.requestDialogClose(settingsDialogEl);
+    setTimeout(run3, 180);
   }
   function notifySettingsChanged(key) {
     try {
-      global32.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
+      global38.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
     } catch (_) {
     }
   }
@@ -18937,10 +22651,10 @@
     });
   }
   function applyLiveSettings(key) {
-    if (typeof global32.beljarApplyLiveSettings === "function") global32.beljarApplyLiveSettings(key);
+    if (typeof global38.beljarApplyLiveSettings === "function") global38.beljarApplyLiveSettings(key);
   }
   function writePersist(key, fn) {
-    var p = persist();
+    var p = persist3();
     if (p) fn(p);
     Dropdown.closeAll();
     applyLiveSettings(key);
@@ -18948,7 +22662,7 @@
   }
   function runCategoryReset(applyReset, notifyKey) {
     Dropdown.closeAll();
-    var p = persist();
+    var p = persist3();
     if (p && applyReset) applyReset(p);
     syncFromState();
     var key = notifyKey || "category-reset";
@@ -18962,26 +22676,29 @@
       if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
       if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
       if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-      if (typeof global32.syncEditorCmTheme === "function") global32.syncEditorCmTheme();
+      if (typeof global38.syncEditorCmTheme === "function") global38.syncEditorCmTheme();
       p.resetEditorPrefs();
       if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
       p.resetBelugaPrefs();
       BelugaRun.setBelugaMode("stable");
+      p.resetHarpoonPrefs();
       p.resetReplPrefs();
       p.resetWorkspacePrefs();
       var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-      global32.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
+      global38.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
       p.resetAliasesPrefs();
     }, "settings-reset-all");
     Keybindings.resetAll();
     if (keybindingsApi) keybindingsApi.refresh();
     if (aliasesApi) aliasesApi.refresh();
-    if (global32.Toasts && typeof global32.Toasts.success === "function") {
-      global32.Toasts.success("All settings reset.");
+    syncFromState();
+    applyLiveSettings("settings-reset-all");
+    if (global38.Toasts && typeof global38.Toasts.success === "function") {
+      global38.Toasts.success("All settings reset.");
     }
   }
   function syncFromState() {
-    var p = persist();
+    var p = persist3();
     if (!p) return;
     Object.keys(controls).forEach(function(id) {
       var c = controls[id];
@@ -18992,8 +22709,9 @@
         else c.input.checked = c.read();
       }
     });
+    if (typeof p.readStoredKeymapStyle === "function") paintStyleRows(p.readStoredKeymapStyle());
   }
-  function makeResetLink(onClick) {
+  function makeResetLink(onClick2) {
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "bj-settings__reset-link";
@@ -19001,7 +22719,7 @@
     btn.addEventListener("click", function(e) {
       e.preventDefault();
       e.stopPropagation();
-      onClick();
+      onClick2();
     });
     return btn;
   }
@@ -19016,7 +22734,32 @@
     if (!head || !onReset) return;
     head.appendChild(makeResetLink(onReset));
   }
-  function addActionRow(parent, labelText, descText, actionLabel, onClick) {
+  function addPanelHeadAction(panel2, label, onClick2) {
+    var head = panel2.querySelector(".bj-settings__panel-head");
+    if (!head) return null;
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "bj-settings__head-action";
+    btn.textContent = label;
+    btn.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick2();
+    });
+    var reset = head.querySelector(".bj-settings__reset-link");
+    if (reset) head.insertBefore(btn, reset);
+    else head.appendChild(btn);
+    return btn;
+  }
+  function addSubordinateGroup(parent, section) {
+    var group = document.createElement("div");
+    group.className = "bj-settings__substyle";
+    group.dataset.section = section;
+    group.hidden = true;
+    parent.appendChild(group);
+    return group;
+  }
+  function addActionRow(parent, labelText, descText, actionLabel, onClick2) {
     var row = document.createElement("div");
     row.className = "bj-dialog__setting bj-settings__action-row";
     var main = document.createElement("div");
@@ -19036,7 +22779,7 @@
     btn.addEventListener("click", function(e) {
       e.preventDefault();
       e.stopPropagation();
-      onClick();
+      onClick2();
     });
     row.appendChild(main);
     row.appendChild(btn);
@@ -19052,27 +22795,27 @@
     iconHost.className = "library-find__icon";
     iconHost.setAttribute("aria-hidden", "true");
     iconHost.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
-    var input = document.createElement("input");
-    input.type = "search";
-    input.className = "library-find__input";
-    input.placeholder = opts.placeholder;
-    input.setAttribute("aria-label", opts.ariaLabel);
-    input.autocomplete = "off";
-    input.spellcheck = false;
+    var input2 = document.createElement("input");
+    input2.type = "search";
+    input2.className = "library-find__input";
+    input2.placeholder = opts.placeholder;
+    input2.setAttribute("aria-label", opts.ariaLabel);
+    input2.autocomplete = "off";
+    input2.spellcheck = false;
     if (opts.ariaControls) {
-      input.setAttribute("aria-autocomplete", "list");
-      input.setAttribute("aria-controls", opts.ariaControls);
+      input2.setAttribute("aria-autocomplete", "list");
+      input2.setAttribute("aria-controls", opts.ariaControls);
     }
-    input.addEventListener("focus", function() {
+    input2.addEventListener("focus", function() {
       inputWrap.classList.add("is-focused");
     });
-    input.addEventListener("blur", function() {
+    input2.addEventListener("blur", function() {
       inputWrap.classList.remove("is-focused");
     });
     inputWrap.appendChild(iconHost);
-    inputWrap.appendChild(input);
+    inputWrap.appendChild(input2);
     slot.appendChild(inputWrap);
-    return { slot, inputWrap, input };
+    return { slot, inputWrap, input: input2 };
   }
   function addEditorUnit(parent, opts) {
     var unit = document.createElement("div");
@@ -19084,21 +22827,55 @@
     parent.appendChild(unit);
     return { unit, body };
   }
+  var KB_FILTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+  function activeEditingStyle() {
+    try {
+      var P3 = global38.Persist;
+      return P3 && P3.readStoredKeymapStyle ? P3.readStoredKeymapStyle() : "default";
+    } catch (_) {
+      return "default";
+    }
+  }
   function mountKeybindingsSheet(body) {
-    var root = document.createElement("div");
-    root.className = "bj-kb";
-    var list2 = document.createElement("div");
-    list2.className = "bj-kb__list";
-    list2.setAttribute("role", "list");
-    root.appendChild(list2);
-    body.appendChild(root);
+    var root2 = document.createElement("div");
+    root2.className = "bj-kb";
+    var filterBar = document.createElement("div");
+    filterBar.className = "bj-kb__filter";
+    var filterIcon = document.createElement("span");
+    filterIcon.className = "bj-kb__filter-icon";
+    filterIcon.innerHTML = KB_FILTER_ICON;
+    filterIcon.setAttribute("aria-hidden", "true");
+    var filterInput = document.createElement("input");
+    filterInput.type = "search";
+    filterInput.className = "bj-kb__filter-input";
+    filterInput.placeholder = "Filter by name or chord\u2026";
+    filterInput.setAttribute("aria-label", "Filter keybindings");
+    filterInput.autocomplete = "off";
+    filterInput.spellcheck = false;
+    var filterCount = document.createElement("span");
+    filterCount.className = "bj-kb__filter-count";
+    filterCount.setAttribute("aria-live", "polite");
+    filterBar.appendChild(filterIcon);
+    filterBar.appendChild(filterInput);
+    filterBar.appendChild(filterCount);
+    var list3 = document.createElement("div");
+    list3.className = "bj-kb__list";
+    list3.setAttribute("role", "list");
+    var noResults = document.createElement("p");
+    noResults.className = "bj-settings__empty bj-kb__noresults";
+    noResults.textContent = "No commands match.";
+    noResults.hidden = true;
+    root2.appendChild(filterBar);
+    root2.appendChild(list3);
+    root2.appendChild(noResults);
+    body.appendChild(root2);
     var recordingChord = null;
     var invalidTimer = null;
-    function toastWarn(message) {
-      if (global32.Toasts && typeof global32.Toasts.warn === "function") {
-        global32.Toasts.warn(message);
-      } else if (global32.Toasts && typeof global32.Toasts.show === "function") {
-        global32.Toasts.show(message, { kind: "warn" });
+    function toastWarn(message2) {
+      if (global38.Toasts && typeof global38.Toasts.warn === "function") {
+        global38.Toasts.warn(message2);
+      } else if (global38.Toasts && typeof global38.Toasts.show === "function") {
+        global38.Toasts.show(message2, { kind: "warn" });
       }
     }
     function kb() {
@@ -19154,8 +22931,8 @@
       hint.textContent = "Press keys\u2026";
       chordBtn.appendChild(hint);
     }
-    function showRefuse(chordBtn, message) {
-      toastWarn(message);
+    function showRefuse(chordBtn, message2) {
+      toastWarn(message2);
       showRecordingHint(chordBtn);
       chordBtn.classList.add("is-invalid");
       chordBtn.focus();
@@ -19207,7 +22984,7 @@
       }
       recordingChord = null;
       chordBtn.classList.remove("is-recording", "is-invalid");
-      refresh3();
+      refresh4();
     }
     function unbindRecording(chordBtn) {
       var K = kb();
@@ -19215,7 +22992,7 @@
       if (K && id) K.clearBinding(id);
       recordingChord = null;
       chordBtn.classList.remove("is-recording", "is-invalid");
-      refresh3();
+      refresh4();
     }
     function buildRow2(cmd) {
       var row = document.createElement("div");
@@ -19232,6 +23009,18 @@
       title.className = "bj-kb__title";
       title.textContent = cmd.title || cmd.id || "";
       main.appendChild(title);
+      var described = typeof Commands !== "undefined" && Commands.describe ? Commands.describe(cmd.id, { style: activeEditingStyle() }) : null;
+      if (described && described.shadow) {
+        var tag = document.createElement("span");
+        tag.className = "bj-kb__tag";
+        tag.textContent = described.shadow.tag;
+        tag.setAttribute("data-tooltip", described.shadow.tip);
+        if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(tag);
+        main.appendChild(tag);
+        row.classList.add("bj-kb__row--shadowed");
+        row.dataset.shadowed = "1";
+        row.dataset.shadowKind = described.shadow.kind;
+      }
       var chord = document.createElement("button");
       chord.type = "button";
       chord.className = "bj-kb__chord";
@@ -19275,16 +23064,16 @@
       row.appendChild(chord);
       return row;
     }
-    function refresh3() {
+    function refresh4() {
       clearRecording();
-      list2.replaceChildren();
+      list3.replaceChildren();
       var K = kb();
       var cmds = K && typeof K.list === "function" ? K.list() : [];
       if (!cmds.length) {
         var empty = document.createElement("p");
         empty.className = "bj-settings__empty bj-kb__empty";
         empty.textContent = "No keybindings.";
-        list2.appendChild(empty);
+        list3.appendChild(empty);
         return;
       }
       var lastSection = null;
@@ -19296,24 +23085,67 @@
           head.className = "bj-settings__section-head bj-kb__section";
           head.dataset.section = section;
           head.textContent = section;
-          list2.appendChild(head);
+          list3.appendChild(head);
           lastSection = section;
         }
-        list2.appendChild(buildRow2(cmd));
+        list3.appendChild(buildRow2(cmd));
+      }
+      applyFilter();
+    }
+    function applyFilter() {
+      var q = String(filterInput.value || "").trim().toLowerCase();
+      var rows = list3.querySelectorAll(".bj-kb__row");
+      var liveSections = /* @__PURE__ */ Object.create(null);
+      var shown = 0;
+      var bound = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var chord = row.dataset.chord || "";
+        if (chord) bound += 1;
+        var hit = !q || (row.dataset.title || "").indexOf(q) >= 0 || chord.indexOf(q) >= 0 || String(row.dataset.section || "").toLowerCase().indexOf(q) >= 0;
+        row.hidden = !hit;
+        if (!hit) continue;
+        shown += 1;
+        liveSections[row.dataset.section || ""] = true;
+      }
+      var heads = list3.querySelectorAll(".bj-kb__section");
+      for (var h = 0; h < heads.length; h++) {
+        heads[h].hidden = !liveSections[heads[h].dataset.section || ""];
+      }
+      noResults.hidden = shown > 0 || !rows.length;
+      if (q) {
+        filterCount.textContent = shown + " of " + rows.length;
+      } else {
+        filterCount.textContent = rows.length + " commands \xB7 " + bound + " bound";
       }
     }
-    refresh3();
+    filterInput.addEventListener("input", applyFilter);
+    filterInput.addEventListener("keydown", function(e) {
+      if (e.key !== "Escape" || !filterInput.value) return;
+      e.stopPropagation();
+      filterInput.value = "";
+      applyFilter();
+    });
+    function revealCommand(id) {
+      if (filterInput.value) {
+        filterInput.value = "";
+        applyFilter();
+      }
+      return list3.querySelector('.bj-kb__row[data-command-id="' + String(id).replace(/"/g, "") + '"]');
+    }
+    refresh4();
     return {
-      refresh: refresh3,
-      clearRecording
+      refresh: refresh4,
+      clearRecording,
+      revealCommand
     };
   }
   function mountAliasesSheet(body) {
-    var root = document.createElement("div");
-    root.className = "bj-alias";
-    var list2 = document.createElement("div");
-    list2.className = "bj-alias__list";
-    list2.setAttribute("role", "list");
+    var root2 = document.createElement("div");
+    root2.className = "bj-alias";
+    var list3 = document.createElement("div");
+    list3.className = "bj-alias__list";
+    list3.setAttribute("role", "list");
     var footer = document.createElement("div");
     footer.className = "bj-alias__footer";
     var addBtn = document.createElement("button");
@@ -19321,24 +23153,24 @@
     addBtn.className = "bj-alias__add";
     addBtn.textContent = "Add alias";
     footer.appendChild(addBtn);
-    root.appendChild(list2);
-    root.appendChild(footer);
-    body.appendChild(root);
+    root2.appendChild(list3);
+    root2.appendChild(footer);
+    body.appendChild(root2);
     var nextRowId = 1;
     var rows = [];
     var CLOSE_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-    function toastWarn(message) {
-      if (global32.Toasts && typeof global32.Toasts.warn === "function") {
-        global32.Toasts.warn(message);
-      } else if (global32.Toasts && typeof global32.Toasts.show === "function") {
-        global32.Toasts.show(message, { kind: "warn" });
+    function toastWarn(message2) {
+      if (global38.Toasts && typeof global38.Toasts.warn === "function") {
+        global38.Toasts.warn(message2);
+      } else if (global38.Toasts && typeof global38.Toasts.show === "function") {
+        global38.Toasts.show(message2, { kind: "warn" });
       }
     }
-    function setTip3(el5, text) {
-      if (global32.Tooltips && typeof global32.Tooltips.set === "function") {
-        global32.Tooltips.set(el5, text);
+    function setTip3(el6, text) {
+      if (global38.Tooltips && typeof global38.Tooltips.set === "function") {
+        global38.Tooltips.set(el6, text);
       } else {
-        el5.setAttribute("aria-label", text);
+        el6.setAttribute("aria-label", text);
       }
     }
     function normalizePairs(raw) {
@@ -19373,7 +23205,7 @@
       return [];
     }
     function loadPairs() {
-      var p = persist();
+      var p = persist3();
       var stored = p && typeof p.readStoredAliasPairs === "function" ? p.readStoredAliasPairs() : null;
       return stored == null ? defaultPairs() : normalizePairs(stored);
     }
@@ -19407,10 +23239,10 @@
       return null;
     }
     function buildRow2(row) {
-      var el5 = document.createElement("div");
-      el5.className = "bj-alias__row";
-      el5.setAttribute("role", "listitem");
-      el5.dataset.rowId = String(row.id);
+      var el6 = document.createElement("div");
+      el6.className = "bj-alias__row";
+      el6.setAttribute("role", "listitem");
+      el6.dataset.rowId = String(row.id);
       var trigger = document.createElement("input");
       trigger.type = "text";
       trigger.className = "bj-alias__input bj-alias__input--trigger";
@@ -19508,24 +23340,24 @@
         commit();
         render4();
       });
-      el5.appendChild(trigger);
-      el5.appendChild(arrow);
-      el5.appendChild(expansion);
-      el5.appendChild(del);
-      return el5;
+      el6.appendChild(trigger);
+      el6.appendChild(arrow);
+      el6.appendChild(expansion);
+      el6.appendChild(del);
+      return el6;
     }
     function render4() {
-      list2.replaceChildren();
+      list3.replaceChildren();
       footer.hidden = false;
       if (!rows.length) {
         var emptyAll = document.createElement("p");
         emptyAll.className = "bj-settings__empty bj-alias__empty";
         emptyAll.textContent = "No aliases. Add one to expand text while typing.";
-        list2.appendChild(emptyAll);
+        list3.appendChild(emptyAll);
         return;
       }
       rows.forEach(function(row) {
-        list2.appendChild(buildRow2(row));
+        list3.appendChild(buildRow2(row));
       });
     }
     function reload() {
@@ -19537,7 +23369,7 @@
       var row = { id: nextRowId++, from: "", to: "" };
       rows.push(row);
       render4();
-      var triggerEl = list2.querySelector('[data-row-id="' + row.id + '"] .bj-alias__input--trigger');
+      var triggerEl = list3.querySelector('[data-row-id="' + row.id + '"] .bj-alias__input--trigger');
       if (triggerEl) triggerEl.focus();
     });
     reload();
@@ -19566,7 +23398,7 @@
     dsc.textContent = descText;
     m.appendChild(lbl);
     m.appendChild(dsc);
-    var toggle3 = Toggle.create({
+    var toggle4 = Toggle.create({
       id: inputId,
       checked: readFn(),
       ariaLabel: labelText,
@@ -19577,15 +23409,181 @@
       }
     });
     r.appendChild(m);
-    r.appendChild(toggle3.element);
+    r.appendChild(toggle4.element);
     parent.appendChild(r);
-    controls[id] = { type: "switch", input: toggle3.input, setChecked: toggle3.setChecked, read: readFn };
-    return toggle3.input;
+    controls[id] = { type: "switch", input: toggle4.input, setChecked: toggle4.setChecked, read: readFn };
+    return toggle4.input;
+  }
+  var BACKSLASH = String.fromCharCode(92);
+  var SETTING_INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
+  function chordFacts() {
+    var E3 = typeof BelEditor !== "undefined" ? BelEditor : null;
+    if (!E3 || typeof E3.reservedChordFacts !== "function") return null;
+    try {
+      return E3.reservedChordFacts();
+    } catch (_) {
+      return null;
+    }
+  }
+  function reservedSubstituteLine(facts) {
+    var pairs = facts.rows.filter(function(r) {
+      return r.substitute && r.substitute !== "\u2014";
+    }).map(function(r) {
+      return r.chord + " \u2192 " + r.substitute;
+    });
+    return pairs.length ? "BelJar remaps them: " + pairs.join("; ") + "." : "";
+  }
+  function fullKeyboardLine() {
+    var F = typeof FullKeyboard !== "undefined" ? FullKeyboard : null;
+    if (F && F.isSupported && F.isSupported()) {
+      return "Full keyboard runs BelJar fullscreen with Keyboard Lock, so Ctrl+W closes nothing. Hold Esc to leave \u2014 it is in the command palette, or type :fullkeys.";
+    }
+    return "This browser has no Keyboard Lock, so those chords stay with the browser.";
+  }
+  var KEYMAP_STYLE_HELP = {
+    aria: "Editing style details",
+    paragraphs: function() {
+      var facts = chordFacts();
+      var out = [
+        {
+          head: "Standard",
+          body: "Plain BelJar. Chords in this panel do what you bind them to."
+        },
+        // ⛔ No key enumerations. The leader is CONFIGURABLE, so a sentence
+        // naming a backslash sequence is already wrong for anyone who picked
+        // comma, and every key spelled out is a second copy of a table that can
+        // rot. Available macros lists the live maps with the live leader.
+        {
+          head: "Vim",
+          body: "Normal mode for motion and operators; :s, :g and / work as usual. BelJar adds motions for holes, problems, declarations and case branches, plus a leader map, :set for preferences, and a declaration text object (dad deletes one declaration). Mode and pending keys show in the status strip."
+        },
+        {
+          head: "Emacs",
+          body: "Mark, kill and yank on Ctrl; motion on Ctrl+F/B/P. Ctrl+S is incremental search in the status strip. Ctrl+S / Ctrl+R step; Escape restores the caret. C-x is the usual map, C-c is BelJar\u2019s prefix, M-x opens the command line."
+        }
+      ];
+      if (facts) {
+        var sub = reservedSubstituteLine(facts);
+        out.push({
+          head: "Browser conflicts",
+          body: facts.fidelity.headline + " " + facts.fidelity.detail + (sub ? " " + sub : "")
+        });
+        out.push({ head: "Full keyboard", body: fullKeyboardLine() });
+      } else {
+        out.push({
+          head: "Browser conflicts",
+          body: "Some chords never reach the page; which ones depends on your platform. Available macros has the measured list."
+        });
+      }
+      out.push({
+        head: "In every style",
+        body: "Escape still closes rename, autocomplete and sticky hover. Available macros (the button above) lists every key and :name you can type in the current style. It ends with the chords this browser takes and what to press instead."
+      });
+      return out;
+    }
+  };
+  function attachSettingInfoTooltip(btn, spec) {
+    if (!btn || !spec) return;
+    var readParagraphs = function() {
+      var p = spec.paragraphs;
+      return (typeof p === "function" ? p() : p) || [];
+    };
+    var aria = spec.aria || "More information";
+    btn.setAttribute("aria-label", aria);
+    var pop = null;
+    var hideTimer = null;
+    function hostEl() {
+      return btn.closest("dialog") || btn.closest(".bj-dialog__card") || document.body;
+    }
+    function ensurePop() {
+      if (pop) return pop;
+      pop = document.createElement("div");
+      pop.className = "bj-setting-info-popover";
+      pop.setAttribute("role", "tooltip");
+      pop.hidden = true;
+      var paragraphs = readParagraphs();
+      for (var i = 0; i < paragraphs.length; i++) {
+        var item = paragraphs[i];
+        if (item && item.head) {
+          var h = document.createElement("p");
+          h.className = "bj-setting-info-head";
+          h.textContent = item.head;
+          pop.appendChild(h);
+        }
+        var p = document.createElement("p");
+        p.className = "bj-setting-info-tip";
+        p.textContent = item && item.body != null ? item.body : item;
+        pop.appendChild(p);
+      }
+      hostEl().appendChild(pop);
+      pop.addEventListener("mouseenter", function() {
+        clearTimeout(hideTimer);
+      });
+      pop.addEventListener("mouseleave", scheduleHide);
+      return pop;
+    }
+    function positionPop() {
+      var el6 = ensurePop();
+      el6.hidden = false;
+      el6.classList.remove("is-visible", "tooltip-spout-left", "tooltip-spout-right");
+      el6.style.visibility = "hidden";
+      el6.style.left = "0";
+      el6.style.top = "0";
+      var br = btn.getBoundingClientRect();
+      var gap = 6;
+      var pw = el6.offsetWidth;
+      var ph = el6.offsetHeight;
+      var left = br.right + gap;
+      var top = br.top + (br.height - ph) / 2;
+      var flipped = false;
+      if (left + pw > window.innerWidth - 12) {
+        left = br.left - gap - pw;
+        flipped = true;
+      }
+      if (top + ph > window.innerHeight - 12) top = window.innerHeight - 12 - ph;
+      if (top < 12) top = 12;
+      el6.style.position = "fixed";
+      el6.style.left = left + "px";
+      el6.style.top = top + "px";
+      el6.classList.add(flipped ? "tooltip-spout-right" : "tooltip-spout-left");
+      var anchorY = br.top + br.height / 2 - top;
+      anchorY = Math.max(10, Math.min(ph - 10, anchorY));
+      el6.style.setProperty("--tooltip-arrow-y", anchorY + "px");
+      el6.style.visibility = "";
+      requestAnimationFrame(function() {
+        el6.classList.add("is-visible");
+      });
+    }
+    function show3() {
+      clearTimeout(hideTimer);
+      positionPop();
+    }
+    function scheduleHide() {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(function() {
+        if (!pop) return;
+        pop.classList.remove("is-visible");
+        pop.hidden = true;
+      }, 120);
+    }
+    btn.addEventListener("mouseenter", show3);
+    btn.addEventListener("mouseleave", scheduleHide);
+    btn.addEventListener("focusin", show3);
+    btn.addEventListener("focusout", scheduleHide);
   }
   function ensureSettingsDialog() {
     if (settingsDialogEl) return settingsDialogEl;
-    var p0 = persist();
-    function addDropdownRow(parent, id, labelText, descText, options, readFn, writeFn) {
+    var p0 = persist3();
+    function gestureTargetOptions() {
+      var ids = typeof DoubleTap !== "undefined" && DoubleTap.targets ? DoubleTap.targets() : ["tools.palette"];
+      var out = [];
+      for (var i = 0; i < ids.length; i++) {
+        var cmd = typeof Commands !== "undefined" && Commands.get ? Commands.get(ids[i]) : null;
+        if (cmd) out.push({ value: cmd.id, label: cmd.title });
+      }
+      return out.length ? out : [{ value: "tools.palette", label: "Open Command Palette" }];
+    }
+    function addDropdownRow(parent, id, labelText, descText, options, readFn, writeFn, infoSpec) {
       var r = document.createElement("div");
       r.className = "bj-dialog__setting";
       var m = document.createElement("div");
@@ -19596,7 +23594,20 @@
       var dsc = document.createElement("span");
       dsc.className = "bj-dialog__setting-desc";
       dsc.textContent = descText;
-      m.appendChild(lbl);
+      if (infoSpec) {
+        var labelRow = document.createElement("div");
+        labelRow.className = "bj-dialog__setting-label-row";
+        labelRow.appendChild(lbl);
+        var infoBtn = document.createElement("button");
+        infoBtn.type = "button";
+        infoBtn.className = "bj-setting-info";
+        infoBtn.innerHTML = SETTING_INFO_SVG;
+        attachSettingInfoTooltip(infoBtn, infoSpec);
+        labelRow.appendChild(infoBtn);
+        m.appendChild(labelRow);
+      } else {
+        m.appendChild(lbl);
+      }
       m.appendChild(dsc);
       var dd = Dropdown.create(options, readFn(), function(v) {
         writePersist(id, function(p) {
@@ -19623,8 +23634,9 @@
     var categories = [
       { id: "appearance", label: "Appearance" },
       { id: "editor", label: "Editor" },
-      { id: "keybindings", label: "Keybindings" },
+      { id: "keybindings", label: "Keys" },
       { id: "beluga", label: "Beluga" },
+      { id: "harpoon", label: "Harpoon" },
       { id: "repl", label: "REPL" },
       { id: "workspace", label: "Workspace" },
       { id: "aliases", label: "Aliases" }
@@ -19633,16 +23645,16 @@
     var activeCategory = "appearance";
     function selectCategory(id) {
       activeCategory = id;
-      nav.querySelectorAll(".bj-settings__nav-item").forEach(function(el5) {
-        var on = el5.dataset.category === id;
-        el5.classList.toggle("is-active", on);
-        el5.setAttribute("aria-selected", on ? "true" : "false");
-        el5.tabIndex = on ? 0 : -1;
+      nav.querySelectorAll(".bj-settings__nav-item").forEach(function(el6) {
+        var on = el6.dataset.category === id;
+        el6.classList.toggle("is-active", on);
+        el6.setAttribute("aria-selected", on ? "true" : "false");
+        el6.tabIndex = on ? 0 : -1;
       });
-      main.querySelectorAll(".bj-settings__panel").forEach(function(el5) {
-        var on = el5.dataset.category === id;
-        el5.hidden = !on;
-        el5.classList.toggle("is-active", on);
+      main.querySelectorAll(".bj-settings__panel").forEach(function(el6) {
+        var on = el6.dataset.category === id;
+        el6.hidden = !on;
+        el6.classList.toggle("is-active", on);
       });
       if (id !== "keybindings" && keybindingsApi) keybindingsApi.clearRecording();
       if (searchResults && !searchResults.hidden && settingsSearchInput && settingsSearchInput.value) {
@@ -19718,7 +23730,14 @@
     resetAllBtn.addEventListener("click", function(e) {
       e.preventDefault();
       e.stopPropagation();
-      resetAllSettings();
+      if (typeof closeSettingsSearch === "function") closeSettingsSearch(true);
+      ConfirmDialog.confirm({
+        message: "Reset all settings to defaults?",
+        confirmLabel: "Reset all",
+        ariaLabel: "Reset all settings"
+      }).then(function(ok) {
+        if (ok) resetAllSettings();
+      });
     });
     navFoot.appendChild(resetAllBtn);
     nav.appendChild(navFoot);
@@ -19729,7 +23748,7 @@
         if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
         if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
         if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-        if (typeof global32.syncEditorCmTheme === "function") global32.syncEditorCmTheme();
+        if (typeof global38.syncEditorCmTheme === "function") global38.syncEditorCmTheme();
       }, "appearance-reset");
     });
     attachPanelReset(main.querySelector('[data-category="editor"]'), function() {
@@ -19741,12 +23760,29 @@
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function() {
       Keybindings.resetAll();
       if (keybindingsApi) keybindingsApi.refresh();
+      syncFromState();
+      applyLiveSettings("keybindings-reset");
+      postSettingsApply("keybindings-reset");
     });
+    addPanelHeadAction(
+      main.querySelector('[data-category="keybindings"]'),
+      "Available macros",
+      function() {
+        leaveSettingsAnd(function() {
+          if (typeof AvailableMacros !== "undefined") AvailableMacros.open();
+        });
+      }
+    );
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function() {
       runCategoryReset(function(p) {
         p.resetBelugaPrefs();
         BelugaRun.setBelugaMode("stable");
       }, "beluga-reset");
+    });
+    attachPanelReset(main.querySelector('[data-category="harpoon"]'), function() {
+      runCategoryReset(function(p) {
+        p.resetHarpoonPrefs();
+      }, "harpoon-reset");
     });
     attachPanelReset(main.querySelector('[data-category="repl"]'), function() {
       runCategoryReset(function(p) {
@@ -19757,7 +23793,7 @@
       runCategoryReset(function(p) {
         p.resetWorkspacePrefs();
         var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-        global32.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
+        global38.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
       }, "workspace-reset");
     });
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function() {
@@ -19779,7 +23815,7 @@
         var isLight = v === "light";
         document.documentElement.classList.toggle("light", isLight);
         p.writeStoredTheme(isLight ? "light" : "dark");
-        if (typeof global32.syncEditorCmTheme === "function") global32.syncEditorCmTheme();
+        if (typeof global38.syncEditorCmTheme === "function") global38.syncEditorCmTheme();
       }
     );
     addDropdownRow(
@@ -19877,12 +23913,12 @@
       panelBodies.editor,
       "editor-font-size",
       "Font size",
-      "",
+      "Size of code in the editor. Independent of UI font size.",
       [
-        { value: "sm", label: "Small (12px)" },
-        { value: "md", label: "Default (13px)" },
-        { value: "lg", label: "Large (14px)" },
-        { value: "xl", label: "Larger (16px)" }
+        { value: "sm", label: "Small" },
+        { value: "md", label: "Default" },
+        { value: "lg", label: "Large" },
+        { value: "xl", label: "Larger" }
       ],
       function() {
         return p0 ? p0.readStoredEditorFontSize() : "md";
@@ -19895,7 +23931,7 @@
       panelBodies.editor,
       "editor-line-height",
       "Line height",
-      "",
+      "Spacing between editor lines.",
       [
         { value: "compact", label: "Compact" },
         { value: "normal", label: "Default" },
@@ -19924,7 +23960,7 @@
       panelBodies.editor,
       "editor-cursor-blink",
       "Cursor blink",
-      "",
+      "How the insertion caret flashes.",
       [
         { value: "blink", label: "Blink" },
         { value: "fast", label: "Fast" },
@@ -19953,9 +23989,9 @@
       panelBodies.editor,
       "editor-whitespace",
       "Show whitespace",
-      "",
+      "Where to mark spaces and tabs.",
       [
-        { value: "none", label: "Nowhere" },
+        { value: "none", label: "Off" },
         { value: "trailing", label: "Trailing only" },
         { value: "selection", label: "In selection" },
         { value: "all", label: "All" }
@@ -20014,7 +24050,7 @@
       panelBodies.editor,
       "editor-format-width",
       "Format print width",
-      "Max width for Alt+Shift+F.",
+      "Max line width for Format Document.",
       [
         { value: "80", label: "80 columns" },
         { value: "100", label: "100 columns" },
@@ -20055,7 +24091,7 @@
       panelBodies.editor,
       "format-on-save",
       "Format on save",
-      "Run Alt+Shift+F formatting when auto-save flushes a .bel file.",
+      "Run Format Document when auto-save flushes a .bel file.",
       function() {
         return p0 ? p0.readStoredFormatOnSave() : false;
       },
@@ -20166,7 +24202,7 @@
       "Autocomplete",
       "When the completion popup opens. Show Autocomplete still opens it explicitly.",
       [
-        { value: "none", label: "Nowhere" },
+        { value: "none", label: "Off" },
         { value: "typing", label: "Only after keystroke" },
         { value: "always", label: "Always at token end" }
       ],
@@ -20180,7 +24216,7 @@
     addSwitchRow(
       panelBodies.editor,
       "editor-autocomplete-continue",
-      "Continue after accept",
+      "Continue suggesting after accept",
       "Keep showing completions after Tab or click when more options remain.",
       function() {
         return p0 ? p0.readStoredEditorAutocompleteContinue() : false;
@@ -20197,7 +24233,7 @@
       [
         { value: "all", label: "All symbols" },
         { value: "user-only", label: "Identifiers only" },
-        { value: "none", label: "Nowhere" }
+        { value: "none", label: "Off" }
       ],
       function() {
         return p0 ? p0.readStoredHoverScope() : "all";
@@ -20222,7 +24258,7 @@
       panelBodies.editor,
       "quiet-while-typing",
       "Quiet while typing",
-      "Hold hover, occurrence highlight, and auto-complete until checking settles. Explicit Ctrl+Space still works.",
+      "Hold hover, occurrence highlight, and auto-complete until checking settles. Show Autocomplete still works.",
       function() {
         return p0 ? p0.readStoredQuietWhileTyping() : false;
       },
@@ -20241,6 +24277,23 @@
       },
       function(p, on) {
         p.writeStoredEditorLineNumbers(on);
+      }
+    );
+    addDropdownRow(
+      panelBodies.editor,
+      "editor-line-number-style",
+      "Line number style",
+      "Relative numbers count out from the cursor, so a Vim count like 5j can be read off the gutter.",
+      [
+        { value: "absolute", label: "Absolute" },
+        { value: "relative", label: "Relative" },
+        { value: "hybrid", label: "Relative + current line" }
+      ],
+      function() {
+        return p0 && p0.readStoredEditorLineNumberMode ? p0.readStoredEditorLineNumberMode() : "absolute";
+      },
+      function(p, v) {
+        if (p.writeStoredEditorLineNumberMode) p.writeStoredEditorLineNumberMode(v);
       }
     );
     addSwitchRow(
@@ -20263,7 +24316,7 @@
       [
         { value: "none", label: "Don't remember" },
         { value: "session", label: "This session" },
-        { value: "local", label: "Always (local)" }
+        { value: "local", label: "Always" }
       ],
       function() {
         return p0 ? p0.readStoredEditorFoldPersist() : "session";
@@ -20305,7 +24358,7 @@
         { value: "both", label: "Underlines and gutter" },
         { value: "underlines", label: "Underlines only" },
         { value: "gutter", label: "Gutter only" },
-        { value: "none", label: "Nowhere" }
+        { value: "none", label: "Off" }
       ],
       function() {
         return p0 ? p0.readStoredDiagPresentation() : "both";
@@ -20356,6 +24409,151 @@
         if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
       }
     );
+    addDropdownRow(
+      panelBodies.keybindings,
+      "keymap-style",
+      "Editing style",
+      "Vim, Emacs, or standard editing in the main editor.",
+      [
+        { value: "default", label: "Standard" },
+        { value: "vim", label: "Vim" },
+        { value: "emacs", label: "Emacs" }
+      ],
+      function() {
+        return p0 && typeof p0.readStoredKeymapStyle === "function" ? p0.readStoredKeymapStyle() : "default";
+      },
+      function(p, v) {
+        if (typeof p.writeStoredKeymapStyle === "function") p.writeStoredKeymapStyle(v);
+        if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
+        if (typeof BelEditor !== "undefined" && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
+        if (keybindingsApi && keybindingsApi.refresh) keybindingsApi.refresh();
+        paintStyleRows(v);
+      },
+      KEYMAP_STYLE_HELP
+    );
+    var applyModal = function() {
+      if (typeof BelEditor !== "undefined" && BelEditor.applyModalPrefs) BelEditor.applyModalPrefs();
+    };
+    var vimGroup = addSubordinateGroup(panelBodies.keybindings, "Vim");
+    addDropdownRow(
+      vimGroup,
+      "vim-leader",
+      "Leader key",
+      "Prefix for BelJar shortcuts in Normal mode. Press it and pause to see what follows.",
+      [
+        { value: BACKSLASH, label: "Backslash  " + BACKSLASH },
+        { value: ",", label: "Comma  ," },
+        { value: " ", label: "Space" }
+      ],
+      function() {
+        return p0 && p0.readStoredVimLeader ? p0.readStoredVimLeader() : BACKSLASH;
+      },
+      function(p, v) {
+        if (p.writeStoredVimLeader) p.writeStoredVimLeader(v);
+        applyModal();
+      }
+    );
+    addSwitchRow(
+      vimGroup,
+      "vim-yank-clipboard",
+      "Yank to system clipboard",
+      "Copying with y also puts the text on the system clipboard. Pasting is unaffected.",
+      function() {
+        return p0 && p0.readStoredVimYankClipboard ? p0.readStoredVimYankClipboard() : false;
+      },
+      function(p, on) {
+        if (p.writeStoredVimYankClipboard) p.writeStoredVimYankClipboard(on);
+      }
+    );
+    addDropdownRow(
+      vimGroup,
+      "vim-insert-escape",
+      "Leave Insert with",
+      "A two-key sequence that acts as Escape while typing.",
+      [
+        { value: "", label: "Escape only" },
+        { value: "jk", label: "jk" },
+        { value: "jj", label: "jj" },
+        { value: "kj", label: "kj" }
+      ],
+      function() {
+        return p0 && p0.readStoredVimInsertEscape ? p0.readStoredVimInsertEscape() : "";
+      },
+      function(p, v) {
+        if (p.writeStoredVimInsertEscape) p.writeStoredVimInsertEscape(v);
+        applyModal();
+      }
+    );
+    styleGroups2 = { vim: vimGroup };
+    paintStyleRows(p0 && p0.readStoredKeymapStyle ? p0.readStoredKeymapStyle() : "default");
+    addDropdownRow(
+      panelBodies.keybindings,
+      "status-strip",
+      "Status strip",
+      "Goal at the caret, holes left, problems, checker state.",
+      [
+        { value: "standard", label: "Standard" },
+        { value: "compact", label: "Compact" },
+        { value: "detailed", label: "Detailed" },
+        { value: "off", label: "Off" }
+      ],
+      function() {
+        return StatusStrip.storedMode();
+      },
+      function(p, v) {
+        if (typeof p.writeStoredStatusStrip === "function") p.writeStoredStatusStrip(v);
+        StatusStrip.apply();
+      }
+    );
+    addSectionHead(panelBodies.keybindings, "Gestures");
+    addDropdownRow(
+      panelBodies.keybindings,
+      "double-tap",
+      "Double-tap a modifier",
+      "Tap it twice quickly to run a command. A key pressed between the taps cancels it.",
+      [
+        { value: "off", label: "Off" },
+        { value: "shift", label: "Shift Shift" },
+        { value: "control", label: "Ctrl Ctrl" },
+        { value: "alt", label: "Alt Alt" }
+      ],
+      function() {
+        return p0 && p0.readStoredDoubleTapTrigger ? p0.readStoredDoubleTapTrigger() : "off";
+      },
+      function(p, v) {
+        if (p.writeStoredDoubleTapTrigger) p.writeStoredDoubleTapTrigger(v);
+      }
+    );
+    addDropdownRow(
+      panelBodies.keybindings,
+      "double-tap-command",
+      "Double-tap command",
+      "What the two taps run.",
+      gestureTargetOptions(),
+      function() {
+        return p0 && p0.readStoredDoubleTapCommand ? p0.readStoredDoubleTapCommand() : "tools.palette";
+      },
+      function(p, v) {
+        if (p.writeStoredDoubleTapCommand) p.writeStoredDoubleTapCommand(v);
+      }
+    );
+    addDropdownRow(
+      panelBodies.keybindings,
+      "double-tap-speed",
+      "Double-tap speed",
+      "How close together the two taps must be.",
+      [
+        { value: "fast", label: "Fast  250ms" },
+        { value: "normal", label: "Normal  350ms" },
+        { value: "relaxed", label: "Relaxed  500ms" }
+      ],
+      function() {
+        return p0 && p0.readStoredDoubleTapSpeed ? p0.readStoredDoubleTapSpeed() : "normal";
+      },
+      function(p, v) {
+        if (p.writeStoredDoubleTapSpeed) p.writeStoredDoubleTapSpeed(v);
+      }
+    );
     var kbUnit = addEditorUnit(panelBodies.keybindings, {
       kind: "kb",
       searchText: "Customize keybindings Remap commands and chords"
@@ -20377,8 +24575,8 @@
     addSwitchRow(
       panelBodies.beluga,
       "beluga-fallback-stable",
-      "Retry with Stable on stack overflow",
-      "Fall back to Stable if Fast overflows the stack.",
+      "Retry with Stable if Fast fails",
+      "If a Fast run crashes, retry on the Stable worker.",
       function() {
         return p0 ? p0.readStoredBelugaFallbackStable() : true;
       },
@@ -20390,7 +24588,7 @@
       panelBodies.beluga,
       "beluga-cancel-on-edit",
       "Cancel load on edit",
-      "Abort a pending load when the buffer changes.",
+      "Abort a pending Run/Load when the buffer changes.",
       function() {
         return p0 ? p0.readStoredBelugaCancelOnEdit() : true;
       },
@@ -20402,7 +24600,7 @@
       panelBodies.beluga,
       "check-aggressiveness",
       "Check aggressiveness",
-      "How quickly background checking settles after edits. Modes only \u2014 not raw timers.",
+      "How quickly background checking settles after edits.",
       [
         { value: "responsive", label: "Responsive" },
         { value: "balanced", label: "Balanced" },
@@ -20419,7 +24617,7 @@
       panelBodies.beluga,
       "suite-check",
       "Suite check",
-      "Settlement always checks the active file (with prelude). Suite mode also type-checks sibling files for explorer/inspector health.",
+      "Settlement always checks the active file (with prelude). Suite mode also type-checks sibling files.",
       [
         { value: "suite", label: "Active + suite" },
         { value: "active", label: "Active file only" }
@@ -20431,13 +24629,12 @@
         p.writeStoredSuiteCheck(v);
       }
     );
-    addSectionHead(panelBodies.beluga, "Autosolve");
     addDropdownRow(
-      panelBodies.beluga,
+      panelBodies.harpoon,
       "harpoon-mode",
       "Harpoon opens in",
-      "Manual lets you pick each tactic yourself, with Brutus (the search) one click away. Brutus starts searching immediately.",
-      [{ value: "manual", label: "Manual" }, { value: "brutus", label: "Brutus" }],
+      "Manual lets you pick each tactic yourself, with Orca (the search) one click away. Orca starts searching immediately.",
+      [{ value: "manual", label: "Manual" }, { value: "orca", label: "Orca" }],
       function() {
         return p0 ? p0.readStoredHarpoonMode() : "manual";
       },
@@ -20446,7 +24643,7 @@
       }
     );
     addSwitchRow(
-      panelBodies.beluga,
+      panelBodies.harpoon,
       "harpoon-verify-moves",
       "Pre-verify offered tactics",
       "Check the top tactics against Beluga in the background so each shows whether it holds before you pick it. Costs a few checker calls per goal.",
@@ -20458,7 +24655,7 @@
       }
     );
     addSwitchRow(
-      panelBodies.beluga,
+      panelBodies.harpoon,
       "autosolve-focus-next",
       "Focus next hole after place",
       "After placing a solved proof, jump the editor to the next open hole.",
@@ -20470,7 +24667,7 @@
       }
     );
     addSwitchRow(
-      panelBodies.beluga,
+      panelBodies.harpoon,
       "autosolve-show-stats",
       "Show checker call counts",
       "Show how many Beluga certifies ran per hole in the proof tree.",
@@ -20499,7 +24696,7 @@
       "Autocomplete",
       "When the completion popup opens. Show Autocomplete still opens it explicitly.",
       [
-        { value: "none", label: "Nowhere" },
+        { value: "none", label: "Off" },
         { value: "typing", label: "Only after keystroke" },
         { value: "always", label: "Always at token end" }
       ],
@@ -20513,7 +24710,7 @@
     addSwitchRow(
       panelBodies.repl,
       "repl-autocomplete-continue",
-      "Continue after accept",
+      "Continue suggesting after accept",
       "Keep showing completions after Tab or click when more options remain.",
       function() {
         return p0 ? p0.readStoredReplAutocompleteContinue() : false;
@@ -20574,10 +24771,10 @@
       panelBodies.repl,
       "repl-history-persist",
       "Remember history",
-      "Transcript and \u2191/\u2193 commands: this session (sessionStorage), until reset (localStorage), or never.",
+      "Transcript and \u2191/\u2193 commands: this tab, across reloads, or never.",
       [
-        { value: "session", label: "Across sessions" },
-        { value: "local", label: "Until reset" },
+        { value: "session", label: "This session" },
+        { value: "local", label: "Across sessions" },
         { value: "none", label: "Never" }
       ],
       function() {
@@ -20639,7 +24836,7 @@
       },
       function(p, on) {
         p.writeStoredInspectorFollow(on);
-        global32.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
+        global38.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
       }
     );
     addActionRow(
@@ -20648,19 +24845,25 @@
       "Reset split panes and side panel sizes.",
       "Reset",
       function() {
-        if (!persist()) return;
-        persist().resetLayoutPrefs();
-        postSettingsApply("layout-reset");
-        if (typeof global32.location !== "undefined") global32.location.reload();
+        ConfirmDialog.confirm({
+          message: "Reset split panes and side panel sizes? The page will reload.",
+          confirmLabel: "Reset",
+          ariaLabel: "Reset panel layout"
+        }).then(function(ok) {
+          if (!ok || !persist3()) return;
+          persist3().resetLayoutPrefs();
+          postSettingsApply("layout-reset");
+          if (typeof global38.location !== "undefined") global38.location.reload();
+        });
       }
     );
     addActionRow(
       panelBodies.workspace,
       "Export settings",
-      "Download editor, appearance, keybindings, and aliases as JSON.",
+      "Download appearance, editor, keybindings, aliases, and other prefs as JSON.",
       "Export\u2026",
       function() {
-        var p = persist();
+        var p = persist3();
         if (!p || typeof p.exportUserSettings !== "function") return;
         var bundle = p.exportUserSettings();
         var blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
@@ -20680,21 +24883,21 @@
       "Load a previously exported settings JSON file.",
       "Import\u2026",
       function() {
-        var input = document.createElement("input");
-        input.type = "file";
-        input.accept = "application/json,.json";
-        input.addEventListener("change", function() {
-          var file = input.files && input.files[0];
+        var input2 = document.createElement("input");
+        input2.type = "file";
+        input2.accept = "application/json,.json";
+        input2.addEventListener("change", function() {
+          var file = input2.files && input2.files[0];
           if (!file) return;
           var reader = new FileReader();
           reader.onload = function() {
-            var p = persist();
+            var p = persist3();
             if (!p || typeof p.importUserSettings !== "function") return;
             try {
               var bundle = JSON.parse(String(reader.result || ""));
               var result = p.importUserSettings(bundle);
               if (!result || !result.ok) {
-                if (global32.Toasts && global32.Toasts.warn) global32.Toasts.warn("Could not import settings.");
+                if (global38.Toasts && global38.Toasts.warn) global38.Toasts.warn("Could not import settings.");
                 return;
               }
               if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
@@ -20705,18 +24908,20 @@
                 document.documentElement.classList.toggle("light", p.readStoredTheme() === "light");
               }
               syncFromState();
+              if (keybindingsApi) keybindingsApi.refresh();
+              if (aliasesApi) aliasesApi.refresh();
               applyLiveSettings("settings-import");
               postSettingsApply("settings-import");
-              if (global32.Toasts && global32.Toasts.success) {
-                global32.Toasts.success("Imported " + (result.applied || 0) + " settings.");
+              if (global38.Toasts && global38.Toasts.success) {
+                global38.Toasts.success("Imported " + (result.applied || 0) + " settings.");
               }
             } catch (_) {
-              if (global32.Toasts && global32.Toasts.warn) global32.Toasts.warn("Invalid settings file.");
+              if (global38.Toasts && global38.Toasts.warn) global38.Toasts.warn("Invalid settings file.");
             }
           };
           reader.readAsText(file);
         });
-        input.click();
+        input2.click();
       }
     );
     addDropdownRow(
@@ -20731,7 +24936,7 @@
       function(p, v) {
         p.writeStoredAliasActivation(v);
         if (v !== "greedy") return;
-        var ed = global32.CurrentEditor;
+        var ed = global38.CurrentEditor;
         if (ed && typeof ed.getValue === "function") {
           var activeId2 = p.getActiveFileId();
           if (activeId2) p.setFileText(activeId2, ed.getValue());
@@ -20818,16 +25023,16 @@
       window.addEventListener("resize", positionSearchResults);
       window.addEventListener("scroll", positionSearchResults, true);
     }
-    function flashEl(el5) {
-      if (!el5) return;
+    function flashEl(el6) {
+      if (!el6) return;
       main.querySelectorAll(".is-flash").forEach(function(node) {
         node.classList.remove("is-flash");
       });
-      el5.classList.add("is-flash");
+      el6.classList.add("is-flash");
       if (flashTimer) clearTimeout(flashTimer);
       flashTimer = setTimeout(function() {
         flashTimer = null;
-        el5.classList.remove("is-flash");
+        el6.classList.remove("is-flash");
       }, 1100);
     }
     function hitRank(title, q) {
@@ -20842,48 +25047,60 @@
         var body = panelBodies[cat.id];
         if (!body) return;
         var section = "";
-        Array.prototype.forEach.call(body.children, function(el5) {
-          if (el5.classList.contains("bj-settings__section-head")) {
-            section = String(el5.textContent || "").trim();
+        var scan = [];
+        Array.prototype.forEach.call(body.children, function(el6) {
+          if (el6.classList.contains("bj-settings__substyle")) {
+            if (el6.hidden) return;
+            var owner = el6.dataset.section || "";
+            Array.prototype.forEach.call(el6.children, function(sub) {
+              scan.push({ el: sub, section: owner });
+            });
             return;
           }
-          if (el5.classList.contains("bj-settings__unit")) return;
-          if (!el5.classList.contains("bj-dialog__setting")) return;
-          var titleEl = el5.querySelector(".bj-dialog__setting-label");
-          var descEl = el5.querySelector(".bj-dialog__setting-desc");
+          scan.push({ el: el6, section: null });
+        });
+        scan.forEach(function(entry) {
+          var el6 = entry.el;
+          if (entry.section === null && el6.classList.contains("bj-settings__section-head")) {
+            section = String(el6.textContent || "").trim();
+            return;
+          }
+          if (el6.classList.contains("bj-settings__unit")) return;
+          if (!el6.classList.contains("bj-dialog__setting")) return;
+          var rowSection = entry.section === null ? section : entry.section;
+          var titleEl = el6.querySelector(".bj-dialog__setting-label");
+          var descEl = el6.querySelector(".bj-dialog__setting-desc");
           var title = titleEl ? String(titleEl.textContent || "") : "";
           var desc = descEl ? String(descEl.textContent || "") : "";
-          var hay = (title + " " + desc + " " + section + " " + cat.label).replace(/\s+/g, " ").toLowerCase();
+          var hay = (title + " " + desc + " " + rowSection + " " + cat.label).replace(/\s+/g, " ").toLowerCase();
           if (hay.indexOf(q) < 0) return;
           hits.push({
             kind: "setting",
             categoryId: cat.id,
             title,
-            meta: section || cat.label,
-            el: el5,
+            meta: rowSection || cat.label,
+            el: el6,
             rank: hitRank(title, q)
           });
         });
       });
-      if (activeCategory === "keybindings") {
-        var K = Keybindings;
-        var cmds = K && typeof K.list === "function" ? K.list() : [];
-        cmds.forEach(function(cmd) {
-          var title = cmd.title || cmd.id || "";
-          var section = cmd.section || "";
-          var hay = (title + " " + section).toLowerCase();
-          if (hay.indexOf(q) < 0) return;
-          hits.push({
-            kind: "command",
-            categoryId: "keybindings",
-            title,
-            meta: "Keybindings",
-            id: cmd.id,
-            rank: hitRank(title, q)
-          });
+      var K = Keybindings;
+      var cmds = K && typeof K.list === "function" ? K.list() : [];
+      cmds.forEach(function(cmd) {
+        var title = cmd.title || cmd.id || "";
+        var section = cmd.section || "";
+        var hay = (title + " " + section).toLowerCase();
+        if (hay.indexOf(q) < 0) return;
+        hits.push({
+          kind: "command",
+          categoryId: "keybindings",
+          title,
+          meta: "Keybindings",
+          id: cmd.id,
+          rank: hitRank(title, q)
         });
-      }
-      if (activeCategory === "aliases" && aliasesApi && typeof aliasesApi.list === "function") {
+      });
+      if (aliasesApi && typeof aliasesApi.list === "function") {
         aliasesApi.list().forEach(function(pair) {
           var from = String(pair.from || "");
           var to = String(pair.to || "");
@@ -20911,15 +25128,15 @@
       return hits.slice(0, 20);
     }
     function setSearchActive(idx) {
-      var items2 = searchResults.querySelectorAll(".hsearch-ac-item");
+      var items3 = searchResults.querySelectorAll(".hsearch-ac-item");
       searchActive = idx;
-      for (var i = 0; i < items2.length; i++) {
-        items2[i].classList.toggle("is-active", i === idx);
+      for (var i = 0; i < items3.length; i++) {
+        items3[i].classList.toggle("is-active", i === idx);
         if (i === idx) {
-          items2[i].setAttribute("aria-selected", "true");
-          items2[i].scrollIntoView({ block: "nearest" });
+          items3[i].setAttribute("aria-selected", "true");
+          items3[i].scrollIntoView({ block: "nearest" });
         } else {
-          items2[i].removeAttribute("aria-selected");
+          items3[i].removeAttribute("aria-selected");
         }
       }
     }
@@ -20932,7 +25149,7 @@
         if (hit.kind === "setting") {
           target = hit.el;
         } else if (hit.kind === "command" && hit.id) {
-          target = main.querySelector('.bj-kb__row[data-command-id="' + String(hit.id).replace(/"/g, "") + '"]');
+          target = keybindingsApi && typeof keybindingsApi.revealCommand === "function" ? keybindingsApi.revealCommand(hit.id) : main.querySelector('.bj-kb__row[data-command-id="' + String(hit.id).replace(/"/g, "") + '"]');
         } else if (hit.kind === "alias" && hit.rowId != null) {
           target = main.querySelector('.bj-alias__row[data-row-id="' + String(hit.rowId).replace(/"/g, "") + '"]');
         }
@@ -21049,22 +25266,23 @@
     });
     return settingsDialogEl;
   }
-  function open8() {
+  function open9() {
     ensureSettingsDialog();
     if (typeof closeSettingsSearch === "function") closeSettingsSearch(true);
     syncFromState();
+    if (keybindingsApi && typeof keybindingsApi.refresh === "function") keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
   }
-  global32.SettingsUI = {
+  global38.SettingsUI = {
     syncFromState,
     ensureSettingsDialog,
-    open: open8,
+    open: open9,
     notifySettingsChanged
   };
-  global32.BelJarSettingsUI = global32.SettingsUI;
+  global38.BelJarSettingsUI = global38.SettingsUI;
 
   // js/harpoon/harpoon-icon.mjs
-  var global33 = globalThis;
+  var global39 = globalThis;
   var MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="1.6"/><path d="M6.2 6.2 16.5 16.5"/><path d="M20.5 20.5 19.5 12 16.5 16.5 12 19.5Z"/></svg>';
   function appendGlyph(parent, className) {
     var span = document.createElement("span");
@@ -21073,16 +25291,16 @@
     parent.appendChild(span);
     return span;
   }
-  global33.HarpoonIcon = { markup: MARKUP, appendGlyph };
-  global33.BelJarHarpoonIcon = global33.HarpoonIcon;
+  global39.HarpoonIcon = { markup: MARKUP, appendGlyph };
+  global39.BelJarHarpoonIcon = global39.HarpoonIcon;
 
   // js/harpoon/harpoon-glyphs.mjs
-  var global34 = globalThis;
+  var global40 = globalThis;
   function fallbackNormalize(text) {
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192").replace(/([[({])[ \t]+/g, "$1").replace(/[ \t]+([\])}])/g, "$1");
   }
   function displayBeluga(text) {
-    var ed = global34.BelEditor || null;
+    var ed = global40.BelEditor || null;
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(text);
     return fallbackNormalize(text);
   }
@@ -21095,7 +25313,7 @@
   function looksLikeBeluga(s) {
     return /(\|-|⊢|\[|=>|->)/.test(String(s || ""));
   }
-  global34.HarpoonGlyphs = {
+  global40.HarpoonGlyphs = {
     displayBeluga,
     compactTypeLabel,
     looksLikeBeluga,
@@ -21103,12 +25321,12 @@
   };
 
   // js/harpoon/harpoon-lab-tree.mjs
-  var global35 = globalThis;
+  var global41 = globalThis;
   function norm(s) {
     return String(s == null ? "" : s).replace(/\s+/g, " ").trim();
   }
   function glyphs() {
-    return global35.HarpoonGlyphs || null;
+    return global41.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
     var g14 = glyphs();
@@ -21137,9 +25355,9 @@
     if (m) parts.push(m + "\u0394");
     return parts.join(" \xB7 ");
   }
-  function moveLabel(step) {
-    var meta = step.meta || {};
-    switch (step.move) {
+  function moveLabel(step2) {
+    var meta = step2.meta || {};
+    switch (step2.move) {
       case "split":
         return "case " + (meta.scrutinee || "?");
       case "synth":
@@ -21157,7 +25375,7 @@
       case "intro":
         return "intro";
       default:
-        return step.move;
+        return step2.move;
     }
   }
   function altCount(frontier) {
@@ -21169,7 +25387,7 @@
     return n;
   }
   var SIZE = {
-    move: { w: 104, h: 32, label: 13 },
+    move: { w: 104, minW: 74, h: 32, label: 13 },
     theorem: { w: 112, h: 34, label: 14 },
     branch: { h: 26, label: 16, minW: 88, maxW: 148 },
     stuck: { w: 88, h: 32, label: 10 },
@@ -21186,13 +25404,13 @@
       if (extra) for (var k in extra) n[k] = extra[k];
       return n;
     }
-    var root = mk("theorem", opts.name || "theorem", {
+    var root2 = mk("theorem", opts.name || "theorem", {
       sub: shortGoal(opts.goalType || ""),
       goalType: opts.goalType || "",
       theoremSnapshot: snap,
       premiseCount: snap && snap.premiseCount
     });
-    var tails = { "": root };
+    var tails = { "": root2 };
     var armByPattern = {};
     var advancedTrace = [];
     var stuckTrace = null;
@@ -21206,8 +25424,8 @@
       var st = steps[i];
       var key = st.branch ? norm(st.branch) : "";
       var container = key && armByPattern[key] ? key : "";
-      var tail = tails[container] || root;
-      var entry = advancedTrace[i];
+      var tail = tails[container] || root2;
+      var entry = st.traceEntry || advancedTrace[i];
       var holeCtx = st.holeCtx || entry && entry.holeCtx || [];
       var holeMeta = st.holeMeta || entry && entry.holeMeta || [];
       var frontier = entry && entry.tried ? entry.tried.slice() : [];
@@ -21243,7 +25461,7 @@
     }
     if (stuck && stuck.reason && stuck.reason !== "cancelled" && stuck.reason !== "stopped") {
       var skey = stuckTrace && stuckTrace.branch ? norm(stuckTrace.branch) : "";
-      var stail = tails[skey && armByPattern[skey] ? skey : ""] || root;
+      var stail = tails[skey && armByPattern[skey] ? skey : ""] || root2;
       var stuckCtx = stuckTrace && stuckTrace.holeCtx || [];
       var stuckMeta = stuckTrace && stuckTrace.holeMeta || [];
       stail.children.push(mk("stuck", "stuck", {
@@ -21261,13 +25479,13 @@
       (function markClosed(n) {
         if (!n.children.length && n.type === "move") n.closed = true;
         for (var c = 0; c < n.children.length; c += 1) markClosed(n.children[c]);
-      })(root);
+      })(root2);
     }
     (function attachParents(n, parent) {
       n.parent = parent;
       for (var ci = 0; ci < n.children.length; ci += 1) attachParents(n.children[ci], n);
-    })(root, null);
-    return root;
+    })(root2, null);
+    return root2;
   }
   function breadcrumb(n) {
     var parts = [];
@@ -21280,9 +25498,9 @@
     }
     return parts;
   }
-  function findById(root, id) {
+  function findById(root2, id) {
     if (!id) return null;
-    var nodes = flatten(root);
+    var nodes = flatten(root2);
     for (var i = 0; i < nodes.length; i += 1) {
       if (nodes[i].id === id) return nodes[i];
     }
@@ -21292,6 +25510,11 @@
     if (n.type === "arm") {
       var len = (n.label || "").length;
       return Math.max(SIZE.branch.minW, Math.min(SIZE.branch.maxW, 24 + len * 5.5));
+    }
+    if (n.type === "move") {
+      var mlen = Math.min((n.label || "").length, SIZE.move.label);
+      var dot = n.closed || n.open ? 14 : 0;
+      return Math.max(SIZE.move.minW, Math.min(SIZE.move.w, 26 + mlen * 6.3 + dot));
     }
     if (n.type === "theorem") return SIZE.theorem.w;
     if (n.type === "stuck") return SIZE.stuck.w;
@@ -21342,7 +25565,7 @@
       x += c.subW + GAP;
     }
   }
-  function expandGhosts(root) {
+  function expandGhosts(root2) {
     (function walk(n) {
       if (n.type === "move" && n.ghosts && n.ghosts.length) {
         for (var i = 0; i < n.ghosts.length; i += 1) {
@@ -21358,20 +25581,20 @@
         }
       }
       for (var c = 0; c < n.children.length; c += 1) walk(n.children[c]);
-    })(root);
+    })(root2);
   }
-  function flatten(root) {
+  function flatten(root2) {
     var out = [];
     (function walk(n, parent, depth) {
       n.parent = parent;
       n.depth = depth;
       out.push(n);
       for (var i = 0; i < n.children.length; i += 1) walk(n.children[i], n, depth + 1);
-    })(root, null, 0);
+    })(root2, null, 0);
     return out;
   }
   var SVGNS = "http://www.w3.org/2000/svg";
-  function el2(name, attrs) {
+  function el3(name, attrs) {
     var e = document.createElementNS(SVGNS, name);
     if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]);
     return e;
@@ -21395,7 +25618,7 @@
   function renderNodeBody(g14, n, pw, h, clipId) {
     var isArm = n.type === "arm";
     var rx = isArm ? 6 : 8;
-    g14.appendChild(el2("rect", {
+    g14.appendChild(el3("rect", {
       x: -pw / 2,
       y: -h / 2,
       width: pw,
@@ -21404,7 +25627,7 @@
       class: isArm ? "hpt-shape hpt-shape--branch" : "hpt-shape"
     }));
     var label = trunc(displayBeluga2(n.label || ""), labelMax(n));
-    var text = el2("text", {
+    var text = el3("text", {
       y: isArm ? 4 : 4,
       class: isArm ? "hpt-text hpt-text--branch" : "hpt-text",
       "clip-path": "url(#" + clipId + ")"
@@ -21412,14 +25635,14 @@
     text.textContent = label;
     g14.appendChild(text);
     if (n.closed) {
-      g14.appendChild(el2("circle", {
+      g14.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
         class: "hpt-status hpt-status--done"
       }));
     } else if (n.open && n.type === "move") {
-      g14.appendChild(el2("circle", {
+      g14.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
@@ -21432,22 +25655,22 @@
     if (g14 && typeof g14.looksLikeBeluga === "function") return g14.looksLikeBeluga(s);
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
-  function highlightInto(host, text, kind) {
-    var ed = global35.BelEditor || null;
+  function highlightInto(host2, text, kind) {
+    var ed = global41.BelEditor || null;
     var shown = displayBeluga2(String(text == null ? "" : text).trim());
     if (!shown) return false;
     try {
       if (kind === "type" && ed && typeof ed.renderTypeInto === "function") {
-        ed.renderTypeInto(host, shown, "comp");
+        ed.renderTypeInto(host2, shown, "comp");
         return true;
       }
       if (ed && typeof ed.highlightSourceFragment === "function") {
-        host.appendChild(ed.highlightSourceFragment(shown));
+        host2.appendChild(ed.highlightSourceFragment(shown));
         return true;
       }
     } catch (_) {
     }
-    host.textContent = shown;
+    host2.textContent = shown;
     return true;
   }
   function buildNodeTipFragment(n, mode) {
@@ -21518,13 +25741,13 @@
     }
     return frag;
   }
-  function render3(container, root, opts) {
+  function render3(container, root2, opts) {
     opts = opts || {};
     var mode = opts.mode || "path";
-    if (mode === "space") expandGhosts(root);
-    var nodes = flatten(root);
-    measure(root);
-    place2(root, root.subW / 2 + 24, 36);
+    if (mode === "space") expandGhosts(root2);
+    var nodes = flatten(root2);
+    measure(root2);
+    place2(root2, root2.subW / 2 + 24, 36);
     var minX = Infinity;
     var maxX = -Infinity;
     var maxY = 0;
@@ -21537,29 +25760,35 @@
     var contentW = Math.max(300, maxX - minX + pad * 2);
     var H = maxY + pad * 2;
     var cssH = Math.min(520, Math.max(200, H * 0.85));
+    if (opts.fill && container.clientHeight > 0) cssH = container.clientHeight;
     var scale = H > 0 ? cssH / H : 1;
+    if (opts.fill) scale = Math.min(scale, 1.25);
     var hostW = container.clientWidth || 640;
     var viewW = scale > 0 ? hostW / scale : contentW;
     var defaultW = Math.min(viewW, contentW);
     if (defaultW < 300) defaultW = Math.min(300, contentW);
     var defaultX = (minX + maxX) / 2 - defaultW / 2;
-    var vb = opts.initialView ? { x: opts.initialView.x, y: opts.initialView.y, w: opts.initialView.w, h: opts.initialView.h } : { x: defaultX, y: 0, w: defaultW, h: H };
-    var svg = el2("svg", {
+    var viewH = scale > 0 ? cssH / scale : H;
+    var defaultY = H / 2 - viewH / 2;
+    var vb = opts.initialView ? { x: opts.initialView.x, y: opts.initialView.y, w: opts.initialView.w, h: opts.initialView.h } : { x: defaultX, y: defaultY, w: defaultW, h: viewH };
+    var svg = el3("svg", {
       class: "hpt-svg",
       viewBox: vb.x + " " + vb.y + " " + vb.w + " " + vb.h,
-      preserveAspectRatio: "xMidYMin meet"
+      // Top-anchored by default, which is what a scrolling compact strip wants. When the
+      // graph is filling a pane, any slack belongs on both sides of it, not all below.
+      preserveAspectRatio: opts.fill ? "xMidYMid meet" : "xMidYMin meet"
     });
     svg.style.width = "100%";
     svg.style.height = cssH + "px";
-    var defs = el2("defs");
+    var defs = el3("defs");
     nodes.forEach(function(n) {
       var clipId = "hpt-clip-" + n.id;
       n._clipId = clipId;
       var pw = n.w;
       var h = n.h;
-      var cp = el2("clipPath", { id: clipId });
+      var cp = el3("clipPath", { id: clipId });
       var inset = n.type === "arm" ? 6 : 12;
-      cp.appendChild(el2("rect", {
+      cp.appendChild(el3("rect", {
         x: -pw / 2 + inset,
         y: -h / 2 + 2,
         width: pw - inset * 2,
@@ -21569,11 +25798,11 @@
       defs.appendChild(cp);
     });
     svg.appendChild(defs);
-    var scene = el2("g", { class: "hpt-scene" });
+    var scene = el3("g", { class: "hpt-scene" });
     svg.appendChild(scene);
     nodes.forEach(function(n) {
       if (!n.parent) return;
-      scene.appendChild(el2("path", {
+      scene.appendChild(el3("path", {
         d: edgePath(n.parent, n),
         class: "hpt-edge" + (n.type === "arm" ? " hpt-edge--branch" : "") + (n.type === "ghost" ? " hpt-edge--ghost" : "")
       }));
@@ -21589,7 +25818,7 @@
     nodes.forEach(function(n, idx) {
       var pw = n.w;
       var h = n.h;
-      var g14 = el2("g", {
+      var g14 = el3("g", {
         class: "hpt-node hpt-node--" + (n.kind || n.type) + (n.type === "ghost" ? " is-ghost" : ""),
         transform: "translate(" + n.x + "," + n.y + ")",
         "data-node-id": String(n.id),
@@ -21603,9 +25832,9 @@
         var bh = 13;
         var bx = pw / 2 - bw * 0.55;
         var by = h / 2 - bh * 0.55;
-        var chip = el2("g", { class: "hpt-altcount", transform: "translate(" + bx + "," + by + ")" });
-        chip.appendChild(el2("rect", { x: 0, y: 0, width: bw, height: bh, rx: bh / 2 }));
-        var ct = el2("text", { x: bw / 2, y: bh - 4, class: "hpt-altcount-text" });
+        var chip = el3("g", { class: "hpt-altcount", transform: "translate(" + bx + "," + by + ")" });
+        chip.appendChild(el3("rect", { x: 0, y: 0, width: bw, height: bh, rx: bh / 2 }));
+        var ct = el3("text", { x: bw / 2, y: bh - 4, class: "hpt-altcount-text" });
         ct.textContent = "+" + n.altCount;
         chip.appendChild(ct);
         g14.appendChild(chip);
@@ -21616,9 +25845,9 @@
       } else {
         ariaTip = n.step && n.step.rationale || n.label || "";
       }
-      if (global35.Tooltips && typeof global35.Tooltips.setRich === "function") {
+      if (global41.Tooltips && typeof global41.Tooltips.setRich === "function") {
         (function(node) {
-          global35.Tooltips.setRich(g14, function() {
+          global41.Tooltips.setRich(g14, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
@@ -21677,7 +25906,7 @@
         }
         svg.classList.add("is-panning");
       }
-      var scale2 = vb.w / svg.clientWidth;
+      var scale2 = Math.max(vb.w / svg.clientWidth, vb.h / svg.clientHeight);
       vb.x = drag.vx - dx * scale2;
       vb.y = drag.vy - dy * scale2;
       applyVB();
@@ -21712,7 +25941,7 @@
     }
     return svg;
   }
-  global35.HarpoonTree = {
+  global41.HarpoonTree = {
     buildModel,
     render: render3,
     breadcrumb,
@@ -21720,9 +25949,9 @@
   };
 
   // js/harpoon/harpoon-lab-display.mjs
-  var global36 = globalThis;
+  var global42 = globalThis;
   function createDisplay(deps) {
-    var el5 = deps.el;
+    var el6 = deps.el;
     var E3 = deps.E;
     var setTip3 = deps.setTip;
     var liveEditorFileId2 = deps.liveEditorFileId;
@@ -21732,12 +25961,12 @@
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g14 = global36.HarpoonGlyphs;
+      var g14 = global42.HarpoonGlyphs;
       if (g14) return g14.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g14 = global36.HarpoonGlyphs;
+      var g14 = global42.HarpoonGlyphs;
       if (g14) return g14.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
@@ -21749,35 +25978,35 @@
       if (ed && typeof ed.expandBelAliases === "function") s = ed.expandBelAliases(s);
       return displayType3(s);
     }
-    function renderType3(host, typeStr, kind) {
+    function renderType4(host2, typeStr, kind) {
       var norm2 = displayType3(typeStr);
-      host.textContent = "";
+      host2.textContent = "";
       if (!norm2) return;
       var ed = E3();
       if (ed && typeof ed.renderTypeInto === "function") {
         try {
-          ed.renderTypeInto(host, norm2, kind || "comp");
-          if (host.textContent.indexOf("|-") !== -1) host.textContent = norm2;
+          ed.renderTypeInto(host2, norm2, kind || "comp");
+          if (host2.textContent.indexOf("|-") !== -1) host2.textContent = norm2;
           return;
         } catch (e) {
         }
       }
-      host.textContent = norm2;
+      host2.textContent = norm2;
     }
-    function renderSource2(host, text) {
+    function renderSource2(host2, text) {
       var shown = displaySource(text);
-      host.textContent = "";
+      host2.textContent = "";
       if (!shown) return;
       var ed = E3();
       if (ed && typeof ed.renderSourceInto === "function") {
         try {
-          ed.renderSourceInto(host, shown, "bel");
-          if (host.textContent.indexOf("|-") !== -1) host.textContent = shown;
+          ed.renderSourceInto(host2, shown, "bel");
+          if (host2.textContent.indexOf("|-") !== -1) host2.textContent = shown;
           return;
         } catch (e) {
         }
       }
-      host.textContent = shown;
+      host2.textContent = shown;
     }
     function peelDisplayGoal2(goalType, goalState) {
       if (!goalType || goalState === "live") return goalType;
@@ -21800,7 +26029,7 @@
       if (!ed || !prep || typeof ed.resolveHoleGoalForHit !== "function") {
         return { goalType: na.goalType, goalState: na.goalState || "live" };
       }
-      var api3 = global36.CurrentEditor;
+      var api3 = global42.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = ed.resolveHoleGoalForHit(session.view, eng, prep.hit);
       if (!hit || !hit.goal) {
@@ -21819,7 +26048,7 @@
       var from = session ? session.declFrom : null;
       if (!view || !name || from == null) return cached || sourceType;
       if (session.fileId && liveEditorFileId2() !== session.fileId) return cached || sourceType;
-      var api3 = global36.CurrentEditor;
+      var api3 = global42.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       if (!eng || typeof eng.intelSyncAt !== "function") return cached || sourceType;
       var to = session.declTo != null ? session.declTo : Math.min(from + 400, view.state.doc.length);
@@ -21853,27 +26082,34 @@
       var old = wrap.querySelector(".harpoon-lab-auto-goal-priors");
       if (old) old.remove();
       if (!binders || !binders.length) return;
-      var row = el5("div", "harpoon-lab-auto-goal-priors");
-      var text = el5("span", "harpoon-lab-auto-goal-priors-text");
-      renderType3(text, binders.map(function(b) {
+      var row = el6("div", "harpoon-lab-auto-goal-priors");
+      var text = el6("span", "harpoon-lab-auto-goal-priors-text");
+      renderType4(text, binders.map(function(b) {
         return b.text;
       }).join(" "), "binder");
       row.appendChild(text);
       body.insertAdjacentElement("afterend", row);
     }
-    function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders) {
-      var wrap = el5("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
-      var glabel = el5("div", "harpoon-lab-goal-label");
-      glabel.appendChild(el5("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
-      if (declName) glabel.appendChild(el5("span", "harpoon-lab-auto-goal-name", declName));
+    function appendDeclLabel(glabel, declName, declKw) {
+      if (!declName) return;
+      var name = el6("span", "harpoon-lab-auto-goal-name");
+      if (declKw) name.appendChild(el6("span", "harpoon-lab-goal-decl-kw bel-hl-keyword", declKw));
+      name.appendChild(el6("span", "harpoon-lab-goal-decl-name bel-hl-var-def", declName));
+      glabel.appendChild(name);
+    }
+    function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders, declKw) {
+      var wrap = el6("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
+      var glabel = el6("div", "harpoon-lab-goal-label");
+      glabel.appendChild(el6("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+      appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
-      var body = el5("div", "harpoon-lab-auto-goal-body");
-      var goal = el5("div", "harpoon-hole-goal");
+      var body = el6("div", "harpoon-lab-auto-goal-body");
+      var goal = el6("div", "harpoon-hole-goal");
       var ed = E3();
       if (ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goal, { surface: "lab", goalState: goalState || "live", goal: goalType });
       } else {
-        renderType3(goal, goalType);
+        renderType4(goal, goalType);
       }
       body.appendChild(goal);
       wrap.appendChild(body);
@@ -21892,9 +26128,9 @@
       return body;
     }
     function appendAutoSolution(parent, body) {
-      var wrap = el5("div", "harpoon-lab-auto-solution harpoon-lab-auto-panel");
-      wrap.appendChild(el5("span", "harpoon-lab-auto-solution-label harpoon-lab-section-label is-solution", "Solution"));
-      var bodyEl3 = el5("div", "harpoon-lab-auto-solution-body");
+      var wrap = el6("div", "harpoon-lab-auto-solution harpoon-lab-auto-panel");
+      wrap.appendChild(el6("span", "harpoon-lab-auto-solution-label harpoon-lab-section-label is-solution", "Solution"));
+      var bodyEl3 = el6("div", "harpoon-lab-auto-solution-body");
       renderSource2(bodyEl3, formatSolutionBody(body));
       wrap.appendChild(bodyEl3);
       parent.appendChild(wrap);
@@ -21916,40 +26152,40 @@
       var tag = opts.tag || "div";
       var className = opts.className || "";
       if (opts.tone) className += " tone-" + opts.tone;
-      var root = el5(tag, className);
-      if (tag === "button") root.type = "button";
-      if (opts.disabled) root.disabled = true;
-      var badge = el5("span", "harpoon-lab-banner-badge" + (opts.badgeClass ? " " + opts.badgeClass : ""));
+      var root2 = el6(tag, className);
+      if (tag === "button") root2.type = "button";
+      if (opts.disabled) root2.disabled = true;
+      var badge = el6("span", "harpoon-lab-banner-badge" + (opts.badgeClass ? " " + opts.badgeClass : ""));
       if (opts.icon) badge.innerHTML = opts.icon;
-      root.appendChild(badge);
-      var copy = el5("span", "harpoon-lab-banner-copy" + (opts.copyClass ? " " + opts.copyClass : ""));
+      root2.appendChild(badge);
+      var copy = el6("span", "harpoon-lab-banner-copy" + (opts.copyClass ? " " + opts.copyClass : ""));
       if (opts.title != null) {
-        copy.appendChild(el5("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
+        copy.appendChild(el6("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
       }
       if (opts.sub) {
-        copy.appendChild(el5("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
+        copy.appendChild(el6("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
       }
-      root.appendChild(copy);
+      root2.appendChild(copy);
       if (typeof opts.onClick === "function") {
-        root.addEventListener("click", function(e) {
+        root2.addEventListener("click", function(e) {
           e.preventDefault();
-          if (root.disabled || root.classList.contains("is-committing")) return;
+          if (root2.disabled || root2.classList.contains("is-committing")) return;
           opts.onClick();
         });
       }
-      return root;
+      return root2;
     }
     function buildPlaceStrip2(self, opts) {
       opts = opts || {};
-      var blocked = !!opts.blocked;
+      var blocked2 = !!opts.blocked;
       var title = opts.title || "Place the proof";
-      var sub = opts.sub || (blocked ? "The hole changed \u2014 restart to insert" : "Insert into the file");
+      var sub = opts.sub || (blocked2 ? "The hole changed \u2014 restart to insert" : "Insert into the file");
       var extraCls = opts.extraCls || "";
       return buildBannerShell2({
         tag: "button",
-        className: "harpoon-lab-place harpoon-lab-strip harpoon-lab-banner" + extraCls + (blocked ? " is-blocked" : ""),
-        disabled: blocked,
-        tone: blocked ? "error" : "action",
+        className: "harpoon-lab-place harpoon-lab-strip harpoon-lab-banner" + extraCls + (blocked2 ? " is-blocked" : ""),
+        disabled: blocked2,
+        tone: blocked2 ? "error" : "action",
         icon: ICON_ARROW_RIGHT2,
         badgeClass: "harpoon-lab-place-arrow",
         copyClass: "harpoon-lab-place-copy",
@@ -21976,11 +26212,11 @@
       });
       if (!placed && commit.detailRaw) {
         var copy = banner.querySelector(".harpoon-lab-banner-copy");
-        if (copy) copy.appendChild(el5("span", "harpoon-lab-commit-tech", commit.detailRaw));
+        if (copy) copy.appendChild(el6("span", "harpoon-lab-commit-tech", commit.detailRaw));
       }
       if (!placed && typeof onRetry === "function") {
-        var actions = el5("div", "harpoon-lab-commit-actions");
-        var retryBtn = el5("button", "harpoon-lab-commit-retry");
+        var actions = el6("div", "harpoon-lab-commit-actions");
+        var retryBtn = el6("button", "harpoon-lab-commit-retry");
         retryBtn.type = "button";
         retryBtn.textContent = "Try again";
         retryBtn.addEventListener("click", function(e) {
@@ -22036,11 +26272,11 @@
       while (m = re.exec(String(text || ""))) names.push(m[1]);
       return names;
     }
-    function deriveMoveLead(step) {
-      if (!step) return "";
-      var meta = step.meta || {};
-      var move = step.move;
-      var goalHead = meta.goalHead || goalHeadFromGoal(step.goal) || "the goal";
+    function deriveMoveLead(step2) {
+      if (!step2) return "";
+      var meta = step2.meta || {};
+      var move = step2.move;
+      var goalHead = meta.goalHead || goalHeadFromGoal(step2.goal) || "the goal";
       switch (move) {
         case "synth": {
           var links = (meta.chain || []).filter(function(c) {
@@ -22070,7 +26306,7 @@
     }
     function moveLead(s) {
       if (s && s.lead) return s.lead;
-      var ed = global36.BelEditor;
+      var ed = global42.BelEditor;
       if (ed && typeof ed.stepLead === "function" && s && s.meta) {
         var fromEd = ed.stepLead({ kind: s.move }, s.meta, { goal: s.goal });
         if (fromEd) return fromEd;
@@ -22080,69 +26316,69 @@
       return s && MOVE_GLOSS[s.move] || "made a move";
     }
     function facetChip(text, extraClass, tip, richKind) {
-      var chip = el5("span", "hpt-move-facet-chip" + (extraClass ? " " + extraClass : ""));
-      var code = el5("code", "hpt-move-facet-code");
+      var chip = el6("span", "hpt-move-facet-chip" + (extraClass ? " " + extraClass : ""));
+      var code = el6("code", "hpt-move-facet-code");
       renderSource2(code, text);
       chip.appendChild(code);
       if (tip) bindChipTip2(chip, tip, richKind ? text : null, richKind);
       return chip;
     }
-    function renderMoveFacet(step, variant) {
-      var meta = step.meta || {};
-      var move = step.move;
+    function renderMoveFacet(step2, variant) {
+      var meta = step2.meta || {};
+      var move = step2.move;
       if (move === "synth") {
         return renderSynthChain2(meta, variant === "detail" ? "full" : "inline");
       }
-      var wrap = el5("div", "hpt-move-facet" + (variant === "inline" ? " is-inline" : "") + (move ? " is-move-" + move : ""));
-      var has2 = false;
+      var wrap = el6("div", "hpt-move-facet" + (variant === "inline" ? " is-inline" : "") + (move ? " is-move-" + move : ""));
+      var has3 = false;
       if (move === "intro") {
-        var introNames = meta.introduced && meta.introduced.length ? meta.introduced : introducedFromText(step.text);
+        var introNames = meta.introduced && meta.introduced.length ? meta.introduced : introducedFromText(step2.text);
         introNames.forEach(function(n) {
           wrap.appendChild(facetChip(n, "", "Binder introduced for the assumed input"));
-          has2 = true;
+          has3 = true;
         });
       } else if (move === "split") {
         if (meta.arms) {
           var armTip = meta.arms === 1 ? "Opened one branch with a single hole" : "Opened " + meta.arms + " branches, each with its own hole";
           wrap.appendChild(facetChip(meta.arms + " arm" + (meta.arms === 1 ? "" : "s"), "", armTip));
-          has2 = true;
+          has3 = true;
         }
         if (meta.annotated) {
           wrap.appendChild(facetChip("typed", "is-muted", "Arms carry explicit type annotations"));
-          has2 = true;
+          has3 = true;
         }
       } else if (move === "fill") {
-        var filler = meta.filler || step.text && String(step.text).split("\n")[0].replace(/\s+/g, " ").trim();
+        var filler = meta.filler || step2.text && String(step2.text).split("\n")[0].replace(/\s+/g, " ").trim();
         if (filler) {
           wrap.appendChild(facetChip(filler, "", "Proof term written in place of the hole", "type"));
-          has2 = true;
+          has3 = true;
         }
       } else if (move === "recurse" || move === "lemma") {
         (meta.uses || []).forEach(function(u) {
           wrap.appendChild(facetChip(u, "", "Used from the local context"));
-          has2 = true;
+          has3 = true;
         });
         (meta.binds || []).forEach(function(b) {
           wrap.appendChild(facetChip(b, "is-binds", "New witness bound by this move"));
-          has2 = true;
+          has3 = true;
         });
       } else if (move === "invert") {
         if (meta.uses && meta.uses[0]) {
-          var arrow = el5("span", "hpt-move-facet-arrow");
+          var arrow = el6("span", "hpt-move-facet-arrow");
           arrow.textContent = meta.uses[0] + " \u2192 " + ((meta.binds || []).join(", ") || "\u2026");
           bindChipTip2(arrow, "Hypothesis inverted into pattern variables");
           wrap.appendChild(arrow);
-          has2 = true;
+          has3 = true;
         }
       } else if (move === "impossible" && meta.refuted) {
         wrap.appendChild(facetChip(meta.refuted, "", "Shown to be contradictory"));
-        has2 = true;
+        has3 = true;
       }
-      return has2 ? wrap : null;
+      return has3 ? wrap : null;
     }
-    function appendMoveFacet(host, step) {
-      var facet = renderMoveFacet(step, "inline");
-      if (facet) host.appendChild(facet);
+    function appendMoveFacet(host2, step2) {
+      var facet = renderMoveFacet(step2, "inline");
+      if (facet) host2.appendChild(facet);
     }
     function autoVerdictTitle(na) {
       if (na.complete) {
@@ -22208,7 +26444,7 @@
       normalizeGlyphs: normalizeGlyphs2,
       displayType: displayType3,
       displaySource,
-      renderType: renderType3,
+      renderType: renderType4,
       renderSource: renderSource2,
       peelDisplayGoal: peelDisplayGoal2,
       resolveNativeAutoGoalDisplay,
@@ -22216,6 +26452,7 @@
       priorGoalBinders: priorGoalBinders2,
       mountGoalPriors: mountGoalPriors2,
       appendAutoGoalHero,
+      appendDeclLabel,
       appendAutoSolution,
       formatSolutionBody,
       autoVerdictTone,
@@ -22237,7 +26474,7 @@
   }
 
   // js/harpoon/harpoon-lab-commit.mjs
-  var global37 = globalThis;
+  var global43 = globalThis;
   function createCommit(deps) {
     var E3 = deps.E;
     var toast3 = deps.toast;
@@ -22278,16 +26515,16 @@
     }
     var COMMIT_CHECK_TIMEOUT_MS = 45e3;
     var COMMIT_NAV_TIMEOUT_MS = 8e3;
-    function withCommitTimeout(promise, ms, message) {
+    function withCommitTimeout(promise, ms, message2) {
       return new Promise(function(resolve2, reject) {
-        var timer2 = global37.setTimeout(function() {
-          reject(new Error(message || "Timed out."));
+        var timer2 = global43.setTimeout(function() {
+          reject(new Error(message2 || "Timed out."));
         }, ms);
         Promise.resolve(promise).then(function(v) {
-          global37.clearTimeout(timer2);
+          global43.clearTimeout(timer2);
           resolve2(v);
         }).catch(function(e) {
-          global37.clearTimeout(timer2);
+          global43.clearTimeout(timer2);
           reject(e);
         });
       });
@@ -22297,7 +26534,7 @@
       var fileId = this.fileId || this.anchor && this.anchor.fileId;
       this.clearPendingCommitNav();
       var view = this.resolveView();
-      var api3 = global37.CurrentEditor;
+      var api3 = global43.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng) || this.compromise && this.compromise.liveHit;
       if (!fileId || !hit) {
@@ -22316,8 +26553,8 @@
         self.verifyAndCommit(src, { skipBeginUi: true });
       };
       self._pendingCommitNavListener = onActive;
-      global37.addEventListener("beljar:active-editor-view", onActive);
-      global37.dispatchEvent(new CustomEvent("beljar:open-file-at", {
+      global43.addEventListener("beljar:active-editor-view", onActive);
+      global43.dispatchEvent(new CustomEvent("beljar:open-file-at", {
         detail: {
           fileId,
           from: hit.from,
@@ -22330,7 +26567,7 @@
         onActive();
         return Promise.resolve(false);
       }
-      self._pendingCommitNavTimer = global37.setTimeout(function() {
+      self._pendingCommitNavTimer = global43.setTimeout(function() {
         if (!self.pendingCommitSource) return;
         self.clearPendingCommitNav();
         self.resetCommitForRetry();
@@ -22342,7 +26579,7 @@
       opts = opts || {};
       var ed = E3();
       var self = this;
-      var client = global37.BelugaClient;
+      var client = global43.BelugaClient;
       if (!ed) return Promise.resolve(false);
       if (!opts.skipBeginUi) this.beginCommitUi("verify");
       this.probeAnchor();
@@ -22360,7 +26597,7 @@
         this.finishCommitFailure("Open the file to place the proof.", false);
         return Promise.resolve(false);
       }
-      var api3 = global37.CurrentEditor;
+      var api3 = global43.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng);
       if (!hit) {
@@ -22388,7 +26625,8 @@
       var body = String(source).replace(/;\s*$/, "").trimEnd();
       var tot = totalityPrefixFromDecl(declSlice);
       if (tot && !/\/\s*total\b/.test(body)) body = tot + "\n" + body;
-      var newDecl = "rec " + decl.name + " : " + decl.type + " =\n" + body + "\n;";
+      var hadSemi = /;\s*$/.test(declSlice);
+      var newDecl = ed.committedMemberText ? ed.committedMemberText(decl, body, hadSemi) : "rec " + decl.name + " : " + decl.type + " =\n" + body + (hadSemi ? "\n;" : "");
       var codes = ed.buildCommitCheckCodes ? ed.buildCommitCheckCodes(prep.assembledCode, prep, newDecl) : {
         patched: prep.assembledCode != null ? prep.assembledCode.slice(0, prep.assembledDeclFrom) + newDecl + prep.assembledCode.slice(prep.assembledDeclTo) : docText.slice(0, declFrom) + newDecl + docText.slice(declTo),
         orchestration: prep.assembledCode != null ? prep.assembledCode.slice(0, prep.assembledDeclFrom) + newDecl + prep.assembledCode.slice(prep.assembledDeclTo) : docText.slice(0, declFrom) + newDecl + docText.slice(declTo)
@@ -22460,9 +26698,9 @@
   }
 
   // js/harpoon/harpoon-lab-reel.mjs
-  var global38 = globalThis;
+  var global44 = globalThis;
   function createReel(deps) {
-    var el5 = deps.el;
+    var el6 = deps.el;
     var tacticVerb2 = deps.tacticVerb || function(k) {
       return k || "move";
     };
@@ -22471,7 +26709,7 @@
     var bindChipTip2 = deps.bindChipTip;
     var moveLead = deps.moveLead;
     var appendMoveFacet = deps.appendMoveFacet;
-    var renderType3 = deps.renderType;
+    var renderType4 = deps.renderType;
     var renderSource2 = deps.renderSource;
     var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
     var resolveNativeAutoGoalDisplay = deps.resolveNativeAutoGoalDisplay;
@@ -22481,15 +26719,15 @@
     var ICON_PLAY2 = deps.ICON_PLAY;
     var ICON_PAUSE2 = deps.ICON_PAUSE;
     function appendAutoStepRow(trail, s, i) {
-      var item = el5("li", "harpoon-lab-auto-step");
+      var item = el6("li", "harpoon-lab-auto-step");
       item.style.setProperty("--i", String(i));
-      item.appendChild(el5("span", "harpoon-lab-auto-node"));
-      var body = el5("div", "harpoon-lab-auto-step-body");
-      var rowCopy = el5("div", "harpoon-lab-auto-step-copy");
-      var verb = el5("span", "harpoon-lab-auto-move move-" + (s.move || "move"));
+      item.appendChild(el6("span", "harpoon-lab-auto-node"));
+      var body = el6("div", "harpoon-lab-auto-step-body");
+      var rowCopy = el6("div", "harpoon-lab-auto-step-copy");
+      var verb = el6("span", "harpoon-lab-auto-move move-" + (s.move || "move"));
       verb.textContent = tacticVerb2(s.move);
       rowCopy.appendChild(verb);
-      rowCopy.appendChild(el5("span", "harpoon-lab-auto-why", moveLead(s)));
+      rowCopy.appendChild(el6("span", "harpoon-lab-auto-why", moveLead(s)));
       body.appendChild(rowCopy);
       appendMoveFacet(body, s);
       item.appendChild(body);
@@ -22513,8 +26751,8 @@
       var node = session._statTipEl || session._autoSearchSpinner;
       if (!node) return;
       if (node.getAttribute("data-tooltip") === tip) return;
-      if (global38.Tooltips && global38.Tooltips.set) {
-        global38.Tooltips.set(node, tip, { ariaLabel: false });
+      if (global44.Tooltips && global44.Tooltips.set) {
+        global44.Tooltips.set(node, tip, { ariaLabel: false });
       } else if (tip) {
         node.setAttribute("data-tooltip", tip);
       }
@@ -22524,45 +26762,45 @@
     var REEL_CLICK_EASE = "cubic-bezier(0.34, 1.22, 0.64, 1)";
     var REEL_OUT_MS = 150;
     var COMMIT_IN_MS = 280;
-    function buildStepCopy(step) {
-      var rowCopy = el5("div", "harpoon-lab-auto-step-copy");
-      var verb = el5("span", "harpoon-lab-auto-move move-" + (step.move || "move"));
-      verb.textContent = tacticVerb2(step.move);
+    function buildStepCopy(step2) {
+      var rowCopy = el6("div", "harpoon-lab-auto-step-copy");
+      var verb = el6("span", "harpoon-lab-auto-move move-" + (step2.move || "move"));
+      verb.textContent = tacticVerb2(step2.move);
       rowCopy.appendChild(verb);
-      rowCopy.appendChild(el5("span", "harpoon-lab-auto-why", moveLead(step)));
+      rowCopy.appendChild(el6("span", "harpoon-lab-auto-why", moveLead(step2)));
       return rowCopy;
     }
-    function installCommittedRow(row, step, animate) {
+    function installCommittedRow(row, step2, animate) {
       row.classList.remove("is-working", "is-committing", "is-selected", "is-settling", "is-fresh");
       var conveyor = row.querySelector(".harpoon-conveyor");
       if (conveyor) conveyor.parentNode.removeChild(conveyor);
       var spine = row.querySelector(".harpoon-lab-auto-node");
       if (spine) spine.classList.remove("is-live");
-      else row.insertBefore(el5("span", "harpoon-lab-auto-node"), row.firstChild);
+      else row.insertBefore(el6("span", "harpoon-lab-auto-node"), row.firstChild);
       var priorBody = row.querySelector(".harpoon-lab-auto-step-body");
       if (priorBody) priorBody.parentNode.removeChild(priorBody);
       var priorCopy = row.querySelector(":scope > .harpoon-lab-auto-step-copy");
       if (priorCopy) priorCopy.parentNode.removeChild(priorCopy);
       var priorFacet = row.querySelector(":scope > .hpt-move-facet, :scope > .hpt-chain");
       if (priorFacet) priorFacet.parentNode.removeChild(priorFacet);
-      var body = el5("div", "harpoon-lab-auto-step-body");
-      var copy = buildStepCopy(step);
+      var body = el6("div", "harpoon-lab-auto-step-body");
+      var copy = buildStepCopy(step2);
       if (animate) copy.classList.add("is-reveal");
       body.appendChild(copy);
-      appendMoveFacet(body, step);
+      appendMoveFacet(body, step2);
       row.appendChild(body);
-      bindStepGoalTip2(copy.querySelector(".harpoon-lab-auto-move"), step.goal);
+      bindStepGoalTip2(copy.querySelector(".harpoon-lab-auto-move"), step2.goal);
     }
     function reelMotionOk() {
       if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
         return !Persist.prefersReducedMotion();
       }
-      return !(global38.matchMedia && global38.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      return !(global44.matchMedia && global44.matchMedia("(prefers-reduced-motion: reduce)").matches);
     }
-    function reelClearMotion(el6) {
-      if (!el6) return;
-      el6.style.transition = "";
-      el6.style.transform = "";
+    function reelClearMotion(el7) {
+      if (!el7) return;
+      el7.style.transition = "";
+      el7.style.transform = "";
     }
     function reelAnimateTick(conveyor, newChip, existingEls, oldRects) {
       if (!reelMotionOk() || !newChip) return;
@@ -22571,25 +26809,25 @@
       var chipRect = newChip.getBoundingClientRect();
       var spawnX = conveyorRect.right - chipRect.left + 8;
       newChip.style.transform = "translateX(" + spawnX + "px)";
-      var i, el6, neu, dx;
+      var i, el7, neu, dx;
       for (i = 0; i < existingEls.length; i += 1) {
-        el6 = existingEls[i];
-        if (el6.classList.contains("is-rejected")) continue;
-        neu = el6.getBoundingClientRect();
+        el7 = existingEls[i];
+        if (el7.classList.contains("is-rejected")) continue;
+        neu = el7.getBoundingClientRect();
         dx = oldRects[i].left - neu.left;
         if (Math.abs(dx) > 0.5) {
-          el6.style.transition = "none";
-          el6.style.transform = "translateX(" + dx + "px)";
+          el7.style.transition = "none";
+          el7.style.transform = "translateX(" + dx + "px)";
         }
       }
       requestAnimationFrame(function() {
         requestAnimationFrame(function() {
           var trailTrans = "transform " + dur + "ms " + REEL_EASE;
           for (i = 0; i < existingEls.length; i += 1) {
-            el6 = existingEls[i];
-            if (el6.classList.contains("is-rejected")) continue;
-            el6.style.transition = trailTrans;
-            el6.style.transform = "";
+            el7 = existingEls[i];
+            if (el7.classList.contains("is-rejected")) continue;
+            el7.style.transition = trailTrans;
+            el7.style.transform = "";
           }
           newChip.style.transition = "transform " + dur + "ms " + REEL_CLICK_EASE;
           newChip.style.transform = "";
@@ -22614,43 +26852,43 @@
       });
     }
     function makeBranchGroup(branch, i) {
-      var group = el5("li", "harpoon-lab-auto-branch");
+      var group = el6("li", "harpoon-lab-auto-branch");
       if (i != null) group.style.setProperty("--i", String(i));
-      var caseRow = el5("div", "harpoon-lab-auto-case");
-      caseRow.appendChild(el5("span", "harpoon-lab-auto-case-node"));
-      var head = el5("div", "harpoon-lab-auto-branch-head");
-      var label = el5("span", "harpoon-lab-auto-branch-label", "case");
+      var caseRow = el6("div", "harpoon-lab-auto-case");
+      caseRow.appendChild(el6("span", "harpoon-lab-auto-case-node"));
+      var head = el6("div", "harpoon-lab-auto-branch-head");
+      var label = el6("span", "harpoon-lab-auto-branch-label", "case");
       head.appendChild(label);
-      var pat = el5("code", "harpoon-lab-auto-branch-pat");
-      renderType3(pat, branch);
+      var pat = el6("code", "harpoon-lab-auto-branch-pat");
+      renderType4(pat, branch);
       head.appendChild(pat);
       bindChipTip2(label, "Case pattern; nested steps solve this branch", branch, "type", "below");
       caseRow.appendChild(head);
       group.appendChild(caseRow);
-      var host = el5("ol", "harpoon-lab-auto-branch-steps");
-      group.appendChild(host);
-      return { group, host };
+      var host2 = el6("ol", "harpoon-lab-auto-branch-steps");
+      group.appendChild(host2);
+      return { group, host: host2 };
     }
     function appendCommittedStepRow(record, s, i) {
       var b = s.branch || null;
-      var host = record._branchHost || record;
+      var host2 = record._branchHost || record;
       if (b !== record._lastBranch) {
         record._lastBranch = b;
         if (b) {
           var made = makeBranchGroup(b, i);
           record.appendChild(made.group);
-          host = made.host;
-          record._branchHost = host;
+          host2 = made.host;
+          record._branchHost = host2;
         } else {
-          host = record;
+          host2 = record;
           record._branchHost = null;
         }
       }
-      return appendAutoStepRow(host, s, i);
+      return appendAutoStepRow(host2, s, i);
     }
     function appendAutoTree(trail, steps) {
       var lastBranch = null;
-      var host = trail;
+      var host2 = trail;
       steps.forEach(function(s, i) {
         var b = s.branch || null;
         if (b !== lastBranch) {
@@ -22658,12 +26896,12 @@
           if (b) {
             var made = makeBranchGroup(b, i);
             trail.appendChild(made.group);
-            host = made.host;
+            host2 = made.host;
           } else {
-            host = trail;
+            host2 = trail;
           }
         }
-        appendAutoStepRow(host, s, i);
+        appendAutoStepRow(host2, s, i);
       });
     }
     function refreshNativeAutoGoalDisplay() {
@@ -22722,8 +26960,8 @@
         btn._belPauseState = paused;
         btn.innerHTML = paused ? ICON_PLAY2 : ICON_PAUSE2;
         btn.setAttribute("aria-label", paused ? "Resume search" : "Pause search");
-        if (global38.Tooltips && global38.Tooltips.set) {
-          global38.Tooltips.set(btn, paused ? "Resume" : "Pause");
+        if (global44.Tooltips && global44.Tooltips.set) {
+          global44.Tooltips.set(btn, paused ? "Resume" : "Pause");
         }
       }
       if (this._autoSearchBox) {
@@ -22745,10 +26983,38 @@
         }
         this._reelRecordCount = na.steps.length;
       }
+      this.syncLiveContext();
       this.syncReelStatus();
       this.syncAutoPauseBtn();
     }
     ;
+    function syncLiveContext() {
+      var na = this.nativeAuto;
+      if (!na) return;
+      var hole = na.liveHoles && na.liveHoles.length ? na.liveHoles[0] : null;
+      var meta = hole && hole.meta || [];
+      var ctx = hole && hole.ctx || [];
+      var key = JSON.stringify([meta, ctx]);
+      if (key === this._ctxKey) return;
+      var wrap = this._ctxWrap;
+      if (!meta.length && !ctx.length) {
+        if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        this._ctxWrap = null;
+        this._ctxKey = key;
+        return;
+      }
+      if (!wrap || !wrap.parentNode) {
+        var anchor = this._autoSearchBox;
+        if (!anchor || !anchor.parentNode) return;
+        wrap = el6("div", "harpoon-lab-context");
+        anchor.parentNode.insertBefore(wrap, anchor);
+        this._ctxWrap = wrap;
+      }
+      wrap.textContent = "";
+      this.renderCtx(wrap, "meta", meta);
+      this.renderCtx(wrap, "ctx", ctx);
+      this._ctxKey = key;
+    }
     function syncReelStatus() {
       var na = this.nativeAuto;
       if (!na) return;
@@ -22763,25 +27029,25 @@
         return this._workingRow;
       }
       var i = this._reelRecordCount || 0;
-      var item = el5("li", "harpoon-lab-auto-step is-working");
+      var item = el6("li", "harpoon-lab-auto-step is-working");
       item.style.setProperty("--i", String(i));
-      item.appendChild(el5("span", "harpoon-lab-auto-node is-live"));
-      var lane = el5("div", "harpoon-conveyor");
-      var strip = el5("div", "harpoon-conveyor-strip");
-      lane.appendChild(strip);
+      item.appendChild(el6("span", "harpoon-lab-auto-node is-live"));
+      var lane = el6("div", "harpoon-conveyor");
+      var strip2 = el6("div", "harpoon-conveyor-strip");
+      lane.appendChild(strip2);
       item.appendChild(lane);
-      var host = this._reelRecord._branchHost || this._reelRecord;
-      host.appendChild(item);
+      var host2 = this._reelRecord._branchHost || this._reelRecord;
+      host2.appendChild(item);
       this._workingRow = item;
-      this._workingStrip = strip;
+      this._workingStrip = strip2;
       this._workingChips = [];
       return item;
     }
     ;
     function feedConveyor(wave) {
-      var strip = this.ensureWorkingRow() && this._workingStrip;
-      if (!strip) return;
-      var conveyor = strip.parentElement;
+      var strip2 = this.ensureWorkingRow() && this._workingStrip;
+      if (!strip2) return;
+      var conveyor = strip2.parentElement;
       var motionOk = reelMotionOk();
       for (var i = 0; i < wave.length; i += 1) {
         var c = wave[i];
@@ -22790,16 +27056,16 @@
           prev.el.classList.remove("is-focus");
           prev.el.classList.add("is-trail");
         }
-        var existingEls = motionOk ? Array.prototype.slice.call(strip.children) : [];
+        var existingEls = motionOk ? Array.prototype.slice.call(strip2.children) : [];
         var oldRects = motionOk ? existingEls.map(function(node) {
           return node.getBoundingClientRect();
         }) : [];
-        var chip = el5("div", "harpoon-conveyor-chip is-trying is-focus move-" + (c.kind || "move"));
-        chip.appendChild(el5("span", "harpoon-conveyor-kind", c.kind || "move"));
-        var term = el5("code", "harpoon-conveyor-term");
+        var chip = el6("div", "harpoon-conveyor-chip is-trying is-focus move-" + (c.kind || "move"));
+        chip.appendChild(el6("span", "harpoon-conveyor-kind", c.kind || "move"));
+        var term = el6("code", "harpoon-conveyor-term");
         renderSource2(term, c.head || "");
         chip.appendChild(term);
-        strip.appendChild(chip);
+        strip2.appendChild(chip);
         this._workingChips.push({ kind: c.kind, head: c.head, status: "trying", el: chip });
         if (motionOk) reelAnimateTick(conveyor, chip, existingEls, oldRects);
       }
@@ -22863,10 +27129,10 @@
       }
     }
     ;
-    function settleWorkingRow(step, i) {
+    function settleWorkingRow(step2, i) {
       var row = this._workingRow;
       if (!row || !row.isConnected) {
-        appendCommittedStepRow(this._reelRecord, step, i);
+        appendCommittedStepRow(this._reelRecord, step2, i);
         this._reelRecordCount = Math.max(this._reelRecordCount, i + 1);
         return;
       }
@@ -22888,8 +27154,8 @@
         self._settleTimer = null;
         self._settleFlush = null;
         if (!row.isConnected) return;
-        installCommittedRow(row, step, motionOk);
-        var b = step.branch || null;
+        installCommittedRow(row, step2, motionOk);
+        var b = step2.branch || null;
         if (b !== self._reelRecord._lastBranch) {
           self._reelRecord._lastBranch = b;
           self._reelRecord._branchHost = b ? self._makeBranchGroup(b, i) : null;
@@ -22950,6 +27216,7 @@
       clearNativeAutoShell,
       syncAutoPauseBtn,
       updateNativeAutoSearch,
+      syncLiveContext,
       syncReelStatus,
       ensureWorkingRow,
       feedConveyor,
@@ -22964,10 +27231,10 @@
 
   // js/harpoon/harpoon-lab-auto.mjs
   function createAuto(deps) {
-    var el5 = deps.el;
+    var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip3 = deps.setTip;
-    var renderType3 = deps.renderType;
+    var renderType4 = deps.renderType;
     var renderSource2 = deps.renderSource;
     var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
     var autoSubtext = deps.autoSubtext;
@@ -22994,7 +27261,7 @@
       var na = this.nativeAuto;
       if (!na) return;
       var self = this;
-      var box = el5("div", "harpoon-lab-auto is-" + na.phase + (na.paused ? " is-paused" : "") + (self.isFrozenRetrospective() ? " is-frozen" : ""));
+      var box = el6("div", "harpoon-lab-auto is-" + na.phase + (na.paused ? " is-paused" : "") + (self.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       if (na.goalType) {
         var hero = resolveNativeAutoGoalDisplay(self, na);
@@ -23004,16 +27271,17 @@
           hero.goalType,
           na.declName,
           hero.goalState,
-          heroPriors
+          heroPriors,
+          na.declKw
         );
       }
       if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
       if (na.phase === "searching") {
-        var controls2 = el5("div", "harpoon-lab-auto-controls");
-        var searching = el5("div", "harpoon-lab-auto-searching");
-        var spinnerEl = el5("span", "inspector-spinner harpoon-lab-auto-searching-spinner");
+        var controls2 = el6("div", "harpoon-lab-auto-controls");
+        var searching = el6("div", "harpoon-lab-auto-searching");
+        var spinnerEl = el6("span", "inspector-spinner harpoon-lab-auto-searching-spinner");
         spinnerEl.setAttribute("aria-hidden", "true");
-        var searchTextEl = el5(
+        var searchTextEl = el6(
           "span",
           "harpoon-lab-auto-searching-text beljar-tip-shimmer",
           nativeAutoSearchLabel(na)
@@ -23050,8 +27318,8 @@
         );
         controls2.appendChild(livePop);
         box.appendChild(controls2);
-        var live2 = el5("div", "harpoon-reel");
-        var record = el5("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
+        var live2 = el6("div", "harpoon-reel");
+        var record = el6("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
         live2.appendChild(record);
         box.appendChild(live2);
         this._autoSearchBox = box;
@@ -23104,9 +27372,9 @@
         box.appendChild(stuckCard);
       }
       if (!na.complete && na.stuck && na.stuck.reason === "file-errors" && na.stuck.error) {
-        var errWrap = el5("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
-        errWrap.appendChild(el5("span", "harpoon-lab-auto-stuck-label", "Checker error"));
-        errWrap.appendChild(el5("div", "harpoon-lab-auto-stuck-goal", na.stuck.error));
+        var errWrap = el6("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
+        errWrap.appendChild(el6("span", "harpoon-lab-auto-stuck-label", "Checker error"));
+        errWrap.appendChild(el6("div", "harpoon-lab-auto-stuck-goal", na.stuck.error));
         stageNode2(errWrap, stage);
         stage += 1;
         box.appendChild(errWrap);
@@ -23121,7 +27389,7 @@
           titleClass: "harpoon-lab-resume-title",
           subClass: "harpoon-lab-resume-sub",
           title: na.complete ? "Take it back by hand" : "Continue by hand",
-          sub: na.complete ? "Review the steps, or undo before placing" : na.steps && na.steps.length ? "Keep the " + na.steps.length + " step" + (na.steps.length === 1 ? "" : "s") + " Brutus found and carry on" : "Pick the next move yourself",
+          sub: na.complete ? "Review the steps, or undo before placing" : na.steps && na.steps.length ? "Keep the " + na.steps.length + " step" + (na.steps.length === 1 ? "" : "s") + " Orca found and carry on" : "Pick the next move yourself",
           onClick: function() {
             self.backToManual();
           }
@@ -23146,9 +27414,9 @@
           );
           stage += 1;
         } else if (commit.status !== "placed") {
-          var blocked = self.compromise && self.compromise.level === "block";
+          var blocked2 = self.compromise && self.compromise.level === "block";
           var place3 = buildPlaceStrip2(self, {
-            blocked,
+            blocked: blocked2,
             extraCls: " harpoon-lab-auto-place is-instant",
             title: "Place the proof",
             onClick: function() {
@@ -23186,29 +27454,42 @@
       if (!reason) return "";
       return String(reason).replace(/^File\s+"[^"]*",\s*line\s+\d+,\s*column\s+\d+\s*/i, "").replace(/^Error:\s*/i, "").trim();
     }
+    function belugaText(s) {
+      var g14 = globalThis.HarpoonGlyphs;
+      return g14 ? g14.displayBeluga(s) : String(s == null ? "" : s);
+    }
     var STUCK_REASON = {
       "no-move": "no move certified",
       "step-bound": "step limit",
       "search-bound": "search bound hit",
       "file-errors": "file errors",
-      "coinductive-out-of-fragment": "coinductive goal \u2014 out of fragment",
-      "no-totality-measure": "no totality measure \u2014 recursion unavailable",
+      "coinductive-out-of-fragment": "coinductive goal, out of fragment",
+      "no-totality-measure": "no totality measure, recursion unavailable",
       stopped: "stopped",
       cancelled: "cancelled"
     };
+    var STUCK_HINT = {
+      "no-totality-measure": "Every candidate below is non-recursive. Add a / total / measure to use the induction hypothesis.",
+      "step-bound": "The budget ran out with the goal still open. It was not refuted.",
+      "search-bound": "The search hit its bound, not the end of the space.",
+      "file-errors": "The program does not check before this goal. Fix those errors first.",
+      "coinductive-out-of-fragment": "Coinductive goals are outside the fragment Orca searches."
+    };
     function renderStuckCard(na) {
       var stuck = na.stuck;
-      var card = el5("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-warn harpoon-stuck");
-      var head = el5("div", "harpoon-stuck-head");
-      head.appendChild(el5("span", "harpoon-lab-auto-stuck-label", STUCK_REASON[stuck.reason] || stuck.reason || "stuck"));
+      var card = el6("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-warn harpoon-stuck");
+      var head = el6("div", "harpoon-stuck-head");
+      head.appendChild(el6("span", "harpoon-lab-auto-stuck-label", STUCK_REASON[stuck.reason] || stuck.reason || "stuck"));
       var where = stuckWhere(stuck);
-      if (where) head.appendChild(el5("code", "harpoon-stuck-where", where));
+      if (where) head.appendChild(el6("code", "harpoon-stuck-where", where));
       card.appendChild(head);
       if (stuck.goal) {
-        var goal = el5("div", "harpoon-hole-goal harpoon-lab-auto-stuck-goal");
-        renderType3(goal, stuck.goal);
+        var goal = el6("div", "harpoon-hole-goal harpoon-lab-auto-stuck-goal");
+        renderType4(goal, stuck.goal);
         card.appendChild(goal);
       }
+      var hint = STUCK_HINT[stuck.reason];
+      if (hint) card.appendChild(el6("p", "harpoon-stuck-hint", hint));
       var stuckTrace = null;
       var trace = na.trace || null;
       if (trace) {
@@ -23224,31 +27505,55 @@
         return v.verdict === "guard";
       });
       if (rejected.length || guarded.length) {
-        card.appendChild(el5(
+        card.appendChild(el6(
           "div",
           "harpoon-stuck-sub",
           rejected.length + " rejected by the checker" + (guarded.length ? " \xB7 " + guarded.length + " skipped" : "")
         ));
-        var list2 = el5("ul", "harpoon-stuck-tried");
-        var addRow = function(v) {
-          var li = el5("li", "harpoon-stuck-tried-row is-" + v.verdict);
-          li.appendChild(el5("span", "hpt-card-kind hpt-kind--" + v.kind, v.kind));
-          var hd = el5("code", "harpoon-stuck-tried-head");
-          renderSource2(hd, v.head);
+        var list3 = el6("ul", "harpoon-stuck-tried");
+        var groupRows = function(items3) {
+          var order2 = [];
+          var byKey = {};
+          items3.forEach(function(v) {
+            var reason = stuckReason(v.reason);
+            var key = v.kind + " :: " + reason;
+            if (!byKey[key]) {
+              byKey[key] = { kind: v.kind, verdict: v.verdict, reason, heads: [] };
+              order2.push(key);
+            }
+            byKey[key].heads.push(v.head);
+          });
+          return order2.map(function(k) {
+            return byKey[k];
+          });
+        };
+        var addGroup = function(g14) {
+          var li = el6("li", "harpoon-stuck-tried-row is-" + g14.verdict);
+          li.appendChild(el6("span", "hpt-card-kind hpt-kind--" + g14.kind, g14.kind));
+          var hd = el6("code", "harpoon-stuck-tried-head");
+          renderSource2(hd, g14.heads[0]);
           li.appendChild(hd);
-          var reason = stuckReason(v.reason);
-          if (reason) {
-            var rn = el5("span", "harpoon-stuck-tried-reason", reason);
-            setTip3(rn, v.reason, { ariaLabel: false });
+          if (g14.heads.length > 1) {
+            var more = el6("span", "harpoon-stuck-tried-more", "+" + (g14.heads.length - 1));
+            setTip3(more, g14.heads.map(belugaText).join("\n"), { ariaLabel: false });
+            more.setAttribute(
+              "aria-label",
+              g14.heads.length + " candidates rejected with this objection"
+            );
+            li.appendChild(more);
+          }
+          if (g14.reason) {
+            var rn = el6("span", "harpoon-stuck-tried-reason", g14.reason);
+            setTip3(rn, g14.reason, { ariaLabel: false });
             li.appendChild(rn);
           }
-          list2.appendChild(li);
+          list3.appendChild(li);
         };
-        rejected.forEach(addRow);
-        guarded.forEach(addRow);
-        card.appendChild(list2);
+        groupRows(rejected).forEach(addGroup);
+        groupRows(guarded).forEach(addGroup);
+        card.appendChild(list3);
       } else if (stuck.reason === "no-move") {
-        card.appendChild(el5("div", "harpoon-stuck-sub", "no candidate reached this goal"));
+        card.appendChild(el6("div", "harpoon-stuck-sub", "no candidate reached this goal"));
       }
       return card;
     }
@@ -23262,13 +27567,13 @@
   }
 
   // js/harpoon/harpoon-lab-tree-ui.mjs
-  var global39 = globalThis;
+  var global45 = globalThis;
   function createTreeUi(deps) {
-    var el5 = deps.el;
+    var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip3 = deps.setTip;
     var bindChipTip2 = deps.bindChipTip;
-    var renderType3 = deps.renderType;
+    var renderType4 = deps.renderType;
     var renderSource2 = deps.renderSource;
     var appendAutoTree = deps.appendAutoTree;
     var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
@@ -23286,39 +27591,40 @@
     var ICON_CHEVRON_RIGHT2 = deps.ICON_CHEVRON_RIGHT;
     function renderDerivationSection(box, na) {
       var self = this;
-      var section = el5("div", "harpoon-deriv");
-      var header = el5("div", "harpoon-deriv-header");
-      header.appendChild(el5("span", "harpoon-lab-section-label is-steps", "Derivation"));
-      var toggle3 = el5("div", "harpoon-deriv-toggle");
+      this._compactTreeRedraw = null;
+      var section = el6("div", "harpoon-deriv");
+      var header = el6("div", "harpoon-deriv-header");
+      header.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Derivation"));
+      var toggle4 = el6("div", "harpoon-deriv-toggle");
       var views = [["list", "List"], ["tree", "Tree"]];
       var view = "list";
-      var listHost = el5("ol", "harpoon-lab-auto-trail is-instant");
+      var listHost = el6("ol", "harpoon-lab-auto-trail is-instant");
       appendAutoTree(listHost, na.steps || []);
-      var treeHost = el5("div", "harpoon-deriv-treehost");
+      var treeHost = el6("div", "harpoon-deriv-treehost");
       var treeDrawn = false;
       function showView(v) {
         view = v;
         listHost.hidden = v !== "list";
         treeHost.hidden = v !== "tree";
-        toggle3.querySelectorAll(".harpoon-deriv-tab").forEach(function(t) {
+        toggle4.querySelectorAll(".harpoon-deriv-tab").forEach(function(t) {
           t.classList.toggle("is-active", t.dataset.view === v);
         });
         if (v === "tree" && !treeDrawn) {
           treeDrawn = true;
-          var mounted = self.mountTreePanel(treeHost, na, { compact: true, live: true });
-          self._compactTreeRedraw = mounted.redraw;
+          var mounted2 = self.mountTreePanel(treeHost, na, { compact: true, live: true });
+          self._compactTreeRedraw = mounted2.redraw;
         }
       }
       views.forEach(function(vv) {
-        var t = el5("button", "harpoon-deriv-tab" + (vv[0] === view ? " is-active" : ""), vv[1]);
+        var t = el6("button", "harpoon-deriv-tab" + (vv[0] === view ? " is-active" : ""), vv[1]);
         t.type = "button";
         t.dataset.view = vv[0];
         t.addEventListener("click", function() {
           if (view !== vv[0]) showView(vv[0]);
         });
-        toggle3.appendChild(t);
+        toggle4.appendChild(t);
       });
-      header.appendChild(toggle3);
+      header.appendChild(toggle4);
       var popBtn = iconBtn2(
         "icon-btn harpoon-deriv-popout",
         ICON_POPOUT2,
@@ -23336,24 +27642,24 @@
       return section;
     }
     ;
-    function mountTreePanel(host, na, opts) {
+    function mountTreePanel(host2, na, opts) {
       var self = this;
       opts = opts || {};
-      host.textContent = "";
-      var wrap = el5("div", "hpt-panel" + (opts.compact ? " is-compact" : " is-roomy"));
+      host2.textContent = "";
+      var wrap = el6("div", "hpt-panel" + (opts.compact ? " is-compact" : " is-roomy"));
       var mode = "path";
       var selectedNodeId = null;
-      var treeHost = el5("div", "hpt-host");
-      var card = el5("div", "hpt-card");
+      var treeHost = el6("div", "hpt-host");
+      var card = el6("div", "hpt-card");
       card.hidden = true;
       var userView = null;
       function cur() {
         return opts.live ? self.derivationNa() || na : na;
       }
       function draw() {
-        if (!global39.HarpoonTree) return;
+        if (!global45.HarpoonTree) return;
         var n = cur();
-        var root = global39.HarpoonTree.buildModel({
+        var root2 = global45.HarpoonTree.buildModel({
           steps: n.steps || [],
           trace: n.trace || null,
           complete: !!n.complete,
@@ -23362,8 +27668,11 @@
           goalType: n.goalType || "",
           theoremSnapshot: n.theoremSnapshot || null
         });
-        global39.HarpoonTree.render(treeHost, root, {
+        global45.HarpoonTree.render(treeHost, root2, {
           mode,
+          // The roomy explorer gives the graph a whole pane; the compact one gives it a
+          // fixed strip inside the panel, where filling would mean growing the panel.
+          fill: opts.compact === false,
           instant: !!opts.live,
           selectedId: selectedNodeId,
           initialView: userView,
@@ -23392,8 +27701,8 @@
           treeMode: treeMode || mode
         };
       }
-      if (global39.Menu && global39.Menu.bindContextMenu) {
-        global39.Menu.bindContextMenu(treeHost, function() {
+      if (global45.Menu && global45.Menu.bindContextMenu) {
+        global45.Menu.bindContextMenu(treeHost, function() {
           var hasTrace = !!(cur().trace && cur().trace.length);
           return [
             {
@@ -23416,32 +27725,32 @@
         let applyCollapsed = function() {
           split.classList.toggle("is-rail-collapsed", collapsed);
           rail.classList.toggle("is-collapsed", collapsed);
-          toggle3.innerHTML = collapsed ? ICON_CHEVRON_LEFT2 : ICON_CHEVRON_RIGHT2;
+          toggle4.innerHTML = collapsed ? ICON_CHEVRON_LEFT2 : ICON_CHEVRON_RIGHT2;
           var tip = collapsed ? "Show details panel" : "Hide details panel";
-          setTip3(toggle3, tip);
-          toggle3.setAttribute("aria-label", tip);
-          toggle3.setAttribute("aria-expanded", collapsed ? "false" : "true");
+          setTip3(toggle4, tip);
+          toggle4.setAttribute("aria-label", tip);
+          toggle4.setAttribute("aria-expanded", collapsed ? "false" : "true");
         };
-        var split = el5("div", "hpt-split");
-        var left = el5("div", "hpt-split-tree");
+        var split = el6("div", "hpt-split");
+        var left = el6("div", "hpt-split-tree");
         left.appendChild(treeHost);
-        var rail = el5("div", "hpt-split-rail");
+        var rail = el6("div", "hpt-split-rail");
         card.hidden = false;
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
-        var persist3 = global39.Persist;
-        var collapsed = !!(persist3 && persist3.readStoredHarpoonDetailsCollapsed && persist3.readStoredHarpoonDetailsCollapsed());
-        var railHead = el5("div", "hpt-rail-head");
-        var railTitle = el5("span", "hpt-rail-title", "Details");
-        var toggle3 = el5("button", "icon-btn hpt-rail-toggle");
-        toggle3.type = "button";
+        var persist5 = global45.Persist;
+        var collapsed = !!(persist5 && persist5.readStoredHarpoonDetailsCollapsed && persist5.readStoredHarpoonDetailsCollapsed());
+        var railHead = el6("div", "hpt-rail-head");
+        var railTitle = el6("span", "hpt-rail-title", "Details");
+        var toggle4 = el6("button", "icon-btn hpt-rail-toggle");
+        toggle4.type = "button";
         railHead.appendChild(railTitle);
-        railHead.appendChild(toggle3);
-        toggle3.addEventListener("click", function() {
+        railHead.appendChild(toggle4);
+        toggle4.addEventListener("click", function() {
           collapsed = !collapsed;
-          if (persist3 && persist3.writeStoredHarpoonDetailsCollapsed) {
-            persist3.writeStoredHarpoonDetailsCollapsed(collapsed);
+          if (persist5 && persist5.writeStoredHarpoonDetailsCollapsed) {
+            persist5.writeStoredHarpoonDetailsCollapsed(collapsed);
           }
           applyCollapsed();
         });
@@ -23452,8 +27761,9 @@
         split.appendChild(rail);
         wrap.appendChild(split);
       }
-      host.appendChild(wrap);
+      host2.appendChild(wrap);
       draw();
+      if (opts.compact === false) requestAnimationFrame(draw);
       return { wrap, redraw: draw };
     }
     ;
@@ -23467,9 +27777,9 @@
         return;
       }
       var live2 = na.phase === "searching";
-      var content = el5("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
-      var mounted = this.mountTreePanel(content, na, { compact: false, live: live2 });
-      this._treeRedraw = mounted.redraw;
+      var content = el6("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
+      var mounted2 = this.mountTreePanel(content, na, { compact: false, live: live2 });
+      this._treeRedraw = mounted2.redraw;
       var name = this.prep && this.prep.name || na.declName || "theorem";
       this._treeWin = fw.open({
         title: labTitle2(name + " \xB7 proof tree"),
@@ -23504,44 +27814,44 @@
       var links = chain.filter(function(c) {
         return c !== "impossible";
       });
-      var wrap = el5("div", "hpt-chain" + (variant === "inline" ? " is-inline" : "") + (variant === "rail" ? " is-rail" : "") + (refutation ? " is-refutation" : ""));
+      var wrap = el6("div", "hpt-chain" + (variant === "inline" ? " is-inline" : "") + (variant === "rail" ? " is-rail" : "") + (refutation ? " is-refutation" : ""));
       if (variant === "full") {
-        wrap.appendChild(el5(
+        wrap.appendChild(el6(
           "div",
           "hpt-chain-label",
           refutation ? "Refutation \u2014 derived to a contradiction" : "Synthesis \u2014 backward-chained " + links.length + " step" + (links.length === 1 ? "" : "s")
         ));
       }
-      var seq2 = el5("div", "hpt-chain-seq");
+      var seq2 = el6("div", "hpt-chain-seq");
       var linkTotal = links.length;
       links.forEach(function(name, i) {
-        if (i > 0) seq2.appendChild(el5("span", "hpt-chain-arrow", "\u2192"));
+        if (i > 0) seq2.appendChild(el6("span", "hpt-chain-arrow", "\u2192"));
         var stepNum = i + 1;
         var isClose = i === links.length - 1 && !refutation;
         var stepTip = isClose ? "Calls " + name + " and closes this subgoal (" + stepNum + " of " + linkTotal + ")" : "Calls " + name + " (" + stepNum + " of " + linkTotal + ")";
         if (variant === "rail") {
-          var railNm = el5("code", "hpt-chain-name");
+          var railNm = el6("code", "hpt-chain-name");
           railNm.textContent = name;
           bindChipTip2(railNm, stepTip);
           seq2.appendChild(railNm);
           return;
         }
-        var link = el5("span", "hpt-chain-link" + (isClose ? " is-close" : ""));
-        link.appendChild(el5("span", "hpt-chain-idx", String(stepNum)));
-        var nm = el5("code", "hpt-chain-name");
+        var link = el6("span", "hpt-chain-link" + (isClose ? " is-close" : ""));
+        link.appendChild(el6("span", "hpt-chain-idx", String(stepNum)));
+        var nm = el6("code", "hpt-chain-name");
         nm.textContent = name;
         link.appendChild(nm);
         bindChipTip2(link, stepTip);
         seq2.appendChild(link);
       });
       if (refutation) {
-        seq2.appendChild(el5("span", "hpt-chain-arrow", "\u2192"));
+        seq2.appendChild(el6("span", "hpt-chain-arrow", "\u2192"));
         if (variant === "rail") {
-          var railImp = el5("code", "hpt-chain-name is-impossible", "impossible");
+          var railImp = el6("code", "hpt-chain-name is-impossible", "impossible");
           bindChipTip2(railImp, "This branch is impossible (contradiction)");
           seq2.appendChild(railImp);
         } else {
-          var impLink = el5("span", "hpt-chain-link is-impossible", "impossible");
+          var impLink = el6("span", "hpt-chain-link is-impossible", "impossible");
           bindChipTip2(impLink, "This branch is impossible (contradiction)");
           seq2.appendChild(impLink);
         }
@@ -23549,12 +27859,12 @@
       wrap.appendChild(seq2);
       if (variant === "full") {
         var refuted = meta.uses && meta.uses.length ? meta.uses[meta.uses.length - 1] : null;
-        var note = el5("div", "hpt-chain-note");
+        var note = el6("div", "hpt-chain-note");
         if (!refutation) {
           note.textContent = "the final rule closes the goal";
         } else if (refuted) {
           note.appendChild(document.createTextNode("these rules refute "));
-          var rc = el5("code", "hpt-chain-refuted");
+          var rc = el6("code", "hpt-chain-refuted");
           rc.textContent = refuted;
           note.appendChild(rc);
         } else {
@@ -23565,9 +27875,9 @@
       return wrap;
     }
     function detailSection(label, bodyEl3) {
-      var sec = el5("div", "hpt-detail-section");
-      if (label) sec.appendChild(el5("span", "harpoon-lab-section-label", label));
-      var body = el5("div", "hpt-detail-section-body");
+      var sec = el6("div", "hpt-detail-section");
+      if (label) sec.appendChild(el6("span", "harpoon-lab-section-label", label));
+      var body = el6("div", "hpt-detail-section-body");
       body.appendChild(bodyEl3);
       sec.appendChild(body);
       return sec;
@@ -23584,62 +27894,62 @@
         parts.push(checks + " check" + (checks === 1 ? "" : "s"));
       }
       if (!parts.length) return null;
-      var foot = el5("div", "hpt-detail-foot");
+      var foot = el6("div", "hpt-detail-foot");
       parts.forEach(function(p, i) {
-        if (i > 0) foot.appendChild(el5("span", "hpt-detail-sep", "\xB7"));
-        foot.appendChild(el5("span", "hpt-detail-meta-item", p));
+        if (i > 0) foot.appendChild(el6("span", "hpt-detail-sep", "\xB7"));
+        foot.appendChild(el6("span", "hpt-detail-meta-item", p));
       });
       return foot;
     }
     function renderDetailBanner(moveKind, name, lead) {
-      var banner = el5("div", "hpt-detail-banner");
+      var banner = el6("div", "hpt-detail-banner");
       if (moveKind) {
-        banner.appendChild(el5("span", "harpoon-lab-auto-move move-" + moveKind, moveKind));
+        banner.appendChild(el6("span", "harpoon-lab-auto-move move-" + moveKind, moveKind));
       }
-      banner.appendChild(el5("div", "hpt-detail-name", name));
-      if (lead) banner.appendChild(el5("p", "hpt-detail-lead", lead));
+      banner.appendChild(el6("div", "hpt-detail-name", name));
+      if (lead) banner.appendChild(el6("p", "hpt-detail-lead", lead));
       return banner;
     }
     function renderTreeRailOverview(mount, ctx) {
       var na = ctx.na || {};
       var name = ctx.declName || "theorem";
-      mount.appendChild(el5("span", "harpoon-lab-section-label is-steps", "Overview"));
-      var banner = el5("div", "hpt-detail-banner is-overview");
-      banner.appendChild(el5("div", "hpt-detail-name", name));
+      mount.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Overview"));
+      var banner = el6("div", "hpt-detail-banner is-overview");
+      banner.appendChild(el6("div", "hpt-detail-name", name));
       mount.appendChild(banner);
       if (na.goalType) {
-        var g14 = el5("div", "hpt-detail-goal");
-        renderType3(g14, na.goalType);
+        var g14 = el6("div", "hpt-detail-goal");
+        renderType4(g14, na.goalType);
         mount.appendChild(detailSection("Theorem", g14));
       }
       var snap = na.theoremSnapshot;
       if (snap && (snap.premiseCount || snap.totality)) {
-        var meta = el5("div", "hpt-detail-theorem-meta");
+        var meta = el6("div", "hpt-detail-theorem-meta");
         if (snap.premiseCount) {
-          meta.appendChild(el5("span", "hpt-detail-meta-item", snap.premiseCount + " premise" + (snap.premiseCount === 1 ? "" : "s")));
+          meta.appendChild(el6("span", "hpt-detail-meta-item", snap.premiseCount + " premise" + (snap.premiseCount === 1 ? "" : "s")));
         }
         if (snap.totality && snap.totality.kind) {
-          meta.appendChild(el5("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
+          meta.appendChild(el6("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
         }
         mount.appendChild(detailSection("Structure", meta));
       }
-      var status = el5("div", "hpt-detail-status");
+      var status = el6("div", "hpt-detail-status");
       if (na.phase === "searching") {
-        status.appendChild(el5("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
-        status.appendChild(el5("div", "hpt-detail-status-sub", reelStatText(na)));
+        status.appendChild(el6("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
+        status.appendChild(el6("div", "hpt-detail-status-sub", reelStatText(na)));
       } else if (na.complete) {
-        status.appendChild(el5("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status.appendChild(el6("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sc = (na.steps || []).length;
         var line = sc ? sc + (sc === 1 ? " step" : " steps") : "";
         if (na.checks) line += (line ? " \xB7 " : "") + na.checks + (na.checks === 1 ? " check" : " checks");
-        if (line) status.appendChild(el5("div", "hpt-detail-status-sub", line));
+        if (line) status.appendChild(el6("div", "hpt-detail-status-sub", line));
       } else {
-        status.appendChild(el5("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status.appendChild(el6("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sub = autoSubtext(na);
-        if (sub) status.appendChild(el5("div", "hpt-detail-status-sub", sub));
+        if (sub) status.appendChild(el6("div", "hpt-detail-status-sub", sub));
         var sc2 = (na.steps || []).length;
         if (sc2) {
-          status.appendChild(el5(
+          status.appendChild(el6(
             "div",
             "hpt-detail-status-sub",
             sc2 + (sc2 === 1 ? " step" : " steps") + " recorded"
@@ -23647,20 +27957,20 @@
         }
       }
       mount.appendChild(detailSection("Status", status));
-      mount.appendChild(el5("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
+      mount.appendChild(el6("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
-      if (!n || !global39.HarpoonTree || typeof global39.HarpoonTree.breadcrumb !== "function") return null;
-      var parts = global39.HarpoonTree.breadcrumb(n);
+      if (!n || !global45.HarpoonTree || typeof global45.HarpoonTree.breadcrumb !== "function") return null;
+      var parts = global45.HarpoonTree.breadcrumb(n);
       if (!parts.length) return null;
       function truncPart(s) {
         s = String(s || "");
         return s.length > 22 ? s.slice(0, 21) + "\u2026" : s;
       }
-      var row = el5("div", "hpt-breadcrumb");
+      var row = el6("div", "hpt-breadcrumb");
       parts.forEach(function(p, i) {
-        if (i > 0) row.appendChild(el5("span", "hpt-breadcrumb-sep", "/"));
-        row.appendChild(el5("span", "hpt-breadcrumb-part", truncPart(p)));
+        if (i > 0) row.appendChild(el6("span", "hpt-breadcrumb-sep", "/"));
+        row.appendChild(el6("span", "hpt-breadcrumb-part", truncPart(p)));
       });
       return row;
     }
@@ -23671,26 +27981,26 @@
       if (focus.armLine) bits.push("deepest case arm (line " + focus.armLine + ")");
       if (typeof focus.score === "number") bits.push("priority score " + focus.score);
       if (!bits.length) return null;
-      return el5("p", "hpt-detail-focus", bits.join(" \xB7 "));
+      return el6("p", "hpt-detail-focus", bits.join(" \xB7 "));
     }
     function renderAltRow(v, rail) {
-      var li = el5("li", "hpt-tried is-" + v.verdict);
-      li.appendChild(el5("span", (rail ? "harpoon-lab-auto-move" : "hpt-card-kind") + " move-" + v.kind, v.kind));
-      var head = el5("code", "hpt-tried-head");
+      var li = el6("li", "hpt-tried is-" + v.verdict);
+      li.appendChild(el6("span", (rail ? "harpoon-lab-auto-move" : "hpt-card-kind") + " move-" + v.kind, v.kind));
+      var head = el6("code", "hpt-tried-head");
       renderSource2(head, v.head || v.kind);
       li.appendChild(head);
       if (v.rationale) {
-        var rat = el5("span", "hpt-tried-rationale");
+        var rat = el6("span", "hpt-tried-rationale");
         rat.textContent = v.rationale;
         li.appendChild(rat);
       }
       if (v.text && v.text !== v.head) {
-        var full = el5("pre", "hpt-tried-text");
+        var full = el6("pre", "hpt-tried-text");
         renderSource2(full, v.text);
         li.appendChild(full);
       }
       if (v.reason) {
-        var reason = el5("span", "hpt-tried-reason");
+        var reason = el6("span", "hpt-tried-reason");
         reason.textContent = (v.verdict === "guard" ? "Skipped: " : "Rejected: ") + v.reason;
         li.appendChild(reason);
       }
@@ -23716,21 +28026,21 @@
           tip: "Certified clean by Beluga and spliced into the proof."
         }
       ];
-      var wrap = el5("div", "hpt-alt-tray");
+      var wrap = el6("div", "hpt-alt-tray");
       groups.forEach(function(g14) {
         var rows = tried.filter(function(v) {
           return v.verdict === g14.key;
         });
         if (!rows.length) return;
-        var sec = el5("div", "hpt-alt-group is-" + g14.key);
-        var groupLabel = el5("div", "hpt-alt-group-label", g14.label + " (" + rows.length + ")");
+        var sec = el6("div", "hpt-alt-group is-" + g14.key);
+        var groupLabel = el6("div", "hpt-alt-group-label", g14.label + " (" + rows.length + ")");
         if (g14.tip) setTip3(groupLabel, g14.tip);
         sec.appendChild(groupLabel);
-        var list2 = el5("ul", "hpt-detail-tried");
+        var list3 = el6("ul", "hpt-detail-tried");
         rows.forEach(function(v) {
-          list2.appendChild(renderAltRow(v, opts.rail));
+          list3.appendChild(renderAltRow(v, opts.rail));
         });
-        sec.appendChild(list2);
+        sec.appendChild(list3);
         wrap.appendChild(sec);
       });
       return wrap.childNodes.length ? wrap : null;
@@ -23741,18 +28051,18 @@
       var text = liveFileText2(fileId);
       if (!text) return;
       var from = lineColToOffset2(text, hole.line, hole.col);
-      if (typeof global39.openFileAt === "function") {
-        global39.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
+      if (typeof global45.openFileAt === "function") {
+        global45.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
       }
     }
     ;
     function renderWhereSection(self, n, st) {
-      var where = el5("div", "hpt-detail-where");
+      var where = el6("div", "hpt-detail-where");
       var crumb = renderTreeBreadcrumb(n);
       if (crumb) where.appendChild(crumb);
       var hole = st && st.hole || n.hole;
       if (hole && hole.line) {
-        var loc = el5("button", "hpt-hole-loc");
+        var loc = el6("button", "hpt-hole-loc");
         loc.type = "button";
         loc.textContent = "line " + hole.line + (hole.col ? ":" + hole.col : "") + (hole.name ? " (" + hole.name + ")" : "");
         loc.addEventListener("click", function() {
@@ -23761,42 +28071,42 @@
         where.appendChild(loc);
       }
       if (st && st.branch) {
-        where.appendChild(el5("div", "hpt-detail-branch", "in branch: " + st.branch));
+        where.appendChild(el6("div", "hpt-detail-branch", "in branch: " + st.branch));
       }
       if (st && typeof st.checks === "number" && st.checks > 0) {
         var showStats = typeof Persist === "undefined" || Persist.readStoredAutosolveShowStats();
         if (showStats) {
-          var checksEl = el5("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
+          var checksEl = el6("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
           setTip3(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
           where.appendChild(checksEl);
         }
       }
       return where.childNodes.length ? where : null;
     }
-    function renderStateContext(self, mount, state, goalState) {
-      if (!state) return;
+    function renderStateContext(self, mount, state2, goalState) {
+      if (!state2) return;
       var ed = E3();
-      if (state.goal) {
-        var goalHost = el5("div", "hpt-detail-goal");
+      if (state2.goal) {
+        var goalHost = el6("div", "hpt-detail-goal");
         if (ed && typeof ed.mountHoleGoalTier === "function") {
           ed.mountHoleGoalTier(goalHost, {
             surface: "lab",
             goalState: goalState || "live",
-            goal: state.goal
+            goal: state2.goal
           });
         } else {
-          renderType3(goalHost, state.goal);
+          renderType4(goalHost, state2.goal);
         }
         mount.appendChild(detailSection("Goal", goalHost));
       }
-      if (state.meta && state.meta.length) {
-        var metaWrap = el5("div", "hpt-detail-ctx");
-        self.renderCtx(metaWrap, "meta", state.meta);
+      if (state2.meta && state2.meta.length) {
+        var metaWrap = el6("div", "hpt-detail-ctx");
+        self.renderCtx(metaWrap, "meta", state2.meta);
         mount.appendChild(detailSection("Meta context", metaWrap));
       }
-      if (state.ctx && state.ctx.length) {
-        var ctxWrap = el5("div", "hpt-detail-ctx");
-        self.renderCtx(ctxWrap, "ctx", state.ctx);
+      if (state2.ctx && state2.ctx.length) {
+        var ctxWrap = el6("div", "hpt-detail-ctx");
+        self.renderCtx(ctxWrap, "ctx", state2.ctx);
         mount.appendChild(detailSection("Context", ctxWrap));
       }
     }
@@ -23806,7 +28116,7 @@
       var rail = card.classList.contains("is-rail");
       if (!n) {
         if (rail && ctx) {
-          var idle = el5("div", "hpt-detail");
+          var idle = el6("div", "hpt-detail");
           card.appendChild(idle);
           renderTreeRailOverview(idle, ctx);
         } else if (!rail) {
@@ -23814,7 +28124,7 @@
         }
         return;
       }
-      var mount = rail ? el5("div", "hpt-detail") : card;
+      var mount = rail ? el6("div", "hpt-detail") : card;
       if (rail) card.appendChild(mount);
       var self = this;
       var treeMode = ctx && ctx.treeMode || "path";
@@ -23826,12 +28136,12 @@
         if (rail) mount.appendChild(gBanner);
         else card.appendChild(gBanner);
         if (gh.text && gh.text !== gh.head) {
-          var gcode = rail ? el5("div", "hpt-detail-code") : el5("div", "hpt-card-code");
+          var gcode = rail ? el6("div", "hpt-detail-code") : el6("div", "hpt-card-code");
           renderSource2(gcode, gh.text);
           if (rail) mount.appendChild(detailSection("Fragment", gcode));
           else card.appendChild(gcode);
         }
-        var gverdict = el5(
+        var gverdict = el6(
           "div",
           "hpt-detail-verdict is-" + gh.verdict,
           (gh.verdict === "guard" ? "skipped \u2014 " : "rejected \u2014 ") + (gh.reason || "did not certify")
@@ -23865,12 +28175,12 @@
           if (snap && snap.premiseCount) {
             mount.appendChild(detailSection(
               "Structure",
-              el5("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
+              el6("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
             ));
           }
         } else if (n.type === "arm" && n.pattern) {
-          var pg = el5("div", "hpt-detail-goal");
-          renderType3(pg, n.pattern);
+          var pg = el6("div", "hpt-detail-goal");
+          renderType4(pg, n.pattern);
           mount.appendChild(detailSection("Branch pattern", pg));
         }
         return;
@@ -23887,7 +28197,7 @@
         ctx: st.holeCtx,
         meta: st.holeMeta
       }, goalState);
-      var codeEl = el5("div", rail ? "hpt-detail-code" : "hpt-card-code");
+      var codeEl = el6("div", rail ? "hpt-detail-code" : "hpt-card-code");
       renderSource2(codeEl, st.text || "");
       mount.appendChild(detailSection("Fragment", codeEl));
       if (st.move === "synth") {
@@ -23896,20 +28206,20 @@
       }
       if (st.move === "split" && meta.armPatterns && meta.armPatterns.length) {
         if (meta.scrutinee) {
-          var scrut = el5("div", "hpt-detail-goal");
-          renderType3(scrut, meta.scrutinee);
+          var scrut = el6("div", "hpt-detail-goal");
+          renderType4(scrut, meta.scrutinee);
           mount.appendChild(detailSection("Scrutinee", scrut));
         }
         var armCount = meta.armPatterns.length;
-        var arms = el5("ul", "hpt-detail-arms");
+        var arms = el6("ul", "hpt-detail-arms");
         meta.armPatterns.forEach(function(pat) {
-          var li = el5("li", "hpt-detail-arm");
-          renderType3(li, pat);
+          var li = el6("li", "hpt-detail-arm");
+          renderType4(li, pat);
           arms.appendChild(li);
         });
         var armsSection = detailSection("Arms (" + armCount + ")", arms);
         if (armCount === 1) {
-          var note = el5(
+          var note = el6(
             "p",
             "hpt-detail-note",
             "One arm \u2014 this case only binds the scrutinee\u2019s components (it acts as a let)."
@@ -23939,13 +28249,14 @@
 
   // js/harpoon/harpoon-lab-manual.mjs
   function createManual(deps) {
-    var el5 = deps.el;
+    var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip3 = deps.setTip;
     var E3 = deps.E;
     var toast3 = deps.toast;
     var renderSource2 = deps.renderSource;
     var appendAutoGoalHero = deps.appendAutoGoalHero;
+    var appendDeclLabel = deps.appendDeclLabel;
     var priorGoalBinders2 = deps.priorGoalBinders;
     var buildPlaceStrip2 = deps.buildPlaceStrip;
     var renderCommitOutcome2 = deps.renderCommitOutcome;
@@ -23959,7 +28270,7 @@
     var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
     var ICON_UNDO2 = deps.ICON_UNDO;
     var ICON_REDO2 = deps.ICON_REDO;
-    var ICON_BRUTUS2 = deps.ICON_BRUTUS;
+    var ICON_ORCA2 = deps.ICON_ORCA;
     var ICON_CHEVRON_DOWN2 = deps.ICON_CHEVRON_DOWN;
     var ICON_DECLINE2 = deps.ICON_DECLINE;
     var ICON_CHECK2 = deps.ICON_CHECK;
@@ -23996,54 +28307,58 @@
       } else if (mv.kind === "fill") arg = meta && meta.filler;
       return { verb: base.verb, arg, tip: base.tip, meta };
     }
+    function displayGoal(s) {
+      var g14 = globalThis.HarpoonGlyphs;
+      return g14 ? g14.displayBeluga(s) : String(s == null ? "" : s);
+    }
     function moveHeadText(text) {
       return String(text || "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 90);
     }
     function buildMoveRow(session, mv, hole, index) {
       var tac = tacticOf(mv, hole);
-      var row = el5("div", "harpoon-lab-move move-" + mv.kind + (index === 0 ? " is-primary" : ""));
+      var row = el6("div", "harpoon-lab-move move-" + mv.kind + (index === 0 ? " is-primary" : ""));
       row.style.setProperty("--i", String(index));
       row._mv = mv;
-      var btn = el5("button", "harpoon-lab-move-main");
+      var btn = el6("button", "harpoon-lab-move-main");
       btn.type = "button";
-      var head = el5("span", "harpoon-lab-move-head");
-      var verb = el5("span", "harpoon-lab-move-verb", tac.verb);
+      var head = el6("span", "harpoon-lab-move-head");
+      var verb = el6("span", "harpoon-lab-move-verb", tac.verb);
       setTip3(verb, tac.tip);
       head.appendChild(verb);
       if (tac.arg) {
-        var argEl = el5("span", "harpoon-lab-move-arg", tac.arg);
+        var argEl = el6("span", "harpoon-lab-move-arg", tac.arg);
         setTip3(argEl, argTip(mv.kind, tac.arg));
         head.appendChild(argEl);
       }
       btn.appendChild(head);
-      if (mv.rationale) btn.appendChild(el5("span", "harpoon-lab-move-why", mv.rationale));
+      if (mv.rationale) btn.appendChild(el6("span", "harpoon-lab-move-why", mv.rationale));
       btn.setAttribute("aria-label", "Apply " + tac.verb + (tac.arg ? " " + tac.arg : ""));
       btn.addEventListener("click", function(e) {
         e.preventDefault();
         session.manualApply(mv, row);
       });
       row.appendChild(btn);
-      var foot = el5("button", "harpoon-lab-move-foot");
+      var foot = el6("button", "harpoon-lab-move-foot");
       foot.type = "button";
       foot.setAttribute("aria-expanded", "false");
-      foot.appendChild(el5("span", "harpoon-lab-move-termhead", moveHeadText(mv.text)));
-      var pip = el5("span", "harpoon-lab-move-pip");
+      foot.appendChild(el6("span", "harpoon-lab-move-termhead", moveHeadText(mv.text)));
+      var pip = el6("span", "harpoon-lab-move-pip");
       pip.setAttribute("aria-hidden", "true");
       foot.appendChild(pip);
       row._pip = pip;
-      var chev = el5("span", "harpoon-lab-move-chevron");
+      var chev = el6("span", "harpoon-lab-move-chevron");
       chev.innerHTML = ICON_CHEVRON_DOWN2;
       foot.appendChild(chev);
       setTip3(foot, "Show the full term");
       foot.addEventListener("click", function(e) {
         e.preventDefault();
         e.stopPropagation();
-        var open9 = row.classList.toggle("is-expanded");
-        foot.setAttribute("aria-expanded", open9 ? "true" : "false");
-        setTip3(foot, open9 ? "Hide the full term" : "Show the full term");
+        var open10 = row.classList.toggle("is-expanded");
+        foot.setAttribute("aria-expanded", open10 ? "true" : "false");
+        setTip3(foot, open10 ? "Hide the full term" : "Show the full term");
         var full = row.querySelector(".harpoon-lab-move-term");
-        if (open9 && !full) {
-          var term = el5("div", "harpoon-lab-move-term");
+        if (open10 && !full) {
+          var term = el6("div", "harpoon-lab-move-term");
           renderSource2(term, mv.text);
           row.appendChild(term);
         }
@@ -24065,60 +28380,65 @@
       verified: "Beluga accepts this move",
       rejected: "Beluga rejects this move"
     };
-    function markPip(row, state, detail) {
+    function markPip(row, state2, detail2) {
       if (!row || !row._pip) return;
       row.classList.remove("is-checking", "is-verified", "is-rejected");
-      if (state) row.classList.add("is-" + state);
-      if (state === "verified") row._pip.innerHTML = ICON_CHECK2;
-      else if (state === "rejected") row._pip.innerHTML = ICON_DECLINE2;
+      if (state2) row.classList.add("is-" + state2);
+      if (state2 === "verified") row._pip.innerHTML = ICON_CHECK2;
+      else if (state2 === "rejected") row._pip.innerHTML = ICON_DECLINE2;
       else row._pip.innerHTML = "";
       var main = row.querySelector(".harpoon-lab-move-main");
       if (main) {
-        main.disabled = state === "rejected";
-        main.setAttribute("aria-disabled", state === "rejected" ? "true" : "false");
+        main.disabled = state2 === "rejected";
+        main.setAttribute("aria-disabled", state2 === "rejected" ? "true" : "false");
       }
-      var tip = PIP_TIP[state] || "";
-      if (state === "rejected" && detail) tip += " \u2014 " + String(detail).slice(0, 180);
+      var tip = PIP_TIP[state2] || "";
+      if (state2 === "rejected" && detail2) tip += ": " + String(detail2).slice(0, 180);
       setTip3(row._pip, tip);
       row._pip.setAttribute("aria-hidden", tip ? "false" : "true");
       if (tip) row._pip.setAttribute("aria-label", tip);
     }
     function skel(cls, w) {
-      var n = el5("span", "harpoon-skel" + (cls ? " " + cls : ""));
+      var n = el6("span", "harpoon-skel" + (cls ? " " + cls : ""));
       if (w) n.style.width = w;
       return n;
     }
     function sectionLabel(text) {
-      var n = el5("div", "harpoon-lab-section-label is-steps harpoon-lab-moves-label");
+      var n = el6("div", "harpoon-lab-section-label is-steps harpoon-lab-moves-label");
       n.textContent = text;
       return n;
     }
-    function skelGoalHero(declName) {
-      var wrap = el5("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
-      var glabel = el5("div", "harpoon-lab-goal-label");
-      glabel.appendChild(el5("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
-      if (declName) glabel.appendChild(el5("span", "harpoon-lab-auto-goal-name", declName));
+    function declKwOf2(prep) {
+      var key = prep && prep.declKey || "";
+      var i = key.indexOf(":");
+      return i > 0 ? key.slice(0, i) : "";
+    }
+    function skelGoalHero(declName, declKw) {
+      var wrap = el6("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
+      var glabel = el6("div", "harpoon-lab-goal-label");
+      glabel.appendChild(el6("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+      appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
-      var body = el5("div", "harpoon-lab-auto-goal-body");
+      var body = el6("div", "harpoon-lab-auto-goal-body");
       body.appendChild(skel("harpoon-skel--goal", "72%"));
       wrap.appendChild(body);
       return wrap;
     }
     function skelBar() {
-      var bar = el5("div", "harpoon-lab-bar");
-      var status = el5("div", "harpoon-lab-status");
-      status.appendChild(el5("span", "harpoon-lab-status-dot"));
+      var bar = el6("div", "harpoon-lab-bar");
+      var status = el6("div", "harpoon-lab-status");
+      status.appendChild(el6("span", "harpoon-lab-status-dot"));
       status.appendChild(skel("harpoon-skel--text", "3.6rem"));
       bar.appendChild(status);
       return bar;
     }
     function skelCtx() {
-      var wrap = el5("div", "harpoon-lab-context");
-      var sec = el5("div", "harpoon-lab-ctx");
-      sec.appendChild(el5("span", "harpoon-lab-ctx-label", "meta"));
-      var rows = el5("div", "harpoon-lab-binders");
+      var wrap = el6("div", "harpoon-lab-context");
+      var sec = el6("div", "harpoon-lab-ctx");
+      sec.appendChild(el6("span", "harpoon-lab-ctx-label", "meta"));
+      var rows = el6("div", "harpoon-lab-binders");
       ["58%", "41%"].forEach(function(w, i) {
-        var row = el5("div", "harpoon-lab-binder");
+        var row = el6("div", "harpoon-lab-binder");
         row.appendChild(skel("harpoon-skel--text" + (i ? " harpoon-skel--d1" : ""), w));
         rows.appendChild(row);
       });
@@ -24127,21 +28447,21 @@
       return wrap;
     }
     function skelMoveRow(i) {
-      var row = el5("div", "harpoon-lab-move is-skeleton");
+      var row = el6("div", "harpoon-lab-move is-skeleton");
       row.style.setProperty("--i", String(i));
-      var main = el5("div", "harpoon-lab-move-main");
-      var head = el5("span", "harpoon-lab-move-head");
+      var main = el6("div", "harpoon-lab-move-main");
+      var head = el6("span", "harpoon-lab-move-head");
       head.appendChild(skel("harpoon-skel--verb", ["2.8rem", "2.2rem", "3.4rem"][i % 3]));
       main.appendChild(head);
       main.appendChild(skel("harpoon-skel--text harpoon-skel--d1", ["52%", "38%", "45%"][i % 3]));
       row.appendChild(main);
       return row;
     }
-    var GLOW_PULL_X = 0.55;
-    var GLOW_PULL_Y = 0.45;
+    var GLOW_PULL_X = 0.46;
+    var GLOW_PULL_Y = 0.36;
     var GLOW_CLAMP_X = 0.3;
     var GLOW_CLAMP_Y = 0.35;
-    function bindBrutusGlow(btn) {
+    function bindOrcaGlow(btn) {
       var reduce = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (reduce) return;
       var rect = null;
@@ -24184,30 +28504,30 @@
         btn.style.removeProperty("--glow-dy");
       });
     }
-    function buildBrutusRunning(session, na) {
-      var band = el5("div", "harpoon-lab-brutus-band is-running" + (na.paused ? " is-paused" : ""));
-      var shell = el5("div", "harpoon-lab-brutus harpoon-lab-brutus--live");
-      var badge = el5("span", "harpoon-lab-brutus-badge" + (na.paused ? "" : " is-working"));
-      badge.innerHTML = ICON_BRUTUS2;
+    function buildOrcaRunning(session, na) {
+      var band = el6("div", "harpoon-lab-orca-band is-running" + (na.paused ? " is-paused" : ""));
+      var shell = el6("div", "harpoon-lab-orca harpoon-lab-orca--live");
+      var badge = el6("span", "harpoon-lab-orca-badge" + (na.paused ? "" : " is-working"));
+      badge.innerHTML = ICON_ORCA2;
       shell.appendChild(badge);
       session._autoSearchSpinner = badge;
       session._statTipEl = badge;
-      var copy = el5("span", "harpoon-lab-brutus-copy");
-      copy.appendChild(el5("span", "harpoon-lab-brutus-title", na.paused ? "Brutus paused" : "Brutus"));
-      var sub = el5("span", "harpoon-lab-brutus-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
+      var copy = el6("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el6("span", "harpoon-lab-orca-title", na.paused ? "Orca paused" : "Orca"));
+      var sub = el6("span", "harpoon-lab-orca-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
       sub.textContent = na.paused ? "Take a step by hand, or resume" : nativeAutoSearchLabel(na);
       if (!na.paused) sub.style.setProperty("--shimmer-accent", "var(--repl-holes-accent)");
       copy.appendChild(sub);
       shell.appendChild(copy);
       session._autoSearchText = sub;
-      var actions = el5("div", "harpoon-lab-brutus-actions");
+      var actions = el6("div", "harpoon-lab-orca-actions");
       var pauseBtn = iconBtn2(
         "icon-btn harpoon-lab-auto-pause",
         na.paused ? ICON_PLAY2 : ICON_PAUSE2,
-        na.paused ? "Resume the search" : "Pause \u2014 and get the tactics back",
+        na.paused ? "Resume the search" : "Pause and get the tactics back",
         na.paused ? "Resume" : "Pause",
         function() {
-          session.toggleBrutusPause();
+          session.toggleOrcaPause();
         }
       );
       pauseBtn._belPauseState = !!na.paused;
@@ -24227,45 +28547,46 @@
       session._autoSearchBox = band;
       return band;
     }
-    function buildBrutus(session, state, disabled) {
-      var band = el5("div", "harpoon-lab-brutus-band");
-      var btn = el5("button", "harpoon-lab-brutus");
+    function buildOrca(session, state2, disabled) {
+      var band = el6("div", "harpoon-lab-orca-band");
+      var btn = el6("button", "harpoon-lab-orca");
       btn.type = "button";
       if (disabled) btn.disabled = true;
-      var badge = el5("span", "harpoon-lab-brutus-badge");
-      badge.innerHTML = ICON_BRUTUS2;
+      var badge = el6("span", "harpoon-lab-orca-badge");
+      badge.innerHTML = ICON_ORCA2;
       btn.appendChild(badge);
-      var copy = el5("span", "harpoon-lab-brutus-copy");
-      copy.appendChild(el5("span", "harpoon-lab-brutus-title", "Brutus"));
-      copy.appendChild(el5(
+      var copy = el6("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el6("span", "harpoon-lab-orca-title", "Orca"));
+      copy.appendChild(el6(
         "span",
-        "harpoon-lab-brutus-sub",
-        state && state.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
+        "harpoon-lab-orca-sub",
+        state2 && state2.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
       ));
       btn.appendChild(copy);
       if (!disabled) {
         btn.addEventListener("click", function(e) {
           e.preventDefault();
-          session.runBrutus();
+          session.runOrca();
         });
-        bindBrutusGlow(btn);
+        bindOrcaGlow(btn);
       }
       band.appendChild(btn);
       return band;
     }
-    function manualNa(session, m, st, complete) {
+    function manualNa(session, m, st, complete2) {
       return {
-        phase: complete ? "solved" : "building",
+        phase: complete2 ? "solved" : "building",
         steps: st && st.steps || [],
         trace: null,
         stuck: null,
-        complete: !!complete,
+        complete: !!complete2,
         code: st && st.code,
         goalType: session.manualGoalType(),
-        goalState: complete ? "live" : "approximate",
+        goalState: complete2 ? "live" : "approximate",
         sourceGoalType: m.sourceGoalType,
         priorBinders: m.priorBinders,
         declName: m.declName,
+        declKw: m.declKw || "",
         theoremSnapshot: m.theoremSnapshot || null,
         manual: true
       };
@@ -24293,6 +28614,7 @@
         phase: "loading",
         state: null,
         declName: thm.name || prep.name || "",
+        declKw: declKwOf2(prep),
         sourceGoalType,
         priorBinders: [],
         busy: false,
@@ -24311,7 +28633,7 @@
         if (!self.manual) return false;
         if (!res || !res.ok) {
           self.manual.phase = "error";
-          self.manual.error = "The file has errors \u2014 fix them before proving.";
+          self.manual.error = "The file has errors. Fix them before proving.";
           self.render();
           return false;
         }
@@ -24340,11 +28662,39 @@
       var hole = ed.focusHole(st);
       return hole && hole.goal || this.manual.sourceGoalType || "";
     }
+    var CHECK_TIMEOUT_MS = 45e3;
     function manualOracle() {
       var client = globalThis.BelugaClient;
       return function(code) {
-        return client.checkResultForProver ? client.checkResultForProver(code) : client.checkResult(code);
+        var p = client.checkResultForProver ? client.checkResultForProver(code) : client.checkResult(code);
+        return new Promise(function(resolve2, reject) {
+          var done = false;
+          var timer2 = setTimeout(function() {
+            if (done) return;
+            done = true;
+            reject(new Error("The checker did not answer within " + Math.round(CHECK_TIMEOUT_MS / 1e3) + "s."));
+          }, CHECK_TIMEOUT_MS);
+          Promise.resolve(p).then(function(v) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer2);
+            resolve2(v);
+          }, function(e) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer2);
+            reject(e);
+          });
+        });
       };
+    }
+    function setTacticStatus(session, text, stalled) {
+      var host2 = session && session._tacticStatusEl;
+      if (!host2) return;
+      host2.textContent = text || "\u200B";
+      host2.classList.toggle("is-on", !!text);
+      if (stalled) host2.setAttribute("data-stalled", "");
+      else host2.removeAttribute("data-stalled");
     }
     function manualApply(mv, row) {
       var ed = E3();
@@ -24355,7 +28705,7 @@
       var na = this.nativeAuto;
       if (na && na.phase === "searching") {
         if (!na.paused) return Promise.resolve(false);
-        this._retireBrutus = true;
+        this._retireOrca = true;
         this.nativeAuto = null;
         this.userCancelled = true;
         if (this.stopReelClock) this.stopReelClock();
@@ -24366,11 +28716,19 @@
       if (row) {
         row.classList.add("is-applying");
         if (!row.querySelector(".harpoon-lab-move-track")) {
-          row.insertBefore(el5("div", "harpoon-lab-move-track"), row.firstChild);
+          row.insertBefore(el6("div", "harpoon-lab-move-track"), row.firstChild);
         }
       }
       if (this._movesEl) this._movesEl.classList.add("is-busy");
+      var applyVerb = tacticVerb2(mv.kind) || "move";
+      setTacticStatus(self, "checking " + applyVerb);
+      var since = Date.now();
+      var tick2 = setInterval(function() {
+        var secs = Math.round((Date.now() - since) / 1e3);
+        if (secs >= 3) setTacticStatus(self, "checking " + applyVerb + " " + secs + "s");
+      }, 1e3);
       var clearApplying = function() {
+        clearInterval(tick2);
         if (self._movesEl) self._movesEl.classList.remove("is-busy");
         if (!row) return;
         row.classList.remove("is-applying");
@@ -24381,11 +28739,13 @@
         m.busy = false;
         if (!r.ok) {
           clearApplying();
+          setTacticStatus(self, "not accepted", true);
           markPip(row, "rejected", r.error || "The checker did not accept this move.");
           toast3(firstLineOf(r.error) || "That move did not type-check.", "error");
           return false;
         }
         m.state = r.state;
+        setTacticStatus(self, "");
         m.priorBinders = priorGoalBinders2(self, m.sourceGoalType, self.manualGoalType());
         self.render();
         self.sweepCandidates();
@@ -24393,13 +28753,14 @@
       }).catch(function(err) {
         m.busy = false;
         clearApplying();
+        setTacticStatus(self, "no answer on " + applyVerb, true);
         markPip(row, "rejected", err && err.message || String(err));
         toast3(firstLineOf(err && err.message) || "That move could not be checked.", "error");
         return false;
       });
     }
-    function firstLineOf(detail) {
-      var t = String(detail || "").replace(/^File\s+"[^"]*",\s*line\s*\d+,\s*column\s*\d+:?\s*/i, "");
+    function firstLineOf(detail2) {
+      var t = String(detail2 || "").replace(/^File\s+"[^"]*",\s*line\s*\d+,\s*column\s*\d+:?\s*/i, "");
       t = t.replace(/^Error:\s*/i, "").split("\n")[0].trim();
       return t.length > 160 ? t.slice(0, 157) + "\u2026" : t;
     }
@@ -24407,17 +28768,31 @@
       var ed = E3();
       var self = this;
       var m = this.manual;
-      if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
-      var persist3 = globalThis.Persist;
-      var on = !persist3 || typeof persist3.readStoredHarpoonVerifyMoves !== "function" ? true : persist3.readStoredHarpoonVerifyMoves();
-      if (!on) return;
       var token = {};
       this._sweepToken = token;
+      if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
+      var persist5 = globalThis.Persist;
+      var on = !persist5 || typeof persist5.readStoredHarpoonVerifyMoves !== "function" ? true : persist5.readStoredHarpoonVerifyMoves();
+      if (!on) return;
       var rows = this._moveRows.slice(0, 8);
       var i = 0;
       var oracle = manualOracle();
+      function sinkRefused() {
+        if (self._sweepToken !== token || !self._moveRows) return;
+        var list3 = self._moveRows[0] && self._moveRows[0].parentNode;
+        if (!list3) return;
+        self._moveRows.forEach(function(row) {
+          if (row && row.classList && row.classList.contains("is-rejected")) list3.appendChild(row);
+        });
+      }
       function next() {
-        if (self._sweepToken !== token || i >= rows.length) return;
+        if (self._sweepToken !== token) return;
+        if (i >= rows.length) {
+          sinkRefused();
+          setTacticStatus(self, "");
+          return;
+        }
+        if (!m.busy) setTacticStatus(self, "checking " + (i + 1) + "/" + rows.length);
         var row = rows[i];
         i += 1;
         if (!row || !row._mv) {
@@ -24435,7 +28810,9 @@
           );
           next();
         }).catch(function() {
-          if (self._sweepToken === token) next();
+          if (self._sweepToken !== token) return;
+          markPip(row, null);
+          next();
         });
       }
       next();
@@ -24471,12 +28848,24 @@
       this.render();
       this.sweepCandidates();
     }
-    function runBrutus() {
+    function orcaStack(self, before) {
+      var prior = before && before.stack || [];
+      if (!before || self._orcaAnchored) return prior;
+      self._orcaAnchored = true;
+      return prior.concat([{
+        code: before.code,
+        holes: before.holes,
+        focusIdx: before.focusIdx,
+        steps: before.steps
+      }]);
+    }
+    function runOrca() {
       var m = this.manual;
       var self = this;
       if (!m || !m.state) return;
       this.cancelSweep();
       this.manualBefore = m.state;
+      this._orcaAnchored = false;
       this.runNativeAuto(m.state.code);
       this.scrollToDerivation();
     }
@@ -24499,12 +28888,12 @@
         });
       });
     }
-    function toggleBrutusPause() {
+    function toggleOrcaPause() {
       var na = this.nativeAuto;
       var m = this.manual;
       if (!m) return;
       if (!na || na.phase !== "searching") {
-        if (m.state) this.runBrutus();
+        if (m.state) this.runOrca();
         return;
       }
       var self = this;
@@ -24514,7 +28903,7 @@
         m.syncing = true;
         m.syncFailed = false;
         this.render();
-        this.syncManualToBrutus().then(function(ok) {
+        this.syncManualToOrca().then(function(ok) {
           m.syncing = false;
           m.syncFailed = !ok;
           if (!self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
@@ -24528,7 +28917,7 @@
         this.render();
       }
     }
-    function absorbBrutusResult(r) {
+    function absorbOrcaResult(r) {
       var ed = E3();
       var self = this;
       var m = this.manual;
@@ -24539,7 +28928,7 @@
       if (r && r.complete && r.code) {
         m.state = ed.absorbAuto(
           before,
-          { complete: true, code: r.code, steps: r.steps || [] },
+          { complete: true, code: r.code, steps: r.steps || [], trace: r.trace || null },
           this.thm
         );
         this.manualBefore = null;
@@ -24558,7 +28947,7 @@
         if (res && res.ok) {
           var next = ed.manualState(code, self.thm, res.output || "");
           next.steps = (before && before.steps || []).concat(r && r.steps || []);
-          next.stack = before && before.stack || [];
+          next.stack = orcaStack(self, before);
           self.manual.state = next;
           self.manual.priorBinders = priorGoalBinders2(
             self,
@@ -24576,7 +28965,7 @@
         return false;
       });
     }
-    function syncManualToBrutus() {
+    function syncManualToOrca() {
       var self = this;
       var ed = E3();
       var na = this.nativeAuto;
@@ -24588,8 +28977,8 @@
         if (!res || !res.ok || !self.manual) return false;
         var next = ed.manualState(code, self.thm, res.output || "");
         var before = self.manualBefore;
-        next.steps = (before && before.steps || []).concat(na.steps || []);
-        next.stack = before && before.stack || [];
+        next.steps = (before && before.steps || []).concat(ed.pairTrace ? ed.pairTrace(na.steps || [], na.trace) : na.steps || []);
+        next.stack = orcaStack(self, before);
         self.manual.state = next;
         self.manual.priorBinders = priorGoalBinders2(
           self,
@@ -24613,7 +29002,8 @@
         this.manual.state = ed.absorbAuto(before, {
           complete: true,
           code: na.code,
-          steps: na.steps || []
+          steps: na.steps || [],
+          trace: na.trace || null
         }, this.thm);
         this.render();
         return;
@@ -24622,12 +29012,7 @@
       var seedSteps = priorSteps.concat(na && na.steps || []);
       this.startManual(resumeCode, {
         steps: seedSteps,
-        stack: before ? priorStack.concat([{
-          code: before.code,
-          holes: before.holes,
-          focusIdx: before.focusIdx,
-          steps: priorSteps
-        }]) : priorStack
+        stack: orcaStack(this, before)
       });
     }
     function commitManual() {
@@ -24651,9 +29036,9 @@
       var m = this.manual;
       if (!m) return;
       var st = m.state;
-      var complete = st && ed.manualIsComplete(st);
+      var complete2 = st && ed.manualIsComplete(st);
       this._renderSig = manualRenderSig2(this);
-      var box = el5("div", "harpoon-lab-manual is-" + m.phase + (complete ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
+      var box = el6("div", "harpoon-lab-manual is-" + m.phase + (complete2 ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       var goalType = this.manualGoalType();
       if (goalType) {
@@ -24661,19 +29046,19 @@
           box,
           goalType,
           m.declName,
-          complete ? "live" : "approximate",
-          m.priorBinders
+          complete2 ? "live" : "approximate",
+          m.priorBinders,
+          m.declKw
         );
       }
       if (!this.isFrozenRetrospective()) this.renderCompromiseBanner(box);
       if (m.phase === "loading") {
-        if (!goalType) box.appendChild(skelGoalHero(m.declName));
+        if (!goalType) box.appendChild(skelGoalHero(m.declName, m.declKw));
         box.appendChild(skelBar());
-        box.appendChild(skelCtx());
-        box.appendChild(buildBrutus(this, null, true));
-        var skelMoves = el5("div", "harpoon-lab-moves");
+        box.appendChild(buildOrca(this, null, true));
+        var skelMoves = el6("div", "harpoon-lab-moves");
         skelMoves.appendChild(sectionLabel("Tactics"));
-        var skelList = el5("div", "harpoon-lab-move-list");
+        var skelList = el6("div", "harpoon-lab-move-list");
         for (var k = 0; k < 3; k += 1) skelList.appendChild(skelMoveRow(k));
         skelMoves.appendChild(skelList);
         box.appendChild(skelMoves);
@@ -24681,15 +29066,15 @@
         return;
       }
       if (m.phase === "error") {
-        var err = el5("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
-        err.appendChild(el5("span", "harpoon-lab-auto-stuck-label", "Cannot prove"));
-        err.appendChild(el5("div", "harpoon-lab-auto-stuck-goal", m.error || ""));
+        var err = el6("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
+        err.appendChild(el6("span", "harpoon-lab-auto-stuck-label", "Cannot prove"));
+        err.appendChild(el6("div", "harpoon-lab-auto-stuck-goal", m.error || ""));
         box.appendChild(err);
         parent.appendChild(box);
         return;
       }
-      this._manualNa = manualNa(this, m, st, complete);
-      if (complete) {
+      this._manualNa = manualNa(this, m, st, complete2);
+      if (complete2) {
         var proven = renderManualSolvedSummary2(box);
         if (proven) {
           proven.querySelector(".harpoon-lab-auto-sub").textContent = (st.steps.length === 1 ? "1 step" : st.steps.length + " steps") + " \xB7 ready to place in the file";
@@ -24708,9 +29093,9 @@
           ), stage);
           stage += 1;
         } else if (commit.status !== "placed") {
-          var blocked = this.compromise && this.compromise.level === "block";
+          var blocked2 = this.compromise && this.compromise.level === "block";
           var place3 = buildPlaceStrip2(this, {
-            blocked,
+            blocked: blocked2,
             extraCls: " harpoon-lab-auto-place is-instant",
             title: "Place the proof",
             onClick: function() {
@@ -24722,20 +29107,20 @@
           box.appendChild(place3);
           if (commit.status === "checking") this.updateCommitPlace();
         }
-        var open9 = st ? st.holes.length : 0;
-        var bar = el5("div", "harpoon-lab-bar");
-        var status = el5("div", "harpoon-lab-status");
-        var dot = el5("span", "harpoon-lab-status-dot" + (complete ? " is-done" : ""));
-        setTip3(dot, complete ? "Proven" : "Unproven");
-        dot.setAttribute("aria-label", complete ? "Proven" : "Unproven");
+        var open10 = st ? st.holes.length : 0;
+        var bar = el6("div", "harpoon-lab-bar");
+        var status = el6("div", "harpoon-lab-status");
+        var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
+        setTip3(dot, complete2 ? "Proven" : "Unproven");
+        dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
-        status.appendChild(el5(
+        status.appendChild(el6(
           "span",
           "harpoon-lab-status-text",
-          complete ? "Proven" : open9 === 1 ? "1 goal" : open9 + " goals"
+          complete2 ? "Proven" : open10 === 1 ? "1 goal" : open10 + " goals"
         ));
         bar.appendChild(status);
-        var actions = el5("div", "harpoon-lab-bar-actions");
+        var actions = el6("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
           ICON_UNDO2,
@@ -24761,17 +29146,17 @@
         bar.appendChild(actions);
         box.appendChild(bar);
         if (st && st.holes.length > 1) {
-          var pickBand = el5("div", "harpoon-lab-picker-band");
-          var picker = el5("div", "harpoon-lab-picker");
+          var pickBand = el6("div", "harpoon-lab-picker-band");
+          var picker = el6("div", "harpoon-lab-picker");
           picker.setAttribute("role", "tablist");
           picker.setAttribute("aria-label", "Subgoals");
           st.holes.forEach(function(h, i) {
-            var tab = el5("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            var tab = el6("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
             tab.type = "button";
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
             tab.textContent = String(i + 1);
-            setTip3(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + h.goal : ""));
+            setTip3(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
             tab.addEventListener("click", function(e) {
               e.preventDefault();
               self.manualFocus(i);
@@ -24781,12 +29166,16 @@
           pickBand.appendChild(picker);
           box.appendChild(pickBand);
         }
-        var hole = st ? ed.focusHole(st) : null;
+        var naRun = this.nativeAuto;
+        var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
+        var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
-          var ctxWrap = el5("div", "harpoon-lab-context");
+          var ctxWrap = el6("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
+          this._ctxWrap = ctxWrap;
+          this._ctxKey = JSON.stringify([hole.meta || [], hole.ctx || []]);
         }
         var solved = solvedBodyOf2(st.code, m.declName);
         if (solved) {
@@ -24794,20 +29183,20 @@
           stage += 1;
         }
       } else {
-        var open9 = st ? st.holes.length : 0;
-        var bar = el5("div", "harpoon-lab-bar");
-        var status = el5("div", "harpoon-lab-status");
-        var dot = el5("span", "harpoon-lab-status-dot" + (complete ? " is-done" : ""));
-        setTip3(dot, complete ? "Proven" : "Unproven");
-        dot.setAttribute("aria-label", complete ? "Proven" : "Unproven");
+        var open10 = st ? st.holes.length : 0;
+        var bar = el6("div", "harpoon-lab-bar");
+        var status = el6("div", "harpoon-lab-status");
+        var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
+        setTip3(dot, complete2 ? "Proven" : "Unproven");
+        dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
-        status.appendChild(el5(
+        status.appendChild(el6(
           "span",
           "harpoon-lab-status-text",
-          complete ? "Proven" : open9 === 1 ? "1 goal" : open9 + " goals"
+          complete2 ? "Proven" : open10 === 1 ? "1 goal" : open10 + " goals"
         ));
         bar.appendChild(status);
-        var actions = el5("div", "harpoon-lab-bar-actions");
+        var actions = el6("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
           ICON_UNDO2,
@@ -24833,17 +29222,17 @@
         bar.appendChild(actions);
         box.appendChild(bar);
         if (st && st.holes.length > 1) {
-          var pickBand = el5("div", "harpoon-lab-picker-band");
-          var picker = el5("div", "harpoon-lab-picker");
+          var pickBand = el6("div", "harpoon-lab-picker-band");
+          var picker = el6("div", "harpoon-lab-picker");
           picker.setAttribute("role", "tablist");
           picker.setAttribute("aria-label", "Subgoals");
           st.holes.forEach(function(h, i) {
-            var tab = el5("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            var tab = el6("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
             tab.type = "button";
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
             tab.textContent = String(i + 1);
-            setTip3(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + h.goal : ""));
+            setTip3(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
             tab.addEventListener("click", function(e) {
               e.preventDefault();
               self.manualFocus(i);
@@ -24853,33 +29242,40 @@
           pickBand.appendChild(picker);
           box.appendChild(pickBand);
         }
-        var hole = st ? ed.focusHole(st) : null;
+        var naRun = this.nativeAuto;
+        var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
+        var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
-          var ctxWrap = el5("div", "harpoon-lab-context");
+          var ctxWrap = el6("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
+          this._ctxWrap = ctxWrap;
+          this._ctxKey = JSON.stringify([hole.meta || [], hole.ctx || []]);
         }
         var na = this.nativeAuto;
         var running2 = !!(na && na.phase === "searching");
         var searching = running2 && !na.paused;
-        if (running2) box.appendChild(buildBrutusRunning(this, na));
-        else box.appendChild(buildBrutus(this, st, false));
+        if (running2) box.appendChild(buildOrcaRunning(this, na));
+        else box.appendChild(buildOrca(this, st, false));
         if (na && na.phase === "stuck" && na.stuck && na.stuck.goal) {
           var stuckCard = this.renderStuckCard(na);
           stageNode2(stuckCard, stage);
           stage += 1;
           box.appendChild(stuckCard);
         }
-        var movesWrap = el5("div", "harpoon-lab-moves" + (searching ? " is-locked" : ""));
+        var movesWrap = el6("div", "harpoon-lab-moves" + (searching ? " is-locked" : ""));
         this._movesEl = movesWrap;
         this._moveRows = [];
         var tacticsLabel = sectionLabel("Tactics");
         if (searching) {
           tacticsLabel.appendChild(
-            el5("span", "harpoon-lab-moves-lock", "Pause Brutus to use tactics")
+            el6("span", "harpoon-lab-moves-lock", "Pause Orca to use tactics")
           );
         }
+        var tacStatus = el6("span", "harpoon-lab-moves-status");
+        tacticsLabel.appendChild(tacStatus);
+        this._tacticStatusEl = tacStatus;
         movesWrap.appendChild(tacticsLabel);
         var moves = [];
         try {
@@ -24887,41 +29283,41 @@
         } catch (e) {
           moves = [];
         }
-        var list2 = el5("div", "harpoon-lab-move-list");
+        var list3 = el6("div", "harpoon-lab-move-list");
         if (m.busy || m.syncing) {
           for (var sk = 0; sk < Math.min(3, Math.max(1, moves.length)); sk += 1) {
-            list2.appendChild(skelMoveRow(sk));
+            list3.appendChild(skelMoveRow(sk));
           }
-          movesWrap.appendChild(list2);
+          movesWrap.appendChild(list3);
         } else if (m.syncFailed) {
-          var lost = el5("div", "harpoon-lab-moves-empty");
-          lost.appendChild(el5(
+          var lost = el6("div", "harpoon-lab-moves-empty");
+          lost.appendChild(el6(
             "span",
             "harpoon-lab-moves-empty-title",
             "Could not read the paused proof"
           ));
-          lost.appendChild(el5(
+          lost.appendChild(el6(
             "span",
             "harpoon-lab-moves-empty-sub",
-            "Resume Brutus, or undo the last step and try again."
+            "Resume Orca, or undo the last step and try again."
           ));
           movesWrap.appendChild(lost);
         } else if (!moves.length) {
-          var none = el5("div", "harpoon-lab-moves-empty");
-          none.appendChild(el5("span", "harpoon-lab-moves-empty-title", "Nothing applies here"));
-          none.appendChild(el5(
+          var none = el6("div", "harpoon-lab-moves-empty");
+          none.appendChild(el6("span", "harpoon-lab-moves-empty-title", "Nothing applies here"));
+          none.appendChild(el6(
             "span",
             "harpoon-lab-moves-empty-sub",
-            "BelJar has no move for this goal. Undo the last step, pick another subgoal, or let Brutus search."
+            "BelJar has no move for this goal. Undo the last step, pick another subgoal, or let Orca search."
           ));
           movesWrap.appendChild(none);
         } else {
           moves.forEach(function(mv, i) {
             var row = buildMoveRow(self, mv, hole, i);
             self._moveRows.push(row);
-            list2.appendChild(row);
+            list3.appendChild(row);
           });
-          movesWrap.appendChild(list2);
+          movesWrap.appendChild(list3);
         }
         stageNode2(movesWrap, stage);
         stage += 1;
@@ -24929,9 +29325,9 @@
       }
       var naNow = this.nativeAuto;
       if (naNow && naNow.phase === "searching") {
-        var live2 = el5("div", "harpoon-reel harpoon-lab-manual-trail");
-        var liveHead = el5("div", "harpoon-deriv-header");
-        liveHead.appendChild(el5("span", "harpoon-lab-section-label is-steps", "Derivation"));
+        var live2 = el6("div", "harpoon-reel harpoon-lab-manual-trail");
+        var liveHead = el6("div", "harpoon-deriv-header");
+        liveHead.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Derivation"));
         liveHead.appendChild(iconBtn2(
           "icon-btn harpoon-deriv-popout",
           ICON_POPOUT2,
@@ -24942,7 +29338,7 @@
           }
         ));
         live2.appendChild(liveHead);
-        var record = el5("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
+        var record = el6("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
         record._lastBranch = null;
         record._branchHost = null;
         live2.appendChild(record);
@@ -24953,8 +29349,14 @@
         this._workingStrip = null;
         this._workingChips = [];
         this._derivEl = live2;
+        var prior = this.manualBefore && this.manualBefore.steps || [];
+        for (var pi = 0; pi < prior.length; pi += 1) {
+          appendCommittedStepRow(record, prior[pi], pi);
+        }
         var already = naNow.steps || [];
-        for (var si = 0; si < already.length; si += 1) appendCommittedStepRow(record, already[si], si);
+        for (var si = 0; si < already.length; si += 1) {
+          appendCommittedStepRow(record, already[si], prior.length + si);
+        }
         this._reelRecordCount = already.length;
         this.syncReelStatus();
         this.startReelClock();
@@ -24977,10 +29379,10 @@
       manualFocus,
       sweepCandidates,
       cancelSweep,
-      runBrutus,
-      toggleBrutusPause,
-      absorbBrutusResult,
-      syncManualToBrutus,
+      runOrca,
+      toggleOrcaPause,
+      absorbOrcaResult,
+      syncManualToOrca,
       scrollToDerivation,
       backToManual,
       commitManual
@@ -24988,24 +29390,24 @@
   }
 
   // js/harpoon/harpoon-lab.mjs
-  var global40 = globalThis;
+  var global46 = globalThis;
   function E() {
-    return global40.BelEditor || null;
+    return global46.BelEditor || null;
   }
   function P2() {
-    return global40.HarpoonEngine || null;
+    return global46.HarpoonEngine || null;
   }
   function FW() {
-    return global40.FloatingWindow || null;
+    return global46.FloatingWindow || null;
   }
   function toast2(msg, kind) {
-    var T = global40.Toasts;
+    var T = global46.Toasts;
     if (!T) return;
     if (kind === "error" && T.error) T.error(msg);
     else if (kind === "success" && T.success) T.success(msg);
     else if (T.info) T.info(msg);
   }
-  var el3 = function(tag, cls, text) {
+  var el4 = function(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
@@ -25029,7 +29431,7 @@
   var ICON_POPOUT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>';
   var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.8v12.4c0 .8.9 1.3 1.6.9l10.2-6.2a1 1 0 0 0 0-1.7L9.6 4.9A1 1 0 0 0 8 5.8Z"/></svg>';
   var ICON_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c.3 3.1 1.4 4.2 4.5 4.5-3.1.3-4.2 1.4-4.5 4.5-.3-3.1-1.4-4.2-4.5-4.5 3.1-.3 4.2-1.4 4.5-4.5Z"/><path d="M18.5 12.5c.2 2 .9 2.7 2.9 2.9-2 .2-2.7.9-2.9 2.9-.2-2-.9-2.7-2.9-2.9 2-.2 2.7-.9 2.9-2.9Z"/></svg>';
-  var ICON_BRUTUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.2 14.4 9.4v4H9.6v-4Z" fill="currentColor" stroke="none"/><path d="M6.6 13.9h10.8"/><path d="M12 14.4v3.9"/><circle cx="12" cy="20" r="1.5"/></svg>';
+  var ICON_ORCA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.4 15.4Q9.4 8.2 16.2 4.4Q13.6 10.4 14.2 15.4Z" fill="currentColor" stroke="none"/><path d="M3 18.8q2.9-3 5.8 0t5.8 0t5.8 0"/></svg>';
   var ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
   var ICON_DECLINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7 17 17"/><path d="M17 7 7 17"/></svg>';
   var ICON_TAKEOVER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.4 18.6 10.6 12.3 12.3 9.6 18.6Z"/></svg>';
@@ -25046,62 +29448,62 @@
   function tacticVerb(kind) {
     return TACTIC_VERB[kind] || kind || "move";
   }
-  function setTip(el5, text, opts) {
-    if (!el5) return;
-    if (global40.Tooltips && global40.Tooltips.set) {
-      global40.Tooltips.set(el5, text, opts);
+  function setTip(el6, text, opts) {
+    if (!el6) return;
+    if (global46.Tooltips && global46.Tooltips.set) {
+      global46.Tooltips.set(el6, text, opts);
     } else {
-      el5.removeAttribute("title");
+      el6.removeAttribute("title");
       var tip = text != null ? String(text).trim() : "";
-      if (tip) el5.setAttribute("data-tooltip", tip);
-      else el5.removeAttribute("data-tooltip");
+      if (tip) el6.setAttribute("data-tooltip", tip);
+      else el6.removeAttribute("data-tooltip");
     }
   }
   function buildLabeledCodeTip(label, code, kind) {
     var frag = document.createDocumentFragment();
     if (label) {
-      var lab = el3("div", "hpt-tip-note");
+      var lab = el4("div", "hpt-tip-note");
       lab.textContent = label;
       frag.appendChild(lab);
     }
-    var host = el3("div", "hpt-tip-code");
-    if (kind === "source") renderSource(host, code);
-    else renderType(host, code);
-    frag.appendChild(host);
+    var host2 = el4("div", "hpt-tip-code");
+    if (kind === "source") renderSource(host2, code);
+    else renderType2(host2, code);
+    frag.appendChild(host2);
     return frag;
   }
-  function bindStepGoalTip(host, goal) {
-    if (!host) return;
+  function bindStepGoalTip(host2, goal) {
+    if (!host2) return;
     var shown = goal ? displayType(goal) : "";
     if (!shown) {
-      if (global40.Tooltips && global40.Tooltips.setRich) global40.Tooltips.setRich(host, null);
-      setTip(host, "", { ariaLabel: false });
-      host.removeAttribute("data-tooltip-placement");
+      if (global46.Tooltips && global46.Tooltips.setRich) global46.Tooltips.setRich(host2, null);
+      setTip(host2, "", { ariaLabel: false });
+      host2.removeAttribute("data-tooltip-placement");
       return;
     }
-    host.setAttribute("data-tooltip-placement", "below");
-    if (global40.Tooltips && typeof global40.Tooltips.setRich === "function") {
-      global40.Tooltips.setRich(host, function() {
+    host2.setAttribute("data-tooltip-placement", "below");
+    if (global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
+      global46.Tooltips.setRich(host2, function() {
         return buildLabeledCodeTip("Goal at this step", goal, "type");
       }, "Goal at this step: " + shown);
     } else {
-      setTip(host, "Goal at this step: " + shown, { ariaLabel: false });
+      setTip(host2, "Goal at this step: " + shown, { ariaLabel: false });
     }
   }
-  function bindChipTip(el5, tip, richCode, richKind, placement) {
-    if (!el5 || !tip) return;
-    el5.setAttribute("data-tooltip-placement", placement || "below");
-    el5.setAttribute("data-tooltip-no-track", "");
-    if (richCode && global40.Tooltips && typeof global40.Tooltips.setRich === "function") {
-      global40.Tooltips.setRich(el5, function() {
+  function bindChipTip(el6, tip, richCode, richKind, placement) {
+    if (!el6 || !tip) return;
+    el6.setAttribute("data-tooltip-placement", placement || "below");
+    el6.setAttribute("data-tooltip-no-track", "");
+    if (richCode && global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
+      global46.Tooltips.setRich(el6, function() {
         return buildLabeledCodeTip(tip, richCode, richKind || "type");
       }, tip);
     } else {
-      setTip(el5, tip, { ariaLabel: false });
+      setTip(el6, tip, { ariaLabel: false });
     }
   }
-  function iconBtn(className, svg, label, tip, onClick, disabled) {
-    var b = el3("button", className);
+  function iconBtn(className, svg, label, tip, onClick2, disabled) {
+    var b = el4("button", className);
     b.type = "button";
     b.setAttribute("aria-label", label);
     if (tip) setTip(b, tip);
@@ -25109,7 +29511,7 @@
     b.innerHTML = svg;
     b.addEventListener("click", function(e) {
       e.preventDefault();
-      if (!b.disabled) onClick();
+      if (!b.disabled) onClick2();
     });
     return b;
   }
@@ -25125,14 +29527,14 @@
       }
     }, 300);
   }
-  if (typeof global40.addEventListener === "function") {
-    global40.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
-    global40.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
-    global40.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
-    global40.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
+  if (typeof global46.addEventListener === "function") {
+    global46.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
+    global46.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
+    global46.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
+    global46.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
   }
   function liveEditorFileId() {
-    var api3 = global40.CurrentEditor;
+    var api3 = global46.CurrentEditor;
     if (api3 && typeof api3.getDocumentId === "function") {
       var docId = api3.getDocumentId();
       if (docId) return docId;
@@ -25141,13 +29543,13 @@
       var edId = api3.getActiveFileId();
       if (edId) return edId;
     }
-    var P3 = global40.Persist;
+    var P3 = global46.Persist;
     return P3 && P3.getActiveFileId ? P3.getActiveFileId() : null;
   }
   function liveFileText(fileId) {
-    var P3 = global40.Persist;
+    var P3 = global46.Persist;
     if (!P3 || !fileId) return "";
-    var api3 = global40.CurrentEditor;
+    var api3 = global46.CurrentEditor;
     if (fileId === liveEditorFileId() && api3 && typeof api3.getValue === "function") {
       return api3.getValue();
     }
@@ -25165,16 +29567,22 @@
   }
   function findHoleHitInText(docText, anchor, ed) {
     if (!anchor || !docText || !ed || typeof ed.parseDecl !== "function") return null;
-    var re = new RegExp(
-      "\\b(rec|proof)\\s+" + String(anchor.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
-    );
-    var m = re.exec(docText);
-    if (!m) return null;
-    var from = m.index;
-    var semi = docText.indexOf(";", from);
-    var to = semi < 0 ? docText.length : semi + 1;
-    var lines = docText.slice(0, from).split("\n");
-    var declStartLine = lines.length;
+    var loc = ed.locateMember ? ed.locateMember(docText, anchor.declName) : null;
+    var from;
+    var to;
+    if (loc) {
+      from = loc.from;
+      to = loc.to;
+    } else {
+      var re = new RegExp(
+        "(^|[\\n\\r])[ \\t]*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + String(anchor.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
+      );
+      var m = re.exec(docText);
+      if (!m) return null;
+      from = m.index + m[1].length;
+      var semi = docText.indexOf(";", from);
+      to = semi < 0 ? docText.length : semi + 1;
+    }
     var declSlice = docText.slice(from, to);
     var decl = ed.parseDecl(declSlice);
     if (!decl || anchor.declKey && decl.kw + ":" + decl.name !== anchor.declKey) return null;
@@ -25186,12 +29594,6 @@
     var line = before.split("\n").length;
     var lastNl = before.lastIndexOf("\n");
     var col = before.length - (lastNl < 0 ? 0 : lastNl + 1) + 1;
-    if (anchor.holeKey) {
-      var want = anchor.holeKey;
-      var got = line + ":" + col + ":";
-      if (want.indexOf(got) !== 0 && got !== want.split(":").slice(0, 2).join(":") + ":") {
-      }
-    }
     var off = bodyStart + qIdx;
     return { hole: { line, col, name: null }, from: off, to: off + 1 };
   }
@@ -25200,7 +29602,7 @@
   function displayType() {
     return displayApi.displayType.apply(null, arguments);
   }
-  function renderType() {
+  function renderType2() {
     return displayApi.renderType.apply(null, arguments);
   }
   function renderSource() {
@@ -25214,6 +29616,11 @@
   }
   function mountGoalPriors() {
     return displayApi.mountGoalPriors.apply(null, arguments);
+  }
+  function declKwOf(prep) {
+    var key = prep && prep.declKey || "";
+    var i = key.indexOf(":");
+    return i > 0 ? key.slice(0, i) : "";
   }
   function renderManualSolvedSummary() {
     return displayApi.renderManualSolvedSummary.apply(null, arguments);
@@ -25242,11 +29649,30 @@
   function commitFailureUserMessage() {
     return commitApi.commitFailureUserMessage();
   }
-  function Session(view, declFrom, declTo, host) {
+  var liveSessions = [];
+  function activeSession() {
+    var active3 = global46.document ? global46.document.activeElement : null;
+    var newest = null;
+    for (var i = liveSessions.length - 1; i >= 0; i -= 1) {
+      var s = liveSessions[i];
+      if (!s || !s.bodyEl) continue;
+      if (active3 && s.bodyEl.contains(active3)) return s;
+      if (!newest) newest = s;
+    }
+    return newest;
+  }
+  function trackSession(session) {
+    if (liveSessions.indexOf(session) < 0) liveSessions.push(session);
+  }
+  function untrackSession(session) {
+    var at = liveSessions.indexOf(session);
+    if (at !== -1) liveSessions.splice(at, 1);
+  }
+  function Session(view, declFrom, declTo, host2) {
     this.view = view;
     this.declFrom = declFrom;
     this.declTo = declTo;
-    this.host = host || { kind: "float" };
+    this.host = host2 || { kind: "float" };
     this.win = null;
     this.bodyEl = null;
     this.barEl = null;
@@ -25260,6 +29686,7 @@
     this._compromiseBanner = null;
     this.commitState = defaultCommitState();
     this._verdictPopPlayed = false;
+    trackSession(this);
   }
   Session.prototype.getCommitState = function() {
     if (this.nativeAuto) {
@@ -25306,8 +29733,8 @@
     }
     if (title) title.classList.add("beljar-tip-shimmer");
     if (!place3.querySelector(".harpoon-lab-place-track")) {
-      var track = el3("div", "harpoon-lab-place-track");
-      track.appendChild(el3("div", "harpoon-loadbar"));
+      var track = el4("div", "harpoon-lab-place-track");
+      track.appendChild(el4("div", "harpoon-loadbar"));
       place3.insertBefore(track, place3.firstChild);
     }
   };
@@ -25333,16 +29760,16 @@
     }
     try {
       var focusNext = typeof Persist === "undefined" || Persist.readStoredAutosolveFocusNext();
-      if (focusNext && global40.CurrentEditor && typeof global40.CurrentEditor.cycleHole === "function") {
-        global40.CurrentEditor.cycleHole(1);
+      if (focusNext && global46.CurrentEditor && typeof global46.CurrentEditor.cycleHole === "function") {
+        global46.CurrentEditor.cycleHole(1);
       }
     } catch (_) {
     }
   };
-  Session.prototype.finishCommitFailure = function(detail, canRetry, opts) {
+  Session.prototype.finishCommitFailure = function(detail2, canRetry, opts) {
     opts = opts || {};
     var st = this.getCommitState();
-    var raw = String(detail || "The proof did not re-check.");
+    var raw = String(detail2 || "The proof did not re-check.");
     var checkerReject = opts.kind === "checker";
     st.status = "failed";
     st.phase = null;
@@ -25350,7 +29777,7 @@
       st.detail = commitFailureUserMessage();
       st.detailRaw = raw;
       toast2(st.detail, "error");
-      var N = global40.Notifications;
+      var N = global46.Notifications;
       if (N && typeof N.emit === "function") {
         N.emit({
           kind: "error",
@@ -25380,17 +29807,17 @@
     st.dismissed = false;
     this.render();
   };
-  Session.prototype.abortCommitChecking = function(detail, canRetry) {
+  Session.prototype.abortCommitChecking = function(detail2, canRetry) {
     if (canRetry) this.resetCommitForRetry();
-    else this.finishCommitFailure(detail, false);
+    else this.finishCommitFailure(detail2, false);
   };
   Session.prototype.clearPendingCommitNav = function() {
     if (this._pendingCommitNavTimer != null) {
-      global40.clearTimeout(this._pendingCommitNavTimer);
+      global46.clearTimeout(this._pendingCommitNavTimer);
       this._pendingCommitNavTimer = null;
     }
     if (this._pendingCommitNavListener) {
-      global40.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
+      global46.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
       this._pendingCommitNavListener = null;
     }
     this.pendingCommitSource = null;
@@ -25403,7 +29830,7 @@
     if (idx !== -1) probeSessions.splice(idx, 1);
   };
   Session.prototype.resolveView = function() {
-    var api3 = global40.CurrentEditor;
+    var api3 = global46.CurrentEditor;
     if (!api3 || !this.fileId) return this.view;
     if (liveEditorFileId() === this.fileId && typeof api3.getView === "function") {
       var v = api3.getView();
@@ -25414,8 +29841,8 @@
   Session.prototype.captureAnchor = function(view, prep) {
     var ed = E();
     if (!ed || typeof ed.captureHarpoonAnchor !== "function" || !prep) return;
-    var api3 = global40.CurrentEditor;
-    var P3 = global40.Persist;
+    var api3 = global46.CurrentEditor;
+    var P3 = global46.Persist;
     var fileId = this.fileId || (P3 && P3.getActiveFileId ? P3.getActiveFileId() : null);
     var fileText = view ? view.state.doc.toString() : prep.fileText != null ? prep.fileText : liveFileText(fileId);
     var declSlice = prep.span ? view ? view.state.doc.sliceString(prep.span.from, prep.span.to) : fileText.slice(prep.span.from, prep.span.to) : "";
@@ -25444,10 +29871,10 @@
     if (!ed || typeof ed.assessHarpoonAnchor !== "function" || !this.anchor || !this.nativeAuto) return;
     var fileId = this.fileId || this.anchor.fileId;
     if (!fileId) return;
-    var api3 = global40.CurrentEditor;
-    var active = liveEditorFileId() === fileId;
+    var api3 = global46.CurrentEditor;
+    var active3 = liveEditorFileId() === fileId;
     this.resolveView();
-    var view = active ? this.view : null;
+    var view = active3 ? this.view : null;
     var fileText = liveFileText(fileId);
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var liveHit = this.findLiveHit(view, eng);
@@ -25473,11 +29900,21 @@
       this.updateCompromiseBanner();
     }
   };
+  function pushOrca(session, label) {
+    if (typeof window === "undefined" || !window.StatusStrip) return;
+    var na = session && session.nativeAuto;
+    if (!na || na.phase !== "searching") {
+      window.StatusStrip.setOrca(false);
+      return;
+    }
+    window.StatusStrip.setOrca(true, na.paused ? "paused" : label || "");
+  }
   Session.prototype.stopNativeAuto = function() {
     this.userCancelled = true;
     if (this.nativeAuto && this.nativeAuto.phase === "searching") {
       setNativeSearchLabel(this.nativeAuto, "Stopping\u2026");
       this.updateNativeAutoSearch();
+      pushOrca(this, "stopping");
     }
   };
   Session.prototype.restartNativeAuto = function() {
@@ -25497,7 +29934,7 @@
     }
     this.userCancelled = false;
     var view = this.resolveView();
-    var api3 = global40.CurrentEditor;
+    var api3 = global46.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var hit = this.findLiveHit(view, eng);
     if (!hit) {
@@ -25541,12 +29978,12 @@
     if (place3) {
       var commit = this.getCommitState();
       if (commit.status === "placed" || commit.status === "failed") return;
-      var blocked = c.level === "block";
-      place3.disabled = blocked;
-      place3.classList.toggle("is-blocked", blocked);
+      var blocked2 = c.level === "block";
+      place3.disabled = blocked2;
+      place3.classList.toggle("is-blocked", blocked2);
       var sub = place3.querySelector(".harpoon-lab-place-sub");
       if (sub && na && na.complete && commit.status !== "checking") {
-        sub.textContent = blocked ? "The hole changed \u2014 restart to insert" : "Insert into the file";
+        sub.textContent = blocked2 ? "The hole changed \u2014 restart to insert" : "Insert into the file";
       }
     }
   };
@@ -25647,11 +30084,11 @@
     );
     if (this._autoGoalWrap) {
       var goalHost = this._autoGoalWrap.querySelector(".harpoon-hole-goal");
-      var ed = typeof global40.BelEditor !== "undefined" ? global40.BelEditor : null;
+      var ed = typeof global46.BelEditor !== "undefined" ? global46.BelEditor : null;
       if (goalHost && ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goalHost, { surface: "lab", goalState: "live", goal: match.goal });
       } else if (goalHost) {
-        renderType(goalHost, match.goal);
+        renderType2(goalHost, match.goal);
       }
       mountGoalPriors(this._autoGoalWrap, this.nativeAuto.priorBinders);
     }
@@ -25659,7 +30096,7 @@
   Session.prototype.resolveFullDeclSignature = function(proveCode, sourceType) {
     var self = this;
     var ed = E();
-    var client = global40.BelugaClient;
+    var client = global46.BelugaClient;
     var name = this.prep && this.prep.name;
     if (!ed || !client || typeof client.ideDeclTypeForProver !== "function" || !name || !proveCode) return;
     if (this._fullDeclSigRequested === name) return;
@@ -25684,7 +30121,7 @@
   };
   Session.prototype.runNativeAuto = function(codeOverride) {
     var ed = E();
-    var client = global40.BelugaClient;
+    var client = global46.BelugaClient;
     var prep = this.prep;
     var self = this;
     if (!ed || !client || !prep || typeof ed.proveProgram !== "function" || typeof ed.theoremUnderProof !== "function") {
@@ -25698,7 +30135,7 @@
       return Promise.resolve(false);
     }
     var proveCode = codeOverride || prep.proveCode || prep.assembledCode;
-    var api3 = global40.CurrentEditor;
+    var api3 = global46.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var goalHit = typeof ed.resolveHoleGoalForHit === "function" ? ed.resolveHoleGoalForHit(this.view, eng, prep.hit) : { goal: thm.compType && thm.compType.raw ? thm.compType.raw : "", state: "approximate", loadingLive: true };
     if ((!goalHit || !goalHit.goal) && prep.hit && prep.hit.hole && prep.hit.hole.goal) {
@@ -25724,6 +30161,7 @@
       sourceGoalType,
       priorBinders: priorGoalBinders(this, sourceGoalType, initialGoalType),
       declName: thm.name || this.prep && this.prep.name || "",
+      declKw: declKwOf(this.prep),
       theoremSnapshot: {
         premiseCount: thm.compType && thm.compType.premises && thm.compType.premises.length || 0,
         totality: thm.totality || null,
@@ -25752,6 +30190,7 @@
       if (!self.nativeAuto || self.nativeAuto.paused) return;
       setNativeSearchLabel(self.nativeAuto, label);
       self.syncReelStatus();
+      pushOrca(self, String(label || "").replace(/[….]+$/, ""));
     }
     pulseLabel("Starting Beluga\u2026");
     var proverReady = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
@@ -25818,6 +30257,10 @@
           var prevLen = (na.steps || []).length;
           na.steps = info.steps || [];
           if (info.code) na.liveCode = info.code;
+          if (info.holes) {
+            na.liveHoles = info.holes;
+            self.syncLiveContext();
+          }
           na.checks = na.steps.reduce(function(t, s) {
             return t + (s.checks || 0);
           }, 0);
@@ -25834,8 +30277,8 @@
       });
     }).then(function(r) {
       self.probeAnchor();
-      if (self._retireBrutus) {
-        self._retireBrutus = false;
+      if (self._retireOrca) {
+        self._retireOrca = false;
         self.userCancelled = false;
         self.render();
         return false;
@@ -25863,7 +30306,7 @@
       };
       self.render();
       self.refreshTreeExplorer();
-      if (self.manual) self.absorbBrutusResult(r);
+      if (self.manual) self.absorbOrcaResult(r);
       return !!(r && r.complete);
     }).catch(function(err) {
       var cancelled = client.isCancelledError && client.isCancelledError(err);
@@ -25883,6 +30326,7 @@
       self.refreshTreeExplorer();
       return false;
     }).finally(function() {
+      pushOrca(self);
       if (self._goalTierListener) {
         window.removeEventListener("beljar:hole-goals-updated", self._goalTierListener);
         window.removeEventListener("beljar:development-checked", self._goalTierListener);
@@ -25945,11 +30389,12 @@
     return "Restart from the current file state";
   }
   Session.prototype.disposeSession = function() {
+    untrackSession(this);
     this.clearPendingCommitNav();
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
-    var client = global40.BelugaClient;
+    var client = global46.BelugaClient;
     if (client && client.endProverSession) client.endProverSession();
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
@@ -25985,25 +30430,25 @@
     var self = this;
     var body = this.bodyEl;
     if (!body) return;
-    var open9 = m.subgoals && m.subgoals.length || 0;
-    var bar = el3("div", "harpoon-lab-bar");
-    var status = el3("div", "harpoon-lab-status");
-    var dot = el3("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
+    var open10 = m.subgoals && m.subgoals.length || 0;
+    var bar = el4("div", "harpoon-lab-bar");
+    var status = el4("div", "harpoon-lab-status");
+    var dot = el4("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
     dot.setAttribute("data-tooltip", m.complete ? "Proven" : "Unproven");
     dot.setAttribute("aria-label", m.complete ? "Proven" : "Unproven");
-    if (global40.Tooltips && global40.Tooltips.bind) global40.Tooltips.bind(dot);
+    if (global46.Tooltips && global46.Tooltips.bind) global46.Tooltips.bind(dot);
     status.appendChild(dot);
-    var label = el3("span", "harpoon-lab-status-text");
+    var label = el4("span", "harpoon-lab-status-text");
     if (m.complete) {
       label.textContent = "Proven";
-    } else if (open9 === 1) {
+    } else if (open10 === 1) {
       label.textContent = "1 goal";
     } else {
-      label.textContent = open9 + " goals";
+      label.textContent = open10 + " goals";
     }
     status.appendChild(label);
     bar.appendChild(status);
-    var actions = el3("div", "harpoon-lab-bar-actions");
+    var actions = el4("div", "harpoon-lab-bar-actions");
     actions.appendChild(iconBtn("icon-btn", ICON_UNDO, "Undo", "Undo", function() {
       self.undo();
     }));
@@ -26015,15 +30460,15 @@
   };
   Session.prototype.renderCtx = function(parent, label, binders) {
     if (!binders || !binders.length) return;
-    var sec = el3("div", "harpoon-lab-ctx");
-    sec.appendChild(el3("span", "harpoon-lab-ctx-label", label));
-    var rows = el3("div", "harpoon-lab-binders");
+    var sec = el4("div", "harpoon-lab-ctx");
+    sec.appendChild(el4("span", "harpoon-lab-ctx-label", label));
+    var rows = el4("div", "harpoon-lab-binders");
     binders.forEach(function(b) {
-      var row = el3("div", "harpoon-lab-binder");
-      row.appendChild(el3("span", "harpoon-lab-binder-name", b.name));
-      row.appendChild(el3("span", "harpoon-lab-binder-sep", ":"));
-      var t = el3("span", "harpoon-lab-binder-type");
-      renderType(t, b.type);
+      var row = el4("div", "harpoon-lab-binder");
+      row.appendChild(el4("span", "harpoon-lab-binder-name", b.name));
+      row.appendChild(el4("span", "harpoon-lab-binder-sep", ":"));
+      var t = el4("span", "harpoon-lab-binder-type");
+      renderType2(t, b.type);
       row.appendChild(t);
       rows.appendChild(row);
     });
@@ -26057,16 +30502,16 @@
       });
     });
     if (!moves.length && !tac.auto) return;
-    var wrap = el3("div", "harpoon-lab-moves");
+    var wrap = el4("div", "harpoon-lab-moves");
     if (tac.auto) {
-      var autoBtn = el3("button", "harpoon-lab-auto-btn");
+      var autoBtn = el4("button", "harpoon-lab-auto-btn");
       autoBtn.type = "button";
-      var spark = el3("span", "harpoon-lab-auto-btn-glyph");
+      var spark = el4("span", "harpoon-lab-auto-btn-glyph");
       spark.innerHTML = ICON_SPARK;
       autoBtn.appendChild(spark);
-      autoBtn.appendChild(el3("span", "harpoon-lab-auto-btn-label", "Auto-solve"));
+      autoBtn.appendChild(el4("span", "harpoon-lab-auto-btn-label", "Auto-solve"));
       autoBtn.setAttribute("data-tooltip", "Let BelJar search for the whole proof");
-      if (global40.Tooltips && global40.Tooltips.bind) global40.Tooltips.bind(autoBtn);
+      if (global46.Tooltips && global46.Tooltips.bind) global46.Tooltips.bind(autoBtn);
       autoBtn.addEventListener("click", function(e) {
         e.preventDefault();
         self.runTactic({ kind: "auto" });
@@ -26074,16 +30519,16 @@
       wrap.appendChild(autoBtn);
     }
     if (moves.length) {
-      var row = el3("div", "harpoon-lab-tacs");
+      var row = el4("div", "harpoon-lab-tacs");
       moves.forEach(function(mv, i) {
         var primary = i === 0;
-        var b = el3("button", "harpoon-lab-tac" + (primary ? " is-primary" : ""));
+        var b = el4("button", "harpoon-lab-tac" + (primary ? " is-primary" : ""));
         b.type = "button";
-        b.appendChild(el3("span", "harpoon-lab-tac-verb", mv.label));
-        if (mv.arg) b.appendChild(el3("span", "harpoon-lab-tac-arg", mv.arg));
+        b.appendChild(el4("span", "harpoon-lab-tac-verb", mv.label));
+        if (mv.arg) b.appendChild(el4("span", "harpoon-lab-tac-arg", mv.arg));
         if (mv.tip) {
           b.setAttribute("data-tooltip", mv.tip);
-          if (global40.Tooltips && global40.Tooltips.bind) global40.Tooltips.bind(b);
+          if (global46.Tooltips && global46.Tooltips.bind) global46.Tooltips.bind(b);
         }
         b.addEventListener("click", function(e) {
           e.preventDefault();
@@ -26096,21 +30541,21 @@
     parent.appendChild(wrap);
   };
   Session.prototype.renderGoalCard = function(sg, idx, total) {
-    var card = el3("article", "harpoon-lab-goal-card");
-    var goalWrap = el3("div", "harpoon-lab-goal harpoon-lab-strip tone-goal");
-    var glabel = el3("div", "harpoon-lab-goal-label");
-    glabel.appendChild(el3("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+    var card = el4("article", "harpoon-lab-goal-card");
+    var goalWrap = el4("div", "harpoon-lab-goal harpoon-lab-strip tone-goal");
+    var glabel = el4("div", "harpoon-lab-goal-label");
+    glabel.appendChild(el4("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
     if (total > 1) {
-      glabel.appendChild(el3("span", "harpoon-lab-goal-idx", idx + 1 + " / " + total));
+      glabel.appendChild(el4("span", "harpoon-lab-goal-idx", idx + 1 + " / " + total));
     }
     goalWrap.appendChild(glabel);
-    var goal = el3("div", "harpoon-hole-goal harpoon-lab-goal-type");
-    renderType(goal, sg.goal);
+    var goal = el4("div", "harpoon-hole-goal harpoon-lab-goal-type");
+    renderType2(goal, sg.goal);
     goalWrap.appendChild(goal);
     card.appendChild(goalWrap);
     var hasCtx = sg.meta && sg.meta.length || sg.ctx && sg.ctx.length;
     if (hasCtx) {
-      var ctxWrap = el3("div", "harpoon-lab-context");
+      var ctxWrap = el4("div", "harpoon-lab-context");
       this.renderCtx(ctxWrap, "meta", sg.meta);
       this.renderCtx(ctxWrap, "ctx", sg.ctx);
       card.appendChild(ctxWrap);
@@ -26128,7 +30573,7 @@
   function __initHarpoonLabPeels() {
     displayApi = createDisplay({
       el: function() {
-        return el3.apply(null, arguments);
+        return el4.apply(null, arguments);
       },
       E,
       setTip: function() {
@@ -26161,7 +30606,7 @@
     });
     reelApi = createReel({
       el: function() {
-        return el3.apply(null, arguments);
+        return el4.apply(null, arguments);
       },
       tacticVerb,
       setTip: function() {
@@ -26187,7 +30632,7 @@
     });
     treeUiApi = createTreeUi({
       el: function() {
-        return el3.apply(null, arguments);
+        return el4.apply(null, arguments);
       },
       iconBtn: function() {
         return iconBtn.apply(null, arguments);
@@ -26227,7 +30672,7 @@
     });
     autoApi = createAuto({
       el: function() {
-        return el3.apply(null, arguments);
+        return el4.apply(null, arguments);
       },
       iconBtn: function() {
         return iconBtn.apply(null, arguments);
@@ -26242,6 +30687,7 @@
       autoVerdictTitle: displayApi.autoVerdictTitle,
       autoVerdictTone: displayApi.autoVerdictTone,
       appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      appendDeclLabel: displayApi.appendDeclLabel,
       resolveNativeAutoGoalDisplay: displayApi.resolveNativeAutoGoalDisplay,
       priorGoalBinders: displayApi.priorGoalBinders,
       setNativeSearchLabel: displayApi.setNativeSearchLabel,
@@ -26266,6 +30712,7 @@
     Session.prototype.clearNativeAutoShell = reelApi.clearNativeAutoShell;
     Session.prototype.syncAutoPauseBtn = reelApi.syncAutoPauseBtn;
     Session.prototype.updateNativeAutoSearch = reelApi.updateNativeAutoSearch;
+    Session.prototype.syncLiveContext = reelApi.syncLiveContext;
     Session.prototype.syncReelStatus = reelApi.syncReelStatus;
     Session.prototype.ensureWorkingRow = reelApi.ensureWorkingRow;
     Session.prototype.feedConveyor = reelApi.feedConveyor;
@@ -26287,7 +30734,7 @@
     Session.prototype.verifyAndCommit = commitApi.verifyAndCommit;
     manualApi = createManual({
       el: function() {
-        return el3.apply(null, arguments);
+        return el4.apply(null, arguments);
       },
       iconBtn: function() {
         return iconBtn.apply(null, arguments);
@@ -26301,6 +30748,7 @@
       E,
       renderSource: displayApi.renderSource,
       appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      appendDeclLabel: displayApi.appendDeclLabel,
       priorGoalBinders: displayApi.priorGoalBinders,
       buildPlaceStrip: displayApi.buildPlaceStrip,
       renderCommitOutcome: displayApi.renderCommitOutcome,
@@ -26316,7 +30764,7 @@
       nativeAutoSearchLabel: displayApi.nativeAutoSearchLabel,
       ICON_UNDO,
       ICON_REDO,
-      ICON_BRUTUS,
+      ICON_ORCA,
       ICON_CHEVRON_DOWN,
       ICON_DECLINE,
       ICON_CHECK,
@@ -26334,10 +30782,10 @@
     Session.prototype.manualFocus = manualApi.manualFocus;
     Session.prototype.sweepCandidates = manualApi.sweepCandidates;
     Session.prototype.cancelSweep = manualApi.cancelSweep;
-    Session.prototype.runBrutus = manualApi.runBrutus;
-    Session.prototype.toggleBrutusPause = manualApi.toggleBrutusPause;
-    Session.prototype.absorbBrutusResult = manualApi.absorbBrutusResult;
-    Session.prototype.syncManualToBrutus = manualApi.syncManualToBrutus;
+    Session.prototype.runOrca = manualApi.runOrca;
+    Session.prototype.toggleOrcaPause = manualApi.toggleOrcaPause;
+    Session.prototype.absorbOrcaResult = manualApi.absorbOrcaResult;
+    Session.prototype.syncManualToOrca = manualApi.syncManualToOrca;
     Session.prototype.scrollToDerivation = manualApi.scrollToDerivation;
     Session.prototype.backToManual = manualApi.backToManual;
     Session.prototype.commitManual = manualApi.commitManual;
@@ -26351,9 +30799,26 @@
       this.updateNativeAutoSearch();
       return;
     }
+    var scroller = body;
+    while (scroller && scroller !== document.body) {
+      var oy = "";
+      try {
+        oy = globalThis.getComputedStyle(scroller).overflowY;
+      } catch (e) {
+        oy = "";
+      }
+      if ((oy === "auto" || oy === "scroll") && scroller.scrollHeight > scroller.clientHeight) break;
+      scroller = scroller.parentNode;
+    }
+    var keepTop = scroller && scroller !== document.body ? scroller.scrollTop : 0;
     this.clearNativeAutoShell();
     body.textContent = "";
     body.classList.remove("is-starting");
+    if (keepTop > 0) {
+      Promise.resolve().then(function() {
+        if (scroller && Math.abs(scroller.scrollTop - keepTop) > 1) scroller.scrollTop = keepTop;
+      });
+    }
     var m = this.model;
     if (this.manual) {
       this.renderManual(body);
@@ -26364,7 +30829,7 @@
       return;
     }
     if (!m || !m.ok && (!m.subgoals || !m.subgoals.length)) {
-      body.appendChild(el3("div", "harpoon-lab-empty", m && m.error ? "Could not start: " + m.error : "No proof."));
+      body.appendChild(el4("div", "harpoon-lab-empty", m && m.error ? "Could not start: " + m.error : "No proof."));
       return;
     }
     this.renderBar(m);
@@ -26399,7 +30864,7 @@
       }
       return;
     }
-    var work = el3("div", "harpoon-lab-work");
+    var work = el4("div", "harpoon-lab-work");
     var focused = this.findSubgoal(this.focusedId) || m.subgoals[0];
     var focusedIdx = 0;
     for (var fi = 0; fi < m.subgoals.length; fi++) {
@@ -26409,15 +30874,15 @@
       }
     }
     if (m.subgoals.length > 1) {
-      var picker = el3("div", "harpoon-lab-picker");
+      var picker = el4("div", "harpoon-lab-picker");
       picker.setAttribute("role", "tablist");
       picker.setAttribute("aria-label", "Subgoals");
       m.subgoals.forEach(function(sg, idx) {
-        var tab = el3("button", "harpoon-lab-picker-tab" + (sg.id === focused.id ? " is-active" : ""));
+        var tab = el4("button", "harpoon-lab-picker-tab" + (sg.id === focused.id ? " is-active" : ""));
         tab.type = "button";
         tab.setAttribute("role", "tab");
         tab.setAttribute("aria-selected", sg.id === focused.id ? "true" : "false");
-        tab.appendChild(el3("span", "harpoon-lab-picker-num", String(idx + 1)));
+        tab.appendChild(el4("span", "harpoon-lab-picker-num", String(idx + 1)));
         tab.addEventListener("click", function() {
           self.focusedId = sg.id;
           self.render();
@@ -26431,21 +30896,37 @@
   };
   function finishPrepare(ed, ctx, span, decl, hit) {
     var assembled = String(ctx.code);
-    var re = new RegExp("(^|\\n)\\s*(rec|proof)\\s+" + decl.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:");
-    var match = re.exec(assembled);
-    if (!match) {
-      toast2("Harpoon: declaration not found in the checkable program.", "error");
-      return null;
+    var loc = ed.locateMember ? ed.locateMember(assembled, decl.name, ctx.fileStart || 0) : null;
+    var declStart;
+    var declEnd;
+    var blockStart;
+    var blockEnd;
+    if (loc) {
+      declStart = loc.from;
+      declEnd = loc.to;
+      blockStart = loc.blockFrom != null ? loc.blockFrom : loc.from;
+      blockEnd = loc.blockTo != null ? loc.blockTo : loc.to;
+    } else {
+      var re = new RegExp(
+        "(^|\\n)\\s*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + decl.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
+      );
+      var match = re.exec(assembled);
+      if (!match) {
+        toast2("Harpoon: declaration not found in the checkable program.", "error");
+        return null;
+      }
+      declStart = match.index + match[1].length;
+      var semi = assembled.indexOf(";", declStart);
+      declEnd = semi === -1 ? assembled.length : semi + 1;
+      blockStart = declStart;
+      blockEnd = declEnd;
     }
-    var declStart = match.index + match[1].length;
-    var semi = assembled.indexOf(";", declStart);
-    var declEnd = semi === -1 ? assembled.length : semi + 1;
     var built = ed.buildProofProgram(assembled, declStart, declEnd);
     if (!built) {
       toast2("Harpoon: couldn\u2019t build the proof program.", "error");
       return null;
     }
-    var proveCode = ed.proveOrchestrationCode ? ed.proveOrchestrationCode(assembled, decl.name, declStart, declEnd, ctx.fileStart) : assembled;
+    var proveCode = ed.proveOrchestrationCode ? ed.proveOrchestrationCode(assembled, decl.name, blockStart, blockEnd, ctx.fileStart) : assembled;
     return {
       built,
       span,
@@ -26455,6 +30936,8 @@
       assembledCode: assembled,
       assembledDeclFrom: declStart,
       assembledDeclTo: declEnd,
+      assembledBlockFrom: blockStart,
+      assembledBlockTo: blockEnd,
       proveCode,
       offsetLines: ctx.offsetLines || 0,
       fileStart: ctx.fileStart != null ? ctx.fileStart : 0
@@ -26462,13 +30945,13 @@
   }
   function prepareForHole(view, hit) {
     var ed = E();
-    var api3 = global40.CurrentEditor;
+    var api3 = global46.CurrentEditor;
     var ctx = api3 && typeof api3.getHoleActionContext === "function" ? api3.getHoleActionContext() : null;
     if (!ctx || !ctx.code) {
       toast2("Harpoon: no checkable program.", "error");
       return null;
     }
-    var span = api3.getDeclSpan ? api3.getDeclSpan(hit.from) : null;
+    var span = api3.getMemberSpan ? api3.getMemberSpan(hit.from) : api3.getDeclSpan ? api3.getDeclSpan(hit.from) : null;
     if (!span) {
       toast2("Harpoon: couldn\u2019t find the enclosing declaration.", "error");
       return null;
@@ -26488,7 +30971,7 @@
       toast2("Harpoon: no checkable program.", "error");
       return null;
     }
-    var span = ed.declSpanInText(ctx.fileText, hit.from);
+    var span = ed.memberSpanInText ? ed.memberSpanInText(ctx.fileText, hit.from) : ed.declSpanInText(ctx.fileText, hit.from);
     if (!span) {
       toast2("Harpoon: couldn\u2019t find the enclosing declaration.", "error");
       return null;
@@ -26510,20 +30993,20 @@
   function removeFloatSession(session) {
     var idx = floatSessions.indexOf(session);
     if (idx !== -1) floatSessions.splice(idx, 1);
-    if (global40.WorkspaceState && global40.WorkspaceState.scheduleSave) {
-      global40.WorkspaceState.scheduleSave();
+    if (global46.WorkspaceState && global46.WorkspaceState.scheduleSave) {
+      global46.WorkspaceState.scheduleSave();
     }
   }
   function listHoleHits(view, engine) {
     if (!view || !engine || typeof engine.getHoles !== "function") return [];
-    var doc = view.state.doc;
+    var doc2 = view.state.doc;
     var out = [];
     var holes = engine.getHoles() || [];
     for (var i = 0; i < holes.length; i++) {
       var h = holes[i];
-      if (!h || h.line < 1 || h.line > doc.lines) continue;
-      var off = doc.line(h.line).from + Math.max(0, (h.col || 1) - 1);
-      if (off >= doc.length || doc.sliceString(off, off + 1) !== "?") continue;
+      if (!h || h.line < 1 || h.line > doc2.lines) continue;
+      var off = doc2.line(h.line).from + Math.max(0, (h.col || 1) - 1);
+      if (off >= doc2.length || doc2.sliceString(off, off + 1) !== "?") continue;
       out.push({ hole: h, from: off, to: off + 1 });
     }
     return out;
@@ -26538,9 +31021,14 @@
     }
     if (!anchor.declKey) return null;
     var ed = E();
+    var api3 = global46.CurrentEditor;
     for (var j = 0; j < hits.length; j++) {
       var hit = hits[j];
-      var span = ed && ed.getDeclSpan ? ed.getDeclSpan(hit.from) : null;
+      var span = null;
+      if (api3 && api3.getMemberSpan) span = api3.getMemberSpan(hit.from);
+      else if (api3 && api3.getDeclSpan) span = api3.getDeclSpan(hit.from);
+      else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
+      else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
       if (!span) continue;
       var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
       if (decl && decl.kw + ":" + decl.name === anchor.declKey) return hit;
@@ -26548,26 +31036,26 @@
     return null;
   }
   function openingMode() {
-    var persist3 = global40.Persist;
-    if (persist3 && typeof persist3.readStoredHarpoonMode === "function") {
-      return persist3.readStoredHarpoonMode() === "brutus" ? "brutus" : "manual";
+    var persist5 = global46.Persist;
+    if (persist5 && typeof persist5.readStoredHarpoonMode === "function") {
+      return persist5.readStoredHarpoonMode() === "orca" ? "orca" : "manual";
     }
     return "manual";
   }
-  function runSession(view, prep, host) {
-    var session = new Session(view, prep.span.from, prep.span.to, host);
+  function runSession(view, prep, host2) {
+    var session = new Session(view, prep.span.from, prep.span.to, host2);
     session.prep = prep;
-    var persist3 = global40.Persist;
-    session.fileId = host.fileId || (persist3 && persist3.getActiveFileId ? persist3.getActiveFileId() : null);
+    var persist5 = global46.Persist;
+    session.fileId = host2.fileId || (persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null);
     session.captureAnchor(view, prep);
     session.bindProbe();
-    var content = el3("div", "harpoon-lab" + (host.kind === "panel" ? " harpoon-lab--panel" : ""));
+    var content = el4("div", "harpoon-lab" + (host2.kind === "panel" ? " harpoon-lab--panel" : ""));
     session.bodyEl = content;
-    host.mount(content, session);
-    if (host.onSessionStart) host.onSessionStart(prep.name);
-    var startBrutus = openingMode() === "brutus";
+    host2.mount(content, session);
+    if (host2.onSessionStart) host2.onSessionStart(prep.name);
+    var startOrca = openingMode() === "orca";
     session.startManual().then(function(ok) {
-      if (ok && startBrutus) session.runBrutus();
+      if (ok && startOrca) session.runOrca();
     });
     return session;
   }
@@ -26581,8 +31069,8 @@
     }
     var prep = prepareForHole(view, hit);
     if (!prep) return;
-    var persist3 = global40.Persist;
-    var fileId = persist3 && persist3.getActiveFileId ? persist3.getActiveFileId() : null;
+    var persist5 = global46.Persist;
+    var fileId = persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null;
     var session = runSession(view, prep, {
       kind: "float",
       mount: function(content, s) {
@@ -26599,8 +31087,8 @@
           x: geom.x,
           y: geom.y,
           onGeometryChange: function() {
-            if (global40.WorkspaceState && global40.WorkspaceState.scheduleSave) {
-              global40.WorkspaceState.scheduleSave();
+            if (global46.WorkspaceState && global46.WorkspaceState.scheduleSave) {
+              global46.WorkspaceState.scheduleSave();
             }
           },
           onClose: function() {
@@ -26612,8 +31100,8 @@
           }
         });
         floatSessions.push(s);
-        if (global40.WorkspaceState && global40.WorkspaceState.scheduleSave) {
-          global40.WorkspaceState.scheduleSave();
+        if (global46.WorkspaceState && global46.WorkspaceState.scheduleSave) {
+          global46.WorkspaceState.scheduleSave();
         }
       }
     });
@@ -26622,8 +31110,8 @@
   function labTitle(name) {
     var wrap = document.createElement("span");
     wrap.className = "harpoon-lab-title";
-    if (global40.HarpoonIcon) global40.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
-    wrap.appendChild(el3("span", "harpoon-lab-title-text", name ? "Harpoon \xB7 " + name : "Harpoon"));
+    if (global46.HarpoonIcon) global46.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
+    wrap.appendChild(el4("span", "harpoon-lab-title-text", name ? "Harpoon \xB7 " + name : "Harpoon"));
     return wrap;
   }
   function proveInPanel(view, engine, hit, container, opts) {
@@ -26698,22 +31186,23 @@
     openFromHole(view, engine, hit, { geom: entry.geom });
     return true;
   }
-  global40.Harpoon = {
+  global46.Harpoon = {
     // Test seam: probes mount a Session over a fabricated state to drive the
     // SHIPPED render/click paths rather than a re-implementation of them.
     _Session: Session,
     openFromHole,
+    activeSession,
     proveInPanel,
     proveInPanelForFile,
     collectFloatingHarpoonWindows,
     restoreFloatingHarpoonWindow
   };
-  global40.BelJarHarpoon = global40.Harpoon;
+  global46.BelJarHarpoon = global46.Harpoon;
 
   // js/harpoon/harpoon-goal-sections.mjs
-  var global41 = globalThis;
+  var global47 = globalThis;
   function dirOf5(name) {
-    var PS = global41.ProjectSource;
+    var PS = global47.ProjectSource;
     if (PS && typeof PS.dirOf === "function") return PS.dirOf(name);
     var i = String(name || "").lastIndexOf("/");
     return i === -1 ? "" : name.slice(0, i);
@@ -26729,7 +31218,7 @@
     return dot === -1 ? base : base.slice(0, dot);
   }
   function holeHostFile(name) {
-    var PS = global41.ProjectSource;
+    var PS = global47.ProjectSource;
     if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
     var low = String(name || "").toLowerCase();
     if (low.endsWith(".cfg") || low.endsWith(".elf")) return false;
@@ -26738,7 +31227,7 @@
     return base.indexOf(".") === -1;
   }
   function scanFileHoles(text) {
-    var ed = global41.BelEditor;
+    var ed = global47.BelEditor;
     if (ed && typeof ed.scanFileHoles === "function") return ed.scanFileHoles(text);
     return [];
   }
@@ -26800,8 +31289,8 @@
     var activeHits = opts.activeHits || null;
     var memberHoles = opts.memberHoles || {};
     var developmentPaths = opts.developmentPaths || null;
-    var SL = global41.ExplorerSuiteLayout;
-    var PS = global41.ProjectSource;
+    var SL = global47.ExplorerSuiteLayout;
+    var PS = global47.ProjectSource;
     var resolveMembers = opts.resolveMembers || (PS && typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath2, gt) {
       return PS.orderedPathsForCfg(all, cfgPath2, gt);
     } : null);
@@ -26853,9 +31342,7 @@
         var memberPaths = resolveMembers ? resolveMembers(files, cfgPath, getText) : [];
         var blockNames = [cfgPath];
         for (var mi = 0; mi < memberPaths.length; mi++) blockNames.push(memberPaths[mi]);
-        var meta = suiteByFile[cfgPath] || {};
         var suiteLabel = cfgBaseLabel(cfgPath);
-        var suiteHue = meta.hue != null ? meta.hue : null;
         for (var bi = 0; bi < blockNames.length; bi++) {
           var path = blockNames[bi];
           placed[path] = true;
@@ -26869,7 +31356,6 @@
               fileBaseName: f.baseName || baseName4(f.name),
               inDevelopment: !developmentPaths || developmentPaths.indexOf(f.name) !== -1,
               suiteLabel,
-              suiteHue,
               hit: hits[hi]
             });
           }
@@ -26886,7 +31372,6 @@
             fileBaseName: file.baseName || baseName4(file.name),
             inDevelopment: !developmentPaths || developmentPaths.indexOf(file.name) !== -1,
             suiteLabel: null,
-            suiteHue: null,
             hit: fileHits[oi]
           });
         }
@@ -26896,30 +31381,29 @@
       sections.push({
         id: "dir:" + dir,
         label: dir || "/",
-        suiteHue: null,
         entries: dirEntries
       });
     }
     return { sections, totalCount };
   }
-  global41.HarpoonGoalSections = {
+  global47.HarpoonGoalSections = {
     buildSections
   };
-  global41.BelJarHarpoonGoalSections = global41.HarpoonGoalSections;
+  global47.BelJarHarpoonGoalSections = global47.HarpoonGoalSections;
 
   // js/harpoon/harpoon-panel.mjs
-  var global42 = globalThis;
+  var global48 = globalThis;
   function E2() {
-    return global42.BelEditor || null;
+    return global48.BelEditor || null;
   }
-  var el4 = function(tag, cls, text) {
+  var el5 = function(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
   };
   function curView() {
-    var api3 = global42.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     return api3 && typeof api3.getView === "function" ? api3.getView() : null;
   }
   function activeSyntacticHits(view) {
@@ -26930,31 +31414,45 @@
     });
   }
   function normalizeGlyphs(text) {
-    var g14 = global42.HarpoonGlyphs;
+    var g14 = global48.HarpoonGlyphs;
     if (g14) return g14.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g14 = global42.HarpoonGlyphs;
+    var g14 = global48.HarpoonGlyphs;
     if (g14) return g14.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
     return normalizeGlyphs(typeStr);
   }
-  function renderType2(host, typeStr) {
+  function renderType3(host2, typeStr) {
     var norm2 = displayType2(typeStr);
-    host.textContent = "";
+    host2.textContent = "";
     if (!norm2) return;
     var ed = E2();
     if (ed && typeof ed.renderTypeInto === "function") {
       try {
-        ed.renderTypeInto(host, norm2, "comp");
-        if (host.textContent.indexOf("|-") !== -1) host.textContent = norm2;
+        ed.renderTypeInto(host2, norm2, "comp");
+        if (host2.textContent.indexOf("|-") !== -1) host2.textContent = norm2;
         return;
       } catch (e) {
       }
     }
-    host.textContent = norm2;
+    host2.textContent = norm2;
+  }
+  function setSuiteTip(host2, label) {
+    var name = label || "(none)";
+    var tips = global48.Tooltips;
+    if (tips && typeof tips.setRich === "function") {
+      tips.setRich(host2, function() {
+        var row = el5("span", "harpoon-tip-suite");
+        row.appendChild(el5("span", "harpoon-tip-suite-key", "Suite:"));
+        row.appendChild(el5("span", "harpoon-tip-suite-name", name));
+        return row;
+      }, "Suite: " + name);
+      return;
+    }
+    if (tips && typeof tips.set === "function") tips.set(host2, "Suite: " + name);
   }
   var bodyEl2 = null;
   var panelEl2 = null;
@@ -27020,20 +31518,25 @@
   }
   function declKeyForHit(view, hit) {
     var ed = E2();
-    if (!ed || !hit) return null;
-    var span = ed.getDeclSpan ? ed.getDeclSpan(hit.from) : null;
+    var api3 = global48.CurrentEditor;
+    if (!hit) return null;
+    var span = null;
+    if (api3 && api3.getMemberSpan) span = api3.getMemberSpan(hit.from);
+    else if (api3 && api3.getDeclSpan) span = api3.getDeclSpan(hit.from);
+    else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
+    else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
     if (!span) return null;
-    var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
+    var decl = ed && ed.parseDecl ? ed.parseDecl(view.state.doc.sliceString(span.from, span.to)) : null;
     if (!decl) return null;
     return decl.kw + ":" + decl.name;
   }
   function activeFileId() {
-    var p = typeof global42.Persist !== "undefined" ? global42.Persist : null;
+    var p = typeof global48.Persist !== "undefined" ? global48.Persist : null;
     if (!p) return null;
     return typeof p.getActiveFileId === "function" ? p.getActiveFileId() : null;
   }
   function activeFilePath() {
-    var p = typeof global42.Persist !== "undefined" ? global42.Persist : null;
+    var p = typeof global48.Persist !== "undefined" ? global48.Persist : null;
     if (!p) return "";
     var id = typeof p.getActiveFileId === "function" ? p.getActiveFileId() : typeof p.getCurrentFileId === "function" ? p.getCurrentFileId() : null;
     if (!id || typeof p.getFileById !== "function") return "";
@@ -27046,6 +31549,13 @@
   function entryKey(entry) {
     return entry.fileId + ":" + holeKey(entry.hit);
   }
+  function mirrorTierClass(win) {
+    var track = trackOf(win);
+    win.classList.toggle(
+      "harpoon-hole-goal--tiered",
+      !!track && track.classList.contains("harpoon-hole-goal--tiered")
+    );
+  }
   function mountTieredGoal(goalEl, goalState, goalType) {
     var ed = E2();
     if (ed && typeof ed.mountHoleGoalTier === "function") {
@@ -27056,13 +31566,13 @@
       });
       return;
     }
-    goalEl.appendChild(el4("span", "harpoon-hole-recalc beljar-tip-shimmer", "Recalculating\u2026"));
+    goalEl.appendChild(el5("span", "harpoon-hole-recalc beljar-tip-shimmer", "Recalculating\u2026"));
   }
   function applyGoalStateToModel(model, view) {
     var ed = E2();
-    var api3 = global42.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-    var P3 = typeof global42.Persist !== "undefined" ? global42.Persist : null;
+    var P3 = typeof global48.Persist !== "undefined" ? global48.Persist : null;
     if (!ed || typeof ed.enrichHoleHitsWithGoalState !== "function" || !view) return model;
     var activeId2 = activeFileId();
     var getText = P3 && typeof P3.getFileText === "function" ? function(id) {
@@ -27136,8 +31646,8 @@
     return Object.assign({}, entry, { hit: mergeHitGoal(entry.hit, rich) });
   }
   function collectProjectSections() {
-    var P3 = typeof global42.Persist !== "undefined" ? global42.Persist : null;
-    var PG = typeof global42.HarpoonGoalSections !== "undefined" ? global42.HarpoonGoalSections : null;
+    var P3 = typeof global48.Persist !== "undefined" ? global48.Persist : null;
+    var PG = typeof global48.HarpoonGoalSections !== "undefined" ? global48.HarpoonGoalSections : null;
     var holeGoals = collectInScopeHoleGoals();
     var view = curView();
     var ed = E2();
@@ -27155,7 +31665,6 @@
         sections: [{
           id: "active",
           label: "",
-          suiteHue: null,
           entries: hits.map(function(hit) {
             return {
               fileId: activeFileId(),
@@ -27175,8 +31684,8 @@
     } : function() {
       return "";
     };
-    var PS = typeof global42.ProjectSource !== "undefined" ? global42.ProjectSource : null;
-    var SL = typeof global42.ExplorerSuiteLayout !== "undefined" ? global42.ExplorerSuiteLayout : null;
+    var PS = typeof global48.ProjectSource !== "undefined" ? global48.ProjectSource : null;
+    var SL = typeof global48.ExplorerSuiteLayout !== "undefined" ? global48.ExplorerSuiteLayout : null;
     var model = PG.buildSections({
       files,
       getText,
@@ -27190,11 +31699,11 @@
         return [];
       },
       computeDirLayout: SL && typeof SL.computeDirLayout === "function" && PS ? function(dir, filesInDir) {
-        var active = P3.getActiveCfgsForDir(dir);
+        var active3 = P3.getActiveCfgsForDir(dir);
         var resolver = typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath, gt) {
           return PS.orderedPathsForCfg(all, cfgPath, gt);
         } : null;
-        return SL.computeDirLayout(filesInDir, active, resolver, files, getText);
+        return SL.computeDirLayout(filesInDir, active3, resolver, files, getText);
       } : null
     });
     for (var si = 0; si < model.sections.length; si++) {
@@ -27205,6 +31714,95 @@
     }
     return model;
   }
+  var DECL_LINE = /^[ \t]*(rec|proof|and)[ \t]+([^\s:(){}\[\],]+)[ \t]*:/;
+  var declTextCache = /* @__PURE__ */ Object.create(null);
+  function fileTextFor(fileId) {
+    if (fileId in declTextCache) return declTextCache[fileId];
+    var P3 = typeof global48.Persist !== "undefined" ? global48.Persist : null;
+    var t = null;
+    try {
+      t = P3 && typeof P3.getFileText === "function" ? P3.getFileText(fileId) : null;
+    } catch (_) {
+      t = null;
+    }
+    declTextCache[fileId] = t == null ? null : String(t);
+    return declTextCache[fileId];
+  }
+  function declForEntry(entry) {
+    var line = entry && entry.hit && entry.hit.hole && entry.hit.hole.line;
+    if (!line) return null;
+    var text = fileTextFor(entry.fileId);
+    if (!text) return null;
+    var lines = text.split(/\r?\n/);
+    for (var i = Math.min(line, lines.length) - 1; i >= 0; i -= 1) {
+      var m = DECL_LINE.exec(lines[i]);
+      if (m) return { kw: m[1], name: m[2] };
+    }
+    return null;
+  }
+  function maskOf(win) {
+    return win && win.firstElementChild;
+  }
+  function trackOf(win) {
+    var mask = maskOf(win);
+    return mask ? mask.firstElementChild : null;
+  }
+  function readOver(win) {
+    var mask = maskOf(win);
+    var track = trackOf(win);
+    if (!mask || !track || !mask.clientWidth) return -1;
+    return Math.max(0, Math.round(track.scrollWidth - mask.clientWidth));
+  }
+  function applyOver(win, over) {
+    if (over < 0) return;
+    win.dataset.measured = "1";
+    if (over <= 1) {
+      if (!win.classList.contains("is-clipped")) return;
+      win.classList.remove("is-clipped");
+      win.style.removeProperty("--slide");
+      win.style.removeProperty("--slide-ms");
+      return;
+    }
+    var slide = "-" + over + "px";
+    var ms = Math.min(2800, Math.max(500, Math.round(over * 6))) + "ms";
+    if (win.style.getPropertyValue("--slide").trim() === slide && win.style.getPropertyValue("--slide-ms").trim() === ms && win.classList.contains("is-clipped")) return;
+    win.classList.add("is-clipped");
+    win.style.setProperty("--slide", slide);
+    win.style.setProperty("--slide-ms", ms);
+  }
+  function markClipped(root2) {
+    if (!root2) return;
+    var wins = root2.querySelectorAll(".harpoon-hole-goal");
+    var over = [];
+    for (var i = 0; i < wins.length; i++) over.push(readOver(wins[i]));
+    for (var j = 0; j < wins.length; j++) applyOver(wins[j], over[j]);
+  }
+  var clipObs = null;
+  var clipRoot = null;
+  function scheduleMarkClipped(root2) {
+    clipRoot = root2;
+    markClipped(root2);
+    requestAnimationFrame(function() {
+      if (clipRoot !== root2 || !root2.isConnected) return;
+      markClipped(root2);
+      requestAnimationFrame(function() {
+        if (clipRoot === root2 && root2.isConnected) markClipped(root2);
+      });
+    });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function() {
+        if (clipRoot === root2 && root2.isConnected) markClipped(root2);
+      });
+    }
+    if (typeof ResizeObserver === "undefined") return;
+    if (clipObs) clipObs.disconnect();
+    clipObs = new ResizeObserver(function() {
+      markClipped(root2);
+    });
+    clipObs.observe(root2);
+    var tracks = root2.querySelectorAll(".harpoon-hole-goal-track");
+    for (var i = 0; i < tracks.length; i++) clipObs.observe(tracks[i]);
+  }
   function buildRow(entry) {
     var hit = entry.hit;
     var key = entryKey(entry);
@@ -27214,54 +31812,65 @@
     var outOfScope = entry.inDevelopment === false;
     var tiered = !outOfScope && loadingLive && (goalState === "pending" || goalState === "approximate" || goalState === "rechecking");
     var showType = !!(goalType && (goalState === "live" || goalState === "cached" || outOfScope && goalState === "approximate"));
-    var row = el4("div", "harpoon-panel-hole");
+    var row = el5("div", "harpoon-panel-hole");
     row.setAttribute("role", "button");
     row.tabIndex = 0;
     row.dataset.entryKey = key;
     if (outOfScope && !goalType) row.classList.add("is-indeterminate");
-    var head = el4("div", "harpoon-panel-hole-head");
-    var loc = el4("span", "harpoon-hole-loc");
-    var pathLabel = entry.fileBaseName || entry.filePath;
-    if (pathLabel) loc.appendChild(el4("span", "harpoon-hole-path", pathLabel));
-    loc.appendChild(el4("span", "harpoon-hole-ln", String(hit.hole.line)));
-    head.appendChild(loc);
-    if (entry.suiteLabel) {
-      var headEnd = el4("div", "harpoon-panel-hole-head-end");
-      var suiteEl = el4("span", "harpoon-hole-suite");
-      if (entry.suiteHue != null) suiteEl.style.setProperty("--suite-hue", String(entry.suiteHue));
-      suiteEl.textContent = entry.suiteLabel;
-      headEnd.appendChild(suiteEl);
-      head.appendChild(headEnd);
+    var head = el5("div", "harpoon-panel-hole-head");
+    var decl = declForEntry(entry);
+    var declEl = el5("span", "harpoon-hole-decl");
+    if (decl) {
+      declEl.appendChild(el5("span", "harpoon-hole-decl-kw bel-hl-keyword", decl.kw));
+      declEl.appendChild(el5("span", "harpoon-hole-decl-name bel-hl-var-def", decl.name));
+    } else {
+      declEl.classList.add("is-unknown");
+      declEl.appendChild(el5("span", "harpoon-hole-decl-name", "top level"));
     }
+    head.appendChild(declEl);
+    var loc = el5("span", "harpoon-hole-loc");
+    var pathLabel = entry.fileBaseName || entry.filePath;
+    if (pathLabel) loc.appendChild(el5("span", "harpoon-hole-path", pathLabel));
+    loc.appendChild(el5("span", "harpoon-hole-ln", String(hit.hole.line)));
+    setSuiteTip(loc, entry.suiteLabel);
+    head.appendChild(loc);
     row.appendChild(head);
-    row.appendChild(el4("div", "harpoon-panel-hole-rule"));
-    var goal = el4("div", "harpoon-hole-goal");
+    row.appendChild(el5("div", "harpoon-panel-hole-rule"));
+    var goal = el5("div", "harpoon-hole-goal");
+    var goalMask = el5("div", "harpoon-hole-goal-mask");
+    var goalInner = el5("div", "harpoon-hole-goal-track");
+    goalMask.appendChild(goalInner);
+    goal.appendChild(goalMask);
     if (showType) {
       row.dataset.goalState = outOfScope ? goalState === "approximate" ? "approximate" : "cached" : "ready";
       var edLive = E2();
       if (edLive && typeof edLive.mountHoleGoalTier === "function") {
-        edLive.mountHoleGoalTier(goal, {
+        edLive.mountHoleGoalTier(goalInner, {
           surface: "harpoon-card",
           goalState: "live",
           goal: goalType
         });
       } else {
-        renderType2(goal, goalType);
+        renderType3(goalInner, goalType);
       }
     } else if (tiered) {
       row.classList.add("is-pending");
       row.dataset.goalState = goalState;
-      mountTieredGoal(goal, goalState, goalType);
+      mountTieredGoal(goalInner, goalState, goalType);
     } else if (outOfScope) {
       row.classList.add("is-unfocused");
       row.dataset.goalState = "inactive";
-      goal.appendChild(el4("span", "harpoon-hole-unfocused", "Not computable outside scope"));
+      goalInner.appendChild(el5("span", "harpoon-hole-unfocused", "Not computable outside scope"));
     } else {
       row.classList.add("is-pending");
       row.dataset.goalState = "pending";
-      mountTieredGoal(goal, "pending", null);
+      mountTieredGoal(goalInner, "pending", null);
     }
+    mirrorTierClass(goal);
     row.appendChild(goal);
+    row.addEventListener("pointerenter", function() {
+      applyOver(goal, readOver(goal));
+    });
     row.addEventListener("click", function(ev) {
       if (ev.ctrlKey || ev.metaKey) {
         ev.preventDefault();
@@ -27277,10 +31886,11 @@
     });
     return row;
   }
-  function renderList2(opts) {
+  function renderList3(opts) {
     if (!bodyEl2) return;
     exitProofMode();
     var view = curView();
+    declTextCache = /* @__PURE__ */ Object.create(null);
     var model = collectProjectSections();
     applyGoalStateToModel(model, view);
     if (opts && opts.certify) maybeCertifyVisibleGoals(model, view);
@@ -27288,19 +31898,24 @@
     if (model.totalCount && renderKey === lastListRenderKey && bodyEl2.querySelector(".harpoon-panel-list")) return;
     lastListRenderKey = renderKey;
     if (!model.totalCount) {
+      if (clipObs) {
+        clipObs.disconnect();
+        clipObs = null;
+      }
+      clipRoot = null;
       bodyEl2.textContent = "";
-      var empty = el4("div", "panel-empty");
-      empty.appendChild(el4("p", "panel-empty__note", "No open goals in this project."));
+      var empty = el5("div", "panel-empty");
+      empty.appendChild(el5("p", "panel-empty__note", "No open goals in this project."));
       bodyEl2.appendChild(empty);
       return;
     }
     bodyEl2.textContent = "";
-    var root = el4("div", "harpoon-panel-list");
+    var root2 = el5("div", "harpoon-panel-list");
     for (var si = 0; si < model.sections.length; si++) {
       var sec = model.sections[si];
-      var block = el4("div", "harpoon-panel-suite");
+      var block = el5("div", "harpoon-panel-suite");
       if (sec.label) {
-        var lbl = el4("div", "harpoon-panel-suite-label");
+        var lbl = el5("div", "harpoon-panel-suite-label");
         var isDev = sec.entries.some(function(e) {
           return e.inDevelopment !== false;
         });
@@ -27308,85 +31923,86 @@
         lbl.textContent = sec.label;
         block.appendChild(lbl);
       }
-      var secList = el4("div", "harpoon-panel-section");
+      var secList = el5("div", "harpoon-panel-section");
       for (var ei = 0; ei < sec.entries.length; ei++) {
         secList.appendChild(buildRow(sec.entries[ei]));
       }
       block.appendChild(secList);
-      root.appendChild(block);
+      root2.appendChild(block);
     }
-    bodyEl2.appendChild(root);
+    bodyEl2.appendChild(root2);
+    scheduleMarkClipped(root2);
   }
   function beginPanelSession(fileId, declKey, start) {
     enterProofMode();
     if (declKey && fileId) provingDecl = { fileId, declKey };
-    if (global42.WorkspaceState && global42.WorkspaceState.scheduleSave) {
-      global42.WorkspaceState.scheduleSave();
+    if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
+      global48.WorkspaceState.scheduleSave();
     }
     bodyEl2.textContent = "";
-    var host = el4("div", "harpoon-panel-session");
-    bodyEl2.appendChild(host);
+    var host2 = el5("div", "harpoon-panel-session");
+    bodyEl2.appendChild(host2);
     backHandler = function() {
       if (panelSession && typeof panelSession.disposeSession === "function") {
         panelSession.disposeSession();
         panelSession = null;
         return;
       }
-      var proof = global42.HarpoonEngine;
+      var proof = global48.HarpoonEngine;
       if (proof && proof.dispose) proof.dispose();
       provingDecl = null;
-      renderList2();
+      renderList3();
     };
-    panelSession = start(host, {
+    panelSession = start(host2, {
       onSessionStart: function() {
         enterProofMode();
       },
       onSessionEnd: function() {
         panelSession = null;
         provingDecl = null;
-        renderList2();
+        renderList3();
       },
       onBack: backHandler,
       onDone: function() {
         panelSession = null;
         provingDecl = null;
-        renderList2();
+        renderList3();
       }
     });
   }
   function proveHit(view, eng, hit, fileId) {
-    var lab = global42.Harpoon;
+    var lab = global48.Harpoon;
     if (!lab || typeof lab.proveInPanel !== "function") return;
     var fid = fileId || activeFileId();
-    beginPanelSession(fid, declKeyForHit(view, hit), function(host, opts) {
-      return lab.proveInPanel(view, eng, hit, host, opts);
+    beginPanelSession(fid, declKeyForHit(view, hit), function(host2, opts) {
+      return lab.proveInPanel(view, eng, hit, host2, opts);
     });
   }
   function declKeyInFileText(fileId, from) {
     var ed = E2();
-    var P3 = global42.Persist;
+    var P3 = global48.Persist;
     if (!ed || !P3 || typeof ed.declSpanInText !== "function") return null;
     var text = String(P3.getFileText(fileId) || "");
-    var span = ed.declSpanInText(text, from);
+    var span = ed.memberSpanInText ? ed.memberSpanInText(text, from) : ed.declSpanInText(text, from);
     var decl = span ? ed.parseDecl(text.slice(span.from, span.to)) : null;
     return decl ? decl.kw + ":" + decl.name : null;
   }
   function proveEntry(entry) {
     var fid = entry.fileId;
-    var lab = global42.Harpoon;
+    var lab = global48.Harpoon;
     if (fid !== activeFileId()) {
       if (!lab || typeof lab.proveInPanelForFile !== "function") return;
-      beginPanelSession(fid, declKeyInFileText(fid, entry.hit.from), function(host, opts) {
-        return lab.proveInPanelForFile(fid, entry.hit, host, opts);
+      beginPanelSession(fid, declKeyInFileText(fid, entry.hit.from), function(host2, opts) {
+        return lab.proveInPanelForFile(fid, entry.hit, host2, opts);
       });
       return;
     }
     var view = curView();
-    var api3 = global42.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     if (view && eng) proveHit(view, eng, entry.hit, fid);
   }
-  function init11(container, opts) {
+  function init13(container, opts) {
     bodyEl2 = container;
     panelEl2 = opts && opts.panelEl || container.closest(".harpoon-panel");
     if (panelEl2) {
@@ -27395,14 +32011,14 @@
         backBtn.addEventListener("click", function(e) {
           e.preventDefault();
           if (backHandler) backHandler();
-          else renderList2();
+          else renderList3();
         });
       }
     }
-    renderList2({ certify: true });
+    renderList3({ certify: true });
   }
-  function refresh2() {
-    if (bodyEl2 && !proving) renderList2({ certify: true });
+  function refresh3() {
+    if (bodyEl2 && !proving) renderList3({ certify: true });
   }
   function collectWorkspaceHarpoon(out) {
     if (!out.sidebar) return;
@@ -27415,17 +32031,17 @@
     var eng = deps && deps.engine;
     if (!view || !eng) return;
     if (decl.fileId && decl.fileId !== activeFileId()) return;
-    var lab = global42.Harpoon;
+    var lab = global48.Harpoon;
     if (!lab) return;
     var hit = null;
     if (typeof lab.restoreFloatingHarpoonWindow === "function") {
-      var doc = view.state.doc;
+      var doc2 = view.state.doc;
       var holes = eng.getHoles ? eng.getHoles() : [];
       for (var i = 0; i < holes.length; i++) {
         var h = holes[i];
-        if (!h || h.line < 1 || h.line > doc.lines) continue;
-        var off = doc.line(h.line).from + Math.max(0, (h.col || 1) - 1);
-        if (off >= doc.length || doc.sliceString(off, off + 1) !== "?") continue;
+        if (!h || h.line < 1 || h.line > doc2.lines) continue;
+        var off = doc2.line(h.line).from + Math.max(0, (h.col || 1) - 1);
+        if (off >= doc2.length || doc2.sliceString(off, off + 1) !== "?") continue;
         var candidate = { hole: h, from: off, to: off + 1 };
         if (declKeyForHit(view, candidate) === decl.declKey) {
           hit = candidate;
@@ -27435,24 +32051,24 @@
     }
     if (hit) proveHit(view, eng, hit, decl.fileId);
   }
-  global42.HarpoonPanel = {
-    init: init11,
-    refresh: refresh2,
+  global48.HarpoonPanel = {
+    init: init13,
+    refresh: refresh3,
     collectWorkspaceHarpoon,
     restoreWorkspaceHarpoon
   };
-  global42.BelJarHarpoonPanel = global42.HarpoonPanel;
+  global48.BelJarHarpoonPanel = global48.HarpoonPanel;
 
   // js/beluga/beluga-text.mjs
-  var global43 = globalThis;
+  var global49 = globalThis;
   function normalizeBelugaRaw(s) {
     return String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
   function stripBelugaAnsi(s) {
     return normalizeBelugaRaw(s).replace(/\u001b\[[0-9;]*m/g, "").replace(/\u009b[0-9;]*m/g, "").replace(/Ø\[[0-9;]*m/g, "");
   }
-  function polishBelugaErrorDetail(detail) {
-    return String(detail != null ? detail : "").replace(/;\s*$/, "").replace(
+  function polishBelugaErrorDetail(detail2) {
+    return String(detail2 != null ? detail2 : "").replace(/;\s*$/, "").replace(
       /Failed to parse Expected the parser input to end here\.?/gi,
       "Failed to parse: unexpected text here."
     ).replace(/parse Expected/g, "parse.\nExpected").replace(
@@ -27471,7 +32087,7 @@
   function parseBelugaCommandError(text) {
     if (!isBelugaCommandError(text)) return null;
     var lines = stripBelugaAnsi(text).split("\n");
-    var detail = [];
+    var detail2 = [];
     var sawFailed = false;
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim();
@@ -27488,9 +32104,9 @@
         line = line.replace(/^-\s*Error\s*:\s*/i, "").trim();
         if (/^-\s*Failed to execute command\.?$/i.test(line)) continue;
       }
-      if (line) detail.push(line);
+      if (line) detail2.push(line);
     }
-    var body = polishBelugaErrorDetail(detail.join("\n"));
+    var body = polishBelugaErrorDetail(detail2.join("\n"));
     return {
       label: /^-\s*Error in query/im.test(stripBelugaAnsi(text)) ? "Query failed" : "Command failed",
       detail: body || "Command failed."
@@ -27531,7 +32147,7 @@
     }
     return out;
   }
-  global43.BelugaText = {
+  global49.BelugaText = {
     normalizeBelugaRaw,
     stripBelugaAnsi,
     isBelugaCommandError,
@@ -27541,7 +32157,7 @@
   };
 
   // js/beluga/beluga-run.mjs
-  var global44 = globalThis;
+  var global50 = globalThis;
   var belugaBusy = false;
   var belugaMode = Persist.readStoredBelugaMode();
   var btnLoad = null;
@@ -28030,7 +32646,7 @@
   var loadCode = runToHere;
   var loadProject = runModule;
   var runConfig = runModule;
-  function init12() {
+  function init14() {
     if (typeof BelugaClient === "undefined") {
       Toasts.error("Beluga client failed to load.", {
         duration: 0,
@@ -28044,19 +32660,19 @@
     BelugaClient.setProgressHandler(belugaProgressHook);
     BelugaClient.configure(modeToConfig(belugaMode));
     BelugaClient.warm().catch(function(e) {
-      var detail = e && e.message ? e.message : String(e);
+      var detail2 = e && e.message ? e.message : String(e);
       Toasts.error("Beluga worker failed to load.", {
         duration: 0,
         closable: true,
         durable: true,
-        detail,
+        detail: detail2,
         source: "beluga.worker",
         dedupeKey: "beluga.worker.load"
       });
     });
   }
-  global44.BelugaRun = {
-    init: init12,
+  global50.BelugaRun = {
+    init: init14,
     setBelugaBusy,
     isBelugaBusy,
     getBelugaMode,
@@ -28075,7 +32691,7 @@
     ensureEditorLoadedForRun,
     getProjectSpans
   };
-  global44.BelJarBelugaRun = global44.BelugaRun;
+  global50.BelJarBelugaRun = global50.BelugaRun;
 
   // js/app/app-empty-state.mjs
   function create10(opts) {
@@ -28085,11 +32701,11 @@
     var getEditorMount = opts.getEditorMount;
     var projectTreeEmpty2 = opts.projectTreeEmpty;
     var editorCanvasIdle2 = opts.editorCanvasIdle;
-    function setEmptyOverlayVisible(el5, visible2) {
-      if (!el5) return;
-      el5.hidden = !visible2;
-      el5.setAttribute("aria-hidden", visible2 ? "false" : "true");
-      if ("inert" in el5) el5.inert = !visible2;
+    function setEmptyOverlayVisible(el6, visible2) {
+      if (!el6) return;
+      el6.hidden = !visible2;
+      el6.setAttribute("aria-hidden", visible2 ? "false" : "true");
+      if ("inert" in el6) el6.inert = !visible2;
     }
     function updateInspectorProjectEmpty2() {
       var inspectorPanelEl2 = getInspectorPanelEl && getInspectorPanelEl();
@@ -28109,8 +32725,8 @@
       if (mount) mount.classList.toggle("is-inactive", idle);
       var runBtn = document.getElementById("btn-load");
       if (runBtn) runBtn.disabled = idle;
-      var statusDot = document.getElementById("ide-status-dot");
-      if (statusDot) statusDot.hidden = idle;
+      var statusDot2 = document.getElementById("ide-status-dot");
+      if (statusDot2) statusDot2.hidden = idle;
     }
     return {
       updateInspectorProjectEmpty: updateInspectorProjectEmpty2,
@@ -28128,26 +32744,26 @@
     };
     function getOpenSidePanelId() {
       if (!workspaceEl2) return null;
-      var order = ["harpoon", "library", "inspector", "explorer"];
-      for (var i = 0; i < order.length; i++) {
-        var id = order[i];
+      var order2 = ["harpoon", "library", "inspector", "explorer"];
+      for (var i = 0; i < order2.length; i++) {
+        var id = order2[i];
         var cfg = panels[id];
         if (cfg && workspaceEl2.classList.contains(cfg.openClass)) return id;
       }
       return null;
     }
-    function setSidePanelOpen2(id, open9) {
+    function setSidePanelOpen2(id, open10) {
       var cfg = panels[id];
       if (!workspaceEl2 || !cfg) return;
-      workspaceEl2.classList.toggle(cfg.openClass, open9);
+      workspaceEl2.classList.toggle(cfg.openClass, open10);
       if (cfg.btn) {
-        cfg.btn.classList.toggle("is-active", open9);
-        cfg.btn.setAttribute("aria-pressed", open9 ? "true" : "false");
+        cfg.btn.classList.toggle("is-active", open10);
+        cfg.btn.setAttribute("aria-pressed", open10 ? "true" : "false");
       }
-      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open9 ? "false" : "true");
-      if (typeof cfg.writeOpen === "function") cfg.writeOpen(open9);
+      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open10 ? "false" : "true");
+      if (typeof cfg.writeOpen === "function") cfg.writeOpen(open10);
       if (typeof Persist !== "undefined" && Persist.writeStoredActiveSidePanel) {
-        if (open9) Persist.writeStoredActiveSidePanel(id);
+        if (open10) Persist.writeStoredActiveSidePanel(id);
         else if (!getOpenSidePanelId()) Persist.writeStoredActiveSidePanel(null);
       }
       scheduleWorkspaceSave();
@@ -28164,11 +32780,11 @@
     function toggleSidePanel2(id) {
       var cfg = panels[id];
       if (!workspaceEl2 || !cfg) return false;
-      var open9 = !workspaceEl2.classList.contains(cfg.openClass);
-      if (open9) closeOtherSidePanels2(id);
-      setSidePanelOpen2(id, open9);
+      var open10 = !workspaceEl2.classList.contains(cfg.openClass);
+      if (open10) closeOtherSidePanels2(id);
+      setSidePanelOpen2(id, open10);
       notifySidePanelLayout2();
-      return open9;
+      return open10;
     }
     function wireSidebarOpenTooltip2(btn) {
       if (!btn || typeof Tooltips === "undefined") return function() {
@@ -28299,10 +32915,10 @@
       if (!SL || typeof SL.computeDirLayout !== "function") {
         return { orderedFiles: filesInDir, suiteByFile: {} };
       }
-      const active = activeCfgsForDir3(dir);
+      const active3 = activeCfgsForDir3(dir);
       const allFiles = Persist.listFiles();
       const getText = projectFileText2;
-      return SL.computeDirLayout(filesInDir, active, suiteMembersResolver, allFiles, getText);
+      return SL.computeDirLayout(filesInDir, active3, suiteMembersResolver, allFiles, getText);
     }
     function owningActiveCfgForFile(fileName) {
       const dir = ProjectSource.dirOf(fileName);
@@ -28313,21 +32929,21 @@
       return ProjectSource.resolveOwningActiveCfg(files, fileName, getText, activeCfgs);
     }
     function reconcileActiveCfgsInDir2(dir, editedCfg) {
-      const active = activeCfgsForDir3(dir);
-      if (active.length < 2) return;
+      const active3 = activeCfgsForDir3(dir);
+      if (active3.length < 2) return;
       const SL = ExplorerSuiteLayout;
       const files = Persist.listFiles();
       const getText = projectFileText2;
-      if (editedCfg && active.includes(editedCfg)) {
-        const others = active.filter((c) => c !== editedCfg);
+      if (editedCfg && active3.includes(editedCfg)) {
+        const others = active3.filter((c) => c !== editedCfg);
         if (SL.findCfgIntersection(editedCfg, others, files, getText, suiteMembersResolver).length) {
           Persist.removeActiveCfgForDir(dir, editedCfg);
           return;
         }
       }
-      for (let i = 1; i < active.length; i++) {
-        const cfg = active[i];
-        const earlier = active.slice(0, i);
+      for (let i = 1; i < active3.length; i++) {
+        const cfg = active3[i];
+        const earlier = active3.slice(0, i);
         if (SL.findCfgIntersection(cfg, earlier, files, getText, suiteMembersResolver).length) {
           Persist.removeActiveCfgForDir(dir, cfg);
         }
@@ -28335,14 +32951,14 @@
     }
     function makeActiveCfgForFile2(fileName) {
       const dir = ProjectSource.dirOf(fileName);
-      const active = activeCfgsForDir3(dir);
+      const active3 = activeCfgsForDir3(dir);
       const files = Persist.listFiles();
       const getText = projectFileText2;
       const SL = ExplorerSuiteLayout;
-      if (active.includes(fileName)) {
+      if (active3.includes(fileName)) {
         Persist.removeActiveCfgForDir(dir, fileName);
       } else if (SL) {
-        const check = SL.canActivateCfg(fileName, active, files, getText, suiteMembersResolver);
+        const check = SL.canActivateCfg(fileName, active3, files, getText, suiteMembersResolver);
         if (!check.ok) {
           showToast2(check.reason || "Cannot activate suite", { kind: "warn" });
           return;
@@ -28595,10 +33211,10 @@
       if (!id || text == null) return;
       const activeId2 = getPersist2() ? getPersist2().getCurrentFileId() : null;
       const registryActiveId = Persist.getActiveFileId();
-      const isActive = !!(getEditor() && getPersist2() && (id === activeId2 || id === registryActiveId));
-      if (isActive && getPersist2().cancelPendingSave) getPersist2().cancelPendingSave();
+      const isActive2 = !!(getEditor() && getPersist2() && (id === activeId2 || id === registryActiveId));
+      if (isActive2 && getPersist2().cancelPendingSave) getPersist2().cancelPendingSave();
       Persist.setFileText(id, text);
-      if (!isActive) return;
+      if (!isActive2) return;
       const stored = Persist.getFileText(id);
       if (stored == null) return;
       if (getPersist2().replaceEditorText) getPersist2().replaceEditorText(stored);
@@ -28627,8 +33243,8 @@
       if (getPersist2()) {
         const cur = getPersist2().getCurrentFileId();
         if (cur && unique.includes(cur) && !Persist.getFileById(cur)) {
-          const open9 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
-          if (open9) switchToFile2(open9);
+          const open10 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
+          if (open10) switchToFile2(open10);
           else if (projectIsEmpty2()) enterEmptyProjectView2();
           else enterCanvasIdleView2();
         }
@@ -28638,12 +33254,12 @@
     function executeUploadPlan2(plan, options) {
       if (!plan) return { added: 0, replaced: 0 };
       const H = typeof EditHistory !== "undefined" ? EditHistory : null;
-      const run = () => executeUploadPlanInner(plan, options || {});
+      const run3 = () => executeUploadPlanInner(plan, options || {});
       if (H && typeof H.transact === "function") {
-        const r = H.transact("file-batch", run);
+        const r = H.transact("file-batch", run3);
         return r.ok ? r.result || { added: 0, replaced: 0 } : { added: 0, replaced: 0 };
       }
-      return run();
+      return run3();
     }
     function executeUploadPlanInner(plan, options) {
       let added = 0;
@@ -28886,10 +33502,10 @@
     }
     function relativeUnderPrefix(fullPath, prefix) {
       const path = String(fullPath || "");
-      const root = String(prefix || "");
-      if (!root) return path;
-      if (path === root) return "";
-      if (path.indexOf(root + "/") === 0) return path.slice(root.length + 1);
+      const root2 = String(prefix || "");
+      if (!root2) return path;
+      if (path === root2) return "";
+      if (path.indexOf(root2 + "/") === 0) return path.slice(root2.length + 1);
       return path;
     }
     function downloadFileById2(fileId) {
@@ -29001,9 +33617,9 @@
       return { ok: true, zipName: stem + ".zip", entries: pack };
     }
     function downloadSuite2(cfgFileId) {
-      const state = suiteDownloadState2(cfgFileId);
-      if (!state.ok) return;
-      DownloadZip.downloadZip(state.entries, state.zipName);
+      const state2 = suiteDownloadState2(cfgFileId);
+      if (!state2.ok) return;
+      DownloadZip.downloadZip(state2.entries, state2.zipName);
     }
     return {
       fileInputEl,
@@ -29034,7 +33650,6 @@
     var getEditor = deps.getEditor;
     var setEditor = deps.setEditor;
     var getPersist2 = deps.getPersist;
-    var setPersist = deps.setPersist;
     var mountEditorFor2 = deps.mountEditorFor;
     var ensurePersistForFile2 = deps.ensurePersistForFile;
     var syncEditorCmTheme2 = deps.syncEditorCmTheme;
@@ -29051,7 +33666,6 @@
     var rememberCfgLint2 = deps.rememberCfgLint;
     var cfgTabLint2 = deps.cfgTabLint;
     var ensureActiveCfgForDir2 = deps.ensureActiveCfgForDir;
-    var ensureEditorMatchesFileKind2 = deps.ensureEditorMatchesFileKind;
     var showToast2 = deps.showToast;
     var projectIsEmpty2 = deps.projectIsEmpty;
     var enterCanvasIdleView2 = deps.enterCanvasIdleView;
@@ -29456,11 +34070,10 @@
   }
 
   // js/app/app-explorer-bootstrap.mjs
+  var projectTreeListenerBound = false;
   function create16(deps) {
     var getEditor = deps.getEditor;
-    var setEditor = deps.setEditor;
     var getPersist2 = deps.getPersist;
-    var setPersist = deps.setPersist;
     var projectFileText2 = deps.projectFileText;
     var showToast2 = deps.showToast;
     var setTip3 = deps.setTip;
@@ -29489,7 +34102,6 @@
     var applyFileReplacement2 = deps.applyFileReplacement;
     var executeUploadPlan2 = deps.executeUploadPlan;
     var exportLibraryAsNewProject2 = deps.exportLibraryAsNewProject;
-    var projectIsEmpty2 = deps.projectIsEmpty;
     var projectTreeEmpty2 = deps.projectTreeEmpty;
     var updateInspectorProjectEmpty2 = deps.updateInspectorProjectEmpty;
     var getWorkspaceBootPending = deps.getWorkspaceBootPending;
@@ -29647,13 +34259,13 @@
         listFiles: () => Persist.listFiles(),
         listEmptyFolders: () => Persist.listEmptyFolders(),
         getActiveId: () => {
-          const open9 = Persist.getOpenFileIds();
-          if (!open9.length) return null;
+          const open10 = Persist.getOpenFileIds();
+          if (!open10.length) return null;
           const cur = getPersist2() ? getPersist2().getCurrentFileId() : null;
-          if (cur && open9.includes(cur)) return cur;
-          const active = Persist.getActiveFileId();
-          if (active && open9.includes(active)) return active;
-          return open9[open9.length - 1] || null;
+          if (cur && open10.includes(cur)) return cur;
+          const active3 = Persist.getActiveFileId();
+          if (active3 && open10.includes(active3)) return active3;
+          return open10[open10.length - 1] || null;
         },
         getActiveCfgForDir: activeCfgForDir2,
         getActiveCfgsForDir: activeCfgsForDir3,
@@ -29661,7 +34273,7 @@
         getFileDiag: explorerFileDiag2,
         bindFileDiagTip: bindExplorerDiagTip2,
         getProjectName: () => Persist.getProjectName(),
-        applyTip: (el5, tip) => setTip3(el5, tip, { ariaLabel: false }),
+        applyTip: (el6, tip) => setTip3(el6, tip, { ariaLabel: false }),
         getFileContextItems: (fileId) => fileContextItems2(fileId),
         getSelectionContextItems: (selection) => explorerSelectionContextItems2(selection),
         getFolderContextItems: (folderPath) => explorerFolderContextItems2(folderPath),
@@ -29689,12 +34301,12 @@
       if (explorerSearchController) return;
       if (!explorerPanelEl2) return;
       const wrap = explorerPanelEl2.querySelector("#explorer-search-wrap");
-      const input = explorerPanelEl2.querySelector("#explorer-search-input");
+      const input2 = explorerPanelEl2.querySelector("#explorer-search-input");
       const ac = explorerPanelEl2.querySelector("#explorer-search-ac");
-      if (!wrap || !input || !ac) return;
+      if (!wrap || !input2 || !ac) return;
       explorerSearchController = ExplorerSearch.init({
         wrap,
-        input,
+        input: input2,
         ac,
         header: wrap.closest(".panel-header"),
         listFiles: () => Persist.listFiles(),
@@ -29719,7 +34331,7 @@
         }),
         getActiveFileId: () => getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId(),
         getEditor: () => getEditor(),
-        applyTip: (el5, tip) => setTip3(el5, tip, { ariaLabel: false }),
+        applyTip: (el6, tip) => setTip3(el6, tip, { ariaLabel: false }),
         showToast: showToast2,
         afterSuiteEdit: afterSuiteEdit2,
         applyFileReplacement: (id, text) => applyFileReplacement2(id, text),
@@ -29740,12 +34352,18 @@
       if (explorerController) explorerController.refresh();
       else updateRunButtonTooltip2();
     }
+    if (!projectTreeListenerBound && typeof window !== "undefined") {
+      projectTreeListenerBound = true;
+      window.addEventListener("beljar:project-tree-changed", function() {
+        renderExplorerTree2();
+      });
+    }
     function refreshExplorerActiveAndDiags2() {
       ensureExplorer2();
       if (explorerController?.refreshActiveAndDiags) explorerController.refreshActiveAndDiags();
       else if (explorerController?.refreshDiags) explorerController.refreshDiags();
     }
-    function refreshInspector2(detail) {
+    function refreshInspector2(detail2) {
       if (projectTreeEmpty2()) {
         updateInspectorProjectEmpty2();
         return;
@@ -29753,7 +34371,7 @@
       if (inspectorProjectEmptyEl2) inspectorProjectEmptyEl2.hidden = true;
       const body = inspectorPanelEl2?.querySelector(".inspector-body");
       if (body) body.hidden = false;
-      requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("beljar:inspector-refresh", { detail: detail || {} })));
+      requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("beljar:inspector-refresh", { detail: detail2 || {} })));
     }
     function notifyActiveEditorView2() {
       if (!getEditor() || typeof getEditor().getView !== "function") return;
@@ -29823,9 +34441,6 @@
     var activeCfgsForDir3 = deps.activeCfgsForDir;
     var afterSuiteEdit2 = deps.afterSuiteEdit;
     var renderTabs2 = deps.renderTabs;
-    var renderExplorerTree2 = deps.renderExplorerTree;
-    var updateHeaderContext2 = deps.updateHeaderContext;
-    var ensureEditorMatchesFileKind2 = deps.ensureEditorMatchesFileKind;
     var showToast2 = deps.showToast;
     var ensureExplorer2 = deps.ensureExplorer;
     var getExplorerController2 = deps.getExplorerController;
@@ -29834,9 +34449,9 @@
     function wireMenuTrigger(btn, menuOpts) {
       if (!btn) return;
       let suppressNextClick = false;
-      function setOpen2(open9) {
-        btn.classList.toggle("is-active", open9);
-        btn.setAttribute("aria-expanded", open9 ? "true" : "false");
+      function setOpen2(open10) {
+        btn.classList.toggle("is-active", open10);
+        btn.setAttribute("aria-expanded", open10 ? "true" : "false");
       }
       function runMenuInteraction() {
         if (typeof Menu !== "undefined" && Menu.isOpen() && Menu.rootAnchor() === btn) {
@@ -29844,12 +34459,12 @@
           return;
         }
         if (typeof Menu === "undefined") return;
-        const items2 = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
+        const items3 = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
         Menu.open({
           anchor: btn,
           side: menuOpts.side,
           align: menuOpts.align,
-          items: items2,
+          items: items3,
           onClose: () => setOpen2(false)
         });
         setOpen2(true);
@@ -29982,10 +34597,10 @@
         if (folderPaths.length === 1) return explorerFolderContextItems2(folderPaths[0]);
         return null;
       }
-      const items2 = [];
+      const items3 = [];
       const deleteCount = selectionDeleteFileIds2(fileIds, folderPaths).length;
       if (deleteCount > 0) {
-        items2.push({
+        items3.push({
           label: deleteCount === 1 ? "Delete file\u2026" : `Delete ${deleteCount} files\u2026`,
           disabled: selectionDeleteDisabled2(fileIds, folderPaths),
           onSelect: () => deleteSelectionInteractive2(fileIds, folderPaths)
@@ -29994,12 +34609,12 @@
       const openIds = Persist.getOpenFileIds();
       const openSelected = fileIds.filter((id) => openIds.includes(id));
       if (openSelected.length) {
-        items2.push({
+        items3.push({
           label: openSelected.length === 1 ? "Close tab" : `Close ${openSelected.length} tabs`,
           onSelect: () => closeTabsForFiles2(openSelected)
         });
       }
-      return items2;
+      return items3;
     }
     function fileContextItems2(fileId, opts) {
       const fromTab = !!(opts && opts.fromTab);
@@ -30023,13 +34638,13 @@
           onSelect: () => downloadSuite2(fileId)
         });
       }
-      const run = [];
+      const run3 = [];
       const suiteEdit = [];
       const low = file.name.toLowerCase();
       const Run = BelugaRun;
       if (low.endsWith(".cfg")) {
         if (Persist.getActiveCfgsForDir(ProjectSource.dirOf(file.name)).includes(file.name)) {
-          run.push({
+          run3.push({
             label: "Deactivate suite",
             onSelect: () => {
               makeActiveCfgForFile2(file.name);
@@ -30037,7 +34652,7 @@
             }
           });
         } else {
-          run.push({
+          run3.push({
             label: "Make active suite",
             onSelect: () => {
               makeActiveCfgForFile2(file.name);
@@ -30046,17 +34661,17 @@
           });
         }
         if (Run && Run.runModuleCfg) {
-          run.push({ label: "Run suite", onSelect: () => Run.runModuleCfg(file.name) });
+          run3.push({ label: "Run suite", onSelect: () => Run.runModuleCfg(file.name) });
         }
       } else if (Run && ProjectSource.isSignaturePath(file.name)) {
-        run.push({ label: "Run file", onSelect: () => Run.runFile(fileId) });
+        run3.push({ label: "Run file", onSelect: () => Run.runFile(fileId) });
         const moduleName = moduleNameFor2(fileId);
         const { cfg, member, index, count } = activeSuiteMembership2(file.name);
         if (moduleName) {
           if (member && index > 0) {
-            run.push({ label: "Run suite to here", onSelect: () => Run.runToHere(fileId) });
+            run3.push({ label: "Run suite to here", onSelect: () => Run.runToHere(fileId) });
           }
-          run.push({ label: "Run suite", onSelect: () => Run.runModule(fileId) });
+          run3.push({ label: "Run suite", onSelect: () => Run.runModule(fileId) });
         }
         const dir = ProjectSource.dirOf(file.name);
         if (cfg && member) {
@@ -30116,7 +34731,7 @@
         onSelect: () => deleteFileInteractive2(fileId)
       });
       const blocks = fromTab ? [manage] : [explorerCreateMenuItems2(parentDir3), manage];
-      if (run.length) blocks.push(run);
+      if (run3.length) blocks.push(run3);
       if (suiteEdit.length) blocks.push(suiteEdit);
       blocks.push(destroy);
       const out = [];
@@ -30150,8 +34765,8 @@
         },
         { type: "separator" }
       ];
-      const run = folderRunItems(folderPath);
-      const runBlock = run.length ? run.concat([{ type: "separator" }]) : [];
+      const run3 = folderRunItems(folderPath);
+      const runBlock = run3.length ? run3.concat([{ type: "separator" }]) : [];
       return create19.concat(rename).concat(destroy).concat(runBlock);
     }
     function folderRunItems(folderPath) {
@@ -30177,8 +34792,8 @@
     }
     if (typeof Menu !== "undefined") {
       const contextItemsFromEvent = (e) => {
-        const el5 = e.target.closest("[data-file-id]");
-        return el5 ? fileContextItems2(el5.getAttribute("data-file-id"), { fromTab: true }) : [];
+        const el6 = e.target.closest("[data-file-id]");
+        return el6 ? fileContextItems2(el6.getAttribute("data-file-id"), { fromTab: true }) : [];
       };
       if (editorTabsEl2) Menu.bindContextMenu(editorTabsEl2, contextItemsFromEvent);
     }
@@ -30215,8 +34830,8 @@
         return;
       }
       const ed = getEditor();
-      const persist3 = getPersist2();
-      if (persist3 && typeof persist3.flushCheckpoint === "function") persist3.flushCheckpoint();
+      const persist5 = getPersist2();
+      if (persist5 && typeof persist5.flushCheckpoint === "function") persist5.flushCheckpoint();
       else if (ed && typeof ed.flushCheckpoint === "function") ed.flushCheckpoint();
       const liveId = ed && typeof ed.getCurrentFileId === "function" ? ed.getCurrentFileId() : null;
       const applyFormatted = (id, next) => {
@@ -30235,14 +34850,14 @@
             ed.setValue(next);
           }
           const applied = typeof ed.getValue === "function" ? ed.getValue() : next;
-          if (persist3 && typeof persist3.replaceEditorText === "function") persist3.replaceEditorText(applied);
-          if (persist3 && typeof persist3.flushCheckpoint === "function") persist3.flushCheckpoint();
+          if (persist5 && typeof persist5.replaceEditorText === "function") persist5.replaceEditorText(applied);
+          if (persist5 && typeof persist5.flushCheckpoint === "function") persist5.flushCheckpoint();
           else Persist.setFileText(id, applied);
           return;
         }
         Persist.setFileText(id, next);
       };
-      const run = () => {
+      const run3 = () => {
         let changed2 = 0;
         let refused2 = 0;
         for (const f of files) {
@@ -30260,9 +34875,9 @@
       };
       let stats;
       if (typeof EditHistory !== "undefined" && typeof EditHistory.transact === "function") {
-        stats = EditHistory.transact("format", run, "Format project").result || { changed: 0, refused: 0, total: files.length };
+        stats = EditHistory.transact("format", run3, "Format project").result || { changed: 0, refused: 0, total: files.length };
       } else {
-        stats = run();
+        stats = run3();
       }
       const { changed, refused, total } = stats;
       if (changed === 0 && refused === 0) {
@@ -30395,111 +35010,320 @@
     var switchToFile2 = deps.switchToFile;
     var openFileAt2 = deps.openFileAt;
     var projectFileText2 = deps.projectFileText;
+    var closeFile2 = deps.closeFile;
+    var closeTabsForFiles2 = deps.closeTabsForFiles;
+    var activeSuiteMembership2 = deps.activeSuiteMembership;
+    var afterSuiteEdit2 = deps.afterSuiteEdit;
     {
       CommandPalette.init();
-      const reg = CommandPalette.register;
-      reg({ id: "project.new", title: "New Project\u2026", section: "File", run: () => newProject2() });
-      reg({ id: "file.new", title: "New file\u2026", section: "File", run: () => newFile2() });
-      reg({ id: "file.upload", title: "Upload File", section: "File", run: () => fileInputEl.click() });
-      reg({ id: "file.upload-folder", title: "Upload Folder", section: "File", run: () => uploadFolderInputEl.click() });
-      reg({ id: "file.import-folder", title: "Import Folder as New Project", section: "File", run: () => folderInputEl.click() });
-      reg({ id: "file.download", title: "Download Current File", section: "File", run: downloadCurrentFile2 });
-      reg({ id: "edit.undo", title: "Undo", section: "Edit", shortcut: "Mod+Z", run: () => editorExec2("undo") });
-      reg({ id: "edit.redo", title: "Redo", section: "Edit", shortcut: "Mod+Y", run: () => editorExec2("redo") });
-      reg({ id: "edit.find", title: "Find\u2026", section: "Edit", shortcut: "Mod+F", run: () => editorExec2("openSearch") });
-      reg({
-        id: "edit.search-project",
-        title: "Search in Project\u2026",
-        section: "Edit",
-        shortcut: "Mod+Shift+F",
-        run: () => CommandPalette.open({ mode: "search" })
-      });
-      reg({ id: "edit.toggle-comment", title: "Toggle Line Comment", section: "Edit", shortcut: "Mod+/", run: () => editorExec2("toggleComment") });
-      reg({
-        id: "edit.format",
-        title: "Format Document",
-        section: "Edit",
-        shortcut: "Alt+Shift+F",
-        run: () => editorExec2("format")
-      });
-      reg({
-        id: "nav.symbol",
-        title: "Go to Symbol\u2026",
-        section: "Navigate",
-        shortcut: "Mod+Shift+O",
-        run: () => CommandPalette.open({ mode: "symbols" })
-      });
-      reg({
-        id: "tools.palette",
-        title: "Open Command Palette",
-        section: "Tools",
-        shortcut: "Mod+K",
-        run: () => CommandPalette.open()
-      });
-      reg({
-        id: "tools.graph",
-        title: "Open Dependency Graph",
-        section: "Tools",
-        run: () => window.CurrentEditor?.openDependencyGraph()
-      });
-      reg({
-        id: "tools.inspector",
-        title: "Open Inspector",
-        section: "Tools",
-        run: () => window.dispatchEvent(new Event("beljar:open-inspector"))
-      });
-      reg({
-        id: "run.file",
-        title: "Run File",
-        section: "Run",
+      const on = (id, run3, when) => Commands2.attach(id, when ? { run: run3, when } : { run: run3 });
+      const say2 = (text) => {
+        if (typeof StatusStrip !== "undefined" && StatusStrip.setMessage) StatusStrip.setMessage(text);
+      };
+      const reapplyPrefs = () => {
+        if (typeof Persist.applyStoredEditorChrome === "function") Persist.applyStoredEditorChrome();
+        if (typeof BelEditor !== "undefined" && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
+      };
+      const toggleSetting = (spec) => {
+        const res = applyValue(Persist, spec, void 0);
+        if (res.applied) reapplyPrefs();
+        say2(res.message);
+        return res.ok;
+      };
+      const runSet = (argText) => {
+        const res = runSetOn(Persist, argText);
+        if (res.applied) reapplyPrefs();
+        say2(res.message);
+        return res.ok;
+      };
+      Commands2.runSet = runSet;
+      const currentEditor = () => window.CurrentEditor;
+      const onEditor = (id, fn, ready) => Commands2.attach(id, {
         run: () => {
-          if (BelugaRun.runFile) BelugaRun.runFile();
+          const e = currentEditor();
+          if (!e) return false;
+          if (typeof e.focus === "function") e.focus();
+          return fn(e);
+        },
+        when: () => {
+          const e = currentEditor();
+          if (!e) return false;
+          return ready ? !!ready(e) : true;
         }
       });
-      reg({
-        id: "run.here",
-        title: "Run Suite to Here",
-        section: "Run",
+      const holeAtCaret = (e) => typeof e.holeAtCursor === "function" ? e.holeAtCursor() : null;
+      const caretHead = (e) => {
+        const view = typeof e.getView === "function" ? e.getView() : null;
+        return view ? view.state.selection.main.head : null;
+      };
+      const openTabIds = () => {
+        if (typeof Persist.getOpenFileIds !== "function") return [];
+        return Persist.getOpenFileIds() || [];
+      };
+      const stepTab = (delta) => {
+        const ids = openTabIds();
+        if (ids.length < 2) return false;
+        const current = getPersist2() ? getPersist2().getCurrentFileId() : null;
+        const at = ids.indexOf(current);
+        const next = ids[((at < 0 ? 0 : at + delta) % ids.length + ids.length) % ids.length];
+        if (!next || next === current) return false;
+        switchToFile2(next);
+        return true;
+      };
+      on("project.new", () => newProject2());
+      on("file.new", () => newFile2());
+      on("file.upload", () => fileInputEl.click());
+      on("file.upload-folder", () => uploadFolderInputEl.click());
+      on("file.import-folder", () => folderInputEl.click());
+      on("file.download", downloadCurrentFile2);
+      on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
+      on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
+      on(
+        "tab.close",
+        () => {
+          const id = getPersist2() ? getPersist2().getCurrentFileId() : null;
+          if (!id) return false;
+          closeFile2(id);
+          return true;
+        },
+        () => !!(getPersist2() && getPersist2().getCurrentFileId())
+      );
+      const tabsRightOf = () => {
+        const ids = openTabIds();
+        const at = ids.indexOf(getPersist2() ? getPersist2().getCurrentFileId() : null);
+        return at < 0 ? [] : ids.slice(at + 1);
+      };
+      const otherTabs = () => {
+        const current = getPersist2() ? getPersist2().getCurrentFileId() : null;
+        return openTabIds().filter((id) => id !== current);
+      };
+      on(
+        "tab.close-others",
+        () => {
+          closeTabsForFiles2(otherTabs());
+          return true;
+        },
+        () => otherTabs().length > 0
+      );
+      on(
+        "tab.close-right",
+        () => {
+          closeTabsForFiles2(tabsRightOf());
+          return true;
+        },
+        () => tabsRightOf().length > 0
+      );
+      on("file.save", () => {
+        const p = getPersist2();
+        if (!p || typeof p.flushCheckpoint !== "function") return false;
+        p.flushCheckpoint();
+        const file = Persist.getFileById ? Persist.getFileById(p.getCurrentFileId()) : null;
+        say2(file && file.name ? "Saved " + file.name : "Saved.");
+        return true;
+      }, () => !!(getPersist2() && getPersist2().getCurrentFileId() && typeof getPersist2().flushCheckpoint === "function"));
+      on("file.open", (ctx) => {
+        const wanted = String(ctx && ctx.argText || "").trim();
+        if (!wanted) {
+          say2("Usage: :e <file>");
+          return false;
+        }
+        const files = Persist.listFiles() || [];
+        const lower = wanted.toLowerCase();
+        const base = (n) => n.slice(n.lastIndexOf("/") + 1).toLowerCase();
+        const hit = files.find((f) => f.name.toLowerCase() === lower) || files.find((f) => base(f.name) === lower) || files.find((f) => f.name.toLowerCase().indexOf(lower) >= 0);
+        if (!hit) {
+          say2(`No file matching "${wanted}".`);
+          return false;
+        }
+        switchToFile2(hit.id);
+        return true;
+      });
+      const membership = () => {
+        const id = getPersist2() ? getPersist2().getCurrentFileId() : null;
+        const file = id && Persist.getFileById ? Persist.getFileById(id) : null;
+        if (!file || !file.name || !activeSuiteMembership2) return null;
+        const m = activeSuiteMembership2(file.name);
+        return m && m.cfg ? { ...m, file } : null;
+      };
+      const editSuite = (add) => {
+        const m = membership();
+        if (!m) return false;
+        const dir = ProjectSource.dirOf(m.file.name);
+        if (add) Persist.addEntryToCfg(m.cfg, m.file.name);
+        else Persist.removeEntryFromCfg(m.cfg, m.file.name);
+        afterSuiteEdit2(dir, m.cfg);
+        const cfgName = m.cfg.slice(m.cfg.lastIndexOf("/") + 1);
+        say2((add ? "Added to " : "Removed from ") + cfgName);
+        return true;
+      };
+      on("suite.add-file", () => editSuite(true), () => {
+        const m = membership();
+        return !!m && !m.member;
+      });
+      on("suite.remove-file", () => editSuite(false), () => {
+        const m = membership();
+        return !!m && m.member;
+      });
+      on("edit.undo", () => editorExec2("undo"));
+      on("edit.redo", () => editorExec2("redo"));
+      on("edit.find", () => editorExec2("openSearch"));
+      on("edit.search-project", () => CommandPalette.open({ mode: "search" }));
+      on("edit.toggle-comment", () => editorExec2("toggleComment"));
+      on("edit.format", () => editorExec2("format"));
+      onEditor("edit.rename", (e) => e.rename());
+      onEditor("edit.select-all", (e) => e.selectAll());
+      on("nav.symbol", () => CommandPalette.open({ mode: "symbols" }));
+      onEditor("nav.definition", (e) => e.goToDefinition());
+      onEditor("nav.references", (e) => e.findReferences());
+      onEditor("nav.enclosing-decl", (e) => {
+        const head = caretHead(e);
+        if (head == null) return false;
+        const span = e.getDeclSpan(head);
+        if (!span) return false;
+        return e.jumpToRange({ from: span.from, to: span.from });
+      });
+      onEditor("nav.binder", (e) => e.revealBinder());
+      onEditor("nav.inspector", (e) => e.revealInInspector());
+      onEditor("nav.next-hole", (e) => e.cycleHole(1));
+      onEditor("nav.prev-hole", (e) => e.cycleHole(-1));
+      onEditor("nav.next-problem", (e) => e.jumpToNextError());
+      onEditor("nav.prev-problem", (e) => e.jumpToPrevError());
+      onEditor("prover.hole-intro", (e) => e.runHoleIntro(), holeAtCaret);
+      onEditor("prover.hole-split", (e) => e.runHoleSplit(), holeAtCaret);
+      onEditor("prover.hole-fill", (e) => e.runHoleFill(), holeAtCaret);
+      onEditor("prover.open-in-harpoon", (e) => e.openHoleInHarpoon(), holeAtCaret);
+      const lab = () => {
+        const H = window.Harpoon;
+        return H && typeof H.activeSession === "function" ? H.activeSession() : null;
+      };
+      const manualState = () => {
+        const s = lab();
+        return s && s.manual && s.manual.state || null;
+      };
+      const onLab = (id, fn, ready) => Commands2.attach(id, {
         run: () => {
-          if (BelugaRun.runToHere) BelugaRun.runToHere();
+          const s = lab();
+          if (!s) return false;
+          return fn(s) !== false;
+        },
+        when: () => {
+          const s = lab();
+          return !!s && (!ready || ready(s));
         }
       });
-      reg({
-        id: "run.module",
-        title: "Run Suite",
-        section: "Run",
-        when: () => !!moduleNameFor2(),
-        run: () => {
-          if (BelugaRun.runModule) BelugaRun.runModule();
+      const stepGoal = (delta) => (s) => {
+        const st = s.manual && s.manual.state;
+        if (!st || !st.holes || st.holes.length < 2) return false;
+        const n = st.holes.length;
+        s.manualFocus(((st.focusIdx < 0 ? 0 : st.focusIdx) + delta + n) % n);
+        return true;
+      };
+      const manyGoals = (s) => {
+        const st = s.manual && s.manual.state;
+        return !!st && !!st.holes && st.holes.length > 1;
+      };
+      onLab("harpoon.next-goal", stepGoal(1), manyGoals);
+      onLab("harpoon.prev-goal", stepGoal(-1), manyGoals);
+      const editorApi = () => window.BelEditor || null;
+      const canUndoMove = (s) => {
+        const E3 = editorApi();
+        const st = s.manual && s.manual.state;
+        return !!(E3 && st && typeof E3.manualCanUndo === "function" && E3.manualCanUndo(st));
+      };
+      const canRedoMove = (s) => {
+        const E3 = editorApi();
+        const st = s.manual && s.manual.state;
+        return !!(E3 && st && typeof E3.manualCanRedo === "function" && E3.manualCanRedo(st));
+      };
+      onLab("harpoon.undo-move", (s) => {
+        s.manualStepBack();
+        return true;
+      }, canUndoMove);
+      onLab("harpoon.redo-move", (s) => {
+        s.manualStepForward();
+        return true;
+      }, canRedoMove);
+      const searching = (s) => !!s.nativeAuto;
+      onLab(
+        "harpoon.orca-start",
+        (s) => {
+          s.runOrca();
+          return true;
+        },
+        (s) => !s.nativeAuto && !!(s.manual && s.manual.state)
+      );
+      onLab("harpoon.orca-pause", (s) => {
+        s.toggleOrcaPause();
+        return true;
+      }, searching);
+      onLab("harpoon.orca-absorb", (s) => {
+        s.backToManual();
+        return true;
+      }, searching);
+      for (const spec of SETTINGS) {
+        on(settingId(spec.slug), () => toggleSetting(spec));
+      }
+      on("settings.set", (ctx) => runSet(ctx && ctx.argText));
+      on("cmdline.open", () => StatusStrip.openCommandLine(""));
+      on(
+        "keys.full-keyboard",
+        () => {
+          FullKeyboard.toggle();
+          return true;
+        },
+        () => FullKeyboard.isSupported()
+      );
+      on("keys.macros", () => AvailableMacros.open());
+      on(
+        "cmdline.repeat",
+        () => StatusStrip.repeatLastCommand(),
+        () => !!(typeof StatusStrip !== "undefined" && StatusStrip.lastCommandLine && StatusStrip.lastCommandLine())
+      );
+      on("tools.palette", () => CommandPalette.open());
+      on("nav.anywhere", () => CommandPalette.open());
+      on("tools.commands", () => CommandPalette.runCommandEntry());
+      onEditor("edit.autocomplete", (e) => e.toggleAutocomplete() !== false);
+      on("tools.graph", () => window.CurrentEditor?.openDependencyGraph());
+      on("tools.inspector", () => window.dispatchEvent(new Event("beljar:open-inspector")));
+      const runDefault = () => {
+        const id = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
+        const file = (Persist.listFiles() || []).filter((f) => f.id === id)[0] || null;
+        if (file && /\.cfg$/i.test(file.name)) {
+          BelugaRun.runModuleCfg(file.name);
+          return true;
         }
-      });
-      reg({
-        id: "run.project",
-        title: "Run Project",
-        section: "Run",
-        when: () => signatureFileCount2() > 1,
-        run: () => {
-          if (BelugaRun.runProject) BelugaRun.runProject();
+        if (!file || !moduleNameFor2(file.id)) {
+          BelugaRun.runFile();
+          return true;
         }
+        BelugaRun.runToHere();
+        return true;
+      };
+      on("run.default", runDefault);
+      on("run.file", () => {
+        if (BelugaRun.runFile) BelugaRun.runFile();
       });
-      reg({
-        id: "run.clear-output",
-        title: "Clear Output",
-        section: "Run",
-        run: () => {
-          ReplOutput.clearOutput();
-        }
+      on("run.here", () => {
+        if (BelugaRun.runToHere) BelugaRun.runToHere();
       });
-      reg({ id: "view.theme", title: "Toggle Theme", section: "View", run: toggleTheme2 });
-      reg({ id: "view.explorer", title: "Toggle Explorer", section: "View", run: () => toggleSidePanel2("explorer") });
-      reg({
-        id: "view.settings",
-        title: "Open Settings\u2026",
-        section: "View",
-        run: () => {
-          SettingsUI.open();
-        }
+      on("run.module", () => {
+        if (BelugaRun.runModule) BelugaRun.runModule();
+      }, () => !!moduleNameFor2());
+      on("run.project", () => {
+        if (BelugaRun.runProject) BelugaRun.runProject();
+      }, () => signatureFileCount2() > 1);
+      on("run.clear-output", () => {
+        ReplOutput.clearOutput();
       });
+      on("view.theme", toggleTheme2);
+      on("view.explorer", () => toggleSidePanel2("explorer"));
+      on("view.library", () => toggleSidePanel2("library"));
+      on("view.harpoon", () => toggleSidePanel2("harpoon"));
+      on("view.settings", () => {
+        SettingsUI.open();
+      });
+      onEditor("fold.all", (e) => e.foldAll());
+      onEditor("fold.unfold-all", (e) => e.unfoldAll());
       CommandPalette.setProvider("files", () => {
         const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
         return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({ title: f.name, detail: "Switch to file", run: () => switchToFile2(f.id) }));
@@ -30516,30 +35340,30 @@
           if (st === "blocked") return "\u2298 ";
           return "";
         }
-        const items2 = symbols.map((s) => ({
+        const items3 = symbols.map((s) => ({
           title: statusPrefix(s.id) + s.name,
           detail: s.label || "",
           run: () => ed.jumpToRange(s.nameRange || s.range)
         }));
         const cross = ed && typeof ed.listProjectSymbols === "function" ? ed.listProjectSymbols() : [];
         for (const s of cross) {
-          items2.push({
+          items3.push({
             title: s.name,
             detail: s.fileName.split("/").pop(),
             run: () => openFileAt2(s.fileId, s.from, s.to)
           });
         }
-        return items2;
+        return items3;
       });
-      CommandPalette.setProvider("search", (query) => {
-        if (!query || query.length < 2) return [];
+      CommandPalette.setProvider("search", (query2) => {
+        if (!query2) return [];
         const activeId2 = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
         const entries = Persist.listFiles().map((f) => ({
           id: f.id,
           name: f.name,
           text: projectFileText2(f.id)
         }));
-        return ProjectSource.scanProjectText(entries, query, 60).map((m) => ({
+        return ProjectSource.scanProjectText(entries, query2, 60).map((m) => ({
           title: m.lineText,
           mono: true,
           detail: m.name.split("/").pop() + ":" + m.line,
@@ -30562,27 +35386,27 @@
   }
   var openFileIds = Persist.getOpenFileIds();
   var activeFileId2 = openFileIds.length ? openFileIds.includes(Persist.getActiveFileId()) ? Persist.getActiveFileId() : openFileIds[0] : null;
-  var persist2 = activeFileId2 ? Persist.createPersist({ documentId: activeFileId2 }) : null;
-  var initialCheckpoint = persist2 ? persist2.getInitialCheckpoint() : null;
+  var persist4 = activeFileId2 ? Persist.createPersist({ documentId: activeFileId2 }) : null;
+  var initialCheckpoint = persist4 ? persist4.getInitialCheckpoint() : null;
   function mountEditorFor(snapshot, openOpts) {
     if (typeof BelEditor === "undefined" || !BelEditor.mount) return null;
     const initialLocal = openOpts && openOpts.initialLocal != null ? openOpts.initialLocal : snapshot ? snapshot.editor.local : null;
-    const docId = persist2 && persist2.getCurrentFileId() || snapshot && snapshot.meta && snapshot.meta.documentId || void 0;
+    const docId = persist4 && persist4.getCurrentFileId() || snapshot && snapshot.meta && snapshot.meta.documentId || void 0;
     const file = docId ? Persist.getFileById(docId) : null;
     const ed = BelEditor.mount(editorMount, {
-      doc: snapshot ? snapshot.editor.text : persist2 ? persist2.getEditorText() : "",
+      doc: snapshot ? snapshot.editor.text : persist4 ? persist4.getEditorText() : "",
       initialLocal,
       semanticCheckpoint: snapshot ? snapshot.semantic : null,
       documentId: docId,
       filePath: file ? file.name : void 0,
       jumpAt: openOpts && openOpts.jumpAt,
-      persist: persist2,
+      persist: persist4,
       onDocChange: function(text) {
-        if (persist2) {
-          if (text == null && typeof persist2.markEditorDirty === "function") {
-            persist2.markEditorDirty();
+        if (persist4) {
+          if (text == null && typeof persist4.markEditorDirty === "function") {
+            persist4.markEditorDirty();
           } else {
-            persist2.scheduleEditorPersist(text);
+            persist4.scheduleEditorPersist(text);
           }
         }
         if (file && /\.cfg$/i.test(file.name)) scheduleCfgExplorerRefresh(file.name);
@@ -30682,7 +35506,7 @@
     });
     WorkspaceState.registerProvider("floating", {
       collect(out) {
-        const fileId = persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId();
+        const fileId = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
         collectWorkspaceFloating(fileId, out);
       }
     });
@@ -30714,7 +35538,7 @@
     WorkspaceState.applyWorkspace(ws, {
       projectId: Persist.getActiveProjectId(),
       openFileIds: Persist.getOpenFileIds(),
-      activeFileId: persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId(),
+      activeFileId: persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
       view: getActiveEditorView(),
       engine: getSemanticEngine(),
       applySidePanel: applyStoredSidePanel,
@@ -30735,11 +35559,11 @@
     return !!(view && view.dom && view.dom.classList.contains("bel-editor--cfg"));
   }
   function remountActiveEditor(openOpts) {
-    if (!persist2 || !editor) return;
-    const id = persist2.getCurrentFileId();
+    if (!persist4 || !editor) return;
+    const id = persist4.getCurrentFileId();
     if (!id) return;
-    persist2.flushCheckpoint();
-    const snapshot = persist2.getInitialCheckpoint();
+    persist4.flushCheckpoint();
+    const snapshot = persist4.getInitialCheckpoint();
     editor.destroy();
     editor = mountEditorFor(snapshot, openOpts || {});
     window.CurrentEditor = editor;
@@ -30753,8 +35577,8 @@
     updateRunButtonTooltip();
   }
   function ensureEditorMatchesFileKind() {
-    if (!persist2 || !editor) return;
-    const id = persist2.getCurrentFileId();
+    if (!persist4 || !editor) return;
+    const id = persist4.getCurrentFileId();
     if (!id) return;
     const file = Persist.getFileById(id);
     if (!file) return;
@@ -30800,13 +35624,13 @@
     return Persist.getOpenFileIds().length === 0;
   }
   function enterCanvasIdleView() {
-    if (persist2) persist2.flushCheckpoint();
+    if (persist4) persist4.flushCheckpoint();
     WorkspaceState.flushWorkspace();
     if (editor && typeof editor.destroy === "function") editor.destroy();
     editor = null;
     window.CurrentEditor = null;
     window.BelJarCurrentEditor = window.CurrentEditor;
-    persist2 = null;
+    persist4 = null;
     if (typeof FloatingWindow !== "undefined" && FloatingWindow.closeAll) FloatingWindow.closeAll();
     if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
       BelugaClient.noteEditorChange("");
@@ -30827,8 +35651,8 @@
   }
   function ensurePersistForFile(id) {
     if (!id) return null;
-    if (!persist2) persist2 = Persist.createPersist({ documentId: id });
-    return persist2;
+    if (!persist4) persist4 = Persist.createPersist({ documentId: id });
+    return persist4;
   }
   function syncEditorCmTheme() {
     if (!editor || typeof editor.setDarkTheme !== "function") return;
@@ -30856,7 +35680,7 @@
     if (/^repl-/.test(key) || key === "repl-reset") return false;
     if (/^beluga-/.test(key) || key === "beluga-reset") return false;
     if (key === "check-aggressiveness" || key === "suite-check") return false;
-    if (/^autosolve-/.test(key)) return false;
+    if (/^autosolve-/.test(key) || /^harpoon-/.test(key) || key === "harpoon-reset") return false;
     if (key === "workspace-reset" || key === "restore-panels" || key === "library-expand-default" || key === "inspector-follow") return false;
     if (key === "motion-pref" || key === "toast-duration") return false;
     if (/^alias/.test(key) || key === "aliases-reset") return false;
@@ -30876,6 +35700,9 @@
         BelEditor.applyEditorPrefs();
       }
     }
+    if (key === "keymap-style" || key === "status-strip" || key === "keybindings-reset" || key === "settings-import" || key === "settings-reset-all") {
+      if (typeof StatusStrip !== "undefined" && typeof StatusStrip.apply === "function") StatusStrip.apply();
+    }
     if ((key === "library-expand-default" || key === "workspace-reset") && getLibraryController() && typeof getLibraryController().refresh === "function") {
       getLibraryController().refresh();
     }
@@ -30889,17 +35716,17 @@
   window.addEventListener("beljar:settings-changed", function(e) {
     applyLiveSettings2(e && e.detail ? e.detail.key : "");
   });
-  function showToast(message, opts) {
-    return Toasts.show(message, opts);
+  function showToast(message2, opts) {
+    return Toasts.show(message2, opts);
   }
   if (!editor && (typeof BelEditor === "undefined" || !BelEditor.mount)) {
     {
       Toasts.error("CodeMirror editor bundle failed to load.", { duration: 0, closable: true });
     }
   }
-  function setTip2(el5, text, opts) {
-    if (!el5 || typeof Tooltips === "undefined" || !Tooltips.set) return;
-    Tooltips.set(el5, text, opts);
+  function setTip2(el6, text, opts) {
+    if (!el6 || typeof Tooltips === "undefined" || !Tooltips.set) return;
+    Tooltips.set(el6, text, opts);
   }
   function toggleTheme() {
     document.documentElement.classList.toggle("light");
@@ -30927,25 +35754,25 @@
       btn: filesBtn,
       panel: explorerPanelEl,
       openClass: "is-explorer-open",
-      writeOpen: (open9) => {
-        Persist.writeStoredExplorerOpen(open9);
+      writeOpen: (open10) => {
+        Persist.writeStoredExplorerOpen(open10);
       }
     },
     inspector: {
       btn: inspectorBtn,
       panel: inspectorPanelEl,
       openClass: "is-inspector-open",
-      writeOpen: (open9) => {
-        Persist.writeStoredInspectorOpen(open9);
+      writeOpen: (open10) => {
+        Persist.writeStoredInspectorOpen(open10);
       }
     },
     library: {
       btn: libraryBtn,
       panel: libraryPanelEl,
       openClass: "is-library-open",
-      writeOpen: (open9) => {
-        Persist.writeStoredLibraryOpen(open9);
-        if (!open9) {
+      writeOpen: (open10) => {
+        Persist.writeStoredLibraryOpen(open10);
+        if (!open10) {
           const lib = getLibraryController();
           if (lib && typeof lib.collapseFolders === "function") lib.collapseFolders();
         }
@@ -30955,9 +35782,9 @@
       btn: harpoonBtn,
       panel: harpoonPanelEl,
       openClass: "is-harpoon-open",
-      writeOpen: (open9) => {
+      writeOpen: (open10) => {
         if (Persist.writeStoredHarpoonOpen) {
-          Persist.writeStoredHarpoonOpen(open9);
+          Persist.writeStoredHarpoonOpen(open10);
         }
       }
     }
@@ -31004,10 +35831,10 @@
       items: Array.isArray(lint.items) ? lint.items : cfgTabLint.get(fileId)?.items
     });
   }
-  function lintTooltipHead(items2) {
-    if (!items2 || !items2.length) return "";
-    const errs = items2.filter((d) => d.kind === "error").length;
-    const warns = items2.length - errs;
+  function lintTooltipHead(items3) {
+    if (!items3 || !items3.length) return "";
+    const errs = items3.filter((d) => d.kind === "error").length;
+    const warns = items3.length - errs;
     const parts = [];
     if (errs) parts.push(errs === 1 ? "1 error" : `${errs} errors`);
     if (warns) parts.push(warns === 1 ? "1 warning" : `${warns} warnings`);
@@ -31030,22 +35857,22 @@
     }
     return null;
   }
-  function bindExplorerDiagTip(el5, fileId, fileName, diag) {
-    if (!el5 || !diag) return;
-    el5.removeAttribute("title");
-    const items2 = explorerFileDiagItems(fileId, fileName);
-    if (items2 && items2.length) {
-      el5.setAttribute("data-tooltip", lintTooltipHead(items2));
-      el5.setAttribute("data-tooltip-head", "");
-      el5.setAttribute("data-tooltip-errors", JSON.stringify(items2));
-      if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el5);
+  function bindExplorerDiagTip(el6, fileId, fileName, diag) {
+    if (!el6 || !diag) return;
+    el6.removeAttribute("title");
+    const items3 = explorerFileDiagItems(fileId, fileName);
+    if (items3 && items3.length) {
+      el6.setAttribute("data-tooltip", lintTooltipHead(items3));
+      el6.setAttribute("data-tooltip-head", "");
+      el6.setAttribute("data-tooltip-errors", JSON.stringify(items3));
+      if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el6);
       return;
     }
-    setTip2(el5, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
+    setTip2(el6, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
   }
   function updateTabLintStyles() {
     if (!editorTabsEl) return;
-    const activeId2 = persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId();
+    const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
     editorTabsEl.querySelectorAll(".editor-tab[data-file-id]").forEach((tab) => {
       const id = tab.getAttribute("data-file-id");
       tab.classList.toggle("has-errors", fileTabHasErrors(id, activeId2));
@@ -31256,9 +36083,9 @@
       window.CurrentEditor = ed;
       window.BelJarCurrentEditor = ed;
     },
-    getPersist: () => persist2,
+    getPersist: () => persist4,
     setPersist: (p) => {
-      persist2 = p;
+      persist4 = p;
     }
   };
   function __initAppPeels() {
@@ -31285,9 +36112,9 @@
       listOpenFiles: () => {
         return Persist.getOpenFileIds().map((id) => Persist.getFileById(id)).filter(Boolean);
       },
-      getActiveId: () => persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId(),
+      getActiveId: () => persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
       fileHasErrors: (fileId) => {
-        const activeId2 = persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId();
+        const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
         return fileTabHasErrors(fileId, activeId2);
       },
       setTip: setTip2,
@@ -31437,6 +36264,10 @@
       downloadCurrentFile,
       editorExec,
       moduleNameFor,
+      closeFile,
+      closeTabsForFiles,
+      activeSuiteMembership,
+      afterSuiteEdit,
       signatureFileCount,
       switchToFile,
       openFileAt,
@@ -31454,7 +36285,7 @@
   }
   var suppressUnloadFlush = false;
   function switchProjectAndReload(mutate) {
-    if (persist2) persist2.flushCheckpoint();
+    if (persist4) persist4.flushCheckpoint();
     WorkspaceState.flushWorkspace();
     suppressUnloadFlush = true;
     try {
@@ -31545,32 +36376,32 @@
   }
   var headerProjectRenameInput = null;
   function endHeaderProjectRename() {
-    const el5 = document.getElementById("header-context");
-    if (!el5 || !headerProjectRenameInput) return;
+    const el6 = document.getElementById("header-context");
+    if (!el6 || !headerProjectRenameInput) return;
     const nameEl = document.createElement("span");
     nameEl.className = "header-context-name";
     nameEl.id = "header-context-name";
     headerProjectRenameInput.replaceWith(nameEl);
     headerProjectRenameInput = null;
-    el5.classList.remove("is-renaming");
+    el6.classList.remove("is-renaming");
   }
   function startHeaderProjectRename() {
     if (headerProjectRenameInput) return;
-    const el5 = document.getElementById("header-context");
+    const el6 = document.getElementById("header-context");
     const nameEl = document.getElementById("header-context-name");
-    if (!el5 || !nameEl) return;
+    if (!el6 || !nameEl) return;
     const initial = Persist.getProjectName();
-    el5.classList.add("is-renaming");
-    setTip2(el5, "");
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "header-context-inline-name";
-    input.value = initial;
-    input.spellcheck = false;
-    input.setAttribute("aria-label", "Project name");
-    input.size = Math.max(initial.length, 6);
-    nameEl.replaceWith(input);
-    headerProjectRenameInput = input;
+    el6.classList.add("is-renaming");
+    setTip2(el6, "");
+    const input2 = document.createElement("input");
+    input2.type = "text";
+    input2.className = "header-context-inline-name";
+    input2.value = initial;
+    input2.spellcheck = false;
+    input2.setAttribute("aria-label", "Project name");
+    input2.size = Math.max(initial.length, 6);
+    nameEl.replaceWith(input2);
+    headerProjectRenameInput = input2;
     let settled = false;
     let suppressBlurDismiss = false;
     function dismiss4() {
@@ -31580,14 +36411,14 @@
       updateHeaderContext();
     }
     function commit() {
-      const next = normalizeProjectRenameName(input.value);
+      const next = normalizeProjectRenameName(input2.value);
       const err = validateProjectRenameName(next);
       if (err) {
         showToast(err, { kind: "warn" });
-        input.classList.add("is-invalid");
-        input.focus();
-        input.select();
-        setTimeout(() => input.classList.remove("is-invalid"), 400);
+        input2.classList.add("is-invalid");
+        input2.focus();
+        input2.select();
+        setTimeout(() => input2.classList.remove("is-invalid"), 400);
         return false;
       }
       if (next === Persist.getProjectName()) {
@@ -31599,7 +36430,7 @@
       applyProjectRename(next);
       return true;
     }
-    input.addEventListener("keydown", (e) => {
+    input2.addEventListener("keydown", (e) => {
       e.stopPropagation();
       if (e.key === "Enter") {
         e.preventDefault();
@@ -31616,35 +36447,35 @@
         dismiss4();
       }
     });
-    input.addEventListener("input", () => {
-      input.size = Math.max(input.value.length, 6);
+    input2.addEventListener("input", () => {
+      input2.size = Math.max(input2.value.length, 6);
     });
-    input.addEventListener("click", (e) => {
+    input2.addEventListener("click", (e) => {
       e.stopPropagation();
     });
-    input.addEventListener("pointerdown", (e) => {
+    input2.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
     });
-    input.addEventListener("blur", () => {
+    input2.addEventListener("blur", () => {
       if (settled) return;
       setTimeout(() => {
         if (!settled && !suppressBlurDismiss) dismiss4();
       }, 0);
     });
     requestAnimationFrame(() => {
-      input.focus();
-      input.select();
+      input2.focus();
+      input2.select();
     });
   }
   function updateHeaderContext() {
-    const el5 = document.getElementById("header-context");
+    const el6 = document.getElementById("header-context");
     const nameEl = document.getElementById("header-context-name");
-    if (!el5 || !nameEl) return;
+    if (!el6 || !nameEl) return;
     if (headerProjectRenameInput) return;
     nameEl.textContent = Persist.getProjectName();
     const tip = headerContextFileHint();
-    el5.setAttribute("aria-label", tip);
-    setTip2(el5, tip);
+    el6.setAttribute("aria-label", tip);
+    setTip2(el6, tip);
   }
   var headerContextEl = document.getElementById("header-context");
   if (headerContextEl) {
@@ -31662,7 +36493,7 @@
     if (tab) tab.classList.toggle("has-errors", !!hasErrors);
   }
   window.addEventListener("beljar:file-lint", (ev) => {
-    const id = persist2 ? persist2.getCurrentFileId() : null;
+    const id = persist4 ? persist4.getCurrentFileId() : null;
     if (!id || !ev.detail) return;
     const file = Persist.getFileById(id);
     if (!file) return;
@@ -31711,8 +36542,8 @@
     inspectorBtn.addEventListener("click", () => {
       const wasOpen = workspaceEl.classList.contains("is-inspector-open");
       if (!wasOpen) hideInspectorTooltipUntilLeave();
-      const open9 = toggleSidePanel("inspector");
-      if (open9) refreshInspector({ live: true });
+      const open10 = toggleSidePanel("inspector");
+      if (open10) refreshInspector({ live: true });
     });
     window.addEventListener("beljar:open-inspector", openInspector);
   }
@@ -31736,8 +36567,8 @@
       }
       const wasOpen = workspaceEl.classList.contains("is-library-open");
       if (!wasOpen) hideLibraryTooltipUntilLeave();
-      const open9 = toggleSidePanel("library");
-      if (open9) {
+      const open10 = toggleSidePanel("library");
+      if (open10) {
         ensureLibrary();
         if (getLibraryController() && typeof getLibraryController().refresh === "function") {
           getLibraryController().refresh();
@@ -31776,8 +36607,8 @@
     harpoonBtn.addEventListener("click", () => {
       const wasOpen = workspaceEl.classList.contains("is-harpoon-open");
       if (!wasOpen) hideProofTooltipUntilLeave();
-      const open9 = toggleSidePanel("harpoon");
-      if (open9) {
+      const open10 = toggleSidePanel("harpoon");
+      if (open10) {
         ensureHarpoonPanel();
         refreshHarpoonPanelIfOpen();
       }
@@ -31816,12 +36647,11 @@
       BelugaRun.runModuleCfg(file.name);
       return;
     }
-    if (!file || !moduleNameFor(file.id)) {
-      BelugaRun.runFile();
+    if ((e.ctrlKey || e.metaKey) && file && moduleNameFor(file.id)) {
+      BelugaRun.runModule();
       return;
     }
-    if (e.ctrlKey || e.metaKey) BelugaRun.runModule();
-    else BelugaRun.runToHere();
+    Commands.run("run.default");
   });
   document.getElementById("btn-clear").addEventListener("click", () => {
     ReplOutput.clearOutput();
@@ -31878,14 +36708,14 @@
     if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
       ReplPersist.saveNow();
     }
-    if (persist2 && !suppressUnloadFlush) persist2.flushCheckpoint();
+    if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
     WorkspaceState.flushWorkspace();
   });
   window.addEventListener("pagehide", () => {
     if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
       ReplPersist.saveNow();
     }
-    if (persist2 && !suppressUnloadFlush) persist2.flushCheckpoint();
+    if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
     WorkspaceState.flushWorkspace();
   });
   {

@@ -2,11 +2,11 @@
  * Explorer/search/library bootstrap + inline create/rename — injected into app.js.
  */
 
+  var projectTreeListenerBound = false;
+
   export function create(deps) {
     var getEditor = deps.getEditor;
-    var setEditor = deps.setEditor;
     var getPersist = deps.getPersist;
-    var setPersist = deps.setPersist;
     var projectFileText = deps.projectFileText;
     var showToast = deps.showToast;
     var setTip = deps.setTip;
@@ -35,7 +35,6 @@
     var applyFileReplacement = deps.applyFileReplacement;
     var executeUploadPlan = deps.executeUploadPlan;
     var exportLibraryAsNewProject = deps.exportLibraryAsNewProject;
-    var projectIsEmpty = deps.projectIsEmpty;
     var projectTreeEmpty = deps.projectTreeEmpty;
     var updateInspectorProjectEmpty = deps.updateInspectorProjectEmpty;
     var getWorkspaceBootPending = deps.getWorkspaceBootPending;
@@ -298,6 +297,13 @@
       ensureExplorer();
       if (explorerController) explorerController.refresh();
       else updateRunButtonTooltip();
+    }
+
+    if (!projectTreeListenerBound && typeof window !== 'undefined') {
+      projectTreeListenerBound = true;
+      window.addEventListener('beljar:project-tree-changed', function () {
+        renderExplorerTree();
+      });
     }
 
     function refreshExplorerActiveAndDiags() {

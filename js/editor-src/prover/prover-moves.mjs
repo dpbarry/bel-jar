@@ -1,6 +1,7 @@
 // Pure move-text emission: given (hole, code, thm), produce candidate texts
 // for fill / synth / recurse / lemma / split / intro. No ordering, no checker.
 
+import { transport } from './prover-transport.mjs';
 import {
   decomposeContextual,
   headOfConclusion,
@@ -199,6 +200,24 @@ export function splitTextForCtype(code, hole, scrutText, ctypeType, ctOpts = {})
         continue;
       }
       if (t[0] === '{') { ok = false; break; } // a non-box Pi binder — still out of fragment
+      // ⭐ A BARE BOX argument (`M_dot : Map [h] [g] -> [h |- target S[]] -> …`) bound as
+      // a plain name, which makes the sub-derivation a COMPUTATION VALUE. That is the
+      // wrong side of entry 40b's law: a comp variable can never be weakened into a
+      // deeper box (`[Ψ, x:B ⊢ c[..]]` earns "Expected an LF term-level constant"), so
+      // the ctype-construction composite could generate `M_dot (weaken X1) [h1, x:target
+      // _ |- X2[..]]` and have it rejected for the SPELLING OF THE PATTERN, three moves
+      // earlier. Measured on `cc.bel#weaken`, the exact reference term, exactly that
+      // error. The corpus spells it as a box (`| M_dot sigma' [h |- M] =>`), which binds
+      // M in the META context where the weakening is well-typed.
+      if (ctOpts.boxArgs) {
+        const bx = t[0] === '[' ? decomposeContextual(t) : null;
+        if (bx) {
+          const bparts = splitCtx(bx.ctx || '');
+          const bctx = bparts.length ? ['_', ...bparts.slice(1)].join(', ') : '';
+          args.push(`[${bctx} |- ${fresh()}]`);
+          continue;
+        }
+      }
       args.push(fresh());
     }
     if (!ok) continue;
@@ -440,6 +459,25 @@ export function synthMoves(hole, code, thm) {
     });
     if (extras.some((e) => !e || /\bblock\b/.test(e.type))) {
       if (globalThis.__factDropDebug) globalThis.__factDropDebug({ name, type: t, ctx: b.ctx, concl: b.concl, goalParts, reason: 'unparseable-extra' });
+      // ⭐ ENTRY 41's PER-ARGUMENT-CONTEXT HOME. This drop is the measured one: 160 facts
+      // across 16 of 40 sampled targets, 7 of them STUCK:no-move. The fact is thrown away
+      // because the single ambient context cannot spell a block extra — but `transport`
+      // CAN: `h,y:term,u:aeq y y` -> `h,b:block(y,u)` is `[.., b.1, b.2]` (Specimen D).
+      // ⚠️ Entry 42 admitted these facts with the OLD single-context spelling and measured
+      // ZERO. What differs here is only the SPELLING; if this also measures zero, the
+      // spelling was never the blocker and entry 42's verdict stands for a second reason.
+      if (globalThis.__proverTransport) {
+        const tr = transport(b.ctx, splitCtx(goal.ctx).join(', '));
+        if (tr.ok) {
+          const concl0 = isCtypeApplication(b.concl)
+            ? normalizeCtypeSpelling(b.concl) : String(b.concl || '').trim();
+          facts.push({
+            name, extras: [], concl: concl0, original: true, decOk: decNames.has(name),
+            viaComp, weaken: false, transportSub: tr.sub || null,
+            invented: inventedSet.has(name) || undefined,
+          });
+        }
+      }
       return; // block extras — outside fragment
     }
     if (viaComp && extras.length) return; // a comp variable has no binder telescope
@@ -876,6 +914,45 @@ export function recurseTexts(hole, thm, code) {
     }
   }
   if (!boxes.length) return piRecurseTexts(hole, thm, code);
+  // ⭐ AUTHOR-FAITHFUL UNTOTALIED RECURSION (master plan entry 54) — OPT-IN.
+  //
+  // The S2 policy above (2026-07-21) opened untotalied recursion on the SYNTH path
+  // only; this bail kept it shut for the main generator. Measured 2026-08-16: **180 of
+  // 391 in-fragment stuck targets (46%) are never offered `recurse` or `lemma` at all**,
+  // and 164 of those have reference proofs that demonstrably need one. The subset
+  // reachable from HERE — untotalied AND carrying a box premise — is 44 targets.
+  //
+  // Downstream is already correct for this case: `decreasingBoxIndex` returns 0 for an
+  // untotalied theorem (its documented default) and `measureDesignation` returns null,
+  // so the box route is taken with premise 0 as the decreasing slot.
+  //
+  // ⛔⛔ SOUNDNESS — READ BEFORE ENABLING BY DEFAULT. Beluga ACCEPTS untotalied
+  // recursive functions, including circular ones, so the CHECKER IS NOT THE GUARD here;
+  // `decOk` alone is. A hole in decOk yields a proof the checker accepts that is
+  // circular — a false theorem recorded COMPLETE, strictly worse than a missed proof.
+  // decOk was audited for this change and one real leak was found and fixed (arm type
+  // ascriptions donated LF index variables — see `armPatternPart` in prover-hyp.mjs).
+  // The guard is pinned on invented shapes in tests/test-prover-decok-soundness.mjs;
+  // that file must stay green for this toggle to be defensible. Any COMPLETE obtained
+  // with this on whose recursion argument is not a case component is a FAILURE.
+  // ⛔⛔ REVERTED 2026-08-17 — THE EXPERIMENT WAS RUN AND IT PRODUCES FALSE PROOFS.
+  // A/B over the 44: **11 gains, 0 losses, −11.2% checks — and 10 of the 11 are
+  // CIRCULAR**, e.g. `conv` came out as
+  //     fn X => case X of | [g |- app X1 X2] => conv [g |- X1]
+  //                       | [g |- ret X7]    => conv X          ← the original binder
+  // which Beluga ACCEPTS because the theorem is untotalied. Verified with
+  // `scratch/probes/circularity-audit.mjs` against `scratch/probes/untot-gains.txt`.
+  //
+  // ⭐ THE LESSON, and why decOk was not enough: those calls came through the **FILL**
+  // path (`steps: intro,split,fill,fill` — no `recurse` step at all). decOk guards the
+  // IH/recurse route ONLY. Making the theorem recursively available also makes its own
+  // name applicable in a fill, and a fill can apply it to the original binder without
+  // ever consulting decOk. So untotalied recursion CANNOT be opened by relaxing this
+  // bail: it needs a GLOBAL well-foundedness check on the emitted term at certification
+  // time (every self-application's decreasing argument must be a case component),
+  // because for an untotalied theorem the checker is not the termination guard.
+  // ⛔ Do not re-open this without that check. The toggle is gone deliberately — an
+  // opt-in flag that manufactures accepted-but-false proofs is a loaded gun.
   if (!thm.totality) return [];
   // A measure designating a Pi BINDER (`/ total m (f _ m _) /` on a mixed
   // theorem): recursion is by case analysis on that meta, with the box
@@ -930,7 +1007,7 @@ export function recurseTexts(hole, thm, code) {
   // one that does not occur there must be spelled by its in-scope name.
   //
   // Measured on poplmark-reloaded#mstep_appl in the engine's own skeleton
-  // (scratchpad/probe-mixed-slot.mjs), `[g⊢mstep M M'] → [g⊢mstep (app M N) (app M' N)]`:
+  // (scratch/probes/probe-mixed-slot.mjs), `[g⊢mstep M M'] → [g⊢mstep (app M N) (app M' N)]`:
   //   all-named          `f [g|-M] [g|-M'] [g|-N] [g|-X1]` → Ill-typed
   //   all-underscore     `f [g|-_] [g|-_] [g|-_] [g|-X1]`  → Expression is not closed
   //   THIS RULE (M,M' occur in the premise; N does not)
@@ -1495,6 +1572,101 @@ function instantiatedVariants(h, premCtx, all, code) {
   return out;
 }
 
+
+// ⭐ INLINE IH / LEMMA CALL IN AN ARGUMENT SLOT — the missing third piece of the
+// ctype-construction composite (master plan entries 41c / 42).
+//
+// The reference term is `M_dot (weaken sigma') [h, x:target _ |- M[..]]`. Entry 41c
+// established by CHECKER TEST that the call cannot be let-bound first: every ascribed
+// spelling of `let r = weaken sigma' in M_dot r …` is rejected ("requires that some
+// metavariables are further restricted"), because the constructor's ARGUMENT POSITION
+// is what determines the callee's implicit result index. So the call must be built
+// INLINE — the one thing `argFillChoices` could never do, since it was handed no
+// theorem. Entry 42 built the other two pieces of this composite and measured zero
+// with this one absent; the law it bought ([[composite-moves-are-atomic]]) is why it
+// is wired behind the SAME toggle as them.
+//
+// SELF calls come from `recurseTexts`, so the decreasing-slot discipline
+// (`decSubderivNames` + the theorem's own `/ total /`) is inherited unchanged and no
+// call is proposed here that the termination checker would refuse — which also keeps
+// the entry-55 soundness guard's premise intact.
+//
+// SIBLING calls are generated below rather than by `supportLemmaTexts`, for two
+// reasons that both bite on this family: that generator filters on the GOAL's head
+// (an argument slot has its own), and it `continue`s on `!boxes.length` — while
+// `weaken : Map [h] [g] -> Map [h, x:target S[]] [g]` has no box premise at all, so
+// the one lemma this family needs was unreachable from it by construction.
+const INLINE_ARG_PER_SLOT = 3;   // candidate hypotheses considered per callee premise
+const INLINE_ARG_CAP = 6;        // calls handed back for ONE slot
+
+// The conclusion family of a theorem, boxed (`[g |- aeq M N]`) or ctype (`Map [h] [g]`).
+function callableConclusionHead(t) {
+  const concl = (t && t.compType && t.compType.conclusion) || '';
+  if (!concl) return null;
+  const boxed = boxedConclusionHead(concl);
+  if (boxed) return boxed;
+  const a = parseAppType(normalizeCtypeSpelling(String(concl).trim()));
+  return (a && a.head) || null;
+}
+
+function ctypePremiseHead(raw) {
+  const a = parseAppType(normalizeCtypeSpelling(String(raw || '').trim()));
+  return (a && a.head) || null;
+}
+
+export function inlineArgCallTexts(wantHead, hole, thm, code) {
+  if (!wantHead || !hole) return [];
+  const out = [];
+  const seen = new Set();
+  const add = (call) => {
+    const t = `(${String(call).replace(/\s+/g, ' ').trim()})`;
+    if (!seen.has(t)) { seen.add(t); out.push(t); }
+  };
+  // (a) SELF — the induction hypothesis, applied inline instead of let-bound.
+  if (thm && thm.compType && callableConclusionHead(thm) === wantHead) {
+    for (const t of recurseTexts(hole, thm, code)) {
+      if (out.length >= INLINE_ARG_CAP) break;
+      const rhs = t.includes('let ') ? letRhsOf(t) : (t.includes('?') ? null : String(t).trim());
+      if (rhs) add(rhs);
+    }
+  }
+  // (b) SIBLINGS declared earlier in the same program (never speculated: entry 54
+  //     measured that every lemma this population calls already exists as a sibling).
+  const idx = theoremIndex(code);
+  const all = expandedHypsOf(hole, code);
+  for (const lem of idx) {
+    if (out.length >= INLINE_ARG_CAP) break;
+    if (!lem || !lem.compType) continue;
+    if (thm && lem.name === thm.name) continue;
+    if (!theoremInScope(lem, thm, idx)) continue;
+    if (callableConclusionHead(lem) !== wantHead) continue;
+    const prems = lem.compType.premises.filter((p) => p.kind === 'box' || p.kind === 'ctype');
+    if (!prems.length || prems.length !== lem.compType.premises.filter((p) => p.kind !== 'ctx').length) continue;
+    const perSlot = prems.map((p) => {
+      if (p.kind === 'ctype') {
+        const want = ctypePremiseHead(p.raw);
+        return all
+          .filter((h) => h.where === 'comp' && ctypePremiseHead(h.type) === want)
+          .map((h) => h.name)
+          .slice(0, INLINE_ARG_PER_SLOT);
+      }
+      const want = premiseDecHead(p.raw, code);
+      return all
+        .filter((h) => contextualHead(h.type) === want)
+        .map((h) => (h.where === 'comp' ? h.name : boxOf(h.type).ctx
+          ? `[${boxOf(h.type).ctx} |- ${termOf(h)}]`
+          : `[ |- ${termOf(h)}]`))
+        .slice(0, INLINE_ARG_PER_SLOT);
+    });
+    if (perSlot.some((l) => !l.length)) continue;
+    for (const tuple of cartesian(perSlot)) {
+      if (out.length >= INLINE_ARG_CAP) break;
+      if (new Set(tuple).size !== tuple.length) continue;
+      add(`${lem.name} ${tuple.join(' ')}`);
+    }
+  }
+  return out;
+}
 
 export function supportLemmaTexts(hole, currentThm, code) {
   const goal = decomposeContextual(hole && hole.goal);

@@ -7,9 +7,36 @@ const global = globalThis;
   var controls = {};
   var settingsSearchInput = null;
   var closeSettingsSearch = null;
+  /** style → the option group nested under the Editing style row. */
+  var styleGroups = {};
 
   function persist() {
     return Persist
+  }
+
+  /** Show exactly the active style's options, and nothing under Standard. */
+  function paintStyleRows(style) {
+    for (var key in styleGroups) {
+      if (styleGroups[key]) styleGroups[key].hidden = key !== style;
+    }
+  }
+
+  /**
+   * Close Settings, then do the thing.
+   *
+   * ⛔ A modal `<dialog>` lives in the browser's TOP LAYER, which no z-index can
+   * beat — and `FloatingWindow` tops out at 4000 "below modal dialogs" by
+   * design. So a button in Settings that opened a floating window opened it
+   * *underneath* Settings: it looked like the button was dead. Anything that
+   * hands you a window to read has to leave Settings first, and doing that
+   * explicitly is also the honest reading of the gesture — you are going to look
+   * at something else.
+   */
+  function leaveSettingsAnd(run) {
+    if (settingsDialogEl && settingsDialogEl.open) Dialog.requestDialogClose(settingsDialogEl);
+    // After the close transition, so the window is not competing with a dialog
+    // that is still animating out.
+    setTimeout(run, 180);
   }
 
   function notifySettingsChanged(key) {
@@ -61,6 +88,8 @@ const global = globalThis;
       p.resetBelugaPrefs();
       BelugaRun.setBelugaMode('stable');
 
+      p.resetHarpoonPrefs();
+
       p.resetReplPrefs();
 
       p.resetWorkspacePrefs();
@@ -72,6 +101,8 @@ const global = globalThis;
     Keybindings.resetAll();
     if (keybindingsApi) keybindingsApi.refresh();
     if (aliasesApi) aliasesApi.refresh();
+    syncFromState();
+    applyLiveSettings('settings-reset-all');
     if (global.Toasts && typeof global.Toasts.success === 'function') {
       global.Toasts.success('All settings reset.');
     }
@@ -89,6 +120,10 @@ const global = globalThis;
         else c.input.checked = c.read();
       }
     });
+    // The style can change from anywhere — `:set`, the palette, a settings
+    // import, another tab — so the nested group follows the STORED style here
+    // rather than only on the dropdown's own change handler.
+    if (typeof p.readStoredKeymapStyle === 'function') paintStyleRows(p.readStoredKeymapStyle());
   }
 
   function makeResetLink(onClick) {
@@ -115,6 +150,57 @@ const global = globalThis;
     var head = panel.querySelector('.bj-settings__panel-head');
     if (!head || !onReset) return;
     head.appendChild(makeResetLink(onReset));
+  }
+
+  /**
+   * A button in a panel's HEAD, beside Reset.
+   *
+   * ⛔ This is where a "go and look at something" action belongs — not in a
+   * settings row. A row with a View button reads as a setting whose control
+   * happens to be a button, and it is not: nothing about it is configured. The
+   * head is already the panel's action strip, and Reset established the
+   * vocabulary.
+   */
+  function addPanelHeadAction(panel, label, onClick) {
+    var head = panel.querySelector('.bj-settings__panel-head');
+    if (!head) return null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bj-settings__head-action';
+    btn.textContent = label;
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    // Before Reset, which stays the last thing in the row.
+    var reset = head.querySelector('.bj-settings__reset-link');
+    if (reset) head.insertBefore(btn, reset);
+    else head.appendChild(btn);
+    return btn;
+  }
+
+  /**
+   * Rows that belong TO a setting rather than beside it.
+   *
+   * The Vim options are not a peer section of the panel — they exist only
+   * because Editing style says Vim. Given their own heading they read as a
+   * standing part of the app that happens to be irrelevant right now, and under
+   * Standard they were three dead rows advertising a mode you are not in.
+   * Nested under the row that causes them, and hidden when it does not, they
+   * read as what they are.
+   *
+   * `data-section` is what settings search reports them under, so a leader-key
+   * hit still reads "Vim" — but only while Vim is the active style, because a
+   * search result you cannot act on is worse than no result.
+   */
+  function addSubordinateGroup(parent, section) {
+    var group = document.createElement('div');
+    group.className = 'bj-settings__substyle';
+    group.dataset.section = section;
+    group.hidden = true;
+    parent.appendChild(group);
+    return group;
   }
 
   function addActionRow(parent, labelText, descText, actionLabel, onClick) {
@@ -197,15 +283,60 @@ const global = globalThis;
     return { unit: unit, body: body };
   }
 
+  var KB_FILTER_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+
+  function activeEditingStyle() {
+    // Read Persist from the global, not the builder's local `p0` — this runs
+    // from `buildRow`, which is a different scope, and a swallowed
+    // ReferenceError here silently reports every style as Standard.
+    try {
+      var P = global.Persist;
+      return P && P.readStoredKeymapStyle ? P.readStoredKeymapStyle() : 'default';
+    } catch (_) {
+      return 'default';
+    }
+  }
+
   function mountKeybindingsSheet(body) {
     var root = document.createElement('div');
     root.className = 'bj-kb';
+
+    // The command catalogue is long enough that scrolling is not a way to find
+    // anything. Filtering hides rows rather than re-rendering, so an in-progress
+    // chord recording and every row's handlers survive it.
+    var filterBar = document.createElement('div');
+    filterBar.className = 'bj-kb__filter';
+    var filterIcon = document.createElement('span');
+    filterIcon.className = 'bj-kb__filter-icon';
+    filterIcon.innerHTML = KB_FILTER_ICON;
+    filterIcon.setAttribute('aria-hidden', 'true');
+    var filterInput = document.createElement('input');
+    filterInput.type = 'search';
+    filterInput.className = 'bj-kb__filter-input';
+    filterInput.placeholder = 'Filter by name or chord…';
+    filterInput.setAttribute('aria-label', 'Filter keybindings');
+    filterInput.autocomplete = 'off';
+    filterInput.spellcheck = false;
+    var filterCount = document.createElement('span');
+    filterCount.className = 'bj-kb__filter-count';
+    filterCount.setAttribute('aria-live', 'polite');
+    filterBar.appendChild(filterIcon);
+    filterBar.appendChild(filterInput);
+    filterBar.appendChild(filterCount);
 
     var list = document.createElement('div');
     list.className = 'bj-kb__list';
     list.setAttribute('role', 'list');
 
+    var noResults = document.createElement('p');
+    noResults.className = 'bj-settings__empty bj-kb__noresults';
+    noResults.textContent = 'No commands match.';
+    noResults.hidden = true;
+
+    root.appendChild(filterBar);
     root.appendChild(list);
+    root.appendChild(noResults);
     body.appendChild(root);
 
     var recordingChord = null;
@@ -366,6 +497,32 @@ const global = globalThis;
       title.textContent = cmd.title || cmd.id || '';
       main.appendChild(title);
 
+      // Tell the truth about the ACTIVE editing style: a chord Vim or Emacs has
+      // taken must not sit there implying it works — that lie is what this whole
+      // keymap effort started from.
+      //
+      // ⛔ It says so with a TAG beside the name, never a second line. A sentence
+      // under every other row is louder than the rows themselves, and this sheet
+      // is a list to scan. The chord column keeps BelJar's OWN binding, because
+      // unlike Available Macros this sheet is where you rebind it — so the tag is
+      // computed for THAT chord (no `showing`), and it reports the contest over
+      // the chord you are looking at: "Emacs uses Ctrl+F for forward-char."
+      var described = (typeof Commands !== 'undefined' && Commands.describe)
+        ? Commands.describe(cmd.id, { style: activeEditingStyle() })
+        : null;
+      if (described && described.shadow) {
+        var tag = document.createElement('span');
+        tag.className = 'bj-kb__tag';
+        tag.textContent = described.shadow.tag;
+        tag.setAttribute('data-tooltip', described.shadow.tip);
+        // `bindTooltips()` sweeps once at boot and is not delegated.
+        if (typeof Tooltips !== 'undefined' && Tooltips.bind) Tooltips.bind(tag);
+        main.appendChild(tag);
+        row.classList.add('bj-kb__row--shadowed');
+        row.dataset.shadowed = '1';
+        row.dataset.shadowKind = described.shadow.kind;
+      }
+
       var chord = document.createElement('button');
       chord.type = 'button';
       chord.className = 'bj-kb__chord';
@@ -442,6 +599,56 @@ const global = globalThis;
         }
         list.appendChild(buildRow(cmd));
       }
+      applyFilter();
+    }
+
+    function applyFilter() {
+      var q = String(filterInput.value || '').trim().toLowerCase();
+      var rows = list.querySelectorAll('.bj-kb__row');
+      var liveSections = Object.create(null);
+      var shown = 0;
+      var bound = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var chord = row.dataset.chord || '';
+        if (chord) bound += 1;
+        var hit = !q
+          || (row.dataset.title || '').indexOf(q) >= 0
+          || chord.indexOf(q) >= 0
+          || String(row.dataset.section || '').toLowerCase().indexOf(q) >= 0;
+        row.hidden = !hit;
+        if (!hit) continue;
+        shown += 1;
+        liveSections[row.dataset.section || ''] = true;
+      }
+      var heads = list.querySelectorAll('.bj-kb__section');
+      for (var h = 0; h < heads.length; h++) {
+        heads[h].hidden = !liveSections[heads[h].dataset.section || ''];
+      }
+      noResults.hidden = shown > 0 || !rows.length;
+      if (q) {
+        filterCount.textContent = shown + ' of ' + rows.length;
+      } else {
+        filterCount.textContent = rows.length + ' commands · ' + bound + ' bound';
+      }
+    }
+
+    filterInput.addEventListener('input', applyFilter);
+    filterInput.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !filterInput.value) return;
+      e.stopPropagation();
+      filterInput.value = '';
+      applyFilter();
+    });
+
+    // The settings-wide search scrolls to a row by id; a filter hiding that row
+    // would make the hit silently do nothing.
+    function revealCommand(id) {
+      if (filterInput.value) {
+        filterInput.value = '';
+        applyFilter();
+      }
+      return list.querySelector('.bj-kb__row[data-command-id="' + String(id).replace(/"/g, '') + '"]');
     }
 
     refresh();
@@ -449,6 +656,7 @@ const global = globalThis;
     return {
       refresh: refresh,
       clearRecording: clearRecording,
+      revealCommand: revealCommand,
     };
   }
 
@@ -753,12 +961,239 @@ const global = globalThis;
     return toggle.input;
   }
 
+  var BACKSLASH = String.fromCharCode(92);
+
+  var SETTING_INFO_SVG =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
+
+  /**
+   * What Emacs mode actually is on THIS machine. Chromium reserves Command on
+   * macOS and Control on Windows/Linux, and Emacs lives on Control — so one
+   * option means two different things, which is precisely what this setting
+   * used to hide. It reports now instead of selling.
+   */
+  /**
+   * ⛔ DERIVED, never written out again.
+   *
+   * This used to be a hand-typed sentence, and it drifted the moment the chord
+   * table was MEASURED: it went on naming Ctrl+L as reserved (it is not — recenter
+   * works), offering Alt+L as a substitute for it (nothing binds Alt+L), and
+   * offering Ctrl+Shift+W for kill-region — a chord that is itself reserved and
+   * could never be pressed, which is exactly the failure `reserved-chords.mjs`
+   * exists to prevent. Two of the three substitutes this panel promised were
+   * wrong, in the one place a user reads before choosing Emacs.
+   *
+   * `emacsFidelity()` computes the same sentence from the measured table. There
+   * is one source now, read late enough that the editor bundle is present.
+   */
+  function chordFacts() {
+    var E = typeof BelEditor !== 'undefined' ? BelEditor : null;
+    if (!E || typeof E.reservedChordFacts !== 'function') return null;
+    try {
+      return E.reservedChordFacts();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Every substitute the MEASURED table names, as one line.
+   *
+   * ⛔ Derived from the rows, never retyped. The hand-written version of this
+   * sentence named Ctrl+L as reserved (it is not), offered Alt+L for it (nothing
+   * binds Alt+L) and offered Ctrl+Shift+W for kill-region — itself reserved, so
+   * unpressable. Two of the three substitutes this panel promised were wrong, in
+   * the one place a user reads before choosing Emacs.
+   */
+  function reservedSubstituteLine(facts) {
+    var pairs = facts.rows
+      .filter(function (r) { return r.substitute && r.substitute !== '—'; })
+      .map(function (r) { return r.chord + ' → ' + r.substitute; });
+    return pairs.length ? 'BelJar remaps them: ' + pairs.join('; ') + '.' : '';
+  }
+
+  function fullKeyboardLine() {
+    var F = typeof FullKeyboard !== 'undefined' ? FullKeyboard : null;
+    if (F && F.isSupported && F.isSupported()) {
+      return 'Full keyboard runs BelJar fullscreen with Keyboard Lock, so Ctrl+W closes nothing. '
+        + 'Hold Esc to leave — it is in the command palette, or type :fullkeys.';
+    }
+    return 'This browser has no Keyboard Lock, so those chords stay with the browser.';
+  }
+
+  // ⛔ `paragraphs` is a FUNCTION, not an array. Half of what it returns is
+  // derived from the editor bundle's MEASURED chord table, and this object is
+  // built at module load — long before `BelEditor` exists. Evaluating it eagerly
+  // baked in the loading fallback forever.
+  //
+  // ⛔ This passage carries what used to be two settings rows. A row with a View
+  // button is not a setting, and "the browser takes four of your chords" is not
+  // something you configure — it is something you need to know before you pick
+  // Emacs, which is exactly here. So it is written here, once, derived.
+  var KEYMAP_STYLE_HELP = {
+    aria: 'Editing style details',
+    paragraphs: function () {
+      var facts = chordFacts();
+      var out = [
+        { head: 'Standard',
+          body: 'Plain BelJar. Chords in this panel do what you bind them to.' },
+        // ⛔ No key enumerations. The leader is CONFIGURABLE, so a sentence
+        // naming a backslash sequence is already wrong for anyone who picked
+        // comma, and every key spelled out is a second copy of a table that can
+        // rot. Available macros lists the live maps with the live leader.
+        { head: 'Vim',
+          body: 'Normal mode for motion and operators; :s, :g and / work as usual. BelJar adds '
+            + 'motions for holes, problems, declarations and case branches, plus a leader map, '
+            + ':set for preferences, and a declaration text object (dad deletes one declaration). '
+            + 'Mode and pending keys show in the status strip.' },
+        { head: 'Emacs',
+          body: 'Mark, kill and yank on Ctrl; motion on Ctrl+F/B/P. Ctrl+S is incremental search '
+            + 'in the status strip. Ctrl+S / Ctrl+R step; Escape restores the caret. C-x is '
+            + 'the usual map, C-c is BelJar’s prefix, M-x opens the command line.' },
+      ];
+      if (facts) {
+        var sub = reservedSubstituteLine(facts);
+        out.push({
+          head: 'Browser conflicts',
+          body: facts.fidelity.headline + ' ' + facts.fidelity.detail
+            + (sub ? ' ' + sub : ''),
+        });
+        out.push({ head: 'Full keyboard', body: fullKeyboardLine() });
+      } else {
+        out.push({
+          head: 'Browser conflicts',
+          body: 'Some chords never reach the page; which ones depends on your platform. '
+            + 'Available macros has the measured list.',
+        });
+      }
+      out.push({
+        head: 'In every style',
+        body: 'Escape still closes rename, autocomplete and sticky hover. Available macros '
+          + '(the button above) lists every key and :name you can type in the current style. '
+          + 'It ends with the chords this browser takes and what to press instead.',
+      });
+      return out;
+    },
+  };
+
+  function attachSettingInfoTooltip(btn, spec) {
+    if (!btn || !spec) return;
+    // Read when the popover opens, so a derived line reflects what is true then.
+    var readParagraphs = function () {
+      var p = spec.paragraphs;
+      return (typeof p === 'function' ? p() : p) || [];
+    };
+    var aria = spec.aria || 'More information';
+    btn.setAttribute('aria-label', aria);
+    // Modal <dialog> sits in the top layer — body-level #tooltip-root cannot paint over it.
+    var pop = null;
+    var hideTimer = null;
+
+    function hostEl() {
+      return btn.closest('dialog') || btn.closest('.bj-dialog__card') || document.body;
+    }
+
+    function ensurePop() {
+      if (pop) return pop;
+      pop = document.createElement('div');
+      pop.className = 'bj-setting-info-popover';
+      pop.setAttribute('role', 'tooltip');
+      pop.hidden = true;
+      // A paragraph is either a plain string or `{ head, body }`. Six plain
+      // paragraphs read as a wall; the same six under short heads read as a
+      // reference you can scan for the one you came for.
+      var paragraphs = readParagraphs();
+      for (var i = 0; i < paragraphs.length; i++) {
+        var item = paragraphs[i];
+        if (item && item.head) {
+          var h = document.createElement('p');
+          h.className = 'bj-setting-info-head';
+          h.textContent = item.head;
+          pop.appendChild(h);
+        }
+        var p = document.createElement('p');
+        p.className = 'bj-setting-info-tip';
+        p.textContent = item && item.body != null ? item.body : item;
+        pop.appendChild(p);
+      }
+      hostEl().appendChild(pop);
+      pop.addEventListener('mouseenter', function () { clearTimeout(hideTimer); });
+      pop.addEventListener('mouseleave', scheduleHide);
+      return pop;
+    }
+
+    function positionPop() {
+      var el = ensurePop();
+      el.hidden = false;
+      el.classList.remove('is-visible', 'tooltip-spout-left', 'tooltip-spout-right');
+      el.style.visibility = 'hidden';
+      el.style.left = '0';
+      el.style.top = '0';
+      var br = btn.getBoundingClientRect();
+      var gap = 6;
+      var pw = el.offsetWidth;
+      var ph = el.offsetHeight;
+      var left = br.right + gap;
+      var top = br.top + (br.height - ph) / 2;
+      var flipped = false;
+      if (left + pw > window.innerWidth - 12) {
+        left = br.left - gap - pw;
+        flipped = true;
+      }
+      if (top + ph > window.innerHeight - 12) top = window.innerHeight - 12 - ph;
+      if (top < 12) top = 12;
+      el.style.position = 'fixed';
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+      el.classList.add(flipped ? 'tooltip-spout-right' : 'tooltip-spout-left');
+      var anchorY = br.top + br.height / 2 - top;
+      anchorY = Math.max(10, Math.min(ph - 10, anchorY));
+      el.style.setProperty('--tooltip-arrow-y', anchorY + 'px');
+      el.style.visibility = '';
+      requestAnimationFrame(function () { el.classList.add('is-visible'); });
+    }
+
+    function show() {
+      clearTimeout(hideTimer);
+      positionPop();
+    }
+
+    function scheduleHide() {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(function () {
+        if (!pop) return;
+        pop.classList.remove('is-visible');
+        pop.hidden = true;
+      }, 120);
+    }
+
+    btn.addEventListener('mouseenter', show);
+    btn.addEventListener('mouseleave', scheduleHide);
+    btn.addEventListener('focusin', show);
+    btn.addEventListener('focusout', scheduleHide);
+  }
+
   function ensureSettingsDialog() {
     if (settingsDialogEl) return settingsDialogEl;
 
     var p0 = persist();
 
-    function addDropdownRow(parent, id, labelText, descText, options, readFn, writeFn) {
+    /**
+     * Gesture targets as dropdown options. An id the catalogue has dropped
+     * simply disappears from the list rather than showing an empty label.
+     */
+    function gestureTargetOptions() {
+      var ids = (typeof DoubleTap !== 'undefined' && DoubleTap.targets)
+        ? DoubleTap.targets() : ['tools.palette'];
+      var out = [];
+      for (var i = 0; i < ids.length; i++) {
+        var cmd = (typeof Commands !== 'undefined' && Commands.get) ? Commands.get(ids[i]) : null;
+        if (cmd) out.push({ value: cmd.id, label: cmd.title });
+      }
+      return out.length ? out : [{ value: 'tools.palette', label: 'Open Command Palette' }];
+    }
+
+    function addDropdownRow(parent, id, labelText, descText, options, readFn, writeFn, infoSpec) {
       var r = document.createElement('div');
       r.className = 'bj-dialog__setting';
       var m = document.createElement('div');
@@ -769,7 +1204,20 @@ const global = globalThis;
       var dsc = document.createElement('span');
       dsc.className = 'bj-dialog__setting-desc';
       dsc.textContent = descText;
-      m.appendChild(lbl);
+      if (infoSpec) {
+        var labelRow = document.createElement('div');
+        labelRow.className = 'bj-dialog__setting-label-row';
+        labelRow.appendChild(lbl);
+        var infoBtn = document.createElement('button');
+        infoBtn.type = 'button';
+        infoBtn.className = 'bj-setting-info';
+        infoBtn.innerHTML = SETTING_INFO_SVG;
+        attachSettingInfoTooltip(infoBtn, infoSpec);
+        labelRow.appendChild(infoBtn);
+        m.appendChild(labelRow);
+      } else {
+        m.appendChild(lbl);
+      }
       m.appendChild(dsc);
       var dd = Dropdown.create(options, readFn(), function (v) {
         writePersist(id, function (p) { writeFn(p, v); });
@@ -799,8 +1247,9 @@ const global = globalThis;
     var categories = [
       { id: 'appearance', label: 'Appearance' },
       { id: 'editor', label: 'Editor' },
-      { id: 'keybindings', label: 'Keybindings' },
+      { id: 'keybindings', label: 'Keys' },
       { id: 'beluga', label: 'Beluga' },
+      { id: 'harpoon', label: 'Harpoon' },
       { id: 'repl', label: 'REPL' },
       { id: 'workspace', label: 'Workspace' },
       { id: 'aliases', label: 'Aliases' },
@@ -901,7 +1350,14 @@ const global = globalThis;
     resetAllBtn.addEventListener('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
-      resetAllSettings();
+      if (typeof closeSettingsSearch === 'function') closeSettingsSearch(true);
+      ConfirmDialog.confirm({
+        message: 'Reset all settings to defaults?',
+        confirmLabel: 'Reset all',
+        ariaLabel: 'Reset all settings',
+      }).then(function (ok) {
+        if (ok) resetAllSettings();
+      });
     });
     navFoot.appendChild(resetAllBtn);
     nav.appendChild(navFoot);
@@ -927,13 +1383,28 @@ const global = globalThis;
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function () {
       Keybindings.resetAll();
       if (keybindingsApi) keybindingsApi.refresh();
+      syncFromState();
+      applyLiveSettings('keybindings-reset');
+      postSettingsApply('keybindings-reset');
     });
+    // "What can I press right now" belongs in the panel's action strip beside
+    // Reset — it is a thing you go and look at, not a thing you configure.
+    addPanelHeadAction(main.querySelector('[data-category="keybindings"]'),
+      'Available macros', function () {
+        leaveSettingsAnd(function () {
+          if (typeof AvailableMacros !== 'undefined') AvailableMacros.open();
+        });
+      });
 
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function () {
       runCategoryReset(function (p) {
         p.resetBelugaPrefs();
         BelugaRun.setBelugaMode('stable');
       }, 'beluga-reset');
+    });
+
+    attachPanelReset(main.querySelector('[data-category="harpoon"]'), function () {
+      runCategoryReset(function (p) { p.resetHarpoonPrefs(); }, 'harpoon-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="repl"]'), function () {
@@ -1051,17 +1522,17 @@ const global = globalThis;
         if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
       }
     );
-    addDropdownRow(panelBodies.editor, 'editor-font-size', 'Font size', '',
+    addDropdownRow(panelBodies.editor, 'editor-font-size', 'Font size', 'Size of code in the editor. Independent of UI font size.',
       [
-        { value: 'sm', label: 'Small (12px)' },
-        { value: 'md', label: 'Default (13px)' },
-        { value: 'lg', label: 'Large (14px)' },
-        { value: 'xl', label: 'Larger (16px)' },
+        { value: 'sm', label: 'Small' },
+        { value: 'md', label: 'Default' },
+        { value: 'lg', label: 'Large' },
+        { value: 'xl', label: 'Larger' },
       ],
       function () { return p0 ? p0.readStoredEditorFontSize() : 'md'; },
       function (p, v) { p.writeStoredEditorFontSize(v); }
     );
-    addDropdownRow(panelBodies.editor, 'editor-line-height', 'Line height', '',
+    addDropdownRow(panelBodies.editor, 'editor-line-height', 'Line height', 'Spacing between editor lines.',
       [
         { value: 'compact', label: 'Compact' },
         { value: 'normal', label: 'Default' },
@@ -1074,7 +1545,7 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredEditorWordWrap() : false; },
       function (p, on) { p.writeStoredEditorWordWrap(on); }
     );
-    addDropdownRow(panelBodies.editor, 'editor-cursor-blink', 'Cursor blink', '',
+    addDropdownRow(panelBodies.editor, 'editor-cursor-blink', 'Cursor blink', 'How the insertion caret flashes.',
       [
         { value: 'blink', label: 'Blink' },
         { value: 'fast', label: 'Fast' },
@@ -1087,9 +1558,9 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredEditorScrollPastEnd() : true; },
       function (p, on) { p.writeStoredEditorScrollPastEnd(on); }
     );
-    addDropdownRow(panelBodies.editor, 'editor-whitespace', 'Show whitespace', '',
+    addDropdownRow(panelBodies.editor, 'editor-whitespace', 'Show whitespace', 'Where to mark spaces and tabs.',
       [
-        { value: 'none', label: 'Nowhere' },
+        { value: 'none', label: 'Off' },
         { value: 'trailing', label: 'Trailing only' },
         { value: 'selection', label: 'In selection' },
         { value: 'all', label: 'All' },
@@ -1118,7 +1589,7 @@ const global = globalThis;
       function () { return p0 ? String(p0.readStoredAutosaveDelay()) : '320'; },
       function (p, v) { p.writeStoredAutosaveDelay(parseInt(v, 10)); }
     );
-    addDropdownRow(panelBodies.editor, 'editor-format-width', 'Format print width', 'Max width for Alt+Shift+F.',
+    addDropdownRow(panelBodies.editor, 'editor-format-width', 'Format print width', 'Max line width for Format Document.',
       [
         { value: '80', label: '80 columns' },
         { value: '100', label: '100 columns' },
@@ -1137,7 +1608,7 @@ const global = globalThis;
       function (p, on) { p.writeStoredCfgAutoSync(on); }
     );
     addSwitchRow(panelBodies.editor, 'format-on-save', 'Format on save',
-      'Run Alt+Shift+F formatting when auto-save flushes a .bel file.',
+      'Run Format Document when auto-save flushes a .bel file.',
       function () { return p0 ? p0.readStoredFormatOnSave() : false; },
       function (p, on) { p.writeStoredFormatOnSave(on); }
     );
@@ -1180,14 +1651,14 @@ const global = globalThis;
     addDropdownRow(panelBodies.editor, 'editor-autocomplete-trigger', 'Autocomplete',
       'When the completion popup opens. Show Autocomplete still opens it explicitly.',
       [
-        { value: 'none', label: 'Nowhere' },
+        { value: 'none', label: 'Off' },
         { value: 'typing', label: 'Only after keystroke' },
         { value: 'always', label: 'Always at token end' },
       ],
       function () { return p0 ? p0.readStoredEditorAutocompleteTrigger() : 'typing'; },
       function (p, v) { p.writeStoredEditorAutocompleteTrigger(v); }
     );
-    addSwitchRow(panelBodies.editor, 'editor-autocomplete-continue', 'Continue after accept',
+    addSwitchRow(panelBodies.editor, 'editor-autocomplete-continue', 'Continue suggesting after accept',
       'Keep showing completions after Tab or click when more options remain.',
       function () { return p0 ? p0.readStoredEditorAutocompleteContinue() : false; },
       function (p, on) { p.writeStoredEditorAutocompleteContinue(on); }
@@ -1197,7 +1668,7 @@ const global = globalThis;
       [
         { value: 'all', label: 'All symbols' },
         { value: 'user-only', label: 'Identifiers only' },
-        { value: 'none', label: 'Nowhere' },
+        { value: 'none', label: 'Off' },
       ],
       function () { return p0 ? p0.readStoredHoverScope() : 'all'; },
       function (p, v) { p.writeStoredHoverScope(v); }
@@ -1208,7 +1679,7 @@ const global = globalThis;
       function (p, on) { p.writeStoredHoverSticky(on); }
     );
     addSwitchRow(panelBodies.editor, 'quiet-while-typing', 'Quiet while typing',
-      'Hold hover, occurrence highlight, and auto-complete until checking settles. Explicit Ctrl+Space still works.',
+      'Hold hover, occurrence highlight, and auto-complete until checking settles. Show Autocomplete still works.',
       function () { return p0 ? p0.readStoredQuietWhileTyping() : false; },
       function (p, on) { p.writeStoredQuietWhileTyping(on); }
     );
@@ -1219,6 +1690,16 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredEditorLineNumbers() : true; },
       function (p, on) { p.writeStoredEditorLineNumbers(on); }
     );
+    addDropdownRow(panelBodies.editor, 'editor-line-number-style', 'Line number style',
+      'Relative numbers count out from the cursor, so a Vim count like 5j can be read off the gutter.',
+      [
+        { value: 'absolute', label: 'Absolute' },
+        { value: 'relative', label: 'Relative' },
+        { value: 'hybrid', label: 'Relative + current line' },
+      ],
+      function () { return p0 && p0.readStoredEditorLineNumberMode ? p0.readStoredEditorLineNumberMode() : 'absolute'; },
+      function (p, v) { if (p.writeStoredEditorLineNumberMode) p.writeStoredEditorLineNumberMode(v); }
+    );
     addSwitchRow(panelBodies.editor, 'editor-fold-gutter', 'Code folding', 'Fold markers in the gutter.',
       function () { return p0 ? p0.readStoredEditorFoldGutter() : true; },
       function (p, on) { p.writeStoredEditorFoldGutter(on); }
@@ -1227,7 +1708,7 @@ const global = globalThis;
       [
         { value: 'none', label: 'Don\'t remember' },
         { value: 'session', label: 'This session' },
-        { value: 'local', label: 'Always (local)' },
+        { value: 'local', label: 'Always' },
       ],
       function () { return p0 ? p0.readStoredEditorFoldPersist() : 'session'; },
       function (p, v) { p.writeStoredEditorFoldPersist(v); }
@@ -1247,7 +1728,7 @@ const global = globalThis;
         { value: 'both', label: 'Underlines and gutter' },
         { value: 'underlines', label: 'Underlines only' },
         { value: 'gutter', label: 'Gutter only' },
-        { value: 'none', label: 'Nowhere' },
+        { value: 'none', label: 'Off' },
       ],
       function () { return p0 ? p0.readStoredDiagPresentation() : 'both'; },
       function (p, v) { p.writeStoredDiagPresentation(v); }
@@ -1275,6 +1756,121 @@ const global = globalThis;
     );
 
     // Keybindings
+    //
+    // ⛔ The style's own options are SUBORDINATE to the style row, not a section
+    // beside it. They exist only because Editing style says Vim; given their own
+    // heading they read as a standing part of the app that happens to be
+    // irrelevant, and under Standard they were three dead rows advertising a
+    // mode you are not in. `paintStyleRows()` shows exactly one group, indented
+    // under the row that causes it, and nothing at all under Standard.
+    addDropdownRow(panelBodies.keybindings, 'keymap-style', 'Editing style',
+      'Vim, Emacs, or standard editing in the main editor.',
+      [
+        { value: 'default', label: 'Standard' },
+        { value: 'vim', label: 'Vim' },
+        { value: 'emacs', label: 'Emacs' },
+      ],
+      function () { return p0 && typeof p0.readStoredKeymapStyle === 'function' ? p0.readStoredKeymapStyle() : 'default'; },
+      function (p, v) {
+        if (typeof p.writeStoredKeymapStyle === 'function') p.writeStoredKeymapStyle(v);
+        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+        if (typeof BelEditor !== 'undefined' && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
+        // The per-row "live in this style" notes are style-dependent.
+        if (keybindingsApi && keybindingsApi.refresh) keybindingsApi.refresh();
+        paintStyleRows(v);
+      },
+      KEYMAP_STYLE_HELP
+    );
+
+    // ⛔ `applyModalPrefs()` after every write below. Vim's maps are installed
+    // once per PAGE, not per editor, and the style compartment is rebuilt only
+    // when the STYLE changes — so without this the leader dropdown wrote a
+    // preference nothing read until reload, while which-key immediately started
+    // advertising the new leader. The setting and the keymap disagreed, silently.
+    var applyModal = function () {
+      if (typeof BelEditor !== 'undefined' && BelEditor.applyModalPrefs) BelEditor.applyModalPrefs();
+    };
+    var vimGroup = addSubordinateGroup(panelBodies.keybindings, 'Vim');
+    addDropdownRow(vimGroup, 'vim-leader', 'Leader key',
+      'Prefix for BelJar shortcuts in Normal mode. Press it and pause to see what follows.',
+      [
+        { value: BACKSLASH, label: 'Backslash  ' + BACKSLASH },
+        { value: ',', label: 'Comma  ,' },
+        { value: ' ', label: 'Space' },
+      ],
+      function () { return p0 && p0.readStoredVimLeader ? p0.readStoredVimLeader() : BACKSLASH; },
+      function (p, v) { if (p.writeStoredVimLeader) p.writeStoredVimLeader(v); applyModal(); }
+    );
+    addSwitchRow(vimGroup, 'vim-yank-clipboard', 'Yank to system clipboard',
+      'Copying with y also puts the text on the system clipboard. Pasting is unaffected.',
+      function () { return p0 && p0.readStoredVimYankClipboard ? p0.readStoredVimYankClipboard() : false; },
+      function (p, on) { if (p.writeStoredVimYankClipboard) p.writeStoredVimYankClipboard(on); }
+    );
+    addDropdownRow(vimGroup, 'vim-insert-escape', 'Leave Insert with',
+      'A two-key sequence that acts as Escape while typing.',
+      [
+        { value: '', label: 'Escape only' },
+        { value: 'jk', label: 'jk' },
+        { value: 'jj', label: 'jj' },
+        { value: 'kj', label: 'kj' },
+      ],
+      function () { return p0 && p0.readStoredVimInsertEscape ? p0.readStoredVimInsertEscape() : ''; },
+      function (p, v) { if (p.writeStoredVimInsertEscape) p.writeStoredVimInsertEscape(v); applyModal(); }
+    );
+
+    // Emacs has no preference worth inventing, and a group with nothing in it is
+    // not a gap to fill — Emacs is modeless by design. What it costs you on this
+    // platform is a FACT about the browser, not a setting, so it lives in the
+    // Editing style passage with everything else you read before choosing.
+    styleGroups = { vim: vimGroup };
+    paintStyleRows(p0 && p0.readStoredKeymapStyle ? p0.readStoredKeymapStyle() : 'default');
+
+    addDropdownRow(panelBodies.keybindings, 'status-strip', 'Status strip',
+      'Goal at the caret, holes left, problems, checker state.',
+      [
+        { value: 'standard', label: 'Standard' },
+        { value: 'compact', label: 'Compact' },
+        { value: 'detailed', label: 'Detailed' },
+        { value: 'off', label: 'Off' },
+      ],
+      function () {
+        return StatusStrip.storedMode();
+      },
+      function (p, v) {
+        if (typeof p.writeStoredStatusStrip === 'function') p.writeStoredStatusStrip(v);
+        StatusStrip.apply();
+      }
+    );
+    addSectionHead(panelBodies.keybindings, 'Gestures');
+    addDropdownRow(panelBodies.keybindings, 'double-tap', 'Double-tap a modifier',
+      'Tap it twice quickly to run a command. A key pressed between the taps cancels it.',
+      [
+        { value: 'off', label: 'Off' },
+        { value: 'shift', label: 'Shift Shift' },
+        { value: 'control', label: 'Ctrl Ctrl' },
+        { value: 'alt', label: 'Alt Alt' },
+      ],
+      function () { return p0 && p0.readStoredDoubleTapTrigger ? p0.readStoredDoubleTapTrigger() : 'off'; },
+      function (p, v) { if (p.writeStoredDoubleTapTrigger) p.writeStoredDoubleTapTrigger(v); }
+    );
+    // Options come from the registry, so a row can never name a command that
+    // does not exist and the label is the command's own title.
+    addDropdownRow(panelBodies.keybindings, 'double-tap-command', 'Double-tap command',
+      'What the two taps run.',
+      gestureTargetOptions(),
+      function () { return p0 && p0.readStoredDoubleTapCommand ? p0.readStoredDoubleTapCommand() : 'tools.palette'; },
+      function (p, v) { if (p.writeStoredDoubleTapCommand) p.writeStoredDoubleTapCommand(v); }
+    );
+    addDropdownRow(panelBodies.keybindings, 'double-tap-speed', 'Double-tap speed',
+      'How close together the two taps must be.',
+      [
+        { value: 'fast', label: 'Fast  250ms' },
+        { value: 'normal', label: 'Normal  350ms' },
+        { value: 'relaxed', label: 'Relaxed  500ms' },
+      ],
+      function () { return p0 && p0.readStoredDoubleTapSpeed ? p0.readStoredDoubleTapSpeed() : 'normal'; },
+      function (p, v) { if (p.writeStoredDoubleTapSpeed) p.writeStoredDoubleTapSpeed(v); }
+    );
     var kbUnit = addEditorUnit(panelBodies.keybindings, {
       kind: 'kb',
       searchText: 'Customize keybindings Remap commands and chords',
@@ -1292,18 +1888,18 @@ const global = globalThis;
         BelugaRun.setBelugaMode(m);
       }
     );
-    addSwitchRow(panelBodies.beluga, 'beluga-fallback-stable', 'Retry with Stable on stack overflow',
-      'Fall back to Stable if Fast overflows the stack.',
+    addSwitchRow(panelBodies.beluga, 'beluga-fallback-stable', 'Retry with Stable if Fast fails',
+      'If a Fast run crashes, retry on the Stable worker.',
       function () { return p0 ? p0.readStoredBelugaFallbackStable() : true; },
       function (p, on) { p.writeStoredBelugaFallbackStable(on); }
     );
     addSwitchRow(panelBodies.beluga, 'beluga-cancel-on-edit', 'Cancel load on edit',
-      'Abort a pending load when the buffer changes.',
+      'Abort a pending Run/Load when the buffer changes.',
       function () { return p0 ? p0.readStoredBelugaCancelOnEdit() : true; },
       function (p, on) { p.writeStoredBelugaCancelOnEdit(on); }
     );
     addDropdownRow(panelBodies.beluga, 'check-aggressiveness', 'Check aggressiveness',
-      'How quickly background checking settles after edits. Modes only — not raw timers.',
+      'How quickly background checking settles after edits.',
       [
         { value: 'responsive', label: 'Responsive' },
         { value: 'balanced', label: 'Balanced' },
@@ -1313,7 +1909,7 @@ const global = globalThis;
       function (p, v) { p.writeStoredCheckAggressiveness(v); }
     );
     addDropdownRow(panelBodies.beluga, 'suite-check', 'Suite check',
-      'Settlement always checks the active file (with prelude). Suite mode also type-checks sibling files for explorer/inspector health.',
+      'Settlement always checks the active file (with prelude). Suite mode also type-checks sibling files.',
       [
         { value: 'suite', label: 'Active + suite' },
         { value: 'active', label: 'Active file only' },
@@ -1321,26 +1917,28 @@ const global = globalThis;
       function () { return p0 ? p0.readStoredSuiteCheck() : 'suite'; },
       function (p, v) { p.writeStoredSuiteCheck(v); }
     );
-    addSectionHead(panelBodies.beluga, 'Autosolve');
-    addDropdownRow(panelBodies.beluga, 'harpoon-mode', 'Harpoon opens in',
-      'Manual lets you pick each tactic yourself, with Brutus (the search) one click away. '
-      + 'Brutus starts searching immediately.',
-      [{ value: 'manual', label: 'Manual' }, { value: 'brutus', label: 'Brutus' }],
+    addDropdownRow(
+      panelBodies.harpoon,
+      'harpoon-mode',
+      'Harpoon opens in',
+      'Manual lets you pick each tactic yourself, with Orca (the search) one click away. '
+      + 'Orca starts searching immediately.',
+      [{ value: 'manual', label: 'Manual' }, { value: 'orca', label: 'Orca' }],
       function () { return p0 ? p0.readStoredHarpoonMode() : 'manual'; },
       function (p, v) { p.writeStoredHarpoonMode(v); }
     );
-    addSwitchRow(panelBodies.beluga, 'harpoon-verify-moves', 'Pre-verify offered tactics',
+    addSwitchRow(panelBodies.harpoon, 'harpoon-verify-moves', 'Pre-verify offered tactics',
       'Check the top tactics against Beluga in the background so each shows whether it holds '
       + 'before you pick it. Costs a few checker calls per goal.',
       function () { return p0 ? p0.readStoredHarpoonVerifyMoves() : true; },
       function (p, on) { p.writeStoredHarpoonVerifyMoves(on); }
     );
-    addSwitchRow(panelBodies.beluga, 'autosolve-focus-next', 'Focus next hole after place',
+    addSwitchRow(panelBodies.harpoon, 'autosolve-focus-next', 'Focus next hole after place',
       'After placing a solved proof, jump the editor to the next open hole.',
       function () { return p0 ? p0.readStoredAutosolveFocusNext() : true; },
       function (p, on) { p.writeStoredAutosolveFocusNext(on); }
     );
-    addSwitchRow(panelBodies.beluga, 'autosolve-show-stats', 'Show checker call counts',
+    addSwitchRow(panelBodies.harpoon, 'autosolve-show-stats', 'Show checker call counts',
       'Show how many Beluga certifies ran per hole in the proof tree.',
       function () { return p0 ? p0.readStoredAutosolveShowStats() : true; },
       function (p, on) { p.writeStoredAutosolveShowStats(on); }
@@ -1354,14 +1952,14 @@ const global = globalThis;
     addDropdownRow(panelBodies.repl, 'repl-autocomplete-trigger', 'Autocomplete',
       'When the completion popup opens. Show Autocomplete still opens it explicitly.',
       [
-        { value: 'none', label: 'Nowhere' },
+        { value: 'none', label: 'Off' },
         { value: 'typing', label: 'Only after keystroke' },
         { value: 'always', label: 'Always at token end' },
       ],
       function () { return p0 ? p0.readStoredReplAutocompleteTrigger() : 'typing'; },
       function (p, v) { p.writeStoredReplAutocompleteTrigger(v); }
     );
-    addSwitchRow(panelBodies.repl, 'repl-autocomplete-continue', 'Continue after accept',
+    addSwitchRow(panelBodies.repl, 'repl-autocomplete-continue', 'Continue suggesting after accept',
       'Keep showing completions after Tab or click when more options remain.',
       function () { return p0 ? p0.readStoredReplAutocompleteContinue() : false; },
       function (p, on) { p.writeStoredReplAutocompleteContinue(on); }
@@ -1384,10 +1982,10 @@ const global = globalThis;
       function (p, on) { p.writeStoredReplHoverTimestamp(on); }
     );
     addDropdownRow(panelBodies.repl, 'repl-history-persist', 'Remember history',
-      'Transcript and ↑/↓ commands: this session (sessionStorage), until reset (localStorage), or never.',
+      'Transcript and \u2191/\u2193 commands: this tab, across reloads, or never.',
       [
-        { value: 'session', label: 'Across sessions' },
-        { value: 'local', label: 'Until reset' },
+        { value: 'session', label: 'This session' },
+        { value: 'local', label: 'Across sessions' },
         { value: 'none', label: 'Never' },
       ],
       function () { return p0 ? p0.readStoredReplHistoryPersist() : 'local'; },
@@ -1430,17 +2028,23 @@ const global = globalThis;
       'Reset split panes and side panel sizes.',
       'Reset',
       function () {
-        if (!persist()) return;
-        persist().resetLayoutPrefs();
-        postSettingsApply('layout-reset');
-        if (typeof global.location !== 'undefined') global.location.reload();
+        ConfirmDialog.confirm({
+          message: 'Reset split panes and side panel sizes? The page will reload.',
+          confirmLabel: 'Reset',
+          ariaLabel: 'Reset panel layout',
+        }).then(function (ok) {
+          if (!ok || !persist()) return;
+          persist().resetLayoutPrefs();
+          postSettingsApply('layout-reset');
+          if (typeof global.location !== 'undefined') global.location.reload();
+        });
       }
     );
 
     addActionRow(
       panelBodies.workspace,
       'Export settings',
-      'Download editor, appearance, keybindings, and aliases as JSON.',
+      'Download appearance, editor, keybindings, aliases, and other prefs as JSON.',
       'Export\u2026',
       function () {
         var p = persist();
@@ -1487,6 +2091,8 @@ const global = globalThis;
                 document.documentElement.classList.toggle('light', p.readStoredTheme() === 'light');
               }
               syncFromState();
+              if (keybindingsApi) keybindingsApi.refresh();
+              if (aliasesApi) aliasesApi.refresh();
               applyLiveSettings('settings-import');
               postSettingsApply('settings-import');
               if (global.Toasts && global.Toasts.success) {
@@ -1632,50 +2238,69 @@ const global = globalThis;
         var body = panelBodies[cat.id];
         if (!body) return;
         var section = '';
+        // A subordinate group's rows are indexed under the STYLE that owns them
+        // ("Leader key" reads as Vim, not as Keys) — and only while that group is
+        // showing. A search result you cannot act on is worse than no result:
+        // under Standard there is no leader row to jump to.
+        var scan = [];
         Array.prototype.forEach.call(body.children, function (el) {
-          if (el.classList.contains('bj-settings__section-head')) {
+          if (el.classList.contains('bj-settings__substyle')) {
+            if (el.hidden) return;
+            var owner = el.dataset.section || '';
+            Array.prototype.forEach.call(el.children, function (sub) {
+              scan.push({ el: sub, section: owner });
+            });
+            return;
+          }
+          scan.push({ el: el, section: null });
+        });
+        scan.forEach(function (entry) {
+          var el = entry.el;
+          if (entry.section === null && el.classList.contains('bj-settings__section-head')) {
             section = String(el.textContent || '').trim();
             return;
           }
           if (el.classList.contains('bj-settings__unit')) return;
           if (!el.classList.contains('bj-dialog__setting')) return;
+          // ⛔ A group's own section must not leak past it. `section` is the
+          // running head; a grouped row overrides it for ITSELF only, or the
+          // Status strip row that follows the Vim group would report as Vim.
+          var rowSection = entry.section === null ? section : entry.section;
           var titleEl = el.querySelector('.bj-dialog__setting-label');
           var descEl = el.querySelector('.bj-dialog__setting-desc');
           var title = titleEl ? String(titleEl.textContent || '') : '';
           var desc = descEl ? String(descEl.textContent || '') : '';
-          var hay = (title + ' ' + desc + ' ' + section + ' ' + cat.label).replace(/\s+/g, ' ').toLowerCase();
+          var hay = (title + ' ' + desc + ' ' + rowSection + ' ' + cat.label).replace(/\s+/g, ' ').toLowerCase();
           if (hay.indexOf(q) < 0) return;
           hits.push({
             kind: 'setting',
             categoryId: cat.id,
             title: title,
-            meta: section || cat.label,
+            meta: rowSection || cat.label,
             el: el,
             rank: hitRank(title, q),
           });
         });
       });
 
-      if (activeCategory === 'keybindings') {
-        var K = Keybindings;
-        var cmds = K && typeof K.list === 'function' ? K.list() : [];
-        cmds.forEach(function (cmd) {
-          var title = cmd.title || cmd.id || '';
-          var section = cmd.section || '';
-          var hay = (title + ' ' + section).toLowerCase();
-          if (hay.indexOf(q) < 0) return;
-          hits.push({
-            kind: 'command',
-            categoryId: 'keybindings',
-            title: title,
-            meta: 'Keybindings',
-            id: cmd.id,
-            rank: hitRank(title, q),
-          });
+      var K = Keybindings;
+      var cmds = K && typeof K.list === 'function' ? K.list() : [];
+      cmds.forEach(function (cmd) {
+        var title = cmd.title || cmd.id || '';
+        var section = cmd.section || '';
+        var hay = (title + ' ' + section).toLowerCase();
+        if (hay.indexOf(q) < 0) return;
+        hits.push({
+          kind: 'command',
+          categoryId: 'keybindings',
+          title: title,
+          meta: 'Keybindings',
+          id: cmd.id,
+          rank: hitRank(title, q),
         });
-      }
+      });
 
-      if (activeCategory === 'aliases' && aliasesApi && typeof aliasesApi.list === 'function') {
+      if (aliasesApi && typeof aliasesApi.list === 'function') {
         aliasesApi.list().forEach(function (pair) {
           var from = String(pair.from || '');
           var to = String(pair.to || '');
@@ -1727,7 +2352,9 @@ const global = globalThis;
         if (hit.kind === 'setting') {
           target = hit.el;
         } else if (hit.kind === 'command' && hit.id) {
-          target = main.querySelector('.bj-kb__row[data-command-id="' + String(hit.id).replace(/"/g, '') + '"]');
+          target = keybindingsApi && typeof keybindingsApi.revealCommand === 'function'
+            ? keybindingsApi.revealCommand(hit.id)
+            : main.querySelector('.bj-kb__row[data-command-id="' + String(hit.id).replace(/"/g, '') + '"]');
         } else if (hit.kind === 'alias' && hit.rowId != null) {
           target = main.querySelector('.bj-alias__row[data-row-id="' + String(hit.rowId).replace(/"/g, '') + '"]');
         }
@@ -1854,6 +2481,9 @@ const global = globalThis;
     ensureSettingsDialog();
     if (typeof closeSettingsSearch === 'function') closeSettingsSearch(true);
     syncFromState();
+    // The chord rows carry per-style notes, so they are only right for the
+    // style in force at render time. Rebuild on every open.
+    if (keybindingsApi && typeof keybindingsApi.refresh === 'function') keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
   }
 

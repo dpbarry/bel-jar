@@ -3,7 +3,10 @@
 // exercised against a minimal fake EditorView (it only needs doc.sliceString +
 // dispatch + indentRange-tolerant state), so we test parseDecl + buildProofProgram
 // directly and commit's text construction via a stub.
-import { parseDecl, buildProofProgram } from '../js/editor-src/harpoon/harpoon-program.mjs';
+import {
+  parseDecl, buildProofProgram, locateMember, committedMemberText, listCompMembers,
+} from '../js/editor-src/harpoon/harpoon-program.mjs';
+import { memberSpanInText } from '../js/editor-src/harpoon/scan-file-holes.mjs';
 import { theoremUnderProof } from '../js/editor-src/prover/prover-hyp.mjs';
 
 let n = 0;
@@ -67,5 +70,60 @@ expect(qLine[built.col - 1] === '?', `reported (line ${built.line}, col ${built.
 
 // The LF prelude is preserved ahead of the proof.
 expect(built.code.startsWith('LF nat : type ='), 'prelude preserved before proof');
+
+// --- mutual `and` members ---------------------------------------------------
+const andG = parseDecl('and g : [ |- tp] =\n?\n');
+expect(andG && andG.kw === 'rec' && andG.leader === 'and', 'parses and-member leader');
+eq(andG.name, 'g', 'and-member name');
+eq(andG.type, '[ |- tp]', 'and-member type');
+
+const andRecG = parseDecl('and rec h : [ |- tp] -> [ |- tp] =\nfn x => ?');
+expect(andRecG && andRecG.leader === 'and rec' && andRecG.name === 'h', 'parses and rec member');
+
+const andThm = theoremUnderProof('and g : [ |- tp] =\n?\n;');
+expect(andThm && andThm.name === 'g', 'theoremUnderProof reads and-member');
+
+const mutual = [
+  'LF nat : type =',
+  '| z : nat',
+  ';',
+  'rec f : [ |- nat] = [ |- z]',
+  'and g : [ |- nat] = ?',
+  ';',
+].join('\n');
+const locG = locateMember(mutual, 'g');
+expect(locG && mutual.slice(locG.from, locG.to).startsWith('and g'), 'locateMember finds and g');
+expect(mutual.slice(locG.from, locG.to).indexOf('rec f') < 0, 'member span excludes sibling f');
+expect(mutual.slice(locG.blockFrom, locG.blockTo).includes('rec f')
+  && mutual.slice(locG.blockFrom, locG.blockTo).includes('and g'),
+  'block span keeps both members');
+
+const locF = locateMember(mutual, 'f');
+const builtF = buildProofProgram(mutual, locF.from, locF.to);
+expect(builtF && /rec f : \[ \|- nat\] =/.test(builtF.code), 'mutual head stays rec (not proof)');
+expect(builtF.code.includes('and g'), 'masking f keeps sibling g');
+expect(!/proof f/.test(builtF.code), 'does not rewrite mutual head to proof');
+expect(!/\?and/.test(builtF.code), 'masked hole is not glued to the next member');
+
+const builtG = buildProofProgram(mutual, locG.from, locG.to);
+expect(builtG && /and g : \[ \|- nat\] =/.test(builtG.code), 'and-member stays and');
+expect(/rec f : \[ \|- nat\] = \[ \|- z\]/.test(builtG.code), 'masking g keeps sibling f complete');
+
+const qOff = mutual.indexOf('?');
+const memSpan = memberSpanInText(mutual, qOff);
+expect(memSpan && mutual.slice(memSpan.from, memSpan.to).trimStart().startsWith('and g'),
+  'memberSpanInText at g\'s hole is the g clause');
+
+const commitAnd = committedMemberText(andG, '[ |- z]', false);
+expect(commitAnd.startsWith('and g :'), 'commit keeps and leader');
+expect(!/;/.test(commitAnd), 'non-last member commit has no semicolon');
+
+const commitHead = committedMemberText(parseDecl('rec f : [ |- tp] = ?'), '[ |- z]', false);
+expect(commitHead.startsWith('rec f :') && !/;/.test(commitHead),
+  'mutual-head commit is rec without semicolon');
+
+const members = listCompMembers(mutual);
+expect(members.some((m) => m.name === 'f') && members.some((m) => m.name === 'g'),
+  'listCompMembers splits the mutual block');
 
 console.log(`OK test-proof-lab (${n} assertions)`);

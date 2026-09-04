@@ -17,10 +17,29 @@ const BAD_DOUBLE_DASH_LINE = /^\s*--/;
 
 const _summaryCache = new WeakMap();
 
+// The walk is split so the keystroke path pays only for what it reads:
+//  - lint blocks (eager): top-level decls, O(#decls). No binder stacks.
+//  - parse diagnostics (lazy): error-node iterate; syntax-store remaps
+//    untouched blocks and re-walks only the dirty range when it can.
+//  - names walk (lazy): definedNames / defMap / uses — binder-stack pass,
+//    computed on FIRST access (hover, scope tint, settlement masking).
 export function walkTree(tree, doc) {
   let s = _summaryCache.get(tree);
   if (s) return s;
-  s = doWalk(tree, doc);
+  const { blocks, blockAt } = computeLintBlocks(tree, doc);
+  let parseDiags = null;
+  let names = null;
+  const getNames = () => names || (names = doNamesWalk(tree, doc, blockAt));
+  s = {
+    blocks,
+    blockAt,
+    get parseDiags() {
+      return parseDiags || (parseDiags = collectParseDiagnostics(tree, doc, { blocks, blockAt }));
+    },
+    get definedNames() { return getNames().definedNames; },
+    get defMap() { return getNames().defMap; },
+    get uses() { return getNames().uses; },
+  };
   _summaryCache.set(tree, s);
   return s;
 }
@@ -450,13 +469,15 @@ function upperExtent(node, doc, refFrom, refTo) {
   return { from: refFrom, to: refTo, name: doc.sliceString(refFrom, refTo) };
 }
 
-function doWalk(tree, doc) {
-  const { blocks, blockAt } = computeLintBlocks(tree, doc);
+// Parse-fault diagnostics: error nodes + unknown-pragma lines. Optional
+// `range` bounds the tree iterate (last-block remap in the syntax store).
+export function collectParseDiagnostics(tree, doc, opts = {}) {
+  const { blocks, blockAt } = opts.blocks && opts.blockAt
+    ? opts
+    : computeLintBlocks(tree, doc);
+  const range = opts.range || null;
 
   const parseDiags = [];
-  const definedNames = [];
-  const defMap = new Map();
-  const uses = [];
   const parseDiagSeen = new Set();
   // Blocks that received a real (non-zero-width) parse diagnostic, and the
   // first zero-width (missing-token) error seen per block. Zero-width errors
@@ -464,13 +485,6 @@ function doWalk(tree, doc) {
   // recovery echoes of the same fault.
   const realDiagBlocks = new Set();
   const zeroWidthByBlock = new Map();
-
-  let inLFDatatype = false;
-  let lfDatatypeKeywordSeen = false;
-
-  const stack = [];
-  const moduleLets = [];
-  const moduleEndStack = [];
 
   function pushParseDiag(from, to, message, blockFrom, blockTo) {
     if (from >= to) return;
@@ -500,6 +514,76 @@ function doWalk(tree, doc) {
     if (start >= end) return null;
     return { from: start, to: end };
   }
+
+  const iterateSpec = {
+    enter(ref) {
+      const hit = blockAt(ref.from);
+      if (!hit) return;
+      if (range && (hit.block.to <= range.from || hit.block.from >= range.to)) return;
+      const node = ref.node;
+      const n = node.name;
+      const { from: bFrom, to: bTo } = hit.block;
+      if (lineIsBadPragma(doc, ref.from)) return;
+      if (n === PARSE_ERROR && node.from < node.to) {
+        if (node.from >= bFrom && node.to <= bTo) {
+          pushParseDiag(node.from, node.to, messageAt(ref.from, doc), bFrom, bTo);
+        }
+      } else if (node.type.isError && node.from < node.to && n !== PARSE_ERROR) {
+        if (!node.firstChild && node.from >= bFrom && node.to <= bTo) {
+          pushParseDiag(node.from, node.to, messageAt(ref.from, doc), bFrom, bTo);
+        }
+      } else if (node.type.isError && node.from === node.to) {
+        if (!zeroWidthByBlock.has(hit.index)) {
+          zeroWidthByBlock.set(hit.index, { pos: node.from, bFrom, bTo });
+        }
+      } else if (
+        node.firstChild == null &&
+        node.from < node.to &&
+        n !== 'LineComment' &&
+        n !== 'BlockComment' &&
+        inParseErrorContext(node, bFrom, bTo)
+      ) {
+        pushParseDiag(ref.from, ref.to, messageAt(ref.from, doc), bFrom, bTo);
+      }
+    },
+  };
+  if (range) {
+    iterateSpec.from = range.from;
+    iterateSpec.to = range.to;
+  }
+  tree.iterate(iterateSpec);
+
+  // Surface missing-token faults in blocks that produced no spanning error —
+  // without this, an unclosed paren in one block shows NOTHING here while a
+  // different block's error shows, reading as "only one error at a time".
+  for (const [blockIndex, zw] of zeroWidthByBlock) {
+    if (realDiagBlocks.has(blockIndex)) continue;
+    const anchor = zeroWidthAnchor(zw.pos, zw.bFrom, zw.bTo);
+    if (!anchor) continue;
+    pushParseDiag(anchor.from, anchor.to, 'Syntax error: incomplete declaration', zw.bFrom, zw.bTo);
+  }
+
+  const pragmaBlocks = range
+    ? blocks.filter((b) => b.to > range.from && b.from < range.to)
+    : blocks;
+  const pragmaDiags = collectBadPragmaLineDiags(pragmaBlocks, doc);
+  return mergeDiagsByOverlap(parseDiags, pragmaDiags);
+}
+
+// Name pass: binder-stack scope resolution → definedNames / defMap / uses.
+// Deferred until a consumer actually asks (hover, scope tint, settlement
+// masking); never on the raw keystroke path.
+function doNamesWalk(tree, doc, blockAt) {
+  const definedNames = [];
+  const defMap = new Map();
+  const uses = [];
+
+  let inLFDatatype = false;
+  let lfDatatypeKeywordSeen = false;
+
+  const stack = [];
+  const moduleLets = [];
+  const moduleEndStack = [];
 
   function noteDefinedName(from, to) {
     const hit = blockAt(from);
@@ -689,35 +773,6 @@ function doWalk(tree, doc) {
           bound,
         });
       }
-
-      const hit = blockAt(ref.from);
-      if (hit) {
-        const { from: bFrom, to: bTo } = hit.block;
-        if (!lineIsBadPragma(doc, ref.from)) {
-          const msg = messageAt(ref.from, doc);
-          if (n === PARSE_ERROR && node.from < node.to) {
-            if (node.from >= bFrom && node.to <= bTo) {
-              pushParseDiag(node.from, node.to, msg, bFrom, bTo);
-            }
-          } else if (node.type.isError && node.from < node.to && n !== PARSE_ERROR) {
-            if (!node.firstChild && node.from >= bFrom && node.to <= bTo) {
-              pushParseDiag(node.from, node.to, msg, bFrom, bTo);
-            }
-          } else if (node.type.isError && node.from === node.to) {
-            if (!zeroWidthByBlock.has(hit.index)) {
-              zeroWidthByBlock.set(hit.index, { pos: node.from, bFrom, bTo });
-            }
-          } else if (
-            node.firstChild == null &&
-            node.from < node.to &&
-            n !== 'LineComment' &&
-            n !== 'BlockComment' &&
-            inParseErrorContext(node, bFrom, bTo)
-          ) {
-            pushParseDiag(ref.from, ref.to, msg, bFrom, bTo);
-          }
-        }
-      }
     },
     leave(ref) {
       const node = ref.node;
@@ -776,27 +831,7 @@ function doWalk(tree, doc) {
     },
   });
 
-  // Surface missing-token faults in blocks that produced no spanning error —
-  // without this, an unclosed paren in one block shows NOTHING here while a
-  // different block's error shows, reading as "only one error at a time".
-  for (const [blockIndex, zw] of zeroWidthByBlock) {
-    if (realDiagBlocks.has(blockIndex)) continue;
-    const anchor = zeroWidthAnchor(zw.pos, zw.bFrom, zw.bTo);
-    if (!anchor) continue;
-    pushParseDiag(anchor.from, anchor.to, 'Syntax error: incomplete declaration', zw.bFrom, zw.bTo);
-  }
-
-  const pragmaDiags = collectBadPragmaLineDiags(blocks, doc);
-  const mergedParseDiags = mergeDiagsByOverlap(parseDiags, pragmaDiags);
-
-  return {
-    blocks,
-    blockAt,
-    definedNames,
-    defMap,
-    parseDiags: mergedParseDiags,
-    uses,
-  };
+  return { definedNames, defMap, uses };
 }
 
 // Block-level dependency map derived from the walk: defining block index →

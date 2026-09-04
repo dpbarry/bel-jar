@@ -211,7 +211,7 @@ expect(!pruned.text.includes('| s M =>'), 'the offending arm was pruned from the
 expect(pruned.text.includes('| z =>'), 'the surviving arm was kept');
 expect(attempts > 1, 'pruning re-verified rather than accepting the first verdict');
 
-// ── 9. Brutus folds into the SAME trail ─────────────────────────────────────
+// ── 9. Orca folds into the SAME trail ─────────────────────────────────────
 // A mid-proof auto-solve must read as a continuation, not a separate event.
 const autoResult = {
   complete: true,
@@ -219,12 +219,12 @@ const autoResult = {
   steps: [{ move: 'fill', lead: 'closed nat', meta: { kind: 'fill' }, checks: 4, status: 'solved' }],
 };
 const absorbed = absorbAuto(s1, autoResult, thm);
-expect(absorbed.steps.length === 2, 'Brutus’s steps append onto the manual trail');
+expect(absorbed.steps.length === 2, 'Orca’s steps append onto the manual trail');
 expect(absorbed.steps[0].manual === true && absorbed.steps[1].manual === undefined,
-  'manual and Brutus steps stay distinguishable inside one trail');
-expect(isComplete(absorbed), 'a completing Brutus run leaves no holes');
-expect(canUndo(absorbed), 'a Brutus run is one undoable event');
-expect(undo(absorbed).code === s1.code, 'undoing Brutus returns to the manual state it started from');
+  'manual and Orca steps stay distinguishable inside one trail');
+expect(isComplete(absorbed), 'a completing Orca run leaves no holes');
+expect(canUndo(absorbed), 'a Orca run is one undoable event');
+expect(undo(absorbed).code === s1.code, 'undoing Orca returns to the manual state it started from');
 
 // ── 10. focus selection (Harpoon's `defer` / subgoal list) ──────────────────
 const twoHoles = manualState(
@@ -237,5 +237,31 @@ const moved = focusOn(twoHoles, 1);
 expect(moved.focusIdx === 1, 'the user can select another subgoal');
 expect(moved.code === twoHoles.code, 'selecting a subgoal does not touch the program');
 expect(focusOn(twoHoles, 9) === twoHoles, 'an out-of-range focus is a no-op');
+
+// ── 11. a STALLED Orca run is undoable too ─────────────────────────────────
+// The completing run above was always undoable, because `absorbAuto` pushes the
+// pre-run snapshot. The STALLED path does not go through `absorbAuto` — the Lab
+// re-checks whatever program Orca reached and builds the successor with
+// `manualState`, then reattaches the trail and the stack by hand. It used to
+// reattach `before.stack` VERBATIM, which silently dropped the anchor: Orca
+// advanced, got stuck, its steps showed in the trail, and undo could not leave
+// them. Pinning the contract the Lab's `orcaStack()` now satisfies.
+const advancedCode = CODE.replace('?', 'fn x => ?');
+const stalled = manualState(advancedCode, thm, holeReport(HOLE_LINE, 8, '[ |- nat]'));
+stalled.steps = s1.steps.concat([
+  { move: 'intro', lead: 'introduced x', meta: { kind: 'intro' }, checks: 2 },
+]);
+// what the Lab now does: prior stack PLUS an anchor for the pre-run state
+stalled.stack = s1.stack.concat([
+  { code: s1.code, holes: s1.holes, focusIdx: s1.focusIdx, steps: s1.steps },
+]);
+expect(canUndo(stalled), 'a stalled Orca run is still one undoable event');
+expect(undo(stalled).code === s1.code,
+  'undoing a STALLED Orca run returns to the state it started from');
+expect(undo(stalled).steps.length === s1.steps.length,
+  'undoing a stalled run drops the steps it contributed');
+expect(canRedo(undo(stalled)), 'and it can be redone');
+expect(redo(undo(stalled)).code === advancedCode,
+  'redo restores what Orca reached before stalling');
 
 console.log('test-prover-manual: OK');

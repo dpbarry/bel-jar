@@ -6,7 +6,7 @@ export function theoremDeclRange(code, name) {
   if (!name) return null;
   const lines = String(code || '').split('\n');
   const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const head = new RegExp(`^\\s*(?:rec|proof)\\s+${esc}\\s*:`);
+  const head = new RegExp(`^\\s*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)${esc}\\s*:`);
   let start = -1;
   for (let i = 0; i < lines.length; i += 1) {
     if (head.test(lines[i])) { start = i + 1; break; }
@@ -15,7 +15,8 @@ export function theoremDeclRange(code, name) {
   let end = lines.length;
   for (let i = start; i < lines.length; i += 1) {
     if (/^\s*;\s*$/.test(lines[i])) { end = i + 1; break; }
-    if (i > start && new RegExp(String.raw`^\s*(?:(?:and\s+)?rec|proof)\s+${DECL_IDENT}`, 'u').test(lines[i])) {
+    if (/^\s*and\s/.test(lines[i])) { end = i; break; }
+    if (i > start && new RegExp(String.raw`^\s*(?:rec|proof)\s+${DECL_IDENT}`, 'u').test(lines[i])) {
       end = i;
       break;
     }

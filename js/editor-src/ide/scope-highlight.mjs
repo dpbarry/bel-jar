@@ -3,6 +3,7 @@ import { tags as hlTags } from '@lezer/highlight';
 import { Decoration, EditorView, ViewPlugin } from '@codemirror/view';
 import { RangeSetBuilder, StateField, StateEffect } from '@codemirror/state';
 import { walkTree } from '../tree-walk.mjs';
+import { envHasGlobal, envHasPreludeName, nameEnvForTree } from '../semantic/name-env.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
 
 const tagBoundLower = hlTags.local(hlTags.variableName);
@@ -20,11 +21,42 @@ function markFor(state, markCache, tag) {
   return m;
 }
 
-function overlapsViewport(from, to, view) {
-  for (const r of view.visibleRanges) {
+function overlapsRanges(from, to, ranges) {
+  for (const r of ranges) {
     if (to > r.from && from < r.to) return true;
   }
   return false;
+}
+
+function overlapsViewport(from, to, view) {
+  return overlapsRanges(from, to, view.visibleRanges);
+}
+
+// Bound uses of in-scope locals. Prefers the symbol store's local-resolution
+// references (same answer hover/lint/completion use) when that tree has an env;
+// falls back to walkTree's binder stack when the store hasn't synced yet.
+export function collectBoundTintRanges(tree, doc, visibleRanges) {
+  const pending = [];
+  const env = nameEnvForTree(tree);
+  if (env && Array.isArray(env.references)) {
+    for (const r of env.references) {
+      if (r.resolution !== 'local') continue;
+      if (r.name.startsWith('#') || r.name.startsWith('$')) continue;
+      if (envHasGlobal(env, r.name, r.kind === 'upper')) continue;
+      if (envHasPreludeName(env, r.name)) continue;
+      if (visibleRanges && !overlapsRanges(r.from, r.to, visibleRanges)) continue;
+      pending.push({ from: r.from, to: r.to, kind: r.kind === 'upper' ? 'upper' : 'lower' });
+    }
+    return pending;
+  }
+  const { uses } = walkTree(tree, doc);
+  for (const u of uses) {
+    if (!u.bound) continue;
+    if (u.name.startsWith('#') || u.name.startsWith('$')) continue;
+    if (visibleRanges && !overlapsRanges(u.from, u.to, visibleRanges)) continue;
+    pending.push({ from: u.from, to: u.to, kind: u.kind === 'upper' ? 'upper' : 'lower' });
+  }
+  return pending;
 }
 
 function lfDeclarationComplete(node) {
@@ -41,34 +73,39 @@ function buildDecorations(view, markCache) {
   const tree = syntaxTree(view.state);
   const doc = view.state.doc;
   const state = view.state;
-  const { uses } = walkTree(tree, doc);
 
   const pendingMarks = [];
 
-  for (const u of uses) {
-    if (!u.bound) continue;
-    if (u.name.startsWith('#') || u.name.startsWith('$')) continue;
-    if (!overlapsViewport(u.from, u.to, view)) continue;
+  for (const u of collectBoundTintRanges(tree, doc, view.visibleRanges)) {
     const tag = u.kind === 'upper' ? tagBoundUpper : tagBoundLower;
     const mk = markFor(state, markCache, tag);
     if (mk) pendingMarks.push({ from: u.from, to: u.to, deco: mk });
   }
 
-  tree.iterate({
-    enter(ref) {
-      if (ref.name !== 'LFDeclaration') return;
-      const node = ref.node;
-      if (!lfDeclarationComplete(node)) return;
-      let id = null;
-      for (let c = node.firstChild; c; c = c.nextSibling) {
-        if (c.name === 'LowerIdentifier') { id = c; break; }
-      }
-      if (!id) return;
-      if (!overlapsViewport(id.from, id.to, view)) return;
-      const mk = markFor(state, markCache, tagDefTypeName);
-      if (mk) pendingMarks.push({ from: id.from, to: id.to, deco: mk });
-    },
-  });
+  // Def-name tint only matters where it's visible; bound the declaration scan
+  // to the viewport instead of walking every declaration in the file.
+  const seenDecl = new Set();
+  for (const r of view.visibleRanges) {
+    tree.iterate({
+      from: r.from,
+      to: r.to,
+      enter(ref) {
+        if (ref.name !== 'LFDeclaration') return;
+        if (seenDecl.has(ref.from)) return;
+        seenDecl.add(ref.from);
+        const node = ref.node;
+        if (!lfDeclarationComplete(node)) return;
+        let id = null;
+        for (let c = node.firstChild; c; c = c.nextSibling) {
+          if (c.name === 'LowerIdentifier') { id = c; break; }
+        }
+        if (!id) return;
+        if (!overlapsViewport(id.from, id.to, view)) return;
+        const mk = markFor(state, markCache, tagDefTypeName);
+        if (mk) pendingMarks.push({ from: id.from, to: id.to, deco: mk });
+      },
+    });
+  }
 
   pendingMarks.sort((a, b) => a.from - b.from || a.to - b.to);
   const builder = new RangeSetBuilder();
@@ -76,13 +113,12 @@ function buildDecorations(view, markCache) {
   return builder.finish();
 }
 
-// Bound-variable tinting is a cosmetic overlay, so it must not run its whole-file
-// `walkTree` synchronously in the keystroke transaction (~37ms/key on a mature
-// file, blocking paint before every character shows). Instead the decorations
-// live in a StateField that cheaply shifts existing marks by `tr.changes` on each
-// edit (so tints track the text with zero walk), and a debounced scheduler
-// re-derives the real set off the critical path once typing settles. The tint of
-// a just-typed identifier lags by <SCOPE_REBUILD_MS>; imperceptible for a colour.
+// Bound-variable tinting is a cosmetic overlay, so it must not run on the
+// keystroke transaction. Decorations live in a StateField that cheaply shifts
+// existing marks by `tr.changes` on each edit, and a debounced scheduler
+// re-derives the real set off the critical path once typing settles. The
+// rebuild reads the symbol store's local-resolution references (no whole-file
+// binder walk) when that tree has an env.
 const setScopeEffect = StateEffect.define();
 
 const SCOPE_REBUILD_MS = 90;

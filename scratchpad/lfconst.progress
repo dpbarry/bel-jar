@@ -1,8 +1,0 @@
-  [1/8] data/case-studies/classical-processes/cp.cfg#str_step'
-  [2/8] data/examples/compile/cls/test.cfg#cev_complete
-  [3/8] data/examples/poplmark-reloaded+/sources.cfg#fundVar
-  [4/8] data/examples/cpp13/cchoist.bel#hcc
-  [5/8] data/examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Subsumption.bel#ceq
-  [6/8] data/examples/logrel/algeq-typing.bel#algEqRTrans
-  [7/8] data/examples/logrel/weak-norm-under-binders.bel#extVarSub
-  [8/8] data/examples/popl12/nbe.bel#weaken

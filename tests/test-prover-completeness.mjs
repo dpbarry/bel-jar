@@ -1,4 +1,4 @@
-// Generation-level completeness pins (docs/prover-completeness.md §5).
+// Generation-level completeness pins (docs/archive/prover-completeness.md §5).
 // Every fix is pinned on INVENTED shapes — never a corpus/held-out lemma name —
 // so green means "the mechanism is general", not "a lemma passes".
 import { parseCompType, parseTotality, decreasingBoxIndex } from '../js/editor-src/prover/prover-comp-type.mjs';

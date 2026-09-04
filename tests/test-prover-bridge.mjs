@@ -167,6 +167,19 @@ const secondRange = theoremDeclRange(multi, 'second');
 expect(secondRange && secondRange.start === 2 && secondRange.end === 5,
   `theoremDeclRange isolates the second decl (got ${JSON.stringify(secondRange)})`);
 
+const mutualRangeSrc = [
+  'rec f : [ |- a] = ?',
+  'and g : [ |- b] =',
+  '?',
+  ';',
+].join('\n');
+const gRange = theoremDeclRange(mutualRangeSrc, 'g');
+expect(gRange && gRange.start === 2 && gRange.end === 4,
+  `theoremDeclRange isolates and-member g (got ${JSON.stringify(gRange)})`);
+const fRange = theoremDeclRange(mutualRangeSrc, 'f');
+expect(fRange && fRange.start === 1 && fRange.end === 1,
+  `theoremDeclRange stops the head member at and (got ${JSON.stringify(fRange)})`);
+
 // ── 6. proof-form `?` without a hole report must not false-complete ───────────
 const proofDecl = 'proof silent : [ |- nat] = ? ;';
 const silent = await proveProgram(proofDecl, theoremUnderProof(proofDecl), async () => ({

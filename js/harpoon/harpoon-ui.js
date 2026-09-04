@@ -105,7 +105,7 @@
     return n;
   }
   var SIZE = {
-    move: { w: 104, h: 32, label: 13 },
+    move: { w: 104, minW: 74, h: 32, label: 13 },
     theorem: { w: 112, h: 34, label: 14 },
     branch: { h: 26, label: 16, minW: 88, maxW: 148 },
     stuck: { w: 88, h: 32, label: 10 },
@@ -143,7 +143,7 @@
       var key = st.branch ? norm(st.branch) : "";
       var container = key && armByPattern[key] ? key : "";
       var tail = tails[container] || root;
-      var entry = advancedTrace[i];
+      var entry = st.traceEntry || advancedTrace[i];
       var holeCtx = st.holeCtx || entry && entry.holeCtx || [];
       var holeMeta = st.holeMeta || entry && entry.holeMeta || [];
       var frontier = entry && entry.tried ? entry.tried.slice() : [];
@@ -228,6 +228,11 @@
     if (n.type === "arm") {
       var len = (n.label || "").length;
       return Math.max(SIZE.branch.minW, Math.min(SIZE.branch.maxW, 24 + len * 5.5));
+    }
+    if (n.type === "move") {
+      var mlen = Math.min((n.label || "").length, SIZE.move.label);
+      var dot = n.closed || n.open ? 14 : 0;
+      return Math.max(SIZE.move.minW, Math.min(SIZE.move.w, 26 + mlen * 6.3 + dot));
     }
     if (n.type === "theorem") return SIZE.theorem.w;
     if (n.type === "stuck") return SIZE.stuck.w;
@@ -473,17 +478,23 @@
     var contentW = Math.max(300, maxX - minX + pad * 2);
     var H = maxY + pad * 2;
     var cssH = Math.min(520, Math.max(200, H * 0.85));
+    if (opts.fill && container.clientHeight > 0) cssH = container.clientHeight;
     var scale = H > 0 ? cssH / H : 1;
+    if (opts.fill) scale = Math.min(scale, 1.25);
     var hostW = container.clientWidth || 640;
     var viewW = scale > 0 ? hostW / scale : contentW;
     var defaultW = Math.min(viewW, contentW);
     if (defaultW < 300) defaultW = Math.min(300, contentW);
     var defaultX = (minX + maxX) / 2 - defaultW / 2;
-    var vb = opts.initialView ? { x: opts.initialView.x, y: opts.initialView.y, w: opts.initialView.w, h: opts.initialView.h } : { x: defaultX, y: 0, w: defaultW, h: H };
+    var viewH = scale > 0 ? cssH / scale : H;
+    var defaultY = H / 2 - viewH / 2;
+    var vb = opts.initialView ? { x: opts.initialView.x, y: opts.initialView.y, w: opts.initialView.w, h: opts.initialView.h } : { x: defaultX, y: defaultY, w: defaultW, h: viewH };
     var svg = el("svg", {
       class: "hpt-svg",
       viewBox: vb.x + " " + vb.y + " " + vb.w + " " + vb.h,
-      preserveAspectRatio: "xMidYMin meet"
+      // Top-anchored by default, which is what a scrolling compact strip wants. When the
+      // graph is filling a pane, any slack belongs on both sides of it, not all below.
+      preserveAspectRatio: opts.fill ? "xMidYMid meet" : "xMidYMin meet"
     });
     svg.style.width = "100%";
     svg.style.height = cssH + "px";
@@ -613,7 +624,7 @@
         }
         svg.classList.add("is-panning");
       }
-      var scale2 = vb.w / svg.clientWidth;
+      var scale2 = Math.max(vb.w / svg.clientWidth, vb.h / svg.clientHeight);
       vb.x = drag.vx - dx * scale2;
       vb.y = drag.vy - dy * scale2;
       applyVB();
@@ -797,11 +808,18 @@
       row.appendChild(text);
       body.insertAdjacentElement("afterend", row);
     }
-    function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders) {
+    function appendDeclLabel(glabel, declName, declKw) {
+      if (!declName) return;
+      var name = el4("span", "harpoon-lab-auto-goal-name");
+      if (declKw) name.appendChild(el4("span", "harpoon-lab-goal-decl-kw bel-hl-keyword", declKw));
+      name.appendChild(el4("span", "harpoon-lab-goal-decl-name bel-hl-var-def", declName));
+      glabel.appendChild(name);
+    }
+    function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders, declKw) {
       var wrap = el4("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
       var glabel = el4("div", "harpoon-lab-goal-label");
       glabel.appendChild(el4("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
-      if (declName) glabel.appendChild(el4("span", "harpoon-lab-auto-goal-name", declName));
+      appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
       var body = el4("div", "harpoon-lab-auto-goal-body");
       var goal = el4("div", "harpoon-hole-goal");
@@ -1152,6 +1170,7 @@
       priorGoalBinders: priorGoalBinders2,
       mountGoalPriors: mountGoalPriors2,
       appendAutoGoalHero,
+      appendDeclLabel,
       appendAutoSolution,
       formatSolutionBody,
       autoVerdictTone,
@@ -1324,7 +1343,8 @@
       var body = String(source).replace(/;\s*$/, "").trimEnd();
       var tot = totalityPrefixFromDecl(declSlice);
       if (tot && !/\/\s*total\b/.test(body)) body = tot + "\n" + body;
-      var newDecl = "rec " + decl.name + " : " + decl.type + " =\n" + body + "\n;";
+      var hadSemi = /;\s*$/.test(declSlice);
+      var newDecl = ed.committedMemberText ? ed.committedMemberText(decl, body, hadSemi) : "rec " + decl.name + " : " + decl.type + " =\n" + body + (hadSemi ? "\n;" : "");
       var codes = ed.buildCommitCheckCodes ? ed.buildCommitCheckCodes(prep.assembledCode, prep, newDecl) : {
         patched: prep.assembledCode != null ? prep.assembledCode.slice(0, prep.assembledDeclFrom) + newDecl + prep.assembledCode.slice(prep.assembledDeclTo) : docText.slice(0, declFrom) + newDecl + docText.slice(declTo),
         orchestration: prep.assembledCode != null ? prep.assembledCode.slice(0, prep.assembledDeclFrom) + newDecl + prep.assembledCode.slice(prep.assembledDeclTo) : docText.slice(0, declFrom) + newDecl + docText.slice(declTo)
@@ -1681,10 +1701,38 @@
         }
         this._reelRecordCount = na.steps.length;
       }
+      this.syncLiveContext();
       this.syncReelStatus();
       this.syncAutoPauseBtn();
     }
     ;
+    function syncLiveContext() {
+      var na = this.nativeAuto;
+      if (!na) return;
+      var hole = na.liveHoles && na.liveHoles.length ? na.liveHoles[0] : null;
+      var meta = hole && hole.meta || [];
+      var ctx = hole && hole.ctx || [];
+      var key = JSON.stringify([meta, ctx]);
+      if (key === this._ctxKey) return;
+      var wrap = this._ctxWrap;
+      if (!meta.length && !ctx.length) {
+        if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        this._ctxWrap = null;
+        this._ctxKey = key;
+        return;
+      }
+      if (!wrap || !wrap.parentNode) {
+        var anchor = this._autoSearchBox;
+        if (!anchor || !anchor.parentNode) return;
+        wrap = el4("div", "harpoon-lab-context");
+        anchor.parentNode.insertBefore(wrap, anchor);
+        this._ctxWrap = wrap;
+      }
+      wrap.textContent = "";
+      this.renderCtx(wrap, "meta", meta);
+      this.renderCtx(wrap, "ctx", ctx);
+      this._ctxKey = key;
+    }
     function syncReelStatus() {
       var na = this.nativeAuto;
       if (!na) return;
@@ -1886,6 +1934,7 @@
       clearNativeAutoShell,
       syncAutoPauseBtn,
       updateNativeAutoSearch,
+      syncLiveContext,
       syncReelStatus,
       ensureWorkingRow,
       feedConveyor,
@@ -1940,7 +1989,8 @@
           hero.goalType,
           na.declName,
           hero.goalState,
-          heroPriors
+          heroPriors,
+          na.declKw
         );
       }
       if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
@@ -2057,7 +2107,7 @@
           titleClass: "harpoon-lab-resume-title",
           subClass: "harpoon-lab-resume-sub",
           title: na.complete ? "Take it back by hand" : "Continue by hand",
-          sub: na.complete ? "Review the steps, or undo before placing" : na.steps && na.steps.length ? "Keep the " + na.steps.length + " step" + (na.steps.length === 1 ? "" : "s") + " Brutus found and carry on" : "Pick the next move yourself",
+          sub: na.complete ? "Review the steps, or undo before placing" : na.steps && na.steps.length ? "Keep the " + na.steps.length + " step" + (na.steps.length === 1 ? "" : "s") + " Orca found and carry on" : "Pick the next move yourself",
           onClick: function() {
             self.backToManual();
           }
@@ -2122,15 +2172,26 @@
       if (!reason) return "";
       return String(reason).replace(/^File\s+"[^"]*",\s*line\s+\d+,\s*column\s+\d+\s*/i, "").replace(/^Error:\s*/i, "").trim();
     }
+    function belugaText(s) {
+      var g = globalThis.HarpoonGlyphs;
+      return g ? g.displayBeluga(s) : String(s == null ? "" : s);
+    }
     var STUCK_REASON = {
       "no-move": "no move certified",
       "step-bound": "step limit",
       "search-bound": "search bound hit",
       "file-errors": "file errors",
-      "coinductive-out-of-fragment": "coinductive goal \u2014 out of fragment",
-      "no-totality-measure": "no totality measure \u2014 recursion unavailable",
+      "coinductive-out-of-fragment": "coinductive goal, out of fragment",
+      "no-totality-measure": "no totality measure, recursion unavailable",
       stopped: "stopped",
       cancelled: "cancelled"
+    };
+    var STUCK_HINT = {
+      "no-totality-measure": "Every candidate below is non-recursive. Add a / total / measure to use the induction hypothesis.",
+      "step-bound": "The budget ran out with the goal still open. It was not refuted.",
+      "search-bound": "The search hit its bound, not the end of the space.",
+      "file-errors": "The program does not check before this goal. Fix those errors first.",
+      "coinductive-out-of-fragment": "Coinductive goals are outside the fragment Orca searches."
     };
     function renderStuckCard(na) {
       var stuck = na.stuck;
@@ -2145,6 +2206,8 @@
         renderType3(goal, stuck.goal);
         card.appendChild(goal);
       }
+      var hint = STUCK_HINT[stuck.reason];
+      if (hint) card.appendChild(el4("p", "harpoon-stuck-hint", hint));
       var stuckTrace = null;
       var trace = na.trace || null;
       if (trace) {
@@ -2166,22 +2229,46 @@
           rejected.length + " rejected by the checker" + (guarded.length ? " \xB7 " + guarded.length + " skipped" : "")
         ));
         var list = el4("ul", "harpoon-stuck-tried");
-        var addRow = function(v) {
-          var li = el4("li", "harpoon-stuck-tried-row is-" + v.verdict);
-          li.appendChild(el4("span", "hpt-card-kind hpt-kind--" + v.kind, v.kind));
+        var groupRows = function(items) {
+          var order = [];
+          var byKey = {};
+          items.forEach(function(v) {
+            var reason = stuckReason(v.reason);
+            var key = v.kind + " :: " + reason;
+            if (!byKey[key]) {
+              byKey[key] = { kind: v.kind, verdict: v.verdict, reason, heads: [] };
+              order.push(key);
+            }
+            byKey[key].heads.push(v.head);
+          });
+          return order.map(function(k) {
+            return byKey[k];
+          });
+        };
+        var addGroup = function(g) {
+          var li = el4("li", "harpoon-stuck-tried-row is-" + g.verdict);
+          li.appendChild(el4("span", "hpt-card-kind hpt-kind--" + g.kind, g.kind));
           var hd = el4("code", "harpoon-stuck-tried-head");
-          renderSource2(hd, v.head);
+          renderSource2(hd, g.heads[0]);
           li.appendChild(hd);
-          var reason = stuckReason(v.reason);
-          if (reason) {
-            var rn = el4("span", "harpoon-stuck-tried-reason", reason);
-            setTip2(rn, v.reason, { ariaLabel: false });
+          if (g.heads.length > 1) {
+            var more = el4("span", "harpoon-stuck-tried-more", "+" + (g.heads.length - 1));
+            setTip2(more, g.heads.map(belugaText).join("\n"), { ariaLabel: false });
+            more.setAttribute(
+              "aria-label",
+              g.heads.length + " candidates rejected with this objection"
+            );
+            li.appendChild(more);
+          }
+          if (g.reason) {
+            var rn = el4("span", "harpoon-stuck-tried-reason", g.reason);
+            setTip2(rn, g.reason, { ariaLabel: false });
             li.appendChild(rn);
           }
           list.appendChild(li);
         };
-        rejected.forEach(addRow);
-        guarded.forEach(addRow);
+        groupRows(rejected).forEach(addGroup);
+        groupRows(guarded).forEach(addGroup);
         card.appendChild(list);
       } else if (stuck.reason === "no-move") {
         card.appendChild(el4("div", "harpoon-stuck-sub", "no candidate reached this goal"));
@@ -2222,6 +2309,7 @@
     var ICON_CHEVRON_RIGHT2 = deps.ICON_CHEVRON_RIGHT;
     function renderDerivationSection(box, na) {
       var self = this;
+      this._compactTreeRedraw = null;
       var section = el4("div", "harpoon-deriv");
       var header = el4("div", "harpoon-deriv-header");
       header.appendChild(el4("span", "harpoon-lab-section-label is-steps", "Derivation"));
@@ -2300,6 +2388,9 @@
         });
         global7.HarpoonTree.render(treeHost, root, {
           mode,
+          // The roomy explorer gives the graph a whole pane; the compact one gives it a
+          // fixed strip inside the panel, where filling would mean growing the panel.
+          fill: opts.compact === false,
           instant: !!opts.live,
           selectedId: selectedNodeId,
           initialView: userView,
@@ -2390,6 +2481,7 @@
       }
       host.appendChild(wrap);
       draw();
+      if (opts.compact === false) requestAnimationFrame(draw);
       return { wrap, redraw: draw };
     }
     ;
@@ -2882,6 +2974,7 @@
     var toast2 = deps.toast;
     var renderSource2 = deps.renderSource;
     var appendAutoGoalHero = deps.appendAutoGoalHero;
+    var appendDeclLabel = deps.appendDeclLabel;
     var priorGoalBinders2 = deps.priorGoalBinders;
     var buildPlaceStrip2 = deps.buildPlaceStrip;
     var renderCommitOutcome2 = deps.renderCommitOutcome;
@@ -2895,7 +2988,7 @@
     var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
     var ICON_UNDO2 = deps.ICON_UNDO;
     var ICON_REDO2 = deps.ICON_REDO;
-    var ICON_BRUTUS2 = deps.ICON_BRUTUS;
+    var ICON_ORCA2 = deps.ICON_ORCA;
     var ICON_CHEVRON_DOWN2 = deps.ICON_CHEVRON_DOWN;
     var ICON_DECLINE2 = deps.ICON_DECLINE;
     var ICON_CHECK2 = deps.ICON_CHECK;
@@ -2931,6 +3024,10 @@
         arg = meta && meta.callee || meta && meta.uses && meta.uses[0] || null;
       } else if (mv.kind === "fill") arg = meta && meta.filler;
       return { verb: base.verb, arg, tip: base.tip, meta };
+    }
+    function displayGoal(s) {
+      var g = globalThis.HarpoonGlyphs;
+      return g ? g.displayBeluga(s) : String(s == null ? "" : s);
     }
     function moveHeadText(text) {
       return String(text || "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 90);
@@ -3014,7 +3111,7 @@
         main.setAttribute("aria-disabled", state === "rejected" ? "true" : "false");
       }
       var tip = PIP_TIP[state] || "";
-      if (state === "rejected" && detail) tip += " \u2014 " + String(detail).slice(0, 180);
+      if (state === "rejected" && detail) tip += ": " + String(detail).slice(0, 180);
       setTip2(row._pip, tip);
       row._pip.setAttribute("aria-hidden", tip ? "false" : "true");
       if (tip) row._pip.setAttribute("aria-label", tip);
@@ -3029,11 +3126,16 @@
       n.textContent = text;
       return n;
     }
-    function skelGoalHero(declName) {
+    function declKwOf2(prep) {
+      var key = prep && prep.declKey || "";
+      var i = key.indexOf(":");
+      return i > 0 ? key.slice(0, i) : "";
+    }
+    function skelGoalHero(declName, declKw) {
       var wrap = el4("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
       var glabel = el4("div", "harpoon-lab-goal-label");
       glabel.appendChild(el4("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
-      if (declName) glabel.appendChild(el4("span", "harpoon-lab-auto-goal-name", declName));
+      appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
       var body = el4("div", "harpoon-lab-auto-goal-body");
       body.appendChild(skel("harpoon-skel--goal", "72%"));
@@ -3073,11 +3175,11 @@
       row.appendChild(main);
       return row;
     }
-    var GLOW_PULL_X = 0.55;
-    var GLOW_PULL_Y = 0.45;
+    var GLOW_PULL_X = 0.46;
+    var GLOW_PULL_Y = 0.36;
     var GLOW_CLAMP_X = 0.3;
     var GLOW_CLAMP_Y = 0.35;
-    function bindBrutusGlow(btn) {
+    function bindOrcaGlow(btn) {
       var reduce = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (reduce) return;
       var rect = null;
@@ -3120,30 +3222,30 @@
         btn.style.removeProperty("--glow-dy");
       });
     }
-    function buildBrutusRunning(session, na) {
-      var band = el4("div", "harpoon-lab-brutus-band is-running" + (na.paused ? " is-paused" : ""));
-      var shell = el4("div", "harpoon-lab-brutus harpoon-lab-brutus--live");
-      var badge = el4("span", "harpoon-lab-brutus-badge" + (na.paused ? "" : " is-working"));
-      badge.innerHTML = ICON_BRUTUS2;
+    function buildOrcaRunning(session, na) {
+      var band = el4("div", "harpoon-lab-orca-band is-running" + (na.paused ? " is-paused" : ""));
+      var shell = el4("div", "harpoon-lab-orca harpoon-lab-orca--live");
+      var badge = el4("span", "harpoon-lab-orca-badge" + (na.paused ? "" : " is-working"));
+      badge.innerHTML = ICON_ORCA2;
       shell.appendChild(badge);
       session._autoSearchSpinner = badge;
       session._statTipEl = badge;
-      var copy = el4("span", "harpoon-lab-brutus-copy");
-      copy.appendChild(el4("span", "harpoon-lab-brutus-title", na.paused ? "Brutus paused" : "Brutus"));
-      var sub = el4("span", "harpoon-lab-brutus-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
+      var copy = el4("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el4("span", "harpoon-lab-orca-title", na.paused ? "Orca paused" : "Orca"));
+      var sub = el4("span", "harpoon-lab-orca-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
       sub.textContent = na.paused ? "Take a step by hand, or resume" : nativeAutoSearchLabel(na);
       if (!na.paused) sub.style.setProperty("--shimmer-accent", "var(--repl-holes-accent)");
       copy.appendChild(sub);
       shell.appendChild(copy);
       session._autoSearchText = sub;
-      var actions = el4("div", "harpoon-lab-brutus-actions");
+      var actions = el4("div", "harpoon-lab-orca-actions");
       var pauseBtn = iconBtn2(
         "icon-btn harpoon-lab-auto-pause",
         na.paused ? ICON_PLAY2 : ICON_PAUSE2,
-        na.paused ? "Resume the search" : "Pause \u2014 and get the tactics back",
+        na.paused ? "Resume the search" : "Pause and get the tactics back",
         na.paused ? "Resume" : "Pause",
         function() {
-          session.toggleBrutusPause();
+          session.toggleOrcaPause();
         }
       );
       pauseBtn._belPauseState = !!na.paused;
@@ -3163,28 +3265,28 @@
       session._autoSearchBox = band;
       return band;
     }
-    function buildBrutus(session, state, disabled) {
-      var band = el4("div", "harpoon-lab-brutus-band");
-      var btn = el4("button", "harpoon-lab-brutus");
+    function buildOrca(session, state, disabled) {
+      var band = el4("div", "harpoon-lab-orca-band");
+      var btn = el4("button", "harpoon-lab-orca");
       btn.type = "button";
       if (disabled) btn.disabled = true;
-      var badge = el4("span", "harpoon-lab-brutus-badge");
-      badge.innerHTML = ICON_BRUTUS2;
+      var badge = el4("span", "harpoon-lab-orca-badge");
+      badge.innerHTML = ICON_ORCA2;
       btn.appendChild(badge);
-      var copy = el4("span", "harpoon-lab-brutus-copy");
-      copy.appendChild(el4("span", "harpoon-lab-brutus-title", "Brutus"));
+      var copy = el4("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el4("span", "harpoon-lab-orca-title", "Orca"));
       copy.appendChild(el4(
         "span",
-        "harpoon-lab-brutus-sub",
+        "harpoon-lab-orca-sub",
         state && state.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
       ));
       btn.appendChild(copy);
       if (!disabled) {
         btn.addEventListener("click", function(e) {
           e.preventDefault();
-          session.runBrutus();
+          session.runOrca();
         });
-        bindBrutusGlow(btn);
+        bindOrcaGlow(btn);
       }
       band.appendChild(btn);
       return band;
@@ -3202,6 +3304,7 @@
         sourceGoalType: m.sourceGoalType,
         priorBinders: m.priorBinders,
         declName: m.declName,
+        declKw: m.declKw || "",
         theoremSnapshot: m.theoremSnapshot || null,
         manual: true
       };
@@ -3229,6 +3332,7 @@
         phase: "loading",
         state: null,
         declName: thm.name || prep.name || "",
+        declKw: declKwOf2(prep),
         sourceGoalType,
         priorBinders: [],
         busy: false,
@@ -3247,7 +3351,7 @@
         if (!self.manual) return false;
         if (!res || !res.ok) {
           self.manual.phase = "error";
-          self.manual.error = "The file has errors \u2014 fix them before proving.";
+          self.manual.error = "The file has errors. Fix them before proving.";
           self.render();
           return false;
         }
@@ -3276,11 +3380,39 @@
       var hole = ed.focusHole(st);
       return hole && hole.goal || this.manual.sourceGoalType || "";
     }
+    var CHECK_TIMEOUT_MS = 45e3;
     function manualOracle() {
       var client = globalThis.BelugaClient;
       return function(code) {
-        return client.checkResultForProver ? client.checkResultForProver(code) : client.checkResult(code);
+        var p = client.checkResultForProver ? client.checkResultForProver(code) : client.checkResult(code);
+        return new Promise(function(resolve, reject) {
+          var done = false;
+          var timer = setTimeout(function() {
+            if (done) return;
+            done = true;
+            reject(new Error("The checker did not answer within " + Math.round(CHECK_TIMEOUT_MS / 1e3) + "s."));
+          }, CHECK_TIMEOUT_MS);
+          Promise.resolve(p).then(function(v) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve(v);
+          }, function(e) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            reject(e);
+          });
+        });
       };
+    }
+    function setTacticStatus(session, text, stalled) {
+      var host = session && session._tacticStatusEl;
+      if (!host) return;
+      host.textContent = text || "\u200B";
+      host.classList.toggle("is-on", !!text);
+      if (stalled) host.setAttribute("data-stalled", "");
+      else host.removeAttribute("data-stalled");
     }
     function manualApply(mv, row) {
       var ed = E3();
@@ -3291,7 +3423,7 @@
       var na = this.nativeAuto;
       if (na && na.phase === "searching") {
         if (!na.paused) return Promise.resolve(false);
-        this._retireBrutus = true;
+        this._retireOrca = true;
         this.nativeAuto = null;
         this.userCancelled = true;
         if (this.stopReelClock) this.stopReelClock();
@@ -3306,7 +3438,15 @@
         }
       }
       if (this._movesEl) this._movesEl.classList.add("is-busy");
+      var applyVerb = tacticVerb2(mv.kind) || "move";
+      setTacticStatus(self, "checking " + applyVerb);
+      var since = Date.now();
+      var tick = setInterval(function() {
+        var secs = Math.round((Date.now() - since) / 1e3);
+        if (secs >= 3) setTacticStatus(self, "checking " + applyVerb + " " + secs + "s");
+      }, 1e3);
       var clearApplying = function() {
+        clearInterval(tick);
         if (self._movesEl) self._movesEl.classList.remove("is-busy");
         if (!row) return;
         row.classList.remove("is-applying");
@@ -3317,11 +3457,13 @@
         m.busy = false;
         if (!r.ok) {
           clearApplying();
+          setTacticStatus(self, "not accepted", true);
           markPip(row, "rejected", r.error || "The checker did not accept this move.");
           toast2(firstLineOf(r.error) || "That move did not type-check.", "error");
           return false;
         }
         m.state = r.state;
+        setTacticStatus(self, "");
         m.priorBinders = priorGoalBinders2(self, m.sourceGoalType, self.manualGoalType());
         self.render();
         self.sweepCandidates();
@@ -3329,6 +3471,7 @@
       }).catch(function(err) {
         m.busy = false;
         clearApplying();
+        setTacticStatus(self, "no answer on " + applyVerb, true);
         markPip(row, "rejected", err && err.message || String(err));
         toast2(firstLineOf(err && err.message) || "That move could not be checked.", "error");
         return false;
@@ -3343,17 +3486,31 @@
       var ed = E3();
       var self = this;
       var m = this.manual;
+      var token = {};
+      this._sweepToken = token;
       if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
       var persist = globalThis.Persist;
       var on = !persist || typeof persist.readStoredHarpoonVerifyMoves !== "function" ? true : persist.readStoredHarpoonVerifyMoves();
       if (!on) return;
-      var token = {};
-      this._sweepToken = token;
       var rows = this._moveRows.slice(0, 8);
       var i = 0;
       var oracle = manualOracle();
+      function sinkRefused() {
+        if (self._sweepToken !== token || !self._moveRows) return;
+        var list = self._moveRows[0] && self._moveRows[0].parentNode;
+        if (!list) return;
+        self._moveRows.forEach(function(row) {
+          if (row && row.classList && row.classList.contains("is-rejected")) list.appendChild(row);
+        });
+      }
       function next() {
-        if (self._sweepToken !== token || i >= rows.length) return;
+        if (self._sweepToken !== token) return;
+        if (i >= rows.length) {
+          sinkRefused();
+          setTacticStatus(self, "");
+          return;
+        }
+        if (!m.busy) setTacticStatus(self, "checking " + (i + 1) + "/" + rows.length);
         var row = rows[i];
         i += 1;
         if (!row || !row._mv) {
@@ -3371,7 +3528,9 @@
           );
           next();
         }).catch(function() {
-          if (self._sweepToken === token) next();
+          if (self._sweepToken !== token) return;
+          markPip(row, null);
+          next();
         });
       }
       next();
@@ -3407,12 +3566,24 @@
       this.render();
       this.sweepCandidates();
     }
-    function runBrutus() {
+    function orcaStack(self, before) {
+      var prior = before && before.stack || [];
+      if (!before || self._orcaAnchored) return prior;
+      self._orcaAnchored = true;
+      return prior.concat([{
+        code: before.code,
+        holes: before.holes,
+        focusIdx: before.focusIdx,
+        steps: before.steps
+      }]);
+    }
+    function runOrca() {
       var m = this.manual;
       var self = this;
       if (!m || !m.state) return;
       this.cancelSweep();
       this.manualBefore = m.state;
+      this._orcaAnchored = false;
       this.runNativeAuto(m.state.code);
       this.scrollToDerivation();
     }
@@ -3435,12 +3606,12 @@
         });
       });
     }
-    function toggleBrutusPause() {
+    function toggleOrcaPause() {
       var na = this.nativeAuto;
       var m = this.manual;
       if (!m) return;
       if (!na || na.phase !== "searching") {
-        if (m.state) this.runBrutus();
+        if (m.state) this.runOrca();
         return;
       }
       var self = this;
@@ -3450,7 +3621,7 @@
         m.syncing = true;
         m.syncFailed = false;
         this.render();
-        this.syncManualToBrutus().then(function(ok) {
+        this.syncManualToOrca().then(function(ok) {
           m.syncing = false;
           m.syncFailed = !ok;
           if (!self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
@@ -3464,7 +3635,7 @@
         this.render();
       }
     }
-    function absorbBrutusResult(r) {
+    function absorbOrcaResult(r) {
       var ed = E3();
       var self = this;
       var m = this.manual;
@@ -3475,7 +3646,7 @@
       if (r && r.complete && r.code) {
         m.state = ed.absorbAuto(
           before,
-          { complete: true, code: r.code, steps: r.steps || [] },
+          { complete: true, code: r.code, steps: r.steps || [], trace: r.trace || null },
           this.thm
         );
         this.manualBefore = null;
@@ -3494,7 +3665,7 @@
         if (res && res.ok) {
           var next = ed.manualState(code, self.thm, res.output || "");
           next.steps = (before && before.steps || []).concat(r && r.steps || []);
-          next.stack = before && before.stack || [];
+          next.stack = orcaStack(self, before);
           self.manual.state = next;
           self.manual.priorBinders = priorGoalBinders2(
             self,
@@ -3512,7 +3683,7 @@
         return false;
       });
     }
-    function syncManualToBrutus() {
+    function syncManualToOrca() {
       var self = this;
       var ed = E3();
       var na = this.nativeAuto;
@@ -3524,8 +3695,8 @@
         if (!res || !res.ok || !self.manual) return false;
         var next = ed.manualState(code, self.thm, res.output || "");
         var before = self.manualBefore;
-        next.steps = (before && before.steps || []).concat(na.steps || []);
-        next.stack = before && before.stack || [];
+        next.steps = (before && before.steps || []).concat(ed.pairTrace ? ed.pairTrace(na.steps || [], na.trace) : na.steps || []);
+        next.stack = orcaStack(self, before);
         self.manual.state = next;
         self.manual.priorBinders = priorGoalBinders2(
           self,
@@ -3549,7 +3720,8 @@
         this.manual.state = ed.absorbAuto(before, {
           complete: true,
           code: na.code,
-          steps: na.steps || []
+          steps: na.steps || [],
+          trace: na.trace || null
         }, this.thm);
         this.render();
         return;
@@ -3558,12 +3730,7 @@
       var seedSteps = priorSteps.concat(na && na.steps || []);
       this.startManual(resumeCode, {
         steps: seedSteps,
-        stack: before ? priorStack.concat([{
-          code: before.code,
-          holes: before.holes,
-          focusIdx: before.focusIdx,
-          steps: priorSteps
-        }]) : priorStack
+        stack: orcaStack(this, before)
       });
     }
     function commitManual() {
@@ -3598,15 +3765,15 @@
           goalType,
           m.declName,
           complete ? "live" : "approximate",
-          m.priorBinders
+          m.priorBinders,
+          m.declKw
         );
       }
       if (!this.isFrozenRetrospective()) this.renderCompromiseBanner(box);
       if (m.phase === "loading") {
-        if (!goalType) box.appendChild(skelGoalHero(m.declName));
+        if (!goalType) box.appendChild(skelGoalHero(m.declName, m.declKw));
         box.appendChild(skelBar());
-        box.appendChild(skelCtx());
-        box.appendChild(buildBrutus(this, null, true));
+        box.appendChild(buildOrca(this, null, true));
         var skelMoves = el4("div", "harpoon-lab-moves");
         skelMoves.appendChild(sectionLabel("Tactics"));
         var skelList = el4("div", "harpoon-lab-move-list");
@@ -3707,7 +3874,7 @@
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
             tab.textContent = String(i + 1);
-            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + h.goal : ""));
+            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
             tab.addEventListener("click", function(e) {
               e.preventDefault();
               self.manualFocus(i);
@@ -3717,12 +3884,16 @@
           pickBand.appendChild(picker);
           box.appendChild(pickBand);
         }
-        var hole = st ? ed.focusHole(st) : null;
+        var naRun = this.nativeAuto;
+        var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
+        var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
           var ctxWrap = el4("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
+          this._ctxWrap = ctxWrap;
+          this._ctxKey = JSON.stringify([hole.meta || [], hole.ctx || []]);
         }
         var solved = solvedBodyOf2(st.code, m.declName);
         if (solved) {
@@ -3779,7 +3950,7 @@
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
             tab.textContent = String(i + 1);
-            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + h.goal : ""));
+            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
             tab.addEventListener("click", function(e) {
               e.preventDefault();
               self.manualFocus(i);
@@ -3789,18 +3960,22 @@
           pickBand.appendChild(picker);
           box.appendChild(pickBand);
         }
-        var hole = st ? ed.focusHole(st) : null;
+        var naRun = this.nativeAuto;
+        var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
+        var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
           var ctxWrap = el4("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
+          this._ctxWrap = ctxWrap;
+          this._ctxKey = JSON.stringify([hole.meta || [], hole.ctx || []]);
         }
         var na = this.nativeAuto;
         var running = !!(na && na.phase === "searching");
         var searching = running && !na.paused;
-        if (running) box.appendChild(buildBrutusRunning(this, na));
-        else box.appendChild(buildBrutus(this, st, false));
+        if (running) box.appendChild(buildOrcaRunning(this, na));
+        else box.appendChild(buildOrca(this, st, false));
         if (na && na.phase === "stuck" && na.stuck && na.stuck.goal) {
           var stuckCard = this.renderStuckCard(na);
           stageNode2(stuckCard, stage);
@@ -3813,9 +3988,12 @@
         var tacticsLabel = sectionLabel("Tactics");
         if (searching) {
           tacticsLabel.appendChild(
-            el4("span", "harpoon-lab-moves-lock", "Pause Brutus to use tactics")
+            el4("span", "harpoon-lab-moves-lock", "Pause Orca to use tactics")
           );
         }
+        var tacStatus = el4("span", "harpoon-lab-moves-status");
+        tacticsLabel.appendChild(tacStatus);
+        this._tacticStatusEl = tacStatus;
         movesWrap.appendChild(tacticsLabel);
         var moves = [];
         try {
@@ -3839,7 +4017,7 @@
           lost.appendChild(el4(
             "span",
             "harpoon-lab-moves-empty-sub",
-            "Resume Brutus, or undo the last step and try again."
+            "Resume Orca, or undo the last step and try again."
           ));
           movesWrap.appendChild(lost);
         } else if (!moves.length) {
@@ -3848,7 +4026,7 @@
           none.appendChild(el4(
             "span",
             "harpoon-lab-moves-empty-sub",
-            "BelJar has no move for this goal. Undo the last step, pick another subgoal, or let Brutus search."
+            "BelJar has no move for this goal. Undo the last step, pick another subgoal, or let Orca search."
           ));
           movesWrap.appendChild(none);
         } else {
@@ -3889,8 +4067,14 @@
         this._workingStrip = null;
         this._workingChips = [];
         this._derivEl = live;
+        var prior = this.manualBefore && this.manualBefore.steps || [];
+        for (var pi = 0; pi < prior.length; pi += 1) {
+          appendCommittedStepRow(record, prior[pi], pi);
+        }
         var already = naNow.steps || [];
-        for (var si = 0; si < already.length; si += 1) appendCommittedStepRow(record, already[si], si);
+        for (var si = 0; si < already.length; si += 1) {
+          appendCommittedStepRow(record, already[si], prior.length + si);
+        }
         this._reelRecordCount = already.length;
         this.syncReelStatus();
         this.startReelClock();
@@ -3913,10 +4097,10 @@
       manualFocus,
       sweepCandidates,
       cancelSweep,
-      runBrutus,
-      toggleBrutusPause,
-      absorbBrutusResult,
-      syncManualToBrutus,
+      runOrca,
+      toggleOrcaPause,
+      absorbOrcaResult,
+      syncManualToOrca,
       scrollToDerivation,
       backToManual,
       commitManual
@@ -3965,7 +4149,7 @@
   var ICON_POPOUT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>';
   var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.8v12.4c0 .8.9 1.3 1.6.9l10.2-6.2a1 1 0 0 0 0-1.7L9.6 4.9A1 1 0 0 0 8 5.8Z"/></svg>';
   var ICON_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c.3 3.1 1.4 4.2 4.5 4.5-3.1.3-4.2 1.4-4.5 4.5-.3-3.1-1.4-4.2-4.5-4.5 3.1-.3 4.2-1.4 4.5-4.5Z"/><path d="M18.5 12.5c.2 2 .9 2.7 2.9 2.9-2 .2-2.7.9-2.9 2.9-.2-2-.9-2.7-2.9-2.9 2-.2 2.7-.9 2.9-2.9Z"/></svg>';
-  var ICON_BRUTUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.2 14.4 9.4v4H9.6v-4Z" fill="currentColor" stroke="none"/><path d="M6.6 13.9h10.8"/><path d="M12 14.4v3.9"/><circle cx="12" cy="20" r="1.5"/></svg>';
+  var ICON_ORCA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.4 15.4Q9.4 8.2 16.2 4.4Q13.6 10.4 14.2 15.4Z" fill="currentColor" stroke="none"/><path d="M3 18.8q2.9-3 5.8 0t5.8 0t5.8 0"/></svg>';
   var ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
   var ICON_DECLINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7 17 17"/><path d="M17 7 7 17"/></svg>';
   var ICON_TAKEOVER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.4 18.6 10.6 12.3 12.3 9.6 18.6Z"/></svg>';
@@ -4101,16 +4285,22 @@
   }
   function findHoleHitInText(docText, anchor, ed) {
     if (!anchor || !docText || !ed || typeof ed.parseDecl !== "function") return null;
-    var re = new RegExp(
-      "\\b(rec|proof)\\s+" + String(anchor.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
-    );
-    var m = re.exec(docText);
-    if (!m) return null;
-    var from = m.index;
-    var semi = docText.indexOf(";", from);
-    var to = semi < 0 ? docText.length : semi + 1;
-    var lines = docText.slice(0, from).split("\n");
-    var declStartLine = lines.length;
+    var loc = ed.locateMember ? ed.locateMember(docText, anchor.declName) : null;
+    var from;
+    var to;
+    if (loc) {
+      from = loc.from;
+      to = loc.to;
+    } else {
+      var re = new RegExp(
+        "(^|[\\n\\r])[ \\t]*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + String(anchor.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
+      );
+      var m = re.exec(docText);
+      if (!m) return null;
+      from = m.index + m[1].length;
+      var semi = docText.indexOf(";", from);
+      to = semi < 0 ? docText.length : semi + 1;
+    }
     var declSlice = docText.slice(from, to);
     var decl = ed.parseDecl(declSlice);
     if (!decl || anchor.declKey && decl.kw + ":" + decl.name !== anchor.declKey) return null;
@@ -4122,12 +4312,6 @@
     var line = before.split("\n").length;
     var lastNl = before.lastIndexOf("\n");
     var col = before.length - (lastNl < 0 ? 0 : lastNl + 1) + 1;
-    if (anchor.holeKey) {
-      var want = anchor.holeKey;
-      var got = line + ":" + col + ":";
-      if (want.indexOf(got) !== 0 && got !== want.split(":").slice(0, 2).join(":") + ":") {
-      }
-    }
     var off = bodyStart + qIdx;
     return { hole: { line, col, name: null }, from: off, to: off + 1 };
   }
@@ -4150,6 +4334,11 @@
   }
   function mountGoalPriors() {
     return displayApi.mountGoalPriors.apply(null, arguments);
+  }
+  function declKwOf(prep) {
+    var key = prep && prep.declKey || "";
+    var i = key.indexOf(":");
+    return i > 0 ? key.slice(0, i) : "";
   }
   function renderManualSolvedSummary() {
     return displayApi.renderManualSolvedSummary.apply(null, arguments);
@@ -4178,6 +4367,25 @@
   function commitFailureUserMessage() {
     return commitApi.commitFailureUserMessage();
   }
+  var liveSessions = [];
+  function activeSession() {
+    var active = global8.document ? global8.document.activeElement : null;
+    var newest = null;
+    for (var i = liveSessions.length - 1; i >= 0; i -= 1) {
+      var s = liveSessions[i];
+      if (!s || !s.bodyEl) continue;
+      if (active && s.bodyEl.contains(active)) return s;
+      if (!newest) newest = s;
+    }
+    return newest;
+  }
+  function trackSession(session) {
+    if (liveSessions.indexOf(session) < 0) liveSessions.push(session);
+  }
+  function untrackSession(session) {
+    var at = liveSessions.indexOf(session);
+    if (at !== -1) liveSessions.splice(at, 1);
+  }
   function Session(view, declFrom, declTo, host) {
     this.view = view;
     this.declFrom = declFrom;
@@ -4196,6 +4404,7 @@
     this._compromiseBanner = null;
     this.commitState = defaultCommitState();
     this._verdictPopPlayed = false;
+    trackSession(this);
   }
   Session.prototype.getCommitState = function() {
     if (this.nativeAuto) {
@@ -4409,11 +4618,21 @@
       this.updateCompromiseBanner();
     }
   };
+  function pushOrca(session, label) {
+    if (typeof window === "undefined" || !window.StatusStrip) return;
+    var na = session && session.nativeAuto;
+    if (!na || na.phase !== "searching") {
+      window.StatusStrip.setOrca(false);
+      return;
+    }
+    window.StatusStrip.setOrca(true, na.paused ? "paused" : label || "");
+  }
   Session.prototype.stopNativeAuto = function() {
     this.userCancelled = true;
     if (this.nativeAuto && this.nativeAuto.phase === "searching") {
       setNativeSearchLabel(this.nativeAuto, "Stopping\u2026");
       this.updateNativeAutoSearch();
+      pushOrca(this, "stopping");
     }
   };
   Session.prototype.restartNativeAuto = function() {
@@ -4660,6 +4879,7 @@
       sourceGoalType,
       priorBinders: priorGoalBinders(this, sourceGoalType, initialGoalType),
       declName: thm.name || this.prep && this.prep.name || "",
+      declKw: declKwOf(this.prep),
       theoremSnapshot: {
         premiseCount: thm.compType && thm.compType.premises && thm.compType.premises.length || 0,
         totality: thm.totality || null,
@@ -4688,6 +4908,7 @@
       if (!self.nativeAuto || self.nativeAuto.paused) return;
       setNativeSearchLabel(self.nativeAuto, label);
       self.syncReelStatus();
+      pushOrca(self, String(label || "").replace(/[….]+$/, ""));
     }
     pulseLabel("Starting Beluga\u2026");
     var proverReady = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
@@ -4754,6 +4975,10 @@
           var prevLen = (na.steps || []).length;
           na.steps = info.steps || [];
           if (info.code) na.liveCode = info.code;
+          if (info.holes) {
+            na.liveHoles = info.holes;
+            self.syncLiveContext();
+          }
           na.checks = na.steps.reduce(function(t, s) {
             return t + (s.checks || 0);
           }, 0);
@@ -4770,8 +4995,8 @@
       });
     }).then(function(r) {
       self.probeAnchor();
-      if (self._retireBrutus) {
-        self._retireBrutus = false;
+      if (self._retireOrca) {
+        self._retireOrca = false;
         self.userCancelled = false;
         self.render();
         return false;
@@ -4799,7 +5024,7 @@
       };
       self.render();
       self.refreshTreeExplorer();
-      if (self.manual) self.absorbBrutusResult(r);
+      if (self.manual) self.absorbOrcaResult(r);
       return !!(r && r.complete);
     }).catch(function(err) {
       var cancelled = client.isCancelledError && client.isCancelledError(err);
@@ -4819,6 +5044,7 @@
       self.refreshTreeExplorer();
       return false;
     }).finally(function() {
+      pushOrca(self);
       if (self._goalTierListener) {
         window.removeEventListener("beljar:hole-goals-updated", self._goalTierListener);
         window.removeEventListener("beljar:development-checked", self._goalTierListener);
@@ -4881,6 +5107,7 @@
     return "Restart from the current file state";
   }
   Session.prototype.disposeSession = function() {
+    untrackSession(this);
     this.clearPendingCommitNav();
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
@@ -5178,6 +5405,7 @@
       autoVerdictTitle: displayApi.autoVerdictTitle,
       autoVerdictTone: displayApi.autoVerdictTone,
       appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      appendDeclLabel: displayApi.appendDeclLabel,
       resolveNativeAutoGoalDisplay: displayApi.resolveNativeAutoGoalDisplay,
       priorGoalBinders: displayApi.priorGoalBinders,
       setNativeSearchLabel: displayApi.setNativeSearchLabel,
@@ -5202,6 +5430,7 @@
     Session.prototype.clearNativeAutoShell = reelApi.clearNativeAutoShell;
     Session.prototype.syncAutoPauseBtn = reelApi.syncAutoPauseBtn;
     Session.prototype.updateNativeAutoSearch = reelApi.updateNativeAutoSearch;
+    Session.prototype.syncLiveContext = reelApi.syncLiveContext;
     Session.prototype.syncReelStatus = reelApi.syncReelStatus;
     Session.prototype.ensureWorkingRow = reelApi.ensureWorkingRow;
     Session.prototype.feedConveyor = reelApi.feedConveyor;
@@ -5237,6 +5466,7 @@
       E,
       renderSource: displayApi.renderSource,
       appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      appendDeclLabel: displayApi.appendDeclLabel,
       priorGoalBinders: displayApi.priorGoalBinders,
       buildPlaceStrip: displayApi.buildPlaceStrip,
       renderCommitOutcome: displayApi.renderCommitOutcome,
@@ -5252,7 +5482,7 @@
       nativeAutoSearchLabel: displayApi.nativeAutoSearchLabel,
       ICON_UNDO,
       ICON_REDO,
-      ICON_BRUTUS,
+      ICON_ORCA,
       ICON_CHEVRON_DOWN,
       ICON_DECLINE,
       ICON_CHECK,
@@ -5270,10 +5500,10 @@
     Session.prototype.manualFocus = manualApi.manualFocus;
     Session.prototype.sweepCandidates = manualApi.sweepCandidates;
     Session.prototype.cancelSweep = manualApi.cancelSweep;
-    Session.prototype.runBrutus = manualApi.runBrutus;
-    Session.prototype.toggleBrutusPause = manualApi.toggleBrutusPause;
-    Session.prototype.absorbBrutusResult = manualApi.absorbBrutusResult;
-    Session.prototype.syncManualToBrutus = manualApi.syncManualToBrutus;
+    Session.prototype.runOrca = manualApi.runOrca;
+    Session.prototype.toggleOrcaPause = manualApi.toggleOrcaPause;
+    Session.prototype.absorbOrcaResult = manualApi.absorbOrcaResult;
+    Session.prototype.syncManualToOrca = manualApi.syncManualToOrca;
     Session.prototype.scrollToDerivation = manualApi.scrollToDerivation;
     Session.prototype.backToManual = manualApi.backToManual;
     Session.prototype.commitManual = manualApi.commitManual;
@@ -5287,9 +5517,26 @@
       this.updateNativeAutoSearch();
       return;
     }
+    var scroller = body;
+    while (scroller && scroller !== document.body) {
+      var oy = "";
+      try {
+        oy = globalThis.getComputedStyle(scroller).overflowY;
+      } catch (e) {
+        oy = "";
+      }
+      if ((oy === "auto" || oy === "scroll") && scroller.scrollHeight > scroller.clientHeight) break;
+      scroller = scroller.parentNode;
+    }
+    var keepTop = scroller && scroller !== document.body ? scroller.scrollTop : 0;
     this.clearNativeAutoShell();
     body.textContent = "";
     body.classList.remove("is-starting");
+    if (keepTop > 0) {
+      Promise.resolve().then(function() {
+        if (scroller && Math.abs(scroller.scrollTop - keepTop) > 1) scroller.scrollTop = keepTop;
+      });
+    }
     var m = this.model;
     if (this.manual) {
       this.renderManual(body);
@@ -5367,21 +5614,37 @@
   };
   function finishPrepare(ed, ctx, span, decl, hit) {
     var assembled = String(ctx.code);
-    var re = new RegExp("(^|\\n)\\s*(rec|proof)\\s+" + decl.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:");
-    var match = re.exec(assembled);
-    if (!match) {
-      toast("Harpoon: declaration not found in the checkable program.", "error");
-      return null;
+    var loc = ed.locateMember ? ed.locateMember(assembled, decl.name, ctx.fileStart || 0) : null;
+    var declStart;
+    var declEnd;
+    var blockStart;
+    var blockEnd;
+    if (loc) {
+      declStart = loc.from;
+      declEnd = loc.to;
+      blockStart = loc.blockFrom != null ? loc.blockFrom : loc.from;
+      blockEnd = loc.blockTo != null ? loc.blockTo : loc.to;
+    } else {
+      var re = new RegExp(
+        "(^|\\n)\\s*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + decl.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
+      );
+      var match = re.exec(assembled);
+      if (!match) {
+        toast("Harpoon: declaration not found in the checkable program.", "error");
+        return null;
+      }
+      declStart = match.index + match[1].length;
+      var semi = assembled.indexOf(";", declStart);
+      declEnd = semi === -1 ? assembled.length : semi + 1;
+      blockStart = declStart;
+      blockEnd = declEnd;
     }
-    var declStart = match.index + match[1].length;
-    var semi = assembled.indexOf(";", declStart);
-    var declEnd = semi === -1 ? assembled.length : semi + 1;
     var built = ed.buildProofProgram(assembled, declStart, declEnd);
     if (!built) {
       toast("Harpoon: couldn\u2019t build the proof program.", "error");
       return null;
     }
-    var proveCode = ed.proveOrchestrationCode ? ed.proveOrchestrationCode(assembled, decl.name, declStart, declEnd, ctx.fileStart) : assembled;
+    var proveCode = ed.proveOrchestrationCode ? ed.proveOrchestrationCode(assembled, decl.name, blockStart, blockEnd, ctx.fileStart) : assembled;
     return {
       built,
       span,
@@ -5391,6 +5654,8 @@
       assembledCode: assembled,
       assembledDeclFrom: declStart,
       assembledDeclTo: declEnd,
+      assembledBlockFrom: blockStart,
+      assembledBlockTo: blockEnd,
       proveCode,
       offsetLines: ctx.offsetLines || 0,
       fileStart: ctx.fileStart != null ? ctx.fileStart : 0
@@ -5404,7 +5669,7 @@
       toast("Harpoon: no checkable program.", "error");
       return null;
     }
-    var span = api.getDeclSpan ? api.getDeclSpan(hit.from) : null;
+    var span = api.getMemberSpan ? api.getMemberSpan(hit.from) : api.getDeclSpan ? api.getDeclSpan(hit.from) : null;
     if (!span) {
       toast("Harpoon: couldn\u2019t find the enclosing declaration.", "error");
       return null;
@@ -5424,7 +5689,7 @@
       toast("Harpoon: no checkable program.", "error");
       return null;
     }
-    var span = ed.declSpanInText(ctx.fileText, hit.from);
+    var span = ed.memberSpanInText ? ed.memberSpanInText(ctx.fileText, hit.from) : ed.declSpanInText(ctx.fileText, hit.from);
     if (!span) {
       toast("Harpoon: couldn\u2019t find the enclosing declaration.", "error");
       return null;
@@ -5474,9 +5739,14 @@
     }
     if (!anchor.declKey) return null;
     var ed = E();
+    var api = global8.CurrentEditor;
     for (var j = 0; j < hits.length; j++) {
       var hit = hits[j];
-      var span = ed && ed.getDeclSpan ? ed.getDeclSpan(hit.from) : null;
+      var span = null;
+      if (api && api.getMemberSpan) span = api.getMemberSpan(hit.from);
+      else if (api && api.getDeclSpan) span = api.getDeclSpan(hit.from);
+      else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
+      else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
       if (!span) continue;
       var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
       if (decl && decl.kw + ":" + decl.name === anchor.declKey) return hit;
@@ -5486,7 +5756,7 @@
   function openingMode() {
     var persist = global8.Persist;
     if (persist && typeof persist.readStoredHarpoonMode === "function") {
-      return persist.readStoredHarpoonMode() === "brutus" ? "brutus" : "manual";
+      return persist.readStoredHarpoonMode() === "orca" ? "orca" : "manual";
     }
     return "manual";
   }
@@ -5501,9 +5771,9 @@
     session.bodyEl = content;
     host.mount(content, session);
     if (host.onSessionStart) host.onSessionStart(prep.name);
-    var startBrutus = openingMode() === "brutus";
+    var startOrca = openingMode() === "orca";
     session.startManual().then(function(ok) {
-      if (ok && startBrutus) session.runBrutus();
+      if (ok && startOrca) session.runOrca();
     });
     return session;
   }
@@ -5639,6 +5909,7 @@
     // SHIPPED render/click paths rather than a re-implementation of them.
     _Session: Session,
     openFromHole,
+    activeSession,
     proveInPanel,
     proveInPanelForFile,
     collectFloatingHarpoonWindows,
@@ -5789,9 +6060,7 @@
         var memberPaths = resolveMembers ? resolveMembers(files, cfgPath, getText) : [];
         var blockNames = [cfgPath];
         for (var mi = 0; mi < memberPaths.length; mi++) blockNames.push(memberPaths[mi]);
-        var meta = suiteByFile[cfgPath] || {};
         var suiteLabel = cfgBaseLabel(cfgPath);
-        var suiteHue = meta.hue != null ? meta.hue : null;
         for (var bi = 0; bi < blockNames.length; bi++) {
           var path = blockNames[bi];
           placed[path] = true;
@@ -5805,7 +6074,6 @@
               fileBaseName: f.baseName || baseName(f.name),
               inDevelopment: !developmentPaths || developmentPaths.indexOf(f.name) !== -1,
               suiteLabel,
-              suiteHue,
               hit: hits[hi]
             });
           }
@@ -5822,7 +6090,6 @@
             fileBaseName: file.baseName || baseName(file.name),
             inDevelopment: !developmentPaths || developmentPaths.indexOf(file.name) !== -1,
             suiteLabel: null,
-            suiteHue: null,
             hit: fileHits[oi]
           });
         }
@@ -5832,7 +6099,6 @@
       sections.push({
         id: "dir:" + dir,
         label: dir || "/",
-        suiteHue: null,
         entries: dirEntries
       });
     }
@@ -5891,6 +6157,20 @@
       }
     }
     host.textContent = norm2;
+  }
+  function setSuiteTip(host, label) {
+    var name = label || "(none)";
+    var tips = global10.Tooltips;
+    if (tips && typeof tips.setRich === "function") {
+      tips.setRich(host, function() {
+        var row = el3("span", "harpoon-tip-suite");
+        row.appendChild(el3("span", "harpoon-tip-suite-key", "Suite:"));
+        row.appendChild(el3("span", "harpoon-tip-suite-name", name));
+        return row;
+      }, "Suite: " + name);
+      return;
+    }
+    if (tips && typeof tips.set === "function") tips.set(host, "Suite: " + name);
   }
   var bodyEl = null;
   var panelEl = null;
@@ -5956,10 +6236,15 @@
   }
   function declKeyForHit(view, hit) {
     var ed = E2();
-    if (!ed || !hit) return null;
-    var span = ed.getDeclSpan ? ed.getDeclSpan(hit.from) : null;
+    var api = global10.CurrentEditor;
+    if (!hit) return null;
+    var span = null;
+    if (api && api.getMemberSpan) span = api.getMemberSpan(hit.from);
+    else if (api && api.getDeclSpan) span = api.getDeclSpan(hit.from);
+    else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
+    else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
     if (!span) return null;
-    var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
+    var decl = ed && ed.parseDecl ? ed.parseDecl(view.state.doc.sliceString(span.from, span.to)) : null;
     if (!decl) return null;
     return decl.kw + ":" + decl.name;
   }
@@ -5981,6 +6266,13 @@
   }
   function entryKey(entry) {
     return entry.fileId + ":" + holeKey(entry.hit);
+  }
+  function mirrorTierClass(win) {
+    var track = trackOf(win);
+    win.classList.toggle(
+      "harpoon-hole-goal--tiered",
+      !!track && track.classList.contains("harpoon-hole-goal--tiered")
+    );
   }
   function mountTieredGoal(goalEl, goalState, goalType) {
     var ed = E2();
@@ -6091,7 +6383,6 @@
         sections: [{
           id: "active",
           label: "",
-          suiteHue: null,
           entries: hits.map(function(hit) {
             return {
               fileId: activeFileId(),
@@ -6141,6 +6432,95 @@
     }
     return model;
   }
+  var DECL_LINE = /^[ \t]*(rec|proof|and)[ \t]+([^\s:(){}\[\],]+)[ \t]*:/;
+  var declTextCache = /* @__PURE__ */ Object.create(null);
+  function fileTextFor(fileId) {
+    if (fileId in declTextCache) return declTextCache[fileId];
+    var P2 = typeof global10.Persist !== "undefined" ? global10.Persist : null;
+    var t = null;
+    try {
+      t = P2 && typeof P2.getFileText === "function" ? P2.getFileText(fileId) : null;
+    } catch (_) {
+      t = null;
+    }
+    declTextCache[fileId] = t == null ? null : String(t);
+    return declTextCache[fileId];
+  }
+  function declForEntry(entry) {
+    var line = entry && entry.hit && entry.hit.hole && entry.hit.hole.line;
+    if (!line) return null;
+    var text = fileTextFor(entry.fileId);
+    if (!text) return null;
+    var lines = text.split(/\r?\n/);
+    for (var i = Math.min(line, lines.length) - 1; i >= 0; i -= 1) {
+      var m = DECL_LINE.exec(lines[i]);
+      if (m) return { kw: m[1], name: m[2] };
+    }
+    return null;
+  }
+  function maskOf(win) {
+    return win && win.firstElementChild;
+  }
+  function trackOf(win) {
+    var mask = maskOf(win);
+    return mask ? mask.firstElementChild : null;
+  }
+  function readOver(win) {
+    var mask = maskOf(win);
+    var track = trackOf(win);
+    if (!mask || !track || !mask.clientWidth) return -1;
+    return Math.max(0, Math.round(track.scrollWidth - mask.clientWidth));
+  }
+  function applyOver(win, over) {
+    if (over < 0) return;
+    win.dataset.measured = "1";
+    if (over <= 1) {
+      if (!win.classList.contains("is-clipped")) return;
+      win.classList.remove("is-clipped");
+      win.style.removeProperty("--slide");
+      win.style.removeProperty("--slide-ms");
+      return;
+    }
+    var slide = "-" + over + "px";
+    var ms = Math.min(2800, Math.max(500, Math.round(over * 6))) + "ms";
+    if (win.style.getPropertyValue("--slide").trim() === slide && win.style.getPropertyValue("--slide-ms").trim() === ms && win.classList.contains("is-clipped")) return;
+    win.classList.add("is-clipped");
+    win.style.setProperty("--slide", slide);
+    win.style.setProperty("--slide-ms", ms);
+  }
+  function markClipped(root) {
+    if (!root) return;
+    var wins = root.querySelectorAll(".harpoon-hole-goal");
+    var over = [];
+    for (var i = 0; i < wins.length; i++) over.push(readOver(wins[i]));
+    for (var j = 0; j < wins.length; j++) applyOver(wins[j], over[j]);
+  }
+  var clipObs = null;
+  var clipRoot = null;
+  function scheduleMarkClipped(root) {
+    clipRoot = root;
+    markClipped(root);
+    requestAnimationFrame(function() {
+      if (clipRoot !== root || !root.isConnected) return;
+      markClipped(root);
+      requestAnimationFrame(function() {
+        if (clipRoot === root && root.isConnected) markClipped(root);
+      });
+    });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function() {
+        if (clipRoot === root && root.isConnected) markClipped(root);
+      });
+    }
+    if (typeof ResizeObserver === "undefined") return;
+    if (clipObs) clipObs.disconnect();
+    clipObs = new ResizeObserver(function() {
+      markClipped(root);
+    });
+    clipObs.observe(root);
+    var tracks = root.querySelectorAll(".harpoon-hole-goal-track");
+    for (var i = 0; i < tracks.length; i++) clipObs.observe(tracks[i]);
+  }
   function buildRow(entry) {
     var hit = entry.hit;
     var key = entryKey(entry);
@@ -6156,48 +6536,59 @@
     row.dataset.entryKey = key;
     if (outOfScope && !goalType) row.classList.add("is-indeterminate");
     var head = el3("div", "harpoon-panel-hole-head");
+    var decl = declForEntry(entry);
+    var declEl = el3("span", "harpoon-hole-decl");
+    if (decl) {
+      declEl.appendChild(el3("span", "harpoon-hole-decl-kw bel-hl-keyword", decl.kw));
+      declEl.appendChild(el3("span", "harpoon-hole-decl-name bel-hl-var-def", decl.name));
+    } else {
+      declEl.classList.add("is-unknown");
+      declEl.appendChild(el3("span", "harpoon-hole-decl-name", "top level"));
+    }
+    head.appendChild(declEl);
     var loc = el3("span", "harpoon-hole-loc");
     var pathLabel = entry.fileBaseName || entry.filePath;
     if (pathLabel) loc.appendChild(el3("span", "harpoon-hole-path", pathLabel));
     loc.appendChild(el3("span", "harpoon-hole-ln", String(hit.hole.line)));
+    setSuiteTip(loc, entry.suiteLabel);
     head.appendChild(loc);
-    if (entry.suiteLabel) {
-      var headEnd = el3("div", "harpoon-panel-hole-head-end");
-      var suiteEl = el3("span", "harpoon-hole-suite");
-      if (entry.suiteHue != null) suiteEl.style.setProperty("--suite-hue", String(entry.suiteHue));
-      suiteEl.textContent = entry.suiteLabel;
-      headEnd.appendChild(suiteEl);
-      head.appendChild(headEnd);
-    }
     row.appendChild(head);
     row.appendChild(el3("div", "harpoon-panel-hole-rule"));
     var goal = el3("div", "harpoon-hole-goal");
+    var goalMask = el3("div", "harpoon-hole-goal-mask");
+    var goalInner = el3("div", "harpoon-hole-goal-track");
+    goalMask.appendChild(goalInner);
+    goal.appendChild(goalMask);
     if (showType) {
       row.dataset.goalState = outOfScope ? goalState === "approximate" ? "approximate" : "cached" : "ready";
       var edLive = E2();
       if (edLive && typeof edLive.mountHoleGoalTier === "function") {
-        edLive.mountHoleGoalTier(goal, {
+        edLive.mountHoleGoalTier(goalInner, {
           surface: "harpoon-card",
           goalState: "live",
           goal: goalType
         });
       } else {
-        renderType2(goal, goalType);
+        renderType2(goalInner, goalType);
       }
     } else if (tiered) {
       row.classList.add("is-pending");
       row.dataset.goalState = goalState;
-      mountTieredGoal(goal, goalState, goalType);
+      mountTieredGoal(goalInner, goalState, goalType);
     } else if (outOfScope) {
       row.classList.add("is-unfocused");
       row.dataset.goalState = "inactive";
-      goal.appendChild(el3("span", "harpoon-hole-unfocused", "Not computable outside scope"));
+      goalInner.appendChild(el3("span", "harpoon-hole-unfocused", "Not computable outside scope"));
     } else {
       row.classList.add("is-pending");
       row.dataset.goalState = "pending";
-      mountTieredGoal(goal, "pending", null);
+      mountTieredGoal(goalInner, "pending", null);
     }
+    mirrorTierClass(goal);
     row.appendChild(goal);
+    row.addEventListener("pointerenter", function() {
+      applyOver(goal, readOver(goal));
+    });
     row.addEventListener("click", function(ev) {
       if (ev.ctrlKey || ev.metaKey) {
         ev.preventDefault();
@@ -6217,6 +6608,7 @@
     if (!bodyEl) return;
     exitProofMode();
     var view = curView();
+    declTextCache = /* @__PURE__ */ Object.create(null);
     var model = collectProjectSections();
     applyGoalStateToModel(model, view);
     if (opts && opts.certify) maybeCertifyVisibleGoals(model, view);
@@ -6224,6 +6616,11 @@
     if (model.totalCount && renderKey === lastListRenderKey && bodyEl.querySelector(".harpoon-panel-list")) return;
     lastListRenderKey = renderKey;
     if (!model.totalCount) {
+      if (clipObs) {
+        clipObs.disconnect();
+        clipObs = null;
+      }
+      clipRoot = null;
       bodyEl.textContent = "";
       var empty = el3("div", "panel-empty");
       empty.appendChild(el3("p", "panel-empty__note", "No open goals in this project."));
@@ -6252,6 +6649,7 @@
       root.appendChild(block);
     }
     bodyEl.appendChild(root);
+    scheduleMarkClipped(root);
   }
   function beginPanelSession(fileId, declKey, start) {
     enterProofMode();
@@ -6303,7 +6701,7 @@
     var P2 = global10.Persist;
     if (!ed || !P2 || typeof ed.declSpanInText !== "function") return null;
     var text = String(P2.getFileText(fileId) || "");
-    var span = ed.declSpanInText(text, from);
+    var span = ed.memberSpanInText ? ed.memberSpanInText(text, from) : ed.declSpanInText(text, from);
     var decl = span ? ed.parseDecl(text.slice(span.from, span.to)) : null;
     return decl ? decl.kw + ":" + decl.name : null;
   }

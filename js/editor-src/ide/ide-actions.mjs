@@ -6,6 +6,7 @@ import { EditorView, Decoration } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
 import { scrollIntoViewCenter, resolveReferenceJump, notifyInspectorJump } from './viewport.mjs';
 import { logJumpSameFile } from './jump-log.mjs';
+import { record as recordJump } from './jump-list.mjs';
 import { findProjectDefinition, findProjectDefinitions, findGroupDefinition } from '../semantic/project-prelude.mjs';
 
 export function getEngine(view) {
@@ -116,6 +117,13 @@ export function flashExtension() {
 
 function moveTo(view, range, { flash = true, select = false } = {}) {
   if (!range || !view?.dom?.isConnected) return false;
+  // Every jump in the editor funnels through here, so this is the one place
+  // that can remember where the user came from.
+  const g = typeof window !== 'undefined' ? window : self;
+  recordJump({
+    fileId: g.Persist?.getActiveFileId?.() ?? null,
+    pos: view.state.selection.main.head,
+  });
   const from = clampPos(view, range.from);
   const spanEnd = range.to != null && range.to > range.from ? range.to : range.from;
   const to = clampPos(view, select ? spanEnd : range.from);

@@ -69,14 +69,21 @@ function getText(id) {
   expect(prelude.length === 2, 'prelude has base + mid before use');
   expect(prelude[0].name === 'grp/base.bel' && prelude[1].name === 'grp/mid.bel', 'prelude load order');
 
+  // Active cfg switched to one.cfg (which does not list use.bel): the file
+  // falls back to the sibling cfg that OWNS it (two.cfg), keeping its suite
+  // membership — not standalone. Standalone is reserved for files no cfg lists.
   P.setActiveCfgForDir('grp', 'grp/one.cfg');
-  const orphanPre = PS.preludeFilesFor(files, useId, getText, {
+  const fallbackPre = PS.preludeFilesFor(files, useId, getText, {
     activeCfgForDir: (d) => P.getActiveCfgForDir(d),
   });
   const dev = PS.developmentForFile(files, useId, getText, {
     activeCfgForDir: (d) => P.getActiveCfgForDir(d),
   });
-  expect(orphanPre.length === 0 && dev.kind === 'standalone', 'file not in active cfg → standalone, no prelude');
+  expect(dev.kind === 'module' && dev.cfg === 'grp/two.cfg',
+    'file not in active cfg → falls back to its owning cfg');
+  expect(fallbackPre.length === 2
+    && fallbackPre[0].name === 'grp/base.bel' && fallbackPre[1].name === 'grp/mid.bel',
+    'owning-cfg fallback keeps prelude order');
 }
 
 // ── two disjoint active suites in one folder ─────────────────────────────────

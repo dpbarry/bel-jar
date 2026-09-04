@@ -161,11 +161,22 @@ function createDisplay(deps) {
     body.insertAdjacentElement('afterend', row);
   }
 
-  function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders) {
+  // The corner label names the declaration being proved. It reads as Beluga source rather
+  // than a bare identifier, using the same `bel-hl-*` palette as every other rendered
+  // fragment in the app, so `rec` and `proof` are told apart at a glance.
+  function appendDeclLabel(glabel, declName, declKw) {
+    if (!declName) return;
+    var name = el('span', 'harpoon-lab-auto-goal-name');
+    if (declKw) name.appendChild(el('span', 'harpoon-lab-goal-decl-kw bel-hl-keyword', declKw));
+    name.appendChild(el('span', 'harpoon-lab-goal-decl-name bel-hl-var-def', declName));
+    glabel.appendChild(name);
+  }
+
+  function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders, declKw) {
     var wrap = el('div', 'harpoon-lab-auto-goal harpoon-lab-strip tone-goal');
     var glabel = el('div', 'harpoon-lab-goal-label');
     glabel.appendChild(el('span', 'harpoon-lab-goal-label-text harpoon-lab-section-label is-goal', 'Goal'));
-    if (declName) glabel.appendChild(el('span', 'harpoon-lab-auto-goal-name', declName));
+    appendDeclLabel(glabel, declName, declKw);
     wrap.appendChild(glabel);
     var body = el('div', 'harpoon-lab-auto-goal-body');
     var goal = el('div', 'harpoon-hole-goal');
@@ -556,6 +567,7 @@ function createDisplay(deps) {
     priorGoalBinders: priorGoalBinders,
     mountGoalPriors: mountGoalPriors,
     appendAutoGoalHero: appendAutoGoalHero,
+    appendDeclLabel: appendDeclLabel,
     appendAutoSolution: appendAutoSolution,
     formatSolutionBody: formatSolutionBody,
     autoVerdictTone: autoVerdictTone,

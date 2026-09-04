@@ -1,0 +1,417 @@
+/* Header: symbol identity first; quiet “in file” locus underneath. */
+.inspector-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.28rem;
+  padding: 0.05rem 0 0.55rem;
+  min-height: 0;
+}
+
+.inspector-header-main {
+  --inspector-name-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Inline flow — same model as .repl-welcome-kbd next to its sentence.
+   font-family MUST match the name so vertical-align:middle uses the same metrics. */
+.inspector-title {
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: var(--inspector-name-size);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-locus {
+  display: flex;
+  align-items: baseline;
+  gap: 0.28em;
+  max-width: 100%;
+  min-width: 0;
+  /* Sit under the name, past the status dot + its gap. */
+  padding-left: calc(6px + 0.3rem);
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: var(--muted-high);
+}
+
+.inspector-locus-prep {
+  flex: 0 0 auto;
+  color: var(--muted-mid);
+}
+
+.inspector-def-file {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0.2rem;
+  background: transparent;
+  font: inherit;
+  font-weight: 500;
+  color: var(--base-higher);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-def-file:hover {
+    color: var(--accent-high);
+  }
+}
+
+.inspector-def-file:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: 1px;
+}
+
+.inspector-status-dot {
+  flex: 0 0 auto;
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--muted-mid) 55%, transparent);
+}
+
+.inspector-status-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 260deg,
+    color-mix(in oklab, var(--ide-status-checking) 80%, white) 320deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    radial-gradient(circle, transparent 55%, #000 58%, #000 100%);
+          mask:
+    radial-gradient(circle, transparent 55%, #000 58%, #000 100%);
+  opacity: 0;
+  pointer-events: none;
+  animation: ide-status-shimmer 1.6s linear infinite;
+}
+
+.inspector-status-dot.is-checked {
+  background: var(--ide-status-clean, hsl(140, 45%, 48%));
+}
+
+.inspector-status-dot.is-checking {
+  background: var(--ide-status-checking);
+}
+
+.inspector-status-dot.is-checking::after {
+  opacity: 1;
+}
+
+.inspector-status-dot.is-error {
+  background: var(--ide-status-error, hsl(0, 65%, 55%));
+}
+
+.inspector-status-dot.is-error-checking {
+  background: var(--ide-status-error, hsl(0, 65%, 55%));
+}
+
+.inspector-status-dot.is-error-checking::after {
+  opacity: 1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 260deg,
+    color-mix(in oklab, var(--ide-status-error) 80%, white) 320deg,
+    transparent 360deg
+  );
+}
+
+/* Not checked here (a different development, not yet checked) — honestly neutral,
+   never a false "clean" green. */
+.inspector-status-dot.is-unknown {
+  background: color-mix(in srgb, var(--muted-mid) 55%, transparent);
+}
+
+.inspector-kind-pill {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 9rem;
+  margin-left: 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sans);
+  font-size: 0.65em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--accent-high);
+  background: var(--accent-lower);
+  border-radius: 0.2rem;
+  padding: 0.05em 0.35em;
+}
+
+.inspector-name {
+  font-family: var(--mono);
+  font-size: 1em;
+  line-height: inherit;
+  color: var(--base-highest);
+}
+
+@container inspector (max-width: 320px) {
+  .inspector-locus {
+    font-size: 0.64rem;
+  }
+
+  .inspector-header-main {
+    --inspector-name-size: 0.74rem;
+  }
+
+  .inspector-kind-pill {
+    max-width: 6.5rem;
+  }
+}
+
+/* A single-line horizontally-scrollable text container; ScrollFade adds the
+   edge fades (mask-image) dynamically as it scrolls. The mask is applied inline
+   by the JS, so here we only set the scroll behaviour + hide the scrollbar. */
+.bel-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* old Edge */
+}
+
+.bel-scroll-x-text {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.bel-scroll-x::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+/* Type — presented as information (not a field). The supercolon flourish on the
+   left (.bel-type::before) reads "type of"; the highlighted text sits beside it. */
+.inspector-type {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0 0 0.4rem;
+  color: var(--base-highest);
+}
+
+.inspector-type-recalc.beljar-tip-shimmer {
+  --shimmer-accent: var(--accent-mid);
+  font-family: var(--sans);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+
+.inspector-section {
+  padding-top: 0.45rem;
+  margin-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--chrome-divider) 60%, transparent);
+}
+
+.inspector-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 0.25rem;
+}
+
+.inspector-section.is-collapsed .inspector-section-head {
+  margin-bottom: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inspector-section-head:hover .inspector-section-chevron {
+    color: var(--accent-high);
+    opacity: 1;
+  }
+}
+
+.inspector-section-head:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -1px;
+}
+
+.inspector-section-title {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--base-higher);
+  font-weight: 700;
+}
+
+.inspector-section-count {
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-mid);
+  background: color-mix(in srgb, var(--base-high) 14%, transparent);
+  border-radius: 0.7rem;
+  padding: 0.02rem 0.4rem;
+  min-width: 1.05rem;
+  text-align: center;
+}
+
+.inspector-section-count.has-items {
+  color: var(--base-highest);
+  background: color-mix(in srgb, var(--base-higher) 32%, transparent);
+  font-weight: 600;
+}
+
+.inspector-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.inspector-section-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--base-high);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.inspector-section-chevron svg {
+  width: 0.65rem;
+  height: 0.65rem;
+  transition: transform 180ms ease;
+}
+
+.inspector-section.is-collapsed .inspector-section-chevron svg {
+  transform: rotate(-90deg);
+}
+
+.inspector-section-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease;
+}
+
+.inspector-section.is-collapsed .inspector-section-body {
+  grid-template-rows: 0fr;
+}
+
+.inspector-section-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.inspector-group-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--base-high);
+  margin: 0.3rem 0 0.1rem;
+}
+
+.inspector-ref-file-group {
+  min-width: 0;
+}
+
+.inspector-ref-file-group + .inspector-ref-file-group {
+  margin-top: 0.55rem;
+}
+
+.inspector-ref-file-name {
+  margin: 0.2rem 0 0.12rem;
+  padding: 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
+.inspector-ref-file-name-base {
+  color: var(--base-high);
+}
+
+.inspector-ref-file-name-count {
+  color: var(--muted-high);
+  font-weight: 400;
+}
+
+.inspector-ref-file-group .inspector-row {
+  padding-left: 0.55rem;
+}
+
+.inspector-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  padding: 0.13rem 0.3rem;
+  cursor: pointer;
+  color: var(--base-higher);
+  font: inherit;
+}
+
+.inspector-row-loc {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-mid);
+  flex: 0 0 auto;
+}
+
+.inspector-row-label {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.inspector-row-file {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 0.5rem;
+  font-size: 0.62rem;
+  color: var(--muted-high);
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+/* Impact tier shown by the row's text colour: a signature cascade (this symbol's
+   type restructures it) is blue; a terminal implementation use (body-user, type
+   unaffected) is grey. The hover names the tier. */
+.inspector-impact-sig .inspector-row-label {
+  /* Softened toward the muted tone so it reads blue without dominating the panel. */
+  color: color-mix(in oklab, var(--accent-mid) 62%, var(--muted-high));
+}
+.inspector-impact-uses .inspector-row-label {
+  color: var(--muted-high);
+}

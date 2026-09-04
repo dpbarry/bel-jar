@@ -62,7 +62,15 @@ const MARGIN = 8;
           });
         } else {
           if (act.label) btn.setAttribute('aria-label', act.label);
-          if (global.Tooltips?.set && act.label) global.Tooltips.set(btn, act.label);
+          // `info` is a hover-only action: a rich tooltip and nothing to press.
+          // It exists so a window can explain ITSELF in its own title bar rather
+          // than spending a row of its body on a sentence about itself.
+          if (typeof act.tooltip === 'function' && global.Tooltips?.setRich) {
+            global.Tooltips.setRich(btn, act.tooltip, act.label);
+            btn.classList.add('floating-window-action--info');
+          } else if (global.Tooltips?.set && act.label) {
+            global.Tooltips.set(btn, act.label);
+          }
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (typeof act.onClick === 'function') act.onClick();

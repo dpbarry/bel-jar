@@ -224,6 +224,16 @@
     var EDITOR_RULERS_KEY = "beljar-editor-rulers";
     var EDITOR_FONT_FAMILY_KEY = "beljar-editor-font-family";
     var EDITOR_HOLE_EMPHASIS_KEY = "beljar-editor-hole-emphasis";
+    var KEYMAP_STYLE_KEY = "beljar-keymap-style";
+    var STATUS_STRIP_KEY = "beljar-status-strip";
+    var COMMAND_LINE_HISTORY_KEY = "beljar-command-line-history";
+    var DOUBLE_TAP_TRIGGER_KEY = "beljar-double-tap-trigger";
+    var DOUBLE_TAP_COMMAND_KEY = "beljar-double-tap-command";
+    var DOUBLE_TAP_SPEED_KEY = "beljar-double-tap-speed";
+    var VIM_LEADER_KEY = "beljar-vim-leader";
+    var VIM_YANK_CLIPBOARD_KEY = "beljar-vim-yank-clipboard";
+    var EDITOR_LINE_NUMBER_MODE_KEY = "beljar-editor-line-number-mode";
+    var VIM_INSERT_ESCAPE_KEY = "beljar-vim-insert-escape";
     var MOTION_PREF_KEY = "beljar-motion-pref";
     var TOAST_DURATION_KEY = "beljar-toast-duration";
     var CHECK_AGGRESSIVENESS_KEY = "beljar-check-aggressiveness";
@@ -566,6 +576,19 @@
     function writeStoredEditorLineNumbers2(on) {
       writeBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY, on);
     }
+    function readStoredEditorLineNumberMode2() {
+      try {
+        var v = backendLoad2(EDITOR_LINE_NUMBER_MODE_KEY);
+        if (v === "relative" || v === "hybrid") return v;
+        return "absolute";
+      } catch (_) {
+        return "absolute";
+      }
+    }
+    function writeStoredEditorLineNumberMode2(v) {
+      if (v === "relative" || v === "hybrid") backendSave2(EDITOR_LINE_NUMBER_MODE_KEY, v);
+      else backendRemove2(EDITOR_LINE_NUMBER_MODE_KEY);
+    }
     function readStoredEditorFoldGutter2() {
       return readBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY);
     }
@@ -749,6 +772,127 @@
       if (mode === "subtle" || mode === "loud") backendSave2(EDITOR_HOLE_EMPHASIS_KEY, mode);
       else backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
     }
+    function readStoredKeymapStyle() {
+      try {
+        var v = backendLoad2(KEYMAP_STYLE_KEY);
+        if (v === "vim" || v === "emacs") return v;
+        return "default";
+      } catch (_) {
+        return "default";
+      }
+    }
+    function writeStoredKeymapStyle(style) {
+      if (style === "vim" || style === "emacs") backendSave2(KEYMAP_STYLE_KEY, style);
+      else backendRemove2(KEYMAP_STYLE_KEY);
+    }
+    function readStoredStatusStrip() {
+      try {
+        var v = backendLoad2(STATUS_STRIP_KEY);
+        if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+    function writeStoredStatusStrip(mode) {
+      if (mode === "off" || mode === "compact" || mode === "standard" || mode === "detailed") backendSave2(STATUS_STRIP_KEY, mode);
+      else backendRemove2(STATUS_STRIP_KEY);
+    }
+    function readStoredCommandLineHistory() {
+      try {
+        var raw = backendLoad2(COMMAND_LINE_HISTORY_KEY);
+        if (!raw) return [];
+        var parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(function(x) {
+          return typeof x === "string" && x;
+        }).slice(0, 50);
+      } catch (_) {
+        return [];
+      }
+    }
+    function writeStoredCommandLineHistory(list) {
+      if (!Array.isArray(list) || !list.length) {
+        backendRemove2(COMMAND_LINE_HISTORY_KEY);
+        return;
+      }
+      var clean = list.filter(function(x) {
+        return typeof x === "string" && x;
+      }).slice(0, 50);
+      backendSave2(COMMAND_LINE_HISTORY_KEY, JSON.stringify(clean));
+    }
+    function readStoredDoubleTapTrigger() {
+      try {
+        var v = backendLoad2(DOUBLE_TAP_TRIGGER_KEY);
+        return v === "shift" || v === "control" || v === "alt" ? v : "off";
+      } catch (_) {
+        return "off";
+      }
+    }
+    function writeStoredDoubleTapTrigger(v) {
+      if (v === "shift" || v === "control" || v === "alt") backendSave2(DOUBLE_TAP_TRIGGER_KEY, v);
+      else backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
+    }
+    function readStoredDoubleTapCommand() {
+      try {
+        var v = backendLoad2(DOUBLE_TAP_COMMAND_KEY);
+        return typeof v === "string" && v ? v : "tools.palette";
+      } catch (_) {
+        return "tools.palette";
+      }
+    }
+    function writeStoredDoubleTapCommand(v) {
+      if (typeof v === "string" && v && v !== "tools.palette") backendSave2(DOUBLE_TAP_COMMAND_KEY, v);
+      else backendRemove2(DOUBLE_TAP_COMMAND_KEY);
+    }
+    function readStoredDoubleTapSpeed() {
+      try {
+        var v = backendLoad2(DOUBLE_TAP_SPEED_KEY);
+        return v === "fast" || v === "relaxed" ? v : "normal";
+      } catch (_) {
+        return "normal";
+      }
+    }
+    function writeStoredDoubleTapSpeed(v) {
+      if (v === "fast" || v === "relaxed") backendSave2(DOUBLE_TAP_SPEED_KEY, v);
+      else backendRemove2(DOUBLE_TAP_SPEED_KEY);
+    }
+    function readStoredVimLeader() {
+      try {
+        var v = backendLoad2(VIM_LEADER_KEY);
+        if (v === "," || v === " ") return v;
+        return String.fromCharCode(92);
+      } catch (_) {
+        return String.fromCharCode(92);
+      }
+    }
+    function writeStoredVimLeader(v) {
+      if (v === "," || v === " ") backendSave2(VIM_LEADER_KEY, v);
+      else backendRemove2(VIM_LEADER_KEY);
+    }
+    function readStoredVimYankClipboard() {
+      try {
+        return backendLoad2(VIM_YANK_CLIPBOARD_KEY) === "on";
+      } catch (_) {
+        return false;
+      }
+    }
+    function writeStoredVimYankClipboard(on) {
+      if (on === true) backendSave2(VIM_YANK_CLIPBOARD_KEY, "on");
+      else backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+    }
+    function readStoredVimInsertEscape() {
+      try {
+        var v = backendLoad2(VIM_INSERT_ESCAPE_KEY);
+        return v === "jk" || v === "jj" || v === "kj" ? v : "";
+      } catch (_) {
+        return "";
+      }
+    }
+    function writeStoredVimInsertEscape(v) {
+      if (v === "jk" || v === "jj" || v === "kj") backendSave2(VIM_INSERT_ESCAPE_KEY, v);
+      else backendRemove2(VIM_INSERT_ESCAPE_KEY);
+    }
     function readStoredMotionPref() {
       try {
         var v = backendLoad2(MOTION_PREF_KEY);
@@ -832,17 +976,14 @@
     }
     function readStoredHarpoonMode() {
       try {
-        var v = localStorage.getItem(HARPOON_MODE_KEY);
-        return v === "brutus" ? "brutus" : "manual";
-      } catch (e) {
+        return backendLoad2(HARPOON_MODE_KEY) === "orca" ? "orca" : "manual";
+      } catch (_) {
         return "manual";
       }
     }
     function writeStoredHarpoonMode(mode) {
-      try {
-        localStorage.setItem(HARPOON_MODE_KEY, mode === "brutus" ? "brutus" : "manual");
-      } catch (e) {
-      }
+      if (mode === "orca") backendSave2(HARPOON_MODE_KEY, "orca");
+      else backendRemove2(HARPOON_MODE_KEY);
     }
     function readStoredHarpoonVerifyMoves() {
       return readBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY);
@@ -985,6 +1126,7 @@
       EDITOR_WORD_WRAP_KEY,
       EDITOR_TAB_SIZE_KEY,
       EDITOR_LINE_NUMBERS_KEY,
+      EDITOR_LINE_NUMBER_MODE_KEY,
       EDITOR_FOLD_GUTTER_KEY,
       EDITOR_FOLD_PERSIST_KEY,
       EDITOR_ACTIVE_LINE_KEY,
@@ -1006,7 +1148,16 @@
       EDITOR_WHITESPACE_KEY,
       EDITOR_RULERS_KEY,
       EDITOR_FONT_FAMILY_KEY,
-      EDITOR_HOLE_EMPHASIS_KEY
+      EDITOR_HOLE_EMPHASIS_KEY,
+      KEYMAP_STYLE_KEY,
+      STATUS_STRIP_KEY,
+      COMMAND_LINE_HISTORY_KEY,
+      VIM_LEADER_KEY,
+      VIM_YANK_CLIPBOARD_KEY,
+      VIM_INSERT_ESCAPE_KEY,
+      DOUBLE_TAP_TRIGGER_KEY,
+      DOUBLE_TAP_COMMAND_KEY,
+      DOUBLE_TAP_SPEED_KEY
     ];
     function exportUserSettings() {
       var prefs = {};
@@ -1118,6 +1269,8 @@
       backendRemove2(BELUGA_CANCEL_ON_EDIT_KEY);
       backendRemove2(CHECK_AGGRESSIVENESS_KEY);
       backendRemove2(SUITE_CHECK_KEY);
+    }
+    function resetHarpoonPrefs2() {
       backendRemove2(AUTOSOLVE_FOCUS_NEXT_KEY);
       backendRemove2(AUTOSOLVE_SHOW_STATS_KEY);
       backendRemove2(HARPOON_MODE_KEY);
@@ -1133,7 +1286,6 @@
       backendRemove2(REPL_HISTORY_PERSIST_KEY);
       backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
       backendRemove2(REPL_AUTOCOMPLETE_CONTINUE_KEY);
-      clearReplHistoryPayload();
     }
     var KEYBINDINGS_KEY = "beljar-keybindings";
     function readStoredKeybindings2() {
@@ -1171,6 +1323,15 @@
     }
     function resetKeybindingPrefs2() {
       writeStoredKeybindings2({});
+      backendRemove2(KEYMAP_STYLE_KEY);
+      backendRemove2(STATUS_STRIP_KEY);
+      backendRemove2(COMMAND_LINE_HISTORY_KEY);
+      backendRemove2(VIM_LEADER_KEY);
+      backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+      backendRemove2(VIM_INSERT_ESCAPE_KEY);
+      backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
+      backendRemove2(DOUBLE_TAP_COMMAND_KEY);
+      backendRemove2(DOUBLE_TAP_SPEED_KEY);
     }
     function resetAliasesPrefs2() {
       backendRemove2(ALIAS_ACTIVATION_KEY);
@@ -1296,6 +1457,8 @@
       writeStoredEditorWordWrap: writeStoredEditorWordWrap2,
       readStoredEditorTabSize: readStoredEditorTabSize2,
       writeStoredEditorTabSize: writeStoredEditorTabSize2,
+      readStoredEditorLineNumberMode: readStoredEditorLineNumberMode2,
+      writeStoredEditorLineNumberMode: writeStoredEditorLineNumberMode2,
       readStoredEditorLineNumbers: readStoredEditorLineNumbers2,
       writeStoredEditorLineNumbers: writeStoredEditorLineNumbers2,
       readStoredEditorFoldGutter: readStoredEditorFoldGutter2,
@@ -1342,6 +1505,24 @@
       writeStoredEditorFontFamily,
       readStoredEditorHoleEmphasis,
       writeStoredEditorHoleEmphasis,
+      readStoredKeymapStyle,
+      writeStoredKeymapStyle,
+      readStoredStatusStrip,
+      readStoredDoubleTapTrigger,
+      writeStoredDoubleTapTrigger,
+      readStoredDoubleTapCommand,
+      writeStoredDoubleTapCommand,
+      readStoredDoubleTapSpeed,
+      writeStoredDoubleTapSpeed,
+      readStoredVimYankClipboard,
+      writeStoredVimYankClipboard,
+      readStoredVimLeader,
+      writeStoredVimLeader,
+      readStoredVimInsertEscape,
+      writeStoredVimInsertEscape,
+      readStoredCommandLineHistory,
+      writeStoredCommandLineHistory,
+      writeStoredStatusStrip,
       readStoredMotionPref,
       writeStoredMotionPref,
       applyStoredMotionPref,
@@ -1386,6 +1567,7 @@
       resetEditorGutterPrefs: resetEditorGutterPrefs2,
       resetEditorPrefs: resetEditorPrefs2,
       resetBelugaPrefs: resetBelugaPrefs2,
+      resetHarpoonPrefs: resetHarpoonPrefs2,
       resetReplPrefs: resetReplPrefs2,
       readStoredKeybindings: readStoredKeybindings2,
       writeStoredKeybindings: writeStoredKeybindings2,
@@ -1513,7 +1695,6 @@
       resetStoredWorkspace2(pid);
     }
     function resetWorkspacePrefs2() {
-      resetStoredWorkspace2();
       backendRemove2(INSPECTOR_FOLLOW_KEY2);
       backendRemove2(RESTORE_PANELS_KEY);
       backendRemove2(LIBRARY_EXPAND_DEFAULT_KEY);
@@ -2069,6 +2250,7 @@
       list.push(p);
       list.sort();
       writeEmptyFolders(list);
+      notifyProjectTreeChanged("folder-add");
     }
     function removeEmptyFolder2(path) {
       var p = String(path || "");
@@ -2078,9 +2260,12 @@
       });
       if (next.length === list.length) return;
       writeEmptyFolders(next);
+      notifyProjectTreeChanged("folder-remove");
     }
     function clearEmptyFolders2() {
+      if (!readEmptyFolders().length) return;
       writeEmptyFolders([]);
+      notifyProjectTreeChanged("folder-clear");
     }
     function pruneEmptyFoldersUnder2(prefix) {
       var p = String(prefix || "").trim();
@@ -2092,7 +2277,10 @@
       var kept = list.filter(function(x) {
         return x !== p && x.indexOf(p + "/") !== 0;
       });
-      if (kept.length !== list.length) writeEmptyFolders(kept);
+      if (kept.length !== list.length) {
+        writeEmptyFolders(kept);
+        notifyProjectTreeChanged("folder-prune");
+      }
     }
     function renameEmptyFolderPrefix2(from, to) {
       var list = readEmptyFolders();
@@ -2110,6 +2298,7 @@
         });
         list.sort();
         writeEmptyFolders(list);
+        notifyProjectTreeChanged("folder-rename");
       }
     }
     function pruneEmptyFoldersForFile(filePath) {
@@ -2119,7 +2308,10 @@
       var next = list.filter(function(ef) {
         return name !== ef && name.indexOf(ef + "/") !== 0;
       });
-      if (next.length !== list.length) writeEmptyFolders(next);
+      if (next.length !== list.length) {
+        writeEmptyFolders(next);
+        notifyProjectTreeChanged("folder-prune");
+      }
     }
     function folderSubtreeOccupied(folderPath, files, emptyFolders) {
       if (!folderPath) return files.length > 0 || emptyFolders.length > 0;
@@ -2303,6 +2495,7 @@
       files.push({ id, name: fileName });
       writeProjectFiles(files);
       pruneEmptyFoldersForFile(fileName);
+      notifyProjectTreeChanged("create");
       return id;
     }
     function relToCfgDir(cfgDir, fullPath) {
@@ -2346,6 +2539,12 @@
       var g2 = typeof window !== "undefined" ? window : null;
       if (g2 && typeof g2.dispatchEvent === "function") {
         g2.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
+      }
+    }
+    function notifyProjectTreeChanged(kind) {
+      var g2 = typeof window !== "undefined" ? window : null;
+      if (g2 && typeof g2.dispatchEvent === "function") {
+        g2.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
@@ -2399,6 +2598,7 @@
       state.meta.revision = 1;
       backendSave2(stateKeyFor2(id), JSON.stringify(state));
       pruneEmptyFoldersForFile(name);
+      notifyProjectTreeChanged("restore");
       return true;
     }
     function deleteFile2(id) {
@@ -2425,6 +2625,7 @@
         backendRemove2(projKey2("active-file"));
         writeOpenFileIds2([]);
       }
+      notifyProjectTreeChanged("delete");
       return files.length ? files[Math.max(0, idx - 1)].id : null;
     }
     function rewriteCfgsForOp(oldName, newName) {
@@ -2470,6 +2671,7 @@
           if (changed) writeActiveCfgByDir2(map);
           pruneEmptyFoldersForFile(newName);
           if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
+          notifyProjectTreeChanged("rename");
           return;
         }
       }
@@ -3697,6 +3899,12 @@
   function writeStoredEditorLineNumbers() {
     return _settingsApi.writeStoredEditorLineNumbers.apply(_settingsApi, arguments);
   }
+  function readStoredEditorLineNumberMode() {
+    return _settingsApi.readStoredEditorLineNumberMode.apply(_settingsApi, arguments);
+  }
+  function writeStoredEditorLineNumberMode() {
+    return _settingsApi.writeStoredEditorLineNumberMode.apply(_settingsApi, arguments);
+  }
   function readStoredEditorFoldGutter() {
     return _settingsApi.readStoredEditorFoldGutter.apply(_settingsApi, arguments);
   }
@@ -3806,6 +4014,24 @@
     "writeStoredEditorFontFamily",
     "readStoredEditorHoleEmphasis",
     "writeStoredEditorHoleEmphasis",
+    "readStoredKeymapStyle",
+    "writeStoredKeymapStyle",
+    "readStoredStatusStrip",
+    "writeStoredStatusStrip",
+    "readStoredCommandLineHistory",
+    "writeStoredCommandLineHistory",
+    "readStoredDoubleTapTrigger",
+    "writeStoredDoubleTapTrigger",
+    "readStoredDoubleTapCommand",
+    "writeStoredDoubleTapCommand",
+    "readStoredDoubleTapSpeed",
+    "writeStoredDoubleTapSpeed",
+    "readStoredVimLeader",
+    "writeStoredVimLeader",
+    "readStoredVimYankClipboard",
+    "writeStoredVimYankClipboard",
+    "readStoredVimInsertEscape",
+    "writeStoredVimInsertEscape",
     "readStoredMotionPref",
     "writeStoredMotionPref",
     "applyStoredMotionPref",
@@ -3870,6 +4096,9 @@
   }
   function resetBelugaPrefs() {
     return _settingsApi.resetBelugaPrefs.apply(_settingsApi, arguments);
+  }
+  function resetHarpoonPrefs() {
+    return _settingsApi.resetHarpoonPrefs.apply(_settingsApi, arguments);
   }
   function resetReplPrefs() {
     return _settingsApi.resetReplPrefs.apply(_settingsApi, arguments);
@@ -4476,6 +4705,8 @@
     writeStoredEditorWordWrap,
     readStoredEditorTabSize,
     writeStoredEditorTabSize,
+    readStoredEditorLineNumberMode,
+    writeStoredEditorLineNumberMode,
     readStoredEditorLineNumbers,
     writeStoredEditorLineNumbers,
     readStoredEditorFoldGutter,
@@ -4519,6 +4750,7 @@
     resetEditorGutterPrefs,
     resetEditorPrefs,
     resetBelugaPrefs,
+    resetHarpoonPrefs,
     resetReplPrefs,
     resetWorkspacePrefs,
     resetAliasesPrefs,

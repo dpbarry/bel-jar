@@ -1,7 +1,7 @@
 // Frozen anchor for a Harpoon auto-solve session — pure compare logic for
 // "is the hole still safe to insert into?" without cancelling live search.
 
-import { parseDecl } from './harpoon-program.mjs';
+import { parseDecl, locateMember } from './harpoon-program.mjs';
 import { DECL_IDENT } from '../prover/ident.mjs';
 
 export function textFingerprint(text) {
@@ -74,6 +74,16 @@ function memberFingerprintsDrifted(anchor, live) {
 function findDeclByKey(docText, declKey, getDeclSpan, parseDeclFn) {
   if (!declKey || !docText) return null;
   const parse = parseDeclFn || parseDecl;
+  const colon = String(declKey).indexOf(':');
+  const name = colon >= 0 ? declKey.slice(colon + 1) : '';
+  const loc = locateMember(docText, name);
+  if (loc) {
+    const slice = docText.slice(loc.from, loc.to);
+    const decl = parse(slice);
+    if (decl && `${decl.kw}:${decl.name}` === declKey) {
+      return { from: loc.from, to: loc.to, decl, slice };
+    }
+  }
   const re = new RegExp(String.raw`\b(rec|proof)\s+(${DECL_IDENT})\s*:`, 'gu');
   let m;
   while ((m = re.exec(docText)) !== null) {

@@ -51,6 +51,13 @@ const underscoreObjMarks = (s) => String(s)
 
 function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
 
+/** How a fact is spelled when cited in a synthesized term. */
+export function factArgText(f) {
+  if (f.transportSub) return `${f.name}[${f.transportSub}]`;
+  if (f.weaken) return `${f.name}[..]`;
+  return f.name;
+}
+
 // Split into top-level tokens; parenthesised groups stay whole.
 function toks(text) {
   const s = norm(text);
@@ -623,7 +630,7 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
         // must never SHADOW a derivable LF term).
         if (lfOnly && f.viaComp) continue;
         if (norm(f.concl) === norm(concl)) {
-          return { status: 'solved', argText: f.weaken ? `${f.name}[..]` : f.name, lets: [], viaComp: !!f.viaComp };
+          return { status: 'solved', argText: factArgText(f), lets: [], viaComp: !!f.viaComp };
         }
         continue;
       }
@@ -760,7 +767,7 @@ export function synthesize(goal, facts, rules, ctors, opts = {}) {
           choiceBudget -= 1;
           if (choiceBudget <= 0) return choiceSpent();
           const r2 = resolved.slice();
-          r2[pick.i] = { text: f.weaken ? `${f.name}[..]` : f.name, viaComp: !!f.viaComp };
+          r2[pick.i] = { text: factArgText(f), viaComp: !!f.viaComp };
           const deep = dfs(t2, rest, r2, lets);
           if (deep.status === 'solved') return deep;
           if (deep.status === 'blocked' && !blockedFallback) blockedFallback = deep;

@@ -4,47 +4,13 @@
 
 import {
   decomposeContextual,
-  headOfConclusion,
-  typeFamilyHead,
-  enumerateConstructorsTyped,
-  fillCandidates,
-  invertCandidates,
-  paramInvertCandidates,
-  reachableTypeHeads,
-  isHypArgType,
-  isCTypeFamily,
-  branchLetNames,
-  constructorArgDescriptor,
-  conclusionOf,
-  schemaInfo,
-  schemaAdmittedTypes,
-  parameterTermFor,
-  introBinders,
-  familyIndexSorts,
-  patternMetavars,
   setConstructorScopeDecl,
 } from './hole-split.mjs';
-import { synthesize, demandSplitVerdict, fillSplitPlan, fillIntroPlan, fillInvertPlan, fillInvertChainPlan } from './prover-synth.mjs';
 import { findCounterexample, certifyCounterexample } from './prover-counterexample.mjs';
 import { parseHoles } from './hole-report.mjs';
-import { reIdentExact } from './ident.mjs';
-import {
-  parseCompType,
-  parseTotality,
-  boxedConclusionHead,
-  decreasingBoxIndex,
-  decreasingArgIndex,
-  measureDesignation,
-  implicitMetaCount,
-  normalizeCtypeSpelling,
-  isCtypeApplication,
-} from './prover-comp-type.mjs';
-import {
-  deferDominated,
-  withWritableRiskDominated,
-  certifyWaveSize,
-  classifyVerdict,
-} from './prover-policy.mjs';
+import { DECL_IDENT } from './ident.mjs';
+import { decreasingArgIndex, implicitMetaCount } from './prover-comp-type.mjs';
+import { deferDominated, certifyWaveSize, classifyVerdict } from './prover-policy.mjs';
 import { stepMeta, stepLead, letRhsOf, moveHead } from './prover-captions.mjs';
 import {
   theoremDeclRange,
@@ -52,39 +18,21 @@ import {
   spliceAtHole,
   holesForTheorem,
   normalizeHoleCol,
-  holeByteOffset,
-  stripLfComments,
-  proveOrchestrationCode,
-  mapProveHolesToDocHits,
 } from './prover-certify.mjs';
 import {
   theoremUnderProof,
   pathBodyBefore,
+  branchBodyBefore,
   enrichHoleFromTheorem,
   resolveHoleGoal,
-  hypsOf,
-  expandedHypsOf,
-  sourceWritableNames,
-  inventedReportNames,
-  textReferencesNames,
-  schemaSomeVars,
-  branchBodyBefore,
-  openCasesAt,
+  circularSelfCalls,
   branchPatternBox,
-  letsInBranch,
-  boxOf,
-  splitCtx,
-  termOf,
-  freshForHole,
-  metaConclusion,
-  contextualHead,
-  isDeclaredTypeFamily,
-  resultFamilyOfCtor,
-  holeByteOffsetBridge,
+  openCasesAt,
   declStartOffset,
+  holeByteOffsetBridge,
   declBodyEqIndex,
 } from './prover-hyp.mjs';
-import { recurseTexts, splitTextForCtype } from './prover-moves.mjs';
+import { branchLetNames } from './hole-split.mjs';
 import { candidateMoves, movePrefilterOk } from './prover-candidates.mjs';
 
 export {
@@ -406,7 +354,12 @@ async function proveProgramWithScope(initialCode, thm, oracle, opts = {}) {
         : p)
       : undefined;
     const quiet = { ...opts, onStep: undefined, onTraceEntry: undefined, onPulse: forkPulse };
-    const thm2 = { ...thm, totality: d.totality };
+    // `syntheticTotality` marks this measure as OURS, not the author's. Entry 55: an
+    // invented measure can be arity-correct yet land on an IMPLICIT argument, which
+    // satisfies Beluga's totality check vacuously and lets a circular proof through.
+    // The certification-time well-foundedness check keys on this flag — the author's
+    // own pragma is trusted to Beluga, ours is verified by us.
+    const thm2 = { ...thm, totality: d.totality, syntheticTotality: true };
     const res = await proveProgramCore(forked, thm2, oracle, quiet);
     forkChecks += res.checkCount || 0;
     if (res.complete) {
@@ -653,7 +606,55 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
     if (!holes.length) {
       const syn = syntacticHoleInTheorem(code, thm);
       if (!syn) {
-        return finish({ complete: !!(checked.ok && countErrors(checked) <= baseErrors), code, steps, trace: trace || undefined });
+        // ⛔ A COMPLETION WITH ZERO ACCEPTED MOVES IS NOT A PROOF (master plan 52b).
+        // Reaching here on the FIRST iteration means the checker reported no hole and
+        // no `?` survives — i.e. there was nothing to prove. That is correct and normal
+        // for the IDE (running the prover on an already-finished decl), but for a
+        // harness that just MASKED a body to `?` it means the mask did not take, and
+        // recording it as COMPLETE mints a false positive. The 2026-07-29 ledger carried
+        // 52 such rows and "proved" `logEqSym` — two nested recursive calls inside an
+        // `mlam` — in 22 checks. Callers that masked pass `requireProgress` and get an
+        // honest harness error instead. The IDE path is unaffected.
+        if (opts.requireProgress && !steps.length) {
+          return finish({
+            complete: false,
+            code,
+            steps,
+            stuck: { reason: 'mask-ineffective', error: 'no hole to prove: the target body was not masked' },
+          });
+        }
+        const done = !!(checked.ok && countErrors(checked) <= baseErrors);
+        // 🚨 ENTRY 55 — NEVER BANK A CIRCULAR PROOF. For an untotalied theorem Beluga
+        // runs no termination check, so `checked.ok` is not evidence of a proof: a
+        // self-application on an unchanged argument typechecks and would be recorded
+        // COMPLETE (measured: 3 such false proofs in the 273 ledger). decOk cannot
+        // stop it — these arrive via the FILL path and never consult it — so the term
+        // is verified here, at certification. Totalied theorems are left to Beluga,
+        // which does enforce the measure.
+        if (done && thm && (!thm.totality || thm.syntheticTotality) && !globalThis.__proverNoCircCheck) {
+          // The decOk set must be computed from the theorem's ACTUAL decreasing binder.
+          // Hardcoding 0 made `decSubderivNames` read the wrong `fn` binder on every
+          // theorem whose decreasing premise is not the first, returning an empty set so
+          // that every self-call looked circular — measured as 15 lost completions on the
+          // differential before this was corrected.
+          const decIdxForCheck = (() => {
+            try { const i = decreasingArgIndex(thm); return i >= 0 ? i : 0; } catch { return 0; }
+          })();
+          const circ = circularSelfCalls(code, thm, decIdxForCheck);
+          if (circ.length) {
+            return finish({
+              complete: false,
+              code,
+              steps,
+              trace: trace || undefined,
+              stuck: {
+                reason: 'circular-recursion',
+                error: `self-application with no decreasing argument: ${circ[0]}`,
+              },
+            });
+          }
+        }
+        return finish({ complete: done, code, steps, trace: trace || undefined });
       }
       // A `?` remains but Beluga reported no holes for it. If the check errored,
       // the report was cut short — searching blind would guess; decline honestly.
@@ -1212,8 +1213,15 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
       // `code` is the program AS ACCEPTED SO FAR. Reporting it lets a caller
       // stop the search and inherit its progress (the Lab's "take over"), which
       // is otherwise impossible: the steps alone don't reconstitute the program.
+      // `holes` is the SUCCESSOR hole report, already computed above for the
+      // search's own guards. Reporting it costs one array reference and saves the
+      // Lab a full program re-check: without it the panel can only learn the
+      // current context by re-running the checker, which is why the context and
+      // tactics used to sit frozen at the pre-search state for the whole run.
       if (opts.onStep) {
-        opts.onStep({ steps: [...steps], last: steps[steps.length - 1], code: spliced });
+        opts.onStep({
+          steps: [...steps], last: steps[steps.length - 1], code: spliced, holes: nextHoles,
+        });
       }
       advanced = true;
       break;
@@ -1397,7 +1405,10 @@ export function approximateHoleGoal(fileText, line, col) {
   const code = String(fileText || '');
   const wantLine = line;
   const wantCol = col || 1;
-  const re = /\b(?:rec|proof)\s+([\p{L}_][\p{L}\p{N}_']*)\s*:/gu;
+  const re = new RegExp(
+    String.raw`(?:^|[\n\s])(?:and\s+(?:rec\s+)?|(?:rec|proof)\s+)(${DECL_IDENT})\s*:`,
+    'gu',
+  );
   let match;
   while ((match = re.exec(code)) !== null) {
     const name = match[1];

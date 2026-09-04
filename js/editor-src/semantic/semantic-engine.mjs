@@ -581,13 +581,16 @@ export function createSemanticEngine(options = {}) {
     if (updateOptions.cursorPos != null) lastCursorPos = updateOptions.cursorPos;
     const prevSyntax = syntaxStore.getSnapshot();
     const syntax = timeSync('syntaxStore', () => syntaxStore.update(tree, doc, { ...updateOptions, documentId }));
-    let trigger = timeSync('settlementTrigger', () => settlementTrigger(prevSyntax, syntax));
+    const parseIncomplete = syntax.doc.length > 0 && syntax.tree.length < syntax.doc.length;
+    const symbolChanges = parseIncomplete ? null : (updateOptions.changes ?? null);
+    let trigger = timeSync('settlementTrigger', () => settlementTrigger(prevSyntax, syntax, {
+      changes: symbolChanges,
+    }));
     if (updateOptions.forceResettle) trigger = 'semantic';
     const perf = getCheckTrace();
     if (perf.enabled) {
       perf.record('edit:trigger', 0, { trigger, version: syntax.version });
     }
-    const parseIncomplete = syntax.doc.length > 0 && syntax.tree.length < syntax.doc.length;
     const deferSettlement = !!updateOptions.deferSettlement
       || (parseIncomplete && !updateOptions.changes);
     if (trigger === 'cosmetic' && settlement) {
@@ -608,7 +611,6 @@ export function createSemanticEngine(options = {}) {
     // top-level node set is truncated, so fall back to a full rebuild rather than
     // reason about a partial tree; the incremental path's own length/probe guards
     // then keep the fast path a pure win when it does engage.
-    const symbolChanges = parseIncomplete ? null : (updateOptions.changes ?? null);
     const symbols = symbolStore.update(syntax, { changes: symbolChanges });
     const belugaDiags = belugaDiagnosticsForVersion(syntax.version);
     const graph = timeSync('graphUpdate', () => semanticGraph.update(symbols, syntax, {

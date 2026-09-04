@@ -98,6 +98,7 @@ import {
   supportLemmaTexts,
   helperLemmaTexts,
   ihDirectCallTexts,
+  inlineArgCallTexts,
   goalMatchesTheoremConclusion,
 } from './prover-moves.mjs';
 
@@ -120,7 +121,12 @@ export function candidateMoves(hole, code, thm) {
   hole = resolveHoleGoal(enrichHoleFromTheorem(hole, thm, code), thm);
 
   const fills = [];
-  for (const t of fillCandidates(hole, code)) {
+  // Entry 42's composite: a ctype ARGUMENT slot may need an inline IH/lemma call, and
+  // `fillCandidates` holds no theorem. Supplied as a callback (see its signature).
+  const inlineCalls = globalThis.__proverInlineArg
+    ? (wantHead) => inlineArgCallTexts(wantHead, hole, thm, code)
+    : null;
+  for (const t of fillCandidates(hole, code, inlineCalls)) {
     fills.push({ kind: 'fill', text: t, rationale: 'inhabit the goal directly with ' + t });
   }
   for (const t of ihDirectCallTexts(hole, thm, code)) {
@@ -353,7 +359,7 @@ export function candidateMoves(hole, code, thm) {
       });
     }
     // Ctype-hypothesis split (staked 2026-07-21; S1b's 2026-07-19 attempt is
-    // the postmortem in docs/prover-master-plan.md §0.5). The re-split guard
+    // the postmortem in docs/archive/orca-research/prover-master-plan.md §0.5). The re-split guard
     // that broke S1b (swapping the SHARED caseScrutSet to openCasesAt caused
     // 23 LF regressions) is here scoped to THIS emission only: ctypeScrutsOpen
     // gates ctype splits alone, so the LF path (splitDone/caseScrutSet) is
@@ -362,7 +368,17 @@ export function candidateMoves(hole, code, thm) {
     // split, a move type that otherwise did not exist.
     if (!annotated && !bare && c.type && isCtypeApplication(c.type)
         && !ctypeScrutsOpen().has(c.name)) {
-      const ctypeText = splitTextForCtype(code, hole, c.name, c.type);
+      // The BOX-pattern variant leads (the corpus idiom, and the only one whose bound
+      // sub-derivation is a meta the later fill can weaken); the bare-name spelling
+      // still follows, so nothing that relied on it is lost — the checker and the
+      // backtracker arbitrate, as with every other dual spelling.
+      const ctypeTexts = globalThis.__proverInlineArg
+        ? [...new Set([
+          splitTextForCtype(code, hole, c.name, c.type, { boxArgs: true }),
+          splitTextForCtype(code, hole, c.name, c.type),
+        ].filter(Boolean))]
+        : [splitTextForCtype(code, hole, c.name, c.type)].filter(Boolean);
+      const ctypeText = ctypeTexts[0];
       if (ctypeText) {
         // NESTING PARENS: a nested `case` MUST be parenthesised or the OUTER case's
         // remaining arms parse as arms of the INNER one. `splitDone` keys on
@@ -373,12 +389,14 @@ export function candidateMoves(hole, code, thm) {
         // `| Ae_l X4 =>` arm, and the candidate died with a type error that looked like
         // the inversion's fault. Any decl-scoped OPEN case means we are nested.
         const nested = splitDone || declScopedCases().length > 0;
-        splits.push({
-          kind: 'split',
-          text: nested ? `(${ctypeText})` : ctypeText,
-          rationale: 'case-analyse ' + c.name,
-          scrutinee: c.name,
-        });
+        for (const txt of ctypeTexts) {
+          splits.push({
+            kind: 'split',
+            text: nested ? `(${txt})` : txt,
+            rationale: 'case-analyse ' + c.name,
+            scrutinee: c.name,
+          });
+        }
         // ⭐ CTYPE INVERSION — the one-arm case, i.e. `let Ae_a d1 d2 = d in`.
         //
         // When the hypothesis' OWN indices leave exactly one constructor possible, the

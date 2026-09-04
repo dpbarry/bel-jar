@@ -13,7 +13,7 @@ import {
   rectangularSelection,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
-import { openSearchPanel, findNext, findPrevious } from '@codemirror/search';
+import { openSearchPanel, findNext, findPrevious, SearchCursor } from '@codemirror/search';
 import { searchPanel } from './ide/search-panel.mjs';
 import { ensureSyntaxTree, foldAll, foldKeymap, indentRange, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language';
 import { diagnosticCount, forceLinting, forEachDiagnostic, linter } from '@codemirror/lint';
@@ -25,6 +25,7 @@ import {
   resolveJumpRange, captureFormatViewportAnchor, captureViewportLocal,
 } from './ide/viewport.mjs';
 import { aliases, maybeExpandBelAliases } from './aliases.mjs';
+import { memberSpanFromTree } from './harpoon/scan-file-holes.mjs';
 
 export {
   expandBelAliases,
@@ -43,7 +44,39 @@ export {
 export { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
 export { highlightSourceFragment, renderSourceInto } from './format/source-render.mjs';
 export { normalizeType, renderTypeInto } from './format/type-render.mjs';
-export { buildProofProgram, commitProof, parseDecl, declRangeWithSemicolon } from './harpoon/harpoon-program.mjs';
+
+// The reserved-chord truth table, surfaced to the shell so the settings sheet
+// and the live keymap read the same facts.
+export function reservedChordFacts() {
+  const isMac = isMacPlatform();
+  return {
+    isMac,
+    rows: reservedChords(isMac),
+    fidelity: emacsFidelity(isMac),
+  };
+}
+/**
+ * The keys the ACTIVE editing style adds on its own — Vim's `gd`, `]h` and the
+ * leader map, Emacs' `C-x` and `C-c` chains.
+ *
+ * ⛔ These are real, invocable bindings and they were listed NOWHERE. The
+ * Keybindings sheet projects `Keybindings`, which has never heard of them; the
+ * palette lists commands, not chords; Available Macros asked `describe()`, which
+ * only knows BelJar's own chord table. The only way to find `]h` was to hold `]`
+ * for 400ms and read which-key — a discovery path that requires already knowing
+ * the key exists.
+ *
+ * Surfaced here rather than duplicated shell-side so the list can only ever be
+ * the maps that are actually installed.
+ */
+export { styleMacros, packageKeyNote } from './ide/modal/style-macros.mjs';
+export { activeVimOptions } from './ide/modal/vim-setup.mjs';
+export { vimStatus } from './ide/keymap-style.mjs';
+export { applyModalPrefs } from './ide/keymap-style.mjs';
+export {
+  buildProofProgram, commitProof, parseDecl, declRangeWithSemicolon,
+  locateMember, committedMemberText, listCompMembers,
+} from './harpoon/harpoon-program.mjs';
 export { formatProofBody } from './format/proof-format.mjs';
 export { captureHarpoonAnchor, assessHarpoonAnchor, textFingerprint, holeKeyFromHit } from './harpoon/harpoon-anchor.mjs';
 export {
@@ -72,6 +105,7 @@ export {
   attemptMove,
   applyMove,
   absorbAuto,
+  pairTrace,
   undo as manualUndo,
   redo as manualRedo,
   canUndo as manualCanUndo,
@@ -81,7 +115,7 @@ export { fillCandidates } from './prover/hole-split.mjs';
 export { normalizeProofModel, normalizeSubgoal, parseBinders, applicableTactics, splitTargets } from './harpoon/harpoon-model.mjs';
 export { createCachedGoalHintIcon, createApproxGoalHintIcon, bindCachedGoalHintTooltip, CACHED_GOAL_TIP, APPROXIMATE_GOAL_TIP, RECHECKING_GOAL_TIP, CHECKING_GOAL_TIP, CACHED_GOAL_HINT_SVG } from './prover/cached-goal-hint.mjs';
 export { mountHoleGoalTier } from './prover/hole-goal-pending-ui.mjs';
-export { holeHostFile, scanFileHoles, hitsFromHoles, declSpanInText } from './harpoon/scan-file-holes.mjs';
+export { holeHostFile, scanFileHoles, hitsFromHoles, declSpanInText, memberSpanInText } from './harpoon/scan-file-holes.mjs';
 export {
   buildHoleDisplayRows,
   settlementGoalsByPos,
@@ -195,6 +229,10 @@ import {
   buildBracketKeymap,
   buildSelectionExtensions,
 } from './editor-prefs.mjs';
+import { reservedChords, emacsFidelity, isMacPlatform } from './ide/modal/reserved-chords.mjs';
+import { buildKeymapStyleExtensions, normalizeKeymapStyle, remappableOmitIds, vimAllowsRemap } from './ide/keymap-style.mjs';
+import { statusStripFeed } from './ide/status-strip-feed.mjs';
+import { installEditorCommands } from './ide/editor-commands.mjs';
 import { applySaveTransforms } from './ide/save-transforms.mjs';
 import { foldPersistence, flushFoldKeys } from './ide/fold-persist.mjs';
 import {
@@ -504,45 +542,87 @@ function refreshSettlementLint(view) {
   });
 }
 
-function buildRemappableEditorKeymap(semanticEngine) {
+function buildRemappableEditorKeymap(semanticEngine, keymapStyle) {
+  const style = normalizeKeymapStyle(keymapStyle ?? readEditorPrefs().keymapStyle);
   const g = typeof window !== 'undefined' ? window : self;
   const KB = g.Keybindings;
-  if (!KB || typeof KB.buildEditorKeymap !== 'function') {
-    return [
-      { key: 'Alt-Shift-f', run: formatCommand },
-      { key: 'Mod-f', run: openSearchPanel },
-      { key: 'Mod-/', run: toggleComment },
-      { key: 'F12', run: (view) => goToDefinition(view) },
-      { key: 'Shift-F12', run: (view) => findReferences(view) },
-      ...holeCycleKeymap(semanticEngine),
-      ...editHistoryKeymap(),
-      { key: 'F2', run: (view) => startRename(view) },
-      { key: 'Mod-a', run: selectAll },
-      { key: 'Ctrl-Space', run: toggleEditorAutocomplete },
-    ];
+  const omitIds = remappableOmitIds(style);
+  const omit = Object.create(null);
+  for (const id of omitIds) omit[id] = true;
+
+  function wrap(commandId, run) {
+    return (view) => {
+      if (style === 'vim' && !vimAllowsRemap(view, commandId)) return false;
+      return !!run(view);
+    };
   }
-  return KB.buildEditorKeymap({
-    'edit.undo': (view) => {
+
+  if (!KB || typeof KB.buildEditorKeymap !== 'function') {
+    const fallback = [];
+    if (!omit['edit.format']) fallback.push({ key: 'Alt-Shift-f', run: wrap('edit.format', formatCommand) });
+    if (!omit['edit.find']) fallback.push({ key: 'Mod-f', run: wrap('edit.find', openSearchPanel) });
+    if (!omit['edit.toggle-comment']) fallback.push({ key: 'Mod-/', run: wrap('edit.toggle-comment', toggleComment) });
+    fallback.push({ key: 'F12', run: wrap('nav.definition', (view) => goToDefinition(view)) });
+    fallback.push({ key: 'Shift-F12', run: wrap('nav.references', (view) => findReferences(view)) });
+    fallback.push({
+      key: 'F8',
+      run: wrap('nav.next-hole', (view) => cycleHole(view, semanticEngine, 1)),
+      shift: wrap('nav.prev-hole', (view) => cycleHole(view, semanticEngine, -1)),
+    });
+    fallback.push(...editHistoryKeymap());
+    fallback.push({ key: 'F2', run: wrap('edit.rename', (view) => startRename(view)) });
+    if (!omit['edit.select-all']) fallback.push({ key: 'Mod-a', run: wrap('edit.select-all', selectAll) });
+    if (!omit['edit.autocomplete']) fallback.push({ key: 'Ctrl-Space', run: wrap('edit.autocomplete', toggleEditorAutocomplete) });
+    return fallback;
+  }
+
+  const runners = {
+    'edit.undo': wrap('edit.undo', (view) => {
       const H = g.EditHistory;
       if (H?.undo()) return true;
       return undo(view);
-    },
-    'edit.redo': (view) => {
+    }),
+    'edit.redo': wrap('edit.redo', (view) => {
       const H = g.EditHistory;
       if (H?.redo()) return true;
       return redo(view);
-    },
-    'edit.find': openSearchPanel,
-    'edit.toggle-comment': toggleComment,
-    'edit.format': formatCommand,
-    'edit.rename': (view) => startRename(view),
-    'edit.select-all': selectAll,
-    'edit.autocomplete': toggleEditorAutocomplete,
-    'nav.definition': (view) => goToDefinition(view),
-    'nav.references': (view) => findReferences(view),
-    'nav.next-hole': (view) => cycleHole(view, semanticEngine, 1),
-    'nav.prev-hole': (view) => cycleHole(view, semanticEngine, -1),
-  });
+    }),
+    'edit.find': wrap('edit.find', openSearchPanel),
+    'edit.toggle-comment': wrap('edit.toggle-comment', toggleComment),
+    'edit.format': wrap('edit.format', formatCommand),
+    'edit.rename': wrap('edit.rename', (view) => startRename(view)),
+    'edit.select-all': wrap('edit.select-all', selectAll),
+    'edit.autocomplete': wrap('edit.autocomplete', toggleEditorAutocomplete),
+    'nav.definition': wrap('nav.definition', (view) => goToDefinition(view)),
+    'nav.references': wrap('nav.references', (view) => findReferences(view)),
+    'nav.next-hole': wrap('nav.next-hole', (view) => cycleHole(view, semanticEngine, 1)),
+    'nav.prev-hole': wrap('nav.prev-hole', (view) => cycleHole(view, semanticEngine, -1)),
+  };
+  for (const id of omitIds) delete runners[id];
+
+  // Everything else editor-scope reaches the editor through the REGISTRY.
+  //
+  // ⛔ The explicit table above exists only for the commands that need a
+  // view-specific closure. Every other editor command — the 31 motions, their
+  // selection twins, the line edits, the nav and prover verbs — is attached to
+  // the registry by `installEditorCommands()` and `app-command-palette.mjs`, and
+  // the Keybindings sheet offers all of them for rebinding. Without this
+  // fallback that offer was a lie: the chord entry was built, found no runner
+  // and returned false, so 62 of the 74 bindable editor commands did nothing
+  // when bound and nothing on screen said so.
+  //
+  // None of them ship a `defaultSpec`, so nothing is emitted until somebody
+  // actually binds one. The style gate still applies: under Vim these are
+  // `insert-only`, so `wrap` keeps them out of Normal mode where Vim owns motion.
+  const fallback = (id) => {
+    const C = g.Commands;
+    if (!C || typeof C.run !== 'function' || !C.has(id)) return null;
+    const cmd = C.get(id);
+    if (!cmd || typeof cmd.run !== 'function') return null;
+    return wrap(id, () => C.run(id));
+  };
+
+  return KB.buildEditorKeymap(runners, { omitIds, fallback });
 }
 
 /** Tab: insert indent at caret; indent lines when something is selected. */
@@ -566,7 +646,7 @@ function insertIndentAtCursor(view) {
 
 const indentOrInsertTab = { key: 'Tab', run: insertIndentAtCursor, shift: indentLess };
 
-function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bracketKeymapCompartment, remappableKeymapCompartment, selectionCompartment, scrollPastEndCompartment, getOverlayDiags = null) {
+function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bracketKeymapCompartment, remappableKeymapCompartment, keymapStyleCompartment, selectionCompartment, scrollPastEndCompartment, getOverlayDiags = null) {
   return [
     settlementTickField,
     beluga(),
@@ -581,8 +661,10 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     dropCursor(),
     rectangularSelection(),
     crosshairCursor(),
+    keymapStyleCompartment.of(buildKeymapStyleExtensions(prefs.keymapStyle)),
+    statusStripFeed(() => readEditorPrefs().keymapStyle),
     remappableKeymapCompartment.of(
-      Prec.high(keymap.of(buildRemappableEditorKeymap(semanticEngine)))
+      Prec.high(keymap.of(buildRemappableEditorKeymap(semanticEngine, prefs.keymapStyle)))
     ),
     keymap.of([
       { key: 'Enter', run: smartEnter },
@@ -662,6 +744,14 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
   ];
 }
 
+// Every `.ide-status-dot` on the page, not just the topbar one: the status strip
+// renders a second dot and must show the identical state, spinner and tooltip
+// rather than a lookalike. Module scope so every closure below can reach it.
+function statusDots() {
+  if (typeof document === 'undefined') return [];
+  return Array.from(document.querySelectorAll('.ide-status-dot'));
+}
+
 function wireStatusDotErrorNav(ideStatusDot) {
   if (!ideStatusDot) return;
   if (ideStatusDot._belErrorNavClick) {
@@ -731,10 +821,7 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
     });
   };
 
-  const ideStatusDot = typeof document !== 'undefined'
-    ? document.getElementById('ide-status-dot')
-    : null;
-  wireStatusDotErrorNav(ideStatusDot);
+  statusDots().forEach(wireStatusDotErrorNav);
 
   function cfgStatus() {
     if (!isCfg) return { errors: 0, warnings: 0, diags: [], fileCount: 0 };
@@ -760,7 +847,10 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
   }
   function refreshStatusDot() {
     const { diags, fileCount } = cfgStatus();
-    updateAuxStatusDot(ideStatusDot, diags, { fileCount, lintItems: collectLintTooltipItems() });
+    const lintItems = collectLintTooltipItems();
+    for (const dot of statusDots()) {
+      updateAuxStatusDot(dot, diags, { fileCount, lintItems });
+    }
     const g = typeof globalThis !== 'undefined' ? globalThis : window;
     const rows = diags.map((d) => {
       const line = view.state.doc.lineAt(Math.min(Math.max(0, d.from), view.state.doc.length));
@@ -823,6 +913,8 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
     getView: () => view,
     runSyntaxLint: () => [],
     getDeclSpan: () => null,
+    getMemberSpan: () => null,
+    getCaseBranchSpan: () => null,
     setDarkTheme(dark) {
       view.dispatch({ effects: themeCompartment.reconfigure(cmThemeExtensions(dark)) });
     },
@@ -864,6 +956,7 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
     selectAll() { return selectAll(view); },
     openSearch() { return openSearchPanel(view); },
     toggleComment() { return toggleComment(view); },
+
   };
 }
 
@@ -888,6 +981,7 @@ export function mount(parentEl, options = {}) {
   const ideCompartment = new Compartment();
   const bracketKeymapCompartment = new Compartment();
   const remappableKeymapCompartment = new Compartment();
+  const keymapStyleCompartment = new Compartment();
   const selectionCompartment = new Compartment();
   const scrollPastEndCompartment = new Compartment();
   const diagCompartment = new Compartment();
@@ -992,6 +1086,9 @@ export function mount(parentEl, options = {}) {
     });
   }
 
+  // Motions and editing verbs live on this side of the bundle seam.
+  installEditorCommands();
+
   const ideStatusDot = typeof document !== 'undefined'
     ? document.getElementById('ide-status-dot')
     : null;
@@ -1071,11 +1168,15 @@ export function mount(parentEl, options = {}) {
     const diags = collectStatusDiagnostics(view, semanticEngine);
     const ownDiags = diags.filter((d) => !isSuitePreludeBannerDiag(d));
     const lintItems = lintTooltipItemsFromDiagnostics(ownDiags, view.state.doc);
-    updateIdeStatusDot(ideStatusDot, diags, {
-      parseCoverage: computeParseCoverage(view.state),
-      belugaPending: settling,
-      lintItems,
-    });
+    const coverage = computeParseCoverage(view.state);
+    for (const dot of statusDots()) {
+      wireStatusDotErrorNav(dot);
+      updateIdeStatusDot(dot, diags, {
+        parseCoverage: coverage,
+        belugaPending: settling,
+        lintItems,
+      });
+    }
     if (syntaxNeedsSettlement() || settling) armStatusSettleWatch(view);
     else clearStatusSettleWatch();
     publishActiveLiveDiagnostics(view, diags);
@@ -1138,40 +1239,18 @@ export function mount(parentEl, options = {}) {
   let semanticSyncGen = 0;
   let pendingSemanticSync = null;
   let semanticSyncRaf = 0;
-  let semanticSyncTimer = 0;
-  let semanticSyncFirstQueuedAt = 0;
 
-  // The heavy per-keystroke main-thread work is symbolStore.update + graph
-  // rebuild inside syncSemanticFromView (~23 ms on an 18 KB late-suite file):
-  // it re-resolves every identifier in the file even though the user changed one
-  // declaration. That whole snapshot only feeds hover / nav / occurrence
-  // highlight / rename / dependency graph / settlement scheduling — none of which
-  // is observed MID-BURST; it's what you consult when you PAUSE. So while keys
-  // are arriving faster than a frame, coalesce the rebuild into a short idle
-  // window instead of running it every keystroke (which also pushes out the next
-  // paint). Incremental Lezer parse + syntax highlighting stay live (they run off
-  // CM's own tree, not this snapshot), so typing feels like a plain textarea.
-  //
-  // MAX_SEMANTIC_STALENESS caps how long the snapshot may lag even under
-  // continuous typing, so nav/settlement never starve; IDLE_SYNC_MS is the quiet
-  // gap that triggers an immediate flush (the common "typed a bit, paused" case).
-  // The flush runs the full semantic rebuild (walkTree + lint). Under a browser
-  // trace it lands INSIDE the keydown handler when forced inline, which is the
-  // mid-typing stutter. So: (a) only flush after a genuine pause (a fast-typing
-  // burst with sub-IDLE gaps never triggers it), and (b) even at the staleness
-  // cap, DEFER off the keyboard handler instead of running inline. Nothing needs
-  // the snapshot mid-burst — hover/nav flush on cursor move (selectionSet path).
-  const IDLE_SYNC_MS = 120;
-  const MAX_SEMANTIC_STALENESS_MS = 1500;
-
+  // Semantic snapshot feeds hover / nav / occurrence highlight / rename /
+  // dependency graph / settlement — none of which is observed mid-keystroke.
+  // Coalesce to one requestAnimationFrame per burst so the rebuild never runs
+  // inside the keydown handler. Incremental Lezer parse + highlighting stay live.
+  // Selection-only (click / arrow) flushes immediately so hover sees the doc.
   function flushPendingSemanticSync() {
-    if (semanticSyncTimer) { clearTimeout(semanticSyncTimer); semanticSyncTimer = 0; }
     if (semanticSyncRaf) {
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(semanticSyncRaf);
       else clearTimeout(semanticSyncRaf);
       semanticSyncRaf = 0;
     }
-    semanticSyncFirstQueuedAt = 0;
     const job = pendingSemanticSync;
     pendingSemanticSync = null;
     if (!job || job.gen !== semanticSyncGen) return;
@@ -1207,37 +1286,10 @@ export function mount(parentEl, options = {}) {
         ? !!opts.deferSettlement
         : !!pendingSemanticSync?.deferSettlement,
     };
-    // Rename-end must land promptly (it re-settles the corrected doc) — flush on
-    // the next frame, no idle coalescing.
-    if (pendingSemanticSync.renameEnded) {
-      if (semanticSyncTimer) { clearTimeout(semanticSyncTimer); semanticSyncTimer = 0; }
-      if (semanticSyncRaf) return;
-      const kick = () => { semanticSyncRaf = 0; flushPendingSemanticSync(); };
-      semanticSyncRaf = typeof requestAnimationFrame === 'function'
-        ? requestAnimationFrame(kick) : setTimeout(kick, 0);
-      return;
-    }
-    const now = Date.now();
-    if (!semanticSyncFirstQueuedAt) semanticSyncFirstQueuedAt = now;
-    // Hard staleness cap: if the snapshot has been dirty too long under
-    // continuous typing, flush — but DEFER it to just after the frame (not inline
-    // in the keydown handler), so a held key / fast burst never pays the rebuild
-    // as input latency. It still runs promptly, just off the critical path.
-    if (now - semanticSyncFirstQueuedAt >= MAX_SEMANTIC_STALENESS_MS) {
-      if (semanticSyncTimer) { clearTimeout(semanticSyncTimer); semanticSyncTimer = 0; }
-      if (!semanticSyncRaf) {
-        const kick = () => { semanticSyncRaf = 0; flushPendingSemanticSync(); };
-        semanticSyncRaf = typeof requestAnimationFrame === 'function'
-          ? requestAnimationFrame(kick) : setTimeout(kick, 0);
-      }
-      return;
-    }
-    // Otherwise (re)arm the idle window: the rebuild runs once typing pauses.
-    if (semanticSyncTimer) clearTimeout(semanticSyncTimer);
-    semanticSyncTimer = setTimeout(() => {
-      semanticSyncTimer = 0;
-      flushPendingSemanticSync();
-    }, IDLE_SYNC_MS);
+    if (semanticSyncRaf) return;
+    const kick = () => { semanticSyncRaf = 0; flushPendingSemanticSync(); };
+    semanticSyncRaf = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(kick) : setTimeout(kick, 0);
   }
 
   const treeWatchPlugin = ViewPlugin.fromClass(class {
@@ -1318,7 +1370,7 @@ export function mount(parentEl, options = {}) {
   });
 
   const extensions = [
-    ...baseExtensions(ph, options.onDocChange, semanticEngine, editorPrefs, bracketKeymapCompartment, remappableKeymapCompartment, selectionCompartment, scrollPastEndCompartment, suiteOverlayDiagnostics),
+    ...baseExtensions(ph, options.onDocChange, semanticEngine, editorPrefs, bracketKeymapCompartment, remappableKeymapCompartment, keymapStyleCompartment, selectionCompartment, scrollPastEndCompartment, suiteOverlayDiagnostics),
     diagCompartment.of(buildDiagLintExtensions(semanticEngine, editorPrefs, suiteOverlayDiagnostics)),
     docSyncExt,
     treeWatchPlugin,
@@ -1416,17 +1468,27 @@ export function mount(parentEl, options = {}) {
     });
   }
 
+  let appliedKeymapStyle = normalizeKeymapStyle(editorPrefs.keymapStyle);
   activeEditorPrefsApplier = (prefs) => {
-    view.dispatch({
-      effects: [
-        chromeCompartment.reconfigure(buildEditorChromeTheme(prefs)),
-        ideCompartment.reconfigure(buildToggleableExtensions(prefs, { semanticEngine })),
-        bracketKeymapCompartment.reconfigure(keymap.of(buildBracketKeymap(prefs))),
-        selectionCompartment.reconfigure(buildSelectionExtensions(prefs)),
-        scrollPastEndCompartment.reconfigure(scrollPastEndExtensions(prefs)),
-        diagCompartment.reconfigure(buildDiagLintExtensions(semanticEngine, prefs, suiteOverlayDiagnostics)),
-      ],
-    });
+    const nextKeymap = normalizeKeymapStyle(prefs.keymapStyle);
+    const effects = [
+      chromeCompartment.reconfigure(buildEditorChromeTheme(prefs)),
+      ideCompartment.reconfigure(buildToggleableExtensions(prefs, { semanticEngine })),
+      bracketKeymapCompartment.reconfigure(keymap.of(buildBracketKeymap(prefs))),
+      selectionCompartment.reconfigure(buildSelectionExtensions(prefs)),
+      scrollPastEndCompartment.reconfigure(scrollPastEndExtensions(prefs)),
+      diagCompartment.reconfigure(buildDiagLintExtensions(semanticEngine, prefs, suiteOverlayDiagnostics)),
+    ];
+    if (nextKeymap !== appliedKeymapStyle) {
+      appliedKeymapStyle = nextKeymap;
+      effects.push(
+        keymapStyleCompartment.reconfigure(buildKeymapStyleExtensions(nextKeymap)),
+        remappableKeymapCompartment.reconfigure(
+          Prec.high(keymap.of(buildRemappableEditorKeymap(semanticEngine, nextKeymap)))
+        ),
+      );
+    }
+    view.dispatch({ effects });
     refreshSettlementLint(view);
     const p = typeof window !== 'undefined' ? window.Persist : null;
     if (p?.applyStoredEditorChrome) p.applyStoredEditorChrome();
@@ -1436,7 +1498,7 @@ export function mount(parentEl, options = {}) {
     if (!view) return;
     view.dispatch({
       effects: remappableKeymapCompartment.reconfigure(
-        Prec.high(keymap.of(buildRemappableEditorKeymap(semanticEngine)))
+        Prec.high(keymap.of(buildRemappableEditorKeymap(semanticEngine, appliedKeymapStyle)))
       ),
     });
   }
@@ -1514,6 +1576,39 @@ export function mount(parentEl, options = {}) {
       }
       if (!node || node.name === 'Program') return null;
       return { from: node.from, to: node.to };
+    },
+    getMemberSpan(pos) {
+      const span = memberSpanFromTree(syntaxTree(view.state), pos);
+      return span || this.getDeclSpan(pos);
+    },
+    /**
+     * The `case` branch around `pos`, for Vim's `ac` / `ic` text objects.
+     *
+     * `CaseBranch` is `QuantifiedBinder* Pattern FatArrow Expression`, so the
+     * INNER object is the expression after the arrow — the branch body, which is
+     * what `cic` should rewrite. Falling back to everything past the arrow keeps
+     * it working on a branch whose body has not parsed yet.
+     */
+    getCaseBranchSpan(pos, opts) {
+      const tree = syntaxTree(view.state);
+      let node = tree.resolveInner(pos, 1);
+      while (node && node.name !== 'CaseBranch') node = node.parent;
+      if (!node) return null;
+      if (!opts || !opts.inner) {
+        // `a` takes the delimiter with it, as it does everywhere in Vim: the
+        // grammar puts `|` OUTSIDE the branch, so `dac` without this leaves a
+        // bare bar sitting on its own line.
+        let from = node.from;
+        const doc = view.state.doc;
+        let scan = from;
+        while (scan > 0 && /\s/.test(doc.sliceString(scan - 1, scan))) scan -= 1;
+        if (scan > 0 && doc.sliceString(scan - 1, scan) === '|') from = scan - 1;
+        return { from, to: node.to };
+      }
+      const body = node.getChild ? node.getChild('Expression') : null;
+      if (body) return { from: body.from, to: body.to };
+      const arrow = node.getChild ? node.getChild('FatArrow') : null;
+      return arrow && node.to > arrow.to ? { from: arrow.to, to: node.to } : null;
     },
     getLintBlocks() {
       const tree = syntaxTree(view.state);
@@ -1711,5 +1806,41 @@ export function mount(parentEl, options = {}) {
     selectAll() { return selectAll(view); },
     openSearch() { return openSearchPanel(view); },
     toggleComment() { return toggleComment(view); },
+    // Ctrl-Space reaches this through the keymap; the method is what lets the
+    // palette, the command line and M-x reach the same act.
+    toggleAutocomplete() { return toggleEditorAutocomplete(view); },
+
+    /**
+     * One incremental-search step: the next (or previous) literal match from
+     * `from`, wrapping, with its position in the match list.
+     *
+     * Scans the document per call, which is the honest cost of literal search
+     * and is a string scan rather than a parse — but it is driven by the command
+     * bar per keystroke, so the match list is capped.
+     */
+    searchFrom(query, from, forward) {
+      const q = String(query == null ? '' : query);
+      if (!q) return null;
+      const doc = view.state.doc;
+      const hits = [];
+      const cursor = new SearchCursor(doc, q, 0);
+      while (!cursor.next().done) {
+        hits.push({ from: cursor.value.from, to: cursor.value.to });
+        if (hits.length >= 5000) break;
+      }
+      if (!hits.length) return null;
+      const at = Number.isFinite(from) ? from : 0;
+      let idx = -1;
+      if (forward === false) {
+        for (let i = hits.length - 1; i >= 0; i -= 1) {
+          if (hits[i].from < at) { idx = i; break; }
+        }
+        if (idx < 0) idx = hits.length - 1;
+      } else {
+        idx = hits.findIndex((h) => h.from > at);
+        if (idx < 0) idx = 0;
+      }
+      return { from: hits[idx].from, to: hits[idx].to, index: idx + 1, total: hits.length };
+    },
   };
 }

@@ -50,7 +50,7 @@ function prepareHole(hole, thm, code) {
   return resolveHoleGoal(normalizeHoleCol(code, enrichHoleFromTheorem(hole, thm, code)), thm);
 }
 
-// The engine's OWN focus rule, so manual and Brutus agree on "the current
+// The engine's OWN focus rule, so manual and Orca agree on "the current
 // subgoal": the leftmost enclosing case-arm, then the highest-scoring hole
 // within that arm.
 function defaultFocusIdx(holes, code) {
@@ -241,21 +241,44 @@ export async function applyMove(state, mv, oracle, thm, precomputed) {
 }
 
 /**
- * Fold a Brutus (auto-solve) run into the session, so a mid-proof search reads
+ * Fold a Orca (auto-solve) run into the session, so a mid-proof search reads
  * as a continuation of the same trail rather than a separate event. `result` is
  * a `proveProgram` return value.
  */
+/**
+ * Carry a search's own trace onto the steps that produced it.
+ *
+ * `HarpoonTree.buildModel` otherwise pairs steps with trace entries BY INDEX, which holds only
+ * for a pure auto session: once these steps are concatenated onto manual ones the index means
+ * nothing and the node graph silently loses every alternative the search considered. Pairing
+ * here, where the index is known to be valid, makes the data position-independent.
+ *
+ * Only ADVANCED trace rows correspond to steps; a non-advancing probe must not shift the
+ * pairing. Steps are cloned rather than mutated so this stays usable from a pure reducer.
+ *
+ * Both paths that fold a run back into a manual session must use this: `absorbAuto` for a
+ * finished run and the surface's pause-resync for a held one. A path that concatenates steps
+ * without it drops the alternatives again.
+ */
+export function pairTrace(steps, trace) {
+  const advanced = (trace || []).filter((t) => t && t.advanced);
+  if (!advanced.length) return steps || [];
+  return (steps || []).map((s, i) => (
+    s && advanced[i] && !s.traceEntry ? { ...s, traceEntry: advanced[i] } : s));
+}
+
 export function absorbAuto(state, result, thm) {
   if (!result || !result.code) return state;
   const holes = result.complete
     ? []
     : holesForTheorem(result.code, thm, parseHoles(result.output || ''))
       .map((h) => prepareHole(h, thm, result.code));
+  const absorbed = pairTrace(result.steps, result.trace);
   return {
     code: result.code,
     holes,
     focusIdx: defaultFocusIdx(holes, result.code),
-    steps: [...state.steps, ...(result.steps || [])],
+    steps: [...state.steps, ...absorbed],
     stack: [...state.stack, snapshot(state)],
     future: [],
   };

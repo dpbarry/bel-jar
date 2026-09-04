@@ -69,4 +69,35 @@ const refAt = (e, pos) => e.debugSnapshot().references.find((r) => r.range.from 
   expect(n.range.from > SRC.indexOf('{n'), 'binder scope must start at/after its introduction, not before');
 }
 
-console.log('OK semantic scope v2 (context turnstile, fn body, no leak, shadowing, precise spans)');
+// --- Prelude constructors in boxed patterns are not local binders ----------
+{
+  const PRELUDE = `LF tm : type =\n  | app : tm → tm → tm\n;\n`;
+  const SRC = `rec f : [ ⊢ tm] =\n  fn y => case y of [ ⊢ app _] => y\n;\n`;
+  const files = [
+    { id: 'a', name: 'p/a.bel' },
+    { id: 'b', name: 'p/b.bel' },
+    { id: 'c', name: 'p/t.cfg' },
+  ];
+  const tx = { a: PRELUDE, b: SRC, c: 'a.bel\nb.bel\n' };
+  const prev = globalThis.Persist;
+  globalThis.Persist = {
+    listFiles: () => files,
+    getActiveFileId: () => 'b',
+    getFileText: (id) => tx[id] || '',
+    getActiveCfgForDir: (dir) => (dir === 'p' ? 'p/t.cfg' : null),
+  };
+  try {
+    const e = eng(SRC);
+    const locals = e.debugSnapshot().symbols.filter((s) => s.name === 'app' && !s.isGlobal);
+    expect(locals.length === 0, `prelude ctor app must not be a local, got ${locals.length}`);
+    const appPos = SRC.indexOf('app _');
+    const r = refAt(e, appPos);
+    expect(r && r.name === 'app', 'app in the boxed pattern is a reference');
+    expect(r.resolution !== 'local', `app must not resolve as local, got ${r.resolution}`);
+  } finally {
+    if (prev === undefined) delete globalThis.Persist;
+    else globalThis.Persist = prev;
+  }
+}
+
+console.log('OK semantic scope v2 (context turnstile, fn body, no leak, shadowing, precise spans, prelude pattern heads)');

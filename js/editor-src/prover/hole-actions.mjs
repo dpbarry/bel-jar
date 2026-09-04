@@ -21,6 +21,7 @@ import { StateField } from '@codemirror/state';
 import { indentRange } from '@codemirror/language';
 import { Transaction } from '@codemirror/state';
 import { dispatchEdit } from '../edit-history.mjs';
+import { normalizeType } from '../format/type-render.mjs';
 import {
   decomposeContextual,
   headOfConclusion,
@@ -433,7 +434,7 @@ export async function runSplit(view, engine, hit, varName) {
     if (await tryFill(view, engine, hit, ctx, client)) return;
     decline({
       title: `Split ${varName} declined`,
-      body: `\`${varName}\` is already determined by a context variable, and BelJar couldn’t find an inhabiting term for the goal \`${hole.goal}\`.`,
+      body: `\`${varName}\` is already determined by a context variable, and BelJar couldn’t find an inhabiting term for the goal \`${normalizeType(hole.goal)}\`.`,
       source: 'prover.split',
       dedupeKey: `prover.split.param:${varName}:${hole.goal || ''}`,
       links: holeLinks(hole),
@@ -481,7 +482,7 @@ export async function runFill(view, engine, hit) {
   if (await tryFill(view, engine, hit, ctx, client)) return;
   decline({
     title: 'Fill declined',
-    body: `BelJar couldn’t find an inhabiting term for the goal \`${hit.hole.goal}\`.`,
+    body: `BelJar couldn’t find an inhabiting term for the goal \`${normalizeType(hit.hole.goal)}\`.`,
     source: 'prover.fill',
     dedupeKey: `prover.fill:${hit.hole.goal || ''}`,
     links: holeLinks(hit.hole),
@@ -508,7 +509,7 @@ export async function runIntro(view, engine, hit) {
 
   decline({
     title: 'Intro declined',
-    body: `Can’t introduce binders for goal \`${hole.goal || '?'}\` yet.`,
+    body: `Can’t introduce binders for goal \`${normalizeType(hole.goal) || '?'}\` yet.`,
     source: 'prover.intro',
     dedupeKey: `prover.intro:${hole.goal || ''}`,
     links: holeLinks(hole),

@@ -1,7 +1,0 @@
-data/examples/cpp13/cc.bel#cc'
-data/examples/cpp13/cchoist.bel#weakenEnv1
-data/examples/equal/alg-equal-datatypes-adeq.bel#aeq_str
-data/examples/equal/alg-equal-datatypes-adeq.bel#aeq_wk
-data/examples/logrel/algeq-simplified.bel#thm
-data/examples/logrel/algeq-simplified1.bel#thm
-data/examples/popl12/normeval.bel#nsubst

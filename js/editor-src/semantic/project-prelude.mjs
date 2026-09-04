@@ -25,6 +25,12 @@ import { NAMESPACE } from './ids.mjs';
 
 export { cfgByDirFromFiles, dirOf, parseCfg, developmentForFile, activeCfgResolver } from './development.mjs';
 
+const PRELUDE_CTOR_NS = new Set([
+  NAMESPACE.LF_CONSTRUCTOR,
+  NAMESPACE.COMP_CONSTRUCTOR,
+  NAMESPACE.LF_CONSTANT,
+]);
+
 function pickCfgForDir(cfgByDir, dir, paths) {
   const map = cfgByDir[dir];
   if (!map) return null;
@@ -331,28 +337,51 @@ export function findProjectDefinitions(files, activeId, name, getText, options =
   return before.concat(after);
 }
 
+// Cache validity for group-derived lookups WITHOUT scanning content: the same
+// active id, the same ordered sibling ids, and the same text OBJECT for each
+// sibling (persist keeps refs stable for untouched files). Building a key by
+// joining the texts would re-scan every prelude byte per call — the exact
+// O(file)-key anti-pattern this layer exists to remove; `===` on a stable ref
+// is O(1).
+function groupCacheValid(cache, activeId, others, texts) {
+  if (!cache || cache.activeId !== activeId || !cache.ids || cache.ids.length !== others.length) {
+    return false;
+  }
+  for (let i = 0; i < others.length; i += 1) {
+    if (cache.ids[i] !== others[i].id || cache.texts[i] !== texts[i]) return false;
+  }
+  return true;
+}
+
+function groupCacheEntry(activeId, others, texts, value) {
+  return { activeId, ids: others.map((f) => f.id), texts, value };
+}
+
 // Every definition in the group's OTHER files (the engine owns the active
 // file's symbols) — palette "@" fodder. Deduped per file by name.
 // Peer-symbol list is rebuilt on every completion activateOnTyping tick without
-// this memo — key on active id + sibling text identity (same shape as groupLookup).
-let _groupSymbolsCache = { key: null, value: null };
+// this memo — validated by active id + sibling text ref identity (same shape
+// as groupLookup).
+let _groupSymbolsCache = null;
 
 export function listGroupSymbols(files, activeId, getText, options = {}) {
   const group = groupFilesFor(files, activeId, getText, options);
-  const parts = [];
   const peers = [];
+  const texts = [];
   for (const f of group) {
     if (f.id === activeId) continue;
     peers.push(f);
-    parts.push(f.id, getText(f.id) ?? '');
+    texts.push(getText(f.id) ?? '');
   }
-  const key = `${activeId}\x01${parts.length}\x01${parts.join('\x02')}`;
-  if (_groupSymbolsCache.key === key) return _groupSymbolsCache.value;
+  if (groupCacheValid(_groupSymbolsCache, activeId, peers, texts)) {
+    return _groupSymbolsCache.value;
+  }
 
   const out = [];
-  for (const f of peers) {
+  for (let i = 0; i < peers.length; i += 1) {
+    const f = peers[i];
     const seen = new Set();
-    const parsed = parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name);
+    const parsed = parsedDefsOfRaw(String(texts[i]), f.name);
     for (const d of parsed.defs) {
       if (seen.has(d.name)) continue;
       seen.add(d.name);
@@ -368,7 +397,7 @@ export function listGroupSymbols(files, activeId, getText, options = {}) {
       });
     }
   }
-  _groupSymbolsCache = { key, value: out };
+  _groupSymbolsCache = groupCacheEntry(activeId, peers, texts, out);
   return out;
 }
 
@@ -381,41 +410,55 @@ export function listGroupSymbols(files, activeId, getText, options = {}) {
 // while you type the active file). Cache the group's merged {sigByName, names}
 // per (activeId + the group's text identities); a keystroke in the active file
 // leaves siblings' text refs unchanged, so it's one cheap cache hit + Map.get.
-let _groupLookupCache = { key: null, value: null };
+let _groupLookupCache = null;
 
 function groupLookup(files, activeId, getText, options) {
   const group = groupFilesFor(files, activeId, getText, options);
-  // Key on the ordered non-active member ids + their current text (string ref
-  // identity, which persist keeps stable for untouched files).
-  const parts = [];
+  // Validated by active id + each sibling's text REF identity (O(#files)
+  // pointer compares, never a byte scan of the prelude).
   const others = [];
+  const texts = [];
   for (const f of group) {
     if (f.id === activeId) continue;
     others.push(f);
-    parts.push(f.id, getText(f.id) ?? '');
+    texts.push(getText(f.id) ?? '');
   }
-  const key = `${activeId}${parts.length}${parts.join('')}`;
-  if (_groupLookupCache.key === key) return _groupLookupCache.value;
+  if (groupCacheValid(_groupLookupCache, activeId, others, texts)) {
+    return _groupLookupCache.value;
+  }
   // sigByName: LATEST-defining prelude file wins (the old loop set best = hit for
   // every prelude file in load order, so the last one iterated stuck). names:
   // union. group is prelude-prefix order (active last, excluded here).
   const sigByName = new Map();
   const names = new Set();
-  for (const f of others) {
-    const parsed = parsedDefsOfRaw(String(getText(f.id) ?? ''), f.name);
+  const ctorNames = new Set();
+  for (let i = 0; i < others.length; i += 1) {
+    const f = others[i];
+    const parsed = parsedDefsOfRaw(String(texts[i]), f.name);
     for (const n of parsed.names) names.add(n);
+    for (const d of parsed.defs) {
+      if (PRELUDE_CTOR_NS.has(d.namespace)) ctorNames.add(d.name);
+    }
     for (const [n, sig] of parsed.sigByName) {
       sigByName.set(n, { fileName: f.name, type: sig.type, label: sig.label });
     }
   }
-  const value = { sigByName, names };
-  _groupLookupCache = { key, value };
+  const value = { sigByName, names, ctorNames };
+  _groupLookupCache = groupCacheEntry(activeId, others, texts, value);
   return value;
 }
 
 export function findGroupSignature(files, activeId, name, getText, options = {}) {
   if (!name) return null;
   return groupLookup(files, activeId, getText, options).sigByName.get(name) || null;
+}
+
+export function groupDefinedNames(files, activeId, getText, options = {}) {
+  return groupLookup(files, activeId, getText, options).names;
+}
+
+export function groupCtorNames(files, activeId, getText, options = {}) {
+  return groupLookup(files, activeId, getText, options).ctorNames;
 }
 
 function posToLineCol(text, from) {

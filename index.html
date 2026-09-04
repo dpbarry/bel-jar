@@ -3,102 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <script>
-    window.BELJAR_SPLIT_KEY = 'beljar-editor-split';
-    window.BELJAR_SPLIT_MIN = 0.18;
-    window.BELJAR_SPLIT_MAX = 0.82;
-    window.BELJAR_SPLIT_DEFAULT = 0.5;
-    (function () {
-      var SPLIT_KEY = window.BELJAR_SPLIT_KEY;
-      var SPLIT_MIN = window.BELJAR_SPLIT_MIN;
-      var SPLIT_MAX = window.BELJAR_SPLIT_MAX;
-      var SPLIT_DEFAULT = window.BELJAR_SPLIT_DEFAULT;
-      var STACK_MQ = '(max-width: 48rem)';
-
-      function clampSplit(n) {
-        if (!isFinite(n)) return SPLIT_DEFAULT;
-        if (n < SPLIT_MIN) return SPLIT_MIN;
-        if (n > SPLIT_MAX) return SPLIT_MAX;
-        return n;
-      }
-
-      function applySplitVars(ratio) {
-        var root = document.documentElement.style;
-        var a = Math.round(ratio * 1e6) / 1e6;
-        var b = Math.round((1 - ratio) * 1e6) / 1e6;
-        // Plain fr tracks — minmax(Nrem, Xfr) leaves a black void when Xfr < Nrem.
-        if (window.matchMedia(STACK_MQ).matches) {
-          root.removeProperty('--workspace-split-cols');
-          root.setProperty('--workspace-split-rows', a + 'fr ' + b + 'fr');
-        } else {
-          root.removeProperty('--workspace-split-rows');
-          root.setProperty('--workspace-split-cols', a + 'fr ' + b + 'fr');
-        }
-      }
-
-      try {
-        if (localStorage.getItem('beljar-theme') === 'light') {
-          document.documentElement.classList.add('light');
-        }
-        var uiFontScales = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
-        var uiFontStored = localStorage.getItem('beljar-ui-font-size');
-        document.documentElement.style.setProperty(
-          '--ui-font-scale',
-          String(uiFontScales[uiFontStored] || 1)
-        );
-        var uiTextContrast = { normal: 1, low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
-        var uiTextContrastStored = localStorage.getItem('beljar-ui-text-contrast');
-        document.documentElement.style.setProperty(
-          '--ui-text-contrast',
-          String(uiTextContrast[uiTextContrastStored] || uiTextContrast.medium)
-        );
-        var motion = localStorage.getItem('beljar-motion-pref');
-        document.documentElement.classList.toggle('bj-motion-reduce', motion === 'reduce');
-        document.documentElement.classList.toggle('bj-motion-full', motion === 'full');
-        var editorFont = localStorage.getItem('beljar-editor-font-family');
-        document.documentElement.style.setProperty(
-          '--editor-mono',
-          editorFont === 'system'
-            ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
-            : "'JetBrains Mono', monospace"
-        );
-        document.documentElement.style.setProperty(
-          '--editor-ligatures',
-          localStorage.getItem('beljar-editor-ligatures') === 'off' ? 'none' : 'common-ligatures'
-        );
-        var holeEmph = localStorage.getItem('beljar-editor-hole-emphasis');
-        document.documentElement.classList.toggle('bj-hole-subtle', holeEmph === 'subtle');
-        document.documentElement.classList.toggle('bj-hole-loud', holeEmph === 'loud');
-        applySplitVars(clampSplit(parseFloat(localStorage.getItem(SPLIT_KEY))));
-        function applyStoredPanelPx(key, cssVar) {
-          var n = parseFloat(localStorage.getItem(key));
-          if (isFinite(n) && n > 0) document.documentElement.style.setProperty(cssVar, n + 'px');
-        }
-        applyStoredPanelPx('beljar-explorer-w', '--explorer-w');
-        applyStoredPanelPx('beljar-inspector-w', '--inspector-w');
-        applyStoredPanelPx('beljar-library-w', '--library-w');
-        applyStoredPanelPx('beljar-harpoon-w', '--harpoon-w');
-        applyStoredPanelPx('beljar-explorer-h', '--explorer-h');
-        applyStoredPanelPx('beljar-inspector-h', '--inspector-h');
-        applyStoredPanelPx('beljar-library-h', '--library-h');
-        applyStoredPanelPx('beljar-harpoon-h', '--harpoon-h');
-      } catch (_) {}
-    })();
-
-    (function () {
-      if (!('serviceWorker' in navigator)) return;
-      var host = location.hostname;
-      var isLocalDev = host === 'localhost' || host === '127.0.0.1';
-      if (isLocalDev) {
-        // Live Server / local dev: a stale SW can break the 25MB Beluga worker load.
-        navigator.serviceWorker.getRegistrations().then(function (regs) {
-          regs.forEach(function (r) { r.unregister(); });
-        });
-        return;
-      }
-      navigator.serviceWorker.register('sw.js');
-    })();
-  </script>
+  <script src="js/boot/early-boot.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
   <title>BelJar</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.png">
@@ -329,51 +234,7 @@
       <div id="output" class="repl-log repl-stream" role="log" aria-live="polite" aria-relevant="additions"></div>
     </div>
     </div>
-    <script>
-      (function () {
-        try {
-          var ws = document.querySelector('.workspace');
-          if (!ws) return;
-          if (localStorage.getItem('beljar-restore-panels') === 'off') return;
-          var proj = localStorage.getItem('beljar-active-project') || 'default';
-          var panelKey = proj === 'default'
-            ? 'beljar-active-side-panel'
-            : 'beljar-proj:' + proj.replace(/[^a-zA-Z0-9._-]/g, '_') + ':active-side-panel';
-          var activePanel = localStorage.getItem(panelKey);
-          if (!activePanel) {
-            if (localStorage.getItem('beljar-harpoon-open') === '1') activePanel = 'harpoon';
-            else if (localStorage.getItem('beljar-library-open') === '1') activePanel = 'library';
-            else if (localStorage.getItem('beljar-inspector-open') === '1') activePanel = 'inspector';
-            else if (localStorage.getItem('beljar-explorer-open') === '1') activePanel = 'explorer';
-          }
-          if (activePanel === 'harpoon') {
-            ws.classList.add('is-harpoon-open');
-            var pp = document.getElementById('harpoon-panel');
-            if (pp) pp.setAttribute('aria-hidden', 'false');
-            var pb = document.getElementById('btn-harpoon');
-            if (pb) { pb.classList.add('is-active'); pb.setAttribute('aria-pressed', 'true'); }
-          } else if (activePanel === 'library') {
-            ws.classList.add('is-library-open');
-            var lp = document.getElementById('library-panel');
-            if (lp) lp.setAttribute('aria-hidden', 'false');
-            var lb = document.getElementById('btn-library');
-            if (lb) { lb.classList.add('is-active'); lb.setAttribute('aria-pressed', 'true'); }
-          } else if (activePanel === 'inspector') {
-            ws.classList.add('is-inspector-open');
-            var ip = document.getElementById('inspector-panel');
-            if (ip) ip.setAttribute('aria-hidden', 'false');
-            var ib = document.getElementById('btn-inspector');
-            if (ib) { ib.classList.add('is-active'); ib.setAttribute('aria-pressed', 'true'); }
-          } else if (activePanel === 'explorer') {
-            ws.classList.add('is-explorer-open');
-            var ep = document.getElementById('explorer-panel');
-            if (ep) ep.setAttribute('aria-hidden', 'false');
-            var fb = document.getElementById('btn-files');
-            if (fb) { fb.classList.add('is-active'); fb.setAttribute('aria-pressed', 'true'); }
-          }
-        } catch (_) {}
-      })();
-    </script>
+    <script src="js/boot/panel-restore.js"></script>
   </div>
 
   <div id="tooltip-root" class="tooltip-root" role="tooltip" hidden></div>
@@ -392,22 +253,10 @@
   </div>
   <div id="menu-root" class="menu-root"></div>
 
-  <script>
-    window.onerror = function (msg, url, line) {
-      var lineMsg = msg + ' (line ' + line + ')';
-      if (window.Toasts && Toasts.error) {
-        Toasts.error('[JS ERROR] ' + lineMsg, { duration: 0, closable: true });
-      } else if (window.Repl && Repl.appendBuffered) {
-        Repl.appendBuffered('[JS ERROR] ' + lineMsg, 'error');
-      } else {
-        var o = document.getElementById('output');
-        o.textContent = (o.textContent ? o.textContent + '\n' : '') + '[JS ERROR] ' + lineMsg;
-      }
-    };
-  </script>
   <script src="js/beluga/beluga-client.js"></script>
   <script src="js/harpoon/harpoon-client.js"></script>
-  <script src="js/editor-cm.bundle.js?v=ac9-editor-mono"></script>
+  <script src="js/editor-cm.bundle.js?v=ac12-vim-caret"></script>
+  <script src="js/boot/error-hook.js"></script>
   <script src="js/shell.js"></script>
 </body>
 

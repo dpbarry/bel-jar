@@ -3,7 +3,6 @@
 // do not auto-bridge (teaching/ops durability goes through Notifications.emit).
 const global = globalThis;
 const DEFAULT_DURATION_MS = 3500;
-  const ENTER_MS = 340;
   const LEAVE_MS = 280;
   const UNTIL_POLL_MS = 120;
 

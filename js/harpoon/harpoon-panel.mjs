@@ -54,6 +54,24 @@ function E() { return global.BelEditor || null; }
     host.textContent = norm;
   }
 
+  // "suite: <name>" — the key in the cfg/suite green, the name plain; no suite reads "(none)".
+  function setSuiteTip(host, label) {
+    var name = label || '(none)';
+    var tips = global.Tooltips;
+    if (tips && typeof tips.setRich === 'function') {
+      tips.setRich(host, function () {
+        // One row element: the rich tooltip body is a flex COLUMN, so sibling
+        // spans would stack into two lines.
+        var row = el('span', 'harpoon-tip-suite');
+        row.appendChild(el('span', 'harpoon-tip-suite-key', 'Suite:'));
+        row.appendChild(el('span', 'harpoon-tip-suite-name', name));
+        return row;
+      }, 'Suite: ' + name);
+      return;
+    }
+    if (tips && typeof tips.set === 'function') tips.set(host, 'Suite: ' + name);
+  }
+
   var bodyEl = null;
   var panelEl = null;
   var backBtn = null;
@@ -126,10 +144,15 @@ function E() { return global.BelEditor || null; }
 
   function declKeyForHit(view, hit) {
     var ed = E();
-    if (!ed || !hit) return null;
-    var span = ed.getDeclSpan ? ed.getDeclSpan(hit.from) : null;
+    var api = global.CurrentEditor;
+    if (!hit) return null;
+    var span = null;
+    if (api && api.getMemberSpan) span = api.getMemberSpan(hit.from);
+    else if (api && api.getDeclSpan) span = api.getDeclSpan(hit.from);
+    else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
+    else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
     if (!span) return null;
-    var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
+    var decl = ed && ed.parseDecl ? ed.parseDecl(view.state.doc.sliceString(span.from, span.to)) : null;
     if (!decl) return null;
     return decl.kw + ':' + decl.name;
   }
@@ -156,6 +179,15 @@ function E() { return global.BelEditor || null; }
 
   function entryKey(entry) {
     return entry.fileId + ':' + holeKey(entry.hit);
+  }
+
+  // `mountHoleGoalTier` marks the element it mounts INTO, which is now the sliding track,
+  // while the card's rules key off the window. Mirror the marker up one level rather than
+  // rewriting every `--tiered` selector to reach through the track.
+  function mirrorTierClass(win) {
+    var track = trackOf(win);
+    win.classList.toggle('harpoon-hole-goal--tiered',
+      !!track && track.classList.contains('harpoon-hole-goal--tiered'));
   }
 
   function mountTieredGoal(goalEl, goalState, goalType) {
@@ -273,7 +305,6 @@ function E() { return global.BelEditor || null; }
         sections: [{
           id: 'active',
           label: '',
-          suiteHue: null,
           entries: hits.map(function (hit) {
             return {
               fileId: activeFileId(),
@@ -323,6 +354,118 @@ function E() { return global.BelEditor || null; }
     return model;
   }
 
+  // ── The declaration a hole sits in ──────────────────────────────────────────
+  // The card header names the theorem being proved, not just the file, so a list of
+  // holes reads as a list of OBLIGATIONS. `declKeyForHit` cannot serve here: it needs a
+  // live view and therefore only answers for the active file, while this panel lists
+  // holes across the whole project.
+  // Scanning the file text upward from the hole is enough and works everywhere. `and`
+  // is included because a mutual block continues a declaration, and a hole inside one
+  // belongs to the arm it sits under, not to the block head.
+  var DECL_LINE = /^[ \t]*(rec|proof|and)[ \t]+([^\s:(){}\[\],]+)[ \t]*:/;
+  var declTextCache = Object.create(null);
+
+  function fileTextFor(fileId) {
+    if (fileId in declTextCache) return declTextCache[fileId];
+    var P = typeof global.Persist !== 'undefined' ? global.Persist : null;
+    var t = null;
+    try { t = P && typeof P.getFileText === 'function' ? P.getFileText(fileId) : null; } catch (_) { t = null; }
+    declTextCache[fileId] = t == null ? null : String(t);
+    return declTextCache[fileId];
+  }
+
+  /** `{ kw, name }` for the declaration enclosing this hole, or null. */
+  function declForEntry(entry) {
+    var line = entry && entry.hit && entry.hit.hole && entry.hit.hole.line;
+    if (!line) return null;
+    var text = fileTextFor(entry.fileId);
+    if (!text) return null;
+    var lines = text.split(/\r?\n/);
+    // `hole.line` is 1-based; start at the hole's own line so a one-line declaration
+    // is found, then walk back to the nearest head above it.
+    for (var i = Math.min(line, lines.length) - 1; i >= 0; i -= 1) {
+      var m = DECL_LINE.exec(lines[i]);
+      if (m) return { kw: m[1], name: m[2] };
+    }
+    return null;
+  }
+
+  // ── Clip and slide ──────────────────────────────────────────────────────────
+  // Overflow is track (content-sized) minus mask (the visible viewport). Measuring
+  // against the WINDOW would include its padding and under-slide the tail; measuring
+  // a shrinking track reports ~0 overflow, so the fade never appears.
+
+  function maskOf(win) {
+    return win && win.firstElementChild;
+  }
+
+  function trackOf(win) {
+    var mask = maskOf(win);
+    return mask ? mask.firstElementChild : null;
+  }
+
+  /** Overflow in px, or -1 when the card cannot be measured yet (panel hidden). */
+  function readOver(win) {
+    var mask = maskOf(win);
+    var track = trackOf(win);
+    if (!mask || !track || !mask.clientWidth) return -1;
+    return Math.max(0, Math.round(track.scrollWidth - mask.clientWidth));
+  }
+
+  function applyOver(win, over) {
+    if (over < 0) return;
+    win.dataset.measured = '1';
+    if (over <= 1) {
+      if (!win.classList.contains('is-clipped')) return;
+      win.classList.remove('is-clipped');
+      win.style.removeProperty('--slide');
+      win.style.removeProperty('--slide-ms');
+      return;
+    }
+    var slide = '-' + over + 'px';
+    var ms = Math.min(2800, Math.max(500, Math.round(over * 6))) + 'ms';
+    if (win.style.getPropertyValue('--slide').trim() === slide
+        && win.style.getPropertyValue('--slide-ms').trim() === ms
+        && win.classList.contains('is-clipped')) return;
+    win.classList.add('is-clipped');
+    win.style.setProperty('--slide', slide);
+    win.style.setProperty('--slide-ms', ms);
+  }
+
+  function markClipped(root) {
+    if (!root) return;
+    var wins = root.querySelectorAll('.harpoon-hole-goal');
+    var over = [];
+    for (var i = 0; i < wins.length; i++) over.push(readOver(wins[i]));
+    for (var j = 0; j < wins.length; j++) applyOver(wins[j], over[j]);
+  }
+
+  var clipObs = null;
+  var clipRoot = null;
+
+  function scheduleMarkClipped(root) {
+    clipRoot = root;
+    markClipped(root);
+    requestAnimationFrame(function () {
+      if (clipRoot !== root || !root.isConnected) return;
+      markClipped(root);
+      requestAnimationFrame(function () {
+        if (clipRoot === root && root.isConnected) markClipped(root);
+      });
+    });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () {
+        if (clipRoot === root && root.isConnected) markClipped(root);
+      });
+    }
+    if (typeof ResizeObserver === 'undefined') return;
+    if (clipObs) clipObs.disconnect();
+    clipObs = new ResizeObserver(function () { markClipped(root); });
+    clipObs.observe(root);
+    var tracks = root.querySelectorAll('.harpoon-hole-goal-track');
+    for (var i = 0; i < tracks.length; i++) clipObs.observe(tracks[i]);
+  }
+
   function buildRow(entry) {
     var hit = entry.hit;
     var key = entryKey(entry);
@@ -345,52 +488,83 @@ function E() { return global.BelEditor || null; }
     if (outOfScope && !goalType) row.classList.add('is-indeterminate');
 
     var head = el('div', 'harpoon-panel-hole-head');
+
+    // Left: the obligation. Syntax-coloured so it reads as Beluga source, matching the
+    // corner label the hole box shows mid-proof.
+    var decl = declForEntry(entry);
+    var declEl = el('span', 'harpoon-hole-decl');
+    if (decl) {
+      declEl.appendChild(el('span', 'harpoon-hole-decl-kw bel-hl-keyword', decl.kw));
+      declEl.appendChild(el('span', 'harpoon-hole-decl-name bel-hl-var-def', decl.name));
+    } else {
+      declEl.classList.add('is-unknown');
+      declEl.appendChild(el('span', 'harpoon-hole-decl-name', 'top level'));
+    }
+    head.appendChild(declEl);
+
+    // Right: where it lives. Both fields ellipsis instead of wrapping, so the strip is
+    // always exactly one line tall whatever the names are.
     var loc = el('span', 'harpoon-hole-loc');
     var pathLabel = entry.fileBaseName || entry.filePath;
     if (pathLabel) loc.appendChild(el('span', 'harpoon-hole-path', pathLabel));
     loc.appendChild(el('span', 'harpoon-hole-ln', String(hit.hole.line)));
+    // Sections group by DIRECTORY, so the suite is NOT recoverable from the section header:
+    // it hangs off the location field — the one place on the card that already answers
+    // "where does this live" — keyed so an absent suite reads as an answer, not a gap.
+    setSuiteTip(loc, entry.suiteLabel);
     head.appendChild(loc);
 
-    if (entry.suiteLabel) {
-      var headEnd = el('div', 'harpoon-panel-hole-head-end');
-      var suiteEl = el('span', 'harpoon-hole-suite');
-      if (entry.suiteHue != null) suiteEl.style.setProperty('--suite-hue', String(entry.suiteHue));
-      suiteEl.textContent = entry.suiteLabel;
-      headEnd.appendChild(suiteEl);
-      head.appendChild(headEnd);
-    }
     row.appendChild(head);
     row.appendChild(el('div', 'harpoon-panel-hole-rule'));
 
+    // Three nested elements, each with one job:
+    //   window  clips, and carries the goal band's padding and background
+    //   mask    carries the edge fade, and never moves
+    //   track   holds the type, and is what slides
+    // The fade cannot live on the window: a mask applies to an element's BACKGROUND as
+    // well as its text, so the band itself would fade out at the right edge on exactly the
+    // long-type cards and not the short ones. It cannot live on the track either, since a
+    // mask on the track would travel with the text it is meant to fade.
     var goal = el('div', 'harpoon-hole-goal');
+    var goalMask = el('div', 'harpoon-hole-goal-mask');
+    var goalInner = el('div', 'harpoon-hole-goal-track');
+    goalMask.appendChild(goalInner);
+    goal.appendChild(goalMask);
     if (showType) {
       row.dataset.goalState = outOfScope
         ? (goalState === 'approximate' ? 'approximate' : 'cached')
         : 'ready';
       var edLive = E();
       if (edLive && typeof edLive.mountHoleGoalTier === 'function') {
-        edLive.mountHoleGoalTier(goal, {
+        edLive.mountHoleGoalTier(goalInner, {
           surface: 'harpoon-card',
           goalState: 'live',
           goal: goalType,
         });
       } else {
-        renderType(goal, goalType);
+        renderType(goalInner, goalType);
       }
     } else if (tiered) {
       row.classList.add('is-pending');
       row.dataset.goalState = goalState;
-      mountTieredGoal(goal, goalState, goalType);
+      mountTieredGoal(goalInner, goalState, goalType);
     } else if (outOfScope) {
       row.classList.add('is-unfocused');
       row.dataset.goalState = 'inactive';
-      goal.appendChild(el('span', 'harpoon-hole-unfocused', 'Not computable outside scope'));
+      goalInner.appendChild(el('span', 'harpoon-hole-unfocused', 'Not computable outside scope'));
     } else {
       row.classList.add('is-pending');
       row.dataset.goalState = 'pending';
-      mountTieredGoal(goal, 'pending', null);
+      mountTieredGoal(goalInner, 'pending', null);
     }
+    mirrorTierClass(goal);
     row.appendChild(goal);
+
+    // Safety net for a list built while the panel was hidden: every width reads as 0 then,
+    // so the batched pass could not classify this card. One card on enter is cheap.
+    row.addEventListener('pointerenter', function () {
+      applyOver(goal, readOver(goal));
+    });
 
     row.addEventListener('click', function (ev) {
       if (ev.ctrlKey || ev.metaKey) {
@@ -412,6 +586,8 @@ function E() { return global.BelEditor || null; }
     if (!bodyEl) return;
     exitProofMode();
     var view = curView();
+    // File text is cached only for the span of one render; it is stale by the next one.
+    declTextCache = Object.create(null);
     var model = collectProjectSections();
     applyGoalStateToModel(model, view);
     if (opts && opts.certify) maybeCertifyVisibleGoals(model, view);
@@ -421,6 +597,8 @@ function E() { return global.BelEditor || null; }
     lastListRenderKey = renderKey;
 
     if (!model.totalCount) {
+      if (clipObs) { clipObs.disconnect(); clipObs = null; }
+      clipRoot = null;
       bodyEl.textContent = '';
       var empty = el('div', 'panel-empty');
       empty.appendChild(el('p', 'panel-empty__note', 'No open goals in this project.'));
@@ -448,6 +626,7 @@ function E() { return global.BelEditor || null; }
       root.appendChild(block);
     }
     bodyEl.appendChild(root);
+    scheduleMarkClipped(root);
   }
 
   function beginPanelSession(fileId, declKey, start) {
@@ -494,7 +673,9 @@ function E() { return global.BelEditor || null; }
     var P = global.Persist;
     if (!ed || !P || typeof ed.declSpanInText !== 'function') return null;
     var text = String(P.getFileText(fileId) || '');
-    var span = ed.declSpanInText(text, from);
+    var span = ed.memberSpanInText
+      ? ed.memberSpanInText(text, from)
+      : ed.declSpanInText(text, from);
     var decl = span ? ed.parseDecl(text.slice(span.from, span.to)) : null;
     return decl ? decl.kw + ':' + decl.name : null;
   }

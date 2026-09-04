@@ -13,6 +13,7 @@ await esbuild.build({
   platform: 'browser',
   legalComments: 'none',
   minify: true,
+  ignoreAnnotations: true,
   footer: {
     js: 'globalThis.BelJarEditor=globalThis.BelEditor;',
   },

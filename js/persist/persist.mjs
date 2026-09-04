@@ -983,6 +983,14 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.writeStoredEditorLineNumbers.apply(_settingsApi, arguments);
   }
 
+  function readStoredEditorLineNumberMode() {
+    return _settingsApi.readStoredEditorLineNumberMode.apply(_settingsApi, arguments);
+  }
+
+  function writeStoredEditorLineNumberMode() {
+    return _settingsApi.writeStoredEditorLineNumberMode.apply(_settingsApi, arguments);
+  }
+
   function readStoredEditorFoldGutter() {
     return _settingsApi.readStoredEditorFoldGutter.apply(_settingsApi, arguments);
   }
@@ -1118,6 +1126,16 @@ var SCHEMA_VERSION = 3;
     'readStoredEditorRulers', 'writeStoredEditorRulers',
     'readStoredEditorFontFamily', 'writeStoredEditorFontFamily',
     'readStoredEditorHoleEmphasis', 'writeStoredEditorHoleEmphasis',
+    'readStoredKeymapStyle', 'writeStoredKeymapStyle',
+    'readStoredStatusStrip', 'writeStoredStatusStrip',
+    'readStoredCommandLineHistory', 'writeStoredCommandLineHistory',
+    
+    'readStoredDoubleTapTrigger', 'writeStoredDoubleTapTrigger',
+    'readStoredDoubleTapCommand', 'writeStoredDoubleTapCommand',
+    'readStoredDoubleTapSpeed', 'writeStoredDoubleTapSpeed',
+    'readStoredVimLeader', 'writeStoredVimLeader',
+    'readStoredVimYankClipboard', 'writeStoredVimYankClipboard',
+    'readStoredVimInsertEscape', 'writeStoredVimInsertEscape',
     'readStoredMotionPref', 'writeStoredMotionPref',
     'applyStoredMotionPref', 'prefersReducedMotion',
     'readStoredToastDuration', 'writeStoredToastDuration', 'toastDurationMs',
@@ -1169,6 +1187,10 @@ var SCHEMA_VERSION = 3;
 
   function resetBelugaPrefs() {
     return _settingsApi.resetBelugaPrefs.apply(_settingsApi, arguments);
+  }
+
+  function resetHarpoonPrefs() {
+    return _settingsApi.resetHarpoonPrefs.apply(_settingsApi, arguments);
   }
 
   function resetReplPrefs() {
@@ -1986,6 +2008,8 @@ var SCHEMA_VERSION = 3;
     writeStoredEditorWordWrap: writeStoredEditorWordWrap,
     readStoredEditorTabSize: readStoredEditorTabSize,
     writeStoredEditorTabSize: writeStoredEditorTabSize,
+    readStoredEditorLineNumberMode: readStoredEditorLineNumberMode,
+    writeStoredEditorLineNumberMode: writeStoredEditorLineNumberMode,
     readStoredEditorLineNumbers: readStoredEditorLineNumbers,
     writeStoredEditorLineNumbers: writeStoredEditorLineNumbers,
     readStoredEditorFoldGutter: readStoredEditorFoldGutter,
@@ -2029,6 +2053,7 @@ var SCHEMA_VERSION = 3;
     resetEditorGutterPrefs: resetEditorGutterPrefs,
     resetEditorPrefs: resetEditorPrefs,
     resetBelugaPrefs: resetBelugaPrefs,
+    resetHarpoonPrefs: resetHarpoonPrefs,
     resetReplPrefs: resetReplPrefs,
     resetWorkspacePrefs: resetWorkspacePrefs,
     resetAliasesPrefs: resetAliasesPrefs,

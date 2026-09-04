@@ -637,7 +637,7 @@ function showSymbolTooltips(g) {
   return readHoverScope(g) !== 'none';
 }
 
-export { showSymbolTooltips };
+export { showSymbolTooltips, showBuiltinTooltips };
 
 function showBuiltinTooltips(g) {
   return readHoverScope(g) === 'all';
@@ -700,18 +700,18 @@ export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
       }
 
       let kwHit = null;
-      if (symbolTips && !typeTip && !quiet && showBuiltinTooltips(g)) {
+      if (symbolTips && !typeTip && !quiet) {
         kwHit = keywordAt(view.state, pos);
         if (kwHit) {
           const range = { from: kwHit.from, to: kwHit.to };
-          // A `?` is a HOLE: show its goal tooltip IMMEDIATELY (a shimmer until the
-          // checker types it, then the goal swaps in place) — never the generic
-          // builtin blurb. `goalAt` is a LIVE getter so the poll picks up the goal.
+          // Hole goals are not builtins — they stay visible in "identifiers only".
           if (kwHit.label === 'HOLE') {
             const eng = engineFor(g, semanticEngine);
             typeTip = makeHoleTooltip(range, kwHit.name, () => holeGoalAt(eng, view.state.doc, range.from));
-          } else {
+          } else if (showBuiltinTooltips(g)) {
             typeTip = makeKeywordTooltip(range, kwHit.label, kwHit.name, kwHit.desc);
+          } else {
+            kwHit = null;
           }
         }
       }

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BelJar chord audit</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 1.5rem 2rem 4rem;
+    background: #16171b; color: #d7d8dd;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 1.05rem; margin: 0 0 .2rem; }
+  p  { max-width: 62ch; color: #9a9ca6; margin: .35rem 0; }
+  code, kbd { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; }
+  .bar { display: flex; gap: .5rem; align-items: center; margin: 1.1rem 0 .8rem; flex-wrap: wrap; }
+  button {
+    font: inherit; color: #d7d8dd; background: #23252c;
+    border: 1px solid #33363f; border-radius: 6px; padding: .32rem .7rem; cursor: pointer;
+  }
+  button:hover { background: #2b2e37; }
+  button.primary { border-color: #4a6ea8; color: #cfe0ff; }
+  .count { color: #9a9ca6; font-variant-numeric: tabular-nums; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .3rem; }
+  .row {
+    display: flex; align-items: baseline; gap: .55rem;
+    padding: .3rem .55rem; border-radius: 5px; border: 1px solid transparent;
+    background: #1c1e24; cursor: pointer;
+  }
+  .row kbd { flex: 0 0 8.5rem; color: #eceef4; }
+  .row .state { font-size: .78rem; color: #6f727c; }
+  .row.arrived { background: #17251b; border-color: #2c4a33; }
+  .row.arrived .state { color: #79c48d; }
+  .row.reserved { background: #251a1a; border-color: #4a2c2c; }
+  .row.reserved .state { color: #d98686; }
+  .row.reclaimed { background: #1b2030; border-color: #35507a; }
+  .row.reclaimed .state { color: #8fb4f0; }
+  .row.flagged { border-color: #7a6320; }
+  .row.flagged .state::after { content: " · browser also acted"; color: #d9b464; }
+  textarea {
+    width: 100%; height: 11rem; margin-top: 1rem; background: #101115; color: #b9bcc6;
+    border: 1px solid #33363f; border-radius: 6px; padding: .6rem; font-family: ui-monospace, monospace;
+    font-size: 12px;
+  }
+  .note { color: #d9b464; }
+</style>
+</head>
+<body>
+
+<h1>BelJar chord audit</h1>
+<p>
+  This measures what <code>reserved-chords.mjs</code> currently <em>asserts</em> from
+  documentation. Press every chord below, in any order. A chord that reaches this page turns
+  green; whatever is still grey at the end is one the browser took before the page ever saw it.
+</p>
+<p class="note">
+  Some of these open or close a browser tab on purpose — that <em>is</em> the finding. Results are
+  saved after every keypress, so losing this tab loses nothing: just reopen the file.
+  If a chord turned green <em>and</em> the browser also did its own thing, click that row to flag it.
+</p>
+
+<div class="bar">
+  <button id="lock" class="primary">Fullscreen + Keyboard Lock</button>
+  <button id="unlock">Exit</button>
+  <button id="copy">Copy results</button>
+  <button id="reset">Reset</button>
+  <span class="count" id="count"></span>
+</div>
+
+<div class="grid" id="grid"></div>
+<textarea id="out" readonly spellcheck="false"></textarea>
+
+<script>
+(function () {
+  var KEY = 'beljar-chord-audit-v1';
+  var LETTERS = 'abcdefghijklmnopqrstuvwxyz'.split('');
+  var CHORDS = [];
+  LETTERS.forEach(function (c) { CHORDS.push({ id: 'Ctrl+' + c.toUpperCase(), ctrl: true, key: c }); });
+  ['n', 't', 'w', 'p'].forEach(function (c) {
+    CHORDS.push({ id: 'Ctrl+Shift+' + c.toUpperCase(), ctrl: true, shift: true, key: c });
+  });
+  ['1', '9'].forEach(function (d) { CHORDS.push({ id: 'Ctrl+' + d, ctrl: true, key: d }); });
+  CHORDS.push({ id: 'Ctrl+Tab', ctrl: true, key: 'tab' });
+  CHORDS.push({ id: 'Ctrl+Shift+Tab', ctrl: true, shift: true, key: 'tab' });
+  ['t', 'l', 'x'].forEach(function (c) { CHORDS.push({ id: 'Alt+' + c.toUpperCase(), alt: true, key: c }); });
+
+  var state = load();
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && parsed.seen) return parsed;
+    } catch (_) { /* start fresh */ }
+    return { seen: {}, flagged: {}, locked: {}, platform: '', ua: '' };
+  }
+
+  function save() {
+    state.platform = navigator.platform || '';
+    state.ua = navigator.userAgent || '';
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) { /* full */ }
+  }
+
+  /** The chord id for an event, or null when it is not one we are testing. */
+  function idOf(e) {
+    var k = (e.key || '').toLowerCase();
+    if (k === 'control' || k === 'shift' || k === 'alt' || k === 'meta') return null;
+    var name = k === 'tab' ? 'Tab' : (k.length === 1 ? k.toUpperCase() : null);
+    if (!name) return null;
+    // `e.key` under Ctrl+Shift is already the shifted character on some layouts;
+    // fall back to the physical key so `Ctrl+Shift+N` is recognised as N.
+    if (e.shiftKey && e.code && /^Key([A-Z])$/.test(e.code)) name = e.code.slice(3);
+    if (e.ctrlKey && e.shiftKey) return 'Ctrl+Shift+' + name;
+    if (e.ctrlKey) return 'Ctrl+' + name;
+    if (e.altKey) return 'Alt+' + name;
+    return null;
+  }
+
+  var locked = false;
+  var grid = document.getElementById('grid');
+  var nodes = {};
+
+  CHORDS.forEach(function (c) {
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.dataset.id = c.id;
+    var kbd = document.createElement('kbd');
+    kbd.textContent = c.id;
+    var st = document.createElement('span');
+    st.className = 'state';
+    row.appendChild(kbd);
+    row.appendChild(st);
+    row.addEventListener('click', function () {
+      state.flagged[c.id] = !state.flagged[c.id];
+      save();
+      paint();
+    });
+    grid.appendChild(row);
+    nodes[c.id] = { row: row, state: st };
+  });
+
+  function paint() {
+    var arrived = 0;
+    var reclaimed = 0;
+    CHORDS.forEach(function (c) {
+      var n = nodes[c.id];
+      var seen = state.seen[c.id];
+      var lockSeen = state.locked[c.id];
+      var cls = seen ? ' arrived' : (lockSeen ? ' reclaimed' : ' reserved');
+      n.row.className = 'row' + cls + (state.flagged[c.id] ? ' flagged' : '');
+      n.state.textContent = seen
+        ? (lockSeen ? 'reaches the page (also when locked)' : 'reaches the page')
+        : (lockSeen ? 'reclaimed by Keyboard Lock' : 'not seen yet');
+      if (seen) arrived += 1;
+      if (!seen && lockSeen) reclaimed += 1;
+    });
+    document.getElementById('count').textContent =
+      arrived + ' of ' + CHORDS.length + ' reached the page'
+      + (reclaimed ? ' · ' + reclaimed + ' more reclaimed by Keyboard Lock' : '')
+      + (locked ? ' · LOCKED: press the grey ones again' : '');
+    document.getElementById('out').value = report();
+  }
+
+  function report() {
+    var reserved = CHORDS.filter(function (c) { return !state.seen[c.id]; }).map(function (c) { return c.id; });
+    var flagged = Object.keys(state.flagged).filter(function (k) { return state.flagged[k]; });
+    var lockedOnly = CHORDS
+      .filter(function (c) { return !state.seen[c.id] && state.locked[c.id]; })
+      .map(function (c) { return c.id; });
+    return JSON.stringify({
+      platform: navigator.platform || '',
+      userAgent: navigator.userAgent || '',
+      keyboardLockAvailable: !!(navigator.keyboard && navigator.keyboard.lock),
+      reserved: reserved,
+      arrivedButBrowserAlsoActed: flagged,
+      reclaimedByKeyboardLock: lockedOnly,
+      tested: CHORDS.length,
+    }, null, 2);
+  }
+
+  window.addEventListener('keydown', function (e) {
+    var id = idOf(e);
+    if (!id || !nodes[id]) return;
+    // Suppressing is the point: a chord BelJar can take is one it can prevent.
+    e.preventDefault();
+    e.stopPropagation();
+    if (locked) state.locked[id] = true;
+    else state.seen[id] = true;
+    save();
+    paint();
+  }, true);
+
+  document.getElementById('lock').addEventListener('click', function () {
+    var el = document.documentElement;
+    var go = el.requestFullscreen ? el.requestFullscreen() : Promise.reject(new Error('no fullscreen'));
+    go.then(function () {
+      if (!navigator.keyboard || !navigator.keyboard.lock) throw new Error('Keyboard Lock unavailable');
+      return navigator.keyboard.lock();
+    }).then(function () {
+      locked = true;
+      paint();
+    }).catch(function (err) {
+      alert('Keyboard Lock did not engage: ' + (err && err.message ? err.message : err));
+    });
+  });
+
+  document.getElementById('unlock').addEventListener('click', function () {
+    if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+    if (document.exitFullscreen && document.fullscreenElement) document.exitFullscreen();
+    locked = false;
+    paint();
+  });
+
+  document.getElementById('copy').addEventListener('click', function () {
+    var out = document.getElementById('out');
+    out.select();
+    if (navigator.clipboard) navigator.clipboard.writeText(out.value).catch(function () {});
+    else document.execCommand('copy');
+  });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    state = { seen: {}, flagged: {}, locked: {}, platform: '', ua: '' };
+    save();
+    paint();
+  });
+
+  paint();
+}());
+</script>
+</body>
+</html>

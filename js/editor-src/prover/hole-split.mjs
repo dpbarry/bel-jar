@@ -14,9 +14,12 @@
 // hole-actions.mjs.
 
 import { parser } from '../beluga-parser.js';
+import { unifyAgainstGoal, instantiateType, instantiationChanged } from './prover-unify.mjs';
+import { inhabit } from './prover-inhabit.mjs';
 import { parseCompType } from './prover-comp-type.mjs';
 import { firstChildNamed, firstIdentChild, isLFDatatypeHead } from '../tree-helpers.mjs';
 import { reIdentDollarHashExact } from './ident.mjs';
+import { transport } from './prover-transport.mjs';
 
 // ── Contextual type decomposition ───────────────────────────────────────────
 // A hole scrutinee var has a type like `[ |- nat]`, `[g |- tm]`, `[g, x:tm |- tm]`,
@@ -459,7 +462,7 @@ export function enumerateConstructorsTyped(code, family) {
 // now reads `CompConstructor` nodes directly from the Lezer tree (above),
 // which is comment-safe and correctly block-bounded by construction (there
 // is no text span to mis-scope). Verified byte-for-byte against the whole
-// corpus before deletion: see docs/prover-master-plan.md's Slice 1 entry.
+// corpus before deletion: see docs/archive/orca-research/prover-master-plan.md Slice 1.
 // `compArrowSpineTyped` (below) stays — it is still used by the INFIX-family
 // text fallback (`enumerateInfixLfDeclsText`), a separate, untouched path.
 function compArrowSpineTyped(typeText) {
@@ -1112,6 +1115,17 @@ function ctxProperlyExtends(outerCtx, innerCtx) {
 function weakenedSpelling(name, hypType, targetCtx) {
   if (!name || !/^[#$]?[\p{L}_]/u.test(String(name))) return null;
   if (/\[/.test(String(name))) return null; // already carries a substitution
+  // ⭐ PER-ARGUMENT CONTEXT TRANSPORT (master plan entry 41's "correct, invasive" home —
+  // entry 42 killed the bounded one). The shipped line below emits exactly ONE spelling,
+  // `[..]`, and returns null otherwise — so a hypothesis that needs `[.., b.1, b.2]`
+  // produces NO CANDIDATE AT ALL. `targetCtx` is the per-argument context entry 41 says
+  // "the planner cannot" see; it is already passed in here and thrown away.
+  // Measured 2026-08-18: 58% of rejected recursive calls are context-transport errors.
+  if (globalThis.__proverTransport) {
+    const t = transport(contextOf(hypType), targetCtx);
+    if (!t.ok) return null;                       // honest decline, with t.why
+    return t.sub ? `${name}[${t.sub}]` : name;
+  }
   return ctxProperlyExtends(targetCtx, contextOf(hypType)) ? `${name}[..]` : null;
 }
 
@@ -1297,7 +1311,7 @@ export function branchPairChannel(code, hole) {
 // A 41% share of REJECTIONS is only a 4% share of CHECKS, because those candidates
 // are cheap and clustered in a few holes, while the expensive holes are elsewhere.
 // Reverted under the declared >=20% stake. This is the ROI law again: no completion
-// has ever come from removing candidates. See `scratchpad/error-census.mjs`.
+// has ever come from removing candidates. See `scratch/probes/error-census.mjs`.
 function fillScope(hole, code) {
   const seen = new Set();
   const out = [];
@@ -1593,7 +1607,57 @@ function hoSlotFills(desc, scope, code) {
   return out.slice(0, HO_SLOT_CAP);
 }
 
-function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
+// ⭐ (B) CONTEXT-INDEX INSTANTIATION for a ctype constructor. `matchIndices` binds
+// UPPERCASE pattern variables only, and a ctype's context indices are lowercase by
+// convention (`M_dot : Map [h] [g] -> [h |- target S[]] -> Map [h] [g, x:source S[]]`),
+// so nothing ever bound `h` and every argument slot kept its DECLARED context. That is
+// why entry 40a's weakening spelling could not reach this site: the boxed slot looked
+// like `[h |- target S[]]` when the goal had already extended `h` to `h, x:target S[]`,
+// so `ctxProperlyExtends` compared `h` against `h` and declined.
+//
+// Binds positionally, and only where it is unambiguous: an index that is a BARE context
+// variable takes the goal's whole index; an index whose parts align one-for-one takes
+// the goal's part at each position that is a bare variable. A declaration part
+// (`x:source S[]`) binds nothing — that would be a unification, not a rename.
+function ctypeCtxSubst(resultIdx, goalIdx) {
+  if (!Array.isArray(resultIdx) || !Array.isArray(goalIdx)) return null;
+  if (!resultIdx.length || resultIdx.length !== goalIdx.length) return null;
+  const bare = (t) => {
+    const m = /^\[\s*([\s\S]*?)\s*\]$/.exec(String(t || '').trim());
+    return m ? m[1] : null;
+  };
+  const isVar = (t) => /^[\p{Ll}][\p{L}\p{N}_']*$/u.test(String(t || '').trim());
+  const subst = {};
+  for (let i = 0; i < resultIdx.length; i += 1) {
+    const r = bare(resultIdx[i]);
+    const g = bare(goalIdx[i]);
+    if (r == null || g == null) continue;
+    const rp = splitCtxParts(r);
+    const gp = splitCtxParts(g);
+    if (rp.length === 1 && isVar(rp[0])) {
+      if (subst[rp[0]] != null && subst[rp[0]] !== g.trim()) return null;
+      subst[rp[0]] = g.trim();
+      continue;
+    }
+    if (rp.length !== gp.length) continue;
+    for (let k = 0; k < rp.length; k += 1) {
+      if (!isVar(rp[k])) continue;
+      const v = rp[k].trim();
+      if (subst[v] != null && subst[v] !== gp[k].trim()) return null;
+      subst[v] = gp[k].trim();
+    }
+  }
+  return Object.keys(subst).length ? subst : null;
+}
+
+// Substitute lowercase context variables by TEXT. `applySubst` replaces uppercase
+// tokens only (it exists for index metavariables), so it cannot serve here.
+function applyCtxSubst(typeText, subst) {
+  return String(typeText == null ? '' : typeText)
+    .replace(/[\p{L}_][\p{L}\p{N}_']*/gu, (tok) => (subst[tok] != null ? subst[tok] : tok));
+}
+
+function argFillChoices(desc, rawType, hole, scope, goalBox, code, inlineCalls = null) {
   if (/^\s*\{/.test(rawType)) {
     // An explicit Pi whose type is a BOX is a comp-level witness the checker can
     // infer — offer the boxed wildcard (`Res [g ⊢ _] …`, the existential idiom).
@@ -1660,6 +1724,56 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
     for (const c of enumerateConstructorsTyped(code, fam)) {
       if (!c.argTypes.length) out.push(bbox(c.name));
     }
+    if (globalThis.__proverInlineArg) {
+      // (F) A binder of the slot's OWN context inhabits the slot — `extend`'s
+      // `M_dot (weaken sigma) [h, x:target _ |- x]` cites `x`, which exists only in
+      // the argument's context and therefore appears in no hole scope. Reachable only
+      // once (B) has instantiated that context from the goal.
+      for (const part of splitCtxParts(boxedArg.ctx)) {
+        const ci = part.indexOf(':');
+        if (ci < 0) continue;
+        const nm = part.slice(0, ci).trim();
+        const ty = part.slice(ci + 1).trim();
+        if (!/^[\p{Ll}][\p{L}\p{N}_']*$/u.test(nm) || /block/.test(ty)) continue;
+        if (fam && typeFamilyHead(ty, code) === fam) out.push(bbox(nm));
+      }
+      // SPELLINGS of the instantiated context, in preference order. Two independent
+      // corrections apply, and both are forced by the checker:
+      //   • the context carries the goal's own metavariables (`h, x:target S[]`) where
+      //     the corpus underscores what the call determines (`h, x:target _`);
+      //   • the LEADING context variable is a name RECONSTRUCTION invented (`z`), and
+      //     citing it earns "This free context variable is illegal" unless some arm
+      //     pattern binds it (invariant 11 / D11). Measured on `cc.bel#weaken`: the
+      //     otherwise-correct `M_dot (weaken X1) [z, x:target _ |- X2[..]]` is refused
+      //     for exactly this, and the identical term with `_` is ACCEPTED.
+      // Dual-spell, never rename — the checker arbitrates between them.
+      const uUnder = (c) => String(c).replace(/\p{Lu}[\p{L}\p{N}_']*(?:\[\s*\])?/gu, '_');
+      const writableCtx = contextWritableAt(code, hole, boxedArg.ctx);
+      const specs = [];
+      for (const c of (writableCtx
+        ? [boxedArg.ctx, uUnder(boxedArg.ctx)]
+        : [underscoreLeadCtx(uUnder(boxedArg.ctx)), underscoreLeadCtx(boxedArg.ctx),
+          boxedArg.ctx, uUnder(boxedArg.ctx)])) {
+        if (c !== boxedArg.ctx && !specs.includes(c)) specs.push(c);
+      }
+      if (specs.length) {
+        // INTERLEAVED, not appended: the enclosing combo enumeration walks slots
+        // diagonally under a cap, so a variant parked at the end of the list is only
+        // reachable in combination with every other slot's first choice. Measured on
+        // `cc.bel#weaken`: with the variants appended, the one candidate that matters
+        // (`M_dot (weaken X1) [h1, x:target _ |- X2[..]]`) fell off the diagonal.
+        const pre = `[${boxedArg.ctx} |- `;
+        const woven = [];
+        for (const o of out) {
+          if (o.startsWith(pre)) {
+            for (const c of specs) woven.push(`[${c} |- ${o.slice(pre.length)}`);
+          }
+          woven.push(o);
+        }
+        out.length = 0;
+        out.push(...woven);
+      }
+    }
     if (out.length) return [...new Set(out)];
   }
   if (desc.higherOrder) {
@@ -1717,7 +1831,22 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
     }
     return scope.map((s) => s.name);
   }
-  const pool = scope.filter((s) => !needsWeakening(s.type, goalBox));
+  let pool = scope.filter((s) => !needsWeakening(s.type, goalBox));
+  // A CTYPE slot (`Map [h] [g]`) is inhabited by a derivation of that same ctype
+  // family and by nothing else — a context variable (`h1`), a schema variable or an
+  // index metavariable (`S1`) is not a computation value at all. Without this the slot
+  // list leads with junk the prefilter then throws away, and the enumeration's cap is
+  // spent before it reaches the constructed candidates below.
+  {
+    const wh = headOfConclusion(rawType);
+    if (globalThis.__proverInlineArg && wh && isCTypeFamily(code, wh)) {
+      const same = pool.filter((s) => {
+        const a = parseAppType(String(s.type || '').trim());
+        return a && a.head === wh;
+      });
+      if (same.length) pool = same;
+    }
+  }
   const ordered = pool.length ? pool : scope;
   // Candidates whose conclusion family matches the wanted type's head come first —
   // keeps the right choice inside the bounded combo enumeration.
@@ -1729,8 +1858,49 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
   // Depth-2 fallback: a nested constructor witness when a bare in-scope hypothesis
   // does not inhabit the slot (the invert-then-rebuild idiom — appended AFTER the
   // bare choices so existing proofs' candidate order is unchanged).
+  // ⭐ STEP 3 — THE RECURSIVE INHABITER. One procedure builds a term for this slot from
+  // hypotheses, constructor applications with their own slots inhabited recursively,
+  // inline calls, and binder introduction. It is what the nine lookup-shaped generators
+  // around it are each a fragment of. INTERLEAVED after the bare lookups, never appended
+  // last: the caller enumerates argument combos diagonally under a cap, so a candidate
+  // parked at the end of a slot's list is only reachable with every other slot's first
+  // choice — measured this session on `cc.bel#weaken`.
+  let built = [];
+  if (globalThis.__proverInhabit) {
+    const env = {
+      code,
+      hole,
+      scope: [
+        ...(hole.meta || []).filter((m) => m && m.name).map((m) => ({
+          name: m.name, type: m.type, concl: conclusionOf(m.type || ''), where: 'meta',
+        })),
+        ...(hole.ctx || []).filter((c) => c && c.name).map((c) => ({
+          name: c.name, type: c.type, concl: conclusionOf(c.type || ''), where: 'comp',
+        })),
+      ],
+      inlineCalls,
+    };
+    try { built = inhabit(rawType, env, 2) || []; } catch { built = []; }
+    if (built.length && globalThis.__inhabitDebug) {
+      globalThis.__inhabitDebug({ slot: String(rawType).slice(0, 60), n: built.length, sample: built.slice(0, 3) });
+    }
+  }
   const nested = nestedCtorArgFills(rawType, scope, code);
-  return nested.length ? [...bare, ...nested] : bare;
+  // ⭐ (C) THE INLINE IH/LEMMA CALL — entry 42's missing third piece. A CTYPE slot may
+  // need a term no lookup can produce: `M_dot (weaken sigma') …`. Restricted to ctype
+  // slots because a call is a computation value, spelled bare; an LF slot needs a boxed
+  // object and would be ill-formed by construction (the M3/M4 rule).
+  let inline = [];
+  if (inlineCalls && wantHead && isCTypeFamily(code, wantHead)) {
+    inline = inlineCalls(wantHead) || [];
+    if (inline.length && globalThis.__inlineArgDebug) {
+      globalThis.__inlineArgDebug({ what: 'inline-call', slot: String(rawType).slice(0, 60), n: inline.length, texts: inline.slice(0, 3) });
+    }
+  }
+  if (!nested.length && !inline.length && !built.length) return bare;
+  const head = bare.slice(0, 2);
+  const tail = bare.slice(2);
+  return [...new Set([...head, ...built, ...tail, ...nested, ...inline])];
 }
 
 // Bounded cartesian enumeration. `validPrefix` prunes DURING the walk — without
@@ -1750,7 +1920,7 @@ function argFillChoices(desc, rawType, hole, scope, goalBox, code) {
 //
 // ⛔ MEASURED 2026-08-15 — THE ANSWER IS (b). CROWD-OUT IS DEAD; DO NOT RE-TEST IT.
 // A/B over the FULL in-fragment cheap-death class (207 targets, <=50 checks, 66
-// developments, `scratchpad/cheapdeath-ids.txt`), caps widened 4→64 / 6→96 / 48→512
+// developments, `scratch/probes/cheapdeath-ids.txt`), caps widened 4→64 / 6→96 / 48→512
 // / 12→128: **207/207 IDENTICAL VERDICTS, 0 changes, +4.4% checks.**
 // So the correct term is not sitting past the cap — it is ABSENT FROM THE POOL.
 // The pool is built by LOOKUP (in-scope names + nullary constructors + the branch
@@ -2310,7 +2480,11 @@ function underscoreLeadCtx(ctxStr) {
   return parts.join(',');
 }
 
-export function fillCandidates(hole, code) {
+// `inlineCalls` (optional): `(ctypeFamilyHead) => callText[]`, supplied by
+// `candidateMoves`, which is the only caller that holds the theorem. Passed as a
+// callback rather than importing the generator, because `prover-moves.mjs` imports
+// THIS module — a direct import would close the cycle.
+export function fillCandidates(hole, code, inlineCalls = null) {
   const out = [];
   const seen = new Set();
   const push = (t) => { if (t && !seen.has(t)) { seen.add(t); out.push(t); } };
@@ -2337,6 +2511,33 @@ export function fillCandidates(hole, code) {
   if (!decomp) {
     const rg = resultGoalParts(hole);
     if (rg) decomp = { ctx: rg.ctx, concl: goalStr, boxed: false };
+  }
+  // ⭐ (A) A CONTEXT-INDEXED CTYPE GOAL — `Map [h, x:target S[]] [g]`. `resultGoalParts`
+  // demands at least one argument that is a BOXED OBJECT (`[Γ |- …]`), and a ctype
+  // indexed by CONTEXTS has none: every index is `[h]`, which carries no turnstile. So
+  // the goal decomposed to null and `fillCandidates` returned the axiom rule alone —
+  // measured on `cpp13/cc.bel#weaken`, where the whole candidate set at the `M_dot` arm
+  // is `X`, `X1`, `weaken X1`, and the constructor application is never proposed at all.
+  // That is the FIRST piece of entry 42's composite, and reading the trace is what showed
+  // it missing: entry 41b's "the general ctype-ctor application comes only from the
+  // planner" is still true for THIS goal shape. Admits an unboxed application of a
+  // declared ctype family; an ARROW goal is not an application and is left alone.
+  // ⛔ OPT-IN (`globalThis.__proverInlineArg`, `INLINEARG=1`). The whole composite —
+  // (A) here, (B) the context-index instantiation, (C) the inline call in an argument
+  // slot, (F) the slot's own binders, and the box-pattern ctype split in
+  // `splitTextForCtype` — is behind THIS ONE FLAG, per entry 42's "all three pieces,
+  // one toggle, or leave it alone". Measured 2026-08-19 over a 45-target stride sample
+  // of its own structural class: **3 gains / 0 losses / −15.7% checks**, against a
+  // declared stake of >=6. Stake MISSED, so it is not default. Kept, not deleted, and
+  // kept measurable: `npm run prover:diff` with INLINEARG=1 is **199/199, zero
+  // regressions**, suite 209/210, and the default path is byte-identical (47/47 non-
+  // timeout rows match the ledger exactly). DEFER != DISCARD.
+  if (!decomp && globalThis.__proverInlineArg) {
+    const ch = headOfConclusion(goalStr);
+    if (ch && isCTypeFamily(code, ch) && splitArrowSpineText(goalStr).length === 1) {
+      decomp = { ctx: '', concl: goalStr, boxed: false };
+      if (globalThis.__inlineArgDebug) globalThis.__inlineArgDebug({ what: 'ctype-goal', goal: goalStr });
+    }
   }
   if (!decomp) { looseAxioms.forEach(push); return out; }
   // WRITABILITY of the goal's CONTEXT (invariant 11, the context half). A theorem
@@ -2658,9 +2859,28 @@ export function fillCandidates(hole, code) {
     const descs = ctor.argTypes.map((at) => constructorArgDescriptor(at, []));
     const subst = goalApp ? matchIndices(ctor.result.indices, goalApp.indices) : null;
     if (goalApp && goalApp.indices.length && rigidConflict(ctor.result.indices, goalApp.indices)) continue;
+    // (B) A ctype constructor's CONTEXT indices are lowercase and so invisible to
+    // `matchIndices`; bind them positionally so each slot carries the context the GOAL
+    // fixes, not the one the declaration wrote.
+    const ctxSubst = (compFamily && globalThis.__proverInlineArg && goalApp && !globalThis.__proverUnify)
+      ? ctypeCtxSubst(ctor.result.indices, goalApp.indices) : null;
+    // ⭐ THE UNIFIER (`prover-unify.mjs`) SUPERSEDES BOTH of the above when enabled: it
+    // binds index metavariables AND context variables AND indices buried inside context
+    // declarations, in one substitution, applied STRUCTURALLY. `matchIndices` binds only
+    // uppercase tokens and `ctypeCtxSubst` only bare context parts, so between them a
+    // slot's type stayed as DECLARED in every case either one could not read.
+    // Fails open: `null` means no information, and the old path runs unchanged.
+    const uni = (globalThis.__proverUnify && goalApp)
+      ? unifyAgainstGoal(ctor.result.indices, goalApp.indices) : null;
+    if (globalThis.__unifyDebug) {
+      const changed = uni ? ctor.argTypes.filter((at) => instantiationChanged(at, uni)).length : 0;
+      globalThis.__unifyDebug({ ctor: ctor.name, fired: !!uni, slots: ctor.argTypes.length, changed });
+    }
     const perArg = ctor.argTypes.map((at, i) => {
-      const want = subst ? applySubst(at, subst) : at;
-      const choices = argFillChoices(descs[i], want, hole, scope, hole.goal, code);
+      let want = subst ? applySubst(at, subst) : at;
+      if (ctxSubst) want = applyCtxSubst(want, ctxSubst);
+      if (uni) want = instantiateType(at, uni);
+      const choices = argFillChoices(descs[i], want, hole, scope, hole.goal, code, inlineCalls);
       // A COMPUTATION-family constructor takes comp expressions as arguments —
       // a comp-context variable of a matching boxed family passes BARE
       // (`Re q [ ⊢ plus/z]`), never spelled inside a box (spec §2 fill / D3).
@@ -2743,6 +2963,8 @@ export function synthesizeFills(goalConcl, hole, code) {
   const scope = fillScope(hole, code);
 
   for (const ctor of ctors) {
+    const uni2 = globalThis.__proverUnify
+      ? unifyAgainstGoal(ctor.result.indices, goal.indices) : null;
     const subst = matchIndices(ctor.result.indices, goal.indices);
     if (!subst) continue;
     const descs = ctor.argTypes.map((at) => constructorArgDescriptor(at, []));
@@ -2758,7 +2980,7 @@ export function synthesizeFills(goalConcl, hole, code) {
         argTerms.push('_');
         continue;
       }
-      const want = applySubst(at, subst);
+      const want = uni2 ? instantiateType(at, uni2) : applySubst(at, subst);
       // A closed argument (e.g. dual_sym's `dual A A'`): its witness is the closed
       // metavar named in the branch scrutinee, boxed `[]`.
       if (isClosedArgType(want)) {

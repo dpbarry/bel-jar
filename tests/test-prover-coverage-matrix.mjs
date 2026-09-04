@@ -1,4 +1,4 @@
-// SHAPE-CLASS COVERAGE MATRIX + GRAMMAR ANCHOR (docs/prover-completeness.md §6).
+// SHAPE-CLASS COVERAGE MATRIX + GRAMMAR ANCHOR (docs/archive/prover-completeness.md §6).
 //
 // The theorem this test exploits: candidate generation is SYNTAX-DIRECTED and
 // name-independent (test-prover-no-overfit enforces the latter structurally),
@@ -417,7 +417,7 @@ for (const row of ROWS) {
   const extra = [...found].filter((f) => !EXPECTED.includes(f));
   expect(!missing.length && !extra.length,
     `grammar anchor drift — the Beluga expression grammar changed; re-audit the closure table `
-    + `and docs/prover-completeness.md before trusting coverage. missing=[${missing}] new=[${extra}]`);
+    + `and docs/archive/prover-completeness.md before trusting coverage. missing=[${missing}] new=[${extra}]`);
 }
 
 console.log('OK test-prover-coverage-matrix (shape classes covered by construction; grammar anchored)');

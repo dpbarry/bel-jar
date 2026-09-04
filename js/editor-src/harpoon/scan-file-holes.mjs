@@ -42,3 +42,54 @@ export function declSpanInText(text, pos) {
   if (!node || node.name === 'Program') return null;
   return { from: node.from, to: node.to };
 }
+
+// Rec/proof MEMBER containing `pos` — the first RecBody of a mutual block, or
+// a RecContinuation (`and` / `and rec`), or a standalone ProofDeclaration.
+// `blockFrom`/`blockTo` cover the enclosing RecDeclaration (siblings included).
+export function memberSpanFromTree(tree, pos) {
+  if (!tree) return null;
+  let node = tree.resolveInner(pos, 1);
+  let recBody = null;
+  let recDecl = null;
+  let proofDecl = null;
+  while (node) {
+    if (node.name === 'RecBody') recBody = node;
+    if (node.name === 'RecDeclaration') recDecl = node;
+    if (node.name === 'ProofDeclaration') proofDecl = node;
+    if (node.name === 'Program' || !node.parent) break;
+    node = node.parent;
+  }
+  if (proofDecl) {
+    return {
+      from: proofDecl.from, to: proofDecl.to,
+      blockFrom: proofDecl.from, blockTo: proofDecl.to,
+    };
+  }
+  if (!recBody) {
+    if (!recDecl) return null;
+    return {
+      from: recDecl.from, to: recDecl.to,
+      blockFrom: recDecl.from, blockTo: recDecl.to,
+    };
+  }
+  const parent = recBody.parent;
+  let from = recBody.from;
+  if (parent && parent.name === 'RecContinuation') from = parent.from;
+  else if (recDecl) {
+    for (let c = recDecl.firstChild; c; c = c.nextSibling) {
+      if (c.name === 'RecKeyword') { from = c.from; break; }
+    }
+  }
+  const blockFrom = recDecl ? recDecl.from : from;
+  const blockTo = recDecl ? recDecl.to : recBody.to;
+  return { from, to: recBody.to, blockFrom, blockTo };
+}
+
+export function memberSpanInText(text, pos) {
+  const src = String(text ?? '');
+  if (!src) return null;
+  let tree;
+  try { tree = parser.parse(src); } catch (_) { return declSpanInText(src, pos); }
+  return memberSpanFromTree(tree, Math.max(0, Math.min(pos, src.length)))
+    || declSpanInText(src, pos);
+}

@@ -99,22 +99,77 @@ function E() { return global.BelEditor || null; }
     + '<path d="M12 2.5c.3 3.1 1.4 4.2 4.5 4.5-3.1.3-4.2 1.4-4.5 4.5-.3-3.1-1.4-4.2-4.5-4.5 3.1-.3 4.2-1.4 4.5-4.5Z"/>'
     + '<path d="M18.5 12.5c.2 2 .9 2.7 2.9 2.9-2 .2-2.7.9-2.9 2.9-.2-2-.9-2.7-2.9-2.9 2-.2 2.7-.9 2.9-2.9Z"/>'
     + '</svg>';
-  // BRUTUS — a gladius, the Roman shortsword. The name is Roman and the tactic is
-  // brute force, so the glyph is both at once; it is also the one image the name
-  // already carries. Drawn vertically (a diagonal blade wastes half a square
-  // badge) from four primitives that hold their shape at 17px: a pointed blade,
-  // a crossguard, a grip and a round pommel.
-  // The blade is FILLED, not outlined: at 17px an outlined blade is two hairlines
-  // around empty space and the whole glyph reads as an anchor. Mass at the top,
-  // a wide guard, a dot for the pommel — the cruciform silhouette is what makes
-  // it legible as a sword at badge size.
-  var ICON_BRUTUS =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" '
+  // ORCA — the DORSAL FIN breaking the surface, not a whale.
+  // ⛔ A whale silhouette is the one thing this glyph must not be: at 17px an orca
+  // and a beluga are the same rounded blob, and Beluga is the proof assistant we
+  // sit on top of. Naming the search after the beluga's predator only works if the
+  // icon cannot be mistaken for the beluga.
+  // ⭐ The fin is the answer, and the reason is anatomical: a beluga has NO dorsal
+  // fin at all — just a low ridge, an adaptation for surfacing under pack ice. The
+  // tall swept fin is therefore the single feature a beluga physically cannot have,
+  // and it is unmistakable in silhouette.
+  // MASS AT THE TOP (a filled fin, not an outline — at 17px an outlined fin is two
+  // hairlines around nothing) over a single WAVE.
+  // ⛔ It was two straight horizontals, and that read as a BOAT: a triangle above a
+  // long waterline with a shorter line under it is a hull and its reflection, so the
+  // glyph said "sailing" rather than "something is under there". One wave fixes it,
+  // because a fin cutting water is the only reason water would be disturbed.
+  // ⛔ The FIN had to be reshaped too, not just the water. Its first form had a long
+  // swept left edge rising to a peak with a near-vertical right edge straight down to a
+  // flat base — which is a SAIL. Swapping the rules for a wave under a sail still read
+  // as sailing. What separates a dorsal fin from a sail is the trailing edge: a sail's
+  // luff is straight, a fin's trailing edge is CONCAVE and swept back.
+  //
+  // Geometry, worked out rather than eyeballed. Each control point is placed relative to
+  // its own chord, since that is what decides which way an edge bows:
+  // A gentle lean was not enough: a nearly symmetric triangle is a sail whatever its edges
+  // are doing, because at this size a shallow curve reads as straight. The tip has to
+  // OVERHANG the base. Nothing rigged like a sail leans past its own footing, so the
+  // overhang alone settles what the shape is.
+  //   · base (6.4,15.4)→(14.2,15.4), 7.8 wide. Tip (16.2,4.4) — 2.0 PAST the base's rear
+  //     corner, which is the whole read.
+  //   · leading edge base-front→tip, control (9.4,8.2) against a chord midpoint of
+  //     (11.3,9.9). Up and left of it, so the edge bulges outward: convex, the way the
+  //     front of a fin does.
+  //   · trailing edge tip→base-rear, control (13.6,10.4) against a chord midpoint of
+  //     (15.2,9.9). Well left of the chord, so this edge cuts INWARD. That hook is what a
+  //     sail's straight luff can never do.
+  //   · height 11.0 against a 7.8 base — taller than it is wide, as a fin is.
+  // ⛔ The water was three identical quadratic humps, and it read as a tilde string rather
+  // than a surface. Amplitude was not the fault: at 2.4 peak-to-peak over a 5.6 half-period
+  // its proportions were near enough to a well-drawn wave. Three things were:
+  //   1. every hump began and ended ON the baseline, which is where a sinusoid is at its
+  //      STEEPEST (40.6° here). So the round caps — the blunt fat end of a 1.85 stroke —
+  //      were parked at the exact moment of fastest motion. The line stopped dead instead
+  //      of receding, and a stroke that stops mid-gesture always looks cut off.
+  //   2. three identical humps at identical spacing is a repeating pattern, and a pattern
+  //      reads as ornament. Water is not periodic at this scale.
+  //   3. it was symmetric under an asymmetric fin, so the two shapes shared a frame
+  //      without relating to one another.
+  //
+  // Rebuilt as three cubics with the turns placed deliberately:
+  //   · every turning point has a HORIZONTAL tangent, set by giving both controls of a
+  //     hump the same x (its midpoint) and the y of the point they lead into. That is what
+  //     makes a crest broad instead of pointed.
+  // The water is three humps because three humps is the CONVENTIONAL sign for water, and
+  // at 17px recognition comes from convention, not from anatomy. Two smoother turns and one
+  // long tapered S were both tried, both looked better drawn large, and both read as a
+  // tilde at the size it ships. Compare candidates at 17px rather than reasoning about
+  // curves: scratch/probes/orca-water-sheet.mjs puts them side by side.
+  // What was actually wrong with the first attempt was only that it was faint — 2.4
+  // peak-to-peak under a 1.85 stroke. Deeper at 3.0, heavier at 2.0, same shape.
+  // The stroke applies to the water alone; the fin carries stroke="none".
+  //   · span 3→20.4, wider than the fin, three quadratics of 5.8. A quadratic peaks at HALF
+  //     its control offset, so −3 gives a band of y 17.3→20.3.
+  //   · `t` reflects the previous control, so the humps alternate without restating each.
+  //   · the crest tops out at 16.3 against a fin base of 15.4 — 0.9 clear, close enough
+  //     that the two shapes read as one object rather than a fin above a separate line.
+  var ICON_ORCA =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
     + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    + '<path d="M12 2.2 14.4 9.4v4H9.6v-4Z" fill="currentColor" stroke="none"/>'
-    + '<path d="M6.6 13.9h10.8"/>'
-    + '<path d="M12 14.4v3.9"/>'
-    + '<circle cx="12" cy="20" r="1.5"/>'
+    + '<path d="M6.4 15.4Q9.4 8.2 16.2 4.4Q13.6 10.4 14.2 15.4Z" '
+    + 'fill="currentColor" stroke="none"/>'
+    + '<path d="M3 18.8q2.9-3 5.8 0t5.8 0t5.8 0"/>'
     + '</svg>';
   var ICON_CHEVRON_DOWN =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
@@ -138,7 +193,7 @@ function E() { return global.BelEditor || null; }
 
   // ONE tactic vocabulary for the whole surface. Our engine's move kinds ARE
   // Harpoon's tactics, so they are named as Harpoon names them — in the picker,
-  // in the manual trail, and in Brutus's solve reel alike. A proof should not
+  // in the manual trail, and in Orca's solve reel alike. A proof should not
   // change language depending on who built it.
   var TACTIC_VERB = {
     intro: 'intros',
@@ -288,16 +343,25 @@ function E() { return global.BelEditor || null; }
 
   function findHoleHitInText(docText, anchor, ed) {
     if (!anchor || !docText || !ed || typeof ed.parseDecl !== 'function') return null;
-    var re = new RegExp(
-      '\\b(rec|proof)\\s+' + String(anchor.declName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:',
-    );
-    var m = re.exec(docText);
-    if (!m) return null;
-    var from = m.index;
-    var semi = docText.indexOf(';', from);
-    var to = semi < 0 ? docText.length : semi + 1;
-    var lines = docText.slice(0, from).split('\n');
-    var declStartLine = lines.length;
+    var loc = ed.locateMember
+      ? ed.locateMember(docText, anchor.declName)
+      : null;
+    var from;
+    var to;
+    if (loc) {
+      from = loc.from;
+      to = loc.to;
+    } else {
+      var re = new RegExp(
+        '(^|[\\n\\r])[ \\t]*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)'
+          + String(anchor.declName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:',
+      );
+      var m = re.exec(docText);
+      if (!m) return null;
+      from = m.index + m[1].length;
+      var semi = docText.indexOf(';', from);
+      to = semi < 0 ? docText.length : semi + 1;
+    }
     var declSlice = docText.slice(from, to);
     var decl = ed.parseDecl(declSlice);
     if (!decl || (anchor.declKey && (decl.kw + ':' + decl.name) !== anchor.declKey)) return null;
@@ -309,13 +373,6 @@ function E() { return global.BelEditor || null; }
     var line = before.split('\n').length;
     var lastNl = before.lastIndexOf('\n');
     var col = before.length - (lastNl < 0 ? 0 : lastNl + 1) + 1;
-    if (anchor.holeKey) {
-      var want = anchor.holeKey;
-      var got = line + ':' + col + ':';
-      if (want.indexOf(got) !== 0 && got !== want.split(':').slice(0, 2).join(':') + ':') {
-        // allow line/col drift if still same decl and ? exists
-      }
-    }
     var off = bodyStart + qIdx;
     return { hole: { line: line, col: col, name: null }, from: off, to: off + 1 };
   }
@@ -334,6 +391,13 @@ function E() { return global.BelEditor || null; }
   function fullDeclSignature() { return displayApi.fullDeclSignature.apply(null, arguments); }
   function priorGoalBinders() { return displayApi.priorGoalBinders.apply(null, arguments); }
   function mountGoalPriors() { return displayApi.mountGoalPriors.apply(null, arguments); }
+  // `prep.declKey` is `kw + ':' + name`, so the keyword the author actually wrote is already
+  // known here. Never default it: guessing `rec` would silently mislabel every `proof`.
+  function declKwOf(prep) {
+    var key = (prep && prep.declKey) || '';
+    var i = key.indexOf(':');
+    return i > 0 ? key.slice(0, i) : '';
+  }
   function appendAutoGoalHero() { return displayApi.appendAutoGoalHero.apply(null, arguments); }
   function appendAutoSolution() { return displayApi.appendAutoSolution.apply(null, arguments); }
   function formatSolutionBody() { return displayApi.formatSolutionBody.apply(null, arguments); }
@@ -355,6 +419,43 @@ function E() { return global.BelEditor || null; }
   function defaultCommitState() { return commitApi.defaultCommitState(); }
   function commitFailureUserMessage() { return commitApi.commitFailureUserMessage(); }
 
+  /**
+   * Every live lab, newest last — panel and floats alike.
+   *
+   * The command layer needs "the lab the user is looking at", and neither half
+   * knows that alone: the panel holds one session, `floatSessions` holds the
+   * windows, and a chord has to reach whichever one has the user's attention.
+   */
+  var liveSessions = [];
+
+  /**
+   * The session a keyboard command drives: the one holding DOM focus, else the
+   * most recently opened. Null when no lab is open — which is what gates the
+   * `harpoon.*` commands out of the palette rather than letting them no-op.
+   */
+  function activeSession() {
+    var active = global.document ? global.document.activeElement : null;
+    var newest = null;
+    for (var i = liveSessions.length - 1; i >= 0; i -= 1) {
+      var s = liveSessions[i];
+      // A session with no `bodyEl` is mid-construction — there is nothing on
+      // screen yet, so it is not what the user is looking at.
+      if (!s || !s.bodyEl) continue;
+      if (active && s.bodyEl.contains(active)) return s;
+      if (!newest) newest = s;
+    }
+    return newest;
+  }
+
+  function trackSession(session) {
+    if (liveSessions.indexOf(session) < 0) liveSessions.push(session);
+  }
+
+  function untrackSession(session) {
+    var at = liveSessions.indexOf(session);
+    if (at !== -1) liveSessions.splice(at, 1);
+  }
+
   function Session(view, declFrom, declTo, host) {
     this.view = view;
     this.declFrom = declFrom;
@@ -373,6 +474,10 @@ function E() { return global.BelEditor || null; }
     this._compromiseBanner = null;
     this.commitState = defaultCommitState();
     this._verdictPopPlayed = false;
+    // Tracked from construction, not from `runSession`: the invariant is "a
+    // Session exists ⇒ a command can reach it", and `disposeSession` is the one
+    // place it stops being true.
+    trackSession(this);
   }
 
   Session.prototype.getCommitState = function () {
@@ -613,11 +718,27 @@ function E() { return global.BelEditor || null; }
     }
   };
 
+  /**
+   * Mirror the search into the status strip so Orca is watchable without the
+   * Harpoon panel open. Driven by `nativeAuto.phase`, which is the lab's own
+   * authority on whether a search is live — never inferred from silence.
+   */
+  function pushOrca(session, label) {
+    if (typeof window === 'undefined' || !window.StatusStrip) return;
+    var na = session && session.nativeAuto;
+    if (!na || na.phase !== 'searching') {
+      window.StatusStrip.setOrca(false);
+      return;
+    }
+    window.StatusStrip.setOrca(true, na.paused ? 'paused' : (label || ''));
+  }
+
   Session.prototype.stopNativeAuto = function () {
     this.userCancelled = true;
     if (this.nativeAuto && this.nativeAuto.phase === 'searching') {
       setNativeSearchLabel(this.nativeAuto, 'Stopping…');
       this.updateNativeAutoSearch();
+      pushOrca(this, 'stopping');
     }
   };
 
@@ -827,7 +948,7 @@ function E() { return global.BelEditor || null; }
     }).catch(function () { self._fullDeclSigRequested = null; });
   };
 
-  // `codeOverride` lets Brutus run from the manual session's WORKING program
+  // `codeOverride` lets Orca run from the manual session's WORKING program
   // rather than the pristine one — i.e. "finish the proof from here".
   Session.prototype.runNativeAuto = function (codeOverride) {
     var ed = E();
@@ -875,6 +996,7 @@ function E() { return global.BelEditor || null; }
       sourceGoalType: sourceGoalType,
       priorBinders: priorGoalBinders(this, sourceGoalType, initialGoalType),
       declName: thm.name || (this.prep && this.prep.name) || '',
+      declKw: declKwOf(this.prep),
       theoremSnapshot: {
         premiseCount: (thm.compType && thm.compType.premises && thm.compType.premises.length) || 0,
         totality: thm.totality || null,
@@ -903,6 +1025,7 @@ function E() { return global.BelEditor || null; }
       if (!self.nativeAuto || self.nativeAuto.paused) return;
       setNativeSearchLabel(self.nativeAuto, label);
       self.syncReelStatus();
+      pushOrca(self, String(label || '').replace(/[….]+$/, ''));
     }
     pulseLabel('Starting Beluga…');
     var proverReady = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
@@ -973,6 +1096,18 @@ function E() { return global.BelEditor || null; }
           na.steps = info.steps || [];
           // Where the search has actually got to — what "take over" inherits.
           if (info.code) na.liveCode = info.code;
+          // The successor hole report, straight from the search. Lets the panel
+          // show the CURRENT context while the run continues instead of the
+          // pre-search one, at no checker cost.
+          // ⛔ Refresh from HERE. `onStep` is the only per-step signal during a
+          // run: it does not call `render()` (the fast path) or
+          // `updateNativeAutoSearch`, so a refresh hung off either of those never
+          // fires while the search is actually moving, and the context only
+          // caught up once the run ended.
+          if (info.holes) {
+            na.liveHoles = info.holes;
+            self.syncLiveContext();
+          }
           na.checks = na.steps.reduce(function (t, s) { return t + (s.checks || 0); }, 0);
           if (!na.paused) {
             setNativeSearchLabel(na, 'Step ' + na.steps.length
@@ -993,8 +1128,8 @@ function E() { return global.BelEditor || null; }
       // RETIRED: the user took a step by hand while paused. The manual state is
       // already correct (synced at pause), so just let the surface settle — do
       // not resurrect a verdict for a search nobody is waiting on.
-      if (self._retireBrutus) {
-        self._retireBrutus = false;
+      if (self._retireOrca) {
+        self._retireOrca = false;
         self.userCancelled = false;
         self.render();
         return false;
@@ -1025,7 +1160,7 @@ function E() { return global.BelEditor || null; }
       self.refreshTreeExplorer();
       // ONE SURFACE: hand the result to the working program so the panel shows
       // what actually happened rather than the state it started from.
-      if (self.manual) self.absorbBrutusResult(r);
+      if (self.manual) self.absorbOrcaResult(r);
       return !!(r && r.complete);
     }).catch(function (err) {
       var cancelled = client.isCancelledError && client.isCancelledError(err);
@@ -1047,6 +1182,9 @@ function E() { return global.BelEditor || null; }
       self.refreshTreeExplorer();
       return false;
     }).finally(function () {
+      // The search is over, whatever the outcome — the bar must stop claiming
+      // Orca is running.
+      pushOrca(self);
       if (self._goalTierListener) {
         window.removeEventListener('beljar:hole-goals-updated', self._goalTierListener);
         window.removeEventListener('beljar:development-checked', self._goalTierListener);
@@ -1112,6 +1250,7 @@ function E() { return global.BelEditor || null; }
   }
 
   Session.prototype.disposeSession = function () {
+    untrackSession(this);
     this.clearPendingCommitNav();
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
@@ -1389,6 +1528,7 @@ function E() { return global.BelEditor || null; }
       autoVerdictTitle: displayApi.autoVerdictTitle,
       autoVerdictTone: displayApi.autoVerdictTone,
       appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      appendDeclLabel: displayApi.appendDeclLabel,
       resolveNativeAutoGoalDisplay: displayApi.resolveNativeAutoGoalDisplay,
       priorGoalBinders: displayApi.priorGoalBinders,
       setNativeSearchLabel: displayApi.setNativeSearchLabel,
@@ -1413,6 +1553,7 @@ function E() { return global.BelEditor || null; }
     Session.prototype.clearNativeAutoShell = reelApi.clearNativeAutoShell;
     Session.prototype.syncAutoPauseBtn = reelApi.syncAutoPauseBtn;
     Session.prototype.updateNativeAutoSearch = reelApi.updateNativeAutoSearch;
+    Session.prototype.syncLiveContext = reelApi.syncLiveContext;
     Session.prototype.syncReelStatus = reelApi.syncReelStatus;
     Session.prototype.ensureWorkingRow = reelApi.ensureWorkingRow;
     Session.prototype.feedConveyor = reelApi.feedConveyor;
@@ -1447,6 +1588,7 @@ function E() { return global.BelEditor || null; }
       E: E,
       renderSource: displayApi.renderSource,
       appendAutoGoalHero: displayApi.appendAutoGoalHero,
+      appendDeclLabel: displayApi.appendDeclLabel,
       priorGoalBinders: displayApi.priorGoalBinders,
       buildPlaceStrip: displayApi.buildPlaceStrip,
       renderCommitOutcome: displayApi.renderCommitOutcome,
@@ -1460,7 +1602,7 @@ function E() { return global.BelEditor || null; }
       nativeAutoSearchLabel: displayApi.nativeAutoSearchLabel,
       ICON_UNDO: ICON_UNDO,
       ICON_REDO: ICON_REDO,
-      ICON_BRUTUS: ICON_BRUTUS,
+      ICON_ORCA: ICON_ORCA,
       ICON_CHEVRON_DOWN: ICON_CHEVRON_DOWN,
       ICON_DECLINE: ICON_DECLINE,
       ICON_CHECK: ICON_CHECK,
@@ -1479,10 +1621,10 @@ function E() { return global.BelEditor || null; }
     Session.prototype.manualFocus = manualApi.manualFocus;
     Session.prototype.sweepCandidates = manualApi.sweepCandidates;
     Session.prototype.cancelSweep = manualApi.cancelSweep;
-    Session.prototype.runBrutus = manualApi.runBrutus;
-    Session.prototype.toggleBrutusPause = manualApi.toggleBrutusPause;
-    Session.prototype.absorbBrutusResult = manualApi.absorbBrutusResult;
-    Session.prototype.syncManualToBrutus = manualApi.syncManualToBrutus;
+    Session.prototype.runOrca = manualApi.runOrca;
+    Session.prototype.toggleOrcaPause = manualApi.toggleOrcaPause;
+    Session.prototype.absorbOrcaResult = manualApi.absorbOrcaResult;
+    Session.prototype.syncManualToOrca = manualApi.syncManualToOrca;
     Session.prototype.scrollToDerivation = manualApi.scrollToDerivation;
     Session.prototype.backToManual = manualApi.backToManual;
     Session.prototype.commitManual = manualApi.commitManual;
@@ -1495,7 +1637,7 @@ function E() { return global.BelEditor || null; }
     var self = this;
     var body = this.bodyEl;
 
-    // While Brutus searches, its status line and reel are updated IN PLACE —
+    // While Orca searches, its status line and reel are updated IN PLACE —
     // rebuilding the panel on every pulse would thrash the DOM and destroy the
     // user's scroll position, which now matters because the tactics stay on
     // screen above the live derivation.
@@ -1503,7 +1645,7 @@ function E() { return global.BelEditor || null; }
     // failed resync all change the panel's structure (they unlock the tactics,
     // skeleton them, or replace them), and a status-only update would leave the
     // previous structure on screen — which is how a pause once stranded the user
-    // with the tactics of a goal Brutus had already left. `_renderSig` is what
+    // with the tactics of a goal Orca had already left. `_renderSig` is what
     // renderManual last drew; anything else means rebuild.
     if (this.nativeAuto && this.nativeAuto.phase === 'searching'
         && this._autoSearchBox && body.contains(this._autoSearchBox)
@@ -1512,12 +1654,41 @@ function E() { return global.BelEditor || null; }
       return;
     }
 
+    // ── Hold the scroll position across a structural rebuild ─────────────────
+    // `body.textContent = ''` drops every child, and the browser clamps the
+    // scroller to 0 the moment its content collapses. So any render that is not
+    // the in-place search pulse threw the reader back to the top: finishing the
+    // initial load, a pause, a resync, a tactic landing. The band that scrolls is
+    // an ANCESTOR of bodyEl (`.harpoon-panel-body`), not bodyEl itself, so find
+    // it rather than assuming.
+    // Restored synchronously after the rebuild, which is safe because the panel
+    // is text and lays out in the same frame. A shorter panel clamps naturally,
+    // and anything that deliberately moves the view (scrollToDerivation) runs in
+    // a later frame and still wins.
+    var scroller = body;
+    while (scroller && scroller !== document.body) {
+      var oy = '';
+      try { oy = globalThis.getComputedStyle(scroller).overflowY; } catch (e) { oy = ''; }
+      if ((oy === 'auto' || oy === 'scroll') && scroller.scrollHeight > scroller.clientHeight) break;
+      scroller = scroller.parentNode;
+    }
+    var keepTop = (scroller && scroller !== document.body) ? scroller.scrollTop : 0;
+
     this.clearNativeAutoShell();
     body.textContent = '';
     body.classList.remove('is-starting');
+    // Restored in a MICROTASK, not a frame: `render` has several early returns,
+    // so there is no single place to put this, and a microtask runs once the whole
+    // synchronous rebuild is done but still BEFORE paint. A rAF would paint the
+    // top-of-panel first and then snap, which is the flash we are removing.
+    if (keepTop > 0) {
+      Promise.resolve().then(function () {
+        if (scroller && Math.abs(scroller.scrollTop - keepTop) > 1) scroller.scrollTop = keepTop;
+      });
+    }
     var m = this.model;
 
-    // ONE SURFACE. The manual panel is the whole of Harpoon; Brutus is a STATE
+    // ONE SURFACE. The manual panel is the whole of Harpoon; Orca is a STATE
     // of it, not a screen that replaces it. While the search runs the tactics
     // stay in place (disabled) and the derivation below streams; pausing hands
     // the tactics straight back. `renderManual` renders every phase.
@@ -1525,7 +1696,7 @@ function E() { return global.BelEditor || null; }
       this.renderManual(body);
       return;
     }
-    // No manual session (legacy/standalone Brutus) — its own surface still works.
+    // No manual session (legacy/standalone Orca) — its own surface still works.
     if (this.nativeAuto) {
       this.renderNativeAuto(body);
       return;
@@ -1593,16 +1764,35 @@ function E() { return global.BelEditor || null; }
 
   function finishPrepare(ed, ctx, span, decl, hit) {
     var assembled = String(ctx.code);
-    var re = new RegExp('(^|\\n)\\s*(rec|proof)\\s+' + decl.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:');
-    var match = re.exec(assembled);
-    if (!match) { toast('Harpoon: declaration not found in the checkable program.', 'error'); return null; }
-    var declStart = match.index + match[1].length;
-    var semi = assembled.indexOf(';', declStart);
-    var declEnd = semi === -1 ? assembled.length : semi + 1;
+    var loc = ed.locateMember
+      ? ed.locateMember(assembled, decl.name, ctx.fileStart || 0)
+      : null;
+    var declStart;
+    var declEnd;
+    var blockStart;
+    var blockEnd;
+    if (loc) {
+      declStart = loc.from;
+      declEnd = loc.to;
+      blockStart = loc.blockFrom != null ? loc.blockFrom : loc.from;
+      blockEnd = loc.blockTo != null ? loc.blockTo : loc.to;
+    } else {
+      var re = new RegExp(
+        '(^|\\n)\\s*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)'
+          + decl.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:',
+      );
+      var match = re.exec(assembled);
+      if (!match) { toast('Harpoon: declaration not found in the checkable program.', 'error'); return null; }
+      declStart = match.index + match[1].length;
+      var semi = assembled.indexOf(';', declStart);
+      declEnd = semi === -1 ? assembled.length : semi + 1;
+      blockStart = declStart;
+      blockEnd = declEnd;
+    }
     var built = ed.buildProofProgram(assembled, declStart, declEnd);
     if (!built) { toast('Harpoon: couldn\u2019t build the proof program.', 'error'); return null; }
     var proveCode = (ed.proveOrchestrationCode)
-      ? ed.proveOrchestrationCode(assembled, decl.name, declStart, declEnd, ctx.fileStart)
+      ? ed.proveOrchestrationCode(assembled, decl.name, blockStart, blockEnd, ctx.fileStart)
       : assembled;
     return {
       built: built,
@@ -1613,6 +1803,8 @@ function E() { return global.BelEditor || null; }
       assembledCode: assembled,
       assembledDeclFrom: declStart,
       assembledDeclTo: declEnd,
+      assembledBlockFrom: blockStart,
+      assembledBlockTo: blockEnd,
       proveCode: proveCode,
       offsetLines: ctx.offsetLines || 0,
       fileStart: ctx.fileStart != null ? ctx.fileStart : 0,
@@ -1624,7 +1816,8 @@ function E() { return global.BelEditor || null; }
     var api = global.CurrentEditor;
     var ctx = api && typeof api.getHoleActionContext === 'function' ? api.getHoleActionContext() : null;
     if (!ctx || !ctx.code) { toast('Harpoon: no checkable program.', 'error'); return null; }
-    var span = api.getDeclSpan ? api.getDeclSpan(hit.from) : null;
+    var span = api.getMemberSpan ? api.getMemberSpan(hit.from)
+      : (api.getDeclSpan ? api.getDeclSpan(hit.from) : null);
     if (!span) { toast('Harpoon: couldn\u2019t find the enclosing declaration.', 'error'); return null; }
     var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
     if (!decl) { toast('Harpoon: only rec/proof declarations are supported.', 'error'); return null; }
@@ -1641,7 +1834,9 @@ function E() { return global.BelEditor || null; }
         || typeof ed.declSpanInText !== 'function') return null;
     var ctx = ed.holeActionContextForFile(fileId);
     if (!ctx || !ctx.code) { toast('Harpoon: no checkable program.', 'error'); return null; }
-    var span = ed.declSpanInText(ctx.fileText, hit.from);
+    var span = ed.memberSpanInText
+      ? ed.memberSpanInText(ctx.fileText, hit.from)
+      : ed.declSpanInText(ctx.fileText, hit.from);
     if (!span) { toast('Harpoon: couldn\u2019t find the enclosing declaration.', 'error'); return null; }
     var decl = ed.parseDecl(String(ctx.fileText).slice(span.from, span.to));
     if (!decl) { toast('Harpoon: only rec/proof declarations are supported.', 'error'); return null; }
@@ -1651,6 +1846,7 @@ function E() { return global.BelEditor || null; }
   }
 
   var floatSessions = [];
+
 
   function holeKeyFromHit(hit) {
     if (!hit || !hit.hole) return '';
@@ -1690,9 +1886,14 @@ function E() { return global.BelEditor || null; }
     }
     if (!anchor.declKey) return null;
     var ed = E();
+    var api = global.CurrentEditor;
     for (var j = 0; j < hits.length; j++) {
       var hit = hits[j];
-      var span = ed && ed.getDeclSpan ? ed.getDeclSpan(hit.from) : null;
+      var span = null;
+      if (api && api.getMemberSpan) span = api.getMemberSpan(hit.from);
+      else if (api && api.getDeclSpan) span = api.getDeclSpan(hit.from);
+      else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
+      else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
       if (!span) continue;
       var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
       if (decl && (decl.kw + ':' + decl.name) === anchor.declKey) return hit;
@@ -1704,7 +1905,7 @@ function E() { return global.BelEditor || null; }
   function openingMode() {
     var persist = global.Persist;
     if (persist && typeof persist.readStoredHarpoonMode === 'function') {
-      return persist.readStoredHarpoonMode() === 'brutus' ? 'brutus' : 'manual';
+      return persist.readStoredHarpoonMode() === 'orca' ? 'orca' : 'manual';
     }
     return 'manual';
   }
@@ -1723,14 +1924,14 @@ function E() { return global.BelEditor || null; }
     if (host.onSessionStart) host.onSessionStart(prep.name);
 
     // BelJar drives \u2014 no OCaml Harpoon session either way. MANUAL is the default:
-    // proving is an interactive act, and the search ("Brutus") is one tactic within
+    // proving is an interactive act, and the search ("Orca") is one tactic within
     // it, one click from the manual surface. A user who wants the old
     // straight-to-search behaviour flips the preference.
-    // Always the manual surface. Opening "in Brutus" now means the search starts
+    // Always the manual surface. Opening "in Orca" now means the search starts
     // itself once the goal is read — not that a different panel appears.
-    var startBrutus = openingMode() === 'brutus';
+    var startOrca = openingMode() === 'orca';
     session.startManual().then(function (ok) {
-      if (ok && startBrutus) session.runBrutus();
+      if (ok && startOrca) session.runOrca();
     });
     return session;
   }
@@ -1871,6 +2072,7 @@ function E() { return global.BelEditor || null; }
     // SHIPPED render/click paths rather than a re-implementation of them.
     _Session: Session,
     openFromHole: openFromHole,
+    activeSession: activeSession,
     proveInPanel: proveInPanel,
     proveInPanelForFile: proveInPanelForFile,
     collectFloatingHarpoonWindows: collectFloatingHarpoonWindows,

@@ -11,6 +11,7 @@ import { lintQueryPragmaBounds, mergeDiagnostics as mergeDiagLists } from './que
 import { timeSync } from '../perf/check-trace.mjs';
 import { checkerSnapshot } from '../semantic/checker-snapshot.mjs';
 import { LINT_TOOLTIP_FILTER } from './hover.mjs';
+import { getEngine } from './ide-actions.mjs';
 import { diagnosticRowHighlight, diagnosticGutterTooltips, suitePreludeRowWash, suitePreludeLineTooltips } from './diag-gutter.mjs';
 import { isSuitePreludeBannerDiag } from '../semantic/suite-prelude-banner.mjs';
 import { isRenaming } from './rename.mjs';
@@ -39,7 +40,10 @@ function syntaxLintTreeInner(tree, doc) {
 export { syntaxLintTreeInner };
 
 export function syntaxLint(view) {
-  return syntaxLintTree(syntaxTree(view.state), view.state.doc);
+  const tree = syntaxTree(view.state);
+  const snap = getEngine(view)?.getSnapshot?.();
+  if (snap?.syntax?.tree === tree) return snap.syntax.syntaxDiagnostics || [];
+  return syntaxLintTree(tree, view.state.doc);
 }
 
 /** Shared CM lint options — BelJar-styled tooltips, not CM defaults. */

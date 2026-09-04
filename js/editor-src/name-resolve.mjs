@@ -7,6 +7,15 @@ import {
   isLFDatatypeHead,
 } from './tree-helpers.mjs';
 import { findGroupSignature, groupDefinesName } from './semantic/project-prelude.mjs';
+import {
+  envFindGlobal,
+  envFindLocalCovering,
+  envHasGlobal,
+  envHasLocalCovering,
+  envHasPreludeName,
+  envIdentNode,
+  nameEnvForTree,
+} from './semantic/name-env.mjs';
 import { buildInfixState, infixSlotForIdent } from './infix.mjs';
 
 // The project group's answer for a name this document does not define: kind
@@ -80,6 +89,8 @@ const LOCAL_BINDER_LABEL = {
   MLamParam:          'Meta Parameter',
   SchemaSomeBindings: 'Schema Binder',
   AtomicPattern:      'Pattern Variable',
+  PatternBinder:      'Pattern Variable',
+  TotalityBinder:     'Parameter',
 };
 
 function globalLabel(declParent) {
@@ -334,9 +345,17 @@ function sourceSignatureForGlobal(declParent, ident, doc) {
 // collectUndefinedApplicationDiags entry (every keystroke), alongside the external
 // name memo.
 let _localBinderMemo = new Map();
-function resetLocalBinderMemo() { _localBinderMemo = new Map(); }
+let _localBinderDoc = null;
+function resetLocalBinderMemo() {
+  _localBinderMemo = new Map();
+  _localBinderDoc = null;
+}
 
 function findEnclosingLocalBinder(ident, doc, name) {
+  if (_localBinderDoc !== doc) {
+    _localBinderMemo = new Map();
+    _localBinderDoc = doc;
+  }
   const memoKey = `${ident.from}:${ident.to}`;
   if (_localBinderMemo.has(memoKey)) return _localBinderMemo.get(memoKey);
   let result = null;
@@ -495,13 +514,45 @@ function scanContextPartForName(part, doc, name) {
   return null;
 }
 
+function declParentOf(ident) {
+  for (let p = ident.parent; p; p = p.parent) {
+    if (GLOBAL_DECL_PARENT.has(p.name)) return p;
+  }
+  return null;
+}
+
 function findGlobalDeclarationIdent(tree, doc, name, isUpper) {
+  const env = nameEnvForTree(tree);
+  if (env) {
+    const sym = envFindGlobal(env, name, isUpper);
+    if (!sym) return null;
+    const ident = envIdentNode(tree, sym);
+    if (!ident) return null;
+    const declParent = declParentOf(ident);
+    return declParent ? { ident, declParent } : null;
+  }
   const entries = walkTree(tree, doc).defMap.get(name);
   if (!entries) return null;
   for (const e of entries) {
     if (e.isUpper === isUpper) return { ident: e.ident, declParent: e.declParent };
   }
   return null;
+}
+
+function isLocallyBound(tree, ident, doc, name) {
+  const env = nameEnvForTree(tree);
+  if (env) return envHasLocalCovering(env, name, ident.from);
+  return findEnclosingLocalBinder(ident, doc, name) !== null;
+}
+
+function enclosingLocalHit(tree, ident, doc, name) {
+  const env = nameEnvForTree(tree);
+  if (env) {
+    const sym = envFindLocalCovering(env, name, ident.from);
+    if (!sym) return null;
+    return hit(sym.sourceText || '', sym.nodeKind || 'Local');
+  }
+  return findEnclosingLocalBinder(ident, doc, name);
 }
 
 const TYPE_APP = new Set(['LFAppType', 'CompAppType']);
@@ -641,7 +692,16 @@ function externalKnownName(name) {
   return known;
 }
 
+// The in-file half prefers the symbol store's per-name index (published for
+// exactly this tree; O(1) map read, no tree walk). When the store hasn't seen
+// this tree yet (engine sync still pending) it falls back to the walk's defMap
+// — same answer, legacy cost.
 function isKnownGlobalName(tree, doc, name, isUpper) {
+  const env = nameEnvForTree(tree);
+  if (env) {
+    if (envHasGlobal(env, name, isUpper)) return true;
+    return envHasPreludeName(env, name);
+  }
   if (findGlobalDeclarationIdent(tree, doc, name, isUpper)) return true;
   return externalKnownName(name);
 }
@@ -692,7 +752,7 @@ function applicationHeadIsBound(tree, doc, app, isType) {
   const head = isType ? headIdentOfTypeApp(app) : headIdentOfTermApp(app);
   if (!head || identInMetaVar(head)) return true;
   const name = doc.sliceString(head.from, head.to);
-  if (findEnclosingLocalBinder(head, doc, name) !== null) return true;
+  if (isLocallyBound(tree, head, doc, name)) return true;
   return isKnownGlobalName(tree, doc, name, head.name === 'UpperIdentifier');
 }
 
@@ -735,7 +795,7 @@ function undefinedApplicationSite(tree, doc, ident) {
   for (let q = ident.parent; q; q = q.parent) {
     if (q.name === 'ParameterVariable' || q.name === 'SubstitutionVariable') return null;
   }
-  if (findEnclosingLocalBinder(ident, doc, name) !== null) return null;
+  if (isLocallyBound(tree, ident, doc, name)) return null;
   if (ascribedTypeForIdent(ident, doc)) return null;
   for (let p = ident.parent; p; p = p.parent) {
     const isType = TYPE_APP.has(p.name);
@@ -762,7 +822,7 @@ function undefinedApplicationMessage(name, site) {
   return `Type family '${site.headName}' is not defined`;
 }
 
-export function collectUndefinedApplicationDiags(tree, doc) {
+export function collectUndefinedApplicationDiags(tree, doc, range = null) {
   // Prelude + doc positions are fixed for this synchronous pass; memoize the
   // external name lookups and local-binder scans so a deeply-nested app that
   // re-asks the same head at every nesting level pays each lookup once.
@@ -773,7 +833,7 @@ export function collectUndefinedApplicationDiags(tree, doc) {
   // Only visit application nodes — never every identifier in the file.
   // The old per-ident walk called findEnclosingLocalBinder ~thousands of times
   // per keystroke (O(idents × depth) on large proofs).
-  tree.iterate({
+  const iterate = {
     enter(ref) {
       const isType = TYPE_APP.has(ref.name);
       const isTerm = TERM_APP.has(ref.name);
@@ -799,7 +859,12 @@ export function collectUndefinedApplicationDiags(tree, doc) {
         });
       }
     },
-  });
+  };
+  if (range && range.from != null && range.to != null) {
+    iterate.from = range.from;
+    iterate.to = range.to;
+  }
+  tree.iterate(iterate);
   return diags;
 }
 
@@ -993,7 +1058,7 @@ function implicitTypeFromDeclSignature(tree, doc, ident) {
   const encl = findEnclosingGlobalDecl(ident);
   if (!encl) return null;
   const enclIdent = firstIdentChild(encl);
-  if (!enclIdent || enclIdent === ident) return null;
+  if (!enclIdent || sameSpan(enclIdent, ident)) return null;
   const sig = sourceSignatureForGlobal(encl, enclIdent, doc);
   if (!sig) return null;
   const name = doc.sliceString(ident.from, ident.to);
@@ -1097,7 +1162,7 @@ function inferImplicitFromSibling(tree, doc, ident) {
   const isUpper = ident.name === 'UpperIdentifier';
   for (const cand of siblingOccurrences(encl, doc, name, isUpper, ident)) {
     // A locally-bound occurrence (lambda/pi shadow) is a different variable.
-    if (findEnclosingLocalBinder(cand, doc, name)) continue;
+    if (isLocallyBound(tree, cand, doc, name)) continue;
     const t = inferImplicitFromInfix(tree, doc, cand)
       || inferImplicitFromTypeApp(tree, doc, cand)
       || inferImplicitFromTermApp(tree, doc, cand);
@@ -1153,12 +1218,16 @@ function findEnclosingGlobalDecl(node) {
   return null;
 }
 
+function sameSpan(a, b) {
+  return !!(a && b && a.from === b.from && a.to === b.to);
+}
+
 function classifyAsBinderSite(ident) {
   const p = ident.parent;
   if (!p) return null;
   const pname = p.name;
 
-  if (GLOBAL_DECL_PARENT.has(pname) && firstIdentChild(p) === ident) {
+  if (GLOBAL_DECL_PARENT.has(pname) && sameSpan(firstIdentChild(p), ident)) {
     return { kind: 'decl-global', declParent: p };
   }
 
@@ -1171,7 +1240,7 @@ function classifyAsBinderSite(ident) {
   }
 
   if (LOCAL_BINDER_INLINE_TYPE.has(pname)) {
-    if (pname === 'SchemaSomeBindings' || firstIdentChild(p) === ident) {
+    if (pname === 'SchemaSomeBindings' || sameSpan(firstIdentChild(p), ident)) {
       return { kind: 'binder-inline', binderParent: p };
     }
   }
@@ -1187,7 +1256,7 @@ function classifyAsBinderSite(ident) {
   // A computation pattern variable: the bare lowercase atom of a `case` / `let` /
   // `fun` pattern (`let MakeTransSimf t1 s3 = …` binds t1, s3). The constructor
   // head is uppercase and resolves globally, so only LowerIdentifier counts.
-  if (pname === 'AtomicPattern' && ident.name === 'LowerIdentifier' && p.firstChild === ident) {
+  if (pname === 'AtomicPattern' && ident.name === 'LowerIdentifier' && sameSpan(p.firstChild, ident)) {
     return { kind: 'binder-bare', binderParent: p };
   }
 
@@ -1237,7 +1306,7 @@ export function referenceKind(tree, doc, from) {
     return 'local';
   }
   if (ascribedTypeForIdent(ident, doc)) return 'local';
-  if (findEnclosingLocalBinder(ident, doc, name) !== null) return 'local';
+  if (isLocallyBound(tree, ident, doc, name)) return 'local';
 
   const isUpper = ident.name === 'UpperIdentifier';
   if (findGlobalDeclarationIdent(tree, doc, name, isUpper)) return 'global';
@@ -1250,7 +1319,7 @@ export function referenceKind(tree, doc, from) {
   const encl = findEnclosingGlobalDecl(ident);
   if (encl) {
     const enclIdent = firstIdentChild(encl);
-    if (enclIdent && enclIdent !== ident) return 'implicit';
+    if (enclIdent && !sameSpan(enclIdent, ident)) return 'implicit';
   }
 
   return 'unbound';
@@ -1362,7 +1431,7 @@ export function resolveHoverDoc(tree, doc, from) {
     };
   }
 
-  const local = findEnclosingLocalBinder(ident, doc, name);
+  const local = enclosingLocalHit(tree, ident, doc, name);
   if (local !== null) {
     // A projected block variable (b2.2) shows the field's type, not the block's.
     const projected = projectLocalType(local.text || null, ident, doc);
@@ -1443,7 +1512,7 @@ export function resolveHoverDoc(tree, doc, from) {
   const encl = findEnclosingGlobalDecl(ident);
   if (encl) {
     const enclIdent = firstIdentChild(encl);
-    if (enclIdent && enclIdent !== ident) {
+    if (enclIdent && !sameSpan(enclIdent, ident)) {
       const { line, col } = lineColAt(doc, ident.from);
       const enclDeclName = doc.sliceString(enclIdent.from, enclIdent.to);
       // A projection (#p.2) selects a block field — source inference would only

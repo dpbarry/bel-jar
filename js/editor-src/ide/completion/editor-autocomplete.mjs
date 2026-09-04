@@ -5,6 +5,7 @@ import { renderTypeInto } from '../../format/type-render.mjs';
 import { createCompletionController } from './source.mjs';
 import { isQuietTypingActiveForView } from '../quiet-typing.mjs';
 import { getEngine } from '../ide-actions.mjs';
+import { vimAllowsRemap } from '../keymap-style.mjs';
 
 const POPUP_GAP_PX = 4;
 const VIEW_PAD_PX = 8;
@@ -426,6 +427,9 @@ export function belEditorAutocomplete(engine, opts = {}) {
 
   const runToggleIfDefault = (view) => {
     const g = typeof window !== 'undefined' ? window : globalThis;
+    const style = g.Persist?.readStoredKeymapStyle?.();
+    if (style === 'emacs') return false;
+    if (style === 'vim' && !vimAllowsRemap(view, 'edit.autocomplete')) return false;
     const KB = g.Keybindings;
     if (KB && typeof KB.resolve === 'function' && KB.has && KB.has('edit.autocomplete')) {
       const spec = KB.resolve('edit.autocomplete');

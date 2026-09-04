@@ -1,0 +1,195 @@
+/* -- Modal dialogs -- */
+
+.bj-dialog:not([open]) {
+  display: none;
+}
+
+.bj-dialog[open] {
+  margin: 0;
+  padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right))
+    max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+  border: none;
+  background: transparent;
+  color: var(--base-highest);
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bj-dialog.is-leaving {
+  pointer-events: none;
+}
+
+.bj-dialog::backdrop {
+  background: hsl(222 18% 8% / var(--dialog-overlay-in-alpha));
+  transition:
+    opacity var(--dialog-ms-in) ease-out,
+    display var(--dialog-ms-in) allow-discrete,
+    overlay var(--dialog-ms-in) allow-discrete;
+}
+
+html.light .bj-dialog::backdrop {
+  background: hsl(222 22% 24% / var(--dialog-overlay-out-alpha));
+}
+
+.bj-dialog[open]::backdrop {
+  opacity: 1;
+}
+
+.bj-dialog.is-leaving::backdrop {
+  opacity: 0;
+  transition: opacity var(--dialog-ms-out) ease-in;
+}
+
+@starting-style {
+  .bj-dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+.bj-dialog__card {
+  position: relative;
+  width: min(26rem, 100%);
+  max-width: 100%;
+  min-width: 0;
+  max-height: calc(100dvh - 2rem);
+  padding: 2rem 1.25rem 1.35rem;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 450;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  background: light-dark(
+    color-mix(in oklab, var(--base-lowest) 94%, var(--accent-lowest)),
+    color-mix(in oklab, var(--base-lower) 92%, hsl(217 35% 8%))
+  );
+  border: 1px solid light-dark(
+    color-mix(in oklab, var(--muted-low) 88%, var(--accent-low)),
+    color-mix(in oklab, var(--base-high) 78%, hsl(217 25% 28%))
+  );
+  border-radius: calc(var(--radius-md) + 2px);
+  box-shadow:
+    inset 0 1px 0 var(--surface-highlight),
+    var(--shadow-dialog);
+  transform: scale(0.93);
+  transform-origin: center center;
+  opacity: 0;
+  transition:
+    transform var(--dialog-ms-in) var(--dialog-ease-in),
+    opacity var(--dialog-ms-in) ease-out;
+}
+
+.bj-dialog__card--settings,
+.bj-dialog__card--settings-compact {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding: 0;
+  overflow: clip;
+}
+
+.bj-dialog__card--settings {
+  grid-template-rows: auto 1fr;
+  width: min(54rem, calc(100vw - 2rem));
+  height: min(34rem, calc(100dvh - 2.5rem));
+}
+
+.bj-dialog__card--settings-compact {
+  grid-template-rows: auto auto;
+  width: min(36rem, calc(100vw - 2rem));
+  height: auto;
+  max-height: min(34rem, calc(100dvh - 2.5rem));
+}
+
+.bj-dialog__card--settings .bj-dialog__title,
+.bj-dialog__card--settings-compact .bj-dialog__title {
+  grid-row: 1;
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  margin: 0;
+  padding: 0 3rem 0 0.65rem;
+}
+
+.bj-dialog__card--settings .bj-dialog__header {
+  grid-row: 1;
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+  margin: 0;
+  padding: 0.5rem 2.75rem 0.5rem 0.65rem;
+}
+
+.bj-dialog__card--settings .bj-dialog__header .bj-dialog__title {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.bj-settings__search-slot {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.bj-settings__search-slot .library-find--preview.is-focused {
+  width: min(19rem, 100%);
+}
+
+.bj-settings__results {
+  position: fixed;
+  z-index: 80;
+  display: none;
+  max-height: min(16rem, 42vh);
+  left: auto;
+  right: auto;
+}
+
+.bj-settings__results.is-open {
+  display: block;
+}
+
+.bj-settings__results[hidden] {
+  display: none !important;
+}
+
+.bj-dialog__card--settings .bj-dialog__close,
+.bj-dialog__card--settings-compact .bj-dialog__close {
+  grid-row: 1;
+  grid-column: 1;
+  position: relative;
+  top: auto;
+  right: auto;
+  justify-self: end;
+  align-self: center;
+  margin-right: 0.35rem;
+  z-index: 1;
+}
+
+.bj-dialog__card--settings .bj-dialog__body,
+.bj-dialog__card--settings-compact .bj-dialog__body {
+  grid-row: 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bj-dialog__card--settings-compact .bj-dialog__body {
+  overflow-y: auto;
+}

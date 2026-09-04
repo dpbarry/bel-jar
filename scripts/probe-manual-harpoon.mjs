@@ -68,7 +68,7 @@ try {
       if (n.classList.contains('harpoon-lab-banner')) return 'banner';
       if (n.classList.contains('harpoon-lab-moves')) return 'tactics';
       if (n.classList.contains('harpoon-deriv') || n.classList.contains('harpoon-reel')) return 'derivation';
-      if (n.classList.contains('harpoon-lab-brutus-band')) return 'brutus';
+      if (n.classList.contains('harpoon-lab-orca-band')) return 'orca';
       return null;
     };
     return [...box.children].map(kind).filter(Boolean);
@@ -81,7 +81,7 @@ try {
     const lastBanner = seq.lastIndexOf('banner');
     if (lastBanner > bar) return false;              // a banner below the bar
     // and nothing from the working segment may precede the bar
-    return !seq.slice(0, bar).some((k) => k === 'tactics' || k === 'derivation' || k === 'brutus');
+    return !seq.slice(0, bar).some((k) => k === 'tactics' || k === 'derivation' || k === 'orca');
   };
 
   // ── Part 1: the reducer against the REAL checker ───────────────────────────
@@ -179,14 +179,14 @@ try {
     return {
       skels: body.querySelectorAll('.harpoon-skel').length,
       skelRows: body.querySelectorAll('.harpoon-lab-move.is-skeleton').length,
-      brutusInSkeleton: !!body.querySelector('.harpoon-lab-brutus'),
+      orcaInSkeleton: !!body.querySelector('.harpoon-lab-orca'),
       goalBands: body.querySelectorAll('.harpoon-lab-auto-goal').length,
       height: body.getBoundingClientRect().height,
     };
   }, CODE, DECL);
   ok(mount.skels > 0, `loading renders ${mount.skels} skeleton fills`);
   ok(mount.skelRows === 3, `three skeleton tactic rows hold the list geometry (${mount.skelRows})`);
-  ok(mount.brutusInSkeleton, 'Brutus is present during loading — chrome does not pop in');
+  ok(mount.orcaInSkeleton, 'Orca is present during loading — chrome does not pop in');
   ok(mount.goalBands === 1,
     `exactly one goal band during loading — the known type shows for real (${mount.goalBands})`);
   await page.screenshot({ path: path.join(outDir, 'manual-harpoon-loading.png') });
@@ -236,7 +236,7 @@ try {
       verified: body.querySelectorAll('.harpoon-lab-move.is-verified').length,
       rejected: body.querySelectorAll('.harpoon-lab-move.is-rejected').length,
       chevrons: body.querySelectorAll('.harpoon-lab-move-chevron').length,
-      brutusBadge: !!body.querySelector('.harpoon-lab-brutus-badge svg'),
+      orcaBadge: !!body.querySelector('.harpoon-lab-orca-badge svg'),
       overlaps,
       pipCollisions,
       pipTip: pipEl ? (pipEl.getAttribute('data-tooltip') || pipEl.getAttribute('aria-label') || '') : '',
@@ -262,7 +262,7 @@ try {
   });
   ok(surf.rows > 1, `${surf.rows} tactic rows [${surf.verbs.join(', ')}]`);
   ok(surf.chevrons === surf.rows, `every row has an expand chevron (${surf.chevrons}/${surf.rows})`);
-  ok(surf.brutusBadge, 'Brutus carries its gladius glyph');
+  ok(surf.orcaBadge, 'Orca carries its gladius glyph');
   ok(surf.overlaps === 0, `no header text reaches the footer strip (${surf.overlaps} overlaps)`);
   ok(surf.pipCollisions === 0, `the verdict pip never overlaps the term preview (${surf.pipCollisions})`);
   ok(surf.verified + surf.rejected > 0,
@@ -275,34 +275,34 @@ try {
   await page.screenshot({ path: path.join(outDir, 'manual-harpoon.png') });
   console.log('  shot → scripts/.shots/manual-harpoon.png');
 
-  // Brutus close-up, at rest and hovered — the sheen and the glyph are too small
+  // Orca close-up, at rest and hovered — the sheen and the glyph are too small
   // to judge in a full-panel shot.
-  const brutusEl = await page.$('.__probe .harpoon-lab-brutus');
-  if (brutusEl) {
-    await brutusEl.screenshot({ path: path.join(outDir, 'brutus-rest.png') });
-    await brutusEl.hover();
+  const orcaEl = await page.$('.__probe .harpoon-lab-orca');
+  if (orcaEl) {
+    await orcaEl.screenshot({ path: path.join(outDir, 'orca-rest.png') });
+    await orcaEl.hover();
     await new Promise((r) => setTimeout(r, 600));   // let the eased transition settle
-    await brutusEl.screenshot({ path: path.join(outDir, 'brutus-hover.png') });
+    await orcaEl.screenshot({ path: path.join(outDir, 'orca-hover.png') });
     await page.mouse.move(0, 0);
     const glyph = await page.evaluate(() => {
-      const svg = document.querySelector('.__probe .harpoon-lab-brutus-badge svg');
+      const svg = document.querySelector('.__probe .harpoon-lab-orca-badge svg');
       if (!svg) return null;
       const r = svg.getBoundingClientRect();
       return { w: Math.round(r.width), h: Math.round(r.height), shapes: svg.children.length };
     });
     ok(glyph && glyph.w >= 14 && glyph.w === glyph.h,
-      `the Brutus glyph is square and legibly sized (${glyph && glyph.w}×${glyph && glyph.h}px, ${glyph && glyph.shapes} shapes)`);
-    console.log('  shot → scripts/.shots/brutus-rest.png · brutus-hover.png');
+      `the Orca glyph is square and legibly sized (${glyph && glyph.w}×${glyph && glyph.h}px, ${glyph && glyph.shapes} shapes)`);
+    console.log('  shot → scripts/.shots/orca-rest.png · orca-hover.png');
 
     // Pointer-following glow: it must LEAN toward the cursor, not track it, and
     // never drag the sheen box's edge into view.
     const box = await page.evaluate(() => {
-      const b = document.querySelector('.__probe .harpoon-lab-brutus');
+      const b = document.querySelector('.__probe .harpoon-lab-orca');
       const r = b.getBoundingClientRect();
       return { left: r.left, top: r.top, w: r.width, h: r.height };
     });
     const readGlow = () => page.evaluate(() => {
-      const b = document.querySelector('.__probe .harpoon-lab-brutus');
+      const b = document.querySelector('.__probe .harpoon-lab-orca');
       return {
         dx: parseFloat(b.style.getPropertyValue('--glow-dx')) || 0,
         dy: parseFloat(b.style.getPropertyValue('--glow-dy')) || 0,
@@ -318,7 +318,7 @@ try {
     const gLeft = await readGlow();
     await page.mouse.move(box.left + box.w * 0.92, box.top + box.h * 0.5);
     await new Promise((r) => setTimeout(r, 700));
-    await brutusEl.screenshot({ path: path.join(outDir, 'brutus-glow-right.png') });
+    await orcaEl.screenshot({ path: path.join(outDir, 'orca-glow-right.png') });
     await page.mouse.move(0, 0);
     await new Promise((r) => setTimeout(r, 700));
     const gAway = await readGlow();
@@ -337,23 +337,23 @@ try {
     ok(Math.abs(gRight.dx) <= box.w * 0.3 + 0.5 && Math.abs(gLeft.dx) <= box.w * 0.3 + 0.5,
       `the pull stays clamped inside the sheen box’s overhang (${Math.round(gRight.dx)}px ≤ ${Math.round(box.w * 0.3)}px)`);
     ok(gAway.dx === 0 && gAway.dy === 0, 'leaving the button releases it back to rest');
-    console.log('  shot → scripts/.shots/brutus-glow-right.png');
+    console.log('  shot → scripts/.shots/orca-glow-right.png');
     // LIGHT MODE — where stacked edge treatments show up as a thick, uneven
     // border (the dark ground hides them).
     await page.evaluate(() => document.documentElement.classList.add('light'));
     await new Promise((r) => setTimeout(r, 300));
-    await brutusEl.screenshot({ path: path.join(outDir, 'brutus-light.png') });
-    await brutusEl.hover();
+    await orcaEl.screenshot({ path: path.join(outDir, 'orca-light.png') });
+    await orcaEl.hover();
     await new Promise((r) => setTimeout(r, 600));
-    await brutusEl.screenshot({ path: path.join(outDir, 'brutus-light-hover.png') });
+    await orcaEl.screenshot({ path: path.join(outDir, 'orca-light-hover.png') });
     await page.mouse.move(0, 0);
     await page.evaluate(() => document.documentElement.classList.remove('light'));
     await new Promise((r) => setTimeout(r, 250));
-    console.log('  shot → scripts/.shots/brutus-light.png · brutus-light-hover.png');
+    console.log('  shot → scripts/.shots/orca-light.png · orca-light-hover.png');
     // The glyph blown up, so its silhouette can actually be judged.
     await page.evaluate(() => {
       document.querySelectorAll('.__glyph').forEach((n) => n.remove());
-      const svg = document.querySelector('.__probe .harpoon-lab-brutus-badge svg');
+      const svg = document.querySelector('.__probe .harpoon-lab-orca-badge svg');
       const box = document.createElement('div');
       box.className = '__glyph';
       box.style.cssText = 'position:fixed;left:24px;top:24px;width:132px;height:132px;'
@@ -366,9 +366,9 @@ try {
     });
     const glyphBox = await page.$('.__glyph');
     if (glyphBox) {
-      await glyphBox.screenshot({ path: path.join(outDir, 'brutus-glyph.png') });
+      await glyphBox.screenshot({ path: path.join(outDir, 'orca-glyph.png') });
       await page.evaluate(() => document.querySelectorAll('.__glyph').forEach((n) => n.remove()));
-      console.log('  shot → scripts/.shots/brutus-glyph.png');
+      console.log('  shot → scripts/.shots/orca-glyph.png');
     }
   }
 
@@ -466,8 +466,8 @@ try {
   await page.screenshot({ path: path.join(outDir, 'manual-harpoon-after.png') });
   console.log('  shot → scripts/.shots/manual-harpoon-after.png');
 
-  // ── Part 3: the finished proof, and the Brutus↔manual seam ────────────────
-  console.log('\n[3] completion + the Brutus seam');
+  // ── Part 3: the finished proof, and the Orca↔manual seam ────────────────
+  console.log('\n[3] completion + the Orca seam');
   const done = await page.evaluate(async (code, decl) => {
     const ed = window.BelJarEditor;
     const cl = window.BelugaClient;
@@ -511,7 +511,7 @@ try {
       place: left('.harpoon-lab-place'),
       provenPresent: !!body.querySelector('.harpoon-lab-manual-head'),
     };
-    return { solvedManual, banners, pauseWired: typeof s.toggleBrutusPause === 'function' };
+    return { solvedManual, banners, pauseWired: typeof s.toggleOrcaPause === 'function' };
   }, CODE, DECL);
 
   const d = done.solvedManual;
@@ -519,7 +519,7 @@ try {
   ok(d.hasPlace, 'a finished manual proof offers "Place the proof"');
   ok(d.hasSolution, 'a finished manual proof SHOWS ITS SOLUTION (the reported bug)');
   ok(d.hasDerivation, 'a finished manual proof shows its derivation (the reported bug)');
-  ok(d.hasTreeToggle === 2, `manual gets the same List ⇄ Tree toggle as Brutus (${d.hasTreeToggle} tabs)`);
+  ok(d.hasTreeToggle === 2, `manual gets the same List ⇄ Tree toggle as Orca (${d.hasTreeToggle} tabs)`);
   ok(d.derivationNaOk, 'the pop-out tree explorer can read a manual proof');
 
   const b = done.banners;
@@ -533,7 +533,7 @@ try {
     'the bar heads the working segment — it is never isolated between banners');
   await page.screenshot({ path: path.join(outDir, 'manual-harpoon-complete.png') });
   console.log('  shot → scripts/.shots/manual-harpoon-complete.png');
-  // ── Part 4: ONE SURFACE — Brutus runs inside the manual panel ─────────────
+  // ── Part 4: ONE SURFACE — Orca runs inside the manual panel ─────────────
   console.log('');
   console.log('[4] the unified surface');
   const uni = await page.evaluate(async (code, decl) => {
@@ -553,9 +553,9 @@ try {
     s.render();
     const body = s.bodyEl;
     const before = {
-      hasButton: !!body.querySelector('.harpoon-lab-brutus-band:not(.is-running)'),
+      hasButton: !!body.querySelector('.harpoon-lab-orca-band:not(.is-running)'),
       tacticsLive: !body.querySelector('.harpoon-lab-moves.is-locked'),
-      title: (body.querySelector('.harpoon-lab-brutus-title') || {}).textContent || '',
+      title: (body.querySelector('.harpoon-lab-orca-title') || {}).textContent || '',
     };
 
     // Put the session into the RUNNING state the way runNativeAuto does, then
@@ -577,7 +577,7 @@ try {
     const during = {
       stillOneSurface: !!body.querySelector('.harpoon-lab-manual'),
       goalStillThere: !!body.querySelector('.harpoon-lab-auto-goal'),
-      bandRunning: !!body.querySelector('.harpoon-lab-brutus-band.is-running'),
+      bandRunning: !!body.querySelector('.harpoon-lab-orca-band.is-running'),
       tacticsLocked: !!body.querySelector('.harpoon-lab-moves.is-locked'),
       lockHint: (body.querySelector('.harpoon-lab-moves-lock') || {}).textContent || '',
       lockIsPlainText: (() => {
@@ -587,19 +587,19 @@ try {
         return cs.borderTopWidth === '0px' && cs.borderLeftWidth === '0px';
       })(),
       // The checks/time tooltip belongs to the glyph only.
-      statTipOnBadge: !!(body.querySelector('.harpoon-lab-brutus-badge')
+      statTipOnBadge: !!(body.querySelector('.harpoon-lab-orca-badge')
         || {}).getAttribute?.('data-tooltip'),
-      statTipOnSub: !!(body.querySelector('.harpoon-lab-brutus-sub')
+      statTipOnSub: !!(body.querySelector('.harpoon-lab-orca-sub')
         || {}).getAttribute?.('data-tooltip'),
-      spinnerInBadge: !!body.querySelector('.harpoon-lab-brutus-badge .inspector-spinner'),
-      daggerWorking: !!body.querySelector('.harpoon-lab-brutus-badge.is-working svg'),
+      spinnerInBadge: !!body.querySelector('.harpoon-lab-orca-badge .inspector-spinner'),
+      daggerWorking: !!body.querySelector('.harpoon-lab-orca-badge.is-working svg'),
       tacticsStillListed: body.querySelectorAll('.harpoon-lab-move').length,
       liveReel: !!body.querySelector('.harpoon-reel-record.is-live'),
       reelReplayed: body.querySelectorAll('.harpoon-reel-record.is-live .harpoon-lab-auto-step').length,
       applyBlocked: false,
     };
     // Prove the gladius is actually swinging (two samples, different angles).
-    const badgeSvg = body.querySelector('.harpoon-lab-brutus-badge.is-working svg');
+    const badgeSvg = body.querySelector('.harpoon-lab-orca-badge.is-working svg');
     const t0 = badgeSvg ? getComputedStyle(badgeSvg).transform : '';
     await new Promise((r) => setTimeout(r, 420));
     const t1 = badgeSvg ? getComputedStyle(badgeSvg).transform : '';
@@ -612,14 +612,14 @@ try {
       during.applyBlocked = s.manual.state.code === codeNow;
     }
 
-    // PAUSE SAFETY: Brutus has advanced past the goal the tactic list was built
+    // PAUSE SAFETY: Orca has advanced past the goal the tactic list was built
     // for, so the instant after pausing the panel must NOT show those stale
     // moves — they cannot apply, and if the resync fails they are all the user
     // is left with (a dead end at a provable hole).
     s.nativeAuto.steps = [{ move: 'intro', lead: 'opened the goal’s binders',
       meta: { kind: 'intro', introduced: ['A'] }, checks: 1, status: 'open', text: 'mlam A =>' }];
     s.nativeAuto.liveCode = window.__probeReady.code;   // where the search has got to
-    s.toggleBrutusPause();
+    s.toggleOrcaPause();
     const instant = {
       showsStale: !!document.querySelector(
         '.__probe .harpoon-lab-move:not(.is-skeleton) .harpoon-lab-move-verb'),
@@ -637,11 +637,11 @@ try {
       syncFailed: !!s.manual.syncFailed,
       skeletonsLeft: body.querySelectorAll('.harpoon-lab-move.is-skeleton').length,
       syncedCode: s.manual.state.code === window.__probeReady.code,
-      bandPaused: !!body.querySelector('.harpoon-lab-brutus-band.is-paused'),
+      bandPaused: !!body.querySelector('.harpoon-lab-orca-band.is-paused'),
       tacticsLive: !body.querySelector('.harpoon-lab-moves.is-locked'),
       tacticRows: body.querySelectorAll('.harpoon-lab-move').length,
       stillSearching: !!(s.nativeAuto && s.nativeAuto.phase === 'searching'),
-      resumeLabel: (body.querySelector('.harpoon-lab-brutus-title') || {}).textContent || '',
+      resumeLabel: (body.querySelector('.harpoon-lab-orca-title') || {}).textContent || '',
       lockHint: (body.querySelector('.harpoon-lab-moves-lock') || {}).textContent || '',
       anyApplicable: [...body.querySelectorAll('.harpoon-lab-move')]
         .some((r) => !r.classList.contains('is-rejected')),
@@ -661,19 +661,19 @@ try {
     if (pausedRow) await s.manualApply(pausedRow._mv, pausedRow);
     await new Promise((r) => setTimeout(r, 400));
     const afterManual = {
-      brutusRetired: !s.nativeAuto,
+      orcaRetired: !s.nativeAuto,
       advanced: s.manual.state.code !== codeBeforeManual,
-      // Either Brutus is offered again (goals remain) or the proof is done —
+      // Either Orca is offered again (goals remain) or the proof is done —
       // what must NOT happen is the running cockpit surviving the retirement.
-      buttonBack: !!body.querySelector('.harpoon-lab-brutus-band:not(.is-running)')
+      buttonBack: !!body.querySelector('.harpoon-lab-orca-band:not(.is-running)')
         || !!body.querySelector('.harpoon-lab-manual-head'),
-      noRunningBand: !body.querySelector('.harpoon-lab-brutus-band.is-running'),
+      noRunningBand: !body.querySelector('.harpoon-lab-orca-band.is-running'),
     };
-    // Brutus FINISHING must update the surface, not leave the pre-search state.
+    // Orca FINISHING must update the surface, not leave the pre-search state.
     const preSearchCode = s.manual.state.code;
     const solvedCode = preSearchCode.replace('?', '[ |- refl]');
     s.manualBefore = s.manual.state;
-    await s.absorbBrutusResult({
+    await s.absorbOrcaResult({
       complete: true, code: solvedCode,
       steps: [{ move: 'fill', lead: 'closed eq', meta: { kind: 'fill' }, checks: 3, status: 'solved' }],
     });
@@ -683,20 +683,20 @@ try {
       place: !!body.querySelector('.harpoon-lab-place'),
       solution: !!body.querySelector('.harpoon-lab-auto-solution'),
       stillOneSurface: !!body.querySelector('.harpoon-lab-manual'),
-      noStaleButton: !body.querySelector('.harpoon-lab-brutus-band'),
+      noStaleButton: !body.querySelector('.harpoon-lab-orca-band'),
     };
 
     return { before, during, paused, afterManual, undef, emptyIcons, finished, instant };
   }, CODE, DECL);
 
-  ok(uni.before.hasButton, 'idle: the Brutus button is offered');
-  ok(uni.before.title === 'Brutus', `idle: the button is just "Brutus" (${uni.before.title})`);
+  ok(uni.before.hasButton, 'idle: the Orca button is offered');
+  ok(uni.before.title === 'Orca', `idle: the button is just "Orca" (${uni.before.title})`);
   ok(uni.before.tacticsLive, 'idle: tactics are live');
   ok(uni.during.stillOneSurface, 'running: the SAME panel is still mounted (no screen swap)');
   ok(uni.during.goalStillThere, 'running: the goal band is still in place');
-  ok(uni.during.bandRunning, 'running: the Brutus band became the cockpit');
+  ok(uni.during.bandRunning, 'running: the Orca band became the cockpit');
   ok(uni.during.tacticsLocked, 'running: tactics are locked');
-  ok(uni.during.lockHint === 'Pause Brutus to use tactics',
+  ok(uni.during.lockHint === 'Pause Orca to use tactics',
     `running: the lock hint is a fluent instruction ("${uni.during.lockHint}")`);
   ok(uni.during.lockIsPlainText, 'running: the lock hint is plain text, not a pill');
   ok(uni.during.tacticsStillListed > 0,
@@ -716,16 +716,16 @@ try {
   ok(uni.paused.stillSearching, 'paused: the run is held, not thrown away');
   ok(/paused/i.test(uni.paused.resumeLabel), `paused: the band says so ("${uni.paused.resumeLabel}")`);
   ok(!uni.instant.showsStale,
-    'pause is SAFE instantly: no stale tactics for the goal Brutus already left');
+    'pause is SAFE instantly: no stale tactics for the goal Orca already left');
   ok(uni.instant.skeletons > 0, `pause skeletons the list until it knows (${uni.instant.skeletons})`);
   ok(!uni.paused.syncing && !uni.paused.syncFailed, 'paused: the resync completed cleanly');
   ok(uni.paused.skeletonsLeft === 0, 'paused: skeletons give way to the real tactics');
-  ok(uni.paused.syncedCode, 'paused: the state resynced to where Brutus actually got to');
+  ok(uni.paused.syncedCode, 'paused: the state resynced to where Orca actually got to');
   ok(uni.paused.anyApplicable, 'paused: at least one offered tactic can actually be applied');
   ok(uni.afterManual.advanced, `paused → a tactic applies and the proof advances`);
-  ok(uni.afterManual.brutusRetired, 'paused → applying a tactic retires the held run');
+  ok(uni.afterManual.orcaRetired, 'paused → applying a tactic retires the held run');
   ok(uni.afterManual.buttonBack,
-    'paused → the surface moves on (Brutus offered again, or the proof is proven)');
+    'paused → the surface moves on (Orca offered again, or the proof is proven)');
   ok(uni.afterManual.noRunningBand, 'paused → the running cockpit does not survive the retirement');
   ok(!uni.undef, 'no literal "undefined" leaks into the chrome');
   ok(uni.emptyIcons === 0, `every icon button actually has its glyph (${uni.emptyIcons} empty)`);
@@ -733,12 +733,56 @@ try {
   ok(uni.finished.proven, 'finished: the Proven verdict shows');
   ok(uni.finished.place, 'finished: "Place the proof" is offered');
   ok(uni.finished.solution, 'finished: the solution is shown');
-  ok(uni.finished.noStaleButton, 'finished: no stale "Run Brutus again" over a solved proof');
+  ok(uni.finished.noStaleButton, 'finished: no stale "Run Orca again" over a solved proof');
   ok(uni.finished.stillOneSurface, 'finished: still the same surface');
+  // ── the command layer reaches the live lab ────────────────────────────────
+  // The `harpoon.*` commands are wired shell-side against `Harpoon.activeSession()`.
+  // Without this they could be catalogued, listed and bound while driving nothing.
+  console.log('');
+  console.log('[6] commands drive the live session');
+  const cmd = await page.evaluate(async () => {
+    const C = window.Commands;
+    const s = window.__probeSession;
+    // The probe mounts its Session directly; tracking happens in the constructor,
+    // so this is the same session the command layer would find.
+    const found = window.Harpoon.activeSession() === s;
+    const st = s.manual && s.manual.state;
+    const holes = st ? st.holes.length : 0;
+    const focus0 = st ? st.focusIdx : -1;
+    // `available: true` is the real gate — a plain `palette: true` listing
+    // ignores `when()` and would pass whether or not a lab were open.
+    const offered = () => C.list({ palette: true, available: true }).map((c) => c.id);
+    const before = offered();
+    C.run('harpoon.next-goal');
+    const focus1 = s.manual.state.focusIdx;
+    const steps0 = (s.manual.state.steps || []).length;
+    const undoRan = C.run('harpoon.undo-move');
+    const steps1 = (s.manual.state.steps || []).length;
+    return {
+      found, holes, focus0, focus1, undoRan, steps0, steps1,
+      undoOffered: before.indexOf('harpoon.undo-move') >= 0,
+      nextGoalOffered: before.indexOf('harpoon.next-goal') >= 0,
+    };
+  });
+  ok(cmd.found, 'Harpoon.activeSession() finds the mounted lab');
+  ok(cmd.undoOffered, 'with a lab open and a step taken, Undo Proof Move is offered');
+  // Focus stepping earns its palette row only when there is somewhere to step.
+  ok(cmd.nextGoalOffered === (cmd.holes > 1),
+    `Focus Next Goal is offered exactly when there are goals to move between `
+    + `(${cmd.holes} open, offered: ${cmd.nextGoalOffered})`);
+  if (cmd.holes > 1) {
+    ok(cmd.focus1 !== cmd.focus0,
+      `harpoon.next-goal moves the focus (${cmd.focus0} → ${cmd.focus1})`);
+  } else {
+    ok(cmd.focus1 === cmd.focus0, 'with nowhere to step, the focus holds');
+  }
+  ok(cmd.undoRan === true, 'harpoon.undo-move runs against the live state');
+  ok(cmd.steps1 < cmd.steps0, `and takes a step back (${cmd.steps0} → ${cmd.steps1})`);
+
   const seqPaused = await segmentOrder();
   ok(orderOk(seqPaused), `segments in order while working [${(seqPaused || []).join(' → ')}]`);
-  await page.screenshot({ path: path.join(outDir, 'brutus-paused.png') });
-  console.log('  shot → scripts/.shots/brutus-paused.png');
+  await page.screenshot({ path: path.join(outDir, 'orca-paused.png') });
+  console.log('  shot → scripts/.shots/orca-paused.png');
 } finally {
   await browser.close();
   server.close();

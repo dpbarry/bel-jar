@@ -1,0 +1,1104 @@
+/* ── Orca ───────────────────────────────────────────────────────────────────
+   Proportioned like the surface's banners — a fixed badge, then a copy column —
+   rather than a centred label, so it keeps the same rhythm as everything else.
+   The sheen is restrained on purpose: this search succeeds on a minority of
+   goals, and the control should not promise more than it delivers. */
+.harpoon-lab-orca-band {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--harpoon-divider);
+}
+.harpoon-lab-orca {
+  appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.52rem 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--repl-holes-accent) 30%, transparent);
+  border-radius: 0.55rem;
+  /* ONE border, ONE flat fill. The previous surface stacked a vertical gradient,
+     an inset top highlight and an inset 1px ring — three edge treatments that
+     read as a single thick, uneven border, most obviously in light mode where
+     the "glass" highlight has no dark ground to sit against. No outer shadow
+     either: a coloured bloom around a small control reads as cheap at any
+     radius. */
+  background: color-mix(in oklab, var(--repl-holes-accent) 9%, var(--harpoon-card-bg));
+  color: var(--base-highest);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    background 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The sheen. Present at rest — that is the "nice unhovered" — and on hover it
+   brightens and GLIDES a little across the surface. Opacity and transform are
+   the only animated properties, so it interpolates perfectly and is exactly
+   symmetric leaving and arriving. */
+.harpoon-lab-orca::before {
+  content: '';
+  position: absolute;
+  /* OVERHANGS both sides. The glide translates this element, so at `inset: 0`
+     its own left edge slid into view on hover and drew a hard vertical line —
+     the seam was the box, not the gradient. Extending it far past the button
+     means no amount of travel can uncover it; `overflow: hidden` clips the rest.
+     (Percentages below are of THIS box, which is 180% of the button's width.) */
+  inset: -80% -40%;
+  z-index: 0;
+  /* Fully spent well before the button's edges, so the sheen never stacks onto
+     the border and thickens it. Light gathered in the middle of a surface, not
+     painted to its rim. Radii are of THIS box (1.8× the button wide, 2.6× tall),
+     chosen so the glow lands at ~18% across.
+
+     ⛔ Three stops read as a COMET: a 20% core falling to nothing across 78% is a
+     steep enough ramp that the eye finds an edge and tracks it as an object. Haze
+     is not a dimmer core, it is a LONGER one — the peak drops to 14% and is spent
+     over five stops instead of two, so there is no radius at which the light
+     visibly stops. The outer third never exceeds 2.5%, which is why the wider
+     reach still cannot stack onto the border. */
+  background: radial-gradient(38% 66% at 32% 50%,
+    color-mix(in srgb, var(--repl-holes-accent) 14%, transparent) 0%,
+    color-mix(in srgb, var(--repl-holes-accent) 11%, transparent) 22%,
+    color-mix(in srgb, var(--repl-holes-accent) 6.5%, transparent) 46%,
+    color-mix(in srgb, var(--repl-holes-accent) 2.5%, transparent) 68%,
+    transparent 88%);
+  opacity: 0.62;
+  /* The glow LEANS toward the pointer. `--glow-d{x,y}` are set per frame from
+     the cursor (see bindOrcaGlow) but only ever carry a FRACTION of the
+     distance, so the light is drawn toward you rather than pinned under you.
+     The long transition is the gravity: each new target is eased into, never
+     snapped to, so quick movements read as the glow swinging rather than
+     tracking. Releasing the pointer clears the offsets and it drifts home. */
+  transform: translate3d(var(--glow-dx, 0px), var(--glow-dy, 0px), 0);
+  pointer-events: none;
+  transition:
+    opacity 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 820ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.harpoon-lab-orca-badge,
+.harpoon-lab-orca-copy { position: relative; z-index: 1; }
+.harpoon-lab-orca-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--repl-holes-accent) 16%, transparent);
+  color: var(--repl-holes-accent);
+}
+.harpoon-lab-orca-badge svg { width: 1.05rem; height: 1.05rem; }
+.harpoon-lab-orca-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.07rem;
+  min-width: 0;
+}
+.harpoon-lab-orca-title {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+.harpoon-lab-orca-sub {
+  font-family: var(--sans);
+  font-size: 0.655rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--muted-high);
+}
+.harpoon-lab-orca:disabled { opacity: 0.55; cursor: default; }
+/* Hover LIFTS the surface — it brightens, its edge glows, its badge warms and
+   grows a hair. All one eased curve, fully symmetric, so leaving looks exactly
+   like arriving in reverse. (A sheen sweeping across on enter and then sliding
+   back out on leave is what read as clunky: the light appeared to travel the
+   wrong way, and a half-hovered button froze it mid-pass.) */
+.harpoon-lab-orca-badge {
+  transition:
+    background 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Hover: the surface deepens, its edge firms, it rises a hair, and the light
+   inside slides. Four small coordinated moves on one curve — tactile, and
+   symmetric on the way out. */
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-orca:not(:disabled):hover {
+    border-color: color-mix(in srgb, var(--repl-holes-accent) 50%, transparent);
+    background: color-mix(in oklab, var(--repl-holes-accent) 15%, var(--harpoon-card-bg));
+    transform: translateY(-1px);
+  }
+  /* Only the brightness is bound to hover; WHERE the light sits is the pointer's
+     business (--glow-dx/dy), so the two never fight over `transform`. */
+  /* Short of full: at 1 the bloom arrives as a step you can name, and the point is
+     that it should be felt rather than noticed. */
+  .harpoon-lab-orca:not(:disabled):hover::before { opacity: 0.92; }
+  .harpoon-lab-orca:not(:disabled):hover .harpoon-lab-orca-badge {
+    background: color-mix(in srgb, var(--repl-holes-accent) 24%, transparent);
+  }
+}
+.harpoon-lab-orca:not(:disabled):active {
+  transform: translateY(0);
+  transition-duration: 60ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-orca,
+  .harpoon-lab-orca::before,
+  .harpoon-lab-orca-badge { transition: none; }
+  .harpoon-lab-orca:not(:disabled):hover::before { transform: none; }
+}
+
+/* ── The tactic list ──────────────────────────────────────────────────────── */
+.harpoon-lab-moves-label { margin-bottom: 0.34rem; }
+.harpoon-lab-move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.44rem;
+}
+/* While a tactic runs, its siblings recede — the chosen row stays fully legible
+   (see .is-applying) so the user's click is visibly acknowledged. */
+.harpoon-lab-moves.is-busy .harpoon-lab-move:not(.is-applying) {
+  opacity: 0.42;
+  pointer-events: none;
+}
+.harpoon-lab-moves-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px dashed var(--harpoon-divider);
+  border-radius: 0.42rem;
+  background: color-mix(in srgb, var(--muted-high) 4%, transparent);
+}
+.harpoon-lab-moves-empty-title {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--base-higher);
+}
+.harpoon-lab-moves-empty-sub {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: var(--muted-high);
+}
+
+/* ── A tactic row ─────────────────────────────────────────────────────────────
+   HEADER applies · FOOTER expands. The kind rail on the left is the row's
+   identity; the footer carries the term, the checker's verdict and the chevron,
+   each in its own column so none can collide with the others. */
+.harpoon-lab-move {
+  --move-accent: var(--harpoon-move-intro);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-left: 0.5rem;
+  border: 1px solid var(--harpoon-card-border);
+  border-radius: 0.42rem;
+  background: var(--harpoon-card-bg);
+  overflow: hidden;
+  transition: border-color 0.12s ease, background 0.12s ease, opacity 0.14s ease;
+}
+.harpoon-lab-move::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--edge-strip-w-callout);
+  background: var(--move-accent);
+  opacity: 0.72;
+  transition: opacity 0.14s ease;
+}
+.harpoon-lab-move.move-synth { --move-accent: var(--harpoon-move-synth); }
+.harpoon-lab-move.move-split { --move-accent: var(--harpoon-move-split); }
+.harpoon-lab-move.move-fill { --move-accent: var(--harpoon-move-fill); }
+.harpoon-lab-move.move-recurse { --move-accent: var(--harpoon-move-recurse); }
+.harpoon-lab-move.move-invert { --move-accent: var(--harpoon-move-invert); }
+.harpoon-lab-move.move-lemma { --move-accent: var(--harpoon-move-lemma); }
+.harpoon-lab-move.move-intro { --move-accent: var(--harpoon-move-intro); }
+.harpoon-lab-move.move-impossible { --move-accent: var(--harpoon-move-impossible); }
+
+/* The engine's top-ranked candidate — the suggested next move. Marked by a
+   fuller rail and a breath of its own colour, not by shouting. */
+.harpoon-lab-move.is-primary {
+  border-color: color-mix(in srgb, var(--move-accent) 38%, var(--harpoon-card-border));
+  background: color-mix(in srgb, var(--move-accent) 5.5%, var(--harpoon-card-bg));
+}
+.harpoon-lab-move.is-primary::before { opacity: 1; }
+
+/* Header — the tactic itself. Nothing else is allowed in this row, so a long
+   Beluga term can use the full width and truncate on its own terms. */
+.harpoon-lab-move-main {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  width: 100%;
+  padding: 0.44rem 0.5rem 0.42rem 0.4rem;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.harpoon-lab-move-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.34rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.harpoon-lab-move-verb {
+  font-family: var(--mono);
+  font-size: 0.765rem;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--move-accent);
+  flex: none;
+}
+.harpoon-lab-move-arg {
+  font-family: var(--mono);
+  font-size: 0.715rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--base-highest);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.harpoon-lab-move-why {
+  font-family: var(--sans);
+  font-size: 0.645rem;
+  line-height: 1.4;
+  color: var(--muted-high);
+}
+
+/* Footer — term preview · verdict · chevron. A real three-column layout: the
+   preview is the only flexible cell, so it truncates and the other two never
+   move or overlap. */
+.harpoon-lab-move-foot {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.26rem 0.4rem 0.3rem 0.4rem;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--harpoon-divider) 62%, transparent);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.harpoon-lab-move-termhead {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.655rem;
+  line-height: 1.5;
+  color: var(--muted-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The verdict. Its own fixed cell and its own tooltip target — hovering it
+   answers for the verdict, not for the whole card. */
+.harpoon-lab-move-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+  border-radius: 50%;
+}
+.harpoon-lab-move-pip:empty { display: none; }
+.harpoon-lab-move-pip svg { width: 0.72rem; height: 0.72rem; }
+.harpoon-lab-move.is-verified .harpoon-lab-move-pip { color: var(--ide-status-clean); }
+.harpoon-lab-move.is-verified::before { opacity: 1; }
+.harpoon-lab-move.is-rejected .harpoon-lab-move-pip { color: var(--ide-status-error); }
+.harpoon-lab-move.is-rejected::before { opacity: 0.3; }
+
+/* A tactic the checker has REFUSED collapses to one quiet line. It keeps its
+   place in the engine's ranking (rank is information; re-sorting under the
+   reader's cursor is not) but stops spending three lines and a term preview on
+   a move that cannot be taken. Still expandable — the term is exactly what you
+   want to read when asking "why not?". */
+.harpoon-lab-move.is-rejected {
+  /* A dead option stops advertising its kind: overriding the accent takes the
+     rail, the verb, the hover and the term panel to neutral in one move, so the
+     whole card expresses "unavailable" with one voice instead of staying
+     colour-coded as though it were still a choice. The only colour left is the
+     ✕. */
+  --move-accent: var(--muted-mid);
+  flex-flow: row wrap;
+  align-items: center;
+  column-gap: 0.5rem;
+  opacity: 0.58;
+  border-style: dashed;
+}
+.harpoon-lab-move.is-rejected .harpoon-lab-move-main {
+  cursor: default;
+  pointer-events: none;
+}
+.harpoon-lab-move.is-rejected .harpoon-lab-move-verb { font-weight: 600; }
+.harpoon-lab-move.is-rejected .harpoon-lab-move-main {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  padding: 0.26rem 0.2rem 0.26rem 0.4rem;
+}
+/* The rationale goes; the TERM stays. Two candidates can share a tactic and a
+   callee (`by tp_refl` twice) and differ only in the term they would write, so
+   the term is the one line that must survive the collapse — it is also the
+   answer to "why was this refused?". */
+.harpoon-lab-move.is-rejected .harpoon-lab-move-why { display: none; }
+.harpoon-lab-move.is-rejected .harpoon-lab-move-foot {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  border-top: 0;
+  padding: 0.26rem 0.4rem 0.26rem 0;
+}
+.harpoon-lab-move.is-rejected .harpoon-lab-move-term { width: 100%; margin-top: 0.1rem; }
+/* Checking — a ring on the pip's own cell, never over the header text. In the
+   TACTIC'S colour, like every other signal this row emits; the global magenta
+   made a `split` announce itself in a `fill`-adjacent hue while it worked. */
+.harpoon-lab-move.is-checking .harpoon-lab-move-pip {
+  display: inline-flex;
+  /* Sized to the ✓ and ✕ glyphs it alternates with (0.72rem), not to the pip's
+     own 0.95rem cell — a ring drawn at cell size dwarfed its neighbours. */
+  width: 0.72rem;
+  height: 0.72rem;
+  margin: 0 0.115rem;
+  border: 1.25px solid color-mix(in srgb, var(--move-accent) 28%, transparent);
+  border-top-color: var(--move-accent);
+  animation: harpoon-move-spin 0.7s linear infinite;
+}
+@keyframes harpoon-move-spin { to { transform: rotate(360deg); } }
+
+/* The expand affordance — the reason the footer reads as a disclosure and not
+   as a second way to run the tactic. */
+.harpoon-lab-move-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  color: var(--muted-mid);
+  transition: transform 0.16s ease, color 0.12s ease;
+}
+.harpoon-lab-move-chevron svg { width: 0.68rem; height: 0.68rem; }
+.harpoon-lab-move.is-expanded .harpoon-lab-move-chevron {
+  transform: rotate(180deg);
+  color: var(--base-higher);
+}
+
+.harpoon-lab-move-term {
+  margin: 0 0.45rem 0.42rem;
+  padding: 0.38rem 0.48rem;
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--move-accent) 5%, var(--harpoon-card-bg-raised));
+  font-family: var(--mono);
+  font-size: 0.695rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.harpoon-lab-move:not(.is-expanded) .harpoon-lab-move-term { display: none; }
+
+/* Applying — the chosen row keeps full contrast and grows a progress track. */
+.harpoon-lab-move.is-applying {
+  border-color: color-mix(in srgb, var(--move-accent) 58%, var(--harpoon-card-border));
+}
+/* The applying pulse: a band of the TACTIC'S OWN colour running left→right along
+   the row's top edge.
+   Purpose-built rather than borrowed: `.harpoon-loadbar` carries the place
+   strip's hardcoded magenta, and its `::before` is absolutely positioned while
+   the bar itself is not a containing block — dropped into a row it resolved
+   against the card and painted a full-height magenta slab over the tactic. */
+.harpoon-lab-move-track {
+  /* ABSOLUTE, so appearing costs no layout: as a flex child it was 2px of new
+     content and every row below it jumped. It fades in over the row's top edge
+     instead, inside the card's own rounded clip. */
+  position: absolute;
+  top: 0;
+  left: var(--edge-strip-w-callout);
+  right: 0;
+  z-index: 2;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--move-accent) 15%, transparent);
+  animation: harpoon-move-track-in 160ms ease-out both;
+}
+@keyframes harpoon-move-track-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.harpoon-lab-move-track::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--move-accent) 62%, transparent) 38%,
+    var(--move-accent) 52%,
+    color-mix(in srgb, var(--move-accent) 62%, transparent) 66%,
+    transparent 100%);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--move-accent) 45%, transparent);
+  /* Eases out of the left edge and into the right — a breath, not a metronome. */
+  animation: harpoon-move-pulse 1.25s cubic-bezier(0.45, 0.05, 0.35, 1) infinite;
+}
+@keyframes harpoon-move-pulse {
+  0% { transform: translateX(-100%); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateX(250%); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-move-track { animation: none; }
+  .harpoon-lab-move-track::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+    box-shadow: none;
+  }
+}
+
+/* Skeleton rows hold a real row's geometry but almost none of its WEIGHT. The
+   full row chrome — border, fill, rail, three bars — turned the loading state
+   into a stack of heavy empty boxes that shouted louder than the real list. A
+   placeholder should be quiet: it is the absence of content, not content. */
+.harpoon-lab-move.is-skeleton {
+  pointer-events: none;
+  border-color: color-mix(in oklab, var(--harpoon-card-border) 45%, transparent);
+  background: none;
+}
+.harpoon-lab-move.is-skeleton::before { opacity: 0.16; }
+.harpoon-lab-move.is-skeleton .harpoon-lab-move-main {
+  gap: 0.34rem;
+  padding: 0.42rem 0.5rem 0.44rem 0.4rem;
+  cursor: default;
+}
+.harpoon-lab-move.is-skeleton .harpoon-lab-move-foot {
+  cursor: default;
+  border-top-color: color-mix(in oklab, var(--harpoon-divider) 40%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-lab-move:not(.is-skeleton):not(.is-rejected):hover {
+    border-color: color-mix(in srgb, var(--move-accent) 52%, var(--harpoon-card-border));
+    background: color-mix(in srgb, var(--move-accent) 7.5%, var(--harpoon-card-bg));
+  }
+  .harpoon-lab-move:not(.is-skeleton):hover::before { opacity: 1; }
+  .harpoon-lab-move-foot:hover .harpoon-lab-move-chevron { color: var(--base-highest); }
+}
+
+/* Keyboard parity — every target the mouse has, the keyboard gets, visibly. */
+.harpoon-lab-move-main:focus-visible,
+.harpoon-lab-move-foot:focus-visible,
+.harpoon-lab-orca:focus-visible,
+.harpoon-lab-picker-tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--repl-holes-accent) 62%, transparent);
+  outline-offset: -2px;
+  border-radius: 0.3rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-move.is-checking .harpoon-lab-move-pip { animation: none; }
+  .harpoon-lab-move-chevron { transition: none; }
+}
+
+/* ── "Continue by hand" — the return path out of a Orca run. Badge sizing is
+      the shared banner default; overriding it made this banner read as a
+      different species from the verdict and place strips it sits between. ──── */
+
+/* ── The trail of accepted moves — the reel's own step rows. ───────────────── */
+.harpoon-lab-manual-trail { padding: 0.55rem 0.75rem 0.65rem; }
+.harpoon-lab-manual-trail .harpoon-lab-section-label { margin-bottom: 0.34rem; }
+
+/* ── Orca, RUNNING ──────────────────────────────────────────────────────────
+   The search is a STATE of this panel, not a screen that replaces it. The band
+   keeps the button's silhouette — badge, copy, then actions — so starting a
+   search morphs the control in place while everything above and below it stays
+   exactly where the user left it. */
+.harpoon-lab-orca--live {
+  cursor: default;
+  gap: 0.6rem;
+}
+.harpoon-lab-orca--live .harpoon-lab-orca-copy { flex: 1 1 auto; }
+.harpoon-lab-orca-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex: none;
+  position: relative;
+  z-index: 1;
+}
+.harpoon-lab-orca-spinner { width: 1rem; height: 1rem; }
+/* Paused reads calmer than running: the accent recedes, the badge shows the
+   fin again rather than a spinner, and the copy invites the next move. */
+.harpoon-lab-orca-band.is-paused .harpoon-lab-orca--live {
+  border-color: color-mix(in srgb, var(--repl-holes-accent) 22%, transparent);
+  background: color-mix(in oklab, var(--repl-holes-accent) 5%, var(--harpoon-card-bg));
+}
+.harpoon-lab-orca-band.is-paused .harpoon-lab-orca::before { opacity: 0.25; }
+
+/* ── Tactics, LOCKED while Orca works ───────────────────────────────────────
+   Readable but inert. Locking rather than hiding keeps the panel's geometry
+   stable across start/pause and lets the user see what pausing would give back. */
+.harpoon-lab-moves.is-locked .harpoon-lab-move-list {
+  opacity: 0.4;
+  pointer-events: none;
+  filter: saturate(0.5);
+  transition: opacity 220ms ease, filter 220ms ease;
+}
+
+/* The FIN WORKS while Orca searches: it heels over the way a dorsal fin does when
+   the animal banks through a turn, hunting. Pivoting at the WATERLINE (72% down the
+   viewBox, where the long stroke sits) is what sells it — a fin rotates about the
+   surface it cuts, not about its tip, and pivoting anywhere else reads as a wobble.
+   The old glyph swung from its pommel at 83%; a fin pinned that low would look
+   hinged to the seabed.
+   Shallower than the sword's 14deg, because a tall fin sweeps a much wider arc for
+   the same angle and 14deg threw the tip outside the badge. The sinusoidal curve is
+   literal banking motion — slowest at the extremes, fastest through the middle — and
+   `alternate` means it never snaps back; it just keeps working. */
+.harpoon-lab-orca-badge.is-working svg {
+  transform-origin: 50% 72%;
+  animation: harpoon-orca-hunt 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@keyframes harpoon-orca-hunt {
+  from { transform: rotate(-9deg); }
+  to { transform: rotate(9deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harpoon-lab-orca-badge.is-working svg { animation: none; }
+}
+
+/* The lock hint sits at the far right of the Tactics label — a sentence, not a
+   pill. ("paused to use" was neither fluent nor an instruction.) */
+.harpoon-lab-moves-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+/* The Tactics status tag: what is happening, right now, in the header rather than
+   over the rows it describes. Empty when idle — a tag that is always present is a
+   tag nobody reads. Sits at the far right like the lock hint, and the two never
+   coexist (the list is locked or it is yours). */
+.harpoon-lab-moves-status {
+  margin-left: auto;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--muted-high);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.harpoon-lab-moves-status.is-on { opacity: 1; }
+/* An empty tag still claims the header's flex gap, which reads as a stray gutter
+   after the lock hint. */
+.harpoon-lab-moves-status:empty { display: none; }
+/* A stall is not the same as progress. Once the tag is reporting that nothing
+   came back, it stops being recessive. */
+.harpoon-lab-moves-status.is-on:is([data-stalled]) { color: var(--ide-status-error); }
+/* Two auto margins would split the slack and strand the lock hint mid-header. */
+.harpoon-lab-moves-lock ~ .harpoon-lab-moves-status { margin-left: 0; }
+
+.harpoon-lab-moves-lock {
+  margin-left: auto;
+  font-family: var(--sans);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-high);
+  white-space: nowrap;
+}
+
+
+/* ══ Derivation, tree explorer and detail rail ═══════════════════════════════
+   The node graph and its sidebar. Moved here from ide.css (2026-08-29): these are
+   Harpoon surfaces and every other Harpoon style already lives in this file, so
+   anyone editing the surface was looking in the wrong stylesheet.
+   Cascade-safe: no selector here is duplicated in ide.css, and the six rules that
+   also name a `.harpoon-*` class are more specific than the plain rules they meet,
+   so specificity decides rather than file order. */
+/* ── Derivation section — List⇄Tree toggle + pop-out to the explorer. */
+.harpoon-deriv { padding: 0.5rem 0.65rem 0.6rem; }
+.harpoon-deriv-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.harpoon-deriv-header .harpoon-lab-section-label { margin: 0; }
+.harpoon-deriv-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 0.15rem;
+  padding: 0.12rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--harpoon-divider) 30%, transparent);
+}
+.harpoon-deriv-tab {
+  font: inherit;
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.14rem 0.55rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-high);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.harpoon-deriv-tab.is-active {
+  color: var(--base-highest);
+  background: var(--harpoon-card-bg-raised);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--harpoon-divider) 60%, transparent);
+}
+.harpoon-deriv-popout {
+  flex: 0 0 auto;
+  color: var(--muted-high);
+}
+.harpoon-deriv-popout svg { width: 0.95rem; height: 0.95rem; }
+@media (hover: hover) and (pointer: fine) {
+  .harpoon-deriv-tab:hover { color: var(--base-highest); }
+  .harpoon-deriv-popout:hover { color: var(--repl-holes-accent); }
+}
+.harpoon-deriv-treehost { margin-top: 0.1rem; }
+/* [hidden] must win over the trail's own display:flex, else the List stays visible
+   in Tree mode (both showing at once). */
+.harpoon-deriv > [hidden] { display: none !important; }
+
+/* Roomy pop-out explorer: tree on the left, detail rail on the right. */
+.harpoon-tree-explorer { height: 100%; }
+.harpoon-tree-window .floating-window-body { overflow: hidden; }
+.harpoon-tree-explorer .hpt-panel.is-roomy {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--harpoon-card-bg);
+}
+.hpt-split {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+.hpt-split-tree {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--harpoon-card-bg) 92%, var(--chrome-bg));
+}
+.hpt-split-tree .hpt-host { height: 100%; }
+.hpt-split-tree .hpt-svg { height: 100% !important; }
+.hpt-split-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 clamp(248px, 36%, 340px);
+  width: clamp(248px, 36%, 340px);
+  min-width: 0;
+  border-left: 1px solid color-mix(in srgb, var(--harpoon-divider) 50%, transparent);
+  background: var(--harpoon-card-bg);
+  transition:
+    width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    flex-basis 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 180ms ease;
+}
+
+.hpt-rail-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.65rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--harpoon-divider) 45%, transparent);
+  background: color-mix(in srgb, var(--harpoon-card-bg) 88%, var(--chrome-bg));
+}
+
+.hpt-rail-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-mid);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 180ms ease;
+}
+
+.hpt-rail-toggle {
+  flex: 0 0 auto;
+}
+
+.hpt-rail-toggle svg {
+  pointer-events: none;
+}
+
+.hpt-split-rail .hpt-card.is-rail {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.hpt-split.is-rail-collapsed .hpt-split-rail {
+  flex: 0 0 var(--icon-btn);
+  width: var(--icon-btn);
+  border-left-color: color-mix(in srgb, var(--harpoon-divider) 35%, transparent);
+}
+.hpt-split-rail.is-collapsed .hpt-rail-head {
+  justify-content: center;
+  padding: 0.45rem 0;
+  border-bottom: 0;
+  min-height: 0;
+  background: transparent;
+}
+.hpt-split-rail.is-collapsed .hpt-rail-title {
+  display: none;
+}
+.hpt-split.is-rail-collapsed .hpt-card.is-rail {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hpt-split-rail,
+  .hpt-rail-title,
+  .hpt-rail-toggle,
+  .hpt-split-rail .hpt-card.is-rail {
+    transition: none;
+  }
+}
+
+.hpt-card.is-rail {
+  border-top: 0;
+  animation: none;
+  padding: 0;
+  gap: 0;
+  min-height: 0;
+}
+
+/* Pop-out detail rail — inspector-like sections, one calm hierarchy. */
+.hpt-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.75rem 0.85rem 0.9rem;
+  min-height: 100%;
+}
+.hpt-detail > .harpoon-lab-section-label {
+  margin-bottom: 0.45rem;
+  color: var(--muted-mid);
+}
+.hpt-detail-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--harpoon-divider) 45%, transparent);
+}
+.hpt-detail-banner.is-overview {
+  border-bottom: 0;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0;
+}
+.hpt-detail-banner .harpoon-lab-auto-move {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.hpt-detail-name {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--base-highest);
+  word-break: break-word;
+}
+.hpt-detail-banner.is-overview .hpt-detail-name {
+  font-size: 1.12rem;
+}
+.hpt-detail-lead {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--muted-high);
+}
+.hpt-detail-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.hpt-detail-status-main {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--base-highest);
+}
+.hpt-detail-status-sub {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted-high);
+}
+/* In the pop-out rail the sections rarely fill the column, and this prompt used to hang
+   directly under the last one with the rest of the rail empty beneath it — reading as a
+   sentence someone forgot to finish rather than as an invitation. Sinking it to the foot of
+   the rail turns the empty space into margin instead of a gap. `margin-top: auto` only
+   takes effect when there IS slack, so a rail full of detail is unchanged. */
+.hpt-split-rail .hpt-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.hpt-split-rail .hpt-detail-hint {
+  margin-top: auto;
+}
+
+.hpt-detail-hint {
+  margin: 0.75rem 0 0;
+  padding-top: 0.65rem;
+  border-top: 1px solid color-mix(in srgb, var(--harpoon-divider) 35%, transparent);
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--muted-mid);
+}
+/* A short in-context gloss under a section (e.g. one-arm case = let). */
+.hpt-detail-note {
+  margin: 0.4rem 0 0;
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: var(--muted-mid);
+}
+.hpt-detail-section {
+  padding-top: 0.65rem;
+  margin-top: 0.5rem;
+}
+.hpt-detail-section + .hpt-detail-section {
+  border-top: 1px solid color-mix(in srgb, var(--harpoon-divider) 28%, transparent);
+}
+.hpt-detail-section .harpoon-lab-section-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--muted-mid);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.hpt-detail-section-body { min-width: 0; }
+.hpt-detail-goal {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--base-highest);
+}
+.hpt-detail-code{
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--base-highest);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.hpt-detail-code {
+  padding: 0.45rem 0.5rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--harpoon-card-bg-raised) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--harpoon-divider) 35%, transparent);
+}
+.hpt-detail-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.35rem;
+  margin-top: auto;
+  padding-top: 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  color: var(--muted-mid);
+}
+.hpt-detail-sep { opacity: 0.55; user-select: none; }
+.hpt-detail-meta-item { white-space: nowrap; }
+.hpt-detail-verdict {
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--harpoon-move-stuck);
+}
+.hpt-detail-verdict.is-guard { color: var(--muted-high); }
+.hpt-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.3rem;
+  font-size: 0.7rem;
+  color: var(--muted-high);
+  font-family: var(--mono);
+  line-height: 1.35;
+}
+.hpt-breadcrumb-sep { opacity: 0.35; user-select: none; font-size: 0.62rem; }
+.hpt-breadcrumb-part {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hpt-detail-where { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.7rem; }
+.hpt-hole-loc {
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--accent-mid);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hpt-detail-branch,
+.hpt-detail-checks,
+.hpt-detail-focus { font-size: 0.68rem; color: var(--muted-mid); line-height: 1.4; }
+.hpt-detail-theorem-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  font-size: 0.68rem;
+  color: var(--muted-high);
+}
+.hpt-alt-tray { display: flex; flex-direction: column; gap: 0.5rem; }
+.hpt-alt-group-label {
+  font-size: 0.58rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-mid);
+  margin-bottom: 0.25rem;
+}
+.hpt-alt-group.is-rejected .hpt-alt-group-label { color: var(--hpt-stuck); }
+.hpt-tried-rationale {
+  grid-column: 1 / -1;
+  font-size: 0.64rem;
+  color: var(--muted-mid);
+  line-height: 1.35;
+}
+.hpt-tried-text {
+  margin: 0.25rem 0 0;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: color-mix(in srgb, var(--harpoon-card-bg-raised) 50%, transparent);
+  border-radius: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.hpt-detail-arms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+}
+@media (hover: hover) and (pointer: fine) {
+  .hpt-hole-loc:hover { color: var(--base-highest); }
+}
+.hpt-detail-tried {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.hpt-detail-tried .harpoon-lab-auto-move,
+.hpt-detail-tried .hpt-card-kind {
+  flex: 0 0 auto;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.08rem 0.38rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.hpt-tried {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.5rem;
+  align-items: start;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--harpoon-card-bg-raised) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--harpoon-divider) 25%, transparent);
+}
+.hpt-tried.is-rejected { border-color: color-mix(in srgb, var(--hpt-stuck) 22%, transparent); }
+.hpt-tried.is-guard { opacity: 0.88; }
+.hpt-tried-head {
+  grid-column: 1 / -1;
+  font-size: 0.7rem;
+  word-break: break-word;
+}
+.hpt-tried-reason {
+  grid-column: 1 / -1;
+  font-size: 0.65rem;
+  color: var(--muted-mid);
+  line-height: 1.35;
+}
+.hpt-chain.is-rail .hpt-chain-seq {
+  flex-wrap: wrap;
+  gap: 0.18rem 0.28rem;
+}
+.hpt-chain.is-rail .hpt-chain-name {
+  font-size: 0.74rem;
+  padding: 0.06rem 0.2rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--harpoon-move-synth) 8%, transparent);
+}
+.hpt-chain.is-rail .hpt-chain-name.is-impossible {
+  color: var(--harpoon-move-impossible);
+  background: color-mix(in srgb, var(--harpoon-move-impossible) 10%, transparent);
+}
+.hpt-chain.is-rail .hpt-chain-arrow {
+  font-size: 0.68rem;
+  opacity: 0.7;
+}
+.hpt-panel.is-roomy {
+  background: var(--harpoon-card-bg);
+}

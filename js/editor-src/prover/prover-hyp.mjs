@@ -541,6 +541,107 @@ export function decreasingBinderNameAt(code, hole, decIdxThm) {
 }
 
 
+// The PATTERN part of a case arm — the text before a bracket-depth-0 `:` ascription.
+//
+// ⛔ SOUNDNESS (master plan entry 54). `openCasesAt` captures everything between `|`
+// and `=>`, so an ascribed arm (`| [ |- k1 D1] : [ |- kk (app IDXA IDXB)] =>`) carries
+// INDEX variables that are LF terms, not sub-derivations. Feeding those to the decOk
+// fixpoint would mark a non-smaller term as a legal decreasing argument. For a TOTALIED
+// theorem Beluga's totality checker still catches the resulting call, but under the
+// author-faithful untotalied policy decOk is the ONLY termination guard — so this leak
+// is a soundness hole there, not a spelling nuisance. Pinned in
+// tests/test-prover-decok-soundness.mjs (S5). A `:` inside a context or box is nested
+// and must NOT split (`[g, x:tm |- …]`), hence the depth test rather than indexOf.
+export function armPatternPart(arm) {
+  const s = String(arm == null ? '' : arm);
+  let depth = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (ch === '[' || ch === '(' || ch === '<' || ch === '{') depth += 1;
+    else if (ch === ']' || ch === ')' || ch === '>' || ch === '}') depth -= 1;
+    else if (ch === ':' && depth === 0) return s.slice(0, i);
+  }
+  return s;
+}
+
+/**
+ * CERTIFICATION-TIME WELL-FOUNDEDNESS (master plan entry 55).
+ *
+ * For an UNTOTALIED theorem Beluga performs no termination check, so a produced proof
+ * may contain a self-application on an unchanged argument and still typecheck — a
+ * circular proof banked as COMPLETE. Measured: 3 such false proofs in the 273-target
+ * ledger (`halts_step`), and 10 of 11 gains in the entry-54 A/B.
+ *
+ * `decOk` cannot prevent this: it guards the IH/recurse generator, while the offending
+ * calls arrive through the FILL path (`steps: intro,split,fill`) and never consult it.
+ * The check therefore has to run on the EMITTED TERM.
+ *
+ * Rule: a self-application is well-founded iff at least ONE of its arguments is a
+ * strict sub-derivation (a member of the decOk set at that call site). A self-call with
+ * no descending argument anywhere is circular. Passing the original binder alongside a
+ * genuinely descending argument stays legal, so the ordinary `f x y'` idiom is untouched.
+ *
+ * Conservative in the safe direction: it can only REFUSE a completion, never invent one.
+ * Returns [] when the proof is clean, else a list of offending call texts.
+ */
+export function circularSelfCalls(code, thm, decIdxThm = 0) {
+  const name = thm && thm.name;
+  if (!name || !code) return [];
+  // NB `'` must NOT be escaped: under the `u` flag `\'` is an *invalid escape* and the
+  // RegExp constructor throws, which surfaced as a HARNESS-ERROR on `mstep'`. Only real
+  // regex metacharacters go here.
+  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m);
+  const lines = String(code).split('\n');
+  const out = [];
+  // The theorem's own fn binders — arguments that are NOT structurally smaller.
+  const binders = new Set([...String(code).matchAll(/\bfn\s+([\p{L}_][\p{L}\p{N}_']*)\s*(?:=>|⇒)/gu)].map((m) => m[1]));
+  if (!binders.size) return [];
+  const callRe = new RegExp('(^|[^\\p{L}\\p{N}_\'])' + esc + '\\s+([^\\n;]*)', 'gu');
+  // ⛔ SCAN THE TARGET DECL ONLY. `code` is the whole orchestrated program, and other
+  // declarations mention this name constantly (an LF family, a sibling theorem calling
+  // it, the ledger's own prelude). Scanning globally flagged `rec eval : … = fn X => X`
+  // — the IDENTITY, with no self-call whatsoever — as circular, and cost 11 false
+  // refusals on the differential. Line indices stay ABSOLUTE so the decOk hole
+  // positions computed below remain valid against `code`.
+  let lo = 0;
+  let hi = lines.length - 1;
+  {
+    const headRe = new RegExp('^\\s*(?:and\\s+)?(?:rec|proof)\\s+' + esc + '\\s*[:{]');
+    const anyHead = /^\s*(?:and\s+)?(?:rec|proof)\s/;
+    const start = lines.findIndex((l) => headRe.test(l));
+    if (start < 0) return [];
+    lo = start;
+    hi = lines.length - 1;
+    for (let k = start + 1; k < lines.length; k += 1) {
+      if (anyHead.test(lines[k]) || /^\s*;\s*$/.test(lines[k])) { hi = k; break; }
+    }
+  }
+  for (let li = lo; li <= hi; li += 1) {
+    const line = lines[li];
+    // Skip the declaration header and any totality pragma — neither is a call site.
+    if (/^\s*(?:and\s+)?(?:rec|proof)\s/.test(line) || /^\s*\/\s*total\b/.test(line)) continue;
+    let m;
+    callRe.lastIndex = 0;
+    while ((m = callRe.exec(line))) {
+      const argText = String(m[2] || '');
+      const toks = argText.match(/\[[^\]]*\]|[\p{L}_][\p{L}\p{N}_']*/gu) || [];
+      if (!toks.length) continue;
+      // decOk names in scope at this call site.
+      const dec = decSubderivNames(code, { line: li + 1, col: Math.max(1, m.index + 1) }, decIdxThm);
+      const descends = toks.some((t) => {
+        const inner = t.startsWith('[') ? (t.match(/[\p{L}_][\p{L}\p{N}_']*/gu) || []) : [t];
+        return inner.some((v) => dec.has(v));
+      });
+      const passesBinder = toks.some((t) => {
+        const inner = t.startsWith('[') ? (t.match(/[\p{L}_][\p{L}\p{N}_']*/gu) || []) : [t];
+        return inner.some((v) => binders.has(v));
+      });
+      if (!descends && passesBinder) out.push(`${name} ${argText.trim()}`.slice(0, 120));
+    }
+  }
+  return out;
+}
+
 export function decSubderivNames(code, hole, decIdxThm) {
   const decBinder = decreasingBinderNameAt(code, hole, decIdxThm);
   if (!decBinder) return new Set();
@@ -563,7 +664,8 @@ export function decSubderivNames(code, hole, decIdxThm) {
     const add = (v) => { if (v && !dec.has(v)) { dec.add(v); grew = true; } };
     for (const c of cases) {
       if (!c.arm || !dec.has(c.scrut)) continue;
-      for (const v of c.arm.match(/\p{Lu}[\p{L}\p{N}_']*/gu) || []) add(v);
+      // PATTERN part only — an ascription's index variables are not sub-derivations.
+      for (const v of armPatternPart(c.arm).match(/\p{Lu}[\p{L}\p{N}_']*/gu) || []) add(v);
     }
     for (const m of lets) {
       if (!dec.has(m[2])) continue;
@@ -1237,7 +1339,10 @@ export function familyOfConstructorNameBridge(code, name) {
 
 export function theoremUnderProof(declText) {
   const s = String(declText || '');
-  const m = new RegExp(String.raw`^\s*(?:rec|proof)\s+(${DECL_IDENT})\s*:`, 'u').exec(s);
+  const m = new RegExp(
+    String.raw`^\s*(?:and\s+(?:rec\s+)?|(?:rec|proof)\s+)(${DECL_IDENT})\s*:`,
+    'u',
+  ).exec(s);
   if (!m) return null;
   const eq = declBodyEqIndex(s, m[0].length);
   if (eq < 0) return null;

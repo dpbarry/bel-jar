@@ -1,0 +1,359 @@
+/* -- Library preview dialog -- */
+
+.bj-dialog__card--library-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(72rem, calc(100vw - 2rem));
+  height: min(44rem, calc(100dvh - 2.5rem));
+  max-height: min(44rem, calc(100dvh - 2.5rem));
+  padding: 0;
+  overflow: hidden;
+}
+
+.bj-library-preview-dialog .bj-dialog__close {
+  z-index: 2;
+}
+
+.bj-library-preview-dialog .bj-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.library-preview {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.library-preview__header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+  padding: 0.5rem 2.5rem 0.5rem 0.85rem;
+  border-bottom: 1px solid light-dark(hsla(220, 12%, 82%, 0.65), hsla(217, 12%, 26%, 0.85));
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.library-preview__header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.library-preview__category {
+  font-weight: 600;
+  color: var(--base-highest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-preview__sep {
+  flex: 0 0 auto;
+  color: var(--muted-high);
+}
+
+.library-preview__file {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  color: var(--base-high);
+}
+
+.library-preview__split {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.library-preview__tree {
+  flex: 0 0 14.5rem;
+  width: 14.5rem;
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid light-dark(hsla(220, 12%, 82%, 0.65), hsla(217, 12%, 26%, 0.85));
+  background: light-dark(hsla(220, 16%, 97%, 0.55), hsla(220, 12%, 10%, 0.35));
+  padding: 0.35rem 0;
+}
+
+.library-preview-tree-folder,
+.library-preview-tree-file {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0;
+  padding-left: calc(0.5rem + var(--library-depth, 0) * 0.75rem);
+  border: none;
+  background: transparent;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  text-align: left;
+  color: var(--base-higher);
+  transition: background var(--transition), color var(--transition);
+}
+
+.library-preview-tree-file {
+  position: relative;
+  --file-accent: var(--muted-mid);
+  --file-active-bg: var(--file-row-active-bg);
+}
+
+.library-preview-tree-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.18rem 0.2rem 0.18rem 0;
+  border: none;
+  background: transparent;
+  font-size: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.library-preview-tree-folder:hover,
+.library-preview-tree-file:hover {
+  background: var(--file-row-hover-bg);
+}
+
+.library-preview-tree-folder.is-menu-open,
+.library-preview-tree-file.is-menu-open {
+  background: var(--file-row-hover-bg);
+}
+
+.library-preview-tree-file:focus-visible,
+.library-preview-tree-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-mid) 45%, transparent);
+  outline-offset: -2px;
+}
+
+.library-preview-tree-file.is-selected {
+  background: var(--file-active-bg);
+  font-weight: 500;
+  color: var(--file-fg, var(--base-highest));
+  box-shadow: none;
+}
+
+.library-preview-tree-file.is-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--edge-strip-w);
+  border-radius: var(--edge-strip-radius) 0 0 var(--edge-strip-radius);
+  background: var(--file-accent);
+  opacity: 0.8;
+}
+
+.library-preview-tree-file .library-preview-tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.18rem 0;
+  cursor: pointer;
+}
+
+.library-preview-tree-file .library-actions,
+.library-preview-tree-folder .library-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .library-preview-tree-file:hover .library-actions,
+  .library-preview-tree-folder:hover .library-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.library-preview-tree-file.is-menu-open .library-actions,
+.library-preview-tree-folder.is-menu-open .library-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.library-preview-tree-file:focus-within .library-actions,
+.library-preview-tree-folder:focus-within .library-actions,
+.library-preview-tree-file .library-actions:focus-within,
+.library-preview-tree-folder .library-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.library-preview-tree-file--suite,
+.library-preview-tree-file--suite-cfg {
+  --file-fg: var(--file-suite-fg);
+  --file-accent: var(--file-suite-accent);
+  color: var(--file-fg, var(--base-higher));
+}
+
+.library-preview-tree-file--cfg,
+.library-preview-tree-file--elf {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78125rem;
+  color: var(--file-fg, var(--base-higher));
+}
+
+.library-preview-tree-file--cfg {
+  --file-fg: var(--file-cfg-fg);
+  --file-accent: var(--file-cfg-accent);
+}
+
+.library-preview-tree-file--elf {
+  --file-fg: var(--file-elf-fg);
+  --file-accent: var(--file-elf-accent);
+}
+
+.library-preview-tree-file--suite-cfg .library-preview-tree-label {
+  font-weight: 600;
+}
+
+.library-preview-tree-file--suite-block-sep {
+  margin-top: 0.35rem;
+  box-shadow: inset 0 1px 0 var(--file-suite-sep);
+}
+
+.library-preview-tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-preview-tree-folder.is-collapsed .library-category-chevron svg {
+  transform: rotate(0deg);
+}
+
+.library-preview__code {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: light-dark(hsl(220, 14%, 98%), hsl(220, 12%, 11%));
+}
+
+.library-preview__empty,
+.library-preview__loading,
+.library-preview__code-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.library-preview__empty[hidden],
+.library-preview__loading[hidden],
+.library-preview__code-wrap[hidden] {
+  display: none !important;
+}
+
+.library-preview__empty,
+.library-preview__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  font-size: 0.8125rem;
+  color: var(--base-high);
+}
+
+.library-preview__code-wrap {
+  display: flex;
+  overflow: hidden;
+}
+
+.library-preview__gutter {
+  flex: 0 0 auto;
+  min-width: 2.75rem;
+  padding: 0.65rem 0.5rem 0.65rem 0.75rem;
+  overflow: hidden;
+  text-align: right;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--muted-high);
+  user-select: none;
+  border-right: 1px solid light-dark(hsla(220, 12%, 86%, 0.8), hsla(217, 12%, 22%, 0.9));
+  background: light-dark(hsla(220, 14%, 95%, 0.7), hsla(220, 12%, 9%, 0.6));
+  white-space: pre;
+}
+
+.library-preview__code-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  padding: 0.65rem 0.85rem;
+}
+
+.library-preview__pre {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre;
+  color: var(--base-highest);
+}
+
+.library-preview__pre code,
+.library-preview__pre code span {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.library-preview__spinner {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid color-mix(in srgb, var(--muted-mid) 35%, transparent);
+  border-top-color: var(--accent-mid);
+  border-radius: 50%;
+  animation: library-preview-spin 0.7s linear infinite;
+}
+
+@keyframes library-preview-spin {
+  to { transform: rotate(360deg); }
+}
+
+.library-category-preview {
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .library-category-item:hover .library-category-preview {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.library-category-item:focus-within .library-category-preview {
+  opacity: 1;
+  pointer-events: auto;
+}

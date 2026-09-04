@@ -65,7 +65,7 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
   }
 
   var SIZE = {
-    move: { w: 104, h: 32, label: 13 },
+    move: { w: 104, minW: 74, h: 32, label: 13 },
     theorem: { w: 112, h: 34, label: 14 },
     branch: { h: 26, label: 16, minW: 88, maxW: 148 },
     stuck: { w: 88, h: 32, label: 10 },
@@ -107,7 +107,10 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
       var key = st.branch ? norm(st.branch) : '';
       var container = key && armByPattern[key] ? key : '';
       var tail = tails[container] || root;
-      var entry = advancedTrace[i];
+      // A step may carry its own trace entry, attached by `absorbAuto` where the pairing
+      // is known-good. Prefer it: the positional fallback is correct only while every step
+      // in the list came from a single search run.
+      var entry = st.traceEntry || advancedTrace[i];
       var holeCtx = st.holeCtx || (entry && entry.holeCtx) || [];
       var holeMeta = st.holeMeta || (entry && entry.holeMeta) || [];
       var frontier = (entry && entry.tried) ? entry.tried.slice() : [];
@@ -194,6 +197,19 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
     if (n.type === 'arm') {
       var len = (n.label || '').length;
       return Math.max(SIZE.branch.minW, Math.min(SIZE.branch.maxW, 24 + len * 5.5));
+    }
+    // Move chips used to be ONE fixed width, so `fill` was drawn as wide as `impossible`
+    // and a proof read as a column of identical slabs — the shape of the tree carried no
+    // information. Sizing to the label the way arms already do gives the graph a profile.
+    // `SIZE.move.w` stays the CEILING, so nothing that fitted before is clipped now.
+    //   · 6.3px per character against the 11px sans of `.hpt-text`, rounded up rather than
+    //     down: an overwide chip looks unremarkable, a clipped label looks broken.
+    //   · +14 when the node carries a status dot, which is drawn inset from the right edge
+    //     and would otherwise sit on top of the text once the chip narrows.
+    if (n.type === 'move') {
+      var mlen = Math.min((n.label || '').length, SIZE.move.label);
+      var dot = (n.closed || n.open) ? 14 : 0;
+      return Math.max(SIZE.move.minW, Math.min(SIZE.move.w, 26 + mlen * 6.3 + dot));
     }
     if (n.type === 'theorem') return SIZE.theorem.w;
     if (n.type === 'stuck') return SIZE.stuck.w;
@@ -476,7 +492,16 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
     // actual pixel width at that same scale. A tree that fits, fits exactly
     // as before; a tree wider than the panel simply overflows sideways,
     // explorable with the existing pan/zoom — never shrunk.
+    // ⛔ In the pop-out explorer the host is far taller than `cssH`, and CSS stretches the
+    // svg to fill it. The viewBox was still sized for `cssH`, so the diagram was scaled to
+    // the WIDTH and pinned to the top of the box, leaving most of the pane empty under a
+    // small tree. Fitting to the real height instead is what puts the graph in the middle
+    // of the space it was given.
+    if (opts.fill && container.clientHeight > 0) cssH = container.clientHeight;
     var scale = H > 0 ? cssH / H : 1;
+    // A short proof in a large pane would otherwise be blown up until three nodes filled a
+    // window. Filling the space is worth doing; magnifying past legibility is not.
+    if (opts.fill) scale = Math.min(scale, 1.25);
     var hostW = container.clientWidth || 640;
     var viewW = scale > 0 ? hostW / scale : contentW;
     var defaultW = Math.min(viewW, contentW);
@@ -486,6 +511,11 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
     // slack (e.g. the 300px floor on a lone root node) dumped all the extra
     // space to the right, so a small tree rendered off-center to the left.
     var defaultX = (minX + maxX) / 2 - defaultW / 2;
+    // The viewBox height that exactly fills the box at this scale, and the y that centres
+    // the content inside it. When not filling, `cssH / scale` is `H` and this reduces to
+    // the previous `y: 0, h: H` — the same numbers, not merely similar ones.
+    var viewH = scale > 0 ? cssH / scale : H;
+    var defaultY = H / 2 - viewH / 2;
 
     // Once the user has manually panned/zoomed, every subsequent redraw (each
     // new step settling) must keep showing THAT view, not snap back to the
@@ -495,12 +525,14 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
     // reset) computes the default.
     var vb = opts.initialView
       ? { x: opts.initialView.x, y: opts.initialView.y, w: opts.initialView.w, h: opts.initialView.h }
-      : { x: defaultX, y: 0, w: defaultW, h: H };
+      : { x: defaultX, y: defaultY, w: defaultW, h: viewH };
 
     var svg = el('svg', {
       class: 'hpt-svg',
       viewBox: vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h,
-      preserveAspectRatio: 'xMidYMin meet',
+      // Top-anchored by default, which is what a scrolling compact strip wants. When the
+      // graph is filling a pane, any slack belongs on both sides of it, not all below.
+      preserveAspectRatio: opts.fill ? 'xMidYMid meet' : 'xMidYMin meet',
     });
     svg.style.width = '100%';
     svg.style.height = cssH + 'px';
@@ -635,7 +667,10 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
         try { svg.setPointerCapture(drag.id); } catch (_) { /* ignore */ }
         svg.classList.add('is-panning');
       }
-      var scale = vb.w / svg.clientWidth;
+      // `meet` scales by the SMALLER of the two ratios, so the px-per-unit factor is the
+      // larger of them. Dividing by width alone is only right while width is the
+      // constraining dimension, and drags the wrong distance when height is.
+      var scale = Math.max(vb.w / svg.clientWidth, vb.h / svg.clientHeight);
       vb.x = drag.vx - dx * scale;
       vb.y = drag.vy - dy * scale;
       applyVB();

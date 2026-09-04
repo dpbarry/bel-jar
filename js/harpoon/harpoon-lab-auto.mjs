@@ -44,7 +44,7 @@ function createAuto(deps) {
             ? na.priorBinders
             : priorGoalBinders(self, na.sourceGoalType, hero.goalType);
           this._autoGoalWrap = appendAutoGoalHero(
-            box, hero.goalType, na.declName, hero.goalState, heroPriors);
+            box, hero.goalType, na.declName, hero.goalState, heroPriors, na.declKw);
         }
         // Beneath the goal, with the other banners — same rule as the manual
         // surface, now that position follows call order.
@@ -174,7 +174,7 @@ function createAuto(deps) {
           box.appendChild(errWrap);
         }
 
-        // ── Back to hand-proving. Brutus is a TACTIC inside the manual session,
+        // ── Back to hand-proving. Orca is a TACTIC inside the manual session,
         //    so its result must be returnable — a stalled search hands its partial
         //    derivation back instead of dead-ending, and a solved one can still be
         //    inspected by hand before placing. Only shown when we came from manual. */
@@ -192,7 +192,7 @@ function createAuto(deps) {
               ? 'Review the steps, or undo before placing'
               : ((na.steps && na.steps.length)
                 ? 'Keep the ' + na.steps.length + ' step' + (na.steps.length === 1 ? '' : 's')
-                  + ' Brutus found and carry on'
+                  + ' Orca found and carry on'
                 : 'Pick the next move yourself'),
             onClick: function () { self.backToManual(); },
           });
@@ -263,16 +263,46 @@ function createAuto(deps) {
           .trim();
       }
 
-      // A one-word tag for why the search halted — terse, diagnostic.
+      // Beluga text shown anywhere on this card goes through the SHARED glyph map,
+      // tooltips included. Without it `|-` leaks into hovers while the row beside
+      // them shows `⊢`, so the same term appears in two notations one line apart.
+      function belugaText(s) {
+        var g = globalThis.HarpoonGlyphs;
+        return g ? g.displayBeluga(s) : String(s == null ? '' : s);
+      }
+
+      // A one-word tag for why the search halted. Terse, diagnostic.
       var STUCK_REASON = {
         'no-move': 'no move certified',
         'step-bound': 'step limit',
         'search-bound': 'search bound hit',
         'file-errors': 'file errors',
-        'coinductive-out-of-fragment': 'coinductive goal — out of fragment',
-        'no-totality-measure': 'no totality measure — recursion unavailable',
+        'coinductive-out-of-fragment': 'coinductive goal, out of fragment',
+        'no-totality-measure': 'no totality measure, recursion unavailable',
         stopped: 'stopped',
         cancelled: 'cancelled',
+      };
+
+      // ── What the user can DO about it ────────────────────────────────────────
+      // Still diagnostic, not consolation: each line names the CAUSE and the one
+      // edit that removes it. A stop with a known, fixable cause should not read
+      // the same as a stop we cannot explain.
+      //
+      // `no-totality-measure` is the one that most needed this. Without a
+      // `/ total /` pragma Beluga runs no termination check, so the engine refuses
+      // to build an induction hypothesis at all (`decreasingArgIndex` -> -1) — and
+      // every candidate it then shows is necessarily NON-RECURSIVE. The card was
+      // presenting that as a wall of failed fills, which reads as "the search is
+      // weak here" when the truth is "recursion was switched off, and you can
+      // switch it on".
+      var STUCK_HINT = {
+        'no-totality-measure':
+          'Every candidate below is non-recursive. Add a / total / measure to use the '
+          + 'induction hypothesis.',
+        'step-bound': 'The budget ran out with the goal still open. It was not refuted.',
+        'search-bound': 'The search hit its bound, not the end of the space.',
+        'file-errors': 'The program does not check before this goal. Fix those errors first.',
+        'coinductive-out-of-fragment': 'Coinductive goals are outside the fragment Orca searches.',
       };
 
       // The STUCK card. This card should never need to show — a complete solve replaces
@@ -298,6 +328,13 @@ function createAuto(deps) {
           card.appendChild(goal);
         }
 
+        // The cause, and the edit that removes it — placed BEFORE the candidate
+        // list, because when it exists it explains the whole list. Reading nine
+        // failed non-recursive fills and only then learning that recursion was
+        // switched off is the wrong order.
+        var hint = STUCK_HINT[stuck.reason];
+        if (hint) card.appendChild(el('p', 'harpoon-stuck-hint', hint));
+
         // The tried candidates for the stuck hole — the trace's non-advanced entry.
         var stuckTrace = null;
         var trace = na.trace || null;
@@ -317,22 +354,50 @@ function createAuto(deps) {
             rejected.length + ' rejected by the checker'
             + (guarded.length ? ' · ' + guarded.length + ' skipped' : '')));
           var list = el('ul', 'harpoon-stuck-tried');
-          var addRow = function (v) {
-            var li = el('li', 'harpoon-stuck-tried-row is-' + v.verdict);
-            li.appendChild(el('span', 'hpt-card-kind hpt-kind--' + v.kind, v.kind));
+
+          // ── One row per DISTINCT objection, not per candidate ─────────────────
+          // The engine enumerates argument tuples, so a single failing head arrives
+          // as its whole cartesian product: `result X X`, `result X X1`, `result X X2`,
+          // `result X1 X` … nine rows carrying two distinct facts. That is a wall of
+          // near-identical text where the actual signal — WHICH heads were tried and
+          // WHAT the checker said — is one line each.
+          // Group on (kind + objection). The first head is shown in full because it
+          // is representative; the rest are counted. Nothing is discarded: every
+          // variant is still listed in the row's tooltip.
+          var groupRows = function (items) {
+            var order = [];
+            var byKey = {};
+            items.forEach(function (v) {
+              var reason = stuckReason(v.reason);
+              var key = v.kind + ' :: ' + reason;
+              if (!byKey[key]) { byKey[key] = { kind: v.kind, verdict: v.verdict, reason: reason, heads: [] }; order.push(key); }
+              byKey[key].heads.push(v.head);
+            });
+            return order.map(function (k) { return byKey[k]; });
+          };
+
+          var addGroup = function (g) {
+            var li = el('li', 'harpoon-stuck-tried-row is-' + g.verdict);
+            li.appendChild(el('span', 'hpt-card-kind hpt-kind--' + g.kind, g.kind));
             var hd = el('code', 'harpoon-stuck-tried-head');
-            renderSource(hd, v.head);
+            renderSource(hd, g.heads[0]);
             li.appendChild(hd);
-            var reason = stuckReason(v.reason);
-            if (reason) {
-              var rn = el('span', 'harpoon-stuck-tried-reason', reason);
-              setTip(rn, v.reason, { ariaLabel: false });
+            if (g.heads.length > 1) {
+              var more = el('span', 'harpoon-stuck-tried-more', '+' + (g.heads.length - 1));
+              setTip(more, g.heads.map(belugaText).join('\n'), { ariaLabel: false });
+              more.setAttribute('aria-label',
+                g.heads.length + ' candidates rejected with this objection');
+              li.appendChild(more);
+            }
+            if (g.reason) {
+              var rn = el('span', 'harpoon-stuck-tried-reason', g.reason);
+              setTip(rn, g.reason, { ariaLabel: false });
               li.appendChild(rn);
             }
             list.appendChild(li);
           };
-          rejected.forEach(addRow);
-          guarded.forEach(addRow);
+          groupRows(rejected).forEach(addGroup);
+          groupRows(guarded).forEach(addGroup);
           card.appendChild(list);
         } else if (stuck.reason === 'no-move') {
           // No trace (collectTrace off) — say so plainly rather than imply nothing tried.

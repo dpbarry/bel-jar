@@ -8,6 +8,9 @@ node_modules/
 scratch/*
 !scratch/README.md
 
+# Submodule build cache (noise in parent status)
+Beluga-W/_build/
+
 # Corpus masking-harness run outputs (regenerate via `npm run corpus`/`heldout`)
 results/corpus/
 

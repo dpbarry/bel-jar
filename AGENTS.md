@@ -2,7 +2,7 @@
 
 BelJar is a browser IDE for the Beluga proof assistant. The AST/semantic engine is the substrate; Beluga is invoked surgically, not as a text blob checker.
 
-**Where things live:** [`docs/CODEMAP.md`](docs/CODEMAP.md) — two-layer runtime, domain folders, satellites, vocabulary, partition targets.
+**Where things live:** [`docs/CODEMAP.md`](docs/CODEMAP.md). **Doc index:** [`docs/README.md`](docs/README.md).
 
 ## Rules (`.cursor/rules/`)
 
@@ -19,36 +19,58 @@ BelJar is a browser IDE for the Beluga proof assistant. The AST/semantic engine 
 ## Quick commands
 
 ```bash
-npm test                  # full test suite (one invocation)
+npm test                  # full suite: 236 checks, ~95s (BELJAR_TEST_JOBS=8 default)
+npm run test:fast         # same minus the 7 Beluga integration files, ~50s — says so on exit
 npm run build             # editor + shell ESM leaves + library (not OCaml)
+npm run check:build       # fail when authored .mjs is newer than committed .js
 node scripts/build-editor.mjs   # editor bundle only
-node scripts/build-shell.mjs    # shell ESM → IIFE (tooltips, dialogs, workspace, …)
-npm run prover:probe      # optional live prover gates (Chrome)
+node scripts/build-shell.mjs    # shell ESM → IIFE (tooltips, dialogs, boot, …)
+npm run probe             # ALL probes in real Chrome (~3min)
+npm run probe:app         # ROUTINE: general surfaces only (~24s)
+npm run probe:keymap      # deep: Vim/Emacs, the command line, every binding pressed (~2.5min)
+npm run probe:harpoon     # deep: the manual proving surface (~10s)
+npm run probe:holes       # deep: the Harpoon holes panel (~8s)
 ```
+
+**Two tiers.** `npm test` is pure Node — parsers, semantic model, formatters, Beluga. `npm run
+probe*` is real Chrome with real keystrokes, and catches what Node cannot see: focus, layout, and
+chords the browser eats. Neither replaces the other.
+
+**Which to run while iterating:** `npm run test:fast` + `npm run probe:app`, then the `probe:*` for
+whatever area you touched. **Before calling anything done:** `npm test` and `npm run probe`.
+
+⛔ `test:fast` skips the Beluga integration files and **prints that it did** — a fast run that looks
+identical to a full one is how "the suite is green" comes to mean less than it says.
+⛔ Do not add keymap checks to `probe.mjs`: three probes' worth of Vim/Emacs dominating the routine
+gate is what made the split necessary.
+
+The shelved Orca thread's instruments (`prover-*.mjs`, `corpus-*.mjs`, `autocomplete-*.mjs`) are
+still in `scripts/` but no longer have npm entries — that thread is closed, and `prover-differential`
+reports a false 0/199 regression because the native `main.exe` is gone. Run them by path, knowingly.
+
+**Boot (`index.html`):** `js/boot/early-boot.js` (prefs + split vars), `panel-restore.js` (side panel), `error-hook.js` (global `onerror`). Sources in `js/boot/*-core.mjs` + `*.mjs`; tested via `tests/test-early-boot.mjs`, `test-error-hook.mjs`.
+
+Native Beluga CLI (`prover:diff`, `scripts/prover-native-oracle.mjs`, `scripts/prover-bench.mjs`): requires `Beluga-W/_build/default/src/beluga/main.exe` — build via `_rebuild/rebuild.ps1`.
 
 OCaml shim rebuild (rare): `_rebuild/rebuild.ps1` — only when `Beluga-W/src/web/beluga_web.ml` changes.
 
-## Doc sources of truth (do not start from the wrong one)
+## Docs (do not start from the archive)
 
-| Thread | Start here | Also (narrower) |
-|--------|------------|-----------------|
-| **Structure / where code lives** | [`docs/CODEMAP.md`](docs/CODEMAP.md) | Archive only: [`docs/design-quality-refactoring-handoff.md`](docs/design-quality-refactoring-handoff.md) (thread closed) |
-| **Native prover** | [`docs/prover-master-plan.md`](docs/prover-master-plan.md) | Kickoff paste: [`docs/prover-agent-kickoff.md`](docs/prover-agent-kickoff.md). Completeness audit text: [`docs/prover-completeness.md`](docs/prover-completeness.md) (appendix only) |
-| **Input lag / incremental symbols** | [`docs/incremental-semantics-execution-handoff.md`](docs/incremental-semantics-execution-handoff.md) (Phase 1 keystone) | Context: [`docs/input-and-incremental-intelligence-handoff.md`](docs/input-and-incremental-intelligence-handoff.md). Beluga settlement principles: [`docs/fast-incremental-checking.md`](docs/fast-incremental-checking.md) |
-| **Undo** | [`docs/edit-history.md`](docs/edit-history.md) | — |
+| Thread | Start here |
+|--------|------------|
+| **Index / where code lives** | [`docs/README.md`](docs/README.md), [`docs/CODEMAP.md`](docs/CODEMAP.md) |
+| **Orca (shipped search)** | [`docs/ORCA.md`](docs/ORCA.md) |
+| **Harpoon (proving surface)** | [`docs/HARPOON.md`](docs/HARPOON.md) |
+| **Modal editing** (open) | [`docs/modal-editing.md`](docs/modal-editing.md) |
+| **Undo** | [`docs/edit-history.md`](docs/edit-history.md) |
+| **Archive** | [`docs/archive/`](docs/archive/) — closed plans + shelved Orca-past-32% programme |
 
-## Active work: two threads
+## Active work
 
-**1. Native prover / Harpoon autosolve engine (the frontier).** BelJar's own proof-search engine (`js/editor-src/prover/`) generates each proof step; the Beluga checker certifies it. Harpoon is demoted to oracle. The machinery ships (plan-driven focused search, phases B–I); the work is late-game — grinding the biggest residue classes to maximize corpus autosolve, and making found proofs QUICK + ELEGANT (a completion that costs 30 min / thousands of checks is a *defect*, not a win). North star: make the search a decision procedure by construction — never per-failure budgets or name-keyed branches.
+**1. Modal editing.** Command registry is landed; catalogue and command bar are in progress; Vim/Emacs depth is not. Plan: [`docs/modal-editing.md`](docs/modal-editing.md).
 
-- Direction: [`docs/prover-master-plan.md`](docs/prover-master-plan.md).
-- Fresh-agent paste: [`docs/prover-agent-kickoff.md`](docs/prover-agent-kickoff.md) §0.
-- Instruments: `npm run prover:probe`, `npm run prover:diff`, `node scripts/prover-native-oracle.mjs`.
+**2. Orca is shipped at 32.1%.** Naming: **Harpoon** is the proving surface; **Orca** is the automatic search inside it (`proveProgram` / `candidateMoves`). Older notes say "autosolve"; read those as Orca. Product: [`docs/ORCA.md`](docs/ORCA.md). Pushing past 32% is **shelved** — resume only from [`docs/archive/orca-research/README.md`](docs/archive/orca-research/README.md), which exists so a successor does not rebuild a refuted mechanism.
 
-**2. Input performance — no lag, no lost power.** Kill typing latency in large files / large preludes via smarter behind-the-scenes scheduling; never underpower lint/parse/checks to fake speed. Per keystroke the main thread does Text + incremental Lezer only — never a whole-doc `toString`/rebuild. Prefix-closed settlement is built. The open keystone is making the JS symbol/lint layer incremental-per-decl to match the already-incremental checker.
+⛔ **Two standing traps on the shipped engine:** never emit a `/ total /` the author did not write (an invented measure can disable Beluga's termination check and bank a circular proof); **`npm run prover:diff` is DOWN** (native `main.exe` missing since 2026-08-22) — its 0/199 STUCK is a missing tool, not a regression. `npm test` is the working gate.
 
-- Execution SoT: [`docs/incremental-semantics-execution-handoff.md`](docs/incremental-semantics-execution-handoff.md).
-- Input-path history/context: [`docs/input-and-incremental-intelligence-handoff.md`](docs/input-and-incremental-intelligence-handoff.md).
-- Graph-driven Beluga (not the typing-lag thread): [`docs/fast-incremental-checking.md`](docs/fast-incremental-checking.md).
-
-Durable prover laws also live in [`.cursor/rules/beljar-prover.mdc`](.cursor/rules/beljar-prover.mdc) (local to Cursor checkouts).
+Durable prover laws: [`.cursor/rules/beljar-prover.mdc`](.cursor/rules/beljar-prover.mdc).

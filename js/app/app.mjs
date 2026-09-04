@@ -394,7 +394,7 @@ function shouldApplyEditorPrefs(key) {
   if (/^repl-/.test(key) || key === 'repl-reset') return false;
   if (/^beluga-/.test(key) || key === 'beluga-reset') return false;
   if (key === 'check-aggressiveness' || key === 'suite-check') return false;
-  if (/^autosolve-/.test(key)) return false;
+  if (/^autosolve-/.test(key) || /^harpoon-/.test(key) || key === 'harpoon-reset') return false;
   if (key === 'workspace-reset' || key === 'restore-panels' || key === 'library-expand-default' || key === 'inspector-follow') return false;
   if (key === 'motion-pref' || key === 'toast-duration') return false;
   if (/^alias/.test(key) || key === 'aliases-reset') return false;
@@ -415,6 +415,10 @@ function applyLiveSettings(key) {
     if (typeof BelEditor !== 'undefined' && typeof BelEditor.applyEditorPrefs === 'function') {
       BelEditor.applyEditorPrefs();
     }
+  }
+  if (key === 'keymap-style' || key === 'status-strip' || key === 'keybindings-reset'
+    || key === 'settings-import' || key === 'settings-reset-all') {
+    if (typeof StatusStrip !== 'undefined' && typeof StatusStrip.apply === 'function') StatusStrip.apply();
   }
   if ((key === 'library-expand-default' || key === 'workspace-reset')
     && getLibraryController() && typeof getLibraryController().refresh === 'function') {
@@ -663,63 +667,41 @@ function ensureProjectActiveCfgs() {
 function ensureActiveCfgForDir() { return suiteCfgApi.ensureActiveCfgForDir.apply(suiteCfgApi, arguments); }
 function activeCfgForDir() { return suiteCfgApi.activeCfgForDir.apply(suiteCfgApi, arguments); }
 function activeCfgsForDir() { return suiteCfgApi.activeCfgsForDir.apply(suiteCfgApi, arguments); }
-function suiteMembersResolver() { return suiteCfgApi.suiteMembersResolver.apply(suiteCfgApi, arguments); }
 function suiteLayoutForDir() { return suiteCfgApi.suiteLayoutForDir.apply(suiteCfgApi, arguments); }
-function owningActiveCfgForFile() { return suiteCfgApi.owningActiveCfgForFile.apply(suiteCfgApi, arguments); }
 function reconcileActiveCfgsInDir() { return suiteCfgApi.reconcileActiveCfgsInDir.apply(suiteCfgApi, arguments); }
 function makeActiveCfgForFile() { return suiteCfgApi.makeActiveCfgForFile.apply(suiteCfgApi, arguments); }
 function moduleNameFor() { return suiteCfgApi.moduleNameFor.apply(suiteCfgApi, arguments); }
 function activeSuiteMembership() { return suiteCfgApi.activeSuiteMembership.apply(suiteCfgApi, arguments); }
-function cfgHasDanglingEntry() { return suiteCfgApi.cfgHasDanglingEntry.apply(suiteCfgApi, arguments); }
 function explorerFileDiag() { return suiteCfgApi.explorerFileDiag.apply(suiteCfgApi, arguments); }
 function afterSuiteEdit() { return suiteCfgApi.afterSuiteEdit.apply(suiteCfgApi, arguments); }
 function activeFileRecord() { return suiteCfgApi.activeFileRecord.apply(suiteCfgApi, arguments); }
 function updateRunButtonTooltip() { return suiteCfgApi.updateRunButtonTooltip.apply(suiteCfgApi, arguments); }
 
-function renameFolderPrefix() { return explorerBootstrapApi.renameFolderPrefix.apply(explorerBootstrapApi, arguments); }
-function handleExplorerInlineCancel() { return explorerBootstrapApi.handleExplorerInlineCancel.apply(explorerBootstrapApi, arguments); }
-function handleExplorerInlineCommit() { return explorerBootstrapApi.handleExplorerInlineCommit.apply(explorerBootstrapApi, arguments); }
-function startExplorerCreateFile() { return explorerBootstrapApi.startExplorerCreateFile.apply(explorerBootstrapApi, arguments); }
-function startExplorerCreateFolder() { return explorerBootstrapApi.startExplorerCreateFolder.apply(explorerBootstrapApi, arguments); }
 function explorerCreateMenuItems() { return explorerBootstrapApi.explorerCreateMenuItems.apply(explorerBootstrapApi, arguments); }
 function renameFolderInteractive() { return explorerBootstrapApi.renameFolderInteractive.apply(explorerBootstrapApi, arguments); }
 function ensureExplorer() { return explorerBootstrapApi.ensureExplorer.apply(explorerBootstrapApi, arguments); }
-function ensureExplorerSearch() { return explorerBootstrapApi.ensureExplorerSearch.apply(explorerBootstrapApi, arguments); }
 function ensureLibrary() { return explorerBootstrapApi.ensureLibrary.apply(explorerBootstrapApi, arguments); }
 function renderExplorerTree() { return explorerBootstrapApi.renderExplorerTree.apply(explorerBootstrapApi, arguments); }
 function refreshExplorerActiveAndDiags() { return explorerBootstrapApi.refreshExplorerActiveAndDiags.apply(explorerBootstrapApi, arguments); }
 function refreshInspector() { return explorerBootstrapApi.refreshInspector.apply(explorerBootstrapApi, arguments); }
 function notifyActiveEditorView() { return explorerBootstrapApi.notifyActiveEditorView.apply(explorerBootstrapApi, arguments); }
 
-function applyEditorJump() { return fileLifecycleApi.applyEditorJump.apply(fileLifecycleApi, arguments); }
 function switchToFile() { return fileLifecycleApi.switchToFile.apply(fileLifecycleApi, arguments); }
-function captureRefPeekRestore() { return fileLifecycleApi.captureRefPeekRestore.apply(fileLifecycleApi, arguments); }
-function beginRefPeekSession() { return fileLifecycleApi.beginRefPeekSession.apply(fileLifecycleApi, arguments); }
-function endRefPeekSession() { return fileLifecycleApi.endRefPeekSession.apply(fileLifecycleApi, arguments); }
-function peekFileAt() { return fileLifecycleApi.peekFileAt.apply(fileLifecycleApi, arguments); }
 function openFileAt() { return fileLifecycleApi.openFileAt.apply(fileLifecycleApi, arguments); }
 function newFile() { return fileLifecycleApi.newFile.apply(fileLifecycleApi, arguments); }
 function closeFile() { return fileLifecycleApi.closeFile.apply(fileLifecycleApi, arguments); }
 function deleteFileInteractive() { return fileLifecycleApi.deleteFileInteractive.apply(fileLifecycleApi, arguments); }
-function deleteFilesInteractive() { return fileLifecycleApi.deleteFilesInteractive.apply(fileLifecycleApi, arguments); }
 function closeTabsForFiles() { return fileLifecycleApi.closeTabsForFiles.apply(fileLifecycleApi, arguments); }
 function selectionDeleteFileIds() { return fileLifecycleApi.selectionDeleteFileIds.apply(fileLifecycleApi, arguments); }
 function selectionDeleteDisabled() { return fileLifecycleApi.selectionDeleteDisabled.apply(fileLifecycleApi, arguments); }
 function deleteSelectionInteractive() { return fileLifecycleApi.deleteSelectionInteractive.apply(fileLifecycleApi, arguments); }
-function filesUnderFolder() { return fileLifecycleApi.filesUnderFolder.apply(fileLifecycleApi, arguments); }
 function deleteFolderInteractive() { return fileLifecycleApi.deleteFolderInteractive.apply(fileLifecycleApi, arguments); }
 
-function relPathFromPickerFile() { return uploadImportApi.relPathFromPickerFile.apply(uploadImportApi, arguments); }
-function projectEntriesFromRawEntries() { return uploadImportApi.projectEntriesFromRawEntries.apply(uploadImportApi, arguments); }
-function projectEntriesFromPickerFiles() { return uploadImportApi.projectEntriesFromPickerFiles.apply(uploadImportApi, arguments); }
 function exportLibraryAsNewProject() { return uploadImportApi.exportLibraryAsNewProject.apply(uploadImportApi, arguments); }
 function applyFileReplacement() { return uploadImportApi.applyFileReplacement.apply(uploadImportApi, arguments); }
 function deleteProjectFilesById() { return uploadImportApi.deleteProjectFilesById.apply(uploadImportApi, arguments); }
 function executeUploadPlan() { return uploadImportApi.executeUploadPlan.apply(uploadImportApi, arguments); }
-function resolveAndApplyUpload() { return uploadImportApi.resolveAndApplyUpload.apply(uploadImportApi, arguments); }
 function reloadActiveEditorFromPersist() { return uploadImportApi.reloadActiveEditorFromPersist.apply(uploadImportApi, arguments); }
-function syncCfgEditorsAfterRewrite() { return uploadImportApi.syncCfgEditorsAfterRewrite.apply(uploadImportApi, arguments); }
-function applyMovePlan() { return uploadImportApi.applyMovePlan.apply(uploadImportApi, arguments); }
 function resolveAndApplyMove() { return uploadImportApi.resolveAndApplyMove.apply(uploadImportApi, arguments); }
 function downloadCurrentFile() { return uploadImportApi.downloadCurrentFile.apply(uploadImportApi, arguments); }
 function downloadFileById() { return uploadImportApi.downloadFileById.apply(uploadImportApi, arguments); }
@@ -727,18 +709,12 @@ function downloadFolder() { return uploadImportApi.downloadFolder.apply(uploadIm
 function downloadSuite() { return uploadImportApi.downloadSuite.apply(uploadImportApi, arguments); }
 function suiteDownloadState() { return uploadImportApi.suiteDownloadState.apply(uploadImportApi, arguments); }
 
-function wireMenuTrigger() { return menusApi.wireMenuTrigger.apply(menusApi, arguments); }
 function signatureFileCount() { return menusApi.signatureFileCount.apply(menusApi, arguments); }
-function buildProjectMenuItems() { return menusApi.buildProjectMenuItems.apply(menusApi, arguments); }
-function renameFileInteractive() { return menusApi.renameFileInteractive.apply(menusApi, arguments); }
 function explorerSelectionContextItems() { return menusApi.explorerSelectionContextItems.apply(menusApi, arguments); }
 function fileContextItems() { return menusApi.fileContextItems.apply(menusApi, arguments); }
 function explorerFolderContextItems() { return menusApi.explorerFolderContextItems.apply(menusApi, arguments); }
-function folderRunItems() { return menusApi.folderRunItems.apply(menusApi, arguments); }
 function backgroundRunItems() { return menusApi.backgroundRunItems.apply(menusApi, arguments); }
 function editorExec() { return menusApi.editorExec.apply(menusApi, arguments); }
-function editorClipboard() { return menusApi.editorClipboard.apply(menusApi, arguments); }
-function buildToolsMenuItems() { return menusApi.buildToolsMenuItems.apply(menusApi, arguments); }
 
 function updateInspectorProjectEmpty() { return emptyStateApi.updateInspectorProjectEmpty.apply(emptyStateApi, arguments); }
 function updateEditorEmptyState() { return emptyStateApi.updateEditorEmptyState.apply(emptyStateApi, arguments); }
@@ -862,6 +838,7 @@ function __initAppPeels() {
     uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
     folderInputEl: uploadImportApi.folderInputEl,
     downloadCurrentFile, editorExec, moduleNameFor,
+    closeFile, closeTabsForFiles, activeSuiteMembership, afterSuiteEdit,
     signatureFileCount, switchToFile, openFileAt, projectFileText,
   }));
 }
@@ -1306,12 +1283,13 @@ document.getElementById('btn-load').addEventListener('click', (e) => {
     return;
   }
   // Isolated files: Run File. Suite members: click = to here, Ctrl/Cmd = whole suite.
-  if (!file || !moduleNameFor(file.id)) {
-    BelugaRun.runFile();
+  if ((e.ctrlKey || e.metaKey) && file && moduleNameFor(file.id)) {
+    BelugaRun.runModule();
     return;
   }
-  if (e.ctrlKey || e.metaKey) BelugaRun.runModule();
-  else BelugaRun.runToHere();
+  // Shared with the status strip's status segment via `run.default`, so the two
+  // cannot drift into meaning different things.
+  Commands.run('run.default');
 });
 document.getElementById('btn-clear').addEventListener('click', () => {
   ReplOutput.clearOutput();

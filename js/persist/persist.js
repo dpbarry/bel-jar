@@ -147,13 +147,13 @@
     function readStoredAliasActivation2() {
       try {
         var v = backendLoad2(ALIAS_ACTIVATION_KEY);
-        return v === "greedy" ? "greedy" : "strict";
+        return v === "strict" ? "strict" : "greedy";
       } catch (_) {
-        return "strict";
+        return "greedy";
       }
     }
     function writeStoredAliasActivation2(mode) {
-      if (mode === "greedy") backendSave2(ALIAS_ACTIVATION_KEY, "greedy");
+      if (mode === "strict") backendSave2(ALIAS_ACTIVATION_KEY, "strict");
       else backendRemove2(ALIAS_ACTIVATION_KEY);
     }
     function readStoredAliasPairs2() {
@@ -937,11 +937,13 @@
       if (mode === "short" || mode === "long") backendSave2(TOAST_DURATION_KEY, mode);
       else backendRemove2(TOAST_DURATION_KEY);
     }
-    function toastDurationMs() {
-      var mode = readStoredToastDuration();
+    function toastDurationForMode(mode) {
       if (mode === "short") return 2e3;
-      if (mode === "long") return 6e3;
+      if (mode === "long") return 5e3;
       return 3500;
+    }
+    function toastDurationMs() {
+      return toastDurationForMode(readStoredToastDuration());
     }
     function readStoredCheckAggressiveness() {
       try {
@@ -1529,6 +1531,7 @@
       prefersReducedMotion,
       readStoredToastDuration,
       writeStoredToastDuration,
+      toastDurationForMode,
       toastDurationMs,
       readStoredCheckAggressiveness,
       writeStoredCheckAggressiveness,
@@ -3471,7 +3474,7 @@
     saveBlocked = true;
     lastSaveError = classified || { code: "capacity", retryable: false, detail: null };
     if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
-      globalThis.Toasts.error("Couldn\u2019t save \u2014 storage full.", {
+      globalThis.Toasts.error("Couldn\u2019t save: storage full.", {
         duration: 0,
         closable: true
       });
@@ -3481,8 +3484,8 @@
         kind: "error",
         category: "ops",
         origin: "local",
-        title: "Couldn\u2019t save \u2014 storage full",
-        body: "BelJar couldn\u2019t write your project. The last successful save is intact; newer edits may be lost on reload until space is available.",
+        title: "Couldn\u2019t save: storage full",
+        body: "Your last successful save is intact. Newer edits may be lost on reload until browser storage frees up.",
         detail: classified && classified.detail ? classified.detail : null,
         source: "persist.capacity",
         dedupeKey: CAPACITY_DEDUPE
@@ -4038,6 +4041,7 @@
     "prefersReducedMotion",
     "readStoredToastDuration",
     "writeStoredToastDuration",
+    "toastDurationForMode",
     "toastDurationMs",
     "readStoredCheckAggressiveness",
     "writeStoredCheckAggressiveness",

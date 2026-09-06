@@ -1,11 +1,24 @@
 // Durable notification inbox — bell panel. Separate from Toasts (ephemeral).
+// What a card shows is decided in notification-view.mjs; this file only draws
+// that decision, so the panel cannot quietly disagree with what we test.
 import {
   createNotificationStore,
   createLocalPersistAdapter,
   createMemoryAdapter,
+  linkTarget,
   normalizeRecord,
   SCHEMA_VERSION,
 } from './notification-store.mjs';
+import {
+  KIND_META,
+  formatStamp,
+  formatStampFull,
+  inlineSegments,
+  itemView,
+  kindMeta,
+  labelTitle,
+  panelView,
+} from './notification-view.mjs';
 
 const global = globalThis;
 
@@ -13,10 +26,35 @@ let bellBtn = null;
 let panelEl = null;
 let listEl = null;
 let emptyEl = null;
-let badgeEl = null;
 let clearBtn = null;
+let countEl = null;
 let open = false;
 let unsub = null;
+let fade = null;
+let diagSeq = 0;
+
+// Everything init() registers, so dispose() can take it off again. Without this
+// a second init() double-binds every handler and the first set leaks.
+const teardown = [];
+
+function track(target, type, fn, opts) {
+  target.addEventListener(type, fn, opts);
+  teardown.push(() => target.removeEventListener(type, fn, opts));
+}
+
+function onBellClick(e) {
+  e.stopPropagation();
+  toggle();
+}
+
+function onClearClick(e) {
+  e.stopPropagation();
+  clear();
+}
+
+function onWindowResize() {
+  if (open) positionPanel();
+}
 
 const store = createNotificationStore({
   adapter: typeof localStorage !== 'undefined'
@@ -24,107 +62,203 @@ const store = createNotificationStore({
     : createMemoryAdapter(),
 });
 
-function formatTime(ts) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date(ts));
-  } catch (_) {
-    return '';
-  }
+function svgMarkup(paths, cls) {
+  return '<svg' + (cls ? ' class="' + cls + '"' : '')
+    + ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
 }
 
-function updateBadge() {
-  if (!badgeEl) return;
-  const n = store.unreadCount();
-  if (n <= 0) {
-    badgeEl.hidden = true;
-    badgeEl.textContent = '';
-    if (bellBtn) {
-      if (store.count() > 0) bellBtn.setAttribute('data-has-notifications', '');
-      else bellBtn.removeAttribute('data-has-notifications');
-    }
-    return;
-  }
-  badgeEl.hidden = false;
-  badgeEl.textContent = n > 9 ? '9+' : String(n);
-  if (bellBtn) bellBtn.setAttribute('data-has-notifications', '');
+function bindTooltip(el, text) {
+  if (!el || !text) return;
+  el.setAttribute('data-tooltip', text);
+  try {
+    if (typeof Tooltips !== 'undefined' && typeof Tooltips.bind === 'function') Tooltips.bind(el);
+  } catch (_) {}
+}
+
+function updateBellState() {
+  if (!bellBtn) return;
+  const total = store.count();
+  const unread = store.unreadCount();
+  if (total > 0) bellBtn.setAttribute('data-has-notifications', '');
+  else bellBtn.removeAttribute('data-has-notifications');
+  if (unread > 0) bellBtn.setAttribute('data-has-unread', '');
+  else bellBtn.removeAttribute('data-has-unread');
+  bellBtn.setAttribute(
+    'aria-label',
+    unread > 0 ? 'Notifications, ' + unread + ' unread' : 'Notifications',
+  );
 }
 
 function kindClass(kind) {
-  if (kind === 'error' || kind === 'warn' || kind === 'info' || kind === 'success') {
-    return 'notif-item--' + kind;
+  return 'notif-item--' + (KIND_META[kind] ? kind : 'system');
+}
+
+function buildDiagToggle(pre) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'notif-item-more';
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', pre.id);
+  btn.innerHTML = svgMarkup('<path d="m9 6 6 6-6 6"/>', 'notif-item-chevron')
+    + '<span>Diagnostic</span>';
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const show = pre.hidden;
+    pre.hidden = !show;
+    btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+    btn.classList.toggle('is-open', show);
+    if (fade) fade.update();
+  });
+  return btn;
+}
+
+// One left-aligned run under the body: when, then where, then the raw output.
+// Nothing is pushed to the far edge, so a short foot has no gap to explain.
+function buildFoot(view) {
+  const foot = document.createElement('div');
+  foot.className = 'notif-item-foot';
+
+  if (view.unread) {
+    const dot = document.createElement('span');
+    dot.className = 'notif-item-dot';
+    dot.setAttribute('role', 'img');
+    dot.setAttribute('aria-label', 'Unread');
+    foot.appendChild(dot);
   }
-  return 'notif-item--system';
+
+  const stamp = document.createElement('span');
+  stamp.className = 'notif-item-stamp';
+  stamp.textContent = view.stamp;
+  bindTooltip(stamp, view.stampFull);
+  foot.appendChild(stamp);
+
+  if (view.target) {
+    const jump = document.createElement('button');
+    jump.type = 'button';
+    jump.className = 'notif-item-link';
+    jump.textContent = view.target.label;
+    jump.setAttribute('aria-label', 'Open ' + view.target.label);
+    jump.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openTarget(view.id, view.target);
+    });
+    foot.appendChild(jump);
+  }
+
+  if (view.teaching || view.remote) {
+    const tag = document.createElement('span');
+    tag.className = 'notif-item-tag';
+    tag.textContent = view.teaching ? 'teaching' : 'remote';
+    foot.appendChild(tag);
+  }
+
+  return foot;
+}
+
+function buildItem(view) {
+  const li = document.createElement('li');
+  li.className = 'notif-item ' + kindClass(view.kind);
+  if (view.unread) li.classList.add('is-unread');
+  li.dataset.notifId = view.id;
+  li.dataset.notifKind = view.kind;
+
+  // On screen the wash says "error"; a screen reader needs the word, and this
+  // is the only place it is carried.
+  const title = document.createElement('p');
+  title.className = 'notif-item-title';
+  const kindWord = document.createElement('span');
+  kindWord.className = 'notif-item-kind';
+  kindWord.textContent = view.meta.label + ': ';
+  title.appendChild(kindWord);
+  title.appendChild(document.createTextNode(view.title));
+
+  li.appendChild(title);
+
+  if (view.body) {
+    const body = document.createElement('p');
+    body.className = 'notif-item-body';
+    if (view.promotedDetail) body.classList.add('is-diagnostic');
+    for (const seg of view.bodySegments) {
+      if (!seg.code) {
+        body.appendChild(document.createTextNode(seg.text));
+        continue;
+      }
+      const code = document.createElement('code');
+      code.className = 'notif-item-code';
+      code.textContent = seg.text;
+      body.appendChild(code);
+    }
+    li.appendChild(body);
+  }
+
+  let toggleBtn = null;
+  let pre = null;
+  if (view.detail) {
+    diagSeq += 1;
+    pre = document.createElement('pre');
+    pre.className = 'notif-item-diag';
+    pre.id = 'notif-diag-' + diagSeq;
+    pre.textContent = view.detail;
+    pre.hidden = true;
+    toggleBtn = buildDiagToggle(pre);
+  }
+
+  const foot = buildFoot(view);
+  if (toggleBtn) foot.appendChild(toggleBtn);
+  li.appendChild(foot);
+  if (pre) li.appendChild(pre);
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.type = 'button';
+  dismissBtn.className = 'icon-btn notif-item-dismiss';
+  dismissBtn.setAttribute('aria-label', 'Dismiss notification');
+  dismissBtn.innerHTML = svgMarkup('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
+  dismissBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dismiss(view.id);
+  });
+  li.appendChild(dismissBtn);
+
+  return li;
 }
 
 function renderList() {
   if (!listEl || !emptyEl) return;
+  const records = store.list();
+  const view = panelView(records, Date.now());
+
   listEl.textContent = '';
-  const sorted = store.list();
-  for (const item of sorted) {
-    const li = document.createElement('li');
-    li.className = 'notif-item ' + kindClass(item.kind);
-    if (!item.readAt) li.classList.add('is-unread');
-    li.dataset.notifId = item.id;
+  for (const item of view.items) listEl.appendChild(buildItem(item));
 
-    const main = document.createElement('div');
-    main.className = 'notif-item-main';
-
-    const title = document.createElement('p');
-    title.className = 'notif-item-msg';
-    title.textContent = item.title;
-    main.appendChild(title);
-
-    if (item.body && item.body !== item.title) {
-      const body = document.createElement('p');
-      body.className = 'notif-item-body';
-      body.textContent = item.body;
-      main.appendChild(body);
-    }
-
-    if (item.detail) {
-      const details = document.createElement('details');
-      details.className = 'notif-item-detail';
-      const summary = document.createElement('summary');
-      summary.textContent = 'Details';
-      details.appendChild(summary);
-      const pre = document.createElement('pre');
-      pre.className = 'notif-item-detail-pre';
-      pre.textContent = item.detail;
-      details.appendChild(pre);
-      main.appendChild(details);
-    }
-
-    const meta = document.createElement('span');
-    meta.className = 'notif-item-time';
-    const bits = [formatTime(item.createdAt)];
-    if (item.category === 'teaching') bits.push('teaching');
-    else if (item.origin === 'remote') bits.push('remote');
-    meta.textContent = bits.filter(Boolean).join(' · ');
-    main.appendChild(meta);
-
-    const dismissBtn = document.createElement('button');
-    dismissBtn.type = 'button';
-    dismissBtn.className = 'icon-btn notif-item-dismiss';
-    dismissBtn.setAttribute('aria-label', 'Dismiss notification');
-    dismissBtn.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-      '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>' +
-      '</svg>';
-    dismissBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dismiss(item.id);
-    });
-
-    li.appendChild(main);
-    li.appendChild(dismissBtn);
-    listEl.appendChild(li);
+  emptyEl.hidden = !view.empty;
+  listEl.hidden = view.empty;
+  if (clearBtn) clearBtn.hidden = view.empty;
+  if (countEl) {
+    countEl.textContent = view.total ? String(view.total) : '';
+    countEl.hidden = !view.total;
   }
-  emptyEl.hidden = sorted.length > 0;
-  listEl.hidden = sorted.length === 0;
-  updateBadge();
+  if (fade) fade.update();
+  updateBellState();
+}
+
+// Navigation belongs to the shell, so a target goes out as an event rather than
+// reaching across the seam. Same channel cross-file go-to-definition uses.
+function openTarget(id, target) {
+  if (!target) return;
+  store.markRead(id);
+  try {
+    window.dispatchEvent(new CustomEvent('beljar:open-file-at', {
+      detail: {
+        fileId: target.fileId,
+        from: target.from,
+        to: target.to,
+        line: target.line,
+        source: 'notification',
+      },
+    }));
+  } catch (_) {}
+  setOpen(false);
 }
 
 function emit(partial) {
@@ -180,6 +314,7 @@ function fromToast(message, opts) {
     detail: o.detail || null,
     source: o.source || 'toast',
     dedupeKey: o.dedupeKey || null,
+    links: o.links || null,
     origin: 'local',
   });
 }
@@ -192,9 +327,12 @@ function clear() {
   store.clear();
 }
 
+// Flush with the end of the header chrome, not with the bell — a panel that
+// stops mid-cluster leaves the buttons past it looking stranded.
 function positionPanel() {
   if (!bellBtn || !panelEl) return;
-  const r = bellBtn.getBoundingClientRect();
+  const anchor = bellBtn.closest('.header-end') || bellBtn;
+  const r = anchor.getBoundingClientRect();
   const right = Math.max(0, window.innerWidth - r.right);
   panelEl.style.setProperty('--notif-panel-right', right + 'px');
 }
@@ -204,6 +342,9 @@ function setOpen(next) {
   open = !!next;
   if (open) {
     positionPanel();
+    // Re-render before the panel lands: markAllRead only republishes when
+    // something was actually unread, so the read state can go undrawn.
+    renderList();
     store.markAllRead();
   }
   panelEl.classList.toggle('is-open', open);
@@ -237,40 +378,56 @@ function onDocKeyDown(e) {
 }
 
 function init() {
+  dispose();
   bellBtn = document.getElementById('btn-notifications');
   panelEl = document.getElementById('notif-panel');
   listEl = document.getElementById('notif-panel-list');
   emptyEl = document.getElementById('notif-panel-empty');
-  badgeEl = document.getElementById('notif-badge');
   clearBtn = document.getElementById('btn-notif-clear');
+  countEl = document.getElementById('notif-panel-count');
   if (!bellBtn || !panelEl) return;
 
-  if (unsub) unsub();
   unsub = store.subscribe(() => renderList());
 
-  bellBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggle();
-  });
-
-  if (clearBtn) {
-    clearBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      clear();
-    });
+  track(bellBtn, 'click', onBellClick);
+  if (clearBtn) track(clearBtn, 'click', onClearClick);
+  track(document, 'pointerdown', onDocPointerDown, true);
+  track(document, 'keydown', onDocKeyDown, true);
+  track(window, 'resize', onWindowResize);
+  if (listEl && global.ScrollFade && typeof global.ScrollFade.attach === 'function') {
+    fade = global.ScrollFade.attach(listEl, { axis: 'y', size: 14 });
   }
-
-  document.addEventListener('pointerdown', onDocPointerDown, true);
-  document.addEventListener('keydown', onDocKeyDown, true);
-  window.addEventListener('resize', () => {
-    if (open) positionPanel();
-  });
   positionPanel();
   renderList();
 }
 
+// Release the panel: the store subscription, every handler init() bound, and
+// the element references. Safe to call when init() never ran.
+function dispose() {
+  if (unsub) {
+    unsub();
+    unsub = null;
+  }
+  while (teardown.length) {
+    const off = teardown.pop();
+    try { off(); } catch (_) {}
+  }
+  if (fade) {
+    try { fade.destroy(); } catch (_) {}
+    fade = null;
+  }
+  setOpen(false);
+  bellBtn = null;
+  panelEl = null;
+  listEl = null;
+  emptyEl = null;
+  clearBtn = null;
+  countEl = null;
+}
+
 global.Notifications = {
   init,
+  dispose,
   emit,
   push,
   teaching,
@@ -285,6 +442,17 @@ global.Notifications = {
   unreadCount: () => store.unreadCount(),
   list: () => store.list(),
   store,
-  _pure: { normalizeRecord, SCHEMA_VERSION },
+  _pure: {
+    normalizeRecord,
+    linkTarget,
+    itemView,
+    panelView,
+    kindMeta,
+    labelTitle,
+    inlineSegments,
+    formatStamp,
+    formatStampFull,
+    SCHEMA_VERSION,
+  },
 };
 global.BelJarNotifications = global.Notifications;

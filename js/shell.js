@@ -419,13 +419,13 @@
     function readStoredAliasActivation2() {
       try {
         var v = backendLoad2(ALIAS_ACTIVATION_KEY);
-        return v === "greedy" ? "greedy" : "strict";
+        return v === "strict" ? "strict" : "greedy";
       } catch (_) {
-        return "strict";
+        return "greedy";
       }
     }
     function writeStoredAliasActivation2(mode) {
-      if (mode === "greedy") backendSave2(ALIAS_ACTIVATION_KEY, "greedy");
+      if (mode === "strict") backendSave2(ALIAS_ACTIVATION_KEY, "strict");
       else backendRemove2(ALIAS_ACTIVATION_KEY);
     }
     function readStoredAliasPairs2() {
@@ -1209,11 +1209,13 @@
       if (mode === "short" || mode === "long") backendSave2(TOAST_DURATION_KEY, mode);
       else backendRemove2(TOAST_DURATION_KEY);
     }
-    function toastDurationMs() {
-      var mode = readStoredToastDuration();
+    function toastDurationForMode(mode) {
       if (mode === "short") return 2e3;
-      if (mode === "long") return 6e3;
+      if (mode === "long") return 5e3;
       return 3500;
+    }
+    function toastDurationMs() {
+      return toastDurationForMode(readStoredToastDuration());
     }
     function readStoredCheckAggressiveness() {
       try {
@@ -1801,6 +1803,7 @@
       prefersReducedMotion: prefersReducedMotion2,
       readStoredToastDuration,
       writeStoredToastDuration,
+      toastDurationForMode,
       toastDurationMs,
       readStoredCheckAggressiveness,
       writeStoredCheckAggressiveness,
@@ -2080,8 +2083,8 @@
       } catch (_) {
       }
     }
-    function writeStoredExplorerOpen2(open10) {
-      if (open10) backendSave2(EXPLORER_OPEN_KEY2, "1");
+    function writeStoredExplorerOpen2(open11) {
+      if (open11) backendSave2(EXPLORER_OPEN_KEY2, "1");
       else backendRemove2(EXPLORER_OPEN_KEY2);
     }
     function readStoredInspectorOpen2() {
@@ -2091,8 +2094,8 @@
         return false;
       }
     }
-    function writeStoredInspectorOpen2(open10) {
-      if (open10) backendSave2(INSPECTOR_OPEN_KEY2, "1");
+    function writeStoredInspectorOpen2(open11) {
+      if (open11) backendSave2(INSPECTOR_OPEN_KEY2, "1");
       else backendRemove2(INSPECTOR_OPEN_KEY2);
     }
     function readStoredInspectorFollow2() {
@@ -2124,8 +2127,8 @@
         return false;
       }
     }
-    function writeStoredLibraryOpen2(open10) {
-      if (open10) backendSave2(LIBRARY_OPEN_KEY2, "1");
+    function writeStoredLibraryOpen2(open11) {
+      if (open11) backendSave2(LIBRARY_OPEN_KEY2, "1");
       else backendRemove2(LIBRARY_OPEN_KEY2);
     }
     function readStoredHarpoonOpen2() {
@@ -2135,8 +2138,8 @@
         return false;
       }
     }
-    function writeStoredHarpoonOpen2(open10) {
-      if (open10) backendSave2("beljar-harpoon-open", "1");
+    function writeStoredHarpoonOpen2(open11) {
+      if (open11) backendSave2("beljar-harpoon-open", "1");
       else backendRemove2("beljar-harpoon-open");
     }
     function readStoredHarpoonDetailsCollapsed2() {
@@ -3743,7 +3746,7 @@
     saveBlocked = true;
     lastSaveError = classified || { code: "capacity", retryable: false, detail: null };
     if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
-      globalThis.Toasts.error("Couldn\u2019t save \u2014 storage full.", {
+      globalThis.Toasts.error("Couldn\u2019t save: storage full.", {
         duration: 0,
         closable: true
       });
@@ -3753,8 +3756,8 @@
         kind: "error",
         category: "ops",
         origin: "local",
-        title: "Couldn\u2019t save \u2014 storage full",
-        body: "BelJar couldn\u2019t write your project. The last successful save is intact; newer edits may be lost on reload until space is available.",
+        title: "Couldn\u2019t save: storage full",
+        body: "Your last successful save is intact. Newer edits may be lost on reload until browser storage frees up.",
         detail: classified && classified.detail ? classified.detail : null,
         source: "persist.capacity",
         dedupeKey: CAPACITY_DEDUPE
@@ -4310,6 +4313,7 @@
     "prefersReducedMotion",
     "readStoredToastDuration",
     "writeStoredToastDuration",
+    "toastDurationForMode",
     "toastDurationMs",
     "readStoredCheckAggressiveness",
     "writeStoredCheckAggressiveness",
@@ -5107,6 +5111,25 @@
     if (pid) return String(pid);
     return P3.getProjectName?.() || "default";
   }
+  function fileToBringForward(entry, direction, P3) {
+    var cur = P3.getActiveFileId();
+    var target = null;
+    var active4 = entry.structural && entry.structural.activeFileId;
+    if (active4) target = direction === "undo" ? active4.before : active4.after;
+    if (!target) {
+      var ids = Object.keys(entry.files || {});
+      var offScreen = [];
+      for (var i = 0; i < ids.length; i++) {
+        if (ids[i] !== cur && P3.getFileById(ids[i])) offScreen.push(ids[i]);
+      }
+      if (offScreen.length === ids.length && offScreen.length) target = offScreen[0];
+    }
+    if (!target || !P3.getFileById(target)) return null;
+    if (target === cur) {
+      return null;
+    }
+    return target;
+  }
   function buildAdapter() {
     var P3 = global2.Persist;
     return {
@@ -5136,6 +5159,31 @@
       },
       setOpenFileIds: function(ids) {
         P3.setOpenFileIds(ids);
+      },
+      listEmptyFolders: function() {
+        return typeof P3.listEmptyFolders === "function" ? P3.listEmptyFolders() : null;
+      },
+      // Diffed rather than written wholesale: add/removeEmptyFolder are what
+      // notify the explorer, so going through them keeps the tree in step.
+      setEmptyFolders: function(paths) {
+        if (typeof P3.listEmptyFolders !== "function") return;
+        var want = {};
+        var i;
+        for (i = 0; i < (paths || []).length; i++) want[paths[i]] = true;
+        var have = P3.listEmptyFolders() || [];
+        for (i = 0; i < have.length; i++) {
+          if (!want[have[i]] && typeof P3.removeEmptyFolder === "function") {
+            P3.removeEmptyFolder(have[i]);
+          }
+        }
+        have = P3.listEmptyFolders() || [];
+        var present = {};
+        for (i = 0; i < have.length; i++) present[have[i]] = true;
+        for (i = 0; i < (paths || []).length; i++) {
+          if (!present[paths[i]] && typeof P3.addEmptyFolder === "function") {
+            P3.addEmptyFolder(paths[i]);
+          }
+        }
       },
       getActiveFileId: function() {
         return P3.getActiveFileId();
@@ -5170,27 +5218,47 @@
         return null;
       },
       toast,
+      /**
+       * The strip's `⟲` widget counts what is on the stack, so it has to be told
+       * when the stack moves — a widget that polls shows a stale number until
+       * something unrelated happens to repaint it. This fires on every push,
+       * apply, amend and project swap, which is exactly the set of moments the
+       * count can change.
+       */
+      onStackChange: function() {
+        var S = global2.StatusStrip;
+        if (!S || typeof S.setHistoryDepth !== "function" || !history) return;
+        S.setHistoryDepth(history.getUndoStack().length, history.getRedoStack().length);
+      },
+      /**
+       * Show the user the file their keystroke just changed.
+       *
+       * ⛔ An undo that edits a file you cannot see is a side effect, not an
+       * undo. A plain tab switch is not itself a history step, so an entry made
+       * before the switch carries no `structural.activeFileId` to follow — and
+       * undoing past a switch used to rewrite the off-screen file in silence,
+       * leaving the user staring at an unchanged buffer wondering what Ctrl+Z
+       * did. If the step touches no file that is on screen, bring one of the
+       * files it DOES touch to the front.
+       */
       onApplied: function(entry, direction) {
-        if (typeof global2.dispatchEvent === "function") {
-          global2.dispatchEvent(new CustomEvent("beljar:edit-history-applied", {
-            detail: { entry, direction }
-          }));
-        }
-        var active3 = entry.structural && entry.structural.activeFileId;
-        if (active3 && global2.Persist) {
-          var target = direction === "undo" ? active3.before : active3.after;
-          var cur = global2.Persist.getActiveFileId();
-          if (target && target !== cur && typeof global2.belJarSwitchToFileForHistory === "function") {
+        var P4 = global2.Persist;
+        if (P4 && typeof global2.belJarSwitchToFileForHistory === "function") {
+          var target = fileToBringForward(entry, direction, P4);
+          if (target) {
             var rec = entry.files && entry.files[target];
             var local = null;
-            if (rec) {
-              local = direction === "undo" ? rec.beforeLocal || null : rec.afterLocal || null;
-            }
+            if (rec) local = direction === "undo" ? rec.beforeLocal || null : rec.afterLocal || null;
             if (!local && entry.editorLocal && entry.editorLocal[target]) {
               local = entry.editorLocal[target];
             }
             global2.belJarSwitchToFileForHistory(target, local);
           }
+        }
+        if (typeof global2.dispatchEvent === "function") {
+          global2.dispatchEvent(new CustomEvent("beljar:edit-history-applied", {
+            detail: { entry, direction }
+          }));
         }
       }
     };
@@ -5549,10 +5617,10 @@
     const eq = text.indexOf("=");
     const value = eq >= 0 ? text.slice(eq + 1).trim() : null;
     let name = (eq >= 0 ? text.slice(0, eq) : text).trim().toLowerCase();
-    let toggle4 = false;
+    let toggle5 = false;
     if (name.endsWith("!")) {
       name = name.slice(0, -1);
-      toggle4 = true;
+      toggle5 = true;
     }
     let negated = false;
     if (!findSetting(name) && name.startsWith("no") && findSetting(name.slice(2))) {
@@ -5570,7 +5638,7 @@
     let requested;
     if (value != null && value !== "") requested = value;
     else if (negated) requested = false;
-    else if (toggle4) requested = void 0;
+    else if (toggle5) requested = void 0;
     else if (spec.kind === "bool" || spec.on !== void 0) requested = true;
     else requested = void 0;
     return { spec, requested };
@@ -5586,17 +5654,17 @@
     const labels = spec.labels || {};
     return spec.title + ": " + (labels[value] != null ? labels[value] : String(value));
   }
-  function applyValue(persist5, spec, requested) {
-    if (!persist5 || !spec) return { ok: false, message: "Settings are not ready yet." };
-    if (typeof persist5[spec.read] !== "function" || typeof persist5[spec.write] !== "function") {
+  function applyValue(persist4, spec, requested) {
+    if (!persist4 || !spec) return { ok: false, message: "Settings are not ready yet." };
+    if (typeof persist4[spec.read] !== "function" || typeof persist4[spec.write] !== "function") {
       return { ok: false, message: `${spec.title} cannot be changed here.` };
     }
-    const value = nextValue(spec, persist5[spec.read](), requested);
+    const value = nextValue(spec, persist4[spec.read](), requested);
     if (value === null) return { ok: false, message: `${spec.title}: no such value.` };
-    persist5[spec.write](value);
+    persist4[spec.write](value);
     return { ok: true, applied: true, spec, value, message: describeChange(spec, value) };
   }
-  function runSetOn(persist5, raw) {
+  function runSetOn(persist4, raw) {
     const res = parseSet(raw);
     if (res.error === "usage") {
       return { ok: false, message: "Usage: :set nu, :set nowrap, :set ts=4" };
@@ -5616,7 +5684,7 @@
         message: `${res.spec.title} is not on or off. Try :set ${res.name}=${res.spec.values[0]}.`
       };
     }
-    return applyValue(persist5, res.spec, res.requested);
+    return applyValue(persist4, res.spec, res.requested);
   }
 
   // js/commands/command-catalog.mjs
@@ -6080,6 +6148,9 @@
     { id: "view.explorer", title: "Toggle Explorer", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.library", title: "Toggle Library", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.harpoon", title: "Toggle Harpoon", section: "View", scope: "global", palette: true, keybindable: true },
+    // The `⟲` widget in the status strip is the same panel; a surface you can only
+    // reach by clicking is one the palette and the `:` line cannot offer.
+    { id: "view.edit-history", title: "Toggle Edit History", section: "View", scope: "global", palette: true, keybindable: true, ex: ["undolist"] },
     { id: "view.settings", title: "Open Settings\u2026", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "fold.all", title: "Fold All", section: "View", scope: "editor", palette: true, keybindable: true },
     { id: "fold.unfold-all", title: "Unfold All", section: "View", scope: "editor", palette: true, keybindable: true },
@@ -6504,6 +6575,169 @@
   };
   global3.Commands = Commands2;
 
+  // js/status-strip/status-strip-history.mjs
+  var KIND_LABELS = {
+    typing: "Typing",
+    edit: "Edit",
+    format: "Format",
+    rename: "Rename",
+    hole: "Fill hole",
+    "proof-commit": "Commit proof",
+    "library-insert": "Insert from library",
+    "file-batch": "Add files",
+    "file-delete": "Delete files"
+  };
+  function labelForKind(kind) {
+    const k = String(kind || "");
+    if (KIND_LABELS[k]) return KIND_LABELS[k];
+    if (!k) return "Edit";
+    return k.charAt(0).toUpperCase() + k.slice(1).replace(/-/g, " ");
+  }
+  function baseName(path) {
+    const p = String(path || "");
+    const cut = p.lastIndexOf("/");
+    return cut >= 0 ? p.slice(cut + 1) : p;
+  }
+  function nameFromId(id) {
+    return baseName(String(id || "").replace(/^[a-z]+:\/\//i, ""));
+  }
+  function structuralOf(entry) {
+    return entry.structural || {};
+  }
+  function filesTouched(entry, nameOf2) {
+    const resolve2 = typeof nameOf2 === "function" ? nameOf2 : () => null;
+    const s = structuralOf(entry);
+    const names = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (name) => {
+      const n = String(name || "");
+      if (!n || seen.has(n)) return;
+      seen.add(n);
+      names.push(n);
+    };
+    for (const f of s.created || []) add(f.name);
+    for (const f of s.deleted || []) add(f.name);
+    for (const id of Object.keys(entry.files || {})) add(resolve2(id) || nameFromId(id));
+    for (const id of Object.keys(s.cfg || {})) add(resolve2(id) || nameFromId(id));
+    return names;
+  }
+  function plural(n, one, many) {
+    return n + " " + (n === 1 ? one : many);
+  }
+  function describeEntry(entry, nameOf2) {
+    const e = entry || {};
+    const s = structuralOf(e);
+    const names = filesTouched(e, nameOf2);
+    let label = e.label || labelForKind(e.kind);
+    if (!e.label) {
+      const created = (s.created || []).length;
+      const deleted = (s.deleted || []).length;
+      if (e.kind === "file-batch" && created) label = "Add " + plural(created, "file", "files");
+      else if (e.kind === "file-delete" && deleted) label = "Delete " + plural(deleted, "file", "files");
+      else if (created && deleted) label = "Replace " + plural(created, "file", "files");
+      else if (created) label = "Add " + plural(created, "file", "files");
+      else if (deleted) label = "Delete " + plural(deleted, "file", "files");
+    }
+    const where = names.length === 1 ? baseName(names[0]) : names.length > 1 ? plural(names.length, "file", "files") : "";
+    let preview = null;
+    if (!e.label && PREVIEWABLE[e.kind]) {
+      const ids = Object.keys(e.files || {});
+      if (ids.length === 1) {
+        const rec = e.files[ids[0]];
+        preview = changePreview(rec && rec.before, rec && rec.after);
+      }
+    }
+    return { label, where, files: names, preview };
+  }
+  var PREVIEW_MAX = 34;
+  function changePreview(before, after) {
+    const b = String(before == null ? "" : before);
+    const a = String(after == null ? "" : after);
+    if (b === a) return null;
+    let p = 0;
+    const max = Math.min(b.length, a.length);
+    while (p < max && b[p] === a[p]) p += 1;
+    let sfx = 0;
+    while (sfx < max - p && b[b.length - 1 - sfx] === a[a.length - 1 - sfx]) sfx += 1;
+    const added = a.slice(p, a.length - sfx);
+    const removed = b.slice(p, b.length - sfx);
+    const sign = added && removed ? "\xB1" : added ? "+" : "\u2212";
+    const body = added || removed;
+    const flat = body.replace(/\s+/g, " ").trim();
+    if (!flat) {
+      const n = body.length;
+      if (!n) return null;
+      return { sign, text: n === 1 ? "newline" : n + " spaces", faded: true };
+    }
+    const text = flat.length > PREVIEW_MAX ? flat.slice(0, PREVIEW_MAX - 1) + "\u2026" : flat;
+    return { sign, text };
+  }
+  var PREVIEWABLE = { typing: true, edit: true };
+  var MINUTE = 6e4;
+  var HOUR = 60 * MINUTE;
+  var DAY = 24 * HOUR;
+  function relativeTime(ts, now) {
+    const then = Number(ts);
+    const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    if (!Number.isFinite(then) || then <= 0) return "";
+    const ago = Math.max(0, at - then);
+    if (ago < MINUTE) return "now";
+    if (ago < HOUR) return Math.floor(ago / MINUTE) + "m";
+    if (ago < DAY) return Math.floor(ago / HOUR) + "h";
+    return Math.floor(ago / DAY) + "d";
+  }
+  function buildHistoryRows(undoStack, redoStack, opts) {
+    const o = opts || {};
+    const nameOf2 = o.nameOf;
+    const at = o.now;
+    const undo = Array.isArray(undoStack) ? undoStack : [];
+    const redo = Array.isArray(redoStack) ? redoStack : [];
+    const rows2 = [];
+    for (let i = 0; i < redo.length; i += 1) {
+      const entry = redo[i];
+      const d = describeEntry(entry, nameOf2);
+      rows2.push({
+        id: entry.id,
+        kind: entry.kind,
+        label: d.label,
+        preview: d.preview,
+        where: d.where,
+        files: d.files,
+        when: relativeTime(entry.ts, at),
+        direction: "redo",
+        distance: redo.length - i,
+        ahead: true
+      });
+    }
+    rows2.push({ id: "__now__", now: true, label: "Current", direction: null, distance: 0 });
+    for (let i = undo.length - 1; i >= 0; i -= 1) {
+      const entry = undo[i];
+      const d = describeEntry(entry, nameOf2);
+      rows2.push({
+        id: entry.id,
+        kind: entry.kind,
+        label: d.label,
+        preview: d.preview,
+        where: d.where,
+        files: d.files,
+        when: relativeTime(entry.ts, at),
+        direction: "undo",
+        distance: undo.length - i,
+        ahead: false
+      });
+    }
+    return rows2;
+  }
+  function historySummary(undoCount, redoCount) {
+    const u = Number(undoCount) || 0;
+    const r = Number(redoCount) || 0;
+    if (!u && !r) return "Nothing to undo yet";
+    const parts = [];
+    if (u) parts.push(plural(u, "step", "steps") + " to undo");
+    if (r) parts.push(plural(r, "step", "steps") + " to redo");
+    return parts.join(" \xB7 ");
+  }
+
   // js/status-strip/status-strip-segments.mjs
   var SEGMENT_ORDER = [
     "keymap",
@@ -6517,15 +6751,16 @@
     "orca",
     "symbols",
     "spacer",
+    "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "command", "goal", "holes", "problems", "orca", "spacer", "checker"],
-    standard: ["keymap", "position", "mode", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "checker"],
+    compact: ["keymap", "position", "mode", "command", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
+    standard: ["keymap", "position", "mode", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
-  function plural(n, one, many) {
+  function plural2(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
   function truncate(text, max) {
@@ -6581,8 +6816,8 @@
       const lines = s.selLines || 1;
       return {
         key: "selection",
-        text: lines > 1 ? plural(lines, "line", "lines") : plural(chars, "char", "chars"),
-        title: plural(chars, "character", "characters") + " selected"
+        text: lines > 1 ? plural2(lines, "line", "lines") : plural2(chars, "char", "chars"),
+        title: plural2(chars, "character", "characters") + " selected"
       };
     },
     /** The whole reason this bar exists: the goal under the caret, inline. */
@@ -6608,7 +6843,7 @@
       const rest = s.goal ? n - 1 : n;
       return {
         key: "holes",
-        text: s.goal ? rest > 0 ? "+" + rest + " more" : "last hole" : plural(n, "hole", "holes"),
+        text: s.goal ? rest > 0 ? "+" + rest + " more" : "last hole" : plural2(n, "hole", "holes"),
         title: "Go to the next hole",
         tone: "holes",
         action: "next-hole"
@@ -6643,10 +6878,37 @@
     },
     symbols(s) {
       if (!Number.isFinite(s.symbols) || s.symbols <= 0) return null;
-      return { key: "symbols", text: plural(s.symbols, "decl", "decls"), title: s.symbols + " declarations in this file" };
+      return { key: "symbols", text: plural2(s.symbols, "decl", "decls"), title: s.symbols + " declarations in this file" };
     },
     spacer() {
       return { key: "spacer", spacer: true };
+    },
+    /**
+     * How much history you are standing on, and the way into it.
+     *
+     * Earns its place the same way the rest do: how far back you can go is
+     * visible nowhere else in BelJar, and neither is the fact that a redo branch
+     * is waiting. It stays silent until there is something to say, so an untouched
+     * file carries no widget at all.
+     *
+     * The count is the UNDO depth. A second number for redo would be two figures
+     * with no way to tell which is which at 0.68rem — the branch is carried by a
+     * tone change and spelled out in the tooltip and the panel instead.
+     */
+    history(s) {
+      const undo = s.undoDepth || 0;
+      const redo = s.redoDepth || 0;
+      if (!undo && !redo) return null;
+      return {
+        key: "history",
+        text: String(undo),
+        mark: "\u27F2",
+        title: "Edit history\n\n" + historySummary(undo, redo),
+        tone: redo ? "branched" : "plain",
+        action: "edit-history",
+        mono: true,
+        pressed: !!s.historyOpen
+      };
     },
     /** Always speaks: silence about the checker reads as "is it even on?". */
     checker(s) {
@@ -6660,10 +6922,10 @@
         text = Number.isFinite(s.parsePercent) && s.parsePercent < 100 ? "Parsing " + s.parsePercent + "%" : "Checking\u2026";
       } else if (errors) {
         tone = "error";
-        text = plural(errors, "error", "errors");
+        text = plural2(errors, "error", "errors");
       } else if (warnings) {
         tone = "warning";
-        text = plural(warnings, "warning", "warnings");
+        text = plural2(warnings, "warning", "warnings");
       }
       const broken = errors + warnings > 0;
       return {
@@ -6998,16 +7260,16 @@
     if (!first || !cap) return;
     const rowH = first.offsetHeight;
     if (!rowH || cap < rowH * 2) return;
-    const rows = Math.max(2, Math.floor((cap - listPad.top - listPad.bottom) / rowH));
-    listEl.style.maxHeight = rows * rowH + listPad.top + listPad.bottom + "px";
+    const rows2 = Math.max(2, Math.floor((cap - listPad.top - listPad.bottom) / rowH));
+    listEl.style.maxHeight = rows2 * rowH + listPad.top + listPad.bottom + "px";
   }
   function anchorList() {
-    const bar = host && host.closest ? host.closest(".bj-strip") : null;
-    if (!bar || !listEl) return;
-    const rect = bar.getBoundingClientRect();
+    const bar2 = host && host.closest ? host.closest(".bj-strip") : null;
+    if (!bar2 || !listEl) return;
+    const rect = bar2.getBoundingClientRect();
     listEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
     const zone = host.parentNode && host.parentNode.getBoundingClientRect ? host.parentNode : null;
-    const field = (open || exInput ? zone : null) || bar.querySelector(".bj-strip__seg--command") || zone;
+    const field = (open || exInput ? zone : null) || bar2.querySelector(".bj-strip__seg--command") || zone;
     const from = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
     const pad = 6;
     let left = from && from.width ? from.left : rect.left + pad;
@@ -7527,15 +7789,15 @@
     return runLine(text, () => {
     });
   }
-  function showKeyHints(rows) {
+  function showKeyHints(rows2) {
     if (!listEl || open || exInput) return false;
-    if (!rows || !rows.length) {
+    if (!rows2 || !rows2.length) {
       hideKeyHints();
       return false;
     }
     hinting = true;
     query = "";
-    items = rows.map((r) => ({ value: r.key, label: r.title }));
+    items = rows2.map((r) => ({ value: r.key, label: r.title }));
     active = -1;
     chosen = false;
     renderList();
@@ -7551,8 +7813,299 @@
     return true;
   }
 
-  // js/status-strip/status-strip-view.mjs
+  // js/status-strip/status-strip-history-ui.mjs
   var global5 = globalThis;
+  var panelEl = null;
+  var listEl2 = null;
+  var open2 = false;
+  var active2 = -1;
+  var rows = [];
+  var listeners = false;
+  var onChanged = null;
+  function history3() {
+    return global5.EditHistory || null;
+  }
+  function nameOf(id) {
+    const P3 = global5.Persist;
+    if (!P3 || typeof P3.getFileById !== "function") return null;
+    const f = P3.getFileById(id);
+    return f ? f.name : null;
+  }
+  function bar() {
+    return document.querySelector(".bj-strip");
+  }
+  function anchor() {
+    const strip2 = bar();
+    if (!strip2 || !panelEl) return;
+    const rect = strip2.getBoundingClientRect();
+    panelEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
+    const seg = strip2.querySelector(".bj-strip__seg--history");
+    const from = seg ? seg.getBoundingClientRect() : null;
+    const pad = 6;
+    const width = panelEl.offsetWidth || 0;
+    let left = from ? from.right - width : rect.right - width - pad;
+    left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
+    panelEl.style.left = Math.max(pad, Math.round(left)) + "px";
+  }
+  function ensurePanel() {
+    if (panelEl && panelEl.isConnected) return panelEl;
+    panelEl = document.createElement("div");
+    panelEl.className = "bj-hist";
+    panelEl.setAttribute("role", "dialog");
+    panelEl.setAttribute("aria-label", "Edit history");
+    const head = document.createElement("div");
+    head.className = "bj-hist__head";
+    const title = document.createElement("span");
+    title.className = "bj-hist__title";
+    title.textContent = "Edit history";
+    const count = document.createElement("span");
+    count.className = "bj-hist__count";
+    head.appendChild(title);
+    head.appendChild(count);
+    panelEl.appendChild(head);
+    listEl2 = document.createElement("div");
+    listEl2.className = "bj-hist__list";
+    listEl2.setAttribute("role", "listbox");
+    panelEl.appendChild(listEl2);
+    const foot = document.createElement("div");
+    foot.className = "bj-hist__foot";
+    foot.appendChild(hintRow("edit.undo", "Undo"));
+    foot.appendChild(hintRow("edit.redo", "Redo"));
+    panelEl.appendChild(foot);
+    panelEl._count = count;
+    document.body.appendChild(panelEl);
+    return panelEl;
+  }
+  function hintRow(commandId, fallbackLabel) {
+    const row = document.createElement("span");
+    row.className = "bj-hist__hint";
+    const K = global5.Keybindings;
+    const C = global5.Commands;
+    let label = fallbackLabel;
+    let keys = "";
+    try {
+      const cmd = C && typeof C.get === "function" ? C.get(commandId) : null;
+      if (cmd && cmd.title) label = cmd.title;
+      if (K && typeof K.labelFor === "function") keys = K.labelFor(commandId) || "";
+    } catch (_) {
+    }
+    const name = document.createElement("span");
+    name.className = "bj-hist__hint-name";
+    name.textContent = label;
+    row.appendChild(name);
+    if (keys) {
+      const kbd = document.createElement("kbd");
+      kbd.className = "bj-hist__key";
+      kbd.textContent = keys;
+      row.appendChild(kbd);
+    }
+    return row;
+  }
+  function rowEl(row, index) {
+    if (row.now) {
+      const marker = document.createElement("div");
+      marker.className = "bj-hist__now";
+      marker.setAttribute("role", "option");
+      marker.setAttribute("aria-selected", "true");
+      marker.dataset.index = String(index);
+      const dot = document.createElement("span");
+      dot.className = "bj-hist__now-dot";
+      const text = document.createElement("span");
+      text.className = "bj-hist__now-text";
+      text.textContent = row.label;
+      marker.appendChild(dot);
+      marker.appendChild(text);
+      return marker;
+    }
+    const el6 = document.createElement("button");
+    el6.type = "button";
+    el6.className = "bj-hist__row" + (row.ahead ? " is-ahead" : "");
+    el6.setAttribute("role", "option");
+    el6.setAttribute("aria-selected", "false");
+    el6.dataset.index = String(index);
+    el6.dataset.direction = row.direction;
+    el6.dataset.distance = String(row.distance);
+    const label = document.createElement("span");
+    label.className = "bj-hist__label";
+    if (row.preview) {
+      label.classList.add("is-preview");
+      const sign = document.createElement("span");
+      sign.className = "bj-hist__sign is-" + (row.preview.sign === "+" ? "add" : row.preview.sign === "\u2212" ? "cut" : "swap");
+      sign.textContent = row.preview.sign;
+      label.appendChild(sign);
+      const text = document.createElement("span");
+      text.className = "bj-hist__text" + (row.preview.faded ? " is-faded" : "");
+      text.textContent = row.preview.text;
+      label.appendChild(text);
+    } else {
+      label.textContent = row.label;
+    }
+    el6.appendChild(label);
+    if (row.where) {
+      const where = document.createElement("span");
+      where.className = "bj-hist__where";
+      where.textContent = row.where;
+      el6.appendChild(where);
+    }
+    const when = document.createElement("span");
+    when.className = "bj-hist__when";
+    when.textContent = row.when || "";
+    el6.appendChild(when);
+    const tipLines = [row.label];
+    if (row.files && row.files.length > 1) tipLines.push("", ...row.files);
+    el6.setAttribute("data-tooltip", tipLines.join("\n"));
+    el6.setAttribute("aria-label", row.label + (row.where ? ", " + row.where : ""));
+    return el6;
+  }
+  function render() {
+    const H = history3();
+    if (!H) return;
+    const panel2 = ensurePanel();
+    const undo = H.getUndoStack ? H.getUndoStack() : [];
+    const redo = H.getRedoStack ? H.getRedoStack() : [];
+    rows = buildHistoryRows(undo, redo, { nameOf, now: Date.now() });
+    panel2._count.textContent = historySummary(undo.length, redo.length);
+    listEl2.textContent = "";
+    rows.forEach((row, i) => listEl2.appendChild(rowEl(row, i)));
+    if (active2 < 0 || active2 >= rows.length) active2 = rows.findIndex((r) => r.now);
+    paintActive2();
+    const now = listEl2.querySelector(".bj-hist__now");
+    if (now && typeof now.scrollIntoView === "function") {
+      now.scrollIntoView({ block: "center" });
+    }
+    anchor();
+  }
+  function paintActive2() {
+    const nodes = listEl2.children;
+    for (let i = 0; i < nodes.length; i += 1) {
+      const on = i === active2;
+      nodes[i].classList.toggle("is-active", on);
+      nodes[i].setAttribute("aria-selected", on ? "true" : "false");
+    }
+    const el6 = nodes[active2];
+    if (el6 && typeof el6.scrollIntoView === "function") el6.scrollIntoView({ block: "nearest" });
+  }
+  function travelTo(index) {
+    const row = rows[index];
+    const H = history3();
+    if (!row || !H || !row.direction || !row.distance) return false;
+    const step2 = row.direction === "undo" ? H.undo : H.redo;
+    for (let i = 0; i < row.distance; i += 1) {
+      if (!step2.call(H)) break;
+    }
+    active2 = -1;
+    render();
+    if (onChanged) onChanged();
+    return true;
+  }
+  function onKeyDown(e) {
+    if (!open2) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close2({ focusStrip: true });
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      active2 = Math.max(0, Math.min(rows.length - 1, active2 + dir));
+      paintActive2();
+      return;
+    }
+    if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      active2 = e.key === "Home" ? 0 : rows.length - 1;
+      paintActive2();
+      return;
+    }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      travelTo(active2);
+    }
+  }
+  function onDocPointerDown(e) {
+    if (!open2) return;
+    const t = e.target;
+    if (panelEl && panelEl.contains(t)) return;
+    if (t && t.closest && t.closest(".bj-strip__seg--history")) return;
+    close2();
+  }
+  function onListClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest(".bj-hist__row") : null;
+    if (!btn) return;
+    e.preventDefault();
+    travelTo(Number(btn.dataset.index));
+  }
+  function bind() {
+    if (listeners) return;
+    listeners = true;
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    window.addEventListener("resize", anchor);
+    window.addEventListener("scroll", anchor, { passive: true, capture: true });
+    listEl2.addEventListener("click", onListClick);
+  }
+  function unbind() {
+    if (!listeners) return;
+    listeners = false;
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("pointerdown", onDocPointerDown, true);
+    window.removeEventListener("resize", anchor);
+    window.removeEventListener("scroll", anchor, { capture: true });
+    if (listEl2) listEl2.removeEventListener("click", onListClick);
+  }
+  function isOpen2() {
+    return open2;
+  }
+  function close2(opts) {
+    if (!open2) return false;
+    open2 = false;
+    unbind();
+    if (panelEl && panelEl.parentNode) panelEl.parentNode.removeChild(panelEl);
+    panelEl = null;
+    listEl2 = null;
+    active2 = -1;
+    if (onChanged) onChanged();
+    if (opts && opts.focusStrip) global5.CurrentEditor?.focus?.();
+    return true;
+  }
+  function openPanel(changed) {
+    const H = history3();
+    if (!H) return false;
+    const undo = H.getUndoStack ? H.getUndoStack().length : 0;
+    const redo = H.getRedoStack ? H.getRedoStack().length : 0;
+    if (!undo && !redo) return false;
+    onChanged = changed || null;
+    open2 = true;
+    ensurePanel();
+    bind();
+    active2 = -1;
+    render();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(anchor);
+    if (onChanged) onChanged();
+    return true;
+  }
+  function toggle(changed) {
+    return open2 ? (close2(), false) : openPanel(changed);
+  }
+  function refresh2() {
+    if (!open2) return;
+    const H = history3();
+    if (!H) {
+      close2();
+      return;
+    }
+    const undo = H.getUndoStack ? H.getUndoStack().length : 0;
+    const redo = H.getRedoStack ? H.getRedoStack().length : 0;
+    if (!undo && !redo) {
+      close2();
+      return;
+    }
+    render();
+  }
+
+  // js/status-strip/status-strip-view.mjs
+  var global6 = globalThis;
   var root = null;
   var segmentHost = null;
   var vimSlotEl = null;
@@ -7583,12 +8136,15 @@
     holes: 0,
     symbols: NaN,
     orca: false,
-    orcaDetail: ""
+    orcaDetail: "",
+    undoDepth: 0,
+    redoDepth: 0,
+    historyOpen: false
   };
   var detail = "standard";
   var rendered = "";
   function persist() {
-    return global5.Persist || null;
+    return global6.Persist || null;
   }
   function storedMode() {
     const p = persist();
@@ -7628,6 +8184,7 @@
   }
   function unmount() {
     close({ restore: false });
+    close2();
     if (root && root.parentNode) root.parentNode.removeChild(root);
     root = null;
     segmentHost = null;
@@ -7647,7 +8204,7 @@
     return dotEl;
   }
   function renderType(host2, text) {
-    const ed = global5.BelEditor;
+    const ed = global6.BelEditor;
     const norm2 = ed && typeof ed.normalizeType === "function" ? ed.normalizeType(text) : String(text == null ? "" : text);
     host2.textContent = "";
     if (!norm2) return;
@@ -7676,6 +8233,8 @@
       el6.setAttribute("data-tooltip", seg.title);
       el6.setAttribute("aria-label", seg.title);
     }
+    if (seg.pressed != null) el6.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
+    if (seg.pressed) el6.classList.add("is-open");
     if (seg.dot) el6.appendChild(statusDot());
     if (seg.mark) {
       const mark = document.createElement("span");
@@ -7691,18 +8250,31 @@
     return el6;
   }
   var ACTIONS = {
-    "focus-editor": () => global5.CurrentEditor?.focus?.(),
-    "goto-line": () => global5.CommandPalette?.open({ mode: "line" }),
-    "commands": () => global5.CommandPalette?.open({ mode: "commands" }),
-    "next-problem": () => global5.Commands?.run("nav.next-problem"),
-    "run-default": () => global5.Commands?.run("run.default") || global5.Commands?.run("run.file"),
-    "next-hole": () => global5.Commands?.run("nav.next-hole"),
-    "open-harpoon": () => global5.Commands?.run("prover.open-in-harpoon") || global5.Commands?.run("view.harpoon"),
-    "run": () => global5.Commands?.run("run.file")
+    "focus-editor": () => global6.CurrentEditor?.focus?.(),
+    "goto-line": () => global6.CommandPalette?.open({ mode: "line" }),
+    "commands": () => global6.CommandPalette?.open({ mode: "commands" }),
+    "next-problem": () => global6.Commands?.run("nav.next-problem"),
+    "run-default": () => global6.Commands?.run("run.default") || global6.Commands?.run("run.file"),
+    "next-hole": () => global6.Commands?.run("nav.next-hole"),
+    "open-harpoon": () => global6.Commands?.run("prover.open-in-harpoon") || global6.Commands?.run("view.harpoon"),
+    "run": () => global6.Commands?.run("run.file"),
+    "edit-history": () => openHistory()
   };
   function runAction(action) {
     const fn = ACTIONS[action];
     if (fn) fn();
+  }
+  function openHistory() {
+    toggle(syncHistory);
+    syncHistory();
+  }
+  function syncHistory() {
+    const H = global6.EditHistory;
+    setEditorState({
+      undoDepth: H && H.getUndoStack ? H.getUndoStack().length : 0,
+      redoDepth: H && H.getRedoStack ? H.getRedoStack().length : 0,
+      historyOpen: isOpen2()
+    });
   }
   function paint() {
     frame = 0;
@@ -7710,7 +8282,7 @@
     const host2 = ensureRoot();
     if (!host2) return;
     const segments = buildSegments(state, detail);
-    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone).join("|");
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "")).join("|");
     if (signature === rendered) return;
     rendered = signature;
     const els = segments.map(segmentEl);
@@ -7815,7 +8387,10 @@
       "holes",
       "symbols",
       "orca",
-      "orcaDetail"
+      "orcaDetail",
+      "undoDepth",
+      "redoDepth",
+      "historyOpen"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];
@@ -7837,20 +8412,20 @@
     schedule();
   }
   function goalAtCaret() {
-    const ed = global5.CurrentEditor;
+    const ed = global6.CurrentEditor;
     if (!ed || typeof ed.holeAtCursor !== "function") return "";
     try {
       const hit = ed.holeAtCursor();
       const goal = hit && hit.hole ? hit.hole.goal : null;
       if (!goal) return "";
-      const norm2 = global5.BelEditor && typeof global5.BelEditor.normalizeType === "function" ? global5.BelEditor.normalizeType(String(goal)) : String(goal);
+      const norm2 = global6.BelEditor && typeof global6.BelEditor.normalizeType === "function" ? global6.BelEditor.normalizeType(String(goal)) : String(goal);
       return norm2;
     } catch (_) {
       return "";
     }
   }
   function seedFromEditor() {
-    const ed = global5.CurrentEditor;
+    const ed = global6.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     if (!view) {
       setEditorState({ hasFile: false, line: NaN, col: NaN, selChars: 0, selLines: 0, goal: "" });
@@ -7894,10 +8469,11 @@
     root.dataset.detail = detail;
     seedFromEditor();
     refreshProofState();
+    syncHistory();
     paint();
   }
   function refreshProofState() {
-    const ed = global5.CurrentEditor;
+    const ed = global6.CurrentEditor;
     if (!ed) {
       setEditorState({ holes: 0, symbols: NaN, goal: "" });
       return;
@@ -7939,13 +8515,13 @@
   function init2() {
     if (inited || typeof document === "undefined") return;
     inited = true;
-    global5.addEventListener("beljar:hole-goals-updated", refreshProofState);
-    global5.addEventListener("beljar:file-lint", onLint);
-    global5.addEventListener("beljar:keybindings-changed", apply);
+    global6.addEventListener("beljar:hole-goals-updated", refreshProofState);
+    global6.addEventListener("beljar:file-lint", onLint);
+    global6.addEventListener("beljar:keybindings-changed", apply);
     document.addEventListener("click", onClick, true);
     apply();
   }
-  global5.StatusStrip = {
+  global6.StatusStrip = {
     init: init2,
     apply,
     setEditorState,
@@ -7990,6 +8566,19 @@
     lastCommandLine: lastEntry,
     closeCommandLine: close,
     setOrca,
+    /**
+     * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
+     * never polls the history: a widget that counts something has to be told when
+     * the count changes, or it shows a stale number until the caret happens to
+     * move.
+     */
+    setHistoryDepth: (undoDepth, redoDepth) => {
+      setEditorState({ undoDepth: undoDepth || 0, redoDepth: redoDepth || 0 });
+      refresh2();
+    },
+    openHistory,
+    closeHistory: close2,
+    isHistoryOpen: isOpen2,
     isMounted: () => mounted,
     element: () => root,
     _pure: { buildSegments, isResting }
@@ -8027,7 +8616,7 @@
   }
 
   // js/ui/keybindings.mjs
-  var global6 = globalThis;
+  var global7 = globalThis;
   var IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var DEFAULTS = [];
   var BY_ID = /* @__PURE__ */ Object.create(null);
@@ -8061,7 +8650,7 @@
   var globalHandlers = /* @__PURE__ */ Object.create(null);
   var listening = false;
   function persistApi() {
-    return global6.Persist || null;
+    return global7.Persist || null;
   }
   var scopeDefsCache = /* @__PURE__ */ Object.create(null);
   var scopeDefsVersion = -1;
@@ -8092,10 +8681,10 @@
   }
   function notifyChanged() {
     try {
-      if (typeof global6.CustomEvent === "function") {
-        global6.dispatchEvent(new global6.CustomEvent("beljar:keybindings-changed", { detail: {} }));
-      } else if (typeof global6.dispatchEvent === "function") {
-        global6.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
+      if (typeof global7.CustomEvent === "function") {
+        global7.dispatchEvent(new global7.CustomEvent("beljar:keybindings-changed", { detail: {} }));
+      } else if (typeof global7.dispatchEvent === "function") {
+        global7.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
       }
     } catch (_) {
     }
@@ -8200,7 +8789,7 @@
   function list2(isMac) {
     syncDefaults();
     var mac = isMac != null ? isMac : IS_MAC;
-    var rows = DEFAULTS.map(function(def) {
+    var rows2 = DEFAULTS.map(function(def) {
       var spec = resolve(def.id, mac);
       return {
         id: def.id,
@@ -8213,7 +8802,7 @@
         isEmpty: !spec
       };
     });
-    rows.sort(function(a, b) {
+    rows2.sort(function(a, b) {
       var sa = SECTION_ORDER.indexOf(a.section);
       var sb = SECTION_ORDER.indexOf(b.section);
       if (sa < 0) sa = SECTION_ORDER.length;
@@ -8221,7 +8810,7 @@
       if (sa !== sb) return sa - sb;
       return a.title.localeCompare(b.title);
     });
-    return rows;
+    return rows2;
   }
   function isBrowserReserved(spec) {
     var n = normalizeSpec(spec);
@@ -8475,12 +9064,12 @@
     }
     if (listening) return;
     listening = true;
-    global6.addEventListener("keydown", onGlobalKeydown, true);
+    global7.addEventListener("keydown", onGlobalKeydown, true);
   }
   function setGlobalHandler(id, fn) {
     globalHandlers[id] = fn;
   }
-  global6.Keybindings = {
+  global7.Keybindings = {
     DEFAULTS,
     IS_MAC,
     has: has2,
@@ -8526,14 +9115,14 @@
       RESERVED
     }
   };
-  global6.BelJarKeybindings = global6.Keybindings;
+  global7.BelJarKeybindings = global7.Keybindings;
 
   // js/ui/perf-hud.mjs
-  var global7 = globalThis;
+  var global8 = globalThis;
   var panel = null;
   var timer = null;
   function perf() {
-    return global7.Perf || null;
+    return global8.Perf || null;
   }
   function formatBreakdown(bd) {
     if (!bd || !bd.phases) return "(no edit trace yet \u2014 type in the editor)";
@@ -8546,7 +9135,7 @@
     }
     return lines.join("\n");
   }
-  function render() {
+  function render2() {
     if (!panel) return;
     var p = perf();
     if (!p) {
@@ -8555,7 +9144,7 @@
     }
     panel.textContent = formatBreakdown(p.lastEditBreakdown());
   }
-  function ensurePanel() {
+  function ensurePanel2() {
     if (panel) return panel;
     panel = document.createElement("pre");
     panel.id = "beljar-perf-hud";
@@ -8581,14 +9170,14 @@
     return panel;
   }
   function enable() {
-    global7.PerfDebug = true;
-    global7.BelJarPerfDebug = global7.PerfDebug;
+    global8.PerfDebug = true;
+    global8.BelJarPerfDebug = global8.PerfDebug;
     var p = perf();
     if (p) p.enabled = true;
-    ensurePanel();
-    render();
+    ensurePanel2();
+    render2();
     if (timer) clearInterval(timer);
-    timer = setInterval(render, 500);
+    timer = setInterval(render2, 500);
     if (console.info) console.info("[beljar-perf] HUD enabled \u2014 Perf.lastEditBreakdown() / exportEvents()");
     return p;
   }
@@ -8601,11 +9190,11 @@
     panel = null;
     var p = perf();
     if (p) p.enabled = false;
-    global7.PerfDebug = false;
-    global7.BelJarPerfDebug = global7.PerfDebug;
+    global8.PerfDebug = false;
+    global8.BelJarPerfDebug = global8.PerfDebug;
   }
-  global7.PerfHud = { enable, disable, refresh: render };
-  global7.BelJarPerfHud = global7.PerfHud;
+  global8.PerfHud = { enable, disable, refresh: render2 };
+  global8.BelJarPerfHud = global8.PerfHud;
 
   // js/editor-src/project-paths.mjs
   function fileBase(name) {
@@ -8853,21 +9442,21 @@
     const owning = activeCfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(filePath));
     return owning.length === 1 ? owning[0] : null;
   }
-  function standaloneResult(active3) {
+  function standaloneResult(active4) {
     return {
       kind: "standalone",
       cfg: null,
-      paths: active3 ? [active3.name] : [],
-      activeIndex: active3 ? 0 : -1,
+      paths: active4 ? [active4.name] : [],
+      activeIndex: active4 ? 0 : -1,
       preludePaths: [],
-      scopeKey: active3 ? `standalone:${active3.name}` : "standalone:"
+      scopeKey: active4 ? `standalone:${active4.name}` : "standalone:"
     };
   }
   function developmentForFile(files, activeId2, getText, options = {}) {
-    const activeCfgsForDir3 = resolveActiveCfgsForDir(options);
-    const activeCfgForDir2 = resolveActiveCfgForDir(options);
-    const active3 = files.find((f) => f.id === activeId2);
-    if (!active3) {
+    const activeCfgsForDir2 = resolveActiveCfgsForDir(options);
+    const activeCfgForDir = resolveActiveCfgForDir(options);
+    const active4 = files.find((f) => f.id === activeId2);
+    if (!active4) {
       return {
         kind: "standalone",
         cfg: null,
@@ -8877,18 +9466,18 @@
         scopeKey: "standalone:"
       };
     }
-    if (/\.cfg$/i.test(String(active3.name))) {
-      const paths2 = resolveActiveChain(files, active3.name, getText);
+    if (/\.cfg$/i.test(String(active4.name))) {
+      const paths2 = resolveActiveChain(files, active4.name, getText);
       return {
         kind: "module",
-        cfg: active3.name,
+        cfg: active4.name,
         paths: paths2,
         activeIndex: -1,
         preludePaths: [],
-        scopeKey: `module:${active3.name}`
+        scopeKey: `module:${active4.name}`
       };
     }
-    if (!isSignaturePath(active3.name)) {
+    if (!isSignaturePath(active4.name)) {
       return {
         kind: "standalone",
         cfg: null,
@@ -8898,16 +9487,16 @@
         scopeKey: "standalone:"
       };
     }
-    let cfgPath = resolveOwningActiveCfg(files, active3.name, getText, activeCfgsForDir3(dirOf2(active3.name)));
-    if (!cfgPath) cfgPath = activeCfgForDir2(dirOf2(active3.name));
+    let cfgPath = resolveOwningActiveCfg(files, active4.name, getText, activeCfgsForDir2(dirOf2(active4.name)));
+    if (!cfgPath) cfgPath = activeCfgForDir(dirOf2(active4.name));
     let paths = cfgPath ? resolveActiveChain(files, cfgPath, getText) : [];
-    let activeIndex3 = paths.indexOf(active3.name);
+    let activeIndex3 = paths.indexOf(active4.name);
     if (activeIndex3 < 0) {
-      cfgPath = owningCfgForFile(files, active3.name, getText, cfgPath);
-      if (!cfgPath) return standaloneResult(active3);
+      cfgPath = owningCfgForFile(files, active4.name, getText, cfgPath);
+      if (!cfgPath) return standaloneResult(active4);
       paths = resolveActiveChain(files, cfgPath, getText);
-      activeIndex3 = paths.indexOf(active3.name);
-      if (activeIndex3 < 0) return standaloneResult(active3);
+      activeIndex3 = paths.indexOf(active4.name);
+      if (activeIndex3 < 0) return standaloneResult(active4);
     }
     return {
       kind: "module",
@@ -8924,9 +9513,9 @@
   }
   function visibilityPaths(dev) {
     if (!dev || !dev.paths.length) return [];
-    const active3 = dev.paths[dev.activeIndex >= 0 ? dev.activeIndex : dev.paths.length - 1];
+    const active4 = dev.paths[dev.activeIndex >= 0 ? dev.activeIndex : dev.paths.length - 1];
     const out = [...dev.preludePaths];
-    if (active3 && out.indexOf(active3) === -1) out.push(active3);
+    if (active4 && out.indexOf(active4) === -1) out.push(active4);
     return out;
   }
   function workspaceDevelopments(files, getText) {
@@ -9534,14 +10123,14 @@
     if (typeof raw.fileId !== "string" || !raw.fileId) return null;
     var geom = clampGeom(raw.geom);
     if (!geom) return null;
-    var anchor = raw.anchor && typeof raw.anchor === "object" ? raw.anchor : null;
-    if (!anchor) return null;
+    var anchor2 = raw.anchor && typeof raw.anchor === "object" ? raw.anchor : null;
+    if (!anchor2) return null;
     return {
       id: typeof raw.id === "string" ? raw.id : kind + ":" + raw.fileId + ":" + geom.x,
       kind,
       geom,
       fileId: raw.fileId,
-      anchor,
+      anchor: anchor2,
       followEditor: !!raw.followEditor,
       zOrder: isFinite(Number(raw.zOrder)) ? Number(raw.zOrder) : 0
     };
@@ -9604,20 +10193,20 @@
     return base;
   }
   function readWorkspace(projectId) {
-    var persist5 = P();
-    if (!persist5 || typeof persist5.readStoredWorkspace !== "function") {
+    var persist4 = P();
+    if (!persist4 || typeof persist4.readStoredWorkspace !== "function") {
       return emptyWorkspace(projectId);
     }
-    return normalizeWorkspace(persist5.readStoredWorkspace(projectId), projectId);
+    return normalizeWorkspace(persist4.readStoredWorkspace(projectId), projectId);
   }
   function writeWorkspace(snapshot, projectId) {
-    var persist5 = P();
-    if (!persist5 || typeof persist5.writeStoredWorkspace !== "function") return false;
-    var pid = projectId || (persist5.getActiveProjectId ? persist5.getActiveProjectId() : "default");
+    var persist4 = P();
+    if (!persist4 || typeof persist4.writeStoredWorkspace !== "function") return false;
+    var pid = projectId || (persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default");
     var next = normalizeWorkspace(snapshot, pid);
     next.projectId = pid;
     next.updatedAt = Date.now();
-    return persist5.writeStoredWorkspace(next, pid);
+    return persist4.writeStoredWorkspace(next, pid);
   }
   function registerProvider(name, hooks) {
     if (!name || !hooks) return;
@@ -9635,31 +10224,31 @@
       }
     }
   }
-  function mergeFloatingSnapshots(priorFloating, activeFileId3, openFileIds2, liveFloating) {
-    var open10 = openFileIds2 || [];
+  function mergeFloatingSnapshots(priorFloating, activeFileId2, openFileIds, liveFloating) {
+    var open11 = openFileIds || [];
     var live2 = Array.isArray(liveFloating) ? liveFloating : [];
     var kept = (priorFloating || []).filter(function(entry) {
-      if (!entry || entry.fileId === activeFileId3) return false;
-      if (open10.indexOf(entry.fileId) === -1) return false;
+      if (!entry || entry.fileId === activeFileId2) return false;
+      if (open11.indexOf(entry.fileId) === -1) return false;
       if (entry.kind === "graph" || entry.kind === "harpoon") return false;
       return true;
     });
     var merged = kept.concat(live2);
     return merged.filter(function(entry) {
-      return entry && open10.indexOf(entry.fileId) !== -1;
+      return entry && open11.indexOf(entry.fileId) !== -1;
     }).slice(0, MAX_FLOATING);
   }
   function collectWorkspace() {
-    var persist5 = P();
-    var pid = persist5 && persist5.getActiveProjectId ? persist5.getActiveProjectId() : "default";
+    var persist4 = P();
+    var pid = persist4 && persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default";
     var prior = readWorkspace(pid);
     var snap = emptyWorkspace(pid);
-    var openIds = persist5 && persist5.getOpenFileIds ? persist5.getOpenFileIds() : [];
-    var activeFileId3 = persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null;
-    snap.activeSidePanel = persist5 && typeof persist5.readStoredActiveSidePanel === "function" ? persist5.readStoredActiveSidePanel(pid) : null;
+    var openIds = persist4 && persist4.getOpenFileIds ? persist4.getOpenFileIds() : [];
+    var activeFileId2 = persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null;
+    snap.activeSidePanel = persist4 && typeof persist4.readStoredActiveSidePanel === "function" ? persist4.readStoredActiveSidePanel(pid) : null;
     snap.floating = [];
     collectFromProviders(snap);
-    snap.floating = mergeFloatingSnapshots(prior.floating, activeFileId3, openIds, snap.floating);
+    snap.floating = mergeFloatingSnapshots(prior.floating, activeFileId2, openIds, snap.floating);
     snap.projectId = pid;
     snap.updatedAt = Date.now();
     snap.v = SCHEMA_VERSION2;
@@ -9676,23 +10265,23 @@
     var snap = collectWorkspace();
     writeWorkspace(snap, snap.projectId);
   }
-  function filterFloatingForFile(floating, fileId, openFileIds2) {
+  function filterFloatingForFile(floating, fileId, openFileIds) {
     if (!Array.isArray(floating)) return [];
-    var open10 = openFileIds2 || [];
+    var open11 = openFileIds || [];
     return floating.filter(function(entry) {
       if (!entry || entry.fileId !== fileId) return false;
-      return open10.indexOf(entry.fileId) !== -1;
+      return open11.indexOf(entry.fileId) !== -1;
     });
   }
   function applyWorkspace(snapshot, deps) {
     deps = deps || {};
-    var persist5 = P();
-    var pid = deps.projectId || (persist5 && persist5.getActiveProjectId ? persist5.getActiveProjectId() : "default");
+    var persist4 = P();
+    var pid = deps.projectId || (persist4 && persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default");
     var ws = normalizeWorkspace(snapshot, pid);
     if (restoredForProject === pid + ":" + ws.updatedAt) return;
     restoredForProject = pid + ":" + ws.updatedAt;
-    var openIds = deps.openFileIds || (persist5 && persist5.getOpenFileIds ? persist5.getOpenFileIds() : []);
-    var activeFileId3 = deps.activeFileId || (persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null);
+    var openIds = deps.openFileIds || (persist4 && persist4.getOpenFileIds ? persist4.getOpenFileIds() : []);
+    var activeFileId2 = deps.activeFileId || (persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null);
     if (typeof deps.applySidePanel === "function" && ws.activeSidePanel) {
       deps.applySidePanel(ws.activeSidePanel);
     }
@@ -9706,14 +10295,14 @@
       }
     }
     if (typeof deps.restoreFloating === "function") {
-      var floats = filterFloatingForFile(ws.floating, activeFileId3, openIds);
+      var floats = filterFloatingForFile(ws.floating, activeFileId2, openIds);
       deps.restoreFloating(floats, deps);
     }
   }
   function resetWorkspaceState2(projectId) {
-    var persist5 = P();
-    if (persist5 && typeof persist5.resetStoredWorkspace === "function") {
-      persist5.resetStoredWorkspace(projectId);
+    var persist4 = P();
+    if (persist4 && typeof persist4.resetStoredWorkspace === "function") {
+      persist4.resetStoredWorkspace(projectId);
     }
     restoredForProject = null;
   }
@@ -9743,7 +10332,18 @@
   // js/workspace/workspace-split.mjs
   var STACK_MQ = "(max-width: 48rem)";
   var HIT_GRACE_PX = 6;
+  var liveTeardown = null;
+  function dispose() {
+    var run3 = liveTeardown;
+    liveTeardown = null;
+    if (!run3) return;
+    try {
+      run3();
+    } catch (_) {
+    }
+  }
   function init3(opts) {
+    dispose();
     opts = opts || {};
     var workspace = document.querySelector(".workspace");
     var workspacePanes = document.querySelector(".workspace-panes");
@@ -9754,8 +10354,8 @@
     var inspectorPanel = document.querySelector(".inspector-panel");
     var libraryPanel = document.querySelector(".library-panel");
     if (!workspace || !workspacePanes || !editorPanel || !outputPanel) return null;
-    var persist5 = globalThis.Persist;
-    var ratio = persist5 && persist5.readStoredEditorSplit ? persist5.readStoredEditorSplit() : 0.5;
+    var persist4 = globalThis.Persist;
+    var ratio = persist4 && persist4.readStoredEditorSplit ? persist4.readStoredEditorSplit() : 0.5;
     var stackedMq = globalThis.matchMedia(STACK_MQ);
     var dragging = false;
     var hitStrip = document.createElement("div");
@@ -9764,7 +10364,7 @@
     hitStrip.tabIndex = -1;
     workspacePanes.appendChild(hitStrip);
     function clamp3(r) {
-      return persist5 && persist5.clampEditorSplit ? persist5.clampEditorSplit(r) : Math.min(0.82, Math.max(0.18, r));
+      return persist4 && persist4.clampEditorSplit ? persist4.clampEditorSplit(r) : Math.min(0.82, Math.max(0.18, r));
     }
     function isStacked() {
       return stackedMq.matches;
@@ -9805,8 +10405,8 @@
     function applyLayout(save) {
       ratio = clamp3(ratio);
       applySplitVars(ratio);
-      if (save && persist5 && persist5.writeStoredEditorSplit) {
-        persist5.writeStoredEditorSplit(ratio);
+      if (save && persist4 && persist4.writeStoredEditorSplit) {
+        persist4.writeStoredEditorSplit(ratio);
       }
       if (typeof opts.onResize === "function") opts.onResize();
       requestAnimationFrame(positionHitStrip);
@@ -9862,23 +10462,33 @@
       globalThis.addEventListener("pointercancel", endDrag);
     }
     hitStrip.addEventListener("pointerdown", startDrag);
-    stackedMq.addEventListener("change", function() {
+    function onStackedChange() {
       applyLayout(false);
-    });
+    }
+    stackedMq.addEventListener("change", onStackedChange);
     globalThis.addEventListener("resize", positionHitStrip);
+    var ro = null;
     if (typeof ResizeObserver !== "undefined") {
-      var ro = new ResizeObserver(function() {
+      ro = new ResizeObserver(function() {
         positionHitStrip();
       });
       ro.observe(workspacePanes);
       ro.observe(editorPanel);
     }
+    liveTeardown = function() {
+      endDrag();
+      hitStrip.removeEventListener("pointerdown", startDrag);
+      stackedMq.removeEventListener("change", onStackedChange);
+      globalThis.removeEventListener("resize", positionHitStrip);
+      if (ro) ro.disconnect();
+      if (hitStrip.parentNode) hitStrip.parentNode.removeChild(hitStrip);
+    };
     applyLayout(false);
     return { getRatio: function() {
       return ratio;
-    } };
+    }, dispose };
   }
-  var WorkspaceSplit2 = { init: init3 };
+  var WorkspaceSplit2 = { init: init3, dispose };
   var g4 = typeof window !== "undefined" ? window : globalThis;
   g4.WorkspaceSplit = WorkspaceSplit2;
   g4.BelJarWorkspaceSplit = g4.WorkspaceSplit;
@@ -9888,14 +10498,25 @@
   var HIT_GRACE_PX2 = 6;
   var DEFAULT_W = 250;
   var DEFAULT_H = 190;
+  var liveTeardown2 = null;
+  function dispose2() {
+    var run3 = liveTeardown2;
+    liveTeardown2 = null;
+    if (!run3) return;
+    try {
+      run3();
+    } catch (_) {
+    }
+  }
   function init4(opts) {
+    dispose2();
     opts = opts || {};
     var workspace = document.querySelector(".workspace");
     if (!workspace) return null;
-    var persist5 = globalThis.Persist;
-    if (persist5) {
-      DEFAULT_W = persist5.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
-      DEFAULT_H = persist5.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
+    var persist4 = globalThis.Persist;
+    if (persist4) {
+      DEFAULT_W = persist4.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
+      DEFAULT_H = persist4.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
     }
     var stackedMq = globalThis.matchMedia(STACK_MQ2);
     var resizers = [];
@@ -9912,7 +10533,7 @@
       hitStrip.setAttribute("aria-hidden", "true");
       hitStrip.tabIndex = -1;
       panel2.appendChild(hitStrip);
-      function isOpen4() {
+      function isOpen5() {
         return workspace.classList.contains(config.openClass);
       }
       function applySize(save) {
@@ -9931,7 +10552,7 @@
         return isStacked() ? config.seamStacked : config.seam;
       }
       function positionHitStrip() {
-        if (!isOpen4()) {
+        if (!isOpen5()) {
           hitStrip.style.display = "none";
           return;
         }
@@ -9992,7 +10613,7 @@
         globalThis.removeEventListener("pointercancel", endDrag);
       }
       function startDrag(ev) {
-        if (!isOpen4() || ev.button !== 0) return;
+        if (!isOpen5() || ev.button !== 0) return;
         ev.preventDefault();
         setDragging(true);
         size = pointerSize(ev);
@@ -10007,7 +10628,12 @@
           size = config.read(isStacked());
           applySize(false);
         },
-        reposition: positionHitStrip
+        reposition: positionHitStrip,
+        destroy: function() {
+          endDrag();
+          hitStrip.removeEventListener("pointerdown", startDrag);
+          if (hitStrip.parentNode) hitStrip.parentNode.removeChild(hitStrip);
+        }
       };
     }
     var panelConfigs = [
@@ -10017,13 +10643,13 @@
         cssVarW: "--explorer-w",
         cssVarH: "--explorer-h",
         read: function(stacked) {
-          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist5.readStoredExplorerHeight() : persist5.readStoredExplorerWidth();
+          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist4.readStoredExplorerHeight() : persist4.readStoredExplorerWidth();
         },
         write: function(px, stacked) {
-          if (!persist5) return;
-          if (stacked) persist5.writeStoredExplorerHeight(px);
-          else persist5.writeStoredExplorerWidth(px);
+          if (!persist4) return;
+          if (stacked) persist4.writeStoredExplorerHeight(px);
+          else persist4.writeStoredExplorerWidth(px);
         }
       },
       {
@@ -10032,13 +10658,13 @@
         cssVarW: "--inspector-w",
         cssVarH: "--inspector-h",
         read: function(stacked) {
-          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist5.readStoredInspectorHeight() : persist5.readStoredInspectorWidth();
+          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist4.readStoredInspectorHeight() : persist4.readStoredInspectorWidth();
         },
         write: function(px, stacked) {
-          if (!persist5) return;
-          if (stacked) persist5.writeStoredInspectorHeight(px);
-          else persist5.writeStoredInspectorWidth(px);
+          if (!persist4) return;
+          if (stacked) persist4.writeStoredInspectorHeight(px);
+          else persist4.writeStoredInspectorWidth(px);
         }
       },
       {
@@ -10047,13 +10673,13 @@
         cssVarW: "--library-w",
         cssVarH: "--library-h",
         read: function(stacked) {
-          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist5.readStoredLibraryHeight() : persist5.readStoredLibraryWidth();
+          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist4.readStoredLibraryHeight() : persist4.readStoredLibraryWidth();
         },
         write: function(px, stacked) {
-          if (!persist5) return;
-          if (stacked) persist5.writeStoredLibraryHeight(px);
-          else persist5.writeStoredLibraryWidth(px);
+          if (!persist4) return;
+          if (stacked) persist4.writeStoredLibraryHeight(px);
+          else persist4.writeStoredLibraryWidth(px);
         }
       },
       {
@@ -10062,17 +10688,17 @@
         cssVarW: "--harpoon-w",
         cssVarH: "--harpoon-h",
         read: function(stacked) {
-          if (!persist5) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist5.readStoredHarpoonHeight() : persist5.readStoredHarpoonWidth();
+          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
+          return stacked ? persist4.readStoredHarpoonHeight() : persist4.readStoredHarpoonWidth();
         },
         write: function(px, stacked) {
-          if (!persist5) return;
-          if (stacked) persist5.writeStoredHarpoonHeight(px);
-          else persist5.writeStoredHarpoonWidth(px);
+          if (!persist4) return;
+          if (stacked) persist4.writeStoredHarpoonHeight(px);
+          else persist4.writeStoredHarpoonWidth(px);
         }
       }
     ];
-    if (persist5) {
+    if (persist4) {
       var root2 = document.documentElement.style;
       for (var i = 0; i < panelConfigs.length; i++) {
         var cfg = panelConfigs[i];
@@ -10094,20 +10720,32 @@
     }
     stackedMq.addEventListener("change", refreshAll);
     globalThis.addEventListener("resize", repositionAll);
+    var mo = null;
     if (typeof MutationObserver !== "undefined") {
-      var mo = new MutationObserver(repositionAll);
+      mo = new MutationObserver(repositionAll);
       mo.observe(workspace, { attributes: true, attributeFilter: ["class"] });
     }
+    var ro = null;
     if (typeof ResizeObserver !== "undefined") {
-      var ro = new ResizeObserver(repositionAll);
+      ro = new ResizeObserver(repositionAll);
       for (var n = 0; n < panelConfigs.length; n++) {
         if (panelConfigs[n].panel) ro.observe(panelConfigs[n].panel);
       }
     }
+    liveTeardown2 = function() {
+      stackedMq.removeEventListener("change", refreshAll);
+      globalThis.removeEventListener("resize", repositionAll);
+      if (mo) mo.disconnect();
+      if (ro) ro.disconnect();
+      for (var d = 0; d < resizers.length; d++) {
+        if (typeof resizers[d].destroy === "function") resizers[d].destroy();
+      }
+      resizers.length = 0;
+    };
     refreshAll();
-    return { refresh: refreshAll };
+    return { refresh: refreshAll, dispose: dispose2 };
   }
-  var SidePanelResize2 = { init: init4 };
+  var SidePanelResize2 = { init: init4, dispose: dispose2 };
   var g5 = typeof window !== "undefined" ? window : globalThis;
   g5.SidePanelResize = SidePanelResize2;
   g5.BelJarSidePanelResize = g5.SidePanelResize;
@@ -10152,8 +10790,8 @@
   }
   function canActivateCfg(cfgPath, activeCfgs, allFiles, getText, resolveMembers) {
     const nextSet = memberSet(allFiles, cfgPath, getText, resolveMembers);
-    const active3 = activeCfgs || [];
-    for (const other of active3) {
+    const active4 = activeCfgs || [];
+    for (const other of active4) {
       if (other === cfgPath) return { ok: true };
       const existing = memberSet(allFiles, other, getText, resolveMembers);
       for (const p of Object.keys(nextSet)) {
@@ -10284,13 +10922,13 @@
     const m = margin;
     return x >= m && y >= m && x + w <= vw - m && y + h <= vh - m;
   }
-  function separatedFromAnchor(x, y, w, h, anchor, gap) {
-    const tr = anchor;
+  function separatedFromAnchor(x, y, w, h, anchor2, gap) {
+    const tr = anchor2;
     const g14 = gap;
     return x + w <= tr.left - g14 || x >= tr.right + g14 || y + h <= tr.top - g14 || y >= tr.bottom + g14;
   }
-  function overlapAreaWithAnchor(x, y, w, h, anchor) {
-    const tr = anchor;
+  function overlapAreaWithAnchor(x, y, w, h, anchor2) {
+    const tr = anchor2;
     const ix = Math.max(x, tr.left);
     const iy = Math.max(y, tr.top);
     const ax = Math.min(x + w, tr.right);
@@ -10501,9 +11139,9 @@
     tip.style.removeProperty("--tooltip-arrow-x");
     tip.style.removeProperty("--tooltip-arrow-y");
   }
-  function applySpout(tip, anchor, placement, x, y, tw, th, tr, arrowBox = null) {
+  function applySpout(tip, anchor2, placement, x, y, tw, th, tr, arrowBox = null) {
     clearSpout(tip);
-    if (anchor.hasAttribute("data-tooltip-no-spout")) {
+    if (anchor2.hasAttribute("data-tooltip-no-spout")) {
       tip.classList.add("tooltip-spout-none");
       return;
     }
@@ -10580,8 +11218,8 @@
     }
     tooltipLeaveGen++;
   }
-  function parseLintErrors(anchor) {
-    const raw = anchor.getAttribute("data-tooltip-errors");
+  function parseLintErrors(anchor2) {
+    const raw = anchor2.getAttribute("data-tooltip-errors");
     if (!raw) return null;
     try {
       const items3 = JSON.parse(raw);
@@ -10590,12 +11228,12 @@
       return null;
     }
   }
-  function isStackedLintErrors(anchor) {
-    return !!parseLintErrors(anchor) && !anchor.hasAttribute("data-tooltip-head");
+  function isStackedLintErrors(anchor2) {
+    return !!parseLintErrors(anchor2) && !anchor2.hasAttribute("data-tooltip-head");
   }
-  function anchorHasTooltip(anchor) {
-    if (!anchor) return false;
-    return !!(anchor.getAttribute("data-tooltip") || anchor.getAttribute("data-tooltip-tone") || anchor.hasAttribute("data-tooltip-head") || anchor.hasAttribute("data-tooltip-rich") && typeof anchor._belTooltipRich === "function" || parseLintErrors(anchor));
+  function anchorHasTooltip(anchor2) {
+    if (!anchor2) return false;
+    return !!(anchor2.getAttribute("data-tooltip") || anchor2.getAttribute("data-tooltip-tone") || anchor2.hasAttribute("data-tooltip-head") || anchor2.hasAttribute("data-tooltip-rich") && typeof anchor2._belTooltipRich === "function" || parseLintErrors(anchor2));
   }
   function fillDiagnosticTooltip(tip, message2, severity) {
     tip.classList.add("tooltip-inner--diagnostic", `tooltip-inner--${severity}`);
@@ -10614,11 +11252,11 @@
     frame2.append(head, body);
     tip.appendChild(frame2);
   }
-  function fillTooltipContent(tip, anchor) {
-    const text = anchor.getAttribute("data-tooltip");
-    const tone = anchor.getAttribute("data-tooltip-tone");
-    const items3 = parseLintErrors(anchor);
-    const headed = anchor.hasAttribute("data-tooltip-head");
+  function fillTooltipContent(tip, anchor2) {
+    const text = anchor2.getAttribute("data-tooltip");
+    const tone = anchor2.getAttribute("data-tooltip-tone");
+    const items3 = parseLintErrors(anchor2);
+    const headed = anchor2.hasAttribute("data-tooltip-head");
     tip.classList.remove(
       "tooltip-inner--lint-errors",
       "tooltip-inner--diagnostic",
@@ -10626,12 +11264,12 @@
       "tooltip-inner--warning",
       "tooltip-inner--rich"
     );
-    if (anchor.hasAttribute("data-tooltip-rich") && typeof anchor._belTooltipRich === "function") {
+    if (anchor2.hasAttribute("data-tooltip-rich") && typeof anchor2._belTooltipRich === "function") {
       tip.classList.add("tooltip-inner--rich");
       tip.replaceChildren();
       let frag = null;
       try {
-        frag = anchor._belTooltipRich(anchor);
+        frag = anchor2._belTooltipRich(anchor2);
       } catch (_) {
         frag = null;
       }
@@ -10676,24 +11314,24 @@
     if (!text) return;
     tip.textContent = text;
   }
-  function tooltipPreferPlacement(anchor) {
-    const raw = (anchor.getAttribute("data-tooltip-placement") || "").trim().toLowerCase();
+  function tooltipPreferPlacement(anchor2) {
+    const raw = (anchor2.getAttribute("data-tooltip-placement") || "").trim().toLowerCase();
     if (!raw) return frp().PREFERENCE_TOOLTIP;
     const side = raw === "below" ? "bottom" : raw === "above" ? "top" : raw;
     const order2 = ["bottom", "top", "right", "left"];
     if (!order2.includes(side)) return frp().PREFERENCE_TOOLTIP;
     return [side, ...order2.filter((s) => s !== side)];
   }
-  function anchorConnected(anchor) {
-    return !!(anchor && anchor.isConnected);
+  function anchorConnected(anchor2) {
+    return !!(anchor2 && anchor2.isConnected);
   }
-  function tooltipRectEl(anchor) {
-    const fn = anchor._belTooltipRectEl;
+  function tooltipRectEl(anchor2) {
+    const fn = anchor2._belTooltipRectEl;
     if (typeof fn === "function") {
-      const el6 = fn(anchor);
+      const el6 = fn(anchor2);
       if (el6 && el6.nodeType === 1 && el6.isConnected) return el6;
     }
-    return anchor;
+    return anchor2;
   }
   function clearTooltipRoot() {
     tooltipRoot.replaceChildren();
@@ -10701,8 +11339,8 @@
   function tooltipAnimatedEl() {
     return tooltipRoot.querySelector(".tooltip-stack") || tooltipRoot.querySelector(".tooltip-inner");
   }
-  function buildStackedDiagnosticTooltips(anchor) {
-    const items3 = parseLintErrors(anchor);
+  function buildStackedDiagnosticTooltips(anchor2) {
+    const items3 = parseLintErrors(anchor2);
     clearTooltipRoot();
     const stack = document.createElement("div");
     stack.className = "tooltip-stack";
@@ -10739,10 +11377,10 @@
     if (placement === "bottom") return inners[0];
     return verticallyClosestStackInner(inners, tr);
   }
-  function applyStackSpout(stack, anchor, placement, x, y, tw, th, tr) {
+  function applyStackSpout(stack, anchor2, placement, x, y, tw, th, tr) {
     const inners = [...stack.querySelectorAll(".tooltip-inner")];
     for (let i = 0; i < inners.length; i++) clearSpout(inners[i]);
-    if (anchor.hasAttribute("data-tooltip-no-spout")) {
+    if (anchor2.hasAttribute("data-tooltip-no-spout")) {
       for (let i = 0; i < inners.length; i++) inners[i].classList.add("tooltip-spout-none");
       return;
     }
@@ -10755,56 +11393,56 @@
     const target = stackSpoutTarget(inners, placement, tr);
     if (!target) return;
     const targetRect = target.getBoundingClientRect();
-    applySpout(target, anchor, placement, x, y, tw, th, tr, {
+    applySpout(target, anchor2, placement, x, y, tw, th, tr, {
       left: targetRect.left,
       top: targetRect.top,
       width: targetRect.width,
       height: targetRect.height
     });
   }
-  function layoutTooltip(anchor) {
-    if (!anchorConnected(anchor)) {
+  function layoutTooltip(anchor2) {
+    if (!anchorConnected(anchor2)) {
       hideTooltip();
       return;
     }
-    if (!anchorHasTooltip(anchor) || tooltipRoot.hidden) return;
-    const stacked = isStackedLintErrors(anchor);
+    if (!anchorHasTooltip(anchor2) || tooltipRoot.hidden) return;
+    const stacked = isStackedLintErrors(anchor2);
     let tip;
-    if (stacked) tip = buildStackedDiagnosticTooltips(anchor);
+    if (stacked) tip = buildStackedDiagnosticTooltips(anchor2);
     else {
       tip = tooltipRoot.querySelector(".tooltip-inner");
       if (!tip) {
         ensureTooltipInner();
         tip = tooltipRoot.querySelector(".tooltip-inner");
       }
-      fillTooltipContent(tip, anchor);
+      fillTooltipContent(tip, anchor2);
     }
     if (!tip) return;
     tooltipRoot.classList.add("is-measuring");
     const tw = tooltipRoot.offsetWidth;
     const th = tooltipRoot.offsetHeight;
-    const tr = tooltipRectEl(anchor).getBoundingClientRect();
+    const tr = tooltipRectEl(anchor2).getBoundingClientRect();
     const pos = frp().computePosition({
       anchor: tr,
       width: tw,
       height: th,
       margin: tooltipMargin(),
       gap: tooltipGap(),
-      preferPlacement: tooltipPreferPlacement(anchor)
+      preferPlacement: tooltipPreferPlacement(anchor2)
     });
     tooltipRoot.classList.remove("is-measuring");
     tooltipRoot.style.left = `${pos.x}px`;
     tooltipRoot.style.top = `${pos.y}px`;
-    if (stacked) applyStackSpout(tip, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
-    else applySpout(tip, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
+    if (stacked) applyStackSpout(tip, anchor2, pos.placement, pos.x, pos.y, tw, th, tr);
+    else applySpout(tip, anchor2, pos.placement, pos.x, pos.y, tw, th, tr);
     tooltipRoot.classList.add("is-visible");
   }
-  function isPlainTextTooltip(anchor) {
-    if (!anchor.getAttribute("data-tooltip")) return false;
-    if (anchor.getAttribute("data-tooltip-tone")) return false;
-    if (anchor.hasAttribute("data-tooltip-head")) return false;
-    if (anchor.hasAttribute("data-tooltip-rich")) return false;
-    if (parseLintErrors(anchor)) return false;
+  function isPlainTextTooltip(anchor2) {
+    if (!anchor2.getAttribute("data-tooltip")) return false;
+    if (anchor2.getAttribute("data-tooltip-tone")) return false;
+    if (anchor2.hasAttribute("data-tooltip-head")) return false;
+    if (anchor2.hasAttribute("data-tooltip-rich")) return false;
+    if (parseLintErrors(anchor2)) return false;
     return true;
   }
   function refreshTooltipIfAnchored(target) {
@@ -10836,22 +11474,22 @@
       tooltipRoot.appendChild(inner);
     }
   }
-  function showTooltip(anchor, opts) {
+  function showTooltip(anchor2, opts) {
     opts = opts || {};
-    if (suppressedTooltipAnchors.has(anchor)) return;
-    if (!anchorConnected(anchor)) return;
-    if (!anchorHasTooltip(anchor)) return;
+    if (suppressedTooltipAnchors.has(anchor2)) return;
+    if (!anchorConnected(anchor2)) return;
+    if (!anchorHasTooltip(anchor2)) return;
     cancelTooltipHideAnim();
-    if (tooltipAnchor === anchor && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
-      layoutTooltip(anchor);
+    if (tooltipAnchor === anchor2 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
+      layoutTooltip(anchor2);
       return;
     }
     clearTooltipRoot();
-    if (!isStackedLintErrors(anchor)) ensureTooltipInner();
+    if (!isStackedLintErrors(anchor2)) ensureTooltipInner();
     tooltipRoot.classList.remove("is-leaving");
-    tooltipAnchor = anchor;
+    tooltipAnchor = anchor2;
     tooltipRoot.hidden = false;
-    layoutTooltip(anchor);
+    layoutTooltip(anchor2);
   }
   function hideTooltip() {
     tooltipAnchor = null;
@@ -11089,7 +11727,7 @@
   }
 
   // js/ui/hint.mjs
-  var global8 = globalThis;
+  var global9 = globalThis;
   var DEFAULT_DURATION_MS = 1e4;
   var GAP_PX = 10;
   var LEAVE_MS = 160;
@@ -11133,29 +11771,29 @@
     }
   }
   function releaseTooltip() {
-    if (anchorEl && global8.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
+    if (anchorEl && global9.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
   }
   function suppressTooltip() {
-    if (anchorEl && global8.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
-    if (anchorEl && global8.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
+    if (anchorEl && global9.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
+    if (anchorEl && global9.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
   }
   function progressBar() {
     return rootEl && rootEl.querySelector(".hint-progress-bar");
   }
   function freezeProgressBar() {
-    const bar = progressBar();
-    if (!bar) return;
-    const t = getComputedStyle(bar).transform;
-    bar.style.animation = "none";
-    bar.style.transition = "none";
-    bar.style.transform = t && t !== "none" ? t : "scaleX(0)";
+    const bar2 = progressBar();
+    if (!bar2) return;
+    const t = getComputedStyle(bar2).transform;
+    bar2.style.animation = "none";
+    bar2.style.transition = "none";
+    bar2.style.transform = t && t !== "none" ? t : "scaleX(0)";
   }
   function clearProgressBarFreeze() {
-    const bar = progressBar();
-    if (!bar) return;
-    bar.style.removeProperty("animation");
-    bar.style.removeProperty("transition");
-    bar.style.removeProperty("transform");
+    const bar2 = progressBar();
+    if (!bar2) return;
+    bar2.style.removeProperty("animation");
+    bar2.style.removeProperty("transition");
+    bar2.style.removeProperty("transform");
   }
   function ensureDom() {
     if (rootEl) return true;
@@ -11301,11 +11939,11 @@
   function show(opts) {
     const o = opts && typeof opts === "object" ? opts : {};
     const id = o.id != null ? String(o.id) : null;
-    const anchor = o.anchor;
+    const anchor2 = o.anchor;
     const text = o.text != null ? String(o.text) : "";
     const duration = typeof o.duration === "number" && o.duration > 0 ? o.duration : DEFAULT_DURATION_MS;
     const once = o.once !== false;
-    if (!anchor || !text) return false;
+    if (!anchor2 || !text) return false;
     if (once && id && wasDismissed(id)) return false;
     if (!ensureDom()) return false;
     if (visible || dismissing) {
@@ -11313,7 +11951,7 @@
       finishHide();
     }
     activeId = id;
-    anchorEl = anchor;
+    anchorEl = anchor2;
     actionFn = typeof o.onClick === "function" ? o.onClick : null;
     if (cardEl) {
       if (actionFn) cardEl.classList.add("is-action");
@@ -11340,7 +11978,7 @@
     if (!visible || dismissing) return;
     place();
   }
-  global8.Hint = {
+  global9.Hint = {
     show,
     dismiss,
     wasDismissed,
@@ -11350,11 +11988,11 @@
       return activeId === String(id);
     }
   };
-  global8.BelJarHint = global8.Hint;
+  global9.BelJarHint = global9.Hint;
 
   // js/ui/menu.mjs
-  var global9 = globalThis;
-  var FRP = global9.FloatingRectPlacement;
+  var global10 = globalThis;
+  var FRP = global10.FloatingRectPlacement;
   var MARGIN = FRP.DEFAULT_MARGIN;
   var customRowTypes = /* @__PURE__ */ Object.create(null);
   var allControllers = /* @__PURE__ */ new Set();
@@ -11420,13 +12058,13 @@
     const SUBMENU_OPEN_DELAY_MS = 90;
     const MENU_ITEM_TIP_DELAY_MS = 300;
     function hideMenuTooltips() {
-      const T = global9.Tooltips;
+      const T = global10.Tooltips;
       if (T && T.hide) T.hide();
     }
     function bindMenuItemTooltip(btn, item) {
       const text = item.tooltip;
       if (!text) return;
-      const T = global9.Tooltips;
+      const T = global10.Tooltips;
       if (!T) return;
       let timer2 = null;
       btn.addEventListener("mouseenter", () => {
@@ -11452,15 +12090,15 @@
       });
     }
     const controller = { menuRoot };
-    function isOpen4() {
+    function isOpen5() {
       return openMenus.length > 0;
     }
     function rootAnchor() {
       return rootAnchorEl;
     }
-    function anchorRect(anchor) {
-      if (anchor instanceof Element) return anchor.getBoundingClientRect();
-      return FRP.normalizeAnchor(anchor);
+    function anchorRect(anchor2) {
+      if (anchor2 instanceof Element) return anchor2.getBoundingClientRect();
+      return FRP.normalizeAnchor(anchor2);
     }
     function submenuPlacementAnchor(anchorRowEl) {
       const parentMenuEl = anchorRowEl.closest(".menu");
@@ -11486,14 +12124,14 @@
       }
       return { anchorRef, align };
     }
-    function layoutMenuEl(menuEl, anchor, side, align, isSubmenu) {
+    function layoutMenuEl(menuEl, anchor2, side, align, isSubmenu) {
       let ar;
-      if (isSubmenu && anchor instanceof Element) {
-        const placed = submenuPlacementAnchor(anchor);
+      if (isSubmenu && anchor2 instanceof Element) {
+        const placed = submenuPlacementAnchor(anchor2);
         ar = placed.anchorRef;
         align = placed.align;
       } else {
-        ar = anchorRect(anchor);
+        ar = anchorRect(anchor2);
       }
       const alreadyVisible = menuEl.classList.contains("is-visible");
       if (!alreadyVisible) {
@@ -11941,15 +12579,15 @@
         focusMenuItem(menuEl, 0);
       });
     }
-    function open10(opts) {
+    function open11(opts) {
       closeOtherControllers();
       const items3 = opts.items;
-      const anchor = opts.anchor;
+      const anchor2 = opts.anchor;
       const side = opts.side;
       const align = opts.align ?? "start";
       const launch = () => {
         rootOnClose = opts.onClose || null;
-        rootAnchorEl = anchor instanceof Element ? anchor : null;
+        rootAnchorEl = anchor2 instanceof Element ? anchor2 : null;
         const menuEl = buildMenu(items3, 0);
         if (side === "bottom") {
           menuEl.classList.add("is-drop-down");
@@ -11961,13 +12599,13 @@
         openMenus.push({
           el: menuEl,
           level: 0,
-          anchorRef: anchor,
+          anchorRef: anchor2,
           triggerEl: null,
           side,
           align,
           isSubmenu: false
         });
-        layoutMenuEl(menuEl, anchor, side, align, false);
+        layoutMenuEl(menuEl, anchor2, side, align, false);
         setActiveController(controller);
         rovingTabIndexForPanel(menuEl);
         focusMenuItem(menuEl, 0);
@@ -11982,7 +12620,7 @@
     function openContext(opts) {
       const x = opts.x;
       const y = opts.y;
-      open10({
+      open11({
         anchor: { left: x, right: x, top: y, bottom: y },
         side: opts.side || "bottom",
         align: opts.align || "start",
@@ -12016,11 +12654,11 @@
       if (activeController === controller) setActiveController(null);
       forceCloseSync();
     }
-    controller.open = open10;
+    controller.open = open11;
     controller.openContext = openContext;
     controller.bindContextMenu = bindContextMenu;
     controller.closeAll = closeAll3;
-    controller.isOpen = isOpen4;
+    controller.isOpen = isOpen5;
     controller.rootAnchor = rootAnchor;
     controller.relayoutAll = relayoutAll;
     controller.forceCloseSync = forceCloseSync;
@@ -12031,9 +12669,9 @@
   var defaultRoot = document.getElementById("menu-root");
   var defaultMenu = defaultRoot ? createMenuController(defaultRoot) : null;
   var dialogMenuControllers = /* @__PURE__ */ new WeakMap();
-  function menuControllerForAnchor(anchor) {
-    if (!(anchor instanceof Element)) return defaultMenu;
-    const dlg = anchor.closest("dialog.bj-dialog[open]");
+  function menuControllerForAnchor(anchor2) {
+    if (!(anchor2 instanceof Element)) return defaultMenu;
+    const dlg = anchor2.closest("dialog.bj-dialog[open]");
     if (!dlg) return defaultMenu;
     let ctrl = dialogMenuControllers.get(dlg);
     if (ctrl) return ctrl;
@@ -12055,10 +12693,10 @@
     }, { once: true });
     return ctrl;
   }
-  global9.Menu = {
+  global10.Menu = {
     open(opts) {
-      const anchor = opts && opts.anchor;
-      const ctrl = menuControllerForAnchor(anchor instanceof Element ? anchor : null);
+      const anchor2 = opts && opts.anchor;
+      const ctrl = menuControllerForAnchor(anchor2 instanceof Element ? anchor2 : null);
       if (ctrl) ctrl.open(opts);
     },
     openContext(opts) {
@@ -12085,7 +12723,7 @@
   };
 
   // js/ui/command-palette.mjs
-  var global10 = globalThis;
+  var global11 = globalThis;
   function fuzzyScore(query2, text) {
     if (!query2) return { score: 0, positions: [] };
     const t = String(text || "");
@@ -12250,7 +12888,7 @@
   }
   var IS_MAC2 = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var ui = null;
-  var isOpen2 = false;
+  var isOpen3 = false;
   var flatItems = [];
   var activeIndex = 0;
   var restoreFocusTo = null;
@@ -12258,7 +12896,7 @@
   function buildUi() {
     const backdrop = document.createElement("div");
     backdrop.className = "bel-palette-backdrop";
-    backdrop.addEventListener("pointerdown", close2);
+    backdrop.addEventListener("pointerdown", close3);
     const panel2 = document.createElement("div");
     panel2.className = "bel-palette";
     panel2.setAttribute("role", "dialog");
@@ -12308,7 +12946,7 @@
         runActive();
       } else if (e.key === "Escape") {
         e.preventDefault();
-        close2();
+        close3();
       } else if (e.key === "Tab") {
         e.preventDefault();
       }
@@ -12353,7 +12991,7 @@
         shortcut,
         section: "Modes",
         run: () => {
-          open2({ mode: h.prefix === "" ? "anywhere" : h.prefix === ">" ? "commands" : h.prefix === "@" ? "symbols" : h.prefix === "%" ? "search" : h.prefix === ":" ? "line" : h.prefix === "!" ? "problems" : h.prefix === "/" ? "library" : "help" });
+          open3({ mode: h.prefix === "" ? "anywhere" : h.prefix === ">" ? "commands" : h.prefix === "@" ? "symbols" : h.prefix === "%" ? "search" : h.prefix === ":" ? "line" : h.prefix === "!" ? "problems" : h.prefix === "/" ? "library" : "help" });
         }
       };
     });
@@ -12369,7 +13007,7 @@
       detail: "Current file",
       mono: false,
       run: () => {
-        const ed = global10.CurrentEditor;
+        const ed = global11.CurrentEditor;
         if (!ed || typeof ed.getView !== "function") return;
         const view = ed.getView();
         if (!view) return;
@@ -12525,8 +13163,8 @@
     }
     const n = flatItems.length;
     activeIndex = (index % n + n) % n;
-    const rows = ui.list.querySelectorAll(".bel-palette-item");
-    rows.forEach((row) => {
+    const rows2 = ui.list.querySelectorAll(".bel-palette-item");
+    rows2.forEach((row) => {
       const on = Number(row.getAttribute("data-index")) === activeIndex;
       row.classList.toggle("is-active", on);
       row.setAttribute("aria-selected", on ? "true" : "false");
@@ -12540,23 +13178,23 @@
   function runActive() {
     const item = flatItems[activeIndex];
     if (!item) return;
-    close2();
+    close3();
     try {
       item.run();
     } catch (err) {
-      if (global10.console && console.error) console.error("[palette]", err);
-      if (global10.Toasts && global10.Toasts.warn) {
+      if (global11.console && console.error) console.error("[palette]", err);
+      if (global11.Toasts && global11.Toasts.warn) {
         const msg = err && err.message ? String(err.message) : String(err);
-        global10.Toasts.warn("Command failed: " + msg);
+        global11.Toasts.warn("Command failed: " + msg);
       }
     }
   }
-  function open2(opts) {
+  function open3(opts) {
     let mode = "anywhere";
     if (opts && opts.mode && MODE_PREFIX[opts.mode] != null) mode = opts.mode;
     if (!ui) buildUi();
     restoreFocusTo = document.activeElement;
-    isOpen2 = true;
+    isOpen3 = true;
     ui.backdrop.classList.add("is-open");
     ui.panel.classList.add("is-open");
     ui.input.value = MODE_PREFIX[mode];
@@ -12568,18 +13206,18 @@
     } catch (_) {
     }
   }
-  function close2() {
-    if (!ui || !isOpen2) return;
-    isOpen2 = false;
+  function close3() {
+    if (!ui || !isOpen3) return;
+    isOpen3 = false;
     ui.backdrop.classList.remove("is-open");
     ui.panel.classList.remove("is-open");
     const back = restoreFocusTo;
     restoreFocusTo = null;
     if (back && typeof back.focus === "function" && document.contains(back)) back.focus();
   }
-  function toggle(opts) {
-    if (isOpen2) close2();
-    else open2(opts);
+  function toggle2(opts) {
+    if (isOpen3) close3();
+    else open3(opts);
   }
   function runCommandEntry() {
     var style = "";
@@ -12592,36 +13230,47 @@
     var line = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
     if (line && style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });
     if (line && style === "vim") return StatusStrip.openCommandLine("");
-    return toggle({ mode: "commands" });
+    return toggle2({ mode: "commands" });
+  }
+  var fallbackKeydown = null;
+  function onFallbackKeydown(e) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const key = (e.key || "").toLowerCase();
+    if (key === "k" && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle2({ mode: "anywhere" });
+    } else if (key === "p" && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle2({ mode: "commands" });
+    } else if (key === "o" && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle2({ mode: "symbols" });
+    } else if (key === "f" && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle2({ mode: "search" });
+    }
+  }
+  function dispose3() {
+    close3();
+    if (fallbackKeydown) {
+      window.removeEventListener("keydown", fallbackKeydown, true);
+      fallbackKeydown = null;
+    }
   }
   function init5() {
+    dispose3();
     if (typeof Keybindings !== "undefined" && typeof Keybindings.initGlobals === "function") {
       Keybindings.initGlobals({
-        "nav.anywhere": () => toggle({ mode: "anywhere" }),
+        "nav.anywhere": () => toggle2({ mode: "anywhere" }),
         "tools.commands": runCommandEntry,
-        "nav.symbol": () => toggle({ mode: "symbols" }),
-        "edit.search-project": () => toggle({ mode: "search" })
+        "nav.symbol": () => toggle2({ mode: "symbols" }),
+        "edit.search-project": () => toggle2({ mode: "search" })
       });
       return;
     }
-    window.addEventListener("keydown", (e) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (!mod) return;
-      const key = (e.key || "").toLowerCase();
-      if (key === "k" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "anywhere" });
-      } else if (key === "p" && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "commands" });
-      } else if (key === "o" && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "symbols" });
-      } else if (key === "f" && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "search" });
-      }
-    }, true);
+    fallbackKeydown = onFallbackKeydown;
+    window.addEventListener("keydown", fallbackKeydown, true);
   }
   function shortcutLabelFor(idOrSpec) {
     if (typeof Keybindings !== "undefined" && Keybindings.has(idOrSpec)) {
@@ -12629,16 +13278,17 @@
     }
     return formatShortcut2(idOrSpec, IS_MAC2);
   }
-  global10.CommandPalette = {
+  global11.CommandPalette = {
     register,
+    dispose: dispose3,
     unregister: unregister2,
     setProvider,
-    open: open2,
-    close: close2,
-    toggle,
+    open: open3,
+    close: close3,
+    toggle: toggle2,
     runCommandEntry,
     init: init5,
-    isOpen: () => isOpen2,
+    isOpen: () => isOpen3,
     shortcutLabel: shortcutLabelFor,
     shortcutParts: (spec) => shortcutParts2(spec, IS_MAC2),
     listCommands,
@@ -12657,18 +13307,18 @@
   };
 
   // js/ui/floating-window.mjs
-  var global11 = globalThis;
+  var global12 = globalThis;
   var MARGIN2 = 8;
-  var open3 = /* @__PURE__ */ new Set();
+  var open4 = /* @__PURE__ */ new Set();
   var zTop = 4e3;
   function clamp2(v, lo, hi) {
     return Math.min(Math.max(v, lo), hi);
   }
   function viewportW() {
-    return typeof global11.innerWidth === "number" ? global11.innerWidth : 1024;
+    return typeof global12.innerWidth === "number" ? global12.innerWidth : 1024;
   }
   function viewportH() {
-    return typeof global11.innerHeight === "number" ? global11.innerHeight : 768;
+    return typeof global12.innerHeight === "number" ? global12.innerHeight : 768;
   }
   function makeEl(tag, cls) {
     const n = document.createElement(tag);
@@ -12684,7 +13334,7 @@
     const root2 = makeEl("div", "floating-window" + (opts.className ? " " + opts.className : ""));
     root2.style.width = width + "px";
     root2.style.height = height + "px";
-    const bar = makeEl("div", "floating-window-bar");
+    const bar2 = makeEl("div", "floating-window-bar");
     const titleEl = makeEl("span", "floating-window-title");
     setTitleContent(titleEl, opts.title);
     const barActions = makeEl("div", "floating-window-actions");
@@ -12701,7 +13351,7 @@
             btn.setAttribute("aria-pressed", on ? "true" : "false");
             const t = tip(on);
             if (t) btn.setAttribute("aria-label", t);
-            if (global11.Tooltips?.set) global11.Tooltips.set(btn, t);
+            if (global12.Tooltips?.set) global12.Tooltips.set(btn, t);
           };
           setPressed(!!act.pressed);
           if (act.ref) act.ref.setPressed = setPressed;
@@ -12713,11 +13363,11 @@
           });
         } else {
           if (act.label) btn.setAttribute("aria-label", act.label);
-          if (typeof act.tooltip === "function" && global11.Tooltips?.setRich) {
-            global11.Tooltips.setRich(btn, act.tooltip, act.label);
+          if (typeof act.tooltip === "function" && global12.Tooltips?.setRich) {
+            global12.Tooltips.setRich(btn, act.tooltip, act.label);
             btn.classList.add("floating-window-action--info");
-          } else if (global11.Tooltips?.set && act.label) {
-            global11.Tooltips.set(btn, act.label);
+          } else if (global12.Tooltips?.set && act.label) {
+            global12.Tooltips.set(btn, act.label);
           }
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -12732,12 +13382,12 @@
     closeBtn2.type = "button";
     closeBtn2.setAttribute("aria-label", "Close");
     closeBtn2.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-    bar.append(titleEl, barActions, closeBtn2);
+    bar2.append(titleEl, barActions, closeBtn2);
     const body = makeEl("div", "floating-window-body");
     if (opts.content) body.appendChild(opts.content);
     const grip = makeEl("div", "floating-window-grip");
     grip.setAttribute("aria-hidden", "true");
-    root2.append(bar, body, grip);
+    root2.append(bar2, body, grip);
     document.body.appendChild(root2);
     let x = typeof opts.x === "number" ? opts.x : Math.round((viewportW() - width) / 2);
     let y = typeof opts.y === "number" ? opts.y : Math.round(viewportH() * 0.18);
@@ -12779,13 +13429,13 @@
     function onDragUp() {
       if (!dragP) return;
       dragP = null;
-      global11.removeEventListener("pointermove", onDragMove);
-      global11.removeEventListener("pointerup", onDragUp);
-      global11.removeEventListener("pointercancel", onDragUp);
+      global12.removeEventListener("pointermove", onDragMove);
+      global12.removeEventListener("pointerup", onDragUp);
+      global12.removeEventListener("pointercancel", onDragUp);
       document.body.classList.remove("floating-window-dragging");
       notifyGeometryChange();
     }
-    bar.addEventListener("pointerdown", (e) => {
+    bar2.addEventListener("pointerdown", (e) => {
       if (e.target === closeBtn2 || closeBtn2.contains(e.target)) return;
       for (const b of actionBtns) {
         if (e.target === b || b.contains(e.target)) return;
@@ -12793,9 +13443,9 @@
       if (e.button !== 0) return;
       dragP = { px: e.clientX, py: e.clientY, startX: x, startY: y };
       document.body.classList.add("floating-window-dragging");
-      global11.addEventListener("pointermove", onDragMove);
-      global11.addEventListener("pointerup", onDragUp);
-      global11.addEventListener("pointercancel", onDragUp);
+      global12.addEventListener("pointermove", onDragMove);
+      global12.addEventListener("pointerup", onDragUp);
+      global12.addEventListener("pointercancel", onDragUp);
       e.preventDefault();
     });
     let rez = null;
@@ -12810,9 +13460,9 @@
     function onRezUp() {
       if (!rez) return;
       rez = null;
-      global11.removeEventListener("pointermove", onRezMove);
-      global11.removeEventListener("pointerup", onRezUp);
-      global11.removeEventListener("pointercancel", onRezUp);
+      global12.removeEventListener("pointermove", onRezMove);
+      global12.removeEventListener("pointerup", onRezUp);
+      global12.removeEventListener("pointercancel", onRezUp);
       document.body.classList.remove("floating-window-resizing");
       notifyGeometryChange();
     }
@@ -12820,21 +13470,21 @@
       if (e.button !== 0) return;
       rez = { px: e.clientX, py: e.clientY, startW: root2.offsetWidth, startH: root2.offsetHeight };
       document.body.classList.add("floating-window-resizing");
-      global11.addEventListener("pointermove", onRezMove);
-      global11.addEventListener("pointerup", onRezUp);
-      global11.addEventListener("pointercancel", onRezUp);
+      global12.addEventListener("pointermove", onRezMove);
+      global12.addEventListener("pointerup", onRezUp);
+      global12.addEventListener("pointercancel", onRezUp);
       e.preventDefault();
       e.stopPropagation();
     });
     let closed = false;
-    function close4() {
+    function close5() {
       if (closed) return;
       closed = true;
       onDragUp();
       onRezUp();
       root2.removeEventListener("pointerdown", raise, true);
       if (root2.parentNode) root2.parentNode.removeChild(root2);
-      open3.delete(handle);
+      open4.delete(handle);
       if (typeof opts.onClose === "function") {
         try {
           opts.onClose();
@@ -12842,7 +13492,7 @@
         }
       }
     }
-    closeBtn2.addEventListener("click", close4);
+    closeBtn2.addEventListener("click", close5);
     function setTitleContent(target, title) {
       target.textContent = "";
       if (title == null) return;
@@ -12852,7 +13502,7 @@
     const handle = {
       el: root2,
       body,
-      close: close4,
+      close: close5,
       getGeometry,
       setContent(node) {
         body.textContent = "";
@@ -12863,16 +13513,16 @@
       },
       raise
     };
-    open3.add(handle);
+    open4.add(handle);
     return handle;
   }
   function closeAll() {
-    for (const h of [...open3]) h.close();
+    for (const h of [...open4]) h.close();
   }
-  global11.FloatingWindow = { open: openWindow, closeAll };
+  global12.FloatingWindow = { open: openWindow, closeAll };
 
   // js/ui/available-macros.mjs
-  var global12 = globalThis;
+  var global13 = globalThis;
   var RESERVED_MARK = "*";
   var INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
   function aboutFragment() {
@@ -12909,7 +13559,7 @@
     const usable = (r) => r.substitute && r.substitute !== "\u2014" && (!r.subStyle || r.subStyle === style);
     const live2 = facts.rows.filter(usable);
     const dead = facts.rows.filter((r) => !usable(r));
-    const rows = live2.map((r) => ({
+    const rows2 = live2.map((r) => ({
       id: "reserved:" + r.chord,
       // What the chord would have done. Emacs' own meaning only where Emacs is the
       // style — `kill-region` means nothing under Standard — otherwise the BelJar
@@ -12936,9 +13586,9 @@
     });
     return {
       name: RESERVED_MARK + " Taken by the browser",
-      rows,
+      rows: rows2,
       meta,
-      lead: rows.length ? "The browser handles these before BelJar sees them." : "Nothing BelJar binds is taken on this platform."
+      lead: rows2.length ? "The browser handles these before BelJar sees them." : "Nothing BelJar binds is taken on this platform."
     };
   }
   var NAMED_KEY = /^(Up|Down|Left|Right|Home|End|PageUp|PageDown|Esc|Escape|Enter|Return|Tab|Space|Backspace|Delete|Insert|F\d{1,2})$/i;
@@ -12984,7 +13634,7 @@
     });
   }
   function macroModel(described, styleGroups3, reserved, access, note) {
-    const rows = (described || []).filter(Boolean);
+    const rows2 = (described || []).filter(Boolean);
     const keys = [];
     const at = /* @__PURE__ */ new Map();
     const push2 = (row) => {
@@ -13011,7 +13661,7 @@
         });
       }
     }
-    for (const r of rows) {
+    for (const r of rows2) {
       const chord = liveChord(r);
       if (chord) push2({ ...r, chord });
     }
@@ -13026,7 +13676,7 @@
       name: "Command line",
       lead: access.open,
       prefix: access.prefix,
-      rows: rows.filter((r) => (r.ex || []).length)
+      rows: rows2.filter((r) => (r.ex || []).length)
     }] : [];
     const live2 = groups.filter((g14) => g14.rows.length);
     if (note && live2.length) live2[live2.length - 1].closing = note;
@@ -13050,18 +13700,18 @@
   }
   function activeStyle() {
     try {
-      const P3 = global12.Persist;
+      const P3 = global13.Persist;
       if (P3 && typeof P3.readStoredKeymapStyle === "function") return P3.readStoredKeymapStyle();
     } catch (_) {
     }
     return "default";
   }
   function describeAll() {
-    const C = global12.Commands;
+    const C = global13.Commands;
     if (!C || typeof C.describe !== "function") return [];
-    const E3 = global12.BelEditor;
+    const E3 = global13.BelEditor;
     const style = activeStyle();
-    let isMac = /Mac|iPhone|iPad/.test(global12.navigator && global12.navigator.platform || "");
+    let isMac = /Mac|iPhone|iPad/.test(global13.navigator && global13.navigator.platform || "");
     if (E3 && typeof E3.reservedChordFacts === "function") {
       try {
         isMac = !!E3.reservedChordFacts().isMac;
@@ -13083,7 +13733,7 @@
     if (shadow) {
       const tag = el("span", "bj-macros__tag", shadow.tag);
       tag.setAttribute("data-tooltip", shadow.tip);
-      if (global12.Tooltips && typeof global12.Tooltips.bind === "function") global12.Tooltips.bind(tag);
+      if (global13.Tooltips && typeof global13.Tooltips.bind === "function") global13.Tooltips.bind(tag);
       what.appendChild(tag);
     }
     r.appendChild(what);
@@ -13153,8 +13803,8 @@
     return wrap;
   }
   function styleGroups() {
-    const E3 = global12.BelEditor;
-    const C = global12.Commands;
+    const E3 = global13.BelEditor;
+    const C = global13.Commands;
     if (!E3 || typeof E3.styleMacros !== "function") return [];
     const style = activeStyle();
     const facts = reservedFacts();
@@ -13174,7 +13824,7 @@
     }));
   }
   function reservedFacts() {
-    const E3 = global12.BelEditor;
+    const E3 = global13.BelEditor;
     if (!E3 || typeof E3.reservedChordFacts !== "function") return null;
     try {
       return E3.reservedChordFacts();
@@ -13183,8 +13833,8 @@
     }
   }
   function glossFor(chord) {
-    const C = global12.Commands;
-    const KB = global12.Keybindings;
+    const C = global13.Commands;
+    const KB = global13.Keybindings;
     if (!C || !KB || typeof KB.normalizeSpec !== "function") return "";
     const spec = KB.normalizeSpec(chord);
     if (!spec) return "";
@@ -13193,13 +13843,13 @@
     return cmd ? cmd.title : "";
   }
   function lineAccess() {
-    const KB = global12.Keybindings;
+    const KB = global13.Keybindings;
     const chord = KB && typeof KB.labelFor === "function" ? KB.labelFor("cmdline.open") : "";
     return commandLineAccess(activeStyle(), chord);
   }
   function openAvailableMacros() {
     const access = lineAccess();
-    const E3 = global12.BelEditor;
+    const E3 = global13.BelEditor;
     let note = "";
     try {
       note = E3 && typeof E3.packageKeyNote === "function" ? E3.packageKeyNote(activeStyle()) : "";
@@ -13213,13 +13863,13 @@
       note
     );
     if (!countRows(groups)) {
-      if (global12.StatusStrip && global12.StatusStrip.setMessage) {
-        global12.StatusStrip.setMessage("The command list is not ready yet.");
+      if (global13.StatusStrip && global13.StatusStrip.setMessage) {
+        global13.StatusStrip.setMessage("The command list is not ready yet.");
       }
       return false;
     }
-    if (!global12.FloatingWindow || typeof global12.FloatingWindow.open !== "function") return false;
-    global12.FloatingWindow.open({
+    if (!global13.FloatingWindow || typeof global13.FloatingWindow.open !== "function") return false;
+    global13.FloatingWindow.open({
       title: "Available macros",
       className: "floating-window--macros",
       actions: [{
@@ -13235,14 +13885,14 @@
     });
     return true;
   }
-  global12.AvailableMacros = { open: openAvailableMacros };
+  global13.AvailableMacros = { open: openAvailableMacros };
 
   // js/ui/full-keyboard.mjs
-  var global13 = globalThis;
-  var active2 = false;
+  var global14 = globalThis;
+  var active3 = false;
   var listening2 = false;
   function strip() {
-    const B = global13.StatusStrip;
+    const B = global14.StatusStrip;
     return B && typeof B.setMessage === "function" ? B : null;
   }
   function say(text) {
@@ -13250,24 +13900,24 @@
     if (B) B.setMessage(text);
   }
   function isSupported() {
-    const nav = global13.navigator;
+    const nav = global14.navigator;
     return !!(nav && nav.keyboard && typeof nav.keyboard.lock === "function");
   }
   function isActive() {
-    return active2 && !!(global13.document && global13.document.fullscreenElement);
+    return active3 && !!(global14.document && global14.document.fullscreenElement);
   }
   function watchFullscreen() {
-    if (listening2 || !global13.document) return;
+    if (listening2 || !global14.document) return;
     listening2 = true;
-    global13.document.addEventListener("fullscreenchange", () => {
-      if (global13.document.fullscreenElement || !active2) return;
-      active2 = false;
+    global14.document.addEventListener("fullscreenchange", () => {
+      if (global14.document.fullscreenElement || !active3) return;
+      active3 = false;
       releaseLock();
       say("Full keyboard off.");
     });
   }
   function releaseLock() {
-    const nav = global13.navigator;
+    const nav = global14.navigator;
     if (nav && nav.keyboard && typeof nav.keyboard.unlock === "function") {
       try {
         nav.keyboard.unlock();
@@ -13280,51 +13930,51 @@
       say("This browser has no Keyboard Lock, so the reserved chords stay reserved.");
       return false;
     }
-    const el6 = global13.document && global13.document.documentElement;
+    const el6 = global14.document && global14.document.documentElement;
     if (!el6 || typeof el6.requestFullscreen !== "function") {
       say("Full keyboard needs fullscreen, which this browser will not give.");
       return false;
     }
     watchFullscreen();
     try {
-      if (!global13.document.fullscreenElement) await el6.requestFullscreen();
-      await global13.navigator.keyboard.lock();
+      if (!global14.document.fullscreenElement) await el6.requestFullscreen();
+      await global14.navigator.keyboard.lock();
     } catch (err) {
-      if (global13.document.fullscreenElement && global13.document.exitFullscreen) {
+      if (global14.document.fullscreenElement && global14.document.exitFullscreen) {
         try {
-          await global13.document.exitFullscreen();
+          await global14.document.exitFullscreen();
         } catch (_) {
         }
       }
       releaseLock();
-      active2 = false;
+      active3 = false;
       say("Full keyboard could not start: " + (err && err.message || "the browser refused."));
       return false;
     }
-    active2 = true;
+    active3 = true;
     say("Full keyboard on \u2014 Ctrl+N, Ctrl+T, Ctrl+W and the rest are yours. Hold Esc to leave.");
     return true;
   }
   async function exit() {
-    if (!active2) return false;
-    active2 = false;
+    if (!active3) return false;
+    active3 = false;
     releaseLock();
-    if (global13.document && global13.document.fullscreenElement && global13.document.exitFullscreen) {
+    if (global14.document && global14.document.fullscreenElement && global14.document.exitFullscreen) {
       try {
-        await global13.document.exitFullscreen();
+        await global14.document.exitFullscreen();
       } catch (_) {
       }
     }
     say("Full keyboard off.");
     return true;
   }
-  function toggle2() {
+  function toggle3() {
     return isActive() ? exit() : enter();
   }
-  global13.FullKeyboard = { isSupported, isActive, enter, exit, toggle: toggle2 };
+  global14.FullKeyboard = { isSupported, isActive, enter, exit, toggle: toggle3 };
 
   // js/ui/double-tap.mjs
-  var global14 = globalThis;
+  var global15 = globalThis;
   var TRIGGERS = {
     off: null,
     shift: { key: "Shift", flag: "shiftKey" },
@@ -13336,7 +13986,7 @@
   var sawOtherKey = false;
   var listening3 = false;
   function persist2() {
-    return global14.Persist || null;
+    return global15.Persist || null;
   }
   function settings() {
     const p = persist2();
@@ -13373,7 +14023,7 @@
   function blocked(e) {
     const doc2 = typeof document !== "undefined" ? document : null;
     const t = e && e.target || (doc2 ? doc2.activeElement : null);
-    const B = global14.StatusStrip;
+    const B = global15.StatusStrip;
     return !!blockReason({
       composing: !!(e && (e.isComposing || e.keyCode === 229)),
       recordingChord: !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording")),
@@ -13391,7 +14041,7 @@
     if (e.metaKey) held.push("metaKey");
     return held.some((f) => f !== flag);
   }
-  function onKeyDown(e) {
+  function onKeyDown2(e) {
     const cfg = settings();
     const trigger = TRIGGERS[cfg.trigger];
     if (!trigger || e.key !== trigger.key) {
@@ -13435,18 +14085,18 @@
     return { close: true, run: id };
   }
   function run2(id) {
-    const C = global14.Commands;
-    const P3 = global14.CommandPalette;
+    const C = global15.Commands;
+    const P3 = global15.CommandPalette;
     const paletteOpen = !!(P3 && typeof P3.isOpen === "function" && P3.isOpen());
     const action = resolveAction(id, paletteOpen);
     if (action.close && P3 && typeof P3.close === "function") P3.close();
     if (action.run && C && typeof C.run === "function") C.run(action.run);
   }
   function init6() {
-    if (listening3 || typeof global14.addEventListener !== "function") return false;
+    if (listening3 || typeof global15.addEventListener !== "function") return false;
     listening3 = true;
-    global14.addEventListener("keydown", onKeyDown, true);
-    global14.addEventListener("keyup", onKeyUp, true);
+    global15.addEventListener("keydown", onKeyDown2, true);
+    global15.addEventListener("keyup", onKeyUp, true);
     return true;
   }
   var GESTURE_TARGETS = [
@@ -13460,7 +14110,7 @@
     "view.harpoon",
     "keys.macros"
   ];
-  global14.DoubleTap = {
+  global15.DoubleTap = {
     init: init6,
     shouldFire,
     targets: () => GESTURE_TARGETS.slice(),
@@ -13477,7 +14127,7 @@
   if (typeof document !== "undefined") init6();
 
   // js/ui/scroll-fade.mjs
-  var global15 = globalThis;
+  var global16 = globalThis;
   var EPS = 1;
   function computeSides(m) {
     var axis = m.axis || "both";
@@ -13570,10 +14220,10 @@
       }
     };
   }
-  global15.ScrollFade = { attach: attach2, computeSides };
+  global16.ScrollFade = { attach: attach2, computeSides };
 
   // js/ui/text-slide.mjs
-  var global16 = globalThis;
+  var global17 = globalThis;
   var SPEED_PX_PER_S = 90;
   var MIN_SLIDE_S = 0.5;
   var SLIDE_FRAC = 0.38;
@@ -13581,7 +14231,7 @@
   function prefersFineHover2() {
     return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   }
-  function bind(el6, opts) {
+  function bind2(el6, opts) {
     if (!el6 || el6.nodeType !== 1 || el6._textSlideBound) return;
     el6._textSlideBound = true;
     opts = opts || {};
@@ -13593,7 +14243,7 @@
       while (el6.firstChild) inner.appendChild(el6.firstChild);
       el6.appendChild(inner);
     }
-    var active3 = false;
+    var active4 = false;
     var returnHandler = null;
     function measure2() {
       var overflow = inner.scrollWidth - el6.clientWidth;
@@ -13610,14 +14260,14 @@
     }
     function start() {
       if (!prefersFineHover2()) return;
-      active3 = true;
+      active4 = true;
       cancelReturn();
       inner.style.transition = "";
       inner.style.transform = "";
       if (measure2() > 1) el6.classList.add("text-slide--playing");
     }
     function stop() {
-      active3 = false;
+      active4 = false;
       if (!el6.classList.contains("text-slide--playing")) return;
       var cur = window.getComputedStyle(inner).transform;
       el6.classList.remove("text-slide--playing");
@@ -13628,7 +14278,7 @@
       returnHandler = function(e) {
         if (e.propertyName !== "transform") return;
         cancelReturn();
-        if (!active3) {
+        if (!active4) {
           inner.style.transition = "";
           inner.style.transform = "";
         }
@@ -13639,15 +14289,15 @@
     triggerEl.addEventListener("mouseleave", stop);
     if (typeof ResizeObserver !== "undefined") {
       var ro = new ResizeObserver(function() {
-        if (active3) measure2();
+        if (active4) measure2();
       });
       ro.observe(el6);
     }
   }
   function bindAll() {
-    document.querySelectorAll("[data-text-slide]").forEach(bind);
+    document.querySelectorAll("[data-text-slide]").forEach(bind2);
   }
-  global16.TextSlide = { bind, bindAll };
+  global17.TextSlide = { bind: bind2, bindAll };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bindAll);
   } else {
@@ -13678,9 +14328,9 @@
   }
   function capturingSearchInput() {
     if (typeof document === "undefined") return null;
-    const open10 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
-    for (let i = open10.length - 1; i >= 0; i--) {
-      const input2 = findSurfaceSearchInput(open10[i]);
+    const open11 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
+    for (let i = open11.length - 1; i >= 0; i--) {
+      const input2 = findSurfaceSearchInput(open11[i]);
       if (input2) return input2;
     }
     const palette = document.querySelector(".bel-palette.is-open");
@@ -13968,7 +14618,7 @@
       shell.appendChild(el2("p", "bj-prompt-dialog__note", opts.note));
     }
   }
-  function open4(opts) {
+  function open5(opts) {
     opts = opts || {};
     return new Promise((resolve2) => {
       let settled = false;
@@ -14020,7 +14670,7 @@
     buildActions,
     buildRowActions,
     appendBody,
-    open: open4
+    open: open5
   };
   var g9 = typeof window !== "undefined" ? window : globalThis;
   g9.PromptDialog = PromptDialog;
@@ -14036,7 +14686,7 @@
   function confirm(messageOrOpts, maybeOpts) {
     const opts = normalizeOpts(messageOrOpts, maybeOpts);
     const danger = opts.danger !== false;
-    return open4({
+    return open5({
       ariaLabel: opts.ariaLabel || "Confirm",
       subject: opts.subject,
       message: opts.message,
@@ -14082,7 +14732,7 @@
     if (name.indexOf(".") === -1) name += ".bel";
     return name;
   }
-  function open5(opts) {
+  function open6(opts) {
     opts = opts || {};
     const { el: el6, buildRowActions: buildRowActions2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
     const normalize2 = typeof opts.normalize === "function" ? opts.normalize : defaultNormalize;
@@ -14187,7 +14837,7 @@
     });
   }
   var NamePrompt2 = {
-    open: open5,
+    open: open6,
     normalizeBelFileName,
     defaultNormalize,
     defaultValidate,
@@ -14308,13 +14958,13 @@
   g12.BelJarConflictDialog = g12.ConflictDialog;
 
   // js/ui/name-conflicts.mjs
-  var global17 = globalThis;
+  var global18 = globalThis;
   function parentDir(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
     return i === -1 ? "" : s.slice(0, i);
   }
-  function baseName(path) {
+  function baseName2(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
     return i === -1 ? s : s.slice(i + 1);
@@ -14351,7 +15001,7 @@
   }
   function suggestNewPath(path, reservedPaths) {
     var dir = parentDir(path);
-    var base = baseName(path);
+    var base = baseName2(path);
     var stem = base;
     var ext = "";
     var dot = base.lastIndexOf(".");
@@ -14425,7 +15075,7 @@
   function emptyFolderMoveTarget(fromPrefix, destDir, existingFiles, emptyFolders) {
     var prefix = String(fromPrefix || "");
     if (!prefix) return null;
-    var folderName = baseName(prefix);
+    var folderName = baseName2(prefix);
     var to = joinPath2(destDir, folderName);
     if (to === prefix) return null;
     for (var i = 0; i < existingFiles.length; i++) {
@@ -14477,7 +15127,7 @@
         }
       }
       if (!file) return [];
-      var base = baseName(file.name);
+      var base = baseName2(file.name);
       var to = joinPath2(destDir, base);
       if (to === file.name) return [];
       moves.push({ id: file.id, from: file.name, to, text: getText(file.id) });
@@ -14495,7 +15145,7 @@
           }
         }
         if (!fileM) continue;
-        var baseM = baseName(fileM.name);
+        var baseM = baseName2(fileM.name);
         var toM = joinPath2(destDir, baseM);
         if (destNames[toM]) return [];
         destNames[toM] = true;
@@ -14517,7 +15167,7 @@
           }
         }
         if (!fileS) continue;
-        var baseS = baseName(fileS.name);
+        var baseS = baseName2(fileS.name);
         var toS = joinPath2(destDir, baseS);
         if (selDestNames[toS]) return [];
         selDestNames[toS] = true;
@@ -14527,7 +15177,7 @@
       for (var sfo = 0; sfo < selFolderPaths.length; sfo++) {
         var prefixS = String(selFolderPaths[sfo] || "");
         if (!prefixS) continue;
-        var folderNameS = baseName(prefixS);
+        var folderNameS = baseName2(prefixS);
         var underS = filesUnderPrefix(existingFiles, prefixS);
         for (var sj = 0; sj < underS.length; sj++) {
           var fS = underS[sj];
@@ -14544,7 +15194,7 @@
     if (payload.kind === "folder") {
       var prefix = String(payload.folderPath || "");
       if (!prefix) return [];
-      var folderName = baseName(prefix);
+      var folderName = baseName2(prefix);
       var under = filesUnderPrefix(existingFiles, prefix);
       for (var j = 0; j < under.length; j++) {
         var f = under[j];
@@ -14872,7 +15522,7 @@
       conflicts.push({
         kind: "folder",
         path: folderPath,
-        label: baseName(folderPath),
+        label: baseName2(folderPath),
         incoming: incomingUnder,
         existingPaths: existingUnder,
         suggestedPath: suggestNewPath(
@@ -14889,7 +15539,7 @@
         conflicts.push({
           kind: "file",
           path: entry.name,
-          label: baseName(entry.name),
+          label: baseName2(entry.name),
           entry,
           existingId: pathToId[entry.name],
           suggestedPath: suggestNewPath(entry.name, existingPaths)
@@ -14969,9 +15619,9 @@
     }
     return plan;
   }
-  global17.NameConflicts = {
+  global18.NameConflicts = {
     parentDir,
-    baseName,
+    baseName: baseName2,
     joinPath: joinPath2,
     nameConflict,
     suggestNewPath,
@@ -14991,10 +15641,10 @@
     detectMoveConflicts,
     applyMoveResolutions
   };
-  global17.BelJarNameConflicts = global17.NameConflicts;
+  global18.BelJarNameConflicts = global18.NameConflicts;
 
   // js/ui/download-zip.mjs
-  var global18 = globalThis;
+  var global19 = globalThis;
   var CRC_TABLE = (function() {
     var table = new Uint32Array(256);
     for (var n = 0; n < 256; n++) {
@@ -15122,16 +15772,16 @@
   function downloadZip(entries, fileName) {
     triggerDownload(buildZip(entries), fileName || "download.zip");
   }
-  global18.DownloadZip = {
+  global19.DownloadZip = {
     buildZip,
     triggerDownload,
     downloadTextFile,
     downloadZip
   };
-  global18.BelJarDownloadZip = global18.DownloadZip;
+  global19.BelJarDownloadZip = global19.DownloadZip;
 
   // js/ui/tree-dnd.mjs
-  var global19 = globalThis;
+  var global20 = globalThis;
   var THRESHOLD = 4;
   var AUTO_EXPAND_MS = 600;
   function attach3(container, opts) {
@@ -15291,11 +15941,11 @@
       container.removeEventListener("pointercancel", onPointerUp);
     };
   }
-  global19.TreeDnD = { attach: attach3 };
-  global19.BelJarTreeDnD = global19.TreeDnD;
+  global20.TreeDnD = { attach: attach3 };
+  global20.BelJarTreeDnD = global20.TreeDnD;
 
   // js/ui/header-search.mjs
-  var global20 = globalThis;
+  var global21 = globalThis;
   function init7(opts) {
     opts = opts || {};
     var host2 = opts.host;
@@ -15304,25 +15954,25 @@
     var header = opts.header || host2.closest(".panel-header, .inspector-header-bar");
     var openClass = opts.openClass || "is-search-open";
     var blurDelay = opts.blurDelay != null ? opts.blurDelay : 140;
-    var isOpen4 = false;
+    var isOpen5 = false;
     function emit2(name, arg) {
       if (typeof opts[name] === "function") opts[name](arg);
     }
-    function open10() {
-      if (isOpen4) return;
-      isOpen4 = true;
+    function open11() {
+      if (isOpen5) return;
+      isOpen5 = true;
       host2.classList.add("is-open");
       if (header) header.classList.add(openClass);
       input2.setAttribute("aria-expanded", "true");
       requestAnimationFrame(function() {
-        if (isOpen4) input2.focus();
+        if (isOpen5) input2.focus();
       });
       emit2("onOpen");
     }
-    function close4(force) {
-      if (!isOpen4) return;
+    function close5(force) {
+      if (!isOpen5) return;
       if (!force && input2.value) return;
-      isOpen4 = false;
+      isOpen5 = false;
       host2.classList.remove("is-open");
       if (header) header.classList.remove(openClass);
       input2.setAttribute("aria-expanded", "false");
@@ -15332,17 +15982,17 @@
       if (had) emit2("onInput", "");
       emit2("onClose");
     }
-    function toggle4() {
-      if (isOpen4) close4(true);
-      else open10();
+    function toggle5() {
+      if (isOpen5) close5(true);
+      else open11();
     }
     host2.addEventListener("mousedown", function(e) {
       if (e.target === input2) return;
       e.preventDefault();
-      if (isOpen4) input2.focus();
-      else open10();
+      if (isOpen5) input2.focus();
+      else open11();
     });
-    input2.addEventListener("focus", open10);
+    input2.addEventListener("focus", open11);
     input2.addEventListener("input", function() {
       emit2("onInput", input2.value);
     });
@@ -15353,7 +16003,7 @@
           input2.value = "";
           emit2("onInput", "");
         } else {
-          close4(true);
+          close5(true);
         }
         emit2("onEscape", e);
         return;
@@ -15364,35 +16014,35 @@
       setTimeout(function() {
         if (host2.contains(document.activeElement)) return;
         if (typeof opts.keepOpenFor === "function" && opts.keepOpenFor(document.activeElement)) return;
-        close4(false);
+        close5(false);
       }, blurDelay);
     });
     if (typeof opts.keepOpenFor === "function") {
       document.addEventListener("pointerdown", function(e) {
-        if (!isOpen4) return;
+        if (!isOpen5) return;
         if (host2.contains(e.target)) return;
         if (opts.keepOpenFor(e.target)) return;
-        close4(true);
+        close5(true);
       }, true);
     }
     return {
-      open: open10,
-      close: close4,
-      toggle: toggle4,
+      open: open11,
+      close: close5,
+      toggle: toggle5,
       isOpen: function() {
-        return isOpen4;
+        return isOpen5;
       },
       input: input2,
       host: host2
     };
   }
-  global20.HeaderSearch = { init: init7 };
-  global20.BelJarHeaderSearch = global20.HeaderSearch;
+  global21.HeaderSearch = { init: init7 };
+  global21.BelJarHeaderSearch = global21.HeaderSearch;
 
   // js/explorer/explorer-inline-name.mjs
-  var global21 = globalThis;
+  var global22 = globalThis;
   var NC = function() {
-    return global21.NameConflicts;
+    return global22.NameConflicts;
   };
   function lastSegment(path) {
     var s = String(path || "");
@@ -15502,7 +16152,7 @@
     if (target.kind === "file") return target.parentDir != null ? target.parentDir : "";
     return "";
   }
-  global21.ExplorerInlineName = {
+  global22.ExplorerInlineName = {
     lastSegment,
     parentDir: parentDir2,
     joinPath: joinPath3,
@@ -15516,13 +16166,13 @@
     resolveCreateParentFromRow,
     resolveCreateParentDir
   };
-  global21.BelJarExplorerInlineName = global21.ExplorerInlineName;
+  global22.BelJarExplorerInlineName = global22.ExplorerInlineName;
 
   // js/explorer/explorer-tree.mjs
-  var global22 = globalThis;
+  var global23 = globalThis;
   var EXPLORER_CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   function explorerFileBucket2(name) {
-    var PS = global22.ProjectSource;
+    var PS = global23.ProjectSource;
     if (PS && PS.isCfgPath(name)) return 0;
     if (PS && PS.isSignaturePath(name)) return 1;
     var low = String(name).toLowerCase();
@@ -15604,14 +16254,14 @@
     return root2;
   }
   function resolveCreateParentFromRow2(row) {
-    var IL = global22.ExplorerInlineName;
+    var IL = global23.ExplorerInlineName;
     if (IL && IL.resolveCreateParentFromRow) return IL.resolveCreateParentFromRow(row);
     if (!row) return "";
     if (row.hasAttribute("data-folder-path")) return row.getAttribute("data-folder-path") || "";
     return row.getAttribute("data-drop-zone") || "";
   }
   function resolveCreateParentDir2(target) {
-    var IL = global22.ExplorerInlineName;
+    var IL = global23.ExplorerInlineName;
     if (IL && IL.resolveCreateParentDir) return IL.resolveCreateParentDir(target);
     if (!target) return "";
     if (target.kind === "folder") return target.folderPath || "";
@@ -15655,25 +16305,25 @@
   function rowKeyEqual(a, b) {
     return a && b && a.kind === b.kind && a.key === b.key;
   }
-  function findRowIndex(rows, key) {
-    for (var i = 0; i < rows.length; i++) {
-      var rk = typeof rows[i].getAttribute === "function" ? rowKeyFromEl(rows[i]) : rows[i];
+  function findRowIndex(rows2, key) {
+    for (var i = 0; i < rows2.length; i++) {
+      var rk = typeof rows2[i].getAttribute === "function" ? rowKeyFromEl(rows2[i]) : rows2[i];
       if (rowKeyEqual(rk, key)) return i;
     }
     return -1;
   }
-  function rangeSelectVisibleRows(rows, anchorKey, endKey) {
+  function rangeSelectVisibleRows(rows2, anchorKey, endKey) {
     var fileIds = /* @__PURE__ */ new Set();
     var folderPaths = /* @__PURE__ */ new Set();
-    if (!rows.length || !endKey) return { fileIds, folderPaths };
-    var endIdx = findRowIndex(rows, endKey);
+    if (!rows2.length || !endKey) return { fileIds, folderPaths };
+    var endIdx = findRowIndex(rows2, endKey);
     if (endIdx === -1) return { fileIds, folderPaths };
-    var anchorIdx = anchorKey ? findRowIndex(rows, anchorKey) : endIdx;
+    var anchorIdx = anchorKey ? findRowIndex(rows2, anchorKey) : endIdx;
     if (anchorIdx === -1) anchorIdx = endIdx;
     var lo = Math.min(anchorIdx, endIdx);
     var hi = Math.max(anchorIdx, endIdx);
     for (var j = lo; j <= hi; j++) {
-      var rk = typeof rows[j].getAttribute === "function" ? rowKeyFromEl(rows[j]) : rows[j];
+      var rk = typeof rows2[j].getAttribute === "function" ? rowKeyFromEl(rows2[j]) : rows2[j];
       if (!rk) continue;
       if (rk.kind === "file") fileIds.add(rk.key);
       else folderPaths.add(rk.key);
@@ -15837,12 +16487,12 @@
     return bottom;
   }
   function computeRootZoneBoundary(container) {
-    var rows = container.querySelectorAll(".explorer-folder-item, .explorer-file-item");
+    var rows2 = container.querySelectorAll(".explorer-folder-item, .explorer-file-item");
     var pad = container.querySelector(".explorer-tree-root-pad");
-    if (!rows.length) {
+    if (!rows2.length) {
       return { rootTop: container.getBoundingClientRect().top, pad, tailRow: null };
     }
-    var last = rows[rows.length - 1];
+    var last = rows2[rows2.length - 1];
     var rect = last.getBoundingClientRect();
     var depth = parseInt(last.getAttribute("data-tree-depth") || "0", 10);
     var kind = last.classList.contains("explorer-file-item") ? "file" : "folder";
@@ -15853,12 +16503,12 @@
     };
   }
   function loadCollapsed(projectName) {
-    var P3 = global22.Persist;
+    var P3 = global23.Persist;
     if (!P3) return /* @__PURE__ */ new Set();
     return new Set(P3.getExplorerFold(projectName));
   }
   function saveCollapsed(projectName, collapsed) {
-    var P3 = global22.Persist;
+    var P3 = global23.Persist;
     if (!P3) return;
     P3.setExplorerFold(projectName, [].slice.call(collapsed));
   }
@@ -15897,13 +16547,13 @@
       selectedFolders.clear();
       inlineSession = session;
       if (session.parentDir) expandParentChain(session.parentDir);
-      refresh4();
+      refresh5();
     }
     function cancelInlineName() {
       if (!inlineSession) return;
       if (typeof opts.onInlineCancel === "function") opts.onInlineCancel(inlineSession);
       clearInlineSession();
-      refresh4();
+      refresh5();
     }
     function commitInlineName(rawName) {
       if (!inlineSession) return false;
@@ -15911,7 +16561,7 @@
       var ok = opts.onInlineCommit(inlineSession, rawName);
       if (ok) {
         clearInlineSession();
-        refresh4();
+        refresh5();
       } else if (inlineInputEl) {
         inlineInputEl.classList.add("is-invalid");
         inlineInputEl.focus();
@@ -15980,8 +16630,8 @@
       saveTimer3 = setTimeout(function() {
         saveTimer3 = null;
         saveCollapsed(opts.getProjectName ? opts.getProjectName() : "Untitled Project", collapsed);
-        if (global22.WorkspaceState && global22.WorkspaceState.scheduleSave) {
-          global22.WorkspaceState.scheduleSave();
+        if (global23.WorkspaceState && global23.WorkspaceState.scheduleSave) {
+          global23.WorkspaceState.scheduleSave();
         }
       }, 120);
     }
@@ -15991,7 +16641,7 @@
       else if (collapsed.has(path)) collapsed.delete(path);
       else collapsed.add(path);
       scheduleSave3();
-      refresh4();
+      refresh5();
     }
     function collapseSubtree(folderPath) {
       var files = opts.listFiles ? opts.listFiles() : [];
@@ -16007,7 +16657,7 @@
         });
       }
       scheduleSave3();
-      refresh4();
+      refresh5();
     }
     function expandSubtree(folderPath) {
       if (!folderPath) {
@@ -16020,7 +16670,7 @@
         });
       }
       scheduleSave3();
-      refresh4();
+      refresh5();
     }
     function indent(depth) {
       return 0.6 + depth * 0.75 + "rem";
@@ -16029,9 +16679,9 @@
       return [].slice.call(container.querySelectorAll(".explorer-folder-item, .explorer-file-item"));
     }
     function syncSelectionClasses() {
-      var rows = visibleRows();
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
+      var rows2 = visibleRows();
+      for (var i = 0; i < rows2.length; i++) {
+        var row = rows2[i];
         var fid = row.getAttribute("data-file-id");
         var fp = row.getAttribute("data-folder-path");
         var sel = fid ? selectedFiles.has(fid) : fp != null && selectedFolders.has(fp);
@@ -16106,9 +16756,9 @@
       var pathSet = {};
       for (var j = 0; j < folderPaths.length; j++) pathSet[folderPaths[j]] = true;
       var out = [];
-      var rows = visibleRows();
-      for (var r = 0; r < rows.length; r++) {
-        var row = rows[r];
+      var rows2 = visibleRows();
+      for (var r = 0; r < rows2.length; r++) {
+        var row = rows2[r];
         var fid = row.getAttribute("data-file-id");
         var fp = row.getAttribute("data-folder-path");
         if (fid && idSet[fid]) out.push(row);
@@ -16200,7 +16850,7 @@
             endKey: key
           };
           scheduleSave3();
-          refresh4();
+          refresh5();
           return;
         }
         applyShiftSelect(anchorKey, key);
@@ -16232,21 +16882,21 @@
       if (inlineSession) return;
       var row = e.target.closest(".explorer-folder-item, .explorer-file-item");
       if (!row || !container.contains(row)) return;
-      var rows = visibleRows();
-      var idx = rows.indexOf(row);
+      var rows2 = visibleRows();
+      var idx = rows2.indexOf(row);
       if (idx === -1) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        if (idx < rows.length - 1) focusRow(rows[idx + 1]);
+        if (idx < rows2.length - 1) focusRow(rows2[idx + 1]);
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        if (idx > 0) focusRow(rows[idx - 1]);
+        if (idx > 0) focusRow(rows2[idx - 1]);
       } else if (e.key === "Home") {
         e.preventDefault();
-        if (rows.length) focusRow(rows[0]);
+        if (rows2.length) focusRow(rows2[0]);
       } else if (e.key === "End") {
         e.preventDefault();
-        if (rows.length) focusRow(rows[rows.length - 1]);
+        if (rows2.length) focusRow(rows2[rows2.length - 1]);
       } else if (e.key === "ArrowRight") {
         var fp = row.getAttribute("data-folder-path");
         if (fp && collapsed.has(fp)) {
@@ -16390,7 +17040,7 @@
         treeEl.appendChild(btn);
       }
     }
-    function refresh4() {
+    function refresh5() {
       if (!opts.listFiles) return;
       var files = opts.listFiles();
       pruneSelection(files);
@@ -16434,8 +17084,8 @@
       clearSelection();
     }
     container.addEventListener("click", onBackgroundClick);
-    if (typeof global22.Menu !== "undefined") {
-      global22.Menu.bindContextMenu(container, function(e) {
+    if (typeof global23.Menu !== "undefined") {
+      global23.Menu.bindContextMenu(container, function(e) {
         var fileEl = e.target.closest("[data-file-id]");
         var folderEl = e.target.closest("[data-folder-path]");
         var hasSelection = selectedFiles.size + selectedFolders.size > 0;
@@ -16451,10 +17101,10 @@
       });
     }
     function zoneHighlightEls(zonePath) {
-      var rows = container.querySelectorAll(".explorer-folder-item, .explorer-file-item");
+      var rows2 = container.querySelectorAll(".explorer-folder-item, .explorer-file-item");
       var out = [];
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].getAttribute("data-drop-zone") === zonePath) out.push(rows[i]);
+      for (var i = 0; i < rows2.length; i++) {
+        if (rows2[i].getAttribute("data-drop-zone") === zonePath) out.push(rows2[i]);
       }
       return out;
     }
@@ -16494,8 +17144,8 @@
       }
       return null;
     }
-    if (typeof global22.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
-      dndDetach = global22.TreeDnD.attach(container, {
+    if (typeof global23.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
+      dndDetach = global23.TreeDnD.attach(container, {
         getDragPayload: buildDragPayload,
         resolveDrop,
         canDrop: opts.canDrop,
@@ -16544,9 +17194,9 @@
     }
     function refreshDiags() {
       if (!opts.getFileDiag) return;
-      var rows = container.querySelectorAll(".explorer-file-item[data-file-id]");
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
+      var rows2 = container.querySelectorAll(".explorer-file-item[data-file-id]");
+      for (var i = 0; i < rows2.length; i++) {
+        var row = rows2[i];
         if (row.classList.contains("is-renaming")) continue;
         var fid = row.getAttribute("data-file-id");
         var fname = row.getAttribute("data-file-name");
@@ -16561,15 +17211,15 @@
     }
     function refreshActiveAndDiags() {
       var activeId2 = opts.getActiveId ? opts.getActiveId() : null;
-      var rows = container.querySelectorAll(".explorer-file-item[data-file-id]");
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
+      var rows2 = container.querySelectorAll(".explorer-file-item[data-file-id]");
+      for (var i = 0; i < rows2.length; i++) {
+        var row = rows2[i];
         row.classList.toggle("is-active", row.getAttribute("data-file-id") === activeId2);
       }
       refreshDiags();
     }
     return {
-      refresh: refresh4,
+      refresh: refresh5,
       refreshDiags,
       setFileDiag,
       refreshActiveAndDiags,
@@ -16615,7 +17265,7 @@
           expandParentChain(parent);
           scheduleSave3();
         }
-        refresh4();
+        refresh5();
         if (sidebar.explorer.scrollActiveIntoView) {
           requestAnimationFrame(function() {
             var row = container.querySelector('.explorer-file-item[data-file-id="' + activeId2 + '"]');
@@ -16633,7 +17283,7 @@
       }
     };
   }
-  global22.Explorer = {
+  global23.Explorer = {
     buildExplorerModel,
     collectFolderPaths,
     collectSubtreeFolderPaths,
@@ -16648,10 +17298,10 @@
     sameParentFileIdsForDrag,
     init: init8
   };
-  global22.BelJarExplorer = global22.Explorer;
+  global23.BelJarExplorer = global23.Explorer;
 
   // js/library/library-suites.mjs
-  var global23 = globalThis;
+  var global24 = globalThis;
   function dirOf3(path) {
     var i = String(path || "").lastIndexOf("/");
     return i === -1 ? "" : path.slice(0, i);
@@ -16698,11 +17348,11 @@
     });
     return out;
   }
-  global23.LibrarySuites = { listActiveSuites };
-  global23.BelJarLibrarySuites = global23.LibrarySuites;
+  global24.LibrarySuites = { listActiveSuites };
+  global24.BelJarLibrarySuites = global24.LibrarySuites;
 
   // js/library/library-search.mjs
-  var global24 = globalThis;
+  var global25 = globalThis;
   var SEARCH_ICON2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
   function normalizeQuery(q) {
     return String(q || "").trim().toLowerCase();
@@ -16858,7 +17508,7 @@
       renderHit(container, hits[i], layout, onSelect);
     }
   }
-  global24.LibrarySearch = {
+  global25.LibrarySearch = {
     SEARCH_ICON: SEARCH_ICON2,
     normalizeQuery,
     metadataHay,
@@ -16866,11 +17516,11 @@
     searchEntries,
     renderResults: renderResults2
   };
-  global24.BelJarLibrarySearch = global24.LibrarySearch;
+  global25.BelJarLibrarySearch = global25.LibrarySearch;
 
   // js/explorer/explorer-search.mjs
-  var global25 = globalThis;
-  function baseName2(name) {
+  var global26 = globalThis;
+  function baseName3(name) {
     var i = String(name).lastIndexOf("/");
     return i === -1 ? String(name) : String(name).slice(i + 1);
   }
@@ -16879,7 +17529,7 @@
     return i === -1 ? "" : String(name).slice(0, i);
   }
   function extOf(name) {
-    var b = baseName2(name);
+    var b = baseName3(name);
     var d = b.lastIndexOf(".");
     return d === -1 ? "" : b.slice(d + 1).toLowerCase();
   }
@@ -16889,8 +17539,8 @@
     var input2 = opts.input;
     var ac = opts.ac;
     if (!wrap || !input2 || !ac) return null;
-    var LS = global25.LibrarySearch;
-    var HS = global25.HeaderSearch;
+    var LS = global26.LibrarySearch;
+    var HS = global26.HeaderSearch;
     var hits = [];
     var activeIndex3 = -1;
     var token = 0;
@@ -16916,7 +17566,7 @@
         byPath[f.name] = f.id;
         var entry = {
           id: f.id,
-          label: baseName2(f.name),
+          label: baseName3(f.name),
           path: f.name,
           pathLabel: dirName(f.name),
           ext: extOf(f.name) || "bel"
@@ -16992,9 +17642,9 @@
     function setActiveIndex(i) {
       if (!hits.length) return;
       activeIndex3 = (i % hits.length + hits.length) % hits.length;
-      var rows = ac.querySelectorAll(".hsearch-ac-item");
-      for (var k = 0; k < rows.length; k++) rows[k].classList.toggle("is-active", k === activeIndex3);
-      if (rows[activeIndex3]) rows[activeIndex3].scrollIntoView({ block: "nearest" });
+      var rows2 = ac.querySelectorAll(".hsearch-ac-item");
+      for (var k = 0; k < rows2.length; k++) rows2[k].classList.toggle("is-active", k === activeIndex3);
+      if (rows2[activeIndex3]) rows2[activeIndex3].scrollIntoView({ block: "nearest" });
     }
     function pick(hit) {
       if (!hit) return;
@@ -17067,11 +17717,11 @@
       }
     };
   }
-  global25.ExplorerSearch = { init: init9 };
-  global25.BelJarExplorerSearch = global25.ExplorerSearch;
+  global26.ExplorerSearch = { init: init9 };
+  global26.BelJarExplorerSearch = global26.ExplorerSearch;
 
   // js/library/library-preview.mjs
-  var global26 = globalThis;
+  var global27 = globalThis;
   var CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_INSERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
@@ -17134,8 +17784,8 @@
       return;
     }
     codeEl.className = "library-preview__code-source bel-hl-source" + (ext === "elf" ? " bel-hl-source--elf" : "");
-    if (global26.BelEditor && typeof global26.BelEditor.renderSourceInto === "function") {
-      global26.BelEditor.renderSourceInto(codeEl, text, ext);
+    if (global27.BelEditor && typeof global27.BelEditor.renderSourceInto === "function") {
+      global27.BelEditor.renderSourceInto(codeEl, text, ext);
       return;
     }
     codeEl.textContent = text;
@@ -17153,7 +17803,7 @@
     return "";
   }
   function suiteByFileForFolderChildren(children, cfgTextByLabel) {
-    var SL = global26.ExplorerSuiteLayout;
+    var SL = global27.ExplorerSuiteLayout;
     if (!SL || typeof SL.computeDirLayout !== "function") return {};
     var fileChildren = [];
     var activeCfgs = [];
@@ -17179,11 +17829,11 @@
     };
     return SL.computeDirLayout(fileChildren, activeCfgs, null, fileChildren, getText).suiteByFile;
   }
-  function open6(opts) {
+  function open7(opts) {
     opts = opts || {};
-    if (!opts.scopeFolder || typeof global26.Dialog === "undefined") return;
+    if (!opts.scopeFolder || typeof global27.Dialog === "undefined") return;
     if (activeDialog && activeDialog.open) {
-      global26.Dialog.requestDialogClose(activeDialog);
+      global27.Dialog.requestDialogClose(activeDialog);
       activeDialog = null;
     }
     var scopeFolder = opts.scopeFolder;
@@ -17198,7 +17848,7 @@
     var fileIndex = /* @__PURE__ */ Object.create(null);
     var searchFiles = [];
     var searchToken = 0;
-    var LS = global26.LibrarySearch;
+    var LS = global27.LibrarySearch;
     var treeRows = [];
     var selectedId = null;
     var loadToken = 0;
@@ -17640,7 +18290,7 @@
       }
     }
     treePane.addEventListener("keydown", handleTreeKeydown);
-    var dialogEl = global26.Dialog.createDialog({
+    var dialogEl = global27.Dialog.createDialog({
       ariaLabel: "Library preview \u2014 " + scopeLabel,
       content: shell,
       className: "bj-library-preview-dialog",
@@ -17655,7 +18305,7 @@
         document.activeElement.blur();
       }
     });
-    global26.Dialog.openDialog(dialogEl);
+    global27.Dialog.openDialog(dialogEl);
     ensureCfgTextsLoaded().then(function() {
       renderTree();
       if (selectedId && fileIndex[selectedId]) {
@@ -17669,16 +18319,16 @@
       });
     });
   }
-  function close3() {
-    if (activeDialog && global26.Dialog) {
-      global26.Dialog.requestDialogClose(activeDialog);
+  function close4() {
+    if (activeDialog && global27.Dialog) {
+      global27.Dialog.requestDialogClose(activeDialog);
     }
   }
-  global26.LibraryPreview = { open: open6, close: close3 };
-  global26.BelJarLibraryPreview = global26.LibraryPreview;
+  global27.LibraryPreview = { open: open7, close: close4 };
+  global27.BelJarLibraryPreview = global27.LibraryPreview;
 
   // js/library/library-panel.mjs
-  var global27 = globalThis;
+  var global28 = globalThis;
   var CHEVRON_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_PREVIEW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -17706,9 +18356,9 @@
     var allFileEntries = [];
     var suitesCache = [];
     var searchWrap = document.getElementById("library-search-wrap");
-    var LS = global27.LibrarySearch;
+    var LS = global28.LibrarySearch;
     function readExpandDefault() {
-      return typeof global27.Persist !== "undefined" && global27.Persist.readStoredLibraryExpandDefault();
+      return typeof global28.Persist !== "undefined" && global28.Persist.readStoredLibraryExpandDefault();
     }
     function isCategoryExpanded(foldKey, forceOpen) {
       if (forceOpen) return true;
@@ -17729,7 +18379,7 @@
         searchPending = false;
         searchToken += 1;
       }
-      render4();
+      render5();
     }
     function applyTip(el6, tip) {
       if (typeof opts.applyTip === "function") opts.applyTip(el6, tip);
@@ -17759,8 +18409,8 @@
     function refreshSuites() {
       if (typeof opts.listActiveSuites === "function") {
         suitesCache = opts.listActiveSuites();
-      } else if (global27.LibrarySuites) {
-        suitesCache = global27.LibrarySuites.listActiveSuites({
+      } else if (global28.LibrarySuites) {
+        suitesCache = global28.LibrarySuites.listActiveSuites({
           listFiles: opts.listFiles,
           getActiveCfgForDir: opts.getActiveCfgForDir
         });
@@ -17770,8 +18420,8 @@
       return suitesCache;
     }
     function openLibraryPreview(previewOpts) {
-      if (!global27.LibraryPreview || typeof global27.LibraryPreview.open !== "function") return;
-      global27.LibraryPreview.open({
+      if (!global28.LibraryPreview || typeof global28.LibraryPreview.open !== "function") return;
+      global28.LibraryPreview.open({
         scopeFolder: previewOpts.scopeFolder,
         scopeLabel: previewOpts.scopeLabel,
         initialFile: previewOpts.initialFile || null,
@@ -17787,17 +18437,17 @@
             toast3("Could not copy to clipboard.", { kind: "warn" });
           });
         },
-        onInsertFile: function(anchor, item) {
-          var row = beginLibraryMenuIntent(anchor);
+        onInsertFile: function(anchor2, item) {
+          var row = beginLibraryMenuIntent(anchor2);
           fetchContent(item.path).then(function(code) {
-            openInsertMenu(anchor, code, item);
+            openInsertMenu(anchor2, code, item);
           }).catch(function() {
             cancelLibraryMenuIntent(row);
             toast3("Could not load library sample.", { kind: "warn" });
           });
         },
-        onInsertFolder: function(anchor, folder) {
-          openFolderInsertMenu(anchor, folder);
+        onInsertFolder: function(anchor2, folder) {
+          openFolderInsertMenu(anchor2, folder);
         }
       });
     }
@@ -17857,8 +18507,8 @@
       return d ? d + "/" + name : name;
     }
     function resolveBulkPlan(incoming, existingFiles) {
-      var NC2 = global27.NameConflicts;
-      var CD = global27.ConflictDialog;
+      var NC2 = global28.NameConflicts;
+      var CD = global28.ConflictDialog;
       if (!NC2) {
         return Promise.resolve({ create: incoming.slice(), replace: [], replaceFolder: [] });
       }
@@ -17889,8 +18539,8 @@
       });
     }
     function resolveMagicPlan(relPath, code, existingFiles) {
-      var NC2 = global27.NameConflicts;
-      var CD = global27.ConflictDialog;
+      var NC2 = global28.NameConflicts;
+      var CD = global28.ConflictDialog;
       var incoming = [{ name: relPath, text: code }];
       if (!NC2) {
         return Promise.resolve({ create: [{ name: relPath, text: code }], replace: [], replaceFolder: [] });
@@ -17920,7 +18570,7 @@
       });
     }
     function applyFilePlan(plan, suite) {
-      var P3 = global27.Persist;
+      var P3 = global28.Persist;
       if (!plan) return;
       var targetId = null;
       var targetPath = null;
@@ -17963,8 +18613,8 @@
       }
     }
     function syncActiveCfgsAfterBulk() {
-      var P3 = global27.Persist;
-      var PS = global27.ProjectSource;
+      var P3 = global28.Persist;
+      var PS = global28.ProjectSource;
       if (!P3 || !PS || typeof PS.inferActiveCfgByDir !== "function") return;
       if (typeof P3.backfillActiveCfgByDir !== "function") return;
       var files = P3.listFiles();
@@ -17974,7 +18624,7 @@
       P3.backfillActiveCfgByDir(byDir);
     }
     function applyBulkPlan(plan) {
-      var P3 = global27.Persist;
+      var P3 = global28.Persist;
       if (!plan) return;
       if (typeof opts.applyUploadPlan === "function") {
         var count = 0;
@@ -18116,7 +18766,7 @@
       });
     }
     function runInsertAtRoot(item) {
-      var P3 = global27.Persist;
+      var P3 = global28.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !isLibraryProjectFile(item)) return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -18130,7 +18780,7 @@
       });
     }
     function runInsertUnderCurrentFolder(item) {
-      var P3 = global27.Persist;
+      var P3 = global28.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !canInsertUnderCurrentFolder() || !isLibraryProjectFile(item)) return;
       var dir = activeFileDir();
       if (!dir) return;
@@ -18162,7 +18812,7 @@
       return out;
     }
     function runFolderInsert(folder, mode) {
-      var P3 = global27.Persist;
+      var P3 = global28.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       var rootPrefix = folder.name || "";
       var entries = collectFolderFiles(folder, rootPrefix);
@@ -18194,25 +18844,25 @@
         toast3("Could not load library samples.", { kind: "warn" });
       });
     }
-    function libraryMenuRow(anchor) {
-      if (!anchor || !anchor.closest) return null;
-      return anchor.closest(".library-category-item") || anchor.closest(".library-example-item") || anchor.closest(".library-preview-tree-folder") || anchor.closest(".library-preview-tree-file");
+    function libraryMenuRow(anchor2) {
+      if (!anchor2 || !anchor2.closest) return null;
+      return anchor2.closest(".library-category-item") || anchor2.closest(".library-example-item") || anchor2.closest(".library-preview-tree-folder") || anchor2.closest(".library-preview-tree-file");
     }
-    function beginLibraryMenuIntent(anchor) {
-      var row = libraryMenuRow(anchor);
+    function beginLibraryMenuIntent(anchor2) {
+      var row = libraryMenuRow(anchor2);
       if (row) row.classList.add("is-menu-open");
       return row;
     }
     function cancelLibraryMenuIntent(row) {
       if (row) row.classList.remove("is-menu-open");
     }
-    function openLibraryMenu(anchor, menuOpts) {
-      if (typeof global27.Menu === "undefined") return;
-      var row = libraryMenuRow(anchor);
+    function openLibraryMenu(anchor2, menuOpts) {
+      if (typeof global28.Menu === "undefined") return;
+      var row = libraryMenuRow(anchor2);
       if (row) row.classList.add("is-menu-open");
       var userOnClose = menuOpts.onClose;
-      global27.Menu.open({
-        anchor: menuOpts.anchor != null ? menuOpts.anchor : anchor,
+      global28.Menu.open({
+        anchor: menuOpts.anchor != null ? menuOpts.anchor : anchor2,
         side: menuOpts.side,
         align: menuOpts.align,
         items: menuOpts.items,
@@ -18223,8 +18873,8 @@
         }
       });
     }
-    function openFolderInsertMenu(anchor, folder) {
-      openLibraryMenu(anchor, {
+    function openFolderInsertMenu(anchor2, folder) {
+      openLibraryMenu(anchor2, {
         side: "right",
         align: "start",
         items: [
@@ -18244,8 +18894,8 @@
         ]
       });
     }
-    function openFileInsertMenu(anchor, item, code) {
-      if (typeof global27.Menu === "undefined") return;
+    function openFileInsertMenu(anchor2, item, code) {
+      if (typeof global28.Menu === "undefined") return;
       refreshSuites();
       var ed = typeof opts.getEditor === "function" ? opts.getEditor() : null;
       var editorReady = !!(ed && hasEditor());
@@ -18269,7 +18919,7 @@
           label: "Insert to active suite",
           disabled: !suitesCache.length || !isSuiteSourceFile(item),
           onSelect: function() {
-            openSuitePicker(anchor, item);
+            openSuitePicker(anchor2, item);
           }
         },
         {
@@ -18307,19 +18957,19 @@
           }
         }
       ];
-      openLibraryMenu(anchor, {
+      openLibraryMenu(anchor2, {
         side: "right",
         align: "start",
         items: items3
       });
     }
-    function openInsertMenu(anchor, code, item) {
-      openFileInsertMenu(anchor, item, prepareLibraryInsert(code, item));
+    function openInsertMenu(anchor2, code, item) {
+      openFileInsertMenu(anchor2, item, prepareLibraryInsert(code, item));
     }
     function runMagic(item, suite) {
       if (!suite) return;
       if (!isSuiteSourceFile(item)) return;
-      var P3 = global27.Persist;
+      var P3 = global28.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -18332,15 +18982,15 @@
         toast3("Could not load library sample.", { kind: "warn" });
       });
     }
-    function openSuitePicker(anchor, item) {
+    function openSuitePicker(anchor2, item) {
       refreshSuites();
       if (!suitesCache.length) return;
       if (suitesCache.length === 1) {
         runMagic(item, suitesCache[0]);
         return;
       }
-      if (typeof global27.Menu === "undefined") return;
-      openLibraryMenu(anchor, {
+      if (typeof global28.Menu === "undefined") return;
+      openLibraryMenu(anchor2, {
         side: "right",
         align: "start",
         items: suitesCache.map(function(s) {
@@ -18472,7 +19122,7 @@
         searchSnippets = null;
         searchPending = false;
         if (searchWrap) searchWrap.classList.remove("is-searching");
-        render4();
+        render5();
         return;
       }
       var token = ++searchToken;
@@ -18485,7 +19135,7 @@
       searchSnippets = /* @__PURE__ */ Object.create(null);
       searchPending = true;
       if (searchWrap) searchWrap.classList.add("is-searching");
-      render4();
+      render5();
       LS.searchEntries(allFileEntries, q, fetchContent, { limit: 0 }).then(function(hits) {
         if (token !== searchToken) return;
         searchPending = false;
@@ -18499,7 +19149,7 @@
             searchSnippets[h.entry.id] = { snippet: h.snippet, line: h.line };
           }
         }
-        render4();
+        render5();
       });
     }
     var searchTimer = null;
@@ -18574,8 +19224,8 @@
       });
       if (item.description) {
         applyTip(row, item.description);
-      } else if (typeof global27.Tooltips !== "undefined" && global27.Tooltips.bindOverflow) {
-        global27.Tooltips.bindOverflow(nameEl, function() {
+      } else if (typeof global28.Tooltips !== "undefined" && global28.Tooltips.bindOverflow) {
+        global28.Tooltips.bindOverflow(nameEl, function() {
           return item.label;
         });
       }
@@ -18614,7 +19264,7 @@
         if (folder.description) applyTip(toggleBtn, folder.description);
         toggleBtn.addEventListener("click", function() {
           toggleCategoryExpanded(foldKey);
-          render4();
+          render5();
         });
         catRow.appendChild(toggleBtn);
         var previewBtn = actionBtn2("library-category-preview", "Preview", ICON_PREVIEW, false, function() {
@@ -18655,7 +19305,7 @@
       }
       return rendered2;
     }
-    function render4() {
+    function render5() {
       container.innerHTML = "";
       if (!manifest || !manifest.sections || !manifest.sections.length) {
         var empty = document.createElement("p");
@@ -18699,15 +19349,15 @@
       }).then(function(data) {
         manifest = data;
         rebuildFileIndex();
-        render4();
+        render5();
       }).catch(function() {
         manifest = null;
         allFileEntries = [];
-        render4();
+        render5();
       });
     }
-    if (searchEl && searchWrap && global27.HeaderSearch) {
-      global27.HeaderSearch.init({
+    if (searchEl && searchWrap && global28.HeaderSearch) {
+      global28.HeaderSearch.init({
         host: searchWrap,
         input: searchEl,
         onInput: scheduleSearch
@@ -18719,17 +19369,17 @@
     return {
       refresh: function() {
         refreshSuites();
-        render4();
+        render5();
       },
       collapseFolders,
       reload: loadManifest
     };
   }
-  global27.Library = { init: init10 };
-  global27.BelJarLibrary = global27.Library;
+  global28.Library = { init: init10 };
+  global28.BelJarLibrary = global28.Library;
 
   // js/ui/toasts.mjs
-  var global28 = globalThis;
+  var global29 = globalThis;
   var DEFAULT_DURATION_MS2 = 3500;
   var LEAVE_MS2 = 280;
   var UNTIL_POLL_MS = 120;
@@ -18739,6 +19389,17 @@
   function nextId() {
     seq += 1;
     return "toast-" + seq;
+  }
+  function durationForMode(mode) {
+    try {
+      if (typeof Persist !== "undefined" && typeof Persist.toastDurationForMode === "function") {
+        return Persist.toastDurationForMode(mode);
+      }
+    } catch (_) {
+    }
+    if (mode === "short") return 2e3;
+    if (mode === "long") return 5e3;
+    return DEFAULT_DURATION_MS2;
   }
   function normalizeDuration(opts) {
     var fallback = DEFAULT_DURATION_MS2;
@@ -18751,6 +19412,7 @@
     if (!opts || opts.duration === void 0) return fallback;
     const d = opts.duration;
     if (d === false || d === null || d === 0 || d === Infinity) return null;
+    if (d === "short" || d === "normal" || d === "long") return durationForMode(d);
     if (typeof d === "number" && d > 0) return d;
     return fallback;
   }
@@ -18765,10 +19427,12 @@
       onDismiss: typeof o.onDismiss === "function" ? o.onDismiss : null,
       notify: o.notify,
       durable: o.durable,
+      body: o.body != null ? String(o.body) : null,
       detail: o.detail != null ? String(o.detail) : null,
       source: o.source != null ? String(o.source) : null,
       dedupeKey: o.dedupeKey != null ? String(o.dedupeKey) : null,
-      category: o.category != null ? String(o.category) : null
+      category: o.category != null ? String(o.category) : null,
+      links: o.links && typeof o.links === "object" ? o.links : null
     };
   }
   function shouldNotify(kind, notifyOpt, durableOpt) {
@@ -18777,15 +19441,17 @@
     return false;
   }
   function pushNotification(message2, parsed) {
-    const N = global28.Notifications;
+    const N = global29.Notifications;
     if (!N) return;
     if (typeof N.fromToast === "function") {
       N.fromToast(message2, {
         kind: parsed.kind,
+        body: parsed.body,
         detail: parsed.detail,
         source: parsed.source,
         dedupeKey: parsed.dedupeKey,
-        category: parsed.category
+        category: parsed.category,
+        links: parsed.links
       });
       return;
     }
@@ -18820,7 +19486,7 @@
     try {
       if (entry.onDismiss) entry.onDismiss();
     } catch (err) {
-      if (global28.console && console.error) console.error("[toast]", err);
+      if (global29.console && console.error) console.error("[toast]", err);
     }
     removeNode(entry);
     if (live.size === 0) hideToastLayer();
@@ -18871,7 +19537,7 @@
       try {
         if (untilFn()) animateOut(id, entry);
       } catch (err) {
-        if (global28.console && console.error) console.error("[toast]", err);
+        if (global29.console && console.error) console.error("[toast]", err);
         animateOut(id, entry);
       }
     }, UNTIL_POLL_MS);
@@ -18947,12 +19613,24 @@
       stackEl.className = "toast-stack";
       stackEl.setAttribute("aria-live", "polite");
       stackEl.setAttribute("aria-relevant", "additions");
+      stackEl.dataset.toastsOwned = "yes";
       document.body.appendChild(stackEl);
     }
     if (!stackEl.hasAttribute("popover")) stackEl.setAttribute("popover", "manual");
   }
-  global28.Toasts = {
+  function dispose4() {
+    dismissAll();
+    if (stackEl && stackEl.dataset && stackEl.dataset.toastsOwned === "yes") {
+      try {
+        stackEl.remove();
+      } catch (_) {
+      }
+    }
+    stackEl = null;
+  }
+  global29.Toasts = {
     init: init11,
+    dispose: dispose4,
     show: show2,
     error: (message2, opts) => typed("error", message2, opts),
     warn: (message2, opts) => typed("warn", message2, opts),
@@ -18962,7 +19640,7 @@
     dismissAll,
     _pure: { normalizeDuration, parseOpts, shouldNotify, DEFAULT_DURATION_MS: DEFAULT_DURATION_MS2 }
   };
-  global28.BelJarToasts = global28.Toasts;
+  global29.BelJarToasts = global29.Toasts;
 
   // js/ui/notification-store.mjs
   var SCHEMA_VERSION3 = 1;
@@ -19023,7 +19701,9 @@
         fileId: input2.links.fileId != null ? String(input2.links.fileId) : void 0,
         path: input2.links.path != null ? String(input2.links.path) : void 0,
         line: Number.isFinite(input2.links.line) ? input2.links.line : void 0,
-        hole: input2.links.hole != null ? String(input2.links.hole) : void 0
+        hole: input2.links.hole != null ? String(input2.links.hole) : void 0,
+        from: Number.isFinite(input2.links.from) ? input2.links.from : void 0,
+        to: Number.isFinite(input2.links.to) ? input2.links.to : void 0
       };
     }
     return {
@@ -19043,6 +19723,22 @@
       origin,
       remoteId: input2.remoteId != null ? String(input2.remoteId) : null,
       expiresAt: input2.expiresAt != null ? Number(input2.expiresAt) : null
+    };
+  }
+  function linkTarget(rec) {
+    const l = rec && rec.links;
+    if (!l || !l.fileId) return null;
+    const from = Number.isFinite(l.from) ? l.from : null;
+    const line = Number.isFinite(l.line) && l.line >= 1 ? Math.floor(l.line) : null;
+    if (from == null && line == null) return null;
+    const path = l.path != null ? String(l.path) : "";
+    const base = path ? path.slice(path.lastIndexOf("/") + 1) : String(l.fileId);
+    return {
+      fileId: String(l.fileId),
+      from,
+      to: Number.isFinite(l.to) ? l.to : from,
+      line,
+      label: line != null ? base + ":" + line : base
     };
   }
   function createMemoryAdapter(seed) {
@@ -19114,7 +19810,7 @@
     const o = opts && typeof opts === "object" ? opts : {};
     const cap = Number.isFinite(o.cap) && o.cap > 0 ? o.cap : DEFAULT_CAP;
     const adapter = o.adapter || createMemoryAdapter();
-    const listeners = /* @__PURE__ */ new Set();
+    const listeners2 = /* @__PURE__ */ new Set();
     let items3 = [];
     try {
       items3 = (adapter.load() || []).map(migrateRecord).filter(Boolean);
@@ -19130,14 +19826,14 @@
       if (next.length > max) next = next.slice(0, max);
       return next;
     }
-    function persist5() {
+    function persist4() {
       try {
         adapter.save(items3);
       } catch (_) {
       }
     }
     function notify() {
-      for (const fn of listeners) {
+      for (const fn of listeners2) {
         try {
           fn(items3.slice());
         } catch (_) {
@@ -19175,14 +19871,14 @@
           };
           items3[idx] = merged;
           items3 = prune(items3, cap);
-          persist5();
+          persist4();
           notify();
           return merged;
         }
       }
       items3.push(rec);
       items3 = prune(items3, cap);
-      persist5();
+      persist4();
       notify();
       return rec;
     }
@@ -19190,21 +19886,21 @@
       const idx = items3.findIndex((r) => r.id === id);
       if (idx < 0) return false;
       items3.splice(idx, 1);
-      persist5();
+      persist4();
       notify();
       return true;
     }
     function clear2() {
       if (items3.length === 0) return;
       items3 = [];
-      persist5();
+      persist4();
       notify();
     }
     function markRead(id) {
       const rec = get2(id);
       if (!rec || rec.readAt) return false;
       rec.readAt = Date.now();
-      persist5();
+      persist4();
       notify();
       return true;
     }
@@ -19218,7 +19914,7 @@
         }
       }
       if (changed) {
-        persist5();
+        persist4();
         notify();
       }
       return changed;
@@ -19226,9 +19922,9 @@
     function subscribe(fn) {
       if (typeof fn !== "function") return () => {
       };
-      listeners.add(fn);
+      listeners2.add(fn);
       return () => {
-        listeners.delete(fn);
+        listeners2.delete(fn);
       };
     }
     return {
@@ -19246,22 +19942,58 @@
     };
   }
 
-  // js/ui/notifications.mjs
-  var global29 = globalThis;
-  var bellBtn = null;
-  var panelEl = null;
-  var listEl2 = null;
-  var emptyEl = null;
-  var badgeEl = null;
-  var clearBtn = null;
-  var open7 = false;
-  var unsub = null;
-  var store = createNotificationStore({
-    adapter: typeof localStorage !== "undefined" ? createLocalPersistAdapter() : createMemoryAdapter()
-  });
-  function formatTime(ts) {
+  // js/ui/notification-view.mjs
+  var WEEK = 7 * 24 * 36e5;
+  var KIND_META = {
+    error: { accent: "var(--notif-kind-error)", label: "Error" },
+    warn: { accent: "var(--notif-kind-warn)", label: "Warning" },
+    info: { accent: "var(--notif-kind-info)", label: "Info" },
+    success: { accent: "var(--notif-kind-success)", label: "Done" },
+    system: { accent: "var(--notif-kind-system)", label: "System" }
+  };
+  function kindMeta(kind) {
+    return KIND_META[kind] || KIND_META.system;
+  }
+  function clock(ts) {
+    try {
+      return new Intl.DateTimeFormat(void 0, { hour: "numeric", minute: "2-digit" }).format(new Date(ts));
+    } catch (_) {
+      return "";
+    }
+  }
+  function weekday(ts) {
+    try {
+      return new Intl.DateTimeFormat(void 0, { weekday: "short" }).format(new Date(ts));
+    } catch (_) {
+      return "";
+    }
+  }
+  function calendarDay(ts) {
+    try {
+      return new Intl.DateTimeFormat(void 0, { month: "short", day: "numeric" }).format(new Date(ts));
+    } catch (_) {
+      return "";
+    }
+  }
+  function sameDay(a, b) {
+    const x = new Date(a);
+    const y = new Date(b);
+    return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+  }
+  function formatStamp(ts, now) {
+    if (!Number.isFinite(ts)) return "";
+    const at = Number.isFinite(now) ? now : Date.now();
+    if (sameDay(ts, at)) return clock(ts);
+    if (at - ts >= 0 && at - ts < WEEK) return weekday(ts) + " " + clock(ts);
+    return calendarDay(ts) + ", " + clock(ts);
+  }
+  function formatStampFull(ts) {
+    if (!Number.isFinite(ts)) return "";
     try {
       return new Intl.DateTimeFormat(void 0, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
         hour: "numeric",
         minute: "2-digit"
       }).format(new Date(ts));
@@ -19269,84 +20001,268 @@
       return "";
     }
   }
-  function updateBadge() {
-    if (!badgeEl) return;
-    const n = store.unreadCount();
-    if (n <= 0) {
-      badgeEl.hidden = true;
-      badgeEl.textContent = "";
-      if (bellBtn) {
-        if (store.count() > 0) bellBtn.setAttribute("data-has-notifications", "");
-        else bellBtn.removeAttribute("data-has-notifications");
-      }
-      return;
+  function labelTitle(text) {
+    const t = text == null ? "" : String(text).trim();
+    if (t.length < 2 || !t.endsWith(".") || t.endsWith("..")) return t;
+    return t.slice(0, -1);
+  }
+  function splitText(rec) {
+    const title = labelTitle(rec.title);
+    const rawBody = rec.body != null ? String(rec.body).trim() : "";
+    const rawDetail = rec.detail != null ? String(rec.detail).trim() : "";
+    const body = rawBody && rawBody !== title ? rawBody : "";
+    const detail2 = rawDetail && rawDetail !== title && rawDetail !== body ? rawDetail : "";
+    if (!body && detail2) return { body: detail2, detail: "", promoted: true };
+    return { body, detail: detail2, promoted: false };
+  }
+  function inlineSegments(text) {
+    const src = text == null ? "" : String(text);
+    if (src.indexOf("`") < 0) return src ? [{ code: false, text: src }] : [];
+    const out = [];
+    let rest = src;
+    while (rest) {
+      const open11 = rest.indexOf("`");
+      if (open11 < 0) break;
+      const close5 = rest.indexOf("`", open11 + 1);
+      if (close5 < 0) break;
+      if (open11 > 0) out.push({ code: false, text: rest.slice(0, open11) });
+      const code = rest.slice(open11 + 1, close5);
+      if (code) out.push({ code: true, text: code });
+      rest = rest.slice(close5 + 1);
     }
-    badgeEl.hidden = false;
-    badgeEl.textContent = n > 9 ? "9+" : String(n);
-    if (bellBtn) bellBtn.setAttribute("data-has-notifications", "");
+    if (rest) out.push({ code: false, text: rest });
+    return out;
+  }
+  function itemView(rec, now) {
+    if (!rec || typeof rec !== "object") return null;
+    const kind = KIND_META[rec.kind] ? rec.kind : "system";
+    const text = splitText(rec);
+    return {
+      id: rec.id,
+      kind,
+      meta: kindMeta(kind),
+      title: labelTitle(rec.title),
+      body: text.body,
+      bodySegments: inlineSegments(text.body),
+      detail: text.detail,
+      promotedDetail: text.promoted,
+      unread: !rec.readAt,
+      remote: rec.origin === "remote",
+      teaching: rec.category === "teaching",
+      stamp: formatStamp(rec.createdAt, now),
+      stampFull: formatStampFull(rec.createdAt),
+      target: linkTarget(rec)
+    };
+  }
+  function panelView(list3, now) {
+    const items3 = Array.isArray(list3) ? list3 : [];
+    return {
+      total: items3.length,
+      unread: items3.filter((r) => r && !r.readAt).length,
+      empty: items3.length === 0,
+      items: items3.map((r) => itemView(r, now)).filter(Boolean)
+    };
+  }
+
+  // js/ui/notifications.mjs
+  var global30 = globalThis;
+  var bellBtn = null;
+  var panelEl2 = null;
+  var listEl3 = null;
+  var emptyEl = null;
+  var clearBtn = null;
+  var countEl2 = null;
+  var open8 = false;
+  var unsub = null;
+  var fade = null;
+  var diagSeq = 0;
+  var teardown = [];
+  function track(target, type, fn, opts) {
+    target.addEventListener(type, fn, opts);
+    teardown.push(() => target.removeEventListener(type, fn, opts));
+  }
+  function onBellClick(e) {
+    e.stopPropagation();
+    toggle4();
+  }
+  function onClearClick(e) {
+    e.stopPropagation();
+    clear();
+  }
+  function onWindowResize() {
+    if (open8) positionPanel();
+  }
+  var store = createNotificationStore({
+    adapter: typeof localStorage !== "undefined" ? createLocalPersistAdapter() : createMemoryAdapter()
+  });
+  function svgMarkup(paths, cls) {
+    return "<svg" + (cls ? ' class="' + cls + '"' : "") + ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
+  }
+  function bindTooltip(el6, text) {
+    if (!el6 || !text) return;
+    el6.setAttribute("data-tooltip", text);
+    try {
+      if (typeof Tooltips !== "undefined" && typeof Tooltips.bind === "function") Tooltips.bind(el6);
+    } catch (_) {
+    }
+  }
+  function updateBellState() {
+    if (!bellBtn) return;
+    const total = store.count();
+    const unread = store.unreadCount();
+    if (total > 0) bellBtn.setAttribute("data-has-notifications", "");
+    else bellBtn.removeAttribute("data-has-notifications");
+    if (unread > 0) bellBtn.setAttribute("data-has-unread", "");
+    else bellBtn.removeAttribute("data-has-unread");
+    bellBtn.setAttribute(
+      "aria-label",
+      unread > 0 ? "Notifications, " + unread + " unread" : "Notifications"
+    );
   }
   function kindClass2(kind) {
-    if (kind === "error" || kind === "warn" || kind === "info" || kind === "success") {
-      return "notif-item--" + kind;
+    return "notif-item--" + (KIND_META[kind] ? kind : "system");
+  }
+  function buildDiagToggle(pre) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "notif-item-more";
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", pre.id);
+    btn.innerHTML = svgMarkup('<path d="m9 6 6 6-6 6"/>', "notif-item-chevron") + "<span>Diagnostic</span>";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const show3 = pre.hidden;
+      pre.hidden = !show3;
+      btn.setAttribute("aria-expanded", show3 ? "true" : "false");
+      btn.classList.toggle("is-open", show3);
+      if (fade) fade.update();
+    });
+    return btn;
+  }
+  function buildFoot(view) {
+    const foot = document.createElement("div");
+    foot.className = "notif-item-foot";
+    if (view.unread) {
+      const dot = document.createElement("span");
+      dot.className = "notif-item-dot";
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", "Unread");
+      foot.appendChild(dot);
     }
-    return "notif-item--system";
+    const stamp = document.createElement("span");
+    stamp.className = "notif-item-stamp";
+    stamp.textContent = view.stamp;
+    bindTooltip(stamp, view.stampFull);
+    foot.appendChild(stamp);
+    if (view.target) {
+      const jump = document.createElement("button");
+      jump.type = "button";
+      jump.className = "notif-item-link";
+      jump.textContent = view.target.label;
+      jump.setAttribute("aria-label", "Open " + view.target.label);
+      jump.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openTarget(view.id, view.target);
+      });
+      foot.appendChild(jump);
+    }
+    if (view.teaching || view.remote) {
+      const tag = document.createElement("span");
+      tag.className = "notif-item-tag";
+      tag.textContent = view.teaching ? "teaching" : "remote";
+      foot.appendChild(tag);
+    }
+    return foot;
+  }
+  function buildItem(view) {
+    const li = document.createElement("li");
+    li.className = "notif-item " + kindClass2(view.kind);
+    if (view.unread) li.classList.add("is-unread");
+    li.dataset.notifId = view.id;
+    li.dataset.notifKind = view.kind;
+    const title = document.createElement("p");
+    title.className = "notif-item-title";
+    const kindWord = document.createElement("span");
+    kindWord.className = "notif-item-kind";
+    kindWord.textContent = view.meta.label + ": ";
+    title.appendChild(kindWord);
+    title.appendChild(document.createTextNode(view.title));
+    li.appendChild(title);
+    if (view.body) {
+      const body = document.createElement("p");
+      body.className = "notif-item-body";
+      if (view.promotedDetail) body.classList.add("is-diagnostic");
+      for (const seg of view.bodySegments) {
+        if (!seg.code) {
+          body.appendChild(document.createTextNode(seg.text));
+          continue;
+        }
+        const code = document.createElement("code");
+        code.className = "notif-item-code";
+        code.textContent = seg.text;
+        body.appendChild(code);
+      }
+      li.appendChild(body);
+    }
+    let toggleBtn = null;
+    let pre = null;
+    if (view.detail) {
+      diagSeq += 1;
+      pre = document.createElement("pre");
+      pre.className = "notif-item-diag";
+      pre.id = "notif-diag-" + diagSeq;
+      pre.textContent = view.detail;
+      pre.hidden = true;
+      toggleBtn = buildDiagToggle(pre);
+    }
+    const foot = buildFoot(view);
+    if (toggleBtn) foot.appendChild(toggleBtn);
+    li.appendChild(foot);
+    if (pre) li.appendChild(pre);
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.className = "icon-btn notif-item-dismiss";
+    dismissBtn.setAttribute("aria-label", "Dismiss notification");
+    dismissBtn.innerHTML = svgMarkup('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
+    dismissBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dismiss3(view.id);
+    });
+    li.appendChild(dismissBtn);
+    return li;
   }
   function renderList2() {
-    if (!listEl2 || !emptyEl) return;
-    listEl2.textContent = "";
-    const sorted = store.list();
-    for (const item of sorted) {
-      const li = document.createElement("li");
-      li.className = "notif-item " + kindClass2(item.kind);
-      if (!item.readAt) li.classList.add("is-unread");
-      li.dataset.notifId = item.id;
-      const main = document.createElement("div");
-      main.className = "notif-item-main";
-      const title = document.createElement("p");
-      title.className = "notif-item-msg";
-      title.textContent = item.title;
-      main.appendChild(title);
-      if (item.body && item.body !== item.title) {
-        const body = document.createElement("p");
-        body.className = "notif-item-body";
-        body.textContent = item.body;
-        main.appendChild(body);
-      }
-      if (item.detail) {
-        const details = document.createElement("details");
-        details.className = "notif-item-detail";
-        const summary = document.createElement("summary");
-        summary.textContent = "Details";
-        details.appendChild(summary);
-        const pre = document.createElement("pre");
-        pre.className = "notif-item-detail-pre";
-        pre.textContent = item.detail;
-        details.appendChild(pre);
-        main.appendChild(details);
-      }
-      const meta = document.createElement("span");
-      meta.className = "notif-item-time";
-      const bits = [formatTime(item.createdAt)];
-      if (item.category === "teaching") bits.push("teaching");
-      else if (item.origin === "remote") bits.push("remote");
-      meta.textContent = bits.filter(Boolean).join(" \xB7 ");
-      main.appendChild(meta);
-      const dismissBtn = document.createElement("button");
-      dismissBtn.type = "button";
-      dismissBtn.className = "icon-btn notif-item-dismiss";
-      dismissBtn.setAttribute("aria-label", "Dismiss notification");
-      dismissBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-      dismissBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        dismiss3(item.id);
-      });
-      li.appendChild(main);
-      li.appendChild(dismissBtn);
-      listEl2.appendChild(li);
+    if (!listEl3 || !emptyEl) return;
+    const records = store.list();
+    const view = panelView(records, Date.now());
+    listEl3.textContent = "";
+    for (const item of view.items) listEl3.appendChild(buildItem(item));
+    emptyEl.hidden = !view.empty;
+    listEl3.hidden = view.empty;
+    if (clearBtn) clearBtn.hidden = view.empty;
+    if (countEl2) {
+      countEl2.textContent = view.total ? String(view.total) : "";
+      countEl2.hidden = !view.total;
     }
-    emptyEl.hidden = sorted.length > 0;
-    listEl2.hidden = sorted.length === 0;
-    updateBadge();
+    if (fade) fade.update();
+    updateBellState();
+  }
+  function openTarget(id, target) {
+    if (!target) return;
+    store.markRead(id);
+    try {
+      window.dispatchEvent(new CustomEvent("beljar:open-file-at", {
+        detail: {
+          fileId: target.fileId,
+          from: target.from,
+          to: target.to,
+          line: target.line,
+          source: "notification"
+        }
+      }));
+    } catch (_) {
+    }
+    setOpen(false);
   }
   function emit(partial) {
     const rec = store.upsert(partial);
@@ -19396,6 +20312,7 @@
       detail: o.detail || null,
       source: o.source || "toast",
       dedupeKey: o.dedupeKey || null,
+      links: o.links || null,
       origin: "local"
     });
   }
@@ -19406,74 +20323,97 @@
     store.clear();
   }
   function positionPanel() {
-    if (!bellBtn || !panelEl) return;
-    const r = bellBtn.getBoundingClientRect();
+    if (!bellBtn || !panelEl2) return;
+    const anchor2 = bellBtn.closest(".header-end") || bellBtn;
+    const r = anchor2.getBoundingClientRect();
     const right = Math.max(0, window.innerWidth - r.right);
-    panelEl.style.setProperty("--notif-panel-right", right + "px");
+    panelEl2.style.setProperty("--notif-panel-right", right + "px");
   }
   function setOpen(next) {
-    if (!panelEl || !bellBtn) return;
-    open7 = !!next;
-    if (open7) {
+    if (!panelEl2 || !bellBtn) return;
+    open8 = !!next;
+    if (open8) {
       positionPanel();
+      renderList2();
       store.markAllRead();
     }
-    panelEl.classList.toggle("is-open", open7);
-    panelEl.setAttribute("aria-hidden", open7 ? "false" : "true");
-    bellBtn.setAttribute("aria-expanded", open7 ? "true" : "false");
-    bellBtn.classList.toggle("is-active", open7);
-    if (open7 && typeof Tooltips !== "undefined") {
+    panelEl2.classList.toggle("is-open", open8);
+    panelEl2.setAttribute("aria-hidden", open8 ? "false" : "true");
+    bellBtn.setAttribute("aria-expanded", open8 ? "true" : "false");
+    bellBtn.classList.toggle("is-active", open8);
+    if (open8 && typeof Tooltips !== "undefined") {
       Tooltips.hide();
       Tooltips.suppressAnchor(bellBtn);
     }
   }
-  function toggle3() {
-    setOpen(!open7);
+  function toggle4() {
+    setOpen(!open8);
   }
-  function onDocPointerDown(e) {
-    if (!open7) return;
+  function onDocPointerDown2(e) {
+    if (!open8) return;
     const t = e.target;
-    if (panelEl && panelEl.contains(t)) return;
+    if (panelEl2 && panelEl2.contains(t)) return;
     if (bellBtn && bellBtn.contains(t)) return;
     setOpen(false);
   }
   function onDocKeyDown(e) {
-    if (e.key === "Escape" && open7) {
+    if (e.key === "Escape" && open8) {
       e.preventDefault();
       setOpen(false);
       bellBtn.focus();
     }
   }
   function init12() {
+    dispose5();
     bellBtn = document.getElementById("btn-notifications");
-    panelEl = document.getElementById("notif-panel");
-    listEl2 = document.getElementById("notif-panel-list");
+    panelEl2 = document.getElementById("notif-panel");
+    listEl3 = document.getElementById("notif-panel-list");
     emptyEl = document.getElementById("notif-panel-empty");
-    badgeEl = document.getElementById("notif-badge");
     clearBtn = document.getElementById("btn-notif-clear");
-    if (!bellBtn || !panelEl) return;
-    if (unsub) unsub();
+    countEl2 = document.getElementById("notif-panel-count");
+    if (!bellBtn || !panelEl2) return;
     unsub = store.subscribe(() => renderList2());
-    bellBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggle3();
-    });
-    if (clearBtn) {
-      clearBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        clear();
-      });
+    track(bellBtn, "click", onBellClick);
+    if (clearBtn) track(clearBtn, "click", onClearClick);
+    track(document, "pointerdown", onDocPointerDown2, true);
+    track(document, "keydown", onDocKeyDown, true);
+    track(window, "resize", onWindowResize);
+    if (listEl3 && global30.ScrollFade && typeof global30.ScrollFade.attach === "function") {
+      fade = global30.ScrollFade.attach(listEl3, { axis: "y", size: 14 });
     }
-    document.addEventListener("pointerdown", onDocPointerDown, true);
-    document.addEventListener("keydown", onDocKeyDown, true);
-    window.addEventListener("resize", () => {
-      if (open7) positionPanel();
-    });
     positionPanel();
     renderList2();
   }
-  global29.Notifications = {
+  function dispose5() {
+    if (unsub) {
+      unsub();
+      unsub = null;
+    }
+    while (teardown.length) {
+      const off = teardown.pop();
+      try {
+        off();
+      } catch (_) {
+      }
+    }
+    if (fade) {
+      try {
+        fade.destroy();
+      } catch (_) {
+      }
+      fade = null;
+    }
+    setOpen(false);
+    bellBtn = null;
+    panelEl2 = null;
+    listEl3 = null;
+    emptyEl = null;
+    clearBtn = null;
+    countEl2 = null;
+  }
+  global30.Notifications = {
     init: init12,
+    dispose: dispose5,
     emit,
     push,
     teaching,
@@ -19482,18 +20422,98 @@
     clear,
     markRead: (id) => store.markRead(id),
     markAllRead: () => store.markAllRead(),
-    toggle: toggle3,
-    isOpen: () => open7,
+    toggle: toggle4,
+    isOpen: () => open8,
     count: () => store.count(),
     unreadCount: () => store.unreadCount(),
     list: () => store.list(),
     store,
-    _pure: { normalizeRecord, SCHEMA_VERSION: SCHEMA_VERSION3 }
+    _pure: {
+      normalizeRecord,
+      linkTarget,
+      itemView,
+      panelView,
+      kindMeta,
+      labelTitle,
+      inlineSegments,
+      formatStamp,
+      formatStampFull,
+      SCHEMA_VERSION: SCHEMA_VERSION3
+    }
   };
-  global29.BelJarNotifications = global29.Notifications;
+  global30.BelJarNotifications = global30.Notifications;
+
+  // js/frame/frame.mjs
+  var global31 = globalThis;
+  var teardown2 = [];
+  var mounted2 = false;
+  function track2(target, type, fn, opts) {
+    if (!target) return;
+    target.addEventListener(type, fn, opts);
+    teardown2.push(() => target.removeEventListener(type, fn, opts));
+  }
+  function toggleTheme() {
+    const root2 = document.documentElement;
+    root2.classList.toggle("light");
+    const isLight = root2.classList.contains("light");
+    if (global31.Persist && typeof global31.Persist.writeStoredTheme === "function") {
+      global31.Persist.writeStoredTheme(isLight ? "light" : "dark");
+    }
+    global31.dispatchEvent(new CustomEvent("beljar:settings-changed", {
+      detail: { key: "theme" }
+    }));
+    return isLight ? "light" : "dark";
+  }
+  function onReload() {
+    global31.location.reload();
+  }
+  function onSettings() {
+    if (global31.SettingsUI && typeof global31.SettingsUI.open === "function") {
+      global31.SettingsUI.open();
+    }
+  }
+  function mount() {
+    if (mounted2) return;
+    mounted2 = true;
+    if (global31.Toasts && typeof global31.Toasts.init === "function") global31.Toasts.init();
+    if (global31.Notifications && typeof global31.Notifications.init === "function") {
+      global31.Notifications.init();
+    }
+    track2(document.getElementById("btn-theme"), "click", toggleTheme);
+    track2(document.getElementById("btn-reload"), "click", onReload);
+    track2(document.getElementById("btn-settings"), "click", onSettings);
+  }
+  function unmount2() {
+    if (!mounted2) return;
+    mounted2 = false;
+    while (teardown2.length) {
+      const off = teardown2.pop();
+      try {
+        off();
+      } catch (_) {
+      }
+    }
+    for (const peer of [global31.Notifications, global31.Toasts]) {
+      if (peer && typeof peer.dispose === "function") {
+        try {
+          peer.dispose();
+        } catch (_) {
+        }
+      }
+    }
+  }
+  var Frame2 = {
+    mount,
+    unmount: unmount2,
+    toggleTheme,
+    isMounted: () => mounted2,
+    pendingTeardown: () => teardown2.length
+  };
+  global31.Frame = Frame2;
+  global31.BelJarFrame = global31.Frame;
 
   // js/repl/repl-stream.mjs
-  var global30 = globalThis;
+  var global32 = globalThis;
   var outputEl2 = null;
   var liveEl = null;
   var cmdInputEl = null;
@@ -19731,7 +20751,7 @@
     if (input2 && !input2.disabled) input2.focus();
   }
   function isSelectingText() {
-    var sel = global30.getSelection && global30.getSelection();
+    var sel = global32.getSelection && global32.getSelection();
     return !!(sel && !sel.isCollapsed && String(sel).length);
   }
   function bindFocusDelegation() {
@@ -19819,13 +20839,13 @@
     return openTurnBody;
   }
   ensureLiveLine();
-  if (typeof global30.addEventListener === "function") {
-    global30.addEventListener("beljar:settings-changed", function(e) {
+  if (typeof global32.addEventListener === "function") {
+    global32.addEventListener("beljar:settings-changed", function(e) {
       var key = e && e.detail ? e.detail.key : "";
       if (key === "repl-hover-timestamp" || key === "repl-reset") syncStampHoverPref();
     });
   }
-  global30.ReplStream = {
+  global32.ReplStream = {
     ensureLiveLine,
     getLiveLine,
     getCommandInput,
@@ -19840,20 +20860,20 @@
     rebindStamps,
     syncStampHoverPref
   };
-  global30.BelJarReplStream = global30.ReplStream;
+  global32.BelJarReplStream = global32.ReplStream;
 
   // js/repl/repl-output.mjs
-  var global31 = globalThis;
+  var global33 = globalThis;
   var output = document.getElementById("output");
   function normBelugaRaw(s) {
-    return global31.BelugaText ? global31.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
+    return global33.BelugaText ? global33.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
   function stripAnsi(s) {
-    return global31.BelugaText ? global31.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
+    return global33.BelugaText ? global33.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
   }
   function isInternalQueryLine(trimmed) {
-    if (global31.BelugaText && global31.BelugaText.isInternalQueryLine) {
-      return global31.BelugaText.isInternalQueryLine(trimmed);
+    if (global33.BelugaText && global33.BelugaText.isInternalQueryLine) {
+      return global33.BelugaText.isInternalQueryLine(trimmed);
     }
     return trimmed === "[]" || trimmed === "^." || trimmed === "^" || /^\[[^\]]*(?:TClo|FREE BVar|\?[A-Za-z0-9_.]+)/i.test(trimmed);
   }
@@ -20007,8 +21027,8 @@
     });
   }
   function belugaCommandErrorInfo(text) {
-    if (global31.BelugaText && typeof global31.BelugaText.parseBelugaCommandError === "function") {
-      return global31.BelugaText.parseBelugaCommandError(text);
+    if (global33.BelugaText && typeof global33.BelugaText.parseBelugaCommandError === "function") {
+      return global33.BelugaText.parseBelugaCommandError(text);
     }
     return null;
   }
@@ -20182,7 +21202,7 @@
     });
   }
   function collectEditorQuerySourceLines() {
-    var editor2 = global31.CurrentEditor;
+    var editor2 = global33.CurrentEditor;
     if (!editor2 || typeof editor2.getValue !== "function") return [];
     var src = editor2.getValue();
     var out = [];
@@ -20268,11 +21288,11 @@
     return { solutions, isDone, queryLine, queryError };
   }
   function queryDisplayRows(bindings) {
-    return global31.BelugaText && global31.BelugaText.prettifyQueryBindings ? global31.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
+    return global33.BelugaText && global33.BelugaText.prettifyQueryBindings ? global33.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
   }
-  function displayQueryBindings(container, rows) {
+  function displayQueryBindings(container, rows2) {
     container.replaceChildren();
-    rows.forEach(function(b) {
+    rows2.forEach(function(b) {
       var row = document.createElement("div");
       row.className = "repl-query-binding";
       var key = document.createElement("code");
@@ -20318,18 +21338,18 @@
         wrap.appendChild(headRow);
       }
       solutions.forEach(function(sol, idx) {
-        var rows = queryDisplayRows(sol.bindings);
-        if (!rows.length) return;
+        var rows2 = queryDisplayRows(sol.bindings);
+        if (!rows2.length) return;
         var card = document.createElement("div");
         card.className = "repl-query-sol" + (idx > 0 ? " repl-query-sol--nth" : "");
         var head = document.createElement("div");
         head.className = "repl-query-sol-head";
         head.textContent = solutions.length > 1 ? "Solution " + sol.n : "Solution";
         card.appendChild(head);
-        if (rows.length) {
+        if (rows2.length) {
           var bindEl = document.createElement("div");
           bindEl.className = "repl-query-bindings";
-          displayQueryBindings(bindEl, rows);
+          displayQueryBindings(bindEl, rows2);
           card.appendChild(bindEl);
         }
         wrap.appendChild(card);
@@ -20981,7 +22001,7 @@
     streamAppend(block);
     scrollReplBottom();
   }
-  global31.ReplOutput = {
+  global33.ReplOutput = {
     appendOutput,
     appendReplHelp,
     appendRunOutput,
@@ -21018,11 +22038,11 @@
       return out;
     }
   };
-  global31.BelJarReplOutput = global31.ReplOutput;
+  global33.BelJarReplOutput = global33.ReplOutput;
 
   // js/repl/repl-run-cmd.mjs
-  var global32 = globalThis;
-  function baseName3(path) {
+  var global34 = globalThis;
+  function baseName4(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
     return i === -1 ? s : s.slice(i + 1);
@@ -21030,7 +22050,7 @@
   function formatRunPath(absPath, cwd) {
     var p = String(absPath || "");
     if (!p) return p;
-    if (dirOf2(p) === String(cwd != null ? cwd : "")) return baseName3(p);
+    if (dirOf2(p) === String(cwd != null ? cwd : "")) return baseName4(p);
     return p;
   }
   function formatRunCaption(absPath, cwd, amalgam) {
@@ -21160,10 +22180,10 @@
         if (files[i].name === joined) return { path: files[i].name, id: files[i].id };
       }
     }
-    var baseWant = baseName3(want);
+    var baseWant = baseName4(want);
     var hits = [];
     for (i = 0; i < files.length; i++) {
-      var bn = baseName3(files[i].name);
+      var bn = baseName4(files[i].name);
       if (bn === baseWant || bn === want) hits.push(files[i]);
     }
     if (hits.length === 1) return { path: hits[0].name, id: hits[0].id };
@@ -21202,7 +22222,7 @@
     for (i = 0; i < files.length; i++) {
       var fn = files[i].name || "";
       if (!/\.cfg$/i.test(fn)) continue;
-      var bn = baseName3(fn);
+      var bn = baseName4(fn);
       if (bn === cfgBase || bn.replace(/\.cfg$/i, "") === name.replace(/\.cfg$/i, "")) {
         hits.push(fn);
       }
@@ -21317,7 +22337,7 @@
   var api = {
     dirOf: dirOf2,
     joinPath,
-    baseName: baseName3,
+    baseName: baseName4,
     formatRunPath,
     formatRunCaption,
     formatRunStatusName,
@@ -21332,8 +22352,8 @@
     dispatchRunCommand,
     executeRunCommand
   };
-  global32.ReplRunCmd = api;
-  global32.BelJarReplRunCmd = api;
+  global34.ReplRunCmd = api;
+  global34.BelJarReplRunCmd = api;
 
   // js/repl/repl-ac-suggest.mjs
   var MAX_ITEMS = 16;
@@ -21354,13 +22374,13 @@
   function basenameCounts(paths) {
     var counts = /* @__PURE__ */ Object.create(null);
     for (var i = 0; i < paths.length; i++) {
-      var bn = baseName3(paths[i]);
+      var bn = baseName4(paths[i]);
       counts[bn] = (counts[bn] || 0) + 1;
     }
     return counts;
   }
   function suggestPathLabel(absPath, cwd, counts) {
-    var bn = baseName3(absPath);
+    var bn = baseName4(absPath);
     if ((counts[bn] || 0) > 1) return absPath;
     var formatted = formatRunPath(absPath, cwd);
     if (formatted === bn && dirOf2(absPath) !== String(cwd != null ? cwd : "")) {
@@ -21379,7 +22399,7 @@
     var tl = t.toLowerCase();
     var labelL = String(label || "").toLowerCase();
     var pathL = String(absPath || "").toLowerCase();
-    var bnL = baseName3(absPath).toLowerCase();
+    var bnL = baseName4(absPath).toLowerCase();
     if (!isNavToken(t)) {
       return labelL.indexOf(tl) === 0 || bnL.indexOf(tl) === 0 || pathL.indexOf(tl) !== -1;
     }
@@ -21527,17 +22547,17 @@
       if (n && isCfgPath(n)) paths.push(n);
     }
     var counts = basenameCounts(paths.map(function(p2) {
-      return baseName3(p2).replace(/\.cfg$/i, "");
+      return baseName4(p2).replace(/\.cfg$/i, "");
     }));
     counts = /* @__PURE__ */ Object.create(null);
     for (var c = 0; c < paths.length; c++) {
-      var sn = baseName3(paths[c]).replace(/\.cfg$/i, "");
+      var sn = baseName4(paths[c]).replace(/\.cfg$/i, "");
       counts[sn] = (counts[sn] || 0) + 1;
     }
     var items3 = [];
     for (var j = 0; j < paths.length; j++) {
       var p = paths[j];
-      var suite = baseName3(p).replace(/\.cfg$/i, "");
+      var suite = baseName4(p).replace(/\.cfg$/i, "");
       var label = (counts[suite] || 0) > 1 ? p.replace(/\.cfg$/i, "") : suite;
       if (dirOf2(p) !== String(cwd || "") && (counts[suite] || 0) <= 1) {
         label = suggestPathLabel(p, cwd, basenameCounts(paths)).replace(/\.cfg$/i, "");
@@ -21584,7 +22604,7 @@
       var label;
       if (folder === "") label = "~";
       else if (folder === String(cwd || "")) label = ".";
-      else if (dirOf2(folder) === String(cwd || "")) label = baseName3(folder);
+      else if (dirOf2(folder) === String(cwd || "")) label = baseName4(folder);
       else if (!dirOf2(folder) && String(cwd || "")) label = "~/" + folder;
       else label = folder;
       var t = String(token || "").replace(/\\/g, "/");
@@ -21652,16 +22672,16 @@
   }
 
   // js/repl/repl-autocomplete.mjs
-  var global33 = globalThis;
+  var global35 = globalThis;
   var inputEl = null;
   var popupEl = null;
-  var listEl3 = null;
+  var listEl4 = null;
   var mirrorEl = null;
   var items2 = [];
   var activeIndex2 = -1;
   var replaceFrom = 0;
   var typedToken = "";
-  var open8 = false;
+  var open9 = false;
   var explicit = false;
   var suppressRefresh = false;
   var debounceTimer = null;
@@ -21678,16 +22698,16 @@
     return inputEl;
   }
   function ensurePopup() {
-    if (popupEl && popupEl.isConnected && listEl3 && listEl3.isConnected) return popupEl;
+    if (popupEl && popupEl.isConnected && listEl4 && listEl4.isConnected) return popupEl;
     if (typeof document === "undefined" || !document.body) return null;
     popupEl = document.createElement("div");
     popupEl.className = "repl-ac";
     popupEl.hidden = true;
-    listEl3 = document.createElement("ul");
-    listEl3.className = "repl-ac-list";
-    listEl3.setAttribute("role", "listbox");
-    listEl3.setAttribute("aria-label", "Command completions");
-    popupEl.appendChild(listEl3);
+    listEl4 = document.createElement("ul");
+    listEl4.className = "repl-ac-list";
+    listEl4.setAttribute("role", "listbox");
+    listEl4.setAttribute("aria-label", "Command completions");
+    popupEl.appendChild(listEl4);
     document.body.appendChild(popupEl);
     return popupEl;
   }
@@ -21729,26 +22749,26 @@
     };
   }
   function positionPopup() {
-    if (!popupEl || popupEl.hidden || !open8 || !listEl3) return;
+    if (!popupEl || popupEl.hidden || !open9 || !listEl4) return;
     var input2 = getInput();
     if (!input2) return;
-    var anchor = tokenAnchor(input2, replaceFrom);
-    if (!anchor) return;
-    listEl3.style.maxHeight = "";
+    var anchor2 = tokenAnchor(input2, replaceFrom);
+    if (!anchor2) return;
+    listEl4.style.maxHeight = "";
     var popW = popupEl.offsetWidth || 0;
     var popH = popupEl.offsetHeight || 0;
     if (popH < 1) return;
-    var roomBelow = window.innerHeight - anchor.bottom - VIEW_PAD_PX;
-    var roomAbove = anchor.top - VIEW_PAD_PX;
+    var roomBelow = window.innerHeight - anchor2.bottom - VIEW_PAD_PX;
+    var roomAbove = anchor2.top - VIEW_PAD_PX;
     var placeBelow = roomBelow >= popH + POPUP_GAP_PX || roomBelow >= roomAbove;
     var avail = placeBelow ? roomBelow : roomAbove;
     if (avail > 0 && popH > avail - POPUP_GAP_PX) {
-      listEl3.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + "px";
+      listEl4.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + "px";
       popH = popupEl.offsetHeight || popH;
     }
     var maxLeft = window.innerWidth - VIEW_PAD_PX - popW;
-    var left = Math.max(VIEW_PAD_PX, Math.min(anchor.left, maxLeft));
-    var top = placeBelow ? anchor.bottom + POPUP_GAP_PX : anchor.top - popH - POPUP_GAP_PX;
+    var left = Math.max(VIEW_PAD_PX, Math.min(anchor2.left, maxLeft));
+    var top = placeBelow ? anchor2.bottom + POPUP_GAP_PX : anchor2.top - popH - POPUP_GAP_PX;
     if (top < VIEW_PAD_PX) top = VIEW_PAD_PX;
     if (top + popH > window.innerHeight - VIEW_PAD_PX) {
       top = Math.max(VIEW_PAD_PX, window.innerHeight - VIEW_PAD_PX - popH);
@@ -21757,7 +22777,7 @@
     popupEl.style.top = top + "px";
   }
   function onReposition() {
-    if (open8) positionPopup();
+    if (open9) positionPopup();
   }
   function bindReposition(on) {
     var output2 = document.getElementById("output");
@@ -21819,7 +22839,7 @@
     return DEFAULT_VERBS.slice();
   }
   function hide() {
-    open8 = false;
+    open9 = false;
     explicit = false;
     items2 = [];
     activeIndex2 = -1;
@@ -21831,27 +22851,27 @@
       popupEl.style.left = "";
       popupEl.style.top = "";
     }
-    if (listEl3) {
-      listEl3.textContent = "";
-      listEl3.style.maxHeight = "";
+    if (listEl4) {
+      listEl4.textContent = "";
+      listEl4.style.maxHeight = "";
     }
   }
-  function isOpen3() {
-    return open8 && items2.length > 0;
+  function isOpen4() {
+    return open9 && items2.length > 0;
   }
   function scrollActiveIntoView(li) {
-    if (!listEl3 || !li) return;
+    if (!listEl4 || !li) return;
     var top = li.offsetTop;
     var bottom = top + li.offsetHeight;
-    var viewTop = listEl3.scrollTop;
-    var viewBottom = viewTop + listEl3.clientHeight;
-    if (top < viewTop) listEl3.scrollTop = top;
-    else if (bottom > viewBottom) listEl3.scrollTop = bottom - listEl3.clientHeight;
+    var viewTop = listEl4.scrollTop;
+    var viewBottom = viewTop + listEl4.clientHeight;
+    if (top < viewTop) listEl4.scrollTop = top;
+    else if (bottom > viewBottom) listEl4.scrollTop = bottom - listEl4.clientHeight;
   }
   function setActive2(idx) {
-    if (!listEl3 || !items2.length) return;
+    if (!listEl4 || !items2.length) return;
     activeIndex2 = Math.max(0, Math.min(items2.length - 1, idx));
-    var kids = listEl3.children;
+    var kids = listEl4.children;
     for (var i = 0; i < kids.length; i++) {
       if (i === activeIndex2) kids[i].setAttribute("aria-selected", "true");
       else kids[i].removeAttribute("aria-selected");
@@ -21874,7 +22894,7 @@
     if (typeof ReplCommands !== "undefined" && ReplCommands.resetHistoryIndex) {
       ReplCommands.resetHistoryIndex();
     }
-    if (autocompleteContinue()) refresh2();
+    if (autocompleteContinue()) refresh3();
     else suppressRefresh = true;
     return true;
   }
@@ -21899,9 +22919,9 @@
       li.appendChild(detail2);
     }
   }
-  function render2(result) {
+  function render3(result) {
     var popup = ensurePopup();
-    if (!popup || !listEl3) return;
+    if (!popup || !listEl4) return;
     if (!result || !result.items || !result.items.length) {
       hide();
       return;
@@ -21910,8 +22930,8 @@
     replaceFrom = result.replaceFrom || 0;
     typedToken = result.token || "";
     activeIndex2 = 0;
-    open8 = true;
-    listEl3.textContent = "";
+    open9 = true;
+    listEl4.textContent = "";
     for (var i = 0; i < items2.length; i++) {
       var it = items2[i];
       var li = document.createElement("li");
@@ -21923,7 +22943,7 @@
         e.preventDefault();
         accept2(parseInt(e.currentTarget.dataset.index, 10));
       });
-      listEl3.appendChild(li);
+      listEl4.appendChild(li);
     }
     popup.hidden = false;
     popup.style.visibility = "hidden";
@@ -21943,7 +22963,7 @@
       verbs: listVerbs()
     });
   }
-  function refresh2(opts) {
+  function refresh3(opts) {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function() {
       debounceTimer = null;
@@ -21965,24 +22985,24 @@
         return;
       }
       explicit = false;
-      render2(compute());
+      render3(compute());
     }, 20);
   }
   function toggleExplicit() {
-    if (isOpen3()) {
+    if (isOpen4()) {
       hide();
       return true;
     }
-    refresh2({ explicit: true });
+    refresh3({ explicit: true });
     return true;
   }
-  function onKeyDown2(e) {
+  function onKeyDown3(e) {
     if (!e) return false;
     if (isAutocompleteToggle(e)) {
       toggleExplicit();
       return true;
     }
-    if (!isOpen3()) return false;
+    if (!isOpen4()) return false;
     if (e.key === "ArrowDown") {
       setActive2(activeIndex2 + 1);
       return true;
@@ -22010,9 +23030,9 @@
       suppressRefresh = false;
       if (!autocompleteContinue()) return;
     }
-    refresh2();
+    refresh3();
   }
-  function bind2(input2) {
+  function bind3(input2) {
     inputEl = input2 || getInput();
     ensurePopup();
     hide();
@@ -22020,28 +23040,28 @@
     alwaysNavBound = true;
     inputEl.addEventListener("keyup", function(e) {
       if (e && (e.ctrlKey || e.metaKey || e.altKey || isAutocompleteToggle(e))) return;
-      if (autocompleteTrigger() === "always") refresh2();
+      if (autocompleteTrigger() === "always") refresh3();
     });
     inputEl.addEventListener("click", function() {
-      if (autocompleteTrigger() === "always") refresh2();
+      if (autocompleteTrigger() === "always") refresh3();
     });
   }
   var api2 = {
-    bind: bind2,
-    refresh: refresh2,
+    bind: bind3,
+    refresh: refresh3,
     onInput,
     hide,
-    isOpen: isOpen3,
+    isOpen: isOpen4,
     toggleExplicit,
-    onKeyDown: onKeyDown2,
+    onKeyDown: onKeyDown3,
     _compute: compute,
     _suggest: suggestReplCompletions
   };
-  global33.ReplAutocomplete = api2;
-  global33.BelJarReplAutocomplete = api2;
+  global35.ReplAutocomplete = api2;
+  global35.BelJarReplAutocomplete = api2;
 
   // js/repl/repl-commands.mjs
-  var global34 = globalThis;
+  var global36 = globalThis;
   var replHistory = [];
   var replHistoryIndex = null;
   var historyLoaded2 = false;
@@ -22085,7 +23105,7 @@
     return document.getElementById("command-input");
   }
   function parseBelugaCmd(prefixed) {
-    var norm2 = global34.BelugaText ? global34.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
+    var norm2 = global36.BelugaText ? global36.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
     var inner = norm2.replace(/^%:/, "").trim();
     if (!inner) return { verb: "", args: "" };
     var sp = inner.search(/\s/);
@@ -22237,7 +23257,7 @@
       }
     }
   }
-  global34.ReplCommands = {
+  global36.ReplCommands = {
     runCmd,
     resetHistoryIndex,
     historyUp,
@@ -22245,10 +23265,10 @@
     getHistory,
     recordHistory
   };
-  global34.BelJarReplCommands = global34.ReplCommands;
+  global36.BelJarReplCommands = global36.ReplCommands;
 
   // js/repl/repl-persist.mjs
-  var global35 = globalThis;
+  var global37 = globalThis;
   var SAVE_DEBOUNCE_MS2 = 300;
   var HTML_CAP = 400 * 1024;
   var saveTimer2 = null;
@@ -22386,15 +23406,15 @@
       if (ok) scheduleSave2();
     }
   }
-  global35.ReplPersist = {
+  global37.ReplPersist = {
     scheduleSave: scheduleSave2,
     saveNow,
     restore
   };
-  global35.BelJarReplPersist = global35.ReplPersist;
+  global37.BelJarReplPersist = global37.ReplPersist;
 
   // js/ui/bj-toggle.mjs
-  var global36 = globalThis;
+  var global38 = globalThis;
   function createParts(opts) {
     opts = opts || {};
     var input2 = document.createElement("input");
@@ -22403,19 +23423,19 @@
     if (opts.id) input2.id = opts.id;
     if (opts.ariaLabel) input2.setAttribute("aria-label", opts.ariaLabel);
     input2.checked = !!opts.checked;
-    var track = document.createElement("span");
-    track.className = "bj-toggle__track";
-    track.setAttribute("aria-hidden", "true");
+    var track3 = document.createElement("span");
+    track3.className = "bj-toggle__track";
+    track3.setAttribute("aria-hidden", "true");
     var thumb = document.createElement("span");
     thumb.className = "bj-toggle__thumb";
-    track.appendChild(thumb);
+    track3.appendChild(thumb);
     input2.addEventListener("change", function() {
       if (opts.onChange) opts.onChange(input2.checked);
     });
     function setChecked(on) {
       input2.checked = !!on;
     }
-    return { input: input2, track, setChecked };
+    return { input: input2, track: track3, setChecked };
   }
   function create8(opts) {
     opts = opts || {};
@@ -22428,11 +23448,11 @@
     parts.element = wrap;
     return parts;
   }
-  global36.Toggle = { create: create8, createParts };
-  global36.BelJarToggle = global36.Toggle;
+  global38.Toggle = { create: create8, createParts };
+  global38.BelJarToggle = global38.Toggle;
 
   // js/ui/bj-dropdown.mjs
-  var global37 = globalThis;
+  var global39 = globalThis;
   var openDropdowns = [];
   function closeAll2() {
     for (var i = openDropdowns.length - 1; i >= 0; i--) {
@@ -22484,10 +23504,10 @@
       btn.addEventListener("click", function() {
         if (opt.value !== selected) {
           setValue(opt.value);
-          close4();
+          close5();
           onChange(opt.value);
         } else {
-          close4();
+          close5();
         }
       });
       panel2.appendChild(btn);
@@ -22527,7 +23547,7 @@
       panel2.style.top = pos.y + "px";
       panel2.style.left = pos.x + "px";
     }
-    function open10() {
+    function open11() {
       var el6 = container.parentElement;
       while (el6 && el6.tagName !== "DIALOG") el6 = el6.parentElement;
       var mountEl = el6 || document.body;
@@ -22563,7 +23583,7 @@
       updateFocus();
       if (openDropdowns.indexOf(api3) === -1) openDropdowns.push(api3);
     }
-    function close4() {
+    function close5() {
       container.classList.remove("is-open");
       panel2.classList.remove("is-open");
       trigger.setAttribute("aria-expanded", "false");
@@ -22573,21 +23593,21 @@
       if (idx !== -1) openDropdowns.splice(idx, 1);
     }
     trigger.addEventListener("click", function() {
-      if (container.classList.contains("is-open")) close4();
-      else open10();
+      if (container.classList.contains("is-open")) close5();
+      else open11();
     });
     trigger.addEventListener("keydown", function(e) {
-      var isOpen4 = container.classList.contains("is-open");
-      if (!isOpen4) {
+      var isOpen5 = container.classList.contains("is-open");
+      if (!isOpen5) {
         if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          open10();
+          open11();
         }
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        close4();
+        close5();
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
         focusedIdx = Math.min(focusedIdx + 1, options.length - 1);
@@ -22604,22 +23624,22 @@
             setValue(o.value);
             onChange(o.value);
           }
-          close4();
+          close5();
         }
       }
     });
     document.addEventListener("click", function(e) {
-      if (container.classList.contains("is-open") && !container.contains(e.target) && !panel2.contains(e.target)) close4();
+      if (container.classList.contains("is-open") && !container.contains(e.target) && !panel2.contains(e.target)) close5();
     });
     setValue(currentValue);
-    var api3 = { element: container, setValue, close: close4 };
+    var api3 = { element: container, setValue, close: close5 };
     return api3;
   }
-  global37.Dropdown = { create: create9, closeAll: closeAll2 };
-  global37.BelJarDropdown = global37.Dropdown;
+  global39.Dropdown = { create: create9, closeAll: closeAll2 };
+  global39.BelJarDropdown = global39.Dropdown;
 
   // js/ui/settings-ui.mjs
-  var global38 = globalThis;
+  var global40 = globalThis;
   var settingsDialogEl = null;
   var keybindingsApi = null;
   var aliasesApi = null;
@@ -22641,7 +23661,7 @@
   }
   function notifySettingsChanged(key) {
     try {
-      global38.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
+      global40.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
     } catch (_) {
     }
   }
@@ -22651,7 +23671,7 @@
     });
   }
   function applyLiveSettings(key) {
-    if (typeof global38.beljarApplyLiveSettings === "function") global38.beljarApplyLiveSettings(key);
+    if (typeof global40.beljarApplyLiveSettings === "function") global40.beljarApplyLiveSettings(key);
   }
   function writePersist(key, fn) {
     var p = persist3();
@@ -22676,7 +23696,7 @@
       if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
       if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
       if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-      if (typeof global38.syncEditorCmTheme === "function") global38.syncEditorCmTheme();
+      if (typeof global40.syncEditorCmTheme === "function") global40.syncEditorCmTheme();
       p.resetEditorPrefs();
       if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
       p.resetBelugaPrefs();
@@ -22685,7 +23705,7 @@
       p.resetReplPrefs();
       p.resetWorkspacePrefs();
       var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-      global38.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
+      global40.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
       p.resetAliasesPrefs();
     }, "settings-reset-all");
     Keybindings.resetAll();
@@ -22693,8 +23713,8 @@
     if (aliasesApi) aliasesApi.refresh();
     syncFromState();
     applyLiveSettings("settings-reset-all");
-    if (global38.Toasts && typeof global38.Toasts.success === "function") {
-      global38.Toasts.success("All settings reset.");
+    if (global40.Toasts && typeof global40.Toasts.success === "function") {
+      global40.Toasts.success("All settings reset.");
     }
   }
   function syncFromState() {
@@ -22830,7 +23850,7 @@
   var KB_FILTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
   function activeEditingStyle() {
     try {
-      var P3 = global38.Persist;
+      var P3 = global40.Persist;
       return P3 && P3.readStoredKeymapStyle ? P3.readStoredKeymapStyle() : "default";
     } catch (_) {
       return "default";
@@ -22872,10 +23892,10 @@
     var recordingChord = null;
     var invalidTimer = null;
     function toastWarn(message2) {
-      if (global38.Toasts && typeof global38.Toasts.warn === "function") {
-        global38.Toasts.warn(message2);
-      } else if (global38.Toasts && typeof global38.Toasts.show === "function") {
-        global38.Toasts.show(message2, { kind: "warn" });
+      if (global40.Toasts && typeof global40.Toasts.warn === "function") {
+        global40.Toasts.warn(message2);
+      } else if (global40.Toasts && typeof global40.Toasts.show === "function") {
+        global40.Toasts.show(message2, { kind: "warn" });
       }
     }
     function kb() {
@@ -22984,7 +24004,7 @@
       }
       recordingChord = null;
       chordBtn.classList.remove("is-recording", "is-invalid");
-      refresh4();
+      refresh5();
     }
     function unbindRecording(chordBtn) {
       var K = kb();
@@ -22992,7 +24012,7 @@
       if (K && id) K.clearBinding(id);
       recordingChord = null;
       chordBtn.classList.remove("is-recording", "is-invalid");
-      refresh4();
+      refresh5();
     }
     function buildRow2(cmd) {
       var row = document.createElement("div");
@@ -23064,7 +24084,7 @@
       row.appendChild(chord);
       return row;
     }
-    function refresh4() {
+    function refresh5() {
       clearRecording();
       list3.replaceChildren();
       var K = kb();
@@ -23094,12 +24114,12 @@
     }
     function applyFilter() {
       var q = String(filterInput.value || "").trim().toLowerCase();
-      var rows = list3.querySelectorAll(".bj-kb__row");
+      var rows2 = list3.querySelectorAll(".bj-kb__row");
       var liveSections = /* @__PURE__ */ Object.create(null);
       var shown = 0;
       var bound = 0;
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
+      for (var i = 0; i < rows2.length; i++) {
+        var row = rows2[i];
         var chord = row.dataset.chord || "";
         if (chord) bound += 1;
         var hit = !q || (row.dataset.title || "").indexOf(q) >= 0 || chord.indexOf(q) >= 0 || String(row.dataset.section || "").toLowerCase().indexOf(q) >= 0;
@@ -23112,11 +24132,11 @@
       for (var h = 0; h < heads.length; h++) {
         heads[h].hidden = !liveSections[heads[h].dataset.section || ""];
       }
-      noResults.hidden = shown > 0 || !rows.length;
+      noResults.hidden = shown > 0 || !rows2.length;
       if (q) {
-        filterCount.textContent = shown + " of " + rows.length;
+        filterCount.textContent = shown + " of " + rows2.length;
       } else {
-        filterCount.textContent = rows.length + " commands \xB7 " + bound + " bound";
+        filterCount.textContent = rows2.length + " commands \xB7 " + bound + " bound";
       }
     }
     filterInput.addEventListener("input", applyFilter);
@@ -23133,9 +24153,9 @@
       }
       return list3.querySelector('.bj-kb__row[data-command-id="' + String(id).replace(/"/g, "") + '"]');
     }
-    refresh4();
+    refresh5();
     return {
-      refresh: refresh4,
+      refresh: refresh5,
       clearRecording,
       revealCommand
     };
@@ -23157,18 +24177,18 @@
     root2.appendChild(footer);
     body.appendChild(root2);
     var nextRowId = 1;
-    var rows = [];
+    var rows2 = [];
     var CLOSE_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
     function toastWarn(message2) {
-      if (global38.Toasts && typeof global38.Toasts.warn === "function") {
-        global38.Toasts.warn(message2);
-      } else if (global38.Toasts && typeof global38.Toasts.show === "function") {
-        global38.Toasts.show(message2, { kind: "warn" });
+      if (global40.Toasts && typeof global40.Toasts.warn === "function") {
+        global40.Toasts.warn(message2);
+      } else if (global40.Toasts && typeof global40.Toasts.show === "function") {
+        global40.Toasts.show(message2, { kind: "warn" });
       }
     }
-    function setTip3(el6, text) {
-      if (global38.Tooltips && typeof global38.Tooltips.set === "function") {
-        global38.Tooltips.set(el6, text);
+    function setTip2(el6, text) {
+      if (global40.Tooltips && typeof global40.Tooltips.set === "function") {
+        global40.Tooltips.set(el6, text);
       } else {
         el6.setAttribute("aria-label", text);
       }
@@ -23210,7 +24230,7 @@
       return stored == null ? defaultPairs() : normalizePairs(stored);
     }
     function pairsFromRows() {
-      return normalizePairs(rows.map(function(r) {
+      return normalizePairs(rows2.map(function(r) {
         return [r.from, r.to];
       }));
     }
@@ -23232,9 +24252,9 @@
     function findDuplicate(from, exceptId) {
       var needle = String(from || "").trim();
       if (!needle) return null;
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].id === exceptId) continue;
-        if (rows[i].from.trim() === needle) return rows[i];
+      for (var i = 0; i < rows2.length; i++) {
+        if (rows2[i].id === exceptId) continue;
+        if (rows2[i].from.trim() === needle) return rows2[i];
       }
       return null;
     }
@@ -23267,7 +24287,7 @@
       del.type = "button";
       del.className = "icon-btn bj-alias__delete";
       del.innerHTML = CLOSE_SVG2;
-      setTip3(del, "Delete alias");
+      setTip2(del, "Delete alias");
       var touchedFrom = false;
       var touchedTo = false;
       function refreshInvalid() {
@@ -23334,11 +24354,11 @@
       del.addEventListener("click", function(e) {
         e.preventDefault();
         e.stopPropagation();
-        rows = rows.filter(function(r) {
+        rows2 = rows2.filter(function(r) {
           return r.id !== row.id;
         });
         commit();
-        render4();
+        render5();
       });
       el6.appendChild(trigger);
       el6.appendChild(arrow);
@@ -23346,29 +24366,29 @@
       el6.appendChild(del);
       return el6;
     }
-    function render4() {
+    function render5() {
       list3.replaceChildren();
       footer.hidden = false;
-      if (!rows.length) {
+      if (!rows2.length) {
         var emptyAll = document.createElement("p");
         emptyAll.className = "bj-settings__empty bj-alias__empty";
         emptyAll.textContent = "No aliases. Add one to expand text while typing.";
         list3.appendChild(emptyAll);
         return;
       }
-      rows.forEach(function(row) {
+      rows2.forEach(function(row) {
         list3.appendChild(buildRow2(row));
       });
     }
     function reload() {
-      rows = rowsFromPairs(loadPairs());
-      render4();
+      rows2 = rowsFromPairs(loadPairs());
+      render5();
     }
     addBtn.addEventListener("click", function() {
       if (typeof closeSettingsSearch === "function") closeSettingsSearch(true);
       var row = { id: nextRowId++, from: "", to: "" };
-      rows.push(row);
-      render4();
+      rows2.push(row);
+      render5();
       var triggerEl = list3.querySelector('[data-row-id="' + row.id + '"] .bj-alias__input--trigger');
       if (triggerEl) triggerEl.focus();
     });
@@ -23376,7 +24396,7 @@
     return {
       refresh: reload,
       list: function() {
-        return rows.filter(function(r) {
+        return rows2.filter(function(r) {
           return !!(r.from && r.from.trim() && r.to !== "");
         }).map(function(r) {
           return { id: r.id, from: r.from, to: r.to };
@@ -23398,7 +24418,7 @@
     dsc.textContent = descText;
     m.appendChild(lbl);
     m.appendChild(dsc);
-    var toggle4 = Toggle.create({
+    var toggle5 = Toggle.create({
       id: inputId,
       checked: readFn(),
       ariaLabel: labelText,
@@ -23409,10 +24429,10 @@
       }
     });
     r.appendChild(m);
-    r.appendChild(toggle4.element);
+    r.appendChild(toggle5.element);
     parent.appendChild(r);
-    controls[id] = { type: "switch", input: toggle4.input, setChecked: toggle4.setChecked, read: readFn };
-    return toggle4.input;
+    controls[id] = { type: "switch", input: toggle5.input, setChecked: toggle5.setChecked, read: readFn };
+    return toggle5.input;
   }
   var BACKSLASH = String.fromCharCode(92);
   var SETTING_INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
@@ -23748,7 +24768,7 @@
         if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
         if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
         if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-        if (typeof global38.syncEditorCmTheme === "function") global38.syncEditorCmTheme();
+        if (typeof global40.syncEditorCmTheme === "function") global40.syncEditorCmTheme();
       }, "appearance-reset");
     });
     attachPanelReset(main.querySelector('[data-category="editor"]'), function() {
@@ -23793,7 +24813,7 @@
       runCategoryReset(function(p) {
         p.resetWorkspacePrefs();
         var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-        global38.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
+        global40.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
       }, "workspace-reset");
     });
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function() {
@@ -23815,7 +24835,7 @@
         var isLight = v === "light";
         document.documentElement.classList.toggle("light", isLight);
         p.writeStoredTheme(isLight ? "light" : "dark");
-        if (typeof global38.syncEditorCmTheme === "function") global38.syncEditorCmTheme();
+        if (typeof global40.syncEditorCmTheme === "function") global40.syncEditorCmTheme();
       }
     );
     addDropdownRow(
@@ -24836,7 +25856,7 @@
       },
       function(p, on) {
         p.writeStoredInspectorFollow(on);
-        global38.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
+        global40.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
       }
     );
     addActionRow(
@@ -24853,7 +25873,7 @@
           if (!ok || !persist3()) return;
           persist3().resetLayoutPrefs();
           postSettingsApply("layout-reset");
-          if (typeof global38.location !== "undefined") global38.location.reload();
+          if (typeof global40.location !== "undefined") global40.location.reload();
         });
       }
     );
@@ -24897,7 +25917,7 @@
               var bundle = JSON.parse(String(reader.result || ""));
               var result = p.importUserSettings(bundle);
               if (!result || !result.ok) {
-                if (global38.Toasts && global38.Toasts.warn) global38.Toasts.warn("Could not import settings.");
+                if (global40.Toasts && global40.Toasts.warn) global40.Toasts.warn("Could not import settings.");
                 return;
               }
               if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
@@ -24912,11 +25932,11 @@
               if (aliasesApi) aliasesApi.refresh();
               applyLiveSettings("settings-import");
               postSettingsApply("settings-import");
-              if (global38.Toasts && global38.Toasts.success) {
-                global38.Toasts.success("Imported " + (result.applied || 0) + " settings.");
+              if (global40.Toasts && global40.Toasts.success) {
+                global40.Toasts.success("Imported " + (result.applied || 0) + " settings.");
               }
             } catch (_) {
-              if (global38.Toasts && global38.Toasts.warn) global38.Toasts.warn("Invalid settings file.");
+              if (global40.Toasts && global40.Toasts.warn) global40.Toasts.warn("Invalid settings file.");
             }
           };
           reader.readAsText(file);
@@ -24931,12 +25951,12 @@
       "Strict: while typing. Greedy: also on paste, import, and library insert.",
       [{ value: "strict", label: "Strict" }, { value: "greedy", label: "Greedy" }],
       function() {
-        return p0 ? p0.readStoredAliasActivation() : "strict";
+        return p0 ? p0.readStoredAliasActivation() : "greedy";
       },
       function(p, v) {
         p.writeStoredAliasActivation(v);
         if (v !== "greedy") return;
-        var ed = global38.CurrentEditor;
+        var ed = global40.CurrentEditor;
         if (ed && typeof ed.getValue === "function") {
           var activeId2 = p.getActiveFileId();
           if (activeId2) p.setFileText(activeId2, ed.getValue());
@@ -25012,8 +26032,8 @@
     }
     closeSettingsSearch = closeSettingsSearchPanel;
     function openSearchResults() {
-      var mount = settingsDialogEl || document.body;
-      if (searchResults.parentElement !== mount) mount.appendChild(searchResults);
+      var mount3 = settingsDialogEl || document.body;
+      if (searchResults.parentElement !== mount3) mount3.appendChild(searchResults);
       searchResults.hidden = false;
       searchResults.classList.add("is-open");
       search.input.setAttribute("aria-expanded", "true");
@@ -25266,23 +26286,23 @@
     });
     return settingsDialogEl;
   }
-  function open9() {
+  function open10() {
     ensureSettingsDialog();
     if (typeof closeSettingsSearch === "function") closeSettingsSearch(true);
     syncFromState();
     if (keybindingsApi && typeof keybindingsApi.refresh === "function") keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
   }
-  global38.SettingsUI = {
+  global40.SettingsUI = {
     syncFromState,
     ensureSettingsDialog,
-    open: open9,
+    open: open10,
     notifySettingsChanged
   };
-  global38.BelJarSettingsUI = global38.SettingsUI;
+  global40.BelJarSettingsUI = global40.SettingsUI;
 
   // js/harpoon/harpoon-icon.mjs
-  var global39 = globalThis;
+  var global41 = globalThis;
   var MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="1.6"/><path d="M6.2 6.2 16.5 16.5"/><path d="M20.5 20.5 19.5 12 16.5 16.5 12 19.5Z"/></svg>';
   function appendGlyph(parent, className) {
     var span = document.createElement("span");
@@ -25291,16 +26311,16 @@
     parent.appendChild(span);
     return span;
   }
-  global39.HarpoonIcon = { markup: MARKUP, appendGlyph };
-  global39.BelJarHarpoonIcon = global39.HarpoonIcon;
+  global41.HarpoonIcon = { markup: MARKUP, appendGlyph };
+  global41.BelJarHarpoonIcon = global41.HarpoonIcon;
 
   // js/harpoon/harpoon-glyphs.mjs
-  var global40 = globalThis;
+  var global42 = globalThis;
   function fallbackNormalize(text) {
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192").replace(/([[({])[ \t]+/g, "$1").replace(/[ \t]+([\])}])/g, "$1");
   }
   function displayBeluga(text) {
-    var ed = global40.BelEditor || null;
+    var ed = global42.BelEditor || null;
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(text);
     return fallbackNormalize(text);
   }
@@ -25313,7 +26333,7 @@
   function looksLikeBeluga(s) {
     return /(\|-|⊢|\[|=>|->)/.test(String(s || ""));
   }
-  global40.HarpoonGlyphs = {
+  global42.HarpoonGlyphs = {
     displayBeluga,
     compactTypeLabel,
     looksLikeBeluga,
@@ -25321,12 +26341,12 @@
   };
 
   // js/harpoon/harpoon-lab-tree.mjs
-  var global41 = globalThis;
+  var global43 = globalThis;
   function norm(s) {
     return String(s == null ? "" : s).replace(/\s+/g, " ").trim();
   }
   function glyphs() {
-    return global41.HarpoonGlyphs || null;
+    return global43.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
     var g14 = glyphs();
@@ -25656,7 +26676,7 @@
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
   function highlightInto(host2, text, kind) {
-    var ed = global41.BelEditor || null;
+    var ed = global43.BelEditor || null;
     var shown = displayBeluga2(String(text == null ? "" : text).trim());
     if (!shown) return false;
     try {
@@ -25741,7 +26761,7 @@
     }
     return frag;
   }
-  function render3(container, root2, opts) {
+  function render4(container, root2, opts) {
     opts = opts || {};
     var mode = opts.mode || "path";
     if (mode === "space") expandGhosts(root2);
@@ -25845,9 +26865,9 @@
       } else {
         ariaTip = n.step && n.step.rationale || n.label || "";
       }
-      if (global41.Tooltips && typeof global41.Tooltips.setRich === "function") {
+      if (global43.Tooltips && typeof global43.Tooltips.setRich === "function") {
         (function(node) {
-          global41.Tooltips.setRich(g14, function() {
+          global43.Tooltips.setRich(g14, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
@@ -25941,19 +26961,19 @@
     }
     return svg;
   }
-  global41.HarpoonTree = {
+  global43.HarpoonTree = {
     buildModel,
-    render: render3,
+    render: render4,
     breadcrumb,
     findById
   };
 
   // js/harpoon/harpoon-lab-display.mjs
-  var global42 = globalThis;
+  var global44 = globalThis;
   function createDisplay(deps) {
     var el6 = deps.el;
     var E3 = deps.E;
-    var setTip3 = deps.setTip;
+    var setTip2 = deps.setTip;
     var liveEditorFileId2 = deps.liveEditorFileId;
     var bindChipTip2 = deps.bindChipTip;
     var renderSynthChain2 = deps.renderSynthChain;
@@ -25961,12 +26981,12 @@
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g14 = global42.HarpoonGlyphs;
+      var g14 = global44.HarpoonGlyphs;
       if (g14) return g14.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g14 = global42.HarpoonGlyphs;
+      var g14 = global44.HarpoonGlyphs;
       if (g14) return g14.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
@@ -26029,7 +27049,7 @@
       if (!ed || !prep || typeof ed.resolveHoleGoalForHit !== "function") {
         return { goalType: na.goalType, goalState: na.goalState || "live" };
       }
-      var api3 = global42.CurrentEditor;
+      var api3 = global44.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = ed.resolveHoleGoalForHit(session.view, eng, prep.hit);
       if (!hit || !hit.goal) {
@@ -26048,7 +27068,7 @@
       var from = session ? session.declFrom : null;
       if (!view || !name || from == null) return cached || sourceType;
       if (session.fileId && liveEditorFileId2() !== session.fileId) return cached || sourceType;
-      var api3 = global42.CurrentEditor;
+      var api3 = global44.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       if (!eng || typeof eng.intelSyncAt !== "function") return cached || sourceType;
       var to = session.declTo != null ? session.declTo : Math.min(from + 400, view.state.doc.length);
@@ -26306,7 +27326,7 @@
     }
     function moveLead(s) {
       if (s && s.lead) return s.lead;
-      var ed = global42.BelEditor;
+      var ed = global44.BelEditor;
       if (ed && typeof ed.stepLead === "function" && s && s.meta) {
         var fromEd = ed.stepLead({ kind: s.move }, s.meta, { goal: s.goal });
         if (fromEd) return fromEd;
@@ -26474,7 +27494,7 @@
   }
 
   // js/harpoon/harpoon-lab-commit.mjs
-  var global43 = globalThis;
+  var global45 = globalThis;
   function createCommit(deps) {
     var E3 = deps.E;
     var toast3 = deps.toast;
@@ -26517,14 +27537,14 @@
     var COMMIT_NAV_TIMEOUT_MS = 8e3;
     function withCommitTimeout(promise, ms, message2) {
       return new Promise(function(resolve2, reject) {
-        var timer2 = global43.setTimeout(function() {
+        var timer2 = global45.setTimeout(function() {
           reject(new Error(message2 || "Timed out."));
         }, ms);
         Promise.resolve(promise).then(function(v) {
-          global43.clearTimeout(timer2);
+          global45.clearTimeout(timer2);
           resolve2(v);
         }).catch(function(e) {
-          global43.clearTimeout(timer2);
+          global45.clearTimeout(timer2);
           reject(e);
         });
       });
@@ -26534,7 +27554,7 @@
       var fileId = this.fileId || this.anchor && this.anchor.fileId;
       this.clearPendingCommitNav();
       var view = this.resolveView();
-      var api3 = global43.CurrentEditor;
+      var api3 = global45.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng) || this.compromise && this.compromise.liveHit;
       if (!fileId || !hit) {
@@ -26553,8 +27573,8 @@
         self.verifyAndCommit(src, { skipBeginUi: true });
       };
       self._pendingCommitNavListener = onActive;
-      global43.addEventListener("beljar:active-editor-view", onActive);
-      global43.dispatchEvent(new CustomEvent("beljar:open-file-at", {
+      global45.addEventListener("beljar:active-editor-view", onActive);
+      global45.dispatchEvent(new CustomEvent("beljar:open-file-at", {
         detail: {
           fileId,
           from: hit.from,
@@ -26567,7 +27587,7 @@
         onActive();
         return Promise.resolve(false);
       }
-      self._pendingCommitNavTimer = global43.setTimeout(function() {
+      self._pendingCommitNavTimer = global45.setTimeout(function() {
         if (!self.pendingCommitSource) return;
         self.clearPendingCommitNav();
         self.resetCommitForRetry();
@@ -26579,7 +27599,7 @@
       opts = opts || {};
       var ed = E3();
       var self = this;
-      var client = global43.BelugaClient;
+      var client = global45.BelugaClient;
       if (!ed) return Promise.resolve(false);
       if (!opts.skipBeginUi) this.beginCommitUi("verify");
       this.probeAnchor();
@@ -26597,7 +27617,7 @@
         this.finishCommitFailure("Open the file to place the proof.", false);
         return Promise.resolve(false);
       }
-      var api3 = global43.CurrentEditor;
+      var api3 = global45.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng);
       if (!hit) {
@@ -26698,13 +27718,13 @@
   }
 
   // js/harpoon/harpoon-lab-reel.mjs
-  var global44 = globalThis;
+  var global46 = globalThis;
   function createReel(deps) {
     var el6 = deps.el;
     var tacticVerb2 = deps.tacticVerb || function(k) {
       return k || "move";
     };
-    var setTip3 = deps.setTip;
+    var setTip2 = deps.setTip;
     var bindStepGoalTip2 = deps.bindStepGoalTip;
     var bindChipTip2 = deps.bindChipTip;
     var moveLead = deps.moveLead;
@@ -26751,8 +27771,8 @@
       var node = session._statTipEl || session._autoSearchSpinner;
       if (!node) return;
       if (node.getAttribute("data-tooltip") === tip) return;
-      if (global44.Tooltips && global44.Tooltips.set) {
-        global44.Tooltips.set(node, tip, { ariaLabel: false });
+      if (global46.Tooltips && global46.Tooltips.set) {
+        global46.Tooltips.set(node, tip, { ariaLabel: false });
       } else if (tip) {
         node.setAttribute("data-tooltip", tip);
       }
@@ -26795,7 +27815,7 @@
       if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
         return !Persist.prefersReducedMotion();
       }
-      return !(global44.matchMedia && global44.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      return !(global46.matchMedia && global46.matchMedia("(prefers-reduced-motion: reduce)").matches);
     }
     function reelClearMotion(el7) {
       if (!el7) return;
@@ -26960,8 +27980,8 @@
         btn._belPauseState = paused;
         btn.innerHTML = paused ? ICON_PLAY2 : ICON_PAUSE2;
         btn.setAttribute("aria-label", paused ? "Resume search" : "Pause search");
-        if (global44.Tooltips && global44.Tooltips.set) {
-          global44.Tooltips.set(btn, paused ? "Resume" : "Pause");
+        if (global46.Tooltips && global46.Tooltips.set) {
+          global46.Tooltips.set(btn, paused ? "Resume" : "Pause");
         }
       }
       if (this._autoSearchBox) {
@@ -27004,10 +28024,10 @@
         return;
       }
       if (!wrap || !wrap.parentNode) {
-        var anchor = this._autoSearchBox;
-        if (!anchor || !anchor.parentNode) return;
+        var anchor2 = this._autoSearchBox;
+        if (!anchor2 || !anchor2.parentNode) return;
         wrap = el6("div", "harpoon-lab-context");
-        anchor.parentNode.insertBefore(wrap, anchor);
+        anchor2.parentNode.insertBefore(wrap, anchor2);
         this._ctxWrap = wrap;
       }
       wrap.textContent = "";
@@ -27102,7 +28122,7 @@
       entry.el.classList.toggle("is-won", entry.status === "won");
       entry.el.classList.toggle("is-rejected", entry.status === "rejected");
       if (entry.status === "rejected") {
-        if (entry.reason) setTip3(entry.el, entry.reason, { ariaLabel: false });
+        if (entry.reason) setTip2(entry.el, entry.reason, { ariaLabel: false });
         if (na) na.checks = (na.checks || 0) + 1;
       }
     }
@@ -27233,7 +28253,7 @@
   function createAuto(deps) {
     var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
-    var setTip3 = deps.setTip;
+    var setTip2 = deps.setTip;
     var renderType4 = deps.renderType;
     var renderSource2 = deps.renderSource;
     var nativeAutoSearchLabel = deps.nativeAutoSearchLabel;
@@ -27535,7 +28555,7 @@
           li.appendChild(hd);
           if (g14.heads.length > 1) {
             var more = el6("span", "harpoon-stuck-tried-more", "+" + (g14.heads.length - 1));
-            setTip3(more, g14.heads.map(belugaText).join("\n"), { ariaLabel: false });
+            setTip2(more, g14.heads.map(belugaText).join("\n"), { ariaLabel: false });
             more.setAttribute(
               "aria-label",
               g14.heads.length + " candidates rejected with this objection"
@@ -27544,7 +28564,7 @@
           }
           if (g14.reason) {
             var rn = el6("span", "harpoon-stuck-tried-reason", g14.reason);
-            setTip3(rn, g14.reason, { ariaLabel: false });
+            setTip2(rn, g14.reason, { ariaLabel: false });
             li.appendChild(rn);
           }
           list3.appendChild(li);
@@ -27567,11 +28587,11 @@
   }
 
   // js/harpoon/harpoon-lab-tree-ui.mjs
-  var global45 = globalThis;
+  var global47 = globalThis;
   function createTreeUi(deps) {
     var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
-    var setTip3 = deps.setTip;
+    var setTip2 = deps.setTip;
     var bindChipTip2 = deps.bindChipTip;
     var renderType4 = deps.renderType;
     var renderSource2 = deps.renderSource;
@@ -27595,7 +28615,7 @@
       var section = el6("div", "harpoon-deriv");
       var header = el6("div", "harpoon-deriv-header");
       header.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Derivation"));
-      var toggle4 = el6("div", "harpoon-deriv-toggle");
+      var toggle5 = el6("div", "harpoon-deriv-toggle");
       var views = [["list", "List"], ["tree", "Tree"]];
       var view = "list";
       var listHost = el6("ol", "harpoon-lab-auto-trail is-instant");
@@ -27606,13 +28626,13 @@
         view = v;
         listHost.hidden = v !== "list";
         treeHost.hidden = v !== "tree";
-        toggle4.querySelectorAll(".harpoon-deriv-tab").forEach(function(t) {
+        toggle5.querySelectorAll(".harpoon-deriv-tab").forEach(function(t) {
           t.classList.toggle("is-active", t.dataset.view === v);
         });
         if (v === "tree" && !treeDrawn) {
           treeDrawn = true;
-          var mounted2 = self.mountTreePanel(treeHost, na, { compact: true, live: true });
-          self._compactTreeRedraw = mounted2.redraw;
+          var mounted4 = self.mountTreePanel(treeHost, na, { compact: true, live: true });
+          self._compactTreeRedraw = mounted4.redraw;
         }
       }
       views.forEach(function(vv) {
@@ -27622,9 +28642,9 @@
         t.addEventListener("click", function() {
           if (view !== vv[0]) showView(vv[0]);
         });
-        toggle4.appendChild(t);
+        toggle5.appendChild(t);
       });
-      header.appendChild(toggle4);
+      header.appendChild(toggle5);
       var popBtn = iconBtn2(
         "icon-btn harpoon-deriv-popout",
         ICON_POPOUT2,
@@ -27657,9 +28677,9 @@
         return opts.live ? self.derivationNa() || na : na;
       }
       function draw() {
-        if (!global45.HarpoonTree) return;
+        if (!global47.HarpoonTree) return;
         var n = cur();
-        var root2 = global45.HarpoonTree.buildModel({
+        var root2 = global47.HarpoonTree.buildModel({
           steps: n.steps || [],
           trace: n.trace || null,
           complete: !!n.complete,
@@ -27668,7 +28688,7 @@
           goalType: n.goalType || "",
           theoremSnapshot: n.theoremSnapshot || null
         });
-        global45.HarpoonTree.render(treeHost, root2, {
+        global47.HarpoonTree.render(treeHost, root2, {
           mode,
           // The roomy explorer gives the graph a whole pane; the compact one gives it a
           // fixed strip inside the panel, where filling would mean growing the panel.
@@ -27701,8 +28721,8 @@
           treeMode: treeMode || mode
         };
       }
-      if (global45.Menu && global45.Menu.bindContextMenu) {
-        global45.Menu.bindContextMenu(treeHost, function() {
+      if (global47.Menu && global47.Menu.bindContextMenu) {
+        global47.Menu.bindContextMenu(treeHost, function() {
           var hasTrace = !!(cur().trace && cur().trace.length);
           return [
             {
@@ -27725,11 +28745,11 @@
         let applyCollapsed = function() {
           split.classList.toggle("is-rail-collapsed", collapsed);
           rail.classList.toggle("is-collapsed", collapsed);
-          toggle4.innerHTML = collapsed ? ICON_CHEVRON_LEFT2 : ICON_CHEVRON_RIGHT2;
+          toggle5.innerHTML = collapsed ? ICON_CHEVRON_LEFT2 : ICON_CHEVRON_RIGHT2;
           var tip = collapsed ? "Show details panel" : "Hide details panel";
-          setTip3(toggle4, tip);
-          toggle4.setAttribute("aria-label", tip);
-          toggle4.setAttribute("aria-expanded", collapsed ? "false" : "true");
+          setTip2(toggle5, tip);
+          toggle5.setAttribute("aria-label", tip);
+          toggle5.setAttribute("aria-expanded", collapsed ? "false" : "true");
         };
         var split = el6("div", "hpt-split");
         var left = el6("div", "hpt-split-tree");
@@ -27739,18 +28759,18 @@
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
-        var persist5 = global45.Persist;
-        var collapsed = !!(persist5 && persist5.readStoredHarpoonDetailsCollapsed && persist5.readStoredHarpoonDetailsCollapsed());
+        var persist4 = global47.Persist;
+        var collapsed = !!(persist4 && persist4.readStoredHarpoonDetailsCollapsed && persist4.readStoredHarpoonDetailsCollapsed());
         var railHead = el6("div", "hpt-rail-head");
         var railTitle = el6("span", "hpt-rail-title", "Details");
-        var toggle4 = el6("button", "icon-btn hpt-rail-toggle");
-        toggle4.type = "button";
+        var toggle5 = el6("button", "icon-btn hpt-rail-toggle");
+        toggle5.type = "button";
         railHead.appendChild(railTitle);
-        railHead.appendChild(toggle4);
-        toggle4.addEventListener("click", function() {
+        railHead.appendChild(toggle5);
+        toggle5.addEventListener("click", function() {
           collapsed = !collapsed;
-          if (persist5 && persist5.writeStoredHarpoonDetailsCollapsed) {
-            persist5.writeStoredHarpoonDetailsCollapsed(collapsed);
+          if (persist4 && persist4.writeStoredHarpoonDetailsCollapsed) {
+            persist4.writeStoredHarpoonDetailsCollapsed(collapsed);
           }
           applyCollapsed();
         });
@@ -27778,8 +28798,8 @@
       }
       var live2 = na.phase === "searching";
       var content = el6("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
-      var mounted2 = this.mountTreePanel(content, na, { compact: false, live: live2 });
-      this._treeRedraw = mounted2.redraw;
+      var mounted4 = this.mountTreePanel(content, na, { compact: false, live: live2 });
+      this._treeRedraw = mounted4.redraw;
       var name = this.prep && this.prep.name || na.declName || "theorem";
       this._treeWin = fw.open({
         title: labTitle2(name + " \xB7 proof tree"),
@@ -27910,17 +28930,17 @@
       if (lead) banner.appendChild(el6("p", "hpt-detail-lead", lead));
       return banner;
     }
-    function renderTreeRailOverview(mount, ctx) {
+    function renderTreeRailOverview(mount3, ctx) {
       var na = ctx.na || {};
       var name = ctx.declName || "theorem";
-      mount.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Overview"));
+      mount3.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Overview"));
       var banner = el6("div", "hpt-detail-banner is-overview");
       banner.appendChild(el6("div", "hpt-detail-name", name));
-      mount.appendChild(banner);
+      mount3.appendChild(banner);
       if (na.goalType) {
         var g14 = el6("div", "hpt-detail-goal");
         renderType4(g14, na.goalType);
-        mount.appendChild(detailSection("Theorem", g14));
+        mount3.appendChild(detailSection("Theorem", g14));
       }
       var snap = na.theoremSnapshot;
       if (snap && (snap.premiseCount || snap.totality)) {
@@ -27931,7 +28951,7 @@
         if (snap.totality && snap.totality.kind) {
           meta.appendChild(el6("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
         }
-        mount.appendChild(detailSection("Structure", meta));
+        mount3.appendChild(detailSection("Structure", meta));
       }
       var status = el6("div", "hpt-detail-status");
       if (na.phase === "searching") {
@@ -27956,12 +28976,12 @@
           ));
         }
       }
-      mount.appendChild(detailSection("Status", status));
-      mount.appendChild(el6("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
+      mount3.appendChild(detailSection("Status", status));
+      mount3.appendChild(el6("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
-      if (!n || !global45.HarpoonTree || typeof global45.HarpoonTree.breadcrumb !== "function") return null;
-      var parts = global45.HarpoonTree.breadcrumb(n);
+      if (!n || !global47.HarpoonTree || typeof global47.HarpoonTree.breadcrumb !== "function") return null;
+      var parts = global47.HarpoonTree.breadcrumb(n);
       if (!parts.length) return null;
       function truncPart(s) {
         s = String(s || "");
@@ -28028,16 +29048,16 @@
       ];
       var wrap = el6("div", "hpt-alt-tray");
       groups.forEach(function(g14) {
-        var rows = tried.filter(function(v) {
+        var rows2 = tried.filter(function(v) {
           return v.verdict === g14.key;
         });
-        if (!rows.length) return;
+        if (!rows2.length) return;
         var sec = el6("div", "hpt-alt-group is-" + g14.key);
-        var groupLabel = el6("div", "hpt-alt-group-label", g14.label + " (" + rows.length + ")");
-        if (g14.tip) setTip3(groupLabel, g14.tip);
+        var groupLabel = el6("div", "hpt-alt-group-label", g14.label + " (" + rows2.length + ")");
+        if (g14.tip) setTip2(groupLabel, g14.tip);
         sec.appendChild(groupLabel);
         var list3 = el6("ul", "hpt-detail-tried");
-        rows.forEach(function(v) {
+        rows2.forEach(function(v) {
           list3.appendChild(renderAltRow(v, opts.rail));
         });
         sec.appendChild(list3);
@@ -28051,8 +29071,8 @@
       var text = liveFileText2(fileId);
       if (!text) return;
       var from = lineColToOffset2(text, hole.line, hole.col);
-      if (typeof global45.openFileAt === "function") {
-        global45.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
+      if (typeof global47.openFileAt === "function") {
+        global47.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
       }
     }
     ;
@@ -28077,13 +29097,13 @@
         var showStats = typeof Persist === "undefined" || Persist.readStoredAutosolveShowStats();
         if (showStats) {
           var checksEl = el6("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
-          setTip3(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
+          setTip2(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
           where.appendChild(checksEl);
         }
       }
       return where.childNodes.length ? where : null;
     }
-    function renderStateContext(self, mount, state2, goalState) {
+    function renderStateContext(self, mount3, state2, goalState) {
       if (!state2) return;
       var ed = E3();
       if (state2.goal) {
@@ -28097,17 +29117,17 @@
         } else {
           renderType4(goalHost, state2.goal);
         }
-        mount.appendChild(detailSection("Goal", goalHost));
+        mount3.appendChild(detailSection("Goal", goalHost));
       }
       if (state2.meta && state2.meta.length) {
         var metaWrap = el6("div", "hpt-detail-ctx");
         self.renderCtx(metaWrap, "meta", state2.meta);
-        mount.appendChild(detailSection("Meta context", metaWrap));
+        mount3.appendChild(detailSection("Meta context", metaWrap));
       }
       if (state2.ctx && state2.ctx.length) {
         var ctxWrap = el6("div", "hpt-detail-ctx");
         self.renderCtx(ctxWrap, "ctx", state2.ctx);
-        mount.appendChild(detailSection("Context", ctxWrap));
+        mount3.appendChild(detailSection("Context", ctxWrap));
       }
     }
     function renderTreeDetail(card, n, ctx) {
@@ -28124,8 +29144,8 @@
         }
         return;
       }
-      var mount = rail ? el6("div", "hpt-detail") : card;
-      if (rail) card.appendChild(mount);
+      var mount3 = rail ? el6("div", "hpt-detail") : card;
+      if (rail) card.appendChild(mount3);
       var self = this;
       var treeMode = ctx && ctx.treeMode || "path";
       var goalState = ctx && ctx.na && ctx.na.goalState || "live";
@@ -28133,12 +29153,12 @@
       if (n.type === "ghost") {
         var gh = n.ghost;
         var gBanner = renderDetailBanner(gh.kind, gh.head || gh.kind, "candidate not taken");
-        if (rail) mount.appendChild(gBanner);
+        if (rail) mount3.appendChild(gBanner);
         else card.appendChild(gBanner);
         if (gh.text && gh.text !== gh.head) {
           var gcode = rail ? el6("div", "hpt-detail-code") : el6("div", "hpt-card-code");
           renderSource2(gcode, gh.text);
-          if (rail) mount.appendChild(detailSection("Fragment", gcode));
+          if (rail) mount3.appendChild(detailSection("Fragment", gcode));
           else card.appendChild(gcode);
         }
         var gverdict = el6(
@@ -28147,19 +29167,19 @@
           (gh.verdict === "guard" ? "skipped \u2014 " : "rejected \u2014 ") + (gh.reason || "did not certify")
         );
         if (gh.rationale) gverdict.textContent += "\n" + gh.rationale;
-        if (rail) mount.appendChild(gverdict);
+        if (rail) mount3.appendChild(gverdict);
         else card.appendChild(gverdict);
         return;
       }
       if (n.type === "stuck") {
-        mount.appendChild(renderDetailBanner("stuck", "stuck", "no certified move closes this goal"));
+        mount3.appendChild(renderDetailBanner("stuck", "stuck", "no certified move closes this goal"));
         var whereStuck = renderWhereSection(self, n, null);
-        if (whereStuck) mount.appendChild(detailSection("Where", whereStuck));
+        if (whereStuck) mount3.appendChild(detailSection("Where", whereStuck));
         var focusStuck = renderFocusLine(n.focus);
-        if (focusStuck) mount.appendChild(detailSection("Focus", focusStuck));
-        renderStateContext(self, mount, n.state || { goal: n.goal }, goalState);
+        if (focusStuck) mount3.appendChild(detailSection("Focus", focusStuck));
+        renderStateContext(self, mount3, n.state || { goal: n.goal }, goalState);
         var altStuck = renderAlternativesTray(n.tried || n.frontier || [], { rail });
-        if (altStuck) mount.appendChild(detailSection("Alternatives", altStuck));
+        if (altStuck) mount3.appendChild(detailSection("Alternatives", altStuck));
         if (!rail) {
         }
         return;
@@ -28168,12 +29188,12 @@
       if (!st) {
         var idleKind = n.type === "theorem" ? null : n.kind || n.type;
         var idleLead = n.sub || (n.type === "arm" ? "case branch" : "");
-        mount.appendChild(renderDetailBanner(idleKind, n.label || "", idleLead));
+        mount3.appendChild(renderDetailBanner(idleKind, n.label || "", idleLead));
         if (n.type === "theorem" && ctx && ctx.na) {
-          renderStateContext(self, mount, { goal: ctx.na.goalType }, ctx.na.goalState);
+          renderStateContext(self, mount3, { goal: ctx.na.goalType }, ctx.na.goalState);
           var snap = ctx.na.theoremSnapshot;
           if (snap && snap.premiseCount) {
-            mount.appendChild(detailSection(
+            mount3.appendChild(detailSection(
               "Structure",
               el6("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
             ));
@@ -28181,34 +29201,34 @@
         } else if (n.type === "arm" && n.pattern) {
           var pg = el6("div", "hpt-detail-goal");
           renderType4(pg, n.pattern);
-          mount.appendChild(detailSection("Branch pattern", pg));
+          mount3.appendChild(detailSection("Branch pattern", pg));
         }
         return;
       }
       var meta = st.meta || {};
       var lead = st.lead || deriveMoveLead(st) || st.rationale || n.sub || "";
-      mount.appendChild(renderDetailBanner(st.move, n.label || st.move || "move", lead));
+      mount3.appendChild(renderDetailBanner(st.move, n.label || st.move || "move", lead));
       var where = renderWhereSection(self, n, st);
-      if (where) mount.appendChild(detailSection("Where", where));
+      if (where) mount3.appendChild(detailSection("Where", where));
       var focus = renderFocusLine(st.focus || n.focus);
-      if (focus) mount.appendChild(detailSection("Focus", focus));
-      renderStateContext(self, mount, n.state || {
+      if (focus) mount3.appendChild(detailSection("Focus", focus));
+      renderStateContext(self, mount3, n.state || {
         goal: st.goal,
         ctx: st.holeCtx,
         meta: st.holeMeta
       }, goalState);
       var codeEl = el6("div", rail ? "hpt-detail-code" : "hpt-card-code");
       renderSource2(codeEl, st.text || "");
-      mount.appendChild(detailSection("Fragment", codeEl));
+      mount3.appendChild(detailSection("Fragment", codeEl));
       if (st.move === "synth") {
         var chainEl = renderSynthChain2(meta, rail ? "rail" : "full");
-        if (chainEl) mount.appendChild(detailSection("Chain", chainEl));
+        if (chainEl) mount3.appendChild(detailSection("Chain", chainEl));
       }
       if (st.move === "split" && meta.armPatterns && meta.armPatterns.length) {
         if (meta.scrutinee) {
           var scrut = el6("div", "hpt-detail-goal");
           renderType4(scrut, meta.scrutinee);
-          mount.appendChild(detailSection("Scrutinee", scrut));
+          mount3.appendChild(detailSection("Scrutinee", scrut));
         }
         var armCount = meta.armPatterns.length;
         var arms = el6("ul", "hpt-detail-arms");
@@ -28226,13 +29246,13 @@
           );
           armsSection.querySelector(".hpt-detail-section-body").appendChild(note);
         }
-        mount.appendChild(armsSection);
+        mount3.appendChild(armsSection);
       }
       var foot = renderDetailMeta(meta, st.checks);
-      if (foot) mount.appendChild(foot);
+      if (foot) mount3.appendChild(foot);
       if (showAlts) {
         var alts = renderAlternativesTray(n.frontier || n.traceEntry && n.traceEntry.tried || [], { rail });
-        if (alts) mount.appendChild(detailSection("Alternatives", alts));
+        if (alts) mount3.appendChild(detailSection("Alternatives", alts));
       }
     }
     ;
@@ -28251,7 +29271,7 @@
   function createManual(deps) {
     var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
-    var setTip3 = deps.setTip;
+    var setTip2 = deps.setTip;
     var E3 = deps.E;
     var toast3 = deps.toast;
     var renderSource2 = deps.renderSource;
@@ -28323,11 +29343,11 @@
       btn.type = "button";
       var head = el6("span", "harpoon-lab-move-head");
       var verb = el6("span", "harpoon-lab-move-verb", tac.verb);
-      setTip3(verb, tac.tip);
+      setTip2(verb, tac.tip);
       head.appendChild(verb);
       if (tac.arg) {
         var argEl = el6("span", "harpoon-lab-move-arg", tac.arg);
-        setTip3(argEl, argTip(mv.kind, tac.arg));
+        setTip2(argEl, argTip(mv.kind, tac.arg));
         head.appendChild(argEl);
       }
       btn.appendChild(head);
@@ -28349,15 +29369,15 @@
       var chev = el6("span", "harpoon-lab-move-chevron");
       chev.innerHTML = ICON_CHEVRON_DOWN2;
       foot.appendChild(chev);
-      setTip3(foot, "Show the full term");
+      setTip2(foot, "Show the full term");
       foot.addEventListener("click", function(e) {
         e.preventDefault();
         e.stopPropagation();
-        var open10 = row.classList.toggle("is-expanded");
-        foot.setAttribute("aria-expanded", open10 ? "true" : "false");
-        setTip3(foot, open10 ? "Hide the full term" : "Show the full term");
+        var open11 = row.classList.toggle("is-expanded");
+        foot.setAttribute("aria-expanded", open11 ? "true" : "false");
+        setTip2(foot, open11 ? "Hide the full term" : "Show the full term");
         var full = row.querySelector(".harpoon-lab-move-term");
-        if (open10 && !full) {
+        if (open11 && !full) {
           var term = el6("div", "harpoon-lab-move-term");
           renderSource2(term, mv.text);
           row.appendChild(term);
@@ -28394,7 +29414,7 @@
       }
       var tip = PIP_TIP[state2] || "";
       if (state2 === "rejected" && detail2) tip += ": " + String(detail2).slice(0, 180);
-      setTip3(row._pip, tip);
+      setTip2(row._pip, tip);
       row._pip.setAttribute("aria-hidden", tip ? "false" : "true");
       if (tip) row._pip.setAttribute("aria-label", tip);
     }
@@ -28425,24 +29445,24 @@
       return wrap;
     }
     function skelBar() {
-      var bar = el6("div", "harpoon-lab-bar");
+      var bar2 = el6("div", "harpoon-lab-bar");
       var status = el6("div", "harpoon-lab-status");
       status.appendChild(el6("span", "harpoon-lab-status-dot"));
       status.appendChild(skel("harpoon-skel--text", "3.6rem"));
-      bar.appendChild(status);
-      return bar;
+      bar2.appendChild(status);
+      return bar2;
     }
     function skelCtx() {
       var wrap = el6("div", "harpoon-lab-context");
       var sec = el6("div", "harpoon-lab-ctx");
       sec.appendChild(el6("span", "harpoon-lab-ctx-label", "meta"));
-      var rows = el6("div", "harpoon-lab-binders");
+      var rows2 = el6("div", "harpoon-lab-binders");
       ["58%", "41%"].forEach(function(w, i) {
         var row = el6("div", "harpoon-lab-binder");
         row.appendChild(skel("harpoon-skel--text" + (i ? " harpoon-skel--d1" : ""), w));
-        rows.appendChild(row);
+        rows2.appendChild(row);
       });
-      sec.appendChild(rows);
+      sec.appendChild(rows2);
       wrap.appendChild(sec);
       return wrap;
     }
@@ -28771,10 +29791,10 @@
       var token = {};
       this._sweepToken = token;
       if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
-      var persist5 = globalThis.Persist;
-      var on = !persist5 || typeof persist5.readStoredHarpoonVerifyMoves !== "function" ? true : persist5.readStoredHarpoonVerifyMoves();
+      var persist4 = globalThis.Persist;
+      var on = !persist4 || typeof persist4.readStoredHarpoonVerifyMoves !== "function" ? true : persist4.readStoredHarpoonVerifyMoves();
       if (!on) return;
-      var rows = this._moveRows.slice(0, 8);
+      var rows2 = this._moveRows.slice(0, 8);
       var i = 0;
       var oracle = manualOracle();
       function sinkRefused() {
@@ -28787,13 +29807,13 @@
       }
       function next() {
         if (self._sweepToken !== token) return;
-        if (i >= rows.length) {
+        if (i >= rows2.length) {
           sinkRefused();
           setTacticStatus(self, "");
           return;
         }
-        if (!m.busy) setTacticStatus(self, "checking " + (i + 1) + "/" + rows.length);
-        var row = rows[i];
+        if (!m.busy) setTacticStatus(self, "checking " + (i + 1) + "/" + rows2.length);
+        var row = rows2[i];
         i += 1;
         if (!row || !row._mv) {
           next();
@@ -29107,19 +30127,19 @@
           box.appendChild(place3);
           if (commit.status === "checking") this.updateCommitPlace();
         }
-        var open10 = st ? st.holes.length : 0;
-        var bar = el6("div", "harpoon-lab-bar");
+        var open11 = st ? st.holes.length : 0;
+        var bar2 = el6("div", "harpoon-lab-bar");
         var status = el6("div", "harpoon-lab-status");
         var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
-        setTip3(dot, complete2 ? "Proven" : "Unproven");
+        setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
         status.appendChild(el6(
           "span",
           "harpoon-lab-status-text",
-          complete2 ? "Proven" : open10 === 1 ? "1 goal" : open10 + " goals"
+          complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
-        bar.appendChild(status);
+        bar2.appendChild(status);
         var actions = el6("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
@@ -29143,8 +30163,8 @@
         redoBtn.disabled = !(st && ed.manualCanRedo(st));
         actions.appendChild(undoBtn);
         actions.appendChild(redoBtn);
-        bar.appendChild(actions);
-        box.appendChild(bar);
+        bar2.appendChild(actions);
+        box.appendChild(bar2);
         if (st && st.holes.length > 1) {
           var pickBand = el6("div", "harpoon-lab-picker-band");
           var picker = el6("div", "harpoon-lab-picker");
@@ -29156,7 +30176,7 @@
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
             tab.textContent = String(i + 1);
-            setTip3(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
+            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
             tab.addEventListener("click", function(e) {
               e.preventDefault();
               self.manualFocus(i);
@@ -29183,19 +30203,19 @@
           stage += 1;
         }
       } else {
-        var open10 = st ? st.holes.length : 0;
-        var bar = el6("div", "harpoon-lab-bar");
+        var open11 = st ? st.holes.length : 0;
+        var bar2 = el6("div", "harpoon-lab-bar");
         var status = el6("div", "harpoon-lab-status");
         var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
-        setTip3(dot, complete2 ? "Proven" : "Unproven");
+        setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
         status.appendChild(el6(
           "span",
           "harpoon-lab-status-text",
-          complete2 ? "Proven" : open10 === 1 ? "1 goal" : open10 + " goals"
+          complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
-        bar.appendChild(status);
+        bar2.appendChild(status);
         var actions = el6("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
@@ -29219,8 +30239,8 @@
         redoBtn.disabled = !(st && ed.manualCanRedo(st));
         actions.appendChild(undoBtn);
         actions.appendChild(redoBtn);
-        bar.appendChild(actions);
-        box.appendChild(bar);
+        bar2.appendChild(actions);
+        box.appendChild(bar2);
         if (st && st.holes.length > 1) {
           var pickBand = el6("div", "harpoon-lab-picker-band");
           var picker = el6("div", "harpoon-lab-picker");
@@ -29232,7 +30252,7 @@
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
             tab.textContent = String(i + 1);
-            setTip3(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
+            setTip2(tab, "Subgoal " + (i + 1) + (h.goal ? " \xB7 " + displayGoal(h.goal) : ""));
             tab.addEventListener("click", function(e) {
               e.preventDefault();
               self.manualFocus(i);
@@ -29390,18 +30410,18 @@
   }
 
   // js/harpoon/harpoon-lab.mjs
-  var global46 = globalThis;
+  var global48 = globalThis;
   function E() {
-    return global46.BelEditor || null;
+    return global48.BelEditor || null;
   }
   function P2() {
-    return global46.HarpoonEngine || null;
+    return global48.HarpoonEngine || null;
   }
   function FW() {
-    return global46.FloatingWindow || null;
+    return global48.FloatingWindow || null;
   }
   function toast2(msg, kind) {
-    var T = global46.Toasts;
+    var T = global48.Toasts;
     if (!T) return;
     if (kind === "error" && T.error) T.error(msg);
     else if (kind === "success" && T.success) T.success(msg);
@@ -29450,8 +30470,8 @@
   }
   function setTip(el6, text, opts) {
     if (!el6) return;
-    if (global46.Tooltips && global46.Tooltips.set) {
-      global46.Tooltips.set(el6, text, opts);
+    if (global48.Tooltips && global48.Tooltips.set) {
+      global48.Tooltips.set(el6, text, opts);
     } else {
       el6.removeAttribute("title");
       var tip = text != null ? String(text).trim() : "";
@@ -29476,14 +30496,14 @@
     if (!host2) return;
     var shown = goal ? displayType(goal) : "";
     if (!shown) {
-      if (global46.Tooltips && global46.Tooltips.setRich) global46.Tooltips.setRich(host2, null);
+      if (global48.Tooltips && global48.Tooltips.setRich) global48.Tooltips.setRich(host2, null);
       setTip(host2, "", { ariaLabel: false });
       host2.removeAttribute("data-tooltip-placement");
       return;
     }
     host2.setAttribute("data-tooltip-placement", "below");
-    if (global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
-      global46.Tooltips.setRich(host2, function() {
+    if (global48.Tooltips && typeof global48.Tooltips.setRich === "function") {
+      global48.Tooltips.setRich(host2, function() {
         return buildLabeledCodeTip("Goal at this step", goal, "type");
       }, "Goal at this step: " + shown);
     } else {
@@ -29494,8 +30514,8 @@
     if (!el6 || !tip) return;
     el6.setAttribute("data-tooltip-placement", placement || "below");
     el6.setAttribute("data-tooltip-no-track", "");
-    if (richCode && global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
-      global46.Tooltips.setRich(el6, function() {
+    if (richCode && global48.Tooltips && typeof global48.Tooltips.setRich === "function") {
+      global48.Tooltips.setRich(el6, function() {
         return buildLabeledCodeTip(tip, richCode, richKind || "type");
       }, tip);
     } else {
@@ -29527,14 +30547,14 @@
       }
     }, 300);
   }
-  if (typeof global46.addEventListener === "function") {
-    global46.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
-    global46.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
-    global46.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
-    global46.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
+  if (typeof global48.addEventListener === "function") {
+    global48.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
+    global48.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
+    global48.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
+    global48.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
   }
   function liveEditorFileId() {
-    var api3 = global46.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     if (api3 && typeof api3.getDocumentId === "function") {
       var docId = api3.getDocumentId();
       if (docId) return docId;
@@ -29543,13 +30563,13 @@
       var edId = api3.getActiveFileId();
       if (edId) return edId;
     }
-    var P3 = global46.Persist;
+    var P3 = global48.Persist;
     return P3 && P3.getActiveFileId ? P3.getActiveFileId() : null;
   }
   function liveFileText(fileId) {
-    var P3 = global46.Persist;
+    var P3 = global48.Persist;
     if (!P3 || !fileId) return "";
-    var api3 = global46.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     if (fileId === liveEditorFileId() && api3 && typeof api3.getValue === "function") {
       return api3.getValue();
     }
@@ -29565,9 +30585,9 @@
     var c = Math.max(0, (col || 1) - 1);
     return offset + Math.min(c, lineText.length);
   }
-  function findHoleHitInText(docText, anchor, ed) {
-    if (!anchor || !docText || !ed || typeof ed.parseDecl !== "function") return null;
-    var loc = ed.locateMember ? ed.locateMember(docText, anchor.declName) : null;
+  function findHoleHitInText(docText, anchor2, ed) {
+    if (!anchor2 || !docText || !ed || typeof ed.parseDecl !== "function") return null;
+    var loc = ed.locateMember ? ed.locateMember(docText, anchor2.declName) : null;
     var from;
     var to;
     if (loc) {
@@ -29575,7 +30595,7 @@
       to = loc.to;
     } else {
       var re = new RegExp(
-        "(^|[\\n\\r])[ \\t]*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + String(anchor.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
+        "(^|[\\n\\r])[ \\t]*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + String(anchor2.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
       );
       var m = re.exec(docText);
       if (!m) return null;
@@ -29585,7 +30605,7 @@
     }
     var declSlice = docText.slice(from, to);
     var decl = ed.parseDecl(declSlice);
-    if (!decl || anchor.declKey && decl.kw + ":" + decl.name !== anchor.declKey) return null;
+    if (!decl || anchor2.declKey && decl.kw + ":" + decl.name !== anchor2.declKey) return null;
     var bodyStart = from + (decl.bodyStart != null ? decl.bodyStart : declSlice.indexOf("=") + 1);
     var body = docText.slice(bodyStart, to);
     var qIdx = body.indexOf("?");
@@ -29651,12 +30671,12 @@
   }
   var liveSessions = [];
   function activeSession() {
-    var active3 = global46.document ? global46.document.activeElement : null;
+    var active4 = global48.document ? global48.document.activeElement : null;
     var newest = null;
     for (var i = liveSessions.length - 1; i >= 0; i -= 1) {
       var s = liveSessions[i];
       if (!s || !s.bodyEl) continue;
-      if (active3 && s.bodyEl.contains(active3)) return s;
+      if (active4 && s.bodyEl.contains(active4)) return s;
       if (!newest) newest = s;
     }
     return newest;
@@ -29733,9 +30753,9 @@
     }
     if (title) title.classList.add("beljar-tip-shimmer");
     if (!place3.querySelector(".harpoon-lab-place-track")) {
-      var track = el4("div", "harpoon-lab-place-track");
-      track.appendChild(el4("div", "harpoon-loadbar"));
-      place3.insertBefore(track, place3.firstChild);
+      var track3 = el4("div", "harpoon-lab-place-track");
+      track3.appendChild(el4("div", "harpoon-loadbar"));
+      place3.insertBefore(track3, place3.firstChild);
     }
   };
   Session.prototype.isFrozenRetrospective = function() {
@@ -29760,8 +30780,8 @@
     }
     try {
       var focusNext = typeof Persist === "undefined" || Persist.readStoredAutosolveFocusNext();
-      if (focusNext && global46.CurrentEditor && typeof global46.CurrentEditor.cycleHole === "function") {
-        global46.CurrentEditor.cycleHole(1);
+      if (focusNext && global48.CurrentEditor && typeof global48.CurrentEditor.cycleHole === "function") {
+        global48.CurrentEditor.cycleHole(1);
       }
     } catch (_) {
     }
@@ -29777,7 +30797,7 @@
       st.detail = commitFailureUserMessage();
       st.detailRaw = raw;
       toast2(st.detail, "error");
-      var N = global46.Notifications;
+      var N = global48.Notifications;
       if (N && typeof N.emit === "function") {
         N.emit({
           kind: "error",
@@ -29813,11 +30833,11 @@
   };
   Session.prototype.clearPendingCommitNav = function() {
     if (this._pendingCommitNavTimer != null) {
-      global46.clearTimeout(this._pendingCommitNavTimer);
+      global48.clearTimeout(this._pendingCommitNavTimer);
       this._pendingCommitNavTimer = null;
     }
     if (this._pendingCommitNavListener) {
-      global46.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
+      global48.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
       this._pendingCommitNavListener = null;
     }
     this.pendingCommitSource = null;
@@ -29830,7 +30850,7 @@
     if (idx !== -1) probeSessions.splice(idx, 1);
   };
   Session.prototype.resolveView = function() {
-    var api3 = global46.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     if (!api3 || !this.fileId) return this.view;
     if (liveEditorFileId() === this.fileId && typeof api3.getView === "function") {
       var v = api3.getView();
@@ -29841,8 +30861,8 @@
   Session.prototype.captureAnchor = function(view, prep) {
     var ed = E();
     if (!ed || typeof ed.captureHarpoonAnchor !== "function" || !prep) return;
-    var api3 = global46.CurrentEditor;
-    var P3 = global46.Persist;
+    var api3 = global48.CurrentEditor;
+    var P3 = global48.Persist;
     var fileId = this.fileId || (P3 && P3.getActiveFileId ? P3.getActiveFileId() : null);
     var fileText = view ? view.state.doc.toString() : prep.fileText != null ? prep.fileText : liveFileText(fileId);
     var declSlice = prep.span ? view ? view.state.doc.sliceString(prep.span.from, prep.span.to) : fileText.slice(prep.span.from, prep.span.to) : "";
@@ -29855,9 +30875,9 @@
   };
   Session.prototype.findLiveHit = function(view, engine) {
     if (!this.anchor) return null;
-    var anchor = { declKey: this.anchor.declKey, holeKey: this.anchor.holeKey };
+    var anchor2 = { declKey: this.anchor.declKey, holeKey: this.anchor.holeKey };
     if (view && engine) {
-      var hit = findHoleHit(view, engine, anchor);
+      var hit = findHoleHit(view, engine, anchor2);
       if (hit) return hit;
     }
     var ed = E();
@@ -29871,10 +30891,10 @@
     if (!ed || typeof ed.assessHarpoonAnchor !== "function" || !this.anchor || !this.nativeAuto) return;
     var fileId = this.fileId || this.anchor.fileId;
     if (!fileId) return;
-    var api3 = global46.CurrentEditor;
-    var active3 = liveEditorFileId() === fileId;
+    var api3 = global48.CurrentEditor;
+    var active4 = liveEditorFileId() === fileId;
     this.resolveView();
-    var view = active3 ? this.view : null;
+    var view = active4 ? this.view : null;
     var fileText = liveFileText(fileId);
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var liveHit = this.findLiveHit(view, eng);
@@ -29934,7 +30954,7 @@
     }
     this.userCancelled = false;
     var view = this.resolveView();
-    var api3 = global46.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var hit = this.findLiveHit(view, eng);
     if (!hit) {
@@ -30084,7 +31104,7 @@
     );
     if (this._autoGoalWrap) {
       var goalHost = this._autoGoalWrap.querySelector(".harpoon-hole-goal");
-      var ed = typeof global46.BelEditor !== "undefined" ? global46.BelEditor : null;
+      var ed = typeof global48.BelEditor !== "undefined" ? global48.BelEditor : null;
       if (goalHost && ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goalHost, { surface: "lab", goalState: "live", goal: match.goal });
       } else if (goalHost) {
@@ -30096,7 +31116,7 @@
   Session.prototype.resolveFullDeclSignature = function(proveCode, sourceType) {
     var self = this;
     var ed = E();
-    var client = global46.BelugaClient;
+    var client = global48.BelugaClient;
     var name = this.prep && this.prep.name;
     if (!ed || !client || typeof client.ideDeclTypeForProver !== "function" || !name || !proveCode) return;
     if (this._fullDeclSigRequested === name) return;
@@ -30121,7 +31141,7 @@
   };
   Session.prototype.runNativeAuto = function(codeOverride) {
     var ed = E();
-    var client = global46.BelugaClient;
+    var client = global48.BelugaClient;
     var prep = this.prep;
     var self = this;
     if (!ed || !client || !prep || typeof ed.proveProgram !== "function" || typeof ed.theoremUnderProof !== "function") {
@@ -30135,7 +31155,7 @@
       return Promise.resolve(false);
     }
     var proveCode = codeOverride || prep.proveCode || prep.assembledCode;
-    var api3 = global46.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var goalHit = typeof ed.resolveHoleGoalForHit === "function" ? ed.resolveHoleGoalForHit(this.view, eng, prep.hit) : { goal: thm.compType && thm.compType.raw ? thm.compType.raw : "", state: "approximate", loadingLive: true };
     if ((!goalHit || !goalHit.goal) && prep.hit && prep.hit.hole && prep.hit.hole.goal) {
@@ -30394,7 +31414,7 @@
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
-    var client = global46.BelugaClient;
+    var client = global48.BelugaClient;
     if (client && client.endProverSession) client.endProverSession();
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
@@ -30430,24 +31450,24 @@
     var self = this;
     var body = this.bodyEl;
     if (!body) return;
-    var open10 = m.subgoals && m.subgoals.length || 0;
-    var bar = el4("div", "harpoon-lab-bar");
+    var open11 = m.subgoals && m.subgoals.length || 0;
+    var bar2 = el4("div", "harpoon-lab-bar");
     var status = el4("div", "harpoon-lab-status");
     var dot = el4("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
     dot.setAttribute("data-tooltip", m.complete ? "Proven" : "Unproven");
     dot.setAttribute("aria-label", m.complete ? "Proven" : "Unproven");
-    if (global46.Tooltips && global46.Tooltips.bind) global46.Tooltips.bind(dot);
+    if (global48.Tooltips && global48.Tooltips.bind) global48.Tooltips.bind(dot);
     status.appendChild(dot);
     var label = el4("span", "harpoon-lab-status-text");
     if (m.complete) {
       label.textContent = "Proven";
-    } else if (open10 === 1) {
+    } else if (open11 === 1) {
       label.textContent = "1 goal";
     } else {
-      label.textContent = open10 + " goals";
+      label.textContent = open11 + " goals";
     }
     status.appendChild(label);
-    bar.appendChild(status);
+    bar2.appendChild(status);
     var actions = el4("div", "harpoon-lab-bar-actions");
     actions.appendChild(iconBtn("icon-btn", ICON_UNDO, "Undo", "Undo", function() {
       self.undo();
@@ -30455,14 +31475,14 @@
     actions.appendChild(iconBtn("icon-btn", ICON_REDO, "Redo", "Redo", function() {
       self.redo();
     }));
-    bar.appendChild(actions);
-    body.insertBefore(bar, body.firstChild);
+    bar2.appendChild(actions);
+    body.insertBefore(bar2, body.firstChild);
   };
   Session.prototype.renderCtx = function(parent, label, binders) {
     if (!binders || !binders.length) return;
     var sec = el4("div", "harpoon-lab-ctx");
     sec.appendChild(el4("span", "harpoon-lab-ctx-label", label));
-    var rows = el4("div", "harpoon-lab-binders");
+    var rows2 = el4("div", "harpoon-lab-binders");
     binders.forEach(function(b) {
       var row = el4("div", "harpoon-lab-binder");
       row.appendChild(el4("span", "harpoon-lab-binder-name", b.name));
@@ -30470,9 +31490,9 @@
       var t = el4("span", "harpoon-lab-binder-type");
       renderType2(t, b.type);
       row.appendChild(t);
-      rows.appendChild(row);
+      rows2.appendChild(row);
     });
-    sec.appendChild(rows);
+    sec.appendChild(rows2);
     parent.appendChild(sec);
   };
   Session.prototype.renderTactics = function(parent, sg) {
@@ -30511,7 +31531,7 @@
       autoBtn.appendChild(spark);
       autoBtn.appendChild(el4("span", "harpoon-lab-auto-btn-label", "Auto-solve"));
       autoBtn.setAttribute("data-tooltip", "Let BelJar search for the whole proof");
-      if (global46.Tooltips && global46.Tooltips.bind) global46.Tooltips.bind(autoBtn);
+      if (global48.Tooltips && global48.Tooltips.bind) global48.Tooltips.bind(autoBtn);
       autoBtn.addEventListener("click", function(e) {
         e.preventDefault();
         self.runTactic({ kind: "auto" });
@@ -30528,7 +31548,7 @@
         if (mv.arg) b.appendChild(el4("span", "harpoon-lab-tac-arg", mv.arg));
         if (mv.tip) {
           b.setAttribute("data-tooltip", mv.tip);
-          if (global46.Tooltips && global46.Tooltips.bind) global46.Tooltips.bind(b);
+          if (global48.Tooltips && global48.Tooltips.bind) global48.Tooltips.bind(b);
         }
         b.addEventListener("click", function(e) {
           e.preventDefault();
@@ -30945,7 +31965,7 @@
   }
   function prepareForHole(view, hit) {
     var ed = E();
-    var api3 = global46.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     var ctx = api3 && typeof api3.getHoleActionContext === "function" ? api3.getHoleActionContext() : null;
     if (!ctx || !ctx.code) {
       toast2("Harpoon: no checkable program.", "error");
@@ -30993,8 +32013,8 @@
   function removeFloatSession(session) {
     var idx = floatSessions.indexOf(session);
     if (idx !== -1) floatSessions.splice(idx, 1);
-    if (global46.WorkspaceState && global46.WorkspaceState.scheduleSave) {
-      global46.WorkspaceState.scheduleSave();
+    if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
+      global48.WorkspaceState.scheduleSave();
     }
   }
   function listHoleHits(view, engine) {
@@ -31011,17 +32031,17 @@
     }
     return out;
   }
-  function findHoleHit(view, engine, anchor) {
-    if (!anchor) return null;
+  function findHoleHit(view, engine, anchor2) {
+    if (!anchor2) return null;
     var hits = listHoleHits(view, engine);
-    if (anchor.holeKey) {
+    if (anchor2.holeKey) {
       for (var i = 0; i < hits.length; i++) {
-        if (holeKeyFromHit(hits[i]) === anchor.holeKey) return hits[i];
+        if (holeKeyFromHit(hits[i]) === anchor2.holeKey) return hits[i];
       }
     }
-    if (!anchor.declKey) return null;
+    if (!anchor2.declKey) return null;
     var ed = E();
-    var api3 = global46.CurrentEditor;
+    var api3 = global48.CurrentEditor;
     for (var j = 0; j < hits.length; j++) {
       var hit = hits[j];
       var span = null;
@@ -31031,22 +32051,22 @@
       else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
       if (!span) continue;
       var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
-      if (decl && decl.kw + ":" + decl.name === anchor.declKey) return hit;
+      if (decl && decl.kw + ":" + decl.name === anchor2.declKey) return hit;
     }
     return null;
   }
   function openingMode() {
-    var persist5 = global46.Persist;
-    if (persist5 && typeof persist5.readStoredHarpoonMode === "function") {
-      return persist5.readStoredHarpoonMode() === "orca" ? "orca" : "manual";
+    var persist4 = global48.Persist;
+    if (persist4 && typeof persist4.readStoredHarpoonMode === "function") {
+      return persist4.readStoredHarpoonMode() === "orca" ? "orca" : "manual";
     }
     return "manual";
   }
   function runSession(view, prep, host2) {
     var session = new Session(view, prep.span.from, prep.span.to, host2);
     session.prep = prep;
-    var persist5 = global46.Persist;
-    session.fileId = host2.fileId || (persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null);
+    var persist4 = global48.Persist;
+    session.fileId = host2.fileId || (persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null);
     session.captureAnchor(view, prep);
     session.bindProbe();
     var content = el4("div", "harpoon-lab" + (host2.kind === "panel" ? " harpoon-lab--panel" : ""));
@@ -31069,8 +32089,8 @@
     }
     var prep = prepareForHole(view, hit);
     if (!prep) return;
-    var persist5 = global46.Persist;
-    var fileId = persist5 && persist5.getActiveFileId ? persist5.getActiveFileId() : null;
+    var persist4 = global48.Persist;
+    var fileId = persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null;
     var session = runSession(view, prep, {
       kind: "float",
       mount: function(content, s) {
@@ -31087,8 +32107,8 @@
           x: geom.x,
           y: geom.y,
           onGeometryChange: function() {
-            if (global46.WorkspaceState && global46.WorkspaceState.scheduleSave) {
-              global46.WorkspaceState.scheduleSave();
+            if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
+              global48.WorkspaceState.scheduleSave();
             }
           },
           onClose: function() {
@@ -31100,8 +32120,8 @@
           }
         });
         floatSessions.push(s);
-        if (global46.WorkspaceState && global46.WorkspaceState.scheduleSave) {
-          global46.WorkspaceState.scheduleSave();
+        if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
+          global48.WorkspaceState.scheduleSave();
         }
       }
     });
@@ -31110,7 +32130,7 @@
   function labTitle(name) {
     var wrap = document.createElement("span");
     wrap.className = "harpoon-lab-title";
-    if (global46.HarpoonIcon) global46.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
+    if (global48.HarpoonIcon) global48.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
     wrap.appendChild(el4("span", "harpoon-lab-title-text", name ? "Harpoon \xB7 " + name : "Harpoon"));
     return wrap;
   }
@@ -31186,7 +32206,7 @@
     openFromHole(view, engine, hit, { geom: entry.geom });
     return true;
   }
-  global46.Harpoon = {
+  global48.Harpoon = {
     // Test seam: probes mount a Session over a fabricated state to drive the
     // SHIPPED render/click paths rather than a re-implementation of them.
     _Session: Session,
@@ -31197,28 +32217,28 @@
     collectFloatingHarpoonWindows,
     restoreFloatingHarpoonWindow
   };
-  global46.BelJarHarpoon = global46.Harpoon;
+  global48.BelJarHarpoon = global48.Harpoon;
 
   // js/harpoon/harpoon-goal-sections.mjs
-  var global47 = globalThis;
+  var global49 = globalThis;
   function dirOf5(name) {
-    var PS = global47.ProjectSource;
+    var PS = global49.ProjectSource;
     if (PS && typeof PS.dirOf === "function") return PS.dirOf(name);
     var i = String(name || "").lastIndexOf("/");
     return i === -1 ? "" : name.slice(0, i);
   }
-  function baseName4(name) {
+  function baseName5(name) {
     var s = String(name || "");
     var i = s.lastIndexOf("/");
     return i === -1 ? s : s.slice(i + 1);
   }
   function cfgBaseLabel(cfgPath) {
-    var base = baseName4(cfgPath);
+    var base = baseName5(cfgPath);
     var dot = base.lastIndexOf(".");
     return dot === -1 ? base : base.slice(0, dot);
   }
   function holeHostFile(name) {
-    var PS = global47.ProjectSource;
+    var PS = global49.ProjectSource;
     if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
     var low = String(name || "").toLowerCase();
     if (low.endsWith(".cfg") || low.endsWith(".elf")) return false;
@@ -31227,7 +32247,7 @@
     return base.indexOf(".") === -1;
   }
   function scanFileHoles(text) {
-    var ed = global47.BelEditor;
+    var ed = global49.BelEditor;
     if (ed && typeof ed.scanFileHoles === "function") return ed.scanFileHoles(text);
     return [];
   }
@@ -31272,7 +32292,7 @@
     return {
       id: file.id,
       name: file.name,
-      baseName: file.baseName || baseName4(file.name)
+      baseName: file.baseName || baseName5(file.name)
     };
   }
   function buildSections(opts) {
@@ -31285,12 +32305,12 @@
       return [];
     };
     var computeDirLayout2 = opts.computeDirLayout;
-    var activeFileId3 = opts.activeFileId || null;
+    var activeFileId2 = opts.activeFileId || null;
     var activeHits = opts.activeHits || null;
     var memberHoles = opts.memberHoles || {};
     var developmentPaths = opts.developmentPaths || null;
-    var SL = global47.ExplorerSuiteLayout;
-    var PS = global47.ProjectSource;
+    var SL = global49.ExplorerSuiteLayout;
+    var PS = global49.ProjectSource;
     var resolveMembers = opts.resolveMembers || (PS && typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath2, gt) {
       return PS.orderedPathsForCfg(all, cfgPath2, gt);
     } : null);
@@ -31304,9 +32324,9 @@
     }
     var dirKeys = Object.keys(byDir).sort();
     var activeDir = opts.activeFileDir;
-    if (activeDir == null && activeFileId3) {
+    if (activeDir == null && activeFileId2) {
       for (var ai = 0; ai < files.length; ai++) {
-        if (files[ai].id === activeFileId3) {
+        if (files[ai].id === activeFileId2) {
           activeDir = dirOf5(files[ai].name);
           break;
         }
@@ -31348,12 +32368,12 @@
           placed[path] = true;
           var f = fileByName[path];
           if (!f || !holeHostFile(f.name)) continue;
-          var hits = hitsForFile(f, getText, f.id === activeFileId3 ? activeHits : null, memberHoles);
+          var hits = hitsForFile(f, getText, f.id === activeFileId2 ? activeHits : null, memberHoles);
           for (var hi = 0; hi < hits.length; hi++) {
             dirEntries.push({
               fileId: f.id,
               filePath: f.name,
-              fileBaseName: f.baseName || baseName4(f.name),
+              fileBaseName: f.baseName || baseName5(f.name),
               inDevelopment: !developmentPaths || developmentPaths.indexOf(f.name) !== -1,
               suiteLabel,
               hit: hits[hi]
@@ -31364,12 +32384,12 @@
       for (var fi = 0; fi < filesInDir.length; fi++) {
         var file = filesInDir[fi];
         if (!holeHostFile(file.name) || placed[file.name]) continue;
-        var fileHits = hitsForFile(file, getText, file.id === activeFileId3 ? activeHits : null, memberHoles);
+        var fileHits = hitsForFile(file, getText, file.id === activeFileId2 ? activeHits : null, memberHoles);
         for (var oi = 0; oi < fileHits.length; oi++) {
           dirEntries.push({
             fileId: file.id,
             filePath: file.name,
-            fileBaseName: file.baseName || baseName4(file.name),
+            fileBaseName: file.baseName || baseName5(file.name),
             inDevelopment: !developmentPaths || developmentPaths.indexOf(file.name) !== -1,
             suiteLabel: null,
             hit: fileHits[oi]
@@ -31386,15 +32406,15 @@
     }
     return { sections, totalCount };
   }
-  global47.HarpoonGoalSections = {
+  global49.HarpoonGoalSections = {
     buildSections
   };
-  global47.BelJarHarpoonGoalSections = global47.HarpoonGoalSections;
+  global49.BelJarHarpoonGoalSections = global49.HarpoonGoalSections;
 
   // js/harpoon/harpoon-panel.mjs
-  var global48 = globalThis;
+  var global50 = globalThis;
   function E2() {
-    return global48.BelEditor || null;
+    return global50.BelEditor || null;
   }
   var el5 = function(tag, cls, text) {
     var n = document.createElement(tag);
@@ -31403,7 +32423,7 @@
     return n;
   };
   function curView() {
-    var api3 = global48.CurrentEditor;
+    var api3 = global50.CurrentEditor;
     return api3 && typeof api3.getView === "function" ? api3.getView() : null;
   }
   function activeSyntacticHits(view) {
@@ -31414,12 +32434,12 @@
     });
   }
   function normalizeGlyphs(text) {
-    var g14 = global48.HarpoonGlyphs;
+    var g14 = global50.HarpoonGlyphs;
     if (g14) return g14.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g14 = global48.HarpoonGlyphs;
+    var g14 = global50.HarpoonGlyphs;
     if (g14) return g14.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
@@ -31442,7 +32462,7 @@
   }
   function setSuiteTip(host2, label) {
     var name = label || "(none)";
-    var tips = global48.Tooltips;
+    var tips = global50.Tooltips;
     if (tips && typeof tips.setRich === "function") {
       tips.setRich(host2, function() {
         var row = el5("span", "harpoon-tip-suite");
@@ -31455,7 +32475,7 @@
     if (tips && typeof tips.set === "function") tips.set(host2, "Suite: " + name);
   }
   var bodyEl2 = null;
-  var panelEl2 = null;
+  var panelEl3 = null;
   var backBtn = null;
   var proving = false;
   var backHandler = null;
@@ -31518,7 +32538,7 @@
   }
   function declKeyForHit(view, hit) {
     var ed = E2();
-    var api3 = global48.CurrentEditor;
+    var api3 = global50.CurrentEditor;
     if (!hit) return null;
     var span = null;
     if (api3 && api3.getMemberSpan) span = api3.getMemberSpan(hit.from);
@@ -31531,12 +32551,12 @@
     return decl.kw + ":" + decl.name;
   }
   function activeFileId() {
-    var p = typeof global48.Persist !== "undefined" ? global48.Persist : null;
+    var p = typeof global50.Persist !== "undefined" ? global50.Persist : null;
     if (!p) return null;
     return typeof p.getActiveFileId === "function" ? p.getActiveFileId() : null;
   }
   function activeFilePath() {
-    var p = typeof global48.Persist !== "undefined" ? global48.Persist : null;
+    var p = typeof global50.Persist !== "undefined" ? global50.Persist : null;
     if (!p) return "";
     var id = typeof p.getActiveFileId === "function" ? p.getActiveFileId() : typeof p.getCurrentFileId === "function" ? p.getCurrentFileId() : null;
     if (!id || typeof p.getFileById !== "function") return "";
@@ -31550,10 +32570,10 @@
     return entry.fileId + ":" + holeKey(entry.hit);
   }
   function mirrorTierClass(win) {
-    var track = trackOf(win);
+    var track3 = trackOf(win);
     win.classList.toggle(
       "harpoon-hole-goal--tiered",
-      !!track && track.classList.contains("harpoon-hole-goal--tiered")
+      !!track3 && track3.classList.contains("harpoon-hole-goal--tiered")
     );
   }
   function mountTieredGoal(goalEl, goalState, goalType) {
@@ -31570,9 +32590,9 @@
   }
   function applyGoalStateToModel(model, view) {
     var ed = E2();
-    var api3 = global48.CurrentEditor;
+    var api3 = global50.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-    var P3 = typeof global48.Persist !== "undefined" ? global48.Persist : null;
+    var P3 = typeof global50.Persist !== "undefined" ? global50.Persist : null;
     if (!ed || typeof ed.enrichHoleHitsWithGoalState !== "function" || !view) return model;
     var activeId2 = activeFileId();
     var getText = P3 && typeof P3.getFileText === "function" ? function(id) {
@@ -31646,8 +32666,8 @@
     return Object.assign({}, entry, { hit: mergeHitGoal(entry.hit, rich) });
   }
   function collectProjectSections() {
-    var P3 = typeof global48.Persist !== "undefined" ? global48.Persist : null;
-    var PG = typeof global48.HarpoonGoalSections !== "undefined" ? global48.HarpoonGoalSections : null;
+    var P3 = typeof global50.Persist !== "undefined" ? global50.Persist : null;
+    var PG = typeof global50.HarpoonGoalSections !== "undefined" ? global50.HarpoonGoalSections : null;
     var holeGoals = collectInScopeHoleGoals();
     var view = curView();
     var ed = E2();
@@ -31684,8 +32704,8 @@
     } : function() {
       return "";
     };
-    var PS = typeof global48.ProjectSource !== "undefined" ? global48.ProjectSource : null;
-    var SL = typeof global48.ExplorerSuiteLayout !== "undefined" ? global48.ExplorerSuiteLayout : null;
+    var PS = typeof global50.ProjectSource !== "undefined" ? global50.ProjectSource : null;
+    var SL = typeof global50.ExplorerSuiteLayout !== "undefined" ? global50.ExplorerSuiteLayout : null;
     var model = PG.buildSections({
       files,
       getText,
@@ -31699,11 +32719,11 @@
         return [];
       },
       computeDirLayout: SL && typeof SL.computeDirLayout === "function" && PS ? function(dir, filesInDir) {
-        var active3 = P3.getActiveCfgsForDir(dir);
+        var active4 = P3.getActiveCfgsForDir(dir);
         var resolver = typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath, gt) {
           return PS.orderedPathsForCfg(all, cfgPath, gt);
         } : null;
-        return SL.computeDirLayout(filesInDir, active3, resolver, files, getText);
+        return SL.computeDirLayout(filesInDir, active4, resolver, files, getText);
       } : null
     });
     for (var si = 0; si < model.sections.length; si++) {
@@ -31718,7 +32738,7 @@
   var declTextCache = /* @__PURE__ */ Object.create(null);
   function fileTextFor(fileId) {
     if (fileId in declTextCache) return declTextCache[fileId];
-    var P3 = typeof global48.Persist !== "undefined" ? global48.Persist : null;
+    var P3 = typeof global50.Persist !== "undefined" ? global50.Persist : null;
     var t = null;
     try {
       t = P3 && typeof P3.getFileText === "function" ? P3.getFileText(fileId) : null;
@@ -31749,9 +32769,9 @@
   }
   function readOver(win) {
     var mask = maskOf(win);
-    var track = trackOf(win);
-    if (!mask || !track || !mask.clientWidth) return -1;
-    return Math.max(0, Math.round(track.scrollWidth - mask.clientWidth));
+    var track3 = trackOf(win);
+    if (!mask || !track3 || !mask.clientWidth) return -1;
+    return Math.max(0, Math.round(track3.scrollWidth - mask.clientWidth));
   }
   function applyOver(win, over) {
     if (over < 0) return;
@@ -31936,8 +32956,8 @@
   function beginPanelSession(fileId, declKey, start) {
     enterProofMode();
     if (declKey && fileId) provingDecl = { fileId, declKey };
-    if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
-      global48.WorkspaceState.scheduleSave();
+    if (global50.WorkspaceState && global50.WorkspaceState.scheduleSave) {
+      global50.WorkspaceState.scheduleSave();
     }
     bodyEl2.textContent = "";
     var host2 = el5("div", "harpoon-panel-session");
@@ -31948,7 +32968,7 @@
         panelSession = null;
         return;
       }
-      var proof = global48.HarpoonEngine;
+      var proof = global50.HarpoonEngine;
       if (proof && proof.dispose) proof.dispose();
       provingDecl = null;
       renderList3();
@@ -31971,7 +32991,7 @@
     });
   }
   function proveHit(view, eng, hit, fileId) {
-    var lab = global48.Harpoon;
+    var lab = global50.Harpoon;
     if (!lab || typeof lab.proveInPanel !== "function") return;
     var fid = fileId || activeFileId();
     beginPanelSession(fid, declKeyForHit(view, hit), function(host2, opts) {
@@ -31980,7 +33000,7 @@
   }
   function declKeyInFileText(fileId, from) {
     var ed = E2();
-    var P3 = global48.Persist;
+    var P3 = global50.Persist;
     if (!ed || !P3 || typeof ed.declSpanInText !== "function") return null;
     var text = String(P3.getFileText(fileId) || "");
     var span = ed.memberSpanInText ? ed.memberSpanInText(text, from) : ed.declSpanInText(text, from);
@@ -31989,7 +33009,7 @@
   }
   function proveEntry(entry) {
     var fid = entry.fileId;
-    var lab = global48.Harpoon;
+    var lab = global50.Harpoon;
     if (fid !== activeFileId()) {
       if (!lab || typeof lab.proveInPanelForFile !== "function") return;
       beginPanelSession(fid, declKeyInFileText(fid, entry.hit.from), function(host2, opts) {
@@ -31998,15 +33018,15 @@
       return;
     }
     var view = curView();
-    var api3 = global48.CurrentEditor;
+    var api3 = global50.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     if (view && eng) proveHit(view, eng, entry.hit, fid);
   }
   function init13(container, opts) {
     bodyEl2 = container;
-    panelEl2 = opts && opts.panelEl || container.closest(".harpoon-panel");
-    if (panelEl2) {
-      backBtn = panelEl2.querySelector(".harpoon-panel-back");
+    panelEl3 = opts && opts.panelEl || container.closest(".harpoon-panel");
+    if (panelEl3) {
+      backBtn = panelEl3.querySelector(".harpoon-panel-back");
       if (backBtn) {
         backBtn.addEventListener("click", function(e) {
           e.preventDefault();
@@ -32017,7 +33037,7 @@
     }
     renderList3({ certify: true });
   }
-  function refresh3() {
+  function refresh4() {
     if (bodyEl2 && !proving) renderList3({ certify: true });
   }
   function collectWorkspaceHarpoon(out) {
@@ -32031,7 +33051,7 @@
     var eng = deps && deps.engine;
     if (!view || !eng) return;
     if (decl.fileId && decl.fileId !== activeFileId()) return;
-    var lab = global48.Harpoon;
+    var lab = global50.Harpoon;
     if (!lab) return;
     var hit = null;
     if (typeof lab.restoreFloatingHarpoonWindow === "function") {
@@ -32051,16 +33071,16 @@
     }
     if (hit) proveHit(view, eng, hit, decl.fileId);
   }
-  global48.HarpoonPanel = {
+  global50.HarpoonPanel = {
     init: init13,
-    refresh: refresh3,
+    refresh: refresh4,
     collectWorkspaceHarpoon,
     restoreWorkspaceHarpoon
   };
-  global48.BelJarHarpoonPanel = global48.HarpoonPanel;
+  global50.BelJarHarpoonPanel = global50.HarpoonPanel;
 
   // js/beluga/beluga-text.mjs
-  var global49 = globalThis;
+  var global51 = globalThis;
   function normalizeBelugaRaw(s) {
     return String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
@@ -32147,7 +33167,7 @@
     }
     return out;
   }
-  global49.BelugaText = {
+  global51.BelugaText = {
     normalizeBelugaRaw,
     stripBelugaAnsi,
     isBelugaCommandError,
@@ -32157,7 +33177,7 @@
   };
 
   // js/beluga/beluga-run.mjs
-  var global50 = globalThis;
+  var global52 = globalThis;
   var belugaBusy = false;
   var belugaMode = Persist.readStoredBelugaMode();
   var btnLoad = null;
@@ -32239,19 +33259,19 @@
     var dev = ProjectSource.developmentForFile(files, activeId2, getText);
     return dev.kind === "module" && dev.cfg ? dev.cfg : null;
   }
-  function baseName5(p) {
+  function baseName6(p) {
     var s = String(p || "");
     return s.slice(s.lastIndexOf("/") + 1);
   }
   function projectDisplayName(cfgPath) {
-    if (cfgPath) return baseName5(cfgPath).replace(/\.cfg$/i, "");
+    if (cfgPath) return baseName6(cfgPath).replace(/\.cfg$/i, "");
     return activeFileName();
   }
   function activeFileName() {
     var id = Persist.getActiveFileId();
     var files = Persist.listFiles() || [];
     for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return baseName5(files[i].name);
+      if (files[i].id === id) return baseName6(files[i].name);
     }
     return "input.bel";
   }
@@ -32280,7 +33300,7 @@
     if (typeof ReplRunCmd !== "undefined" && ReplRunCmd.formatRunStatusName) {
       return ReplRunCmd.formatRunStatusName(absPath, activeCwd2(), !!amalgam);
     }
-    var shown = absPath ? baseName5(absPath) : "input.bel";
+    var shown = absPath ? baseName6(absPath) : "input.bel";
     return amalgam ? "&" + shown : shown;
   }
   function makeGetText() {
@@ -32374,7 +33394,7 @@
     return applyOutputNaming(msg, spans, prelude, displayName, null);
   }
   function suiteNameFromCfg(cfgPath) {
-    return baseName5(cfgPath).replace(/\.cfg$/i, "") || "suite";
+    return baseName6(cfgPath).replace(/\.cfg$/i, "") || "suite";
   }
   function activeCwd2() {
     var id = Persist.getActiveFileId && Persist.getActiveFileId();
@@ -32385,7 +33405,7 @@
     if (typeof ReplRunCmd !== "undefined" && ReplRunCmd.formatRunCaption) {
       return ReplRunCmd.formatRunCaption(absPath, activeCwd2(), !!amalgam);
     }
-    var shown = absPath ? baseName5(absPath) : "input.bel";
+    var shown = absPath ? baseName6(absPath) : "input.bel";
     return amalgam ? "run &" + shown : "run " + shown;
   }
   function beginRunTurn(caption) {
@@ -32462,7 +33482,7 @@
   function fileNameOf(id) {
     var files = Persist.listFiles() || [];
     for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return baseName5(files[i].name);
+      if (files[i].id === id) return baseName6(files[i].name);
     }
     return "input.bel";
   }
@@ -32652,6 +33672,7 @@
         duration: 0,
         closable: true,
         durable: true,
+        body: "The checker script never arrived, so nothing can be run or type-checked. Reload the page to retry.",
         source: "beluga.client",
         dedupeKey: "beluga.client.load"
       });
@@ -32665,13 +33686,14 @@
         duration: 0,
         closable: true,
         durable: true,
+        body: "Type-checking is unavailable until it loads. Reload the page to retry.",
         detail: detail2,
         source: "beluga.worker",
         dedupeKey: "beluga.worker.load"
       });
     });
   }
-  global50.BelugaRun = {
+  global52.BelugaRun = {
     init: init14,
     setBelugaBusy,
     isBelugaBusy,
@@ -32691,7 +33713,7 @@
     ensureEditorLoadedForRun,
     getProjectSpans
   };
-  global50.BelJarBelugaRun = global50.BelugaRun;
+  global52.BelJarBelugaRun = global52.BelugaRun;
 
   // js/app/app-empty-state.mjs
   function create10(opts) {
@@ -32699,94 +33721,94 @@
     var getInspectorProjectEmptyEl = opts.getInspectorProjectEmptyEl;
     var getEditorEmptyEl = opts.getEditorEmptyEl;
     var getEditorMount = opts.getEditorMount;
-    var projectTreeEmpty2 = opts.projectTreeEmpty;
-    var editorCanvasIdle2 = opts.editorCanvasIdle;
+    var projectTreeEmpty = opts.projectTreeEmpty;
+    var editorCanvasIdle = opts.editorCanvasIdle;
     function setEmptyOverlayVisible(el6, visible2) {
       if (!el6) return;
       el6.hidden = !visible2;
       el6.setAttribute("aria-hidden", visible2 ? "false" : "true");
       if ("inert" in el6) el6.inert = !visible2;
     }
-    function updateInspectorProjectEmpty2() {
-      var inspectorPanelEl2 = getInspectorPanelEl && getInspectorPanelEl();
-      if (!inspectorPanelEl2) return;
-      var body = inspectorPanelEl2.querySelector(".inspector-body");
-      var empty = projectTreeEmpty2();
+    function updateInspectorProjectEmpty() {
+      var inspectorPanelEl = getInspectorPanelEl && getInspectorPanelEl();
+      if (!inspectorPanelEl) return;
+      var body = inspectorPanelEl.querySelector(".inspector-body");
+      var empty = projectTreeEmpty();
       setEmptyOverlayVisible(getInspectorProjectEmptyEl && getInspectorProjectEmptyEl(), empty);
       if (body) {
         body.hidden = empty;
         body.setAttribute("aria-hidden", empty ? "true" : "false");
       }
     }
-    function updateEditorEmptyState2() {
-      var idle = editorCanvasIdle2();
+    function updateEditorEmptyState() {
+      var idle = editorCanvasIdle();
       setEmptyOverlayVisible(getEditorEmptyEl && getEditorEmptyEl(), idle);
-      var mount = getEditorMount && getEditorMount();
-      if (mount) mount.classList.toggle("is-inactive", idle);
+      var mount3 = getEditorMount && getEditorMount();
+      if (mount3) mount3.classList.toggle("is-inactive", idle);
       var runBtn = document.getElementById("btn-load");
       if (runBtn) runBtn.disabled = idle;
       var statusDot2 = document.getElementById("ide-status-dot");
       if (statusDot2) statusDot2.hidden = idle;
     }
     return {
-      updateInspectorProjectEmpty: updateInspectorProjectEmpty2,
-      updateEditorEmptyState: updateEditorEmptyState2
+      updateInspectorProjectEmpty,
+      updateEditorEmptyState
     };
   }
 
   // js/app/app-side-panels.mjs
   function create11(opts) {
-    var workspaceEl2 = opts.workspaceEl;
+    var workspaceEl = opts.workspaceEl;
     var panels = opts.panels || {};
     var onLayout = opts.onLayout || function() {
     };
     var scheduleWorkspaceSave = opts.scheduleWorkspaceSave || function() {
     };
     function getOpenSidePanelId() {
-      if (!workspaceEl2) return null;
+      if (!workspaceEl) return null;
       var order2 = ["harpoon", "library", "inspector", "explorer"];
       for (var i = 0; i < order2.length; i++) {
         var id = order2[i];
         var cfg = panels[id];
-        if (cfg && workspaceEl2.classList.contains(cfg.openClass)) return id;
+        if (cfg && workspaceEl.classList.contains(cfg.openClass)) return id;
       }
       return null;
     }
-    function setSidePanelOpen2(id, open10) {
+    function setSidePanelOpen(id, open11) {
       var cfg = panels[id];
-      if (!workspaceEl2 || !cfg) return;
-      workspaceEl2.classList.toggle(cfg.openClass, open10);
+      if (!workspaceEl || !cfg) return;
+      workspaceEl.classList.toggle(cfg.openClass, open11);
       if (cfg.btn) {
-        cfg.btn.classList.toggle("is-active", open10);
-        cfg.btn.setAttribute("aria-pressed", open10 ? "true" : "false");
+        cfg.btn.classList.toggle("is-active", open11);
+        cfg.btn.setAttribute("aria-pressed", open11 ? "true" : "false");
       }
-      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open10 ? "false" : "true");
-      if (typeof cfg.writeOpen === "function") cfg.writeOpen(open10);
+      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open11 ? "false" : "true");
+      if (typeof cfg.writeOpen === "function") cfg.writeOpen(open11);
       if (typeof Persist !== "undefined" && Persist.writeStoredActiveSidePanel) {
-        if (open10) Persist.writeStoredActiveSidePanel(id);
+        if (open11) Persist.writeStoredActiveSidePanel(id);
         else if (!getOpenSidePanelId()) Persist.writeStoredActiveSidePanel(null);
       }
       scheduleWorkspaceSave();
     }
-    function closeOtherSidePanels2(id) {
+    function closeOtherSidePanels(id) {
       Object.keys(panels).forEach(function(otherId) {
-        if (otherId !== id) setSidePanelOpen2(otherId, false);
+        if (otherId !== id) setSidePanelOpen(otherId, false);
       });
     }
-    function notifySidePanelLayout2() {
+    function notifySidePanelLayout() {
       onLayout();
       window.dispatchEvent(new Event("resize"));
     }
-    function toggleSidePanel2(id) {
+    function toggleSidePanel(id) {
       var cfg = panels[id];
-      if (!workspaceEl2 || !cfg) return false;
-      var open10 = !workspaceEl2.classList.contains(cfg.openClass);
-      if (open10) closeOtherSidePanels2(id);
-      setSidePanelOpen2(id, open10);
-      notifySidePanelLayout2();
-      return open10;
+      if (!workspaceEl || !cfg) return false;
+      var open11 = !workspaceEl.classList.contains(cfg.openClass);
+      if (open11) closeOtherSidePanels(id);
+      setSidePanelOpen(id, open11);
+      notifySidePanelLayout();
+      return open11;
     }
-    function wireSidebarOpenTooltip2(btn) {
+    function wireSidebarOpenTooltip(btn) {
       if (!btn || typeof Tooltips === "undefined") return function() {
       };
       btn.addEventListener("mouseleave", function() {
@@ -32798,30 +33820,30 @@
       };
     }
     return {
-      setSidePanelOpen: setSidePanelOpen2,
+      setSidePanelOpen,
       getOpenSidePanelId,
-      closeOtherSidePanels: closeOtherSidePanels2,
-      notifySidePanelLayout: notifySidePanelLayout2,
-      toggleSidePanel: toggleSidePanel2,
-      wireSidebarOpenTooltip: wireSidebarOpenTooltip2
+      closeOtherSidePanels,
+      notifySidePanelLayout,
+      toggleSidePanel,
+      wireSidebarOpenTooltip
     };
   }
 
   // js/app/app-file-tabs.mjs
   function create12(opts) {
-    var editorTabsEl2 = opts.editorTabsEl;
+    var editorTabsEl = opts.editorTabsEl;
     var listOpenFiles = opts.listOpenFiles;
     var getActiveId = opts.getActiveId;
     var fileHasErrors = opts.fileHasErrors;
-    var setTip3 = opts.setTip;
+    var setTip2 = opts.setTip;
     var onSwitch = opts.onSwitch;
     var onClose = opts.onClose;
     var onNew = opts.onNew;
-    function renderTabs2() {
-      if (!editorTabsEl2) return;
+    function renderTabs() {
+      if (!editorTabsEl) return;
       var files = listOpenFiles() || [];
       var activeId2 = getActiveId();
-      editorTabsEl2.innerHTML = "";
+      editorTabsEl.innerHTML = "";
       files.forEach(function(file) {
         var tab = document.createElement("button");
         tab.type = "button";
@@ -32829,18 +33851,18 @@
         tab.className = "editor-tab" + (file.id === activeId2 ? " is-active" : "") + (fileHasErrors(file.id) ? " has-errors" : "");
         tab.setAttribute("aria-selected", file.id === activeId2 ? "true" : "false");
         tab.setAttribute("data-file-id", file.id);
-        var baseName6 = file.name.split("/").pop();
-        tab.setAttribute("aria-label", baseName6);
+        var baseName7 = file.name.split("/").pop();
+        tab.setAttribute("aria-label", baseName7);
         var nameSpan = document.createElement("span");
         nameSpan.className = "editor-tab-name";
-        nameSpan.textContent = baseName6;
+        nameSpan.textContent = baseName7;
         if (typeof Tooltips !== "undefined") Tooltips.bindOverflow(nameSpan, function() {
-          return baseName6;
+          return baseName7;
         });
         var closeBtn2 = document.createElement("button");
         closeBtn2.type = "button";
         closeBtn2.className = "editor-tab-close";
-        if (setTip3) setTip3(closeBtn2, "Close");
+        if (setTip2) setTip2(closeBtn2, "Close");
         closeBtn2.setAttribute("tabindex", "-1");
         closeBtn2.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
         closeBtn2.addEventListener("click", function(e) {
@@ -32852,115 +33874,115 @@
         tab.addEventListener("click", function() {
           onSwitch(file.id);
         });
-        editorTabsEl2.appendChild(tab);
+        editorTabsEl.appendChild(tab);
       });
       var newBtn = document.createElement("button");
       newBtn.type = "button";
       newBtn.className = "editor-tab-new";
-      if (setTip3) setTip3(newBtn, "New file");
+      if (setTip2) setTip2(newBtn, "New file");
       newBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
       newBtn.addEventListener("click", function() {
         onNew();
       });
-      editorTabsEl2.appendChild(newBtn);
-      var activeTab = editorTabsEl2.querySelector(".editor-tab.is-active");
+      editorTabsEl.appendChild(newBtn);
+      var activeTab = editorTabsEl.querySelector(".editor-tab.is-active");
       if (activeTab) activeTab.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
-    return { renderTabs: renderTabs2 };
+    return { renderTabs };
   }
 
   // js/app/app-suite-cfg.mjs
   function create13(deps) {
     var getEditor = deps.getEditor;
     var getPersist2 = deps.getPersist;
-    var projectFileText2 = deps.projectFileText;
-    var showToast2 = deps.showToast;
-    var belFileHealth2 = deps.belFileHealth;
-    var liveFileLint2 = deps.liveFileLint;
-    var cfgTabLint2 = deps.cfgTabLint;
-    var setTip3 = deps.setTip;
-    var renderExplorerTree2 = deps.renderExplorerTree;
-    var updateHeaderContext2 = deps.updateHeaderContext;
-    var reloadActiveEditorFromPersist2 = deps.reloadActiveEditorFromPersist;
-    var renderTabs2 = deps.renderTabs;
-    var getLibraryController2 = deps.getLibraryController;
-    function ensureProjectActiveCfgs2() {
+    var projectFileText = deps.projectFileText;
+    var showToast = deps.showToast;
+    var belFileHealth = deps.belFileHealth;
+    var liveFileLint = deps.liveFileLint;
+    var cfgTabLint = deps.cfgTabLint;
+    var setTip2 = deps.setTip;
+    var renderExplorerTree = deps.renderExplorerTree;
+    var updateHeaderContext = deps.updateHeaderContext;
+    var reloadActiveEditorFromPersist = deps.reloadActiveEditorFromPersist;
+    var renderTabs = deps.renderTabs;
+    var getLibraryController = deps.getLibraryController;
+    function ensureProjectActiveCfgs() {
       if (typeof ProjectSource.inferActiveCfgByDir !== "function") return;
       if (typeof Persist.backfillActiveCfgByDir !== "function") return;
       const files = Persist.listFiles();
-      const getText = (id) => projectFileText2(id);
+      const getText = (id) => projectFileText(id);
       Persist.backfillActiveCfgByDir(ProjectSource.inferActiveCfgByDir(files, getText));
     }
-    function ensureActiveCfgForDir2(dir) {
+    function ensureActiveCfgForDir(dir) {
       if (Persist.getActiveCfgForDir(dir)) return;
       if (typeof ProjectSource.inferActiveCfgForDir !== "function") return;
       const files = Persist.listFiles();
-      const path = ProjectSource.inferActiveCfgForDir(files, projectFileText2, dir);
+      const path = ProjectSource.inferActiveCfgForDir(files, projectFileText, dir);
       if (path) Persist.setActiveCfgForDir(dir, path);
     }
-    function activeCfgForDir2(dir) {
+    function activeCfgForDir(dir) {
       const path = Persist.getActiveCfgForDir(dir);
       if (!path) return null;
       return Persist.listFiles().some((f) => f.name === path) ? path : null;
     }
-    function activeCfgsForDir3(dir) {
+    function activeCfgsForDir2(dir) {
       const names = new Set(Persist.listFiles().map((f) => f.name));
       return Persist.getActiveCfgsForDir(dir).filter((p) => names.has(p));
     }
     function suiteMembersResolver(all, cfgPath, gt) {
       return ProjectSource.orderedPathsForCfg(all, cfgPath, gt);
     }
-    function suiteLayoutForDir2(dir, filesInDir) {
+    function suiteLayoutForDir(dir, filesInDir) {
       const SL = ExplorerSuiteLayout;
       if (!SL || typeof SL.computeDirLayout !== "function") {
         return { orderedFiles: filesInDir, suiteByFile: {} };
       }
-      const active3 = activeCfgsForDir3(dir);
+      const active4 = activeCfgsForDir2(dir);
       const allFiles = Persist.listFiles();
-      const getText = projectFileText2;
-      return SL.computeDirLayout(filesInDir, active3, suiteMembersResolver, allFiles, getText);
+      const getText = projectFileText;
+      return SL.computeDirLayout(filesInDir, active4, suiteMembersResolver, allFiles, getText);
     }
     function owningActiveCfgForFile(fileName) {
       const dir = ProjectSource.dirOf(fileName);
-      const activeCfgs = activeCfgsForDir3(dir);
+      const activeCfgs = activeCfgsForDir2(dir);
       if (!activeCfgs.length) return null;
       const files = Persist.listFiles();
-      const getText = projectFileText2;
+      const getText = projectFileText;
       return ProjectSource.resolveOwningActiveCfg(files, fileName, getText, activeCfgs);
     }
-    function reconcileActiveCfgsInDir2(dir, editedCfg) {
-      const active3 = activeCfgsForDir3(dir);
-      if (active3.length < 2) return;
+    function reconcileActiveCfgsInDir(dir, editedCfg) {
+      const active4 = activeCfgsForDir2(dir);
+      if (active4.length < 2) return;
       const SL = ExplorerSuiteLayout;
       const files = Persist.listFiles();
-      const getText = projectFileText2;
-      if (editedCfg && active3.includes(editedCfg)) {
-        const others = active3.filter((c) => c !== editedCfg);
+      const getText = projectFileText;
+      if (editedCfg && active4.includes(editedCfg)) {
+        const others = active4.filter((c) => c !== editedCfg);
         if (SL.findCfgIntersection(editedCfg, others, files, getText, suiteMembersResolver).length) {
           Persist.removeActiveCfgForDir(dir, editedCfg);
           return;
         }
       }
-      for (let i = 1; i < active3.length; i++) {
-        const cfg = active3[i];
-        const earlier = active3.slice(0, i);
+      for (let i = 1; i < active4.length; i++) {
+        const cfg = active4[i];
+        const earlier = active4.slice(0, i);
         if (SL.findCfgIntersection(cfg, earlier, files, getText, suiteMembersResolver).length) {
           Persist.removeActiveCfgForDir(dir, cfg);
         }
       }
     }
-    function makeActiveCfgForFile2(fileName) {
+    function makeActiveCfgForFile(fileName) {
       const dir = ProjectSource.dirOf(fileName);
-      const active3 = activeCfgsForDir3(dir);
+      const active4 = activeCfgsForDir2(dir);
       const files = Persist.listFiles();
-      const getText = projectFileText2;
+      const getText = projectFileText;
       const SL = ExplorerSuiteLayout;
-      if (active3.includes(fileName)) {
+      if (active4.includes(fileName)) {
         Persist.removeActiveCfgForDir(dir, fileName);
       } else if (SL) {
-        const check = SL.canActivateCfg(fileName, active3, files, getText, suiteMembersResolver);
+        const check = SL.canActivateCfg(fileName, active4, files, getText, suiteMembersResolver);
         if (!check.ok) {
-          showToast2(check.reason || "Cannot activate suite", { kind: "warn" });
+          showToast(check.reason || "Cannot activate suite", { kind: "warn" });
           return;
         }
         Persist.addActiveCfgForDir(dir, fileName);
@@ -32972,23 +33994,23 @@
       if (getEditor()?.remoduleContext && activeFile && ProjectSource.dirOf(activeFile.name) === dir) {
         getEditor().remoduleContext();
       }
-      renderExplorerTree2();
-      updateHeaderContext2();
-      updateRunButtonTooltip2();
+      renderExplorerTree();
+      updateHeaderContext();
+      updateRunButtonTooltip();
     }
-    function moduleNameFor2(fileId) {
+    function moduleNameFor(fileId) {
       const files = Persist.listFiles();
-      const getText = projectFileText2;
+      const getText = projectFileText;
       const id = fileId || Persist.getActiveFileId();
       const dev = ProjectSource.developmentForFile(files, id, getText);
       if (dev.kind !== "module" || !dev.cfg) return null;
       return dev.cfg.slice(dev.cfg.lastIndexOf("/") + 1).replace(/\.cfg$/i, "");
     }
-    function activeSuiteMembership2(fileName) {
+    function activeSuiteMembership(fileName) {
       const cfg = owningActiveCfgForFile(fileName);
       if (!cfg) return { cfg: null, member: false, index: -1, count: 0 };
       const files = Persist.listFiles();
-      const getText = projectFileText2;
+      const getText = projectFileText;
       const paths = ProjectSource.developmentFilesForCfg(files, cfg, getText).map((f) => f.name);
       const index = paths.indexOf(fileName);
       return { cfg, member: index !== -1, index, count: paths.length };
@@ -32999,38 +34021,38 @@
       if (!cfgFile) return false;
       const names = new Set(files.map((f) => f.name));
       const dir = ProjectSource.dirOf(cfgName);
-      for (const entry of ProjectSource.parseCfg(projectFileText2(cfgFile.id))) {
+      for (const entry of ProjectSource.parseCfg(projectFileText(cfgFile.id))) {
         if (!ProjectSource.isCfgEntryToken(entry)) continue;
         if (!names.has(dir ? dir + "/" + entry : entry)) return true;
       }
       return false;
     }
-    function explorerFileDiag2(fileId, fileName) {
+    function explorerFileDiag(fileId, fileName) {
       const low = String(fileName || "").toLowerCase();
       if (low.endsWith(".cfg")) {
         if (cfgHasDanglingEntry2(fileName)) return "warning";
         const activeId2 = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
-        const lint = fileId === activeId2 ? liveFileLint2() : cfgTabLint2.get(fileId);
+        const lint = fileId === activeId2 ? liveFileLint() : cfgTabLint.get(fileId);
         if (lint && lint.errors > 0) return "error";
         if (lint && lint.warnings > 0) return "warning";
         return null;
       }
       if (ProjectSource.isSignaturePath(fileName)) {
-        const health = belFileHealth2(fileId);
+        const health = belFileHealth(fileId);
         if (health.errors > 0) return "error";
         if (health.warnings > 0) return "warning";
         return null;
       }
       return null;
     }
-    function afterSuiteEdit2(dir, editedCfg) {
+    function afterSuiteEdit(dir, editedCfg) {
       if (!editedCfg) {
         const activeFile2 = Persist.getFileById(Persist.getActiveFileId());
         if (activeFile2 && /\.cfg$/i.test(activeFile2.name) && ProjectSource.dirOf(activeFile2.name) === dir) {
           editedCfg = activeFile2.name;
         }
       }
-      reconcileActiveCfgsInDir2(dir, editedCfg);
+      reconcileActiveCfgsInDir(dir, editedCfg);
       if (editedCfg && typeof BelEditor !== "undefined" && typeof BelEditor.invalidateFileHealthAfterChange === "function") {
         const cfgFile = Persist.listFiles().find((f) => f.name === editedCfg);
         if (cfgFile) BelEditor.invalidateFileHealthAfterChange(cfgFile.id);
@@ -33040,49 +34062,49 @@
       if (getEditor()?.remoduleContext && activeFile && ProjectSource.dirOf(activeFile.name) === dir) {
         getEditor().remoduleContext();
       }
-      reloadActiveEditorFromPersist2();
-      renderExplorerTree2();
-      renderTabs2();
-      updateHeaderContext2();
-      updateRunButtonTooltip2();
-      if (getLibraryController2() && typeof getLibraryController2().refresh === "function") {
-        getLibraryController2().refresh();
+      reloadActiveEditorFromPersist();
+      renderExplorerTree();
+      renderTabs();
+      updateHeaderContext();
+      updateRunButtonTooltip();
+      if (getLibraryController() && typeof getLibraryController().refresh === "function") {
+        getLibraryController().refresh();
       }
     }
-    function activeFileRecord2() {
+    function activeFileRecord() {
       const id = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
       return id ? Persist.getFileById(id) : null;
     }
-    function updateRunButtonTooltip2() {
+    function updateRunButtonTooltip() {
       const btn = document.getElementById("btn-load");
       if (!btn) return;
-      const file = activeFileRecord2();
+      const file = activeFileRecord();
       if (file && /\.cfg$/i.test(file.name)) {
-        setTip3(btn, "Run suite");
-      } else if (file && moduleNameFor2(file.id)) {
-        const hasPrelude = !!(ProjectSource.buildPrelude && ProjectSource.buildPrelude(Persist.listFiles(), file.id, projectFileText2));
-        setTip3(btn, hasPrelude ? "Run suite to here\nCtrl+click: run suite" : "Run\nCtrl+click: run suite");
+        setTip2(btn, "Run suite");
+      } else if (file && moduleNameFor(file.id)) {
+        const hasPrelude = !!(ProjectSource.buildPrelude && ProjectSource.buildPrelude(Persist.listFiles(), file.id, projectFileText));
+        setTip2(btn, hasPrelude ? "Run suite to here\nCtrl+click: run suite" : "Run\nCtrl+click: run suite");
       } else {
-        setTip3(btn, "Run");
+        setTip2(btn, "Run");
       }
     }
     return {
-      ensureProjectActiveCfgs: ensureProjectActiveCfgs2,
-      ensureActiveCfgForDir: ensureActiveCfgForDir2,
-      activeCfgForDir: activeCfgForDir2,
-      activeCfgsForDir: activeCfgsForDir3,
+      ensureProjectActiveCfgs,
+      ensureActiveCfgForDir,
+      activeCfgForDir,
+      activeCfgsForDir: activeCfgsForDir2,
       suiteMembersResolver,
-      suiteLayoutForDir: suiteLayoutForDir2,
+      suiteLayoutForDir,
       owningActiveCfgForFile,
-      reconcileActiveCfgsInDir: reconcileActiveCfgsInDir2,
-      makeActiveCfgForFile: makeActiveCfgForFile2,
-      moduleNameFor: moduleNameFor2,
-      activeSuiteMembership: activeSuiteMembership2,
+      reconcileActiveCfgsInDir,
+      makeActiveCfgForFile,
+      moduleNameFor,
+      activeSuiteMembership,
       cfgHasDanglingEntry: cfgHasDanglingEntry2,
-      explorerFileDiag: explorerFileDiag2,
-      afterSuiteEdit: afterSuiteEdit2,
-      activeFileRecord: activeFileRecord2,
-      updateRunButtonTooltip: updateRunButtonTooltip2
+      explorerFileDiag,
+      afterSuiteEdit,
+      activeFileRecord,
+      updateRunButtonTooltip
     };
   }
 
@@ -33092,21 +34114,21 @@
     var setEditor = deps.setEditor;
     var getPersist2 = deps.getPersist;
     var setPersist = deps.setPersist;
-    var showToast2 = deps.showToast;
-    var projectFileText2 = deps.projectFileText;
-    var switchToFile2 = deps.switchToFile;
-    var switchProjectAndReload2 = deps.switchProjectAndReload;
-    var ensureEditorMatchesFileKind2 = deps.ensureEditorMatchesFileKind;
-    var updateEditorEmptyState2 = deps.updateEditorEmptyState;
-    var renderTabs2 = deps.renderTabs;
-    var renderExplorerTree2 = deps.renderExplorerTree;
-    var updateHeaderContext2 = deps.updateHeaderContext;
-    var updateRunButtonTooltip2 = deps.updateRunButtonTooltip;
-    var enterEmptyProjectView2 = deps.enterEmptyProjectView;
-    var enterCanvasIdleView2 = deps.enterCanvasIdleView;
-    var projectIsEmpty2 = deps.projectIsEmpty;
-    var onCfgContentChange2 = deps.onCfgContentChange;
-    var cfgTabLint2 = deps.cfgTabLint;
+    var showToast = deps.showToast;
+    var projectFileText = deps.projectFileText;
+    var switchToFile = deps.switchToFile;
+    var switchProjectAndReload = deps.switchProjectAndReload;
+    var ensureEditorMatchesFileKind = deps.ensureEditorMatchesFileKind;
+    var updateEditorEmptyState = deps.updateEditorEmptyState;
+    var renderTabs = deps.renderTabs;
+    var renderExplorerTree = deps.renderExplorerTree;
+    var updateHeaderContext = deps.updateHeaderContext;
+    var updateRunButtonTooltip = deps.updateRunButtonTooltip;
+    var enterEmptyProjectView = deps.enterEmptyProjectView;
+    var enterCanvasIdleView = deps.enterCanvasIdleView;
+    var projectIsEmpty = deps.projectIsEmpty;
+    var onCfgContentChange = deps.onCfgContentChange;
+    var cfgTabLint = deps.cfgTabLint;
     const fileInputEl = document.createElement("input");
     fileInputEl.type = "file";
     fileInputEl.accept = ".bel";
@@ -33124,9 +34146,9 @@
       const result = await resolveAndApplyUpload(entries, { openTabs: true });
       if (result === null) return;
       if (result.replaced > 0 && result.added === 0) {
-        showToast2("Replaced existing file.", { kind: "success" });
+        showToast("Replaced existing file.", { kind: "success" });
       } else if (result.added > 0) {
-        showToast2(
+        showToast(
           "Added " + result.added + " file" + (result.added === 1 ? "" : "s") + " to the project.",
           { kind: "success" }
         );
@@ -33171,11 +34193,11 @@
       }
       return projectEntriesFromRawEntries(rawEntries);
     }
-    async function exportLibraryAsNewProject2(payload) {
+    async function exportLibraryAsNewProject(payload) {
       if (!getPersist2() || !payload) return;
       const { projectEntries } = projectEntriesFromRawEntries(payload.entries || []);
       if (!projectEntries.length) {
-        showToast2("No files to export.", { kind: "warn" });
+        showToast("No files to export.", { kind: "warn" });
         return;
       }
       let projName = payload.defaultName || Persist.DEFAULT_PROJECT_NAME;
@@ -33196,7 +34218,7 @@
         const orderedBel = projectEntries.filter((e) => ProjectSource.isBelPath(e.name)).map((e) => e.name);
         activePath = orderedBel[0] || projectEntries.find((e) => ProjectSource.isSignaturePath(e.name))?.name || projectEntries.find((e) => ProjectSource.isCfgPath(e.name))?.name || null;
       }
-      switchProjectAndReload2(() => {
+      switchProjectAndReload(() => {
         Persist.createProjectWithFiles(projName, projectEntries, {
           projectName: projName,
           activeCfgByDir: activeCfgByDir || void 0
@@ -33207,7 +34229,7 @@
         }
       });
     }
-    function applyFileReplacement2(id, text) {
+    function applyFileReplacement(id, text) {
       if (!id || text == null) return;
       const activeId2 = getPersist2() ? getPersist2().getCurrentFileId() : null;
       const registryActiveId = Persist.getActiveFileId();
@@ -33220,13 +34242,13 @@
       if (getPersist2().replaceEditorText) getPersist2().replaceEditorText(stored);
       if (getEditor().setValueNonUndoable) getEditor().setValueNonUndoable(stored);
       else getEditor().setValue(stored);
-      ensureEditorMatchesFileKind2();
+      ensureEditorMatchesFileKind();
       const file = Persist.getFileById(id);
       if (file && /\.cfg$/i.test(file.name) && typeof getEditor().refreshLint === "function") {
         getEditor().refreshLint();
       }
     }
-    function deleteProjectFilesById2(ids) {
+    function deleteProjectFilesById(ids) {
       const unique = [...new Set(ids)];
       if (!unique.length) return;
       const currentId = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
@@ -33234,24 +34256,24 @@
         const openIds = Persist.getOpenFileIds().filter((x) => !unique.includes(x));
         const files = Persist.listFiles();
         const fallback = openIds[0] || (files.find((f) => !unique.includes(f.id)) || {}).id;
-        if (fallback) switchToFile2(fallback);
+        if (fallback) switchToFile(fallback);
       }
       for (const id of unique) {
         Persist.deleteFile(id);
-        cfgTabLint2.delete(id);
+        cfgTabLint.delete(id);
       }
       if (getPersist2()) {
         const cur = getPersist2().getCurrentFileId();
         if (cur && unique.includes(cur) && !Persist.getFileById(cur)) {
-          const open10 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
-          if (open10) switchToFile2(open10);
-          else if (projectIsEmpty2()) enterEmptyProjectView2();
-          else enterCanvasIdleView2();
+          const open11 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
+          if (open11) switchToFile(open11);
+          else if (projectIsEmpty()) enterEmptyProjectView();
+          else enterCanvasIdleView();
         }
       }
-      if (projectIsEmpty2()) enterEmptyProjectView2();
+      if (projectIsEmpty()) enterEmptyProjectView();
     }
-    function executeUploadPlan2(plan, options) {
+    function executeUploadPlan(plan, options) {
       if (!plan) return { added: 0, replaced: 0 };
       const H = typeof EditHistory !== "undefined" ? EditHistory : null;
       const run3 = () => executeUploadPlanInner(plan, options || {});
@@ -33276,7 +34298,7 @@
           const f = Persist.getFileById(openId);
           if (f) reopenPaths.push(f.name);
         }
-        deleteProjectFilesById2(folder.deleteIds || []);
+        deleteProjectFilesById(folder.deleteIds || []);
         for (const entry of folder.entries || []) {
           const id = Persist.createFile(entry.name);
           Persist.setFileText(id, entry.text);
@@ -33292,7 +34314,7 @@
         replaced += 1;
       }
       for (const item of plan.replace || []) {
-        applyFileReplacement2(item.id, item.text);
+        applyFileReplacement(item.id, item.text);
         replaced += 1;
       }
       for (const entry of plan.create || []) {
@@ -33302,13 +34324,13 @@
         lastCreatedId = id;
         if (options.openTabs) Persist.openFile(id);
       }
-      if (switchedActiveId) switchToFile2(switchedActiveId);
-      else if (options.openTabs && lastCreatedId) switchToFile2(lastCreatedId);
-      else reloadActiveEditorFromPersist2();
-      updateEditorEmptyState2();
-      renderTabs2();
-      renderExplorerTree2();
-      updateHeaderContext2();
+      if (switchedActiveId) switchToFile(switchedActiveId);
+      else if (options.openTabs && lastCreatedId) switchToFile(lastCreatedId);
+      else reloadActiveEditorFromPersist();
+      updateEditorEmptyState();
+      renderTabs();
+      renderExplorerTree();
+      updateHeaderContext();
       return { added, replaced };
     }
     async function resolveAndApplyUpload(entries, options) {
@@ -33324,17 +34346,17 @@
       }
       const plan = NameConflicts.applyResolutions(existing, entries, conflicts, resolutions);
       if (!plan) return null;
-      return executeUploadPlan2(plan, options);
+      return executeUploadPlan(plan, options);
     }
-    function reloadActiveEditorFromPersist2() {
+    function reloadActiveEditorFromPersist() {
       if (!getPersist2() || !getEditor()) return;
       const id = getPersist2().getCurrentFileId();
       if (!id) return;
       const file = Persist.getFileById(id);
       if (!file) {
         const fallback = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
-        if (fallback) switchToFile2(fallback);
-        else if (!projectIsEmpty2()) enterCanvasIdleView2();
+        if (fallback) switchToFile(fallback);
+        else if (!projectIsEmpty()) enterCanvasIdleView();
         return;
       }
       const stored = Persist.getFileText(id);
@@ -33345,7 +34367,7 @@
       if (getPersist2().replaceEditorText) getPersist2().replaceEditorText(stored);
       if (getEditor().setValueNonUndoable) getEditor().setValueNonUndoable(stored);
       else getEditor().setValue(stored);
-      ensureEditorMatchesFileKind2();
+      ensureEditorMatchesFileKind();
       if (file && /\.cfg$/i.test(file.name) && typeof getEditor().refreshLint === "function") {
         getEditor().refreshLint();
       }
@@ -33368,17 +34390,17 @@
         }
       }
       if (touchedActiveCfg) {
-        ensureEditorMatchesFileKind2();
+        ensureEditorMatchesFileKind();
         if (getEditor() && typeof getEditor().refreshLint === "function") getEditor().refreshLint();
         const activeFile = Persist.getFileById(activeId2);
         if (activeFile && /\.cfg$/i.test(activeFile.name)) {
-          onCfgContentChange2(activeFile.name);
+          onCfgContentChange(activeFile.name);
           return;
         }
       }
-      renderExplorerTree2();
-      updateHeaderContext2();
-      updateRunButtonTooltip2();
+      renderExplorerTree();
+      updateHeaderContext();
+      updateRunButtonTooltip();
     }
     function applyMovePlan(plan) {
       if (!plan || !getPersist2()) return;
@@ -33389,32 +34411,32 @@
         Persist.renameFile(id, to);
       };
       for (const folder of plan.replaceFolder || []) {
-        deleteProjectFilesById2(folder.deleteIds || []);
+        deleteProjectFilesById(folder.deleteIds || []);
         for (const r of folder.renames || []) recordMove(r.id, r.to);
       }
       for (const rep of plan.replaces || []) {
-        applyFileReplacement2(rep.targetId, rep.text);
-        deleteProjectFilesById2([rep.deleteId]);
+        applyFileReplacement(rep.targetId, rep.text);
+        deleteProjectFilesById([rep.deleteId]);
       }
       for (const r of plan.renames || []) recordMove(r.id, r.to);
       Persist.preserveEmptyFoldersAfterMoves(moves);
-      reloadActiveEditorFromPersist2();
-      renderTabs2();
-      renderExplorerTree2();
-      updateHeaderContext2();
+      reloadActiveEditorFromPersist();
+      renderTabs();
+      renderExplorerTree();
+      updateHeaderContext();
     }
-    async function resolveAndApplyMove2(payload, dropTarget) {
+    async function resolveAndApplyMove(payload, dropTarget) {
       if (!getPersist2()) return;
       const existing = Persist.listFiles();
       const empty = Persist.listEmptyFolders();
-      const getText = projectFileText2;
+      const getText = projectFileText;
       const moves = NameConflicts.computeMoveTargets(existing, payload, dropTarget, getText);
       const emptyMoves = NameConflicts.computeEmptyFolderMoves(existing, payload, dropTarget, empty);
       if (!moves.length) {
         if (!emptyMoves.length) return;
         for (const m of emptyMoves) Persist.renameEmptyFolderPrefix(m.from, m.to);
-        renderExplorerTree2();
-        updateHeaderContext2();
+        renderExplorerTree();
+        updateHeaderContext();
         return;
       }
       let plan;
@@ -33433,7 +34455,7 @@
       if (!plan) return;
       applyMovePlan(plan);
       for (const m of emptyMoves) Persist.renameEmptyFolderPrefix(m.from, m.to);
-      if (emptyMoves.length) renderExplorerTree2();
+      if (emptyMoves.length) renderExplorerTree();
     }
     const uploadFolderInputEl = document.createElement("input");
     uploadFolderInputEl.type = "file";
@@ -33446,7 +34468,7 @@
       if (!getPersist2()) return;
       const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all);
       if (!belCount) {
-        showToast2("No .bel files in that folder.", { kind: "warn" });
+        showToast("No .bel files in that folder.", { kind: "warn" });
         return;
       }
       const result = await resolveAndApplyUpload(projectEntries, {
@@ -33456,12 +34478,12 @@
       if (result === null) return;
       const nAdded = result.added;
       if (nAdded > 0) {
-        showToast2(
+        showToast(
           "Added " + nAdded + " file" + (nAdded === 1 ? "" : "s") + " to the project.",
           { kind: "success" }
         );
       } else if (result.replaced > 0) {
-        showToast2("Updated existing project files.", { kind: "success" });
+        showToast("Updated existing project files.", { kind: "success" });
       }
     });
     const folderInputEl = document.createElement("input");
@@ -33475,7 +34497,7 @@
       if (!getPersist2()) return;
       const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all, { stripRoot: true });
       if (!belCount) {
-        showToast2("No .bel files in that folder.", { kind: "warn" });
+        showToast("No .bel files in that folder.", { kind: "warn" });
         return;
       }
       const rootName = all[0] && all[0].webkitRelativePath ? all[0].webkitRelativePath.split("/")[0] : "Imported";
@@ -33484,7 +34506,7 @@
       const tmpFiles = projectEntries.map((e, i) => ({ id: "tmp-" + i, name: e.name }));
       const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? "";
       const activeCfgByDir = typeof ProjectSource.inferActiveCfgByDir === "function" ? ProjectSource.inferActiveCfgByDir(tmpFiles, tmpText) : null;
-      switchProjectAndReload2(() => {
+      switchProjectAndReload(() => {
         Persist.createProjectWithFiles(rootName, projectEntries, {
           projectName: rootName,
           activeCfgByDir: activeCfgByDir || void 0
@@ -33495,7 +34517,7 @@
         }
       });
     });
-    function baseName6(path) {
+    function baseName7(path) {
       const s = String(path || "");
       const i = s.lastIndexOf("/");
       return i === -1 ? s : s.slice(i + 1);
@@ -33508,18 +34530,18 @@
       if (path.indexOf(root2 + "/") === 0) return path.slice(root2.length + 1);
       return path;
     }
-    function downloadFileById2(fileId) {
+    function downloadFileById(fileId) {
       if (!fileId) return;
       const file = Persist.getFileById(fileId);
       if (!file) return;
-      const text = typeof projectFileText2 === "function" ? projectFileText2(fileId) : Persist.getFileText(fileId) || "";
-      DownloadZip.downloadTextFile(text, baseName6(file.name) || "download.bel");
+      const text = typeof projectFileText === "function" ? projectFileText(fileId) : Persist.getFileText(fileId) || "";
+      DownloadZip.downloadTextFile(text, baseName7(file.name) || "download.bel");
     }
-    function downloadCurrentFile2() {
+    function downloadCurrentFile() {
       const id = Persist.getActiveFileId && Persist.getActiveFileId();
-      if (id) downloadFileById2(id);
+      if (id) downloadFileById(id);
     }
-    function downloadFolder2(folderPath) {
+    function downloadFolder(folderPath) {
       if (!folderPath) return;
       const allFiles = Persist.listFiles() || [];
       const under = NameConflicts.filesUnderPrefix(allFiles, folderPath);
@@ -33532,7 +34554,7 @@
         const file = under[i];
         const rel = relativeUnderPrefix(file.name, folderPath);
         if (!rel) continue;
-        const text = typeof projectFileText2 === "function" ? projectFileText2(file.id) : Persist.getFileText(file.id) || "";
+        const text = typeof projectFileText === "function" ? projectFileText(file.id) : Persist.getFileText(file.id) || "";
         entries.push({
           path: rel,
           data: enc ? enc.encode(text) : text
@@ -33551,10 +34573,10 @@
         if (!coveredByFile) entries.push({ path: dirPath + "/", directory: true });
       });
       entries.sort((a, b) => String(a.path).localeCompare(String(b.path)));
-      DownloadZip.downloadZip(entries, (baseName6(folderPath) || "folder") + ".zip");
+      DownloadZip.downloadZip(entries, (baseName7(folderPath) || "folder") + ".zip");
     }
     function suiteStem(cfgPath) {
-      return String(baseName6(cfgPath) || "suite").replace(/\.cfg$/i, "") || "suite";
+      return String(baseName7(cfgPath) || "suite").replace(/\.cfg$/i, "") || "suite";
     }
     function suiteMemberPaths(cfgPath, cfgText) {
       const PS = ProjectSource;
@@ -33573,7 +34595,7 @@
       }
       return out;
     }
-    function suiteDownloadState2(cfgFileId) {
+    function suiteDownloadState(cfgFileId) {
       if (!cfgFileId) {
         return { ok: false, reason: "Suite unavailable." };
       }
@@ -33583,9 +34605,9 @@
       }
       const allFiles = Persist.listFiles() || [];
       const byName = new Map(allFiles.map((f) => [f.name, f]));
-      const cfgText = typeof projectFileText2 === "function" ? projectFileText2(cfgFileId) : Persist.getFileText(cfgFileId) || "";
+      const cfgText = typeof projectFileText === "function" ? projectFileText(cfgFileId) : Persist.getFileText(cfgFileId) || "";
       if (typeof ExplorerSuiteLayout.cfgHasDanglingEntry === "function") {
-        if (ExplorerSuiteLayout.cfgHasDanglingEntry(allFiles, cfgFile.name, projectFileText2)) {
+        if (ExplorerSuiteLayout.cfgHasDanglingEntry(allFiles, cfgFile.name, projectFileText)) {
           return { ok: false, reason: "A listed suite file is missing from the project." };
         }
       } else {
@@ -33601,14 +34623,14 @@
       const pack = [];
       const enc = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
       pack.push({
-        path: stem + "/" + baseName6(cfgFile.name),
+        path: stem + "/" + baseName7(cfgFile.name),
         data: enc ? enc.encode(cfgText) : cfgText
       });
       for (let j = 0; j < members.length; j++) {
         const mem = members[j];
         const file = byName.get(mem.full);
         if (!file) continue;
-        const text = typeof projectFileText2 === "function" ? projectFileText2(file.id) : Persist.getFileText(file.id) || "";
+        const text = typeof projectFileText === "function" ? projectFileText(file.id) : Persist.getFileText(file.id) || "";
         pack.push({
           path: stem + "/" + mem.entry.replace(/\\/g, "/"),
           data: enc ? enc.encode(text) : text
@@ -33616,8 +34638,8 @@
       }
       return { ok: true, zipName: stem + ".zip", entries: pack };
     }
-    function downloadSuite2(cfgFileId) {
-      const state2 = suiteDownloadState2(cfgFileId);
+    function downloadSuite(cfgFileId) {
+      const state2 = suiteDownloadState(cfgFileId);
       if (!state2.ok) return;
       DownloadZip.downloadZip(state2.entries, state2.zipName);
     }
@@ -33626,22 +34648,22 @@
       relPathFromPickerFile,
       projectEntriesFromRawEntries,
       projectEntriesFromPickerFiles,
-      exportLibraryAsNewProject: exportLibraryAsNewProject2,
-      applyFileReplacement: applyFileReplacement2,
-      deleteProjectFilesById: deleteProjectFilesById2,
-      executeUploadPlan: executeUploadPlan2,
+      exportLibraryAsNewProject,
+      applyFileReplacement,
+      deleteProjectFilesById,
+      executeUploadPlan,
       resolveAndApplyUpload,
-      reloadActiveEditorFromPersist: reloadActiveEditorFromPersist2,
+      reloadActiveEditorFromPersist,
       syncCfgEditorsAfterRewrite,
       applyMovePlan,
-      resolveAndApplyMove: resolveAndApplyMove2,
+      resolveAndApplyMove,
       uploadFolderInputEl,
       folderInputEl,
-      downloadCurrentFile: downloadCurrentFile2,
-      downloadFileById: downloadFileById2,
-      downloadFolder: downloadFolder2,
-      downloadSuite: downloadSuite2,
-      suiteDownloadState: suiteDownloadState2
+      downloadCurrentFile,
+      downloadFileById,
+      downloadFolder,
+      downloadSuite,
+      suiteDownloadState
     };
   }
 
@@ -33650,32 +34672,48 @@
     var getEditor = deps.getEditor;
     var setEditor = deps.setEditor;
     var getPersist2 = deps.getPersist;
-    var mountEditorFor2 = deps.mountEditorFor;
-    var ensurePersistForFile2 = deps.ensurePersistForFile;
-    var syncEditorCmTheme2 = deps.syncEditorCmTheme;
-    var updateEditorEmptyState2 = deps.updateEditorEmptyState;
-    var renderTabs2 = deps.renderTabs;
-    var renderExplorerTree2 = deps.renderExplorerTree;
-    var updateHeaderContext2 = deps.updateHeaderContext;
-    var updateRunButtonTooltip2 = deps.updateRunButtonTooltip;
-    var notifyActiveEditorView2 = deps.notifyActiveEditorView;
-    var refreshInspector2 = deps.refreshInspector;
-    var refreshExplorerActiveAndDiags2 = deps.refreshExplorerActiveAndDiags;
-    var scheduleTabLintStyles2 = deps.scheduleTabLintStyles;
-    var liveFileLint2 = deps.liveFileLint;
-    var rememberCfgLint2 = deps.rememberCfgLint;
-    var cfgTabLint2 = deps.cfgTabLint;
-    var ensureActiveCfgForDir2 = deps.ensureActiveCfgForDir;
-    var showToast2 = deps.showToast;
-    var projectIsEmpty2 = deps.projectIsEmpty;
-    var enterCanvasIdleView2 = deps.enterCanvasIdleView;
-    var enterEmptyProjectView2 = deps.enterEmptyProjectView;
-    var deleteProjectFilesById2 = deps.deleteProjectFilesById;
-    var getExplorerController2 = deps.getExplorerController;
+    var mountEditorFor = deps.mountEditorFor;
+    var ensurePersistForFile = deps.ensurePersistForFile;
+    var syncEditorCmTheme = deps.syncEditorCmTheme;
+    var updateEditorEmptyState = deps.updateEditorEmptyState;
+    var renderTabs = deps.renderTabs;
+    var renderExplorerTree = deps.renderExplorerTree;
+    var updateHeaderContext = deps.updateHeaderContext;
+    var updateRunButtonTooltip = deps.updateRunButtonTooltip;
+    var notifyActiveEditorView = deps.notifyActiveEditorView;
+    var refreshInspector = deps.refreshInspector;
+    var refreshExplorerActiveAndDiags = deps.refreshExplorerActiveAndDiags;
+    var scheduleTabLintStyles = deps.scheduleTabLintStyles;
+    var liveFileLint = deps.liveFileLint;
+    var rememberCfgLint = deps.rememberCfgLint;
+    var cfgTabLint = deps.cfgTabLint;
+    var ensureActiveCfgForDir = deps.ensureActiveCfgForDir;
+    var showToast = deps.showToast;
+    var projectIsEmpty = deps.projectIsEmpty;
+    var enterCanvasIdleView = deps.enterCanvasIdleView;
+    var enterEmptyProjectView = deps.enterEmptyProjectView;
+    var deleteProjectFilesById = deps.deleteProjectFilesById;
+    var getExplorerController = deps.getExplorerController;
     var syncCfgEditorsAfterRewrite = deps.syncCfgEditorsAfterRewrite;
     var refPeekRestore = null;
+    function resolveLineOffset(line) {
+      var ed = getEditor();
+      var view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+      var doc2 = view && view.state ? view.state.doc : null;
+      if (!doc2 || !doc2.lines || !Number.isFinite(line)) return null;
+      var n = Math.min(Math.max(1, Math.floor(line)), doc2.lines);
+      return doc2.line(n).from;
+    }
+    function withResolvedOffset(jumpAt) {
+      if (!jumpAt || jumpAt.from != null) return jumpAt;
+      var at = resolveLineOffset(jumpAt.line);
+      if (at == null) return jumpAt;
+      return Object.assign({}, jumpAt, { from: at, to: at });
+    }
     function applyEditorJump(jumpAt) {
       if (!getEditor() || !jumpAt) return false;
+      jumpAt = withResolvedOffset(jumpAt);
+      if (jumpAt.from == null) return false;
       if (typeof getEditor().jumpToReference === "function" && jumpAt.name) {
         return getEditor().jumpToReference(jumpAt, jumpAt.name);
       }
@@ -33684,32 +34722,32 @@
       }
       return false;
     }
-    function switchToFile2(id, openOpts) {
+    function switchToFile(id, openOpts) {
       if (!id) return;
-      ensurePersistForFile2(id);
+      ensurePersistForFile(id);
       if (!getPersist2()) return;
       if (!getEditor()) {
         Persist.openFile(id);
         Persist.setActiveFileId(id);
         const curId = getPersist2().getCurrentFileId();
         const snapshot2 = curId === id ? getPersist2().getInitialCheckpoint() : getPersist2().switchFile(id);
-        setEditor(mountEditorFor2(snapshot2, openOpts));
-        syncEditorCmTheme2();
+        setEditor(mountEditorFor(snapshot2, openOpts));
+        syncEditorCmTheme();
         if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
           BelugaClient.noteEditorChange(getEditor() ? getEditor().getValue() : "");
         }
-        updateEditorEmptyState2();
+        updateEditorEmptyState();
         if (getEditor()) getEditor().focus();
-        renderTabs2();
-        renderExplorerTree2();
-        updateHeaderContext2();
-        updateRunButtonTooltip2();
-        notifyActiveEditorView2();
-        refreshInspector2();
+        renderTabs();
+        renderExplorerTree();
+        updateHeaderContext();
+        updateRunButtonTooltip();
+        notifyActiveEditorView();
+        refreshInspector();
         return;
       }
       const keepSelection = openOpts && openOpts.keepSelection;
-      const shouldClearSelection = !keepSelection && !(getExplorerController2() && getExplorerController2().shouldKeepSelectionOnOpen && getExplorerController2().shouldKeepSelectionOnOpen());
+      const shouldClearSelection = !keepSelection && !(getExplorerController() && getExplorerController().shouldKeepSelectionOnOpen && getExplorerController().shouldKeepSelectionOnOpen());
       const peekAt = openOpts && openOpts.peekAt;
       const jumpAt = openOpts && openOpts.jumpAt;
       const initialLocal = openOpts && openOpts.initialLocal;
@@ -33718,53 +34756,53 @@
       const persistId = getPersist2().getCurrentFileId();
       if (id === persistId && editorDocId === id) {
         Persist.setActiveFileId(id);
-        renderTabs2();
+        renderTabs();
         if (peekAt && getEditor() && typeof getEditor().peekRange === "function") getEditor().peekRange(peekAt);
         else if (jumpAt) applyEditorJump(jumpAt);
         else if (initialLocal != null && getEditor() && typeof getEditor().applyViewport === "function") {
           getEditor().applyViewport(initialLocal);
-        } else if (shouldClearSelection && getExplorerController2() && getExplorerController2().clearSelection) {
-          getExplorerController2().clearSelection();
+        } else if (shouldClearSelection && getExplorerController() && getExplorerController().clearSelection) {
+          getExplorerController().clearSelection();
         }
-        refreshExplorerActiveAndDiags2();
-        notifyActiveEditorView2();
+        refreshExplorerActiveAndDiags();
+        notifyActiveEditorView();
         return;
       }
       {
         const file = Persist.getFileById(id);
-        if (file) ensureActiveCfgForDir2(ProjectSource.dirOf(file.name));
+        if (file) ensureActiveCfgForDir(ProjectSource.dirOf(file.name));
       }
       const leavingId = getPersist2().getCurrentFileId();
       const leavingFile = Persist.getFileById(leavingId);
-      const snap = liveFileLint2();
+      const snap = liveFileLint();
       const lintItems = getEditor() && typeof getEditor().getLintTooltipItems === "function" ? getEditor().getLintTooltipItems() : null;
       if (snap && leavingFile && /\.cfg$/i.test(leavingFile.name)) {
-        rememberCfgLint2(leavingId, { ...snap, items: lintItems });
+        rememberCfgLint(leavingId, { ...snap, items: lintItems });
       }
       WorkspaceState.flushWorkspace();
       if (getEditor() && typeof getEditor().cancelRename === "function") getEditor().cancelRename();
       const snapshot = getPersist2().switchFile(id);
       Persist.setActiveFileId(id);
       getEditor().destroy();
-      setEditor(mountEditorFor2(snapshot, {
+      setEditor(mountEditorFor(snapshot, {
         jumpAt,
         initialLocal: initialLocal != null ? initialLocal : snapshot ? snapshot.editor.local : null
       }));
-      syncEditorCmTheme2();
+      syncEditorCmTheme();
       if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
         BelugaClient.noteEditorChange(getEditor() ? getEditor().getValue() : "");
       }
       if (getEditor()) getEditor().focus();
-      renderTabs2();
-      if (shouldClearSelection && getExplorerController2() && getExplorerController2().clearSelection) {
-        getExplorerController2().clearSelection();
+      renderTabs();
+      if (shouldClearSelection && getExplorerController() && getExplorerController().clearSelection) {
+        getExplorerController().clearSelection();
       }
-      refreshExplorerActiveAndDiags2();
-      updateHeaderContext2();
-      updateRunButtonTooltip2();
-      scheduleTabLintStyles2();
-      notifyActiveEditorView2();
-      refreshInspector2();
+      refreshExplorerActiveAndDiags();
+      updateHeaderContext();
+      updateRunButtonTooltip();
+      scheduleTabLintStyles();
+      notifyActiveEditorView();
+      refreshInspector();
       requestAnimationFrame(() => {
         if (peekAt) {
           if (getEditor() && typeof getEditor().peekRange === "function") getEditor().peekRange(peekAt);
@@ -33776,13 +34814,42 @@
       });
     }
     window.belJarSwitchToFileForHistory = function(id) {
-      switchToFile2(id);
+      switchToFile(id);
     };
+    function resyncEditorAfterHistory() {
+      if (!getPersist2()) return false;
+      const mounted4 = getEditor() && typeof getEditor().getDocumentId === "function" ? getEditor().getDocumentId() : null;
+      const mountedIsGone = !!mounted4 && !Persist.getFileById(mounted4);
+      if (projectIsEmpty()) {
+        if (mounted4 || getEditor()) enterEmptyProjectView();
+        return true;
+      }
+      let target = Persist.getActiveFileId();
+      if (!target || !Persist.getFileById(target)) {
+        target = Persist.getOpenFileIds().find((id) => Persist.getFileById(id)) || (Persist.listFiles()[0] || {}).id || null;
+      }
+      if (!target) {
+        enterCanvasIdleView();
+        return true;
+      }
+      if (!mountedIsGone && mounted4 === target && getPersist2().getCurrentFileId() === target) {
+        return false;
+      }
+      switchToFile(target);
+      return true;
+    }
     window.addEventListener("beljar:edit-history-applied", function() {
-      renderTabs2();
-      if (typeof renderExplorerTree2 === "function") renderExplorerTree2();
-      refreshExplorerActiveAndDiags2();
-      updateHeaderContext2();
+      resyncEditorAfterHistory();
+      renderTabs();
+      if (typeof renderExplorerTree === "function") renderExplorerTree();
+      refreshExplorerActiveAndDiags();
+      updateHeaderContext();
+    });
+    window.addEventListener("beljar:project-tree-changed", function() {
+      if (!getPersist2() || !getEditor()) return;
+      const mounted4 = typeof getEditor().getDocumentId === "function" ? getEditor().getDocumentId() : null;
+      if (!mounted4 || Persist.getFileById(mounted4)) return;
+      resyncEditorAfterHistory();
     });
     function captureRefPeekRestore() {
       if (!getEditor() || !getPersist2()) return null;
@@ -33803,7 +34870,7 @@
         }
         return;
       }
-      switchToFile2(snap.fileId, { initialLocal: snap.local, keepSelection: true });
+      switchToFile(snap.fileId, { initialLocal: snap.local, keepSelection: true });
     }
     function peekFileAt(fileId, opts) {
       if (!getPersist2() || !fileId || opts.from == null) return;
@@ -33821,11 +34888,11 @@
         if (getEditor() && typeof getEditor().peekRange === "function") getEditor().peekRange(peekAt);
         return;
       }
-      switchToFile2(fileId, { peekAt, keepSelection: true });
+      switchToFile(fileId, { peekAt, keepSelection: true });
     }
-    function openFileAt2(fileId, from, to, opts) {
-      if (from == null) return;
+    function openFileAt(fileId, from, to, opts) {
       opts = opts || {};
+      if (from == null && !Number.isFinite(opts.line)) return;
       if (typeof BelEditor !== "undefined" && typeof BelEditor.logJumpRequest === "function") {
         BelEditor.logJumpRequest({
           fileId,
@@ -33848,28 +34915,30 @@
       const editorDocId = getEditor() && typeof getEditor().getDocumentId === "function" ? getEditor().getDocumentId() : getPersist2() ? getPersist2().getCurrentFileId() : null;
       const needSwitch = editorDocId !== fileId;
       if (needSwitch) {
-        switchToFile2(fileId, { jumpAt });
+        switchToFile(fileId, { jumpAt });
         return;
       }
       if (!getEditor()) return;
+      const at = withResolvedOffset(jumpAt);
+      if (at.from == null) return;
       if (typeof getEditor().jumpToReference === "function" && opts.name) {
-        getEditor().jumpToReference(jumpAt, opts.name);
+        getEditor().jumpToReference(at, opts.name);
       } else if (typeof getEditor().jumpToRange === "function") {
-        getEditor().jumpToRange(jumpAt);
+        getEditor().jumpToRange(at);
         if (typeof BelEditor !== "undefined" && typeof BelEditor.logJumpResult === "function" && typeof getEditor().getView === "function") {
           const v = getEditor().getView();
-          if (v) requestAnimationFrame(() => BelEditor.logJumpResult(v, jumpAt));
+          if (v) requestAnimationFrame(() => BelEditor.logJumpResult(v, at));
         }
       } else if (typeof getEditor().scheduleJumpToRange === "function") {
-        getEditor().scheduleJumpToRange(jumpAt);
+        getEditor().scheduleJumpToRange(at);
       }
-      notifyActiveEditorView2();
+      notifyActiveEditorView();
     }
     window.addEventListener("beljar:open-file-at", (ev) => {
       const d = ev.detail || {};
       if (d.fileId) {
         refPeekRestore = null;
-        openFileAt2(d.fileId, d.from, d.to, d);
+        openFileAt(d.fileId, d.from, d.to, d);
       }
     });
     window.addEventListener("beljar:peek-file-at", (ev) => {
@@ -33883,9 +34952,9 @@
       const ids = ev && ev.detail && ev.detail.fileIds;
       syncCfgEditorsAfterRewrite(ids);
     });
-    async function newFile2(name) {
-      var baseName6 = name;
-      if (!baseName6) {
+    async function newFile(name) {
+      var baseName7 = name;
+      if (!baseName7) {
         var def = "untitled.bel";
         var stemEnd = 8;
         {
@@ -33893,7 +34962,7 @@
           var dot = def.lastIndexOf(".");
           stemEnd = dot > 0 ? dot : def.length;
         }
-        baseName6 = await NamePrompt.open({
+        baseName7 = await NamePrompt.open({
           ariaLabel: "New file",
           message: "New file",
           value: def,
@@ -33910,31 +34979,31 @@
           confirmLabel: "Create"
         });
       }
-      if (!baseName6) return;
-      if (NameConflicts.nameConflict(Persist.listFiles(), baseName6)) {
-        showToast2("A file with that name already exists in this folder.", { kind: "warn" });
+      if (!baseName7) return;
+      if (NameConflicts.nameConflict(Persist.listFiles(), baseName7)) {
+        showToast("A file with that name already exists in this folder.", { kind: "warn" });
         return;
       }
-      const id = Persist.createFile(baseName6);
-      switchToFile2(id);
+      const id = Persist.createFile(baseName7);
+      switchToFile(id);
     }
-    function closeFile2(id) {
+    function closeFile(id) {
       const openIds = Persist.getOpenFileIds();
       if (!openIds.includes(id)) return;
       if (openIds.length <= 1) {
         Persist.closeOpenFile(id);
-        enterCanvasIdleView2();
+        enterCanvasIdleView();
         return;
       }
       if (getPersist2() && getPersist2().getCurrentFileId() === id) {
         const idx = openIds.indexOf(id);
         const neighborId = openIds[idx - 1] || openIds[idx + 1];
-        if (neighborId) switchToFile2(neighborId);
+        if (neighborId) switchToFile(neighborId);
       }
       Persist.closeOpenFile(id);
-      renderTabs2();
+      renderTabs();
     }
-    function deleteFileInteractive2(id) {
+    function deleteFileInteractive(id) {
       deleteFilesInteractive([id]);
     }
     async function deleteFilesInteractive(ids) {
@@ -33960,53 +35029,53 @@
       const performDelete = function() {
         if (getPersist2() && unique.includes(getPersist2().getCurrentFileId())) {
           const fallback = Persist.getOpenFileIds().find((x) => !unique.includes(x)) || (files.find((f) => !unique.includes(f.id)) || {}).id;
-          if (fallback) switchToFile2(fallback);
+          if (fallback) switchToFile(fallback);
         }
         for (const id of unique) {
           Persist.deleteFile(id);
-          cfgTabLint2.delete(id);
+          cfgTabLint.delete(id);
         }
-        if (getExplorerController2() && getExplorerController2().clearSelection) getExplorerController2().clearSelection();
-        if (projectIsEmpty2()) {
-          enterEmptyProjectView2();
+        if (getExplorerController() && getExplorerController().clearSelection) getExplorerController().clearSelection();
+        if (projectIsEmpty()) {
+          enterEmptyProjectView();
           return;
         }
-        renderTabs2();
-        renderExplorerTree2();
-        updateHeaderContext2();
+        renderTabs();
+        renderExplorerTree();
+        updateHeaderContext();
       };
       if (H && typeof H.transact === "function") H.transact("file-delete", performDelete);
       else performDelete();
     }
-    function closeTabsForFiles2(ids) {
+    function closeTabsForFiles(ids) {
       const unique = [...new Set((ids || []).filter(Boolean))];
       const openIds = Persist.getOpenFileIds();
       const targets = unique.filter((id) => openIds.includes(id));
       if (!targets.length) return;
       if (targets.length >= openIds.length) {
         for (const id of targets) Persist.closeOpenFile(id);
-        enterCanvasIdleView2();
+        enterCanvasIdleView();
         return;
       }
-      for (const id of targets) closeFile2(id);
+      for (const id of targets) closeFile(id);
     }
-    function selectionDeleteFileIds2(fileIds, folderPaths) {
+    function selectionDeleteFileIds(fileIds, folderPaths) {
       const ids = new Set(fileIds || []);
       for (const folderPath of folderPaths || []) {
         for (const file of filesUnderFolder(folderPath)) ids.add(file.id);
       }
       return [...ids];
     }
-    function selectionDeleteDisabled2(fileIds, folderPaths) {
-      return !selectionDeleteFileIds2(fileIds, folderPaths).length;
+    function selectionDeleteDisabled(fileIds, folderPaths) {
+      return !selectionDeleteFileIds(fileIds, folderPaths).length;
     }
-    function deleteSelectionInteractive2(fileIds, folderPaths) {
-      deleteFilesInteractive(selectionDeleteFileIds2(fileIds, folderPaths));
+    function deleteSelectionInteractive(fileIds, folderPaths) {
+      deleteFilesInteractive(selectionDeleteFileIds(fileIds, folderPaths));
       if (folderPaths && folderPaths.length) {
         for (const folderPath of folderPaths) {
           Persist.pruneEmptyFoldersUnder(folderPath);
         }
-        renderExplorerTree2();
+        renderExplorerTree();
       }
     }
     function filesUnderFolder(folderPath) {
@@ -34018,7 +35087,7 @@
         (f) => f.name === folderPath || f.name.startsWith(folderPath + "/")
       );
     }
-    async function deleteFolderInteractive2(folderPath) {
+    async function deleteFolderInteractive(folderPath) {
       const IL = ExplorerInlineName;
       const label = IL ? IL.lastSegment(folderPath) : folderPath;
       const allFiles = Persist.listFiles();
@@ -34038,34 +35107,34 @@
         ariaLabel: "Delete folder"
       };
       if (!await ConfirmDialog.confirm(confirmOpts)) return;
-      deleteProjectFilesById2(under.map((f) => f.id));
+      deleteProjectFilesById(under.map((f) => f.id));
       Persist.pruneEmptyFoldersUnder(folderPath);
-      if (projectIsEmpty2()) {
-        enterEmptyProjectView2();
+      if (projectIsEmpty()) {
+        enterEmptyProjectView();
         return;
       }
-      renderTabs2();
-      renderExplorerTree2();
-      updateHeaderContext2();
+      renderTabs();
+      renderExplorerTree();
+      updateHeaderContext();
     }
     return {
       applyEditorJump,
-      switchToFile: switchToFile2,
+      switchToFile,
       captureRefPeekRestore,
       beginRefPeekSession,
       endRefPeekSession,
       peekFileAt,
-      openFileAt: openFileAt2,
-      newFile: newFile2,
-      closeFile: closeFile2,
-      deleteFileInteractive: deleteFileInteractive2,
+      openFileAt,
+      newFile,
+      closeFile,
+      deleteFileInteractive,
       deleteFilesInteractive,
-      closeTabsForFiles: closeTabsForFiles2,
-      selectionDeleteFileIds: selectionDeleteFileIds2,
-      selectionDeleteDisabled: selectionDeleteDisabled2,
-      deleteSelectionInteractive: deleteSelectionInteractive2,
+      closeTabsForFiles,
+      selectionDeleteFileIds,
+      selectionDeleteDisabled,
+      deleteSelectionInteractive,
       filesUnderFolder,
-      deleteFolderInteractive: deleteFolderInteractive2
+      deleteFolderInteractive
     };
   }
 
@@ -34074,38 +35143,38 @@
   function create16(deps) {
     var getEditor = deps.getEditor;
     var getPersist2 = deps.getPersist;
-    var projectFileText2 = deps.projectFileText;
-    var showToast2 = deps.showToast;
-    var setTip3 = deps.setTip;
-    var explorerPanelEl2 = deps.explorerPanelEl;
-    var libraryPanelEl2 = deps.libraryPanelEl;
-    var inspectorPanelEl2 = deps.inspectorPanelEl;
-    var inspectorProjectEmptyEl2 = deps.inspectorProjectEmptyEl;
-    var renderTabs2 = deps.renderTabs;
-    var updateHeaderContext2 = deps.updateHeaderContext;
-    var updateRunButtonTooltip2 = deps.updateRunButtonTooltip;
-    var reloadActiveEditorFromPersist2 = deps.reloadActiveEditorFromPersist;
-    var switchToFile2 = deps.switchToFile;
-    var ensureEditorMatchesFileKind2 = deps.ensureEditorMatchesFileKind;
-    var activeCfgForDir2 = deps.activeCfgForDir;
-    var activeCfgsForDir3 = deps.activeCfgsForDir;
-    var suiteLayoutForDir2 = deps.suiteLayoutForDir;
-    var explorerFileDiag2 = deps.explorerFileDiag;
-    var bindExplorerDiagTip2 = deps.bindExplorerDiagTip;
-    var makeActiveCfgForFile2 = deps.makeActiveCfgForFile;
-    var fileContextItems2 = deps.fileContextItems;
-    var explorerSelectionContextItems2 = deps.explorerSelectionContextItems;
-    var explorerFolderContextItems2 = deps.explorerFolderContextItems;
-    var backgroundRunItems2 = deps.backgroundRunItems;
-    var resolveAndApplyMove2 = deps.resolveAndApplyMove;
-    var afterSuiteEdit2 = deps.afterSuiteEdit;
-    var applyFileReplacement2 = deps.applyFileReplacement;
-    var executeUploadPlan2 = deps.executeUploadPlan;
-    var exportLibraryAsNewProject2 = deps.exportLibraryAsNewProject;
-    var projectTreeEmpty2 = deps.projectTreeEmpty;
-    var updateInspectorProjectEmpty2 = deps.updateInspectorProjectEmpty;
+    var projectFileText = deps.projectFileText;
+    var showToast = deps.showToast;
+    var setTip2 = deps.setTip;
+    var explorerPanelEl = deps.explorerPanelEl;
+    var libraryPanelEl = deps.libraryPanelEl;
+    var inspectorPanelEl = deps.inspectorPanelEl;
+    var inspectorProjectEmptyEl = deps.inspectorProjectEmptyEl;
+    var renderTabs = deps.renderTabs;
+    var updateHeaderContext = deps.updateHeaderContext;
+    var updateRunButtonTooltip = deps.updateRunButtonTooltip;
+    var reloadActiveEditorFromPersist = deps.reloadActiveEditorFromPersist;
+    var switchToFile = deps.switchToFile;
+    var ensureEditorMatchesFileKind = deps.ensureEditorMatchesFileKind;
+    var activeCfgForDir = deps.activeCfgForDir;
+    var activeCfgsForDir2 = deps.activeCfgsForDir;
+    var suiteLayoutForDir = deps.suiteLayoutForDir;
+    var explorerFileDiag = deps.explorerFileDiag;
+    var bindExplorerDiagTip = deps.bindExplorerDiagTip;
+    var makeActiveCfgForFile = deps.makeActiveCfgForFile;
+    var fileContextItems = deps.fileContextItems;
+    var explorerSelectionContextItems = deps.explorerSelectionContextItems;
+    var explorerFolderContextItems = deps.explorerFolderContextItems;
+    var backgroundRunItems = deps.backgroundRunItems;
+    var resolveAndApplyMove = deps.resolveAndApplyMove;
+    var afterSuiteEdit = deps.afterSuiteEdit;
+    var applyFileReplacement = deps.applyFileReplacement;
+    var executeUploadPlan = deps.executeUploadPlan;
+    var exportLibraryAsNewProject = deps.exportLibraryAsNewProject;
+    var projectTreeEmpty = deps.projectTreeEmpty;
+    var updateInspectorProjectEmpty = deps.updateInspectorProjectEmpty;
     var getWorkspaceBootPending = deps.getWorkspaceBootPending;
-    var restoreWorkspaceForFile2 = deps.restoreWorkspaceForFile;
+    var restoreWorkspaceForFile = deps.restoreWorkspaceForFile;
     var explorerController = null;
     var explorerSearchController = null;
     var libraryController = null;
@@ -34124,17 +35193,17 @@
         }
       }
       Persist.preserveEmptyFoldersAfterMoves(moves);
-      reloadActiveEditorFromPersist2();
+      reloadActiveEditorFromPersist();
       Persist.renameEmptyFolderPrefix(from, to);
-      renderTabs2();
-      updateHeaderContext2();
+      renderTabs();
+      updateHeaderContext();
     }
     function handleExplorerInlineCancel(session) {
       if (!session || session.mode !== "create") return;
       if (session.kind === "file") {
         Persist.deleteFile(session.fileId);
-        renderTabs2();
-        updateHeaderContext2();
+        renderTabs();
+        updateHeaderContext();
       } else if (session.kind === "folder") {
         Persist.removeEmptyFolder(session.folderPath);
       }
@@ -34155,19 +35224,19 @@
           session.fileId
         );
         if (!result.ok) {
-          showToast2(result.error, { kind: "warn" });
+          showToast(result.error, { kind: "warn" });
           return false;
         }
         if (result.fullPath !== file.name) {
           Persist.renameFile(session.fileId, result.fullPath);
           if (session.fileId === Persist.getActiveFileId()) {
-            ensureEditorMatchesFileKind2();
+            ensureEditorMatchesFileKind();
           }
         }
-        if (session.mode === "create") switchToFile2(session.fileId);
+        if (session.mode === "create") switchToFile(session.fileId);
         else {
-          renderTabs2();
-          updateHeaderContext2();
+          renderTabs();
+          updateHeaderContext();
         }
         return true;
       }
@@ -34181,7 +35250,7 @@
           session.folderPath
         );
         if (!result.ok) {
-          showToast2(result.error, { kind: "warn" });
+          showToast(result.error, { kind: "warn" });
           return false;
         }
         if (session.mode === "create") {
@@ -34197,7 +35266,7 @@
       return false;
     }
     function startExplorerCreateFile(parentDir3) {
-      ensureExplorer2();
+      ensureExplorer();
       if (!explorerController) return;
       const IL = ExplorerInlineName;
       const files = Persist.listFiles();
@@ -34214,7 +35283,7 @@
       });
     }
     function startExplorerCreateFolder(parentDir3) {
-      ensureExplorer2();
+      ensureExplorer();
       if (!explorerController) return;
       const IL = ExplorerInlineName;
       const files = Persist.listFiles();
@@ -34230,15 +35299,15 @@
         originalPath: fullPath
       });
     }
-    function explorerCreateMenuItems2(parentDir3) {
+    function explorerCreateMenuItems(parentDir3) {
       return [
         { label: "New file", onSelect: () => startExplorerCreateFile(parentDir3) },
         { label: "New folder", onSelect: () => startExplorerCreateFolder(parentDir3) },
         { type: "separator" }
       ];
     }
-    function renameFolderInteractive2(folderPath) {
-      ensureExplorer2();
+    function renameFolderInteractive(folderPath) {
+      ensureExplorer();
       if (!explorerController) return;
       const IL = ExplorerInlineName;
       explorerController.beginInlineName({
@@ -34250,37 +35319,37 @@
         originalPath: folderPath
       });
     }
-    function ensureExplorer2() {
+    function ensureExplorer() {
       if (explorerController) return;
-      const treeEl = explorerPanelEl2 && explorerPanelEl2.querySelector(".explorer-tree");
+      const treeEl = explorerPanelEl && explorerPanelEl.querySelector(".explorer-tree");
       if (!treeEl) return;
       explorerController = Explorer.init({
         container: treeEl,
         listFiles: () => Persist.listFiles(),
         listEmptyFolders: () => Persist.listEmptyFolders(),
         getActiveId: () => {
-          const open10 = Persist.getOpenFileIds();
-          if (!open10.length) return null;
+          const open11 = Persist.getOpenFileIds();
+          if (!open11.length) return null;
           const cur = getPersist2() ? getPersist2().getCurrentFileId() : null;
-          if (cur && open10.includes(cur)) return cur;
-          const active3 = Persist.getActiveFileId();
-          if (active3 && open10.includes(active3)) return active3;
-          return open10[open10.length - 1] || null;
+          if (cur && open11.includes(cur)) return cur;
+          const active4 = Persist.getActiveFileId();
+          if (active4 && open11.includes(active4)) return active4;
+          return open11[open11.length - 1] || null;
         },
-        getActiveCfgForDir: activeCfgForDir2,
-        getActiveCfgsForDir: activeCfgsForDir3,
-        getSuiteLayoutForDir: suiteLayoutForDir2,
-        getFileDiag: explorerFileDiag2,
-        bindFileDiagTip: bindExplorerDiagTip2,
+        getActiveCfgForDir: activeCfgForDir,
+        getActiveCfgsForDir: activeCfgsForDir2,
+        getSuiteLayoutForDir: suiteLayoutForDir,
+        getFileDiag: explorerFileDiag,
+        bindFileDiagTip: bindExplorerDiagTip,
         getProjectName: () => Persist.getProjectName(),
-        applyTip: (el6, tip) => setTip3(el6, tip, { ariaLabel: false }),
-        getFileContextItems: (fileId) => fileContextItems2(fileId),
-        getSelectionContextItems: (selection) => explorerSelectionContextItems2(selection),
-        getFolderContextItems: (folderPath) => explorerFolderContextItems2(folderPath),
-        getBackgroundContextItems: () => backgroundRunItems2(),
-        onOpenFile: (id, openOpts) => switchToFile2(id, openOpts),
-        onMakeActiveCfg: makeActiveCfgForFile2,
-        onRefresh: updateRunButtonTooltip2,
+        applyTip: (el6, tip) => setTip2(el6, tip, { ariaLabel: false }),
+        getFileContextItems: (fileId) => fileContextItems(fileId),
+        getSelectionContextItems: (selection) => explorerSelectionContextItems(selection),
+        getFolderContextItems: (folderPath) => explorerFolderContextItems(folderPath),
+        getBackgroundContextItems: () => backgroundRunItems(),
+        onOpenFile: (id, openOpts) => switchToFile(id, openOpts),
+        onMakeActiveCfg: makeActiveCfgForFile,
+        onRefresh: updateRunButtonTooltip,
         onInlineCommit: handleExplorerInlineCommit,
         onInlineCancel: handleExplorerInlineCancel,
         canDrop: (payload, target) => {
@@ -34292,17 +35361,17 @@
           );
         },
         onDrop: (payload, target) => {
-          resolveAndApplyMove2(payload, target);
+          resolveAndApplyMove(payload, target);
         }
       });
       ensureExplorerSearch();
     }
     function ensureExplorerSearch() {
       if (explorerSearchController) return;
-      if (!explorerPanelEl2) return;
-      const wrap = explorerPanelEl2.querySelector("#explorer-search-wrap");
-      const input2 = explorerPanelEl2.querySelector("#explorer-search-input");
-      const ac = explorerPanelEl2.querySelector("#explorer-search-ac");
+      if (!explorerPanelEl) return;
+      const wrap = explorerPanelEl.querySelector("#explorer-search-wrap");
+      const input2 = explorerPanelEl.querySelector("#explorer-search-input");
+      const ac = explorerPanelEl.querySelector("#explorer-search-ac");
       if (!wrap || !input2 || !ac) return;
       explorerSearchController = ExplorerSearch.init({
         wrap,
@@ -34310,77 +35379,77 @@
         ac,
         header: wrap.closest(".panel-header"),
         listFiles: () => Persist.listFiles(),
-        getFileText: projectFileText2,
-        onOpenFile: (id) => switchToFile2(id)
+        getFileText: projectFileText,
+        onOpenFile: (id) => switchToFile(id)
       });
     }
-    function ensureLibrary2() {
+    function ensureLibrary() {
       if (libraryController) return;
-      const treeEl = libraryPanelEl2 && libraryPanelEl2.querySelector(".library-tree");
+      const treeEl = libraryPanelEl && libraryPanelEl.querySelector(".library-tree");
       const searchEl = document.getElementById("library-search");
       if (!treeEl) return;
       libraryController = Library.init({
         container: treeEl,
         searchEl,
         listFiles: () => Persist.listFiles(),
-        getActiveCfgForDir: activeCfgForDir2,
+        getActiveCfgForDir: activeCfgForDir,
         listActiveSuites: () => LibrarySuites.listActiveSuites({
           listFiles: () => Persist.listFiles(),
-          getActiveCfgsForDir: activeCfgsForDir3,
-          getActiveCfgForDir: activeCfgForDir2
+          getActiveCfgsForDir: activeCfgsForDir2,
+          getActiveCfgForDir: activeCfgForDir
         }),
         getActiveFileId: () => getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId(),
         getEditor: () => getEditor(),
-        applyTip: (el6, tip) => setTip3(el6, tip, { ariaLabel: false }),
-        showToast: showToast2,
-        afterSuiteEdit: afterSuiteEdit2,
-        applyFileReplacement: (id, text) => applyFileReplacement2(id, text),
-        applyUploadPlan: (plan) => executeUploadPlan2(plan, { openTabs: false }),
+        applyTip: (el6, tip) => setTip2(el6, tip, { ariaLabel: false }),
+        showToast,
+        afterSuiteEdit,
+        applyFileReplacement: (id, text) => applyFileReplacement(id, text),
+        applyUploadPlan: (plan) => executeUploadPlan(plan, { openTabs: false }),
         onProjectChanged: ({ modifiedActive } = {}) => {
-          renderTabs2();
-          renderExplorerTree2();
-          updateHeaderContext2();
-          if (modifiedActive) reloadActiveEditorFromPersist2();
+          renderTabs();
+          renderExplorerTree();
+          updateHeaderContext();
+          if (modifiedActive) reloadActiveEditorFromPersist();
         },
         onExportAsNewProject: (payload) => {
-          exportLibraryAsNewProject2(payload);
+          exportLibraryAsNewProject(payload);
         }
       });
     }
-    function renderExplorerTree2() {
-      ensureExplorer2();
+    function renderExplorerTree() {
+      ensureExplorer();
       if (explorerController) explorerController.refresh();
-      else updateRunButtonTooltip2();
+      else updateRunButtonTooltip();
     }
     if (!projectTreeListenerBound && typeof window !== "undefined") {
       projectTreeListenerBound = true;
       window.addEventListener("beljar:project-tree-changed", function() {
-        renderExplorerTree2();
+        renderExplorerTree();
       });
     }
-    function refreshExplorerActiveAndDiags2() {
-      ensureExplorer2();
+    function refreshExplorerActiveAndDiags() {
+      ensureExplorer();
       if (explorerController?.refreshActiveAndDiags) explorerController.refreshActiveAndDiags();
       else if (explorerController?.refreshDiags) explorerController.refreshDiags();
     }
-    function refreshInspector2(detail2) {
-      if (projectTreeEmpty2()) {
-        updateInspectorProjectEmpty2();
+    function refreshInspector(detail2) {
+      if (projectTreeEmpty()) {
+        updateInspectorProjectEmpty();
         return;
       }
-      if (inspectorProjectEmptyEl2) inspectorProjectEmptyEl2.hidden = true;
-      const body = inspectorPanelEl2?.querySelector(".inspector-body");
+      if (inspectorProjectEmptyEl) inspectorProjectEmptyEl.hidden = true;
+      const body = inspectorPanelEl?.querySelector(".inspector-body");
       if (body) body.hidden = false;
       requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("beljar:inspector-refresh", { detail: detail2 || {} })));
     }
-    function notifyActiveEditorView2() {
+    function notifyActiveEditorView() {
       if (!getEditor() || typeof getEditor().getView !== "function") return;
       const view = getEditor().getView();
       if (!view?.dom?.isConnected) return;
       window.dispatchEvent(new CustomEvent("beljar:active-editor-view", { detail: { view } }));
       const fileId = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
       if (!getWorkspaceBootPending()) {
-        requestAnimationFrame(() => restoreWorkspaceForFile2(fileId));
+        requestAnimationFrame(() => restoreWorkspaceForFile(fileId));
       }
     }
     return {
@@ -34389,15 +35458,15 @@
       handleExplorerInlineCommit,
       startExplorerCreateFile,
       startExplorerCreateFolder,
-      explorerCreateMenuItems: explorerCreateMenuItems2,
-      renameFolderInteractive: renameFolderInteractive2,
-      ensureExplorer: ensureExplorer2,
+      explorerCreateMenuItems,
+      renameFolderInteractive,
+      ensureExplorer,
       ensureExplorerSearch,
-      ensureLibrary: ensureLibrary2,
-      renderExplorerTree: renderExplorerTree2,
-      refreshExplorerActiveAndDiags: refreshExplorerActiveAndDiags2,
-      refreshInspector: refreshInspector2,
-      notifyActiveEditorView: notifyActiveEditorView2,
+      ensureLibrary,
+      renderExplorerTree,
+      refreshExplorerActiveAndDiags,
+      refreshInspector,
+      notifyActiveEditorView,
       getExplorerController: function() {
         return explorerController;
       },
@@ -34411,47 +35480,47 @@
   function create17(deps) {
     var getEditor = deps.getEditor;
     var getPersist2 = deps.getPersist;
-    var newProject2 = deps.newProject;
-    var newFile2 = deps.newFile;
-    var buildSwitchProjectSubmenu2 = deps.buildSwitchProjectSubmenu;
-    var buildDeleteProjectSubmenu2 = deps.buildDeleteProjectSubmenu;
-    var normalizeProjectRenameName2 = deps.normalizeProjectRenameName;
-    var validateProjectRenameName2 = deps.validateProjectRenameName;
-    var applyProjectRename2 = deps.applyProjectRename;
+    var newProject = deps.newProject;
+    var newFile = deps.newFile;
+    var buildSwitchProjectSubmenu = deps.buildSwitchProjectSubmenu;
+    var buildDeleteProjectSubmenu = deps.buildDeleteProjectSubmenu;
+    var normalizeProjectRenameName = deps.normalizeProjectRenameName;
+    var validateProjectRenameName = deps.validateProjectRenameName;
+    var applyProjectRename = deps.applyProjectRename;
     var fileInputEl = deps.fileInputEl;
     var uploadFolderInputEl = deps.uploadFolderInputEl;
     var folderInputEl = deps.folderInputEl;
-    var downloadCurrentFile2 = deps.downloadCurrentFile;
-    var downloadFileById2 = deps.downloadFileById;
-    var downloadFolder2 = deps.downloadFolder;
-    var downloadSuite2 = deps.downloadSuite;
-    var suiteDownloadState2 = deps.suiteDownloadState;
-    var deleteFileInteractive2 = deps.deleteFileInteractive;
-    var closeFile2 = deps.closeFile;
-    var closeTabsForFiles2 = deps.closeTabsForFiles;
-    var selectionDeleteFileIds2 = deps.selectionDeleteFileIds;
-    var selectionDeleteDisabled2 = deps.selectionDeleteDisabled;
-    var deleteSelectionInteractive2 = deps.deleteSelectionInteractive;
-    var deleteFolderInteractive2 = deps.deleteFolderInteractive;
-    var renameFolderInteractive2 = deps.renameFolderInteractive;
-    var explorerCreateMenuItems2 = deps.explorerCreateMenuItems;
-    var makeActiveCfgForFile2 = deps.makeActiveCfgForFile;
-    var moduleNameFor2 = deps.moduleNameFor;
-    var activeSuiteMembership2 = deps.activeSuiteMembership;
-    var activeCfgsForDir3 = deps.activeCfgsForDir;
-    var afterSuiteEdit2 = deps.afterSuiteEdit;
-    var renderTabs2 = deps.renderTabs;
-    var showToast2 = deps.showToast;
-    var ensureExplorer2 = deps.ensureExplorer;
-    var getExplorerController2 = deps.getExplorerController;
-    var editorTabsEl2 = deps.editorTabsEl;
-    var projectFileText2 = deps.projectFileText;
+    var downloadCurrentFile = deps.downloadCurrentFile;
+    var downloadFileById = deps.downloadFileById;
+    var downloadFolder = deps.downloadFolder;
+    var downloadSuite = deps.downloadSuite;
+    var suiteDownloadState = deps.suiteDownloadState;
+    var deleteFileInteractive = deps.deleteFileInteractive;
+    var closeFile = deps.closeFile;
+    var closeTabsForFiles = deps.closeTabsForFiles;
+    var selectionDeleteFileIds = deps.selectionDeleteFileIds;
+    var selectionDeleteDisabled = deps.selectionDeleteDisabled;
+    var deleteSelectionInteractive = deps.deleteSelectionInteractive;
+    var deleteFolderInteractive = deps.deleteFolderInteractive;
+    var renameFolderInteractive = deps.renameFolderInteractive;
+    var explorerCreateMenuItems = deps.explorerCreateMenuItems;
+    var makeActiveCfgForFile = deps.makeActiveCfgForFile;
+    var moduleNameFor = deps.moduleNameFor;
+    var activeSuiteMembership = deps.activeSuiteMembership;
+    var activeCfgsForDir2 = deps.activeCfgsForDir;
+    var afterSuiteEdit = deps.afterSuiteEdit;
+    var renderTabs = deps.renderTabs;
+    var showToast = deps.showToast;
+    var ensureExplorer = deps.ensureExplorer;
+    var getExplorerController = deps.getExplorerController;
+    var editorTabsEl = deps.editorTabsEl;
+    var projectFileText = deps.projectFileText;
     function wireMenuTrigger(btn, menuOpts) {
       if (!btn) return;
       let suppressNextClick = false;
-      function setOpen2(open10) {
-        btn.classList.toggle("is-active", open10);
-        btn.setAttribute("aria-expanded", open10 ? "true" : "false");
+      function setOpen2(open11) {
+        btn.classList.toggle("is-active", open11);
+        btn.setAttribute("aria-expanded", open11 ? "true" : "false");
       }
       function runMenuInteraction() {
         if (typeof Menu !== "undefined" && Menu.isOpen() && Menu.rootAnchor() === btn) {
@@ -34492,19 +35561,19 @@
         runMenuInteraction();
       });
     }
-    function signatureFileCount2() {
+    function signatureFileCount() {
       const files = Persist.listFiles() || [];
       return files.filter((f) => ProjectSource.isSignaturePath(String(f.name || ""))).length;
     }
     function buildProjectMenuItems() {
       const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
       const currentFile = currentId ? Persist.getFileById(currentId) : null;
-      const switchSubmenu = buildSwitchProjectSubmenu2();
-      const deleteSubmenu = buildDeleteProjectSubmenu2();
+      const switchSubmenu = buildSwitchProjectSubmenu();
+      const deleteSubmenu = buildDeleteProjectSubmenu();
       return [
         {
           label: "New project",
-          onSelect: () => newProject2()
+          onSelect: () => newProject()
         },
         ...switchSubmenu ? [{ label: "Switch project", submenu: switchSubmenu }] : [],
         {
@@ -34515,19 +35584,19 @@
               ariaLabel: "Rename project",
               message: "Rename project",
               value: cur,
-              normalize: normalizeProjectRenameName2,
-              validate: validateProjectRenameName2,
+              normalize: normalizeProjectRenameName,
+              validate: validateProjectRenameName,
               confirmLabel: "Save"
             });
             if (!next) return;
-            applyProjectRename2(next);
+            applyProjectRename(next);
           }
         },
         ...deleteSubmenu ? [{ label: "Delete project", submenu: deleteSubmenu }] : [],
         { type: "separator" },
         {
           label: "New file",
-          onSelect: () => newFile2()
+          onSelect: () => newFile()
         },
         {
           label: "Upload file",
@@ -34544,7 +35613,7 @@
         { type: "separator" },
         {
           label: 'Download "' + (currentFile ? currentFile.name : "file") + '"',
-          onSelect: downloadCurrentFile2
+          onSelect: downloadCurrentFile
         },
         { type: "separator" },
         {
@@ -34558,13 +35627,13 @@
           label: "Delete file\u2026",
           disabled: !currentFile,
           onSelect: () => {
-            if (currentId) deleteFileInteractive2(currentId);
+            if (currentId) deleteFileInteractive(currentId);
           }
         },
         { type: "separator" },
         {
           label: "Run project",
-          disabled: signatureFileCount2() <= 1,
+          disabled: signatureFileCount() <= 1,
           onSelect: () => {
             if (BelugaRun.runProject) {
               BelugaRun.runProject();
@@ -34576,10 +35645,10 @@
     function renameFileInteractive(id) {
       const file = Persist.getFileById(id);
       if (!file) return;
-      ensureExplorer2();
-      if (!getExplorerController2()) return;
+      ensureExplorer();
+      if (!getExplorerController()) return;
       const IL = ExplorerInlineName;
-      getExplorerController2().beginInlineName({
+      getExplorerController().beginInlineName({
         kind: "file",
         mode: "rename",
         parentDir: ProjectSource.dirOf(file.name),
@@ -34588,22 +35657,22 @@
         originalPath: file.name
       });
     }
-    function explorerSelectionContextItems2(selection) {
+    function explorerSelectionContextItems(selection) {
       const fileIds = selection && selection.fileIds ? selection.fileIds : [];
       const folderPaths = selection && selection.folderPaths ? selection.folderPaths : [];
       const total = fileIds.length + folderPaths.length;
       if (total <= 1) {
-        if (fileIds.length === 1) return fileContextItems2(fileIds[0]);
-        if (folderPaths.length === 1) return explorerFolderContextItems2(folderPaths[0]);
+        if (fileIds.length === 1) return fileContextItems(fileIds[0]);
+        if (folderPaths.length === 1) return explorerFolderContextItems(folderPaths[0]);
         return null;
       }
       const items3 = [];
-      const deleteCount = selectionDeleteFileIds2(fileIds, folderPaths).length;
+      const deleteCount = selectionDeleteFileIds(fileIds, folderPaths).length;
       if (deleteCount > 0) {
         items3.push({
           label: deleteCount === 1 ? "Delete file\u2026" : `Delete ${deleteCount} files\u2026`,
-          disabled: selectionDeleteDisabled2(fileIds, folderPaths),
-          onSelect: () => deleteSelectionInteractive2(fileIds, folderPaths)
+          disabled: selectionDeleteDisabled(fileIds, folderPaths),
+          onSelect: () => deleteSelectionInteractive(fileIds, folderPaths)
         });
       }
       const openIds = Persist.getOpenFileIds();
@@ -34611,12 +35680,12 @@
       if (openSelected.length) {
         items3.push({
           label: openSelected.length === 1 ? "Close tab" : `Close ${openSelected.length} tabs`,
-          onSelect: () => closeTabsForFiles2(openSelected)
+          onSelect: () => closeTabsForFiles(openSelected)
         });
       }
       return items3;
     }
-    function fileContextItems2(fileId, opts) {
+    function fileContextItems(fileId, opts) {
       const fromTab = !!(opts && opts.fromTab);
       const files = Persist.listFiles();
       const file = files.find((f) => f.id === fileId);
@@ -34626,16 +35695,16 @@
         { label: "Rename\u2026", onSelect: () => renameFileInteractive(fileId) },
         {
           label: "Download",
-          onSelect: () => downloadFileById2(fileId)
+          onSelect: () => downloadFileById(fileId)
         }
       ];
       if (file.name.toLowerCase().endsWith(".cfg")) {
-        const suiteState = typeof suiteDownloadState2 === "function" ? suiteDownloadState2(fileId) : { ok: false, reason: "Suite download unavailable." };
+        const suiteState = typeof suiteDownloadState === "function" ? suiteDownloadState(fileId) : { ok: false, reason: "Suite download unavailable." };
         manage.push({
           label: "Download suite",
           disabled: !suiteState.ok,
           tooltip: suiteState.ok ? void 0 : suiteState.reason || "A listed suite file is missing from the project.",
-          onSelect: () => downloadSuite2(fileId)
+          onSelect: () => downloadSuite(fileId)
         });
       }
       const run3 = [];
@@ -34647,16 +35716,16 @@
           run3.push({
             label: "Deactivate suite",
             onSelect: () => {
-              makeActiveCfgForFile2(file.name);
-              renderTabs2();
+              makeActiveCfgForFile(file.name);
+              renderTabs();
             }
           });
         } else {
           run3.push({
             label: "Make active suite",
             onSelect: () => {
-              makeActiveCfgForFile2(file.name);
-              renderTabs2();
+              makeActiveCfgForFile(file.name);
+              renderTabs();
             }
           });
         }
@@ -34665,8 +35734,8 @@
         }
       } else if (Run && ProjectSource.isSignaturePath(file.name)) {
         run3.push({ label: "Run file", onSelect: () => Run.runFile(fileId) });
-        const moduleName = moduleNameFor2(fileId);
-        const { cfg, member, index, count } = activeSuiteMembership2(file.name);
+        const moduleName = moduleNameFor(fileId);
+        const { cfg, member, index, count } = activeSuiteMembership(file.name);
         if (moduleName) {
           if (member && index > 0) {
             run3.push({ label: "Run suite to here", onSelect: () => Run.runToHere(fileId) });
@@ -34678,32 +35747,32 @@
           if (index > 0) {
             suiteEdit.push({ label: "Move up in suite", onSelect: () => {
               Persist.moveEntryInCfg(cfg, file.name, -1);
-              afterSuiteEdit2(dir, cfg);
+              afterSuiteEdit(dir, cfg);
             } });
           }
           if (index < count - 1) {
             suiteEdit.push({ label: "Move down in suite", onSelect: () => {
               Persist.moveEntryInCfg(cfg, file.name, 1);
-              afterSuiteEdit2(dir, cfg);
+              afterSuiteEdit(dir, cfg);
             } });
           }
           suiteEdit.push({ label: "Remove from suite", onSelect: () => {
             Persist.removeEntryFromCfg(cfg, file.name);
-            afterSuiteEdit2(dir, cfg);
+            afterSuiteEdit(dir, cfg);
           } });
         } else {
-          const activeCfgs = activeCfgsForDir3(dir);
+          const activeCfgs = activeCfgsForDir2(dir);
           if (activeCfgs.length === 1) {
             suiteEdit.push({ label: "Add to active suite", onSelect: () => {
               Persist.addEntryToCfg(activeCfgs[0], file.name);
-              afterSuiteEdit2(dir, activeCfgs[0]);
+              afterSuiteEdit(dir, activeCfgs[0]);
             } });
           } else {
             for (const c of activeCfgs) {
               const base = c.slice(c.lastIndexOf("/") + 1);
               suiteEdit.push({ label: "Add to " + base, onSelect: () => {
                 Persist.addEntryToCfg(c, file.name);
-                afterSuiteEdit2(dir, c);
+                afterSuiteEdit(dir, c);
               } });
             }
           }
@@ -34716,21 +35785,21 @@
         {
           label: "Close tab",
           disabled: tabIdx === -1,
-          onSelect: () => closeFile2(fileId)
+          onSelect: () => closeFile(fileId)
         }
       ];
       if (fromTab) {
         destroy.push({
           label: "Close all to the right",
           disabled: tabsToRight.length === 0,
-          onSelect: () => closeTabsForFiles2(tabsToRight)
+          onSelect: () => closeTabsForFiles(tabsToRight)
         });
       }
       destroy.push({
         label: "Delete file\u2026",
-        onSelect: () => deleteFileInteractive2(fileId)
+        onSelect: () => deleteFileInteractive(fileId)
       });
-      const blocks = fromTab ? [manage] : [explorerCreateMenuItems2(parentDir3), manage];
+      const blocks = fromTab ? [manage] : [explorerCreateMenuItems(parentDir3), manage];
       if (run3.length) blocks.push(run3);
       if (suiteEdit.length) blocks.push(suiteEdit);
       blocks.push(destroy);
@@ -34748,20 +35817,20 @@
       }
       return out;
     }
-    function explorerFolderContextItems2(folderPath) {
-      const create19 = explorerCreateMenuItems2(folderPath);
+    function explorerFolderContextItems(folderPath) {
+      const create19 = explorerCreateMenuItems(folderPath);
       const rename = [
-        { label: "Rename\u2026", onSelect: () => renameFolderInteractive2(folderPath) },
+        { label: "Rename\u2026", onSelect: () => renameFolderInteractive(folderPath) },
         {
           label: "Download folder",
-          onSelect: () => downloadFolder2(folderPath)
+          onSelect: () => downloadFolder(folderPath)
         },
         { type: "separator" }
       ];
       const destroy = [
         {
           label: "Delete folder\u2026",
-          onSelect: () => deleteFolderInteractive2(folderPath)
+          onSelect: () => deleteFolderInteractive(folderPath)
         },
         { type: "separator" }
       ];
@@ -34782,9 +35851,9 @@
         onSelect: () => BelugaRun.runFolder(folderPath)
       }];
     }
-    function backgroundRunItems2() {
-      const create19 = explorerCreateMenuItems2("");
-      if (signatureFileCount2() < 1) return create19;
+    function backgroundRunItems() {
+      const create19 = explorerCreateMenuItems("");
+      if (signatureFileCount() < 1) return create19;
       return create19.concat([
         { label: "Run project", onSelect: () => BelugaRun.runProject() },
         { type: "separator" }
@@ -34793,11 +35862,11 @@
     if (typeof Menu !== "undefined") {
       const contextItemsFromEvent = (e) => {
         const el6 = e.target.closest("[data-file-id]");
-        return el6 ? fileContextItems2(el6.getAttribute("data-file-id"), { fromTab: true }) : [];
+        return el6 ? fileContextItems(el6.getAttribute("data-file-id"), { fromTab: true }) : [];
       };
-      if (editorTabsEl2) Menu.bindContextMenu(editorTabsEl2, contextItemsFromEvent);
+      if (editorTabsEl) Menu.bindContextMenu(editorTabsEl, contextItemsFromEvent);
     }
-    function editorExec2(cmd) {
+    function editorExec(cmd) {
       if (!getEditor() || typeof getEditor()[cmd] !== "function") return;
       getEditor().focus();
       getEditor()[cmd]();
@@ -34821,17 +35890,17 @@
         (f) => ProjectSource.isSignaturePath(String(f.name || ""))
       );
       if (!files.length) {
-        showToast2("No Beluga source files to format.", { kind: "warn" });
+        showToast("No Beluga source files to format.", { kind: "warn" });
         return;
       }
       const formatOffline = typeof BelEditor !== "undefined" && typeof BelEditor.formatSource === "function" ? BelEditor.formatSource : null;
       if (!formatOffline) {
-        showToast2("Formatter is not available.", { kind: "error" });
+        showToast("Formatter is not available.", { kind: "error" });
         return;
       }
       const ed = getEditor();
-      const persist5 = getPersist2();
-      if (persist5 && typeof persist5.flushCheckpoint === "function") persist5.flushCheckpoint();
+      const persist4 = getPersist2();
+      if (persist4 && typeof persist4.flushCheckpoint === "function") persist4.flushCheckpoint();
       else if (ed && typeof ed.flushCheckpoint === "function") ed.flushCheckpoint();
       const liveId = ed && typeof ed.getCurrentFileId === "function" ? ed.getCurrentFileId() : null;
       const applyFormatted = (id, next) => {
@@ -34850,8 +35919,8 @@
             ed.setValue(next);
           }
           const applied = typeof ed.getValue === "function" ? ed.getValue() : next;
-          if (persist5 && typeof persist5.replaceEditorText === "function") persist5.replaceEditorText(applied);
-          if (persist5 && typeof persist5.flushCheckpoint === "function") persist5.flushCheckpoint();
+          if (persist4 && typeof persist4.replaceEditorText === "function") persist4.replaceEditorText(applied);
+          if (persist4 && typeof persist4.flushCheckpoint === "function") persist4.flushCheckpoint();
           else Persist.setFileText(id, applied);
           return;
         }
@@ -34861,7 +35930,7 @@
         let changed2 = 0;
         let refused2 = 0;
         for (const f of files) {
-          const src = projectFileText2(f.id);
+          const src = projectFileText(f.id);
           const next = formatOffline(src, { quiet: true });
           if (next == null) {
             refused2 += 1;
@@ -34881,16 +35950,16 @@
       }
       const { changed, refused, total } = stats;
       if (changed === 0 && refused === 0) {
-        showToast2("All files already formatted.", { kind: "success" });
+        showToast("All files already formatted.", { kind: "success" });
       } else if (refused === 0) {
-        showToast2(changed === 1 ? "Formatted 1 file." : "Formatted " + changed + " files.", { kind: "success" });
+        showToast(changed === 1 ? "Formatted 1 file." : "Formatted " + changed + " files.", { kind: "success" });
       } else if (changed === 0) {
-        showToast2(
+        showToast(
           refused === total ? "Format refused for every file." : "Format refused for " + refused + " file" + (refused === 1 ? "" : "s") + ".",
           { kind: "warn" }
         );
       } else {
-        showToast2(
+        showToast(
           "Formatted " + changed + " of " + total + " files (" + refused + " refused).",
           { kind: "warn" }
         );
@@ -34901,15 +35970,15 @@
       const currentFile = currentId ? Persist.getFileById(currentId) : null;
       const canFormatFile = !!(currentFile && ProjectSource.isSignaturePath(String(currentFile.name || "")) && getEditor() && typeof getEditor().format === "function");
       return [
-        { label: "Undo", onSelect: () => editorExec2("undo") },
-        { label: "Redo", onSelect: () => editorExec2("redo") },
+        { label: "Undo", onSelect: () => editorExec("undo") },
+        { label: "Redo", onSelect: () => editorExec("redo") },
         { type: "separator" },
         { label: "Cut", onSelect: () => editorClipboard("cut") },
         { label: "Copy", onSelect: () => editorClipboard("copy") },
         { label: "Paste", onSelect: () => editorClipboard("paste") },
-        { label: "Select All", onSelect: () => editorExec2("selectAll") },
+        { label: "Select All", onSelect: () => editorExec("selectAll") },
         { type: "separator" },
-        { label: "Find\u2026", onSelect: () => editorExec2("openSearch") },
+        { label: "Find\u2026", onSelect: () => editorExec("openSearch") },
         {
           label: "Search in project\u2026",
           onSelect: () => {
@@ -34924,7 +35993,7 @@
         },
         {
           label: "Format project",
-          disabled: signatureFileCount2() === 0,
+          disabled: signatureFileCount() === 0,
           onSelect: formatProjectFiles
         }
       ];
@@ -34974,20 +36043,20 @@
       wireMenuTrigger(explorerNewBtn, {
         side: "bottom",
         align: "end",
-        items: () => explorerCreateMenuItems2("").filter((item) => item.type !== "separator")
+        items: () => explorerCreateMenuItems("").filter((item) => item.type !== "separator")
       });
     }
     return {
       wireMenuTrigger,
-      signatureFileCount: signatureFileCount2,
+      signatureFileCount,
       buildProjectMenuItems,
       renameFileInteractive,
-      explorerSelectionContextItems: explorerSelectionContextItems2,
-      fileContextItems: fileContextItems2,
-      explorerFolderContextItems: explorerFolderContextItems2,
+      explorerSelectionContextItems,
+      fileContextItems,
+      explorerFolderContextItems,
       folderRunItems,
-      backgroundRunItems: backgroundRunItems2,
-      editorExec: editorExec2,
+      backgroundRunItems,
+      editorExec,
       editorClipboard,
       buildToolsMenuItems
     };
@@ -34996,24 +36065,24 @@
   // js/app/app-command-palette.mjs
   function create18(deps) {
     var getPersist2 = deps.getPersist;
-    var toggleSidePanel2 = deps.toggleSidePanel;
+    var toggleSidePanel = deps.toggleSidePanel;
     var toggleTheme2 = deps.toggleTheme;
-    var newProject2 = deps.newProject;
-    var newFile2 = deps.newFile;
+    var newProject = deps.newProject;
+    var newFile = deps.newFile;
     var fileInputEl = deps.fileInputEl;
     var uploadFolderInputEl = deps.uploadFolderInputEl;
     var folderInputEl = deps.folderInputEl;
-    var downloadCurrentFile2 = deps.downloadCurrentFile;
-    var editorExec2 = deps.editorExec;
-    var moduleNameFor2 = deps.moduleNameFor;
-    var signatureFileCount2 = deps.signatureFileCount;
-    var switchToFile2 = deps.switchToFile;
-    var openFileAt2 = deps.openFileAt;
-    var projectFileText2 = deps.projectFileText;
-    var closeFile2 = deps.closeFile;
-    var closeTabsForFiles2 = deps.closeTabsForFiles;
-    var activeSuiteMembership2 = deps.activeSuiteMembership;
-    var afterSuiteEdit2 = deps.afterSuiteEdit;
+    var downloadCurrentFile = deps.downloadCurrentFile;
+    var editorExec = deps.editorExec;
+    var moduleNameFor = deps.moduleNameFor;
+    var signatureFileCount = deps.signatureFileCount;
+    var switchToFile = deps.switchToFile;
+    var openFileAt = deps.openFileAt;
+    var projectFileText = deps.projectFileText;
+    var closeFile = deps.closeFile;
+    var closeTabsForFiles = deps.closeTabsForFiles;
+    var activeSuiteMembership = deps.activeSuiteMembership;
+    var afterSuiteEdit = deps.afterSuiteEdit;
     {
       CommandPalette.init();
       const on = (id, run3, when) => Commands2.attach(id, when ? { run: run3, when } : { run: run3 });
@@ -35067,15 +36136,15 @@
         const at = ids.indexOf(current);
         const next = ids[((at < 0 ? 0 : at + delta) % ids.length + ids.length) % ids.length];
         if (!next || next === current) return false;
-        switchToFile2(next);
+        switchToFile(next);
         return true;
       };
-      on("project.new", () => newProject2());
-      on("file.new", () => newFile2());
+      on("project.new", () => newProject());
+      on("file.new", () => newFile());
       on("file.upload", () => fileInputEl.click());
       on("file.upload-folder", () => uploadFolderInputEl.click());
       on("file.import-folder", () => folderInputEl.click());
-      on("file.download", downloadCurrentFile2);
+      on("file.download", downloadCurrentFile);
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -35083,7 +36152,7 @@
         () => {
           const id = getPersist2() ? getPersist2().getCurrentFileId() : null;
           if (!id) return false;
-          closeFile2(id);
+          closeFile(id);
           return true;
         },
         () => !!(getPersist2() && getPersist2().getCurrentFileId())
@@ -35100,7 +36169,7 @@
       on(
         "tab.close-others",
         () => {
-          closeTabsForFiles2(otherTabs());
+          closeTabsForFiles(otherTabs());
           return true;
         },
         () => otherTabs().length > 0
@@ -35108,7 +36177,7 @@
       on(
         "tab.close-right",
         () => {
-          closeTabsForFiles2(tabsRightOf());
+          closeTabsForFiles(tabsRightOf());
           return true;
         },
         () => tabsRightOf().length > 0
@@ -35135,14 +36204,14 @@
           say2(`No file matching "${wanted}".`);
           return false;
         }
-        switchToFile2(hit.id);
+        switchToFile(hit.id);
         return true;
       });
       const membership = () => {
         const id = getPersist2() ? getPersist2().getCurrentFileId() : null;
         const file = id && Persist.getFileById ? Persist.getFileById(id) : null;
-        if (!file || !file.name || !activeSuiteMembership2) return null;
-        const m = activeSuiteMembership2(file.name);
+        if (!file || !file.name || !activeSuiteMembership) return null;
+        const m = activeSuiteMembership(file.name);
         return m && m.cfg ? { ...m, file } : null;
       };
       const editSuite = (add) => {
@@ -35151,7 +36220,7 @@
         const dir = ProjectSource.dirOf(m.file.name);
         if (add) Persist.addEntryToCfg(m.cfg, m.file.name);
         else Persist.removeEntryFromCfg(m.cfg, m.file.name);
-        afterSuiteEdit2(dir, m.cfg);
+        afterSuiteEdit(dir, m.cfg);
         const cfgName = m.cfg.slice(m.cfg.lastIndexOf("/") + 1);
         say2((add ? "Added to " : "Removed from ") + cfgName);
         return true;
@@ -35164,12 +36233,12 @@
         const m = membership();
         return !!m && m.member;
       });
-      on("edit.undo", () => editorExec2("undo"));
-      on("edit.redo", () => editorExec2("redo"));
-      on("edit.find", () => editorExec2("openSearch"));
+      on("edit.undo", () => editorExec("undo"));
+      on("edit.redo", () => editorExec("redo"));
+      on("edit.find", () => editorExec("openSearch"));
       on("edit.search-project", () => CommandPalette.open({ mode: "search" }));
-      on("edit.toggle-comment", () => editorExec2("toggleComment"));
-      on("edit.format", () => editorExec2("format"));
+      on("edit.toggle-comment", () => editorExec("toggleComment"));
+      on("edit.format", () => editorExec("format"));
       onEditor("edit.rename", (e) => e.rename());
       onEditor("edit.select-all", (e) => e.selectAll());
       on("nav.symbol", () => CommandPalette.open({ mode: "symbols" }));
@@ -35292,7 +36361,7 @@
           BelugaRun.runModuleCfg(file.name);
           return true;
         }
-        if (!file || !moduleNameFor2(file.id)) {
+        if (!file || !moduleNameFor(file.id)) {
           BelugaRun.runFile();
           return true;
         }
@@ -35308,17 +36377,20 @@
       });
       on("run.module", () => {
         if (BelugaRun.runModule) BelugaRun.runModule();
-      }, () => !!moduleNameFor2());
+      }, () => !!moduleNameFor());
       on("run.project", () => {
         if (BelugaRun.runProject) BelugaRun.runProject();
-      }, () => signatureFileCount2() > 1);
+      }, () => signatureFileCount() > 1);
       on("run.clear-output", () => {
         ReplOutput.clearOutput();
       });
       on("view.theme", toggleTheme2);
-      on("view.explorer", () => toggleSidePanel2("explorer"));
-      on("view.library", () => toggleSidePanel2("library"));
-      on("view.harpoon", () => toggleSidePanel2("harpoon"));
+      on("view.explorer", () => toggleSidePanel("explorer"));
+      on("view.library", () => toggleSidePanel("library"));
+      on("view.harpoon", () => toggleSidePanel("harpoon"));
+      on("view.edit-history", () => {
+        window.StatusStrip?.openHistory?.();
+      });
       on("view.settings", () => {
         SettingsUI.open();
       });
@@ -35326,7 +36398,7 @@
       onEditor("fold.unfold-all", (e) => e.unfoldAll());
       CommandPalette.setProvider("files", () => {
         const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
-        return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({ title: f.name, detail: "Switch to file", run: () => switchToFile2(f.id) }));
+        return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({ title: f.name, detail: "Switch to file", run: () => switchToFile(f.id) }));
       });
       CommandPalette.setProvider("symbols", () => {
         const ed = window.CurrentEditor;
@@ -35350,7 +36422,7 @@
           items3.push({
             title: s.name,
             detail: s.fileName.split("/").pop(),
-            run: () => openFileAt2(s.fileId, s.from, s.to)
+            run: () => openFileAt(s.fileId, s.from, s.to)
           });
         }
         return items3;
@@ -35361,1371 +36433,1412 @@
         const entries = Persist.listFiles().map((f) => ({
           id: f.id,
           name: f.name,
-          text: projectFileText2(f.id)
+          text: projectFileText(f.id)
         }));
         return ProjectSource.scanProjectText(entries, query2, 60).map((m) => ({
           title: m.lineText,
           mono: true,
           detail: m.name.split("/").pop() + ":" + m.line,
-          run: () => openFileAt2(m.id, m.from, m.to)
+          run: () => openFileAt(m.id, m.from, m.to)
         }));
       });
     }
   }
 
   // js/app/app.mjs
-  var editorMount = document.getElementById("editor");
-  var editorEmptyEl = document.getElementById("editor-empty");
-  var inspectorProjectEmptyEl = document.getElementById("inspector-project-empty");
-  var cmdInput = typeof ReplStream !== "undefined" && ReplStream.getCommandInput ? ReplStream.getCommandInput() : document.getElementById("command-input");
-  var btnRun2 = typeof ReplStream !== "undefined" && ReplStream.getRunButton ? ReplStream.getRunButton() : document.getElementById("btn-run");
-  Persist.ensureProject();
-  ensureProjectActiveCfgs();
-  if (typeof EditHistoryInstall !== "undefined") {
-    EditHistoryInstall.init();
+  var teardown3 = [];
+  var mounted3 = false;
+  var editor = null;
+  function onWin(type, fn, opts) {
+    window.addEventListener(type, fn, opts);
+    teardown3.push(() => window.removeEventListener(type, fn, opts));
   }
-  var openFileIds = Persist.getOpenFileIds();
-  var activeFileId2 = openFileIds.length ? openFileIds.includes(Persist.getActiveFileId()) ? Persist.getActiveFileId() : openFileIds[0] : null;
-  var persist4 = activeFileId2 ? Persist.createPersist({ documentId: activeFileId2 }) : null;
-  var initialCheckpoint = persist4 ? persist4.getInitialCheckpoint() : null;
-  function mountEditorFor(snapshot, openOpts) {
-    if (typeof BelEditor === "undefined" || !BelEditor.mount) return null;
-    const initialLocal = openOpts && openOpts.initialLocal != null ? openOpts.initialLocal : snapshot ? snapshot.editor.local : null;
-    const docId = persist4 && persist4.getCurrentFileId() || snapshot && snapshot.meta && snapshot.meta.documentId || void 0;
-    const file = docId ? Persist.getFileById(docId) : null;
-    const ed = BelEditor.mount(editorMount, {
-      doc: snapshot ? snapshot.editor.text : persist4 ? persist4.getEditorText() : "",
-      initialLocal,
-      semanticCheckpoint: snapshot ? snapshot.semantic : null,
-      documentId: docId,
-      filePath: file ? file.name : void 0,
-      jumpAt: openOpts && openOpts.jumpAt,
-      persist: persist4,
-      onDocChange: function(text) {
-        if (persist4) {
-          if (text == null && typeof persist4.markEditorDirty === "function") {
-            persist4.markEditorDirty();
-          } else {
-            persist4.scheduleEditorPersist(text);
+  function mount2() {
+    if (mounted3) return;
+    mounted3 = true;
+    const editorMount = document.getElementById("editor");
+    const editorEmptyEl = document.getElementById("editor-empty");
+    const inspectorProjectEmptyEl = document.getElementById("inspector-project-empty");
+    const cmdInput = typeof ReplStream !== "undefined" && ReplStream.getCommandInput ? ReplStream.getCommandInput() : document.getElementById("command-input");
+    const btnRun2 = typeof ReplStream !== "undefined" && ReplStream.getRunButton ? ReplStream.getRunButton() : document.getElementById("btn-run");
+    Persist.ensureProject();
+    ensureProjectActiveCfgs();
+    if (typeof EditHistoryInstall !== "undefined") {
+      EditHistoryInstall.init();
+    }
+    const openFileIds = Persist.getOpenFileIds();
+    const activeFileId2 = openFileIds.length ? openFileIds.includes(Persist.getActiveFileId()) ? Persist.getActiveFileId() : openFileIds[0] : null;
+    let persist4 = activeFileId2 ? Persist.createPersist({ documentId: activeFileId2 }) : null;
+    const initialCheckpoint = persist4 ? persist4.getInitialCheckpoint() : null;
+    function mountEditorFor(snapshot, openOpts) {
+      if (typeof BelEditor === "undefined" || !BelEditor.mount) return null;
+      const initialLocal = openOpts && openOpts.initialLocal != null ? openOpts.initialLocal : snapshot ? snapshot.editor.local : null;
+      const docId = persist4 && persist4.getCurrentFileId() || snapshot && snapshot.meta && snapshot.meta.documentId || void 0;
+      const file = docId ? Persist.getFileById(docId) : null;
+      const ed = BelEditor.mount(editorMount, {
+        doc: snapshot ? snapshot.editor.text : persist4 ? persist4.getEditorText() : "",
+        initialLocal,
+        semanticCheckpoint: snapshot ? snapshot.semantic : null,
+        documentId: docId,
+        filePath: file ? file.name : void 0,
+        jumpAt: openOpts && openOpts.jumpAt,
+        persist: persist4,
+        onDocChange: function(text) {
+          if (persist4) {
+            if (text == null && typeof persist4.markEditorDirty === "function") {
+              persist4.markEditorDirty();
+            } else {
+              persist4.scheduleEditorPersist(text);
+            }
+          }
+          if (file && /\.cfg$/i.test(file.name)) scheduleCfgExplorerRefresh(file.name);
+        }
+      });
+      if (ed && typeof EditHistory !== "undefined") {
+        queueMicrotask(() => {
+          const id = ed.getCurrentFileId?.();
+          const text = ed.getValue?.();
+          if (id != null && text != null) EditHistory.reconcileActiveFile(id, text);
+        });
+      }
+      return ed;
+    }
+    function getActiveEditorView() {
+      return editor && editor.getView ? editor.getView() : null;
+    }
+    function getSemanticEngine() {
+      return editor && editor.getSemanticEngine ? editor.getSemanticEngine() : null;
+    }
+    function collectWorkspaceFloating(fileId, out) {
+      if (!fileId || !out) return;
+      if (typeof BelEditor !== "undefined") {
+        if (BelEditor.collectFloatingInspectorWindows) {
+          BelEditor.collectFloatingInspectorWindows(fileId, out);
+        }
+        if (BelEditor.collectFloatingGraphWindows) {
+          BelEditor.collectFloatingGraphWindows(fileId, out);
+        }
+      }
+      if (typeof Harpoon !== "undefined" && Harpoon.collectFloatingHarpoonWindows) {
+        Harpoon.collectFloatingHarpoonWindows(fileId, out);
+      }
+    }
+    function restoreWorkspaceFloating(floats, deps) {
+      const view = deps && deps.view;
+      const engine = deps && deps.engine;
+      if (!view || !Array.isArray(floats)) return;
+      const sorted = floats.slice().sort((a, b) => (a.zOrder || 0) - (b.zOrder || 0));
+      let skipped = 0;
+      for (const entry of sorted) {
+        let ok = false;
+        if (entry.kind === "inspector" && typeof BelEditor !== "undefined" && BelEditor.restoreFloatingInspectorWindow) {
+          ok = BelEditor.restoreFloatingInspectorWindow(entry, view);
+        } else if (entry.kind === "graph" && typeof BelEditor !== "undefined" && BelEditor.restoreFloatingGraphWindow) {
+          ok = BelEditor.restoreFloatingGraphWindow(entry, view);
+        } else if (entry.kind === "harpoon" && typeof Harpoon !== "undefined" && Harpoon.restoreFloatingHarpoonWindow) {
+          ok = Harpoon.restoreFloatingHarpoonWindow(entry, view, engine);
+        }
+        if (!ok) skipped += 1;
+      }
+      if (skipped > 0 && Toasts.error) {
+        Toasts.error(
+          skipped === 1 ? "Could not restore a floating window after reload." : `Could not restore ${skipped} floating windows after reload.`,
+          { duration: "long" }
+        );
+      }
+    }
+    function registerWorkspaceProviders() {
+      WorkspaceState.registerProvider("inspector", {
+        collect(out) {
+          if (typeof BelEditor !== "undefined" && BelEditor.collectWorkspaceInspector) {
+            BelEditor.collectWorkspaceInspector(out);
+          }
+        },
+        restoreSidebar(sidebar, deps) {
+          if (typeof BelEditor !== "undefined" && BelEditor.restoreWorkspaceInspector) {
+            BelEditor.restoreWorkspaceInspector(sidebar, deps);
           }
         }
-        if (file && /\.cfg$/i.test(file.name)) scheduleCfgExplorerRefresh(file.name);
-      }
-    });
-    if (ed && typeof EditHistory !== "undefined") {
-      queueMicrotask(() => {
-        const id = ed.getCurrentFileId?.();
-        const text = ed.getValue?.();
-        if (id != null && text != null) EditHistory.reconcileActiveFile(id, text);
+      });
+      WorkspaceState.registerProvider("explorer", {
+        collect(out) {
+          if (getExplorerController() && getExplorerController().collectWorkspaceExplorer) {
+            getExplorerController().collectWorkspaceExplorer(out);
+          }
+        },
+        restoreSidebar(sidebar) {
+          if (!workspaceEl?.classList.contains("is-explorer-open")) return;
+          if (getExplorerController() && getExplorerController().restoreWorkspaceExplorer) {
+            getExplorerController().restoreWorkspaceExplorer(sidebar);
+          }
+        }
+      });
+      WorkspaceState.registerProvider("harpoon-panel", {
+        collect(out) {
+          if (typeof HarpoonPanel !== "undefined" && HarpoonPanel.collectWorkspaceHarpoon) {
+            HarpoonPanel.collectWorkspaceHarpoon(out);
+          }
+        },
+        restoreSidebar(sidebar, deps) {
+          if (!workspaceEl?.classList.contains("is-harpoon-open")) return;
+          if (typeof HarpoonPanel !== "undefined" && HarpoonPanel.restoreWorkspaceHarpoon) {
+            HarpoonPanel.restoreWorkspaceHarpoon(sidebar, deps);
+          }
+        }
+      });
+      WorkspaceState.registerProvider("floating", {
+        collect(out) {
+          const fileId = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
+          collectWorkspaceFloating(fileId, out);
+        }
       });
     }
-    return ed;
-  }
-  function getActiveEditorView() {
-    return editor && editor.getView ? editor.getView() : null;
-  }
-  function getSemanticEngine() {
-    return editor && editor.getSemanticEngine ? editor.getSemanticEngine() : null;
-  }
-  function collectWorkspaceFloating(fileId, out) {
-    if (!fileId || !out) return;
-    if (typeof BelEditor !== "undefined") {
-      if (BelEditor.collectFloatingInspectorWindows) {
-        BelEditor.collectFloatingInspectorWindows(fileId, out);
-      }
-      if (BelEditor.collectFloatingGraphWindows) {
-        BelEditor.collectFloatingGraphWindows(fileId, out);
-      }
+    function applyStoredSidePanel(id) {
+      if (!id) return;
+      if (typeof Persist.readStoredRestorePanels === "function" && !Persist.readStoredRestorePanels()) return;
+      closeOtherSidePanels(id);
+      setSidePanelOpen(id, true);
+      notifySidePanelLayout();
     }
-    if (typeof Harpoon !== "undefined" && Harpoon.collectFloatingHarpoonWindows) {
-      Harpoon.collectFloatingHarpoonWindows(fileId, out);
+    let workspaceBootPending = true;
+    const restoredFloatIds = /* @__PURE__ */ new Set();
+    function restoreWorkspaceForFile(fileId) {
+      if (!fileId) return;
+      const ws = WorkspaceState.readWorkspace();
+      const openIds = Persist.getOpenFileIds();
+      const floats = WorkspaceState.filterFloatingForFile(ws.floating, fileId, openIds).filter((entry) => !restoredFloatIds.has(entry.id));
+      if (!floats.length) return;
+      restoreWorkspaceFloating(floats, {
+        view: getActiveEditorView(),
+        engine: getSemanticEngine(),
+        activeFileId: fileId
+      });
+      floats.forEach((entry) => restoredFloatIds.add(entry.id));
     }
-  }
-  function restoreWorkspaceFloating(floats, deps) {
-    const view = deps && deps.view;
-    const engine = deps && deps.engine;
-    if (!view || !Array.isArray(floats)) return;
-    const sorted = floats.slice().sort((a, b) => (a.zOrder || 0) - (b.zOrder || 0));
-    let skipped = 0;
-    for (const entry of sorted) {
-      let ok = false;
-      if (entry.kind === "inspector" && typeof BelEditor !== "undefined" && BelEditor.restoreFloatingInspectorWindow) {
-        ok = BelEditor.restoreFloatingInspectorWindow(entry, view);
-      } else if (entry.kind === "graph" && typeof BelEditor !== "undefined" && BelEditor.restoreFloatingGraphWindow) {
-        ok = BelEditor.restoreFloatingGraphWindow(entry, view);
-      } else if (entry.kind === "harpoon" && typeof Harpoon !== "undefined" && Harpoon.restoreFloatingHarpoonWindow) {
-        ok = Harpoon.restoreFloatingHarpoonWindow(entry, view, engine);
-      }
-      if (!ok) skipped += 1;
+    function restoreWorkspaceState() {
+      const ws = WorkspaceState.readWorkspace();
+      WorkspaceState.applyWorkspace(ws, {
+        projectId: Persist.getActiveProjectId(),
+        openFileIds: Persist.getOpenFileIds(),
+        activeFileId: persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
+        view: getActiveEditorView(),
+        engine: getSemanticEngine(),
+        applySidePanel: applyStoredSidePanel,
+        restoreFloating: (floats, deps) => {
+          const pending = (floats || []).filter((entry) => !restoredFloatIds.has(entry.id));
+          if (!pending.length) return;
+          restoreWorkspaceFloating(pending, deps);
+          pending.forEach((entry) => restoredFloatIds.add(entry.id));
+        }
+      });
     }
-    if (skipped > 0 && Toasts.error) {
-      Toasts.error(
-        skipped === 1 ? "Could not restore a floating window after reload." : `Could not restore ${skipped} floating windows after reload.`,
-        { duration: 5e3 }
-      );
+    function isCfgFileName(name) {
+      return /\.cfg$/i.test(String(name || ""));
     }
-  }
-  function registerWorkspaceProviders() {
-    WorkspaceState.registerProvider("inspector", {
-      collect(out) {
-        if (typeof BelEditor !== "undefined" && BelEditor.collectWorkspaceInspector) {
-          BelEditor.collectWorkspaceInspector(out);
-        }
-      },
-      restoreSidebar(sidebar, deps) {
-        if (typeof BelEditor !== "undefined" && BelEditor.restoreWorkspaceInspector) {
-          BelEditor.restoreWorkspaceInspector(sidebar, deps);
-        }
+    function editorViewIsCfg(ed) {
+      if (!ed || typeof ed.getView !== "function") return false;
+      const view = ed.getView();
+      return !!(view && view.dom && view.dom.classList.contains("bel-editor--cfg"));
+    }
+    function remountActiveEditor(openOpts) {
+      if (!persist4 || !editor) return;
+      const id = persist4.getCurrentFileId();
+      if (!id) return;
+      persist4.flushCheckpoint();
+      const snapshot = persist4.getInitialCheckpoint();
+      editor.destroy();
+      editor = mountEditorFor(snapshot, openOpts || {});
+      window.CurrentEditor = editor;
+      window.BelJarCurrentEditor = window.CurrentEditor;
+      syncEditorCmTheme();
+      if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
+        BelugaClient.noteEditorChange(editor ? editor.getValue() : "");
       }
-    });
-    WorkspaceState.registerProvider("explorer", {
-      collect(out) {
-        if (getExplorerController() && getExplorerController().collectWorkspaceExplorer) {
-          getExplorerController().collectWorkspaceExplorer(out);
-        }
-      },
-      restoreSidebar(sidebar) {
-        if (!workspaceEl?.classList.contains("is-explorer-open")) return;
-        if (getExplorerController() && getExplorerController().restoreWorkspaceExplorer) {
-          getExplorerController().restoreWorkspaceExplorer(sidebar);
-        }
-      }
-    });
-    WorkspaceState.registerProvider("harpoon-panel", {
-      collect(out) {
-        if (typeof HarpoonPanel !== "undefined" && HarpoonPanel.collectWorkspaceHarpoon) {
-          HarpoonPanel.collectWorkspaceHarpoon(out);
-        }
-      },
-      restoreSidebar(sidebar, deps) {
-        if (!workspaceEl?.classList.contains("is-harpoon-open")) return;
-        if (typeof HarpoonPanel !== "undefined" && HarpoonPanel.restoreWorkspaceHarpoon) {
-          HarpoonPanel.restoreWorkspaceHarpoon(sidebar, deps);
-        }
-      }
-    });
-    WorkspaceState.registerProvider("floating", {
-      collect(out) {
-        const fileId = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
-        collectWorkspaceFloating(fileId, out);
-      }
-    });
-  }
-  function applyStoredSidePanel(id) {
-    if (!id) return;
-    if (typeof Persist.readStoredRestorePanels === "function" && !Persist.readStoredRestorePanels()) return;
-    closeOtherSidePanels(id);
-    setSidePanelOpen(id, true);
-    notifySidePanelLayout();
-  }
-  var workspaceBootPending = true;
-  var restoredFloatIds = /* @__PURE__ */ new Set();
-  function restoreWorkspaceForFile(fileId) {
-    if (!fileId) return;
-    const ws = WorkspaceState.readWorkspace();
-    const openIds = Persist.getOpenFileIds();
-    const floats = WorkspaceState.filterFloatingForFile(ws.floating, fileId, openIds).filter((entry) => !restoredFloatIds.has(entry.id));
-    if (!floats.length) return;
-    restoreWorkspaceFloating(floats, {
-      view: getActiveEditorView(),
-      engine: getSemanticEngine(),
-      activeFileId: fileId
-    });
-    floats.forEach((entry) => restoredFloatIds.add(entry.id));
-  }
-  function restoreWorkspaceState() {
-    const ws = WorkspaceState.readWorkspace();
-    WorkspaceState.applyWorkspace(ws, {
-      projectId: Persist.getActiveProjectId(),
-      openFileIds: Persist.getOpenFileIds(),
-      activeFileId: persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
-      view: getActiveEditorView(),
-      engine: getSemanticEngine(),
-      applySidePanel: applyStoredSidePanel,
-      restoreFloating: (floats, deps) => {
-        const pending = (floats || []).filter((entry) => !restoredFloatIds.has(entry.id));
-        if (!pending.length) return;
-        restoreWorkspaceFloating(pending, deps);
-        pending.forEach((entry) => restoredFloatIds.add(entry.id));
-      }
-    });
-  }
-  function isCfgFileName(name) {
-    return /\.cfg$/i.test(String(name || ""));
-  }
-  function editorViewIsCfg(ed) {
-    if (!ed || typeof ed.getView !== "function") return false;
-    const view = ed.getView();
-    return !!(view && view.dom && view.dom.classList.contains("bel-editor--cfg"));
-  }
-  function remountActiveEditor(openOpts) {
-    if (!persist4 || !editor) return;
-    const id = persist4.getCurrentFileId();
-    if (!id) return;
-    persist4.flushCheckpoint();
-    const snapshot = persist4.getInitialCheckpoint();
-    editor.destroy();
-    editor = mountEditorFor(snapshot, openOpts || {});
+      notifyActiveEditorView();
+      refreshInspector();
+      updateRunButtonTooltip();
+    }
+    function ensureEditorMatchesFileKind() {
+      if (!persist4 || !editor) return;
+      const id = persist4.getCurrentFileId();
+      if (!id) return;
+      const file = Persist.getFileById(id);
+      if (!file) return;
+      if (isCfgFileName(file.name) !== editorViewIsCfg(editor)) remountActiveEditor();
+    }
+    editor = activeFileId2 ? mountEditorFor(initialCheckpoint) : null;
+    ensureEditorMatchesFileKind();
     window.CurrentEditor = editor;
     window.BelJarCurrentEditor = window.CurrentEditor;
-    syncEditorCmTheme();
-    if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
-      BelugaClient.noteEditorChange(editor ? editor.getValue() : "");
+    let cfgExplorerRefreshTimer = null;
+    function projectFileText(fileId) {
+      if (!fileId) return "";
+      const activeId2 = Persist.getActiveFileId();
+      const ed = typeof window !== "undefined" ? window.CurrentEditor : null;
+      if (fileId === activeId2 && ed && typeof ed.getValue === "function") {
+        return ed.getValue();
+      }
+      return Persist.getFileText(fileId) ?? "";
     }
-    notifyActiveEditorView();
-    refreshInspector();
-    updateRunButtonTooltip();
-  }
-  function ensureEditorMatchesFileKind() {
-    if (!persist4 || !editor) return;
-    const id = persist4.getCurrentFileId();
-    if (!id) return;
-    const file = Persist.getFileById(id);
-    if (!file) return;
-    if (isCfgFileName(file.name) !== editorViewIsCfg(editor)) remountActiveEditor();
-  }
-  var editor = activeFileId2 ? mountEditorFor(initialCheckpoint) : null;
-  ensureEditorMatchesFileKind();
-  window.CurrentEditor = editor;
-  window.BelJarCurrentEditor = window.CurrentEditor;
-  var cfgExplorerRefreshTimer = null;
-  function projectFileText(fileId) {
-    if (!fileId) return "";
-    const activeId2 = Persist.getActiveFileId();
-    const ed = typeof window !== "undefined" ? window.CurrentEditor : null;
-    if (fileId === activeId2 && ed && typeof ed.getValue === "function") {
-      return ed.getValue();
+    function scheduleCfgExplorerRefresh(cfgName) {
+      clearTimeout(cfgExplorerRefreshTimer);
+      cfgExplorerRefreshTimer = setTimeout(() => onCfgContentChange(cfgName), 80);
     }
-    return Persist.getFileText(fileId) ?? "";
-  }
-  function scheduleCfgExplorerRefresh(cfgName) {
-    clearTimeout(cfgExplorerRefreshTimer);
-    cfgExplorerRefreshTimer = setTimeout(() => onCfgContentChange(cfgName), 80);
-  }
-  function onCfgContentChange(cfgName) {
-    const dir = ProjectSource.dirOf(cfgName);
-    reconcileActiveCfgsInDir(dir, cfgName);
-    const activeFile = activeFileRecord();
-    if (editor?.remoduleContext && activeFile && ProjectSource.dirOf(activeFile.name) === dir) {
-      editor.remoduleContext();
+    function onCfgContentChange(cfgName) {
+      const dir = ProjectSource.dirOf(cfgName);
+      reconcileActiveCfgsInDir(dir, cfgName);
+      const activeFile = activeFileRecord();
+      if (editor?.remoduleContext && activeFile && ProjectSource.dirOf(activeFile.name) === dir) {
+        editor.remoduleContext();
+      }
+      renderExplorerTree();
+      updateHeaderContext();
+      updateRunButtonTooltip();
     }
-    renderExplorerTree();
-    updateHeaderContext();
-    updateRunButtonTooltip();
-  }
-  function projectIsEmpty() {
-    return Persist.listFiles().length === 0;
-  }
-  function projectTreeEmpty() {
-    return Persist.listFiles().length === 0 && Persist.listEmptyFolders().length === 0;
-  }
-  function editorCanvasIdle() {
-    if (projectIsEmpty()) return true;
-    return Persist.getOpenFileIds().length === 0;
-  }
-  function enterCanvasIdleView() {
-    if (persist4) persist4.flushCheckpoint();
-    WorkspaceState.flushWorkspace();
-    if (editor && typeof editor.destroy === "function") editor.destroy();
-    editor = null;
-    window.CurrentEditor = null;
-    window.BelJarCurrentEditor = window.CurrentEditor;
-    persist4 = null;
-    if (typeof FloatingWindow !== "undefined" && FloatingWindow.closeAll) FloatingWindow.closeAll();
-    if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
-      BelugaClient.noteEditorChange("");
+    function projectIsEmpty() {
+      return Persist.listFiles().length === 0;
     }
-    const ex = getExplorerController();
-    if (ex && typeof ex.clearSelection === "function") ex.clearSelection();
-    updateEditorEmptyState();
-    updateInspectorProjectEmpty();
+    function projectTreeEmpty() {
+      return Persist.listFiles().length === 0 && Persist.listEmptyFolders().length === 0;
+    }
+    function editorCanvasIdle() {
+      if (projectIsEmpty()) return true;
+      return Persist.getOpenFileIds().length === 0;
+    }
+    function enterCanvasIdleView() {
+      if (persist4) persist4.flushCheckpoint();
+      WorkspaceState.flushWorkspace();
+      if (editor && typeof editor.destroy === "function") editor.destroy();
+      editor = null;
+      window.CurrentEditor = null;
+      window.BelJarCurrentEditor = window.CurrentEditor;
+      persist4 = null;
+      if (typeof FloatingWindow !== "undefined" && FloatingWindow.closeAll) FloatingWindow.closeAll();
+      if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
+        BelugaClient.noteEditorChange("");
+      }
+      const ex = getExplorerController();
+      if (ex && typeof ex.clearSelection === "function") ex.clearSelection();
+      updateEditorEmptyState();
+      updateInspectorProjectEmpty();
+      renderTabs();
+      renderExplorerTree();
+      updateHeaderContext();
+    }
+    function enterEmptyProjectView() {
+      if (Persist.clearEmptyFolders) {
+        Persist.clearEmptyFolders();
+      }
+      enterCanvasIdleView();
+    }
+    function ensurePersistForFile(id) {
+      if (!id) return null;
+      if (!persist4) persist4 = Persist.createPersist({ documentId: id });
+      return persist4;
+    }
+    function syncEditorCmTheme() {
+      if (!editor || typeof editor.setDarkTheme !== "function") return;
+      editor.setDarkTheme(!document.documentElement.classList.contains("light"));
+    }
+    window.syncEditorCmTheme = syncEditorCmTheme;
+    if (editor) syncEditorCmTheme();
+    function onWorkspaceLayoutResize() {
+      if (editor && editor.getView) editor.getView().requestMeasure();
+    }
+    WorkspaceSplit.init({ onResize: onWorkspaceLayoutResize });
+    SidePanelResize.init({ onResize: onWorkspaceLayoutResize });
+    var restoredTranscript = typeof ReplPersist !== "undefined" && ReplPersist.restore && ReplPersist.restore();
+    if (!restoredTranscript) ReplOutput.insertWelcomeBanner();
+    BelugaRun.init();
+    Frame.mount();
+    if (typeof Persist !== "undefined") {
+      if (Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
+      if (Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
+    }
+    function shouldApplyEditorPrefs(key) {
+      if (!key || key === "layout-reset") return false;
+      if (key === "theme") return false;
+      if (/^repl-/.test(key) || key === "repl-reset") return false;
+      if (/^beluga-/.test(key) || key === "beluga-reset") return false;
+      if (key === "check-aggressiveness" || key === "suite-check") return false;
+      if (/^autosolve-/.test(key) || /^harpoon-/.test(key) || key === "harpoon-reset") return false;
+      if (key === "workspace-reset" || key === "restore-panels" || key === "library-expand-default" || key === "inspector-follow") return false;
+      if (key === "motion-pref" || key === "toast-duration") return false;
+      if (/^alias/.test(key) || key === "aliases-reset") return false;
+      return true;
+    }
+    function applyLiveSettings2(key) {
+      if (!key || key === "layout-reset") return;
+      if (key === "theme" || key === "appearance-reset" || key === "settings-import") syncEditorCmTheme();
+      if (key === "appearance-reset" || key === "motion-pref" || key === "settings-import") {
+        if (typeof Persist !== "undefined" && Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
+      }
+      if (key === "appearance-reset" || key === "editor-reset" || key === "settings-import" || key === "editor-font-family" || key === "editor-hole-emphasis") {
+        if (typeof Persist !== "undefined" && Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
+      }
+      if (shouldApplyEditorPrefs(key) || key === "editor-reset" || key === "settings-import") {
+        if (typeof BelEditor !== "undefined" && typeof BelEditor.applyEditorPrefs === "function") {
+          BelEditor.applyEditorPrefs();
+        }
+      }
+      if (key === "keymap-style" || key === "status-strip" || key === "keybindings-reset" || key === "settings-import" || key === "settings-reset-all") {
+        if (typeof StatusStrip !== "undefined" && typeof StatusStrip.apply === "function") StatusStrip.apply();
+      }
+      if ((key === "library-expand-default" || key === "workspace-reset") && getLibraryController() && typeof getLibraryController().refresh === "function") {
+        getLibraryController().refresh();
+      }
+      if (key === "repl-history-persist" || key === "repl-reset") {
+        if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
+          ReplPersist.saveNow();
+        }
+      }
+    }
+    window.beljarApplyLiveSettings = applyLiveSettings2;
+    onWin("beljar:settings-changed", function(e) {
+      applyLiveSettings2(e && e.detail ? e.detail.key : "");
+    });
+    function showToast(message2, opts) {
+      return Toasts.show(message2, opts);
+    }
+    if (!editor && (typeof BelEditor === "undefined" || !BelEditor.mount)) {
+      {
+        Toasts.error("CodeMirror editor bundle failed to load.", { duration: 0, closable: true });
+      }
+    }
+    function setTip2(el6, text, opts) {
+      if (!el6 || typeof Tooltips === "undefined" || !Tooltips.set) return;
+      Tooltips.set(el6, text, opts);
+    }
+    function toggleTheme2() {
+      return Frame.toggleTheme();
+    }
+    window.Repl = {
+      appendBuffered: function(text, kind) {
+        ReplOutput.appendOutput(text, kind || "auto");
+      }
+    };
+    window.BelJarRepl = window.Repl;
+    const filesBtn = document.getElementById("btn-files");
+    const inspectorBtn = document.getElementById("btn-inspector");
+    const libraryBtn = document.getElementById("btn-library");
+    const harpoonBtn = document.getElementById("btn-harpoon");
+    const workspaceEl = document.querySelector(".workspace");
+    const explorerPanelEl = document.getElementById("explorer-panel");
+    const inspectorPanelEl = document.getElementById("inspector-panel");
+    const libraryPanelEl = document.getElementById("library-panel");
+    const harpoonPanelEl = document.getElementById("harpoon-panel");
+    const SIDE_PANELS = {
+      explorer: {
+        btn: filesBtn,
+        panel: explorerPanelEl,
+        openClass: "is-explorer-open",
+        writeOpen: (open11) => {
+          Persist.writeStoredExplorerOpen(open11);
+        }
+      },
+      inspector: {
+        btn: inspectorBtn,
+        panel: inspectorPanelEl,
+        openClass: "is-inspector-open",
+        writeOpen: (open11) => {
+          Persist.writeStoredInspectorOpen(open11);
+        }
+      },
+      library: {
+        btn: libraryBtn,
+        panel: libraryPanelEl,
+        openClass: "is-library-open",
+        writeOpen: (open11) => {
+          Persist.writeStoredLibraryOpen(open11);
+          if (!open11) {
+            const lib = getLibraryController();
+            if (lib && typeof lib.collapseFolders === "function") lib.collapseFolders();
+          }
+        }
+      },
+      harpoon: {
+        btn: harpoonBtn,
+        panel: harpoonPanelEl,
+        openClass: "is-harpoon-open",
+        writeOpen: (open11) => {
+          if (Persist.writeStoredHarpoonOpen) {
+            Persist.writeStoredHarpoonOpen(open11);
+          }
+        }
+      }
+    };
+    const editorTabsEl = document.getElementById("editor-tabs");
+    const cfgTabLint = /* @__PURE__ */ new Map();
+    function liveFileLint() {
+      const ed = window.CurrentEditor;
+      if (!ed || typeof ed.getIdeStatus !== "function") return null;
+      const st = ed.getIdeStatus();
+      return { errors: st.errors, warnings: st.warnings };
+    }
+    function belFileHealth(fileId) {
+      if (typeof BelEditor === "undefined" || typeof BelEditor.fileHealthFor !== "function") {
+        return { errors: 0, warnings: 0, items: [] };
+      }
+      const activeId2 = Persist.getActiveFileId();
+      let live2 = null;
+      if (fileId === activeId2 && window.CurrentEditor?.getValue) {
+        live2 = window.CurrentEditor.getValue();
+      }
+      return BelEditor.fileHealthFor(fileId, live2);
+    }
+    function fileLintCounts(fileId, activeId2) {
+      const file = Persist.getFileById(fileId);
+      const name = file?.name || "";
+      if (/\.cfg$/i.test(name)) {
+        return fileId === activeId2 ? liveFileLint() : cfgTabLint.get(fileId);
+      }
+      if (ProjectSource.isSignaturePath(name)) {
+        return belFileHealth(fileId);
+      }
+      return null;
+    }
+    function fileTabHasErrors(fileId, activeId2) {
+      const lint = fileLintCounts(fileId, activeId2);
+      return !!(lint && lint.errors > 0);
+    }
+    function rememberCfgLint(fileId, lint) {
+      if (!fileId || !lint) return;
+      cfgTabLint.set(fileId, {
+        errors: lint.errors || 0,
+        warnings: lint.warnings || 0,
+        items: Array.isArray(lint.items) ? lint.items : cfgTabLint.get(fileId)?.items
+      });
+    }
+    function lintTooltipHead(items3) {
+      if (!items3 || !items3.length) return "";
+      const errs = items3.filter((d) => d.kind === "error").length;
+      const warns = items3.length - errs;
+      const parts = [];
+      if (errs) parts.push(errs === 1 ? "1 error" : `${errs} errors`);
+      if (warns) parts.push(warns === 1 ? "1 warning" : `${warns} warnings`);
+      return parts.join(" \xB7 ");
+    }
+    function explorerFileDiagItems(fileId, fileName) {
+      const low = String(fileName || "").toLowerCase();
+      if (low.endsWith(".cfg")) {
+        const activeId2 = Persist.getActiveFileId();
+        const ed = window.CurrentEditor;
+        if (fileId === activeId2 && ed && typeof ed.getLintTooltipItems === "function") {
+          return ed.getLintTooltipItems();
+        }
+        const cached = cfgTabLint.get(fileId);
+        return cached && Array.isArray(cached.items) ? cached.items : null;
+      }
+      if (ProjectSource.isSignaturePath(fileName)) {
+        const health = belFileHealth(fileId);
+        return health?.items?.length ? health.items : null;
+      }
+      return null;
+    }
+    function bindExplorerDiagTip(el6, fileId, fileName, diag) {
+      if (!el6 || !diag) return;
+      el6.removeAttribute("title");
+      const items3 = explorerFileDiagItems(fileId, fileName);
+      if (items3 && items3.length) {
+        el6.setAttribute("data-tooltip", lintTooltipHead(items3));
+        el6.setAttribute("data-tooltip-head", "");
+        el6.setAttribute("data-tooltip-errors", JSON.stringify(items3));
+        if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el6);
+        return;
+      }
+      setTip2(el6, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
+    }
+    function updateTabLintStyles() {
+      if (!editorTabsEl) return;
+      const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
+      editorTabsEl.querySelectorAll(".editor-tab[data-file-id]").forEach((tab) => {
+        const id = tab.getAttribute("data-file-id");
+        tab.classList.toggle("has-errors", fileTabHasErrors(id, activeId2));
+      });
+      if (getExplorerController() && typeof getExplorerController().refreshDiags === "function") {
+        getExplorerController().refreshDiags();
+      }
+    }
+    let tabLintStyleRaf = 0;
+    function scheduleTabLintStyles() {
+      if (tabLintStyleRaf) return;
+      tabLintStyleRaf = requestAnimationFrame(() => {
+        tabLintStyleRaf = 0;
+        updateTabLintStyles();
+      });
+    }
+    var suiteCfgApi = null;
+    var explorerBootstrapApi = null;
+    var fileLifecycleApi = null;
+    var uploadImportApi = null;
+    var menusApi = null;
+    var emptyStateApi = null;
+    var sidePanelsApi = null;
+    var fileTabsApi = null;
+    function getExplorerController() {
+      return explorerBootstrapApi && explorerBootstrapApi.getExplorerController ? explorerBootstrapApi.getExplorerController() : null;
+    }
+    function getLibraryController() {
+      return explorerBootstrapApi && explorerBootstrapApi.getLibraryController ? explorerBootstrapApi.getLibraryController() : null;
+    }
+    function ensureProjectActiveCfgs() {
+      if (suiteCfgApi) return suiteCfgApi.ensureProjectActiveCfgs.apply(suiteCfgApi, arguments);
+      if (typeof ProjectSource.inferActiveCfgByDir !== "function") return;
+      if (typeof Persist.backfillActiveCfgByDir !== "function") return;
+      const files = Persist.listFiles();
+      const getText = (id) => projectFileText(id);
+      Persist.backfillActiveCfgByDir(ProjectSource.inferActiveCfgByDir(files, getText));
+    }
+    function ensureActiveCfgForDir() {
+      return suiteCfgApi.ensureActiveCfgForDir.apply(suiteCfgApi, arguments);
+    }
+    function activeCfgForDir() {
+      return suiteCfgApi.activeCfgForDir.apply(suiteCfgApi, arguments);
+    }
+    function activeCfgsForDir2() {
+      return suiteCfgApi.activeCfgsForDir.apply(suiteCfgApi, arguments);
+    }
+    function suiteLayoutForDir() {
+      return suiteCfgApi.suiteLayoutForDir.apply(suiteCfgApi, arguments);
+    }
+    function reconcileActiveCfgsInDir() {
+      return suiteCfgApi.reconcileActiveCfgsInDir.apply(suiteCfgApi, arguments);
+    }
+    function makeActiveCfgForFile() {
+      return suiteCfgApi.makeActiveCfgForFile.apply(suiteCfgApi, arguments);
+    }
+    function moduleNameFor() {
+      return suiteCfgApi.moduleNameFor.apply(suiteCfgApi, arguments);
+    }
+    function activeSuiteMembership() {
+      return suiteCfgApi.activeSuiteMembership.apply(suiteCfgApi, arguments);
+    }
+    function explorerFileDiag() {
+      return suiteCfgApi.explorerFileDiag.apply(suiteCfgApi, arguments);
+    }
+    function afterSuiteEdit() {
+      return suiteCfgApi.afterSuiteEdit.apply(suiteCfgApi, arguments);
+    }
+    function activeFileRecord() {
+      return suiteCfgApi.activeFileRecord.apply(suiteCfgApi, arguments);
+    }
+    function updateRunButtonTooltip() {
+      return suiteCfgApi.updateRunButtonTooltip.apply(suiteCfgApi, arguments);
+    }
+    function explorerCreateMenuItems() {
+      return explorerBootstrapApi.explorerCreateMenuItems.apply(explorerBootstrapApi, arguments);
+    }
+    function renameFolderInteractive() {
+      return explorerBootstrapApi.renameFolderInteractive.apply(explorerBootstrapApi, arguments);
+    }
+    function ensureExplorer() {
+      return explorerBootstrapApi.ensureExplorer.apply(explorerBootstrapApi, arguments);
+    }
+    function ensureLibrary() {
+      return explorerBootstrapApi.ensureLibrary.apply(explorerBootstrapApi, arguments);
+    }
+    function renderExplorerTree() {
+      return explorerBootstrapApi.renderExplorerTree.apply(explorerBootstrapApi, arguments);
+    }
+    function refreshExplorerActiveAndDiags() {
+      return explorerBootstrapApi.refreshExplorerActiveAndDiags.apply(explorerBootstrapApi, arguments);
+    }
+    function refreshInspector() {
+      return explorerBootstrapApi.refreshInspector.apply(explorerBootstrapApi, arguments);
+    }
+    function notifyActiveEditorView() {
+      return explorerBootstrapApi.notifyActiveEditorView.apply(explorerBootstrapApi, arguments);
+    }
+    function switchToFile() {
+      return fileLifecycleApi.switchToFile.apply(fileLifecycleApi, arguments);
+    }
+    function openFileAt() {
+      return fileLifecycleApi.openFileAt.apply(fileLifecycleApi, arguments);
+    }
+    function newFile() {
+      return fileLifecycleApi.newFile.apply(fileLifecycleApi, arguments);
+    }
+    function closeFile() {
+      return fileLifecycleApi.closeFile.apply(fileLifecycleApi, arguments);
+    }
+    function deleteFileInteractive() {
+      return fileLifecycleApi.deleteFileInteractive.apply(fileLifecycleApi, arguments);
+    }
+    function closeTabsForFiles() {
+      return fileLifecycleApi.closeTabsForFiles.apply(fileLifecycleApi, arguments);
+    }
+    function selectionDeleteFileIds() {
+      return fileLifecycleApi.selectionDeleteFileIds.apply(fileLifecycleApi, arguments);
+    }
+    function selectionDeleteDisabled() {
+      return fileLifecycleApi.selectionDeleteDisabled.apply(fileLifecycleApi, arguments);
+    }
+    function deleteSelectionInteractive() {
+      return fileLifecycleApi.deleteSelectionInteractive.apply(fileLifecycleApi, arguments);
+    }
+    function deleteFolderInteractive() {
+      return fileLifecycleApi.deleteFolderInteractive.apply(fileLifecycleApi, arguments);
+    }
+    function exportLibraryAsNewProject() {
+      return uploadImportApi.exportLibraryAsNewProject.apply(uploadImportApi, arguments);
+    }
+    function applyFileReplacement() {
+      return uploadImportApi.applyFileReplacement.apply(uploadImportApi, arguments);
+    }
+    function deleteProjectFilesById() {
+      return uploadImportApi.deleteProjectFilesById.apply(uploadImportApi, arguments);
+    }
+    function executeUploadPlan() {
+      return uploadImportApi.executeUploadPlan.apply(uploadImportApi, arguments);
+    }
+    function reloadActiveEditorFromPersist() {
+      return uploadImportApi.reloadActiveEditorFromPersist.apply(uploadImportApi, arguments);
+    }
+    function resolveAndApplyMove() {
+      return uploadImportApi.resolveAndApplyMove.apply(uploadImportApi, arguments);
+    }
+    function downloadCurrentFile() {
+      return uploadImportApi.downloadCurrentFile.apply(uploadImportApi, arguments);
+    }
+    function downloadFileById() {
+      return uploadImportApi.downloadFileById.apply(uploadImportApi, arguments);
+    }
+    function downloadFolder() {
+      return uploadImportApi.downloadFolder.apply(uploadImportApi, arguments);
+    }
+    function downloadSuite() {
+      return uploadImportApi.downloadSuite.apply(uploadImportApi, arguments);
+    }
+    function suiteDownloadState() {
+      return uploadImportApi.suiteDownloadState.apply(uploadImportApi, arguments);
+    }
+    function signatureFileCount() {
+      return menusApi.signatureFileCount.apply(menusApi, arguments);
+    }
+    function explorerSelectionContextItems() {
+      return menusApi.explorerSelectionContextItems.apply(menusApi, arguments);
+    }
+    function fileContextItems() {
+      return menusApi.fileContextItems.apply(menusApi, arguments);
+    }
+    function explorerFolderContextItems() {
+      return menusApi.explorerFolderContextItems.apply(menusApi, arguments);
+    }
+    function backgroundRunItems() {
+      return menusApi.backgroundRunItems.apply(menusApi, arguments);
+    }
+    function editorExec() {
+      return menusApi.editorExec.apply(menusApi, arguments);
+    }
+    function updateInspectorProjectEmpty() {
+      return emptyStateApi.updateInspectorProjectEmpty.apply(emptyStateApi, arguments);
+    }
+    function updateEditorEmptyState() {
+      return emptyStateApi.updateEditorEmptyState.apply(emptyStateApi, arguments);
+    }
+    function setSidePanelOpen() {
+      return sidePanelsApi.setSidePanelOpen.apply(sidePanelsApi, arguments);
+    }
+    function closeOtherSidePanels() {
+      return sidePanelsApi.closeOtherSidePanels.apply(sidePanelsApi, arguments);
+    }
+    function notifySidePanelLayout() {
+      return sidePanelsApi.notifySidePanelLayout.apply(sidePanelsApi, arguments);
+    }
+    function toggleSidePanel() {
+      return sidePanelsApi.toggleSidePanel.apply(sidePanelsApi, arguments);
+    }
+    function wireSidebarOpenTooltip() {
+      return sidePanelsApi.wireSidebarOpenTooltip.apply(sidePanelsApi, arguments);
+    }
+    function renderTabs() {
+      return fileTabsApi.renderTabs.apply(fileTabsApi, arguments);
+    }
+    const peelHub = {
+      getEditor: () => editor,
+      setEditor: (ed) => {
+        editor = ed;
+        window.CurrentEditor = ed;
+        window.BelJarCurrentEditor = ed;
+      },
+      getPersist: () => persist4,
+      setPersist: (p) => {
+        persist4 = p;
+      }
+    };
+    function __initAppPeels() {
+      emptyStateApi = create10({
+        getInspectorPanelEl: () => inspectorPanelEl,
+        getInspectorProjectEmptyEl: () => inspectorProjectEmptyEl,
+        getEditorEmptyEl: () => editorEmptyEl,
+        getEditorMount: () => editorMount,
+        projectTreeEmpty,
+        editorCanvasIdle
+      });
+      sidePanelsApi = create11({
+        workspaceEl,
+        panels: SIDE_PANELS,
+        onLayout: () => {
+          if (editor && editor.getView) editor.getView().requestMeasure();
+        },
+        scheduleWorkspaceSave: () => {
+          WorkspaceState.scheduleSave();
+        }
+      });
+      fileTabsApi = create12({
+        editorTabsEl,
+        listOpenFiles: () => {
+          return Persist.getOpenFileIds().map((id) => Persist.getFileById(id)).filter(Boolean);
+        },
+        getActiveId: () => persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
+        fileHasErrors: (fileId) => {
+          const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
+          return fileTabHasErrors(fileId, activeId2);
+        },
+        setTip: setTip2,
+        onSwitch: (id) => switchToFile(id),
+        onClose: (id) => closeFile(id),
+        onNew: () => newFile()
+      });
+      suiteCfgApi = create13(Object.assign({}, peelHub, {
+        projectFileText,
+        showToast,
+        belFileHealth,
+        liveFileLint,
+        cfgTabLint,
+        setTip: setTip2,
+        renderExplorerTree,
+        updateHeaderContext,
+        reloadActiveEditorFromPersist,
+        renderTabs,
+        getLibraryController
+      }));
+      uploadImportApi = create14(Object.assign({}, peelHub, {
+        showToast,
+        projectFileText,
+        switchToFile,
+        switchProjectAndReload,
+        ensureEditorMatchesFileKind,
+        updateEditorEmptyState,
+        renderTabs,
+        renderExplorerTree,
+        updateHeaderContext,
+        updateRunButtonTooltip,
+        enterEmptyProjectView,
+        enterCanvasIdleView,
+        projectIsEmpty,
+        onCfgContentChange,
+        cfgTabLint
+      }));
+      fileLifecycleApi = create15(Object.assign({}, peelHub, {
+        mountEditorFor,
+        ensurePersistForFile,
+        syncEditorCmTheme,
+        updateEditorEmptyState,
+        renderTabs,
+        renderExplorerTree,
+        updateHeaderContext,
+        updateRunButtonTooltip,
+        notifyActiveEditorView,
+        refreshInspector,
+        refreshExplorerActiveAndDiags,
+        scheduleTabLintStyles,
+        liveFileLint,
+        rememberCfgLint,
+        cfgTabLint,
+        ensureActiveCfgForDir,
+        ensureEditorMatchesFileKind,
+        showToast,
+        projectIsEmpty,
+        enterCanvasIdleView,
+        enterEmptyProjectView,
+        deleteProjectFilesById,
+        getExplorerController,
+        syncCfgEditorsAfterRewrite: uploadImportApi.syncCfgEditorsAfterRewrite
+      }));
+      explorerBootstrapApi = create16(Object.assign({}, peelHub, {
+        projectFileText,
+        showToast,
+        setTip: setTip2,
+        explorerPanelEl,
+        libraryPanelEl,
+        inspectorPanelEl,
+        inspectorProjectEmptyEl,
+        renderTabs,
+        updateHeaderContext,
+        updateRunButtonTooltip,
+        reloadActiveEditorFromPersist,
+        switchToFile,
+        ensureEditorMatchesFileKind,
+        activeCfgForDir,
+        activeCfgsForDir: activeCfgsForDir2,
+        suiteLayoutForDir,
+        explorerFileDiag,
+        bindExplorerDiagTip,
+        makeActiveCfgForFile,
+        fileContextItems,
+        explorerSelectionContextItems,
+        explorerFolderContextItems,
+        backgroundRunItems,
+        resolveAndApplyMove,
+        afterSuiteEdit,
+        applyFileReplacement,
+        executeUploadPlan,
+        exportLibraryAsNewProject,
+        projectIsEmpty,
+        projectTreeEmpty,
+        updateInspectorProjectEmpty,
+        getWorkspaceBootPending: () => workspaceBootPending,
+        restoreWorkspaceForFile
+      }));
+      menusApi = create17(Object.assign({}, peelHub, {
+        newProject,
+        newFile,
+        buildSwitchProjectSubmenu,
+        buildDeleteProjectSubmenu,
+        normalizeProjectRenameName,
+        validateProjectRenameName,
+        applyProjectRename,
+        fileInputEl: uploadImportApi.fileInputEl,
+        uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
+        folderInputEl: uploadImportApi.folderInputEl,
+        downloadCurrentFile,
+        downloadFileById,
+        downloadFolder,
+        downloadSuite,
+        suiteDownloadState,
+        deleteFileInteractive,
+        closeFile,
+        closeTabsForFiles,
+        selectionDeleteFileIds,
+        selectionDeleteDisabled,
+        deleteSelectionInteractive,
+        deleteFolderInteractive,
+        renameFolderInteractive,
+        explorerCreateMenuItems,
+        makeActiveCfgForFile,
+        moduleNameFor,
+        activeSuiteMembership,
+        activeCfgsForDir: activeCfgsForDir2,
+        afterSuiteEdit,
+        renderTabs,
+        renderExplorerTree,
+        updateHeaderContext,
+        ensureEditorMatchesFileKind,
+        showToast,
+        ensureExplorer,
+        getExplorerController,
+        editorTabsEl,
+        projectFileText
+      }));
+      create18(Object.assign({}, peelHub, {
+        toggleSidePanel,
+        toggleTheme: toggleTheme2,
+        newProject,
+        newFile,
+        fileInputEl: uploadImportApi.fileInputEl,
+        uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
+        folderInputEl: uploadImportApi.folderInputEl,
+        downloadCurrentFile,
+        editorExec,
+        moduleNameFor,
+        closeFile,
+        closeTabsForFiles,
+        activeSuiteMembership,
+        afterSuiteEdit,
+        signatureFileCount,
+        switchToFile,
+        openFileAt,
+        projectFileText
+      }));
+    }
+    __initAppPeels();
+    if (filesBtn && workspaceEl) {
+      const hideExplorerTooltipUntilLeave = wireSidebarOpenTooltip(filesBtn);
+      filesBtn.addEventListener("click", () => {
+        const wasOpen = workspaceEl.classList.contains("is-explorer-open");
+        if (!wasOpen) hideExplorerTooltipUntilLeave();
+        toggleSidePanel("explorer");
+      });
+    }
+    let suppressUnloadFlush = false;
+    function switchProjectAndReload(mutate) {
+      if (persist4) persist4.flushCheckpoint();
+      WorkspaceState.flushWorkspace();
+      suppressUnloadFlush = true;
+      try {
+        mutate();
+      } catch (e) {
+        suppressUnloadFlush = false;
+        throw e;
+      }
+      window.location.reload();
+    }
+    async function newProject(name) {
+      var projName = name;
+      if (projName == null) {
+        projName = await NamePrompt.open({
+          ariaLabel: "New project",
+          message: "New project",
+          value: Persist.DEFAULT_PROJECT_NAME,
+          selection: { start: 0, end: Persist.DEFAULT_PROJECT_NAME.length },
+          normalize: NamePrompt.defaultNormalize,
+          validate: function(n) {
+            return n ? null : "Name is required.";
+          },
+          confirmLabel: "Create"
+        });
+      }
+      if (projName === null) return;
+      switchProjectAndReload(() => Persist.newBlankProject(projName && projName.trim() || Persist.DEFAULT_PROJECT_NAME));
+    }
+    function switchToProject(id) {
+      if (id === Persist.getActiveProjectId()) return;
+      switchProjectAndReload(() => Persist.setActiveProjectId(id));
+    }
+    async function deleteProjectInteractive(id) {
+      const projects = Persist.listProjects();
+      if (projects.length <= 1) return;
+      const target = projects.find((p) => p.id === id);
+      if (!target) return;
+      if (!await ConfirmDialog.confirm({
+        subject: target.name,
+        message: "Delete this project and all of its files?",
+        ariaLabel: "Delete project"
+      })) return;
+      const wasActive = id === Persist.getActiveProjectId();
+      if (wasActive) {
+        switchProjectAndReload(() => Persist.deleteProject(id));
+        return;
+      }
+      Persist.deleteProject(id);
+      showToast('Deleted project "' + target.name + '".');
+    }
+    function buildSwitchProjectSubmenu() {
+      const projects = Persist.listProjects();
+      if (projects.length <= 1) return null;
+      const activeId2 = Persist.getActiveProjectId();
+      return projects.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map((p) => ({
+        label: p.name,
+        checked: p.id === activeId2,
+        onSelect: () => switchToProject(p.id)
+      }));
+    }
+    function buildDeleteProjectSubmenu() {
+      const projects = Persist.listProjects();
+      if (projects.length <= 1) return null;
+      const activeId2 = Persist.getActiveProjectId();
+      return projects.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map((p) => ({
+        label: p.name,
+        checked: p.id === activeId2,
+        onSelect: () => deleteProjectInteractive(p.id)
+      }));
+    }
+    function headerContextFileHint() {
+      const n = Persist.listFiles().length;
+      if (n === 0) return "No files";
+      return n === 1 ? "1 file" : n + " files";
+    }
+    function normalizeProjectRenameName(raw) {
+      if (NamePrompt.defaultNormalize) {
+        return NamePrompt.defaultNormalize(raw);
+      }
+      return String(raw || "").trim();
+    }
+    function validateProjectRenameName(name) {
+      return name ? null : "Name is required.";
+    }
+    function applyProjectRename(name) {
+      Persist.setProjectName(name);
+      updateHeaderContext();
+    }
+    let headerProjectRenameInput = null;
+    function endHeaderProjectRename() {
+      const el6 = document.getElementById("header-context");
+      if (!el6 || !headerProjectRenameInput) return;
+      const nameEl = document.createElement("span");
+      nameEl.className = "header-context-name";
+      nameEl.id = "header-context-name";
+      headerProjectRenameInput.replaceWith(nameEl);
+      headerProjectRenameInput = null;
+      el6.classList.remove("is-renaming");
+    }
+    function startHeaderProjectRename() {
+      if (headerProjectRenameInput) return;
+      const el6 = document.getElementById("header-context");
+      const nameEl = document.getElementById("header-context-name");
+      if (!el6 || !nameEl) return;
+      const initial = Persist.getProjectName();
+      el6.classList.add("is-renaming");
+      setTip2(el6, "");
+      const input2 = document.createElement("input");
+      input2.type = "text";
+      input2.className = "header-context-inline-name";
+      input2.value = initial;
+      input2.spellcheck = false;
+      input2.setAttribute("aria-label", "Project name");
+      input2.size = Math.max(initial.length, 6);
+      nameEl.replaceWith(input2);
+      headerProjectRenameInput = input2;
+      let settled = false;
+      let suppressBlurDismiss = false;
+      function dismiss4() {
+        if (settled) return;
+        settled = true;
+        endHeaderProjectRename();
+        updateHeaderContext();
+      }
+      function commit() {
+        const next = normalizeProjectRenameName(input2.value);
+        const err = validateProjectRenameName(next);
+        if (err) {
+          showToast(err, { kind: "warn" });
+          input2.classList.add("is-invalid");
+          input2.focus();
+          input2.select();
+          setTimeout(() => input2.classList.remove("is-invalid"), 400);
+          return false;
+        }
+        if (next === Persist.getProjectName()) {
+          dismiss4();
+          return true;
+        }
+        settled = true;
+        endHeaderProjectRename();
+        applyProjectRename(next);
+        return true;
+      }
+      input2.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          suppressBlurDismiss = true;
+          if (commit()) {
+            settled = true;
+          } else {
+            setTimeout(() => {
+              suppressBlurDismiss = false;
+            }, 0);
+          }
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          dismiss4();
+        }
+      });
+      input2.addEventListener("input", () => {
+        input2.size = Math.max(input2.value.length, 6);
+      });
+      input2.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+      input2.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+      });
+      input2.addEventListener("blur", () => {
+        if (settled) return;
+        setTimeout(() => {
+          if (!settled && !suppressBlurDismiss) dismiss4();
+        }, 0);
+      });
+      requestAnimationFrame(() => {
+        input2.focus();
+        input2.select();
+      });
+    }
+    function updateHeaderContext() {
+      const el6 = document.getElementById("header-context");
+      const nameEl = document.getElementById("header-context-name");
+      if (!el6 || !nameEl) return;
+      if (headerProjectRenameInput) return;
+      nameEl.textContent = Persist.getProjectName();
+      const tip = headerContextFileHint();
+      el6.setAttribute("aria-label", tip);
+      setTip2(el6, tip);
+    }
+    const headerContextEl = document.getElementById("header-context");
+    if (headerContextEl) {
+      headerContextEl.addEventListener("click", (e) => {
+        if (headerProjectRenameInput) return;
+        const nameEl = e.target.closest("#header-context-name");
+        if (!nameEl) return;
+        e.stopPropagation();
+        startHeaderProjectRename();
+      });
+    }
+    function setActiveTabErrorDot(id, hasErrors) {
+      if (!editorTabsEl) return;
+      const tab = editorTabsEl.querySelector('.editor-tab[data-file-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+      if (tab) tab.classList.toggle("has-errors", !!hasErrors);
+    }
+    onWin("beljar:file-lint", (ev) => {
+      const id = persist4 ? persist4.getCurrentFileId() : null;
+      if (!id || !ev.detail) return;
+      const file = Persist.getFileById(id);
+      if (!file) return;
+      if (/\.cfg$/i.test(file.name)) {
+        rememberCfgLint(id, ev.detail);
+        scheduleTabLintStyles();
+        return;
+      }
+      if (ProjectSource.isSignaturePath(file.name)) {
+        const health = belFileHealth(id);
+        const errs = health.errors || 0;
+        const warns = health.warnings || 0;
+        setActiveTabErrorDot(id, errs > 0);
+        if (getExplorerController() && typeof getExplorerController().setFileDiag === "function") {
+          getExplorerController().setFileDiag(id, errs > 0 ? "error" : warns > 0 ? "warning" : null);
+        }
+      }
+    });
+    onWin("beljar:explorer-health-changed", () => scheduleTabLintStyles());
+    onWin("beljar:development-checked", () => scheduleTabLintStyles());
+    if (activeFileId2) Persist.openFile(activeFileId2);
+    registerWorkspaceProviders();
     renderTabs();
     renderExplorerTree();
     updateHeaderContext();
-  }
-  function enterEmptyProjectView() {
-    if (Persist.clearEmptyFolders) {
-      Persist.clearEmptyFolders();
-    }
-    enterCanvasIdleView();
-  }
-  function ensurePersistForFile(id) {
-    if (!id) return null;
-    if (!persist4) persist4 = Persist.createPersist({ documentId: id });
-    return persist4;
-  }
-  function syncEditorCmTheme() {
-    if (!editor || typeof editor.setDarkTheme !== "function") return;
-    editor.setDarkTheme(!document.documentElement.classList.contains("light"));
-  }
-  window.syncEditorCmTheme = syncEditorCmTheme;
-  if (editor) syncEditorCmTheme();
-  function onWorkspaceLayoutResize() {
-    if (editor && editor.getView) editor.getView().requestMeasure();
-  }
-  WorkspaceSplit.init({ onResize: onWorkspaceLayoutResize });
-  SidePanelResize.init({ onResize: onWorkspaceLayoutResize });
-  var restoredTranscript = typeof ReplPersist !== "undefined" && ReplPersist.restore && ReplPersist.restore();
-  if (!restoredTranscript) ReplOutput.insertWelcomeBanner();
-  BelugaRun.init();
-  Toasts.init();
-  Notifications.init();
-  if (typeof Persist !== "undefined") {
-    if (Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
-    if (Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
-  }
-  function shouldApplyEditorPrefs(key) {
-    if (!key || key === "layout-reset") return false;
-    if (key === "theme") return false;
-    if (/^repl-/.test(key) || key === "repl-reset") return false;
-    if (/^beluga-/.test(key) || key === "beluga-reset") return false;
-    if (key === "check-aggressiveness" || key === "suite-check") return false;
-    if (/^autosolve-/.test(key) || /^harpoon-/.test(key) || key === "harpoon-reset") return false;
-    if (key === "workspace-reset" || key === "restore-panels" || key === "library-expand-default" || key === "inspector-follow") return false;
-    if (key === "motion-pref" || key === "toast-duration") return false;
-    if (/^alias/.test(key) || key === "aliases-reset") return false;
-    return true;
-  }
-  function applyLiveSettings2(key) {
-    if (!key || key === "layout-reset") return;
-    if (key === "theme" || key === "appearance-reset" || key === "settings-import") syncEditorCmTheme();
-    if (key === "appearance-reset" || key === "motion-pref" || key === "settings-import") {
-      if (typeof Persist !== "undefined" && Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
-    }
-    if (key === "appearance-reset" || key === "editor-reset" || key === "settings-import" || key === "editor-font-family" || key === "editor-hole-emphasis") {
-      if (typeof Persist !== "undefined" && Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
-    }
-    if (shouldApplyEditorPrefs(key) || key === "editor-reset" || key === "settings-import") {
-      if (typeof BelEditor !== "undefined" && typeof BelEditor.applyEditorPrefs === "function") {
-        BelEditor.applyEditorPrefs();
-      }
-    }
-    if (key === "keymap-style" || key === "status-strip" || key === "keybindings-reset" || key === "settings-import" || key === "settings-reset-all") {
-      if (typeof StatusStrip !== "undefined" && typeof StatusStrip.apply === "function") StatusStrip.apply();
-    }
-    if ((key === "library-expand-default" || key === "workspace-reset") && getLibraryController() && typeof getLibraryController().refresh === "function") {
-      getLibraryController().refresh();
-    }
-    if (key === "repl-history-persist" || key === "repl-reset") {
-      if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
-        ReplPersist.saveNow();
-      }
-    }
-  }
-  window.beljarApplyLiveSettings = applyLiveSettings2;
-  window.addEventListener("beljar:settings-changed", function(e) {
-    applyLiveSettings2(e && e.detail ? e.detail.key : "");
-  });
-  function showToast(message2, opts) {
-    return Toasts.show(message2, opts);
-  }
-  if (!editor && (typeof BelEditor === "undefined" || !BelEditor.mount)) {
-    {
-      Toasts.error("CodeMirror editor bundle failed to load.", { duration: 0, closable: true });
-    }
-  }
-  function setTip2(el6, text, opts) {
-    if (!el6 || typeof Tooltips === "undefined" || !Tooltips.set) return;
-    Tooltips.set(el6, text, opts);
-  }
-  function toggleTheme() {
-    document.documentElement.classList.toggle("light");
-    var isLight = document.documentElement.classList.contains("light");
-    Persist.writeStoredTheme(isLight ? "light" : "dark");
-    syncEditorCmTheme();
-  }
-  window.Repl = {
-    appendBuffered: function(text, kind) {
-      ReplOutput.appendOutput(text, kind || "auto");
-    }
-  };
-  window.BelJarRepl = window.Repl;
-  var filesBtn = document.getElementById("btn-files");
-  var inspectorBtn = document.getElementById("btn-inspector");
-  var libraryBtn = document.getElementById("btn-library");
-  var harpoonBtn = document.getElementById("btn-harpoon");
-  var workspaceEl = document.querySelector(".workspace");
-  var explorerPanelEl = document.getElementById("explorer-panel");
-  var inspectorPanelEl = document.getElementById("inspector-panel");
-  var libraryPanelEl = document.getElementById("library-panel");
-  var harpoonPanelEl = document.getElementById("harpoon-panel");
-  var SIDE_PANELS = {
-    explorer: {
-      btn: filesBtn,
-      panel: explorerPanelEl,
-      openClass: "is-explorer-open",
-      writeOpen: (open10) => {
-        Persist.writeStoredExplorerOpen(open10);
-      }
-    },
-    inspector: {
-      btn: inspectorBtn,
-      panel: inspectorPanelEl,
-      openClass: "is-inspector-open",
-      writeOpen: (open10) => {
-        Persist.writeStoredInspectorOpen(open10);
-      }
-    },
-    library: {
-      btn: libraryBtn,
-      panel: libraryPanelEl,
-      openClass: "is-library-open",
-      writeOpen: (open10) => {
-        Persist.writeStoredLibraryOpen(open10);
-        if (!open10) {
-          const lib = getLibraryController();
-          if (lib && typeof lib.collapseFolders === "function") lib.collapseFolders();
-        }
-      }
-    },
-    harpoon: {
-      btn: harpoonBtn,
-      panel: harpoonPanelEl,
-      openClass: "is-harpoon-open",
-      writeOpen: (open10) => {
-        if (Persist.writeStoredHarpoonOpen) {
-          Persist.writeStoredHarpoonOpen(open10);
-        }
-      }
-    }
-  };
-  var editorTabsEl = document.getElementById("editor-tabs");
-  var cfgTabLint = /* @__PURE__ */ new Map();
-  function liveFileLint() {
-    const ed = window.CurrentEditor;
-    if (!ed || typeof ed.getIdeStatus !== "function") return null;
-    const st = ed.getIdeStatus();
-    return { errors: st.errors, warnings: st.warnings };
-  }
-  function belFileHealth(fileId) {
-    if (typeof BelEditor === "undefined" || typeof BelEditor.fileHealthFor !== "function") {
-      return { errors: 0, warnings: 0, items: [] };
-    }
-    const activeId2 = Persist.getActiveFileId();
-    let live2 = null;
-    if (fileId === activeId2 && window.CurrentEditor?.getValue) {
-      live2 = window.CurrentEditor.getValue();
-    }
-    return BelEditor.fileHealthFor(fileId, live2);
-  }
-  function fileLintCounts(fileId, activeId2) {
-    const file = Persist.getFileById(fileId);
-    const name = file?.name || "";
-    if (/\.cfg$/i.test(name)) {
-      return fileId === activeId2 ? liveFileLint() : cfgTabLint.get(fileId);
-    }
-    if (ProjectSource.isSignaturePath(name)) {
-      return belFileHealth(fileId);
-    }
-    return null;
-  }
-  function fileTabHasErrors(fileId, activeId2) {
-    const lint = fileLintCounts(fileId, activeId2);
-    return !!(lint && lint.errors > 0);
-  }
-  function rememberCfgLint(fileId, lint) {
-    if (!fileId || !lint) return;
-    cfgTabLint.set(fileId, {
-      errors: lint.errors || 0,
-      warnings: lint.warnings || 0,
-      items: Array.isArray(lint.items) ? lint.items : cfgTabLint.get(fileId)?.items
-    });
-  }
-  function lintTooltipHead(items3) {
-    if (!items3 || !items3.length) return "";
-    const errs = items3.filter((d) => d.kind === "error").length;
-    const warns = items3.length - errs;
-    const parts = [];
-    if (errs) parts.push(errs === 1 ? "1 error" : `${errs} errors`);
-    if (warns) parts.push(warns === 1 ? "1 warning" : `${warns} warnings`);
-    return parts.join(" \xB7 ");
-  }
-  function explorerFileDiagItems(fileId, fileName) {
-    const low = String(fileName || "").toLowerCase();
-    if (low.endsWith(".cfg")) {
-      const activeId2 = Persist.getActiveFileId();
-      const ed = window.CurrentEditor;
-      if (fileId === activeId2 && ed && typeof ed.getLintTooltipItems === "function") {
-        return ed.getLintTooltipItems();
-      }
-      const cached = cfgTabLint.get(fileId);
-      return cached && Array.isArray(cached.items) ? cached.items : null;
-    }
-    if (ProjectSource.isSignaturePath(fileName)) {
-      const health = belFileHealth(fileId);
-      return health?.items?.length ? health.items : null;
-    }
-    return null;
-  }
-  function bindExplorerDiagTip(el6, fileId, fileName, diag) {
-    if (!el6 || !diag) return;
-    el6.removeAttribute("title");
-    const items3 = explorerFileDiagItems(fileId, fileName);
-    if (items3 && items3.length) {
-      el6.setAttribute("data-tooltip", lintTooltipHead(items3));
-      el6.setAttribute("data-tooltip-head", "");
-      el6.setAttribute("data-tooltip-errors", JSON.stringify(items3));
-      if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el6);
-      return;
-    }
-    setTip2(el6, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
-  }
-  function updateTabLintStyles() {
-    if (!editorTabsEl) return;
-    const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
-    editorTabsEl.querySelectorAll(".editor-tab[data-file-id]").forEach((tab) => {
-      const id = tab.getAttribute("data-file-id");
-      tab.classList.toggle("has-errors", fileTabHasErrors(id, activeId2));
-    });
-    if (getExplorerController() && typeof getExplorerController().refreshDiags === "function") {
-      getExplorerController().refreshDiags();
-    }
-  }
-  var tabLintStyleRaf = 0;
-  function scheduleTabLintStyles() {
-    if (tabLintStyleRaf) return;
-    tabLintStyleRaf = requestAnimationFrame(() => {
-      tabLintStyleRaf = 0;
-      updateTabLintStyles();
-    });
-  }
-  var suiteCfgApi = null;
-  var explorerBootstrapApi = null;
-  var fileLifecycleApi = null;
-  var uploadImportApi = null;
-  var menusApi = null;
-  var emptyStateApi = null;
-  var sidePanelsApi = null;
-  var fileTabsApi = null;
-  function getExplorerController() {
-    return explorerBootstrapApi && explorerBootstrapApi.getExplorerController ? explorerBootstrapApi.getExplorerController() : null;
-  }
-  function getLibraryController() {
-    return explorerBootstrapApi && explorerBootstrapApi.getLibraryController ? explorerBootstrapApi.getLibraryController() : null;
-  }
-  function ensureProjectActiveCfgs() {
-    if (suiteCfgApi) return suiteCfgApi.ensureProjectActiveCfgs.apply(suiteCfgApi, arguments);
-    if (typeof ProjectSource.inferActiveCfgByDir !== "function") return;
-    if (typeof Persist.backfillActiveCfgByDir !== "function") return;
-    const files = Persist.listFiles();
-    const getText = (id) => projectFileText(id);
-    Persist.backfillActiveCfgByDir(ProjectSource.inferActiveCfgByDir(files, getText));
-  }
-  function ensureActiveCfgForDir() {
-    return suiteCfgApi.ensureActiveCfgForDir.apply(suiteCfgApi, arguments);
-  }
-  function activeCfgForDir() {
-    return suiteCfgApi.activeCfgForDir.apply(suiteCfgApi, arguments);
-  }
-  function activeCfgsForDir2() {
-    return suiteCfgApi.activeCfgsForDir.apply(suiteCfgApi, arguments);
-  }
-  function suiteLayoutForDir() {
-    return suiteCfgApi.suiteLayoutForDir.apply(suiteCfgApi, arguments);
-  }
-  function reconcileActiveCfgsInDir() {
-    return suiteCfgApi.reconcileActiveCfgsInDir.apply(suiteCfgApi, arguments);
-  }
-  function makeActiveCfgForFile() {
-    return suiteCfgApi.makeActiveCfgForFile.apply(suiteCfgApi, arguments);
-  }
-  function moduleNameFor() {
-    return suiteCfgApi.moduleNameFor.apply(suiteCfgApi, arguments);
-  }
-  function activeSuiteMembership() {
-    return suiteCfgApi.activeSuiteMembership.apply(suiteCfgApi, arguments);
-  }
-  function explorerFileDiag() {
-    return suiteCfgApi.explorerFileDiag.apply(suiteCfgApi, arguments);
-  }
-  function afterSuiteEdit() {
-    return suiteCfgApi.afterSuiteEdit.apply(suiteCfgApi, arguments);
-  }
-  function activeFileRecord() {
-    return suiteCfgApi.activeFileRecord.apply(suiteCfgApi, arguments);
-  }
-  function updateRunButtonTooltip() {
-    return suiteCfgApi.updateRunButtonTooltip.apply(suiteCfgApi, arguments);
-  }
-  function explorerCreateMenuItems() {
-    return explorerBootstrapApi.explorerCreateMenuItems.apply(explorerBootstrapApi, arguments);
-  }
-  function renameFolderInteractive() {
-    return explorerBootstrapApi.renameFolderInteractive.apply(explorerBootstrapApi, arguments);
-  }
-  function ensureExplorer() {
-    return explorerBootstrapApi.ensureExplorer.apply(explorerBootstrapApi, arguments);
-  }
-  function ensureLibrary() {
-    return explorerBootstrapApi.ensureLibrary.apply(explorerBootstrapApi, arguments);
-  }
-  function renderExplorerTree() {
-    return explorerBootstrapApi.renderExplorerTree.apply(explorerBootstrapApi, arguments);
-  }
-  function refreshExplorerActiveAndDiags() {
-    return explorerBootstrapApi.refreshExplorerActiveAndDiags.apply(explorerBootstrapApi, arguments);
-  }
-  function refreshInspector() {
-    return explorerBootstrapApi.refreshInspector.apply(explorerBootstrapApi, arguments);
-  }
-  function notifyActiveEditorView() {
-    return explorerBootstrapApi.notifyActiveEditorView.apply(explorerBootstrapApi, arguments);
-  }
-  function switchToFile() {
-    return fileLifecycleApi.switchToFile.apply(fileLifecycleApi, arguments);
-  }
-  function openFileAt() {
-    return fileLifecycleApi.openFileAt.apply(fileLifecycleApi, arguments);
-  }
-  function newFile() {
-    return fileLifecycleApi.newFile.apply(fileLifecycleApi, arguments);
-  }
-  function closeFile() {
-    return fileLifecycleApi.closeFile.apply(fileLifecycleApi, arguments);
-  }
-  function deleteFileInteractive() {
-    return fileLifecycleApi.deleteFileInteractive.apply(fileLifecycleApi, arguments);
-  }
-  function closeTabsForFiles() {
-    return fileLifecycleApi.closeTabsForFiles.apply(fileLifecycleApi, arguments);
-  }
-  function selectionDeleteFileIds() {
-    return fileLifecycleApi.selectionDeleteFileIds.apply(fileLifecycleApi, arguments);
-  }
-  function selectionDeleteDisabled() {
-    return fileLifecycleApi.selectionDeleteDisabled.apply(fileLifecycleApi, arguments);
-  }
-  function deleteSelectionInteractive() {
-    return fileLifecycleApi.deleteSelectionInteractive.apply(fileLifecycleApi, arguments);
-  }
-  function deleteFolderInteractive() {
-    return fileLifecycleApi.deleteFolderInteractive.apply(fileLifecycleApi, arguments);
-  }
-  function exportLibraryAsNewProject() {
-    return uploadImportApi.exportLibraryAsNewProject.apply(uploadImportApi, arguments);
-  }
-  function applyFileReplacement() {
-    return uploadImportApi.applyFileReplacement.apply(uploadImportApi, arguments);
-  }
-  function deleteProjectFilesById() {
-    return uploadImportApi.deleteProjectFilesById.apply(uploadImportApi, arguments);
-  }
-  function executeUploadPlan() {
-    return uploadImportApi.executeUploadPlan.apply(uploadImportApi, arguments);
-  }
-  function reloadActiveEditorFromPersist() {
-    return uploadImportApi.reloadActiveEditorFromPersist.apply(uploadImportApi, arguments);
-  }
-  function resolveAndApplyMove() {
-    return uploadImportApi.resolveAndApplyMove.apply(uploadImportApi, arguments);
-  }
-  function downloadCurrentFile() {
-    return uploadImportApi.downloadCurrentFile.apply(uploadImportApi, arguments);
-  }
-  function downloadFileById() {
-    return uploadImportApi.downloadFileById.apply(uploadImportApi, arguments);
-  }
-  function downloadFolder() {
-    return uploadImportApi.downloadFolder.apply(uploadImportApi, arguments);
-  }
-  function downloadSuite() {
-    return uploadImportApi.downloadSuite.apply(uploadImportApi, arguments);
-  }
-  function suiteDownloadState() {
-    return uploadImportApi.suiteDownloadState.apply(uploadImportApi, arguments);
-  }
-  function signatureFileCount() {
-    return menusApi.signatureFileCount.apply(menusApi, arguments);
-  }
-  function explorerSelectionContextItems() {
-    return menusApi.explorerSelectionContextItems.apply(menusApi, arguments);
-  }
-  function fileContextItems() {
-    return menusApi.fileContextItems.apply(menusApi, arguments);
-  }
-  function explorerFolderContextItems() {
-    return menusApi.explorerFolderContextItems.apply(menusApi, arguments);
-  }
-  function backgroundRunItems() {
-    return menusApi.backgroundRunItems.apply(menusApi, arguments);
-  }
-  function editorExec() {
-    return menusApi.editorExec.apply(menusApi, arguments);
-  }
-  function updateInspectorProjectEmpty() {
-    return emptyStateApi.updateInspectorProjectEmpty.apply(emptyStateApi, arguments);
-  }
-  function updateEditorEmptyState() {
-    return emptyStateApi.updateEditorEmptyState.apply(emptyStateApi, arguments);
-  }
-  function setSidePanelOpen() {
-    return sidePanelsApi.setSidePanelOpen.apply(sidePanelsApi, arguments);
-  }
-  function closeOtherSidePanels() {
-    return sidePanelsApi.closeOtherSidePanels.apply(sidePanelsApi, arguments);
-  }
-  function notifySidePanelLayout() {
-    return sidePanelsApi.notifySidePanelLayout.apply(sidePanelsApi, arguments);
-  }
-  function toggleSidePanel() {
-    return sidePanelsApi.toggleSidePanel.apply(sidePanelsApi, arguments);
-  }
-  function wireSidebarOpenTooltip() {
-    return sidePanelsApi.wireSidebarOpenTooltip.apply(sidePanelsApi, arguments);
-  }
-  function renderTabs() {
-    return fileTabsApi.renderTabs.apply(fileTabsApi, arguments);
-  }
-  var peelHub = {
-    getEditor: () => editor,
-    setEditor: (ed) => {
-      editor = ed;
-      window.CurrentEditor = ed;
-      window.BelJarCurrentEditor = ed;
-    },
-    getPersist: () => persist4,
-    setPersist: (p) => {
-      persist4 = p;
-    }
-  };
-  function __initAppPeels() {
-    emptyStateApi = create10({
-      getInspectorPanelEl: () => inspectorPanelEl,
-      getInspectorProjectEmptyEl: () => inspectorProjectEmptyEl,
-      getEditorEmptyEl: () => editorEmptyEl,
-      getEditorMount: () => editorMount,
-      projectTreeEmpty,
-      editorCanvasIdle
-    });
-    sidePanelsApi = create11({
-      workspaceEl,
-      panels: SIDE_PANELS,
-      onLayout: () => {
-        if (editor && editor.getView) editor.getView().requestMeasure();
-      },
-      scheduleWorkspaceSave: () => {
-        WorkspaceState.scheduleSave();
-      }
-    });
-    fileTabsApi = create12({
-      editorTabsEl,
-      listOpenFiles: () => {
-        return Persist.getOpenFileIds().map((id) => Persist.getFileById(id)).filter(Boolean);
-      },
-      getActiveId: () => persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
-      fileHasErrors: (fileId) => {
-        const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
-        return fileTabHasErrors(fileId, activeId2);
-      },
-      setTip: setTip2,
-      onSwitch: (id) => switchToFile(id),
-      onClose: (id) => closeFile(id),
-      onNew: () => newFile()
-    });
-    suiteCfgApi = create13(Object.assign({}, peelHub, {
-      projectFileText,
-      showToast,
-      belFileHealth,
-      liveFileLint,
-      cfgTabLint,
-      setTip: setTip2,
-      renderExplorerTree,
-      updateHeaderContext,
-      reloadActiveEditorFromPersist,
-      renderTabs,
-      getLibraryController
-    }));
-    uploadImportApi = create14(Object.assign({}, peelHub, {
-      showToast,
-      projectFileText,
-      switchToFile,
-      switchProjectAndReload,
-      ensureEditorMatchesFileKind,
-      updateEditorEmptyState,
-      renderTabs,
-      renderExplorerTree,
-      updateHeaderContext,
-      updateRunButtonTooltip,
-      enterEmptyProjectView,
-      enterCanvasIdleView,
-      projectIsEmpty,
-      onCfgContentChange,
-      cfgTabLint
-    }));
-    fileLifecycleApi = create15(Object.assign({}, peelHub, {
-      mountEditorFor,
-      ensurePersistForFile,
-      syncEditorCmTheme,
-      updateEditorEmptyState,
-      renderTabs,
-      renderExplorerTree,
-      updateHeaderContext,
-      updateRunButtonTooltip,
-      notifyActiveEditorView,
-      refreshInspector,
-      refreshExplorerActiveAndDiags,
-      scheduleTabLintStyles,
-      liveFileLint,
-      rememberCfgLint,
-      cfgTabLint,
-      ensureActiveCfgForDir,
-      ensureEditorMatchesFileKind,
-      showToast,
-      projectIsEmpty,
-      enterCanvasIdleView,
-      enterEmptyProjectView,
-      deleteProjectFilesById,
-      getExplorerController,
-      syncCfgEditorsAfterRewrite: uploadImportApi.syncCfgEditorsAfterRewrite
-    }));
-    explorerBootstrapApi = create16(Object.assign({}, peelHub, {
-      projectFileText,
-      showToast,
-      setTip: setTip2,
-      explorerPanelEl,
-      libraryPanelEl,
-      inspectorPanelEl,
-      inspectorProjectEmptyEl,
-      renderTabs,
-      updateHeaderContext,
-      updateRunButtonTooltip,
-      reloadActiveEditorFromPersist,
-      switchToFile,
-      ensureEditorMatchesFileKind,
-      activeCfgForDir,
-      activeCfgsForDir: activeCfgsForDir2,
-      suiteLayoutForDir,
-      explorerFileDiag,
-      bindExplorerDiagTip,
-      makeActiveCfgForFile,
-      fileContextItems,
-      explorerSelectionContextItems,
-      explorerFolderContextItems,
-      backgroundRunItems,
-      resolveAndApplyMove,
-      afterSuiteEdit,
-      applyFileReplacement,
-      executeUploadPlan,
-      exportLibraryAsNewProject,
-      projectIsEmpty,
-      projectTreeEmpty,
-      updateInspectorProjectEmpty,
-      getWorkspaceBootPending: () => workspaceBootPending,
-      restoreWorkspaceForFile
-    }));
-    menusApi = create17(Object.assign({}, peelHub, {
-      newProject,
-      newFile,
-      buildSwitchProjectSubmenu,
-      buildDeleteProjectSubmenu,
-      normalizeProjectRenameName,
-      validateProjectRenameName,
-      applyProjectRename,
-      fileInputEl: uploadImportApi.fileInputEl,
-      uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
-      folderInputEl: uploadImportApi.folderInputEl,
-      downloadCurrentFile,
-      downloadFileById,
-      downloadFolder,
-      downloadSuite,
-      suiteDownloadState,
-      deleteFileInteractive,
-      closeFile,
-      closeTabsForFiles,
-      selectionDeleteFileIds,
-      selectionDeleteDisabled,
-      deleteSelectionInteractive,
-      deleteFolderInteractive,
-      renameFolderInteractive,
-      explorerCreateMenuItems,
-      makeActiveCfgForFile,
-      moduleNameFor,
-      activeSuiteMembership,
-      activeCfgsForDir: activeCfgsForDir2,
-      afterSuiteEdit,
-      renderTabs,
-      renderExplorerTree,
-      updateHeaderContext,
-      ensureEditorMatchesFileKind,
-      showToast,
-      ensureExplorer,
-      getExplorerController,
-      editorTabsEl,
-      projectFileText
-    }));
-    create18(Object.assign({}, peelHub, {
-      toggleSidePanel,
-      toggleTheme,
-      newProject,
-      newFile,
-      fileInputEl: uploadImportApi.fileInputEl,
-      uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
-      folderInputEl: uploadImportApi.folderInputEl,
-      downloadCurrentFile,
-      editorExec,
-      moduleNameFor,
-      closeFile,
-      closeTabsForFiles,
-      activeSuiteMembership,
-      afterSuiteEdit,
-      signatureFileCount,
-      switchToFile,
-      openFileAt,
-      projectFileText
-    }));
-  }
-  __initAppPeels();
-  if (filesBtn && workspaceEl) {
-    const hideExplorerTooltipUntilLeave = wireSidebarOpenTooltip(filesBtn);
-    filesBtn.addEventListener("click", () => {
-      const wasOpen = workspaceEl.classList.contains("is-explorer-open");
-      if (!wasOpen) hideExplorerTooltipUntilLeave();
-      toggleSidePanel("explorer");
-    });
-  }
-  var suppressUnloadFlush = false;
-  function switchProjectAndReload(mutate) {
-    if (persist4) persist4.flushCheckpoint();
-    WorkspaceState.flushWorkspace();
-    suppressUnloadFlush = true;
-    try {
-      mutate();
-    } catch (e) {
-      suppressUnloadFlush = false;
-      throw e;
-    }
-    window.location.reload();
-  }
-  async function newProject(name) {
-    var projName = name;
-    if (projName == null) {
-      projName = await NamePrompt.open({
-        ariaLabel: "New project",
-        message: "New project",
-        value: Persist.DEFAULT_PROJECT_NAME,
-        selection: { start: 0, end: Persist.DEFAULT_PROJECT_NAME.length },
-        normalize: NamePrompt.defaultNormalize,
-        validate: function(n) {
-          return n ? null : "Name is required.";
-        },
-        confirmLabel: "Create"
-      });
-    }
-    if (projName === null) return;
-    switchProjectAndReload(() => Persist.newBlankProject(projName && projName.trim() || Persist.DEFAULT_PROJECT_NAME));
-  }
-  function switchToProject(id) {
-    if (id === Persist.getActiveProjectId()) return;
-    switchProjectAndReload(() => Persist.setActiveProjectId(id));
-  }
-  async function deleteProjectInteractive(id) {
-    const projects = Persist.listProjects();
-    if (projects.length <= 1) return;
-    const target = projects.find((p) => p.id === id);
-    if (!target) return;
-    if (!await ConfirmDialog.confirm({
-      subject: target.name,
-      message: "Delete this project and all of its files?",
-      ariaLabel: "Delete project"
-    })) return;
-    const wasActive = id === Persist.getActiveProjectId();
-    if (wasActive) {
-      switchProjectAndReload(() => Persist.deleteProject(id));
-      return;
-    }
-    Persist.deleteProject(id);
-    showToast('Deleted project "' + target.name + '".');
-  }
-  function buildSwitchProjectSubmenu() {
-    const projects = Persist.listProjects();
-    if (projects.length <= 1) return null;
-    const activeId2 = Persist.getActiveProjectId();
-    return projects.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map((p) => ({
-      label: p.name,
-      checked: p.id === activeId2,
-      onSelect: () => switchToProject(p.id)
-    }));
-  }
-  function buildDeleteProjectSubmenu() {
-    const projects = Persist.listProjects();
-    if (projects.length <= 1) return null;
-    const activeId2 = Persist.getActiveProjectId();
-    return projects.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map((p) => ({
-      label: p.name,
-      checked: p.id === activeId2,
-      onSelect: () => deleteProjectInteractive(p.id)
-    }));
-  }
-  function headerContextFileHint() {
-    const n = Persist.listFiles().length;
-    if (n === 0) return "No files";
-    return n === 1 ? "1 file" : n + " files";
-  }
-  function normalizeProjectRenameName(raw) {
-    if (NamePrompt.defaultNormalize) {
-      return NamePrompt.defaultNormalize(raw);
-    }
-    return String(raw || "").trim();
-  }
-  function validateProjectRenameName(name) {
-    return name ? null : "Name is required.";
-  }
-  function applyProjectRename(name) {
-    Persist.setProjectName(name);
-    updateHeaderContext();
-  }
-  var headerProjectRenameInput = null;
-  function endHeaderProjectRename() {
-    const el6 = document.getElementById("header-context");
-    if (!el6 || !headerProjectRenameInput) return;
-    const nameEl = document.createElement("span");
-    nameEl.className = "header-context-name";
-    nameEl.id = "header-context-name";
-    headerProjectRenameInput.replaceWith(nameEl);
-    headerProjectRenameInput = null;
-    el6.classList.remove("is-renaming");
-  }
-  function startHeaderProjectRename() {
-    if (headerProjectRenameInput) return;
-    const el6 = document.getElementById("header-context");
-    const nameEl = document.getElementById("header-context-name");
-    if (!el6 || !nameEl) return;
-    const initial = Persist.getProjectName();
-    el6.classList.add("is-renaming");
-    setTip2(el6, "");
-    const input2 = document.createElement("input");
-    input2.type = "text";
-    input2.className = "header-context-inline-name";
-    input2.value = initial;
-    input2.spellcheck = false;
-    input2.setAttribute("aria-label", "Project name");
-    input2.size = Math.max(initial.length, 6);
-    nameEl.replaceWith(input2);
-    headerProjectRenameInput = input2;
-    let settled = false;
-    let suppressBlurDismiss = false;
-    function dismiss4() {
-      if (settled) return;
-      settled = true;
-      endHeaderProjectRename();
-      updateHeaderContext();
-    }
-    function commit() {
-      const next = normalizeProjectRenameName(input2.value);
-      const err = validateProjectRenameName(next);
-      if (err) {
-        showToast(err, { kind: "warn" });
-        input2.classList.add("is-invalid");
-        input2.focus();
-        input2.select();
-        setTimeout(() => input2.classList.remove("is-invalid"), 400);
-        return false;
-      }
-      if (next === Persist.getProjectName()) {
-        dismiss4();
-        return true;
-      }
-      settled = true;
-      endHeaderProjectRename();
-      applyProjectRename(next);
-      return true;
-    }
-    input2.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Enter") {
-        e.preventDefault();
-        suppressBlurDismiss = true;
-        if (commit()) {
-          settled = true;
-        } else {
-          setTimeout(() => {
-            suppressBlurDismiss = false;
-          }, 0);
-        }
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        dismiss4();
-      }
-    });
-    input2.addEventListener("input", () => {
-      input2.size = Math.max(input2.value.length, 6);
-    });
-    input2.addEventListener("click", (e) => {
-      e.stopPropagation();
-    });
-    input2.addEventListener("pointerdown", (e) => {
-      e.stopPropagation();
-    });
-    input2.addEventListener("blur", () => {
-      if (settled) return;
-      setTimeout(() => {
-        if (!settled && !suppressBlurDismiss) dismiss4();
-      }, 0);
-    });
+    updateEditorEmptyState();
+    updateInspectorProjectEmpty();
+    if (editor) notifyActiveEditorView();
     requestAnimationFrame(() => {
-      input2.focus();
-      input2.select();
-    });
-  }
-  function updateHeaderContext() {
-    const el6 = document.getElementById("header-context");
-    const nameEl = document.getElementById("header-context-name");
-    if (!el6 || !nameEl) return;
-    if (headerProjectRenameInput) return;
-    nameEl.textContent = Persist.getProjectName();
-    const tip = headerContextFileHint();
-    el6.setAttribute("aria-label", tip);
-    setTip2(el6, tip);
-  }
-  var headerContextEl = document.getElementById("header-context");
-  if (headerContextEl) {
-    headerContextEl.addEventListener("click", (e) => {
-      if (headerProjectRenameInput) return;
-      const nameEl = e.target.closest("#header-context-name");
-      if (!nameEl) return;
-      e.stopPropagation();
-      startHeaderProjectRename();
-    });
-  }
-  function setActiveTabErrorDot(id, hasErrors) {
-    if (!editorTabsEl) return;
-    const tab = editorTabsEl.querySelector('.editor-tab[data-file-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
-    if (tab) tab.classList.toggle("has-errors", !!hasErrors);
-  }
-  window.addEventListener("beljar:file-lint", (ev) => {
-    const id = persist4 ? persist4.getCurrentFileId() : null;
-    if (!id || !ev.detail) return;
-    const file = Persist.getFileById(id);
-    if (!file) return;
-    if (/\.cfg$/i.test(file.name)) {
-      rememberCfgLint(id, ev.detail);
-      scheduleTabLintStyles();
-      return;
-    }
-    if (ProjectSource.isSignaturePath(file.name)) {
-      const health = belFileHealth(id);
-      const errs = health.errors || 0;
-      const warns = health.warnings || 0;
-      setActiveTabErrorDot(id, errs > 0);
-      if (getExplorerController() && typeof getExplorerController().setFileDiag === "function") {
-        getExplorerController().setFileDiag(id, errs > 0 ? "error" : warns > 0 ? "warning" : null);
-      }
-    }
-  });
-  window.addEventListener("beljar:explorer-health-changed", () => scheduleTabLintStyles());
-  window.addEventListener("beljar:development-checked", () => scheduleTabLintStyles());
-  if (activeFileId2) Persist.openFile(activeFileId2);
-  registerWorkspaceProviders();
-  renderTabs();
-  renderExplorerTree();
-  updateHeaderContext();
-  updateEditorEmptyState();
-  updateInspectorProjectEmpty();
-  if (editor) notifyActiveEditorView();
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      restoreWorkspaceState();
-      workspaceBootPending = false;
-    });
-  });
-  function openInspector() {
-    if (!workspaceEl) return;
-    if (!workspaceEl.classList.contains("is-inspector-open")) {
-      closeOtherSidePanels("inspector");
-      setSidePanelOpen("inspector", true);
-      notifySidePanelLayout();
-    }
-    requestAnimationFrame(() => refreshInspector({ live: true }));
-  }
-  if (inspectorBtn && workspaceEl) {
-    const hideInspectorTooltipUntilLeave = wireSidebarOpenTooltip(inspectorBtn);
-    inspectorBtn.addEventListener("click", () => {
-      const wasOpen = workspaceEl.classList.contains("is-inspector-open");
-      if (!wasOpen) hideInspectorTooltipUntilLeave();
-      const open10 = toggleSidePanel("inspector");
-      if (open10) refreshInspector({ live: true });
-    });
-    window.addEventListener("beljar:open-inspector", openInspector);
-  }
-  function openLibrary() {
-    if (!workspaceEl) return;
-    if (!workspaceEl.classList.contains("is-library-open")) {
-      closeOtherSidePanels("library");
-      setSidePanelOpen("library", true);
-      notifySidePanelLayout();
-    }
-    ensureLibrary();
-    if (getLibraryController() && typeof getLibraryController().refresh === "function") {
-      getLibraryController().refresh();
-    }
-  }
-  if (libraryBtn && workspaceEl) {
-    const hideLibraryTooltipUntilLeave = wireSidebarOpenTooltip(libraryBtn);
-    libraryBtn.addEventListener("click", () => {
-      if (Hint.dismiss) {
-        Hint.dismiss("library");
-      }
-      const wasOpen = workspaceEl.classList.contains("is-library-open");
-      if (!wasOpen) hideLibraryTooltipUntilLeave();
-      const open10 = toggleSidePanel("library");
-      if (open10) {
-        ensureLibrary();
-        if (getLibraryController() && typeof getLibraryController().refresh === "function") {
-          getLibraryController().refresh();
-        }
-      }
-    });
-    if (Hint.show) {
       requestAnimationFrame(() => {
+        restoreWorkspaceState();
+        workspaceBootPending = false;
+      });
+    });
+    function openInspector() {
+      if (!workspaceEl) return;
+      if (!workspaceEl.classList.contains("is-inspector-open")) {
+        closeOtherSidePanels("inspector");
+        setSidePanelOpen("inspector", true);
+        notifySidePanelLayout();
+      }
+      requestAnimationFrame(() => refreshInspector({ live: true }));
+    }
+    if (inspectorBtn && workspaceEl) {
+      const hideInspectorTooltipUntilLeave = wireSidebarOpenTooltip(inspectorBtn);
+      inspectorBtn.addEventListener("click", () => {
+        const wasOpen = workspaceEl.classList.contains("is-inspector-open");
+        if (!wasOpen) hideInspectorTooltipUntilLeave();
+        const open11 = toggleSidePanel("inspector");
+        if (open11) refreshInspector({ live: true });
+      });
+      onWin("beljar:open-inspector", openInspector);
+    }
+    function openLibrary() {
+      if (!workspaceEl) return;
+      if (!workspaceEl.classList.contains("is-library-open")) {
+        closeOtherSidePanels("library");
+        setSidePanelOpen("library", true);
+        notifySidePanelLayout();
+      }
+      ensureLibrary();
+      if (getLibraryController() && typeof getLibraryController().refresh === "function") {
+        getLibraryController().refresh();
+      }
+    }
+    if (libraryBtn && workspaceEl) {
+      const hideLibraryTooltipUntilLeave = wireSidebarOpenTooltip(libraryBtn);
+      libraryBtn.addEventListener("click", () => {
+        if (Hint.dismiss) {
+          Hint.dismiss("library");
+        }
+        const wasOpen = workspaceEl.classList.contains("is-library-open");
+        if (!wasOpen) hideLibraryTooltipUntilLeave();
+        const open11 = toggleSidePanel("library");
+        if (open11) {
+          ensureLibrary();
+          if (getLibraryController() && typeof getLibraryController().refresh === "function") {
+            getLibraryController().refresh();
+          }
+        }
+      });
+      if (Hint.show) {
         requestAnimationFrame(() => {
-          Hint.show({
-            id: "library",
-            anchor: libraryBtn,
-            text: "Check the library to view or insert Beluga examples",
-            onClick: openLibrary
+          requestAnimationFrame(() => {
+            Hint.show({
+              id: "library",
+              anchor: libraryBtn,
+              text: "Check the library to view or insert Beluga examples",
+              onClick: openLibrary
+            });
           });
         });
+      }
+    }
+    ensureLibrary();
+    let harpoonPanelInited = false;
+    function ensureHarpoonPanel() {
+      if (harpoonPanelInited || typeof HarpoonPanel === "undefined") return;
+      const bodyEl3 = harpoonPanelEl && harpoonPanelEl.querySelector("#harpoon-panel-body");
+      if (!bodyEl3) return;
+      HarpoonPanel.init(bodyEl3, { panelEl: harpoonPanelEl });
+      harpoonPanelInited = true;
+    }
+    function refreshHarpoonPanelIfOpen() {
+      if (workspaceEl && workspaceEl.classList.contains("is-harpoon-open") && typeof HarpoonPanel !== "undefined" && HarpoonPanel.refresh) {
+        HarpoonPanel.refresh();
+      }
+    }
+    if (harpoonBtn && workspaceEl) {
+      const hideProofTooltipUntilLeave = wireSidebarOpenTooltip(harpoonBtn);
+      harpoonBtn.addEventListener("click", () => {
+        const wasOpen = workspaceEl.classList.contains("is-harpoon-open");
+        if (!wasOpen) hideProofTooltipUntilLeave();
+        const open11 = toggleSidePanel("harpoon");
+        if (open11) {
+          ensureHarpoonPanel();
+          refreshHarpoonPanelIfOpen();
+        }
       });
-    }
-  }
-  ensureLibrary();
-  var harpoonPanelInited = false;
-  function ensureHarpoonPanel() {
-    if (harpoonPanelInited || typeof HarpoonPanel === "undefined") return;
-    const bodyEl3 = harpoonPanelEl && harpoonPanelEl.querySelector("#harpoon-panel-body");
-    if (!bodyEl3) return;
-    HarpoonPanel.init(bodyEl3, { panelEl: harpoonPanelEl });
-    harpoonPanelInited = true;
-  }
-  function refreshHarpoonPanelIfOpen() {
-    if (workspaceEl && workspaceEl.classList.contains("is-harpoon-open") && typeof HarpoonPanel !== "undefined" && HarpoonPanel.refresh) {
-      HarpoonPanel.refresh();
-    }
-  }
-  if (harpoonBtn && workspaceEl) {
-    const hideProofTooltipUntilLeave = wireSidebarOpenTooltip(harpoonBtn);
-    harpoonBtn.addEventListener("click", () => {
-      const wasOpen = workspaceEl.classList.contains("is-harpoon-open");
-      if (!wasOpen) hideProofTooltipUntilLeave();
-      const open10 = toggleSidePanel("harpoon");
-      if (open10) {
+      let harpoonRefreshTimer = null;
+      const debouncedHarpoonRefresh = () => {
+        if (harpoonRefreshTimer) clearTimeout(harpoonRefreshTimer);
+        harpoonRefreshTimer = setTimeout(refreshHarpoonPanelIfOpen, 120);
+      };
+      onWin("beljar:doc-changed", debouncedHarpoonRefresh);
+      onWin("beljar:file-lint", debouncedHarpoonRefresh);
+      onWin("beljar:active-editor-view", debouncedHarpoonRefresh);
+      onWin("beljar:development-checked", debouncedHarpoonRefresh);
+      onWin("beljar:hole-goals-updated", debouncedHarpoonRefresh);
+      if (workspaceEl.classList.contains("is-harpoon-open")) {
         ensureHarpoonPanel();
         refreshHarpoonPanelIfOpen();
       }
-    });
-    let harpoonRefreshTimer = null;
-    const debouncedHarpoonRefresh = () => {
-      if (harpoonRefreshTimer) clearTimeout(harpoonRefreshTimer);
-      harpoonRefreshTimer = setTimeout(refreshHarpoonPanelIfOpen, 120);
-    };
-    window.addEventListener("beljar:doc-changed", debouncedHarpoonRefresh);
-    window.addEventListener("beljar:file-lint", debouncedHarpoonRefresh);
-    window.addEventListener("beljar:active-editor-view", debouncedHarpoonRefresh);
-    window.addEventListener("beljar:development-checked", debouncedHarpoonRefresh);
-    window.addEventListener("beljar:hole-goals-updated", debouncedHarpoonRefresh);
-    if (workspaceEl.classList.contains("is-harpoon-open")) {
-      ensureHarpoonPanel();
-      refreshHarpoonPanelIfOpen();
     }
-  }
-  var settingsBtn = document.getElementById("btn-settings");
-  if (settingsBtn) {
-    settingsBtn.addEventListener("click", () => {
-      SettingsUI.open();
-    });
-  }
-  var reloadBtn = document.getElementById("btn-reload");
-  if (reloadBtn) {
-    reloadBtn.addEventListener("click", () => {
-      window.location.reload();
-    });
-  }
-  document.getElementById("btn-theme").addEventListener("click", toggleTheme);
-  document.getElementById("btn-load").addEventListener("click", (e) => {
-    const file = activeFileRecord();
-    if (file && /\.cfg$/i.test(file.name)) {
-      BelugaRun.runModuleCfg(file.name);
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && file && moduleNameFor(file.id)) {
-      BelugaRun.runModule();
-      return;
-    }
-    Commands.run("run.default");
-  });
-  document.getElementById("btn-clear").addEventListener("click", () => {
-    ReplOutput.clearOutput();
-    ReplCommands.resetHistoryIndex();
-  });
-  if (btnRun2) {
-    btnRun2.addEventListener("click", () => {
-      ReplCommands.runCmd();
-    });
-  }
-  if (cmdInput) {
-    if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.bind) {
-      ReplAutocomplete.bind(cmdInput);
-    }
-    cmdInput.addEventListener("input", () => {
-      ReplCommands.resetHistoryIndex();
-      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.onInput) {
-        ReplAutocomplete.onInput();
-      } else if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.refresh) {
-        ReplAutocomplete.refresh();
+    document.getElementById("btn-load").addEventListener("click", (e) => {
+      const file = activeFileRecord();
+      if (file && /\.cfg$/i.test(file.name)) {
+        BelugaRun.runModuleCfg(file.name);
+        return;
       }
+      if ((e.ctrlKey || e.metaKey) && file && moduleNameFor(file.id)) {
+        BelugaRun.runModule();
+        return;
+      }
+      Commands.run("run.default");
     });
-    cmdInput.addEventListener("keydown", (e) => {
-      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.onKeyDown) {
-        if (ReplAutocomplete.onKeyDown(e)) {
-          e.preventDefault();
+    document.getElementById("btn-clear").addEventListener("click", () => {
+      ReplOutput.clearOutput();
+      ReplCommands.resetHistoryIndex();
+    });
+    if (btnRun2) {
+      btnRun2.addEventListener("click", () => {
+        ReplCommands.runCmd();
+      });
+    }
+    if (cmdInput) {
+      if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.bind) {
+        ReplAutocomplete.bind(cmdInput);
+      }
+      cmdInput.addEventListener("input", () => {
+        ReplCommands.resetHistoryIndex();
+        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.onInput) {
+          ReplAutocomplete.onInput();
+        } else if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.refresh) {
+          ReplAutocomplete.refresh();
+        }
+      });
+      cmdInput.addEventListener("keydown", (e) => {
+        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.onKeyDown) {
+          if (ReplAutocomplete.onKeyDown(e)) {
+            e.preventDefault();
+            return;
+          }
+        }
+        if (e.key === "Enter") {
+          if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
+            ReplAutocomplete.hide();
+          }
+          ReplCommands.runCmd();
           return;
         }
-      }
-      if (e.key === "Enter") {
-        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
-          ReplAutocomplete.hide();
+        if (e.key === "ArrowUp") {
+          if (ReplCommands.historyUp()) e.preventDefault();
+          return;
         }
-        ReplCommands.runCmd();
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        if (ReplCommands.historyUp()) e.preventDefault();
-        return;
-      }
-      if (e.key === "ArrowDown") {
-        if (ReplCommands.historyDown()) e.preventDefault();
-      }
-    });
-    cmdInput.addEventListener("blur", () => {
-      setTimeout(() => {
-        if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
-          ReplAutocomplete.hide();
+        if (e.key === "ArrowDown") {
+          if (ReplCommands.historyDown()) e.preventDefault();
         }
-      }, 120);
-    });
-  }
-  window.addEventListener("beforeunload", () => {
-    if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
-      ReplPersist.saveNow();
+      });
+      cmdInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (typeof ReplAutocomplete !== "undefined" && ReplAutocomplete.hide) {
+            ReplAutocomplete.hide();
+          }
+        }, 120);
+      });
     }
-    if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
-    WorkspaceState.flushWorkspace();
-  });
-  window.addEventListener("pagehide", () => {
-    if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
-      ReplPersist.saveNow();
-    }
-    if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
-    WorkspaceState.flushWorkspace();
-  });
-  {
-    RunProgress.bind({
-      header: document.getElementById("output-panel-header"),
-      fill: document.getElementById("output-header-progress"),
-      status: document.getElementById("output-header-status"),
-      output: document.getElementById("output")
+    onWin("beforeunload", () => {
+      if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
+        ReplPersist.saveNow();
+      }
+      if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
+      WorkspaceState.flushWorkspace();
     });
+    onWin("pagehide", () => {
+      if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
+        ReplPersist.saveNow();
+      }
+      if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
+      WorkspaceState.flushWorkspace();
+    });
+    {
+      RunProgress.bind({
+        header: document.getElementById("output-panel-header"),
+        fill: document.getElementById("output-header-progress"),
+        status: document.getElementById("output-header-status"),
+        output: document.getElementById("output")
+      });
+    }
   }
+  function unmount3() {
+    if (!mounted3) return;
+    mounted3 = false;
+    while (teardown3.length) {
+      const off = teardown3.pop();
+      try {
+        off();
+      } catch (_) {
+      }
+    }
+    const peers = [
+      globalThis.Notifications,
+      globalThis.Toasts,
+      globalThis.WorkspaceSplit,
+      globalThis.SidePanelResize,
+      globalThis.CommandPalette,
+      globalThis.HarpoonPanel,
+      globalThis.Explorer,
+      globalThis.Library
+    ];
+    for (const peer of peers) {
+      if (peer && typeof peer.dispose === "function") {
+        try {
+          peer.dispose();
+        } catch (_) {
+        }
+      }
+    }
+    if (editor && typeof editor.destroy === "function") {
+      try {
+        editor.destroy();
+      } catch (_) {
+      }
+    }
+    editor = null;
+    window.CurrentEditor = null;
+    window.BelJarCurrentEditor = null;
+  }
+  window.App = {
+    mount: mount2,
+    unmount: unmount3,
+    isMounted: () => mounted3,
+    // Test seam: how many registrations unmount still has to undo.
+    pendingTeardown: () => teardown3.length
+  };
+  window.BelJarApp = window.App;
+  mount2();
 
   // js/compat/beljar-window-aliases.mjs
   var g13 = globalThis;

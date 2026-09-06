@@ -496,6 +496,9 @@ export const CATALOG = [
   { id: 'view.explorer', title: 'Toggle Explorer', section: 'View', scope: 'global', palette: true, keybindable: true },
   { id: 'view.library', title: 'Toggle Library', section: 'View', scope: 'global', palette: true, keybindable: true },
   { id: 'view.harpoon', title: 'Toggle Harpoon', section: 'View', scope: 'global', palette: true, keybindable: true },
+  // The `⟲` widget in the status strip is the same panel; a surface you can only
+  // reach by clicking is one the palette and the `:` line cannot offer.
+  { id: 'view.edit-history', title: 'Toggle Edit History', section: 'View', scope: 'global', palette: true, keybindable: true, ex: ['undolist'] },
   { id: 'view.settings', title: 'Open Settings…', section: 'View', scope: 'global', palette: true, keybindable: true },
   { id: 'fold.all', title: 'Fold All', section: 'View', scope: 'editor', palette: true, keybindable: true },
   { id: 'fold.unfold-all', title: 'Unfold All', section: 'View', scope: 'editor', palette: true, keybindable: true },

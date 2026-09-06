@@ -1,4 +1,167 @@
 (() => {
+  // js/status-strip/status-strip-history.mjs
+  var KIND_LABELS = {
+    typing: "Typing",
+    edit: "Edit",
+    format: "Format",
+    rename: "Rename",
+    hole: "Fill hole",
+    "proof-commit": "Commit proof",
+    "library-insert": "Insert from library",
+    "file-batch": "Add files",
+    "file-delete": "Delete files"
+  };
+  function labelForKind(kind) {
+    const k = String(kind || "");
+    if (KIND_LABELS[k]) return KIND_LABELS[k];
+    if (!k) return "Edit";
+    return k.charAt(0).toUpperCase() + k.slice(1).replace(/-/g, " ");
+  }
+  function baseName(path) {
+    const p = String(path || "");
+    const cut = p.lastIndexOf("/");
+    return cut >= 0 ? p.slice(cut + 1) : p;
+  }
+  function nameFromId(id) {
+    return baseName(String(id || "").replace(/^[a-z]+:\/\//i, ""));
+  }
+  function structuralOf(entry) {
+    return entry.structural || {};
+  }
+  function filesTouched(entry, nameOf2) {
+    const resolve = typeof nameOf2 === "function" ? nameOf2 : () => null;
+    const s = structuralOf(entry);
+    const names = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (name) => {
+      const n = String(name || "");
+      if (!n || seen.has(n)) return;
+      seen.add(n);
+      names.push(n);
+    };
+    for (const f of s.created || []) add(f.name);
+    for (const f of s.deleted || []) add(f.name);
+    for (const id of Object.keys(entry.files || {})) add(resolve(id) || nameFromId(id));
+    for (const id of Object.keys(s.cfg || {})) add(resolve(id) || nameFromId(id));
+    return names;
+  }
+  function plural(n, one, many) {
+    return n + " " + (n === 1 ? one : many);
+  }
+  function describeEntry(entry, nameOf2) {
+    const e = entry || {};
+    const s = structuralOf(e);
+    const names = filesTouched(e, nameOf2);
+    let label = e.label || labelForKind(e.kind);
+    if (!e.label) {
+      const created = (s.created || []).length;
+      const deleted = (s.deleted || []).length;
+      if (e.kind === "file-batch" && created) label = "Add " + plural(created, "file", "files");
+      else if (e.kind === "file-delete" && deleted) label = "Delete " + plural(deleted, "file", "files");
+      else if (created && deleted) label = "Replace " + plural(created, "file", "files");
+      else if (created) label = "Add " + plural(created, "file", "files");
+      else if (deleted) label = "Delete " + plural(deleted, "file", "files");
+    }
+    const where = names.length === 1 ? baseName(names[0]) : names.length > 1 ? plural(names.length, "file", "files") : "";
+    let preview = null;
+    if (!e.label && PREVIEWABLE[e.kind]) {
+      const ids = Object.keys(e.files || {});
+      if (ids.length === 1) {
+        const rec = e.files[ids[0]];
+        preview = changePreview(rec && rec.before, rec && rec.after);
+      }
+    }
+    return { label, where, files: names, preview };
+  }
+  var PREVIEW_MAX = 34;
+  function changePreview(before, after) {
+    const b = String(before == null ? "" : before);
+    const a = String(after == null ? "" : after);
+    if (b === a) return null;
+    let p = 0;
+    const max = Math.min(b.length, a.length);
+    while (p < max && b[p] === a[p]) p += 1;
+    let sfx = 0;
+    while (sfx < max - p && b[b.length - 1 - sfx] === a[a.length - 1 - sfx]) sfx += 1;
+    const added = a.slice(p, a.length - sfx);
+    const removed = b.slice(p, b.length - sfx);
+    const sign = added && removed ? "\xB1" : added ? "+" : "\u2212";
+    const body = added || removed;
+    const flat = body.replace(/\s+/g, " ").trim();
+    if (!flat) {
+      const n = body.length;
+      if (!n) return null;
+      return { sign, text: n === 1 ? "newline" : n + " spaces", faded: true };
+    }
+    const text = flat.length > PREVIEW_MAX ? flat.slice(0, PREVIEW_MAX - 1) + "\u2026" : flat;
+    return { sign, text };
+  }
+  var PREVIEWABLE = { typing: true, edit: true };
+  var MINUTE = 6e4;
+  var HOUR = 60 * MINUTE;
+  var DAY = 24 * HOUR;
+  function relativeTime(ts, now) {
+    const then = Number(ts);
+    const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    if (!Number.isFinite(then) || then <= 0) return "";
+    const ago = Math.max(0, at - then);
+    if (ago < MINUTE) return "now";
+    if (ago < HOUR) return Math.floor(ago / MINUTE) + "m";
+    if (ago < DAY) return Math.floor(ago / HOUR) + "h";
+    return Math.floor(ago / DAY) + "d";
+  }
+  function buildHistoryRows(undoStack, redoStack, opts) {
+    const o = opts || {};
+    const nameOf2 = o.nameOf;
+    const at = o.now;
+    const undo = Array.isArray(undoStack) ? undoStack : [];
+    const redo = Array.isArray(redoStack) ? redoStack : [];
+    const rows2 = [];
+    for (let i = 0; i < redo.length; i += 1) {
+      const entry = redo[i];
+      const d = describeEntry(entry, nameOf2);
+      rows2.push({
+        id: entry.id,
+        kind: entry.kind,
+        label: d.label,
+        preview: d.preview,
+        where: d.where,
+        files: d.files,
+        when: relativeTime(entry.ts, at),
+        direction: "redo",
+        distance: redo.length - i,
+        ahead: true
+      });
+    }
+    rows2.push({ id: "__now__", now: true, label: "Current", direction: null, distance: 0 });
+    for (let i = undo.length - 1; i >= 0; i -= 1) {
+      const entry = undo[i];
+      const d = describeEntry(entry, nameOf2);
+      rows2.push({
+        id: entry.id,
+        kind: entry.kind,
+        label: d.label,
+        preview: d.preview,
+        where: d.where,
+        files: d.files,
+        when: relativeTime(entry.ts, at),
+        direction: "undo",
+        distance: undo.length - i,
+        ahead: false
+      });
+    }
+    return rows2;
+  }
+  function historySummary(undoCount, redoCount) {
+    const u = Number(undoCount) || 0;
+    const r = Number(redoCount) || 0;
+    if (!u && !r) return "Nothing to undo yet";
+    const parts = [];
+    if (u) parts.push(plural(u, "step", "steps") + " to undo");
+    if (r) parts.push(plural(r, "step", "steps") + " to redo");
+    return parts.join(" \xB7 ");
+  }
+
   // js/status-strip/status-strip-segments.mjs
   var SEGMENT_ORDER = [
     "keymap",
@@ -12,15 +175,16 @@
     "orca",
     "symbols",
     "spacer",
+    "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "command", "goal", "holes", "problems", "orca", "spacer", "checker"],
-    standard: ["keymap", "position", "mode", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "checker"],
+    compact: ["keymap", "position", "mode", "command", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
+    standard: ["keymap", "position", "mode", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
-  function plural(n, one, many) {
+  function plural2(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
   function truncate(text, max) {
@@ -76,8 +240,8 @@
       const lines = s.selLines || 1;
       return {
         key: "selection",
-        text: lines > 1 ? plural(lines, "line", "lines") : plural(chars, "char", "chars"),
-        title: plural(chars, "character", "characters") + " selected"
+        text: lines > 1 ? plural2(lines, "line", "lines") : plural2(chars, "char", "chars"),
+        title: plural2(chars, "character", "characters") + " selected"
       };
     },
     /** The whole reason this bar exists: the goal under the caret, inline. */
@@ -103,7 +267,7 @@
       const rest = s.goal ? n - 1 : n;
       return {
         key: "holes",
-        text: s.goal ? rest > 0 ? "+" + rest + " more" : "last hole" : plural(n, "hole", "holes"),
+        text: s.goal ? rest > 0 ? "+" + rest + " more" : "last hole" : plural2(n, "hole", "holes"),
         title: "Go to the next hole",
         tone: "holes",
         action: "next-hole"
@@ -138,10 +302,37 @@
     },
     symbols(s) {
       if (!Number.isFinite(s.symbols) || s.symbols <= 0) return null;
-      return { key: "symbols", text: plural(s.symbols, "decl", "decls"), title: s.symbols + " declarations in this file" };
+      return { key: "symbols", text: plural2(s.symbols, "decl", "decls"), title: s.symbols + " declarations in this file" };
     },
     spacer() {
       return { key: "spacer", spacer: true };
+    },
+    /**
+     * How much history you are standing on, and the way into it.
+     *
+     * Earns its place the same way the rest do: how far back you can go is
+     * visible nowhere else in BelJar, and neither is the fact that a redo branch
+     * is waiting. It stays silent until there is something to say, so an untouched
+     * file carries no widget at all.
+     *
+     * The count is the UNDO depth. A second number for redo would be two figures
+     * with no way to tell which is which at 0.68rem — the branch is carried by a
+     * tone change and spelled out in the tooltip and the panel instead.
+     */
+    history(s) {
+      const undo = s.undoDepth || 0;
+      const redo = s.redoDepth || 0;
+      if (!undo && !redo) return null;
+      return {
+        key: "history",
+        text: String(undo),
+        mark: "\u27F2",
+        title: "Edit history\n\n" + historySummary(undo, redo),
+        tone: redo ? "branched" : "plain",
+        action: "edit-history",
+        mono: true,
+        pressed: !!s.historyOpen
+      };
     },
     /** Always speaks: silence about the checker reads as "is it even on?". */
     checker(s) {
@@ -155,10 +346,10 @@
         text = Number.isFinite(s.parsePercent) && s.parsePercent < 100 ? "Parsing " + s.parsePercent + "%" : "Checking\u2026";
       } else if (errors) {
         tone = "error";
-        text = plural(errors, "error", "errors");
+        text = plural2(errors, "error", "errors");
       } else if (warnings) {
         tone = "warning";
-        text = plural(warnings, "warning", "warnings");
+        text = plural2(warnings, "warning", "warnings");
       }
       const broken = errors + warnings > 0;
       return {
@@ -750,16 +941,16 @@
     if (!first || !cap) return;
     const rowH = first.offsetHeight;
     if (!rowH || cap < rowH * 2) return;
-    const rows = Math.max(2, Math.floor((cap - listPad.top - listPad.bottom) / rowH));
-    listEl.style.maxHeight = rows * rowH + listPad.top + listPad.bottom + "px";
+    const rows2 = Math.max(2, Math.floor((cap - listPad.top - listPad.bottom) / rowH));
+    listEl.style.maxHeight = rows2 * rowH + listPad.top + listPad.bottom + "px";
   }
   function anchorList() {
-    const bar = host && host.closest ? host.closest(".bj-strip") : null;
-    if (!bar || !listEl) return;
-    const rect = bar.getBoundingClientRect();
+    const bar2 = host && host.closest ? host.closest(".bj-strip") : null;
+    if (!bar2 || !listEl) return;
+    const rect = bar2.getBoundingClientRect();
     listEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
     const zone = host.parentNode && host.parentNode.getBoundingClientRect ? host.parentNode : null;
-    const field = (open || exInput ? zone : null) || bar.querySelector(".bj-strip__seg--command") || zone;
+    const field = (open || exInput ? zone : null) || bar2.querySelector(".bj-strip__seg--command") || zone;
     const from = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
     const pad = 6;
     let left = from && from.width ? from.left : rect.left + pad;
@@ -1279,15 +1470,15 @@
     return runLine(text, () => {
     });
   }
-  function showKeyHints(rows) {
+  function showKeyHints(rows2) {
     if (!listEl || open || exInput) return false;
-    if (!rows || !rows.length) {
+    if (!rows2 || !rows2.length) {
       hideKeyHints();
       return false;
     }
     hinting = true;
     query = "";
-    items = rows.map((r) => ({ value: r.key, label: r.title }));
+    items = rows2.map((r) => ({ value: r.key, label: r.title }));
     active = -1;
     chosen = false;
     renderList();
@@ -1303,8 +1494,299 @@
     return true;
   }
 
-  // js/status-strip/status-strip-view.mjs
+  // js/status-strip/status-strip-history-ui.mjs
   var global2 = globalThis;
+  var panelEl = null;
+  var listEl2 = null;
+  var open2 = false;
+  var active2 = -1;
+  var rows = [];
+  var listeners = false;
+  var onChanged = null;
+  function history2() {
+    return global2.EditHistory || null;
+  }
+  function nameOf(id) {
+    const P = global2.Persist;
+    if (!P || typeof P.getFileById !== "function") return null;
+    const f = P.getFileById(id);
+    return f ? f.name : null;
+  }
+  function bar() {
+    return document.querySelector(".bj-strip");
+  }
+  function anchor() {
+    const strip = bar();
+    if (!strip || !panelEl) return;
+    const rect = strip.getBoundingClientRect();
+    panelEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
+    const seg = strip.querySelector(".bj-strip__seg--history");
+    const from = seg ? seg.getBoundingClientRect() : null;
+    const pad = 6;
+    const width = panelEl.offsetWidth || 0;
+    let left = from ? from.right - width : rect.right - width - pad;
+    left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
+    panelEl.style.left = Math.max(pad, Math.round(left)) + "px";
+  }
+  function ensurePanel() {
+    if (panelEl && panelEl.isConnected) return panelEl;
+    panelEl = document.createElement("div");
+    panelEl.className = "bj-hist";
+    panelEl.setAttribute("role", "dialog");
+    panelEl.setAttribute("aria-label", "Edit history");
+    const head = document.createElement("div");
+    head.className = "bj-hist__head";
+    const title = document.createElement("span");
+    title.className = "bj-hist__title";
+    title.textContent = "Edit history";
+    const count = document.createElement("span");
+    count.className = "bj-hist__count";
+    head.appendChild(title);
+    head.appendChild(count);
+    panelEl.appendChild(head);
+    listEl2 = document.createElement("div");
+    listEl2.className = "bj-hist__list";
+    listEl2.setAttribute("role", "listbox");
+    panelEl.appendChild(listEl2);
+    const foot = document.createElement("div");
+    foot.className = "bj-hist__foot";
+    foot.appendChild(hintRow("edit.undo", "Undo"));
+    foot.appendChild(hintRow("edit.redo", "Redo"));
+    panelEl.appendChild(foot);
+    panelEl._count = count;
+    document.body.appendChild(panelEl);
+    return panelEl;
+  }
+  function hintRow(commandId, fallbackLabel) {
+    const row = document.createElement("span");
+    row.className = "bj-hist__hint";
+    const K = global2.Keybindings;
+    const C = global2.Commands;
+    let label = fallbackLabel;
+    let keys = "";
+    try {
+      const cmd = C && typeof C.get === "function" ? C.get(commandId) : null;
+      if (cmd && cmd.title) label = cmd.title;
+      if (K && typeof K.labelFor === "function") keys = K.labelFor(commandId) || "";
+    } catch (_) {
+    }
+    const name = document.createElement("span");
+    name.className = "bj-hist__hint-name";
+    name.textContent = label;
+    row.appendChild(name);
+    if (keys) {
+      const kbd = document.createElement("kbd");
+      kbd.className = "bj-hist__key";
+      kbd.textContent = keys;
+      row.appendChild(kbd);
+    }
+    return row;
+  }
+  function rowEl(row, index) {
+    if (row.now) {
+      const marker = document.createElement("div");
+      marker.className = "bj-hist__now";
+      marker.setAttribute("role", "option");
+      marker.setAttribute("aria-selected", "true");
+      marker.dataset.index = String(index);
+      const dot = document.createElement("span");
+      dot.className = "bj-hist__now-dot";
+      const text = document.createElement("span");
+      text.className = "bj-hist__now-text";
+      text.textContent = row.label;
+      marker.appendChild(dot);
+      marker.appendChild(text);
+      return marker;
+    }
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "bj-hist__row" + (row.ahead ? " is-ahead" : "");
+    el.setAttribute("role", "option");
+    el.setAttribute("aria-selected", "false");
+    el.dataset.index = String(index);
+    el.dataset.direction = row.direction;
+    el.dataset.distance = String(row.distance);
+    const label = document.createElement("span");
+    label.className = "bj-hist__label";
+    if (row.preview) {
+      label.classList.add("is-preview");
+      const sign = document.createElement("span");
+      sign.className = "bj-hist__sign is-" + (row.preview.sign === "+" ? "add" : row.preview.sign === "\u2212" ? "cut" : "swap");
+      sign.textContent = row.preview.sign;
+      label.appendChild(sign);
+      const text = document.createElement("span");
+      text.className = "bj-hist__text" + (row.preview.faded ? " is-faded" : "");
+      text.textContent = row.preview.text;
+      label.appendChild(text);
+    } else {
+      label.textContent = row.label;
+    }
+    el.appendChild(label);
+    if (row.where) {
+      const where = document.createElement("span");
+      where.className = "bj-hist__where";
+      where.textContent = row.where;
+      el.appendChild(where);
+    }
+    const when = document.createElement("span");
+    when.className = "bj-hist__when";
+    when.textContent = row.when || "";
+    el.appendChild(when);
+    const tipLines = [row.label];
+    if (row.files && row.files.length > 1) tipLines.push("", ...row.files);
+    el.setAttribute("data-tooltip", tipLines.join("\n"));
+    el.setAttribute("aria-label", row.label + (row.where ? ", " + row.where : ""));
+    return el;
+  }
+  function render() {
+    const H = history2();
+    if (!H) return;
+    const panel = ensurePanel();
+    const undo = H.getUndoStack ? H.getUndoStack() : [];
+    const redo = H.getRedoStack ? H.getRedoStack() : [];
+    rows = buildHistoryRows(undo, redo, { nameOf, now: Date.now() });
+    panel._count.textContent = historySummary(undo.length, redo.length);
+    listEl2.textContent = "";
+    rows.forEach((row, i) => listEl2.appendChild(rowEl(row, i)));
+    if (active2 < 0 || active2 >= rows.length) active2 = rows.findIndex((r) => r.now);
+    paintActive2();
+    const now = listEl2.querySelector(".bj-hist__now");
+    if (now && typeof now.scrollIntoView === "function") {
+      now.scrollIntoView({ block: "center" });
+    }
+    anchor();
+  }
+  function paintActive2() {
+    const nodes = listEl2.children;
+    for (let i = 0; i < nodes.length; i += 1) {
+      const on = i === active2;
+      nodes[i].classList.toggle("is-active", on);
+      nodes[i].setAttribute("aria-selected", on ? "true" : "false");
+    }
+    const el = nodes[active2];
+    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+  }
+  function travelTo(index) {
+    const row = rows[index];
+    const H = history2();
+    if (!row || !H || !row.direction || !row.distance) return false;
+    const step2 = row.direction === "undo" ? H.undo : H.redo;
+    for (let i = 0; i < row.distance; i += 1) {
+      if (!step2.call(H)) break;
+    }
+    active2 = -1;
+    render();
+    if (onChanged) onChanged();
+    return true;
+  }
+  function onKeyDown(e) {
+    if (!open2) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close2({ focusStrip: true });
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      active2 = Math.max(0, Math.min(rows.length - 1, active2 + dir));
+      paintActive2();
+      return;
+    }
+    if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      active2 = e.key === "Home" ? 0 : rows.length - 1;
+      paintActive2();
+      return;
+    }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      travelTo(active2);
+    }
+  }
+  function onDocPointerDown(e) {
+    if (!open2) return;
+    const t = e.target;
+    if (panelEl && panelEl.contains(t)) return;
+    if (t && t.closest && t.closest(".bj-strip__seg--history")) return;
+    close2();
+  }
+  function onListClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest(".bj-hist__row") : null;
+    if (!btn) return;
+    e.preventDefault();
+    travelTo(Number(btn.dataset.index));
+  }
+  function bind() {
+    if (listeners) return;
+    listeners = true;
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    window.addEventListener("resize", anchor);
+    window.addEventListener("scroll", anchor, { passive: true, capture: true });
+    listEl2.addEventListener("click", onListClick);
+  }
+  function unbind() {
+    if (!listeners) return;
+    listeners = false;
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("pointerdown", onDocPointerDown, true);
+    window.removeEventListener("resize", anchor);
+    window.removeEventListener("scroll", anchor, { capture: true });
+    if (listEl2) listEl2.removeEventListener("click", onListClick);
+  }
+  function isOpen2() {
+    return open2;
+  }
+  function close2(opts) {
+    if (!open2) return false;
+    open2 = false;
+    unbind();
+    if (panelEl && panelEl.parentNode) panelEl.parentNode.removeChild(panelEl);
+    panelEl = null;
+    listEl2 = null;
+    active2 = -1;
+    if (onChanged) onChanged();
+    if (opts && opts.focusStrip) global2.CurrentEditor?.focus?.();
+    return true;
+  }
+  function openPanel(changed) {
+    const H = history2();
+    if (!H) return false;
+    const undo = H.getUndoStack ? H.getUndoStack().length : 0;
+    const redo = H.getRedoStack ? H.getRedoStack().length : 0;
+    if (!undo && !redo) return false;
+    onChanged = changed || null;
+    open2 = true;
+    ensurePanel();
+    bind();
+    active2 = -1;
+    render();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(anchor);
+    if (onChanged) onChanged();
+    return true;
+  }
+  function toggle(changed) {
+    return open2 ? (close2(), false) : openPanel(changed);
+  }
+  function refresh2() {
+    if (!open2) return;
+    const H = history2();
+    if (!H) {
+      close2();
+      return;
+    }
+    const undo = H.getUndoStack ? H.getUndoStack().length : 0;
+    const redo = H.getRedoStack ? H.getRedoStack().length : 0;
+    if (!undo && !redo) {
+      close2();
+      return;
+    }
+    render();
+  }
+
+  // js/status-strip/status-strip-view.mjs
+  var global3 = globalThis;
   var root = null;
   var segmentHost = null;
   var vimSlotEl = null;
@@ -1335,12 +1817,15 @@
     holes: 0,
     symbols: NaN,
     orca: false,
-    orcaDetail: ""
+    orcaDetail: "",
+    undoDepth: 0,
+    redoDepth: 0,
+    historyOpen: false
   };
   var detail = "standard";
   var rendered = "";
   function persist() {
-    return global2.Persist || null;
+    return global3.Persist || null;
   }
   function storedMode() {
     const p = persist();
@@ -1380,6 +1865,7 @@
   }
   function unmount() {
     close({ restore: false });
+    close2();
     if (root && root.parentNode) root.parentNode.removeChild(root);
     root = null;
     segmentHost = null;
@@ -1399,7 +1885,7 @@
     return dotEl;
   }
   function renderType(host2, text) {
-    const ed = global2.BelEditor;
+    const ed = global3.BelEditor;
     const norm = ed && typeof ed.normalizeType === "function" ? ed.normalizeType(text) : String(text == null ? "" : text);
     host2.textContent = "";
     if (!norm) return;
@@ -1428,6 +1914,8 @@
       el.setAttribute("data-tooltip", seg.title);
       el.setAttribute("aria-label", seg.title);
     }
+    if (seg.pressed != null) el.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
+    if (seg.pressed) el.classList.add("is-open");
     if (seg.dot) el.appendChild(statusDot());
     if (seg.mark) {
       const mark = document.createElement("span");
@@ -1443,18 +1931,31 @@
     return el;
   }
   var ACTIONS = {
-    "focus-editor": () => global2.CurrentEditor?.focus?.(),
-    "goto-line": () => global2.CommandPalette?.open({ mode: "line" }),
-    "commands": () => global2.CommandPalette?.open({ mode: "commands" }),
-    "next-problem": () => global2.Commands?.run("nav.next-problem"),
-    "run-default": () => global2.Commands?.run("run.default") || global2.Commands?.run("run.file"),
-    "next-hole": () => global2.Commands?.run("nav.next-hole"),
-    "open-harpoon": () => global2.Commands?.run("prover.open-in-harpoon") || global2.Commands?.run("view.harpoon"),
-    "run": () => global2.Commands?.run("run.file")
+    "focus-editor": () => global3.CurrentEditor?.focus?.(),
+    "goto-line": () => global3.CommandPalette?.open({ mode: "line" }),
+    "commands": () => global3.CommandPalette?.open({ mode: "commands" }),
+    "next-problem": () => global3.Commands?.run("nav.next-problem"),
+    "run-default": () => global3.Commands?.run("run.default") || global3.Commands?.run("run.file"),
+    "next-hole": () => global3.Commands?.run("nav.next-hole"),
+    "open-harpoon": () => global3.Commands?.run("prover.open-in-harpoon") || global3.Commands?.run("view.harpoon"),
+    "run": () => global3.Commands?.run("run.file"),
+    "edit-history": () => openHistory()
   };
   function runAction(action) {
     const fn = ACTIONS[action];
     if (fn) fn();
+  }
+  function openHistory() {
+    toggle(syncHistory);
+    syncHistory();
+  }
+  function syncHistory() {
+    const H = global3.EditHistory;
+    setEditorState({
+      undoDepth: H && H.getUndoStack ? H.getUndoStack().length : 0,
+      redoDepth: H && H.getRedoStack ? H.getRedoStack().length : 0,
+      historyOpen: isOpen2()
+    });
   }
   function paint() {
     frame = 0;
@@ -1462,7 +1963,7 @@
     const host2 = ensureRoot();
     if (!host2) return;
     const segments = buildSegments(state, detail);
-    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone).join("|");
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "")).join("|");
     if (signature === rendered) return;
     rendered = signature;
     const els = segments.map(segmentEl);
@@ -1567,7 +2068,10 @@
       "holes",
       "symbols",
       "orca",
-      "orcaDetail"
+      "orcaDetail",
+      "undoDepth",
+      "redoDepth",
+      "historyOpen"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];
@@ -1589,20 +2093,20 @@
     schedule();
   }
   function goalAtCaret() {
-    const ed = global2.CurrentEditor;
+    const ed = global3.CurrentEditor;
     if (!ed || typeof ed.holeAtCursor !== "function") return "";
     try {
       const hit = ed.holeAtCursor();
       const goal = hit && hit.hole ? hit.hole.goal : null;
       if (!goal) return "";
-      const norm = global2.BelEditor && typeof global2.BelEditor.normalizeType === "function" ? global2.BelEditor.normalizeType(String(goal)) : String(goal);
+      const norm = global3.BelEditor && typeof global3.BelEditor.normalizeType === "function" ? global3.BelEditor.normalizeType(String(goal)) : String(goal);
       return norm;
     } catch (_) {
       return "";
     }
   }
   function seedFromEditor() {
-    const ed = global2.CurrentEditor;
+    const ed = global3.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     if (!view) {
       setEditorState({ hasFile: false, line: NaN, col: NaN, selChars: 0, selLines: 0, goal: "" });
@@ -1646,10 +2150,11 @@
     root.dataset.detail = detail;
     seedFromEditor();
     refreshProofState();
+    syncHistory();
     paint();
   }
   function refreshProofState() {
-    const ed = global2.CurrentEditor;
+    const ed = global3.CurrentEditor;
     if (!ed) {
       setEditorState({ holes: 0, symbols: NaN, goal: "" });
       return;
@@ -1691,13 +2196,13 @@
   function init() {
     if (inited || typeof document === "undefined") return;
     inited = true;
-    global2.addEventListener("beljar:hole-goals-updated", refreshProofState);
-    global2.addEventListener("beljar:file-lint", onLint);
-    global2.addEventListener("beljar:keybindings-changed", apply);
+    global3.addEventListener("beljar:hole-goals-updated", refreshProofState);
+    global3.addEventListener("beljar:file-lint", onLint);
+    global3.addEventListener("beljar:keybindings-changed", apply);
     document.addEventListener("click", onClick, true);
     apply();
   }
-  global2.StatusStrip = {
+  global3.StatusStrip = {
     init,
     apply,
     setEditorState,
@@ -1742,6 +2247,19 @@
     lastCommandLine: lastEntry,
     closeCommandLine: close,
     setOrca,
+    /**
+     * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
+     * never polls the history: a widget that counts something has to be told when
+     * the count changes, or it shows a stale number until the caret happens to
+     * move.
+     */
+    setHistoryDepth: (undoDepth, redoDepth) => {
+      setEditorState({ undoDepth: undoDepth || 0, redoDepth: redoDepth || 0 });
+      refresh2();
+    },
+    openHistory,
+    closeHistory: close2,
+    isHistoryOpen: isOpen2,
     isMounted: () => mounted,
     element: () => root,
     _pure: { buildSegments, isResting }

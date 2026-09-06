@@ -440,7 +440,7 @@ var SCHEMA_VERSION = 3;
     saveBlocked = true;
     lastSaveError = classified || { code: 'capacity', retryable: false, detail: null };
     if (typeof globalThis.Toasts !== 'undefined' && globalThis.Toasts.error) {
-      globalThis.Toasts.error('Couldn’t save — storage full.', {
+      globalThis.Toasts.error('Couldn’t save: storage full.', {
         duration: 0,
         closable: true,
       });
@@ -450,8 +450,9 @@ var SCHEMA_VERSION = 3;
         kind: 'error',
         category: 'ops',
         origin: 'local',
-        title: 'Couldn’t save — storage full',
-        body: 'BelJar couldn’t write your project. The last successful save is intact; newer edits may be lost on reload until space is available.',
+        title: 'Couldn’t save: storage full',
+        body: 'Your last successful save is intact. Newer edits may be lost on'
+          + ' reload until browser storage frees up.',
         detail: classified && classified.detail ? classified.detail : null,
         source: 'persist.capacity',
         dedupeKey: CAPACITY_DEDUPE,
@@ -1138,7 +1139,7 @@ var SCHEMA_VERSION = 3;
     'readStoredVimInsertEscape', 'writeStoredVimInsertEscape',
     'readStoredMotionPref', 'writeStoredMotionPref',
     'applyStoredMotionPref', 'prefersReducedMotion',
-    'readStoredToastDuration', 'writeStoredToastDuration', 'toastDurationMs',
+    'readStoredToastDuration', 'writeStoredToastDuration', 'toastDurationForMode', 'toastDurationMs',
     'readStoredCheckAggressiveness', 'writeStoredCheckAggressiveness', 'checkAggressivenessScale',
     'readStoredAutosolveFocusNext', 'writeStoredAutosolveFocusNext',
     'readStoredAutosolveShowStats', 'writeStoredAutosolveShowStats',

@@ -1,4 +1,5 @@
-// Notification store — pure model + adapters. UI lives in notifications.mjs.
+// Notification store — pure model + adapters. UI lives in notifications.mjs;
+// what a card SHOWS is decided in notification-view.mjs.
 // Cloud later = new adapter + inbound emit({ origin: 'remote' }); no schema break.
 
 export const SCHEMA_VERSION = 1;
@@ -69,6 +70,8 @@ export function normalizeRecord(input) {
       path: input.links.path != null ? String(input.links.path) : undefined,
       line: Number.isFinite(input.links.line) ? input.links.line : undefined,
       hole: input.links.hole != null ? String(input.links.hole) : undefined,
+      from: Number.isFinite(input.links.from) ? input.links.from : undefined,
+      to: Number.isFinite(input.links.to) ? input.links.to : undefined,
     };
   }
 
@@ -89,6 +92,27 @@ export function normalizeRecord(input) {
     origin,
     remoteId: input.remoteId != null ? String(input.remoteId) : null,
     expiresAt: input.expiresAt != null ? Number(input.expiresAt) : null,
+  };
+}
+
+// Where a notification points, or null when it points nowhere. A target needs a
+// fileId plus something to aim at: an offset from the emitter, or a line.
+// Offsets win when both are present; a line is resolved against the document at
+// jump time, since the emitter may not have had one.
+export function linkTarget(rec) {
+  const l = rec && rec.links;
+  if (!l || !l.fileId) return null;
+  const from = Number.isFinite(l.from) ? l.from : null;
+  const line = Number.isFinite(l.line) && l.line >= 1 ? Math.floor(l.line) : null;
+  if (from == null && line == null) return null;
+  const path = l.path != null ? String(l.path) : '';
+  const base = path ? path.slice(path.lastIndexOf('/') + 1) : String(l.fileId);
+  return {
+    fileId: String(l.fileId),
+    from,
+    to: Number.isFinite(l.to) ? l.to : from,
+    line,
+    label: line != null ? base + ':' + line : base,
   };
 }
 
@@ -220,6 +244,8 @@ export function createNotificationStore(opts) {
     const rec = normalizeRecord(input);
     if (!rec) return null;
 
+    // A dedupe key means one card, refreshed — the same thing happening again
+    // is not new news, and it is not a tally either.
     if (rec.dedupeKey) {
       const idx = items.findIndex((r) => r.dedupeKey === rec.dedupeKey && !r.dismissedAt);
       if (idx >= 0) {

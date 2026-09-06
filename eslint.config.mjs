@@ -24,6 +24,7 @@ const SHELL_GLOBALS = [
   'ExplorerSuiteLayout',
   'FloatingRectPlacement',
   'FloatingWindow',
+  'Frame',
   'FullKeyboard',
   'Harpoon',
   'HarpoonEngine',

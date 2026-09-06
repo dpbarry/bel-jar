@@ -15,8 +15,9 @@
     "test": "npm run check:build && node tests/run-all.mjs",
     "test:fast": "npm run check:build && node tests/run-all.mjs --fast",
     "test:semantic": "node tests/run-all.mjs semantic",
-    "probe": "npm run probe:app && npm run probe:keymap && npm run probe:harpoon && npm run probe:holes",
+    "probe": "npm run probe:app && npm run probe:undo && npm run probe:keymap && npm run probe:harpoon && npm run probe:holes",
     "probe:app": "node scripts/probe.mjs",
+    "probe:undo": "node scripts/probe-undo.mjs",
     "probe:keymap": "node scripts/probe-keymap.mjs",
     "probe:harpoon": "node scripts/probe-manual-harpoon.mjs",
     "probe:holes": "node scripts/probe-harpoon-panel.mjs"

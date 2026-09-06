@@ -33,6 +33,7 @@ import './explorer/explorer.mjs';
 import './library/library.mjs';
 import './ui/toasts.mjs';
 import './ui/notifications.mjs';
+import './frame/frame.mjs';
 import './repl/repl-stream.mjs';
 import './repl/repl-output.mjs';
 import './repl/repl-run-cmd.mjs';

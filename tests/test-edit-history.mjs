@@ -123,7 +123,12 @@ function snapTexts(adapter) {
   expect(adapter.getFileText('a') === 'foo' && adapter.getFileText('b') === 'foo', 'both files restored');
 }
 
-// precondition refusal
+// text drift is RECONCILED, never refused
+//
+// The old contract refused here, and refusing is what shipped the bug the user
+// reported: one out-of-band rewrite (trim-on-save) and every undo for the rest
+// of the session answered "the project changed since that edit". Drift now gets
+// folded into the step, so undo still runs and redo still puts the drift back.
 {
   const adapter = mockAdapter({
     files: [{ id: 'a', name: 'a.bel' }],
@@ -136,9 +141,33 @@ function snapTexts(adapter) {
     files: { a: { before: 'one', after: 'two' } },
     structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
   }));
-  expect(!H.undo(), 'refuse when drifted');
-  expect(adapter.getFileText('a') === 'drift', 'no mutation on refuse');
-  expect(H.canUndo(), 'stack unchanged');
+  expect(H.undo(), 'undo runs despite drift');
+  expect(adapter.getFileText('a') === 'one', 'undo reaches the recorded before-state');
+  expect(H.canRedo(), 'the drifted state is redoable');
+  expect(H.redo(), 'redo runs');
+  expect(adapter.getFileText('a') === 'drift', 'redo restores the drifted text, losing nothing');
+}
+
+// structural impossibility DOES still refuse, and says so honestly
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }],
+    texts: { a: 'two' },
+    activeFileId: 'a',
+  });
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'e', kind: 'edit',
+    files: { a: { before: 'one', after: 'two' } },
+    structural: {
+      created: [], deleted: [{ id: 'gone', name: 'gone.bel', text: 'x' }],
+      cfg: {}, openFileIds: null, activeFileId: null,
+    },
+  }));
+  adapter.restoreDeletedFile = () => false;
+  expect(!H.undo(), 'refuse when a file the step needs cannot be restored');
+  expect(adapter.getFileText('a') === 'two', 'no mutation left behind on refusal');
+  expect(H.canUndo(), 'stack unchanged on refusal');
 }
 
 // redo invalidation
@@ -250,7 +279,7 @@ function snapTexts(adapter) {
   expect(adapter.getFileText('a') === 'one', 'undo works after reload drift');
 }
 
-// undo → edit during markNonUndoable window → undo (post-undo edits must be historied)
+// undo → edit → undo: an edit made right after an undo must still be historied
 {
   const adapter = mockAdapter({
     files: [{ id: 'a', name: 'a.bel' }],
@@ -279,7 +308,6 @@ function snapTexts(adapter) {
   expect(H.undo(), 'first undo');
   expect(editor._text === 'hi', 'editor restored');
 
-  H.markNonUndoable(5000);
   H.onDocChange(
     {
       state: {
@@ -357,7 +385,13 @@ function snapTexts(adapter) {
   expect(H.undo(), 'undo with selection snapshot');
   expect(editor._sel?.anchor === 1 && editor._sel?.head === 1, 'cursor restored to beforeSel');
   expect(editor._scroll, 'undo requests scrollIntoView');
-  expect(editor._viewport?.scrollTop === 240, 'viewport restored for typing undo');
+  // ⛔ The caret ships INSIDE the replacement, and nothing follows it.
+  // applyViewport dispatches a second selection and a raw scrollTop write two
+  // animation frames later, from a snapshot of a document that may no longer
+  // exist by then. Held-down Ctrl+Z queued one per press and they landed after
+  // the run was over, each dragging the caret back into the middle of the
+  // chain. scrollIntoView on the restored caret is the whole restore.
+  expect(editor._viewport === null, 'undo schedules no late viewport dispatch');
 }
 
 // hole-shaped entry without prior sels still reveals on undo (EOF fallback + scroll)
@@ -398,7 +432,7 @@ function snapTexts(adapter) {
   expect(editor._text === '?', 'hole text restored');
   expect(editor._sel?.anchor === 1 && editor._sel?.head === 1, 'missing sel falls back to EOF of restored text');
   expect(editor._scroll, 'hole undo still scrolls');
-  expect(editor._viewport?.selection?.anchor === 1, 'viewport reveal applied for non-format kind');
+  expect(editor._viewport === null, 'the reveal rides the replacement, not a later dispatch');
 }
 
 // beginEntry/commitEntry records selection snapshots for non-typing edits

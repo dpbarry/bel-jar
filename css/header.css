@@ -230,27 +230,19 @@ html.light .theme-toggle .icon-moon {
   height: 0.875rem;
 }
 
-.notif-badge {
-  position: absolute;
-  top: 0.12rem;
-  right: 0.1rem;
-  min-width: 0.85rem;
-  height: 0.85rem;
-  padding: 0 0.18rem;
-  border-radius: 999px;
-  background: var(--accent-mid);
-  color: var(--ui-fg-on-accent);
-  font-size: 0.52rem;
-  font-weight: 600;
-  line-height: 0.85rem;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  box-shadow: 0 0 0 1px var(--chrome-bg-header);
+/* Closed body path: outline always strokes; unread fills via opacity (CSS-animatable). */
+.notif-bell .notif-bell-body {
+  fill: currentColor;
+  fill-opacity: 0;
+  transition: fill-opacity 180ms ease;
 }
 
 .notif-bell[data-has-notifications] {
   color: var(--accent-high);
+}
+
+.notif-bell[data-has-unread] .notif-bell-body {
+  fill-opacity: 1;
 }
 
 .header-end .icon-btn.is-active {

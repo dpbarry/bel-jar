@@ -614,7 +614,39 @@ const global = globalThis;
     return toggle({ mode: 'commands' });
   }
 
+  // Only the fallback keydown needs undoing. On the Keybindings path the
+  // registry owns the chords, and the panel's own listeners die with its DOM.
+  let fallbackKeydown = null;
+
+  function onFallbackKeydown(e) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const key = (e.key || '').toLowerCase();
+    if (key === 'k' && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: 'anywhere' });
+    } else if (key === 'p' && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: 'commands' });
+    } else if (key === 'o' && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: 'symbols' });
+    } else if (key === 'f' && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: 'search' });
+    }
+  }
+
+  function dispose() {
+    close();
+    if (fallbackKeydown) {
+      window.removeEventListener('keydown', fallbackKeydown, true);
+      fallbackKeydown = null;
+    }
+  }
+
   function init() {
+    dispose();
     if (typeof Keybindings !== 'undefined' && typeof Keybindings.initGlobals === 'function') {
       Keybindings.initGlobals({
         'nav.anywhere': () => toggle({ mode: 'anywhere' }),
@@ -624,24 +656,8 @@ const global = globalThis;
       });
       return;
     }
-    window.addEventListener('keydown', (e) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (!mod) return;
-      const key = (e.key || '').toLowerCase();
-      if (key === 'k' && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: 'anywhere' });
-      } else if (key === 'p' && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: 'commands' });
-      } else if (key === 'o' && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: 'symbols' });
-      } else if (key === 'f' && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: 'search' });
-      }
-    }, true);
+    fallbackKeydown = onFallbackKeydown;
+    window.addEventListener('keydown', fallbackKeydown, true);
   }
 
   function shortcutLabelFor(idOrSpec) {
@@ -653,6 +669,7 @@ const global = globalThis;
 
   global.CommandPalette = {
     register,
+    dispose,
     unregister,
     setProvider,
     open,

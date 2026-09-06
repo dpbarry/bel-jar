@@ -74,14 +74,14 @@ export function create(deps) {
     function readStoredAliasActivation() {
       try {
         var v = backendLoad(ALIAS_ACTIVATION_KEY);
-        return v === 'greedy' ? 'greedy' : 'strict';
+        return v === 'strict' ? 'strict' : 'greedy';
       } catch (_) {
-        return 'strict';
+        return 'greedy';
       }
     }
 
     function writeStoredAliasActivation(mode) {
-      if (mode === 'greedy') backendSave(ALIAS_ACTIVATION_KEY, 'greedy');
+      if (mode === 'strict') backendSave(ALIAS_ACTIVATION_KEY, 'strict');
       else backendRemove(ALIAS_ACTIVATION_KEY);
     }
 
@@ -862,11 +862,14 @@ export function create(deps) {
       else backendRemove(TOAST_DURATION_KEY);
     }
 
-    function toastDurationMs() {
-      var mode = readStoredToastDuration();
+    function toastDurationForMode(mode) {
       if (mode === 'short') return 2000;
-      if (mode === 'long') return 6000;
+      if (mode === 'long') return 5000;
       return 3500;
+    }
+
+    function toastDurationMs() {
+      return toastDurationForMode(readStoredToastDuration());
     }
 
     function readStoredCheckAggressiveness() {
@@ -1465,6 +1468,7 @@ export function create(deps) {
       prefersReducedMotion: prefersReducedMotion,
       readStoredToastDuration: readStoredToastDuration,
       writeStoredToastDuration: writeStoredToastDuration,
+      toastDurationForMode: toastDurationForMode,
       toastDurationMs: toastDurationMs,
       readStoredCheckAggressiveness: readStoredCheckAggressiveness,
       writeStoredCheckAggressiveness: writeStoredCheckAggressiveness,

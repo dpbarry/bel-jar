@@ -42,7 +42,7 @@ try {
     sameAsKeybindings: Commands.defaults().length === Keybindings.DEFAULTS.length,
   }));
   console.log('  registry:', JSON.stringify(reg));
-  check(reg.total === 148, `registry holds 148 commands (got ${reg.total})`);
+  check(reg.total === 149, `registry holds 149 commands (got ${reg.total})`);
   check(reg.unwired.length === 0, 'every palette command has behaviour attached', reg.unwired.join(', '));
   check(reg.chordedUnwired.length === 0,
     'every command that ships a chord has behaviour behind it', reg.chordedUnwired.join(', '));

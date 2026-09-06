@@ -8,6 +8,29 @@ import { create as createExplorerBootstrap } from './app-explorer-bootstrap.mjs'
 import { create as createMenus } from './app-menus.mjs';
 import { create as createCommandPalette } from './app-command-palette.mjs';
 
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+// The shell used to boot purely by being loaded, which left nowhere to hand
+// control back to. mount() is that same body, now callable; unmount() undoes
+// what it can. Boot is unchanged: mount() still runs on load, at the bottom.
+//
+// The body is deliberately NOT re-indented. Wrapping 1300 lines would bury the
+// real change in whitespace, and nothing here depends on indentation.
+//
+// ⛔ Window listeners registered during mount go through onWin so unmount can
+// take them off again. Adding a bare window.addEventListener here leaks it.
+const teardown = [];
+let mounted = false;
+let editor = null;
+
+function onWin(type, fn, opts) {
+  window.addEventListener(type, fn, opts);
+  teardown.push(() => window.removeEventListener(type, fn, opts));
+}
+
+function mount() {
+if (mounted) return;
+mounted = true;
+
 const editorMount = document.getElementById('editor');
 const editorEmptyEl = document.getElementById('editor-empty');
 const inspectorProjectEmptyEl = document.getElementById('inspector-project-empty');
@@ -135,7 +158,7 @@ function restoreWorkspaceFloating(floats, deps) {
       skipped === 1
         ? 'Could not restore a floating window after reload.'
         : `Could not restore ${skipped} floating windows after reload.`,
-      { duration: 5000 },
+      { duration: 'long' },
     );
   }
 }
@@ -274,7 +297,7 @@ function ensureEditorMatchesFileKind() {
   if (isCfgFileName(file.name) !== editorViewIsCfg(editor)) remountActiveEditor();
 }
 
-let editor = activeFileId ? mountEditorFor(initialCheckpoint) : null;
+editor = activeFileId ? mountEditorFor(initialCheckpoint) : null;
 ensureEditorMatchesFileKind();
 
 window.CurrentEditor = editor;
@@ -381,8 +404,9 @@ var restoredTranscript = typeof ReplPersist !== 'undefined'
   && ReplPersist.restore();
 if (!restoredTranscript) ReplOutput.insertWelcomeBanner();
 BelugaRun.init();
-Toasts.init();
-Notifications.init();
+// Theme, toasts, the inbox and the header buttons that mean the same thing on
+// every route. The frame owns them; this page just asks for them.
+Frame.mount();
 if (typeof Persist !== 'undefined') {
   if (Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
   if (Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
@@ -432,7 +456,7 @@ function applyLiveSettings(key) {
 }
 
 window.beljarApplyLiveSettings = applyLiveSettings;
-window.addEventListener('beljar:settings-changed', function (e) {
+onWin('beljar:settings-changed', function (e) {
   applyLiveSettings(e && e.detail ? e.detail.key : '');
 });
 
@@ -451,11 +475,11 @@ function setTip(el, text, opts) {
   Tooltips.set(el, text, opts);
 }
 
+// One implementation, in the frame. The header button, the `view.theme`
+// command and the settings panel must all flip the same switch — and the frame
+// announces it on beljar:settings-changed, which re-themes CodeMirror below.
 function toggleTheme() {
-  document.documentElement.classList.toggle('light');
-  var isLight = document.documentElement.classList.contains('light');
-  Persist.writeStoredTheme(isLight ? 'light' : 'dark');
-  syncEditorCmTheme();
+  return Frame.toggleTheme();
 }
 
 window.Repl = {
@@ -1108,7 +1132,7 @@ function setActiveTabErrorDot(id, hasErrors) {
   if (tab) tab.classList.toggle('has-errors', !!hasErrors);
 }
 
-window.addEventListener('beljar:file-lint', (ev) => {
+onWin('beljar:file-lint', (ev) => {
   const id = persist ? persist.getCurrentFileId() : null;
   if (!id || !ev.detail) return;
   const file = Persist.getFileById(id)
@@ -1130,8 +1154,8 @@ window.addEventListener('beljar:file-lint', (ev) => {
   }
 });
 
-window.addEventListener('beljar:explorer-health-changed', () => scheduleTabLintStyles());
-window.addEventListener('beljar:development-checked', () => scheduleTabLintStyles());
+onWin('beljar:explorer-health-changed', () => scheduleTabLintStyles());
+onWin('beljar:development-checked', () => scheduleTabLintStyles());
 
 // Initial render.
 if (activeFileId) Persist.openFile(activeFileId);
@@ -1166,7 +1190,7 @@ if (inspectorBtn && workspaceEl) {
     const open = toggleSidePanel('inspector');
     if (open) refreshInspector({ live: true });
   });
-  window.addEventListener('beljar:open-inspector', openInspector);
+  onWin('beljar:open-inspector', openInspector);
 }
 
 function openLibrary() {
@@ -1243,11 +1267,11 @@ if (harpoonBtn && workspaceEl) {
     if (harpoonRefreshTimer) clearTimeout(harpoonRefreshTimer);
     harpoonRefreshTimer = setTimeout(refreshHarpoonPanelIfOpen, 120);
   };
-  window.addEventListener('beljar:doc-changed', debouncedHarpoonRefresh);
-  window.addEventListener('beljar:file-lint', debouncedHarpoonRefresh);
-  window.addEventListener('beljar:active-editor-view', debouncedHarpoonRefresh);
-  window.addEventListener('beljar:development-checked', debouncedHarpoonRefresh);
-  window.addEventListener('beljar:hole-goals-updated', debouncedHarpoonRefresh);
+  onWin('beljar:doc-changed', debouncedHarpoonRefresh);
+  onWin('beljar:file-lint', debouncedHarpoonRefresh);
+  onWin('beljar:active-editor-view', debouncedHarpoonRefresh);
+  onWin('beljar:development-checked', debouncedHarpoonRefresh);
+  onWin('beljar:hole-goals-updated', debouncedHarpoonRefresh);
 
   // Restored-open on page load: the inline boot script adds `is-harpoon-open`
   // but never inits the body, so initialize it here (mirrors ensureLibrary()'s
@@ -1262,20 +1286,10 @@ if (harpoonBtn && workspaceEl) {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-const settingsBtn = document.getElementById('btn-settings');
-if (settingsBtn) {
-  settingsBtn.addEventListener('click', () => {
-    SettingsUI.open();
-  });
-}
-
 // ── Toolbar buttons ───────────────────────────────────────────────────────────
+// Settings, reload and theme are frame chrome — wired in js/frame/frame.mjs,
+// not here. Everything below is editor-page specific.
 
-const reloadBtn = document.getElementById('btn-reload');
-if (reloadBtn) {
-  reloadBtn.addEventListener('click', () => { window.location.reload(); });
-}
-document.getElementById('btn-theme').addEventListener('click', toggleTheme);
 document.getElementById('btn-load').addEventListener('click', (e) => {
   const file = activeFileRecord();
   if (file && /\.cfg$/i.test(file.name)) {
@@ -1344,14 +1358,14 @@ if (cmdInput) {
     }, 120);
   });
 }
-window.addEventListener('beforeunload', () => {
+onWin('beforeunload', () => {
   if (typeof ReplPersist !== 'undefined' && ReplPersist.saveNow) {
     ReplPersist.saveNow();
   }
   if (persist && !suppressUnloadFlush) persist.flushCheckpoint();
   WorkspaceState.flushWorkspace();
 });
-window.addEventListener('pagehide', () => {
+onWin('pagehide', () => {
   if (typeof ReplPersist !== 'undefined' && ReplPersist.saveNow) {
     ReplPersist.saveNow();
   }
@@ -1367,3 +1381,44 @@ window.addEventListener('pagehide', () => {
     output: document.getElementById('output'),
   });
 }
+}
+
+// Undo what mount() set up: the listeners it registered, the editor it built,
+// the globals it published, and any peer that owns DOM and can dispose it.
+// Peers are reached softly — this crosses the same seam the rest of the shell
+// crosses with typeof, and a peer without dispose() is simply not torn down.
+function unmount() {
+  if (!mounted) return;
+  mounted = false;
+  while (teardown.length) {
+    const off = teardown.pop();
+    try { off(); } catch (_) {}
+  }
+  const peers = [
+    globalThis.Notifications, globalThis.Toasts, globalThis.WorkspaceSplit,
+    globalThis.SidePanelResize, globalThis.CommandPalette, globalThis.HarpoonPanel,
+    globalThis.Explorer, globalThis.Library,
+  ];
+  for (const peer of peers) {
+    if (peer && typeof peer.dispose === 'function') {
+      try { peer.dispose(); } catch (_) {}
+    }
+  }
+  if (editor && typeof editor.destroy === 'function') {
+    try { editor.destroy(); } catch (_) {}
+  }
+  editor = null;
+  window.CurrentEditor = null;
+  window.BelJarCurrentEditor = null;
+}
+
+window.App = {
+  mount,
+  unmount,
+  isMounted: () => mounted,
+  // Test seam: how many registrations unmount still has to undo.
+  pendingTeardown: () => teardown.length,
+};
+window.BelJarApp = window.App;
+
+mount();

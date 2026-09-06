@@ -3,7 +3,18 @@ var STACK_MQ = '(max-width: 48rem)';
   var DEFAULT_W = 250;
   var DEFAULT_H = 190;
 
+  // The live set of resizers, so a re-init replaces rather than stacks.
+  var liveTeardown = null;
+
+  function dispose() {
+    var run = liveTeardown;
+    liveTeardown = null;
+    if (!run) return;
+    try { run(); } catch (_) {}
+  }
+
   function init(opts) {
+    dispose();
     opts = opts || {};
     var workspace = document.querySelector('.workspace');
     if (!workspace) return null;
@@ -140,6 +151,11 @@ var STACK_MQ = '(max-width: 48rem)';
           applySize(false);
         },
         reposition: positionHitStrip,
+        destroy: function () {
+          endDrag();
+          hitStrip.removeEventListener('pointerdown', startDrag);
+          if (hitStrip.parentNode) hitStrip.parentNode.removeChild(hitStrip);
+        },
       };
     }
 
@@ -233,23 +249,36 @@ var STACK_MQ = '(max-width: 48rem)';
     stackedMq.addEventListener('change', refreshAll);
     globalThis.addEventListener('resize', repositionAll);
 
+    var mo = null;
     if (typeof MutationObserver !== 'undefined') {
-      var mo = new MutationObserver(repositionAll);
+      mo = new MutationObserver(repositionAll);
       mo.observe(workspace, { attributes: true, attributeFilter: ['class'] });
     }
 
+    var ro = null;
     if (typeof ResizeObserver !== 'undefined') {
-      var ro = new ResizeObserver(repositionAll);
+      ro = new ResizeObserver(repositionAll);
       for (var n = 0; n < panelConfigs.length; n++) {
         if (panelConfigs[n].panel) ro.observe(panelConfigs[n].panel);
       }
     }
 
+    liveTeardown = function () {
+      stackedMq.removeEventListener('change', refreshAll);
+      globalThis.removeEventListener('resize', repositionAll);
+      if (mo) mo.disconnect();
+      if (ro) ro.disconnect();
+      for (var d = 0; d < resizers.length; d++) {
+        if (typeof resizers[d].destroy === 'function') resizers[d].destroy();
+      }
+      resizers.length = 0;
+    };
+
     refreshAll();
-    return { refresh: refreshAll };
+    return { refresh: refreshAll, dispose: dispose };
   }
 
-  export const SidePanelResize = { init: init };
+  export const SidePanelResize = { init: init, dispose: dispose };
 
 const g = typeof window !== 'undefined' ? window : globalThis;
 g.SidePanelResize = SidePanelResize;

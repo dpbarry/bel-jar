@@ -31,8 +31,29 @@
     var syncCfgEditorsAfterRewrite = deps.syncCfgEditorsAfterRewrite;
     var refPeekRestore = null;
 
+    // Line-addressed sources (notifications, and anything pointing in from
+    // outside the editor) carry a line, not an offset. Resolve it against the
+    // live document, which only exists once the file is actually mounted.
+    function resolveLineOffset(line) {
+      var ed = getEditor();
+      var view = ed && typeof ed.getView === 'function' ? ed.getView() : null;
+      var doc = view && view.state ? view.state.doc : null;
+      if (!doc || !doc.lines || !Number.isFinite(line)) return null;
+      var n = Math.min(Math.max(1, Math.floor(line)), doc.lines);
+      return doc.line(n).from;
+    }
+
+    function withResolvedOffset(jumpAt) {
+      if (!jumpAt || jumpAt.from != null) return jumpAt;
+      var at = resolveLineOffset(jumpAt.line);
+      if (at == null) return jumpAt;
+      return Object.assign({}, jumpAt, { from: at, to: at });
+    }
+
     function applyEditorJump(jumpAt) {
       if (!getEditor() || !jumpAt) return false;
+      jumpAt = withResolvedOffset(jumpAt);
+      if (jumpAt.from == null) return false;
       if (typeof getEditor().jumpToReference === 'function' && jumpAt.name) {
         return getEditor().jumpToReference(jumpAt, jumpAt.name);
       }
@@ -148,11 +169,71 @@
       switchToFile(id);
     };
 
+    /**
+     * Make the editor, the tabs and the explorer agree with the workspace after
+     * a history step. Returns true if it had to remount the editor.
+     *
+     * ⛔ Undo and redo move files in and out of existence — undoing an import
+     * DELETES the files it created. `EditHistory` writes that through Persist,
+     * which is state, not view: nothing there closes a tab or re-points the
+     * editor. Undoing a folder import used to leave the buffer showing a file
+     * that no longer existed, while the tab strip and explorer said the default
+     * main.bel was open. Deleting the file a buffer is showing — by ANY route,
+     * including undoing its creation — has to close that buffer.
+     */
+    function resyncEditorAfterHistory() {
+      if (!getPersist()) return false;
+      const mounted = getEditor() && typeof getEditor().getDocumentId === 'function'
+        ? getEditor().getDocumentId()
+        : null;
+      const mountedIsGone = !!mounted && !Persist.getFileById(mounted);
+
+      if (projectIsEmpty()) {
+        if (mounted || getEditor()) enterEmptyProjectView();
+        return true;
+      }
+
+      let target = Persist.getActiveFileId();
+      if (!target || !Persist.getFileById(target)) {
+        target = Persist.getOpenFileIds().find((id) => Persist.getFileById(id))
+          || (Persist.listFiles()[0] || {}).id
+          || null;
+      }
+      if (!target) {
+        enterCanvasIdleView();
+        return true;
+      }
+
+      // A live editor already showing the right file needs nothing; the history
+      // layer put the text in it directly.
+      if (!mountedIsGone && mounted === target && getPersist().getCurrentFileId() === target) {
+        return false;
+      }
+      switchToFile(target);
+      return true;
+    }
+
     window.addEventListener('beljar:edit-history-applied', function () {
+      resyncEditorAfterHistory();
       renderTabs();
       if (typeof renderExplorerTree === 'function') renderExplorerTree();
       refreshExplorerActiveAndDiags();
       updateHeaderContext();
+    });
+
+    // ⛔ A buffer showing a file that no longer exists is never acceptable, and
+    // it can arise from any route that removes files — the explorer's own
+    // delete, a bulk import that replaces a folder, a script calling
+    // `Persist.deleteFile` directly — not just from undo. This is the backstop
+    // for all of them: narrow on purpose, so a normal file op that leaves a
+    // live buffer alone never trips it.
+    window.addEventListener('beljar:project-tree-changed', function () {
+      if (!getPersist() || !getEditor()) return;
+      const mounted = typeof getEditor().getDocumentId === 'function'
+        ? getEditor().getDocumentId()
+        : null;
+      if (!mounted || Persist.getFileById(mounted)) return;
+      resyncEditorAfterHistory();
     });
 
     // Find-references hover preview: switch tabs to peek cross-file rows, then
@@ -206,8 +287,9 @@
     // Open a file (switching if needed) and jump to a position in it — the target
     // of cross-file go-to-definition, palette symbols, and project search.
     function openFileAt(fileId, from, to, opts) {
-      if (from == null) return;
       opts = opts || {};
+      // A line with no offset is a valid target: it resolves after the switch.
+      if (from == null && !Number.isFinite(opts.line)) return;
       if (typeof BelEditor !== 'undefined' && typeof BelEditor.logJumpRequest === 'function') {
         BelEditor.logJumpRequest({
           fileId, from, to, line: opts.line, col: opts.col, phase: 'openFileAt',
@@ -231,17 +313,19 @@
         return;
       }
       if (!getEditor()) return;
+      const at = withResolvedOffset(jumpAt);
+      if (at.from == null) return;
       if (typeof getEditor().jumpToReference === 'function' && opts.name) {
-        getEditor().jumpToReference(jumpAt, opts.name);
+        getEditor().jumpToReference(at, opts.name);
       } else if (typeof getEditor().jumpToRange === 'function') {
-        getEditor().jumpToRange(jumpAt);
+        getEditor().jumpToRange(at);
         if (typeof BelEditor !== 'undefined' && typeof BelEditor.logJumpResult === 'function'
           && typeof getEditor().getView === 'function') {
           const v = getEditor().getView();
-          if (v) requestAnimationFrame(() => BelEditor.logJumpResult(v, jumpAt));
+          if (v) requestAnimationFrame(() => BelEditor.logJumpResult(v, at));
         }
       } else if (typeof getEditor().scheduleJumpToRange === 'function') {
-        getEditor().scheduleJumpToRange(jumpAt);
+        getEditor().scheduleJumpToRange(at);
       }
       notifyActiveEditorView();
     }

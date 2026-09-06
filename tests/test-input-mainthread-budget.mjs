@@ -42,7 +42,6 @@ function countingDoc(text, counter, label) {
     toast: () => {},
   };
   const H = createEditHistory(adapter);
-  H.markNonUndoable(0); // ensure edits are undoable
 
   const N = 500;
   let buf = 'x';

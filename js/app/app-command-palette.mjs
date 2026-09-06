@@ -339,6 +339,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('view.explorer', () => toggleSidePanel('explorer'));
       on('view.library', () => toggleSidePanel('library'));
       on('view.harpoon', () => toggleSidePanel('harpoon'));
+      on('view.edit-history', () => { window.StatusStrip?.openHistory?.(); });
       on('view.settings', () => { SettingsUI.open(); });
       onEditor('fold.all', (e) => e.foldAll());
       onEditor('fold.unfold-all', (e) => e.unfoldAll());

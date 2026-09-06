@@ -80,7 +80,7 @@ const EXPECTED_PALETTE_ORDER = [
   'harpoon.next-goal', 'harpoon.prev-goal', 'harpoon.undo-move', 'harpoon.redo-move',
   'harpoon.orca-start', 'harpoon.orca-pause', 'harpoon.orca-absorb',
   'run.default', 'run.file', 'run.here', 'run.module', 'run.project', 'run.clear-output',
-  'view.theme', 'view.explorer', 'view.library', 'view.harpoon', 'view.settings',
+  'view.theme', 'view.explorer', 'view.library', 'view.harpoon', 'view.edit-history', 'view.settings',
   'fold.all', 'fold.unfold-all',
   // Settings — generated from `js/commands/command-settings.mjs`, in table order.
   'set.word-wrap', 'set.line-numbers', 'set.line-number-style', 'set.fold-gutter', 'set.active-line',

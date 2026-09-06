@@ -2112,7 +2112,7 @@ const global = globalThis;
     addDropdownRow(panelBodies.aliases, 'alias-activation', 'Alias expansion',
       'Strict: while typing. Greedy: also on paste, import, and library insert.',
       [{ value: 'strict', label: 'Strict' }, { value: 'greedy', label: 'Greedy' }],
-      function () { return p0 ? p0.readStoredAliasActivation() : 'strict'; },
+      function () { return p0 ? p0.readStoredAliasActivation() : 'greedy'; },
       function (p, v) {
         p.writeStoredAliasActivation(v);
         if (v !== 'greedy') return;

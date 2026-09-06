@@ -1,7 +1,19 @@
 var STACK_MQ = '(max-width: 48rem)';
   var HIT_GRACE_PX = 6;
 
+  // The live layout, so a re-init replaces rather than stacks. init() builds a
+  // fresh one; dispose() runs it and forgets it.
+  var liveTeardown = null;
+
+  function dispose() {
+    var run = liveTeardown;
+    liveTeardown = null;
+    if (!run) return;
+    try { run(); } catch (_) {}
+  }
+
   function init(opts) {
+    dispose();
     opts = opts || {};
     var workspace = document.querySelector('.workspace');
     var workspacePanes = document.querySelector('.workspace-panes');
@@ -142,25 +154,36 @@ var STACK_MQ = '(max-width: 48rem)';
 
     hitStrip.addEventListener('pointerdown', startDrag);
 
-    stackedMq.addEventListener('change', function () {
+    function onStackedChange() {
       applyLayout(false);
-    });
+    }
+    stackedMq.addEventListener('change', onStackedChange);
 
     globalThis.addEventListener('resize', positionHitStrip);
 
+    var ro = null;
     if (typeof ResizeObserver !== 'undefined') {
-      var ro = new ResizeObserver(function () {
+      ro = new ResizeObserver(function () {
         positionHitStrip();
       });
       ro.observe(workspacePanes);
       ro.observe(editorPanel);
     }
 
+    liveTeardown = function () {
+      endDrag();
+      hitStrip.removeEventListener('pointerdown', startDrag);
+      stackedMq.removeEventListener('change', onStackedChange);
+      globalThis.removeEventListener('resize', positionHitStrip);
+      if (ro) ro.disconnect();
+      if (hitStrip.parentNode) hitStrip.parentNode.removeChild(hitStrip);
+    };
+
     applyLayout(false);
-    return { getRatio: function () { return ratio; } };
+    return { getRatio: function () { return ratio; }, dispose: dispose };
   }
 
-  export const WorkspaceSplit = { init: init };
+  export const WorkspaceSplit = { init: init, dispose: dispose };
 
 const g = typeof window !== 'undefined' ? window : globalThis;
 g.WorkspaceSplit = WorkspaceSplit;

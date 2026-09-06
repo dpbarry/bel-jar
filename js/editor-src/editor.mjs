@@ -239,6 +239,8 @@ import {
   editHistoryKeymap,
   editHistoryListener,
   dispatchEdit,
+  runHistoryUndo,
+  runHistoryRedo,
 } from './edit-history.mjs';
 
 const TAB_SIZE = 2;
@@ -329,8 +331,6 @@ function globalRef() {
 }
 
 function replaceDocNonUndoable(view, text, opts = {}) {
-  const H = globalRef().EditHistory;
-  H?.markNonUndoable?.(opts.markMs ?? 2000);
   const doc = sanitizePastedPlainText(text ?? '');
   const len = doc.length;
   let anchor = opts.selection?.anchor;
@@ -355,13 +355,11 @@ function replaceDocNonUndoable(view, text, opts = {}) {
 }
 
 function runEditHistoryUndo() {
-  const H = globalRef().EditHistory;
-  return H?.undo?.() ?? false;
+  return runHistoryUndo();
 }
 
 function runEditHistoryRedo() {
-  const H = globalRef().EditHistory;
-  return H?.redo?.() ?? false;
+  return runHistoryRedo();
 }
 
 function reindentWholeDocument(view) {
@@ -577,16 +575,11 @@ function buildRemappableEditorKeymap(semanticEngine, keymapStyle) {
   }
 
   const runners = {
-    'edit.undo': wrap('edit.undo', (view) => {
-      const H = g.EditHistory;
-      if (H?.undo()) return true;
-      return undo(view);
-    }),
-    'edit.redo': wrap('edit.redo', (view) => {
-      const H = g.EditHistory;
-      if (H?.redo()) return true;
-      return redo(view);
-    }),
+    // ⛔ No `|| undo(view)` fallback. See historyOwnsUndo: when our stack has a
+    // step, we run it and swallow the key; CodeMirror's parallel history only
+    // gets the key when we have nothing at all.
+    'edit.undo': wrap('edit.undo', (view) => runHistoryUndo() || undo(view)),
+    'edit.redo': wrap('edit.redo', (view) => runHistoryRedo() || redo(view)),
     'edit.find': wrap('edit.find', openSearchPanel),
     'edit.toggle-comment': wrap('edit.toggle-comment', toggleComment),
     'edit.format': wrap('edit.format', formatCommand),
@@ -1387,7 +1380,6 @@ export function mount(parentEl, options = {}) {
 
   const initialDoc = prepareEditorDoc(options.doc ?? '', docPath);
   let state = EditorState.create({ doc: initialDoc, extensions });
-  globalRef().EditHistory?.markNonUndoable?.();
   const ir0 = indentRange(state, 0, state.doc.length);
   if (!ir0.empty) {
     state = state.update({

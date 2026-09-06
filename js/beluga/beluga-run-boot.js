@@ -592,6 +592,7 @@
         duration: 0,
         closable: true,
         durable: true,
+        body: "The checker script never arrived, so nothing can be run or type-checked. Reload the page to retry.",
         source: "beluga.client",
         dedupeKey: "beluga.client.load"
       });
@@ -605,6 +606,7 @@
         duration: 0,
         closable: true,
         durable: true,
+        body: "Type-checking is unavailable until it loads. Reload the page to retry.",
         detail,
         source: "beluga.worker",
         dedupeKey: "beluga.worker.load"

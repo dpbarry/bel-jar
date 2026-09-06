@@ -821,6 +821,9 @@
     { id: "view.explorer", title: "Toggle Explorer", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.library", title: "Toggle Library", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.harpoon", title: "Toggle Harpoon", section: "View", scope: "global", palette: true, keybindable: true },
+    // The `⟲` widget in the status strip is the same panel; a surface you can only
+    // reach by clicking is one the palette and the `:` line cannot offer.
+    { id: "view.edit-history", title: "Toggle Edit History", section: "View", scope: "global", palette: true, keybindable: true, ex: ["undolist"] },
     { id: "view.settings", title: "Open Settings\u2026", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "fold.all", title: "Fold All", section: "View", scope: "editor", palette: true, keybindable: true },
     { id: "fold.unfold-all", title: "Unfold All", section: "View", scope: "editor", palette: true, keybindable: true },
@@ -1755,7 +1758,34 @@
     if (line && style === "vim") return StatusStrip.openCommandLine("");
     return toggle({ mode: "commands" });
   }
+  var fallbackKeydown = null;
+  function onFallbackKeydown(e) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const key = (e.key || "").toLowerCase();
+    if (key === "k" && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: "anywhere" });
+    } else if (key === "p" && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: "commands" });
+    } else if (key === "o" && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: "symbols" });
+    } else if (key === "f" && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      toggle({ mode: "search" });
+    }
+  }
+  function dispose() {
+    close();
+    if (fallbackKeydown) {
+      window.removeEventListener("keydown", fallbackKeydown, true);
+      fallbackKeydown = null;
+    }
+  }
   function init() {
+    dispose();
     if (typeof Keybindings !== "undefined" && typeof Keybindings.initGlobals === "function") {
       Keybindings.initGlobals({
         "nav.anywhere": () => toggle({ mode: "anywhere" }),
@@ -1765,24 +1795,8 @@
       });
       return;
     }
-    window.addEventListener("keydown", (e) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (!mod) return;
-      const key = (e.key || "").toLowerCase();
-      if (key === "k" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "anywhere" });
-      } else if (key === "p" && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "commands" });
-      } else if (key === "o" && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "symbols" });
-      } else if (key === "f" && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        toggle({ mode: "search" });
-      }
-    }, true);
+    fallbackKeydown = onFallbackKeydown;
+    window.addEventListener("keydown", fallbackKeydown, true);
   }
   function shortcutLabelFor(idOrSpec) {
     if (typeof Keybindings !== "undefined" && Keybindings.has(idOrSpec)) {
@@ -1792,6 +1806,7 @@
   }
   global2.CommandPalette = {
     register,
+    dispose,
     unregister: unregister2,
     setProvider,
     open,

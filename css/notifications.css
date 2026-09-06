@@ -1,4 +1,4 @@
-/* -- Notification panel -- */
+/* -- Notification inbox -- */
 
 .notif-panel {
   --notif-panel-right: 0px;
@@ -8,8 +8,8 @@
   z-index: 10080;
   display: flex;
   flex-direction: column;
-  width: min(21rem, calc(100vw - var(--notif-panel-right) - 0.5rem));
-  max-height: min(26rem, calc(100dvh - var(--header-h) - 0.5rem));
+  width: min(23rem, calc(100vw - var(--notif-panel-right) - 0.5rem));
+  max-height: min(28rem, calc(100dvh - var(--header-h) - 0.5rem));
   background: var(--menu-bg);
   border: 1px solid var(--menu-border);
   border-top: none;
@@ -40,10 +40,9 @@
 .notif-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.4rem;
   min-height: var(--panel-header-h);
-  padding: 0 0.35rem 0 0.75rem;
+  padding: 0 0.35rem 0 0.65rem;
   border-bottom: 1px solid var(--chrome-divider);
   flex-shrink: 0;
 }
@@ -56,10 +55,55 @@
   color: var(--menu-section-fg);
 }
 
+.notif-panel-count {
+  flex: 0 0 auto;
+  min-width: 1.05rem;
+  padding: 0.02rem 0.28rem;
+  border-radius: 999px;
+  background: var(--notif-recess-bg);
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--muted-higher);
+  font-variant-numeric: tabular-nums;
+}
+
+.notif-panel-clear {
+  flex: 0 0 auto;
+  margin: 0 0 0 auto;
+  padding: 0.28rem 0.45rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--muted-mid);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .notif-panel-clear:hover {
+    color: var(--base-highest);
+    background: light-dark(hsla(220, 10%, 42%, 0.055), hsla(220, 8%, 52%, 0.065));
+  }
+}
+
+.notif-panel-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .notif-panel-list {
   list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
   margin: 0;
-  padding: 0.25rem 0;
+  padding: 0.4rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   flex: 1 1 auto;
@@ -67,117 +111,290 @@
 }
 
 .notif-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
   margin: 0;
-  padding: 1.35rem 0.85rem 1.5rem;
-  text-align: center;
-  font-size: 0.78rem;
+  padding: 1.6rem 0.85rem 1.75rem;
+  font-size: 0.75rem;
   color: var(--muted-high);
 }
 
+/* Both of these are flex containers, so the UA's [hidden] rule loses to our
+   own display. Say it again, or the empty state prints under the list. */
+.notif-panel-list[hidden],
+.notif-panel-empty[hidden] {
+  display: none;
+}
+
+.notif-panel-empty svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--muted-mid);
+  opacity: 0.7;
+}
+
+/* -- One card ------------------------------------------------------------- */
+
+/* Kind branding is the card's own surface and edge, nothing more: no icon
+   badge (it repeats what the wash already says and steals the text's left
+   margin) and no side strip (stacked, it reads as a ladder). */
 .notif-item {
-  --notif-accent: var(--muted-mid);
+  --notif-accent: var(--notif-kind-system);
+  --notif-wash: var(--notif-card-bg);
+  --notif-wash-hover: var(--notif-card-bg-hover);
+  --notif-edge: var(--notif-card-border);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.35rem;
-  align-items: start;
-  padding: 0.55rem 0.45rem 0.55rem 0.75rem;
-  border-bottom: 1px solid var(--menu-separator);
-  border-left: 2px solid transparent;
-  transition: background var(--transition);
+  grid-template-areas:
+    'title close'
+    'body  body'
+    'foot  foot'
+    'diag  diag';
+  column-gap: 0.4rem;
+  row-gap: 0.1rem;
+  padding: 0.5rem 0.45rem 0.45rem 0.6rem;
+  border: 1px solid var(--notif-edge);
+  border-radius: var(--radius-md);
+  background: var(--notif-wash);
+  transition: background var(--transition), border-color var(--transition);
 }
 
-.notif-item.is-unread {
-  border-left-color: var(--notif-accent);
+.notif-item--error {
+  --notif-accent: var(--notif-kind-error);
+  --notif-wash: color-mix(in oklab, var(--notif-card-bg) 90%, var(--notif-kind-error) 10%);
+  --notif-wash-hover: color-mix(in oklab, var(--notif-card-bg) 85%, var(--notif-kind-error) 15%);
+  --notif-edge: color-mix(in oklab, var(--notif-card-border) 50%, var(--notif-kind-error) 50%);
 }
 
-.notif-item--error { --notif-accent: var(--repl-error); }
-.notif-item--warn { --notif-accent: var(--repl-warn); }
-.notif-item--info { --notif-accent: var(--accent-mid); }
+.notif-item--warn {
+  --notif-accent: var(--notif-kind-warn);
+  --notif-wash: color-mix(in oklab, var(--notif-card-bg) 91%, var(--notif-kind-warn) 9%);
+  --notif-wash-hover: color-mix(in oklab, var(--notif-card-bg) 86%, var(--notif-kind-warn) 14%);
+  --notif-edge: color-mix(in oklab, var(--notif-card-border) 55%, var(--notif-kind-warn) 45%);
+}
+
+.notif-item--info {
+  --notif-accent: var(--notif-kind-info);
+  --notif-wash: color-mix(in oklab, var(--notif-card-bg) 94%, var(--notif-kind-info) 6%);
+  --notif-wash-hover: color-mix(in oklab, var(--notif-card-bg) 89%, var(--notif-kind-info) 11%);
+  --notif-edge: color-mix(in oklab, var(--notif-card-border) 66%, var(--notif-kind-info) 34%);
+}
+
 .notif-item--success {
-  --notif-accent: light-dark(hsl(145, 55%, 38%), hsl(145, 45%, 52%));
-}
-.notif-item--system { --notif-accent: var(--muted-mid); }
-
-.notif-item:last-child {
-  border-bottom: none;
+  --notif-accent: var(--notif-kind-success);
+  --notif-wash: color-mix(in oklab, var(--notif-card-bg) 94%, var(--notif-kind-success) 6%);
+  --notif-wash-hover: color-mix(in oklab, var(--notif-card-bg) 89%, var(--notif-kind-success) 11%);
+  --notif-edge: color-mix(in oklab, var(--notif-card-border) 66%, var(--notif-kind-success) 34%);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .notif-item:hover {
-    background: var(--menu-item-hover-wash);
+    background: var(--notif-wash-hover);
   }
 }
 
-.notif-item-main {
-  min-width: 0;
+/* The kind is spoken, never drawn: the wash says it on screen. */
+.notif-item-kind {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.notif-item-msg {
+.notif-item-title {
+  grid-area: title;
+  align-self: center;
   margin: 0;
-  font-size: 0.78rem;
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: 0.775rem;
+  font-weight: 550;
+  line-height: 1.3;
   color: var(--menu-item-fg);
   word-break: break-word;
 }
 
 .notif-item-body {
-  margin: 0.25rem 0 0;
-  font-size: 0.72rem;
+  grid-area: body;
+  margin: 0.12rem 0 0;
+  font-size: 0.7rem;
   font-weight: 400;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--muted-high);
   word-break: break-word;
 }
 
-.notif-item-detail {
-  margin: 0.3rem 0 0;
-  font-size: 0.68rem;
-  color: var(--muted-high);
+.notif-item-code {
+  padding: 0 0.16rem;
+  border-radius: 2px;
+  background: var(--notif-recess-bg);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.94em;
+  color: var(--muted-higher);
+  word-break: break-all;
 }
 
-.notif-item-detail summary {
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-}
-
-.notif-item-detail summary::-webkit-details-marker {
-  display: none;
-}
-
-.notif-item-detail-pre {
-  margin: 0.35rem 0 0;
-  padding: 0.4rem 0.45rem;
-  max-height: 8rem;
-  overflow: auto;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.65rem;
-  line-height: 1.35;
+/* A record that arrived with a raw diagnostic and no prose gets it here, so
+   keep the emitter's line breaks rather than reflowing machine output. */
+.notif-item-body.is-diagnostic {
   white-space: pre-wrap;
-  word-break: break-word;
-  background: color-mix(in oklab, var(--menu-bg) 88%, var(--notif-accent) 12%);
-  border-radius: var(--radius-sm);
 }
 
-.notif-item-time {
-  display: block;
+.notif-item-foot {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  margin-top: 0.3rem;
+}
+
+/* A foot carrying nothing but the stamp reads as a hairline under the body,
+   not a row of its own; only chips and toggles earn the full gap. */
+.notif-item-foot:not(:has(.notif-item-link, .notif-item-more, .notif-item-tag)) {
   margin-top: 0.2rem;
-  font-size: 0.62rem;
-  color: var(--muted-high);
-  font-variant-numeric: tabular-nums;
 }
 
-.notif-item-dismiss {
-  flex-shrink: 0;
-  margin-top: 0.05rem;
+.notif-item-stamp {
+  flex: 0 0 auto;
+  font-size: 0.615rem;
+  line-height: 1.4;
+  color: var(--muted-mid);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.notif-item-dot {
+  flex: 0 0 auto;
+  width: 0.3rem;
+  height: 0.3rem;
+  margin-right: 0.02rem;
+  border-radius: 50%;
+  background: var(--notif-accent);
+}
+
+.notif-item-tag {
+  flex: 0 0 auto;
+  padding: 0 0.26rem;
+  border-radius: var(--radius-sm);
+  background: var(--notif-recess-bg);
+  font-size: 0.575rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  text-transform: uppercase;
   color: var(--muted-mid);
 }
 
+.notif-item-link {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0.05rem 0.32rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.63rem;
+  line-height: 1.5;
+  color: var(--notif-accent);
+  background: color-mix(in oklab, var(--notif-wash) 84%, var(--notif-accent) 16%);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .notif-item-dismiss:hover {
-    color: var(--menu-item-fg-hover);
+  .notif-item-link:hover {
+    background: color-mix(in oklab, var(--notif-wash) 70%, var(--notif-accent) 30%);
   }
+}
+
+.notif-item-more {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0 0 0 0.05rem;
+  padding: 0.05rem 0.24rem 0.05rem 0.1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  line-height: 1.5;
+  color: var(--muted-mid);
+  cursor: pointer;
+}
+
+.notif-item-chevron {
+  width: 0.6rem;
+  height: 0.6rem;
+  transition: transform var(--transition);
+}
+
+.notif-item-more.is-open .notif-item-chevron {
+  transform: rotate(90deg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .notif-item-more:hover {
+    color: var(--base-highest);
+  }
+}
+
+.notif-item-diag {
+  grid-area: diag;
+  margin: 0.35rem 0 0.05rem;
+  padding: 0.4rem 0.45rem;
+  max-height: 8rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.63rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted-high);
+  background: var(--notif-recess-bg);
+  border-radius: var(--radius-sm);
+}
+
+.notif-item-dismiss {
+  grid-area: close;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: -0.05rem -0.05rem 0 0;
+  color: var(--muted-mid);
+  opacity: 0.6;
+  transition: color var(--transition), opacity var(--transition);
+}
+
+.notif-item-dismiss svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .notif-item:hover .notif-item-dismiss {
+    opacity: 1;
+  }
+
+  .notif-item-dismiss:hover {
+    color: var(--notif-accent);
+  }
+}
+
+.notif-item-link:focus-visible,
+.notif-item-more:focus-visible,
+.notif-item-dismiss:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: var(--focus-ring);
 }
 
 /* -- Toasts -- */
@@ -275,25 +492,27 @@
     opacity 240ms ease;
 }
 
+/* Kinds share the inbox's accents, so a toast and the card it banks read as
+   the same event. */
 .toast--default {
-  --toast-accent: var(--muted-mid);
+  --toast-accent: var(--notif-kind-system);
   --toast-wash: var(--menu-bg);
 }
 .toast--success {
-  --toast-accent: light-dark(hsl(145, 55%, 38%), hsl(145, 45%, 52%));
+  --toast-accent: var(--notif-kind-success);
   --toast-wash: color-mix(in oklab, var(--menu-bg) 91%, var(--toast-accent) 9%);
 }
 .toast--error {
-  --toast-accent: var(--repl-error);
-  --toast-wash: color-mix(in oklab, var(--menu-bg) 90%, var(--repl-error) 10%);
+  --toast-accent: var(--notif-kind-error);
+  --toast-wash: color-mix(in oklab, var(--menu-bg) 90%, var(--toast-accent) 10%);
 }
 .toast--info {
-  --toast-accent: var(--accent-mid);
-  --toast-wash: color-mix(in oklab, var(--menu-bg) 91%, var(--accent-mid) 9%);
+  --toast-accent: var(--notif-kind-info);
+  --toast-wash: color-mix(in oklab, var(--menu-bg) 91%, var(--toast-accent) 9%);
 }
 .toast--warn {
-  --toast-accent: var(--repl-warn);
-  --toast-wash: color-mix(in oklab, var(--menu-bg) 90%, var(--repl-warn) 10%);
+  --toast-accent: var(--notif-kind-warn);
+  --toast-wash: color-mix(in oklab, var(--menu-bg) 90%, var(--toast-accent) 10%);
 }
 
 .toast-body {

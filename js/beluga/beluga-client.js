@@ -235,12 +235,13 @@
       err.isStackOverflow = isOvf;
       if (!isOvf && global.Toasts && global.Toasts.error) {
         global.Toasts.error(
-          'Beluga checker failed to load' + loc + '.',
+          'Beluga checker failed to load.',
           {
-            duration: 12000,
+            duration: 'long',
             durable: true,
-            detail: (msg || 'Beluga worker crashed') + loc
-              + '. Hard-refresh the page; if it persists, check that beluga_web.bc.js downloads fully in the Network tab.',
+            body: 'Type-checking is unavailable until it loads. Reload the page;'
+              + ' if it keeps failing, check that beluga_web.bc.js downloads fully.',
+            detail: (msg || 'Beluga worker crashed') + loc,
             source: 'beluga.worker',
             dedupeKey: 'beluga.worker.onerror',
           },

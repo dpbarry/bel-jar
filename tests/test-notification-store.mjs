@@ -2,6 +2,7 @@ import {
   createNotificationStore,
   createMemoryAdapter,
   createLocalPersistAdapter,
+  linkTarget,
   normalizeRecord,
   migrateRecord,
   SCHEMA_VERSION,
@@ -65,6 +66,16 @@ expect(store.get(id1).title === 'A2', 'dedupe updates title');
 expect(store.get(id1).createdAt === 20, 'explicit createdAt on merge');
 expect(store.get(id1).readAt == null, 'dedupe resets unread');
 
+// A repeat refreshes the one card; it never becomes a stack or a tally.
+store.upsert({
+  title: 'A3', kind: 'error', source: 'prover.split', dedupeKey: 'k1', createdAt: 21,
+});
+expect(store.count() === 1, 'a third sighting is still one card');
+expect(store.get(id1).title === 'A3', 'and it carries the latest wording');
+expect(store.get(id1).count === undefined, 'nothing counts the repeats');
+expect(normalizeRecord({ title: 'restored', count: 7 }).count === undefined,
+  'a count from an older store is dropped, not honoured');
+
 store.upsert({ title: 'B', source: 'ops', createdAt: 100 });
 store.upsert({ title: 'C', source: 'ops', createdAt: 200 });
 store.upsert({ title: 'D', source: 'ops', createdAt: 300 });
@@ -97,4 +108,37 @@ const s3 = createNotificationStore({ adapter: persistAdapter });
 expect(s3.count() === 1, 'local persist round-trip');
 expect(s3.list()[0].title === 'Persisted', 'persisted title');
 
-console.log('OK notification-store (normalize, dedupe, cap, persist, subscribe)');
+// -- linkTarget: what the inbox can actually navigate to --------------------
+expect(linkTarget(null) === null, 'linkTarget: no record');
+expect(linkTarget(normalizeRecord('bare')) === null, 'linkTarget: no links');
+expect(linkTarget(normalizeRecord({ title: 'x', links: { line: 4 } })) === null,
+  'linkTarget: line without fileId is not addressable');
+expect(linkTarget(normalizeRecord({ title: 'x', links: { fileId: 'f1' } })) === null,
+  'linkTarget: fileId alone aims at nothing');
+
+const byLine = linkTarget(normalizeRecord({
+  title: 'x', links: { fileId: 'f1', path: 'proofs/weak-norm.bel', line: 42 },
+}));
+expect(byLine.fileId === 'f1', 'linkTarget: fileId');
+expect(byLine.from === null && byLine.line === 42, 'linkTarget: line resolves later');
+expect(byLine.label === 'weak-norm.bel:42', 'linkTarget: label is basename:line');
+
+const byOffset = linkTarget(normalizeRecord({
+  title: 'x', links: { fileId: 'f1', path: 'a.bel', from: 100, to: 120, line: 9 },
+}));
+expect(byOffset.from === 100 && byOffset.to === 120, 'linkTarget: offsets survive normalize');
+expect(byOffset.label === 'a.bel:9', 'linkTarget: line still labels an offset target');
+
+const noTo = linkTarget(normalizeRecord({ title: 'x', links: { fileId: 'f1', from: 7 } }));
+expect(noTo.to === 7, 'linkTarget: to defaults to from');
+expect(noTo.label === 'f1', 'linkTarget: falls back to fileId with no path');
+
+expect(linkTarget(normalizeRecord({ title: 'x', links: { fileId: 'f1', line: 0 } })) === null,
+  'linkTarget: line 0 is not a line');
+
+const roundTrip = migrateRecord(normalizeRecord({
+  title: 'x', links: { fileId: 'f1', from: 5, to: 8, path: 'a.bel' },
+}));
+expect(linkTarget(roundTrip).from === 5, 'linkTarget: survives migrate');
+
+console.log('OK notification-store (normalize, dedupe, cap, persist, subscribe, linkTarget)');

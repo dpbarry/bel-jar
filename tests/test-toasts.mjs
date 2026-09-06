@@ -28,6 +28,8 @@ expect(shouldNotify('success') === false, 'success does not notify');
 expect(shouldNotify('info', true) === true, 'notify:true on info');
 expect(normalizeDuration({}) === 3500, 'missing duration → default');
 expect(normalizeDuration({ duration: 1200 }) === 1200, 'custom duration');
+expect(normalizeDuration({ duration: 'long' }) === 5000, 'named long → 5s');
+expect(normalizeDuration({ duration: 'short' }) === 2000, 'named short → 2s');
 expect(normalizeDuration({ duration: 0 }) === null, '0 → indefinite');
 expect(normalizeDuration({ duration: false }) === null, 'false → indefinite');
 expect(normalizeDuration({ duration: null }) === null, 'null → indefinite');
@@ -38,5 +40,20 @@ expect(parsed.kind === 'success', 'kind preserved');
 expect(parsed.closable === true, 'closable preserved');
 expect(parsed.durable === true, 'durable preserved');
 expect(parsed.duration === 3500, 'parseOpts default duration');
+
+// The inbox card needs more than the toast line: a durable toast carries its
+// explanation and its jump target across the bridge, or the card reads bare.
+const bridged = parseOpts('Beluga checker failed to load.', {
+  kind: 'error',
+  durable: true,
+  body: 'Reload the page to retry.',
+  detail: 'Beluga worker crashed',
+  links: { fileId: 'f1', line: 12 },
+});
+expect(bridged.body === 'Reload the page to retry.', 'body crosses the bridge');
+expect(bridged.detail === 'Beluga worker crashed', 'detail crosses the bridge');
+expect(bridged.links && bridged.links.fileId === 'f1', 'links cross the bridge');
+expect(parseOpts('x', {}).body === null, 'no body opt, no body');
+expect(parseOpts('x', { links: 'nope' }).links === null, 'a non-object links is dropped');
 
 console.log('OK toasts (duration parsing, durable opts)');

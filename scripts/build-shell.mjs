@@ -30,6 +30,8 @@ const SHELL_ENTRIES = [
   'ui/command-palette.mjs',
   'ui/scroll-fade.mjs',
   'ui/toasts.mjs',
+  // The shared chrome, loadable on its own by a page with no editor:
+  'frame/frame.mjs',
   'ui/name-conflicts.mjs',
   'repl/repl-output.mjs',
   // index.html head / inline boot (classic IIFE, not shell graph):

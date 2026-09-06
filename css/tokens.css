@@ -195,6 +195,18 @@
   --menu-separator: light-dark(hsla(220, 10%, 50%, 0.14), hsla(220, 10%, 70%, 0.1));
   --menu-shortcut-fg: var(--ui-fg-faint);
 
+  /* Notification inbox — cards inset on the menu surface. Each kind brands with
+     one accent; the wash/edge pair is how strongly a card wears it. */
+  --notif-card-bg: light-dark(hsl(220, 20%, 97.2%), hsl(222, 14%, 10.5%));
+  --notif-card-bg-hover: light-dark(hsl(220, 22%, 95.8%), hsl(222, 14%, 12.5%));
+  --notif-card-border: light-dark(hsla(220, 10%, 55%, 0.22), hsla(220, 12%, 64%, 0.16));
+  --notif-recess-bg: light-dark(hsla(220, 12%, 88%, 0.55), hsla(222, 18%, 5%, 0.5));
+  --notif-kind-error: var(--repl-error);
+  --notif-kind-warn: var(--repl-warn);
+  --notif-kind-info: var(--accent-mid);
+  --notif-kind-success: var(--ide-status-clean);
+  --notif-kind-system: var(--muted-mid);
+
   /* Search UI — shared chrome for inputs & result dropdowns. Sizing stays local;
      recess vs well variants, border-only focus accent, dropdown shadow, and row hover align. */
   --search-recess-radius: var(--radius-sm);
@@ -218,7 +230,7 @@
   --search-drop-bg: var(--menu-bg);
   --search-drop-border: var(--menu-border);
   --search-drop-shadow: var(--shadow-popover);
-  --search-drop-pad: 0.25rem;
+  --search-drop-pad: 0;
 
   --search-row-radius: var(--menu-item-radius);
   --search-row-hover-bg: var(--menu-item-hover-wash);

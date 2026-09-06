@@ -43,10 +43,9 @@
       </a>
       <button id="btn-notifications" type="button" class="icon-btn notif-bell" data-tooltip="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M10.268 21a2 2 0 0 0 3.464 0"/>
-          <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>
+          <path class="notif-bell-body" d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326Z"/>
+          <path class="notif-bell-clapper" d="M10.268 21a2 2 0 0 0 3.464 0"/>
         </svg>
-        <span class="notif-badge" id="notif-badge" hidden aria-hidden="true"></span>
       </button>
       <button id="btn-theme" class="icon-btn theme-toggle" data-tooltip="Toggle theme">
         <svg class="icon-moon" viewBox="1.25 1.25 21.5 21.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -62,14 +61,17 @@
   <aside id="notif-panel" class="notif-panel" aria-hidden="true" aria-label="Notifications">
     <div class="notif-panel-header">
       <span class="notif-panel-title">Notifications</span>
-      <button id="btn-notif-clear" type="button" class="icon-btn" data-tooltip="Clear all" aria-label="Clear all notifications">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 5h18"/><path d="M19 5v15c0 1-1 2-2 2H7c-1 0-2-1-2-2V5"/><path d="M8 5V3c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-        </svg>
-      </button>
+      <span id="notif-panel-count" class="notif-panel-count" aria-hidden="true" hidden></span>
+      <button id="btn-notif-clear" type="button" class="notif-panel-clear" aria-label="Clear all notifications" hidden>Clear all</button>
     </div>
     <ul id="notif-panel-list" class="notif-panel-list" role="list"></ul>
-    <p id="notif-panel-empty" class="notif-panel-empty">No notifications</p>
+    <p id="notif-panel-empty" class="notif-panel-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+        <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/>
+      </svg>
+      <span>No notifications</span>
+    </p>
   </aside>
 
   <div id="toast-stack" class="toast-stack" popover="manual" aria-live="polite" aria-relevant="additions"></div>

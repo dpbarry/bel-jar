@@ -19,6 +19,10 @@ import {
   repeatLast, lastEntry, attachExCompletion, detachExCompletion,
   showKeyHints, hideKeyHints, forceList,
 } from './status-strip-line-ui.mjs';
+import {
+  toggle as toggleHistory, close as closeHistory, refresh as refreshHistory,
+  isOpen as historyOpen,
+} from './status-strip-history-ui.mjs';
 
 const global = globalThis;
 
@@ -56,6 +60,9 @@ const state = {
   symbols: NaN,
   orca: false,
   orcaDetail: '',
+  undoDepth: 0,
+  redoDepth: 0,
+  historyOpen: false,
 };
 
 let detail = 'standard';
@@ -118,6 +125,7 @@ function ownStatusDot(owned) {
 
 function unmount() {
   closeLine({ restore: false });
+  closeHistory();
   if (root && root.parentNode) root.parentNode.removeChild(root);
   root = null;
   segmentHost = null;
@@ -196,6 +204,8 @@ function segmentEl(seg) {
     el.setAttribute('data-tooltip', seg.title);
     el.setAttribute('aria-label', seg.title);
   }
+  if (seg.pressed != null) el.setAttribute('aria-expanded', seg.pressed ? 'true' : 'false');
+  if (seg.pressed) el.classList.add('is-open');
   if (seg.dot) el.appendChild(statusDot());
   if (seg.mark) {
     const mark = document.createElement('span');
@@ -221,11 +231,33 @@ const ACTIONS = {
   'open-harpoon': () => global.Commands?.run('prover.open-in-harpoon')
     || global.Commands?.run('view.harpoon'),
   'run': () => global.Commands?.run('run.file'),
+  'edit-history': () => openHistory(),
 };
 
 function runAction(action) {
   const fn = ACTIONS[action];
   if (fn) fn();
+}
+
+/**
+ * Open or close the history panel, and keep the segment's pressed state honest.
+ *
+ * The panel calls back on every change so the count in the strip and the rows in
+ * the panel can never disagree — one stack, read in two places, never two
+ * copies kept in step by hand.
+ */
+function openHistory() {
+  toggleHistory(syncHistory);
+  syncHistory();
+}
+
+function syncHistory() {
+  const H = global.EditHistory;
+  setEditorState({
+    undoDepth: H && H.getUndoStack ? H.getUndoStack().length : 0,
+    redoDepth: H && H.getRedoStack ? H.getRedoStack().length : 0,
+    historyOpen: historyOpen(),
+  });
 }
 
 function paint() {
@@ -236,7 +268,7 @@ function paint() {
   const segments = buildSegments(state, detail);
   // Cheap identity check: a repaint that would change nothing is skipped, so a
   // caret sweeping within one line never touches the DOM.
-  const signature = segments.map((s) => s.key + ':' + s.text + ':' + s.tone).join('|');
+  const signature = segments.map((s) => s.key + ':' + s.text + ':' + s.tone + ':' + (s.pressed ? '1' : '')).join('|');
   if (signature === rendered) return;
   rendered = signature;
   const els = segments.map(segmentEl);
@@ -361,7 +393,7 @@ function setEditorState(next) {
   // set mark both belong to the keymap that was active when they happened.
   if (next.style && next.style !== state.style) next = { ...next, pending: '', mark: false };
   for (const key of ['style', 'mode', 'pending', 'mark', 'hasFile', 'line', 'col', 'selChars', 'selLines',
-    'goal', 'holes', 'symbols', 'orca', 'orcaDetail']) {
+    'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen']) {
     if (!(key in next) || state[key] === next[key]) continue;
     state[key] = next[key];
     changed = true;
@@ -465,6 +497,7 @@ function apply() {
   root.dataset.detail = detail;
   seedFromEditor();
   refreshProofState();
+  syncHistory();
   paint();
 }
 
@@ -556,6 +589,19 @@ global.StatusStrip = {
   lastCommandLine: lastEntry,
   closeCommandLine: closeLine,
   setOrca,
+  /**
+   * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
+   * never polls the history: a widget that counts something has to be told when
+   * the count changes, or it shows a stale number until the caret happens to
+   * move.
+   */
+  setHistoryDepth: (undoDepth, redoDepth) => {
+    setEditorState({ undoDepth: undoDepth || 0, redoDepth: redoDepth || 0 });
+    refreshHistory();
+  },
+  openHistory,
+  closeHistory,
+  isHistoryOpen: historyOpen,
   isMounted: () => mounted,
   element: () => root,
   _pure: { buildSegments, isResting },

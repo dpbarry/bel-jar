@@ -387,7 +387,6 @@ function splitDeclineRecord(varName, note, extra, hole) {
   return {
     title: `Split ${varName} declined`,
     body: `Split ${varName}${head}${where}: ${why}. ${fallback}`,
-    detail: extra || null,
     source: 'prover.split',
     dedupeKey: `prover.split:${varName}:${note.reason || ''}:${note.head || ''}`,
     links: holeLinks(hole),

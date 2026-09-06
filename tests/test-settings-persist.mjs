@@ -231,7 +231,10 @@ assert.equal(P.readStoredToastDuration(), 'normal');
 P.writeStoredToastDuration('short');
 assert.equal(P.toastDurationMs(), 2000);
 P.writeStoredToastDuration('long');
-assert.equal(P.toastDurationMs(), 6000);
+assert.equal(P.toastDurationMs(), 5000);
+assert.equal(P.toastDurationForMode('long'), 5000);
+assert.equal(P.toastDurationForMode('short'), 2000);
+assert.equal(P.toastDurationForMode('normal'), 3500);
 P.writeStoredToastDuration('normal');
 assert.equal(P.toastDurationMs(), 3500);
 

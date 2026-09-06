@@ -42,7 +42,7 @@ expect(maybeExpandBelAliases('\\lor') === '\\lor', 'strict leaves text');
 globalThis.Persist = { readStoredAliasActivation() { return 'greedy'; } };
 expect(maybeExpandBelAliases('\\lor') === '∨', 'greedy expands text');
 globalThis.Persist = undefined;
-expect(readAliasActivationMode() === 'strict', 'default strict');
+expect(readAliasActivationMode() === 'greedy', 'default greedy');
 
 invalidateAliasPairs();
 expect(defaultAliasPairs().length > 10, 'defaults exist');

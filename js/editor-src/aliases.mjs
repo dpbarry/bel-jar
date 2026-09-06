@@ -147,7 +147,7 @@ export function readAliasActivationMode() {
   if (persist && typeof persist.readStoredAliasActivation === 'function') {
     return persist.readStoredAliasActivation();
   }
-  return 'strict';
+  return 'greedy';
 }
 
 export function expandBelAliases(text) {

@@ -15,6 +15,17 @@ const DEFAULT_DURATION_MS = 3500;
     return 'toast-' + seq;
   }
 
+  function durationForMode(mode) {
+    try {
+      if (typeof Persist !== 'undefined' && typeof Persist.toastDurationForMode === 'function') {
+        return Persist.toastDurationForMode(mode);
+      }
+    } catch (_) {}
+    if (mode === 'short') return 2000;
+    if (mode === 'long') return 5000;
+    return DEFAULT_DURATION_MS;
+  }
+
   function normalizeDuration(opts) {
     var fallback = DEFAULT_DURATION_MS;
     try {
@@ -25,6 +36,7 @@ const DEFAULT_DURATION_MS = 3500;
     if (!opts || opts.duration === undefined) return fallback;
     const d = opts.duration;
     if (d === false || d === null || d === 0 || d === Infinity) return null;
+    if (d === 'short' || d === 'normal' || d === 'long') return durationForMode(d);
     if (typeof d === 'number' && d > 0) return d;
     return fallback;
   }
@@ -40,10 +52,12 @@ const DEFAULT_DURATION_MS = 3500;
       onDismiss: typeof o.onDismiss === 'function' ? o.onDismiss : null,
       notify: o.notify,
       durable: o.durable,
+      body: o.body != null ? String(o.body) : null,
       detail: o.detail != null ? String(o.detail) : null,
       source: o.source != null ? String(o.source) : null,
       dedupeKey: o.dedupeKey != null ? String(o.dedupeKey) : null,
       category: o.category != null ? String(o.category) : null,
+      links: o.links && typeof o.links === 'object' ? o.links : null,
     };
   }
 
@@ -60,10 +74,12 @@ const DEFAULT_DURATION_MS = 3500;
     if (typeof N.fromToast === 'function') {
       N.fromToast(message, {
         kind: parsed.kind,
+        body: parsed.body,
         detail: parsed.detail,
         source: parsed.source,
         dedupeKey: parsed.dedupeKey,
         category: parsed.category,
+        links: parsed.links,
       });
       return;
     }
@@ -247,14 +263,26 @@ const DEFAULT_DURATION_MS = 3500;
       stackEl.className = 'toast-stack';
       stackEl.setAttribute('aria-live', 'polite');
       stackEl.setAttribute('aria-relevant', 'additions');
+      stackEl.dataset.toastsOwned = 'yes';
       document.body.appendChild(stackEl);
     }
     // Manual popover puts toasts in the top layer above <dialog showModal()> backdrops.
     if (!stackEl.hasAttribute('popover')) stackEl.setAttribute('popover', 'manual');
   }
 
+  // Drop anything on screen and release the stack. The element is only removed
+  // when init() created it; a stack that came from the page belongs to the page.
+  function dispose() {
+    dismissAll();
+    if (stackEl && stackEl.dataset && stackEl.dataset.toastsOwned === 'yes') {
+      try { stackEl.remove(); } catch (_) {}
+    }
+    stackEl = null;
+  }
+
   global.Toasts = {
     init,
+    dispose,
     show,
     error: (message, opts) => typed('error', message, opts),
     warn: (message, opts) => typed('warn', message, opts),

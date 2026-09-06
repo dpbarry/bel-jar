@@ -15,6 +15,13 @@ function emptyStructural() {
     cfg: {},
     openFileIds: null,
     activeFileId: null,
+    // ⛔ Folders are TWO things: implicit (a file named `demo/a.bel` makes
+    // `demo` exist) and explicit (a folder record kept alive with nothing in
+    // it). Deleting the last file in a folder deliberately promotes it to the
+    // explicit list — right when a user deletes files, WRONG when undo removes
+    // files that a step created, which left an empty `demo/` behind after
+    // undoing a folder import. So the explicit list is part of the snapshot.
+    emptyFolders: null,
   };
 }
 
@@ -32,6 +39,7 @@ export function normalizeEntry(raw) {
       cfg: raw.structural.cfg && typeof raw.structural.cfg === 'object' ? raw.structural.cfg : {},
       openFileIds: raw.structural.openFileIds ?? null,
       activeFileId: raw.structural.activeFileId ?? null,
+      emptyFolders: raw.structural.emptyFolders ?? null,
     }
     : emptyStructural();
   return {
@@ -60,6 +68,11 @@ function listsEqual(a, b) {
 
 function captureOpenIds(adapter) {
   return adapter.getOpenFileIds?.() ?? null;
+}
+
+function captureEmptyFolders(adapter) {
+  const list = adapter.listEmptyFolders?.();
+  return Array.isArray(list) ? list.slice().sort() : null;
 }
 
 function captureActiveId(adapter) {
@@ -94,14 +107,11 @@ function structuralSide(entry, direction) {
     openFileIds: s.openFileIds
       ? (undo ? s.openFileIds.after : s.openFileIds.before)
       : null,
-    openFileIdsExpect: s.openFileIds
-      ? (undo ? s.openFileIds.after : s.openFileIds.before)
-      : null,
     activeFileId: s.activeFileId
       ? (undo ? s.activeFileId.after : s.activeFileId.before)
       : null,
-    activeFileIdExpect: s.activeFileId
-      ? (undo ? s.activeFileId.after : s.activeFileId.before)
+    emptyFolders: s.emptyFolders
+      ? (undo ? s.emptyFolders.before : s.emptyFolders.after)
       : null,
   };
 }
@@ -134,22 +144,24 @@ function isViewportLocal(local) {
     && (local.selection || isFinite(local.scrollTop) || local.viewportAnchor || local.centerLine != null));
 }
 
+/**
+ * Where the caret goes when this record is applied.
+ *
+ * ⛔ `beforeSel`/`afterSel` WIN over `beforeLocal.selection`. They are read from
+ * the exact state the edit started and ended in (`update.startState` for a
+ * typing burst, the pre-dispatch view for a command). `beforeLocal` is a
+ * viewport snapshot taken from an update LISTENER — by then the first keystroke
+ * of the burst has already landed, so its selection is one edit late. Undoing a
+ * word typed at the end of a line used to drop the caret on the NEXT line
+ * because of exactly that off-by-one.
+ */
 function selectionForFile(rec, direction, len) {
   if (!rec) return clampSelection(null, len);
+  const raw = direction === 'undo' ? rec.beforeSel : rec.afterSel;
+  if (raw && isFinite(raw.anchor) && isFinite(raw.head)) return clampSelection(raw, len);
   const local = direction === 'undo' ? rec.beforeLocal : rec.afterLocal;
   if (local?.selection) return clampSelection(local.selection, len);
-  const raw = direction === 'undo' ? rec.beforeSel : rec.afterSel;
-  return clampSelection(raw, len);
-}
-
-function viewportLocalForFile(rec, direction, entry, fileId) {
-  if (rec) {
-    const side = direction === 'undo' ? rec.beforeLocal : rec.afterLocal;
-    if (isViewportLocal(side)) return side;
-  }
-  const legacy = entry?.editorLocal?.[fileId];
-  if (isViewportLocal(legacy)) return legacy;
-  return null;
+  return clampSelection(null, len);
 }
 
 function captureAdapterViewport(adapter) {
@@ -194,6 +206,66 @@ function entryTouchesFile(entry, fileId) {
   if (s.cfg[fileId]) return true;
   if (s.created.some((f) => f.id === fileId)) return true;
   if (s.deleted.some((f) => f.id === fileId)) return true;
+  return false;
+}
+
+/**
+ * A document change nobody asked for: every transaction in it opted out of
+ * history. Trim-on-save, format-on-save, a whole-document reindent, a rename's
+ * internal sync, our own undo/redo replacement.
+ *
+ * ⛔ "Out of band" means AMEND, never IGNORE. See onDocChange.
+ */
+function isOutOfBand(update) {
+  return update.transactions.every((tr) => {
+    if (tr.annotation(Transaction.addToHistory) === false) return true;
+    if (tr.annotation(editHistoryTxn)) return true;
+    const ue = tr.annotation(Transaction.userEvent);
+    return ue === 'undo' || ue === 'redo';
+  });
+}
+
+/**
+ * Point one side of an entry's record of `fileId` at `text`.
+ *
+ * `side` is the side that faces the CURRENT document: an undo-stack entry's
+ * `after`, a redo-stack entry's `before`. Returns true if anything moved.
+ */
+/**
+ * An entry that no longer moves anything.
+ *
+ * Amending can flatten a step to nothing: type three trailing spaces, let
+ * trim-on-save take them straight back out, and the entry that recorded the
+ * typing now says before === after. Leaving it on the stack costs the user a
+ * Ctrl+Z that visibly does nothing, which is its own kind of rotten, so a
+ * flattened entry is dropped instead.
+ */
+function isNoOpEntry(entry) {
+  const s = entry.structural || emptyStructural();
+  if (s.created.length || s.deleted.length || s.openFileIds || s.activeFileId) return false;
+  if (s.emptyFolders) return false;
+  for (const rec of Object.values(entry.files || {})) {
+    if (rec.before !== rec.after) return false;
+  }
+  for (const patch of Object.values(s.cfg || {})) {
+    if (patch.before !== patch.after) return false;
+  }
+  return true;
+}
+
+function amendEntryFile(entry, fileId, side, text) {
+  const rec = entry.files?.[fileId];
+  if (rec) {
+    if (rec[side] === text) return true;
+    rec[side] = text;
+    return true;
+  }
+  const patch = entry.structural?.cfg?.[fileId];
+  if (patch) {
+    if (patch[side] === text) return true;
+    patch[side] = text;
+    return true;
+  }
   return false;
 }
 
@@ -245,19 +317,15 @@ function validateEntry(adapter, entry, direction) {
     }
   }
 
-  if (side.openFileIdsExpect != null) {
-    const curOpen = captureOpenIds(adapter);
-    if (!listsEqual(curOpen, side.openFileIdsExpect)) {
-      return { ok: false, reason: 'open-tabs-mismatch' };
-    }
-  }
-
-  if (side.activeFileIdExpect != null) {
-    const curActive = captureActiveId(adapter);
-    if (curActive !== side.activeFileIdExpect) {
-      return { ok: false, reason: 'active-file-mismatch' };
-    }
-  }
+  // ⛔ Which tabs are open and which one is in front do NOT gate a step.
+  //
+  // They are presentation, not content: `applyWorkspacePatch` simply SETS both,
+  // so there is nothing to lose by proceeding and nothing to protect by
+  // stopping. Requiring an exact match made redo refuse itself — undoing a
+  // delete restores the files, the app opens one of them to show the user, the
+  // tab list is now legitimately different from the recorded one, and the redo
+  // that should have followed answered `open-tabs-mismatch` and did nothing at
+  // all. A step is blocked only by something it genuinely cannot carry out.
 
   return { ok: true };
 }
@@ -271,6 +339,7 @@ function snapshotWorkspace(adapter) {
     files,
     openFileIds: captureOpenIds(adapter),
     activeFileId: captureActiveId(adapter),
+    emptyFolders: captureEmptyFolders(adapter),
     fileRecords: (adapter.listFiles?.() ?? []).map((f) => ({ id: f.id, name: f.name })),
   };
 }
@@ -308,11 +377,22 @@ function diffWorkspace(before, after, kind, label) {
   if (before.activeFileId !== after.activeFileId) {
     structural.activeFileId = { before: before.activeFileId, after: after.activeFileId };
   }
+  // ⛔ Recorded whenever files come or go, NOT only when the two lists differ.
+  // Applying the step is what invents the discrepancy: deleting the last file
+  // in a folder promotes that folder onto the explicit list, so undoing a
+  // folder import went `[] → [] → ['demo']` and left an empty `demo/` sitting
+  // in the explorer. The snapshot has to be there to restore even when nothing
+  // about it changed at record time.
+  const filesMoved = structural.created.length || structural.deleted.length;
+  if (before.emptyFolders && after.emptyFolders
+    && (filesMoved || !listsEqual(before.emptyFolders, after.emptyFolders))) {
+    structural.emptyFolders = { before: before.emptyFolders, after: after.emptyFolders };
+  }
 
   const hasFiles = Object.keys(files).length > 0;
   const hasStruct = structural.created.length || structural.deleted.length
     || Object.keys(structural.cfg).length
-    || structural.openFileIds || structural.activeFileId;
+    || structural.openFileIds || structural.activeFileId || structural.emptyFolders;
   if (!hasFiles && !hasStruct) return null;
 
   return normalizeEntry({
@@ -332,7 +412,6 @@ export function createEditHistory(adapter) {
   let openEntry = null;
   let typingGroup = null;
   let typingTimer = null;
-  let nonUndoableUntil = 0;
   let applying = false;
 
   function persistStack() {
@@ -371,14 +450,6 @@ export function createEditHistory(adapter) {
 
   function toast(msg, kind = 'error') {
     adapter.toast?.(msg, kind);
-  }
-
-  function markNonUndoable(ms = 800) {
-    nonUndoableUntil = Date.now() + ms;
-  }
-
-  function isNonUndoable() {
-    return Date.now() < nonUndoableUntil || applying;
   }
 
   function flushTypingGroup() {
@@ -467,6 +538,7 @@ export function createEditHistory(adapter) {
       openEntry.structuralBefore = {
         openFileIds: captureOpenIds(adapter),
         activeFileId: captureActiveId(adapter),
+        emptyFolders: captureEmptyFolders(adapter),
         fileRecords: (adapter.listFiles?.() ?? []).map((f) => ({ id: f.id, name: f.name })),
         cfg: {},
       };
@@ -482,6 +554,7 @@ export function createEditHistory(adapter) {
       openEntry.structuralBefore = {
         openFileIds: captureOpenIds(adapter),
         activeFileId: captureActiveId(adapter),
+        emptyFolders: captureEmptyFolders(adapter),
         fileRecords: (adapter.listFiles?.() ?? []).map((f) => ({ id: f.id, name: f.name })),
         cfg: {},
       };
@@ -494,6 +567,7 @@ export function createEditHistory(adapter) {
       files: { ...openEntry.filesBefore },
       openFileIds: openEntry.structuralBefore?.openFileIds ?? captureOpenIds(adapter),
       activeFileId: openEntry.structuralBefore?.activeFileId ?? captureActiveId(adapter),
+      emptyFolders: openEntry.structuralBefore?.emptyFolders ?? captureEmptyFolders(adapter),
       fileRecords: openEntry.structuralBefore?.fileRecords
         ?? (adapter.listFiles?.() ?? []).map((f) => ({ id: f.id, name: f.name })),
     };
@@ -615,16 +689,20 @@ export function createEditHistory(adapter) {
       adapter.setActiveFileId(side.activeFileId);
     }
 
+    // After the deletes, not before: deleting the last file in a folder pushes
+    // that folder onto the explicit empty-folder list, so restoring the list
+    // has to happen once every file move is done.
+    if (side.emptyFolders != null && adapter.setEmptyFolders) {
+      rollback.emptyFolders = captureEmptyFolders(adapter);
+      adapter.setEmptyFolders(side.emptyFolders);
+    }
+
     if (ed && activeId && touchedActive.has(activeId)) {
       const target = fileTextSide(entry, activeId, direction);
       if (target == null) return true;
       const len = target.length;
       const rec = entry.files[activeId];
-      const viewportLocal = viewportLocalForFile(rec, direction, entry, activeId);
-      let sel = selectionForFile(rec, direction, len);
-      if (viewportLocal?.selection) {
-        sel = clampSelection(viewportLocal.selection, len);
-      }
+      const sel = selectionForFile(rec, direction, len);
       const ue = direction === 'undo' ? 'undo' : 'redo';
       const replaceOpts = {
         userEvent: ue,
@@ -634,19 +712,26 @@ export function createEditHistory(adapter) {
       if (typeof ed.replaceDocumentNonUndoable === 'function') {
         ed.replaceDocumentNonUndoable(target, replaceOpts);
       } else {
-        markNonUndoable();
         ed.setValueNonUndoable?.(target, replaceOpts)
           ?? ed.setValue?.(target);
       }
-      adapter.syncActiveEditorCheckpoint?.(ed.getValue?.() ?? target);
-      if (ed.applyViewport) {
-        const localToApply = isViewportLocal(viewportLocal)
-          ? { ...viewportLocal, selection: sel }
-          : { selection: sel };
-        if (typeof ed.getValue !== 'function' || ed.getValue() === target) {
-          ed.applyViewport(localToApply);
-        }
+
+      // ⛔ No applyViewport here. It schedules a selection dispatch and a raw
+      // scrollTop write two animation frames later, from a snapshot of a
+      // document that may no longer exist. Held down, Ctrl+Z queues one per
+      // press and they land after the whole run is over, each yanking the caret
+      // somewhere from the middle of the chain. The replacement above already
+      // sets the caret, in the same transaction as the text, synchronously —
+      // that is the whole restore, and it cannot arrive late or out of order.
+
+      // The editor sanitizes what it is handed (CRLF, zero-widths, exotic
+      // spaces). If that changed the text, the editor — not the entry — is now
+      // the truth, so move the entry rather than leave the stack lying.
+      const landed = typeof ed.getValue === 'function' ? ed.getValue() : target;
+      if (landed !== target) {
+        amendEntryFile(entry, activeId, direction === 'undo' ? 'before' : 'after', landed);
       }
+      adapter.syncActiveEditorCheckpoint?.(landed);
     }
 
     return true;
@@ -670,6 +755,45 @@ export function createEditHistory(adapter) {
     if (rollback.activeFileId != null && adapter.setActiveFileId) {
       adapter.setActiveFileId(rollback.activeFileId);
     }
+    if (rollback.emptyFolders != null && adapter.setEmptyFolders) {
+      adapter.setEmptyFolders(rollback.emptyFolders);
+    }
+  }
+
+  /**
+   * Fold text drift into the entry we are about to apply, so the step still
+   * runs.
+   *
+   * ⛔ Refusing was the wrong answer. If a file's current text is not what the
+   * entry expects, something rewrote it without telling us — and punishing the
+   * user by disabling undo for the rest of the session loses far more than it
+   * protects. Instead the drift becomes part of this step: the side facing the
+   * current document is re-pointed at the current text, so applying the entry
+   * reverses BOTH the recorded edit and the drift, and the opposite direction
+   * puts the drifted text back. Nothing is lost and nothing is refused.
+   *
+   * Structural impossibility (a file the entry needs is gone, or one it must
+   * create is already there) is not drift and is not folded — that still fails,
+   * and applyWorkspacePatch rolls back.
+   */
+  function reconcileDrift(entry, direction) {
+    const facing = direction === 'undo' ? 'after' : 'before';
+    const s = entry.structural || emptyStructural();
+    const skip = new Set([
+      ...(direction === 'undo' ? s.deleted : s.created).map((f) => f.id),
+    ]);
+    let folded = false;
+    for (const fileId of [...fileIdsOf(entry), ...Object.keys(s.cfg || {})]) {
+      if (skip.has(fileId)) continue;
+      if (!adapter.getFileById?.(fileId)) continue;
+      const cur = readFileText(adapter, fileId, true);
+      const rec = entry.files?.[fileId];
+      const patch = s.cfg?.[fileId];
+      const expect = rec ? rec[facing] : (patch ? patch[facing] : null);
+      if (expect == null || expect === cur) continue;
+      if (amendEntryFile(entry, fileId, facing, cur)) folded = true;
+    }
+    return folded;
   }
 
   function applyStackEntry(direction) {
@@ -679,20 +803,27 @@ export function createEditHistory(adapter) {
     if (!stack.length) return false;
 
     const entry = stack[stack.length - 1];
-    const check = validateEntry(adapter, entry, direction);
+    let check = validateEntry(adapter, entry, direction);
+    if (!check.ok && /^(text|cfg)-mismatch:/.test(check.reason || '')) {
+      if (reconcileDrift(entry, direction)) {
+        persistStack();
+        check = validateEntry(adapter, entry, direction);
+      }
+    }
     if (!check.ok) {
-      toast("Can't undo — the project changed since that edit.");
+      // Left only for the genuinely impossible: a file this step needs has been
+      // deleted, or one it created is already back. Say which way we were going.
+      toast(`Can't ${direction} — a file this step needs is no longer where it was.`);
       return false;
     }
 
     applying = true;
-    markNonUndoable(2000);
-    const rollback = { files: {}, deleted: [], removed: [], fileRecords: [], openFileIds: null, activeFileId: null };
+    const rollback = { files: {}, deleted: [], removed: [], fileRecords: [], openFileIds: null, activeFileId: null, emptyFolders: null };
     try {
       applyWorkspacePatch(entry, direction, rollback);
     } catch (err) {
       rollbackPatch(rollback);
-      toast("Can't undo — the project changed since that edit.");
+      toast(`Can't ${direction} — ${err?.message || 'the workspace would not take the change'}.`);
       applying = false;
       return false;
     }
@@ -707,13 +838,23 @@ export function createEditHistory(adapter) {
   }
 
   function onDocChange(view, update, fileId) {
-    if (!update.docChanged || !fileId || openEntry || applying) return;
-    if (update.transactions.some((tr) => {
-      if (tr.annotation(Transaction.addToHistory) === false) return true;
-      if (tr.annotation(editHistoryTxn)) return true;
-      const ue = tr.annotation(Transaction.userEvent);
-      return ue === 'undo' || ue === 'redo';
-    })) return;
+    if (!update.docChanged || !fileId) return;
+    // `applying` is us; `openEntry` is a transaction that commitEntry will
+    // snapshot for itself. Everything else has to land somewhere.
+    if (openEntry || applying) return;
+
+    // ⛔ An out-of-band rewrite is NOT ignorable. Trim-on-save, format-on-save,
+    // a reindent, a rename's internal sync — each dispatches with
+    // `addToHistory: false`, and the old recorder simply dropped them. The
+    // document then no longer matched the top entry's `after`, every later undo
+    // failed validation, and the user got "the project changed since that
+    // edit" forever. These are not undo STEPS (nobody wants a Ctrl+Z that only
+    // re-adds trailing spaces), so they amend the current state of the stack
+    // instead of pushing onto it.
+    if (isOutOfBand(update)) {
+      amendCurrentText(fileId, view.state.doc.toString());
+      return;
+    }
 
     // No toString() on the keystroke path: hold cheap references to the live
     // view (for the final "after") and the burst's starting doc (for "before").
@@ -728,15 +869,21 @@ export function createEditHistory(adapter) {
     }
 
     flushTypingGroup();
+    const beforeSel = selectionSnapshot(view, update.startState);
+    const beforeLocal = captureAdapterViewport(adapter);
+    // The viewport snapshot is taken from an update listener, so its selection
+    // is already one keystroke old. Keep its scroll, take the caret from the
+    // state the burst actually started in.
+    if (beforeLocal && beforeSel) beforeLocal.selection = { ...beforeSel };
     typingGroup = {
       fileId,
       view,
       before: null,
       beforeDoc: update.startState.doc,
       pendingAfter: null,
-      beforeSel: selectionSnapshot(view, update.startState),
+      beforeSel,
       afterSel: selectionSnapshot(view),
-      beforeLocal: captureAdapterViewport(adapter),
+      beforeLocal,
       afterLocal: null,
     };
     scheduleTypingFlush();
@@ -748,22 +895,52 @@ export function createEditHistory(adapter) {
   function undo() { return applyStackEntry('undo'); }
   function redo() { return applyStackEntry('redo'); }
 
+  /**
+   * Re-anchor the stack to `text` as the file's current content, WITHOUT
+   * creating an undo step and WITHOUT clearing the redo stack.
+   *
+   * The stack's standing invariant is:
+   *
+   *     current text === nearest undo entry that touches the file `.after`
+   *                  === nearest redo entry that touches the file `.before`
+   *
+   * Anything that rewrites the document behind the recorder's back breaks that
+   * invariant, and a broken invariant is what produced "Can't undo — the
+   * project changed since that edit." Amending restores it. We search from the
+   * top down because entries that do not mention the file say nothing about it
+   * and are unaffected either way.
+   */
+  function amendCurrentText(fileId, text) {
+    if (!fileId || text == null) return false;
+    // An open typing burst is the top entry in waiting: it, not the stack
+    // below it, owns the current text. Amending the stack here would leave the
+    // burst's `before` disagreeing with the entry under it.
+    if (typingGroup?.fileId === fileId) {
+      typingGroup.pendingAfter = text;
+      return true;
+    }
+    let moved = false;
+    for (let i = undoStack.length - 1; i >= 0; i -= 1) {
+      if (!amendEntryFile(undoStack[i], fileId, 'after', text)) continue;
+      moved = true;
+      if (isNoOpEntry(undoStack[i])) undoStack.splice(i, 1);
+      break;
+    }
+    for (let i = redoStack.length - 1; i >= 0; i -= 1) {
+      if (!amendEntryFile(redoStack[i], fileId, 'before', text)) continue;
+      moved = true;
+      if (isNoOpEntry(redoStack[i])) redoStack.splice(i, 1);
+      break;
+    }
+    if (moved) {
+      persistStack();
+      adapter.onStackChange?.();
+    }
+    return moved;
+  }
+
   function reconcileActiveFile(fileId, text) {
-    if (!fileId || text == null) return;
-    if (typingGroup?.fileId === fileId) typingGroup.pendingAfter = text;
-    if (!undoStack.length) return;
-    const entry = undoStack[undoStack.length - 1];
-    const rec = entry.files?.[fileId];
-    if (!rec || rec.after === text) return;
-    entry.files[fileId] = {
-      before: rec.before,
-      after: text,
-      beforeSel: rec.beforeSel,
-      afterSel: rec.afterSel,
-      beforeLocal: rec.beforeLocal,
-      afterLocal: rec.afterLocal,
-    };
-    persistStack();
+    amendCurrentText(fileId, text);
   }
 
   function swapProject(projectKey) {
@@ -788,8 +965,6 @@ export function createEditHistory(adapter) {
     reconcileActiveFile,
     flushCheckpoint: () => adapter.flushCheckpoint?.(),
     onDocChange,
-    markNonUndoable,
-    isNonUndoable,
     isApplying: () => applying,
     canUndo,
     canRedo,
@@ -803,7 +978,7 @@ export function createEditHistory(adapter) {
       const check = validateEntry(adapter, entry, direction);
       if (!check.ok) return false;
       applying = true;
-      const rollback = { files: {}, deleted: [], removed: [], fileRecords: [], openFileIds: null, activeFileId: null };
+      const rollback = { files: {}, deleted: [], removed: [], fileRecords: [], openFileIds: null, activeFileId: null, emptyFolders: null };
       try {
         applyWorkspacePatch(entry, direction, rollback);
       } catch (_) {
@@ -817,25 +992,41 @@ export function createEditHistory(adapter) {
   };
 }
 
+/**
+ * Does BelJar's history own this keystroke?
+ *
+ * ⛔ Two histories must never both run. CodeMirror's own `history()` is still
+ * installed (aux editors that BelJar does not track rely on it), so the rule
+ * is: if our stack has a step in this direction, we take the key — whether or
+ * not applying it succeeds. Falling through on FAILURE was the old behaviour
+ * and it was the worst of both: the user saw a refusal toast AND the document
+ * changed underneath them, from a parallel stack that had been diverging since
+ * the first out-of-band rewrite. Fall through only when we have nothing.
+ */
+export function historyOwnsUndo(direction) {
+  const H = globalRef().EditHistory;
+  if (!H) return false;
+  return direction === 'undo' ? !!H.canUndo?.() : !!H.canRedo?.();
+}
+
+export function runHistoryUndo() {
+  const H = globalRef().EditHistory;
+  if (!historyOwnsUndo('undo')) return false;
+  H.undo();
+  return true;
+}
+
+export function runHistoryRedo() {
+  const H = globalRef().EditHistory;
+  if (!historyOwnsUndo('redo')) return false;
+  H.redo();
+  return true;
+}
+
 export function editHistoryKeymap() {
   return [
-    {
-      key: 'Mod-z',
-      run: (view) => {
-        const H = globalRef().EditHistory;
-        if (H?.undo()) return true;
-        return false;
-      },
-    },
-    {
-      key: 'Mod-y',
-      mac: 'Mod-Shift-z',
-      run: (view) => {
-        const H = globalRef().EditHistory;
-        if (H?.redo()) return true;
-        return false;
-      },
-    },
+    { key: 'Mod-z', run: () => runHistoryUndo() },
+    { key: 'Mod-y', mac: 'Mod-Shift-z', run: () => runHistoryRedo() },
   ];
 }
 

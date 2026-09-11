@@ -64,4 +64,4 @@ expect(expandBelAliases('\\lambda') === 'λ', 'null storage restores defaults');
 
 globalThis.Persist = prev;
 
-console.log('OK bel-aliases');
+console.log('OK jar-aliases');

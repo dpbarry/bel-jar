@@ -131,4 +131,4 @@ assert.equal(
   assert.equal(locateToken(codeDoc, 'nonexistent'), null);
 }
 
-console.log('OK bel-beluga-diag parses File/line/column errors + first-line span rule + locateToken uses AST');
+console.log('OK jar-beluga-diag parses File/line/column errors + first-line span rule + locateToken uses AST');

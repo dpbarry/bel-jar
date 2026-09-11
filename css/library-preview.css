@@ -190,25 +190,25 @@
 /* A single-line horizontally-scrollable text container; ScrollFade adds the
    edge fades (mask-image) dynamically as it scrolls. The mask is applied inline
    by the JS, so here we only set the scroll behaviour + hide the scrollbar. */
-.bel-scroll-x {
+.jar-scroll-x {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;            /* Firefox */
   -ms-overflow-style: none;         /* old Edge */
 }
 
-.bel-scroll-x-text {
+.jar-scroll-x-text {
   display: inline-block;
   white-space: nowrap;
 }
 
-.bel-scroll-x::-webkit-scrollbar {
+.jar-scroll-x::-webkit-scrollbar {
   height: 0;
   width: 0;
 }
 
 /* Type — presented as information (not a field). The supercolon flourish on the
-   left (.bel-type::before) reads "type of"; the highlighted text sits beside it. */
+   left (.jar-type::before) reads "type of"; the highlighted text sits beside it. */
 .inspector-type {
   font-family: var(--mono);
   font-size: 0.8rem;

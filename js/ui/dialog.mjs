@@ -1,4 +1,4 @@
-const DIALOG_ROOT_CLASS = 'bj-dialog';
+const DIALOG_ROOT_CLASS = 'jar-dialog';
 const dialogs = new WeakMap();
 
 const SURFACE_SEARCH_SELECTOR = 'input[type="search"]:not([disabled]), [data-surface-find]';
@@ -6,7 +6,7 @@ const PALETTE_PREFIXES = '/@>%#!?:';
 
 function isRecordingChordTarget(e) {
   const t = (e && e.target) || (typeof document !== 'undefined' ? document.activeElement : null);
-  return !!(t && t.classList && t.classList.contains('bj-kb__chord') && t.classList.contains('is-recording'));
+  return !!(t && t.classList && t.classList.contains('jar-kb__chord') && t.classList.contains('is-recording'));
 }
 
 function isFindEvent(e) {
@@ -31,7 +31,7 @@ function capturingSearchInput() {
     const input = findSurfaceSearchInput(open[i]);
     if (input) return input;
   }
-  const palette = document.querySelector('.bel-palette.is-open');
+  const palette = document.querySelector('.jar-palette.is-open');
   return palette ? findSurfaceSearchInput(palette) : null;
 }
 
@@ -39,7 +39,7 @@ export function focusSurfaceSearch(input) {
   if (!input || typeof input.focus !== 'function') return false;
   input.focus();
   const v = String(input.value || '');
-  if (input.classList && input.classList.contains('bel-palette-input')) {
+  if (input.classList && input.classList.contains('jar-palette-input')) {
     const start = v.length && PALETTE_PREFIXES.includes(v[0]) ? 1 : 0;
     try { input.setSelectionRange(start, v.length); } catch (_) {}
     return true;
@@ -185,12 +185,12 @@ export function createDialog(opts) {
   dialogEl.className = [DIALOG_ROOT_CLASS, className].filter(Boolean).join(' ');
 
   const card = document.createElement('div');
-  card.className = ['bj-dialog__card', cardClass].filter(Boolean).join(' ');
+  card.className = ['jar-dialog__card', cardClass].filter(Boolean).join(' ');
 
   if (closeButton) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'bj-dialog__close icon-btn';
+    btn.className = 'jar-dialog__close icon-btn';
     btn.setAttribute('aria-label', closeLabel);
     btn.innerHTML =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
@@ -206,14 +206,14 @@ export function createDialog(opts) {
     let titleEl = null;
     if (title) {
       titleEl = document.createElement('div');
-      titleEl.className = 'bj-dialog__title';
-      titleEl.id = 'bj-dialog-title-' + Math.random().toString(36).slice(2);
+      titleEl.className = 'jar-dialog__title';
+      titleEl.id = 'jar-dialog-title-' + Math.random().toString(36).slice(2);
       titleEl.textContent = title;
       dialogEl.setAttribute('aria-labelledby', titleEl.id);
     }
     if (headerExtra) {
       const header = document.createElement('div');
-      header.className = 'bj-dialog__header';
+      header.className = 'jar-dialog__header';
       if (titleEl) header.appendChild(titleEl);
       header.appendChild(headerExtra);
       card.appendChild(header);
@@ -225,7 +225,7 @@ export function createDialog(opts) {
   }
 
   const body = document.createElement('div');
-  body.className = 'bj-dialog__body';
+  body.className = 'jar-dialog__body';
   applyDialogBodyContent(body, opts);
   card.appendChild(body);
 

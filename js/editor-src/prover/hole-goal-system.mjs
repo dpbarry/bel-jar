@@ -1,6 +1,6 @@
 // Owns how BelJar answers hole goals and file health across settlement,
 // development-check, and the hole-goals store. Not CM mount, not the prover
-// search loop — those stay in bel-editor / prover-orchestrator.
+// search loop — those stay in jar-editor / prover-orchestrator.
 //
 // Callers (shell / harpoon / inspector) reach public APIs via BelEditor
 // re-exports from editor.mjs. Mount imports developmentMembersForFile and

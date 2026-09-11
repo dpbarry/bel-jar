@@ -1,5 +1,5 @@
 import { Prec } from '@codemirror/state';
-import { EditorView, keymap, ViewPlugin } from '@codemirror/view';
+import { keymap, ViewPlugin } from '@codemirror/view';
 import { fuzzyScore } from './fuzzy.mjs';
 import { renderTypeInto } from '../../format/type-render.mjs';
 import { createCompletionController } from './source.mjs';

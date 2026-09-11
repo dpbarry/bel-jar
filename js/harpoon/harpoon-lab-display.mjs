@@ -5,7 +5,6 @@ const global = globalThis;
 function createDisplay(deps) {
   var el = deps.el;
   var E = deps.E;
-  var setTip = deps.setTip;
   var liveEditorFileId = deps.liveEditorFileId;
   var bindChipTip = deps.bindChipTip;
   var renderSynthChain = deps.renderSynthChain;
@@ -162,13 +161,13 @@ function createDisplay(deps) {
   }
 
   // The corner label names the declaration being proved. It reads as Beluga source rather
-  // than a bare identifier, using the same `bel-hl-*` palette as every other rendered
+  // than a bare identifier, using the same `jar-hl-*` palette as every other rendered
   // fragment in the app, so `rec` and `proof` are told apart at a glance.
   function appendDeclLabel(glabel, declName, declKw) {
     if (!declName) return;
     var name = el('span', 'harpoon-lab-auto-goal-name');
-    if (declKw) name.appendChild(el('span', 'harpoon-lab-goal-decl-kw bel-hl-keyword', declKw));
-    name.appendChild(el('span', 'harpoon-lab-goal-decl-name bel-hl-var-def', declName));
+    if (declKw) name.appendChild(el('span', 'harpoon-lab-goal-decl-kw jar-hl-keyword', declKw));
+    name.appendChild(el('span', 'harpoon-lab-goal-decl-name jar-hl-var-def', declName));
     glabel.appendChild(name);
   }
 

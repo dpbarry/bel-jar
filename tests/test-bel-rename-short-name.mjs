@@ -52,4 +52,4 @@ expect(out.includes('{x:arthichoke}'), `commit preserves braces: ${out}`);
 expect(!out.includes('x:name'), `no leftover name in braces: ${out}`);
 expect(!out.includes('arthichokelinear'), `no mangled splice: ${out}`);
 
-console.log('OK bel-rename short-name (name inside braces)');
+console.log('OK jar-rename short-name (name inside braces)');

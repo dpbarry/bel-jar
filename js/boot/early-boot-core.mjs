@@ -43,8 +43,8 @@ export function applyDocumentPrefs(docEl, storage) {
   );
 
   const motion = storage.getItem('beljar-motion-pref');
-  docEl.classList.toggle('bj-motion-reduce', motion === 'reduce');
-  docEl.classList.toggle('bj-motion-full', motion === 'full');
+  docEl.classList.toggle('jar-motion-reduce', motion === 'reduce');
+  docEl.classList.toggle('jar-motion-full', motion === 'full');
 
   const editorFont = storage.getItem('beljar-editor-font-family');
   docEl.style.setProperty(
@@ -59,8 +59,8 @@ export function applyDocumentPrefs(docEl, storage) {
   );
 
   const holeEmph = storage.getItem('beljar-editor-hole-emphasis');
-  docEl.classList.toggle('bj-hole-subtle', holeEmph === 'subtle');
-  docEl.classList.toggle('bj-hole-loud', holeEmph === 'loud');
+  docEl.classList.toggle('jar-hole-subtle', holeEmph === 'subtle');
+  docEl.classList.toggle('jar-hole-loud', holeEmph === 'loud');
 }
 
 export function applyPanelDimensionPrefs(rootStyle, storage) {

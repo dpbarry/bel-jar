@@ -11,9 +11,10 @@ Agent rules and commands: [`AGENTS.md`](../AGENTS.md), [`.cursor/rules/`](../.cu
 | Doc | Role |
 |-----|------|
 | [CODEMAP.md](CODEMAP.md) | Where code lives — two-layer runtime, domains, vocabulary |
+| [COMMANDS.md](COMMANDS.md) | ⭐ **Read before adding or changing a command.** The shape, the recipe, the invariants and the traps |
 | [ORCA.md](ORCA.md) | Proof search — what it is, the 32.1%, how to run it |
 | [HARPOON.md](HARPOON.md) | Proving surface — states, invariants, how to change it |
-| [edit-history.md](edit-history.md) | Undo/redo contract |
+| [edit-history.md](edit-history.md) | Undo/redo contract, and the budgets that keep the stack persistable |
 
 ## Open plans
 

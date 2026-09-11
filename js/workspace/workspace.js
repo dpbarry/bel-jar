@@ -78,7 +78,6 @@
     const out = [];
     for (const f of files) {
       const fn = String(f.name || "");
-      const low = fn.toLowerCase();
       if (isSignaturePath(fn)) out.push(fn);
     }
     return out;
@@ -128,7 +127,6 @@
     return ordered;
   }
   function topLevelCfgPaths(files, getText) {
-    const cfgByDir = cfgByDirFromFiles(files, getText);
     const referenced = {};
     const cfgPaths = [];
     for (const f of files) {

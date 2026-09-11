@@ -71,7 +71,6 @@ function createReel(deps) {
       var REEL_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
       var REEL_CLICK_EASE = 'cubic-bezier(0.34, 1.22, 0.64, 1)';
       var REEL_OUT_MS = 150;
-      var COMMIT_IN_MS = 280;
 
       function buildStepCopy(step) {
         var rowCopy = el('div', 'harpoon-lab-auto-step-copy');

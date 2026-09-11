@@ -708,7 +708,7 @@
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  background: color-mix(in srgb, var(--harpoon-card-bg) 92%, var(--chrome-bg));
+  background: color-mix(in srgb, var(--harpoon-card-bg) 92%, var(--chrome-bg-panel));
 }
 .hpt-split-tree .hpt-host { height: 100%; }
 .hpt-split-tree .hpt-svg { height: 100% !important; }
@@ -735,7 +735,7 @@
   min-height: 2.25rem;
   padding: 0.35rem 0.45rem 0.35rem 0.65rem;
   border-bottom: 1px solid color-mix(in srgb, var(--harpoon-divider) 45%, transparent);
-  background: color-mix(in srgb, var(--harpoon-card-bg) 88%, var(--chrome-bg));
+  background: color-mix(in srgb, var(--harpoon-card-bg) 88%, var(--chrome-bg-panel));
 }
 
 .hpt-rail-title {

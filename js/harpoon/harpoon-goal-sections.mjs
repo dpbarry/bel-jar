@@ -88,13 +88,11 @@ function dirOf(name) {
     var files = (opts.files || []).map(normalizeFile);
     var getText = opts.getText || function () { return ''; };
     var getActiveCfgsForDir = opts.getActiveCfgsForDir || function () { return []; };
-    var computeDirLayout = opts.computeDirLayout;
     var activeFileId = opts.activeFileId || null;
     var activeHits = opts.activeHits || null;
     var memberHoles = opts.memberHoles || {};
     var developmentPaths = opts.developmentPaths || null;
 
-    var SL = global.ExplorerSuiteLayout;
     var PS = global.ProjectSource;
     var resolveMembers = opts.resolveMembers || (PS && typeof PS.orderedPathsForCfg === 'function'
       ? function (all, cfgPath, gt) { return PS.orderedPathsForCfg(all, cfgPath, gt); }
@@ -133,15 +131,6 @@ function dirOf(name) {
     for (var di = 0; di < dirKeys.length; di++) {
       var dir = dirKeys[di];
       var filesInDir = byDir[dir];
-      var layout = { orderedFiles: filesInDir, suiteByFile: {} };
-      if (typeof computeDirLayout === 'function') {
-        layout = computeDirLayout(dir, filesInDir);
-      } else if (SL && typeof SL.computeDirLayout === 'function') {
-        var activeCfgs = getActiveCfgsForDir(dir);
-        layout = SL.computeDirLayout(filesInDir, activeCfgs, resolveMembers, files, getText);
-      }
-
-      var suiteByFile = layout.suiteByFile || {};
       var activeCfgs = getActiveCfgsForDir(dir);
       var placed = {};
       var dirEntries = [];

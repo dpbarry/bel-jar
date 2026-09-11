@@ -330,7 +330,7 @@
       notifyActiveEditorView();
     }
 
-    // Fired by the editor layer (bel-ide-actions) when go-to-definition resolves
+    // Fired by the editor layer (jar-ide-actions) when go-to-definition resolves
     // into ANOTHER project file.
     window.addEventListener('beljar:open-file-at', (ev) => {
       const d = ev.detail || {};

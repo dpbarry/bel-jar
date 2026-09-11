@@ -40,4 +40,4 @@ expect(state.field(renameActiveField, false), 'single-char delete keeps rename s
 const anchor = state.field(renameActiveField, false).sites[state.field(renameActiveField, false).anchorSite];
 expect(anchor.from === anchor.to, 'anchor is empty after deleting sole char');
 
-console.log('OK bel-rename backspace (delete last char stays in rename)');
+console.log('OK jar-rename backspace (delete last char stays in rename)');

@@ -110,6 +110,17 @@ function saveNow() {
   writeSnapshot();
 }
 
+/**
+ * Flush only if something is actually waiting.
+ *
+ * Serialising the whole transcript to HTML is not something to do every time
+ * the user switches tabs; `saveNow` is for the way out.
+ */
+function saveIfPending() {
+  if (!saveTimer) return;
+  saveNow();
+}
+
 function restore() {
   var p = getPersist();
   if (!p || typeof p.readStoredReplTranscript !== 'function') return false;
@@ -171,6 +182,7 @@ function restore() {
 global.ReplPersist = {
   scheduleSave: scheduleSave,
   saveNow: saveNow,
+  saveIfPending: saveIfPending,
   restore: restore,
 };
 global.BelJarReplPersist = global.ReplPersist;

@@ -53,6 +53,19 @@
         tab.appendChild(nameSpan);
         tab.appendChild(closeBtn);
         tab.addEventListener('click', function () { onSwitch(file.id); });
+        // Middle-click closes. Universal in every editor and every browser, and
+        // its absence reads as the strip being unfinished rather than as a
+        // decision. `auxclick` is the event that carries the middle button;
+        // `mousedown` has to be stopped too or the browser starts autoscroll.
+        tab.addEventListener('mousedown', function (e) {
+          if (e.button === 1) e.preventDefault();
+        });
+        tab.addEventListener('auxclick', function (e) {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onClose(file.id);
+        });
         editorTabsEl.appendChild(tab);
       });
 

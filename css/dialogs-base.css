@@ -1,10 +1,10 @@
 /* -- Modal dialogs -- */
 
-.bj-dialog:not([open]) {
+.jar-dialog:not([open]) {
   display: none;
 }
 
-.bj-dialog[open] {
+.jar-dialog[open] {
   margin: 0;
   padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right))
     max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
@@ -25,11 +25,11 @@
   justify-content: center;
 }
 
-.bj-dialog.is-leaving {
+.jar-dialog.is-leaving {
   pointer-events: none;
 }
 
-.bj-dialog::backdrop {
+.jar-dialog::backdrop {
   background: hsl(222 18% 8% / var(--dialog-overlay-in-alpha));
   transition:
     opacity var(--dialog-ms-in) ease-out,
@@ -37,26 +37,26 @@
     overlay var(--dialog-ms-in) allow-discrete;
 }
 
-html.light .bj-dialog::backdrop {
+html.light .jar-dialog::backdrop {
   background: hsl(222 22% 24% / var(--dialog-overlay-out-alpha));
 }
 
-.bj-dialog[open]::backdrop {
+.jar-dialog[open]::backdrop {
   opacity: 1;
 }
 
-.bj-dialog.is-leaving::backdrop {
+.jar-dialog.is-leaving::backdrop {
   opacity: 0;
   transition: opacity var(--dialog-ms-out) ease-in;
 }
 
 @starting-style {
-  .bj-dialog[open]::backdrop {
+  .jar-dialog[open]::backdrop {
     opacity: 0;
   }
 }
 
-.bj-dialog__card {
+.jar-dialog__card {
   position: relative;
   width: min(26rem, 100%);
   max-width: 100%;
@@ -88,29 +88,29 @@ html.light .bj-dialog::backdrop {
     opacity var(--dialog-ms-in) ease-out;
 }
 
-.bj-dialog__card--settings,
-.bj-dialog__card--settings-compact {
+.jar-dialog__card--settings,
+.jar-dialog__card--settings-compact {
   display: grid;
   grid-template-columns: 1fr;
   padding: 0;
   overflow: clip;
 }
 
-.bj-dialog__card--settings {
+.jar-dialog__card--settings {
   grid-template-rows: auto 1fr;
   width: min(54rem, calc(100vw - 2rem));
   height: min(34rem, calc(100dvh - 2.5rem));
 }
 
-.bj-dialog__card--settings-compact {
+.jar-dialog__card--settings-compact {
   grid-template-rows: auto auto;
   width: min(36rem, calc(100vw - 2rem));
   height: auto;
   max-height: min(34rem, calc(100dvh - 2.5rem));
 }
 
-.bj-dialog__card--settings .bj-dialog__title,
-.bj-dialog__card--settings-compact .bj-dialog__title {
+.jar-dialog__card--settings .jar-dialog__title,
+.jar-dialog__card--settings-compact .jar-dialog__title {
   grid-row: 1;
   grid-column: 1;
   display: flex;
@@ -120,7 +120,7 @@ html.light .bj-dialog::backdrop {
   padding: 0 3rem 0 0.65rem;
 }
 
-.bj-dialog__card--settings .bj-dialog__header {
+.jar-dialog__card--settings .jar-dialog__header {
   grid-row: 1;
   grid-column: 1;
   display: flex;
@@ -130,7 +130,7 @@ html.light .bj-dialog::backdrop {
   padding: 0.5rem 2.75rem 0.5rem 0.65rem;
 }
 
-.bj-dialog__card--settings .bj-dialog__header .bj-dialog__title {
+.jar-dialog__card--settings .jar-dialog__header .jar-dialog__title {
   flex: 0 0 auto;
   min-width: 0;
   min-height: 0;
@@ -138,7 +138,7 @@ html.light .bj-dialog::backdrop {
   padding: 0;
 }
 
-.bj-settings__search-slot {
+.jar-settings__search-slot {
   position: relative;
   flex: 1 1 auto;
   display: flex;
@@ -147,11 +147,11 @@ html.light .bj-dialog::backdrop {
   margin-left: auto;
 }
 
-.bj-settings__search-slot .library-find--preview.is-focused {
+.jar-settings__search-slot .library-find--preview.is-focused {
   width: min(19rem, 100%);
 }
 
-.bj-settings__results {
+.jar-settings__results {
   position: fixed;
   z-index: 80;
   display: none;
@@ -160,16 +160,16 @@ html.light .bj-dialog::backdrop {
   right: auto;
 }
 
-.bj-settings__results.is-open {
+.jar-settings__results.is-open {
   display: block;
 }
 
-.bj-settings__results[hidden] {
+.jar-settings__results[hidden] {
   display: none !important;
 }
 
-.bj-dialog__card--settings .bj-dialog__close,
-.bj-dialog__card--settings-compact .bj-dialog__close {
+.jar-dialog__card--settings .jar-dialog__close,
+.jar-dialog__card--settings-compact .jar-dialog__close {
   grid-row: 1;
   grid-column: 1;
   position: relative;
@@ -181,8 +181,8 @@ html.light .bj-dialog::backdrop {
   z-index: 1;
 }
 
-.bj-dialog__card--settings .bj-dialog__body,
-.bj-dialog__card--settings-compact .bj-dialog__body {
+.jar-dialog__card--settings .jar-dialog__body,
+.jar-dialog__card--settings-compact .jar-dialog__body {
   grid-row: 2;
   min-height: 0;
   display: flex;
@@ -190,6 +190,6 @@ html.light .bj-dialog::backdrop {
   overflow: hidden;
 }
 
-.bj-dialog__card--settings-compact .bj-dialog__body {
+.jar-dialog__card--settings-compact .jar-dialog__body {
   overflow-y: auto;
 }

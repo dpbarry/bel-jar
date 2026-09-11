@@ -524,13 +524,13 @@ function holeCtx() {
 // ── Floating toolbar (a CM tooltip anchored on the focused hole) ────────────
 function buildToolbar(view, engine, hit) {
   const dom = document.createElement('div');
-  dom.className = 'bel-hole-toolbar';
+  dom.className = 'jar-hole-toolbar';
 
   const hole = hit.hole;
   const mkBtn = (label, title, onClick) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'bel-hole-action';
+    b.className = 'jar-hole-action';
     b.textContent = label;
     if (title) b.title = title;
     b.addEventListener('mousedown', (e) => { e.preventDefault(); });
@@ -574,9 +574,9 @@ function buildToolbar(view, engine, hit) {
   const vars = splitTargetsOf(hole);
   if (vars.length) {
     const wrap = document.createElement('span');
-    wrap.className = 'bel-hole-split-group';
+    wrap.className = 'jar-hole-split-group';
     const lead = document.createElement('span');
-    lead.className = 'bel-hole-split-label';
+    lead.className = 'jar-hole-split-label';
     lead.textContent = 'split';
     wrap.appendChild(lead);
     for (const v of vars) {
@@ -625,7 +625,7 @@ export function holeActionToolbar(engine) {
             const tip = buildToolbar(view, engine, v.hit);
             if (tip && tip.create) return tip.create();
             const dom = document.createElement('div');
-            dom.className = 'bel-hole-toolbar';
+            dom.className = 'jar-hole-toolbar';
             return { dom };
           },
         };

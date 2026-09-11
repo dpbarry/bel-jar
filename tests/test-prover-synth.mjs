@@ -1,4 +1,4 @@
-// GOAL-DIRECTED SYNTHESIS (bel-synth): the gap-filling engine. This pins the
+// GOAL-DIRECTED SYNTHESIS (jar-synth): the gap-filling engine. This pins the
 // exact capability the greedy loop lacks — deriving a deep non-closing
 // `let`-chain BACKWARD from the goal by unification (SLD over the pattern
 // fragment), with forward saturation restricted to index-determined (unique-

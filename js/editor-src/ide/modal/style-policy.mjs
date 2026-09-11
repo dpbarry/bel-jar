@@ -33,6 +33,20 @@ export const EMACS_OMIT_COMMAND_IDS = [
   'edit.toggle-comment',
   // Alt+X is M-x; Emacs' own binding wins.
   'tools.commands',
+  // Alt+Shift+F is S-M-f — forward-word-selecting in the package's key table.
+  // `C-c q` is BelJar's substitute for Format Document.
+  'edit.format',
+  // Ctrl+X/Ctrl+C/Ctrl+V are real Emacs prefix/scroll keys (C-x, C-c, C-v);
+  // Emacs' own kill-ring (C-w/M-w/C-y) already covers cut/copy/paste and is
+  // already listed in Available Keys.
+  'edit.cut',
+  'edit.copy',
+  'edit.paste',
+  // `Mod+G` is Go to Line everywhere else; under Emacs `C-g` is keyboard-quit,
+  // the one chord that must always mean "stop". `M-g g` is the substitute, and
+  // it is Emacs' own spelling. (Global scope, so the yield happens in
+  // `shouldYieldGlobalForEmacs`; the editor keymap has nothing to omit.)
+  'nav.goto-line',
 ];
 
 /** Globals that must yield to Emacs when a Beluga emacs-mode editor is focused. */
@@ -47,6 +61,16 @@ export const VIM_ALWAYS_COMMAND_IDS = [
   'nav.next-hole',
   'nav.prev-hole',
 ];
+
+// ⛔ Every id above is on a FUNCTION KEY, and that is not a coincidence — it is
+// the condition. Vim runs at `Prec.highest` and preventDefaults whatever it
+// matched, so `always` can only be honoured for a chord the vim package does not
+// bind; declare it for one vim owns and the chord silently keeps doing vim's
+// thing while every surface reports it as live. Cut/Copy/Paste were declared
+// here on exactly that mistaken basis — `<C-x>` decrements a number, `<C-v>` is
+// blockwise visual, `<C-c>` is `<Esc>` — and they are insert-only now.
+// `tests/test-command-catalog.mjs` reads the package's keymap and fails if a
+// future `always` collides with it.
 
 // `vimAllowsRemap` runs per keystroke for every bound editor chord, so the
 // lookup is memoized against the registry's version counter rather than

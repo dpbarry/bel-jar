@@ -1,12 +1,12 @@
 (() => {
   // js/ui/dialog.mjs
-  var DIALOG_ROOT_CLASS = "bj-dialog";
+  var DIALOG_ROOT_CLASS = "jar-dialog";
   var dialogs = /* @__PURE__ */ new WeakMap();
   var SURFACE_SEARCH_SELECTOR = 'input[type="search"]:not([disabled]), [data-surface-find]';
   var PALETTE_PREFIXES = "/@>%#!?:";
   function isRecordingChordTarget(e) {
     const t = e && e.target || (typeof document !== "undefined" ? document.activeElement : null);
-    return !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording"));
+    return !!(t && t.classList && t.classList.contains("jar-kb__chord") && t.classList.contains("is-recording"));
   }
   function isFindEvent(e) {
     const KB = globalThis.Keybindings;
@@ -28,14 +28,14 @@
       const input = findSurfaceSearchInput(open3[i]);
       if (input) return input;
     }
-    const palette = document.querySelector(".bel-palette.is-open");
+    const palette = document.querySelector(".jar-palette.is-open");
     return palette ? findSurfaceSearchInput(palette) : null;
   }
   function focusSurfaceSearch(input) {
     if (!input || typeof input.focus !== "function") return false;
     input.focus();
     const v = String(input.value || "");
-    if (input.classList && input.classList.contains("bel-palette-input")) {
+    if (input.classList && input.classList.contains("jar-palette-input")) {
       const start = v.length && PALETTE_PREFIXES.includes(v[0]) ? 1 : 0;
       try {
         input.setSelectionRange(start, v.length);
@@ -163,11 +163,11 @@
     const dialogEl = document.createElement("dialog");
     dialogEl.className = [DIALOG_ROOT_CLASS, className].filter(Boolean).join(" ");
     const card = document.createElement("div");
-    card.className = ["bj-dialog__card", cardClass].filter(Boolean).join(" ");
+    card.className = ["jar-dialog__card", cardClass].filter(Boolean).join(" ");
     if (closeButton) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "bj-dialog__close icon-btn";
+      btn.className = "jar-dialog__close icon-btn";
       btn.setAttribute("aria-label", closeLabel);
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
       btn.addEventListener("click", (e) => {
@@ -181,14 +181,14 @@
       let titleEl = null;
       if (title) {
         titleEl = document.createElement("div");
-        titleEl.className = "bj-dialog__title";
-        titleEl.id = "bj-dialog-title-" + Math.random().toString(36).slice(2);
+        titleEl.className = "jar-dialog__title";
+        titleEl.id = "jar-dialog-title-" + Math.random().toString(36).slice(2);
         titleEl.textContent = title;
         dialogEl.setAttribute("aria-labelledby", titleEl.id);
       }
       if (headerExtra) {
         const header = document.createElement("div");
-        header.className = "bj-dialog__header";
+        header.className = "jar-dialog__header";
         if (titleEl) header.appendChild(titleEl);
         header.appendChild(headerExtra);
         card.appendChild(header);
@@ -199,7 +199,7 @@
       dialogEl.setAttribute("aria-label", opts.ariaLabel);
     }
     const body = document.createElement("div");
-    body.className = "bj-dialog__body";
+    body.className = "jar-dialog__body";
     applyDialogBodyContent(body, opts);
     card.appendChild(body);
     dialogEl.appendChild(card);
@@ -244,8 +244,8 @@
   g.BelJarDialog = g.Dialog;
 
   // js/ui/prompt-dialog.mjs
-  var CARD_CLASS = "bj-dialog__card bj-prompt-dialog__card";
-  var WRAP_CLASS = "bj-prompt-dialog-wrap";
+  var CARD_CLASS = "jar-dialog__card jar-prompt-dialog__card";
+  var WRAP_CLASS = "jar-prompt-dialog-wrap";
   function el(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -253,20 +253,20 @@
     return node;
   }
   function markMono(name) {
-    const span = el("span", "bj-prompt-dialog__mono");
+    const span = el("span", "jar-prompt-dialog__mono");
     span.textContent = name;
     return span;
   }
   function actionButton(label, action, variant, opts) {
     opts = opts || {};
-    const btn = el("button", "bj-prompt-dialog__btn" + (variant ? ` is-${variant}` : ""));
+    const btn = el("button", "jar-prompt-dialog__btn" + (variant ? ` is-${variant}` : ""));
     btn.type = "button";
     btn.dataset.action = action;
     if (opts.monoSuffix) {
       if (opts.labelPrefix) {
-        btn.appendChild(el("span", "bj-prompt-dialog__btn-prefix", opts.labelPrefix));
+        btn.appendChild(el("span", "jar-prompt-dialog__btn-prefix", opts.labelPrefix));
       }
-      const mono = el("span", "bj-prompt-dialog__btn-mono");
+      const mono = el("span", "jar-prompt-dialog__btn-mono");
       mono.textContent = opts.monoSuffix;
       btn.appendChild(mono);
     } else {
@@ -275,7 +275,7 @@
     return btn;
   }
   function buildActions(buttons, layout) {
-    const actions = el("div", "bj-prompt-dialog__actions");
+    const actions = el("div", "jar-prompt-dialog__actions");
     if (layout === "row") actions.classList.add("is-row");
     for (const b of buttons) {
       const btnOpts = {};
@@ -296,28 +296,28 @@
       return;
     }
     if (opts.step) {
-      shell.appendChild(el("p", "bj-prompt-dialog__step", opts.step));
+      shell.appendChild(el("p", "jar-prompt-dialog__step", opts.step));
     }
     if (opts.subject) {
-      const subject = el("p", "bj-prompt-dialog__subject");
+      const subject = el("p", "jar-prompt-dialog__subject");
       subject.appendChild(markMono(opts.subject));
       shell.appendChild(subject);
     }
     if (opts.message != null) {
-      const intro = el("p", "bj-prompt-dialog__message");
+      const intro = el("p", "jar-prompt-dialog__message");
       if (opts.message instanceof Node) intro.appendChild(opts.message);
       else intro.textContent = String(opts.message);
       shell.appendChild(intro);
     }
     if (opts.note) {
-      shell.appendChild(el("p", "bj-prompt-dialog__note", opts.note));
+      shell.appendChild(el("p", "jar-prompt-dialog__note", opts.note));
     }
   }
   function open(opts) {
     opts = opts || {};
     return new Promise((resolve) => {
       let settled = false;
-      const shell = el("div", "bj-prompt-dialog");
+      const shell = el("div", "jar-prompt-dialog");
       appendBody(shell, opts);
       const buttons = opts.buttons || [];
       if (buttons.length) {
@@ -386,7 +386,7 @@
       subject: opts.subject,
       message: opts.message,
       note: opts.note,
-      className: opts.className || "bj-confirm-dialog-wrap",
+      className: opts.className || "jar-confirm-dialog-wrap",
       closeButton: opts.closeButton,
       layout: "row",
       buttons: [
@@ -436,9 +436,9 @@
     const sel = selectionForValue(initialValue, opts.selection);
     let settled = false;
     return new Promise((resolve) => {
-      const wrap = el2("div", "bj-name-prompt");
-      const leadEl = opts.message ? el2("p", "bj-name-prompt__message", opts.message) : null;
-      const input = el2("input", "bj-name-prompt__input");
+      const wrap = el2("div", "jar-name-prompt");
+      const leadEl = opts.message ? el2("p", "jar-name-prompt__message", opts.message) : null;
+      const input = el2("input", "jar-name-prompt__input");
       input.type = "text";
       input.value = initialValue;
       input.spellcheck = false;
@@ -446,11 +446,11 @@
       if (opts.mono) input.classList.add("is-mono");
       if (opts.placeholder) input.placeholder = opts.placeholder;
       wrap.appendChild(input);
-      const errorEl = el2("p", "bj-name-prompt__error");
+      const errorEl = el2("p", "jar-name-prompt__error");
       errorEl.hidden = true;
       wrap.appendChild(errorEl);
       if (opts.hint) {
-        const hint = el2("p", "bj-name-prompt__hint");
+        const hint = el2("p", "jar-name-prompt__hint");
         hint.textContent = opts.hint;
         wrap.appendChild(hint);
       }
@@ -458,14 +458,14 @@
         { action: "cancel", label: opts.cancelLabel || "Cancel", variant: "ghost" },
         { action: "confirm", label: opts.confirmLabel || "Create", variant: "primary" }
       ]);
-      actions.classList.add("bj-name-prompt__actions");
+      actions.classList.add("jar-name-prompt__actions");
       const cancelBtn = actions.querySelector('[data-action="cancel"]');
       const confirmBtn = actions.querySelector('[data-action="confirm"]');
       wrap.appendChild(actions);
       const dialogEl = createDialog({
         ariaLabel: opts.ariaLabel || "Name",
         content: wrap,
-        className: "bj-name-prompt-dialog",
+        className: "jar-name-prompt-dialog",
         cardClass: CARD_CLASS2,
         removeOnClose: true
       });
@@ -516,8 +516,8 @@
         tryConfirm();
       });
       if (leadEl) {
-        const card = dialogEl.querySelector(".bj-dialog__card");
-        const body = dialogEl.querySelector(".bj-dialog__body");
+        const card = dialogEl.querySelector(".jar-dialog__card");
+        const body = dialogEl.querySelector(".jar-dialog__body");
         if (card && body) card.insertBefore(leadEl, body);
       }
       dialogEl.addEventListener("close", () => {
@@ -554,14 +554,14 @@
   }
   function buildConflictBody(conflict, total, index) {
     const { el: el2, markMono: markMono2 } = PromptDialog;
-    const wrap = el2("div", "bj-conflict-dialog__panel");
+    const wrap = el2("div", "jar-conflict-dialog__panel");
     if (total > 1) {
-      wrap.appendChild(el2("p", "bj-prompt-dialog__step", `${index + 1} of ${total}`));
+      wrap.appendChild(el2("p", "jar-prompt-dialog__step", `${index + 1} of ${total}`));
     }
-    const subject = el2("p", "bj-prompt-dialog__subject");
+    const subject = el2("p", "jar-prompt-dialog__subject");
     subject.appendChild(markMono2(conflict.label));
     wrap.appendChild(subject);
-    const message = el2("p", "bj-prompt-dialog__message");
+    const message = el2("p", "jar-prompt-dialog__message");
     message.textContent = conflict.kind === "folder" ? "A folder with this name is already in the project." : "A file with this name is already in the project.";
     wrap.appendChild(message);
     return wrap;
@@ -596,7 +596,7 @@
       let index = 0;
       const resolutions = [];
       let settled = false;
-      const shell = el2("div", "bj-prompt-dialog");
+      const shell = el2("div", "jar-prompt-dialog");
       const dialogEl = createDialog({
         ariaLabel: "Name conflict",
         content: shell,

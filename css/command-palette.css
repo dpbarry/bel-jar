@@ -1,6 +1,6 @@
 /* -- Command palette -- */
 
-.bel-palette-backdrop {
+.jar-palette-backdrop {
   position: fixed;
   inset: 0;
   z-index: 10200;
@@ -12,13 +12,13 @@
     visibility 0s var(--overlay-pop-ms-out);
 }
 
-.bel-palette-backdrop.is-open {
+.jar-palette-backdrop.is-open {
   opacity: 1;
   visibility: visible;
   transition: opacity calc(var(--overlay-pop-ms-in) * 0.8) ease-out;
 }
 
-.bel-palette {
+.jar-palette {
   position: fixed;
   left: 50%;
   top: 11vh;
@@ -41,7 +41,7 @@
     visibility 0s var(--overlay-pop-ms-out);
 }
 
-.bel-palette.is-open {
+.jar-palette.is-open {
   transform: translateX(-50%) scale(1);
   opacity: 1;
   visibility: visible;
@@ -50,7 +50,7 @@
     opacity calc(var(--overlay-pop-ms-in) * 0.8) ease-out;
 }
 
-.bel-palette-inputwrap {
+.jar-palette-inputwrap {
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -61,11 +61,11 @@
   transition: var(--search-field-transition);
 }
 
-.bel-palette-inputwrap:focus-within {
+.jar-palette-inputwrap:focus-within {
   border-color: var(--search-well-focus-border);
 }
 
-.bel-palette-mode {
+.jar-palette-mode {
   flex-shrink: 0;
   padding: 0.12rem 0.38rem;
   border-radius: 0.28rem;
@@ -78,18 +78,18 @@
   user-select: none;
 }
 
-.bel-palette-icon {
+.jar-palette-icon {
   display: flex;
   flex-shrink: 0;
   color: var(--muted-high);
 }
 
-.bel-palette-icon > svg {
+.jar-palette-icon > svg {
   width: 0.8rem;
   height: 0.8rem;
 }
 
-.bel-palette-input {
+.jar-palette-input {
   flex: 1;
   min-width: 0;
   border: none;
@@ -100,18 +100,18 @@
   padding: 0.42rem 0.25rem 0.42rem 0;
 }
 
-.bel-palette-input::placeholder {
+.jar-palette-input::placeholder {
   color: var(--base-high);
 }
 
-.bel-palette-list {
+.jar-palette-list {
   max-height: min(21rem, 55vh);
   overflow-y: auto;
   overscroll-behavior: contain;
   margin-top: 0.25rem;
 }
 
-.bel-palette-section {
+.jar-palette-section {
   padding: 0.5rem 0.6rem 0.25rem;
   font-size: 0.62rem;
   font-weight: 600;
@@ -122,7 +122,7 @@
   user-select: none;
 }
 
-.bel-palette-item {
+.jar-palette-item {
   position: relative;
   display: flex;
   align-items: center;
@@ -140,7 +140,7 @@
   transition: color 120ms ease, background 120ms ease;
 }
 
-.bel-palette-item::before {
+.jar-palette-item::before {
   content: '';
   position: absolute;
   left: var(--row-pill-inset-x);
@@ -155,21 +155,21 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bel-palette-item:hover {
+  .jar-palette-item:hover {
     background: var(--search-row-hover-bg);
     color: var(--search-row-hover-fg);
   }
 }
 
-.bel-palette-item.is-active {
+.jar-palette-item.is-active {
   color: var(--search-row-active-fg);
   background: var(--search-row-active-bg);
 }
-.bel-palette-item.is-active::before {
+.jar-palette-item.is-active::before {
   opacity: var(--row-pill-opacity);
 }
 
-.bel-palette-item-title {
+.jar-palette-item-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -177,18 +177,18 @@
 }
 
 /* Project-search results show source lines — render them as code. */
-.bel-palette-item-title.is-mono {
+.jar-palette-item-title.is-mono {
   font-family: var(--mono);
   font-size: 0.72rem;
   font-weight: 400;
 }
 
-.bel-palette-item-title b {
+.jar-palette-item-title b {
   font-weight: 600;
   color: var(--accent-high);
 }
 
-.bel-palette-item-shortcut {
+.jar-palette-item-shortcut {
   flex-shrink: 0;
   font-size: 0.7rem;
   font-weight: 500;
@@ -197,25 +197,25 @@
   font-variant-numeric: tabular-nums;
 }
 
-.bel-palette-item-detail {
+.jar-palette-item-detail {
   flex-shrink: 0;
   font-size: 0.68rem;
   color: var(--muted-mid);
 }
 
-.bel-palette-item.is-severity-error .bel-palette-item-detail {
+.jar-palette-item.is-severity-error .jar-palette-item-detail {
   color: var(--danger-mid, #c44);
 }
 
-.bel-palette-item.is-severity-warning .bel-palette-item-detail {
+.jar-palette-item.is-severity-warning .jar-palette-item-detail {
   color: var(--warn-mid, #b8860b);
 }
 
-.bel-palette-item.is-library .bel-palette-item-title {
+.jar-palette-item.is-library .jar-palette-item-title {
   font-weight: 550;
 }
 
-.bel-palette-empty {
+.jar-palette-empty {
   padding: 0.85rem 0.65rem;
   font-size: 0.75rem;
   color: var(--muted-mid);
@@ -223,7 +223,7 @@
   user-select: none;
 }
 
-.bel-palette-hint {
+.jar-palette-hint {
   padding: 0.35rem 0.65rem 0.15rem;
   font-size: 0.68rem;
   color: var(--muted-mid);

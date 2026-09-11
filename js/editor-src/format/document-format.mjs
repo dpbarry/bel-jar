@@ -299,25 +299,35 @@ export function formatDocument(state, opts = {}) {
 
 export function formatCommand(view) {
   const anchor = captureFormatViewportAnchor(view);
-  const oldText = view.state.doc.toString();
   const sel = view.state.selection.main;
+  // ⛔ The caret needs an anchor too, not a byte offset.
+  //
+  // Formatting rewrites the whole document, so `Math.min(head, newLength)` is a
+  // position in the OLD text read against the NEW one — it lands wherever the
+  // reflowed text happens to reach, and the further down the file you were the
+  // further off it is. The viewport already had this solved: the same
+  // declaration-relative, whitespace-insensitive anchor that keeps the right
+  // code on screen puts the caret back where the user left it.
+  const caretAnchor = captureFormatViewportAnchor(view, sel.head);
   const change = formatDocument(view.state);
   if (!change) return false;
 
   const newText = change.changes.insert;
   const newLen = newText.length;
-  const selHead = Math.min(sel.head, newLen);
+  const fallbackHead = Math.min(sel.head, newLen);
   const fileId = (typeof globalThis !== 'undefined' ? globalThis : window).CurrentEditor?.getCurrentFileId?.() ?? null;
 
   dispatchEdit(view, {
     ...change,
-    selection: EditorSelection.cursor(selHead),
+    selection: EditorSelection.cursor(fallbackHead),
     userEvent: 'format',
   }, {
     fileId,
     kind: 'format',
   });
 
+  // Resolved against the state the dispatch just produced.
+  const selHead = resolveFormatViewportAnchor(caretAnchor, view.state, newText) ?? fallbackHead;
   const resolvedPos = resolveFormatViewportAnchor(anchor, view.state, newText) ?? selHead;
   scheduleScrollToCenter(view, resolvedPos, {
     selection: { anchor: selHead, head: selHead },

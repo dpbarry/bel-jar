@@ -6,12 +6,43 @@ export const EDIT_HISTORY_CAP = 100;
 export const SESSION_KEY_PREFIX = 'beljar-edit-history-v1:';
 export const TYPING_GROUP_MS = 150;
 
+/**
+ * ⛔ An entry holds WHOLE document snapshots, so a count-only cap is not a cap.
+ *
+ * 100 typing bursts in a 30 KB case-study file is ~6 MB of live strings that
+ * were also re-serialised into sessionStorage after every burst — over
+ * Chrome's ~5 MB origin quota, so `setItem` threw, the throw was swallowed as
+ * "quota", and the session history silently stopped persisting partway through
+ * the first serious editing session. A `format project` entry, which diffs
+ * every file at once, gets there on its own.
+ *
+ * So there are two budgets: what we keep in memory, and the smaller slice we
+ * try to hand sessionStorage. Both are measured in characters of snapshot
+ * text, which is O(1) per string to add up.
+ */
+export const EDIT_HISTORY_BYTE_CAP = 8 * 1024 * 1024;
+export const SESSION_BYTE_CAP = 1_500_000;
+export const EDIT_HISTORY_MIN_ENTRIES = 12;
+const PERSIST_DEBOUNCE_MS = 400;
+
 export const editHistoryTxn = Annotation.define();
 
 function emptyStructural() {
   return {
     created: [],
     deleted: [],
+    /**
+     * ⛔ A RENAME keeps the id and changes the name, so nothing else in this
+     * shape can see it: the text is identical, the id is in both file lists, and
+     * `diffWorkspace` found nothing to record. Renaming a file therefore made NO
+     * entry — and the next Ctrl+Z reached past it and silently reverted the
+     * user's last EDIT while the rename stood. A step that cannot be represented
+     * is worse than one that is refused: it makes the key next to it lie.
+     *
+     * `[{ id, before, after }]`, names only. The `.cfg` rewrites a rename causes
+     * are ordinary text diffs and ride in `files`.
+     */
+    renamed: [],
     cfg: {},
     openFileIds: null,
     activeFileId: null,
@@ -36,6 +67,7 @@ export function normalizeEntry(raw) {
     ? {
       created: Array.isArray(raw.structural.created) ? raw.structural.created : [],
       deleted: Array.isArray(raw.structural.deleted) ? raw.structural.deleted : [],
+      renamed: Array.isArray(raw.structural.renamed) ? raw.structural.renamed : [],
       cfg: raw.structural.cfg && typeof raw.structural.cfg === 'object' ? raw.structural.cfg : {},
       openFileIds: raw.structural.openFileIds ?? null,
       activeFileId: raw.structural.activeFileId ?? null,
@@ -55,6 +87,39 @@ export function normalizeEntry(raw) {
 
 function fileIdsOf(entry) {
   return Object.keys(entry.files || {});
+}
+
+/** Characters of snapshot text an entry keeps alive. `.length` is O(1). */
+function entryWeight(entry) {
+  let n = 0;
+  for (const rec of Object.values(entry.files || {})) {
+    n += (rec.before?.length || 0) + (rec.after?.length || 0);
+  }
+  const s = entry.structural;
+  if (s) {
+    for (const f of s.created || []) n += f.text?.length || 0;
+    for (const f of s.deleted || []) n += f.text?.length || 0;
+    for (const p of Object.values(s.cfg || {})) {
+      n += (p.before?.length || 0) + (p.after?.length || 0);
+    }
+  }
+  return n;
+}
+
+/**
+ * The newest run of `stack` that fits `budget`, always keeping at least `min`
+ * entries so a single enormous step (format-project) cannot empty the stack.
+ */
+function newestWithin(stack, budget, min) {
+  let used = 0;
+  let start = stack.length;
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    const kept = stack.length - i;
+    used += entryWeight(stack[i]);
+    if (used > budget && kept > min) break;
+    start = i;
+  }
+  return start;
 }
 
 function listsEqual(a, b) {
@@ -94,21 +159,31 @@ function structuralSide(entry, direction) {
   return {
     created: undo ? s.created : s.deleted,
     deleted: undo ? s.deleted : s.created,
+    // Names only, so the two directions are the two sides of the same pair.
+    renamed: (s.renamed || []).map((r) => ({ id: r.id, name: undo ? r.before : r.after })),
+    // ⛔ TARGET is where the step is going; EXPECT is what has to be there
+    // already. They are OPPOSITE sides, and writing them the same way (undo
+    // targeting `after`) made every cfg patch apply as a no-op that validated
+    // perfectly, because it was checked against the side it was about to write.
     cfgTarget: (fileId) => {
       const patch = s.cfg[fileId];
       if (!patch) return null;
-      return undo ? patch.after : patch.before;
+      return undo ? patch.before : patch.after;
     },
     cfgExpect: (fileId) => {
       const patch = s.cfg[fileId];
       if (!patch) return null;
       return undo ? patch.after : patch.before;
     },
+    // ⛔ Same polarity as every other TARGET: undo goes back to `before`.
+    // Inverted, undoing a delete restored the file to the explorer but left
+    // its tab closed (setting the open list to the state it was already in),
+    // and the tab came back on REDO instead.
     openFileIds: s.openFileIds
-      ? (undo ? s.openFileIds.after : s.openFileIds.before)
+      ? (undo ? s.openFileIds.before : s.openFileIds.after)
       : null,
     activeFileId: s.activeFileId
-      ? (undo ? s.activeFileId.after : s.activeFileId.before)
+      ? (undo ? s.activeFileId.before : s.activeFileId.after)
       : null,
     emptyFolders: s.emptyFolders
       ? (undo ? s.emptyFolders.before : s.emptyFolders.after)
@@ -200,28 +275,27 @@ function fileTextExpect(entry, fileId, direction) {
   return direction === 'undo' ? rec.after : rec.before;
 }
 
-function entryTouchesFile(entry, fileId) {
-  if (entry.files[fileId]) return true;
-  const s = entry.structural || emptyStructural();
-  if (s.cfg[fileId]) return true;
-  if (s.created.some((f) => f.id === fileId)) return true;
-  if (s.deleted.some((f) => f.id === fileId)) return true;
-  return false;
-}
 
 /**
  * A document change nobody asked for: every transaction in it opted out of
  * history. Trim-on-save, format-on-save, a whole-document reindent, a rename's
- * internal sync, our own undo/redo replacement.
+ * internal sync.
  *
  * ⛔ "Out of band" means AMEND, never IGNORE. See onDocChange.
+ *
+ * ⛔ A `userEvent` of undo/redo does NOT qualify. Our own replacement carries
+ * one, but it always runs under `applying`, which onDocChange checks first — so
+ * the only way such a transaction reaches here is a RIVAL history acting on our
+ * document. Absorbing that was quietly fatal: CodeMirror's undo reverted the
+ * text, the amend re-pointed the entry it had just reverted at the reverted
+ * text, the entry flattened to a no-op and was dropped. Every press ate one step
+ * and the stack emptied itself with no undo ever having run. A foreign history
+ * change is recorded as an ordinary edit instead, so it is at least reversible.
  */
 function isOutOfBand(update) {
   return update.transactions.every((tr) => {
     if (tr.annotation(Transaction.addToHistory) === false) return true;
-    if (tr.annotation(editHistoryTxn)) return true;
-    const ue = tr.annotation(Transaction.userEvent);
-    return ue === 'undo' || ue === 'redo';
+    return !!tr.annotation(editHistoryTxn);
   });
 }
 
@@ -243,6 +317,7 @@ function isOutOfBand(update) {
 function isNoOpEntry(entry) {
   const s = entry.structural || emptyStructural();
   if (s.created.length || s.deleted.length || s.openFileIds || s.activeFileId) return false;
+  if ((s.renamed || []).length) return false;
   if (s.emptyFolders) return false;
   for (const rec of Object.values(entry.files || {})) {
     if (rec.before !== rec.after) return false;
@@ -302,6 +377,17 @@ function validateEntry(adapter, entry, direction) {
   for (const f of side.deleted) {
     if (adapter.getFileById?.(f.id)) {
       return { ok: false, reason: `still-present:${f.id}` };
+    }
+  }
+
+  // ⛔ A rename is gated on the file EXISTING and nothing else. The current
+  // name is deliberately not checked: renaming a file twice and undoing once is
+  // an ordinary thing to do, and refusing because the name in hand is not the
+  // one recorded would be the "project changed since that edit" dead end all
+  // over again — for an operation that simply sets a string.
+  for (const r of side.renamed) {
+    if (!adapter.getFileById?.(r.id)) {
+      return { ok: false, reason: `missing-rename:${r.id}` };
     }
   }
 
@@ -370,6 +456,15 @@ function diffWorkspace(before, after, kind, label) {
       structural.deleted.push({ id: rec.id, name: rec.name, text: before.files[id] ?? '' });
     }
   }
+  // ⛔ Same id, different name. Renames and drag-moves are the whole reason
+  // `fileRecords` carries the NAME as well as the id — without this the diff of
+  // a rename is empty and the step vanishes.
+  for (const [id, rec] of afterRec) {
+    const was = beforeRec.get(id);
+    if (was && was.name !== rec.name) {
+      structural.renamed.push({ id, before: was.name, after: rec.name });
+    }
+  }
 
   if (!listsEqual(before.openFileIds, after.openFileIds)) {
     structural.openFileIds = { before: before.openFileIds, after: after.openFileIds };
@@ -391,6 +486,7 @@ function diffWorkspace(before, after, kind, label) {
 
   const hasFiles = Object.keys(files).length > 0;
   const hasStruct = structural.created.length || structural.deleted.length
+    || structural.renamed.length
     || Object.keys(structural.cfg).length
     || structural.openFileIds || structural.activeFileId || structural.emptyFolders;
   if (!hasFiles && !hasStruct) return null;
@@ -413,22 +509,87 @@ export function createEditHistory(adapter) {
   let typingGroup = null;
   let typingTimer = null;
   let applying = false;
+  let persistTimer = null;
+  let persistPending = false;
 
-  function persistStack() {
+  /**
+   * Write the stack to sessionStorage, newest-first and inside the byte
+   * budget. Whatever does not fit is simply not persisted — losing the OLDEST
+   * steps across a reload is a far better failure than the previous one, where
+   * a single over-quota `setItem` threw and nothing at all was saved.
+   */
+  function writeStack() {
     const store = adapter.sessionStorage;
     if (!store || !adapter.projectKey) return;
-    try {
-      const key = SESSION_KEY_PREFIX + adapter.projectKey;
-      store.setItem(key, JSON.stringify({ undo: undoStack, redo: redoStack }));
-    } catch (_) { /* quota */ }
+    const key = SESSION_KEY_PREFIX + adapter.projectKey;
+    let budget = SESSION_BYTE_CAP;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const undo = undoStack.slice(newestWithin(undoStack, budget, 1));
+      const redo = redoStack.slice(newestWithin(redoStack, budget, 0));
+      try {
+        store.setItem(key, JSON.stringify({ undo, redo }));
+        return;
+      } catch (_) {
+        // Quota is shared with everything else on the origin, so a budget that
+        // should have fit can still be refused. Shed and retry, then give up.
+        budget = Math.floor(budget / 4);
+        if (budget < 4096) {
+          try { store.removeItem?.(key); } catch (_e) { /* nothing left to do */ }
+          return;
+        }
+      }
+    }
   }
 
+  function flushPersist() {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    if (!persistPending) return;
+    persistPending = false;
+    writeStack();
+  }
+
+  /**
+   * Serialising megabytes of snapshots after every 150 ms typing burst is a
+   * measurable stall on the input path, so the write trails the burst. The
+   * first write of a quiet period still goes out immediately — the stack
+   * being on disk one keystroke after the user starts typing is what makes a
+   * crash-then-reload survivable.
+   */
+  function persistStack() {
+    if (!adapter.sessionStorage || !adapter.projectKey) return;
+    if (persistTimer) {
+      persistPending = true;
+      return;
+    }
+    persistPending = false;
+    writeStack();
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      if (persistPending) flushPersist();
+    }, PERSIST_DEBOUNCE_MS);
+  }
+
+  /**
+   * Replace the stacks with whatever is stored for the current project.
+   *
+   * ⛔ "Nothing stored" means an EMPTY history, not "keep what you had". This
+   * runs on every project swap, and returning early left the previous project's
+   * entries live against a workspace whose files they do not describe — undo
+   * would then try to write one project's text into another's.
+   */
   function loadStack() {
     const store = adapter.sessionStorage;
     if (!store || !adapter.projectKey) return;
     try {
       const raw = store.getItem(SESSION_KEY_PREFIX + adapter.projectKey);
-      if (!raw) return;
+      if (!raw) {
+        undoStack = [];
+        redoStack = [];
+        return;
+      }
       const parsed = JSON.parse(raw);
       undoStack = Array.isArray(parsed.undo)
         ? parsed.undo.map(normalizeEntry).filter(Boolean)
@@ -446,6 +607,8 @@ export function createEditHistory(adapter) {
     if (undoStack.length > EDIT_HISTORY_CAP) {
       undoStack = undoStack.slice(undoStack.length - EDIT_HISTORY_CAP);
     }
+    const start = newestWithin(undoStack, EDIT_HISTORY_BYTE_CAP, EDIT_HISTORY_MIN_ENTRIES);
+    if (start > 0) undoStack = undoStack.slice(start);
   }
 
   function toast(msg, kind = 'error') {
@@ -659,6 +822,20 @@ export function createEditHistory(adapter) {
       rollback.removed.push(f.id);
     }
 
+    // ⛔ BEFORE the text loops, not after. `Persist.renameFile` rewrites every
+    // `.cfg` that mentions the old path, and those cfg files are also carried as
+    // ordinary text diffs in this same entry. Renaming first lets the recorded
+    // text win; renaming last would overwrite it with the rename's own guess.
+    for (const r of side.renamed) {
+      const cur = adapter.getFileById?.(r.id);
+      if (!cur) throw new Error(`Missing file ${r.id}`);
+      if (cur.name === r.name) continue;
+      rollback.renamed.push({ id: r.id, name: cur.name });
+      if (!adapter.renameFile?.(r.id, r.name)) {
+        throw new Error(`Could not rename ${cur.name}`);
+      }
+    }
+
     for (const fileId of Object.keys(entry.structural?.cfg || {})) {
       const target = side.cfgTarget(fileId);
       if (target == null) continue;
@@ -738,6 +915,9 @@ export function createEditHistory(adapter) {
   }
 
   function rollbackPatch(rollback) {
+    for (const r of rollback.renamed || []) {
+      adapter.renameFile?.(r.id, r.name);
+    }
     for (const id of rollback.removed) {
       const rec = rollback.fileRecords.find((f) => f.id === id);
       const text = rollback.files[id];
@@ -818,7 +998,7 @@ export function createEditHistory(adapter) {
     }
 
     applying = true;
-    const rollback = { files: {}, deleted: [], removed: [], fileRecords: [], openFileIds: null, activeFileId: null, emptyFolders: null };
+    const rollback = { files: {}, deleted: [], removed: [], renamed: [], fileRecords: [], openFileIds: null, activeFileId: null, emptyFolders: null };
     try {
       applyWorkspacePatch(entry, direction, rollback);
     } catch (err) {
@@ -945,6 +1125,9 @@ export function createEditHistory(adapter) {
 
   function swapProject(projectKey) {
     flushTypingGroup();
+    // Land any trailing write against the project it belongs to, before the
+    // key moves out from under it.
+    flushPersist();
     adapter.projectKey = projectKey;
     loadStack();
     adapter.onStackChange?.();
@@ -962,6 +1145,7 @@ export function createEditHistory(adapter) {
     transact,
     pushEntry,
     flushTypingGroup,
+    flushPersist,
     reconcileActiveFile,
     flushCheckpoint: () => adapter.flushCheckpoint?.(),
     onDocChange,
@@ -978,7 +1162,7 @@ export function createEditHistory(adapter) {
       const check = validateEntry(adapter, entry, direction);
       if (!check.ok) return false;
       applying = true;
-      const rollback = { files: {}, deleted: [], removed: [], fileRecords: [], openFileIds: null, activeFileId: null, emptyFolders: null };
+      const rollback = { files: {}, deleted: [], removed: [], renamed: [], fileRecords: [], openFileIds: null, activeFileId: null, emptyFolders: null };
       try {
         applyWorkspacePatch(entry, direction, rollback);
       } catch (_) {

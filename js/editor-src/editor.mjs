@@ -12,19 +12,19 @@ import {
   placeholder,
   rectangularSelection,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentLess, indentMore, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
+import { defaultKeymap, history, indentLess, indentMore, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel, findNext, findPrevious, SearchCursor } from '@codemirror/search';
 import { searchPanel } from './ide/search-panel.mjs';
 import { ensureSyntaxTree, foldAll, foldKeymap, indentRange, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language';
-import { diagnosticCount, forceLinting, forEachDiagnostic, linter } from '@codemirror/lint';
+import { diagnosticCount, forceLinting, linter } from '@codemirror/lint';
 import { beluga } from './language.mjs';
 import { formatCommand, formatSource, formatString } from './format/document-format.mjs';
 export { formatCommand, formatSource, formatString };
 import {
-  scheduleJumpToRange, scheduleViewportRestore, viewportCenterLine,
-  resolveJumpRange, captureFormatViewportAnchor, captureViewportLocal,
+  scheduleJumpToRange, scheduleViewportRestore,
+  resolveJumpRange, captureViewportLocal,
 } from './ide/viewport.mjs';
-import { aliases, maybeExpandBelAliases } from './aliases.mjs';
+import { aliases } from './aliases.mjs';
 import { memberSpanFromTree } from './harpoon/scan-file-holes.mjs';
 
 export {
@@ -61,7 +61,7 @@ export function reservedChordFacts() {
  *
  * ⛔ These are real, invocable bindings and they were listed NOWHERE. The
  * Keybindings sheet projects `Keybindings`, which has never heard of them; the
- * palette lists commands, not chords; Available Macros asked `describe()`, which
+ * palette lists commands, not chords; Available Keys asked `describe()`, which
  * only knows BelJar's own chord table. The only way to find `]h` was to hold `]`
  * for 400ms and read which-key — a discovery path that requires already knowing
  * the key exists.
@@ -70,7 +70,14 @@ export function reservedChordFacts() {
  * the maps that are actually installed.
  */
 export { styleMacros, packageKeyNote } from './ide/modal/style-macros.mjs';
-export { activeVimOptions } from './ide/modal/vim-setup.mjs';
+export { activeVimOptions, vimOption, vimMacroBindingReport } from './ide/modal/vim-setup.mjs';
+/**
+ * ⛔ The command line needs to know which names VIM'S dispatcher answers to,
+ * because under Vim that dispatcher is what Enter runs. Without it the list
+ * denied `:nohlsearch` and offered `:set.occurrence-highlight`, and both were
+ * wrong in the browser. See `vim-ex-names.mjs`.
+ */
+export { vimExCandidates } from './ide/modal/vim-ex-names.mjs';
 export { vimStatus } from './ide/keymap-style.mjs';
 export { applyModalPrefs } from './ide/keymap-style.mjs';
 export {
@@ -174,7 +181,7 @@ import { computeLintBlocks } from './lint-units.mjs';
 import { hoverTooltip } from './ide/hover.mjs';
 import { belAutocompletion, toggleEditorAutocomplete } from './ide/completion/index.mjs';
 import { completionChrome } from './ide/completion/chrome.mjs';
-import { holeCycleKeymap, cycleHole } from './prover/hole-decorations.mjs';
+import { cycleHole } from './prover/hole-decorations.mjs';
 import { createSemanticEngine } from './semantic/semantic-engine.mjs';
 import { createEditorCheckHost } from './semantic/editor-check-host.mjs';
 import { listGroupSymbols, normalizeUnlocatedBelugaRunOutput } from './semantic/project-prelude.mjs';
@@ -224,6 +231,7 @@ import { editorFollow } from './ide/follow-sync.mjs';
 import { prepareEditorDoc, sanitizeEditorText } from './editor-doc-prep.mjs';
 import {
   readEditorPrefs,
+  readKeymapStylePref,
   buildEditorChromeTheme,
   buildToggleableExtensions,
   buildBracketKeymap,
@@ -232,6 +240,16 @@ import {
 import { reservedChords, emacsFidelity, isMacPlatform } from './ide/modal/reserved-chords.mjs';
 import { buildKeymapStyleExtensions, normalizeKeymapStyle, remappableOmitIds, vimAllowsRemap } from './ide/keymap-style.mjs';
 import { statusStripFeed } from './ide/status-strip-feed.mjs';
+/**
+ * ⛔ Re-exported because the SHELL needs the same answer, and for the same
+ * reason the feed has it: the goal chip must be refreshed when the goals ARRIVE,
+ * not only when the caret moves. `refreshProofState` runs on
+ * `beljar:hole-goals-updated` and used to set holes and symbols while leaving
+ * `goal` untouched — so a hole you were already standing in when its goal was
+ * computed stayed blank until you moved off it and back onto it.
+ */
+export { goalAtCaret } from './ide/status-strip-feed.mjs';
+import { macroRecorder, abortRecording } from './ide/macro-engine.mjs';
 import { installEditorCommands } from './ide/editor-commands.mjs';
 import { applySaveTransforms } from './ide/save-transforms.mjs';
 import { foldPersistence, flushFoldKeys } from './ide/fold-persist.mjs';
@@ -655,14 +673,28 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     rectangularSelection(),
     crosshairCursor(),
     keymapStyleCompartment.of(buildKeymapStyleExtensions(prefs.keymapStyle)),
-    statusStripFeed(() => readEditorPrefs().keymapStyle),
+    statusStripFeed(readKeymapStylePref),
+    // Style-neutral: macros belong to BelJar, not to a keymap, so the
+    // recorder is in the base set and Standard has them too.
+    macroRecorder(),
     remappableKeymapCompartment.of(
       Prec.high(keymap.of(buildRemappableEditorKeymap(semanticEngine, prefs.keymapStyle)))
     ),
     keymap.of([
       { key: 'Enter', run: smartEnter },
       { key: 'F3', run: findNext, shift: findPrevious },
-      indentOrInsertTab, ...defaultKeymap, ...historyKeymap, ...foldKeymap,
+      // ⛔ NOT `...historyKeymap`. CodeMirror's stock history keymap binds FIVE
+      // chords — `Mod-z`, `Mod-y`/`Mod-Shift-z`, linux `Ctrl-Shift-z`, `Mod-u`
+      // (undoSelection) and `Alt-u`/`Mod-Shift-u` (redoSelection) — and every one of
+      // them drives CodeMirror's OWN history directly. BelJar only ever intercepted
+      // the first two, so the other three reverted the document from a parallel
+      // stack that `EditHistory` never saw; `onDocChange` then recorded the revert as
+      // a fresh edit, which cleared the redo stack and left the two histories
+      // permanently out of step. Worse, under Vim the style gate returns FALSE in
+      // Normal mode, so `Mod-z` fell straight past our own entry into this one.
+      // `edit.undo`/`edit.redo` own those chords in the remappable keymap above; here
+      // there must be nothing for them to fall through to.
+      indentOrInsertTab, ...defaultKeymap, ...foldKeymap,
     ]),
     bracketKeymapCompartment.of(keymap.of(buildBracketKeymap(prefs))),
     placeholder(placeholderText),
@@ -717,7 +749,10 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
       { key: 'Mod-f', run: openSearchPanel },
       { key: 'F3', run: findNext, shift: findPrevious },
       ...editHistoryKeymap(),
-      ...defaultKeymap, ...historyKeymap,
+      // ⛔ `editHistoryKeymap()` above is the ONLY history binding here — see the
+      // note in `baseExtensions`. The .cfg editor is tracked by `editHistoryListener`,
+      // so CodeMirror's stock history chords would diverge from our stack too.
+      ...defaultKeymap,
     ]),
     placeholder(placeholderText),
     editorChrome(),
@@ -803,7 +838,7 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
     ],
   });
   const view = new EditorView({ parent: parentEl, state });
-  view.dom.classList.add('bel-editor--aux', 'bel-editor--cfg');
+  view.dom.classList.add('jar-editor--aux', 'jar-editor--cfg');
   activeEditorView = view;
   activeEditorPrefsApplier = (prefs) => {
     view.dispatch({
@@ -1399,7 +1434,7 @@ export function mount(parentEl, options = {}) {
   // global CurrentEditor handle is assigned by app.js.
   view._belSemanticEngine = semanticEngine;
   wireStatusDotErrorNavLocal();
-  if (/\.elf$/i.test(docPath)) view.dom.classList.add('bel-editor--elf');
+  if (/\.elf$/i.test(docPath)) view.dom.classList.add('jar-editor--elf');
 
   semanticEngine.setCheckerCode(() => healthyCodeWithPrelude());
   hydrateSemanticCheckpoint(initialDoc);
@@ -1408,13 +1443,21 @@ export function mount(parentEl, options = {}) {
   queueMicrotask(() => {
     if (view.dom?.isConnected) scheduleDevelopmentCheck(view);
   });
+  // ⛔ Named and removed in `destroy()`, like the keybindings listener below.
+  // Anonymous, it could never come off — and every file switch left one more
+  // behind, each holding this whole mount alive: the view, the semantic engine
+  // with its symbol/checker/graph stores, and the document text. The dead ones
+  // were harmless to RUN (their view is disconnected, so they return at the
+  // first line), which is exactly why a session that had opened two hundred
+  // files was quietly carrying two hundred editors.
+  function onDevelopmentChecked() {
+    if (!semanticView?.dom?.isConnected) return;
+    bumpSuiteOverlay();
+    refreshIdeStatusRef(semanticView);
+    refreshSettlementLint(semanticView);
+  }
   if (typeof g.addEventListener === 'function') {
-    g.addEventListener('beljar:development-checked', () => {
-      if (!semanticView?.dom?.isConnected) return;
-      bumpSuiteOverlay();
-      refreshIdeStatusRef(semanticView);
-      refreshSettlementLint(semanticView);
-    });
+    g.addEventListener('beljar:development-checked', onDevelopmentChecked);
   }
   if (!options.jumpAt) scheduleViewportRestore(view, options.initialLocal, { focus: true });
   if (typeof options.onDocChange === 'function') {
@@ -1472,6 +1515,10 @@ export function mount(parentEl, options = {}) {
       diagCompartment.reconfigure(buildDiagLintExtensions(semanticEngine, prefs, suiteOverlayDiagnostics)),
     ];
     if (nextKeymap !== appliedKeymapStyle) {
+      // ⛔ A half-recorded macro belongs to the keymap it was being pressed in.
+      // Carrying it across meant the next `C-x (` in Emacs stopped a Vim
+      // recording and filed vim Normal-mode keys under `@a`.
+      abortRecording('Recording cancelled — the editing style changed.');
       appliedKeymapStyle = nextKeymap;
       effects.push(
         keymapStyleCompartment.reconfigure(buildKeymapStyleExtensions(nextKeymap)),
@@ -1784,6 +1831,7 @@ export function mount(parentEl, options = {}) {
       activeEditorView = null;
       if (typeof g.removeEventListener === 'function') {
         g.removeEventListener('beljar:keybindings-changed', reconfigureRemappableKeymap);
+        g.removeEventListener('beljar:development-checked', onDevelopmentChecked);
       }
       if (g.BelugaClient?.setIntelKeepWarm) g.BelugaClient.setIntelKeepWarm(false);
       if (semanticEngine.scheduler && semanticEngine.scheduler.stop) {

@@ -44,13 +44,13 @@ index.html
 | **Graph** | [`graph-view.mjs`](../js/editor-src/graph/graph-view.mjs) | `graph/*` |
 | **Format** | [`document-format.mjs`](../js/editor-src/format/document-format.mjs) | `format/*` |
 | **Perf tracing** | [`check-trace.mjs`](../js/editor-src/perf/check-trace.mjs) | `perf/*` |
-| **Commands / keys** | [`command-registry.mjs`](../js/commands/command-registry.mjs) | `commands/*` — catalogue (metadata) + attached behaviour; `Keybindings`, the palette, the command line and Available macros are all projections of it. Modal keymaps: `editor-src/ide/modal/*`, assembled by `keymap-style.mjs`. See [`COMMANDS.md`](COMMANDS.md) |
+| **Commands / keys** | [`command-registry.mjs`](../js/commands/command-registry.mjs) | `commands/*` — catalogue (metadata) + attached behaviour; `Keybindings`, the palette, the command line and Available Keys are all projections of it. Modal keymaps: `editor-src/ide/modal/*`, assembled by `keymap-style.mjs`. See [`COMMANDS.md`](COMMANDS.md) |
 | **Status strip** | [`status-strip-view.mjs`](../js/status-strip/status-strip-view.mjs) | `status-strip/*` — status strip under the editor pane (shell-owned sibling of `.editor-body`, not a CM panel); fed by [`status-strip-feed.mjs`](../js/editor-src/ide/status-strip-feed.mjs) + `beljar:file-lint` |
 | **Shell UI** | [`app.mjs`](../js/app/app.mjs) → generated `app.js` | `app-*.mjs` peels; explorer / library / settings |
-| **Persist / workspace** | [`persist.mjs`](../js/persist/persist.mjs), [`workspace.mjs`](../js/workspace/workspace.mjs) | Peels + [`install-edit-history.mjs`](../js/persist/install-edit-history.mjs) |
+| **Persist / workspace** | [`persist.mjs`](../js/persist/persist.mjs), [`workspace.mjs`](../js/workspace/workspace.mjs) | Peels + [`install-edit-history.mjs`](../js/persist/install-edit-history.mjs), [`tab-guard.mjs`](../js/persist/tab-guard.mjs) (a second tab on one project) |
 | **Beluga runtime** | [`beluga-client.js`](../js/beluga/beluga-client.js) | `beluga-run*`, `beluga-worker.js` (checker always on worker) |
 | **Library / corpus** | [`library/`](../library/) | Generated [`library.js`](../js/library/library.js) |
-| **Style** | [`css/style.css`](../css/style.css) | Tokens → concern files → `components/`; `responsive` last |
+| **Style** | [`css/style.css`](../css/style.css) | Tokens → concern files → `components/`; `responsive` last. Every `var(--x)` must name a real token — [`test-css-tokens.mjs`](../tests/test-css-tokens.mjs) fails the build otherwise, because an undefined property drops the whole declaration in silence |
 | **Tests / scripts** | [`tests/`](../tests/), [`scripts/`](../scripts/) | One `npm test`; prover probes `scripts/prover-*.mjs` |
 
 **Root `js/editor-src/*`:** substrate + barrel only — `editor.mjs`; parser/tokens; `language` / `tree-walk` / `tree-helpers` / `name-resolve` / `infix` / `lint-units` / `aliases`; `edit-history` / `editor-prefs` / `editor-doc-prep`; `project-paths`. Everything else goes in a domain folder.

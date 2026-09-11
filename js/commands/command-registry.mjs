@@ -13,8 +13,9 @@
  */
 import { CATALOG } from './command-catalog.mjs';
 import {
-  chordShadow, STYLE_TAKES, STYLE_CHORDS, specFromStyleKey, readableStyleChord,
+  chordShadow, chordInStyle, STYLE_TAKES, STYLE_CHORDS, specFromStyleKey, readableStyleChord,
 } from './command-shadows.mjs';
+import { editingStyle } from './command-context.mjs';
 import {
   SETTINGS, findSetting, nextValue, nearestSetting, settingId, parseSet, describeChange, optionCandidates,
 } from './command-settings.mjs';
@@ -181,7 +182,7 @@ function baseOwnerOf(spec, exceptId) {
 
 /**
  * The single formatter for "how do I invoke this" — palette rail, Keybindings
- * sheet, available macros, `:help`. Nothing else may format a chord.
+ * sheet, Available Keys, `:help`. Nothing else may format a chord.
  */
 /**
  * How to invoke this command, and what contests it.
@@ -313,6 +314,21 @@ export const Commands = {
       fromStyle: true,
       baseOwnerOf: (s) => baseOwnerOf(s, cmd ? cmd.id : null),
     });
+  },
+  /**
+   * The chord that invokes `id` RIGHT NOW, in the style currently in force, or
+   * '' when nothing does.
+   *
+   * ⛔ The one call for a surface that prints a key beside a command's name.
+   * `describe().chord` is BelJar's own binding and says nothing about whether the
+   * style left it alone — print that under Emacs and the Find row offers Ctrl+F,
+   * which Emacs uses for forward-char. A row with no chord is right; a row with a
+   * chord that does nothing is not.
+   */
+  liveChord(id, opts) {
+    const o = opts || {};
+    const style = o.style || editingStyle();
+    return chordInStyle(describe(id, Object.assign({}, o, { style, showing: 'style' })));
   },
   isAvailable,
   version: () => version,

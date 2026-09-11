@@ -37,6 +37,7 @@ import {
   vimPendingSnapshot, vimEditGuard, vimChromeTheme, vimSlotAttacher,
   registerVimExCommands, vimOptions, ensureVimUndoBridge,
 } from './modal/vim-runtime.mjs';
+import { vimCaretMotion } from './modal/vim-caret.mjs';
 import {
   ensureEmacsKeys, ensureEmacsUndoBridge, emacsChainGuard, emacsChromeTheme,
 } from './modal/emacs-runtime.mjs';
@@ -92,13 +93,22 @@ export function buildKeymapStyleExtensions(style) {
     ensureVimUndoBridge();
     registerVimExCommands();
     installVimBindings(vimOptions());
+    // ⛔ `vimCaretMotion` sits BEFORE the package, with `vimPendingSnapshot`, for
+    // the same reason: it has to see the key first. It is the other half of the
+    // decision `vimChromeTheme` makes below — BelJar draws a thin caret in every
+    // mode, so the caret must MOVE like one, and vim's block-cursor clamp is not
+    // reachable any other way. It takes a key only when vim has nothing pending,
+    // so `dl` and `2l` are untouched.
     return [Prec.highest([
-      vimPendingSnapshot(), ...vim(), vimEditGuard(), vimChromeTheme(), vimSlotAttacher(),
+      vimPendingSnapshot(), vimCaretMotion(), ...vim(), vimEditGuard(), vimChromeTheme(), vimSlotAttacher(),
     ])];
   }
   if (s === 'emacs') {
-    ensureEmacsUndoBridge();
+    // ⛔ Package table FIRST, our overrides after. `ensureEmacsKeys` walks every
+    // spec the package ships, so anything bound before it is liable to be
+    // rebound by it — which is exactly how the undo bridge lost its keys.
     ensureEmacsKeys();
+    ensureEmacsUndoBridge();
     installEmacsBindings();
     return [Prec.highest([...emacs(), emacsChainGuard(), emacsChromeTheme()])];
   }

@@ -35,4 +35,4 @@ expect(!isCfgEntryToken('use.'), 'trailing dot not an entry');
 expect(isCfgSourceEntry('name'), 'extensionless is source entry');
 expect(!isCfgSourceEntry('nested.cfg'), 'cfg include is not source entry');
 
-console.log('OK bel-paths');
+console.log('OK jar-paths');

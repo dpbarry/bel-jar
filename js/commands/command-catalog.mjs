@@ -111,6 +111,54 @@ export const CATALOG = [
     palette: true,
     styles: { vim: 'insert-only', emacs: 'off' },
   },
+  // Cut/Copy/Paste run through the browser's own clipboard (`document.execCommand`
+  // in editor-commands.mjs — the same mechanism the context menu and the Edit
+  // menu already used ad hoc, now centralised behind one id each).
+  //
+  // ⛔ BOTH styles take all three chords, and neither policy may be softer than
+  // that. This shipped as `vim: 'always'` on the strength of a remembered claim
+  // that "neither this vim package nor real vim binds Ctrl+X/Ctrl+V"; the
+  // package's own keymap says otherwise on every line — `<C-x>` is
+  // incrementNumberToken (it DECREMENTS THE NUMBER under the caret), `<C-v>` is
+  // blockwise visual mode, and `<C-c>` is `<Esc>`. Vim runs at `Prec.highest` and
+  // preventDefaults what it matched, so the chord never reached these commands:
+  // the sheet offered Cut on Ctrl+X, Available Keys printed it as pressable,
+  // and pressing it edited the document instead. Insert-only is the truth — vim
+  // matches only `context: 'insert'` commands there, so all three fall through.
+  //
+  // Emacs: `C-x` and `C-c` are prefixes and `C-v` is scroll-up-command, so the
+  // chords are gone outright. Emacs' own kill-ring — `C-w`/`M-w`/`C-y`, already
+  // live and already listed in Available Keys — is what fires instead.
+  {
+    id: 'edit.cut',
+    title: 'Cut',
+    section: 'Edit',
+    scope: 'editor',
+    defaultSpec: 'Mod+X',
+    keybindable: true,
+    palette: true,
+    styles: { vim: 'insert-only', emacs: 'off' },
+  },
+  {
+    id: 'edit.copy',
+    title: 'Copy',
+    section: 'Edit',
+    scope: 'editor',
+    defaultSpec: 'Mod+C',
+    keybindable: true,
+    palette: true,
+    styles: { vim: 'insert-only', emacs: 'off' },
+  },
+  {
+    id: 'edit.paste',
+    title: 'Paste',
+    section: 'Edit',
+    scope: 'editor',
+    defaultSpec: 'Mod+V',
+    keybindable: true,
+    palette: true,
+    styles: { vim: 'insert-only', emacs: 'off' },
+  },
   {
     id: 'edit.find',
     title: 'Find…',
@@ -140,6 +188,11 @@ export const CATALOG = [
     palette: true,
     styles: { vim: 'insert-only', emacs: 'off' },
   },
+  // ⛔ `emacs: 'off'`, and it is not a preference. `Alt+Shift+F` is `S-M-f` to
+  // the Emacs handler, which binds it to forward-word-selecting off the package's
+  // own key table — at `Prec.highest`, so Format Document never ran under Emacs
+  // and every surface went on offering the chord. `C-c q` is the substitute, in
+  // the one place an Emacs user would look for it: `M-q` is fill-paragraph.
   {
     id: 'edit.format',
     title: 'Format Document',
@@ -149,7 +202,7 @@ export const CATALOG = [
     keybindable: true,
     palette: true,
     ex: ['fmt', 'format'],
-    styles: { vim: 'always' },
+    styles: { vim: 'always', emacs: 'off' },
   },
   {
     id: 'edit.rename',
@@ -235,6 +288,38 @@ export const CATALOG = [
   { id: 'select.parent-syntax', title: 'Select Enclosing Syntax', section: 'Motion', scope: 'editor', keybindable: true, cmdline: false, styles: { vim: 'insert-only' } },
   { id: 'select.collapse', title: 'Collapse Selection', section: 'Motion', scope: 'editor', keybindable: true, cmdline: false, styles: { vim: 'insert-only' } },
 
+  /**
+   * Keyboard macros — record what you type, replay it.
+   *
+   * ⛔ Editor scope and NO default chord. There is no cross-editor convention
+   * for a non-modal keyboard macro (Emacs has `C-x (`, Vim has `q`, and both
+   * reach these ids through their own style map), and inventing one is how a
+   * keymap ends up fighting the user's. Bindable, so Standard users can pick.
+   *
+   * ⛔ `emacs: 'off'` is NOT "unavailable": Emacs reaches both through `C-x (`
+   * / `C-x )` / `C-x e`, which is why they carry `STYLE_CHORDS` substitutes.
+   * The declaration is about the CHORD, and Emacs owns every chord these could
+   * ship on.
+   */
+  {
+    id: 'macro.record',
+    title: 'Record Macro',
+    section: 'Edit',
+    scope: 'editor',
+    palette: true,
+    keybindable: true,
+    ex: ['macrorec'],
+  },
+  {
+    id: 'macro.replay',
+    title: 'Replay Macro',
+    section: 'Edit',
+    scope: 'editor',
+    palette: true,
+    keybindable: true,
+    ex: ['macroplay'],
+  },
+
   // ── Navigate ───────────────────────────────────────────────────────────────
   {
     id: 'nav.symbol',
@@ -254,6 +339,28 @@ export const CATALOG = [
     defaultSpec: 'Mod+K',
     keybindable: true,
     styles: { emacs: 'yield' },
+  },
+  /**
+   * ⛔ `Mod+G` is not invented — it is goto-line in VS Code, Sublime, Atom,
+   * Notepad++ and every IDE that has the feature, and the vim package binds no
+   * `<C-g>` at all. Emacs DOES (`keyboard-quit`), so it is `off` there and
+   * reaches the same command through `M-g g`, which is Emacs' own spelling.
+   *
+   * Until this existed the feature had no command: Vim had `:42` and `G`, the
+   * palette had its `:` mode, and Emacs had `M-g` bound by the package to a
+   * command the package does not ship — a dead key on the chord an Emacs user
+   * presses to go to a line.
+   */
+  {
+    id: 'nav.goto-line',
+    title: 'Go to Line…',
+    section: 'Navigate',
+    scope: 'global',
+    defaultSpec: 'Mod+G',
+    keybindable: true,
+    palette: true,
+    ex: ['line'],
+    styles: { emacs: 'off' },
   },
   {
     id: 'nav.definition',
@@ -529,7 +636,50 @@ export const CATALOG = [
   // Generated from `describe()`, so it is the keymap rather than a copy of it.
   // `keys.show-chords` from the original Wave G list folded in here: one sheet
   // that answers "what can I press" beats two that answer half each.
-  { id: 'keys.macros', title: 'Available Macros…', section: 'Tools', scope: 'global', palette: true, keybindable: true, ex: ['help', 'macros'] },
+  // ⛔ The ID stays `keys.macros` while the NAME changes. Ids are the stable
+  // contract — a user's stored keybindings are keyed by them, and renaming one
+  // orphans their chord silently. `:macros` stays an alias for the same reason.
+  //
+  // The name had to change: "macro" already means a recorded keystroke sequence
+  // in both Vim (`q`/`@`) and Emacs (`C-x (`), and Vim's works here — the strip
+  // prints `recording @a` while you record one. A window listing pressable KEYS
+  // cannot also be called that.
+  {
+    id: 'keys.macros',
+    title: 'Available Keys…',
+    section: 'Tools',
+    scope: 'global',
+    palette: true,
+    keybindable: true,
+    ex: ['keys', 'help', 'macros'],
+  },
+  /**
+   * Reload the page.
+   *
+   * ⛔ A real command, because it is a real thing people do — and because
+   * everything BelJar can do must be reachable BY NAME. It was reachable only by
+   * the browser's own chord, which means it existed for the mouse and for F5 and
+   * for nobody typing `:`.
+   *
+   * ⛔ NO DEFAULT CHORD — and NOT because the browser has `Ctrl+R`. It does not:
+   * the hand audit (`scripts/chord-audit.html`, every Ctrl+letter, Chrome 152 /
+   * Windows 11) measured it ARRIVING, which is why it is absent from
+   * `BROWSER_RESERVED_PC`. Emacs proves the point by taking it — `C-r` is bound
+   * to reverse-search there.
+   *
+   * The real reason is that it is spoken for in two of the three styles, by the
+   * ⛔ rule that a style policy is a claim about the PACKAGE'S keymap:
+   *   vim    `<C-r>` is REDO, in the package's own table.
+   *   emacs  `C-r` is reverse-search, re-pointed at BelJar's search line.
+   * So a default could only be Standard-only — a chord that shadows the
+   * browser's own reload to do what the browser's own reload already does,
+   * since `beforeunload` flushes on that path too. Bindable if someone wants
+   * it; not worth a default.
+   *
+   * The work is safe: `beforeunload`, `pagehide` and `visibilitychange` all
+   * flush every buffer to storage, so a reload loses nothing.
+   */
+  { id: 'app.reload', title: 'Reload BelJar', section: 'Tools', scope: 'global', palette: true, keybindable: true, ex: ['reload', 'refresh'] },
   { id: 'cmdline.repeat', title: 'Repeat Last Command', section: 'Tools', scope: 'global', palette: true, keybindable: true },
   { id: 'cmdline.open', title: 'Command Line', section: 'Tools', scope: 'global', palette: true, keybindable: true },
   { id: 'tools.palette', title: 'Open Command Palette', section: 'Tools', scope: 'global', palette: true, shortcut: 'Mod+K' },

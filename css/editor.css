@@ -333,7 +333,7 @@ html.light .output-header-progress {
 
 /* VS Code-style widget: slides down flush from the top edge, bottom corners
    rounded, a slim expand strip on the left spanning both rows. */
-.bel-search {
+.jar-search {
   display: flex;
   align-items: stretch;
   gap: 0.2rem;
@@ -343,10 +343,10 @@ html.light .output-header-progress {
   border-top: none;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   box-shadow: var(--menu-shadow);
-  animation: bel-search-in 140ms ease-out;
+  animation: jar-search-in 140ms ease-out;
 }
 
-@keyframes bel-search-in {
+@keyframes jar-search-in {
   from {
     transform: translateY(-0.35rem);
     opacity: 0;
@@ -357,25 +357,25 @@ html.light .output-header-progress {
   }
 }
 
-.bel-search-main {
+.jar-search-main {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
 }
 
-.bel-search-row {
+.jar-search-row {
   display: flex;
   align-items: center;
   gap: 0.2rem;
 }
 
 /* display:flex would defeat the hidden attribute on the collapsed replace row */
-.bel-search-row[hidden] {
+.jar-search-row[hidden] {
   display: none;
 }
 
 /* Fixed-basis inputs so the find and replace fields align exactly. */
-.bel-search-inputwrap {
+.jar-search-inputwrap {
   flex: 0 0 13.5rem;
   min-width: 0;
   display: flex;
@@ -388,15 +388,15 @@ html.light .output-header-progress {
   transition: var(--search-field-transition);
 }
 
-.bel-search-inputwrap:focus-within {
+.jar-search-inputwrap:focus-within {
   border-color: var(--search-well-focus-border);
 }
 
-.bel-search.is-no-results .bel-search-inputwrap:not(.bel-search-inputwrap--replace) {
+.jar-search.is-no-results .jar-search-inputwrap:not(.jar-search-inputwrap--replace) {
   border-color: var(--ide-error-squiggle);
 }
 
-.bel-search .bel-search-input {
+.jar-search .jar-search-input {
   flex: 1;
   min-width: 0;
   border: none;
@@ -408,24 +408,24 @@ html.light .output-header-progress {
   padding: 0.27rem 0;
 }
 
-.bel-search .bel-search-input::placeholder {
+.jar-search .jar-search-input::placeholder {
   color: var(--base-high);
 }
 
 /* Input well is ~94% L in light mode; global ::selection (--accent-lowest) vanishes on it. */
-.bel-search .bel-search-input::selection {
+.jar-search .jar-search-input::selection {
   background: light-dark(rgba(37, 99, 235, 0.35), var(--accent-low));
   color: var(--base-highest);
 }
 
-.bel-search-chips {
+.jar-search-chips {
   display: flex;
   align-items: center;
   gap: 0.1rem;
   flex-shrink: 0;
 }
 
-.bel-search-chip {
+.jar-search-chip {
   border: none;
   background: transparent;
   color: var(--muted-mid);
@@ -440,18 +440,18 @@ html.light .output-header-progress {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bel-search-chip:hover {
+  .jar-search-chip:hover {
     background: var(--accent-lowest);
     color: var(--base-higher);
   }
 }
 
-.bel-search-chip.is-on {
+.jar-search-chip.is-on {
   background: var(--accent-lower);
   color: var(--accent-high);
 }
 
-.bel-search-count {
+.jar-search-count {
   flex-shrink: 0;
   font-size: 0.64rem;
   color: var(--muted-mid);
@@ -461,16 +461,16 @@ html.light .output-header-progress {
   white-space: nowrap;
 }
 
-.bel-search.is-no-results .bel-search-count {
+.jar-search.is-no-results .jar-search-count {
   color: var(--ide-error-squiggle);
 }
 
 /* No reserved gap before a search has been typed. */
-.bel-search-count:empty {
+.jar-search-count:empty {
   display: none;
 }
 
-.bel-search-btn {
+.jar-search-btn {
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -486,27 +486,27 @@ html.light .output-header-progress {
   transition: background 100ms ease, color 100ms ease;
 }
 
-.bel-search-btn svg {
+.jar-search-btn svg {
   width: 0.75rem;
   height: 0.75rem;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bel-search-btn:hover {
+  .jar-search-btn:hover {
     background: var(--accent-lowest);
     color: var(--accent-high);
   }
 }
 
 /* The expand strip stretches the panel's full height. */
-.bel-search > .bel-search-expand {
+.jar-search > .jar-search-expand {
   width: 0.9rem;
   height: auto;
   align-self: stretch;
   color: var(--muted-mid);
 }
 
-.bel-search > .bel-search-expand svg {
+.jar-search > .jar-search-expand svg {
   width: 0.62rem;
   height: 0.62rem;
 }
@@ -541,7 +541,7 @@ html.light .output-header-progress {
   justify-content: center;
 }
 
-.cm-bel-foldmarker {
+.cm-jar-foldmarker {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -552,29 +552,29 @@ html.light .output-header-progress {
   transition: opacity 120ms ease, color 120ms ease;
 }
 
-.cm-bel-foldmarker svg {
+.cm-jar-foldmarker svg {
   width: 0.7rem;
   height: 0.7rem;
 }
 
 /* VS Code behavior: open-fold chevrons appear only while the gutter area is
    hovered; collapsed markers stay visible so folds are discoverable. */
-.cm-bel-foldmarker.is-open {
+.cm-jar-foldmarker.is-open {
   opacity: 0;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  #editor.editor-cm-host .cm-gutters:hover .cm-bel-foldmarker.is-open {
+  #editor.editor-cm-host .cm-gutters:hover .cm-jar-foldmarker.is-open {
     opacity: 0.7;
   }
 
-  .cm-bel-foldmarker:hover {
+  .cm-jar-foldmarker:hover {
     color: var(--accent-mid);
     opacity: 1;
   }
 }
 
-.cm-bel-foldmarker.is-folded {
+.cm-jar-foldmarker.is-folded {
   opacity: 1;
   color: var(--accent-mid);
 }

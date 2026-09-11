@@ -9,7 +9,7 @@ Everything planned is built and measured; the two things still open are not code
 |---|---|
 | **Commands** | **149**, every one runnable — 113 in the palette, 140 bindable **and every one of them live when bound** (§T.1), 118 nameable on the command line, 16 with a shipped chord, 25 `:ex` names |
 | **Preferences as commands** | 29, generating 55 `:set` names from one table |
-| **Style keys** | 41 — Vim's 16 normal + 10 leader maps, Emacs' 6 `C-x` + 9 `C-c`, all listed in Available macros (§T.4) |
+| **Style keys** | 41 — Vim's 16 normal + 10 leader maps, Emacs' 6 `C-x` + 9 `C-c`, all listed in Available Keys (§T.4) |
 | **Gates** | `npm test` 238/238 · `npm run probe:app` 114 checks · `npm run probe:keymap` 289 checks |
 | **Still open** | macOS chord measurement — needs a Mac, two minutes (`scripts/chord-audit.html`) |
 
@@ -25,14 +25,14 @@ They are recorded in §T and their rules are folded into §0.4:
 | **62 of 74** bindable editor commands did nothing when bound | the projection now refuses to emit a runnerless entry |
 | **2 of 3** Vim leaders offered had never worked, at all | BelJar takes the key from vim, as `mapleader` does |
 | the settings panel named **2 unbindable** Emacs substitutes | derived from the measured table now |
-| **41** style bindings were listed in no surface anywhere | Available macros leads with them |
+| **41** style bindings were listed in no surface anywhere | Available Keys leads with them |
 | the two buttons the pass ADDED opened windows **under** the modal | §T.7 — the panel rethink that followed |
 | the `shadowing` tag was about a COMMAND, not a chord | §T.8 — it fired where nothing collided and was silent where things did |
-| the Reserved chords sheet was a table of em-dashes I read but never LOOKED at | §T.9 — deleted; folded into Available macros |
-| "Available macros" listed `:names` and substitutes that do nothing in the active style | §T.10 — filtered by style: names, spelling and keys |
+| the Reserved chords sheet was a table of em-dashes I read but never LOOKED at | §T.9 — deleted; folded into Available Keys |
+| "Available Keys" listed `:names` and substitutes that do nothing in the active style | §T.10 — filtered by style: names, spelling and keys |
 | and printed `w write wa wall` — four spellings of one answer | §T.10 — one name per row; aliases stay in the filter |
 | the window spent a row explaining itself, and the block ended in two paragraphs | §T.11 — info circle in the chrome; the block closes in labelled rows |
-| "Available macros" omitted the Emacs package's 62 bindings and grouped by whose keymap | §T.12 — grouped by key SHAPE, package keys read from the package |
+| "Available Keys" omitted the Emacs package's 62 bindings and grouped by whose keymap | §T.12 — grouped by key SHAPE, package keys read from the package |
 
 **This document is now a record, not a worklist.** It is both the plan and the changelog of how
 it was built, which is more history than anyone needs day to day. Read in this order:
@@ -121,7 +121,7 @@ reason to read this file at all.
   NORMAL and INSERT differed only in spelling. Pinned by a test over every emittable tone.
 
 **Showing a keymap — the north star is the CURRENT REALITY**
-- ⛔ **Available Macros lists only what can be invoked right now.** A command the active style has
+- ⛔ **Available Keys lists only what can be invoked right now.** A command the active style has
   taken, with nothing bound to replace it, does not appear — not with a dash, not greyed, not at
   all. Listing it was a list of what you *cannot* do in a window whose name promises the opposite.
   Rows earn their place by being callable; a `taken` tag can never appear there. (§P)
@@ -143,7 +143,7 @@ reason to read this file at all.
   an ungated collision check accused Vim of taking it. (§T.8)
 - ⛔ **A shadowed row wears a one-word TAG beside its name — never a second line.**
   A sentence under every other row reads louder than the rows themselves, and both the
-  Keybindings sheet and Available Macros are lists to scan. `describe()` returns
+  Keybindings sheet and Available Keys are lists to scan. `describe()` returns
   `shadow: { tag, tip, instead }`; there is **no bare sentence field left**, because every
   renderer that had one printed it as a stacked amber line. (§O)
 - ⛔ **Show the chord that WORKS in the active style**, never the default greyed out. In Available
@@ -199,7 +199,7 @@ reason to read this file at all.
   data rendered badly is still a bad surface. **Screenshot every surface you touch** —
   `scripts/.shots/` exists for this. (§T.9)
 - ⛔⛔ **A surface promising what you can do RIGHT NOW must be filtered by the active style — the
-  names, their SPELLING, and the keys they point at.** Available macros printed 25 `:names` under
+  names, their SPELLING, and the keys they point at.** Available Keys printed 25 `:names` under
   Standard where nothing opens the command line (`Alt+X` opens the palette there), printed a colon
   under Emacs where the `M-x` line takes bare names, and told Standard users to press `Ctrl+Q` —
   an `EmacsHandler` binding that does nothing outside Emacs. Three things, one mistake. (§T.10)
@@ -211,7 +211,7 @@ reason to read this file at all.
   and "finished". And when colour carries a pair (gone / works), ⛔ it must never carry it alone:
   the strikethrough and the arrow say the same thing. (§T.11)
 - ⛔⛔ **"What can I do right now" means EVERYTHING that is bound, not everything in the tables we
-  happen to own.** Available macros listed BelJar's chords and BelJar's own Vim/Emacs maps and
+  happen to own.** Available Keys listed BelJar's chords and BelJar's own Vim/Emacs maps and
   called that available, while the Emacs package's 62 bindings — `Ctrl+P`, `Ctrl+K`, `Ctrl+Y` —
   were live and listed nowhere. Read the package's table. Where a package publishes none (vim
   does not), **say so on screen**: an unexplained absence reads as an oversight. (§T.12)
@@ -272,7 +272,7 @@ reason to read this file at all.
   reports the mapped one; that is the only read that can catch this class of bug.
 - ⛔ **A binding nobody can list is barely a binding.** 41 style bindings appeared in no
   surface — which-key was the only way in, and which-key answers a prefix you already knew to
-  press. `style-macros.mjs` exports the maps as data and Available macros leads with them.
+  press. `style-macros.mjs` exports the maps as data and Available Keys leads with them.
 - ⚠ **A probe that does not have EDITOR FOCUS measures nothing** — and a dead leader looks
   exactly like an unfocused probe. `page.click('.cm-content')` is not enough after a palette
   closes; focus the view and *assert* it. This cost an hour chasing a working fix.
@@ -419,7 +419,7 @@ only by luck — arrived argument-less through `:` while working perfectly from 
 now pass the identical context shape. The probe caught it because it drives a REAL `:e` rather
 than calling `Commands.run` directly.
 
-**The available macros** (B1) is `js/ui/available-macros.mjs` — the reserved-chord sheet's floating window
+**The Available Keys** (B1) is `js/ui/available-macros.mjs` — the reserved-chord sheet's floating window
 with a different filter, every row generated from `describe()`. Four columns: what it does, its
 chord, its typed names (`:ex` then `M-x`), and why it is shadowed if it is. **Shadowed rows are
 greyed, never hidden** — "this chord exists but Vim owns it" is the answer someone came for, and
@@ -431,7 +431,7 @@ silence is not. A sticky filter matches title, chord, ex name and M-x name at on
   already walk the persisted ring inside the line, and one sheet that answers "what can I press"
   beats two that answer half each.
 
-⚠ **The available macros immediately found three commands that ship a CHORD with no behaviour** —
+⚠ **The Available Keys immediately found three commands that ship a CHORD with no behaviour** —
 `edit.autocomplete`, `nav.anywhere`, `tools.commands`. Each chord worked (CodeMirror's keymap owns
 Ctrl-Space; the palette owns Mod+K) but the command itself was unrunnable, so `M-x`, the palette
 and the line could not reach the same act. All three are attached now, and the probe pins the rule:
@@ -443,7 +443,7 @@ cannot name a command that does not exist. `DoubleTap.targets()` is the shortlis
 **global-scope only**, because the gesture fires from anywhere including with no editor mounted,
 and `]h` / `]e` already carry hole and problem navigation for anyone who wants those on a key. The
 persisted key still accepts any id; the picker is a choice, not the limit. The probe drives the
-whole path: retarget to `keys.macros`, tap twice, the available macros opens and the palette does
+whole path: retarget to `keys.macros`, tap twice, the Available Keys opens and the palette does
 not.
 
 ⚠ **Two taps dispatched in the same millisecond do not fire** — `shouldFire` requires `gap > 0`,
@@ -475,7 +475,7 @@ leader), not only the two the plan named.
   been pointed at it. `continuations()` now handles both spellings: `]h` continues `]` with `h`,
   `C-x C-f` continues `C-x` with `C-f`. ⛔ The prefix must end at a **boundary**, or `C-x` would
   claim the `C-c` map. ⛔ The **declined** chords (`C-x 2` and friends) are left out — they answer
-  when pressed, but a hint lists what you CAN do, which is the Available Macros rule.
+  when pressed, but a hint lists what you CAN do, which is the Available Keys rule.
 - The probe drives it for real: `g` and the leader both produce a hint, `gd` typed fluently
   produces none.
 
@@ -500,7 +500,7 @@ does nothing.
 
 | # | Work | Note | Size |
 |---|------|------|------|
-| ~~B1~~ | ✅ **Available macros** (§6.7) landed 2026-09-01 — `keys.macros`, `:help` | See below | — |
+| ~~B1~~ | ✅ **Available Keys** (§6.7) landed 2026-09-01 — `keys.macros`, `:help` | See below | — |
 | ~~B2~~ | ✅ **Grouped layout in the Keys panel** (§11) landed 2026-09-01 — heads: Vim · Gestures · Learning | — |
 | ~~B3~~ | ✅ **Command-target picker for the double-tap gesture** landed 2026-09-01 | See below | — |
 | ~~B4~~ | ✅ **Wave G remainder** landed 2026-09-01 — `cmdline.repeat`; `bar.history` and `keys.show-chords` folded in, see below | — |
@@ -542,7 +542,7 @@ does nothing.
 The first cut of these surfaces read as generic assistant output and was rejected on sight. What
 changed, and what to keep true:
 
-- ⛔ **The available macros was a worse copy of the Keybindings sheet.** 147 rows, a column of em-dashes
+- ⛔ **The Available Keys was a worse copy of the Keybindings sheet.** 147 rows, a column of em-dashes
   for the 130 commands with no chord, and internal `beljar-*` M-x slugs wrapping onto second lines.
   It is now the *short* answer: **only rows you can actually press or type** (17 chords, 17 `:`
   names), in two blocks, `Keys` then `Command line`. Everything else is in the palette, and the
@@ -618,7 +618,7 @@ plain `<Del>` still deletes, and Insert mode is untouched.
 
 ### H. Vim polish (2026-09-01)
 
-- **"Cheat sheet" is now "Available Macros"** — `keys.macros`, `:help` / `:macros`,
+- **"Cheat sheet" is now "Available Keys"** — `keys.macros`, `:help` / `:macros`,
   `js/ui/available-macros.mjs`, `window.AvailableMacros`, `.bj-macros__*`.
 - **A shadowed row wears a one-word tag, not a sentence.** `insert` / `taken` / `shared`, beside
   the name, with the explanation on hover. A line of amber under every second row was louder than
@@ -885,9 +885,9 @@ it. `setMessage(text, { hold: true })` keeps it up; the schedulers take it down 
 chain resolves or is abandoned, and only ever clear a hint they put there themselves. Both probes
 now wait past the old hold window and assert it is still on screen, then assert Escape removes it.
 
-**Available Macros was listing commands you could not call.** Under Emacs it showed
+**Available Keys was listing commands you could not call.** Under Emacs it showed
 `Toggle Line Comment [taken] —`, `Select All [taken] —`, `Show Autocomplete [taken] —` — rows with
-no way to invoke them, in a window called *Available Macros*. ⛔ The list now contains only what
+no way to invoke them, in a window called *Available Keys*. ⛔ The list now contains only what
 can be invoked right now: a command the style has taken with nothing to replace it is **absent**,
 and a `taken` tag can never appear there. `liveChord()` is the one function that decides, and the
 probe asserts no row has an empty keys cell.
@@ -899,17 +899,17 @@ the sentence, because it is the one formatter and the only place that knows the 
 and its general chord; `shadowFor()` returns structure only.
 
 **Both sheets showed a stacked amber sentence under every shadowed row** — the Keybindings sheet
-kept doing it after Available Macros was fixed, because the two rendered independently. Both now
+kept doing it after Available Keys was fixed, because the two rendered independently. Both now
 use the same one-word tag beside the name, with the explanation on hover, and the row is exactly as
 tall as an untagged one. `shadowedBy` was deleted from `describe()` outright: leaving an unrendered
 sentence field there is an invitation to print it under a row again.
 
-⚠ **The two sheets differ in ONE way, deliberately.** Available Macros is a reference, so its keys
+⚠ **The two sheets differ in ONE way, deliberately.** Available Keys is a reference, so its keys
 column shows the chord that works in the active style. The Keybindings sheet is an *editor* — that
 column is the button you click to rebind — so it keeps BelJar's own binding and lets the tag carry
 the rest.
 
-**The shadowed rows were backwards.** Available Macros showed BelJar's default chord greyed out
+**The shadowed rows were backwards.** Available Keys showed BelJar's default chord greyed out
 with a `taken` tag — a list of what does *not* work, handed to the person who has just switched to
 Emacs and needs to know what does. Flipped: the keys column shows the chord that works **in the
 active style**, and the tag carries what took the default.
@@ -1390,8 +1390,8 @@ js/commands/
 ### `describe(id)` — one function, four surfaces
 
 Returns `{ title, section, chord, ex, mx, availableInStyle, shadowedBy }`. It is the **single**
-source for: the palette's right rail, the Keybindings sheet row, `:help` / the available macros, and
-and the available macros. Nothing else may format a chord.
+source for: the palette's right rail, the Keybindings sheet row, `:help` / the Available Keys, and
+and the Available Keys. Nothing else may format a chord.
 
 ### Consequences
 
@@ -1587,7 +1587,7 @@ Never silent, never modal. Every refusal answers with the nearest available thin
 C-f (emacs)→ (silent: Emacs owns it — the Keybindings sheet says so, the bar does not nag)
 ```
 
-### 6.7 Discoverability capstone — the available macros
+### 6.7 Discoverability capstone — the Available Keys
 
 `keys.macros` (and `:help`) opens the existing **floating window**
 ([`floating-window.mjs`](../js/ui/floating-window.mjs)) with a live table generated from
@@ -1859,7 +1859,7 @@ delay for **our** prefixes (`C-x`, `C-c`) — not a reimplementation of the pack
 
 ### 9.4 The reserved-chord truth panel
 
-Generated by the same `describe()` machinery as the available macros (§6.7), filtered to conflicts,
+Generated by the same `describe()` machinery as the Available Keys (§6.7), filtered to conflicts,
 **per platform**:
 
 | Chord | Emacs meaning | Status here | BelJar substitute |
@@ -1964,7 +1964,7 @@ and an *All / Bound / Modified* switcher remain optional polish, not requirement
 Switching to Vim or Emacs emits **one** status-strip message, not a modal:
 
 ```
-Vim mode.  :  commands   ·   \  leader   ·   :help  available macros
+Vim mode.  :  commands   ·   \  leader   ·   :help  Available Keys
 ```
 
 Once per style per profile. That is the entire onboarding, and it is enough because the leader
@@ -2431,7 +2431,7 @@ The panel is **Keys**; the setting is **Editing style**; the neutral option is *
 "Default" — it is a real choice, not an absence of one.
 
 *Remaining in Phase 7:* the grouped layout inside the Keys panel (the rows exist but are still a
-flat list), a command-target picker for the double-tap gesture, and the generated available macros
+flat list), a command-target picker for the double-tap gesture, and the generated Available Keys
 (§6.7) — which is the reserved-chord sheet's shape with a different filter, so it is mostly
 assembled already.
 
@@ -2552,7 +2552,7 @@ time, and the Reserved chords sheet had been rendering it correctly. Nothing cal
 **Fix.** Derived from `reservedChordFacts().fidelity`, read lazily — the help object is built at
 module load, long before `BelEditor` exists, so `paragraphs` is a function now. The Vim and
 Emacs paragraphs also stopped enumerating keys: the leader is configurable, so a sentence
-naming a backslash sequence is wrong for anyone who picked comma, and Available macros lists
+naming a backslash sequence is wrong for anyone who picked comma, and Available Keys lists
 the live maps anyway.
 
 ### T.4 41 style bindings were listed nowhere
@@ -2560,12 +2560,12 @@ the live maps anyway.
 Vim's 16 normal maps, its 10 leader maps and Emacs' 15 chains are real, invocable bindings on
 ordinary command ids — and they appeared in **no listing in the app**. The Keybindings sheet
 projects `Keybindings`, which has never heard of them. The palette lists commands, not keys.
-Available macros asked `Commands.describe()`, which only knows BelJar's own chord table. The
+Available Keys asked `Commands.describe()`, which only knows BelJar's own chord table. The
 only way to find `]h` was to hold `]` for 400ms and read which-key — a discovery path that
 requires already knowing the key exists.
 
 **Fix.** `modal/style-macros.mjs` exports the maps as data, with the leader expanded and titles
-resolved through the registry, so a row cannot name a key that is not mapped. Available macros
+resolved through the registry, so a row cannot name a key that is not mapped. Available Keys
 leads with them: *Vim keys · Vim leader · BelJar keys · Command line*. `readableKeys()` turns
 vim's `<C-o>` config syntax into `Ctrl+O` — the other rows read `gd`, the neighbouring block
 reads `Ctrl+K`, and `<C-o>` was the one row nobody could act on without knowing the notation.
@@ -2587,7 +2587,7 @@ Vim had three options under its own heading and Emacs had none, which read as "E
 afterthought". Emacs has no preference worth inventing — what it has is a platform cost, and
 this panel is where someone about to choose it is standing. It gets a head and one action row
 whose description is the **measured** fidelity headline, with a View button onto the Reserved
-chords sheet. A third head, *Every style*, opens Available macros. The panel now reads
+chords sheet. A third head, *Every style*, opens Available Keys. The panel now reads
 Vim · Emacs · Every style · Gestures.
 
 ### What this pass says about the layer
@@ -2615,7 +2615,7 @@ Settings, waits out the transition, then runs.
 it borrows the shape of a setting to be a link. It reads as a control whose value you forgot to
 set. So:
 
-- **Available macros** moved into the panel HEAD, beside Reset — the panel's action strip
+- **Available Keys** moved into the panel HEAD, beside Reset — the panel's action strip
   already existed and Reset had established the vocabulary. `addPanelHeadAction()`.
 - **Reserved chords** stopped being a row at all. What it said belongs in the ⓘ passage next to
   Editing style, which is where someone stands *before* choosing Emacs.
@@ -2628,7 +2628,7 @@ rail; `paintStyleRows()` shows exactly one group, and nothing at all under Stand
 none, because Emacs has no preference worth inventing and an empty group is not a gap to fill.
 
 ```
-KEYS                                    Available macros   Reset
+KEYS                                    Available Keys   Reset
 ─────────────────────────────────────────────────────────────────
 Editing style  ⓘ                                        [ Vim  ▾ ]
    │ Leader key                                 [ Backslash    ▾ ]
@@ -2667,7 +2667,7 @@ Two things wrong with that, and the second is the one that mattered.
 Standard, delivered to someone in Emacs. It answers a question nobody asked.
 
 **It fired where nothing was contested, and stayed silent where something was.** The tag appeared
-on `Redo — C-S-z` and `Find… — C-s` in Available macros. Neither of those chords collides with
+on `Redo — C-S-z` and `Find… — C-s` in Available Keys. Neither of those chords collides with
 anything: BelJar binds no Ctrl+S, and Ctrl+Shift+Z is free on Windows. Meanwhile the seven chords
 Emacs genuinely takes — Ctrl+F, Ctrl+A, Ctrl+Space, Ctrl+Y, Ctrl+/, Ctrl+K, Alt+X — carried no
 tag at all on the sheet that lists them. The tag was on the wrong axis entirely.
@@ -2689,7 +2689,7 @@ Three kinds, and only three:
 the caveat is which mode you must be in.
 
 **What each surface gets now.** The Keybindings sheet shows BelJar's own chord — it is where you
-rebind — so `Find… [shadowed] Ctrl+F` reports that Ctrl+F is taken. Available macros shows the
+rebind — so `Find… [shadowed] Ctrl+F` reports that Ctrl+F is taken. Available Keys shows the
 chord that WORKS, and every chord it shows is free, so under Emacs it wears **no tags at all**.
 `describe(id, { showing: 'style' })` is how a surface asks for the second reading.
 
@@ -2712,7 +2712,7 @@ and what it runs with each; `STYLE_CHORDS` is the chord a style binds for a BelJ
 rather than the command id also means the collision follows a rebind: move Find… off Ctrl+F and
 the tag moves to whatever now sits there.
 
-### T.9 The Reserved chords sheet — deleted, folded into Available macros
+### T.9 The Reserved chords sheet — deleted, folded into Available Keys
 
 Found by the user, not by me. I read `reserved-chords-sheet.mjs` during the §T sweep, judged it
 "correct" from its source, and **never opened it**. It was not correct. It was a three-column
@@ -2722,7 +2722,7 @@ carries an explicit ⛔ law that *no row may be a dash*. Reading a file is not l
 
 It is gone. No sheet, no `keys.reserved-chords` command, no `:chords` alias, no `.bj-chords` CSS,
 no `ReservedChordsSheet` global. "Which of my chords does this browser eat, and what do I press
-instead" is the same question as "what can I press", so it is a block of **Available macros**,
+instead" is the same question as "what can I press", so it is a block of **Available Keys**,
 last, after everything you *can* do:
 
 ```
@@ -2746,7 +2746,7 @@ Four rules made it fit:
   chord is the row's SUBJECT and sits on the left, struck through, where every other row puts its
   name. A struck-through chord may never appear in the keys column.
 - ⛔⛔ **A surface promising what you can do RIGHT NOW must be filtered by the active style — the
-  names, their SPELLING, and the keys they point at.** Available macros printed 25 `:names` under
+  names, their SPELLING, and the keys they point at.** Available Keys printed 25 `:names` under
   Standard where nothing opens the command line (`Alt+X` opens the palette there), printed a colon
   under Emacs where the `M-x` line takes bare names, and told Standard users to press `Ctrl+Q` —
   an `EmacsHandler` binding that does nothing outside Emacs. Three things, one mistake. (§T.10)
@@ -2758,7 +2758,7 @@ Four rules made it fit:
   and "finished". And when colour carries a pair (gone / works), ⛔ it must never carry it alone:
   the strikethrough and the arrow say the same thing. (§T.11)
 - ⛔⛔ **"What can I do right now" means EVERYTHING that is bound, not everything in the tables we
-  happen to own.** Available macros listed BelJar's chords and BelJar's own Vim/Emacs maps and
+  happen to own.** Available Keys listed BelJar's chords and BelJar's own Vim/Emacs maps and
   called that available, while the Emacs package's 62 bindings — `Ctrl+P`, `Ctrl+K`, `Ctrl+Y` —
   were live and listed nowhere. Read the package's table. Where a package publishes none (vim
   does not), **say so on screen**: an unexplained absence reads as an oversight. (§T.12)
@@ -2796,7 +2796,7 @@ is still a bad surface. `scripts/.shots/` exists precisely for this and I did no
 
 ### T.10 "Available" has to mean available — the `:` block, and the substitutes
 
-The user asked the obvious question I had not: *"shouldn't available macros indicate available
+The user asked the obvious question I had not: *"shouldn't Available Keys indicate available
 macros? there's no `:cmd` section when in Emacs or Standard, and verbiage like `:fullkeys` in the
 reserved section."* Both halves were right, and the answer went one level deeper than the question.
 
@@ -2900,13 +2900,13 @@ substitutes are not offered there — so "one line tall" and "title runs into ke
 row that is a label with a deliberately wrapping value. Bounded at three lines, and excluded from
 the collision check, which is a question you cannot ask of a wrapping row.
 
-### T.12 "Available macros" was neither available nor all of them
+### T.12 "Available Keys" was neither available nor all of them
 
 Three complaints, one root cause: the window was built from **the tables BelJar happens to own**,
 not from **what is bound**. The user's own framing is the correct spec, and it should have been the
 spec from the start:
 
-> Available macros is the keybindings sheet, filtered to the ones that are bound.
+> Available Keys is the keybindings sheet, filtered to the ones that are bound.
 
 **1. The blocks were named for whose keymap a binding came from.** "Vim keys", "Emacs C-x" — and
 then **"BelJar keys"**, which is nonsense: those bindings change when you switch style too. The
@@ -2925,7 +2925,7 @@ cannot go quietly stale or quietly incomplete.
 `@replit/codemirror-vim` exports `map`, `unmap`, `defineAction`, `findKey` — nothing that
 ENUMERATES its keymap. Writing vi's motions from memory is the one thing the ⛔ read-the-table law
 forbids. So the window **says so**, in a closing line under the Vim blocks. An unexplained absence
-in a window called "available macros" reads as an oversight, which is precisely how it read.
+in a window called "Available Keys" reads as an oversight, which is precisely how it read.
 
 **3. A substituted key was only in the footnote.** `Ctrl+M` is next-line — a working macro — and it
 appeared nowhere in the key list, only in the taken-by-the-browser block explaining why it exists.

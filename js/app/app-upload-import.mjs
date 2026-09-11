@@ -4,9 +4,7 @@
 
   export function create(deps) {
     var getEditor = deps.getEditor;
-    var setEditor = deps.setEditor;
     var getPersist = deps.getPersist;
-    var setPersist = deps.setPersist;
     var showToast = deps.showToast;
     var projectFileText = deps.projectFileText;
     var switchToFile = deps.switchToFile;
@@ -88,7 +86,6 @@
     async function projectEntriesFromPickerFiles(all, opts) {
       const rawEntries = [];
       for (const file of all) {
-        const low = file.name.toLowerCase();
         if (!ProjectSource.isProjectSourcePath(file.name)) continue;
         rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
       }
@@ -332,8 +329,25 @@
       updateRunButtonTooltip();
     }
 
+    /**
+     * ⛔ ONE history step for a whole drag.
+     *
+     * A move is a rename plus, sometimes, a delete — and until
+     * `structural.renamed` existed the rename half was invisible, so dragging a
+     * folder across the tree left either no entry or, worse, an entry that
+     * undid only the deletes. Wrapped, the drag goes back in one press.
+     */
     function applyMovePlan(plan) {
       if (!plan || !getPersist()) return;
+      const H = typeof EditHistory !== 'undefined' ? EditHistory : null;
+      if (H && typeof H.transact === 'function') {
+        H.transact('file-move', () => applyMovePlanNow(plan), 'Move files');
+        return;
+      }
+      applyMovePlanNow(plan);
+    }
+
+    function applyMovePlanNow(plan) {
       const moves = [];
       const recordMove = (id, to) => {
         const f = Persist.getFileById(id);

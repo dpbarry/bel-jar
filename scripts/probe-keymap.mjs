@@ -75,8 +75,8 @@ try {
   await new Promise((r) => setTimeout(r, 400));
 
   const vimLine = await page.evaluate(() => {
-    const bar = document.querySelector('.bj-strip');
-    const slot = document.querySelector('.bj-strip__vim');
+    const bar = document.querySelector('.jar-strip');
+    const slot = document.querySelector('.jar-strip__vim');
     const input = slot ? slot.querySelector('input') : null;
     return {
       hasSlot: !!slot,
@@ -146,14 +146,14 @@ try {
       Persist.writeStoredKeymapStyle(style);
       SettingsUI.open();
       await new Promise((r) => setTimeout(r, 400));
-      const item = [...document.querySelectorAll('button, [role="tab"], .bj-settings__rail-item')]
+      const item = [...document.querySelectorAll('button, [role="tab"], .jar-settings__rail-item')]
         .find((el) => (el.textContent || '').trim() === 'Keys');
       if (item) item.click();
       await new Promise((r) => setTimeout(r, 350));
-      const rows = [...document.querySelectorAll('.bj-kb__row')];
+      const rows = [...document.querySelectorAll('.jar-kb__row')];
       const out = rows.filter((r) => r.dataset.shadowed).map((r) => {
-        const tag = r.querySelector('.bj-kb__tag');
-        const title = r.querySelector('.bj-kb__title');
+        const tag = r.querySelector('.jar-kb__tag');
+        const title = r.querySelector('.jar-kb__title');
         return {
           id: r.dataset.commandId,
           kind: r.dataset.shadowKind || '',
@@ -171,7 +171,7 @@ try {
         .map((r) => Math.round(r.getBoundingClientRect().height));
       return {
         rows: out,
-        stackedNotes: document.querySelectorAll('.bj-kb__when').length,
+        stackedNotes: document.querySelectorAll('.jar-kb__when').length,
         plainRowH: plain.length ? Math.max(...plain) : 0,
       };
     };
@@ -242,30 +242,30 @@ try {
     Persist.writeStoredKeymapStyle(s);
     SettingsUI.open();
     await new Promise((r) => setTimeout(r, 400));
-    const tab = [...document.querySelectorAll('button, [role="tab"], .bj-settings__rail-item')]
+    const tab = [...document.querySelectorAll('button, [role="tab"], .jar-settings__rail-item')]
       .find((el) => (el.textContent || '').trim() === 'Keys');
     if (tab) tab.click();
     SettingsUI.syncFromState();
     await new Promise((r) => setTimeout(r, 350));
     const body = document.querySelector(
-      '.bj-settings__panel[data-category="keybindings"] .bj-settings__panel-body'
+      '.jar-settings__panel[data-category="keybindings"] .jar-settings__panel-body'
     );
     const order = [];
     let shownGroup = null;
     let indent = 0;
     for (const node of body.children) {
-      if (node.classList.contains('bj-settings__substyle')) {
+      if (node.classList.contains('jar-settings__substyle')) {
         if (node.hidden) continue;
         shownGroup = node.dataset.section;
         indent = Math.round(
           node.children[0].getBoundingClientRect().left - node.getBoundingClientRect().left
         );
         for (const sub of node.children) {
-          order.push('> ' + (sub.querySelector('.bj-dialog__setting-label') || {}).textContent);
+          order.push('> ' + (sub.querySelector('.jar-dialog__setting-label') || {}).textContent);
         }
         continue;
       }
-      const label = node.querySelector && node.querySelector('.bj-dialog__setting-label');
+      const label = node.querySelector && node.querySelector('.jar-dialog__setting-label');
       if (label) order.push(label.textContent);
     }
     return { order, shownGroup, indent };
@@ -297,24 +297,24 @@ try {
   const passage = await page.evaluate(async () => {
     SettingsUI.open();
     await new Promise((r) => setTimeout(r, 400));
-    const tab = [...document.querySelectorAll('button, [role="tab"], .bj-settings__rail-item')]
+    const tab = [...document.querySelectorAll('button, [role="tab"], .jar-settings__rail-item')]
       .find((el) => (el.textContent || '').trim() === 'Keys');
     if (tab) tab.click();
     await new Promise((r) => setTimeout(r, 350));
     const btn = document.querySelector(
-      '.bj-settings__panel[data-category="keybindings"] .bj-setting-info'
+      '.jar-settings__panel[data-category="keybindings"] .jar-setting-info'
     );
     if (!btn) return { found: false };
     btn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 400));
-    const pop = [...document.querySelectorAll('.bj-setting-info-popover')].find((n) => !n.hidden);
+    const pop = [...document.querySelectorAll('.jar-setting-info-popover')].find((n) => !n.hidden);
     if (!pop) return { found: true, shown: false };
     const box = pop.getBoundingClientRect();
     return {
       found: true,
       shown: true,
-      heads: [...pop.querySelectorAll('.bj-setting-info-head')].map((n) => n.textContent),
-      text: [...pop.querySelectorAll('.bj-setting-info-tip')].map((n) => n.textContent).join(' '),
+      heads: [...pop.querySelectorAll('.jar-setting-info-head')].map((n) => n.textContent),
+      text: [...pop.querySelectorAll('.jar-setting-info-tip')].map((n) => n.textContent).join(' '),
       onScreen: box.top >= -0.5 && box.bottom <= window.innerHeight + 0.5,
       clipped: pop.scrollHeight > pop.clientHeight + 1,
     };
@@ -378,7 +378,7 @@ try {
     JSON.stringify({ before: motionChord.before, after: motionAfter }));
   await new Promise((r) => setTimeout(r, 300));
 
-  // ── the available macros ─────────────────────────────────────────────────────────
+  // ── the Available Keys ─────────────────────────────────────────────────────────
   // The short answer to "what can I press". A row exists because you can type
   // it, so the load-bearing check is that it does NOT list all 147 commands.
   const macros = await page.evaluate(async () => {
@@ -386,27 +386,27 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     const win = document.querySelector('.floating-window--macros');
     if (!win) return { open: false };
-    const rowsOf = () => win.querySelectorAll('.bj-macros__row').length;
+    const rowsOf = () => win.querySelectorAll('.jar-macros__row').length;
     const before = rowsOf();
-    const input = win.querySelector('.bj-macros__filter-input');
+    const input = win.querySelector('.jar-macros__filter-input');
     const type = async (text) => {
       input.value = text;
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 120));
     };
     await type('hole');
-    const filtered = [...win.querySelectorAll('.bj-macros__row .bj-macros__title')].map((n) => n.textContent);
-    const countWhileFiltering = win.querySelector('.bj-macros__filter-count').textContent;
+    const filtered = [...win.querySelectorAll('.jar-macros__row .jar-macros__title')].map((n) => n.textContent);
+    const countWhileFiltering = win.querySelector('.jar-macros__filter-count').textContent;
     await type('zzzznothing');
-    const emptyShown = !win.querySelector('.bj-macros__empty').hidden;
+    const emptyShown = !win.querySelector('.jar-macros__empty').hidden;
     await type('');
     // Nothing may run wider than the window: a row that wraps or overflows is
     // the whole reason this got rebuilt.
-    const box = win.querySelector('.bj-macros').getBoundingClientRect();
+    const box = win.querySelector('.jar-macros').getBoundingClientRect();
     const winBox = win.getBoundingClientRect();
     // Scroll to the bottom: the filter must stay reachable and the closing line
     // must stay put. If the whole panel scrolls instead, both leave the window.
-    const listEl = win.querySelector('.bj-macros__list');
+    const listEl = win.querySelector('.jar-macros__list');
     // ⚠ Shrink the window first. Under Standard the list is SHORT now — the
     // command-line block is gone where nothing opens the line — so at full
     // height it does not overflow, and "did it scroll" would be vacuously false.
@@ -420,21 +420,21 @@ try {
     // a sentence about the window, taking a row inside it, forever. The window
     // explains itself from an info circle in its title bar now. What must stay
     // pinned while the list scrolls is the filter strip.
-    const filterBox = win.querySelector('.bj-macros__filter').getBoundingClientRect();
+    const filterBox = win.querySelector('.jar-macros__filter').getBoundingClientRect();
     const inside = (b) => b.top >= winBox.top - 0.5 && b.bottom <= winBox.bottom + 0.5;
-    const pinned = inside(filterBox) && !win.querySelector('.bj-macros__foot')
+    const pinned = inside(filterBox) && !win.querySelector('.jar-macros__foot')
       && !!win.querySelector('.floating-window-action--info');
     const scrolled = listEl.scrollTop > 0;
     // The rows line up with the window's own title, not some other inset.
     const titleBox = win.querySelector('.floating-window-title').getBoundingClientRect();
-    const firstTitle = win.querySelector('.bj-macros__title').getBoundingClientRect();
+    const firstTitle = win.querySelector('.jar-macros__title').getBoundingClientRect();
     const titleAligned = Math.abs(firstTitle.left - titleBox.left) < 1.5;
-    const rows = [...win.querySelectorAll('.bj-macros__row')];
+    const rows = [...win.querySelectorAll('.jar-macros__row')];
     const overflowing = rows.filter((r) => r.getBoundingClientRect().right > box.right + 0.5).length;
     // ⚠ A block's closing rows carry extra top padding on purpose — they are
     // separated from the rows they summarise — so they are measured apart.
-    const listRows = rows.filter((r) => !r.classList.contains('bj-macros__row--meta'));
-    const metaRows = rows.filter((r) => r.classList.contains('bj-macros__row--meta'));
+    const listRows = rows.filter((r) => !r.classList.contains('jar-macros__row--meta'));
+    const metaRows = rows.filter((r) => r.classList.contains('jar-macros__row--meta'));
     const tall = listRows.filter((r) => r.getBoundingClientRect().height > 34).length;
     // A closing row may wrap its chips — Standard names nine chords — but must
     // never run away: three lines is the ceiling.
@@ -444,9 +444,9 @@ try {
     // then the value's box legitimately starts to the left of where the label
     // ends. "Runs its title into its keys" is not a question you can ask of it.
     const collisions = rows.filter((r) => {
-      if (r.classList.contains('bj-macros__row--meta')) return false;
-      const left = r.querySelector('.bj-macros__what');
-      const keys = r.querySelector('.bj-macros__keys');
+      if (r.classList.contains('jar-macros__row--meta')) return false;
+      const left = r.querySelector('.jar-macros__what');
+      const keys = r.querySelector('.jar-macros__keys');
       if (!left || !keys) return false;
       return left.getBoundingClientRect().right > keys.getBoundingClientRect().left + 0.5;
     }).length;
@@ -454,17 +454,17 @@ try {
       open: true,
       before,
       restored: rowsOf(),
-      groups: [...win.querySelectorAll('.bj-macros__group')].map((n) => n.textContent),
+      groups: [...win.querySelectorAll('.jar-macros__group')].map((n) => n.textContent),
       // Every row must show at least one way in; a row with an empty keys cell
       // is exactly the column of em-dashes this was rebuilt to remove.
-      keyless: rows.filter((r) => !r.querySelector('.bj-macros__keys').textContent.trim()).length,
-      dashes: rows.filter((r) => r.querySelector('.bj-macros__keys').textContent.trim() === '—').length,
-      chords: win.querySelectorAll('.bj-macros__chord').length,
-      ownChords: [...win.querySelectorAll('.bj-macros__row')]
-        .filter((r) => !r.classList.contains('bj-macros__row--reserved'))
-        .reduce((n, r) => n + r.querySelectorAll('.bj-macros__chord').length, 0),
-      exNames: win.querySelectorAll('.bj-macros__ex').length,
-      countAtRest: win.querySelector('.bj-macros__filter-count').textContent,
+      keyless: rows.filter((r) => !r.querySelector('.jar-macros__keys').textContent.trim()).length,
+      dashes: rows.filter((r) => r.querySelector('.jar-macros__keys').textContent.trim() === '—').length,
+      chords: win.querySelectorAll('.jar-macros__chord').length,
+      ownChords: [...win.querySelectorAll('.jar-macros__row')]
+        .filter((r) => !r.classList.contains('jar-macros__row--reserved'))
+        .reduce((n, r) => n + r.querySelectorAll('.jar-macros__chord').length, 0),
+      exNames: win.querySelectorAll('.jar-macros__ex').length,
+      countAtRest: win.querySelector('.jar-macros__filter-count').textContent,
       countWhileFiltering,
       filtered,
       emptyShown,
@@ -473,10 +473,10 @@ try {
       metaTall,
       collisions,
       // Shadowed rows carry a one-word tag with a tooltip, not a second line.
-      tags: [...win.querySelectorAll('.bj-macros__tag')].map((t) => ({
+      tags: [...win.querySelectorAll('.jar-macros__tag')].map((t) => ({
         text: t.textContent, tip: t.getAttribute('data-tooltip') || '',
       })),
-      notes: win.querySelectorAll('.bj-macros__note').length,
+      notes: win.querySelectorAll('.jar-macros__note').length,
       pinned,
       scrolled,
       titleAligned,
@@ -484,7 +484,7 @@ try {
     };
   });
   console.log('  macros:', JSON.stringify({ ...macros, filtered: macros.filtered }));
-  check(macros.open, 'the Available Macros window opens');
+  check(macros.open, 'the Available Keys window opens');
   // Standard style adds no keys of its own, so the two BelJar blocks are all
   // there is. The Vim and Emacs blocks are checked further down, under those
   // styles, where they actually exist.
@@ -512,10 +512,10 @@ try {
     Commands.run('keys.macros');
     await new Promise((r) => setTimeout(r, 350));
     const win = document.querySelector('.floating-window--macros');
-    const list = win.querySelector('.bj-macros__list');
-    const groups = [...list.querySelectorAll('.bj-macros__group')].map((n) => n.textContent);
-    const asides = [...list.querySelectorAll('.bj-macros__aside')].map((n) => n.textContent);
-    const ex = [...win.querySelectorAll('.bj-macros__ex')].map((n) => n.textContent);
+    const list = win.querySelector('.jar-macros__list');
+    const groups = [...list.querySelectorAll('.jar-macros__group')].map((n) => n.textContent);
+    const asides = [...list.querySelectorAll('.jar-macros__aside')].map((n) => n.textContent);
+    const ex = [...win.querySelectorAll('.jar-macros__ex')].map((n) => n.textContent);
     FloatingWindow.closeAll();
     Keybindings.resetAll();
     return { groups, asides, ex: ex.slice(0, 3) };
@@ -532,16 +532,28 @@ try {
     `every row shows a way in (${macros.keyless} of ${macros.before} blank)`);
   check(macros.dashes === 0,
     'and no row is a dash — an unreachable command is simply absent', String(macros.dashes));
-  // 17 shipped BelJar chords + 16 Vim normal maps + 10 leader maps. Counted as a
-  // sum rather than a magic number so a new map moves the arithmetic, not the
-  // meaning of the check.
+  // ⛔ DERIVED, not counted. This was the literal `16`, and the number went stale
+  // the day Cut, Copy and Paste were added — a hard-coded expectation for a
+  // projection is the same retyped-beside-the-table mistake the window itself
+  // exists to avoid, one layer up in the gate that guards it.
+  //
+  // The window lists KEYS, one row per key, so the expectation is the DISTINCT
+  // chord count of the live table: `nav.anywhere` and `tools.palette` both ship
+  // Ctrl+K and share one row, whichever title it happens to carry.
+  //
   // Counted OUTSIDE the taken-by-the-browser block: a substitute there is a
-  // chord you press, but it is not one of BelJar's shipped bindings.
-  // ⚠ 16, not 17: `nav.anywhere` and `tools.palette` both ship Ctrl+K, and the
-  // window lists KEYS — one key, one row. Which title it carries is the first
-  // one bound to it, and either is true of that key.
-  check(macros.ownChords === 16,
-    `every shipped chord is here, deduped by key (${macros.ownChords})`);
+  // chord you press, but it is not one of BelJar's shipped bindings. This runs
+  // under Standard, where no style has taken anything away.
+  const expectedOwnChords = await page.evaluate(() => {
+    const seen = new Set();
+    for (const cmd of Commands.list()) {
+      const d = Commands.describe(cmd.id, { style: 'default' });
+      if (d && d.chord) seen.add(d.chord);
+    }
+    return seen.size;
+  });
+  check(macros.ownChords === expectedOwnChords,
+    `every shipped chord is here, deduped by key (${macros.ownChords} of ${expectedOwnChords})`);
   check(macros.before < macros.total / 3,
     `it stays short: ${macros.before} rows, not all ${macros.total} commands`);
   check(macros.collisions === 0, 'no row runs its title into its keys', String(macros.collisions));
@@ -587,7 +599,7 @@ try {
   await page.keyboard.press('KeyE');
   await new Promise((r) => setTimeout(r, 350));
   const ccRan = await page.evaluate(() => ({
-    msg: (document.querySelector('.bj-strip__message') || {}).textContent || '',
+    msg: (document.querySelector('.jar-strip__message') || {}).textContent || '',
     caret: CurrentEditor.getView().state.selection.main.head,
   }));
   console.log('  C-c e:', JSON.stringify(ccRan));
@@ -600,7 +612,7 @@ try {
   await page.keyboard.press('Digit2');
   await new Promise((r) => setTimeout(r, 300));
   const declined = await page.evaluate(() =>
-    (document.querySelector('.bj-strip__message') || {}).textContent || '');
+    (document.querySelector('.jar-strip__message') || {}).textContent || '');
   console.log('  C-x 2:', JSON.stringify(declined));
   check(/one editor pane|splits/.test(declined), 'C-x 2 answers instead of doing nothing', declined);
 
@@ -675,13 +687,13 @@ try {
   // ⛔ It is a LIST in the popup above the strip — the same box `:` completes
   // into — not a one-liner crammed into the echo area beside everything else.
   const hintRows = () => page.evaluate(() => {
-    const list = document.querySelector('.bj-cmdline__list');
+    const list = document.querySelector('.jar-cmdline__list');
     if (!list || list.hidden) return { shown: false, rows: [] };
     return {
       shown: true,
-      rows: [...list.querySelectorAll('.bj-cmdline__item')].map((r) => [
-        r.querySelector('.bj-cmdline__item-name').textContent,
-        (r.querySelector('.bj-cmdline__item-label') || {}).textContent || '',
+      rows: [...list.querySelectorAll('.jar-cmdline__item')].map((r) => [
+        r.querySelector('.jar-cmdline__item-name').textContent,
+        (r.querySelector('.jar-cmdline__item-label') || {}).textContent || '',
       ]),
     };
   });
@@ -698,8 +710,8 @@ try {
   // ⛔ It sits ON the strip: its bottom edge and the strip's top border are one
   // line. A gap between them was the patchwork look this replaced.
   const seam = await page.evaluate(() => {
-    const list = document.querySelector('.bj-cmdline__list');
-    const strip = document.querySelector('.bj-strip');
+    const list = document.querySelector('.jar-cmdline__list');
+    const strip = document.querySelector('.jar-strip');
     if (!list || list.hidden) return null;
     return Math.round(strip.getBoundingClientRect().top - list.getBoundingClientRect().bottom);
   });
@@ -724,7 +736,7 @@ try {
 
   // Typing a full sequence fluently must never show it.
   const fluent = await page.evaluate(() => {
-    const bar = document.querySelector('.bj-strip__message');
+    const bar = document.querySelector('.jar-strip__message');
     if (bar) bar.textContent = '';
     return true;
   });
@@ -732,7 +744,7 @@ try {
   await page.keyboard.press('d');
   await new Promise((r) => setTimeout(r, 700));
   const afterFluent = await page.evaluate(() =>
-    (document.querySelector('.bj-strip__message') || {}).textContent || '');
+    (document.querySelector('.jar-strip__message') || {}).textContent || '');
   console.log('  which-key fluent:', JSON.stringify({ fluent, afterFluent }));
   check(!/Definition.*·/.test(afterFluent),
     'a sequence typed fluently never triggers the hint', afterFluent);
@@ -751,7 +763,7 @@ try {
   await page.keyboard.press('Enter');
   await new Promise((r) => setTimeout(r, 400));
   const wAfter = await page.evaluate(() => ({
-    msg: (document.querySelector('.bj-strip__message') || {}).textContent || '',
+    msg: (document.querySelector('.jar-strip__message') || {}).textContent || '',
     stored: (Persist.getFileById(Persist.getActiveFileId()) || {}).name || '',
   }));
   console.log('  :w:', JSON.stringify({ ...wRan, ...wAfter }));
@@ -762,7 +774,7 @@ try {
   await page.keyboard.type(':e nosuchfile.bel');
   await page.keyboard.press('Enter');
   await new Promise((r) => setTimeout(r, 350));
-  const eMiss = await page.evaluate(() => (document.querySelector('.bj-strip__message') || {}).textContent || '');
+  const eMiss = await page.evaluate(() => (document.querySelector('.jar-strip__message') || {}).textContent || '');
   check(/No file matching/.test(eMiss), ':e answers when the name matches nothing', eMiss);
 
   // `:set` writes a real preference through vim's own ex line.
@@ -776,7 +788,7 @@ try {
   await new Promise((r) => setTimeout(r, 400));
   const setAfter = await page.evaluate(() => ({
     wrap: Persist.readStoredEditorWordWrap(),
-    msg: (document.querySelector('.bj-strip__message') || {}).textContent || '',
+    msg: (document.querySelector('.jar-strip__message') || {}).textContent || '',
   }));
   console.log('  :set:', JSON.stringify({ ...setRan, ...setAfter }));
   check(setAfter.wrap === false, ':set nowrap writes the real preference', JSON.stringify(setAfter));
@@ -853,6 +865,146 @@ try {
   }, String.fromCharCode(92));
   await new Promise((r) => setTimeout(r, 300));
 
+  // ── ⛔ THE CARET IS A CARET, even in Normal mode ─────────────────────
+  //
+  // BelJar has never drawn vim's block cursor — `vimChromeTheme()` hides it so
+  // every mode shows the same thin caret as the rest of the editor. The MOTION
+  // never followed: `l` stopped ON the last character and nothing crossed a line
+  // boundary, because the package's `clipCursorToContent` gives the extra cell to
+  // Insert and Visual only. A thin caret that cannot reach the end of its own
+  // line is two designs disagreeing on screen.
+  {
+    const cSeed = async (text, line, ch) => page.evaluate(({ t, ln, c }) => {
+      const v = CurrentEditor.getView();
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: t } });
+      const l = v.state.doc.line(ln);
+      v.dispatch({ selection: { anchor: l.from + c, head: l.from + c } });
+      v.focus();
+    }, { t: text, ln: line, c: ch });
+    const cPos = () => page.evaluate(() => {
+      const v = CurrentEditor.getView();
+      const h = v.state.selection.main.head;
+      const l = v.state.doc.lineAt(h);
+      return `L${l.number}:c${h - l.from}/${l.length}`;
+    });
+    const cDoc = () => page.evaluate(() => CurrentEditor.getValue().split(String.fromCharCode(10)).join('|'));
+    const cKey = async (k, n = 1) => {
+      for (let i = 0; i < n; i += 1) {
+        await page.keyboard.press(k);
+        await new Promise((r) => setTimeout(r, 130));
+      }
+    };
+    const NL2 = String.fromCharCode(10);
+    const CDOC = ['abcd', 'wxyz', 'QQQQ', ''].join(NL2);
+
+    await page.evaluate(() => { Persist.writeStoredKeymapStyle('vim'); BelEditor.applyEditorPrefs?.(); });
+    await new Promise((r) => setTimeout(r, 900));
+    await page.click('.cm-content');
+    await page.keyboard.press('Escape');
+    await new Promise((r) => setTimeout(r, 200));
+
+    await cSeed(CDOC, 1, 3);
+    await cKey('KeyL');
+    check((await cPos()) === 'L1:c4/4',
+      'Normal mode: `l` reaches PAST the last character', await cPos());
+    await cKey('KeyL');
+    check((await cPos()) === 'L2:c0/4', 'and the next one wraps to the following line', await cPos());
+    await cKey('KeyH');
+    check((await cPos()) === 'L1:c4/4', '`h` wraps back over the boundary', await cPos());
+
+    await cSeed(CDOC, 1, 3);
+    await cKey('ArrowRight');
+    await cKey('ArrowRight');
+    check((await cPos()) === 'L2:c0/4', 'the arrows do exactly the same', await cPos());
+    await cKey('ArrowLeft');
+    check((await cPos()) === 'L1:c4/4', 'in both directions', await cPos());
+
+    // The ends of the document are still ends.
+    await cSeed(CDOC, 1, 0);
+    await cKey('KeyH');
+    check((await cPos()) === 'L1:c0/4', 'the start of the document stops it', await cPos());
+
+    // ⛔ OPERATORS AND COUNTS ARE UNTOUCHED. `h` and `l` are operator motions too;
+    // this layer takes the key only when vim's input state is completely clear,
+    // which is exactly the case vim would have clamped and nothing else.
+    await cSeed(CDOC, 1, 0);
+    await cKey('KeyD');
+    await cKey('KeyL');
+    check((await cDoc()).startsWith('bcd|'), '`dl` still deletes one character', await cDoc());
+    await cSeed(CDOC, 1, 0);
+    await cKey('KeyD');
+    await page.keyboard.press('Digit2');
+    await new Promise((r) => setTimeout(r, 130));
+    await cKey('KeyL');
+    check((await cDoc()).startsWith('cd|'), '`d2l` still takes a count', await cDoc());
+    await cSeed(CDOC, 1, 1);
+    await cKey('KeyC');
+    await cKey('KeyL');
+    check((await cDoc()).startsWith('acd|'), '`cl` still changes one character', await cDoc());
+    await page.keyboard.press('Escape');
+    await new Promise((r) => setTimeout(r, 200));
+
+    // ⛔ A COUNT IS NOT A DIFFERENT KIND OF THING. `3l` has to land where `lll`
+    // lands — left to vim, one key moved the caret by two different rules
+    // depending on whether a digit came first.
+    await cSeed(CDOC, 1, 1);
+    await cKey('KeyL', 3);
+    const cThree = await cPos();
+    await cSeed(CDOC, 1, 1);
+    await page.keyboard.press('Digit3');
+    await new Promise((r) => setTimeout(r, 140));
+    await cKey('KeyL');
+    check((await cPos()) === cThree, '`3l` lands exactly where `l l l` lands',
+      (await cPos()) + ' vs ' + cThree);
+    await cSeed(CDOC, 1, 1);
+    await page.keyboard.press('Digit5');
+    await new Promise((r) => setTimeout(r, 140));
+    await cKey('KeyL');
+    check((await cPos()) === 'L2:c1/4', 'and a count carries over the line boundary too', await cPos());
+    // ⚠ The count must be CONSUMED, or a `3` stays armed for whatever comes next.
+    await cSeed(CDOC, 1, 0);
+    await page.keyboard.press('Digit3');
+    await new Promise((r) => setTimeout(r, 140));
+    await cKey('KeyL');
+    await cKey('KeyX');
+    check((await cDoc()).startsWith('abc|'),
+      'and the count does not leak into the next key', await cDoc());
+
+    // ⛔ `End` follows the caret rule; `$` stays vi's, because `d$` and `$x` are
+    // built on it landing ON the last character and nothing can tell `$x` apart
+    // from a caret move.
+    await cSeed(CDOC, 1, 1);
+    await cKey('End');
+    check((await cPos()) === 'L1:c4/4', '`End` goes past the last character', await cPos());
+    await cSeed(CDOC, 1, 1);
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Digit4');
+    await page.keyboard.up('Shift');
+    await new Promise((r) => setTimeout(r, 200));
+    check((await cPos()) === 'L1:c3/4', "and `$` stays vi's, ON the last character", await cPos());
+    await cSeed(CDOC, 1, 1);
+    await cKey('KeyD');
+    await cKey('End');
+    check((await cDoc()).startsWith('a|'), '`d<End>` still deletes to the end of the line', await cDoc());
+
+    // ⚠ And the caret sitting one past the end must not make an ordinary key
+    // destructive: `x` there would otherwise delete the line break and JOIN two
+    // lines. Measured, not assumed.
+    await cSeed(CDOC, 1, 3);
+    await cKey('KeyL');
+    check((await cPos()) === 'L1:c4/4', 'parked one past the end', await cPos());
+    await cKey('KeyX');
+    check((await cDoc()).startsWith('abcd|wxyz|'),
+      'and `x` there joins nothing — the line break survives', await cDoc());
+    await cSeed(CDOC, 1, 3);
+    await cKey('KeyL');
+    await cKey('KeyI');
+    check(/INSERT/.test(await page.evaluate(() => (document.querySelector('.jar-strip__seg--mode') || {}).textContent || '')),
+      '`i` one past the end still enters Insert, where the caret already belonged');
+    await page.keyboard.press('Escape');
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
   // ── AST text objects (spike S3) ─────────────────────────────────────────────
   const objSetup = await page.evaluate(async () => {
     const view = CurrentEditor.getView();
@@ -892,20 +1044,30 @@ try {
     ';',
     '',
   ].join(String.fromCharCode(10));
+  // ⛔ OFFSETS COME FROM THE LIVE DOCUMENT, never from the string we inserted.
+  // BelJar rewrites `|-` to ⊢ and `=>` to ⇒ as the text lands, so this fixture is
+  // FOUR characters shorter in the editor than in this file — `src.indexOf('beta')`
+  // pointed past the last branch, at the closing `;`. `getCaseBranchSpan` then
+  // truthfully answered "no branch here", all four text-object checks failed, and
+  // their three companions ("leaves the other branch alone", "keeps this branch's
+  // pattern", "still leaves the other one") PASSED, because a `dic` that never ran
+  // disturbs nothing. A red check beside three green ones reads like a narrow
+  // feature bug; it was the fixture measuring a position that does not exist.
   const caseObj = await page.evaluate(async (src) => {
     const v = CurrentEditor.getView();
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: src } });
     await new Promise((r) => setTimeout(r, 400));
+    const live = v.state.doc.toString();
     // Inside the SECOND branch's body.
-    const at = src.indexOf('beta') + 1;
+    const at = live.indexOf('beta') + 1;
     v.dispatch({ selection: { anchor: at, head: at } });
     return {
       whole: CurrentEditor.getCaseBranchSpan(at, {}),
       inner: CurrentEditor.getCaseBranchSpan(at, { inner: true }),
-      text: src,
+      text: live,
     };
   }, CASE_SRC);
-  const sliceOf = (span) => (span ? CASE_SRC.slice(span.from, span.to) : null);
+  const sliceOf = (span) => (span ? caseObj.text.slice(span.from, span.to) : null);
   console.log('  case spans:', JSON.stringify({ a: sliceOf(caseObj.whole), i: sliceOf(caseObj.inner) }));
   check(sliceOf(caseObj.whole) && /s u/.test(sliceOf(caseObj.whole)) && /beta/.test(sliceOf(caseObj.whole)),
     '`ac` spans the whole branch, pattern and all', sliceOf(caseObj.whole));
@@ -915,11 +1077,11 @@ try {
   // Driven for real: `dic` empties one branch body and leaves everything else.
   await page.click('.cm-content');
   await page.keyboard.press('Escape');
-  await page.evaluate((src) => {
+  await page.evaluate(() => {
     const v = CurrentEditor.getView();
-    const at = src.indexOf('beta') + 1;
+    const at = v.state.doc.toString().indexOf('beta') + 1;
     v.dispatch({ selection: { anchor: at, head: at } });
-  }, CASE_SRC);
+  });
   await page.keyboard.type('dic');
   await new Promise((r) => setTimeout(r, 400));
   const afterDic = await page.evaluate(() => CurrentEditor.getView().state.doc.toString());
@@ -936,11 +1098,11 @@ try {
   await new Promise((r) => setTimeout(r, 400));
   await page.click('.cm-content');
   await page.keyboard.press('Escape');
-  await page.evaluate((src) => {
+  await page.evaluate(() => {
     const v = CurrentEditor.getView();
-    const at = src.indexOf('beta') + 1;
+    const at = v.state.doc.toString().indexOf('beta') + 1;
     v.dispatch({ selection: { anchor: at, head: at } });
-  }, CASE_SRC);
+  });
   await page.keyboard.type('dac');
   await new Promise((r) => setTimeout(r, 400));
   const afterDac = await page.evaluate(() => CurrentEditor.getView().state.doc.toString());
@@ -1152,10 +1314,10 @@ try {
   await page.keyboard.type('yy');
   await new Promise((r) => setTimeout(r, 350));
   const afterYank = await page.evaluate(() => ({
-    handedOver: document.querySelector('.bj-strip').classList.contains('is-vim-line'),
-    segmentsVisible: getComputedStyle(document.querySelector('.bj-strip__segments')).display !== 'none',
-    vimMessageInSlot: !!document.querySelector('.bj-strip__vim .cm-vim-message'),
-    echoed: (document.querySelector('.bj-strip__message') || {}).textContent || '',
+    handedOver: document.querySelector('.jar-strip').classList.contains('is-vim-line'),
+    segmentsVisible: getComputedStyle(document.querySelector('.jar-strip__segments')).display !== 'none',
+    vimMessageInSlot: !!document.querySelector('.jar-strip__vim .cm-vim-message'),
+    echoed: (document.querySelector('.jar-strip__message') || {}).textContent || '',
   }));
   console.log('  vim message:', JSON.stringify(afterYank));
   check(!afterYank.handedOver && afterYank.segmentsVisible,
@@ -1172,16 +1334,16 @@ try {
   await page.keyboard.type('2d');
   await new Promise((r) => setTimeout(r, 300));
   const pending = await page.evaluate(() => {
-    const strip = document.querySelector('.bj-strip');
-    const segs = document.querySelector('.bj-strip__segments');
-    const slot = document.querySelector('.bj-strip__vim');
+    const strip = document.querySelector('.jar-strip');
+    const segs = document.querySelector('.jar-strip__segments');
+    const slot = document.querySelector('.jar-strip__vim');
     return {
       handedOver: strip ? strip.classList.contains('is-vim-line') : false,
       segmentsVisible: segs ? getComputedStyle(segs).display !== 'none' : false,
       slotVisible: slot ? getComputedStyle(slot).display !== 'none' : false,
-      mode: (document.querySelector('.bj-strip__seg--mode') || {}).textContent || '',
-      command: (document.querySelector('.bj-strip__seg--command') || {}).textContent || '',
-      segments: document.querySelectorAll('.bj-strip__seg').length,
+      mode: (document.querySelector('.jar-strip__seg--mode') || {}).textContent || '',
+      command: (document.querySelector('.jar-strip__seg--command') || {}).textContent || '',
+      segments: document.querySelectorAll('.jar-strip__seg').length,
       focused: CurrentEditor.getView().hasFocus,
     };
   });
@@ -1271,12 +1433,13 @@ try {
   await page.keyboard.type(':ru');
   await new Promise((r) => setTimeout(r, 350));
   const exSuggest = await page.evaluate(() => {
-    const list = document.querySelector('.bj-cmdline__list');
-    const slotInput = document.querySelector('.bj-strip__vim input');
+    const list = document.querySelector('.jar-cmdline__list');
+    const slotInput = document.querySelector('.jar-strip__vim input');
     return {
       vimOwnsInput: !!slotInput,
       listShown: list ? !list.hidden : false,
-      items: list ? [...list.querySelectorAll('.bj-cmdline__item-name')].map((n) => n.textContent) : [],
+      items: list ? [...list.querySelectorAll('.jar-cmdline__item-name')].map((n) => n.textContent) : [],
+      labels: list ? [...list.querySelectorAll('.jar-cmdline__item-label')].map((n) => n.textContent) : [],
       value: slotInput ? slotInput.value : null,
     };
   });
@@ -1284,11 +1447,20 @@ try {
   check(exSuggest.vimOwnsInput, 'vim still owns its own ex input');
   check(exSuggest.listShown && exSuggest.items.length > 0,
     'typing on the vim ex line offers suggestions', JSON.stringify(exSuggest));
-  // Prefix matches rank first. Later rows may match by title ("Run Command…")
-  // or inside an id, which is the point of a fuzzy name match — but nothing may
-  // match by a SCATTERED title, which is how `fmt` used to reach `:ru`.
-  check(exSuggest.items.slice(0, 4).every((t) => t.startsWith('ru')),
-    'the best matches are the ones that start with what was typed', exSuggest.items.join(','));
+  // A prefix match ranks FIRST — that is the one Tab takes.
+  check(exSuggest.items[0].startsWith('ru'),
+    'the best match is the one that starts with what was typed', exSuggest.items.join(','));
+  // ⚠ Later rows may match by title ("Run a BelJar command…", "Vim: run a
+  // command on matching lines"), which is the point of a fuzzy name match. What
+  // is forbidden is a SCATTERED title — how `fmt` used to reach `:ru`. So every
+  // row must carry `ru` CONTIGUOUSLY, in its name or in its words.
+  const exScatter = exSuggest.items.filter((t, i) => {
+    const hay = (t + ' ' + (exSuggest.labels[i] || '')).toLowerCase();
+    return hay.indexOf('ru') < 0;
+  });
+  check(exScatter.length === 0,
+    'and every other row carries what was typed contiguously, never scattered',
+    exScatter.join(',') + '  |  ' + exSuggest.items.join(','));
   check(exSuggest.items.indexOf('fmt') < 0,
     'and a scattered title match is refused', exSuggest.items.join(','));
 
@@ -1296,7 +1468,7 @@ try {
   await page.keyboard.press('Tab');
   await new Promise((r) => setTimeout(r, 250));
   const afterTab = await page.evaluate(() => {
-    const el = document.querySelector('.bj-strip__vim input');
+    const el = document.querySelector('.jar-strip__vim input');
     return el ? el.value : null;
   });
   console.log('  ex tab:', JSON.stringify(afterTab));
@@ -1307,8 +1479,8 @@ try {
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 300));
   const afterEsc = await page.evaluate(() => {
-    const list = document.querySelector('.bj-cmdline__list');
-    return { listShown: list ? !list.hidden : false, handedOver: document.querySelector('.bj-strip').classList.contains('is-vim-line') };
+    const list = document.querySelector('.jar-cmdline__list');
+    return { listShown: list ? !list.hidden : false, handedOver: document.querySelector('.jar-strip').classList.contains('is-vim-line') };
   });
   check(!afterEsc.listShown && !afterEsc.handedOver,
     'closing the ex line clears the suggestions', JSON.stringify(afterEsc));
@@ -1317,49 +1489,49 @@ try {
   const readMacros = () => page.evaluate(async (open) => {
     if (open) { FloatingWindow.closeAll(); Commands.run('keys.macros'); await new Promise((r) => setTimeout(r, 300)); }
     const win = document.querySelector('.floating-window--macros');
-    const rows = [...win.querySelectorAll('.bj-macros__row')].map((r) => ({
-      title: (r.querySelector('.bj-macros__title') || {}).textContent || '',
+    const rows = [...win.querySelectorAll('.jar-macros__row')].map((r) => ({
+      title: (r.querySelector('.jar-macros__title') || {}).textContent || '',
       // The whole cell: a chord in the Keys block, `:names` in the other.
-      keys: (r.querySelector('.bj-macros__keys') || {}).textContent || '',
-      tag: (r.querySelector('.bj-macros__tag') || {}).textContent || '',
-      tip: r.querySelector('.bj-macros__tag') ? r.querySelector('.bj-macros__tag').getAttribute('data-tooltip') : '',
-      sameLine: r.querySelector('.bj-macros__tag')
-        ? Math.abs(r.querySelector('.bj-macros__tag').getBoundingClientRect().top
-                   - r.querySelector('.bj-macros__title').getBoundingClientRect().top) < 3
+      keys: (r.querySelector('.jar-macros__keys') || {}).textContent || '',
+      tag: (r.querySelector('.jar-macros__tag') || {}).textContent || '',
+      tip: r.querySelector('.jar-macros__tag') ? r.querySelector('.jar-macros__tag').getAttribute('data-tooltip') : '',
+      sameLine: r.querySelector('.jar-macros__tag')
+        ? Math.abs(r.querySelector('.jar-macros__tag').getBoundingClientRect().top
+                   - r.querySelector('.jar-macros__title').getBoundingClientRect().top) < 3
         : true,
-      bound: r.querySelector('.bj-macros__tag') ? !!r.querySelector('.bj-macros__tag')._belTooltipBound : null,
+      bound: r.querySelector('.jar-macros__tag') ? !!r.querySelector('.jar-macros__tag')._belTooltipBound : null,
     }));
-    const rowH = Math.max(...[...win.querySelectorAll('.bj-macros__row')]
-      .filter((r) => !r.classList.contains('bj-macros__row--meta'))
+    const rowH = Math.max(...[...win.querySelectorAll('.jar-macros__row')]
+      .filter((r) => !r.classList.contains('jar-macros__row--meta'))
       .map((r) => r.getBoundingClientRect().height));
     // The blocks, and the keys under each — rows are flat siblings of their
     // heading, so walk the list rather than querying inside a group.
     const groups = [];
     let bucket = null;
-    for (const node of win.querySelector('.bj-macros__list').children) {
-      if (node.classList.contains('bj-macros__group')) {
+    for (const node of win.querySelector('.jar-macros__list').children) {
+      if (node.classList.contains('jar-macros__group')) {
         bucket = { name: node.textContent, keys: [] };
         groups.push(bucket);
         continue;
       }
-      if (bucket) bucket.keys.push((node.querySelector('.bj-macros__chord') || {}).textContent || '');
+      if (bucket) bucket.keys.push((node.querySelector('.jar-macros__chord') || {}).textContent || '');
     }
     return {
       rows, rowH: Math.round(rowH), groups,
-      exNames: [...win.querySelectorAll('.bj-macros__ex')].map((n) => n.textContent),
-      exPerRow: [...win.querySelectorAll('.bj-macros__row')]
-        .map((r) => r.querySelectorAll('.bj-macros__ex').length)
+      exNames: [...win.querySelectorAll('.jar-macros__ex')].map((n) => n.textContent),
+      exPerRow: [...win.querySelectorAll('.jar-macros__row')]
+        .map((r) => r.querySelectorAll('.jar-macros__ex').length)
         .filter((n) => n > 0),
-      reservedRows: win.querySelectorAll('.bj-macros__row--reserved').length,
-      starred: [...win.querySelectorAll('.bj-macros__star')].map((n) => (
-        n.closest('.bj-macros__row').querySelector('.bj-macros__chord') || {}).textContent),
-      starInName: [...win.querySelectorAll('.bj-macros__star')]
-        .every((n) => !!n.closest('.bj-macros__what')),
-      starInKeys: [...win.querySelectorAll('.bj-macros__star')]
-        .some((n) => !!n.closest('.bj-macros__keys')),
-      starredHeading: [...win.querySelectorAll('.bj-macros__group')]
+      reservedRows: win.querySelectorAll('.jar-macros__row--reserved').length,
+      starred: [...win.querySelectorAll('.jar-macros__star')].map((n) => (
+        n.closest('.jar-macros__row').querySelector('.jar-macros__chord') || {}).textContent),
+      starInName: [...win.querySelectorAll('.jar-macros__star')]
+        .every((n) => !!n.closest('.jar-macros__what')),
+      starInKeys: [...win.querySelectorAll('.jar-macros__star')]
+        .some((n) => !!n.closest('.jar-macros__keys')),
+      starredHeading: [...win.querySelectorAll('.jar-macros__group')]
         .some((n) => /^\*/.test(n.textContent)),
-      notes: win.querySelectorAll('.bj-macros__note').length,
+      notes: win.querySelectorAll('.jar-macros__note').length,
       leader: (Persist.readStoredVimLeader && Persist.readStoredVimLeader())
         || String.fromCharCode(92),
     };
@@ -1466,7 +1638,7 @@ try {
   // shadow table said "`C-x h` is a no-op in this package" — a remembered claim
   // about a dependency, not a read one. The package binds `C-x C-p|C-x h` to
   // selectAll and `probe:keymap` measures it selecting the whole document, so
-  // Available Macros must offer it. A wrong belief had been pinned by a test.
+  // Available Keys must offer it. A wrong belief had been pinned by a test.
   const selectAll = emacsRows.rows.find((r) => r.title === 'Select All');
   check(selectAll && selectAll.keys === 'Ctrl+X H',
     'Select All IS listed under Emacs, at the C-x h the package really binds',
@@ -1526,7 +1698,7 @@ try {
   await page.keyboard.type(':');
   await new Promise((r) => setTimeout(r, 350));
   const exRan = await page.evaluate(async () => {
-    const input = document.querySelector('.bj-strip__vim input');
+    const input = document.querySelector('.jar-strip__vim input');
     if (!input) return { missing: true };
     input.value = 'BJ Toggle Theme';
     const before = document.documentElement.className;
@@ -1549,7 +1721,7 @@ try {
   await page.screenshot({ path: path.join(outDir, 'status-strip.png') });
 
   const levels = await page.evaluate(async () => {
-    const count = () => document.querySelectorAll('.bj-strip__seg').length;
+    const count = () => document.querySelectorAll('.jar-strip__seg').length;
     const out = {};
     for (const level of ['compact', 'standard', 'detailed']) {
       Persist.writeStoredStatusStrip(level);
@@ -1559,7 +1731,7 @@ try {
     }
     Persist.writeStoredStatusStrip('off');
     StatusStrip.apply();
-    out.off = !!document.querySelector('.bj-strip');
+    out.off = !!document.querySelector('.jar-strip');
     return out;
   });
   console.log('  levels:', JSON.stringify(levels));
@@ -1582,20 +1754,20 @@ try {
 
   /** Everything the list is showing, measured rather than assumed. */
   const readList = () => page.evaluate(() => {
-    const list = document.querySelector('.bj-cmdline__list');
-    const rows = list ? [...list.querySelectorAll('.bj-cmdline__item')] : [];
+    const list = document.querySelector('.jar-cmdline__list');
+    const rows = list ? [...list.querySelectorAll('.jar-cmdline__item')] : [];
     const activeRow = rows.find((r) => r.classList.contains('is-active')) || null;
-    const inp = document.querySelector('.bj-cmdline__input');
-    const exField = document.querySelector('.bj-strip__vim input');
+    const inp = document.querySelector('.jar-cmdline__input');
+    const exField = document.querySelector('.jar-strip__vim input');
     const field = exField && exField.offsetParent !== null ? exField : inp;
     return {
       shown: list ? !list.hidden : false,
       rows: rows.length,
-      none: list ? list.querySelectorAll('.bj-cmdline__none').length : 0,
-      noneText: list && list.querySelector('.bj-cmdline__none')
-        ? list.querySelector('.bj-cmdline__none').textContent : '',
+      none: list ? list.querySelectorAll('.jar-cmdline__none').length : 0,
+      noneText: list && list.querySelector('.jar-cmdline__none')
+        ? list.querySelector('.jar-cmdline__none').textContent : '',
       activeIndex: activeRow ? Number(activeRow.dataset.index) : -1,
-      activeText: activeRow ? activeRow.querySelector('.bj-cmdline__item-name').textContent : '',
+      activeText: activeRow ? activeRow.querySelector('.jar-cmdline__item-name').textContent : '',
       // Is the highlighted row actually inside the scrollport?
       activeVisible: activeRow && list
         ? (activeRow.offsetTop >= list.scrollTop - 1
@@ -1705,8 +1877,8 @@ try {
   await new Promise((r) => setTimeout(r, 400));
   const afterEnter = await page.evaluate(() => ({
     open: StatusStrip.isCommandLineOpen(),
-    listShown: !document.querySelector('.bj-cmdline__list').hidden,
-    msg: (document.querySelector('.bj-strip__message') || {}).textContent || '',
+    listShown: !document.querySelector('.jar-cmdline__list').hidden,
+    msg: (document.querySelector('.jar-strip__message') || {}).textContent || '',
   }));
   console.log('  enter:', JSON.stringify({ picked: picked.activeText, ...afterEnter }));
   check(!afterEnter.open, 'Enter closes the line');
@@ -1722,7 +1894,7 @@ try {
     await type('run');
     if (how === 'Escape') await key('Escape');
     else if (how === 'ctrl-g') { await page.keyboard.down('Control'); await key('g'); await page.keyboard.up('Control'); }
-    else await page.evaluate(() => document.querySelector('.bj-cmdline__input').blur());
+    else await page.evaluate(() => document.querySelector('.jar-cmdline__input').blur());
     await new Promise((r) => setTimeout(r, 250));
     const out = await readList();
     check(!out.lineOpen && !out.shown, `${how} closes the line and clears the list`, JSON.stringify(out));
@@ -1736,13 +1908,13 @@ try {
   check(!searchOpen.shown, 'opening search shows no command list', JSON.stringify(searchOpen));
   await type('nat');
   const searching = await page.evaluate(() => ({
-    listShown: !document.querySelector('.bj-cmdline__list').hidden,
-    count: (document.querySelector('.bj-cmdline__count') || {}).textContent || '',
+    listShown: !document.querySelector('.jar-cmdline__list').hidden,
+    count: (document.querySelector('.jar-cmdline__count') || {}).textContent || '',
   }));
   check(!searching.listShown, 'and typing a query still shows none', JSON.stringify(searching));
   check(/\d+\/\d+/.test(searching.count), 'the match count is what search reports instead', searching.count);
   await type('qqqq');
-  const noMatch = await page.evaluate(() => (document.querySelector('.bj-cmdline__count') || {}).textContent || '');
+  const noMatch = await page.evaluate(() => (document.querySelector('.jar-cmdline__count') || {}).textContent || '');
   check(/no match/.test(noMatch), 'and it says when nothing matches', noMatch);
   await key('Escape');
   await new Promise((r) => setTimeout(r, 250));
@@ -1786,9 +1958,9 @@ try {
   await key('Escape');
   await new Promise((r) => setTimeout(r, 300));
   const afterExEsc = await page.evaluate(() => ({
-    listShown: !document.querySelector('.bj-cmdline__list').hidden,
-    handedOver: document.querySelector('.bj-strip').classList.contains('is-vim-line'),
-    exField: !!document.querySelector('.bj-strip__vim input[value]'),
+    listShown: !document.querySelector('.jar-cmdline__list').hidden,
+    handedOver: document.querySelector('.jar-strip').classList.contains('is-vim-line'),
+    exField: !!document.querySelector('.jar-strip__vim input[value]'),
   }));
   check(!afterExEsc.listShown && !afterExEsc.handedOver,
     'Escape closes the ex line and takes the list with it', JSON.stringify(afterExEsc));
@@ -1802,6 +1974,68 @@ try {
     'an unknown ex name says so while typing', JSON.stringify(exUnknown));
   await key('Escape');
   await new Promise((r) => setTimeout(r, 250));
+
+  // ⛔ THE LIST MUST NAME THE NAMESPACE THAT WILL RUN.
+  //
+  // Under Vim, Enter goes to the PACKAGE'S `exCommandDispatcher`, not to
+  // `Commands.run`. Drawn from BelJar's registry alone the list was wrong in
+  // both directions at once, and both were measured here:
+  //   `:nohlsearch` → "No matching command", and Enter ran it.
+  //   `:occurrence` + Tab → `set.occurrence-highlight`, and Enter answered
+  //                          `Not an editor command`.
+  await type(':nohlsearch');
+  await new Promise((r) => setTimeout(r, 300));
+  const exVimOwn = await readList();
+  check(exVimOwn.none === 0 && exVimOwn.rows > 0,
+    "vim's OWN ex commands are offered, not denied", JSON.stringify(exVimOwn));
+  await key('Escape');
+  await new Promise((r) => setTimeout(r, 200));
+
+  await type(':noh');
+  await new Promise((r) => setTimeout(r, 300));
+  await key('Tab');
+  await new Promise((r) => setTimeout(r, 300));
+  const exShort = await page.evaluate(() => (document.querySelector('.jar-strip__vim input') || {}).value);
+  check(exShort === 'nohlsearch', 'and their short forms complete, the way a vi user types them', exShort);
+  await key('Escape');
+  await new Promise((r) => setTimeout(r, 200));
+
+  await type(':occurrence');
+  await new Promise((r) => setTimeout(r, 300));
+  await key('Tab');
+  await new Promise((r) => setTimeout(r, 300));
+  const exNoId = await page.evaluate(() => (document.querySelector('.jar-strip__vim input') || {}).value);
+  check(exNoId === 'occurrence',
+    "a BelJar id is NOT offered on vim's line — `Vim.defineEx` was never given one",
+    exNoId);
+  await key('Escape');
+  await new Promise((r) => setTimeout(r, 200));
+
+  // ⛔ `:BJ` is how the other hundred commands are reached from vim's line, and
+  // it was a name you had to already know. Its ARGUMENT completes now, which is
+  // what makes that line the same reach the other two styles have.
+  await type(':BJ theme');
+  await new Promise((r) => setTimeout(r, 320));
+  await key('Tab');
+  await new Promise((r) => setTimeout(r, 320));
+  const exBJ = await page.evaluate(() => (document.querySelector('.jar-strip__vim input') || {}).value);
+  check(exBJ === 'BJ view.theme', '`:BJ` completes over every BelJar command', exBJ);
+  const themeBefore = await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme);
+  await key('Enter');
+  await new Promise((r) => setTimeout(r, 900));
+  const themeAfter = await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme);
+  // ⚠ This is also the regression guard for a bug older than any of it: Tab
+  // wrote `el.value` directly, so nothing recomputed the token span, and Enter
+  // — which applies the highlighted candidate before running — spliced the full
+  // value over the STEM. `:gra` + Tab → `graph`, Enter → `graphph`.
+  check(themeBefore !== themeAfter,
+    'and Tab then Enter RUNS it, instead of splicing the value over the stem',
+    themeBefore + ' -> ' + themeAfter);
+  await page.evaluate(() => Commands.run('view.theme'));
+  await new Promise((r) => setTimeout(r, 400));
+  await page.click('.cm-content');
+  await key('Escape');
+  await new Promise((r) => setTimeout(r, 200));
 
   // Switching away from Vim must not leave the list or listeners behind.
   await page.evaluate(() => {
@@ -1831,9 +2065,9 @@ try {
   await page.keyboard.up('Control');
   await new Promise((r) => setTimeout(r, 300));
   const chain = await page.evaluate(() => ({
-    command: (document.querySelector('.bj-strip__seg--command') || {}).textContent || '',
-    keymap: (document.querySelector('.bj-strip__seg--keymap') || {}).textContent || '',
-    handedOver: document.querySelector('.bj-strip').classList.contains('is-vim-line'),
+    command: (document.querySelector('.jar-strip__seg--command') || {}).textContent || '',
+    keymap: (document.querySelector('.jar-strip__seg--keymap') || {}).textContent || '',
+    handedOver: document.querySelector('.jar-strip').classList.contains('is-vim-line'),
   }));
   console.log('  C-x chain:', JSON.stringify(chain));
   check(/C-x/.test(chain.command), 'a half-typed C-x chain shows in the command zone', chain.command);
@@ -1842,7 +2076,7 @@ try {
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 300));
   const chainGone = await page.evaluate(() =>
-    (document.querySelector('.bj-strip__seg--command') || {}).textContent || '');
+    (document.querySelector('.jar-strip__seg--command') || {}).textContent || '');
   check(!/C-x/.test(chainGone), 'and clears when the chain ends', chainGone);
 
   // ── a chain going nowhere must not reach the browser ───────────────────────
@@ -1898,15 +2132,15 @@ try {
   // ⛔ The hint is a LIST in the popup above the strip — the same box `M-x`
   // completes into — not a one-line message squeezed into the echo area.
   const hintRows = () => page.evaluate(() => {
-    const list = document.querySelector('.bj-cmdline__list');
+    const list = document.querySelector('.jar-cmdline__list');
     if (!list || list.hidden) return { shown: false, rows: [], legend: 0 };
-    const rows = [...list.querySelectorAll('.bj-cmdline__item')];
+    const rows = [...list.querySelectorAll('.jar-cmdline__item')];
     return {
       shown: true,
       legend: rows.filter((r) => r.classList.contains('is-legend')).length,
       rows: rows.map((r) => [
-        r.querySelector('.bj-cmdline__item-name').textContent,
-        (r.querySelector('.bj-cmdline__item-label') || {}).textContent || '',
+        r.querySelector('.jar-cmdline__item-name').textContent,
+        (r.querySelector('.jar-cmdline__item-label') || {}).textContent || '',
       ]),
     };
   });
@@ -1983,7 +2217,7 @@ try {
   await page.keyboard.press('KeyN');
   await new Promise((r) => setTimeout(r, 750));
   const fluentChain = await page.evaluate(() =>
-    (document.querySelector('.bj-strip__message') || {}).textContent || '');
+    (document.querySelector('.jar-strip__message') || {}).textContent || '');
   console.log('  emacs fluent:', JSON.stringify(fluentChain));
   check(!/·/.test(fluentChain),
     'a chain typed fluently never raises the hint', fluentChain);
@@ -1997,7 +2231,7 @@ try {
   await new Promise((r) => setTimeout(r, 350));
   const mx = await page.evaluate(() => ({
     open: StatusStrip.isCommandLineOpen(),
-    prompt: (document.querySelector('.bj-cmdline__prompt') || {}).textContent || '',
+    prompt: (document.querySelector('.jar-cmdline__prompt') || {}).textContent || '',
   }));
   console.log('  M-x:', JSON.stringify(mx));
   check(mx.open, 'M-x opens the command line');
@@ -2038,7 +2272,7 @@ try {
   const outside = await page.evaluate(() => ({
     editorFocused: CurrentEditor.getView().hasFocus,
     line: StatusStrip.isCommandLineOpen(),
-    prompt: (document.querySelector('.bj-cmdline__prompt') || {}).textContent || '',
+    prompt: (document.querySelector('.jar-cmdline__prompt') || {}).textContent || '',
     palette: !!(window.CommandPalette && CommandPalette.isOpen && CommandPalette.isOpen()),
   }));
   console.log('  M-x outside:', JSON.stringify(outside));
@@ -2086,9 +2320,13 @@ try {
   });
   await new Promise((r) => setTimeout(r, 900));
 
-  // ── what the Emacs work must NOT have cost Standard ────────────────────────
-  // ⛔ Under Standard the chord is BelJar's own `Alt+X`, not a keymap macro, and
-  // it must still open the palette — the fix routes by style, not by wiping one.
+  // ── Alt+X means ONE thing, in every style ──────────────────────────────────
+  // ⛔ This check used to read "under Standard, Alt+X still opens the palette",
+  // and that WAS the bug. Routing the same chord to a different window per style
+  // is the thing the Emacs work set out to remove, and Standard was the branch
+  // that never got fixed — which cost Standard the command line entirely, and
+  // with it `:set`, `:e`, the bang, a line address and the line's history.
+  // The palette has not moved: it is still Mod+K, with `>` for its commands mode.
   await page.click('.cm-content');
   await page.evaluate(() => { document.querySelector('.cm-content').blur(); document.body.focus(); });
   await new Promise((r) => setTimeout(r, 200));
@@ -2101,15 +2339,406 @@ try {
     line: StatusStrip.isCommandLineOpen(),
   }));
   console.log('  Alt+X under Standard:', JSON.stringify(stdEntry));
-  check(stdEntry.palette && !stdEntry.line,
-    'under Standard, Alt+X still opens the palette', JSON.stringify(stdEntry));
+  check(stdEntry.line && !stdEntry.palette,
+    'under Standard, Alt+X opens the command line — the same surface every style gets',
+    JSON.stringify(stdEntry));
+  await page.evaluate(() => StatusStrip.closeCommandLine?.());
+  await new Promise((r) => setTimeout(r, 200));
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 250));
+
+  // ── ⛔ the line LOOKS like a command line, in both faces ────────────────────
+  //
+  // Both of these were reported from a screenshot and then measured here.
+  //
+  //   · Vim's `:` floated ABOVE its own text. The package builds the ex line as
+  //     `span(display:flex) > [ ":" , input ]`, and a bare text node in a flex
+  //     container is an ANONYMOUS FLEX ITEM: with no `align-items` it stretches
+  //     to the row height and paints the glyph at the top, while the input
+  //     centres its own. Measured 3px out.
+  //   · BelJar's own `:` sat 0.4rem off the text and one step larger, so its
+  //     line did not read like the vim line in the same slot. Vim writes
+  //     `:set ts=4` with the sigil hard against the text.
+  console.log('\n[shape] the line reads like a command line');
+
+  /**
+   * The ink of each glyph run in a clip: `{ x0, x1, top, bot }`, left to right.
+   *
+   * ⛔ Why a SCREENSHOT and not `getBoundingClientRect`. Every geometry the DOM
+   * will hand back is a BOX, and this whole class of bug lives in the gap
+   * between a box and the glyph painted inside it: two elements can have
+   * identical, perfectly centred boxes and still print their text a pixel
+   * apart, because an <input> centres its inner text in its content box while a
+   * text node sits on the line box's baseline. The box check passed throughout
+   * the bug. The eye did not.
+   */
+  const inkRuns = async (clip) => {
+    const shot = await page.screenshot({ encoding: 'base64', clip });
+    return page.evaluate(async (data) => {
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/png;base64,' + data; });
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      const lum = (i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      // The background is whatever colour most of the clip is.
+      const counts = new Map();
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.round(lum(i));
+        counts.set(v, (counts.get(v) || 0) + 1);
+      }
+      let bg = 0;
+      let best = -1;
+      for (const [v, n] of counts) if (n > best) { best = n; bg = v; }
+      const runs = [];
+      let cur = null;
+      for (let x = 0; x < c.width; x += 1) {
+        let top = -1;
+        let bot = -1;
+        for (let y = 0; y < c.height; y += 1) {
+          const i = (y * c.width + x) * 4;
+          if (Math.abs(lum(i) - bg) > 28) { if (top < 0) top = y; bot = y; }
+        }
+        if (top >= 0) {
+          if (!cur) cur = { x0: x, x1: x, top, bot };
+          else { cur.x1 = x; cur.top = Math.min(cur.top, top); cur.bot = Math.max(cur.bot, bot); }
+        } else if (cur) { runs.push(cur); cur = null; }
+      }
+      if (cur) runs.push(cur);
+      return runs;
+    }, shot);
+  };
+
+  await page.evaluate(() => { Persist.writeStoredKeymapStyle('vim'); BelEditor.applyEditorPrefs?.(); });
+  await new Promise((r) => setTimeout(r, 1300));
+  await page.click('.cm-content');
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 200));
+  await page.keyboard.type(':');
+  await new Promise((r) => setTimeout(r, 400));
+  await page.keyboard.type('a');
+  await new Promise((r) => setTimeout(r, 200));
+  await page.keyboard.type('bc');
+  await new Promise((r) => setTimeout(r, 200));
+  const vimShape = await page.evaluate(() => {
+    const input = document.querySelector('.jar-strip__vim input');
+    if (!input) return null;
+    const span = input.parentElement;
+    const t = [...span.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+    if (!t) return null;
+    const r = document.createRange();
+    r.selectNodeContents(t);
+    const pb = r.getBoundingClientRect();
+    const ib = input.getBoundingClientRect();
+    const own = document.querySelector('.jar-cmdline__prompt');
+    return {
+      drift: Math.round(Math.abs((pb.top + pb.height / 2) - (ib.top + ib.height / 2))),
+      prefix: t.textContent,
+      // ⛔ THE CAUSE, and the thing box geometry could not see. `makePrompt`
+      // writes `font-family: monospace` as an INLINE style on this span, so the
+      // sigil came out in the browser's generic monospace beside an input in
+      // JetBrains Mono — two fonts, two baselines, one line.
+      sigilFont: getComputedStyle(span).fontFamily,
+      inputFont: getComputedStyle(input).fontFamily,
+      ownFont: own ? getComputedStyle(own).fontFamily : '',
+      sigilColour: getComputedStyle(span).color,
+      ownColour: own ? getComputedStyle(own).color : '',
+      clip: (() => { const b = span.getBoundingClientRect(); return { x: Math.floor(b.left), y: Math.floor(b.top) - 3, width: 46, height: Math.ceil(b.height) + 6 }; })(),
+    };
+  });
+  check(vimShape && vimShape.sigilFont === vimShape.inputFont,
+    "vim's `:` is set in the same font as the text beside it",
+    vimShape && vimShape.sigilFont + '  vs  ' + vimShape.inputFont);
+  check(vimShape && vimShape.sigilFont === vimShape.ownFont,
+    "and in the same font as BelJar's own `:` line, which mounts in the same slot",
+    vimShape && vimShape.sigilFont + '  vs  ' + vimShape.ownFont);
+  check(vimShape && vimShape.sigilColour === vimShape.ownColour,
+    'and the same colour — one slot, one `:`, not two features',
+    vimShape && vimShape.sigilColour + '  vs  ' + vimShape.ownColour);
+  check(vimShape && vimShape.drift <= 2,
+    "vim's `:` sits on the same line as the text it prompts for",
+    JSON.stringify(vimShape && vimShape.drift));
+  // ⛔ And now the thing the eye actually judges. Box centres agreed to within
+  // 2px through the whole bug: the boxes WERE centred, and the glyphs inside
+  // them still were not, because an <input> centres its text in its content box
+  // while a text node sits on the line box's baseline. Measure the INK.
+  const vimInk = await inkRuns(vimShape.clip);
+  check(vimInk.length >= 2 && Math.abs(vimInk[0].bot - vimInk[1].bot) <= 1,
+    "vim's `:` rests on the same baseline as the letters, measured in pixels",
+    JSON.stringify(vimInk.slice(0, 3)));
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 250));
+
+  await page.evaluate(() => { Persist.writeStoredKeymapStyle('default'); BelEditor.applyEditorPrefs?.(); });
+  await new Promise((r) => setTimeout(r, 1200));
+  await page.evaluate(() => StatusStrip.openCommandLine(''));
+  await new Promise((r) => setTimeout(r, 250));
+  await page.keyboard.type('set ts=');
+  await new Promise((r) => setTimeout(r, 350));
+  const ownShape = await page.evaluate(() => {
+    const p = document.querySelector('.jar-cmdline__prompt');
+    const i = document.querySelector('.jar-cmdline__input');
+    const pr = p.getBoundingClientRect();
+    const ir = i.getBoundingClientRect();
+    return {
+      gap: Math.round(ir.left - pr.right),
+      drift: Math.round(Math.abs((pr.top + pr.height / 2) - (ir.top + ir.height / 2))),
+      sameSize: getComputedStyle(p).fontSize === getComputedStyle(i).fontSize,
+      unknown: i.classList.contains('is-unknown'),
+      rows: [...document.querySelectorAll('.jar-cmdline__item-name')].map((n) => n.textContent),
+      none: (document.querySelector('.jar-cmdline__none') || {}).textContent || null,
+    };
+  });
+  check(ownShape.gap <= 1 && ownShape.drift <= 1 && ownShape.sameSize,
+    "a sigil prompt is part of the line, flush and the same size — as vim writes it",
+    JSON.stringify(ownShape));
+  // ⛔ The screenshot bug: a valid line, mid-typing, tinted red with its list
+  // saying "No matching command" — because the list is slot-scoped and the tint
+  // was driven by the list being empty.
+  check(!ownShape.unknown, '`:set ts=` is not flagged unknown — it is valid and Enter would run it');
+  check(ownShape.rows.join(',') === '2,4',
+    '`:set ts=` offers that setting own values', JSON.stringify(ownShape.rows));
+  check(ownShape.none === null, 'and no "No matching command" legend', String(ownShape.none));
+
+  await page.keyboard.type('4');
+  await page.keyboard.press('Enter');
+  await new Promise((r) => setTimeout(r, 400));
+  check(String(await page.evaluate(() => Persist.readStoredEditorTabSize())) === '4',
+    'and Enter runs it');
+  await page.evaluate(() => Persist.writeStoredEditorTabSize(2));
+
+  // `:w!` — the bang is grammar, not part of the name.
+  await page.evaluate(() => StatusStrip.openCommandLine(''));
+  await new Promise((r) => setTimeout(r, 250));
+  await page.keyboard.type('w!');
+  await new Promise((r) => setTimeout(r, 350));
+  check(!(await page.evaluate(() => document.querySelector('.jar-cmdline__input').classList.contains('is-unknown'))),
+    '`:w!` is not flagged unknown — the bang is grammar');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => StatusStrip.closeCommandLine?.());
+  await new Promise((r) => setTimeout(r, 200));
 
   await page.screenshot({ path: path.join(outDir, 'command-line.png') });
   // (the harness checks page errors once, at finish)
 
 }
+  // ── ⛔ keyboard macros: ONE engine, all three styles ────────────────────────
+  //
+  // The rule undo already lives by, applied to the other cross-cutting facility.
+  // Before this, macros existed only in Vim because only Vim's PACKAGE shipped
+  // them: Emacs' `C-x (` was swallowed in silence and Standard had nothing. The
+  // engine records DOM keystrokes and replays them through whichever style is
+  // loaded, so there is one implementation and one set of semantics.
+  //
+  // ⚠ Every check below failed at least once while it was being built. `q` had
+  // to become a real mapping armed only while recording (the package does that
+  // inside its own `handleKey`, which we no longer go through), and a refusal
+  // had to stop reporting itself as "not available right now".
+  console.log('\n[macro] record and replay, in every style');
+{
+const mSettle = (ms = 260) => new Promise((r) => setTimeout(r, ms));
+const mStyle = async (s) => {
+  await page.evaluate((v) => { Persist.writeStoredKeymapStyle(v); BelEditor.applyEditorPrefs?.(); }, s);
+  await mSettle(1400);
+  await page.click('.cm-content');
+  await page.keyboard.press('Escape');
+  await mSettle();
+};
+/** Seed and put the caret at the START of line `n` — never by clicking. */
+const mSeed = async (text, line = 1) => {
+  await page.evaluate(({ t, n }) => {
+    CurrentEditor.setValue(t);
+    const v = CurrentEditor.getView();
+    const l = v.state.doc.line(Math.min(n, v.state.doc.lines));
+    v.dispatch({ selection: { anchor: l.from, head: l.from } });
+    v.focus();
+  }, { t: text, n: line });
+  await mSettle(420);
+};
+const mCaretTo = async (n) => {
+  await page.evaluate((line) => {
+    const v = CurrentEditor.getView();
+    const l = v.state.doc.line(Math.min(line, v.state.doc.lines));
+    v.dispatch({ selection: { anchor: l.from, head: l.from } });
+    v.focus();
+  }, n);
+  await mSettle(180);
+};
+const mDoc = () => page.evaluate(() => CurrentEditor.getValue());
+const mStrip = () => page.evaluate(() => (document.querySelector('.jar-strip')?.textContent || '').trim());
+/** The REC chip as a SURFACE: what it is, what it says, what it does. */
+const mRec = () => page.evaluate(() => {
+  const el = document.querySelector('.jar-strip__seg--macro');
+  if (!el) return null;
+  return {
+    tag: el.tagName,
+    text: el.textContent,
+    title: el.getAttribute('data-tooltip') || '',
+    action: el.dataset.action || '',
+    colour: getComputedStyle(el).color,
+  };
+});
+/** Segment keys left to right, so the command zone's PLACE can be asserted. */
+const mOrder = () => page.evaluate(() => [...document.querySelector('.jar-strip__segments').children]
+  .map((el) => {
+    if (el.classList.contains('jar-strip__command')) return 'command';
+    if (el.classList.contains('jar-strip__spacer')) return 'spacer';
+    if (el.classList.contains('jar-strip__message')) return 'message';
+    const m = el.className.match(/jar-strip__seg--([a-z-]+)/);
+    return m ? m[1] : '?';
+  }));
+const mChord = async (mods, code) => {
+  for (const m of mods) await page.keyboard.down(m);
+  await page.keyboard.press(code);
+  for (const m of mods.slice().reverse()) await page.keyboard.up(m);
+  await mSettle(150);
+};
+
+  // ══ VIM ═══════════════════════════════════════════════════════════════════
+  await mStyle('vim');
+  await mSeed('one\ntwo\nthree\nfour\n', 1);
+  await page.keyboard.press('KeyQ');
+  await page.keyboard.press('KeyA');
+  await mSettle(320);
+  let ms = await mStrip();
+  check(/REC/.test(ms) && /@a/.test(ms), 'vim: `qa` records, and the strip names the register', ms.slice(0, 80));
+
+  // ⛔ The way OUT of a recording, on the chip that reports it. A user with REC
+  // on the bar had to ask how to stop, because nothing anywhere said.
+  let rec = await mRec();
+  check(!!rec && rec.tag === 'BUTTON' && rec.action === 'macro-stop',
+    'vim: the REC chip is a button that stops the recording', JSON.stringify(rec));
+  check(!!rec && /press q to stop/i.test(rec.title),
+    'vim: and its tooltip names `q`', rec && rec.title);
+  // A tone nobody styles is a tone nobody sees: `is-error` had rules under
+  // `--problems` and `--checker` only, so REC rendered in the resting grey.
+  check(!!rec && rec.colour !== 'rgb(144, 148, 154)',
+    'vim: REC is not painted in the resting muted grey', rec && rec.colour);
+
+  // ⛔ The command zone is the LAST thing in the left group. It grows, so
+  // anything placed after it is thrown to the far edge of the bar — which is
+  // exactly what happened to REC.
+  const ord = await mOrder();
+  const cmdAt = ord.indexOf('command');
+  const spacerAt = ord.indexOf('spacer');
+  check(cmdAt >= 0 && spacerAt === cmdAt + 1,
+    'the command zone is the last item of the left group', JSON.stringify(ord));
+  check(ord.indexOf('macro') >= 0 && ord.indexOf('macro') < cmdAt,
+    'REC stays beside the mode, left of the command zone', JSON.stringify(ord));
+
+  await page.keyboard.press('KeyI');
+  await mSettle(220);
+  rec = await mRec();
+  // `q` in Insert mode types the letter q. A tooltip that says "press q" there
+  // is a correct answer that still leaves you stuck.
+  check(!!rec && /press esc then q to stop/i.test(rec.title),
+    'vim: in Insert mode the tooltip says Esc first', rec && rec.title);
+  await page.keyboard.type('X');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('KeyJ');
+  await mSettle(200);
+  await page.keyboard.press('KeyQ');
+  await mSettle(340);
+  check(!/REC/.test(await mStrip()), 'vim: `q` stops it and REC clears');
+  check((await mDoc()).startsWith('Xone'), 'vim: recording still performs the edits', JSON.stringify((await mDoc()).slice(0, 12)));
+
+  await mChord(['Shift'], 'Digit2');
+  await page.keyboard.press('KeyA');
+  await mSettle(420);
+  let md = await mDoc();
+  check(md.split('\n')[1].includes('Xtwo'), 'vim: `@a` replays the recorded keys', JSON.stringify(md));
+
+  // ══ EMACS ═════════════════════════════════════════════════════════════════
+  await mStyle('emacs');
+  await mSeed('alpha\nbravo\ncharlie\n', 1);
+  await mChord(['Control'], 'KeyX');
+  await mChord(['Shift'], 'Digit9');
+  await mSettle(300);
+  check(/REC/.test(await mStrip()), 'emacs: `C-x (` starts recording', (await mStrip()).slice(0, 80));
+  rec = await mRec();
+  check(!!rec && /press ctrl\+x \) to stop/i.test(rec.title),
+    'emacs: the chip names `Ctrl+X )`, spelled the way every other surface spells it',
+    rec && rec.title);
+  await page.keyboard.type('zz');
+  await mSettle(220);
+  await mChord(['Control'], 'KeyX');
+  await mChord(['Shift'], 'Digit0');
+  await mSettle(340);
+  check(!/REC/.test(await mStrip()), 'emacs: `C-x )` stops it');
+  md = await mDoc();
+  check(md.startsWith('zzalpha'), 'emacs: recording performed the typing', JSON.stringify(md.slice(0, 12)));
+
+  await mCaretTo(2);
+  await mChord(['Control'], 'KeyX');
+  await page.keyboard.press('KeyE');
+  await mSettle(450);
+  md = await mDoc();
+  check(md.split('\n')[1].startsWith('zzbravo'), 'emacs: `C-x e` replays it', JSON.stringify(md));
+
+  // ══ STANDARD ══════════════════════════════════════════════════════════════
+  await mStyle('default');
+  await page.evaluate(() => {
+    Keybindings.setBinding('macro.record', 'Mod+Alt+Shift+F9');
+    Keybindings.setBinding('macro.replay', 'Mod+Alt+Shift+F10');
+  });
+  await mSettle(300);
+  await mSeed('red\ngreen\nblue\n', 1);
+  await mChord(['Control', 'Alt', 'Shift'], 'F9');
+  await mSettle(280);
+  check(/REC/.test(await mStrip()), 'standard: a bound chord starts recording', (await mStrip()).slice(0, 80));
+  await page.keyboard.type('##');
+  await mSettle(200);
+  await mChord(['Control', 'Alt', 'Shift'], 'F9');
+  await mSettle(320);
+  check(!/REC/.test(await mStrip()), 'standard: and stops it');
+  check((await mDoc()).startsWith('##red'), 'standard: recording performed the typing', JSON.stringify((await mDoc()).slice(0, 10)));
+
+  await mCaretTo(2);
+  await mChord(['Control', 'Alt', 'Shift'], 'F10');
+  await mSettle(450);
+  md = await mDoc();
+  check(md.split('\n')[1].startsWith('##green'), 'standard: replay works', JSON.stringify(md));
+
+  // ⛔ A macro carries the keymap it was recorded in. Standard and Emacs share a
+  // register name (neither has registers), so this is exactly the case where a
+  // replay could silently type vim-shaped gibberish into the buffer.
+  await mStyle('emacs');
+  await mSeed('untouched\nlines\n', 1);
+  const mBefore = await mDoc();
+  await mChord(['Control'], 'KeyX');
+  await page.keyboard.press('KeyE');
+  await mSettle(420);
+  check((await mDoc()) === mBefore,
+    'a macro recorded in Standard is refused under Emacs, not replayed as gibberish',
+    JSON.stringify(await mDoc()));
+  check(/recorded in Standard/i.test(await mStrip()), 'and it says so', (await mStrip()).slice(0, 110));
+
+  await page.evaluate(() => { Keybindings.resetBinding('macro.record'); Keybindings.resetBinding('macro.replay'); });
+
+  // ⛔ STANDARD WITH NOTHING BOUND — the state a new user is actually in.
+  // `macro.record` ships with no default chord on purpose (there is no
+  // cross-editor convention to borrow), so the recording someone starts from
+  // the palette or the command line has NO KEY that ends it. The chip is the
+  // whole way out, and it has to say so and then work.
+  await mStyle('default');
+  await mSettle(400);
+  await mSeed('one\ntwo\n', 1);
+  await page.evaluate(() => Commands.run('macro.record', { dropTrailing: 0 }));
+  await mSettle(400);
+  rec = await mRec();
+  check(!!rec && /click to stop/i.test(rec.title),
+    'standard, unbound: the chip offers the click rather than naming a key nobody has',
+    rec && rec.title);
+  check(!/press/i.test((rec && rec.title) || 'press'),
+    'and it does NOT name a chord that is not bound', rec && rec.title);
+  await page.click('.jar-strip__seg--macro');
+  await mSettle(420);
+  check((await mRec()) === null, 'and clicking it really does stop the recording', await mStrip());
+}
+
   // ══ phase 3 ════════════════════════════════════════════════════════════════
   console.log('\n[keymap] substitutes, vanilla keys, and every binding pressed');
 {
@@ -2161,13 +2790,13 @@ try {
       })(),
       head: s.head,
       len: v ? v.state.doc.length : -1,
-      msg: (document.querySelector('.bj-strip__message') || {}).textContent || '',
+      msg: (document.querySelector('.jar-strip__message') || {}).textContent || '',
       line: StatusStrip.isCommandLineOpen(),
       holes: v ? v.state.doc.toString().split('?').length : -1,
       palette: !!(window.CommandPalette && CommandPalette.isOpen && CommandPalette.isOpen()),
       // Anything that mounted: a panel, a dialog, a floating window, a popup.
       surfaces: document.querySelectorAll(
-        '.cm-panel, .floating-window, dialog[open], .bj-cmdline__list:not([hidden]), .cm-tooltip',
+        '.cm-panel, .floating-window, dialog[open], .jar-cmdline__list:not([hidden]), .cm-tooltip',
       ).length,
       active: document.activeElement ? (document.activeElement.className || document.activeElement.tagName) : '',
       body: document.body.className,
@@ -2282,7 +2911,7 @@ try {
   check(!s.doc.startsWith('alpha'), 'M-d kill word', JSON.stringify(s.doc.slice(0, 8)));
 
   // ⛔ `command-shadows.mjs` claimed this was "a no-op in this package" and so
-  // Available Macros told Emacs users select-all was unreachable. It is not.
+  // Available Keys told Emacs users select-all was unreachable. It is not.
   await load(PLAIN);
   await chord(['Control'], 'KeyX');
   await page.keyboard.press('KeyH');
@@ -2294,7 +2923,7 @@ try {
   await chord(['Control'], 'KeyX');
   await chord(['Control'], 'KeyS');
   await new Promise((r) => setTimeout(r, 400));
-  const savedMsg = await page.evaluate(() => (document.querySelector('.bj-strip__message') || {}).textContent || '');
+  const savedMsg = await page.evaluate(() => (document.querySelector('.jar-strip__message') || {}).textContent || '');
   check(/sav/i.test(savedMsg), 'C-x C-s saves, and says so', JSON.stringify(savedMsg));
 
   console.log('\n[2] vanilla Vim');
@@ -2338,6 +2967,30 @@ try {
   await load(PLAIN); await esc();
   await type(':set number'); await page.keyboard.press('Enter'); await new Promise((r) => setTimeout(r, 350));
   check(await page.evaluate(() => !!document.querySelector('.cm-lineNumbers')), ':set number');
+
+  // ⛔ …and an option only VIM owns still reaches vim. Replacing `:set` took its
+  // five options with it (`pcre`, `langmap`, `insertModeEscKeysTimeout`,
+  // `filetype`, `textwidth`), each answered "Unknown option" and lost. Measured
+  // through `Vim.getOption`, not through a message: a message can say anything.
+  const pcreBefore = await page.evaluate(() => window.BelEditor?.vimOption?.('pcre'));
+  await load(PLAIN); await esc();
+  await type(':set nopcre'); await page.keyboard.press('Enter'); await new Promise((r) => setTimeout(r, 300));
+  const pcreOff = await page.evaluate(() => window.BelEditor?.vimOption?.('pcre'));
+  await type(':set pcre'); await page.keyboard.press('Enter'); await new Promise((r) => setTimeout(r, 300));
+  const pcreOn = await page.evaluate(() => window.BelEditor?.vimOption?.('pcre'));
+  console.log('  vim-owned :set:', JSON.stringify({ pcreBefore, pcreOff, pcreOn }));
+  check(pcreOff === false && pcreOn === true,
+    ":set hands a vim-owned option back to vim", JSON.stringify({ pcreOff, pcreOn }));
+  // The CONTROL: a name neither side owns must still be refused, or the
+  // fall-through would be swallowing typos instead of forwarding options.
+  await type(':set notarealoption'); await page.keyboard.press('Enter'); await new Promise((r) => setTimeout(r, 300));
+  const unknownMsg = await page.evaluate(() => ((document.querySelector('.jar-strip__message') || {}).textContent || '').trim());
+  // ⛔ BelJar's exact phrasing, quotes and all. `/unknown option/i` passed while
+  // the fall-through was dead, because the broken path echoed the package's own
+  // `nopcre=Error: Unknown option: nopcre` — the control was matching our bug.
+  check(/^Unknown option "notarealoption"/.test(unknownMsg),
+    'CONTROL: a name neither owns is refused by BelJar, not echoed by vim',
+    JSON.stringify(unknownMsg));
 
   // ══ 3. every binding does SOMETHING ═══════════════════════════════════════
   // The bindings are read from the running app, so a new one is covered the day
@@ -2421,6 +3074,232 @@ try {
   const tabsAfter = await openTabs();
   check(tabsBefore > 0 && tabsAfter === tabsBefore - 1, 'emacs  C-x k  closes the tab',
     JSON.stringify({ before: tabsBefore, after: tabsAfter }));
+
+  // ── undo/redo reaches BelJar's history in EVERY style ──────────────────────
+  //
+  // ⛔ Not "the document changed" — that is what the bug looked like from the
+  // outside. Under Emacs the package ships `'C-/|C-x u|S-C--|C-z': null`, and
+  // rebinding that null over our bridge left the key falling through to
+  // CodeMirror's own history: the text reverted, BelJar's stack never moved,
+  // and the entry that had just been reverted was silently absorbed. So the
+  // check is on the STACKS — one step off undo, one step onto redo — which only
+  // BelJar's history can produce.
+  const histState = () => page.evaluate(() => ({
+    doc: CurrentEditor.getValue(),
+    undo: EditHistory.getUndoStack().length,
+    redo: EditHistory.getRedoStack().length,
+  }));
+  const freshDoc = async () => {
+    await page.evaluate(() => {
+      const v = CurrentEditor.getView();
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: '' } });
+      v.focus();
+      EditHistory.swapProject('probe-keymap-' + Math.random().toString(36).slice(2));
+    });
+    await new Promise((r) => setTimeout(r, 450));
+  };
+
+  async function undoLeg(styleName, insertFirst, undoPress, redoPress, undoLabel, redoLabel) {
+    await freshDoc();
+    if (insertFirst) { await page.keyboard.press('KeyI'); await new Promise((r) => setTimeout(r, 250)); }
+    await page.keyboard.type('zzz', { delay: 16 });
+    await new Promise((r) => setTimeout(r, 500));
+    if (insertFirst) { await page.keyboard.press('Escape'); await new Promise((r) => setTimeout(r, 350)); }
+    const b = await histState();
+    await undoPress();
+    await new Promise((r) => setTimeout(r, 450));
+    const a = await histState();
+    check(a.doc !== b.doc && a.undo === b.undo - 1 && a.redo === b.redo + 1,
+      `${styleName}  ${undoLabel}  undoes through BelJar's history`,
+      `${JSON.stringify(b.doc)}->${JSON.stringify(a.doc)} stacks ${b.undo}/${b.redo} -> ${a.undo}/${a.redo}`);
+    await redoPress();
+    await new Promise((r) => setTimeout(r, 450));
+    const c = await histState();
+    check(c.doc === b.doc && c.undo === b.undo && c.redo === b.redo,
+      `${styleName}  ${redoLabel}  redoes through BelJar's history`,
+      `${JSON.stringify(a.doc)}->${JSON.stringify(c.doc)} stacks ${a.undo}/${a.redo} -> ${c.undo}/${c.redo}`);
+  }
+
+  /**
+   * The history panel's footer must name a key that actually works — not the
+   * Standard chord recited regardless of style. Opens the panel and reads the
+   * two `.jar-hist__key` chips against what THIS style's undo/redo really are.
+   *
+   * ⛔ `Keybindings.labelFor('edit.undo')` used to be shown unconditionally: an
+   * Emacs user was told to press Ctrl+Y for redo, which is yank, because that
+   * lookup only ever knows the Standard registry chord, never Vim's or Emacs'
+   * own fixed key tables.
+   */
+  async function checkFooterMatches(styleName, undoLabel, redoLabel) {
+    await new Promise((r) => setTimeout(r, 200));
+    if ((await page.evaluate(() => EditHistory.getUndoStack().length)) === 0) {
+      await page.keyboard.type('x', { delay: 16 });
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    await page.click('.jar-strip__seg--history');
+    await new Promise((r) => setTimeout(r, 550));
+    const keys = await page.evaluate(() =>
+      [...document.querySelectorAll('.jar-hist__key')].map((k) => k.textContent));
+    check(keys[0] === undoLabel && keys[1] === redoLabel,
+      `${styleName}  the history panel footer names the real undo/redo keys`,
+      `got ${JSON.stringify(keys)}, wanted [${undoLabel}, ${redoLabel}]`);
+    await page.keyboard.press('Escape');
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
+  // ⛔ The `C-x k` check above closes the last tab, so there is no editor left.
+  // Put one back before anything that needs to type.
+  await page.evaluate(() => {
+    const P = window.Persist;
+    let f = P.listFiles()[0];
+    if (!f) { P.createFile('undo-probe.bel'); f = P.listFiles()[0]; }
+    if (f && window.belJarSwitchToFileForHistory) window.belJarSwitchToFileForHistory(f.id);
+  });
+  await new Promise((r) => setTimeout(r, 1600));
+
+  await setStyle('emacs');
+  await page.click('.cm-content');
+  // All four undo chords the package declines to bind, and the redo twins.
+  await undoLeg('emacs', false,
+    () => chord(['Control'], 'Slash'), () => chord(['Control', 'Shift'], 'Slash'), 'C-/', 'S-C-/');
+  await undoLeg('emacs', false,
+    () => chord(['Control'], 'KeyZ'), () => chord(['Control', 'Shift'], 'KeyZ'), 'C-z', 'S-C-z');
+  await undoLeg('emacs', false,
+    () => chord(['Control', 'Shift'], 'Minus'), () => chord(['Control'], 'Minus'), 'C-_', 'C--');
+  await undoLeg('emacs', false,
+    async () => { await chord(['Control'], 'KeyX'); await page.keyboard.press('KeyU'); },
+    () => chord(['Control', 'Shift'], 'Slash'), 'C-x u', 'S-C-/');
+  await checkFooterMatches('emacs', 'Ctrl+Z', 'Ctrl+Shift+Z');
+
+  await setStyle('vim');
+  await page.click('.cm-content');
+  await undoLeg('vim', true,
+    () => page.keyboard.press('KeyU'), () => chord(['Control'], 'KeyR'), 'u', 'C-r');
+  await checkFooterMatches('vim', 'u', 'Ctrl+R');
+
+  await setStyle('default');
+  await page.click('.cm-content');
+  await undoLeg('Standard', false,
+    () => chord(['Control'], 'KeyZ'), () => chord(['Control'], 'KeyY'), 'Ctrl+Z', 'Ctrl+Y');
+  await checkFooterMatches('Standard', 'Ctrl+Z', 'Ctrl+Y');
+
+  // A manual rebind of edit.undo must show up too — the fix was not "hardcode
+  // per style", it was "read what is actually bound", and Standard's chord is
+  // still user-remappable through the Keybindings sheet.
+  await page.evaluate(() => { window.Keybindings.setBinding('edit.undo', 'Alt+Shift+U'); });
+  await new Promise((r) => setTimeout(r, 300));
+  await checkFooterMatches('Standard (rebound)', 'Alt+Shift+U', 'Ctrl+Y');
+  const reboundWorks = await (async () => {
+    const b = await page.evaluate(() => CurrentEditor.getValue());
+    await chord(['Alt', 'Shift'], 'KeyU');
+    await new Promise((r) => setTimeout(r, 450));
+    const a = await page.evaluate(() => CurrentEditor.getValue());
+    return a !== b;
+  })();
+  check(reboundWorks, 'and the rebound chord actually undoes, not just the label');
+  await page.evaluate(() => { window.Keybindings.resetBinding('edit.undo'); });
+
+  // ── ⛔ the three styles must be equally reachable ────────────────────────────
+  //
+  // Every check below was a FAILURE when it was written, measured by pressing
+  // the key in this browser:
+  //
+  //   · Standard had no command line at all. `cmdline.open` ships no chord, the
+  //     double-tap gesture is off by default, and Alt+X opened the palette — so
+  //     `:set`, `:e`, the bang, a line address and the line's history were
+  //     Vim-and-Emacs-only features of a style-neutral app.
+  //   · `M-g` under Emacs was bound by the package to a `gotoline` command the
+  //     package does not ship. A dead key on the chord an Emacs user presses to
+  //     go to a line.
+  //   · `C-x (` and `C-x z` answered with nothing — swallowed by the chain
+  //     guard, which reads as a broken keymap rather than a missing feature.
+  console.log('\n[parity] the same reach in all three styles');
+  const lineState = () => page.evaluate(() => ({
+    open: !!StatusStrip.isCommandLineOpen(),
+    palette: !!document.querySelector('.jar-palette.is-open'),
+    prompt: (document.querySelector('.jar-cmdline__prompt')?.textContent || '').trim(),
+    msg: (document.querySelector('.jar-strip__message')?.textContent || '').trim(),
+    line: (() => {
+      const v = CurrentEditor.getView();
+      return v.state.doc.lineAt(v.state.selection.main.head).number;
+    })(),
+  }));
+  const shutLine = async () => {
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => StatusStrip.closeCommandLine?.());
+    await new Promise((r) => setTimeout(r, 160));
+    await page.click('.cm-content');
+  };
+
+  await page.evaluate(() => CurrentEditor.setValue('one\ntwo\nthree\nfour\nfive\nsix\n'));
+  await new Promise((r) => setTimeout(r, 400));
+
+  await setStyle('default');
+  await chord(['Alt'], 'KeyX');
+  await new Promise((r) => setTimeout(r, 350));
+  let par = await lineState();
+  check(par.open && !par.palette,
+    'Standard: Alt+X opens the COMMAND LINE, the same surface Vim and Emacs get',
+    JSON.stringify(par));
+  await type('set ts=4');
+  await page.keyboard.press('Enter');
+  await new Promise((r) => setTimeout(r, 350));
+  check(String(await page.evaluate(() => Persist.readStoredEditorTabSize())) === '4',
+    'Standard: and `:set ts=4` runs from it — a command that exists ONLY on that line');
+  await page.evaluate(() => Persist.writeStoredEditorTabSize(2));
+  await shutLine();
+
+  for (const style of ['default', 'vim']) {
+    await setStyle(style);
+    await chord(['Control'], 'KeyG');
+    await new Promise((r) => setTimeout(r, 320));
+    par = await lineState();
+    check(par.open && /go to line/i.test(par.prompt),
+      `${style}: Ctrl+G opens Go to Line`, JSON.stringify(par));
+    await type('5');
+    await page.keyboard.press('Enter');
+    await new Promise((r) => setTimeout(r, 320));
+    check((await lineState()).line === 5, `${style}: and it jumps there`);
+    await shutLine();
+  }
+
+  await setStyle('emacs');
+  // `M-g` is a PREFIX now, not a dead key: binding the chain overwrites the
+  // package's broken single-key entry with the prefix marker.
+  await chord(['Alt'], 'KeyG');
+  await page.keyboard.press('KeyG');
+  await new Promise((r) => setTimeout(r, 350));
+  par = await lineState();
+  check(par.open && /go to line/i.test(par.prompt),
+    'Emacs: `M-g g` opens Go to Line — the chord the package left dead',
+    JSON.stringify(par));
+  await type('3');
+  await page.keyboard.press('Enter');
+  await new Promise((r) => setTimeout(r, 320));
+  check((await lineState()).line === 3, 'Emacs: and it jumps there');
+  await shutLine();
+
+  // ⛔ `C-x (` used to be swallowed in silence, then answered with an honest
+  // decline, and now RECORDS — the feature it names exists in every style. The
+  // `[macro]` phase drives the whole round trip; this only pins that the chord
+  // is live at all, so a regression here fails next to its neighbours.
+  await chord(['Control'], 'KeyX');
+  await chord(['Shift'], 'Digit9');
+  await new Promise((r) => setTimeout(r, 320));
+  check(/REC/.test(await page.evaluate(() => document.querySelector('.jar-strip')?.textContent || '')),
+    'Emacs: `C-x (` starts a keyboard macro — no longer a silent dead chord');
+  await chord(['Control'], 'KeyX');
+  await chord(['Shift'], 'Digit0');
+  await new Promise((r) => setTimeout(r, 260));
+
+  await page.click('.cm-content');
+  await chord(['Control'], 'KeyX');
+  await page.keyboard.press('KeyZ');
+  await new Promise((r) => setTimeout(r, 320));
+  par = await lineState();
+  check(par.msg !== '' || par.open,
+    'Emacs: `C-x z` (repeat-last-command) answers', JSON.stringify(par.msg));
+  await shutLine();
 
   await page.evaluate(() => { Persist.writeStoredKeymapStyle('default'); BelEditor.applyEditorPrefs?.(); });
   // (the harness checks page errors once, at finish)

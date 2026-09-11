@@ -72,9 +72,9 @@ applyDocumentPrefs(docEl, themeStore);
 assert.ok(docEl.classList.classes.has('light'));
 assert.equal(docEl.style.props['--ui-font-scale'], String(UI_FONT_SCALES.lg));
 assert.equal(docEl.style.props['--ui-text-contrast'], String(UI_TEXT_CONTRAST.high));
-assert.ok(docEl.classList.classes.has('bj-motion-reduce'));
+assert.ok(docEl.classList.classes.has('jar-motion-reduce'));
 assert.equal(docEl.style.props['--editor-ligatures'], 'none');
-assert.ok(docEl.classList.classes.has('bj-hole-loud'));
+assert.ok(docEl.classList.classes.has('jar-hole-loud'));
 
 // panel restore keys
 assert.equal(panelStorageKey('default'), 'beljar-active-side-panel');

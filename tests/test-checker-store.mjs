@@ -91,4 +91,97 @@ store.remapDiagnostics(changes);
 const remapped = store.getSnapshot().belugaDiagnostics[0];
 expect(remapped.from === 7 && remapped.to === 9, 'remapDiagnostics follows cosmetic insert');
 
-console.log('OK checker store (stale carry, applyProgress hold)');
+// ── a ready verdict never carries an unverified finding ──────────────────────
+//
+// ⛔ This is the phantom-error bug. `stale` means "the document moved under this
+// diagnostic and nothing has re-checked it". Settlement's frontier-empty path
+// used to copy the previous findings straight into applyResult, which stamps
+// them `ready` — so an error from before an undo became an authoritative verdict
+// on a document that no longer contained it, and nothing ever cleared it: the
+// file had to be closed and reopened. A ready snapshot must only ever hold what
+// the checker actually confirmed.
+{
+  const s = createCheckerStore();
+  s.applyResult({
+    syntaxVersion: 1,
+    checkerFp: 'fp1',
+    ok: false,
+    belugaDiagnostics: [{ severity: 'error', message: 'real', from: 0, to: 1 }],
+    rawOutput: '',
+  });
+  s.invalidate(2);
+  const carried = s.getSnapshot().belugaDiagnostics;
+  expect(carried.length === 1 && carried[0].stale === true, 'invalidate marks findings stale');
+
+  // Exactly what the buggy fast path did: hand the stale set back as a verdict.
+  s.applyResult({
+    syntaxVersion: 2,
+    checkerFp: 'fp2',
+    ok: true,
+    belugaDiagnostics: carried,
+    rawOutput: '',
+  });
+  const after = s.getSnapshot();
+  expect(after.state === 'ready', 'applyResult still lands a ready verdict');
+  expect(after.belugaDiagnostics.length === 0,
+    'a stale finding cannot survive into a ready verdict');
+  expect(after.ok === true && after.belugaDiagnostics.length === 0,
+    'ok and the diagnostic list agree');
+
+  // A verified finding passes through untouched.
+  s.applyResult({
+    syntaxVersion: 3,
+    checkerFp: 'fp3',
+    ok: false,
+    belugaDiagnostics: [{ severity: 'error', message: 'verified', from: 0, to: 1 }],
+    rawOutput: '',
+  });
+  expect(s.getSnapshot().belugaDiagnostics.length === 1, 'verified findings are kept');
+}
+
+// ⛔ A finding whose text the edit consumed is DROPPED, not carried inverted.
+//
+// The two ends map with opposite association so the range shrinks around an
+// edit rather than swallowing it. When an edit REPLACES a span that ENCLOSES
+// the finding — select a line and paste over it — `from` maps to the end of the
+// insertion and `to` to its start, and the range comes out backwards. The
+// squiggle layer skips an inverted range; the COUNTS did not, so the strip and
+// the tab dot kept reporting an error with nothing on screen to point at, and
+// "go to next problem" aimed at a position that no longer meant anything.
+{
+  const s = createCheckerStore();
+  s.applyResult({
+    syntaxVersion: 1,
+    checkerFp: 'fp',
+    ok: false,
+    belugaDiagnostics: [
+      { severity: 'error', message: 'pasted over', from: 6, to: 8 },
+      { severity: 'error', message: 'further down', from: 20, to: 24 },
+    ],
+    rawOutput: '',
+  });
+  // Replace [5,9) — which strictly encloses [6,8) — with three characters.
+  s.remapDiagnostics(ChangeSet.of([{ from: 5, to: 9, insert: 'abc' }], 40));
+  const left = s.getSnapshot().belugaDiagnostics;
+  expect(left.length === 1, 'the finding inside the replaced span is dropped');
+  expect(left[0].message === 'further down', 'and the untouched one survives');
+  expect(left[0].from < left[0].to, 'with a range that is still a range');
+  expect(left[0].from === 19, 'shifted by what the edit changed');
+}
+
+// A pure deletion collapses the range to nothing, which is equally a phantom.
+{
+  const s = createCheckerStore();
+  s.applyResult({
+    syntaxVersion: 1,
+    checkerFp: 'fp',
+    ok: false,
+    belugaDiagnostics: [{ severity: 'error', message: 'deleted', from: 5, to: 9 }],
+    rawOutput: '',
+  });
+  s.remapDiagnostics(ChangeSet.of([{ from: 4, to: 10, insert: '' }], 40));
+  expect(s.getSnapshot().belugaDiagnostics.length === 0, 'a collapsed finding is dropped too');
+}
+
+
+console.log('OK checker store (stale carry, applyProgress hold, no stale in a ready verdict)');

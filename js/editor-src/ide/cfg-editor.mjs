@@ -6,7 +6,6 @@ import {
   isCfgPath,
   isElfPath,
   isProjectSourcePath,
-  isSignaturePath,
 } from '../project-paths.mjs';
 import { autocompletion } from '@codemirror/autocomplete';
 import { EditorView, hoverTooltip } from '@codemirror/view';
@@ -170,7 +169,7 @@ function diagnosticsOnEntry(view, entry) {
 function cfgEntryNote(entry, exists) {
   const baseName = entry.fullPath.split('/').pop() || entry.fullPath;
   const note = document.createElement('div');
-  note.className = 'beljar-tip bel-type-tip';
+  note.className = 'beljar-tip jar-type-tip';
   note.appendChild(buildTipHead('Suite entry', baseName, null));
 
   const bodyLines = [];
@@ -185,7 +184,7 @@ function cfgEntryNote(entry, exists) {
 
 // Hover for a cfg entry: render any lint warnings/errors in the SAME styled
 // frame as .bel tooltips, then the suite-position note — not the bare default
-// editor tooltip. Stacked in a .bel-hover-stack so chrome/spout match exactly.
+// editor tooltip. Stacked in a .jar-hover-stack so chrome/spout match exactly.
 function cfgHover(documentId) {
   const cfgPath = resolveCfgDocumentPath(documentId);
   return hoverTooltip((view, pos) => {
@@ -194,7 +193,7 @@ function cfgHover(documentId) {
     if (!entry) return null;
 
     const stack = document.createElement('div');
-    stack.className = 'bel-hover-stack';
+    stack.className = 'jar-hover-stack';
 
     const diags = diagnosticsOnEntry(view, entry);
     for (const d of diags) {
@@ -263,7 +262,7 @@ const cfgNavGestures = (documentId) => {
       const foldCell = event.target?.closest?.('.cm-foldGutter .cm-gutterElement');
       // Chevron strip without a fold marker proxies the line-number click; with a
       // chevron, leave the event alone so folding still toggles.
-      if (foldCell?.querySelector?.('.cm-bel-foldmarker')) return false;
+      if (foldCell?.querySelector?.('.cm-jar-foldmarker')) return false;
       const inGutter = !!event.target?.closest?.('.cm-lineNumbers, .cm-foldGutter');
       if (inGutter) {
         if (event.button !== 0) return false;

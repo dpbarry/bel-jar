@@ -38,11 +38,16 @@ function isEditable(view) {
   return !view.state.readOnly;
 }
 
-function runClipboard(view, action) {
-  view.focus();
-  try {
-    document.execCommand(action);
-  } catch (_) {}
+/**
+ * Cut/Copy/Paste, THROUGH the registry now — `edit.cut`/`edit.copy`/`edit.paste`
+ * in editor-commands.mjs, not a private `document.execCommand` call living only
+ * here. A menu row that runs its own copy of a command is exactly the "list
+ * retyped instead of derived" trap: this menu can drift from what Keybindings,
+ * the palette and Available Keys all say about the same three commands.
+ */
+function runClipboard(action) {
+  const g = typeof window !== 'undefined' ? window : self;
+  g.Commands?.run?.('edit.' + action);
 }
 
 function editHistoryApi() {
@@ -50,8 +55,22 @@ function editHistoryApi() {
   return g.EditHistory;
 }
 
+/**
+ * The chord to print beside a row — the one that WORKS in the style in force.
+ *
+ * ⛔ `Commands.liveChord` first, not `Keybindings.labelFor`. `labelFor` answers
+ * with BelJar's OWN binding and knows nothing about the style having taken it, so
+ * this menu offered Ctrl+F for Find… under Emacs (which uses Ctrl+F for
+ * forward-char and answers on `C-s`) and Ctrl+X for Cut, where `C-x` is a prefix.
+ * One reduction, shared with Available Keys and the header menus.
+ */
 function kbLabel(id, fallbackSpec) {
   const g = typeof window !== 'undefined' ? window : self;
+  if (id && g.Commands && typeof g.Commands.liveChord === 'function') {
+    // '' is an ANSWER here — the style took the chord and bound nothing back — so
+    // it must not fall through to the spec this file happens to remember.
+    try { return g.Commands.liveChord(id) || ''; } catch (_) { /* fall through */ }
+  }
   if (id && g.Keybindings && typeof g.Keybindings.labelFor === 'function' && g.Keybindings.has(id)) {
     return g.Keybindings.labelFor(id) || '';
   }
@@ -85,21 +104,21 @@ function buildEditMenuItems(view) {
     { type: 'separator' },
     {
       label: 'Cut',
-      shortcut: kbLabel(null, 'Mod+X'),
+      shortcut: kbLabel('edit.cut', 'Mod+X'),
       disabled: !editable || !hasSel,
-      onSelect: () => runClipboard(view, 'cut'),
+      onSelect: () => runClipboard('cut'),
     },
     {
       label: 'Copy',
-      shortcut: kbLabel(null, 'Mod+C'),
+      shortcut: kbLabel('edit.copy', 'Mod+C'),
       disabled: !hasSel,
-      onSelect: () => runClipboard(view, 'copy'),
+      onSelect: () => runClipboard('copy'),
     },
     {
       label: 'Paste',
-      shortcut: kbLabel(null, 'Mod+V'),
+      shortcut: kbLabel('edit.paste', 'Mod+V'),
       disabled: !editable,
-      onSelect: () => runClipboard(view, 'paste'),
+      onSelect: () => runClipboard('paste'),
     },
     {
       label: 'Select All',
@@ -262,7 +281,7 @@ export function contextMenu() {
       if (!items.length) return false;
 
       event.preventDefault();
-      view.dom.classList.add('cm-bel-context-open');
+      view.dom.classList.add('cm-jar-context-open');
       g.Menu.openContext({
         x: event.clientX,
         y: event.clientY,
@@ -270,7 +289,7 @@ export function contextMenu() {
         align: 'start',
         items,
         onClose: () => {
-          view.dom.classList.remove('cm-bel-context-open');
+          view.dom.classList.remove('cm-jar-context-open');
         },
         // The menu focuses item 0 on open, latching a :focus-visible ring that
         // coexists with :hover on the row the mouse moves to (two rows lit). Drop

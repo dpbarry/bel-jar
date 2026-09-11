@@ -24,6 +24,10 @@
 export const STYLE_TAKES = {
   emacs: [
     { spec: 'Mod+F', key: 'C-f', runs: 'forward-char' },
+    // ⛔ Emacs binds `C-z` to undo and `ensureEmacsUndoBridge` re-binds that same
+    // spec to BelJar's history — so Ctrl+Z under Emacs IS Undo, reached through
+    // Emacs' own key. `sameCommand`, like `M-x`, because nothing is lost.
+    { spec: 'Mod+Z', key: 'C-z', runs: 'undo', sameCommand: 'edit.undo' },
     // ⛔ Not a no-op: the package binds `C-x C-p|C-x h` to selectAll, and
     // `probe-keymap.mjs` measures it selecting the whole document. A remembered
     // claim about a dependency once told Emacs users a working chord did not
@@ -33,6 +37,18 @@ export const STYLE_TAKES = {
     { spec: 'Mod+Y', key: 'C-y', runs: 'yank' },
     { spec: 'Mod+/', key: 'C-/', runs: 'undo' },
     { spec: 'Mod+K', key: 'C-k', runs: 'kill-line' },
+    // ⛔ `C-g` is the one chord an Emacs user presses to get OUT of something.
+    // BelJar's Go to Line ships on `Mod+G` — the universal IDE chord — so under
+    // Emacs it stands aside and answers to `M-g g`, Emacs' own goto-map.
+    { spec: 'Mod+G', key: 'C-g', runs: 'keyboard-quit' },
+    // ⛔ A PREFIX takes the chord as surely as a command does. `C-x` and `C-c`
+    // are not in the package's key table — they are chain heads — so a table
+    // built by reading `emacsKeys` alone missed them, and Cut and Copy went on
+    // advertising Ctrl+X and Ctrl+C under Emacs with no tag on either.
+    { spec: 'Mod+X', key: 'C-x', runs: 'the C-x prefix' },
+    { spec: 'Mod+C', key: 'C-c', runs: 'the C-c prefix' },
+    { spec: 'Mod+V', key: 'C-v', runs: 'scroll-up-command' },
+    { spec: 'Alt+Shift+F', key: 'S-M-f', runs: 'forward-word, selecting' },
     // ⛔ `M-x` IS Run Command — Emacs reaches the same command through its own
     // binding. `sameCommand` stops it reading as a loss, because nothing is lost.
     { spec: 'Alt+X', key: 'M-x', runs: 'execute-extended-command', sameCommand: 'tools.commands' },
@@ -54,6 +70,11 @@ export const INSERT_ALTERNATIVE = {
     'edit.undo': 'u',
     'edit.redo': 'C-r',
     'edit.find': '/',
+    // The kill-ring answer, not the chord: in Normal mode Vim's own operators
+    // are what cut, copy and paste, and the chords belong to Vim there.
+    'edit.cut': 'd',
+    'edit.copy': 'y',
+    'edit.paste': 'p',
   },
 };
 
@@ -65,6 +86,8 @@ export const INSERT_ALTERNATIVE = {
  *   C-s      the search line          (`ensureEmacsUndoBridge`)
  *   C-x h    selectAll                (the package's own key table)
  *   C-S-z    redo                     (`ensureEmacsUndoBridge`)
+ *   C-c q    Format Document          (`CC_MAP`; `M-q` is fill-paragraph, so `q`
+ *                                      is where an Emacs user looks for it)
  *   M-x      the command line         (`showCommandLine`)
  *   C-x C-f  the palette              (`CX_MAP`; `tools.palette` and
  *                                      `nav.anywhere` are the same action)
@@ -74,8 +97,15 @@ export const STYLE_CHORDS = {
     'edit.find': 'C-s',
     'edit.select-all': 'C-x h',
     'edit.redo': 'C-S-z',
+    'edit.format': 'C-c q',
     'tools.commands': 'M-x',
     'nav.anywhere': 'C-x C-f',
+    // Emacs' own goto-map. `M-g` alone is the prefix; `M-g g` and `M-g M-g`
+    // both land here, exactly as they do in Emacs.
+    'nav.goto-line': 'M-g g',
+    // Emacs' own kmacro keys, running BelJar's one macro engine.
+    'macro.record': 'C-x (',
+    'macro.replay': 'C-x e',
   },
   vim: {},
 };
@@ -85,7 +115,7 @@ export const STYLE_NAME = { emacs: 'Emacs', vim: 'Vim' };
 /**
  * Pure: a style's spelling of a chord in BelJar's — `C-x h` → `Ctrl+X H`.
  *
- * ⛔ One spelling per surface. Available macros groups keys by SHAPE, and two
+ * ⛔ One spelling per surface. Available Keys groups keys by SHAPE, and two
  * spellings in one list produced blocks headed `C`, `C+S` and `Ctrl+x`. A shell
  * copy of the editor's speller, because this side of the bundle seam cannot
  * import across it.
@@ -141,6 +171,31 @@ export function specFromStyleKey(key) {
   if (mods.Shift) out.push('Shift');
   out.push(last.length === 1 ? last.toUpperCase() : last);
   return out.join('+');
+}
+
+/**
+ * Pure: the chord that invokes a described command RIGHT NOW, or ''.
+ *
+ * ⛔ This, not `describe().chord`, is the answer to "what do I press". `chord`
+ * is BelJar's OWN binding, and the active style may have taken it — so every
+ * surface that prints a key owes this reduction, and the order is load-bearing:
+ *
+ *   a substitute the style binds instead   →  press that
+ *   a policy of `off`                      →  nothing to press
+ *   a chord the style took (`shadowed`)    →  nothing to press
+ *   otherwise                              →  BelJar's own
+ *
+ * It lives here rather than inside one surface because THREE of them need it and
+ * only one had it: Available Keys reduced correctly, the editor's context menu
+ * printed BelJar's chord regardless of the style, and the header's Edit menu
+ * printed no chord at all. Reach it through `Commands.liveChord(id)`.
+ */
+export function chordInStyle(described) {
+  if (!described) return '';
+  if (described.styleChord) return described.styleChord;
+  if (described.availableInStyle === false) return '';
+  if (described.shadow && described.shadow.kind === 'shadowed') return '';
+  return described.chord || '';
 }
 
 /**

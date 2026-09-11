@@ -93,11 +93,18 @@ expect(press('a').fired.length === 0, 'a bare letter fires nothing');
 const hit = press('k', { ctrl: true });
 expect(hit.fired.join(',') === 'nav.anywhere', 'Ctrl+K runs Go to File');
 expect(hit.prevented, 'a claimed chord is prevented');
-expect(hit.reads === 1, `one chord = one override read, got ${hit.reads}`);
+expect(hit.reads <= 1, `one chord = at most one override read, got ${hit.reads}`);
+
+// ⛔ And ZERO on the next press. The dispatch table is keyed on the STORED
+// override string, so a held-down Emacs motion rebuilds nothing: no JSON parse
+// and no re-normalizing of 66 specs per repeat. Held at key-repeat that was the
+// difference between free and a few hundred string allocations a second.
+expect(press('k', { ctrl: true }).reads === 0, 'a repeat of the same chord reads nothing');
+expect(press('k', { ctrl: true }).fired.join(',') === 'nav.anywhere', 'and still fires');
 
 const miss = press('j', { ctrl: true });
 expect(miss.fired.length === 0, 'an unclaimed chord fires nothing');
-expect(miss.reads === 1, `an unclaimed modifier chord still reads once, got ${miss.reads}`);
+expect(miss.reads === 0, `an unclaimed modifier chord costs nothing either, got ${miss.reads}`);
 
 // ⛔ NOT Ctrl+Shift+P: measured reserved by Chrome on Windows, so it was a
 // default that fired for nobody. See `scripts/chord-audit.html`.
@@ -106,8 +113,11 @@ expect(press('x', { alt: true }).fired.join(',') === 'tools.commands', 'Alt+X ru
 expect(press('f', { ctrl: true, shift: true }).fired.join(',') === 'edit.search-project', 'Ctrl+Shift+F');
 
 // Function keys carry no modifier but can still be bound, so they must not be
-// short-circuited by the fast path.
-expect(press('F8').reads === 1, 'function keys reach the tables');
+// short-circuited by the fast path. Bind one and press it — a read count cannot
+// show this any more, and firing is the property that was meant.
+P.writeStoredKeybindings({ 'nav.anywhere': 'F8' });
+expect(press('F8').fired.join(',') === 'nav.anywhere', 'function keys reach the tables');
+P.writeStoredKeybindings({});
 
 // ── no stale overrides ────────────────────────────────────────────────────────
 // Nothing is cached between calls: a write from a settings import or another tab
@@ -127,4 +137,4 @@ expect(freed.fired.length === 0, 'the freed default fires nothing');
 expect(freed.prevented, 'the freed default is still swallowed');
 P.writeStoredKeybindings({});
 
-console.log(`OK keybindings dispatch (${globalCount} global commands, 1 read per chord, 0 while typing)`);
+console.log(`OK keybindings dispatch (${globalCount} global commands, <=1 read per rebind, 0 per repeat, 0 while typing)`);

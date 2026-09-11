@@ -1,5 +1,5 @@
 // Shared type renderer (type-render.mjs): pins that a Beluga type STRING is
-// parsed-and-highlighted into spans with stable bel-hl-* classes, and that the
+// parsed-and-highlighted into spans with stable jar-hl-* classes, and that the
 // literal text round-trips (no characters dropped or reordered). Uses a tiny DOM
 // shim so the renderer's document.* calls run under node.
 import { normalizeType, highlightTypeFragment } from '../js/editor-src/format/type-render.mjs';
@@ -82,34 +82,34 @@ expect(lv1.length > 0, 'highlightTypeFragment emits leaves');
 expect(lv1.map((l) => l.text).join('') === normalizeType(T1),
   `rendered text must equal the normalized type, got "${lv1.map((l) => l.text).join('')}"`);
 // At least some leaves are highlighted spans (not all plain text).
-expect(lv1.some((l) => l.cls && l.cls.startsWith('bel-hl-')),
-  'at least one leaf carries a bel-hl-* class');
+expect(lv1.some((l) => l.cls && l.cls.startsWith('jar-hl-')),
+  'at least one leaf carries a jar-hl-* class');
 // The trailing "type" keyword is highlighted as a keyword.
-expect(lv1.some((l) => l.text === 'type' && l.cls === 'bel-hl-keyword'),
+expect(lv1.some((l) => l.text === 'type' && l.cls === 'jar-hl-keyword'),
   '"type" renders as a keyword');
 // Type-family heads are highlighted as type names.
-expect(lv1.some((l) => l.text === 'tm' && l.cls === 'bel-hl-type'),
-  'a type-family head renders as bel-hl-type');
+expect(lv1.some((l) => l.text === 'tm' && l.cls === 'jar-hl-type'),
+  'a type-family head renders as jar-hl-type');
 // Arrows are coloured (the renderer colours bare arrows the grammar misses).
-expect(lv1.some((l) => l.text === '→' && l.cls === 'bel-hl-arrow'),
-  'arrows render as bel-hl-arrow');
+expect(lv1.some((l) => l.text === '→' && l.cls === 'jar-hl-arrow'),
+  'arrows render as jar-hl-arrow');
 
 // Turnstile in contextual types; parameter binder in dependent type
 const T3 = '{#p:[Δ ⊢ tm K[] A[]]} → type';
 const lv3 = leaves(highlightTypeFragment(T3));
-expect(lv3.some((l) => (l.text === '⊢' || l.text === '|-') && l.cls === 'bel-hl-control'),
-  'turnstile renders as bel-hl-control');
-expect(lv3.some((l) => l.text === '#p' && l.cls === 'bel-hl-meta'),
-  '#p parameter binder renders as bel-hl-meta');
-expect(lv3.some((l) => l.text === '→' && l.cls === 'bel-hl-arrow'),
-  'binder type arrow renders as bel-hl-arrow');
+expect(lv3.some((l) => (l.text === '⊢' || l.text === '|-') && l.cls === 'jar-hl-control'),
+  'turnstile renders as jar-hl-control');
+expect(lv3.some((l) => l.text === '#p' && l.cls === 'jar-hl-meta'),
+  '#p parameter binder renders as jar-hl-meta');
+expect(lv3.some((l) => l.text === '→' && l.cls === 'jar-hl-arrow'),
+  'binder type arrow renders as jar-hl-arrow');
 
 // --- an implicit-heavy type with binders ---
 const T2 = '({x:tm K _} {y:tm K _} msf (\\z. M z x y)) → pmsf (\\z. pat/pair (M z))';
 const lv2 = leaves(highlightTypeFragment(T2));
 expect(lv2.map((l) => l.text).join('') === normalizeType(T2),
   'implicit-heavy type text round-trips exactly');
-expect(lv2.some((l) => l.cls && l.cls.startsWith('bel-hl-')),
+expect(lv2.some((l) => l.cls && l.cls.startsWith('jar-hl-')),
   'implicit-heavy type gets highlighted');
 
 // --- empty / degenerate input never throws and yields empty/plain ---
@@ -124,12 +124,12 @@ const lfLeaves = leaves(highlightTypeFragment(LFT, 'lf-constructor'));
 const compLeaves = leaves(highlightTypeFragment(LFT, 'comp-type'));
 const clsOf = (lv, txt) => (lv.find((l) => l.text === txt) || {}).cls;
 // In LF context, the argument A is a meta-variable; in comp context it's a type.
-expect(clsOf(lfLeaves, 'A') === 'bel-hl-meta',
+expect(clsOf(lfLeaves, 'A') === 'jar-hl-meta',
   `LF-kind hint colours argument A as a meta-var (got ${clsOf(lfLeaves, 'A')})`);
-expect(clsOf(compLeaves, 'A') === 'bel-hl-type',
+expect(clsOf(compLeaves, 'A') === 'jar-hl-type',
   `comp-kind hint colours argument A as a type name (got ${clsOf(compLeaves, 'A')})`);
 // The head `nd` is a type name in both.
-expect(clsOf(lfLeaves, 'nd') === 'bel-hl-type', 'LF head nd is a type name');
+expect(clsOf(lfLeaves, 'nd') === 'jar-hl-type', 'LF head nd is a type name');
 // Text round-trips regardless of hint.
 expect(lfLeaves.map((l) => l.text).join('') === normalizeType(LFT), 'LF-hinted text round-trips');
 
@@ -138,16 +138,16 @@ expect(lfLeaves.map((l) => l.text).join('') === normalizeType(LFT), 'LF-hinted t
 // parenthesized type where both names read as type names.
 const bLeaves = leaves(highlightTypeFragment('(g:ctx)', 'binder'));
 expect(bLeaves.map((l) => l.text).join('') === '(g:ctx)', 'binder text round-trips');
-expect(clsOf(bLeaves, 'g') === 'bel-hl-local-def',
+expect(clsOf(bLeaves, 'g') === 'jar-hl-local-def',
   `binder hint colours g as a local definition (got ${clsOf(bLeaves, 'g')})`);
-expect(clsOf(bLeaves, 'ctx') === 'bel-hl-type',
+expect(clsOf(bLeaves, 'ctx') === 'jar-hl-type',
   `binder hint colours ctx as a type name (got ${clsOf(bLeaves, 'ctx')})`);
 
 // --- in a full goal type the binder g matches the editor (local def), not the
 // generic var-def blue it used to fall back to.
 const G1 = '(g:ctx) [g ⊢ ex_red_rew P Q] → [g ⊢ ex_fstepcong P P f_tau Q]';
 const gLeaves = leaves(highlightTypeFragment(G1, 'comp'));
-expect(clsOf(gLeaves, 'g') === 'bel-hl-local-def',
+expect(clsOf(gLeaves, 'g') === 'jar-hl-local-def',
   `goal binder g colours as a local definition (got ${clsOf(gLeaves, 'g')})`);
 
 console.log('OK type render (normalizeType, highlight spans, round-trip, kind-aware LF vs comp colouring)');

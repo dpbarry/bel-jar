@@ -6,7 +6,6 @@ var outputEl = null;
 var liveEl = null;
 var cmdInputEl = null;
 var btnRunEl = null;
-var openTurnEl = null;
 var openTurnBody = null;
 var focusBound = false;
 
@@ -314,7 +313,6 @@ function clearExceptLive() {
   for (var i = 0; i < kids.length; i++) {
     if (kids[i] !== liveEl) output.removeChild(kids[i]);
   }
-  openTurnEl = null;
   openTurnBody = null;
   ensureLiveLine();
 }
@@ -378,7 +376,6 @@ function beginTurn(cmdText) {
   turn.appendChild(body);
 
   output.insertBefore(turn, liveEl);
-  openTurnEl = turn;
   openTurnBody = body;
   if (typeof ReplPersist !== 'undefined' && ReplPersist.scheduleSave) {
     ReplPersist.scheduleSave();
@@ -387,7 +384,6 @@ function beginTurn(cmdText) {
 }
 
 function endTurn() {
-  openTurnEl = null;
   openTurnBody = null;
 }
 

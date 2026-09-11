@@ -5,9 +5,6 @@ import { firstSyntaxErrorInText, isSuitePreludeBannerDiag } from './suite-prelud
 
 export { isSuitePreludeBannerDiag };
 
-function cloneItems(items) {
-  return (items || []).map((d) => ({ ...d }));
-}
 
 export function healthFromDiagnostics(diags) {
   let errors = 0;

@@ -90,8 +90,8 @@ const renameSessionField = StateField.define({
   },
 });
 
-const renameMark = Decoration.mark({ class: 'cm-bel-rename-active' });
-const renameInvalidMark = Decoration.mark({ class: 'cm-bel-rename-active is-invalid' });
+const renameMark = Decoration.mark({ class: 'cm-jar-rename-active' });
+const renameInvalidMark = Decoration.mark({ class: 'cm-jar-rename-active is-invalid' });
 
 const VALID_IDENT = /^[^\s()[\]{}.,;:%|"\\]+$/;
 
@@ -511,31 +511,50 @@ function commitRename(view) {
 
   const H = editHistory();
   const env = persistEnv();
-  if (H) {
-    H.beginEntry('rename');
-    H.captureStructuralBefore();
-    if (env) {
-      const activeId = env.P.getActiveFileId();
-      if (activeId) H.touchFile(activeId);
-      if (session.propagate || session.crossFile) {
-        const plans = groupRenameEdits(
-          env.P.listFiles(), activeId, session.originalName,
-          (id) => env.P.getFileText(id),
-          session.crossFile ? session.crossFile.defFileId : null,
-        );
-        for (const plan of plans) H.touchFile(plan.fileId);
+  if (H) H.beginEntry('rename');
+
+  // ⛔ The open entry MUST be closed on every exit from here.
+  //
+  // While an entry is open the recorder deliberately ignores document changes —
+  // `commitEntry` is going to snapshot the whole workspace itself. So a throw
+  // anywhere between `beginEntry` and `commitEntry` does not just lose this
+  // rename: it leaves the entry open, and every keystroke after it goes
+  // unrecorded until something else happens to call `beginEntry` again. Undo
+  // stops working, in silence, for the rest of the session. `groupRenameEdits`
+  // reads and re-indexes every file in the development, which is the most
+  // likely thing in here to fail on a workspace in an odd state.
+  let closed = false;
+  try {
+    if (H) {
+      H.captureStructuralBefore();
+      if (env) {
+        const activeId = env.P.getActiveFileId();
+        if (activeId) H.touchFile(activeId);
+        if (session.propagate || session.crossFile) {
+          const plans = groupRenameEdits(
+            env.P.listFiles(), activeId, session.originalName,
+            (id) => env.P.getFileText(id),
+            session.crossFile ? session.crossFile.defFileId : null,
+          );
+          for (const plan of plans) H.touchFile(plan.fileId);
+        }
       }
     }
-  }
 
-  if (session.propagate || session.crossFile) propagateGroupRename(session, trimmed);
-  view.dispatch({
-    changes: buildRenameCommitChanges(session, trimmed, view.state.doc),
-    effects: [setRenameSession.of(null), scrollIntoViewCenter(anchorFrom(session))],
-    userEvent: 'rename',
-    annotations: [Transaction.addToHistory.of(false)],
-  });
-  if (H) H.commitEntry();
+    if (session.propagate || session.crossFile) propagateGroupRename(session, trimmed);
+    view.dispatch({
+      changes: buildRenameCommitChanges(session, trimmed, view.state.doc),
+      effects: [setRenameSession.of(null), scrollIntoViewCenter(anchorFrom(session))],
+      userEvent: 'rename',
+      annotations: [Transaction.addToHistory.of(false)],
+    });
+    if (H) {
+      H.commitEntry();
+      closed = true;
+    }
+  } finally {
+    if (H && !closed) H.cancelEntry();
+  }
   view.focus();
   return true;
 }
@@ -764,7 +783,7 @@ export function rename() {
       },
     ])),
     EditorView.editorAttributes.of((view) => (
-      view.state.field(renameSessionField, false) ? { class: 'cm-bel-renaming' } : null
+      view.state.field(renameSessionField, false) ? { class: 'cm-jar-renaming' } : null
     )),
   ];
 }

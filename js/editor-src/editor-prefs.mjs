@@ -35,6 +35,20 @@ function persistApi() {
   return g.Persist;
 }
 
+/**
+ * Just the editing style.
+ *
+ * ⛔ `readEditorPrefs()` is 33 separate `localStorage` reads. That is the right
+ * shape for mount and for a settings change, and the wrong shape for anything
+ * that runs per keystroke — the status-strip feed asked it for ONE field on
+ * every transaction, so every character typed and every cursor move paid for
+ * thirty-two answers nobody read.
+ */
+export function readKeymapStylePref() {
+  const p = persistApi();
+  return p?.readStoredKeymapStyle?.() ?? 'default';
+}
+
 export function readEditorPrefs() {
   const p = persistApi();
   return {

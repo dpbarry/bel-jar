@@ -413,7 +413,7 @@ const probes = [
     // nested second-premise analysis, `impossible [g |- NL]` on a boxed meta,
     // dep-filtered result projections (`E1[.., b.1, b.4]`), tail IH calls, and
     // cross-lemma substitution reasoning (`E1[.., N, E2]` — the known residue).
-    // HARD gate since 2026-07-05: closed by the SYNTHESIS engine (bel-synth) —
+    // HARD gate since 2026-07-05: closed by the SYNTHESIS engine (jar-synth) —
     // the app1×app1 arm by the backward-chained 5-deep helper chain, the cross
     // arms by refutation closing (destructure + impossible), app2×app2 by the
     // two-IH eq_app composition. 13 steps / 67 checks / ~9s. Pins the synthesis

@@ -30,7 +30,6 @@
 import { normalizeCtypeSpelling, parseCompType, isCtypeApplication } from './prover-comp-type.mjs';
 import { decomposeContextual } from './hole-split.mjs';
 
-const MAX_DEPTH = 5;
 const MAX_NODES = 400;
 const MAX_PRODUCTS = 12;
 

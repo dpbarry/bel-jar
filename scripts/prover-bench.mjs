@@ -140,7 +140,7 @@ if (allMode) {
 }
 console.log(`class ${cls}: ${members.length} members, ${reps.length} bench reps (cap ${cap})\n`);
 
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bel-bench-'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jar-bench-'));
 let done = 0;
 let complete = 0;
 for (const id of reps) {

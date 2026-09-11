@@ -31,6 +31,7 @@ import {
 import { syntaxTree } from '@codemirror/language';
 import { travel } from './jump-list.mjs';
 import { normalizeType } from '../format/type-render.mjs';
+import { toggleRecording, replayMacro } from './macro-engine.mjs';
 
 const global = globalThis;
 
@@ -164,6 +165,34 @@ const CUSTOM_COMMANDS = {
   'nav.jump-forward': (view) => travelTo(view, 1),
 };
 
+/**
+ * The two that need their CONTEXT, not just a view.
+ *
+ * ⛔ `dropTrailing` is how many keystrokes the chord that stopped the recording
+ * was made of — the recorder sits on capture, so it has already seen them. Vim's
+ * `q` is one; Emacs' `C-x )` is two. Every caller DERIVES it from its own key
+ * sequence rather than stating a number, so a chord that moves cannot leave a
+ * stale count behind.
+ */
+const MACRO_COMMANDS = {
+  // ⛔ Always `true`. The engine says its own outcome — "recorded 4 keys",
+  // "No macro recorded yet", "That macro was recorded in Standard" — and a
+  // command that returns false is reported by every caller as *"…is not
+  // available right now"*, which overwrote the real reason with a wrong one.
+  // Returning false is for "I could not run", not for "I ran and declined".
+  'macro.record': (view, ctx) => {
+    toggleRecording(
+      (ctx && ctx.register) || '',
+      ctx && Number.isFinite(ctx.dropTrailing) ? ctx.dropTrailing : 1,
+    );
+    return true;
+  },
+  'macro.replay': (view, ctx) => {
+    replayMacro(view, (ctx && ctx.register) || '', (ctx && ctx.count) || 1);
+    return true;
+  },
+};
+
 function cycle(view, positions, forward) {
   const target = stepThrough(positions, view.state.selection.main.head, forward);
   if (target == null) return false;
@@ -229,6 +258,13 @@ export const EDITOR_COMMANDS = {
   'select.parent-syntax': selectParentSyntax,
   'select.collapse': simplifySelection,
 
+  // ── clipboard ─────────────────────────────────────────────────────────────
+  // `document.execCommand` — the same mechanism the context menu and the Edit
+  // menu already used ad hoc; see clipboardAction below.
+  'edit.cut': (view) => clipboardAction(view, 'cut'),
+  'edit.copy': (view) => clipboardAction(view, 'copy'),
+  'edit.paste': (view) => clipboardAction(view, 'paste'),
+
   // ── editing ───────────────────────────────────────────────────────────────
   'edit.delete-line': deleteLine,
   'edit.move-line-up': moveLineUp,
@@ -243,6 +279,26 @@ export const EDITOR_COMMANDS = {
   'edit.blank-line': insertBlankLine,
   'edit.trim-whitespace': deleteTrailingWhitespace,
 };
+
+/**
+ * Cut/copy/paste via the browser's own clipboard.
+ *
+ * ⛔ Not the async Clipboard API. `navigator.clipboard.readText()` needs a
+ * permission grant that is not guaranteed synchronous with the keypress, and
+ * `vim-setup.mjs`'s yank-to-clipboard bridge already documents why that makes
+ * paste impossible to build that way. `execCommand` fires the same native
+ * cut/copy/paste the browser would for a real Ctrl+X/C/V — CodeMirror's own
+ * contenteditable listens for exactly that event and turns it into a normal,
+ * historied transaction, so this is not a second path around EditHistory.
+ */
+function clipboardAction(view, action) {
+  if (action !== 'copy' && view.state.readOnly) return false;
+  view.focus();
+  try {
+    document.execCommand(action);
+  } catch (_) { /* the browser declined; nothing else to fall back to */ }
+  return true;
+}
 
 function liveView() {
   const ed = global.CurrentEditor;
@@ -272,12 +328,27 @@ export function installEditorCommands() {
       when: () => !!liveView(),
     });
   }
+  for (const id of Object.keys(MACRO_COMMANDS)) {
+    const fn = MACRO_COMMANDS[id];
+    C.attach(id, {
+      // ⛔ No `view.focus()` here. Recording is armed by a keystroke that is
+      // already in the editor, and stealing focus mid-macro would land the
+      // replayed keys somewhere else.
+      run: (ctx) => {
+        const view = liveView();
+        if (!view) return false;
+        return fn(view, ctx) !== false;
+      },
+      when: () => !!liveView(),
+    });
+  }
   return true;
 }
 
 /** Pure, for tests. */
 export const _pure = {
-  ids: () => Object.keys(EDITOR_COMMANDS).concat(Object.keys(CUSTOM_COMMANDS)),
+  ids: () => Object.keys(EDITOR_COMMANDS)
+    .concat(Object.keys(CUSTOM_COMMANDS), Object.keys(MACRO_COMMANDS)),
   stepThrough,
-  CUSTOM_IDS: Object.keys(CUSTOM_COMMANDS),
+  CUSTOM_IDS: Object.keys(CUSTOM_COMMANDS).concat(Object.keys(MACRO_COMMANDS)),
 };

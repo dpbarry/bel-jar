@@ -19,9 +19,6 @@
  * Detailed pick how much of the same model gets rendered.
  */
 
-/** ⛔ Derived, never retyped: the panel and this tooltip say the same thing. */
-import { historySummary } from './status-strip-history.mjs';
-
 /** Left to right. `spacer` pushes everything after it to the right edge. */
 /**
  * ⛔ The left group reads as four separate facts, in this order:
@@ -39,15 +36,15 @@ import { historySummary } from './status-strip-history.mjs';
  * to a keymap called "Emacs C-x"). Layers are not alternatives.
  */
 export const SEGMENT_ORDER = [
-  'keymap', 'position', 'mode', 'command', 'selection', 'goal', 'holes', 'problems',
+  'keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems',
   'orca', 'symbols', 'spacer', 'history', 'checker',
 ];
 
 export const DETAIL_LEVELS = ['compact', 'standard', 'detailed'];
 
 const PRESETS = {
-  compact: ['keymap', 'position', 'mode', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'history', 'checker'],
-  standard: ['keymap', 'position', 'mode', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'history', 'checker'],
+  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'history', 'checker'],
+  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'history', 'checker'],
   detailed: SEGMENT_ORDER,
 };
 
@@ -68,6 +65,26 @@ function vimTone(mode) {
   if (m.indexOf('VISUAL') >= 0 || m.indexOf('V-') >= 0) return 'visual';
   if (m.indexOf('REPLACE') >= 0) return 'replace';
   return 'normal';
+}
+
+/**
+ * Pure: how to end the recording that is running, in the style you are in.
+ *
+ * ⛔ The key is SENT by the engine (`s.macro.stop`), never worked out here —
+ * see `macro-keys.mjs`. All this adds is the one thing the engine cannot know:
+ * whether the key is reachable from the mode you are in right now. Vim's `q`
+ * ends a recording in Normal mode and types the letter q anywhere else, so under
+ * Insert or Visual the honest instruction has an Esc in front of it. Saying just
+ * "press q" there is how a correct answer still gets someone stuck.
+ */
+function stopSentence(s) {
+  const stop = (s.macro && s.macro.stop) || '';
+  // ⛔ Standard ships no default chord, so with nothing bound there is no key to
+  // name — and the click is not the only way out either. Saying so is the
+  // difference between a state you can leave and one you are stuck in.
+  if (!stop) return 'Click to stop, or run the command again.';
+  const needsNormal = s.style === 'vim' && vimTone(s.mode) !== 'normal';
+  return 'Press ' + (needsNormal ? 'Esc then ' : '') + stop + ' to stop, or click.';
 }
 
 const BUILDERS = {
@@ -93,6 +110,33 @@ const BUILDERS = {
       return { key: 'mode', text: 'MARK', tone: 'visual', title: 'The mark is set' };
     }
     return null;
+  },
+
+  /**
+   * Recording a keyboard macro.
+   *
+   * ⛔ In EVERY preset, including compact. Recording is a mode you can forget
+   * you are in — the one piece of state where being told costs a few pixels and
+   * not being told costs you the macro. Vim names the register (`@a`); Emacs and
+   * Standard have none to name, so it just says REC.
+   */
+  macro(s) {
+    if (!s.macro || !s.macro.recording) return null;
+    return {
+      key: 'macro',
+      text: s.macro.label ? 'REC ' + s.macro.label : 'REC',
+      // ⚠ `error` for two weeks, and NOTHING WAS STYLED FOR IT: `is-error` has
+      // rules under `--problems` and `--checker` only, so the one chip that must
+      // not be missed rendered in the resting muted grey. A tone is a claim on a
+      // stylesheet; naming one nobody honours is the same as naming none.
+      tone: 'recording',
+      title: 'Recording a keyboard macro. ' + stopSentence(s),
+      mono: true,
+      // ⛔ A way out that works from any mode. Vim's `q` is a NORMAL-mode key
+      // and Emacs' `C-x )` is a chord a macro is busy swallowing; a chip that
+      // reports a state you cannot leave is a trap, not a status.
+      action: 'macro-stop',
+    };
   },
 
   /** A half-typed chord. The command LINE mounts beside this, same zone. */
@@ -123,9 +167,44 @@ const BUILDERS = {
     };
   },
 
-  /** The whole reason this bar exists: the goal under the caret, inline. */
+  /**
+   * The whole reason this bar exists: the goal under the caret, inline.
+   *
+   * ⛔ THREE states, not two. Being in a hole and knowing that hole's goal are
+   * different facts (`inHole` / `goal`, split in `status-strip-feed.mjs`), and
+   * folding them into one string meant a hole whose goal the checker had not
+   * produced yet was reported as *no hole at all*: you stood on a fresh `?` and
+   * the bar said nothing, with no way to say the honest thing.
+   *
+   *   not in a hole            → no chip
+   *   in a hole, goal known    → the type, syntax-highlighted
+   *   in a hole, goal not yet  → the same chip, holding a placeholder
+   *
+   * The placeholder keeps the hole wash and the turnstile so the chip does not
+   * appear and jump when the real goal lands — only its text changes. It is NOT
+   * a button: an action that cannot work yet is worse than no action.
+   */
   goal(s) {
-    if (!s.goal) return null;
+    if (!s.inHole) return null;
+    if (!s.goal) {
+      // ⛔ `Computing…` only while a goal may still ARRIVE, which is the engine's
+      // settle state and not this bar's `checking` flag — see `goalMayStillArrive`
+      // in `hole-goal-display.mjs`, which owns that vocabulary. Settled with no
+      // goal is a real, reachable state (a hole inside a declaration that failed
+      // to check never gets one) and a spinner that never resolves is a lie told
+      // slowly.
+      const busy = !!s.goalPending;
+      return {
+        key: 'goal',
+        text: busy ? 'Computing…' : 'No goal',
+        mark: '⊢',
+        tone: 'pending',
+        title: busy
+          ? 'Working out this hole’s goal'
+          : 'No goal for this hole. It is inside something that has not checked.',
+        mono: true,
+      };
+    }
     return {
       key: 'goal',
       // The bare type, so it can be syntax-highlighted like everywhere else in
@@ -145,10 +224,14 @@ const BUILDERS = {
     const n = s.holes || 0;
     if (!n) return null;
     // Standing in one already? Then the goal segment is saying so; count the rest.
-    const rest = s.goal ? n - 1 : n;
+    // ⛔ Keyed on `inHole`, not on the goal TEXT. Standing in a hole whose goal
+    // is still being computed is still standing in a hole — keyed on the text,
+    // this said "2 holes" beside a chip reading `Computing…`, counting the very
+    // hole the caret was in.
+    const rest = s.inHole ? n - 1 : n;
     return {
       key: 'holes',
-      text: s.goal ? (rest > 0 ? '+' + rest + ' more' : 'last hole') : plural(n, 'hole', 'holes'),
+      text: s.inHole ? (rest > 0 ? '+' + rest + ' more' : 'last hole') : plural(n, 'hole', 'holes'),
       title: 'Go to the next hole',
       tone: 'holes',
       action: 'next-hole',
@@ -203,7 +286,7 @@ const BUILDERS = {
    *
    * The count is the UNDO depth. A second number for redo would be two figures
    * with no way to tell which is which at 0.68rem — the branch is carried by a
-   * tone change and spelled out in the tooltip and the panel instead.
+   * tone change and spelled out in the panel instead.
    */
   history(s) {
     const undo = s.undoDepth || 0;
@@ -212,8 +295,12 @@ const BUILDERS = {
     return {
       key: 'history',
       text: String(undo),
-      mark: '⟲',
-      title: 'Edit history\n\n' + historySummary(undo, redo),
+      // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
+      // and already carries the HOLES magenta — borrowing it painted the undo
+      // arrow bright pink, which read as an error badge sitting next to the
+      // checker. A widget that means something else gets its own mark.
+      icon: 'history',
+      title: 'Editor history',
       tone: redo ? 'branched' : 'plain',
       action: 'edit-history',
       mono: true,

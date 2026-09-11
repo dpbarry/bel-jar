@@ -429,7 +429,7 @@ function inspectorPanelEl() {
 }
 
 function isCfgEditorView(view) {
-  return !!view?.dom?.classList?.contains('bel-editor--cfg');
+  return !!view?.dom?.classList?.contains('jar-editor--cfg');
 }
 
 function dockView() {

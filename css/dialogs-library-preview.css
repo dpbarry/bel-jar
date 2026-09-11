@@ -1,6 +1,6 @@
 /* -- Library preview dialog -- */
 
-.bj-dialog__card--library-preview {
+.jar-dialog__card--library-preview {
   display: flex;
   flex-direction: column;
   width: min(72rem, calc(100vw - 2rem));
@@ -10,11 +10,11 @@
   overflow: hidden;
 }
 
-.bj-library-preview-dialog .bj-dialog__close {
+.jar-library-preview-dialog .jar-dialog__close {
   z-index: 2;
 }
 
-.bj-library-preview-dialog .bj-dialog__body {
+.jar-library-preview-dialog .jar-dialog__body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -71,7 +71,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.75rem;
   color: var(--base-high);
 }
@@ -132,9 +132,11 @@
   color: inherit;
 }
 
-.library-preview-tree-folder:hover,
-.library-preview-tree-file:hover {
-  background: var(--file-row-hover-bg);
+@media (hover: hover) and (pointer: fine) {
+  .library-preview-tree-folder:hover,
+  .library-preview-tree-file:hover {
+    background: var(--file-row-hover-bg);
+  }
 }
 
 .library-preview-tree-folder.is-menu-open,
@@ -212,7 +214,7 @@
 
 .library-preview-tree-file--cfg,
 .library-preview-tree-file--elf {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.78125rem;
   color: var(--file-fg, var(--base-higher));
 }
@@ -291,7 +293,7 @@
   padding: 0.65rem 0.5rem 0.65rem 0.75rem;
   overflow: hidden;
   text-align: right;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.75rem;
   line-height: 1.55;
   color: var(--muted-high);
@@ -310,7 +312,7 @@
 
 .library-preview__pre {
   margin: 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.75rem;
   line-height: 1.55;
   tab-size: 2;

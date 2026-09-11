@@ -9,26 +9,51 @@ import { EditorView } from '@codemirror/view';
 import { getCM } from '@replit/codemirror-vim';
 import { normalizeKeymapStyle } from './keymap-style.mjs';
 import { normalizeType } from '../format/type-render.mjs';
+import { goalMayStillArrive } from '../prover/hole-goal-display.mjs';
+
+const NO_HOLE = { inHole: false, goal: '', goalPending: false };
 
 /**
- * The goal under the caret, or ''. This is the same `holeAtCursor` call the
- * command palette already gates its prover moves on, so it is known cheap; it
- * still only runs once per animation frame, never per keystroke.
+ * Where the caret is, as TWO facts: is it in a hole, and is that hole's goal
+ * known yet.
+ *
+ * ⛔ These used to be one string, and collapsing them was a real hole in the
+ * state machine. `''` meant both "not in a hole" and "in a hole whose goal the
+ * checker has not produced yet", so standing on a fresh `?` looked exactly like
+ * standing on ordinary code: the bar said nothing, and had no way to say the
+ * honest thing, which is *not yet*.
+ *
+ * This is the same `holeAtCursor` call the command palette already gates its
+ * prover moves on, so it is known cheap; it still runs once per animation frame,
+ * never per keystroke.
  */
-function goalAtCaret() {
+export function goalAtCaret() {
   const g = typeof window !== 'undefined' ? window : globalThis;
   const ed = g.CurrentEditor;
-  if (!ed || typeof ed.holeAtCursor !== 'function') return '';
+  if (!ed || typeof ed.holeAtCursor !== 'function') return NO_HOLE;
   try {
     const hit = ed.holeAtCursor();
-    const goal = hit && hit.hole ? hit.hole.goal : null;
-    if (!goal) return '';
+    if (!hit || !hit.hole) return NO_HOLE;
+    const goal = hit.hole.goal;
+    // ⛔ Whether a goal may STILL ARRIVE is the engine's own settle state, not
+    // the bar's `checking` flag — which is `belugaChecking || parse incomplete`,
+    // a near-miss that would have the chip promising a goal after the check had
+    // already finished without one. `goalMayStillArrive` is the one predicate,
+    // and it lives with the rest of the goal vocabulary.
+    let settle = '';
+    try {
+      settle = ed.getSemanticEngine?.()?.settleState?.() || '';
+    } catch (_) { /* unknown settle state reads as "still working" */ }
     // `hole.goal` is Beluga's own text: ASCII `|-`, `->`, `=>`. Every surface
     // that SHOWS a type owes it `normalizeType`, which is the single place those
     // become ⊢ → ⇒. Skipping it is how raw `|-` leaks into the UI.
-    return normalizeType(String(goal));
+    return {
+      inHole: true,
+      goal: goal ? normalizeType(String(goal)) : '',
+      goalPending: goalMayStillArrive(settle),
+    };
   } catch (_) {
-    return '';
+    return NO_HOLE;
   }
 }
 
@@ -68,7 +93,16 @@ export function statusStripFeed(getStyle) {
   const flush = () => {
     frame = 0;
     const B = bar();
-    if (B && pending) B.setEditorState(pending);
+    // ⛔ The goal is resolved HERE, not where `pending` is built.
+    //
+    // `holeAtCaret` walks the hole list and `normalizeType` rewrites the whole
+    // type string; the file above says that happens "once per animation frame,
+    // never per keystroke", and it was doing it once per transaction — which
+    // under key-repeat is every keystroke, on the input path, for a value only
+    // the last one of the burst will ever be shown. Reading it in the flush is
+    // also more truthful: it reports the caret the user ended up at, not the
+    // one they passed through.
+    if (B && pending) B.setEditorState({ ...pending, ...goalAtCaret() });
     pending = null;
   };
 
@@ -85,7 +119,6 @@ export function statusStripFeed(getStyle) {
     const selLines = selChars ? doc.lineAt(sel.to).number - doc.lineAt(sel.from).number + 1 : 0;
     const { mode } = readMode(view, style);
     pending = {
-      goal: goalAtCaret(),
       style,
       mode,
       hasFile: true,

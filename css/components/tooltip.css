@@ -365,19 +365,19 @@
   max-width: 100%;
 }
 
-.tooltip-inner--rich .bj-setting-info-tip {
+.tooltip-inner--rich .jar-setting-info-tip {
   margin: 0;
   font-size: 0.68rem;
   line-height: 1.45;
   color: var(--base-high);
 }
 
-.tooltip-inner--rich .bj-setting-info-tip + .bj-setting-info-tip {
+.tooltip-inner--rich .jar-setting-info-tip + .jar-setting-info-tip {
   margin-top: 0.15rem;
 }
 
 /* In-dialog help popover — modal top layer blocks #tooltip-root; same chrome as .tooltip-inner */
-.bj-setting-info-popover {
+.jar-setting-info-popover {
   --tooltip-bg: light-dark(var(--base-lowest), var(--base-lower));
   --tooltip-border: light-dark(var(--muted-mid), var(--base-high));
   --tooltip-spout-size: 6px;
@@ -418,16 +418,16 @@
     opacity calc(var(--overlay-pop-ms-in) * 0.82) ease-out;
 }
 
-.bj-setting-info-popover[hidden] {
+.jar-setting-info-popover[hidden] {
   display: none !important;
 }
 
-.bj-setting-info-popover.is-visible {
+.jar-setting-info-popover.is-visible {
   transform: scale(1);
   opacity: 1;
 }
 
-.bj-setting-info-popover::before {
+.jar-setting-info-popover::before {
   content: none;
   position: absolute;
   width: var(--tooltip-spout-size);
@@ -438,7 +438,7 @@
   pointer-events: none;
 }
 
-.bj-setting-info-popover.tooltip-spout-left::before {
+.jar-setting-info-popover.tooltip-spout-left::before {
   content: '';
   left: calc(var(--tooltip-spout-size) * -0.55);
   top: var(--tooltip-arrow-y, 50%);
@@ -447,7 +447,7 @@
   border-top: 0;
 }
 
-.bj-setting-info-popover.tooltip-spout-right::before {
+.jar-setting-info-popover.tooltip-spout-right::before {
   content: '';
   right: calc(var(--tooltip-spout-size) * -0.55);
   top: var(--tooltip-arrow-y, 50%);
@@ -456,7 +456,7 @@
   border-bottom: 0;
 }
 
-.bj-setting-info-popover .bj-setting-info-tip {
+.jar-setting-info-popover .jar-setting-info-tip {
   margin: 0;
   font-size: inherit;
   font-weight: inherit;
@@ -468,7 +468,7 @@
 /* A short head over each passage. The popover carries what used to be two
    settings rows, and six unbroken paragraphs read as a wall — heads make it a
    reference you can scan for the one thing you came for. */
-.bj-setting-info-popover .bj-setting-info-head {
+.jar-setting-info-popover .jar-setting-info-head {
   margin: 0;
   font-size: 0.6rem;
   font-weight: 650;
@@ -479,10 +479,10 @@
 
 /* Tighten the gap between a head and the passage it introduces, so the pairs
    group visually instead of floating equidistant. */
-.bj-setting-info-popover .bj-setting-info-head + .bj-setting-info-tip {
+.jar-setting-info-popover .jar-setting-info-head + .jar-setting-info-tip {
   margin-top: -0.16rem;
 }
 
-.bj-setting-info-popover .bj-setting-info-tip + .bj-setting-info-head {
+.jar-setting-info-popover .jar-setting-info-tip + .jar-setting-info-head {
   margin-top: 0.2rem;
 }

@@ -63,6 +63,19 @@ var history = null;
         return P.restoreDeletedFile(id, name, text);
       },
       deleteFile: function (id) { P.deleteFile(id); return true; },
+      /**
+       * ⛔ Through `Persist.renameFile`, not a raw write — it is the one call
+       * that also rewrites every `.cfg` mentioning the old path, moves the
+       * active-cfg map and repairs the empty-folder list. Undoing a rename any
+       * other way would put the name back and leave a project that no longer
+       * builds.
+       */
+      renameFile: function (id, name) {
+        if (typeof P.renameFile !== 'function') return false;
+        P.renameFile(id, name);
+        var now = P.getFileById(id);
+        return !!(now && now.name === name);
+      },
       getOpenFileIds: function () { return P.getOpenFileIds(); },
       setOpenFileIds: function (ids) { P.setOpenFileIds(ids); },
       listEmptyFolders: function () {
@@ -192,7 +205,14 @@ var history = null;
     if (history) {
       history.flushTypingGroup();
       history.flushCheckpoint();
+      // The session write trails the typing burst; on the way out there is no
+      // later tick to land it in.
+      if (typeof history.flushPersist === 'function') history.flushPersist();
     }
   }
   global.addEventListener('pagehide', onPageExit);
   global.addEventListener('beforeunload', onPageExit);
+  // The only transition a discarded or backgrounded tab is guaranteed to make.
+  global.document?.addEventListener('visibilitychange', function () {
+    if (global.document.visibilityState === 'hidden') onPageExit();
+  });

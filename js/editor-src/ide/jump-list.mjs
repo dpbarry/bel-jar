@@ -50,7 +50,16 @@ export function isNavigating() {
  */
 export function record(entry) {
   if (navigating || !entry || !Number.isFinite(entry.pos)) return false;
-  const res = pushEntry(entries, entries.length - 1, entry);
+  // ⛔ Truncate at the CURSOR, not at the end of the list.
+  //
+  // This is the "going back three times and then jumping somewhere new drops
+  // the forward tail" rule at the top of the file, and it was written against
+  // `entries.length - 1`, which drops nothing. Forward looked right — the
+  // cursor lands past the end either way — but BACK then walked the abandoned
+  // tail: come back from C to A, jump to D, and pressing back went D → C → B
+  // → A instead of D → A. Back retracing places you had already left is the
+  // one thing a back button must not do.
+  const res = pushEntry(entries, cursor, entry);
   entries = res.list;
   cursor = entries.length;
   return true;

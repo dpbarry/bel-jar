@@ -15,6 +15,7 @@ const global = globalThis;
 
 let panelEl = null;
 let listEl = null;
+let footEl = null;
 let open = false;
 let active = -1;
 let rows = [];
@@ -34,7 +35,7 @@ function nameOf(id) {
 }
 
 function bar() {
-  return document.querySelector('.bj-strip');
+  return document.querySelector('.jar-strip');
 }
 
 function anchor() {
@@ -45,7 +46,7 @@ function anchor() {
   panelEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + 'px';
   // Right-aligned to the segment it belongs to, so it points at the thing you
   // clicked rather than at the far side of the window.
-  const seg = strip.querySelector('.bj-strip__seg--history');
+  const seg = strip.querySelector('.jar-strip__seg--history');
   const from = seg ? seg.getBoundingClientRect() : null;
   const pad = 6;
   const width = panelEl.offsetWidth || 0;
@@ -57,33 +58,31 @@ function anchor() {
 function ensurePanel() {
   if (panelEl && panelEl.isConnected) return panelEl;
   panelEl = document.createElement('div');
-  panelEl.className = 'bj-hist';
+  panelEl.className = 'jar-hist';
   panelEl.setAttribute('role', 'dialog');
   panelEl.setAttribute('aria-label', 'Edit history');
 
   const head = document.createElement('div');
-  head.className = 'bj-hist__head';
+  head.className = 'jar-hist__head';
   const title = document.createElement('span');
-  title.className = 'bj-hist__title';
+  title.className = 'jar-hist__title';
   title.textContent = 'Edit history';
   const count = document.createElement('span');
-  count.className = 'bj-hist__count';
+  count.className = 'jar-hist__count';
   head.appendChild(title);
   head.appendChild(count);
   panelEl.appendChild(head);
 
   listEl = document.createElement('div');
-  listEl.className = 'bj-hist__list';
+  listEl.className = 'jar-hist__list';
   listEl.setAttribute('role', 'listbox');
   panelEl.appendChild(listEl);
 
-  const foot = document.createElement('div');
-  foot.className = 'bj-hist__foot';
-  // ⛔ Derived from the registry, never retyped: if the user has rebound undo,
-  // the hint has to name the key they actually have.
-  foot.appendChild(hintRow('edit.undo', 'Undo'));
-  foot.appendChild(hintRow('edit.redo', 'Redo'));
-  panelEl.appendChild(foot);
+  footEl = document.createElement('div');
+  footEl.className = 'jar-hist__foot';
+  // Populated in render(), not here — see renderFoot for why it has to be
+  // rebuilt on every paint rather than fixed at panel creation.
+  panelEl.appendChild(footEl);
 
   panelEl._count = count;
   document.body.appendChild(panelEl);
@@ -91,47 +90,119 @@ function ensurePanel() {
 }
 
 /**
- * A footer hint naming the chord the user actually has for a command.
+ * Which style the editor is actually in right now.
  *
- * Reads the live keybinding rather than spelling `Ctrl+Z` into the markup —
- * a panel that names a key you rebound is a surface offering what does not work.
+ * Read fresh every time rather than cached: this drives what the footer tells
+ * the user to press, and a stale read here is a wrong instruction, not a
+ * cosmetic glitch.
  */
+function liveKeymapStyle() {
+  const P = global.Persist;
+  const raw = P && typeof P.readStoredKeymapStyle === 'function' ? P.readStoredKeymapStyle() : '';
+  const s = String(raw || '').toLowerCase();
+  return s === 'vim' || s === 'emacs' ? s : 'default';
+}
+
+/**
+ * Vim's and Emacs' OWN undo/redo keys — not reachable through the Keybindings
+ * sheet, so there is no override to read for them.
+ *
+ * `edit.undo`/`edit.redo` in the catalogue are the STANDARD chord only. Under
+ * Vim, Normal-mode undo is the package's own fixed `u` / `Ctrl-R`
+ * (`ensureVimUndoBridge` in vim-runtime.mjs just points what they DO at
+ * BelJar's history; it does not touch what triggers them). Under Emacs the
+ * bridge binds its own fixed aliases (`ensureEmacsUndoBridge` in
+ * emacs-runtime.mjs) — `edit.redo` is even policy-`off` there, so the registry
+ * chord for it does not fire at all. Showing `Keybindings.labelFor('edit.undo')`
+ * regardless of style told an Emacs user to press Ctrl+Y for redo, which is
+ * yank.
+ *
+ * ⛔ Emacs shows `Ctrl+Z` / `Ctrl+Shift+Z`, not the stock-Emacs `C-/` / `C-S-/`
+ * — even though `ensureEmacsUndoBridge` binds BOTH pairs as equal aliases and
+ * either works. Real GNU Emacs uses `C-z` to suspend the frame, so `C-/` is
+ * its bound-in undo key; a browser tab has no frame to suspend, and every
+ * other application trains people to reach for `Ctrl+Z`, so that alias is the
+ * one BelJar's own users actually press. The hint names what people use, not
+ * what is most traditional.
+ *
+ * Specs use BelJar's own `Control+…` vocabulary rather than the packages'
+ * `C-…` shorthand, so `Keybindings.formatShortcut` renders them exactly like
+ * every other chord in the app (`Ctrl+Z` on Windows/Linux, `⌃Z` on a Mac).
+ */
+const FIXED_STYLE_SPECS = {
+  vim: { 'edit.undo': 'u', 'edit.redo': 'Control+R' },
+  emacs: { 'edit.undo': 'Control+Z', 'edit.redo': 'Control+Shift+Z' },
+};
+
+function liveKeyLabel(commandId) {
+  const K = global.Keybindings;
+  const style = liveKeymapStyle();
+  const fixed = FIXED_STYLE_SPECS[style] && FIXED_STYLE_SPECS[style][commandId];
+  if (fixed != null) {
+    return K && typeof K.formatShortcut === 'function' ? K.formatShortcut(fixed) : fixed;
+  }
+  // Standard style: the registry chord, WITH the user's own override if they
+  // rebound it — a panel that names a key you rebound away from is a surface
+  // offering what does not work.
+  if (!K || typeof K.labelFor !== 'function') return '';
+  try {
+    return K.labelFor(commandId) || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+/** A footer hint: the command's name, and the key that ACTUALLY runs it now. */
 function hintRow(commandId, fallbackLabel) {
   const row = document.createElement('span');
-  row.className = 'bj-hist__hint';
-  const K = global.Keybindings;
+  row.className = 'jar-hist__hint';
   const C = global.Commands;
   let label = fallbackLabel;
-  let keys = '';
   try {
     const cmd = C && typeof C.get === 'function' ? C.get(commandId) : null;
     if (cmd && cmd.title) label = cmd.title;
-    if (K && typeof K.labelFor === 'function') keys = K.labelFor(commandId) || '';
   } catch (_) { /* the fallback label still reads correctly */ }
+  const keys = liveKeyLabel(commandId);
   const name = document.createElement('span');
-  name.className = 'bj-hist__hint-name';
+  name.className = 'jar-hist__hint-name';
   name.textContent = label;
   row.appendChild(name);
   if (keys) {
     const kbd = document.createElement('kbd');
-    kbd.className = 'bj-hist__key';
+    kbd.className = 'jar-hist__key';
     kbd.textContent = keys;
     row.appendChild(kbd);
   }
   return row;
 }
 
+/**
+ * Rebuilt every render, not fixed at panel creation.
+ *
+ * ⛔ The style can change while the panel is open — Settings is one click away
+ * — and `render()` is what runs on that repaint (via the stack's own
+ * `onStackChange`, which fires on every project swap too). A footer built once
+ * at `ensurePanel()` would keep naming the style that was live when the panel
+ * FIRST opened.
+ */
+function renderFoot() {
+  if (!footEl) return;
+  footEl.textContent = '';
+  footEl.appendChild(hintRow('edit.undo', 'Undo'));
+  footEl.appendChild(hintRow('edit.redo', 'Redo'));
+}
+
 function rowEl(row, index) {
   if (row.now) {
     const marker = document.createElement('div');
-    marker.className = 'bj-hist__now';
+    marker.className = 'jar-hist__now';
     marker.setAttribute('role', 'option');
     marker.setAttribute('aria-selected', 'true');
     marker.dataset.index = String(index);
     const dot = document.createElement('span');
-    dot.className = 'bj-hist__now-dot';
+    dot.className = 'jar-hist__now-dot';
     const text = document.createElement('span');
-    text.className = 'bj-hist__now-text';
+    text.className = 'jar-hist__now-text';
     text.textContent = row.label;
     marker.appendChild(dot);
     marker.appendChild(text);
@@ -140,7 +211,7 @@ function rowEl(row, index) {
 
   const el = document.createElement('button');
   el.type = 'button';
-  el.className = 'bj-hist__row' + (row.ahead ? ' is-ahead' : '');
+  el.className = 'jar-hist__row' + (row.ahead ? ' is-ahead' : '');
   el.setAttribute('role', 'option');
   el.setAttribute('aria-selected', 'false');
   el.dataset.index = String(index);
@@ -149,16 +220,16 @@ function rowEl(row, index) {
 
   // What it did, when that is legible; what it was called, when it is not.
   const label = document.createElement('span');
-  label.className = 'bj-hist__label';
+  label.className = 'jar-hist__label';
   if (row.preview) {
     label.classList.add('is-preview');
     const sign = document.createElement('span');
-    sign.className = 'bj-hist__sign is-' + (row.preview.sign === '+' ? 'add'
+    sign.className = 'jar-hist__sign is-' + (row.preview.sign === '+' ? 'add'
       : (row.preview.sign === '−' ? 'cut' : 'swap'));
     sign.textContent = row.preview.sign;
     label.appendChild(sign);
     const text = document.createElement('span');
-    text.className = 'bj-hist__text' + (row.preview.faded ? ' is-faded' : '');
+    text.className = 'jar-hist__text' + (row.preview.faded ? ' is-faded' : '');
     text.textContent = row.preview.text;
     label.appendChild(text);
   } else {
@@ -168,13 +239,13 @@ function rowEl(row, index) {
 
   if (row.where) {
     const where = document.createElement('span');
-    where.className = 'bj-hist__where';
+    where.className = 'jar-hist__where';
     where.textContent = row.where;
     el.appendChild(where);
   }
 
   const when = document.createElement('span');
-  when.className = 'bj-hist__when';
+  when.className = 'jar-hist__when';
   when.textContent = row.when || '';
   el.appendChild(when);
 
@@ -184,6 +255,8 @@ function rowEl(row, index) {
   if (row.files && row.files.length > 1) tipLines.push('', ...row.files);
   el.setAttribute('data-tooltip', tipLines.join('\n'));
   el.setAttribute('aria-label', row.label + (row.where ? ', ' + row.where : ''));
+  // Built long after the one boot-time `[data-tooltip]` sweep, so it binds itself.
+  global.Tooltips?.bind?.(el);
   return el;
 }
 
@@ -198,11 +271,12 @@ function render() {
 
   listEl.textContent = '';
   rows.forEach((row, i) => listEl.appendChild(rowEl(row, i)));
+  renderFoot();
   if (active < 0 || active >= rows.length) active = rows.findIndex((r) => r.now);
   paintActive();
   // Open on the present, not on the top of a long list: the row you came to act
   // near is the one you are standing on.
-  const now = listEl.querySelector('.bj-hist__now');
+  const now = listEl.querySelector('.jar-hist__now');
   if (now && typeof now.scrollIntoView === 'function') {
     now.scrollIntoView({ block: 'center' });
   }
@@ -270,12 +344,12 @@ function onDocPointerDown(e) {
   if (panelEl && panelEl.contains(t)) return;
   // The segment toggles; letting the outside-click close it too would close and
   // immediately reopen.
-  if (t && t.closest && t.closest('.bj-strip__seg--history')) return;
+  if (t && t.closest && t.closest('.jar-strip__seg--history')) return;
   close();
 }
 
 function onListClick(e) {
-  const btn = e.target && e.target.closest ? e.target.closest('.bj-hist__row') : null;
+  const btn = e.target && e.target.closest ? e.target.closest('.jar-hist__row') : null;
   if (!btn) return;
   e.preventDefault();
   travelTo(Number(btn.dataset.index));

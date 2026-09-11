@@ -19,7 +19,7 @@ BelJar is a browser IDE for the Beluga proof assistant. The AST/semantic engine 
 ## Quick commands
 
 ```bash
-npm test                  # full suite: 236 checks, ~95s (BELJAR_TEST_JOBS=8 default)
+npm test                  # full suite: 245 files, ~90s (BELJAR_TEST_JOBS=8 default)
 npm run test:fast         # same minus the 7 Beluga integration files, ~50s — says so on exit
 npm run build             # editor + shell ESM leaves + library (not OCaml)
 npm run check:build       # fail when authored .mjs is newer than committed .js
@@ -48,6 +48,13 @@ The shelved Orca thread's instruments (`prover-*.mjs`, `corpus-*.mjs`, `autocomp
 still in `scripts/` but no longer have npm entries — that thread is closed, and `prover-differential`
 reports a false 0/199 regression because the native `main.exe` is gone. Run them by path, knowingly.
 
+**Storage durability.** `pagehide`/`beforeunload` are not save hooks — a phone switching apps
+or a tab Chrome discards fires neither. The flush lives on `visibilitychange` → hidden, and
+that one is DIRTY-GATED (`persist.flushCheckpointIfDirty`, `ReplPersist.saveIfPending`)
+because the ordinary flush writes unconditionally and this hook fires on every alt-tab.
+`js/persist/tab-guard.mjs` warns when a second tab has the same project open — a handshake
+over the `storage` event, so it cannot produce a false alarm.
+
 **Boot (`index.html`):** `js/boot/early-boot.js` (prefs + split vars), `panel-restore.js` (side panel), `error-hook.js` (global `onerror`). Sources in `js/boot/*-core.mjs` + `*.mjs`; tested via `tests/test-early-boot.mjs`, `test-error-hook.mjs`.
 
 Native Beluga CLI (`prover:diff`, `scripts/prover-native-oracle.mjs`, `scripts/prover-bench.mjs`): requires `Beluga-W/_build/default/src/beluga/main.exe` — build via `_rebuild/rebuild.ps1`.
@@ -67,7 +74,12 @@ OCaml shim rebuild (rare): `_rebuild/rebuild.ps1` — only when `Beluga-W/src/we
 
 ## Active work
 
-**1. Modal editing.** Command registry is landed; catalogue and command bar are in progress; Vim/Emacs depth is not. Plan: [`docs/modal-editing.md`](docs/modal-editing.md).
+**1. Modal editing.** Command registry, catalogue, command line and status strip are landed.
+⛔ **The three styles are meant to be equally reachable** — `COMMANDS.md` carries the capability
+matrix and the gates (`test-global-chords.mjs`, and the `[parity]` phase of `probe:keymap`).
+**Keyboard macros have one owner too** — `js/editor-src/ide/macro-engine.mjs` records DOM
+keystrokes and replays them through whichever style is loaded, and Vim's `q`/`@` are
+re-pointed at it just as `ensureVimUndoBridge` re-points `:undo`. Plan: [`docs/modal-editing.md`](docs/modal-editing.md).
 
 **2. Orca is shipped at 32.1%.** Naming: **Harpoon** is the proving surface; **Orca** is the automatic search inside it (`proveProgram` / `candidateMoves`). Older notes say "autosolve"; read those as Orca. Product: [`docs/ORCA.md`](docs/ORCA.md). Pushing past 32% is **shelved** — resume only from [`docs/archive/orca-research/README.md`](docs/archive/orca-research/README.md), which exists so a successor does not rebuild a refuted mechanism.
 

@@ -5,7 +5,7 @@
 // drops or renames a spec, it fails here rather than silently listing 61 of 62
 // bindings — or, worse, advertising one the package no longer has.
 //
-// Available macros was listing BelJar's chords and BelJar's own Vim/Emacs maps
+// Available Keys was listing BelJar's chords and BelJar's own Vim/Emacs maps
 // and calling that "available", while `C-p`, `C-e`, `C-k`, `C-y` and forty
 // others were live the whole time and appeared nowhere.
 import {

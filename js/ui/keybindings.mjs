@@ -9,7 +9,10 @@
  * still works in specs, not commands.
  */
 import { Commands } from '../commands/command-registry.mjs';
-import { isEmacsEditorFocused as isEmacsFocused } from '../commands/command-context.mjs';
+import {
+  isEmacsEditorFocused as isEmacsFocused,
+  isCommandLineFocused,
+} from '../commands/command-context.mjs';
 
 const global = globalThis;
 var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || '');
@@ -53,6 +56,22 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   // Mirrors the catalogue's section order so the sheet and the palette read alike.
   var SECTION_ORDER = ['File', 'Edit', 'Motion', 'Navigate', 'Prover', 'Run', 'View', 'Settings', 'Tools'];
   var globalHandlers = Object.create(null);
+  /**
+   * The runner for a global command nobody named explicitly.
+   *
+   * ⛔ Without this, `initGlobals` was a PROJECTION THAT DROPPED WHAT IT
+   * PROJECTED — the same bug `buildEditorKeymap` was fixed for, on the other
+   * half of the keymap. It received a hand-written map of FOUR handlers while
+   * the catalogue declares 67 bindable global commands, and the dispatch loop
+   * did `if (typeof handler !== 'function') continue;`. So the Keybindings sheet
+   * accepted a chord for any of the other 63, the panel displayed it, and the
+   * key did nothing at all: bind Toggle Theme to a chord and press it, and
+   * nothing happens.
+   *
+   * Named runner, else `fallback(id)`, else NO entry — so an id with no
+   * behaviour attached falls through to the browser instead of being swallowed.
+   */
+  var globalFallback = null;
   var listening = false;
 
   function persistApi() {
@@ -93,12 +112,100 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     return o && typeof o === 'object' ? o : {};
   }
 
+  /**
+   * The override map's RAW stored form, or null when it cannot be read cheaply.
+   *
+   * This is the cache key for the dispatch table. Reading one string is the
+   * cheap part of `readOverrides`; parsing it and re-normalizing 66 specs is
+   * the expensive part, and that is what gets skipped when the string has not
+   * moved. Keying on the stored bytes rather than on a change EVENT is what
+   * keeps the old contract intact — a write from another tab, a settings
+   * import, or a direct `Persist.writeStoredKeybindings` still takes effect on
+   * the very next keystroke, with nothing to remember to notify.
+   */
+  function overridesRaw() {
+    try {
+      var p = persistApi();
+      var key = p && p.KEYBINDINGS_KEY;
+      if (!key || !global.localStorage) return null;
+      return global.localStorage.getItem(key) || '';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** A canonical spec, pre-split so matching allocates nothing. */
+  function compileSpec(n) {
+    if (!n) return null;
+    var parts = n.split('+');
+    var c = { key: parts[parts.length - 1], mod: false, control: false, alt: false, shift: false };
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (parts[i] === 'Mod') c.mod = true;
+      else if (parts[i] === 'Control') c.control = true;
+      else if (parts[i] === 'Alt') c.alt = true;
+      else if (parts[i] === 'Shift') c.shift = true;
+    }
+    return c;
+  }
+
+  /** `key` is `normalizeKeyToken(e.key)`, computed once per event by the caller. */
+  function eventMatchesCompiled(e, key, c) {
+    if (!c) return false;
+    if (c.control) {
+      if (!e.ctrlKey || e.metaKey) return false;
+    } else if (c.mod !== !!(e.ctrlKey || e.metaKey)) return false;
+    if (c.alt !== !!e.altKey) return false;
+    if (c.shift !== !!e.shiftKey) return false;
+    return key === c.key;
+  }
+
+  /**
+   * The compiled global chord table.
+   *
+   * ⛔ This runs on EVERY keydown carrying a modifier — which, under Emacs, is
+   * most of them. Rebuilt from scratch it was a localStorage read, a JSON
+   * parse and ~400 `normalizeSpec` calls (each one a split, a loop and a join)
+   * per cursor move, held down at key-repeat. Nothing about the table changes
+   * between keystrokes; only the stored override string can, and that is what
+   * it is keyed on.
+   */
+  var globalTable = null;
+
+  function globalDispatchTable() {
+    syncDefaults();
+    var raw = overridesRaw();
+    if (globalTable && globalTable.version === projectedVersion
+      && raw !== null && globalTable.raw === raw) {
+      return globalTable;
+    }
+    var overrides = readOverrides();
+    var defs = defsForScope('global');
+    var bound = [];
+    for (var i = 0; i < defs.length; i++) {
+      var spec = resolveWith(defs[i].id, null, overrides);
+      if (spec) bound.push({ id: defs[i].id, c: compileSpec(spec) });
+    }
+    var freedSpecs = freedDefaultsForScope('global', overrides);
+    var freed = [];
+    for (var j = 0; j < freedSpecs.length; j++) {
+      var fc = compileSpec(freedSpecs[j]);
+      if (fc) freed.push(fc);
+    }
+    var table = { raw: raw, version: projectedVersion, bound: bound, freed: freed };
+    globalTable = raw === null ? null : table;
+    return table;
+  }
+
   function writeOverrides(map) {
     var p = persistApi();
     if (p && typeof p.writeStoredKeybindings === 'function') p.writeStoredKeybindings(map);
   }
 
   function notifyChanged() {
+    // Belt and braces: the table is keyed on the stored bytes, so this is not
+    // what makes a rebind take effect — it just avoids one wasted rebuild
+    // where a write and a read race inside the same tick.
+    globalTable = null;
     try {
       if (typeof global.CustomEvent === 'function') {
         global.dispatchEvent(new global.CustomEvent('beljar:keybindings-changed', { detail: {} }));
@@ -489,7 +596,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
 
   function isRecordingChordTarget(e) {
     var t = (e && e.target) || (typeof document !== 'undefined' ? document.activeElement : null);
-    return !!(t && t.classList && t.classList.contains('bj-kb__chord') && t.classList.contains('is-recording'));
+    return !!(t && t.classList && t.classList.contains('jar-kb__chord') && t.classList.contains('is-recording'));
   }
 
   function isEmacsEditorFocused() {
@@ -516,26 +623,33 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     if (e.isComposing) return;
     // Bare keys and modifier-only presses can never be a global chord; bail out
     // before touching the tables so ordinary typing costs one branch.
-    if (!(e.ctrlKey || e.metaKey || e.altKey) && !isFunctionKey(normalizeKeyToken(e.key))) return;
+    var key = normalizeKeyToken(e.key);
+    if (!(e.ctrlKey || e.metaKey || e.altKey) && !isFunctionKey(key)) return;
     // Settings chord capture: let the focused .is-recording button own the event
     // (globals use capture and would otherwise steal Mod+K / Mod+Shift+P / …).
     if (isRecordingChordTarget(e)) return;
-    var overrides = readOverrides();
-    var freed = freedDefaultsForScope('global', overrides);
+    // The command line owns the keyboard while it has focus — see
+    // `isCommandLineFocused`. Its own key language (`C-g`, `C-s`, `C-n`) must
+    // reach it, not a global chord that happens to share a chord with it.
+    if (isCommandLineFocused()) return;
+    var table = globalDispatchTable();
+    var freed = table.freed;
     for (var fi = 0; fi < freed.length; fi++) {
-      if (eventMatchesSpec(e, freed[fi])) {
+      if (eventMatchesCompiled(e, key, freed[fi])) {
         e.preventDefault();
         e.stopPropagation();
         return;
       }
     }
-    var defs = defsForScope('global');
-    for (var i = 0; i < defs.length; i++) {
-      var def = defs[i];
-      var spec = resolveWith(def.id, null, overrides);
-      if (!spec || !eventMatchesSpec(e, spec)) continue;
-      if (shouldYieldGlobalForEmacs(def.id, isEmacsEditorFocused())) return;
-      var handler = globalHandlers[def.id];
+    var bound = table.bound;
+    for (var i = 0; i < bound.length; i++) {
+      if (!eventMatchesCompiled(e, key, bound[i].c)) continue;
+      var id = bound[i].id;
+      if (shouldYieldGlobalForEmacs(id, isEmacsEditorFocused())) return;
+      // Resolved at PRESS time, never cached: behaviour is attached during boot
+      // and a command's `when()` can change between one keystroke and the next.
+      var handler = globalHandlers[id]
+        || (globalFallback ? globalFallback(id) : null);
       if (typeof handler !== 'function') continue;
       e.preventDefault();
       e.stopPropagation();
@@ -544,12 +658,19 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
     }
   }
 
-  function initGlobals(handlers) {
+  /**
+   * `handlers` names the globals that need a closure of their own (the palette's
+   * modes). `opts.fallback(id)` supplies a runner for everything else — that is
+   * how the other 63 registry-backed global commands become real chords instead
+   * of dead ones.
+   */
+  function initGlobals(handlers, opts) {
     if (handlers && typeof handlers === 'object') {
       Object.keys(handlers).forEach(function (id) {
         globalHandlers[id] = handlers[id];
       });
     }
+    if (opts && typeof opts.fallback === 'function') globalFallback = opts.fallback;
     if (listening) return;
     listening = true;
     global.addEventListener('keydown', onGlobalKeydown, true);

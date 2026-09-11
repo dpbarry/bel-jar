@@ -246,20 +246,6 @@ function createManual(deps) {
     return bar;
   }
 
-  function skelCtx() {
-    var wrap = el('div', 'harpoon-lab-context');
-    var sec = el('div', 'harpoon-lab-ctx');
-    sec.appendChild(el('span', 'harpoon-lab-ctx-label', 'meta'));
-    var rows = el('div', 'harpoon-lab-binders');
-    ['58%', '41%'].forEach(function (w, i) {
-      var row = el('div', 'harpoon-lab-binder');
-      row.appendChild(skel('harpoon-skel--text' + (i ? ' harpoon-skel--d1' : ''), w));
-      rows.appendChild(row);
-    });
-    sec.appendChild(rows);
-    wrap.appendChild(sec);
-    return wrap;
-  }
 
   // Two bars, not three: a short one where the tactic name goes and a longer one
   // for its rationale. The term-preview bar was pure noise — three bars per row
@@ -816,7 +802,6 @@ function createManual(deps) {
 
   function runOrca() {
     var m = this.manual;
-    var self = this;
     if (!m || !m.state) return;
     this.cancelSweep();
     this.manualBefore = m.state;
@@ -987,7 +972,6 @@ function createManual(deps) {
     var na = this.nativeAuto;
     var before = this.manualBefore || null;
     var priorSteps = (before && before.steps) || [];
-    var priorStack = (before && before.stack) || [];
     this.manualBefore = null;
     this.nativeAuto = null;
 
@@ -1016,7 +1000,6 @@ function createManual(deps) {
   /** Place the hand-built proof into the file — the same verified commit the
       auto path uses. */
   function commitManual() {
-    var ed = E();
     var m = this.manual;
     var st = this.getCommitState();
     if (!m || !m.state || st.status === 'checking' || st.status === 'placed') {

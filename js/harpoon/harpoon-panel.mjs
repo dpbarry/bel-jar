@@ -321,8 +321,6 @@ function E() { return global.BelEditor || null; }
 
     var files = typeof P.listFiles === 'function' ? P.listFiles() : [];
     var getText = typeof P.getFileText === 'function' ? function (id) { return P.getFileText(id); } : function () { return ''; };
-    var PS = typeof global.ProjectSource !== 'undefined' ? global.ProjectSource : null;
-    var SL = typeof global.ExplorerSuiteLayout !== 'undefined' ? global.ExplorerSuiteLayout : null;
 
     var model = PG.buildSections({
       files: files,
@@ -334,15 +332,6 @@ function E() { return global.BelEditor || null; }
       getActiveCfgsForDir: typeof P.getActiveCfgsForDir === 'function'
         ? function (dir) { return P.getActiveCfgsForDir(dir); }
         : function () { return []; },
-      computeDirLayout: SL && typeof SL.computeDirLayout === 'function' && PS
-        ? function (dir, filesInDir) {
-          var active = P.getActiveCfgsForDir(dir);
-          var resolver = typeof PS.orderedPathsForCfg === 'function'
-            ? function (all, cfgPath, gt) { return PS.orderedPathsForCfg(all, cfgPath, gt); }
-            : null;
-          return SL.computeDirLayout(filesInDir, active, resolver, files, getText);
-        }
-        : null,
     });
 
     for (var si = 0; si < model.sections.length; si++) {
@@ -494,8 +483,8 @@ function E() { return global.BelEditor || null; }
     var decl = declForEntry(entry);
     var declEl = el('span', 'harpoon-hole-decl');
     if (decl) {
-      declEl.appendChild(el('span', 'harpoon-hole-decl-kw bel-hl-keyword', decl.kw));
-      declEl.appendChild(el('span', 'harpoon-hole-decl-name bel-hl-var-def', decl.name));
+      declEl.appendChild(el('span', 'harpoon-hole-decl-kw jar-hl-keyword', decl.kw));
+      declEl.appendChild(el('span', 'harpoon-hole-decl-name jar-hl-var-def', decl.name));
     } else {
       declEl.classList.add('is-unknown');
       declEl.appendChild(el('span', 'harpoon-hole-decl-name', 'top level'));

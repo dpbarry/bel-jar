@@ -7,7 +7,7 @@ import { checkerSnapshotFromSyntax } from './checker-snapshot.mjs';
 import { computeLintBlocks, maskBlocksByIndex } from '../lint-units.mjs';
 import { blockDependents, walkTree } from '../tree-walk.mjs';
 import { getCheckTrace } from '../perf/check-trace.mjs';
-import { computeSettleDelayMs, SETTLE_DELAY_MS } from './settle-delay.mjs';
+import { SETTLE_DELAY_MS } from './settle-delay.mjs';
 import {
   declIndicesForRanges,
   declRangesForIndices,
@@ -180,11 +180,6 @@ export function createSettlement({
       const out = { ...d, source: d.source || 'suite' };
       return spanFirstLineDiagnostic(out, diagDoc);
     });
-    // Raw findings (affected files resolved to names) let the banner tell whether
-    // a "prelude error" is actually the active file's own fault — see
-    // preludeBannerDiag.
-    const suiteFindings = ctx?.suiteFindings || [];
-
     // Block-index the prelude the same way the active file is, so an error in an
     // earlier suite file can be masked and the active file still reached —
     // parity with the single-file divide-and-conquer. Lazy: an all-green run
@@ -316,6 +311,11 @@ export function createSettlement({
     }
 
     const canonicalFp = fingerprint(snap.code);
+    // ⛔ Captured BEFORE markChecking overwrites it. This is the fingerprint of
+    // the code the standing verdict was actually reached on, and the
+    // frontier-empty path below is only entitled to carry that verdict forward
+    // when the code has not moved since.
+    const priorFp = checkerStore.getSnapshot().checkerFp || '';
     checkerStore.markChecking(syntaxSnap.version, canonicalFp);
     if (typeof onChecking === 'function') onChecking();
 
@@ -419,12 +419,28 @@ export function createSettlement({
 
     if (useFrontier && (!keepIdx || !keepIdx.size)) {
       const prev = checkerStore.getSnapshot();
+      // ⛔ An empty dirty frontier is NOT evidence that the document is
+      // unchanged, and this path used to treat it as though it were: it copied
+      // the previous findings — stale flags and all — into `finish`, which
+      // stamps them `ready`. An undo replaces the whole document at once and can
+      // leave nothing marked dirty, so every error from before the undo was
+      // promoted to an authoritative verdict on a file that no longer contained
+      // it. Nothing could ever clear it, because nothing ever re-checked; the
+      // error survived until the file was closed and reopened onto a fresh
+      // store. The FINGERPRINT is the evidence — same checker-relevant code,
+      // same verdict. Anything else falls through and is actually checked.
+      const codeUnmoved = !!priorFp && priorFp === canonicalFp;
       const priorForVersion = (prev.state === 'ready' || prev.state === 'stale')
         && prev.syntaxVersion === syntaxSnap.version;
-      if (priorForVersion) {
+      if (priorForVersion && codeUnmoved) {
         if (perf.enabled) perf.record('settle:mode', 0, { mode: 'frontier-empty' });
         if (preludeFp) lastFullPreludeFp = preludeFp;
-        const prevDiags = (prev.belugaDiagnostics || []).filter((d) => d.source !== 'suite');
+        // Same code, same verdict — so these ARE verified for this document and
+        // stop being stale. Carrying the flag would leave a `ready` snapshot
+        // holding findings it does not vouch for.
+        const prevDiags = (prev.belugaDiagnostics || [])
+          .filter((d) => d.source !== 'suite')
+          .map(({ stale, ...rest }) => rest);
         return finish({
           syntaxVersion: syntaxSnap.version,
           checkerFp: canonicalFp,

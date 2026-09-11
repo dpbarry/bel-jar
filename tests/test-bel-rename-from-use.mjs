@@ -64,4 +64,4 @@ expect(!committed.state.field(renameActiveField, false), 'rename session cleared
 const committedDef = defsOf(committed.state.doc.toString()).find((d) => d.name === 'baz');
 expect(committedDef, 'definition still correct after commit');
 
-console.log('OK bel-rename from use (def mirrors + commit + no phantom invalid)');
+console.log('OK jar-rename from use (def mirrors + commit + no phantom invalid)');

@@ -32,8 +32,8 @@ function mountType(parent, goal, opts = {}) {
   const tag = opts.tag || 'span';
   const extraCls = opts.extraCls || '';
   const typeEl = document.createElement(tag);
-  typeEl.className = 'hole-goal-type bel-type' + (extraCls ? ` ${extraCls}` : '');
-  renderTypeInto(typeEl.appendChild(el('span', 'bel-type-text')), goal, 'comp');
+  typeEl.className = 'hole-goal-type jar-type' + (extraCls ? ` ${extraCls}` : '');
+  renderTypeInto(typeEl.appendChild(el('span', 'jar-type-text')), goal, 'comp');
   parent.appendChild(typeEl);
   return typeEl;
 }

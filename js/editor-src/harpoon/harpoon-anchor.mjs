@@ -19,10 +19,6 @@ export function holeKeyFromHit(hit) {
   return `${hit.hole.line}:${hit.hole.col || 1}:${hit.hole.name || ''}`;
 }
 
-function normalizeBody(text) {
-  return String(text || '').replace(/\s+/g, ' ').trim();
-}
-
 function declKeyOf(decl) {
   return decl ? `${decl.kw}:${decl.name}` : '';
 }

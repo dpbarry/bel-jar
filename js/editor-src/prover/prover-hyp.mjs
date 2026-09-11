@@ -7,14 +7,6 @@ import {
   headOfConclusion,
   typeFamilyHead,
   enumerateConstructorsTyped,
-  patternMetavars,
-  isHypArgType,
-  isCTypeFamily,
-  branchLetNames,
-  schemaInfo,
-  schemaAdmittedTypes,
-  introBinders,
-  familyIndexSorts,
   conclusionOf,
   constructorArgDescriptor,
 } from './hole-split.mjs';
@@ -24,13 +16,9 @@ import {
   boxedConclusionHead,
   decreasingBoxIndex,
   decreasingArgIndex,
-  measureDesignation,
-  implicitMetaCount,
-  normalizeCtypeSpelling,
-  isCtypeApplication,
 } from './prover-comp-type.mjs';
 import { holeByteOffset, theoremDeclRange, stripLfComments } from './prover-certify.mjs';
-import { DECL_IDENT, reIdentExact } from './ident.mjs';
+import { DECL_IDENT } from './ident.mjs';
 
 // Fresh-name helper mirroring hole-split's, kept local so move-gen is pure.
 
@@ -441,7 +429,7 @@ export function subderivMetas(cands, preferComp = false, thm = null) {
   return pool;
 }
 
-// GOAL-DIRECTED SYNTHESIS moves (the bel-synth backward-chaining engine): adapt
+// GOAL-DIRECTED SYNTHESIS moves (the jar-synth backward-chaining engine): adapt
 // the hole to the engine's plain-data shape — facts from the hole's meta/comp
 // bindings (decOk = the same decreasing-candidate set the greedy recurse uses),
 // rules from the IH + sibling lemmas, constructors from the reachable families —
@@ -465,7 +453,7 @@ export function subderivMetas(cands, preferComp = false, thm = null) {
 // budget) must count from the decl start or every hole in a fat assembly is
 // born over-budget (measured 2026-07-19: values/natval died at 8 checks).
 
-// GOAL-DIRECTED SYNTHESIS moves (the bel-synth backward-chaining engine): adapt
+// GOAL-DIRECTED SYNTHESIS moves (the jar-synth backward-chaining engine): adapt
 // the hole to the engine's plain-data shape — facts from the hole's meta/comp
 // bindings (decOk = the same decreasing-candidate set the greedy recurse uses),
 // rules from the IH + sibling lemmas, constructors from the reachable families —

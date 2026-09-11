@@ -68,27 +68,37 @@ expect(C.list({ runnable: true }).every((c) => typeof c.run === 'function'), 'ru
 
 // ── defaults(): the projection Keybindings resolves against ───────────────────
 
-const SHIPPED_16 = [
+// ⛔ A snapshot, on purpose: a new command must arrive UNBOUND unless somebody
+// decided otherwise, and tripping this test is how that decision gets made out
+// loud instead of by accident.
+//
+// `nav.goto-line` was the twentieth, and it is not an invented chord: `Mod+G` is
+// goto-line in every IDE that has the feature, the vim package binds no `<C-g>`
+// at all, and under Emacs — which binds `C-g` to keyboard-quit — it is declared
+// `off` and answers to `M-g g` instead.
+const SHIPPED_CHORDS = [
   'nav.anywhere', 'tools.commands', 'nav.symbol', 'edit.search-project',
-  'edit.undo', 'edit.redo', 'edit.find', 'edit.toggle-comment', 'edit.format',
+  'edit.undo', 'edit.redo', 'edit.cut', 'edit.copy', 'edit.paste',
+  'edit.find', 'edit.toggle-comment', 'edit.format',
   'edit.rename', 'edit.select-all', 'edit.autocomplete',
   'nav.definition', 'nav.references', 'nav.next-hole', 'nav.prev-hole',
+  'nav.goto-line',
 ];
 const projected = C.defaults();
-for (const id of SHIPPED_16) {
+for (const id of SHIPPED_CHORDS) {
   const row = projected.find((d) => d.id === id);
   expect(row, `defaults() includes ${id}`);
   expect(row.defaultSpec, `${id} is one of the shipped chords and must stay bound by default`);
 }
 const bound = projected.filter((d) => d.defaultSpec).map((d) => d.id).sort();
 expect(
-  bound.join(',') === SHIPPED_16.slice().sort().join(','),
-  'exactly the shipped 16 ship a default chord; new commands arrive unbound\n  got: ' + bound.join(',')
+  bound.join(',') === SHIPPED_CHORDS.slice().sort().join(','),
+  'exactly the shipped 19 ship a default chord; new commands arrive unbound\n  got: ' + bound.join(',')
 );
 const redo = projected.find((d) => d.id === 'edit.redo');
 expect(redo.defaultSpec === 'Mod+Y' && redo.macDefaultSpec === 'Mod+Shift+Z', 'defaults() carries the mac variant');
 expect(projected.every((d) => d.title && d.section && d.scope), 'projection rows are complete');
-expect(projected.length > SHIPPED_16.length, 'the bindable set has grown past the shipped chords');
+expect(projected.length > SHIPPED_CHORDS.length, 'the bindable set has grown past the shipped chords');
 
 // ── style policy ──────────────────────────────────────────────────────────────
 
@@ -117,7 +127,7 @@ const STUB_SPECS = {
   'tools.commands': 'Alt+X',
 };
 globalThis.Keybindings = {
-  has: (id) => SHIPPED_16.indexOf(id) >= 0,
+  has: (id) => SHIPPED_CHORDS.indexOf(id) >= 0,
   resolve: (id) => STUB_SPECS[id] || '',
   labelFor: (id) => 'CHORD:' + id,
   formatShortcut: (spec) => 'LIT:' + spec,
@@ -148,7 +158,7 @@ expect(dEmacs.shadow.runs === 'forward-char', 'and what Emacs does with it', dEm
 expect(!/Without Emacs/.test(dEmacs.shadow.tip),
   'never a sentence about a keymap you are not in', dEmacs.shadow.tip);
 // ⛔ In BelJar's spelling, not Emacs'. `STYLE_CHORDS` is written `C-s`, and
-// Available macros groups keys by shape — two spellings in one list produced
+// Available Keys groups keys by shape — two spellings in one list produced
 // blocks headed `C`, `C+S` and `Ctrl+x`.
 expect(dEmacs.styleChord === 'Ctrl+S',
   'the chord that works is carried separately, in one spelling', dEmacs.styleChord);

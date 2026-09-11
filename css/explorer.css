@@ -158,7 +158,7 @@
 
 .explorer-file-item--cfg,
 .explorer-file-item--elf {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.8125rem;
 }
 
@@ -312,7 +312,7 @@
 
 .explorer-file-item--cfg .explorer-inline-name,
 .explorer-file-item--elf .explorer-inline-name {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
 }
 
 .explorer-inline-name.is-invalid {
@@ -392,10 +392,10 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
    Used by hover tooltips, the inspector panel, and the pinned inspector window,
    so every surface renders a term's type identically. */
 
-/* .bel-type is the container; .bel-type-text holds the highlighted type. The
+/* .jar-type is the container; .jar-type-text holds the highlighted type. The
    leading glyph (∷, a styled supercolon meaning "has type") is decorative — it
    is NOT literal text, so it never collides with real colons inside the type. */
-.bel-type {
+.jar-type {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
@@ -410,7 +410,7 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
   align-items: baseline;
   font-family: var(--mono);
 }
-.beljar-tip-goal .bel-type-text {
+.beljar-tip-goal .jar-type-text {
   white-space: pre-wrap;
 }
 .beljar-tip-goal:has(.beljar-tip-goal-pending) .beljar-tip-shimmer {
@@ -421,7 +421,7 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
 /* The pending goal in the hover tooltip uses the shared shimmer treatment as-is
    (weighted, dot-led, NOT italic). No per-site overrides — keep it unified. */
 
-.bel-type::before {
+.jar-type::before {
   content: '\2237'; /* ∷ PROPORTION — reads as "has type" */
   flex: 0 0 auto;
   font-size: inherit;
@@ -431,46 +431,46 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
   user-select: none;
 }
 
-.bel-type-text {
+.jar-type-text {
   min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.bel-type.is-pending::before {
+.jar-type.is-pending::before {
   opacity: 0.3;
 }
 
-/* Syntax-highlight classes for rendered type strings (bel-type-render.mjs).
-   Mirrors the editor's defaultBelugaHighlightStyle palette (bel-language.mjs),
+/* Syntax-highlight classes for rendered type strings (jar-type-render.mjs).
+   Mirrors the editor's defaultBelugaHighlightStyle palette (jar-language.mjs),
    theme-aware via light-dark(). */
 /* `html *` sets --sans with SELECTOR specificity, which beats plain inheritance —
-   without this, every bel-hl-* token silently renders in Inter while the bare
+   without this, every jar-hl-* token silently renders in Inter while the bare
    text nodes between them (spaces, brackets) take the container's mono, giving
    mixed-font types whose spacing shifts with the DOM shape. Tokens and the
-   .bel-type-text host must always take the surrounding container's font. */
-.bel-type-text,
-[class^='bel-hl-'],
-[class*=' bel-hl-'] { font-family: inherit; }
-.bel-hl-keyword  { color: light-dark(hsl(221, 82%, 34%), var(--accent-mid)); font-weight: 600; }
-.bel-hl-control  { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); font-weight: 600; }
-.bel-hl-arrow    { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); }
-.bel-hl-op       { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
-.bel-hl-type     { color: light-dark(hsl(268, 70%, 37%), hsl(264, 78%, 74%)); }
-.bel-hl-type-def { color: light-dark(hsl(270, 78%, 32%), hsl(264, 88%, 78%)); font-weight: 600; }
-.bel-hl-metatype { color: light-dark(hsl(195, 64%, 30%), hsl(190, 70%, 74%)); font-weight: 600; }
-.bel-hl-meta     { color: light-dark(hsl(194, 70%, 32%), hsl(190, 76%, 76%)); }
-.bel-hl-var      { color: var(--base-highest); }
-.bel-hl-var-def  { color: light-dark(hsl(220, 88%, 30%), hsl(215, 92%, 82%)); font-weight: 600; }
-.bel-hl-local    { color: light-dark(hsl(272, 64%, 38%), hsl(280, 50%, 80%)); }
-.bel-hl-local-def { color: light-dark(hsl(276, 82%, 33%), hsl(280, 80%, 80%)); font-weight: 600; }
-.bel-hl-ctor     { color: light-dark(hsl(221, 84%, 31%), hsl(215, 92%, 82%)); }
-.bel-hl-number   { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
-.bel-hl-atom     { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
-.bel-hl-hole     { color: var(--ide-hole-border); font-weight: 700; }
-.bel-hl-prop     { color: light-dark(hsl(213, 82%, 34%), hsl(210, 78%, 72%)); }
-.bel-hl-meta-pragma { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
-.bel-hl-punct    { color: light-dark(var(--muted-higher), var(--muted-highest)); }
-.bel-hl-comment  { color: light-dark(hsl(221, 10%, 40%), var(--muted-high)); font-style: italic; }
+   .jar-type-text host must always take the surrounding container's font. */
+.jar-type-text,
+[class^='jar-hl-'],
+[class*=' jar-hl-'] { font-family: inherit; }
+.jar-hl-keyword  { color: light-dark(hsl(221, 82%, 34%), var(--accent-mid)); font-weight: 600; }
+.jar-hl-control  { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); font-weight: 600; }
+.jar-hl-arrow    { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); }
+.jar-hl-op       { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
+.jar-hl-type     { color: light-dark(hsl(268, 70%, 37%), hsl(264, 78%, 74%)); }
+.jar-hl-type-def { color: light-dark(hsl(270, 78%, 32%), hsl(264, 88%, 78%)); font-weight: 600; }
+.jar-hl-metatype { color: light-dark(hsl(195, 64%, 30%), hsl(190, 70%, 74%)); font-weight: 600; }
+.jar-hl-meta     { color: light-dark(hsl(194, 70%, 32%), hsl(190, 76%, 76%)); }
+.jar-hl-var      { color: var(--base-highest); }
+.jar-hl-var-def  { color: light-dark(hsl(220, 88%, 30%), hsl(215, 92%, 82%)); font-weight: 600; }
+.jar-hl-local    { color: light-dark(hsl(272, 64%, 38%), hsl(280, 50%, 80%)); }
+.jar-hl-local-def { color: light-dark(hsl(276, 82%, 33%), hsl(280, 80%, 80%)); font-weight: 600; }
+.jar-hl-ctor     { color: light-dark(hsl(221, 84%, 31%), hsl(215, 92%, 82%)); }
+.jar-hl-number   { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
+.jar-hl-atom     { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
+.jar-hl-hole     { color: var(--ide-hole-border); font-weight: 700; }
+.jar-hl-prop     { color: light-dark(hsl(213, 82%, 34%), hsl(210, 78%, 72%)); }
+.jar-hl-meta-pragma { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
+.jar-hl-punct    { color: light-dark(var(--muted-higher), var(--muted-highest)); }
+.jar-hl-comment  { color: light-dark(hsl(221, 10%, 40%), var(--muted-high)); font-style: italic; }
 
-.bel-hl-source--elf { color: light-dark(hsl(221, 8%, 38%), var(--muted-higher)); }
+.jar-hl-source--elf { color: light-dark(hsl(221, 8%, 38%), var(--muted-higher)); }

@@ -6,6 +6,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadProjectSource } from './project-source-stack.mjs';
+// ⛔ Fixtures are written the way a person types Beluga (`|-`, `->`), but every
+// index in this file is built on the EDITOR-NORMALIZED text, where those are ⊢ and
+// →. Expand the needle rather than hand-writing the glyph, so a change to the
+// alias table moves both sides at once.
+import { expandBelAliases } from '../js/editor-src/aliases.mjs';
 import {
   defsOf,
   usesOf,
@@ -16,7 +21,8 @@ import {
   listGroupSymbols,
   groupReferencesFor,
   groupRenameEdits,
-  applyTextEdits,
+  applyGroupRenameToFile,
+  filterRenameEdits,
   groupDefinesName,
   buildPrelude,
   preludeFilesFor,
@@ -183,7 +189,6 @@ expect(refs.length === 0,
 
 // CRLF storage must rename on the same normalized basis as groupRenameEdits.
 {
-  const { applyGroupRenameToFile } = await import('../js/editor-src/semantic/project-prelude.mjs');
   const crlf = EQUIV.replace(/\n/g, '\r\n');
   const crlfPlans = groupRenameEdits(FILES, 'cr/lam', 'term', (id) => (id === 'cr/equiv' ? crlf : getText(id)), crRosserOpts);
   expect(crlfPlans.length === 1 && crlfPlans[0].fileId === 'cr/equiv', 'CRLF rename plan on equiv');
@@ -195,15 +200,28 @@ expect(refs.length === 0,
 // Renaming `term` FROM lam.bel (active owns def): only equiv.bel's free uses.
 let plans = groupRenameEdits(FILES, 'cr/lam', 'term', getText, crRosserOpts);
 expect(plans.length === 1 && plans[0].fileId === 'cr/equiv', 'rename plan touches only the using file');
-const renamed = applyTextEdits(EQUIV, plans[0].edits, 'tm');
+// ⛔ `applyGroupRenameToFile`, never `applyTextEdits` on RAW storage. The planner
+// indexes the editor-normalized text — `|-` is ⊢ and `->` is → there — so on this
+// fixture its offsets run THREE characters ahead of the stored bytes, and a naive
+// application produced `[g tmerm]`: a rename that corrupts the file. Applying on
+// the normalized basis is the documented contract (see the comment on
+// `applyGroupRenameToFile`) and what `rename.mjs` actually calls.
+const renamed = applyGroupRenameToFile(EQUIV, 'church-rosser/equiv.bel', plans[0].edits, 'tm', 'term');
 expect(!/\bterm\b/.test(renamed), 'all free uses rewritten');
-expect(renamed.includes('block x:tm') && renamed.includes('[g |- tm]'), 'rewrites land at the right spots');
+expect(renamed.includes('block x:tm') && renamed.includes(expandBelAliases('[g |- tm]')),
+  `rewrites land at the right spots, got ${JSON.stringify(renamed)}`);
+// ⛔ …and the guard is what makes a wrong basis safe rather than silent:
+// `filterRenameEdits` drops every edit whose span is not the original name, so a
+// plan applied to raw storage under-writes instead of mangling.
+expect(filterRenameEdits(EQUIV, plans[0].edits, 'term').length < plans[0].edits.length,
+  'raw storage is refused by the rename guard, not written at shifted offsets');
 expect(renamed.includes('pred'), 'unrelated names untouched');
 
 // Renaming `term` FROM equiv.bel (def lives in lam.bel): def file gets def+uses.
 plans = groupRenameEdits(FILES, 'cr/equiv', 'term', getText, { defFileId: 'cr/lam', ...crRosserOpts });
 expect(plans.length === 1 && plans[0].fileId === 'cr/lam', 'def-file plan when renaming from a use site');
-const lamRenamed = applyTextEdits(LAM, plans[0].edits, 'tm');
+// Same basis rule as above — LAM has three `->`, so raw offsets are three short.
+const lamRenamed = applyGroupRenameToFile(LAM, 'church-rosser/lam.bel', plans[0].edits, 'tm', 'term');
 expect(lamRenamed.includes('LF tm : type') && !/\bterm\b/.test(lamRenamed),
   'definition and its in-file uses renamed');
 

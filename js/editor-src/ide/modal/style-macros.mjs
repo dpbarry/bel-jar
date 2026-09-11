@@ -6,7 +6,7 @@
  * ordinary command ids, and they are the most distinctive thing about either
  * mode. Until this existed they appeared in no listing anywhere: the Keybindings
  * sheet projects `Keybindings`, which has never heard of them; the palette lists
- * commands rather than keys; Available Macros asked `Commands.describe()`, which
+ * commands rather than keys; Available Keys asked `Commands.describe()`, which
  * only knows BelJar's own table. Which-key was the sole way in, and which-key
  * only answers a prefix you already knew to press.
  *
@@ -19,6 +19,7 @@ import { _pure as vimMaps, DEFAULT_LEADER, leaderLabel } from './vim-setup.mjs';
 import { _pure as emacsMaps } from './emacs-setup.mjs';
 import { emacsKeyRows, readableEmacsKey } from './emacs-keys.mjs';
 import { EMACS_SUBSTITUTES } from './emacs-runtime.mjs';
+import { VIM_MACRO_ROWS } from './macro-keys.mjs';
 
 /**
  * Pure: `[keys, id]` pairs for a style, leader already expanded.
@@ -50,7 +51,14 @@ export function styleMacroGroups(style, leader) {
     return [
       {
         name: 'Vim keys',
-        rows: vimMaps.NORMAL_MAP.map(([keys, id]) => ({ keys: readableKeys(keys), id })),
+        // ⛔ `q` and `@` belong in this list. BelJar binds them itself —
+        // `installMacroBindings` drains the package's pair and maps its own onto
+        // the one macro engine — so they are exactly as much "a key BelJar adds
+        // under Vim" as `gd` is, and they were the only ones missing. Which is
+        // how someone ends up recording a macro with no way to find the key that
+        // ends it.
+        rows: vimMaps.NORMAL_MAP.concat(VIM_MACRO_ROWS)
+          .map(([keys, id]) => ({ keys: readableKeys(keys), id })),
       },
       {
         name: 'Vim leader',
@@ -65,6 +73,7 @@ export function styleMacroGroups(style, leader) {
       // turned shape-grouping into nonsense.
       { name: 'Emacs C-x', rows: emacsMaps.CX_MAP.map(([keys, id]) => ({ keys: readableEmacsKey(keys), id })) },
       { name: 'Emacs C-c', rows: emacsMaps.CC_MAP.map(([keys, id]) => ({ keys: readableEmacsKey(keys), id })) },
+      { name: 'Emacs M-g', rows: emacsMaps.MG_MAP.map(([keys, id]) => ({ keys: readableEmacsKey(keys), id })) },
     ];
   }
   return [];
@@ -81,7 +90,7 @@ const SUBSTITUTE_TITLES = {
  * The keys the STYLE'S OWN PACKAGE binds — read from the package, never recalled.
  *
  * ⛔ These are the bulk of what is live under Emacs and they were listed nowhere:
- * `C-p`, `C-e`, `C-k`, `C-y` and forty more. Available macros is the keybindings
+ * `C-p`, `C-e`, `C-k`, `C-y` and forty more. Available Keys is the keybindings
  * sheet filtered to what is bound, and it was quietly omitting the single largest
  * source of bindings in the style you are in.
  *
@@ -115,7 +124,7 @@ export function packageKeyNote(style) {
  * title resolved through the registry.
  *
  * A row whose command the registry does not know is DROPPED rather than shown
- * with its raw id — the same rule Available Macros follows for everything else,
+ * with its raw id — the same rule Available Keys follows for everything else,
  * and the reason this is worth centralising: one list, one set of names.
  */
 export function styleMacros(style, isReserved) {

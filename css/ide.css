@@ -15,7 +15,7 @@
 /* ---- IDE: hole decorations ---- */
 
 /* The `?` glyph itself is coloured by the syntax highlighter (its own hole tag in
-   bel-language.mjs) — restrained, no box. The "look here" weight lives on the
+   jar-language.mjs) — restrained, no box. The "look here" weight lives on the
    line-number cell of a hole's line: a soft violet wash + a crisp full-height
    accent strip flush to the left edge — a ::before pseudo-element, NOT a thick
    border (edge-strip language: --edge-strip-w). Scoped to the line-number gutter. */
@@ -37,19 +37,19 @@
   pointer-events: none;
 }
 
-html.bj-hole-subtle .cm-lineNumbers .cm-gutterElement.cm-hole-gutter {
+html.jar-hole-subtle .cm-lineNumbers .cm-gutterElement.cm-hole-gutter {
   background: color-mix(in oklab, var(--ide-hole-gutter) 45%, transparent);
   font-weight: 500;
 }
-html.bj-hole-subtle .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
+html.jar-hole-subtle .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   opacity: 0.55;
 }
-html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter {
+html.jar-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter {
   background: color-mix(in oklab, var(--ide-hole-gutter) 100%, var(--accent-glow));
   font-weight: 700;
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ide-hole-border) 35%, transparent);
 }
-html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
+html.jar-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   width: calc(var(--edge-strip-w) + 1px);
 }
 
@@ -98,7 +98,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 .cm-foldGutter .cm-gutterElement.cm-hole-gutter {
   background: var(--ide-hole-gutter);
 }
-.cm-foldGutter .cm-gutterElement.cm-hole-gutter:not(:has(.cm-bel-foldmarker)) {
+.cm-foldGutter .cm-gutterElement.cm-hole-gutter:not(:has(.cm-jar-foldmarker)) {
   cursor: pointer;
 }
 
@@ -126,7 +126,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   gap: 0.1rem;
 }
 
-.bel-hover-stack {
+.jar-hover-stack {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -139,8 +139,8 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
    CSS animations (the "Recalculating…" spinner/sweep restarting ~3× while
    diagnostics settle, since each settle triggers a remeasure cloak). opacity:0
    hides without pausing or restarting the child animation. */
-.bel-hover-stack.beljar-tip--remeasure,
-.bel-type-tip.beljar-tip--remeasure {
+.jar-hover-stack.beljar-tip--remeasure,
+.jar-type-tip.beljar-tip--remeasure {
   opacity: 0;
 }
 
@@ -215,7 +215,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   margin-top: -1px;
 }
 
-.bel-hover-stack > .cm-diagnostic + .cm-diagnostic {
+.jar-hover-stack > .cm-diagnostic + .cm-diagnostic {
   margin-top: 0;
   border-top: none;
   border-top-left-radius: var(--radius-sm);
@@ -292,7 +292,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   color: var(--ide-warn-squiggle);
 }
 
-/* Type body in tooltips: the shared .bel-type flex + flourish, kept tight. */
+/* Type body in tooltips: the shared .jar-type flex + flourish, kept tight. */
 .beljar-tip-body--type {
   align-items: baseline;
 }
@@ -403,7 +403,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 
 .cm-editor .cm-tooltip-hover.cm-tooltip-above > .cm-tooltip-section.beljar-tip:last-child::before,
 .cm-editor .cm-tooltip-hover.cm-tooltip-above
-  > .cm-tooltip-section:last-child:not(:has(.bel-hover-stack)) .cm-diagnostic:last-of-type::before {
+  > .cm-tooltip-section:last-child:not(:has(.jar-hover-stack)) .cm-diagnostic:last-of-type::before {
   display: block;
   bottom: calc(var(--tooltip-spout-size) * -0.55);
   left: var(--tooltip-arrow-x, 0.7rem);
@@ -414,7 +414,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 
 .cm-editor .cm-tooltip-hover.cm-tooltip-below > .cm-tooltip-section.beljar-tip:first-child::before,
 .cm-editor .cm-tooltip-hover.cm-tooltip-below
-  > .cm-tooltip-section:first-child:not(:has(.bel-hover-stack)) .cm-diagnostic:first-of-type::before {
+  > .cm-tooltip-section:first-child:not(:has(.jar-hover-stack)) .cm-diagnostic:first-of-type::before {
   display: block;
   top: calc(var(--tooltip-spout-size) * -0.55);
   left: var(--tooltip-arrow-x, 0.7rem);
@@ -423,11 +423,11 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   border-bottom: 0;
 }
 
-.cm-editor .cm-tooltip-hover .bel-hover-stack > *::before {
+.cm-editor .cm-tooltip-hover .jar-hover-stack > *::before {
   display: none;
 }
 
-.cm-editor .cm-tooltip-hover.cm-tooltip-above .bel-hover-stack > :last-child::before {
+.cm-editor .cm-tooltip-hover.cm-tooltip-above .jar-hover-stack > :last-child::before {
   display: block;
   bottom: calc(var(--tooltip-spout-size) * -0.55);
   left: var(--tooltip-arrow-x, 0.7rem);
@@ -436,7 +436,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   border-top: 0;
 }
 
-.cm-editor .cm-tooltip-hover.cm-tooltip-below .bel-hover-stack > :first-child::before {
+.cm-editor .cm-tooltip-hover.cm-tooltip-below .jar-hover-stack > :first-child::before {
   display: block;
   top: calc(var(--tooltip-spout-size) * -0.55);
   left: var(--tooltip-arrow-x, 0.7rem);
@@ -467,12 +467,12 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 }
 
 /* html * forces --sans; tokens must follow the popup mono (see explorer.css). */
-.editor-ac [class^='bel-hl-'],
-.editor-ac [class*=' bel-hl-'] {
+.editor-ac [class^='jar-hl-'],
+.editor-ac [class*=' jar-hl-'] {
   font-family: inherit;
 }
 
-.editor-ac-item [class*='bel-hl-'] {
+.editor-ac-item [class*='jar-hl-'] {
   line-height: inherit;
   vertical-align: baseline;
 }
@@ -624,14 +624,14 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 
 /* Live word-occurrence highlight on cursor rest. Borderless — a quiet wash
    that just tints the matching tokens; the active token reads a touch warmer. */
-#editor.editor-cm-host .cm-bel-occurrence {
+#editor.editor-cm-host .cm-jar-occurrence {
   border-radius: 2px;
   background: light-dark(
     color-mix(in srgb, var(--accent-glow) 55%, transparent),
     hsla(215, 58%, 66%, 0.22)
   );
 }
-#editor.editor-cm-host .cm-bel-occurrence-active {
+#editor.editor-cm-host .cm-jar-occurrence-active {
   background: light-dark(
     color-mix(in srgb, var(--accent-glow) 95%, transparent),
     hsla(215, 60%, 70%, 0.36)
@@ -669,8 +669,8 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   line-height: 1.35;
   /* Keep height when empty so the row doesn't pop in/out with the cursor. */
   min-height: calc(1.35em + 0.7em);
-  color: var(--muted-higher, var(--muted));
-  background: var(--base-lower, var(--base));
+  color: var(--muted-higher);
+  background: var(--base-lower);
   border-bottom: 1px solid var(--base-mid);
   white-space: nowrap;
   overflow: hidden;
@@ -680,7 +680,7 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 .beljar-structure-sep {
   flex: 0 0 auto;
   margin: 0 0.45em;
-  color: var(--muted-mid, var(--muted));
+  color: var(--muted-mid);
   font-weight: 500;
   user-select: none;
 }
@@ -698,11 +698,18 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   filter: saturate(0.42) brightness(0.92);
   opacity: 0.88;
 }
-.beljar-structure-part:hover,
 .beljar-structure-part:focus-visible {
   filter: saturate(0.62) brightness(1.05);
   opacity: 1;
   outline: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .beljar-structure-part:hover {
+    filter: saturate(0.62) brightness(1.05);
+    opacity: 1;
+    outline: none;
+  }
 }
 /* Hole gutter identity survives a non-empty selection on the line (e.g. F8 cycle). */
 .cm-editor:has(.cm-selectionBackground) .cm-lineNumbers .cm-gutterElement.cm-hole-gutter {
@@ -715,18 +722,18 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 
 /* Right-click context menu: keep the targeted token visibly selected while the
    menu is open (editor often blurs, so the normal unfocused tint is too faint). */
-.cm-editor.cm-bel-context-open .cm-selectionBackground {
+.cm-editor.cm-jar-context-open .cm-selectionBackground {
   background-color: light-dark(rgba(37, 99, 235, 0.28), rgba(96, 165, 250, 0.28));
 }
 
 /* Ctrl/Cmd-hover definition link: underline the jumpable token. */
-.cm-bel-deflink {
+.cm-jar-deflink {
   text-decoration: underline;
   text-decoration-color: var(--accent-mid);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
-.cm-editor.cm-bel-deflink-armed .cm-content {
+.cm-editor.cm-jar-deflink-armed .cm-content {
   cursor: pointer;
 }
 
@@ -734,11 +741,11 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
    physically translates left→right and exits. Transform-based (not background-
    position, which clamps), so it's a true GPU-smooth sweep. Ease-out so it
    starts moving on frame one rather than hovering off-screen first. */
-.cm-bel-flash-line {
+.cm-jar-flash-line {
   position: relative;
   isolation: isolate;
 }
-.cm-bel-flash-line::after {
+.cm-jar-flash-line::after {
   content: '';
   position: absolute;
   top: 0;
@@ -755,10 +762,10 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
     color-mix(in srgb, var(--accent-mid) 26%, transparent) 65%,
     transparent 100%
   );
-  animation: cm-bel-flash-sweep 750ms cubic-bezier(0.16, 0.84, 0.3, 1) forwards;
+  animation: cm-jar-flash-sweep 750ms cubic-bezier(0.16, 0.84, 0.3, 1) forwards;
   will-change: transform, opacity;
 }
-@keyframes cm-bel-flash-sweep {
+@keyframes cm-jar-flash-sweep {
   0% {
     transform: translateX(100%);
     opacity: 1;
@@ -770,18 +777,18 @@ html.bj-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cm-bel-flash-line::after { animation: none; opacity: 0; }
+  .cm-jar-flash-line::after { animation: none; opacity: 0; }
 }
 
 /* Inline rename: type over the symbol; phantom previews at other occurrences. */
-.cm-bel-rename-active {
+.cm-jar-rename-active {
   border-radius: 2px;
   background: light-dark(
     color-mix(in srgb, var(--accent-glow) 95%, transparent),
     hsla(215, 60%, 70%, 0.36)
   );
 }
-.cm-bel-rename-active.is-invalid {
+.cm-jar-rename-active.is-invalid {
   background: light-dark(
     color-mix(in srgb, var(--ide-error-squiggle) 14%, var(--base-lowest)),
     color-mix(in srgb, var(--ide-error-squiggle) 18%, var(--base-low))

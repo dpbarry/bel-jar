@@ -5973,24 +5973,24 @@ backward-chaining synthesis engine.
 ### 2.4 Architecture map (where everything lives)
 
 The solve loop — `proveProgram` / `proveProgramCore` in
-[prover-orchestrator.mjs](js/editor-src/prover/prover-orchestrator.mjs) (3809 lines, THE orchestrator) —
+[prover-orchestrator.mjs](../../../js/editor-src/prover/prover-orchestrator.mjs) (3809 lines, THE orchestrator) —
 iterates: check program → parse `## Holes ##` report (`parseHoles`,
-[hole-report.mjs](js/editor-src/prover/hole-report.mjs)) → leftmost hole → `candidateMoves` from OUR model
+[hole-report.mjs](../../../js/editor-src/prover/hole-report.mjs)) → leftmost hole → `candidateMoves` from OUR model
 → certify each candidate with the checker → accept the first that checks clean → loop until
 0 holes (COMPLETE) or no move (STUCK, with an honest reason + the tried list).
 
 | File | Role |
 |---|---|
-| [prover-orchestrator.mjs](js/editor-src/prover/prover-orchestrator.mjs) | THE orchestrator. `candidateMoves` (order: closing-fills → **synth** → impossible → recurse → open-fills → invert → lemma → split → intro), `proveProgramCore`, budgets/guards, wave-parallel dispatch, prefilter, F1 step meta/captions/trace. **The file you will change most.** |
-| [prover-synth.mjs](js/editor-src/prover/prover-synth.mjs) | goal-directed **backward-chaining synthesis** (SLD over the pattern fragment) — this is the seed of the north star. Pure; adapter = `synthMoves` in the bridge. **The file whose ideas you will GENERALISE.** |
-| [hole-split.mjs](js/editor-src/prover/hole-split.mjs) | the model layer: typed constructor enumeration, split/intro skeletons, inversion, param inversion, fills, schema/block machinery, symmetric unifier. |
-| [prover-comp-type.mjs](js/editor-src/prover/prover-comp-type.mjs) | pure comp-type parsing, totality parsing, IH matching, `measureDesignation` (single source of truth for what the measure decreases). |
-| [proof-format.mjs](js/editor-src/format/proof-format.mjs) | `formatProofBody` — token-preserving re-layout + canonical glyphs. |
-| [prover-corpus-decls.mjs](js/editor-src/prover/prover-corpus-decls.mjs) | PURE harness core: `assembleCfgProgram`, `enumerateDecls`, `maskableTargets`, `maskByName`, `mutualMembers`. |
-| [js/beluga/beluga-client.js](js/beluga/beluga-client.js) | worker plumbing: `proverSlot` session + a CHECK POOL of 2 (checkFromString is STATELESS → checks parallelize; wave size 3). |
-| [scripts/prover-native-oracle.mjs](scripts/prover-native-oracle.mjs) | **FIRST TOOL** — browserless, step-faithful `proveProgram` with native `main.exe` as oracle. |
-| [scripts/corpus-harness.mjs](scripts/corpus-harness.mjs) | the falsification instrument (one chrome, resumable JSONL cache). `corpus-plan.mjs` / `corpus-report.mjs` alongside. |
-| [scripts/prover-probes.mjs](scripts/prover-probes.mjs) | the 11 live gates (`npm run prover:probe`). |
+| [prover-orchestrator.mjs](../../../js/editor-src/prover/prover-orchestrator.mjs) | THE orchestrator. `candidateMoves` (order: closing-fills → **synth** → impossible → recurse → open-fills → invert → lemma → split → intro), `proveProgramCore`, budgets/guards, wave-parallel dispatch, prefilter, F1 step meta/captions/trace. **The file you will change most.** |
+| [prover-synth.mjs](../../../js/editor-src/prover/prover-synth.mjs) | goal-directed **backward-chaining synthesis** (SLD over the pattern fragment) — this is the seed of the north star. Pure; adapter = `synthMoves` in the bridge. **The file whose ideas you will GENERALISE.** |
+| [hole-split.mjs](../../../js/editor-src/prover/hole-split.mjs) | the model layer: typed constructor enumeration, split/intro skeletons, inversion, param inversion, fills, schema/block machinery, symmetric unifier. |
+| [prover-comp-type.mjs](../../../js/editor-src/prover/prover-comp-type.mjs) | pure comp-type parsing, totality parsing, IH matching, `measureDesignation` (single source of truth for what the measure decreases). |
+| [proof-format.mjs](../../../js/editor-src/format/proof-format.mjs) | `formatProofBody` — token-preserving re-layout + canonical glyphs. |
+| [prover-corpus-decls.mjs](../../../js/editor-src/prover/prover-corpus-decls.mjs) | PURE harness core: `assembleCfgProgram`, `enumerateDecls`, `maskableTargets`, `maskByName`, `mutualMembers`. |
+| [js/beluga/beluga-client.js](../../../js/beluga/beluga-client.js) | worker plumbing: `proverSlot` session + a CHECK POOL of 2 (checkFromString is STATELESS → checks parallelize; wave size 3). |
+| [scripts/prover-native-oracle.mjs](../../../scripts/prover-native-oracle.mjs) | **FIRST TOOL** — browserless, step-faithful `proveProgram` with native `main.exe` as oracle. |
+| [scripts/corpus-harness.mjs](../../../scripts/corpus-harness.mjs) | the falsification instrument (one chrome, resumable JSONL cache). `corpus-plan.mjs` / `corpus-report.mjs` alongside. |
+| [scripts/prover-probes.mjs](../../../scripts/prover-probes.mjs) | the 11 live gates (`npm run prover:probe`). |
 
 **Domain facts you need on day one:**
 - A case-split's sub-derivations land in the META context (Δ / cD) as `X1 : ( |- dual A A')`,
@@ -6163,7 +6163,7 @@ T3 result reported without its tier label is a lie by omission.
 
 ## 4. The model to mirror — synthesis already IS the north star, in miniature
 
-Before designing anything, study [prover-synth.mjs](js/editor-src/prover/prover-synth.mjs). It is the seed of
+Before designing anything, study [prover-synth.mjs](../../../js/editor-src/prover/prover-synth.mjs). It is the seed of
 everything Phase D builds, and it already embodies the discipline you are extending:
 
 - It does **goal-directed backward chaining** (SLD resolution) over the pattern fragment:
@@ -7394,18 +7394,18 @@ touch `src/core`. For JS/editor changes: `node scripts/build-editor.mjs`; bump `
 
 | Area | Path |
 |---|---|
-| Orchestrator (you change most) | [js/editor-src/prover/prover-orchestrator.mjs](js/editor-src/prover/prover-orchestrator.mjs) |
-| Backward-chaining synthesis (you GENERALISE — Phases C/D) | [js/editor-src/prover/prover-synth.mjs](js/editor-src/prover/prover-synth.mjs) |
-| **Phase D algorithm (read before editing synth)** | [js/editor-src/prover/prover-synth.mjs](../js/editor-src/prover/prover-synth.mjs) + this master plan |
-| Model layer (split/fill/invert/schema) | [js/editor-src/prover/hole-split.mjs](js/editor-src/prover/hole-split.mjs) |
-| Comp-type / totality / IH / measureDesignation | [js/editor-src/prover/prover-comp-type.mjs](js/editor-src/prover/prover-comp-type.mjs) |
-| Hole report parsing | [js/editor-src/prover/hole-report.mjs](js/editor-src/prover/hole-report.mjs) |
-| Proof formatter | [js/editor-src/format/proof-format.mjs](js/editor-src/format/proof-format.mjs) |
-| Harness core (pure) | [js/editor-src/prover/prover-corpus-decls.mjs](js/editor-src/prover/prover-corpus-decls.mjs) |
-| Native oracle (FIRST TOOL) | [scripts/prover-native-oracle.mjs](scripts/prover-native-oracle.mjs) |
-| Falsification harness | [scripts/corpus-harness.mjs](scripts/corpus-harness.mjs), `corpus-plan.mjs`, `corpus-report.mjs` |
-| Live gates | [scripts/prover-probes.mjs](scripts/prover-probes.mjs) |
-| Worker plumbing / check pool | [js/beluga/beluga-client.js](js/beluga/beluga-client.js) |
+| Orchestrator (you change most) | [js/editor-src/prover/prover-orchestrator.mjs](../../../js/editor-src/prover/prover-orchestrator.mjs) |
+| Backward-chaining synthesis (you GENERALISE — Phases C/D) | [js/editor-src/prover/prover-synth.mjs](../../../js/editor-src/prover/prover-synth.mjs) |
+| **Phase D algorithm (read before editing synth)** | [js/editor-src/prover/prover-synth.mjs](../../../js/editor-src/prover/prover-synth.mjs) + this master plan |
+| Model layer (split/fill/invert/schema) | [js/editor-src/prover/hole-split.mjs](../../../js/editor-src/prover/hole-split.mjs) |
+| Comp-type / totality / IH / measureDesignation | [js/editor-src/prover/prover-comp-type.mjs](../../../js/editor-src/prover/prover-comp-type.mjs) |
+| Hole report parsing | [js/editor-src/prover/hole-report.mjs](../../../js/editor-src/prover/hole-report.mjs) |
+| Proof formatter | [js/editor-src/format/proof-format.mjs](../../../js/editor-src/format/proof-format.mjs) |
+| Harness core (pure) | [js/editor-src/prover/prover-corpus-decls.mjs](../../../js/editor-src/prover/prover-corpus-decls.mjs) |
+| Native oracle (FIRST TOOL) | [scripts/prover-native-oracle.mjs](../../../scripts/prover-native-oracle.mjs) |
+| Falsification harness | [scripts/corpus-harness.mjs](../../../scripts/corpus-harness.mjs), `corpus-plan.mjs`, `corpus-report.mjs` |
+| Live gates | [scripts/prover-probes.mjs](../../../scripts/prover-probes.mjs) |
+| Worker plumbing / check pool | [js/beluga/beluga-client.js](../../../js/beluga/beluga-client.js) |
 | Coverage matrix + grammar anchor | `tests/test-prover-coverage-matrix.mjs` |
 | No-overfit structural guard | `tests/test-prover-no-overfit.mjs` |
 | Path canonicity pin | `tests/test-prover-path-canonicity.mjs` |

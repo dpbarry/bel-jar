@@ -187,7 +187,7 @@ export function lintTooltipItemsFromState(state, extraDiags = null) {
 }
 
 const TIP_ATTRS = ['data-tooltip', 'data-tooltip-tone', 'data-tooltip-head', 'data-tooltip-errors', 'data-tooltip-placement'];
-const GUTTER_TIP_MEASURE_KEY = 'bel-gutter-diag-tips';
+const GUTTER_TIP_MEASURE_KEY = 'jar-gutter-diag-tips';
 const PRELUDE_TIP_ATTR = 'data-suite-prelude-tip';
 
 function preludeRowLineEl(view) {

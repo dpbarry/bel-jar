@@ -145,7 +145,7 @@ const entry = (over) => ({
   expect(seg.text === '7', `it counts the undo depth (got ${seg.text})`);
   expect(seg.action === 'edit-history', 'and it opens the panel');
   expect(seg.tone === 'plain', 'no branch, no accent');
-  expect(seg.title.indexOf('7 steps to undo') > 0, 'the tooltip spells the summary out');
+  expect(seg.title === 'Editor history', 'the tooltip names the panel');
 
   const branched = buildSegments({ ...base, undoDepth: 7, redoDepth: 2 }, 'standard');
   expect(branched.find((s) => s.key === 'history').tone === 'branched',

@@ -57,4 +57,4 @@ expect(
   `inverse commit restores references, got ${JSON.stringify(state.doc.toString())}`,
 );
 
-console.log('OK bel-rename undo');
+console.log('OK jar-rename undo');

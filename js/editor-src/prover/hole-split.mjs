@@ -16,7 +16,6 @@
 import { parser } from '../beluga-parser.js';
 import { unifyAgainstGoal, instantiateType, instantiationChanged } from './prover-unify.mjs';
 import { inhabit } from './prover-inhabit.mjs';
-import { parseCompType } from './prover-comp-type.mjs';
 import { firstChildNamed, firstIdentChild, isLFDatatypeHead } from '../tree-helpers.mjs';
 import { reIdentDollarHashExact } from './ident.mjs';
 import { transport } from './prover-transport.mjs';
@@ -1039,14 +1038,6 @@ function ctxBinderNames(ctxStr) {
   }).filter(Boolean);
 }
 
-function ctxNameBinderNames(ctxStr) {
-  const parts = String(ctxStr || '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (parts.length <= 1) return [];
-  return parts.slice(1)
-    .filter((p) => /:\s*name\b/.test(p))
-    .map((p) => p.slice(0, p.indexOf(':')).trim())
-    .filter(Boolean);
-}
 
 function metaProjectionSuffix(lambdaBinders, ctxNames) {
   const idx = [...lambdaBinders, ...ctxNames];

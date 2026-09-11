@@ -1,7 +1,7 @@
 import { createDialog, openDialog, requestDialogClose } from './dialog.mjs';
 
-export const CARD_CLASS = 'bj-dialog__card bj-prompt-dialog__card';
-export const WRAP_CLASS = 'bj-prompt-dialog-wrap';
+export const CARD_CLASS = 'jar-dialog__card jar-prompt-dialog__card';
+export const WRAP_CLASS = 'jar-prompt-dialog-wrap';
 
 export function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -11,21 +11,21 @@ export function el(tag, className, text) {
 }
 
 export function markMono(name) {
-  const span = el('span', 'bj-prompt-dialog__mono');
+  const span = el('span', 'jar-prompt-dialog__mono');
   span.textContent = name;
   return span;
 }
 
 export function actionButton(label, action, variant, opts) {
   opts = opts || {};
-  const btn = el('button', 'bj-prompt-dialog__btn' + (variant ? ` is-${variant}` : ''));
+  const btn = el('button', 'jar-prompt-dialog__btn' + (variant ? ` is-${variant}` : ''));
   btn.type = 'button';
   btn.dataset.action = action;
   if (opts.monoSuffix) {
     if (opts.labelPrefix) {
-      btn.appendChild(el('span', 'bj-prompt-dialog__btn-prefix', opts.labelPrefix));
+      btn.appendChild(el('span', 'jar-prompt-dialog__btn-prefix', opts.labelPrefix));
     }
-    const mono = el('span', 'bj-prompt-dialog__btn-mono');
+    const mono = el('span', 'jar-prompt-dialog__btn-mono');
     mono.textContent = opts.monoSuffix;
     btn.appendChild(mono);
   } else {
@@ -35,7 +35,7 @@ export function actionButton(label, action, variant, opts) {
 }
 
 export function buildActions(buttons, layout) {
-  const actions = el('div', 'bj-prompt-dialog__actions');
+  const actions = el('div', 'jar-prompt-dialog__actions');
   if (layout === 'row') actions.classList.add('is-row');
   for (const b of buttons) {
     const btnOpts = {};
@@ -59,24 +59,24 @@ export function appendBody(shell, opts) {
   }
 
   if (opts.step) {
-    shell.appendChild(el('p', 'bj-prompt-dialog__step', opts.step));
+    shell.appendChild(el('p', 'jar-prompt-dialog__step', opts.step));
   }
 
   if (opts.subject) {
-    const subject = el('p', 'bj-prompt-dialog__subject');
+    const subject = el('p', 'jar-prompt-dialog__subject');
     subject.appendChild(markMono(opts.subject));
     shell.appendChild(subject);
   }
 
   if (opts.message != null) {
-    const intro = el('p', 'bj-prompt-dialog__message');
+    const intro = el('p', 'jar-prompt-dialog__message');
     if (opts.message instanceof Node) intro.appendChild(opts.message);
     else intro.textContent = String(opts.message);
     shell.appendChild(intro);
   }
 
   if (opts.note) {
-    shell.appendChild(el('p', 'bj-prompt-dialog__note', opts.note));
+    shell.appendChild(el('p', 'jar-prompt-dialog__note', opts.note));
   }
 }
 
@@ -85,7 +85,7 @@ export function open(opts) {
 
   return new Promise((resolve) => {
     let settled = false;
-    const shell = el('div', 'bj-prompt-dialog');
+    const shell = el('div', 'jar-prompt-dialog');
     appendBody(shell, opts);
 
     const buttons = opts.buttons || [];

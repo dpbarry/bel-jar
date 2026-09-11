@@ -30,7 +30,6 @@ let root = null;
 let segmentHost = null;
 let vimSlotEl = null;
 let commandHost = null;
-let messageText = '';
 let messageTimer = 0;
 let messageEl = null;
 // Long enough to read a chord, short enough not to linger.
@@ -46,6 +45,8 @@ const state = {
   mode: '',
   pending: '',
   mark: false,
+  /** `{ recording, label, stop }` while a keyboard macro is being recorded. */
+  macro: null,
   hasFile: false,
   line: NaN,
   col: NaN,
@@ -55,6 +56,14 @@ const state = {
   warnings: 0,
   checking: false,
   parsePercent: NaN,
+  /**
+   * The caret is inside a hole. ⛔ SEPARATE from `goal`: a hole whose goal has
+   * not been computed yet is still a hole, and folding the two into one string
+   * is what made a fresh `?` look like ordinary code.
+   */
+  inHole: false,
+  /** A goal may still arrive for the hole at the caret (the engine's own say). */
+  goalPending: false,
   goal: '',
   holes: 0,
   symbols: NaN,
@@ -97,19 +106,19 @@ function ensureRoot() {
   const pane = hostPane();
   if (!pane) return null;
   root = document.createElement('div');
-  root.className = 'bj-strip';
+  root.className = 'jar-strip';
   root.setAttribute('role', 'status');
   root.setAttribute('aria-live', 'off');
   segmentHost = document.createElement('div');
-  segmentHost.className = 'bj-strip__segments';
+  segmentHost.className = 'jar-strip__segments';
   root.appendChild(segmentHost);
   // ⛔ The command line lives IN the row, in the command zone, not over it.
   // Opening `:` used to wipe the strip and show a bare prompt; the strip is the
   // strip, and typing a command is one more thing happening in it.
   commandHost = document.createElement('div');
-  commandHost.className = 'bj-strip__command';
+  commandHost.className = 'jar-strip__command';
   vimSlotEl = document.createElement('div');
-  vimSlotEl.className = 'bj-strip__vim';
+  vimSlotEl.className = 'jar-strip__vim';
   commandHost.appendChild(vimSlotEl);
   // commandHost joins the segment row on every paint; it is not a child of the
   // strip directly, so nothing here appends it.
@@ -120,7 +129,7 @@ function ensureRoot() {
 
 function ownStatusDot(owned) {
   const root_ = typeof document !== 'undefined' ? document.documentElement : null;
-  if (root_) root_.classList.toggle('bj-strip-owns-status', !!owned);
+  if (root_) root_.classList.toggle('jar-strip-owns-status', !!owned);
 }
 
 function unmount() {
@@ -149,7 +158,7 @@ let dotEl = null;
 function statusDot() {
   if (!dotEl) {
     dotEl = document.createElement('span');
-    dotEl.className = 'ide-status-dot bj-strip__statusdot';
+    dotEl.className = 'ide-status-dot jar-strip__statusdot';
     dotEl.setAttribute('data-status-silent', '');
     dotEl.setAttribute('role', 'status');
   }
@@ -183,14 +192,71 @@ function renderType(host, text) {
   host.textContent = norm;
 }
 
+/**
+ * The strip's own glyphs, drawn rather than typed.
+ *
+ * ⛔ Not a font character. `⟲` renders at whatever weight and proportion the UI
+ * font happens to give it — in Inter it arrives as a near-closed ring whose head
+ * all but touches its tail, so the one deliberate feature of the shape reads as
+ * a rendering fault. Drawn here it keeps the strip's stroke weight, inherits the
+ * segment's colour through `currentColor`, and the gap is a decision.
+ *
+ * The undo arrow, on a 16 grid about (8,8) with r 5.3:
+ *
+ *   arc   302° counter-clockwise, from 190° round the bottom to 132°.
+ *   head  a FILLED triangle whose base straddles the arc's end and whose tip
+ *         carries on along the tangent.
+ *
+ * ⛔ The head is filled, not a stroked chevron. A chevron's trailing barb lies
+ * along the arc it is attached to, so at 13px the two merge into one thick hook
+ * and the arrow stops reading as an arrow. Filling it also keeps the visual gap
+ * honest: the tip reaches ~155°, leaving a clean ~35° opening rather than the
+ * hairline the glyph had.
+ *
+ * ⛔ Sized generously on purpose. A head scaled to "proportionate" against the
+ * ring reads as a thickened tip at 13px, not as an arrowhead — the triangle has
+ * to be big enough that its silhouette is legible on its own, before the ring
+ * around it helps. It is built by scaling the base triangle 1.6× outward from
+ * the arc's own end point, so the head still meets the ring at the same seam.
+ */
+const ICONS = {
+  history: [
+    { d: 'M2.78 8.92A5.3 5.3 0 1 0 4.45 4.06', stroke: true },
+    { d: 'M1.36 6.84 2.85 2.28 6.05 5.84Z', fill: true },
+  ],
+};
+
+function iconEl(name) {
+  const parts = ICONS[name];
+  if (!parts) return null;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'jar-strip__icon');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  for (const part of parts) {
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', part.d);
+    p.setAttribute('fill', part.fill ? 'currentColor' : 'none');
+    if (part.stroke) {
+      p.setAttribute('stroke', 'currentColor');
+      p.setAttribute('stroke-width', '1.5');
+      p.setAttribute('stroke-linecap', 'round');
+    }
+    svg.appendChild(p);
+  }
+  return svg;
+}
+
 function segmentEl(seg) {
   if (seg.spacer) {
     const gap = document.createElement('span');
-    gap.className = 'bj-strip__spacer';
+    gap.className = 'jar-strip__spacer';
     return gap;
   }
   const el = document.createElement(seg.action ? 'button' : 'span');
-  el.className = 'bj-strip__seg bj-strip__seg--' + seg.key
+  el.className = 'jar-strip__seg jar-strip__seg--' + seg.key
     + (seg.tone ? ' is-' + seg.tone : '')
     + (seg.mono ? ' is-mono' : '')
     + (seg.dot ? ' is-dot' : '')
@@ -203,18 +269,28 @@ function segmentEl(seg) {
   if (seg.title) {
     el.setAttribute('data-tooltip', seg.title);
     el.setAttribute('aria-label', seg.title);
+    // ⛔ `bindTooltips()` sweeps `[data-tooltip]` ONCE at boot and is not
+    // delegated. Every segment here is built after that sweep and rebuilt on
+    // each repaint, so none of these tooltips had ever appeared — including the
+    // goal's, which is the only place the untruncated type is shown, and the
+    // checker's, which is the only place the problem count is spelled out.
+    global.Tooltips?.bind?.(el);
   }
   if (seg.pressed != null) el.setAttribute('aria-expanded', seg.pressed ? 'true' : 'false');
   if (seg.pressed) el.classList.add('is-open');
   if (seg.dot) el.appendChild(statusDot());
+  if (seg.icon) {
+    const glyph = iconEl(seg.icon);
+    if (glyph) el.appendChild(glyph);
+  }
   if (seg.mark) {
     const mark = document.createElement('span');
-    mark.className = 'bj-strip__mark';
+    mark.className = 'jar-strip__mark';
     mark.textContent = seg.mark;
     el.appendChild(mark);
   }
   const label = document.createElement('span');
-  label.className = 'bj-strip__label';
+  label.className = 'jar-strip__label';
   if (seg.render === 'type') renderType(label, seg.text);
   else label.textContent = seg.text || '';
   el.appendChild(label);
@@ -232,6 +308,17 @@ const ACTIONS = {
     || global.Commands?.run('view.harpoon'),
   'run': () => global.Commands?.run('run.file'),
   'edit-history': () => openHistory(),
+  /**
+   * Stop the recording, then hand the keyboard straight back.
+   *
+   * ⛔ `dropTrailing: 0`. The number is how many KEYSTROKES asked for the stop,
+   * because the recorder sits on capture and has already seen them — a click is
+   * none, and the default of 1 would eat the last key of the macro.
+   */
+  'macro-stop': () => {
+    global.Commands?.run('macro.record', { dropTrailing: 0 });
+    global.CurrentEditor?.focus?.();
+  },
 };
 
 function runAction(action) {
@@ -268,16 +355,26 @@ function paint() {
   const segments = buildSegments(state, detail);
   // Cheap identity check: a repaint that would change nothing is skipped, so a
   // caret sweeping within one line never touches the DOM.
-  const signature = segments.map((s) => s.key + ':' + s.text + ':' + s.tone + ':' + (s.pressed ? '1' : '')).join('|');
+  // ⚠ The TITLE is part of the identity. A tooltip is content: REC's names the
+  // key that ends the recording, and that sentence changes with the vim mode
+  // while its chip reads `REC` throughout. Left out, the repaint that follows a
+  // mode change kept the stale instruction.
+  const signature = segments.map((s) => s.key + ':' + s.text + ':' + s.tone + ':' + (s.pressed ? '1' : '') + ':' + (s.title || '')).join('|');
   if (signature === rendered) return;
   rendered = signature;
   const els = segments.map(segmentEl);
-  // The command zone sits after the last of the left-hand facts, so a chord or
-  // a `:` line appears exactly where the eye already is.
-  const LEFT = ['keymap', 'position', 'mode', 'command'];
-  let at = 0;
-  segments.forEach((seg, i) => { if (LEFT.indexOf(seg.key) >= 0) at = i + 1; });
-  placeSegments(els, at);
+  // ⛔ The command zone is the LAST thing in the left group — everything else
+  // comes before it, always.
+  //
+  // It used to sit after the last of a NAMED list of left-hand facts, and a
+  // segment outside that list therefore landed to its RIGHT. The line grows
+  // (`flex: 1 1 auto`), so that segment was shoved to the far edge of the bar:
+  // start a macro with no chord half-typed and REC — the one piece of state you
+  // must not lose track of — flew across the window and docked next to the
+  // checker. Anchoring to the spacer states the rule the eye already reads:
+  // facts on the left, the line you are typing at the end of them.
+  const spacerAt = segments.findIndex((seg) => seg.spacer);
+  placeSegments(els, spacerAt < 0 ? els.length : spacerAt);
   // A repaint drops the message node, so put it back in the gap.
   placeMessage();
   host.classList.toggle('is-resting', isResting(segments));
@@ -289,7 +386,7 @@ function paint() {
 function messageNode() {
   if (!messageEl) {
     messageEl = document.createElement('span');
-    messageEl.className = 'bj-strip__message';
+    messageEl.className = 'jar-strip__message';
     messageEl.setAttribute('role', 'status');
     messageEl.setAttribute('aria-live', 'polite');
   }
@@ -322,7 +419,7 @@ function placeSegments(els, at) {
 function placeMessage() {
   if (!segmentHost) return;
   const node = messageNode();
-  const spacer = segmentHost.querySelector('.bj-strip__spacer');
+  const spacer = segmentHost.querySelector('.jar-strip__spacer');
   if (spacer) {
     if (node.previousSibling !== spacer) spacer.after(node);
   } else if (node.parentNode !== segmentHost) {
@@ -351,7 +448,6 @@ function setMessage(text, opts) {
   placeMessage();
   if (messageTimer) clearTimeout(messageTimer);
   messageTimer = 0;
-  messageText = next;
   if (!next) {
     node.classList.remove('is-visible');
     // Let the fade finish before the text goes, or it blinks empty.
@@ -392,8 +488,12 @@ function setEditorState(next) {
   // Leaving a keymap leaves its state behind with it: a half-typed chord and a
   // set mark both belong to the keymap that was active when they happened.
   if (next.style && next.style !== state.style) next = { ...next, pending: '', mark: false };
-  for (const key of ['style', 'mode', 'pending', 'mark', 'hasFile', 'line', 'col', 'selChars', 'selLines',
-    'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen']) {
+  // ⚠ An ALLOWLIST, and it fails silent: a field not named here is dropped
+  // without a word, which is exactly what happened to `inHole` — the feed sent
+  // it, the builder read it, and the bar never showed a goal. A new piece of
+  // editor state has to be added in BOTH places, here and in `state` above.
+  for (const key of ['style', 'mode', 'pending', 'mark', 'macro', 'hasFile', 'line', 'col', 'selChars', 'selLines',
+    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen']) {
     if (!(key in next) || state[key] === next[key]) continue;
     state[key] = next[key];
     changed = true;
@@ -509,11 +609,22 @@ function apply() {
 function refreshProofState() {
   const ed = global.CurrentEditor;
   if (!ed) {
-    setEditorState({ holes: 0, symbols: NaN, goal: '' });
+    setEditorState({ holes: 0, symbols: NaN, goal: '', inHole: false, goalPending: false });
     return;
   }
   let holes = 0;
   let symbols = NaN;
+  // ⛔ The goal is read HERE too, not only when the caret moves.
+  //
+  // This runs on `beljar:hole-goals-updated` — the moment the goals exist — and
+  // it used to set holes and symbols while leaving `goal` alone. So a hole you
+  // were already standing in when its goal arrived stayed blank until you moved
+  // off it and back: the one case where the bar has something new to say was
+  // the one case it stayed silent for.
+  let goalState = { inHole: false, goal: '', goalPending: false };
+  try {
+    goalState = global.BelEditor?.goalAtCaret?.() || goalState;
+  } catch (_) { /* leave it unknown rather than wrong */ }
   let checking = state.checking;
   let parsePercent = NaN;
   try {
@@ -529,7 +640,13 @@ function refreshProofState() {
       parsePercent = st.parse && !st.parse.complete ? st.parse.percent : NaN;
     }
   } catch (_) { /* leave what we had */ }
-  setEditorState({ holes, symbols });
+  setEditorState({
+    holes,
+    symbols,
+    goal: goalState.goal,
+    inHole: goalState.inHole,
+    goalPending: !!goalState.goalPending,
+  });
   setDiagnostics({ errors: state.errors, warnings: state.warnings, checking, parsePercent });
 }
 
@@ -540,7 +657,7 @@ function onLint(e) {
 }
 
 function onClick(e) {
-  const btn = e.target && e.target.closest ? e.target.closest('.bj-strip__seg[data-action]') : null;
+  const btn = e.target && e.target.closest ? e.target.closest('.jar-strip__seg[data-action]') : null;
   if (!btn) return;
   e.preventDefault();
   runAction(btn.dataset.action);

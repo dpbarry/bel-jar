@@ -17,7 +17,7 @@ function modPressed(event) {
 const setLinkEffect = StateEffect.define();
 const clearLinkEffect = StateEffect.define();
 
-const linkMark = Decoration.mark({ class: 'cm-bel-deflink' });
+const linkMark = Decoration.mark({ class: 'cm-jar-deflink' });
 
 const linkField = StateField.define({
   create() {
@@ -41,13 +41,13 @@ export function clearDefLink(view) {
   if (!view._belDefLinkActive) return;
   view._belDefLinkActive = false;
   view.dispatch({ effects: clearLinkEffect.of(null) });
-  view.dom.classList.remove('cm-bel-deflink-armed');
+  view.dom.classList.remove('cm-jar-deflink-armed');
 }
 
 export function armDefLink(view, from, to) {
   view._belDefLinkActive = true;
   view.dispatch({ effects: setLinkEffect.of({ from, to }) });
-  view.dom.classList.add('cm-bel-deflink-armed');
+  view.dom.classList.add('cm-jar-deflink-armed');
 }
 
 export function defLinkDecoration() {
@@ -107,8 +107,8 @@ export const navSemanticTick = StateEffect.define();
 
 const REST_MS = 260;
 
-const occMark = Decoration.mark({ class: 'cm-bel-occurrence' });
-const occActiveMark = Decoration.mark({ class: 'cm-bel-occurrence cm-bel-occurrence-active' });
+const occMark = Decoration.mark({ class: 'cm-jar-occurrence' });
+const occActiveMark = Decoration.mark({ class: 'cm-jar-occurrence cm-jar-occurrence-active' });
 
 const setOccEffect = StateEffect.define();
 

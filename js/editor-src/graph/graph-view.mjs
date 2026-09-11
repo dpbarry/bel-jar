@@ -87,7 +87,7 @@ function makeGroupSource(view, engine) {
 }
 
 function isCfgEditorView(view) {
-  return !!view?.dom?.classList?.contains('bel-editor--cfg');
+  return !!view?.dom?.classList?.contains('jar-editor--cfg');
 }
 
 // Parse-% chrome is only meaningful for the single-file engine's incremental
@@ -265,37 +265,37 @@ export function renderGraph(container, layout, { onJump, interactive = true, fit
   container.textContent = '';
   if (!layout.nodes.length) {
     const empty = document.createElement('p');
-    empty.className = 'bel-graph-empty';
+    empty.className = 'jar-graph-empty';
     empty.textContent = 'No dependencies to graph.';
     container.appendChild(empty);
     return null;
   }
 
-  const svg = svgEl('svg', { class: 'bel-graph-svg' });
-  const arrowId = `bel-graph-arrow-${++markerSeq}`;
+  const svg = svgEl('svg', { class: 'jar-graph-svg' });
+  const arrowId = `jar-graph-arrow-${++markerSeq}`;
   const defs = svgEl('defs');
   const marker = svgEl('marker', {
     id: arrowId, viewBox: '0 0 8 8', refX: '7', refY: '4',
     markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse',
   });
-  marker.appendChild(svgEl('path', { d: 'M0 0 L8 4 L0 8 z', class: 'bel-graph-arrowhead' }));
+  marker.appendChild(svgEl('path', { d: 'M0 0 L8 4 L0 8 z', class: 'jar-graph-arrowhead' }));
   defs.appendChild(marker);
   svg.appendChild(defs);
 
-  const viewport = svgEl('g', { class: 'bel-graph-viewport' });
+  const viewport = svgEl('g', { class: 'jar-graph-viewport' });
   svg.appendChild(viewport);
 
   for (const e of layout.edges) {
     viewport.appendChild(svgEl('path', {
       d: e.path,
-      class: `bel-graph-edge bel-graph-edge--${e.kind || 'body'}`,
+      class: `jar-graph-edge jar-graph-edge--${e.kind || 'body'}`,
       'marker-end': `url(#${arrowId})`,
     }));
   }
 
   for (const n of layout.nodes) {
     const g = svgEl('g', {
-      class: `bel-graph-node is-${n.role}`,
+      class: `jar-graph-node is-${n.role}`,
       transform: `translate(${n.x} ${n.y})`, tabindex: '0',
     });
     g.appendChild(svgEl('rect', { width: n.w, height: n.h, rx: '6' }));
@@ -344,7 +344,7 @@ export function renderGraph(container, layout, { onJump, interactive = true, fit
 
     let pan = null;
     svg.addEventListener('pointerdown', (ev) => {
-      if (ev.target.closest('.bel-graph-node')) return;
+      if (ev.target.closest('.jar-graph-node')) return;
       pan = { px: ev.clientX, py: ev.clientY, x0: view.x, y0: view.y, id: ev.pointerId };
       svg.setPointerCapture(ev.pointerId);
       svg.classList.add('is-panning');
@@ -425,7 +425,7 @@ function graphModelFingerprint(model) {
 
 function updateStaleBanner(container, text) {
   if (!container) return;
-  let banner = container.querySelector('.bel-graph-stale-banner');
+  let banner = container.querySelector('.jar-graph-stale-banner');
   if (!text) {
     banner?.remove();
     return;
@@ -616,38 +616,58 @@ const GRAPH_SETTINGS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 let graphSettingsDialog = null;
 const graphSettingsFields = {};
 
+/**
+ * ⛔ One outside-click listener for all of these, not one per instance.
+ *
+ * Each dropdown used to add a `document` click handler it never removed, and
+ * the settings dialog builds a fresh set every time it opens — so the handlers
+ * piled up, holding dead panels alive and running on every click in the app.
+ * Mirrors `js/ui/jar-dropdown.mjs`, which cannot be imported across the bundle
+ * seam.
+ */
+const openGraphDropdowns = [];
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    if (!openGraphDropdowns.length) return;
+    for (let i = openGraphDropdowns.length - 1; i >= 0; i -= 1) {
+      const d = openGraphDropdowns[i];
+      if (d && !d.containsTarget(e.target)) d.close();
+    }
+  });
+}
+
 function createGraphPrefDropdown(options, currentValue, onChange) {
   let selected = currentValue;
   let focusedIdx = -1;
   const optionEls = [];
 
   const container = document.createElement('div');
-  container.className = 'bj-dropdown';
+  container.className = 'jar-dropdown';
 
   const trigger = document.createElement('button');
   trigger.type = 'button';
-  trigger.className = 'bj-dropdown__trigger';
+  trigger.className = 'jar-dropdown__trigger';
   trigger.setAttribute('aria-haspopup', 'listbox');
   trigger.setAttribute('aria-expanded', 'false');
 
   const valueSpan = document.createElement('span');
-  valueSpan.className = 'bj-dropdown__value';
+  valueSpan.className = 'jar-dropdown__value';
 
   const chevronEl = document.createElement('span');
-  chevronEl.className = 'bj-dropdown__chevron';
+  chevronEl.className = 'jar-dropdown__chevron';
   chevronEl.setAttribute('aria-hidden', 'true');
   chevronEl.innerHTML = '<svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   trigger.append(valueSpan, chevronEl);
 
   const panel = document.createElement('div');
-  panel.className = 'bj-dropdown__panel';
+  panel.className = 'jar-dropdown__panel';
   panel.setAttribute('role', 'listbox');
 
   for (const [idx, opt] of options.entries()) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'bj-dropdown__option';
+    btn.className = 'jar-dropdown__option';
     btn.setAttribute('role', 'option');
     btn.dataset.value = opt.value;
 
@@ -655,7 +675,7 @@ function createGraphPrefDropdown(options, currentValue, onChange) {
     labelSpan.textContent = opt.label;
 
     const checkEl = document.createElement('span');
-    checkEl.className = 'bj-dropdown__option-check';
+    checkEl.className = 'jar-dropdown__option-check';
     checkEl.setAttribute('aria-hidden', 'true');
     checkEl.innerHTML = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4.5L4.5 8L10 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -734,9 +754,15 @@ function createGraphPrefDropdown(options, currentValue, onChange) {
     trigger.setAttribute('aria-expanded', 'true');
     window.addEventListener('scroll', reposition, true);
     window.addEventListener('resize', reposition);
+    if (openGraphDropdowns.indexOf(entry) === -1) openGraphDropdowns.push(entry);
     focusedIdx = options.findIndex((o) => o.value === selected);
     updateFocus();
   }
+
+  const entry = {
+    close,
+    containsTarget: (t) => container.contains(t) || panel.contains(t),
+  };
 
   function close() {
     container.classList.remove('is-open');
@@ -744,6 +770,11 @@ function createGraphPrefDropdown(options, currentValue, onChange) {
     trigger.setAttribute('aria-expanded', 'false');
     window.removeEventListener('scroll', reposition, true);
     window.removeEventListener('resize', reposition);
+    // Mounted onto the dialog on open, so it has to come back off — otherwise
+    // every graph-settings visit leaves a hidden panel behind in the dialog.
+    if (panel.parentElement) panel.parentElement.removeChild(panel);
+    const at = openGraphDropdowns.indexOf(entry);
+    if (at !== -1) openGraphDropdowns.splice(at, 1);
   }
 
   trigger.addEventListener('click', () => {
@@ -769,10 +800,6 @@ function createGraphPrefDropdown(options, currentValue, onChange) {
     }
   });
 
-  document.addEventListener('click', (e) => {
-    if (container.classList.contains('is-open') && !container.contains(e.target) && !panel.contains(e.target)) close();
-  });
-
   setValue(currentValue);
   return { element: container, setValue };
 }
@@ -783,14 +810,14 @@ function addGraphSettingDropdown(parent, labelText, descText, options, key) {
   const prefs = loadGraphPrefs();
   const current = NUMERIC_PREF_KEYS.has(key) ? String(prefs[key]) : prefs[key];
   const row = document.createElement('div');
-  row.className = 'bj-dialog__setting';
+  row.className = 'jar-dialog__setting';
   const main = document.createElement('div');
-  main.className = 'bj-dialog__setting-main';
+  main.className = 'jar-dialog__setting-main';
   const label = document.createElement('span');
-  label.className = 'bj-dialog__setting-label';
+  label.className = 'jar-dialog__setting-label';
   label.textContent = labelText;
   const desc = document.createElement('span');
-  desc.className = 'bj-dialog__setting-desc';
+  desc.className = 'jar-dialog__setting-desc';
   desc.textContent = descText;
   main.append(label, desc);
   const dd = createGraphPrefDropdown(options, current, (val) => {
@@ -818,16 +845,16 @@ function ensureGraphSettingsDialog() {
   if (typeof g.Dialog === 'undefined') return null;
 
   const shell = document.createElement('div');
-  shell.className = 'bj-settings bj-settings--solo';
+  shell.className = 'jar-settings jar-settings--solo';
 
   const main = document.createElement('div');
-  main.className = 'bj-settings__main';
+  main.className = 'jar-settings__main';
 
   const panel = document.createElement('div');
-  panel.className = 'bj-settings__panel is-active';
+  panel.className = 'jar-settings__panel is-active';
 
   const body = document.createElement('div');
-  body.className = 'bj-settings__panel-body';
+  body.className = 'jar-settings__panel-body';
 
   addGraphSettingDropdown(
     body,
@@ -870,7 +897,7 @@ function ensureGraphSettingsDialog() {
   graphSettingsDialog = g.Dialog.createDialog({
     title: 'Dependency graph settings',
     content: shell,
-    cardClass: 'bj-dialog__card--settings-compact',
+    cardClass: 'jar-dialog__card--settings-compact',
     removeOnClose: false,
   });
   return graphSettingsDialog;
@@ -980,7 +1007,7 @@ function modelSymbolCount(engine) {
 function makeStaleBanner(text) {
   if (!text) return null;
   const el = document.createElement('div');
-  el.className = 'bel-graph-stale-banner';
+  el.className = 'jar-graph-stale-banner';
   el.setAttribute('role', 'status');
   el.textContent = text;
   return el;
@@ -988,7 +1015,7 @@ function makeStaleBanner(text) {
 
 function graphWindowTitle(parseNote = '') {
   const t = document.createElement('span');
-  t.className = 'bel-graph-title-name';
+  t.className = 'jar-graph-title-name';
   t.textContent = parseNote ? `Dependency graph (${parseNote})` : 'Dependency graph';
   return t;
 }
@@ -1111,7 +1138,7 @@ function setTip(el, text) {
 function iconButton(name, title) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'bel-graph3d-iconbtn';
+  b.className = 'jar-graph3d-iconbtn';
   b.innerHTML = iconSvg(name);
   setTip(b, title);
   return b;
@@ -1120,7 +1147,7 @@ function iconButton(name, title) {
 function bareNavBtn(name, title) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'bel-graph3d-navbtn';
+  b.className = 'jar-graph3d-navbtn';
   b.innerHTML = iconSvg(name);
   setTip(b, title);
   return b;
@@ -1128,11 +1155,11 @@ function bareNavBtn(name, title) {
 
 function buildGraphPropBar() {
   const el = document.createElement('div');
-  el.className = 'bel-graph3d-propbar';
+  el.className = 'jar-graph3d-propbar';
   const text = document.createElement('div');
-  text.className = 'bel-graph3d-propbar-text';
+  text.className = 'jar-graph3d-propbar-text';
   const nav = document.createElement('div');
-  nav.className = 'bel-graph3d-propbar-nav';
+  nav.className = 'jar-graph3d-propbar-nav';
   const backBtn = bareNavBtn('back', 'Back (Alt+←)');
   const forwardBtn = bareNavBtn('forward', 'Forward (Alt+→)');
   nav.append(backBtn, forwardBtn);
@@ -1164,24 +1191,24 @@ function buildGraphPropBar() {
 
 function buildGraphToolbar({ sidebar } = {}) {
   const el = document.createElement('div');
-  el.className = 'bel-graph3d-toolbar';
+  el.className = 'jar-graph3d-toolbar';
 
   const searchWrap = document.createElement('div');
-  searchWrap.className = 'bel-graph3d-search-wrap';
+  searchWrap.className = 'jar-graph3d-search-wrap';
   const search = document.createElement('input');
   search.type = 'text';
-  search.className = 'bel-graph3d-search';
+  search.className = 'jar-graph3d-search';
   search.placeholder = 'Search…';
   search.setAttribute('autocomplete', 'off');
   const acList = document.createElement('div');
-  acList.className = 'bel-graph3d-autocomplete';
+  acList.className = 'jar-graph3d-autocomplete';
   acList.hidden = true;
   searchWrap.append(search, acList);
 
   const localBtn = iconButton('explore', 'Local view');
-  localBtn.classList.add('bel-graph3d-scopebtn');
+  localBtn.classList.add('jar-graph3d-scopebtn');
   const globalBtn = iconButton('global', 'Global view');
-  globalBtn.classList.add('bel-graph3d-scopebtn');
+  globalBtn.classList.add('jar-graph3d-scopebtn');
   const resetBtn = iconButton('reset', 'Reset view');
   const zoomOutBtn = iconButton('minus', 'Zoom out');
   const zoomInBtn = iconButton('plus', 'Zoom in');
@@ -1259,7 +1286,7 @@ function buildGraphToolbar({ sidebar } = {}) {
     hits.forEach((n, i) => {
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'bel-graph3d-ac-item';
+      row.className = 'jar-graph3d-ac-item';
       row.dataset.name = n.name || '';
       if (n.id != null) row.dataset.id = String(n.id);
       row.textContent = n.name || '?';
@@ -1299,7 +1326,7 @@ function buildGraphToolbar({ sidebar } = {}) {
         sidebar?.render(nodes, lastFilter, nodeHandlers);
       });
       search.addEventListener('keydown', (ev) => {
-        const items = acList.querySelectorAll('.bel-graph3d-ac-item');
+        const items = acList.querySelectorAll('.jar-graph3d-ac-item');
         if (ev.key === 'ArrowDown' && items.length) { ev.preventDefault(); acPick = Math.min(items.length - 1, acPick + 1); renderAc(search.value); }
         else if (ev.key === 'ArrowUp' && items.length) { ev.preventDefault(); acPick = Math.max(0, acPick - 1); renderAc(search.value); }
         else if (ev.key === 'Enter') {
@@ -1350,20 +1377,20 @@ function buildGraphToolbar({ sidebar } = {}) {
 
 function buildGraphSidebar({ onLayoutChange } = {}) {
   const el = document.createElement('aside');
-  el.className = 'bel-graph3d-sidebar';
+  el.className = 'jar-graph3d-sidebar';
   const head = document.createElement('div');
-  head.className = 'bel-graph3d-sidebar-head';
+  head.className = 'jar-graph3d-sidebar-head';
   const headLabel = document.createElement('span');
-  headLabel.className = 'bel-graph3d-sidebar-head-label';
+  headLabel.className = 'jar-graph3d-sidebar-head-label';
   headLabel.textContent = 'Symbols (0)';
   const collapseBtn = document.createElement('button');
   collapseBtn.type = 'button';
-  collapseBtn.className = 'bel-graph3d-sidebar-toggle';
+  collapseBtn.className = 'jar-graph3d-sidebar-toggle';
   collapseBtn.innerHTML = iconSvg('back');
   setTip(collapseBtn, 'Collapse symbol list');
   head.append(headLabel, collapseBtn);
   const list = document.createElement('div');
-  list.className = 'bel-graph3d-sidebar-list';
+  list.className = 'jar-graph3d-sidebar-list';
   el.append(head, list);
 
   let collapsed = !!loadGraphPrefs().sidebarCollapsed;
@@ -1393,7 +1420,7 @@ function buildGraphSidebar({ onLayoutChange } = {}) {
     for (const n of items) {
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'bel-graph3d-sidebar-item' + (n.id === hiId ? ' is-active' : '') + (n.role === 'root' ? ' is-root' : '');
+      row.className = 'jar-graph3d-sidebar-item' + (n.id === hiId ? ' is-active' : '') + (n.role === 'root' ? ' is-root' : '');
       row.textContent = n.name || '?';
       row.addEventListener('click', () => handlers?.onPick?.(n));
       row.addEventListener('dblclick', (ev) => { ev.preventDefault(); handlers?.onJump?.(n); });
@@ -1767,23 +1794,23 @@ function open3DGraph(view, engine, key, model, titleNode, {
   }
 
   const body = document.createElement('div');
-  body.className = 'bel-graph3d-container';
+  body.className = 'jar-graph3d-container';
   body.tabIndex = -1;
   if (staleBanner) body.appendChild(staleBanner);
 
   const main = document.createElement('div');
-  main.className = 'bel-graph3d-main';
+  main.className = 'jar-graph3d-main';
   const graphHost = { win: null };
   const sidebar = buildGraphSidebar({
     onLayoutChange: () => graphHost.win?._graph3d?.resize?.(),
   });
   const propBar = buildGraphPropBar();
   const stage = document.createElement('div');
-  stage.className = 'bel-graph3d-stage';
+  stage.className = 'jar-graph3d-stage';
   const canvas = document.createElement('canvas');
-  canvas.className = 'bel-graph3d-canvas';
+  canvas.className = 'jar-graph3d-canvas';
   const labels = document.createElement('div');
-  labels.className = 'bel-graph3d-labels';
+  labels.className = 'jar-graph3d-labels';
   const toolbar = buildGraphToolbar({ sidebar });
 
   stage.append(canvas, labels, toolbar.el);
@@ -1872,7 +1899,7 @@ function open3DGraph(view, engine, key, model, titleNode, {
   const win = g.FloatingWindow.open({
     title: titleNode,
     content: body,
-    className: 'bel-graph-window bel-graph3d-window',
+    className: 'jar-graph-window jar-graph3d-window',
     width: geom?.w ?? width,
     height: geom?.h ?? height,
     x: geom?.x,
@@ -1957,11 +1984,11 @@ function open3DGraph(view, engine, key, model, titleNode, {
     const eng = bundleEngine(win) || engine;
     const ctrl = mountGraph3DRenderer(v, eng, ctx);
     if (!ctrl) {
-      const keptBanner = body.querySelector('.bel-graph-stale-banner');
+      const keptBanner = body.querySelector('.jar-graph-stale-banner');
       body.textContent = '';
       if (keptBanner) body.appendChild(keptBanner);
       const fallback = document.createElement('div');
-      fallback.className = 'bel-graph-container';
+      fallback.className = 'jar-graph-container';
       body.appendChild(fallback);
       renderGraph(fallback, layoutGraph(model, { mode }), {
         interactive: true, fit: true, onJump: (node) => jumpToNode(v, eng, node),

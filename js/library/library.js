@@ -482,7 +482,7 @@
       codeEl.textContent = text;
       return;
     }
-    codeEl.className = "library-preview__code-source bel-hl-source" + (ext === "elf" ? " bel-hl-source--elf" : "");
+    codeEl.className = "library-preview__code-source jar-hl-source" + (ext === "elf" ? " jar-hl-source--elf" : "");
     if (global4.BelEditor && typeof global4.BelEditor.renderSourceInto === "function") {
       global4.BelEditor.renderSourceInto(codeEl, text, ext);
       return;
@@ -992,8 +992,8 @@
     var dialogEl = global4.Dialog.createDialog({
       ariaLabel: "Library preview \u2014 " + scopeLabel,
       content: shell,
-      className: "bj-library-preview-dialog",
-      cardClass: "bj-dialog__card bj-dialog__card--library-preview",
+      className: "jar-library-preview-dialog",
+      cardClass: "jar-dialog__card jar-dialog__card--library-preview",
       removeOnClose: true
     });
     activeDialog = dialogEl;

@@ -12,6 +12,11 @@ import { Prec } from '@codemirror/state';
 
 export const HOVER_OPEN_MS = 60;
 
+// How long a hole tooltip waits for the checker to hand it a goal before it
+// stops asking. Long enough for a settle on a big development, short enough
+// that a hole in a broken declaration stops shimmering and says so.
+export const HOLE_GOAL_POLL_MS = 12000;
+
 export const LINT_TOOLTIP_FILTER = () => [];
 
 // Phase-lock a freshly-created "Recalculating…" shimmer to a shared clock. Both
@@ -156,16 +161,16 @@ export function buildTipBody(text) {
 // with literal colons inside the type.
 function buildTypeBody(typeStr, kind) {
   const body = document.createElement('div');
-  body.className = 'beljar-tip-body beljar-tip-body--type bel-type';
+  body.className = 'beljar-tip-body beljar-tip-body--type jar-type';
   if (typeStr != null) renderTypeInto(body.appendChild(typeContentEl()), typeStr, kind);
   return body;
 }
 
 // Inner element that holds the highlighted type text (sibling to the ::before
-// supercolon on the .bel-type container).
+// supercolon on the .jar-type container).
 function typeContentEl() {
   const span = document.createElement('span');
-  span.className = 'bel-type-text';
+  span.className = 'jar-type-text';
   return span;
 }
 
@@ -282,7 +287,7 @@ function rangeAnchorCoords(view, range_) {
 }
 
 function markTooltipRemeasure(dom) {
-  const scope = dom.closest('.bel-hover-stack') || dom;
+  const scope = dom.closest('.jar-hover-stack') || dom;
   scope.classList.add('beljar-tip--remeasure');
 }
 
@@ -299,7 +304,7 @@ function liveTooltip(anchor, region, typeTip, diagSources = null, view) {
     create(view) {
       const typeDom = typeTip ? typeTip.create(view).dom : null;
       const container = document.createElement('div');
-      container.className = 'bel-hover-stack';
+      container.className = 'jar-hover-stack';
       let signature = null;
       let hasPositioned = false;
 
@@ -355,7 +360,7 @@ function liveTooltip(anchor, region, typeTip, diagSources = null, view) {
 
 function positionArrow(scope, anchor) {
   if (!scope.isConnected || !anchor) return;
-  const host = scope.classList.contains('bel-hover-stack') ? scope.lastElementChild : scope;
+  const host = scope.classList.contains('jar-hover-stack') ? scope.lastElementChild : scope;
   if (!host) return;
   const rect = host.getBoundingClientRect();
   if (!rect.width) return;
@@ -580,7 +585,7 @@ function makeHoleTooltip(range, name, goalAt) {
     pos: range.from, end: range.to, above: true, strictSide: true,
     create() {
       const dom = document.createElement('div');
-      dom.className = 'bel-type-tip beljar-tip';
+      dom.className = 'jar-type-tip beljar-tip';
       dom.appendChild(buildTipHead('HOLE', name));
       const body = document.createElement('div');
       body.className = 'beljar-tip-body beljar-tip-goal';
@@ -612,10 +617,23 @@ function makeHoleTooltip(range, name, goalAt) {
         renderPending();
         // The goal arrives when the checker settles (no doc change), so poll the
         // live goal getter briefly and swap it in place when it appears.
+        //
+        // ⛔ Bounded. A hole in a declaration Beluga cannot get through never
+        // gets a goal at all, and an unbounded poll left a tooltip shimmering
+        // "Recalculating…" for as long as the pointer rested on it, five wakeups
+        // a second, saying nothing. After the deadline, say the true thing.
         if (typeof goalAt === 'function') {
+          const deadline = Date.now() + HOLE_GOAL_POLL_MS;
           poll = setInterval(() => {
             const g = goalAt();
-            if (g != null) { clearInterval(poll); poll = null; renderGoal(g); }
+            if (g != null) { clearInterval(poll); poll = null; renderGoal(g); return; }
+            if (Date.now() >= deadline) {
+              clearInterval(poll);
+              poll = null;
+              slot.textContent = 'No goal yet — this declaration is not checking.';
+              slot.classList.remove('beljar-tip-goal-pending');
+              body.classList.add('beljar-tip-body--empty');
+            }
           }, 200);
         }
       }
@@ -752,7 +770,7 @@ function makeCrossFileTooltip(range, name, sig) {
     strictSide: false,
     create() {
       const dom = document.createElement('div');
-      dom.className = 'bel-type-tip beljar-tip';
+      dom.className = 'jar-type-tip beljar-tip';
       dom.appendChild(buildTipHead(sig.label, name, null));
       dom.appendChild(buildTypeBody(sig.type, sig.label));
       const note = document.createElement('div');
@@ -772,7 +790,7 @@ function makeStaticTooltip(range, label, headName, text) {
     strictSide: false,
     create(view) {
       const dom = document.createElement('div');
-      dom.className = 'bel-type-tip beljar-tip';
+      dom.className = 'jar-type-tip beljar-tip';
       dom.appendChild(buildTipHead(label, headName, null));
       dom.appendChild(buildTypeBody(text, label));
       return { dom };
@@ -788,7 +806,7 @@ function makeHeadOnlyTooltip(range, label, headName) {
     strictSide: false,
     create(view) {
       const dom = document.createElement('div');
-      dom.className = 'bel-type-tip beljar-tip';
+      dom.className = 'jar-type-tip beljar-tip';
       dom.appendChild(buildTipHead(label, headName, null));
       return { dom };
     },
@@ -803,7 +821,7 @@ function makeAsyncTooltip(range, label, headName, textPromise, options = {}) {
     strictSide: false,
     create(view) {
       const dom = document.createElement('div');
-      dom.className = 'bel-type-tip beljar-tip';
+      dom.className = 'jar-type-tip beljar-tip';
       const head = buildTipHead(label, headName, 'Recalculating...');
       const initialText = options.initialText || null;
       const body = initialText ? buildTypeBody(initialText, label) : buildComputingBody();
@@ -815,7 +833,7 @@ function makeAsyncTooltip(range, label, headName, textPromise, options = {}) {
         // Reconstitute the body as a highlighted type body in place: clear any
         // prior content (e.g. the computing shimmer) before rendering the type.
         body.textContent = '';
-        body.className = 'beljar-tip-body beljar-tip-body--type bel-type';
+        body.className = 'beljar-tip-body beljar-tip-body--type jar-type';
         renderTypeInto(body.appendChild(typeContentEl()), text, label);
         head.removeAttribute('data-state');
         view.requestMeasure();

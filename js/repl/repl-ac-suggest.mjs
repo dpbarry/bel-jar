@@ -20,12 +20,6 @@ var DEFAULT_VERBS = [
   'fdef', 'fsig', 'lookuphole', 'printhole', 'query', 'type', 'types',
 ];
 
-function extOf(path) {
-  var b = baseName(path);
-  var d = b.lastIndexOf('.');
-  if (d === -1) return 'bel';
-  return b.slice(d + 1).toLowerCase() || 'bel';
-}
 
 function basenameCounts(paths) {
   var counts = Object.create(null);

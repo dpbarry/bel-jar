@@ -52,7 +52,7 @@
     const B = global.StatusStrip;
     return !!blockReason({
       composing: !!(e && (e.isComposing || e.keyCode === 229)),
-      recordingChord: !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording")),
+      recordingChord: !!(t && t.classList && t.classList.contains("jar-kb__chord") && t.classList.contains("is-recording")),
       // A modal owns the screen; opening the palette behind or over it is wrong.
       // This also covers the settings search field, which lives inside one.
       modalOpen: !!(doc && doc.querySelector("dialog[open]")),

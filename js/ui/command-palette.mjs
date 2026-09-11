@@ -13,6 +13,7 @@
 // Commands come from the shared registry (`js/commands/`), not a list of their
 // own: `register()` here is a thin front door that marks an entry palette-visible.
 import { Commands } from '../commands/command-registry.mjs';
+import { LIST_STEP } from '../status-strip/status-strip-line-ui.mjs';
 
 const global = globalThis;
 // ── Pure logic ──────────────────────────────────────────────────────────────
@@ -125,11 +126,24 @@ const global = globalThis;
     return { line, col: Number.isFinite(col) && col >= 1 ? col : 1 };
   }
 
+  /**
+   * ⛔ Each mode names a COMMAND, never a chord.
+   *
+   * These rows used to carry chord strings — `'Mod+Shift+P'` for Commands among
+   * them, a chord Chrome eats on Windows and which moved to `Alt+X` when that
+   * was measured. The string was then used as a lookup KEY to find the command
+   * id and ask `Keybindings` for the real chord, so the right key was usually
+   * printed and the wrong one was one rename away from being printed instead.
+   * The id is the only thing the two halves should share, and `liveChord` is
+   * the one reducer that knows whether the active style has taken the chord —
+   * Ctrl+K is `yield` under Emacs, where it is kill-line, so printing BelJar's
+   * own binding there tells the user to press a key that edits their document.
+   */
   const HELP_CATALOG = [
-    { title: 'Anywhere', detail: 'Go to files & symbols', prefix: '', shortcut: 'Mod+K' },
-    { title: 'Commands', detail: 'Run a command', prefix: '>', shortcut: 'Mod+Shift+P' },
-    { title: 'Symbols', detail: 'Go to symbol', prefix: '@', shortcut: 'Mod+Shift+O' },
-    { title: 'Search project', detail: 'Find text across files', prefix: '%', shortcut: 'Mod+Shift+F' },
+    { title: 'Anywhere', detail: 'Go to files & symbols', prefix: '', commandId: 'nav.anywhere' },
+    { title: 'Commands', detail: 'Run a command', prefix: '>', commandId: 'tools.commands' },
+    { title: 'Symbols', detail: 'Go to symbol', prefix: '@', commandId: 'nav.symbol' },
+    { title: 'Search project', detail: 'Find text across files', prefix: '%', commandId: 'edit.search-project' },
     { title: 'Go to line', detail: 'Jump to line[:column]', prefix: ':' },
     { title: 'Problems', detail: 'Errors & warnings', prefix: '!' },
     { title: 'Library', detail: 'Browse library samples', prefix: '/' },
@@ -208,6 +222,7 @@ const global = globalThis;
 
   let ui = null;
   let isOpen = false;
+  let sessionId = 0;
   let flatItems = [];
   let activeIndex = 0;
   let restoreFocusTo = null;
@@ -217,57 +232,72 @@ const global = globalThis;
 
   function buildUi() {
     const backdrop = document.createElement('div');
-    backdrop.className = 'bel-palette-backdrop';
+    backdrop.className = 'jar-palette-backdrop';
     backdrop.addEventListener('pointerdown', close);
 
     const panel = document.createElement('div');
-    panel.className = 'bel-palette';
+    panel.className = 'jar-palette';
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Command palette');
 
     const inputWrap = document.createElement('div');
-    inputWrap.className = 'bel-palette-inputwrap';
+    inputWrap.className = 'jar-palette-inputwrap';
 
     const modeChip = document.createElement('span');
-    modeChip.className = 'bel-palette-mode';
+    modeChip.className = 'jar-palette-mode';
     modeChip.setAttribute('aria-hidden', 'true');
 
     const iconHost = document.createElement('span');
-    iconHost.className = 'bel-palette-icon';
+    iconHost.className = 'jar-palette-icon';
     iconHost.innerHTML = SEARCH_ICON;
     iconHost.setAttribute('aria-hidden', 'true');
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.className = 'bel-palette-input';
+    input.className = 'jar-palette-input';
     input.placeholder = MODE_META.anywhere.placeholder;
     input.autocomplete = 'off';
     input.spellcheck = false;
     input.setAttribute('data-surface-find', '');
     input.setAttribute('role', 'combobox');
     input.setAttribute('aria-expanded', 'true');
-    input.setAttribute('aria-controls', 'bel-palette-list');
+    input.setAttribute('aria-controls', 'jar-palette-list');
 
     inputWrap.append(modeChip, iconHost, input);
 
     const list = document.createElement('div');
-    list.className = 'bel-palette-list';
-    list.id = 'bel-palette-list';
+    list.className = 'jar-palette-list';
+    list.id = 'jar-palette-list';
     list.setAttribute('role', 'listbox');
 
     const empty = document.createElement('div');
-    empty.className = 'bel-palette-empty';
+    empty.className = 'jar-palette-empty';
     empty.textContent = 'No matching results';
     empty.hidden = true;
 
     const hint = document.createElement('div');
-    hint.className = 'bel-palette-hint';
+    hint.className = 'jar-palette-hint';
     hint.hidden = true;
 
     panel.append(inputWrap, list, empty, hint);
 
     input.addEventListener('input', renderResults);
     input.addEventListener('keydown', (e) => {
+      // ⛔ An editing style is not an editor feature. The command line already
+      // walks its list on `C-n`/`C-m`/`C-p` and aborts on `C-g`; this list did
+      // neither, so an Emacs user reaching the SAME kind of popup found the same
+      // keys dead in one of the two places it appears. A style has to hold
+      // wherever the app puts a list in front of you.
+      //
+      // ⛔ `LIST_STEP` is IMPORTED, not restated: `C-m` is forward here because
+      // Chromium never delivers `Ctrl+N` to a page, and that substitution has to
+      // mean one thing across the whole app. Two copies of that table is how the
+      // trio came to mean RET in one surface and next-line in the other.
+      if (e.ctrlKey && !e.altKey && !e.metaKey && LIST_STEP[e.key] !== undefined) {
+        e.preventDefault();
+        setActive(activeIndex + LIST_STEP[e.key]);
+        return;
+      }
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setActive(activeIndex + 1);
@@ -277,7 +307,8 @@ const global = globalThis;
       } else if (e.key === 'Enter') {
         e.preventDefault();
         runActive();
-      } else if (e.key === 'Escape') {
+      } else if (e.key === 'Escape' || (e.ctrlKey && e.key === 'g')) {
+        // `C-g` aborts, the same as on the command line.
         e.preventDefault();
         close();
       } else if (e.key === 'Tab') {
@@ -290,41 +321,47 @@ const global = globalThis;
     return ui;
   }
 
+  /**
+   * The command rows, built ONCE per palette session.
+   *
+   * ⛔ This ran on every keystroke, and each row resolved its own chord through
+   * `Keybindings` — which reads and parses the stored override map every time.
+   * A hundred and fifty rows meant a hundred and fifty `localStorage` reads per
+   * character typed into the palette, and the list cannot change while the
+   * palette holds focus, so all of it was waste.
+   *
+   * ⛔ And the chord is `liveChord`, not `Keybindings.labelFor`. A row that
+   * prints a key is promising that key works: under Emacs, `Find… Ctrl+F` sends
+   * the user to forward-char, and `Cut Ctrl+X` to the C-x prefix. `liveChord`
+   * answers with the chord that works in the style actually loaded, or nothing —
+   * and a row with no chord shows its detail instead, which is right.
+   */
+  let commandItemsCache = null;
+  let commandItemsKey = '';
+
   function commandItems() {
-    return activeCommands().map((c) => {
-      let shortcut = '';
-      if (typeof Keybindings !== 'undefined' && Keybindings.has(c.id)) {
-        shortcut = Keybindings.labelFor(c.id) || '';
-      } else if (c.shortcut) {
-        shortcut = formatShortcut(c.shortcut, IS_MAC);
-      }
-      return {
-        id: c.id,
-        title: c.title,
-        section: c.section || 'Commands',
-        shortcut,
-        detail: c.detail || '',
-        run: c.run,
-      };
-    });
+    const key = `${sessionId}|${Commands.version()}`;
+    if (commandItemsCache && commandItemsKey === key) return commandItemsCache;
+    commandItemsKey = key;
+    commandItemsCache = activeCommands().map((c) => ({
+      id: c.id,
+      title: c.title,
+      section: c.section || 'Commands',
+      shortcut: Commands.liveChord ? (Commands.liveChord(c.id) || '') : '',
+      detail: c.detail || '',
+      run: c.run,
+    }));
+    return commandItemsCache;
   }
 
   function helpItems() {
     return HELP_CATALOG.map((h) => {
+      // The prefix is always the way in; a chord is shown only where one works
+      // right now, in the style that is actually loaded.
       let shortcut = h.prefix || 'bare';
-      if (h.shortcut) {
-        if (typeof Keybindings !== 'undefined') {
-          const id =
-            h.shortcut === 'Mod+K' ? 'nav.anywhere'
-            : h.shortcut === 'Mod+Shift+P' ? 'tools.commands'
-            : h.shortcut === 'Mod+Shift+O' ? 'nav.symbol'
-            : h.shortcut === 'Mod+Shift+F' ? 'edit.search-project'
-            : '';
-          if (id && Keybindings.has(id)) shortcut = Keybindings.labelFor(id) || formatShortcut(h.shortcut, IS_MAC);
-          else shortcut = formatShortcut(h.shortcut, IS_MAC);
-        } else {
-          shortcut = formatShortcut(h.shortcut, IS_MAC);
-        }
+      if (h.commandId) {
+        const live = Commands.liveChord ? Commands.liveChord(h.commandId) : '';
+        if (live) shortcut = live;
       }
       return {
         title: (h.prefix ? h.prefix + '  ' : '') + h.title,
@@ -452,28 +489,28 @@ const global = globalThis;
       if (grouped && item.section && item.section !== lastSection) {
         lastSection = item.section;
         const head = document.createElement('div');
-        head.className = 'bel-palette-section';
+        head.className = 'jar-palette-section';
         head.textContent = item.section;
         ui.list.appendChild(head);
       }
       const row = document.createElement('div');
-      row.className = 'bel-palette-item';
+      row.className = 'jar-palette-item';
       if (item.severity === 'error') row.classList.add('is-severity-error');
       if (item.severity === 'warning') row.classList.add('is-severity-warning');
       if (item.kind === 'library') row.classList.add('is-library');
-      row.id = 'bel-palette-opt-' + i;
+      row.id = 'jar-palette-opt-' + i;
       row.setAttribute('role', 'option');
       row.setAttribute('data-index', String(i));
 
       const title = document.createElement('span');
-      title.className = 'bel-palette-item-title' + (item.mono ? ' is-mono' : '');
+      title.className = 'jar-palette-item-title' + (item.mono ? ' is-mono' : '');
       appendHighlighted(title, item.title, item._match);
       row.appendChild(title);
 
       const side = item.shortcut || item.detail;
       if (side) {
         const meta = document.createElement('span');
-        meta.className = item.shortcut ? 'bel-palette-item-shortcut' : 'bel-palette-item-detail';
+        meta.className = item.shortcut ? 'jar-palette-item-shortcut' : 'jar-palette-item-detail';
         meta.textContent = side;
         row.appendChild(meta);
       }
@@ -530,15 +567,15 @@ const global = globalThis;
     }
     const n = flatItems.length;
     activeIndex = ((index % n) + n) % n;
-    const rows = ui.list.querySelectorAll('.bel-palette-item');
+    const rows = ui.list.querySelectorAll('.jar-palette-item');
     rows.forEach((row) => {
       const on = Number(row.getAttribute('data-index')) === activeIndex;
       row.classList.toggle('is-active', on);
       row.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    ui.input.setAttribute('aria-activedescendant', 'bel-palette-opt-' + activeIndex);
+    ui.input.setAttribute('aria-activedescendant', 'jar-palette-opt-' + activeIndex);
     if (!opts || opts.scroll !== false) {
-      const row = ui.list.querySelector('.bel-palette-item.is-active');
+      const row = ui.list.querySelector('.jar-palette-item.is-active');
       if (row) row.scrollIntoView({ block: 'nearest' });
     }
   }
@@ -560,6 +597,12 @@ const global = globalThis;
     let mode = 'anywhere';
     if (opts && opts.mode && MODE_PREFIX[opts.mode] != null) mode = opts.mode;
     if (!ui) buildUi();
+    // A new session. Providers that have to gather something expensive — the
+    // project-text corpus, say — key their cache on this: nothing can edit a
+    // file while the palette holds focus, so the corpus is fixed for the run of
+    // one session and the cache is safe by construction rather than by TTL.
+    sessionId += 1;
+    commandItemsCache = null;
     restoreFocusTo = document.activeElement;
     isOpen = true;
     ui.backdrop.classList.add('is-open');
@@ -588,15 +631,26 @@ const global = globalThis;
   }
 
   /**
-   * "Run a command by name" — the palette, or the keymap's own command line.
+   * "Run a command by name" — the command line, in whatever the style calls it.
    *
-   * ⛔ A macro is not an editor feature. Under Emacs, `M-x` opened the M-x line
-   * inside the editor and the PALETTE everywhere else, because the Emacs keymap
-   * only exists while CodeMirror has focus and the global chord fell through to
-   * `tools.commands`. One chord, two different windows, depending on where you
-   * happened to be looking. Under a modal keymap the command line IS how you run
-   * a command by name, so that is what the chord opens — in the explorer, in
-   * settings, anywhere.
+   * ⛔ One chord, ONE window. Under Emacs, `M-x` opened the M-x line inside the
+   * editor and the PALETTE everywhere else, because the Emacs keymap only exists
+   * while CodeMirror has focus and the global chord fell through to
+   * `tools.commands`: one chord, two different windows, depending on where you
+   * happened to be looking.
+   *
+   * ⛔ Standard was the half of that fix that never landed, and it cost Standard
+   * the command line ENTIRELY. `cmdline.open` ships no chord, the double-tap
+   * gesture is off by default, and this branch sent Alt+X to the palette — so
+   * `:set ts=4`, `:e util.bel`, the bang, a line address, arguments and the
+   * line's history were Vim-and-Emacs-only features of a supposedly
+   * style-neutral app. Two commands (`settings.set`, `file.open`) exist ONLY on
+   * that line and were unreachable by keyboard in Standard.
+   *
+   * The palette has not moved: it is still `Mod+K` (`nav.anywhere` and
+   * `tools.palette` both), and `>` still gets its commands mode. What changed is
+   * that the chord named "Run Command…" now opens the surface that runs a
+   * command by name in every style, with the prompt each style expects.
    *
    * ⚠ Both the global chord and `Commands.run('tools.commands')` come through
    * here, so the two halves cannot drift into meaning different things.
@@ -609,9 +663,11 @@ const global = globalThis;
       }
     } catch (e) { /* Standard is the honest fallback */ }
     var line = typeof StatusStrip !== 'undefined' && StatusStrip.openCommandLine;
-    if (line && style === 'emacs') return StatusStrip.openCommandLine('', { prompt: 'M-x' });
-    if (line && style === 'vim') return StatusStrip.openCommandLine('');
-    return toggle({ mode: 'commands' });
+    // No strip to open it in (a page with no editor mounted yet): the palette is
+    // the honest fallback, not an error.
+    if (!line) return toggle({ mode: 'commands' });
+    if (style === 'emacs') return StatusStrip.openCommandLine('', { prompt: 'M-x' });
+    return StatusStrip.openCommandLine('');
   }
 
   // Only the fallback keydown needs undoing. On the Keybindings path the
@@ -653,6 +709,19 @@ const global = globalThis;
         'tools.commands': runCommandEntry,
         'nav.symbol': () => toggle({ mode: 'symbols' }),
         'edit.search-project': () => toggle({ mode: 'search' }),
+      }, {
+        // ⛔ Everything else runs through the registry. These four need a
+        // closure because they open a specific palette MODE; the other 63
+        // global commands are ordinary ids, and without this they accepted a
+        // chord in the Keybindings sheet and did nothing when pressed.
+        //
+        // Null when nothing is attached yet, so the chord falls through to the
+        // browser rather than being swallowed by a handler that cannot act.
+        fallback: (id) => {
+          const cmd = Commands.get(id);
+          if (!cmd || typeof cmd.run !== 'function') return null;
+          return () => Commands.run(id);
+        },
       });
       return;
     }
@@ -678,6 +747,8 @@ const global = globalThis;
     runCommandEntry,
     init,
     isOpen: () => isOpen,
+    /** Bumped on every `open()`. See the note there. */
+    sessionId: () => sessionId,
     shortcutLabel: shortcutLabelFor,
     shortcutParts: (spec) => shortcutParts(spec, IS_MAC),
     listCommands,

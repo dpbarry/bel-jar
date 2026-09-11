@@ -236,10 +236,10 @@
   min-width: 0;
   max-width: 100%;
 }
-.hole-goal-inline .hole-goal-type.bel-type {
+.hole-goal-inline .hole-goal-type.jar-type {
   min-width: 0;
 }
-.hole-goal-type.bel-type {
+.hole-goal-type.jar-type {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -272,12 +272,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.inspector-type.bel-type {
+.inspector-type.jar-type {
   display: flex;
   align-items: flex-start;
   gap: 0.35rem;
 }
-.inspector-type.bel-type .bel-cached-hint {
+.inspector-type.jar-type .jar-cached-hint {
   flex: 0 0 auto;
   margin-top: 0.12rem;
 }
@@ -287,7 +287,7 @@
   gap: 0.35rem;
   margin-bottom: 0.2rem;
 }
-.bel-cached-hint {
+.jar-cached-hint {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -300,11 +300,11 @@
   line-height: 0;
   pointer-events: auto;
 }
-.bel-cached-hint svg {
+.jar-cached-hint svg {
   display: block;
   pointer-events: none;
 }
-.inspector-section-head .bel-cached-hint {
+.inspector-section-head .jar-cached-hint {
   margin-left: 0.15rem;
 }
 
@@ -322,7 +322,7 @@
   display: block;
   overflow: hidden;
 }
-.inspector-hole-row .hole-goal-inline .bel-type-text {
+.inspector-hole-row .hole-goal-inline .jar-type-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

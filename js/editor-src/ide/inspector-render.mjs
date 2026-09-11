@@ -30,7 +30,7 @@ import {
 } from './inspector-model.mjs';
 
 function isCfgEditorView(view) {
-  return !!view?.dom?.classList?.contains('bel-editor--cfg');
+  return !!view?.dom?.classList?.contains('jar-editor--cfg');
 }
 
 export function setTip(el, text) {
@@ -62,9 +62,9 @@ export function el(tag, cls, text) {
 }
 
 function scrollFadeLine(cls, child) {
-  const node = el('div', `${cls} bel-scroll-x`);
+  const node = el('div', `${cls} jar-scroll-x`);
   if (child instanceof Node) node.appendChild(child);
-  else if (child != null) node.appendChild(el('span', 'bel-scroll-x-text', child));
+  else if (child != null) node.appendChild(el('span', 'jar-scroll-x-text', child));
   const g = typeof window !== 'undefined' ? window : self;
   if (g.ScrollFade && typeof g.ScrollFade.attach === 'function') {
     const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (fn) => setTimeout(fn, 0);
@@ -342,7 +342,7 @@ function section(title, count, sectionKey) {
     }
   }
   head.addEventListener('click', (e) => {
-    if (e.target.closest('.inspector-graph-popout') || e.target.closest('.bel-cached-hint')) return;
+    if (e.target.closest('.inspector-graph-popout') || e.target.closest('.jar-cached-hint')) return;
     toggle();
   });
   head.addEventListener('keydown', (e) => {
@@ -506,10 +506,10 @@ export function renderInspector(bodyEl, model, view, engine, opts = {}) {
   }
 
   if (model.type != null) {
-    const typeEl = el('div', 'inspector-type bel-type');
+    const typeEl = el('div', 'inspector-type jar-type');
     const srcLabel = model.typeSource && TYPE_SOURCE_LABEL[model.typeSource];
     if (srcLabel) setTip(typeEl, srcLabel);
-    renderTypeInto(typeEl.appendChild(el('span', 'bel-type-text')), model.type, model.namespace);
+    renderTypeInto(typeEl.appendChild(el('span', 'jar-type-text')), model.type, model.namespace);
     if (model.typeUpgrading) typeEl.appendChild(typeRecalcShimmer());
     if (model.typeSource === 'stale-cache') {
       const hint = createCachedGoalHintIcon(TYPE_SOURCE_LABEL['stale-cache']);
@@ -520,7 +520,7 @@ export function renderInspector(bodyEl, model, view, engine, opts = {}) {
     }
     scrollInner.appendChild(typeEl);
   } else if (model.typePending || model.statusState === 'checking') {
-    const typeEl = el('div', 'inspector-type bel-type is-pending');
+    const typeEl = el('div', 'inspector-type jar-type is-pending');
     typeEl.appendChild(typeRecalcShimmer());
     scrollInner.appendChild(typeEl);
   }
@@ -606,7 +606,7 @@ export function renderInspector(bodyEl, model, view, engine, opts = {}) {
         openLocalGraphWindow(view, graphPos, graphOpts);
       });
       graphActions.insertBefore(popOut, graphActions.firstChild);
-      const mini = el('div', 'inspector-mini-graph bel-graph-mini');
+      const mini = el('div', 'inspector-mini-graph jar-graph-mini');
       graphBody.appendChild(mini);
       scrollInner.appendChild(graphSec);
       // Render after attach so the container has measurable size for fit-to-view.

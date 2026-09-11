@@ -1,4 +1,4 @@
-// Parse a type string inside a synthetic wrapper and render bel-hl-* highlighted DOM.
+// Parse a type string inside a synthetic wrapper and render jar-hl-* highlighted DOM.
 
 import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
 import { belugaLanguage } from '../language.mjs';
@@ -56,31 +56,31 @@ function parseWrapped(text, kind) {
 // Tag → stable class. Mirrors the editor's defaultBelugaHighlightStyle buckets
 // (see language.mjs), collapsed to the set that matters in type position.
 const HIGHLIGHTER = tagHighlighter([
-  { tag: t.keyword, class: 'bel-hl-keyword' },
-  { tag: t.controlKeyword, class: 'bel-hl-control' },
-  { tag: t.typeOperator, class: 'bel-hl-arrow' },
-  { tag: t.operator, class: 'bel-hl-op' },
-  { tag: t.definitionOperator, class: 'bel-hl-op' },
-  { tag: t.special(t.typeName), class: 'bel-hl-metatype' },
-  { tag: t.special(t.variableName), class: 'bel-hl-meta' },
-  { tag: t.definition(t.special(t.typeName)), class: 'bel-hl-metatype' },
-  { tag: t.definition(t.special(t.variableName)), class: 'bel-hl-meta' },
-  { tag: t.definition(t.local(t.variableName)), class: 'bel-hl-local-def' },
-  { tag: t.definition(t.local(t.typeName)), class: 'bel-hl-metatype' },
-  { tag: t.definition(t.typeName), class: 'bel-hl-type-def' },
-  { tag: t.definition(t.variableName), class: 'bel-hl-var-def' },
-  { tag: t.definition(t.function(t.variableName)), class: 'bel-hl-ctor' },
-  { tag: t.function(t.variableName), class: 'bel-hl-ctor' },
-  { tag: t.local(t.variableName), class: 'bel-hl-local' },
-  { tag: t.local(t.typeName), class: 'bel-hl-local' },
-  { tag: t.typeName, class: 'bel-hl-type' },
-  { tag: t.variableName, class: 'bel-hl-var' },
-  { tag: t.number, class: 'bel-hl-number' },
-  { tag: t.atom, class: 'bel-hl-atom' },
-  { tag: t.propertyName, class: 'bel-hl-prop' },
-  { tag: t.meta, class: 'bel-hl-meta-pragma' },
+  { tag: t.keyword, class: 'jar-hl-keyword' },
+  { tag: t.controlKeyword, class: 'jar-hl-control' },
+  { tag: t.typeOperator, class: 'jar-hl-arrow' },
+  { tag: t.operator, class: 'jar-hl-op' },
+  { tag: t.definitionOperator, class: 'jar-hl-op' },
+  { tag: t.special(t.typeName), class: 'jar-hl-metatype' },
+  { tag: t.special(t.variableName), class: 'jar-hl-meta' },
+  { tag: t.definition(t.special(t.typeName)), class: 'jar-hl-metatype' },
+  { tag: t.definition(t.special(t.variableName)), class: 'jar-hl-meta' },
+  { tag: t.definition(t.local(t.variableName)), class: 'jar-hl-local-def' },
+  { tag: t.definition(t.local(t.typeName)), class: 'jar-hl-metatype' },
+  { tag: t.definition(t.typeName), class: 'jar-hl-type-def' },
+  { tag: t.definition(t.variableName), class: 'jar-hl-var-def' },
+  { tag: t.definition(t.function(t.variableName)), class: 'jar-hl-ctor' },
+  { tag: t.function(t.variableName), class: 'jar-hl-ctor' },
+  { tag: t.local(t.variableName), class: 'jar-hl-local' },
+  { tag: t.local(t.typeName), class: 'jar-hl-local' },
+  { tag: t.typeName, class: 'jar-hl-type' },
+  { tag: t.variableName, class: 'jar-hl-var' },
+  { tag: t.number, class: 'jar-hl-number' },
+  { tag: t.atom, class: 'jar-hl-atom' },
+  { tag: t.propertyName, class: 'jar-hl-prop' },
+  { tag: t.meta, class: 'jar-hl-meta-pragma' },
   { tag: [t.punctuation, t.paren, t.squareBracket, t.brace, t.angleBracket, t.separator],
-    class: 'bel-hl-punct' },
+    class: 'jar-hl-punct' },
 ]);
 
 export function normalizeType(typeStr) {

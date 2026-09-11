@@ -1,7 +1,10 @@
 /**
  * The command line: the strip's `command` state, in three faces.
  *
- *   command   our own input, opened by `:` (Standard), `M-x` (Emacs), the palette
+ *   command   our own input — `Alt+X` in Standard, `M-x` in Emacs, and from
+ *             `Go to Line` and the palette. ⚠ Nothing binds a bare `:`: the
+ *             header used to claim it did, and in Standard the line had no key
+ *             at all.
  *   search    the same input matching text incrementally (`/`, `C-s`)
  *   ex        VIM'S input, mounted in our slot, with our candidates layered on top
  *
@@ -13,7 +16,7 @@
  * is DOM and wiring.
  */
 import { parseCommandLine, lineTarget, tokenAtCaret } from './status-strip-parse.mjs';
-import { optionCandidates } from '../commands/command-settings.mjs';
+import { optionCandidates, optionValueCandidates } from '../commands/command-settings.mjs';
 import { complete, applyCompletion } from './status-strip-complete.mjs';
 
 const global = globalThis;
@@ -45,6 +48,11 @@ let active = -1;
 let chosen = false;
 /** The text the current candidate list was ranked from. */
 let query = '';
+/** The span a completion replaces, and what kind of thing the caret is naming. */
+let lastToken = null;
+let lastKind = '';
+/** Did the line name a real command? Slot 0 has no name yet, so it is null. */
+let lastKnown = null;
 let onCloseCb = null;
 let history = [];
 let historyAt = -1;
@@ -56,6 +64,23 @@ let savedSelection = null;
 let searchDir = '';
 let searchAnchor = 0;
 let promptEl = null;
+
+/**
+ * ⛔ ONE writer for the prompt, so its text and its spacing cannot disagree.
+ *
+ * A SIGIL (`:`, `/`, `?`) is part of the line — vim writes `:set ts=4` and
+ * `/pattern` with nothing between them — while a WORD (`M-x`, `Go to line`) is
+ * a label and wants its gap. Three places set this text and none of them said
+ * which kind it was, so `:` sat 0.4rem off the text it belongs to while the vim
+ * ex line in the same slot had it flush.
+ */
+function setPrompt(text) {
+  if (!promptEl) return;
+  const t = String(text == null ? '' : text);
+  promptEl.textContent = t;
+  const field = promptEl.parentNode;
+  if (field && field.classList) field.classList.toggle('is-sigil', t.length === 1 && !/\w/.test(t));
+}
 let countEl = null;
 let previewTimer = 0;
 const PREVIEW_MS = 90;
@@ -89,27 +114,99 @@ function saveHistory() {
 }
 
 /** Commands the line can name: ex aliases first, then the id. */
-function commandSources() {
+/**
+ * ⛔ THE CANDIDATE LIST MUST NAME THE NAMESPACE THAT WILL ACTUALLY RUN.
+ *
+ * There are two `:` faces and they do NOT share a dispatcher. BelJar's own line
+ * runs through `Commands.run`, which knows ids, ex aliases and `M-x` names.
+ * Vim's line is the package's input, and Enter goes to the package's
+ * `exCommandDispatcher`, which knows vim's own ex commands plus whatever
+ * `registerVimExCommands` handed it — every BelJar command WITH AN EX ALIAS, and
+ * nothing else. Ids were never registered; `:BJ <id>` is their way in.
+ *
+ * One source for both faces broke the ⛔ *"a surface may only offer what WORKS"*
+ * law in both directions at once. Measured in the browser:
+ *
+ *   `:occurrence` + Tab → `set.occurrence-highlight`, and Enter answered
+ *                          `Not an editor command`. Offered, could not run.
+ *   `:nohlsearch`        → "No matching command", and Enter ran it. Denied,
+ *                          worked anyway.
+ *
+ * So the face is a parameter now. `vim` gets the namespace vim has.
+ */
+function commandSources(face) {
   const C = global.Commands;
   const P = global.Persist;
+  const forVim = face === 'vim';
   return {
     commands() {
       if (!C || typeof C.list !== 'function') return [];
+      const rows = C.list({ cmdline: true, runnable: true, available: true })
+        // ⛔ On vim's line, only the ones `Vim.defineEx` was given. A command
+        // with no ex alias is reachable there through `:BJ <id>`, which is a
+        // different line from the one being typed.
+        .filter((c) => !forVim || (c.ex && c.ex.length))
+        .map((c) => ({
+          value: (c.ex && c.ex[0]) || c.id,
+          label: c.title,
+          detail: c.section,
+          // The id and `M-x` name are not names vim's dispatcher has, so on that
+          // face they must not even be MATCHABLE — matching one puts a string on
+          // the line that Enter cannot run.
+          aliases: forVim
+            ? (c.ex || []).slice()
+            : (c.ex || []).concat([c.id], c.mx ? [c.mx] : []),
+          args: c.args || [],
+          id: c.id,
+        }));
+      if (!forVim) return rows;
+      // Vim's own, last: BelJar's `defineEx` overrides some of these (`:set`,
+      // `:undo`, `:write`), and the row that wins should be the one describing
+      // what will actually happen. `rank()` is stable on ties, so earlier wins.
+      const taken = new Set(rows.map((r) => r.value));
+      const E = global.BelEditor;
+      let vimRows = [];
+      try {
+        vimRows = typeof E?.vimExCandidates === 'function' ? E.vimExCandidates() : [];
+      } catch (_) { vimRows = []; }
+      // ⛔ `:BJ` is how the rest of BelJar is reached from vim's line, and it was
+      // a name you had to already know. As a candidate WITH A COMPLETABLE
+      // ARGUMENT it becomes the same reach the other two styles have.
+      rows.push({
+        value: 'BJ',
+        label: 'Run a BelJar command…',
+        detail: 'BelJar',
+        aliases: [],
+        args: [{ kind: 'command', label: 'command' }],
+        id: 'vim:BJ',
+      });
+      return rows.concat(vimRows.filter((r) => !taken.has(r.value)));
+    },
+    /**
+     * Every BelJar command by id, for `:BJ <command>`.
+     *
+     * ⚠ The VALUE is the id, because that is what `:BJ` resolves FIRST — it
+     * tries id, then ex alias, then exact title, then a title substring. A row
+     * whose value it would resolve by the fuzzy last rule is a row that can
+     * land on a different command than the one you picked.
+     */
+    commandNames() {
+      if (!C || typeof C.list !== 'function') return [];
       return C.list({ cmdline: true, runnable: true, available: true }).map((c) => ({
-        value: (c.ex && c.ex[0]) || c.id,
+        value: c.id,
         label: c.title,
         detail: c.section,
-        aliases: (c.ex || []).concat([c.id], c.mx ? [c.mx] : []),
-        args: c.args || [],
-        id: c.id,
+        aliases: (c.ex || []).concat(c.mx ? [c.mx] : []),
       }));
     },
     files() {
       if (!P || typeof P.listFiles !== 'function') return [];
       return (P.listFiles() || []).map((f) => ({ value: f.name, label: f.name }));
     },
-    // `:set ` completes over every preference name and vi abbreviation.
+    // `:set ` completes over every preference name, vi abbreviation and `no`
+    // form; `:set ts=` completes over that setting's own values.
     options: () => optionCandidates(),
+    optionValues: (name) => optionValueCandidates(name),
   };
 }
 
@@ -272,7 +369,7 @@ function fitWholeRows(cap) {
  * would point at the keymap badge instead of at the text it is completing.
  */
 function anchorList() {
-  const bar = host && host.closest ? host.closest('.bj-strip') : null;
+  const bar = host && host.closest ? host.closest('.jar-strip') : null;
   if (!bar || !listEl) return;
   const rect = bar.getBoundingClientRect();
   listEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + 'px';
@@ -285,7 +382,7 @@ function anchorList() {
   // while hidden, which silently anchored everything to the far left.
   const zone = host.parentNode && host.parentNode.getBoundingClientRect ? host.parentNode : null;
   const field = (open || exInput ? zone : null)
-    || bar.querySelector('.bj-strip__seg--command')
+    || bar.querySelector('.jar-strip__seg--command')
     || zone;
   const from = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
   const pad = 6;
@@ -312,7 +409,7 @@ function syncActiveDescendant() {
     el.removeAttribute('aria-activedescendant');
     return;
   }
-  el.setAttribute('aria-activedescendant', 'bj-cmdline-opt-' + active);
+  el.setAttribute('aria-activedescendant', 'jar-cmdline-opt-' + active);
 }
 
 function bindListListeners() {
@@ -387,6 +484,15 @@ function hideList() {
  * "show me everything" is a real request, and refusing it because nothing is
  * typed yet is the one case where the noise rule gets it backwards.
  */
+/** What an empty candidate list is empty OF. */
+const EMPTY_LEGEND = {
+  option: 'No matching option',
+  'option-value': 'No matching value',
+  file: 'No matching file',
+  command: 'No matching command',
+  none: 'This command takes no further argument',
+};
+
 function renderList() {
   if (!listEl) return;
   if (searchDir || (!query.trim() && !forced && !hinting)) { hideList(); return; }
@@ -397,8 +503,11 @@ function renderList() {
 
   if (!items.length) {
     const none = document.createElement('div');
-    none.className = 'bj-cmdline__none';
-    none.textContent = 'No matching command';
+    none.className = 'jar-cmdline__none';
+    // ⛔ Name what is being looked for. The legend said "No matching command"
+    // in an ARGUMENT slot too, so `:set ts=` — a valid line — was told its
+    // command did not exist.
+    none.textContent = EMPTY_LEGEND[lastKind] || 'No matching command';
     listEl.appendChild(none);
     anchorList();
     syncActiveDescendant();
@@ -416,18 +525,18 @@ function renderList() {
 
   items.forEach((it, i) => {
     const row = document.createElement('div');
-    row.className = 'bj-cmdline__item';
-    row.id = 'bj-cmdline-opt-' + i;
+    row.className = 'jar-cmdline__item';
+    row.id = 'jar-cmdline-opt-' + i;
     row.setAttribute('role', 'option');
     row.setAttribute('aria-selected', 'false');
     row.dataset.index = String(i);
     const name = document.createElement('span');
-    name.className = 'bj-cmdline__item-name';
+    name.className = 'jar-cmdline__item-name';
     name.textContent = it.value;
     row.appendChild(name);
     if (it.label && it.label !== it.value) {
       const label = document.createElement('span');
-      label.className = 'bj-cmdline__item-label';
+      label.className = 'jar-cmdline__item-label';
       label.textContent = it.label;
       row.appendChild(label);
     }
@@ -470,9 +579,15 @@ function searchStep(fromCaret, forward) {
  */
 function completeInto(el) {
   const caret = el.selectionStart == null ? el.value.length : el.selectionStart;
-  const res = complete(el.value, caret, commandSources());
+  const res = complete(el.value, caret, commandSources(el === exInput ? 'vim' : 'own'));
   query = el.value;
   items = res.items.slice(0, LIST_CAP);
+  lastToken = res.token || null;
+  lastKnown = res.parsed && res.parsed.slot > 0 ? !!res.known : null;
+  // When the NAME is the thing that does not exist, the legend is about the
+  // name — not about the argument slot it happens to be sitting in. `:zzz foo`
+  // otherwise read "This command takes no further argument".
+  lastKind = lastKnown === false ? 'command' : (res.kind || '');
   active = -1;
   chosen = false;
   return res;
@@ -485,7 +600,17 @@ function completeInto(el) {
 function markUnknown() {
   if (!input) return;
   const typed = query.trim();
-  input.classList.toggle('is-unknown', !!typed && !items.length && !/^\d/.test(typed));
+  if (!typed || /^\d/.test(typed)) { input.classList.remove('is-unknown'); return; }
+  // ⛔ "Unknown" is about the COMMAND NAME, never about an argument.
+  //
+  // It used to be `no candidates for the current slot` — and the candidate list
+  // is slot-scoped while the red tint covers the whole line. So `:set ts=`
+  // turned the line red and printed "No matching command" the instant the `=`
+  // was typed, for a line that is valid and that Enter would have run. Once the
+  // caret is past slot 0 the name has already resolved or not, and that is the
+  // only question a red line can honestly answer.
+  const unknown = lastKnown === null ? !items.length : !lastKnown;
+  input.classList.toggle('is-unknown', unknown);
 }
 
 /**
@@ -533,7 +658,7 @@ function accept(index) {
   const it = items[index == null ? Math.max(active, 0) : index];
   if (!it || !el) return false;
   const caret = el.selectionStart == null ? el.value.length : el.selectionStart;
-  const next = applyCompletion(el.value, caret, it.value);
+  const next = applyCompletion(el.value, caret, it.value, lastToken);
   el.value = next.text;
   el.setSelectionRange(next.caret, next.caret);
   resetCycle();
@@ -576,6 +701,20 @@ function tabCycle(back) {
   // The stem's end moves with each replacement, or the next Tab would splice the
   // new value into the middle of the last one.
   wildStem = { from: wildStem.from, to: caretAt };
+  // ⛔ And so does `lastToken`, which is the span a LATER `accept()` replaces.
+  //
+  // Tab writes `el.value` directly, so no `input` event fires and nothing
+  // recomputed it — it still described the STEM. Then Enter, which applies the
+  // highlighted candidate before running the line, spliced the full value over
+  // those three characters: `:gra` + Tab → `graph`, Enter → `graphph`, and the
+  // line answered `Unknown command "graphph"`. Type a stem, Tab, Enter is the
+  // most ordinary thing anyone does on a command line, and it was broken in
+  // both faces.
+  //
+  // Keeping the span in step makes that second apply a no-op instead of a
+  // corruption — the fix is the state being true, not a guard at the one caller
+  // that noticed.
+  lastToken = { text: it.value, from: wildStem.from, to: caretAt };
   active = items.indexOf(it);
   chosen = true;
   if (ghostEl && el === input) ghostEl.textContent = '';
@@ -648,8 +787,21 @@ export function attachExCompletion(el) {
     if (e.key === 'Enter' && chosen && active >= 0) {
       accept();
       hideList();
+      remember(el.value);
       return;
     }
+    // ⛔ ONE history store, written by BOTH faces.
+    //
+    // Vim's `:` goes through the package, so nothing typed there ever reached
+    // BelJar's history: switch from Vim to Standard and the line you ran a
+    // minute ago was simply gone. The STORE is shared now — anything submitted
+    // in either face is recallable in the BelJar face.
+    //
+    // ⚠ Reading stays split, and deliberately: ↑/↓ in this field are VIM'S ex
+    // history, and taking them would delete a real vim feature to duplicate one
+    // that Tab already covers. So the vim face recalls vim's, the BelJar face
+    // recalls everything.
+    if (e.key === 'Enter') remember(el.value);
     if (e.key === 'Escape') { hideList(); return; }
     if (!listOpen()) return;
     if (e.key === 'PageDown' || e.key === 'PageUp') {
@@ -744,28 +896,28 @@ function onKey(e) {
 
 export function build(fieldParent, listParent) {
   host = document.createElement('div');
-  host.className = 'bj-cmdline';
+  host.className = 'jar-cmdline';
   host.hidden = true;
 
   listEl = document.createElement('div');
-  listEl.className = 'bj-cmdline__list';
+  listEl.className = 'jar-cmdline__list';
   listEl.setAttribute('role', 'listbox');
   listEl.hidden = true;
 
   const field = document.createElement('div');
-  field.className = 'bj-cmdline__field';
+  field.className = 'jar-cmdline__field';
   const prompt = document.createElement('span');
-  prompt.className = 'bj-cmdline__prompt';
+  prompt.className = 'jar-cmdline__prompt';
   prompt.textContent = ':';
   promptEl = prompt;
   countEl = document.createElement('span');
-  countEl.className = 'bj-cmdline__count';
+  countEl.className = 'jar-cmdline__count';
   ghostEl = document.createElement('span');
-  ghostEl.className = 'bj-cmdline__ghost';
+  ghostEl.className = 'jar-cmdline__ghost';
   ghostEl.setAttribute('aria-hidden', 'true');
   input = document.createElement('input');
   input.type = 'text';
-  input.className = 'bj-cmdline__input';
+  input.className = 'jar-cmdline__input';
   input.autocomplete = 'off';
   input.spellcheck = false;
   input.setAttribute('aria-label', 'Command line');
@@ -776,7 +928,7 @@ export function build(fieldParent, listParent) {
   });
 
   const wrap = document.createElement('span');
-  wrap.className = 'bj-cmdline__inputwrap';
+  wrap.className = 'jar-cmdline__inputwrap';
   wrap.append(ghostEl, input);
   field.append(prompt, wrap, countEl);
   host.append(field);
@@ -796,7 +948,7 @@ export function isOpen() {
 export function openSearch(forward, onClose) {
   if (!openLine('', onClose)) return false;
   searchDir = forward === false ? '?' : '/';
-  promptEl.textContent = searchDir;
+  setPrompt(searchDir);
   countEl.textContent = '';
   // Search offers no commands; whatever the command face left is not an answer
   // to what is being typed now.
@@ -820,7 +972,7 @@ export function openLine(prefix, onClose, opts) {
   savedSelection = view ? { anchor: view.state.selection.main.anchor, head: view.state.selection.main.head } : null;
   searchDir = '';
   // `M-x` is not `:`; the prompt says which line you are on.
-  if (promptEl) promptEl.textContent = (opts && opts.prompt) || ':';
+  setPrompt((opts && opts.prompt) || ':');
   if (countEl) countEl.textContent = '';
   hinting = false;
   forced = false;
@@ -856,7 +1008,7 @@ export function close(opts) {
   if (countEl) countEl.textContent = '';
   const wasSearch = !!searchDir;
   searchDir = '';
-  if (promptEl) promptEl.textContent = ':';
+  setPrompt(':');
   if (wasSearch && savedSelection && (!opts || opts.restore !== false)) {
     const ed = global.CurrentEditor;
     const view = ed && typeof ed.getView === 'function' ? ed.getView() : null;

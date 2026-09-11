@@ -5,7 +5,7 @@
   min-height: 0;
   font-family: var(--mono);
   font-size: 0.82rem;
-  color: var(--text);
+  color: var(--base-highest);
 }
 
 .harpoon-lab--panel {
@@ -590,7 +590,7 @@ button.harpoon-lab-banner:focus-visible {
   padding: 0.65rem 0.75rem 0.7rem;
 }
 /* The declaration under proof, rendered as source rather than as a caption: mono, and
-   coloured from the shared `bel-hl-*` palette so it matches the goal beneath it. */
+   coloured from the shared `jar-hl-*` palette so it matches the goal beneath it. */
 .harpoon-lab-auto-goal-name {
   display: inline-flex;
   align-items: baseline;
@@ -612,7 +612,7 @@ button.harpoon-lab-banner:focus-visible {
   text-overflow: ellipsis;
 }
 .harpoon-lab-auto-goal-type,
-.harpoon-lab-auto-goal .hole-goal-type.bel-type {
+.harpoon-lab-auto-goal .hole-goal-type.jar-type {
   font-size: 0.82rem;
   line-height: 1.55;
 }
@@ -1737,11 +1737,11 @@ button.harpoon-lab-banner:focus-visible {
 .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .harpoon-hole-goal-track {
   white-space: nowrap;
 }
-/* Shared `.bel-type` / `.bel-type-text` wrap and shrink. Inside a card they must not:
+/* Shared `.jar-type` / `.jar-type-text` wrap and shrink. Inside a card they must not:
    a shrinking flex child makes overflow unmeasurable (scrollWidth ≈ viewport). */
-.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .bel-type,
-.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .hole-goal-type.bel-type,
-.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .bel-type-text {
+.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .jar-type,
+.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .hole-goal-type.jar-type,
+.harpoon-panel-hole .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .jar-type-text {
   flex-shrink: 0;
   min-width: max-content;
   width: max-content;
@@ -1749,7 +1749,7 @@ button.harpoon-lab-banner:focus-visible {
   word-break: normal;
   overflow-wrap: normal;
 }
-.harpoon-panel-hole .harpoon-hole-goal .bel-type-text {
+.harpoon-panel-hole .harpoon-hole-goal .jar-type-text {
   white-space: pre;
 }
 
@@ -1815,7 +1815,7 @@ button.harpoon-lab-banner:focus-visible {
   flex-direction: column;
   align-items: stretch;
 }
-.harpoon-panel-hole .harpoon-hole-goal--tiered .hole-goal-type.bel-type {
+.harpoon-panel-hole .harpoon-hole-goal--tiered .hole-goal-type.jar-type {
   font-size: inherit;
   line-height: inherit;
 }

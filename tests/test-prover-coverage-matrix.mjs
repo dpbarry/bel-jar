@@ -10,7 +10,7 @@
 // to stumble on first. Adding syntax dimensions (new binder sorts, new
 // hypothesis kinds) REQUIRES adding rows here.
 //
-// bel-synth's own obligations (fact inversion, pass-through args, DFS fairness,
+// jar-synth's own obligations (fact inversion, pass-through args, DFS fairness,
 // bound honesty) are pinned in test-prover-completeness.mjs; this matrix covers
 // the candidateMoves surface.
 import fs from 'node:fs';

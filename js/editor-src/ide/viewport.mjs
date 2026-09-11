@@ -93,8 +93,15 @@ function declarationByIndex(tree, index) {
   return null;
 }
 
-export function captureFormatViewportAnchor(view) {
-  const pos = viewportCenterPos(view);
+/**
+ * A whitespace-insensitive handle on a position, survivable across a reformat.
+ *
+ * `atPos` defaults to the centre of the viewport — the thing to keep on screen.
+ * Pass an explicit position to anchor something else: the CARET needs exactly
+ * the same treatment, and `Math.min(head, newLength)` is not it.
+ */
+export function captureFormatViewportAnchor(view, atPos = null) {
+  const pos = atPos != null && isFinite(atPos) ? atPos : viewportCenterPos(view);
   if (pos == null) return null;
   const src = view.state.doc.toString();
   const tree = syntaxTree(view.state);

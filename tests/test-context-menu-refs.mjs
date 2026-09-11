@@ -3,6 +3,7 @@ import { EditorState } from '@codemirror/state';
 import { ensureSyntaxTree } from '@codemirror/language';
 import { beluga } from '../js/editor-src/language.mjs';
 import { prepareEditorDoc } from '../js/editor-src/editor-doc-prep.mjs';
+import { expandBelAliases } from '../js/editor-src/aliases.mjs';
 import { activeCfgResolver } from '../js/editor-src/semantic/development.mjs';
 import { canFindReferences } from '../js/editor-src/ide/refs-panel.mjs';
 import { findProjectDefinition, findGroupDefinition } from '../js/editor-src/semantic/project-prelude.mjs';
@@ -33,7 +34,15 @@ expect(
 );
 
 const useDoc = prepareEditorDoc(getText('rb'), 'church/par-red.bel');
-const usePos = useDoc.indexOf('[g |- term]') + '[g |- '.length;
+// ⛔ A NORMALIZED needle for a normalized document. `prepareEditorDoc` expands
+// `|-` to ⊢, so `indexOf('[g |- term]')` is -1 and `usePos` lands 5 characters
+// into the file — the assertion below then reported "im :" and read as a bug in
+// the definition index. Expand the needle the same way the document was, so the
+// fixture stays readable here and correct there whatever the alias table says.
+const useNeedle = expandBelAliases('[g |- term]');
+const useAt = useDoc.indexOf(useNeedle);
+expect(useAt >= 0, `fixture text is in the prepared document (looked for ${useNeedle})`);
+const usePos = useAt + expandBelAliases('[g |- ').length;
 expect(useDoc.slice(usePos, usePos + 4) === 'term', `fixture should land on term, got "${useDoc.slice(usePos, usePos + 4)}"`);
 
 const state = EditorState.create({ doc: useDoc, extensions: [beluga()] });

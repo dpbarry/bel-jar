@@ -1,0 +1,3712 @@
+{
+ "builtins/nd-first-order.bel": {
+  "parse": "a151c676aa29",
+  "blocks": "e240ea915f08",
+  "defs": "273c20d906f8",
+  "uses": "c4e09b025689",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 911,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 25,
+   "uses": 170
+  }
+ },
+ "builtins/nd-propositional.bel": {
+  "parse": "329f2f163d87",
+  "blocks": "e9abc9131b2e",
+  "defs": "7ff8483e4995",
+  "uses": "c66aa7964759",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 590,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 18,
+   "uses": 115
+  }
+ },
+ "case-studies/classical-processes/cp_base.bel": {
+  "parse": "686c5e2436bd",
+  "blocks": "8dab3494b98c",
+  "defs": "6342bd8ef131",
+  "uses": "c57bab2a7380",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 896,
+   "errors": 0,
+   "blocks": 33,
+   "defs": 29,
+   "uses": 156
+  }
+ },
+ "case-studies/classical-processes/cp_dyn.bel": {
+  "parse": "649099c51983",
+  "blocks": "9d0b08f9791b",
+  "defs": "0488c9153cbe",
+  "uses": "9e1a1961a302",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1754,
+   "errors": 0,
+   "blocks": 21,
+   "defs": 19,
+   "uses": 345
+  }
+ },
+ "case-studies/classical-processes/cp_lemmas.bel": {
+  "parse": "41b447c6fc71",
+  "blocks": "473672dacdae",
+  "defs": "38dda05aa324",
+  "uses": "e92575565dcb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 13897,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 17,
+   "uses": 2136
+  }
+ },
+ "case-studies/classical-processes/cp_linear.bel": {
+  "parse": "71beb414c802",
+  "blocks": "4da116720275",
+  "defs": "80e4ae6c30b1",
+  "uses": "bd2ef51949c3",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1170,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 19,
+   "uses": 216
+  }
+ },
+ "case-studies/classical-processes/cp_statics.bel": {
+  "parse": "a416ba5a207b",
+  "blocks": "57e97c173f6b",
+  "defs": "ebd6da4e6d5e",
+  "uses": "1108a61e0ad1",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1058,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 11,
+   "uses": 204
+  }
+ },
+ "case-studies/classical-processes/cp_thrm.bel": {
+  "parse": "12602ab4ed4b",
+  "blocks": "d11e438859b1",
+  "defs": "ecba4cafc6ae",
+  "uses": "c5ad9f343437",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 18022,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 4,
+   "uses": 2659
+  }
+ },
+ "case-studies/harmony-lemma-formalization/1_definitions.bel": {
+  "parse": "e983ce8bb544",
+  "blocks": "7f1599419566",
+  "defs": "97b4f7bc95ee",
+  "uses": "7bf8992f5aef",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2317,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 48,
+   "uses": 453
+  }
+ },
+ "case-studies/harmony-lemma-formalization/2_input_rewriting.bel": {
+  "parse": "258e441473e7",
+  "blocks": "5dcfa6f30f8a",
+  "defs": "0c30bd6e0f60",
+  "uses": "00fb35e8959f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3188,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 7,
+   "uses": 463
+  }
+ },
+ "case-studies/harmony-lemma-formalization/3_free_output_rewriting.bel": {
+  "parse": "1fa81efb5194",
+  "blocks": "153acfdddc9d",
+  "defs": "57459ead639d",
+  "uses": "3b3ea24f210e",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2721,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 7,
+   "uses": 423
+  }
+ },
+ "case-studies/harmony-lemma-formalization/4_bound_output_rewriting.bel": {
+  "parse": "eaea29c67b8e",
+  "blocks": "53b213bf9ac9",
+  "defs": "a6508af8000b",
+  "uses": "7447404d9bcc",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4003,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 8,
+   "uses": 579
+  }
+ },
+ "case-studies/harmony-lemma-formalization/5_theorem1.bel": {
+  "parse": "c65fc5279782",
+  "blocks": "e05a2714a171",
+  "defs": "d5c66991e933",
+  "uses": "e462ef26dd14",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 8843,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 9,
+   "uses": 1269
+  }
+ },
+ "case-studies/harmony-lemma-formalization/6_stepcong_lemma.bel": {
+  "parse": "bf1f1811a2af",
+  "blocks": "fa1ba2086bc8",
+  "defs": "683f83b9a8c3",
+  "uses": "e40a2fbce79d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 23621,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 20,
+   "uses": 3519
+  }
+ },
+ "case-studies/harmony-lemma-formalization/7_reduction_rewriting.bel": {
+  "parse": "a4bfcc179b7e",
+  "blocks": "0be96ec7e80f",
+  "defs": "ead8a7837186",
+  "uses": "31de9d82822f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2439,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 7,
+   "uses": 370
+  }
+ },
+ "case-studies/harmony-lemma-formalization/8_theorem2.bel": {
+  "parse": "cbd6ed80353d",
+  "blocks": "5133cb8d3274",
+  "defs": "5948cb7cfc2d",
+  "uses": "34e27dafae7e",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 705,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 2,
+   "uses": 112
+  }
+ },
+ "examples/arith/arith.bel": {
+  "parse": "1306d224cf35",
+  "blocks": "81b31eb4c550",
+  "defs": "d0f4bed34b3f",
+  "uses": "f8bd7d546133",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1051,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 11,
+   "uses": 130
+  }
+ },
+ "examples/back/tc.bel": {
+  "parse": "359fa88d88ae",
+  "blocks": "c6886fdada2e",
+  "defs": "6035bbe030c0",
+  "uses": "479386782c12",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1512,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 45,
+   "uses": 285
+  }
+ },
+ "examples/bigstep-deterministic/alternate.bel": {
+  "parse": "de639ee545ba",
+  "blocks": "1b5e52f9c7b6",
+  "defs": "09a397cc6521",
+  "uses": "e3a50656f715",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1727,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 13,
+   "uses": 250
+  }
+ },
+ "examples/bigstep-deterministic/bigstep-deterministic.bel": {
+  "parse": "7179489fe6cf",
+  "blocks": "e6c0a7e9e682",
+  "defs": "406c14ff4334",
+  "uses": "b2b5968498f2",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2798,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 9,
+   "uses": 454
+  }
+ },
+ "examples/bigstep-deterministic/eq.bel": {
+  "parse": "016e15090593",
+  "blocks": "f076e7011474",
+  "defs": "f4d2a550d46b",
+  "uses": "474184d559b8",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1953,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 10,
+   "uses": 305
+  }
+ },
+ "examples/cfg/fvnat-pt1.bel": {
+  "parse": "6b014629d97f",
+  "blocks": "6626b98ee733",
+  "defs": "25015c7a40a6",
+  "uses": "4e0bb6433218",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 198,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 13,
+   "uses": 42
+  }
+ },
+ "examples/cfg/fvnat-pt2.bel": {
+  "parse": "3de07fb5737d",
+  "blocks": "b5051cd0d557",
+  "defs": "4c3d0e4709cf",
+  "uses": "07799e53e581",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 825,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 1,
+   "uses": 110
+  }
+ },
+ "examples/church-rosser/equiv-crec.bel": {
+  "parse": "32f71e87a21f",
+  "blocks": "ccaa09733136",
+  "defs": "7cbb2ac859b6",
+  "uses": "65dde2678080",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3495,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 8,
+   "uses": 504
+  }
+ },
+ "examples/church-rosser/equiv.bel": {
+  "parse": "714726a8c01b",
+  "blocks": "e1cecd5e5edf",
+  "defs": "34fa2686a465",
+  "uses": "6ec7195672da",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3763,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 9,
+   "uses": 567
+  }
+ },
+ "examples/church-rosser/equiv.elf": {
+  "parse": "1db085c2e85b",
+  "blocks": "af97668b8d1d",
+  "defs": "41d8184c8752",
+  "uses": "bf6167ce8414",
+  "diags": "391f12cebac2",
+  "counts": {
+   "nodes": 1667,
+   "errors": 3,
+   "blocks": 28,
+   "defs": 28,
+   "uses": 342
+  }
+ },
+ "examples/church-rosser/lam.elf": {
+  "parse": "f048234f2a57",
+  "blocks": "0fbc189394e6",
+  "defs": "e4cc11fc8c87",
+  "uses": "07b2efb7a49f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 61,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 3,
+   "uses": 9
+  }
+ },
+ "examples/church-rosser/ord-cr-crec.bel": {
+  "parse": "3f189798adf9",
+  "blocks": "a5160bfd8694",
+  "defs": "2650cea98c0b",
+  "uses": "0ecdd15dad5c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 265,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 3,
+   "uses": 38
+  }
+ },
+ "examples/church-rosser/ord-cr.bel": {
+  "parse": "3f189798adf9",
+  "blocks": "2c25a5715f14",
+  "defs": "2650cea98c0b",
+  "uses": "5bf132034efd",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 265,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 3,
+   "uses": 38
+  }
+ },
+ "examples/church-rosser/ord-cr.elf": {
+  "parse": "ca3f8cb3c477",
+  "blocks": "aff89471a37c",
+  "defs": "8ff7b4587912",
+  "uses": "e653b5a6aa14",
+  "diags": "fbd75b4ebfbe",
+  "counts": {
+   "nodes": 138,
+   "errors": 2,
+   "blocks": 2,
+   "defs": 2,
+   "uses": 27
+  }
+ },
+ "examples/church-rosser/ord-lemmas-crec.bel": {
+  "parse": "c5802da27c20",
+  "blocks": "9d274cfa5cbd",
+  "defs": "e38a7cf2a169",
+  "uses": "4721173c4436",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1062,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 5,
+   "uses": 162
+  }
+ },
+ "examples/church-rosser/ord-lemmas.bel": {
+  "parse": "e09258ab47b1",
+  "blocks": "6a1d97cb25bb",
+  "defs": "ddbc43b97e5a",
+  "uses": "427c34252057",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1142,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 5,
+   "uses": 190
+  }
+ },
+ "examples/church-rosser/ord-lemmas.elf": {
+  "parse": "738d9bbfc6b0",
+  "blocks": "9da04f4fc582",
+  "defs": "99fa8bfdf8a8",
+  "uses": "d259b31fd66c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 583,
+   "errors": 0,
+   "blocks": 12,
+   "defs": 12,
+   "uses": 115
+  }
+ },
+ "examples/church-rosser/ord-red.elf": {
+  "parse": "beaf4277507c",
+  "blocks": "e42ce5dc78a5",
+  "defs": "38a8a0be9f11",
+  "uses": "f9f3cd2a13f9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 449,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 13,
+   "uses": 94
+  }
+ },
+ "examples/church-rosser/par-cr-crec-1.bel": {
+  "parse": "1e3c746e49ce",
+  "blocks": "9644fa5aea10",
+  "defs": "7572d9061a72",
+  "uses": "d3bf649b5720",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5984,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 13,
+   "uses": 825
+  }
+ },
+ "examples/church-rosser/par-cr-crec-cover.bel": {
+  "parse": "f3db60971a91",
+  "blocks": "aae24208ebb1",
+  "defs": "363342f0cc6e",
+  "uses": "7815752589e1",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4851,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 15,
+   "uses": 793
+  }
+ },
+ "examples/church-rosser/par-cr-crec.bel": {
+  "parse": "ba60a83132d9",
+  "blocks": "143db9c4f6cb",
+  "defs": "286b8a18bafb",
+  "uses": "64e43beb33f9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4998,
+   "errors": 0,
+   "blocks": 12,
+   "defs": 13,
+   "uses": 789
+  }
+ },
+ "examples/church-rosser/par-cr.bel": {
+  "parse": "e8245a1db3b3",
+  "blocks": "f83514ef81d1",
+  "defs": "cb11bc1cc4ef",
+  "uses": "16d85f9f73cc",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4995,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 13,
+   "uses": 790
+  }
+ },
+ "examples/church-rosser/par-cr.elf": {
+  "parse": "7295de804dad",
+  "blocks": "ca0c809c7a5a",
+  "defs": "1cdd835e875d",
+  "uses": "1caba6db7fbf",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2282,
+   "errors": 0,
+   "blocks": 21,
+   "defs": 21,
+   "uses": 489
+  }
+ },
+ "examples/church-rosser/par-lemmas-crec.bel": {
+  "parse": "264a5a812787",
+  "blocks": "162ad5305ef2",
+  "defs": "7a0e11a53791",
+  "uses": "b7805f7580b3",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 737,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 3,
+   "uses": 113
+  }
+ },
+ "examples/church-rosser/par-lemmas.bel": {
+  "parse": "21cb804e98c8",
+  "blocks": "696a5b1966e9",
+  "defs": "216bddcd30b9",
+  "uses": "92276a84764a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 767,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 3,
+   "uses": 125
+  }
+ },
+ "examples/church-rosser/par-lemmas.elf": {
+  "parse": "697102b28146",
+  "blocks": "a64830042e43",
+  "defs": "78ef5c18c7fc",
+  "uses": "d25c89b973ab",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 329,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 6,
+   "uses": 69
+  }
+ },
+ "examples/church-rosser/par-red.bel": {
+  "parse": "381fd83b182a",
+  "blocks": "e2a27f6d3390",
+  "defs": "22b55d38dbbd",
+  "uses": "94c0d9b27e28",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 510,
+   "errors": 0,
+   "blocks": 14,
+   "defs": 11,
+   "uses": 104
+  }
+ },
+ "examples/church-rosser/par-red.elf": {
+  "parse": "4f8dd813e475",
+  "blocks": "fc1427c4b8f4",
+  "defs": "8a73dd8581d3",
+  "uses": "01b4aa22791c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 482,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 11,
+   "uses": 98
+  }
+ },
+ "examples/codatatypes/bisimulation/bisimulation.bel": {
+  "parse": "28278722d202",
+  "blocks": "f864b272ebbd",
+  "defs": "3995f99e2c3f",
+  "uses": "e567e0311fb5",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5578,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 29,
+   "uses": 847
+  }
+ },
+ "examples/codatatypes/bisimulation/invariant.bel": {
+  "parse": "1be6401efa09",
+  "blocks": "0b9307c33a71",
+  "defs": "2ca0b7d13925",
+  "uses": "114517bec007",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3634,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 30,
+   "uses": 553
+  }
+ },
+ "examples/codatatypes/bisimulation/picalc.bel": {
+  "parse": "7cff3b10f187",
+  "blocks": "1d6c9afb9ee4",
+  "defs": "6864d891a6fc",
+  "uses": "89bdc39b4c9a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2261,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 45,
+   "uses": 455
+  }
+ },
+ "examples/codatatypes/howes-method/howe-total.bel": {
+  "parse": "b72712faff05",
+  "blocks": "3c71c55e1640",
+  "defs": "878440d62dbd",
+  "uses": "5ea708c9d27d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 20704,
+   "errors": 0,
+   "blocks": 54,
+   "defs": 95,
+   "uses": 3107
+  }
+ },
+ "examples/codatatypes/howes-method/howe.bel": {
+  "parse": "8f7cf0dd8d1f",
+  "blocks": "a66c0b3b5d71",
+  "defs": "01765ca42081",
+  "uses": "41439d65b1b9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 21204,
+   "errors": 0,
+   "blocks": 56,
+   "defs": 97,
+   "uses": 3077
+  }
+ },
+ "examples/codatatypes/tofte-hoas.bel": {
+  "parse": "60188c94f5f6",
+  "blocks": "160bedc7de65",
+  "defs": "c827b55d1aae",
+  "uses": "07e2c95094da",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1325,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 18,
+   "uses": 215
+  }
+ },
+ "examples/compile/cls/cls-complete.elf": {
+  "parse": "9ec63526b430",
+  "blocks": "b15e59571c97",
+  "defs": "e22ed7e40164",
+  "uses": "112f8f51bb35",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1476,
+   "errors": 0,
+   "blocks": 22,
+   "defs": 22,
+   "uses": 312
+  }
+ },
+ "examples/compile/cls/cls-sound.elf": {
+  "parse": "7ed9d0134f95",
+  "blocks": "85552077312a",
+  "defs": "832c22fc101c",
+  "uses": "4a6f5d149140",
+  "diags": "3a85578b281b",
+  "counts": {
+   "nodes": 2677,
+   "errors": 68,
+   "blocks": 23,
+   "defs": 23,
+   "uses": 513
+  }
+ },
+ "examples/compile/cls/cls.elf": {
+  "parse": "56a33a1cd77f",
+  "blocks": "0d01fa9928b8",
+  "defs": "ebe0387334a0",
+  "uses": "ab45223d66a9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 190,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 17,
+   "uses": 38
+  }
+ },
+ "examples/compile/cls/complete-1.bel": {
+  "parse": "1fec4d70b796",
+  "blocks": "fec3576e408a",
+  "defs": "b7798ebc9c38",
+  "uses": "abd9b172c7f4",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 761,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 2,
+   "uses": 101
+  }
+ },
+ "examples/compile/cls/complete.bel": {
+  "parse": "7815bbba8ac7",
+  "blocks": "ca0af928fde6",
+  "defs": "74c14352f79d",
+  "uses": "29f721a7062e",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3486,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 3,
+   "uses": 484
+  }
+ },
+ "examples/compile/cls/compute.elf": {
+  "parse": "e5baa60ca298",
+  "blocks": "1c8db410091d",
+  "defs": "0f8eb44968c1",
+  "uses": "1a0372a2a09d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3386,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 34,
+   "uses": 649
+  }
+ },
+ "examples/compile/cls/debruijn.elf": {
+  "parse": "c74e3ad93230",
+  "blocks": "a7454c0a9569",
+  "defs": "4651eced97d0",
+  "uses": "44a349aa7682",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 370,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 23,
+   "uses": 69
+  }
+ },
+ "examples/compile/cls/feval.elf": {
+  "parse": "ac3dd4aefc22",
+  "blocks": "b62ac0358ddd",
+  "defs": "17190df36f4f",
+  "uses": "4ea07ffa134b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 937,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 17,
+   "uses": 214
+  }
+ },
+ "examples/compile/cls/mini-ml.elf": {
+  "parse": "7c4bb1bed43f",
+  "blocks": "ee5559b5a70c",
+  "defs": "1a8dd6fbe5c5",
+  "uses": "5986c0d1dfbe",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 272,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 12,
+   "uses": 44
+  }
+ },
+ "examples/compile/cls/trans.elf": {
+  "parse": "fd6ef48cb59c",
+  "blocks": "2f946cca055b",
+  "defs": "5d0aabdb50a0",
+  "uses": "346c965ac8e8",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1471,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 21,
+   "uses": 310
+  }
+ },
+ "examples/compile/cls/trans2.elf": {
+  "parse": "c9502a8004f6",
+  "blocks": "bbb23797da1c",
+  "defs": "e6bf7d139d2c",
+  "uses": "6cb83d7b55c5",
+  "diags": "303012396b20",
+  "counts": {
+   "nodes": 1381,
+   "errors": 23,
+   "blocks": 21,
+   "defs": 21,
+   "uses": 282
+  }
+ },
+ "examples/compile/cpm/ceval-complete.bel": {
+  "parse": "c18abb8299d1",
+  "blocks": "434c3824e1f1",
+  "defs": "15aedc723eb5",
+  "uses": "47b772700806",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2564,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 2,
+   "uses": 341
+  }
+ },
+ "examples/compile/cpm/ceval-complete.elf": {
+  "parse": "b518a87831b9",
+  "blocks": "cc1797759d51",
+  "defs": "69aa759f9b0b",
+  "uses": "1c43cd4c63ab",
+  "diags": "8e2c341f8e2c",
+  "counts": {
+   "nodes": 1554,
+   "errors": 62,
+   "blocks": 16,
+   "defs": 16,
+   "uses": 210
+  }
+ },
+ "examples/compile/cpm/ceval-sound.bel": {
+  "parse": "3946a2c35cc8",
+  "blocks": "3521f893d5f7",
+  "defs": "c8dc59919374",
+  "uses": "5b1b1c537335",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2339,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 4,
+   "uses": 333
+  }
+ },
+ "examples/compile/cpm/ceval-sound.elf": {
+  "parse": "dc1456fdbea6",
+  "blocks": "4c6422345460",
+  "defs": "30ced6526d45",
+  "uses": "5d1c6fc1f914",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1258,
+   "errors": 0,
+   "blocks": 16,
+   "defs": 16,
+   "uses": 241
+  }
+ },
+ "examples/compile/cpm/ceval.elf": {
+  "parse": "d96586c6e1ff",
+  "blocks": "a6ff4d3d6967",
+  "defs": "122764747ab9",
+  "uses": "fdfdff3a4e31",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1980,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 27,
+   "uses": 360
+  }
+ },
+ "examples/compile/cpm/cpm.elf": {
+  "parse": "a1c1e5ff52c7",
+  "blocks": "3eebbb82bdef",
+  "defs": "ef17aacd2d14",
+  "uses": "19f3339da0ff",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 299,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 15,
+   "uses": 53
+  }
+ },
+ "examples/compile/cpm/evalv.elf": {
+  "parse": "fc0d2c01da63",
+  "blocks": "45acfd151510",
+  "defs": "1db8308989a0",
+  "uses": "5722fd9879ea",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 789,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 14,
+   "uses": 159
+  }
+ },
+ "examples/compile/cpm/mini-mlv.elf": {
+  "parse": "92858d89cd76",
+  "blocks": "56d96fe7a112",
+  "defs": "6c53f8b64695",
+  "uses": "f398ed848ad5",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 380,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 18,
+   "uses": 65
+  }
+ },
+ "examples/compile/cpm/proof-equiv.elf": {
+  "parse": "0943d2de42bb",
+  "blocks": "97745592c48d",
+  "defs": "555963720509",
+  "uses": "da1d9eb24b47",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 757,
+   "errors": 0,
+   "blocks": 16,
+   "defs": 16,
+   "uses": 157
+  }
+ },
+ "examples/compile/cpm/theorems.elf": {
+  "parse": "49fcfebae007",
+  "blocks": "88dda0b50681",
+  "defs": "23e28a61f5af",
+  "uses": "123d433d37aa",
+  "diags": "306449fb46fc",
+  "counts": {
+   "nodes": 202,
+   "errors": 9,
+   "blocks": 3,
+   "defs": 3,
+   "uses": 34
+  }
+ },
+ "examples/compile/cps/cps-eval.elf": {
+  "parse": "bbd48f8c17f3",
+  "blocks": "7f20a5730acc",
+  "defs": "f6b843461f83",
+  "uses": "5675371b41cb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 477,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 7,
+   "uses": 90
+  }
+ },
+ "examples/compile/cps/cps.elf": {
+  "parse": "0a22f40a88cb",
+  "blocks": "c4545f1a85d1",
+  "defs": "caf5bb7ba093",
+  "uses": "3a95540a7264",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 274,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 11,
+   "uses": 42
+  }
+ },
+ "examples/compile/cps/mini-ml.elf": {
+  "parse": "7c4bb1bed43f",
+  "blocks": "ee5559b5a70c",
+  "defs": "1a8dd6fbe5c5",
+  "uses": "5986c0d1dfbe",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 272,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 12,
+   "uses": 44
+  }
+ },
+ "examples/compile/cps/ml-cps.elf": {
+  "parse": "f0ad3aa45acf",
+  "blocks": "ce547f6a1568",
+  "defs": "da4ba2d81363",
+  "uses": "1b75fed8fb20",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1408,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 10,
+   "uses": 256
+  }
+ },
+ "examples/compile/cxm/evalv.elf": {
+  "parse": "18496b0d3c7c",
+  "blocks": "43430e94199b",
+  "defs": "7f9077fed714",
+  "uses": "cdc5e395933b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 656,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 14,
+   "uses": 139
+  }
+ },
+ "examples/compile/cxm/mini-mlv.elf": {
+  "parse": "20c6c1e2c162",
+  "blocks": "5ad0dc970060",
+  "defs": "9b74d9bf8c7e",
+  "uses": "a596ade8a496",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 366,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 18,
+   "uses": 61
+  }
+ },
+ "examples/compile/cxm/xeval.elf": {
+  "parse": "d426e87bcac5",
+  "blocks": "9faca54147c1",
+  "defs": "60c9cb687d9d",
+  "uses": "bace39c0aad1",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1645,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 33,
+   "uses": 327
+  }
+ },
+ "examples/compile/debruijn1/debruijn.elf": {
+  "parse": "6f2229aef7aa",
+  "blocks": "cd949ebe10bf",
+  "defs": "69f8acd8ec7c",
+  "uses": "9cbd60d3dd88",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 145,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 10,
+   "uses": 25
+  }
+ },
+ "examples/compile/debruijn1/eval.elf": {
+  "parse": "b30f45c23610",
+  "blocks": "c245679b89bd",
+  "defs": "055a2931c43c",
+  "uses": "edae5b1ad236",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 181,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 3,
+   "uses": 32
+  }
+ },
+ "examples/compile/debruijn1/feval.elf": {
+  "parse": "f004a29c327c",
+  "blocks": "5efe99697213",
+  "defs": "e82c08d31446",
+  "uses": "e0fb703f36de",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 267,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 5,
+   "uses": 56
+  }
+ },
+ "examples/compile/debruijn1/map-eval.bel": {
+  "parse": "0b44d6a7e51e",
+  "blocks": "9af19e0eb30f",
+  "defs": "25e70e5ec0b1",
+  "uses": "c3e3b152ff66",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1602,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 6,
+   "uses": 219
+  }
+ },
+ "examples/compile/debruijn1/map-eval.elf": {
+  "parse": "8bed466eddc2",
+  "blocks": "788c317f9097",
+  "defs": "7b8bc36109cd",
+  "uses": "35e3a78937cb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 538,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 5,
+   "uses": 112
+  }
+ },
+ "examples/compile/debruijn1/mini-ml.elf": {
+  "parse": "5c09b6934589",
+  "blocks": "28df2d4b8b4d",
+  "defs": "15fb71e0b5fa",
+  "uses": "1da62cba31f2",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 62,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 3,
+   "uses": 9
+  }
+ },
+ "examples/compile/debruijn1/trans.elf": {
+  "parse": "c774a134ef0c",
+  "blocks": "13983d6f14a4",
+  "defs": "e8f4cdb41369",
+  "uses": "b86d34e96558",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 444,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 7,
+   "uses": 87
+  }
+ },
+ "examples/compile/debruijn/debruijn.elf": {
+  "parse": "c74e3ad93230",
+  "blocks": "a7454c0a9569",
+  "defs": "4651eced97d0",
+  "uses": "44a349aa7682",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 370,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 23,
+   "uses": 69
+  }
+ },
+ "examples/compile/debruijn/eval.elf": {
+  "parse": "259f1f75bf93",
+  "blocks": "c369f4ef89d2",
+  "defs": "3194833ea396",
+  "uses": "2f44c523e958",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 759,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 13,
+   "uses": 152
+  }
+ },
+ "examples/compile/debruijn/feval.elf": {
+  "parse": "9bb93de3672c",
+  "blocks": "7d7e75ff1a80",
+  "defs": "1cd3b9e12f92",
+  "uses": "a45556b247aa",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 938,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 17,
+   "uses": 214
+  }
+ },
+ "examples/compile/debruijn/map-eval.bel": {
+  "parse": "988202cf1407",
+  "blocks": "360ad1ffad84",
+  "defs": "747ddc7e5114",
+  "uses": "bccb2e71344c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 899,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 5,
+   "uses": 126
+  }
+ },
+ "examples/compile/debruijn/map-eval.elf": {
+  "parse": "4183c1881fd3",
+  "blocks": "35378ed1e01d",
+  "defs": "b4d7460668b0",
+  "uses": "43e74fa8e0f2",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3361,
+   "errors": 0,
+   "blocks": 34,
+   "defs": 34,
+   "uses": 712
+  }
+ },
+ "examples/compile/debruijn/mini-ml.elf": {
+  "parse": "232c5c3b0614",
+  "blocks": "f35246ef9962",
+  "defs": "8c545000facd",
+  "uses": "c3d99046c815",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 273,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 12,
+   "uses": 44
+  }
+ },
+ "examples/compile/debruijn/trans.elf": {
+  "parse": "fd6ef48cb59c",
+  "blocks": "9ab8833ce764",
+  "defs": "f48d4176adf4",
+  "uses": "d53050448aee",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1471,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 21,
+   "uses": 310
+  }
+ },
+ "examples/compile/debruijn/val-lemmas.elf": {
+  "parse": "2a7cd3c197dd",
+  "blocks": "f4edf956b570",
+  "defs": "71cdb0fcc739",
+  "uses": "f66712220207",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 388,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 10,
+   "uses": 75
+  }
+ },
+ "examples/compile/debruijn/value.elf": {
+  "parse": "980b3b894c09",
+  "blocks": "5dd492291920",
+  "defs": "be7bcb67e5a8",
+  "uses": "f00828c53dce",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 134,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 5,
+   "uses": 26
+  }
+ },
+ "examples/copy/copy-crec.bel": {
+  "parse": "b15cb3aeff29",
+  "blocks": "ed09ad74a6c8",
+  "defs": "aec9ec896aa2",
+  "uses": "82b18aa10a2f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1128,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 18,
+   "uses": 188
+  }
+ },
+ "examples/copy/copy-explicit.bel": {
+  "parse": "d53fa2d24ba9",
+  "blocks": "2849125d90b8",
+  "defs": "a2e2e4143301",
+  "uses": "e97fc704f993",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 800,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 6,
+   "uses": 117
+  }
+ },
+ "examples/copy/copy-simple-crec.bel": {
+  "parse": "42d278bfeec3",
+  "blocks": "faf02a99b8b5",
+  "defs": "a4cb5eda61fd",
+  "uses": "8e46a8ffb8fe",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 571,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 7,
+   "uses": 83
+  }
+ },
+ "examples/copy/copy-simple-explicit.bel": {
+  "parse": "c7c83f9e3fa7",
+  "blocks": "b22188915f74",
+  "defs": "c5b78c2198a7",
+  "uses": "ae9c272c5b40",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 470,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 4,
+   "uses": 65
+  }
+ },
+ "examples/copy/copy-simple.bel": {
+  "parse": "6f5c1f889bb2",
+  "blocks": "398e0368ae9b",
+  "defs": "d6b463b2d4fe",
+  "uses": "665f79818b16",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 966,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 14,
+   "uses": 148
+  }
+ },
+ "examples/copy/copy.bel": {
+  "parse": "8769730f4a0d",
+  "blocks": "d17e8078f937",
+  "defs": "2d04daf34df7",
+  "uses": "95df27196225",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1122,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 19,
+   "uses": 176
+  }
+ },
+ "examples/count-var/cntvar-2.bel": {
+  "parse": "5026b05856f2",
+  "blocks": "9e0832c5fee9",
+  "defs": "f7785a4488f7",
+  "uses": "d2aca8880212",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1010,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 12,
+   "uses": 152
+  }
+ },
+ "examples/count-var/cntvar-crec.bel": {
+  "parse": "2feb08ea7c31",
+  "blocks": "0ab7246781a0",
+  "defs": "78836bbf4e93",
+  "uses": "3a212648f418",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 998,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 12,
+   "uses": 152
+  }
+ },
+ "examples/count-var/cntvar-explicit.bel": {
+  "parse": "5faa8af23b86",
+  "blocks": "f2c61b82aaae",
+  "defs": "b78442cd0c2e",
+  "uses": "c75bdb33c3ac",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1262,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 10,
+   "uses": 181
+  }
+ },
+ "examples/count-var/cntvar-simple-crec.bel": {
+  "parse": "ebfa1c1a7e02",
+  "blocks": "844b99ab59c6",
+  "defs": "3b6971a57066",
+  "uses": "b25ecf655b6a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 847,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 9,
+   "uses": 120
+  }
+ },
+ "examples/count-var/cntvar-simple.bel": {
+  "parse": "a136d9b799bf",
+  "blocks": "c8cb09db46f6",
+  "defs": "e05631a4b60a",
+  "uses": "80c818db028b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 603,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 8,
+   "uses": 83
+  }
+ },
+ "examples/count-var/cntvar-str.bel": {
+  "parse": "a7fc1a7769ab",
+  "blocks": "f80420042a07",
+  "defs": "be445375cbcd",
+  "uses": "d01fc4989643",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 985,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 12,
+   "uses": 148
+  }
+ },
+ "examples/count-var/cntvar.bel": {
+  "parse": "ddcd09c525df",
+  "blocks": "2f6f85a69475",
+  "defs": "2dd29e903804",
+  "uses": "fb6e7d1fa21d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 573,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 16,
+   "uses": 100
+  }
+ },
+ "examples/cpp13/cc.bel": {
+  "parse": "03166e6c82a9",
+  "blocks": "40af37cdd766",
+  "defs": "9955680530cc",
+  "uses": "d6b243d8de3a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 6048,
+   "errors": 0,
+   "blocks": 30,
+   "defs": 65,
+   "uses": 947
+  }
+ },
+ "examples/cpp13/cchoist.bel": {
+  "parse": "4905cc47db62",
+  "blocks": "cba1c308701e",
+  "defs": "455e4e5885fe",
+  "uses": "3f84c084ec3f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 9099,
+   "errors": 0,
+   "blocks": 38,
+   "defs": 80,
+   "uses": 1396
+  }
+ },
+ "examples/cpp13/cps.bel": {
+  "parse": "801a9d399d51",
+  "blocks": "147d48cfcef1",
+  "defs": "20a559b76d13",
+  "uses": "ce6fb8de9d30",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2849,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 30,
+   "uses": 462
+  }
+ },
+ "examples/cpp13/sfcps.bel": {
+  "parse": "ebab8989a3d6",
+  "blocks": "6316fead93aa",
+  "defs": "76be17e7a1b7",
+  "uses": "5dcf8725731f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3457,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 35,
+   "uses": 576
+  }
+ },
+ "examples/cut-elim/cut-admit-cover.bel": {
+  "parse": "f99a5fabb8f8",
+  "blocks": "5135f40d5f27",
+  "defs": "3a2e179fcac5",
+  "uses": "6ed2d90dc386",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3976,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 20,
+   "uses": 592
+  }
+ },
+ "examples/cut-elim/formulas.elf": {
+  "parse": "5ace8c70d592",
+  "blocks": "b3303e7e0e22",
+  "defs": "1392bf35cdc7",
+  "uses": "de61c4ed13a9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 174,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 10,
+   "uses": 29
+  }
+ },
+ "examples/cut-elim/int-admit.bel": {
+  "parse": "d66daff501d2",
+  "blocks": "0760dad1b7ca",
+  "defs": "f9a5cd57bdf6",
+  "uses": "48f2925f2dda",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 8103,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 2,
+   "uses": 1233
+  }
+ },
+ "examples/cut-elim/int-admit.elf": {
+  "parse": "499cba88d0bf",
+  "blocks": "367872d66253",
+  "defs": "6439ec27d0b6",
+  "uses": "ad3ae039d68b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4391,
+   "errors": 0,
+   "blocks": 36,
+   "defs": 36,
+   "uses": 893
+  }
+ },
+ "examples/cut-elim/int-cut.elf": {
+  "parse": "ccfc31537dc1",
+  "blocks": "8ddd89991c51",
+  "defs": "6912a725729a",
+  "uses": "0e4e095b2125",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 926,
+   "errors": 0,
+   "blocks": 1,
+   "defs": 19,
+   "uses": 170
+  }
+ },
+ "examples/cut-elim/int-elim.bel": {
+  "parse": "be299fc712ae",
+  "blocks": "81260713e00d",
+  "defs": "fffda4d562e7",
+  "uses": "1da93337daad",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1319,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 19,
+   "uses": 260
+  }
+ },
+ "examples/cut-elim/int.elf": {
+  "parse": "daa4c62a2bd4",
+  "blocks": "b4381e4b4896",
+  "defs": "1574a834f22f",
+  "uses": "a1eec6f60c9a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 896,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 19,
+   "uses": 161
+  }
+ },
+ "examples/equal/alg-equal-ctxrel.bel": {
+  "parse": "88baf2122f2a",
+  "blocks": "efe8d693d96c",
+  "defs": "3c4265678446",
+  "uses": "fa851d5c8ef0",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 8903,
+   "errors": 0,
+   "blocks": 31,
+   "defs": 59,
+   "uses": 1454
+  }
+ },
+ "examples/equal/alg-equal-datatypes-adeq.bel": {
+  "parse": "763a1f6367b3",
+  "blocks": "c224e3050dab",
+  "defs": "88c5c08b7142",
+  "uses": "dfb4f9356034",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4526,
+   "errors": 0,
+   "blocks": 17,
+   "defs": 38,
+   "uses": 743
+  }
+ },
+ "examples/equal/alg-equal-datatypes.bel": {
+  "parse": "02f19100ac85",
+  "blocks": "1513f589da31",
+  "defs": "4fb75395d19c",
+  "uses": "d518c9fc8d84",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2193,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 18,
+   "uses": 350
+  }
+ },
+ "examples/equal/eq-proof-1.bel": {
+  "parse": "3f243c1271fd",
+  "blocks": "dabe1184c430",
+  "defs": "b20721a72b8d",
+  "uses": "f2870c765854",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2457,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 16,
+   "uses": 417
+  }
+ },
+ "examples/equal/eq-proof-2.bel": {
+  "parse": "5ba36a8236b8",
+  "blocks": "d8536161ea7e",
+  "defs": "ec9ee541a137",
+  "uses": "5d95659956a9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2568,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 17,
+   "uses": 433
+  }
+ },
+ "examples/equal/eq-proof-crec.bel": {
+  "parse": "925682e215f2",
+  "blocks": "e335e56159c3",
+  "defs": "afe423b45e1b",
+  "uses": "8ca7bb374c7c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2504,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 17,
+   "uses": 418
+  }
+ },
+ "examples/equal/eq-proof-full-crec.bel": {
+  "parse": "45e2299080a9",
+  "blocks": "f510fc3c115d",
+  "defs": "6e9d88a50908",
+  "uses": "048e5d025fa1",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2486,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 17,
+   "uses": 413
+  }
+ },
+ "examples/equal/eq-proof-tuple.bel": {
+  "parse": "34262850edcf",
+  "blocks": "c109b800445c",
+  "defs": "7f730f59f988",
+  "uses": "dcbd487d50a0",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1926,
+   "errors": 0,
+   "blocks": 12,
+   "defs": 16,
+   "uses": 327
+  }
+ },
+ "examples/equal/eq-proof.bel": {
+  "parse": "89026b81bdf0",
+  "blocks": "fca138cc6155",
+  "defs": "9e3ea03f780f",
+  "uses": "ea54e5fe9a84",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1454,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 9,
+   "uses": 235
+  }
+ },
+ "examples/fol/fol-handbook.bel": {
+  "parse": "ab7314bc35f7",
+  "blocks": "a17434cead01",
+  "defs": "e0a18f182ea8",
+  "uses": "658c3ebbce31",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3609,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 27,
+   "uses": 586
+  }
+ },
+ "examples/fol/fol.bel": {
+  "parse": "35412cefe7e9",
+  "blocks": "5079cf9bf15a",
+  "defs": "1cd9f0c4dd4d",
+  "uses": "ebe33ead901b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1926,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 10,
+   "uses": 278
+  }
+ },
+ "examples/fol/fol.elf": {
+  "parse": "7171ee74b78b",
+  "blocks": "37f9c17a882b",
+  "defs": "6202a55c73c6",
+  "uses": "b9606fab68d6",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 364,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 15,
+   "uses": 70
+  }
+ },
+ "examples/free-vars/fvnat-crec.bel": {
+  "parse": "48f7e96b3103",
+  "blocks": "a21dbbdddf7b",
+  "defs": "9d29373c33ae",
+  "uses": "028c3ca4f739",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1114,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 17,
+   "uses": 173
+  }
+ },
+ "examples/free-vars/fvnat-explicit.bel": {
+  "parse": "d880d6db0da9",
+  "blocks": "b680025b59e2",
+  "defs": "e49e778b4f02",
+  "uses": "00cc4d270116",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1033,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 14,
+   "uses": 157
+  }
+ },
+ "examples/free-vars/fvnat.bel": {
+  "parse": "e865e820f586",
+  "blocks": "d8b333476851",
+  "defs": "9d29373c33ae",
+  "uses": "46e3ada48191",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1175,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 17,
+   "uses": 181
+  }
+ },
+ "examples/freshML/cconv-cheney.bel": {
+  "parse": "ad9402814813",
+  "blocks": "05275f7c1e5d",
+  "defs": "75455e69d893",
+  "uses": "c18d031a79ae",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1501,
+   "errors": 0,
+   "blocks": 15,
+   "defs": 24,
+   "uses": 220
+  }
+ },
+ "examples/freshML/conv-untyped.bel": {
+  "parse": "ee94ed74f82f",
+  "blocks": "0ac0fd395303",
+  "defs": "4b22d46ad5e6",
+  "uses": "7b22f49bc09a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 843,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 14,
+   "uses": 135
+  }
+ },
+ "examples/freshML/cps-crec.bel": {
+  "parse": "f53e854652b8",
+  "blocks": "d7eacddd9d9e",
+  "defs": "2652c09a1982",
+  "uses": "35703cb99423",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1047,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 14,
+   "uses": 159
+  }
+ },
+ "examples/freshML/cps-popl-tutorial1.bel": {
+  "parse": "fae55ebb1237",
+  "blocks": "a39cee7cc39c",
+  "defs": "71e2b07932fc",
+  "uses": "c3dd8f6f7b2a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1408,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 20,
+   "uses": 238
+  }
+ },
+ "examples/freshML/cps-popl-tutorial2-crec.bel": {
+  "parse": "2f3a28d8f2bd",
+  "blocks": "9c74bf54f0e3",
+  "defs": "e033385205ba",
+  "uses": "7de9c283ac63",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1364,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 18,
+   "uses": 218
+  }
+ },
+ "examples/freshML/cps-popl-tutorial2.bel": {
+  "parse": "d92d63ba00cc",
+  "blocks": "61932b32fbe4",
+  "defs": "a22bc32aa7fd",
+  "uses": "adddc701a011",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1253,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 15,
+   "uses": 204
+  }
+ },
+ "examples/freshML/cps.bel": {
+  "parse": "fd06198ebfde",
+  "blocks": "e3c756e37c50",
+  "defs": "eb5d270f1250",
+  "uses": "2efe0b0c875c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 692,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 12,
+   "uses": 105
+  }
+ },
+ "examples/freshML/debruijn-1.bel": {
+  "parse": "438a5b78ed06",
+  "blocks": "2976171f3605",
+  "defs": "ee1c3ef578c6",
+  "uses": "cb7de77361ed",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1901,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 23,
+   "uses": 290
+  }
+ },
+ "examples/freshML/debruijn-1a.bel": {
+  "parse": "2b7f6bc7a67a",
+  "blocks": "6a1305aa8973",
+  "defs": "ac91e74f5026",
+  "uses": "44662ec71130",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1781,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 26,
+   "uses": 291
+  }
+ },
+ "examples/freshML/debruijn-uniform.bel": {
+  "parse": "8eeb31a47e48",
+  "blocks": "70c2997d63f0",
+  "defs": "8f23a5700c2f",
+  "uses": "d6a4ff02d5ba",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1324,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 20,
+   "uses": 205
+  }
+ },
+ "examples/freshML/debruijn.bel": {
+  "parse": "820d1037f68e",
+  "blocks": "55cb1636a3fe",
+  "defs": "73c9c46e2b7a",
+  "uses": "5b70c1a0cac5",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 795,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 11,
+   "uses": 105
+  }
+ },
+ "examples/freshML/term.bel": {
+  "parse": "d985eeb3d956",
+  "blocks": "cc5dabc6a595",
+  "defs": "727dd4bc4ded",
+  "uses": "4da2fb82fa33",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 872,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 11,
+   "uses": 118
+  }
+ },
+ "examples/freshML/ucconv-total.bel": {
+  "parse": "a718b1d6b8c3",
+  "blocks": "132a96b45f99",
+  "defs": "f564173c73c0",
+  "uses": "9a3280a07ed4",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4008,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 37,
+   "uses": 588
+  }
+ },
+ "examples/higher-order/jpath.bel": {
+  "parse": "6dc48f03d204",
+  "blocks": "c685bac6e0b9",
+  "defs": "277dd3f8eea6",
+  "uses": "ce0acc8ff33f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3309,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 26,
+   "uses": 565
+  }
+ },
+ "examples/improve/eta.bel": {
+  "parse": "bc5bbfea7995",
+  "blocks": "1a0c7ad7aa3d",
+  "defs": "8cfaa02dbaf9",
+  "uses": "3f247b9751c5",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 149,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 4,
+   "uses": 21
+  }
+ },
+ "examples/improve/recon.bel": {
+  "parse": "708cad0d32c7",
+  "blocks": "a357f3a41327",
+  "defs": "d5834546c9d1",
+  "uses": "539947468ff2",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 367,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 8,
+   "uses": 57
+  }
+ },
+ "examples/lincx_mechanization/context_functions.bel": {
+  "parse": "372974c70b25",
+  "blocks": "40542cc5c12a",
+  "defs": "d64b437a62ac",
+  "uses": "4ec627503bc6",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4064,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 35,
+   "uses": 613
+  }
+ },
+ "examples/lincx_mechanization/join.bel": {
+  "parse": "2bee9ac9c809",
+  "blocks": "a74d668dee85",
+  "defs": "8460f16899b8",
+  "uses": "3fb089f37870",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 900,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 13,
+   "uses": 187
+  }
+ },
+ "examples/lincx_mechanization/judgments.bel": {
+  "parse": "534d817ee93b",
+  "blocks": "99e485b98f18",
+  "defs": "307f0c35ee7d",
+  "uses": "29b75ffad421",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1503,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 18,
+   "uses": 319
+  }
+ },
+ "examples/lincx_mechanization/lemma1.bel": {
+  "parse": "90c84779cf99",
+  "blocks": "b1c303a62b40",
+  "defs": "6137ba3da704",
+  "uses": "67ef7c33cd99",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 13541,
+   "errors": 0,
+   "blocks": 28,
+   "defs": 33,
+   "uses": 1796
+  }
+ },
+ "examples/lincx_mechanization/subst_split.bel": {
+  "parse": "3a254fbb254a",
+  "blocks": "cada95ee26d6",
+  "defs": "a9ae9f5fd944",
+  "uses": "02215381e695",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4773,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 9,
+   "uses": 772
+  }
+ },
+ "examples/lincx_mechanization/substitution.bel": {
+  "parse": "1ca13f35e86f",
+  "blocks": "40073531fbc4",
+  "defs": "7f429b0aaed2",
+  "uses": "2690845ebe48",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5676,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 83,
+   "uses": 1158
+  }
+ },
+ "examples/lincx_mechanization/substitution_functions.bel": {
+  "parse": "1f34c8aa89e3",
+  "blocks": "26e5aa85b2d9",
+  "defs": "461c1ee62ea8",
+  "uses": "587460cc3a3f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4948,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 9,
+   "uses": 712
+  }
+ },
+ "examples/lincx_mechanization/syntax.bel": {
+  "parse": "8488c3344f3e",
+  "blocks": "6545b00a5fdc",
+  "defs": "d96fdf190d4c",
+  "uses": "bbab207180af",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 710,
+   "errors": 0,
+   "blocks": 15,
+   "defs": 49,
+   "uses": 118
+  }
+ },
+ "examples/literate_beluga/0Beginner/Close_Terms.bel": {
+  "parse": "b6f20a3ce389",
+  "blocks": "f90fcd84df08",
+  "defs": "bd0ccf89fd75",
+  "uses": "89fead1c9c8c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 620,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 8,
+   "uses": 83
+  }
+ },
+ "examples/literate_beluga/0Beginner/From_HOAS_to_DeBruijn.bel": {
+  "parse": "1a53903faf51",
+  "blocks": "a2d3ecbeefd7",
+  "defs": "c5d56a57c557",
+  "uses": "0666bb60ce4b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1725,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 18,
+   "uses": 273
+  }
+ },
+ "examples/literate_beluga/0Beginner/Norm.bel": {
+  "parse": "72c32db1dc71",
+  "blocks": "e53a6e89c5c4",
+  "defs": "8bb15ad15210",
+  "uses": "a3e6356edf4f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 579,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 8,
+   "uses": 88
+  }
+ },
+ "examples/literate_beluga/0Beginner/Parallel_Reduction.bel": {
+  "parse": "fa046eaf0d2d",
+  "blocks": "64965d495ac8",
+  "defs": "fea341878eb9",
+  "uses": "4272b188ba26",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2014,
+   "errors": 0,
+   "blocks": 12,
+   "defs": 18,
+   "uses": 341
+  }
+ },
+ "examples/literate_beluga/0Beginner/Polymorphic_Algorithmic_Equality.bel": {
+  "parse": "de9fc0ada2bd",
+  "blocks": "34e8e7d1fc94",
+  "defs": "1ce17604b5d1",
+  "uses": "b9fa23fee085",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7729,
+   "errors": 0,
+   "blocks": 23,
+   "defs": 42,
+   "uses": 1271
+  }
+ },
+ "examples/literate_beluga/0Beginner/Type_Uniqueness.bel": {
+  "parse": "00f1754a8a72",
+  "blocks": "b5ba460fb672",
+  "defs": "6ee715ecaac5",
+  "uses": "9e9d7503f21a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 871,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 13,
+   "uses": 135
+  }
+ },
+ "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Relation.bel": {
+  "parse": "208f9b8f3dda",
+  "blocks": "8bd75269ea3e",
+  "defs": "b5f87673660b",
+  "uses": "dfead4a73e09",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 14992,
+   "errors": 0,
+   "blocks": 37,
+   "defs": 63,
+   "uses": 2241
+  }
+ },
+ "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Subsumption.bel": {
+  "parse": "27f20e9eed66",
+  "blocks": "cd064b05e9aa",
+  "defs": "d3074ee4faa7",
+  "uses": "d1f30903d63e",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2859,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 18,
+   "uses": 463
+  }
+ },
+ "examples/literate_beluga/1Intermediate/Poplmark.bel": {
+  "parse": "a26393143ba3",
+  "blocks": "7e5d71b9c408",
+  "defs": "7dfb31eae772",
+  "uses": "5694439a96b9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5555,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 20,
+   "uses": 937
+  }
+ },
+ "examples/literate_beluga/2Advanced/Normalization_by_Evaluation.bel": {
+  "parse": "dd34ba0d30fb",
+  "blocks": "1b3cefe7b4ab",
+  "defs": "45ba43ecfa18",
+  "uses": "a5db204c8ba3",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2790,
+   "errors": 0,
+   "blocks": 27,
+   "defs": 26,
+   "uses": 395
+  }
+ },
+ "examples/literate_beluga/2Advanced/Weak_Normalization.bel": {
+  "parse": "a8fda2382737",
+  "blocks": "cef4109671d8",
+  "defs": "1d1831f56d54",
+  "uses": "2546831d6cfa",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2375,
+   "errors": 0,
+   "blocks": 29,
+   "defs": 31,
+   "uses": 355
+  }
+ },
+ "examples/logrel/algeq-simplified.bel": {
+  "parse": "92be6af9fafd",
+  "blocks": "d3997805f714",
+  "defs": "a8ee7700b10d",
+  "uses": "9c2b5e2aa53f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 14016,
+   "errors": 0,
+   "blocks": 64,
+   "defs": 77,
+   "uses": 2155
+  }
+ },
+ "examples/logrel/algeq-simplified1.bel": {
+  "parse": "e97a61da604e",
+  "blocks": "221756cc04c0",
+  "defs": "ea904f558a07",
+  "uses": "9b9d3aeb357b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 14316,
+   "errors": 0,
+   "blocks": 61,
+   "defs": 75,
+   "uses": 2156
+  }
+ },
+ "examples/logrel/algeq-typing.bel": {
+  "parse": "d9fff4f23c3a",
+  "blocks": "32bd2104d429",
+  "defs": "c4c3e84f3379",
+  "uses": "1a292270d808",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 18185,
+   "errors": 0,
+   "blocks": 71,
+   "defs": 77,
+   "uses": 2861
+  }
+ },
+ "examples/logrel/weak-norm-closed-ideal.bel": {
+  "parse": "342a0edefe8d",
+  "blocks": "69b06913801f",
+  "defs": "42e643ea980c",
+  "uses": "32da2a6e2dec",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2768,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 30,
+   "uses": 409
+  }
+ },
+ "examples/logrel/weak-norm-total-mix-lf-inductive.bel": {
+  "parse": "a79cc749a16c",
+  "blocks": "f9cc770222e5",
+  "defs": "20dd8291a024",
+  "uses": "886e6673db38",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2984,
+   "errors": 0,
+   "blocks": 18,
+   "defs": 32,
+   "uses": 407
+  }
+ },
+ "examples/logrel/weak-norm-total-products-explicit-typing.bel": {
+  "parse": "b49fed7b5bd5",
+  "blocks": "07f897a57324",
+  "defs": "6e9cd44558b2",
+  "uses": "4d1632542837",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5113,
+   "errors": 0,
+   "blocks": 48,
+   "defs": 61,
+   "uses": 751
+  }
+ },
+ "examples/logrel/weak-norm-total-products.bel": {
+  "parse": "c50317b0d02d",
+  "blocks": "88033e8bc0f3",
+  "defs": "279b6e4955f7",
+  "uses": "07846939a0a8",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5243,
+   "errors": 0,
+   "blocks": 25,
+   "defs": 48,
+   "uses": 796
+  }
+ },
+ "examples/logrel/weak-norm-total.bel": {
+  "parse": "7c27757b6ffe",
+  "blocks": "fcb64afa79d5",
+  "defs": "e9337b48043e",
+  "uses": "4834ad8df61d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2937,
+   "errors": 0,
+   "blocks": 21,
+   "defs": 32,
+   "uses": 426
+  }
+ },
+ "examples/logrel/weak-norm-under-binders-beta-only.bel": {
+  "parse": "8d92546d937b",
+  "blocks": "4d0c66bfd1ce",
+  "defs": "18f39df4c9dd",
+  "uses": "6fd494e6d9eb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7384,
+   "errors": 0,
+   "blocks": 25,
+   "defs": 44,
+   "uses": 1083
+  }
+ },
+ "examples/logrel/weak-norm-under-binders-simplified.bel": {
+  "parse": "0e50593d6553",
+  "blocks": "ed6561a4e2b8",
+  "defs": "e3314750459b",
+  "uses": "82e9b1b15ae9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7187,
+   "errors": 0,
+   "blocks": 25,
+   "defs": 45,
+   "uses": 1062
+  }
+ },
+ "examples/logrel/weak-norm-under-binders.bel": {
+  "parse": "fbf9de95dedc",
+  "blocks": "de88ab6b23a8",
+  "defs": "6c3fb782b73f",
+  "uses": "82d6a6e2252a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7924,
+   "errors": 0,
+   "blocks": 29,
+   "defs": 51,
+   "uses": 1131
+  }
+ },
+ "examples/logrel/weak-norm.bel": {
+  "parse": "ec52db05361f",
+  "blocks": "89441bc6a489",
+  "defs": "7262741af9eb",
+  "uses": "a6503d348124",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2387,
+   "errors": 0,
+   "blocks": 20,
+   "defs": 31,
+   "uses": 355
+  }
+ },
+ "examples/lp-horn/iscan.bel": {
+  "parse": "07dcd00c08d5",
+  "blocks": "20154afeb259",
+  "defs": "6c0386a6dcae",
+  "uses": "aa389e373a16",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 967,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 4,
+   "uses": 148
+  }
+ },
+ "examples/lp-horn/uni-complete-crec.bel": {
+  "parse": "2da677d78893",
+  "blocks": "6cb27ee13dcd",
+  "defs": "9e711b873bbc",
+  "uses": "1e1a1bbd4efb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1352,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 5,
+   "uses": 220
+  }
+ },
+ "examples/lp-horn/uni-complete.bel": {
+  "parse": "59c1994a8014",
+  "blocks": "72d7d628bf3a",
+  "defs": "e0a0b50ca458",
+  "uses": "3cfd604d3858",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1511,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 3,
+   "uses": 232
+  }
+ },
+ "examples/lp-horn/uni-sound-crec.bel": {
+  "parse": "38e2ea991813",
+  "blocks": "590f16ca9a31",
+  "defs": "422f7ef29804",
+  "uses": "ce1033a84a72",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1125,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 4,
+   "uses": 166
+  }
+ },
+ "examples/lp-horn/uni-sound.bel": {
+  "parse": "ad770fe10876",
+  "blocks": "684205d772e2",
+  "defs": "0eca30ea11be",
+  "uses": "7370051c9460",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1207,
+   "errors": 0,
+   "blocks": 3,
+   "defs": 4,
+   "uses": 176
+  }
+ },
+ "examples/mini-ml/clos-eval.bel": {
+  "parse": "f962fef22eed",
+  "blocks": "27af25c49afb",
+  "defs": "669c0ae89845",
+  "uses": "4af4b84d749a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1518,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 24,
+   "uses": 230
+  }
+ },
+ "examples/mini-ml/eval-sub-1-explicit.bel": {
+  "parse": "7472efabbc3a",
+  "blocks": "bdc1c0e343d1",
+  "defs": "d3b68a359e78",
+  "uses": "216fcc75f4dd",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 806,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 9,
+   "uses": 91
+  }
+ },
+ "examples/mini-ml/eval-sub-1.bel": {
+  "parse": "958050f90f41",
+  "blocks": "7069761887a4",
+  "defs": "5e45a1838d1b",
+  "uses": "57edd4bcf70a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 553,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 9,
+   "uses": 66
+  }
+ },
+ "examples/mini-ml/eval-sub-explicit.bel": {
+  "parse": "72efd2a9b35d",
+  "blocks": "5763b99a2cf0",
+  "defs": "e46534c2f561",
+  "uses": "390d11ec07ee",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1076,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 9,
+   "uses": 123
+  }
+ },
+ "examples/mini-ml/eval-sub.bel": {
+  "parse": "ce1795adcac4",
+  "blocks": "7c351a27735a",
+  "defs": "e65a725e1ec1",
+  "uses": "eb5678eeb8c5",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 855,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 13,
+   "uses": 113
+  }
+ },
+ "examples/mini-ml/tps.bel": {
+  "parse": "cb512dd92762",
+  "blocks": "479e4c5be332",
+  "defs": "a885a6ecb648",
+  "uses": "c6eb95ced4a2",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2309,
+   "errors": 0,
+   "blocks": 33,
+   "defs": 29,
+   "uses": 376
+  }
+ },
+ "examples/mini-ml/vsound-explicit.bel": {
+  "parse": "2d946c57ad8a",
+  "blocks": "649b3cdf3671",
+  "defs": "e5d841dd6118",
+  "uses": "922210be858a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1087,
+   "errors": 0,
+   "blocks": 15,
+   "defs": 12,
+   "uses": 166
+  }
+ },
+ "examples/mini-ml/vsound.bel": {
+  "parse": "35d97ba031bf",
+  "blocks": "d7ba27724bf5",
+  "defs": "34e2e4d6bf7f",
+  "uses": "09ca4ce89c26",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 541,
+   "errors": 0,
+   "blocks": 18,
+   "defs": 16,
+   "uses": 102
+  }
+ },
+ "examples/path/bred-nf.bel": {
+  "parse": "9c2cd3ebe660",
+  "blocks": "4ccd5b295a2b",
+  "defs": "bc0e65511993",
+  "uses": "82117c759543",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 9442,
+   "errors": 0,
+   "blocks": 26,
+   "defs": 41,
+   "uses": 1576
+  }
+ },
+ "examples/path/path-typed.bel": {
+  "parse": "01a8b573d511",
+  "blocks": "8c33948666b8",
+  "defs": "6e752c5ebdc6",
+  "uses": "e332fc4c047e",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2673,
+   "errors": 0,
+   "blocks": 23,
+   "defs": 22,
+   "uses": 449
+  }
+ },
+ "examples/path/path.bel": {
+  "parse": "bf5da3838b03",
+  "blocks": "301293168c17",
+  "defs": "444abdd43a97",
+  "uses": "7691c20ee0d5",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2224,
+   "errors": 0,
+   "blocks": 18,
+   "defs": 17,
+   "uses": 356
+  }
+ },
+ "examples/polylam/normal.bel": {
+  "parse": "bf67bb56972c",
+  "blocks": "f277af53e2e2",
+  "defs": "20dc7e178119",
+  "uses": "71ef86b26882",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1410,
+   "errors": 0,
+   "blocks": 14,
+   "defs": 15,
+   "uses": 228
+  }
+ },
+ "examples/popl12/clos-eval.bel": {
+  "parse": "093eb0594b2e",
+  "blocks": "550742195f14",
+  "defs": "e587a3e7272a",
+  "uses": "727f2f99fbf4",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1036,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 22,
+   "uses": 157
+  }
+ },
+ "examples/popl12/closconv.bel": {
+  "parse": "3827dff7e1a2",
+  "blocks": "18d5dd3977c1",
+  "defs": "d159a8a108c1",
+  "uses": "ddb88e682471",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1684,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 26,
+   "uses": 251
+  }
+ },
+ "examples/popl12/copy.bel": {
+  "parse": "6fe38f0d9ac5",
+  "blocks": "01f096e42490",
+  "defs": "e30d0bfa10e0",
+  "uses": "d8f23ba0e255",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 748,
+   "errors": 0,
+   "blocks": 8,
+   "defs": 13,
+   "uses": 128
+  }
+ },
+ "examples/popl12/lists.bel": {
+  "parse": "42ecd5bd5f51",
+  "blocks": "0b863ecd9491",
+  "defs": "9b7868562b64",
+  "uses": "b4d59639b3dc",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 260,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 11,
+   "uses": 47
+  }
+ },
+ "examples/popl12/nbe-sub.bel": {
+  "parse": "36ddf51fc4c3",
+  "blocks": "583edab36db6",
+  "defs": "02d2b6318bfc",
+  "uses": "f2d7fa17d4f8",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3314,
+   "errors": 0,
+   "blocks": 27,
+   "defs": 27,
+   "uses": 464
+  }
+ },
+ "examples/popl12/nbe.bel": {
+  "parse": "d32a45dc8193",
+  "blocks": "7d0ce18a02a9",
+  "defs": "232ca9ba57af",
+  "uses": "02932cafe64c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3666,
+   "errors": 0,
+   "blocks": 31,
+   "defs": 35,
+   "uses": 543
+  }
+ },
+ "examples/popl12/normeval-abbrev.bel": {
+  "parse": "b42f66406e43",
+  "blocks": "ab016aa6fa81",
+  "defs": "5bde144c5aed",
+  "uses": "843a306a474a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4866,
+   "errors": 0,
+   "blocks": 25,
+   "defs": 36,
+   "uses": 693
+  }
+ },
+ "examples/popl12/normeval-subst.bel": {
+  "parse": "4a50e9ee5701",
+  "blocks": "2ebb48c73cb1",
+  "defs": "d81eca82f8ad",
+  "uses": "62912f607447",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3080,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 28,
+   "uses": 435
+  }
+ },
+ "examples/popl12/normeval-total.bel": {
+  "parse": "801cbf93e176",
+  "blocks": "9baa816792a8",
+  "defs": "44022806e784",
+  "uses": "6e5bc77fdccf",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5651,
+   "errors": 0,
+   "blocks": 31,
+   "defs": 33,
+   "uses": 781
+  }
+ },
+ "examples/popl12/normeval.bel": {
+  "parse": "82a9ea90862e",
+  "blocks": "865354bfe353",
+  "defs": "e07fc79d0938",
+  "uses": "e49e8828df3d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5158,
+   "errors": 0,
+   "blocks": 31,
+   "defs": 34,
+   "uses": 711
+  }
+ },
+ "examples/poplmark-reloaded+/1a_prop_sn.bel": {
+  "parse": "8b4c0794d243",
+  "blocks": "dc52de54cba9",
+  "defs": "f10d41ba158d",
+  "uses": "032a6c650b80",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 19064,
+   "errors": 0,
+   "blocks": 22,
+   "defs": 27,
+   "uses": 2215
+  }
+ },
+ "examples/poplmark-reloaded+/1b_soundness.bel": {
+  "parse": "34714104c157",
+  "blocks": "c7dead0a811a",
+  "defs": "5aa5d0bbb9f8",
+  "uses": "1ac8690c710f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2131,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 4,
+   "uses": 252
+  }
+ },
+ "examples/poplmark-reloaded+/2a_prop_SN.bel": {
+  "parse": "bdd18b0f4176",
+  "blocks": "4c59abea91a5",
+  "defs": "7c021ed1999a",
+  "uses": "0a63e724bb3a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 6145,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 9,
+   "uses": 639
+  }
+ },
+ "examples/poplmark-reloaded+/2b_sn.bel": {
+  "parse": "5ae58d49a177",
+  "blocks": "f3eec966b1fb",
+  "defs": "313ea2384164",
+  "uses": "90bc141cb0ba",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 10580,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 28,
+   "uses": 1175
+  }
+ },
+ "examples/poplmark-reloaded+/sn_def.bel": {
+  "parse": "0a04e0b4a138",
+  "blocks": "840ca77f6da2",
+  "defs": "1e40ad641751",
+  "uses": "fa91990e495f",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3024,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 25,
+   "uses": 456
+  }
+ },
+ "examples/poplmark-reloaded+/terms_def.bel": {
+  "parse": "9a657dedcb2d",
+  "blocks": "14a8d4271aad",
+  "defs": "c7a36244dd0c",
+  "uses": "9f2a4ff8ff8e",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7882,
+   "errors": 0,
+   "blocks": 15,
+   "defs": 36,
+   "uses": 1065
+  }
+ },
+ "examples/poplmark-reloaded/1a_prop_sn.bel": {
+  "parse": "f5d5548efec3",
+  "blocks": "4eff53035a25",
+  "defs": "4b9893f7b091",
+  "uses": "0c5e14fdc7b4",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7555,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 17,
+   "uses": 992
+  }
+ },
+ "examples/poplmark-reloaded/1b_soundness.bel": {
+  "parse": "556245ac3ae2",
+  "blocks": "b8039b5ee717",
+  "defs": "cf2f8dc309cd",
+  "uses": "671cf0d8374c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1328,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 4,
+   "uses": 176
+  }
+ },
+ "examples/poplmark-reloaded/2a_prop_SN.bel": {
+  "parse": "4eef0c2f4388",
+  "blocks": "eb4e51e2c92a",
+  "defs": "43d70a1c865d",
+  "uses": "46a199ee739d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3516,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 9,
+   "uses": 489
+  }
+ },
+ "examples/poplmark-reloaded/2b_sn.bel": {
+  "parse": "3c8fd130bfeb",
+  "blocks": "70860fd7c3e7",
+  "defs": "6f283040c958",
+  "uses": "61d94a2cfdfb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4966,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 16,
+   "uses": 685
+  }
+ },
+ "examples/poplmark-reloaded/sn_def.bel": {
+  "parse": "0fd80d406215",
+  "blocks": "c27097e00b49",
+  "defs": "a9d8d21cb887",
+  "uses": "309ad17d7aae",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1592,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 16,
+   "uses": 242
+  }
+ },
+ "examples/poplmark-reloaded/terms_def.bel": {
+  "parse": "e04e7defd7be",
+  "blocks": "2fb470ea47f2",
+  "defs": "decffd66db8e",
+  "uses": "e214f6eecaaa",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3187,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 20,
+   "uses": 495
+  }
+ },
+ "examples/poplmark/pearl.bel": {
+  "parse": "a52be4173754",
+  "blocks": "ab3a8ad445a7",
+  "defs": "d6002afca8f6",
+  "uses": "2ee3bd338ea9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5589,
+   "errors": 0,
+   "blocks": 24,
+   "defs": 22,
+   "uses": 939
+  }
+ },
+ "examples/poplmark/poplmark.bel": {
+  "parse": "078c842453bf",
+  "blocks": "5ccef71c17f3",
+  "defs": "91c26d678830",
+  "uses": "84ca77436a38",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1858,
+   "errors": 0,
+   "blocks": 11,
+   "defs": 20,
+   "uses": 278
+  }
+ },
+ "examples/small-step/lam.bel": {
+  "parse": "4848a43efb97",
+  "blocks": "47d1ece140c4",
+  "defs": "8f6f2da01d2b",
+  "uses": "2569160a3507",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1835,
+   "errors": 0,
+   "blocks": 25,
+   "defs": 20,
+   "uses": 271
+  }
+ },
+ "examples/small-step/subject-red.bel": {
+  "parse": "8199e32546e0",
+  "blocks": "a6fe3b26dfb5",
+  "defs": "9a79f65e2922",
+  "uses": "19110914eb94",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2425,
+   "errors": 0,
+   "blocks": 17,
+   "defs": 17,
+   "uses": 407
+  }
+ },
+ "examples/small-step/system-f-iso.bel": {
+  "parse": "9bc5cb7f1ce5",
+  "blocks": "20482ca88807",
+  "defs": "188d8aeb29c6",
+  "uses": "a6a342a8a58c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4163,
+   "errors": 0,
+   "blocks": 44,
+   "defs": 44,
+   "uses": 580
+  }
+ },
+ "examples/small-step/system-f-iso.elf": {
+  "parse": "ee1d65d61570",
+  "blocks": "af763e73d397",
+  "defs": "a3e30b3705d2",
+  "uses": "eee6d3bd06ae",
+  "diags": "863fa03d3dda",
+  "counts": {
+   "nodes": 3912,
+   "errors": 63,
+   "blocks": 77,
+   "defs": 75,
+   "uses": 700
+  }
+ },
+ "examples/small-step/system-f.bel": {
+  "parse": "cb1b6956f274",
+  "blocks": "d4caa448215b",
+  "defs": "21594c23dbfd",
+  "uses": "456656a2efee",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2943,
+   "errors": 0,
+   "blocks": 35,
+   "defs": 35,
+   "uses": 415
+  }
+ },
+ "examples/small-step/system-f.elf": {
+  "parse": "38350ea5e9b3",
+  "blocks": "d1f66753888c",
+  "defs": "9420f9b0516c",
+  "uses": "33e9a53b49bc",
+  "diags": "ca1307738741",
+  "counts": {
+   "nodes": 2745,
+   "errors": 43,
+   "blocks": 57,
+   "defs": 55,
+   "uses": 489
+  }
+ },
+ "examples/tapl/ch14-b.bel": {
+  "parse": "fd73bf8ce0fe",
+  "blocks": "0ec3e80d913e",
+  "defs": "f607b214d41b",
+  "uses": "1154c0d29244",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1812,
+   "errors": 0,
+   "blocks": 25,
+   "defs": 25,
+   "uses": 288
+  }
+ },
+ "examples/tapl/ch14.bel": {
+  "parse": "9014f5c3f27a",
+  "blocks": "d4a72ccf1128",
+  "defs": "e7960d7a17ed",
+  "uses": "a9df366c36fb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3065,
+   "errors": 0,
+   "blocks": 14,
+   "defs": 34,
+   "uses": 457
+  }
+ },
+ "examples/tapl/ch3+arith+leq/evaluation.bel": {
+  "parse": "f0f5151e9edf",
+  "blocks": "9edeee180390",
+  "defs": "df2dc4094d0a",
+  "uses": "47f4d0d611f8",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 12102,
+   "errors": 0,
+   "blocks": 83,
+   "defs": 83,
+   "uses": 1666
+  }
+ },
+ "examples/tapl/ch3+arith+leq/exp.bel": {
+  "parse": "2fdf58ca45f4",
+  "blocks": "a189190a6cef",
+  "defs": "530ba07188fe",
+  "uses": "92f08e920a0c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 257,
+   "errors": 0,
+   "blocks": 12,
+   "defs": 12,
+   "uses": 43
+  }
+ },
+ "examples/tapl/ch3+arith+leq/interpreter-cont.bel": {
+  "parse": "c367ef00b03b",
+  "blocks": "7302c05ef301",
+  "defs": "2f7ed371aebf",
+  "uses": "6ea0968b3139",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1826,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 6,
+   "uses": 187
+  }
+ },
+ "examples/tapl/ch3+arith+leq/interpreter.bel": {
+  "parse": "0794e7dbc46e",
+  "blocks": "69b800de340f",
+  "defs": "17f82b5f6148",
+  "uses": "f87124e9ebd7",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 4457,
+   "errors": 0,
+   "blocks": 28,
+   "defs": 28,
+   "uses": 439
+  }
+ },
+ "examples/tapl/ch3+arith+leq/tps.bel": {
+  "parse": "aa13327e9333",
+  "blocks": "c2718842c89f",
+  "defs": "ebef4fd3ff84",
+  "uses": "8c96f03233ad",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1604,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 13,
+   "uses": 221
+  }
+ },
+ "examples/tapl/ch3+arith/big-small.bel": {
+  "parse": "13b268e3bf07",
+  "blocks": "1444013106ec",
+  "defs": "b36b8a57547c",
+  "uses": "cd4eed47754c",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7890,
+   "errors": 0,
+   "blocks": 60,
+   "defs": 60,
+   "uses": 1125
+  }
+ },
+ "examples/tapl/ch3+arith/big-step.bel": {
+  "parse": "fc4246f71da3",
+  "blocks": "aa1351c77382",
+  "defs": "9fbe3354b309",
+  "uses": "586e07b3d212",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2193,
+   "errors": 0,
+   "blocks": 14,
+   "defs": 14,
+   "uses": 295
+  }
+ },
+ "examples/tapl/ch3+arith/det.bel": {
+  "parse": "79ba1496a147",
+  "blocks": "04e33bbc95c0",
+  "defs": "2ccddb3d6bb8",
+  "uses": "6cb922cd8f54",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1082,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 19,
+   "uses": 165
+  }
+ },
+ "examples/tapl/ch3+arith/evaluation-corrected.bel": {
+  "parse": "fac1af562a81",
+  "blocks": "e33943074c3b",
+  "defs": "b59aad7a4d97",
+  "uses": "7383ccaec51a",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 7817,
+   "errors": 0,
+   "blocks": 63,
+   "defs": 63,
+   "uses": 1086
+  }
+ },
+ "examples/tapl/ch3+arith/evaluation.bel": {
+  "parse": "de5353b6c3b2",
+  "blocks": "020b058c45fc",
+  "defs": "560cfcf430bc",
+  "uses": "5ba5c79b5c03",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 5526,
+   "errors": 0,
+   "blocks": 24,
+   "defs": 57,
+   "uses": 805
+  }
+ },
+ "examples/tapl/ch3+arith/evaluator-big-step.bel": {
+  "parse": "57fc9b2c46c8",
+  "blocks": "bc3e06a7c554",
+  "defs": "ad6382bbda1d",
+  "uses": "88aa05cfd42d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 802,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 4,
+   "uses": 81
+  }
+ },
+ "examples/tapl/ch3+arith/evaluator-small-step.bel": {
+  "parse": "02ee526bbaf2",
+  "blocks": "aa5ca99de482",
+  "defs": "726e055fd009",
+  "uses": "cc44e908cebb",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1720,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 13,
+   "uses": 176
+  }
+ },
+ "examples/tapl/ch3+arith/exp.bel": {
+  "parse": "285802838055",
+  "blocks": "1e2cf4a46d81",
+  "defs": "4ed962daa327",
+  "uses": "25f7b7e3539e",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 229,
+   "errors": 0,
+   "blocks": 4,
+   "defs": 11,
+   "uses": 39
+  }
+ },
+ "examples/tapl/ch3/eval.bel": {
+  "parse": "40aeb9820c24",
+  "blocks": "6e355a7622fb",
+  "defs": "f7cd77b74451",
+  "uses": "de1632386fd1",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1325,
+   "errors": 0,
+   "blocks": 21,
+   "defs": 21,
+   "uses": 211
+  }
+ },
+ "examples/tapl/ch3/evaluation-2.bel": {
+  "parse": "fcf57f6ff126",
+  "blocks": "deb8553506cc",
+  "defs": "9cb160857026",
+  "uses": "158369c8af10",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3615,
+   "errors": 0,
+   "blocks": 35,
+   "defs": 35,
+   "uses": 524
+  }
+ },
+ "examples/tapl/ch3/evaluation-seq.bel": {
+  "parse": "0db8429a2101",
+  "blocks": "af03b79ab16e",
+  "defs": "612bfc165383",
+  "uses": "58804fc7cd84",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3786,
+   "errors": 0,
+   "blocks": 33,
+   "defs": 33,
+   "uses": 522
+  }
+ },
+ "examples/tapl/ch3/evaluation.bel": {
+  "parse": "a1d0f18f358c",
+  "blocks": "c56ccc6f89ae",
+  "defs": "f34d7adaba3b",
+  "uses": "e7e912506f38",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 3884,
+   "errors": 0,
+   "blocks": 31,
+   "defs": 34,
+   "uses": 557
+  }
+ },
+ "examples/tapl/ch3/evaluator.bel": {
+  "parse": "f474550ec262",
+  "blocks": "d4e769a487fd",
+  "defs": "713c6f634328",
+  "uses": "dd4c2fff4c3d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 365,
+   "errors": 0,
+   "blocks": 5,
+   "defs": 5,
+   "uses": 47
+  }
+ },
+ "examples/tapl/ch3/exp.bel": {
+  "parse": "554b31b11507",
+  "blocks": "6d379d44917e",
+  "defs": "f232f65d435e",
+  "uses": "1bb90e367133",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 98,
+   "errors": 0,
+   "blocks": 2,
+   "defs": 5,
+   "uses": 18
+  }
+ },
+ "examples/tapl/ch6/evaluator.bel": {
+  "parse": "84c31530c6b7",
+  "blocks": "b3944529cbb8",
+  "defs": "387e82c921ec",
+  "uses": "4e974d95db88",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 404,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 7,
+   "uses": 47
+  }
+ },
+ "examples/tapl/ch6/small-step.bel": {
+  "parse": "59a29acae5da",
+  "blocks": "705bc0e2cc5a",
+  "defs": "5fbd02152302",
+  "uses": "2eadc0bf91c5",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1131,
+   "errors": 0,
+   "blocks": 6,
+   "defs": 14,
+   "uses": 155
+  }
+ },
+ "examples/tapl/ch6/tps.bel": {
+  "parse": "6c00759a7474",
+  "blocks": "4e3719f71b8d",
+  "defs": "b8e95b382175",
+  "uses": "3dbcb736dfbe",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 940,
+   "errors": 0,
+   "blocks": 7,
+   "defs": 17,
+   "uses": 155
+  }
+ },
+ "examples/typed-compilation/cconv-cheney.bel": {
+  "parse": "3eb3b51abefa",
+  "blocks": "da5fb0a79397",
+  "defs": "791f415a98b6",
+  "uses": "cdbeaa80a199",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1510,
+   "errors": 0,
+   "blocks": 24,
+   "defs": 24,
+   "uses": 220
+  }
+ },
+ "examples/typed-compilation/cps-popl-tutorial1-crec.bel": {
+  "parse": "9fe3f84e16eb",
+  "blocks": "5a3c4afd25ac",
+  "defs": "9418fc2d1985",
+  "uses": "b5310ffed6c2",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1188,
+   "errors": 0,
+   "blocks": 19,
+   "defs": 18,
+   "uses": 196
+  }
+ },
+ "examples/typed-compilation/cps-popl-tutorial2-crec.bel": {
+  "parse": "04ecd77ba5ad",
+  "blocks": "9c2d942370f6",
+  "defs": "c417ab54d622",
+  "uses": "c154294a5819",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1373,
+   "errors": 0,
+   "blocks": 17,
+   "defs": 18,
+   "uses": 212
+  }
+ },
+ "examples/typed-compilation/debruijn.bel": {
+  "parse": "9f666929faf7",
+  "blocks": "b927f6b50fde",
+  "defs": "b50f1c38c118",
+  "uses": "e25e7839f0f3",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1665,
+   "errors": 0,
+   "blocks": 22,
+   "defs": 22,
+   "uses": 257
+  }
+ },
+ "examples/typed-compilation/term-typed.bel": {
+  "parse": "4dab335c0966",
+  "blocks": "675ac511d6e2",
+  "defs": "abb02ffde3e6",
+  "uses": "c7853824a508",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 507,
+   "errors": 0,
+   "blocks": 9,
+   "defs": 9,
+   "uses": 74
+  }
+ },
+ "examples/typed-eval/tpeval-explicit.bel": {
+  "parse": "3a5e45a8ce0e",
+  "blocks": "b4f7cbe5fd3b",
+  "defs": "e110b1e6faa1",
+  "uses": "311115a9925d",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1792,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 13,
+   "uses": 227
+  }
+ },
+ "examples/typed-eval/tpeval-val.bel": {
+  "parse": "c96c0074c337",
+  "blocks": "254b2292410d",
+  "defs": "ead367985b8b",
+  "uses": "cf9d44e2b313",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1517,
+   "errors": 0,
+   "blocks": 29,
+   "defs": 28,
+   "uses": 218
+  }
+ },
+ "examples/typed-eval/tpeval.bel": {
+  "parse": "6edd2b614dec",
+  "blocks": "3e39b0490cff",
+  "defs": "b9fc8b7b0e06",
+  "uses": "83a2450bc838",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 908,
+   "errors": 0,
+   "blocks": 14,
+   "defs": 13,
+   "uses": 119
+  }
+ },
+ "examples/typed-eval/tpeval2.bel": {
+  "parse": "c6363a52fc38",
+  "blocks": "b1ead7bc6ee1",
+  "defs": "a3da45a81851",
+  "uses": "08609416be73",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 926,
+   "errors": 0,
+   "blocks": 14,
+   "defs": 14,
+   "uses": 124
+  }
+ },
+ "examples/typed-eval/valsound.bel": {
+  "parse": "e767b372807f",
+  "blocks": "1b8016e3db66",
+  "defs": "8636ccc79fb0",
+  "uses": "e9e8ae1c52db",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 529,
+   "errors": 0,
+   "blocks": 12,
+   "defs": 12,
+   "uses": 91
+  }
+ },
+ "examples/unique/unique-crec.bel": {
+  "parse": "d1db0169c6d0",
+  "blocks": "64b9674f8fc6",
+  "defs": "fbf89d730f16",
+  "uses": "c72776bf8be4",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 2809,
+   "errors": 0,
+   "blocks": 22,
+   "defs": 21,
+   "uses": 412
+  }
+ },
+ "examples/unique/unique-eval.bel": {
+  "parse": "c7731cf6de0b",
+  "blocks": "4284afd3d19e",
+  "defs": "c9e727e89639",
+  "uses": "862c53927e6b",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 613,
+   "errors": 0,
+   "blocks": 13,
+   "defs": 12,
+   "uses": 93
+  }
+ },
+ "examples/unique/unique-standard.bel": {
+  "parse": "a962f2256b57",
+  "blocks": "8872e5accffa",
+  "defs": "684ca418a549",
+  "uses": "ad923094c200",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1004,
+   "errors": 0,
+   "blocks": 10,
+   "defs": 14,
+   "uses": 161
+  }
+ },
+ "examples/unique/unique.bel": {
+  "parse": "1785d3263890",
+  "blocks": "ed88fe6822cc",
+  "defs": "0fbfbc27018c",
+  "uses": "f975e470aee9",
+  "diags": "da39a3ee5e6b",
+  "counts": {
+   "nodes": 1359,
+   "errors": 0,
+   "blocks": 17,
+   "defs": 20,
+   "uses": 218
+  }
+ }
+}

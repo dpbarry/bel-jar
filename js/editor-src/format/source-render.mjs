@@ -1,4 +1,4 @@
-// Full-file Beluga source → bel-hl-* highlighted DOM (read-only preview).
+// Full-file Beluga source → jar-hl-* highlighted DOM (read-only preview).
 
 import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
 import { syntaxTree } from '@codemirror/language';
@@ -7,36 +7,36 @@ import { belugaLanguage, holeTag } from '../language.mjs';
 import { expandBelAliases } from '../aliases.mjs';
 
 const SOURCE_HIGHLIGHTER = tagHighlighter([
-  { tag: holeTag, class: 'bel-hl-hole' },
-  { tag: t.keyword, class: 'bel-hl-keyword' },
-  { tag: t.controlKeyword, class: 'bel-hl-control' },
-  { tag: t.typeOperator, class: 'bel-hl-arrow' },
-  { tag: t.operator, class: 'bel-hl-op' },
-  { tag: t.definitionOperator, class: 'bel-hl-op' },
-  { tag: t.arithmeticOperator, class: 'bel-hl-op' },
-  { tag: t.special(t.typeName), class: 'bel-hl-metatype' },
-  { tag: t.special(t.variableName), class: 'bel-hl-meta' },
-  { tag: t.definition(t.special(t.typeName)), class: 'bel-hl-metatype' },
-  { tag: t.definition(t.special(t.variableName)), class: 'bel-hl-meta' },
-  { tag: t.definition(t.typeName), class: 'bel-hl-type-def' },
-  { tag: t.definition(t.variableName), class: 'bel-hl-var-def' },
-  { tag: t.definition(t.function(t.variableName)), class: 'bel-hl-ctor' },
-  { tag: t.definition(t.local(t.variableName)), class: 'bel-hl-local' },
-  { tag: t.definition(t.local(t.typeName)), class: 'bel-hl-meta' },
-  { tag: t.function(t.variableName), class: 'bel-hl-ctor' },
-  { tag: t.local(t.variableName), class: 'bel-hl-local' },
-  { tag: t.local(t.typeName), class: 'bel-hl-local' },
-  { tag: t.typeName, class: 'bel-hl-type' },
-  { tag: t.variableName, class: 'bel-hl-var' },
-  { tag: t.namespace, class: 'bel-hl-prop' },
-  { tag: t.number, class: 'bel-hl-number' },
-  { tag: t.atom, class: 'bel-hl-atom' },
-  { tag: t.propertyName, class: 'bel-hl-prop' },
-  { tag: t.meta, class: 'bel-hl-meta-pragma' },
-  { tag: t.modifier, class: 'bel-hl-meta-pragma' },
-  { tag: [t.lineComment, t.blockComment], class: 'bel-hl-comment' },
+  { tag: holeTag, class: 'jar-hl-hole' },
+  { tag: t.keyword, class: 'jar-hl-keyword' },
+  { tag: t.controlKeyword, class: 'jar-hl-control' },
+  { tag: t.typeOperator, class: 'jar-hl-arrow' },
+  { tag: t.operator, class: 'jar-hl-op' },
+  { tag: t.definitionOperator, class: 'jar-hl-op' },
+  { tag: t.arithmeticOperator, class: 'jar-hl-op' },
+  { tag: t.special(t.typeName), class: 'jar-hl-metatype' },
+  { tag: t.special(t.variableName), class: 'jar-hl-meta' },
+  { tag: t.definition(t.special(t.typeName)), class: 'jar-hl-metatype' },
+  { tag: t.definition(t.special(t.variableName)), class: 'jar-hl-meta' },
+  { tag: t.definition(t.typeName), class: 'jar-hl-type-def' },
+  { tag: t.definition(t.variableName), class: 'jar-hl-var-def' },
+  { tag: t.definition(t.function(t.variableName)), class: 'jar-hl-ctor' },
+  { tag: t.definition(t.local(t.variableName)), class: 'jar-hl-local' },
+  { tag: t.definition(t.local(t.typeName)), class: 'jar-hl-meta' },
+  { tag: t.function(t.variableName), class: 'jar-hl-ctor' },
+  { tag: t.local(t.variableName), class: 'jar-hl-local' },
+  { tag: t.local(t.typeName), class: 'jar-hl-local' },
+  { tag: t.typeName, class: 'jar-hl-type' },
+  { tag: t.variableName, class: 'jar-hl-var' },
+  { tag: t.namespace, class: 'jar-hl-prop' },
+  { tag: t.number, class: 'jar-hl-number' },
+  { tag: t.atom, class: 'jar-hl-atom' },
+  { tag: t.propertyName, class: 'jar-hl-prop' },
+  { tag: t.meta, class: 'jar-hl-meta-pragma' },
+  { tag: t.modifier, class: 'jar-hl-meta-pragma' },
+  { tag: [t.lineComment, t.blockComment], class: 'jar-hl-comment' },
   { tag: [t.punctuation, t.paren, t.squareBracket, t.brace, t.angleBracket, t.separator],
-    class: 'bel-hl-punct' },
+    class: 'jar-hl-punct' },
 ]);
 
 function normalizeSource(text) {
@@ -121,7 +121,7 @@ export function highlightDocRange(state, from, to) {
 export function renderSourceInto(el, text, ext) {
   el.textContent = '';
   el.appendChild(highlightSourceFragment(text, ext));
-  if (ext === 'elf') el.classList.add('bel-hl-source--elf');
-  else el.classList.remove('bel-hl-source--elf');
+  if (ext === 'elf') el.classList.add('jar-hl-source--elf');
+  else el.classList.remove('jar-hl-source--elf');
   return el;
 }

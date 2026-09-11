@@ -129,7 +129,7 @@ const global = globalThis;
   function makeResetLink(onClick) {
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'bj-settings__reset-link';
+    btn.className = 'jar-settings__reset-link';
     btn.textContent = 'Reset';
     btn.addEventListener('click', function (e) {
       e.preventDefault();
@@ -141,13 +141,13 @@ const global = globalThis;
 
   function addSectionHead(parent, title) {
     var h = document.createElement('div');
-    h.className = 'bj-settings__section-head';
+    h.className = 'jar-settings__section-head';
     h.textContent = title;
     parent.appendChild(h);
   }
 
   function attachPanelReset(panel, onReset) {
-    var head = panel.querySelector('.bj-settings__panel-head');
+    var head = panel.querySelector('.jar-settings__panel-head');
     if (!head || !onReset) return;
     head.appendChild(makeResetLink(onReset));
   }
@@ -162,11 +162,11 @@ const global = globalThis;
    * vocabulary.
    */
   function addPanelHeadAction(panel, label, onClick) {
-    var head = panel.querySelector('.bj-settings__panel-head');
+    var head = panel.querySelector('.jar-settings__panel-head');
     if (!head) return null;
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'bj-settings__head-action';
+    btn.className = 'jar-settings__head-action';
     btn.textContent = label;
     btn.addEventListener('click', function (e) {
       e.preventDefault();
@@ -174,7 +174,7 @@ const global = globalThis;
       onClick();
     });
     // Before Reset, which stays the last thing in the row.
-    var reset = head.querySelector('.bj-settings__reset-link');
+    var reset = head.querySelector('.jar-settings__reset-link');
     if (reset) head.insertBefore(btn, reset);
     else head.appendChild(btn);
     return btn;
@@ -196,7 +196,7 @@ const global = globalThis;
    */
   function addSubordinateGroup(parent, section) {
     var group = document.createElement('div');
-    group.className = 'bj-settings__substyle';
+    group.className = 'jar-settings__substyle';
     group.dataset.section = section;
     group.hidden = true;
     parent.appendChild(group);
@@ -205,20 +205,20 @@ const global = globalThis;
 
   function addActionRow(parent, labelText, descText, actionLabel, onClick) {
     var row = document.createElement('div');
-    row.className = 'bj-dialog__setting bj-settings__action-row';
+    row.className = 'jar-dialog__setting jar-settings__action-row';
     var main = document.createElement('div');
-    main.className = 'bj-dialog__setting-main';
+    main.className = 'jar-dialog__setting-main';
     var lbl = document.createElement('span');
-    lbl.className = 'bj-dialog__setting-label';
+    lbl.className = 'jar-dialog__setting-label';
     lbl.textContent = labelText;
     var dsc = document.createElement('span');
-    dsc.className = 'bj-dialog__setting-desc';
+    dsc.className = 'jar-dialog__setting-desc';
     dsc.textContent = descText;
     main.appendChild(lbl);
     main.appendChild(dsc);
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'bj-settings__action-btn';
+    btn.className = 'jar-settings__action-btn';
     btn.textContent = actionLabel;
     btn.addEventListener('click', function (e) {
       e.preventDefault();
@@ -271,10 +271,10 @@ const global = globalThis;
 
   function addEditorUnit(parent, opts) {
     var unit = document.createElement('div');
-    unit.className = 'bj-settings__unit' + (opts.kind ? ' bj-settings__unit--' + opts.kind : '');
+    unit.className = 'jar-settings__unit' + (opts.kind ? ' jar-settings__unit--' + opts.kind : '');
 
     var body = document.createElement('div');
-    body.className = 'bj-settings__unit-body';
+    body.className = 'jar-settings__unit-body';
 
     if (opts.searchText) unit.dataset.search = opts.searchText;
 
@@ -300,37 +300,37 @@ const global = globalThis;
 
   function mountKeybindingsSheet(body) {
     var root = document.createElement('div');
-    root.className = 'bj-kb';
+    root.className = 'jar-kb';
 
     // The command catalogue is long enough that scrolling is not a way to find
     // anything. Filtering hides rows rather than re-rendering, so an in-progress
     // chord recording and every row's handlers survive it.
     var filterBar = document.createElement('div');
-    filterBar.className = 'bj-kb__filter';
+    filterBar.className = 'jar-kb__filter';
     var filterIcon = document.createElement('span');
-    filterIcon.className = 'bj-kb__filter-icon';
+    filterIcon.className = 'jar-kb__filter-icon';
     filterIcon.innerHTML = KB_FILTER_ICON;
     filterIcon.setAttribute('aria-hidden', 'true');
     var filterInput = document.createElement('input');
     filterInput.type = 'search';
-    filterInput.className = 'bj-kb__filter-input';
+    filterInput.className = 'jar-kb__filter-input';
     filterInput.placeholder = 'Filter by name or chord…';
     filterInput.setAttribute('aria-label', 'Filter keybindings');
     filterInput.autocomplete = 'off';
     filterInput.spellcheck = false;
     var filterCount = document.createElement('span');
-    filterCount.className = 'bj-kb__filter-count';
+    filterCount.className = 'jar-kb__filter-count';
     filterCount.setAttribute('aria-live', 'polite');
     filterBar.appendChild(filterIcon);
     filterBar.appendChild(filterInput);
     filterBar.appendChild(filterCount);
 
     var list = document.createElement('div');
-    list.className = 'bj-kb__list';
+    list.className = 'jar-kb__list';
     list.setAttribute('role', 'list');
 
     var noResults = document.createElement('p');
-    noResults.className = 'bj-settings__empty bj-kb__noresults';
+    noResults.className = 'jar-settings__empty jar-kb__noresults';
     noResults.textContent = 'No commands match.';
     noResults.hidden = true;
 
@@ -375,14 +375,14 @@ const global = globalThis;
     function fillChord(chordBtn, spec, opts) {
       chordBtn.replaceChildren();
       chordBtn._shortcutSpec = spec || '';
-      chordBtn.classList.remove('bj-kb__chord--conflict', 'is-recording', 'is-empty');
-      if (opts && opts.conflict) chordBtn.classList.add('bj-kb__chord--conflict');
+      chordBtn.classList.remove('jar-kb__chord--conflict', 'is-recording', 'is-empty');
+      if (opts && opts.conflict) chordBtn.classList.add('jar-kb__chord--conflict');
       var label = labelFor(spec);
       if (!spec) {
         chordBtn.classList.add('is-empty');
         chordBtn.setAttribute('aria-label', 'No keybinding');
         var empty = document.createElement('span');
-        empty.className = 'bj-kb__empty-mark';
+        empty.className = 'jar-kb__empty-mark';
         empty.textContent = '\u2014';
         empty.setAttribute('aria-hidden', 'true');
         chordBtn.appendChild(empty);
@@ -392,7 +392,7 @@ const global = globalThis;
       var parts = partsFor(spec);
       for (var i = 0; i < parts.length; i++) {
         var k = document.createElement('kbd');
-        k.className = 'bj-kb__key';
+        k.className = 'jar-kb__key';
         k.textContent = parts[i];
         chordBtn.appendChild(k);
       }
@@ -400,10 +400,10 @@ const global = globalThis;
 
     function showRecordingHint(chordBtn) {
       chordBtn.classList.add('is-recording');
-      chordBtn.classList.remove('is-empty', 'bj-kb__chord--conflict');
+      chordBtn.classList.remove('is-empty', 'jar-kb__chord--conflict');
       chordBtn.replaceChildren();
       var hint = document.createElement('span');
-      hint.className = 'bj-kb__record-hint';
+      hint.className = 'jar-kb__record-hint';
       hint.textContent = 'Press keys\u2026';
       chordBtn.appendChild(hint);
     }
@@ -467,7 +467,21 @@ const global = globalThis;
       }
       recordingChord = null;
       chordBtn.classList.remove('is-recording', 'is-invalid');
+      // ⛔ A chord the active style already owns is ACCEPTED — it is the user's
+      // keymap — but it does not work, and saying nothing is the exact failure
+      // this layer exists to stop. The row grows a `shadowed` tag on the next
+      // refresh; the tag is a thing you notice later, and the moment to say it
+      // is the moment they pressed the keys. Same sentence, one formatter.
+      warnIfStyleTakes(id);
       refresh();
+    }
+
+    function warnIfStyleTakes(id) {
+      if (typeof Commands === 'undefined' || !Commands.describe) return;
+      var described = Commands.describe(id, { style: activeEditingStyle() });
+      var shadow = described && described.shadow;
+      if (!shadow || shadow.kind !== 'shadowed') return;
+      toastWarn(shadow.tip + ' This binding will not fire while that style is on.');
     }
 
     function unbindRecording(chordBtn) {
@@ -481,7 +495,7 @@ const global = globalThis;
 
     function buildRow(cmd) {
       var row = document.createElement('div');
-      row.className = 'bj-kb__row' + (cmd.isUser ? ' bj-kb__row--user' : '');
+      row.className = 'jar-kb__row' + (cmd.isUser ? ' jar-kb__row--user' : '');
       row.setAttribute('role', 'listitem');
       row.dataset.commandId = cmd.id || '';
       row.dataset.section = cmd.section || '';
@@ -491,9 +505,9 @@ const global = globalThis;
       row.dataset.chord = chordLabel.toLowerCase();
 
       var main = document.createElement('div');
-      main.className = 'bj-kb__main';
+      main.className = 'jar-kb__main';
       var title = document.createElement('span');
-      title.className = 'bj-kb__title';
+      title.className = 'jar-kb__title';
       title.textContent = cmd.title || cmd.id || '';
       main.appendChild(title);
 
@@ -504,7 +518,7 @@ const global = globalThis;
       // ⛔ It says so with a TAG beside the name, never a second line. A sentence
       // under every other row is louder than the rows themselves, and this sheet
       // is a list to scan. The chord column keeps BelJar's OWN binding, because
-      // unlike Available Macros this sheet is where you rebind it — so the tag is
+      // unlike Available Keys this sheet is where you rebind it — so the tag is
       // computed for THAT chord (no `showing`), and it reports the contest over
       // the chord you are looking at: "Emacs uses Ctrl+F for forward-char."
       var described = (typeof Commands !== 'undefined' && Commands.describe)
@@ -512,20 +526,20 @@ const global = globalThis;
         : null;
       if (described && described.shadow) {
         var tag = document.createElement('span');
-        tag.className = 'bj-kb__tag';
+        tag.className = 'jar-kb__tag';
         tag.textContent = described.shadow.tag;
         tag.setAttribute('data-tooltip', described.shadow.tip);
         // `bindTooltips()` sweeps once at boot and is not delegated.
         if (typeof Tooltips !== 'undefined' && Tooltips.bind) Tooltips.bind(tag);
         main.appendChild(tag);
-        row.classList.add('bj-kb__row--shadowed');
+        row.classList.add('jar-kb__row--shadowed');
         row.dataset.shadowed = '1';
         row.dataset.shadowKind = described.shadow.kind;
       }
 
       var chord = document.createElement('button');
       chord.type = 'button';
-      chord.className = 'bj-kb__chord';
+      chord.className = 'jar-kb__chord';
       chord._commandId = cmd.id;
       var conflictId = kb() && cmd.spec ? kb().findConflict(cmd.spec, cmd.id) : null;
       fillChord(chord, cmd.spec || '', { conflict: !!conflictId });
@@ -579,7 +593,7 @@ const global = globalThis;
 
       if (!cmds.length) {
         var empty = document.createElement('p');
-        empty.className = 'bj-settings__empty bj-kb__empty';
+        empty.className = 'jar-settings__empty jar-kb__empty';
         empty.textContent = 'No keybindings.';
         list.appendChild(empty);
         return;
@@ -591,7 +605,7 @@ const global = globalThis;
         var section = cmd.section || 'Other';
         if (section !== lastSection) {
           var head = document.createElement('div');
-          head.className = 'bj-settings__section-head bj-kb__section';
+          head.className = 'jar-settings__section-head jar-kb__section';
           head.dataset.section = section;
           head.textContent = section;
           list.appendChild(head);
@@ -604,7 +618,7 @@ const global = globalThis;
 
     function applyFilter() {
       var q = String(filterInput.value || '').trim().toLowerCase();
-      var rows = list.querySelectorAll('.bj-kb__row');
+      var rows = list.querySelectorAll('.jar-kb__row');
       var liveSections = Object.create(null);
       var shown = 0;
       var bound = 0;
@@ -621,7 +635,7 @@ const global = globalThis;
         shown += 1;
         liveSections[row.dataset.section || ''] = true;
       }
-      var heads = list.querySelectorAll('.bj-kb__section');
+      var heads = list.querySelectorAll('.jar-kb__section');
       for (var h = 0; h < heads.length; h++) {
         heads[h].hidden = !liveSections[heads[h].dataset.section || ''];
       }
@@ -648,7 +662,7 @@ const global = globalThis;
         filterInput.value = '';
         applyFilter();
       }
-      return list.querySelector('.bj-kb__row[data-command-id="' + String(id).replace(/"/g, '') + '"]');
+      return list.querySelector('.jar-kb__row[data-command-id="' + String(id).replace(/"/g, '') + '"]');
     }
 
     refresh();
@@ -662,18 +676,18 @@ const global = globalThis;
 
   function mountAliasesSheet(body) {
     var root = document.createElement('div');
-    root.className = 'bj-alias';
+    root.className = 'jar-alias';
 
     var list = document.createElement('div');
-    list.className = 'bj-alias__list';
+    list.className = 'jar-alias__list';
     list.setAttribute('role', 'list');
 
     var footer = document.createElement('div');
-    footer.className = 'bj-alias__footer';
+    footer.className = 'jar-alias__footer';
 
     var addBtn = document.createElement('button');
     addBtn.type = 'button';
-    addBtn.className = 'bj-alias__add';
+    addBtn.className = 'jar-alias__add';
     addBtn.textContent = 'Add alias';
     footer.appendChild(addBtn);
 
@@ -774,13 +788,13 @@ const global = globalThis;
 
     function buildRow(row) {
       var el = document.createElement('div');
-      el.className = 'bj-alias__row';
+      el.className = 'jar-alias__row';
       el.setAttribute('role', 'listitem');
       el.dataset.rowId = String(row.id);
 
       var trigger = document.createElement('input');
       trigger.type = 'text';
-      trigger.className = 'bj-alias__input bj-alias__input--trigger';
+      trigger.className = 'jar-alias__input jar-alias__input--trigger';
       trigger.value = row.from;
       trigger.placeholder = 'trigger';
       trigger.spellcheck = false;
@@ -788,13 +802,13 @@ const global = globalThis;
       trigger.setAttribute('aria-label', 'Alias trigger');
 
       var arrow = document.createElement('span');
-      arrow.className = 'bj-alias__arrow';
+      arrow.className = 'jar-alias__arrow';
       arrow.textContent = '\u2192';
       arrow.setAttribute('aria-hidden', 'true');
 
       var expansion = document.createElement('input');
       expansion.type = 'text';
-      expansion.className = 'bj-alias__input bj-alias__input--expansion';
+      expansion.className = 'jar-alias__input jar-alias__input--expansion';
       expansion.value = row.to;
       expansion.placeholder = 'expansion';
       expansion.spellcheck = false;
@@ -803,7 +817,7 @@ const global = globalThis;
 
       var del = document.createElement('button');
       del.type = 'button';
-      del.className = 'icon-btn bj-alias__delete';
+      del.className = 'icon-btn jar-alias__delete';
       del.innerHTML = CLOSE_SVG;
       setTip(del, 'Delete alias');
 
@@ -895,7 +909,7 @@ const global = globalThis;
 
       if (!rows.length) {
         var emptyAll = document.createElement('p');
-        emptyAll.className = 'bj-settings__empty bj-alias__empty';
+        emptyAll.className = 'jar-settings__empty jar-alias__empty';
         emptyAll.textContent = 'No aliases. Add one to expand text while typing.';
         list.appendChild(emptyAll);
         return;
@@ -916,7 +930,7 @@ const global = globalThis;
       var row = { id: nextRowId++, from: '', to: '' };
       rows.push(row);
       render();
-      var triggerEl = list.querySelector('[data-row-id="' + row.id + '"] .bj-alias__input--trigger');
+      var triggerEl = list.querySelector('[data-row-id="' + row.id + '"] .jar-alias__input--trigger');
       if (triggerEl) triggerEl.focus();
     });
 
@@ -935,16 +949,16 @@ const global = globalThis;
   }
 
   function addSwitchRow(parent, id, labelText, descText, readFn, writeFn) {
-    var inputId = 'bj-setting-' + id;
+    var inputId = 'jar-setting-' + id;
     var r = document.createElement('div');
-    r.className = 'bj-dialog__setting bj-dialog__setting--switch';
+    r.className = 'jar-dialog__setting jar-dialog__setting--switch';
     var m = document.createElement('div');
-    m.className = 'bj-dialog__setting-main';
+    m.className = 'jar-dialog__setting-main';
     var lbl = document.createElement('span');
-    lbl.className = 'bj-dialog__setting-label';
+    lbl.className = 'jar-dialog__setting-label';
     lbl.textContent = labelText;
     var dsc = document.createElement('span');
-    dsc.className = 'bj-dialog__setting-desc';
+    dsc.className = 'jar-dialog__setting-desc';
     dsc.textContent = descText;
     m.appendChild(lbl);
     m.appendChild(dsc);
@@ -1040,7 +1054,7 @@ const global = globalThis;
         // ⛔ No key enumerations. The leader is CONFIGURABLE, so a sentence
         // naming a backslash sequence is already wrong for anyone who picked
         // comma, and every key spelled out is a second copy of a table that can
-        // rot. Available macros lists the live maps with the live leader.
+        // rot. Available Keys lists the live maps with the live leader.
         { head: 'Vim',
           body: 'Normal mode for motion and operators; :s, :g and / work as usual. BelJar adds '
             + 'motions for holes, problems, declarations and case branches, plus a leader map, '
@@ -1063,12 +1077,12 @@ const global = globalThis;
         out.push({
           head: 'Browser conflicts',
           body: 'Some chords never reach the page; which ones depends on your platform. '
-            + 'Available macros has the measured list.',
+            + 'Available Keys has the measured list.',
         });
       }
       out.push({
         head: 'In every style',
-        body: 'Escape still closes rename, autocomplete and sticky hover. Available macros '
+        body: 'Escape still closes rename, autocomplete and sticky hover. Available Keys '
           + '(the button above) lists every key and :name you can type in the current style. '
           + 'It ends with the chords this browser takes and what to press instead.',
       });
@@ -1090,13 +1104,13 @@ const global = globalThis;
     var hideTimer = null;
 
     function hostEl() {
-      return btn.closest('dialog') || btn.closest('.bj-dialog__card') || document.body;
+      return btn.closest('dialog') || btn.closest('.jar-dialog__card') || document.body;
     }
 
     function ensurePop() {
       if (pop) return pop;
       pop = document.createElement('div');
-      pop.className = 'bj-setting-info-popover';
+      pop.className = 'jar-setting-info-popover';
       pop.setAttribute('role', 'tooltip');
       pop.hidden = true;
       // A paragraph is either a plain string or `{ head, body }`. Six plain
@@ -1107,12 +1121,12 @@ const global = globalThis;
         var item = paragraphs[i];
         if (item && item.head) {
           var h = document.createElement('p');
-          h.className = 'bj-setting-info-head';
+          h.className = 'jar-setting-info-head';
           h.textContent = item.head;
           pop.appendChild(h);
         }
         var p = document.createElement('p');
-        p.className = 'bj-setting-info-tip';
+        p.className = 'jar-setting-info-tip';
         p.textContent = item && item.body != null ? item.body : item;
         pop.appendChild(p);
       }
@@ -1195,22 +1209,22 @@ const global = globalThis;
 
     function addDropdownRow(parent, id, labelText, descText, options, readFn, writeFn, infoSpec) {
       var r = document.createElement('div');
-      r.className = 'bj-dialog__setting';
+      r.className = 'jar-dialog__setting';
       var m = document.createElement('div');
-      m.className = 'bj-dialog__setting-main';
+      m.className = 'jar-dialog__setting-main';
       var lbl = document.createElement('span');
-      lbl.className = 'bj-dialog__setting-label';
+      lbl.className = 'jar-dialog__setting-label';
       lbl.textContent = labelText;
       var dsc = document.createElement('span');
-      dsc.className = 'bj-dialog__setting-desc';
+      dsc.className = 'jar-dialog__setting-desc';
       dsc.textContent = descText;
       if (infoSpec) {
         var labelRow = document.createElement('div');
-        labelRow.className = 'bj-dialog__setting-label-row';
+        labelRow.className = 'jar-dialog__setting-label-row';
         labelRow.appendChild(lbl);
         var infoBtn = document.createElement('button');
         infoBtn.type = 'button';
-        infoBtn.className = 'bj-setting-info';
+        infoBtn.className = 'jar-setting-info';
         infoBtn.innerHTML = SETTING_INFO_SVG;
         attachSettingInfoTooltip(infoBtn, infoSpec);
         labelRow.appendChild(infoBtn);
@@ -1230,19 +1244,19 @@ const global = globalThis;
     }
 
     var shell = document.createElement('div');
-    shell.className = 'bj-settings';
+    shell.className = 'jar-settings';
 
     var nav = document.createElement('nav');
-    nav.className = 'bj-settings__nav';
+    nav.className = 'jar-settings__nav';
     nav.setAttribute('aria-label', 'Settings');
 
     var navList = document.createElement('div');
-    navList.className = 'bj-settings__nav-list';
+    navList.className = 'jar-settings__nav-list';
     navList.setAttribute('role', 'tablist');
     navList.setAttribute('aria-label', 'Settings categories');
 
     var main = document.createElement('div');
-    main.className = 'bj-settings__main';
+    main.className = 'jar-settings__main';
 
     var categories = [
       { id: 'appearance', label: 'Appearance' },
@@ -1260,13 +1274,13 @@ const global = globalThis;
 
     function selectCategory(id) {
       activeCategory = id;
-      nav.querySelectorAll('.bj-settings__nav-item').forEach(function (el) {
+      nav.querySelectorAll('.jar-settings__nav-item').forEach(function (el) {
         var on = el.dataset.category === id;
         el.classList.toggle('is-active', on);
         el.setAttribute('aria-selected', on ? 'true' : 'false');
         el.tabIndex = on ? 0 : -1;
       });
-      main.querySelectorAll('.bj-settings__panel').forEach(function (el) {
+      main.querySelectorAll('.jar-settings__panel').forEach(function (el) {
         var on = el.dataset.category === id;
         el.hidden = !on;
         el.classList.toggle('is-active', on);
@@ -1279,7 +1293,7 @@ const global = globalThis;
 
     function visibleCategoryIds() {
       return categories.map(function (c) { return c.id; }).filter(function (id) {
-        var btn = nav.querySelector('.bj-settings__nav-item[data-category="' + id + '"]');
+        var btn = nav.querySelector('.jar-settings__nav-item[data-category="' + id + '"]');
         return btn && !btn.hidden;
       });
     }
@@ -1298,7 +1312,7 @@ const global = globalThis;
     categories.forEach(function (cat) {
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'bj-settings__nav-item';
+      btn.className = 'jar-settings__nav-item';
       btn.textContent = cat.label;
       btn.dataset.category = cat.id;
       btn.setAttribute('role', 'tab');
@@ -1317,21 +1331,21 @@ const global = globalThis;
       navList.appendChild(btn);
 
       var panel = document.createElement('div');
-      panel.className = 'bj-settings__panel';
+      panel.className = 'jar-settings__panel';
       panel.dataset.category = cat.id;
       panel.setAttribute('role', 'tabpanel');
       panel.hidden = cat.id !== activeCategory;
 
       var head = document.createElement('div');
-      head.className = 'bj-settings__panel-head';
+      head.className = 'jar-settings__panel-head';
       var headLabel = document.createElement('span');
-      headLabel.className = 'bj-settings__panel-head-label';
+      headLabel.className = 'jar-settings__panel-head-label';
       headLabel.textContent = cat.label;
       head.appendChild(headLabel);
       panel.appendChild(head);
 
       var body = document.createElement('div');
-      body.className = 'bj-settings__panel-body';
+      body.className = 'jar-settings__panel-body';
       panel.appendChild(body);
 
       panelBodies[cat.id] = body;
@@ -1341,10 +1355,10 @@ const global = globalThis;
     nav.appendChild(navList);
 
     var navFoot = document.createElement('div');
-    navFoot.className = 'bj-settings__nav-foot';
+    navFoot.className = 'jar-settings__nav-foot';
     var resetAllBtn = document.createElement('button');
     resetAllBtn.type = 'button';
-    resetAllBtn.className = 'bj-settings__reset-all';
+    resetAllBtn.className = 'jar-settings__reset-all';
     resetAllBtn.textContent = 'Reset all';
     resetAllBtn.setAttribute('aria-label', 'Reset all settings');
     resetAllBtn.addEventListener('click', function (e) {
@@ -1390,7 +1404,7 @@ const global = globalThis;
     // "What can I press right now" belongs in the panel's action strip beside
     // Reset — it is a thing you go and look at, not a thing you configure.
     addPanelHeadAction(main.querySelector('[data-category="keybindings"]'),
-      'Available macros', function () {
+      'Available Keys', function () {
         leaveSettingsAnd(function () {
           if (typeof AvailableMacros !== 'undefined') AvailableMacros.open();
         });
@@ -2141,11 +2155,11 @@ const global = globalThis;
     shell.appendChild(main);
 
     var search = makeSearchField({
-      slotClass: 'bj-settings__search-slot',
-      wrapClass: 'bj-settings__search',
+      slotClass: 'jar-settings__search-slot',
+      wrapClass: 'jar-settings__search',
       placeholder: 'Search\u2026',
       ariaLabel: 'Search settings',
-      ariaControls: 'bj-settings-search-results',
+      ariaControls: 'jar-settings-search-results',
     });
     settingsSearchInput = search.input;
     var searchWrap = search.inputWrap;
@@ -2154,8 +2168,8 @@ const global = globalThis;
     var searchActive = -1;
     var flashTimer = null;
     var searchResults = document.createElement('div');
-    searchResults.className = 'hsearch-ac bj-settings__results';
-    searchResults.id = 'bj-settings-search-results';
+    searchResults.className = 'hsearch-ac jar-settings__results';
+    searchResults.id = 'jar-settings-search-results';
     searchResults.setAttribute('role', 'listbox');
     searchResults.hidden = true;
 
@@ -2244,7 +2258,7 @@ const global = globalThis;
         // under Standard there is no leader row to jump to.
         var scan = [];
         Array.prototype.forEach.call(body.children, function (el) {
-          if (el.classList.contains('bj-settings__substyle')) {
+          if (el.classList.contains('jar-settings__substyle')) {
             if (el.hidden) return;
             var owner = el.dataset.section || '';
             Array.prototype.forEach.call(el.children, function (sub) {
@@ -2256,18 +2270,18 @@ const global = globalThis;
         });
         scan.forEach(function (entry) {
           var el = entry.el;
-          if (entry.section === null && el.classList.contains('bj-settings__section-head')) {
+          if (entry.section === null && el.classList.contains('jar-settings__section-head')) {
             section = String(el.textContent || '').trim();
             return;
           }
-          if (el.classList.contains('bj-settings__unit')) return;
-          if (!el.classList.contains('bj-dialog__setting')) return;
+          if (el.classList.contains('jar-settings__unit')) return;
+          if (!el.classList.contains('jar-dialog__setting')) return;
           // ⛔ A group's own section must not leak past it. `section` is the
           // running head; a grouped row overrides it for ITSELF only, or the
           // Status strip row that follows the Vim group would report as Vim.
           var rowSection = entry.section === null ? section : entry.section;
-          var titleEl = el.querySelector('.bj-dialog__setting-label');
-          var descEl = el.querySelector('.bj-dialog__setting-desc');
+          var titleEl = el.querySelector('.jar-dialog__setting-label');
+          var descEl = el.querySelector('.jar-dialog__setting-desc');
           var title = titleEl ? String(titleEl.textContent || '') : '';
           var desc = descEl ? String(descEl.textContent || '') : '';
           var hay = (title + ' ' + desc + ' ' + rowSection + ' ' + cat.label).replace(/\s+/g, ' ').toLowerCase();
@@ -2354,15 +2368,15 @@ const global = globalThis;
         } else if (hit.kind === 'command' && hit.id) {
           target = keybindingsApi && typeof keybindingsApi.revealCommand === 'function'
             ? keybindingsApi.revealCommand(hit.id)
-            : main.querySelector('.bj-kb__row[data-command-id="' + String(hit.id).replace(/"/g, '') + '"]');
+            : main.querySelector('.jar-kb__row[data-command-id="' + String(hit.id).replace(/"/g, '') + '"]');
         } else if (hit.kind === 'alias' && hit.rowId != null) {
-          target = main.querySelector('.bj-alias__row[data-row-id="' + String(hit.rowId).replace(/"/g, '') + '"]');
+          target = main.querySelector('.jar-alias__row[data-row-id="' + String(hit.rowId).replace(/"/g, '') + '"]');
         }
         if (!target) return;
         target.scrollIntoView({ block: 'center' });
         flashEl(target);
         if (hit.kind === 'alias') {
-          var sel = hit.focus === 'to' ? '.bj-alias__input--expansion' : '.bj-alias__input--trigger';
+          var sel = hit.focus === 'to' ? '.jar-alias__input--expansion' : '.jar-alias__input--trigger';
           var field = target.querySelector(sel);
           if (field) field.focus();
         }
@@ -2463,7 +2477,7 @@ const global = globalThis;
       title: 'Settings',
       headerExtra: search.slot,
       content: shell,
-      cardClass: 'bj-dialog__card--settings',
+      cardClass: 'jar-dialog__card--settings',
       removeOnClose: false,
     });
     settingsDialogEl.addEventListener('close', function () {

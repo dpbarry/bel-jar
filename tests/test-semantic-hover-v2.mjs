@@ -93,7 +93,7 @@ function mockSession(typeOf = (name) => 'MV@' + name) {
 
 // Settles without fabricating a type: when Beluga runs and reports no type for
 // the site, the hover never goes 'ready' with a bogus type (and never hangs —
-// the bel-hover layer renders the settled no-type result as head-only).
+// the jar-hover layer renders the settled no-type result as head-only).
 {
   const SRC = `o : type.\npf : o → type.\nrec c : o = M;\n`;
   const session = mockSession(() => null); // session runs but has no type for M

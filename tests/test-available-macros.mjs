@@ -1,10 +1,11 @@
-// The available macros's model: what earns a row, and what does not.
+// The Available Keys's model: what earns a row, and what does not.
 //
 // It is the short answer to "what can I press", not a second copy of the
 // Keybindings sheet. So the rule to pin is the one that keeps it short: a row
 // exists because you can type it.
 import {
   macroModel, countRows, rowMatches, reservedGroup, listSentence, commandLineAccess,
+  keyGroupOf, sortGroups,
 } from '../js/ui/available-macros.mjs';
 
 function expect(cond, msg) {
@@ -75,7 +76,7 @@ expect(rowMatches(r, ':fmt'), 'a typed colon is not a failed search');
 expect(rowMatches(r, 'FORMAT'), 'case insensitively');
 expect(!rowMatches(r, 'zzz'), 'and misses when it should');
 
-console.log('OK available macros (a row earns its place by being typeable; two blocks; filter)');
+console.log('OK Available Keys (a row earns its place by being typeable; two blocks; filter)');
 
 
 // ── taken by the browser ─────────────────────────────────────────────────────
@@ -205,3 +206,18 @@ const aliased = row({ title: 'Save Now', ex: ['w', 'write', 'wa', 'wall'] });
 expect(rowMatches(aliased, 'write') && rowMatches(aliased, 'wall'),
   'a secondary alias still finds the row');
 expect(rowMatches(aliased, 'w'), 'and so does the primary one');
+
+// ── the shape groups, and which of them lead ───────────────────────────
+// Keys are grouped by what you PRESS, so vim's `q{reg}` and `@{reg}` become a
+// `q` map and an `@` map exactly as `gd` becomes a `g` map.
+expect(keyGroupOf('q{reg}') === 'q', "vim's record key groups under `q`");
+expect(keyGroupOf('@{reg}') === '@', 'and its replay key under `@`');
+
+// ⚠ An UNRANKED prefix sorts to the front — that is how the leader map leads,
+// and it is why two one-row blocks headed `q` and `@` jumped above it the moment
+// the macro keys were listed. Ranked, they sit with the other prefix maps.
+const order = sortGroups(['Ctrl', '@', 'g', 'q', String.fromCharCode(92), ']', '[']);
+expect(order[0] === String.fromCharCode(92), 'the leader still leads', order.join(','));
+expect(order.indexOf('q') > order.indexOf('['), '`q` sits after the bracket maps', order.join(','));
+expect(order.indexOf('@') > order.indexOf('q'), 'and `@` after `q`', order.join(','));
+expect(order.indexOf('Ctrl') > order.indexOf('@'), 'the chord blocks come after every map', order.join(','));

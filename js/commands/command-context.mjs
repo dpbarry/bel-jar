@@ -62,6 +62,23 @@ export function isVimEditorFocused(given) {
   return !!(scroller && scroller.classList && scroller.classList.contains('cm-vimMode'));
 }
 
+/**
+ * True when BelJar's own command line — or Vim's ex line mounted in its slot —
+ * holds the keyboard.
+ *
+ * ⛔ A global chord must not fire into it. The line is a MODAL surface with its
+ * own key language: `C-g` and `Escape` abort, `C-s`/`C-r` step the search,
+ * `C-n`/`C-p`/`C-m` walk the candidates. The global listener is on `window` in
+ * the CAPTURE phase, so it sees every one of those first — and until the global
+ * half of the keymap was only four palette chords, none of them collided and
+ * nobody noticed. The moment every bindable global command became live, any of
+ * them could be bound to a key the line needs; `Ctrl+G` collided immediately,
+ * hijacking the one chord an Emacs user presses to get out of `M-x`.
+ */
+export function isCommandLineFocused(given) {
+  return !!closestFrom(activeElement(given), '.jar-cmdline, .jar-strip__vim');
+}
+
 /** `editor` | `repl` | `harpoon` | `explorer` | `global`. */
 export function activeScope(given) {
   const el = activeElement(given);

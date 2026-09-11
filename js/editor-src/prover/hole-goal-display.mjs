@@ -43,6 +43,22 @@ export function fileInActiveDevelopment(fileName, activeDevPaths) {
   return activeDevPaths.includes(fileName);
 }
 
+/**
+ * Pure: with no goal in hand right now, could one still arrive?
+ *
+ * ⛔ The strip's `Computing…` placeholder turns on this and nothing else, and
+ * it lives HERE because this module owns the goal-state vocabulary — a second
+ * copy of "which settle states are terminal" is a copy that goes stale.
+ *
+ * ⚠ It is NOT `resolveHoleGoalDisplay`'s `checking`. That one asks "is a check
+ * in flight over a goal we already have", so it excludes `idle`; this asks "is
+ * this the END of the road", and idle is emphatically not — nothing has run yet.
+ * Two questions, two predicates, deliberately.
+ */
+export function goalMayStillArrive(settleState) {
+  return settleState !== 'ready' && settleState !== 'failed';
+}
+
 export function resolveHoleGoalDisplay({
   inDevelopment,
   settleState,

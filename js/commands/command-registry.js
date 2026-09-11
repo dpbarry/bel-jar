@@ -278,6 +278,11 @@
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
+    for (const s of SETTINGS) {
+      if (s.kind !== "bool" && s.off === void 0) continue;
+      out.push({ value: "no" + s.slug, label: s.title + " \u2014 off" });
+      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " \u2014 off" });
+    }
     return out;
   }
   function findSetting(name) {
@@ -326,7 +331,8 @@
     if (!text) return { error: "usage" };
     const eq = text.indexOf("=");
     const value = eq >= 0 ? text.slice(eq + 1).trim() : null;
-    let name = (eq >= 0 ? text.slice(0, eq) : text).trim().toLowerCase();
+    const typed = (eq >= 0 ? text.slice(0, eq) : text).trim();
+    let name = typed.toLowerCase();
     let toggle = false;
     if (name.endsWith("!")) {
       name = name.slice(0, -1);
@@ -338,7 +344,9 @@
       negated = true;
     }
     const spec = findSetting(name);
-    if (!spec) return { error: "unknown", name, near: nearestSetting(name) };
+    if (!spec) {
+      return { error: "unknown", name, near: nearestSetting(name), typed, value, negated, toggle };
+    }
     if (value != null && value !== "" && spec.kind === "enum" && !(spec.values || []).some((v) => String(v) === String(value))) {
       return { error: "value", name, spec, value };
     }
@@ -441,6 +449,54 @@
       palette: true,
       styles: { vim: "insert-only", emacs: "off" }
     },
+    // Cut/Copy/Paste run through the browser's own clipboard (`document.execCommand`
+    // in editor-commands.mjs — the same mechanism the context menu and the Edit
+    // menu already used ad hoc, now centralised behind one id each).
+    //
+    // ⛔ BOTH styles take all three chords, and neither policy may be softer than
+    // that. This shipped as `vim: 'always'` on the strength of a remembered claim
+    // that "neither this vim package nor real vim binds Ctrl+X/Ctrl+V"; the
+    // package's own keymap says otherwise on every line — `<C-x>` is
+    // incrementNumberToken (it DECREMENTS THE NUMBER under the caret), `<C-v>` is
+    // blockwise visual mode, and `<C-c>` is `<Esc>`. Vim runs at `Prec.highest` and
+    // preventDefaults what it matched, so the chord never reached these commands:
+    // the sheet offered Cut on Ctrl+X, Available Keys printed it as pressable,
+    // and pressing it edited the document instead. Insert-only is the truth — vim
+    // matches only `context: 'insert'` commands there, so all three fall through.
+    //
+    // Emacs: `C-x` and `C-c` are prefixes and `C-v` is scroll-up-command, so the
+    // chords are gone outright. Emacs' own kill-ring — `C-w`/`M-w`/`C-y`, already
+    // live and already listed in Available Keys — is what fires instead.
+    {
+      id: "edit.cut",
+      title: "Cut",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+X",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      id: "edit.copy",
+      title: "Copy",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+C",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      id: "edit.paste",
+      title: "Paste",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+V",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
     {
       id: "edit.find",
       title: "Find\u2026",
@@ -470,6 +526,11 @@
       palette: true,
       styles: { vim: "insert-only", emacs: "off" }
     },
+    // ⛔ `emacs: 'off'`, and it is not a preference. `Alt+Shift+F` is `S-M-f` to
+    // the Emacs handler, which binds it to forward-word-selecting off the package's
+    // own key table — at `Prec.highest`, so Format Document never ran under Emacs
+    // and every surface went on offering the chord. `C-c q` is the substitute, in
+    // the one place an Emacs user would look for it: `M-q` is fill-paragraph.
     {
       id: "edit.format",
       title: "Format Document",
@@ -479,7 +540,7 @@
       keybindable: true,
       palette: true,
       ex: ["fmt", "format"],
-      styles: { vim: "always" }
+      styles: { vim: "always", emacs: "off" }
     },
     {
       id: "edit.rename",
@@ -563,6 +624,37 @@
     { id: "select.line", title: "Select Line", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
     { id: "select.parent-syntax", title: "Select Enclosing Syntax", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
     { id: "select.collapse", title: "Collapse Selection", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    /**
+     * Keyboard macros — record what you type, replay it.
+     *
+     * ⛔ Editor scope and NO default chord. There is no cross-editor convention
+     * for a non-modal keyboard macro (Emacs has `C-x (`, Vim has `q`, and both
+     * reach these ids through their own style map), and inventing one is how a
+     * keymap ends up fighting the user's. Bindable, so Standard users can pick.
+     *
+     * ⛔ `emacs: 'off'` is NOT "unavailable": Emacs reaches both through `C-x (`
+     * / `C-x )` / `C-x e`, which is why they carry `STYLE_CHORDS` substitutes.
+     * The declaration is about the CHORD, and Emacs owns every chord these could
+     * ship on.
+     */
+    {
+      id: "macro.record",
+      title: "Record Macro",
+      section: "Edit",
+      scope: "editor",
+      palette: true,
+      keybindable: true,
+      ex: ["macrorec"]
+    },
+    {
+      id: "macro.replay",
+      title: "Replay Macro",
+      section: "Edit",
+      scope: "editor",
+      palette: true,
+      keybindable: true,
+      ex: ["macroplay"]
+    },
     // ── Navigate ───────────────────────────────────────────────────────────────
     {
       id: "nav.symbol",
@@ -582,6 +674,28 @@
       defaultSpec: "Mod+K",
       keybindable: true,
       styles: { emacs: "yield" }
+    },
+    /**
+     * ⛔ `Mod+G` is not invented — it is goto-line in VS Code, Sublime, Atom,
+     * Notepad++ and every IDE that has the feature, and the vim package binds no
+     * `<C-g>` at all. Emacs DOES (`keyboard-quit`), so it is `off` there and
+     * reaches the same command through `M-g g`, which is Emacs' own spelling.
+     *
+     * Until this existed the feature had no command: Vim had `:42` and `G`, the
+     * palette had its `:` mode, and Emacs had `M-g` bound by the package to a
+     * command the package does not ship — a dead key on the chord an Emacs user
+     * presses to go to a line.
+     */
+    {
+      id: "nav.goto-line",
+      title: "Go to Line\u2026",
+      section: "Navigate",
+      scope: "global",
+      defaultSpec: "Mod+G",
+      keybindable: true,
+      palette: true,
+      ex: ["line"],
+      styles: { emacs: "off" }
     },
     {
       id: "nav.definition",
@@ -852,7 +966,50 @@
     // Generated from `describe()`, so it is the keymap rather than a copy of it.
     // `keys.show-chords` from the original Wave G list folded in here: one sheet
     // that answers "what can I press" beats two that answer half each.
-    { id: "keys.macros", title: "Available Macros\u2026", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["help", "macros"] },
+    // ⛔ The ID stays `keys.macros` while the NAME changes. Ids are the stable
+    // contract — a user's stored keybindings are keyed by them, and renaming one
+    // orphans their chord silently. `:macros` stays an alias for the same reason.
+    //
+    // The name had to change: "macro" already means a recorded keystroke sequence
+    // in both Vim (`q`/`@`) and Emacs (`C-x (`), and Vim's works here — the strip
+    // prints `recording @a` while you record one. A window listing pressable KEYS
+    // cannot also be called that.
+    {
+      id: "keys.macros",
+      title: "Available Keys\u2026",
+      section: "Tools",
+      scope: "global",
+      palette: true,
+      keybindable: true,
+      ex: ["keys", "help", "macros"]
+    },
+    /**
+     * Reload the page.
+     *
+     * ⛔ A real command, because it is a real thing people do — and because
+     * everything BelJar can do must be reachable BY NAME. It was reachable only by
+     * the browser's own chord, which means it existed for the mouse and for F5 and
+     * for nobody typing `:`.
+     *
+     * ⛔ NO DEFAULT CHORD — and NOT because the browser has `Ctrl+R`. It does not:
+     * the hand audit (`scripts/chord-audit.html`, every Ctrl+letter, Chrome 152 /
+     * Windows 11) measured it ARRIVING, which is why it is absent from
+     * `BROWSER_RESERVED_PC`. Emacs proves the point by taking it — `C-r` is bound
+     * to reverse-search there.
+     *
+     * The real reason is that it is spoken for in two of the three styles, by the
+     * ⛔ rule that a style policy is a claim about the PACKAGE'S keymap:
+     *   vim    `<C-r>` is REDO, in the package's own table.
+     *   emacs  `C-r` is reverse-search, re-pointed at BelJar's search line.
+     * So a default could only be Standard-only — a chord that shadows the
+     * browser's own reload to do what the browser's own reload already does,
+     * since `beforeunload` flushes on that path too. Bindable if someone wants
+     * it; not worth a default.
+     *
+     * The work is safe: `beforeunload`, `pagehide` and `visibilitychange` all
+     * flush every buffer to storage, so a reload loses nothing.
+     */
+    { id: "app.reload", title: "Reload BelJar", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["reload", "refresh"] },
     { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.open", title: "Command Line", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "tools.palette", title: "Open Command Palette", section: "Tools", scope: "global", palette: true, shortcut: "Mod+K" },
@@ -882,6 +1039,10 @@
   var STYLE_TAKES = {
     emacs: [
       { spec: "Mod+F", key: "C-f", runs: "forward-char" },
+      // ⛔ Emacs binds `C-z` to undo and `ensureEmacsUndoBridge` re-binds that same
+      // spec to BelJar's history — so Ctrl+Z under Emacs IS Undo, reached through
+      // Emacs' own key. `sameCommand`, like `M-x`, because nothing is lost.
+      { spec: "Mod+Z", key: "C-z", runs: "undo", sameCommand: "edit.undo" },
       // ⛔ Not a no-op: the package binds `C-x C-p|C-x h` to selectAll, and
       // `probe-keymap.mjs` measures it selecting the whole document. A remembered
       // claim about a dependency once told Emacs users a working chord did not
@@ -891,6 +1052,18 @@
       { spec: "Mod+Y", key: "C-y", runs: "yank" },
       { spec: "Mod+/", key: "C-/", runs: "undo" },
       { spec: "Mod+K", key: "C-k", runs: "kill-line" },
+      // ⛔ `C-g` is the one chord an Emacs user presses to get OUT of something.
+      // BelJar's Go to Line ships on `Mod+G` — the universal IDE chord — so under
+      // Emacs it stands aside and answers to `M-g g`, Emacs' own goto-map.
+      { spec: "Mod+G", key: "C-g", runs: "keyboard-quit" },
+      // ⛔ A PREFIX takes the chord as surely as a command does. `C-x` and `C-c`
+      // are not in the package's key table — they are chain heads — so a table
+      // built by reading `emacsKeys` alone missed them, and Cut and Copy went on
+      // advertising Ctrl+X and Ctrl+C under Emacs with no tag on either.
+      { spec: "Mod+X", key: "C-x", runs: "the C-x prefix" },
+      { spec: "Mod+C", key: "C-c", runs: "the C-c prefix" },
+      { spec: "Mod+V", key: "C-v", runs: "scroll-up-command" },
+      { spec: "Alt+Shift+F", key: "S-M-f", runs: "forward-word, selecting" },
       // ⛔ `M-x` IS Run Command — Emacs reaches the same command through its own
       // binding. `sameCommand` stops it reading as a loss, because nothing is lost.
       { spec: "Alt+X", key: "M-x", runs: "execute-extended-command", sameCommand: "tools.commands" }
@@ -903,7 +1076,12 @@
     vim: {
       "edit.undo": "u",
       "edit.redo": "C-r",
-      "edit.find": "/"
+      "edit.find": "/",
+      // The kill-ring answer, not the chord: in Normal mode Vim's own operators
+      // are what cut, copy and paste, and the chords belong to Vim there.
+      "edit.cut": "d",
+      "edit.copy": "y",
+      "edit.paste": "p"
     }
   };
   var STYLE_CHORDS = {
@@ -911,8 +1089,15 @@
       "edit.find": "C-s",
       "edit.select-all": "C-x h",
       "edit.redo": "C-S-z",
+      "edit.format": "C-c q",
       "tools.commands": "M-x",
-      "nav.anywhere": "C-x C-f"
+      "nav.anywhere": "C-x C-f",
+      // Emacs' own goto-map. `M-g` alone is the prefix; `M-g g` and `M-g M-g`
+      // both land here, exactly as they do in Emacs.
+      "nav.goto-line": "M-g g",
+      // Emacs' own kmacro keys, running BelJar's one macro engine.
+      "macro.record": "C-x (",
+      "macro.replay": "C-x e"
     },
     vim: {}
   };
@@ -951,6 +1136,13 @@
     if (mods.Shift) out.push("Shift");
     out.push(last.length === 1 ? last.toUpperCase() : last);
     return out.join("+");
+  }
+  function chordInStyle(described) {
+    if (!described) return "";
+    if (described.styleChord) return described.styleChord;
+    if (described.availableInStyle === false) return "";
+    if (described.shadow && described.shadow.kind === "shadowed") return "";
+    return described.chord || "";
   }
   function takesChord(style, spec) {
     if (!spec) return null;
@@ -998,6 +1190,18 @@
       };
     }
     return null;
+  }
+
+  // js/commands/command-context.mjs
+  function editingStyle() {
+    const g = typeof window !== "undefined" ? window : globalThis;
+    const p = g.Persist;
+    try {
+      const v = p && typeof p.readStoredKeymapStyle === "function" ? p.readStoredKeymapStyle() : "";
+      return v === "vim" || v === "emacs" ? v : "default";
+    } catch (_) {
+      return "default";
+    }
   }
 
   // js/commands/command-names.mjs
@@ -1241,6 +1445,21 @@
         fromStyle: true,
         baseOwnerOf: (s) => baseOwnerOf(s, cmd ? cmd.id : null)
       });
+    },
+    /**
+     * The chord that invokes `id` RIGHT NOW, in the style currently in force, or
+     * '' when nothing does.
+     *
+     * ⛔ The one call for a surface that prints a key beside a command's name.
+     * `describe().chord` is BelJar's own binding and says nothing about whether the
+     * style left it alone — print that under Emacs and the Find row offers Ctrl+F,
+     * which Emacs uses for forward-char. A row with no chord is right; a row with a
+     * chord that does nothing is not.
+     */
+    liveChord(id, opts) {
+      const o = opts || {};
+      const style = o.style || editingStyle();
+      return chordInStyle(describe(id, Object.assign({}, o, { style, showing: "style" })));
     },
     isAvailable,
     version: () => version,

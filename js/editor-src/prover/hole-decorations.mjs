@@ -105,7 +105,7 @@ function clearHoleGutterTip(cell) {
 }
 
 function foldCellHasChevron(cell) {
-  return !!cell?.querySelector?.('.cm-bel-foldmarker');
+  return !!cell?.querySelector?.('.cm-jar-foldmarker');
 }
 
 function applyHoleGutterTips(view) {

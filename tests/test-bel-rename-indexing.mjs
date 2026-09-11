@@ -28,4 +28,4 @@ expect(line26.includes('{x:arthichoke}'), `line 26 ok: ${line26}`);
 expect(line28.includes('{x:arthichoke}'), `line 28 ok: ${line28}`);
 expect(!line28.includes('x:name'), `line 28 not mangled: ${line28}`);
 
-console.log('OK bel-rename indexing (cp_linear raw vs normalized basis)');
+console.log('OK jar-rename indexing (cp_linear raw vs normalized basis)');

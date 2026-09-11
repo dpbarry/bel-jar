@@ -67,4 +67,4 @@ expect(
   'group conflict still blocks global rename',
 );
 
-console.log('OK bel-rename preview (empty draft + engine-lost symbol)');
+console.log('OK jar-rename preview (empty draft + engine-lost symbol)');

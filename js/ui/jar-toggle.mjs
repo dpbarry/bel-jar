@@ -5,16 +5,16 @@ function createParts(opts) {
     opts = opts || {};
     var input = document.createElement('input');
     input.type = 'checkbox';
-    input.className = 'bj-toggle__input';
+    input.className = 'jar-toggle__input';
     if (opts.id) input.id = opts.id;
     if (opts.ariaLabel) input.setAttribute('aria-label', opts.ariaLabel);
     input.checked = !!opts.checked;
 
     var track = document.createElement('span');
-    track.className = 'bj-toggle__track';
+    track.className = 'jar-toggle__track';
     track.setAttribute('aria-hidden', 'true');
     var thumb = document.createElement('span');
-    thumb.className = 'bj-toggle__thumb';
+    thumb.className = 'jar-toggle__thumb';
     track.appendChild(thumb);
 
     input.addEventListener('change', function () {
@@ -31,7 +31,7 @@ function createParts(opts) {
   function create(opts) {
     opts = opts || {};
     var wrap = document.createElement('label');
-    wrap.className = 'bj-toggle';
+    wrap.className = 'jar-toggle';
     if (opts.className) wrap.className += ' ' + opts.className;
     var parts = createParts(opts);
     wrap.appendChild(parts.input);

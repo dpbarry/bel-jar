@@ -158,7 +158,7 @@ function namespaceFromDefEntry(e, src) {
   return e.isUpper ? NAMESPACE.COMP_TYPE : NAMESPACE.LF_CONSTANT;
 }
 
-// Match bel-editor mount: sanitize, alias expand, auto-indent for .bel/.elf.
+// Match jar-editor mount: sanitize, alias expand, auto-indent for .bel/.elf.
 export function editorTextForIndexing(text, fileName) {
   if (fileName && isSignaturePath(fileName)) {
     return prepareEditorDoc(text, fileName);
@@ -569,6 +569,18 @@ export function filterRenameEdits(text, edits, originalName) {
 }
 
 // Group rename indexes positions on editor-normalized text; apply there, not on raw storage.
+//
+// ⛔ `groupRenameEdits` offsets are into `editorTextForIndexing(raw)`, NOT into
+// `raw`. On a file holding `|-` or `->` the two bases differ by one character per
+// occurrence, so `applyTextEdits(raw, plan.edits, …)` writes at shifted offsets:
+// on the church-rosser fixture it turned `[g |- term]` into `[g tmerm]`. Every
+// caller must come through here. `filterRenameEdits` is the backstop — an edit
+// whose span is not `originalName` is dropped rather than written blind.
+//
+// ⚠ The return value is therefore the NORMALIZED file, not raw storage with one
+// word swapped: writing it back also applies alias expansion and auto-indent.
+// That is the same text the editor would show on open, and `rename.mjs` touches
+// the file in the undo entry so a single Ctrl+Z reverses all of it.
 export function applyGroupRenameToFile(raw, fileName, edits, newName, originalName) {
   const basis = editorTextForIndexing(raw, fileName);
   const valid = filterRenameEdits(basis, edits, originalName);

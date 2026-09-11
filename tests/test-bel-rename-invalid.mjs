@@ -58,4 +58,4 @@ restore = applySync(restore);
 expect(restore.doc.toString() === 'foo bar foo', 'anchor can be restored while drafting');
 expect(restore.field(renameActiveField, false), 'session still active after invalid drafts');
 
-console.log('OK bel-rename invalid draft (live mirror, stay in rename mode)');
+console.log('OK jar-rename invalid draft (live mirror, stay in rename mode)');

@@ -4,7 +4,7 @@
 // the table must actually exist. Nothing else catches a typo there — a bad name
 // produces a setting that is present in the palette and silently does nothing.
 import {
-  SETTINGS, settingId, settingEntries, optionNames, optionCandidates,
+  SETTINGS, settingId, settingEntries, optionNames, optionCandidates, optionValueCandidates,
   findSetting, nextValue, nearestSetting, parseSet, describeChange, orList,
   applyValue, runSetOn,
 } from '../js/commands/command-settings.mjs';
@@ -32,7 +32,44 @@ for (const s of SETTINGS) {
 }
 expect(new Set(SETTINGS.map((s) => s.slug)).size === SETTINGS.length, 'slugs are unique');
 expect(new Set(optionNames()).size === optionNames().length, 'no name means two settings');
-expect(optionCandidates().length === optionNames().length, 'every name completes');
+// ⛔ The completer must offer at least every name `:set` answers to — and now
+// the `no` forms as well, because `parseSet` accepts `:set nonu` and a
+// completer that does not offer it disagrees with the parser about the one
+// spelling that turns an option OFF.
+{
+  const cands = optionCandidates().map((c) => c.value);
+  const names = optionNames();
+  for (const n of names) expect(cands.indexOf(n) >= 0, `\`:set ${n}\` completes`);
+  expect(new Set(cands).size === cands.length,
+    'no candidate is offered twice — a duplicate shows as two identical rows');
+  const negatable = SETTINGS.filter((x) => x.kind === 'bool' || x.off !== undefined);
+  expect(negatable.length > 0, 'some settings can be turned off');
+  for (const x of negatable) {
+    expect(cands.indexOf('no' + x.slug) >= 0, `\`:set no${x.slug}\` completes`);
+    expect(parseSet('no' + x.slug).spec === x, `and \`:set no${x.slug}\` parses to ${x.slug}`);
+  }
+  // The other direction: nothing that cannot be negated gets a `no` form.
+  for (const x of SETTINGS) {
+    if (x.kind === 'bool' || x.off !== undefined) continue;
+    expect(cands.indexOf('no' + x.slug) < 0,
+      `${x.slug} has no off value, so \`:set no${x.slug}\` must not be offered`);
+  }
+}
+
+// `:set <enum>=` completes over that setting's own values; a boolean has none.
+{
+  for (const x of SETTINGS) {
+    const vals = optionValueCandidates(x.slug).map((v) => v.value);
+    if (x.kind === 'enum') {
+      expect(vals.join(',') === (x.values || []).map(String).join(','),
+        `\`:set ${x.slug}=\` offers exactly its values`, vals.join(','));
+    } else {
+      expect(vals.length === 0, `\`:set ${x.slug}=\` offers nothing — it is a boolean`);
+    }
+  }
+  expect(optionValueCandidates('ts').map((v) => v.value).join(',') === '2,4',
+    'and it resolves an alias, not only a slug');
+}
 
 // ── catalogue rows ───────────────────────────────────────────────────────────
 const entries = settingEntries();

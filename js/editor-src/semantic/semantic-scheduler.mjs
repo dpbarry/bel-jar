@@ -1,4 +1,8 @@
 const BATCH_PER_TICK = 8;
+const TICK_MS = 50;
+// The ceiling for the not-ready retry back-off. One wakeup a second on a file
+// that cannot settle, instead of twenty.
+const NOT_READY_MAX_MS = 1000;
 
 export function createSemanticScheduler(engine, session) {
   const queue = [];
@@ -175,15 +179,22 @@ export function createSemanticScheduler(engine, session) {
     return elaborateDeclById(declId);
   }
 
-  function scheduleRun() {
+  function scheduleRun(delayMs) {
     if (stopped || scheduledRun) return;
+    const delay = delayMs == null ? TICK_MS : delayMs;
 
     scheduledRun = setTimeout(async () => {
       scheduledRun = null;
       if (stopped) return;
 
+      // ⛔ Back off instead of spinning. A file that never settles — a standing
+      // syntax fault, a suite member that will not load, Beluga unavailable —
+      // used to hold this in a 20 Hz retry loop for as long as the tab stayed
+      // open, doing no work and never stopping. Retry quickly at first, because
+      // "not ready yet" is usually milliseconds away, then subside to once a
+      // second so an editor sitting on an unsettleable file is genuinely idle.
       if (typeof engine.isSettlementReady === 'function' && !engine.isSettlementReady()) {
-        scheduleRun();
+        scheduleRun(Math.min(delay * 2, NOT_READY_MAX_MS));
         return;
       }
 
@@ -209,8 +220,10 @@ export function createSemanticScheduler(engine, session) {
 
       // Re-arm while implicit work is queued OR decls still await reconstruction
       // (deriveFrontier is batch-bounded).
-      if (queue.length > 0 || moreToDerive) scheduleRun();
-    }, 50);
+      // A productive tick resets the cadence: the next "not ready" starts its
+      // back-off from TICK_MS again rather than from wherever it left off.
+      if (queue.length > 0 || moreToDerive) scheduleRun(TICK_MS);
+    }, delay);
   }
 
   function invalidateAll() {

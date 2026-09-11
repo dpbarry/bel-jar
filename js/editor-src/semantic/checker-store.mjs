@@ -89,12 +89,20 @@ export function createCheckerStore() {
     checkedFp = '',
     settleMode = null,
   }) {
+    // ⛔ A `ready` verdict cannot carry an unverified finding. `stale` means
+    // "the document moved under this diagnostic and nothing has re-checked it",
+    // so a stale entry reaching a ready snapshot is a caller asserting something
+    // the checker never confirmed — which is exactly how an error outlived the
+    // edit that caused it and could only be cleared by reopening the file. The
+    // path that legitimately carries findings forward (frontier-empty, on proof
+    // the code is unchanged) clears the flag itself; this is the backstop.
+    const verified = (belugaDiagnostics || []).filter((d) => !d.stale);
     snapshot = {
       syntaxVersion,
       checkerFp,
       state: 'ready',
       ok: !!ok,
-      belugaDiagnostics: belugaDiagnostics || [],
+      belugaDiagnostics: verified,
       memberDiagnostics: memberDiagnostics || {},
       memberHoles: memberHoles || {},
       rawOutput: rawOutput || '',
@@ -141,17 +149,37 @@ export function createCheckerStore() {
     };
   }
 
+  /**
+   * ⛔ A diagnostic whose span the edit consumed is DROPPED, not carried with a
+   * broken range.
+   *
+   * The two ends map with opposite association on purpose — the range should
+   * shrink around an edit rather than swallow it — but when the edit REPLACES
+   * the span (select the erroring token, type over it) `from` maps to the end of
+   * the insertion and `to` to its start, so the range comes out inverted. The
+   * squiggle layer quietly skips those, while the counts do not: the status
+   * strip and the tab dot went on reporting an error with nothing on screen to
+   * point at, and "go to next problem" aimed at a position that no longer meant
+   * anything. The text that finding was about is gone; the next check says what
+   * is true of the text that replaced it.
+   */
   function remapDiagnostics(changes) {
     if (!changes || !snapshot.belugaDiagnostics?.length) return;
-    snapshot = {
-      ...snapshot,
-      belugaDiagnostics: snapshot.belugaDiagnostics.map((d) => {
-        if (d.from == null) return d;
-        const from = changes.mapPos(d.from, 1);
-        const to = d.to != null ? changes.mapPos(d.to, -1) : d.to;
-        return from === d.from && to === d.to ? d : { ...d, from, to };
-      }),
-    };
+    const out = [];
+    for (const d of snapshot.belugaDiagnostics) {
+      if (d.from == null) { out.push(d); continue; }
+      const from = changes.mapPos(d.from, 1);
+      const to = d.to != null ? changes.mapPos(d.to, -1) : d.to;
+      if (to != null && to <= from) continue;
+      out.push(from === d.from && to === d.to ? d : { ...d, from, to });
+    }
+    if (out.length === snapshot.belugaDiagnostics.length
+      && out.every((d, i) => d === snapshot.belugaDiagnostics[i])) {
+      return;
+    }
+    // `ok` is not touched: dropping a finding whose text is gone says nothing
+    // about whether the last check passed. The next check settles that.
+    snapshot = { ...snapshot, belugaDiagnostics: out };
   }
 
   function getSnapshot() {

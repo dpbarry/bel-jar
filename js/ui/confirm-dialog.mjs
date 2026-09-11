@@ -15,7 +15,7 @@ export function confirm(messageOrOpts, maybeOpts) {
     subject: opts.subject,
     message: opts.message,
     note: opts.note,
-    className: opts.className || 'bj-confirm-dialog-wrap',
+    className: opts.className || 'jar-confirm-dialog-wrap',
     closeButton: opts.closeButton,
     layout: 'row',
     buttons: [

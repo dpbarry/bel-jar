@@ -11,25 +11,47 @@ function closeAll() {
   }
 }
 
+/**
+ * ⛔ ONE outside-click listener for every dropdown there will ever be.
+ *
+ * Each instance used to add its own `document` click handler and never take it
+ * off. Settings rebuilds its rows on every open, and it holds a dozen
+ * dropdowns — so an ordinary week's worth of visits to Settings left hundreds
+ * of permanent listeners on `document`, each keeping a dead panel and its
+ * option list alive and each running on every click anywhere in the app.
+ *
+ * `openDropdowns` already tracks exactly the ones that could need closing, so
+ * the shared listener is also strictly less work than one of the old ones.
+ */
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', function (e) {
+    if (!openDropdowns.length) return;
+    for (var i = openDropdowns.length - 1; i >= 0; i--) {
+      var d = openDropdowns[i];
+      if (d && typeof d.containsTarget === 'function' && !d.containsTarget(e.target)) d.close();
+    }
+  });
+}
+
 function create(options, currentValue, onChange) {
   var selected = currentValue;
   var focusedIdx = -1;
   var optionEls = [];
 
   var container = document.createElement('div');
-  container.className = 'bj-dropdown';
+  container.className = 'jar-dropdown';
 
   var trigger = document.createElement('button');
   trigger.type = 'button';
-  trigger.className = 'bj-dropdown__trigger';
+  trigger.className = 'jar-dropdown__trigger';
   trigger.setAttribute('aria-haspopup', 'listbox');
   trigger.setAttribute('aria-expanded', 'false');
 
   var valueSpan = document.createElement('span');
-  valueSpan.className = 'bj-dropdown__value';
+  valueSpan.className = 'jar-dropdown__value';
 
   var chevronEl = document.createElement('span');
-  chevronEl.className = 'bj-dropdown__chevron';
+  chevronEl.className = 'jar-dropdown__chevron';
   chevronEl.setAttribute('aria-hidden', 'true');
   chevronEl.innerHTML = '<svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -37,13 +59,13 @@ function create(options, currentValue, onChange) {
   trigger.appendChild(chevronEl);
 
   var panel = document.createElement('div');
-  panel.className = 'bj-dropdown__panel';
+  panel.className = 'jar-dropdown__panel';
   panel.setAttribute('role', 'listbox');
 
   options.forEach(function (opt, idx) {
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'bj-dropdown__option';
+    btn.className = 'jar-dropdown__option';
     btn.setAttribute('role', 'option');
     btn.dataset.value = opt.value;
 
@@ -51,7 +73,7 @@ function create(options, currentValue, onChange) {
     labelSpan.textContent = opt.label;
 
     var checkEl = document.createElement('span');
-    checkEl.className = 'bj-dropdown__option-check';
+    checkEl.className = 'jar-dropdown__option-check';
     checkEl.setAttribute('aria-hidden', 'true');
     checkEl.innerHTML = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4.5L4.5 8L10 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -152,6 +174,12 @@ function create(options, currentValue, onChange) {
     trigger.setAttribute('aria-expanded', 'false');
     window.removeEventListener('scroll', reposition, true);
     window.removeEventListener('resize', reposition);
+    // The panel is mounted OUT of the dropdown (onto the dialog or the body) so
+    // it can escape a scroll container, which means closing has to take it back
+    // out — otherwise every dropdown ever opened leaves a hidden panel behind
+    // in a dialog that gets rebuilt every time it is shown. There is no exit
+    // transition to cut short: the panel is display:none when not open.
+    if (panel.parentElement) panel.parentElement.removeChild(panel);
     var idx = openDropdowns.indexOf(api);
     if (idx !== -1) openDropdowns.splice(idx, 1);
   }
@@ -175,12 +203,15 @@ function create(options, currentValue, onChange) {
     }
   });
 
-  document.addEventListener('click', function (e) {
-    if (container.classList.contains('is-open') && !container.contains(e.target) && !panel.contains(e.target)) close();
-  });
-
   setValue(currentValue);
-  var api = { element: container, setValue: setValue, close: close };
+  var api = {
+    element: container,
+    setValue: setValue,
+    close: close,
+    containsTarget: function (target) {
+      return container.contains(target) || panel.contains(target);
+    },
+  };
   return api;
 }
 

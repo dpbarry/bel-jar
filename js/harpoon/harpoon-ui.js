@@ -671,7 +671,6 @@
   function createDisplay(deps) {
     var el4 = deps.el;
     var E3 = deps.E;
-    var setTip2 = deps.setTip;
     var liveEditorFileId2 = deps.liveEditorFileId;
     var bindChipTip2 = deps.bindChipTip;
     var renderSynthChain2 = deps.renderSynthChain;
@@ -811,8 +810,8 @@
     function appendDeclLabel(glabel, declName, declKw) {
       if (!declName) return;
       var name = el4("span", "harpoon-lab-auto-goal-name");
-      if (declKw) name.appendChild(el4("span", "harpoon-lab-goal-decl-kw bel-hl-keyword", declKw));
-      name.appendChild(el4("span", "harpoon-lab-goal-decl-name bel-hl-var-def", declName));
+      if (declKw) name.appendChild(el4("span", "harpoon-lab-goal-decl-kw jar-hl-keyword", declKw));
+      name.appendChild(el4("span", "harpoon-lab-goal-decl-name jar-hl-var-def", declName));
       glabel.appendChild(name);
     }
     function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders, declKw) {
@@ -1479,7 +1478,6 @@
     var REEL_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
     var REEL_CLICK_EASE = "cubic-bezier(0.34, 1.22, 0.64, 1)";
     var REEL_OUT_MS = 150;
-    var COMMIT_IN_MS = 280;
     function buildStepCopy(step) {
       var rowCopy = el4("div", "harpoon-lab-auto-step-copy");
       var verb = el4("span", "harpoon-lab-auto-move move-" + (step.move || "move"));
@@ -3150,20 +3148,6 @@
       bar.appendChild(status);
       return bar;
     }
-    function skelCtx() {
-      var wrap = el4("div", "harpoon-lab-context");
-      var sec = el4("div", "harpoon-lab-ctx");
-      sec.appendChild(el4("span", "harpoon-lab-ctx-label", "meta"));
-      var rows = el4("div", "harpoon-lab-binders");
-      ["58%", "41%"].forEach(function(w, i) {
-        var row = el4("div", "harpoon-lab-binder");
-        row.appendChild(skel("harpoon-skel--text" + (i ? " harpoon-skel--d1" : ""), w));
-        rows.appendChild(row);
-      });
-      sec.appendChild(rows);
-      wrap.appendChild(sec);
-      return wrap;
-    }
     function skelMoveRow(i) {
       var row = el4("div", "harpoon-lab-move is-skeleton");
       row.style.setProperty("--i", String(i));
@@ -3579,7 +3563,6 @@
     }
     function runOrca() {
       var m = this.manual;
-      var self = this;
       if (!m || !m.state) return;
       this.cancelSweep();
       this.manualBefore = m.state;
@@ -3713,7 +3696,6 @@
       var na = this.nativeAuto;
       var before = this.manualBefore || null;
       var priorSteps = before && before.steps || [];
-      var priorStack = before && before.stack || [];
       this.manualBefore = null;
       this.nativeAuto = null;
       if (na && na.complete && na.code && before && ed && typeof ed.absorbAuto === "function") {
@@ -3734,7 +3716,6 @@
       });
     }
     function commitManual() {
-      var ed = E3();
       var m = this.manual;
       var st = this.getCommitState();
       if (!m || !m.state || st.status === "checking" || st.status === "placed") {
@@ -6002,12 +5983,10 @@
     var getActiveCfgsForDir = opts.getActiveCfgsForDir || function() {
       return [];
     };
-    var computeDirLayout = opts.computeDirLayout;
     var activeFileId2 = opts.activeFileId || null;
     var activeHits = opts.activeHits || null;
     var memberHoles = opts.memberHoles || {};
     var developmentPaths = opts.developmentPaths || null;
-    var SL = global9.ExplorerSuiteLayout;
     var PS = global9.ProjectSource;
     var resolveMembers = opts.resolveMembers || (PS && typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath2, gt) {
       return PS.orderedPathsForCfg(all, cfgPath2, gt);
@@ -6042,14 +6021,6 @@
     for (var di = 0; di < dirKeys.length; di++) {
       var dir = dirKeys[di];
       var filesInDir = byDir[dir];
-      var layout = { orderedFiles: filesInDir, suiteByFile: {} };
-      if (typeof computeDirLayout === "function") {
-        layout = computeDirLayout(dir, filesInDir);
-      } else if (SL && typeof SL.computeDirLayout === "function") {
-        var activeCfgs = getActiveCfgsForDir(dir);
-        layout = SL.computeDirLayout(filesInDir, activeCfgs, resolveMembers, files, getText);
-      }
-      var suiteByFile = layout.suiteByFile || {};
       var activeCfgs = getActiveCfgsForDir(dir);
       var placed = {};
       var dirEntries = [];
@@ -6402,8 +6373,6 @@
     } : function() {
       return "";
     };
-    var PS = typeof global10.ProjectSource !== "undefined" ? global10.ProjectSource : null;
-    var SL = typeof global10.ExplorerSuiteLayout !== "undefined" ? global10.ExplorerSuiteLayout : null;
     var model = PG.buildSections({
       files,
       getText,
@@ -6415,14 +6384,7 @@
         return P2.getActiveCfgsForDir(dir);
       } : function() {
         return [];
-      },
-      computeDirLayout: SL && typeof SL.computeDirLayout === "function" && PS ? function(dir, filesInDir) {
-        var active = P2.getActiveCfgsForDir(dir);
-        var resolver = typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath, gt) {
-          return PS.orderedPathsForCfg(all, cfgPath, gt);
-        } : null;
-        return SL.computeDirLayout(filesInDir, active, resolver, files, getText);
-      } : null
+      }
     });
     for (var si = 0; si < model.sections.length; si++) {
       var sec = model.sections[si];
@@ -6539,8 +6501,8 @@
     var decl = declForEntry(entry);
     var declEl = el3("span", "harpoon-hole-decl");
     if (decl) {
-      declEl.appendChild(el3("span", "harpoon-hole-decl-kw bel-hl-keyword", decl.kw));
-      declEl.appendChild(el3("span", "harpoon-hole-decl-name bel-hl-var-def", decl.name));
+      declEl.appendChild(el3("span", "harpoon-hole-decl-kw jar-hl-keyword", decl.kw));
+      declEl.appendChild(el3("span", "harpoon-hole-decl-name jar-hl-var-def", decl.name));
     } else {
       declEl.classList.add("is-unknown");
       declEl.appendChild(el3("span", "harpoon-hole-decl-name", "top level"));

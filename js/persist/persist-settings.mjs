@@ -126,9 +126,6 @@ export function create(deps) {
     var LIBRARY_HINT_DISMISSED_KEY = 'beljar-library-hint-dismissed';
     var HINT_DISMISSED_PREFIX = 'beljar-hint-dismissed:';
     var RESTORE_PANELS_KEY = 'beljar-restore-panels';
-    var ACTIVE_SIDE_PANEL_KEY = 'beljar-active-side-panel';
-    var WORKSPACE_KEY = 'beljar-workspace-v1';
-    var SIDE_PANEL_IDS = ['explorer', 'inspector', 'library', 'harpoon'];
     var AUTOSAVE_DELAY_KEY = 'beljar-autosave-delay';
     var EDITOR_FONT_SIZE_KEY = 'beljar-editor-font-size';
     var EDITOR_LINE_HEIGHT_KEY = 'beljar-editor-line-height';
@@ -831,8 +828,8 @@ export function create(deps) {
       if (!root && typeof document !== 'undefined') root = document.documentElement;
       if (!root) return;
       var mode = readStoredMotionPref();
-      root.classList.toggle('bj-motion-reduce', mode === 'reduce');
-      root.classList.toggle('bj-motion-full', mode === 'full');
+      root.classList.toggle('jar-motion-reduce', mode === 'reduce');
+      root.classList.toggle('jar-motion-full', mode === 'full');
     }
 
     function prefersReducedMotion() {
@@ -997,8 +994,8 @@ export function create(deps) {
       root.style.setProperty('--editor-ligatures', 'none');
       backendRemove('beljar-editor-ligatures');
       var emph = readStoredEditorHoleEmphasis();
-      root.classList.toggle('bj-hole-subtle', emph === 'subtle');
-      root.classList.toggle('bj-hole-loud', emph === 'loud');
+      root.classList.toggle('jar-hole-subtle', emph === 'subtle');
+      root.classList.toggle('jar-hole-loud', emph === 'loud');
     }
 
     var USER_SETTINGS_EXPORT_KEYS = [

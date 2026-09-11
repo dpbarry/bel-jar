@@ -12,7 +12,7 @@
 //      computation type parses — leaving LF/schema/inductive/complete-lemma
 //      decls as the prelude pool.
 //
-// The harness masks one target's body to `?` (bel-harpoon.buildProofProgram),
+// The harness masks one target's body to `?` (jar-harpoon.buildProofProgram),
 // narrows the prelude via proveOrchestrationCode (which keeps schemas + complete
 // siblings and strips only OTHER holed decls), and re-derives it with the live
 // checker. Anti-overfit law applies to THIS file too: nothing here may branch on

@@ -465,9 +465,6 @@
     var LIBRARY_HINT_DISMISSED_KEY = "beljar-library-hint-dismissed";
     var HINT_DISMISSED_PREFIX = "beljar-hint-dismissed:";
     var RESTORE_PANELS_KEY = "beljar-restore-panels";
-    var ACTIVE_SIDE_PANEL_KEY = "beljar-active-side-panel";
-    var WORKSPACE_KEY = "beljar-workspace-v1";
-    var SIDE_PANEL_IDS2 = ["explorer", "inspector", "library", "harpoon"];
     var AUTOSAVE_DELAY_KEY = "beljar-autosave-delay";
     var EDITOR_FONT_SIZE_KEY = "beljar-editor-font-size";
     var EDITOR_LINE_HEIGHT_KEY = "beljar-editor-line-height";
@@ -1183,8 +1180,8 @@
       if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
       if (!root2) return;
       var mode = readStoredMotionPref();
-      root2.classList.toggle("bj-motion-reduce", mode === "reduce");
-      root2.classList.toggle("bj-motion-full", mode === "full");
+      root2.classList.toggle("jar-motion-reduce", mode === "reduce");
+      root2.classList.toggle("jar-motion-full", mode === "full");
     }
     function prefersReducedMotion2() {
       var mode = readStoredMotionPref();
@@ -1352,8 +1349,8 @@
       root2.style.setProperty("--editor-ligatures", "none");
       backendRemove2("beljar-editor-ligatures");
       var emph = readStoredEditorHoleEmphasis();
-      root2.classList.toggle("bj-hole-subtle", emph === "subtle");
-      root2.classList.toggle("bj-hole-loud", emph === "loud");
+      root2.classList.toggle("jar-hole-subtle", emph === "subtle");
+      root2.classList.toggle("jar-hole-loud", emph === "loud");
     }
     var USER_SETTINGS_EXPORT_KEYS = [
       "beljar-theme",
@@ -2831,7 +2828,6 @@
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
         var t = line.trim();
-        var low = t.toLowerCase();
         var isEntry = isCfgEntryLine(t);
         if (!isEntry) {
           out.push(line);
@@ -3024,7 +3020,6 @@
       var targetAt = -1;
       for (var i = 0; i < lines.length; i++) {
         var t = lines[i].trim();
-        var low = t.toLowerCase();
         var isEntry = isCfgEntryLine(t);
         if (!isEntry) continue;
         if ((dir ? dir + "/" + t : t) === fileName) targetAt = entryLineIdx.length;
@@ -3563,7 +3558,10 @@
   function backendSave(key, value) {
     try {
       defaultBackend.saveSync(key, value);
-    } catch (_) {
+      return true;
+    } catch (err) {
+      if (isCapacityError(err)) reportCapacityFailure(classifyPersistError(err));
+      return false;
     }
   }
   function backendRemove(key) {
@@ -3720,9 +3718,17 @@
   var CAPACITY_DEDUPE = "persist.capacity";
   var saveBlocked = false;
   var lastSaveError = null;
+  function isCapacityError(err) {
+    if (!err) return false;
+    if (err.code === "capacity") return true;
+    var name = String(err.name || "");
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
+    if (err.code === 22 || err.code === 1014) return true;
+    return /quota/i.test(String(err.message || ""));
+  }
   function classifyPersistError(err) {
     if (!err) return { code: "unknown", retryable: false, detail: null };
-    if (err.name === "QuotaExceededError" || err.code === "capacity") {
+    if (isCapacityError(err)) {
       return {
         code: "capacity",
         retryable: false,
@@ -3743,8 +3749,10 @@
     };
   }
   function reportCapacityFailure(classified) {
+    var already = saveBlocked;
     saveBlocked = true;
     lastSaveError = classified || { code: "capacity", retryable: false, detail: null };
+    if (already) return;
     if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
       globalThis.Toasts.error("Couldn\u2019t save: storage full.", {
         duration: 0,
@@ -3887,6 +3895,12 @@
     function flushCheckpoint() {
       persistNow();
     }
+    function hasPendingSave() {
+      return saveTimer3 != null;
+    }
+    function flushCheckpointIfDirty() {
+      if (saveTimer3 != null) persistNow();
+    }
     function flushEditor() {
       flushCheckpoint();
     }
@@ -3932,6 +3946,8 @@
       replaceEditorText,
       scheduleCheckpointSave: scheduleSave3,
       flushCheckpoint,
+      flushCheckpointIfDirty,
+      hasPendingSave,
       flushEditor,
       exportSnapshot,
       importSnapshot,
@@ -5154,6 +5170,19 @@
         P3.deleteFile(id);
         return true;
       },
+      /**
+       * ⛔ Through `Persist.renameFile`, not a raw write — it is the one call
+       * that also rewrites every `.cfg` mentioning the old path, moves the
+       * active-cfg map and repairs the empty-folder list. Undoing a rename any
+       * other way would put the name back and leave a project that no longer
+       * builds.
+       */
+      renameFile: function(id, name) {
+        if (typeof P3.renameFile !== "function") return false;
+        P3.renameFile(id, name);
+        var now = P3.getFileById(id);
+        return !!(now && now.name === name);
+      },
       getOpenFileIds: function() {
         return P3.getOpenFileIds();
       },
@@ -5284,10 +5313,94 @@
     if (history) {
       history.flushTypingGroup();
       history.flushCheckpoint();
+      if (typeof history.flushPersist === "function") history.flushPersist();
     }
   }
   global2.addEventListener("pagehide", onPageExit);
   global2.addEventListener("beforeunload", onPageExit);
+  global2.document?.addEventListener("visibilitychange", function() {
+    if (global2.document.visibilityState === "hidden") onPageExit();
+  });
+
+  // js/persist/tab-guard.mjs
+  var global3 = globalThis;
+  var PING_KEY = "beljar-tab-ping";
+  var PONG_KEY = "beljar-tab-pong";
+  var DEDUPE = "workspace.multi-tab";
+  var nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var warned = false;
+  function projectId() {
+    const P3 = global3.Persist;
+    if (!P3) return "";
+    try {
+      return String(P3.getActiveProjectId?.() || P3.getProjectName?.() || "");
+    } catch (_) {
+      return "";
+    }
+  }
+  function write(key, value) {
+    try {
+      global3.localStorage?.setItem(key, JSON.stringify(value));
+    } catch (_) {
+    }
+  }
+  function parse(raw) {
+    try {
+      const v = JSON.parse(raw);
+      return v && typeof v === "object" ? v : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  function warnOnce() {
+    if (warned) return;
+    warned = true;
+    const title = "This project is open in another tab";
+    const body = "Both tabs save to the same place, so whichever writes last wins and the other tab\u2019s edits are lost. Work in one tab at a time.";
+    if (global3.Notifications?.emit) {
+      global3.Notifications.emit({
+        kind: "warn",
+        category: "ops",
+        origin: "local",
+        title,
+        body,
+        source: DEDUPE,
+        dedupeKey: DEDUPE
+      });
+    }
+    if (global3.Toasts?.warn) {
+      global3.Toasts.warn(title, { duration: "long", closable: true });
+    }
+  }
+  function onStorage(e) {
+    if (!e || !e.newValue) return;
+    const mine = projectId();
+    if (e.key === PING_KEY) {
+      const msg = parse(e.newValue);
+      if (!msg || msg.n === nonce || msg.p !== mine) return;
+      write(PONG_KEY, { n: msg.n, p: mine, at: Date.now() });
+      warnOnce();
+      return;
+    }
+    if (e.key === PONG_KEY) {
+      const msg = parse(e.newValue);
+      if (!msg || msg.n !== nonce) return;
+      warnOnce();
+    }
+  }
+  function announce() {
+    const p = projectId();
+    if (!p) return;
+    write(PING_KEY, { n: nonce, p, at: Date.now() });
+  }
+  function initTabGuard() {
+    if (!global3.addEventListener || !global3.localStorage) return;
+    global3.addEventListener("storage", onStorage);
+    if (global3.requestAnimationFrame) global3.requestAnimationFrame(() => announce());
+    else setTimeout(announce, 0);
+  }
+  global3.TabGuard = { init: initTabGuard, announce, _nonce: () => nonce };
+  initTabGuard();
 
   // js/commands/command-settings.mjs
   var SETTINGS = [
@@ -5568,7 +5681,20 @@
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
+    for (const s of SETTINGS) {
+      if (s.kind !== "bool" && s.off === void 0) continue;
+      out.push({ value: "no" + s.slug, label: s.title + " \u2014 off" });
+      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " \u2014 off" });
+    }
     return out;
+  }
+  function optionValueCandidates(name) {
+    const spec = findSetting(String(name || "").replace(/^no/, "")) || findSetting(name);
+    if (!spec || spec.kind !== "enum") return [];
+    return (spec.values || []).map((v) => ({
+      value: String(v),
+      label: spec.labels && spec.labels[v] || String(v)
+    }));
   }
   function findSetting(name) {
     const key = String(name == null ? "" : name).toLowerCase();
@@ -5616,7 +5742,8 @@
     if (!text) return { error: "usage" };
     const eq = text.indexOf("=");
     const value = eq >= 0 ? text.slice(eq + 1).trim() : null;
-    let name = (eq >= 0 ? text.slice(0, eq) : text).trim().toLowerCase();
+    const typed2 = (eq >= 0 ? text.slice(0, eq) : text).trim();
+    let name = typed2.toLowerCase();
     let toggle5 = false;
     if (name.endsWith("!")) {
       name = name.slice(0, -1);
@@ -5628,7 +5755,9 @@
       negated = true;
     }
     const spec = findSetting(name);
-    if (!spec) return { error: "unknown", name, near: nearestSetting(name) };
+    if (!spec) {
+      return { error: "unknown", name, near: nearestSetting(name), typed: typed2, value, negated, toggle: toggle5 };
+    }
     if (value != null && value !== "" && spec.kind === "enum" && !(spec.values || []).some((v) => String(v) === String(value))) {
       return { error: "value", name, spec, value };
     }
@@ -5768,6 +5897,54 @@
       palette: true,
       styles: { vim: "insert-only", emacs: "off" }
     },
+    // Cut/Copy/Paste run through the browser's own clipboard (`document.execCommand`
+    // in editor-commands.mjs — the same mechanism the context menu and the Edit
+    // menu already used ad hoc, now centralised behind one id each).
+    //
+    // ⛔ BOTH styles take all three chords, and neither policy may be softer than
+    // that. This shipped as `vim: 'always'` on the strength of a remembered claim
+    // that "neither this vim package nor real vim binds Ctrl+X/Ctrl+V"; the
+    // package's own keymap says otherwise on every line — `<C-x>` is
+    // incrementNumberToken (it DECREMENTS THE NUMBER under the caret), `<C-v>` is
+    // blockwise visual mode, and `<C-c>` is `<Esc>`. Vim runs at `Prec.highest` and
+    // preventDefaults what it matched, so the chord never reached these commands:
+    // the sheet offered Cut on Ctrl+X, Available Keys printed it as pressable,
+    // and pressing it edited the document instead. Insert-only is the truth — vim
+    // matches only `context: 'insert'` commands there, so all three fall through.
+    //
+    // Emacs: `C-x` and `C-c` are prefixes and `C-v` is scroll-up-command, so the
+    // chords are gone outright. Emacs' own kill-ring — `C-w`/`M-w`/`C-y`, already
+    // live and already listed in Available Keys — is what fires instead.
+    {
+      id: "edit.cut",
+      title: "Cut",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+X",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      id: "edit.copy",
+      title: "Copy",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+C",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
+    {
+      id: "edit.paste",
+      title: "Paste",
+      section: "Edit",
+      scope: "editor",
+      defaultSpec: "Mod+V",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "insert-only", emacs: "off" }
+    },
     {
       id: "edit.find",
       title: "Find\u2026",
@@ -5797,6 +5974,11 @@
       palette: true,
       styles: { vim: "insert-only", emacs: "off" }
     },
+    // ⛔ `emacs: 'off'`, and it is not a preference. `Alt+Shift+F` is `S-M-f` to
+    // the Emacs handler, which binds it to forward-word-selecting off the package's
+    // own key table — at `Prec.highest`, so Format Document never ran under Emacs
+    // and every surface went on offering the chord. `C-c q` is the substitute, in
+    // the one place an Emacs user would look for it: `M-q` is fill-paragraph.
     {
       id: "edit.format",
       title: "Format Document",
@@ -5806,7 +5988,7 @@
       keybindable: true,
       palette: true,
       ex: ["fmt", "format"],
-      styles: { vim: "always" }
+      styles: { vim: "always", emacs: "off" }
     },
     {
       id: "edit.rename",
@@ -5890,6 +6072,37 @@
     { id: "select.line", title: "Select Line", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
     { id: "select.parent-syntax", title: "Select Enclosing Syntax", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
     { id: "select.collapse", title: "Collapse Selection", section: "Motion", scope: "editor", keybindable: true, cmdline: false, styles: { vim: "insert-only" } },
+    /**
+     * Keyboard macros — record what you type, replay it.
+     *
+     * ⛔ Editor scope and NO default chord. There is no cross-editor convention
+     * for a non-modal keyboard macro (Emacs has `C-x (`, Vim has `q`, and both
+     * reach these ids through their own style map), and inventing one is how a
+     * keymap ends up fighting the user's. Bindable, so Standard users can pick.
+     *
+     * ⛔ `emacs: 'off'` is NOT "unavailable": Emacs reaches both through `C-x (`
+     * / `C-x )` / `C-x e`, which is why they carry `STYLE_CHORDS` substitutes.
+     * The declaration is about the CHORD, and Emacs owns every chord these could
+     * ship on.
+     */
+    {
+      id: "macro.record",
+      title: "Record Macro",
+      section: "Edit",
+      scope: "editor",
+      palette: true,
+      keybindable: true,
+      ex: ["macrorec"]
+    },
+    {
+      id: "macro.replay",
+      title: "Replay Macro",
+      section: "Edit",
+      scope: "editor",
+      palette: true,
+      keybindable: true,
+      ex: ["macroplay"]
+    },
     // ── Navigate ───────────────────────────────────────────────────────────────
     {
       id: "nav.symbol",
@@ -5909,6 +6122,28 @@
       defaultSpec: "Mod+K",
       keybindable: true,
       styles: { emacs: "yield" }
+    },
+    /**
+     * ⛔ `Mod+G` is not invented — it is goto-line in VS Code, Sublime, Atom,
+     * Notepad++ and every IDE that has the feature, and the vim package binds no
+     * `<C-g>` at all. Emacs DOES (`keyboard-quit`), so it is `off` there and
+     * reaches the same command through `M-g g`, which is Emacs' own spelling.
+     *
+     * Until this existed the feature had no command: Vim had `:42` and `G`, the
+     * palette had its `:` mode, and Emacs had `M-g` bound by the package to a
+     * command the package does not ship — a dead key on the chord an Emacs user
+     * presses to go to a line.
+     */
+    {
+      id: "nav.goto-line",
+      title: "Go to Line\u2026",
+      section: "Navigate",
+      scope: "global",
+      defaultSpec: "Mod+G",
+      keybindable: true,
+      palette: true,
+      ex: ["line"],
+      styles: { emacs: "off" }
     },
     {
       id: "nav.definition",
@@ -6179,7 +6414,50 @@
     // Generated from `describe()`, so it is the keymap rather than a copy of it.
     // `keys.show-chords` from the original Wave G list folded in here: one sheet
     // that answers "what can I press" beats two that answer half each.
-    { id: "keys.macros", title: "Available Macros\u2026", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["help", "macros"] },
+    // ⛔ The ID stays `keys.macros` while the NAME changes. Ids are the stable
+    // contract — a user's stored keybindings are keyed by them, and renaming one
+    // orphans their chord silently. `:macros` stays an alias for the same reason.
+    //
+    // The name had to change: "macro" already means a recorded keystroke sequence
+    // in both Vim (`q`/`@`) and Emacs (`C-x (`), and Vim's works here — the strip
+    // prints `recording @a` while you record one. A window listing pressable KEYS
+    // cannot also be called that.
+    {
+      id: "keys.macros",
+      title: "Available Keys\u2026",
+      section: "Tools",
+      scope: "global",
+      palette: true,
+      keybindable: true,
+      ex: ["keys", "help", "macros"]
+    },
+    /**
+     * Reload the page.
+     *
+     * ⛔ A real command, because it is a real thing people do — and because
+     * everything BelJar can do must be reachable BY NAME. It was reachable only by
+     * the browser's own chord, which means it existed for the mouse and for F5 and
+     * for nobody typing `:`.
+     *
+     * ⛔ NO DEFAULT CHORD — and NOT because the browser has `Ctrl+R`. It does not:
+     * the hand audit (`scripts/chord-audit.html`, every Ctrl+letter, Chrome 152 /
+     * Windows 11) measured it ARRIVING, which is why it is absent from
+     * `BROWSER_RESERVED_PC`. Emacs proves the point by taking it — `C-r` is bound
+     * to reverse-search there.
+     *
+     * The real reason is that it is spoken for in two of the three styles, by the
+     * ⛔ rule that a style policy is a claim about the PACKAGE'S keymap:
+     *   vim    `<C-r>` is REDO, in the package's own table.
+     *   emacs  `C-r` is reverse-search, re-pointed at BelJar's search line.
+     * So a default could only be Standard-only — a chord that shadows the
+     * browser's own reload to do what the browser's own reload already does,
+     * since `beforeunload` flushes on that path too. Bindable if someone wants
+     * it; not worth a default.
+     *
+     * The work is safe: `beforeunload`, `pagehide` and `visibilitychange` all
+     * flush every buffer to storage, so a reload loses nothing.
+     */
+    { id: "app.reload", title: "Reload BelJar", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["reload", "refresh"] },
     { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.open", title: "Command Line", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "tools.palette", title: "Open Command Palette", section: "Tools", scope: "global", palette: true, shortcut: "Mod+K" },
@@ -6209,6 +6487,10 @@
   var STYLE_TAKES = {
     emacs: [
       { spec: "Mod+F", key: "C-f", runs: "forward-char" },
+      // ⛔ Emacs binds `C-z` to undo and `ensureEmacsUndoBridge` re-binds that same
+      // spec to BelJar's history — so Ctrl+Z under Emacs IS Undo, reached through
+      // Emacs' own key. `sameCommand`, like `M-x`, because nothing is lost.
+      { spec: "Mod+Z", key: "C-z", runs: "undo", sameCommand: "edit.undo" },
       // ⛔ Not a no-op: the package binds `C-x C-p|C-x h` to selectAll, and
       // `probe-keymap.mjs` measures it selecting the whole document. A remembered
       // claim about a dependency once told Emacs users a working chord did not
@@ -6218,6 +6500,18 @@
       { spec: "Mod+Y", key: "C-y", runs: "yank" },
       { spec: "Mod+/", key: "C-/", runs: "undo" },
       { spec: "Mod+K", key: "C-k", runs: "kill-line" },
+      // ⛔ `C-g` is the one chord an Emacs user presses to get OUT of something.
+      // BelJar's Go to Line ships on `Mod+G` — the universal IDE chord — so under
+      // Emacs it stands aside and answers to `M-g g`, Emacs' own goto-map.
+      { spec: "Mod+G", key: "C-g", runs: "keyboard-quit" },
+      // ⛔ A PREFIX takes the chord as surely as a command does. `C-x` and `C-c`
+      // are not in the package's key table — they are chain heads — so a table
+      // built by reading `emacsKeys` alone missed them, and Cut and Copy went on
+      // advertising Ctrl+X and Ctrl+C under Emacs with no tag on either.
+      { spec: "Mod+X", key: "C-x", runs: "the C-x prefix" },
+      { spec: "Mod+C", key: "C-c", runs: "the C-c prefix" },
+      { spec: "Mod+V", key: "C-v", runs: "scroll-up-command" },
+      { spec: "Alt+Shift+F", key: "S-M-f", runs: "forward-word, selecting" },
       // ⛔ `M-x` IS Run Command — Emacs reaches the same command through its own
       // binding. `sameCommand` stops it reading as a loss, because nothing is lost.
       { spec: "Alt+X", key: "M-x", runs: "execute-extended-command", sameCommand: "tools.commands" }
@@ -6230,7 +6524,12 @@
     vim: {
       "edit.undo": "u",
       "edit.redo": "C-r",
-      "edit.find": "/"
+      "edit.find": "/",
+      // The kill-ring answer, not the chord: in Normal mode Vim's own operators
+      // are what cut, copy and paste, and the chords belong to Vim there.
+      "edit.cut": "d",
+      "edit.copy": "y",
+      "edit.paste": "p"
     }
   };
   var STYLE_CHORDS = {
@@ -6238,8 +6537,15 @@
       "edit.find": "C-s",
       "edit.select-all": "C-x h",
       "edit.redo": "C-S-z",
+      "edit.format": "C-c q",
       "tools.commands": "M-x",
-      "nav.anywhere": "C-x C-f"
+      "nav.anywhere": "C-x C-f",
+      // Emacs' own goto-map. `M-g` alone is the prefix; `M-g g` and `M-g M-g`
+      // both land here, exactly as they do in Emacs.
+      "nav.goto-line": "M-g g",
+      // Emacs' own kmacro keys, running BelJar's one macro engine.
+      "macro.record": "C-x (",
+      "macro.replay": "C-x e"
     },
     vim: {}
   };
@@ -6278,6 +6584,13 @@
     if (mods.Shift) out.push("Shift");
     out.push(last.length === 1 ? last.toUpperCase() : last);
     return out.join("+");
+  }
+  function chordInStyle(described) {
+    if (!described) return "";
+    if (described.styleChord) return described.styleChord;
+    if (described.availableInStyle === false) return "";
+    if (described.shadow && described.shadow.kind === "shadowed") return "";
+    return described.chord || "";
   }
   function takesChord(style, spec) {
     if (!spec) return null;
@@ -6327,6 +6640,46 @@
     return null;
   }
 
+  // js/commands/command-context.mjs
+  function doc(given) {
+    if (given) return given;
+    return typeof document !== "undefined" ? document : null;
+  }
+  function activeElement(given) {
+    const d = doc(given);
+    return d && d.activeElement ? d.activeElement : null;
+  }
+  function closestFrom(el6, selector) {
+    if (!el6 || typeof el6.closest !== "function") return null;
+    try {
+      return el6.closest(selector);
+    } catch (_) {
+      return null;
+    }
+  }
+  function editingStyle() {
+    const g14 = typeof window !== "undefined" ? window : globalThis;
+    const p = g14.Persist;
+    try {
+      const v = p && typeof p.readStoredKeymapStyle === "function" ? p.readStoredKeymapStyle() : "";
+      return v === "vim" || v === "emacs" ? v : "default";
+    } catch (_) {
+      return "default";
+    }
+  }
+  function isEmacsEditorFocused(given) {
+    const ed = closestFrom(activeElement(given), ".cm-editor");
+    if (!ed || typeof ed.querySelector !== "function") return false;
+    try {
+      return !!ed.querySelector(".cm-emacsMode");
+    } catch (_) {
+      return false;
+    }
+  }
+  function isCommandLineFocused(given) {
+    return !!closestFrom(activeElement(given), ".jar-cmdline, .jar-strip__vim");
+  }
+
   // js/commands/command-names.mjs
   var MX_PREFIX = "beljar-";
   function mxNameFor(id, explicit2) {
@@ -6351,7 +6704,7 @@
   }
 
   // js/commands/command-registry.mjs
-  var global3 = globalThis;
+  var global4 = globalThis;
   var POLICIES = ["off", "yield", "insert-only", "always"];
   var DEFAULT_POLICY = "always";
   var order = [];
@@ -6454,7 +6807,7 @@
     return readableStyleChord((STYLE_CHORDS[style] || {})[id] || "");
   }
   function baseOwnerOf(spec, exceptId) {
-    const KB = global3.Keybindings;
+    const KB = global4.Keybindings;
     if (!spec || !KB || typeof KB.findConflict !== "function") return null;
     const id = KB.findConflict(spec, exceptId);
     if (!id) return null;
@@ -6466,7 +6819,7 @@
     if (!cmd) return null;
     const o = opts || {};
     const style = o.style || "default";
-    const KB = global3.Keybindings;
+    const KB = global4.Keybindings;
     let spec = "";
     let chord = "";
     if (KB && typeof KB.has === "function" && KB.has(cmd.id)) {
@@ -6569,180 +6922,33 @@
         baseOwnerOf: (s) => baseOwnerOf(s, cmd ? cmd.id : null)
       });
     },
+    /**
+     * The chord that invokes `id` RIGHT NOW, in the style currently in force, or
+     * '' when nothing does.
+     *
+     * ⛔ The one call for a surface that prints a key beside a command's name.
+     * `describe().chord` is BelJar's own binding and says nothing about whether the
+     * style left it alone — print that under Emacs and the Find row offers Ctrl+F,
+     * which Emacs uses for forward-char. A row with no chord is right; a row with a
+     * chord that does nothing is not.
+     */
+    liveChord(id, opts) {
+      const o = opts || {};
+      const style = o.style || editingStyle();
+      return chordInStyle(describe(id, Object.assign({}, o, { style, showing: "style" })));
+    },
     isAvailable,
     version: () => version,
     _pure: { normalize, POLICIES, DEFAULT_POLICY, chordShadow, STYLE_TAKES, STYLE_CHORDS, specFromStyleKey, CATALOG }
   };
-  global3.Commands = Commands2;
-
-  // js/status-strip/status-strip-history.mjs
-  var KIND_LABELS = {
-    typing: "Typing",
-    edit: "Edit",
-    format: "Format",
-    rename: "Rename",
-    hole: "Fill hole",
-    "proof-commit": "Commit proof",
-    "library-insert": "Insert from library",
-    "file-batch": "Add files",
-    "file-delete": "Delete files"
-  };
-  function labelForKind(kind) {
-    const k = String(kind || "");
-    if (KIND_LABELS[k]) return KIND_LABELS[k];
-    if (!k) return "Edit";
-    return k.charAt(0).toUpperCase() + k.slice(1).replace(/-/g, " ");
-  }
-  function baseName(path) {
-    const p = String(path || "");
-    const cut = p.lastIndexOf("/");
-    return cut >= 0 ? p.slice(cut + 1) : p;
-  }
-  function nameFromId(id) {
-    return baseName(String(id || "").replace(/^[a-z]+:\/\//i, ""));
-  }
-  function structuralOf(entry) {
-    return entry.structural || {};
-  }
-  function filesTouched(entry, nameOf2) {
-    const resolve2 = typeof nameOf2 === "function" ? nameOf2 : () => null;
-    const s = structuralOf(entry);
-    const names = [];
-    const seen = /* @__PURE__ */ new Set();
-    const add = (name) => {
-      const n = String(name || "");
-      if (!n || seen.has(n)) return;
-      seen.add(n);
-      names.push(n);
-    };
-    for (const f of s.created || []) add(f.name);
-    for (const f of s.deleted || []) add(f.name);
-    for (const id of Object.keys(entry.files || {})) add(resolve2(id) || nameFromId(id));
-    for (const id of Object.keys(s.cfg || {})) add(resolve2(id) || nameFromId(id));
-    return names;
-  }
-  function plural(n, one, many) {
-    return n + " " + (n === 1 ? one : many);
-  }
-  function describeEntry(entry, nameOf2) {
-    const e = entry || {};
-    const s = structuralOf(e);
-    const names = filesTouched(e, nameOf2);
-    let label = e.label || labelForKind(e.kind);
-    if (!e.label) {
-      const created = (s.created || []).length;
-      const deleted = (s.deleted || []).length;
-      if (e.kind === "file-batch" && created) label = "Add " + plural(created, "file", "files");
-      else if (e.kind === "file-delete" && deleted) label = "Delete " + plural(deleted, "file", "files");
-      else if (created && deleted) label = "Replace " + plural(created, "file", "files");
-      else if (created) label = "Add " + plural(created, "file", "files");
-      else if (deleted) label = "Delete " + plural(deleted, "file", "files");
-    }
-    const where = names.length === 1 ? baseName(names[0]) : names.length > 1 ? plural(names.length, "file", "files") : "";
-    let preview = null;
-    if (!e.label && PREVIEWABLE[e.kind]) {
-      const ids = Object.keys(e.files || {});
-      if (ids.length === 1) {
-        const rec = e.files[ids[0]];
-        preview = changePreview(rec && rec.before, rec && rec.after);
-      }
-    }
-    return { label, where, files: names, preview };
-  }
-  var PREVIEW_MAX = 34;
-  function changePreview(before, after) {
-    const b = String(before == null ? "" : before);
-    const a = String(after == null ? "" : after);
-    if (b === a) return null;
-    let p = 0;
-    const max = Math.min(b.length, a.length);
-    while (p < max && b[p] === a[p]) p += 1;
-    let sfx = 0;
-    while (sfx < max - p && b[b.length - 1 - sfx] === a[a.length - 1 - sfx]) sfx += 1;
-    const added = a.slice(p, a.length - sfx);
-    const removed = b.slice(p, b.length - sfx);
-    const sign = added && removed ? "\xB1" : added ? "+" : "\u2212";
-    const body = added || removed;
-    const flat = body.replace(/\s+/g, " ").trim();
-    if (!flat) {
-      const n = body.length;
-      if (!n) return null;
-      return { sign, text: n === 1 ? "newline" : n + " spaces", faded: true };
-    }
-    const text = flat.length > PREVIEW_MAX ? flat.slice(0, PREVIEW_MAX - 1) + "\u2026" : flat;
-    return { sign, text };
-  }
-  var PREVIEWABLE = { typing: true, edit: true };
-  var MINUTE = 6e4;
-  var HOUR = 60 * MINUTE;
-  var DAY = 24 * HOUR;
-  function relativeTime(ts, now) {
-    const then = Number(ts);
-    const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
-    if (!Number.isFinite(then) || then <= 0) return "";
-    const ago = Math.max(0, at - then);
-    if (ago < MINUTE) return "now";
-    if (ago < HOUR) return Math.floor(ago / MINUTE) + "m";
-    if (ago < DAY) return Math.floor(ago / HOUR) + "h";
-    return Math.floor(ago / DAY) + "d";
-  }
-  function buildHistoryRows(undoStack, redoStack, opts) {
-    const o = opts || {};
-    const nameOf2 = o.nameOf;
-    const at = o.now;
-    const undo = Array.isArray(undoStack) ? undoStack : [];
-    const redo = Array.isArray(redoStack) ? redoStack : [];
-    const rows2 = [];
-    for (let i = 0; i < redo.length; i += 1) {
-      const entry = redo[i];
-      const d = describeEntry(entry, nameOf2);
-      rows2.push({
-        id: entry.id,
-        kind: entry.kind,
-        label: d.label,
-        preview: d.preview,
-        where: d.where,
-        files: d.files,
-        when: relativeTime(entry.ts, at),
-        direction: "redo",
-        distance: redo.length - i,
-        ahead: true
-      });
-    }
-    rows2.push({ id: "__now__", now: true, label: "Current", direction: null, distance: 0 });
-    for (let i = undo.length - 1; i >= 0; i -= 1) {
-      const entry = undo[i];
-      const d = describeEntry(entry, nameOf2);
-      rows2.push({
-        id: entry.id,
-        kind: entry.kind,
-        label: d.label,
-        preview: d.preview,
-        where: d.where,
-        files: d.files,
-        when: relativeTime(entry.ts, at),
-        direction: "undo",
-        distance: undo.length - i,
-        ahead: false
-      });
-    }
-    return rows2;
-  }
-  function historySummary(undoCount, redoCount) {
-    const u = Number(undoCount) || 0;
-    const r = Number(redoCount) || 0;
-    if (!u && !r) return "Nothing to undo yet";
-    const parts = [];
-    if (u) parts.push(plural(u, "step", "steps") + " to undo");
-    if (r) parts.push(plural(r, "step", "steps") + " to redo");
-    return parts.join(" \xB7 ");
-  }
+  global4.Commands = Commands2;
 
   // js/status-strip/status-strip-segments.mjs
   var SEGMENT_ORDER = [
     "keymap",
     "position",
     "mode",
+    "macro",
     "command",
     "selection",
     "goal",
@@ -6755,12 +6961,12 @@
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "command", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
-    standard: ["keymap", "position", "mode", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
-  function plural2(n, one, many) {
+  function plural(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
   function truncate(text, max) {
@@ -6773,6 +6979,12 @@
     if (m.indexOf("VISUAL") >= 0 || m.indexOf("V-") >= 0) return "visual";
     if (m.indexOf("REPLACE") >= 0) return "replace";
     return "normal";
+  }
+  function stopSentence(s) {
+    const stop = s.macro && s.macro.stop || "";
+    if (!stop) return "Click to stop, or run the command again.";
+    const needsNormal = s.style === "vim" && vimTone(s.mode) !== "normal";
+    return "Press " + (needsNormal ? "Esc then " : "") + stop + " to stop, or click.";
   }
   var BUILDERS = {
     /**
@@ -6795,6 +7007,32 @@
       }
       return null;
     },
+    /**
+     * Recording a keyboard macro.
+     *
+     * ⛔ In EVERY preset, including compact. Recording is a mode you can forget
+     * you are in — the one piece of state where being told costs a few pixels and
+     * not being told costs you the macro. Vim names the register (`@a`); Emacs and
+     * Standard have none to name, so it just says REC.
+     */
+    macro(s) {
+      if (!s.macro || !s.macro.recording) return null;
+      return {
+        key: "macro",
+        text: s.macro.label ? "REC " + s.macro.label : "REC",
+        // ⚠ `error` for two weeks, and NOTHING WAS STYLED FOR IT: `is-error` has
+        // rules under `--problems` and `--checker` only, so the one chip that must
+        // not be missed rendered in the resting muted grey. A tone is a claim on a
+        // stylesheet; naming one nobody honours is the same as naming none.
+        tone: "recording",
+        title: "Recording a keyboard macro. " + stopSentence(s),
+        mono: true,
+        // ⛔ A way out that works from any mode. Vim's `q` is a NORMAL-mode key
+        // and Emacs' `C-x )` is a chord a macro is busy swallowing; a chip that
+        // reports a state you cannot leave is a trap, not a status.
+        action: "macro-stop"
+      };
+    },
     /** A half-typed chord. The command LINE mounts beside this, same zone. */
     command(s) {
       if (!s.pending) return null;
@@ -6816,13 +7054,40 @@
       const lines = s.selLines || 1;
       return {
         key: "selection",
-        text: lines > 1 ? plural2(lines, "line", "lines") : plural2(chars, "char", "chars"),
-        title: plural2(chars, "character", "characters") + " selected"
+        text: lines > 1 ? plural(lines, "line", "lines") : plural(chars, "char", "chars"),
+        title: plural(chars, "character", "characters") + " selected"
       };
     },
-    /** The whole reason this bar exists: the goal under the caret, inline. */
+    /**
+     * The whole reason this bar exists: the goal under the caret, inline.
+     *
+     * ⛔ THREE states, not two. Being in a hole and knowing that hole's goal are
+     * different facts (`inHole` / `goal`, split in `status-strip-feed.mjs`), and
+     * folding them into one string meant a hole whose goal the checker had not
+     * produced yet was reported as *no hole at all*: you stood on a fresh `?` and
+     * the bar said nothing, with no way to say the honest thing.
+     *
+     *   not in a hole            → no chip
+     *   in a hole, goal known    → the type, syntax-highlighted
+     *   in a hole, goal not yet  → the same chip, holding a placeholder
+     *
+     * The placeholder keeps the hole wash and the turnstile so the chip does not
+     * appear and jump when the real goal lands — only its text changes. It is NOT
+     * a button: an action that cannot work yet is worse than no action.
+     */
     goal(s) {
-      if (!s.goal) return null;
+      if (!s.inHole) return null;
+      if (!s.goal) {
+        const busy = !!s.goalPending;
+        return {
+          key: "goal",
+          text: busy ? "Computing\u2026" : "No goal",
+          mark: "\u22A2",
+          tone: "pending",
+          title: busy ? "Working out this hole\u2019s goal" : "No goal for this hole. It is inside something that has not checked.",
+          mono: true
+        };
+      }
       return {
         key: "goal",
         // The bare type, so it can be syntax-highlighted like everywhere else in
@@ -6840,10 +7105,10 @@
     holes(s) {
       const n = s.holes || 0;
       if (!n) return null;
-      const rest = s.goal ? n - 1 : n;
+      const rest = s.inHole ? n - 1 : n;
       return {
         key: "holes",
-        text: s.goal ? rest > 0 ? "+" + rest + " more" : "last hole" : plural2(n, "hole", "holes"),
+        text: s.inHole ? rest > 0 ? "+" + rest + " more" : "last hole" : plural(n, "hole", "holes"),
         title: "Go to the next hole",
         tone: "holes",
         action: "next-hole"
@@ -6878,7 +7143,7 @@
     },
     symbols(s) {
       if (!Number.isFinite(s.symbols) || s.symbols <= 0) return null;
-      return { key: "symbols", text: plural2(s.symbols, "decl", "decls"), title: s.symbols + " declarations in this file" };
+      return { key: "symbols", text: plural(s.symbols, "decl", "decls"), title: s.symbols + " declarations in this file" };
     },
     spacer() {
       return { key: "spacer", spacer: true };
@@ -6893,7 +7158,7 @@
      *
      * The count is the UNDO depth. A second number for redo would be two figures
      * with no way to tell which is which at 0.68rem — the branch is carried by a
-     * tone change and spelled out in the tooltip and the panel instead.
+     * tone change and spelled out in the panel instead.
      */
     history(s) {
       const undo = s.undoDepth || 0;
@@ -6902,8 +7167,12 @@
       return {
         key: "history",
         text: String(undo),
-        mark: "\u27F2",
-        title: "Edit history\n\n" + historySummary(undo, redo),
+        // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
+        // and already carries the HOLES magenta — borrowing it painted the undo
+        // arrow bright pink, which read as an error badge sitting next to the
+        // checker. A widget that means something else gets its own mark.
+        icon: "history",
+        title: "Editor history",
         tone: redo ? "branched" : "plain",
         action: "edit-history",
         mono: true,
@@ -6922,10 +7191,10 @@
         text = Number.isFinite(s.parsePercent) && s.parsePercent < 100 ? "Parsing " + s.parsePercent + "%" : "Checking\u2026";
       } else if (errors) {
         tone = "error";
-        text = plural2(errors, "error", "errors");
+        text = plural(errors, "error", "errors");
       } else if (warnings) {
         tone = "warning";
-        text = plural2(warnings, "warning", "warnings");
+        text = plural(warnings, "warning", "warnings");
       }
       const broken = errors + warnings > 0;
       return {
@@ -7051,15 +7320,57 @@
     }
     if (parsed.kind === "empty" || parsed.slot === 0) {
       const all2 = src.commands && src.commands() || [];
-      const items4 = rank(token.text, all2, 30);
-      return { parsed, kind: "command", items: items4, ghost: ghostFor(token.text, items4), token };
+      const bang = !!parsed.bang && token.text.endsWith("!");
+      const typed2 = bang ? token.text.slice(0, -1) : token.text;
+      const items4 = rank(typed2, all2, 30);
+      return {
+        parsed,
+        kind: "command",
+        items: items4,
+        // A completion cannot land after the `!` without eating it.
+        ghost: bang ? "" : ghostFor(typed2, items4),
+        token: bang ? { text: typed2, from: token.from, to: token.to - 1 } : token
+      };
     }
     const all = src.commands && src.commands() || [];
     const cmd = all.find((c) => c.value === parsed.name) || all.find((c) => Array.isArray(c.aliases) && c.aliases.indexOf(parsed.name) >= 0);
     const argKind = cmd && cmd.args && cmd.args[parsed.slot - 1] ? cmd.args[parsed.slot - 1].kind : null;
-    const pool = argKind === "file" ? src.files && src.files() || [] : argKind === "option" ? src.options && src.options() || [] : [];
+    const known = !!cmd;
+    if (argKind === "option") return { ...completeOption(parsed, token, src), known };
+    let pool = [];
+    if (argKind === "file") pool = src.files && src.files() || [];
+    else if (argKind === "command") pool = src.commandNames && src.commandNames() || [];
     const items3 = rank(token.text, pool, 30);
-    return { parsed, kind: argKind || "none", items: items3, ghost: ghostFor(token.text, items3), token };
+    return { parsed, kind: argKind || "none", items: items3, ghost: ghostFor(token.text, items3), token, known };
+  }
+  function completeOption(parsed, token, src) {
+    const eq = token.text.indexOf("=");
+    if (eq >= 0) {
+      const name = token.text.slice(0, eq);
+      const typed3 = token.text.slice(eq + 1);
+      const pool2 = src.optionValues && src.optionValues(name) || [];
+      const items4 = rank(typed3, pool2, 30);
+      return {
+        parsed,
+        kind: "option-value",
+        option: name,
+        items: items4,
+        ghost: ghostFor(typed3, items4),
+        token: { text: typed3, from: token.from + eq + 1, to: token.to }
+      };
+    }
+    const bang = token.text.endsWith("!");
+    const typed2 = bang ? token.text.slice(0, -1) : token.text;
+    const pool = src.options && src.options() || [];
+    const items3 = rank(typed2, pool, 30);
+    return {
+      parsed,
+      kind: "option",
+      items: items3,
+      // A completion cannot land after the `!` without eating it.
+      ghost: bang ? "" : ghostFor(typed2, items3),
+      token: bang ? { text: typed2, from: token.from, to: token.to - 1 } : token
+    };
   }
   function ghostFor(typed2, items3) {
     const q = String(typed2 || "");
@@ -7068,16 +7379,15 @@
     if (!best.toLowerCase().startsWith(q.toLowerCase())) return "";
     return best.slice(q.length);
   }
-  function applyCompletion(raw, caret, value) {
-    const parsed = parseCommandLine(raw, caret);
-    const token = tokenAtCaret(parsed);
+  function applyCompletion(raw, caret, value, token) {
     const text = String(raw == null ? "" : raw);
-    const next = text.slice(0, token.from) + value + text.slice(token.to);
-    return { text: next, caret: token.from + value.length };
+    const span = token || tokenAtCaret(parseCommandLine(raw, caret));
+    const next = text.slice(0, span.from) + value + text.slice(span.to);
+    return { text: next, caret: span.from + String(value).length };
   }
 
   // js/status-strip/status-strip-line-ui.mjs
-  var global4 = globalThis;
+  var global5 = globalThis;
   var HISTORY_CAP = 50;
   var LIST_CAP = 30;
   var LIST_STEP = { n: 1, m: 1, p: -1 };
@@ -7091,6 +7401,9 @@
   var active = -1;
   var chosen = false;
   var query = "";
+  var lastToken = null;
+  var lastKind = "";
+  var lastKnown = null;
   var onCloseCb = null;
   var history2 = [];
   var historyAt = -1;
@@ -7100,6 +7413,13 @@
   var searchDir = "";
   var searchAnchor = 0;
   var promptEl = null;
+  function setPrompt(text) {
+    if (!promptEl) return;
+    const t = String(text == null ? "" : text);
+    promptEl.textContent = t;
+    const field = promptEl.parentNode;
+    if (field && field.classList) field.classList.toggle("is-sigil", t.length === 1 && !/\w/.test(t));
+  }
   var countEl = null;
   var previewTimer = 0;
   var PREVIEW_MS = 90;
@@ -7113,7 +7433,7 @@
   function loadHistory() {
     if (historyLoaded) return;
     historyLoaded = true;
-    const P3 = global4.Persist;
+    const P3 = global5.Persist;
     if (P3 && typeof P3.readStoredCommandLineHistory === "function") {
       try {
         history2 = P3.readStoredCommandLineHistory() || [];
@@ -7123,7 +7443,7 @@
     }
   }
   function saveHistory() {
-    const P3 = global4.Persist;
+    const P3 = global5.Persist;
     if (P3 && typeof P3.writeStoredCommandLineHistory === "function") {
       try {
         P3.writeStoredCommandLineHistory(history2);
@@ -7131,27 +7451,68 @@
       }
     }
   }
-  function commandSources() {
-    const C = global4.Commands;
-    const P3 = global4.Persist;
+  function commandSources(face) {
+    const C = global5.Commands;
+    const P3 = global5.Persist;
+    const forVim = face === "vim";
     return {
       commands() {
         if (!C || typeof C.list !== "function") return [];
-        return C.list({ cmdline: true, runnable: true, available: true }).map((c) => ({
+        const rows2 = C.list({ cmdline: true, runnable: true, available: true }).filter((c) => !forVim || c.ex && c.ex.length).map((c) => ({
           value: c.ex && c.ex[0] || c.id,
           label: c.title,
           detail: c.section,
-          aliases: (c.ex || []).concat([c.id], c.mx ? [c.mx] : []),
+          // The id and `M-x` name are not names vim's dispatcher has, so on that
+          // face they must not even be MATCHABLE — matching one puts a string on
+          // the line that Enter cannot run.
+          aliases: forVim ? (c.ex || []).slice() : (c.ex || []).concat([c.id], c.mx ? [c.mx] : []),
           args: c.args || [],
           id: c.id
+        }));
+        if (!forVim) return rows2;
+        const taken = new Set(rows2.map((r) => r.value));
+        const E3 = global5.BelEditor;
+        let vimRows = [];
+        try {
+          vimRows = typeof E3?.vimExCandidates === "function" ? E3.vimExCandidates() : [];
+        } catch (_) {
+          vimRows = [];
+        }
+        rows2.push({
+          value: "BJ",
+          label: "Run a BelJar command\u2026",
+          detail: "BelJar",
+          aliases: [],
+          args: [{ kind: "command", label: "command" }],
+          id: "vim:BJ"
+        });
+        return rows2.concat(vimRows.filter((r) => !taken.has(r.value)));
+      },
+      /**
+       * Every BelJar command by id, for `:BJ <command>`.
+       *
+       * ⚠ The VALUE is the id, because that is what `:BJ` resolves FIRST — it
+       * tries id, then ex alias, then exact title, then a title substring. A row
+       * whose value it would resolve by the fuzzy last rule is a row that can
+       * land on a different command than the one you picked.
+       */
+      commandNames() {
+        if (!C || typeof C.list !== "function") return [];
+        return C.list({ cmdline: true, runnable: true, available: true }).map((c) => ({
+          value: c.id,
+          label: c.title,
+          detail: c.section,
+          aliases: (c.ex || []).concat(c.mx ? [c.mx] : [])
         }));
       },
       files() {
         if (!P3 || typeof P3.listFiles !== "function") return [];
         return (P3.listFiles() || []).map((f) => ({ value: f.name, label: f.name }));
       },
-      // `:set ` completes over every preference name and vi abbreviation.
-      options: () => optionCandidates()
+      // `:set ` completes over every preference name, vi abbreviation and `no`
+      // form; `:set ts=` completes over that setting's own values.
+      options: () => optionCandidates(),
+      optionValues: (name) => optionValueCandidates(name)
     };
   }
   function resolveCommand(name) {
@@ -7161,7 +7522,7 @@
     return all.find((c) => String(c.value).toLowerCase() === want) || all.find((c) => c.aliases.some((a) => String(a).toLowerCase() === want)) || all.find((c) => (c.label || "").toLowerCase() === want) || null;
   }
   function jumpToLine(target) {
-    const ed = global4.CurrentEditor;
+    const ed = global5.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     if (!view || !target) return false;
     const doc2 = view.state.doc;
@@ -7173,7 +7534,7 @@
     return true;
   }
   function message(text) {
-    const B = global4.StatusStrip;
+    const B = global5.StatusStrip;
     if (B && typeof B.setMessage === "function") B.setMessage(text);
   }
   function runLine(raw, closing) {
@@ -7197,16 +7558,16 @@
       message(near ? `Unknown command "${parsed.name}". Did you mean "${near.value}"?` : `Unknown command "${parsed.name}".`);
       return false;
     }
-    const C = global4.Commands;
+    const C = global5.Commands;
     try {
       const ok = C && C.run(cmd.id, { args: parsed.args, bang: parsed.bang, argText: parsed.argText });
       if (!ok) message(`"${cmd.label}" is not available right now.`);
       return !!ok;
     } catch (err) {
-      if (global4.console && console.error) console.error("[cmdline]", err);
-      if (global4.Toasts && global4.Toasts.warn) {
+      if (global5.console && console.error) console.error("[cmdline]", err);
+      if (global5.Toasts && global5.Toasts.warn) {
         const msg = err && err.message ? String(err.message) : String(err);
-        global4.Toasts.warn("Command failed: " + msg);
+        global5.Toasts.warn("Command failed: " + msg);
       }
       return false;
     }
@@ -7231,7 +7592,7 @@
     if (!parsed || parsed.kind !== "line") return;
     previewTimer = setTimeout(() => {
       previewTimer = 0;
-      const ed = global4.CurrentEditor;
+      const ed = global5.CurrentEditor;
       const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
       if (!view || typeof ed.peekRange !== "function") return;
       const doc2 = view.state.doc;
@@ -7243,7 +7604,7 @@
     if (previewTimer) clearTimeout(previewTimer);
     previewTimer = 0;
     if (savedScroll == null) return;
-    const ed = global4.CurrentEditor;
+    const ed = global5.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     const target = savedScroll;
     savedScroll = null;
@@ -7264,12 +7625,12 @@
     listEl.style.maxHeight = rows2 * rowH + listPad.top + listPad.bottom + "px";
   }
   function anchorList() {
-    const bar2 = host && host.closest ? host.closest(".bj-strip") : null;
+    const bar2 = host && host.closest ? host.closest(".jar-strip") : null;
     if (!bar2 || !listEl) return;
     const rect = bar2.getBoundingClientRect();
     listEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
     const zone = host.parentNode && host.parentNode.getBoundingClientRect ? host.parentNode : null;
-    const field = (open || exInput ? zone : null) || bar2.querySelector(".bj-strip__seg--command") || zone;
+    const field = (open || exInput ? zone : null) || bar2.querySelector(".jar-strip__seg--command") || zone;
     const from = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
     const pad = 6;
     let left = from && from.width ? from.left : rect.left + pad;
@@ -7290,7 +7651,7 @@
       el6.removeAttribute("aria-activedescendant");
       return;
     }
-    el6.setAttribute("aria-activedescendant", "bj-cmdline-opt-" + active);
+    el6.setAttribute("aria-activedescendant", "jar-cmdline-opt-" + active);
   }
   function bindListListeners() {
     if (listListeners || typeof window === "undefined") return;
@@ -7333,6 +7694,13 @@
     unbindListListeners();
     syncActiveDescendant();
   }
+  var EMPTY_LEGEND = {
+    option: "No matching option",
+    "option-value": "No matching value",
+    file: "No matching file",
+    command: "No matching command",
+    none: "This command takes no further argument"
+  };
   function renderList() {
     if (!listEl) return;
     if (searchDir || !query.trim() && !forced && !hinting) {
@@ -7345,8 +7713,8 @@
     bindListListeners();
     if (!items.length) {
       const none = document.createElement("div");
-      none.className = "bj-cmdline__none";
-      none.textContent = "No matching command";
+      none.className = "jar-cmdline__none";
+      none.textContent = EMPTY_LEGEND[lastKind] || "No matching command";
       listEl.appendChild(none);
       anchorList();
       syncActiveDescendant();
@@ -7361,18 +7729,18 @@
     const cap = cs ? parseFloat(cs.maxHeight) || 0 : 0;
     items.forEach((it, i) => {
       const row = document.createElement("div");
-      row.className = "bj-cmdline__item";
-      row.id = "bj-cmdline-opt-" + i;
+      row.className = "jar-cmdline__item";
+      row.id = "jar-cmdline-opt-" + i;
       row.setAttribute("role", "option");
       row.setAttribute("aria-selected", "false");
       row.dataset.index = String(i);
       const name = document.createElement("span");
-      name.className = "bj-cmdline__item-name";
+      name.className = "jar-cmdline__item-name";
       name.textContent = it.value;
       row.appendChild(name);
       if (it.label && it.label !== it.value) {
         const label = document.createElement("span");
-        label.className = "bj-cmdline__item-label";
+        label.className = "jar-cmdline__item-label";
         label.textContent = it.label;
         row.appendChild(label);
       }
@@ -7389,7 +7757,7 @@
     paintActive();
   }
   function searchStep(fromCaret, forward) {
-    const ed = global4.CurrentEditor;
+    const ed = global5.CurrentEditor;
     if (!ed || typeof ed.searchFrom !== "function") return;
     const hit = ed.searchFrom(input.value, fromCaret, forward);
     countEl.textContent = input.value ? hit ? hit.index + "/" + hit.total : "no match" : "";
@@ -7402,9 +7770,12 @@
   }
   function completeInto(el6) {
     const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
-    const res = complete(el6.value, caret, commandSources());
+    const res = complete(el6.value, caret, commandSources(el6 === exInput ? "vim" : "own"));
     query = el6.value;
     items = res.items.slice(0, LIST_CAP);
+    lastToken = res.token || null;
+    lastKnown = res.parsed && res.parsed.slot > 0 ? !!res.known : null;
+    lastKind = lastKnown === false ? "command" : res.kind || "";
     active = -1;
     chosen = false;
     return res;
@@ -7412,7 +7783,12 @@
   function markUnknown() {
     if (!input) return;
     const typed2 = query.trim();
-    input.classList.toggle("is-unknown", !!typed2 && !items.length && !/^\d/.test(typed2));
+    if (!typed2 || /^\d/.test(typed2)) {
+      input.classList.remove("is-unknown");
+      return;
+    }
+    const unknown = lastKnown === null ? !items.length : !lastKnown;
+    input.classList.toggle("is-unknown", unknown);
   }
   function forceList() {
     const el6 = activeInput();
@@ -7449,7 +7825,7 @@
     const it = items[index == null ? Math.max(active, 0) : index];
     if (!it || !el6) return false;
     const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
-    const next = applyCompletion(el6.value, caret, it.value);
+    const next = applyCompletion(el6.value, caret, it.value, lastToken);
     el6.value = next.text;
     el6.setSelectionRange(next.caret, next.caret);
     resetCycle();
@@ -7487,6 +7863,7 @@
     el6.value = el6.value.slice(0, wildStem.from) + it.value + el6.value.slice(wildStem.to);
     el6.setSelectionRange(caretAt, caretAt);
     wildStem = { from: wildStem.from, to: caretAt };
+    lastToken = { text: it.value, from: wildStem.from, to: caretAt };
     active = items.indexOf(it);
     chosen = true;
     if (ghostEl && el6 === input) ghostEl.textContent = "";
@@ -7550,8 +7927,10 @@
       if (e.key === "Enter" && chosen && active >= 0) {
         accept();
         hideList();
+        remember(el6.value);
         return;
       }
+      if (e.key === "Enter") remember(el6.value);
       if (e.key === "Escape") {
         hideList();
         return;
@@ -7663,26 +8042,26 @@
   }
   function build(fieldParent, listParent) {
     host = document.createElement("div");
-    host.className = "bj-cmdline";
+    host.className = "jar-cmdline";
     host.hidden = true;
     listEl = document.createElement("div");
-    listEl.className = "bj-cmdline__list";
+    listEl.className = "jar-cmdline__list";
     listEl.setAttribute("role", "listbox");
     listEl.hidden = true;
     const field = document.createElement("div");
-    field.className = "bj-cmdline__field";
+    field.className = "jar-cmdline__field";
     const prompt = document.createElement("span");
-    prompt.className = "bj-cmdline__prompt";
+    prompt.className = "jar-cmdline__prompt";
     prompt.textContent = ":";
     promptEl = prompt;
     countEl = document.createElement("span");
-    countEl.className = "bj-cmdline__count";
+    countEl.className = "jar-cmdline__count";
     ghostEl = document.createElement("span");
-    ghostEl.className = "bj-cmdline__ghost";
+    ghostEl.className = "jar-cmdline__ghost";
     ghostEl.setAttribute("aria-hidden", "true");
     input = document.createElement("input");
     input.type = "text";
-    input.className = "bj-cmdline__input";
+    input.className = "jar-cmdline__input";
     input.autocomplete = "off";
     input.spellcheck = false;
     input.setAttribute("aria-label", "Command line");
@@ -7696,7 +8075,7 @@
       if (open) close({ restore: blurRestoreOnClose(!!searchDir) });
     });
     const wrap = document.createElement("span");
-    wrap.className = "bj-cmdline__inputwrap";
+    wrap.className = "jar-cmdline__inputwrap";
     wrap.append(ghostEl, input);
     field.append(prompt, wrap, countEl);
     host.append(field);
@@ -7710,13 +8089,13 @@
   function openSearch(forward, onClose) {
     if (!openLine("", onClose)) return false;
     searchDir = forward === false ? "?" : "/";
-    promptEl.textContent = searchDir;
+    setPrompt(searchDir);
     countEl.textContent = "";
     items = [];
     active = -1;
     query = "";
     hideList();
-    const ed = global4.CurrentEditor;
+    const ed = global5.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     searchAnchor = view ? view.state.selection.main.head : 0;
     return true;
@@ -7725,12 +8104,12 @@
     if (!host) return false;
     onCloseCb = onClose || null;
     loadHistory();
-    const ed = global4.CurrentEditor;
+    const ed = global5.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     savedScroll = view && view.scrollDOM ? view.scrollDOM.scrollTop : null;
     savedSelection = view ? { anchor: view.state.selection.main.anchor, head: view.state.selection.main.head } : null;
     searchDir = "";
-    if (promptEl) promptEl.textContent = opts && opts.prompt || ":";
+    setPrompt(opts && opts.prompt || ":");
     if (countEl) countEl.textContent = "";
     hinting = false;
     forced = false;
@@ -7762,16 +8141,16 @@
     if (countEl) countEl.textContent = "";
     const wasSearch = !!searchDir;
     searchDir = "";
-    if (promptEl) promptEl.textContent = ":";
+    setPrompt(":");
     if (wasSearch && savedSelection && (!opts || opts.restore !== false)) {
-      const ed = global4.CurrentEditor;
+      const ed = global5.CurrentEditor;
       const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
       if (view) view.dispatch({ selection: savedSelection });
     }
     savedSelection = null;
     restoreViewport();
     if (opts && opts.restore !== false) {
-      const ed = global4.CurrentEditor;
+      const ed = global5.CurrentEditor;
       if (ed && typeof ed.focus === "function") ed.focus();
     }
     if (onCloseCb) onCloseCb();
@@ -7813,33 +8192,197 @@
     return true;
   }
 
+  // js/status-strip/status-strip-history.mjs
+  var KIND_LABELS = {
+    typing: "Typing",
+    edit: "Edit",
+    format: "Format",
+    rename: "Rename",
+    hole: "Fill hole",
+    "proof-commit": "Commit proof",
+    "library-insert": "Insert from library",
+    "file-batch": "Add files",
+    "file-delete": "Delete files"
+  };
+  function labelForKind(kind) {
+    const k = String(kind || "");
+    if (KIND_LABELS[k]) return KIND_LABELS[k];
+    if (!k) return "Edit";
+    return k.charAt(0).toUpperCase() + k.slice(1).replace(/-/g, " ");
+  }
+  function baseName(path) {
+    const p = String(path || "");
+    const cut = p.lastIndexOf("/");
+    return cut >= 0 ? p.slice(cut + 1) : p;
+  }
+  function nameFromId(id) {
+    return baseName(String(id || "").replace(/^[a-z]+:\/\//i, ""));
+  }
+  function structuralOf(entry) {
+    return entry.structural || {};
+  }
+  function filesTouched(entry, nameOf2) {
+    const resolve2 = typeof nameOf2 === "function" ? nameOf2 : () => null;
+    const s = structuralOf(entry);
+    const names = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (name) => {
+      const n = String(name || "");
+      if (!n || seen.has(n)) return;
+      seen.add(n);
+      names.push(n);
+    };
+    for (const f of s.created || []) add(f.name);
+    for (const f of s.deleted || []) add(f.name);
+    for (const id of Object.keys(entry.files || {})) add(resolve2(id) || nameFromId(id));
+    for (const id of Object.keys(s.cfg || {})) add(resolve2(id) || nameFromId(id));
+    return names;
+  }
+  function plural2(n, one, many) {
+    return n + " " + (n === 1 ? one : many);
+  }
+  function describeEntry(entry, nameOf2) {
+    const e = entry || {};
+    const s = structuralOf(e);
+    const names = filesTouched(e, nameOf2);
+    let label = e.label || labelForKind(e.kind);
+    if (!e.label) {
+      const created = (s.created || []).length;
+      const deleted = (s.deleted || []).length;
+      if (e.kind === "file-batch" && created) label = "Add " + plural2(created, "file", "files");
+      else if (e.kind === "file-delete" && deleted) label = "Delete " + plural2(deleted, "file", "files");
+      else if (created && deleted) label = "Replace " + plural2(created, "file", "files");
+      else if (created) label = "Add " + plural2(created, "file", "files");
+      else if (deleted) label = "Delete " + plural2(deleted, "file", "files");
+    }
+    const where = names.length === 1 ? baseName(names[0]) : names.length > 1 ? plural2(names.length, "file", "files") : "";
+    let preview = null;
+    if (!e.label && PREVIEWABLE[e.kind]) {
+      const ids = Object.keys(e.files || {});
+      if (ids.length === 1) {
+        const rec = e.files[ids[0]];
+        preview = changePreview(rec && rec.before, rec && rec.after);
+      }
+    }
+    return { label, where, files: names, preview };
+  }
+  var PREVIEW_MAX = 34;
+  function changePreview(before, after) {
+    const b = String(before == null ? "" : before);
+    const a = String(after == null ? "" : after);
+    if (b === a) return null;
+    let p = 0;
+    const max = Math.min(b.length, a.length);
+    while (p < max && b[p] === a[p]) p += 1;
+    let sfx = 0;
+    while (sfx < max - p && b[b.length - 1 - sfx] === a[a.length - 1 - sfx]) sfx += 1;
+    const added = a.slice(p, a.length - sfx);
+    const removed = b.slice(p, b.length - sfx);
+    const sign = added && removed ? "\xB1" : added ? "+" : "\u2212";
+    const body = added || removed;
+    const flat = body.replace(/\s+/g, " ").trim();
+    if (!flat) {
+      const n = body.length;
+      if (!n) return null;
+      return { sign, text: n === 1 ? "newline" : n + " spaces", faded: true };
+    }
+    const text = flat.length > PREVIEW_MAX ? flat.slice(0, PREVIEW_MAX - 1) + "\u2026" : flat;
+    return { sign, text };
+  }
+  var PREVIEWABLE = { typing: true, edit: true };
+  var MINUTE = 6e4;
+  var HOUR = 60 * MINUTE;
+  var DAY = 24 * HOUR;
+  function relativeTime(ts, now) {
+    const then = Number(ts);
+    const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    if (!Number.isFinite(then) || then <= 0) return "";
+    const ago = Math.max(0, at - then);
+    if (ago < MINUTE) return "now";
+    if (ago < HOUR) return Math.floor(ago / MINUTE) + "m";
+    if (ago < DAY) return Math.floor(ago / HOUR) + "h";
+    return Math.floor(ago / DAY) + "d";
+  }
+  function buildHistoryRows(undoStack, redoStack, opts) {
+    const o = opts || {};
+    const nameOf2 = o.nameOf;
+    const at = o.now;
+    const undo = Array.isArray(undoStack) ? undoStack : [];
+    const redo = Array.isArray(redoStack) ? redoStack : [];
+    const rows2 = [];
+    for (let i = 0; i < redo.length; i += 1) {
+      const entry = redo[i];
+      const d = describeEntry(entry, nameOf2);
+      rows2.push({
+        id: entry.id,
+        kind: entry.kind,
+        label: d.label,
+        preview: d.preview,
+        where: d.where,
+        files: d.files,
+        when: relativeTime(entry.ts, at),
+        direction: "redo",
+        distance: redo.length - i,
+        ahead: true
+      });
+    }
+    rows2.push({ id: "__now__", now: true, label: "Current", direction: null, distance: 0 });
+    for (let i = undo.length - 1; i >= 0; i -= 1) {
+      const entry = undo[i];
+      const d = describeEntry(entry, nameOf2);
+      rows2.push({
+        id: entry.id,
+        kind: entry.kind,
+        label: d.label,
+        preview: d.preview,
+        where: d.where,
+        files: d.files,
+        when: relativeTime(entry.ts, at),
+        direction: "undo",
+        distance: undo.length - i,
+        ahead: false
+      });
+    }
+    return rows2;
+  }
+  function historySummary(undoCount, redoCount) {
+    const u = Number(undoCount) || 0;
+    const r = Number(redoCount) || 0;
+    if (!u && !r) return "Nothing to undo yet";
+    const parts = [];
+    if (u) parts.push(plural2(u, "step", "steps") + " to undo");
+    if (r) parts.push(plural2(r, "step", "steps") + " to redo");
+    return parts.join(" \xB7 ");
+  }
+
   // js/status-strip/status-strip-history-ui.mjs
-  var global5 = globalThis;
+  var global6 = globalThis;
   var panelEl = null;
   var listEl2 = null;
+  var footEl = null;
   var open2 = false;
   var active2 = -1;
   var rows = [];
   var listeners = false;
   var onChanged = null;
   function history3() {
-    return global5.EditHistory || null;
+    return global6.EditHistory || null;
   }
   function nameOf(id) {
-    const P3 = global5.Persist;
+    const P3 = global6.Persist;
     if (!P3 || typeof P3.getFileById !== "function") return null;
     const f = P3.getFileById(id);
     return f ? f.name : null;
   }
   function bar() {
-    return document.querySelector(".bj-strip");
+    return document.querySelector(".jar-strip");
   }
   function anchor() {
     const strip2 = bar();
     if (!strip2 || !panelEl) return;
     const rect = strip2.getBoundingClientRect();
     panelEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
-    const seg = strip2.querySelector(".bj-strip__seg--history");
+    const seg = strip2.querySelector(".jar-strip__seg--history");
     const from = seg ? seg.getBoundingClientRect() : null;
     const pad = 6;
     const width = panelEl.offsetWidth || 0;
@@ -7850,68 +8393,94 @@
   function ensurePanel() {
     if (panelEl && panelEl.isConnected) return panelEl;
     panelEl = document.createElement("div");
-    panelEl.className = "bj-hist";
+    panelEl.className = "jar-hist";
     panelEl.setAttribute("role", "dialog");
     panelEl.setAttribute("aria-label", "Edit history");
     const head = document.createElement("div");
-    head.className = "bj-hist__head";
+    head.className = "jar-hist__head";
     const title = document.createElement("span");
-    title.className = "bj-hist__title";
+    title.className = "jar-hist__title";
     title.textContent = "Edit history";
     const count = document.createElement("span");
-    count.className = "bj-hist__count";
+    count.className = "jar-hist__count";
     head.appendChild(title);
     head.appendChild(count);
     panelEl.appendChild(head);
     listEl2 = document.createElement("div");
-    listEl2.className = "bj-hist__list";
+    listEl2.className = "jar-hist__list";
     listEl2.setAttribute("role", "listbox");
     panelEl.appendChild(listEl2);
-    const foot = document.createElement("div");
-    foot.className = "bj-hist__foot";
-    foot.appendChild(hintRow("edit.undo", "Undo"));
-    foot.appendChild(hintRow("edit.redo", "Redo"));
-    panelEl.appendChild(foot);
+    footEl = document.createElement("div");
+    footEl.className = "jar-hist__foot";
+    panelEl.appendChild(footEl);
     panelEl._count = count;
     document.body.appendChild(panelEl);
     return panelEl;
   }
+  function liveKeymapStyle() {
+    const P3 = global6.Persist;
+    const raw = P3 && typeof P3.readStoredKeymapStyle === "function" ? P3.readStoredKeymapStyle() : "";
+    const s = String(raw || "").toLowerCase();
+    return s === "vim" || s === "emacs" ? s : "default";
+  }
+  var FIXED_STYLE_SPECS = {
+    vim: { "edit.undo": "u", "edit.redo": "Control+R" },
+    emacs: { "edit.undo": "Control+Z", "edit.redo": "Control+Shift+Z" }
+  };
+  function liveKeyLabel(commandId) {
+    const K = global6.Keybindings;
+    const style = liveKeymapStyle();
+    const fixed = FIXED_STYLE_SPECS[style] && FIXED_STYLE_SPECS[style][commandId];
+    if (fixed != null) {
+      return K && typeof K.formatShortcut === "function" ? K.formatShortcut(fixed) : fixed;
+    }
+    if (!K || typeof K.labelFor !== "function") return "";
+    try {
+      return K.labelFor(commandId) || "";
+    } catch (_) {
+      return "";
+    }
+  }
   function hintRow(commandId, fallbackLabel) {
     const row = document.createElement("span");
-    row.className = "bj-hist__hint";
-    const K = global5.Keybindings;
-    const C = global5.Commands;
+    row.className = "jar-hist__hint";
+    const C = global6.Commands;
     let label = fallbackLabel;
-    let keys = "";
     try {
       const cmd = C && typeof C.get === "function" ? C.get(commandId) : null;
       if (cmd && cmd.title) label = cmd.title;
-      if (K && typeof K.labelFor === "function") keys = K.labelFor(commandId) || "";
     } catch (_) {
     }
+    const keys = liveKeyLabel(commandId);
     const name = document.createElement("span");
-    name.className = "bj-hist__hint-name";
+    name.className = "jar-hist__hint-name";
     name.textContent = label;
     row.appendChild(name);
     if (keys) {
       const kbd = document.createElement("kbd");
-      kbd.className = "bj-hist__key";
+      kbd.className = "jar-hist__key";
       kbd.textContent = keys;
       row.appendChild(kbd);
     }
     return row;
   }
+  function renderFoot() {
+    if (!footEl) return;
+    footEl.textContent = "";
+    footEl.appendChild(hintRow("edit.undo", "Undo"));
+    footEl.appendChild(hintRow("edit.redo", "Redo"));
+  }
   function rowEl(row, index) {
     if (row.now) {
       const marker = document.createElement("div");
-      marker.className = "bj-hist__now";
+      marker.className = "jar-hist__now";
       marker.setAttribute("role", "option");
       marker.setAttribute("aria-selected", "true");
       marker.dataset.index = String(index);
       const dot = document.createElement("span");
-      dot.className = "bj-hist__now-dot";
+      dot.className = "jar-hist__now-dot";
       const text = document.createElement("span");
-      text.className = "bj-hist__now-text";
+      text.className = "jar-hist__now-text";
       text.textContent = row.label;
       marker.appendChild(dot);
       marker.appendChild(text);
@@ -7919,22 +8488,22 @@
     }
     const el6 = document.createElement("button");
     el6.type = "button";
-    el6.className = "bj-hist__row" + (row.ahead ? " is-ahead" : "");
+    el6.className = "jar-hist__row" + (row.ahead ? " is-ahead" : "");
     el6.setAttribute("role", "option");
     el6.setAttribute("aria-selected", "false");
     el6.dataset.index = String(index);
     el6.dataset.direction = row.direction;
     el6.dataset.distance = String(row.distance);
     const label = document.createElement("span");
-    label.className = "bj-hist__label";
+    label.className = "jar-hist__label";
     if (row.preview) {
       label.classList.add("is-preview");
       const sign = document.createElement("span");
-      sign.className = "bj-hist__sign is-" + (row.preview.sign === "+" ? "add" : row.preview.sign === "\u2212" ? "cut" : "swap");
+      sign.className = "jar-hist__sign is-" + (row.preview.sign === "+" ? "add" : row.preview.sign === "\u2212" ? "cut" : "swap");
       sign.textContent = row.preview.sign;
       label.appendChild(sign);
       const text = document.createElement("span");
-      text.className = "bj-hist__text" + (row.preview.faded ? " is-faded" : "");
+      text.className = "jar-hist__text" + (row.preview.faded ? " is-faded" : "");
       text.textContent = row.preview.text;
       label.appendChild(text);
     } else {
@@ -7943,18 +8512,19 @@
     el6.appendChild(label);
     if (row.where) {
       const where = document.createElement("span");
-      where.className = "bj-hist__where";
+      where.className = "jar-hist__where";
       where.textContent = row.where;
       el6.appendChild(where);
     }
     const when = document.createElement("span");
-    when.className = "bj-hist__when";
+    when.className = "jar-hist__when";
     when.textContent = row.when || "";
     el6.appendChild(when);
     const tipLines = [row.label];
     if (row.files && row.files.length > 1) tipLines.push("", ...row.files);
     el6.setAttribute("data-tooltip", tipLines.join("\n"));
     el6.setAttribute("aria-label", row.label + (row.where ? ", " + row.where : ""));
+    global6.Tooltips?.bind?.(el6);
     return el6;
   }
   function render() {
@@ -7967,9 +8537,10 @@
     panel2._count.textContent = historySummary(undo.length, redo.length);
     listEl2.textContent = "";
     rows.forEach((row, i) => listEl2.appendChild(rowEl(row, i)));
+    renderFoot();
     if (active2 < 0 || active2 >= rows.length) active2 = rows.findIndex((r) => r.now);
     paintActive2();
-    const now = listEl2.querySelector(".bj-hist__now");
+    const now = listEl2.querySelector(".jar-hist__now");
     if (now && typeof now.scrollIntoView === "function") {
       now.scrollIntoView({ block: "center" });
     }
@@ -8027,11 +8598,11 @@
     if (!open2) return;
     const t = e.target;
     if (panelEl && panelEl.contains(t)) return;
-    if (t && t.closest && t.closest(".bj-strip__seg--history")) return;
+    if (t && t.closest && t.closest(".jar-strip__seg--history")) return;
     close2();
   }
   function onListClick(e) {
-    const btn = e.target && e.target.closest ? e.target.closest(".bj-hist__row") : null;
+    const btn = e.target && e.target.closest ? e.target.closest(".jar-hist__row") : null;
     if (!btn) return;
     e.preventDefault();
     travelTo(Number(btn.dataset.index));
@@ -8066,7 +8637,7 @@
     listEl2 = null;
     active2 = -1;
     if (onChanged) onChanged();
-    if (opts && opts.focusStrip) global5.CurrentEditor?.focus?.();
+    if (opts && opts.focusStrip) global6.CurrentEditor?.focus?.();
     return true;
   }
   function openPanel(changed) {
@@ -8105,12 +8676,11 @@
   }
 
   // js/status-strip/status-strip-view.mjs
-  var global6 = globalThis;
+  var global7 = globalThis;
   var root = null;
   var segmentHost = null;
   var vimSlotEl = null;
   var commandHost = null;
-  var messageText = "";
   var messageTimer = 0;
   var messageEl = null;
   var MESSAGE_HOLD_MS = 3200;
@@ -8123,6 +8693,8 @@
     mode: "",
     pending: "",
     mark: false,
+    /** `{ recording, label, stop }` while a keyboard macro is being recorded. */
+    macro: null,
     hasFile: false,
     line: NaN,
     col: NaN,
@@ -8132,6 +8704,14 @@
     warnings: 0,
     checking: false,
     parsePercent: NaN,
+    /**
+     * The caret is inside a hole. ⛔ SEPARATE from `goal`: a hole whose goal has
+     * not been computed yet is still a hole, and folding the two into one string
+     * is what made a fresh `?` look like ordinary code.
+     */
+    inHole: false,
+    /** A goal may still arrive for the hole at the caret (the engine's own say). */
+    goalPending: false,
     goal: "",
     holes: 0,
     symbols: NaN,
@@ -8144,7 +8724,7 @@
   var detail = "standard";
   var rendered = "";
   function persist() {
-    return global6.Persist || null;
+    return global7.Persist || null;
   }
   function storedMode() {
     const p = persist();
@@ -8163,16 +8743,16 @@
     const pane = hostPane();
     if (!pane) return null;
     root = document.createElement("div");
-    root.className = "bj-strip";
+    root.className = "jar-strip";
     root.setAttribute("role", "status");
     root.setAttribute("aria-live", "off");
     segmentHost = document.createElement("div");
-    segmentHost.className = "bj-strip__segments";
+    segmentHost.className = "jar-strip__segments";
     root.appendChild(segmentHost);
     commandHost = document.createElement("div");
-    commandHost.className = "bj-strip__command";
+    commandHost.className = "jar-strip__command";
     vimSlotEl = document.createElement("div");
-    vimSlotEl.className = "bj-strip__vim";
+    vimSlotEl.className = "jar-strip__vim";
     commandHost.appendChild(vimSlotEl);
     build(commandHost, root);
     pane.appendChild(root);
@@ -8180,7 +8760,7 @@
   }
   function ownStatusDot(owned) {
     const root_ = typeof document !== "undefined" ? document.documentElement : null;
-    if (root_) root_.classList.toggle("bj-strip-owns-status", !!owned);
+    if (root_) root_.classList.toggle("jar-strip-owns-status", !!owned);
   }
   function unmount() {
     close({ restore: false });
@@ -8197,14 +8777,14 @@
   function statusDot() {
     if (!dotEl) {
       dotEl = document.createElement("span");
-      dotEl.className = "ide-status-dot bj-strip__statusdot";
+      dotEl.className = "ide-status-dot jar-strip__statusdot";
       dotEl.setAttribute("data-status-silent", "");
       dotEl.setAttribute("role", "status");
     }
     return dotEl;
   }
   function renderType(host2, text) {
-    const ed = global6.BelEditor;
+    const ed = global7.BelEditor;
     const norm2 = ed && typeof ed.normalizeType === "function" ? ed.normalizeType(text) : String(text == null ? "" : text);
     host2.textContent = "";
     if (!norm2) return;
@@ -8217,14 +8797,42 @@
     }
     host2.textContent = norm2;
   }
+  var ICONS = {
+    history: [
+      { d: "M2.78 8.92A5.3 5.3 0 1 0 4.45 4.06", stroke: true },
+      { d: "M1.36 6.84 2.85 2.28 6.05 5.84Z", fill: true }
+    ]
+  };
+  function iconEl(name) {
+    const parts = ICONS[name];
+    if (!parts) return null;
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "jar-strip__icon");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    for (const part of parts) {
+      const p = document.createElementNS(NS, "path");
+      p.setAttribute("d", part.d);
+      p.setAttribute("fill", part.fill ? "currentColor" : "none");
+      if (part.stroke) {
+        p.setAttribute("stroke", "currentColor");
+        p.setAttribute("stroke-width", "1.5");
+        p.setAttribute("stroke-linecap", "round");
+      }
+      svg.appendChild(p);
+    }
+    return svg;
+  }
   function segmentEl(seg) {
     if (seg.spacer) {
       const gap = document.createElement("span");
-      gap.className = "bj-strip__spacer";
+      gap.className = "jar-strip__spacer";
       return gap;
     }
     const el6 = document.createElement(seg.action ? "button" : "span");
-    el6.className = "bj-strip__seg bj-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "");
+    el6.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "");
     if (seg.action) {
       el6.type = "button";
       el6.dataset.action = seg.action;
@@ -8232,33 +8840,49 @@
     if (seg.title) {
       el6.setAttribute("data-tooltip", seg.title);
       el6.setAttribute("aria-label", seg.title);
+      global7.Tooltips?.bind?.(el6);
     }
     if (seg.pressed != null) el6.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
     if (seg.pressed) el6.classList.add("is-open");
     if (seg.dot) el6.appendChild(statusDot());
+    if (seg.icon) {
+      const glyph = iconEl(seg.icon);
+      if (glyph) el6.appendChild(glyph);
+    }
     if (seg.mark) {
       const mark = document.createElement("span");
-      mark.className = "bj-strip__mark";
+      mark.className = "jar-strip__mark";
       mark.textContent = seg.mark;
       el6.appendChild(mark);
     }
     const label = document.createElement("span");
-    label.className = "bj-strip__label";
+    label.className = "jar-strip__label";
     if (seg.render === "type") renderType(label, seg.text);
     else label.textContent = seg.text || "";
     el6.appendChild(label);
     return el6;
   }
   var ACTIONS = {
-    "focus-editor": () => global6.CurrentEditor?.focus?.(),
-    "goto-line": () => global6.CommandPalette?.open({ mode: "line" }),
-    "commands": () => global6.CommandPalette?.open({ mode: "commands" }),
-    "next-problem": () => global6.Commands?.run("nav.next-problem"),
-    "run-default": () => global6.Commands?.run("run.default") || global6.Commands?.run("run.file"),
-    "next-hole": () => global6.Commands?.run("nav.next-hole"),
-    "open-harpoon": () => global6.Commands?.run("prover.open-in-harpoon") || global6.Commands?.run("view.harpoon"),
-    "run": () => global6.Commands?.run("run.file"),
-    "edit-history": () => openHistory()
+    "focus-editor": () => global7.CurrentEditor?.focus?.(),
+    "goto-line": () => global7.CommandPalette?.open({ mode: "line" }),
+    "commands": () => global7.CommandPalette?.open({ mode: "commands" }),
+    "next-problem": () => global7.Commands?.run("nav.next-problem"),
+    "run-default": () => global7.Commands?.run("run.default") || global7.Commands?.run("run.file"),
+    "next-hole": () => global7.Commands?.run("nav.next-hole"),
+    "open-harpoon": () => global7.Commands?.run("prover.open-in-harpoon") || global7.Commands?.run("view.harpoon"),
+    "run": () => global7.Commands?.run("run.file"),
+    "edit-history": () => openHistory(),
+    /**
+     * Stop the recording, then hand the keyboard straight back.
+     *
+     * ⛔ `dropTrailing: 0`. The number is how many KEYSTROKES asked for the stop,
+     * because the recorder sits on capture and has already seen them — a click is
+     * none, and the default of 1 would eat the last key of the macro.
+     */
+    "macro-stop": () => {
+      global7.Commands?.run("macro.record", { dropTrailing: 0 });
+      global7.CurrentEditor?.focus?.();
+    }
   };
   function runAction(action) {
     const fn = ACTIONS[action];
@@ -8269,7 +8893,7 @@
     syncHistory();
   }
   function syncHistory() {
-    const H = global6.EditHistory;
+    const H = global7.EditHistory;
     setEditorState({
       undoDepth: H && H.getUndoStack ? H.getUndoStack().length : 0,
       redoDepth: H && H.getRedoStack ? H.getRedoStack().length : 0,
@@ -8282,16 +8906,12 @@
     const host2 = ensureRoot();
     if (!host2) return;
     const segments = buildSegments(state, detail);
-    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "")).join("|");
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "") + ":" + (s.title || "")).join("|");
     if (signature === rendered) return;
     rendered = signature;
     const els = segments.map(segmentEl);
-    const LEFT = ["keymap", "position", "mode", "command"];
-    let at = 0;
-    segments.forEach((seg, i) => {
-      if (LEFT.indexOf(seg.key) >= 0) at = i + 1;
-    });
-    placeSegments(els, at);
+    const spacerAt = segments.findIndex((seg) => seg.spacer);
+    placeSegments(els, spacerAt < 0 ? els.length : spacerAt);
     placeMessage();
     host2.classList.toggle("is-resting", isResting(segments));
     const modeSeg = segments.find((x) => x.key === "mode");
@@ -8301,7 +8921,7 @@
   function messageNode() {
     if (!messageEl) {
       messageEl = document.createElement("span");
-      messageEl.className = "bj-strip__message";
+      messageEl.className = "jar-strip__message";
       messageEl.setAttribute("role", "status");
       messageEl.setAttribute("aria-live", "polite");
     }
@@ -8318,7 +8938,7 @@
   function placeMessage() {
     if (!segmentHost) return;
     const node = messageNode();
-    const spacer = segmentHost.querySelector(".bj-strip__spacer");
+    const spacer = segmentHost.querySelector(".jar-strip__spacer");
     if (spacer) {
       if (node.previousSibling !== spacer) spacer.after(node);
     } else if (node.parentNode !== segmentHost) {
@@ -8331,7 +8951,6 @@
     placeMessage();
     if (messageTimer) clearTimeout(messageTimer);
     messageTimer = 0;
-    messageText = next;
     if (!next) {
       node.classList.remove("is-visible");
       messageTimer = setTimeout(() => {
@@ -8378,11 +8997,14 @@
       "mode",
       "pending",
       "mark",
+      "macro",
       "hasFile",
       "line",
       "col",
       "selChars",
       "selLines",
+      "inHole",
+      "goalPending",
       "goal",
       "holes",
       "symbols",
@@ -8412,20 +9034,20 @@
     schedule();
   }
   function goalAtCaret() {
-    const ed = global6.CurrentEditor;
+    const ed = global7.CurrentEditor;
     if (!ed || typeof ed.holeAtCursor !== "function") return "";
     try {
       const hit = ed.holeAtCursor();
       const goal = hit && hit.hole ? hit.hole.goal : null;
       if (!goal) return "";
-      const norm2 = global6.BelEditor && typeof global6.BelEditor.normalizeType === "function" ? global6.BelEditor.normalizeType(String(goal)) : String(goal);
+      const norm2 = global7.BelEditor && typeof global7.BelEditor.normalizeType === "function" ? global7.BelEditor.normalizeType(String(goal)) : String(goal);
       return norm2;
     } catch (_) {
       return "";
     }
   }
   function seedFromEditor() {
-    const ed = global6.CurrentEditor;
+    const ed = global7.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     if (!view) {
       setEditorState({ hasFile: false, line: NaN, col: NaN, selChars: 0, selLines: 0, goal: "" });
@@ -8473,13 +9095,18 @@
     paint();
   }
   function refreshProofState() {
-    const ed = global6.CurrentEditor;
+    const ed = global7.CurrentEditor;
     if (!ed) {
-      setEditorState({ holes: 0, symbols: NaN, goal: "" });
+      setEditorState({ holes: 0, symbols: NaN, goal: "", inHole: false, goalPending: false });
       return;
     }
     let holes = 0;
     let symbols = NaN;
+    let goalState = { inHole: false, goal: "", goalPending: false };
+    try {
+      goalState = global7.BelEditor?.goalAtCaret?.() || goalState;
+    } catch (_) {
+    }
     let checking = state.checking;
     let parsePercent = NaN;
     try {
@@ -8498,7 +9125,13 @@
       }
     } catch (_) {
     }
-    setEditorState({ holes, symbols });
+    setEditorState({
+      holes,
+      symbols,
+      goal: goalState.goal,
+      inHole: goalState.inHole,
+      goalPending: !!goalState.goalPending
+    });
     setDiagnostics({ errors: state.errors, warnings: state.warnings, checking, parsePercent });
   }
   function onLint(e) {
@@ -8507,7 +9140,7 @@
     refreshProofState();
   }
   function onClick(e) {
-    const btn = e.target && e.target.closest ? e.target.closest(".bj-strip__seg[data-action]") : null;
+    const btn = e.target && e.target.closest ? e.target.closest(".jar-strip__seg[data-action]") : null;
     if (!btn) return;
     e.preventDefault();
     runAction(btn.dataset.action);
@@ -8515,13 +9148,13 @@
   function init2() {
     if (inited || typeof document === "undefined") return;
     inited = true;
-    global6.addEventListener("beljar:hole-goals-updated", refreshProofState);
-    global6.addEventListener("beljar:file-lint", onLint);
-    global6.addEventListener("beljar:keybindings-changed", apply);
+    global7.addEventListener("beljar:hole-goals-updated", refreshProofState);
+    global7.addEventListener("beljar:file-lint", onLint);
+    global7.addEventListener("beljar:keybindings-changed", apply);
     document.addEventListener("click", onClick, true);
     apply();
   }
-  global6.StatusStrip = {
+  global7.StatusStrip = {
     init: init2,
     apply,
     setEditorState,
@@ -8588,35 +9221,8 @@
     else init2();
   }
 
-  // js/commands/command-context.mjs
-  function doc(given) {
-    if (given) return given;
-    return typeof document !== "undefined" ? document : null;
-  }
-  function activeElement(given) {
-    const d = doc(given);
-    return d && d.activeElement ? d.activeElement : null;
-  }
-  function closestFrom(el6, selector) {
-    if (!el6 || typeof el6.closest !== "function") return null;
-    try {
-      return el6.closest(selector);
-    } catch (_) {
-      return null;
-    }
-  }
-  function isEmacsEditorFocused(given) {
-    const ed = closestFrom(activeElement(given), ".cm-editor");
-    if (!ed || typeof ed.querySelector !== "function") return false;
-    try {
-      return !!ed.querySelector(".cm-emacsMode");
-    } catch (_) {
-      return false;
-    }
-  }
-
   // js/ui/keybindings.mjs
-  var global7 = globalThis;
+  var global8 = globalThis;
   var IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var DEFAULTS = [];
   var BY_ID = /* @__PURE__ */ Object.create(null);
@@ -8648,9 +9254,10 @@
   };
   var SECTION_ORDER = ["File", "Edit", "Motion", "Navigate", "Prover", "Run", "View", "Settings", "Tools"];
   var globalHandlers = /* @__PURE__ */ Object.create(null);
+  var globalFallback = null;
   var listening = false;
   function persistApi() {
-    return global7.Persist || null;
+    return global8.Persist || null;
   }
   var scopeDefsCache = /* @__PURE__ */ Object.create(null);
   var scopeDefsVersion = -1;
@@ -8675,16 +9282,72 @@
     var o = p.readStoredKeybindings();
     return o && typeof o === "object" ? o : {};
   }
+  function overridesRaw() {
+    try {
+      var p = persistApi();
+      var key = p && p.KEYBINDINGS_KEY;
+      if (!key || !global8.localStorage) return null;
+      return global8.localStorage.getItem(key) || "";
+    } catch (_) {
+      return null;
+    }
+  }
+  function compileSpec(n) {
+    if (!n) return null;
+    var parts = n.split("+");
+    var c = { key: parts[parts.length - 1], mod: false, control: false, alt: false, shift: false };
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (parts[i] === "Mod") c.mod = true;
+      else if (parts[i] === "Control") c.control = true;
+      else if (parts[i] === "Alt") c.alt = true;
+      else if (parts[i] === "Shift") c.shift = true;
+    }
+    return c;
+  }
+  function eventMatchesCompiled(e, key, c) {
+    if (!c) return false;
+    if (c.control) {
+      if (!e.ctrlKey || e.metaKey) return false;
+    } else if (c.mod !== !!(e.ctrlKey || e.metaKey)) return false;
+    if (c.alt !== !!e.altKey) return false;
+    if (c.shift !== !!e.shiftKey) return false;
+    return key === c.key;
+  }
+  var globalTable = null;
+  function globalDispatchTable() {
+    syncDefaults();
+    var raw = overridesRaw();
+    if (globalTable && globalTable.version === projectedVersion && raw !== null && globalTable.raw === raw) {
+      return globalTable;
+    }
+    var overrides = readOverrides();
+    var defs = defsForScope("global");
+    var bound = [];
+    for (var i = 0; i < defs.length; i++) {
+      var spec = resolveWith(defs[i].id, null, overrides);
+      if (spec) bound.push({ id: defs[i].id, c: compileSpec(spec) });
+    }
+    var freedSpecs = freedDefaultsForScope("global", overrides);
+    var freed = [];
+    for (var j = 0; j < freedSpecs.length; j++) {
+      var fc = compileSpec(freedSpecs[j]);
+      if (fc) freed.push(fc);
+    }
+    var table = { raw, version: projectedVersion, bound, freed };
+    globalTable = raw === null ? null : table;
+    return table;
+  }
   function writeOverrides(map) {
     var p = persistApi();
     if (p && typeof p.writeStoredKeybindings === "function") p.writeStoredKeybindings(map);
   }
   function notifyChanged() {
+    globalTable = null;
     try {
-      if (typeof global7.CustomEvent === "function") {
-        global7.dispatchEvent(new global7.CustomEvent("beljar:keybindings-changed", { detail: {} }));
-      } else if (typeof global7.dispatchEvent === "function") {
-        global7.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
+      if (typeof global8.CustomEvent === "function") {
+        global8.dispatchEvent(new global8.CustomEvent("beljar:keybindings-changed", { detail: {} }));
+      } else if (typeof global8.dispatchEvent === "function") {
+        global8.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
       }
     } catch (_) {
     }
@@ -9016,7 +9679,7 @@
   }
   function isRecordingChordTarget(e) {
     var t = e && e.target || (typeof document !== "undefined" ? document.activeElement : null);
-    return !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording"));
+    return !!(t && t.classList && t.classList.contains("jar-kb__chord") && t.classList.contains("is-recording"));
   }
   function isEmacsEditorFocused2() {
     return isEmacsEditorFocused();
@@ -9028,24 +9691,25 @@
   }
   function onGlobalKeydown(e) {
     if (e.isComposing) return;
-    if (!(e.ctrlKey || e.metaKey || e.altKey) && !isFunctionKey(normalizeKeyToken(e.key))) return;
+    var key = normalizeKeyToken(e.key);
+    if (!(e.ctrlKey || e.metaKey || e.altKey) && !isFunctionKey(key)) return;
     if (isRecordingChordTarget(e)) return;
-    var overrides = readOverrides();
-    var freed = freedDefaultsForScope("global", overrides);
+    if (isCommandLineFocused()) return;
+    var table = globalDispatchTable();
+    var freed = table.freed;
     for (var fi = 0; fi < freed.length; fi++) {
-      if (eventMatchesSpec(e, freed[fi])) {
+      if (eventMatchesCompiled(e, key, freed[fi])) {
         e.preventDefault();
         e.stopPropagation();
         return;
       }
     }
-    var defs = defsForScope("global");
-    for (var i = 0; i < defs.length; i++) {
-      var def = defs[i];
-      var spec = resolveWith(def.id, null, overrides);
-      if (!spec || !eventMatchesSpec(e, spec)) continue;
-      if (shouldYieldGlobalForEmacs(def.id, isEmacsEditorFocused2())) return;
-      var handler = globalHandlers[def.id];
+    var bound = table.bound;
+    for (var i = 0; i < bound.length; i++) {
+      if (!eventMatchesCompiled(e, key, bound[i].c)) continue;
+      var id = bound[i].id;
+      if (shouldYieldGlobalForEmacs(id, isEmacsEditorFocused2())) return;
+      var handler = globalHandlers[id] || (globalFallback ? globalFallback(id) : null);
       if (typeof handler !== "function") continue;
       e.preventDefault();
       e.stopPropagation();
@@ -9056,20 +9720,21 @@
       return;
     }
   }
-  function initGlobals(handlers) {
+  function initGlobals(handlers, opts) {
     if (handlers && typeof handlers === "object") {
       Object.keys(handlers).forEach(function(id) {
         globalHandlers[id] = handlers[id];
       });
     }
+    if (opts && typeof opts.fallback === "function") globalFallback = opts.fallback;
     if (listening) return;
     listening = true;
-    global7.addEventListener("keydown", onGlobalKeydown, true);
+    global8.addEventListener("keydown", onGlobalKeydown, true);
   }
   function setGlobalHandler(id, fn) {
     globalHandlers[id] = fn;
   }
-  global7.Keybindings = {
+  global8.Keybindings = {
     DEFAULTS,
     IS_MAC,
     has: has2,
@@ -9115,14 +9780,14 @@
       RESERVED
     }
   };
-  global7.BelJarKeybindings = global7.Keybindings;
+  global8.BelJarKeybindings = global8.Keybindings;
 
   // js/ui/perf-hud.mjs
-  var global8 = globalThis;
+  var global9 = globalThis;
   var panel = null;
   var timer = null;
   function perf() {
-    return global8.Perf || null;
+    return global9.Perf || null;
   }
   function formatBreakdown(bd) {
     if (!bd || !bd.phases) return "(no edit trace yet \u2014 type in the editor)";
@@ -9170,8 +9835,8 @@
     return panel;
   }
   function enable() {
-    global8.PerfDebug = true;
-    global8.BelJarPerfDebug = global8.PerfDebug;
+    global9.PerfDebug = true;
+    global9.BelJarPerfDebug = global9.PerfDebug;
     var p = perf();
     if (p) p.enabled = true;
     ensurePanel2();
@@ -9190,11 +9855,11 @@
     panel = null;
     var p = perf();
     if (p) p.enabled = false;
-    global8.PerfDebug = false;
-    global8.BelJarPerfDebug = global8.PerfDebug;
+    global9.PerfDebug = false;
+    global9.BelJarPerfDebug = global9.PerfDebug;
   }
-  global8.PerfHud = { enable, disable, refresh: render2 };
-  global8.BelJarPerfHud = global8.PerfHud;
+  global9.PerfHud = { enable, disable, refresh: render2 };
+  global9.BelJarPerfHud = global9.PerfHud;
 
   // js/editor-src/project-paths.mjs
   function fileBase(name) {
@@ -9275,7 +9940,6 @@
     const out = [];
     for (const f of files) {
       const fn = String(f.name || "");
-      const low = fn.toLowerCase();
       if (isSignaturePath(fn)) out.push(fn);
     }
     return out;
@@ -9325,7 +9989,6 @@
     return ordered;
   }
   function topLevelCfgPaths(files, getText) {
-    const cfgByDir = cfgByDirFromFiles(files, getText);
     const referenced = {};
     const cfgPaths = [];
     for (const f of files) {
@@ -10135,10 +10798,10 @@
       zOrder: isFinite(Number(raw.zOrder)) ? Number(raw.zOrder) : 0
     };
   }
-  function emptyWorkspace(projectId) {
+  function emptyWorkspace(projectId2) {
     return {
       v: SCHEMA_VERSION2,
-      projectId: projectId || "default",
+      projectId: projectId2 || "default",
       updatedAt: 0,
       activeSidePanel: null,
       sidebar: {
@@ -10150,8 +10813,8 @@
       floating: []
     };
   }
-  function normalizeWorkspace(raw, projectId) {
-    var base = emptyWorkspace(projectId);
+  function normalizeWorkspace(raw, projectId2) {
+    var base = emptyWorkspace(projectId2);
     if (!raw || typeof raw !== "object") return base;
     if (raw.v !== SCHEMA_VERSION2) return base;
     if (typeof raw.projectId === "string") base.projectId = raw.projectId;
@@ -10192,17 +10855,17 @@
     }
     return base;
   }
-  function readWorkspace(projectId) {
+  function readWorkspace(projectId2) {
     var persist4 = P();
     if (!persist4 || typeof persist4.readStoredWorkspace !== "function") {
-      return emptyWorkspace(projectId);
+      return emptyWorkspace(projectId2);
     }
-    return normalizeWorkspace(persist4.readStoredWorkspace(projectId), projectId);
+    return normalizeWorkspace(persist4.readStoredWorkspace(projectId2), projectId2);
   }
-  function writeWorkspace(snapshot, projectId) {
+  function writeWorkspace(snapshot, projectId2) {
     var persist4 = P();
     if (!persist4 || typeof persist4.writeStoredWorkspace !== "function") return false;
-    var pid = projectId || (persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default");
+    var pid = projectId2 || (persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default");
     var next = normalizeWorkspace(snapshot, pid);
     next.projectId = pid;
     next.updatedAt = Date.now();
@@ -10299,10 +10962,10 @@
       deps.restoreFloating(floats, deps);
     }
   }
-  function resetWorkspaceState2(projectId) {
+  function resetWorkspaceState2(projectId2) {
     var persist4 = P();
     if (persist4 && typeof persist4.resetStoredWorkspace === "function") {
-      persist4.resetStoredWorkspace(projectId);
+      persist4.resetStoredWorkspace(projectId2);
     }
     restoredForProject = null;
   }
@@ -11727,7 +12390,7 @@
   }
 
   // js/ui/hint.mjs
-  var global9 = globalThis;
+  var global10 = globalThis;
   var DEFAULT_DURATION_MS = 1e4;
   var GAP_PX = 10;
   var LEAVE_MS = 160;
@@ -11771,11 +12434,11 @@
     }
   }
   function releaseTooltip() {
-    if (anchorEl && global9.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
+    if (anchorEl && global10.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
   }
   function suppressTooltip() {
-    if (anchorEl && global9.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
-    if (anchorEl && global9.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
+    if (anchorEl && global10.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
+    if (anchorEl && global10.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
   }
   function progressBar() {
     return rootEl && rootEl.querySelector(".hint-progress-bar");
@@ -11978,7 +12641,7 @@
     if (!visible || dismissing) return;
     place();
   }
-  global9.Hint = {
+  global10.Hint = {
     show,
     dismiss,
     wasDismissed,
@@ -11988,11 +12651,11 @@
       return activeId === String(id);
     }
   };
-  global9.BelJarHint = global9.Hint;
+  global10.BelJarHint = global10.Hint;
 
   // js/ui/menu.mjs
-  var global10 = globalThis;
-  var FRP = global10.FloatingRectPlacement;
+  var global11 = globalThis;
+  var FRP = global11.FloatingRectPlacement;
   var MARGIN = FRP.DEFAULT_MARGIN;
   var customRowTypes = /* @__PURE__ */ Object.create(null);
   var allControllers = /* @__PURE__ */ new Set();
@@ -12058,13 +12721,13 @@
     const SUBMENU_OPEN_DELAY_MS = 90;
     const MENU_ITEM_TIP_DELAY_MS = 300;
     function hideMenuTooltips() {
-      const T = global10.Tooltips;
+      const T = global11.Tooltips;
       if (T && T.hide) T.hide();
     }
     function bindMenuItemTooltip(btn, item) {
       const text = item.tooltip;
       if (!text) return;
-      const T = global10.Tooltips;
+      const T = global11.Tooltips;
       if (!T) return;
       let timer2 = null;
       btn.addEventListener("mouseenter", () => {
@@ -12671,7 +13334,7 @@
   var dialogMenuControllers = /* @__PURE__ */ new WeakMap();
   function menuControllerForAnchor(anchor2) {
     if (!(anchor2 instanceof Element)) return defaultMenu;
-    const dlg = anchor2.closest("dialog.bj-dialog[open]");
+    const dlg = anchor2.closest("dialog.jar-dialog[open]");
     if (!dlg) return defaultMenu;
     let ctrl = dialogMenuControllers.get(dlg);
     if (ctrl) return ctrl;
@@ -12693,7 +13356,7 @@
     }, { once: true });
     return ctrl;
   }
-  global10.Menu = {
+  global11.Menu = {
     open(opts) {
       const anchor2 = opts && opts.anchor;
       const ctrl = menuControllerForAnchor(anchor2 instanceof Element ? anchor2 : null);
@@ -12723,7 +13386,7 @@
   };
 
   // js/ui/command-palette.mjs
-  var global11 = globalThis;
+  var global12 = globalThis;
   function fuzzyScore(query2, text) {
     if (!query2) return { score: 0, positions: [] };
     const t = String(text || "");
@@ -12822,10 +13485,10 @@
     return { line, col: Number.isFinite(col) && col >= 1 ? col : 1 };
   }
   var HELP_CATALOG = [
-    { title: "Anywhere", detail: "Go to files & symbols", prefix: "", shortcut: "Mod+K" },
-    { title: "Commands", detail: "Run a command", prefix: ">", shortcut: "Mod+Shift+P" },
-    { title: "Symbols", detail: "Go to symbol", prefix: "@", shortcut: "Mod+Shift+O" },
-    { title: "Search project", detail: "Find text across files", prefix: "%", shortcut: "Mod+Shift+F" },
+    { title: "Anywhere", detail: "Go to files & symbols", prefix: "", commandId: "nav.anywhere" },
+    { title: "Commands", detail: "Run a command", prefix: ">", commandId: "tools.commands" },
+    { title: "Symbols", detail: "Go to symbol", prefix: "@", commandId: "nav.symbol" },
+    { title: "Search project", detail: "Find text across files", prefix: "%", commandId: "edit.search-project" },
     { title: "Go to line", detail: "Jump to line[:column]", prefix: ":" },
     { title: "Problems", detail: "Errors & warnings", prefix: "!" },
     { title: "Library", detail: "Browse library samples", prefix: "/" },
@@ -12889,52 +13552,58 @@
   var IS_MAC2 = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var ui = null;
   var isOpen3 = false;
+  var sessionId = 0;
   var flatItems = [];
   var activeIndex = 0;
   var restoreFocusTo = null;
   var SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
   function buildUi() {
     const backdrop = document.createElement("div");
-    backdrop.className = "bel-palette-backdrop";
+    backdrop.className = "jar-palette-backdrop";
     backdrop.addEventListener("pointerdown", close3);
     const panel2 = document.createElement("div");
-    panel2.className = "bel-palette";
+    panel2.className = "jar-palette";
     panel2.setAttribute("role", "dialog");
     panel2.setAttribute("aria-label", "Command palette");
     const inputWrap = document.createElement("div");
-    inputWrap.className = "bel-palette-inputwrap";
+    inputWrap.className = "jar-palette-inputwrap";
     const modeChip = document.createElement("span");
-    modeChip.className = "bel-palette-mode";
+    modeChip.className = "jar-palette-mode";
     modeChip.setAttribute("aria-hidden", "true");
     const iconHost = document.createElement("span");
-    iconHost.className = "bel-palette-icon";
+    iconHost.className = "jar-palette-icon";
     iconHost.innerHTML = SEARCH_ICON;
     iconHost.setAttribute("aria-hidden", "true");
     const input2 = document.createElement("input");
     input2.type = "text";
-    input2.className = "bel-palette-input";
+    input2.className = "jar-palette-input";
     input2.placeholder = MODE_META.anywhere.placeholder;
     input2.autocomplete = "off";
     input2.spellcheck = false;
     input2.setAttribute("data-surface-find", "");
     input2.setAttribute("role", "combobox");
     input2.setAttribute("aria-expanded", "true");
-    input2.setAttribute("aria-controls", "bel-palette-list");
+    input2.setAttribute("aria-controls", "jar-palette-list");
     inputWrap.append(modeChip, iconHost, input2);
     const list3 = document.createElement("div");
-    list3.className = "bel-palette-list";
-    list3.id = "bel-palette-list";
+    list3.className = "jar-palette-list";
+    list3.id = "jar-palette-list";
     list3.setAttribute("role", "listbox");
     const empty = document.createElement("div");
-    empty.className = "bel-palette-empty";
+    empty.className = "jar-palette-empty";
     empty.textContent = "No matching results";
     empty.hidden = true;
     const hint = document.createElement("div");
-    hint.className = "bel-palette-hint";
+    hint.className = "jar-palette-hint";
     hint.hidden = true;
     panel2.append(inputWrap, list3, empty, hint);
     input2.addEventListener("input", renderResults);
     input2.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && !e.altKey && !e.metaKey && LIST_STEP[e.key] !== void 0) {
+        e.preventDefault();
+        setActive(activeIndex + LIST_STEP[e.key]);
+        return;
+      }
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setActive(activeIndex + 1);
@@ -12944,7 +13613,7 @@
       } else if (e.key === "Enter") {
         e.preventDefault();
         runActive();
-      } else if (e.key === "Escape") {
+      } else if (e.key === "Escape" || e.ctrlKey && e.key === "g") {
         e.preventDefault();
         close3();
       } else if (e.key === "Tab") {
@@ -12955,35 +13624,28 @@
     ui = { backdrop, panel: panel2, input: input2, list: list3, empty, hint, modeChip };
     return ui;
   }
+  var commandItemsCache = null;
+  var commandItemsKey = "";
   function commandItems() {
-    return activeCommands().map((c) => {
-      let shortcut = "";
-      if (typeof Keybindings !== "undefined" && Keybindings.has(c.id)) {
-        shortcut = Keybindings.labelFor(c.id) || "";
-      } else if (c.shortcut) {
-        shortcut = formatShortcut2(c.shortcut, IS_MAC2);
-      }
-      return {
-        id: c.id,
-        title: c.title,
-        section: c.section || "Commands",
-        shortcut,
-        detail: c.detail || "",
-        run: c.run
-      };
-    });
+    const key = `${sessionId}|${Commands2.version()}`;
+    if (commandItemsCache && commandItemsKey === key) return commandItemsCache;
+    commandItemsKey = key;
+    commandItemsCache = activeCommands().map((c) => ({
+      id: c.id,
+      title: c.title,
+      section: c.section || "Commands",
+      shortcut: Commands2.liveChord ? Commands2.liveChord(c.id) || "" : "",
+      detail: c.detail || "",
+      run: c.run
+    }));
+    return commandItemsCache;
   }
   function helpItems() {
     return HELP_CATALOG.map((h) => {
       let shortcut = h.prefix || "bare";
-      if (h.shortcut) {
-        if (typeof Keybindings !== "undefined") {
-          const id = h.shortcut === "Mod+K" ? "nav.anywhere" : h.shortcut === "Mod+Shift+P" ? "tools.commands" : h.shortcut === "Mod+Shift+O" ? "nav.symbol" : h.shortcut === "Mod+Shift+F" ? "edit.search-project" : "";
-          if (id && Keybindings.has(id)) shortcut = Keybindings.labelFor(id) || formatShortcut2(h.shortcut, IS_MAC2);
-          else shortcut = formatShortcut2(h.shortcut, IS_MAC2);
-        } else {
-          shortcut = formatShortcut2(h.shortcut, IS_MAC2);
-        }
+      if (h.commandId) {
+        const live2 = Commands2.liveChord ? Commands2.liveChord(h.commandId) : "";
+        if (live2) shortcut = live2;
       }
       return {
         title: (h.prefix ? h.prefix + "  " : "") + h.title,
@@ -13007,7 +13669,7 @@
       detail: "Current file",
       mono: false,
       run: () => {
-        const ed = global11.CurrentEditor;
+        const ed = global12.CurrentEditor;
         if (!ed || typeof ed.getView !== "function") return;
         const view = ed.getView();
         if (!view) return;
@@ -13091,26 +13753,26 @@
       if (grouped && item.section && item.section !== lastSection) {
         lastSection = item.section;
         const head = document.createElement("div");
-        head.className = "bel-palette-section";
+        head.className = "jar-palette-section";
         head.textContent = item.section;
         ui.list.appendChild(head);
       }
       const row = document.createElement("div");
-      row.className = "bel-palette-item";
+      row.className = "jar-palette-item";
       if (item.severity === "error") row.classList.add("is-severity-error");
       if (item.severity === "warning") row.classList.add("is-severity-warning");
       if (item.kind === "library") row.classList.add("is-library");
-      row.id = "bel-palette-opt-" + i;
+      row.id = "jar-palette-opt-" + i;
       row.setAttribute("role", "option");
       row.setAttribute("data-index", String(i));
       const title = document.createElement("span");
-      title.className = "bel-palette-item-title" + (item.mono ? " is-mono" : "");
+      title.className = "jar-palette-item-title" + (item.mono ? " is-mono" : "");
       appendHighlighted(title, item.title, item._match);
       row.appendChild(title);
       const side = item.shortcut || item.detail;
       if (side) {
         const meta = document.createElement("span");
-        meta.className = item.shortcut ? "bel-palette-item-shortcut" : "bel-palette-item-detail";
+        meta.className = item.shortcut ? "jar-palette-item-shortcut" : "jar-palette-item-detail";
         meta.textContent = side;
         row.appendChild(meta);
       }
@@ -13163,15 +13825,15 @@
     }
     const n = flatItems.length;
     activeIndex = (index % n + n) % n;
-    const rows2 = ui.list.querySelectorAll(".bel-palette-item");
+    const rows2 = ui.list.querySelectorAll(".jar-palette-item");
     rows2.forEach((row) => {
       const on = Number(row.getAttribute("data-index")) === activeIndex;
       row.classList.toggle("is-active", on);
       row.setAttribute("aria-selected", on ? "true" : "false");
     });
-    ui.input.setAttribute("aria-activedescendant", "bel-palette-opt-" + activeIndex);
+    ui.input.setAttribute("aria-activedescendant", "jar-palette-opt-" + activeIndex);
     if (!opts || opts.scroll !== false) {
-      const row = ui.list.querySelector(".bel-palette-item.is-active");
+      const row = ui.list.querySelector(".jar-palette-item.is-active");
       if (row) row.scrollIntoView({ block: "nearest" });
     }
   }
@@ -13182,10 +13844,10 @@
     try {
       item.run();
     } catch (err) {
-      if (global11.console && console.error) console.error("[palette]", err);
-      if (global11.Toasts && global11.Toasts.warn) {
+      if (global12.console && console.error) console.error("[palette]", err);
+      if (global12.Toasts && global12.Toasts.warn) {
         const msg = err && err.message ? String(err.message) : String(err);
-        global11.Toasts.warn("Command failed: " + msg);
+        global12.Toasts.warn("Command failed: " + msg);
       }
     }
   }
@@ -13193,6 +13855,8 @@
     let mode = "anywhere";
     if (opts && opts.mode && MODE_PREFIX[opts.mode] != null) mode = opts.mode;
     if (!ui) buildUi();
+    sessionId += 1;
+    commandItemsCache = null;
     restoreFocusTo = document.activeElement;
     isOpen3 = true;
     ui.backdrop.classList.add("is-open");
@@ -13228,9 +13892,9 @@
     } catch (e) {
     }
     var line = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
-    if (line && style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });
-    if (line && style === "vim") return StatusStrip.openCommandLine("");
-    return toggle2({ mode: "commands" });
+    if (!line) return toggle2({ mode: "commands" });
+    if (style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });
+    return StatusStrip.openCommandLine("");
   }
   var fallbackKeydown = null;
   function onFallbackKeydown(e) {
@@ -13266,6 +13930,19 @@
         "tools.commands": runCommandEntry,
         "nav.symbol": () => toggle2({ mode: "symbols" }),
         "edit.search-project": () => toggle2({ mode: "search" })
+      }, {
+        // ⛔ Everything else runs through the registry. These four need a
+        // closure because they open a specific palette MODE; the other 63
+        // global commands are ordinary ids, and without this they accepted a
+        // chord in the Keybindings sheet and did nothing when pressed.
+        //
+        // Null when nothing is attached yet, so the chord falls through to the
+        // browser rather than being swallowed by a handler that cannot act.
+        fallback: (id) => {
+          const cmd = Commands2.get(id);
+          if (!cmd || typeof cmd.run !== "function") return null;
+          return () => Commands2.run(id);
+        }
       });
       return;
     }
@@ -13278,7 +13955,7 @@
     }
     return formatShortcut2(idOrSpec, IS_MAC2);
   }
-  global11.CommandPalette = {
+  global12.CommandPalette = {
     register,
     dispose: dispose3,
     unregister: unregister2,
@@ -13289,6 +13966,8 @@
     runCommandEntry,
     init: init5,
     isOpen: () => isOpen3,
+    /** Bumped on every `open()`. See the note there. */
+    sessionId: () => sessionId,
     shortcutLabel: shortcutLabelFor,
     shortcutParts: (spec) => shortcutParts2(spec, IS_MAC2),
     listCommands,
@@ -13307,7 +13986,7 @@
   };
 
   // js/ui/floating-window.mjs
-  var global12 = globalThis;
+  var global13 = globalThis;
   var MARGIN2 = 8;
   var open4 = /* @__PURE__ */ new Set();
   var zTop = 4e3;
@@ -13315,10 +13994,10 @@
     return Math.min(Math.max(v, lo), hi);
   }
   function viewportW() {
-    return typeof global12.innerWidth === "number" ? global12.innerWidth : 1024;
+    return typeof global13.innerWidth === "number" ? global13.innerWidth : 1024;
   }
   function viewportH() {
-    return typeof global12.innerHeight === "number" ? global12.innerHeight : 768;
+    return typeof global13.innerHeight === "number" ? global13.innerHeight : 768;
   }
   function makeEl(tag, cls) {
     const n = document.createElement(tag);
@@ -13351,7 +14030,7 @@
             btn.setAttribute("aria-pressed", on ? "true" : "false");
             const t = tip(on);
             if (t) btn.setAttribute("aria-label", t);
-            if (global12.Tooltips?.set) global12.Tooltips.set(btn, t);
+            if (global13.Tooltips?.set) global13.Tooltips.set(btn, t);
           };
           setPressed(!!act.pressed);
           if (act.ref) act.ref.setPressed = setPressed;
@@ -13363,11 +14042,11 @@
           });
         } else {
           if (act.label) btn.setAttribute("aria-label", act.label);
-          if (typeof act.tooltip === "function" && global12.Tooltips?.setRich) {
-            global12.Tooltips.setRich(btn, act.tooltip, act.label);
+          if (typeof act.tooltip === "function" && global13.Tooltips?.setRich) {
+            global13.Tooltips.setRich(btn, act.tooltip, act.label);
             btn.classList.add("floating-window-action--info");
-          } else if (global12.Tooltips?.set && act.label) {
-            global12.Tooltips.set(btn, act.label);
+          } else if (global13.Tooltips?.set && act.label) {
+            global13.Tooltips.set(btn, act.label);
           }
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -13429,9 +14108,9 @@
     function onDragUp() {
       if (!dragP) return;
       dragP = null;
-      global12.removeEventListener("pointermove", onDragMove);
-      global12.removeEventListener("pointerup", onDragUp);
-      global12.removeEventListener("pointercancel", onDragUp);
+      global13.removeEventListener("pointermove", onDragMove);
+      global13.removeEventListener("pointerup", onDragUp);
+      global13.removeEventListener("pointercancel", onDragUp);
       document.body.classList.remove("floating-window-dragging");
       notifyGeometryChange();
     }
@@ -13443,9 +14122,9 @@
       if (e.button !== 0) return;
       dragP = { px: e.clientX, py: e.clientY, startX: x, startY: y };
       document.body.classList.add("floating-window-dragging");
-      global12.addEventListener("pointermove", onDragMove);
-      global12.addEventListener("pointerup", onDragUp);
-      global12.addEventListener("pointercancel", onDragUp);
+      global13.addEventListener("pointermove", onDragMove);
+      global13.addEventListener("pointerup", onDragUp);
+      global13.addEventListener("pointercancel", onDragUp);
       e.preventDefault();
     });
     let rez = null;
@@ -13460,9 +14139,9 @@
     function onRezUp() {
       if (!rez) return;
       rez = null;
-      global12.removeEventListener("pointermove", onRezMove);
-      global12.removeEventListener("pointerup", onRezUp);
-      global12.removeEventListener("pointercancel", onRezUp);
+      global13.removeEventListener("pointermove", onRezMove);
+      global13.removeEventListener("pointerup", onRezUp);
+      global13.removeEventListener("pointercancel", onRezUp);
       document.body.classList.remove("floating-window-resizing");
       notifyGeometryChange();
     }
@@ -13470,9 +14149,9 @@
       if (e.button !== 0) return;
       rez = { px: e.clientX, py: e.clientY, startW: root2.offsetWidth, startH: root2.offsetHeight };
       document.body.classList.add("floating-window-resizing");
-      global12.addEventListener("pointermove", onRezMove);
-      global12.addEventListener("pointerup", onRezUp);
-      global12.addEventListener("pointercancel", onRezUp);
+      global13.addEventListener("pointermove", onRezMove);
+      global13.addEventListener("pointerup", onRezUp);
+      global13.addEventListener("pointercancel", onRezUp);
       e.preventDefault();
       e.stopPropagation();
     });
@@ -13519,22 +14198,22 @@
   function closeAll() {
     for (const h of [...open4]) h.close();
   }
-  global12.FloatingWindow = { open: openWindow, closeAll };
+  global13.FloatingWindow = { open: openWindow, closeAll };
 
   // js/ui/available-macros.mjs
-  var global13 = globalThis;
+  var global14 = globalThis;
   var RESERVED_MARK = "*";
   var INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
   function aboutFragment() {
     const frag = document.createDocumentFragment();
     const p1 = el(
       "p",
-      "bj-setting-info-tip",
-      "Everything you can type right now: your chords, the keys the active editing style adds, and the names the command line answers to."
+      "jar-setting-info-tip",
+      "Your chords, the keys the active editing style adds, and the names the command line answers to."
     );
     const p2 = el(
       "p",
-      "bj-setting-info-tip",
+      "jar-setting-info-tip",
       "Use the command palette to access unbound commands."
     );
     frag.append(p1, p2);
@@ -13550,9 +14229,7 @@
   function liveChord(row) {
     if (!row) return "";
     if (row.live) return row.chord || "";
-    if (row.styleChord) return row.styleChord;
-    if (row.shadow && row.shadow.kind === "shadowed") return "";
-    return row.chord || "";
+    return chordInStyle(row);
   }
   function reservedGroup(facts, glossFor2, access, style) {
     if (!facts || !facts.rows || !facts.rows.length) return null;
@@ -13608,11 +14285,18 @@
   }
   var GROUP_RANK = [
     // The prefix maps, in the order the styles themselves name them.
+    // ⚠ `q` and `@` are RANKED so they do not lead. Vim's macro keys take a
+    // register, so they group by shape exactly like `g` and `]` do — and an
+    // unranked prefix sorts to the FRONT, which put two one-row blocks headed `q`
+    // and `@` above the leader map. They are real maps and belong in the list;
+    // they are not the first thing anyone opens it for.
     "Ctrl+X",
     "Ctrl+C",
     "g",
     "]",
     "[",
+    "q",
+    "@",
     "Ctrl",
     "Ctrl+Shift",
     "Alt",
@@ -13700,18 +14384,18 @@
   }
   function activeStyle() {
     try {
-      const P3 = global13.Persist;
+      const P3 = global14.Persist;
       if (P3 && typeof P3.readStoredKeymapStyle === "function") return P3.readStoredKeymapStyle();
     } catch (_) {
     }
     return "default";
   }
   function describeAll() {
-    const C = global13.Commands;
+    const C = global14.Commands;
     if (!C || typeof C.describe !== "function") return [];
-    const E3 = global13.BelEditor;
+    const E3 = global14.BelEditor;
     const style = activeStyle();
-    let isMac = /Mac|iPhone|iPad/.test(global13.navigator && global13.navigator.platform || "");
+    let isMac = /Mac|iPhone|iPad/.test(global14.navigator && global14.navigator.platform || "");
     if (E3 && typeof E3.reservedChordFacts === "function") {
       try {
         isMac = !!E3.reservedChordFacts().isMac;
@@ -13721,61 +14405,61 @@
     return C.list().map((c) => C.describe(c.id, { style, isMac, showing: "style" })).filter(Boolean);
   }
   function rowNode(row, wantChord, prefix) {
-    const r = el("div", "bj-macros__row");
-    const what = el("span", "bj-macros__what");
+    const r = el("div", "jar-macros__row");
+    const what = el("span", "jar-macros__what");
     if (row.dead) {
-      r.classList.add("bj-macros__row--reserved");
-      what.appendChild(el("kbd", "bj-macros__dead", row.dead));
+      r.classList.add("jar-macros__row--reserved");
+      what.appendChild(el("kbd", "jar-macros__dead", row.dead));
     }
-    if (row.title) what.appendChild(el("span", "bj-macros__title", row.title));
-    if (row.reserved && wantChord) what.appendChild(el("span", "bj-macros__star", RESERVED_MARK));
+    if (row.title) what.appendChild(el("span", "jar-macros__title", row.title));
+    if (row.reserved && wantChord) what.appendChild(el("span", "jar-macros__star", RESERVED_MARK));
     const shadow = wantChord && row.shadow ? row.shadow : null;
     if (shadow) {
-      const tag = el("span", "bj-macros__tag", shadow.tag);
+      const tag = el("span", "jar-macros__tag", shadow.tag);
       tag.setAttribute("data-tooltip", shadow.tip);
-      if (global13.Tooltips && typeof global13.Tooltips.bind === "function") global13.Tooltips.bind(tag);
+      if (global14.Tooltips && typeof global14.Tooltips.bind === "function") global14.Tooltips.bind(tag);
       what.appendChild(tag);
     }
     r.appendChild(what);
-    const keys = el("span", "bj-macros__keys");
-    if (row.dead) keys.appendChild(el("span", "bj-macros__arrow", "\u2192"));
+    const keys = el("span", "jar-macros__keys");
+    if (row.dead) keys.appendChild(el("span", "jar-macros__arrow", "\u2192"));
     if (wantChord) {
-      keys.appendChild(el("kbd", "bj-macros__chord", liveChord(row)));
+      keys.appendChild(el("kbd", "jar-macros__chord", liveChord(row)));
     } else if (row.ex.length) {
-      keys.appendChild(el("code", "bj-macros__ex", (prefix == null ? ":" : prefix) + row.ex[0]));
+      keys.appendChild(el("code", "jar-macros__ex", (prefix == null ? ":" : prefix) + row.ex[0]));
     }
     r.appendChild(keys);
     return r;
   }
   function metaNode(m) {
-    const r = el("div", "bj-macros__row bj-macros__row--meta");
-    r.appendChild(el("span", "bj-macros__meta-label", m.label));
-    const val = el("span", "bj-macros__keys");
-    if (m.text) val.appendChild(el("span", "bj-macros__meta-text", m.text));
-    if (m.name) val.appendChild(el("code", "bj-macros__ex", m.name));
-    for (const c of m.chords || []) val.appendChild(el("kbd", "bj-macros__dead", c));
+    const r = el("div", "jar-macros__row jar-macros__row--meta");
+    r.appendChild(el("span", "jar-macros__meta-label", m.label));
+    const val = el("span", "jar-macros__keys");
+    if (m.text) val.appendChild(el("span", "jar-macros__meta-text", m.text));
+    if (m.name) val.appendChild(el("code", "jar-macros__ex", m.name));
+    for (const c of m.chords || []) val.appendChild(el("kbd", "jar-macros__dead", c));
     r.appendChild(val);
     return r;
   }
   function buildBody(groups) {
-    const wrap = el("div", "bj-macros");
-    const filter = el("div", "bj-macros__filter");
-    const icon = el("span", "bj-macros__filter-icon");
+    const wrap = el("div", "jar-macros");
+    const filter = el("div", "jar-macros__filter");
+    const icon = el("span", "jar-macros__filter-icon");
     icon.innerHTML = FILTER_ICON;
     icon.setAttribute("aria-hidden", "true");
-    const input2 = el("input", "bj-macros__filter-input");
+    const input2 = el("input", "jar-macros__filter-input");
     input2.type = "search";
     input2.placeholder = "Filter by name or key\u2026";
-    input2.setAttribute("aria-label", "Filter the available macros");
+    input2.setAttribute("aria-label", "Filter keys and names");
     input2.autocomplete = "off";
     input2.spellcheck = false;
-    const count = el("span", "bj-macros__filter-count");
+    const count = el("span", "jar-macros__filter-count");
     count.setAttribute("aria-live", "polite");
     filter.append(icon, input2, count);
     wrap.appendChild(filter);
-    const list3 = el("div", "bj-macros__list");
+    const list3 = el("div", "jar-macros__list");
     wrap.appendChild(list3);
-    const empty = el("p", "bj-macros__empty", "No matches.");
+    const empty = el("p", "jar-macros__empty", "No matches.");
     empty.hidden = true;
     wrap.appendChild(empty);
     const total = countRows(groups);
@@ -13786,13 +14470,13 @@
       for (const group of groups) {
         const hits = group.rows.filter((r) => rowMatches(r, query2));
         if (!hits.length && !(quiet && (group.meta || []).length)) continue;
-        list3.appendChild(el("div", "bj-macros__group", group.name));
-        if (quiet && group.lead) list3.appendChild(el("p", "bj-macros__aside", group.lead));
+        list3.appendChild(el("div", "jar-macros__group", group.name));
+        if (quiet && group.lead) list3.appendChild(el("p", "jar-macros__aside", group.lead));
         for (const row of hits) {
           list3.appendChild(rowNode(row, group.name !== "Command line", group.prefix));
         }
         if (quiet) for (const m of group.meta || []) list3.appendChild(metaNode(m));
-        if (quiet && group.closing) list3.appendChild(el("p", "bj-macros__aside", group.closing));
+        if (quiet && group.closing) list3.appendChild(el("p", "jar-macros__aside", group.closing));
         shown += hits.length;
       }
       empty.hidden = shown > 0;
@@ -13803,8 +14487,8 @@
     return wrap;
   }
   function styleGroups() {
-    const E3 = global13.BelEditor;
-    const C = global13.Commands;
+    const E3 = global14.BelEditor;
+    const C = global14.Commands;
     if (!E3 || typeof E3.styleMacros !== "function") return [];
     const style = activeStyle();
     const facts = reservedFacts();
@@ -13824,7 +14508,7 @@
     }));
   }
   function reservedFacts() {
-    const E3 = global13.BelEditor;
+    const E3 = global14.BelEditor;
     if (!E3 || typeof E3.reservedChordFacts !== "function") return null;
     try {
       return E3.reservedChordFacts();
@@ -13833,8 +14517,8 @@
     }
   }
   function glossFor(chord) {
-    const C = global13.Commands;
-    const KB = global13.Keybindings;
+    const C = global14.Commands;
+    const KB = global14.Keybindings;
     if (!C || !KB || typeof KB.normalizeSpec !== "function") return "";
     const spec = KB.normalizeSpec(chord);
     if (!spec) return "";
@@ -13843,13 +14527,13 @@
     return cmd ? cmd.title : "";
   }
   function lineAccess() {
-    const KB = global13.Keybindings;
+    const KB = global14.Keybindings;
     const chord = KB && typeof KB.labelFor === "function" ? KB.labelFor("cmdline.open") : "";
     return commandLineAccess(activeStyle(), chord);
   }
   function openAvailableMacros() {
     const access = lineAccess();
-    const E3 = global13.BelEditor;
+    const E3 = global14.BelEditor;
     let note = "";
     try {
       note = E3 && typeof E3.packageKeyNote === "function" ? E3.packageKeyNote(activeStyle()) : "";
@@ -13863,14 +14547,14 @@
       note
     );
     if (!countRows(groups)) {
-      if (global13.StatusStrip && global13.StatusStrip.setMessage) {
-        global13.StatusStrip.setMessage("The command list is not ready yet.");
+      if (global14.StatusStrip && global14.StatusStrip.setMessage) {
+        global14.StatusStrip.setMessage("The command list is not ready yet.");
       }
       return false;
     }
-    if (!global13.FloatingWindow || typeof global13.FloatingWindow.open !== "function") return false;
-    global13.FloatingWindow.open({
-      title: "Available macros",
+    if (!global14.FloatingWindow || typeof global14.FloatingWindow.open !== "function") return false;
+    global14.FloatingWindow.open({
+      title: "Available Keys",
       className: "floating-window--macros",
       actions: [{
         icon: INFO_ICON,
@@ -13885,14 +14569,14 @@
     });
     return true;
   }
-  global13.AvailableMacros = { open: openAvailableMacros };
+  global14.AvailableMacros = { open: openAvailableMacros };
 
   // js/ui/full-keyboard.mjs
-  var global14 = globalThis;
+  var global15 = globalThis;
   var active3 = false;
   var listening2 = false;
   function strip() {
-    const B = global14.StatusStrip;
+    const B = global15.StatusStrip;
     return B && typeof B.setMessage === "function" ? B : null;
   }
   function say(text) {
@@ -13900,24 +14584,24 @@
     if (B) B.setMessage(text);
   }
   function isSupported() {
-    const nav = global14.navigator;
+    const nav = global15.navigator;
     return !!(nav && nav.keyboard && typeof nav.keyboard.lock === "function");
   }
   function isActive() {
-    return active3 && !!(global14.document && global14.document.fullscreenElement);
+    return active3 && !!(global15.document && global15.document.fullscreenElement);
   }
   function watchFullscreen() {
-    if (listening2 || !global14.document) return;
+    if (listening2 || !global15.document) return;
     listening2 = true;
-    global14.document.addEventListener("fullscreenchange", () => {
-      if (global14.document.fullscreenElement || !active3) return;
+    global15.document.addEventListener("fullscreenchange", () => {
+      if (global15.document.fullscreenElement || !active3) return;
       active3 = false;
       releaseLock();
       say("Full keyboard off.");
     });
   }
   function releaseLock() {
-    const nav = global14.navigator;
+    const nav = global15.navigator;
     if (nav && nav.keyboard && typeof nav.keyboard.unlock === "function") {
       try {
         nav.keyboard.unlock();
@@ -13930,19 +14614,19 @@
       say("This browser has no Keyboard Lock, so the reserved chords stay reserved.");
       return false;
     }
-    const el6 = global14.document && global14.document.documentElement;
+    const el6 = global15.document && global15.document.documentElement;
     if (!el6 || typeof el6.requestFullscreen !== "function") {
       say("Full keyboard needs fullscreen, which this browser will not give.");
       return false;
     }
     watchFullscreen();
     try {
-      if (!global14.document.fullscreenElement) await el6.requestFullscreen();
-      await global14.navigator.keyboard.lock();
+      if (!global15.document.fullscreenElement) await el6.requestFullscreen();
+      await global15.navigator.keyboard.lock();
     } catch (err) {
-      if (global14.document.fullscreenElement && global14.document.exitFullscreen) {
+      if (global15.document.fullscreenElement && global15.document.exitFullscreen) {
         try {
-          await global14.document.exitFullscreen();
+          await global15.document.exitFullscreen();
         } catch (_) {
         }
       }
@@ -13959,9 +14643,9 @@
     if (!active3) return false;
     active3 = false;
     releaseLock();
-    if (global14.document && global14.document.fullscreenElement && global14.document.exitFullscreen) {
+    if (global15.document && global15.document.fullscreenElement && global15.document.exitFullscreen) {
       try {
-        await global14.document.exitFullscreen();
+        await global15.document.exitFullscreen();
       } catch (_) {
       }
     }
@@ -13971,10 +14655,10 @@
   function toggle3() {
     return isActive() ? exit() : enter();
   }
-  global14.FullKeyboard = { isSupported, isActive, enter, exit, toggle: toggle3 };
+  global15.FullKeyboard = { isSupported, isActive, enter, exit, toggle: toggle3 };
 
   // js/ui/double-tap.mjs
-  var global15 = globalThis;
+  var global16 = globalThis;
   var TRIGGERS = {
     off: null,
     shift: { key: "Shift", flag: "shiftKey" },
@@ -13986,7 +14670,7 @@
   var sawOtherKey = false;
   var listening3 = false;
   function persist2() {
-    return global15.Persist || null;
+    return global16.Persist || null;
   }
   function settings() {
     const p = persist2();
@@ -14023,10 +14707,10 @@
   function blocked(e) {
     const doc2 = typeof document !== "undefined" ? document : null;
     const t = e && e.target || (doc2 ? doc2.activeElement : null);
-    const B = global15.StatusStrip;
+    const B = global16.StatusStrip;
     return !!blockReason({
       composing: !!(e && (e.isComposing || e.keyCode === 229)),
-      recordingChord: !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording")),
+      recordingChord: !!(t && t.classList && t.classList.contains("jar-kb__chord") && t.classList.contains("is-recording")),
       // A modal owns the screen; opening the palette behind or over it is wrong.
       // This also covers the settings search field, which lives inside one.
       modalOpen: !!(doc2 && doc2.querySelector("dialog[open]")),
@@ -14085,18 +14769,18 @@
     return { close: true, run: id };
   }
   function run2(id) {
-    const C = global15.Commands;
-    const P3 = global15.CommandPalette;
+    const C = global16.Commands;
+    const P3 = global16.CommandPalette;
     const paletteOpen = !!(P3 && typeof P3.isOpen === "function" && P3.isOpen());
     const action = resolveAction(id, paletteOpen);
     if (action.close && P3 && typeof P3.close === "function") P3.close();
     if (action.run && C && typeof C.run === "function") C.run(action.run);
   }
   function init6() {
-    if (listening3 || typeof global15.addEventListener !== "function") return false;
+    if (listening3 || typeof global16.addEventListener !== "function") return false;
     listening3 = true;
-    global15.addEventListener("keydown", onKeyDown2, true);
-    global15.addEventListener("keyup", onKeyUp, true);
+    global16.addEventListener("keydown", onKeyDown2, true);
+    global16.addEventListener("keyup", onKeyUp, true);
     return true;
   }
   var GESTURE_TARGETS = [
@@ -14110,7 +14794,7 @@
     "view.harpoon",
     "keys.macros"
   ];
-  global15.DoubleTap = {
+  global16.DoubleTap = {
     init: init6,
     shouldFire,
     targets: () => GESTURE_TARGETS.slice(),
@@ -14127,7 +14811,7 @@
   if (typeof document !== "undefined") init6();
 
   // js/ui/scroll-fade.mjs
-  var global16 = globalThis;
+  var global17 = globalThis;
   var EPS = 1;
   function computeSides(m) {
     var axis = m.axis || "both";
@@ -14220,10 +14904,10 @@
       }
     };
   }
-  global16.ScrollFade = { attach: attach2, computeSides };
+  global17.ScrollFade = { attach: attach2, computeSides };
 
   // js/ui/text-slide.mjs
-  var global17 = globalThis;
+  var global18 = globalThis;
   var SPEED_PX_PER_S = 90;
   var MIN_SLIDE_S = 0.5;
   var SLIDE_FRAC = 0.38;
@@ -14297,7 +14981,7 @@
   function bindAll() {
     document.querySelectorAll("[data-text-slide]").forEach(bind2);
   }
-  global17.TextSlide = { bind: bind2, bindAll };
+  global18.TextSlide = { bind: bind2, bindAll };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bindAll);
   } else {
@@ -14305,13 +14989,13 @@
   }
 
   // js/ui/dialog.mjs
-  var DIALOG_ROOT_CLASS = "bj-dialog";
+  var DIALOG_ROOT_CLASS = "jar-dialog";
   var dialogs = /* @__PURE__ */ new WeakMap();
   var SURFACE_SEARCH_SELECTOR = 'input[type="search"]:not([disabled]), [data-surface-find]';
   var PALETTE_PREFIXES = "/@>%#!?:";
   function isRecordingChordTarget2(e) {
     const t = e && e.target || (typeof document !== "undefined" ? document.activeElement : null);
-    return !!(t && t.classList && t.classList.contains("bj-kb__chord") && t.classList.contains("is-recording"));
+    return !!(t && t.classList && t.classList.contains("jar-kb__chord") && t.classList.contains("is-recording"));
   }
   function isFindEvent(e) {
     const KB = globalThis.Keybindings;
@@ -14333,14 +15017,14 @@
       const input2 = findSurfaceSearchInput(open11[i]);
       if (input2) return input2;
     }
-    const palette = document.querySelector(".bel-palette.is-open");
+    const palette = document.querySelector(".jar-palette.is-open");
     return palette ? findSurfaceSearchInput(palette) : null;
   }
   function focusSurfaceSearch(input2) {
     if (!input2 || typeof input2.focus !== "function") return false;
     input2.focus();
     const v = String(input2.value || "");
-    if (input2.classList && input2.classList.contains("bel-palette-input")) {
+    if (input2.classList && input2.classList.contains("jar-palette-input")) {
       const start = v.length && PALETTE_PREFIXES.includes(v[0]) ? 1 : 0;
       try {
         input2.setSelectionRange(start, v.length);
@@ -14468,11 +15152,11 @@
     const dialogEl = document.createElement("dialog");
     dialogEl.className = [DIALOG_ROOT_CLASS, className].filter(Boolean).join(" ");
     const card = document.createElement("div");
-    card.className = ["bj-dialog__card", cardClass].filter(Boolean).join(" ");
+    card.className = ["jar-dialog__card", cardClass].filter(Boolean).join(" ");
     if (closeButton) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "bj-dialog__close icon-btn";
+      btn.className = "jar-dialog__close icon-btn";
       btn.setAttribute("aria-label", closeLabel);
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
       btn.addEventListener("click", (e) => {
@@ -14486,14 +15170,14 @@
       let titleEl = null;
       if (title) {
         titleEl = document.createElement("div");
-        titleEl.className = "bj-dialog__title";
-        titleEl.id = "bj-dialog-title-" + Math.random().toString(36).slice(2);
+        titleEl.className = "jar-dialog__title";
+        titleEl.id = "jar-dialog-title-" + Math.random().toString(36).slice(2);
         titleEl.textContent = title;
         dialogEl.setAttribute("aria-labelledby", titleEl.id);
       }
       if (headerExtra) {
         const header = document.createElement("div");
-        header.className = "bj-dialog__header";
+        header.className = "jar-dialog__header";
         if (titleEl) header.appendChild(titleEl);
         header.appendChild(headerExtra);
         card.appendChild(header);
@@ -14504,7 +15188,7 @@
       dialogEl.setAttribute("aria-label", opts.ariaLabel);
     }
     const body = document.createElement("div");
-    body.className = "bj-dialog__body";
+    body.className = "jar-dialog__body";
     applyDialogBodyContent(body, opts);
     card.appendChild(body);
     dialogEl.appendChild(card);
@@ -14549,8 +15233,8 @@
   g8.BelJarDialog = g8.Dialog;
 
   // js/ui/prompt-dialog.mjs
-  var CARD_CLASS = "bj-dialog__card bj-prompt-dialog__card";
-  var WRAP_CLASS = "bj-prompt-dialog-wrap";
+  var CARD_CLASS = "jar-dialog__card jar-prompt-dialog__card";
+  var WRAP_CLASS = "jar-prompt-dialog-wrap";
   function el2(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -14558,20 +15242,20 @@
     return node;
   }
   function markMono(name) {
-    const span = el2("span", "bj-prompt-dialog__mono");
+    const span = el2("span", "jar-prompt-dialog__mono");
     span.textContent = name;
     return span;
   }
   function actionButton(label, action, variant, opts) {
     opts = opts || {};
-    const btn = el2("button", "bj-prompt-dialog__btn" + (variant ? ` is-${variant}` : ""));
+    const btn = el2("button", "jar-prompt-dialog__btn" + (variant ? ` is-${variant}` : ""));
     btn.type = "button";
     btn.dataset.action = action;
     if (opts.monoSuffix) {
       if (opts.labelPrefix) {
-        btn.appendChild(el2("span", "bj-prompt-dialog__btn-prefix", opts.labelPrefix));
+        btn.appendChild(el2("span", "jar-prompt-dialog__btn-prefix", opts.labelPrefix));
       }
-      const mono = el2("span", "bj-prompt-dialog__btn-mono");
+      const mono = el2("span", "jar-prompt-dialog__btn-mono");
       mono.textContent = opts.monoSuffix;
       btn.appendChild(mono);
     } else {
@@ -14580,7 +15264,7 @@
     return btn;
   }
   function buildActions(buttons, layout) {
-    const actions = el2("div", "bj-prompt-dialog__actions");
+    const actions = el2("div", "jar-prompt-dialog__actions");
     if (layout === "row") actions.classList.add("is-row");
     for (const b of buttons) {
       const btnOpts = {};
@@ -14601,28 +15285,28 @@
       return;
     }
     if (opts.step) {
-      shell.appendChild(el2("p", "bj-prompt-dialog__step", opts.step));
+      shell.appendChild(el2("p", "jar-prompt-dialog__step", opts.step));
     }
     if (opts.subject) {
-      const subject = el2("p", "bj-prompt-dialog__subject");
+      const subject = el2("p", "jar-prompt-dialog__subject");
       subject.appendChild(markMono(opts.subject));
       shell.appendChild(subject);
     }
     if (opts.message != null) {
-      const intro = el2("p", "bj-prompt-dialog__message");
+      const intro = el2("p", "jar-prompt-dialog__message");
       if (opts.message instanceof Node) intro.appendChild(opts.message);
       else intro.textContent = String(opts.message);
       shell.appendChild(intro);
     }
     if (opts.note) {
-      shell.appendChild(el2("p", "bj-prompt-dialog__note", opts.note));
+      shell.appendChild(el2("p", "jar-prompt-dialog__note", opts.note));
     }
   }
   function open5(opts) {
     opts = opts || {};
     return new Promise((resolve2) => {
       let settled = false;
-      const shell = el2("div", "bj-prompt-dialog");
+      const shell = el2("div", "jar-prompt-dialog");
       appendBody(shell, opts);
       const buttons = opts.buttons || [];
       if (buttons.length) {
@@ -14691,7 +15375,7 @@
       subject: opts.subject,
       message: opts.message,
       note: opts.note,
-      className: opts.className || "bj-confirm-dialog-wrap",
+      className: opts.className || "jar-confirm-dialog-wrap",
       closeButton: opts.closeButton,
       layout: "row",
       buttons: [
@@ -14741,9 +15425,9 @@
     const sel = selectionForValue(initialValue, opts.selection);
     let settled = false;
     return new Promise((resolve2) => {
-      const wrap = el6("div", "bj-name-prompt");
-      const leadEl = opts.message ? el6("p", "bj-name-prompt__message", opts.message) : null;
-      const input2 = el6("input", "bj-name-prompt__input");
+      const wrap = el6("div", "jar-name-prompt");
+      const leadEl = opts.message ? el6("p", "jar-name-prompt__message", opts.message) : null;
+      const input2 = el6("input", "jar-name-prompt__input");
       input2.type = "text";
       input2.value = initialValue;
       input2.spellcheck = false;
@@ -14751,11 +15435,11 @@
       if (opts.mono) input2.classList.add("is-mono");
       if (opts.placeholder) input2.placeholder = opts.placeholder;
       wrap.appendChild(input2);
-      const errorEl = el6("p", "bj-name-prompt__error");
+      const errorEl = el6("p", "jar-name-prompt__error");
       errorEl.hidden = true;
       wrap.appendChild(errorEl);
       if (opts.hint) {
-        const hint = el6("p", "bj-name-prompt__hint");
+        const hint = el6("p", "jar-name-prompt__hint");
         hint.textContent = opts.hint;
         wrap.appendChild(hint);
       }
@@ -14763,14 +15447,14 @@
         { action: "cancel", label: opts.cancelLabel || "Cancel", variant: "ghost" },
         { action: "confirm", label: opts.confirmLabel || "Create", variant: "primary" }
       ]);
-      actions.classList.add("bj-name-prompt__actions");
+      actions.classList.add("jar-name-prompt__actions");
       const cancelBtn = actions.querySelector('[data-action="cancel"]');
       const confirmBtn = actions.querySelector('[data-action="confirm"]');
       wrap.appendChild(actions);
       const dialogEl = createDialog({
         ariaLabel: opts.ariaLabel || "Name",
         content: wrap,
-        className: "bj-name-prompt-dialog",
+        className: "jar-name-prompt-dialog",
         cardClass: CARD_CLASS2,
         removeOnClose: true
       });
@@ -14821,8 +15505,8 @@
         tryConfirm();
       });
       if (leadEl) {
-        const card = dialogEl.querySelector(".bj-dialog__card");
-        const body = dialogEl.querySelector(".bj-dialog__body");
+        const card = dialogEl.querySelector(".jar-dialog__card");
+        const body = dialogEl.querySelector(".jar-dialog__body");
         if (card && body) card.insertBefore(leadEl, body);
       }
       dialogEl.addEventListener("close", () => {
@@ -14859,14 +15543,14 @@
   }
   function buildConflictBody(conflict, total, index) {
     const { el: el6, markMono: markMono2 } = PromptDialog;
-    const wrap = el6("div", "bj-conflict-dialog__panel");
+    const wrap = el6("div", "jar-conflict-dialog__panel");
     if (total > 1) {
-      wrap.appendChild(el6("p", "bj-prompt-dialog__step", `${index + 1} of ${total}`));
+      wrap.appendChild(el6("p", "jar-prompt-dialog__step", `${index + 1} of ${total}`));
     }
-    const subject = el6("p", "bj-prompt-dialog__subject");
+    const subject = el6("p", "jar-prompt-dialog__subject");
     subject.appendChild(markMono2(conflict.label));
     wrap.appendChild(subject);
-    const message2 = el6("p", "bj-prompt-dialog__message");
+    const message2 = el6("p", "jar-prompt-dialog__message");
     message2.textContent = conflict.kind === "folder" ? "A folder with this name is already in the project." : "A file with this name is already in the project.";
     wrap.appendChild(message2);
     return wrap;
@@ -14901,7 +15585,7 @@
       let index = 0;
       const resolutions = [];
       let settled = false;
-      const shell = el6("div", "bj-prompt-dialog");
+      const shell = el6("div", "jar-prompt-dialog");
       const dialogEl = createDialog({
         ariaLabel: "Name conflict",
         content: shell,
@@ -14958,7 +15642,7 @@
   g12.BelJarConflictDialog = g12.ConflictDialog;
 
   // js/ui/name-conflicts.mjs
-  var global18 = globalThis;
+  var global19 = globalThis;
   function parentDir(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
@@ -15619,7 +16303,7 @@
     }
     return plan;
   }
-  global18.NameConflicts = {
+  global19.NameConflicts = {
     parentDir,
     baseName: baseName2,
     joinPath: joinPath2,
@@ -15641,10 +16325,10 @@
     detectMoveConflicts,
     applyMoveResolutions
   };
-  global18.BelJarNameConflicts = global18.NameConflicts;
+  global19.BelJarNameConflicts = global19.NameConflicts;
 
   // js/ui/download-zip.mjs
-  var global19 = globalThis;
+  var global20 = globalThis;
   var CRC_TABLE = (function() {
     var table = new Uint32Array(256);
     for (var n = 0; n < 256; n++) {
@@ -15772,16 +16456,16 @@
   function downloadZip(entries, fileName) {
     triggerDownload(buildZip(entries), fileName || "download.zip");
   }
-  global19.DownloadZip = {
+  global20.DownloadZip = {
     buildZip,
     triggerDownload,
     downloadTextFile,
     downloadZip
   };
-  global19.BelJarDownloadZip = global19.DownloadZip;
+  global20.BelJarDownloadZip = global20.DownloadZip;
 
   // js/ui/tree-dnd.mjs
-  var global20 = globalThis;
+  var global21 = globalThis;
   var THRESHOLD = 4;
   var AUTO_EXPAND_MS = 600;
   function attach3(container, opts) {
@@ -15941,11 +16625,11 @@
       container.removeEventListener("pointercancel", onPointerUp);
     };
   }
-  global20.TreeDnD = { attach: attach3 };
-  global20.BelJarTreeDnD = global20.TreeDnD;
+  global21.TreeDnD = { attach: attach3 };
+  global21.BelJarTreeDnD = global21.TreeDnD;
 
   // js/ui/header-search.mjs
-  var global21 = globalThis;
+  var global22 = globalThis;
   function init7(opts) {
     opts = opts || {};
     var host2 = opts.host;
@@ -16036,13 +16720,13 @@
       host: host2
     };
   }
-  global21.HeaderSearch = { init: init7 };
-  global21.BelJarHeaderSearch = global21.HeaderSearch;
+  global22.HeaderSearch = { init: init7 };
+  global22.BelJarHeaderSearch = global22.HeaderSearch;
 
   // js/explorer/explorer-inline-name.mjs
-  var global22 = globalThis;
+  var global23 = globalThis;
   var NC = function() {
-    return global22.NameConflicts;
+    return global23.NameConflicts;
   };
   function lastSegment(path) {
     var s = String(path || "");
@@ -16152,7 +16836,7 @@
     if (target.kind === "file") return target.parentDir != null ? target.parentDir : "";
     return "";
   }
-  global22.ExplorerInlineName = {
+  global23.ExplorerInlineName = {
     lastSegment,
     parentDir: parentDir2,
     joinPath: joinPath3,
@@ -16166,13 +16850,13 @@
     resolveCreateParentFromRow,
     resolveCreateParentDir
   };
-  global22.BelJarExplorerInlineName = global22.ExplorerInlineName;
+  global23.BelJarExplorerInlineName = global23.ExplorerInlineName;
 
   // js/explorer/explorer-tree.mjs
-  var global23 = globalThis;
+  var global24 = globalThis;
   var EXPLORER_CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   function explorerFileBucket2(name) {
-    var PS = global23.ProjectSource;
+    var PS = global24.ProjectSource;
     if (PS && PS.isCfgPath(name)) return 0;
     if (PS && PS.isSignaturePath(name)) return 1;
     var low = String(name).toLowerCase();
@@ -16254,14 +16938,14 @@
     return root2;
   }
   function resolveCreateParentFromRow2(row) {
-    var IL = global23.ExplorerInlineName;
+    var IL = global24.ExplorerInlineName;
     if (IL && IL.resolveCreateParentFromRow) return IL.resolveCreateParentFromRow(row);
     if (!row) return "";
     if (row.hasAttribute("data-folder-path")) return row.getAttribute("data-folder-path") || "";
     return row.getAttribute("data-drop-zone") || "";
   }
   function resolveCreateParentDir2(target) {
-    var IL = global23.ExplorerInlineName;
+    var IL = global24.ExplorerInlineName;
     if (IL && IL.resolveCreateParentDir) return IL.resolveCreateParentDir(target);
     if (!target) return "";
     if (target.kind === "folder") return target.folderPath || "";
@@ -16503,12 +17187,12 @@
     };
   }
   function loadCollapsed(projectName) {
-    var P3 = global23.Persist;
+    var P3 = global24.Persist;
     if (!P3) return /* @__PURE__ */ new Set();
     return new Set(P3.getExplorerFold(projectName));
   }
   function saveCollapsed(projectName, collapsed) {
-    var P3 = global23.Persist;
+    var P3 = global24.Persist;
     if (!P3) return;
     P3.setExplorerFold(projectName, [].slice.call(collapsed));
   }
@@ -16630,8 +17314,8 @@
       saveTimer3 = setTimeout(function() {
         saveTimer3 = null;
         saveCollapsed(opts.getProjectName ? opts.getProjectName() : "Untitled Project", collapsed);
-        if (global23.WorkspaceState && global23.WorkspaceState.scheduleSave) {
-          global23.WorkspaceState.scheduleSave();
+        if (global24.WorkspaceState && global24.WorkspaceState.scheduleSave) {
+          global24.WorkspaceState.scheduleSave();
         }
       }, 120);
     }
@@ -17084,8 +17768,8 @@
       clearSelection();
     }
     container.addEventListener("click", onBackgroundClick);
-    if (typeof global23.Menu !== "undefined") {
-      global23.Menu.bindContextMenu(container, function(e) {
+    if (typeof global24.Menu !== "undefined") {
+      global24.Menu.bindContextMenu(container, function(e) {
         var fileEl = e.target.closest("[data-file-id]");
         var folderEl = e.target.closest("[data-folder-path]");
         var hasSelection = selectedFiles.size + selectedFolders.size > 0;
@@ -17144,8 +17828,8 @@
       }
       return null;
     }
-    if (typeof global23.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
-      dndDetach = global23.TreeDnD.attach(container, {
+    if (typeof global24.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
+      dndDetach = global24.TreeDnD.attach(container, {
         getDragPayload: buildDragPayload,
         resolveDrop,
         canDrop: opts.canDrop,
@@ -17283,7 +17967,7 @@
       }
     };
   }
-  global23.Explorer = {
+  global24.Explorer = {
     buildExplorerModel,
     collectFolderPaths,
     collectSubtreeFolderPaths,
@@ -17298,10 +17982,10 @@
     sameParentFileIdsForDrag,
     init: init8
   };
-  global23.BelJarExplorer = global23.Explorer;
+  global24.BelJarExplorer = global24.Explorer;
 
   // js/library/library-suites.mjs
-  var global24 = globalThis;
+  var global25 = globalThis;
   function dirOf3(path) {
     var i = String(path || "").lastIndexOf("/");
     return i === -1 ? "" : path.slice(0, i);
@@ -17348,11 +18032,11 @@
     });
     return out;
   }
-  global24.LibrarySuites = { listActiveSuites };
-  global24.BelJarLibrarySuites = global24.LibrarySuites;
+  global25.LibrarySuites = { listActiveSuites };
+  global25.BelJarLibrarySuites = global25.LibrarySuites;
 
   // js/library/library-search.mjs
-  var global25 = globalThis;
+  var global26 = globalThis;
   var SEARCH_ICON2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
   function normalizeQuery(q) {
     return String(q || "").trim().toLowerCase();
@@ -17508,7 +18192,7 @@
       renderHit(container, hits[i], layout, onSelect);
     }
   }
-  global25.LibrarySearch = {
+  global26.LibrarySearch = {
     SEARCH_ICON: SEARCH_ICON2,
     normalizeQuery,
     metadataHay,
@@ -17516,10 +18200,10 @@
     searchEntries,
     renderResults: renderResults2
   };
-  global25.BelJarLibrarySearch = global25.LibrarySearch;
+  global26.BelJarLibrarySearch = global26.LibrarySearch;
 
   // js/explorer/explorer-search.mjs
-  var global26 = globalThis;
+  var global27 = globalThis;
   function baseName3(name) {
     var i = String(name).lastIndexOf("/");
     return i === -1 ? String(name) : String(name).slice(i + 1);
@@ -17539,8 +18223,8 @@
     var input2 = opts.input;
     var ac = opts.ac;
     if (!wrap || !input2 || !ac) return null;
-    var LS = global26.LibrarySearch;
-    var HS = global26.HeaderSearch;
+    var LS = global27.LibrarySearch;
+    var HS = global27.HeaderSearch;
     var hits = [];
     var activeIndex3 = -1;
     var token = 0;
@@ -17717,11 +18401,11 @@
       }
     };
   }
-  global26.ExplorerSearch = { init: init9 };
-  global26.BelJarExplorerSearch = global26.ExplorerSearch;
+  global27.ExplorerSearch = { init: init9 };
+  global27.BelJarExplorerSearch = global27.ExplorerSearch;
 
   // js/library/library-preview.mjs
-  var global27 = globalThis;
+  var global28 = globalThis;
   var CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_INSERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
@@ -17783,9 +18467,9 @@
       codeEl.textContent = text;
       return;
     }
-    codeEl.className = "library-preview__code-source bel-hl-source" + (ext === "elf" ? " bel-hl-source--elf" : "");
-    if (global27.BelEditor && typeof global27.BelEditor.renderSourceInto === "function") {
-      global27.BelEditor.renderSourceInto(codeEl, text, ext);
+    codeEl.className = "library-preview__code-source jar-hl-source" + (ext === "elf" ? " jar-hl-source--elf" : "");
+    if (global28.BelEditor && typeof global28.BelEditor.renderSourceInto === "function") {
+      global28.BelEditor.renderSourceInto(codeEl, text, ext);
       return;
     }
     codeEl.textContent = text;
@@ -17803,7 +18487,7 @@
     return "";
   }
   function suiteByFileForFolderChildren(children, cfgTextByLabel) {
-    var SL = global27.ExplorerSuiteLayout;
+    var SL = global28.ExplorerSuiteLayout;
     if (!SL || typeof SL.computeDirLayout !== "function") return {};
     var fileChildren = [];
     var activeCfgs = [];
@@ -17831,9 +18515,9 @@
   }
   function open7(opts) {
     opts = opts || {};
-    if (!opts.scopeFolder || typeof global27.Dialog === "undefined") return;
+    if (!opts.scopeFolder || typeof global28.Dialog === "undefined") return;
     if (activeDialog && activeDialog.open) {
-      global27.Dialog.requestDialogClose(activeDialog);
+      global28.Dialog.requestDialogClose(activeDialog);
       activeDialog = null;
     }
     var scopeFolder = opts.scopeFolder;
@@ -17848,7 +18532,7 @@
     var fileIndex = /* @__PURE__ */ Object.create(null);
     var searchFiles = [];
     var searchToken = 0;
-    var LS = global27.LibrarySearch;
+    var LS = global28.LibrarySearch;
     var treeRows = [];
     var selectedId = null;
     var loadToken = 0;
@@ -18290,11 +18974,11 @@
       }
     }
     treePane.addEventListener("keydown", handleTreeKeydown);
-    var dialogEl = global27.Dialog.createDialog({
+    var dialogEl = global28.Dialog.createDialog({
       ariaLabel: "Library preview \u2014 " + scopeLabel,
       content: shell,
-      className: "bj-library-preview-dialog",
-      cardClass: "bj-dialog__card bj-dialog__card--library-preview",
+      className: "jar-library-preview-dialog",
+      cardClass: "jar-dialog__card jar-dialog__card--library-preview",
       removeOnClose: true
     });
     activeDialog = dialogEl;
@@ -18305,7 +18989,7 @@
         document.activeElement.blur();
       }
     });
-    global27.Dialog.openDialog(dialogEl);
+    global28.Dialog.openDialog(dialogEl);
     ensureCfgTextsLoaded().then(function() {
       renderTree();
       if (selectedId && fileIndex[selectedId]) {
@@ -18320,15 +19004,15 @@
     });
   }
   function close4() {
-    if (activeDialog && global27.Dialog) {
-      global27.Dialog.requestDialogClose(activeDialog);
+    if (activeDialog && global28.Dialog) {
+      global28.Dialog.requestDialogClose(activeDialog);
     }
   }
-  global27.LibraryPreview = { open: open7, close: close4 };
-  global27.BelJarLibraryPreview = global27.LibraryPreview;
+  global28.LibraryPreview = { open: open7, close: close4 };
+  global28.BelJarLibraryPreview = global28.LibraryPreview;
 
   // js/library/library-panel.mjs
-  var global28 = globalThis;
+  var global29 = globalThis;
   var CHEVRON_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_PREVIEW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -18356,9 +19040,9 @@
     var allFileEntries = [];
     var suitesCache = [];
     var searchWrap = document.getElementById("library-search-wrap");
-    var LS = global28.LibrarySearch;
+    var LS = global29.LibrarySearch;
     function readExpandDefault() {
-      return typeof global28.Persist !== "undefined" && global28.Persist.readStoredLibraryExpandDefault();
+      return typeof global29.Persist !== "undefined" && global29.Persist.readStoredLibraryExpandDefault();
     }
     function isCategoryExpanded(foldKey, forceOpen) {
       if (forceOpen) return true;
@@ -18409,8 +19093,8 @@
     function refreshSuites() {
       if (typeof opts.listActiveSuites === "function") {
         suitesCache = opts.listActiveSuites();
-      } else if (global28.LibrarySuites) {
-        suitesCache = global28.LibrarySuites.listActiveSuites({
+      } else if (global29.LibrarySuites) {
+        suitesCache = global29.LibrarySuites.listActiveSuites({
           listFiles: opts.listFiles,
           getActiveCfgForDir: opts.getActiveCfgForDir
         });
@@ -18420,8 +19104,8 @@
       return suitesCache;
     }
     function openLibraryPreview(previewOpts) {
-      if (!global28.LibraryPreview || typeof global28.LibraryPreview.open !== "function") return;
-      global28.LibraryPreview.open({
+      if (!global29.LibraryPreview || typeof global29.LibraryPreview.open !== "function") return;
+      global29.LibraryPreview.open({
         scopeFolder: previewOpts.scopeFolder,
         scopeLabel: previewOpts.scopeLabel,
         initialFile: previewOpts.initialFile || null,
@@ -18507,8 +19191,8 @@
       return d ? d + "/" + name : name;
     }
     function resolveBulkPlan(incoming, existingFiles) {
-      var NC2 = global28.NameConflicts;
-      var CD = global28.ConflictDialog;
+      var NC2 = global29.NameConflicts;
+      var CD = global29.ConflictDialog;
       if (!NC2) {
         return Promise.resolve({ create: incoming.slice(), replace: [], replaceFolder: [] });
       }
@@ -18539,8 +19223,8 @@
       });
     }
     function resolveMagicPlan(relPath, code, existingFiles) {
-      var NC2 = global28.NameConflicts;
-      var CD = global28.ConflictDialog;
+      var NC2 = global29.NameConflicts;
+      var CD = global29.ConflictDialog;
       var incoming = [{ name: relPath, text: code }];
       if (!NC2) {
         return Promise.resolve({ create: [{ name: relPath, text: code }], replace: [], replaceFolder: [] });
@@ -18570,7 +19254,7 @@
       });
     }
     function applyFilePlan(plan, suite) {
-      var P3 = global28.Persist;
+      var P3 = global29.Persist;
       if (!plan) return;
       var targetId = null;
       var targetPath = null;
@@ -18613,8 +19297,8 @@
       }
     }
     function syncActiveCfgsAfterBulk() {
-      var P3 = global28.Persist;
-      var PS = global28.ProjectSource;
+      var P3 = global29.Persist;
+      var PS = global29.ProjectSource;
       if (!P3 || !PS || typeof PS.inferActiveCfgByDir !== "function") return;
       if (typeof P3.backfillActiveCfgByDir !== "function") return;
       var files = P3.listFiles();
@@ -18624,7 +19308,7 @@
       P3.backfillActiveCfgByDir(byDir);
     }
     function applyBulkPlan(plan) {
-      var P3 = global28.Persist;
+      var P3 = global29.Persist;
       if (!plan) return;
       if (typeof opts.applyUploadPlan === "function") {
         var count = 0;
@@ -18766,7 +19450,7 @@
       });
     }
     function runInsertAtRoot(item) {
-      var P3 = global28.Persist;
+      var P3 = global29.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !isLibraryProjectFile(item)) return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -18780,7 +19464,7 @@
       });
     }
     function runInsertUnderCurrentFolder(item) {
-      var P3 = global28.Persist;
+      var P3 = global29.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !canInsertUnderCurrentFolder() || !isLibraryProjectFile(item)) return;
       var dir = activeFileDir();
       if (!dir) return;
@@ -18812,7 +19496,7 @@
       return out;
     }
     function runFolderInsert(folder, mode) {
-      var P3 = global28.Persist;
+      var P3 = global29.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       var rootPrefix = folder.name || "";
       var entries = collectFolderFiles(folder, rootPrefix);
@@ -18857,11 +19541,11 @@
       if (row) row.classList.remove("is-menu-open");
     }
     function openLibraryMenu(anchor2, menuOpts) {
-      if (typeof global28.Menu === "undefined") return;
+      if (typeof global29.Menu === "undefined") return;
       var row = libraryMenuRow(anchor2);
       if (row) row.classList.add("is-menu-open");
       var userOnClose = menuOpts.onClose;
-      global28.Menu.open({
+      global29.Menu.open({
         anchor: menuOpts.anchor != null ? menuOpts.anchor : anchor2,
         side: menuOpts.side,
         align: menuOpts.align,
@@ -18895,7 +19579,7 @@
       });
     }
     function openFileInsertMenu(anchor2, item, code) {
-      if (typeof global28.Menu === "undefined") return;
+      if (typeof global29.Menu === "undefined") return;
       refreshSuites();
       var ed = typeof opts.getEditor === "function" ? opts.getEditor() : null;
       var editorReady = !!(ed && hasEditor());
@@ -18969,7 +19653,7 @@
     function runMagic(item, suite) {
       if (!suite) return;
       if (!isSuiteSourceFile(item)) return;
-      var P3 = global28.Persist;
+      var P3 = global29.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -18989,7 +19673,7 @@
         runMagic(item, suitesCache[0]);
         return;
       }
-      if (typeof global28.Menu === "undefined") return;
+      if (typeof global29.Menu === "undefined") return;
       openLibraryMenu(anchor2, {
         side: "right",
         align: "start",
@@ -19224,8 +19908,8 @@
       });
       if (item.description) {
         applyTip(row, item.description);
-      } else if (typeof global28.Tooltips !== "undefined" && global28.Tooltips.bindOverflow) {
-        global28.Tooltips.bindOverflow(nameEl, function() {
+      } else if (typeof global29.Tooltips !== "undefined" && global29.Tooltips.bindOverflow) {
+        global29.Tooltips.bindOverflow(nameEl, function() {
           return item.label;
         });
       }
@@ -19356,8 +20040,8 @@
         render5();
       });
     }
-    if (searchEl && searchWrap && global28.HeaderSearch) {
-      global28.HeaderSearch.init({
+    if (searchEl && searchWrap && global29.HeaderSearch) {
+      global29.HeaderSearch.init({
         host: searchWrap,
         input: searchEl,
         onInput: scheduleSearch
@@ -19375,11 +20059,11 @@
       reload: loadManifest
     };
   }
-  global28.Library = { init: init10 };
-  global28.BelJarLibrary = global28.Library;
+  global29.Library = { init: init10 };
+  global29.BelJarLibrary = global29.Library;
 
   // js/ui/toasts.mjs
-  var global29 = globalThis;
+  var global30 = globalThis;
   var DEFAULT_DURATION_MS2 = 3500;
   var LEAVE_MS2 = 280;
   var UNTIL_POLL_MS = 120;
@@ -19441,7 +20125,7 @@
     return false;
   }
   function pushNotification(message2, parsed) {
-    const N = global29.Notifications;
+    const N = global30.Notifications;
     if (!N) return;
     if (typeof N.fromToast === "function") {
       N.fromToast(message2, {
@@ -19486,7 +20170,7 @@
     try {
       if (entry.onDismiss) entry.onDismiss();
     } catch (err) {
-      if (global29.console && console.error) console.error("[toast]", err);
+      if (global30.console && console.error) console.error("[toast]", err);
     }
     removeNode(entry);
     if (live.size === 0) hideToastLayer();
@@ -19537,7 +20221,7 @@
       try {
         if (untilFn()) animateOut(id, entry);
       } catch (err) {
-        if (global29.console && console.error) console.error("[toast]", err);
+        if (global30.console && console.error) console.error("[toast]", err);
         animateOut(id, entry);
       }
     }, UNTIL_POLL_MS);
@@ -19628,7 +20312,7 @@
     }
     stackEl = null;
   }
-  global29.Toasts = {
+  global30.Toasts = {
     init: init11,
     dispose: dispose4,
     show: show2,
@@ -19640,7 +20324,7 @@
     dismissAll,
     _pure: { normalizeDuration, parseOpts, shouldNotify, DEFAULT_DURATION_MS: DEFAULT_DURATION_MS2 }
   };
-  global29.BelJarToasts = global29.Toasts;
+  global30.BelJarToasts = global30.Toasts;
 
   // js/ui/notification-store.mjs
   var SCHEMA_VERSION3 = 1;
@@ -20065,7 +20749,7 @@
   }
 
   // js/ui/notifications.mjs
-  var global30 = globalThis;
+  var global31 = globalThis;
   var bellBtn = null;
   var panelEl2 = null;
   var listEl3 = null;
@@ -20378,8 +21062,8 @@
     track(document, "pointerdown", onDocPointerDown2, true);
     track(document, "keydown", onDocKeyDown, true);
     track(window, "resize", onWindowResize);
-    if (listEl3 && global30.ScrollFade && typeof global30.ScrollFade.attach === "function") {
-      fade = global30.ScrollFade.attach(listEl3, { axis: "y", size: 14 });
+    if (listEl3 && global31.ScrollFade && typeof global31.ScrollFade.attach === "function") {
+      fade = global31.ScrollFade.attach(listEl3, { axis: "y", size: 14 });
     }
     positionPanel();
     renderList2();
@@ -20411,7 +21095,7 @@
     clearBtn = null;
     countEl2 = null;
   }
-  global30.Notifications = {
+  global31.Notifications = {
     init: init12,
     dispose: dispose5,
     emit,
@@ -20441,10 +21125,10 @@
       SCHEMA_VERSION: SCHEMA_VERSION3
     }
   };
-  global30.BelJarNotifications = global30.Notifications;
+  global31.BelJarNotifications = global31.Notifications;
 
   // js/frame/frame.mjs
-  var global31 = globalThis;
+  var global32 = globalThis;
   var teardown2 = [];
   var mounted2 = false;
   function track2(target, type, fn, opts) {
@@ -20456,28 +21140,28 @@
     const root2 = document.documentElement;
     root2.classList.toggle("light");
     const isLight = root2.classList.contains("light");
-    if (global31.Persist && typeof global31.Persist.writeStoredTheme === "function") {
-      global31.Persist.writeStoredTheme(isLight ? "light" : "dark");
+    if (global32.Persist && typeof global32.Persist.writeStoredTheme === "function") {
+      global32.Persist.writeStoredTheme(isLight ? "light" : "dark");
     }
-    global31.dispatchEvent(new CustomEvent("beljar:settings-changed", {
+    global32.dispatchEvent(new CustomEvent("beljar:settings-changed", {
       detail: { key: "theme" }
     }));
     return isLight ? "light" : "dark";
   }
   function onReload() {
-    global31.location.reload();
+    global32.location.reload();
   }
   function onSettings() {
-    if (global31.SettingsUI && typeof global31.SettingsUI.open === "function") {
-      global31.SettingsUI.open();
+    if (global32.SettingsUI && typeof global32.SettingsUI.open === "function") {
+      global32.SettingsUI.open();
     }
   }
   function mount() {
     if (mounted2) return;
     mounted2 = true;
-    if (global31.Toasts && typeof global31.Toasts.init === "function") global31.Toasts.init();
-    if (global31.Notifications && typeof global31.Notifications.init === "function") {
-      global31.Notifications.init();
+    if (global32.Toasts && typeof global32.Toasts.init === "function") global32.Toasts.init();
+    if (global32.Notifications && typeof global32.Notifications.init === "function") {
+      global32.Notifications.init();
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
     track2(document.getElementById("btn-reload"), "click", onReload);
@@ -20493,7 +21177,7 @@
       } catch (_) {
       }
     }
-    for (const peer of [global31.Notifications, global31.Toasts]) {
+    for (const peer of [global32.Notifications, global32.Toasts]) {
       if (peer && typeof peer.dispose === "function") {
         try {
           peer.dispose();
@@ -20509,16 +21193,15 @@
     isMounted: () => mounted2,
     pendingTeardown: () => teardown2.length
   };
-  global31.Frame = Frame2;
-  global31.BelJarFrame = global31.Frame;
+  global32.Frame = Frame2;
+  global32.BelJarFrame = global32.Frame;
 
   // js/repl/repl-stream.mjs
-  var global32 = globalThis;
+  var global33 = globalThis;
   var outputEl2 = null;
   var liveEl = null;
   var cmdInputEl = null;
   var btnRunEl = null;
-  var openTurnEl = null;
   var openTurnBody = null;
   var focusBound = false;
   function getOutput() {
@@ -20751,7 +21434,7 @@
     if (input2 && !input2.disabled) input2.focus();
   }
   function isSelectingText() {
-    var sel = global32.getSelection && global32.getSelection();
+    var sel = global33.getSelection && global33.getSelection();
     return !!(sel && !sel.isCollapsed && String(sel).length);
   }
   function bindFocusDelegation() {
@@ -20773,7 +21456,6 @@
     for (var i = 0; i < kids.length; i++) {
       if (kids[i] !== liveEl) output2.removeChild(kids[i]);
     }
-    openTurnEl = null;
     openTurnBody = null;
     ensureLiveLine();
   }
@@ -20824,7 +21506,6 @@
     body.className = "repl-turn-body";
     turn.appendChild(body);
     output2.insertBefore(turn, liveEl);
-    openTurnEl = turn;
     openTurnBody = body;
     if (typeof ReplPersist !== "undefined" && ReplPersist.scheduleSave) {
       ReplPersist.scheduleSave();
@@ -20832,20 +21513,19 @@
     return turn;
   }
   function endTurn() {
-    openTurnEl = null;
     openTurnBody = null;
   }
   function currentTurnBody() {
     return openTurnBody;
   }
   ensureLiveLine();
-  if (typeof global32.addEventListener === "function") {
-    global32.addEventListener("beljar:settings-changed", function(e) {
+  if (typeof global33.addEventListener === "function") {
+    global33.addEventListener("beljar:settings-changed", function(e) {
       var key = e && e.detail ? e.detail.key : "";
       if (key === "repl-hover-timestamp" || key === "repl-reset") syncStampHoverPref();
     });
   }
-  global32.ReplStream = {
+  global33.ReplStream = {
     ensureLiveLine,
     getLiveLine,
     getCommandInput,
@@ -20860,20 +21540,20 @@
     rebindStamps,
     syncStampHoverPref
   };
-  global32.BelJarReplStream = global32.ReplStream;
+  global33.BelJarReplStream = global33.ReplStream;
 
   // js/repl/repl-output.mjs
-  var global33 = globalThis;
+  var global34 = globalThis;
   var output = document.getElementById("output");
   function normBelugaRaw(s) {
-    return global33.BelugaText ? global33.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
+    return global34.BelugaText ? global34.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
   function stripAnsi(s) {
-    return global33.BelugaText ? global33.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
+    return global34.BelugaText ? global34.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
   }
   function isInternalQueryLine(trimmed) {
-    if (global33.BelugaText && global33.BelugaText.isInternalQueryLine) {
-      return global33.BelugaText.isInternalQueryLine(trimmed);
+    if (global34.BelugaText && global34.BelugaText.isInternalQueryLine) {
+      return global34.BelugaText.isInternalQueryLine(trimmed);
     }
     return trimmed === "[]" || trimmed === "^." || trimmed === "^" || /^\[[^\]]*(?:TClo|FREE BVar|\?[A-Za-z0-9_.]+)/i.test(trimmed);
   }
@@ -21027,8 +21707,8 @@
     });
   }
   function belugaCommandErrorInfo(text) {
-    if (global33.BelugaText && typeof global33.BelugaText.parseBelugaCommandError === "function") {
-      return global33.BelugaText.parseBelugaCommandError(text);
+    if (global34.BelugaText && typeof global34.BelugaText.parseBelugaCommandError === "function") {
+      return global34.BelugaText.parseBelugaCommandError(text);
     }
     return null;
   }
@@ -21202,7 +21882,7 @@
     });
   }
   function collectEditorQuerySourceLines() {
-    var editor2 = global33.CurrentEditor;
+    var editor2 = global34.CurrentEditor;
     if (!editor2 || typeof editor2.getValue !== "function") return [];
     var src = editor2.getValue();
     var out = [];
@@ -21288,7 +21968,7 @@
     return { solutions, isDone, queryLine, queryError };
   }
   function queryDisplayRows(bindings) {
-    return global33.BelugaText && global33.BelugaText.prettifyQueryBindings ? global33.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
+    return global34.BelugaText && global34.BelugaText.prettifyQueryBindings ? global34.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
   }
   function displayQueryBindings(container, rows2) {
     container.replaceChildren();
@@ -22001,7 +22681,7 @@
     streamAppend(block);
     scrollReplBottom();
   }
-  global33.ReplOutput = {
+  global34.ReplOutput = {
     appendOutput,
     appendReplHelp,
     appendRunOutput,
@@ -22038,10 +22718,10 @@
       return out;
     }
   };
-  global33.BelJarReplOutput = global33.ReplOutput;
+  global34.BelJarReplOutput = global34.ReplOutput;
 
   // js/repl/repl-run-cmd.mjs
-  var global34 = globalThis;
+  var global35 = globalThis;
   function baseName4(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
@@ -22352,8 +23032,8 @@
     dispatchRunCommand,
     executeRunCommand
   };
-  global34.ReplRunCmd = api;
-  global34.BelJarReplRunCmd = api;
+  global35.ReplRunCmd = api;
+  global35.BelJarReplRunCmd = api;
 
   // js/repl/repl-ac-suggest.mjs
   var MAX_ITEMS = 16;
@@ -22672,7 +23352,7 @@
   }
 
   // js/repl/repl-autocomplete.mjs
-  var global35 = globalThis;
+  var global36 = globalThis;
   var inputEl = null;
   var popupEl = null;
   var listEl4 = null;
@@ -23057,11 +23737,11 @@
     _compute: compute,
     _suggest: suggestReplCompletions
   };
-  global35.ReplAutocomplete = api2;
-  global35.BelJarReplAutocomplete = api2;
+  global36.ReplAutocomplete = api2;
+  global36.BelJarReplAutocomplete = api2;
 
   // js/repl/repl-commands.mjs
-  var global36 = globalThis;
+  var global37 = globalThis;
   var replHistory = [];
   var replHistoryIndex = null;
   var historyLoaded2 = false;
@@ -23105,7 +23785,7 @@
     return document.getElementById("command-input");
   }
   function parseBelugaCmd(prefixed) {
-    var norm2 = global36.BelugaText ? global36.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
+    var norm2 = global37.BelugaText ? global37.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
     var inner = norm2.replace(/^%:/, "").trim();
     if (!inner) return { verb: "", args: "" };
     var sp = inner.search(/\s/);
@@ -23257,7 +23937,7 @@
       }
     }
   }
-  global36.ReplCommands = {
+  global37.ReplCommands = {
     runCmd,
     resetHistoryIndex,
     historyUp,
@@ -23265,10 +23945,10 @@
     getHistory,
     recordHistory
   };
-  global36.BelJarReplCommands = global36.ReplCommands;
+  global37.BelJarReplCommands = global37.ReplCommands;
 
   // js/repl/repl-persist.mjs
-  var global37 = globalThis;
+  var global38 = globalThis;
   var SAVE_DEBOUNCE_MS2 = 300;
   var HTML_CAP = 400 * 1024;
   var saveTimer2 = null;
@@ -23356,6 +24036,10 @@
     }
     writeSnapshot();
   }
+  function saveIfPending() {
+    if (!saveTimer2) return;
+    saveNow();
+  }
   function restore() {
     var p = getPersist();
     if (!p || typeof p.readStoredReplTranscript !== "function") return false;
@@ -23406,28 +24090,29 @@
       if (ok) scheduleSave2();
     }
   }
-  global37.ReplPersist = {
+  global38.ReplPersist = {
     scheduleSave: scheduleSave2,
     saveNow,
+    saveIfPending,
     restore
   };
-  global37.BelJarReplPersist = global37.ReplPersist;
+  global38.BelJarReplPersist = global38.ReplPersist;
 
-  // js/ui/bj-toggle.mjs
-  var global38 = globalThis;
+  // js/ui/jar-toggle.mjs
+  var global39 = globalThis;
   function createParts(opts) {
     opts = opts || {};
     var input2 = document.createElement("input");
     input2.type = "checkbox";
-    input2.className = "bj-toggle__input";
+    input2.className = "jar-toggle__input";
     if (opts.id) input2.id = opts.id;
     if (opts.ariaLabel) input2.setAttribute("aria-label", opts.ariaLabel);
     input2.checked = !!opts.checked;
     var track3 = document.createElement("span");
-    track3.className = "bj-toggle__track";
+    track3.className = "jar-toggle__track";
     track3.setAttribute("aria-hidden", "true");
     var thumb = document.createElement("span");
-    thumb.className = "bj-toggle__thumb";
+    thumb.className = "jar-toggle__thumb";
     track3.appendChild(thumb);
     input2.addEventListener("change", function() {
       if (opts.onChange) opts.onChange(input2.checked);
@@ -23440,7 +24125,7 @@
   function create8(opts) {
     opts = opts || {};
     var wrap = document.createElement("label");
-    wrap.className = "bj-toggle";
+    wrap.className = "jar-toggle";
     if (opts.className) wrap.className += " " + opts.className;
     var parts = createParts(opts);
     wrap.appendChild(parts.input);
@@ -23448,11 +24133,11 @@
     parts.element = wrap;
     return parts;
   }
-  global38.Toggle = { create: create8, createParts };
-  global38.BelJarToggle = global38.Toggle;
+  global39.Toggle = { create: create8, createParts };
+  global39.BelJarToggle = global39.Toggle;
 
-  // js/ui/bj-dropdown.mjs
-  var global39 = globalThis;
+  // js/ui/jar-dropdown.mjs
+  var global40 = globalThis;
   var openDropdowns = [];
   function closeAll2() {
     for (var i = openDropdowns.length - 1; i >= 0; i--) {
@@ -23461,38 +24146,47 @@
       }
     }
   }
+  if (typeof document !== "undefined") {
+    document.addEventListener("click", function(e) {
+      if (!openDropdowns.length) return;
+      for (var i = openDropdowns.length - 1; i >= 0; i--) {
+        var d = openDropdowns[i];
+        if (d && typeof d.containsTarget === "function" && !d.containsTarget(e.target)) d.close();
+      }
+    });
+  }
   function create9(options, currentValue, onChange) {
     var selected = currentValue;
     var focusedIdx = -1;
     var optionEls = [];
     var container = document.createElement("div");
-    container.className = "bj-dropdown";
+    container.className = "jar-dropdown";
     var trigger = document.createElement("button");
     trigger.type = "button";
-    trigger.className = "bj-dropdown__trigger";
+    trigger.className = "jar-dropdown__trigger";
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", "false");
     var valueSpan = document.createElement("span");
-    valueSpan.className = "bj-dropdown__value";
+    valueSpan.className = "jar-dropdown__value";
     var chevronEl = document.createElement("span");
-    chevronEl.className = "bj-dropdown__chevron";
+    chevronEl.className = "jar-dropdown__chevron";
     chevronEl.setAttribute("aria-hidden", "true");
     chevronEl.innerHTML = '<svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     trigger.appendChild(valueSpan);
     trigger.appendChild(chevronEl);
     var panel2 = document.createElement("div");
-    panel2.className = "bj-dropdown__panel";
+    panel2.className = "jar-dropdown__panel";
     panel2.setAttribute("role", "listbox");
     options.forEach(function(opt, idx) {
       var btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "bj-dropdown__option";
+      btn.className = "jar-dropdown__option";
       btn.setAttribute("role", "option");
       btn.dataset.value = opt.value;
       var labelSpan = document.createElement("span");
       labelSpan.textContent = opt.label;
       var checkEl = document.createElement("span");
-      checkEl.className = "bj-dropdown__option-check";
+      checkEl.className = "jar-dropdown__option-check";
       checkEl.setAttribute("aria-hidden", "true");
       checkEl.innerHTML = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4.5L4.5 8L10 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       btn.appendChild(labelSpan);
@@ -23589,6 +24283,7 @@
       trigger.setAttribute("aria-expanded", "false");
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
+      if (panel2.parentElement) panel2.parentElement.removeChild(panel2);
       var idx = openDropdowns.indexOf(api3);
       if (idx !== -1) openDropdowns.splice(idx, 1);
     }
@@ -23628,18 +24323,22 @@
         }
       }
     });
-    document.addEventListener("click", function(e) {
-      if (container.classList.contains("is-open") && !container.contains(e.target) && !panel2.contains(e.target)) close5();
-    });
     setValue(currentValue);
-    var api3 = { element: container, setValue, close: close5 };
+    var api3 = {
+      element: container,
+      setValue,
+      close: close5,
+      containsTarget: function(target) {
+        return container.contains(target) || panel2.contains(target);
+      }
+    };
     return api3;
   }
-  global39.Dropdown = { create: create9, closeAll: closeAll2 };
-  global39.BelJarDropdown = global39.Dropdown;
+  global40.Dropdown = { create: create9, closeAll: closeAll2 };
+  global40.BelJarDropdown = global40.Dropdown;
 
   // js/ui/settings-ui.mjs
-  var global40 = globalThis;
+  var global41 = globalThis;
   var settingsDialogEl = null;
   var keybindingsApi = null;
   var aliasesApi = null;
@@ -23661,7 +24360,7 @@
   }
   function notifySettingsChanged(key) {
     try {
-      global40.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
+      global41.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
     } catch (_) {
     }
   }
@@ -23671,7 +24370,7 @@
     });
   }
   function applyLiveSettings(key) {
-    if (typeof global40.beljarApplyLiveSettings === "function") global40.beljarApplyLiveSettings(key);
+    if (typeof global41.beljarApplyLiveSettings === "function") global41.beljarApplyLiveSettings(key);
   }
   function writePersist(key, fn) {
     var p = persist3();
@@ -23696,7 +24395,7 @@
       if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
       if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
       if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-      if (typeof global40.syncEditorCmTheme === "function") global40.syncEditorCmTheme();
+      if (typeof global41.syncEditorCmTheme === "function") global41.syncEditorCmTheme();
       p.resetEditorPrefs();
       if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
       p.resetBelugaPrefs();
@@ -23705,7 +24404,7 @@
       p.resetReplPrefs();
       p.resetWorkspacePrefs();
       var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-      global40.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
+      global41.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
       p.resetAliasesPrefs();
     }, "settings-reset-all");
     Keybindings.resetAll();
@@ -23713,8 +24412,8 @@
     if (aliasesApi) aliasesApi.refresh();
     syncFromState();
     applyLiveSettings("settings-reset-all");
-    if (global40.Toasts && typeof global40.Toasts.success === "function") {
-      global40.Toasts.success("All settings reset.");
+    if (global41.Toasts && typeof global41.Toasts.success === "function") {
+      global41.Toasts.success("All settings reset.");
     }
   }
   function syncFromState() {
@@ -23734,7 +24433,7 @@
   function makeResetLink(onClick2) {
     var btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "bj-settings__reset-link";
+    btn.className = "jar-settings__reset-link";
     btn.textContent = "Reset";
     btn.addEventListener("click", function(e) {
       e.preventDefault();
@@ -23745,35 +24444,35 @@
   }
   function addSectionHead(parent, title) {
     var h = document.createElement("div");
-    h.className = "bj-settings__section-head";
+    h.className = "jar-settings__section-head";
     h.textContent = title;
     parent.appendChild(h);
   }
   function attachPanelReset(panel2, onReset) {
-    var head = panel2.querySelector(".bj-settings__panel-head");
+    var head = panel2.querySelector(".jar-settings__panel-head");
     if (!head || !onReset) return;
     head.appendChild(makeResetLink(onReset));
   }
   function addPanelHeadAction(panel2, label, onClick2) {
-    var head = panel2.querySelector(".bj-settings__panel-head");
+    var head = panel2.querySelector(".jar-settings__panel-head");
     if (!head) return null;
     var btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "bj-settings__head-action";
+    btn.className = "jar-settings__head-action";
     btn.textContent = label;
     btn.addEventListener("click", function(e) {
       e.preventDefault();
       e.stopPropagation();
       onClick2();
     });
-    var reset = head.querySelector(".bj-settings__reset-link");
+    var reset = head.querySelector(".jar-settings__reset-link");
     if (reset) head.insertBefore(btn, reset);
     else head.appendChild(btn);
     return btn;
   }
   function addSubordinateGroup(parent, section) {
     var group = document.createElement("div");
-    group.className = "bj-settings__substyle";
+    group.className = "jar-settings__substyle";
     group.dataset.section = section;
     group.hidden = true;
     parent.appendChild(group);
@@ -23781,20 +24480,20 @@
   }
   function addActionRow(parent, labelText, descText, actionLabel, onClick2) {
     var row = document.createElement("div");
-    row.className = "bj-dialog__setting bj-settings__action-row";
+    row.className = "jar-dialog__setting jar-settings__action-row";
     var main = document.createElement("div");
-    main.className = "bj-dialog__setting-main";
+    main.className = "jar-dialog__setting-main";
     var lbl = document.createElement("span");
-    lbl.className = "bj-dialog__setting-label";
+    lbl.className = "jar-dialog__setting-label";
     lbl.textContent = labelText;
     var dsc = document.createElement("span");
-    dsc.className = "bj-dialog__setting-desc";
+    dsc.className = "jar-dialog__setting-desc";
     dsc.textContent = descText;
     main.appendChild(lbl);
     main.appendChild(dsc);
     var btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "bj-settings__action-btn";
+    btn.className = "jar-settings__action-btn";
     btn.textContent = actionLabel;
     btn.addEventListener("click", function(e) {
       e.preventDefault();
@@ -23839,9 +24538,9 @@
   }
   function addEditorUnit(parent, opts) {
     var unit = document.createElement("div");
-    unit.className = "bj-settings__unit" + (opts.kind ? " bj-settings__unit--" + opts.kind : "");
+    unit.className = "jar-settings__unit" + (opts.kind ? " jar-settings__unit--" + opts.kind : "");
     var body = document.createElement("div");
-    body.className = "bj-settings__unit-body";
+    body.className = "jar-settings__unit-body";
     if (opts.searchText) unit.dataset.search = opts.searchText;
     unit.appendChild(body);
     parent.appendChild(unit);
@@ -23850,7 +24549,7 @@
   var KB_FILTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
   function activeEditingStyle() {
     try {
-      var P3 = global40.Persist;
+      var P3 = global41.Persist;
       return P3 && P3.readStoredKeymapStyle ? P3.readStoredKeymapStyle() : "default";
     } catch (_) {
       return "default";
@@ -23858,31 +24557,31 @@
   }
   function mountKeybindingsSheet(body) {
     var root2 = document.createElement("div");
-    root2.className = "bj-kb";
+    root2.className = "jar-kb";
     var filterBar = document.createElement("div");
-    filterBar.className = "bj-kb__filter";
+    filterBar.className = "jar-kb__filter";
     var filterIcon = document.createElement("span");
-    filterIcon.className = "bj-kb__filter-icon";
+    filterIcon.className = "jar-kb__filter-icon";
     filterIcon.innerHTML = KB_FILTER_ICON;
     filterIcon.setAttribute("aria-hidden", "true");
     var filterInput = document.createElement("input");
     filterInput.type = "search";
-    filterInput.className = "bj-kb__filter-input";
+    filterInput.className = "jar-kb__filter-input";
     filterInput.placeholder = "Filter by name or chord\u2026";
     filterInput.setAttribute("aria-label", "Filter keybindings");
     filterInput.autocomplete = "off";
     filterInput.spellcheck = false;
     var filterCount = document.createElement("span");
-    filterCount.className = "bj-kb__filter-count";
+    filterCount.className = "jar-kb__filter-count";
     filterCount.setAttribute("aria-live", "polite");
     filterBar.appendChild(filterIcon);
     filterBar.appendChild(filterInput);
     filterBar.appendChild(filterCount);
     var list3 = document.createElement("div");
-    list3.className = "bj-kb__list";
+    list3.className = "jar-kb__list";
     list3.setAttribute("role", "list");
     var noResults = document.createElement("p");
-    noResults.className = "bj-settings__empty bj-kb__noresults";
+    noResults.className = "jar-settings__empty jar-kb__noresults";
     noResults.textContent = "No commands match.";
     noResults.hidden = true;
     root2.appendChild(filterBar);
@@ -23892,10 +24591,10 @@
     var recordingChord = null;
     var invalidTimer = null;
     function toastWarn(message2) {
-      if (global40.Toasts && typeof global40.Toasts.warn === "function") {
-        global40.Toasts.warn(message2);
-      } else if (global40.Toasts && typeof global40.Toasts.show === "function") {
-        global40.Toasts.show(message2, { kind: "warn" });
+      if (global41.Toasts && typeof global41.Toasts.warn === "function") {
+        global41.Toasts.warn(message2);
+      } else if (global41.Toasts && typeof global41.Toasts.show === "function") {
+        global41.Toasts.show(message2, { kind: "warn" });
       }
     }
     function kb() {
@@ -23920,14 +24619,14 @@
     function fillChord(chordBtn, spec, opts) {
       chordBtn.replaceChildren();
       chordBtn._shortcutSpec = spec || "";
-      chordBtn.classList.remove("bj-kb__chord--conflict", "is-recording", "is-empty");
-      if (opts && opts.conflict) chordBtn.classList.add("bj-kb__chord--conflict");
+      chordBtn.classList.remove("jar-kb__chord--conflict", "is-recording", "is-empty");
+      if (opts && opts.conflict) chordBtn.classList.add("jar-kb__chord--conflict");
       var label = labelFor2(spec);
       if (!spec) {
         chordBtn.classList.add("is-empty");
         chordBtn.setAttribute("aria-label", "No keybinding");
         var empty = document.createElement("span");
-        empty.className = "bj-kb__empty-mark";
+        empty.className = "jar-kb__empty-mark";
         empty.textContent = "\u2014";
         empty.setAttribute("aria-hidden", "true");
         chordBtn.appendChild(empty);
@@ -23937,17 +24636,17 @@
       var parts = partsFor(spec);
       for (var i = 0; i < parts.length; i++) {
         var k = document.createElement("kbd");
-        k.className = "bj-kb__key";
+        k.className = "jar-kb__key";
         k.textContent = parts[i];
         chordBtn.appendChild(k);
       }
     }
     function showRecordingHint(chordBtn) {
       chordBtn.classList.add("is-recording");
-      chordBtn.classList.remove("is-empty", "bj-kb__chord--conflict");
+      chordBtn.classList.remove("is-empty", "jar-kb__chord--conflict");
       chordBtn.replaceChildren();
       var hint = document.createElement("span");
-      hint.className = "bj-kb__record-hint";
+      hint.className = "jar-kb__record-hint";
       hint.textContent = "Press keys\u2026";
       chordBtn.appendChild(hint);
     }
@@ -24004,7 +24703,15 @@
       }
       recordingChord = null;
       chordBtn.classList.remove("is-recording", "is-invalid");
+      warnIfStyleTakes(id);
       refresh5();
+    }
+    function warnIfStyleTakes(id) {
+      if (typeof Commands === "undefined" || !Commands.describe) return;
+      var described = Commands.describe(id, { style: activeEditingStyle() });
+      var shadow = described && described.shadow;
+      if (!shadow || shadow.kind !== "shadowed") return;
+      toastWarn(shadow.tip + " This binding will not fire while that style is on.");
     }
     function unbindRecording(chordBtn) {
       var K = kb();
@@ -24016,7 +24723,7 @@
     }
     function buildRow2(cmd) {
       var row = document.createElement("div");
-      row.className = "bj-kb__row" + (cmd.isUser ? " bj-kb__row--user" : "");
+      row.className = "jar-kb__row" + (cmd.isUser ? " jar-kb__row--user" : "");
       row.setAttribute("role", "listitem");
       row.dataset.commandId = cmd.id || "";
       row.dataset.section = cmd.section || "";
@@ -24024,26 +24731,26 @@
       var chordLabel = labelFor2(cmd.spec);
       row.dataset.chord = chordLabel.toLowerCase();
       var main = document.createElement("div");
-      main.className = "bj-kb__main";
+      main.className = "jar-kb__main";
       var title = document.createElement("span");
-      title.className = "bj-kb__title";
+      title.className = "jar-kb__title";
       title.textContent = cmd.title || cmd.id || "";
       main.appendChild(title);
       var described = typeof Commands !== "undefined" && Commands.describe ? Commands.describe(cmd.id, { style: activeEditingStyle() }) : null;
       if (described && described.shadow) {
         var tag = document.createElement("span");
-        tag.className = "bj-kb__tag";
+        tag.className = "jar-kb__tag";
         tag.textContent = described.shadow.tag;
         tag.setAttribute("data-tooltip", described.shadow.tip);
         if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(tag);
         main.appendChild(tag);
-        row.classList.add("bj-kb__row--shadowed");
+        row.classList.add("jar-kb__row--shadowed");
         row.dataset.shadowed = "1";
         row.dataset.shadowKind = described.shadow.kind;
       }
       var chord = document.createElement("button");
       chord.type = "button";
-      chord.className = "bj-kb__chord";
+      chord.className = "jar-kb__chord";
       chord._commandId = cmd.id;
       var conflictId = kb() && cmd.spec ? kb().findConflict(cmd.spec, cmd.id) : null;
       fillChord(chord, cmd.spec || "", { conflict: !!conflictId });
@@ -24091,7 +24798,7 @@
       var cmds = K && typeof K.list === "function" ? K.list() : [];
       if (!cmds.length) {
         var empty = document.createElement("p");
-        empty.className = "bj-settings__empty bj-kb__empty";
+        empty.className = "jar-settings__empty jar-kb__empty";
         empty.textContent = "No keybindings.";
         list3.appendChild(empty);
         return;
@@ -24102,7 +24809,7 @@
         var section = cmd.section || "Other";
         if (section !== lastSection) {
           var head = document.createElement("div");
-          head.className = "bj-settings__section-head bj-kb__section";
+          head.className = "jar-settings__section-head jar-kb__section";
           head.dataset.section = section;
           head.textContent = section;
           list3.appendChild(head);
@@ -24114,7 +24821,7 @@
     }
     function applyFilter() {
       var q = String(filterInput.value || "").trim().toLowerCase();
-      var rows2 = list3.querySelectorAll(".bj-kb__row");
+      var rows2 = list3.querySelectorAll(".jar-kb__row");
       var liveSections = /* @__PURE__ */ Object.create(null);
       var shown = 0;
       var bound = 0;
@@ -24128,7 +24835,7 @@
         shown += 1;
         liveSections[row.dataset.section || ""] = true;
       }
-      var heads = list3.querySelectorAll(".bj-kb__section");
+      var heads = list3.querySelectorAll(".jar-kb__section");
       for (var h = 0; h < heads.length; h++) {
         heads[h].hidden = !liveSections[heads[h].dataset.section || ""];
       }
@@ -24151,7 +24858,7 @@
         filterInput.value = "";
         applyFilter();
       }
-      return list3.querySelector('.bj-kb__row[data-command-id="' + String(id).replace(/"/g, "") + '"]');
+      return list3.querySelector('.jar-kb__row[data-command-id="' + String(id).replace(/"/g, "") + '"]');
     }
     refresh5();
     return {
@@ -24162,15 +24869,15 @@
   }
   function mountAliasesSheet(body) {
     var root2 = document.createElement("div");
-    root2.className = "bj-alias";
+    root2.className = "jar-alias";
     var list3 = document.createElement("div");
-    list3.className = "bj-alias__list";
+    list3.className = "jar-alias__list";
     list3.setAttribute("role", "list");
     var footer = document.createElement("div");
-    footer.className = "bj-alias__footer";
+    footer.className = "jar-alias__footer";
     var addBtn = document.createElement("button");
     addBtn.type = "button";
-    addBtn.className = "bj-alias__add";
+    addBtn.className = "jar-alias__add";
     addBtn.textContent = "Add alias";
     footer.appendChild(addBtn);
     root2.appendChild(list3);
@@ -24180,15 +24887,15 @@
     var rows2 = [];
     var CLOSE_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
     function toastWarn(message2) {
-      if (global40.Toasts && typeof global40.Toasts.warn === "function") {
-        global40.Toasts.warn(message2);
-      } else if (global40.Toasts && typeof global40.Toasts.show === "function") {
-        global40.Toasts.show(message2, { kind: "warn" });
+      if (global41.Toasts && typeof global41.Toasts.warn === "function") {
+        global41.Toasts.warn(message2);
+      } else if (global41.Toasts && typeof global41.Toasts.show === "function") {
+        global41.Toasts.show(message2, { kind: "warn" });
       }
     }
     function setTip2(el6, text) {
-      if (global40.Tooltips && typeof global40.Tooltips.set === "function") {
-        global40.Tooltips.set(el6, text);
+      if (global41.Tooltips && typeof global41.Tooltips.set === "function") {
+        global41.Tooltips.set(el6, text);
       } else {
         el6.setAttribute("aria-label", text);
       }
@@ -24260,24 +24967,24 @@
     }
     function buildRow2(row) {
       var el6 = document.createElement("div");
-      el6.className = "bj-alias__row";
+      el6.className = "jar-alias__row";
       el6.setAttribute("role", "listitem");
       el6.dataset.rowId = String(row.id);
       var trigger = document.createElement("input");
       trigger.type = "text";
-      trigger.className = "bj-alias__input bj-alias__input--trigger";
+      trigger.className = "jar-alias__input jar-alias__input--trigger";
       trigger.value = row.from;
       trigger.placeholder = "trigger";
       trigger.spellcheck = false;
       trigger.autocomplete = "off";
       trigger.setAttribute("aria-label", "Alias trigger");
       var arrow = document.createElement("span");
-      arrow.className = "bj-alias__arrow";
+      arrow.className = "jar-alias__arrow";
       arrow.textContent = "\u2192";
       arrow.setAttribute("aria-hidden", "true");
       var expansion = document.createElement("input");
       expansion.type = "text";
-      expansion.className = "bj-alias__input bj-alias__input--expansion";
+      expansion.className = "jar-alias__input jar-alias__input--expansion";
       expansion.value = row.to;
       expansion.placeholder = "expansion";
       expansion.spellcheck = false;
@@ -24285,7 +24992,7 @@
       expansion.setAttribute("aria-label", "Alias expansion");
       var del = document.createElement("button");
       del.type = "button";
-      del.className = "icon-btn bj-alias__delete";
+      del.className = "icon-btn jar-alias__delete";
       del.innerHTML = CLOSE_SVG2;
       setTip2(del, "Delete alias");
       var touchedFrom = false;
@@ -24371,7 +25078,7 @@
       footer.hidden = false;
       if (!rows2.length) {
         var emptyAll = document.createElement("p");
-        emptyAll.className = "bj-settings__empty bj-alias__empty";
+        emptyAll.className = "jar-settings__empty jar-alias__empty";
         emptyAll.textContent = "No aliases. Add one to expand text while typing.";
         list3.appendChild(emptyAll);
         return;
@@ -24389,7 +25096,7 @@
       var row = { id: nextRowId++, from: "", to: "" };
       rows2.push(row);
       render5();
-      var triggerEl = list3.querySelector('[data-row-id="' + row.id + '"] .bj-alias__input--trigger');
+      var triggerEl = list3.querySelector('[data-row-id="' + row.id + '"] .jar-alias__input--trigger');
       if (triggerEl) triggerEl.focus();
     });
     reload();
@@ -24405,16 +25112,16 @@
     };
   }
   function addSwitchRow(parent, id, labelText, descText, readFn, writeFn) {
-    var inputId = "bj-setting-" + id;
+    var inputId = "jar-setting-" + id;
     var r = document.createElement("div");
-    r.className = "bj-dialog__setting bj-dialog__setting--switch";
+    r.className = "jar-dialog__setting jar-dialog__setting--switch";
     var m = document.createElement("div");
-    m.className = "bj-dialog__setting-main";
+    m.className = "jar-dialog__setting-main";
     var lbl = document.createElement("span");
-    lbl.className = "bj-dialog__setting-label";
+    lbl.className = "jar-dialog__setting-label";
     lbl.textContent = labelText;
     var dsc = document.createElement("span");
-    dsc.className = "bj-dialog__setting-desc";
+    dsc.className = "jar-dialog__setting-desc";
     dsc.textContent = descText;
     m.appendChild(lbl);
     m.appendChild(dsc);
@@ -24472,7 +25179,7 @@
         // ⛔ No key enumerations. The leader is CONFIGURABLE, so a sentence
         // naming a backslash sequence is already wrong for anyone who picked
         // comma, and every key spelled out is a second copy of a table that can
-        // rot. Available macros lists the live maps with the live leader.
+        // rot. Available Keys lists the live maps with the live leader.
         {
           head: "Vim",
           body: "Normal mode for motion and operators; :s, :g and / work as usual. BelJar adds motions for holes, problems, declarations and case branches, plus a leader map, :set for preferences, and a declaration text object (dad deletes one declaration). Mode and pending keys show in the status strip."
@@ -24492,12 +25199,12 @@
       } else {
         out.push({
           head: "Browser conflicts",
-          body: "Some chords never reach the page; which ones depends on your platform. Available macros has the measured list."
+          body: "Some chords never reach the page; which ones depends on your platform. Available Keys has the measured list."
         });
       }
       out.push({
         head: "In every style",
-        body: "Escape still closes rename, autocomplete and sticky hover. Available macros (the button above) lists every key and :name you can type in the current style. It ends with the chords this browser takes and what to press instead."
+        body: "Escape still closes rename, autocomplete and sticky hover. Available Keys (the button above) lists every key and :name you can type in the current style. It ends with the chords this browser takes and what to press instead."
       });
       return out;
     }
@@ -24513,12 +25220,12 @@
     var pop = null;
     var hideTimer = null;
     function hostEl() {
-      return btn.closest("dialog") || btn.closest(".bj-dialog__card") || document.body;
+      return btn.closest("dialog") || btn.closest(".jar-dialog__card") || document.body;
     }
     function ensurePop() {
       if (pop) return pop;
       pop = document.createElement("div");
-      pop.className = "bj-setting-info-popover";
+      pop.className = "jar-setting-info-popover";
       pop.setAttribute("role", "tooltip");
       pop.hidden = true;
       var paragraphs = readParagraphs();
@@ -24526,12 +25233,12 @@
         var item = paragraphs[i];
         if (item && item.head) {
           var h = document.createElement("p");
-          h.className = "bj-setting-info-head";
+          h.className = "jar-setting-info-head";
           h.textContent = item.head;
           pop.appendChild(h);
         }
         var p = document.createElement("p");
-        p.className = "bj-setting-info-tip";
+        p.className = "jar-setting-info-tip";
         p.textContent = item && item.body != null ? item.body : item;
         pop.appendChild(p);
       }
@@ -24605,22 +25312,22 @@
     }
     function addDropdownRow(parent, id, labelText, descText, options, readFn, writeFn, infoSpec) {
       var r = document.createElement("div");
-      r.className = "bj-dialog__setting";
+      r.className = "jar-dialog__setting";
       var m = document.createElement("div");
-      m.className = "bj-dialog__setting-main";
+      m.className = "jar-dialog__setting-main";
       var lbl = document.createElement("span");
-      lbl.className = "bj-dialog__setting-label";
+      lbl.className = "jar-dialog__setting-label";
       lbl.textContent = labelText;
       var dsc = document.createElement("span");
-      dsc.className = "bj-dialog__setting-desc";
+      dsc.className = "jar-dialog__setting-desc";
       dsc.textContent = descText;
       if (infoSpec) {
         var labelRow = document.createElement("div");
-        labelRow.className = "bj-dialog__setting-label-row";
+        labelRow.className = "jar-dialog__setting-label-row";
         labelRow.appendChild(lbl);
         var infoBtn = document.createElement("button");
         infoBtn.type = "button";
-        infoBtn.className = "bj-setting-info";
+        infoBtn.className = "jar-setting-info";
         infoBtn.innerHTML = SETTING_INFO_SVG;
         attachSettingInfoTooltip(infoBtn, infoSpec);
         labelRow.appendChild(infoBtn);
@@ -24641,16 +25348,16 @@
       return dd;
     }
     var shell = document.createElement("div");
-    shell.className = "bj-settings";
+    shell.className = "jar-settings";
     var nav = document.createElement("nav");
-    nav.className = "bj-settings__nav";
+    nav.className = "jar-settings__nav";
     nav.setAttribute("aria-label", "Settings");
     var navList = document.createElement("div");
-    navList.className = "bj-settings__nav-list";
+    navList.className = "jar-settings__nav-list";
     navList.setAttribute("role", "tablist");
     navList.setAttribute("aria-label", "Settings categories");
     var main = document.createElement("div");
-    main.className = "bj-settings__main";
+    main.className = "jar-settings__main";
     var categories = [
       { id: "appearance", label: "Appearance" },
       { id: "editor", label: "Editor" },
@@ -24665,13 +25372,13 @@
     var activeCategory = "appearance";
     function selectCategory(id) {
       activeCategory = id;
-      nav.querySelectorAll(".bj-settings__nav-item").forEach(function(el6) {
+      nav.querySelectorAll(".jar-settings__nav-item").forEach(function(el6) {
         var on = el6.dataset.category === id;
         el6.classList.toggle("is-active", on);
         el6.setAttribute("aria-selected", on ? "true" : "false");
         el6.tabIndex = on ? 0 : -1;
       });
-      main.querySelectorAll(".bj-settings__panel").forEach(function(el6) {
+      main.querySelectorAll(".jar-settings__panel").forEach(function(el6) {
         var on = el6.dataset.category === id;
         el6.hidden = !on;
         el6.classList.toggle("is-active", on);
@@ -24685,7 +25392,7 @@
       return categories.map(function(c) {
         return c.id;
       }).filter(function(id) {
-        var btn = nav.querySelector('.bj-settings__nav-item[data-category="' + id + '"]');
+        var btn = nav.querySelector('.jar-settings__nav-item[data-category="' + id + '"]');
         return btn && !btn.hidden;
       });
     }
@@ -24702,7 +25409,7 @@
     categories.forEach(function(cat) {
       var btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "bj-settings__nav-item";
+      btn.className = "jar-settings__nav-item";
       btn.textContent = cat.label;
       btn.dataset.category = cat.id;
       btn.setAttribute("role", "tab");
@@ -24722,29 +25429,29 @@
       });
       navList.appendChild(btn);
       var panel2 = document.createElement("div");
-      panel2.className = "bj-settings__panel";
+      panel2.className = "jar-settings__panel";
       panel2.dataset.category = cat.id;
       panel2.setAttribute("role", "tabpanel");
       panel2.hidden = cat.id !== activeCategory;
       var head = document.createElement("div");
-      head.className = "bj-settings__panel-head";
+      head.className = "jar-settings__panel-head";
       var headLabel = document.createElement("span");
-      headLabel.className = "bj-settings__panel-head-label";
+      headLabel.className = "jar-settings__panel-head-label";
       headLabel.textContent = cat.label;
       head.appendChild(headLabel);
       panel2.appendChild(head);
       var body = document.createElement("div");
-      body.className = "bj-settings__panel-body";
+      body.className = "jar-settings__panel-body";
       panel2.appendChild(body);
       panelBodies[cat.id] = body;
       main.appendChild(panel2);
     });
     nav.appendChild(navList);
     var navFoot = document.createElement("div");
-    navFoot.className = "bj-settings__nav-foot";
+    navFoot.className = "jar-settings__nav-foot";
     var resetAllBtn = document.createElement("button");
     resetAllBtn.type = "button";
-    resetAllBtn.className = "bj-settings__reset-all";
+    resetAllBtn.className = "jar-settings__reset-all";
     resetAllBtn.textContent = "Reset all";
     resetAllBtn.setAttribute("aria-label", "Reset all settings");
     resetAllBtn.addEventListener("click", function(e) {
@@ -24768,7 +25475,7 @@
         if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
         if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
         if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-        if (typeof global40.syncEditorCmTheme === "function") global40.syncEditorCmTheme();
+        if (typeof global41.syncEditorCmTheme === "function") global41.syncEditorCmTheme();
       }, "appearance-reset");
     });
     attachPanelReset(main.querySelector('[data-category="editor"]'), function() {
@@ -24786,7 +25493,7 @@
     });
     addPanelHeadAction(
       main.querySelector('[data-category="keybindings"]'),
-      "Available macros",
+      "Available Keys",
       function() {
         leaveSettingsAnd(function() {
           if (typeof AvailableMacros !== "undefined") AvailableMacros.open();
@@ -24813,7 +25520,7 @@
       runCategoryReset(function(p) {
         p.resetWorkspacePrefs();
         var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-        global40.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
+        global41.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
       }, "workspace-reset");
     });
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function() {
@@ -24835,7 +25542,7 @@
         var isLight = v === "light";
         document.documentElement.classList.toggle("light", isLight);
         p.writeStoredTheme(isLight ? "light" : "dark");
-        if (typeof global40.syncEditorCmTheme === "function") global40.syncEditorCmTheme();
+        if (typeof global41.syncEditorCmTheme === "function") global41.syncEditorCmTheme();
       }
     );
     addDropdownRow(
@@ -25856,7 +26563,7 @@
       },
       function(p, on) {
         p.writeStoredInspectorFollow(on);
-        global40.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
+        global41.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
       }
     );
     addActionRow(
@@ -25873,7 +26580,7 @@
           if (!ok || !persist3()) return;
           persist3().resetLayoutPrefs();
           postSettingsApply("layout-reset");
-          if (typeof global40.location !== "undefined") global40.location.reload();
+          if (typeof global41.location !== "undefined") global41.location.reload();
         });
       }
     );
@@ -25917,7 +26624,7 @@
               var bundle = JSON.parse(String(reader.result || ""));
               var result = p.importUserSettings(bundle);
               if (!result || !result.ok) {
-                if (global40.Toasts && global40.Toasts.warn) global40.Toasts.warn("Could not import settings.");
+                if (global41.Toasts && global41.Toasts.warn) global41.Toasts.warn("Could not import settings.");
                 return;
               }
               if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
@@ -25932,11 +26639,11 @@
               if (aliasesApi) aliasesApi.refresh();
               applyLiveSettings("settings-import");
               postSettingsApply("settings-import");
-              if (global40.Toasts && global40.Toasts.success) {
-                global40.Toasts.success("Imported " + (result.applied || 0) + " settings.");
+              if (global41.Toasts && global41.Toasts.success) {
+                global41.Toasts.success("Imported " + (result.applied || 0) + " settings.");
               }
             } catch (_) {
-              if (global40.Toasts && global40.Toasts.warn) global40.Toasts.warn("Invalid settings file.");
+              if (global41.Toasts && global41.Toasts.warn) global41.Toasts.warn("Invalid settings file.");
             }
           };
           reader.readAsText(file);
@@ -25956,7 +26663,7 @@
       function(p, v) {
         p.writeStoredAliasActivation(v);
         if (v !== "greedy") return;
-        var ed = global40.CurrentEditor;
+        var ed = global41.CurrentEditor;
         if (ed && typeof ed.getValue === "function") {
           var activeId2 = p.getActiveFileId();
           if (activeId2) p.setFileText(activeId2, ed.getValue());
@@ -25978,11 +26685,11 @@
     shell.appendChild(nav);
     shell.appendChild(main);
     var search = makeSearchField({
-      slotClass: "bj-settings__search-slot",
-      wrapClass: "bj-settings__search",
+      slotClass: "jar-settings__search-slot",
+      wrapClass: "jar-settings__search",
       placeholder: "Search\u2026",
       ariaLabel: "Search settings",
-      ariaControls: "bj-settings-search-results"
+      ariaControls: "jar-settings-search-results"
     });
     settingsSearchInput = search.input;
     var searchWrap = search.inputWrap;
@@ -25990,8 +26697,8 @@
     var searchActive = -1;
     var flashTimer = null;
     var searchResults = document.createElement("div");
-    searchResults.className = "hsearch-ac bj-settings__results";
-    searchResults.id = "bj-settings-search-results";
+    searchResults.className = "hsearch-ac jar-settings__results";
+    searchResults.id = "jar-settings-search-results";
     searchResults.setAttribute("role", "listbox");
     searchResults.hidden = true;
     function positionSearchResults() {
@@ -26069,7 +26776,7 @@
         var section = "";
         var scan = [];
         Array.prototype.forEach.call(body.children, function(el6) {
-          if (el6.classList.contains("bj-settings__substyle")) {
+          if (el6.classList.contains("jar-settings__substyle")) {
             if (el6.hidden) return;
             var owner = el6.dataset.section || "";
             Array.prototype.forEach.call(el6.children, function(sub) {
@@ -26081,15 +26788,15 @@
         });
         scan.forEach(function(entry) {
           var el6 = entry.el;
-          if (entry.section === null && el6.classList.contains("bj-settings__section-head")) {
+          if (entry.section === null && el6.classList.contains("jar-settings__section-head")) {
             section = String(el6.textContent || "").trim();
             return;
           }
-          if (el6.classList.contains("bj-settings__unit")) return;
-          if (!el6.classList.contains("bj-dialog__setting")) return;
+          if (el6.classList.contains("jar-settings__unit")) return;
+          if (!el6.classList.contains("jar-dialog__setting")) return;
           var rowSection = entry.section === null ? section : entry.section;
-          var titleEl = el6.querySelector(".bj-dialog__setting-label");
-          var descEl = el6.querySelector(".bj-dialog__setting-desc");
+          var titleEl = el6.querySelector(".jar-dialog__setting-label");
+          var descEl = el6.querySelector(".jar-dialog__setting-desc");
           var title = titleEl ? String(titleEl.textContent || "") : "";
           var desc = descEl ? String(descEl.textContent || "") : "";
           var hay = (title + " " + desc + " " + rowSection + " " + cat.label).replace(/\s+/g, " ").toLowerCase();
@@ -26169,15 +26876,15 @@
         if (hit.kind === "setting") {
           target = hit.el;
         } else if (hit.kind === "command" && hit.id) {
-          target = keybindingsApi && typeof keybindingsApi.revealCommand === "function" ? keybindingsApi.revealCommand(hit.id) : main.querySelector('.bj-kb__row[data-command-id="' + String(hit.id).replace(/"/g, "") + '"]');
+          target = keybindingsApi && typeof keybindingsApi.revealCommand === "function" ? keybindingsApi.revealCommand(hit.id) : main.querySelector('.jar-kb__row[data-command-id="' + String(hit.id).replace(/"/g, "") + '"]');
         } else if (hit.kind === "alias" && hit.rowId != null) {
-          target = main.querySelector('.bj-alias__row[data-row-id="' + String(hit.rowId).replace(/"/g, "") + '"]');
+          target = main.querySelector('.jar-alias__row[data-row-id="' + String(hit.rowId).replace(/"/g, "") + '"]');
         }
         if (!target) return;
         target.scrollIntoView({ block: "center" });
         flashEl(target);
         if (hit.kind === "alias") {
-          var sel = hit.focus === "to" ? ".bj-alias__input--expansion" : ".bj-alias__input--trigger";
+          var sel = hit.focus === "to" ? ".jar-alias__input--expansion" : ".jar-alias__input--trigger";
           var field = target.querySelector(sel);
           if (field) field.focus();
         }
@@ -26273,7 +26980,7 @@
       title: "Settings",
       headerExtra: search.slot,
       content: shell,
-      cardClass: "bj-dialog__card--settings",
+      cardClass: "jar-dialog__card--settings",
       removeOnClose: false
     });
     settingsDialogEl.addEventListener("close", function() {
@@ -26293,16 +27000,16 @@
     if (keybindingsApi && typeof keybindingsApi.refresh === "function") keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
   }
-  global40.SettingsUI = {
+  global41.SettingsUI = {
     syncFromState,
     ensureSettingsDialog,
     open: open10,
     notifySettingsChanged
   };
-  global40.BelJarSettingsUI = global40.SettingsUI;
+  global41.BelJarSettingsUI = global41.SettingsUI;
 
   // js/harpoon/harpoon-icon.mjs
-  var global41 = globalThis;
+  var global42 = globalThis;
   var MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="1.6"/><path d="M6.2 6.2 16.5 16.5"/><path d="M20.5 20.5 19.5 12 16.5 16.5 12 19.5Z"/></svg>';
   function appendGlyph(parent, className) {
     var span = document.createElement("span");
@@ -26311,16 +27018,16 @@
     parent.appendChild(span);
     return span;
   }
-  global41.HarpoonIcon = { markup: MARKUP, appendGlyph };
-  global41.BelJarHarpoonIcon = global41.HarpoonIcon;
+  global42.HarpoonIcon = { markup: MARKUP, appendGlyph };
+  global42.BelJarHarpoonIcon = global42.HarpoonIcon;
 
   // js/harpoon/harpoon-glyphs.mjs
-  var global42 = globalThis;
+  var global43 = globalThis;
   function fallbackNormalize(text) {
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192").replace(/([[({])[ \t]+/g, "$1").replace(/[ \t]+([\])}])/g, "$1");
   }
   function displayBeluga(text) {
-    var ed = global42.BelEditor || null;
+    var ed = global43.BelEditor || null;
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(text);
     return fallbackNormalize(text);
   }
@@ -26333,7 +27040,7 @@
   function looksLikeBeluga(s) {
     return /(\|-|⊢|\[|=>|->)/.test(String(s || ""));
   }
-  global42.HarpoonGlyphs = {
+  global43.HarpoonGlyphs = {
     displayBeluga,
     compactTypeLabel,
     looksLikeBeluga,
@@ -26341,12 +27048,12 @@
   };
 
   // js/harpoon/harpoon-lab-tree.mjs
-  var global43 = globalThis;
+  var global44 = globalThis;
   function norm(s) {
     return String(s == null ? "" : s).replace(/\s+/g, " ").trim();
   }
   function glyphs() {
-    return global43.HarpoonGlyphs || null;
+    return global44.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
     var g14 = glyphs();
@@ -26676,7 +27383,7 @@
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
   function highlightInto(host2, text, kind) {
-    var ed = global43.BelEditor || null;
+    var ed = global44.BelEditor || null;
     var shown = displayBeluga2(String(text == null ? "" : text).trim());
     if (!shown) return false;
     try {
@@ -26865,9 +27572,9 @@
       } else {
         ariaTip = n.step && n.step.rationale || n.label || "";
       }
-      if (global43.Tooltips && typeof global43.Tooltips.setRich === "function") {
+      if (global44.Tooltips && typeof global44.Tooltips.setRich === "function") {
         (function(node) {
-          global43.Tooltips.setRich(g14, function() {
+          global44.Tooltips.setRich(g14, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
@@ -26961,7 +27668,7 @@
     }
     return svg;
   }
-  global43.HarpoonTree = {
+  global44.HarpoonTree = {
     buildModel,
     render: render4,
     breadcrumb,
@@ -26969,11 +27676,10 @@
   };
 
   // js/harpoon/harpoon-lab-display.mjs
-  var global44 = globalThis;
+  var global45 = globalThis;
   function createDisplay(deps) {
     var el6 = deps.el;
     var E3 = deps.E;
-    var setTip2 = deps.setTip;
     var liveEditorFileId2 = deps.liveEditorFileId;
     var bindChipTip2 = deps.bindChipTip;
     var renderSynthChain2 = deps.renderSynthChain;
@@ -26981,12 +27687,12 @@
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g14 = global44.HarpoonGlyphs;
+      var g14 = global45.HarpoonGlyphs;
       if (g14) return g14.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g14 = global44.HarpoonGlyphs;
+      var g14 = global45.HarpoonGlyphs;
       if (g14) return g14.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
@@ -27049,7 +27755,7 @@
       if (!ed || !prep || typeof ed.resolveHoleGoalForHit !== "function") {
         return { goalType: na.goalType, goalState: na.goalState || "live" };
       }
-      var api3 = global44.CurrentEditor;
+      var api3 = global45.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = ed.resolveHoleGoalForHit(session.view, eng, prep.hit);
       if (!hit || !hit.goal) {
@@ -27068,7 +27774,7 @@
       var from = session ? session.declFrom : null;
       if (!view || !name || from == null) return cached || sourceType;
       if (session.fileId && liveEditorFileId2() !== session.fileId) return cached || sourceType;
-      var api3 = global44.CurrentEditor;
+      var api3 = global45.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       if (!eng || typeof eng.intelSyncAt !== "function") return cached || sourceType;
       var to = session.declTo != null ? session.declTo : Math.min(from + 400, view.state.doc.length);
@@ -27113,8 +27819,8 @@
     function appendDeclLabel(glabel, declName, declKw) {
       if (!declName) return;
       var name = el6("span", "harpoon-lab-auto-goal-name");
-      if (declKw) name.appendChild(el6("span", "harpoon-lab-goal-decl-kw bel-hl-keyword", declKw));
-      name.appendChild(el6("span", "harpoon-lab-goal-decl-name bel-hl-var-def", declName));
+      if (declKw) name.appendChild(el6("span", "harpoon-lab-goal-decl-kw jar-hl-keyword", declKw));
+      name.appendChild(el6("span", "harpoon-lab-goal-decl-name jar-hl-var-def", declName));
       glabel.appendChild(name);
     }
     function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders, declKw) {
@@ -27326,7 +28032,7 @@
     }
     function moveLead(s) {
       if (s && s.lead) return s.lead;
-      var ed = global44.BelEditor;
+      var ed = global45.BelEditor;
       if (ed && typeof ed.stepLead === "function" && s && s.meta) {
         var fromEd = ed.stepLead({ kind: s.move }, s.meta, { goal: s.goal });
         if (fromEd) return fromEd;
@@ -27494,7 +28200,7 @@
   }
 
   // js/harpoon/harpoon-lab-commit.mjs
-  var global45 = globalThis;
+  var global46 = globalThis;
   function createCommit(deps) {
     var E3 = deps.E;
     var toast3 = deps.toast;
@@ -27537,14 +28243,14 @@
     var COMMIT_NAV_TIMEOUT_MS = 8e3;
     function withCommitTimeout(promise, ms, message2) {
       return new Promise(function(resolve2, reject) {
-        var timer2 = global45.setTimeout(function() {
+        var timer2 = global46.setTimeout(function() {
           reject(new Error(message2 || "Timed out."));
         }, ms);
         Promise.resolve(promise).then(function(v) {
-          global45.clearTimeout(timer2);
+          global46.clearTimeout(timer2);
           resolve2(v);
         }).catch(function(e) {
-          global45.clearTimeout(timer2);
+          global46.clearTimeout(timer2);
           reject(e);
         });
       });
@@ -27554,7 +28260,7 @@
       var fileId = this.fileId || this.anchor && this.anchor.fileId;
       this.clearPendingCommitNav();
       var view = this.resolveView();
-      var api3 = global45.CurrentEditor;
+      var api3 = global46.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng) || this.compromise && this.compromise.liveHit;
       if (!fileId || !hit) {
@@ -27573,8 +28279,8 @@
         self.verifyAndCommit(src, { skipBeginUi: true });
       };
       self._pendingCommitNavListener = onActive;
-      global45.addEventListener("beljar:active-editor-view", onActive);
-      global45.dispatchEvent(new CustomEvent("beljar:open-file-at", {
+      global46.addEventListener("beljar:active-editor-view", onActive);
+      global46.dispatchEvent(new CustomEvent("beljar:open-file-at", {
         detail: {
           fileId,
           from: hit.from,
@@ -27587,7 +28293,7 @@
         onActive();
         return Promise.resolve(false);
       }
-      self._pendingCommitNavTimer = global45.setTimeout(function() {
+      self._pendingCommitNavTimer = global46.setTimeout(function() {
         if (!self.pendingCommitSource) return;
         self.clearPendingCommitNav();
         self.resetCommitForRetry();
@@ -27599,7 +28305,7 @@
       opts = opts || {};
       var ed = E3();
       var self = this;
-      var client = global45.BelugaClient;
+      var client = global46.BelugaClient;
       if (!ed) return Promise.resolve(false);
       if (!opts.skipBeginUi) this.beginCommitUi("verify");
       this.probeAnchor();
@@ -27617,7 +28323,7 @@
         this.finishCommitFailure("Open the file to place the proof.", false);
         return Promise.resolve(false);
       }
-      var api3 = global45.CurrentEditor;
+      var api3 = global46.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng);
       if (!hit) {
@@ -27718,7 +28424,7 @@
   }
 
   // js/harpoon/harpoon-lab-reel.mjs
-  var global46 = globalThis;
+  var global47 = globalThis;
   function createReel(deps) {
     var el6 = deps.el;
     var tacticVerb2 = deps.tacticVerb || function(k) {
@@ -27771,8 +28477,8 @@
       var node = session._statTipEl || session._autoSearchSpinner;
       if (!node) return;
       if (node.getAttribute("data-tooltip") === tip) return;
-      if (global46.Tooltips && global46.Tooltips.set) {
-        global46.Tooltips.set(node, tip, { ariaLabel: false });
+      if (global47.Tooltips && global47.Tooltips.set) {
+        global47.Tooltips.set(node, tip, { ariaLabel: false });
       } else if (tip) {
         node.setAttribute("data-tooltip", tip);
       }
@@ -27781,7 +28487,6 @@
     var REEL_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
     var REEL_CLICK_EASE = "cubic-bezier(0.34, 1.22, 0.64, 1)";
     var REEL_OUT_MS = 150;
-    var COMMIT_IN_MS = 280;
     function buildStepCopy(step2) {
       var rowCopy = el6("div", "harpoon-lab-auto-step-copy");
       var verb = el6("span", "harpoon-lab-auto-move move-" + (step2.move || "move"));
@@ -27815,7 +28520,7 @@
       if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
         return !Persist.prefersReducedMotion();
       }
-      return !(global46.matchMedia && global46.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      return !(global47.matchMedia && global47.matchMedia("(prefers-reduced-motion: reduce)").matches);
     }
     function reelClearMotion(el7) {
       if (!el7) return;
@@ -27980,8 +28685,8 @@
         btn._belPauseState = paused;
         btn.innerHTML = paused ? ICON_PLAY2 : ICON_PAUSE2;
         btn.setAttribute("aria-label", paused ? "Resume search" : "Pause search");
-        if (global46.Tooltips && global46.Tooltips.set) {
-          global46.Tooltips.set(btn, paused ? "Resume" : "Pause");
+        if (global47.Tooltips && global47.Tooltips.set) {
+          global47.Tooltips.set(btn, paused ? "Resume" : "Pause");
         }
       }
       if (this._autoSearchBox) {
@@ -28587,7 +29292,7 @@
   }
 
   // js/harpoon/harpoon-lab-tree-ui.mjs
-  var global47 = globalThis;
+  var global48 = globalThis;
   function createTreeUi(deps) {
     var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
@@ -28677,9 +29382,9 @@
         return opts.live ? self.derivationNa() || na : na;
       }
       function draw() {
-        if (!global47.HarpoonTree) return;
+        if (!global48.HarpoonTree) return;
         var n = cur();
-        var root2 = global47.HarpoonTree.buildModel({
+        var root2 = global48.HarpoonTree.buildModel({
           steps: n.steps || [],
           trace: n.trace || null,
           complete: !!n.complete,
@@ -28688,7 +29393,7 @@
           goalType: n.goalType || "",
           theoremSnapshot: n.theoremSnapshot || null
         });
-        global47.HarpoonTree.render(treeHost, root2, {
+        global48.HarpoonTree.render(treeHost, root2, {
           mode,
           // The roomy explorer gives the graph a whole pane; the compact one gives it a
           // fixed strip inside the panel, where filling would mean growing the panel.
@@ -28721,8 +29426,8 @@
           treeMode: treeMode || mode
         };
       }
-      if (global47.Menu && global47.Menu.bindContextMenu) {
-        global47.Menu.bindContextMenu(treeHost, function() {
+      if (global48.Menu && global48.Menu.bindContextMenu) {
+        global48.Menu.bindContextMenu(treeHost, function() {
           var hasTrace = !!(cur().trace && cur().trace.length);
           return [
             {
@@ -28759,7 +29464,7 @@
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
-        var persist4 = global47.Persist;
+        var persist4 = global48.Persist;
         var collapsed = !!(persist4 && persist4.readStoredHarpoonDetailsCollapsed && persist4.readStoredHarpoonDetailsCollapsed());
         var railHead = el6("div", "hpt-rail-head");
         var railTitle = el6("span", "hpt-rail-title", "Details");
@@ -28980,8 +29685,8 @@
       mount3.appendChild(el6("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
-      if (!n || !global47.HarpoonTree || typeof global47.HarpoonTree.breadcrumb !== "function") return null;
-      var parts = global47.HarpoonTree.breadcrumb(n);
+      if (!n || !global48.HarpoonTree || typeof global48.HarpoonTree.breadcrumb !== "function") return null;
+      var parts = global48.HarpoonTree.breadcrumb(n);
       if (!parts.length) return null;
       function truncPart(s) {
         s = String(s || "");
@@ -29071,8 +29776,8 @@
       var text = liveFileText2(fileId);
       if (!text) return;
       var from = lineColToOffset2(text, hole.line, hole.col);
-      if (typeof global47.openFileAt === "function") {
-        global47.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
+      if (typeof global48.openFileAt === "function") {
+        global48.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
       }
     }
     ;
@@ -29451,20 +30156,6 @@
       status.appendChild(skel("harpoon-skel--text", "3.6rem"));
       bar2.appendChild(status);
       return bar2;
-    }
-    function skelCtx() {
-      var wrap = el6("div", "harpoon-lab-context");
-      var sec = el6("div", "harpoon-lab-ctx");
-      sec.appendChild(el6("span", "harpoon-lab-ctx-label", "meta"));
-      var rows2 = el6("div", "harpoon-lab-binders");
-      ["58%", "41%"].forEach(function(w, i) {
-        var row = el6("div", "harpoon-lab-binder");
-        row.appendChild(skel("harpoon-skel--text" + (i ? " harpoon-skel--d1" : ""), w));
-        rows2.appendChild(row);
-      });
-      sec.appendChild(rows2);
-      wrap.appendChild(sec);
-      return wrap;
     }
     function skelMoveRow(i) {
       var row = el6("div", "harpoon-lab-move is-skeleton");
@@ -29881,7 +30572,6 @@
     }
     function runOrca() {
       var m = this.manual;
-      var self = this;
       if (!m || !m.state) return;
       this.cancelSweep();
       this.manualBefore = m.state;
@@ -30015,7 +30705,6 @@
       var na = this.nativeAuto;
       var before = this.manualBefore || null;
       var priorSteps = before && before.steps || [];
-      var priorStack = before && before.stack || [];
       this.manualBefore = null;
       this.nativeAuto = null;
       if (na && na.complete && na.code && before && ed && typeof ed.absorbAuto === "function") {
@@ -30036,7 +30725,6 @@
       });
     }
     function commitManual() {
-      var ed = E3();
       var m = this.manual;
       var st = this.getCommitState();
       if (!m || !m.state || st.status === "checking" || st.status === "placed") {
@@ -30410,18 +31098,18 @@
   }
 
   // js/harpoon/harpoon-lab.mjs
-  var global48 = globalThis;
+  var global49 = globalThis;
   function E() {
-    return global48.BelEditor || null;
+    return global49.BelEditor || null;
   }
   function P2() {
-    return global48.HarpoonEngine || null;
+    return global49.HarpoonEngine || null;
   }
   function FW() {
-    return global48.FloatingWindow || null;
+    return global49.FloatingWindow || null;
   }
   function toast2(msg, kind) {
-    var T = global48.Toasts;
+    var T = global49.Toasts;
     if (!T) return;
     if (kind === "error" && T.error) T.error(msg);
     else if (kind === "success" && T.success) T.success(msg);
@@ -30470,8 +31158,8 @@
   }
   function setTip(el6, text, opts) {
     if (!el6) return;
-    if (global48.Tooltips && global48.Tooltips.set) {
-      global48.Tooltips.set(el6, text, opts);
+    if (global49.Tooltips && global49.Tooltips.set) {
+      global49.Tooltips.set(el6, text, opts);
     } else {
       el6.removeAttribute("title");
       var tip = text != null ? String(text).trim() : "";
@@ -30496,14 +31184,14 @@
     if (!host2) return;
     var shown = goal ? displayType(goal) : "";
     if (!shown) {
-      if (global48.Tooltips && global48.Tooltips.setRich) global48.Tooltips.setRich(host2, null);
+      if (global49.Tooltips && global49.Tooltips.setRich) global49.Tooltips.setRich(host2, null);
       setTip(host2, "", { ariaLabel: false });
       host2.removeAttribute("data-tooltip-placement");
       return;
     }
     host2.setAttribute("data-tooltip-placement", "below");
-    if (global48.Tooltips && typeof global48.Tooltips.setRich === "function") {
-      global48.Tooltips.setRich(host2, function() {
+    if (global49.Tooltips && typeof global49.Tooltips.setRich === "function") {
+      global49.Tooltips.setRich(host2, function() {
         return buildLabeledCodeTip("Goal at this step", goal, "type");
       }, "Goal at this step: " + shown);
     } else {
@@ -30514,8 +31202,8 @@
     if (!el6 || !tip) return;
     el6.setAttribute("data-tooltip-placement", placement || "below");
     el6.setAttribute("data-tooltip-no-track", "");
-    if (richCode && global48.Tooltips && typeof global48.Tooltips.setRich === "function") {
-      global48.Tooltips.setRich(el6, function() {
+    if (richCode && global49.Tooltips && typeof global49.Tooltips.setRich === "function") {
+      global49.Tooltips.setRich(el6, function() {
         return buildLabeledCodeTip(tip, richCode, richKind || "type");
       }, tip);
     } else {
@@ -30547,14 +31235,14 @@
       }
     }, 300);
   }
-  if (typeof global48.addEventListener === "function") {
-    global48.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
-    global48.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
-    global48.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
-    global48.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
+  if (typeof global49.addEventListener === "function") {
+    global49.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
+    global49.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
+    global49.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
+    global49.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
   }
   function liveEditorFileId() {
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     if (api3 && typeof api3.getDocumentId === "function") {
       var docId = api3.getDocumentId();
       if (docId) return docId;
@@ -30563,13 +31251,13 @@
       var edId = api3.getActiveFileId();
       if (edId) return edId;
     }
-    var P3 = global48.Persist;
+    var P3 = global49.Persist;
     return P3 && P3.getActiveFileId ? P3.getActiveFileId() : null;
   }
   function liveFileText(fileId) {
-    var P3 = global48.Persist;
+    var P3 = global49.Persist;
     if (!P3 || !fileId) return "";
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     if (fileId === liveEditorFileId() && api3 && typeof api3.getValue === "function") {
       return api3.getValue();
     }
@@ -30671,7 +31359,7 @@
   }
   var liveSessions = [];
   function activeSession() {
-    var active4 = global48.document ? global48.document.activeElement : null;
+    var active4 = global49.document ? global49.document.activeElement : null;
     var newest = null;
     for (var i = liveSessions.length - 1; i >= 0; i -= 1) {
       var s = liveSessions[i];
@@ -30780,8 +31468,8 @@
     }
     try {
       var focusNext = typeof Persist === "undefined" || Persist.readStoredAutosolveFocusNext();
-      if (focusNext && global48.CurrentEditor && typeof global48.CurrentEditor.cycleHole === "function") {
-        global48.CurrentEditor.cycleHole(1);
+      if (focusNext && global49.CurrentEditor && typeof global49.CurrentEditor.cycleHole === "function") {
+        global49.CurrentEditor.cycleHole(1);
       }
     } catch (_) {
     }
@@ -30797,7 +31485,7 @@
       st.detail = commitFailureUserMessage();
       st.detailRaw = raw;
       toast2(st.detail, "error");
-      var N = global48.Notifications;
+      var N = global49.Notifications;
       if (N && typeof N.emit === "function") {
         N.emit({
           kind: "error",
@@ -30833,11 +31521,11 @@
   };
   Session.prototype.clearPendingCommitNav = function() {
     if (this._pendingCommitNavTimer != null) {
-      global48.clearTimeout(this._pendingCommitNavTimer);
+      global49.clearTimeout(this._pendingCommitNavTimer);
       this._pendingCommitNavTimer = null;
     }
     if (this._pendingCommitNavListener) {
-      global48.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
+      global49.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
       this._pendingCommitNavListener = null;
     }
     this.pendingCommitSource = null;
@@ -30850,7 +31538,7 @@
     if (idx !== -1) probeSessions.splice(idx, 1);
   };
   Session.prototype.resolveView = function() {
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     if (!api3 || !this.fileId) return this.view;
     if (liveEditorFileId() === this.fileId && typeof api3.getView === "function") {
       var v = api3.getView();
@@ -30861,8 +31549,8 @@
   Session.prototype.captureAnchor = function(view, prep) {
     var ed = E();
     if (!ed || typeof ed.captureHarpoonAnchor !== "function" || !prep) return;
-    var api3 = global48.CurrentEditor;
-    var P3 = global48.Persist;
+    var api3 = global49.CurrentEditor;
+    var P3 = global49.Persist;
     var fileId = this.fileId || (P3 && P3.getActiveFileId ? P3.getActiveFileId() : null);
     var fileText = view ? view.state.doc.toString() : prep.fileText != null ? prep.fileText : liveFileText(fileId);
     var declSlice = prep.span ? view ? view.state.doc.sliceString(prep.span.from, prep.span.to) : fileText.slice(prep.span.from, prep.span.to) : "";
@@ -30891,7 +31579,7 @@
     if (!ed || typeof ed.assessHarpoonAnchor !== "function" || !this.anchor || !this.nativeAuto) return;
     var fileId = this.fileId || this.anchor.fileId;
     if (!fileId) return;
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     var active4 = liveEditorFileId() === fileId;
     this.resolveView();
     var view = active4 ? this.view : null;
@@ -30954,7 +31642,7 @@
     }
     this.userCancelled = false;
     var view = this.resolveView();
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var hit = this.findLiveHit(view, eng);
     if (!hit) {
@@ -31104,7 +31792,7 @@
     );
     if (this._autoGoalWrap) {
       var goalHost = this._autoGoalWrap.querySelector(".harpoon-hole-goal");
-      var ed = typeof global48.BelEditor !== "undefined" ? global48.BelEditor : null;
+      var ed = typeof global49.BelEditor !== "undefined" ? global49.BelEditor : null;
       if (goalHost && ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goalHost, { surface: "lab", goalState: "live", goal: match.goal });
       } else if (goalHost) {
@@ -31116,7 +31804,7 @@
   Session.prototype.resolveFullDeclSignature = function(proveCode, sourceType) {
     var self = this;
     var ed = E();
-    var client = global48.BelugaClient;
+    var client = global49.BelugaClient;
     var name = this.prep && this.prep.name;
     if (!ed || !client || typeof client.ideDeclTypeForProver !== "function" || !name || !proveCode) return;
     if (this._fullDeclSigRequested === name) return;
@@ -31141,7 +31829,7 @@
   };
   Session.prototype.runNativeAuto = function(codeOverride) {
     var ed = E();
-    var client = global48.BelugaClient;
+    var client = global49.BelugaClient;
     var prep = this.prep;
     var self = this;
     if (!ed || !client || !prep || typeof ed.proveProgram !== "function" || typeof ed.theoremUnderProof !== "function") {
@@ -31155,7 +31843,7 @@
       return Promise.resolve(false);
     }
     var proveCode = codeOverride || prep.proveCode || prep.assembledCode;
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var goalHit = typeof ed.resolveHoleGoalForHit === "function" ? ed.resolveHoleGoalForHit(this.view, eng, prep.hit) : { goal: thm.compType && thm.compType.raw ? thm.compType.raw : "", state: "approximate", loadingLive: true };
     if ((!goalHit || !goalHit.goal) && prep.hit && prep.hit.hole && prep.hit.hole.goal) {
@@ -31414,7 +32102,7 @@
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
-    var client = global48.BelugaClient;
+    var client = global49.BelugaClient;
     if (client && client.endProverSession) client.endProverSession();
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
@@ -31456,7 +32144,7 @@
     var dot = el4("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
     dot.setAttribute("data-tooltip", m.complete ? "Proven" : "Unproven");
     dot.setAttribute("aria-label", m.complete ? "Proven" : "Unproven");
-    if (global48.Tooltips && global48.Tooltips.bind) global48.Tooltips.bind(dot);
+    if (global49.Tooltips && global49.Tooltips.bind) global49.Tooltips.bind(dot);
     status.appendChild(dot);
     var label = el4("span", "harpoon-lab-status-text");
     if (m.complete) {
@@ -31531,7 +32219,7 @@
       autoBtn.appendChild(spark);
       autoBtn.appendChild(el4("span", "harpoon-lab-auto-btn-label", "Auto-solve"));
       autoBtn.setAttribute("data-tooltip", "Let BelJar search for the whole proof");
-      if (global48.Tooltips && global48.Tooltips.bind) global48.Tooltips.bind(autoBtn);
+      if (global49.Tooltips && global49.Tooltips.bind) global49.Tooltips.bind(autoBtn);
       autoBtn.addEventListener("click", function(e) {
         e.preventDefault();
         self.runTactic({ kind: "auto" });
@@ -31548,7 +32236,7 @@
         if (mv.arg) b.appendChild(el4("span", "harpoon-lab-tac-arg", mv.arg));
         if (mv.tip) {
           b.setAttribute("data-tooltip", mv.tip);
-          if (global48.Tooltips && global48.Tooltips.bind) global48.Tooltips.bind(b);
+          if (global49.Tooltips && global49.Tooltips.bind) global49.Tooltips.bind(b);
         }
         b.addEventListener("click", function(e) {
           e.preventDefault();
@@ -31965,7 +32653,7 @@
   }
   function prepareForHole(view, hit) {
     var ed = E();
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     var ctx = api3 && typeof api3.getHoleActionContext === "function" ? api3.getHoleActionContext() : null;
     if (!ctx || !ctx.code) {
       toast2("Harpoon: no checkable program.", "error");
@@ -32013,8 +32701,8 @@
   function removeFloatSession(session) {
     var idx = floatSessions.indexOf(session);
     if (idx !== -1) floatSessions.splice(idx, 1);
-    if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
-      global48.WorkspaceState.scheduleSave();
+    if (global49.WorkspaceState && global49.WorkspaceState.scheduleSave) {
+      global49.WorkspaceState.scheduleSave();
     }
   }
   function listHoleHits(view, engine) {
@@ -32041,7 +32729,7 @@
     }
     if (!anchor2.declKey) return null;
     var ed = E();
-    var api3 = global48.CurrentEditor;
+    var api3 = global49.CurrentEditor;
     for (var j = 0; j < hits.length; j++) {
       var hit = hits[j];
       var span = null;
@@ -32056,7 +32744,7 @@
     return null;
   }
   function openingMode() {
-    var persist4 = global48.Persist;
+    var persist4 = global49.Persist;
     if (persist4 && typeof persist4.readStoredHarpoonMode === "function") {
       return persist4.readStoredHarpoonMode() === "orca" ? "orca" : "manual";
     }
@@ -32065,7 +32753,7 @@
   function runSession(view, prep, host2) {
     var session = new Session(view, prep.span.from, prep.span.to, host2);
     session.prep = prep;
-    var persist4 = global48.Persist;
+    var persist4 = global49.Persist;
     session.fileId = host2.fileId || (persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null);
     session.captureAnchor(view, prep);
     session.bindProbe();
@@ -32089,7 +32777,7 @@
     }
     var prep = prepareForHole(view, hit);
     if (!prep) return;
-    var persist4 = global48.Persist;
+    var persist4 = global49.Persist;
     var fileId = persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null;
     var session = runSession(view, prep, {
       kind: "float",
@@ -32107,8 +32795,8 @@
           x: geom.x,
           y: geom.y,
           onGeometryChange: function() {
-            if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
-              global48.WorkspaceState.scheduleSave();
+            if (global49.WorkspaceState && global49.WorkspaceState.scheduleSave) {
+              global49.WorkspaceState.scheduleSave();
             }
           },
           onClose: function() {
@@ -32120,8 +32808,8 @@
           }
         });
         floatSessions.push(s);
-        if (global48.WorkspaceState && global48.WorkspaceState.scheduleSave) {
-          global48.WorkspaceState.scheduleSave();
+        if (global49.WorkspaceState && global49.WorkspaceState.scheduleSave) {
+          global49.WorkspaceState.scheduleSave();
         }
       }
     });
@@ -32130,7 +32818,7 @@
   function labTitle(name) {
     var wrap = document.createElement("span");
     wrap.className = "harpoon-lab-title";
-    if (global48.HarpoonIcon) global48.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
+    if (global49.HarpoonIcon) global49.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
     wrap.appendChild(el4("span", "harpoon-lab-title-text", name ? "Harpoon \xB7 " + name : "Harpoon"));
     return wrap;
   }
@@ -32206,7 +32894,7 @@
     openFromHole(view, engine, hit, { geom: entry.geom });
     return true;
   }
-  global48.Harpoon = {
+  global49.Harpoon = {
     // Test seam: probes mount a Session over a fabricated state to drive the
     // SHIPPED render/click paths rather than a re-implementation of them.
     _Session: Session,
@@ -32217,12 +32905,12 @@
     collectFloatingHarpoonWindows,
     restoreFloatingHarpoonWindow
   };
-  global48.BelJarHarpoon = global48.Harpoon;
+  global49.BelJarHarpoon = global49.Harpoon;
 
   // js/harpoon/harpoon-goal-sections.mjs
-  var global49 = globalThis;
+  var global50 = globalThis;
   function dirOf5(name) {
-    var PS = global49.ProjectSource;
+    var PS = global50.ProjectSource;
     if (PS && typeof PS.dirOf === "function") return PS.dirOf(name);
     var i = String(name || "").lastIndexOf("/");
     return i === -1 ? "" : name.slice(0, i);
@@ -32238,7 +32926,7 @@
     return dot === -1 ? base : base.slice(0, dot);
   }
   function holeHostFile(name) {
-    var PS = global49.ProjectSource;
+    var PS = global50.ProjectSource;
     if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
     var low = String(name || "").toLowerCase();
     if (low.endsWith(".cfg") || low.endsWith(".elf")) return false;
@@ -32247,7 +32935,7 @@
     return base.indexOf(".") === -1;
   }
   function scanFileHoles(text) {
-    var ed = global49.BelEditor;
+    var ed = global50.BelEditor;
     if (ed && typeof ed.scanFileHoles === "function") return ed.scanFileHoles(text);
     return [];
   }
@@ -32304,13 +32992,11 @@
     var getActiveCfgsForDir2 = opts.getActiveCfgsForDir || function() {
       return [];
     };
-    var computeDirLayout2 = opts.computeDirLayout;
     var activeFileId2 = opts.activeFileId || null;
     var activeHits = opts.activeHits || null;
     var memberHoles = opts.memberHoles || {};
     var developmentPaths = opts.developmentPaths || null;
-    var SL = global49.ExplorerSuiteLayout;
-    var PS = global49.ProjectSource;
+    var PS = global50.ProjectSource;
     var resolveMembers = opts.resolveMembers || (PS && typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath2, gt) {
       return PS.orderedPathsForCfg(all, cfgPath2, gt);
     } : null);
@@ -32344,14 +33030,6 @@
     for (var di = 0; di < dirKeys.length; di++) {
       var dir = dirKeys[di];
       var filesInDir = byDir[dir];
-      var layout = { orderedFiles: filesInDir, suiteByFile: {} };
-      if (typeof computeDirLayout2 === "function") {
-        layout = computeDirLayout2(dir, filesInDir);
-      } else if (SL && typeof SL.computeDirLayout === "function") {
-        var activeCfgs = getActiveCfgsForDir2(dir);
-        layout = SL.computeDirLayout(filesInDir, activeCfgs, resolveMembers, files, getText);
-      }
-      var suiteByFile = layout.suiteByFile || {};
       var activeCfgs = getActiveCfgsForDir2(dir);
       var placed = {};
       var dirEntries = [];
@@ -32406,15 +33084,15 @@
     }
     return { sections, totalCount };
   }
-  global49.HarpoonGoalSections = {
+  global50.HarpoonGoalSections = {
     buildSections
   };
-  global49.BelJarHarpoonGoalSections = global49.HarpoonGoalSections;
+  global50.BelJarHarpoonGoalSections = global50.HarpoonGoalSections;
 
   // js/harpoon/harpoon-panel.mjs
-  var global50 = globalThis;
+  var global51 = globalThis;
   function E2() {
-    return global50.BelEditor || null;
+    return global51.BelEditor || null;
   }
   var el5 = function(tag, cls, text) {
     var n = document.createElement(tag);
@@ -32423,7 +33101,7 @@
     return n;
   };
   function curView() {
-    var api3 = global50.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     return api3 && typeof api3.getView === "function" ? api3.getView() : null;
   }
   function activeSyntacticHits(view) {
@@ -32434,12 +33112,12 @@
     });
   }
   function normalizeGlyphs(text) {
-    var g14 = global50.HarpoonGlyphs;
+    var g14 = global51.HarpoonGlyphs;
     if (g14) return g14.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g14 = global50.HarpoonGlyphs;
+    var g14 = global51.HarpoonGlyphs;
     if (g14) return g14.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
@@ -32462,7 +33140,7 @@
   }
   function setSuiteTip(host2, label) {
     var name = label || "(none)";
-    var tips = global50.Tooltips;
+    var tips = global51.Tooltips;
     if (tips && typeof tips.setRich === "function") {
       tips.setRich(host2, function() {
         var row = el5("span", "harpoon-tip-suite");
@@ -32538,7 +33216,7 @@
   }
   function declKeyForHit(view, hit) {
     var ed = E2();
-    var api3 = global50.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     if (!hit) return null;
     var span = null;
     if (api3 && api3.getMemberSpan) span = api3.getMemberSpan(hit.from);
@@ -32551,12 +33229,12 @@
     return decl.kw + ":" + decl.name;
   }
   function activeFileId() {
-    var p = typeof global50.Persist !== "undefined" ? global50.Persist : null;
+    var p = typeof global51.Persist !== "undefined" ? global51.Persist : null;
     if (!p) return null;
     return typeof p.getActiveFileId === "function" ? p.getActiveFileId() : null;
   }
   function activeFilePath() {
-    var p = typeof global50.Persist !== "undefined" ? global50.Persist : null;
+    var p = typeof global51.Persist !== "undefined" ? global51.Persist : null;
     if (!p) return "";
     var id = typeof p.getActiveFileId === "function" ? p.getActiveFileId() : typeof p.getCurrentFileId === "function" ? p.getCurrentFileId() : null;
     if (!id || typeof p.getFileById !== "function") return "";
@@ -32590,9 +33268,9 @@
   }
   function applyGoalStateToModel(model, view) {
     var ed = E2();
-    var api3 = global50.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-    var P3 = typeof global50.Persist !== "undefined" ? global50.Persist : null;
+    var P3 = typeof global51.Persist !== "undefined" ? global51.Persist : null;
     if (!ed || typeof ed.enrichHoleHitsWithGoalState !== "function" || !view) return model;
     var activeId2 = activeFileId();
     var getText = P3 && typeof P3.getFileText === "function" ? function(id) {
@@ -32666,8 +33344,8 @@
     return Object.assign({}, entry, { hit: mergeHitGoal(entry.hit, rich) });
   }
   function collectProjectSections() {
-    var P3 = typeof global50.Persist !== "undefined" ? global50.Persist : null;
-    var PG = typeof global50.HarpoonGoalSections !== "undefined" ? global50.HarpoonGoalSections : null;
+    var P3 = typeof global51.Persist !== "undefined" ? global51.Persist : null;
+    var PG = typeof global51.HarpoonGoalSections !== "undefined" ? global51.HarpoonGoalSections : null;
     var holeGoals = collectInScopeHoleGoals();
     var view = curView();
     var ed = E2();
@@ -32704,8 +33382,6 @@
     } : function() {
       return "";
     };
-    var PS = typeof global50.ProjectSource !== "undefined" ? global50.ProjectSource : null;
-    var SL = typeof global50.ExplorerSuiteLayout !== "undefined" ? global50.ExplorerSuiteLayout : null;
     var model = PG.buildSections({
       files,
       getText,
@@ -32717,14 +33393,7 @@
         return P3.getActiveCfgsForDir(dir);
       } : function() {
         return [];
-      },
-      computeDirLayout: SL && typeof SL.computeDirLayout === "function" && PS ? function(dir, filesInDir) {
-        var active4 = P3.getActiveCfgsForDir(dir);
-        var resolver = typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath, gt) {
-          return PS.orderedPathsForCfg(all, cfgPath, gt);
-        } : null;
-        return SL.computeDirLayout(filesInDir, active4, resolver, files, getText);
-      } : null
+      }
     });
     for (var si = 0; si < model.sections.length; si++) {
       var sec = model.sections[si];
@@ -32738,7 +33407,7 @@
   var declTextCache = /* @__PURE__ */ Object.create(null);
   function fileTextFor(fileId) {
     if (fileId in declTextCache) return declTextCache[fileId];
-    var P3 = typeof global50.Persist !== "undefined" ? global50.Persist : null;
+    var P3 = typeof global51.Persist !== "undefined" ? global51.Persist : null;
     var t = null;
     try {
       t = P3 && typeof P3.getFileText === "function" ? P3.getFileText(fileId) : null;
@@ -32841,8 +33510,8 @@
     var decl = declForEntry(entry);
     var declEl = el5("span", "harpoon-hole-decl");
     if (decl) {
-      declEl.appendChild(el5("span", "harpoon-hole-decl-kw bel-hl-keyword", decl.kw));
-      declEl.appendChild(el5("span", "harpoon-hole-decl-name bel-hl-var-def", decl.name));
+      declEl.appendChild(el5("span", "harpoon-hole-decl-kw jar-hl-keyword", decl.kw));
+      declEl.appendChild(el5("span", "harpoon-hole-decl-name jar-hl-var-def", decl.name));
     } else {
       declEl.classList.add("is-unknown");
       declEl.appendChild(el5("span", "harpoon-hole-decl-name", "top level"));
@@ -32956,8 +33625,8 @@
   function beginPanelSession(fileId, declKey, start) {
     enterProofMode();
     if (declKey && fileId) provingDecl = { fileId, declKey };
-    if (global50.WorkspaceState && global50.WorkspaceState.scheduleSave) {
-      global50.WorkspaceState.scheduleSave();
+    if (global51.WorkspaceState && global51.WorkspaceState.scheduleSave) {
+      global51.WorkspaceState.scheduleSave();
     }
     bodyEl2.textContent = "";
     var host2 = el5("div", "harpoon-panel-session");
@@ -32968,7 +33637,7 @@
         panelSession = null;
         return;
       }
-      var proof = global50.HarpoonEngine;
+      var proof = global51.HarpoonEngine;
       if (proof && proof.dispose) proof.dispose();
       provingDecl = null;
       renderList3();
@@ -32991,7 +33660,7 @@
     });
   }
   function proveHit(view, eng, hit, fileId) {
-    var lab = global50.Harpoon;
+    var lab = global51.Harpoon;
     if (!lab || typeof lab.proveInPanel !== "function") return;
     var fid = fileId || activeFileId();
     beginPanelSession(fid, declKeyForHit(view, hit), function(host2, opts) {
@@ -33000,7 +33669,7 @@
   }
   function declKeyInFileText(fileId, from) {
     var ed = E2();
-    var P3 = global50.Persist;
+    var P3 = global51.Persist;
     if (!ed || !P3 || typeof ed.declSpanInText !== "function") return null;
     var text = String(P3.getFileText(fileId) || "");
     var span = ed.memberSpanInText ? ed.memberSpanInText(text, from) : ed.declSpanInText(text, from);
@@ -33009,7 +33678,7 @@
   }
   function proveEntry(entry) {
     var fid = entry.fileId;
-    var lab = global50.Harpoon;
+    var lab = global51.Harpoon;
     if (fid !== activeFileId()) {
       if (!lab || typeof lab.proveInPanelForFile !== "function") return;
       beginPanelSession(fid, declKeyInFileText(fid, entry.hit.from), function(host2, opts) {
@@ -33018,7 +33687,7 @@
       return;
     }
     var view = curView();
-    var api3 = global50.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     if (view && eng) proveHit(view, eng, entry.hit, fid);
   }
@@ -33051,7 +33720,7 @@
     var eng = deps && deps.engine;
     if (!view || !eng) return;
     if (decl.fileId && decl.fileId !== activeFileId()) return;
-    var lab = global50.Harpoon;
+    var lab = global51.Harpoon;
     if (!lab) return;
     var hit = null;
     if (typeof lab.restoreFloatingHarpoonWindow === "function") {
@@ -33071,16 +33740,16 @@
     }
     if (hit) proveHit(view, eng, hit, decl.fileId);
   }
-  global50.HarpoonPanel = {
+  global51.HarpoonPanel = {
     init: init13,
     refresh: refresh4,
     collectWorkspaceHarpoon,
     restoreWorkspaceHarpoon
   };
-  global50.BelJarHarpoonPanel = global50.HarpoonPanel;
+  global51.BelJarHarpoonPanel = global51.HarpoonPanel;
 
   // js/beluga/beluga-text.mjs
-  var global51 = globalThis;
+  var global52 = globalThis;
   function normalizeBelugaRaw(s) {
     return String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
@@ -33167,7 +33836,7 @@
     }
     return out;
   }
-  global51.BelugaText = {
+  global52.BelugaText = {
     normalizeBelugaRaw,
     stripBelugaAnsi,
     isBelugaCommandError,
@@ -33177,7 +33846,7 @@
   };
 
   // js/beluga/beluga-run.mjs
-  var global52 = globalThis;
+  var global53 = globalThis;
   var belugaBusy = false;
   var belugaMode = Persist.readStoredBelugaMode();
   var btnLoad = null;
@@ -33693,7 +34362,7 @@
       });
     });
   }
-  global52.BelugaRun = {
+  global53.BelugaRun = {
     init: init14,
     setBelugaBusy,
     isBelugaBusy,
@@ -33713,7 +34382,7 @@
     ensureEditorLoadedForRun,
     getProjectSpans
   };
-  global52.BelJarBelugaRun = global52.BelugaRun;
+  global53.BelJarBelugaRun = global53.BelugaRun;
 
   // js/app/app-empty-state.mjs
   function create10(opts) {
@@ -33873,6 +34542,15 @@
         tab.appendChild(closeBtn2);
         tab.addEventListener("click", function() {
           onSwitch(file.id);
+        });
+        tab.addEventListener("mousedown", function(e) {
+          if (e.button === 1) e.preventDefault();
+        });
+        tab.addEventListener("auxclick", function(e) {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onClose(file.id);
         });
         editorTabsEl.appendChild(tab);
       });
@@ -34111,9 +34789,7 @@
   // js/app/app-upload-import.mjs
   function create14(deps) {
     var getEditor = deps.getEditor;
-    var setEditor = deps.setEditor;
     var getPersist2 = deps.getPersist;
-    var setPersist = deps.setPersist;
     var showToast = deps.showToast;
     var projectFileText = deps.projectFileText;
     var switchToFile = deps.switchToFile;
@@ -34187,7 +34863,6 @@
     async function projectEntriesFromPickerFiles(all, opts) {
       const rawEntries = [];
       for (const file of all) {
-        const low = file.name.toLowerCase();
         if (!ProjectSource.isProjectSourcePath(file.name)) continue;
         rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
       }
@@ -34404,6 +35079,14 @@
     }
     function applyMovePlan(plan) {
       if (!plan || !getPersist2()) return;
+      const H = typeof EditHistory !== "undefined" ? EditHistory : null;
+      if (H && typeof H.transact === "function") {
+        H.transact("file-move", () => applyMovePlanNow(plan), "Move files");
+        return;
+      }
+      applyMovePlanNow(plan);
+    }
+    function applyMovePlanNow(plan) {
       const moves = [];
       const recordMove = (id, to) => {
         const f = Persist.getFileById(id);
@@ -35180,21 +35863,26 @@
     var libraryController = null;
     function renameFolderPrefix(from, to) {
       if (!from || from === to) return;
-      const files = Persist.listFiles();
-      const moves = [];
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        if (f.name !== from && !f.name.startsWith(from + "/")) continue;
-        const rel = f.name === from ? "" : f.name.slice(from.length + 1);
-        const newPath = to ? rel ? to + "/" + rel : to : rel;
-        if (newPath !== f.name) {
-          moves.push({ from: f.name, to: newPath });
-          Persist.renameFile(f.id, newPath);
+      const H = typeof EditHistory !== "undefined" ? EditHistory : null;
+      const run3 = () => {
+        const files = Persist.listFiles();
+        const moves = [];
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          if (f.name !== from && !f.name.startsWith(from + "/")) continue;
+          const rel = f.name === from ? "" : f.name.slice(from.length + 1);
+          const newPath = to ? rel ? to + "/" + rel : to : rel;
+          if (newPath !== f.name) {
+            moves.push({ from: f.name, to: newPath });
+            Persist.renameFile(f.id, newPath);
+          }
         }
-      }
-      Persist.preserveEmptyFoldersAfterMoves(moves);
+        Persist.preserveEmptyFoldersAfterMoves(moves);
+        Persist.renameEmptyFolderPrefix(from, to);
+      };
+      if (H && typeof H.transact === "function") H.transact("file-rename", run3, "Rename " + from);
+      else run3();
       reloadActiveEditorFromPersist();
-      Persist.renameEmptyFolderPrefix(from, to);
       renderTabs();
       updateHeaderContext();
     }
@@ -35228,7 +35916,13 @@
           return false;
         }
         if (result.fullPath !== file.name) {
-          Persist.renameFile(session.fileId, result.fullPath);
+          const H = typeof EditHistory !== "undefined" ? EditHistory : null;
+          const doRename = () => Persist.renameFile(session.fileId, result.fullPath);
+          if (H && typeof H.transact === "function") {
+            H.transact("file-rename", doRename, "Rename to " + IL.lastSegment(result.fullPath));
+          } else {
+            doRename();
+          }
           if (session.fileId === Persist.getActiveFileId()) {
             ensureEditorMatchesFileKind();
           }
@@ -35789,6 +36483,12 @@
         }
       ];
       if (fromTab) {
+        const otherTabs = openIds.filter((id) => id !== fileId);
+        destroy.push({
+          label: "Close other tabs",
+          disabled: otherTabs.length === 0,
+          onSelect: () => closeTabsForFiles(otherTabs)
+        });
         destroy.push({
           label: "Close all to the right",
           disabled: tabsToRight.length === 0,
@@ -35873,10 +36573,15 @@
     }
     function editorClipboard(action) {
       if (!getEditor()) return;
-      getEditor().focus();
+      window.Commands?.run?.("edit." + action);
+    }
+    function chordFor(id) {
+      const C = window.Commands;
+      if (!C || typeof C.liveChord !== "function") return "";
       try {
-        document.execCommand(action);
+        return C.liveChord(id) || "";
       } catch (_) {
+        return "";
       }
     }
     function formatCurrentFile() {
@@ -35970,17 +36675,18 @@
       const currentFile = currentId ? Persist.getFileById(currentId) : null;
       const canFormatFile = !!(currentFile && ProjectSource.isSignaturePath(String(currentFile.name || "")) && getEditor() && typeof getEditor().format === "function");
       return [
-        { label: "Undo", onSelect: () => editorExec("undo") },
-        { label: "Redo", onSelect: () => editorExec("redo") },
+        { label: "Undo", shortcut: chordFor("edit.undo"), onSelect: () => editorExec("undo") },
+        { label: "Redo", shortcut: chordFor("edit.redo"), onSelect: () => editorExec("redo") },
         { type: "separator" },
-        { label: "Cut", onSelect: () => editorClipboard("cut") },
-        { label: "Copy", onSelect: () => editorClipboard("copy") },
-        { label: "Paste", onSelect: () => editorClipboard("paste") },
-        { label: "Select All", onSelect: () => editorExec("selectAll") },
+        { label: "Cut", shortcut: chordFor("edit.cut"), onSelect: () => editorClipboard("cut") },
+        { label: "Copy", shortcut: chordFor("edit.copy"), onSelect: () => editorClipboard("copy") },
+        { label: "Paste", shortcut: chordFor("edit.paste"), onSelect: () => editorClipboard("paste") },
+        { label: "Select All", shortcut: chordFor("edit.select-all"), onSelect: () => editorExec("selectAll") },
         { type: "separator" },
-        { label: "Find\u2026", onSelect: () => editorExec("openSearch") },
+        { label: "Find\u2026", shortcut: chordFor("edit.find"), onSelect: () => editorExec("openSearch") },
         {
           label: "Search in project\u2026",
+          shortcut: chordFor("edit.search-project"),
           onSelect: () => {
             CommandPalette.open({ mode: "search" });
           }
@@ -35988,6 +36694,7 @@
         { type: "separator" },
         {
           label: "Format file",
+          shortcut: chordFor("edit.format"),
           disabled: !canFormatFile,
           onSelect: formatCurrentFile
         },
@@ -36002,7 +36709,7 @@
       return [
         {
           label: "Open command palette\u2026",
-          shortcut: typeof CommandPalette !== "undefined" ? CommandPalette.shortcutLabel("Mod+K") : "Ctrl+K",
+          shortcut: chordFor("tools.palette"),
           onSelect: () => {
             CommandPalette.open();
           }
@@ -36010,6 +36717,7 @@
         { type: "separator" },
         {
           label: "Dependency graph\u2026",
+          shortcut: chordFor("tools.graph"),
           onSelect: () => window.CurrentEditor?.openDependencyGraph()
         }
       ];
@@ -36081,6 +36789,7 @@
     var projectFileText = deps.projectFileText;
     var closeFile = deps.closeFile;
     var closeTabsForFiles = deps.closeTabsForFiles;
+    var flushEverythingToStorage = deps.flushEverythingToStorage;
     var activeSuiteMembership = deps.activeSuiteMembership;
     var afterSuiteEdit = deps.afterSuiteEdit;
     {
@@ -36265,10 +36974,6 @@
         const H = window.Harpoon;
         return H && typeof H.activeSession === "function" ? H.activeSession() : null;
       };
-      const manualState = () => {
-        const s = lab();
-        return s && s.manual && s.manual.state || null;
-      };
       const onLab = (id, fn, ready) => Commands2.attach(id, {
         run: () => {
           const s = lab();
@@ -36334,6 +37039,10 @@
       }
       on("settings.set", (ctx) => runSet(ctx && ctx.argText));
       on("cmdline.open", () => StatusStrip.openCommandLine(""));
+      on("nav.goto-line", () => {
+        StatusStrip.openCommandLine("", { prompt: "Go to line" });
+        return true;
+      }, () => !!window.CurrentEditor);
       on(
         "keys.full-keyboard",
         () => {
@@ -36384,6 +37093,13 @@
       on("run.clear-output", () => {
         ReplOutput.clearOutput();
       });
+      on("app.reload", () => {
+        try {
+          flushEverythingToStorage(false);
+        } catch (_) {
+        }
+        window.location.reload();
+      });
       on("view.theme", toggleTheme2);
       on("view.explorer", () => toggleSidePanel("explorer"));
       on("view.library", () => toggleSidePanel("library"));
@@ -36427,15 +37143,22 @@
         }
         return items3;
       });
-      CommandPalette.setProvider("search", (query2) => {
-        if (!query2) return [];
-        const activeId2 = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
-        const entries = Persist.listFiles().map((f) => ({
+      let corpus = null;
+      let corpusSession = -1;
+      const searchCorpus = () => {
+        const session = typeof CommandPalette.sessionId === "function" ? CommandPalette.sessionId() : -1;
+        if (corpus && corpusSession === session) return corpus;
+        corpusSession = session;
+        corpus = Persist.listFiles().map((f) => ({
           id: f.id,
           name: f.name,
           text: projectFileText(f.id)
         }));
-        return ProjectSource.scanProjectText(entries, query2, 60).map((m) => ({
+        return corpus;
+      };
+      CommandPalette.setProvider("search", (query2) => {
+        if (!query2) return [];
+        return ProjectSource.scanProjectText(searchCorpus(), query2, 60).map((m) => ({
           title: m.lineText,
           mono: true,
           detail: m.name.split("/").pop() + ":" + m.line,
@@ -36452,6 +37175,10 @@
   function onWin(type, fn, opts) {
     window.addEventListener(type, fn, opts);
     teardown3.push(() => window.removeEventListener(type, fn, opts));
+  }
+  function onDoc(type, fn, opts) {
+    document.addEventListener(type, fn, opts);
+    teardown3.push(() => document.removeEventListener(type, fn, opts));
   }
   function mount2() {
     if (mounted3) return;
@@ -36638,7 +37365,7 @@
     function editorViewIsCfg(ed) {
       if (!ed || typeof ed.getView !== "function") return false;
       const view = ed.getView();
-      return !!(view && view.dom && view.dom.classList.contains("bel-editor--cfg"));
+      return !!(view && view.dom && view.dom.classList.contains("jar-editor--cfg"));
     }
     function remountActiveEditor(openOpts) {
       if (!persist4 || !editor) return;
@@ -37349,7 +38076,8 @@
         signatureFileCount,
         switchToFile,
         openFileAt,
-        projectFileText
+        projectFileText,
+        flushEverythingToStorage
       }));
     }
     __initAppPeels();
@@ -37769,19 +38497,22 @@
         }, 120);
       });
     }
-    onWin("beforeunload", () => {
-      if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
-        ReplPersist.saveNow();
+    function flushEverythingToStorage(pendingOnly) {
+      const wasDirty = !!(persist4 && persist4.hasPendingSave && persist4.hasPendingSave());
+      if (typeof ReplPersist !== "undefined") {
+        if (pendingOnly && ReplPersist.saveIfPending) ReplPersist.saveIfPending();
+        else if (ReplPersist.saveNow) ReplPersist.saveNow();
       }
-      if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
-      WorkspaceState.flushWorkspace();
-    });
-    onWin("pagehide", () => {
-      if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) {
-        ReplPersist.saveNow();
+      if (persist4 && !suppressUnloadFlush) {
+        if (pendingOnly && persist4.flushCheckpointIfDirty) persist4.flushCheckpointIfDirty();
+        else persist4.flushCheckpoint();
       }
-      if (persist4 && !suppressUnloadFlush) persist4.flushCheckpoint();
-      WorkspaceState.flushWorkspace();
+      if (!pendingOnly || wasDirty) WorkspaceState.flushWorkspace();
+    }
+    onWin("beforeunload", () => flushEverythingToStorage(false));
+    onWin("pagehide", () => flushEverythingToStorage(false));
+    onDoc("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushEverythingToStorage(true);
     });
     {
       RunProgress.bind({

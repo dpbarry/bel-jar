@@ -597,7 +597,7 @@ function arrowHead(pts, headW = HEAD_W, headH = HEAD_H) {
 }
 
 // createFlatGraph(canvasHostContainer, model, sim, opts) → controller.
-// `stage` is the .bel-graph3d-stage element; we render an SVG sibling to the
+// `stage` is the .jar-graph3d-stage element; we render an SVG sibling to the
 // (hidden) canvas so the toolbar/labels overlay still composites on top.
 export function createFlatGraph(stage, model, sim, opts = {}) {
   const {
@@ -616,13 +616,13 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
 
   const { layout, routes, width, height } = computeLayout(nodes, model.edges);
 
-  const svg = svgEl('svg', { class: 'bel-flat-svg' });
+  const svg = svgEl('svg', { class: 'jar-flat-svg' });
 
-  const viewport = svgEl('g', { class: 'bel-flat-viewport' });
+  const viewport = svgEl('g', { class: 'jar-flat-viewport' });
   svg.appendChild(viewport);
 
-  const edgeLayer = svgEl('g', { class: 'bel-flat-edges' });
-  const nodeLayer = svgEl('g', { class: 'bel-flat-nodes' });
+  const edgeLayer = svgEl('g', { class: 'jar-flat-edges' });
+  const nodeLayer = svgEl('g', { class: 'jar-flat-nodes' });
   viewport.append(edgeLayer, nodeLayer);
 
   // --- edges. MERGED into a handful of <path> elements (one stroked LINE path +
@@ -658,7 +658,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
       for (const [kind, ds] of src) {
         let el = store.get(kind);
         if (!el) {
-          el = svgEl('path', { class: `bel-flat-edge bel-flat-edge--${kind}${extraClass}` });
+          el = svgEl('path', { class: `jar-flat-edge jar-flat-edge--${kind}${extraClass}` });
           edgeLayer.appendChild(el);
           store.set(kind, el);
         }
@@ -666,15 +666,15 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
       }
     };
     sync(bulkLine, lines, '');
-    sync(bulkHead, heads, ' bel-flat-edge--head');
+    sync(bulkHead, heads, ' jar-flat-edge--head');
   }
   // Focus overlay: one bright path pair per edge kind so body stays grey, sig stays blue.
   const focusLine = new Map();
   const focusHead = new Map();
   function ensureFocusOverlay(kind) {
     if (!focusLine.has(kind)) {
-      const line = svgEl('path', { class: `bel-flat-edge bel-flat-edge--${kind} is-active` });
-      const head = svgEl('path', { class: `bel-flat-edge bel-flat-edge--${kind} bel-flat-edge--head is-active` });
+      const line = svgEl('path', { class: `jar-flat-edge jar-flat-edge--${kind} is-active` });
+      const head = svgEl('path', { class: `jar-flat-edge jar-flat-edge--${kind} jar-flat-edge--head is-active` });
       line.style.display = 'none';
       head.style.display = 'none';
       edgeLayer.append(line, head);
@@ -697,7 +697,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
     if (!p) return;
     const w = p.w;
     const g = svgEl('g', {
-      class: `bel-flat-node is-${nd.role || 'node'} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
+      class: `jar-flat-node is-${nd.role || 'node'} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
       transform: `translate(${p.x - w / 2} ${p.y})`,
       tabindex: '0',
     });
@@ -719,7 +719,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
   // delegated click/dblclick/keydown on chips
   let lastClickIdx = -1, lastClickT = 0;
   const idxOfEvent = (ev) => {
-    const g = ev.target.closest?.('.bel-flat-node');
+    const g = ev.target.closest?.('.jar-flat-node');
     return g ? +g.dataset.idx : -1;
   };
   svg.addEventListener('click', (ev) => {
@@ -728,7 +728,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
     ev.stopPropagation();
     // Selection is .is-focused, not DOM focus — blur so the SVG <g> never shows
     // the browser's rectangular focus ring after a mouse click.
-    ev.target.closest?.('.bel-flat-node')?.blur();
+    ev.target.closest?.('.jar-flat-node')?.blur();
     const now = Date.now();
     if (i === lastClickIdx && now - lastClickT < 350) onJump(nodes[i], i);
     else handleActivate(i, ev.shiftKey);
@@ -871,7 +871,7 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
   // --- interaction: pan on empty drag, wheel zoom toward cursor
   let pan = null;
   svg.addEventListener('pointerdown', (ev) => {
-    if (ev.target.closest('.bel-flat-node')) return;
+    if (ev.target.closest('.jar-flat-node')) return;
     tween = null;
     pan = { px: ev.clientX, py: ev.clientY, x0: cam.x, y0: cam.y, id: ev.pointerId, moved: false };
     svg.setPointerCapture(ev.pointerId);
@@ -889,13 +889,13 @@ export function createFlatGraph(stage, model, sim, opts = {}) {
     const wasClick = !pan.moved;
     pan = null;
     svg.classList.remove('is-panning');
-    if (wasClick && !ev.target.closest('.bel-flat-node') && viewMode === 'global') setFocus(-1);
+    if (wasClick && !ev.target.closest('.jar-flat-node') && viewMode === 'global') setFocus(-1);
   };
   svg.addEventListener('pointerup', endPan);
   svg.addEventListener('pointercancel', endPan);
   // Wheel zooms toward the cursor (trackpad pinch arrives as ctrl+wheel).
   svg.addEventListener('wheel', (ev) => {
-    if (ev.target?.closest?.('input, textarea, .bel-graph3d-toolbar, .bel-graph3d-autocomplete')) return;
+    if (ev.target?.closest?.('input, textarea, .jar-graph3d-toolbar, .jar-graph3d-autocomplete')) return;
     ev.preventDefault();
     ev.stopPropagation();
     tween = null;
@@ -1028,12 +1028,12 @@ export function renderFlatMini(container, model, { onJump = () => {} } = {}) {
   const cw = width - pad * 2;
   const ch = height - pad * 2;
   const svg = svgEl('svg', {
-    class: 'bel-flat-svg bel-flat-svg--mini',
+    class: 'jar-flat-svg jar-flat-svg--mini',
     viewBox: `${-M} ${-M} ${cw + M * 2} ${ch + M * 2}`,
     preserveAspectRatio: 'xMidYMid meet',
   });
-  const edgeLayer = svgEl('g', { class: 'bel-flat-edges' });
-  const nodeLayer = svgEl('g', { class: 'bel-flat-nodes' });
+  const edgeLayer = svgEl('g', { class: 'jar-flat-edges' });
+  const nodeLayer = svgEl('g', { class: 'jar-flat-nodes' });
   svg.append(edgeLayer, nodeLayer);
 
   // Merged edge paths per kind, same as the full view (lines + baked heads).
@@ -1049,10 +1049,10 @@ export function renderFlatMini(container, model, { onJump = () => {} } = {}) {
   }
   for (const [kind, ds] of lines) {
     edgeLayer.appendChild(svgEl('path', {
-      class: `bel-flat-edge bel-flat-edge--${kind}`, d: ds.join(' '),
+      class: `jar-flat-edge jar-flat-edge--${kind}`, d: ds.join(' '),
     }));
     edgeLayer.appendChild(svgEl('path', {
-      class: `bel-flat-edge bel-flat-edge--${kind} bel-flat-edge--head`, d: heads.get(kind).join(' '),
+      class: `jar-flat-edge jar-flat-edge--${kind} jar-flat-edge--head`, d: heads.get(kind).join(' '),
     }));
   }
 
@@ -1060,7 +1060,7 @@ export function renderFlatMini(container, model, { onJump = () => {} } = {}) {
     const p = layout[i];
     if (!p) return;
     const g = svgEl('g', {
-      class: `bel-flat-node is-${nd.role || 'node'} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
+      class: `jar-flat-node is-${nd.role || 'node'} ${NS_CLASS[nd.namespace] || 'ns-default'}`,
       transform: `translate(${p.x - p.w / 2} ${p.y})`,
       tabindex: '0',
     });

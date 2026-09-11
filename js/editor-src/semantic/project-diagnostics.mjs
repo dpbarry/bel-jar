@@ -5,13 +5,6 @@ import { healthFromDiagnostics } from './file-health-store.mjs';
 import { fileContentSig, developmentSignature } from './development-check.mjs';
 import { developmentForFile } from './development.mjs';
 
-function cloneItems(items) {
-  return (items || []).map((it) => ({
-    line: it.line,
-    msg: it.msg || it.message || '',
-    kind: it.kind === 'warning' || it.severity === 'warning' ? 'warning' : 'error',
-  }));
-}
 
 function cloneRows(rows) {
   return (rows || []).map((d) => ({

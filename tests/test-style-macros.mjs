@@ -3,7 +3,7 @@
 // These bindings — Vim's `gd` and leader map, Emacs' `C-x`/`C-c` chains — were
 // real, invocable, and listed in NO surface anywhere. The Keybindings sheet
 // projects `Keybindings`, which has never heard of them; the palette lists
-// commands, not keys; Available Macros asked `Commands.describe()`, which only
+// commands, not keys; Available Keys asked `Commands.describe()`, which only
 // knows BelJar's own chord table. Which-key was the only way in, and which-key
 // answers a prefix you already knew to press.
 import { styleMacroGroups, readableKeys } from '../js/editor-src/ide/modal/style-macros.mjs';
@@ -36,7 +36,12 @@ expect(readableKeys(']h') === ']h', 'a plain sequence is left alone');
 expect(vim[0].rows.every((r) => r.keys.indexOf('<') < 0), 'no angle brackets reach the screen');
 
 const emacs = styleMacroGroups('emacs');
-expect(emacs.map((g) => g.name).join(',') === 'Emacs C-x,Emacs C-c', 'two Emacs blocks');
+// `M-g` is Emacs' goto-map. It is a third block because it is a third PREFIX —
+// the grouping is by the keys' own shape, not by command section — and because
+// the package left `M-g` bound to a `gotoline` command it does not ship, so
+// until BelJar bound the chain it was a dead key nothing could list.
+expect(emacs.map((g) => g.name).join(',') === 'Emacs C-x,Emacs C-c,Emacs M-g',
+  'three Emacs blocks — C-x, C-c and the goto-map\n  got: ' + emacs.map((g) => g.name).join(','));
 // ⛔ One spelling. These are written `C-x C-s` in the map that installs them and
 // spoken as `Ctrl+X Ctrl+S` everywhere a reader sees them.
 expect(emacs[0].rows.some((r) => r.keys === 'Ctrl+X Ctrl+S'),
@@ -44,6 +49,38 @@ expect(emacs[0].rows.some((r) => r.keys === 'Ctrl+X Ctrl+S'),
   JSON.stringify(emacs[0].rows.map((r) => r.keys)));
 
 expect(styleMacroGroups('default').length === 0, 'Standard adds no keys, so it lists none');
+
+// ── the macro keys are keys, and belong in the list of keys ──────────────────
+// ⛔ BelJar binds `q` and `@` under Vim itself — `installMacroBindings` drains
+// the package's pair and maps its own onto the one macro engine — so they are
+// exactly as much "a key BelJar adds under Vim" as `gd` is. They were the only
+// ones missing from this list, which is how a user ends up recording a macro
+// with no way to find the key that ends it.
+expect(vim[0].rows.some((r) => r.id === 'macro.record'), "Vim's record key is listed");
+expect(vim[0].rows.some((r) => r.id === 'macro.replay'), "and Vim's replay key");
+// ⛔ `<register>` is the PACKAGE'S grammar for "one keystroke, handed to the
+// action". It has to be written that way where it is mapped and must never be
+// printed that way.
+expect(vim[0].rows.every((r) => r.keys.indexOf('register') < 0),
+  "and neither prints the package's `<register>` grammar at a reader",
+  JSON.stringify(vim[0].rows.map((r) => r.keys)));
+expect(emacs[0].rows.some((r) => r.keys === 'Ctrl+X (' && r.id === 'macro.record'),
+  "Emacs' `C-x (` is listed, in the one spelling");
+expect(emacs[0].rows.some((r) => r.keys === 'Ctrl+X )' && r.id === 'macro.record'),
+  'and so is the key that STOPS it — the half nobody could find');
+
+// ⛔ The maps and every sentence about them read ONE source. A key spelled
+// twice is a key that goes stale on one side.
+import { VIM_MACRO_KEYS, EMACS_MACRO_KEYS, macroStopLabel } from '../js/editor-src/ide/modal/macro-keys.mjs';
+expect(macroStopLabel('vim') === VIM_MACRO_KEYS.stop, 'the Vim stop key comes from the shared table');
+expect(macroStopLabel('emacs') === 'Ctrl+X )',
+  "the Emacs one goes through the same speller as every other Emacs key");
+expect(macroStopLabel('default', 'Ctrl+Alt+9') === 'Ctrl+Alt+9',
+  'Standard answers with whatever the user has bound');
+expect(macroStopLabel('default', '') === '',
+  'and with NOTHING when nothing is bound, so a surface cannot invent a key');
+expect(VIM_MACRO_KEYS.record.indexOf(VIM_MACRO_KEYS.stop) === 0,
+  "vi's `q{reg}` and its bare `q` are the same key, one armed while recording");
 
 // Every row names a real command id, or the list could advertise a dead key.
 import { CATALOG } from '../js/commands/command-catalog.mjs';

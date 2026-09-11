@@ -58,8 +58,8 @@ export function keyMaps(normalMap, leaderMap, leader) {
  *
  * ⛔ The declined chords are left out on purpose. `C-x 2` answers "BelJar has one
  * editor pane" — worth saying when you press it, but a hint lists what you CAN
- * do, the same rule Available Macros follows.
+ * do, the same rule Available Keys follows.
  */
-export function emacsMaps(cxMap, ccMap) {
-  return (cxMap || []).concat(ccMap || []);
+export function emacsMaps(cxMap, ccMap, mgMap) {
+  return (cxMap || []).concat(ccMap || [], mgMap || []);
 }

@@ -9,6 +9,8 @@
 // BelJar knows: where the holes are, where the problems are, where a name is
 // defined, and how to reach the prover.
 import { Vim } from '@replit/codemirror-vim';
+import { startRecording, stopRecording, replayMacro, isRecording } from '../macro-engine.mjs';
+import { VIM_MACRO_KEYS } from './macro-keys.mjs';
 
 const global = globalThis;
 
@@ -77,13 +79,104 @@ const LEADER_MAP = [
  * apply happen once, in one place, and a preference added there is `:set`-able
  * here the same day. `Commands.settings` is how it crosses the bundle seam.
  */
-export function runSet(arg) {
+/**
+ * Vim's own five options, for the names BelJar's table does not own.
+ *
+ * ⛔ BelJar's `:set` REPLACES Vim's — `Vim.defineEx('set', …)` overwrites the
+ * package's entry outright — so `pcre`, `langmap`, `insertModeEscKeysTimeout`,
+ * `filetype` and `textwidth` were answered "Unknown option" and quietly lost. A
+ * style that takes a chord and gives nothing back is the same failure as a
+ * surface advertising a dead key; a style that takes a whole COMMAND and gives
+ * nothing back is a larger one.
+ *
+ * ⛔ The line is parsed ONCE, by `Commands.settings.parse` — the same grammar the
+ * palette and the command line use. Re-deriving `no…` / `…!` / `…=v` here would
+ * be a second spelling of one rule, and the two would drift.
+ *
+ * `Vim.setOption` / `Vim.getOption` are the package's public API; `getOption`
+ * throwing IS the "vim does not know this either" answer, which is when BelJar's
+ * own "Unknown option" message is the right one after all.
+ */
+function vimOptionCandidates(parsed) {
+  const out = [];
+  for (const n of [parsed.typed, parsed.name]) {
+    if (!n) continue;
+    out.push({ name: n, negated: !!parsed.negated });
+    // ⛔ `parseSet` only strips `no` when BELJAR owns the remainder, so `:set
+    // nopcre` arrives whole. Vim's own `no` prefix has to be undone here or the
+    // one spelling that turns a vim option OFF would be the one that fails.
+    if (/^no./.test(n)) out.push({ name: n.slice(2), negated: true });
+  }
+  return out;
+}
+
+/**
+ * ⛔ `getOption`/`setOption` RETURN an `Error`; they do not throw it. A `try`
+ * around them catches nothing, so an unknown name came back as a truthy object,
+ * fell into the "bare non-boolean is a get" branch, and echoed
+ * `nopcre=Error: Unknown option: nopcre` — which the probe's control then
+ * accepted, because it was looking for the words "unknown option" and those were
+ * in our own echo. A false green sitting on top of a dead fall-through.
+ */
+function vimKnows(result) {
+  return !(result instanceof Error);
+}
+
+function setVimOption(parsed, cm) {
+  for (const { name, negated } of vimOptionCandidates(parsed)) {
+    const current = tryVimGet(name, cm);
+    if (!vimKnows(current)) continue; // vim does not know it either — next spelling
+    let value = parsed.value;
+    if (value == null || value === '') {
+      if (negated) value = false;
+      else if (parsed.toggle) value = !current;
+      else if (typeof current === 'boolean') value = true;
+      // A bare non-boolean is a GET in vim, not a set. Report and stop.
+      else { say(`${name}=${current}`); return true; }
+    }
+    if (!vimKnows(trySetOption(name, value, cm))) return false;
+    const now = tryVimGet(name, cm);
+    say(`${name}=${vimKnows(now) ? String(now) : String(value)}`);
+    return true;
+  }
+  return false;
+}
+
+function tryVimGet(name, cm) {
+  try {
+    return Vim.getOption(name, cm);
+  } catch (e) {
+    return e instanceof Error ? e : new Error(String(e));
+  }
+}
+
+function trySetOption(name, value, cm) {
+  try {
+    return Vim.setOption(name, value, cm);
+  } catch (e) {
+    return e instanceof Error ? e : new Error(String(e));
+  }
+}
+
+/** What Vim's OWN option table holds right now, or undefined. For instruments. */
+export function vimOption(name) {
+  const v = tryVimGet(name, null);
+  return vimKnows(v) ? v : undefined;
+}
+
+export function runSet(arg, cm) {
   const C = commands();
   if (!C) return false;
-  if (typeof C.runSet === 'function') return C.runSet(arg);
+  const text = String(arg || '');
+  const parse = C.settings && typeof C.settings.parse === 'function' ? C.settings.parse : null;
+  if (parse) {
+    const parsed = parse(text);
+    if (parsed && parsed.error === 'unknown' && setVimOption(parsed, cm)) return true;
+  }
+  if (typeof C.runSet === 'function') return C.runSet(text);
   // The shell attaches `settings.set` a tick after the registry exists; going
   // through the id covers the window before `runSet` is published.
-  return C.run('settings.set', { argText: String(arg || '') });
+  return C.run('settings.set', { argText: text });
 }
 
 /**
@@ -148,6 +241,90 @@ function caseObject(cm, head, motionArgs) {
   }
   if (motionArgs) motionArgs.inclusive = false;
   return [cm.posFromIndex(from), cm.posFromIndex(to)];
+}
+
+/**
+ * Vim's `q` and `@`, re-pointed at BelJar's one macro engine.
+ *
+ * ⛔ The same move `ensureVimUndoBridge` makes for `u` and `:undo`, and for the
+ * same reason: a facility that spans the styles has ONE owner, and the style's
+ * own keys reach it. Before this, macros existed only in Vim because only Vim's
+ * package shipped them — Emacs' `C-x (` did nothing at all — and building a
+ * second implementation for the other two would have left the app with two
+ * macro systems that behaved differently.
+ *
+ * ⚠ What the package's version had and this does not: replay of the SEARCH
+ * QUERIES issued inside a macro. Ours re-runs the keystrokes of the search
+ * instead, which is the same thing unless the query was typed with vim's own
+ * history recall. Everything else — registers, counts, `@@` — is carried.
+ *
+ * The package's own mappings are DRAINED first (`unmap` removes one match and
+ * reports whether it found any), or its `enterMacroRecordMode` would still be
+ * sitting on `q` alongside ours.
+ */
+let macroBindingReport = { unmapped: 0, bound: false, error: '' };
+let vimStopArmed = false;
+
+/** `q` is a stop only while there is something to stop. */
+function syncVimStopKey() {
+  const want = isRecording();
+  if (want === vimStopArmed) return;
+  try {
+    if (want) Vim.mapCommand(VIM_MACRO_KEYS.stop, 'action', 'belMacroStop', {}, { context: 'normal' });
+    else while (unmap(VIM_MACRO_KEYS.stop, 'normal')) { /* drain */ }
+    vimStopArmed = want;
+  } catch (_) { /* leave it as it was rather than half-armed */ }
+}
+
+/** ⛔ A silent catch here is how a re-point "succeeds" while doing nothing. */
+export function vimMacroBindingReport() {
+  return { ...macroBindingReport };
+}
+
+function installMacroBindings() {
+  let unmapped = 0;
+  for (const keys of [VIM_MACRO_KEYS.record, VIM_MACRO_KEYS.replay]) {
+    while (unmap(keys, undefined)) { unmapped += 1; }
+  }
+  macroBindingReport = { unmapped, bound: false, error: '' };
+  try {
+    Vim.defineAction('belMacroRecord', (cm, actionArgs) => {
+      // Only ever STARTS: while recording, the armed bare `q` below wins,
+      // because a full match beats a partial one in `matchCommand`.
+      startRecording((actionArgs && actionArgs.selectedCharacter) || '');
+      syncVimStopKey();
+    });
+    // ⛔ `q` alone ends a recording, and it has to be a REAL mapping.
+    //
+    // The package does this inside its own `handleKey` — a bare `q` while
+    // `macroModeState.isRecording` exits macro mode before command matching
+    // runs. Our engine never enters ITS macro mode, so that interception is
+    // gone, and `q<register>` is only a partial match: pressing `q` just sat
+    // there waiting for a register that would never come. Arming a full `q`
+    // while recording restores vi's behaviour using the package's own
+    // precedence, with no DOM interception to get wrong.
+    //
+    // `stopRecording(1)` because the recorder sits on capture and has already
+    // seen this very `q`.
+    Vim.defineAction('belMacroStop', () => {
+      stopRecording(1);
+      syncVimStopKey();
+    });
+    Vim.defineAction('belMacroReplay', (cm, actionArgs) => {
+      const ed = global.CurrentEditor;
+      const view = ed && typeof ed.getView === 'function' ? ed.getView() : null;
+      if (!view) return;
+      replayMacro(view, (actionArgs && actionArgs.selectedCharacter) || '',
+        (actionArgs && actionArgs.repeat) || 1);
+    });
+    Vim.mapCommand(VIM_MACRO_KEYS.record, 'action', 'belMacroRecord', {}, { context: 'normal' });
+    Vim.mapCommand(VIM_MACRO_KEYS.replay, 'action', 'belMacroReplay', {}, { context: 'normal' });
+    macroBindingReport.bound = true;
+    syncVimStopKey();
+  } catch (e) {
+    macroBindingReport.error = (e && e.message) || String(e);
+  }
+  return macroBindingReport.bound;
 }
 
 function installTextObjects() {
@@ -328,11 +505,13 @@ export function installVimBindings(options) {
   if (!installed) {
     installed = true;
     installTextObjects();
+    installMacroBindings();
     installYankClipboard();
     for (const [keys, id] of NORMAL_MAP) defineKey(keys, id);
     try {
       Vim.defineEx('set', 'se', (cm, params) => {
-        runSet(((params && params.args) || []).join(' '));
+        // `cm` is threaded so a vim-owned option can be set on this editor.
+        runSet(((params && params.args) || []).join(' '), cm);
       });
     } catch (_) { /* already defined */ }
   }

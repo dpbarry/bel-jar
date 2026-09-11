@@ -1,12 +1,11 @@
 // Live open-buffer ↔ Beluga / project-health host.
 // Owns check context, suite-prelude overlay, file-health sync, and when
 // whole-development check may run. CM mount and semantic sync coalesce stay
-// in bel-editor; hole goals stay in hole-goal-system.
+// in jar-editor; hole goals stay in hole-goal-system.
 
 import { syntaxTree } from '@codemirror/language';
 import { checkerSnapshot } from './checker-snapshot.mjs';
 import { analyzeSuite, findingMessage, suiteFileDiagnostics } from '../ide/suite-lint.mjs';
-import { getCheckTrace } from '../perf/check-trace.mjs';
 import {
   developmentMembersForFile,
   ensureDevelopmentChecked,

@@ -1,6 +1,6 @@
 // Phase A guard: the per-keystroke input path must NOT materialize the whole
 // document. Two offenders were removed:
-//   1. bel-edit-history.onDocChange — used to toString() the full buffer on
+//   1. jar-edit-history.onDocChange — used to toString() the full buffer on
 //      every keystroke (and the start doc when a burst began).
 //   2. persist.scheduleEditorPersist — used to be handed a full toString() every
 //      key from the editor's docChanged listener.

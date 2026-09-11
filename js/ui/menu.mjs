@@ -768,7 +768,7 @@ const FRP = global.FloatingRectPlacement;
 
   function menuControllerForAnchor(anchor) {
     if (!(anchor instanceof Element)) return defaultMenu;
-    const dlg = anchor.closest('dialog.bj-dialog[open]');
+    const dlg = anchor.closest('dialog.jar-dialog[open]');
     if (!dlg) return defaultMenu;
 
     let ctrl = dialogMenuControllers.get(dlg);

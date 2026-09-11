@@ -13,6 +13,8 @@
  * come from `BelEditor.styleMacros()`, which reads the tables that install them.
  * None of the three can drift from the live keymap.
  */
+import { chordInStyle } from '../commands/command-shadows.mjs';
+
 const global = globalThis;
 
 /** The mark tying a substituted key to the block that explains it. */
@@ -34,10 +36,10 @@ const INFO_ICON =
  */
 function aboutFragment() {
   const frag = document.createDocumentFragment();
-  const p1 = el('p', 'bj-setting-info-tip',
-    'Everything you can type right now: your chords, the keys the active editing '
+  const p1 = el('p', 'jar-setting-info-tip',
+    'Your chords, the keys the active editing '
     + 'style adds, and the names the command line answers to.');
-  const p2 = el('p', 'bj-setting-info-tip',
+  const p2 = el('p', 'jar-setting-info-tip',
     'Use the command palette to access unbound commands.');
   frag.append(p1, p2);
   return frag;
@@ -76,9 +78,14 @@ export function liveChord(row) {
   // away, and blanking a package row for the same reason emptied `Alt+X` (the
   // package's `M-x`) because the chord is one Emacs takes from `tools.commands`.
   if (row.live) return row.chord || '';
-  if (row.styleChord) return row.styleChord;
-  if (row.shadow && row.shadow.kind === 'shadowed') return '';
-  return row.chord || '';
+  // ⛔ The reduction itself lives in `command-shadows.mjs`, because the header's
+  // Edit menu and the editor's context menu need the same answer and used to give
+  // two different wrong ones. It reads the POLICY, not just the tag: `off` means
+  // the keymap never emits the chord, whether or not anyone remembered a
+  // `STYLE_TAKES` row for it. Every `off` command HAPPENED to be covered until Cut,
+  // Copy and Paste arrived, and all three printed a pressable chord under Emacs,
+  // where `C-x` and `C-c` are prefixes and `C-v` scrolls.
+  return chordInStyle(row);
 }
 
 /**
@@ -218,7 +225,12 @@ export function keyGroupOf(keys) {
  */
 const GROUP_RANK = [
   // The prefix maps, in the order the styles themselves name them.
-  'Ctrl+X', 'Ctrl+C', 'g', ']', '[',
+  // ⚠ `q` and `@` are RANKED so they do not lead. Vim's macro keys take a
+  // register, so they group by shape exactly like `g` and `]` do — and an
+  // unranked prefix sorts to the FRONT, which put two one-row blocks headed `q`
+  // and `@` above the leader map. They are real maps and belong in the list;
+  // they are not the first thing anyone opens it for.
+  'Ctrl+X', 'Ctrl+C', 'g', ']', '[', 'q', '@',
   'Ctrl', 'Ctrl+Shift', 'Alt', 'Alt+Shift', 'Ctrl+Alt', 'Ctrl+Alt+Shift', 'Shift',
   'Function keys', 'Single keys',
 ];
@@ -304,7 +316,7 @@ export function macroModel(described, styleGroups, reserved, access, note) {
   // ⛔ Where a style's own keys CANNOT be listed, say so — and say it under the
   // KEYS, not after the browser block at the very end of the window. Vim's
   // package publishes no enumerable keymap, so vi's motions and operators are
-  // absent, and an unexplained absence in a window called "available macros"
+  // absent, and an unexplained absence in a window called "Available Keys"
   // reads as an oversight. Which is exactly what it read as.
   const live = groups.filter((g) => g.rows.length);
   if (note && live.length) live[live.length - 1].closing = note;
@@ -383,27 +395,27 @@ function describeAll() {
  * row says. The tag carries what took the default, on hover.
  */
 function rowNode(row, wantChord, prefix) {
-  const r = el('div', 'bj-macros__row');
-  const what = el('span', 'bj-macros__what');
+  const r = el('div', 'jar-macros__row');
+  const what = el('span', 'jar-macros__what');
   // ⛔ The DEAD chord is the subject of the row, so it sits on the left where
   // every other row puts its name — never in the keys column, which in this
   // window means "press this" and must stay 100% pressable.
   if (row.dead) {
-    r.classList.add('bj-macros__row--reserved');
-    what.appendChild(el('kbd', 'bj-macros__dead', row.dead));
+    r.classList.add('jar-macros__row--reserved');
+    what.appendChild(el('kbd', 'jar-macros__dead', row.dead));
   }
-  if (row.title) what.appendChild(el('span', 'bj-macros__title', row.title));
+  if (row.title) what.appendChild(el('span', 'jar-macros__title', row.title));
   // ⛔ After the NAME, never after the chord. `Ctrl+M*` reads as a chord called
   // "Ctrl+M star" — the mark belongs to the row, and the only place it cannot be
   // mistaken for part of a key is beside the words.
-  if (row.reserved && wantChord) what.appendChild(el('span', 'bj-macros__star', RESERVED_MARK));
+  if (row.reserved && wantChord) what.appendChild(el('span', 'jar-macros__star', RESERVED_MARK));
   // ⛔ A tag ONLY where the chord ON THIS ROW is contested — the style has taken
   // it, or it holds only while you are typing. It used to appear on rows whose
   // chord collided with nothing, saying what the command's chord would be in a
   // keymap you are not using. That is not a caveat on anything shown.
   const shadow = wantChord && row.shadow ? row.shadow : null;
   if (shadow) {
-    const tag = el('span', 'bj-macros__tag', shadow.tag);
+    const tag = el('span', 'jar-macros__tag', shadow.tag);
     tag.setAttribute('data-tooltip', shadow.tip);
     // ⛔ `bindTooltips()` sweeps the document ONCE at boot; it is not delegated.
     // A tooltip added later shows a help cursor and nothing else unless bound.
@@ -412,10 +424,10 @@ function rowNode(row, wantChord, prefix) {
   }
   r.appendChild(what);
 
-  const keys = el('span', 'bj-macros__keys');
-  if (row.dead) keys.appendChild(el('span', 'bj-macros__arrow', '→'));
+  const keys = el('span', 'jar-macros__keys');
+  if (row.dead) keys.appendChild(el('span', 'jar-macros__arrow', '→'));
   if (wantChord) {
-    keys.appendChild(el('kbd', 'bj-macros__chord', liveChord(row)));
+    keys.appendChild(el('kbd', 'jar-macros__chord', liveChord(row)));
   }
   // ⛔ ONE name, not every synonym. `Save Now` was printing `w write wa wall` —
   // four spellings of one answer, in a column whose job is to tell you what to
@@ -423,7 +435,7 @@ function rowNode(row, wantChord, prefix) {
   // conveniences that work whether or not a list mentions them. They stay in the
   // FILTER, so searching "write" still finds the row.
   else if (row.ex.length) {
-    keys.appendChild(el('code', 'bj-macros__ex', (prefix == null ? ':' : prefix) + row.ex[0]));
+    keys.appendChild(el('code', 'jar-macros__ex', (prefix == null ? ':' : prefix) + row.ex[0]));
   }
   r.appendChild(keys);
   return r;
@@ -436,37 +448,37 @@ function rowNode(row, wantChord, prefix) {
  * rather than in a paragraph.
  */
 function metaNode(m) {
-  const r = el('div', 'bj-macros__row bj-macros__row--meta');
-  r.appendChild(el('span', 'bj-macros__meta-label', m.label));
-  const val = el('span', 'bj-macros__keys');
-  if (m.text) val.appendChild(el('span', 'bj-macros__meta-text', m.text));
-  if (m.name) val.appendChild(el('code', 'bj-macros__ex', m.name));
-  for (const c of m.chords || []) val.appendChild(el('kbd', 'bj-macros__dead', c));
+  const r = el('div', 'jar-macros__row jar-macros__row--meta');
+  r.appendChild(el('span', 'jar-macros__meta-label', m.label));
+  const val = el('span', 'jar-macros__keys');
+  if (m.text) val.appendChild(el('span', 'jar-macros__meta-text', m.text));
+  if (m.name) val.appendChild(el('code', 'jar-macros__ex', m.name));
+  for (const c of m.chords || []) val.appendChild(el('kbd', 'jar-macros__dead', c));
   r.appendChild(val);
   return r;
 }
 
 function buildBody(groups) {
-  const wrap = el('div', 'bj-macros');
+  const wrap = el('div', 'jar-macros');
 
-  const filter = el('div', 'bj-macros__filter');
-  const icon = el('span', 'bj-macros__filter-icon');
+  const filter = el('div', 'jar-macros__filter');
+  const icon = el('span', 'jar-macros__filter-icon');
   icon.innerHTML = FILTER_ICON;
   icon.setAttribute('aria-hidden', 'true');
-  const input = el('input', 'bj-macros__filter-input');
+  const input = el('input', 'jar-macros__filter-input');
   input.type = 'search';
   input.placeholder = 'Filter by name or key…';
-  input.setAttribute('aria-label', 'Filter the available macros');
+  input.setAttribute('aria-label', 'Filter keys and names');
   input.autocomplete = 'off';
   input.spellcheck = false;
-  const count = el('span', 'bj-macros__filter-count');
+  const count = el('span', 'jar-macros__filter-count');
   count.setAttribute('aria-live', 'polite');
   filter.append(icon, input, count);
   wrap.appendChild(filter);
 
-  const list = el('div', 'bj-macros__list');
+  const list = el('div', 'jar-macros__list');
   wrap.appendChild(list);
-  const empty = el('p', 'bj-macros__empty', 'No matches.');
+  const empty = el('p', 'jar-macros__empty', 'No matches.');
   empty.hidden = true;
   wrap.appendChild(empty);
 
@@ -481,17 +493,17 @@ function buildBody(groups) {
       // browser may take chords and offer no substitute at all, and that is an
       // answer. While filtering it must not: context is not a match.
       if (!hits.length && !(quiet && (group.meta || []).length)) continue;
-      list.appendChild(el('div', 'bj-macros__group', group.name));
+      list.appendChild(el('div', 'jar-macros__group', group.name));
       // ⛔ Context lines only at rest. A note has nothing to do with the query,
       // and printing it beside three matches reads as a fourth.
-      if (quiet && group.lead) list.appendChild(el('p', 'bj-macros__aside', group.lead));
+      if (quiet && group.lead) list.appendChild(el('p', 'jar-macros__aside', group.lead));
       // Every group but the command line shows a KEY; the style groups show
       // their sequence in the same <kbd> the chord groups use.
       for (const row of hits) {
         list.appendChild(rowNode(row, group.name !== 'Command line', group.prefix));
       }
       if (quiet) for (const m of group.meta || []) list.appendChild(metaNode(m));
-      if (quiet && group.closing) list.appendChild(el('p', 'bj-macros__aside', group.closing));
+      if (quiet && group.closing) list.appendChild(el('p', 'jar-macros__aside', group.closing));
       shown += hits.length;
     }
     empty.hidden = shown > 0;
@@ -577,7 +589,7 @@ export function openAvailableMacros() {
   }
   if (!global.FloatingWindow || typeof global.FloatingWindow.open !== 'function') return false;
   global.FloatingWindow.open({
-    title: 'Available macros',
+    title: 'Available Keys',
     className: 'floating-window--macros',
     actions: [{
       icon: INFO_ICON,

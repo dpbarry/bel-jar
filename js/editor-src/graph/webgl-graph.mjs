@@ -13,7 +13,7 @@ const NS_COLOR = {
   'typedef': [0.40, 0.80, 0.88],          // teal    — typedefs
 };
 const DEFAULT_COLOR = [0.62, 0.66, 0.74];
-// Edge + comet colours come from CSS vars on .bel-graph3d-container (light-dark aware).
+// Edge + comet colours come from CSS vars on .jar-graph3d-container (light-dark aware).
 const _colorProbe = typeof document !== 'undefined' ? document.createElement('span') : null;
 function cssRgba(el, varName) {
   if (!_colorProbe || !el) return null;
@@ -29,7 +29,7 @@ function cssRgba(el, varName) {
   return [+m[1] / 255, +m[2] / 255, +m[3] / 255, m[4] != null ? +m[4] : 1];
 }
 function readEdgePalette(canvas) {
-  const host = canvas.closest?.('.bel-graph3d-container') || canvas.parentElement || document.documentElement;
+  const host = canvas.closest?.('.jar-graph3d-container') || canvas.parentElement || document.documentElement;
   return {
     body: cssRgba(host, '--graph3d-edge-body') ?? [0.42, 0.46, 0.52, 0.52],
     sig: cssRgba(host, '--graph3d-edge-sig') ?? [0.28, 0.52, 0.88, 0.68],
@@ -408,7 +408,7 @@ export function createGraph3D(canvas, sim, opts = {}) {
     let el = labelEls.get(idx);
     if (!el && labelLayer) {
       el = document.createElement('button');
-      el.className = 'bel-graph3d-label';
+      el.className = 'jar-graph3d-label';
       el.type = 'button';
       el.textContent = nodes[idx].name || '?';
       el.dataset.idx = String(idx);
@@ -692,13 +692,13 @@ export function createGraph3D(canvas, sim, opts = {}) {
     if (disposed) return;
     // The toolbar + its search field share the stage — let them behave normally
     // rather than starting an orbit. Everything else (canvas AND labels) drags.
-    if (ev.target?.closest?.('.bel-graph3d-toolbar')) {
+    if (ev.target?.closest?.('.jar-graph3d-toolbar')) {
       toolbarPress = true;
       return;
     }
     toolbarPress = false;
     cancelFly();
-    const labelEl = ev.target?.closest?.('.bel-graph3d-label');
+    const labelEl = ev.target?.closest?.('.jar-graph3d-label');
     const li = labelEl ? Number(labelEl.dataset.idx) : -1;
     drag = {
       x: ev.clientX, y: ev.clientY,        // last frame (for incremental rotation)
@@ -737,7 +737,7 @@ export function createGraph3D(canvas, sim, opts = {}) {
     // pointerdown on the toolbar skips drag setup; without this guard the bubbled
     // pointerup reads as an empty-canvas click and clears global-view focus before
     // toolbar buttons (e.g. "Open neighborhood view") handle their click.
-    if (toolbarPress || ev.target?.closest?.('.bel-graph3d-toolbar')) {
+    if (toolbarPress || ev.target?.closest?.('.jar-graph3d-toolbar')) {
       toolbarPress = false;
       return;
     }
@@ -769,7 +769,7 @@ export function createGraph3D(canvas, sim, opts = {}) {
   function onWheel(ev) {
     if (disposed) return;
     // Let a real text field (the search box) scroll/behave normally.
-    if (ev.target?.closest?.('input, textarea, .bel-graph3d-toolbar, .bel-graph3d-autocomplete')) return;
+    if (ev.target?.closest?.('input, textarea, .jar-graph3d-toolbar, .jar-graph3d-autocomplete')) return;
     // Capture EVERYTHING else over the graph (incl. wheeling over labels) so the
     // page never scrolls/zooms. Trackpad pinch arrives as wheel + ctrlKey.
     ev.preventDefault();

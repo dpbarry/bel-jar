@@ -1,5 +1,3 @@
-import { Prec } from '@codemirror/state';
-import { keymap } from '@codemirror/view';
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import { classifyCompletionSite, isIdentChar } from './classify.mjs';
 import { contributeIdents, contributeModuleMembers } from './contributors.mjs';

@@ -19,17 +19,17 @@ function suggestedBase(conflict) {
 
 function buildConflictBody(conflict, total, index) {
   const { el, markMono } = PromptDialog;
-  const wrap = el('div', 'bj-conflict-dialog__panel');
+  const wrap = el('div', 'jar-conflict-dialog__panel');
 
   if (total > 1) {
-    wrap.appendChild(el('p', 'bj-prompt-dialog__step', `${index + 1} of ${total}`));
+    wrap.appendChild(el('p', 'jar-prompt-dialog__step', `${index + 1} of ${total}`));
   }
 
-  const subject = el('p', 'bj-prompt-dialog__subject');
+  const subject = el('p', 'jar-prompt-dialog__subject');
   subject.appendChild(markMono(conflict.label));
   wrap.appendChild(subject);
 
-  const message = el('p', 'bj-prompt-dialog__message');
+  const message = el('p', 'jar-prompt-dialog__message');
   message.textContent = conflict.kind === 'folder'
     ? 'A folder with this name is already in the project.'
     : 'A file with this name is already in the project.';
@@ -72,7 +72,7 @@ export function resolveConflicts(conflicts, options) {
     const resolutions = [];
     let settled = false;
 
-    const shell = el('div', 'bj-prompt-dialog');
+    const shell = el('div', 'jar-prompt-dialog');
 
     const dialogEl = createDialog({
       ariaLabel: 'Name conflict',

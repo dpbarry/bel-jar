@@ -55,4 +55,4 @@ expect(!cancelRenameIfFocusLost({
   get state() { return current; },
 }), 'focus still in editor does not cancel');
 
-console.log('OK bel-rename blur (focus loss cancels + reverts)');
+console.log('OK jar-rename blur (focus loss cancels + reverts)');

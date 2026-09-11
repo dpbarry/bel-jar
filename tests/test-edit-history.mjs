@@ -42,6 +42,12 @@ function mockAdapter(initial) {
     getActiveFileId() { return state.activeFileId; },
     setActiveFileId(id) { state.activeFileId = id; },
     getActiveEditor() { return state.editor; },
+    renameFile(id, name) {
+      const f = state.files.get(id);
+      if (!f) return false;
+      f.name = name;
+      return true;
+    },
     toast(msg) { state.toasts.push(msg); },
     _state: state,
   };
@@ -121,6 +127,39 @@ function snapTexts(adapter) {
   adapter.setFileText('b', 'bar');
   expect(H.undo(), 'multi undo');
   expect(adapter.getFileText('a') === 'foo' && adapter.getFileText('b') === 'foo', 'both files restored');
+}
+
+// a project swap never inherits the last project's history
+//
+// ⛔ Found by a probe that could not reset itself: `loadStack` returned early
+// when the new key had nothing stored, leaving the previous project's entries
+// live against a workspace whose files they do not describe.
+{
+  const store = new Map();
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }],
+    texts: { a: 'two' },
+    activeFileId: 'a',
+  });
+  adapter.projectKey = 'proj-one';
+  adapter.sessionStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, v),
+  };
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'e', kind: 'typing',
+    files: { a: { before: 'one', after: 'two' } },
+    structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
+  }));
+  expect(H.canUndo(), 'project one has a history');
+
+  H.swapProject('proj-two-never-seen');
+  expect(!H.canUndo(), 'swapping to an unseen project starts with no undo history');
+  expect(!H.canRedo(), 'and no redo history');
+
+  H.swapProject('proj-one');
+  expect(H.canUndo(), 'swapping back restores that project own history');
 }
 
 // text drift is RECONCILED, never refused
@@ -493,4 +532,172 @@ function snapTexts(adapter) {
   expect(entry.files.a.beforeLocal?.scrollTop === 50, 'beforeLocal preserved');
 }
 
-console.log('OK edit-history');
+// ⛔ Structural sides are TARGETS, not expectations. Undo goes to `before`.
+// Inverted, undoing a delete restored the file but left its tab closed, and the
+// tab reappeared on REDO instead. The old test asserted the file came back and
+// never looked at the projection the user actually sees.
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }, { id: 'b', name: 'b.bel' }],
+    texts: { a: 'AA', b: 'BB' },
+    openFileIds: ['a', 'b'],
+    activeFileId: 'b',
+  });
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'del', kind: 'file-delete',
+    files: {},
+    structural: {
+      created: [],
+      deleted: [{ id: 'b', name: 'b.bel', text: 'BB' }],
+      cfg: {},
+      openFileIds: { before: ['a', 'b'], after: ['a'] },
+      activeFileId: { before: 'b', after: 'a' },
+    },
+  }));
+  adapter.deleteFile('b');
+  adapter.setOpenFileIds(['a']);
+  adapter.setActiveFileId('a');
+
+  expect(H.undo(), 'undo the delete');
+  expect(adapter.getFileById('b'), 'file is back');
+  expect(adapter.getOpenFileIds().join(',') === 'a,b', 'and its TAB is back');
+  expect(adapter.getActiveFileId() === 'b', 'and it is the tab in front');
+
+  expect(H.redo(), 'redo the delete');
+  expect(!adapter.getFileById('b'), 'file gone again');
+  expect(adapter.getOpenFileIds().join(',') === 'a', 'tab gone again');
+  expect(adapter.getActiveFileId() === 'a', 'front tab follows');
+}
+
+// A cfg patch must apply, not validate against the side it is about to write.
+const CFG_BEFORE = ['a.bel', ''].join(String.fromCharCode(10));
+const CFG_AFTER = ['a.bel', 'b.bel', ''].join(String.fromCharCode(10));
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'c', name: 'demo.cfg' }, { id: 'a', name: 'a.bel' }],
+    texts: { c: CFG_BEFORE, a: 'AA' },
+    openFileIds: ['a'],
+    activeFileId: 'a',
+  });
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'cfg', kind: 'file-create',
+    files: {},
+    structural: {
+      created: [], deleted: [],
+      cfg: { c: { before: CFG_BEFORE, after: CFG_AFTER } },
+      openFileIds: null, activeFileId: null,
+    },
+  }));
+  adapter.setFileText('c', CFG_AFTER);
+  expect(H.undo(), 'undo the cfg change');
+  expect(adapter.getFileText('c') === CFG_BEFORE, 'cfg reverted');
+  expect(H.redo(), 'redo the cfg change');
+  expect(adapter.getFileText('c') === CFG_AFTER, 'cfg re-applied');
+}
+
+// The session write is budgeted: an over-quota stack persists its newest steps
+// instead of throwing and persisting nothing at all.
+{
+  const store = new Map();
+  const sessionStorage = {
+    setItem(k, v) {
+      if (v.length > 200_000) throw new Error('QuotaExceededError');
+      store.set(k, v);
+    },
+    getItem(k) { return store.get(k) ?? null; },
+    removeItem(k) { store.delete(k); },
+  };
+  const big = 'x'.repeat(60_000);
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }],
+    texts: { a: big },
+    activeFileId: 'a',
+  });
+  adapter.sessionStorage = sessionStorage;
+  const H = createEditHistory(adapter);
+  for (let i = 0; i < 40; i += 1) {
+    H.pushEntry(normalizeEntry({
+      id: `e${i}`, kind: 'typing',
+      files: { a: { before: big + i, after: big + (i + 1) } },
+      structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
+    }));
+  }
+  H.flushPersist();
+  const raw = store.get(SESSION_KEY_PREFIX + 'test-project');
+  expect(raw, 'an over-quota stack still persists something');
+  const parsed = JSON.parse(raw);
+  expect(parsed.undo.length > 0, 'with entries in it');
+  expect(parsed.undo.length < 40, 'but not all of them');
+  expect(parsed.undo[parsed.undo.length - 1].id === 'e39', 'keeping the NEWEST steps');
+}
+
+
+// ── ⛔ A RENAME IS A STEP ──────────────────────────────────────────
+// A rename keeps the id and changes the name, so NOTHING else in an entry can
+// see it: the text is identical and the id is in both file lists. `diffWorkspace`
+// therefore recorded nothing at all — and the Ctrl+Z a user presses to take a
+// rename back reached PAST it and silently reverted their last edit while the
+// rename stood. Measured in the browser before it was fixed.
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'f1', name: 'a.bel' }, { id: 'f2', name: 'keep.bel' }],
+    texts: { f1: 'AAA', f2: 'KEEP' },
+    activeFileId: 'f2',
+  });
+  const h = createEditHistory(adapter);
+
+  const res = h.transact('file-rename', () => adapter.renameFile('f1', 'b.bel'), 'Rename');
+  expect(res.ok && res.entry, 'a rename produces an entry at all');
+  expect(res.entry.structural.renamed.length === 1, 'and the entry carries the rename');
+  expect(res.entry.structural.renamed[0].before === 'a.bel'
+    && res.entry.structural.renamed[0].after === 'b.bel', 'with both names');
+  // ⛔ It must NOT be filed as a delete-and-create: the id survives, so the file
+  // keeps its tab, its viewport and its place in every .cfg.
+  expect(!res.entry.structural.created.length && !res.entry.structural.deleted.length,
+    'a rename is not a delete plus a create');
+  expect(adapter.getFileById('f1').name === 'b.bel', 'the rename happened');
+
+  expect(h.undo(), 'undo runs');
+  expect(adapter.getFileById('f1').name === 'a.bel', 'undo puts the name back');
+  expect(adapter.getFileText('f1') === 'AAA', 'and does not touch the text');
+  expect(adapter.getFileText('f2') === 'KEEP', 'or any other file');
+  expect(h.redo(), 'redo runs');
+  expect(adapter.getFileById('f1').name === 'b.bel', 'redo renames it again');
+  expect(h.undo() && adapter.getFileById('f1').name === 'a.bel', 'and it is stable both ways');
+}
+
+// A rename entry is not a no-op, or it would be dropped on the next amend.
+{
+  const entry = normalizeEntry({
+    id: newEntryId(), kind: 'file-rename', ts: Date.now(), files: {},
+    structural: { created: [], deleted: [], renamed: [{ id: 'f1', before: 'a', after: 'b' }], cfg: {} },
+  });
+  const adapter = mockAdapter({ files: [{ id: 'f1', name: 'b' }], texts: { f1: '' }, activeFileId: 'f1' });
+  const h = createEditHistory(adapter);
+  h.pushEntry(entry);
+  h.reconcileActiveFile('f1', '');
+  expect(h.getUndoStack().length === 1, 'a rename-only entry survives an amend');
+}
+
+// ⛔ A rename is gated on the file EXISTING and nothing else. Renaming twice and
+// undoing once is ordinary; refusing because the name in hand is not the one
+// recorded would be the "project changed since that edit" dead end all over
+// again, for an operation that only sets a string.
+{
+  const adapter = mockAdapter({ files: [{ id: 'f1', name: 'c.bel' }], texts: { f1: '' }, activeFileId: 'f1' });
+  const h = createEditHistory(adapter);
+  const entry = normalizeEntry({
+    id: newEntryId(), kind: 'file-rename', ts: Date.now(), files: {},
+    structural: { created: [], deleted: [], renamed: [{ id: 'f1', before: 'a.bel', after: 'b.bel' }], cfg: {} },
+  });
+  expect(h.validateEntry(entry, 'undo').ok, 'a third name in hand does not block the undo');
+  const gone = normalizeEntry({
+    id: newEntryId(), kind: 'file-rename', ts: Date.now(), files: {},
+    structural: { created: [], deleted: [], renamed: [{ id: 'nope', before: 'a', after: 'b' }], cfg: {} },
+  });
+  expect(!h.validateEntry(gone, 'undo').ok, 'but a file that is gone does');
+}
+
+console.log('OK edit-history (including renames)');

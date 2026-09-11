@@ -26,6 +26,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
     var projectFileText = deps.projectFileText;
     var closeFile = deps.closeFile;
     var closeTabsForFiles = deps.closeTabsForFiles;
+    var flushEverythingToStorage = deps.flushEverythingToStorage;
     var activeSuiteMembership = deps.activeSuiteMembership;
     var afterSuiteEdit = deps.afterSuiteEdit;
 
@@ -235,10 +236,6 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
         const H = window.Harpoon;
         return H && typeof H.activeSession === 'function' ? H.activeSession() : null;
       };
-      const manualState = () => {
-        const s = lab();
-        return (s && s.manual && s.manual.state) || null;
-      };
       /** `when` for a lab command: available only while a lab is actually open. */
       const onLab = (id, fn, ready) => Commands.attach(id, {
         run: () => {
@@ -298,6 +295,15 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('settings.set', (ctx) => runSet(ctx && ctx.argText));
 
       on('cmdline.open', () => StatusStrip.openCommandLine(''));
+      // ⛔ The command line, not the palette. A line number is a two-keystroke
+      // errand; the palette is a window. The line already parses `42` and
+      // `42:8` as an address, so this is the prompt in front of a grammar that
+      // exists rather than a second implementation of it — and it is the same
+      // surface in all three styles, which is the point.
+      on('nav.goto-line', () => {
+        StatusStrip.openCommandLine('', { prompt: 'Go to line' });
+        return true;
+      }, () => !!window.CurrentEditor);
       on('keys.full-keyboard', () => { FullKeyboard.toggle(); return true; },
         () => FullKeyboard.isSupported());
       on('keys.macros', () => AvailableMacros.open());
@@ -334,6 +340,15 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('run.module', () => { if (BelugaRun.runModule) BelugaRun.runModule(); }, () => !!moduleNameFor());
       on('run.project', () => { if (BelugaRun.runProject) BelugaRun.runProject(); }, () => signatureFileCount() > 1);
       on('run.clear-output', () => { ReplOutput.clearOutput(); });
+
+      // ⛔ Flush first, then reload. `beforeunload` does fire on a
+      // `location.reload()`, but relying on it here means the one command whose
+      // whole job is to throw the page away trusts a handler to have run — and
+      // an exception anywhere in that chain would take the buffers with it.
+      on('app.reload', () => {
+        try { flushEverythingToStorage(false); } catch (_) { /* reload anyway */ }
+        window.location.reload();
+      });
 
       on('view.theme', toggleTheme);
       on('view.explorer', () => toggleSidePanel('explorer'));
@@ -387,15 +402,31 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
 
       // Project text search ("#" mode / Ctrl+Shift+F): substring match across every
       // project file (live buffer for the active one), jump on select.
-      CommandPalette.setProvider('search', (query) => {
-        if (!query) return [];
-        const activeId = getPersist() ? getPersist().getCurrentFileId() : Persist.getActiveFileId();
-        const entries = Persist.listFiles().map((f) => ({
+      // ⛔ The corpus is gathered ONCE per palette session, not once per
+      // keystroke. `projectFileText` reads each file's stored blob out of
+      // localStorage, so a hundred-file project meant several megabytes of
+      // string allocation and a full rescan for every letter typed into the
+      // search box — the search got slower the more there was to search, which
+      // is exactly backwards. Nothing can edit a file while the palette has
+      // focus, so one read per session is not a staleness risk.
+      let corpus = null;
+      let corpusSession = -1;
+      const searchCorpus = () => {
+        const session = typeof CommandPalette.sessionId === 'function'
+          ? CommandPalette.sessionId()
+          : -1;
+        if (corpus && corpusSession === session) return corpus;
+        corpusSession = session;
+        corpus = Persist.listFiles().map((f) => ({
           id: f.id,
           name: f.name,
           text: projectFileText(f.id),
         }));
-        return ProjectSource.scanProjectText(entries, query, 60).map((m) => ({
+        return corpus;
+      };
+      CommandPalette.setProvider('search', (query) => {
+        if (!query) return [];
+        return ProjectSource.scanProjectText(searchCorpus(), query, 60).map((m) => ({
           title: m.lineText,
           mono: true,
           detail: m.name.split('/').pop() + ':' + m.line,

@@ -43,10 +43,10 @@ export function open(opts) {
   let settled = false;
 
   return new Promise((resolve) => {
-    const wrap = el('div', 'bj-name-prompt');
-    const leadEl = opts.message ? el('p', 'bj-name-prompt__message', opts.message) : null;
+    const wrap = el('div', 'jar-name-prompt');
+    const leadEl = opts.message ? el('p', 'jar-name-prompt__message', opts.message) : null;
 
-    const input = el('input', 'bj-name-prompt__input');
+    const input = el('input', 'jar-name-prompt__input');
     input.type = 'text';
     input.value = initialValue;
     input.spellcheck = false;
@@ -55,12 +55,12 @@ export function open(opts) {
     if (opts.placeholder) input.placeholder = opts.placeholder;
     wrap.appendChild(input);
 
-    const errorEl = el('p', 'bj-name-prompt__error');
+    const errorEl = el('p', 'jar-name-prompt__error');
     errorEl.hidden = true;
     wrap.appendChild(errorEl);
 
     if (opts.hint) {
-      const hint = el('p', 'bj-name-prompt__hint');
+      const hint = el('p', 'jar-name-prompt__hint');
       hint.textContent = opts.hint;
       wrap.appendChild(hint);
     }
@@ -69,7 +69,7 @@ export function open(opts) {
       { action: 'cancel', label: opts.cancelLabel || 'Cancel', variant: 'ghost' },
       { action: 'confirm', label: opts.confirmLabel || 'Create', variant: 'primary' },
     ]);
-    actions.classList.add('bj-name-prompt__actions');
+    actions.classList.add('jar-name-prompt__actions');
     const cancelBtn = actions.querySelector('[data-action="cancel"]');
     const confirmBtn = actions.querySelector('[data-action="confirm"]');
     wrap.appendChild(actions);
@@ -77,7 +77,7 @@ export function open(opts) {
     const dialogEl = createDialog({
       ariaLabel: opts.ariaLabel || 'Name',
       content: wrap,
-      className: 'bj-name-prompt-dialog',
+      className: 'jar-name-prompt-dialog',
       cardClass: CARD_CLASS,
       removeOnClose: true,
     });
@@ -137,8 +137,8 @@ export function open(opts) {
     });
 
     if (leadEl) {
-      const card = dialogEl.querySelector('.bj-dialog__card');
-      const body = dialogEl.querySelector('.bj-dialog__body');
+      const card = dialogEl.querySelector('.jar-dialog__card');
+      const body = dialogEl.querySelector('.jar-dialog__body');
       if (card && body) card.insertBefore(leadEl, body);
     }
 

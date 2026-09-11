@@ -1,33 +1,33 @@
-.bj-settings {
+.jar-settings {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
   border-top: 1px solid light-dark(hsla(220, 12%, 82%, 0.65), hsla(217, 12%, 26%, 0.85));
 }
 
-.bj-settings--solo {
+.jar-settings--solo {
   flex: 0 1 auto;
   min-height: 0;
 }
 
-.bj-settings--solo .bj-settings__main {
+.jar-settings--solo .jar-settings__main {
   display: block;
   min-height: 0;
 }
 
-.bj-settings--solo .bj-settings__panel {
+.jar-settings--solo .jar-settings__panel {
   display: flex;
   opacity: 1;
   transform: none;
   pointer-events: auto;
 }
 
-.bj-settings--solo .bj-settings__panel-body {
+.jar-settings--solo .jar-settings__panel-body {
   flex: 0 1 auto;
   overflow: visible;
 }
 
-.bj-settings__nav {
+.jar-settings__nav {
   flex: 0 0 11.5rem;
   display: flex;
   flex-direction: column;
@@ -44,7 +44,7 @@
   overflow: hidden;
 }
 
-.bj-settings__nav-list {
+.jar-settings__nav-list {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -55,7 +55,7 @@
   overflow-y: auto;
 }
 
-.bj-settings__nav-foot {
+.jar-settings__nav-foot {
   flex: 0 0 auto;
   width: 94%;
   margin-top: auto;
@@ -63,8 +63,8 @@
   border-top: 1px solid light-dark(hsla(220, 12%, 82%, 0.45), hsla(217, 12%, 26%, 0.55));
 }
 
-.bj-settings__reset-all,
-.bj-settings__reset-link {
+.jar-settings__reset-all,
+.jar-settings__reset-link {
   margin: 0;
   padding: 0.42rem 0.65rem;
   border: none;
@@ -80,20 +80,20 @@
   cursor: pointer;
 }
 
-.bj-settings__reset-all {
+.jar-settings__reset-all {
   display: block;
   width: 100%;
   text-align: left;
 }
 
-.bj-settings__reset-link {
+.jar-settings__reset-link {
   flex: 0 0 auto;
 }
 
 /* A "go and look at this" action in the panel head, beside Reset. Same weight
    and shape as Reset — it is the same kind of thing — but it carries the accent,
    because Reset undoes and this one opens. */
-.bj-settings__head-action {
+.jar-settings__head-action {
   flex: 0 0 auto;
   margin: 0;
   padding: 0.42rem 0.65rem;
@@ -111,31 +111,31 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-settings__head-action:hover {
+  .jar-settings__head-action:hover {
     background: color-mix(in srgb, var(--accent-mid) 12%, transparent);
   }
 }
 
-.bj-settings__head-action:focus-visible {
+.jar-settings__head-action:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-settings__reset-all:hover,
-  .bj-settings__reset-link:hover {
+  .jar-settings__reset-all:hover,
+  .jar-settings__reset-link:hover {
     color: var(--base-highest);
     background: light-dark(hsla(220, 10%, 42%, 0.055), hsla(220, 8%, 52%, 0.065));
   }
 }
 
-.bj-settings__reset-all:focus-visible,
-.bj-settings__reset-link:focus-visible {
+.jar-settings__reset-all:focus-visible,
+.jar-settings__reset-link:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-.bj-settings__nav-item {
+.jar-settings__nav-item {
   position: relative;
   display: flex;
   align-items: center;
@@ -161,7 +161,7 @@
     box-shadow var(--transition);
 }
 
-.bj-settings__nav-item.is-active {
+.jar-settings__nav-item.is-active {
   color: var(--base-highest);
   font-weight: 600;
   background: light-dark(
@@ -175,18 +175,18 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-settings__nav-item:not(.is-active):hover {
+  .jar-settings__nav-item:not(.is-active):hover {
     color: var(--base-highest);
     background: light-dark(hsla(220, 10%, 42%, 0.055), hsla(220, 8%, 52%, 0.065));
   }
 }
 
-.bj-settings__nav-item:focus-visible {
+.jar-settings__nav-item:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-.bj-settings__main {
+.jar-settings__main {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -194,7 +194,7 @@
   overflow: hidden;
 }
 
-.bj-settings__panel {
+.jar-settings__panel {
   grid-area: 1 / 1;
   display: flex;
   flex-direction: column;
@@ -202,15 +202,15 @@
   min-width: 0;
 }
 
-.bj-settings__panel[hidden],
-.bj-settings__nav-item[hidden],
-.bj-settings__panel-body .bj-dialog__setting[hidden],
-.bj-settings__section-head[hidden],
-.bj-settings__unit[hidden] {
+.jar-settings__panel[hidden],
+.jar-settings__nav-item[hidden],
+.jar-settings__panel-body .jar-dialog__setting[hidden],
+.jar-settings__section-head[hidden],
+.jar-settings__unit[hidden] {
   display: none !important;
 }
 
-.bj-settings__panel-head {
+.jar-settings__panel-head {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -222,7 +222,7 @@
   line-height: 1.3;
 }
 
-.bj-settings__panel-head-label {
+.jar-settings__panel-head-label {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 0.72rem;
@@ -233,28 +233,28 @@
   line-height: inherit;
 }
 
-.bj-settings__panel-body {
+.jar-settings__panel-body {
   flex: 1 1 auto;
   min-height: 0;
   padding: 0;
   overflow-y: auto;
 }
 
-.bj-settings__panel-body:has(.bj-settings__unit) {
+.jar-settings__panel-body:has(.jar-settings__unit) {
   display: flex;
   flex-direction: column;
 }
 
-.bj-settings__panel-body:has(.bj-settings__unit) > .bj-dialog__setting,
-.bj-settings__panel-body:has(.bj-settings__unit) > .bj-settings__section-head {
+.jar-settings__panel-body:has(.jar-settings__unit) > .jar-dialog__setting,
+.jar-settings__panel-body:has(.jar-settings__unit) > .jar-settings__section-head {
   flex: 0 0 auto;
 }
 
-/* ⛔ ONE scrollport per panel — `.bj-settings__panel-body`.
+/* ⛔ ONE scrollport per panel — `.jar-settings__panel-body`.
    The keybindings and alias units used to be scrollports of their own, so the
    settings scrolled down into a box that then scrolled separately. You scroll
    past the settings straight into the commands and keep going. */
-.bj-settings__unit {
+.jar-settings__unit {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
@@ -263,15 +263,15 @@
   overflow: visible;
 }
 
-.bj-settings__unit-body {
+.jar-settings__unit-body {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   overflow: visible;
 }
 
-.bj-settings__unit .bj-kb,
-.bj-settings__unit .bj-alias {
+.jar-settings__unit .jar-kb,
+.jar-settings__unit .jar-alias {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
@@ -279,8 +279,8 @@
 }
 
 /* The rows flow into the panel's scroll rather than owning one. */
-.bj-settings__unit .bj-kb__list,
-.bj-settings__unit .bj-alias__list {
+.jar-settings__unit .jar-kb__list,
+.jar-settings__unit .jar-alias__list {
   flex: 0 0 auto;
   min-height: 0;
   overflow: visible;
@@ -288,14 +288,14 @@
 
 /* The filter follows, so it stays reachable over a long list — the panel body
    is the scrollport, so `top: 0` sticks against it. (Aliases has no filter.) */
-.bj-settings__unit .bj-kb__filter {
+.jar-settings__unit .jar-kb__filter {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--chrome-bg-panel, var(--ui-bg));
+  background: var(--chrome-bg-panel);
 }
 
-.bj-settings__panel-body .bj-dialog__setting {
+.jar-settings__panel-body .jar-dialog__setting {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(9.5rem, 11rem);
   align-items: center;
@@ -308,11 +308,11 @@
   transition: none;
 }
 
-.bj-settings__panel-body .bj-dialog__setting:last-child {
+.jar-settings__panel-body .jar-dialog__setting:last-child {
   border-bottom: none;
 }
 
-.bj-settings__unit + .bj-dialog__setting {
+.jar-settings__unit + .jar-dialog__setting {
   border-top: 1px solid light-dark(hsla(220, 12%, 82%, 0.42), hsla(217, 12%, 26%, 0.5));
 }
 
@@ -324,7 +324,7 @@
    Indented under the row that causes them, on a rail, they read as what they
    are: the consequences of one choice. ⛔ Hidden entirely under Standard —
    `paintStyleRows()` shows exactly one group. */
-.bj-settings__substyle {
+.jar-settings__substyle {
   position: relative;
   flex: 0 0 auto;
   /* The chunk taken out of the left. Rows keep their own 1.35rem, so their
@@ -334,13 +334,13 @@
   border-bottom: 1px solid light-dark(hsla(220, 12%, 82%, 0.42), hsla(217, 12%, 26%, 0.5));
 }
 
-.bj-settings__substyle[hidden] {
+.jar-settings__substyle[hidden] {
   display: none !important;
 }
 
 /* The rail: one hairline in the accent, marking the whole group as subordinate.
    Flush inside the indent rather than drawn as a thick border on the box. */
-.bj-settings__substyle::before {
+.jar-settings__substyle::before {
   content: '';
   position: absolute;
   left: 1.5rem;
@@ -353,11 +353,11 @@
 
 /* Inside the group the last row has the group's own border under it, so its
    own would double up. */
-.bj-settings__panel-body .bj-settings__substyle .bj-dialog__setting:last-child {
+.jar-settings__panel-body .jar-settings__substyle .jar-dialog__setting:last-child {
   border-bottom: none;
 }
 
-.bj-settings__section-head {
+.jar-settings__section-head {
   padding: 0.65rem 1.35rem 0.35rem;
   font-size: 0.68rem;
   font-weight: 600;
@@ -368,25 +368,25 @@
   background: light-dark(hsla(220, 14%, 97%, 0.65), hsla(220, 10%, 14%, 0.45));
 }
 
-.bj-settings__section-head + .bj-dialog__setting {
+.jar-settings__section-head + .jar-dialog__setting {
   border-top: none;
 }
 
-.bj-settings__panel-body .bj-dialog__setting--switch {
+.jar-settings__panel-body .jar-dialog__setting--switch {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
 }
 
-.bj-settings__panel-body .bj-dialog__setting--switch .bj-dialog__setting-main {
+.jar-settings__panel-body .jar-dialog__setting--switch .jar-dialog__setting-main {
   grid-column: 1;
 }
 
-.bj-settings__panel-body .bj-dialog__setting--switch .bj-toggle {
+.jar-settings__panel-body .jar-dialog__setting--switch .jar-toggle {
   grid-column: 2;
   justify-self: end;
 }
 
-.bj-settings__action-row {
+.jar-settings__action-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -396,7 +396,7 @@
   border-bottom: none;
 }
 
-.bj-settings__action-btn {
+.jar-settings__action-btn {
   justify-self: end;
   box-sizing: border-box;
   margin: 0;
@@ -418,53 +418,53 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-settings__action-btn:hover {
+  .jar-settings__action-btn:hover {
     background: light-dark(hsl(220, 10%, 91%), hsl(220, 8%, 20%));
     border-color: light-dark(hsla(220, 9%, 62%, 0.9), hsla(217, 8%, 38%, 0.9));
   }
 }
 
-.bj-settings__action-btn:focus-visible {
+.jar-settings__action-btn:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-settings__panel-body .bj-dialog__setting:hover {
+  .jar-settings__panel-body .jar-dialog__setting:hover {
     background: transparent;
   }
 }
 
-.bj-settings__panel-body .bj-dialog__setting-main {
+.jar-settings__panel-body .jar-dialog__setting-main {
   padding-top: 0;
   gap: 0.22rem;
 }
 
-.bj-settings__panel-body .bj-dialog__setting-label {
+.jar-settings__panel-body .jar-dialog__setting-label {
   line-height: 1.3;
 }
 
-.bj-settings__panel-body .bj-dialog__setting-desc {
+.jar-settings__panel-body .jar-dialog__setting-desc {
   max-width: 34rem;
   line-height: 1.45;
 }
 
-.bj-settings__panel-body .bj-dropdown {
+.jar-settings__panel-body .jar-dropdown {
   justify-self: stretch;
   width: 100%;
   max-width: 11rem;
 }
 
-.bj-settings__panel-body .bj-dialog__setting--switch {
+.jar-settings__panel-body .jar-dialog__setting--switch {
   cursor: default;
   user-select: none;
 }
 
-.bj-settings__panel-body .bj-dialog__setting--switch .bj-dialog__setting-label {
+.jar-settings__panel-body .jar-dialog__setting--switch .jar-dialog__setting-label {
   cursor: pointer;
 }
 
-.bj-settings__panel-body .bj-dropdown__trigger {
+.jar-settings__panel-body .jar-dropdown__trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -472,18 +472,18 @@
   width: 100%;
 }
 
-.bj-settings__panel-body .bj-dropdown__value {
+.jar-settings__panel-body .jar-dropdown__value {
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
 }
 
-.bj-settings__panel-body .bj-dropdown__panel {
+.jar-settings__panel-body .jar-dropdown__panel {
   box-sizing: border-box;
   min-width: 0;
 }
 
-.bj-settings__empty {
+.jar-settings__empty {
   margin: 0;
   padding: 2.25rem 1.35rem 1.5rem;
   font-size: 0.76rem;
@@ -494,9 +494,9 @@
   text-align: center;
 }
 
-.bj-settings__panel-body .bj-dialog__setting.is-flash,
-.bj-kb__row.is-flash,
-.bj-alias__row.is-flash {
+.jar-settings__panel-body .jar-dialog__setting.is-flash,
+.jar-kb__row.is-flash,
+.jar-alias__row.is-flash {
   background: light-dark(
     color-mix(in srgb, var(--accent-lower) 55%, transparent),
     color-mix(in oklab, var(--accent-lowest) 62%, hsl(217 28% 12%))
@@ -505,7 +505,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-settings__panel-body .bj-dialog__setting.is-flash:hover {
+  .jar-settings__panel-body .jar-dialog__setting.is-flash:hover {
     background: light-dark(
       color-mix(in srgb, var(--accent-lower) 55%, transparent),
       color-mix(in oklab, var(--accent-lowest) 62%, hsl(217 28% 12%))

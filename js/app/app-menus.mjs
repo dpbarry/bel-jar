@@ -323,6 +323,15 @@
         },
       ];
       if (fromTab) {
+        // `tab.close-others` and `tab.close-right` are real commands with no
+        // chord and no home outside the palette. A tab's own menu is where a
+        // user looks for them, and the pair only reads right together.
+        const otherTabs = openIds.filter((id) => id !== fileId);
+        destroy.push({
+          label: 'Close other tabs',
+          disabled: otherTabs.length === 0,
+          onSelect: () => closeTabsForFiles(otherTabs),
+        });
         destroy.push({
           label: 'Close all to the right',
           disabled: tabsToRight.length === 0,
@@ -417,12 +426,42 @@
       getEditor()[cmd]();
     }
 
+    /**
+     * THROUGH the registry — `edit.cut`/`edit.copy`/`edit.paste` in
+     * editor-commands.mjs. A menu row that runs its own private
+     * `document.execCommand` call is exactly the "list retyped instead of
+     * derived" trap: it can drift from what Keybindings, the palette and
+     * Available Keys all say about the same three commands.
+     */
     function editorClipboard(action) {
       if (!getEditor()) return;
-      getEditor().focus();
+      window.Commands?.run?.('edit.' + action);
+    }
+
+    /**
+     * The chord for a command, in the style currently in force, or '' when the
+     * style has taken it and left nothing to press.
+     *
+     * ⛔ One call, `Commands.liveChord`, because a menu row that prints a chord
+     * is making the same claim the Keybindings sheet makes and must be answered
+     * from the same place. The Edit menu printed NO chord on any of its eight
+     * rows while the editor's own context menu printed one for the same actions
+     * — two menus for one set of commands, disagreeing about whether keys exist.
+     * And the Tools row formatted `Mod+K` by hand, past the one formatter.
+     *
+     * ⛔ It must be the chord that WORKS. Printing BelJar's own would offer
+     * Ctrl+F for Find… under Emacs, where Emacs takes Ctrl+F for forward-char and
+     * `C-s` is the answer. A row with no chord is right; a row with a dead one is
+     * not.
+     */
+    function chordFor(id) {
+      const C = window.Commands;
+      if (!C || typeof C.liveChord !== 'function') return '';
       try {
-        document.execCommand(action);
-      } catch (_) {}
+        return C.liveChord(id) || '';
+      } catch (_) {
+        return '';
+      }
     }
 
     function formatCurrentFile() {
@@ -536,17 +575,18 @@
         && typeof getEditor().format === 'function'
       );
       return [
-        { label: 'Undo', onSelect: () => editorExec('undo') },
-        { label: 'Redo', onSelect: () => editorExec('redo') },
+        { label: 'Undo', shortcut: chordFor('edit.undo'), onSelect: () => editorExec('undo') },
+        { label: 'Redo', shortcut: chordFor('edit.redo'), onSelect: () => editorExec('redo') },
         { type: 'separator' },
-        { label: 'Cut', onSelect: () => editorClipboard('cut') },
-        { label: 'Copy', onSelect: () => editorClipboard('copy') },
-        { label: 'Paste', onSelect: () => editorClipboard('paste') },
-        { label: 'Select All', onSelect: () => editorExec('selectAll') },
+        { label: 'Cut', shortcut: chordFor('edit.cut'), onSelect: () => editorClipboard('cut') },
+        { label: 'Copy', shortcut: chordFor('edit.copy'), onSelect: () => editorClipboard('copy') },
+        { label: 'Paste', shortcut: chordFor('edit.paste'), onSelect: () => editorClipboard('paste') },
+        { label: 'Select All', shortcut: chordFor('edit.select-all'), onSelect: () => editorExec('selectAll') },
         { type: 'separator' },
-        { label: 'Find…', onSelect: () => editorExec('openSearch') },
+        { label: 'Find…', shortcut: chordFor('edit.find'), onSelect: () => editorExec('openSearch') },
         {
           label: 'Search in project…',
+          shortcut: chordFor('edit.search-project'),
           onSelect: () => {
             CommandPalette.open({ mode: 'search' });
           },
@@ -554,6 +594,7 @@
         { type: 'separator' },
         {
           label: 'Format file',
+          shortcut: chordFor('edit.format'),
           disabled: !canFormatFile,
           onSelect: formatCurrentFile,
         },
@@ -571,9 +612,7 @@
       return [
         {
           label: 'Open command palette…',
-          shortcut: typeof CommandPalette !== 'undefined'
-            ? CommandPalette.shortcutLabel('Mod+K')
-            : 'Ctrl+K',
+          shortcut: chordFor('tools.palette'),
           onSelect: () => {
             CommandPalette.open();
           },
@@ -581,6 +620,7 @@
         { type: 'separator' },
         {
           label: 'Dependency graph…',
+          shortcut: chordFor('tools.graph'),
           onSelect: () => window.CurrentEditor?.openDependencyGraph(),
         },
       ];

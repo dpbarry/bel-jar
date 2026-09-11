@@ -27,6 +27,11 @@ function onWin(type, fn, opts) {
   teardown.push(() => window.removeEventListener(type, fn, opts));
 }
 
+function onDoc(type, fn, opts) {
+  document.addEventListener(type, fn, opts);
+  teardown.push(() => document.removeEventListener(type, fn, opts));
+}
+
 function mount() {
 if (mounted) return;
 mounted = true;
@@ -264,7 +269,7 @@ function isCfgFileName(name) {
 function editorViewIsCfg(ed) {
   if (!ed || typeof ed.getView !== 'function') return false;
   const view = ed.getView();
-  return !!(view && view.dom && view.dom.classList.contains('bel-editor--cfg'));
+  return !!(view && view.dom && view.dom.classList.contains('jar-editor--cfg'));
 }
 
 function remountActiveEditor(openOpts) {
@@ -864,6 +869,7 @@ function __initAppPeels() {
     downloadCurrentFile, editorExec, moduleNameFor,
     closeFile, closeTabsForFiles, activeSuiteMembership, afterSuiteEdit,
     signatureFileCount, switchToFile, openFileAt, projectFileText,
+    flushEverythingToStorage,
   }));
 }
 
@@ -1358,19 +1364,41 @@ if (cmdInput) {
     }, 120);
   });
 }
-onWin('beforeunload', () => {
-  if (typeof ReplPersist !== 'undefined' && ReplPersist.saveNow) {
-    ReplPersist.saveNow();
+/**
+ * Get everything in the buffer onto disk.
+ *
+ * ⛔ `beforeunload` is not a save hook. A phone switching apps, a background
+ * tab Chrome decides to discard, a crashed renderer — none of them fire it,
+ * and `pagehide` is only marginally better. The one transition that is
+ * guaranteed before a page can be torn down is visibility going `hidden`, so
+ * that is where the flush has to live; the other two stay as belt and braces
+ * for the ordinary close.
+ *
+ * ⛔ But visibility-hidden fires every time the user alt-tabs, and the ordinary
+ * flush writes UNCONDITIONALLY — it re-serialises the whole checkpoint and the
+ * whole REPL transcript whether or not anything moved. Done on every tab
+ * switch that is wasted work, and with a second BelJar tab open on the same
+ * project it is the idle tab overwriting the working one. So the repeating hook
+ * flushes only what is actually waiting; the once-per-session hooks still take
+ * everything, including the viewport and fold state that no edit marks dirty.
+ */
+function flushEverythingToStorage(pendingOnly) {
+  // Read before flushing — the flush is what clears the flag.
+  const wasDirty = !!(persist && persist.hasPendingSave && persist.hasPendingSave());
+  if (typeof ReplPersist !== 'undefined') {
+    if (pendingOnly && ReplPersist.saveIfPending) ReplPersist.saveIfPending();
+    else if (ReplPersist.saveNow) ReplPersist.saveNow();
   }
-  if (persist && !suppressUnloadFlush) persist.flushCheckpoint();
-  WorkspaceState.flushWorkspace();
-});
-onWin('pagehide', () => {
-  if (typeof ReplPersist !== 'undefined' && ReplPersist.saveNow) {
-    ReplPersist.saveNow();
+  if (persist && !suppressUnloadFlush) {
+    if (pendingOnly && persist.flushCheckpointIfDirty) persist.flushCheckpointIfDirty();
+    else persist.flushCheckpoint();
   }
-  if (persist && !suppressUnloadFlush) persist.flushCheckpoint();
-  WorkspaceState.flushWorkspace();
+  if (!pendingOnly || wasDirty) WorkspaceState.flushWorkspace();
+}
+onWin('beforeunload', () => flushEverythingToStorage(false));
+onWin('pagehide', () => flushEverythingToStorage(false));
+onDoc('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushEverythingToStorage(true);
 });
 
 {

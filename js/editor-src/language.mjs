@@ -23,9 +23,7 @@ import {
   foldBlockComment,
   foldPercentLineCommentRun,
   foldTopLevelDeclaration,
-  isPercentLineComment,
   isPercentLineCommentFold,
-  percentLineCommentFoldFrom,
   percentLineCommentFoldHasLeadingGap,
 } from './ide/fold.mjs';
 import { parseErrorHighlightExtensions } from './ide/invalid-highlight.mjs';
@@ -82,7 +80,7 @@ export function editorFoldGutter() {
   return foldGutter({
     markerDOM(open) {
       const el = document.createElement('span');
-      el.className = `cm-bel-foldmarker${open ? ' is-open' : ' is-folded'}`;
+      el.className = `cm-jar-foldmarker${open ? ' is-open' : ' is-folded'}`;
       el.innerHTML = open
         ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6.5 4 4 4-4"/></svg>'
         : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4.5 4 4-4 4"/></svg>';

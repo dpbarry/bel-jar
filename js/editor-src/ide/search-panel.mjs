@@ -48,7 +48,7 @@ function closePanel(view) {
 function iconBtn(html, label, onClick) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'bel-search-btn';
+  btn.className = 'jar-search-btn';
   btn.setAttribute('aria-label', label);
   btn.setAttribute('data-tooltip', label);
   btn.innerHTML = html;
@@ -61,7 +61,7 @@ function iconBtn(html, label, onClick) {
 function chipBtn(text, label, onToggle) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'bel-search-chip';
+  btn.className = 'jar-search-chip';
   btn.setAttribute('aria-label', label);
   btn.setAttribute('aria-pressed', 'false');
   btn.setAttribute('data-tooltip', label);
@@ -128,7 +128,7 @@ function findClosestMatch(query, state) {
 
 function createSearchPanel(view) {
   const dom = document.createElement('div');
-  dom.className = 'bel-search';
+  dom.className = 'jar-search';
 
   // State mirrored into SearchQuery on every commit.
   let caseSensitive = false;
@@ -138,25 +138,25 @@ function createSearchPanel(view) {
 
   // ── Left edge: expand strip (spans both rows, VS Code style) ───────────────
   const expandBtn = iconBtn(ICONS.chevronRight, 'Toggle replace', () => setReplaceOpen(!replaceOpen));
-  expandBtn.classList.add('bel-search-expand');
+  expandBtn.classList.add('jar-search-expand');
 
   // ── Row 1: find ────────────────────────────────────────────────────────────
   const findRow = document.createElement('div');
-  findRow.className = 'bel-search-row';
+  findRow.className = 'jar-search-row';
 
   const inputWrap = document.createElement('div');
-  inputWrap.className = 'bel-search-inputwrap';
+  inputWrap.className = 'jar-search-inputwrap';
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.className = 'bel-search-input';
+  input.className = 'jar-search-input';
   input.placeholder = 'Find';
   input.setAttribute('main-field', 'true'); // CM: keep panel open while focused
   input.autocomplete = 'off';
   input.spellcheck = false;
 
   const chips = document.createElement('div');
-  chips.className = 'bel-search-chips';
+  chips.className = 'jar-search-chips';
   const caseChip = chipBtn('Aa', 'Match case', (on) => { caseSensitive = on; commit(); });
   const wordChip = chipBtn('ab', 'Whole word', (on) => { wholeWord = on; commit(); });
   const regexChip = chipBtn('.*', 'Regular expression', (on) => { regexp = on; commit(); });
@@ -165,7 +165,7 @@ function createSearchPanel(view) {
   inputWrap.append(input, chips);
 
   const count = document.createElement('span');
-  count.className = 'bel-search-count';
+  count.className = 'jar-search-count';
   count.textContent = '';
 
   const prevBtn = iconBtn(ICONS.arrowUp, 'Previous match (Shift+Enter)', () => findPrevious(view));
@@ -176,15 +176,15 @@ function createSearchPanel(view) {
 
   // ── Row 2: replace ─────────────────────────────────────────────────────────
   const replaceRow = document.createElement('div');
-  replaceRow.className = 'bel-search-row bel-search-row--replace';
+  replaceRow.className = 'jar-search-row jar-search-row--replace';
   replaceRow.hidden = true;
 
   const replaceWrap = document.createElement('div');
-  replaceWrap.className = 'bel-search-inputwrap bel-search-inputwrap--replace';
+  replaceWrap.className = 'jar-search-inputwrap jar-search-inputwrap--replace';
 
   const replaceInput = document.createElement('input');
   replaceInput.type = 'text';
-  replaceInput.className = 'bel-search-input';
+  replaceInput.className = 'jar-search-input';
   replaceInput.placeholder = 'Replace';
   replaceInput.autocomplete = 'off';
   replaceInput.spellcheck = false;
@@ -196,7 +196,7 @@ function createSearchPanel(view) {
   replaceRow.append(replaceWrap, replaceBtn, replaceAllBtn);
 
   const main = document.createElement('div');
-  main.className = 'bel-search-main';
+  main.className = 'jar-search-main';
   main.append(findRow, replaceRow);
 
   dom.append(expandBtn, main);

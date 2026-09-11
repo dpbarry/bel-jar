@@ -101,7 +101,7 @@ try {
   await page.waitForSelector('.harpoon-panel-hole', { timeout: 40000 });
   // Goal types arrive from the checker; wait for at least one card to carry a real type.
   await page.waitForFunction(
-    () => !!document.querySelector('.harpoon-panel-hole .harpoon-hole-goal .bel-type'),
+    () => !!document.querySelector('.harpoon-panel-hole .harpoon-hole-goal .jar-type'),
     { timeout: 90000 });
   await new Promise((r) => setTimeout(r, 1200));
   await page.evaluate(() => window.HarpoonPanel.refresh());
@@ -119,7 +119,7 @@ try {
     return {
       kw: kw && kw.textContent,
       name: nm && nm.textContent,
-      kwColoured: !!(kw && kw.classList.contains('bel-hl-keyword')),
+      kwColoured: !!(kw && kw.classList.contains('jar-hl-keyword')),
       headLines: head ? Math.round(head.getBoundingClientRect().height) : 0,
       // The header must sit decl-left / location-right, with no overlap between them.
       declRight: nm ? Math.round(nm.getBoundingClientRect().right) : 0,
@@ -142,7 +142,7 @@ try {
 
   // 1 ── the header names the obligation, in Beluga's own colours.
   ok(cards.every((c) => c.kw === 'rec'), 'every card names its declaration keyword');
-  ok(cards.every((c) => c.kwColoured), 'the keyword uses the shared bel-hl palette');
+  ok(cards.every((c) => c.kwColoured), 'the keyword uses the shared jar-hl palette');
   ok(cards.some((c) => c.name === 'tp_refl'), 'the short theorem is named on its card');
   ok(cards.some((c) => (c.name || '').startsWith('a_long_running_theorem')),
     'the long theorem is named on its card');
@@ -262,7 +262,7 @@ try {
     return {
       kw: kw && kw.textContent,
       name: nm && nm.textContent,
-      coloured: !!(kw && kw.classList.contains('bel-hl-keyword')),
+      coloured: !!(kw && kw.classList.contains('jar-hl-keyword')),
       mono: n ? /mono|Mono|JetBrains|Consolas/i.test(getComputedStyle(n).fontFamily) : false,
       lines: n ? Math.round(n.getBoundingClientRect().height) : 0,
     };

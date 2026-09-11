@@ -3,7 +3,7 @@
 /* Full width, last child of <body>: the bar reports on the session — the goal
    at the caret, holes left, the checker, Orca — not on one pane. Its height is
    reserved once, so nothing above it ever reflows. */
-.bj-strip {
+.jar-strip {
   display: flex;
   align-items: center;
   gap: var(--strip-gap);
@@ -26,39 +26,39 @@
 /* ⛔ No edge wash. The mode is a segment you can read, in its own colour, after
    the keymap and the position — not a stripe at the far left of the window that
    you have to learn. */
-.bj-strip {
+.jar-strip {
   position: relative;
 }
 
-.bj-strip__spacer {
+.jar-strip__spacer {
   flex: 1 1 auto;
   min-width: 0.5rem;
 }
 
 /* The goal line is the one segment allowed to take the slack — and the one
    allowed to lose its tail, since its tooltip carries the full type. */
-.bj-strip__seg.is-grow {
+.jar-strip__seg.is-grow {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
 }
 
-.bj-strip__seg.is-grow .bj-strip__label {
+.jar-strip__seg.is-grow .jar-strip__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.bj-strip__seg--holes { color: var(--repl-holes-accent); }
-.bj-strip__seg--orca { color: var(--harpoon-move-synth); }
-.bj-strip__seg--symbols { color: var(--ui-fg-faint); }
+.jar-strip__seg--holes { color: var(--repl-holes-accent); }
+.jar-strip__seg--orca { color: var(--harpoon-move-synth); }
+.jar-strip__seg--symbols { color: var(--ui-fg-faint); }
 
-.bj-strip__seg.is-hint {
+.jar-strip__seg.is-hint {
   color: var(--ui-fg-faint);
   font-variant-numeric: tabular-nums;
 }
 
-.bj-strip__seg {
+.jar-strip__seg {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -73,43 +73,43 @@
   transition: color 120ms ease, background 120ms ease;
 }
 
-button.bj-strip__seg {
+button.jar-strip__seg {
   cursor: pointer;
 }
 
 /* Digits must never move their neighbours: a caret sweeping line 9 → 1000 is
    the classic status-bar reflow, and it makes the whole app feel cheap. */
-.bj-strip__seg.is-mono {
+.jar-strip__seg.is-mono {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
-.bj-strip__seg--position {
+.jar-strip__seg--position {
   min-width: 4.5ch;
   justify-content: flex-start;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  button.bj-strip__seg:hover {
+  button.jar-strip__seg:hover {
     background: var(--header-menu-bg-hover);
     color: var(--ui-fg-strong);
   }
 }
 
-.bj-strip__seg:focus-visible {
+.jar-strip__seg:focus-visible {
   outline: 2px solid var(--accent-mid);
   outline-offset: -2px;
 }
 
 /* Which keymap you are in. Stable, so no chip and no colour — it is a caption,
    not a state. */
-.bj-strip__seg--keymap {
+.jar-strip__seg--keymap {
   color: var(--ui-fg-muted);
   letter-spacing: 0.02em;
 }
 
 /* A half-typed chord, in the command zone. */
-.bj-strip__seg--command {
+.jar-strip__seg--command {
   font-family: var(--mono);
   color: var(--accent-high);
   letter-spacing: 0.02em;
@@ -120,7 +120,7 @@ button.bj-strip__seg {
    plain text in the base colour, and the difference between the two facts is
    carried by colour alone — a filled badge next to bare text made the mode look
    like a control you could press, and the row read as two unrelated languages. */
-.bj-strip__seg--mode {
+.jar-strip__seg--mode {
   font-size: 0.62rem;
   font-weight: 650;
   letter-spacing: 0.04em;
@@ -133,23 +133,30 @@ button.bj-strip__seg {
    a glance — were the same word in the same colour, differing only in spelling.
    At rest it is a strong neutral; anything that changes what your keys do earns
    a hue. */
-.bj-strip__seg--mode.is-normal { color: var(--ui-fg-strong); }
-.bj-strip__seg--mode.is-insert { color: var(--accent-high); }
-.bj-strip__seg--mode.is-visual { color: var(--repl-holes-accent); }
-.bj-strip__seg--mode.is-replace { color: var(--ide-status-warning); }
-.bj-strip__seg--mode.is-neutral { color: var(--ui-fg-muted); }
+.jar-strip__seg--mode.is-normal { color: var(--ui-fg-strong); }
+.jar-strip__seg--mode.is-insert { color: var(--accent-high); }
+.jar-strip__seg--mode.is-visual { color: var(--repl-holes-accent); }
+.jar-strip__seg--mode.is-replace { color: var(--ide-status-warning); }
+.jar-strip__seg--mode.is-neutral { color: var(--ui-fg-muted); }
 
-.bj-strip__seg--problems.is-error { color: var(--ide-status-error); }
-.bj-strip__seg--problems.is-warning { color: var(--ide-status-warning); }
+.jar-strip__seg--problems.is-error { color: var(--ide-status-error); }
 
-.bj-strip__seg--checker.is-checked { color: var(--ide-status-clean); }
-.bj-strip__seg--checker.is-checking,
-.bj-strip__seg--checker.is-error-checking { color: var(--ide-status-checking); }
-.bj-strip__seg--checker.is-error { color: var(--ide-status-error); }
-.bj-strip__seg--checker.is-warning { color: var(--ide-status-warning); }
+/* The record light — its own hue, not a borrowed verdict. ⚠ It read `is-error`
+   at first, which was wrong twice over: the tone was styled nowhere (rules exist
+   under `--problems` and `--checker` only) so REC rendered in the resting grey,
+   and the red it was reaching for says "your file is broken" about something
+   that is simply a mode you are in. */
+.jar-strip__seg--macro.is-recording { color: var(--ide-status-recording); }
+.jar-strip__seg--problems.is-warning { color: var(--ide-status-warning); }
+
+.jar-strip__seg--checker.is-checked { color: var(--ide-status-clean); }
+.jar-strip__seg--checker.is-checking,
+.jar-strip__seg--checker.is-error-checking { color: var(--ide-status-checking); }
+.jar-strip__seg--checker.is-error { color: var(--ide-status-error); }
+.jar-strip__seg--checker.is-warning { color: var(--ide-status-warning); }
 
 /* Nothing but chrome showing — recede a little; never hide. */
-.bj-strip.is-resting .bj-strip__seg--position {
+.jar-strip.is-resting .jar-strip__seg--position {
   color: var(--ui-fg-faint);
 }
 
@@ -157,86 +164,100 @@ button.bj-strip__seg {
    The checker segment hosts a real `.ide-status-dot`, so it inherits every
    state, the conic checking shimmer and the rich lint tooltip from ide.css
    rather than imitating them. Only the topbar's own spacing is undone. */
-.bj-strip .ide-status-dot {
+.jar-strip .ide-status-dot {
   margin-left: 0;
   flex: 0 0 auto;
 }
 
 /* Exactly one status dot on screen: while the bar is up, it owns it. */
-html.bj-strip-owns-status .editor-topbar-controls .ide-status-dot {
+html.jar-strip-owns-status .editor-topbar-controls .ide-status-dot {
   display: none;
 }
 
 /* …and the strip tightens around what is left. Keeping the two-item padding
    around a lone icon button leaves the reclaimed dot space reading as a void
    hanging off the divider. */
-html.bj-strip-owns-status .editor-topbar-controls {
+html.jar-strip-owns-status .editor-topbar-controls {
   padding-inline: 0.45rem;
 }
 
 /* The checker reads as one control — dot and words, not two things. */
-.bj-strip__seg--checker {
+.jar-strip__seg--checker {
   gap: 0.4rem;
   font-weight: 500;
   letter-spacing: 0.01em;
 }
 
-.bj-strip__seg--checker.is-checked { color: var(--ui-fg-muted); }
+.jar-strip__seg--checker.is-checked { color: var(--ui-fg-muted); }
 
 @media (hover: hover) and (pointer: fine) {
-  button.bj-strip__seg--checker:hover { color: var(--ui-fg-strong); }
+  button.jar-strip__seg--checker:hover { color: var(--ui-fg-strong); }
 }
 
 /* ── Polish ────────────────────────────────────────────────────────────────── */
 
 /* Primary facts read at full strength; the softer ones recede. One step of
    contrast between them is enough — a bar of uniformly grey text reads dead. */
-.bj-strip__seg--position,
-.bj-strip__seg--goal,
-.bj-strip__seg--problems { color: var(--ui-fg); }
+.jar-strip__seg--position,
+.jar-strip__seg--goal,
+.jar-strip__seg--problems { color: var(--ui-fg); }
 
-.bj-strip__seg--selection { color: var(--ui-fg-muted); }
+.jar-strip__seg--selection { color: var(--ui-fg-muted); }
 
-.bj-strip__seg--goal .bj-strip__label { letter-spacing: -0.005em; }
+.jar-strip__seg--goal .jar-strip__label { letter-spacing: -0.005em; }
 
 /* The goal is real syntax-highlighted Beluga, so it must not be tinted flat —
    it sits in the hole identity WASH instead, which links it to the hole gutter
    and the `?` glyph without stealing the token colours. */
-.bj-strip__seg--goal {
+.jar-strip__seg--goal {
   background: var(--ide-hole-bg);
   border-radius: var(--radius-sm);
   padding-inline: 0.4rem;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  button.bj-strip__seg--goal:hover {
+  button.jar-strip__seg--goal:hover {
     background: color-mix(in srgb, var(--ide-hole-bg) 60%, var(--ide-hole-gutter));
   }
 }
 
-.bj-strip__mark {
+.jar-strip__mark {
   color: var(--ide-hole-border);
   opacity: 0.85;
   flex: 0 0 auto;
 }
 
-.bj-strip__seg--goal .bj-strip__label {
+.jar-strip__seg--goal .jar-strip__label {
   font-family: var(--mono);
 }
 
-.bj-strip__seg--holes { color: var(--repl-holes-accent); }
+/* The goal chip holding a placeholder instead of a type. It keeps the hole wash
+   and the turnstile — it is the same chip, in an earlier state — and drops to
+   the faint step, because `Computing…` is the bar admitting it does not know
+   something, not a fact about your proof. */
+.jar-strip__seg--goal.is-pending .jar-strip__label {
+  font-style: italic;
+  color: var(--ui-fg-faint);
+}
+
+/* ⚠ `is-pending` on the COMMAND chip had no rule at all, the same silent gap
+   REC shipped with. A half-typed chord is transient state you are waiting to
+   resolve; it reads at full strength, not in the resting grey. */
+.jar-strip__seg--command.is-pending { color: var(--ui-fg-strong); }
+
+.jar-strip__seg--holes { color: var(--repl-holes-accent); }
 
 /* Tabular digits everywhere a number can change under the cursor. */
-.bj-strip__seg--position .bj-strip__label,
-.bj-strip__seg--problems .bj-strip__label,
-.bj-strip__seg--holes .bj-strip__label,
-.bj-strip__seg--symbols .bj-strip__label { font-variant-numeric: tabular-nums; }
+.jar-strip__seg--position .jar-strip__label,
+.jar-strip__seg--problems .jar-strip__label,
+.jar-strip__seg--holes .jar-strip__label,
+.jar-strip__seg--symbols .jar-strip__label { font-variant-numeric: tabular-nums; }
 
 /* ── The command line ───────────────────────────────────────────────────────
    Inline, inside the bar: the code stays visible while you type, which is the
    whole reason not to reuse the palette's overlay. Candidates rise ABOVE the
    bar in their own layer so the bar's height never changes. */
-.bj-strip__segments {
+.jar-strip__segments {
   display: flex;
   align-items: center;
   gap: var(--strip-gap);
@@ -248,7 +269,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* ⛔ The command line does NOT take the bar over. It is one more thing happening
    in the row, in the command zone, after the mode. Opening `:` used to wipe
    every segment and leave a bare prompt where the strip had been. */
-.bj-strip__command {
+.jar-strip__command {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -256,17 +277,17 @@ html.bj-strip-owns-status .editor-topbar-controls {
 }
 
 /* Empty until something is being typed, and then it takes only the slack. */
-.bj-strip.is-line-open .bj-strip__command {
+.jar-strip.is-line-open .jar-strip__command {
   flex: 1 1 14rem;
 }
 
 /* The goal is the one segment that yields to a command line; the facts on the
    left never move. */
-.bj-strip.is-line-open .bj-strip__seg--goal {
+.jar-strip.is-line-open .jar-strip__seg--goal {
   flex: 0 1 6rem;
 }
 
-.bj-cmdline {
+.jar-cmdline {
   display: flex;
   align-items: center;
   flex: 1 1 auto;
@@ -274,32 +295,52 @@ html.bj-strip-owns-status .editor-topbar-controls {
   align-self: stretch;
 }
 
-.bj-cmdline[hidden] { display: none; }
+.jar-cmdline[hidden] { display: none; }
 
-.bj-cmdline__field {
+/* ⛔ BASELINE, not centre. The sigil is a text node in a <span> and the text
+   beside it lives in an <input>, and those two put their glyphs in their boxes
+   by different rules — a span's text sits on the line box's baseline, an
+   input's is centred in its content box. Centring both BOXES makes the two
+   agree only where those rules happen to land on the same pixel, which is the
+   default rem and nowhere reliably else; at another zoom the sigil rides up.
+   Aligning the baselines aligns what is actually seen. */
+.jar-cmdline__field {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.4rem;
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.bj-cmdline__prompt {
+/* ⛔ A SIGIL prompt is part of the line, not a label in front of it.
+   Vim writes `:set ts=4` and `/pattern` with the sigil hard against the text;
+   BelJar put a 0.4rem gap there and set the sigil 0.06rem larger than the
+   input, so its own `:` line did not read like the vim line sitting in the same
+   slot. A WORD prompt (`M-x`, `Go to line`) still wants the gap — it is a
+   label. */
+.jar-cmdline__field.is-sigil { gap: 0; }
+
+.jar-cmdline__prompt {
   flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 0.78rem;
   color: var(--accent-high);
 }
 
-.bj-cmdline__inputwrap {
+.jar-cmdline__field.is-sigil .jar-cmdline__prompt {
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.jar-cmdline__inputwrap {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
 }
 
-.bj-cmdline__input,
-.bj-cmdline__ghost {
+.jar-cmdline__input,
+.jar-cmdline__ghost {
   font-family: var(--mono);
   font-size: 0.72rem;
   line-height: 1.4;
@@ -310,7 +351,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   white-space: pre;
 }
 
-.bj-cmdline__input {
+.jar-cmdline__input {
   flex: 1 1 auto;
   min-width: 0;
   outline: none;
@@ -320,12 +361,12 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* A name that matches nothing, said while it is still being typed. Tinting the
    text is enough — a red box on a one-line field would shout. */
-.bj-cmdline__input.is-unknown {
+.jar-cmdline__input.is-unknown {
   color: var(--ide-status-error);
 }
 
 /* Ghost text sits under the input, showing the tail the input has not typed. */
-.bj-cmdline__ghost {
+.jar-cmdline__ghost {
   position: absolute;
   inset: 0;
   color: var(--ui-fg-faint);
@@ -346,7 +387,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
    ⛔ It shares its bottom edge with the strip's top border: no bottom border, no
    bottom corners, no gap. Two hairlines a few pixels apart is the patchwork
    look this replaced. */
-.bj-cmdline__list {
+.jar-cmdline__list {
   position: fixed;
   min-width: 11rem;
   width: max-content;
@@ -367,18 +408,18 @@ html.bj-strip-owns-status .editor-topbar-controls {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
   z-index: 30;
-  animation: bj-cmdline-rise 140ms ease-out;
+  animation: jar-cmdline-rise 140ms ease-out;
 }
 
 /* It grows, it does not slide: a translate would part the shared bottom edge
    from the strip for the length of the animation. */
-@keyframes bj-cmdline-rise {
+@keyframes jar-cmdline-rise {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bj-cmdline__list { animation: none; }
+  .jar-cmdline__list { animation: none; }
 }
 
 /* Full-bleed rows with no radius of their own, exactly like the editor's list:
@@ -388,7 +429,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
    two edges. `space-between` in a `max-content` box stretches every row to the
    width of the longest one, so a three-word row wore a hand's width of empty
    middle — the editor's own list puts the detail right after the label. */
-.bj-cmdline__item {
+.jar-cmdline__item {
   display: flex;
   align-items: baseline;
   gap: 0.7rem;
@@ -400,13 +441,13 @@ html.bj-strip-owns-status .editor-topbar-controls {
   transition: background 100ms ease;
 }
 
-.bj-cmdline__item.is-active {
+.jar-cmdline__item.is-active {
   color: var(--editor-ac-row-fg);
   background: var(--editor-ac-row-bg);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-cmdline__item:hover {
+  .jar-cmdline__item:hover {
     background: var(--search-row-hover-bg);
     color: var(--search-row-hover-fg);
   }
@@ -414,17 +455,17 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* A key hint names a key you press next; there is nothing to click and nothing
    to complete, so it does not pretend to be a menu row. */
-.bj-cmdline__item.is-legend { cursor: default; }
+.jar-cmdline__item.is-legend { cursor: default; }
 
 /* On a candidate row the second column is a hint about the first, so it is
    quiet. On a key hint it IS the content — the left is one letter — so it
    speaks at full strength, and the key gets the weight instead. */
-.bj-cmdline__item.is-legend .bj-cmdline__item-name {
+.jar-cmdline__item.is-legend .jar-cmdline__item-name {
   font-weight: 600;
   min-width: 1.4em;
 }
 
-.bj-cmdline__item.is-legend .bj-cmdline__item-label {
+.jar-cmdline__item.is-legend .jar-cmdline__item-label {
   font-family: var(--sans);
   font-size: 0.7rem;
   color: var(--menu-item-fg);
@@ -432,14 +473,14 @@ html.bj-strip-owns-status .editor-topbar-controls {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-cmdline__item.is-legend:hover { background: none; color: var(--menu-item-fg); }
+  .jar-cmdline__item.is-legend:hover { background: none; color: var(--menu-item-fg); }
 }
 
 /* ⛔ Not bold. The editor's completion bolds only the MATCHED substring; bolding
    every name turns a list you scan into a wall of headings. */
-.bj-cmdline__item-name { font-weight: inherit; }
+.jar-cmdline__item-name { font-weight: inherit; }
 
-.bj-cmdline__item-label {
+.jar-cmdline__item-label {
   font-size: 0.64rem;
   color: var(--muted-high);
   opacity: 0.7;
@@ -447,7 +488,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* Not a row you can pick: the list saying it has nothing, in the list's place,
    so the answer arrives where you are already looking. */
-.bj-cmdline__none {
+.jar-cmdline__none {
   padding: 0.24rem 0.6rem;
   line-height: 1.3;
   color: var(--muted-high);
@@ -459,7 +500,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* The echo area: transient, right-aligned, and it FADES. Something that appears
    and vanishes without motion reads as a glitch rather than a message — and it
    never takes the bar over, so the position and checker keep speaking. */
-.bj-strip__message {
+.jar-strip__message {
   /* Shrinkable and unpadded: it takes width from the spacer, never from its
      neighbours, and ellipsises before it would push either group. */
   flex: 0 1 auto;
@@ -477,17 +518,17 @@ html.bj-strip-owns-status .editor-topbar-controls {
   pointer-events: none;
 }
 
-.bj-strip__message:empty {
+.jar-strip__message:empty {
   display: none;
 }
 
-.bj-strip__message.is-visible {
+.jar-strip__message.is-visible {
   opacity: 1;
   transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bj-strip__message {
+  .jar-strip__message {
     transition: none;
     transform: none;
   }
@@ -498,7 +539,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
    inputs inside our bar. It also writes `--NORMAL--` into this node on every
    mode change, which our own mode badge already says — so the slot only
    becomes visible while a dialog is actually open. */
-.bj-strip__vim {
+.jar-strip__vim {
   display: none;
   flex: 1 1 auto;
   min-width: 0;
@@ -508,10 +549,38 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* ⛔ Vim's own ex field is mounted in the SAME command zone as ours, so it must
    not hide the row it now lives in. It used to sit beside the segments and
    blank them; from inside them, that rule blanked the field as well. */
-.bj-strip.is-vim-line .bj-strip__vim { display: flex; }
-.bj-strip.is-vim-line .bj-strip__command { flex: 1 1 14rem; }
+.jar-strip.is-vim-line .jar-strip__vim { display: flex; }
+.jar-strip.is-vim-line .jar-strip__command { flex: 1 1 14rem; }
 
-.bj-strip__vim input {
+/* ⛔ Vim's `:` sat ABOVE its own text, and the reason is not ours.
+   The package builds the ex line as `div(display:flex) > span(display:flex) >
+   [ ":" , input ]`, where the prefix is a bare TEXT NODE. A bare text node in a
+   flex container becomes an ANONYMOUS FLEX ITEM, and with no `align-items` the
+   default `stretch` gives that box the full row height and paints the glyph at
+   the TOP of it — while the input centres its own text.
+
+   ⛔ CENTRING THE BOXES IS NOT ALIGNING THE TEXT, and that is why this took two
+   passes. An <input> centres its own inner text inside its content box; a bare
+   text node sits on the line box's baseline. Centre both boxes and the two
+   glyph rows still differ by however much those two rules disagree — measured
+   at 1px, with the colon high. `baseline` aligns the things that are actually
+   seen, at every zoom, instead of arranging boxes and hoping.
+
+   ⚠ A DESCENDANT selector, deliberately. The nesting is not ours: the CM5
+   `openDialog` shim wraps vim's own `makePrompt` output in another div, so the
+   flex span sits three levels down and a `>` chain written against the shape
+   this looked like matched nothing at all. `align-items` is inert on anything
+   that is not a flex container, so naming the elements broadly costs nothing
+   and survives the package adding or dropping a wrapper. */
+.jar-strip__vim div {
+  align-items: center;
+}
+
+.jar-strip__vim span {
+  align-items: baseline;
+}
+
+.jar-strip__vim input {
   flex: 1 1 auto;
   min-width: 0;
   border: none;
@@ -526,19 +595,36 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* The package writes `--NORMAL--`, a flex spacer, then the pending-key display
    into this slot. The bar already has a mode badge, so only the third child —
    the pending keys — is wanted. A `:`/`/` dialog is a <div>, so it is unaffected. */
-.bj-strip__vim > span:nth-child(1),
-.bj-strip__vim > span:nth-child(2) {
+.jar-strip__vim > span:nth-child(1),
+.jar-strip__vim > span:nth-child(2) {
   display: none;
 }
 
-.bj-strip__vim .cm-vim-message,
-.bj-strip__vim span {
-  font-family: var(--mono);
+/* ⛔ `!important` — the ONE place in this file that earns it.
+   `makePrompt` writes `font-family: monospace` as an INLINE style on the span
+   holding the sigil, so the `:` came out in the browser's generic monospace
+   while the input beside it was JetBrains Mono: two fonts, two sets of metrics,
+   one line. Nothing but an `!important` author rule outranks an inline
+   declaration, and the alternative — rewriting the package's node after it
+   mounts — is a repaint race for a font. */
+.jar-strip__vim .cm-vim-message,
+.jar-strip__vim span {
+  font-family: var(--mono) !important;
   font-size: 0.72rem;
+}
+
+/* Vim's sigil, in the accent BelJar's own `:` line uses. Both faces mount in
+   the same slot; a `:` that changes colour with the keymap reads as two
+   different features. The pending-key readout stays muted — it is a hint. */
+.jar-strip__vim span {
+  color: var(--accent-high);
+}
+
+.jar-strip__vim .cm-vim-message {
   color: var(--ui-fg-muted);
 }
 
-.bj-cmdline__count {
+.jar-cmdline__count {
   flex: 0 0 auto;
   font-size: 0.66rem;
   color: var(--ui-fg-faint);
@@ -546,11 +632,11 @@ html.bj-strip-owns-status .editor-topbar-controls {
   white-space: nowrap;
 }
 
-.bj-cmdline__count.is-empty { color: var(--ide-status-error); }
+.jar-cmdline__count.is-empty { color: var(--ide-status-error); }
 
 /* ⛔ ONE scrollport, and it is the LIST.
    `.floating-window-body` is `display: block` with its own `overflow-y: auto`,
-   so `.bj-macros`'s `flex: 1 1 auto` was inert: the list took its full content
+   so `.jar-macros`'s `flex: 1 1 auto` was inert: the list took its full content
    height and the BODY scrolled instead — carrying the filter strip and the
    closing line off the top with it. Making the host a flex column hands the
    bounded height down, so the list scrolls under a pinned filter and foot. */
@@ -561,7 +647,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   overflow: hidden;
 }
 
-.bj-macros {
+.jar-macros {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -572,7 +658,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* Flush strip, divider below only: the search-field language twisted the same
    way the Keybindings filter twists it. No box, no top border. */
-.bj-macros__filter {
+.jar-macros__filter {
   display: flex;
   align-items: center;
   gap: 0.45rem;
@@ -583,25 +669,25 @@ html.bj-strip-owns-status .editor-topbar-controls {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-macros__filter:hover:not(:focus-within) { background: var(--header-menu-bg-hover); }
-  .bj-macros__filter:hover .bj-macros__filter-icon { color: var(--ui-fg); }
+  .jar-macros__filter:hover:not(:focus-within) { background: var(--header-menu-bg-hover); }
+  .jar-macros__filter:hover .jar-macros__filter-icon { color: var(--ui-fg); }
 }
 
-.bj-macros__filter:focus-within {
+.jar-macros__filter:focus-within {
   border-bottom-color: color-mix(in srgb, var(--accent-mid) 55%, transparent);
 }
 
-.bj-macros__filter-icon {
+.jar-macros__filter-icon {
   display: flex;
   flex-shrink: 0;
   color: var(--ui-fg-muted);
   transition: color 120ms ease;
 }
 
-.bj-macros__filter-icon > svg { width: 0.72rem; height: 0.72rem; }
-.bj-macros__filter:focus-within .bj-macros__filter-icon { color: var(--accent-high); }
+.jar-macros__filter-icon > svg { width: 0.72rem; height: 0.72rem; }
+.jar-macros__filter:focus-within .jar-macros__filter-icon { color: var(--accent-high); }
 
-.bj-macros__filter-input {
+.jar-macros__filter-input {
   flex: 1;
   min-width: 0;
   padding: 0.16rem 0;
@@ -614,10 +700,10 @@ html.bj-strip-owns-status .editor-topbar-controls {
   caret-color: var(--accent-mid);
 }
 
-.bj-macros__filter-input::placeholder { color: var(--ui-fg-faint); }
-.bj-macros__filter-input::-webkit-search-cancel-button { display: none; }
+.jar-macros__filter-input::placeholder { color: var(--ui-fg-faint); }
+.jar-macros__filter-input::-webkit-search-cancel-button { display: none; }
 
-.bj-macros__filter-count {
+.jar-macros__filter-count {
   flex-shrink: 0;
   font-size: 0.66rem;
   color: var(--ui-fg-faint);
@@ -626,7 +712,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   white-space: nowrap;
 }
 
-.bj-macros__list {
+.jar-macros__list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -635,7 +721,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   padding-bottom: 0.5rem;
 }
 
-.bj-macros__group {
+.jar-macros__group {
   margin-top: 0.55rem;
   padding: 0.6rem 0.65rem 0.25rem;
   border-top: 1px solid var(--chrome-divider);
@@ -647,7 +733,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 }
 
 /* The first block needs no rule above it — the filter strip already drew one. */
-.bj-macros__list > .bj-macros__group:first-child {
+.jar-macros__list > .jar-macros__group:first-child {
   margin-top: 0;
   padding-top: 0.5rem;
   border-top: none;
@@ -656,7 +742,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* Label left, keys right: a menu item's shape, so the eye lands where it already
    knows to look. No per-row rule — this is a list to read, not a table to edit,
    and 34 hairlines read as a ladder. The block headings do the dividing. */
-.bj-macros__row {
+.jar-macros__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
@@ -664,14 +750,14 @@ html.bj-strip-owns-status .editor-topbar-controls {
   padding: 0.24rem 0.65rem;
 }
 
-.bj-macros__what {
+.jar-macros__what {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
   min-width: 0;
 }
 
-.bj-macros__title {
+.jar-macros__title {
   color: var(--ui-fg-strong);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -680,7 +766,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* A quiet chip, not a warning: the chord still exists, it just belongs to the
    editing style right now. */
-.bj-macros__tag {
+.jar-macros__tag {
   flex: 0 0 auto;
   padding: 0.02rem 0.28rem;
   border-radius: var(--radius-sm);
@@ -694,7 +780,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* ⛔ Nothing here is dimmed: every chord on this list works right now. A row
    that did not would not be on it. */
 
-.bj-macros__keys {
+.jar-macros__keys {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -702,7 +788,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   color: var(--menu-shortcut-fg);
 }
 
-.bj-macros__chord {
+.jar-macros__chord {
   font-family: inherit;
   font-size: 0.7rem;
   font-weight: 500;
@@ -711,7 +797,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   white-space: nowrap;
 }
 
-.bj-macros__ex {
+.jar-macros__ex {
   font-family: var(--mono);
   font-size: 0.68rem;
   color: var(--accent-high);
@@ -726,8 +812,8 @@ html.bj-strip-owns-status .editor-topbar-controls {
    Both are muted well below the status dot's saturation — this is a reference
    list, not an alarm — and neither carries meaning alone: the strikethrough and
    the arrow say the same thing without colour. */
-.bj-macros__row--reserved,
-.bj-macros__row--meta {
+.jar-macros__row--reserved,
+.jar-macros__row--meta {
   --macros-gone: color-mix(in srgb, var(--ide-status-error) 54%, var(--ui-fg-faint));
   --macros-live: color-mix(in srgb, var(--ide-status-clean) 58%, var(--ui-fg-muted));
 }
@@ -737,7 +823,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
    to recognise the chord you just pressed. Colour alone would be a problem if it
    were the ONLY signal; it is not — the arrow points away from it, and the label
    above says what the block is. */
-.bj-macros__dead {
+.jar-macros__dead {
   flex: 0 0 auto;
   font-family: inherit;
   font-size: 0.7rem;
@@ -750,14 +836,14 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* The gloss beside it — what the chord would have done — is quieter than a
    command title, because it names a key's meaning rather than something of
    ours you can run. */
-.bj-macros__row--reserved .bj-macros__title {
+.jar-macros__row--reserved .jar-macros__title {
   color: var(--ui-fg-muted);
   font-size: 0.7rem;
 }
 
 /* The answer. Green, and the only green in the window, so the eye finds the
    working half of the pair without reading. */
-.bj-macros__row--reserved .bj-macros__chord {
+.jar-macros__row--reserved .jar-macros__chord {
   color: var(--macros-live);
 }
 
@@ -768,20 +854,20 @@ html.bj-strip-owns-status .editor-topbar-controls {
    pushing its tail to the right edge tore a void through the middle of it that
    dwarfed the arrow trying to span it. So the three parts sit together with one
    even gap between each, and the right edge is left ragged. */
-.bj-macros__row--reserved,
-.bj-macros__row--meta {
+.jar-macros__row--reserved,
+.jar-macros__row--meta {
   display: flex;
   align-items: baseline;
   gap: var(--macros-joint);
 }
 
-.bj-macros__row--reserved {
+.jar-macros__row--reserved {
   --macros-joint: 0.55rem;
 }
 
-.bj-macros__row--reserved .bj-macros__what,
-.bj-macros__row--reserved .bj-macros__keys,
-.bj-macros__row--meta .bj-macros__keys {
+.jar-macros__row--reserved .jar-macros__what,
+.jar-macros__row--reserved .jar-macros__keys,
+.jar-macros__row--meta .jar-macros__keys {
   flex: 0 1 auto;
   justify-content: flex-start;
   gap: var(--macros-joint);
@@ -789,12 +875,12 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* The one thing allowed to lose its tail is the longest gloss, and only when
    the window is genuinely too narrow for the sentence. */
-.bj-macros__row--reserved .bj-macros__title {
+.jar-macros__row--reserved .jar-macros__title {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.bj-macros__arrow {
+.jar-macros__arrow {
   flex: 0 0 auto;
   color: color-mix(in srgb, var(--ui-fg-faint) 70%, transparent);
   font-size: 0.72rem;
@@ -805,7 +891,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
    `Ctrl+M*` is a chord called "Ctrl+M star" — and the one thing this column must
    never do is misstate a key. Tight to the word it follows, so it reads as a
    footnote marker rather than a character of the title. */
-.bj-macros__star {
+.jar-macros__star {
   flex: 0 0 auto;
   margin-left: -0.2rem;
   color: var(--macros-gone, var(--ui-fg-faint));
@@ -815,7 +901,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 }
 
 /* Context, not a result: one quiet line under a heading, and only at rest. */
-.bj-macros__aside {
+.jar-macros__aside {
   margin: 0;
   padding: 0.1rem 0.65rem 0.4rem;
   font-size: 0.66rem;
@@ -832,7 +918,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
    substitutes are not offered there — the chips do not fit beside the label and
    drop below it. The ROW gap must not come with them: at 0.8rem the label
    floated away from the list it introduces. */
-.bj-macros__row--meta {
+.jar-macros__row--meta {
   --macros-joint: 0.8rem;
   align-items: baseline;
   flex-wrap: wrap;
@@ -840,23 +926,23 @@ html.bj-strip-owns-status .editor-topbar-controls {
   padding-top: 0.34rem;
 }
 
-.bj-macros__row--meta + .bj-macros__row--meta {
+.jar-macros__row--meta + .jar-macros__row--meta {
   padding-top: 0.1rem;
 }
 
-.bj-macros__meta-label {
+.jar-macros__meta-label {
   font-size: 0.66rem;
   color: var(--ui-fg-faint);
   white-space: nowrap;
 }
 
-.bj-macros__meta-text {
+.jar-macros__meta-text {
   font-size: 0.68rem;
   color: var(--ui-fg-muted);
 }
 
 /* The chips wrap onto as many lines as they need, flowing from the label. */
-.bj-macros__row--meta .bj-macros__keys {
+.jar-macros__row--meta .jar-macros__keys {
   flex-wrap: wrap;
   row-gap: 0.22rem;
   column-gap: 0.5rem;
@@ -865,16 +951,16 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* ⛔ Quieter than the rows above them. These chords have no answer, so they are
    the least actionable thing in the block — at full strength five of them in a
    row shouted over the five pairs that actually tell you what to press. */
-.bj-macros__row--meta .bj-macros__dead {
+.jar-macros__row--meta .jar-macros__dead {
   font-size: 0.66rem;
   color: color-mix(in srgb, var(--macros-gone) 62%, transparent);
 }
 
-/* ⛔ `.bj-macros__foot` is gone with the row it styled — "Everything else is in
+/* ⛔ `.jar-macros__foot` is gone with the row it styled — "Everything else is in
    the command palette." was a sentence ABOUT the window occupying a row INSIDE
    it, on every open forever. The window explains itself from the info circle in
    its title bar now. */
-.bj-macros__empty {
+.jar-macros__empty {
   flex: 0 0 auto;
   margin: 0;
   padding: 0.5rem 0.65rem;
@@ -887,32 +973,41 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* The count and its glyph. Tabular digits because the number changes on every
    burst of typing, and a widget that nudges the checker sideways as you type is
    the classic status-bar reflow this bar exists not to do. */
-.bj-strip__seg--history {
+.jar-strip__seg--history {
   color: var(--ui-fg-muted);
   min-width: 3.2ch;
   justify-content: flex-end;
 }
 
-.bj-strip__seg--history .bj-strip__mark {
-  font-size: 0.78rem;
-  line-height: 1;
-  opacity: 0.75;
+/* Drawn, not typed: it takes the segment's colour through `currentColor`, so
+   there is exactly one place that decides what this widget looks like. */
+.jar-strip__icon {
+  width: 0.82rem;
+  height: 0.82rem;
+  flex: 0 0 auto;
+  opacity: 0.8;
 }
 
 /* A redo branch is waiting. Not a warning and not an error — it is a fact about
-   where you are standing, so it borrows the same accent the mode segment uses
-   for "something about your keys has changed". */
-.bj-strip__seg--history.is-branched {
-  color: var(--accent-high);
+   where you are standing, so it takes the app's blue accent and nothing louder.
+   ⛔ It must not read as a second error badge sitting beside the checker. */
+.jar-strip__seg--history.is-branched {
+  color: var(--accent-mid);
 }
 
-.bj-strip__seg--history.is-branched .bj-strip__mark { opacity: 1; }
+.jar-strip__seg--history.is-branched .jar-strip__icon { opacity: 1; }
 
 /* Held open: the segment is the panel's handle, so while the panel is up the
-   handle stays lit rather than reverting the moment the pointer leaves. */
-.bj-strip__seg--history.is-open {
+   handle stays lit rather than reverting the moment the pointer leaves.
+   ⛔ Background only where a branch is waiting — lighting the handle must not
+   erase the one thing the colour was carrying. */
+.jar-strip__seg--history.is-open {
   background: var(--header-menu-bg-hover);
   color: var(--ui-fg-strong);
+}
+
+.jar-strip__seg--history.is-open.is-branched {
+  color: var(--accent-mid);
 }
 
 /* Anchored in JS against the bar's rect, exactly like the command line's
@@ -920,7 +1015,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
    with the strip's top border: no bottom border, no bottom corners, no gap. Two
    popups on the same bar floating at different distances from it read as two
    different applications. */
-.bj-hist {
+.jar-hist {
   position: fixed;
   display: flex;
   flex-direction: column;
@@ -934,16 +1029,16 @@ html.bj-strip-owns-status .editor-topbar-controls {
   font-family: var(--sans);
   z-index: 30;
   overflow: hidden;
-  animation: bj-cmdline-rise 140ms ease-out;
+  animation: jar-cmdline-rise 140ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bj-hist { animation: none; }
+  .jar-hist { animation: none; }
 }
 
 /* A caption, not a title bar: the panel is one click deep off a widget you can
    still see, so it does not need a close button or a heavy header. */
-.bj-hist__head {
+.jar-hist__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -952,19 +1047,19 @@ html.bj-strip-owns-status .editor-topbar-controls {
   border-bottom: 1px solid color-mix(in srgb, var(--search-drop-border) 60%, transparent);
 }
 
-.bj-hist__title {
+.jar-hist__title {
   font-size: 0.7rem;
   font-weight: 600;
   color: var(--ui-fg-strong);
 }
 
-.bj-hist__count {
+.jar-hist__count {
   font-size: 0.64rem;
   color: var(--ui-fg-faint);
   white-space: nowrap;
 }
 
-.bj-hist__list {
+.jar-hist__list {
   max-height: 16rem;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -974,7 +1069,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* Full-bleed rows with no radius of their own, same as the candidate list: an
    inset rounded row inside a box reads as a second container. */
-.bj-hist__row {
+.jar-hist__row {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -994,7 +1089,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* What happened. Takes the slack and loses its tail before its neighbours do —
    the tooltip carries the full file list. */
-.bj-hist__label {
+.jar-hist__label {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -1004,7 +1099,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* Where it happened. Quiet: the label already said what, and at this size a
    second full-strength column reads as two competing sentences. */
-.bj-hist__where {
+.jar-hist__where {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -1017,7 +1112,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* When. Fixed width and tabular so the column is a column: ragged timestamps
    turn a scannable list into a paragraph. */
-.bj-hist__when {
+.jar-hist__when {
   flex: 0 0 auto;
   min-width: 2.2rem;
   text-align: right;
@@ -1031,81 +1126,64 @@ html.bj-strip-owns-status .editor-topbar-controls {
    are. The WHOLE row recedes, not just its label — half a row at full strength
    and half faded reads as a rendering fault rather than as a group. They are
    your future, not a mistake, so it is a fade and never a strikethrough. */
-.bj-hist__row.is-ahead { opacity: 0.55; }
+.jar-hist__row.is-ahead { opacity: 0.55; }
 
 /* Pointing at a row is asking "what is this one" — so it comes back to full
    strength whichever side of the marker it is on. */
 @media (hover: hover) and (pointer: fine) {
-  .bj-hist__row:hover {
+  .jar-hist__row:hover {
     background: var(--search-row-hover-bg);
     color: var(--search-row-hover-fg);
     opacity: 1;
   }
 }
 
-.bj-hist__row.is-active {
+.jar-hist__row.is-active {
   background: var(--editor-ac-row-bg);
   color: var(--editor-ac-row-fg);
   opacity: 1;
 }
 
-.bj-hist__row:focus-visible {
+.jar-hist__row:focus-visible {
   outline: 2px solid var(--accent-mid);
   outline-offset: -2px;
 }
 
-/* Where you are standing. A row, not a divider between rows: it is what you
-   click to come back after wandering up into the redo branch, and a marker you
-   cannot use is a marker in the way. */
-.bj-hist__now {
-  position: relative;
+/* Where you are standing: one BAND across the timeline, not four devices
+   stacked on one row.
+   ⛔ It used to carry an edge strip, a dot, uppercase letter-spaced accent text
+   AND a hairline, all at once — four ways of saying the same thing, none of them
+   agreeing about how loud to be. A tinted band between two hairlines is what a
+   position marker in a list looks like: it separates the future from the past by
+   occupying the join, so the separation needs no extra rule of its own. */
+.jar-hist__now {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.26rem 0.6rem;
-  font-size: 0.64rem;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  background: color-mix(in srgb, var(--accent-mid) 9%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--accent-mid) 24%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-mid) 24%, transparent);
+  font-size: 0.63rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--accent-high);
+  letter-spacing: 0.01em;
+  color: var(--accent-mid);
   cursor: default;
 }
 
-/* The accent runs flush to the edge as a pseudo-element rather than a thick
-   border, so the row keeps its own padding and the line keeps its full bleed. */
-.bj-hist__now::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: var(--edge-strip-w);
-  background: var(--accent-high);
-}
-
-.bj-hist__now-dot {
-  width: 0.34rem;
-  height: 0.34rem;
+/* Sentence case. The row is a label on a timeline, not a heading, and shouting
+   it in caps made the quietest fact on screen the loudest thing in the panel. */
+.jar-hist__now-dot {
+  width: 0.3rem;
+  height: 0.3rem;
   border-radius: 50%;
-  background: var(--accent-high);
+  background: currentColor;
   flex: 0 0 auto;
-}
-
-/* The hairline that separates now from the past, drawn from the row so there is
-   no extra element to keep in step. */
-.bj-hist__now::after {
-  content: '';
-  position: absolute;
-  left: 0.6rem;
-  right: 0.6rem;
-  bottom: 0;
-  height: 1px;
-  background: color-mix(in srgb, var(--accent-high) 28%, transparent);
 }
 
 /* The keys, named from the registry so a rebound undo shows the chord the user
    actually has. */
-.bj-hist__foot {
+.jar-hist__foot {
   display: flex;
   align-items: center;
   gap: 0.9rem;
@@ -1113,7 +1191,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   border-top: 1px solid color-mix(in srgb, var(--search-drop-border) 60%, transparent);
 }
 
-.bj-hist__hint {
+.jar-hist__hint {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -1121,7 +1199,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
   color: var(--ui-fg-faint);
 }
 
-.bj-hist__key {
+.jar-hist__key {
   display: inline-block;
   padding: 0.06rem 0.28rem;
   border-radius: 3px;
@@ -1137,7 +1215,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 
 /* A plain edit shows the text it inserted or removed rather than the word
    "Typing" eight times over — see changePreview. Mono, because it is source. */
-.bj-hist__label.is-preview {
+.jar-hist__label.is-preview {
   display: flex;
   align-items: baseline;
   gap: 0.35rem;
@@ -1146,17 +1224,17 @@ html.bj-strip-owns-status .editor-topbar-controls {
 }
 
 /* The sign carries what happened, so the text beside it does not have to. */
-.bj-hist__sign {
+.jar-hist__sign {
   flex: 0 0 auto;
   font-weight: 700;
   opacity: 0.85;
 }
 
-.bj-hist__sign.is-add { color: var(--ide-status-clean); }
-.bj-hist__sign.is-cut { color: var(--ide-status-error); }
-.bj-hist__sign.is-swap { color: var(--accent-high); }
+.jar-hist__sign.is-add { color: color-mix(in srgb, var(--ide-status-clean) 78%, transparent); }
+.jar-hist__sign.is-cut { color: color-mix(in srgb, var(--ide-status-error) 72%, transparent); }
+.jar-hist__sign.is-swap { color: color-mix(in srgb, var(--accent-mid) 80%, transparent); }
 
-.bj-hist__text {
+.jar-hist__text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1166,7 +1244,7 @@ html.bj-strip-owns-status .editor-topbar-controls {
 /* An edit with nothing to show for itself: a newline, a run of indent. Named
    rather than rendered, and quiet, because it is the least interesting row on
    screen and must not read like source. */
-.bj-hist__text.is-faded {
+.jar-hist__text.is-faded {
   font-family: var(--sans);
   font-size: 0.68rem;
   color: var(--ui-fg-faint);

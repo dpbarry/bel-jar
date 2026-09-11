@@ -193,9 +193,6 @@
     var LIBRARY_HINT_DISMISSED_KEY = "beljar-library-hint-dismissed";
     var HINT_DISMISSED_PREFIX = "beljar-hint-dismissed:";
     var RESTORE_PANELS_KEY = "beljar-restore-panels";
-    var ACTIVE_SIDE_PANEL_KEY = "beljar-active-side-panel";
-    var WORKSPACE_KEY = "beljar-workspace-v1";
-    var SIDE_PANEL_IDS = ["explorer", "inspector", "library", "harpoon"];
     var AUTOSAVE_DELAY_KEY = "beljar-autosave-delay";
     var EDITOR_FONT_SIZE_KEY = "beljar-editor-font-size";
     var EDITOR_LINE_HEIGHT_KEY = "beljar-editor-line-height";
@@ -911,8 +908,8 @@
       if (!root && typeof document !== "undefined") root = document.documentElement;
       if (!root) return;
       var mode = readStoredMotionPref();
-      root.classList.toggle("bj-motion-reduce", mode === "reduce");
-      root.classList.toggle("bj-motion-full", mode === "full");
+      root.classList.toggle("jar-motion-reduce", mode === "reduce");
+      root.classList.toggle("jar-motion-full", mode === "full");
     }
     function prefersReducedMotion() {
       var mode = readStoredMotionPref();
@@ -1080,8 +1077,8 @@
       root.style.setProperty("--editor-ligatures", "none");
       backendRemove2("beljar-editor-ligatures");
       var emph = readStoredEditorHoleEmphasis();
-      root.classList.toggle("bj-hole-subtle", emph === "subtle");
-      root.classList.toggle("bj-hole-loud", emph === "loud");
+      root.classList.toggle("jar-hole-subtle", emph === "subtle");
+      root.classList.toggle("jar-hole-loud", emph === "loud");
     }
     var USER_SETTINGS_EXPORT_KEYS = [
       "beljar-theme",
@@ -2559,7 +2556,6 @@
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
         var t = line.trim();
-        var low = t.toLowerCase();
         var isEntry = isCfgEntryLine(t);
         if (!isEntry) {
           out.push(line);
@@ -2752,7 +2748,6 @@
       var targetAt = -1;
       for (var i = 0; i < lines.length; i++) {
         var t = lines[i].trim();
-        var low = t.toLowerCase();
         var isEntry = isCfgEntryLine(t);
         if (!isEntry) continue;
         if ((dir ? dir + "/" + t : t) === fileName) targetAt = entryLineIdx.length;
@@ -3291,7 +3286,10 @@
   function backendSave(key, value) {
     try {
       defaultBackend.saveSync(key, value);
-    } catch (_) {
+      return true;
+    } catch (err) {
+      if (isCapacityError(err)) reportCapacityFailure(classifyPersistError(err));
+      return false;
     }
   }
   function backendRemove(key) {
@@ -3448,9 +3446,17 @@
   var CAPACITY_DEDUPE = "persist.capacity";
   var saveBlocked = false;
   var lastSaveError = null;
+  function isCapacityError(err) {
+    if (!err) return false;
+    if (err.code === "capacity") return true;
+    var name = String(err.name || "");
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
+    if (err.code === 22 || err.code === 1014) return true;
+    return /quota/i.test(String(err.message || ""));
+  }
   function classifyPersistError(err) {
     if (!err) return { code: "unknown", retryable: false, detail: null };
-    if (err.name === "QuotaExceededError" || err.code === "capacity") {
+    if (isCapacityError(err)) {
       return {
         code: "capacity",
         retryable: false,
@@ -3471,8 +3477,10 @@
     };
   }
   function reportCapacityFailure(classified) {
+    var already = saveBlocked;
     saveBlocked = true;
     lastSaveError = classified || { code: "capacity", retryable: false, detail: null };
+    if (already) return;
     if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
       globalThis.Toasts.error("Couldn\u2019t save: storage full.", {
         duration: 0,
@@ -3615,6 +3623,12 @@
     function flushCheckpoint() {
       persistNow();
     }
+    function hasPendingSave() {
+      return saveTimer != null;
+    }
+    function flushCheckpointIfDirty() {
+      if (saveTimer != null) persistNow();
+    }
     function flushEditor() {
       flushCheckpoint();
     }
@@ -3660,6 +3674,8 @@
       replaceEditorText,
       scheduleCheckpointSave: scheduleSave,
       flushCheckpoint,
+      flushCheckpointIfDirty,
+      hasPendingSave,
       flushEditor,
       exportSnapshot,
       importSnapshot,

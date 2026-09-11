@@ -1,6 +1,7 @@
 // The command line's grammar and completion. Pure ESM: no DOM, no registry.
 import { parseCommandLine, tokenAtCaret, lineTarget } from '../js/status-strip/status-strip-parse.mjs';
 import { complete, ghostFor, applyCompletion, score } from '../js/status-strip/status-strip-complete.mjs';
+import { optionCandidates, optionValueCandidates } from '../js/commands/command-settings.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -123,9 +124,72 @@ expect(ap2.text === 'format' && ap2.caret === 6, 'and works on the command name'
 const ap3 = applyCompletion('e ', 2, 'main.bel');
 expect(ap3.text === 'e main.bel', 'inserting into an empty slot appends', ap3.text);
 
+// ── ⛔ the completer must know the grammar the PARSER already implements ──────
+//
+// `parseSet` has always understood `nu`, `nonu`, `nu!` and `ts=4`, and
+// `parseCommandLine` has always split the bang off `w!`. The completer knew
+// none of it, and the line's red "unknown" tint is driven by *the candidate
+// list being empty* — so a perfectly valid line, mid-typing, went red and its
+// list said "No matching command":
+//
+//     :set ts=     ← the instant the `=` was typed
+//     :w!          ← the most-typed ex command there is
+//
+// One grammar, two halves, and only one of them knew it.
+{
+  const settingsCommands = () => [
+    { value: 'set', label: 'Set Option', aliases: ['se'], args: [{ kind: 'option' }] },
+    { value: 'w', label: 'Save Now', aliases: ['write'], args: [] },
+    { value: 'e', label: 'Open File', aliases: ['edit'], args: [{ kind: 'file' }] },
+  ];
+  const gsrc = {
+    commands: settingsCommands,
+    files: () => [{ value: 'util.bel' }],
+    options: () => optionCandidates(),
+    optionValues: (n) => optionValueCandidates(n),
+  };
+  const at = (line) => complete(line, line.length, gsrc);
+
+  // `:set ts=` — the screenshot bug.
+  const eq = at('set ts=');
+  expect(eq.kind === 'option-value', '`set ts=` completes a VALUE, not a command name', eq.kind);
+  expect(eq.items.map((i) => i.value).join(',') === '2,4',
+    'and offers that setting own values', eq.items.map((i) => i.value).join(','));
+  expect(eq.known === true, 'and the line is KNOWN — `set` is a real command');
+  expect(at('set ts=4').items.length === 1, '`set ts=4` narrows to the value typed');
+  expect(at('set ts=9').known === true,
+    'a value that does not exist does not make the COMMAND unknown');
+
+  // The value completion replaces only the value.
+  const applied = applyCompletion('set ts=', 7, '4', eq.token);
+  expect(applied.text === 'set ts=4' && applied.caret === 8,
+    'accepting a value keeps `set ts=` in front of it', JSON.stringify(applied));
+
+  // `:w!` — the bang is grammar, not part of the name.
+  const bang = at('w!');
+  expect(bang.items.length === 1 && bang.items[0].value === 'w',
+    '`w!` still finds `w` — the bang is grammar', JSON.stringify(bang.items));
+  expect(at('set nu!').items.length > 0, 'and so is a bang on an option');
+  const nameToken = at('set nu!').token;
+  expect(applyCompletion('set nu!', 7, 'line-numbers', nameToken).text === 'set line-numbers!',
+    'completing a banged option keeps the bang');
+
+  // vi negation completes, because `parseSet` accepts it.
+  const neg = at('set nonu');
+  expect(neg.items.some((i) => i.value === 'nonumber' || i.value === 'nonu'),
+    '`set nonu` offers the negated forms', neg.items.slice(0, 3).map((i) => i.value).join(','));
+  expect(optionValueCandidates('wrap').length === 0,
+    'a boolean offers no `=` values — `:set wrap=true` is not vi');
+
+  // An argument that matches nothing is still not an unknown COMMAND.
+  expect(at('e nosuch').known === true, 'a missing file does not make `:e` unknown');
+  expect(at('set zzz').known === true, 'a missing option does not make `:set` unknown');
+  expect(at('zzz').known === undefined, 'slot 0 has no name to be known yet');
+}
+
 import { blurRestoreOnClose } from '../js/status-strip/status-strip-line-ui.mjs';
 
 expect(blurRestoreOnClose(true) === true, 'search blur restores selection');
 expect(blurRestoreOnClose(false) === false, 'command blur does not restore');
 
-console.log('OK status strip line (grammar, caret slots, argument-aware completion, ghost text)');
+console.log('OK status strip line (grammar, caret slots, `:set` and bang grammar, ghost text)');

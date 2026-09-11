@@ -9,6 +9,7 @@
 import './repl/run-progress.mjs';
 import './persist/persist.mjs';
 import './persist/install-edit-history.mjs';
+import './persist/tab-guard.mjs';
 import './commands/command-registry.mjs';
 import './status-strip/status-strip-view.mjs';
 import './ui/keybindings.mjs';
@@ -40,8 +41,8 @@ import './repl/repl-run-cmd.mjs';
 import './repl/repl-autocomplete.mjs';
 import './repl/repl-commands.mjs';
 import './repl/repl-persist.mjs';
-import './ui/bj-toggle.mjs';
-import './ui/bj-dropdown.mjs';
+import './ui/jar-toggle.mjs';
+import './ui/jar-dropdown.mjs';
 import './ui/settings-ui.mjs';
 import './harpoon/harpoon-ui.mjs';
 import './beluga/beluga-run-boot.mjs';

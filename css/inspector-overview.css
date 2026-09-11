@@ -38,7 +38,7 @@
   white-space: nowrap;
 }
 
-/* Soft, lower-saturation take on the editor's bel-hl palette. */
+/* Soft, lower-saturation take on the editor's jar-hl palette. */
 .inspector-outline-row[data-ns="lf-type-family"] { --ns-color: light-dark(hsl(266, 48%, 52%), hsl(264, 52%, 77%)); }
 .inspector-outline-row[data-ns="typedef"]        { --ns-color: light-dark(hsl(272, 50%, 50%), hsl(266, 58%, 79%)); }
 .inspector-outline-row[data-ns="comp-type"]      { --ns-color: light-dark(hsl(212, 58%, 47%), hsl(210, 60%, 74%)); }

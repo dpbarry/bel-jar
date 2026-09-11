@@ -51,11 +51,26 @@ export const EMACS_LINE_DOWN_KEY = 'C-m';
 /**
  * Replit's emacs package registers keys at module load behind @__PURE__ bindKey calls;
  * esbuild minify drops them. Re-bind here so C-f/C-n/etc. actually work.
+ *
+ * ⛔ ORDER, not content, is what makes undo work here. This walks EVERY spec the
+ * package ships — including `'C-/|C-x u|S-C--|C-z'` and its redo twin, which the
+ * package binds to its own history — so anything bound before it is liable to be
+ * rebound by it. `ensureEmacsUndoBridge` used to run first, and this quietly put
+ * the package's binding back over BelJar's: every undo key then drove
+ * CodeMirror's parallel history, reverting the document behind our back while the
+ * edit history never saw it. `buildKeymapStyleExtensions` calls this FIRST now.
+ *
+ * ⚠ The `null` guard below is defensiveness, not a description: at 6.1.0 all 62
+ * specs carry a command (`tests/test-emacs-keys.mjs` pins the table). If a
+ * version ever does ship a deliberately-unbound spec, binding it to `null` would
+ * register it as handled-by-nothing and shadow whatever we put there — so it is
+ * skipped rather than bound.
  */
 export function ensureEmacsKeys() {
   if (emacsKeysBound) return;
   emacsKeysBound = true;
   for (const spec of Object.keys(emacsKeys)) {
+    if (!emacsKeys[spec]) continue;
     EmacsHandler.bindKey(spec, emacsKeys[spec]);
   }
   applyBeljarEmacsOverrides();
@@ -104,6 +119,17 @@ let emacsChainAtKeydown = '';
  */
 export function emacsMarkSet() {
   return !!(lastEmacsHandler && lastEmacsHandler.$emacsMark);
+}
+
+/**
+ * The handler that last saw a key — the only reachable one.
+ *
+ * The package's plugin is not exported, so there is no way to ask a view for
+ * its handler; `handleKeyboard` is wrapped on the prototype already, so this is
+ * where the instance can be caught. Macro replay feeds keys back through it.
+ */
+export function activeEmacsHandler() {
+  return lastEmacsHandler;
 }
 
 /**
@@ -247,7 +273,9 @@ export function emacsChromeTheme() {
   }));
 }
 
-/** Emacs gets the same hint Vim does — `C-x` and `C-c` are prefixes too. */
+/** Emacs gets the same hint Vim does — `C-x`, `C-c` and `M-g` are prefixes too. */
 export function emacsWhichKeyHint(chain) {
-  return whichKeyHint(chain, emacsMaps(emacsBindings.CX_MAP, emacsBindings.CC_MAP));
+  return whichKeyHint(chain, emacsMaps(
+    emacsBindings.CX_MAP, emacsBindings.CC_MAP, emacsBindings.MG_MAP,
+  ));
 }

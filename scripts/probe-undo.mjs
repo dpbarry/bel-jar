@@ -405,6 +405,293 @@ try {
   check(redeleted.editorDocId === redeleted.activeId && redeleted.editorText === redeleted.persistText,
     'leaving the buffer on a file that exists');
 
+  // ── 11. the ⟲ widget and the history panel ───────────────────────────────
+  //
+  // The widget counts the live stack, and the panel travels through the REAL
+  // undo/redo rather than reconstructing a state — every guarantee the history
+  // makes lives in those two calls.
+  const widget = () => page.evaluate(() => {
+    const el = document.querySelector('.jar-strip__seg--history');
+    if (!el) return null;
+    const segs = [...document.querySelectorAll('.jar-strip__seg')].map((e) => e.className);
+    const h = segs.findIndex((c) => c.includes('--history'));
+    return {
+      text: el.querySelector('.jar-strip__label')?.textContent || '',
+      hasIcon: !!el.querySelector('.jar-strip__icon'),
+      // ⛔ `.jar-strip__mark` is the goal's turnstile and carries the holes
+      // magenta; borrowing it painted this widget bright pink.
+      borrowsGoalMark: !!el.querySelector('.jar-strip__mark'),
+      colour: getComputedStyle(el).color,
+      branched: el.classList.contains('is-branched'),
+      leftOfChecker: h >= 0 && (segs[h + 1] || '').includes('--checker'),
+      expanded: el.getAttribute('aria-expanded'),
+    };
+  });
+
+  await page.evaluate(() => { while (EditHistory.redo()) { /* back to the tip */ } });
+  await wait(400);
+  // A recognisable typed step, so the panel has something to preview.
+  await page.click('.cm-content');
+  await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+    v.focus();
+  });
+  await type('rec zebra', 500);
+  const w0 = await widget();
+  check(w0, 'the strip carries a history widget');
+  check(w0.leftOfChecker, 'directly left of the checker segment');
+  check(w0.hasIcon && !w0.borrowsGoalMark,
+    'it draws its own icon rather than borrowing the goal turnstile');
+  check(w0.text === String((await snap()).undo),
+    `it counts the live undo stack (says ${w0.text})`);
+  check(!w0.branched, 'and is not flagged as branched at the tip of history');
+
+  await page.click('.jar-strip__seg--history');
+  await wait(700);
+  const panel = await page.evaluate(() => {
+    const el = document.querySelector('.jar-hist');
+    if (!el) return null;
+    const p = el.getBoundingClientRect();
+    const b = document.querySelector('.jar-strip').getBoundingClientRect();
+    const seg = document.querySelector('.jar-strip__seg--history').getBoundingClientRect();
+    return {
+      rows: document.querySelectorAll('.jar-hist__row').length,
+      nowRows: document.querySelectorAll('.jar-hist__now').length,
+      caption: document.querySelector('.jar-hist__count')?.textContent || '',
+      keys: [...document.querySelectorAll('.jar-hist__key')].map((k) => k.textContent),
+      // Shares the strip's top border as its bottom edge, right-aligned to the
+      // widget it belongs to.
+      gapToStrip: Math.round(b.top - p.bottom),
+      rightAligned: Math.abs(p.right - seg.right) <= 1,
+      previews: [...document.querySelectorAll('.jar-hist__label.is-preview')].length,
+      // The row directly under the marker is the most recent step.
+      topPreview: (() => {
+        const rows = [...document.querySelectorAll('.jar-hist__row')];
+        const first = rows.find((r) => !r.classList.contains('is-ahead'));
+        return first ? first.textContent : '';
+      })(),
+    };
+  });
+  check(panel, 'clicking the widget opens the panel');
+  check(panel.gapToStrip === 0, 'it sits flush on the strip, not floating above it',
+    `gap ${panel.gapToStrip}px`);
+  check(panel.rightAligned, 'and right-aligns to the widget it grew out of');
+  check(panel.nowRows === 1, 'exactly one current-position marker');
+  check(panel.rows === (await snap()).undo, 'one row per step on the stack',
+    `${panel.rows} rows vs ${(await snap()).undo} steps`);
+  check(panel.previews > 0, 'typed steps show the text they typed, not the word "Typing"');
+  check(panel.topPreview.indexOf('zebra') >= 0,
+    'and the newest row shows the text just typed', JSON.stringify(panel.topPreview));
+  check(panel.keys.length === 2 && panel.keys.every(Boolean),
+    'the footer names real chords for undo and redo', JSON.stringify(panel.keys));
+  check((await widget()).expanded === 'true', 'the widget reports itself expanded');
+
+  // ⛔ `bindTooltips()` sweeps `[data-tooltip]` once at boot and is not
+  // delegated, so everything the strip builds later has to bind itself. Nothing
+  // did: no strip segment tooltip had ever appeared, including the goal's, which
+  // is the only place the untruncated type is shown.
+  const tipShows = async (sel) => {
+    await page.mouse.move(400, 300);
+    await wait(300);
+    const el = await page.$(sel);
+    if (!el) return '';
+    await el.hover();
+    await wait(900);
+    return page.evaluate(() => {
+      const t = document.querySelector('.jar-tooltip, [class*=tooltip]');
+      return t && getComputedStyle(t).display !== 'none' ? (t.textContent || '').trim() : '';
+    });
+  };
+  check((await tipShows('.jar-hist__row')).length > 0,
+    'a panel row binds its own tooltip rather than relying on the boot sweep');
+  check((await tipShows('.jar-strip__seg--checker')).length > 0,
+    'and so does every strip segment');
+
+  // Travelling: clicking the third step back must apply three real undos.
+  const before = await snap();
+  await page.evaluate(() => {
+    const r = [...document.querySelectorAll('.jar-hist__row')].filter((x) => !x.classList.contains('is-ahead'))[2];
+    if (r) r.click();
+  });
+  await wait(900);
+  const after = await snap();
+  check(after.undo === before.undo - 3, 'clicking the third row back undoes exactly three steps',
+    `${before.undo} -> ${after.undo}`);
+  check(after.redo === before.redo + 3, 'and the three land on the redo stack');
+  const w1 = await widget();
+  check(w1.branched, 'the widget flags the waiting redo branch');
+  check(w1.text === String(after.undo), 'and re-counts without waiting for a caret move');
+  const aheadRows = await page.evaluate(() =>
+    document.querySelectorAll('.jar-hist__row.is-ahead').length);
+  check(aheadRows === 3, 'the panel shows three steps ahead of the marker', String(aheadRows));
+
+  // Escape closes; the widget stops claiming to be open.
+  await page.keyboard.press('Escape');
+  await wait(400);
+  check(!(await page.evaluate(() => !!document.querySelector('.jar-hist'))), 'Escape closes the panel');
+  check((await widget()).expanded === 'false', 'and the widget stops reporting itself expanded');
+
+  // The command layer reaches the same panel.
+  await page.evaluate(() => Commands.run('view.edit-history'));
+  await wait(600);
+  check(await page.evaluate(() => !!document.querySelector('.jar-hist')),
+    'view.edit-history opens the same panel');
+  await page.keyboard.press('Escape');
+  await wait(300);
+
+  // ── 12. undoing back to a clean file leaves NO phantom diagnostic ────────
+  //
+  // ⛔ Reported as "phantom errors like this should be patently impossible".
+  // Settlement's frontier-empty fast path carried the previous findings forward
+  // whenever the dirty frontier was empty — and an undo replaces the whole
+  // document at once, which can leave nothing marked dirty. The error from
+  // before the undo was stamped as a fresh `ready` verdict on a file that no
+  // longer contained it, and nothing re-checked, so it survived until the file
+  // was closed and reopened.
+  //
+  // The check is on the CHECKER's own snapshot, not just the error count: a
+  // snapshot reporting `ok` while still holding a diagnostic is the shape of the
+  // bug, and counting alone would miss it.
+  await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: ['LF nat : type =', '| z : nat', ';', ''].join(String.fromCharCode(10)) } });
+    v.focus();
+    EditHistory.swapProject('probe-phantom-' + Math.random().toString(36).slice(2));
+  });
+  await wait(4000);
+  const clean = await page.evaluate(() => CurrentEditor.getIdeStatus().errors);
+  check(clean === 0, 'the base file checks clean', String(clean));
+
+  await page.click('.cm-content');
+  await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+  });
+  await type('LF bad : type = | q : nosuchtype;', 600);
+  await wait(6000);
+  check((await page.evaluate(() => CurrentEditor.getIdeStatus().errors)) > 0,
+    'the broken edit reports an error');
+
+  await page.evaluate(() => { let n = 0; while (EditHistory.undo() && n++ < 200) { /* to the start */ } });
+  await wait(6000);
+  const afterUndoAll = await page.evaluate(() => {
+    const snap = CurrentEditor.getSemanticEngine?.()?.getSnapshot?.() || null;
+    return {
+      errors: CurrentEditor.getIdeStatus().errors,
+      ok: snap ? snap.checker.ok : null,
+      diags: snap ? (snap.checker.belugaDiagnostics || []).length : -1,
+      stale: snap ? (snap.checker.belugaDiagnostics || []).filter((d) => d.stale).length : -1,
+      state: snap ? snap.checker.state : null,
+    };
+  });
+  check(afterUndoAll.errors === 0, 'undoing every edit leaves no phantom error',
+    JSON.stringify(afterUndoAll));
+  check(afterUndoAll.diags === 0, 'and the checker holds no leftover diagnostic',
+    JSON.stringify(afterUndoAll));
+  check(!(afterUndoAll.state === 'ready' && afterUndoAll.stale > 0),
+    'a ready verdict never carries an unverified finding', JSON.stringify(afterUndoAll));
+  check(!(afterUndoAll.ok === true && afterUndoAll.diags > 0),
+    'the checker never reports ok while holding diagnostics', JSON.stringify(afterUndoAll));
+
+  // ── 13. renaming a file is a STEP, through the real explorer UI ──────────
+  //
+  // ⛔ The worst shape a missing step can take. A rename keeps the id and
+  // changes the name, so nothing in an entry could see it and `diffWorkspace`
+  // recorded NOTHING — the Ctrl+Z a user presses to take a rename back reached
+  // past it and silently reverted their last EDIT, while the rename stood. A
+  // step that cannot be represented is worse than one that is refused: it makes
+  // the key next to it lie.
+  //
+  // Driven through the context menu, not through `Persist.renameFile` — the
+  // engine could record renames for a week while the call site stayed unwrapped.
+  await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: '' } });
+    EditHistory.swapProject('probe-rename-' + Math.random().toString(36).slice(2));
+  });
+  await wait(1500);
+  await page.click('.cm-content');
+  await type('RENAME PROBE TEXT', 500);
+  await wait(700);
+  const beforeRename = await page.evaluate(() => ({
+    name: Persist.getFileById(Persist.getActiveFileId()).name,
+    undo: EditHistory.getUndoStack().length,
+    doc: CurrentEditor.getValue(),
+  }));
+  check(beforeRename.undo >= 1, 'the typing that precedes the rename is on the stack',
+    JSON.stringify(beforeRename));
+
+  await page.evaluate(() => Commands.run('view.explorer'));
+  await wait(900);
+  // ⚠ The row for the file the EDITOR is on, by id — not `querySelector`'s
+  // first row. Earlier phases leave several files in the project, and renaming
+  // whichever happened to sort first measures nothing about the file under test.
+  const rowBox = await page.evaluate(() => {
+    const want = Persist.getActiveFileId();
+    const el = [...document.querySelectorAll('.explorer-file-item')]
+      .find((n) => n.getAttribute('data-file-id') === want);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, id: want };
+  });
+  check(!!rowBox, 'the explorer shows the file the editor is on');
+  if (rowBox) {
+    await page.mouse.click(rowBox.x, rowBox.y, { button: 'right' });
+    await wait(450);
+    const opened = await page.evaluate(() => {
+      const items = [...document.querySelectorAll('[role="menuitem"], .menu-item, .jar-menu-item')];
+      const hit = items.find((e) => /rename/i.test(e.textContent || ''));
+      if (!hit) return false;
+      hit.click();
+      return true;
+    });
+    check(opened, 'and its context menu offers Rename');
+    await wait(500);
+    await page.keyboard.down('Control');
+    await page.keyboard.press('KeyA');
+    await page.keyboard.up('Control');
+    await page.keyboard.type('renamed-by-probe.bel');
+    await page.keyboard.press('Enter');
+    await wait(1000);
+
+    const renamed = await page.evaluate((id) => ({
+      name: Persist.getFileById(id).name,
+      undo: EditHistory.getUndoStack().length,
+      top: EditHistory.getUndoStack().slice(-1).map((e) => ({
+        kind: e.kind,
+        renamed: (e.structural && e.structural.renamed) || [],
+      }))[0] || null,
+      doc: CurrentEditor.getValue(),
+    }), rowBox.id);
+    check(/renamed-by-probe\.bel$/.test(renamed.name), 'the rename landed', renamed.name);
+    check(renamed.undo === beforeRename.undo + 1,
+      'and it pushed exactly ONE step', JSON.stringify({ was: beforeRename.undo, now: renamed.undo }));
+    check(renamed.top && renamed.top.renamed.length === 1,
+      'the step carries the rename itself, not a delete plus a create',
+      JSON.stringify(renamed.top));
+
+    await page.click('.cm-content');
+    await undoOnce();
+    await wait(900);
+    const back = await page.evaluate((id) => ({
+      name: Persist.getFileById(id).name,
+      doc: CurrentEditor.getValue(),
+    }), rowBox.id);
+    check(back.name === beforeRename.name, 'undo puts the NAME back', JSON.stringify(back));
+    // ⛔ The half that was actually broken: the text must be untouched.
+    check(back.doc === beforeRename.doc,
+      'and leaves the text alone — it used to revert the previous edit instead',
+      JSON.stringify({ want: beforeRename.doc, got: back.doc }));
+
+    await redoOnce();
+    await wait(900);
+    const again = await page.evaluate((id) => Persist.getFileById(id).name, rowBox.id);
+    check(/renamed-by-probe\.bel$/.test(again), 'redo renames it again', again);
+    await undoOnce();
+    await wait(700);
+  }
+
   check((await toasts()).length === 0, 'the whole probe raised no toasts');
 } catch (e) {
   crash = e;

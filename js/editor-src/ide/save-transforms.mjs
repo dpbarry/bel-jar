@@ -1,7 +1,44 @@
 /** Save-time text transforms for .bel autosave. */
 
-import { Transaction } from '@codemirror/state';
+import { EditorSelection, Transaction } from '@codemirror/state';
 import { formatDocument } from '../format/document-format.mjs';
+
+/**
+ * The trailing-whitespace runs to delete, as MINIMAL edits.
+ *
+ * ⛔ Not a whole-document replacement. A `{from: 0, to: len}` change maps every
+ * position inside it to one end of the replacement, so trimming sent the caret
+ * to offset 0 — the top of the file — on every autosave that found a stray
+ * space. Autosave runs while you are typing, so turning the preference on moved
+ * the caret to line 1 roughly once a second. Deleting only the runs leaves the
+ * caret where it was, because nothing it sits in front of moved.
+ *
+ * ⛔ `protectedLines` is not an optimisation either. Autosave fires mid-word:
+ * type `foo `, let the debounce land, and the space you were about to build on
+ * is gone — so the next keystroke gives `foobar`. An editor that autosaves must
+ * not trim the line a cursor is on.
+ */
+export function trailingWhitespaceEdits(doc, protectedLines = null) {
+  const edits = [];
+  for (let i = 1; i <= doc.lines; i += 1) {
+    if (protectedLines && protectedLines.has(i)) continue;
+    const line = doc.line(i);
+    const m = /[ \t]+$/.exec(line.text);
+    if (!m) continue;
+    edits.push({ from: line.from + m.index, to: line.to });
+  }
+  return edits;
+}
+
+/** Every line a cursor or a selection end sits on. */
+export function linesUnderSelection(state) {
+  const lines = new Set();
+  for (const r of state.selection.ranges) {
+    lines.add(state.doc.lineAt(r.head).number);
+    lines.add(state.doc.lineAt(r.anchor).number);
+  }
+  return lines;
+}
 
 export function trimTrailingWhitespace(text) {
   const s = String(text != null ? text : '');
@@ -36,11 +73,10 @@ export function applySaveTransforms(view, filePath) {
 
   let changed = false;
   if (trimOn) {
-    const cur = view.state.doc.toString();
-    const next = trimTrailingWhitespace(cur);
-    if (next !== cur) {
+    const edits = trailingWhitespaceEdits(view.state.doc, linesUnderSelection(view.state));
+    if (edits.length) {
       view.dispatch({
-        changes: { from: 0, to: cur.length, insert: next },
+        changes: edits,
         annotations: Transaction.addToHistory.of(false),
       });
       changed = true;
@@ -48,10 +84,18 @@ export function applySaveTransforms(view, filePath) {
   }
   if (formatOn) {
     try {
+      // ⛔ Carry the caret. A format IS a whole-document replacement — there is
+      // no minimal edit to make — so the selection has to be stated, or it maps
+      // to offset 0 exactly as the trim did. This is the same clamp
+      // `formatCommand` uses for the explicit Format Document action; the two
+      // paths must not disagree about where the caret ends up.
+      const head = view.state.selection.main.head;
       const change = formatDocument(view.state);
       if (change) {
+        const newLen = String(change.changes.insert ?? '').length;
         view.dispatch({
           ...change,
+          selection: EditorSelection.cursor(Math.min(head, newLen)),
           annotations: Transaction.addToHistory.of(false),
         });
         changed = true;

@@ -19,7 +19,7 @@ expect(typeof Dialog.findSurfaceSearchInput === 'function', 'Dialog.findSurfaceS
 expect(typeof Dialog.focusSurfaceSearch === 'function', 'Dialog.focusSurfaceSearch exists');
 expect(typeof PromptDialog.open === 'function', 'PromptDialog.open exists');
 expect(typeof PromptDialog.buildActions === 'function', 'PromptDialog.buildActions exists');
-expect(PromptDialog.CARD_CLASS.includes('bj-prompt-dialog__card'), 'shared card class');
+expect(PromptDialog.CARD_CLASS.includes('jar-prompt-dialog__card'), 'shared card class');
 expect(typeof ConfirmDialog.confirm === 'function', 'ConfirmDialog.confirm exists');
 
 {
@@ -52,7 +52,7 @@ expect(typeof ConfirmDialog.confirm === 'function', 'ConfirmDialog.confirm exist
   let range = null;
   Dialog.focusSurfaceSearch({
     value: '%foo',
-    classList: { contains(c) { return c === 'bel-palette-input'; } },
+    classList: { contains(c) { return c === 'jar-palette-input'; } },
     focus() {},
     setSelectionRange(a, b) { range = [a, b]; },
   });

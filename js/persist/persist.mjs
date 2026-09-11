@@ -226,10 +226,25 @@ var SCHEMA_VERSION = 3;
     return defaultBackend.loadSync(key);
   }
 
+  /**
+   * ⛔ A swallowed metadata write is a lost file.
+   *
+   * This is the path the project registry, the open-tab list, the empty-folder
+   * list and every preference go through. `writeState` (document text) already
+   * reports a full quota; this one used to eat it, so on a full disk a file the
+   * user had just created never reached the registry and vanished on reload
+   * with nothing said. Route capacity through the same report — everything else
+   * still stays quiet, because a preference that failed to save is not worth
+   * interrupting anyone over.
+   */
   function backendSave(key, value) {
     try {
       defaultBackend.saveSync(key, value);
-    } catch (_) {}
+      return true;
+    } catch (err) {
+      if (isCapacityError(err)) reportCapacityFailure(classifyPersistError(err));
+      return false;
+    }
   }
 
   function backendRemove(key) {
@@ -413,9 +428,29 @@ var SCHEMA_VERSION = 3;
   var saveBlocked = false;
   var lastSaveError = null;
 
+  /**
+   * ⛔ "Storage is full" is not spelled the same way twice.
+   *
+   * Chrome and Safari throw `QuotaExceededError`; Firefox throws
+   * `NS_ERROR_DOM_QUOTA_REACHED`, and the legacy numeric codes (22, and
+   * Firefox's 1014) still come through on older engines. Matching only the
+   * Chrome name meant a full quota classified as `unknown` on Firefox — which
+   * skips `reportCapacityFailure` entirely, so the user was never told that
+   * every keystroke since had stopped reaching disk. Silent data loss, in the
+   * one browser we did not name.
+   */
+  function isCapacityError(err) {
+    if (!err) return false;
+    if (err.code === 'capacity') return true;
+    var name = String(err.name || '');
+    if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return true;
+    if (err.code === 22 || err.code === 1014) return true;
+    return /quota/i.test(String(err.message || ''));
+  }
+
   function classifyPersistError(err) {
     if (!err) return { code: 'unknown', retryable: false, detail: null };
-    if (err.name === 'QuotaExceededError' || err.code === 'capacity') {
+    if (isCapacityError(err)) {
       return {
         code: 'capacity',
         retryable: false,
@@ -437,8 +472,15 @@ var SCHEMA_VERSION = 3;
   }
 
   function reportCapacityFailure(classified) {
+    // ⛔ Once. The toast is deliberately `duration: 0` — a full disk is not
+    // something to glance at and lose — and autosave retries on every debounce
+    // tick, so reporting per failure buried the screen in a stack of identical
+    // undismissable toasts within a minute of the quota filling. The
+    // notification dedupes on its key; the toast has to dedupe on this flag.
+    var already = saveBlocked;
     saveBlocked = true;
     lastSaveError = classified || { code: 'capacity', retryable: false, detail: null };
+    if (already) return;
     if (typeof globalThis.Toasts !== 'undefined' && globalThis.Toasts.error) {
       globalThis.Toasts.error('Couldn’t save: storage full.', {
         duration: 0,
@@ -610,6 +652,24 @@ var SCHEMA_VERSION = 3;
       persistNow();
     }
 
+    /**
+     * Is there an edit that has not reached storage yet?
+     *
+     * ⛔ `persistNow` writes UNCONDITIONALLY — it bumps the revision and
+     * re-serialises the whole checkpoint whether or not anything moved. That is
+     * right for the once-per-session unload hooks, and wrong for anything that
+     * fires repeatedly: a clean tab rewriting the document every time the user
+     * alt-tabs is pure waste, and with two tabs open on one project it is the
+     * clean one overwriting the other's work.
+     */
+    function hasPendingSave() {
+      return saveTimer != null;
+    }
+
+    function flushCheckpointIfDirty() {
+      if (saveTimer != null) persistNow();
+    }
+
     /** @deprecated use flushCheckpoint */
     function flushEditor() {
       flushCheckpoint();
@@ -668,6 +728,8 @@ var SCHEMA_VERSION = 3;
       replaceEditorText: replaceEditorText,
       scheduleCheckpointSave: scheduleSave,
       flushCheckpoint: flushCheckpoint,
+      flushCheckpointIfDirty: flushCheckpointIfDirty,
+      hasPendingSave: hasPendingSave,
       flushEditor: flushEditor,
       exportSnapshot: exportSnapshot,
       importSnapshot: importSnapshot,
@@ -784,21 +846,9 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.writeStoredAliasPairs.apply(_settingsApi, arguments);
   }
 
-  function readBoolDefaultOn() {
-    return _settingsApi.readBoolDefaultOn.apply(_settingsApi, arguments);
-  }
 
-  function writeBoolDefaultOn() {
-    return _settingsApi.writeBoolDefaultOn.apply(_settingsApi, arguments);
-  }
 
-  function readBoolDefaultOff() {
-    return _settingsApi.readBoolDefaultOff.apply(_settingsApi, arguments);
-  }
 
-  function writeBoolDefaultOff() {
-    return _settingsApi.writeBoolDefaultOff.apply(_settingsApi, arguments);
-  }
 
   function readStoredReplAutoscroll() {
     return _settingsApi.readStoredReplAutoscroll.apply(_settingsApi, arguments);
@@ -1214,9 +1264,6 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.resetAliasesPrefs.apply(_settingsApi, arguments);
   }
 
-  function isAliasExpandablePath() {
-    return _settingsApi.isAliasExpandablePath.apply(_settingsApi, arguments);
-  }
 
   function fileNameForId() {
     return _settingsApi.fileNameForId.apply(_settingsApi, arguments);
@@ -1230,9 +1277,6 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.expandAliasesInAllFiles.apply(_settingsApi, arguments);
   }
 
-  function explorerFoldKey() {
-    return _settingsApi.explorerFoldKey.apply(_settingsApi, arguments);
-  }
 
   function getExplorerFold() {
     return _settingsApi.getExplorerFold.apply(_settingsApi, arguments);
@@ -1271,13 +1315,7 @@ var SCHEMA_VERSION = 3;
     return _layoutApi.workspaceKeyFor.apply(_layoutApi, arguments);
   }
 
-  function activeSidePanelKey() {
-    return _layoutApi.activeSidePanelKey.apply(_layoutApi, arguments);
-  }
 
-  function migrateActiveSidePanelFromLegacy() {
-    return _layoutApi.migrateActiveSidePanelFromLegacy.apply(_layoutApi, arguments);
-  }
 
   function readStoredActiveSidePanel() {
     return _layoutApi.readStoredActiveSidePanel.apply(_layoutApi, arguments);
@@ -1319,25 +1357,10 @@ var SCHEMA_VERSION = 3;
     return _layoutApi.writeStoredEditorSplit.apply(_layoutApi, arguments);
   }
 
-  function clampPanelPx() {
-    return _layoutApi.clampPanelPx.apply(_layoutApi, arguments);
-  }
 
-  function readStoredSidePanelWidth() {
-    return _layoutApi.readStoredSidePanelWidth.apply(_layoutApi, arguments);
-  }
 
-  function writeStoredSidePanelWidth() {
-    return _layoutApi.writeStoredSidePanelWidth.apply(_layoutApi, arguments);
-  }
 
-  function readStoredSidePanelHeight() {
-    return _layoutApi.readStoredSidePanelHeight.apply(_layoutApi, arguments);
-  }
 
-  function writeStoredSidePanelHeight() {
-    return _layoutApi.writeStoredSidePanelHeight.apply(_layoutApi, arguments);
-  }
 
   function readStoredExplorerWidth() {
     return _layoutApi.readStoredExplorerWidth.apply(_layoutApi, arguments);
@@ -1477,9 +1500,6 @@ var SCHEMA_VERSION = 3;
     return _graphPrefsApi.normalizeGraphPrefs(raw);
   }
 
-  function migrateLegacyGraphPrefs() {
-    return _graphPrefsApi.migrateLegacyGraphPrefs();
-  }
 
   function readStoredGraphPrefs() {
     return _graphPrefsApi.readStoredGraphPrefs();
@@ -1507,17 +1527,8 @@ var SCHEMA_VERSION = 3;
       replaceProject: function (entries, options) { return replaceProject(entries, options); },
     });
 
-  function readProjects() {
-    return _projectsApi.readProjects();
-  }
 
-  function writeProjects(projects) {
-    return _projectsApi.writeProjects(projects);
-  }
 
-  function ensureProjects() {
-    return _projectsApi.ensureProjects();
-  }
 
   function listProjects() {
     return _projectsApi.listProjects();
@@ -1579,17 +1590,8 @@ var SCHEMA_VERSION = 3;
     return _fileRegistryApi.readProjectFiles.apply(_fileRegistryApi, arguments);
   }
 
-  function writeProjectFiles() {
-    return _fileRegistryApi.writeProjectFiles.apply(_fileRegistryApi, arguments);
-  }
 
-  function readEmptyFolders() {
-    return _fileRegistryApi.readEmptyFolders.apply(_fileRegistryApi, arguments);
-  }
 
-  function writeEmptyFolders() {
-    return _fileRegistryApi.writeEmptyFolders.apply(_fileRegistryApi, arguments);
-  }
 
   function listEmptyFolders() {
     return _fileRegistryApi.listEmptyFolders.apply(_fileRegistryApi, arguments);
@@ -1615,29 +1617,11 @@ var SCHEMA_VERSION = 3;
     return _fileRegistryApi.renameEmptyFolderPrefix.apply(_fileRegistryApi, arguments);
   }
 
-  function pruneEmptyFoldersForFile() {
-    return _fileRegistryApi.pruneEmptyFoldersForFile.apply(_fileRegistryApi, arguments);
-  }
 
-  function folderSubtreeOccupied() {
-    return _fileRegistryApi.folderSubtreeOccupied.apply(_fileRegistryApi, arguments);
-  }
 
-  function preserveEmptyFoldersAfterPath() {
-    return _fileRegistryApi.preserveEmptyFoldersAfterPath.apply(_fileRegistryApi, arguments);
-  }
 
-  function isPrefixUnderAny() {
-    return _fileRegistryApi.isPrefixUnderAny.apply(_fileRegistryApi, arguments);
-  }
 
-  function relocatedPrefixTarget() {
-    return _fileRegistryApi.relocatedPrefixTarget.apply(_fileRegistryApi, arguments);
-  }
 
-  function inferRelocatedFolderPrefixes() {
-    return _fileRegistryApi.inferRelocatedFolderPrefixes.apply(_fileRegistryApi, arguments);
-  }
 
   function preserveEmptyFoldersAfterMoves() {
     return _fileRegistryApi.preserveEmptyFoldersAfterMoves.apply(_fileRegistryApi, arguments);
@@ -1659,9 +1643,6 @@ var SCHEMA_VERSION = 3;
     return _fileRegistryApi.setActiveFileId.apply(_fileRegistryApi, arguments);
   }
 
-  function uniqueFileId() {
-    return _fileRegistryApi.uniqueFileId.apply(_fileRegistryApi, arguments);
-  }
 
   function replaceProject() {
     return _fileRegistryApi.replaceProject.apply(_fileRegistryApi, arguments);
@@ -1671,33 +1652,12 @@ var SCHEMA_VERSION = 3;
     return _fileRegistryApi.createFile.apply(_fileRegistryApi, arguments);
   }
 
-  function relToCfgDir() {
-    return _fileRegistryApi.relToCfgDir.apply(_fileRegistryApi, arguments);
-  }
 
-  function resolveCfgEntryPath() {
-    return _fileRegistryApi.resolveCfgEntryPath.apply(_fileRegistryApi, arguments);
-  }
 
-  function isCfgEntryToken() {
-    return _fileRegistryApi.isCfgEntryToken.apply(_fileRegistryApi, arguments);
-  }
 
-  function isCfgEntryLine() {
-    return _fileRegistryApi.isCfgEntryLine.apply(_fileRegistryApi, arguments);
-  }
 
-  function cfgTextForRewrite() {
-    return _fileRegistryApi.cfgTextForRewrite.apply(_fileRegistryApi, arguments);
-  }
 
-  function notifyCfgRewritten() {
-    return _fileRegistryApi.notifyCfgRewritten.apply(_fileRegistryApi, arguments);
-  }
 
-  function rewriteCfgBody() {
-    return _fileRegistryApi.rewriteCfgBody.apply(_fileRegistryApi, arguments);
-  }
 
   function restoreDeletedFile() {
     return _fileRegistryApi.restoreDeletedFile.apply(_fileRegistryApi, arguments);
@@ -1707,21 +1667,12 @@ var SCHEMA_VERSION = 3;
     return _fileRegistryApi.deleteFile.apply(_fileRegistryApi, arguments);
   }
 
-  function rewriteCfgsForOp() {
-    return _fileRegistryApi.rewriteCfgsForOp.apply(_fileRegistryApi, arguments);
-  }
 
   function renameFile() {
     return _fileRegistryApi.renameFile.apply(_fileRegistryApi, arguments);
   }
 
-  function cfgFileByPath() {
-    return _fileRegistryApi.cfgFileByPath.apply(_fileRegistryApi, arguments);
-  }
 
-  function cfgListsEntry() {
-    return _fileRegistryApi.cfgListsEntry.apply(_fileRegistryApi, arguments);
-  }
 
   function addEntryToCfg() {
     return _fileRegistryApi.addEntryToCfg.apply(_fileRegistryApi, arguments);

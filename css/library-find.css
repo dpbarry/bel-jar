@@ -241,13 +241,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.75rem;
   font-weight: 500;
 }
 
 .library-find__hit--bel .library-find__hit-name {
-  color: var(--file-bel-fg, var(--base-higher));
+  color: var(--file-jar-fg, var(--base-higher));
 }
 
 .library-find__hit--elf .library-find__hit-name {
@@ -277,7 +277,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.6875rem;
   color: var(--base-high);
   opacity: 0.9;
@@ -299,7 +299,7 @@
   border-radius: 0.28rem;
   background: light-dark(hsla(220, 14%, 92%, 0.65), hsla(220, 10%, 16%, 0.75));
   border: 1px solid light-dark(hsla(220, 12%, 86%, 0.5), hsla(217, 12%, 22%, 0.6));
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.6875rem;
   line-height: 1.4;
   color: var(--base-higher);
@@ -457,20 +457,20 @@
 }
 
 .library-example-item--bel {
-  --file-fg: var(--file-bel-fg);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  --file-fg: var(--file-jar-fg);
+  font-family: var(--mono);
   font-size: 0.78125rem;
 }
 
 .library-example-item--elf {
   --file-fg: var(--file-elf-fg);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.78125rem;
 }
 
 .library-example-item--cfg {
   --file-fg: var(--file-cfg-fg);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.78125rem;
 }
 
@@ -554,7 +554,7 @@
   border-radius: 0.28rem;
   background: light-dark(hsla(220, 14%, 92%, 0.55), hsla(220, 10%, 16%, 0.7));
   border: 1px solid light-dark(hsla(220, 12%, 86%, 0.45), hsla(217, 12%, 22%, 0.55));
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.6875rem;
   line-height: 1.35;
   color: var(--base-higher);

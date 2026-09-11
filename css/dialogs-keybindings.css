@@ -1,6 +1,6 @@
 /* -- Keybindings panel -- */
 
-.bj-kb {
+.jar-kb {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -9,14 +9,14 @@
 }
 
 /* A filter strip, not a search field. The panel's language is full-bleed bands
-   with one hairline (see .bj-settings__section-head), so a bordered pill inset
+   with one hairline (see .jar-settings__section-head), so a bordered pill inset
    into the gap read as a stray widget — and doubled the rule already drawn by
    the setting row above it. Flush, transparent, one bottom hairline.
    The magnifier stays: without a box, the strip needs one unmistakable "this is
    a field" mark, and hover/focus alone read as too passive. It costs the
    placeholder its alignment with the 1.35rem left edge — the right trade, since
    an affordance nobody finds is worse than a small indent. */
-.bj-kb__filter {
+.jar-kb__filter {
   display: flex;
   align-items: center;
   gap: 0.45rem;
@@ -28,40 +28,40 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-kb__filter:hover:not(:focus-within) {
+  .jar-kb__filter:hover:not(:focus-within) {
     background: var(--header-menu-bg-hover);
   }
 
-  .bj-kb__filter:hover .bj-kb__filter-input::placeholder {
+  .jar-kb__filter:hover .jar-kb__filter-input::placeholder {
     color: var(--ui-fg-muted);
   }
 
-  .bj-kb__filter:hover .bj-kb__filter-icon {
+  .jar-kb__filter:hover .jar-kb__filter-icon {
     color: var(--ui-fg);
   }
 }
 
-.bj-kb__filter:focus-within {
+.jar-kb__filter:focus-within {
   border-bottom-color: color-mix(in srgb, var(--accent-mid) 55%, transparent);
 }
 
-.bj-kb__filter-icon {
+.jar-kb__filter-icon {
   display: flex;
   flex-shrink: 0;
   color: var(--ui-fg-muted);
   transition: color 120ms ease;
 }
 
-.bj-kb__filter-icon > svg {
+.jar-kb__filter-icon > svg {
   width: 0.72rem;
   height: 0.72rem;
 }
 
-.bj-kb__filter:focus-within .bj-kb__filter-icon {
+.jar-kb__filter:focus-within .jar-kb__filter-icon {
   color: var(--accent-high);
 }
 
-.bj-kb__filter-input {
+.jar-kb__filter-input {
   flex: 1;
   min-width: 0;
   padding: 0.16rem 0;
@@ -74,18 +74,18 @@
   caret-color: var(--accent-mid);
 }
 
-.bj-kb__filter-input::placeholder {
+.jar-kb__filter-input::placeholder {
   color: var(--ui-fg-faint);
   transition: color 120ms ease;
 }
 
 /* The UA search affordance would reintroduce a widget; Escape clears instead. */
-.bj-kb__filter-input::-webkit-search-cancel-button {
+.jar-kb__filter-input::-webkit-search-cancel-button {
   appearance: none;
 }
 
 /* Right edge lines up with the chord column. */
-.bj-kb__filter-count {
+.jar-kb__filter-count {
   flex-shrink: 0;
   font-size: 0.66rem;
   color: var(--ui-fg-faint);
@@ -94,24 +94,24 @@
   white-space: nowrap;
 }
 
-.bj-kb__noresults {
+.jar-kb__noresults {
   flex: 0 0 auto;
   padding: 1.1rem 1.35rem;
   text-align: center;
 }
 
-.bj-kb__section[hidden] {
+.jar-kb__section[hidden] {
   display: none !important;
 }
 
-.bj-kb__list {
+.jar-kb__list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.bj-kb__row {
+.jar-kb__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -122,19 +122,19 @@
   cursor: pointer;
 }
 
-.bj-kb__row:last-child {
+.jar-kb__row:last-child {
   border-bottom: none;
 }
 
-.bj-kb__row[hidden] {
+.jar-kb__row[hidden] {
   display: none !important;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-kb__row:hover {
+  .jar-kb__row:hover {
     background: light-dark(hsla(220, 10%, 42%, 0.04), hsla(220, 8%, 52%, 0.05));
   }
-  .bj-kb__row.is-flash:hover {
+  .jar-kb__row.is-flash:hover {
     background: light-dark(
       color-mix(in srgb, var(--accent-lower) 55%, transparent),
       color-mix(in oklab, var(--accent-lowest) 62%, hsl(217 28% 12%))
@@ -142,20 +142,20 @@
   }
 }
 
-.bj-kb__row--user .bj-kb__title {
+.jar-kb__row--user .jar-kb__title {
   font-weight: 650;
 }
 
 /* Name and tag on ONE line. The stacked second line put a sentence under every
    other row, which read louder than the rows themselves. */
-.bj-kb__main {
+.jar-kb__main {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
   min-width: 0;
 }
 
-.bj-kb__title {
+.jar-kb__title {
   font-size: 0.8125rem;
   line-height: 1.3;
   color: var(--base-highest);
@@ -166,8 +166,8 @@
 
 /* A quiet chip, not a warning: the binding still exists and is still editable,
    it just belongs to the editing style right now. Same vocabulary as the tag in
-   Available Macros. */
-.bj-kb__tag {
+   Available Keys. */
+.jar-kb__tag {
   flex: 0 0 auto;
   padding: 0.02rem 0.28rem;
   border-radius: var(--radius-sm);
@@ -179,15 +179,15 @@
 }
 
 /* Only a chord with no substitute at all is dimmed; a remapped one still works. */
-.bj-kb__row[data-shadow-kind='taken'] .bj-kb__title {
+.jar-kb__row[data-shadow-kind='taken'] .jar-kb__title {
   color: var(--ui-fg-faint);
 }
 
-.bj-kb__row[data-shadow-kind='taken'] .bj-kb__chord {
+.jar-kb__row[data-shadow-kind='taken'] .jar-kb__chord {
   opacity: 0.45;
 }
 
-.bj-kb__chord {
+.jar-kb__chord {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -208,26 +208,26 @@
   transition: border-color var(--transition), background var(--transition), color var(--transition);
 }
 
-.bj-kb__chord:focus {
+.jar-kb__chord:focus {
   outline: none;
 }
 
-.bj-kb__chord:focus-visible {
+.jar-kb__chord:focus-visible {
   box-shadow: var(--focus-ring);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bj-kb__chord:hover {
+  .jar-kb__chord:hover {
     border-color: light-dark(hsla(220, 12%, 78%, 0.55), hsla(217, 12%, 32%, 0.65));
     background: light-dark(hsla(220, 10%, 42%, 0.04), hsla(220, 8%, 52%, 0.05));
   }
 }
 
-.bj-kb__chord.is-empty {
+.jar-kb__chord.is-empty {
   color: var(--muted-mid);
 }
 
-.bj-kb__chord.is-recording {
+.jar-kb__chord.is-recording {
   border-color: color-mix(in srgb, var(--accent-mid) 45%, transparent);
   background: light-dark(
     color-mix(in srgb, var(--accent-lower) 38%, transparent),
@@ -236,29 +236,29 @@
   color: var(--base-highest);
 }
 
-.bj-kb__chord.is-invalid {
+.jar-kb__chord.is-invalid {
   border-color: var(--warn-mid, hsl(0, 52%, 52%));
-  animation: bj-kb-chord-shake 0.35s ease;
+  animation: jar-kb-chord-shake 0.35s ease;
 }
 
-@keyframes bj-kb-chord-shake {
+@keyframes jar-kb-chord-shake {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-3px); }
   75% { transform: translateX(3px); }
 }
 
-.bj-kb__chord--conflict {
+.jar-kb__chord--conflict {
   color: light-dark(hsl(28, 72%, 38%), hsl(32, 78%, 62%));
 }
 
-.bj-kb__empty-mark {
+.jar-kb__empty-mark {
   font-size: 0.78rem;
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--muted-mid);
 }
 
-.bj-kb__record-hint {
+.jar-kb__record-hint {
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -266,7 +266,7 @@
   white-space: nowrap;
 }
 
-.bj-kb__key {
+.jar-kb__key {
   display: inline-block;
   padding: 0.08rem 0.3rem;
   border-radius: 3px;

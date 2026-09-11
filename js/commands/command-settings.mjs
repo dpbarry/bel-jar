@@ -152,7 +152,34 @@ export function optionCandidates() {
     out.push({ value: s.slug, label: s.title });
     for (const a of s.aliases || []) out.push({ value: a, label: s.title });
   }
+  // ⛔ The `no` forms too. `parseSet` accepts `:set nonu` — it strips `no` when
+  // BelJar owns the remainder — so a completer that only knows `nu` disagrees
+  // with the parser about the one spelling that turns an option OFF, and
+  // offered nothing for the half of vi's `:set` grammar people use most.
+  // Only where turning it off means something: an enum with no `off` value has
+  // nothing to negate, which is exactly what `parseSet` reports as
+  // `not-boolean`.
+  for (const s of SETTINGS) {
+    if (s.kind !== 'bool' && s.off === undefined) continue;
+    out.push({ value: 'no' + s.slug, label: s.title + ' — off' });
+    for (const a of s.aliases || []) out.push({ value: 'no' + a, label: s.title + ' — off' });
+  }
   return out;
+}
+
+/**
+ * The values `:set <name>=` will accept, for the completer.
+ *
+ * A boolean has none — `:set wrap=true` is not vi, and `parseSet` would reject
+ * the value — so it returns nothing rather than inventing `true`/`false`.
+ */
+export function optionValueCandidates(name) {
+  const spec = findSetting(String(name || '').replace(/^no/, '')) || findSetting(name);
+  if (!spec || spec.kind !== 'enum') return [];
+  return (spec.values || []).map((v) => ({
+    value: String(v),
+    label: (spec.labels && spec.labels[v]) || String(v),
+  }));
 }
 
 /** Look up by slug, by `set.` id, or by any alias. */
@@ -222,7 +249,8 @@ export function parseSet(raw) {
   if (!text) return { error: 'usage' };
   const eq = text.indexOf('=');
   const value = eq >= 0 ? text.slice(eq + 1).trim() : null;
-  let name = (eq >= 0 ? text.slice(0, eq) : text).trim().toLowerCase();
+  const typed = (eq >= 0 ? text.slice(0, eq) : text).trim();
+  let name = typed.toLowerCase();
 
   let toggle = false;
   if (name.endsWith('!')) { name = name.slice(0, -1); toggle = true; }
@@ -233,7 +261,16 @@ export function parseSet(raw) {
   }
 
   const spec = findSetting(name);
-  if (!spec) return { error: 'unknown', name, near: nearestSetting(name) };
+  // ⛔ An `unknown` carries the PARSE, not just the name. BelJar's `:set` replaces
+  // Vim's outright (`defineEx('set', …)` overwrites the package's entry), so the
+  // five options only Vim knows — `pcre`, `langmap`, `insertModeEscKeysTimeout`,
+  // `filetype`, `textwidth` — would otherwise be answered "Unknown option" and
+  // silently lost. `vim-setup.mjs` hands those back to Vim, and it must not parse
+  // the line a second time to do it. `typed` keeps the original case, because
+  // `insertModeEscKeysTimeout` does not survive lower-casing.
+  if (!spec) {
+    return { error: 'unknown', name, near: nearestSetting(name), typed, value, negated, toggle };
+  }
   if (value != null && value !== '' && spec.kind === 'enum'
       && !(spec.values || []).some((v) => String(v) === String(value))) {
     return { error: 'value', name, spec, value };

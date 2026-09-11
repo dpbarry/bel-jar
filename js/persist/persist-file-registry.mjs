@@ -396,7 +396,6 @@ export function create(deps) {
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
         var t = line.trim();
-        var low = t.toLowerCase();
         var isEntry = isCfgEntryLine(t);
         if (!isEntry) { out.push(line); continue; }
         var resolved = resolveCfgEntryPath(cfgDir, t);
@@ -597,7 +596,6 @@ export function create(deps) {
       var targetAt = -1;
       for (var i = 0; i < lines.length; i++) {
         var t = lines[i].trim();
-        var low = t.toLowerCase();
         var isEntry = isCfgEntryLine(t);
         if (!isEntry) continue;
         if ((dir ? dir + '/' + t : t) === fileName) targetAt = entryLineIdx.length;

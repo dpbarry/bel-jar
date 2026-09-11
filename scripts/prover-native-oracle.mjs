@@ -61,7 +61,7 @@ if (!thm || !thm.compType) { console.error(`could not parse theorem ${name}`); p
 
 // The native CLI line-wraps long paths (breaking parseHoles' single-line File
 // header) — always check via a SHORT relative filename in a temp cwd.
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bel-oracle-'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jar-oracle-'));
 if (dumpDir) fs.mkdirSync(path.resolve(root, dumpDir), { recursive: true });
 let checks = 0;
 const oracle = async (src) => {

@@ -1,5 +1,5 @@
 import { isolateHistory } from '@codemirror/commands';
-import { Annotation, ChangeSet, Transaction } from '@codemirror/state';
+import { Annotation, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 
 const aliasTxn = Annotation.define();
@@ -85,6 +85,15 @@ const GREEDY_BLOCKED_EVENTS = new Set(['input.alias', 'rename', 'format', 'undo'
 
 let cachedPairs = null;
 let cachedMaxLen = 0;
+// ⛔ Read once, not once per keystroke. `aliases()` is an update listener, so
+// this used to be a `localStorage` hit on every document change — for a
+// preference that only moves when the user changes it, and that already has an
+// invalidation channel sitting right there.
+let cachedActivation = null;
+// Which Persist the cached answer came from. The editor bundle can load before
+// Persist exists, and tests swap the object outright — either way the cache has
+// to notice, and an identity compare is still far cheaper than a storage read.
+let cachedActivationFrom = null;
 
 export function normalizeAliasPairs(raw) {
   const seen = new Set();
@@ -117,6 +126,8 @@ export function defaultAliasPairs() {
 export function invalidateAliasPairs() {
   cachedPairs = null;
   cachedMaxLen = 0;
+  cachedActivation = null;
+  cachedActivationFrom = null;
 }
 
 function loadStoredPairs() {
@@ -144,9 +155,16 @@ function maxAliasLen() {
 
 export function readAliasActivationMode() {
   const persist = typeof globalThis !== 'undefined' ? globalThis.Persist : null;
+  if (cachedActivation && cachedActivationFrom === persist) return cachedActivation;
   if (persist && typeof persist.readStoredAliasActivation === 'function') {
-    return persist.readStoredAliasActivation();
+    cachedActivation = persist.readStoredAliasActivation();
+    cachedActivationFrom = persist;
+    return cachedActivation;
   }
+  // Nothing to cache: Persist is not on the page yet, and the real answer is
+  // still to come.
+  cachedActivation = null;
+  cachedActivationFrom = null;
   return 'greedy';
 }
 
@@ -210,7 +228,25 @@ function collectGreedyEdits(state, changes) {
   for (const { from, to } of mergeIntervals(windows)) {
     const chunk = state.doc.sliceString(from, to);
     const expanded = expandBelAliases(chunk);
-    if (expanded !== chunk) edits.push({ from, to, insert: expanded });
+    if (expanded === chunk) continue;
+    // ⛔ Replace the CHARACTERS THAT CHANGED, not the whole scan window. The
+    // window runs up to `maxAliasLen - 1` either side of the keystroke — 17
+    // characters — and rewriting all of it is a replacement spanning text nobody
+    // touched. CodeMirror's close-brackets tracks the `]` it inserted by
+    // POSITION, and a replacement covering that position drops the marker, so
+    // typing `[ |- nat]` left the auto-closed bracket behind and added a second:
+    // `[ ⊢ nat]]`. Trimming to the differing span leaves the bracket outside the
+    // change, where it stays tracked and types over as it should.
+    let head = 0;
+    while (head < chunk.length && head < expanded.length && chunk[head] === expanded[head]) head += 1;
+    let tail = 0;
+    while (tail < chunk.length - head && tail < expanded.length - head
+      && chunk[chunk.length - 1 - tail] === expanded[expanded.length - 1 - tail]) tail += 1;
+    edits.push({
+      from: from + head,
+      to: to - tail,
+      insert: expanded.slice(head, expanded.length - tail),
+    });
   }
   return edits;
 }
@@ -234,14 +270,42 @@ function expandAtCursor(view, state) {
   return false;
 }
 
+/**
+ * Where the caret belongs after the rewrite.
+ *
+ * ⛔ NOT `ChangeSet.mapPos(head, 1)`. A greedy window is a REPLACEMENT of a
+ * whole span, and mapping a position that sits inside a replacement sends it to
+ * the END of the replacement — so a caret between `|-` and an auto-closed `]`
+ * came back on the far side of the bracket. Typing `[ |- nat]` then produced
+ * `[ ⊢] nat]`: a corrupted document, from the single most common idiom in
+ * Beluga, with nothing on screen to say it had happened. (`mapPos` also threw
+ * "Position N is out of range" when the window ran to the end of the line.)
+ *
+ * The caret's place is decided by the text BEFORE it, expanded the same way the
+ * window was. Clamped to the replacement, so an alias straddling the caret —
+ * mid-sequence, the one case where "before" is not a real boundary — lands
+ * inside the glyph rather than outside the span.
+ */
+function headAfterEdits(state, edits, head) {
+  let delta = 0;
+  for (const e of edits) {
+    if (head < e.from) break;
+    if (head <= e.to) {
+      const prefix = expandBelAliases(state.doc.sliceString(e.from, head));
+      return e.from + Math.min(prefix.length, e.insert.length);
+    }
+    delta += e.insert.length - (e.to - e.from);
+  }
+  return head + delta;
+}
+
 function applyGreedyEdits(view, state, changes) {
   const edits = collectGreedyEdits(state, changes);
   if (!edits.length) return false;
   const head = state.selection.main.head;
-  const mapped = ChangeSet.of(edits, state.doc.length).mapPos(head, 1);
   view.dispatch({
     changes: edits,
-    selection: { anchor: mapped },
+    selection: { anchor: headAfterEdits(state, edits, head) },
     annotations: [aliasTxn.of(true), isolateHistory.of('full')],
     userEvent: 'input.alias',
   });
@@ -270,6 +334,18 @@ export function aliases() {
 if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
   globalThis.addEventListener('beljar:settings-changed', (e) => {
     const key = e && e.detail ? e.detail.key : '';
-    if (/^alias/.test(key) || key === 'aliases-reset') invalidateAliasPairs();
+    // ⛔ Not just the `alias*` keys. Importing a settings file and resetting
+    // everything BOTH rewrite the alias table, and neither is spelled `alias`
+    // — so a user who imported their preferences went on typing against the
+    // aliases they had before, with no way to tell until a reload. An empty
+    // key means "something changed and nobody said what", which is also a
+    // reason to re-read.
+    if (!key
+      || /^alias/.test(key)
+      || key === 'aliases-reset'
+      || key === 'settings-import'
+      || key === 'settings-reset-all') {
+      invalidateAliasPairs();
+    }
   });
 }

@@ -38,7 +38,7 @@ export function createApproxGoalHintIcon(tip = APPROXIMATE_GOAL_TIP) {
 function createGoalHintIcon(tip) {
   if (typeof document === 'undefined') return null;
   const icon = document.createElement('span');
-  icon.className = 'bel-cached-hint';
+  icon.className = 'jar-cached-hint';
   icon.setAttribute('role', 'img');
   icon.innerHTML = CACHED_GOAL_HINT_SVG;
   bindCachedGoalHintTooltip(icon, tip);

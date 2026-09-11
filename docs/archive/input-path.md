@@ -24,9 +24,9 @@ many times per second. That is the late-file lag.
 Fix: the check-context value is a **pure function of sibling texts + active
 fingerprint** — nothing in it depends on checker RESULTS — so the generation key
 was spurious and harmful. Removed it; cache identity is now texts-only. Extracted
-the decision into [`semantic/prelude-cache-key.mjs`](../js/editor-src/semantic/prelude-cache-key.mjs)
+the decision into [`semantic/prelude-cache-key.mjs`](../../js/editor-src/semantic/prelude-cache-key.mjs)
 (`preludeCacheMatches`, no generation param) so the invariant is explicit and
-guarded by [test-prelude-cache-key.mjs](../tests/test-prelude-cache-key.mjs). The
+guarded by [test-prelude-cache-key.mjs](../../tests/test-prelude-cache-key.mjs). The
 suite-prelude BANNER keeps its own generation-keyed cache (that one legitimately
 tracks checked results). A sibling edit still invalidates via text comparison.
 Full suite **193/193**.
@@ -43,7 +43,7 @@ dirty frontier. **Intel is not lost:** the editor already calls
 priority 1), cursor move reprioritises to front, and hover/type-resolution calls
 `sched.ensureElaborated(declId)` on demand and awaits it. So a decl gets intel the
 instant it scrolls into view, and hover blocks on it if you beat the seed.
-Guard: [test-scheduler-viewport-frontier.mjs](../tests/test-scheduler-viewport-frontier.mjs)
+Guard: [test-scheduler-viewport-frontier.mjs](../../tests/test-scheduler-viewport-frontier.mjs)
 proves mount seeds visible-only, scroll pulls the rest, cursor wins priority.
 `seedAllImplicitDeclarations()` kept for a future explicit "warm project" action.
 Full suite **192/192**.
@@ -59,11 +59,11 @@ keystroke): `symbolStore.update` = **~23 ms**, of which `referenceId`'s
 keystroke in the rAF sync) pushes out the next paint → the `worrrkkkk` drops.
 
 Two fixes:
-1. **`referenceId` / `astNodeId` are now O(1)** ([semantic/ids.mjs](../js/editor-src/semantic/ids.mjs)):
+1. **`referenceId` / `astNodeId` are now O(1)** ([semantic/ids.mjs](../../js/editor-src/semantic/ids.mjs)):
    a node's `(name, from, to)` already identifies it uniquely within a doc, so the
    `astPathFor` walk is gone. These ids are snapshot-local (rebuilt each update,
    never persisted), so it's a drop-in. `symbolStore.update` 23 ms → **~9 ms**.
-2. **Semantic rebuild coalesced under active typing** ([editor.mjs](../js/editor-src/editor.mjs)
+2. **Semantic rebuild coalesced under active typing** ([editor.mjs](../../js/editor-src/editor.mjs)
    `scheduleSemanticSync`): the symbol/graph rebuild only feeds hover / nav /
    occurrence / rename / graph / settlement-scheduling — none observed
    mid-burst — so instead of one rAF **per keystroke** it runs once on a ~45 ms
@@ -73,7 +73,7 @@ Two fixes:
    live (they run off CM's tree, not this snapshot) → typing feels like a textarea.
    Rename-end still flushes on the next frame (no coalescing).
 
-Guard: [test-symbolstore-scaling.mjs](../tests/test-symbolstore-scaling.mjs) pins
+Guard: [test-symbolstore-scaling.mjs](../../tests/test-symbolstore-scaling.mjs) pins
 `symbolStore.update` ~linear + `referenceId` O(1)-per-node (depth-independent).
 Full suite **191/191**.
 

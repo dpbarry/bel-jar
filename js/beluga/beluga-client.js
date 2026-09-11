@@ -33,7 +33,6 @@
   var currentEditorCode = '';
   var editorFingerprint = '';
   var mainCommittedFingerprint = '';
-  var mainCheckerFingerprint = '';
   var activeLoad = null;
 
   var LOAD_CANCELLED_MSG = 'Beluga load cancelled';
@@ -514,7 +513,6 @@
     mainActiveBuild = null;
     activeLoad = null;
     mainCommittedFingerprint = '';
-    mainCheckerFingerprint = '';
   }
 
   function teardown() {
@@ -535,7 +533,6 @@
     mainReadyPromise = null;
     mainActiveBuild = null;
     mainCommittedFingerprint = '';
-    mainCheckerFingerprint = '';
     activeLoad = null;
   }
 
@@ -634,7 +631,6 @@
     currentEditorCode = String(code != null ? code : '');
     editorFingerprint = fingerprintCode(currentEditorCode);
     if (checkerSlot) checkerSlot.committedFingerprint = '';
-    mainCheckerFingerprint = '';
 
     if (checkerSlot && checkerSlot.pending.size > 0) {
       terminateSlot(checkerSlot, makeCancelledError(CHECK_CANCELLED_MSG));

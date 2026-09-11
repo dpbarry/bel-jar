@@ -313,4 +313,16 @@ export function ensureVimUndoBridge() {
   vimBridged = true;
   CodeMirror.commands.undo = (cm) => { beljarUndo(cm.cm6); };
   CodeMirror.commands.redo = (cm) => { beljarRedo(cm.cm6); };
+  // ⛔ `:u` and `:red` need their OWN redirect, and the reason is subtle.
+  // `actions.undo` reads `CM.commands.undo` at the moment it runs, so the two
+  // lines above are enough for `u` and `C-r`. The package's EX table is an object
+  // literal that CAPTURED the same functions at module load, long before this
+  // bridge exists (`{ redo: CM.commands.redo, undo: CM.commands.undo }` in
+  // vim.js) — so `:undo` went straight to CodeMirror's parallel history while `u`
+  // came here. Two stacks, both live, on one document, from two spellings of one
+  // word. `defineEx` replaces the entry outright.
+  try {
+    Vim.defineEx('undo', 'u', (cm) => { beljarUndo(cm.cm6); });
+    Vim.defineEx('redo', 'red', (cm) => { beljarRedo(cm.cm6); });
+  } catch (_) { /* a package that stops shipping them leaves nothing to redirect */ }
 }

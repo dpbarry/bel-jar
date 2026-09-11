@@ -381,14 +381,10 @@ function E() { return global.BelEditor || null; }
   var displayApi = null;
   var commitApi = null;
 
-  function normalizeGlyphs() { return displayApi.normalizeGlyphs.apply(null, arguments); }
   function displayType() { return displayApi.displayType.apply(null, arguments); }
-  function displaySource() { return displayApi.displaySource.apply(null, arguments); }
   function renderType() { return displayApi.renderType.apply(null, arguments); }
   function renderSource() { return displayApi.renderSource.apply(null, arguments); }
   function peelDisplayGoal() { return displayApi.peelDisplayGoal.apply(null, arguments); }
-  function resolveNativeAutoGoalDisplay() { return displayApi.resolveNativeAutoGoalDisplay.apply(null, arguments); }
-  function fullDeclSignature() { return displayApi.fullDeclSignature.apply(null, arguments); }
   function priorGoalBinders() { return displayApi.priorGoalBinders.apply(null, arguments); }
   function mountGoalPriors() { return displayApi.mountGoalPriors.apply(null, arguments); }
   // `prep.declKey` is `kw + ':' + name`, so the keyword the author actually wrote is already
@@ -398,23 +394,12 @@ function E() { return global.BelEditor || null; }
     var i = key.indexOf(':');
     return i > 0 ? key.slice(0, i) : '';
   }
-  function appendAutoGoalHero() { return displayApi.appendAutoGoalHero.apply(null, arguments); }
-  function appendAutoSolution() { return displayApi.appendAutoSolution.apply(null, arguments); }
-  function formatSolutionBody() { return displayApi.formatSolutionBody.apply(null, arguments); }
-  function autoVerdictTone() { return displayApi.autoVerdictTone.apply(null, arguments); }
   function renderManualSolvedSummary() { return displayApi.renderManualSolvedSummary.apply(null, arguments); }
   function stageNode() { return displayApi.stageNode.apply(null, arguments); }
   function buildBannerShell() { return displayApi.buildBannerShell.apply(null, arguments); }
   function buildPlaceStrip() { return displayApi.buildPlaceStrip.apply(null, arguments); }
   function renderCommitOutcome() { return displayApi.renderCommitOutcome.apply(null, arguments); }
-  function deriveMoveLead() { return displayApi.deriveMoveLead.apply(null, arguments); }
-  function moveLead() { return displayApi.moveLead.apply(null, arguments); }
-  function renderMoveFacet() { return displayApi.renderMoveFacet.apply(null, arguments); }
-  function appendMoveFacet() { return displayApi.appendMoveFacet.apply(null, arguments); }
-  function autoVerdictTitle() { return displayApi.autoVerdictTitle.apply(null, arguments); }
   function setNativeSearchLabel() { return displayApi.setNativeSearchLabel.apply(null, arguments); }
-  function autoSubtext() { return displayApi.autoSubtext.apply(null, arguments); }
-  function nativeAutoSearchLabel() { return displayApi.nativeAutoSearchLabel.apply(null, arguments); }
   function solvedBodyOf() { return displayApi.solvedBodyOf.apply(null, arguments); }
   function defaultCommitState() { return commitApi.defaultCommitState(); }
   function commitFailureUserMessage() { return commitApi.commitFailureUserMessage(); }
@@ -1936,14 +1921,6 @@ function E() { return global.BelEditor || null; }
     return session;
   }
 
-  function proofDeclText(code, name) {
-    var src = String(code || '');
-    var re = new RegExp('\\b(?:rec|proof)\\s+' + String(name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:');
-    var m = re.exec(src);
-    if (!m) return '';
-    var semi = src.indexOf(';', m.index);
-    return src.slice(m.index, semi < 0 ? src.length : semi + 1);
-  }
 
   function openFromHole(view, engine, hit, opts) {
     opts = opts || {};

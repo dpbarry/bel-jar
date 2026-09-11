@@ -91,4 +91,4 @@ for (const e of [...longCommit].sort((a, b) => b.from - a.from)) {
 }
 expect(longDoc === 'longername bar longername', 'length-change commit does not mangle');
 
-console.log('OK bel-rename commit (live mirror + symbol commit)');
+console.log('OK jar-rename commit (live mirror + symbol commit)');

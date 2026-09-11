@@ -43,23 +43,37 @@
     var explorerSearchController = null;
     var libraryController = null;
 
+    /**
+     * ⛔ ONE history step for the whole folder.
+     *
+     * Renaming a folder renames every file under it, and a rename was invisible
+     * to the history until `structural.renamed` existed — so this was not "many
+     * steps" but NO step, and the Ctrl+Z after it reached past the rename and
+     * silently reverted the user's last edit instead. Wrapped, the whole move is
+     * one entry that goes back in one press.
+     */
     function renameFolderPrefix(from, to) {
       if (!from || from === to) return;
-      const files = Persist.listFiles();
-      const moves = [];
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        if (f.name !== from && !f.name.startsWith(from + '/')) continue;
-        const rel = f.name === from ? '' : f.name.slice(from.length + 1);
-        const newPath = to ? (rel ? to + '/' + rel : to) : rel;
-        if (newPath !== f.name) {
-          moves.push({ from: f.name, to: newPath });
-          Persist.renameFile(f.id, newPath);
+      const H = typeof EditHistory !== 'undefined' ? EditHistory : null;
+      const run = () => {
+        const files = Persist.listFiles();
+        const moves = [];
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          if (f.name !== from && !f.name.startsWith(from + '/')) continue;
+          const rel = f.name === from ? '' : f.name.slice(from.length + 1);
+          const newPath = to ? (rel ? to + '/' + rel : to) : rel;
+          if (newPath !== f.name) {
+            moves.push({ from: f.name, to: newPath });
+            Persist.renameFile(f.id, newPath);
+          }
         }
-      }
-      Persist.preserveEmptyFoldersAfterMoves(moves);
+        Persist.preserveEmptyFoldersAfterMoves(moves);
+        Persist.renameEmptyFolderPrefix(from, to);
+      };
+      if (H && typeof H.transact === 'function') H.transact('file-rename', run, 'Rename ' + from);
+      else run();
       reloadActiveEditorFromPersist();
-      Persist.renameEmptyFolderPrefix(from, to);
       renderTabs();
       updateHeaderContext();
     }
@@ -98,7 +112,16 @@
           return false;
         }
         if (result.fullPath !== file.name) {
-          Persist.renameFile(session.fileId, result.fullPath);
+          // ⛔ A rename is a history STEP. Without this the entry did not exist
+          // at all, and the Ctrl+Z a user presses to take a rename back reverted
+          // whatever they had typed before it instead — while the rename stood.
+          const H = typeof EditHistory !== 'undefined' ? EditHistory : null;
+          const doRename = () => Persist.renameFile(session.fileId, result.fullPath);
+          if (H && typeof H.transact === 'function') {
+            H.transact('file-rename', doRename, 'Rename to ' + IL.lastSegment(result.fullPath));
+          } else {
+            doRename();
+          }
           if (session.fileId === Persist.getActiveFileId()) {
             ensureEditorMatchesFileKind();
           }

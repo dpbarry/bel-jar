@@ -80,7 +80,7 @@ function clampPos(view, pos) {
 const setFlashEffect = StateEffect.define();
 const clearFlashEffect = StateEffect.define();
 
-const flashLineMark = Decoration.line({ class: 'cm-bel-flash-line' });
+const flashLineMark = Decoration.line({ class: 'cm-jar-flash-line' });
 
 const flashField = StateField.define({
   create() {

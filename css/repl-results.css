@@ -310,7 +310,7 @@
 }
 
 .repl-rich-warning-kind {
-  font-family: var(--ui);
+  font-family: var(--sans);
   font-size: 0.58rem;
   font-weight: 600;
   letter-spacing: 0.09em;
@@ -319,7 +319,7 @@
 }
 
 .repl-rich-warning-sub {
-  font-family: var(--ui);
+  font-family: var(--sans);
   font-size: 0.66rem;
   color: color-mix(in oklab, var(--repl-warn) 70%, var(--muted-high));
 }

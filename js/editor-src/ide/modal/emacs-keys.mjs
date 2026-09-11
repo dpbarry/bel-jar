@@ -6,7 +6,7 @@
  * package grows, drops or renames a single spec, so a version bump cannot leave
  * this quietly out of date or quietly incomplete.
  *
- * This exists because Available macros was listing BelJar's chords and BelJar's
+ * This exists because Available Keys was listing BelJar's chords and BelJar's
  * own Vim/Emacs maps and calling that "available" — while `C-p`, `C-e`, `C-k`,
  * `C-y` and forty others were live the whole time and appeared nowhere. The
  * window is the keybindings sheet filtered to what is bound; omitting the

@@ -487,7 +487,7 @@ Four dimensions, all measured, none reducible to another:
 |---|---:|---|---|
 | grammar node names | 1,416 | structural | roles conversion (§6) |
 | **Beluga-named identifiers** | **600** | naming / public API | rename + compat aliases |
-| `.bel-` CSS namespace | 177 | branding | rename (`bel-` → `jar-`) |
+| `.bel-` CSS namespace | 177 | branding | ~~rename~~ **DONE 2026-09-11** |
 | file extensions | 79 | semantic | language-pack `extensions` field |
 | **total** | **~2,272** | | |
 
@@ -975,6 +975,8 @@ Both stand for **BelJar**, not Beluga. F4 called `.bel-` "branding, not semantic
 but it also implied a single clean rename. In fact **a `bel-` → `bj-` migration is already
 half-done**, with the newer surfaces (the status strip, the dialog family) on `bj-` and the
 older ones still on `bel-`.
+
+**RESOLVED 2026-09-11** — both prefixes went to `jar-`; see `PHASE0.md` §5.
 
 ⛔ **Decision needed now, not in Phase 1.** Introducing a third prefix for \*jar would leave
 two incomplete migrations. Either finish `bel-` → `bj-` and treat `bj-` as the permanent
@@ -1525,3 +1527,20 @@ Language-free. ⭐ These survive the refactor unchanged and are what protects it
 
 Every source file in the repository now has a line in this record, and all 1,416 structural
 coupling sites are attributed (F20).
+
+---
+
+# Session additions — 2026-09-11
+
+Files created or renamed while executing Phase 0. Recorded here so the census keeps reading
+zero: the instrument flagged all four, which is the ratchet working on its own author.
+
+| file | LOC | class | note |
+|---|---:|---|---|
+| `jar-dropdown.mjs` | 220 | platform | renamed from `bj-dropdown.mjs` (PHASE0 §5) |
+| `jar-toggle.mjs` | 45 | platform | renamed from `bj-toggle.mjs` (PHASE0 §5) |
+| `shell-differential.mjs` | 180 | build | ⭐ the Phase 0 gate — parse/blocks/defs/uses/diags over 265 corpus files |
+| `test-starjar-purity.mjs` | 104 | build | ⭐ the four-dimension ratchet, in `npm test` |
+
+Also added, outside the census's scanned areas: `docs/starjar/PHASE0.md` and
+`tests/golden/shell-differential.json` (the committed baseline, excluded from the walk).

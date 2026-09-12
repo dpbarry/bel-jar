@@ -83,53 +83,103 @@ function kbLabel(id, fallbackSpec) {
   return fallbackSpec || '';
 }
 
+/**
+ * The one place that decides whether this menu may OFFER a command.
+ *
+ * ⛔ A surface may only offer what WORKS. Every row fronting a registry command
+ * declares `commandId`; if the registry does not know it, nothing attached a
+ * `run`, or its `when()` says no, the row is DROPPED — not shown dead. The
+ * header menus and the palette already derive this way; this menu was the last
+ * surface hand-building its own list.
+ *
+ * Under *jar this is where capability gating lands: a provider with no proof
+ * support leaves every `prover.*` command unattached, and the Prove group is
+ * simply not offered rather than presenting dead affordances.
+ * See docs/starjar/07-surfaces.md.
+ *
+ * Headless (no registry on the global) returns null and nothing is filtered —
+ * a test harness has no user to mislead.
+ */
+function offerableIds() {
+  const g = typeof window !== 'undefined' ? window : self;
+  const C = g.Commands;
+  if (!C || typeof C.list !== 'function') return null;
+  try {
+    return new Set(C.list({ runnable: true, available: true }).map((c) => c.id));
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Catalogue title for `id`, so a label is never retyped beside the registry. */
+function cmdTitle(id, fallback) {
+  const g = typeof window !== 'undefined' ? window : self;
+  const C = g.Commands;
+  try {
+    const c = C && typeof C.get === 'function' ? C.get(id) : null;
+    if (c && c.title) return c.title;
+  } catch (_) { /* fall through */ }
+  return fallback;
+}
+
+/** A row fronting a registry command — label AND chord both derived from it. */
+function cmdRow(id, fallbackLabel, fallbackSpec, extra) {
+  return {
+    commandId: id,
+    label: cmdTitle(id, fallbackLabel),
+    shortcut: kbLabel(id, fallbackSpec),
+    ...(extra || {}),
+  };
+}
+
+/**
+ * Drop rows the registry will not offer, then tidy the separators those drops
+ * strand (leading, trailing, doubled). Without this a gated-away group leaves a
+ * visible seam where nothing is.
+ */
+function keepOfferable(items) {
+  const ok = offerableIds();
+  const kept = ok ? items.filter((it) => !it.commandId || ok.has(it.commandId)) : items.slice();
+  const out = [];
+  for (const it of kept) {
+    if (it.type === 'separator' && (!out.length || out[out.length - 1].type === 'separator')) continue;
+    out.push(it);
+  }
+  while (out.length && out[out.length - 1].type === 'separator') out.pop();
+  return out;
+}
+
 function buildEditMenuItems(view) {
   const editable = isEditable(view);
   const hasSel = hasStandardSelection(view);
   const H = editHistoryApi();
 
+  // Labels come from the catalogue — these seven matched it exactly, so they
+  // were seven chances for the menu and the palette to drift apart.
   return [
-    {
-      label: 'Undo',
-      shortcut: kbLabel('edit.undo', 'Mod+Z'),
+    cmdRow('edit.undo', 'Undo', 'Mod+Z', {
       disabled: !(H && H.canUndo && H.canUndo()),
       onSelect: () => { H?.undo?.(); },
-    },
-    {
-      label: 'Redo',
-      shortcut: kbLabel('edit.redo', 'Mod+Y'),
+    }),
+    cmdRow('edit.redo', 'Redo', 'Mod+Y', {
       disabled: !(H && H.canRedo && H.canRedo()),
       onSelect: () => { H?.redo?.(); },
-    },
+    }),
     { type: 'separator' },
-    {
-      label: 'Cut',
-      shortcut: kbLabel('edit.cut', 'Mod+X'),
+    cmdRow('edit.cut', 'Cut', 'Mod+X', {
       disabled: !editable || !hasSel,
       onSelect: () => runClipboard('cut'),
-    },
-    {
-      label: 'Copy',
-      shortcut: kbLabel('edit.copy', 'Mod+C'),
+    }),
+    cmdRow('edit.copy', 'Copy', 'Mod+C', {
       disabled: !hasSel,
       onSelect: () => runClipboard('copy'),
-    },
-    {
-      label: 'Paste',
-      shortcut: kbLabel('edit.paste', 'Mod+V'),
+    }),
+    cmdRow('edit.paste', 'Paste', 'Mod+V', {
       disabled: !editable,
       onSelect: () => runClipboard('paste'),
-    },
-    {
-      label: 'Select All',
-      shortcut: kbLabel('edit.select-all', 'Mod+A'),
-      onSelect: () => selectAll(view),
-    },
-    {
-      label: 'Find…',
-      shortcut: kbLabel('edit.find', 'Mod+F'),
-      onSelect: () => openSearchPanel(view),
-    },
+    }),
+    cmdRow('edit.select-all', 'Select All', 'Mod+A', { onSelect: () => selectAll(view) }),
+    cmdRow('edit.find', 'Find…', 'Mod+F', { onSelect: () => openSearchPanel(view) }),
   ];
 }
 
@@ -154,24 +204,42 @@ function buildProveMenuItems(view, hit) {
   const items = [{ type: 'separator' }];
 
   if (lab && typeof lab.openFromHole === 'function') {
+    // ⚠ Labels here deliberately DIFFER from the catalogue: right-click already
+    // names the hole, so "Open Hole in Harpoon" / "Intro at Hole" would repeat
+    // it. The id is what gates the row; the wording is contextual.
     items.push({
+      commandId: 'prover.open-in-harpoon',
       label: 'Open in Harpoon…',
       onSelect: () => lab.openFromHole(view, engine, hit),
     });
   }
   if (canIntro(hit.hole)) {
-    items.push({ label: 'Introduce', onSelect: () => runIntro(view, engine, hit) });
+    items.push({
+      commandId: 'prover.hole-intro',
+      label: 'Introduce',
+      onSelect: () => runIntro(view, engine, hit),
+    });
   }
   const vars = splitTargetsOf(hit.hole);
   if (vars.length === 1) {
-    items.push({ label: `Split on ${vars[0]}`, onSelect: () => runSplit(view, engine, hit, vars[0]) });
+    items.push({
+      commandId: 'prover.hole-split',
+      label: `Split on ${vars[0]}`,
+      onSelect: () => runSplit(view, engine, hit, vars[0]),
+    });
   } else if (vars.length > 1) {
     items.push({
+      commandId: 'prover.hole-split',
       label: 'Split on…',
       submenu: vars.map((v) => ({ label: v, onSelect: () => runSplit(view, engine, hit, v) })),
     });
   }
-  items.push({ label: 'Fill', tooltip: 'Prove the goal with an inhabiting term', onSelect: () => runFill(view, engine, hit) });
+  items.push({
+    commandId: 'prover.hole-fill',
+    label: 'Fill',
+    tooltip: 'Prove the goal with an inhabiting term',
+    onSelect: () => runFill(view, engine, hit),
+  });
   return items;
 }
 
@@ -191,11 +259,9 @@ function buildMenuItems(view, pos) {
   if (hasSymbolMenuContext(view, pos, nav)) {
     items.push({ type: 'separator' });
     if (canGoToDefinition(view, pos, nav)) {
-      items.push({
-        label: 'Go to Definition',
-        shortcut: kbLabel('nav.definition', 'F12'),
+      items.push(cmdRow('nav.definition', 'Go to Definition', 'F12', {
         onSelect: () => goToDefinition(view, pos),
-      });
+      }));
     }
 
     // Only when go-to-def can't help: unresolved local/metavar under an enclosing decl.
@@ -207,22 +273,18 @@ function buildMenuItems(view, pos) {
     }
 
     if (canFindReferences(view, pos)) {
-      items.push({
-        label: 'Find References',
-        shortcut: kbLabel('nav.references', 'Shift+F12'),
+      items.push(cmdRow('nav.references', 'Find References', 'Shift+F12', {
         onSelect: () => findReferences(view, pos),
-      });
+      }));
     }
 
     if (canRenameSymbol(view, pos, nav)) {
       const reach = renameReachAt(view, pos);
-      items.push({
-        label: 'Rename Symbol',
-        shortcut: kbLabel('edit.rename', 'F2'),
+      items.push(cmdRow('edit.rename', 'Rename Symbol', 'F2', {
         tooltip: reach ? renameReachTooltip(reach.total) : '',
         tooltipPlacement: 'right',
         onSelect: () => startRename(view, pos),
-      });
+      }));
     }
 
     if (canInspectAt(view, pos)) {
@@ -242,13 +304,11 @@ function buildMenuItems(view, pos) {
 
   // --- Always-available editor actions ---
   items.push({ type: 'separator' });
-  items.push({
-    label: 'Format Document',
-    shortcut: kbLabel('edit.format', 'Alt+Shift+F'),
+  items.push(cmdRow('edit.format', 'Format Document', 'Alt+Shift+F', {
     onSelect: () => formatCommand(view),
-  });
+  }));
 
-  return items;
+  return keepOfferable(items);
 }
 
 export function contextMenu() {

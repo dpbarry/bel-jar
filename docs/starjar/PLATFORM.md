@@ -179,7 +179,7 @@ not a Beluga quirk: `LF n … and a …`, `Inductive even … with odd …`, `Fi
 |---|---:|---|---|
 | **grammar node names** | **1,416** | structural | roles conversion — the only one needing design |
 | Beluga-named identifiers | 600 (75 names, 49 files) | naming, incl. public globals `BelugaClient` / `BelugaRun` / `BelugaText` | rename + compat aliases |
-| `.bel-` CSS namespace | 177 | branding | rename `bel-` → `jar-` |
+| ~~`.bel-` CSS namespace~~ | ~~177~~ | branding | ✅ **done 2026-09-11** — both prefixes → `jar-`, 1,796 sites |
 | file extensions | 79 | semantic | language-pack `extensions` field |
 | **total** | **~2,272** | | |
 
@@ -361,8 +361,6 @@ down, is the one thing that could actually sink this.
 ### Phase 1 — core delamination (Sep 22 – Oct 17)
 
 - Language registry; convert the 17 parser imports.
-- **The prefix decision** (F25): `.bel-` and `.bj-` already coexist — 465 CSS sites and 177
-  JS sites, a half-finished migration. Settle on one name before adding a third.
 - **The renames** (F13): `Beluga*` → `Provider*` across 600 identifier sites with compat
   aliases, and `.bel-` → `.jar-` across 177 CSS-class sites plus `css/`. Mechanical, gated by
   the differential, and cheaper now than after `css/` and every probe selector hardens.

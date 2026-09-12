@@ -7,7 +7,7 @@
 | 1 | Purity lint | ✅ **done** — `tests/test-starjar-purity.mjs` |
 | 2 | The role pilot | ✅ **done** — result below; the hypothesis is falsified |
 | 3 | Shell differential | ✅ **done** — `scripts/shell-differential.mjs`, `npm run diff:shell` |
-| 4 | Fix the menus | ⏸ blocked — both files are in the user's in-flight changes |
+| 4 | Fix the menus | + **done** — the context menu derives; `app-menus` needed nothing |
 | 5 | The prefix decision (F25) | ✅ **done** — `bel-` and `bj-` → `jar-`, 1,796 sites |
 
 ---
@@ -159,8 +159,56 @@ than block every iteration. Run it before and after each delamination step, the 
 
 ## Next
 
-4. **The menus** — `context-menu.mjs` and `app-menus.mjs` are both modified in the working
-   tree. Deferred until those changes land, to avoid tangling with in-flight work.
+(Item 4 is done — see SS4 below.)
+
+---
+
+## 4. The menus
+
+### `context-menu.mjs` — now derives
+
+Added one gate, `offerableIds()`, as the single place deciding whether the menu may OFFER a
+command: rows declare `commandId`, and a row whose command the registry does not know, has no
+`run` attached, or whose `when()` says no is **dropped, not disabled**. `keepOfferable()` then
+tidies the separators the drops strand, so a gated-away group leaves no visible seam.
+
+⭐ Under \*jar this is where capability gating lands: a provider without proof support leaves
+every `prover.*` command unattached and the Prove group is simply not offered.
+
+**Eleven labels were retyped duplicates of catalogue titles** and now derive:
+`Undo` `Redo` `Cut` `Copy` `Paste` `Select All` `Find...` `Go to Definition` `Find References`
+`Rename Symbol` `Format Document`.
+
+⚠ **Four labels deliberately differ and were kept**, with the reason in the code:
+`Open in Harpoon...` `Introduce` `Split on N` `Fill`. Right-click already names the hole, so
+the catalogue's palette-oriented wording (`Open Hole in Harpoon`, `Intro at Hole`) would
+repeat it. **The id gates the row; the wording is contextual.** Deriving these would have been
+the wrong kind of consistency.
+
+### `app-menus.mjs` — needed nothing, and chunk 8 over-claimed
+
+Chunk 8 reported that it "likewise hand-builds its menu ids with no `Commands.list`". True,
+but the consequence drawn from it was wrong: **it has zero capability-gated rows.** Its 49
+labels are parameterised file and project operations (`Download "foo.bel"`,
+`Delete 3 files...`, `Close 2 tabs`) which are not command fronts at all, plus six `run.*`
+rows -- and `run.*` needs only `check`, which is Tier 0 and mandatory for every provider.
+
+⛔ The dead-affordance risk was entirely in `context-menu.mjs`. Deriving app-menus' labels
+from the catalogue would be *wrong*, not merely unnecessary, because their text is genuinely
+contextual.
+
+### Known gap, deliberately not closed
+
+Three context-menu rows front no registry command at all: **Reveal Binder**, **Inspect**,
+**Show Dependency Graph**. They are therefore unreachable from the palette, the keymap and
+`M-x`. That is a real derive-not-retype gap, but closing it means *adding catalogue entries* —
+a product decision about what belongs in the command layer, not a Phase 0 instrumentation fix.
+Logged here rather than silently widened.
+
+### Verification
+
+`npm run lint` clean, `npm run diff:shell` 265 identical, `npm test` **250/250**,
+`npm run probe:app` **ALL OK** (127 checks).
 (Item 5 is done — see §5 below.)
 
 ---

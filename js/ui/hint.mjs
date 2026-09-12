@@ -152,6 +152,8 @@ const DEFAULT_DURATION_MS = 10000;
   }
 
   // Shrink root to the tightest width that keeps the wrap count from max-width layout.
+  // Must run after webfonts settle — a wider fallback face wraps more lines, and the
+  // binary search then locks a too-narrow box for the real face.
   function fitWidth() {
     if (!rootEl) return;
     rootEl.style.removeProperty('width');
@@ -159,7 +161,7 @@ const DEFAULT_DURATION_MS = 10000;
     const cs = getComputedStyle(rootEl);
     let maxW = parseFloat(cs.maxWidth);
     if (!Number.isFinite(maxW) || maxW <= 0) {
-      maxW = Math.min(280, window.innerWidth - 20);
+      maxW = Math.min(352, window.innerWidth - 20);
     }
     maxW = Math.min(Math.floor(maxW), window.innerWidth - 16);
     if (maxW < 48) maxW = 48;
@@ -279,6 +281,15 @@ const DEFAULT_DURATION_MS = 10000;
     rootEl.classList.add('is-visible');
     visible = true;
     dismissing = false;
+
+    const placeId = activeId;
+    const fonts = document.fonts;
+    if (fonts && fonts.status !== 'loaded' && fonts.ready) {
+      fonts.ready.then(() => {
+        if (!visible || dismissing || activeId !== placeId) return;
+        place();
+      });
+    }
 
     autoTimer = setTimeout(() => {
       autoTimer = null;

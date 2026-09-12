@@ -7,7 +7,7 @@
   --hint-duration: 10s;
   position: fixed;
   z-index: 10040;
-  max-width: min(17.5rem, calc(100vw - 1.25rem));
+  max-width: min(18rem, calc(100vw - 1.25rem));
   pointer-events: none;
   visibility: hidden;
   opacity: 0;

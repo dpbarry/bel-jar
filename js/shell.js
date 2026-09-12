@@ -12524,7 +12524,7 @@
     const cs = getComputedStyle(rootEl);
     let maxW = parseFloat(cs.maxWidth);
     if (!Number.isFinite(maxW) || maxW <= 0) {
-      maxW = Math.min(280, window.innerWidth - 20);
+      maxW = Math.min(352, window.innerWidth - 20);
     }
     maxW = Math.min(Math.floor(maxW), window.innerWidth - 16);
     if (maxW < 48) maxW = 48;
@@ -12631,6 +12631,14 @@
     rootEl.classList.add("is-visible");
     visible = true;
     dismissing = false;
+    const placeId = activeId;
+    const fonts = document.fonts;
+    if (fonts && fonts.status !== "loaded" && fonts.ready) {
+      fonts.ready.then(() => {
+        if (!visible || dismissing || activeId !== placeId) return;
+        place();
+      });
+    }
     autoTimer = setTimeout(() => {
       autoTimer = null;
       dismiss();

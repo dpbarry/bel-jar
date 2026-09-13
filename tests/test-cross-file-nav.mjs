@@ -438,4 +438,34 @@ expect(parseInput('#foo').mode === 'search' && parseInput('#foo').legacyHash ===
   expect(psPre('rb').length === 0, 'Run path: unlisted par-red.bel stays isolated');
 }
 
-console.log('OK cross-file nav (defs index, group isolation, project def lookup, group symbols, text scan, % mode, prelude .elf/orphan)');
+// ── a `proof` in another file of the group is a function, not an LF constant ──────────
+// The cross-file index mirrors the symbol store's namespace rule. Its mirror lacked
+// ProofDeclaration, so a peer proof fell through to lf-constant, completion showed it as a
+// constant, and it was listed among the group's constructor names.
+{
+  const peerFiles = [
+    { id: 'pp/a', name: 'pp/a.bel' },
+    { id: 'pp/b', name: 'pp/b.bel' },
+    { id: 'pp/cfg', name: 'pp/sources.cfg' },
+  ];
+  const peerTexts = {
+    'pp/a': 'rec use : [ |- nat] -> [ |- nat] = fn x => x;\n',
+    'pp/b': 'LF nat : type =\n| z : nat\n| s : nat -> nat;\n\nproof plus_zero : [ |- nat] = ?;\n',
+    'pp/cfg': 'b.bel\na.bel\n',
+  };
+  const peerSyms = listGroupSymbols(peerFiles, 'pp/a', (id) => peerTexts[id] || '') || [];
+  const peerProof = peerSyms.find((s) => s && s.name === 'plus_zero');
+  const peerCtor = peerSyms.find((s) => s && s.name === 'z');
+  expect(peerCtor && peerCtor.namespace === 'lf-constructor', `peer LF constructor is found, got ${peerCtor && peerCtor.namespace}`);
+  expect(peerProof && peerProof.namespace === 'rec-function', `peer proof is a function, got ${peerProof && peerProof.namespace}`);
+
+  // Labels a peer file's declarations get: the same canonical wording as the open file.
+  const peerLabel = (name) => {
+    const sig = findGroupSignature(peerFiles, 'pp/a', name, (id) => peerTexts[id] || '');
+    return sig && sig.label;
+  };
+  expect(peerLabel('plus_zero') === 'proof', `peer proof label, got ${peerLabel('plus_zero')}`);
+  expect(peerLabel('z') === 'LF constructor', `peer LF constructor label, got ${peerLabel('z')}`);
+}
+
+console.log('OK cross-file nav (defs index, group isolation, project def lookup, group symbols, text scan, % mode, prelude .elf/orphan, peer proofs)');

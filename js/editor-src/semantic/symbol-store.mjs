@@ -10,6 +10,7 @@ import {
 import { semanticDeclText } from './check-gate.mjs';
 import { publishNameEnv, preludeCtorNames } from './name-env.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
+import { declarationLabel } from './declaration-labels.mjs';
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
 const NOTATION_PRAGMA = new Set(['InfixPragma', 'PrefixPragma']);
@@ -509,26 +510,8 @@ function groupBy(items, keyFn) {
   return map;
 }
 
-function labelFor(namespace, nodeKind) {
-  switch (namespace) {
-    case NAMESPACE.LF_TYPE_FAMILY: return 'LF type family';
-    case NAMESPACE.LF_CONSTANT: return 'LF constant';
-    case NAMESPACE.LF_CONSTRUCTOR: return 'LF constructor';
-    case NAMESPACE.SCHEMA: return 'schema';
-    case NAMESPACE.TYPEDEF: return 'typedef';
-    case NAMESPACE.COMP_TYPE: return nodeKind === 'CoinductiveBody' ? 'coinductive type' : 'computation type';
-    case NAMESPACE.COMP_CONSTRUCTOR:
-      return nodeKind === 'CompDestructor' ? 'computation destructor' : 'computation constructor';
-    case NAMESPACE.REC_FUNCTION: return nodeKind === 'ProofDeclaration' ? 'proof' : 'rec. func.';
-    case NAMESPACE.MODULE: return 'module';
-    case NAMESPACE.PRAGMA:
-      if (nodeKind === 'PrefixPragma') return 'prefix pragma';
-      if (nodeKind === 'InfixPragma') return 'infix pragma';
-      return 'pragma';
-    case NAMESPACE.LOCAL_UPPER:
-    case NAMESPACE.LOCAL_LOWER: return 'local binder';
-    default: return nodeKind || 'symbol';
-  }
+function labelFor(namespace, declarationNode) {
+  return declarationLabel(namespace, declarationNode);
 }
 
 function namespaceForGlobal(parent, ident, doc) {
@@ -1645,7 +1628,7 @@ function makeSymbol({
     namespace,
     name,
     displayName: displayName || name,
-    label: labelFor(namespace, declarationNode.name),
+    label: labelFor(namespace, declarationNode),
     nodeKind: declarationNode.name,
     definingNodeKind: definingNode.name,
     range: rangeOf(declarationNode),

@@ -28,7 +28,7 @@ const EXEMPT = [/^js\/lang\//, /^js\/providers\//];
 // '.elf'. Where a doc and this gate disagree, the gate measured it.
 // Lower these as delamination lands; never raise them without saying why.
 const BASELINE = {
-  nodeSites: 1416,   // grammar node names — the structural dimension
+  nodeSites: 1412,   // grammar node names. 1416 -> 1417 (2026-09-13, the peer-proof fix), then 1412 when the declaration labels became one table
   identifiers: 568,  // Beluga-named identifiers, incl. public globals
   cssClasses: 0,     // `bel-` / `bj-` prefixes — migrated to `jar-` on 2026-09-11
   extensions: 100,   // .bel / .cfg / .elf file-extension logic

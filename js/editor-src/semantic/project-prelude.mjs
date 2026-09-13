@@ -22,6 +22,7 @@ import {
   visibilityPaths,
 } from './development.mjs';
 import { NAMESPACE } from './ids.mjs';
+import { declarationLabel } from './declaration-labels.mjs';
 
 export { cfgByDirFromFiles, dirOf, parseCfg, developmentForFile, activeCfgResolver } from './development.mjs';
 
@@ -93,19 +94,6 @@ export function preludeFilesFor(files, activeId, getText, options = {}) {
 const defsCache = new Map(); // text -> { names, defs, uses, sigByName }
 const NAMES_CACHE_CAP = 128;
 
-const KIND_LABELS = {
-  LFDeclaration: 'LF type family',
-  LFDatatypeDeclaration: 'LF type family',
-  LFConstructor: 'LF constructor',
-  CompConstructor: 'constructor',
-  InductiveDeclaration: 'inductive type',
-  StratifiedDeclaration: 'stratified type',
-  CoinductiveDeclaration: 'coinductive type',
-  RecDeclaration: 'recursive function',
-  SchemaDeclaration: 'schema',
-  TypedefDeclaration: 'typedef',
-};
-
 function firstChildNamed(node, name) {
   for (let c = node.firstChild; c; c = c.nextSibling) {
     if (c.name === name) return c;
@@ -146,7 +134,7 @@ function namespaceFromDefEntry(e, src) {
   if (name === 'LFConstructor') return NAMESPACE.LF_CONSTRUCTOR;
   if (name === 'SchemaDeclaration') return NAMESPACE.SCHEMA;
   if (name === 'TypedefDeclaration') return NAMESPACE.TYPEDEF;
-  if (name === 'LetDeclaration' || name === 'RecBody') return NAMESPACE.REC_FUNCTION;
+  if (name === 'LetDeclaration' || name === 'RecBody' || name === 'ProofDeclaration') return NAMESPACE.REC_FUNCTION;
   if (name === 'ModuleDeclaration') return NAMESPACE.MODULE;
   if (name === 'InductiveBody' || name === 'CoinductiveBody') return NAMESPACE.COMP_TYPE;
   if (name === 'CompConstructor' || name === 'CompDestructor') return NAMESPACE.COMP_CONSTRUCTOR;
@@ -210,7 +198,7 @@ function parsedDefsOfSrc(src) {
       if (type) {
         entry.sigByName.set(name, {
           type,
-          label: KIND_LABELS[e.declParent.name] || 'declaration',
+          label: declarationLabel(namespaceFromDefEntry(e, src), e.declParent),
         });
       }
     }

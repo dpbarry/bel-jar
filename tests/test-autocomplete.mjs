@@ -1957,4 +1957,32 @@ function mkState(src) {
     'constant nat in --name still resolves as a reference');
 }
 
+// ── declaration labels: one canonical wording, named by what the author wrote ──────────
+{
+  const src = [
+    'LF nat : type =',
+    '| z : nat;',
+    'c0 : nat.',
+    'inductive Ev : ctype = | EvZ : Ev;',
+    'stratified St : ctype = | StZ : St',
+    'and inductive Od : ctype = | OdZ : Od',
+    'and Bare : ctype = | BareZ : Bare;',
+    'coinductive Str : ctype = | Hd : Str :: [ |- nat];',
+    'typedef Nt : ctype = [ |- nat];',
+    'rec f : [ |- nat] -> [ |- nat] = fn x => x;',
+    'let v : [ |- nat] = [ |- z];',
+    'proof p : [ |- nat] = ?;',
+  ].join('\n');
+  const labelOf = new Map(mkStore(src).symbols.getSnapshot().globalSymbols.map((g) => [g.name, g.label]));
+  const WANT = {
+    nat: 'LF type family', z: 'LF constructor', c0: 'LF constant',
+    Ev: 'inductive type', EvZ: 'constructor', St: 'stratified type', Od: 'inductive type',
+    Bare: 'stratified type', Str: 'coinductive type', Hd: 'destructor', Nt: 'type abbreviation',
+    f: 'recursive function', v: 'value', p: 'proof',
+  };
+  for (const [name, want] of Object.entries(WANT)) {
+    expect(labelOf.get(name) === want, `declaration label of ${name}: got ${labelOf.get(name)}, want ${want}`);
+  }
+}
+
 console.log('ok - autocomplete slice A');

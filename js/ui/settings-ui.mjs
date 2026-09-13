@@ -2138,6 +2138,11 @@ const global = globalThis;
         p.expandAliasesInAllFiles();
         if (!ed || typeof ed.getValue !== 'function' || typeof ed.setValue !== 'function') return;
         if (typeof BelEditor === 'undefined' || typeof BelEditor.expandBelAliases !== 'function') return;
+        // Same file kinds as the storage pass above, so the open tab never disagrees with disk.
+        var activeFile = activeId && typeof p.listFiles === 'function'
+          ? p.listFiles().find(function (f) { return f.id === activeId; })
+          : null;
+        if (activeFile && typeof p.isAliasExpandablePath === 'function' && !p.isAliasExpandablePath(activeFile.name)) return;
         var cur = ed.getValue();
         var next = BelEditor.expandBelAliases(cur);
         if (next !== cur) ed.setValue(next);

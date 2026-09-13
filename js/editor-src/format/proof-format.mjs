@@ -1,6 +1,7 @@
 // Pretty-print a generate-and-verify proof BODY (the text the search splices over
-// a `?` hole) into readable, canonically-glyphed Beluga — so a committed proof is
-// idiomatic, not the sprawl the raw splicer emits.
+// a `?` hole) into readable Beluga — so a committed proof is idiomatic, not the
+// sprawl the raw splicer emits. Glyphs follow the alias setting: greedy emits them,
+// strict emits the text as it came.
 //
 // The engine assembles bodies by concatenating move texts, so indentation drifts
 // (a nested `let` lands at a fixed column, arms sit at mixed depths). This is a
@@ -8,7 +9,7 @@
 // `case … of`, `|`-arms, `let … in` chains, `(` groups — never a per-theorem
 // template. Pure: text in, text out.
 
-import { expandBelAliases } from '../aliases.mjs';
+import { expandBelAliases, readAliasActivationMode } from '../aliases.mjs';
 
 const INDENT = '  ';
 
@@ -40,10 +41,27 @@ function bracketDelta(line) {
 //   • a `case … of` opens a new arm depth for the `|`s that follow;
 //   • unbalanced `(`/`[` continuations indent one deeper until they close.
 export function formatProofBody(rawBody, opts = {}) {
-  const canon = opts.canonicalGlyphs === false ? String(rawBody ?? '') : expandBelAliases(String(rawBody ?? ''));
+  // Layout is decided on ONE spelling, the alias-expanded view, so a proof lays out the
+  // same under both alias settings. What is EMITTED follows the setting: greedy emits the
+  // expanded view, strict emits each line exactly as it came, because strict never expands
+  // text that arrived unexpanded. Expansion never adds or removes a line, so the two views
+  // pair up line for line; if a custom alias ever broke that, strict falls back to raw.
+  const raw = String(rawBody ?? '');
+  const glyphs = opts.canonicalGlyphs ?? (readAliasActivationMode() === 'greedy');
+  const rawAll = raw.split('\n');
+  let viewAll = expandBelAliases(raw).split('\n');
+  if (viewAll.length !== rawAll.length) viewAll = glyphs ? viewAll : rawAll;
   const base = opts.baseIndent || '';
   // Normalize: drop blank lines, trim each line, keep a `/ total … /` prefix line.
-  const lines = canon.split('\n').map((l) => l.trim()).filter((l) => l.length);
+  const lines = [];
+  const emitLines = [];
+  for (let k = 0; k < viewAll.length; k += 1) {
+    const view = viewAll[k].trim();
+    const asCame = glyphs || viewAll === rawAll ? view : (rawAll[k] ?? '').trim();
+    if (!view.length && !asCame.length) continue;
+    lines.push(view);
+    emitLines.push(glyphs ? view : asCame);
+  }
   if (!lines.length) return base;
 
   const out = [];
@@ -58,14 +76,15 @@ export function formatProofBody(rawBody, opts = {}) {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    const src = emitLines[i];
 
     // A totality annotation prints at the base, alone.
-    if (/^\/\s*(total|trust)\b/.test(line)) { pushLine(0, line); continue; }
+    if (/^\/\s*(total|trust)\b/.test(line)) { pushLine(0, src); continue; }
 
     // Leading binders `fn f => …` / `mlam g => …`: keep on one line at base.
     if (/^(fn|mlam)\b/.test(line) && !/=>\s*\S/.test(line.replace(/^(fn\s+\S+\s*=>\s*)+/, ''))) {
       // a pure binder chain (optionally ending in `case … of`)
-      pushLine(0, line);
+      pushLine(0, src);
       if (/\bcase\b[\s\S]*\bof\b\s*$/.test(line)) caseArmLevel.push(1);
       contDepth = 0;
       continue;
@@ -73,7 +92,7 @@ export function formatProofBody(rawBody, opts = {}) {
 
     if (contDepth > 0) {
       // Continuation of an unclosed group — indent one past current.
-      pushLine(level + 1, line);
+      pushLine(level + 1, src);
       contDepth += bracketDelta(line);
       continue;
     }
@@ -84,21 +103,24 @@ export function formatProofBody(rawBody, opts = {}) {
       // Split an inline arm body onto its own indented line for readability, unless
       // it's a bare box/atom (short) — keep short ones inline.
       const arrowM = /^(\|[\s\S]*?=>)\s*([\s\S]*)$/.exec(line);
-      if (arrowM && arrowM[2] && arrowM[2].length && !/\bcase\b/.test(arrowM[2]) && arrowM[2].length <= 60) {
-        pushLine(armLvl, arrowM[1].trim() + ' ' + arrowM[2].trim());
+      // The same split on the emitted spelling. If it does not split the same way, the arm
+      // is emitted whole rather than guessed at.
+      const emitM = glyphs ? arrowM : /^(\|[\s\S]*?=>)\s*([\s\S]*)$/.exec(src);
+      if (arrowM && emitM && arrowM[2] && arrowM[2].length && !/\bcase\b/.test(arrowM[2]) && arrowM[2].length <= 60) {
+        pushLine(armLvl, emitM[1].trim() + ' ' + emitM[2].trim());
         level = armLvl + 1;
-      } else if (arrowM) {
-        pushLine(armLvl, arrowM[1].trim());
+      } else if (arrowM && emitM) {
+        pushLine(armLvl, emitM[1].trim());
         level = armLvl + 1;
         if (arrowM[2] && arrowM[2].length) {
           // inline `case … of` after the arrow → new nested case
           const rest = arrowM[2].trim();
-          pushLine(level, rest);
+          pushLine(level, emitM[2].trim());
           if (/\bcase\b[\s\S]*\bof\b\s*$/.test(rest)) caseArmLevel.push(level + 1);
           contDepth += bracketDelta(rest);
         }
       } else {
-        pushLine(armLvl, line);
+        pushLine(armLvl, src);
         level = armLvl + 1;
       }
       continue;
@@ -106,7 +128,7 @@ export function formatProofBody(rawBody, opts = {}) {
 
     // `case … of` mid-body (a nested case): current level, open a new arm depth.
     if (/^\(?\s*case\b/.test(line) && /\bof\b\s*$/.test(line)) {
-      pushLine(level, line);
+      pushLine(level, src);
       caseArmLevel.push(level + 1);
       contDepth += bracketDelta(line);
       continue;
@@ -114,7 +136,7 @@ export function formatProofBody(rawBody, opts = {}) {
 
     // A `let … in` (possibly wrapping): print at the arm-body level; siblings align.
     if (/^let\b/.test(line)) {
-      pushLine(level, line);
+      pushLine(level, src);
       contDepth += bracketDelta(line);
       continue;
     }
@@ -122,12 +144,12 @@ export function formatProofBody(rawBody, opts = {}) {
     // A lone closing `)` (closed a nested case group): dedent the case.
     if (/^\)+\s*;?\s*$/.test(line)) {
       if (caseArmLevel.length) caseArmLevel.pop();
-      pushLine(Math.max(0, level - 1), line);
+      pushLine(Math.max(0, level - 1), src);
       continue;
     }
 
     // Default: a result expression (box / application) at the current body level.
-    pushLine(level, line);
+    pushLine(level, src);
     contDepth += bracketDelta(line);
   }
 

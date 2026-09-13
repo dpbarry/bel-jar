@@ -15,6 +15,7 @@
 // mutual IH pool) and commit rewrites only that member's header+body.
 
 import { formatProofBody } from '../format/proof-format.mjs';
+import { maybeExpandBelAliases } from '../aliases.mjs';
 import { dispatchEdit } from '../edit-history.mjs';
 import { proveOrchestrationCode } from '../prover/prover-orchestrator.mjs';
 import { DECL_IDENT } from '../prover/ident.mjs';
@@ -187,7 +188,7 @@ export function buildProofProgram(assembledCode, declFrom, declTo) {
 
 export function committedMemberText(decl, body, hadSemi) {
   const leader = decl.leader && String(decl.leader).startsWith('and') ? decl.leader : 'rec';
-  const canonType = expandTypeGlyphs(decl.type);
+  const canonType = maybeExpandBelAliases(String(decl.type == null ? '' : decl.type));
   const formatted = formatProofBody(String(body == null ? '' : body).replace(/;\s*$/, '').trimEnd());
   return `${leader} ${decl.name} : ${canonType} =\n${formatted}${hadSemi ? '\n;' : ''}`;
 }
@@ -206,12 +207,6 @@ export function commitProof(view, declFrom, declTo, source) {
   }, { fileId, kind: 'proof-commit' });
   view.focus();
   return true;
-}
-
-function expandTypeGlyphs(typeText) {
-  return String(typeText == null ? '' : typeText)
-    .split('|-').join('⊢')
-    .replace(/->/g, '→');
 }
 
 export function declRangeWithSemicolon(doc, from, to) {

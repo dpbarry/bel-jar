@@ -1336,12 +1336,12 @@
       backendRemove2(ALIAS_ACTIVATION_KEY);
       backendRemove2(ALIAS_PAIRS_KEY);
     }
-    function isAliasExpandablePath(name) {
+    function isAliasExpandablePath2(name) {
       var PS = typeof ProjectSource !== "undefined" ? ProjectSource : null;
-      if (PS && typeof PS.isBelPath === "function") return PS.isBelPath(name);
+      if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
       var n = String(name || "").toLowerCase();
-      if (n.endsWith(".cfg") || n.endsWith(".elf")) return false;
-      if (n.endsWith(".bel")) return true;
+      if (n.endsWith(".cfg")) return false;
+      if (n.endsWith(".bel") || n.endsWith(".elf")) return true;
       var base = String(name || "").slice(String(name || "").lastIndexOf("/") + 1);
       return base.indexOf(".") === -1;
     }
@@ -1354,7 +1354,7 @@
     }
     function expandAliasesForStorage2(text, fileName) {
       if (readStoredAliasActivation2() !== "greedy") return String(text != null ? text : "");
-      if (!isAliasExpandablePath(fileName)) return String(text != null ? text : "");
+      if (!isAliasExpandablePath2(fileName)) return String(text != null ? text : "");
       if (typeof BelEditor !== "undefined" && typeof BelEditor.expandBelAliases === "function") {
         return BelEditor.expandBelAliases(text);
       }
@@ -1366,7 +1366,7 @@
       var changed = 0;
       for (var i = 0; i < files.length; i++) {
         var f = files[i];
-        if (!isAliasExpandablePath(f.name)) continue;
+        if (!isAliasExpandablePath2(f.name)) continue;
         var cur = getFileText2(f.id);
         var next = expandAliasesForStorage2(cur, f.name);
         if (next !== cur) {
@@ -1573,7 +1573,7 @@
       writeStoredKeybindings: writeStoredKeybindings2,
       resetKeybindingPrefs: resetKeybindingPrefs2,
       resetAliasesPrefs: resetAliasesPrefs2,
-      isAliasExpandablePath,
+      isAliasExpandablePath: isAliasExpandablePath2,
       fileNameForId: fileNameForId2,
       expandAliasesForStorage: expandAliasesForStorage2,
       expandAliasesInAllFiles: expandAliasesInAllFiles2,
@@ -4144,6 +4144,9 @@
   function expandAliasesInAllFiles() {
     return _settingsApi.expandAliasesInAllFiles.apply(_settingsApi, arguments);
   }
+  function isAliasExpandablePath() {
+    return _settingsApi.isAliasExpandablePath.apply(_settingsApi, arguments);
+  }
   function getExplorerFold() {
     return _settingsApi.getExplorerFold.apply(_settingsApi, arguments);
   }
@@ -4779,6 +4782,7 @@
     writeStoredKeybindings,
     resetKeybindingPrefs,
     expandAliasesInAllFiles,
+    isAliasExpandablePath,
     normalizeLoaded,
     emptyState,
     // Projects (top-level containers):

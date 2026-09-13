@@ -375,7 +375,10 @@
   }
   function highlightInto(host, text, kind) {
     var ed = global3.BelEditor || null;
-    var shown = displayBeluga2(String(text == null ? "" : text).trim());
+    var raw = String(text == null ? "" : text).trim();
+    var strictSource = kind !== "type" && ed && typeof ed.readAliasActivationMode === "function" && ed.readAliasActivationMode() !== "greedy";
+    var greedySource = kind !== "type" && !strictSource && ed && typeof ed.expandBelAliases === "function";
+    var shown = strictSource ? raw : displayBeluga2(greedySource ? ed.expandBelAliases(raw) : raw);
     if (!shown) return false;
     try {
       if (kind === "type" && ed && typeof ed.renderTypeInto === "function") {
@@ -689,9 +692,14 @@
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
       return normalizeGlyphs2(typeStr);
     }
+    function aliasMode() {
+      var ed = E3();
+      return ed && typeof ed.readAliasActivationMode === "function" ? ed.readAliasActivationMode() : "greedy";
+    }
     function displaySource(text) {
       var ed = E3();
       var s = String(text || "");
+      if (aliasMode() !== "greedy") return s;
       if (ed && typeof ed.expandBelAliases === "function") s = ed.expandBelAliases(s);
       return displayType3(s);
     }
@@ -718,7 +726,7 @@
       if (ed && typeof ed.renderSourceInto === "function") {
         try {
           ed.renderSourceInto(host, shown, "bel");
-          if (host.textContent.indexOf("|-") !== -1) host.textContent = shown;
+          if (shown.indexOf("|-") === -1 && host.textContent.indexOf("|-") !== -1) host.textContent = shown;
           return;
         } catch (e) {
         }

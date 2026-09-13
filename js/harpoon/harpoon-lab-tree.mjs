@@ -372,7 +372,13 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
   }
   function highlightInto(host, text, kind) {
     var ed = global.BelEditor || null;
-    var shown = displayBeluga(String(text == null ? '' : text).trim());
+    var raw = String(text == null ? '' : text).trim();
+    // Types always get the glyph display. Source follows the alias setting: expanded under
+    // greedy, exactly as written under strict (as harpoon-lab-display's displaySource).
+    var strictSource = kind !== 'type' && ed && typeof ed.readAliasActivationMode === 'function'
+      && ed.readAliasActivationMode() !== 'greedy';
+    var greedySource = kind !== 'type' && !strictSource && ed && typeof ed.expandBelAliases === 'function';
+    var shown = strictSource ? raw : displayBeluga(greedySource ? ed.expandBelAliases(raw) : raw);
     if (!shown) return false;
     try {
       if (kind === 'type' && ed && typeof ed.renderTypeInto === 'function') {

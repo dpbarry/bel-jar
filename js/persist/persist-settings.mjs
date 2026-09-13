@@ -1267,12 +1267,16 @@ export function create(deps) {
       backendRemove(ALIAS_PAIRS_KEY);
     }
 
+    // Which files greedy alias expansion rewrites in storage (import, upload, switching to
+    // greedy). Every source file, signature files included: greedy means always, and the
+    // editor already expands one when it opens it. Only project manifests are left alone:
+    // they hold file paths, and their editor has no aliases.
     function isAliasExpandablePath(name) {
       var PS = typeof ProjectSource !== 'undefined' ? ProjectSource : null;
-      if (PS && typeof PS.isBelPath === 'function') return PS.isBelPath(name);
+      if (PS && typeof PS.isSignaturePath === 'function') return PS.isSignaturePath(name);
       var n = String(name || '').toLowerCase();
-      if (n.endsWith('.cfg') || n.endsWith('.elf')) return false;
-      if (n.endsWith('.bel')) return true;
+      if (n.endsWith('.cfg')) return false;
+      if (n.endsWith('.bel') || n.endsWith('.elf')) return true;
       var base = String(name || '').slice(String(name || '').lastIndexOf('/') + 1);
       return base.indexOf('.') === -1;
     }

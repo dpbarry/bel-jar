@@ -4,7 +4,7 @@ import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
 import { syntaxTree } from '@codemirror/language';
 import { belugaLanguage, holeTag } from '../language.mjs';
 
-import { expandBelAliases } from '../aliases.mjs';
+import { maybeExpandBelAliases } from '../aliases.mjs';
 
 const SOURCE_HIGHLIGHTER = tagHighlighter([
   { tag: holeTag, class: 'jar-hl-hole' },
@@ -41,7 +41,7 @@ const SOURCE_HIGHLIGHTER = tagHighlighter([
 
 function normalizeSource(text) {
   if (text == null) return '';
-  return expandBelAliases(String(text).replace(/\r\n?/g, '\n'));
+  return maybeExpandBelAliases(String(text).replace(/\r\n?/g, '\n'));
 }
 
 function emitHighlighted(frag, source, tree, absBase = 0) {

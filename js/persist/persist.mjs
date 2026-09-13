@@ -1277,6 +1277,10 @@ var SCHEMA_VERSION = 3;
     return _settingsApi.expandAliasesInAllFiles.apply(_settingsApi, arguments);
   }
 
+  function isAliasExpandablePath() {
+    return _settingsApi.isAliasExpandablePath.apply(_settingsApi, arguments);
+  }
+
 
   function getExplorerFold() {
     return _settingsApi.getExplorerFold.apply(_settingsApi, arguments);
@@ -2014,6 +2018,7 @@ var SCHEMA_VERSION = 3;
     writeStoredKeybindings: writeStoredKeybindings,
     resetKeybindingPrefs: resetKeybindingPrefs,
     expandAliasesInAllFiles: expandAliasesInAllFiles,
+    isAliasExpandablePath: isAliasExpandablePath,
     normalizeLoaded: normalizeLoaded,
     emptyState: emptyState,
     // Projects (top-level containers):

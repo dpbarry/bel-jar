@@ -30,9 +30,18 @@ function createDisplay(deps) {
     return normalizeGlyphs(typeStr);
   }
 
+  function aliasMode() {
+    var ed = E();
+    return ed && typeof ed.readAliasActivationMode === 'function' ? ed.readAliasActivationMode() : 'greedy';
+  }
+
+  // Source (proof bodies, move terms: text that goes into the document, or previews it)
+  // follows the alias setting. Greedy shows it expanded. Strict shows it exactly as written,
+  // without the type-glyph normalization either, which belongs to checker-produced types.
   function displaySource(text) {
     var ed = E();
     var s = String(text || '');
+    if (aliasMode() !== 'greedy') return s;
     if (ed && typeof ed.expandBelAliases === 'function') s = ed.expandBelAliases(s);
     return displayType(s);
   }
@@ -60,7 +69,7 @@ function createDisplay(deps) {
     if (ed && typeof ed.renderSourceInto === 'function') {
       try {
         ed.renderSourceInto(host, shown, 'bel');
-        if (host.textContent.indexOf('|-') !== -1) host.textContent = shown;
+        if (shown.indexOf('|-') === -1 && host.textContent.indexOf('|-') !== -1) host.textContent = shown;
         return;
       } catch (e) { /* fall through */ }
     }

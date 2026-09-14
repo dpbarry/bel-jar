@@ -44,9 +44,20 @@ self.reportBelugaProgress = function (payload) {
   }
 };
 
+function cloneBelugaResult(result) {
+  if (result == null || typeof result !== 'object') return result;
+  var out = {};
+  if ('ok' in result || result.ok != null) {
+    out.ok = result.ok === true || result.ok === 1 || String(result.ok) === 'true';
+  }
+  if (result.output != null) out.output = String(result.output);
+  if (result.fingerprint != null) out.fingerprint = String(result.fingerprint);
+  return out;
+}
+
 function runBelugaJob(type, payload) {
-  if (type === 'check') return Beluga.checkFromString(payload);
-  if (type === 'load') return Beluga.loadFromString(payload);
+  if (type === 'check') return cloneBelugaResult(Beluga.checkFromString(payload));
+  if (type === 'load') return cloneBelugaResult(Beluga.loadFromString(payload));
   if (type === 'run') return Beluga.runCommand(payload);
   if (type === 'ide-type') return Beluga.ideTypeAtJson(payload.line, payload.col);
   if (type === 'ide-decl-type') return Beluga.ideDeclType(payload.name);

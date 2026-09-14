@@ -271,7 +271,7 @@ try {
     return { order, shownGroup, indent };
   }, style);
 
-  for (const [style, group, count] of [['default', null, 0], ['vim', 'Vim', 3], ['emacs', null, 0]]) {
+  for (const [style, group, count] of [['default', null, 0], ['vim', 'Vim', 2], ['emacs', 'Emacs', 1]]) {
     const p = await panelFor(style);
     const nested = p.order.filter((r) => r.startsWith('> '));
     check(p.shownGroup === group,
@@ -1253,9 +1253,9 @@ try {
     window.__realClip = real;
     const v = CurrentEditor.getView();
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: src } });
-    return { off: Persist.readStoredVimYankClipboard() };
+    return true;
   }, 'alpha beta gamma');
-  check(yank.off === false, 'the bridge is off until asked for', String(yank.off));
+  check(yank === true, 'the system clipboard is watched');
 
   const yankWord = async () => {
     await page.click('.cm-content');
@@ -1269,14 +1269,10 @@ try {
     return page.evaluate(() => window.__clip.slice());
   };
 
-  const clipWhenOff = await yankWord();
-  check(clipWhenOff.length === 0, 'with it off, a yank touches nothing', JSON.stringify(clipWhenOff));
-
-  await page.evaluate(() => { Persist.writeStoredVimYankClipboard(true); window.__clip = []; });
-  const clipWhenOn = await yankWord();
-  console.log('  yank clipboard:', JSON.stringify(clipWhenOn));
-  check(clipWhenOn.length === 1 && /alpha/.test(clipWhenOn[0]),
-    'with it on, a yank reaches the clipboard', JSON.stringify(clipWhenOn));
+  const clipAfterYank = await yankWord();
+  console.log('  yank clipboard:', JSON.stringify(clipAfterYank));
+  check(clipAfterYank.length === 1 && /alpha/.test(clipAfterYank[0]),
+    'every yank reaches the system clipboard', JSON.stringify(clipAfterYank));
 
   // ⛔ A delete must NOT clobber the clipboard, whatever Vim's `unnamed` does.
   await page.evaluate(() => { window.__clip = []; });
@@ -1290,7 +1286,6 @@ try {
   await new Promise((r) => setTimeout(r, 300));
   const afterDelete = await page.evaluate(() => {
     const out = window.__clip.slice();
-    Persist.writeStoredVimYankClipboard(false);
     if (window.__realClip) {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true, value: { writeText: window.__realClip },
@@ -2897,10 +2892,43 @@ const mChord = async (mods, code) => {
   check(s.col === 5, 'C-e end of line', 'col ' + s.col);
   await chord(['Control'], 'KeyA'); s = await state();
   check(s.col === 0, 'C-a start of line', 'col ' + s.col);
+  // C-y pastes from where Settings says: the system clipboard by default, or the
+  // kill ring. Headless Chrome grants no clipboard read, so a stand-in plays the
+  // system clipboard, and it holds something the kill ring does not.
+  await page.evaluate(() => {
+    window.__realClipboard = navigator.clipboard;
+    window.__emacsClip = '';
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (t) => { window.__emacsClip = String(t); return Promise.resolve(); },
+        readText: () => Promise.resolve(window.__emacsClip),
+      },
+    });
+  });
+  check(await page.evaluate(() => Persist.readStoredEmacsYankSource()) === 'system',
+    'C-y pastes from the system clipboard until asked otherwise');
   await chord(['Control'], 'KeyK'); s = await state();
   check(s.doc.startsWith('\nbravo'), 'C-k kill line', JSON.stringify(s.doc.slice(0, 8)));
-  await chord(['Control'], 'KeyY'); s = await state();
-  check(s.doc.startsWith('alpha'), 'C-y yank', JSON.stringify(s.doc.slice(0, 8)));
+  check(await page.evaluate(() => window.__emacsClip) === 'alpha', 'C-k also puts the kill on the system clipboard');
+  await page.evaluate(() => { window.__emacsClip = 'ZZZ'; });
+  await chord(['Control'], 'KeyY');
+  await new Promise((r) => setTimeout(r, 150));
+  s = await state();
+  check(s.doc.startsWith('ZZZ'), 'C-y yank pastes the system clipboard', JSON.stringify(s.doc.slice(0, 8)));
+
+  await page.evaluate(() => Persist.writeStoredEmacsYankSource('kill-ring'));
+  await load(PLAIN);
+  await chord(['Control'], 'KeyK');
+  await page.evaluate(() => { window.__emacsClip = 'ZZZ'; });
+  await chord(['Control'], 'KeyY');
+  await new Promise((r) => setTimeout(r, 150));
+  s = await state();
+  check(s.doc.startsWith('alpha'), 'with Kill ring chosen, C-y yanks the kill ring', JSON.stringify(s.doc.slice(0, 8)));
+  await page.evaluate(() => {
+    Persist.writeStoredEmacsYankSource('system');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: window.__realClipboard });
+  });
 
   await load(PLAIN);
   await chord(['Alt'], 'KeyF'); s = await state();

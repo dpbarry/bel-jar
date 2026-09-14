@@ -28,8 +28,8 @@ const EXEMPT = [/^js\/lang\//, /^js\/providers\//];
 // '.elf'. Where a doc and this gate disagree, the gate measured it.
 // Lower these as delamination lands; never raise them without saying why.
 const BASELINE = {
-  nodeSites: 1412,   // grammar node names. 1416 -> 1417 (2026-09-13, the peer-proof fix), then 1412 when the declaration labels became one table
-  identifiers: 568,  // Beluga-named identifiers, incl. public globals
+  nodeSites: 1420,   // grammar node names. 1416 -> 1417 (2026-09-13, the peer-proof fix), then 1412 when the declaration labels became one table, then 1424 (2026-09-13): the suite lint reads which family an LF constant's type ends in, so Twelf-style families count; then 1420 when the names walk stopped binding rec function names
+  identifiers: 566,  // Beluga-named identifiers, incl. public globals. 568 -> 566 (2026-09-14): Harpoon close-abort funnels BelugaClient through one helper
   cssClasses: 0,     // `bel-` / `bj-` prefixes — migrated to `jar-` on 2026-09-11
   extensions: 100,   // .bel / .cfg / .elf file-extension logic
 };

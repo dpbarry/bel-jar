@@ -20,3 +20,15 @@ await esbuild.build({
 });
 
 console.log('Wrote js/editor-cm.bundle.js');
+
+await esbuild.build({
+  entryPoints: [join(root, 'js', 'editor-src', 'prover', 'prover-moves-worker.mjs')],
+  bundle: true,
+  format: 'iife',
+  outfile: join(root, 'js', 'prover-moves.worker.js'),
+  platform: 'browser',
+  legalComments: 'none',
+  minify: true,
+});
+
+console.log('Wrote js/prover-moves.worker.js');

@@ -1815,11 +1815,6 @@ const global = globalThis;
       function () { return p0 && p0.readStoredVimLeader ? p0.readStoredVimLeader() : BACKSLASH; },
       function (p, v) { if (p.writeStoredVimLeader) p.writeStoredVimLeader(v); applyModal(); }
     );
-    addSwitchRow(vimGroup, 'vim-yank-clipboard', 'Yank to system clipboard',
-      'Copying with y also puts the text on the system clipboard. Pasting is unaffected.',
-      function () { return p0 && p0.readStoredVimYankClipboard ? p0.readStoredVimYankClipboard() : false; },
-      function (p, on) { if (p.writeStoredVimYankClipboard) p.writeStoredVimYankClipboard(on); }
-    );
     addDropdownRow(vimGroup, 'vim-insert-escape', 'Leave Insert with',
       'A two-key sequence that acts as Escape while typing.',
       [
@@ -1832,11 +1827,21 @@ const global = globalThis;
       function (p, v) { if (p.writeStoredVimInsertEscape) p.writeStoredVimInsertEscape(v); applyModal(); }
     );
 
-    // Emacs has no preference worth inventing, and a group with nothing in it is
-    // not a gap to fill — Emacs is modeless by design. What it costs you on this
-    // platform is a FACT about the browser, not a setting, so it lives in the
-    // Editing style passage with everything else you read before choosing.
-    styleGroups = { vim: vimGroup };
+    // Emacs has one real choice: what C-y pastes. Read on every press, so no
+    // applyModal. What Emacs costs you on this platform is a FACT about the
+    // browser, not a setting, so it stays in the Editing style passage.
+    var emacsGroup = addSubordinateGroup(panelBodies.keybindings, 'Emacs');
+    addDropdownRow(emacsGroup, 'emacs-yank-source', 'C-y pastes from',
+      'Kills always reach the system clipboard. With Kill ring, M-y cycles earlier kills.',
+      [
+        { value: 'system', label: 'System clipboard' },
+        { value: 'kill-ring', label: 'Kill ring' },
+      ],
+      function () { return p0 && p0.readStoredEmacsYankSource ? p0.readStoredEmacsYankSource() : 'system'; },
+      function (p, v) { if (p.writeStoredEmacsYankSource) p.writeStoredEmacsYankSource(v); }
+    );
+
+    styleGroups = { vim: vimGroup, emacs: emacsGroup };
     paintStyleRows(p0 && p0.readStoredKeymapStyle ? p0.readStoredKeymapStyle() : 'default');
 
     addDropdownRow(panelBodies.keybindings, 'status-strip', 'Status strip',

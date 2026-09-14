@@ -13,10 +13,18 @@
 //      is harmless on its own: a later `LF o = imp|all|not` just wins, and a file
 //      that only uses ITS OWN o is fine (e.g. fol-handbook.bel on top of fol.elf
 //      — both define `o`, no problem). The error only appears when a STILL-LATER
-//      file uses a constructor the redefinition shadowed AWAY (fol.bel uses
+//      file uses a name the redefinition shadowed AWAY (fol.bel uses
 //      `atom`/`conj` from fol.elf's o, which fol-handbook.bel's o lacks → the
-//      baffling "expected o, actual o"). So we flag the VICTIM file at its real
-//      use, never the redefiner — re-declaring a type is not itself an error.
+//      baffling "expected o, actual o"). So the VICTIM gets the error at its real
+//      use, and the redefiner gets a warning at its redeclaration naming what it
+//      dropped and which files use it — only then: re-declaring a type is not
+//      itself an error.
+//
+// A family is any LF type-level declaration: `LF o : type = | c : o;`, and the
+// Twelf style `o : type.` or `LF o : type.`. Its members are its constructors and
+// every constant whose type ends in it (`c : o.`, `s : nat -> nat.`,
+// `p/s : plus (s M) N (s P) <- plus M N P.`), wherever in the suite that constant
+// is declared.
 import { parser } from '../beluga-parser.js';
 import { Text } from '@codemirror/state';
 import { walkTree } from '../tree-walk.mjs';
@@ -37,18 +45,18 @@ export function leadingGlobalPragma(text) {
 // Per-file structure the shadowed-use analysis needs, parser-backed (not regex):
 //   families: Map<headName, { members:Set<name>, headLine:int }>
 //     — every LF type family the file declares, mapped to the names it brings
-//       into scope for that family (the head + its constructors).
+//       into scope for that family (the head, its constructors, and this file's
+//       constants whose type ends in it).
 //   memberType: Map<name, headName> — which family each defined name belongs to.
+//   constants: [{ name, target }] — every constant and the family its type ends in.
 //   uses: [{ name, line }] — FREE references (0-based line), excluding binders.
 // Cached by source text; suite files rarely change while another is edited.
 const fileCache = new Map();
 const FILE_CACHE_CAP = 128;
 
-function isLFDeclNode(name) {
-  return name === 'LFDeclaration' || name === 'LFDatatypeDeclaration';
-}
+const BACKWARD_ARROWS = new Set(['<-', '←']);
 
-// Collect the head(s) and constructor names of one LF declaration node.
+// Collect the head(s) and constructor names of one LF datatype declaration.
 function familyOf(node, doc) {
   const heads = [];
   const ctors = [];
@@ -63,46 +71,121 @@ function familyOf(node, doc) {
   return { heads, ctors };
 }
 
+// The family an LF type ends in: past `->` to its right, past `<-` to its left,
+// through `{x:A} B` to B, through parentheses, and to the head of an application.
+// null when it ends in anything else (a variable, a hole).
+function resultFamily(typeNode, doc) {
+  let cur = typeNode;
+  while (cur) {
+    if (cur.name === 'LFType') {
+      let arrow = null;
+      let before = null;
+      let after = null;
+      let last = null;
+      let app = null;
+      for (let c = cur.firstChild; c; c = c.nextSibling) {
+        if (c.name === 'ArrowOp') arrow = c;
+        else if (c.name === 'LFType') {
+          if (arrow) after = c; else before = c;
+          last = c;
+        } else if (c.name === 'LFAppType' && !app) app = c;
+      }
+      if (arrow) {
+        const op = arrow.firstChild ? arrow.firstChild.name : doc.sliceString(arrow.from, arrow.to).trim();
+        cur = BACKWARD_ARROWS.has(op) ? before : after;
+      } else if (cur.firstChild && cur.firstChild.name === '{') {
+        cur = last;
+      } else {
+        cur = app;
+      }
+    } else if (cur.name === 'LFAppType') {
+      cur = cur.firstChild;
+    } else if (cur.name === 'LFAtomicType') {
+      const first = cur.firstChild;
+      if (!first) return null;
+      if (first.name === 'LowerIdentifier' || first.name === 'UpperIdentifier') {
+        return doc.sliceString(first.from, first.to);
+      }
+      if (first.name !== '(') return null;
+      let inner = null;
+      for (let c = first.nextSibling; c; c = c.nextSibling) {
+        if (c.name === 'LFType') { inner = c; break; }
+      }
+      cur = inner;
+    } else {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function fileShadowInfo(text) {
   const src = String(text ?? '');
   const hit = fileCache.get(src);
   if (hit) return hit;
   const families = new Map();
   const memberType = new Map();
+  const constants = [];
   const uses = [];
   try {
     const doc = Text.of(src.split('\n'));
     const tree = parser.parse(src);
+    const addFamily = (head, from, ctors) => {
+      const headLine = doc.lineAt(from).number - 1;
+      const members = families.get(head)?.members || new Set();
+      members.add(head);
+      for (const c of ctors) members.add(c);
+      families.set(head, { members, headLine });
+    };
     // Families + their members from the tree.
     const cursor = tree.cursor();
     do {
-      if (!isLFDeclNode(cursor.name)) continue;
-      const node = cursor.node;
-      const { heads, ctors } = familyOf(node, doc);
-      // For a mutual family (`LF n … and a …`) every head shares the block; we
-      // attribute all constructors to each head it could belong to. That's a safe
-      // over-approximation: members of the family are in scope together.
-      for (const h of heads) {
-        const headLine = doc.lineAt(h.from).number - 1;
-        const members = families.get(h.name)?.members || new Set();
-        members.add(h.name);
-        for (const c of ctors) members.add(c);
-        families.set(h.name, { members, headLine });
+      if (cursor.name === 'LFDatatypeDeclaration') {
+        const { heads, ctors } = familyOf(cursor.node, doc);
+        // For a mutual family (`LF n … and a …`) every head shares the block; we
+        // attribute all constructors to each head it could belong to. That's a safe
+        // over-approximation: members of the family are in scope together.
+        for (const h of heads) addFamily(h.name, h.from, ctors);
+        for (const h of heads) memberType.set(h.name, h.name);
+        // A constructor's "family" is the first head of its declaration block.
+        if (heads.length) for (const c of ctors) if (!memberType.has(c)) memberType.set(c, heads[0].name);
+      } else if (cursor.name === 'LFDeclaration') {
+        // `nat : type.` declares a family; `s : nat -> nat.` a constant of the
+        // family its type ends in.
+        const node = cursor.node;
+        const id = firstIdentChild(node);
+        if (!id) continue;
+        const name = doc.sliceString(id.from, id.to);
+        let classifier = null;
+        for (let c = id.nextSibling; c; c = c.nextSibling) {
+          if (c.name === 'LFKind' || c.name === 'LFType') { classifier = c; break; }
+        }
+        if (!classifier) continue;
+        if (classifier.name === 'LFKind') {
+          addFamily(name, id.from, []);
+          memberType.set(name, name);
+        } else {
+          const target = resultFamily(classifier, doc);
+          if (target && target !== name) constants.push({ name, target });
+        }
       }
-      for (const h of heads) memberType.set(h.name, h.name);
-      // A constructor's "family" is the first head of its declaration block.
-      if (heads.length) for (const c of ctors) if (!memberType.has(c)) memberType.set(c, heads[0].name);
     } while (cursor.next());
+    // A constant joins its family here when this file declares that family too.
+    for (const c of constants) {
+      if (!memberType.has(c.name)) memberType.set(c.name, c.target);
+      const family = families.get(c.target);
+      if (family) family.members.add(c.name);
+    }
     // Free uses with line numbers.
     const walk = walkTree(tree, doc);
     for (const u of walk.uses) {
-      if (u.bound) continue;
+      if (u.bound || u.binds) continue; // a local binder's own name is not a use either
       uses.push({ name: u.name, line: doc.lineAt(u.from).number - 1 });
     }
   } catch {
     // Leave empty structures on parse failure — no findings beats false ones.
   }
-  const info = { families, memberType, uses };
+  const info = { families, memberType, constants, uses };
   if (fileCache.size >= FILE_CACHE_CAP) fileCache.clear();
   fileCache.set(src, info);
   return info;
@@ -114,8 +197,9 @@ export function fileShadowInfo(text) {
 //
 //   { kind: 'pragma-leak',  severity: 'warning', at, pragma, pragmaLine, affected: [key…] }
 //   { kind: 'shadowed-use', severity: 'error',   at, useName, useLine, type, shadower, origin }
+//   { kind: 'shadowing-redeclaration', severity: 'warning', at, type, headLine, dropped: [name…], users: [key…] }
 //
-// `at`/`shadower`/`origin` are entry keys; `*Line` are 0-based lines in that file.
+// `at`/`shadower`/`origin`/`users` are entry keys; `*Line` are 0-based lines in that file.
 export function analyzeSuite(entries) {
   if (!Array.isArray(entries) || entries.length < 2) return [];
   const findings = [];
@@ -142,8 +226,10 @@ export function analyzeSuite(entries) {
   const infos = entries.map((e) => fileShadowInfo(e.text));
   // name → { provider: key, type: headName } (the live binding as of the cursor).
   const live = new Map();
-  // name → { provider, type } it had BEFORE being shadowed away (for messaging).
+  // name → { type, shadower, origin, headLine } it had BEFORE being shadowed away.
   const shadowedAway = new Map();
+  // `${shadower}\u0000${type}` → the redeclaration warning, once a later file uses what it dropped.
+  const redeclarations = new Map();
 
   for (let i = 0; i < entries.length; i += 1) {
     const info = infos[i];
@@ -164,6 +250,14 @@ export function analyzeSuite(entries) {
         useName: use.name, useLine: use.line, type: lost.type,
         shadower: lost.shadower, origin: lost.origin,
       });
+      const rk = `${lost.shadower}\u0000${lost.type}`;
+      const redeclaration = redeclarations.get(rk) || {
+        kind: 'shadowing-redeclaration', severity: 'warning', at: lost.shadower,
+        type: lost.type, headLine: lost.headLine, dropped: [], users: [],
+      };
+      if (!redeclaration.dropped.includes(use.name)) redeclaration.dropped.push(use.name);
+      if (!redeclaration.users.includes(key)) redeclaration.users.push(key);
+      redeclarations.set(rk, redeclaration);
     }
 
     // 2) Apply THIS file's declarations, detecting what it shadows away.
@@ -176,7 +270,7 @@ export function analyzeSuite(entries) {
         for (const [name, binding] of [...live]) {
           if (binding.type !== head || binding.provider === key) continue;
           if (!fam.members.has(name)) {
-            shadowedAway.set(name, { type: head, shadower: key, origin: binding.provider });
+            shadowedAway.set(name, { type: head, shadower: key, origin: binding.provider, headLine: fam.headLine });
             live.delete(name);
           }
         }
@@ -187,9 +281,32 @@ export function analyzeSuite(entries) {
         shadowedAway.delete(name); // re-provided → no longer lost
       }
     }
+
+    // 3) A constant of a family an EARLIER file declared joins that family, so a
+    //    later redeclaration without it drops it too.
+    for (const c of info.constants) {
+      if (info.families.has(c.target)) continue; // joined in step 2
+      const family = live.get(c.target);
+      if (!family || family.type !== c.target) continue;
+      live.set(c.name, { provider: key, type: c.target });
+      shadowedAway.delete(c.name);
+    }
   }
 
+  for (const redeclaration of redeclarations.values()) findings.push(redeclaration);
   return findings;
+}
+
+// The 0-based line in its own file a finding is about.
+export function findingLine(finding) {
+  if (finding.kind === 'pragma-leak') return finding.pragmaLine ?? 0;
+  if (finding.kind === 'shadowing-redeclaration') return finding.headLine ?? 0;
+  return finding.useLine ?? 0;
+}
+
+function listOf(items) {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
 // Human-readable message for a finding, given a `name(key)` resolver so each
@@ -197,6 +314,11 @@ export function analyzeSuite(entries) {
 export function findingMessage(finding, name) {
   if (finding.kind === 'pragma-leak') {
     return `${finding.pragma} also applies to every previous file in the suite.`;
+  }
+  if (finding.kind === 'shadowing-redeclaration') {
+    const users = finding.users.map(name);
+    return `Redefining ${finding.type} here drops ${listOf(finding.dropped)}, which ${listOf(users)} `
+      + `${users.length === 1 ? 'uses' : 'use'}.`;
   }
   // shadowed-use
   return `${finding.useName} is no longer in scope: ${name(finding.shadower)} redefines `
@@ -216,8 +338,7 @@ export function suiteFileDiagnostics(entries, key, lineSpan) {
   const out = [];
   for (const f of findings) {
     if (f.at !== key) continue;
-    const lineIdx = f.kind === 'pragma-leak' ? f.pragmaLine : f.useLine;
-    const span = lineSpan(lineIdx == null ? 0 : lineIdx);
+    const span = lineSpan(findingLine(f));
     if (!span) continue;
     out.push({ from: span.from, to: span.to, severity: f.severity, source: 'suite', message: findingMessage(f, name) });
   }

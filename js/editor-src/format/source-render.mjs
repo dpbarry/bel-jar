@@ -97,19 +97,22 @@ export function highlightSourceFragment(text) {
 /**
  * Highlight `[from, to)` in an editor document using the live syntax tree so
  * definition / local / ctor tags match the buffer (not a lone re-parse).
+ * Pass `knownTree` when the caller already forced a complete parse.
  */
-export function highlightDocRange(state, from, to) {
+export function highlightDocRange(state, from, to, knownTree = null) {
   const frag = document.createDocumentFragment();
   if (!state?.doc || from == null || to == null) return frag;
   const lo = Math.max(0, from | 0);
   const hi = Math.min(state.doc.length, to | 0);
   if (hi <= lo) return frag;
   const source = state.doc.sliceString(lo, hi);
-  let tree = null;
-  try {
-    tree = syntaxTree(state);
-  } catch (_) {
-    tree = null;
+  let tree = knownTree;
+  if (!tree) {
+    try {
+      tree = syntaxTree(state);
+    } catch (_) {
+      tree = null;
+    }
   }
   if (!tree) {
     frag.appendChild(document.createTextNode(source));

@@ -20,6 +20,7 @@
     var downloadFolder = deps.downloadFolder;
     var downloadSuite = deps.downloadSuite;
     var suiteDownloadState = deps.suiteDownloadState;
+    var exportCurrentManuscript = deps.exportCurrentManuscript;
     var deleteFileInteractive = deps.deleteFileInteractive;
     var closeFile = deps.closeFile;
     var closeTabsForFiles = deps.closeTabsForFiles;
@@ -434,8 +435,13 @@
      * Available Keys all say about the same three commands.
      */
     function editorClipboard(action) {
-      if (!getEditor()) return;
-      window.Commands?.run?.('edit.' + action);
+      const editor = getEditor();
+      if (!editor) return;
+      const ran = window.Commands?.run?.('edit.' + action);
+      // Browsers refuse execCommand('paste'), so edit.paste declines and a keypress
+      // falls through to the native paste. A menu row has nothing to fall through
+      // to, so it asks the editor to read the system clipboard.
+      if (action === 'paste' && !ran) editor.pasteFromSystemClipboard?.();
     }
 
     /**
@@ -616,6 +622,12 @@
           onSelect: () => {
             CommandPalette.open();
           },
+        },
+        { type: 'separator' },
+        {
+          label: 'Export manuscript',
+          disabled: !getEditor() || !getEditor().getValue,
+          onSelect: exportCurrentManuscript,
         },
         { type: 'separator' },
         {

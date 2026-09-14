@@ -240,6 +240,57 @@ expect(!slim.includes('dual_sym'), 'orchestration drops holed sibling theorems')
 expect(slim.includes('rec dual_uniq'), 'orchestration keeps the target theorem');
 expect(slim.includes('tp : type.'), 'orchestration keeps suite prelude');
 
+// A later theorem that CALLS an incomplete lemma must keep that lemma — dropping
+// it makes a clean file look ill-typed to Harpoon.
+{
+  const called = [
+    'tp : type.',
+    'dual : tp -> tp -> type.',
+    'eq : tp -> tp -> type.',
+    'rec dual_sym : [ |- dual A A\'] -> [ |- dual A\' A] =',
+    '/ total 1 /',
+    '?',
+    ';',
+    'rec dual_app : [ |- dual A A\'] -> [ |- dual A\' A] =',
+    '/ total 1 /',
+    'fn d => dual_sym d',
+    ';',
+    'rec dual_use : [ |- dual A A\'] -> [ |- dual A\' A] =',
+    '/ total 1 /',
+    'fn d => let x = dual_sym d in ?',
+    ';',
+  ].join('\n');
+  const useStart = called.indexOf('rec dual_use');
+  const useEnd = called.indexOf(';', useStart) + 1;
+  const kept = proveOrchestrationCode(called, 'dual_use', useStart, useEnd, 0);
+  expect(kept.includes('rec dual_sym'), 'orchestration keeps a holed lemma the target calls');
+  expect(kept.includes('rec dual_app'), 'orchestration keeps complete callers in the prefix');
+}
+
+// …and so must a holed lemma that any KEPT declaration calls, transitively: a complete
+// declaration is always kept, so dropping what it calls makes it ill-typed. A holed lemma
+// nothing reaches still goes.
+{
+  const chain = [
+    'tp : type.',
+    'dual : tp -> tp -> type.',
+    'rec leaf : [ |- dual A A\'] -> [ |- dual A\' A] =', '/ total 1 /', '?', ';',
+    'rec helper : [ |- dual A A\'] -> [ |- dual A\' A] =', '/ total 1 /', 'fn d => leaf d', ';',
+    'rec inner : [ |- dual A A\'] -> [ |- dual A\' A] =', '/ total 1 /', '?', ';',
+    'rec outer : [ |- dual A A\'] -> [ |- dual A\' A] =', '/ total 1 /', 'fn d => let x = inner d in ?', ';',
+    'rec stray : [ |- dual A A\'] -> [ |- dual A\' A] =', '/ total 1 /', '?', ';',
+    'rec goal : [ |- dual A A\'] -> [ |- dual A\' A] =', '/ total 1 /', 'fn d => let y = outer d in ?', ';',
+  ].join('\n');
+  const goalStart = chain.indexOf('rec goal');
+  const goalEnd = chain.indexOf(';', goalStart) + 1;
+  const kept = proveOrchestrationCode(chain, 'goal', goalStart, goalEnd, 0);
+  expect(kept.includes('rec helper'), 'complete declarations in the prefix stay');
+  expect(kept.includes('rec leaf'), 'orchestration keeps a holed lemma a kept complete declaration calls');
+  expect(kept.includes('rec outer'), 'orchestration keeps a holed lemma the target calls (chain)');
+  expect(kept.includes('rec inner'), 'orchestration keeps a holed lemma reached through another holed lemma');
+  expect(!kept.includes('rec stray'), 'orchestration still drops a holed lemma nothing reaches');
+}
+
 // Phase E.6 — unused flat LF dropped from suite prelude; sibling recs untouched.
 {
   const prelude = [

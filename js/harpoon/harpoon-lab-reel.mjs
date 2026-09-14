@@ -568,7 +568,12 @@ function createReel(deps) {
         this._reelClock = setInterval(function () {
           var na = self.nativeAuto;
           if (!na || na.phase !== 'searching') { self.stopReelClock(); return; }
-          if (self._autoSearchText) self._autoSearchText.textContent = nativeAutoSearchLabel(na);
+          if (self._autoSearchText) {
+            var label = nativeAutoSearchLabel(na);
+            if (self._autoSearchText.textContent !== label) {
+              self._autoSearchText.textContent = label;
+            }
+          }
           syncReelStatTips(self, na);
         }, 200);
       };

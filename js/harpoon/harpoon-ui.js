@@ -1912,7 +1912,12 @@
           self.stopReelClock();
           return;
         }
-        if (self._autoSearchText) self._autoSearchText.textContent = nativeAutoSearchLabel(na);
+        if (self._autoSearchText) {
+          var label = nativeAutoSearchLabel(na);
+          if (self._autoSearchText.textContent !== label) {
+            self._autoSearchText.textContent = label;
+          }
+        }
         syncReelStatTips(self, na);
       }, 200);
     }
@@ -3301,6 +3306,22 @@
         manual: true
       };
     }
+    function declineCheckMessage(res) {
+      var out = String(res && res.output || "").trim();
+      if (!out) return "The file has errors. Fix them before proving.";
+      var err = out.match(/^Error:\s*(.+)$/im);
+      if (err) return err[0].trim();
+      var unbound = out.match(/Identifier\s+\S+\s+is unbound\.?/i);
+      if (unbound) return unbound[0].trim();
+      var lines = out.split("\n");
+      for (var i = 0; i < lines.length; i += 1) {
+        var t = lines[i].trim();
+        if (!t || /^##/.test(t) || /^File\s+"/.test(t)) continue;
+        if (/^Raised at|^Called from|^Re-raised|^Backtrace/i.test(t)) break;
+        return t.slice(0, 280);
+      }
+      return "The file has errors. Fix them before proving.";
+    }
     function startManual(code, seed) {
       var ed = E3();
       var client = globalThis.BelugaClient;
@@ -3316,6 +3337,7 @@
         toast2("Harpoon could not read this theorem.", "error");
         return Promise.resolve(false);
       }
+      if (this.disposed) return Promise.resolve(false);
       this.thm = thm;
       this.nativeAuto = null;
       var proveCode = code || prep.proveCode || prep.assembledCode;
@@ -3329,21 +3351,41 @@
         priorBinders: [],
         busy: false,
         error: null,
-        commit: this.commitState || null
+        commit: this.commitState || null,
+        moves: null,
+        movesPending: false
       };
       this.captureAnchor(this.view, prep);
       this.bindProbe();
       this.render();
+      if (this.disposed) return Promise.resolve(false);
+      function runCheck(src) {
+        return client.checkResultForProver ? client.checkResultForProver(src) : client.checkResult(src);
+      }
       var ready = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
       return ready.then(function() {
+        if (self.disposed) return null;
         return client.loadProverChecker ? client.loadProverChecker(proveCode) : null;
       }).then(function() {
-        return client.checkResultForProver ? client.checkResultForProver(proveCode) : client.checkResult(proveCode);
+        if (self.disposed) return { ok: false };
+        return runCheck(proveCode);
       }).then(function(res) {
-        if (!self.manual) return false;
+        if (self.disposed || !self.manual) return res;
+        if (res && res.ok) return res;
+        var assembled = prep.assembledCode;
+        if (!assembled || assembled === proveCode) return res;
+        return runCheck(assembled).then(function(full) {
+          if (full && full.ok) {
+            proveCode = assembled;
+            return full;
+          }
+          return res || full;
+        });
+      }).then(function(res) {
+        if (self.disposed || !self.manual) return false;
         if (!res || !res.ok) {
           self.manual.phase = "error";
-          self.manual.error = "The file has errors. Fix them before proving.";
+          self.manual.error = declineCheckMessage(res);
           self.render();
           return false;
         }
@@ -3354,11 +3396,15 @@
         }
         self.manual.phase = "ready";
         self.manual.priorBinders = priorGoalBinders2(self, sourceGoalType, self.manualGoalType());
+        self.manual.moves = null;
+        self.manual.movesPending = !!(self.manual.state && !ed.manualIsComplete(self.manual.state));
         self.render();
-        self.sweepCandidates();
+        if (self.manual.movesPending) self.loadMoves();
         return true;
       }).catch(function(err) {
-        if (!self.manual) return false;
+        if (self.disposed || !self.manual) return false;
+        var cancelled = client && client.isCancelledError && client.isCancelledError(err);
+        if (cancelled) return false;
         self.manual.phase = "error";
         self.manual.error = err && err.message || String(err);
         self.render();
@@ -3457,8 +3503,7 @@
         m.state = r.state;
         setTacticStatus(self, "");
         m.priorBinders = priorGoalBinders2(self, m.sourceGoalType, self.manualGoalType());
-        self.render();
-        self.sweepCandidates();
+        self.refreshMoves();
         return true;
       }).catch(function(err) {
         m.busy = false;
@@ -3473,6 +3518,51 @@
       var t = String(detail || "").replace(/^File\s+"[^"]*",\s*line\s*\d+,\s*column\s*\d+:?\s*/i, "");
       t = t.replace(/^Error:\s*/i, "").split("\n")[0].trim();
       return t.length > 160 ? t.slice(0, 157) + "\u2026" : t;
+    }
+    function refreshMoves() {
+      var ed = E3();
+      var m = this.manual;
+      if (!m || m.phase !== "ready") return;
+      var complete = m.state && ed && ed.manualIsComplete(m.state);
+      m.moves = null;
+      m.movesPending = !complete;
+      this.cancelSweep();
+      this.render();
+      if (m.movesPending) this.loadMoves();
+    }
+    function loadMoves() {
+      var ed = E3();
+      var self = this;
+      var m = this.manual;
+      var token = {};
+      this._movesToken = token;
+      if (!m || !m.state || !ed) return Promise.resolve(false);
+      if (ed.manualIsComplete(m.state)) {
+        m.movesPending = false;
+        m.moves = [];
+        return Promise.resolve(true);
+      }
+      m.movesPending = true;
+      var run = ed.movesAtAsync ? ed.movesAtAsync(m.state, this.thm, {
+        shouldCancel: function() {
+          return !!(self.disposed || self._movesToken !== token);
+        }
+      }) : Promise.resolve([]);
+      return Promise.resolve(run).then(function(moves) {
+        if (self.disposed || self._movesToken !== token || !self.manual) return false;
+        self.manual.moves = moves || [];
+        self.manual.movesPending = false;
+        self.render();
+        var na = self.nativeAuto;
+        if (!(na && na.phase === "searching" && !na.paused)) self.sweepCandidates();
+        return true;
+      }).catch(function() {
+        if (self.disposed || self._movesToken !== token || !self.manual) return false;
+        self.manual.moves = [];
+        self.manual.movesPending = false;
+        self.render();
+        return false;
+      });
     }
     function sweepCandidates() {
       var ed = E3();
@@ -3537,8 +3627,7 @@
       this.cancelSweep();
       m.state = ed.manualUndo(m.state);
       m.lastError = null;
-      this.render();
-      this.sweepCandidates();
+      this.refreshMoves();
     }
     function manualStepForward() {
       var ed = E3();
@@ -3546,8 +3635,7 @@
       if (!m || !m.state || !ed.manualCanRedo(m.state)) return;
       this.cancelSweep();
       m.state = ed.manualRedo(m.state);
-      this.render();
-      this.sweepCandidates();
+      this.refreshMoves();
     }
     function manualFocus(idx) {
       var ed = E3();
@@ -3555,8 +3643,7 @@
       if (!m || !m.state) return;
       this.cancelSweep();
       m.state = ed.focusOn(m.state, idx);
-      this.render();
-      this.sweepCandidates();
+      this.refreshMoves();
     }
     function orcaStack(self, before) {
       var prior = before && before.stack || [];
@@ -3615,9 +3702,9 @@
         this.syncManualToOrca().then(function(ok) {
           m.syncing = false;
           m.syncFailed = !ok;
-          if (!self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
-          self.render();
-          if (ok) self.sweepCandidates();
+          if (self.disposed || !self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
+          if (ok) self.refreshMoves();
+          else self.render();
         });
       } else {
         m.syncing = false;
@@ -3652,7 +3739,7 @@
         return Promise.resolve(false);
       }
       return manualOracle()(code).then(function(res) {
-        if (!self.manual) return false;
+        if (self.disposed || !self.manual) return false;
         if (res && res.ok) {
           var next = ed.manualState(code, self.thm, res.output || "");
           next.steps = (before && before.steps || []).concat(r && r.steps || []);
@@ -3665,10 +3752,10 @@
           );
         }
         self.manualBefore = null;
-        self.render();
-        self.sweepCandidates();
+        self.refreshMoves();
         return true;
       }).catch(function() {
+        if (self.disposed || !self.manual) return false;
         self.manualBefore = null;
         self.render();
         return false;
@@ -3683,7 +3770,7 @@
       var code = na.liveCode || na.code;
       if (!code || code === m.state.code) return Promise.resolve(true);
       return manualOracle()(code).then(function(res) {
-        if (!res || !res.ok || !self.manual) return false;
+        if (!res || !res.ok || self.disposed || !self.manual) return false;
         var next = ed.manualState(code, self.thm, res.output || "");
         var before = self.manualBefore;
         next.steps = (before && before.steps || []).concat(ed.pairTrace ? ed.pairTrace(na.steps || [], na.trace) : na.steps || []);
@@ -3744,7 +3831,6 @@
       if (!m) return;
       var st = m.state;
       var complete = st && ed.manualIsComplete(st);
-      this._renderSig = manualRenderSig2(this);
       var box = el4("div", "harpoon-lab-manual is-" + m.phase + (complete ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       var goalType = this.manualGoalType();
@@ -3985,14 +4071,18 @@
         this._tacticStatusEl = tacStatus;
         movesWrap.appendChild(tacticsLabel);
         var moves = [];
-        try {
-          moves = ed.movesAt(st, this.thm) || [];
-        } catch (e) {
-          moves = [];
+        if (Array.isArray(m.moves)) moves = m.moves;
+        var needMoves = !Array.isArray(m.moves) && st && ed && !complete && !m.syncFailed && !m.syncing;
+        if (needMoves && !m.movesPending) {
+          m.movesPending = true;
+          Promise.resolve().then(function() {
+            if (self.disposed || !self.manual || self.manual !== m) return;
+            self.loadMoves();
+          });
         }
         var list = el4("div", "harpoon-lab-move-list");
-        if (m.busy || m.syncing) {
-          for (var sk = 0; sk < Math.min(3, Math.max(1, moves.length)); sk += 1) {
+        if (m.syncing || m.movesPending && !moves.length) {
+          for (var sk = 0; sk < (m.movesPending && !moves.length ? 3 : Math.min(3, Math.max(1, moves.length))); sk += 1) {
             list.appendChild(skelMoveRow(sk));
           }
           movesWrap.appendChild(list);
@@ -4075,6 +4165,7 @@
         this._derivEl = deriv;
       }
       parent.appendChild(box);
+      this._renderSig = manualRenderSig2(this);
     }
     return {
       startManual,
@@ -4086,6 +4177,8 @@
       manualFocus,
       sweepCandidates,
       cancelSweep,
+      loadMoves,
+      refreshMoves,
       runOrca,
       toggleOrcaPause,
       absorbOrcaResult,
@@ -4103,6 +4196,9 @@
   }
   function P() {
     return global8.HarpoonEngine || null;
+  }
+  function C() {
+    return global8.BelugaClient || null;
   }
   function FW() {
     return global8.FloatingWindow || null;
@@ -4389,6 +4485,8 @@
     this.anchor = null;
     this.compromise = { level: "none", reason: "", detail: "" };
     this.userCancelled = false;
+    this.disposed = false;
+    this._dead = false;
     this.pendingCommitSource = null;
     this._compromiseBanner = null;
     this.commitState = defaultCommitState();
@@ -4616,8 +4714,17 @@
     }
     window.StatusStrip.setOrca(true, na.paused ? "paused" : label || "");
   }
-  Session.prototype.stopNativeAuto = function() {
+  Session.prototype.abortCompute = function() {
     this.userCancelled = true;
+    this._movesToken = null;
+    if (typeof this.cancelSweep === "function") this.cancelSweep();
+    var client = C();
+    if (client && client.abortProverWorkload) client.abortProverWorkload();
+    var ed = E();
+    if (ed && ed.abortMovesWorkload) ed.abortMovesWorkload();
+  };
+  Session.prototype.stopNativeAuto = function() {
+    this.abortCompute();
     if (this.nativeAuto && this.nativeAuto.phase === "searching") {
       setNativeSearchLabel(this.nativeAuto, "Stopping\u2026");
       this.updateNativeAutoSearch();
@@ -4627,7 +4734,7 @@
   Session.prototype.restartNativeAuto = function() {
     var self = this;
     if (this.nativeAuto && this.nativeAuto.phase === "searching") {
-      this.userCancelled = true;
+      this.abortCompute();
       var waitDone = function() {
         if (self.nativeAuto && self.nativeAuto.phase === "searching") {
           setTimeout(waitDone, 40);
@@ -4803,7 +4910,7 @@
   Session.prototype.resolveFullDeclSignature = function(proveCode, sourceType) {
     var self = this;
     var ed = E();
-    var client = global8.BelugaClient;
+    var client = C();
     var name = this.prep && this.prep.name;
     if (!ed || !client || typeof client.ideDeclTypeForProver !== "function" || !name || !proveCode) return;
     if (this._fullDeclSigRequested === name) return;
@@ -4828,7 +4935,7 @@
   };
   Session.prototype.runNativeAuto = function(codeOverride) {
     var ed = E();
-    var client = global8.BelugaClient;
+    var client = C();
     var prep = this.prep;
     var self = this;
     if (!ed || !client || !prep || typeof ed.proveProgram !== "function" || typeof ed.theoremUnderProof !== "function") {
@@ -4903,17 +5010,23 @@
     var proverReady = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
     var warm = client.loadProverChecker && proveCode ? client.loadProverChecker(proveCode) : Promise.resolve();
     return proverReady.then(function() {
+      if (self.disposed || self.userCancelled) return null;
       pulseLabel("Loading the program\u2026");
       return warm;
     }).then(function() {
+      if (self.disposed || self.userCancelled) return null;
       self.resolveFullDeclSignature(proveCode, sourceGoalType);
       if (client.checkResultForProver) {
         pulseLabel("Reading the goal\u2026");
         return client.checkResultForProver(proveCode).then(function(base) {
+          if (self.disposed || self.userCancelled) return;
           if (base && base.output) self.upgradeNativeAutoGoal(base.output, prep);
         });
       }
     }).then(function() {
+      if (self.disposed || self.userCancelled) {
+        return { complete: false, steps: [], stuck: { reason: "cancelled" } };
+      }
       pulseLabel("Starting search\u2026");
       return ed.proveProgram(proveCode, thm, function(code) {
         return client.checkResultForProver ? client.checkResultForProver(code) : client.checkResult(code);
@@ -4983,6 +5096,7 @@
         }
       });
     }).then(function(r) {
+      if (self.disposed) return false;
       self.probeAnchor();
       if (self._retireOrca) {
         self._retireOrca = false;
@@ -5016,6 +5130,7 @@
       if (self.manual) self.absorbOrcaResult(r);
       return !!(r && r.complete);
     }).catch(function(err) {
+      if (self.disposed) return false;
       var cancelled = client.isCancelledError && client.isCancelledError(err);
       if (cancelled && self.nativeAuto && self.nativeAuto.paused) return false;
       self.nativeAuto = {
@@ -5095,18 +5210,28 @@
     if (c && c.level === "warn") return "Code related to this goal has changed";
     return "Restart from the current file state";
   }
-  Session.prototype.disposeSession = function() {
+  Session.prototype.disposeSession = function(opts) {
+    opts = opts || {};
+    if (this._dead) return;
+    this._dead = true;
+    this.disposed = true;
+    this.abortCompute();
     untrackSession(this);
+    removeFloatSession(this);
     this.clearPendingCommitNav();
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
-    var client = global8.BelugaClient;
+    var client = C();
     if (client && client.endProverSession) client.endProverSession();
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
     this._treeRedraw = null;
-    if (this.win && this.win.close) this.win.close();
+    if (!opts.fromWindowClose && this.win && this.win.close) {
+      var w = this.win;
+      this.win = null;
+      w.close();
+    }
     this.win = null;
     var proof = P();
     if (proof && proof.dispose) proof.dispose();
@@ -5127,7 +5252,9 @@
       m.phase,
       m.syncing ? "syncing" : "",
       m.syncFailed ? "syncfail" : "",
-      m.busy ? "busy" : ""
+      m.busy ? "busy" : "",
+      m.movesPending ? "moves" : "",
+      Array.isArray(m.moves) ? String(m.moves.length) : "-"
     ].join("|");
   }
   Session.prototype.derivationNa = function() {
@@ -5489,6 +5616,8 @@
     Session.prototype.manualFocus = manualApi.manualFocus;
     Session.prototype.sweepCandidates = manualApi.sweepCandidates;
     Session.prototype.cancelSweep = manualApi.cancelSweep;
+    Session.prototype.loadMoves = manualApi.loadMoves;
+    Session.prototype.refreshMoves = manualApi.refreshMoves;
     Session.prototype.runOrca = manualApi.runOrca;
     Session.prototype.toggleOrcaPause = manualApi.toggleOrcaPause;
     Session.prototype.absorbOrcaResult = manualApi.absorbOrcaResult;
@@ -5499,7 +5628,7 @@
   }
   __initHarpoonLabPeels();
   Session.prototype.render = function() {
-    if (!this.bodyEl) return;
+    if (this.disposed || !this.bodyEl) return;
     var self = this;
     var body = this.bodyEl;
     if (this.nativeAuto && this.nativeAuto.phase === "searching" && this._autoSearchBox && body.contains(this._autoSearchBox) && this._renderSig === manualRenderSig(this)) {
@@ -5762,7 +5891,7 @@
     if (host.onSessionStart) host.onSessionStart(prep.name);
     var startOrca = openingMode() === "orca";
     session.startManual().then(function(ok) {
-      if (ok && startOrca) session.runOrca();
+      if (ok && startOrca && !session.disposed) session.runOrca();
     });
     return session;
   }
@@ -5799,11 +5928,7 @@
             }
           },
           onClose: function() {
-            s.userCancelled = true;
-            removeFloatSession(s);
-            s.unbindProbe();
-            var proof = P();
-            if (proof && proof.dispose) proof.dispose();
+            s.disposeSession({ fromWindowClose: true });
           }
         });
         floatSessions.push(s);

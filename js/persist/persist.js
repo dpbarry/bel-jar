@@ -228,7 +228,7 @@
     var DOUBLE_TAP_COMMAND_KEY = "beljar-double-tap-command";
     var DOUBLE_TAP_SPEED_KEY = "beljar-double-tap-speed";
     var VIM_LEADER_KEY = "beljar-vim-leader";
-    var VIM_YANK_CLIPBOARD_KEY = "beljar-vim-yank-clipboard";
+    var EMACS_YANK_SOURCE_KEY = "beljar-emacs-yank-source";
     var EDITOR_LINE_NUMBER_MODE_KEY = "beljar-editor-line-number-mode";
     var VIM_INSERT_ESCAPE_KEY = "beljar-vim-insert-escape";
     var MOTION_PREF_KEY = "beljar-motion-pref";
@@ -867,16 +867,16 @@
       if (v === "," || v === " ") backendSave2(VIM_LEADER_KEY, v);
       else backendRemove2(VIM_LEADER_KEY);
     }
-    function readStoredVimYankClipboard() {
+    function readStoredEmacsYankSource() {
       try {
-        return backendLoad2(VIM_YANK_CLIPBOARD_KEY) === "on";
+        return backendLoad2(EMACS_YANK_SOURCE_KEY) === "kill-ring" ? "kill-ring" : "system";
       } catch (_) {
-        return false;
+        return "system";
       }
     }
-    function writeStoredVimYankClipboard(on) {
-      if (on === true) backendSave2(VIM_YANK_CLIPBOARD_KEY, "on");
-      else backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+    function writeStoredEmacsYankSource(v) {
+      if (v === "kill-ring") backendSave2(EMACS_YANK_SOURCE_KEY, "kill-ring");
+      else backendRemove2(EMACS_YANK_SOURCE_KEY);
     }
     function readStoredVimInsertEscape() {
       try {
@@ -1152,7 +1152,7 @@
       STATUS_STRIP_KEY,
       COMMAND_LINE_HISTORY_KEY,
       VIM_LEADER_KEY,
-      VIM_YANK_CLIPBOARD_KEY,
+      EMACS_YANK_SOURCE_KEY,
       VIM_INSERT_ESCAPE_KEY,
       DOUBLE_TAP_TRIGGER_KEY,
       DOUBLE_TAP_COMMAND_KEY,
@@ -1326,7 +1326,7 @@
       backendRemove2(STATUS_STRIP_KEY);
       backendRemove2(COMMAND_LINE_HISTORY_KEY);
       backendRemove2(VIM_LEADER_KEY);
-      backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+      backendRemove2(EMACS_YANK_SOURCE_KEY);
       backendRemove2(VIM_INSERT_ESCAPE_KEY);
       backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
       backendRemove2(DOUBLE_TAP_COMMAND_KEY);
@@ -1513,8 +1513,8 @@
       writeStoredDoubleTapCommand,
       readStoredDoubleTapSpeed,
       writeStoredDoubleTapSpeed,
-      readStoredVimYankClipboard,
-      writeStoredVimYankClipboard,
+      readStoredEmacsYankSource,
+      writeStoredEmacsYankSource,
       readStoredVimLeader,
       writeStoredVimLeader,
       readStoredVimInsertEscape,
@@ -4047,8 +4047,8 @@
     "writeStoredDoubleTapSpeed",
     "readStoredVimLeader",
     "writeStoredVimLeader",
-    "readStoredVimYankClipboard",
-    "writeStoredVimYankClipboard",
+    "readStoredEmacsYankSource",
+    "writeStoredEmacsYankSource",
     "readStoredVimInsertEscape",
     "writeStoredVimInsertEscape",
     "readStoredMotionPref",

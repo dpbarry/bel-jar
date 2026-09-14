@@ -14,6 +14,7 @@ import { openLocalGraphWindow } from '../graph/graph-view.mjs';
 import { startRename, renameReachAt, renameReachTooltip } from './rename.mjs';
 import { findReferences, canFindReferences } from './refs-panel.mjs';
 import { holeAt, splitTargetsOf, canIntro, runIntro, runFill, runSplit } from '../prover/hole-actions.mjs';
+import { pasteSystemClipboard } from './clipboard-bridge.mjs';
 
 function canGoToDefinition(view, pos, nav) {
   if (nav?.symbolId && !nav.onDefinition) return true;
@@ -45,9 +46,12 @@ function isEditable(view) {
  * retyped instead of derived" trap: this menu can drift from what Keybindings,
  * the palette and Available Keys all say about the same three commands.
  */
-function runClipboard(action) {
+function runClipboard(action, view) {
   const g = typeof window !== 'undefined' ? window : self;
-  g.Commands?.run?.('edit.' + action);
+  const ran = g.Commands?.run?.('edit.' + action);
+  // Browsers refuse `execCommand('paste')`, so `edit.paste` declines and a keypress
+  // falls through to the native paste. A menu row has nothing to fall through to.
+  if (action === 'paste' && !ran && view) pasteSystemClipboard(view);
 }
 
 function editHistoryApi() {
@@ -176,7 +180,7 @@ function buildEditMenuItems(view) {
     }),
     cmdRow('edit.paste', 'Paste', 'Mod+V', {
       disabled: !editable,
-      onSelect: () => runClipboard('paste'),
+      onSelect: () => runClipboard('paste', view),
     }),
     cmdRow('edit.select-all', 'Select All', 'Mod+A', { onSelect: () => selectAll(view) }),
     cmdRow('edit.find', 'Find…', 'Mod+F', { onSelect: () => openSearchPanel(view) }),

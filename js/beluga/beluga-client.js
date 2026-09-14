@@ -390,6 +390,15 @@
     if (proverSessionCount === 0) scheduleProverIdleShutdown();
   }
 
+  function abortProverWorkload() {
+    clearProverIdleTimer();
+    if (proverSlot) {
+      terminateSlot(proverSlot, makeCancelledError(CHECK_CANCELLED_MSG));
+      proverSlot = null;
+    }
+    terminateProverPool(makeCancelledError(CHECK_CANCELLED_MSG));
+  }
+
   function cancelCheckerWorkload() {
     clearCheckerIdleTimer();
     if (!checkerSlot) return;
@@ -651,8 +660,24 @@
   // Structured check result: { ok, output }. `ok` is Beluga's own load/check
   // verdict — the authoritative "did this file pass" signal — so the linter can
   // surface a failure even when the error text carries no parseable location.
+  // A `## Holes ##` report with no Error: is a successful check of an incomplete
+  // proof (Harpoon's starting state). Worker postMessage can drop `ok`; recover
+  // from the output so a clean hole file is not reported as ill-typed.
+  function outputLooksLikeSuccessfulHoleReport(output) {
+    var text = String(output || '');
+    if (!/##\s*Holes:/i.test(text)) return false;
+    if (/\bis unbound\b/i.test(text)) return false;
+    if (/^Error:/im.test(text)) return false;
+    if (/^-\s*Unhandled exception:/im.test(text)) return false;
+    if (/Failed to (?:parse|execute|load)\b/i.test(text)) return false;
+    return true;
+  }
+
   function checkResultOf(result) {
-    return { ok: !!(result && result.ok), output: resultText(result) || '' };
+    var output = resultText(result) || '';
+    var ok = !!(result && result.ok);
+    if (!ok && outputLooksLikeSuccessfulHoleReport(output)) ok = true;
+    return { ok: ok, output: output };
   }
 
   function syncCheckerFingerprintFromCheck(code, result, slot) {
@@ -1088,6 +1113,7 @@
 
     beginProverSession: beginProverSession,
     endProverSession: endProverSession,
+    abortProverWorkload: abortProverWorkload,
 
     checkResultForProver: function (code, hooks) {
       return dispatchCheckResultForProver(code, hooks);

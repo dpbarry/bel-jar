@@ -2,9 +2,12 @@
 // the settlement (anchors in the offending .bel file). Pins: pragma leak across
 // files, and — the subtle one — SHADOWED USE. Re-declaring an LF type is legal
 // shadowing in Beluga and harmless on its own; the error only appears when a
-// LATER file uses a constructor the redefinition shadowed away. We must flag the
-// VICTIM at its use, never the (innocent) redefiner.
-import { analyzeSuite, suiteFileDiagnostics, leadingGlobalPragma, fileShadowInfo } from '../js/editor-src/ide/suite-lint.mjs';
+// LATER file uses a name the redefinition shadowed away. The VICTIM gets the
+// error at its use; the redefiner gets a warning only in that case, never for
+// the redeclaration alone.
+import {
+  analyzeSuite, suiteFileDiagnostics, leadingGlobalPragma, fileShadowInfo, findingLine, findingMessage,
+} from '../js/editor-src/ide/suite-lint.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -146,5 +149,111 @@ expect(leadingGlobalPragma('% a comment\n--nostrengthen') === null,
   expect(d.length === 0, 'a file outside the suite gets no suite diagnostics');
 }
 
-console.log('OK suite lint (legal re-declaration is clean; only a later USE of a shadowed-away '
-  + 'constructor is flagged, on the victim; pragma leak)');
+// ── The redefiner is warned too, but only when a later file uses what it dropped ──
+{
+  const f = analyzeSuite([
+    { key: 'fol.elf', text: ELF },
+    { key: 'fol-handbook.bel', text: HANDBOOK },
+    { key: 'fol.bel', text: FOLBEL },
+  ]);
+  const rd = f.find((x) => x.kind === 'shadowing-redeclaration');
+  expect(rd && rd.at === 'fol-handbook.bel' && rd.severity === 'warning', 'the redefiner gets a warning');
+  expect(rd.type === 'o' && rd.headLine === 1, 'on the line of its redeclared head (line 1)');
+  expect(rd.dropped.join(',') === 'atom' && rd.users.join(',') === 'fol.bel', 'naming what it dropped and who uses it');
+}
+{
+  const f = analyzeSuite([
+    { key: 'a', text: ELF },
+    { key: 'b', text: HANDBOOK },
+    { key: 'c', text: `LF o : type = | imp : o->o->o | conj : o->o->o | atom : atm -> o ;` },
+    { key: 'd', text: FOLBEL },
+  ]);
+  expect(!f.some((x) => x.kind === 'shadowing-redeclaration'), 'no warning once a later file restores the dropped name');
+}
+
+// ── Twelf-style families: `nat : type.` is a family, its constants are its members ──
+const NAT = 'nat : type.\nz : nat.\ns : nat -> nat.';
+const NAT_NO_S = 'nat : type.\nz : nat.';
+const USES_S = 'rec one : [ |- nat] = [ |- s z];';
+{
+  const i = fileShadowInfo(NAT);
+  const nat = i.families.get('nat');
+  expect(nat && nat.members.has('nat') && nat.members.has('z') && nat.members.has('s'),
+    '`nat : type.` is a family whose members are its constants');
+  expect(i.memberType.get('s') === 'nat' && i.memberType.get('z') === 'nat', 'a constant maps back to its family');
+}
+{
+  const f = analyzeSuite([
+    { key: 'a', text: NAT },
+    { key: 'b', text: NAT_NO_S },
+    { key: 'c', text: USES_S },
+  ]);
+  const su = f.find((x) => x.kind === 'shadowed-use');
+  expect(su && su.at === 'c' && su.useName === 's' && su.type === 'nat' && su.shadower === 'b' && su.origin === 'a',
+    'redeclaring a Twelf-style family without a constant shadows it away');
+  const rd = f.find((x) => x.kind === 'shadowing-redeclaration');
+  expect(rd && rd.at === 'b' && rd.headLine === 0 && rd.dropped.join(',') === 's', 'and warns the redefiner');
+  expect(analyzeSuite([{ key: 'a', text: NAT }, { key: 'b', text: NAT_NO_S }]).length === 0,
+    'with no later use, redeclaring it is clean');
+}
+{
+  // A constant declared in a LATER file than its family joins it, and is dropped with it.
+  const f = analyzeSuite([
+    { key: 'a', text: 'nat : type.\nz : nat.' },
+    { key: 'b', text: 's : nat -> nat.' },
+    { key: 'c', text: NAT_NO_S },
+    { key: 'd', text: USES_S },
+  ]);
+  const su = f.find((x) => x.kind === 'shadowed-use');
+  expect(su && su.at === 'd' && su.origin === 'b' && su.shadower === 'c', 'a family member declared in a later file is tracked');
+}
+{
+  // Where a constant's type ends: `->` right, `<-` left, Π body, parentheses, application head.
+  const i = fileShadowInfo([
+    'plus : nat -> nat -> nat -> type.',
+    'p/z : plus z N N.',
+    'p/s : plus (s M) N (s P) <- plus M N P.',
+    'q : {x : nat} eq x x.',
+    'r : (nat -> nat) -> nat.',
+    'w : nat → nat.',
+    'LF o : type = | c : o;',
+    'k : o.',
+  ].join('\n'));
+  const want = { 'p/z': 'plus', 'p/s': 'plus', q: 'eq', r: 'nat', w: 'nat', k: 'o' };
+  for (const [name, family] of Object.entries(want)) {
+    expect(i.memberType.get(name) === family, `${name} belongs to ${family} (got ${i.memberType.get(name)})`);
+  }
+  expect(i.families.get('plus') && i.families.get('o').members.has('k'), 'a kind-declared family, and a datatype with a constant of its type');
+}
+{
+  // Wording for several dropped names and several users.
+  const f = analyzeSuite([
+    { key: 'a', text: 'nat : type.\nz : nat.\ns : nat -> nat.\nt : nat.' },
+    { key: 'b', text: NAT_NO_S },
+    { key: 'c', text: USES_S },
+    { key: 'd', text: 'rec two : [ |- nat] = [ |- s t];' },
+  ]);
+  const rd = f.find((x) => x.kind === 'shadowing-redeclaration');
+  expect(rd && findingMessage(rd, (k) => `${k}.bel`) === 'Redefining nat here drops s and t, which c.bel and d.bel use.',
+    `plural wording (got ${rd && findingMessage(rd, (k) => `${k}.bel`)})`);
+}
+
+// ── suiteFileDiagnostics: the redefiner's warning, on its redeclared head ──────
+{
+  const entries = [
+    { key: 'a', name: 'a.bel', text: NAT },
+    { key: 'b', name: 'b.bel', text: `% the second nat\n${NAT_NO_S}` },
+    { key: 'c', name: 'c.bel', text: USES_S },
+  ];
+  const spans = [];
+  const lineSpan = (i) => { spans.push(i); return { from: i, to: i + 1 }; };
+  const d = suiteFileDiagnostics(entries, 'b', lineSpan);
+  expect(d.length === 1 && d[0].severity === 'warning' && d[0].source === 'suite', 'the redefiner file gets one warning');
+  expect(d[0].message === 'Redefining nat here drops s, which c.bel uses.', `redefiner wording (got ${d[0].message})`);
+  expect(spans.includes(1), 'anchored on the redeclared head, line 1');
+  expect(findingLine({ kind: 'shadowing-redeclaration', headLine: 4 }) === 4 && findingLine({ kind: 'pragma-leak', pragmaLine: 2 }) === 2
+    && findingLine({ kind: 'shadowed-use', useLine: 3 }) === 3, 'findingLine reads each kind\'s own line');
+}
+
+console.log('OK suite lint (legal re-declaration is clean; a later USE of a shadowed-away name is an error '
+  + 'on the victim and a warning on the redefiner; Twelf-style families; pragma leak)');

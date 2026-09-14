@@ -468,4 +468,36 @@ expect(parseInput('#foo').mode === 'search' && parseInput('#foo').legacyHash ===
   expect(peerLabel('z') === 'LF constructor', `peer LF constructor label, got ${peerLabel('z')}`);
 }
 
-console.log('OK cross-file nav (defs index, group isolation, project def lookup, group symbols, text scan, % mode, prelude .elf/orphan, peer proofs)');
+// ── renaming a recursive function from another file renames its recursive calls ──────────
+// The index took its uses from the names walk, which counted every use inside a `rec … and …`
+// declaration as bound by that declaration: renaming `f` from b.bel rewrote its declaration and
+// `let y = f …`, but left `f x` in its own body and in `g`, so the renamed file no longer checked.
+{
+  const recFiles = [
+    { id: 'rr/a', name: 'rr/a.bel' },
+    { id: 'rr/b', name: 'rr/b.bel' },
+    { id: 'rr/cfg', name: 'rr/sources.cfg' },
+  ];
+  const recTexts = {
+    'rr/a': 'LF nat : type = | z : nat | s : nat -> nat;\n'
+      + 'rec f : [ |- nat] -> [ |- nat] = fn x => f x\n'
+      + 'and rec g : [ |- nat] -> [ |- nat] = fn x => f x;\n'
+      + 'let y = f [ |- z];\n',
+    'rr/b': 'rec h : [ |- nat] -> [ |- nat] = fn x => f x;\n',
+    'rr/cfg': 'a.bel\nb.bel\n',
+  };
+  const recGet = (id) => recTexts[id] || '';
+  const recOpts = { defFileId: 'rr/a', activeCfgForDir: activeCfgResolver({ rr: 'rr/sources.cfg' }) };
+  const recRefs = groupReferencesFor(recFiles, 'rr/b', 'f', recGet, recOpts).filter((r) => r.fileId === 'rr/a');
+  expect(recRefs.length === 4, `find-references lists the declaration and all 3 calls of f in a.bel, got ${recRefs.length}`);
+  const recPlans = groupRenameEdits(recFiles, 'rr/b', 'f', recGet, recOpts);
+  const aPlan = recPlans.find((p) => p.fileId === 'rr/a');
+  expect(aPlan, 'a rename plan for the defining file');
+  const renamedA = applyGroupRenameToFile(recTexts['rr/a'], 'rr/a.bel', aPlan.edits, 'fact', 'f');
+  expect(!/\bf\b/.test(renamedA), `every f renamed, including the recursive calls, got ${JSON.stringify(renamedA)}`);
+  // A parameter that reuses the function's name still shadows it.
+  const shadowUses = usesOf('rec f : [ |- nat] -> [ |- nat] = fn f => f;').filter((u) => u.name === 'f');
+  expect(shadowUses.length === 0, 'a use of a parameter named like its function is not a use of the function');
+}
+
+console.log('OK cross-file nav (defs index, group isolation, project def lookup, group symbols, text scan, % mode, prelude .elf/orphan, peer proofs, recursive rename)');

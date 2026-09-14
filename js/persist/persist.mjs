@@ -1185,7 +1185,7 @@ var SCHEMA_VERSION = 3;
     'readStoredDoubleTapCommand', 'writeStoredDoubleTapCommand',
     'readStoredDoubleTapSpeed', 'writeStoredDoubleTapSpeed',
     'readStoredVimLeader', 'writeStoredVimLeader',
-    'readStoredVimYankClipboard', 'writeStoredVimYankClipboard',
+    'readStoredEmacsYankSource', 'writeStoredEmacsYankSource',
     'readStoredVimInsertEscape', 'writeStoredVimInsertEscape',
     'readStoredMotionPref', 'writeStoredMotionPref',
     'applyStoredMotionPref', 'prefersReducedMotion',

@@ -33,7 +33,8 @@ import {
   declBodyEqIndex,
 } from './prover-hyp.mjs';
 import { branchLetNames } from './hole-split.mjs';
-import { candidateMoves, movePrefilterOk } from './prover-candidates.mjs';
+import { movePrefilterOk } from './prover-candidates.mjs';
+import { candidateMovesAsync } from './prover-moves-async.mjs';
 
 export {
   deferDominated,
@@ -409,6 +410,22 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
   async function waitWhilePaused() {
     while (paused() && !hardCancel()) await sleep(50);
   }
+  // The reel clock is a macrotask (setInterval). A long sync turn — trim,
+  // prefilter, result bookkeeping — starves it while CSS (fin, shimmer) keeps
+  // moving, so "Trying lemma · 7s…" freezes. Yield when a turn has run long
+  // enough to miss a tick; `await` only if we actually yield, so the tight
+  // prefilter loop does not pay a microtask per candidate.
+  const uiNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()); // GENERAL: runtime feature detection, not a constructor
+  let lastUiYield = uiNow();
+  const UI_YIELD_MS = 100;
+  function yieldToUi(force) {
+    const t = uiNow();
+    if (!force && t - lastUiYield < UI_YIELD_MS) return null;
+    lastUiYield = t;
+    const sched = globalThis.scheduler;
+    const p = (sched && typeof sched.yield === 'function') ? sched.yield() : sleep(0); // GENERAL: runtime feature detection, not a constructor
+    return Promise.resolve(p).then(() => { lastUiYield = uiNow(); });
+  }
   // Move-space trace (opts.collectTrace): one entry per visited hole with every
   // candidate's verdict — the data the Move-space view and the stuck card render.
   const trace = opts.collectTrace ? [] : null;
@@ -427,7 +444,11 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
   // (premises check + conclusion reject-fill fails). Opt out of the gate with
   // opts.counterexampleCertify === false (type-level only, zero checks).
   if (!opts.noCounterexample && thm && thm.compType) {
-    if (opts.onPulse) opts.onPulse({ label: 'Probing for a counterexample…' });
+    if (opts.onPulse) {
+      opts.onPulse({ label: 'Probing for a counterexample…' });
+      const painted = yieldToUi(true);
+      if (painted) await painted;
+    }
     const ce = findCounterexample(thm.compType, initialCode, opts.counterexample || {});
     if (ce) {
       let certified = false;
@@ -477,6 +498,7 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
         await waitWhilePaused();
         return runOracle(src, purpose);
       }
+      if (hardCancel()) return { ok: false, output: '', cancelled: true };
       throw err;
     }
     if (paused() && !hardCancel()) {
@@ -692,18 +714,30 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
           : `Looking for the next move… (after step ${steps.length})`,
         goal: hole.goal,
       });
+      const painted = yieldToUi(true);
+      if (painted) await painted;
     }
-    let moves = candidateMoves(hole, code, thm);
+    let moves = await candidateMovesAsync(hole, code, thm, { shouldCancel: hardCancel });
+    if (hardCancel()) {
+      return finish({ complete: false, code, steps, stuck: { reason: 'cancelled' } });
+    }
     if (!moves.length && (hole.ctx || []).length) {
       const retry = resolveHoleGoal(
         enrichHoleFromTheorem({ ...hole, ctx: [] }, thm, code),
         thm,
       );
-      const retryMoves = candidateMoves(retry, code, thm);
+      const retryMoves = await candidateMovesAsync(retry, code, thm, { shouldCancel: hardCancel });
+      if (hardCancel()) {
+        return finish({ complete: false, code, steps, stuck: { reason: 'cancelled' } });
+      }
       if (retryMoves.length) {
         hole = retry;
         moves = retryMoves;
       }
+    }
+    {
+      const afterMoves = yieldToUi();
+      if (afterMoves) await afterMoves;
     }
     // WRITABILITY (ctx-var rename drift): a re-elaboration may REPORT an
     // implicit context variable under a fresh name (l → g) while the SOURCE
@@ -839,6 +873,8 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
     // backtracking recovers shallower alternatives instead of aborting.
     let splitDepthBounded = false;
     for (const mv of deferDominated(moves)) {
+      const preYield = yieldToUi();
+      if (preYield) await preYield;
       if (mv.skipCertify) { traceSkip(mv, 'vacuous-probe split: vocabulary-only (taints exhaustion)'); continue; }
       if (mv.kind === 'split' && holeDeclDepth >= SPLIT_DEPTH_BUDGET) { // GENERAL: move-kind tag
         splitDepthBounded = true;
@@ -924,6 +960,8 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
           branch: branchPatternBox(code, hole),
           wave: batch.map((c) => ({ kind: c.mv.kind, head: moveHead(c.mv.text) })),
         });
+        const painted = yieldToUi();
+        if (painted) await painted;
       }
       // E.9 — certify against the candidate's dependency CLOSURE, not the
       // world (the measured timeout mechanism is prefix re-elaboration × size:
@@ -942,6 +980,10 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
         if (!t || t.code.length >= c.spliced.length * 0.8) return null; // no material win
         return t;
       });
+      {
+        const afterTrim = yieldToUi();
+        if (afterTrim) await afterTrim;
+      }
       // Silent certify: the wave pulse already set "Trying intro…" — don't
       // clobber it with a generic Beluga check label.
       const settled = await Promise.all(batch.map((c, ci) => runOracle(
@@ -949,6 +991,10 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
         false,
       ).then((res) => ({ res }), (err) => ({ err }))));
       for (let bi = 0; bi < batch.length; bi += 1) {
+      {
+        const afterCheck = yieldToUi();
+        if (afterCheck) await afterCheck;
+      }
       const { mv } = batch[bi];
       let effText = mv.text;
       let { spliced } = batch[bi];
@@ -1222,6 +1268,8 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
         opts.onStep({
           steps: [...steps], last: steps[steps.length - 1], code: spliced, holes: nextHoles,
         });
+        const painted = yieldToUi(true);
+        if (painted) await painted;
       }
       advanced = true;
       break;
@@ -1299,6 +1347,8 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
         baseErrors = d.baseErrors;
         steps.pop(); // the abandoned acceptance
         if (opts.onPulse) opts.onPulse({ label: 'Backtracking…' });
+        const painted = yieldToUi(true);
+        if (painted) await painted;
         continue;
       }
       let closest = null;

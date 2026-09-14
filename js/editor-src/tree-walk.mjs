@@ -306,17 +306,6 @@ function mlamParams(mlam, doc) {
   return bindings;
 }
 
-function recBindings(recDecl, doc) {
-  const bindings = [];
-  for (let c = recDecl.firstChild; c; c = c.nextSibling) {
-    if (c.name === 'RecBody') {
-      const id = firstChildNamed(c, 'LowerIdentifier');
-      if (id) bindings.push(binding(doc, id));
-    }
-  }
-  return bindings;
-}
-
 function declLowerBindings(decl, doc) {
   const id = firstChildNamed(decl, 'LowerIdentifier');
   if (!id) return [];
@@ -423,13 +412,16 @@ function bindingDefinesSite(b, from, to) {
   return false;
 }
 
+// true when a binder in scope binds the use; 'binds' when the identifier IS a local binder's own
+// name (a parameter, a pattern variable) — neither a use of a global nor bound by anything; false
+// otherwise.
 function resolveUseBound(stack, moduleLets, from, to, name) {
   for (let si = stack.length - 1; si >= 0; si--) {
     const frame = stack[si];
     if (from < frame.scopeFrom || to > frame.scopeTo) continue;
     for (const b of frame.bindings) {
       if (b.name !== name) continue;
-      if (bindingDefinesSite(b, from, to)) return false;
+      if (bindingDefinesSite(b, from, to)) return 'binds';
       return true;
     }
   }
@@ -667,9 +659,6 @@ function doNamesWalk(tree, doc, blockAt) {
         case 'CaseBranch':
           stack.push({ bindings: caseBranchBindings(node, doc), scopeFrom: node.from, scopeTo: node.to });
           break;
-        case 'RecDeclaration':
-          stack.push({ bindings: recBindings(node, doc), scopeFrom: node.from, scopeTo: node.to });
-          break;
         case 'SchemaElement': {
           const sf = schemaSomeFrame(node, doc);
           if (sf) stack.push(sf);
@@ -732,13 +721,14 @@ function doNamesWalk(tree, doc, blockAt) {
         }
 
         const ext = lowerExtent(node, doc, ref.from, ref.to);
-        const bound = resolveUseBound(stack, moduleLets, ext.from, ext.to, ext.name);
+        const binding = resolveUseBound(stack, moduleLets, ext.from, ext.to, ext.name);
         uses.push({
           from: ext.from,
           to: ext.to,
           name: ext.name,
           kind: 'lower',
-          bound,
+          bound: binding === true,
+          binds: binding === 'binds',
         });
       } else if (n === 'UpperIdentifier') {
         const parent = node.parent;
@@ -764,13 +754,14 @@ function doNamesWalk(tree, doc, blockAt) {
         }
 
         const ext = upperExtent(node, doc, ref.from, ref.to);
-        const bound = resolveUseBound(stack, moduleLets, ext.from, ext.to, ext.name);
+        const binding = resolveUseBound(stack, moduleLets, ext.from, ext.to, ext.name);
         uses.push({
           from: ext.from,
           to: ext.to,
           name: ext.name,
           kind: 'upper',
-          bound,
+          bound: binding === true,
+          binds: binding === 'binds',
         });
       }
     },
@@ -799,7 +790,6 @@ function doNamesWalk(tree, doc, blockAt) {
         case 'ContextualType':
         case 'ContextualObject':
         case 'CaseBranch':
-        case 'RecDeclaration':
           stack.pop();
           break;
         case 'LetExpression': {
@@ -850,7 +840,8 @@ export function blockDependents(tree, doc) {
   }
   const dependents = new Map();
   for (const u of summary.uses) {
-    if (u.bound) continue;
+    // A bound use and a local binder's own name both refer to no declaration.
+    if (u.bound || u.binds) continue;
     const defBlocks = defs.get(u.name);
     if (!defBlocks) continue;
     const hit = summary.blockAt(u.from);

@@ -19,6 +19,9 @@ import { ensureSyntaxTree, foldAll, foldKeymap, indentRange, indentUnit, syntaxT
 import { diagnosticCount, forceLinting, linter } from '@codemirror/lint';
 import { beluga } from './language.mjs';
 import { formatCommand, formatSource, formatString } from './format/document-format.mjs';
+import { collectComments } from './format/basics.mjs';
+import { highlightDocRange } from './format/source-render.mjs';
+import { pasteSystemClipboard } from './ide/clipboard-bridge.mjs';
 export { formatCommand, formatSource, formatString };
 import {
   scheduleJumpToRange, scheduleViewportRestore,
@@ -96,6 +99,12 @@ export {
   stepLead,
   stepMeta,
 } from './prover/prover-orchestrator.mjs';
+export {
+  movesAtAsync,
+  abortMovesWorkload,
+  candidateMovesAsync,
+  collectMovesAt,
+} from './prover/prover-moves-async.mjs';
 export {
   buildCommitCheckCodes,
   needsFullCommitCheck,
@@ -1479,22 +1488,6 @@ export function mount(parentEl, options = {}) {
   });
   requestAnimationFrame(() => refreshSyntaxHighlighting(view));
 
-  view.dom.addEventListener(
-    'paste',
-    (e) => {
-      if (!e.clipboardData || view.state.readOnly) return;
-      const t = e.clipboardData.getData('text/plain');
-      if (t === '') return;
-      e.preventDefault();
-      e.stopPropagation();
-      view.dispatch(view.state.replaceSelection(sanitizePastedPlainText(t)), {
-        scrollIntoView: true,
-        userEvent: 'input.paste',
-      });
-    },
-    true
-  );
-
   const fontsReady = typeof document !== 'undefined' && document.fonts?.ready;
   if (fontsReady) {
     fontsReady.then(() => {
@@ -1603,6 +1596,26 @@ export function mount(parentEl, options = {}) {
     },
     getView() {
       return view;
+    },
+    /**
+     * The open document for a reader (Export manuscript): its text, comment spans, the language's
+     * comment tokens and a highlighter, all over one complete tree. Shell bundles carry their own
+     * CodeMirror copies, which cannot read this editor's tree or style tags, so they ask here.
+     */
+    getReadingView() {
+      const state = view.state;
+      const tree = ensureSyntaxTree(state, state.doc.length, 1000) || syntaxTree(state);
+      const text = state.doc.toString();
+      return {
+        text,
+        comments: collectComments(tree, text),
+        commentTokens: state.languageDataAt('commentTokens', 0)[0] || null,
+        highlight: (from, to) => highlightDocRange(state, from, to, tree),
+      };
+    },
+    /** Paste the system clipboard at the selection (menu Paste, which has no native paste). */
+    pasteFromSystemClipboard() {
+      return pasteSystemClipboard(view);
     },
     runSyntaxLint() {
       return syntaxLint(view);

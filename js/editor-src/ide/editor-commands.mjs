@@ -294,9 +294,11 @@ export const EDITOR_COMMANDS = {
 function clipboardAction(view, action) {
   if (action !== 'copy' && view.state.readOnly) return false;
   view.focus();
+  const before = action === 'paste' ? view.state.doc.toString() : null;
   try {
     document.execCommand(action);
   } catch (_) { /* the browser declined; nothing else to fall back to */ }
+  if (action === 'paste' && view.state.doc.toString() === before) return false;
   return true;
 }
 

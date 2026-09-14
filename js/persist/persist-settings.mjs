@@ -161,7 +161,7 @@ export function create(deps) {
     var DOUBLE_TAP_COMMAND_KEY = 'beljar-double-tap-command';
     var DOUBLE_TAP_SPEED_KEY = 'beljar-double-tap-speed';
     var VIM_LEADER_KEY = 'beljar-vim-leader';
-    var VIM_YANK_CLIPBOARD_KEY = 'beljar-vim-yank-clipboard';
+    var EMACS_YANK_SOURCE_KEY = 'beljar-emacs-yank-source';
     var EDITOR_LINE_NUMBER_MODE_KEY = 'beljar-editor-line-number-mode';
     var VIM_INSERT_ESCAPE_KEY = 'beljar-vim-insert-escape';
     var MOTION_PREF_KEY = 'beljar-motion-pref';
@@ -779,19 +779,20 @@ export function create(deps) {
       else backendRemove(VIM_LEADER_KEY);
     }
 
-    // Off by default: silently replacing what someone copied is not something
-    // to opt them into.
-    function readStoredVimYankClipboard() {
+    // Where Emacs C-y and M-y paste from. The system clipboard by default, so C-y
+    // pastes what you copied anywhere; the kill ring keeps Emacs's own history,
+    // which M-y cycles. Kills reach the system clipboard either way.
+    function readStoredEmacsYankSource() {
       try {
-        return backendLoad(VIM_YANK_CLIPBOARD_KEY) === 'on';
+        return backendLoad(EMACS_YANK_SOURCE_KEY) === 'kill-ring' ? 'kill-ring' : 'system';
       } catch (_) {
-        return false;
+        return 'system';
       }
     }
 
-    function writeStoredVimYankClipboard(on) {
-      if (on === true) backendSave(VIM_YANK_CLIPBOARD_KEY, 'on');
-      else backendRemove(VIM_YANK_CLIPBOARD_KEY);
+    function writeStoredEmacsYankSource(v) {
+      if (v === 'kill-ring') backendSave(EMACS_YANK_SOURCE_KEY, 'kill-ring');
+      else backendRemove(EMACS_YANK_SOURCE_KEY);
     }
 
     function readStoredVimInsertEscape() {
@@ -1070,7 +1071,7 @@ export function create(deps) {
       STATUS_STRIP_KEY,
       COMMAND_LINE_HISTORY_KEY,
       VIM_LEADER_KEY,
-      VIM_YANK_CLIPBOARD_KEY,
+      EMACS_YANK_SOURCE_KEY,
       VIM_INSERT_ESCAPE_KEY,
       DOUBLE_TAP_TRIGGER_KEY,
       DOUBLE_TAP_COMMAND_KEY,
@@ -1255,7 +1256,7 @@ export function create(deps) {
       backendRemove(STATUS_STRIP_KEY);
       backendRemove(COMMAND_LINE_HISTORY_KEY);
       backendRemove(VIM_LEADER_KEY);
-      backendRemove(VIM_YANK_CLIPBOARD_KEY);
+      backendRemove(EMACS_YANK_SOURCE_KEY);
       backendRemove(VIM_INSERT_ESCAPE_KEY);
       backendRemove(DOUBLE_TAP_TRIGGER_KEY);
       backendRemove(DOUBLE_TAP_COMMAND_KEY);
@@ -1454,8 +1455,8 @@ export function create(deps) {
       writeStoredDoubleTapCommand: writeStoredDoubleTapCommand,
       readStoredDoubleTapSpeed: readStoredDoubleTapSpeed,
       writeStoredDoubleTapSpeed: writeStoredDoubleTapSpeed,
-      readStoredVimYankClipboard: readStoredVimYankClipboard,
-      writeStoredVimYankClipboard: writeStoredVimYankClipboard,
+      readStoredEmacsYankSource: readStoredEmacsYankSource,
+      writeStoredEmacsYankSource: writeStoredEmacsYankSource,
       readStoredVimLeader: readStoredVimLeader,
       writeStoredVimLeader: writeStoredVimLeader,
       readStoredVimInsertEscape: readStoredVimInsertEscape,

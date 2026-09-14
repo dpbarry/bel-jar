@@ -5,7 +5,7 @@
 
 import { syntaxTree } from '@codemirror/language';
 import { checkerSnapshot } from './checker-snapshot.mjs';
-import { analyzeSuite, findingMessage, suiteFileDiagnostics } from '../ide/suite-lint.mjs';
+import { analyzeSuite, findingLine, findingMessage, suiteFileDiagnostics } from '../ide/suite-lint.mjs';
 import {
   developmentMembersForFile,
   ensureDevelopmentChecked,
@@ -81,11 +81,21 @@ export function createEditorCheckHost(deps) {
     return checkerSnapshot(syntaxTree(view.state), doc).code;
   }
 
+  // The suite as the active file sees it: the files before it, itself, and the files after it. The
+  // later files are what let a redeclaration HERE be warned about when one of them uses a name it
+  // drops; a finding AT a later file is shown when that file is open. (The check context caches on
+  // the prelude and the active file, so an edit to a later file shows here once this file changes
+  // or is reopened.)
   function suiteAnalysisFor(files, activeId, getText, doc) {
     const pre = preludeFilesFor(files, activeId, getText);
     if (!pre.length) return { diagnostics: [], findings: [] };
     const active = files.find((f) => f.id === activeId);
-    const ordered = [...pre, active].filter(Boolean);
+    const dev = developmentForFile(files, activeId, getText);
+    const byName = new Map(files.map((f) => [f.name, f]));
+    const later = dev.activeIndex >= 0
+      ? dev.paths.slice(dev.activeIndex + 1).map((p) => byName.get(p)).filter(Boolean)
+      : [];
+    const ordered = [...pre, active, ...later].filter(Boolean);
     const entries = ordered.map((f) => ({
       key: f.id, name: f.name, text: String(getText(f.id) ?? ''),
     }));
@@ -292,17 +302,26 @@ export function createEditorCheckHost(deps) {
     const index = getProjectDiagnostics();
     index.registerFiles(members);
     const nameOf = (id) => (files.find((f) => f.id === id)?.name || id);
+    // Rows for the active file and the files before it; a later file's findings are published when
+    // that file is open. One observation per file (each setObservation replaces the last), and rows
+    // count lines from 1 where findings count from 0.
+    const activeIndex = members.findIndex((m) => m.id === activeId);
+    const rowsById = new Map();
     for (const f of suite.findings || []) {
       const id = f.at;
       if (!id) continue;
-      const member = members.find((m) => m.id === id);
-      if (!member) continue;
-      const line = f.useLine || f.pragmaLine || 1;
-      const rows = [{
-        line,
+      const memberIndex = members.findIndex((m) => m.id === id);
+      if (memberIndex < 0 || (activeIndex >= 0 && memberIndex > activeIndex)) continue;
+      const rows = rowsById.get(id) || [];
+      rows.push({
+        line: findingLine(f) + 1,
         message: findingMessage(f, nameOf),
         severity: f.severity || 'warning',
-      }];
+      });
+      rowsById.set(id, rows);
+    }
+    for (const [id, rows] of rowsById) {
+      const member = members.find((m) => m.id === id);
       index.setObservation(id, rows, {
         fileName: member.name,
         key: healthKeyForMember(member, members, files),

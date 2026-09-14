@@ -19,9 +19,11 @@ import { emacsMaps } from './which-key.mjs';
 import { _pure as emacsBindings } from './emacs-setup.mjs';
 import { beljarUndo, beljarRedo } from './undo-route.mjs';
 import { whichKeyHint, WHICH_KEY_MS } from './which-key-hint.mjs';
+import { pasteSystemClipboard, writeSystemClipboard } from '../clipboard-bridge.mjs';
 
 let bridged = false;
 let emacsKeysBound = false;
+let emacsClipboardBridged = false;
 
 /**
  * The chords the browser eats, and what BelJar answers to instead.
@@ -88,7 +90,83 @@ export function applyBeljarEmacsOverrides() {
       g.StatusStrip.openCommandLine('', { prompt: 'M-x' });
     }
   };
+  installEmacsClipboardBridge();
   reportEmacsChain();
+}
+
+function installEmacsClipboardBridge() {
+  if (emacsClipboardBridged) return;
+  const commands = EmacsHandler.commands;
+  if (!commands) return;
+  emacsClipboardBridged = true;
+
+  const wrapCopy = (name, readText) => {
+    const command = commands[name];
+    if (!command?.exec) return;
+    const original = command.exec;
+    command.exec = (handler) => {
+      const text = readText(handler);
+      const out = original(handler);
+      if (text) writeSystemClipboard(text);
+      return out;
+    };
+  };
+
+  wrapCopy('killLine', (handler) => {
+    const state = handler.view.state;
+    return state.selection.ranges.map((range) => {
+      const from = range.head;
+      const line = state.doc.lineAt(from);
+      let to = line.to;
+      const text = state.sliceDoc(from, to);
+      if (/^\s*$/.test(text) && to < state.doc.length - 1) to += 1;
+      return state.sliceDoc(from, to);
+    }).join('\n');
+  });
+  const killWord = commands.killWord;
+  if (killWord?.exec) {
+    const original = killWord.exec;
+    killWord.exec = (handler, ...args) => {
+      const before = handler.view.state.doc.toString();
+      const out = original(handler, ...args);
+      const after = handler.view.state.doc.toString();
+      let from = 0;
+      while (from < before.length && from < after.length && before[from] === after[from]) from += 1;
+      let beforeEnd = before.length;
+      let afterEnd = after.length;
+      while (beforeEnd > from && afterEnd > from && before[beforeEnd - 1] === after[afterEnd - 1]) {
+        beforeEnd -= 1;
+        afterEnd -= 1;
+      }
+      if (beforeEnd > from) writeSystemClipboard(before.slice(from, beforeEnd));
+      return out;
+    };
+  }
+  wrapCopy('killRegion', (handler) => handler.getCopyText());
+  wrapCopy('killRingSave', (handler) => handler.getCopyText());
+
+  // C-y and M-y paste from where Settings says: the system clipboard (the default)
+  // or the package's own kill ring, where M-y cycles earlier kills. Read on every
+  // press, so changing the setting needs no reinstall. A browser with no clipboard
+  // read falls back to the kill ring rather than pasting nothing.
+  for (const name of ['yank', 'yankRotate']) {
+    const command = commands[name];
+    if (!command?.exec) continue;
+    const original = command.exec;
+    command.exec = (handler, ...args) => {
+      if (emacsYankSource() === 'system' && pasteSystemClipboard(handler.view)) return true;
+      return original(handler, ...args);
+    };
+  }
+}
+
+function emacsYankSource() {
+  const P = globalThis.Persist;
+  try {
+    return P && typeof P.readStoredEmacsYankSource === 'function' ? P.readStoredEmacsYankSource() : 'system';
+  } catch (_) {
+    return 'system';
+  }
 }
 
 /**

@@ -434,6 +434,23 @@ function createManual(deps) {
 
   // ── Session methods ────────────────────────────────────────────────────────
 
+  function declineCheckMessage(res) {
+    var out = String(res && res.output || '').trim();
+    if (!out) return 'The file has errors. Fix them before proving.';
+    var err = out.match(/^Error:\s*(.+)$/im);
+    if (err) return err[0].trim();
+    var unbound = out.match(/Identifier\s+\S+\s+is unbound\.?/i);
+    if (unbound) return unbound[0].trim();
+    var lines = out.split('\n');
+    for (var i = 0; i < lines.length; i += 1) {
+      var t = lines[i].trim();
+      if (!t || /^##/.test(t) || /^File\s+"/.test(t)) continue;
+      if (/^Raised at|^Called from|^Re-raised|^Backtrace/i.test(t)) break;
+      return t.slice(0, 280);
+    }
+    return 'The file has errors. Fix them before proving.';
+  }
+
   /** Open (or reopen) the manual session over `code`, checking it once to learn
       the hole set. `code` defaults to the prep's orchestration program.
       `seed` carries a trail forward (steps + the undo stack) when we are
@@ -454,6 +471,7 @@ function createManual(deps) {
       toast('Harpoon could not read this theorem.', 'error');
       return Promise.resolve(false);
     }
+    if (this.disposed) return Promise.resolve(false);
     this.thm = thm;
     this.nativeAuto = null;
     var proveCode = code || prep.proveCode || prep.assembledCode;
@@ -468,23 +486,44 @@ function createManual(deps) {
       busy: false,
       error: null,
       commit: this.commitState || null,
+      moves: null,
+      movesPending: false,
     };
     this.captureAnchor(this.view, prep);
     this.bindProbe();
     this.render();
+    if (this.disposed) return Promise.resolve(false);
+
+    function runCheck(src) {
+      return client.checkResultForProver
+        ? client.checkResultForProver(src)
+        : client.checkResult(src);
+    }
 
     var ready = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
     return ready.then(function () {
+      if (self.disposed) return null;
       return client.loadProverChecker ? client.loadProverChecker(proveCode) : null;
     }).then(function () {
-      return client.checkResultForProver
-        ? client.checkResultForProver(proveCode)
-        : client.checkResult(proveCode);
+      if (self.disposed) return { ok: false };
+      return runCheck(proveCode);
     }).then(function (res) {
-      if (!self.manual) return false;
+      if (self.disposed || !self.manual) return res;
+      if (res && res.ok) return res;
+      var assembled = prep.assembledCode;
+      if (!assembled || assembled === proveCode) return res;
+      return runCheck(assembled).then(function (full) {
+        if (full && full.ok) {
+          proveCode = assembled;
+          return full;
+        }
+        return res || full;
+      });
+    }).then(function (res) {
+      if (self.disposed || !self.manual) return false;
       if (!res || !res.ok) {
         self.manual.phase = 'error';
-        self.manual.error = 'The file has errors. Fix them before proving.';
+        self.manual.error = declineCheckMessage(res);
         self.render();
         return false;
       }
@@ -495,11 +534,15 @@ function createManual(deps) {
       }
       self.manual.phase = 'ready';
       self.manual.priorBinders = priorGoalBinders(self, sourceGoalType, self.manualGoalType());
+      self.manual.moves = null;
+      self.manual.movesPending = !!(self.manual.state && !ed.manualIsComplete(self.manual.state));
       self.render();
-      self.sweepCandidates();
+      if (self.manual.movesPending) self.loadMoves();
       return true;
     }).catch(function (err) {
-      if (!self.manual) return false;
+      if (self.disposed || !self.manual) return false;
+      var cancelled = client && client.isCancelledError && client.isCancelledError(err);
+      if (cancelled) return false;
       self.manual.phase = 'error';
       self.manual.error = (err && err.message) || String(err);
       self.render();
@@ -645,8 +688,7 @@ function createManual(deps) {
       m.state = r.state;
       setTacticStatus(self, '');
       m.priorBinders = priorGoalBinders(self, m.sourceGoalType, self.manualGoalType());
-      self.render();
-      self.sweepCandidates();
+      self.refreshMoves();
       return true;
       }).catch(function (err) {
         // The checker itself failed (worker gone, cancelled, out of memory).
@@ -669,6 +711,55 @@ function createManual(deps) {
     var t = String(detail || '').replace(/^File\s+"[^"]*",\s*line\s*\d+,\s*column\s*\d+:?\s*/i, '');
     t = t.replace(/^Error:\s*/i, '').split('\n')[0].trim();
     return t.length > 160 ? t.slice(0, 157) + '…' : t;
+  }
+
+  function refreshMoves() {
+    var ed = E();
+    var m = this.manual;
+    if (!m || m.phase !== 'ready') return;
+    var complete = m.state && ed && ed.manualIsComplete(m.state);
+    m.moves = null;
+    m.movesPending = !complete;
+    this.cancelSweep();
+    this.render();
+    if (m.movesPending) this.loadMoves();
+  }
+
+  function loadMoves() {
+    var ed = E();
+    var self = this;
+    var m = this.manual;
+    var token = {};
+    this._movesToken = token;
+    if (!m || !m.state || !ed) return Promise.resolve(false);
+    if (ed.manualIsComplete(m.state)) {
+      m.movesPending = false;
+      m.moves = [];
+      return Promise.resolve(true);
+    }
+    m.movesPending = true;
+    var run = ed.movesAtAsync
+      ? ed.movesAtAsync(m.state, this.thm, {
+        shouldCancel: function () {
+          return !!(self.disposed || self._movesToken !== token);
+        },
+      })
+      : Promise.resolve([]);
+    return Promise.resolve(run).then(function (moves) {
+      if (self.disposed || self._movesToken !== token || !self.manual) return false;
+      self.manual.moves = moves || [];
+      self.manual.movesPending = false;
+      self.render();
+      var na = self.nativeAuto;
+      if (!(na && na.phase === 'searching' && !na.paused)) self.sweepCandidates();
+      return true;
+    }).catch(function () {
+      if (self.disposed || self._movesToken !== token || !self.manual) return false;
+      self.manual.moves = [];
+      self.manual.movesPending = false;
+      self.render();
+      return false;
+    });
   }
 
   /** Background verification of the offered moves: each row earns its ✓ before
@@ -752,8 +843,7 @@ function createManual(deps) {
     this.cancelSweep();
     m.state = ed.manualUndo(m.state);
     m.lastError = null;
-    this.render();
-    this.sweepCandidates();
+    this.refreshMoves();
   }
 
   function manualStepForward() {
@@ -762,8 +852,7 @@ function createManual(deps) {
     if (!m || !m.state || !ed.manualCanRedo(m.state)) return;
     this.cancelSweep();
     m.state = ed.manualRedo(m.state);
-    this.render();
-    this.sweepCandidates();
+    this.refreshMoves();
   }
 
   function manualFocus(idx) {
@@ -772,8 +861,7 @@ function createManual(deps) {
     if (!m || !m.state) return;
     this.cancelSweep();
     m.state = ed.focusOn(m.state, idx);
-    this.render();
-    this.sweepCandidates();
+    this.refreshMoves();
   }
 
   /** ORCA — hand the current working program to the search. This is the one
@@ -861,9 +949,9 @@ function createManual(deps) {
       this.syncManualToOrca().then(function (ok) {
         m.syncing = false;
         m.syncFailed = !ok;
-        if (!self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
-        self.render();
-        if (ok) self.sweepCandidates();
+        if (self.disposed || !self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
+        if (ok) self.refreshMoves();
+        else self.render();
       });
     } else {
       m.syncing = false;
@@ -913,7 +1001,7 @@ function createManual(deps) {
       return Promise.resolve(false);
     }
     return manualOracle()(code).then(function (res) {
-      if (!self.manual) return false;
+      if (self.disposed || !self.manual) return false;
       if (res && res.ok) {
         var next = ed.manualState(code, self.thm, res.output || '');
         next.steps = ((before && before.steps) || []).concat((r && r.steps) || []);
@@ -923,10 +1011,10 @@ function createManual(deps) {
           self, self.manual.sourceGoalType, self.manualGoalType());
       }
       self.manualBefore = null;
-      self.render();
-      self.sweepCandidates();
+      self.refreshMoves();
       return true;
     }).catch(function () {
+      if (self.disposed || !self.manual) return false;
       self.manualBefore = null;
       self.render();
       return false;
@@ -946,7 +1034,7 @@ function createManual(deps) {
     // No advance since we last looked — the state already IS the truth.
     if (!code || code === m.state.code) return Promise.resolve(true);
     return manualOracle()(code).then(function (res) {
-      if (!res || !res.ok || !self.manual) return false;
+      if (!res || !res.ok || self.disposed || !self.manual) return false;
       var next = ed.manualState(code, self.thm, res.output || '');
       var before = self.manualBefore;
       // The trail is everything that came before plus everything Orca found.
@@ -1019,7 +1107,6 @@ function createManual(deps) {
     if (!m) return;
     var st = m.state;
     var complete = st && ed.manualIsComplete(st);
-    this._renderSig = manualRenderSig(this);
     var box = el('div', 'harpoon-lab-manual is-' + m.phase
       + (complete ? ' is-complete' : '')
       + (this.isFrozenRetrospective() ? ' is-frozen' : ''));
@@ -1293,14 +1380,23 @@ function createManual(deps) {
       this._tacticStatusEl = tacStatus;
       movesWrap.appendChild(tacticsLabel);
       var moves = [];
-      try { moves = ed.movesAt(st, this.thm) || []; } catch (e) { moves = []; }
+      if (Array.isArray(m.moves)) moves = m.moves;
+      var needMoves = !Array.isArray(m.moves) && st && ed && !complete && !m.syncFailed && !m.syncing;
+      if (needMoves && !m.movesPending) {
+        m.movesPending = true;
+        Promise.resolve().then(function () {
+          if (self.disposed || !self.manual || self.manual !== m) return;
+          self.loadMoves();
+        });
+      }
       var list = el('div', 'harpoon-lab-move-list');
-      if (m.busy || m.syncing) {
-        // Applying, or catching up to where Orca paused. NEVER show the
-        // previous goal's tactics here: they were computed for a goal that no
-        // longer exists, and offering them means offering moves that cannot
-        // apply. Skeleton until we know what is actually on offer.
-        for (var sk = 0; sk < Math.min(3, Math.max(1, moves.length)); sk += 1) {
+      if (m.syncing || (m.movesPending && !moves.length)) {
+        // Catching up to where Orca paused, or still synthesising the first
+        // list. NEVER show the previous goal's tactics while syncing: they were
+        // computed for a goal that no longer exists. While Orca searches, cached
+        // tactics stay visible and locked — they are the pre-run offer, not a
+        // guess at a goal the search has already left.
+        for (var sk = 0; sk < (m.movesPending && !moves.length ? 3 : Math.min(3, Math.max(1, moves.length))); sk += 1) {
           list.appendChild(skelMoveRow(sk));
         }
         movesWrap.appendChild(list);
@@ -1394,6 +1490,7 @@ function createManual(deps) {
     }
 
     parent.appendChild(box);
+    this._renderSig = manualRenderSig(this);
   }
 
   return {
@@ -1406,6 +1503,8 @@ function createManual(deps) {
     manualFocus: manualFocus,
     sweepCandidates: sweepCandidates,
     cancelSweep: cancelSweep,
+    loadMoves: loadMoves,
+    refreshMoves: refreshMoves,
     runOrca: runOrca,
     toggleOrcaPause: toggleOrcaPause,
     absorbOrcaResult: absorbOrcaResult,

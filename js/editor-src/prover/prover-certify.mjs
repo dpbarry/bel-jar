@@ -30,8 +30,8 @@ export function proveOrchestrationCode(fullAssembled, thmName, declStart, declEn
   const fs = fileStart == null ? 0 : fileStart;
   const prelude = src.slice(0, fs).trimEnd();
   const filePrefix = src.slice(fs, declStart);
-  const keptPrefixRaw = stripHoledSiblingDecls(filePrefix, thmName);
   const decl = src.slice(declStart, declEnd).trim();
+  const keptPrefixRaw = stripHoledSiblingDecls(filePrefix, thmName, decl);
   const seedCore = nonLfSeedText(keptPrefixRaw, decl);
   const keptPrefix = trimUnusedLfPrelude(keptPrefixRaw, seedCore);
   const trimmedPrelude = trimUnusedLfPrelude(prelude, `${keptPrefix}\n${decl}`);
@@ -240,12 +240,45 @@ function nonLfSeedText(prefix, decl) {
   return parts.join('\n');
 }
 
-function stripHoledSiblingDecls(filePrefix, targetName) {
+function recNamesIn(block) {
+  const out = [];
+  const re = new RegExp(String.raw`(?:^|\band\s+)(?:rec|proof)\s+(${DECL_IDENT})`, 'gu');
+  for (const m of String(block || '').matchAll(re)) out.push(m[1]);
+  return out;
+}
+
+function stripHoledSiblingDecls(filePrefix, targetName, seedText) {
+  const text = String(filePrefix || '');
   const re = new RegExp(String.raw`\b(?:rec|proof)\s+(${DECL_IDENT})\s*:[\s\S]*?;\s*`, 'gu');
-  return String(filePrefix || '').replace(re, (block, name) => {
-    if (name === targetName) return block;
-    return /\?/.test(block) ? '' : block;
-  }).trim();
+  const blocks = [...text.matchAll(re)].map((m) => ({
+    target: m[1] === targetName,
+    holed: /\?/.test(m[0]),
+    names: recNamesIn(m[0]),
+    uses: freeIdents(m[0]),
+  }));
+  // Keep what the target needs, to a fixed point. A complete declaration always stays, so what it
+  // calls is needed; a holed lemma stays once anything kept calls it, and then so does what it
+  // calls. Only holed lemmas nothing reaches are dropped: dropping one a kept declaration calls
+  // makes a clean file look ill-typed to Harpoon.
+  const needed = freeIdents(seedText);
+  if (targetName) needed.add(targetName);
+  const kept = new Set();
+  const keep = (b) => {
+    kept.add(b);
+    for (const u of b.uses) needed.add(u);
+  };
+  for (const b of blocks) if (b.target || !b.holed) keep(b);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const b of blocks) {
+      if (!kept.has(b) && b.names.some((n) => needed.has(n))) {
+        keep(b);
+        grew = true;
+      }
+    }
+  }
+  let i = 0;
+  return text.replace(re, (block) => (kept.has(blocks[i++]) ? block : '')).trim();
 }
 
 export function holesForTheorem(code, thm, holes) {

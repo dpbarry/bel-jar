@@ -184,10 +184,12 @@ function parsedDefsOfSrc(src) {
       entry.names.add(d.name);
     }
     // Only FREE occurrences — a locally-bound use (binder shadowing) never
-    // refers to a group-level definition. The walk also lists the defining
-    // tokens themselves among uses; exclude them so uses = references.
+    // refers to a group-level definition, and neither does a local binder's own
+    // name (`fn d => d`: renaming a global `d` must not rename that parameter).
+    // The walk also lists the defining tokens themselves among uses; exclude
+    // them so uses = references.
     for (const u of walk.uses) {
-      if (u.bound) continue;
+      if (u.bound || u.binds) continue;
       if (seenDef.has(`${u.from}:${u.name}`)) continue;
       entry.uses.push({ name: u.name, from: u.from, to: u.to });
     }

@@ -25,14 +25,13 @@
 // which leaves `proveProgramCore` untouched.
 
 import {
-  candidateMoves,
-  movePrefilterOk,
   countErrors,
   firstErrorOf,
   pruneOneBranch,
   caseArmLine,
   scoreHole,
 } from './prover-orchestrator.mjs';
+import { collectMovesAt } from './prover-moves-at.mjs';
 import { stepMeta, stepLead } from './prover-captions.mjs';
 import { parseHoles } from './hole-report.mjs';
 import {
@@ -107,20 +106,11 @@ export function focusOn(state, idx) {
  * `movePrefilterOk` rejects only candidates the checker would PROVABLY reject
  * (quoted internal names, bare `#p`/`$S` in comp slots, family/scope clashes),
  * so filtering here costs the user nothing and keeps the menu honest.
+ * The search's own last resort — a hole whose context blocks every move still
+ * deserves an offer — is inside `collectMovesAt`.
  */
 export function movesAt(state, thm) {
-  const hole = focusHole(state);
-  if (!hole) return [];
-  let moves = candidateMoves(hole, state.code, thm) || [];
-  moves = moves.filter((mv) => movePrefilterOk(mv, hole, state.code, { trustScope: true }));
-  // The search's own last resort: a hole whose context blocks every move still
-  // deserves an offer. Mirror it rather than showing the user an empty menu.
-  if (!moves.length && hole.ctx && hole.ctx.length) {
-    const bare = { ...hole, ctx: [] };
-    moves = (candidateMoves(bare, state.code, thm) || [])
-      .filter((mv) => movePrefilterOk(mv, bare, state.code, { trustScope: true }));
-  }
-  return moves;
+  return collectMovesAt(focusHole(state), state && state.code, thm);
 }
 
 /**

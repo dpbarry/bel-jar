@@ -139,6 +139,11 @@ const names = new Set(['grp/base.bel', 'grp/use.bel', 'grp/sources.cfg', 'grp/ex
   expect(su && su.severity === 'error', 'a later use of a shadowed-away constructor → error');
   expect('x.elf\ny.bel\nz.bel\n'.slice(su.from, su.to) === 'z.bel', 'error sits on the victim entry (z.bel)');
   expect(/y\.bel redefines o/.test(su.message), 'message names the redefiner');
+  // …and the redefiner's own entry carries a warning naming what it dropped and who uses it.
+  const rd = d.find((x) => /^Redefining o here/.test(x.message));
+  expect(rd && rd.severity === 'warning', 'the redefining entry gets a warning');
+  expect('x.elf\ny.bel\nz.bel\n'.slice(rd.from, rd.to) === 'y.bel', 'warning sits on the redefining entry (y.bel)');
+  expect(rd.message === 'Redefining o here drops atom, which z.bel uses.', `redefiner wording (got ${rd.message})`);
 }
 
 // Distinct names across files never collide.

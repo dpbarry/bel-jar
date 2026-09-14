@@ -32,6 +32,7 @@ const SHELL_PAIRS = [
 ];
 
 const EDITOR_BUNDLE = join(jsRoot, 'editor-cm.bundle.js');
+const MOVES_WORKER = join(jsRoot, 'prover-moves.worker.js');
 const EDITOR_ENTRY = join(root, 'scripts', 'build-editor.mjs');
 
 function mtime(path) {
@@ -73,12 +74,18 @@ for (const rel of SHELL_PAIRS) {
 
 const editorSrcNewest = newestMtime(join(jsRoot, 'editor-src'), '.mjs');
 const editorBundleT = mtime(EDITOR_BUNDLE);
+const movesWorkerT = mtime(MOVES_WORKER);
 const editorBuildT = mtime(EDITOR_ENTRY);
 const editorDriver = Math.max(editorSrcNewest, editorBuildT || 0);
 if (editorBundleT == null) {
   stale.push('missing build output: js/editor-cm.bundle.js (run npm run build:editor)');
 } else if (editorDriver > editorBundleT) {
   stale.push('stale: js/editor-cm.bundle.js (run npm run build:editor)');
+}
+if (movesWorkerT == null) {
+  stale.push('missing build output: js/prover-moves.worker.js (run npm run build:editor)');
+} else if (editorDriver > movesWorkerT) {
+  stale.push('stale: js/prover-moves.worker.js (run npm run build:editor)');
 }
 
 if (stale.length) {

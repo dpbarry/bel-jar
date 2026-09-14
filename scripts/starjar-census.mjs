@@ -30,7 +30,7 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'Beluga-W', 'scratch', 'resul
 const CODE_EXT = new Set(['.mjs', '.js', '.css', '.html', '.grammar', '.json']);
 
 // Known build artifacts: bundles produced by scripts/build-*.mjs, and generated parsers.
-const BUNDLES = new Set(['js/shell.js', 'js/editor-cm.bundle.js', 'js/harpoon/harpoon-ui.js']);
+const BUNDLES = new Set(['js/shell.js', 'js/editor-cm.bundle.js', 'js/harpoon/harpoon-ui.js', 'js/prover-moves.worker.js']);
 const GENERATED = new Set(['js/editor-src/beluga-parser.js', 'js/editor-src/beluga-parser.terms.js']);
 
 // ── grammar node vocabulary ──────────────────────────────────────────────────

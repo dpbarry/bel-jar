@@ -6,6 +6,7 @@ import { create as createUploadImport } from './app-upload-import.mjs';
 import { create as createFileLifecycle } from './app-file-lifecycle.mjs';
 import { create as createExplorerBootstrap } from './app-explorer-bootstrap.mjs';
 import { create as createMenus } from './app-menus.mjs';
+import { create as createManuscriptExport } from './app-manuscript-export.mjs';
 import { create as createCommandPalette } from './app-command-palette.mjs';
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -670,6 +671,7 @@ var suiteCfgApi = null;
 var explorerBootstrapApi = null;
 var fileLifecycleApi = null;
 var uploadImportApi = null;
+var manuscriptExportApi = null;
 var menusApi = null;
 var emptyStateApi = null;
 var sidePanelsApi = null;
@@ -737,6 +739,7 @@ function downloadFileById() { return uploadImportApi.downloadFileById.apply(uplo
 function downloadFolder() { return uploadImportApi.downloadFolder.apply(uploadImportApi, arguments); }
 function downloadSuite() { return uploadImportApi.downloadSuite.apply(uploadImportApi, arguments); }
 function suiteDownloadState() { return uploadImportApi.suiteDownloadState.apply(uploadImportApi, arguments); }
+function exportCurrentManuscript() { return manuscriptExportApi.exportCurrentManuscript.apply(manuscriptExportApi, arguments); }
 
 function signatureFileCount() { return menusApi.signatureFileCount.apply(menusApi, arguments); }
 function explorerSelectionContextItems() { return menusApi.explorerSelectionContextItems.apply(menusApi, arguments); }
@@ -820,6 +823,10 @@ function __initAppPeels() {
     cfgTabLint,
   }));
 
+  manuscriptExportApi = createManuscriptExport(Object.assign({}, peelHub, {
+    projectFileText, showToast,
+  }));
+
   fileLifecycleApi = createFileLifecycle(Object.assign({}, peelHub, {
     mountEditorFor, ensurePersistForFile, syncEditorCmTheme, updateEditorEmptyState,
     renderTabs, renderExplorerTree, updateHeaderContext, updateRunButtonTooltip,
@@ -852,6 +859,7 @@ function __initAppPeels() {
     uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
     folderInputEl: uploadImportApi.folderInputEl,
     downloadCurrentFile, downloadFileById, downloadFolder, downloadSuite, suiteDownloadState,
+    exportCurrentManuscript,
     deleteFileInteractive, closeFile, closeTabsForFiles,
     selectionDeleteFileIds, selectionDeleteDisabled, deleteSelectionInteractive,
     deleteFolderInteractive, renameFolderInteractive, explorerCreateMenuItems,

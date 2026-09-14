@@ -500,7 +500,7 @@
     var DOUBLE_TAP_COMMAND_KEY = "beljar-double-tap-command";
     var DOUBLE_TAP_SPEED_KEY = "beljar-double-tap-speed";
     var VIM_LEADER_KEY = "beljar-vim-leader";
-    var VIM_YANK_CLIPBOARD_KEY = "beljar-vim-yank-clipboard";
+    var EMACS_YANK_SOURCE_KEY = "beljar-emacs-yank-source";
     var EDITOR_LINE_NUMBER_MODE_KEY = "beljar-editor-line-number-mode";
     var VIM_INSERT_ESCAPE_KEY = "beljar-vim-insert-escape";
     var MOTION_PREF_KEY = "beljar-motion-pref";
@@ -1139,16 +1139,16 @@
       if (v === "," || v === " ") backendSave2(VIM_LEADER_KEY, v);
       else backendRemove2(VIM_LEADER_KEY);
     }
-    function readStoredVimYankClipboard() {
+    function readStoredEmacsYankSource() {
       try {
-        return backendLoad2(VIM_YANK_CLIPBOARD_KEY) === "on";
+        return backendLoad2(EMACS_YANK_SOURCE_KEY) === "kill-ring" ? "kill-ring" : "system";
       } catch (_) {
-        return false;
+        return "system";
       }
     }
-    function writeStoredVimYankClipboard(on) {
-      if (on === true) backendSave2(VIM_YANK_CLIPBOARD_KEY, "on");
-      else backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+    function writeStoredEmacsYankSource(v) {
+      if (v === "kill-ring") backendSave2(EMACS_YANK_SOURCE_KEY, "kill-ring");
+      else backendRemove2(EMACS_YANK_SOURCE_KEY);
     }
     function readStoredVimInsertEscape() {
       try {
@@ -1424,7 +1424,7 @@
       STATUS_STRIP_KEY,
       COMMAND_LINE_HISTORY_KEY,
       VIM_LEADER_KEY,
-      VIM_YANK_CLIPBOARD_KEY,
+      EMACS_YANK_SOURCE_KEY,
       VIM_INSERT_ESCAPE_KEY,
       DOUBLE_TAP_TRIGGER_KEY,
       DOUBLE_TAP_COMMAND_KEY,
@@ -1598,7 +1598,7 @@
       backendRemove2(STATUS_STRIP_KEY);
       backendRemove2(COMMAND_LINE_HISTORY_KEY);
       backendRemove2(VIM_LEADER_KEY);
-      backendRemove2(VIM_YANK_CLIPBOARD_KEY);
+      backendRemove2(EMACS_YANK_SOURCE_KEY);
       backendRemove2(VIM_INSERT_ESCAPE_KEY);
       backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
       backendRemove2(DOUBLE_TAP_COMMAND_KEY);
@@ -1785,8 +1785,8 @@
       writeStoredDoubleTapCommand,
       readStoredDoubleTapSpeed,
       writeStoredDoubleTapSpeed,
-      readStoredVimYankClipboard,
-      writeStoredVimYankClipboard,
+      readStoredEmacsYankSource,
+      writeStoredEmacsYankSource,
       readStoredVimLeader,
       writeStoredVimLeader,
       readStoredVimInsertEscape,
@@ -4319,8 +4319,8 @@
     "writeStoredDoubleTapSpeed",
     "readStoredVimLeader",
     "writeStoredVimLeader",
-    "readStoredVimYankClipboard",
-    "writeStoredVimYankClipboard",
+    "readStoredEmacsYankSource",
+    "writeStoredEmacsYankSource",
     "readStoredVimInsertEscape",
     "writeStoredVimInsertEscape",
     "readStoredMotionPref",
@@ -7456,13 +7456,13 @@
     }
   }
   function commandSources(face) {
-    const C = global5.Commands;
+    const C2 = global5.Commands;
     const P3 = global5.Persist;
     const forVim = face === "vim";
     return {
       commands() {
-        if (!C || typeof C.list !== "function") return [];
-        const rows2 = C.list({ cmdline: true, runnable: true, available: true }).filter((c) => !forVim || c.ex && c.ex.length).map((c) => ({
+        if (!C2 || typeof C2.list !== "function") return [];
+        const rows2 = C2.list({ cmdline: true, runnable: true, available: true }).filter((c) => !forVim || c.ex && c.ex.length).map((c) => ({
           value: c.ex && c.ex[0] || c.id,
           label: c.title,
           detail: c.section,
@@ -7501,8 +7501,8 @@
        * land on a different command than the one you picked.
        */
       commandNames() {
-        if (!C || typeof C.list !== "function") return [];
-        return C.list({ cmdline: true, runnable: true, available: true }).map((c) => ({
+        if (!C2 || typeof C2.list !== "function") return [];
+        return C2.list({ cmdline: true, runnable: true, available: true }).map((c) => ({
           value: c.id,
           label: c.title,
           detail: c.section,
@@ -7562,9 +7562,9 @@
       message(near ? `Unknown command "${parsed.name}". Did you mean "${near.value}"?` : `Unknown command "${parsed.name}".`);
       return false;
     }
-    const C = global5.Commands;
+    const C2 = global5.Commands;
     try {
-      const ok = C && C.run(cmd.id, { args: parsed.args, bang: parsed.bang, argText: parsed.argText });
+      const ok = C2 && C2.run(cmd.id, { args: parsed.args, bang: parsed.bang, argText: parsed.argText });
       if (!ok) message(`"${cmd.label}" is not available right now.`);
       return !!ok;
     } catch (err) {
@@ -8448,10 +8448,10 @@
   function hintRow(commandId, fallbackLabel) {
     const row = document.createElement("span");
     row.className = "jar-hist__hint";
-    const C = global6.Commands;
+    const C2 = global6.Commands;
     let label = fallbackLabel;
     try {
-      const cmd = C && typeof C.get === "function" ? C.get(commandId) : null;
+      const cmd = C2 && typeof C2.get === "function" ? C2.get(commandId) : null;
       if (cmd && cmd.title) label = cmd.title;
     } catch (_) {
     }
@@ -14403,8 +14403,8 @@
     return "default";
   }
   function describeAll() {
-    const C = global14.Commands;
-    if (!C || typeof C.describe !== "function") return [];
+    const C2 = global14.Commands;
+    if (!C2 || typeof C2.describe !== "function") return [];
     const E3 = global14.BelEditor;
     const style = activeStyle();
     let isMac = /Mac|iPhone|iPad/.test(global14.navigator && global14.navigator.platform || "");
@@ -14414,7 +14414,7 @@
       } catch (_) {
       }
     }
-    return C.list().map((c) => C.describe(c.id, { style, isMac, showing: "style" })).filter(Boolean);
+    return C2.list().map((c) => C2.describe(c.id, { style, isMac, showing: "style" })).filter(Boolean);
   }
   function rowNode(row, wantChord, prefix) {
     const r = el("div", "jar-macros__row");
@@ -14500,7 +14500,7 @@
   }
   function styleGroups() {
     const E3 = global14.BelEditor;
-    const C = global14.Commands;
+    const C2 = global14.Commands;
     if (!E3 || typeof E3.styleMacros !== "function") return [];
     const style = activeStyle();
     const facts = reservedFacts();
@@ -14511,11 +14511,11 @@
     } catch (_) {
       return [];
     }
-    if (!C || typeof C.chordShadowFor !== "function") return groups;
+    if (!C2 || typeof C2.chordShadowFor !== "function") return groups;
     return groups.map((g14) => ({
       name: g14.name,
       rows: g14.rows.map((r) => Object.assign({}, r, {
-        shadow: C.chordShadowFor({ style, keys: r.keys, commandId: r.id })
+        shadow: C2.chordShadowFor({ style, keys: r.keys, commandId: r.id })
       }))
     }));
   }
@@ -14529,13 +14529,13 @@
     }
   }
   function glossFor(chord) {
-    const C = global14.Commands;
+    const C2 = global14.Commands;
     const KB = global14.Keybindings;
-    if (!C || !KB || typeof KB.normalizeSpec !== "function") return "";
+    if (!C2 || !KB || typeof KB.normalizeSpec !== "function") return "";
     const spec = KB.normalizeSpec(chord);
     if (!spec) return "";
     const id = typeof KB.findConflict === "function" ? KB.findConflict(spec, null) : null;
-    const cmd = id && typeof C.get === "function" ? C.get(id) : null;
+    const cmd = id && typeof C2.get === "function" ? C2.get(id) : null;
     return cmd ? cmd.title : "";
   }
   function lineAccess() {
@@ -14781,12 +14781,12 @@
     return { close: true, run: id };
   }
   function run2(id) {
-    const C = global16.Commands;
+    const C2 = global16.Commands;
     const P3 = global16.CommandPalette;
     const paletteOpen = !!(P3 && typeof P3.isOpen === "function" && P3.isOpen());
     const action = resolveAction(id, paletteOpen);
     if (action.close && P3 && typeof P3.close === "function") P3.close();
-    if (action.run && C && typeof C.run === "function") C.run(action.run);
+    if (action.run && C2 && typeof C2.run === "function") C2.run(action.run);
   }
   function init6() {
     if (listening3 || typeof global16.addEventListener !== "function") return false;
@@ -26192,18 +26192,6 @@
         applyModal();
       }
     );
-    addSwitchRow(
-      vimGroup,
-      "vim-yank-clipboard",
-      "Yank to system clipboard",
-      "Copying with y also puts the text on the system clipboard. Pasting is unaffected.",
-      function() {
-        return p0 && p0.readStoredVimYankClipboard ? p0.readStoredVimYankClipboard() : false;
-      },
-      function(p, on) {
-        if (p.writeStoredVimYankClipboard) p.writeStoredVimYankClipboard(on);
-      }
-    );
     addDropdownRow(
       vimGroup,
       "vim-insert-escape",
@@ -26223,7 +26211,24 @@
         applyModal();
       }
     );
-    styleGroups2 = { vim: vimGroup };
+    var emacsGroup = addSubordinateGroup(panelBodies.keybindings, "Emacs");
+    addDropdownRow(
+      emacsGroup,
+      "emacs-yank-source",
+      "C-y pastes from",
+      "Kills always reach the system clipboard. With Kill ring, M-y cycles earlier kills.",
+      [
+        { value: "system", label: "System clipboard" },
+        { value: "kill-ring", label: "Kill ring" }
+      ],
+      function() {
+        return p0 && p0.readStoredEmacsYankSource ? p0.readStoredEmacsYankSource() : "system";
+      },
+      function(p, v) {
+        if (p.writeStoredEmacsYankSource) p.writeStoredEmacsYankSource(v);
+      }
+    );
+    styleGroups2 = { vim: vimGroup, emacs: emacsGroup };
     paintStyleRows(p0 && p0.readStoredKeymapStyle ? p0.readStoredKeymapStyle() : "default");
     addDropdownRow(
       panelBodies.keybindings,
@@ -28937,7 +28942,12 @@
           self.stopReelClock();
           return;
         }
-        if (self._autoSearchText) self._autoSearchText.textContent = nativeAutoSearchLabel(na);
+        if (self._autoSearchText) {
+          var label = nativeAutoSearchLabel(na);
+          if (self._autoSearchText.textContent !== label) {
+            self._autoSearchText.textContent = label;
+          }
+        }
         syncReelStatTips(self, na);
       }, 200);
     }
@@ -30326,6 +30336,22 @@
         manual: true
       };
     }
+    function declineCheckMessage(res) {
+      var out = String(res && res.output || "").trim();
+      if (!out) return "The file has errors. Fix them before proving.";
+      var err = out.match(/^Error:\s*(.+)$/im);
+      if (err) return err[0].trim();
+      var unbound = out.match(/Identifier\s+\S+\s+is unbound\.?/i);
+      if (unbound) return unbound[0].trim();
+      var lines = out.split("\n");
+      for (var i = 0; i < lines.length; i += 1) {
+        var t = lines[i].trim();
+        if (!t || /^##/.test(t) || /^File\s+"/.test(t)) continue;
+        if (/^Raised at|^Called from|^Re-raised|^Backtrace/i.test(t)) break;
+        return t.slice(0, 280);
+      }
+      return "The file has errors. Fix them before proving.";
+    }
     function startManual(code, seed) {
       var ed = E3();
       var client = globalThis.BelugaClient;
@@ -30341,6 +30367,7 @@
         toast3("Harpoon could not read this theorem.", "error");
         return Promise.resolve(false);
       }
+      if (this.disposed) return Promise.resolve(false);
       this.thm = thm;
       this.nativeAuto = null;
       var proveCode = code || prep.proveCode || prep.assembledCode;
@@ -30354,21 +30381,41 @@
         priorBinders: [],
         busy: false,
         error: null,
-        commit: this.commitState || null
+        commit: this.commitState || null,
+        moves: null,
+        movesPending: false
       };
       this.captureAnchor(this.view, prep);
       this.bindProbe();
       this.render();
+      if (this.disposed) return Promise.resolve(false);
+      function runCheck(src) {
+        return client.checkResultForProver ? client.checkResultForProver(src) : client.checkResult(src);
+      }
       var ready = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
       return ready.then(function() {
+        if (self.disposed) return null;
         return client.loadProverChecker ? client.loadProverChecker(proveCode) : null;
       }).then(function() {
-        return client.checkResultForProver ? client.checkResultForProver(proveCode) : client.checkResult(proveCode);
+        if (self.disposed) return { ok: false };
+        return runCheck(proveCode);
       }).then(function(res) {
-        if (!self.manual) return false;
+        if (self.disposed || !self.manual) return res;
+        if (res && res.ok) return res;
+        var assembled = prep.assembledCode;
+        if (!assembled || assembled === proveCode) return res;
+        return runCheck(assembled).then(function(full) {
+          if (full && full.ok) {
+            proveCode = assembled;
+            return full;
+          }
+          return res || full;
+        });
+      }).then(function(res) {
+        if (self.disposed || !self.manual) return false;
         if (!res || !res.ok) {
           self.manual.phase = "error";
-          self.manual.error = "The file has errors. Fix them before proving.";
+          self.manual.error = declineCheckMessage(res);
           self.render();
           return false;
         }
@@ -30379,11 +30426,15 @@
         }
         self.manual.phase = "ready";
         self.manual.priorBinders = priorGoalBinders2(self, sourceGoalType, self.manualGoalType());
+        self.manual.moves = null;
+        self.manual.movesPending = !!(self.manual.state && !ed.manualIsComplete(self.manual.state));
         self.render();
-        self.sweepCandidates();
+        if (self.manual.movesPending) self.loadMoves();
         return true;
       }).catch(function(err) {
-        if (!self.manual) return false;
+        if (self.disposed || !self.manual) return false;
+        var cancelled = client && client.isCancelledError && client.isCancelledError(err);
+        if (cancelled) return false;
         self.manual.phase = "error";
         self.manual.error = err && err.message || String(err);
         self.render();
@@ -30482,8 +30533,7 @@
         m.state = r.state;
         setTacticStatus(self, "");
         m.priorBinders = priorGoalBinders2(self, m.sourceGoalType, self.manualGoalType());
-        self.render();
-        self.sweepCandidates();
+        self.refreshMoves();
         return true;
       }).catch(function(err) {
         m.busy = false;
@@ -30498,6 +30548,51 @@
       var t = String(detail2 || "").replace(/^File\s+"[^"]*",\s*line\s*\d+,\s*column\s*\d+:?\s*/i, "");
       t = t.replace(/^Error:\s*/i, "").split("\n")[0].trim();
       return t.length > 160 ? t.slice(0, 157) + "\u2026" : t;
+    }
+    function refreshMoves() {
+      var ed = E3();
+      var m = this.manual;
+      if (!m || m.phase !== "ready") return;
+      var complete2 = m.state && ed && ed.manualIsComplete(m.state);
+      m.moves = null;
+      m.movesPending = !complete2;
+      this.cancelSweep();
+      this.render();
+      if (m.movesPending) this.loadMoves();
+    }
+    function loadMoves() {
+      var ed = E3();
+      var self = this;
+      var m = this.manual;
+      var token = {};
+      this._movesToken = token;
+      if (!m || !m.state || !ed) return Promise.resolve(false);
+      if (ed.manualIsComplete(m.state)) {
+        m.movesPending = false;
+        m.moves = [];
+        return Promise.resolve(true);
+      }
+      m.movesPending = true;
+      var run3 = ed.movesAtAsync ? ed.movesAtAsync(m.state, this.thm, {
+        shouldCancel: function() {
+          return !!(self.disposed || self._movesToken !== token);
+        }
+      }) : Promise.resolve([]);
+      return Promise.resolve(run3).then(function(moves) {
+        if (self.disposed || self._movesToken !== token || !self.manual) return false;
+        self.manual.moves = moves || [];
+        self.manual.movesPending = false;
+        self.render();
+        var na = self.nativeAuto;
+        if (!(na && na.phase === "searching" && !na.paused)) self.sweepCandidates();
+        return true;
+      }).catch(function() {
+        if (self.disposed || self._movesToken !== token || !self.manual) return false;
+        self.manual.moves = [];
+        self.manual.movesPending = false;
+        self.render();
+        return false;
+      });
     }
     function sweepCandidates() {
       var ed = E3();
@@ -30562,8 +30657,7 @@
       this.cancelSweep();
       m.state = ed.manualUndo(m.state);
       m.lastError = null;
-      this.render();
-      this.sweepCandidates();
+      this.refreshMoves();
     }
     function manualStepForward() {
       var ed = E3();
@@ -30571,8 +30665,7 @@
       if (!m || !m.state || !ed.manualCanRedo(m.state)) return;
       this.cancelSweep();
       m.state = ed.manualRedo(m.state);
-      this.render();
-      this.sweepCandidates();
+      this.refreshMoves();
     }
     function manualFocus(idx) {
       var ed = E3();
@@ -30580,8 +30673,7 @@
       if (!m || !m.state) return;
       this.cancelSweep();
       m.state = ed.focusOn(m.state, idx);
-      this.render();
-      this.sweepCandidates();
+      this.refreshMoves();
     }
     function orcaStack(self, before) {
       var prior = before && before.stack || [];
@@ -30640,9 +30732,9 @@
         this.syncManualToOrca().then(function(ok) {
           m.syncing = false;
           m.syncFailed = !ok;
-          if (!self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
-          self.render();
-          if (ok) self.sweepCandidates();
+          if (self.disposed || !self.manual || !self.nativeAuto || !self.nativeAuto.paused) return;
+          if (ok) self.refreshMoves();
+          else self.render();
         });
       } else {
         m.syncing = false;
@@ -30677,7 +30769,7 @@
         return Promise.resolve(false);
       }
       return manualOracle()(code).then(function(res) {
-        if (!self.manual) return false;
+        if (self.disposed || !self.manual) return false;
         if (res && res.ok) {
           var next = ed.manualState(code, self.thm, res.output || "");
           next.steps = (before && before.steps || []).concat(r && r.steps || []);
@@ -30690,10 +30782,10 @@
           );
         }
         self.manualBefore = null;
-        self.render();
-        self.sweepCandidates();
+        self.refreshMoves();
         return true;
       }).catch(function() {
+        if (self.disposed || !self.manual) return false;
         self.manualBefore = null;
         self.render();
         return false;
@@ -30708,7 +30800,7 @@
       var code = na.liveCode || na.code;
       if (!code || code === m.state.code) return Promise.resolve(true);
       return manualOracle()(code).then(function(res) {
-        if (!res || !res.ok || !self.manual) return false;
+        if (!res || !res.ok || self.disposed || !self.manual) return false;
         var next = ed.manualState(code, self.thm, res.output || "");
         var before = self.manualBefore;
         next.steps = (before && before.steps || []).concat(ed.pairTrace ? ed.pairTrace(na.steps || [], na.trace) : na.steps || []);
@@ -30769,7 +30861,6 @@
       if (!m) return;
       var st = m.state;
       var complete2 = st && ed.manualIsComplete(st);
-      this._renderSig = manualRenderSig2(this);
       var box = el6("div", "harpoon-lab-manual is-" + m.phase + (complete2 ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       var goalType = this.manualGoalType();
@@ -31010,14 +31101,18 @@
         this._tacticStatusEl = tacStatus;
         movesWrap.appendChild(tacticsLabel);
         var moves = [];
-        try {
-          moves = ed.movesAt(st, this.thm) || [];
-        } catch (e) {
-          moves = [];
+        if (Array.isArray(m.moves)) moves = m.moves;
+        var needMoves = !Array.isArray(m.moves) && st && ed && !complete2 && !m.syncFailed && !m.syncing;
+        if (needMoves && !m.movesPending) {
+          m.movesPending = true;
+          Promise.resolve().then(function() {
+            if (self.disposed || !self.manual || self.manual !== m) return;
+            self.loadMoves();
+          });
         }
         var list3 = el6("div", "harpoon-lab-move-list");
-        if (m.busy || m.syncing) {
-          for (var sk = 0; sk < Math.min(3, Math.max(1, moves.length)); sk += 1) {
+        if (m.syncing || m.movesPending && !moves.length) {
+          for (var sk = 0; sk < (m.movesPending && !moves.length ? 3 : Math.min(3, Math.max(1, moves.length))); sk += 1) {
             list3.appendChild(skelMoveRow(sk));
           }
           movesWrap.appendChild(list3);
@@ -31100,6 +31195,7 @@
         this._derivEl = deriv;
       }
       parent.appendChild(box);
+      this._renderSig = manualRenderSig2(this);
     }
     return {
       startManual,
@@ -31111,6 +31207,8 @@
       manualFocus,
       sweepCandidates,
       cancelSweep,
+      loadMoves,
+      refreshMoves,
       runOrca,
       toggleOrcaPause,
       absorbOrcaResult,
@@ -31128,6 +31226,9 @@
   }
   function P2() {
     return global49.HarpoonEngine || null;
+  }
+  function C() {
+    return global49.BelugaClient || null;
   }
   function FW() {
     return global49.FloatingWindow || null;
@@ -31414,6 +31515,8 @@
     this.anchor = null;
     this.compromise = { level: "none", reason: "", detail: "" };
     this.userCancelled = false;
+    this.disposed = false;
+    this._dead = false;
     this.pendingCommitSource = null;
     this._compromiseBanner = null;
     this.commitState = defaultCommitState();
@@ -31641,8 +31744,17 @@
     }
     window.StatusStrip.setOrca(true, na.paused ? "paused" : label || "");
   }
-  Session.prototype.stopNativeAuto = function() {
+  Session.prototype.abortCompute = function() {
     this.userCancelled = true;
+    this._movesToken = null;
+    if (typeof this.cancelSweep === "function") this.cancelSweep();
+    var client = C();
+    if (client && client.abortProverWorkload) client.abortProverWorkload();
+    var ed = E();
+    if (ed && ed.abortMovesWorkload) ed.abortMovesWorkload();
+  };
+  Session.prototype.stopNativeAuto = function() {
+    this.abortCompute();
     if (this.nativeAuto && this.nativeAuto.phase === "searching") {
       setNativeSearchLabel(this.nativeAuto, "Stopping\u2026");
       this.updateNativeAutoSearch();
@@ -31652,7 +31764,7 @@
   Session.prototype.restartNativeAuto = function() {
     var self = this;
     if (this.nativeAuto && this.nativeAuto.phase === "searching") {
-      this.userCancelled = true;
+      this.abortCompute();
       var waitDone = function() {
         if (self.nativeAuto && self.nativeAuto.phase === "searching") {
           setTimeout(waitDone, 40);
@@ -31828,7 +31940,7 @@
   Session.prototype.resolveFullDeclSignature = function(proveCode, sourceType) {
     var self = this;
     var ed = E();
-    var client = global49.BelugaClient;
+    var client = C();
     var name = this.prep && this.prep.name;
     if (!ed || !client || typeof client.ideDeclTypeForProver !== "function" || !name || !proveCode) return;
     if (this._fullDeclSigRequested === name) return;
@@ -31853,7 +31965,7 @@
   };
   Session.prototype.runNativeAuto = function(codeOverride) {
     var ed = E();
-    var client = global49.BelugaClient;
+    var client = C();
     var prep = this.prep;
     var self = this;
     if (!ed || !client || !prep || typeof ed.proveProgram !== "function" || typeof ed.theoremUnderProof !== "function") {
@@ -31928,17 +32040,23 @@
     var proverReady = client.beginProverSession ? client.beginProverSession() : Promise.resolve();
     var warm = client.loadProverChecker && proveCode ? client.loadProverChecker(proveCode) : Promise.resolve();
     return proverReady.then(function() {
+      if (self.disposed || self.userCancelled) return null;
       pulseLabel("Loading the program\u2026");
       return warm;
     }).then(function() {
+      if (self.disposed || self.userCancelled) return null;
       self.resolveFullDeclSignature(proveCode, sourceGoalType);
       if (client.checkResultForProver) {
         pulseLabel("Reading the goal\u2026");
         return client.checkResultForProver(proveCode).then(function(base) {
+          if (self.disposed || self.userCancelled) return;
           if (base && base.output) self.upgradeNativeAutoGoal(base.output, prep);
         });
       }
     }).then(function() {
+      if (self.disposed || self.userCancelled) {
+        return { complete: false, steps: [], stuck: { reason: "cancelled" } };
+      }
       pulseLabel("Starting search\u2026");
       return ed.proveProgram(proveCode, thm, function(code) {
         return client.checkResultForProver ? client.checkResultForProver(code) : client.checkResult(code);
@@ -32008,6 +32126,7 @@
         }
       });
     }).then(function(r) {
+      if (self.disposed) return false;
       self.probeAnchor();
       if (self._retireOrca) {
         self._retireOrca = false;
@@ -32041,6 +32160,7 @@
       if (self.manual) self.absorbOrcaResult(r);
       return !!(r && r.complete);
     }).catch(function(err) {
+      if (self.disposed) return false;
       var cancelled = client.isCancelledError && client.isCancelledError(err);
       if (cancelled && self.nativeAuto && self.nativeAuto.paused) return false;
       self.nativeAuto = {
@@ -32120,18 +32240,28 @@
     if (c && c.level === "warn") return "Code related to this goal has changed";
     return "Restart from the current file state";
   }
-  Session.prototype.disposeSession = function() {
+  Session.prototype.disposeSession = function(opts) {
+    opts = opts || {};
+    if (this._dead) return;
+    this._dead = true;
+    this.disposed = true;
+    this.abortCompute();
     untrackSession(this);
+    removeFloatSession(this);
     this.clearPendingCommitNav();
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
-    var client = global49.BelugaClient;
+    var client = C();
     if (client && client.endProverSession) client.endProverSession();
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
     this._treeRedraw = null;
-    if (this.win && this.win.close) this.win.close();
+    if (!opts.fromWindowClose && this.win && this.win.close) {
+      var w = this.win;
+      this.win = null;
+      w.close();
+    }
     this.win = null;
     var proof = P2();
     if (proof && proof.dispose) proof.dispose();
@@ -32152,7 +32282,9 @@
       m.phase,
       m.syncing ? "syncing" : "",
       m.syncFailed ? "syncfail" : "",
-      m.busy ? "busy" : ""
+      m.busy ? "busy" : "",
+      m.movesPending ? "moves" : "",
+      Array.isArray(m.moves) ? String(m.moves.length) : "-"
     ].join("|");
   }
   Session.prototype.derivationNa = function() {
@@ -32514,6 +32646,8 @@
     Session.prototype.manualFocus = manualApi.manualFocus;
     Session.prototype.sweepCandidates = manualApi.sweepCandidates;
     Session.prototype.cancelSweep = manualApi.cancelSweep;
+    Session.prototype.loadMoves = manualApi.loadMoves;
+    Session.prototype.refreshMoves = manualApi.refreshMoves;
     Session.prototype.runOrca = manualApi.runOrca;
     Session.prototype.toggleOrcaPause = manualApi.toggleOrcaPause;
     Session.prototype.absorbOrcaResult = manualApi.absorbOrcaResult;
@@ -32524,7 +32658,7 @@
   }
   __initHarpoonLabPeels();
   Session.prototype.render = function() {
-    if (!this.bodyEl) return;
+    if (this.disposed || !this.bodyEl) return;
     var self = this;
     var body = this.bodyEl;
     if (this.nativeAuto && this.nativeAuto.phase === "searching" && this._autoSearchBox && body.contains(this._autoSearchBox) && this._renderSig === manualRenderSig(this)) {
@@ -32787,7 +32921,7 @@
     if (host2.onSessionStart) host2.onSessionStart(prep.name);
     var startOrca = openingMode() === "orca";
     session.startManual().then(function(ok) {
-      if (ok && startOrca) session.runOrca();
+      if (ok && startOrca && !session.disposed) session.runOrca();
     });
     return session;
   }
@@ -32824,11 +32958,7 @@
             }
           },
           onClose: function() {
-            s.userCancelled = true;
-            removeFloatSession(s);
-            s.unbindProbe();
-            var proof = P2();
-            if (proof && proof.dispose) proof.dispose();
+            s.disposeSession({ fromWindowClose: true });
           }
         });
         floatSessions.push(s);
@@ -36213,6 +36343,7 @@
     var downloadFolder = deps.downloadFolder;
     var downloadSuite = deps.downloadSuite;
     var suiteDownloadState = deps.suiteDownloadState;
+    var exportCurrentManuscript = deps.exportCurrentManuscript;
     var deleteFileInteractive = deps.deleteFileInteractive;
     var closeFile = deps.closeFile;
     var closeTabsForFiles = deps.closeTabsForFiles;
@@ -36542,7 +36673,7 @@
       return out;
     }
     function explorerFolderContextItems(folderPath) {
-      const create19 = explorerCreateMenuItems(folderPath);
+      const create20 = explorerCreateMenuItems(folderPath);
       const rename = [
         { label: "Rename\u2026", onSelect: () => renameFolderInteractive(folderPath) },
         {
@@ -36560,7 +36691,7 @@
       ];
       const run3 = folderRunItems(folderPath);
       const runBlock = run3.length ? run3.concat([{ type: "separator" }]) : [];
-      return create19.concat(rename).concat(destroy).concat(runBlock);
+      return create20.concat(rename).concat(destroy).concat(runBlock);
     }
     function folderRunItems(folderPath) {
       const files = Persist.listFiles() || [];
@@ -36576,9 +36707,9 @@
       }];
     }
     function backgroundRunItems() {
-      const create19 = explorerCreateMenuItems("");
-      if (signatureFileCount() < 1) return create19;
-      return create19.concat([
+      const create20 = explorerCreateMenuItems("");
+      if (signatureFileCount() < 1) return create20;
+      return create20.concat([
         { label: "Run project", onSelect: () => BelugaRun.runProject() },
         { type: "separator" }
       ]);
@@ -36596,14 +36727,16 @@
       getEditor()[cmd]();
     }
     function editorClipboard(action) {
-      if (!getEditor()) return;
-      window.Commands?.run?.("edit." + action);
+      const editor2 = getEditor();
+      if (!editor2) return;
+      const ran = window.Commands?.run?.("edit." + action);
+      if (action === "paste" && !ran) editor2.pasteFromSystemClipboard?.();
     }
     function chordFor(id) {
-      const C = window.Commands;
-      if (!C || typeof C.liveChord !== "function") return "";
+      const C2 = window.Commands;
+      if (!C2 || typeof C2.liveChord !== "function") return "";
       try {
-        return C.liveChord(id) || "";
+        return C2.liveChord(id) || "";
       } catch (_) {
         return "";
       }
@@ -36740,6 +36873,12 @@
         },
         { type: "separator" },
         {
+          label: "Export manuscript",
+          disabled: !getEditor() || !getEditor().getValue,
+          onSelect: exportCurrentManuscript
+        },
+        { type: "separator" },
+        {
           label: "Dependency graph\u2026",
           shortcut: chordFor("tools.graph"),
           onSelect: () => window.CurrentEditor?.openDependencyGraph()
@@ -36794,8 +36933,239 @@
     };
   }
 
-  // js/app/app-command-palette.mjs
+  // js/app/app-manuscript-export.mjs
+  var MANUSCRIPT_CSS = `
+:root {
+  color-scheme: light;
+  --paper: #f8f7f3;
+  --ink: #252831;
+  --muted: #69707d;
+  --rule: #d9d9d3;
+  --code-bg: #1d2027;
+  --code-ink: #e8ebf0;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  font-size: 1.08rem;
+  line-height: 1.72;
+  text-rendering: optimizeLegibility;
+}
+.manuscript {
+  width: min(100% - 3rem, 46rem);
+  margin: 0 auto;
+  padding: 5rem 0 6rem;
+}
+.manuscript-header {
+  margin-bottom: 3.25rem;
+  padding-bottom: 1.3rem;
+  border-bottom: 1px solid var(--rule);
+}
+.manuscript-kicker {
+  margin: 0 0 .7rem;
+  color: var(--muted);
+  font: 600 .7rem/1.2 Inter, system-ui, sans-serif;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+.manuscript-title {
+  margin: 0;
+  color: #17191f;
+  font-size: clamp(2rem, 5vw, 3.1rem);
+  font-weight: 500;
+  letter-spacing: -.025em;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+.manuscript-prose {
+  margin: 0 0 1.25rem;
+}
+.manuscript-code {
+  margin: 1.8rem 0 2rem;
+  padding: 1.15rem 1.3rem;
+  overflow-x: auto;
+  border: 1px solid #303641;
+  border-radius: .45rem;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  box-shadow: 0 .45rem 1.5rem rgb(22 26 33 / 10%);
+  font: 400 .86rem/1.65 "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  tab-size: 2;
+  white-space: pre;
+}
+.manuscript-code code { font: inherit; }
+.jar-hl-keyword { color: #9bbcff; font-weight: 700; }
+.jar-hl-control, .jar-hl-arrow { color: #f4c27b; font-weight: 600; }
+.jar-hl-op { color: #8bd7e5; }
+.jar-hl-type, .jar-hl-type-def { color: #d4b7ff; }
+.jar-hl-type-def, .jar-hl-var-def, .jar-hl-local-def { font-weight: 700; }
+.jar-hl-metatype, .jar-hl-meta, .jar-hl-meta-pragma { color: #8ed9df; }
+.jar-hl-var { color: #e8ebf0; }
+.jar-hl-var-def { color: #a9c9ff; }
+.jar-hl-local { color: #d5b6f7; }
+.jar-hl-ctor { color: #a9c9ff; }
+.jar-hl-number, .jar-hl-atom { color: #f2b184; }
+.jar-hl-hole { color: #ff9ca5; font-weight: 700; }
+.jar-hl-prop { color: #9bc8ff; }
+.jar-hl-punct { color: #aeb6c3; }
+.jar-hl-comment { color: #aeb6c3; font-style: italic; }
+@media (max-width: 44rem) {
+  .manuscript { width: min(100% - 1.5rem, 46rem); padding-top: 2.5rem; }
+}
+`;
+  var escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function normalizeLineComment(text, line) {
+    const raw = String(text);
+    if (!line) return raw.trim();
+    return raw.replace(new RegExp(`^(?:${escapeRegExp(line)})+ ?`), "").trimEnd();
+  }
+  function normalizeBlockComment(text, block) {
+    let inner = String(text);
+    if (block?.open && inner.startsWith(block.open)) inner = inner.slice(block.open.length);
+    if (block?.close && inner.trimEnd().endsWith(block.close)) {
+      inner = inner.trimEnd().slice(0, -block.close.length);
+    }
+    inner = inner.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+    const lines = inner.split(/\r?\n/);
+    const indents = lines.filter((line) => line.trim()).map((line) => (line.match(/^\s*/) || [""])[0].length);
+    const indent = indents.length ? Math.min(...indents) : 0;
+    return lines.map((line) => line.slice(indent).replace(/^\s*\* ?/, "")).join("\n").trim();
+  }
+  function commentText(comment, tokens = null) {
+    return comment.kind === "line" ? normalizeLineComment(comment.text, tokens?.line) : normalizeBlockComment(comment.text, tokens?.block);
+  }
+  function isOnlyWhitespace(text) {
+    return !String(text).trim();
+  }
+  function extractManuscriptParts(source, comments, tokens = null) {
+    const text = String(source ?? "");
+    const ordered = (comments || []).slice().sort((a, b) => a.from - b.from);
+    const parts = [];
+    let cursor = 0;
+    let lastComment = null;
+    const pushCode = (from, to) => {
+      let lo = from;
+      let hi = to;
+      while (lo < hi && /\s/.test(text[lo])) lo += 1;
+      while (hi > lo && /\s/.test(text[hi - 1])) hi -= 1;
+      if (hi <= lo) return;
+      parts.push({ type: "code", from: lo, to: hi });
+    };
+    for (const comment of ordered) {
+      if (comment.from < cursor || comment.to <= comment.from) continue;
+      const between = text.slice(cursor, comment.from);
+      if (!isOnlyWhitespace(between)) pushCode(cursor, comment.from);
+      const prose = commentText(comment, tokens);
+      const canJoin = lastComment && lastComment.kind === "line" && comment.kind === "line" && isOnlyWhitespace(between) && !/\r?\n\s*\r?\n/.test(between);
+      if (prose) {
+        if (canJoin && parts.at(-1)?.type === "prose") parts.at(-1).text += ` ${prose}`;
+        else parts.push({ type: "prose", text: prose });
+      }
+      lastComment = comment;
+      cursor = comment.to;
+    }
+    pushCode(cursor, text.length);
+    return parts;
+  }
+  function safeFileStem(fileName) {
+    const base = String(fileName || "manuscript").split(/[\\/]/).pop() || "manuscript";
+    return base.replace(/\.[^.]*$/, "") || "manuscript";
+  }
+  function appendProse(article, text) {
+    for (const paragraph of String(text).split(/\r?\n\s*\r?\n/)) {
+      const value = paragraph.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+      if (!value) continue;
+      const p = document.createElement("p");
+      p.className = "manuscript-prose";
+      p.textContent = value;
+      article.appendChild(p);
+    }
+  }
+  function buildManuscriptHtml({ source, comments = [], tokens = null, highlight = null, fileName }) {
+    const text = String(source ?? "");
+    const parts = extractManuscriptParts(text, comments, tokens);
+    const title = String(fileName || "Manuscript");
+    const doc2 = document.implementation.createHTMLDocument(title);
+    doc2.documentElement.lang = "en";
+    const style = doc2.createElement("style");
+    style.textContent = MANUSCRIPT_CSS;
+    doc2.head.appendChild(style);
+    const article = doc2.createElement("article");
+    article.className = "manuscript";
+    const header = doc2.createElement("header");
+    header.className = "manuscript-header";
+    const kicker = doc2.createElement("p");
+    kicker.className = "manuscript-kicker";
+    kicker.textContent = "Manuscript";
+    const heading = doc2.createElement("h1");
+    heading.className = "manuscript-title";
+    heading.textContent = title;
+    header.append(kicker, heading);
+    article.appendChild(header);
+    if (!parts.length && text) parts.push({ type: "code", from: 0, to: text.length });
+    for (const part of parts) {
+      if (part.type === "prose") {
+        appendProse(article, part.text);
+        continue;
+      }
+      const pre = doc2.createElement("pre");
+      pre.className = "manuscript-code";
+      const code = doc2.createElement("code");
+      if (typeof highlight === "function") {
+        try {
+          code.appendChild(highlight(part.from, part.to));
+        } catch (_) {
+          code.textContent = text.slice(part.from, part.to);
+        }
+      } else {
+        code.textContent = text.slice(part.from, part.to);
+      }
+      pre.appendChild(code);
+      article.appendChild(pre);
+    }
+    doc2.body.appendChild(article);
+    return `<!doctype html>
+${doc2.documentElement.outerHTML}`;
+  }
   function create18(deps) {
+    const getEditor = deps.getEditor;
+    const getPersist2 = deps.getPersist;
+    const projectFileText = deps.projectFileText;
+    const showToast = deps.showToast;
+    function exportCurrentManuscript() {
+      const editor2 = getEditor();
+      const persist4 = getPersist2();
+      const fileId = editor2?.getCurrentFileId?.() || persist4?.getCurrentFileId?.() || Persist.getActiveFileId?.();
+      const file = fileId ? Persist.getFileById(fileId) : null;
+      if (!editor2 || !file) {
+        showToast("No file is open to export.", { kind: "warn" });
+        return;
+      }
+      try {
+        const reading = isSignaturePath(file.name) ? editor2.getReadingView?.() || null : null;
+        const source = reading?.text ?? editor2.getValue?.() ?? projectFileText(fileId) ?? "";
+        const html = buildManuscriptHtml({
+          source,
+          comments: reading?.comments || [],
+          tokens: reading?.commentTokens || null,
+          highlight: reading?.highlight || null,
+          fileName: file.name
+        });
+        const name = `${safeFileStem(file.name)}-manuscript.html`;
+        DownloadZip.triggerDownload(new Blob([html], { type: "text/html;charset=utf-8" }), name);
+      } catch (_) {
+        showToast("Could not export manuscript.", { kind: "error" });
+      }
+    }
+    return { exportCurrentManuscript };
+  }
+
+  // js/app/app-command-palette.mjs
+  function create19(deps) {
     var getPersist2 = deps.getPersist;
     var toggleSidePanel = deps.toggleSidePanel;
     var toggleTheme2 = deps.toggleTheme;
@@ -37722,6 +38092,7 @@
     var explorerBootstrapApi = null;
     var fileLifecycleApi = null;
     var uploadImportApi = null;
+    var manuscriptExportApi = null;
     var menusApi = null;
     var emptyStateApi = null;
     var sidePanelsApi = null;
@@ -37863,6 +38234,9 @@
     function suiteDownloadState() {
       return uploadImportApi.suiteDownloadState.apply(uploadImportApi, arguments);
     }
+    function exportCurrentManuscript() {
+      return manuscriptExportApi.exportCurrentManuscript.apply(manuscriptExportApi, arguments);
+    }
     function signatureFileCount() {
       return menusApi.signatureFileCount.apply(menusApi, arguments);
     }
@@ -37981,6 +38355,10 @@
         onCfgContentChange,
         cfgTabLint
       }));
+      manuscriptExportApi = create18(Object.assign({}, peelHub, {
+        projectFileText,
+        showToast
+      }));
       fileLifecycleApi = create15(Object.assign({}, peelHub, {
         mountEditorFor,
         ensurePersistForFile,
@@ -38058,6 +38436,7 @@
         downloadFolder,
         downloadSuite,
         suiteDownloadState,
+        exportCurrentManuscript,
         deleteFileInteractive,
         closeFile,
         closeTabsForFiles,
@@ -38082,7 +38461,7 @@
         editorTabsEl,
         projectFileText
       }));
-      create18(Object.assign({}, peelHub, {
+      create19(Object.assign({}, peelHub, {
         toggleSidePanel,
         toggleTheme: toggleTheme2,
         newProject,

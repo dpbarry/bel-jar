@@ -197,12 +197,18 @@ try {
     const s = window.__probeSession;
     s.manual.phase = 'ready';
     s.manual.state = window.__probeReady;
-    s.render();
-    s.sweepCandidates();
+    if (typeof s.refreshMoves === 'function') s.refreshMoves();
+    else {
+      s.render();
+      s.sweepCandidates();
+    }
     const body = s.bodyEl;
     for (let i = 0; i < 400; i += 1) {
-      if (!body.querySelector('.harpoon-lab-move.is-checking')
-          && body.querySelectorAll('.harpoon-lab-move.is-verified, .harpoon-lab-move.is-rejected').length) break;
+      const pending = s.manual && s.manual.movesPending;
+      const checking = body.querySelector('.harpoon-lab-move.is-checking');
+      const skeleton = body.querySelector('.harpoon-lab-move.is-skeleton');
+      const marked = body.querySelectorAll('.harpoon-lab-move.is-verified, .harpoon-lab-move.is-rejected').length;
+      if (!pending && !checking && !skeleton && marked) break;
       await new Promise((r) => setTimeout(r, 100));
     }
     const rows = [...body.querySelectorAll('.harpoon-lab-move')];
@@ -547,11 +553,19 @@ try {
     s.manual = {
       phase: 'ready', state: ed.manualState(code, thm, base.output), declName: thm.name,
       sourceGoalType: (thm.compType && thm.compType.raw) || '', priorBinders: [], busy: false,
+      moves: null, movesPending: false,
     };
     s.prep = { name: thm.name, proveCode: code, assembledCode: code,
       assembledDeclFrom: code.indexOf('rec '), assembledDeclTo: code.length, hit: null };
-    s.render();
+    s.thm = thm;
     const body = s.bodyEl;
+    if (typeof s.refreshMoves === 'function') s.refreshMoves();
+    else s.render();
+    for (let i = 0; i < 400; i += 1) {
+      if (!s.manual.movesPending
+          && body.querySelector('.harpoon-lab-move:not(.is-skeleton)')) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
     const before = {
       hasButton: !!body.querySelector('.harpoon-lab-orca-band:not(.is-running)'),
       tacticsLive: !body.querySelector('.harpoon-lab-moves.is-locked'),
@@ -593,7 +607,7 @@ try {
         || {}).getAttribute?.('data-tooltip'),
       spinnerInBadge: !!body.querySelector('.harpoon-lab-orca-badge .inspector-spinner'),
       daggerWorking: !!body.querySelector('.harpoon-lab-orca-badge.is-working svg'),
-      tacticsStillListed: body.querySelectorAll('.harpoon-lab-move').length,
+      tacticsStillListed: body.querySelectorAll('.harpoon-lab-move:not(.is-skeleton)').length,
       liveReel: !!body.querySelector('.harpoon-reel-record.is-live'),
       reelReplayed: body.querySelectorAll('.harpoon-reel-record.is-live .harpoon-lab-auto-step').length,
       applyBlocked: false,
@@ -605,7 +619,7 @@ try {
     const t1 = badgeSvg ? getComputedStyle(badgeSvg).transform : '';
     during.swinging = !!t0 && t0 !== 'none' && t0 !== t1;
 
-    const firstRow = body.querySelector('.harpoon-lab-move');
+    const firstRow = body.querySelector('.harpoon-lab-move:not(.is-skeleton)');
     if (firstRow) {
       const codeNow = s.manual.state.code;
       await s.manualApply(firstRow._mv, firstRow);
@@ -627,11 +641,11 @@ try {
     };
     // Wait for the resync to land — the list is skeletoned until it knows, which
     // is exactly the safety property asserted above.
-    for (let i = 0; i < 200; i += 1) {
-      if (!s.manual.syncing) break;
+    for (let i = 0; i < 400; i += 1) {
+      if (!s.manual.syncing && !s.manual.movesPending
+          && !body.querySelector('.harpoon-lab-move.is-skeleton')) break;
       await new Promise((r) => setTimeout(r, 100));
     }
-    await new Promise((r) => setTimeout(r, 300));
     const paused = {
       syncing: !!s.manual.syncing,
       syncFailed: !!s.manual.syncFailed,

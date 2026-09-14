@@ -11,6 +11,7 @@
 import { Vim } from '@replit/codemirror-vim';
 import { startRecording, stopRecording, replayMacro, isRecording } from '../macro-engine.mjs';
 import { VIM_MACRO_KEYS } from './macro-keys.mjs';
+import { writeSystemClipboard } from '../clipboard-bridge.mjs';
 
 const global = globalThis;
 
@@ -346,15 +347,8 @@ function installTextObjects() {
 }
 
 /**
- * The honest half of `clipboard=unnamed`: a yank also reaches the system
- * clipboard.
- *
- * ⛔ It is NOT the option, and must never be called that. Vim's `unnamed` makes
- * the clipboard *be* the unnamed register in both directions, and the other
- * direction is impossible here: `navigator.clipboard.readText` is async and a
- * register read is synchronous. Writing on yank is the half that works, so that
- * is the half that ships — under its own name, off by default, because silently
- * replacing what someone copied is not a thing to opt them into.
+ * Every Vim yank reaches the system clipboard. This is deliberately
+ * unconditional: a copy action must have one clipboard meaning in every style.
  *
  * `getRegisterController()` is a public, typed part of the package's API, so
  * this wraps a documented method rather than reaching into internals.
@@ -376,30 +370,10 @@ export function installYankClipboard() {
     const out = original.apply(this, arguments);
     // Deletes fill the unnamed register too; mirroring those as well would let
     // `dd` quietly clobber whatever you had copied.
-    if (operator === 'yank' && text && yankToClipboard()) writeClipboard(text);
+    if (operator === 'yank' && text) writeSystemClipboard(text);
     return out;
   };
   return true;
-}
-
-function yankToClipboard() {
-  const P = global.Persist;
-  try {
-    return !!(P && typeof P.readStoredVimYankClipboard === 'function' && P.readStoredVimYankClipboard());
-  } catch (_) {
-    return false;
-  }
-}
-
-function writeClipboard(text) {
-  const nav = global.navigator;
-  if (!nav || !nav.clipboard || typeof nav.clipboard.writeText !== 'function') return;
-  try {
-    // A yank is a keypress, so the gesture requirement is met. A rejection is
-    // the browser's business; it must never break the yank itself.
-    const p = nav.clipboard.writeText(String(text));
-    if (p && typeof p.catch === 'function') p.catch(() => {});
-  } catch (_) { /* no clipboard, no bridge */ }
 }
 
 let installed = false;

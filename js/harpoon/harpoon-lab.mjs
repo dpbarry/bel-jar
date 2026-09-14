@@ -11,6 +11,7 @@ import { create as createManual } from './harpoon-lab-manual.mjs';
 const global = globalThis;
 function E() { return global.BelEditor || null; }
   function P() { return global.HarpoonEngine || null; }
+  function C() { return global.BelugaClient || null; }
   function FW() { return global.FloatingWindow || null; }
 
   function toast(msg, kind) {
@@ -455,6 +456,8 @@ function E() { return global.BelEditor || null; }
     this.anchor = null;
     this.compromise = { level: 'none', reason: '', detail: '' };
     this.userCancelled = false;
+    this.disposed = false;
+    this._dead = false;
     this.pendingCommitSource = null;
     this._compromiseBanner = null;
     this.commitState = defaultCommitState();
@@ -718,8 +721,18 @@ function E() { return global.BelEditor || null; }
     window.StatusStrip.setOrca(true, na.paused ? 'paused' : (label || ''));
   }
 
-  Session.prototype.stopNativeAuto = function () {
+  Session.prototype.abortCompute = function () {
     this.userCancelled = true;
+    this._movesToken = null;
+    if (typeof this.cancelSweep === 'function') this.cancelSweep();
+    var client = C();
+    if (client && client.abortProverWorkload) client.abortProverWorkload();
+    var ed = E();
+    if (ed && ed.abortMovesWorkload) ed.abortMovesWorkload();
+  };
+
+  Session.prototype.stopNativeAuto = function () {
+    this.abortCompute();
     if (this.nativeAuto && this.nativeAuto.phase === 'searching') {
       setNativeSearchLabel(this.nativeAuto, 'Stopping…');
       this.updateNativeAutoSearch();
@@ -730,7 +743,7 @@ function E() { return global.BelEditor || null; }
   Session.prototype.restartNativeAuto = function () {
     var self = this;
     if (this.nativeAuto && this.nativeAuto.phase === 'searching') {
-      this.userCancelled = true;
+      this.abortCompute();
       var waitDone = function () {
         if (self.nativeAuto && self.nativeAuto.phase === 'searching') {
           setTimeout(waitDone, 40);
@@ -912,7 +925,7 @@ function E() { return global.BelEditor || null; }
   Session.prototype.resolveFullDeclSignature = function (proveCode, sourceType) {
     var self = this;
     var ed = E();
-    var client = global.BelugaClient;
+    var client = C();
     var name = this.prep && this.prep.name;
     if (!ed || !client || typeof client.ideDeclTypeForProver !== 'function'
         || !name || !proveCode) return;
@@ -937,7 +950,7 @@ function E() { return global.BelEditor || null; }
   // rather than the pristine one — i.e. "finish the proof from here".
   Session.prototype.runNativeAuto = function (codeOverride) {
     var ed = E();
-    var client = global.BelugaClient;
+    var client = C();
     var prep = this.prep;
     var self = this;
     if (!ed || !client || !prep || typeof ed.proveProgram !== 'function'
@@ -1018,17 +1031,23 @@ function E() { return global.BelEditor || null; }
       ? client.loadProverChecker(proveCode)
       : Promise.resolve();
     return proverReady.then(function () {
+      if (self.disposed || self.userCancelled) return null;
       pulseLabel('Loading the program…');
       return warm;
     }).then(function () {
+      if (self.disposed || self.userCancelled) return null;
       self.resolveFullDeclSignature(proveCode, sourceGoalType);
       if (client.checkResultForProver) {
         pulseLabel('Reading the goal…');
         return client.checkResultForProver(proveCode).then(function (base) {
+          if (self.disposed || self.userCancelled) return;
           if (base && base.output) self.upgradeNativeAutoGoal(base.output, prep);
         });
       }
     }).then(function () {
+      if (self.disposed || self.userCancelled) {
+        return { complete: false, steps: [], stuck: { reason: 'cancelled' } };
+      }
       pulseLabel('Starting search…');
       return ed.proveProgram(proveCode, thm, function (code) {
         return client.checkResultForProver
@@ -1109,6 +1128,7 @@ function E() { return global.BelEditor || null; }
         },
       });
     }).then(function (r) {
+      if (self.disposed) return false;
       self.probeAnchor();
       // RETIRED: the user took a step by hand while paused. The manual state is
       // already correct (synced at pause), so just let the surface settle — do
@@ -1148,6 +1168,7 @@ function E() { return global.BelEditor || null; }
       if (self.manual) self.absorbOrcaResult(r);
       return !!(r && r.complete);
     }).catch(function (err) {
+      if (self.disposed) return false;
       var cancelled = client.isCancelledError && client.isCancelledError(err);
       if (cancelled && self.nativeAuto && self.nativeAuto.paused) return false;
       self.nativeAuto = {
@@ -1234,18 +1255,28 @@ function E() { return global.BelEditor || null; }
     return 'Restart from the current file state';
   }
 
-  Session.prototype.disposeSession = function () {
+  Session.prototype.disposeSession = function (opts) {
+    opts = opts || {};
+    if (this._dead) return;
+    this._dead = true;
+    this.disposed = true;
+    this.abortCompute();
     untrackSession(this);
+    removeFloatSession(this);
     this.clearPendingCommitNav();
     this.unbindProbe();
     if (this.stopReelClock) this.stopReelClock();
     this.pendingCommitSource = null;
-    var client = global.BelugaClient;
+    var client = C();
     if (client && client.endProverSession) client.endProverSession();
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
     this._treeRedraw = null;
-    if (this.win && this.win.close) this.win.close();
+    if (!opts.fromWindowClose && this.win && this.win.close) {
+      var w = this.win;
+      this.win = null;
+      w.close();
+    }
     this.win = null;
     var proof = P();
     if (proof && proof.dispose) proof.dispose();
@@ -1276,6 +1307,8 @@ function E() { return global.BelEditor || null; }
       m.syncing ? 'syncing' : '',
       m.syncFailed ? 'syncfail' : '',
       m.busy ? 'busy' : '',
+      m.movesPending ? 'moves' : '',
+      Array.isArray(m.moves) ? String(m.moves.length) : '-',
     ].join('|');
   }
 
@@ -1606,6 +1639,8 @@ function E() { return global.BelEditor || null; }
     Session.prototype.manualFocus = manualApi.manualFocus;
     Session.prototype.sweepCandidates = manualApi.sweepCandidates;
     Session.prototype.cancelSweep = manualApi.cancelSweep;
+    Session.prototype.loadMoves = manualApi.loadMoves;
+    Session.prototype.refreshMoves = manualApi.refreshMoves;
     Session.prototype.runOrca = manualApi.runOrca;
     Session.prototype.toggleOrcaPause = manualApi.toggleOrcaPause;
     Session.prototype.absorbOrcaResult = manualApi.absorbOrcaResult;
@@ -1618,7 +1653,7 @@ function E() { return global.BelEditor || null; }
   __initHarpoonLabPeels();
 
   Session.prototype.render = function () {
-    if (!this.bodyEl) return;
+    if (this.disposed || !this.bodyEl) return;
     var self = this;
     var body = this.bodyEl;
 
@@ -1916,7 +1951,7 @@ function E() { return global.BelEditor || null; }
     // itself once the goal is read — not that a different panel appears.
     var startOrca = openingMode() === 'orca';
     session.startManual().then(function (ok) {
-      if (ok && startOrca) session.runOrca();
+      if (ok && startOrca && !session.disposed) session.runOrca();
     });
     return session;
   }
@@ -1951,11 +1986,7 @@ function E() { return global.BelEditor || null; }
             }
           },
           onClose: function () {
-            s.userCancelled = true;
-            removeFloatSession(s);
-            s.unbindProbe();
-            var proof = P();
-            if (proof && proof.dispose) proof.dispose();
+            s.disposeSession({ fromWindowClose: true });
           },
         });
         floatSessions.push(s);

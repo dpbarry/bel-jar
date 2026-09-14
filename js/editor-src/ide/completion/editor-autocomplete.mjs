@@ -90,9 +90,20 @@ function fillItem(li, item, token) {
   }
 }
 
+/** Screen coords for a document position, or null if the view cannot measure it. */
+export function coordsAtPosSafe(view, pos, side = 1) {
+  const len = view?.state?.doc?.length;
+  if (len == null || pos < 0 || pos > len) return null;
+  try {
+    return view.coordsAtPos(pos, side);
+  } catch {
+    return null;
+  }
+}
+
 function positionPopup(view, popup, listEl, replaceFrom) {
   if (!popup || popup.hidden || !listEl) return;
-  const coords = view.coordsAtPos(replaceFrom, false);
+  const coords = coordsAtPosSafe(view, replaceFrom);
   if (!coords) return;
 
   listEl.style.maxHeight = '';
@@ -143,11 +154,28 @@ function createEditorAcPlugin(engine, opts) {
       this.debounceTimer = null;
       this.suppressRefresh = false;
       this.repositionBound = false;
-      this.onReposition = () => {
-        if (this.open) positionPopup(this.view, this.popup, this.listEl, this.replaceFrom);
-      };
+      this.repositionTimer = 0;
+      this.onReposition = () => this.scheduleReposition();
       this.ensurePopup();
       this.hide();
+    }
+
+    reposition() {
+      if (this.open) positionPopup(this.view, this.popup, this.listEl, this.replaceFrom);
+    }
+
+    scheduleReposition() {
+      if (this.repositionTimer) return;
+      this.repositionTimer = requestAnimationFrame(() => {
+        this.repositionTimer = 0;
+        this.reposition();
+      });
+    }
+
+    cancelReposition() {
+      if (!this.repositionTimer) return;
+      cancelAnimationFrame(this.repositionTimer);
+      this.repositionTimer = 0;
     }
 
     ensurePopup() {
@@ -184,6 +212,7 @@ function createEditorAcPlugin(engine, opts) {
       this.activeIndex = -1;
       this.typedToken = '';
       this.explicit = false;
+      this.cancelReposition();
       this.bindReposition(false);
       if (this.popup) {
         this.popup.hidden = true;
@@ -275,14 +304,10 @@ function createEditorAcPlugin(engine, opts) {
       if (!wasOpen) popup.style.visibility = 'hidden';
       if (!wasOpen || this.activeIndex < 0) this.setActive(0);
       else this.setActive(this.activeIndex);
-      positionPopup(this.view, popup, this.listEl, this.replaceFrom);
+      this.reposition();
       if (!wasOpen) popup.style.visibility = '';
       this.bindReposition(true);
-      if (!wasOpen) {
-        requestAnimationFrame(() => {
-          positionPopup(this.view, popup, this.listEl, this.replaceFrom);
-        });
-      }
+      if (!wasOpen) this.scheduleReposition();
     }
 
     compute() {
@@ -345,6 +370,16 @@ function createEditorAcPlugin(engine, opts) {
     }
 
     update(u) {
+      if (this.open && u.docChanged) {
+        try {
+          this.replaceFrom = u.changes.mapPos(this.replaceFrom, 1);
+          this.replaceTo = u.changes.mapPos(this.replaceTo, 1);
+        } catch {
+          this.hide();
+        }
+      }
+      if (this.open && (u.viewportChanged || u.geometryChanged)) this.scheduleReposition();
+
       if (!u.docChanged && !u.selectionSet) return;
 
       const trigger = autocompleteTrigger();
@@ -395,6 +430,7 @@ function createEditorAcPlugin(engine, opts) {
 
     destroy() {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
+      this.cancelReposition();
       this.bindReposition(false);
       this.popup?.remove();
       this.popup = null;

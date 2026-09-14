@@ -17,6 +17,7 @@ import { contributeIdents } from '../js/editor-src/ide/completion/contributors.m
 import { rankLookupItems } from '../js/editor-src/ide/completion/weigh.mjs';
 import { fuzzyScore } from '../js/editor-src/ide/completion/fuzzy.mjs';
 import { belCompletionSource, gatherCompletions } from '../js/editor-src/ide/completion/source.mjs';
+import { coordsAtPosSafe } from '../js/editor-src/ide/completion/editor-autocomplete.mjs';
   import {
   SNIPPETS,
   isCaseArmSlot,
@@ -1983,6 +1984,23 @@ function mkState(src) {
   for (const [name, want] of Object.entries(WANT)) {
     expect(labelOf.get(name) === want, `declaration label of ${name}: got ${labelOf.get(name)}, want ${want}`);
   }
+}
+
+{
+  const rect = { left: 4, right: 8, top: 10, bottom: 22 };
+  const view = {
+    state: { doc: { length: 50 } },
+    coordsAtPos(pos) {
+      if (pos === 102) throw new Error('No tile at position 102');
+      return rect;
+    },
+  };
+  expect(coordsAtPosSafe(view, 10) === rect, 'in-range coords pass through');
+  expect(coordsAtPosSafe(view, 102) === null, 'pos past doc is null without measuring');
+  expect(coordsAtPosSafe(view, -1) === null, 'negative pos is null');
+  expect(coordsAtPosSafe(view, 50) === rect, 'doc.length is a valid caret pos');
+  view.state.doc.length = 200;
+  expect(coordsAtPosSafe(view, 102) === null, 'missing tile is null, not a throw');
 }
 
 console.log('ok - autocomplete slice A');

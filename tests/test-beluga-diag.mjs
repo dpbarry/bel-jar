@@ -59,6 +59,16 @@ assert.equal(
   'menhir flush-on-one-line parse errors get readable text',
 );
 
+// Arrows and the turnstile end a token, so a squiggle on `a` in `a→b` covers `a` alone. They were once lost to
+// `?` in an encoding accident (2026-07-25), which let a squiggle run across them.
+{
+  const arrowDoc = Text.of(['LF c : a→b⇒c⊢d.']);
+  for (const [column, want] of [[8, 'a'], [10, 'b'], [12, 'c'], [14, 'd']]) {
+    const [d] = parseBelugaDiagnostics(`File "input.bel", line 1, column ${column}\nError: Ill-typed.`, arrowDoc);
+    assert.equal(arrowDoc.sliceString(d.from, d.to), want);
+  }
+}
+
 assert.equal(belugaOutputLooksLikeFailure(raw), true);
 assert.equal(
   belugaOutputLooksLikeFailure('## Type Reconstruction done: input.bel ##\n## Holes: input.bel ##'),

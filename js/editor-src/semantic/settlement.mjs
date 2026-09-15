@@ -2,6 +2,7 @@ import { Text } from '@codemirror/state';
 import { parser } from '../beluga-parser.js';
 import { fallbackDiagnostic, namedCulprit, parseBelugaDiagnostics, spanFirstLineDiagnostic } from '../ide/beluga-diag.mjs';
 import { assembleCheckerCode, shiftCheckerOutput, attributeCheckerHoles, attributeUnlocatedPreludeIssue } from './project-prelude.mjs';
+import { fileBase } from '../project-paths.mjs';
 import { mergeDiagnostics, parseQueryRuntimeDiagnostics } from '../ide/query-diag.mjs';
 import { checkerSnapshotFromSyntax } from './checker-snapshot.mjs';
 import { computeLintBlocks, maskBlocksByIndex } from '../lint-units.mjs';
@@ -27,7 +28,9 @@ import {
 const MAX_PASSES = 8;
 const MAX_PASSES_PRELUDE_FLOOR = 16;
 
+// `fileName` (the open file's name) words the report of a failure the checker did not locate.
 export function belugaDiagnosticsFromOutput(rawOutput, doc, {
+  fileName = null,
   blockAt = null,
   hasSyntaxFault = false,
   ok = true,
@@ -40,7 +43,7 @@ export function belugaDiagnosticsFromOutput(rawOutput, doc, {
     if (hit) d.blockIndex = hit.index;
   }
   if (!diags.length && ok === false && !hasSyntaxFault) {
-    const fb = fallbackDiagnostic(rawOutput, doc);
+    const fb = fallbackDiagnostic(rawOutput, doc, { fileName });
     if (fb) {
       fb.source = 'beluga';
       const hit = blockAt && blockAt(fb.from);
@@ -285,14 +288,17 @@ export function createSettlement({
       // active-file finding. Mask the prelude block and re-check instead.
       if (preludeIssues.length) return { diags: [], preludeIssues };
 
-      // Unlocated failures cannot be shifted by File/line. Prefer the prelude
-      // token over dumping fallbackDiagnostic onto the active file's line 1.
-      if (!ok && shiftPrelude) {
+      // A failure the checker did not locate cannot be shifted by File/line.
+      // Prefer the prelude token over dumping fallbackDiagnostic onto the active
+      // file's line 1. A located error is the active file's, even when its name
+      // also appears in the prelude.
+      if (!ok && shiftPrelude && !parseBelugaDiagnostics(shifted.text, diagDoc).length) {
         const unlocated = attributeUnlocatedPreludeIssue(rawOutput, shiftPrelude);
         if (unlocated) return { diags: [], preludeIssues: [unlocated] };
       }
 
       let diags = belugaDiagnosticsFromOutput(shifted.text, diagDoc, {
+        fileName: ctx?.activeFileName ? fileBase(ctx.activeFileName) : null,
         blockAt: snap.blockAt,
         hasSyntaxFault: snap.hasSyntaxFault,
         ok,
@@ -413,6 +419,7 @@ export function createSettlement({
     let code;
     let lastOk = false;
     let checkedOkCode = null;
+    let checkedOkOffsetLines = 0;
     let settledHoles = [];
     let settledMemberHoles = {};
     let passLimit;
@@ -449,6 +456,7 @@ export function createSettlement({
           rawOutput: prev.rawOutput || '',
           holes: prev.holes || [],
           checkedCode: prev.checkedCode || '',
+          checkedOffsetLines: prev.checkedOffsetLines || 0,
           checkedFp: prev.checkedFp || '',
           settleMode: 'frontier-empty',
         }, gen);
@@ -551,6 +559,7 @@ export function createSettlement({
         if (res.ok) {
           lastOk = true;
           checkedOkCode = code;
+          checkedOkOffsetLines = shiftPrelude ? shiftPrelude.offsetLines : 0;
           const attributed = attributeCheckerHoles(res.output, {
             prelude: shiftPrelude,
             activeFileName: ctx?.activeFileName || null,
@@ -635,6 +644,7 @@ export function createSettlement({
         rawOutput: outputs.join('\n'),
         holes: settledHoles,
         checkedCode: checkedOkCode || '',
+        checkedOffsetLines: checkedOkCode ? checkedOkOffsetLines : 0,
         checkedFp: checkedOkCode ? fingerprint(checkedOkCode) : '',
         settleMode: useFrontier && keepIdx && keepIdx.size ? 'frontier' : 'full',
       }, gen);

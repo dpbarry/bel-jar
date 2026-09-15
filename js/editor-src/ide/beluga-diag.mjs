@@ -57,7 +57,7 @@ function cleanMessage(parts) {
 }
 
 function expandToToken(lineText, offset) {
-  const isId = (ch) => ch && !/[\s\[\](){}:.,;|/]/.test(ch) && ch !== '?' && ch !== '?' && ch !== '?';
+  const isId = (ch) => ch && !/[\s\[\](){}:.,;|/]/.test(ch) && ch !== '⇒' && ch !== '→' && ch !== '⊢';
   let at = Math.max(0, Math.min(offset, lineText.length - 1));
   if (!isId(lineText[at])) {
     let fwd = at;
@@ -322,7 +322,8 @@ export function fallbackDiagnostic(raw, doc, { fileName = null } = {}) {
     line: line.number,
     column,
   });
-  return { from: span.from, to: span.to, severity: 'error', message };
+  // `detail` is the bare message, so a caller that places the diagnostic in another file can re-word the report.
+  return { from: span.from, to: span.to, severity: 'error', message, detail: polished };
 }
 
 // General rule, NOT a one-off: any diagnostic that starts on the first line must

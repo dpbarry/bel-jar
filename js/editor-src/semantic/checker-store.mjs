@@ -22,6 +22,8 @@ export function createCheckerStore() {
     // file stays live for elaboration/hover.
     checkedCode: '',
     checkedFp: '',
+    // How many lines of checkedCode come before the document's own: the prelude it was assembled with.
+    checkedOffsetLines: 0,
   };
 
   function invalidate(syntaxVersion) {
@@ -45,6 +47,7 @@ export function createCheckerStore() {
       holes: prev.holes || [],
       checkedCode: '',
       checkedFp: '',
+      checkedOffsetLines: 0,
     };
   }
 
@@ -87,6 +90,7 @@ export function createCheckerStore() {
     holes = [],
     checkedCode = '',
     checkedFp = '',
+    checkedOffsetLines = 0,
     settleMode = null,
   }) {
     // ⛔ A `ready` verdict cannot carry an unverified finding. `stale` means
@@ -109,6 +113,7 @@ export function createCheckerStore() {
       holes: holes || [],
       checkedCode,
       checkedFp,
+      checkedOffsetLines,
       settleMode: settleMode || null,
     };
   }
@@ -126,6 +131,7 @@ export function createCheckerStore() {
       holes: [],
       checkedCode: '',
       checkedFp: '',
+      checkedOffsetLines: 0,
     };
   }
 

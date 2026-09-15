@@ -29,7 +29,7 @@ const EXEMPT = [/^js\/lang\//, /^js\/providers\//];
 // Lower these as delamination lands; never raise them without saying why.
 const BASELINE = {
   nodeSites: 1420,   // grammar node names. 1416 -> 1417 (2026-09-13, the peer-proof fix), then 1412 when the declaration labels became one table, then 1424 (2026-09-13): the suite lint reads which family an LF constant's type ends in, so Twelf-style families count; then 1420 when the names walk stopped binding rec function names
-  identifiers: 566,  // Beluga-named identifiers, incl. public globals. 568 -> 566 (2026-09-14): Harpoon close-abort funnels BelugaClient through one helper
+  identifiers: 569,  // Beluga-named identifiers, incl. public globals. 568 -> 566 (2026-09-14): Harpoon close-abort funnels BelugaClient through one helper; 566 -> 569 (2026-09-15): settlement asks parseBelugaDiagnostics whether anything was located before blaming the prelude, and the development check words an unlocated failure with formatBelugaErrorReport under its member file's name
   cssClasses: 0,     // `bel-` / `bj-` prefixes — migrated to `jar-` on 2026-09-11
   extensions: 100,   // .bel / .cfg / .elf file-extension logic
 };

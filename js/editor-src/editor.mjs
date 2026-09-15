@@ -1038,7 +1038,6 @@ export function mount(parentEl, options = {}) {
   });
 
   const {
-    healthyCodeWithPrelude,
     holeActionContext,
     currentScopeKey,
     suiteOverlayDiagnostics,
@@ -1445,7 +1444,8 @@ export function mount(parentEl, options = {}) {
   wireStatusDotErrorNavLocal();
   if (/\.elf$/i.test(docPath)) view.dom.classList.add('jar-editor--elf');
 
-  semanticEngine.setCheckerCode(() => healthyCodeWithPrelude());
+  // The assembled program, with its prelude line count, so type queries ask about the right lines.
+  semanticEngine.setCheckerCode(() => holeActionContext());
   hydrateSemanticCheckpoint(initialDoc);
   syncSemanticFromView(view);
   semanticEngine.ensureSettled?.();

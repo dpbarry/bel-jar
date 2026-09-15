@@ -140,5 +140,27 @@ File "b.bel", line 2, column 17: Hole number 1, <anonymous>
   expect(checker.cachedFor(base) === r1, 'cachedFor returns the memoized result');
 }
 
+// A failure the checker did not locate is reported in the member it lands in, under that file's name and its
+// own line, never as the assembled program's "input.bel" and line.
+{
+  const { checkDevelopmentCode: checkDev } = await import('../js/editor-src/semantic/development-check.mjs');
+  const code = 'LF a : type.\n\nLF b : zz.';
+  const spans = [
+    { id: 'a', name: 'p/a.elf', startLine: 1, endLine: 1 },
+    { id: 'b', name: 'p/b.bel', startLine: 3, endLine: 3 },
+  ];
+  let firstD = true;
+  const outD = await checkDev(code, spans, async () => {
+    if (!firstD) return { ok: true, output: '' };
+    firstD = false;
+    return { ok: false, output: 'Identifier zz is unbound.\n' };
+  });
+  const [dd] = outD.memberDiagnostics['p/b.bel'] || [];
+  if (!dd || !/^File "b\.bel", line 1, column 8\nError: Identifier zz is unbound\./.test(dd.message)) {
+    console.error('FAIL: the member report names b.bel at its own line, got', JSON.stringify(outD.memberDiagnostics));
+    process.exit(1);
+  }
+}
+
 console.log('ok   test-development-check.mjs  development-scoped check (every member attributed incl. later '
   + 'files; clean = ok; signature + memoization)');

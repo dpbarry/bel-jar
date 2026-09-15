@@ -11,6 +11,7 @@ import { createSyntaxStore } from '../js/editor-src/semantic/syntax-store.mjs';
 import { createSettlement } from '../js/editor-src/semantic/settlement.mjs';
 import { createCheckerStore } from '../js/editor-src/semantic/checker-store.mjs';
 import { suitePreludeBannerForActive } from '../js/editor-src/semantic/suite-prelude-banner.mjs';
+import { locateToken } from '../js/editor-src/ide/beluga-diag.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -395,6 +396,61 @@ expect(banner.from === 0 && banner.to === line1End,
   expect(bannerC && !/more in prelude/.test(bannerC.message),
     `a single prelude error must not read "(+N more in prelude)", got: ${bannerC.message}`);
   expect(snapC.ok === false, 'the suite still does not read ok');
+}
+
+// A LOCATED active-file error belongs to the active file, even when its name also appears in the
+// prelude (here as a binder). Only a failure the checker did not locate is looked for in the prelude.
+{
+  const preludeCode = 'LF bad : type =\n  | t1 : bad\n;\nrec f : [ ⊢ bad] → [ ⊢ bad] = fn tp => tp;';
+  const prelude = {
+    code: preludeCode,
+    spans: [{ id: 'base', name: 'base.bel', startLine: 1, endLine: 4 }],
+    offsetLines: 5,
+    names: new Set(['bad', 't1', 'f']),
+  };
+  expect(locateToken(Text.of(preludeCode.split('\n')), 'tp'), 'precondition: tp is a token in the prelude');
+  const activeSyntax = syntaxFor(`LF use : type =\n  | u : tp\n;`);
+  const clientB = {
+    fingerprint: (c) => `fp:${c.length}`,
+    // Assembled: 4 prelude lines, the join line, then the active file from line 6; `tp` is at line 7, column 9.
+    checkResult: async () => ({ ok: false, output: 'File "input.bel", line 7, column 9:\nError: Identifier tp is unbound' }),
+  };
+  const storeB = createCheckerStore();
+  const settlementB = createSettlement({
+    belugaClient: clientB,
+    checkerStore: storeB,
+    getCheckContext: () => ({ doc: activeSyntax.doc, prelude }),
+  });
+  await settlementB.settleNow(activeSyntax, 0);
+  const snapB = storeB.getSnapshot();
+  const own = (snapB.belugaDiagnostics || []).find((d) => /Identifier tp is unbound/.test(d.message));
+  expect(own && activeSyntax.doc.sliceString(own.from, own.to) === 'tp',
+    `a located active error lands on its token, got: ${JSON.stringify(snapB.belugaDiagnostics)}`);
+  expect(Object.keys(snapB.memberDiagnostics || {}).length === 0,
+    `and is not blamed on the prelude, got: ${JSON.stringify(snapB.memberDiagnostics)}`);
+}
+
+// A failure the checker did not locate is reported under the open file's own name and suffix.
+{
+  const activeSyntax = syntaxFor('LF use : type =\n  | u : zz\n;');
+  const storeN = createCheckerStore();
+  let firstN = true;
+  const settlementN = createSettlement({
+    belugaClient: {
+      fingerprint: (c) => `fp:${c.length}`,
+      checkResult: async () => {
+        if (!firstN) return { ok: true, output: '' };
+        firstN = false;
+        return { ok: false, output: 'Identifier zz is unbound.\n' };
+      },
+    },
+    checkerStore: storeN,
+    getCheckContext: () => ({ doc: activeSyntax.doc, prelude: null, activeFileName: 'p/use.elf' }),
+  });
+  await settlementN.settleNow(activeSyntax, 0);
+  const fb = (storeN.getSnapshot().belugaDiagnostics || []).find((d) => /zz is unbound/.test(d.message));
+  expect(fb && /^File "use\.elf", line 2, column 9\n/.test(fb.message),
+    `the report names use.elf, not input.bel, got: ${fb && JSON.stringify(fb.message)}`);
 }
 
 console.log('OK settlement prelude recovery (earlier-file error masked, active file still linted, '

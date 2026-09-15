@@ -11,6 +11,7 @@ import { createSymbolStore, expectedNamespacesAt } from './symbol-store.mjs';
 import { createSyntaxStore } from './syntax-store.mjs';
 import { createSemanticSession } from './semantic-session.mjs';
 import { createSemanticScheduler } from './semantic-scheduler.mjs';
+import { fileBase } from '../project-paths.mjs';
 import { topDeclSpans } from './scoped-check.mjs';
 import { belugaDiagnosticsFromOutput, createSettlement } from './settlement.mjs';
 import { polishBelugaMessage } from '../ide/beluga-diag.mjs';
@@ -549,17 +550,26 @@ export function createSemanticEngine(options = {}) {
 
   let getCheckerCode = typeof options.getCheckerCode === 'function' ? options.getCheckerCode : null;
 
-  function checkerCodeFromSyntax(syntax) {
-    if (!syntax) return '';
-    // Prefer the code the settlement actually got loaded clean (erroring
-    // blocks masked) — elaboration/hover on the healthy decls keeps working
-    // even while other blocks have type errors.
+  // The program the checker's queries run against, and how many of its lines come before the document's (a
+  // prelude): the code the settlement last loaded clean (erroring blocks masked, so elaboration and hover on the
+  // healthy declarations keep working while others have type errors), else the editor's assembled program,
+  // else the document's own checker code. `getCheckerCode` returns { code, offsetLines }, or the code alone.
+  function checkerUnitFromSyntax(syntax) {
+    if (!syntax) return { code: '', offsetLines: 0 };
     const checker = checkerStore.getSnapshot();
     if (checker && checker.checkedCode && checker.syntaxVersion === syntax.version) {
-      return checker.checkedCode;
+      return { code: checker.checkedCode, offsetLines: checker.checkedOffsetLines || 0 };
     }
-    if (getCheckerCode) return getCheckerCode(syntax.doc);
-    return checkerSnapshotFromSyntax(syntax).code;
+    if (getCheckerCode) {
+      const unit = getCheckerCode(syntax.doc);
+      if (unit && typeof unit === 'object') return { code: String(unit.code || ''), offsetLines: unit.offsetLines || 0 };
+      return { code: String(unit || ''), offsetLines: 0 };
+    }
+    return { code: checkerSnapshotFromSyntax(syntax).code, offsetLines: 0 };
+  }
+
+  function checkerCodeFromSyntax(syntax) {
+    return checkerUnitFromSyntax(syntax).code;
   }
 
   function setCheckerCode(fn) {
@@ -714,7 +724,9 @@ export function createSemanticEngine(options = {}) {
     if (!syntax) return [];
     const snap = checkerSnapshotFromSyntax(syntax);
     const failed = ok != null ? !ok : false;
+    const checkCtx = typeof getCheckContext === 'function' ? getCheckContext(syntax) : null;
     const diags = belugaDiagnosticsFromOutput(rawOutput, syntax.doc, {
+      fileName: checkCtx?.activeFileName ? fileBase(checkCtx.activeFileName) : null,
       blockAt: snap.blockAt,
       hasSyntaxFault: snap.hasSyntaxFault,
       ok: !failed,
@@ -841,14 +853,33 @@ export function createSemanticEngine(options = {}) {
     };
   }
 
-  async function sessionTypeAt(pos) {
-    if (!session || typeof session.typeAt !== 'function') return { ok: false, type: null, diagnostics: [] };
+  // A use the pack resolves to a declaration in an earlier suite file. Its type is that declaration's, asked by
+  // name: the answer its own file shows. The checker's type at a position is the type of the term there, which
+  // for a constant inside an application or a type is usually not the constant's (PHASE1.md §13), so a use is
+  // asked by position only when its name has no answer. An implicit variable or a metavariable names no
+  // declaration and has only the type at its position.
+  function isDeclarationUse(syntax, pos) {
+    const resolved = resolveHoverDoc(syntax.tree, syntax.doc, pos);
+    return !!(resolved && resolved.kind === 'external');
+  }
+
+  // The type of the name used at `pos` (see isDeclarationUse).
+  async function sessionTypeAt(pos, name = null) {
+    if (!session) return { ok: false, type: null, diagnostics: [] };
     const syntax = syntaxStore.getSnapshot();
     if (!syntax) return { ok: false, type: null, diagnostics: [] };
-    const code = checkerCodeFromSyntax(syntax);
+    // Lines count from the top of the checked program, prelude included.
+    const unit = checkerUnitFromSyntax(syntax);
+    if (name && typeof session.ideDeclType === 'function' && isDeclarationUse(syntax, pos)) {
+      try {
+        const byName = await session.ideDeclType(unit.code, name);
+        if (byName && byName.ok && byName.type != null) return { ok: true, type: byName.type, diagnostics: [] };
+      } catch (_) { /* ask the position */ }
+    }
+    if (typeof session.typeAt !== 'function') return { ok: false, type: null, diagnostics: [] };
     const lineObj = syntax.doc.lineAt(pos);
     try {
-      const r = await session.typeAt(code, lineObj.number, pos - lineObj.from);
+      const r = await session.typeAt(unit.code, lineObj.number + unit.offsetLines, pos - lineObj.from);
       return { ok: !!(r && r.ok), type: r && r.type != null ? r.type : null, diagnostics: [] };
     } catch (_) {
       return { ok: false, type: null, diagnostics: [] };
@@ -898,7 +929,7 @@ export function createSemanticEngine(options = {}) {
       const hit = metavarStore.get(declId, ref.name);
       const owner = symbols.symbolsById.get(declId);
       const hydratedKey = owner ? `${owner.structuralKey}::${ref.name}` : null;
-      const result = await sessionTypeAt(ref.range.from);
+      const result = await sessionTypeAt(ref.range.from, ref.name);
       metavarStore.apply(declId, ref.name, result);
       if (owner && result && result.ok !== false && result.type != null && hydratedKey) {
         hydratedMetavars.set(hydratedKey, { type: result.type, fp: owner.fingerprint });
@@ -1139,18 +1170,33 @@ export function createSemanticEngine(options = {}) {
 
     if (!session) return { ok: false, complete: false };
 
-    const code = checkerCodeFromSyntax(syntax);
+    // Lines count from the top of the checked program, prelude included.
+    const unit = checkerUnitFromSyntax(syntax);
+    const code = unit.code;
     const doc = syntax.doc;
-    const startLine = doc.lineAt(symbol.range.from).number;
-    const endLine = doc.lineAt(symbol.range.to).number;
+    // Uses of declarations from earlier suite files first, by name (see isDeclarationUse).
+    if (typeof session.ideDeclType === 'function') {
+      const byName = [];
+      for (const site of pendingOf()) {
+        if (!isDeclarationUse(syntax, site.position)) continue;
+        try {
+          const r = await session.ideDeclType(code, site.name);
+          if (r && r.ok && r.type != null) byName.push({ name: site.name, type: r.type });
+        } catch (_) { /* asked by position below */ }
+      }
+      applyImplicitResults(declId, byName);
+    }
+    const inProgram = (sites) => sites.map((s) => ({ ...s, line: s.line + unit.offsetLines }));
+    const startLine = doc.lineAt(symbol.range.from).number + unit.offsetLines;
+    const endLine = doc.lineAt(symbol.range.to).number + unit.offsetLines;
 
     let pending = pendingOf();
-    const batch = await session.elaborateDecl(code, startLine, endLine, pending);
+    const batch = await session.elaborateDecl(code, startLine, endLine, inProgram(pending));
     applyImplicitResults(declId, batch.implicits);
 
     pending = pendingOf();
     if (pending.length > 0 && session.elaboratePositions) {
-      const fb = await session.elaboratePositions(code, pending);
+      const fb = await session.elaboratePositions(code, inProgram(pending));
       applyImplicitResults(declId, fb.implicits);
     }
 
@@ -1239,7 +1285,7 @@ export function createSemanticEngine(options = {}) {
         budget -= 1;
         crossFileAttempted.set(key, owner.fingerprint);
         try {
-          const result = await sessionTypeAt(ref.from);
+          const result = await sessionTypeAt(ref.from, ref.name);
           metavarStore.apply(ref.enclosingDeclarationId, ref.name, result);
           if (result && result.ok !== false && result.type != null) {
             hydratedMetavars.set(key, { type: result.type, fp: owner.fingerprint });

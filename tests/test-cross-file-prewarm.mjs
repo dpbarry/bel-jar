@@ -72,4 +72,49 @@ try {
   delete globalThis.Persist;
 }
 
+// With a prelude before the document, the line asked is the line in the assembled program: the checker counts
+// lines from the top of what it loaded, not from the top of the file.
+{
+  const code = `${PRELUDE}\n\n${ACTIVE}`;
+  const asked = [];
+  installProject();
+  try {
+    const e = createSemanticEngine({
+      session: { typeAt: async (_code, line, col) => { asked.push([line, col]); return { ok: true, type: '[ |- nat]' }; } },
+    });
+    e.setCheckerCode(() => ({ code, offsetLines: 2 }));
+    upd(e, ACTIVE);
+    await e.deriveFrontier();
+  } finally {
+    delete globalThis.Persist;
+  }
+  expect(asked.length === 1 && asked[0][0] === 3 && asked[0][1] === xPos && code.split('\n')[2][xPos] === 'x',
+    `the use of x is asked at line 3, column ${xPos} of the assembled program, got ${JSON.stringify(asked)}`);
+}
+
+// A use of a declaration from an earlier file takes that declaration's type by name, and asks the position only
+// when the name has no answer: the checker's type at a position is the type of the term there.
+for (const [label, ideDeclType, want, wantPositionQueries] of [
+  ['answered by name', async (_code, name) => (name === 'x' ? { ok: true, type: 'DECL-x' } : { ok: false }), 'DECL-x', 0],
+  ['no answer by name', async () => ({ ok: false }), 'AT-POSITION', 1],
+]) {
+  installProject();
+  let byPosition = 0;
+  try {
+    const e = createSemanticEngine({
+      session: {
+        ideDeclType,
+        typeAt: async () => { byPosition += 1; return { ok: true, type: 'AT-POSITION' }; },
+      },
+    });
+    upd(e, ACTIVE);
+    await e.deriveFrontier();
+    const h = e.hoverAt(xPos);
+    expect(h && h.status === 'ready' && h.type === want, `${label}: the use shows ${want}, got ${h && h.status}/${h && h.type}`);
+    expect(byPosition === wantPositionQueries, `${label}: ${wantPositionQueries} position queries, got ${byPosition}`);
+  } finally {
+    delete globalThis.Persist;
+  }
+}
+
 console.log('OK cross-file pre-warm (settled suite background-elaborates B1 uses → instant hover)');

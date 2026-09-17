@@ -298,16 +298,17 @@ function createDisplay(deps) {
       tone: placed ? 'success' : 'error',
       icon: placed ? ICON_CHECK : ICON_ALERT,
       badgeClass: 'harpoon-lab-commit-badge',
+      copyClass: 'harpoon-lab-commit-copy',
       titleClass: 'harpoon-lab-commit-text',
       subClass: 'harpoon-lab-commit-sub',
       title: placed ? 'Placed in file' : 'Could not place',
       sub: placed ? (declName || '') : (commit.detail || 'The proof did not re-check.'),
     });
-    if (!placed && commit.detailRaw) {
-      var copy = banner.querySelector('.harpoon-lab-banner-copy');
-      if (copy) copy.appendChild(el('span', 'harpoon-lab-commit-tech', commit.detailRaw));
+    var copy = banner.querySelector('.harpoon-lab-banner-copy');
+    if (!placed && commit.detailRaw && copy) {
+      copy.appendChild(el('span', 'harpoon-lab-commit-tech', commit.detailRaw));
     }
-    if (!placed && typeof onRetry === 'function') {
+    if (!placed && typeof onRetry === 'function' && copy) {
       var actions = el('div', 'harpoon-lab-commit-actions');
       var retryBtn = el('button', 'harpoon-lab-commit-retry');
       retryBtn.type = 'button';
@@ -317,7 +318,7 @@ function createDisplay(deps) {
         onRetry();
       });
       actions.appendChild(retryBtn);
-      banner.appendChild(actions);
+      copy.appendChild(actions);
     }
     parent.appendChild(banner);
     return banner;

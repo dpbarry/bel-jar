@@ -539,6 +539,50 @@ try {
     'the bar heads the working segment — it is never isolated between banners');
   await page.screenshot({ path: path.join(outDir, 'manual-harpoon-complete.png') });
   console.log('  shot → scripts/.shots/manual-harpoon-complete.png');
+
+  // ⛔ The fail banner used to share a 4.5rem max-height with the short success
+  // dismiss animation, so "Could not place" clipped mid-sentence while Restart
+  // proof / Proof complete wrapped. Measure the real render path at panel width.
+  const failBanner = await page.evaluate(() => {
+    const s = window.__probeSession;
+    s.finishCommitFailure('Type mismatch at line 12', true, { kind: 'checker' });
+    const body = s.bodyEl;
+    const banner = body.querySelector('.harpoon-lab-auto-commit.is-fail');
+    const sub = banner && banner.querySelector('.harpoon-lab-commit-sub');
+    const title = banner && banner.querySelector('.harpoon-lab-commit-text');
+    const badge = banner && banner.querySelector('.harpoon-lab-banner-badge');
+    const proven = body.querySelector('.harpoon-lab-manual-head .harpoon-lab-banner-badge');
+    if (!banner || !sub) return { missing: true };
+    const want = 'The proof no longer fits this file. Symbols or context may have changed since it was solved.';
+    return {
+      missing: false,
+      text: sub.textContent,
+      want,
+      title: title ? title.textContent : '',
+      clippedV: sub.scrollHeight > sub.clientHeight + 1,
+      clippedH: sub.scrollWidth > sub.clientWidth + 1,
+      bannerClipped: banner.scrollHeight > banner.clientHeight + 1,
+      badgeLeft: badge ? badge.offsetLeft : null,
+      provenLeft: proven ? proven.offsetLeft : null,
+      retryInCopy: !!banner.querySelector('.harpoon-lab-banner-copy .harpoon-lab-commit-retry'),
+    };
+  });
+  ok(!failBanner.missing, 'Could not place renders as a banner');
+  ok(failBanner.title === 'Could not place', 'with the fail title');
+  ok(failBanner.text === failBanner.want,
+    'the fail subtitle is the full sentence, not a clipped stem');
+  ok(!failBanner.clippedV && !failBanner.clippedH && !failBanner.bannerClipped,
+    'and the sentence is fully visible — not clipped by a height cap');
+  ok(failBanner.badgeLeft != null && failBanner.badgeLeft === failBanner.provenLeft,
+    `the fail badge shares the proven banner's left edge (${failBanner.badgeLeft} / ${failBanner.provenLeft})`);
+  ok(failBanner.retryInCopy, 'Try again sits in the copy column, not a squeezed third column');
+  await page.screenshot({ path: path.join(outDir, 'manual-harpoon-place-fail.png') });
+  console.log('  shot → scripts/.shots/manual-harpoon-place-fail.png');
+  await page.evaluate(() => {
+    const s = window.__probeSession;
+    if (s && typeof s.resetCommitForRetry === 'function') s.resetCommitForRetry();
+  });
+
   // ── Part 4: ONE SURFACE — Orca runs inside the manual panel ─────────────
   console.log('');
   console.log('[4] the unified surface');

@@ -2,6 +2,7 @@
 
 import { suggestReplCompletions, replAcShouldOpen, DEFAULT_VERBS } from './repl-ac-suggest.mjs';
 import { activeCwd, dirOf } from './repl-run-cmd.mjs';
+import { listStepDelta } from '../status-strip/status-strip-line-ui.mjs';
 
 const global = globalThis;
 
@@ -376,12 +377,9 @@ function onKeyDown(e) {
     return true;
   }
   if (!isOpen()) return false;
-  if (e.key === 'ArrowDown') {
-    setActive(activeIndex + 1);
-    return true;
-  }
-  if (e.key === 'ArrowUp') {
-    setActive(activeIndex - 1);
+  var delta = listStepDelta(e);
+  if (delta) {
+    setActive(activeIndex + delta);
     return true;
   }
   if (e.key === 'Escape') {
@@ -413,6 +411,11 @@ function bind(input) {
   hide();
   if (!inputEl || alwaysNavBound) return;
   alwaysNavBound = true;
+  inputEl.addEventListener('keydown', function (e) {
+    if (!onKeyDown(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
   inputEl.addEventListener('keyup', function (e) {
     if (e && (e.ctrlKey || e.metaKey || e.altKey || isAutocompleteToggle(e))) return;
     if (autocompleteTrigger() === 'always') refresh();

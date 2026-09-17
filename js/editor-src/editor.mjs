@@ -681,6 +681,12 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     dropCursor(),
     rectangularSelection(),
     crosshairCursor(),
+    // Capture on contentDOM (see editor-autocomplete.mjs) beats emacs()/vim()
+    // bubble handlers. Those packages sit at Prec.highest and consume ArrowDown /
+    // C-n / C-m as line motion; a keymap entry is too late because the keymap
+    // facet itself is consulted at Prec.default. The handler still lives in this
+    // extension so Standard remaps via matchesId see the same table.
+    ...belAutocompletion(semanticEngine),
     keymapStyleCompartment.of(buildKeymapStyleExtensions(prefs.keymapStyle)),
     statusStripFeed(readKeymapStylePref),
     // Style-neutral: macros belong to BelJar, not to a keymap, so the
@@ -711,7 +717,6 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     gutterTooltipBand(),
     syntaxLinter(),
     hoverTooltip(semanticEngine, getOverlayDiags),
-    ...belAutocompletion(semanticEngine),
     flashExtension(),
     rename(),
     contextMenu(),

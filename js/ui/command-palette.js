@@ -1469,6 +1469,32 @@
 
   // js/status-strip/status-strip-line-ui.mjs
   var LIST_STEP = { n: 1, m: 1, p: -1 };
+  var LIST_PAGE = 8;
+  function stepLetter(e) {
+    if (!e.ctrlKey || e.shiftKey) return "";
+    if (e.key && e.key.length === 1) return e.key.toLowerCase();
+    if (e.code && e.code.length === 4 && e.code.startsWith("Key")) return e.code[3].toLowerCase();
+    return "";
+  }
+  function listStepDelta(e, opts) {
+    if (!e || e.altKey || e.metaKey) return 0;
+    const arrows = !opts || opts.arrows !== false;
+    if (e.key === "PageDown") return LIST_PAGE;
+    if (e.key === "PageUp") return -LIST_PAGE;
+    if (arrows && !e.ctrlKey && !e.shiftKey) {
+      if (e.key === "ArrowDown") return 1;
+      if (e.key === "ArrowUp") return -1;
+    }
+    const letter = stepLetter(e);
+    if (letter && LIST_STEP[letter] !== void 0) return LIST_STEP[letter];
+    const KB = typeof globalThis !== "undefined" ? globalThis.Keybindings : null;
+    if (KB && typeof KB.matchesId === "function") {
+      if (!arrows && (e.key === "ArrowDown" || e.key === "ArrowUp")) return 0;
+      if (KB.matchesId(e, "motion.line-down")) return 1;
+      if (KB.matchesId(e, "motion.line-up")) return -1;
+    }
+    return 0;
+  }
 
   // js/ui/command-palette.mjs
   var global2 = globalThis;
@@ -1684,18 +1710,13 @@
     panel.append(inputWrap, list2, empty, hint);
     input.addEventListener("input", renderResults);
     input.addEventListener("keydown", (e) => {
-      if (e.ctrlKey && !e.altKey && !e.metaKey && LIST_STEP[e.key] !== void 0) {
+      const delta = listStepDelta(e);
+      if (delta) {
         e.preventDefault();
-        setActive(activeIndex + LIST_STEP[e.key]);
+        setActive(activeIndex + delta);
         return;
       }
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setActive(activeIndex + 1);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setActive(activeIndex - 1);
-      } else if (e.key === "Enter") {
+      if (e.key === "Enter") {
         e.preventDefault();
         runActive();
       } else if (e.key === "Escape" || e.ctrlKey && e.key === "g") {

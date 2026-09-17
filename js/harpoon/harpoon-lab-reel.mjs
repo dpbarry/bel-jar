@@ -16,6 +16,7 @@ function createReel(deps) {
     var resolveNativeAutoGoalDisplay = deps.resolveNativeAutoGoalDisplay;
     var priorGoalBinders = deps.priorGoalBinders;
     var mountGoalPriors = deps.mountGoalPriors;
+    var pushOrca = deps.pushOrca;
     var E = deps.E;
     var ICON_PLAY = deps.ICON_PLAY;
     var ICON_PAUSE = deps.ICON_PAUSE;
@@ -375,13 +376,16 @@ function createReel(deps) {
         this._ctxKey = key;
       }
 
-      // Reflect the search label + checks·time tooltip into the status row.
+      // Reflect the search label + checks·time tooltip into the status row,
+      // the pop-out tree's live clock, and the editor status strip.
       function syncReelStatus() {
         var na = this.nativeAuto;
         if (!na) return;
         if (this._autoSearchText) this._autoSearchText.textContent = nativeAutoSearchLabel(na);
         syncReelStatTips(this, na);
         this.syncAutoPauseBtn();
+        if (typeof this.syncTreeSearchClock === 'function') this.syncTreeSearchClock();
+        if (typeof pushOrca === 'function') pushOrca(this, nativeAutoSearchLabel(na));
       };
 
       // Ensure a live WORKING ROW exists at the bottom of the record — the in-place
@@ -561,20 +565,16 @@ function createReel(deps) {
         return made.host;
       };
 
-      // A light clock refreshing the status label + tooltip while searching.
+      // A light clock refreshing the status label, tooltip, tree rail, and
+      // status strip while searching. One interval, one sync — the tree used to
+      // freeze its "N checks · Xs" line until the next tactic redrew it.
       function startReelClock() {
         var self = this;
         this.stopReelClock();
         this._reelClock = setInterval(function () {
           var na = self.nativeAuto;
           if (!na || na.phase !== 'searching') { self.stopReelClock(); return; }
-          if (self._autoSearchText) {
-            var label = nativeAutoSearchLabel(na);
-            if (self._autoSearchText.textContent !== label) {
-              self._autoSearchText.textContent = label;
-            }
-          }
-          syncReelStatTips(self, na);
+          self.syncReelStatus();
         }, 200);
       };
       function stopReelClock() {

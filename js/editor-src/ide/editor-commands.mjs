@@ -32,8 +32,13 @@ import { syntaxTree } from '@codemirror/language';
 import { travel } from './jump-list.mjs';
 import { normalizeType } from '../format/type-render.mjs';
 import { toggleRecording, replayMacro } from './macro-engine.mjs';
+import { stepEditorAutocomplete } from './completion/editor-autocomplete.mjs';
 
 const global = globalThis;
+
+function orListStep(delta, run) {
+  return (view) => stepEditorAutocomplete(view, delta) || run(view);
+}
 
 /** Pure: the next entry in `positions` after `pos`, wrapping. */
 export function stepThrough(positions, pos, forward) {
@@ -228,8 +233,8 @@ export const EDITOR_COMMANDS = {
   'motion.char-right': cursorCharRight,
   'motion.word-left': cursorGroupLeft,
   'motion.word-right': cursorGroupRight,
-  'motion.line-up': cursorLineUp,
-  'motion.line-down': cursorLineDown,
+  'motion.line-up': orListStep(-1, cursorLineUp),
+  'motion.line-down': orListStep(1, cursorLineDown),
   'motion.line-start': cursorLineBoundaryBackward,
   'motion.line-end': cursorLineBoundaryForward,
   'motion.doc-start': cursorDocStart,

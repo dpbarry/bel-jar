@@ -930,16 +930,17 @@
         tone: placed ? "success" : "error",
         icon: placed ? ICON_CHECK2 : ICON_ALERT2,
         badgeClass: "harpoon-lab-commit-badge",
+        copyClass: "harpoon-lab-commit-copy",
         titleClass: "harpoon-lab-commit-text",
         subClass: "harpoon-lab-commit-sub",
         title: placed ? "Placed in file" : "Could not place",
         sub: placed ? declName || "" : commit.detail || "The proof did not re-check."
       });
-      if (!placed && commit.detailRaw) {
-        var copy = banner.querySelector(".harpoon-lab-banner-copy");
-        if (copy) copy.appendChild(el4("span", "harpoon-lab-commit-tech", commit.detailRaw));
+      var copy = banner.querySelector(".harpoon-lab-banner-copy");
+      if (!placed && commit.detailRaw && copy) {
+        copy.appendChild(el4("span", "harpoon-lab-commit-tech", commit.detailRaw));
       }
-      if (!placed && typeof onRetry === "function") {
+      if (!placed && typeof onRetry === "function" && copy) {
         var actions = el4("div", "harpoon-lab-commit-actions");
         var retryBtn = el4("button", "harpoon-lab-commit-retry");
         retryBtn.type = "button";
@@ -949,7 +950,7 @@
           onRetry();
         });
         actions.appendChild(retryBtn);
-        banner.appendChild(actions);
+        copy.appendChild(actions);
       }
       parent.appendChild(banner);
       return banner;
@@ -1440,6 +1441,7 @@
     var resolveNativeAutoGoalDisplay = deps.resolveNativeAutoGoalDisplay;
     var priorGoalBinders2 = deps.priorGoalBinders;
     var mountGoalPriors2 = deps.mountGoalPriors;
+    var pushOrca2 = deps.pushOrca;
     var E3 = deps.E;
     var ICON_PLAY2 = deps.ICON_PLAY;
     var ICON_PAUSE2 = deps.ICON_PAUSE;
@@ -1745,6 +1747,8 @@
       if (this._autoSearchText) this._autoSearchText.textContent = nativeAutoSearchLabel(na);
       syncReelStatTips(this, na);
       this.syncAutoPauseBtn();
+      if (typeof this.syncTreeSearchClock === "function") this.syncTreeSearchClock();
+      if (typeof pushOrca2 === "function") pushOrca2(this, nativeAutoSearchLabel(na));
     }
     ;
     function ensureWorkingRow() {
@@ -1912,13 +1916,7 @@
           self.stopReelClock();
           return;
         }
-        if (self._autoSearchText) {
-          var label = nativeAutoSearchLabel(na);
-          if (self._autoSearchText.textContent !== label) {
-            self._autoSearchText.textContent = label;
-          }
-        }
-        syncReelStatTips(self, na);
+        self.syncReelStatus();
       }, 200);
     }
     ;
@@ -2509,6 +2507,7 @@
       var content = el4("div", "harpoon-tree-explorer" + (live ? " is-live" : ""));
       var mounted = this.mountTreePanel(content, na, { compact: false, live });
       this._treeRedraw = mounted.redraw;
+      this._treeExplorerEl = content;
       var name = this.prep && this.prep.name || na.declName || "theorem";
       this._treeWin = fw.open({
         title: labTitle2(name + " \xB7 proof tree"),
@@ -2521,10 +2520,24 @@
         onClose: function() {
           self._treeWin = null;
           self._treeRedraw = null;
+          self._treeExplorerEl = null;
         }
       });
     }
     ;
+    function syncTreeSearchClock() {
+      var na = this.nativeAuto;
+      if (!na || na.phase !== "searching") return;
+      var root = this._treeExplorerEl;
+      if (!root || !root.querySelector) return;
+      var mainEl = root.querySelector(".hpt-detail-status-main");
+      var subEl = root.querySelector(".hpt-detail-status-sub");
+      if (!mainEl && !subEl) return;
+      var main = nativeAutoSearchLabel(na);
+      var sub = reelStatText(na);
+      if (mainEl && mainEl.textContent !== main) mainEl.textContent = main;
+      if (subEl && subEl.textContent !== sub) subEl.textContent = sub;
+    }
     function refreshTreeExplorer() {
       var self = this;
       if (!this._treeRedraw || this._treeRedrawPending) return;
@@ -2970,6 +2983,7 @@
       mountTreePanel,
       openTreeExplorer,
       refreshTreeExplorer,
+      syncTreeSearchClock,
       renderSynthChain: renderSynthChain2,
       jumpToTreeHole,
       renderTreeDetail
@@ -4705,14 +4719,30 @@
       this.updateCompromiseBanner();
     }
   };
+  function orcaStrip() {
+    return typeof globalThis !== "undefined" && globalThis.StatusStrip || null;
+  }
+  function claimOrcaRun(session) {
+    var token = {};
+    session._orcaToken = token;
+    return token;
+  }
   function pushOrca(session, label) {
-    if (typeof window === "undefined" || !window.StatusStrip) return;
+    var S = orcaStrip();
+    if (!S) return;
     var na = session && session.nativeAuto;
-    if (!na || na.phase !== "searching") {
-      window.StatusStrip.setOrca(false);
+    if (!session || !session._orcaToken || !na || na.phase !== "searching") {
+      S.setOrca(false);
       return;
     }
-    window.StatusStrip.setOrca(true, na.paused ? "paused" : label || "");
+    var detail = na.paused ? "paused" : String(label || "").replace(/[….]+$/, "");
+    S.setOrca(true, detail);
+  }
+  function endOrcaStrip(session, token) {
+    if (!session || token && session._orcaToken !== token) return;
+    session._orcaToken = null;
+    var S = orcaStrip();
+    if (S) S.setOrca(false);
   }
   Session.prototype.abortCompute = function() {
     this.userCancelled = true;
@@ -4990,6 +5020,7 @@
       checks: 0,
       startedAt: typeof performance !== "undefined" ? performance.now() : Date.now()
     };
+    var orcaToken = claimOrcaRun(this);
     this.render();
     if (!this._goalTierListener) {
       this._goalTierListener = function() {
@@ -5148,7 +5179,9 @@
       self.refreshTreeExplorer();
       return false;
     }).finally(function() {
-      pushOrca(self);
+      var stillMine = self._orcaToken === orcaToken;
+      endOrcaStrip(self, orcaToken);
+      if (stillMine && self.stopReelClock) self.stopReelClock();
       if (self._goalTierListener) {
         window.removeEventListener("beljar:hole-goals-updated", self._goalTierListener);
         window.removeEventListener("beljar:development-checked", self._goalTierListener);
@@ -5216,6 +5249,7 @@
     this._dead = true;
     this.disposed = true;
     this.abortCompute();
+    if (this._orcaToken) endOrcaStrip(this, this._orcaToken);
     untrackSession(this);
     removeFloatSession(this);
     this.clearPendingCommitNav();
@@ -5227,6 +5261,8 @@
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
     this._treeRedraw = null;
+    this._treeExplorerEl = null;
+    this._treeExplorerEl = null;
     if (!opts.fromWindowClose && this.win && this.win.close) {
       var w = this.win;
       this.win = null;
@@ -5443,6 +5479,7 @@
         return el2.apply(null, arguments);
       },
       tacticVerb,
+      pushOrca,
       setTip: function() {
         return setTip.apply(null, arguments);
       },
@@ -5562,6 +5599,7 @@
     Session.prototype.mountTreePanel = treeUiApi.mountTreePanel;
     Session.prototype.openTreeExplorer = treeUiApi.openTreeExplorer;
     Session.prototype.refreshTreeExplorer = treeUiApi.refreshTreeExplorer;
+    Session.prototype.syncTreeSearchClock = treeUiApi.syncTreeSearchClock;
     Session.prototype.jumpToTreeHole = treeUiApi.jumpToTreeHole;
     Session.prototype.renderTreeDetail = treeUiApi.renderTreeDetail;
     Session.prototype.pendingCommitAfterNav = commitApi.pendingCommitAfterNav;

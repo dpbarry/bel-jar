@@ -38,4 +38,21 @@ const asyncSrc = readFileSync(join(root, 'js', 'editor-src', 'prover', 'prover-m
 expect(asyncSrc.includes('settleWithoutUiWork'),
   'a dead moves worker must not synthesise tactics on the UI thread');
 
+expect(lab.includes('claimOrcaRun'), 'each Orca run claims a status-strip token');
+expect(lab.includes('endOrcaStrip(self, orcaToken)'),
+  'finally ends THIS run so a successor search is not cleared');
+expect(!/finally\(function \(\) \{\s*pushOrca\(self\)/.test(lab),
+  'finally must not re-assert searching via pushOrca(self)');
+expect(lab.includes('if (this._orcaToken) endOrcaStrip(this, this._orcaToken)'),
+  'closing the session clears a live Orca strip');
+
+const tree = readFileSync(join(root, 'js', 'harpoon', 'harpoon-lab-tree-ui.mjs'), 'utf8');
+const reel = readFileSync(join(root, 'js', 'harpoon', 'harpoon-lab-reel.mjs'), 'utf8');
+expect(tree.includes('function syncTreeSearchClock'),
+  'the proof-tree rail can patch its status clock in place');
+expect(reel.includes('syncTreeSearchClock'),
+  'the reel clock ticks the proof-tree rail, not only the panel label');
+expect(reel.includes('self.syncReelStatus()'),
+  'the reel clock reuses one sync rather than a frozen snapshot');
+
 console.log(`OK test-harpoon-abort (${n} assertions)`);

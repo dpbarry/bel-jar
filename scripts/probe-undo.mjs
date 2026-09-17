@@ -407,9 +407,8 @@ try {
 
   // ── 11. the ⟲ widget and the history panel ───────────────────────────────
   //
-  // The widget counts the live stack, and the panel travels through the REAL
-  // undo/redo rather than reconstructing a state — every guarantee the history
-  // makes lives in those two calls.
+  // The widget is the way into the panel. The stack lives in the panel, not as
+  // a count that reads as "you should undo all of this".
   const widget = () => page.evaluate(() => {
     const el = document.querySelector('.jar-strip__seg--history');
     if (!el) return null;
@@ -443,8 +442,7 @@ try {
   check(w0.leftOfChecker, 'directly left of the checker segment');
   check(w0.hasIcon && !w0.borrowsGoalMark,
     'it draws its own icon rather than borrowing the goal turnstile');
-  check(w0.text === String((await snap()).undo),
-    `it counts the live undo stack (says ${w0.text})`);
+  check(w0.text === 'History', `it says History, not a count (says ${w0.text})`);
   check(!w0.branched, 'and is not flagged as branched at the tip of history');
 
   await page.click('.jar-strip__seg--history');
@@ -521,7 +519,7 @@ try {
   check(after.redo === before.redo + 3, 'and the three land on the redo stack');
   const w1 = await widget();
   check(w1.branched, 'the widget flags the waiting redo branch');
-  check(w1.text === String(after.undo), 'and re-counts without waiting for a caret move');
+  check(w1.text === 'History', 'and still says History, not a leftover count');
   const aheadRows = await page.evaluate(() =>
     document.querySelectorAll('.jar-hist__row.is-ahead').length);
   check(aheadRows === 3, 'the panel shows three steps ahead of the marker', String(aheadRows));

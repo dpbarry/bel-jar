@@ -35,7 +35,43 @@ const LIST_CAP = 30;
  * once did contradicted two places in this repo that already said otherwise.
  */
 export const LIST_STEP = { n: 1, m: 1, p: -1 };
-const PAGE = 8;
+export const LIST_PAGE = 8;
+
+/**
+ * How far to move an open completion list, or 0 if this key is not a list-step.
+ *
+ * Same function as `js/editor-src/ide/completion/list-keys.mjs` — the two
+ * runtimes cannot import each other. `tests/test-list-step.mjs` pins them.
+ *
+ * @param {{ arrows?: boolean }} [opts] `arrows: false` on Vim's ex line (history)
+ */
+function stepLetter(e) {
+  if (!e.ctrlKey || e.shiftKey) return '';
+  if (e.key && e.key.length === 1) return e.key.toLowerCase();
+  // Chromium sometimes reports C-m as Enter (CR). The physical key still walks.
+  if (e.code && e.code.length === 4 && e.code.startsWith('Key')) return e.code[3].toLowerCase();
+  return '';
+}
+
+export function listStepDelta(e, opts) {
+  if (!e || e.altKey || e.metaKey) return 0;
+  const arrows = !opts || opts.arrows !== false;
+  if (e.key === 'PageDown') return LIST_PAGE;
+  if (e.key === 'PageUp') return -LIST_PAGE;
+  if (arrows && !e.ctrlKey && !e.shiftKey) {
+    if (e.key === 'ArrowDown') return 1;
+    if (e.key === 'ArrowUp') return -1;
+  }
+  const letter = stepLetter(e);
+  if (letter && LIST_STEP[letter] !== undefined) return LIST_STEP[letter];
+  const KB = typeof globalThis !== 'undefined' ? globalThis.Keybindings : null;
+  if (KB && typeof KB.matchesId === 'function') {
+    if (!arrows && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return 0;
+    if (KB.matchesId(e, 'motion.line-down')) return 1;
+    if (KB.matchesId(e, 'motion.line-up')) return -1;
+  }
+  return 0;
+}
 
 let host = null;
 let input = null;
@@ -776,8 +812,9 @@ export function attachExCompletion(el) {
       tabCycle(e.shiftKey);
       return;
     }
-    if (e.ctrlKey && LIST_STEP[e.key] !== undefined) {
-      if (!step(LIST_STEP[e.key])) return;
+    const delta = listStepDelta(e, { arrows: false });
+    if (delta) {
+      if (!step(delta)) return;
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -803,12 +840,6 @@ export function attachExCompletion(el) {
     // recalls everything.
     if (e.key === 'Enter') remember(el.value);
     if (e.key === 'Escape') { hideList(); return; }
-    if (!listOpen()) return;
-    if (e.key === 'PageDown' || e.key === 'PageUp') {
-      if (!step(e.key === 'PageDown' ? PAGE : -PAGE)) return;
-      e.preventDefault();
-      e.stopPropagation();
-    }
   };
   exOnBlur = () => hideList();
   el.addEventListener('input', exOnInput);
@@ -875,13 +906,9 @@ function onKey(e) {
   }
   if (isForceKey(e)) { e.preventDefault(); forceList(); return; }
   if (e.key === 'Tab') { e.preventDefault(); tabCycle(e.shiftKey); return; }
-  if (e.ctrlKey && LIST_STEP[e.key] !== undefined) {
-    if (step(LIST_STEP[e.key])) e.preventDefault();
-    return;
-  }
-  if (listOpen() && (e.key === 'PageDown' || e.key === 'PageUp')) {
-    e.preventDefault();
-    step(e.key === 'PageDown' ? PAGE : -PAGE);
+  const delta = listStepDelta(e, { arrows: false });
+  if (delta) {
+    if (step(delta)) e.preventDefault();
     return;
   }
   // An empty line means "show me what I ran before"; anything typed means

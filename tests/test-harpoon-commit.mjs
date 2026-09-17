@@ -3,6 +3,9 @@ import {
   needsFullCommitCheck,
   countSiblingHoledDecls,
 } from '../js/editor-src/harpoon/harpoon-program.mjs';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 let n = 0;
 function expect(cond, msg) {
@@ -57,5 +60,13 @@ expect(needsFullCommitCheck({
   docText: 'rec a : T = ?;\nrec b : T = x;',
   declName: 'b',
 }) === true, 'sibling hole triggers full check');
+
+{
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../css/harpoon-lab.css'), 'utf8');
+  expect(!/max-height:\s*4\.5rem/.test(css),
+    'commit fail banner is not height-capped (that clip cut "Could not place" mid-sentence)');
+  expect(/harpoon-lab-auto-compromise,\s*\r?\n\.harpoon-lab-auto-commit \{/.test(css),
+    'commit banner uses the same padding group as the other strips');
+}
 
 console.log(`OK test-harpoon-commit (${n} assertions)`);

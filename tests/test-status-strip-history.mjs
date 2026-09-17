@@ -142,7 +142,7 @@ const entry = (over) => ({
   const some = buildSegments({ ...base, undoDepth: 7 }, 'standard');
   const seg = some.find((s) => s.key === 'history');
   expect(seg, 'the widget appears once there is something to undo');
-  expect(seg.text === '7', `it counts the undo depth (got ${seg.text})`);
+  expect(seg.text === 'History', `it is a label, not a count (got ${seg.text})`);
   expect(seg.action === 'edit-history', 'and it opens the panel');
   expect(seg.tone === 'plain', 'no branch, no accent');
   expect(seg.title === 'Editor history', 'the tooltip names the panel');
@@ -162,7 +162,7 @@ const entry = (over) => ({
   // get back. The widget must not vanish and strand the branch.
   const onlyRedo = buildSegments({ ...base, undoDepth: 0, redoDepth: 3 }, 'standard');
   const r = onlyRedo.find((s) => s.key === 'history');
-  expect(r && r.text === '0', 'a pure redo branch still shows the widget');
+  expect(r && r.text === 'History', 'a pure redo branch still shows the widget');
 
   for (const level of ['compact', 'standard', 'detailed']) {
     const at = buildSegments({ ...base, undoDepth: 2 }, level).map((s) => s.key);

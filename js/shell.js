@@ -7153,16 +7153,11 @@
       return { key: "spacer", spacer: true };
     },
     /**
-     * How much history you are standing on, and the way into it.
+     * The way into the edit-history panel.
      *
-     * Earns its place the same way the rest do: how far back you can go is
-     * visible nowhere else in BelJar, and neither is the fact that a redo branch
-     * is waiting. It stays silent until there is something to say, so an untouched
-     * file carries no widget at all.
-     *
-     * The count is the UNDO depth. A second number for redo would be two figures
-     * with no way to tell which is which at 0.68rem — the branch is carried by a
-     * tone change and spelled out in the panel instead.
+     * Silent until there is something to undo or redo, so an untouched file
+     * carries no widget at all. A waiting redo branch is a tone change, spelled
+     * out in the panel — not a second number beside the word.
      */
     history(s) {
       const undo = s.undoDepth || 0;
@@ -7170,7 +7165,7 @@
       if (!undo && !redo) return null;
       return {
         key: "history",
-        text: String(undo),
+        text: "History",
         // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
         // and already carries the HOLES magenta — borrowing it painted the undo
         // arrow bright pink, which read as an error badge sitting next to the
@@ -7179,7 +7174,6 @@
         title: "Editor history",
         tone: redo ? "branched" : "plain",
         action: "edit-history",
-        mono: true,
         pressed: !!s.historyOpen
       };
     },
@@ -7395,7 +7389,32 @@
   var HISTORY_CAP = 50;
   var LIST_CAP = 30;
   var LIST_STEP = { n: 1, m: 1, p: -1 };
-  var PAGE = 8;
+  var LIST_PAGE = 8;
+  function stepLetter(e) {
+    if (!e.ctrlKey || e.shiftKey) return "";
+    if (e.key && e.key.length === 1) return e.key.toLowerCase();
+    if (e.code && e.code.length === 4 && e.code.startsWith("Key")) return e.code[3].toLowerCase();
+    return "";
+  }
+  function listStepDelta(e, opts) {
+    if (!e || e.altKey || e.metaKey) return 0;
+    const arrows = !opts || opts.arrows !== false;
+    if (e.key === "PageDown") return LIST_PAGE;
+    if (e.key === "PageUp") return -LIST_PAGE;
+    if (arrows && !e.ctrlKey && !e.shiftKey) {
+      if (e.key === "ArrowDown") return 1;
+      if (e.key === "ArrowUp") return -1;
+    }
+    const letter = stepLetter(e);
+    if (letter && LIST_STEP[letter] !== void 0) return LIST_STEP[letter];
+    const KB = typeof globalThis !== "undefined" ? globalThis.Keybindings : null;
+    if (KB && typeof KB.matchesId === "function") {
+      if (!arrows && (e.key === "ArrowDown" || e.key === "ArrowUp")) return 0;
+      if (KB.matchesId(e, "motion.line-down")) return 1;
+      if (KB.matchesId(e, "motion.line-up")) return -1;
+    }
+    return 0;
+  }
   var host = null;
   var input = null;
   var ghostEl = null;
@@ -7644,9 +7663,6 @@
   }
   function activeInput() {
     return exInput || input;
-  }
-  function listOpen() {
-    return !!listEl && !listEl.hidden && items.length > 0;
   }
   function syncActiveDescendant() {
     const el6 = activeInput();
@@ -7922,8 +7938,9 @@
         tabCycle(e.shiftKey);
         return;
       }
-      if (e.ctrlKey && LIST_STEP[e.key] !== void 0) {
-        if (!step(LIST_STEP[e.key])) return;
+      const delta = listStepDelta(e, { arrows: false });
+      if (delta) {
+        if (!step(delta)) return;
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -7938,12 +7955,6 @@
       if (e.key === "Escape") {
         hideList();
         return;
-      }
-      if (!listOpen()) return;
-      if (e.key === "PageDown" || e.key === "PageUp") {
-        if (!step(e.key === "PageDown" ? PAGE : -PAGE)) return;
-        e.preventDefault();
-        e.stopPropagation();
       }
     };
     exOnBlur = () => hideList();
@@ -8018,13 +8029,9 @@
       tabCycle(e.shiftKey);
       return;
     }
-    if (e.ctrlKey && LIST_STEP[e.key] !== void 0) {
-      if (step(LIST_STEP[e.key])) e.preventDefault();
-      return;
-    }
-    if (listOpen() && (e.key === "PageDown" || e.key === "PageUp")) {
-      e.preventDefault();
-      step(e.key === "PageDown" ? PAGE : -PAGE);
+    const delta = listStepDelta(e, { arrows: false });
+    if (delta) {
+      if (step(delta)) e.preventDefault();
       return;
     }
     if (e.key === "ArrowDown") {
@@ -13611,18 +13618,13 @@
     panel2.append(inputWrap, list3, empty, hint);
     input2.addEventListener("input", renderResults);
     input2.addEventListener("keydown", (e) => {
-      if (e.ctrlKey && !e.altKey && !e.metaKey && LIST_STEP[e.key] !== void 0) {
+      const delta = listStepDelta(e);
+      if (delta) {
         e.preventDefault();
-        setActive(activeIndex + LIST_STEP[e.key]);
+        setActive(activeIndex + delta);
         return;
       }
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setActive(activeIndex + 1);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setActive(activeIndex - 1);
-      } else if (e.key === "Enter") {
+      if (e.key === "Enter") {
         e.preventDefault();
         runActive();
       } else if (e.key === "Escape" || e.ctrlKey && e.key === "g") {
@@ -23695,12 +23697,9 @@
       return true;
     }
     if (!isOpen4()) return false;
-    if (e.key === "ArrowDown") {
-      setActive2(activeIndex2 + 1);
-      return true;
-    }
-    if (e.key === "ArrowUp") {
-      setActive2(activeIndex2 - 1);
+    var delta = listStepDelta(e);
+    if (delta) {
+      setActive2(activeIndex2 + delta);
       return true;
     }
     if (e.key === "Escape") {
@@ -23730,6 +23729,11 @@
     hide();
     if (!inputEl || alwaysNavBound) return;
     alwaysNavBound = true;
+    inputEl.addEventListener("keydown", function(e) {
+      if (!onKeyDown3(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
     inputEl.addEventListener("keyup", function(e) {
       if (e && (e.ctrlKey || e.metaKey || e.altKey || isAutocompleteToggle(e))) return;
       if (autocompleteTrigger() === "always") refresh3();
@@ -27960,16 +27964,17 @@
         tone: placed ? "success" : "error",
         icon: placed ? ICON_CHECK2 : ICON_ALERT2,
         badgeClass: "harpoon-lab-commit-badge",
+        copyClass: "harpoon-lab-commit-copy",
         titleClass: "harpoon-lab-commit-text",
         subClass: "harpoon-lab-commit-sub",
         title: placed ? "Placed in file" : "Could not place",
         sub: placed ? declName || "" : commit.detail || "The proof did not re-check."
       });
-      if (!placed && commit.detailRaw) {
-        var copy = banner.querySelector(".harpoon-lab-banner-copy");
-        if (copy) copy.appendChild(el6("span", "harpoon-lab-commit-tech", commit.detailRaw));
+      var copy = banner.querySelector(".harpoon-lab-banner-copy");
+      if (!placed && commit.detailRaw && copy) {
+        copy.appendChild(el6("span", "harpoon-lab-commit-tech", commit.detailRaw));
       }
-      if (!placed && typeof onRetry === "function") {
+      if (!placed && typeof onRetry === "function" && copy) {
         var actions = el6("div", "harpoon-lab-commit-actions");
         var retryBtn = el6("button", "harpoon-lab-commit-retry");
         retryBtn.type = "button";
@@ -27979,7 +27984,7 @@
           onRetry();
         });
         actions.appendChild(retryBtn);
-        banner.appendChild(actions);
+        copy.appendChild(actions);
       }
       parent.appendChild(banner);
       return banner;
@@ -28470,6 +28475,7 @@
     var resolveNativeAutoGoalDisplay = deps.resolveNativeAutoGoalDisplay;
     var priorGoalBinders2 = deps.priorGoalBinders;
     var mountGoalPriors2 = deps.mountGoalPriors;
+    var pushOrca2 = deps.pushOrca;
     var E3 = deps.E;
     var ICON_PLAY2 = deps.ICON_PLAY;
     var ICON_PAUSE2 = deps.ICON_PAUSE;
@@ -28775,6 +28781,8 @@
       if (this._autoSearchText) this._autoSearchText.textContent = nativeAutoSearchLabel(na);
       syncReelStatTips(this, na);
       this.syncAutoPauseBtn();
+      if (typeof this.syncTreeSearchClock === "function") this.syncTreeSearchClock();
+      if (typeof pushOrca2 === "function") pushOrca2(this, nativeAutoSearchLabel(na));
     }
     ;
     function ensureWorkingRow() {
@@ -28942,13 +28950,7 @@
           self.stopReelClock();
           return;
         }
-        if (self._autoSearchText) {
-          var label = nativeAutoSearchLabel(na);
-          if (self._autoSearchText.textContent !== label) {
-            self._autoSearchText.textContent = label;
-          }
-        }
-        syncReelStatTips(self, na);
+        self.syncReelStatus();
       }, 200);
     }
     ;
@@ -29539,6 +29541,7 @@
       var content = el6("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
       var mounted4 = this.mountTreePanel(content, na, { compact: false, live: live2 });
       this._treeRedraw = mounted4.redraw;
+      this._treeExplorerEl = content;
       var name = this.prep && this.prep.name || na.declName || "theorem";
       this._treeWin = fw.open({
         title: labTitle2(name + " \xB7 proof tree"),
@@ -29551,10 +29554,24 @@
         onClose: function() {
           self._treeWin = null;
           self._treeRedraw = null;
+          self._treeExplorerEl = null;
         }
       });
     }
     ;
+    function syncTreeSearchClock() {
+      var na = this.nativeAuto;
+      if (!na || na.phase !== "searching") return;
+      var root2 = this._treeExplorerEl;
+      if (!root2 || !root2.querySelector) return;
+      var mainEl = root2.querySelector(".hpt-detail-status-main");
+      var subEl = root2.querySelector(".hpt-detail-status-sub");
+      if (!mainEl && !subEl) return;
+      var main = nativeAutoSearchLabel(na);
+      var sub = reelStatText(na);
+      if (mainEl && mainEl.textContent !== main) mainEl.textContent = main;
+      if (subEl && subEl.textContent !== sub) subEl.textContent = sub;
+    }
     function refreshTreeExplorer() {
       var self = this;
       if (!this._treeRedraw || this._treeRedrawPending) return;
@@ -30000,6 +30017,7 @@
       mountTreePanel,
       openTreeExplorer,
       refreshTreeExplorer,
+      syncTreeSearchClock,
       renderSynthChain: renderSynthChain2,
       jumpToTreeHole,
       renderTreeDetail
@@ -31735,14 +31753,30 @@
       this.updateCompromiseBanner();
     }
   };
+  function orcaStrip() {
+    return typeof globalThis !== "undefined" && globalThis.StatusStrip || null;
+  }
+  function claimOrcaRun(session) {
+    var token = {};
+    session._orcaToken = token;
+    return token;
+  }
   function pushOrca(session, label) {
-    if (typeof window === "undefined" || !window.StatusStrip) return;
+    var S = orcaStrip();
+    if (!S) return;
     var na = session && session.nativeAuto;
-    if (!na || na.phase !== "searching") {
-      window.StatusStrip.setOrca(false);
+    if (!session || !session._orcaToken || !na || na.phase !== "searching") {
+      S.setOrca(false);
       return;
     }
-    window.StatusStrip.setOrca(true, na.paused ? "paused" : label || "");
+    var detail2 = na.paused ? "paused" : String(label || "").replace(/[….]+$/, "");
+    S.setOrca(true, detail2);
+  }
+  function endOrcaStrip(session, token) {
+    if (!session || token && session._orcaToken !== token) return;
+    session._orcaToken = null;
+    var S = orcaStrip();
+    if (S) S.setOrca(false);
   }
   Session.prototype.abortCompute = function() {
     this.userCancelled = true;
@@ -32020,6 +32054,7 @@
       checks: 0,
       startedAt: typeof performance !== "undefined" ? performance.now() : Date.now()
     };
+    var orcaToken = claimOrcaRun(this);
     this.render();
     if (!this._goalTierListener) {
       this._goalTierListener = function() {
@@ -32178,7 +32213,9 @@
       self.refreshTreeExplorer();
       return false;
     }).finally(function() {
-      pushOrca(self);
+      var stillMine = self._orcaToken === orcaToken;
+      endOrcaStrip(self, orcaToken);
+      if (stillMine && self.stopReelClock) self.stopReelClock();
       if (self._goalTierListener) {
         window.removeEventListener("beljar:hole-goals-updated", self._goalTierListener);
         window.removeEventListener("beljar:development-checked", self._goalTierListener);
@@ -32246,6 +32283,7 @@
     this._dead = true;
     this.disposed = true;
     this.abortCompute();
+    if (this._orcaToken) endOrcaStrip(this, this._orcaToken);
     untrackSession(this);
     removeFloatSession(this);
     this.clearPendingCommitNav();
@@ -32257,6 +32295,8 @@
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
     this._treeRedraw = null;
+    this._treeExplorerEl = null;
+    this._treeExplorerEl = null;
     if (!opts.fromWindowClose && this.win && this.win.close) {
       var w = this.win;
       this.win = null;
@@ -32473,6 +32513,7 @@
         return el4.apply(null, arguments);
       },
       tacticVerb,
+      pushOrca,
       setTip: function() {
         return setTip.apply(null, arguments);
       },
@@ -32592,6 +32633,7 @@
     Session.prototype.mountTreePanel = treeUiApi.mountTreePanel;
     Session.prototype.openTreeExplorer = treeUiApi.openTreeExplorer;
     Session.prototype.refreshTreeExplorer = treeUiApi.refreshTreeExplorer;
+    Session.prototype.syncTreeSearchClock = treeUiApi.syncTreeSearchClock;
     Session.prototype.jumpToTreeHole = treeUiApi.jumpToTreeHole;
     Session.prototype.renderTreeDetail = treeUiApi.renderTreeDetail;
     Session.prototype.pendingCommitAfterNav = commitApi.pendingCommitAfterNav;

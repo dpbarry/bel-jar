@@ -13,7 +13,7 @@
 // Commands come from the shared registry (`js/commands/`), not a list of their
 // own: `register()` here is a thin front door that marks an entry palette-visible.
 import { Commands } from '../commands/command-registry.mjs';
-import { LIST_STEP } from '../status-strip/status-strip-line-ui.mjs';
+import { listStepDelta } from '../status-strip/status-strip-line-ui.mjs';
 
 const global = globalThis;
 // ── Pure logic ──────────────────────────────────────────────────────────────
@@ -289,22 +289,17 @@ const global = globalThis;
       // keys dead in one of the two places it appears. A style has to hold
       // wherever the app puts a list in front of you.
       //
-      // ⛔ `LIST_STEP` is IMPORTED, not restated: `C-m` is forward here because
+      // ⛔ `listStepDelta` is IMPORTED, not restated: `C-m` is forward here because
       // Chromium never delivers `Ctrl+N` to a page, and that substitution has to
       // mean one thing across the whole app. Two copies of that table is how the
       // trio came to mean RET in one surface and next-line in the other.
-      if (e.ctrlKey && !e.altKey && !e.metaKey && LIST_STEP[e.key] !== undefined) {
+      const delta = listStepDelta(e);
+      if (delta) {
         e.preventDefault();
-        setActive(activeIndex + LIST_STEP[e.key]);
+        setActive(activeIndex + delta);
         return;
       }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setActive(activeIndex + 1);
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setActive(activeIndex - 1);
-      } else if (e.key === 'Enter') {
+      if (e.key === 'Enter') {
         e.preventDefault();
         runActive();
       } else if (e.key === 'Escape' || (e.ctrlKey && e.key === 'g')) {

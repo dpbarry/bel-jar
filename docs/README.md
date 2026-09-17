@@ -21,6 +21,7 @@ Agent rules and commands: [`AGENTS.md`](../AGENTS.md), [`.cursor/rules/`](../.cu
 | Doc | Role | Status |
 |-----|------|--------|
 | [modal-editing.md](modal-editing.md) | Command layer, status strip, Vim/Emacs | Registry landed; catalogue in progress; bar exists; Vim/Emacs depth not |
+| [calf.md](calf.md) | Paper-proximate proof language over Beluga (Sasybel revival) — research kickoff | Nothing built; fall target is Calf. §10 holds related asks + a winter class-surface vision — not this semester's work |
 
 ## Archive
 

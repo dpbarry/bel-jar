@@ -708,17 +708,44 @@ function E() { return global.BelEditor || null; }
 
   /**
    * Mirror the search into the status strip so Orca is watchable without the
-   * Harpoon panel open. Driven by `nativeAuto.phase`, which is the lab's own
-   * authority on whether a search is live — never inferred from silence.
+   * Harpoon panel open.
+   *
+   * `_orcaToken` is claimed at the start of each run (same pattern as the
+   * sweep). Continuations and `finally` only touch the strip when they still
+   * own the token: a successor search must not be cleared by a predecessor
+   * settling, and a settled run must not re-assert "searching" with an empty
+   * label — which is how the bar stuck on "Orca searching…" after a proof
+   * completed. `nativeAuto.phase` is what the panel draws; the token is what
+   * the bar believes, because several promise exits leave the phase still
+   * `searching` after the loop itself is dead.
    */
+  function orcaStrip() {
+    return (typeof globalThis !== 'undefined' && globalThis.StatusStrip) || null;
+  }
+
+  function claimOrcaRun(session) {
+    var token = {};
+    session._orcaToken = token;
+    return token;
+  }
+
   function pushOrca(session, label) {
-    if (typeof window === 'undefined' || !window.StatusStrip) return;
+    var S = orcaStrip();
+    if (!S) return;
     var na = session && session.nativeAuto;
-    if (!na || na.phase !== 'searching') {
-      window.StatusStrip.setOrca(false);
+    if (!session || !session._orcaToken || !na || na.phase !== 'searching') {
+      S.setOrca(false);
       return;
     }
-    window.StatusStrip.setOrca(true, na.paused ? 'paused' : (label || ''));
+    var detail = na.paused ? 'paused' : String(label || '').replace(/[….]+$/, '');
+    S.setOrca(true, detail);
+  }
+
+  function endOrcaStrip(session, token) {
+    if (!session || (token && session._orcaToken !== token)) return;
+    session._orcaToken = null;
+    var S = orcaStrip();
+    if (S) S.setOrca(false);
   }
 
   Session.prototype.abortCompute = function () {
@@ -1009,6 +1036,7 @@ function E() { return global.BelEditor || null; }
       checks: 0,
       startedAt: (typeof performance !== 'undefined' ? performance.now() : Date.now()),
     };
+    var orcaToken = claimOrcaRun(this);
     this.render();
     if (!this._goalTierListener) {
       this._goalTierListener = function () {
@@ -1189,8 +1217,12 @@ function E() { return global.BelEditor || null; }
       return false;
     }).finally(function () {
       // The search is over, whatever the outcome — the bar must stop claiming
-      // Orca is running.
-      pushOrca(self);
+      // Orca is running. Drop the token rather than re-reading `phase`: several
+      // exits leave `phase === 'searching'` after the loop is dead, and
+      // `pushOrca(self)` would then re-assert an empty "Orca searching…".
+      var stillMine = self._orcaToken === orcaToken;
+      endOrcaStrip(self, orcaToken);
+      if (stillMine && self.stopReelClock) self.stopReelClock();
       if (self._goalTierListener) {
         window.removeEventListener('beljar:hole-goals-updated', self._goalTierListener);
         window.removeEventListener('beljar:development-checked', self._goalTierListener);
@@ -1261,6 +1293,7 @@ function E() { return global.BelEditor || null; }
     this._dead = true;
     this.disposed = true;
     this.abortCompute();
+    if (this._orcaToken) endOrcaStrip(this, this._orcaToken);
     untrackSession(this);
     removeFloatSession(this);
     this.clearPendingCommitNav();
@@ -1272,6 +1305,8 @@ function E() { return global.BelEditor || null; }
     if (this._treeWin && this._treeWin.close) this._treeWin.close();
     this._treeWin = null;
     this._treeRedraw = null;
+    this._treeExplorerEl = null;
+    this._treeExplorerEl = null;
     if (!opts.fromWindowClose && this.win && this.win.close) {
       var w = this.win;
       this.win = null;
@@ -1496,6 +1531,7 @@ function E() { return global.BelEditor || null; }
     reelApi = createReel({
       el: function () { return el.apply(null, arguments); },
       tacticVerb: tacticVerb,
+      pushOrca: pushOrca,
       setTip: function () { return setTip.apply(null, arguments); },
       bindStepGoalTip: function () { return bindStepGoalTip.apply(null, arguments); },
       bindChipTip: function () { return bindChipTip.apply(null, arguments); },
@@ -1589,6 +1625,7 @@ function E() { return global.BelEditor || null; }
     Session.prototype.mountTreePanel = treeUiApi.mountTreePanel;
     Session.prototype.openTreeExplorer = treeUiApi.openTreeExplorer;
     Session.prototype.refreshTreeExplorer = treeUiApi.refreshTreeExplorer;
+    Session.prototype.syncTreeSearchClock = treeUiApi.syncTreeSearchClock;
     Session.prototype.jumpToTreeHole = treeUiApi.jumpToTreeHole;
     Session.prototype.renderTreeDetail = treeUiApi.renderTreeDetail;
 

@@ -277,16 +277,11 @@ const BUILDERS = {
   },
 
   /**
-   * How much history you are standing on, and the way into it.
+   * The way into the edit-history panel.
    *
-   * Earns its place the same way the rest do: how far back you can go is
-   * visible nowhere else in BelJar, and neither is the fact that a redo branch
-   * is waiting. It stays silent until there is something to say, so an untouched
-   * file carries no widget at all.
-   *
-   * The count is the UNDO depth. A second number for redo would be two figures
-   * with no way to tell which is which at 0.68rem — the branch is carried by a
-   * tone change and spelled out in the panel instead.
+   * Silent until there is something to undo or redo, so an untouched file
+   * carries no widget at all. A waiting redo branch is a tone change, spelled
+   * out in the panel — not a second number beside the word.
    */
   history(s) {
     const undo = s.undoDepth || 0;
@@ -294,7 +289,7 @@ const BUILDERS = {
     if (!undo && !redo) return null;
     return {
       key: 'history',
-      text: String(undo),
+      text: 'History',
       // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
       // and already carries the HOLES magenta — borrowing it painted the undo
       // arrow bright pink, which read as an error badge sitting next to the
@@ -303,7 +298,6 @@ const BUILDERS = {
       title: 'Editor history',
       tone: redo ? 'branched' : 'plain',
       action: 'edit-history',
-      mono: true,
       pressed: !!s.historyOpen,
     };
   },

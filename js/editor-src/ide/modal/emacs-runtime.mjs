@@ -20,6 +20,7 @@ import { _pure as emacsBindings } from './emacs-setup.mjs';
 import { beljarUndo, beljarRedo } from './undo-route.mjs';
 import { whichKeyHint, WHICH_KEY_MS } from './which-key-hint.mjs';
 import { pasteSystemClipboard, writeSystemClipboard } from '../clipboard-bridge.mjs';
+import { listStepDelta } from '../completion/list-keys.mjs';
 
 let bridged = false;
 let emacsKeysBound = false;
@@ -272,6 +273,12 @@ export function reportEmacsChain() {
     // handling, so after the call there is no way to tell that this keystroke
     // was the second half of a chain.
     emacsChainAtKeydown = (this.$data && this.$data.keyChain) || '';
+    // The package already yields ArrowUp/Down to CodeMirror's tooltip. BelJar's
+    // list is a custom popup, so that yield never fires — decline list-step keys
+    // here the same way, and let the AC capture handler walk the rows.
+    const event = arguments[0];
+    const popup = typeof document !== 'undefined' ? document.querySelector('.editor-ac') : null;
+    if (event && popup && !popup.hidden && listStepDelta(event)) return;
     const out = original.apply(this, arguments);
     try {
       lastEmacsHandler = this;

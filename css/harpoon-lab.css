@@ -140,7 +140,10 @@
 .harpoon-lab-banner-sub {
   font-family: var(--sans);
   font-size: 0.66rem;
+  line-height: 1.4;
   color: var(--muted-high);
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .harpoon-lab-strip.tone-warn .harpoon-lab-banner-sub,
 .harpoon-lab-strip.tone-error .harpoon-lab-banner-sub {
@@ -1062,7 +1065,8 @@ button.harpoon-lab-banner:focus-visible {
 .harpoon-lab-auto-head,
 .harpoon-lab-manual-head,
 .harpoon-lab-resume,
-.harpoon-lab-auto-compromise {
+.harpoon-lab-auto-compromise,
+.harpoon-lab-auto-commit {
   padding: 0.62rem 0.75rem;
 }
 @keyframes harpoon-auto-pop {
@@ -1070,7 +1074,8 @@ button.harpoon-lab-banner:focus-visible {
   60% { transform: scale(1.12); }
   100% { transform: scale(1); opacity: 1; }
 }
-.harpoon-lab-auto-head-copy { min-width: 0; }
+.harpoon-lab-auto-head-copy,
+.harpoon-lab-commit-copy { min-width: 0; }
 .harpoon-lab-stage {
   animation: none;
 }
@@ -1345,24 +1350,17 @@ button.harpoon-lab-banner:focus-visible {
   opacity: 0.45;
 }
 
-/* ── Commit outcome — placed / failed (parallel to compromise strip). */
+/* ── Commit outcome — placed / failed (same shell as the banners above). */
 .harpoon-lab-auto-commit {
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem 0.6rem;
   margin: 0;
-  padding: 0.6rem 0.75rem;
-  overflow: hidden;
-  max-height: 4.5rem;
   opacity: 1;
   transform: none;
-  transition:
-    opacity 220ms ease,
-    max-height 260ms ease,
-    padding-top 260ms ease,
-    padding-bottom 260ms ease;
+}
+.harpoon-lab-auto-commit.is-fail {
+  align-items: flex-start;
 }
 .harpoon-lab-auto-commit.is-dismissing {
+  overflow: hidden;
   opacity: 0;
   max-height: 0;
   padding-top: 0;
@@ -1372,7 +1370,7 @@ button.harpoon-lab-banner:focus-visible {
   font-size: 0.78rem;
 }
 .harpoon-lab-commit-sub {
-  word-break: break-word;
+  font-size: 0.68rem;
 }
 .harpoon-lab-commit-tech {
   display: block;
@@ -1381,13 +1379,12 @@ button.harpoon-lab-banner:focus-visible {
   font-weight: 400;
   line-height: 1.35;
   color: color-mix(in srgb, var(--base-mid) 72%, transparent);
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 .harpoon-lab-commit-actions {
-  flex: 0 0 auto;
   display: flex;
   gap: 0.3rem;
-  margin-left: auto;
+  margin-top: 0.28rem;
 }
 .harpoon-lab-commit-retry {
   padding: 0.12rem 0.55rem;

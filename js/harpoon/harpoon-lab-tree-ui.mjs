@@ -260,6 +260,7 @@ function createTreeUi(deps) {
         var content = el('div', 'harpoon-tree-explorer' + (live ? ' is-live' : ''));
         var mounted = this.mountTreePanel(content, na, { compact: false, live: live });
         this._treeRedraw = mounted.redraw;
+        this._treeExplorerEl = content;
         var name = (this.prep && this.prep.name) || na.declName || 'theorem';
         this._treeWin = fw.open({
           title: labTitle(name + ' · proof tree'),
@@ -269,9 +270,30 @@ function createTreeUi(deps) {
           height: 560,
           minWidth: 420,
           minHeight: 320,
-          onClose: function () { self._treeWin = null; self._treeRedraw = null; },
+          onClose: function () {
+            self._treeWin = null;
+            self._treeRedraw = null;
+            self._treeExplorerEl = null;
+          },
         });
       };
+
+      // Patch the pop-out rail's STATUS lines in place. A full tree redraw only
+      // happens when a step settles, so without this the "N checks · Xs" counter
+      // froze between tactics.
+      function syncTreeSearchClock() {
+        var na = this.nativeAuto;
+        if (!na || na.phase !== 'searching') return;
+        var root = this._treeExplorerEl;
+        if (!root || !root.querySelector) return;
+        var mainEl = root.querySelector('.hpt-detail-status-main');
+        var subEl = root.querySelector('.hpt-detail-status-sub');
+        if (!mainEl && !subEl) return;
+        var main = nativeAutoSearchLabel(na);
+        var sub = reelStatText(na);
+        if (mainEl && mainEl.textContent !== main) mainEl.textContent = main;
+        if (subEl && subEl.textContent !== sub) subEl.textContent = sub;
+      }
 
       // Redraw the pop-out tree if it's open (throttled to one per frame). Called as the
       // live search settles steps and on the search→solved/stuck transition, so the
@@ -730,6 +752,7 @@ function createTreeUi(deps) {
       mountTreePanel: mountTreePanel,
       openTreeExplorer: openTreeExplorer,
       refreshTreeExplorer: refreshTreeExplorer,
+      syncTreeSearchClock: syncTreeSearchClock,
       renderSynthChain: renderSynthChain,
       jumpToTreeHole: jumpToTreeHole,
       renderTreeDetail: renderTreeDetail,

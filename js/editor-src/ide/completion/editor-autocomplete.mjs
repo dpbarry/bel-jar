@@ -1,11 +1,12 @@
 import { Prec } from '@codemirror/state';
-import { keymap, ViewPlugin } from '@codemirror/view';
+import { keymap, ViewPlugin, EditorView } from '@codemirror/view';
 import { fuzzyScore } from './fuzzy.mjs';
 import { renderTypeInto } from '../../format/type-render.mjs';
 import { createCompletionController } from './source.mjs';
 import { isQuietTypingActiveForView } from '../quiet-typing.mjs';
 import { getEngine } from '../ide-actions.mjs';
 import { vimAllowsRemap } from '../keymap-style.mjs';
+import { listStepDelta } from './list-keys.mjs';
 
 const POPUP_GAP_PX = 4;
 const VIEW_PAD_PX = 8;
@@ -156,6 +157,15 @@ function createEditorAcPlugin(engine, opts) {
       this.repositionBound = false;
       this.repositionTimer = 0;
       this.onReposition = () => this.scheduleReposition();
+      // Capture beats emacs()/vim() bubble handlers on the same node. A
+      // Prec.highest keymap still loses to those packages: their keydown lives
+      // on a ViewPlugin, and the keymap facet itself is consulted at Prec.default.
+      this.onCaptureKey = (e) => {
+        if (!this.handleEvent(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      view.contentDOM.addEventListener('keydown', this.onCaptureKey, true);
       this.ensurePopup();
       this.hide();
     }
@@ -349,15 +359,17 @@ function createEditorAcPlugin(engine, opts) {
       return this.accept(this.activeIndex);
     }
 
+    handleEvent(e) {
+      const delta = listStepDelta(e);
+      if (!delta || !this.isOpen()) return false;
+      this.setActive(this.activeIndex + delta);
+      return true;
+    }
+
     handleKey(key) {
-      if (key === 'ArrowDown') {
+      if (key === 'ArrowDown' || key === 'ArrowUp') {
         if (!this.isOpen()) return false;
-        this.setActive(this.activeIndex + 1);
-        return true;
-      }
-      if (key === 'ArrowUp') {
-        if (!this.isOpen()) return false;
-        this.setActive(this.activeIndex - 1);
+        this.setActive(this.activeIndex + (key === 'ArrowDown' ? 1 : -1));
         return true;
       }
       if (key === 'Escape') {
@@ -432,6 +444,7 @@ function createEditorAcPlugin(engine, opts) {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.cancelReposition();
       this.bindReposition(false);
+      this.view.contentDOM.removeEventListener('keydown', this.onCaptureKey, true);
       this.popup?.remove();
       this.popup = null;
       this.listEl = null;
@@ -445,6 +458,15 @@ export function toggleEditorAutocomplete(view) {
   if (!view || !acPlugin) return false;
   const inst = view.plugin(acPlugin);
   return inst ? inst.toggleExplicit() : false;
+}
+
+/** Step the open editor list. False when the list is closed. */
+export function stepEditorAutocomplete(view, delta) {
+  if (!view || !acPlugin || !delta) return false;
+  const inst = view.plugin(acPlugin);
+  if (!inst || !inst.isOpen()) return false;
+  inst.setActive(inst.activeIndex + delta);
+  return true;
 }
 
 export function belEditorAutocomplete(engine, opts = {}) {
@@ -475,7 +497,23 @@ export function belEditorAutocomplete(engine, opts = {}) {
     return runToggle(view);
   };
 
+  const runEvent = (view, event) => {
+    const inst = view.plugin(plugin);
+    return inst ? inst.handleEvent(event) : false;
+  };
+
   return [
+    // ⛔ Prec.highest DOM handler, and this extension MUST sit before emacs()/vim()
+    // in the view (see editor.mjs). Those packages also sit at Prec.highest and
+    // consume ArrowDown / C-n / C-m as line motion; a keymap entry is too late
+    // because the keymap facet itself is consulted at Prec.default.
+    Prec.highest(EditorView.domEventHandlers({
+      keydown(event, view) {
+        if (!runEvent(view, event)) return false;
+        event.preventDefault();
+        return true;
+      },
+    })),
     plugin,
     Prec.highest(keymap.of([
       { key: 'Ctrl-Space', run: runToggleIfDefault },
@@ -486,6 +524,9 @@ export function belEditorAutocomplete(engine, opts = {}) {
       { key: 'ArrowUp', run: (view) => runKey(view, 'ArrowUp') },
       { key: 'PageDown', run: (view) => runKey(view, 'ArrowDown') },
       { key: 'PageUp', run: (view) => runKey(view, 'ArrowUp') },
+      { key: 'Ctrl-n', run: (view) => stepEditorAutocomplete(view, 1) },
+      { key: 'Ctrl-m', run: (view) => stepEditorAutocomplete(view, 1) },
+      { key: 'Ctrl-p', run: (view) => stepEditorAutocomplete(view, -1) },
       { key: 'Tab', run: (view) => runKey(view, 'Tab') },
     ])),
   ];

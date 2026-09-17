@@ -970,13 +970,10 @@ html.jar-strip-owns-status .editor-topbar-controls {
 
 /* -- Edit history: the `⟲` segment and the timeline behind it -- */
 
-/* The count and its glyph. Tabular digits because the number changes on every
-   burst of typing, and a widget that nudges the checker sideways as you type is
-   the classic status-bar reflow this bar exists not to do. */
+/* The handle into the history panel. The word is stable, so it does not
+   reserve digit-width the way a live count would. */
 .jar-strip__seg--history {
   color: var(--ui-fg-muted);
-  min-width: 3.2ch;
-  justify-content: flex-end;
 }
 
 /* Drawn, not typed: it takes the segment's colour through `currentColor`, so

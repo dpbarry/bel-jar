@@ -205,16 +205,11 @@
       return { key: "spacer", spacer: true };
     },
     /**
-     * How much history you are standing on, and the way into it.
+     * The way into the edit-history panel.
      *
-     * Earns its place the same way the rest do: how far back you can go is
-     * visible nowhere else in BelJar, and neither is the fact that a redo branch
-     * is waiting. It stays silent until there is something to say, so an untouched
-     * file carries no widget at all.
-     *
-     * The count is the UNDO depth. A second number for redo would be two figures
-     * with no way to tell which is which at 0.68rem — the branch is carried by a
-     * tone change and spelled out in the panel instead.
+     * Silent until there is something to undo or redo, so an untouched file
+     * carries no widget at all. A waiting redo branch is a tone change, spelled
+     * out in the panel — not a second number beside the word.
      */
     history(s) {
       const undo = s.undoDepth || 0;
@@ -222,7 +217,7 @@
       if (!undo && !redo) return null;
       return {
         key: "history",
-        text: String(undo),
+        text: "History",
         // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
         // and already carries the HOLES magenta — borrowing it painted the undo
         // arrow bright pink, which read as an error badge sitting next to the
@@ -231,7 +226,6 @@
         title: "Editor history",
         tone: redo ? "branched" : "plain",
         action: "edit-history",
-        mono: true,
         pressed: !!s.historyOpen
       };
     },
@@ -723,7 +717,32 @@
   var HISTORY_CAP = 50;
   var LIST_CAP = 30;
   var LIST_STEP = { n: 1, m: 1, p: -1 };
-  var PAGE = 8;
+  var LIST_PAGE = 8;
+  function stepLetter(e) {
+    if (!e.ctrlKey || e.shiftKey) return "";
+    if (e.key && e.key.length === 1) return e.key.toLowerCase();
+    if (e.code && e.code.length === 4 && e.code.startsWith("Key")) return e.code[3].toLowerCase();
+    return "";
+  }
+  function listStepDelta(e, opts) {
+    if (!e || e.altKey || e.metaKey) return 0;
+    const arrows = !opts || opts.arrows !== false;
+    if (e.key === "PageDown") return LIST_PAGE;
+    if (e.key === "PageUp") return -LIST_PAGE;
+    if (arrows && !e.ctrlKey && !e.shiftKey) {
+      if (e.key === "ArrowDown") return 1;
+      if (e.key === "ArrowUp") return -1;
+    }
+    const letter = stepLetter(e);
+    if (letter && LIST_STEP[letter] !== void 0) return LIST_STEP[letter];
+    const KB = typeof globalThis !== "undefined" ? globalThis.Keybindings : null;
+    if (KB && typeof KB.matchesId === "function") {
+      if (!arrows && (e.key === "ArrowDown" || e.key === "ArrowUp")) return 0;
+      if (KB.matchesId(e, "motion.line-down")) return 1;
+      if (KB.matchesId(e, "motion.line-up")) return -1;
+    }
+    return 0;
+  }
   var host = null;
   var input = null;
   var ghostEl = null;
@@ -972,9 +991,6 @@
   }
   function activeInput() {
     return exInput || input;
-  }
-  function listOpen() {
-    return !!listEl && !listEl.hidden && items.length > 0;
   }
   function syncActiveDescendant() {
     const el = activeInput();
@@ -1250,8 +1266,9 @@
         tabCycle(e.shiftKey);
         return;
       }
-      if (e.ctrlKey && LIST_STEP[e.key] !== void 0) {
-        if (!step(LIST_STEP[e.key])) return;
+      const delta = listStepDelta(e, { arrows: false });
+      if (delta) {
+        if (!step(delta)) return;
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -1266,12 +1283,6 @@
       if (e.key === "Escape") {
         hideList();
         return;
-      }
-      if (!listOpen()) return;
-      if (e.key === "PageDown" || e.key === "PageUp") {
-        if (!step(e.key === "PageDown" ? PAGE : -PAGE)) return;
-        e.preventDefault();
-        e.stopPropagation();
       }
     };
     exOnBlur = () => hideList();
@@ -1346,13 +1357,9 @@
       tabCycle(e.shiftKey);
       return;
     }
-    if (e.ctrlKey && LIST_STEP[e.key] !== void 0) {
-      if (step(LIST_STEP[e.key])) e.preventDefault();
-      return;
-    }
-    if (listOpen() && (e.key === "PageDown" || e.key === "PageUp")) {
-      e.preventDefault();
-      step(e.key === "PageDown" ? PAGE : -PAGE);
+    const delta = listStepDelta(e, { arrows: false });
+    if (delta) {
+      if (step(delta)) e.preventDefault();
       return;
     }
     if (e.key === "ArrowDown") {

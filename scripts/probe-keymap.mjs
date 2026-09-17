@@ -1459,6 +1459,40 @@ try {
   check(exSuggest.items.indexOf('fmt') < 0,
     'and a scattered title match is refused', exSuggest.items.join(','));
 
+  const readExAc = () => page.evaluate(() => {
+    const list = document.querySelector('.jar-cmdline__list');
+    const rows = list ? [...list.querySelectorAll('.jar-cmdline__item')] : [];
+    const activeRow = rows.find((r) => r.classList.contains('is-active')) || null;
+    const slotInput = document.querySelector('.jar-strip__vim input');
+    return {
+      shown: list ? !list.hidden : false,
+      rows: rows.length,
+      activeIndex: activeRow ? Number(activeRow.dataset.index) : -1,
+      value: slotInput ? slotInput.value : null,
+    };
+  });
+  const exCtrl = async (letter) => {
+    await page.keyboard.down('Control');
+    await page.keyboard.press('Key' + letter.toUpperCase());
+    await page.keyboard.up('Control');
+    await new Promise((r) => setTimeout(r, 150));
+  };
+  await exCtrl('n');
+  const exN = await readExAc();
+  check(exN.shown && exN.activeIndex === 0, 'vim ex: C-n selects the first candidate',
+    JSON.stringify(exN));
+  await exCtrl('n');
+  check((await readExAc()).activeIndex === 1, 'vim ex: C-n again walks forward');
+  await exCtrl('p');
+  check((await readExAc()).activeIndex === 0, 'vim ex: C-p walks back');
+  const exBeforeArrow = await readExAc();
+  await page.keyboard.press('ArrowDown');
+  await new Promise((r) => setTimeout(r, 150));
+  const exAfterArrow = await readExAc();
+  check(exAfterArrow.activeIndex === exBeforeArrow.activeIndex,
+    'vim ex: ArrowDown does not walk the list (it is history)',
+    JSON.stringify({ before: exBeforeArrow, after: exAfterArrow }));
+
   // Tab completes into vim's own input.
   await page.keyboard.press('Tab');
   await new Promise((r) => setTimeout(r, 250));
@@ -1479,6 +1513,121 @@ try {
   });
   check(!afterEsc.listShown && !afterEsc.handedOver,
     'closing the ex line clears the suggestions', JSON.stringify(afterEsc));
+
+  // ── Vim insert: arrows and C-n/C-p/C-m walk the editor list ────────────────
+  const readEditorAc = () => page.evaluate(() => {
+    const popup = document.querySelector('.editor-ac');
+    const rows = [...document.querySelectorAll('.editor-ac-item')];
+    const active = rows.findIndex((r) => r.getAttribute('aria-selected') === 'true');
+    const v = CurrentEditor.getView();
+    return {
+      shown: !!(popup && !popup.hidden && rows.length),
+      rows: rows.length,
+      activeIndex: active,
+      head: v.state.selection.main.head,
+      line: v.state.doc.lineAt(v.state.selection.main.head).number,
+    };
+  });
+  const vimDocSnap = await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    return { doc: v.state.doc.toString(), head: v.state.selection.main.head };
+  });
+  await page.click('.cm-content');
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 150));
+  await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    const src = [
+      'LF nat : type =',
+      '| z : ',
+      '| s : nat -> nat;',
+    ].join('\n');
+    const at = src.indexOf('| z : ') + 6;
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: src },
+      selection: { anchor: at },
+    });
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  await page.evaluate(() => {
+    CurrentEditor.getView().focus();
+    CurrentEditor.toggleAutocomplete();
+  });
+  await new Promise((r) => setTimeout(r, 250));
+  const vimAcOpen = await readEditorAc();
+  check(vimAcOpen.shown && vimAcOpen.rows > 0, 'vim: the editor list opens',
+    JSON.stringify(vimAcOpen));
+  await page.keyboard.press('i');
+  await new Promise((r) => setTimeout(r, 150));
+  await page.evaluate(() => CurrentEditor.getView().focus());
+  const vimAc0 = await readEditorAc();
+  check(vimAc0.shown && vimAc0.rows > 0, 'vim insert: the editor list stays open',
+    JSON.stringify(vimAc0));
+  const vimHead = vimAc0.head;
+  const vimAcLine = vimAc0.line;
+  await exCtrl('m');
+  const vimAcM = await readEditorAc();
+  check(vimAcM.shown && vimAcM.head === vimHead && vimAcM.line === vimAcLine,
+    'vim insert: C-m walks the list, not a newline', JSON.stringify(vimAcM));
+  if (vimAc0.rows > 1) {
+    check(vimAcM.activeIndex !== vimAc0.activeIndex,
+      'vim insert: C-m moves the highlight', JSON.stringify({ vimAc0, vimAcM }));
+  }
+  await page.keyboard.press('ArrowDown');
+  await new Promise((r) => setTimeout(r, 120));
+  const vimAc1 = await readEditorAc();
+  check(vimAc1.shown && vimAc1.head === vimHead && vimAc1.line === vimAcLine,
+    'vim insert: ArrowDown stays in the list', JSON.stringify(vimAc1));
+  await exCtrl('p');
+  const vimAcP = await readEditorAc();
+  check(vimAcP.shown && vimAcP.head === vimHead, 'vim insert: C-p stays in the list',
+    JSON.stringify(vimAcP));
+  if (vimAc0.rows > 1) {
+    check(vimAcP.activeIndex !== vimAc1.activeIndex,
+      'vim insert: C-p walks back', JSON.stringify({ vimAc1, vimAcP }));
+  }
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 150));
+
+  const readReplAcVim = () => page.evaluate(() => {
+    const popup = document.querySelector('.repl-ac');
+    const rows = [...document.querySelectorAll('.repl-ac-item')];
+    const active = rows.findIndex((r) => r.getAttribute('aria-selected') === 'true');
+    return {
+      shown: !!(popup && !popup.hidden && rows.length),
+      rows: rows.length,
+      activeIndex: active,
+    };
+  });
+  await page.click('#command-input');
+  await page.evaluate(() => { const el = document.getElementById('command-input'); if (el) el.value = ''; });
+  await page.keyboard.type('t', { delay: 12 });
+  await new Promise((r) => setTimeout(r, 200));
+  const vimRepl0 = await readReplAcVim();
+  check(vimRepl0.shown && vimRepl0.rows > 0, 'vim repl: typing opens the list',
+    JSON.stringify(vimRepl0));
+  await exCtrl('m');
+  const vimRepl1 = await readReplAcVim();
+  check(vimRepl1.shown, 'vim repl: C-m keeps the list open', JSON.stringify(vimRepl1));
+  if (vimRepl0.rows > 1) {
+    check(vimRepl1.activeIndex !== vimRepl0.activeIndex,
+      'vim repl: C-m walks the list', JSON.stringify({ vimRepl0, vimRepl1 }));
+  }
+  await page.keyboard.press('ArrowDown');
+  await new Promise((r) => setTimeout(r, 120));
+  check((await readReplAcVim()).shown, 'vim repl: ArrowDown keeps the list open');
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 150));
+  await page.click('.cm-content');
+  await page.keyboard.press('Escape');
+  await page.evaluate((snap) => {
+    const v = CurrentEditor.getView();
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: snap.doc },
+      selection: { anchor: Math.min(snap.head, snap.doc.length) },
+    });
+  }, vimDocSnap);
+  await new Promise((r) => setTimeout(r, 200));
 
   // ── shadowed rows show what WORKS, not what does not ────────────────────────
   const readMacros = () => page.evaluate(async (open) => {
@@ -2307,6 +2456,108 @@ try {
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 200));
 
+  // ── Emacs: the same list-step keys in the editor and the REPL ──────────────
+  const readEditorAcEmacs = () => page.evaluate(() => {
+    const popup = document.querySelector('.editor-ac');
+    const rows = [...document.querySelectorAll('.editor-ac-item')];
+    const active = rows.findIndex((r) => r.getAttribute('aria-selected') === 'true');
+    const v = CurrentEditor.getView();
+    return {
+      shown: !!(popup && !popup.hidden && rows.length),
+      rows: rows.length,
+      activeIndex: active,
+      head: v.state.selection.main.head,
+      line: v.state.doc.lineAt(v.state.selection.main.head).number,
+    };
+  });
+  await page.evaluate(() => StatusStrip.closeCommandLine?.());
+  await page.click('.cm-content');
+  await new Promise((r) => setTimeout(r, 200));
+  const emDocSnap = await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    return { doc: v.state.doc.toString(), head: v.state.selection.main.head };
+  });
+  await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    const src = [
+      'LF nat : type =',
+      '| z : nat',
+      '| s : nat -> nat;',
+      '',
+      'rec f : [ |- ] = ?;',
+    ].join('\n');
+    const at = src.indexOf('[ |- ]') + 5;
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: src },
+      selection: { anchor: at },
+    });
+    CurrentEditor.toggleAutocomplete();
+  });
+  await new Promise((r) => setTimeout(r, 250));
+  await page.evaluate(() => CurrentEditor.getView().focus());
+  const emAc0 = await readEditorAcEmacs();
+  check(emAc0.shown && emAc0.rows > 0, 'emacs editor: the list opens', JSON.stringify(emAc0));
+  const emHead = emAc0.head;
+  const emLine = emAc0.line;
+  await ctrl('m');
+  const emAcM = await readEditorAcEmacs();
+  check(emAcM.shown && emAcM.head === emHead && emAcM.line === emLine,
+    'emacs editor: C-m walks the list, not next-line', JSON.stringify(emAcM));
+  if (emAc0.rows > 1) {
+    check(emAcM.activeIndex !== emAc0.activeIndex,
+      'emacs editor: C-m moves the highlight');
+  }
+  await key('ArrowDown');
+  const emAc1 = await readEditorAcEmacs();
+  check(emAc1.shown && emAc1.head === emHead && emAc1.line === emLine,
+    'emacs editor: ArrowDown stays in the list', JSON.stringify(emAc1));
+  await ctrl('p');
+  const emAcP = await readEditorAcEmacs();
+  check(emAcP.shown && emAcP.head === emHead, 'emacs editor: C-p stays in the list');
+  if (emAc0.rows > 1) {
+    check(emAcP.activeIndex !== emAc1.activeIndex,
+      'emacs editor: C-p walks back');
+  }
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 150));
+
+  const readReplAc = () => page.evaluate(() => {
+    const popup = document.querySelector('.repl-ac');
+    const rows = [...document.querySelectorAll('.repl-ac-item')];
+    const active = rows.findIndex((r) => r.getAttribute('aria-selected') === 'true');
+    return {
+      shown: !!(popup && !popup.hidden && rows.length),
+      rows: rows.length,
+      activeIndex: active,
+      value: (document.getElementById('command-input') || {}).value || '',
+    };
+  });
+  await page.click('#command-input');
+  await page.evaluate(() => { const el = document.getElementById('command-input'); if (el) el.value = ''; });
+  await type('t');
+  const repl0 = await readReplAc();
+  check(repl0.shown && repl0.rows > 0, 'emacs repl: typing opens the list', JSON.stringify(repl0));
+  await ctrl('m');
+  const repl1 = await readReplAc();
+  check(repl1.shown, 'emacs repl: C-m keeps the list open', JSON.stringify(repl1));
+  if (repl0.rows > 1) {
+    check(repl1.activeIndex !== repl0.activeIndex,
+      'emacs repl: C-m walks the list', JSON.stringify({ repl0, repl1 }));
+  }
+  await key('ArrowDown');
+  const repl2 = await readReplAc();
+  check(repl2.shown, 'emacs repl: ArrowDown keeps the list open');
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 150));
+  await page.click('.cm-content');
+  await page.evaluate((snap) => {
+    const v = CurrentEditor.getView();
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: snap.doc },
+      selection: { anchor: Math.min(snap.head, snap.doc.length) },
+    });
+  }, emDocSnap);
+
   // ── back to Standard ───────────────────────────────────────────────────────
   await page.evaluate(() => {
     Persist.writeStoredKeymapStyle('default');
@@ -2314,6 +2565,82 @@ try {
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 900));
+
+  // ── Standard: a remapped line-down still walks an open list ────────────────
+  await page.click('.cm-content');
+  await new Promise((r) => setTimeout(r, 150));
+  const stdDocSnap = await page.evaluate(() => {
+    Keybindings.setBinding('motion.line-down', 'Control+J');
+    const v = CurrentEditor.getView();
+    return { doc: v.state.doc.toString(), head: v.state.selection.main.head };
+  });
+  await new Promise((r) => setTimeout(r, 250));
+  await page.evaluate(() => {
+    const v = CurrentEditor.getView();
+    const src = [
+      'LF nat : type =',
+      '| z : nat',
+      '| s : nat -> nat;',
+      '',
+      'rec f : [ |- ] = ?;',
+    ].join('\n');
+    const at = src.indexOf('[ |- ]') + 5;
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: src },
+      selection: { anchor: at },
+    });
+    CurrentEditor.toggleAutocomplete();
+  });
+  await new Promise((r) => setTimeout(r, 250));
+  await page.evaluate(() => CurrentEditor.getView().focus());
+  const stdAc0 = await page.evaluate(() => {
+    const popup = document.querySelector('.editor-ac');
+    const rows = [...document.querySelectorAll('.editor-ac-item')];
+    const active = rows.findIndex((r) => r.getAttribute('aria-selected') === 'true');
+    const v = CurrentEditor.getView();
+    return {
+      shown: !!(popup && !popup.hidden && rows.length),
+      rows: rows.length,
+      activeIndex: active,
+      head: v.state.selection.main.head,
+      line: v.state.doc.lineAt(v.state.selection.main.head).number,
+    };
+  });
+  check(stdAc0.shown && stdAc0.rows > 0, 'standard: the editor list opens', JSON.stringify(stdAc0));
+  await page.keyboard.down('Control');
+  await page.keyboard.press('KeyJ');
+  await page.keyboard.up('Control');
+  await new Promise((r) => setTimeout(r, 150));
+  const stdAc1 = await page.evaluate(() => {
+    const popup = document.querySelector('.editor-ac');
+    const rows = [...document.querySelectorAll('.editor-ac-item')];
+    const active = rows.findIndex((r) => r.getAttribute('aria-selected') === 'true');
+    const v = CurrentEditor.getView();
+    return {
+      shown: !!(popup && !popup.hidden && rows.length),
+      rows: rows.length,
+      activeIndex: active,
+      head: v.state.selection.main.head,
+      line: v.state.doc.lineAt(v.state.selection.main.head).number,
+    };
+  });
+  check(stdAc1.shown && stdAc1.head === stdAc0.head && stdAc1.line === stdAc0.line,
+    'standard: remapped motion.line-down walks the list, not next-line',
+    JSON.stringify(stdAc1));
+  if (stdAc0.rows > 1) {
+    check(stdAc1.activeIndex !== stdAc0.activeIndex,
+      'standard: Control+J moves the highlight');
+  }
+  await page.keyboard.press('Escape');
+  await page.evaluate((snap) => {
+    Keybindings.resetBinding('motion.line-down');
+    const v = CurrentEditor.getView();
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: snap.doc },
+      selection: { anchor: Math.min(snap.head, snap.doc.length) },
+    });
+  }, stdDocSnap);
+  await new Promise((r) => setTimeout(r, 200));
 
   // ── Alt+X means ONE thing, in every style ──────────────────────────────────
   // ⛔ This check used to read "under Standard, Alt+X still opens the palette",

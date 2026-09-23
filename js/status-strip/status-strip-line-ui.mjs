@@ -610,8 +610,10 @@ function searchStep(fromCaret, forward) {
 }
 
 /**
- * Re-rank from `el`. Nothing is highlighted until the user picks something: a
- * highlight that Enter would ignore is a lie about what Enter does.
+ * Re-rank from `el`. The top row starts highlighted: that is the candidate
+ * Tab writes onto the line, the same way the editor's list opens on its
+ * first item. `chosen` stays false until the highlight is moved, so Enter
+ * still runs the text that was typed.
  */
 function completeInto(el) {
   const caret = el.selectionStart == null ? el.value.length : el.selectionStart;
@@ -624,7 +626,7 @@ function completeInto(el) {
   // name — not about the argument slot it happens to be sitting in. `:zzz foo`
   // otherwise read "This command takes no further argument".
   lastKind = lastKnown === false ? 'command' : (res.kind || '');
-  active = -1;
+  active = items.length ? 0 : -1;
   chosen = false;
   return res;
 }

@@ -420,7 +420,7 @@ function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
       }
       var gr = document.createElement('div');
       gr.className = 'hpt-tip-note';
-      gr.textContent = (n.ghost.verdict === 'guard' ? 'skipped — ' : 'not taken — ')
+      gr.textContent = (n.ghost.verdict === 'guard' ? 'skipped: ' : 'not taken: ')
         + (n.ghost.reason || 'did not certify');
       frag.appendChild(gr);
       return frag;

@@ -238,7 +238,7 @@
 
 .jar-kb__chord.is-invalid {
   border-color: var(--warn-mid, hsl(0, 52%, 52%));
-  animation: jar-kb-chord-shake 0.35s ease;
+  animation: jar-kb-chord-shake 350ms ease;
 }
 
 @keyframes jar-kb-chord-shake {

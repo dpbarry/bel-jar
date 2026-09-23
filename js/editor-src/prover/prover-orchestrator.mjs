@@ -284,14 +284,14 @@ export function stuckHintFor(stuck, thm) {
     return { message: 'counterexample: the statement is false on a ground instance' };
   }
   if (reason === 'search-bound') { // GENERAL: stuck reason
-    return { message: 'synthesis hit its search bound — not a decidable no' };
+    return { message: 'synthesis hit its search bound, not a decidable no' };
   }
   if (reason === 'step-bound') { // GENERAL: stuck reason
-    return { message: 'step budget exhausted — not a decidable no' };
+    return { message: 'step budget exhausted, not a decidable no' };
   }
   if (reason === 'no-move' && stuck.noCutFree) { // GENERAL: stuck reason
     return {
-      message: 'analytic move space exhausted — no cut-free proof in the fragment; '
+      message: 'analytic move space exhausted: no cut-free proof in the fragment; '
         + 'a lemma or generalized induction hypothesis (a cut) is required',
     };
   }

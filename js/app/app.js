@@ -2930,8 +2930,8 @@ ${doc.documentElement.outerHTML}`;
     }
     for (const s of SETTINGS) {
       if (s.kind !== "bool" && s.off === void 0) continue;
-      out.push({ value: "no" + s.slug, label: s.title + " \u2014 off" });
-      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " \u2014 off" });
+      out.push({ value: "no" + s.slug, label: s.title + " (off)" });
+      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
     }
     return out;
   }
@@ -4498,7 +4498,11 @@ ${doc.documentElement.outerHTML}`;
       onEditor("fold.unfold-all", (e) => e.unfoldAll());
       CommandPalette.setProvider("files", () => {
         const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
-        return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({ title: f.name, detail: "Switch to file", run: () => switchToFile(f.id) }));
+        return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({
+          title: f.name.slice(f.name.lastIndexOf("/") + 1),
+          detail: ProjectSource.dirOf(f.name) || "",
+          run: () => switchToFile(f.id)
+        }));
       });
       CommandPalette.setProvider("symbols", () => {
         const ed = window.CurrentEditor;

@@ -806,9 +806,7 @@
   justify-content: space-between;
   gap: 0.75rem;
   width: 100%;
-  --row-pill-gutter-x: 0.65rem;
-  --row-pill-surface-pad: var(--menu-pad);
-  padding: 0.42rem 0.7rem 0.42rem var(--row-pill-gutter-x);
+  padding: 0.42rem 0.7rem 0.42rem 0.65rem;
   border-radius: var(--menu-item-radius);
   background: none;
   border: none;
@@ -821,41 +819,17 @@
   transition: color 120ms ease, background 120ms ease;
 }
 
-/* Overlay-row pill — same grow-from-center strip as .menu-item */
-.jar-dropdown__option::before {
-  content: '';
-  position: absolute;
-  left: var(--row-pill-inset-x);
-  top: 50%;
-  width: var(--row-pill-w);
-  height: 0.1rem;
-  transform: translateY(-50%);
-  opacity: 0;
-  border-radius: var(--row-pill-radius);
-  background: var(--accent-mid);
-  transition:
-    height 140ms var(--overlay-pop-ease-in),
-    opacity 15ms var(--overlay-pop-ease-in);
-  pointer-events: none;
-}
-
+/* The keyboard cursor (also moved by the pointer, see jar-dropdown.mjs). A
+   stronger wash than plain hover, never a strip. */
 .jar-dropdown__option.is-focused {
-  color: var(--menu-item-fg-hover);
-  background: var(--menu-item-hover-wash);
-}
-.jar-dropdown__option.is-focused::before {
-  opacity: var(--row-pill-opacity);
-  height: calc(100% - 2 * var(--row-pill-inset-y));
+  color: var(--search-row-active-fg);
+  background: var(--search-row-active-bg);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .jar-dropdown__option:hover {
     color: var(--menu-item-fg-hover);
     background: var(--menu-item-hover-wash);
-  }
-  .jar-dropdown__option:hover::before {
-    opacity: var(--row-pill-opacity);
-    height: calc(100% - 2 * var(--row-pill-inset-y));
   }
 }
 

@@ -1477,14 +1477,17 @@ try {
     await page.keyboard.up('Control');
     await new Promise((r) => setTimeout(r, 150));
   };
+  const exOpened = await readExAc();
+  check(exOpened.shown && exOpened.rows > 1 && exOpened.activeIndex === 0,
+    'vim ex: the top candidate starts highlighted — that is what Tab inserts',
+    JSON.stringify(exOpened));
   await exCtrl('n');
   const exN = await readExAc();
-  check(exN.shown && exN.activeIndex === 0, 'vim ex: C-n selects the first candidate',
+  check(exN.shown && exN.activeIndex === 1,
+    'vim ex: C-n walks forward from the highlighted row',
     JSON.stringify(exN));
-  await exCtrl('n');
-  check((await readExAc()).activeIndex === 1, 'vim ex: C-n again walks forward');
   await exCtrl('p');
-  check((await readExAc()).activeIndex === 0, 'vim ex: C-p walks back');
+  check((await readExAc()).activeIndex === 0, 'vim ex: C-p walks back to the top');
   const exBeforeArrow = await readExAc();
   await page.keyboard.press('ArrowDown');
   await new Promise((r) => setTimeout(r, 150));
@@ -1946,7 +1949,7 @@ try {
   await type('r');
   st = await readList();
   check(st.shown && st.rows > 1, `typing raises candidates (${st.rows})`);
-  check(st.activeIndex === -1, 'nothing is highlighted until you pick something', String(st.activeIndex));
+  check(st.activeIndex === 0, 'the top row starts highlighted — that is what Tab inserts', String(st.activeIndex));
   check(!st.unknown, 'and a partial name is not flagged as unknown');
 
   // An unknown name says so WHILE typing, not after Enter.
@@ -1963,10 +1966,8 @@ try {
 
   // ── arrows, scrolling, wrapping ─────────────────────────────────────────────
   console.log('\n[2] moving through the candidates');
-  await key('ArrowDown');
-  st = await readList();
-  check(st.activeIndex === 0, 'the first ArrowDown selects the top row', String(st.activeIndex));
-  check(st.activeVisible, 'and it is visible');
+  check(st.activeIndex === 0 && st.activeVisible, 'the highlighted row is the top one, and it is visible',
+    JSON.stringify(st));
 
   const total = st.rows;
   for (let i = 0; i < total - 1; i += 1) await key('ArrowDown');
@@ -1996,6 +1997,9 @@ try {
   await new Promise((r) => setTimeout(r, 200));
   await type('ru');
   const beforeTab = await readList();
+  check(beforeTab.activeIndex === 0 && beforeTab.activeText && beforeTab.value !== beforeTab.activeText,
+    'before Tab, the highlighted row is the completion Tab will write',
+    JSON.stringify(beforeTab));
   await key('Tab');
   const tab1 = await readList();
   await key('Tab');
@@ -2003,8 +2007,8 @@ try {
   await shiftKey('Tab');
   const tab3 = await readList();
   console.log('  tab:', JSON.stringify({ before: beforeTab.value, t1: tab1.value, t2: tab2.value, back: tab3.value }));
-  check(tab1.value !== beforeTab.value && tab1.value.startsWith('ru'),
-    'Tab puts the first candidate on the line', tab1.value);
+  check(tab1.value === beforeTab.activeText && tab1.value.startsWith('ru'),
+    'Tab writes the highlighted candidate onto the line', tab1.value);
   check(tab2.value !== tab1.value, 'a second Tab moves to the next one', tab2.value);
   check(tab3.value === tab1.value, 'Shift+Tab walks back', tab3.value);
   check(tab2.value.indexOf(tab1.value) !== 0 || tab1.value === tab2.value.slice(0, tab1.value.length),
@@ -2081,7 +2085,7 @@ try {
   await type('ru');
   st = await readList();
   check(st.shown && st.rows > 1, `typing on the ex line raises candidates (${st.rows})`);
-  check(st.activeIndex === -1, 'nothing preselected here either');
+  check(st.activeIndex === 0, 'the top ex candidate starts highlighted too', String(st.activeIndex));
 
   await key('Tab');
   const exTab = await readList();
@@ -2384,8 +2388,9 @@ try {
   // M-x names are how an Emacs user refers to a command, so they must match.
   await type('beljar-run');
   const mxNames = await readList();
-  check(mxNames.shown && mxNames.rows > 0,
-    `an M-x name finds its command (${mxNames.rows})`, JSON.stringify(mxNames));
+  check(mxNames.shown && mxNames.rows > 0 && mxNames.activeIndex === 0,
+    `an M-x name finds its command, with the top row highlighted (${mxNames.rows})`,
+    JSON.stringify(mxNames));
 
   // C-n / C-p walk the candidates, as they do everywhere in Emacs.
   await page.keyboard.down('Control');
@@ -2393,7 +2398,8 @@ try {
   await page.keyboard.up('Control');
   await new Promise((r) => setTimeout(r, 150));
   const afterCtrlN = await readList();
-  check(afterCtrlN.activeIndex === 0, 'C-n selects the first candidate', String(afterCtrlN.activeIndex));
+  check(afterCtrlN.activeIndex === (mxNames.rows > 1 ? 1 : 0),
+    'C-n walks forward from the highlighted row', String(afterCtrlN.activeIndex));
 
   // C-g aborts, as it does everywhere in Emacs.
   await page.keyboard.down('Control');
@@ -2439,17 +2445,23 @@ try {
   await page.evaluate(() => StatusStrip.openCommandLine(''));
   await new Promise((r) => setTimeout(r, 250));
   await type('e');
+  const beforeStep = await readList();
+  check(beforeStep.activeIndex === 0 && beforeStep.rows > 1,
+    'the top candidate starts highlighted', JSON.stringify(beforeStep));
   await ctrl('m');
   const step1 = await readList();
-  check(step1.activeIndex === 0, 'C-m selects the first candidate', String(step1.activeIndex));
+  check(step1.activeIndex === 1, 'C-m walks forward from that row', String(step1.activeIndex));
   await ctrl('m');
   const step2 = await readList();
-  check(step2.activeIndex === 1, 'and C-m again goes forward, exactly as C-n does',
+  check(step2.activeIndex === (beforeStep.rows > 2 ? 2 : 0),
+    'and C-m again goes forward, exactly as C-n does',
     String(step2.activeIndex));
   await ctrl('n');
-  check((await readList()).activeIndex === 2, 'C-n is the same key by another name');
+  const step3 = await readList();
+  const afterN = (step2.activeIndex + 1) % beforeStep.rows;
+  check(step3.activeIndex === afterN, 'C-n is the same key by another name', String(step3.activeIndex));
   await ctrl('p');
-  check((await readList()).activeIndex === 1, 'C-p goes back');
+  check((await readList()).activeIndex === step2.activeIndex, 'C-p goes back');
   // ⛔ And it must NOT submit: C-m walking the list and C-m running the line are
   // different features, and only one of them is what the table promised.
   check((await readList()).lineOpen, 'C-m does not run the line — it is not RET here');

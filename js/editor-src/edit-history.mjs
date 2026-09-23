@@ -779,7 +779,7 @@ export function createEditHistory(adapter) {
     try {
       result = fn();
     } catch (err) {
-      toast(`Edit failed — ${err?.message || 'unknown error'}`);
+      toast(`Edit failed: ${err?.message || 'unknown error'}`);
       return { ok: false, error: err };
     }
     const after = snapshotWorkspace(adapter);
@@ -993,7 +993,7 @@ export function createEditHistory(adapter) {
     if (!check.ok) {
       // Left only for the genuinely impossible: a file this step needs has been
       // deleted, or one it created is already back. Say which way we were going.
-      toast(`Can't ${direction} — a file this step needs is no longer where it was.`);
+      toast(`Can't ${direction}. A file this step needs is no longer where it was.`);
       return false;
     }
 
@@ -1003,7 +1003,7 @@ export function createEditHistory(adapter) {
       applyWorkspacePatch(entry, direction, rollback);
     } catch (err) {
       rollbackPatch(rollback);
-      toast(`Can't ${direction} — ${err?.message || 'the workspace would not take the change'}.`);
+      toast(`Can't ${direction}: ${err?.message || 'the workspace would not take the change'}.`);
       applying = false;
       return false;
     }

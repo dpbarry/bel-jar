@@ -58,7 +58,7 @@
   white-space: nowrap;
   cursor: pointer;
   transition:
-    width 280ms cubic-bezier(0.33, 1, 0.68, 1),
+    width 280ms var(--ease-out),
     border-color 180ms ease,
     background 180ms ease,
     box-shadow 180ms ease;
@@ -209,7 +209,7 @@
   box-shadow: var(--search-drop-shadow);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
-  animation: search-drop-in 0.14s ease;
+  animation: search-drop-in 140ms ease;
 }
 
 .hsearch-ac[hidden] {
@@ -232,7 +232,6 @@
   gap: 0.12rem;
   width: 100%;
   text-align: left;
-  --row-pill-gutter-x: var(--search-row-pad-x);
   padding: 0.34rem var(--search-row-pad-x);
   border: none;
   border-radius: 0;
@@ -240,19 +239,6 @@
   color: var(--base-highest);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
-}
-
-.hsearch-ac-item::before {
-  content: '';
-  position: absolute;
-  left: var(--row-pill-inset-x);
-  top: var(--row-pill-inset-y);
-  bottom: var(--row-pill-inset-y);
-  width: var(--row-pill-w);
-  border-radius: var(--row-pill-radius);
-  background: var(--search-row-active-accent);
-  opacity: 0;
-  pointer-events: none;
 }
 
 .hsearch-ac-head {
@@ -306,9 +292,6 @@
 .hsearch-ac-item.is-active {
   background: var(--search-row-active-bg);
   color: var(--search-row-active-fg);
-}
-.hsearch-ac-item.is-active::before {
-  opacity: var(--row-pill-opacity);
 }
 
 .hsearch-ac-empty {

@@ -100,8 +100,12 @@ function buildDiagToggle(pre) {
   btn.className = 'notif-item-more';
   btn.setAttribute('aria-expanded', 'false');
   btn.setAttribute('aria-controls', pre.id);
-  btn.innerHTML = svgMarkup('<path d="m9 6 6 6-6 6"/>', 'notif-item-chevron')
-    + '<span>Diagnostic</span>';
+  // Open, short chevron. The 24-grid mark reads as a breadcrumb separator
+  // once it shares a line with the stamp.
+  btn.innerHTML = '<svg class="notif-item-chevron" viewBox="0 0 8 10" fill="none"'
+    + ' stroke="currentColor" stroke-width="1.35" stroke-linecap="round"'
+    + ' stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M1.15 1.2 6.35 5 1.15 8.8"/></svg><span>Diagnostic</span>';
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     const show = pre.hidden;
@@ -113,25 +117,13 @@ function buildDiagToggle(pre) {
   return btn;
 }
 
-// One left-aligned run under the body: when, then where, then the raw output.
-// Nothing is pushed to the far edge, so a short foot has no gap to explain.
-function buildFoot(view) {
+// Disclosure and actions on the left rail; the stamp is the right edge of
+// the same line. A short foot is just the time, still on that edge.
+function buildFoot(view, toggleBtn) {
   const foot = document.createElement('div');
   foot.className = 'notif-item-foot';
 
-  if (view.unread) {
-    const dot = document.createElement('span');
-    dot.className = 'notif-item-dot';
-    dot.setAttribute('role', 'img');
-    dot.setAttribute('aria-label', 'Unread');
-    foot.appendChild(dot);
-  }
-
-  const stamp = document.createElement('span');
-  stamp.className = 'notif-item-stamp';
-  stamp.textContent = view.stamp;
-  bindTooltip(stamp, view.stampFull);
-  foot.appendChild(stamp);
+  if (toggleBtn) foot.appendChild(toggleBtn);
 
   if (view.target) {
     const jump = document.createElement('button');
@@ -152,6 +144,12 @@ function buildFoot(view) {
     tag.textContent = view.teaching ? 'teaching' : 'remote';
     foot.appendChild(tag);
   }
+
+  const stamp = document.createElement('span');
+  stamp.className = 'notif-item-stamp';
+  stamp.textContent = view.stamp;
+  bindTooltip(stamp, view.stampFull);
+  foot.appendChild(stamp);
 
   return foot;
 }
@@ -204,10 +202,16 @@ function buildItem(view) {
     toggleBtn = buildDiagToggle(pre);
   }
 
-  const foot = buildFoot(view);
-  if (toggleBtn) foot.appendChild(toggleBtn);
-  li.appendChild(foot);
+  li.appendChild(buildFoot(view, toggleBtn));
   if (pre) li.appendChild(pre);
+
+  if (view.unread) {
+    const dot = document.createElement('span');
+    dot.className = 'notif-item-dot';
+    dot.setAttribute('role', 'img');
+    dot.setAttribute('aria-label', 'Unread');
+    li.appendChild(dot);
+  }
 
   const dismissBtn = document.createElement('button');
   dismissBtn.type = 'button';

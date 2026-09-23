@@ -108,14 +108,28 @@
   --radius-sm: 3px;
   --radius-md: 6px;
 
-  --transition-fast: 75ms ease;
-  --transition: 150ms ease;
-  --transition-slow: 200ms ease;
+  /* Motion. ⛔ ONE curve. `--ease-out` is easeOutQuint, which the app had already
+     converged on by hand in 17 places before it was named; the sixteen other
+     one-off beziers that used to sit beside it were indistinguishable from it and
+     from each other, and a curve nobody can tell apart is a curve nobody is
+     choosing. Durations are the vocabulary actually in use, always in `ms` —
+     a duration written `0.12s` and one written `120ms` are the same number, and
+     mixed units are how a stylesheet stops reading as one hand. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* The one overshoot that is not a mistake: a chip landing, a panel popping in.
+     Reach for it only when the thing should feel like it has mass. */
+  --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --dur-fast: 120ms;
+
+  --transition-fast: 75ms var(--ease-out);
+  --transition: 150ms var(--ease-out);
 
   --overlay-pop-ms-in: 190ms;
   --overlay-pop-ms-out: 125ms;
   --overlay-pop-ease-in: cubic-bezier(0.175, 0.885, 0.32, 1.06);
-  --overlay-pop-ease-out: cubic-bezier(0.4, 0, 1, 1);
+  --overlay-pop-ease-out: var(--ease-in);
 
   --dialog-ms-in: var(--overlay-pop-ms-in);
   --dialog-ms-out: 132ms;
@@ -195,12 +209,14 @@
   --menu-separator: light-dark(hsla(220, 10%, 50%, 0.14), hsla(220, 10%, 70%, 0.1));
   --menu-shortcut-fg: var(--ui-fg-faint);
 
-  /* Notification inbox — cards inset on the menu surface. Each kind brands with
-     one accent; the wash/edge pair is how strongly a card wears it. */
-  --notif-card-bg: light-dark(hsl(220, 20%, 97.2%), hsl(222, 14%, 10.5%));
-  --notif-card-bg-hover: light-dark(hsl(220, 22%, 95.8%), hsl(222, 14%, 12.5%));
-  --notif-card-border: light-dark(hsla(220, 10%, 55%, 0.22), hsla(220, 12%, 64%, 0.16));
-  --notif-recess-bg: light-dark(hsla(220, 12%, 88%, 0.55), hsla(222, 18%, 5%, 0.5));
+  /* Notification inbox — a sheet set into the menu, not a control. The step
+     off --menu-bg is what makes the card; the edge is only there so the step
+     has a crisp limit. Kind tints live in notifications.css — stronger in
+     dark, where the same mix disappears into the sheet. */
+  --notif-card-bg: light-dark(hsl(220, 16%, 96.5%), hsl(222, 13%, 11.15%));
+  --notif-card-bg-hover: light-dark(hsl(220, 15%, 95%), hsl(222, 12%, 13.2%));
+  --notif-card-border: light-dark(hsla(220, 12%, 40%, 0.13), hsla(220, 12%, 82%, 0.11));
+  --notif-recess-bg: light-dark(hsla(220, 14%, 88%, 0.7), hsla(222, 18%, 5%, 0.34));
   --notif-kind-error: var(--repl-error);
   --notif-kind-warn: var(--repl-warn);
   --notif-kind-info: var(--accent-mid);
@@ -236,35 +252,38 @@
   --search-row-hover-bg: var(--menu-item-hover-wash);
   --search-row-hover-fg: var(--menu-item-fg-hover);
   --search-row-active-bg: color-mix(in srgb, var(--accent-lower) 65%, transparent);
-  --search-row-active-accent: var(--accent-mid);
   --search-row-active-fg: var(--accent-high);
 
-  /* Edge strip — flush-left ::before accent on rails, explorer, callouts.
-     Left corners may match the host radius; right corners stay square.
-     row: explorer / settings rail
-     callout: toasts / diag cards / REPL banners / hero lab strips
+  /* ⛔ THE STRIP GRAMMAR. A left-hand mark says "this BOX is a thing of a kind".
+     It never says "this ROW is the one you are on".
 
-     Pill — floating capsule inset from the wash, for interactive list rows:
-     menus / palettes / dropdowns / all autocomplete / search hits. */
+       CALLOUT (--edge-strip-w-callout, flush left, full height) — the only kind.
+       The colour carries the kind: toasts, diagnostic cards, REPL banners, the
+       hero lab strips, error and warning rows. It is a property of the box, so
+       it is always there. Never animated, never bound to the pointer.
+
+     ⛔ A ROW IN A LIST GETS NO MARK. Not on hover, not on keyboard focus, not on
+     selection. Menus, palettes, dropdowns, autocomplete, search hits: hover is a
+     wash (--menu-item-hover-wash), and the row you are on is a STRONGER wash
+     (--search-row-active-bg / --search-row-active-fg). That is the whole
+     vocabulary. A capsule beside a list row is the single loudest tell that a UI
+     was assembled rather than designed, and it is worse than useless here: these
+     lists move their "active" row with the POINTER (see the pointermove in
+     command-palette.mjs and the mouseenter in jar-dropdown.mjs), so the mark
+     followed the mouse and stopped meaning anything at all.
+
+     Edge-strip left corners may match the host radius; right corners stay square.
+     File-tree selection (explorer, library preview) still uses --edge-strip-w to
+     mark the OPEN file, which is durable state and never pointer-driven. */
   --edge-strip-w: 2.5px;
   --edge-strip-w-callout: 3px;
   --edge-strip-radius: var(--menu-item-radius);
-  --row-pill-w: 2.5px;
-  --row-pill-radius: 1.5px;
-  /* Pill sits centered in the left gutter (row pad), accounting for any
-     surface pad outside the row (e.g. --menu-pad on context menus). */
-  --row-pill-gutter-x: 0.65rem;
-  --row-pill-surface-pad: 0.1rem;
-  --row-pill-inset-x: calc((var(--row-pill-gutter-x) - var(--row-pill-surface-pad) - var(--row-pill-w)) / 2);
-  --row-pill-inset-y: 0.3rem;
-  --row-pill-opacity: 1;
   --search-row-pad-x: 0.9rem;
 
   /* Editor autocomplete — restrained; avoid saturated fill on single-item lists. */
   --editor-ac-radius: 2px;
   --editor-ac-row-bg: var(--menu-item-hover-wash);
   --editor-ac-row-fg: var(--ui-fg-strong);
-  --editor-ac-row-accent: color-mix(in srgb, var(--accent-mid) 55%, transparent);
 
   /* Toggle-on — pressed icon toggles (follow sync, etc.). No bg fill; hover keeps wash. */
   --toggle-on-fg: var(--accent-mid);

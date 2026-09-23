@@ -51,7 +51,7 @@
 
 .harpoon-panel-back {
   flex: 0 0 auto;
-  animation: harpoon-back-in 200ms cubic-bezier(0.33, 1, 0.38, 1);
+  animation: harpoon-back-in 200ms var(--ease-out);
 }
 .harpoon-panel-back[hidden] {
   display: none;

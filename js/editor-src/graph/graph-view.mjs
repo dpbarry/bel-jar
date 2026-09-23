@@ -1619,7 +1619,7 @@ function mountGraph3DRenderer(view, engine, ctx) {
         // Chrome's GPU process failing to bind a context), not a BelJar error.
         if (!win._webglWarned) {
           win._webglWarned = true;
-          graphToast('3D graph unavailable — WebGL is disabled in your browser. Showing the flat view.', 'warn');
+          graphToast('3D graph unavailable. WebGL is disabled in your browser, so this is the flat view.', 'warn');
         }
       }
     }

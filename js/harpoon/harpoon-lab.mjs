@@ -838,8 +838,8 @@ function E() { return global.BelEditor || null; }
       var sub = place.querySelector('.harpoon-lab-place-sub');
       if (sub && na && na.complete && commit.status !== 'checking') {
         sub.textContent = blocked
-          ? 'The hole changed — restart to insert'
-          : 'Insert into the file';
+          ? 'The hole changed. Restart to insert.'
+          : '';
       }
     }
   };
@@ -1782,7 +1782,6 @@ function E() { return global.BelEditor || null; }
       } else if (commit.status !== 'placed') {
         var place = buildPlaceStrip(self, {
           title: 'Place the proof',
-          sub: 'Insert into the file',
           onClick: function () { self.commit(); },
         });
         stageNode(place, 1);

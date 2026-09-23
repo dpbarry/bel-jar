@@ -657,9 +657,10 @@ state machine in `status-strip-line-ui.mjs`. Instrument: **`npm run probe:keymap
   could ever scroll into view. `paintActive()` toggles classes in place and calls
   `scrollRowIntoView`, which **subtracts the list's padding** — without that, wrapping to the top
   left 5px of scroll and the first row sat flush against the edge.
-- ⛔ **Nothing is preselected.** A highlight that Enter would ignore is a lie about what Enter
-  does. `chosen` records that the user picked a row; Enter puts that row **on the line** before
-  running, so choosing something and pressing Enter runs *that*.
+- ⛔ **The top row starts highlighted.** That is the candidate Tab writes onto the line, the
+  same way the editor's list opens on its first item. `chosen` records that the highlight was
+  *moved*; Enter puts that row **on the line** before running. A bare Enter still runs the text
+  that was typed.
 - **Tab is a wildmenu.** First Tab writes the top candidate, each further Tab the next, Shift+Tab
   back. The candidate set is frozen when cycling starts so the list cannot re-rank under the
   insertion.

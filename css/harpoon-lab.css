@@ -137,6 +137,11 @@
 .harpoon-lab-strip.tone-error .harpoon-lab-banner-title {
   color: color-mix(in srgb, var(--ide-status-error) 74%, var(--base-highest));
 }
+/* The place strip keeps its sub NODE so the blocked message can swap in and out,
+   but an empty one must not open a gap in the copy column. */
+.harpoon-lab-banner-sub:empty {
+  display: none;
+}
 .harpoon-lab-banner-sub {
   font-family: var(--sans);
   font-size: 0.66rem;
@@ -157,7 +162,7 @@ button.harpoon-lab-banner {
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 button.harpoon-lab-banner:disabled { cursor: not-allowed; }
 button.harpoon-lab-banner:focus-visible {
@@ -352,7 +357,7 @@ button.harpoon-lab-banner:focus-visible {
   font-weight: 700;
   color: var(--muted-high);
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 .harpoon-lab-picker-num { line-height: 1; }
 .harpoon-lab-picker-tab.is-active {
@@ -477,7 +482,7 @@ button.harpoon-lab-banner:focus-visible {
   background: var(--harpoon-card-bg);
   color: var(--base-higher);
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 .harpoon-lab-tac-verb { font-weight: 600; }
 .harpoon-lab-tac-arg {
@@ -542,7 +547,7 @@ button.harpoon-lab-banner:focus-visible {
   letter-spacing: 0.01em;
   cursor: pointer;
   overflow: hidden;
-  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.06s ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 60ms ease;
 }
 .harpoon-lab-auto-btn-glyph {
   display: inline-flex;
@@ -564,7 +569,7 @@ button.harpoon-lab-banner:focus-visible {
     background: linear-gradient(105deg, transparent 30%,
       color-mix(in srgb, var(--repl-holes-accent) 22%, transparent) 50%, transparent 70%);
     transform: translateX(-120%);
-    transition: transform 0.5s ease;
+    transition: transform 500ms ease;
   }
   .harpoon-lab-auto-btn:hover::after { transform: translateX(120%); }
 }
@@ -763,8 +768,8 @@ button.harpoon-lab-banner:focus-visible {
   opacity: 1;
   transform: none;
   transition:
-    filter var(--reel-dur, 320ms) var(--reel-ease, cubic-bezier(0.22, 1, 0.36, 1)),
-    opacity var(--reel-dur, 320ms) var(--reel-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    filter var(--reel-dur, 320ms) var(--reel-ease, var(--ease-out)),
+    opacity var(--reel-dur, 320ms) var(--reel-ease, var(--ease-out)),
     background-color 200ms ease,
     border-color 200ms ease,
     box-shadow 200ms ease;
@@ -829,7 +834,7 @@ button.harpoon-lab-banner:focus-visible {
     inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
     0 2px 0 color-mix(in srgb, var(--reel-accent) 40%, transparent),
     0 0 0 2px color-mix(in srgb, var(--reel-accent) 18%, transparent);
-  animation: harpoon-chip-selected 300ms cubic-bezier(0.34, 1.2, 0.64, 1) both;
+  animation: harpoon-chip-selected 300ms var(--ease-spring) both;
 }
 @keyframes harpoon-chip-selected {
   0% { transform: none; }
@@ -870,7 +875,7 @@ button.harpoon-lab-banner:focus-visible {
 }
 .harpoon-lab-auto-step-copy.is-reveal {
   transform-origin: left center;
-  animation: harpoon-commit-in 240ms cubic-bezier(0.32, 0.94, 0.6, 1) both;
+  animation: harpoon-commit-in 240ms var(--ease-out) both;
 }
 @keyframes harpoon-commit-in {
   0% { opacity: 0; transform: scale(1.07); }
@@ -1082,7 +1087,7 @@ button.harpoon-lab-banner:focus-visible {
 .harpoon-lab-auto-head.is-solved .harpoon-lab-banner-badge,
 .harpoon-lab-manual-head .harpoon-lab-banner-badge,
 .harpoon-lab-auto-commit.is-placed .harpoon-lab-banner-badge {
-  animation: harpoon-auto-pop 0.42s cubic-bezier(0.2, 1.2, 0.2, 1) both;
+  animation: harpoon-auto-pop 420ms var(--ease-spring) both;
   animation-delay: calc(var(--stage-index, 0) * 55ms + 60ms);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--harpoon-strip-accent) 18%, transparent);
 }
@@ -1138,7 +1143,7 @@ button.harpoon-lab-banner:focus-visible {
   grid-template-columns: var(--step-node-col) minmax(0, 1fr);
   column-gap: var(--step-col-gap);
   align-items: start;
-  animation: harpoon-step-in 0.32s ease both;
+  animation: harpoon-step-in 320ms ease both;
   animation-delay: calc(var(--i, 0) * 70ms + 60ms);
 }
 @keyframes harpoon-step-in {
@@ -1510,7 +1515,7 @@ button.harpoon-lab-banner:focus-visible {
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, var(--harpoon-card-bg-raised), var(--harpoon-card-bg));
   box-shadow: var(--harpoon-card-shadow), var(--harpoon-card-inner);
-  transition: border-color 0.12s ease;
+  transition: border-color 120ms ease;
 }
 .harpoon-panel-hole.is-unfocused {
   background: transparent;
@@ -1524,7 +1529,7 @@ button.harpoon-lab-banner:focus-visible {
   border-radius: inherit;
   background: color-mix(in srgb, var(--repl-holes-accent) 9%, transparent);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition: opacity 180ms ease;
   pointer-events: none;
 }
 .harpoon-panel-hole.is-unfocused::after {
@@ -1729,7 +1734,7 @@ button.harpoon-lab-banner:focus-visible {
   max-width: none;
   min-width: max-content;
   transform: translateX(0);
-  transition: transform 0.34s ease;
+  transition: transform 340ms ease;
 }
 .harpoon-hole-goal:not(.harpoon-hole-goal--tiered) .harpoon-hole-goal-track {
   white-space: nowrap;
@@ -1768,8 +1773,8 @@ button.harpoon-lab-banner:focus-visible {
     rgb(0 0 0 / var(--hole-edge-alpha-right)) 100%
   );
   transition:
-    --hole-edge-alpha-left 0.28s ease,
-    --hole-edge-alpha-right 0.28s ease;
+    --hole-edge-alpha-left 280ms ease,
+    --hole-edge-alpha-right 280ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
   .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-track {
@@ -1843,7 +1848,7 @@ button.harpoon-lab-banner:focus-visible {
 }
 .harpoon-hole-goal--tiered .hole-goal-status .harpoon-hole-recalc.beljar-tip-shimmer::before,
 .harpoon-panel-hole .harpoon-hole-recalc.beljar-tip-shimmer::before {
-  animation: inspector-spin 0.7s linear infinite;
+  animation: inspector-spin 700ms linear infinite;
   animation-delay: var(--shimmer-spin-delay, 0s);
 }
 
@@ -1924,8 +1929,8 @@ button.harpoon-lab-banner:focus-visible {
 }
 /* Stagger, so a stack of bars reads as one surface waking up rather than as
    several things flashing in lockstep. */
-.harpoon-skel--d1::after { animation-delay: 0.14s; }
-.harpoon-skel--d2::after { animation-delay: 0.28s; }
+.harpoon-skel--d1::after { animation-delay: 140ms; }
+.harpoon-skel--d2::after { animation-delay: 280ms; }
 .harpoon-skel--goal { height: 0.72rem; }
 .harpoon-skel--verb { height: 0.56rem; }
 .harpoon-skel--text { height: 0.5rem; }

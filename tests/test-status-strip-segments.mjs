@@ -56,6 +56,27 @@ expect(laid.indexOf('checker') > laid.indexOf('spacer'), 'the checker rides the 
 expect(buildSegments({ hasFile: false }, 'compact').filter((s) => s.spacer).length === 0,
   'a trailing spacer with nothing after it is dropped');
 
+// ── a second tab is a strip warning, leftmost of the right-hand group ────────
+expect(find(base, 'tab') === undefined, 'quiet when this is the only tab');
+const conflicted = { ...base, tabConflict: true, undoDepth: 2 };
+expect(find(conflicted, 'tab').text === 'Open in another tab', 'the chip names the condition');
+expect(find(conflicted, 'tab').title === 'Both tabs save to the same files. The later save overwrites the other.',
+  'the tooltip says what two tabs share, without a lecture');
+expect(find(conflicted, 'tab').tone === 'warning', 'and it is a warning');
+expect(find(conflicted, 'tab').action === undefined, 'it is a standing label, not a button');
+const conflictedKeys = keys(conflicted);
+expect(conflictedKeys.indexOf('spacer') < conflictedKeys.indexOf('tab'),
+  'on the right-hand side of the spacer');
+expect(conflictedKeys.indexOf('tab') < conflictedKeys.indexOf('history'),
+  'leftmost of the right group — before History');
+expect(keys({ tabConflict: true, hasFile: false }).indexOf('tab') >= 0,
+  'it speaks even with no file open: the conflict is the project, not the buffer');
+for (const level of DETAIL_LEVELS) {
+  const at = keys(conflicted, level);
+  expect(at.indexOf('tab') >= 0 && at.indexOf('tab') < at.indexOf('history'),
+    `${level} keeps the warning before History`);
+}
+
 // ── verbosity is the user's call, not a hidden cap ───────────────────────────
 const loud = { ...base, style: 'vim', mode: 'INSERT', selChars: 40, selLines: 3, inHole: true, goal: 'g', holes: 2, errors: 1, warnings: 1, symbols: 27, orca: true };
 expect(keys(loud, 'detailed').indexOf('symbols') >= 0, 'Detailed adds the declaration count');
@@ -218,6 +239,7 @@ const STATES = [
   { ...base, macro: { recording: true, stop: 'q' } },
   { ...base, undoDepth: 3 },
   { ...base, undoDepth: 3, redoDepth: 1 },
+  { ...base, tabConflict: true },
   { ...base, style: 'emacs', mark: true },
   ...['NORMAL', 'INSERT', 'VISUAL', 'V-LINE', 'V-BLOCK', 'REPLACE']
     .map((m) => ({ ...base, style: 'vim', mode: m })),

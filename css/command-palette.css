@@ -128,7 +128,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 1.25rem;
-  --row-pill-gutter-x: var(--search-row-pad-x);
   padding: 0.34rem var(--search-row-pad-x);
   border-radius: var(--search-row-radius);
   color: var(--menu-item-fg);
@@ -138,20 +137,6 @@
   cursor: pointer;
   white-space: nowrap;
   transition: color 120ms ease, background 120ms ease;
-}
-
-.jar-palette-item::before {
-  content: '';
-  position: absolute;
-  left: var(--row-pill-inset-x);
-  top: var(--row-pill-inset-y);
-  bottom: var(--row-pill-inset-y);
-  width: var(--row-pill-w);
-  opacity: 0;
-  border-radius: var(--row-pill-radius);
-  background: var(--search-row-active-accent);
-  pointer-events: none;
-  transition: opacity 120ms ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -164,9 +149,6 @@
 .jar-palette-item.is-active {
   color: var(--search-row-active-fg);
   background: var(--search-row-active-bg);
-}
-.jar-palette-item.is-active::before {
-  opacity: var(--row-pill-opacity);
 }
 
 .jar-palette-item-title {

@@ -33,7 +33,7 @@
   box-shadow: var(--search-drop-shadow);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
-  animation: search-drop-in 0.14s ease;
+  animation: search-drop-in 140ms ease;
   box-sizing: border-box;
   font-family: inherit;
   font-size: 0.78rem;

@@ -280,8 +280,8 @@
     }
     for (const s of SETTINGS) {
       if (s.kind !== "bool" && s.off === void 0) continue;
-      out.push({ value: "no" + s.slug, label: s.title + " \u2014 off" });
-      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " \u2014 off" });
+      out.push({ value: "no" + s.slug, label: s.title + " (off)" });
+      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
     }
     return out;
   }

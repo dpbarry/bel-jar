@@ -631,7 +631,7 @@ var CHEVRON_SVG =
     treePane.addEventListener('keydown', handleTreeKeydown);
 
     var dialogEl = global.Dialog.createDialog({
-      ariaLabel: 'Library preview — ' + scopeLabel,
+      ariaLabel: 'Library preview: ' + scopeLabel,
       content: shell,
       className: 'jar-library-preview-dialog',
       cardClass: 'jar-dialog__card jar-dialog__card--library-preview',

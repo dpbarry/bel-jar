@@ -64,7 +64,7 @@
   font-size: 0.62rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
   .inspector-xfile-check:hover {
@@ -91,7 +91,7 @@
   background: transparent;
   color: var(--muted-high);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 120ms ease, color 120ms ease;
 }
 .inspector-xfile-open svg {
   display: block;
@@ -117,7 +117,7 @@
   border-top-color: var(--accent-mid);
   border-radius: 50%;
   vertical-align: -0.1em;
-  animation: inspector-spin 0.7s linear infinite;
+  animation: inspector-spin 700ms linear infinite;
 }
 @keyframes inspector-spin {
   to { transform: rotate(360deg); }

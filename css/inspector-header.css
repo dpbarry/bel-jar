@@ -103,7 +103,7 @@
   box-shadow: var(--search-drop-shadow);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--base-mid) 50%, transparent) transparent;
-  animation: search-drop-in 0.14s ease;
+  animation: search-drop-in 140ms ease;
 }
 
 .inspector-search-ac[hidden] {
@@ -130,7 +130,6 @@
   gap: 0.5rem;
   width: 100%;
   text-align: left;
-  --row-pill-gutter-x: var(--search-row-pad-x);
   padding: 0.34rem var(--search-row-pad-x);
   border: none;
   border-radius: 0;
@@ -138,19 +137,6 @@
   color: var(--base-highest);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
-}
-
-.inspector-search-ac-item::before {
-  content: '';
-  position: absolute;
-  left: var(--row-pill-inset-x);
-  top: var(--row-pill-inset-y);
-  bottom: var(--row-pill-inset-y);
-  width: var(--row-pill-w);
-  border-radius: var(--row-pill-radius);
-  background: var(--search-row-active-accent);
-  opacity: 0;
-  pointer-events: none;
 }
 
 .inspector-search-ac-name {
@@ -190,9 +176,6 @@
 .inspector-search-ac-item.is-active {
   background: var(--search-row-active-bg);
   color: var(--search-row-active-fg);
-}
-.inspector-search-ac-item.is-active::before {
-  opacity: var(--row-pill-opacity);
 }
 
 .inspector-search-ac-empty {

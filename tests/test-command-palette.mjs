@@ -111,7 +111,7 @@ expect(Array.isArray(out[0]._match), 'matches carry highlight positions');
 out = rankItems(items, 'zzz');
 expect(out.length === 0, 'no matches → empty result');
 
-out = rankItems([{ title: 'main.bel', detail: 'Switch to file' }], 'switch');
+out = rankItems([{ title: 'main.bel', detail: 'examples/tapl' }], 'tapl');
 expect(out.length === 1 && out[0]._match === null, 'detail match included without title highlights');
 
 const many = Array.from({ length: 80 }, (_, i) => ({ title: 'cmd' + i }));

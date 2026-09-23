@@ -501,7 +501,7 @@
     color-mix(in srgb, var(--accent-lower) 55%, transparent),
     color-mix(in oklab, var(--accent-lowest) 62%, hsl(217 28% 12%))
   );
-  transition: background 0.9s ease;
+  transition: background 900ms ease;
 }
 
 @media (hover: hover) and (pointer: fine) {

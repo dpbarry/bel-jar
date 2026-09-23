@@ -976,6 +976,13 @@ html.jar-strip-owns-status .editor-topbar-controls {
   color: var(--ui-fg-muted);
 }
 
+/* A second tab on this project. Standing, so it is a colour — the same warning
+   the checker uses — not a chip you can dismiss while the other tab still writes. */
+.jar-strip__seg--tab.is-warning {
+  color: var(--ide-status-warning);
+  font-weight: 500;
+}
+
 /* Drawn, not typed: it takes the segment's colour through `currentColor`, so
    there is exactly one place that decides what this widget looks like. */
 .jar-strip__icon {

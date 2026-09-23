@@ -5330,9 +5330,13 @@
   var global3 = globalThis;
   var PING_KEY = "beljar-tab-ping";
   var PONG_KEY = "beljar-tab-pong";
+  var BYE_KEY = "beljar-tab-bye";
   var DEDUPE = "workspace.multi-tab";
   var nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var companions = /* @__PURE__ */ new Set();
   var warned = false;
+  var departed = false;
+  var announcedProject = "";
   function projectId() {
     const P3 = global3.Persist;
     if (!P3) return "";
@@ -5356,54 +5360,83 @@
       return null;
     }
   }
-  function warnOnce() {
-    if (warned) return;
-    warned = true;
-    const title = "This project is open in another tab";
-    const body = "Both tabs save to the same place, so whichever writes last wins and the other tab\u2019s edits are lost. Work in one tab at a time.";
-    if (global3.Notifications?.emit) {
-      global3.Notifications.emit({
-        kind: "warn",
-        category: "ops",
-        origin: "local",
-        title,
-        body,
-        source: DEDUPE,
-        dedupeKey: DEDUPE
-      });
-    }
-    if (global3.Toasts?.warn) {
-      global3.Toasts.warn(title, { duration: "long", closable: true });
+  function paint(on) {
+    warned = !!on;
+    if (global3.StatusStrip && typeof global3.StatusStrip.setTabConflict === "function") {
+      global3.StatusStrip.setTabConflict(warned);
     }
   }
+  function noteCompanion(id) {
+    if (!id || id === nonce) return;
+    companions.add(id);
+    if (!warned) paint(true);
+  }
+  function forgetCompanion(id) {
+    if (!id || !companions.delete(id)) return;
+    if (companions.size === 0) paint(false);
+  }
+  function forgetInboxRecord() {
+    const N = global3.Notifications;
+    if (!N || typeof N.list !== "function" || typeof N.dismiss !== "function") return;
+    const ids = N.list().filter((r) => r && r.dedupeKey === DEDUPE).map((r) => r.id);
+    for (const id of ids) N.dismiss(id);
+  }
   function onStorage(e) {
-    if (!e || !e.newValue) return;
+    if (departed || !e || !e.newValue) return;
     const mine = projectId();
+    if (!mine) return;
+    const msg = parse(e.newValue);
+    if (!msg || msg.p !== mine) return;
     if (e.key === PING_KEY) {
-      const msg = parse(e.newValue);
-      if (!msg || msg.n === nonce || msg.p !== mine) return;
-      write(PONG_KEY, { n: msg.n, p: mine, at: Date.now() });
-      warnOnce();
+      if (msg.n === nonce) return;
+      noteCompanion(msg.n);
+      write(PONG_KEY, { n: msg.n, from: nonce, p: mine, at: Date.now() });
       return;
     }
     if (e.key === PONG_KEY) {
-      const msg = parse(e.newValue);
-      if (!msg || msg.n !== nonce) return;
-      warnOnce();
+      if (msg.n !== nonce) return;
+      noteCompanion(msg.from);
+      return;
+    }
+    if (e.key === BYE_KEY) {
+      if (msg.n === nonce) return;
+      forgetCompanion(msg.n);
     }
   }
   function announce() {
+    if (departed) return;
     const p = projectId();
     if (!p) return;
+    announcedProject = p;
     write(PING_KEY, { n: nonce, p, at: Date.now() });
+  }
+  function depart() {
+    if (departed) return;
+    const p = projectId() || announcedProject;
+    if (!p) return;
+    departed = true;
+    write(BYE_KEY, { n: nonce, p, at: Date.now() });
+  }
+  function onPageShow(e) {
+    if (!e || !e.persisted) return;
+    departed = false;
+    companions.clear();
+    if (warned) paint(false);
+    announce();
   }
   function initTabGuard() {
     if (!global3.addEventListener || !global3.localStorage) return;
     global3.addEventListener("storage", onStorage);
-    if (global3.requestAnimationFrame) global3.requestAnimationFrame(() => announce());
-    else setTimeout(announce, 0);
+    global3.addEventListener("pagehide", () => depart());
+    global3.addEventListener("pageshow", onPageShow);
+    const afterBoot = () => {
+      forgetInboxRecord();
+      announce();
+    };
+    if (global3.requestAnimationFrame) global3.requestAnimationFrame(afterBoot);
+    else setTimeout(afterBoot, 0);
   }
-  global3.TabGuard = { init: initTabGuard, announce, _nonce: () => nonce };
+  global3.TabGuard = { init: initTabGuard, announce, depart, _nonce: () => nonce };
   initTabGuard();
 
   // js/commands/command-settings.mjs
@@ -5687,8 +5720,8 @@
     }
     for (const s of SETTINGS) {
       if (s.kind !== "bool" && s.off === void 0) continue;
-      out.push({ value: "no" + s.slug, label: s.title + " \u2014 off" });
-      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " \u2014 off" });
+      out.push({ value: "no" + s.slug, label: s.title + " (off)" });
+      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
     }
     return out;
   }
@@ -6961,12 +6994,13 @@
     "orca",
     "symbols",
     "spacer",
+    "tab",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
@@ -7151,6 +7185,21 @@
     },
     spacer() {
       return { key: "spacer", spacer: true };
+    },
+    /**
+     * A second tab has this project open. Standing condition, not an event —
+     * leftmost of the right-hand group, before History, so it is the first thing
+     * you read on that side. Not a notification: a notification can be cleared
+     * while the other tab is still writing.
+     */
+    tab(s) {
+      if (!s.tabConflict) return null;
+      return {
+        key: "tab",
+        text: "Open in another tab",
+        tone: "warning",
+        title: "Both tabs save to the same files. The later save overwrites the other."
+      };
     },
     /**
      * The way into the edit-history panel.
@@ -7796,7 +7845,7 @@
     lastToken = res.token || null;
     lastKnown = res.parsed && res.parsed.slot > 0 ? !!res.known : null;
     lastKind = lastKnown === false ? "command" : res.kind || "";
-    active = -1;
+    active = items.length ? 0 : -1;
     chosen = false;
     return res;
   }
@@ -8730,7 +8779,9 @@
     orcaDetail: "",
     undoDepth: 0,
     redoDepth: 0,
-    historyOpen: false
+    historyOpen: false,
+    /** A second tab has this project open. Standing, not a toast. */
+    tabConflict: false
   };
   var detail = "standard";
   var rendered = "";
@@ -8911,7 +8962,7 @@
       historyOpen: isOpen2()
     });
   }
-  function paint() {
+  function paint2() {
     frame = 0;
     if (!mounted) return;
     const host2 = ensureRoot();
@@ -8988,16 +9039,16 @@
         return false;
       }
       ownStatusDot(true);
-      paint();
+      paint2();
     }
     return openLine(prefix || "", () => {
       rendered = "";
-      paint();
+      paint2();
     }, opts);
   }
   function schedule() {
     if (!mounted || frame) return;
-    frame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(paint) : setTimeout(paint, 16);
+    frame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(paint2) : setTimeout(paint2, 16);
   }
   function setEditorState(next) {
     if (!next) return;
@@ -9023,7 +9074,8 @@
       "orcaDetail",
       "undoDepth",
       "redoDepth",
-      "historyOpen"
+      "historyOpen",
+      "tabConflict"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];
@@ -9103,7 +9155,7 @@
     seedFromEditor();
     refreshProofState();
     syncHistory();
-    paint();
+    paint2();
   }
   function refreshProofState() {
     const ed = global7.CurrentEditor;
@@ -9193,11 +9245,11 @@
           return false;
         }
         ownStatusDot(true);
-        paint();
+        paint2();
       }
       return openSearch(forward, () => {
         rendered = "";
-        paint();
+        paint2();
       });
     },
     isCommandLineOpen: isOpen,
@@ -9210,6 +9262,11 @@
     lastCommandLine: lastEntry,
     closeCommandLine: close,
     setOrca,
+    /**
+     * A second tab has this project open. The tab guard raises it when that tab
+     * answers, and lowers it when the tab says goodbye.
+     */
+    setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
     /**
      * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
      * never polls the history: a widget that counts something has to be told when
@@ -9815,7 +9872,7 @@
     if (!panel) return;
     var p = perf();
     if (!p) {
-      panel.textContent = "Perf missing \u2014 editor check-trace not loaded";
+      panel.textContent = "Perf missing: editor check-trace not loaded";
       return;
     }
     panel.textContent = formatBreakdown(p.lastEditBreakdown());
@@ -14477,7 +14534,7 @@
     empty.hidden = true;
     wrap.appendChild(empty);
     const total = countRows(groups);
-    const paint2 = (query2) => {
+    const paint3 = (query2) => {
       list3.textContent = "";
       let shown = 0;
       const quiet = !query2.trim();
@@ -14496,8 +14553,8 @@
       empty.hidden = shown > 0;
       count.textContent = query2.trim() ? shown + " of " + total : "";
     };
-    paint2("");
-    input2.addEventListener("input", () => paint2(input2.value));
+    paint3("");
+    input2.addEventListener("input", () => paint3(input2.value));
     return wrap;
   }
   function styleGroups() {
@@ -18989,7 +19046,7 @@
     }
     treePane.addEventListener("keydown", handleTreeKeydown);
     var dialogEl = global28.Dialog.createDialog({
-      ariaLabel: "Library preview \u2014 " + scopeLabel,
+      ariaLabel: "Library preview: " + scopeLabel,
       content: shell,
       className: "jar-library-preview-dialog",
       cardClass: "jar-dialog__card jar-dialog__card--library-preview",
@@ -20826,7 +20883,7 @@
     btn.className = "notif-item-more";
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("aria-controls", pre.id);
-    btn.innerHTML = svgMarkup('<path d="m9 6 6 6-6 6"/>', "notif-item-chevron") + "<span>Diagnostic</span>";
+    btn.innerHTML = '<svg class="notif-item-chevron" viewBox="0 0 8 10" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.15 1.2 6.35 5 1.15 8.8"/></svg><span>Diagnostic</span>';
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const show3 = pre.hidden;
@@ -20837,21 +20894,10 @@
     });
     return btn;
   }
-  function buildFoot(view) {
+  function buildFoot(view, toggleBtn) {
     const foot = document.createElement("div");
     foot.className = "notif-item-foot";
-    if (view.unread) {
-      const dot = document.createElement("span");
-      dot.className = "notif-item-dot";
-      dot.setAttribute("role", "img");
-      dot.setAttribute("aria-label", "Unread");
-      foot.appendChild(dot);
-    }
-    const stamp = document.createElement("span");
-    stamp.className = "notif-item-stamp";
-    stamp.textContent = view.stamp;
-    bindTooltip(stamp, view.stampFull);
-    foot.appendChild(stamp);
+    if (toggleBtn) foot.appendChild(toggleBtn);
     if (view.target) {
       const jump = document.createElement("button");
       jump.type = "button";
@@ -20870,6 +20916,11 @@
       tag.textContent = view.teaching ? "teaching" : "remote";
       foot.appendChild(tag);
     }
+    const stamp = document.createElement("span");
+    stamp.className = "notif-item-stamp";
+    stamp.textContent = view.stamp;
+    bindTooltip(stamp, view.stampFull);
+    foot.appendChild(stamp);
     return foot;
   }
   function buildItem(view) {
@@ -20913,10 +20964,15 @@
       pre.hidden = true;
       toggleBtn = buildDiagToggle(pre);
     }
-    const foot = buildFoot(view);
-    if (toggleBtn) foot.appendChild(toggleBtn);
-    li.appendChild(foot);
+    li.appendChild(buildFoot(view, toggleBtn));
     if (pre) li.appendChild(pre);
+    if (view.unread) {
+      const dot = document.createElement("span");
+      dot.className = "notif-item-dot";
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", "Unread");
+      li.appendChild(dot);
+    }
     const dismissBtn = document.createElement("button");
     dismissBtn.type = "button";
     dismissBtn.className = "icon-btn notif-item-dismiss";
@@ -24502,11 +24558,13 @@
     var lbl = document.createElement("span");
     lbl.className = "jar-dialog__setting-label";
     lbl.textContent = labelText;
-    var dsc = document.createElement("span");
-    dsc.className = "jar-dialog__setting-desc";
-    dsc.textContent = descText;
+    var dsc = descText ? document.createElement("span") : null;
+    if (dsc) {
+      dsc.className = "jar-dialog__setting-desc";
+      dsc.textContent = descText;
+    }
     main.appendChild(lbl);
-    main.appendChild(dsc);
+    if (dsc) main.appendChild(dsc);
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "jar-settings__action-btn";
@@ -25136,11 +25194,13 @@
     var lbl = document.createElement("span");
     lbl.className = "jar-dialog__setting-label";
     lbl.textContent = labelText;
-    var dsc = document.createElement("span");
-    dsc.className = "jar-dialog__setting-desc";
-    dsc.textContent = descText;
+    var dsc = descText ? document.createElement("span") : null;
+    if (dsc) {
+      dsc.className = "jar-dialog__setting-desc";
+      dsc.textContent = descText;
+    }
     m.appendChild(lbl);
-    m.appendChild(dsc);
+    if (dsc) m.appendChild(dsc);
     var toggle5 = Toggle.create({
       id: inputId,
       checked: readFn(),
@@ -25334,9 +25394,11 @@
       var lbl = document.createElement("span");
       lbl.className = "jar-dialog__setting-label";
       lbl.textContent = labelText;
-      var dsc = document.createElement("span");
-      dsc.className = "jar-dialog__setting-desc";
-      dsc.textContent = descText;
+      var dsc = descText ? document.createElement("span") : null;
+      if (dsc) {
+        dsc.className = "jar-dialog__setting-desc";
+        dsc.textContent = descText;
+      }
       if (infoSpec) {
         var labelRow = document.createElement("div");
         labelRow.className = "jar-dialog__setting-label-row";
@@ -25351,7 +25413,7 @@
       } else {
         m.appendChild(lbl);
       }
-      m.appendChild(dsc);
+      if (dsc) m.appendChild(dsc);
       var dd = Dropdown.create(options, readFn(), function(v) {
         writePersist(id, function(p) {
           writeFn(p, v);
@@ -25549,7 +25611,7 @@
       panelBodies.appearance,
       "theme",
       "Theme",
-      "Light or dark interface.",
+      "",
       [{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }],
       function() {
         return p0 && p0.readStoredTheme() === "light" ? "light" : "dark";
@@ -25565,7 +25627,7 @@
       panelBodies.appearance,
       "ui-font-size",
       "UI font size",
-      "Scales both text and content size of UI.",
+      "Scales the whole interface, not only text.",
       [
         { value: "sm", label: "Small" },
         { value: "md", label: "Default" },
@@ -25584,7 +25646,7 @@
       panelBodies.appearance,
       "ui-text-contrast",
       "Text contrast",
-      "Higher contrast makes UI text and controls more readable.",
+      "Also shifts identifiers, comments, and punctuation in the editor.",
       [
         { value: "low", label: "Low" },
         { value: "medium", label: "Default" },
@@ -25603,7 +25665,7 @@
       panelBodies.appearance,
       "motion-pref",
       "Motion",
-      "Respect OS reduced-motion, always reduce, or keep animations on.",
+      "Full keeps animations even when the OS asks to reduce them.",
       [
         { value: "system", label: "Follow system" },
         { value: "reduce", label: "Reduce" },
@@ -25621,7 +25683,7 @@
       panelBodies.appearance,
       "toast-duration",
       "Toast duration",
-      "How long ephemeral toasts stay visible.",
+      "How long a toast stays up before it fades.",
       [
         { value: "short", label: "Short" },
         { value: "normal", label: "Default" },
@@ -27450,7 +27512,7 @@
       }
       var gr = document.createElement("div");
       gr.className = "hpt-tip-note";
-      gr.textContent = (n.ghost.verdict === "guard" ? "skipped \u2014 " : "not taken \u2014 ") + (n.ghost.reason || "did not certify");
+      gr.textContent = (n.ghost.verdict === "guard" ? "skipped: " : "not taken: ") + (n.ghost.reason || "did not certify");
       frag.appendChild(gr);
       return frag;
     }
@@ -27921,7 +27983,7 @@
       if (opts.title != null) {
         copy.appendChild(el6("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
       }
-      if (opts.sub) {
+      if (opts.sub != null) {
         copy.appendChild(el6("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
       }
       root2.appendChild(copy);
@@ -27938,7 +28000,7 @@
       opts = opts || {};
       var blocked2 = !!opts.blocked;
       var title = opts.title || "Place the proof";
-      var sub = opts.sub || (blocked2 ? "The hole changed \u2014 restart to insert" : "Insert into the file");
+      var sub = opts.sub != null ? opts.sub : blocked2 ? "The hole changed. Restart to insert." : "";
       var extraCls = opts.extraCls || "";
       return buildBannerShell2({
         tag: "button",
@@ -27999,7 +28061,7 @@
         titleClass: "harpoon-lab-auto-title",
         subClass: "harpoon-lab-auto-sub",
         title: "Proof complete",
-        sub: "Ready to place in the file"
+        sub: ""
       });
       parent.appendChild(banner);
       return banner;
@@ -30918,7 +30980,7 @@
       if (complete2) {
         var proven = renderManualSolvedSummary2(box);
         if (proven) {
-          proven.querySelector(".harpoon-lab-auto-sub").textContent = (st.steps.length === 1 ? "1 step" : st.steps.length + " steps") + " \xB7 ready to place in the file";
+          proven.querySelector(".harpoon-lab-auto-sub").textContent = st.steps.length === 1 ? "1 step" : st.steps.length + " steps";
           stageNode2(proven, stage);
           stage += 1;
         }
@@ -31861,7 +31923,7 @@
       place3.classList.toggle("is-blocked", blocked2);
       var sub = place3.querySelector(".harpoon-lab-place-sub");
       if (sub && na && na.complete && commit.status !== "checking") {
-        sub.textContent = blocked2 ? "The hole changed \u2014 restart to insert" : "Insert into the file";
+        sub.textContent = blocked2 ? "The hole changed. Restart to insert." : "";
       }
     }
   };
@@ -32761,7 +32823,6 @@
       } else if (commit.status !== "placed") {
         var place3 = buildPlaceStrip(self, {
           title: "Place the proof",
-          sub: "Insert into the file",
           onClick: function() {
             self.commit();
           }
@@ -37550,7 +37611,11 @@ ${doc2.documentElement.outerHTML}`;
       onEditor("fold.unfold-all", (e) => e.unfoldAll());
       CommandPalette.setProvider("files", () => {
         const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
-        return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({ title: f.name, detail: "Switch to file", run: () => switchToFile(f.id) }));
+        return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({
+          title: f.name.slice(f.name.lastIndexOf("/") + 1),
+          detail: ProjectSource.dirOf(f.name) || "",
+          run: () => switchToFile(f.id)
+        }));
       });
       CommandPalette.setProvider("symbols", () => {
         const ed = window.CurrentEditor;

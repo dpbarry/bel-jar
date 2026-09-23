@@ -340,7 +340,7 @@ function chooseCrossFileTarget(view, at, targets) {
   g.Menu.openContext({
     x, y, side: 'bottom', align: 'start',
     items: [
-      { type: 'section', label: `${name} — ${targets.length} definitions` },
+      { type: 'section', label: `${name} · ${targets.length} definitions` },
       ...targets.map((t) => ({
         label: t.fileName.split('/').pop(),
         onSelect: () => openFileAtDef(t),

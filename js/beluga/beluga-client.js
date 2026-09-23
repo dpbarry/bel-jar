@@ -92,8 +92,22 @@
       + '&script=' + encodeURIComponent(mainScriptUrl(build));
   }
 
+  // Where the js_of_ocaml runtime is served from. Same origin by default, so
+  // local dev, file:// and the probe suite behave exactly as before. A
+  // deployment overrides it with BELJAR_RUNTIME_BASE: the fast build is ~31.5 MB,
+  // over Cloudflare's per-file static-asset cap, so both blobs live in R2.
+  //
+  // A cross-origin base needs CORS on the bucket. The worker reaches the runtime
+  // through importScripts, which is a cross-origin script load, and a missing
+  // Access-Control-Allow-Origin shows up as Beluga simply never booting.
+  function runtimeBase() {
+    var override = typeof globalThis !== 'undefined' ? globalThis.BELJAR_RUNTIME_BASE : null;
+    if (override) return new URL(String(override), document.baseURI).href;
+    return SCRIPT_SRC ? new URL('../../', SCRIPT_SRC).href : document.baseURI;
+  }
+
   function mainScriptUrl(build) {
-    var base = SCRIPT_SRC ? new URL('../../', SCRIPT_SRC).href : document.baseURI;
+    var base = runtimeBase();
     return build === 'fast'
       ? new URL('beluga_web.bc.dt.js', base).href
       : new URL('beluga_web.bc.js', base).href;

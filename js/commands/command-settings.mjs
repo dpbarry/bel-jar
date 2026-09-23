@@ -161,8 +161,8 @@ export function optionCandidates() {
   // `not-boolean`.
   for (const s of SETTINGS) {
     if (s.kind !== 'bool' && s.off === undefined) continue;
-    out.push({ value: 'no' + s.slug, label: s.title + ' — off' });
-    for (const a of s.aliases || []) out.push({ value: 'no' + a, label: s.title + ' — off' });
+    out.push({ value: 'no' + s.slug, label: s.title + ' (off)' });
+    for (const a of s.aliases || []) out.push({ value: 'no' + a, label: s.title + ' (off)' });
   }
   return out;
 }

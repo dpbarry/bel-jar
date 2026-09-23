@@ -211,11 +211,13 @@ const global = globalThis;
     var lbl = document.createElement('span');
     lbl.className = 'jar-dialog__setting-label';
     lbl.textContent = labelText;
-    var dsc = document.createElement('span');
-    dsc.className = 'jar-dialog__setting-desc';
-    dsc.textContent = descText;
+    var dsc = descText ? document.createElement('span') : null;
+    if (dsc) {
+      dsc.className = 'jar-dialog__setting-desc';
+      dsc.textContent = descText;
+    }
     main.appendChild(lbl);
-    main.appendChild(dsc);
+    if (dsc) main.appendChild(dsc);
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'jar-settings__action-btn';
@@ -957,11 +959,13 @@ const global = globalThis;
     var lbl = document.createElement('span');
     lbl.className = 'jar-dialog__setting-label';
     lbl.textContent = labelText;
-    var dsc = document.createElement('span');
-    dsc.className = 'jar-dialog__setting-desc';
-    dsc.textContent = descText;
+    var dsc = descText ? document.createElement('span') : null;
+    if (dsc) {
+      dsc.className = 'jar-dialog__setting-desc';
+      dsc.textContent = descText;
+    }
     m.appendChild(lbl);
-    m.appendChild(dsc);
+    if (dsc) m.appendChild(dsc);
     var toggle = Toggle.create({
       id: inputId,
       checked: readFn(),
@@ -1215,9 +1219,14 @@ const global = globalThis;
       var lbl = document.createElement('span');
       lbl.className = 'jar-dialog__setting-label';
       lbl.textContent = labelText;
-      var dsc = document.createElement('span');
-      dsc.className = 'jar-dialog__setting-desc';
-      dsc.textContent = descText;
+      // ⛔ A description earns its line by saying what the control cannot. When the
+      // options already say it, pass '' and the line is not drawn at all — without
+      // this, every row grows a subtitle to fill the slot, which is the tell.
+      var dsc = descText ? document.createElement('span') : null;
+      if (dsc) {
+        dsc.className = 'jar-dialog__setting-desc';
+        dsc.textContent = descText;
+      }
       if (infoSpec) {
         var labelRow = document.createElement('div');
         labelRow.className = 'jar-dialog__setting-label-row';
@@ -1232,7 +1241,7 @@ const global = globalThis;
       } else {
         m.appendChild(lbl);
       }
-      m.appendChild(dsc);
+      if (dsc) m.appendChild(dsc);
       var dd = Dropdown.create(options, readFn(), function (v) {
         writePersist(id, function (p) { writeFn(p, v); });
       });
@@ -1443,7 +1452,7 @@ const global = globalThis;
       panelBodies.appearance,
       'theme',
       'Theme',
-      'Light or dark interface.',
+      '',
       [{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }],
       function () {
         return p0 && p0.readStoredTheme() === 'light' ? 'light' : 'dark';
@@ -1460,7 +1469,7 @@ const global = globalThis;
       panelBodies.appearance,
       'ui-font-size',
       'UI font size',
-      'Scales both text and content size of UI.',
+      'Scales the whole interface, not only text.',
       [
         { value: 'sm', label: 'Small' },
         { value: 'md', label: 'Default' },
@@ -1478,7 +1487,7 @@ const global = globalThis;
       panelBodies.appearance,
       'ui-text-contrast',
       'Text contrast',
-      'Higher contrast makes UI text and controls more readable.',
+      'Also shifts identifiers, comments, and punctuation in the editor.',
       [
         { value: 'low', label: 'Low' },
         { value: 'medium', label: 'Default' },
@@ -1496,7 +1505,7 @@ const global = globalThis;
       panelBodies.appearance,
       'motion-pref',
       'Motion',
-      'Respect OS reduced-motion, always reduce, or keep animations on.',
+      'Full keeps animations even when the OS asks to reduce them.',
       [
         { value: 'system', label: 'Follow system' },
         { value: 'reduce', label: 'Reduce' },
@@ -1513,7 +1522,7 @@ const global = globalThis;
       panelBodies.appearance,
       'toast-duration',
       'Toast duration',
-      'How long ephemeral toasts stay visible.',
+      'How long a toast stays up before it fades.',
       [
         { value: 'short', label: 'Short' },
         { value: 'normal', label: 'Default' },

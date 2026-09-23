@@ -1,0 +1,26 @@
+# What the deployed site does NOT carry.
+#
+# The two Beluga runtime blobs are served from R2 (cdn.rpi-backend.com): the
+# fast build is ~31.5 MB, over Cloudflare's 25 MiB per-file static-asset cap,
+# and shipping both would mean ~56 MB of upload on every deploy. index.html
+# points at the bucket on deployed hosts; locally they load from this repo.
+beluga_web.bc.js
+beluga_web.bc.dt.js
+
+# Source, tooling and docs — none of it is fetched at runtime.
+node_modules
+Beluga-W
+_rebuild
+tests
+scripts
+scratch
+results
+docs
+.cursor
+.idea
+.claude
+*.md
+beluga.grammar
+eslint.config.mjs
+package.json
+package-lock.json

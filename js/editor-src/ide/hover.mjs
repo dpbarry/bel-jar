@@ -630,7 +630,7 @@ function makeHoleTooltip(range, name, goalAt) {
             if (Date.now() >= deadline) {
               clearInterval(poll);
               poll = null;
-              slot.textContent = 'No goal yet — this declaration is not checking.';
+              slot.textContent = 'No goal yet. This declaration is not checking.';
               slot.classList.remove('beljar-tip-goal-pending');
               body.classList.add('beljar-tip-body--empty');
             }

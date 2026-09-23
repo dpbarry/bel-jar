@@ -334,7 +334,7 @@
   border: 2px solid color-mix(in srgb, var(--muted-mid) 35%, transparent);
   border-top-color: var(--accent-mid);
   border-radius: 50%;
-  animation: library-preview-spin 0.7s linear infinite;
+  animation: library-preview-spin 700ms linear infinite;
 }
 
 @keyframes library-preview-spin {

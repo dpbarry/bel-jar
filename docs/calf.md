@@ -1,179 +1,351 @@
 # Calf — a paper-proximate proof language over Beluga
 
-**Status:** research kickoff. Nothing is built. This doc is the reasoning substrate for the agents
-who build it — it decides the things that must be decided once, and marks what is deliberately open.
-Working name **Calf** (a young beluga; see §Naming). Provisional file extension `.calf`.
-**Fall target is Calf only.** §10 holds related professor asks and a winter instructional-environment
-vision that Calf is the load-bearing ingredient of — recorded so they are not forgotten, and so
-fall work does not paint us into a corner. They are not this semester's work.
+**Status:** design. Nothing built. Target: a working language by **31 December 2026**.
 
-**One sentence:** a formal language whose surface is as close as a formal language can get to how
-PL-metatheory proofs are written on paper, elaborated deterministically into Beluga concrete syntax
-and checked step-by-step through BelJar's existing settlement/hole machinery — for students who
-should not have to learn Beluga first, and as a cheap, local-repair target for autoformalization.
+**One sentence.** Calf is a language for writing PL metatheory the way it is written on paper —
+drawn rules, named facts, paper contexts — elaborated into Beluga and checked by Beluga, so
+that the reader never learns an encoding and the kernel never trusts a shortcut.
 
-**Ancestry:** `Beluga-W/sasybel/` (2011–12, Marie-Andree B. Langlois) — a SASyLF-syntax → Beluga
-translator, dead since 2014. We revive the *idea*, not the code. The old tree is a specification
-asset: `transform.ml` catalogs the translation rules and (via its `"Sorry, not implemented yet"`
-branches) exactly where they get hard; `examples/translation.tex` is a differential oracle of
-expected Beluga outputs; the four `.sbel` examples are the seed corpus. SASyLF itself is alive
-(v1.5.2a2, 2025) — comparison system, portable corpus, and a differentiator: its automation
-(`by solve`) is deprecated, ours (Orca) is shipped.
+**Working name** Calf (a young beluga: what you write before you write Beluga). Extension
+`.calf`. **Sasybel** (2011–12, McGill) is the ancestor; cite it, do not ship under it.
+
+**How to read this file.** Part I is the language and is the point. Part II is how it reaches
+the kernel. Part III is delivery. Part IV is reference — settled facts, reading, assets, and
+stretch goals. §2 is the exhibit; reconstruct it yourself before proposing syntax.
+
+**How to change this file.** Record a constraint or an elaboration rule when it is *decided*.
+Do not record progress, arguments, or measurements-in-flight; §16 holds results, not lab notes.
 
 ---
 
-## 1. Research position (why this stands up in 2026)
+# PART I — THE LANGUAGE
 
-The 2026 autoformalization systems (Visored, Trellis, LeanMarathon) converged on one architecture:
-a **declarative, paper-like intermediate language** between prose and kernel, LLM above it,
-deterministic machinery below it. All of them target Lean and mainstream mathematics, and all of
-them spend most of their engineering recovering one property: **local repair** — a failed step must
-not corrupt distant work.
+## 1. What Calf is
 
-Calf's claim to novelty is threefold:
+Beluga is the kernel. Calf is how you write a proof when the encoding is not the point.
 
-1. **Domain.** Nobody has built this for PL metatheory / logical frameworks — the domain where
-   paper syntax diverges *most* from formal syntax (binding, contexts, substitution), and the one
-   domain where the underlying assistant (Beluga) makes those exact things free.
-2. **Locality by construction.** In Calf every proof line is a named fact with an explicit
-   justification — an independently checkable obligation. The property the Lean harnesses
-   engineer at great cost is a syntactic invariant here. BelJar's settlement + hole system already
-   checks fragments locally; Calf rides that.
-3. **Checked redundancy.** Paper proofs restate ("so E = z and V = z"). Calf admits restatements
-   and *verifies* them against the unifier instead of trusting or forbidding them. Redundancy
-   becomes signal — for readers, graders, and LLM-repair loops alike.
+The wall in a graduate metatheory course, and in a researcher's first week with any LF-based
+system, is not the mathematics. It is the distance between the proof you have and the proof
+the machine will accept. Calf's whole design is aimed at closing that distance without
+weakening the kernel — you write the paper proof, including its contexts, and an elaborator
+turns it into Beluga that Beluga checks.
 
-The paper's two legs, neither of which is an LLM:
-- **A rules-first elaborator.** The elaboration semantics is written as inference rules (the paper
-  figure); the implementation transcribes them. Every construct elaborates by a stated rule or
-  fails with a stated reason.
-- **A checkable oracle.** Every output is Beluga-checked; corpus pass-rates against the legacy
-  `.sbel` examples, `translation.tex`, and ported SASyLF course proofs are results independent of
-  any AI. The LLM study (prose → Calf, check + Orca repair) sits *on top* of the deterministic
-  artifact, never inside it.
+**The precedent, and the difference.** SASyLF (2008, still maintained) established that a
+paper-proximate surface for metatheory is possible and teachable. It has paper contexts
+(`Gamma ::= * | Gamma, x : tau`, `assumes Gamma`) and justifications named after what
+mathematicians say. Calf inherits that thesis wholesale.
 
-Venue ladder: LFMTP (natural home, Beluga community) → CPP/ITP tool track if corpus numbers are
-strong. Classroom claims are motivation, not evaluated claims — a user study needs a semester we
-do not have.
+What Calf changes is underneath. SASyLF's contexts are built into a bespoke checker, and its
+own retrospective (Boyland, *Evolution of SASyLF 2008–2021*) records the cost: a soundness
+violation in context pattern matching patched by a "relaxation" stopgap; one context
+nonterminal per judgment; derivations in different contexts that cannot be combined; contexts
+that cannot be first-class syntax; and substitution, weakening and exchange as *trusted
+built-ins of the implementation*.
 
----
+Beluga has principled answers to each — parameter variables that range over any position of a
+schema, context variables as ordinary meta-variables, schemas with alternation, and
+substitution as a checked object rather than an axiom. So:
 
-## 2. Decisions already made (do not relitigate without new evidence)
+> **Calf's surface must be at least as good as SASyLF's. Calf's kernel must be Beluga.**
 
-| Decision | Reasoning |
-|---|---|
-| **Emit Beluga concrete syntax (`.bel` text + source map), never Beluga internal AST** | The 2011 version died chasing `Syntax.Ext` churn. Text decouples us from Beluga internals entirely; the worker checker consumes text anyway; the security boundary (never touch Beluga OCaml) is upheld by construction. |
-| **Elaborator is pure `.mjs` in a new `js/editor-src/calf/` domain** | Codemap law: new modules in domain folders. A pure function `calfAst → {belText, sourceMap} \| {decline, span, reason}` needs no second toolchain; OCaml→js_of_ocaml would buy pattern matching at the cost of a build system. Functional paradigm, no classes, minimal comments. |
-| **Grammar via Lezer (`calf.grammar` beside `beluga.grammar`)** | Reuses the entire parser/highlight/lint substrate; `.calf` becomes a first-class BelJar file type for free. |
-| **Freeze the proof fragment to one syllabus** | The fragment that covers `sum.sbel` + `vsound.sbel` + `unique.sbel`: authored inductions, `case rule`, `by rule … on …`, induction hypothesis, inversion, case analysis, variable/assumption cases under a single context-schema pattern. Everything outside = honest decline. SASyLF parity is explicitly a non-goal. |
-| **Automation is elaboration-assistance, not language semantics** | `by search` (Orca) may *find* a justification, but the found justification is materialized back into the source as an explicit `by rule … on …`. The checked document is always fully declarative. This keeps determinism, reproducibility, and the graph projection intact. Analogical remainder (§10.1) is the same discipline applied to *copying a human-authored case*, not to search — out of the v1 language, in of the DAG shape. |
-| **LaTeX is an export, never an IR** | The working artifacts are Calf source and its Gentzen projection (§4 / §10.2). `bussproofs`/`ebproof` dump is a button. A `.tex` file is not a second source of truth and not a round-trip IR. |
-| **Same theorems (ideal), not a relex (§3.0)** | Finished Calf should prove what Beluga proves (metatheory), and vice versa. Fall v1 is a fragment — Calf→Beluga only. Never leak encoding to fake the equivalence by making the files look the same. |
+The work is entirely in between, and §2 is what that work consists of.
 
----
+## 2. The encoding tax — the exhibit
 
-## 3. The language
+Everything Calf has to do is visible in one eleven-line Beluga proof. Learn this section
+before anything else.
 
-### 3.0 Same theorems, not the same documents
+**On paper**, type uniqueness is:
 
-Two different questions. The ideal answers both "yes" for *theorems*, and "no" for *files*.
+> **Theorem.** If `Γ ⊢ E : T` and `Γ ⊢ E : T′` then `T = T′`.
+>
+> *Proof.* By induction on `D :: Γ ⊢ E : T`.
+>
+> *Case* `D` ends in **t-app**, with `D₁ :: Γ ⊢ E₁ : T₂ → T`. Inversion on `F` gives
+> `F₁ :: Γ ⊢ E₁ : T₂′ → T′`. By IH on `D₁, F₁`, `T₂ → T = T₂′ → T′`, so `T = T′`.
+>
+> *Case* `D` ends in **t-lam**, with `D₁ :: Γ, x:T₁ ⊢ E[x] : T₂`. Inversion on `F` gives `F₁`
+> likewise. By IH on `D₁, F₁` in the extended context, `T₂ = T₂′`, so `T = T′`.
+>
+> *Case* `D` is the assumption `x:T ∈ Γ`. Then `F` is that same assumption, so `T = T′`. ∎
 
-**Anything Calf-provable is Beluga-provable?** Yes, always, by construction: elaboration is
-sound. If Calf accepts it, the generated `.bel` checks, and that *is* the proof.
+**In Beluga** (`Beluga-W/examples/unique/unique-standard.bel`, verbatim):
 
-**Anything Beluga-provable is Calf-provable?** Ideal: **yes** — same metatheoretic theorems,
-some Calf proof of that spec, not a pretty-print of that particular `.bel`. Fall v1: **no** —
-the syllabus fragment (§2 / §3.4) cannot say mutual induction, lex measures, modules, or
-Beluga that isn't a proof of an LF judgment (plain computational `rec`s). Growing Calf toward
-the ideal is later language work, not a reason to relex.
+```beluga
+schema tctx = some [t:tp] block (x:term, _t:hastype x t);
 
-"Same theorems" is not a relex. A relex is 1–1 documents (`|Calf| ≈ |Beluga|` everywhere, leak
-`..` so the student still writes the encoding). Equi-expressive languages routinely have
-different succinctness: Calf shorter on paper contexts and binding; Beluga shorter once you
-are fluent in boxes and write a compact `rec` with implicit arguments; Calf *longer* where it
-makes you name facts and restate (`so V = suc E2`) what Beluga's unifier stays silent about.
-That inequality *is* the reconception.
+rec unique : (g:tctx)[g |- hastype E T[]] -> [g |- hastype E T'[]]
+             ->  [ |- eq T T'] =
+/ total d (unique _ _ _ _ d) /
+fn d => fn f => case d of
+| [g |- t_app D1 D2] =>
+  let [g |- t_app F1 F2] = f in
+  let [ |- refl]  = unique  [g |- D1] [g |- F1] in
+    [ |- refl]
 
-What we still refuse as a bijection of files: elaboration picks one canonical `.bel`; many
-Calf documents (unicode, noise words, extra `so`) may share it. Inverse via the source map,
-not by parsing Beluga. If pretty-printing `.bel` recovered `.calf`, we would not need a
-source map — that would mean we had built a relex.
+| [g |- t_lam \x.\u. D] =>
+  let [g |- t_lam \x.\u. F] = f in
+  let [ |- refl] = unique [g, b:block x:term, u:hastype x _ |- D[.., b.1, b.2]]
+                          [g, b |- F[.., b.1, b.2]] in
+   [ |- refl]
 
-Length is not universally equivalent, and not even universally Calf-shorter:
+| [g |- #q.2] =>
+  let [g |- #r.2] = f  in
+    [ |- refl]
+;
+```
 
-| Calf carries, Beluga inserts (Calf *compresses*) | Calf carries, Beluga erases (Calf *expands*) |
-|---|---|
-| Paper contexts `Γ ⊢ E : T` — elaborator adds context variables, schemas, identity substitutions `..`, boxes | Named facts and citation edges — Beluga inlines them into `case`/`rec` terms |
-| `lam x. E[x]` — elaborator adds HOAS | Drawn inference rules as first-class syntax |
-| `if D : E ⇓ V then V value` — elaborator adds `mlam` / computational Π | Checked restatements (`so V = suc E2`) — Beluga's unifier already knows; Calf makes the student say it |
+Same theorem. Everything in the second that is not in the first is **encoding tax**:
 
-The left column is why Calf is paper-proximate. The right column is why it is a *reconception*,
-not a pretty-printer: Calf's extra structure (the named DAG) is exactly what Gentzen projections,
-analogical remainder, and local repair talk about, and exactly what Beluga compilation destroys.
-That is also why those features sit on Calf, not on the pane.
+| # | Tax | Paper says | Beluga demands |
+|---|---|---|---|
+| T1 | **Schema** | `Γ ::= · \| Γ, x:T` | one paper entry becomes a *block* of two LF entries under a `some` telescope |
+| T2 | **Context variable** | nothing; `Γ` is just there | `(g:tctx)`, and every judgment boxed `[g \|- …]` |
+| T3 | **Strengthening** | "T is a type" | `T[]` — an assertion that `T` does not mention `g`. Omit it and the theorem stops type-checking. The most alien token in the file, and invisible on paper |
+| T4 | **Block extension + reassociating substitution** | "by IH on `D₁`" | `[g, b:block x:term, u:hastype x _ \|- D[.., b.1, b.2]]` |
+| T5 | **Parameter-variable case** | "`D` is the assumption `x:T ∈ Γ`" | a case `[g \|- #q.2]`; matching `f` at `[g \|- #r.2]` forces `#r = #q` by unification, and *that* is the argument. No rule named "uniqueness of assumptions" exists |
+| T6 | **Inversion as a `let` on a box pattern** | "inversion on `F`" | `let [g \|- t_app F1 F2] = f in`; non-uniqueness surfaces much later as a coverage failure |
+| T7 | **Equality is an LF type; restatement is load-bearing** | "so `T = T′`" | declare `eq` with `refl`, then `let [ \|- refl] = … in` — the match is what propagates the equation |
+| T8 | **Totality** | "by induction on `D`" | `/ total d (unique _ _ _ _ d) /` |
+| T9 | **Implicit-argument arity** | nothing | you must know how many implicits reconstruction inserted |
 
-**Agent test:** if a proposed Calf construct exists only to match a Beluga construct 1–1, decline
-it. If a proposed elaboration leaks a Beluga token onto the Calf surface to keep the files the
-same length or the same shape, that is the 2011 failure mode — decline it.
+Nine taxes, eleven lines. Every one is a place where Calf either does the work or leaks.
 
-### 3.1 Design principles
-
-1. **Every fact has a name; every justification cites names.** No "by the previous step", no
-   positional references. This is simultaneously the pedagogy (students must know *what* they are
-   using), the graph invariant (§4), and the LLM-repair invariant (edges are explicit).
-2. **Declared notation, not fixed notation.** Judgments are mixfix templates declared by example
-   (`judgment typing: Γ ⊢ exp : tp`). The language has almost no reserved mathematical symbols;
-   the author's paper notation *is* the notation. Unicode and ASCII forms are interchangeable
-   (`⊢`/`|-`, `⇓`/`=>>`, `·`/`empty`) and the editor normalizes.
-3. **Inference rules are drawn, not encoded.** Premises above a `----- name` line, conclusion
-   below — the single most recognizable artifact of the field, kept verbatim from SASyLF/Sasybel.
-4. **Binding looks like paper.** `lam x. E[x]` — declared variables + the `E[x]` "x may occur in
-   E" convention. The elaborator produces the HOAS encoding; the student never sees it unless they
-   open the pane (§5).
-5. **Contexts look like paper.** `Γ ⊢ E : T` and `Γ, x:exp ⊢ …` directly. The elaborator inserts
-   Beluga's context variables, schemas, and identity substitutions (`..`). This is the largest
-   single naturalness win over 2011 Sasybel (which leaked `| g |- M ..` to the surface) and the
-   hardest elaboration problem (§6). It is worth it.
-6. **Restatement is checked.** `where E = z` / `so V = suc E2` clauses inside cases are verified
-   against what unification actually established. Never trusted, never forbidden.
-7. **Noise words are a closed set.** Optional connectives (`so`, `hence`, `then`, `we have`) are
-   fixed lexer-level aliases that carry zero semantics. Prose feel at zero ambiguity cost. The set
-   is closed and documented; agents must never grow it ad hoc.
-
-### 3.2 Shape, by worked example
-
-Value soundness (compare `Beluga-W/sasybel/examples/vsound.sbel` for the 2011 ancestor):
+**How the ancestor failed, precisely.** Not at translation — Sasybel's output for these theorems
+was near-identical to hand-written Beluga. At the surface. This is a *user-written* line from
+`unique.sbel`:
 
 ```
-%{ Value soundness }%
+eq_ref by induction hypothesis on | g, b:(x:exp) x oft _ |- D .. b.1 b.2 ,
+                                   | g,b |- F .. b.1 b.2 ;
+```
 
+T4 typed by the author. T2 and T3 likewise, in the theorem statement. **Never write `..`, a
+box, `mlam`, `#p`, a block, or a schema on the Calf surface to make elaboration easier.** If
+you are about to, the elaborator is under-built, and that is the work.
+
+**What it should look like** (illustrative, not frozen):
+
+```calf
+context Γ ::= · | Γ, x:T
+
+theorem unique:
+  if D : Γ ⊢ E : T and F : Γ ⊢ E : T' then T = T'.
+
+proof by induction on D.
+
+  case rule t-lam, with D1 : Γ, x:T1 ⊢ E[x] : T2:
+    F1 : Γ, x:T1 ⊢ E[x] : T2'   by inversion on F.
+    T2 = T2'                    by induction hypothesis on D1, F1.
+    so T = T'.
+
+  case assumption x:T in Γ:
+    T = T'                      by uniqueness of assumptions on D, F.
+qed
+```
+
+On paper, `Γ, x:T` binds one variable and records one assumption. The two-component block is
+T1 and is the elaborator's business. SASyLF already writes `Gamma ::= * | Gamma, x : tau`, so:
+**if Calf's context surface is worse than SASyLF's, stop and fix that before writing another
+elaboration rule.**
+
+## 3. The core
+
+⚠️ **Proposal, awaiting ratification.** This is a design for the language's basis, not a settled
+fact. Semantics are decided deliberately (§13); accept or reject each unification below on its
+merits, then record the outcome here and delete this notice.
+
+Calf should be **small**. A language with six forms that compose is more expressive than one
+with twenty that overlap, and it is the only kind that can be made reliable. What follows is a
+proposed basis: two concepts, four declaration notations, two proof forms, one justification.
+
+### 3.1 Two concepts
+
+**Concept A — an inductively defined family.** Paper draws four different-looking things.
+Underneath they are one, and the elaborator should have one path:
+
+| Surface notation | Paper form | Declares |
+|---|---|---|
+| `syntax` BNF | `exp ::= z \| suc exp \| lam x. exp[x]` | a family with no indices |
+| `judgment` + drawn rules | `Γ ⊢ e : T`, then rules | a family indexed by other families; **the rules are its constructors** |
+| `context` BNF | `Γ ::= · \| Γ, x:T` | a family of lists whose entries bind |
+| `theorem` + proof | `if … then …` | a family whose constructors are **derived** rather than postulated |
+
+Four notations because paper has four; one semantics because mathematics has one.
+
+**Concept B — a proof is facts and splits.**
+
+- **fact** — `name : statement   by justification.`
+- **split** — a scrutinee and a list of branches, each branch a proof.
+
+That is the entire proof language. Everything else is a justification, not a construct.
+
+### 3.2 Four unifications
+
+Each removes a construct *and* states something true.
+
+**U1 — rules and theorems are cited identically.** `by R on f₁, …` where `R` may be postulated
+or proved. Whether a fact was granted or earned is not the citer's business; this is Gentzen's
+admissibility, and it is the thing the ancestor could never do at all (§16).
+*The restriction that keeps it sound:* **citing** is uniform, **splitting** is not. A split needs
+a known covering, so only postulated families may be split. One sentence, checkable, no special
+cases.
+
+**U2 — the induction hypothesis is a name, not a keyword.** `proof by induction on D` binds `IH`
+to the theorem-as-rule. Then `by IH on …` is ordinary citation under U1, and the smaller-than
+check is a side condition attached to that one name rather than a second justification form.
+
+**U3 — case analysis, inversion and impossibility are one construct with a branch count.**
+*n* branches is case analysis; exactly 1 is inversion, with uniqueness checked; 0 is
+impossibility. The kernel agrees — Harpoon's `split` / `invert` / `impossible` are the same
+tactic with a count check — which is confirmation from the other side rather than a coincidence.
+
+**U4 — `by assumption` is citation of the context's entry rule.** A context declaration derives
+a rule for its own entries, so the variable case stops being a special form and T5 becomes an
+elaboration problem rather than a surface one.
+
+**Result:** the justification grammar is **one production**, `by <name> on <facts>`, plus `?` for
+a hole and an unjustified restatement (`so …`). The restatement is the single place where the
+surface asks the kernel to agree rather than telling it how, and that is exactly where T7 says
+it belongs.
+
+### 3.3 What falls out with no new syntax
+
+The test of a basis is what it gives you for nothing:
+
+- **Schema alternation** — a context BNF with more than one extension alternative.
+  `Γ ::= · \| Γ, x:T \| Γ, a:tp` is precisely Beluga's `+`. This is the construct SASyLF could
+  not reach; here it is a second line in a grammar.
+- **Using an existential or a disjunction** — a split.
+- **Lexicographic measure** — a tuple in `by induction on`.
+- **Several contexts in one theorem** — several context declarations, mentioned in statements.
+
+Four Complete-tier rows arriving free is the evidence that the basis is right. If a charter row
+needs a new construct, suspect the basis before adding one.
+
+### 3.4 What must be added deliberately
+
+Two things, and only two, for the rest of the Complete tier:
+
+- **statement grammar** — `and`, `or`, `there is … such that`
+- **declaration grouping** — `theorem A … and B …` for mutual induction
+
+### 3.5 Crystal rules
+
+Invariants that may never be traded for convenience. A violation is a language bug regardless
+of what it buys.
+
+| | |
+|---|---|
+| **R1** | **Notation is uniquely decodable, checked at declaration.** Ambiguity is an error where the notation was declared, never a parse failure where it was used |
+| **R2** | **One meaning per form.** No construct behaves differently depending on where it appears |
+| **R3** | **Total elaboration.** Every well-formed document elaborates completely or declines at a precise span. No partial emission, ever |
+| **R4** | **Deterministic.** Same source, same bytes out |
+| **R5** | **No construct ships that cannot be stated as an elaboration rule on a board** |
+| **R6** | **No kernel vocabulary on the surface** — §2 |
+| **R7** | **Every form has a paper counterpart.** If you cannot point at where a mathematician writes it, it does not belong in Calf |
+
+R7 is the one that keeps the language small. Most feature creep in proof languages is the kernel
+asking for accommodation; R7 is the standing refusal.
+
+## 4. Expressive charter
+
+Calf is meant to be a **language**, not a demonstration. This table defines "fully formed"; §14
+stages it, and §3 is the basis it must all fit into.
+
+**Core** — without these there is no language. **Complete** — without these it is a teaching
+toy. **Stretch** — designed for, deferred without apology (§19).
+
+### Systems
+
+| Construct | Tier | Note |
+|---|---|---|
+| Object syntax with binding (`lam x. e[x]`) | Core | HOAS is elaboration; never surface |
+| Judgments with author notation (mixfix `Γ ⊢ e : T`, `e ⇓ v`) | Core | R1 governs |
+| Inference rules, drawn | Core | the constructors of a judgment |
+| A single context per judgment | Core | T1–T5 |
+| **Several contexts in one theorem** | Complete | free under §3.3 |
+| **Schema alternation** | Complete | free under §3.3 |
+| Context relations / subsumption between schemas | Complete | needed for anything comparing two contexts |
+| Parametric systems, modules | Stretch | |
+
+### Statements
+
+| Construct | Tier | Note |
+|---|---|---|
+| `if … then …` over judgments | Core | |
+| Equality of objects | Core | |
+| Conjunction, disjunction | Complete | statement grammar (§3.4) |
+| Existentials | Complete | statement grammar; *using* one is a split |
+| Impossibility / contradiction | Complete | a split with zero branches (U3) |
+
+### Arguments
+
+| Construct | Tier | Note |
+|---|---|---|
+| Induction on a derivation | Core | the authored measure; T8 |
+| Case analysis on a derivation | Core | U3 |
+| Inversion, uniqueness checked | Core | U3 with one branch; ambiguity is a Calf error |
+| Citing a proved theorem or lemma | **Core** | U1. ⛔ the ancestor never implemented this at all (§16) |
+| Checked restatement (`so`, `where`) | Core | T7 |
+| Holes | Core | route to Harpoon |
+| Structural induction on a term | Complete | as distinct from on a derivation |
+| **Mutual induction** | Complete | declaration grouping (§3.4) |
+| **Lexicographic / measure induction** | Complete | free under §3.3 |
+| Substitution, weakening, exchange | Core-by-inheritance | free from Beluga; Calf must not make the author invoke by name what the kernel already has |
+| **Logical relations** | Stretch | Beluga's flagship results live here. A Calf that cannot reach them is a teaching language — an acceptable first destination, but choose it deliberately |
+| Coinduction | Stretch | |
+
+**Two rules about this table.** A construct enters the language only with an elaboration rule
+you can write on a board (R5) — never to fill a cell. Anything outside the delivered tier is an
+**honest decline at a precise span** (R3), never a partial translation.
+
+The one permanent exclusion: **no `%beluga { … }` escape hatch.** It destroys "errors speak
+Calf" the moment anyone uses it, and it violates R6. The pane is the escape hatch — read-only,
+always visible, and you leave by taking the generated file, not by embedding the kernel in your
+source.
+
+## 5. Principles
+
+Structure is §3; this is feel.
+
+1. **Cite by name.** Facts you will use have names; justifications cite them. No "by the
+   previous line." The names make the DAG explicit (§7) and are what the elaborator reasons over.
+2. **The author's notation is the notation.** Mixfix templates, e.g. `judgment oft: Γ ⊢ exp : tp`.
+   Unicode and ASCII are spellings of one token (`⊢`/`|-`, `⇓`/`=>>`, `·`/`empty`); the editor
+   may normalise. R1 keeps this from becoming ambiguity.
+3. **Rules are drawn** — premises, bar, name, conclusion.
+4. **Binding looks like paper** — `lam x. exp[x]`. HOAS is elaboration.
+5. **Contexts look like paper** — `Γ ⊢ E : T`, `Γ, x:T ⊢ …`. The expensive principle, and the
+   one that justifies the project.
+6. **Restatement is checked** — `so` / `where` are neither trusted nor forbidden. T7 shows they
+   are load-bearing: a restatement is how an equation reaches the unifier.
+7. **Noise words** (`so`, `hence`, `then`, `we have`) are a closed, documented alias set with no
+   semantics. Do not grow it ad hoc.
+8. **Uneven succinctness is correct.** Calf is shorter on contexts and binding (T1–T5, T8, T9
+   vanish) and *longer* where it names facts and restates what the unifier already knew. That
+   extra structure is the Gentzen view and local repair, and Beluga compilation destroys it.
+   **If pretty-printing the `.bel` recovered the `.calf`, we would have built a relex.**
+
+Completions speak Calf: the rules of *this* judgment, the constructors not yet covered. If
+finishing a Calf line requires reading generated Beluga, the surface has failed.
+
+## 6. Surface
+
+Not frozen. Record each choice here when it is made.
+
+```calf
 syntax
   exp ::= z | suc exp | lam x. exp[x] | app exp exp
   variables x y : exp
 
 judgment value: exp value
 
-  ---------- val-z
-  z value
-
   E value
   ---------------- val-suc
   (suc E) value
 
-  ------------------------ val-lam
-  (lam x. E[x]) value
-
 judgment eval: exp ⇓ exp
-
-  ------- ev-z
-  z ⇓ z
-
-  E1 ⇓ E2
-  ------------------- ev-suc
-  (suc E1) ⇓ (suc E2)
-
-  ------------------------------------ ev-lam
-  (lam x. E[x]) ⇓ (lam x. E[x])
 
   D1 : E1 ⇓ (lam x. E[x])
   D2 : E2 ⇓ V2
@@ -186,323 +358,498 @@ theorem value-soundness:
 
 proof by induction on D.
 
-  case rule ev-z, so V = z:
-    V value                     by rule val-z.
-
   case rule ev-suc, with I : E1 ⇓ E2, so V = suc E2:
-    H : E2 value                by induction hypothesis on I.
-    V value                     by rule val-suc on H.
-
-  case rule ev-lam:
-    V value                     by rule val-lam.
-
-  case rule ev-app, with D3 : E[V2] ⇓ V:
-    V value                     by induction hypothesis on D3.
+    H : E2 value   by induction hypothesis on I.
+    V value        by rule val-suc on H.
 
 qed
 ```
 
-With contexts (type uniqueness, ancestor `unique.sbel`):
+**Justification spellings.** All of these are the one production of §3.2. The words are for the
+reader; the elaborator sees `by <name> on <facts>`.
 
-```
-context Γ ::= · | Γ, x:exp with x oft T
-
-theorem unique:
-  if D : Γ ⊢ E oft T and F : Γ ⊢ E oft T' then T = T'.
-
-proof by induction on D.
-
-  case rule t-app, with D1 : Γ ⊢ E1 oft (T2 → T), D2 : Γ ⊢ E2 oft T2:
-    F1 : Γ ⊢ E1 oft (T2' → T')  by inversion on F.
-    EQ : (T2 → T) = (T2' → T')  by induction hypothesis on D1, F1.
-    T = T'                       by rule eq-arr-out on EQ.
-
-  case assumption x, with (x oft T) in Γ:
-    T = T'                       by uniqueness of assumptions on F.
-
-  ...
-qed
-```
-
-### 3.3 The justification forms (closed set — this *is* the proof calculus)
-
-| Form | Meaning | Beluga target |
+| Spelling | Cites | Note |
 |---|---|---|
-| `by rule R on F1, …` | apply inference rule `R` | constructor application |
-| `by induction hypothesis on F, …` | recursive call; structurally smaller **checked at elaboration**, not just deferred to Beluga | `rec` self-call |
-| `by inversion on F` | the derivation of `F` has exactly one applicable rule; extract its premises | single-branch `case` (coverage certifies uniqueness) |
-| `by case analysis on F: case … end` | split on a derivation or term | `case` |
-| `by theorem T on F1, …` / `by lemma T on …` | cite a proved theorem | call to its `rec` |
-| `by assumption` / `by uniqueness of assumptions on F` | variable/context cases | parameter-variable branch |
-| `by search` | **assistant, not semantics**: Orca finds a justification, which is written back into the source as one of the forms above | n/a (materialized) |
-| `?` | open hole; hands off to Harpoon | Beluga hole |
+| `by rule R on …` | a postulated rule | |
+| `by theorem T` / `by lemma T` | a derived rule | U1: same production |
+| `by induction hypothesis on …` | the name bound by `by induction on` | U2 |
+| `by assumption` / `by uniqueness of assumptions` | the context's entry rule | U4 |
+| `by inversion on F` | — | U3, one branch, uniqueness checked |
+| `by case analysis on F` | — | U3, *n* branches |
+| `so …` / `where …` | — | restatement; the kernel agrees rather than being told |
+| `?` | — | hole, routed to Harpoon |
 
-A later assistant form, **not in v1**, is analogical remainder (`and similarly` / `by analogy with
-case C` — §10.1). It is omitted from this table on purpose: agents must not grow the calculus to
-accommodate it. The v1 shape (named facts, cited justifications, exhaustive `case rule`) is what
-makes it *possible* later.
+`by search` is an **editor action**, not a justification: search proposes, and the buffer gains
+an ordinary Calf line.
 
-Statement shape: `if <named facts> then <fact>.` elaborates to Π over the premise derivations
-producing the conclusion derivation — prose-shaped where SASyLF's `forall … exists …` is
-quantifier-shaped. Accept `forall`/`exists` as aliases for corpus portability.
+**Open surface questions**, to resolve here when the corpus forces them: the statement
+terminator; freshness of names bound by a split; how membership in `Γ` is spelled; whether
+unused conclusions must be named; how a judgment declares which contexts it lives over.
 
-Open surface decisions (record the resolution in this doc when made): statement terminator
-(`.` reads as prose but must be disambiguated from binder dots and projections — recommendation:
-`.` with `;` accepted); whether `case rule` premise names may be rebound or must be fresh;
-concrete `context`-membership syntax for the variable case.
+## 7. One proof, three readings
 
-### 3.4 What is deliberately out (v1)
+Named facts plus cited justifications **are** a derivation DAG, at parse time, with no analysis.
+That object — not any file — is what a Calf document is.
 
-Mutual induction; lexicographic measures; user-declared totality; substitution *lemmas* (Beluga
-gives substitution for free — the tutorial must teach that, not the language re-prove it);
-schema alternation beyond one declared context per judgment family; modules; any Beluga passthrough
-escape hatch (a `%beluga { … }` block would be convenient and would instantly destroy the
-"errors speak Calf" guarantee — declined).
+Which means there are not three artifacts to keep in sync. There is **one derivation and three
+readings of it**, and they sit at three different levels of abstraction:
 
----
+| Reading | Shows | Status |
+|---|---|---|
+| **Tree** | what the proof *is* — the derivation, with `Γ` drawn at every node | editable; patches Calf through node identity |
+| **Calf** | what you *say* — the argument, named and cited | **canonical** |
+| **Beluga** | what it *costs* — the encoding | generated, read-only |
 
-## 4. The graph invariant (natural-deduction output)
+**The third reading is the unusual one.** Every proof assistant shows a goal panel: a snapshot
+of the state at a cursor, which vanishes when you move. None of them shows the *encoding* as a
+persistent view. That is the reading that makes §2 legible — put the cursor on a Calf line and
+see the tokens it cost, itemised, in the place they appear.
 
-**The proof source is a serialized DAG; every graph view is a projection, never an analysis.**
+**Truth order.** Calf is canonical. The tree projects from it and may patch it back. Beluga is
+output and never an input. A *labeled* tree — names and a justification on every bar — is a pure
+inverse of the projection, so missing labels are parse errors, not prompts; an unlabeled tree is
+a different problem and not part of this.
 
-Because facts are named and justifications cite names (§3.1.1), each theorem is a DAG the moment it
-parses: nodes = facts (with their judgment instances), edges = justification citations, clusters =
-cases, subclusters = nested case analyses. Rule declarations are themselves ND figures. Two
-renderings, both pure projections living in `js/editor-src/graph/` beside the existing dependency
-graph views:
+**Requirements this places on everything else.** Stable node identity (fact name + span), so a
+tree workspace is a projection rather than a rewrite. A source map at value granularity (§9), so
+the Beluga reading can be pointed at line by line. And no feature may introduce an anonymous
+dependency — that is why assistants materialise ordinary Calf instead of acting invisibly.
 
-- **Derivation tree** — per fact, premises above the inference line, the classic ND tree. Finite
-  and exact because inversion/IH edges are explicit.
-- **Proof flow** — per theorem, the case-structured DAG; the view a grader scans.
+# PART II — THE MACHINE
 
-Design consequence to uphold everywhere: **no language feature may introduce an anonymous
-dependency** (this is the second reason `by search` materializes its result — a search-justified
-step would otherwise be a node with invisible in-edges). Provenance triple-links every node:
-`.calf` span ↔ generated `.bel` span ↔ graph node. Node identity is stable (fact name + span):
-projections must not be render-only dead ends, because a later workspace may write back through
-them (§10.2).
+## 8. Elaboration target
 
----
+**Decided: emit `rec` / `case` / `let`.** Not Harpoon `proof` scripts. Three reasons:
 
-## 5. BelJar integration (main feature, not a lab)
+1. BelJar's grammar consumes a proof script **opaquely** (`beluga.grammar:489–493, 641`), so
+   holes, hover, rename and search cannot reach inside one. The pane would show text our own
+   IDE cannot model.
+2. A saved proof script re-prints the entire meta-context at every block — noisier than the
+   `rec`, which defeats the three-column test (§15).
+3. `suffices by` accepts only `lemma`, so a backward step from an induction hypothesis has no
+   proof-script form.
 
-| Surface | Behaviour |
+Proof scripts remain a named fallback, not the trunk.
+
+**Constraints on elaboration**, not to be relitigated without new evidence:
+
+| Constraint | Why |
 |---|---|
-| **File type** | `.calf` first-class: explorer, persist, library. Lezer grammar → highlighting, folds, structure. |
-| **Live checking** | Same worker-only pipeline as `.bel` (checker NEVER on main thread). Elaborate → check fragments → map diagnostics back through the source map. Calf diagnostics join `project-diagnostics` as a layer; the status strip and lint gutter work unmodified. |
-| **The pane** (the teaching feature) | Side-by-side `.calf` ↔ generated `.bel`, read-only, hover-linked both directions via the source map. The student *graduates* to Beluga by watching the encoding of their own proof. This is the product argument for Calf living in BelJar rather than as a batch tool. |
-| **Holes** | `?` steps surface in the Harpoon holes panel; Orca proposals come back as materialized Calf justifications (never as Beluga text pasted into a Calf buffer). |
-| **Graph** | §4 views, reachable from the editor context menu like existing graph views. |
-| **Seam** | Editor-side owns everything semantic (`js/editor-src/calf/`); shell touches only file-type registration and panes, via the existing window-global seam. No new globals without a system noun. |
-| **Tests** | `tests/test-calf-*.mjs` in the one `npm test` suite; a probe (`probe:calf`) only when the pane exists. Differential fixtures: the three legacy `.sbel` proofs, expected `.bel` from `translation.tex`, ported SASyLF examples. |
+| **Emit `.bel` text plus a source map**, never Beluga's internal AST | the ancestor died on `Syntax.Ext` churn; the worker consumes text; text survives upstream versions |
+| **Sound elaboration** | if Calf accepts, the emitted Beluga *is* the proof |
+| **Elaboration is a pure function of the source** | assistants that search still *write* Calf |
+| **No invented totality** | ⛔ measures come only from an authored `by induction on`; an invented `/ total /` can disable Beluga's termination check |
+| **Never leak the encoding** | §2 |
+
+## 9. Diagnostics and the source map
+
+**Beluga localises well.** Measured on a 110-line proof: locally-detectable faults are reported
+on the exact offending line, at every depth. The fear that a whole `rec` yields one useless
+diagnostic was wrong.
+
+**The real problem is attribution.** A fault whose contradiction appears later is reported at
+the *first line that uses* the bad binding — four or five lines downstream of the cause, in
+both a twelve-line and a 110-line proof, so the gap is set by proof structure rather than
+length.
+
+Two mechanisms, in order:
+
+1. **Calf-side pre-check — primary.** Unknown rule name, cited fact that does not exist,
+   ambiguous inversion, induction hypothesis applied to something not smaller, and **every
+   coverage question** (Calf knows the judgment's rules, so it knows the covering) are decidable
+   in the elaborator before Beluga runs. These must never reach the kernel. This is where the
+   good messages live.
+2. **The DAG recovers the cause.** When Beluga complains at a *use*, Calf already knows from
+   its citation graph which earlier line established the value complained about. "Line 12 fails
+   because the fact `F1` it cites was established wrongly at line 5" is a graph lookup, not a
+   search.
+
+⛔ **Ascribing every step buys nothing.** Bare and ascribed encodings produce byte-identical
+diagnostics at every depth. Closed question.
+
+**The source map** has three consumers: diagnostics (Beluga `File "input.bel", line L, column C`
+→ `.calf` span, parsed by `js/editor-src/ide/beluga-diag.mjs`), the teaching pane, and the DAG.
+It must relate the **value** Beluga names in a complaint to the Calf fact that established it —
+not merely a line to a line. Build it at that granularity from day one; retrofitting a source
+map is how a project like this acquires an unfixable diagnostics story.
+
+**Errors speak Calf.** Judgment, rule and fact names, `.calf` spans. Silent Beluga passthrough
+is a defect. "We cannot explain this Beluga error yet" plus the raw text is acceptable;
+pretending the error was on the generated line is not.
+
+## 10. Where this lives — BelJar
+
+BelJar is a browser IDE for Beluga: two runtimes glued by `window` globals. Atlas:
+[`CODEMAP.md`](CODEMAP.md). Rules: [`AGENTS.md`](../AGENTS.md) and [`.cursor/rules/`](../.cursor/rules/).
+
+- **BelJar is the intelligence.** Do not wrap Beluga's printer. Cascade: our model → surgical
+  Beluga → honest decline.
+- **Never edit** `Beluga-W/src/core/` or other semantic OCaml without explicit permission; the
+  shim is `Beluga-W/src/web/beluga_web.ml`, rebuilt by `_rebuild/rebuild.ps1`.
+- **The checker is always on a web worker** (`js/beluga/`).
+- **New modules go in a domain folder** — for Calf, `js/editor-src/calf/`. Root `editor-src/*`
+  is substrate and barrel only.
+- **Seam:** the shell does not ES-import `editor-src`. Glue is system-noun globals and
+  `beljar:*` events.
+- **Grammar:** a sibling Lezer `calf.grammar` beside [`beluga.grammar`](../beluga.grammar) is
+  the default; a second parser stack needs a reason.
+- **Checking, holes, search:** [`semantic-engine.mjs`](../js/editor-src/semantic/semantic-engine.mjs),
+  [`settlement.mjs`](../js/editor-src/semantic/settlement.mjs),
+  [`hole-goal-system.mjs`](../js/editor-src/prover/hole-goal-system.mjs), [`ORCA.md`](ORCA.md),
+  [`HARPOON.md`](HARPOON.md).
+- **Tests:** one `npm test`; `tests/test-calf-*.mjs` inside it. Editor changes need
+  `node scripts/build-editor.mjs`.
+- **`Beluga-W/` is a git submodule** — workspace search tools often miss it.
+
+Calf is a **main-line file type**, not a lab: explorer, persistence, library, live elaborate →
+worker → `project-diagnostics`, gutter and status strip intact. The `.calf` / `.bel` pane,
+linked by the source map, is the teaching feature and the reason this is not a CLI.
+
+Calf **incubates here** and must be fully usable here. Do not extract it to its own repo while
+it still needs the pane, the holes and settlement.
+
+## 11. The correspondence surface
+
+Beside the language itself, this is the deliverable: the three readings of §7, **interlinked and
+live**. BelJar is the battle-tested substrate and stays that way; this surface is the
+experimental part, and it is fine for it to be fresh.
+
+### 11.1 What interlinked means
+
+One object, three readings, one selection:
+
+- Put the cursor on a Calf line → its node highlights in the tree, and the region it emitted
+  highlights in the Beluga reading.
+- Click a tree node → the cursor moves to the Calf line that made it.
+- Select a Beluga region → it resolves back to the Calf fact that caused it, never to a line
+  number.
+
+**Editing.** Calf is canonical and always editable. The tree is editable and patches Calf back
+through node identity (§7). The Beluga reading is never an input.
+
+The tree is where you work when you do not yet know what to write; the text is where you work
+when you do. Neither is a mode.
+
+### 11.2 It must work on broken proofs
+
+The single requirement that decides whether any of this gets used, and the one such surfaces
+usually fail: **you need the tree most when you are stuck.** A view that renders only complete,
+checking proofs is a demo.
+
+- A proof with holes has a tree, with open goals drawn as open leaves.
+- A proof that does not fully parse has the tree of the part that did.
+- The Beluga reading shows the last successful elaboration, **marked stale**, rather than going
+  blank on every keystroke.
+
+**This does not weaken R3.** R3 governs what is handed to the kernel: complete, or declined at a
+span, never partial. The *display* may show the last good elaboration with a staleness marker.
+Emission and display are different acts, and keeping that distinction explicit is what stops the
+live pane and R3 from appearing to contradict each other.
+
+### 11.3 What it needs from the rest of the system
+
+- **Stable node identity** (§7) — fact name plus span, surviving edits. Without it the tree is a
+  render-only dead end and the correspondence cannot be bidirectional.
+- **A value-granular source map** (§9) — relating the value Beluga names to the Calf fact that
+  established it, not a line to a line.
+- **Incremental elaboration** — re-elaborating a whole document per keystroke will not hold up.
+  Reuse BelJar's existing incremental discipline rather than inventing a second one.
+- **The checker stays on the worker.** Nothing about a live three-way view changes that.
+
+### 11.4 Tutorials, not coursework
+
+⛔ **No assignment surface, no grading, no submission, no LMS.** BelJar as it stands is what a
+class needs; coursework is not a requirement on this project and must not become one.
+
+The educative angle worth anything is **tutorials**: a guided `.calf` document for a student who
+wants to try it, walking the same three readings — what a derivation is, how you write the
+argument, what it costs in the kernel. Optional, additive, and written as content rather than
+built as a product surface.
+
+### 11.5 The pitch
+
+> **Every proof assistant shows you a goal. This shows you the proof.**
+>
+> One derivation, three readings: the tree is what it is, the text is what you say, the Beluga
+> is what it costs. Work in whichever one you think in — they are the same object.
+
+## 12. The hard problems
+
+1. **Contexts and strengthening** (T1–T5). A first cut without T4 and T5 is a warm-up, not a
+   language.
+2. **Attributing a fault to its cause** (§9). The residual work is correspondence, not search:
+   the source map must relate values, not lines.
+3. **Error translation**, per class, not one regex.
+4. **Inversion uniqueness**, checked in the elaborator rather than deferred to a coverage
+   failure.
+5. **Termination.** Only authored measures. Elaborator-side smallness checking is a *better
+   error*, never a replacement for Beluga's check.
+6. **Several contexts in one theorem** — the Complete-tier item where SASyLF's design gave out,
+   and the clearest evidence that the kernel choice was the right one.
 
 ---
 
-## 6. Where the actual difficulty lives (budget honestly)
+# PART III — THE ROUTE
 
-1. **Contexts and strengthening.** Surfacing `Γ, x:exp ⊢ …` while inferring Beluga's schemas,
-   context variables, identity substitutions, and block cases is *the* semantic content of the
-   work. The `unique.sbel` lambda case in `translation.tex` shows the target's hairiness. If one
-   thing slips, it is this — the fallback is shipping the closed-terms fragment with context
-   support characterized as future work, which is weaker but coherent.
-2. **Error translation.** Beluga reconstruction errors arrive in Beluga vocabulary against
-   generated text. Mapping spans back is mechanical (source map); mapping *vocabulary* back
-   (unification failure → "these two facts claim different types for E") is a design task per
-   error class. Build the taxonomy early; measure coverage of it (this is a paper table).
-3. **Inversion.** `by inversion` must verify uniqueness of the applicable rule, not assume it —
-   elaborate to a case and let coverage certify, but report failure as "inversion is ambiguous
-   here: rules R1, R2 both apply", in Calf vocabulary.
-4. **Termination.** Measures come only from authored `by induction on` — never invented
-   (⛔ standing trap: an invented `/ total /` can disable Beluga's termination check and bank a
-   circular proof). The IH-smallness check at elaboration time is a feature (better error,
-   earlier), not a replacement for Beluga's check.
+## 13. Working requirements
 
----
+**Semantics are designed, never discovered.** Every elaboration rule is stated as a rule — on a
+board, in this file — *before* it is implemented. A construct that cannot be stated that way
+does not ship, however green the tests are. A rule that exists only inside the elaborator's
+code is not a rule; it is an accident that happens to pass.
 
-## 7. Mandates (for every agent on this thread)
-
-⛔ **Rules-first.** No elaboration behaviour that is not written as a rule in the spec section of
-this doc (grow §3.3 / a future §spec as you build). If you cannot state the rule, you may not
-implement the case. AI-written code is fine; AI-shaped semantics is not.
-
-⛔ **Honest decline.** Unsupported construct → doc untouched, precise error at a precise span,
-teaching-backlog note. Never partial output, never whole-file blanking, never "best effort".
-(Instance of the architecture cascade: our model first, surgical Beluga second, decline third.)
-
-⛔ **Errors speak Calf.** No Beluga vocabulary, no generated-code spans, no raw checker text in
-any user-facing message. If you cannot translate an error class yet, decline it explicitly
-("Beluga rejected this step for a reason Calf cannot yet explain — [raw]" is acceptable; silent
-passthrough is not).
-
-⛔ **Determinism.** Elaboration is a pure function; `by search` materializes; graphs are
-projections. Same input, same output, byte-for-byte, forever.
-
-⛔ **Try hard, then stop honestly.** No stub cases that accept and mistranslate. A branch you
-cannot finish is a decline with a named limitation, a failing-by-design test, and a line in this
-doc — that list *is* the future-work section of the paper.
-
-⛔ **The seam and the boundary hold.** Never touch Beluga OCaml. Checker on the worker. Shell/editor
-cross-talk via globals only. Scratch stays out of the product tree.
-
----
-
-## 8. Naming
-
-The product noun should join the family (Beluga → BelJar, Harpoon, Orca) and say what it is.
-
-| Candidate | Case |
+| Designed deliberately, written down here | Built to serve it |
 |---|---|
-| **Calf** ⭐ | A young beluga: the language you speak before you speak Beluga, and the one that grows into it (the pane in §5 is literally the growing-up mechanism). Short, unclaimed in the space, `.calf` reads well. |
-| **Song** | Belugas are "sea canaries"; their song = the natural language of the whale. Poetic, slightly opaque. |
-| **Vellum** | Proofs on paper. Evocative, off-family. |
-| Sasybel (keep) | Heritage/citation continuity, but ties us to SASyLF-the-system and to a dead codebase's reputation. Cite it; don't wear it. |
+| Every elaboration rule | Grammar, AST, emitter plumbing, tests, source-map machinery |
+| The surface: what a paper proof looks like in Calf | Parser, completions, the pane, the file type, persistence |
+| The fragment boundary: what declines honestly | The decline mechanism and its spans |
+| What counts as evidence | The harness that measures it |
 
-Recommendation: **Calf**, with Sasybel cited as ancestry in the paper. Rename this doc only if the
-decision changes.
+Implementation may be generated, assisted or mechanical. Semantics may not. §2 is nine things a
+machine must get exactly right, and none can be settled by seeing whether the output happens to
+check.
+
+**Measurement is separate from design.** Instrumentation produces numbers a decision can stand
+on; it never makes the decision. Where this file records a measurement it records the method
+and the caveats with it.
+
+## 14. Delivery to 31 December 2026
+
+Targets, not commitments. **Each phase closes a property of the language, not a feature list** —
+a phase is over when its property holds, and features are whatever it took. The structure is
+**vertical**: staging as "all the syntax, then all the proofs, then the IDE" defers T4 and T5
+until there is no time to act on what they teach, so the first slice goes through the hardest
+case.
+
+| Phase | Dates | The property it closes |
+|---|---|---|
+| 0 | 22 Sep – 5 Oct | **The tax is owned.** §2's table is yours, not read |
+| 1 | 6 Oct – 2 Nov | **The basis is real.** §3 is ratified by surviving the hardest case |
+| 2 | 3 Nov – 30 Nov | **The Core tier is total.** Every Core row elaborates or declines at a span |
+| 3 | 1 Dec – 21 Dec | **It is a language, in an IDE, and the basis stretches.** Complete-tier rows arrive without new constructs |
+| 4 | 22 Dec – 31 Dec | **The boundary is honest.** Every charter row is marked delivered, designed, or out |
+
+**Two deliverables, not one.** The language (§3–§6) and the correspondence surface (§11) are
+both the project. The surface is scheduled inside Phase 3 rather than bolted on afterwards,
+because §11.3's requirements — node identity, a value-granular source map, incremental
+elaboration — are cheap to build into the elaborator and expensive to retrofit.
+
+⛔ **BelJar itself is not in scope here.** It is the battle-tested substrate and stays stable;
+Calf and the surface are the experimental layer on top, and it is fine for them to be fresh.
+Nothing in this plan may destabilise the shipping IDE to make room for the research.
+
+**Phase 0 — own the tax.** Hand-write the seed corpus three ways: on paper, in imagined Calf,
+and in Beluga by hand (`scratch/`, throwaway). Ladder: `sum` (closed terms) → `vsound` (HOAS) →
+`copy` (context variable and parameter variable, *no blocks* —
+`examples/copy/copy-simple-explicit.bel`, 19 lines) → `unique` (blocks, strengthening). Each rung
+adds exactly one tax family. Read `translation.tex` only after predicting the Beluga unaided.
+**Closed when:** §2's table is confirmed or corrected here, §6's open questions are answered for
+`unique`, and §3's four unifications have been accepted or rejected **in writing** — they are
+cheap to change now and structural later.
+
+**Phase 1 — the basis is real.** `unique` end to end: syntax, judgments, drawn rules, context
+declaration, three proof cases, elaborated to a `.bel` the worker accepts, with a source map at
+value granularity (§9). Must include T4 and T5. **Closed when:** a differential against
+`unique-standard.bel` agrees up to naming, as a test in `npm test`, **and R4 holds** (same source,
+same bytes). If the surface acquired a `..`, a block or a `#p` to get there, the phase has failed
+and is not over — that is R6, and it is the whole point of going through `unique` first.
+
+**Phase 2 — the Core tier is total.** Every Core row of §4, over `sum`, `vsound`, `copy` and two
+or three more from `Beluga-W/examples/`. Diagnostics on `.calf` spans in Calf words; §9's two
+mechanisms built. **Seeded errors before golden-path polish** — write the wrong proofs first and
+judge what the tool says. **Closed when R3 holds:** no input produces partial output. Every
+document either elaborates completely or declines at a precise span, including malformed ones.
+Total behaviour is a property you verify, not a habit you maintain.
+
+**Phase 3 — the three readings, and the basis stretches.** Two gates, both falsifiable.
+
+*The surface.* File type, persistence, library, holes routed to Harpoon, and §11 working:
+selection shared across Calf, tree and Beluga; the tree editable and patching source; **and
+§11.2 holding — all three readings usable on a proof that is broken, incomplete, or mid-edit.**
+That last clause is the gate. A correspondence surface that only renders finished proofs is a
+screenshot, and it is the failure mode these things usually have.
+
+*The language.* **§3.3 predicts that schema alternation, several contexts, lexicographic
+measures and existential *use* need no new constructs.** Delivering them is the experiment that
+tests the basis. **Closed when** those four land with only the two additions §3.4 allows. If any
+of them demands a fifth construct, stop and revisit §3 — the basis was wrong, and finding that
+out in December is the cheapest it will ever be.
+
+**Phase 4 — the boundary is honest.** §15's tables. Every charter row marked delivered,
+designed-but-deferred, or out, with what each deferral costs. A named limitation is a result; a
+silent one is a defect.
+
+**The standing test, applicable in any phase.** If a charter row seems to need a new construct,
+the basis is wrong before the charter is. Adding a seventh form to cover a case is how a small
+language becomes a large one, and it happens one reasonable exception at a time.
+
+## 15. Evidence
+
+Decide the measurements before building what produces them.
+
+1. **The three-column test.** Paper, Calf, generated Beluga, side by side. Calf should read as
+   the paper with names filled in; Beluga should read as a compilation. If those two distances
+   are not obvious at a glance, the surface is not done.
+2. **Encoding tax, measured honestly.** ⛔ Not token counts — a documented failure mode of
+   overstating by factors of 4, 10 and 24. Measure **distinct encoding concepts a reader must
+   already know**: for `unique`, Beluga needs nine; Calf should need zero.
+3. **Expressive coverage** — §4's charter with each row marked delivered, designed, or out, and
+   the seed corpus mapped onto it.
+4. **Against SASyLF's documented walls** — several contexts per judgment, context-varying
+   conjunction, permutable assumptions, contexts as data. Show what each becomes in Calf, or
+   name which it does not reach. Honest "not yet" rows are worth more than silence.
+5. **Error-translation coverage.** Beluga's core declares **106 distinct error variants**, 49 of
+   them in reconstruction and elaboration — precisely where the taxes live. Report the fraction
+   Calf renders in its own vocabulary at a correct span, over the variants a Calf file can
+   actually reach, with the raw-passthrough residue as a number.
+6. **Localisation.** For seeded single-line errors, how often does the diagnostic land on the
+   line at fault? This decides whether a student can work alone.
 
 ---
 
-## 9. Kickoff pointers
+# PART IV — REFERENCE
 
-Read first: this doc → `Beluga-W/sasybel/README` + the four `.sbel` examples →
-`translation.tex` (the oracle) → `transform.ml` *skim*, specifically every `raise (Error` site
-(the hard-case catalog) → `docs/CODEMAP.md` §domains, `docs/ORCA.md`, `docs/HARPOON.md`.
+## 16. Settled — do not re-derive
 
-Gates, in order (each is a merge boundary, not a step list):
+Measured 22 September 2026. Probes in `scratch/` are local to one machine; the results are here
+because that is what survives.
 
-- **G1 — the still fragment.** `calf.grammar` + elaborator for `syntax`/`variables`/`judgment`/
-  `context` (no proofs). Gate: the three legacy examples' declaration halves elaborate to `.bel`
-  that the worker checks clean, differential-matched against `translation.tex` up to naming.
-- **G2 — proofs, locally.** Theorem fragment of §3.3 with provenance and error translation.
-  Gate: `sum`/`vsound`/`unique` check end-to-end; every seeded error lands on a `.calf` span in
-  Calf vocabulary (build the seeded-error fixture set *first*).
-- **G3 — the corpus + the graph.** SASyLF examples ported; §4 projections rendering; Orca as
-  materializing repair. Gate: the coverage table (the paper table) and with/without-repair
-  ablation.
-- **G4 — the study.** Prose → Calf via LLM, deterministic check + repair loop, on the corpus's
-  prose statements. Gate: pass-rate table + failure taxonomy.
+**Diagnostics.** Beluga reports locally-detectable faults on the exact line, at every depth of a
+110-line proof. Non-local faults land at the first *use* of the bad binding, +4 or +5 lines,
+independent of proof length. ⛔ Type-ascribing every binding changes nothing — identical
+diagnostics — and is a closed question.
 
-The paper is G1–G3's spec + G3's table + G4's study. Write §spec entries as you go — retrofitting
-the rules figure from code is how the formality mandate dies.
+**A Beluga defect, found and patched.** Annotating a `let` whose right-hand side is a box of a
+pattern-bound meta-variable raised an internal `Match_failure` from `reconstruct.ml:916` rather
+than checking. Cause: `unifyScrutinee` matched `IndexObj` only for `PatMetaObj` or a `PatAnn`
+wrapping one, with no catch-all, so a variable pattern fell through. Patch looks through
+`PatAnn`, returns `()` for variable patterns (they refine no index, exactly as the `DataObj`
+arm above), and throws `PatternMobj` otherwise. Verified: builds, repro fixed, `npm test`
+259/259, and a 412-file corpus re-check identical to the pre-patch baseline. **Uncommitted, in
+this tree's fork; not proposed upstream.**
 
-Do **not** start §10 work during G1–G4. The only fall obligation those items impose is already in
-the table in §2 and in §4's stable node identity: keep the DAG a thing a later analogical
-instantiator and a later tree-workspace could write back through. If a G3 graph implementation
-would make nodes render-only dead ends, that is a regression against this doc, not a shortcut.
+**The corpus.** 412 `.bel` paths across `Beluga-W/examples/` and `library/`, but only **217
+distinct contents** — `library/` is very largely a byte-identical mirror, so ⛔ **it cannot serve
+as a held-out evaluation set.** 140 check standalone; the rest are members of `.cfg`-driven
+multi-file developments and check when assembled (verified on `church-rosser/ord.cfg`), so
+assembly is the constraint, not health. 97 files are metatheorem-shaped; **46 are first-cut
+candidates**, 31 of them using contexts.
 
----
+**What the ancestor never built.** `transform.ml` has 79 `raise (Error …)` sites: 56 are user
+diagnostics, ten are named unimplemented constructs, eight are internal panics. Two facts
+matter. **`PTheorem` was never implemented — Sasybel could not cite a previously proved theorem
+at all**, so multi-lemma developments were impossible and its one-theorem corpus is not evidence
+that the approach scaled. And the panics cluster on `VAltOft`/`VAltOftBlock` — the context entry
+carrying a typing assumption, i.e. exactly what becomes a block — which panics in three of the
+four traversals. `translation.tex` shows `unique` translating, so **one path handled the hard
+case and three did not.**
 
-## 10. Orbit — not the target
+**The API rot is disjoint from that.** No `raise` site is rot. The rot is structural: Camlp4,
+`ulex`, `Pervasives`, and an `Ext.Comp` that no longer exists (`MetaObjAnn`, `BoxVal`,
+`PatMetaObj` are absent from today's external syntax, which moved to `Beluga-W/src/syntax/` with
+a menhir parser). This is the evidence behind "emit text".
 
-Three professor asks, not said in the same breath as Calf, that slot *onto* it. They are recorded
-here so they survive until winter, and so fall Calf is compatible with them. **They are not the
-fall paper. Agents must not start them.** Classroom claims remain motivation (§1); a user study
-still needs a semester we are not running this fall.
+**Case completion is a separate track.** Completing missing proof cases from authored ones is
+being built against Beluga / Harpoon / Orca, not inside Calf — most of the machinery is
+reachable natively there, and at partial efficacy it was bending Calf's justification around an
+automation. Calf keeps one step: the engine takes a *schema* as a first-class input, and Calf
+supplies **authored** schemas where the Beluga path infers them. See the case-completion track
+for the interface constraints. **Calf must be justified without this feature.**
 
-Calf is nonetheless the parent-ingredient of the instructional-environment vision (§10.3): you
-cannot post a Beluga homework to a first type-theory class; you can post a Calf homework, render
-it as the tree they saw on the board, and (later) let a lecture's "and the other cases are the
-same" actually finish the proof.
+## 17. Research map
 
-### 10.1 Analogical remainder — lecture "and similarly" that actually checks
+### The kernel
 
-The lecturing move: work two of five cases on the board, wave at the rest. The ask is that when
-the author does this in Calf, the remaining cases get *accomplished* — not left as holes, not
-handed to an LLM.
+| Asset | Extract |
+|---|---|
+| `Beluga-W/README.md` | what Beluga is: HOAS plus first-class contexts |
+| `Beluga-W/harpoon.md` | the tactic vocabulary and the proof-script form |
+| `examples/unique/unique-standard.bel` | **the exhibit**; read beside `sasybel/examples/unique.sbel` |
+| `examples/literate_beluga/0Beginner/` | Pientka's narrated walkthroughs, `.bel` interleaved with prose — including `Type_Uniqueness`. The best local teaching resource, and an answer key: open it after your own attempt |
+| `examples/copy/`, `examples/count-var/`, `examples/free-vars/` | small context developments; the Phase 0 ladder |
+| [`beluga.grammar`](../beluga.grammar) | what our parser already knows; Calf elaborates *into* this |
 
-This is easy to mishear as autoformalization (LLM completes the proof) or as Orca-after-a-split
-(search each uncovered hole independently). Both are the wrong algorithm, and the LLM reading is
-the one to steer the conversation away from: not because it is useless, but because it is the
-expensive, ownership-destroying version of something coverage + substitution already know how to
-do. A prof who does not live in this tooling will assume any AI-complete-the-cases feature is
-nonsense they cannot defend; analogical remainder is defensible in one sentence at a whiteboard.
+Papers: Nanevski, Pfenning & Pientka, **Contextual Modal Type Theory** (TOCL 2008) — read the
+day `T[]` stops making sense. Pientka & Cave, **Inductive Beluga: Programming Proofs** (CADE
+2015) — why a proof is a total recursive function. Errington, Jang & Pientka, **Harpoon** (CADE
+2021) — proof scripts as an assertion-level IR, the closest existing thing to Calf and
+machine-written rather than authored.
 
-**The algorithm (when it is built):** the induction/case principle plus the judgment's rule set
-give an exhaustive constructor covering — the same covering `case rule` already demands. The
-author writes one or more cases in full. Each remaining constructor is filled by *instantiating
-an authored case's justification DAG* under a renaming that makes its conclusion unify with the
-remaining case's conclusion (and its `so`/`where` restatements with the unifier). Success
-materializes as ordinary `case rule …` blocks in the source — same discipline as `by search`
-(§2). Failure is an honest decline naming the mismatch ("case `ev-app` is not an instance of
-`ev-suc`: the IH is used on a different premise"). No silent "best effort" fill.
+### The ancestor
 
-That is the opposite of Orca: Orca synthesizes a justification from axioms at a hole; analogy
-*copies a human-authored proof pattern* onto uncovered constructors. Orca remains available as
-the fallback when analogy declines (materializing `by search` / `?`), but it is not how "the
-other cases are the same" is implemented — because "the same" is a claim about the *author's
-argument*, and only substitution can check that claim.
+Aldrich, Simmons & Shin, **SASyLF** (FDPE 2008) — the thesis Calf inherits. ⭐ Boyland,
+**Evolution of SASyLF 2008–2021** (arXiv 2202.03568) — the single most useful document for this
+project: thirteen years of what students got wrong, what was added, and a candid account of
+where the design ran out of road. Code: <https://github.com/boyland/sasylf> — write one small
+proof in it, an afternoon, to calibrate what "paper-proximate" feels like.
 
-Calf is what makes this tractable. Named facts + cited justifications mean a case *is* a DAG
-pattern. Doing the same to a Beluga `rec`/`case` term is reconstructing an argument from a
-compiled encoding; that is why this feature sits on Calf, not on the pane.
+### Cousins — know them so you do not clone them
 
-Surface (later, not v1): something like `and similarly.` or `by analogy with case ev-suc.` after
-the authored cases. Out of §3.3 until the instantiator exists; in of the DAG shape now.
+**Holbert** (<https://arxiv.org/abs/2210.11411>) — browser-based, educational, natural deduction,
+proof trees, no tactics. Closest to Calf's UI ambition; different logic, own kernel, no
+contextual types. **Isabelle/Isar** and **Mizar** — structured declarative proof in another
+kernel; Calf's `by` vocabulary is in this tradition. **Lean Verbose** (Massot) — controlled
+natural language over Lean; the honest version of the education claim. **Ott** — paper-like
+specification compiled to several provers, no proofs. **ORBI / The Next 700 Challenge Problems**
+(Felty, Momigliano, Pientka) — benchmark problems across Twelf, Beluga, Abella and Hybrid; a
+genuinely unseen corpus, which §16 says we need. **Abella**, **Twelf**, **Hybrid** — the
+comparison a reviewer will ask for.
 
-Fall constraint: do not add a justification form that lets a case split be *partial* in the
-checked document. v1 proofs are exhaustive or they are holes. Analogy, when it lands, is an
-editor action that *writes the missing cases*; the file that checks is still fully written.
+## 18. On-disk Sasybel assets
 
-### 10.2 Gentzen as a workspace, LaTeX as a dump
+`Beluga-W/sasybel/` — not in Beluga's dune build, not runnable. A spec dump, not code to revive.
 
-The conversation was "Beluga code ↔ LaTeX visualization, either direction." The right BelJar
-reading is: **Calf is already the code of the Gentzen tree.** §4's derivation-tree projection
-*is* that visualization. `bussproofs`/`ebproof` is an export of the projection, a button for
-slides and homework writeups — never a language, never an IR, never a thing we parse.
+```
+sasybel/
+  examples/
+    sum.sbel          # nats, + — Phase 0 rung 1
+    vsound.sbel       # eval / value soundness — rung 2
+    unique.sbel       # typing uniqueness — rung 4, the exhibit
+    alg-equal.sbel    # α-equality; theorem commented out
+    tutorial.tex      # the 2011 student tutorial
+    translation.tex   # lab notebook: .sbel → reconstructed Beluga, 2011 dialect
+  src/
+    ast.ml(i)         # section / rule / proof AST — the shape of the language
+    transform.ml(i)   # the translation; see §16
+```
 
-The interesting reverse is not "parse LaTeX into Beluga." It is a **tree workspace**: the student
-(or the lecturer building a handout) draws or edits a Gentzen tree, and the system writes Calf
-— or, as the cheap student-helper mode, dumps LaTeX of the tree they drew.
+`translation.tex` is 2011 Beluga (`{N :: n[]}`, `FN g =>`, trailing `..`) and will not compile.
+Read it for *structure*; never paste it. **Do not port this compiler.**
 
-Tree and Calf are the same formal object. A workspace tree carries the DAG §4 already has:
-named facts, a rule (or other justification) on each bar, cited premises. Calf is that DAG
-serialized as text; the tree is that DAG laid out. Workspace → Calf is the inverse of the
-projection — a pure function, no search, no LLM. If a bar has no rule, or a node has no name,
-that is a well-formedness error in the workspace, the same class as a Calf parse error, not a
-prompt. AI was wrongly licensed on this path in an earlier draft of this section; it does not
-belong.
+## 19. Stretch goals
 
-A *different* reverse — photograph of the board, unlabeled `bussproofs`, a tree missing names —
-is reconstruction from an incomplete projection. That may use an LLM, and it is the
-autoformalization study (G4), not the workspace. Do not fold it into the editor.
+Compatible with §7's DAG. None of this is in Phases 0–4, and none of it is Calf's justification.
 
-This is why §4 forbids render-only dead ends. Node identity (fact name + span) has to survive a
-round trip: projection → user edits a bar or a premise in the tree → patch the corresponding
-Calf facts/justifications → re-elaborate. If G3's graph is a picture generator, the workspace
-cannot be built later without throwing it away. The workspace itself is winter; the identity
-discipline is fall.
+**Analogical remainder.** "The other cases are similar" as a checked object: instantiate an
+authored case's DAG onto a missing constructor, inserting ordinary Calf. Now built as a separate
+Beluga-side track (§16); Calf's remaining contribution is authored schemas and completions
+reviewed in paper form.
 
-Direction of truth, always: Calf source is canonical. Trees are projections that may write
-*through* the source map. LaTeX is a one-way dump of a projection. Beluga is an elaboration.
+**LaTeX export.** `bussproofs` output from a tree is a dump, one-way, never an IR. The tree
+*reading* itself is no longer a stretch goal — it is §7 and §11, and it is scheduled.
 
-### 10.3 Parent vision — BelJar as a class surface (winter)
+**A tree from an unlabeled source.** A photograph of a board, or LaTeX without justifications,
+is a recognition problem rather than a projection. Out.
 
-Thrown-out, but the thing Calf is *for* if the research continues past a language paper.
+**Beyond the Complete tier.** Logical relations, coinduction, parametric modules. Each is
+something SASyLF's design could not reach and Beluga can; each is also a place where the paper
+surface is genuinely unsettled — nobody has agreed what `Γ ⊢ …` should look like when there are
+three of them.
 
-LearnOCaml-shaped: a course hosts artifacts students open in a BelJar (or a BelJar-copy) and
-work interactively — posted lecture examples, homework with holes, maybe autograde against a
-hidden Calf spec. A colleague across the Atlantic is already interested in using BelJar in a
-class that would close with an experience report (the LearnOCaml move: ship the tool into a
-real course, write what happened). What that report would track is not decided; plausible
-axes are time-to-first-checked-proof, error-message comprehension, whether students ever open
-the Calf↔Beluga pane, whether the Gentzen view is how they read their own proofs. That is a
-paper of a different kind (JERIC / education workshops / a systems-and-experience slot), and
-it needs the class, not just the language.
+**Class wrapper.** Assignment hosting, autograding and deployment are a **sibling** project that
+bundles this IDE. It does not redo Calf and does not push LMS features into this tree.
 
-Why this sits under Calf rather than under "BelJar but nicer":
-- The posted artifact has to be in a language the class already speaks. That is Calf, or it is
-  a Gentzen tree that *is* Calf (§10.2). Posting `.bel` is posting the encoding.
-- Analogical remainder (§10.1) is the lecture-to-file gesture: the board proof with two cases
-  written and the rest waved at becomes a checked file.
-- Local errors in Calf vocabulary are what a student can act on at 1am without a TA who
-  speaks Beluga. The error-translation taxonomy (§6.2) is the autograder's comment language.
-- The pane (§5) is the off-ramp for the student who wants the encoding — optional, not the
-  homework's surface.
+## 20. Naming and house laws
 
-Fall does not build an LMS, a "post to class" button, a BelJar-copy deploy, or the experience-
-report instrumentation. What fall *does* build for this parent: a language a class could be
-given, errors that class could read, a tree a class could be shown, and a DAG a later "finish
-the other cases" and a later "draw this on the board" can write back through.
+| Name | Note |
+|---|---|
+| **Calf** | Working name. `.calf`. The pane is "growing up" |
+| Song | Belugas as sea canaries |
+| Vellum | Paper; off-family |
+| Sasybel | Cite; do not ship under it |
 
-If winter happens, this section is the kickoff substrate of that project, and this file's
-Calf is the dependency it does not get to redo.
+House laws that apply unchanged: honest decline through the architecture cascade; errors speak
+Calf; elaboration is a pure function of the source; assistants that search still *write* Calf;
+no Beluga OCaml without explicit permission; the checker stays on the worker; ⛔ no invented
+`/ total /`; scratch stays out of the product tree. Try hard, then stop honestly — a named
+limitation beats a lying elaborator.

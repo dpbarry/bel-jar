@@ -250,7 +250,7 @@ function createDisplay(deps) {
     if (opts.title != null) {
       copy.appendChild(el('span', 'harpoon-lab-banner-title' + (opts.titleClass ? ' ' + opts.titleClass : ''), opts.title));
     }
-    if (opts.sub) {
+    if (opts.sub != null) {
       copy.appendChild(el('span', 'harpoon-lab-banner-sub' + (opts.subClass ? ' ' + opts.subClass : ''), opts.sub));
     }
     root.appendChild(copy);
@@ -268,9 +268,9 @@ function createDisplay(deps) {
     opts = opts || {};
     var blocked = !!opts.blocked;
     var title = opts.title || 'Place the proof';
-    var sub = opts.sub || (blocked
-      ? 'The hole changed — restart to insert'
-      : 'Insert into the file');
+    var sub = opts.sub != null ? opts.sub : (blocked
+      ? 'The hole changed. Restart to insert.'
+      : '');
     var extraCls = opts.extraCls || '';
     return buildBannerShell({
       tag: 'button',
@@ -334,7 +334,7 @@ function createDisplay(deps) {
       titleClass: 'harpoon-lab-auto-title',
       subClass: 'harpoon-lab-auto-sub',
       title: 'Proof complete',
-      sub: 'Ready to place in the file',
+      sub: '',
     });
     parent.appendChild(banner);
     return banner;

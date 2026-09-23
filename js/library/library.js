@@ -990,7 +990,7 @@
     }
     treePane.addEventListener("keydown", handleTreeKeydown);
     var dialogEl = global4.Dialog.createDialog({
-      ariaLabel: "Library preview \u2014 " + scopeLabel,
+      ariaLabel: "Library preview: " + scopeLabel,
       content: shell,
       className: "jar-library-preview-dialog",
       cardClass: "jar-dialog__card jar-dialog__card--library-preview",

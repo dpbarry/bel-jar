@@ -317,7 +317,7 @@
 
 .explorer-inline-name.is-invalid {
   border-color: var(--warn-mid, hsl(0, 52%, 52%));
-  animation: explorer-inline-shake 0.35s ease;
+  animation: explorer-inline-shake 350ms ease;
 }
 
 @keyframes explorer-inline-shake {

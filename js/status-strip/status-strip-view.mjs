@@ -72,6 +72,8 @@ const state = {
   undoDepth: 0,
   redoDepth: 0,
   historyOpen: false,
+  /** A second tab has this project open. Standing, not a toast. */
+  tabConflict: false,
 };
 
 let detail = 'standard';
@@ -493,7 +495,7 @@ function setEditorState(next) {
   // it, the builder read it, and the bar never showed a goal. A new piece of
   // editor state has to be added in BOTH places, here and in `state` above.
   for (const key of ['style', 'mode', 'pending', 'mark', 'macro', 'hasFile', 'line', 'col', 'selChars', 'selLines',
-    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen']) {
+    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen', 'tabConflict']) {
     if (!(key in next) || state[key] === next[key]) continue;
     state[key] = next[key];
     changed = true;
@@ -706,6 +708,11 @@ global.StatusStrip = {
   lastCommandLine: lastEntry,
   closeCommandLine: closeLine,
   setOrca,
+  /**
+   * A second tab has this project open. The tab guard raises it when that tab
+   * answers, and lowers it when the tab says goodbye.
+   */
+  setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
   /**
    * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
    * never polls the history: a widget that counts something has to be told when

@@ -1173,8 +1173,7 @@ function createManual(deps) {
       var proven = renderManualSolvedSummary(box);
       if (proven) {
         proven.querySelector('.harpoon-lab-auto-sub').textContent =
-          (st.steps.length === 1 ? '1 step' : st.steps.length + ' steps')
-          + ' · ready to place in the file';
+          (st.steps.length === 1 ? '1 step' : st.steps.length + ' steps');
         stageNode(proven, stage);
         stage += 1;
       }

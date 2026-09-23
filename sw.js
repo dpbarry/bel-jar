@@ -3,7 +3,7 @@
 // The Beluga runtime is a 25-33 MB js_of_ocaml bundle. Fetching it from the
 // network on every load is the single biggest thing between opening BelJar and
 // type-checking anything, so it is cached — and nothing else is.
-var CACHE_NAME = 'beluga-runtime-v2';
+var CACHE_NAME = 'beluga-runtime-20260922151200';
 
 function isBelugaRuntime(url) {
   return /\/beluga_web\.bc(\.dt)?\.js$/.test(new URL(url).pathname);

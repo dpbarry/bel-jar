@@ -416,7 +416,7 @@
       }
       var gr = document.createElement("div");
       gr.className = "hpt-tip-note";
-      gr.textContent = (n.ghost.verdict === "guard" ? "skipped \u2014 " : "not taken \u2014 ") + (n.ghost.reason || "did not certify");
+      gr.textContent = (n.ghost.verdict === "guard" ? "skipped: " : "not taken: ") + (n.ghost.reason || "did not certify");
       frag.appendChild(gr);
       return frag;
     }
@@ -887,7 +887,7 @@
       if (opts.title != null) {
         copy.appendChild(el4("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
       }
-      if (opts.sub) {
+      if (opts.sub != null) {
         copy.appendChild(el4("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
       }
       root.appendChild(copy);
@@ -904,7 +904,7 @@
       opts = opts || {};
       var blocked = !!opts.blocked;
       var title = opts.title || "Place the proof";
-      var sub = opts.sub || (blocked ? "The hole changed \u2014 restart to insert" : "Insert into the file");
+      var sub = opts.sub != null ? opts.sub : blocked ? "The hole changed. Restart to insert." : "";
       var extraCls = opts.extraCls || "";
       return buildBannerShell2({
         tag: "button",
@@ -965,7 +965,7 @@
         titleClass: "harpoon-lab-auto-title",
         subClass: "harpoon-lab-auto-sub",
         title: "Proof complete",
-        sub: "Ready to place in the file"
+        sub: ""
       });
       parent.appendChild(banner);
       return banner;
@@ -3884,7 +3884,7 @@
       if (complete) {
         var proven = renderManualSolvedSummary2(box);
         if (proven) {
-          proven.querySelector(".harpoon-lab-auto-sub").textContent = (st.steps.length === 1 ? "1 step" : st.steps.length + " steps") + " \xB7 ready to place in the file";
+          proven.querySelector(".harpoon-lab-auto-sub").textContent = st.steps.length === 1 ? "1 step" : st.steps.length + " steps";
           stageNode2(proven, stage);
           stage += 1;
         }
@@ -4827,7 +4827,7 @@
       place2.classList.toggle("is-blocked", blocked);
       var sub = place2.querySelector(".harpoon-lab-place-sub");
       if (sub && na && na.complete && commit.status !== "checking") {
-        sub.textContent = blocked ? "The hole changed \u2014 restart to insert" : "Insert into the file";
+        sub.textContent = blocked ? "The hole changed. Restart to insert." : "";
       }
     }
   };
@@ -5727,7 +5727,6 @@
       } else if (commit.status !== "placed") {
         var place2 = buildPlaceStrip(self, {
           title: "Place the proof",
-          sub: "Insert into the file",
           onClick: function() {
             self.commit();
           }

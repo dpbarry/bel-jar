@@ -1516,7 +1516,7 @@ export function mount(parentEl, options = {}) {
       // ⛔ A half-recorded macro belongs to the keymap it was being pressed in.
       // Carrying it across meant the next `C-x (` in Emacs stopped a Vim
       // recording and filed vim Normal-mode keys under `@a`.
-      abortRecording('Recording cancelled — the editing style changed.');
+      abortRecording('Recording cancelled. The editing style changed.');
       appliedKeymapStyle = nextKeymap;
       effects.push(
         keymapStyleCompartment.reconfigure(buildKeymapStyleExtensions(nextKeymap)),

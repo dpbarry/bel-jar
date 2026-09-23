@@ -37,14 +37,14 @@
  */
 export const SEGMENT_ORDER = [
   'keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems',
-  'orca', 'symbols', 'spacer', 'history', 'checker',
+  'orca', 'symbols', 'spacer', 'tab', 'history', 'checker',
 ];
 
 export const DETAIL_LEVELS = ['compact', 'standard', 'detailed'];
 
 const PRESETS = {
-  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'history', 'checker'],
-  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'history', 'checker'],
+  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'history', 'checker'],
+  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'history', 'checker'],
   detailed: SEGMENT_ORDER,
 };
 
@@ -274,6 +274,22 @@ const BUILDERS = {
 
   spacer() {
     return { key: 'spacer', spacer: true };
+  },
+
+  /**
+   * A second tab has this project open. Standing condition, not an event —
+   * leftmost of the right-hand group, before History, so it is the first thing
+   * you read on that side. Not a notification: a notification can be cleared
+   * while the other tab is still writing.
+   */
+  tab(s) {
+    if (!s.tabConflict) return null;
+    return {
+      key: 'tab',
+      text: 'Open in another tab',
+      tone: 'warning',
+      title: 'Both tabs save to the same files. The later save overwrites the other.',
+    };
   },
 
   /**

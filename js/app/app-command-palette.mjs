@@ -360,11 +360,20 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       onEditor('fold.unfold-all', (e) => e.unfoldAll());
 
       // Files: switch tabs straight from the palette (active file excluded).
+      // Basename as the title (what the tab shows), folder as the detail. Every row
+      // used to read the same constant subtitle, "Switch to file", which is
+      // decoration; the folder is the thing that tells two same-named files apart.
+      // Folder search still works because the palette scores the detail as well as
+      // the title, so moving the path off the title costs nothing.
       CommandPalette.setProvider('files', () => {
         const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
         return Persist.listFiles()
           .filter((f) => f.id !== currentId)
-          .map((f) => ({ title: f.name, detail: 'Switch to file', run: () => switchToFile(f.id) }));
+          .map((f) => ({
+            title: f.name.slice(f.name.lastIndexOf('/') + 1),
+            detail: ProjectSource.dirOf(f.name) || '',
+            run: () => switchToFile(f.id),
+          }));
       });
 
       // Symbols ("@" mode): global declarations in the active file, jump on select.

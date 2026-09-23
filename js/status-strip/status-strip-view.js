@@ -13,12 +13,13 @@
     "orca",
     "symbols",
     "spacer",
+    "tab",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
@@ -203,6 +204,21 @@
     },
     spacer() {
       return { key: "spacer", spacer: true };
+    },
+    /**
+     * A second tab has this project open. Standing condition, not an event —
+     * leftmost of the right-hand group, before History, so it is the first thing
+     * you read on that side. Not a notification: a notification can be cleared
+     * while the other tab is still writing.
+     */
+    tab(s) {
+      if (!s.tabConflict) return null;
+      return {
+        key: "tab",
+        text: "Open in another tab",
+        tone: "warning",
+        title: "Both tabs save to the same files. The later save overwrites the other."
+      };
     },
     /**
      * The way into the edit-history panel.
@@ -573,8 +589,8 @@
     }
     for (const s of SETTINGS) {
       if (s.kind !== "bool" && s.off === void 0) continue;
-      out.push({ value: "no" + s.slug, label: s.title + " \u2014 off" });
-      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " \u2014 off" });
+      out.push({ value: "no" + s.slug, label: s.title + " (off)" });
+      for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
     }
     return out;
   }
@@ -1124,7 +1140,7 @@
     lastToken = res.token || null;
     lastKnown = res.parsed && res.parsed.slot > 0 ? !!res.known : null;
     lastKind = lastKnown === false ? "command" : res.kind || "";
-    active = -1;
+    active = items.length ? 0 : -1;
     chosen = false;
     return res;
   }
@@ -2058,7 +2074,9 @@
     orcaDetail: "",
     undoDepth: 0,
     redoDepth: 0,
-    historyOpen: false
+    historyOpen: false,
+    /** A second tab has this project open. Standing, not a toast. */
+    tabConflict: false
   };
   var detail = "standard";
   var rendered = "";
@@ -2351,7 +2369,8 @@
       "orcaDetail",
       "undoDepth",
       "redoDepth",
-      "historyOpen"
+      "historyOpen",
+      "tabConflict"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];
@@ -2538,6 +2557,11 @@
     lastCommandLine: lastEntry,
     closeCommandLine: close,
     setOrca,
+    /**
+     * A second tab has this project open. The tab guard raises it when that tab
+     * answers, and lowers it when the tab says goodbye.
+     */
+    setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
     /**
      * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
      * never polls the history: a widget that counts something has to be told when

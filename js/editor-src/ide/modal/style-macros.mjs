@@ -114,7 +114,7 @@ export function packageKeyRows(style, isReserved) {
 /** Why a style's own keys are not listed, where they cannot be. */
 export function packageKeyNote(style) {
   if (style !== 'vim') return '';
-  return 'Vim’s own keys — motions, operators, counts — are not listed: the vim '
+  return 'Vim’s own keys (motions, operators, counts) are not listed: the vim '
     + 'package does not publish its keymap, and writing one from memory is how a list starts '
     + 'lying. Everything BelJar adds on top of vi is above.';
 }

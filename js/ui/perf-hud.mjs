@@ -23,7 +23,7 @@ var panel = null;
     if (!panel) return;
     var p = perf();
     if (!p) {
-      panel.textContent = 'Perf missing — editor check-trace not loaded';
+      panel.textContent = 'Perf missing: editor check-trace not loaded';
       return;
     }
     panel.textContent = formatBreakdown(p.lastEditBreakdown());

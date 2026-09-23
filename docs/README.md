@@ -21,7 +21,7 @@ Agent rules and commands: [`AGENTS.md`](../AGENTS.md), [`.cursor/rules/`](../.cu
 | Doc | Role | Status |
 |-----|------|--------|
 | [modal-editing.md](modal-editing.md) | Command layer, status strip, Vim/Emacs | Registry landed; catalogue in progress; bar exists; Vim/Emacs depth not |
-| [calf.md](calf.md) | Paper-proximate proof language over Beluga (Sasybel revival) — research kickoff | Nothing built; fall target is Calf. §10 holds related asks + a winter class-surface vision — not this semester's work |
+| [calf.md](calf.md) | Paper-proximate proof language over Beluga — the **dossier**: the claim, the encoding tax, the route to 31 Dec 2026 | Nothing built. §3 is the exhibit (nine encoding taxes on eleven lines of Beluga); §12 is the schedule; §16 is everything deferred past the first paper |
 
 ## Archive
 

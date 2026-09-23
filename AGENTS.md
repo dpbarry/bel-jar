@@ -56,11 +56,14 @@ because the ordinary flush writes unconditionally and this hook fires on every a
 `js/persist/tab-guard.mjs` warns when a second tab has the same project open — a handshake
 over the `storage` event, so it cannot produce a false alarm.
 
-**Deploy (Cloudflare).** Live at `https://bel-jar.deanbarry100.workers.dev` (Workers static assets;
-`.assetsignore` keeps the runtime blobs and the source tree out of the upload). The Beluga runtime
-is served from R2, `https://cdn.rpi-backend.com/` (bucket `beljar-runtime`, CORS for the site
+**Deploy (Cloudflare).** Live at `https://beljar.deanbarry.com`, a Worker with static assets
+(`.assetsignore` keeps the runtime blobs and the source tree out of the upload). The old GitHub Pages
+address redirects there from `index.html` (`tests/test-canonical-redirect.mjs`).
+`bel-jar.deanbarry100.workers.dev` still serves, but it is a separate origin with separate storage:
+not an address to give anyone. The Beluga runtime
+is served from R2, `https://beljar-cdn.deanbarry.com/` (bucket `beljar-runtime`, CORS for the site
 origins), because the fast build is over the 25 MiB per-file cap. `index.html` sets
-`BELJAR_RUNTIME_BASE` on deployed hosts; local, the probes and GitHub Pages stay same-origin.
+`BELJAR_RUNTIME_BASE` on deployed hosts; local dev and the probes stay same-origin.
 After `_rebuild/rebuild.ps1`: **upload both blobs to R2 first, then deploy**, then
 `npm run probe:live`. The runtime URL carries the build stamp (`?v=`, written by
 `_rebuild/stamp-runtime.ps1`), so deploying first lets the edge cache the old bytes under the new

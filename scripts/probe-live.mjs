@@ -13,8 +13,8 @@
 // deployment with BELJAR_LIVE_URL=https://... npm run probe:live
 import { openProbe } from './probe-harness.mjs';
 
-const LIVE = process.env.BELJAR_LIVE_URL || 'https://bel-jar.deanbarry100.workers.dev/';
-const CDN_HOST = 'cdn.rpi-backend.com';
+const LIVE = process.env.BELJAR_LIVE_URL || 'https://beljar.deanbarry.com/';
+const CDN_HOST = 'beljar-cdn.deanbarry.com';
 const NL = String.fromCharCode(10);
 
 // The harness always opens the local app first; nothing here depends on it.

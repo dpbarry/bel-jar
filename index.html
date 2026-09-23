@@ -3,6 +3,18 @@
 
 <head>
   <meta charset="UTF-8">
+  <!-- One address. BelJar moved off GitHub Pages to beljar.deanbarry.com: the
+       online features need the app and its API on one site, and browser storage
+       belongs to the origin, so a second live copy would split everyone's
+       projects in two. Old links land on the same page at the new address.
+       tests/test-canonical-redirect.mjs pins where it fires and where it never may. -->
+  <script>
+    (function () {
+      if (location.hostname !== 'dpbarry.github.io') return;
+      var path = location.pathname.replace(/^\/bel-jar(?=\/|$)/, '') || '/';
+      location.replace('https://beljar.deanbarry.com' + path + location.search + location.hash);
+    })();
+  </script>
   <script src="js/boot/early-boot.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
   <title>BelJar</title>
@@ -261,10 +273,10 @@
   <script>
     (function () {
       var h = location.hostname;
-      var deployed = ['rpi-backend.com', 'workers.dev', 'pages.dev'].some(function (d) {
+      var deployed = ['deanbarry.com', 'workers.dev', 'pages.dev'].some(function (d) {
         return h === d || h.endsWith('.' + d);
       });
-      if (deployed) window.BELJAR_RUNTIME_BASE = 'https://cdn.rpi-backend.com/';
+      if (deployed) window.BELJAR_RUNTIME_BASE = 'https://beljar-cdn.deanbarry.com/';
     })();
   </script>
   <script src="js/beluga/beluga-client.js"></script>

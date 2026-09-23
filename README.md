@@ -4,4 +4,4 @@
 
 It is currently in its beta stage. In the future, it can be a staging ground for experimental Beluga features.
 
-Live at [dpbarry.github.io/bel-jar/](https://dpbarry.github.io/bel-jar/)
+Live at [beljar.deanbarry.com](https://beljar.deanbarry.com)

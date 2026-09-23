@@ -30,6 +30,7 @@ npm run probe:app         # ROUTINE: general surfaces only (~24s)
 npm run probe:keymap      # deep: Vim/Emacs, the command line, every binding pressed (~2.5min)
 npm run probe:harpoon     # deep: the manual proving surface (~10s)
 npm run probe:holes       # deep: the Harpoon holes panel (~8s)
+npm run probe:live        # AFTER A DEPLOY: the live site, R2, both Beluga workers (network; not in `probe`)
 ```
 
 **Two tiers.** `npm test` is pure Node — parsers, semantic model, formatters, Beluga. `npm run
@@ -54,6 +55,19 @@ that one is DIRTY-GATED (`persist.flushCheckpointIfDirty`, `ReplPersist.saveIfPe
 because the ordinary flush writes unconditionally and this hook fires on every alt-tab.
 `js/persist/tab-guard.mjs` warns when a second tab has the same project open — a handshake
 over the `storage` event, so it cannot produce a false alarm.
+
+**Deploy (Cloudflare).** Live at `https://bel-jar.deanbarry100.workers.dev` (Workers static assets;
+`.assetsignore` keeps the runtime blobs and the source tree out of the upload). The Beluga runtime
+is served from R2, `https://cdn.rpi-backend.com/` (bucket `beljar-runtime`, CORS for the site
+origins), because the fast build is over the 25 MiB per-file cap. `index.html` sets
+`BELJAR_RUNTIME_BASE` on deployed hosts; local, the probes and GitHub Pages stay same-origin.
+After `_rebuild/rebuild.ps1`: **upload both blobs to R2 first, then deploy**, then
+`npm run probe:live`. The runtime URL carries the build stamp (`?v=`, written by
+`_rebuild/stamp-runtime.ps1`), so deploying first lets the edge cache the old bytes under the new
+URL until its TTL.
+⛔ The runtime URL has ONE owner, `BelugaClient.runtimeScriptUrl`, and anything else that loads the
+runtime asks it (`tests/test-runtime-url.mjs`). A private copy in `harpoon-client.js` kept pointing
+at the app origin after the move to R2, and its worker 404'd there.
 
 **Boot (`index.html`):** `js/boot/early-boot.js` (prefs + split vars), `panel-restore.js` (side panel), `error-hook.js` (global `onerror`). Sources in `js/boot/*-core.mjs` + `*.mjs`; tested via `tests/test-early-boot.mjs`, `test-error-hook.mjs`.
 

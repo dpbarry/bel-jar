@@ -23,7 +23,8 @@
     "probe:undo": "node scripts/probe-undo.mjs",
     "probe:keymap": "node scripts/probe-keymap.mjs",
     "probe:harpoon": "node scripts/probe-manual-harpoon.mjs",
-    "probe:holes": "node scripts/probe-harpoon-panel.mjs"
+    "probe:holes": "node scripts/probe-harpoon-panel.mjs",
+    "probe:live": "node scripts/probe-live.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.0.0",

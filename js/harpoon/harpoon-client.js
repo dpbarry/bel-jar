@@ -14,11 +14,16 @@
 (function (global) {
   var SCRIPT_SRC = document.currentScript && document.currentScript.src;
 
+  // The runtime URL has one owner: BelugaClient, which index.html loads first.
+  // This worker loads the same bytes, so it asks instead of rebuilding the URL.
+  // A private copy here still pointed at the app origin after the blobs moved
+  // to R2, so this worker 404'd on the deployed site.
   function belugaScriptUrl(build) {
-    var base = SCRIPT_SRC ? new URL('../../', SCRIPT_SRC).href : document.baseURI;
-    return build === 'fast'
-      ? new URL('beluga_web.bc.dt.js', base).href
-      : new URL('beluga_web.bc.js', base).href;
+    var client = global.BelugaClient;
+    if (!client || typeof client.runtimeScriptUrl !== 'function') {
+      throw new Error('HarpoonEngine needs BelugaClient loaded first: it owns the Beluga runtime URL.');
+    }
+    return client.runtimeScriptUrl(build);
   }
 
   function workerUrl(build) {
@@ -88,7 +93,14 @@
     }
     if (slot.ready) return Promise.resolve(slot);
     if (slot.readyPromise) return slot.readyPromise;
-    bind(slot);
+    // A worker that cannot even be constructed (no runtime URL, a blocked
+    // script) must reach the caller as a rejected call, not a synchronous
+    // throw out of start() that a .catch() chained on it would never see.
+    try {
+      bind(slot);
+    } catch (err) {
+      return Promise.reject(err);
+    }
     slot.readyPromise = post(slot, 'init', null)
       .then(function () { slot.ready = true; slot.readyPromise = null; return slot; })
       .catch(function (err) { slot.readyPromise = null; throw err; });

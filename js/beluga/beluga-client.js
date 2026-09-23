@@ -97,20 +97,34 @@
   // deployment overrides it with BELJAR_RUNTIME_BASE: the fast build is ~31.5 MB,
   // over Cloudflare's per-file static-asset cap, so both blobs live in R2.
   //
-  // A cross-origin base needs CORS on the bucket. The worker reaches the runtime
-  // through importScripts, which is a cross-origin script load, and a missing
-  // Access-Control-Allow-Origin shows up as Beluga simply never booting.
+  // A cross-origin base needs CORS on the bucket. The worker loads the runtime
+  // with fetch() in CORS mode and falls back to importScripts; without
+  // Access-Control-Allow-Origin both fail (seen in Chrome) and Beluga never
+  // boots.
   function runtimeBase() {
     var override = typeof globalThis !== 'undefined' ? globalThis.BELJAR_RUNTIME_BASE : null;
     if (override) return new URL(String(override), document.baseURI).href;
     return SCRIPT_SRC ? new URL('../../', SCRIPT_SRC).href : document.baseURI;
   }
 
+  // The build the runtime URL names. _rebuild/stamp-runtime.ps1 writes it from
+  // the same timestamp as sw.js's CACHE_NAME every time the blobs are rebuilt,
+  // and tests/test-runtime-url.mjs fails if the two ever disagree.
+  //
+  // ⛔ It is in the URL so every rebuild is a URL no cache has seen. The blob
+  // names never change and R2 ignores the query string, but the browser cache
+  // and Cloudflare's edge both key on it. Without it a rebuilt runtime hides
+  // behind the old bytes for the edge TTL, and in the meantime different users
+  // check proofs against different compilers.
+  var RUNTIME_VERSION = '20260922151200';
+
+  // ⛔ The ONE place the runtime URL is built. Harpoon's proof worker loads the
+  // same bytes and asks for them through BelugaClient.runtimeScriptUrl. It used
+  // to keep a private copy of this logic, which still pointed at the app origin
+  // after the blobs moved to R2, so its worker 404'd on the deployed site.
   function mainScriptUrl(build) {
-    var base = runtimeBase();
-    return build === 'fast'
-      ? new URL('beluga_web.bc.dt.js', base).href
-      : new URL('beluga_web.bc.js', base).href;
+    var file = build === 'fast' ? 'beluga_web.bc.dt.js' : 'beluga_web.bc.js';
+    return new URL(file + '?v=' + RUNTIME_VERSION, runtimeBase()).href;
   }
 
   function createWorkerSlot(build, label) {
@@ -1091,6 +1105,10 @@
     getThread: function () { return cfg.thread; },
 
     workerUrl: function (build) { return workerUrl(build || cfg.build); },
+
+    // The runtime script URL for a build. Anything else that loads the Beluga
+    // runtime (Harpoon's dedicated worker) asks here rather than rebuilding it.
+    runtimeScriptUrl: function (build) { return mainScriptUrl(build === 'fast' ? 'fast' : 'stable'); },
 
     warm: function () { return ensureReady(); },
 

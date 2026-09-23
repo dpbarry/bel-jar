@@ -26,11 +26,16 @@ Write-Host "Copied beluga_web.bc.js (stable)"
 Copy-Item "$BelugaRepo\_build\default\src\web\beluga_web_dt.bc.js" "$PSScriptRoot\..\beluga_web.bc.dt.js" -Force
 Write-Host "Copied beluga_web.bc.dt.js (fast)"
 
-# Bump the SW cache version so the activate handler evicts old cached builds
+# Stamp the new build: sw.js's CACHE_NAME and the runtime URL's ?v= take the
+# same timestamp, so old cached builds are evicted and the new bytes arrive
+# under a URL no browser or edge cache has seen. Throws, all-or-nothing, if
+# either stamp cannot be written.
 $version = Get-Date -Format 'yyyyMMddHHmmss'
-$swPath = "$PSScriptRoot\..\sw.js"
-$swContent = (Get-Content $swPath -Raw) -replace "var CACHE_NAME = 'beluga-runtime-[^']*'", "var CACHE_NAME = 'beluga-runtime-$version'"
-[System.IO.File]::WriteAllText($swPath, $swContent)
-Write-Host "SW cache version bumped to $version"
+& "$PSScriptRoot\stamp-runtime.ps1" -Version $version
 
+Write-Host ""
+Write-Host "Runtime build $version."
+Write-Host "To deploy: upload BOTH blobs to R2 (bucket beljar-runtime) FIRST, then deploy the site."
+Write-Host "  Deploy first and Cloudflare's edge caches the OLD bytes under the NEW URL until its TTL."
+Write-Host "  Then check the live site: npm run probe:live"
 Write-Host "Success!"

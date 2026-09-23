@@ -51,6 +51,12 @@ var revalidated = Object.create(null);
  * whether they are still current. `cache: 'no-cache'` forces a conditional
  * request, so an unchanged runtime costs one 304 and an updated one is in place
  * for the next load. Correctness no longer depends on remembering anything.
+ *
+ * Since then the runtime URL carries the build stamp as well (?v=, from
+ * RUNTIME_VERSION in beluga-client.js), so a rebuild is a URL no cache has
+ * seen and arrives on the very next load. Revalidation stays as the safety net
+ * for bytes that change under an unchanged URL: a deploy that went out before
+ * the R2 upload, say.
  */
 function revalidate(cache, request) {
   var key = request.url;

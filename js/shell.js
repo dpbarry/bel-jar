@@ -268,7 +268,8 @@
     { pattern: /^beljar\/device$/, cls: "device" },
     { pattern: /^beljar\/notifications$/, cls: "device" },
     { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: "device" },
-    { pattern: /^beljar\/tabs\/(ping|pong|bye)$/, cls: "device" },
+    // the tab guard's handshake, and sync telling the other tabs how it is (sync/sync-status.mjs)
+    { pattern: /^beljar\/tabs\/(ping|pong|bye|sync-status|sync-ask)$/, cls: "device" },
     { pattern: /^beljar\/tombstones$/, cls: "device" },
     { pattern: /^beljar\/settings-sync$/, cls: "device" },
     { pattern: /^beljar\/p\/[^/]+\/meta$/, cls: "work" },
@@ -846,6 +847,9 @@
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // A file changed here and in the cloud in the same lines: ask (the review
+    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -957,8 +961,6 @@
     // the account this browser is signed in as ('' signed out): whose projects it
     // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
     { id: "account", type: "string", default: "" },
-    // the account this device last asked about its own projects (the claim flow, once per account)
-    { id: "claimAskedFor", type: "string", default: "" },
     // durability.mjs: when this browser was last asked to keep BelJar's storage,
     // and when this device was told Safari may delete it (ms; 0: never)
     { id: "persistAskedAt", type: "number", default: 0 },
@@ -1468,6 +1470,34 @@
     function removeConflict(fid, pid) {
       return store3.remove(conflictKey(pid || projectId2(), fid));
     }
+    function listConflicts() {
+      const out = [];
+      for (const p of peekVisible()) {
+        const prefix = projectPrefix(p.id) + "conflict/";
+        const keys = store3.keys(prefix);
+        if (!keys.length) continue;
+        const names = new Map(peekTree(p.id).files.map((f) => [f.id, f.name]));
+        for (const key of keys) {
+          const fid = key.slice(prefix.length);
+          const rec = normalizeConflict(store3.get(key));
+          if (!rec) continue;
+          out.push({ pid: p.id, project: p.name, fid, path: names.get(fid) || fid, source: rec.source, at: rec.at });
+        }
+      }
+      return out;
+    }
+    function conflictSides(fid, pid) {
+      const rec = readConflict(fid, pid);
+      if (!rec) return null;
+      return { base: rec.base, mine: rec.mine, theirs: getText(fid, pid), source: rec.source, at: rec.at };
+    }
+    function resolveStoredConflict(fid, choice, pid) {
+      const rec = readConflict(fid, pid);
+      if (!rec || choice !== "mine" && choice !== "theirs") return false;
+      if (choice === "mine" && !setText(fid, rec.mine, pid).ok) return false;
+      removeConflict(fid, pid);
+      return true;
+    }
     function snapshotProject(pid) {
       const meta = normalizeMeta(pid, store3.get(metaKey(pid)));
       if (!meta) return null;
@@ -1587,6 +1617,9 @@
       readConflict,
       writeConflict,
       removeConflict,
+      listConflicts,
+      conflictSides,
+      resolveStoredConflict,
       // accounts
       account,
       setAccount,
@@ -1614,9 +1647,9 @@
       return i === -1 ? "" : name.slice(0, i);
     }
     function notifyProjectTreeChanged(kind) {
-      var g15 = typeof window !== "undefined" ? window : null;
-      if (g15 && typeof g15.dispatchEvent === "function") {
-        g15.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      var g17 = typeof window !== "undefined" ? window : null;
+      if (g17 && typeof g17.dispatchEvent === "function") {
+        g17.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
       }
     }
     function listFiles2() {
@@ -2133,9 +2166,9 @@
       return t && t.charAt(0) !== "%" && isCfgEntryToken2(t);
     }
     function cfgTextForRewrite(fileId) {
-      var g15 = typeof window !== "undefined" ? window : null;
-      if (g15) {
-        var ed = g15.CurrentEditor;
+      var g17 = typeof window !== "undefined" ? window : null;
+      if (g17) {
+        var ed = g17.CurrentEditor;
         if (fileId === getActiveFileId() && ed && typeof ed.getValue === "function") {
           return String(ed.getValue() ?? "");
         }
@@ -2144,9 +2177,9 @@
     }
     function notifyCfgRewritten(fileIds) {
       if (!fileIds.length) return;
-      var g15 = typeof window !== "undefined" ? window : null;
-      if (g15 && typeof g15.dispatchEvent === "function") {
-        g15.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
+      var g17 = typeof window !== "undefined" ? window : null;
+      if (g17 && typeof g17.dispatchEvent === "function") {
+        g17.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
@@ -2651,9 +2684,9 @@
         if (providers3 && typeof providers3.applyExternalText === "function") providers3.applyExternalText(text);
       }
       function announceConflict(source) {
-        var g15 = typeof window !== "undefined" ? window : null;
-        if (g15 && typeof g15.dispatchEvent === "function" && typeof CustomEvent === "function") {
-          g15.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
+        var g17 = typeof window !== "undefined" ? window : null;
+        if (g17 && typeof g17.dispatchEvent === "function" && typeof CustomEvent === "function") {
+          g17.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
         }
       }
       function reconcile() {
@@ -3643,6 +3676,10 @@
 
   // js/persist/sync/runner.mjs
   var SYNC_LOCK = "beljar/sync";
+  var SAFE = /* @__PURE__ */ new Set(["clean", "pushed", "downloaded", "forgot", "deleted", "absent", "restored"]);
+  function roundIsSafe(result) {
+    return !!result && !!result.projects && Object.values(result.projects).every((r) => SAFE.has(r.status));
+  }
   function createSyncRunner(o) {
     const engine = o.engine;
     const timers = o.timers || {
@@ -3655,7 +3692,7 @@
     const pollMs = o.pollMs != null ? o.pollMs : 6e4;
     const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
     const listeners2 = /* @__PURE__ */ new Set();
-    let status = { state: "waiting", leader: false, lastSync: 0, error: null };
+    let status = { state: "waiting", leader: false, lastSync: 0, error: null, pending: false, safe: false };
     let leader = false;
     let stopped = false;
     let running2 = null;
@@ -3663,10 +3700,11 @@
     let timer2 = null;
     let firstChange = 0;
     let failures = 0;
+    let dirty = false;
     let release = null;
     let abort = null;
     let unsubscribe = null;
-    function update(patch) {
+    function update2(patch) {
       status = Object.assign({}, status, patch);
       for (const fn of [...listeners2]) {
         try {
@@ -3684,6 +3722,8 @@
     }
     function changed() {
       if (!leader || stopped) return;
+      dirty = true;
+      if (!status.pending) update2({ pending: true });
       const t = now();
       if (!firstChange) firstChange = t;
       wakeIn(Math.min(quietMs, maxWaitMs - (t - firstChange)));
@@ -3705,15 +3745,19 @@
         timers.clear(timer2);
         timer2 = null;
       }
-      update({ state: "syncing" });
+      const carried = dirty;
+      dirty = false;
+      update2({ state: "syncing" });
       running2 = engine.syncAll().then((res) => {
         failures = 0;
         const errs = problems(res);
-        update({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res });
+        if (errs.length && carried) dirty = true;
+        update2({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res, pending: dirty, safe: roundIsSafe(res) });
         return res;
       }, (err) => {
         failures += 1;
-        update({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err) });
+        if (carried) dirty = true;
+        update2({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err), pending: dirty, safe: false });
         return null;
       }).then((res) => {
         running2 = null;
@@ -3739,14 +3783,14 @@
         });
         const locks = o.locks;
         if (!locks || typeof locks.request !== "function") {
-          update({ state: "unsupported" });
+          update2({ state: "unsupported" });
           return;
         }
         abort = typeof AbortController === "function" ? new AbortController() : null;
         Promise.resolve(locks.request(SYNC_LOCK, abort ? { signal: abort.signal } : {}, () => {
           if (stopped) return void 0;
           leader = true;
-          update({ state: "idle", leader: true });
+          update2({ state: "idle", leader: true });
           round();
           return new Promise((resolve2) => {
             release = resolve2;
@@ -3792,8 +3836,138 @@
         if (abort) abort.abort();
         if (release) release();
         leader = false;
-        update({ state: "stopped", leader: false });
+        update2({ state: "stopped", leader: false });
         return Promise.resolve(running2).then(() => void 0);
+      }
+    };
+  }
+
+  // js/persist/sync/sync-status.mjs
+  var STATUS_MESSAGE = "sync-status";
+  var ASK_MESSAGE = "sync-ask";
+  function summarize({ account, runner, online, differs }) {
+    const files2 = differs || [];
+    if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, differs: files2 };
+    const st = runner || {};
+    let state2;
+    if (files2.length) state2 = "differs";
+    else if (online === false || st.state === "offline") state2 = "offline";
+    else if (st.state === "error") state2 = "error";
+    else if (st.state === "syncing") state2 = "syncing";
+    else if (st.pending) state2 = "pending";
+    else if (st.lastSync) state2 = "synced";
+    else state2 = "syncing";
+    return { signedIn: true, state: state2, lastSync: st.lastSync || 0, error: st.state === "error" ? st.error || null : null, differs: files2 };
+  }
+  function createSyncStatus(o) {
+    const now = o.now || (() => Date.now());
+    const timers = o.timers || { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h) };
+    const online = o.online || (() => true);
+    let seq2 = 0;
+    const newId3 = o.newId || (() => now().toString(36) + "-" + ++seq2 + "-" + Math.random().toString(36).slice(2, 8));
+    const listeners2 = /* @__PURE__ */ new Set();
+    const asked = /* @__PURE__ */ new Map();
+    let runner = null;
+    let unsubscribeRunner = null;
+    let local = null;
+    let remote = null;
+    let lastKey = "";
+    const leading = () => !!(local && local.leader);
+    const current = () => leading() ? local : remote || local;
+    function summary2() {
+      return summarize({ account: o.account(), runner: current(), online: online(), differs: o.conflicts() });
+    }
+    function emit2() {
+      const s = summary2();
+      const key = JSON.stringify(s);
+      if (key === lastKey) return;
+      lastKey = key;
+      for (const fn of [...listeners2]) {
+        try {
+          fn(s);
+        } catch (_) {
+        }
+      }
+    }
+    function tell(st, answered) {
+      o.tabs.post(STATUS_MESSAGE, {
+        state: st.state,
+        pending: !!st.pending,
+        lastSync: st.lastSync || 0,
+        error: st.error || null,
+        safe: !!st.safe,
+        at: now(),
+        answered: answered || null
+      });
+    }
+    o.tabs.on((kind, msg) => {
+      if (!msg || typeof msg !== "object") return;
+      if (kind === STATUS_MESSAGE) {
+        remote = msg;
+        if (msg.answered && asked.has(msg.answered)) {
+          const resolve2 = asked.get(msg.answered);
+          asked.delete(msg.answered);
+          resolve2({ ok: !!msg.safe, reason: msg.safe ? null : msg.state || "unsafe" });
+        }
+        emit2();
+      } else if (kind === ASK_MESSAGE && leading() && runner) {
+        if (msg.round) {
+          runner.syncNow().then(() => tell(runner.status(), msg.id));
+        } else {
+          tell(local, null);
+        }
+      }
+    });
+    return {
+      /** Follow this tab's runner (Persist.startSync); a non-syncing tab asks the syncing one how things are. */
+      attach(r) {
+        this.detach();
+        runner = r;
+        local = r.status();
+        unsubscribeRunner = r.subscribe((st) => {
+          local = st;
+          emit2();
+          if (st.leader) tell(st, null);
+        });
+        o.tabs.post(ASK_MESSAGE, { id: newId3(), round: false, at: now() });
+        emit2();
+      },
+      detach() {
+        if (unsubscribeRunner) unsubscribeRunner();
+        unsubscribeRunner = null;
+        runner = null;
+        local = null;
+        remote = null;
+        emit2();
+      },
+      summary: summary2,
+      /** Something the summary reads changed (a conflict, the network, the account): tell whoever listens. */
+      refresh: emit2,
+      /** fn(summary) on every change; returns the unsubscribe. */
+      subscribe(fn) {
+        listeners2.add(fn);
+        return () => listeners2.delete(fn);
+      },
+      /**
+       * Sync now and say whether every project's work is on the server:
+       * { ok, reason }. From the syncing tab it runs the round itself; from any
+       * other it asks that tab, and waits at most `timeoutMs` for the answer.
+       */
+      confirm(timeoutMs = 15e3) {
+        if (!runner) return Promise.resolve({ ok: false, reason: "not-syncing" });
+        if (leading()) {
+          return runner.syncNow().then((res) => ({ ok: roundIsSafe(res), reason: roundIsSafe(res) ? null : runner.status().state }));
+        }
+        const id = newId3();
+        return new Promise((resolve2) => {
+          asked.set(id, resolve2);
+          o.tabs.post(ASK_MESSAGE, { id, round: true, at: now() });
+          timers.set(() => {
+            if (!asked.has(id)) return;
+            asked.delete(id);
+            resolve2({ ok: false, reason: "no-answer" });
+          }, timeoutMs);
+        });
       }
     };
   }
@@ -4013,9 +4187,9 @@
     treeNoticeQueued = true;
     Promise.resolve().then(function() {
       treeNoticeQueued = false;
-      var g15 = typeof window !== "undefined" ? window : null;
-      if (g15 && typeof g15.dispatchEvent === "function" && typeof CustomEvent === "function") {
-        g15.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
+      var g17 = typeof window !== "undefined" ? window : null;
+      if (g17 && typeof g17.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        g17.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       }
     });
   }
@@ -4049,9 +4223,6 @@
     else if (k.kind === "tree" || k.kind === "meta") noteTreeChanged();
   });
   var SYNC_NOTICES = {
-    conflict: function(n) {
-      return { kind: "warn", title: "Edits to " + n.path + " overlap another device\u2019s", body: "Open it to choose. Both versions are kept until you do." };
-    },
     copied: function(n) {
       return { kind: "warn", title: "Saved this device\u2019s " + n.from + " as " + n.path, body: "Another device changed the same lines while a conflict here was still open." };
     },
@@ -4134,6 +4305,19 @@
     }, 2e3);
   });
   var syncRunner = null;
+  var syncStatus = createSyncStatus({
+    account: work.account,
+    conflicts: work.listConflicts,
+    tabs: { post: records.postTabMessage, on: records.onTabMessage },
+    online: function() {
+      var nav = globalThis.navigator;
+      return !nav || nav.onLine !== false;
+    }
+  });
+  store.subscribe(function(e) {
+    var k = e && e.key ? parseKey(e.key) : null;
+    if (k && k.kind === "conflict") syncStatus.refresh();
+  });
   function startSync(opts) {
     var account = work.account();
     if (!account) throw new Error("Persist.startSync: nobody is signed in on this browser (Persist.setAccount first)");
@@ -4154,11 +4338,13 @@
       locks: opts.locks !== void 0 ? opts.locks : nav && nav.locks || null
     });
     syncRunner.start();
+    syncStatus.attach(syncRunner);
     return syncRunner;
   }
   function stopSync() {
     const r = syncRunner;
     syncRunner = null;
+    syncStatus.detach();
     return r ? r.stop() : Promise.resolve();
   }
   function syncNow() {
@@ -4166,7 +4352,11 @@
   }
   if (typeof globalThis.addEventListener === "function") {
     globalThis.addEventListener("online", function() {
+      syncStatus.refresh();
       syncNow();
+    });
+    globalThis.addEventListener("offline", function() {
+      syncStatus.refresh();
     });
   }
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
@@ -4185,10 +4375,21 @@
     setAccount: work.setAccount,
     claimProject: work.claimProject,
     projectStats: work.projectStats,
+    onFileChange: work.onFileChange,
     removeAccountProjects: work.removeAccountProjects,
     startSync,
     stopSync,
     syncNow,
+    syncSummary: syncStatus.summary,
+    onSyncSummary: syncStatus.subscribe,
+    confirmSynced: syncStatus.confirm,
+    listConflicts: work.listConflicts,
+    conflictSides: function(pid, fid) {
+      return work.conflictSides(fid, pid);
+    },
+    resolveStoredConflict: function(pid, fid, choice) {
+      return work.resolveStoredConflict(fid, choice, pid);
+    },
     durabilityStatus: durability.status,
     // the open document
     createPersist: documents.createPersist,
@@ -5530,6 +5731,13 @@
       ex: ["set", "se"],
       args: [{ kind: "option", label: "option" }]
     },
+    // ── Account ────────────────────────────────────────────────────────────────
+    // The avatar's and the cloud's actions, by name (js/account/). Each is
+    // available only where it works: no server, no sign-in; signed out, no sync.
+    { id: "account.sign-in", title: "Sign In with GitHub", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "account.sign-out", title: "Sign Out", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "sync.now", title: "Sync Now", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "sync.review", title: "Review Differences", section: "Account", scope: "global", palette: true, keybindable: true },
     // ── Tools ──────────────────────────────────────────────────────────────────
     // Not keybindable: `nav.anywhere` owns Mod+K. The literal `shortcut` is the
     // palette's own display fallback for an entry with no chord of its own.
@@ -5774,10 +5982,10 @@
     const d = doc(given);
     return d && d.activeElement ? d.activeElement : null;
   }
-  function closestFrom(el6, selector) {
-    if (!el6 || typeof el6.closest !== "function") return null;
+  function closestFrom(el7, selector) {
+    if (!el7 || typeof el7.closest !== "function") return null;
     try {
-      return el6.closest(selector);
+      return el7.closest(selector);
     } catch (_) {
       return null;
     }
@@ -6081,14 +6289,15 @@
     "symbols",
     "spacer",
     "tab",
+    "sync",
     "undo",
     "redo",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
@@ -6296,6 +6505,34 @@
         tone: "warning",
         title: "Both tabs save to the same files. The later save overwrites the other."
       };
+    },
+    /**
+     * Sync, only when it needs you (docs/UI.md §2): files changed here and
+     * somewhere else, offline, or a round that keeps failing. Its steady state,
+     * synced, is the cloud's beside the project name and never repeated here.
+     * Files to review show signed out too: two tabs can differ with no account.
+     */
+    sync(s) {
+      const x = s.sync;
+      if (!x) return null;
+      if (x.differs && x.differs.length) {
+        const n = x.differs.length;
+        return {
+          key: "sync",
+          text: n === 1 ? "1 file to review" : n + " files to review",
+          tone: "warning",
+          title: "Review differences",
+          action: "review-differences"
+        };
+      }
+      if (!x.signedIn) return null;
+      if (x.state === "offline") {
+        return { key: "sync", text: "Offline", tone: "warning", title: "Changes sync when you\u2019re back online" };
+      }
+      if (x.state === "error") {
+        return { key: "sync", text: "Couldn\u2019t sync", tone: "error", title: "Sync now", action: "sync-now" };
+      }
+      return null;
     },
     /**
      * Undo and redo, as one tray with the history beside them. The tray appears
@@ -6808,13 +7045,13 @@
     return exInput || input;
   }
   function syncActiveDescendant() {
-    const el6 = activeInput();
-    if (!el6 || !listEl) return;
+    const el7 = activeInput();
+    if (!el7 || !listEl) return;
     if (active < 0 || listEl.hidden) {
-      el6.removeAttribute("aria-activedescendant");
+      el7.removeAttribute("aria-activedescendant");
       return;
     }
-    el6.setAttribute("aria-activedescendant", "jar-cmdline-opt-" + active);
+    el7.setAttribute("aria-activedescendant", "jar-cmdline-opt-" + active);
   }
   function bindListListeners() {
     if (listListeners || typeof window === "undefined") return;
@@ -6931,10 +7168,10 @@
     if (!view) return;
     view.dispatch({ selection: { anchor: hit.from, head: hit.to }, scrollIntoView: true });
   }
-  function completeInto(el6) {
-    const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
-    const res = complete(el6.value, caret, commandSources(el6 === exInput ? "vim" : "own"));
-    query = el6.value;
+  function completeInto(el7) {
+    const caret = el7.selectionStart == null ? el7.value.length : el7.selectionStart;
+    const res = complete(el7.value, caret, commandSources(el7 === exInput ? "vim" : "own"));
+    query = el7.value;
     items = res.items.slice(0, LIST_CAP);
     lastToken = res.token || null;
     lastKnown = res.parsed && res.parsed.slot > 0 ? !!res.known : null;
@@ -6954,11 +7191,11 @@
     input.classList.toggle("is-unknown", unknown);
   }
   function forceList() {
-    const el6 = activeInput();
-    if (!el6 || searchDir) return false;
+    const el7 = activeInput();
+    if (!el7 || searchDir) return false;
     forced = true;
     hinting = false;
-    if (el6 === exInput) refreshEx();
+    if (el7 === exInput) refreshEx();
     else refresh();
     return true;
   }
@@ -6984,15 +7221,15 @@
     renderList();
   }
   function accept(index) {
-    const el6 = activeInput();
+    const el7 = activeInput();
     const it = items[index == null ? Math.max(active, 0) : index];
-    if (!it || !el6) return false;
-    const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
-    const next = applyCompletion(el6.value, caret, it.value, lastToken);
-    el6.value = next.text;
-    el6.setSelectionRange(next.caret, next.caret);
+    if (!it || !el7) return false;
+    const caret = el7.selectionStart == null ? el7.value.length : el7.selectionStart;
+    const next = applyCompletion(el7.value, caret, it.value, lastToken);
+    el7.value = next.text;
+    el7.setSelectionRange(next.caret, next.caret);
     resetCycle();
-    if (el6 === exInput) refreshEx();
+    if (el7 === exInput) refreshEx();
     else refresh();
     return true;
   }
@@ -7005,12 +7242,12 @@
     wildItems = [];
   }
   function tabCycle(back) {
-    const el6 = activeInput();
-    if (!el6) return false;
+    const el7 = activeInput();
+    if (!el7) return false;
     if (wildStem == null) {
       if (!items.length) return false;
-      const caret = el6.selectionStart == null ? el6.value.length : el6.selectionStart;
-      const token = tokenAtCaret(parseCommandLine(el6.value, caret));
+      const caret = el7.selectionStart == null ? el7.value.length : el7.selectionStart;
+      const token = tokenAtCaret(parseCommandLine(el7.value, caret));
       wildStem = { from: token.from, to: token.to };
       wildItems = items.slice();
       wildAt = back ? wildItems.length - 1 : 0;
@@ -7023,13 +7260,13 @@
       return false;
     }
     const caretAt = wildStem.from + it.value.length;
-    el6.value = el6.value.slice(0, wildStem.from) + it.value + el6.value.slice(wildStem.to);
-    el6.setSelectionRange(caretAt, caretAt);
+    el7.value = el7.value.slice(0, wildStem.from) + it.value + el7.value.slice(wildStem.to);
+    el7.setSelectionRange(caretAt, caretAt);
     wildStem = { from: wildStem.from, to: caretAt };
     lastToken = { text: it.value, from: wildStem.from, to: caretAt };
     active = items.indexOf(it);
     chosen = true;
-    if (ghostEl && el6 === input) ghostEl.textContent = "";
+    if (ghostEl && el7 === input) ghostEl.textContent = "";
     paintActive();
     return true;
   }
@@ -7055,14 +7292,14 @@
     completeInto(exInput);
     renderList();
   }
-  function attachExCompletion(el6) {
-    if (!el6) return false;
-    if (exInput === el6) {
+  function attachExCompletion(el7) {
+    if (!el7) return false;
+    if (exInput === el7) {
       refreshEx();
       return true;
     }
     detachExCompletion();
-    exInput = el6;
+    exInput = el7;
     exOnInput = () => {
       resetCycle();
       refreshEx();
@@ -7091,19 +7328,19 @@
       if (e.key === "Enter" && chosen && active >= 0) {
         accept();
         hideList();
-        remember(el6.value);
+        remember(el7.value);
         return;
       }
-      if (e.key === "Enter") remember(el6.value);
+      if (e.key === "Enter") remember(el7.value);
       if (e.key === "Escape") {
         hideList();
         return;
       }
     };
     exOnBlur = () => hideList();
-    el6.addEventListener("input", exOnInput);
-    el6.addEventListener("keydown", exOnKeydown, true);
-    el6.addEventListener("blur", exOnBlur);
+    el7.addEventListener("input", exOnInput);
+    el7.addEventListener("keydown", exOnKeydown, true);
+    el7.addEventListener("blur", exOnBlur);
     refreshEx();
     return true;
   }
@@ -7451,11 +7688,11 @@
     const then = Number(ts);
     const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     if (!Number.isFinite(then) || then <= 0) return "";
-    const ago = Math.max(0, at - then);
-    if (ago < MINUTE) return "now";
-    if (ago < HOUR) return Math.floor(ago / MINUTE) + "m";
-    if (ago < DAY) return Math.floor(ago / HOUR) + "h";
-    return Math.floor(ago / DAY) + "d";
+    const ago2 = Math.max(0, at - then);
+    if (ago2 < MINUTE) return "now";
+    if (ago2 < HOUR) return Math.floor(ago2 / MINUTE) + "m";
+    if (ago2 < DAY) return Math.floor(ago2 / HOUR) + "h";
+    return Math.floor(ago2 / DAY) + "d";
   }
   function buildHistoryRows(undoStack, redoStack, opts) {
     const o = opts || {};
@@ -7582,14 +7819,14 @@
       marker.appendChild(text);
       return marker;
     }
-    const el6 = document.createElement("button");
-    el6.type = "button";
-    el6.className = "jar-hist__row" + (row.ahead ? " is-ahead" : "");
-    el6.setAttribute("role", "option");
-    el6.setAttribute("aria-selected", "false");
-    el6.dataset.index = String(index);
-    el6.dataset.direction = row.direction;
-    el6.dataset.distance = String(row.distance);
+    const el7 = document.createElement("button");
+    el7.type = "button";
+    el7.className = "jar-hist__row" + (row.ahead ? " is-ahead" : "");
+    el7.setAttribute("role", "option");
+    el7.setAttribute("aria-selected", "false");
+    el7.dataset.index = String(index);
+    el7.dataset.direction = row.direction;
+    el7.dataset.distance = String(row.distance);
     const label = document.createElement("span");
     label.className = "jar-hist__label";
     if (row.preview) {
@@ -7605,23 +7842,23 @@
     } else {
       label.textContent = row.label;
     }
-    el6.appendChild(label);
+    el7.appendChild(label);
     if (row.where) {
       const where = document.createElement("span");
       where.className = "jar-hist__where";
       where.textContent = row.where;
-      el6.appendChild(where);
+      el7.appendChild(where);
     }
     const when = document.createElement("span");
     when.className = "jar-hist__when";
     when.textContent = row.when || "";
-    el6.appendChild(when);
+    el7.appendChild(when);
     const tipLines = [row.label];
     if (row.files && row.files.length > 1) tipLines.push("", ...row.files);
-    el6.setAttribute("data-tooltip", tipLines.join("\n"));
-    el6.setAttribute("aria-label", row.label + (row.where ? ", " + row.where : ""));
-    global6.Tooltips?.bind?.(el6);
-    return el6;
+    el7.setAttribute("data-tooltip", tipLines.join("\n"));
+    el7.setAttribute("aria-label", row.label + (row.where ? ", " + row.where : ""));
+    global6.Tooltips?.bind?.(el7);
+    return el7;
   }
   function render() {
     const H = history3();
@@ -7648,8 +7885,8 @@
       nodes[i].classList.toggle("is-active", on);
       nodes[i].setAttribute("aria-selected", on ? "true" : "false");
     }
-    const el6 = nodes[active2];
-    if (el6 && typeof el6.scrollIntoView === "function") el6.scrollIntoView({ block: "nearest" });
+    const el7 = nodes[active2];
+    if (el7 && typeof el7.scrollIntoView === "function") el7.scrollIntoView({ block: "nearest" });
   }
   function travelTo(index) {
     const row = rows[index];
@@ -7804,17 +8041,17 @@
   var onChanged2 = null;
   var anchor2 = () => anchorAbove(panelEl2, ".jar-strip__seg--keymap", "left", ".jar-style__name");
   function rowEl2(style, index, current) {
-    const el6 = document.createElement("button");
-    el6.type = "button";
-    el6.className = "jar-style__row" + (current ? " is-current" : "");
-    el6.setAttribute("role", "option");
-    el6.setAttribute("aria-selected", current ? "true" : "false");
-    el6.dataset.index = String(index);
+    const el7 = document.createElement("button");
+    el7.type = "button";
+    el7.className = "jar-style__row" + (current ? " is-current" : "");
+    el7.setAttribute("role", "option");
+    el7.setAttribute("aria-selected", current ? "true" : "false");
+    el7.dataset.index = String(index);
     const name = document.createElement("span");
     name.className = "jar-style__name";
     name.textContent = style.name;
-    el6.appendChild(name);
-    return el6;
+    el7.appendChild(name);
+    return el7;
   }
   function build2() {
     panelEl2 = document.createElement("div");
@@ -7967,7 +8204,9 @@
     historyOpen: false,
     keymapOpen: false,
     /** A second tab has this project open. Standing, not a toast. */
-    tabConflict: false
+    tabConflict: false,
+    /** What sync is doing (Persist.syncSummary, pushed by js/account/sync-ui.mjs). */
+    sync: null
   };
   var detail = "standard";
   var rendered = "";
@@ -8087,38 +8326,38 @@
       gap.className = "jar-strip__spacer";
       return gap;
     }
-    const el6 = document.createElement(seg.action ? "button" : "span");
-    el6.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "") + (seg.text || seg.render ? "" : " is-icon");
+    const el7 = document.createElement(seg.action ? "button" : "span");
+    el7.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "") + (seg.text || seg.render ? "" : " is-icon");
     if (seg.action) {
-      el6.type = "button";
-      el6.dataset.action = seg.action;
+      el7.type = "button";
+      el7.dataset.action = seg.action;
     }
-    if (seg.disabled) el6.setAttribute("aria-disabled", "true");
+    if (seg.disabled) el7.setAttribute("aria-disabled", "true");
     if (seg.title) {
-      el6.setAttribute("data-tooltip", seg.title);
-      el6.setAttribute("aria-label", seg.title);
-      global9.Tooltips?.bind?.(el6);
+      el7.setAttribute("data-tooltip", seg.title);
+      el7.setAttribute("aria-label", seg.title);
+      global9.Tooltips?.bind?.(el7);
     }
-    if (seg.pressed != null) el6.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
-    if (seg.pressed) el6.classList.add("is-open");
-    if (seg.dot) el6.appendChild(statusDot());
+    if (seg.pressed != null) el7.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
+    if (seg.pressed) el7.classList.add("is-open");
+    if (seg.dot) el7.appendChild(statusDot());
     if (seg.icon) {
       const glyph = iconEl(seg.icon);
-      if (glyph) el6.appendChild(glyph);
+      if (glyph) el7.appendChild(glyph);
     }
     if (seg.mark) {
       const mark = document.createElement("span");
       mark.className = "jar-strip__mark";
       mark.textContent = seg.mark;
-      el6.appendChild(mark);
+      el7.appendChild(mark);
     }
-    if (!seg.text && !seg.render) return el6;
+    if (!seg.text && !seg.render) return el7;
     const label = document.createElement("span");
     label.className = "jar-strip__label";
     if (seg.render === "type") renderType(label, seg.text);
     else label.textContent = seg.text || "";
-    el6.appendChild(label);
-    return el6;
+    el7.appendChild(label);
+    return el7;
   }
   function withKeys(seg) {
     const keys = seg.command ? liveKeyLabel(seg.command) : "";
@@ -8140,6 +8379,8 @@
     "open-harpoon": () => global9.Commands?.run("prover.open-in-harpoon") || global9.Commands?.run("view.harpoon"),
     "run": () => global9.Commands?.run("run.file"),
     "edit-history": () => openHistory(),
+    "review-differences": () => global9.Commands?.run("sync.review"),
+    "sync-now": () => global9.Commands?.run("sync.now"),
     "undo": () => stepHistory("undo"),
     "redo": () => stepHistory("redo"),
     "keymap-menu": () => {
@@ -8291,7 +8532,8 @@
       "redoDepth",
       "historyOpen",
       "keymapOpen",
-      "tabConflict"
+      "tabConflict",
+      "sync"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];
@@ -8535,7 +8777,7 @@
     "Mod+Shift+Delete": 1,
     "Alt+F4": 1
   };
-  var SECTION_ORDER = ["File", "Edit", "Motion", "Navigate", "Prover", "Run", "View", "Settings", "Tools"];
+  var SECTION_ORDER = ["File", "Edit", "Motion", "Navigate", "Prover", "Run", "View", "Settings", "Account", "Tools"];
   var globalHandlers = /* @__PURE__ */ Object.create(null);
   var globalFallback = null;
   var listening = false;
@@ -9322,8 +9564,8 @@
   }
   function defaultActiveCfgForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g15 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g15.Persist;
+    const g17 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g17.Persist;
     if (P3 && typeof P3.getActiveCfgForDir === "function") {
       const path = P3.getActiveCfgForDir(d);
       if (path) {
@@ -9348,8 +9590,8 @@
   }
   function defaultActiveCfgsForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g15 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g15.Persist;
+    const g17 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g17.Persist;
     if (P3 && typeof P3.getActiveCfgsForDir === "function") {
       const list3 = P3.getActiveCfgsForDir(d);
       if (list3?.length) {
@@ -9545,12 +9787,12 @@
     );
     out = out.replace(
       /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
-      (whole, _fname, sl, sc, el6, ec) => {
+      (whole, _fname, sl, sc, el7, ec) => {
         const start = mapLine(spans, +sl);
         if (!start) return whole;
         let token = `${start.name}:${start.line}.${sc}`;
-        if (el6 != null) {
-          const end = mapLine(spans, +el6);
+        if (el7 != null) {
+          const end = mapLine(spans, +el7);
           if (!end || end.id !== start.id) return whole;
           token += `-${end.line}.${ec}`;
         }
@@ -9888,12 +10130,12 @@
     });
     out = out.replace(
       /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
-      (whole, fname, sl, sc, el6, ec, idx, src) => {
+      (whole, fname, sl, sc, el7, ec, idx, src) => {
         const SL = +sl;
         if (SL > offset) {
-          const EL = el6 != null ? +el6 - offset : null;
-          if (el6 != null && EL < 1) return whole;
-          return `${fname}.bel:${SL - offset}.${sc}${el6 != null ? `-${EL}.${ec}` : ""}:`;
+          const EL = el7 != null ? +el7 - offset : null;
+          if (el7 != null && EL < 1) return whole;
+          return `${fname}.bel:${SL - offset}.${sc}${el7 != null ? `-${EL}.${ec}` : ""}:`;
         }
         const hit = preludeFileAt(prelude.spans, SL);
         if (hit) noteIssue(hit, src, idx + whole.length);
@@ -10801,8 +11043,8 @@
   }
   function separatedFromAnchor(x, y, w, h, anchor3, gap) {
     const tr = anchor3;
-    const g15 = gap;
-    return x + w <= tr.left - g15 || x >= tr.right + g15 || y + h <= tr.top - g15 || y >= tr.bottom + g15;
+    const g17 = gap;
+    return x + w <= tr.left - g17 || x >= tr.right + g17 || y + h <= tr.top - g17 || y >= tr.bottom + g17;
   }
   function overlapAreaWithAnchor(x, y, w, h, anchor3) {
     const tr = anchor3;
@@ -10818,15 +11060,15 @@
     const y2 = Math.min(vh - m, y + h) - Math.max(m, y);
     return Math.max(0, x2) * Math.max(0, y2);
   }
-  function computePointMenuPlacement(tw, th, vw, vh, m, g15, tr) {
-    let x = tr.left + g15;
-    let y = tr.top + g15;
-    if (x + tw > vw - m) x = tr.left - g15 - tw;
-    if (y + th > vh - m) y = tr.top - g15 - th;
+  function computePointMenuPlacement(tw, th, vw, vh, m, g17, tr) {
+    let x = tr.left + g17;
+    let y = tr.top + g17;
+    if (x + tw > vw - m) x = tr.left - g17 - tw;
+    if (y + th > vh - m) y = tr.top - g17 - th;
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeSideMenuPlacement(tw, th, vw, vh, m, g15, tr, side, align) {
+  function computeSideMenuPlacement(tw, th, vw, vh, m, g17, tr, side, align) {
     const ah = tr.bottom - tr.top;
     const aw = tr.right - tr.left;
     const alignY = () => {
@@ -10842,34 +11084,34 @@
     let x;
     let y;
     if (side === "right") {
-      x = tr.right + g15;
-      if (x + tw > vw - m) x = tr.left - g15 - tw;
+      x = tr.right + g17;
+      if (x + tw > vw - m) x = tr.left - g17 - tw;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "left") {
-      x = tr.left - g15 - tw;
-      if (x < m) x = tr.right + g15;
+      x = tr.left - g17 - tw;
+      if (x < m) x = tr.right + g17;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "bottom") {
-      y = tr.bottom + g15;
-      if (y + th > vh - m) y = tr.top - g15 - th;
+      y = tr.bottom + g17;
+      if (y + th > vh - m) y = tr.top - g17 - th;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     } else {
-      y = tr.top - g15 - th;
-      if (y < m) y = tr.bottom + g15;
+      y = tr.top - g17 - th;
+      if (y < m) y = tr.bottom + g17;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     }
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g15, tr) {
+  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g17, tr) {
     const side = opts.side;
     const align = opts.align ?? "start";
-    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g15, tr);
-    return computeSideMenuPlacement(tw, th, vw, vh, m, g15, tr, side, align);
+    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g17, tr);
+    return computeSideMenuPlacement(tw, th, vw, vh, m, g17, tr, side, align);
   }
   function computePosition(opts) {
     const tw = opts.width;
@@ -10880,14 +11122,14 @@
     const gap = opts.gap ?? DEFAULT_GAP;
     const tr = normalizeAnchor(opts.anchor);
     const m = margin;
-    const g15 = gap;
+    const g17 = gap;
     if (opts.mode === "menu") {
-      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g15, tr);
+      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g17, tr);
     }
     const preferPlacement = opts.preferPlacement ?? PREFERENCE_TOOLTIP;
     const requireSeparation = opts.requireSeparation !== false;
     const fits = (x, y) => fitsViewport(x, y, tw, th, vw, vh, m);
-    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g15);
+    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g17);
     const clampY = (x, y) => {
       const iy = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
       return { x, y: iy };
@@ -10899,28 +11141,28 @@
     function tryPlacement(side) {
       switch (side) {
         case "right": {
-          const x = tr.right + g15;
+          const x = tr.right + g17;
           if (x + tw > vw - m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "left": {
-          const x = tr.left - g15 - tw;
+          const x = tr.left - g17 - tw;
           if (x < m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "bottom": {
-          const y = tr.bottom + g15;
+          const y = tr.bottom + g17;
           if (y + th > vh - m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "top": {
-          const y = tr.top - g15 - th;
+          const y = tr.top - g17 - th;
           if (y < m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
@@ -10935,10 +11177,10 @@
       if (pos) return pos;
     }
     const emergency = [
-      () => ({ x: m, y: tr.bottom + g15 }),
-      () => ({ x: vw - m - tw, y: tr.bottom + g15 }),
-      () => ({ x: tr.left - g15 - tw, y: vh - m - th }),
-      () => ({ x: tr.right + g15, y: vh - m - th }),
+      () => ({ x: m, y: tr.bottom + g17 }),
+      () => ({ x: vw - m - tw, y: tr.bottom + g17 }),
+      () => ({ x: tr.left - g17 - tw, y: vh - m - th }),
+      () => ({ x: tr.right + g17, y: vh - m - th }),
       () => ({ x: m, y: m })
     ];
     let best = null;
@@ -10959,7 +11201,7 @@
       }
     }
     if (best) return best;
-    const c = clampToViewport(tr.right + g15, tr.bottom + g15, tw, th, vw, vh, m);
+    const c = clampToViewport(tr.right + g17, tr.bottom + g17, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "fallback" };
   }
   var FloatingRectPlacement2 = {
@@ -11050,12 +11292,12 @@
   var tooltipAnchor = null;
   var touchShowTimer = null;
   var tooltipSuppressLeaveUntilPointerUp = null;
-  function prepareOverflow(el6) {
-    if (!el6._belOverflowTipBound) return;
-    const getText = el6._belOverflowGetText;
-    const text = el6.scrollWidth > el6.clientWidth ? getText ? getText() : (el6.textContent || "").trim() : "";
-    if (text) el6.setAttribute("data-tooltip", text);
-    else el6.removeAttribute("data-tooltip");
+  function prepareOverflow(el7) {
+    if (!el7._belOverflowTipBound) return;
+    const getText = el7._belOverflowGetText;
+    const text = el7.scrollWidth > el7.clientWidth ? getText ? getText() : (el7.textContent || "").trim() : "";
+    if (text) el7.setAttribute("data-tooltip", text);
+    else el7.removeAttribute("data-tooltip");
   }
   function tooltipIsShowing() {
     return !!(tooltipRoot && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving"));
@@ -11205,8 +11447,8 @@
   function tooltipRectEl(anchor3) {
     const fn = anchor3._belTooltipRectEl;
     if (typeof fn === "function") {
-      const el6 = fn(anchor3);
-      if (el6 && el6.nodeType === 1 && el6.isConnected) return el6;
+      const el7 = fn(anchor3);
+      if (el7 && el7.nodeType === 1 && el7.isConnected) return el7;
     }
     return anchor3;
   }
@@ -11422,55 +11664,55 @@
     tooltipRoot.style.left = "";
     tooltipRoot.style.top = "";
   }
-  function bindTooltipEl(el6) {
-    if (!el6 || el6.nodeType !== 1 || el6._belTooltipBound) return;
-    el6._belTooltipBound = true;
-    el6.addEventListener("mouseenter", (ev) => {
+  function bindTooltipEl(el7) {
+    if (!el7 || el7.nodeType !== 1 || el7._belTooltipBound) return;
+    el7._belTooltipBound = true;
+    el7.addEventListener("mouseenter", (ev) => {
       if (!frp().prefersFineHover()) return;
       syncTooltipToPointer(ev.clientX, ev.clientY);
     });
-    el6.addEventListener("mouseleave", (ev) => {
+    el7.addEventListener("mouseleave", (ev) => {
       if (!frp().prefersFineHover()) return;
-      if (tooltipSuppressLeaveUntilPointerUp === el6) return;
+      if (tooltipSuppressLeaveUntilPointerUp === el7) return;
       syncTooltipToPointer(ev.clientX, ev.clientY);
     });
-    el6.addEventListener("focusin", () => {
-      if (!el6.matches(":focus-visible")) return;
-      if (tooltipAnchor === el6 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
+    el7.addEventListener("focusin", () => {
+      if (!el7.matches(":focus-visible")) return;
+      if (tooltipAnchor === el7 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
         return;
       }
-      showTooltip(el6);
+      showTooltip(el7);
     });
-    el6.addEventListener("focusout", () => {
-      if (tooltipAnchor === el6) hideTooltip();
+    el7.addEventListener("focusout", () => {
+      if (tooltipAnchor === el7) hideTooltip();
     });
-    el6.addEventListener(
+    el7.addEventListener(
       "pointerdown",
       (e) => {
         if (!frp().prefersFineHover() || !e.isPrimary || e.button !== 0) return;
         if (e.pointerType === "touch") return;
-        tooltipSuppressLeaveUntilPointerUp = el6;
+        tooltipSuppressLeaveUntilPointerUp = el7;
       },
       true
     );
-    el6.addEventListener(
+    el7.addEventListener(
       "touchstart",
       () => {
         if (frp().prefersFineHover()) return;
         clearTimeout(touchShowTimer);
-        touchShowTimer = setTimeout(() => showTooltip(el6), TOUCH_SHOW_DELAY_MS);
+        touchShowTimer = setTimeout(() => showTooltip(el7), TOUCH_SHOW_DELAY_MS);
       },
       { passive: true }
     );
-    el6.addEventListener("touchend", () => {
+    el7.addEventListener("touchend", () => {
       if (frp().prefersFineHover()) return;
       clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el6) hideTooltip();
+      if (tooltipAnchor === el7) hideTooltip();
     });
-    el6.addEventListener("touchcancel", () => {
+    el7.addEventListener("touchcancel", () => {
       if (frp().prefersFineHover()) return;
       clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el6) hideTooltip();
+      if (tooltipAnchor === el7) hideTooltip();
     });
   }
   function bindTooltips() {
@@ -11512,10 +11754,10 @@
       for (let i = 0; i < records2.length; i++) {
         const r = records2[i];
         if (r.type !== "attributes" || r.attributeName !== "data-tooltip" && r.attributeName !== "data-tooltip-errors" && r.attributeName !== "data-tooltip-tone" && r.attributeName !== "data-tooltip-head") continue;
-        const el6 = r.target;
-        if (!el6 || el6.nodeType !== 1) continue;
-        if (r.oldValue === el6.getAttribute(r.attributeName)) continue;
-        refreshTooltipIfAnchored(el6);
+        const el7 = r.target;
+        if (!el7 || el7.nodeType !== 1) continue;
+        if (r.oldValue === el7.getAttribute(r.attributeName)) continue;
+        refreshTooltipIfAnchored(el7);
       }
     });
     tooltipAttrObserver.observe(document.documentElement, {
@@ -11525,46 +11767,46 @@
       attributeFilter: ["data-tooltip", "data-tooltip-errors", "data-tooltip-tone", "data-tooltip-head"]
     });
   }
-  function setTooltip(el6, text, opts) {
-    if (!el6 || el6.nodeType !== 1) return;
+  function setTooltip(el7, text, opts) {
+    if (!el7 || el7.nodeType !== 1) return;
     opts = opts || {};
-    el6.removeAttribute("title");
+    el7.removeAttribute("title");
     const tip = text != null ? String(text).trim() : "";
     if (!tip) {
-      el6.removeAttribute("data-tooltip");
-      if (opts.ariaLabel !== false) el6.removeAttribute("aria-label");
+      el7.removeAttribute("data-tooltip");
+      if (opts.ariaLabel !== false) el7.removeAttribute("aria-label");
       return;
     }
-    const prev = el6.getAttribute("data-tooltip");
-    if (prev !== tip) el6.setAttribute("data-tooltip", tip);
-    if (opts.ariaLabel !== false) el6.setAttribute("aria-label", tip);
-    bindTooltipEl(el6);
+    const prev = el7.getAttribute("data-tooltip");
+    if (prev !== tip) el7.setAttribute("data-tooltip", tip);
+    if (opts.ariaLabel !== false) el7.setAttribute("aria-label", tip);
+    bindTooltipEl(el7);
   }
-  function setRichTooltip(el6, buildFragment, ariaText) {
-    if (!el6 || el6.nodeType !== 1) return;
-    el6.removeAttribute("title");
+  function setRichTooltip(el7, buildFragment, ariaText) {
+    if (!el7 || el7.nodeType !== 1) return;
+    el7.removeAttribute("title");
     if (typeof buildFragment !== "function") {
-      el6._belTooltipRich = null;
-      el6.removeAttribute("data-tooltip-rich");
+      el7._belTooltipRich = null;
+      el7.removeAttribute("data-tooltip-rich");
       return;
     }
-    el6._belTooltipRich = buildFragment;
-    el6.setAttribute("data-tooltip-rich", "");
+    el7._belTooltipRich = buildFragment;
+    el7.setAttribute("data-tooltip-rich", "");
     const aria = ariaText != null ? String(ariaText).trim() : "";
-    if (aria) el6.setAttribute("aria-label", aria);
-    bindTooltipEl(el6);
+    if (aria) el7.setAttribute("aria-label", aria);
+    bindTooltipEl(el7);
   }
-  function bindOverflowTip(el6, getText) {
-    if (!el6 || el6.nodeType !== 1 || el6._belOverflowTipBound) return;
-    el6._belOverflowTipBound = true;
-    el6._belOverflowGetText = getText || null;
-    el6.addEventListener("mouseenter", function() {
+  function bindOverflowTip(el7, getText) {
+    if (!el7 || el7.nodeType !== 1 || el7._belOverflowTipBound) return;
+    el7._belOverflowTipBound = true;
+    el7._belOverflowGetText = getText || null;
+    el7.addEventListener("mouseenter", function() {
       if (!frp().prefersFineHover()) return;
-      const text = el6.scrollWidth > el6.clientWidth ? getText ? getText() : (el6.textContent || "").trim() : "";
-      if (text) el6.setAttribute("data-tooltip", text);
-      else el6.removeAttribute("data-tooltip");
+      const text = el7.scrollWidth > el7.clientWidth ? getText ? getText() : (el7.textContent || "").trim() : "";
+      if (text) el7.setAttribute("data-tooltip", text);
+      else el7.removeAttribute("data-tooltip");
     });
-    bindTooltipEl(el6);
+    bindTooltipEl(el7);
   }
   var Tooltips2 = {
     hide: hideTooltip,
@@ -11578,19 +11820,19 @@
     bindOverflow: bindOverflowTip,
     // Position the tooltip against another element's rect (resolved lazily on
     // each show) while hover behaviour stays on `el`. Falsy result → own rect.
-    setRectEl(el6, fn) {
-      if (el6 && el6.nodeType === 1) el6._belTooltipRectEl = typeof fn === "function" ? fn : null;
+    setRectEl(el7, fn) {
+      if (el7 && el7.nodeType === 1) el7._belTooltipRectEl = typeof fn === "function" ? fn : null;
     },
     // The element the visible tooltip is anchored to (null when hidden). Lets
     // external hover controllers hide only tooltips they own.
     activeAnchor() {
       return tooltipAnchor;
     },
-    suppressAnchor(el6) {
-      suppressedTooltipAnchors.add(el6);
+    suppressAnchor(el7) {
+      suppressedTooltipAnchors.add(el7);
     },
-    releaseAnchor(el6) {
-      suppressedTooltipAnchors.delete(el6);
+    releaseAnchor(el7) {
+      suppressedTooltipAnchors.delete(el7);
     }
   };
   function installTooltips() {
@@ -12064,8 +12306,8 @@
     }
     function relayoutAll() {
       for (let i = 0; i < openMenus.length; i++) {
-        const { el: el6, anchorRef, side, align, isSubmenu } = openMenus[i];
-        layoutMenuEl(el6, anchorRef, side, align, isSubmenu);
+        const { el: el7, anchorRef, side, align, isSubmenu } = openMenus[i];
+        layoutMenuEl(el7, anchorRef, side, align, isSubmenu);
       }
     }
     function rovingTabIndexForPanel(menuEl) {
@@ -12076,7 +12318,7 @@
     }
     function focusableMenuItems(menuEl) {
       return Array.from(menuEl.querySelectorAll(":scope > .menu-item")).filter(
-        (el6) => !el6.disabled && !el6.hasAttribute("data-menu-skip-focus")
+        (el7) => !el7.disabled && !el7.hasAttribute("data-menu-skip-focus")
       );
     }
     function focusMenuItem(menuEl, index) {
@@ -12353,6 +12595,26 @@
       sec.textContent = item.label ?? "";
       return sec;
     }
+    function buildStatus(item) {
+      const row = document.createElement("div");
+      row.className = "menu-status" + (item.tone ? ` is-${item.tone}` : "") + (item.className ? ` ${item.className}` : "");
+      row.setAttribute("role", "presentation");
+      if (item.media) row.appendChild(item.media);
+      const text = document.createElement("div");
+      text.className = "menu-status-text";
+      const title = document.createElement("div");
+      title.className = "menu-status-title";
+      title.textContent = item.title ?? item.label ?? "";
+      text.appendChild(title);
+      if (item.detail) {
+        const detail2 = document.createElement("div");
+        detail2.className = "menu-status-detail";
+        detail2.textContent = item.detail;
+        text.appendChild(detail2);
+      }
+      row.appendChild(text);
+      return row;
+    }
     function normalizeMenuItems(items3) {
       if (!items3 || !items3.length) return [];
       var out = [];
@@ -12390,6 +12652,10 @@
         }
         if (rowType === "section") {
           wrap.appendChild(buildSection(item));
+          continue;
+        }
+        if (rowType === "status") {
+          wrap.appendChild(buildStatus(item));
           continue;
         }
         if (rowType !== "item" && customRowTypes[rowType]) {
@@ -13000,9 +13266,9 @@
     });
     setActive(0, { scroll: true });
   }
-  function appendHighlighted(el6, text, positions) {
+  function appendHighlighted(el7, text, positions) {
     if (!positions || !positions.length) {
-      el6.textContent = text;
+      el7.textContent = text;
       return;
     }
     const set = new Set(positions);
@@ -13022,9 +13288,9 @@
       if (runHit) {
         const b = document.createElement("b");
         b.textContent = run3;
-        el6.appendChild(b);
+        el7.appendChild(b);
       } else {
-        el6.appendChild(document.createTextNode(run3));
+        el7.appendChild(document.createTextNode(run3));
       }
       run3 = "";
     }
@@ -13538,8 +13804,8 @@
       }
       if (row.id && !keys[had].id) keys[had] = row;
     };
-    for (const g15 of styleGroups3 || []) {
-      for (const r of g15.rows) {
+    for (const g17 of styleGroups3 || []) {
+      for (const r of g17.rows) {
         push2({
           id: r.id,
           title: r.title,
@@ -13568,10 +13834,10 @@
       prefix: access.prefix,
       rows: rows2.filter((r) => (r.ex || []).length)
     }] : [];
-    const live2 = groups.filter((g15) => g15.rows.length);
+    const live2 = groups.filter((g17) => g17.rows.length);
     if (note && live2.length) live2[live2.length - 1].closing = note;
     const tail = reserved ? [reserved] : [];
-    return live2.concat(line.filter((g15) => g15.rows.length)).concat(tail.filter((g15) => g15 && (g15.rows.length || (g15.meta || []).length)));
+    return live2.concat(line.filter((g17) => g17.rows.length)).concat(tail.filter((g17) => g17 && (g17.rows.length || (g17.meta || []).length)));
   }
   function commandLineAccess(style, chord) {
     if (style === "vim") return { prefix: ":", open: "Press : in Normal mode." };
@@ -13580,7 +13846,7 @@
     return null;
   }
   function countRows(groups) {
-    return (groups || []).reduce((n, g15) => n + g15.rows.length, 0);
+    return (groups || []).reduce((n, g17) => n + g17.rows.length, 0);
   }
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -13701,9 +13967,9 @@
       return [];
     }
     if (!C2 || typeof C2.chordShadowFor !== "function") return groups;
-    return groups.map((g15) => ({
-      name: g15.name,
-      rows: g15.rows.map((r) => Object.assign({}, r, {
+    return groups.map((g17) => ({
+      name: g17.name,
+      rows: g17.rows.map((r) => Object.assign({}, r, {
         shadow: C2.chordShadowFor({ style, keys: r.keys, commandId: r.id })
       }))
     }));
@@ -13815,14 +14081,14 @@
       say("This browser has no Keyboard Lock, so the reserved chords stay reserved.");
       return false;
     }
-    const el6 = global17.document && global17.document.documentElement;
-    if (!el6 || typeof el6.requestFullscreen !== "function") {
+    const el7 = global17.document && global17.document.documentElement;
+    if (!el7 || typeof el7.requestFullscreen !== "function") {
       say("Full keyboard needs fullscreen, which this browser will not give.");
       return false;
     }
     watchFullscreen();
     try {
-      if (!global17.document.fullscreenElement) await el6.requestFullscreen();
+      if (!global17.document.fullscreenElement) await el7.requestFullscreen();
       await global17.navigator.keyboard.lock();
     } catch (err) {
       if (global17.document.fullscreenElement && global17.document.exitFullscreen) {
@@ -14028,17 +14294,17 @@
     var end = endFades ? "#000 calc(100% - " + size + "px), transparent 100%" : "#000 100%";
     return "linear-gradient(" + dir + ", " + start + ", " + end + ")";
   }
-  function applyMask(el6, sides, size) {
+  function applyMask(el7, sides, size) {
     var masks = [];
     var mx = axisMask("to right", sides.left, sides.right, size);
     var my = axisMask("to bottom", sides.top, sides.bottom, size);
     if (mx) masks.push(mx);
     if (my) masks.push(my);
     var value = masks.length ? masks.join(", ") : "";
-    el6.style.webkitMaskImage = value;
-    el6.style.maskImage = value;
+    el7.style.webkitMaskImage = value;
+    el7.style.maskImage = value;
     if (value) {
-      el6.setAttribute(
+      el7.setAttribute(
         "data-scroll-fade",
         [
           sides.top && "top",
@@ -14048,49 +14314,49 @@
         ].filter(Boolean).join(" ")
       );
     } else {
-      el6.removeAttribute("data-scroll-fade");
+      el7.removeAttribute("data-scroll-fade");
     }
   }
-  function attach2(el6, opts) {
-    if (!el6) return { update: function() {
+  function attach2(el7, opts) {
+    if (!el7) return { update: function() {
     }, destroy: function() {
     } };
     opts = opts || {};
     var size = opts.size || 16;
     var axis = opts.axis || "both";
-    function update() {
+    function update2() {
       var sides = computeSides({
-        scrollTop: el6.scrollTop,
-        scrollLeft: el6.scrollLeft,
-        scrollWidth: el6.scrollWidth,
-        scrollHeight: el6.scrollHeight,
-        clientWidth: el6.clientWidth,
-        clientHeight: el6.clientHeight,
+        scrollTop: el7.scrollTop,
+        scrollLeft: el7.scrollLeft,
+        scrollWidth: el7.scrollWidth,
+        scrollHeight: el7.scrollHeight,
+        clientWidth: el7.clientWidth,
+        clientHeight: el7.clientHeight,
         axis
       });
-      applyMask(el6, sides, size);
+      applyMask(el7, sides, size);
     }
     var onScroll = function() {
-      update();
+      update2();
     };
-    el6.addEventListener("scroll", onScroll, { passive: true });
+    el7.addEventListener("scroll", onScroll, { passive: true });
     var ro = null;
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(function() {
-        update();
+        update2();
       });
-      ro.observe(el6);
+      ro.observe(el7);
     }
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(update);
-    else update();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(update2);
+    else update2();
     return {
-      update,
+      update: update2,
       destroy: function() {
-        el6.removeEventListener("scroll", onScroll);
+        el7.removeEventListener("scroll", onScroll);
         if (ro) ro.disconnect();
-        el6.style.webkitMaskImage = "";
-        el6.style.maskImage = "";
-        el6.removeAttribute("data-scroll-fade");
+        el7.style.webkitMaskImage = "";
+        el7.style.maskImage = "";
+        el7.removeAttribute("data-scroll-fade");
       }
     };
   }
@@ -14105,26 +14371,26 @@
   function prefersFineHover2() {
     return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   }
-  function bind2(el6, opts) {
-    if (!el6 || el6.nodeType !== 1 || el6._textSlideBound) return;
-    el6._textSlideBound = true;
+  function bind2(el7, opts) {
+    if (!el7 || el7.nodeType !== 1 || el7._textSlideBound) return;
+    el7._textSlideBound = true;
     opts = opts || {};
-    var triggerEl = opts.triggerEl && opts.triggerEl.nodeType === 1 ? opts.triggerEl : el6;
-    var inner = el6.querySelector(".text-slide-inner");
+    var triggerEl = opts.triggerEl && opts.triggerEl.nodeType === 1 ? opts.triggerEl : el7;
+    var inner = el7.querySelector(".text-slide-inner");
     if (!inner) {
       inner = document.createElement("span");
       inner.className = "text-slide-inner";
-      while (el6.firstChild) inner.appendChild(el6.firstChild);
-      el6.appendChild(inner);
+      while (el7.firstChild) inner.appendChild(el7.firstChild);
+      el7.appendChild(inner);
     }
     var active5 = false;
     var returnHandler = null;
     function measure2() {
-      var overflow = inner.scrollWidth - el6.clientWidth;
+      var overflow = inner.scrollWidth - el7.clientWidth;
       if (overflow <= 1) return 0;
       var slideS = Math.max(MIN_SLIDE_S, overflow / SPEED_PX_PER_S);
-      el6.style.setProperty("--text-slide-offset", "-" + overflow + "px");
-      el6.style.setProperty("--text-slide-duration", (slideS / SLIDE_FRAC).toFixed(3) + "s");
+      el7.style.setProperty("--text-slide-offset", "-" + overflow + "px");
+      el7.style.setProperty("--text-slide-duration", (slideS / SLIDE_FRAC).toFixed(3) + "s");
       return overflow;
     }
     function cancelReturn() {
@@ -14138,13 +14404,13 @@
       cancelReturn();
       inner.style.transition = "";
       inner.style.transform = "";
-      if (measure2() > 1) el6.classList.add("text-slide--playing");
+      if (measure2() > 1) el7.classList.add("text-slide--playing");
     }
     function stop() {
       active5 = false;
-      if (!el6.classList.contains("text-slide--playing")) return;
+      if (!el7.classList.contains("text-slide--playing")) return;
       var cur = window.getComputedStyle(inner).transform;
-      el6.classList.remove("text-slide--playing");
+      el7.classList.remove("text-slide--playing");
       inner.style.transform = cur;
       void inner.offsetWidth;
       inner.style.transition = "transform " + RETURN_MS + "ms ease-out";
@@ -14165,7 +14431,7 @@
       var ro = new ResizeObserver(function() {
         if (active5) measure2();
       });
-      ro.observe(el6);
+      ro.observe(el7);
     }
   }
   function bindAll() {
@@ -14196,9 +14462,9 @@
   }
   function findSurfaceSearchInput(root2) {
     if (!root2 || typeof root2.querySelector !== "function") return null;
-    const el6 = root2.querySelector(SURFACE_SEARCH_SELECTOR);
-    if (!el6 || el6.disabled) return null;
-    return el6;
+    const el7 = root2.querySelector(SURFACE_SEARCH_SELECTOR);
+    if (!el7 || el7.disabled) return null;
+    return el7;
   }
   function capturingSearchInput() {
     if (typeof document === "undefined") return null;
@@ -14608,16 +14874,16 @@
   }
   function open6(opts) {
     opts = opts || {};
-    const { el: el6, buildRowActions: buildRowActions2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
+    const { el: el7, buildRowActions: buildRowActions2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
     const normalize2 = typeof opts.normalize === "function" ? opts.normalize : defaultNormalize;
     const validate = typeof opts.validate === "function" ? opts.validate : defaultValidate;
     const initialValue = opts.value != null ? String(opts.value) : "";
     const sel = selectionForValue(initialValue, opts.selection);
     let settled = false;
     return new Promise((resolve2) => {
-      const wrap = el6("div", "jar-name-prompt");
-      const leadEl = opts.message ? el6("p", "jar-name-prompt__message", opts.message) : null;
-      const input2 = el6("input", "jar-name-prompt__input");
+      const wrap = el7("div", "jar-name-prompt");
+      const leadEl = opts.message ? el7("p", "jar-name-prompt__message", opts.message) : null;
+      const input2 = el7("input", "jar-name-prompt__input");
       input2.type = "text";
       input2.value = initialValue;
       input2.spellcheck = false;
@@ -14625,11 +14891,11 @@
       if (opts.mono) input2.classList.add("is-mono");
       if (opts.placeholder) input2.placeholder = opts.placeholder;
       wrap.appendChild(input2);
-      const errorEl = el6("p", "jar-name-prompt__error");
+      const errorEl = el7("p", "jar-name-prompt__error");
       errorEl.hidden = true;
       wrap.appendChild(errorEl);
       if (opts.hint) {
-        const hint = el6("p", "jar-name-prompt__hint");
+        const hint = el7("p", "jar-name-prompt__hint");
         hint.textContent = opts.hint;
         wrap.appendChild(hint);
       }
@@ -14732,15 +14998,15 @@
     return slash === -1 ? path : path.slice(slash + 1);
   }
   function buildConflictBody(conflict, total, index) {
-    const { el: el6, markMono: markMono2 } = PromptDialog;
-    const wrap = el6("div", "jar-conflict-dialog__panel");
+    const { el: el7, markMono: markMono2 } = PromptDialog;
+    const wrap = el7("div", "jar-conflict-dialog__panel");
     if (total > 1) {
-      wrap.appendChild(el6("p", "jar-prompt-dialog__step", `${index + 1} of ${total}`));
+      wrap.appendChild(el7("p", "jar-prompt-dialog__step", `${index + 1} of ${total}`));
     }
-    const subject = el6("p", "jar-prompt-dialog__subject");
+    const subject = el7("p", "jar-prompt-dialog__subject");
     subject.appendChild(markMono2(conflict.label));
     wrap.appendChild(subject);
-    const message2 = el6("p", "jar-prompt-dialog__message");
+    const message2 = el7("p", "jar-prompt-dialog__message");
     message2.textContent = conflict.kind === "folder" ? "A folder with this name is already in the project." : "A file with this name is already in the project.";
     wrap.appendChild(message2);
     return wrap;
@@ -14770,12 +15036,12 @@
   function resolveConflicts(conflicts, options) {
     options = options || {};
     if (!conflicts || !conflicts.length) return Promise.resolve([]);
-    const { el: el6, WRAP_CLASS: WRAP_CLASS2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
+    const { el: el7, WRAP_CLASS: WRAP_CLASS2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
     return new Promise((resolve2) => {
       let index = 0;
       const resolutions = [];
       let settled = false;
-      const shell = el6("div", "jar-prompt-dialog");
+      const shell = el7("div", "jar-prompt-dialog");
       const dialogEl = createDialog({
         ariaLabel: "Name conflict",
         content: shell,
@@ -14824,25 +15090,8 @@
       openDialog(dialogEl);
     });
   }
-  function resolveTextConflict(opts) {
-    opts = opts || {};
-    const where = opts.source === "device" ? "Another device" : "Another tab";
-    return PromptDialog.open({
-      ariaLabel: "Edit conflict",
-      subject: opts.fileName || void 0,
-      message: where + " changed the same lines as you.",
-      note: "Both versions are kept until you choose.",
-      layout: "row",
-      buttons: [
-        { action: "both", label: "Keep both", variant: "secondary" },
-        { action: "theirs", label: "Take theirs", variant: "secondary" },
-        { action: "mine", label: "Keep mine", variant: "primary" }
-      ]
-    }).then((action) => action === "mine" || action === "theirs" || action === "both" ? action : null);
-  }
   var ConflictDialog2 = {
-    resolveConflicts,
-    resolveTextConflict
+    resolveConflicts
   };
   var g12 = typeof window !== "undefined" ? window : globalThis;
   g12.ConflictDialog = ConflictDialog2;
@@ -15489,9 +15738,9 @@
     for (var rf = 0; rf < replaceFolders.length; rf++) {
       var folder = replaceFolders[rf];
       var deleteIds = [];
-      for (var g15 = 0; g15 < existingFiles.length; g15++) {
-        var nm = existingFiles[g15].name;
-        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g15].id);
+      for (var g17 = 0; g17 < existingFiles.length; g17++) {
+        var nm = existingFiles[g17].name;
+        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g17].id);
       }
       plan.replaceFolder.push({
         prefix: folder.prefix,
@@ -16316,8 +16565,8 @@
     for (var f = 0; f < fps.length; f++) {
       var fp = fps[f];
       var nested = false;
-      for (var g15 = 0; g15 < fps.length; g15++) {
-        if (fps[g15] !== fp && isPathUnderFolder(fp, fps[g15])) {
+      for (var g17 = 0; g17 < fps.length; g17++) {
+        if (fps[g17] !== fp && isPathUnderFolder(fp, fps[g17])) {
           nested = true;
           break;
         }
@@ -17074,19 +17323,19 @@
         }
       });
     }
-    function applyFileDiagTip(el6, fileId, fileName, diag) {
-      if (!el6 || !diag) return;
+    function applyFileDiagTip(el7, fileId, fileName, diag) {
+      if (!el7 || !diag) return;
       if (typeof opts.bindFileDiagTip === "function") {
-        opts.bindFileDiagTip(el6, fileId, fileName, diag);
+        opts.bindFileDiagTip(el7, fileId, fileName, diag);
       } else if (typeof opts.applyTip === "function") {
-        opts.applyTip(el6, diag === "error" ? "Has errors" : "Has warnings");
+        opts.applyTip(el7, diag === "error" ? "Has errors" : "Has warnings");
       }
     }
-    function clearFileDiagTip(el6) {
-      if (!el6) return;
-      el6.removeAttribute("data-tooltip-errors");
-      el6.removeAttribute("data-tooltip-head");
-      el6.removeAttribute("data-tooltip");
+    function clearFileDiagTip(el7) {
+      if (!el7) return;
+      el7.removeAttribute("data-tooltip-errors");
+      el7.removeAttribute("data-tooltip-head");
+      el7.removeAttribute("data-tooltip");
     }
     function applyRowDiag(row, fid, fname, diag) {
       var dot = row.querySelector(".explorer-file-diag");
@@ -17603,8 +17852,8 @@
       host: wrap,
       input: input2,
       header: opts.header || wrap.closest(".panel-header"),
-      keepOpenFor: function(el6) {
-        return ac.contains(el6);
+      keepOpenFor: function(el7) {
+        return ac.contains(el7);
       },
       onInput: schedule2,
       onClose: clearAc,
@@ -18295,10 +18544,10 @@
         searchPending = false;
         searchToken += 1;
       }
-      render6();
+      render7();
     }
-    function applyTip(el6, tip) {
-      if (typeof opts.applyTip === "function") opts.applyTip(el6, tip);
+    function applyTip(el7, tip) {
+      if (typeof opts.applyTip === "function") opts.applyTip(el7, tip);
     }
     function toast4(msg, kind) {
       if (typeof opts.showToast === "function") opts.showToast(msg, { kind: kind || "info" });
@@ -19038,7 +19287,7 @@
         searchSnippets = null;
         searchPending = false;
         if (searchWrap) searchWrap.classList.remove("is-searching");
-        render6();
+        render7();
         return;
       }
       var token = ++searchToken;
@@ -19051,7 +19300,7 @@
       searchSnippets = /* @__PURE__ */ Object.create(null);
       searchPending = true;
       if (searchWrap) searchWrap.classList.add("is-searching");
-      render6();
+      render7();
       LS.searchEntries(allFileEntries, q, fetchContent, { limit: 0 }).then(function(hits) {
         if (token !== searchToken) return;
         searchPending = false;
@@ -19065,7 +19314,7 @@
             searchSnippets[h.entry.id] = { snippet: h.snippet, line: h.line };
           }
         }
-        render6();
+        render7();
       });
     }
     var searchTimer = null;
@@ -19180,7 +19429,7 @@
         if (folder.description) applyTip(toggleBtn, folder.description);
         toggleBtn.addEventListener("click", function() {
           toggleCategoryExpanded(foldKey);
-          render6();
+          render7();
         });
         catRow.appendChild(toggleBtn);
         var previewBtn = actionBtn2("library-category-preview", "Preview", ICON_PREVIEW, false, function() {
@@ -19221,7 +19470,7 @@
       }
       return rendered2;
     }
-    function render6() {
+    function render7() {
       container.innerHTML = "";
       if (!manifest || !manifest.sections || !manifest.sections.length) {
         var empty = document.createElement("p");
@@ -19265,11 +19514,11 @@
       }).then(function(data) {
         manifest = data;
         rebuildFileIndex();
-        render6();
+        render7();
       }).catch(function() {
         manifest = null;
         allFileEntries = [];
-        render6();
+        render7();
       });
     }
     if (searchEl && searchWrap && global31.HeaderSearch) {
@@ -19285,7 +19534,7 @@
     return {
       refresh: function() {
         refreshSuites();
-        render6();
+        render7();
       },
       collapseFolders,
       reload: loadManifest
@@ -19441,21 +19690,21 @@
     if (!entry || entry.leaving || entry.dismissed) return;
     entry.leaving = true;
     clearTimers2(entry);
-    const el6 = entry.el;
-    el6.classList.remove("is-visible");
-    el6.classList.add("is-leaving");
+    const el7 = entry.el;
+    el7.classList.remove("is-visible");
+    el7.classList.add("is-leaving");
     let done = false;
     const finish = () => {
       if (done) return;
       done = true;
-      el6.removeEventListener("transitionend", onEnd);
+      el7.removeEventListener("transitionend", onEnd);
       finishDismiss(id, entry);
     };
     const onEnd = (e) => {
-      if (e.target !== el6) return;
+      if (e.target !== el7) return;
       finish();
     };
-    el6.addEventListener("transitionend", onEnd);
+    el7.addEventListener("transitionend", onEnd);
     setTimeout(finish, LEAVE_MS2 + 40);
   }
   function wireUntil(id, entry, untilFn) {
@@ -19482,14 +19731,14 @@
       pushNotification(parsed.message, parsed);
     }
     const id = nextId();
-    const el6 = document.createElement("div");
-    el6.className = "toast " + kindClass(parsed.kind);
-    el6.setAttribute("role", parsed.kind === "error" ? "alert" : "status");
-    el6.dataset.toastId = id;
+    const el7 = document.createElement("div");
+    el7.className = "toast " + kindClass(parsed.kind);
+    el7.setAttribute("role", parsed.kind === "error" ? "alert" : "status");
+    el7.dataset.toastId = id;
     const body = document.createElement("div");
     body.className = "toast-body";
     body.textContent = parsed.message;
-    el6.appendChild(body);
+    el7.appendChild(body);
     if (parsed.closable) {
       const closeBtn2 = document.createElement("button");
       closeBtn2.type = "button";
@@ -19500,11 +19749,11 @@
         e.stopPropagation();
         animateOut(id, entry);
       });
-      el6.appendChild(closeBtn2);
+      el7.appendChild(closeBtn2);
     }
     const entry = {
       id,
-      el: el6,
+      el: el7,
       dismissed: false,
       leaving: false,
       onDismiss: parsed.onDismiss,
@@ -19514,9 +19763,9 @@
     };
     live.set(id, entry);
     showToastLayer();
-    stackEl.appendChild(el6);
+    stackEl.appendChild(el7);
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => el6.classList.add("is-visible"));
+      requestAnimationFrame(() => el7.classList.add("is-visible"));
     });
     if (parsed.until) {
       wireUntil(id, entry, parsed.until);
@@ -19975,11 +20224,11 @@
   function svgMarkup(paths, cls) {
     return "<svg" + (cls ? ' class="' + cls + '"' : "") + ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
   }
-  function bindTooltip(el6, text) {
-    if (!el6 || !text) return;
-    el6.setAttribute("data-tooltip", text);
+  function bindTooltip(el7, text) {
+    if (!el7 || !text) return;
+    el7.setAttribute("data-tooltip", text);
     try {
-      if (typeof Tooltips !== "undefined" && typeof Tooltips.bind === "function") Tooltips.bind(el6);
+      if (typeof Tooltips !== "undefined" && typeof Tooltips.bind === "function") Tooltips.bind(el7);
     } catch (_) {
     }
   }
@@ -20417,15 +20666,15 @@
   function hoverTimestampOn() {
     return Settings.get("replHoverTimestamp");
   }
-  function clearStampTooltip(el6) {
-    if (!el6 || el6.nodeType !== 1) return;
+  function clearStampTooltip(el7) {
+    if (!el7 || el7.nodeType !== 1) return;
     if (typeof Tooltips !== "undefined" && Tooltips.set) {
-      Tooltips.set(el6, "", { ariaLabel: false });
+      Tooltips.set(el7, "", { ariaLabel: false });
     } else {
-      el6.removeAttribute("data-tooltip");
+      el7.removeAttribute("data-tooltip");
     }
-    el6.removeAttribute("data-tooltip-placement");
-    el6.removeAttribute("data-tooltip-no-track");
+    el7.removeAttribute("data-tooltip-placement");
+    el7.removeAttribute("data-tooltip-no-track");
   }
   function setStampTooltip(host2, tip) {
     if (!hoverTimestampOn()) {
@@ -20440,11 +20689,11 @@
       host2.setAttribute("data-tooltip", tip);
     }
   }
-  function clearStamp(el6) {
-    if (!el6 || el6.nodeType !== 1) return;
-    if (el6.dataset) delete el6.dataset.ms;
-    el6.removeAttribute("data-ms");
-    clearStampTooltip(el6);
+  function clearStamp(el7) {
+    if (!el7 || el7.nodeType !== 1) return;
+    if (el7.dataset) delete el7.dataset.ms;
+    el7.removeAttribute("data-ms");
+    clearStampTooltip(el7);
   }
   function syncStampHoverPref(root2) {
     var scope = root2 || getOutput();
@@ -20452,10 +20701,10 @@
     if (hoverTimestampOn()) {
       var stamped = scope.querySelectorAll("[data-ms]");
       for (var i = 0; i < stamped.length; i++) {
-        var el6 = stamped[i];
-        var t = Number(el6.dataset.ms);
+        var el7 = stamped[i];
+        var t = Number(el7.dataset.ms);
         if (!Number.isFinite(t)) continue;
-        setStampTooltip(el6, formatTs(t));
+        setStampTooltip(el7, formatTs(t));
       }
       return;
     }
@@ -20541,12 +20790,12 @@
     if (!scope || !scope.querySelectorAll) return;
     var stamps = scope.querySelectorAll(".repl-ts");
     for (var i = 0; i < stamps.length; i++) {
-      var el6 = stamps[i];
-      var parent = el6.parentElement;
+      var el7 = stamps[i];
+      var parent = el7.parentElement;
       var ms = NaN;
-      if (el6.dataset && el6.dataset.ms) ms = Number(el6.dataset.ms);
-      if (!Number.isFinite(ms) && el6.dateTime) ms = Date.parse(el6.dateTime);
-      if (el6.parentNode) el6.parentNode.removeChild(el6);
+      if (el7.dataset && el7.dataset.ms) ms = Number(el7.dataset.ms);
+      if (!Number.isFinite(ms) && el7.dateTime) ms = Date.parse(el7.dateTime);
+      if (el7.parentNode) el7.parentNode.removeChild(el7);
       if (parent) stampHost(parent, Number.isFinite(ms) ? ms : Date.now());
     }
   }
@@ -20566,10 +20815,10 @@
     }
     var stamped = scope.querySelectorAll("[data-ms]");
     for (var j = 0; j < stamped.length; j++) {
-      var el6 = stamped[j];
-      var t = Number(el6.dataset.ms);
+      var el7 = stamped[j];
+      var t = Number(el7.dataset.ms);
       if (!Number.isFinite(t)) continue;
-      setStampTooltip(el6, formatTs(t));
+      setStampTooltip(el7, formatTs(t));
     }
   }
   function buildLiveLine() {
@@ -23396,8 +23645,8 @@
     });
     container.appendChild(trigger);
     function updateFocus() {
-      optionEls.forEach(function(el6, i) {
-        el6.classList.toggle("is-focused", i === focusedIdx);
+      optionEls.forEach(function(el7, i) {
+        el7.classList.toggle("is-focused", i === focusedIdx);
       });
     }
     function setValue(val) {
@@ -23406,8 +23655,8 @@
         return o.value === val;
       })[0];
       valueSpan.textContent = opt ? opt.label : val;
-      optionEls.forEach(function(el6) {
-        el6.classList.toggle("is-selected", el6.dataset.value === val);
+      optionEls.forEach(function(el7) {
+        el7.classList.toggle("is-selected", el7.dataset.value === val);
       });
     }
     function reposition() {
@@ -23429,9 +23678,9 @@
       panel2.style.left = pos.x + "px";
     }
     function open11() {
-      var el6 = container.parentElement;
-      while (el6 && el6.tagName !== "DIALOG") el6 = el6.parentElement;
-      var mountEl = el6 || document.body;
+      var el7 = container.parentElement;
+      while (el7 && el7.tagName !== "DIALOG") el7 = el7.parentElement;
+      var mountEl = el7 || document.body;
       if (panel2.parentElement !== mountEl) mountEl.appendChild(panel2);
       panel2.style.visibility = "hidden";
       panel2.style.display = "block";
@@ -23529,6 +23778,8 @@
   var settingsDialogEl = null;
   var keybindingsApi = null;
   var aliasesApi = null;
+  var refreshAccountTab = null;
+  var selectCategoryRef = null;
   var controls = {};
   var settingsSearchInput = null;
   var closeSettingsSearch = null;
@@ -24070,11 +24321,11 @@
         global43.Toasts.show(message2, { kind: "warn" });
       }
     }
-    function setTip2(el6, text) {
+    function setTip2(el7, text) {
       if (global43.Tooltips && typeof global43.Tooltips.set === "function") {
-        global43.Tooltips.set(el6, text);
+        global43.Tooltips.set(el7, text);
       } else {
-        el6.setAttribute("aria-label", text);
+        el7.setAttribute("aria-label", text);
       }
     }
     function normalizePairs(raw) {
@@ -24140,10 +24391,10 @@
       return null;
     }
     function buildRow2(row) {
-      var el6 = document.createElement("div");
-      el6.className = "jar-alias__row";
-      el6.setAttribute("role", "listitem");
-      el6.dataset.rowId = String(row.id);
+      var el7 = document.createElement("div");
+      el7.className = "jar-alias__row";
+      el7.setAttribute("role", "listitem");
+      el7.dataset.rowId = String(row.id);
       var trigger = document.createElement("input");
       trigger.type = "text";
       trigger.className = "jar-alias__input jar-alias__input--trigger";
@@ -24239,15 +24490,15 @@
           return r.id !== row.id;
         });
         commit();
-        render6();
+        render7();
       });
-      el6.appendChild(trigger);
-      el6.appendChild(arrow);
-      el6.appendChild(expansion);
-      el6.appendChild(del);
-      return el6;
+      el7.appendChild(trigger);
+      el7.appendChild(arrow);
+      el7.appendChild(expansion);
+      el7.appendChild(del);
+      return el7;
     }
-    function render6() {
+    function render7() {
       list3.replaceChildren();
       footer.hidden = false;
       if (!rows2.length) {
@@ -24263,13 +24514,13 @@
     }
     function reload() {
       rows2 = rowsFromPairs(loadPairs());
-      render6();
+      render7();
     }
     addBtn.addEventListener("click", function() {
       if (typeof closeSettingsSearch === "function") closeSettingsSearch(true);
       var row = { id: nextRowId++, from: "", to: "" };
       rows2.push(row);
-      render6();
+      render7();
       var triggerEl = list3.querySelector('[data-row-id="' + row.id + '"] .jar-alias__input--trigger');
       if (triggerEl) triggerEl.focus();
     });
@@ -24426,16 +24677,16 @@
       return pop;
     }
     function positionPop() {
-      var el6 = ensurePop();
-      el6.hidden = false;
-      el6.classList.remove("is-visible", "tooltip-spout-left", "tooltip-spout-right");
-      el6.style.visibility = "hidden";
-      el6.style.left = "0";
-      el6.style.top = "0";
+      var el7 = ensurePop();
+      el7.hidden = false;
+      el7.classList.remove("is-visible", "tooltip-spout-left", "tooltip-spout-right");
+      el7.style.visibility = "hidden";
+      el7.style.left = "0";
+      el7.style.top = "0";
       var br = btn.getBoundingClientRect();
       var gap = 6;
-      var pw = el6.offsetWidth;
-      var ph = el6.offsetHeight;
+      var pw = el7.offsetWidth;
+      var ph = el7.offsetHeight;
       var left = br.right + gap;
       var top = br.top + (br.height - ph) / 2;
       var flipped = false;
@@ -24445,16 +24696,16 @@
       }
       if (top + ph > window.innerHeight - 12) top = window.innerHeight - 12 - ph;
       if (top < 12) top = 12;
-      el6.style.position = "fixed";
-      el6.style.left = left + "px";
-      el6.style.top = top + "px";
-      el6.classList.add(flipped ? "tooltip-spout-right" : "tooltip-spout-left");
+      el7.style.position = "fixed";
+      el7.style.left = left + "px";
+      el7.style.top = top + "px";
+      el7.classList.add(flipped ? "tooltip-spout-right" : "tooltip-spout-left");
       var anchorY = br.top + br.height / 2 - top;
       anchorY = Math.max(10, Math.min(ph - 10, anchorY));
-      el6.style.setProperty("--tooltip-arrow-y", anchorY + "px");
-      el6.style.visibility = "";
+      el7.style.setProperty("--tooltip-arrow-y", anchorY + "px");
+      el7.style.visibility = "";
       requestAnimationFrame(function() {
-        el6.classList.add("is-visible");
+        el7.classList.add("is-visible");
       });
     }
     function show3() {
@@ -24544,22 +24795,25 @@
       { id: "harpoon", label: "Harpoon" },
       { id: "repl", label: "REPL" },
       { id: "workspace", label: "Workspace" },
-      { id: "aliases", label: "Aliases" }
+      { id: "aliases", label: "Aliases" },
+      // Shown only where a server answers (js/account/account.mjs): a tab of
+      // sync settings on a page with no sync would offer what does not work.
+      { id: "account", label: "Account" }
     ];
     var panelBodies = {};
     var activeCategory = "appearance";
     function selectCategory(id) {
       activeCategory = id;
-      nav.querySelectorAll(".jar-settings__nav-item").forEach(function(el6) {
-        var on = el6.dataset.category === id;
-        el6.classList.toggle("is-active", on);
-        el6.setAttribute("aria-selected", on ? "true" : "false");
-        el6.tabIndex = on ? 0 : -1;
+      nav.querySelectorAll(".jar-settings__nav-item").forEach(function(el7) {
+        var on = el7.dataset.category === id;
+        el7.classList.toggle("is-active", on);
+        el7.setAttribute("aria-selected", on ? "true" : "false");
+        el7.tabIndex = on ? 0 : -1;
       });
-      main.querySelectorAll(".jar-settings__panel").forEach(function(el6) {
-        var on = el6.dataset.category === id;
-        el6.hidden = !on;
-        el6.classList.toggle("is-active", on);
+      main.querySelectorAll(".jar-settings__panel").forEach(function(el7) {
+        var on = el7.dataset.category === id;
+        el7.hidden = !on;
+        el7.classList.toggle("is-active", on);
       });
       if (id !== "keybindings" && keybindingsApi) keybindingsApi.clearRecording();
       if (searchResults && !searchResults.hidden && settingsSearchInput && settingsSearchInput.value) {
@@ -25845,6 +26099,65 @@
       searchText: "Customize aliases Define trigger expansion pairs used while typing"
     });
     aliasesApi = mountAliasesSheet(aliasUnit.body);
+    addActionRow(
+      panelBodies.account,
+      "Not signed in",
+      "Sign in to have your projects and settings on every device.",
+      "Sign in with GitHub",
+      function() {
+        var A = global43.Account;
+        if (!A) return;
+        if (A.user()) A.signOut();
+        else A.signIn();
+      }
+    );
+    var accountRow = panelBodies.account.lastElementChild;
+    addSwitchRow(
+      panelBodies.account,
+      "sync-settings",
+      "Sync settings",
+      "Keep your preferences the same on every device.",
+      function() {
+        return Settings.get("syncSettings");
+      },
+      function(p, on) {
+        Settings.set("syncSettings", on);
+      }
+    );
+    addDropdownRow(
+      panelBodies.account,
+      "sync-overlap",
+      "When the same lines changed",
+      "A file edited here and elsewhere in the same place.",
+      [
+        { value: "ask", label: "Ask" },
+        { value: "mine", label: "Keep mine" },
+        { value: "cloud", label: "Use cloud" }
+      ],
+      function() {
+        return Settings.get("syncOverlap");
+      },
+      function(p, v) {
+        Settings.set("syncOverlap", v);
+      }
+    );
+    refreshAccountTab = function() {
+      var A = global43.Account;
+      var there = !!(A && A.available());
+      var tab = nav.querySelector('.jar-settings__nav-item[data-category="account"]');
+      if (tab) tab.hidden = !there;
+      if (!there && activeCategory === "account") selectCategory("appearance");
+      var who = A && A.user();
+      var lbl = accountRow.querySelector(".jar-dialog__setting-label");
+      var dsc = accountRow.querySelector(".jar-dialog__setting-desc");
+      var btn = accountRow.querySelector(".jar-settings__action-btn");
+      if (lbl) lbl.textContent = who ? who.name || "@" + who.handle : "Not signed in";
+      if (dsc) dsc.textContent = who ? "@" + who.handle + ", signed in with GitHub." : "Sign in to have your projects and settings on every device.";
+      if (btn) btn.textContent = who ? "Sign out" : "Sign in with GitHub";
+    };
+    refreshAccountTab();
+    global43.addEventListener("beljar:account", refreshAccountTab);
+    selectCategoryRef = selectCategory;
     selectCategory(activeCategory);
     shell.appendChild(nav);
     shell.appendChild(main);
@@ -25914,16 +26227,16 @@
       window.addEventListener("resize", positionSearchResults);
       window.addEventListener("scroll", positionSearchResults, true);
     }
-    function flashEl(el6) {
-      if (!el6) return;
+    function flashEl(el7) {
+      if (!el7) return;
       main.querySelectorAll(".is-flash").forEach(function(node) {
         node.classList.remove("is-flash");
       });
-      el6.classList.add("is-flash");
+      el7.classList.add("is-flash");
       if (flashTimer) clearTimeout(flashTimer);
       flashTimer = setTimeout(function() {
         flashTimer = null;
-        el6.classList.remove("is-flash");
+        el7.classList.remove("is-flash");
       }, 1100);
     }
     function hitRank(title, q) {
@@ -25937,30 +26250,32 @@
       categories.forEach(function(cat) {
         var body = panelBodies[cat.id];
         if (!body) return;
+        var tabBtn = nav.querySelector('.jar-settings__nav-item[data-category="' + cat.id + '"]');
+        if (tabBtn && tabBtn.hidden) return;
         var section = "";
         var scan = [];
-        Array.prototype.forEach.call(body.children, function(el6) {
-          if (el6.classList.contains("jar-settings__substyle")) {
-            if (el6.hidden) return;
-            var owner = el6.dataset.section || "";
-            Array.prototype.forEach.call(el6.children, function(sub) {
+        Array.prototype.forEach.call(body.children, function(el7) {
+          if (el7.classList.contains("jar-settings__substyle")) {
+            if (el7.hidden) return;
+            var owner = el7.dataset.section || "";
+            Array.prototype.forEach.call(el7.children, function(sub) {
               scan.push({ el: sub, section: owner });
             });
             return;
           }
-          scan.push({ el: el6, section: null });
+          scan.push({ el: el7, section: null });
         });
         scan.forEach(function(entry) {
-          var el6 = entry.el;
-          if (entry.section === null && el6.classList.contains("jar-settings__section-head")) {
-            section = String(el6.textContent || "").trim();
+          var el7 = entry.el;
+          if (entry.section === null && el7.classList.contains("jar-settings__section-head")) {
+            section = String(el7.textContent || "").trim();
             return;
           }
-          if (el6.classList.contains("jar-settings__unit")) return;
-          if (!el6.classList.contains("jar-dialog__setting")) return;
+          if (el7.classList.contains("jar-settings__unit")) return;
+          if (!el7.classList.contains("jar-dialog__setting")) return;
           var rowSection = entry.section === null ? section : entry.section;
-          var titleEl = el6.querySelector(".jar-dialog__setting-label");
-          var descEl = el6.querySelector(".jar-dialog__setting-desc");
+          var titleEl = el7.querySelector(".jar-dialog__setting-label");
+          var descEl = el7.querySelector(".jar-dialog__setting-desc");
           var title = titleEl ? String(titleEl.textContent || "") : "";
           var desc = descEl ? String(descEl.textContent || "") : "";
           var hay = (title + " " + desc + " " + rowSection + " " + cat.label).replace(/\s+/g, " ").toLowerCase();
@@ -25970,7 +26285,7 @@
             categoryId: cat.id,
             title,
             meta: rowSection || cat.label,
-            el: el6,
+            el: el7,
             rank: hitRank(title, q)
           });
         });
@@ -26157,9 +26472,14 @@
     });
     return settingsDialogEl;
   }
-  function open10() {
+  function open10(category) {
     ensureSettingsDialog();
     if (typeof closeSettingsSearch === "function") closeSettingsSearch(true);
+    if (refreshAccountTab) refreshAccountTab();
+    if (typeof category === "string" && selectCategoryRef) {
+      var tab = settingsDialogEl && settingsDialogEl.querySelector('.jar-settings__nav-item[data-category="' + category + '"]');
+      if (tab && !tab.hidden) selectCategoryRef(category);
+    }
     syncFromState();
     if (keybindingsApi && typeof keybindingsApi.refresh === "function") keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
@@ -26220,12 +26540,12 @@
     return global46.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
-    var g15 = glyphs();
-    return g15 ? g15.displayBeluga(text) : String(text == null ? "" : text);
+    var g17 = glyphs();
+    return g17 ? g17.displayBeluga(text) : String(text == null ? "" : text);
   }
   function compactTypeLabel2(box) {
-    var g15 = glyphs();
-    return g15 ? g15.compactTypeLabel(box) : norm(box);
+    var g17 = glyphs();
+    return g17 ? g17.compactTypeLabel(box) : norm(box);
   }
   function trunc(s, max) {
     s = String(s == null ? "" : s);
@@ -26506,10 +26826,10 @@
     if (n.type === "ghost") return SIZE.ghost.label;
     return SIZE.move.label;
   }
-  function renderNodeBody(g15, n, pw, h, clipId) {
+  function renderNodeBody(g17, n, pw, h, clipId) {
     var isArm = n.type === "arm";
     var rx = isArm ? 6 : 8;
-    g15.appendChild(el3("rect", {
+    g17.appendChild(el3("rect", {
       x: -pw / 2,
       y: -h / 2,
       width: pw,
@@ -26524,16 +26844,16 @@
       "clip-path": "url(#" + clipId + ")"
     });
     text.textContent = label;
-    g15.appendChild(text);
+    g17.appendChild(text);
     if (n.closed) {
-      g15.appendChild(el3("circle", {
+      g17.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
         class: "hpt-status hpt-status--done"
       }));
     } else if (n.open && n.type === "move") {
-      g15.appendChild(el3("circle", {
+      g17.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
@@ -26542,8 +26862,8 @@
     }
   }
   function looksLikeType(s) {
-    var g15 = glyphs();
-    if (g15 && typeof g15.looksLikeBeluga === "function") return g15.looksLikeBeluga(s);
+    var g17 = glyphs();
+    if (g17 && typeof g17.looksLikeBeluga === "function") return g17.looksLikeBeluga(s);
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
   function highlightInto(host2, text, kind) {
@@ -26703,24 +27023,24 @@
     });
     var selectedG = null;
     var selectedId = opts.selectedId || null;
-    function select(n, g15) {
+    function select(n, g17) {
       if (selectedG) selectedG.classList.remove("is-selected");
-      selectedG = g15;
-      if (g15) g15.classList.add("is-selected");
+      selectedG = g17;
+      if (g17) g17.classList.add("is-selected");
       if (opts.onSelect) opts.onSelect(n);
     }
     nodes.forEach(function(n, idx) {
       var pw = n.w;
       var h = n.h;
-      var g15 = el3("g", {
+      var g17 = el3("g", {
         class: "hpt-node hpt-node--" + (n.kind || n.type) + (n.type === "ghost" ? " is-ghost" : ""),
         transform: "translate(" + n.x + "," + n.y + ")",
         "data-node-id": String(n.id),
         tabindex: "0",
         role: "button"
       });
-      g15.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
-      renderNodeBody(g15, n, pw, h, n._clipId);
+      g17.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
+      renderNodeBody(g17, n, pw, h, n._clipId);
       if (mode !== "space" && n.altCount > 0 && n.type === "move") {
         var bw = 20;
         var bh = 13;
@@ -26731,7 +27051,7 @@
         var ct = el3("text", { x: bw / 2, y: bh - 4, class: "hpt-altcount-text" });
         ct.textContent = "+" + n.altCount;
         chip.appendChild(ct);
-        g15.appendChild(chip);
+        g17.appendChild(chip);
       }
       var ariaTip;
       if (n.type === "ghost" && n.ghost) {
@@ -26741,26 +27061,26 @@
       }
       if (global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
         (function(node) {
-          global46.Tooltips.setRich(g15, function() {
+          global46.Tooltips.setRich(g17, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
       } else {
         var title = document.createElementNS(SVGNS, "title");
         title.textContent = ariaTip;
-        g15.appendChild(title);
+        g17.appendChild(title);
       }
-      g15.addEventListener("click", function() {
-        select(n, g15);
+      g17.addEventListener("click", function() {
+        select(n, g17);
       });
-      g15.addEventListener("keydown", function(ev) {
+      g17.addEventListener("keydown", function(ev) {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
-          select(n, g15);
+          select(n, g17);
         }
       });
-      scene.appendChild(g15);
-      if (selectedId && n.id === selectedId) select(n, g15);
+      scene.appendChild(g17);
+      if (selectedId && n.id === selectedId) select(n, g17);
     });
     function applyVB() {
       svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
@@ -26845,7 +27165,7 @@
   // js/harpoon/harpoon-lab-display.mjs
   var global47 = globalThis;
   function createDisplay(deps) {
-    var el6 = deps.el;
+    var el7 = deps.el;
     var E3 = deps.E;
     var liveEditorFileId2 = deps.liveEditorFileId;
     var bindChipTip2 = deps.bindChipTip;
@@ -26854,13 +27174,13 @@
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g15 = global47.HarpoonGlyphs;
-      if (g15) return g15.fallbackNormalize(text);
+      var g17 = global47.HarpoonGlyphs;
+      if (g17) return g17.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g15 = global47.HarpoonGlyphs;
-      if (g15) return g15.displayBeluga(typeStr);
+      var g17 = global47.HarpoonGlyphs;
+      if (g17) return g17.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
       return normalizeGlyphs2(typeStr);
@@ -26980,8 +27300,8 @@
       var old = wrap.querySelector(".harpoon-lab-auto-goal-priors");
       if (old) old.remove();
       if (!binders || !binders.length) return;
-      var row = el6("div", "harpoon-lab-auto-goal-priors");
-      var text = el6("span", "harpoon-lab-auto-goal-priors-text");
+      var row = el7("div", "harpoon-lab-auto-goal-priors");
+      var text = el7("span", "harpoon-lab-auto-goal-priors-text");
       renderType4(text, binders.map(function(b) {
         return b.text;
       }).join(" "), "binder");
@@ -26990,19 +27310,19 @@
     }
     function appendDeclLabel(glabel, declName, declKw) {
       if (!declName) return;
-      var name = el6("span", "harpoon-lab-auto-goal-name");
-      if (declKw) name.appendChild(el6("span", "harpoon-lab-goal-decl-kw jar-hl-keyword", declKw));
-      name.appendChild(el6("span", "harpoon-lab-goal-decl-name jar-hl-var-def", declName));
+      var name = el7("span", "harpoon-lab-auto-goal-name");
+      if (declKw) name.appendChild(el7("span", "harpoon-lab-goal-decl-kw jar-hl-keyword", declKw));
+      name.appendChild(el7("span", "harpoon-lab-goal-decl-name jar-hl-var-def", declName));
       glabel.appendChild(name);
     }
     function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders, declKw) {
-      var wrap = el6("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
-      var glabel = el6("div", "harpoon-lab-goal-label");
-      glabel.appendChild(el6("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+      var wrap = el7("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
+      var glabel = el7("div", "harpoon-lab-goal-label");
+      glabel.appendChild(el7("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
       appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
-      var body = el6("div", "harpoon-lab-auto-goal-body");
-      var goal = el6("div", "harpoon-hole-goal");
+      var body = el7("div", "harpoon-lab-auto-goal-body");
+      var goal = el7("div", "harpoon-hole-goal");
       var ed = E3();
       if (ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goal, { surface: "lab", goalState: goalState || "live", goal: goalType });
@@ -27026,9 +27346,9 @@
       return body;
     }
     function appendAutoSolution(parent, body) {
-      var wrap = el6("div", "harpoon-lab-auto-solution harpoon-lab-auto-panel");
-      wrap.appendChild(el6("span", "harpoon-lab-auto-solution-label harpoon-lab-section-label is-solution", "Solution"));
-      var bodyEl3 = el6("div", "harpoon-lab-auto-solution-body");
+      var wrap = el7("div", "harpoon-lab-auto-solution harpoon-lab-auto-panel");
+      wrap.appendChild(el7("span", "harpoon-lab-auto-solution-label harpoon-lab-section-label is-solution", "Solution"));
+      var bodyEl3 = el7("div", "harpoon-lab-auto-solution-body");
       renderSource2(bodyEl3, formatSolutionBody(body));
       wrap.appendChild(bodyEl3);
       parent.appendChild(wrap);
@@ -27050,18 +27370,18 @@
       var tag = opts.tag || "div";
       var className = opts.className || "";
       if (opts.tone) className += " tone-" + opts.tone;
-      var root2 = el6(tag, className);
+      var root2 = el7(tag, className);
       if (tag === "button") root2.type = "button";
       if (opts.disabled) root2.disabled = true;
-      var badge = el6("span", "harpoon-lab-banner-badge" + (opts.badgeClass ? " " + opts.badgeClass : ""));
+      var badge = el7("span", "harpoon-lab-banner-badge" + (opts.badgeClass ? " " + opts.badgeClass : ""));
       if (opts.icon) badge.innerHTML = opts.icon;
       root2.appendChild(badge);
-      var copy = el6("span", "harpoon-lab-banner-copy" + (opts.copyClass ? " " + opts.copyClass : ""));
+      var copy = el7("span", "harpoon-lab-banner-copy" + (opts.copyClass ? " " + opts.copyClass : ""));
       if (opts.title != null) {
-        copy.appendChild(el6("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
+        copy.appendChild(el7("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
       }
       if (opts.sub != null) {
-        copy.appendChild(el6("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
+        copy.appendChild(el7("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
       }
       root2.appendChild(copy);
       if (typeof opts.onClick === "function") {
@@ -27111,11 +27431,11 @@
       });
       var copy = banner.querySelector(".harpoon-lab-banner-copy");
       if (!placed && commit.detailRaw && copy) {
-        copy.appendChild(el6("span", "harpoon-lab-commit-tech", commit.detailRaw));
+        copy.appendChild(el7("span", "harpoon-lab-commit-tech", commit.detailRaw));
       }
       if (!placed && typeof onRetry === "function" && copy) {
-        var actions = el6("div", "harpoon-lab-commit-actions");
-        var retryBtn = el6("button", "harpoon-lab-commit-retry");
+        var actions = el7("div", "harpoon-lab-commit-actions");
+        var retryBtn = el7("button", "harpoon-lab-commit-retry");
         retryBtn.type = "button";
         retryBtn.textContent = "Try again";
         retryBtn.addEventListener("click", function(e) {
@@ -27155,12 +27475,12 @@
     };
     function goalHeadFromGoal(goal) {
       if (!goal) return null;
-      var g15 = String(goal).trim();
-      if (g15[0] === "[" && g15[g15.length - 1] === "]" || g15[0] === "(" && g15[g15.length - 1] === ")") {
-        g15 = g15.slice(1, -1).trim();
+      var g17 = String(goal).trim();
+      if (g17[0] === "[" && g17[g17.length - 1] === "]" || g17[0] === "(" && g17[g17.length - 1] === ")") {
+        g17 = g17.slice(1, -1).trim();
       }
-      var m = g15.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
-      var concl = (m ? m[1] : g15).trim();
+      var m = g17.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
+      var concl = (m ? m[1] : g17).trim();
       var head = concl.split(/\s+/)[0];
       return head || null;
     }
@@ -27215,8 +27535,8 @@
       return s && MOVE_GLOSS[s.move] || "made a move";
     }
     function facetChip(text, extraClass, tip, richKind) {
-      var chip = el6("span", "hpt-move-facet-chip" + (extraClass ? " " + extraClass : ""));
-      var code = el6("code", "hpt-move-facet-code");
+      var chip = el7("span", "hpt-move-facet-chip" + (extraClass ? " " + extraClass : ""));
+      var code = el7("code", "hpt-move-facet-code");
       renderSource2(code, text);
       chip.appendChild(code);
       if (tip) bindChipTip2(chip, tip, richKind ? text : null, richKind);
@@ -27228,7 +27548,7 @@
       if (move === "synth") {
         return renderSynthChain2(meta, variant === "detail" ? "full" : "inline");
       }
-      var wrap = el6("div", "hpt-move-facet" + (variant === "inline" ? " is-inline" : "") + (move ? " is-move-" + move : ""));
+      var wrap = el7("div", "hpt-move-facet" + (variant === "inline" ? " is-inline" : "") + (move ? " is-move-" + move : ""));
       var has3 = false;
       if (move === "intro") {
         var introNames = meta.introduced && meta.introduced.length ? meta.introduced : introducedFromText(step2.text);
@@ -27263,7 +27583,7 @@
         });
       } else if (move === "invert") {
         if (meta.uses && meta.uses[0]) {
-          var arrow = el6("span", "hpt-move-facet-arrow");
+          var arrow = el7("span", "hpt-move-facet-arrow");
           arrow.textContent = meta.uses[0] + " \u2192 " + ((meta.binds || []).join(", ") || "\u2026");
           bindChipTip2(arrow, "Hypothesis inverted into pattern variables");
           wrap.appendChild(arrow);
@@ -27599,7 +27919,7 @@
   // js/harpoon/harpoon-lab-reel.mjs
   var global49 = globalThis;
   function createReel(deps) {
-    var el6 = deps.el;
+    var el7 = deps.el;
     var tacticVerb2 = deps.tacticVerb || function(k) {
       return k || "move";
     };
@@ -27619,15 +27939,15 @@
     var ICON_PLAY2 = deps.ICON_PLAY;
     var ICON_PAUSE2 = deps.ICON_PAUSE;
     function appendAutoStepRow(trail, s, i) {
-      var item = el6("li", "harpoon-lab-auto-step");
+      var item = el7("li", "harpoon-lab-auto-step");
       item.style.setProperty("--i", String(i));
-      item.appendChild(el6("span", "harpoon-lab-auto-node"));
-      var body = el6("div", "harpoon-lab-auto-step-body");
-      var rowCopy = el6("div", "harpoon-lab-auto-step-copy");
-      var verb = el6("span", "harpoon-lab-auto-move move-" + (s.move || "move"));
+      item.appendChild(el7("span", "harpoon-lab-auto-node"));
+      var body = el7("div", "harpoon-lab-auto-step-body");
+      var rowCopy = el7("div", "harpoon-lab-auto-step-copy");
+      var verb = el7("span", "harpoon-lab-auto-move move-" + (s.move || "move"));
       verb.textContent = tacticVerb2(s.move);
       rowCopy.appendChild(verb);
-      rowCopy.appendChild(el6("span", "harpoon-lab-auto-why", moveLead(s)));
+      rowCopy.appendChild(el7("span", "harpoon-lab-auto-why", moveLead(s)));
       body.appendChild(rowCopy);
       appendMoveFacet(body, s);
       item.appendChild(body);
@@ -27662,11 +27982,11 @@
     var REEL_CLICK_EASE = "cubic-bezier(0.34, 1.22, 0.64, 1)";
     var REEL_OUT_MS = 150;
     function buildStepCopy(step2) {
-      var rowCopy = el6("div", "harpoon-lab-auto-step-copy");
-      var verb = el6("span", "harpoon-lab-auto-move move-" + (step2.move || "move"));
+      var rowCopy = el7("div", "harpoon-lab-auto-step-copy");
+      var verb = el7("span", "harpoon-lab-auto-move move-" + (step2.move || "move"));
       verb.textContent = tacticVerb2(step2.move);
       rowCopy.appendChild(verb);
-      rowCopy.appendChild(el6("span", "harpoon-lab-auto-why", moveLead(step2)));
+      rowCopy.appendChild(el7("span", "harpoon-lab-auto-why", moveLead(step2)));
       return rowCopy;
     }
     function installCommittedRow(row, step2, animate) {
@@ -27675,14 +27995,14 @@
       if (conveyor) conveyor.parentNode.removeChild(conveyor);
       var spine = row.querySelector(".harpoon-lab-auto-node");
       if (spine) spine.classList.remove("is-live");
-      else row.insertBefore(el6("span", "harpoon-lab-auto-node"), row.firstChild);
+      else row.insertBefore(el7("span", "harpoon-lab-auto-node"), row.firstChild);
       var priorBody = row.querySelector(".harpoon-lab-auto-step-body");
       if (priorBody) priorBody.parentNode.removeChild(priorBody);
       var priorCopy = row.querySelector(":scope > .harpoon-lab-auto-step-copy");
       if (priorCopy) priorCopy.parentNode.removeChild(priorCopy);
       var priorFacet = row.querySelector(":scope > .hpt-move-facet, :scope > .hpt-chain");
       if (priorFacet) priorFacet.parentNode.removeChild(priorFacet);
-      var body = el6("div", "harpoon-lab-auto-step-body");
+      var body = el7("div", "harpoon-lab-auto-step-body");
       var copy = buildStepCopy(step2);
       if (animate) copy.classList.add("is-reveal");
       body.appendChild(copy);
@@ -27693,10 +28013,10 @@
     function reelMotionOk() {
       return !prefersReducedMotion(Settings.get("motionPref"));
     }
-    function reelClearMotion(el7) {
-      if (!el7) return;
-      el7.style.transition = "";
-      el7.style.transform = "";
+    function reelClearMotion(el8) {
+      if (!el8) return;
+      el8.style.transition = "";
+      el8.style.transform = "";
     }
     function reelAnimateTick(conveyor, newChip, existingEls, oldRects) {
       if (!reelMotionOk() || !newChip) return;
@@ -27705,25 +28025,25 @@
       var chipRect = newChip.getBoundingClientRect();
       var spawnX = conveyorRect.right - chipRect.left + 8;
       newChip.style.transform = "translateX(" + spawnX + "px)";
-      var i, el7, neu, dx;
+      var i, el8, neu, dx;
       for (i = 0; i < existingEls.length; i += 1) {
-        el7 = existingEls[i];
-        if (el7.classList.contains("is-rejected")) continue;
-        neu = el7.getBoundingClientRect();
+        el8 = existingEls[i];
+        if (el8.classList.contains("is-rejected")) continue;
+        neu = el8.getBoundingClientRect();
         dx = oldRects[i].left - neu.left;
         if (Math.abs(dx) > 0.5) {
-          el7.style.transition = "none";
-          el7.style.transform = "translateX(" + dx + "px)";
+          el8.style.transition = "none";
+          el8.style.transform = "translateX(" + dx + "px)";
         }
       }
       requestAnimationFrame(function() {
         requestAnimationFrame(function() {
           var trailTrans = "transform " + dur + "ms " + REEL_EASE;
           for (i = 0; i < existingEls.length; i += 1) {
-            el7 = existingEls[i];
-            if (el7.classList.contains("is-rejected")) continue;
-            el7.style.transition = trailTrans;
-            el7.style.transform = "";
+            el8 = existingEls[i];
+            if (el8.classList.contains("is-rejected")) continue;
+            el8.style.transition = trailTrans;
+            el8.style.transform = "";
           }
           newChip.style.transition = "transform " + dur + "ms " + REEL_CLICK_EASE;
           newChip.style.transform = "";
@@ -27748,20 +28068,20 @@
       });
     }
     function makeBranchGroup(branch, i) {
-      var group = el6("li", "harpoon-lab-auto-branch");
+      var group = el7("li", "harpoon-lab-auto-branch");
       if (i != null) group.style.setProperty("--i", String(i));
-      var caseRow = el6("div", "harpoon-lab-auto-case");
-      caseRow.appendChild(el6("span", "harpoon-lab-auto-case-node"));
-      var head = el6("div", "harpoon-lab-auto-branch-head");
-      var label = el6("span", "harpoon-lab-auto-branch-label", "case");
+      var caseRow = el7("div", "harpoon-lab-auto-case");
+      caseRow.appendChild(el7("span", "harpoon-lab-auto-case-node"));
+      var head = el7("div", "harpoon-lab-auto-branch-head");
+      var label = el7("span", "harpoon-lab-auto-branch-label", "case");
       head.appendChild(label);
-      var pat = el6("code", "harpoon-lab-auto-branch-pat");
+      var pat = el7("code", "harpoon-lab-auto-branch-pat");
       renderType4(pat, branch);
       head.appendChild(pat);
       bindChipTip2(label, "Case pattern; nested steps solve this branch", branch, "type", "below");
       caseRow.appendChild(head);
       group.appendChild(caseRow);
-      var host2 = el6("ol", "harpoon-lab-auto-branch-steps");
+      var host2 = el7("ol", "harpoon-lab-auto-branch-steps");
       group.appendChild(host2);
       return { group, host: host2 };
     }
@@ -27902,7 +28222,7 @@
       if (!wrap || !wrap.parentNode) {
         var anchor3 = this._autoSearchBox;
         if (!anchor3 || !anchor3.parentNode) return;
-        wrap = el6("div", "harpoon-lab-context");
+        wrap = el7("div", "harpoon-lab-context");
         anchor3.parentNode.insertBefore(wrap, anchor3);
         this._ctxWrap = wrap;
       }
@@ -27927,11 +28247,11 @@
         return this._workingRow;
       }
       var i = this._reelRecordCount || 0;
-      var item = el6("li", "harpoon-lab-auto-step is-working");
+      var item = el7("li", "harpoon-lab-auto-step is-working");
       item.style.setProperty("--i", String(i));
-      item.appendChild(el6("span", "harpoon-lab-auto-node is-live"));
-      var lane = el6("div", "harpoon-conveyor");
-      var strip2 = el6("div", "harpoon-conveyor-strip");
+      item.appendChild(el7("span", "harpoon-lab-auto-node is-live"));
+      var lane = el7("div", "harpoon-conveyor");
+      var strip2 = el7("div", "harpoon-conveyor-strip");
       lane.appendChild(strip2);
       item.appendChild(lane);
       var host2 = this._reelRecord._branchHost || this._reelRecord;
@@ -27958,9 +28278,9 @@
         var oldRects = motionOk ? existingEls.map(function(node) {
           return node.getBoundingClientRect();
         }) : [];
-        var chip = el6("div", "harpoon-conveyor-chip is-trying is-focus move-" + (c.kind || "move"));
-        chip.appendChild(el6("span", "harpoon-conveyor-kind", c.kind || "move"));
-        var term = el6("code", "harpoon-conveyor-term");
+        var chip = el7("div", "harpoon-conveyor-chip is-trying is-focus move-" + (c.kind || "move"));
+        chip.appendChild(el7("span", "harpoon-conveyor-kind", c.kind || "move"));
+        var term = el7("code", "harpoon-conveyor-term");
         renderSource2(term, c.head || "");
         chip.appendChild(term);
         strip2.appendChild(chip);
@@ -28128,7 +28448,7 @@
 
   // js/harpoon/harpoon-lab-auto.mjs
   function createAuto(deps) {
-    var el6 = deps.el;
+    var el7 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip2 = deps.setTip;
     var renderType4 = deps.renderType;
@@ -28158,7 +28478,7 @@
       var na = this.nativeAuto;
       if (!na) return;
       var self = this;
-      var box = el6("div", "harpoon-lab-auto is-" + na.phase + (na.paused ? " is-paused" : "") + (self.isFrozenRetrospective() ? " is-frozen" : ""));
+      var box = el7("div", "harpoon-lab-auto is-" + na.phase + (na.paused ? " is-paused" : "") + (self.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       if (na.goalType) {
         var hero = resolveNativeAutoGoalDisplay(self, na);
@@ -28174,11 +28494,11 @@
       }
       if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
       if (na.phase === "searching") {
-        var controls2 = el6("div", "harpoon-lab-auto-controls");
-        var searching = el6("div", "harpoon-lab-auto-searching");
-        var spinnerEl = el6("span", "inspector-spinner harpoon-lab-auto-searching-spinner");
+        var controls2 = el7("div", "harpoon-lab-auto-controls");
+        var searching = el7("div", "harpoon-lab-auto-searching");
+        var spinnerEl = el7("span", "inspector-spinner harpoon-lab-auto-searching-spinner");
         spinnerEl.setAttribute("aria-hidden", "true");
-        var searchTextEl = el6(
+        var searchTextEl = el7(
           "span",
           "harpoon-lab-auto-searching-text beljar-tip-shimmer",
           nativeAutoSearchLabel(na)
@@ -28215,8 +28535,8 @@
         );
         controls2.appendChild(livePop);
         box.appendChild(controls2);
-        var live2 = el6("div", "harpoon-reel");
-        var record = el6("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
+        var live2 = el7("div", "harpoon-reel");
+        var record = el7("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
         live2.appendChild(record);
         box.appendChild(live2);
         this._autoSearchBox = box;
@@ -28269,9 +28589,9 @@
         box.appendChild(stuckCard);
       }
       if (!na.complete && na.stuck && na.stuck.reason === "file-errors" && na.stuck.error) {
-        var errWrap = el6("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
-        errWrap.appendChild(el6("span", "harpoon-lab-auto-stuck-label", "Checker error"));
-        errWrap.appendChild(el6("div", "harpoon-lab-auto-stuck-goal", na.stuck.error));
+        var errWrap = el7("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
+        errWrap.appendChild(el7("span", "harpoon-lab-auto-stuck-label", "Checker error"));
+        errWrap.appendChild(el7("div", "harpoon-lab-auto-stuck-goal", na.stuck.error));
         stageNode2(errWrap, stage);
         stage += 1;
         box.appendChild(errWrap);
@@ -28352,8 +28672,8 @@
       return String(reason).replace(/^File\s+"[^"]*",\s*line\s+\d+,\s*column\s+\d+\s*/i, "").replace(/^Error:\s*/i, "").trim();
     }
     function belugaText(s) {
-      var g15 = globalThis.HarpoonGlyphs;
-      return g15 ? g15.displayBeluga(s) : String(s == null ? "" : s);
+      var g17 = globalThis.HarpoonGlyphs;
+      return g17 ? g17.displayBeluga(s) : String(s == null ? "" : s);
     }
     var STUCK_REASON = {
       "no-move": "no move certified",
@@ -28374,19 +28694,19 @@
     };
     function renderStuckCard(na) {
       var stuck = na.stuck;
-      var card = el6("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-warn harpoon-stuck");
-      var head = el6("div", "harpoon-stuck-head");
-      head.appendChild(el6("span", "harpoon-lab-auto-stuck-label", STUCK_REASON[stuck.reason] || stuck.reason || "stuck"));
+      var card = el7("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-warn harpoon-stuck");
+      var head = el7("div", "harpoon-stuck-head");
+      head.appendChild(el7("span", "harpoon-lab-auto-stuck-label", STUCK_REASON[stuck.reason] || stuck.reason || "stuck"));
       var where = stuckWhere(stuck);
-      if (where) head.appendChild(el6("code", "harpoon-stuck-where", where));
+      if (where) head.appendChild(el7("code", "harpoon-stuck-where", where));
       card.appendChild(head);
       if (stuck.goal) {
-        var goal = el6("div", "harpoon-hole-goal harpoon-lab-auto-stuck-goal");
+        var goal = el7("div", "harpoon-hole-goal harpoon-lab-auto-stuck-goal");
         renderType4(goal, stuck.goal);
         card.appendChild(goal);
       }
       var hint = STUCK_HINT[stuck.reason];
-      if (hint) card.appendChild(el6("p", "harpoon-stuck-hint", hint));
+      if (hint) card.appendChild(el7("p", "harpoon-stuck-hint", hint));
       var stuckTrace = null;
       var trace = na.trace || null;
       if (trace) {
@@ -28402,12 +28722,12 @@
         return v.verdict === "guard";
       });
       if (rejected.length || guarded.length) {
-        card.appendChild(el6(
+        card.appendChild(el7(
           "div",
           "harpoon-stuck-sub",
           rejected.length + " rejected by the checker" + (guarded.length ? " \xB7 " + guarded.length + " skipped" : "")
         ));
-        var list3 = el6("ul", "harpoon-stuck-tried");
+        var list3 = el7("ul", "harpoon-stuck-tried");
         var groupRows = function(items3) {
           var order2 = [];
           var byKey = {};
@@ -28424,24 +28744,24 @@
             return byKey[k];
           });
         };
-        var addGroup = function(g15) {
-          var li = el6("li", "harpoon-stuck-tried-row is-" + g15.verdict);
-          li.appendChild(el6("span", "hpt-card-kind hpt-kind--" + g15.kind, g15.kind));
-          var hd = el6("code", "harpoon-stuck-tried-head");
-          renderSource2(hd, g15.heads[0]);
+        var addGroup = function(g17) {
+          var li = el7("li", "harpoon-stuck-tried-row is-" + g17.verdict);
+          li.appendChild(el7("span", "hpt-card-kind hpt-kind--" + g17.kind, g17.kind));
+          var hd = el7("code", "harpoon-stuck-tried-head");
+          renderSource2(hd, g17.heads[0]);
           li.appendChild(hd);
-          if (g15.heads.length > 1) {
-            var more = el6("span", "harpoon-stuck-tried-more", "+" + (g15.heads.length - 1));
-            setTip2(more, g15.heads.map(belugaText).join("\n"), { ariaLabel: false });
+          if (g17.heads.length > 1) {
+            var more = el7("span", "harpoon-stuck-tried-more", "+" + (g17.heads.length - 1));
+            setTip2(more, g17.heads.map(belugaText).join("\n"), { ariaLabel: false });
             more.setAttribute(
               "aria-label",
-              g15.heads.length + " candidates rejected with this objection"
+              g17.heads.length + " candidates rejected with this objection"
             );
             li.appendChild(more);
           }
-          if (g15.reason) {
-            var rn = el6("span", "harpoon-stuck-tried-reason", g15.reason);
-            setTip2(rn, g15.reason, { ariaLabel: false });
+          if (g17.reason) {
+            var rn = el7("span", "harpoon-stuck-tried-reason", g17.reason);
+            setTip2(rn, g17.reason, { ariaLabel: false });
             li.appendChild(rn);
           }
           list3.appendChild(li);
@@ -28450,7 +28770,7 @@
         groupRows(guarded).forEach(addGroup);
         card.appendChild(list3);
       } else if (stuck.reason === "no-move") {
-        card.appendChild(el6("div", "harpoon-stuck-sub", "no candidate reached this goal"));
+        card.appendChild(el7("div", "harpoon-stuck-sub", "no candidate reached this goal"));
       }
       return card;
     }
@@ -28466,7 +28786,7 @@
   // js/harpoon/harpoon-lab-tree-ui.mjs
   var global50 = globalThis;
   function createTreeUi(deps) {
-    var el6 = deps.el;
+    var el7 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip2 = deps.setTip;
     var bindChipTip2 = deps.bindChipTip;
@@ -28489,15 +28809,15 @@
     function renderDerivationSection(box, na) {
       var self = this;
       this._compactTreeRedraw = null;
-      var section = el6("div", "harpoon-deriv");
-      var header = el6("div", "harpoon-deriv-header");
-      header.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Derivation"));
-      var toggle6 = el6("div", "harpoon-deriv-toggle");
+      var section = el7("div", "harpoon-deriv");
+      var header = el7("div", "harpoon-deriv-header");
+      header.appendChild(el7("span", "harpoon-lab-section-label is-steps", "Derivation"));
+      var toggle6 = el7("div", "harpoon-deriv-toggle");
       var views = [["list", "List"], ["tree", "Tree"]];
       var view = "list";
-      var listHost = el6("ol", "harpoon-lab-auto-trail is-instant");
+      var listHost = el7("ol", "harpoon-lab-auto-trail is-instant");
       appendAutoTree(listHost, na.steps || []);
-      var treeHost = el6("div", "harpoon-deriv-treehost");
+      var treeHost = el7("div", "harpoon-deriv-treehost");
       var treeDrawn = false;
       function showView(v) {
         view = v;
@@ -28513,7 +28833,7 @@
         }
       }
       views.forEach(function(vv) {
-        var t = el6("button", "harpoon-deriv-tab" + (vv[0] === view ? " is-active" : ""), vv[1]);
+        var t = el7("button", "harpoon-deriv-tab" + (vv[0] === view ? " is-active" : ""), vv[1]);
         t.type = "button";
         t.dataset.view = vv[0];
         t.addEventListener("click", function() {
@@ -28543,11 +28863,11 @@
       var self = this;
       opts = opts || {};
       host2.textContent = "";
-      var wrap = el6("div", "hpt-panel" + (opts.compact ? " is-compact" : " is-roomy"));
+      var wrap = el7("div", "hpt-panel" + (opts.compact ? " is-compact" : " is-roomy"));
       var mode = "path";
       var selectedNodeId = null;
-      var treeHost = el6("div", "hpt-host");
-      var card = el6("div", "hpt-card");
+      var treeHost = el7("div", "hpt-host");
+      var card = el7("div", "hpt-card");
       card.hidden = true;
       var userView = null;
       function cur() {
@@ -28628,19 +28948,19 @@
           toggle6.setAttribute("aria-label", tip);
           toggle6.setAttribute("aria-expanded", collapsed ? "false" : "true");
         };
-        var split = el6("div", "hpt-split");
-        var left = el6("div", "hpt-split-tree");
+        var split = el7("div", "hpt-split");
+        var left = el7("div", "hpt-split-tree");
         left.appendChild(treeHost);
-        var rail = el6("div", "hpt-split-rail");
+        var rail = el7("div", "hpt-split-rail");
         card.hidden = false;
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
         var device = global50.Device;
         var collapsed = !!(device && device.get("harpoonDetailsCollapsed"));
-        var railHead = el6("div", "hpt-rail-head");
-        var railTitle = el6("span", "hpt-rail-title", "Details");
-        var toggle6 = el6("button", "icon-btn hpt-rail-toggle");
+        var railHead = el7("div", "hpt-rail-head");
+        var railTitle = el7("span", "hpt-rail-title", "Details");
+        var toggle6 = el7("button", "icon-btn hpt-rail-toggle");
         toggle6.type = "button";
         railHead.appendChild(railTitle);
         railHead.appendChild(toggle6);
@@ -28672,7 +28992,7 @@
         return;
       }
       var live2 = na.phase === "searching";
-      var content = el6("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
+      var content = el7("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
       var mounted4 = this.mountTreePanel(content, na, { compact: false, live: live2 });
       this._treeRedraw = mounted4.redraw;
       this._treeExplorerEl = content;
@@ -28724,44 +29044,44 @@
       var links = chain.filter(function(c) {
         return c !== "impossible";
       });
-      var wrap = el6("div", "hpt-chain" + (variant === "inline" ? " is-inline" : "") + (variant === "rail" ? " is-rail" : "") + (refutation ? " is-refutation" : ""));
+      var wrap = el7("div", "hpt-chain" + (variant === "inline" ? " is-inline" : "") + (variant === "rail" ? " is-rail" : "") + (refutation ? " is-refutation" : ""));
       if (variant === "full") {
-        wrap.appendChild(el6(
+        wrap.appendChild(el7(
           "div",
           "hpt-chain-label",
           refutation ? "Refutation \u2014 derived to a contradiction" : "Synthesis \u2014 backward-chained " + links.length + " step" + (links.length === 1 ? "" : "s")
         ));
       }
-      var seq2 = el6("div", "hpt-chain-seq");
+      var seq2 = el7("div", "hpt-chain-seq");
       var linkTotal = links.length;
       links.forEach(function(name, i) {
-        if (i > 0) seq2.appendChild(el6("span", "hpt-chain-arrow", "\u2192"));
+        if (i > 0) seq2.appendChild(el7("span", "hpt-chain-arrow", "\u2192"));
         var stepNum = i + 1;
         var isClose = i === links.length - 1 && !refutation;
         var stepTip = isClose ? "Calls " + name + " and closes this subgoal (" + stepNum + " of " + linkTotal + ")" : "Calls " + name + " (" + stepNum + " of " + linkTotal + ")";
         if (variant === "rail") {
-          var railNm = el6("code", "hpt-chain-name");
+          var railNm = el7("code", "hpt-chain-name");
           railNm.textContent = name;
           bindChipTip2(railNm, stepTip);
           seq2.appendChild(railNm);
           return;
         }
-        var link = el6("span", "hpt-chain-link" + (isClose ? " is-close" : ""));
-        link.appendChild(el6("span", "hpt-chain-idx", String(stepNum)));
-        var nm = el6("code", "hpt-chain-name");
+        var link = el7("span", "hpt-chain-link" + (isClose ? " is-close" : ""));
+        link.appendChild(el7("span", "hpt-chain-idx", String(stepNum)));
+        var nm = el7("code", "hpt-chain-name");
         nm.textContent = name;
         link.appendChild(nm);
         bindChipTip2(link, stepTip);
         seq2.appendChild(link);
       });
       if (refutation) {
-        seq2.appendChild(el6("span", "hpt-chain-arrow", "\u2192"));
+        seq2.appendChild(el7("span", "hpt-chain-arrow", "\u2192"));
         if (variant === "rail") {
-          var railImp = el6("code", "hpt-chain-name is-impossible", "impossible");
+          var railImp = el7("code", "hpt-chain-name is-impossible", "impossible");
           bindChipTip2(railImp, "This branch is impossible (contradiction)");
           seq2.appendChild(railImp);
         } else {
-          var impLink = el6("span", "hpt-chain-link is-impossible", "impossible");
+          var impLink = el7("span", "hpt-chain-link is-impossible", "impossible");
           bindChipTip2(impLink, "This branch is impossible (contradiction)");
           seq2.appendChild(impLink);
         }
@@ -28769,12 +29089,12 @@
       wrap.appendChild(seq2);
       if (variant === "full") {
         var refuted = meta.uses && meta.uses.length ? meta.uses[meta.uses.length - 1] : null;
-        var note = el6("div", "hpt-chain-note");
+        var note = el7("div", "hpt-chain-note");
         if (!refutation) {
           note.textContent = "the final rule closes the goal";
         } else if (refuted) {
           note.appendChild(document.createTextNode("these rules refute "));
-          var rc = el6("code", "hpt-chain-refuted");
+          var rc = el7("code", "hpt-chain-refuted");
           rc.textContent = refuted;
           note.appendChild(rc);
         } else {
@@ -28785,9 +29105,9 @@
       return wrap;
     }
     function detailSection(label, bodyEl3) {
-      var sec = el6("div", "hpt-detail-section");
-      if (label) sec.appendChild(el6("span", "harpoon-lab-section-label", label));
-      var body = el6("div", "hpt-detail-section-body");
+      var sec = el7("div", "hpt-detail-section");
+      if (label) sec.appendChild(el7("span", "harpoon-lab-section-label", label));
+      var body = el7("div", "hpt-detail-section-body");
       body.appendChild(bodyEl3);
       sec.appendChild(body);
       return sec;
@@ -28804,62 +29124,62 @@
         parts.push(checks + " check" + (checks === 1 ? "" : "s"));
       }
       if (!parts.length) return null;
-      var foot = el6("div", "hpt-detail-foot");
+      var foot = el7("div", "hpt-detail-foot");
       parts.forEach(function(p, i) {
-        if (i > 0) foot.appendChild(el6("span", "hpt-detail-sep", "\xB7"));
-        foot.appendChild(el6("span", "hpt-detail-meta-item", p));
+        if (i > 0) foot.appendChild(el7("span", "hpt-detail-sep", "\xB7"));
+        foot.appendChild(el7("span", "hpt-detail-meta-item", p));
       });
       return foot;
     }
     function renderDetailBanner(moveKind, name, lead) {
-      var banner = el6("div", "hpt-detail-banner");
+      var banner = el7("div", "hpt-detail-banner");
       if (moveKind) {
-        banner.appendChild(el6("span", "harpoon-lab-auto-move move-" + moveKind, moveKind));
+        banner.appendChild(el7("span", "harpoon-lab-auto-move move-" + moveKind, moveKind));
       }
-      banner.appendChild(el6("div", "hpt-detail-name", name));
-      if (lead) banner.appendChild(el6("p", "hpt-detail-lead", lead));
+      banner.appendChild(el7("div", "hpt-detail-name", name));
+      if (lead) banner.appendChild(el7("p", "hpt-detail-lead", lead));
       return banner;
     }
     function renderTreeRailOverview(mount3, ctx) {
       var na = ctx.na || {};
       var name = ctx.declName || "theorem";
-      mount3.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Overview"));
-      var banner = el6("div", "hpt-detail-banner is-overview");
-      banner.appendChild(el6("div", "hpt-detail-name", name));
+      mount3.appendChild(el7("span", "harpoon-lab-section-label is-steps", "Overview"));
+      var banner = el7("div", "hpt-detail-banner is-overview");
+      banner.appendChild(el7("div", "hpt-detail-name", name));
       mount3.appendChild(banner);
       if (na.goalType) {
-        var g15 = el6("div", "hpt-detail-goal");
-        renderType4(g15, na.goalType);
-        mount3.appendChild(detailSection("Theorem", g15));
+        var g17 = el7("div", "hpt-detail-goal");
+        renderType4(g17, na.goalType);
+        mount3.appendChild(detailSection("Theorem", g17));
       }
       var snap = na.theoremSnapshot;
       if (snap && (snap.premiseCount || snap.totality)) {
-        var meta = el6("div", "hpt-detail-theorem-meta");
+        var meta = el7("div", "hpt-detail-theorem-meta");
         if (snap.premiseCount) {
-          meta.appendChild(el6("span", "hpt-detail-meta-item", snap.premiseCount + " premise" + (snap.premiseCount === 1 ? "" : "s")));
+          meta.appendChild(el7("span", "hpt-detail-meta-item", snap.premiseCount + " premise" + (snap.premiseCount === 1 ? "" : "s")));
         }
         if (snap.totality && snap.totality.kind) {
-          meta.appendChild(el6("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
+          meta.appendChild(el7("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
         }
         mount3.appendChild(detailSection("Structure", meta));
       }
-      var status = el6("div", "hpt-detail-status");
+      var status = el7("div", "hpt-detail-status");
       if (na.phase === "searching") {
-        status.appendChild(el6("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
-        status.appendChild(el6("div", "hpt-detail-status-sub", reelStatText(na)));
+        status.appendChild(el7("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
+        status.appendChild(el7("div", "hpt-detail-status-sub", reelStatText(na)));
       } else if (na.complete) {
-        status.appendChild(el6("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status.appendChild(el7("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sc = (na.steps || []).length;
         var line = sc ? sc + (sc === 1 ? " step" : " steps") : "";
         if (na.checks) line += (line ? " \xB7 " : "") + na.checks + (na.checks === 1 ? " check" : " checks");
-        if (line) status.appendChild(el6("div", "hpt-detail-status-sub", line));
+        if (line) status.appendChild(el7("div", "hpt-detail-status-sub", line));
       } else {
-        status.appendChild(el6("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status.appendChild(el7("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sub = autoSubtext(na);
-        if (sub) status.appendChild(el6("div", "hpt-detail-status-sub", sub));
+        if (sub) status.appendChild(el7("div", "hpt-detail-status-sub", sub));
         var sc2 = (na.steps || []).length;
         if (sc2) {
-          status.appendChild(el6(
+          status.appendChild(el7(
             "div",
             "hpt-detail-status-sub",
             sc2 + (sc2 === 1 ? " step" : " steps") + " recorded"
@@ -28867,7 +29187,7 @@
         }
       }
       mount3.appendChild(detailSection("Status", status));
-      mount3.appendChild(el6("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
+      mount3.appendChild(el7("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
       if (!n || !global50.HarpoonTree || typeof global50.HarpoonTree.breadcrumb !== "function") return null;
@@ -28877,10 +29197,10 @@
         s = String(s || "");
         return s.length > 22 ? s.slice(0, 21) + "\u2026" : s;
       }
-      var row = el6("div", "hpt-breadcrumb");
+      var row = el7("div", "hpt-breadcrumb");
       parts.forEach(function(p, i) {
-        if (i > 0) row.appendChild(el6("span", "hpt-breadcrumb-sep", "/"));
-        row.appendChild(el6("span", "hpt-breadcrumb-part", truncPart(p)));
+        if (i > 0) row.appendChild(el7("span", "hpt-breadcrumb-sep", "/"));
+        row.appendChild(el7("span", "hpt-breadcrumb-part", truncPart(p)));
       });
       return row;
     }
@@ -28891,26 +29211,26 @@
       if (focus.armLine) bits.push("deepest case arm (line " + focus.armLine + ")");
       if (typeof focus.score === "number") bits.push("priority score " + focus.score);
       if (!bits.length) return null;
-      return el6("p", "hpt-detail-focus", bits.join(" \xB7 "));
+      return el7("p", "hpt-detail-focus", bits.join(" \xB7 "));
     }
     function renderAltRow(v, rail) {
-      var li = el6("li", "hpt-tried is-" + v.verdict);
-      li.appendChild(el6("span", (rail ? "harpoon-lab-auto-move" : "hpt-card-kind") + " move-" + v.kind, v.kind));
-      var head = el6("code", "hpt-tried-head");
+      var li = el7("li", "hpt-tried is-" + v.verdict);
+      li.appendChild(el7("span", (rail ? "harpoon-lab-auto-move" : "hpt-card-kind") + " move-" + v.kind, v.kind));
+      var head = el7("code", "hpt-tried-head");
       renderSource2(head, v.head || v.kind);
       li.appendChild(head);
       if (v.rationale) {
-        var rat = el6("span", "hpt-tried-rationale");
+        var rat = el7("span", "hpt-tried-rationale");
         rat.textContent = v.rationale;
         li.appendChild(rat);
       }
       if (v.text && v.text !== v.head) {
-        var full = el6("pre", "hpt-tried-text");
+        var full = el7("pre", "hpt-tried-text");
         renderSource2(full, v.text);
         li.appendChild(full);
       }
       if (v.reason) {
-        var reason = el6("span", "hpt-tried-reason");
+        var reason = el7("span", "hpt-tried-reason");
         reason.textContent = (v.verdict === "guard" ? "Skipped: " : "Rejected: ") + v.reason;
         li.appendChild(reason);
       }
@@ -28936,17 +29256,17 @@
           tip: "Certified clean by Beluga and spliced into the proof."
         }
       ];
-      var wrap = el6("div", "hpt-alt-tray");
-      groups.forEach(function(g15) {
+      var wrap = el7("div", "hpt-alt-tray");
+      groups.forEach(function(g17) {
         var rows2 = tried.filter(function(v) {
-          return v.verdict === g15.key;
+          return v.verdict === g17.key;
         });
         if (!rows2.length) return;
-        var sec = el6("div", "hpt-alt-group is-" + g15.key);
-        var groupLabel = el6("div", "hpt-alt-group-label", g15.label + " (" + rows2.length + ")");
-        if (g15.tip) setTip2(groupLabel, g15.tip);
+        var sec = el7("div", "hpt-alt-group is-" + g17.key);
+        var groupLabel = el7("div", "hpt-alt-group-label", g17.label + " (" + rows2.length + ")");
+        if (g17.tip) setTip2(groupLabel, g17.tip);
         sec.appendChild(groupLabel);
-        var list3 = el6("ul", "hpt-detail-tried");
+        var list3 = el7("ul", "hpt-detail-tried");
         rows2.forEach(function(v) {
           list3.appendChild(renderAltRow(v, opts.rail));
         });
@@ -28967,12 +29287,12 @@
     }
     ;
     function renderWhereSection(self, n, st) {
-      var where = el6("div", "hpt-detail-where");
+      var where = el7("div", "hpt-detail-where");
       var crumb = renderTreeBreadcrumb(n);
       if (crumb) where.appendChild(crumb);
       var hole = st && st.hole || n.hole;
       if (hole && hole.line) {
-        var loc = el6("button", "hpt-hole-loc");
+        var loc = el7("button", "hpt-hole-loc");
         loc.type = "button";
         loc.textContent = "line " + hole.line + (hole.col ? ":" + hole.col : "") + (hole.name ? " (" + hole.name + ")" : "");
         loc.addEventListener("click", function() {
@@ -28981,12 +29301,12 @@
         where.appendChild(loc);
       }
       if (st && st.branch) {
-        where.appendChild(el6("div", "hpt-detail-branch", "in branch: " + st.branch));
+        where.appendChild(el7("div", "hpt-detail-branch", "in branch: " + st.branch));
       }
       if (st && typeof st.checks === "number" && st.checks > 0) {
         var showStats = typeof Persist === "undefined" || Settings.get("autosolveShowStats");
         if (showStats) {
-          var checksEl = el6("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
+          var checksEl = el7("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
           setTip2(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
           where.appendChild(checksEl);
         }
@@ -28997,7 +29317,7 @@
       if (!state2) return;
       var ed = E3();
       if (state2.goal) {
-        var goalHost = el6("div", "hpt-detail-goal");
+        var goalHost = el7("div", "hpt-detail-goal");
         if (ed && typeof ed.mountHoleGoalTier === "function") {
           ed.mountHoleGoalTier(goalHost, {
             surface: "lab",
@@ -29010,12 +29330,12 @@
         mount3.appendChild(detailSection("Goal", goalHost));
       }
       if (state2.meta && state2.meta.length) {
-        var metaWrap = el6("div", "hpt-detail-ctx");
+        var metaWrap = el7("div", "hpt-detail-ctx");
         self.renderCtx(metaWrap, "meta", state2.meta);
         mount3.appendChild(detailSection("Meta context", metaWrap));
       }
       if (state2.ctx && state2.ctx.length) {
-        var ctxWrap = el6("div", "hpt-detail-ctx");
+        var ctxWrap = el7("div", "hpt-detail-ctx");
         self.renderCtx(ctxWrap, "ctx", state2.ctx);
         mount3.appendChild(detailSection("Context", ctxWrap));
       }
@@ -29026,7 +29346,7 @@
       var rail = card.classList.contains("is-rail");
       if (!n) {
         if (rail && ctx) {
-          var idle = el6("div", "hpt-detail");
+          var idle = el7("div", "hpt-detail");
           card.appendChild(idle);
           renderTreeRailOverview(idle, ctx);
         } else if (!rail) {
@@ -29034,7 +29354,7 @@
         }
         return;
       }
-      var mount3 = rail ? el6("div", "hpt-detail") : card;
+      var mount3 = rail ? el7("div", "hpt-detail") : card;
       if (rail) card.appendChild(mount3);
       var self = this;
       var treeMode = ctx && ctx.treeMode || "path";
@@ -29046,12 +29366,12 @@
         if (rail) mount3.appendChild(gBanner);
         else card.appendChild(gBanner);
         if (gh.text && gh.text !== gh.head) {
-          var gcode = rail ? el6("div", "hpt-detail-code") : el6("div", "hpt-card-code");
+          var gcode = rail ? el7("div", "hpt-detail-code") : el7("div", "hpt-card-code");
           renderSource2(gcode, gh.text);
           if (rail) mount3.appendChild(detailSection("Fragment", gcode));
           else card.appendChild(gcode);
         }
-        var gverdict = el6(
+        var gverdict = el7(
           "div",
           "hpt-detail-verdict is-" + gh.verdict,
           (gh.verdict === "guard" ? "skipped \u2014 " : "rejected \u2014 ") + (gh.reason || "did not certify")
@@ -29085,11 +29405,11 @@
           if (snap && snap.premiseCount) {
             mount3.appendChild(detailSection(
               "Structure",
-              el6("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
+              el7("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
             ));
           }
         } else if (n.type === "arm" && n.pattern) {
-          var pg = el6("div", "hpt-detail-goal");
+          var pg = el7("div", "hpt-detail-goal");
           renderType4(pg, n.pattern);
           mount3.appendChild(detailSection("Branch pattern", pg));
         }
@@ -29107,7 +29427,7 @@
         ctx: st.holeCtx,
         meta: st.holeMeta
       }, goalState);
-      var codeEl = el6("div", rail ? "hpt-detail-code" : "hpt-card-code");
+      var codeEl = el7("div", rail ? "hpt-detail-code" : "hpt-card-code");
       renderSource2(codeEl, st.text || "");
       mount3.appendChild(detailSection("Fragment", codeEl));
       if (st.move === "synth") {
@@ -29116,20 +29436,20 @@
       }
       if (st.move === "split" && meta.armPatterns && meta.armPatterns.length) {
         if (meta.scrutinee) {
-          var scrut = el6("div", "hpt-detail-goal");
+          var scrut = el7("div", "hpt-detail-goal");
           renderType4(scrut, meta.scrutinee);
           mount3.appendChild(detailSection("Scrutinee", scrut));
         }
         var armCount = meta.armPatterns.length;
-        var arms = el6("ul", "hpt-detail-arms");
+        var arms = el7("ul", "hpt-detail-arms");
         meta.armPatterns.forEach(function(pat) {
-          var li = el6("li", "hpt-detail-arm");
+          var li = el7("li", "hpt-detail-arm");
           renderType4(li, pat);
           arms.appendChild(li);
         });
         var armsSection = detailSection("Arms (" + armCount + ")", arms);
         if (armCount === 1) {
-          var note = el6(
+          var note = el7(
             "p",
             "hpt-detail-note",
             "One arm \u2014 this case only binds the scrutinee\u2019s components (it acts as a let)."
@@ -29160,7 +29480,7 @@
 
   // js/harpoon/harpoon-lab-manual.mjs
   function createManual(deps) {
-    var el6 = deps.el;
+    var el7 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip2 = deps.setTip;
     var E3 = deps.E;
@@ -29219,45 +29539,45 @@
       return { verb: base.verb, arg, tip: base.tip, meta };
     }
     function displayGoal(s) {
-      var g15 = globalThis.HarpoonGlyphs;
-      return g15 ? g15.displayBeluga(s) : String(s == null ? "" : s);
+      var g17 = globalThis.HarpoonGlyphs;
+      return g17 ? g17.displayBeluga(s) : String(s == null ? "" : s);
     }
     function moveHeadText(text) {
       return String(text || "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 90);
     }
     function buildMoveRow(session, mv, hole, index) {
       var tac = tacticOf(mv, hole);
-      var row = el6("div", "harpoon-lab-move move-" + mv.kind + (index === 0 ? " is-primary" : ""));
+      var row = el7("div", "harpoon-lab-move move-" + mv.kind + (index === 0 ? " is-primary" : ""));
       row.style.setProperty("--i", String(index));
       row._mv = mv;
-      var btn = el6("button", "harpoon-lab-move-main");
+      var btn = el7("button", "harpoon-lab-move-main");
       btn.type = "button";
-      var head = el6("span", "harpoon-lab-move-head");
-      var verb = el6("span", "harpoon-lab-move-verb", tac.verb);
+      var head = el7("span", "harpoon-lab-move-head");
+      var verb = el7("span", "harpoon-lab-move-verb", tac.verb);
       setTip2(verb, tac.tip);
       head.appendChild(verb);
       if (tac.arg) {
-        var argEl = el6("span", "harpoon-lab-move-arg", tac.arg);
+        var argEl = el7("span", "harpoon-lab-move-arg", tac.arg);
         setTip2(argEl, argTip(mv.kind, tac.arg));
         head.appendChild(argEl);
       }
       btn.appendChild(head);
-      if (mv.rationale) btn.appendChild(el6("span", "harpoon-lab-move-why", mv.rationale));
+      if (mv.rationale) btn.appendChild(el7("span", "harpoon-lab-move-why", mv.rationale));
       btn.setAttribute("aria-label", "Apply " + tac.verb + (tac.arg ? " " + tac.arg : ""));
       btn.addEventListener("click", function(e) {
         e.preventDefault();
         session.manualApply(mv, row);
       });
       row.appendChild(btn);
-      var foot = el6("button", "harpoon-lab-move-foot");
+      var foot = el7("button", "harpoon-lab-move-foot");
       foot.type = "button";
       foot.setAttribute("aria-expanded", "false");
-      foot.appendChild(el6("span", "harpoon-lab-move-termhead", moveHeadText(mv.text)));
-      var pip = el6("span", "harpoon-lab-move-pip");
+      foot.appendChild(el7("span", "harpoon-lab-move-termhead", moveHeadText(mv.text)));
+      var pip = el7("span", "harpoon-lab-move-pip");
       pip.setAttribute("aria-hidden", "true");
       foot.appendChild(pip);
       row._pip = pip;
-      var chev = el6("span", "harpoon-lab-move-chevron");
+      var chev = el7("span", "harpoon-lab-move-chevron");
       chev.innerHTML = ICON_CHEVRON_DOWN2;
       foot.appendChild(chev);
       setTip2(foot, "Show the full term");
@@ -29269,7 +29589,7 @@
         setTip2(foot, open11 ? "Hide the full term" : "Show the full term");
         var full = row.querySelector(".harpoon-lab-move-term");
         if (open11 && !full) {
-          var term = el6("div", "harpoon-lab-move-term");
+          var term = el7("div", "harpoon-lab-move-term");
           renderSource2(term, mv.text);
           row.appendChild(term);
         }
@@ -29310,12 +29630,12 @@
       if (tip) row._pip.setAttribute("aria-label", tip);
     }
     function skel(cls, w) {
-      var n = el6("span", "harpoon-skel" + (cls ? " " + cls : ""));
+      var n = el7("span", "harpoon-skel" + (cls ? " " + cls : ""));
       if (w) n.style.width = w;
       return n;
     }
     function sectionLabel(text) {
-      var n = el6("div", "harpoon-lab-section-label is-steps harpoon-lab-moves-label");
+      var n = el7("div", "harpoon-lab-section-label is-steps harpoon-lab-moves-label");
       n.textContent = text;
       return n;
     }
@@ -29325,29 +29645,29 @@
       return i > 0 ? key.slice(0, i) : "";
     }
     function skelGoalHero(declName, declKw) {
-      var wrap = el6("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
-      var glabel = el6("div", "harpoon-lab-goal-label");
-      glabel.appendChild(el6("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+      var wrap = el7("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
+      var glabel = el7("div", "harpoon-lab-goal-label");
+      glabel.appendChild(el7("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
       appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
-      var body = el6("div", "harpoon-lab-auto-goal-body");
+      var body = el7("div", "harpoon-lab-auto-goal-body");
       body.appendChild(skel("harpoon-skel--goal", "72%"));
       wrap.appendChild(body);
       return wrap;
     }
     function skelBar() {
-      var bar = el6("div", "harpoon-lab-bar");
-      var status = el6("div", "harpoon-lab-status");
-      status.appendChild(el6("span", "harpoon-lab-status-dot"));
+      var bar = el7("div", "harpoon-lab-bar");
+      var status = el7("div", "harpoon-lab-status");
+      status.appendChild(el7("span", "harpoon-lab-status-dot"));
       status.appendChild(skel("harpoon-skel--text", "3.6rem"));
       bar.appendChild(status);
       return bar;
     }
     function skelMoveRow(i) {
-      var row = el6("div", "harpoon-lab-move is-skeleton");
+      var row = el7("div", "harpoon-lab-move is-skeleton");
       row.style.setProperty("--i", String(i));
-      var main = el6("div", "harpoon-lab-move-main");
-      var head = el6("span", "harpoon-lab-move-head");
+      var main = el7("div", "harpoon-lab-move-main");
+      var head = el7("span", "harpoon-lab-move-head");
       head.appendChild(skel("harpoon-skel--verb", ["2.8rem", "2.2rem", "3.4rem"][i % 3]));
       main.appendChild(head);
       main.appendChild(skel("harpoon-skel--text harpoon-skel--d1", ["52%", "38%", "45%"][i % 3]));
@@ -29402,22 +29722,22 @@
       });
     }
     function buildOrcaRunning(session, na) {
-      var band = el6("div", "harpoon-lab-orca-band is-running" + (na.paused ? " is-paused" : ""));
-      var shell = el6("div", "harpoon-lab-orca harpoon-lab-orca--live");
-      var badge = el6("span", "harpoon-lab-orca-badge" + (na.paused ? "" : " is-working"));
+      var band = el7("div", "harpoon-lab-orca-band is-running" + (na.paused ? " is-paused" : ""));
+      var shell = el7("div", "harpoon-lab-orca harpoon-lab-orca--live");
+      var badge = el7("span", "harpoon-lab-orca-badge" + (na.paused ? "" : " is-working"));
       badge.innerHTML = ICON_ORCA2;
       shell.appendChild(badge);
       session._autoSearchSpinner = badge;
       session._statTipEl = badge;
-      var copy = el6("span", "harpoon-lab-orca-copy");
-      copy.appendChild(el6("span", "harpoon-lab-orca-title", na.paused ? "Orca paused" : "Orca"));
-      var sub = el6("span", "harpoon-lab-orca-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
+      var copy = el7("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el7("span", "harpoon-lab-orca-title", na.paused ? "Orca paused" : "Orca"));
+      var sub = el7("span", "harpoon-lab-orca-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
       sub.textContent = na.paused ? "Take a step by hand, or resume" : nativeAutoSearchLabel(na);
       if (!na.paused) sub.style.setProperty("--shimmer-accent", "var(--repl-holes-accent)");
       copy.appendChild(sub);
       shell.appendChild(copy);
       session._autoSearchText = sub;
-      var actions = el6("div", "harpoon-lab-orca-actions");
+      var actions = el7("div", "harpoon-lab-orca-actions");
       var pauseBtn = iconBtn2(
         "icon-btn harpoon-lab-auto-pause",
         na.paused ? ICON_PLAY2 : ICON_PAUSE2,
@@ -29445,16 +29765,16 @@
       return band;
     }
     function buildOrca(session, state2, disabled) {
-      var band = el6("div", "harpoon-lab-orca-band");
-      var btn = el6("button", "harpoon-lab-orca");
+      var band = el7("div", "harpoon-lab-orca-band");
+      var btn = el7("button", "harpoon-lab-orca");
       btn.type = "button";
       if (disabled) btn.disabled = true;
-      var badge = el6("span", "harpoon-lab-orca-badge");
+      var badge = el7("span", "harpoon-lab-orca-badge");
       badge.innerHTML = ICON_ORCA2;
       btn.appendChild(badge);
-      var copy = el6("span", "harpoon-lab-orca-copy");
-      copy.appendChild(el6("span", "harpoon-lab-orca-title", "Orca"));
-      copy.appendChild(el6(
+      var copy = el7("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el7("span", "harpoon-lab-orca-title", "Orca"));
+      copy.appendChild(el7(
         "span",
         "harpoon-lab-orca-sub",
         state2 && state2.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
@@ -29654,7 +29974,7 @@
       if (row) {
         row.classList.add("is-applying");
         if (!row.querySelector(".harpoon-lab-move-track")) {
-          row.insertBefore(el6("div", "harpoon-lab-move-track"), row.firstChild);
+          row.insertBefore(el7("div", "harpoon-lab-move-track"), row.firstChild);
         }
       }
       if (this._movesEl) this._movesEl.classList.add("is-busy");
@@ -30012,7 +30332,7 @@
       if (!m) return;
       var st = m.state;
       var complete2 = st && ed.manualIsComplete(st);
-      var box = el6("div", "harpoon-lab-manual is-" + m.phase + (complete2 ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
+      var box = el7("div", "harpoon-lab-manual is-" + m.phase + (complete2 ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       var goalType = this.manualGoalType();
       if (goalType) {
@@ -30030,9 +30350,9 @@
         if (!goalType) box.appendChild(skelGoalHero(m.declName, m.declKw));
         box.appendChild(skelBar());
         box.appendChild(buildOrca(this, null, true));
-        var skelMoves = el6("div", "harpoon-lab-moves");
+        var skelMoves = el7("div", "harpoon-lab-moves");
         skelMoves.appendChild(sectionLabel("Tactics"));
-        var skelList = el6("div", "harpoon-lab-move-list");
+        var skelList = el7("div", "harpoon-lab-move-list");
         for (var k = 0; k < 3; k += 1) skelList.appendChild(skelMoveRow(k));
         skelMoves.appendChild(skelList);
         box.appendChild(skelMoves);
@@ -30040,9 +30360,9 @@
         return;
       }
       if (m.phase === "error") {
-        var err = el6("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
-        err.appendChild(el6("span", "harpoon-lab-auto-stuck-label", "Cannot prove"));
-        err.appendChild(el6("div", "harpoon-lab-auto-stuck-goal", m.error || ""));
+        var err = el7("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
+        err.appendChild(el7("span", "harpoon-lab-auto-stuck-label", "Cannot prove"));
+        err.appendChild(el7("div", "harpoon-lab-auto-stuck-goal", m.error || ""));
         box.appendChild(err);
         parent.appendChild(box);
         return;
@@ -30082,19 +30402,19 @@
           if (commit.status === "checking") this.updateCommitPlace();
         }
         var open11 = st ? st.holes.length : 0;
-        var bar = el6("div", "harpoon-lab-bar");
-        var status = el6("div", "harpoon-lab-status");
-        var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
+        var bar = el7("div", "harpoon-lab-bar");
+        var status = el7("div", "harpoon-lab-status");
+        var dot = el7("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
-        status.appendChild(el6(
+        status.appendChild(el7(
           "span",
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
         bar.appendChild(status);
-        var actions = el6("div", "harpoon-lab-bar-actions");
+        var actions = el7("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
           ICON_UNDO2,
@@ -30120,12 +30440,12 @@
         bar.appendChild(actions);
         box.appendChild(bar);
         if (st && st.holes.length > 1) {
-          var pickBand = el6("div", "harpoon-lab-picker-band");
-          var picker = el6("div", "harpoon-lab-picker");
+          var pickBand = el7("div", "harpoon-lab-picker-band");
+          var picker = el7("div", "harpoon-lab-picker");
           picker.setAttribute("role", "tablist");
           picker.setAttribute("aria-label", "Subgoals");
           st.holes.forEach(function(h, i) {
-            var tab = el6("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            var tab = el7("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
             tab.type = "button";
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
@@ -30144,7 +30464,7 @@
         var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
         var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
-          var ctxWrap = el6("div", "harpoon-lab-context");
+          var ctxWrap = el7("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
@@ -30158,19 +30478,19 @@
         }
       } else {
         var open11 = st ? st.holes.length : 0;
-        var bar = el6("div", "harpoon-lab-bar");
-        var status = el6("div", "harpoon-lab-status");
-        var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
+        var bar = el7("div", "harpoon-lab-bar");
+        var status = el7("div", "harpoon-lab-status");
+        var dot = el7("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
-        status.appendChild(el6(
+        status.appendChild(el7(
           "span",
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
         bar.appendChild(status);
-        var actions = el6("div", "harpoon-lab-bar-actions");
+        var actions = el7("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
           ICON_UNDO2,
@@ -30196,12 +30516,12 @@
         bar.appendChild(actions);
         box.appendChild(bar);
         if (st && st.holes.length > 1) {
-          var pickBand = el6("div", "harpoon-lab-picker-band");
-          var picker = el6("div", "harpoon-lab-picker");
+          var pickBand = el7("div", "harpoon-lab-picker-band");
+          var picker = el7("div", "harpoon-lab-picker");
           picker.setAttribute("role", "tablist");
           picker.setAttribute("aria-label", "Subgoals");
           st.holes.forEach(function(h, i) {
-            var tab = el6("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            var tab = el7("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
             tab.type = "button";
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
@@ -30220,7 +30540,7 @@
         var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
         var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
-          var ctxWrap = el6("div", "harpoon-lab-context");
+          var ctxWrap = el7("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
@@ -30238,16 +30558,16 @@
           stage += 1;
           box.appendChild(stuckCard);
         }
-        var movesWrap = el6("div", "harpoon-lab-moves" + (searching ? " is-locked" : ""));
+        var movesWrap = el7("div", "harpoon-lab-moves" + (searching ? " is-locked" : ""));
         this._movesEl = movesWrap;
         this._moveRows = [];
         var tacticsLabel = sectionLabel("Tactics");
         if (searching) {
           tacticsLabel.appendChild(
-            el6("span", "harpoon-lab-moves-lock", "Pause Orca to use tactics")
+            el7("span", "harpoon-lab-moves-lock", "Pause Orca to use tactics")
           );
         }
-        var tacStatus = el6("span", "harpoon-lab-moves-status");
+        var tacStatus = el7("span", "harpoon-lab-moves-status");
         tacticsLabel.appendChild(tacStatus);
         this._tacticStatusEl = tacStatus;
         movesWrap.appendChild(tacticsLabel);
@@ -30261,29 +30581,29 @@
             self.loadMoves();
           });
         }
-        var list3 = el6("div", "harpoon-lab-move-list");
+        var list3 = el7("div", "harpoon-lab-move-list");
         if (m.syncing || m.movesPending && !moves.length) {
           for (var sk = 0; sk < (m.movesPending && !moves.length ? 3 : Math.min(3, Math.max(1, moves.length))); sk += 1) {
             list3.appendChild(skelMoveRow(sk));
           }
           movesWrap.appendChild(list3);
         } else if (m.syncFailed) {
-          var lost = el6("div", "harpoon-lab-moves-empty");
-          lost.appendChild(el6(
+          var lost = el7("div", "harpoon-lab-moves-empty");
+          lost.appendChild(el7(
             "span",
             "harpoon-lab-moves-empty-title",
             "Could not read the paused proof"
           ));
-          lost.appendChild(el6(
+          lost.appendChild(el7(
             "span",
             "harpoon-lab-moves-empty-sub",
             "Resume Orca, or undo the last step and try again."
           ));
           movesWrap.appendChild(lost);
         } else if (!moves.length) {
-          var none = el6("div", "harpoon-lab-moves-empty");
-          none.appendChild(el6("span", "harpoon-lab-moves-empty-title", "Nothing applies here"));
-          none.appendChild(el6(
+          var none = el7("div", "harpoon-lab-moves-empty");
+          none.appendChild(el7("span", "harpoon-lab-moves-empty-title", "Nothing applies here"));
+          none.appendChild(el7(
             "span",
             "harpoon-lab-moves-empty-sub",
             "BelJar has no move for this goal. Undo the last step, pick another subgoal, or let Orca search."
@@ -30303,9 +30623,9 @@
       }
       var naNow = this.nativeAuto;
       if (naNow && naNow.phase === "searching") {
-        var live2 = el6("div", "harpoon-reel harpoon-lab-manual-trail");
-        var liveHead = el6("div", "harpoon-deriv-header");
-        liveHead.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Derivation"));
+        var live2 = el7("div", "harpoon-reel harpoon-lab-manual-trail");
+        var liveHead = el7("div", "harpoon-deriv-header");
+        liveHead.appendChild(el7("span", "harpoon-lab-section-label is-steps", "Derivation"));
         liveHead.appendChild(iconBtn2(
           "icon-btn harpoon-deriv-popout",
           ICON_POPOUT2,
@@ -30316,7 +30636,7 @@
           }
         ));
         live2.appendChild(liveHead);
-        var record = el6("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
+        var record = el7("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
         record._lastBranch = null;
         record._branchHost = null;
         live2.appendChild(record);
@@ -30432,15 +30752,15 @@
   function tacticVerb(kind) {
     return TACTIC_VERB[kind] || kind || "move";
   }
-  function setTip(el6, text, opts) {
-    if (!el6) return;
+  function setTip(el7, text, opts) {
+    if (!el7) return;
     if (global51.Tooltips && global51.Tooltips.set) {
-      global51.Tooltips.set(el6, text, opts);
+      global51.Tooltips.set(el7, text, opts);
     } else {
-      el6.removeAttribute("title");
+      el7.removeAttribute("title");
       var tip = text != null ? String(text).trim() : "";
-      if (tip) el6.setAttribute("data-tooltip", tip);
-      else el6.removeAttribute("data-tooltip");
+      if (tip) el7.setAttribute("data-tooltip", tip);
+      else el7.removeAttribute("data-tooltip");
     }
   }
   function buildLabeledCodeTip(label, code, kind) {
@@ -30474,16 +30794,16 @@
       setTip(host2, "Goal at this step: " + shown, { ariaLabel: false });
     }
   }
-  function bindChipTip(el6, tip, richCode, richKind, placement) {
-    if (!el6 || !tip) return;
-    el6.setAttribute("data-tooltip-placement", placement || "below");
-    el6.setAttribute("data-tooltip-no-track", "");
+  function bindChipTip(el7, tip, richCode, richKind, placement) {
+    if (!el7 || !tip) return;
+    el7.setAttribute("data-tooltip-placement", placement || "below");
+    el7.setAttribute("data-tooltip-no-track", "");
     if (richCode && global51.Tooltips && typeof global51.Tooltips.setRich === "function") {
-      global51.Tooltips.setRich(el6, function() {
+      global51.Tooltips.setRich(el7, function() {
         return buildLabeledCodeTip(tip, richCode, richKind || "type");
       }, tip);
     } else {
-      setTip(el6, tip, { ariaLabel: false });
+      setTip(el7, tip, { ariaLabel: false });
     }
   }
   function iconBtn(className, svg, label, tip, onClick2, disabled) {
@@ -32436,13 +32756,13 @@
     });
   }
   function normalizeGlyphs(text) {
-    var g15 = global53.HarpoonGlyphs;
-    if (g15) return g15.fallbackNormalize(text);
+    var g17 = global53.HarpoonGlyphs;
+    if (g17) return g17.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g15 = global53.HarpoonGlyphs;
-    if (g15) return g15.displayBeluga(typeStr);
+    var g17 = global53.HarpoonGlyphs;
+    if (g17) return g17.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
     return normalizeGlyphs(typeStr);
@@ -32491,9 +32811,9 @@
     } else if (st === "pending") {
       st = "loading";
     }
-    var g15 = goal || "";
-    if (g15) g15 = displayType2(g15).replace(/\s+/g, "");
-    return st + ":" + g15;
+    var g17 = goal || "";
+    if (g17) g17 = displayType2(g17).replace(/\s+/g, "");
+    return st + ":" + g17;
   }
   function modelRenderKey(model) {
     if (!model || !model.totalCount) return "";
@@ -32571,9 +32891,9 @@
   function entryKey(entry) {
     return entry.fileId + ":" + holeKey(entry.hit);
   }
-  function mirrorTierClass(win) {
-    var track3 = trackOf(win);
-    win.classList.toggle(
+  function mirrorTierClass(win2) {
+    var track3 = trackOf(win2);
+    win2.classList.toggle(
       "harpoon-hole-goal--tiered",
       !!track3 && track3.classList.contains("harpoon-hole-goal--tiered")
     );
@@ -32753,35 +33073,35 @@
     }
     return null;
   }
-  function maskOf(win) {
-    return win && win.firstElementChild;
+  function maskOf(win2) {
+    return win2 && win2.firstElementChild;
   }
-  function trackOf(win) {
-    var mask = maskOf(win);
+  function trackOf(win2) {
+    var mask = maskOf(win2);
     return mask ? mask.firstElementChild : null;
   }
-  function readOver(win) {
-    var mask = maskOf(win);
-    var track3 = trackOf(win);
+  function readOver(win2) {
+    var mask = maskOf(win2);
+    var track3 = trackOf(win2);
     if (!mask || !track3 || !mask.clientWidth) return -1;
     return Math.max(0, Math.round(track3.scrollWidth - mask.clientWidth));
   }
-  function applyOver(win, over) {
+  function applyOver(win2, over) {
     if (over < 0) return;
-    win.dataset.measured = "1";
+    win2.dataset.measured = "1";
     if (over <= 1) {
-      if (!win.classList.contains("is-clipped")) return;
-      win.classList.remove("is-clipped");
-      win.style.removeProperty("--slide");
-      win.style.removeProperty("--slide-ms");
+      if (!win2.classList.contains("is-clipped")) return;
+      win2.classList.remove("is-clipped");
+      win2.style.removeProperty("--slide");
+      win2.style.removeProperty("--slide-ms");
       return;
     }
     var slide = "-" + over + "px";
     var ms = Math.min(2800, Math.max(500, Math.round(over * 6))) + "ms";
-    if (win.style.getPropertyValue("--slide").trim() === slide && win.style.getPropertyValue("--slide-ms").trim() === ms && win.classList.contains("is-clipped")) return;
-    win.classList.add("is-clipped");
-    win.style.setProperty("--slide", slide);
-    win.style.setProperty("--slide-ms", ms);
+    if (win2.style.getPropertyValue("--slide").trim() === slide && win2.style.getPropertyValue("--slide-ms").trim() === ms && win2.classList.contains("is-clipped")) return;
+    win2.classList.add("is-clipped");
+    win2.style.setProperty("--slide", slide);
+    win2.style.setProperty("--slide-ms", ms);
   }
   function markClipped(root2) {
     if (!root2) return;
@@ -33735,7 +34055,6 @@
 
   // js/account/account.mjs
   var g13 = typeof window !== "undefined" ? window : globalThis;
-  var SAFE = /* @__PURE__ */ new Set(["clean", "pushed", "downloaded", "forgot", "deleted", "absent", "restored"]);
   var user = null;
   var available = false;
   function accountStep(me, local) {
@@ -33743,23 +34062,8 @@
     if (local === me.id) return "same";
     return local ? "switched" : "first";
   }
-  function claimCandidates(projects, statsOf) {
-    return projects.filter((p) => p.owner === null).map((p) => Object.assign({ id: p.id, name: p.name }, statsOf(p.id))).filter((p) => p.size > 0);
-  }
-  function roundIsSafe(result) {
-    return !!result && !!result.projects && Object.values(result.projects).every((r) => SAFE.has(r.status));
-  }
-  function sizeLabel(chars) {
-    if (chars < 1024) return chars + " characters";
-    return (chars / 1024).toFixed(chars < 10240 ? 1 : 0) + " KB";
-  }
-  function whenLabel(ms, now) {
-    if (!ms) return "never edited";
-    const days = Math.floor((now - ms) / 864e5);
-    if (days <= 0) return "edited today";
-    if (days === 1) return "edited yesterday";
-    if (days < 30) return "edited " + days + " days ago";
-    return "edited " + new Date(ms).toLocaleDateString();
+  function adoptable(projects, sizeOf) {
+    return projects.filter((p) => p.owner === null && sizeOf(p.id) > 0).map((p) => p.id);
   }
   function signInFailure(why, detail2) {
     switch (why) {
@@ -33791,9 +34095,6 @@
         return "Sign-in stopped at a step this page doesn\u2019t know.";
     }
   }
-  function projectLine(p, now = Date.now()) {
-    return [p.files === 1 ? "1 file" : p.files + " files", sizeLabel(p.size), whenLabel(p.editedAt, now)].join(" \xB7 ");
-  }
   async function fetchMe() {
     try {
       const res = await fetch("/api/auth/me", { credentials: "same-origin", headers: { accept: "application/json" } });
@@ -33814,29 +34115,34 @@
     } catch (_) {
     }
   }
+  function avatarNode(cls) {
+    if (user && user.avatar) {
+      const img = document.createElement("img");
+      img.className = cls;
+      img.alt = "";
+      img.src = user.avatar;
+      img.referrerPolicy = "no-referrer";
+      return img;
+    }
+    const initial = document.createElement("span");
+    initial.className = cls + " account-initial";
+    initial.textContent = (user && (user.name || user.handle) || "?").trim().charAt(0).toUpperCase();
+    return initial;
+  }
   function render5() {
     const btn = document.getElementById("btn-account");
     if (!btn) return;
     btn.hidden = !available;
     if (!available) return;
     btn.replaceChildren();
-    const label = user ? "Account: @" + user.handle : "Sign in";
-    btn.setAttribute("aria-label", label);
-    btn.setAttribute("data-tooltip", user ? "@" + user.handle : "Sign in");
     btn.classList.toggle("is-signed-in", !!user);
-    if (user && user.avatar) {
-      const img = document.createElement("img");
-      img.className = "account-avatar";
-      img.alt = "";
-      img.src = user.avatar;
-      img.referrerPolicy = "no-referrer";
-      btn.appendChild(img);
-    } else if (user) {
-      const initial = document.createElement("span");
-      initial.className = "account-initial";
-      initial.textContent = (user.name || user.handle || "?").trim().charAt(0).toUpperCase();
-      btn.appendChild(initial);
+    if (user) {
+      btn.setAttribute("aria-label", "Account: @" + user.handle);
+      btn.setAttribute("data-tooltip", "@" + user.handle);
+      btn.appendChild(avatarNode("account-avatar"));
     } else {
+      btn.setAttribute("aria-label", "Sign in");
+      btn.setAttribute("data-tooltip", "Sign in");
       btn.insertAdjacentHTML(
         "beforeend",
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>'
@@ -33844,105 +34150,72 @@
     }
   }
   function menuItems() {
-    if (!user) {
-      return [
-        { type: "section", label: "Sync your projects between devices" },
-        { label: "Sign in with GitHub", onSelect: signIn }
-      ];
-    }
+    if (!user) return [{ label: "Sign in with GitHub", onSelect: signIn }];
     return [
-      { type: "section", label: "Signed in as @" + user.handle },
-      { label: "Sign out\u2026", onSelect: signOutInteractive }
+      {
+        type: "status",
+        title: user.name || "@" + user.handle,
+        detail: user.name ? "@" + user.handle : null,
+        media: avatarNode("account-avatar account-avatar--menu")
+      },
+      { type: "separator" },
+      { label: "Settings", onSelect: () => g13.SettingsUI && g13.SettingsUI.open("account") },
+      { label: "Sign out", onSelect: signOut }
     ];
   }
   function signIn() {
     saveNow2();
     g13.location.assign("/api/auth/github/start");
   }
-  async function askToClaim() {
+  function adopt(projects) {
     const P3 = g13.Persist;
-    const candidates = claimCandidates(P3.listProjects(), P3.projectStats);
-    if (!candidates.length) {
-      g13.Device.set("claimAskedFor", user.id);
-      return;
-    }
-    const D = g13.PromptDialog;
-    const el6 = (tag, cls, text) => {
-      const n = document.createElement(tag);
-      if (cls) n.className = cls;
-      if (text != null) n.textContent = text;
-      return n;
-    };
-    const body = el6("div", "account-claim");
-    body.appendChild(el6("p", "jar-prompt-dialog__message", "Add this browser\u2019s projects to your account?"));
-    body.appendChild(el6("p", "jar-prompt-dialog__note", "Projects you add sync to your other devices. The rest stay in this browser only."));
-    const list3 = el6("ul", "account-claim__list");
-    const now = Date.now();
-    for (const p of candidates) {
-      const row = el6("li", "account-claim__row");
-      const label = el6("label", "account-claim__label");
-      const box = el6("input");
-      box.type = "checkbox";
-      box.checked = true;
-      box.value = p.id;
-      label.appendChild(box);
-      const text = el6("span", "account-claim__text");
-      text.appendChild(el6("span", "account-claim__name", p.name));
-      text.appendChild(el6("span", "account-claim__meta", projectLine(p, now)));
-      label.appendChild(text);
-      row.appendChild(label);
-      list3.appendChild(row);
-    }
-    body.appendChild(list3);
-    body.appendChild(D.buildActions([
-      { action: "keep", label: "Keep on this device only", variant: "secondary" },
-      { action: "add", label: "Add to my account", variant: "primary" }
-    ], "row"));
-    const choice = await D.open({ ariaLabel: "Add projects to your account", body });
-    if (choice !== "add" && choice !== "keep") return;
-    g13.Device.set("claimAskedFor", user.id);
-    if (choice === "keep") return;
-    const picked = [...list3.querySelectorAll("input:checked")].map((b) => b.value);
-    let added = 0;
-    for (const pid of picked) if (P3.claimProject(pid)) added += 1;
-    if (added) {
-      P3.syncNow();
+    let n = 0;
+    const sizeOf = (pid) => P3.projectStats(pid).size;
+    for (const pid of adoptable(projects || P3.listProjects(), sizeOf)) if (P3.claimProject(pid)) n += 1;
+    if (n) {
       g13.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
-      toast3("success", added === 1 ? "Added 1 project to your account." : "Added " + added + " projects to your account.");
+      P3.syncNow();
     }
+    return n;
   }
-  function claimActiveProject() {
+  function adoptOnWrite() {
     const P3 = g13.Persist;
-    if (!user || !P3.claimProject(P3.getActiveProjectId())) return false;
-    P3.syncNow();
-    toast3("success", "Added this project to your account.");
-    return true;
-  }
-  async function signOutInteractive() {
-    if (!user) return;
-    const choice = await g13.PromptDialog.open({
-      ariaLabel: "Sign out",
-      message: "Sign out of BelJar in this browser?",
-      note: "Your projects stay in your account. On a shared computer, remove them from this browser too.",
-      layout: "row",
-      buttons: [
-        { action: "keep", label: "Sign out", variant: "secondary" },
-        { action: "remove", label: "Sign out and remove them", variant: "primary" }
-      ]
+    const owned = /* @__PURE__ */ new Set();
+    P3.onFileChange(({ pid }) => {
+      if (!user || !pid || owned.has(pid)) return;
+      const p = P3.listProjects().find((x) => x.id === pid);
+      if (!p) return;
+      if (p.owner !== null) {
+        owned.add(pid);
+        return;
+      }
+      adopt([p]);
     });
-    if (choice !== "keep" && choice !== "remove") return;
+  }
+  async function signOut() {
+    if (!user) return;
     const P3 = g13.Persist;
     saveNow2();
-    if (choice === "remove" && !roundIsSafe(await P3.syncNow())) {
-      toast3("error", "Couldn\u2019t confirm your projects are in your account, so nothing was removed. You\u2019re still signed in.");
-      return;
+    const check = await P3.confirmSynced();
+    if (!check.ok) {
+      const choice = await g13.PromptDialog.open({
+        ariaLabel: "Sign out",
+        message: "Not everything is in the cloud yet.",
+        note: check.reason === "offline" ? "You\u2019re offline. Signing out removes your projects from this browser, with what hasn\u2019t synced." : "Signing out removes your projects from this browser, with what hasn\u2019t synced.",
+        layout: "row",
+        buttons: [
+          { action: "out", label: "Sign out anyway", variant: "secondary" },
+          { action: "stay", label: "Stay signed in", variant: "primary" }
+        ]
+      });
+      if (choice !== "out") return;
     }
     await P3.stopSync();
     try {
       await fetch("/api/auth/signout", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: "{}" });
     } catch (_) {
     }
-    if (choice === "remove") P3.removeAccountProjects(user.id);
+    P3.removeAccountProjects(user.id);
     P3.setAccount(null);
     g13.location.reload();
   }
@@ -33992,17 +34265,18 @@
       }
     }
     render5();
+    g13.dispatchEvent(new CustomEvent("beljar:account", { detail: { user: user ? Object.assign({}, user) : null } }));
     if (!me) return;
+    adopt();
+    adoptOnWrite();
     P3.startSync({ transport: createHttpTransport() });
-    if (g13.Device.get("claimAskedFor") !== me.id) askToClaim();
   }
   var Account2 = {
     user: () => user ? Object.assign({}, user) : null,
     available: () => available,
     menuItems,
     signIn,
-    signOut: signOutInteractive,
-    claimActiveProject,
+    signOut,
     _boot: boot
   };
   g13.Account = Account2;
@@ -34018,6 +34292,318 @@
     else go();
   }
 
+  // js/ui/review-differences.mjs
+  var g14 = typeof window !== "undefined" ? window : globalThis;
+  function lineDiff(theirs, mine) {
+    const a = splitLines(theirs);
+    const b = splitLines(mine);
+    const match = lcsMatch(a, b);
+    const rows2 = [];
+    let j = 0;
+    for (let i = 0; i < a.length; i++) {
+      const m = match[i];
+      if (m < 0) {
+        rows2.push({ kind: "theirs", text: a[i] });
+        continue;
+      }
+      while (j < m) rows2.push({ kind: "mine", text: b[j++] });
+      rows2.push({ kind: "same", text: a[i] });
+      j = m + 1;
+    }
+    while (j < b.length) rows2.push({ kind: "mine", text: b[j++] });
+    return rows2;
+  }
+  function compactDiff(rows2, context = 1) {
+    const keep = new Array(rows2.length).fill(false);
+    rows2.forEach((r, i) => {
+      if (r.kind === "same") return;
+      for (let k = Math.max(0, i - context); k <= Math.min(rows2.length - 1, i + context); k++) keep[k] = true;
+    });
+    const out = [];
+    let gap = 0;
+    rows2.forEach((r, i) => {
+      if (!keep[i]) {
+        gap += 1;
+        return;
+      }
+      if (gap) out.push({ kind: "gap", count: gap });
+      gap = 0;
+      out.push(r);
+    });
+    if (gap && out.length) out.push({ kind: "gap", count: gap });
+    return out;
+  }
+  function otherSide(source) {
+    return source === "tab" ? { where: "here and in another tab", theirs: "the other tab\u2019s", use: "Use other tab", all: "Use other tabs" } : { where: "here and in the cloud", theirs: "the cloud\u2019s", use: "Use cloud", all: "Use cloud for all" };
+  }
+  function reviewWords(files2) {
+    const sources = new Set(files2.map((c) => c.source === "tab" ? "tab" : "device"));
+    if (sources.size === 1) {
+      const w = otherSide([...sources][0]);
+      return { intro: (files2.length === 1 ? "This file changed " : "These files changed ") + w.where + ".", theirs: w.theirs, all: w.all };
+    }
+    return { intro: "These files changed here and somewhere else.", theirs: "the other version", all: "Use the other versions" };
+  }
+  function el6(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function sidesOf(c) {
+    const App = g14.App;
+    const open11 = App && typeof App.openConflictSides === "function" ? App.openConflictSides(c.pid, c.fid) : null;
+    return open11 || g14.Persist.conflictSides(c.pid, c.fid);
+  }
+  function resolveDifference(c, choice) {
+    const App = g14.App;
+    const open11 = App && typeof App.resolveOpenConflict === "function" ? App.resolveOpenConflict(c.pid, c.fid, choice) : null;
+    if (open11 !== null && open11 !== void 0) return open11;
+    return g14.Persist.resolveStoredConflict(c.pid, c.fid, choice);
+  }
+  function diffNode(sides) {
+    const pre = el6("div", "review-diff");
+    const rows2 = compactDiff(lineDiff(sides.theirs, sides.mine), 1);
+    if (!rows2.length) {
+      pre.appendChild(el6("div", "review-diff__none", "Both sides are the same now. Either choice keeps it."));
+      return pre;
+    }
+    for (const r of rows2) {
+      if (r.kind === "gap") {
+        pre.appendChild(el6("div", "review-diff__gap", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines"));
+        continue;
+      }
+      const line = el6("div", "review-diff__line is-" + r.kind);
+      line.appendChild(el6("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
+      line.appendChild(el6("span", "review-diff__text", r.text || " "));
+      pre.appendChild(line);
+    }
+    return pre;
+  }
+  var win = null;
+  function render6(body) {
+    const P3 = g14.Persist;
+    const files2 = P3.listConflicts();
+    body.replaceChildren();
+    if (!files2.length) {
+      if (win) win.close();
+      return;
+    }
+    const all = reviewWords(files2);
+    body.appendChild(el6("p", "review__intro", all.intro + " Both versions are kept until you choose."));
+    const legend = el6("p", "review__legend");
+    legend.appendChild(el6("span", "review__key is-theirs", "\u2212 " + all.theirs));
+    legend.appendChild(el6("span", "review__key is-mine", "+ yours"));
+    body.appendChild(legend);
+    for (const c of files2) {
+      const sides = sidesOf(c);
+      if (!sides) continue;
+      const words = otherSide(sides.source || c.source);
+      const section = el6("section", "review__file");
+      section.dataset.pid = c.pid;
+      section.dataset.fid = c.fid;
+      const head = el6("div", "review__head");
+      const name = el6("div", "review__name");
+      name.appendChild(el6("span", "review__path", c.path));
+      head.appendChild(name);
+      const actions = el6("div", "review__actions");
+      const theirsBtn = actionButton(words.use, "theirs", "secondary");
+      const mineBtn = actionButton("Keep mine", "mine", "primary");
+      for (const btn of [theirsBtn, mineBtn]) {
+        btn.addEventListener("click", () => {
+          resolveDifference(c, btn.dataset.action);
+          render6(body);
+        });
+        actions.appendChild(btn);
+      }
+      head.appendChild(actions);
+      section.appendChild(head);
+      section.appendChild(diffNode(sides));
+      body.appendChild(section);
+    }
+    if (files2.length > 1) {
+      const bar = el6("div", "review__all");
+      const theirsAll = actionButton(all.all, "theirs", "secondary");
+      const mineAll = actionButton("Keep all mine", "mine", "primary");
+      for (const btn of [theirsAll, mineAll]) {
+        btn.addEventListener("click", () => {
+          for (const c of g14.Persist.listConflicts()) resolveDifference(c, btn.dataset.action);
+          render6(body);
+        });
+        bar.appendChild(btn);
+      }
+      body.appendChild(bar);
+    }
+  }
+  function fittingHeight(files2) {
+    let rows2 = 0;
+    for (const c of files2) {
+      const sides = sidesOf(c);
+      if (sides) rows2 += compactDiff(lineDiff(sides.theirs, sides.mine), 1).length;
+    }
+    return Math.max(220, Math.min(540, 124 + files2.length * 52 + rows2 * 18 + (files2.length > 1 ? 44 : 0)));
+  }
+  function openReviewDifferences() {
+    const FW2 = g14.FloatingWindow;
+    if (!FW2 || !g14.Persist) return false;
+    if (!g14.Persist.listConflicts().length) return false;
+    if (win) {
+      render6(win.body);
+      return true;
+    }
+    const body = el6("div", "review");
+    const handle = FW2.open({
+      title: "Review differences",
+      className: "floating-window--review",
+      content: body,
+      width: 560,
+      height: fittingHeight(g14.Persist.listConflicts()),
+      minWidth: 360,
+      minHeight: 220,
+      onClose: () => {
+        win = null;
+      }
+    });
+    win = { close: () => handle.close(), body };
+    render6(body);
+    return true;
+  }
+  function refreshReviewDifferences() {
+    if (win) render6(win.body);
+  }
+  var ReviewDifferences = { open: openReviewDifferences, refresh: refreshReviewDifferences, resolve: resolveDifference };
+  g14.ReviewDifferences = ReviewDifferences;
+
+  // js/account/sync-ui.mjs
+  var g15 = typeof window !== "undefined" ? window : globalThis;
+  var summary = null;
+  var wasOffline = false;
+  var marks = null;
+  var CLOUD = "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z";
+  var GLYPHS = {
+    synced: `<path d="${CLOUD}"/><path d="m9.5 14 2 2 4-4"/>`,
+    syncing: `<path d="${CLOUD}"/><path class="sync-cloud__arrow" d="M12.5 17v-5m-2 2 2-2 2 2"/>`,
+    offline: '<path d="m2 2 20 20"/><path d="M5.78 5.78A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.3-.19"/><path d="M21.53 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 10 5.07"/>',
+    alert: `<path d="${CLOUD}"/><path d="M12.5 11.5v3"/><path d="M12.5 17h.01"/>`
+  };
+  function cloudLook(state2) {
+    if (state2 === "pending" || state2 === "syncing") return "syncing";
+    if (state2 === "differs" || state2 === "error") return "alert";
+    return state2 === "offline" ? "offline" : "synced";
+  }
+  function plural3(n, one, many) {
+    return n + " " + (n === 1 ? one : many);
+  }
+  function ago(ms, now = Date.now()) {
+    const s = Math.max(0, Math.round((now - ms) / 1e3));
+    if (s < 45) return "just now";
+    const m = Math.round(s / 60);
+    if (m < 60) return plural3(m, "minute", "minutes") + " ago";
+    return "at " + new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  function cloudWords(s, now = Date.now()) {
+    switch (s.state) {
+      case "differs": {
+        const n = s.differs.length;
+        return { tip: plural3(n, "file", "files") + " to review", title: plural3(n, "file", "files") + " to review", detail: "Changed here and somewhere else.", tone: "warning" };
+      }
+      case "offline":
+        return { tip: "Offline", title: "Offline", detail: "Changes sync when you\u2019re back online." };
+      case "error":
+        return { tip: "Couldn\u2019t sync", title: "Couldn\u2019t sync", detail: "BelJar keeps trying.", tone: "error" };
+      case "syncing":
+      case "pending":
+        return { tip: "Syncing", title: "Syncing", detail: s.lastSync ? "Last synced " + ago(s.lastSync, now) : null };
+      default:
+        return { tip: "All changes synced", title: "All changes synced", detail: s.lastSync ? "Synced " + ago(s.lastSync, now) : null };
+    }
+  }
+  function renderCloud(s) {
+    const btn = document.getElementById("btn-sync");
+    if (!btn) return;
+    btn.hidden = !s.signedIn;
+    if (!s.signedIn) return;
+    const look = cloudLook(s.state);
+    btn.dataset.state = s.state === "differs" ? "differs" : look;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLYPHS[look] + "</svg>";
+    const tip = cloudWords(s).tip;
+    btn.setAttribute("aria-label", tip);
+    if (g15.Tooltips && typeof g15.Tooltips.set === "function") g15.Tooltips.set(btn, tip);
+    else btn.setAttribute("data-tooltip", tip);
+  }
+  function menuItems2() {
+    const s = summary || g15.Persist.syncSummary();
+    const words = cloudWords(s);
+    const items3 = [{ type: "status", title: words.title, detail: words.detail, tone: words.tone }];
+    if (s.differs.length) {
+      items3.push({ type: "separator" }, { label: "Review differences", onSelect: () => openReviewDifferences() });
+    }
+    items3.push({ type: "separator" }, {
+      label: "Sync now",
+      disabled: s.state === "offline" || s.state === "syncing",
+      onSelect: () => g15.Persist.confirmSynced()
+    });
+    return items3;
+  }
+  function markExplorer(s) {
+    if (!marks) {
+      marks = document.createElement("style");
+      marks.id = "sync-differs-marks";
+      document.head.appendChild(marks);
+    }
+    const pid = g15.Persist.getActiveProjectId();
+    const ids = s.differs.filter((d) => d.pid === pid).map((d) => d.fid);
+    const esc = (id) => g15.CSS && typeof g15.CSS.escape === "function" ? g15.CSS.escape(id) : String(id).replace(/"/g, "");
+    marks.textContent = ids.length ? ids.map((id) => `.explorer-file-item[data-file-id="${esc(id)}"] .explorer-file-item-name`).join(",\n") + " { color: var(--ide-status-warning); }\n" + ids.map((id) => `.explorer-file-item[data-file-id="${esc(id)}"] .explorer-file-item-name::after`).join(",\n") + ' { content: " \\2260"; opacity: 0.85; }' : "";
+  }
+  function applyPreference(s) {
+    const how = g15.Settings && g15.Settings.get("syncOverlap");
+    if (how !== "mine" && how !== "cloud") return false;
+    let settled = false;
+    for (const c of s.differs) {
+      if (c.source !== "device") continue;
+      if (resolveDifference(c, how === "mine" ? "mine" : "theirs")) settled = true;
+    }
+    return settled;
+  }
+  function say2(text) {
+    if (g15.StatusStrip && typeof g15.StatusStrip.setMessage === "function") g15.StatusStrip.setMessage(text);
+  }
+  function update(s) {
+    if (applyPreference(s)) return;
+    const before = summary;
+    summary = s;
+    if (s.state === "offline") wasOffline = true;
+    else if (wasOffline && s.state === "synced") {
+      wasOffline = false;
+      if (before) say2("Back online. Everything is synced.");
+    }
+    renderCloud(s);
+    markExplorer(s);
+    refreshReviewDifferences();
+    if (g15.StatusStrip && typeof g15.StatusStrip.setEditorState === "function") g15.StatusStrip.setEditorState({ sync: s });
+  }
+  var SyncUI2 = {
+    menuItems: menuItems2,
+    review: () => openReviewDifferences(),
+    summary: () => summary || (g15.Persist ? g15.Persist.syncSummary() : null)
+  };
+  g15.SyncUI = SyncUI2;
+  if (typeof document !== "undefined") {
+    const go = () => {
+      const P3 = g15.Persist;
+      if (!P3 || typeof P3.onSyncSummary !== "function") return;
+      P3.onSyncSummary(update);
+      update(P3.syncSummary());
+      g15.addEventListener("beljar:account", () => update(P3.syncSummary()));
+      g15.addEventListener("beljar:project-tree-changed", () => {
+        if (summary) markExplorer(summary);
+      });
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go, { once: true });
+    else go();
+  }
+
   // js/app/app-empty-state.mjs
   function create5(opts) {
     var getInspectorPanelEl = opts.getInspectorPanelEl;
@@ -34026,11 +34612,11 @@
     var getEditorMount = opts.getEditorMount;
     var projectTreeEmpty = opts.projectTreeEmpty;
     var editorCanvasIdle = opts.editorCanvasIdle;
-    function setEmptyOverlayVisible(el6, visible2) {
-      if (!el6) return;
-      el6.hidden = !visible2;
-      el6.setAttribute("aria-hidden", visible2 ? "false" : "true");
-      if ("inert" in el6) el6.inert = !visible2;
+    function setEmptyOverlayVisible(el7, visible2) {
+      if (!el7) return;
+      el7.hidden = !visible2;
+      el7.setAttribute("aria-hidden", visible2 ? "false" : "true");
+      if ("inert" in el7) el7.inert = !visible2;
     }
     function updateInspectorProjectEmpty() {
       var inspectorPanelEl = getInspectorPanelEl && getInspectorPanelEl();
@@ -35688,7 +36274,7 @@
         getFileDiag: explorerFileDiag,
         bindFileDiagTip: bindExplorerDiagTip,
         getProjectName: () => Persist.getProjectName(),
-        applyTip: (el6, tip) => setTip2(el6, tip, { ariaLabel: false }),
+        applyTip: (el7, tip) => setTip2(el7, tip, { ariaLabel: false }),
         getFileContextItems: (fileId) => fileContextItems(fileId),
         getSelectionContextItems: (selection) => explorerSelectionContextItems(selection),
         getFolderContextItems: (folderPath) => explorerFolderContextItems(folderPath),
@@ -35746,7 +36332,7 @@
         }),
         getActiveFileId: () => getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId(),
         getEditor: () => getEditor(),
-        applyTip: (el6, tip) => setTip2(el6, tip, { ariaLabel: false }),
+        applyTip: (el7, tip) => setTip2(el7, tip, { ariaLabel: false }),
         showToast,
         afterSuiteEdit,
         applyFileReplacement: (id, text) => applyFileReplacement(id, text),
@@ -35913,17 +36499,6 @@
       const files2 = Persist.listFiles() || [];
       return files2.filter((f) => ProjectSource.isSignaturePath(String(f.name || ""))).length;
     }
-    function projectHomeCaption() {
-      const id = Persist.getActiveProjectId();
-      const project = (Persist.listProjects() || []).find((p) => p.id === id);
-      return project && project.owner ? "Saved in this browser and your account" : "Saved in this browser only";
-    }
-    function activeProjectIsClaimable() {
-      if (typeof Account === "undefined" || !Account.user()) return false;
-      const id = Persist.getActiveProjectId();
-      const project = (Persist.listProjects() || []).find((p) => p.id === id);
-      return !!project && project.owner === null;
-    }
     function buildProjectMenuItems() {
       const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
       const currentFile = currentId ? Persist.getFileById(currentId) : null;
@@ -35970,11 +36545,6 @@
           onSelect: () => folderInputEl.click()
         },
         { type: "separator" },
-        { type: "section", label: projectHomeCaption() },
-        ...activeProjectIsClaimable() ? [{
-          label: "Add project to your account",
-          onSelect: () => Account.claimActiveProject()
-        }] : [],
         {
           label: "Download project",
           disabled: !(Persist.listFiles() || []).length,
@@ -36236,8 +36806,8 @@
     }
     if (typeof Menu !== "undefined") {
       const contextItemsFromEvent = (e) => {
-        const el6 = e.target.closest("[data-file-id]");
-        return el6 ? fileContextItems(el6.getAttribute("data-file-id"), { fromTab: true }) : [];
+        const el7 = e.target.closest("[data-file-id]");
+        return el7 ? fileContextItems(el7.getAttribute("data-file-id"), { fromTab: true }) : [];
       };
       if (editorTabsEl) Menu.bindContextMenu(editorTabsEl, contextItemsFromEvent);
     }
@@ -36411,6 +36981,12 @@
         side: "bottom",
         align: "end",
         items: () => typeof Account !== "undefined" ? Account.menuItems() : []
+      },
+      {
+        id: "btn-sync",
+        side: "bottom",
+        align: "start",
+        items: () => typeof SyncUI !== "undefined" ? SyncUI.menuItems() : []
       },
       {
         id: "menu-project",
@@ -36716,7 +37292,7 @@ ${doc2.documentElement.outerHTML}`;
     {
       CommandPalette.init();
       const on = (id, run3, when) => Commands2.attach(id, when ? { run: run3, when } : { run: run3 });
-      const say2 = (text) => {
+      const say3 = (text) => {
         if (typeof StatusStrip !== "undefined" && StatusStrip.setMessage) StatusStrip.setMessage(text);
       };
       const reapplyPrefs = () => {
@@ -36725,13 +37301,13 @@ ${doc2.documentElement.outerHTML}`;
       const toggleSetting = (spec) => {
         const res = applyValue(Settings, spec, void 0);
         if (res.applied) reapplyPrefs();
-        say2(res.message);
+        say3(res.message);
         return res.ok;
       };
       const runSet = (argText) => {
         const res = runSetOn(Settings, argText);
         if (res.applied) reapplyPrefs();
-        say2(res.message);
+        say3(res.message);
         return res.ok;
       };
       Commands2.runSet = runSet;
@@ -36775,6 +37351,18 @@ ${doc2.documentElement.outerHTML}`;
       on("file.import-folder", () => folderInputEl.click());
       on("file.download", downloadCurrentFile);
       on("project.download", () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
+      const account = () => typeof Account !== "undefined" ? Account : null;
+      const syncState = () => typeof Persist.syncSummary === "function" ? Persist.syncSummary() : null;
+      on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
+      on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
+      on("sync.now", () => Persist.confirmSynced(), () => {
+        const s = syncState();
+        return !!s && s.signedIn && s.state !== "offline";
+      });
+      on("sync.review", () => SyncUI.review(), () => {
+        const s = syncState();
+        return !!s && s.differs.length > 0;
+      });
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -36818,13 +37406,13 @@ ${doc2.documentElement.outerHTML}`;
         p.flushCheckpoint();
         if (typeof Persist.syncNow === "function") Persist.syncNow();
         const file = Persist.getFileById ? Persist.getFileById(p.getCurrentFileId()) : null;
-        say2(file && file.name ? "Saved " + file.name : "Saved.");
+        say3(file && file.name ? "Saved " + file.name : "Saved.");
         return true;
       }, () => !!(getPersist2() && getPersist2().getCurrentFileId() && typeof getPersist2().flushCheckpoint === "function"));
       on("file.open", (ctx) => {
         const wanted = String(ctx && ctx.argText || "").trim();
         if (!wanted) {
-          say2("Usage: :e <file>");
+          say3("Usage: :e <file>");
           return false;
         }
         const files2 = Persist.listFiles() || [];
@@ -36832,7 +37420,7 @@ ${doc2.documentElement.outerHTML}`;
         const base = (n) => n.slice(n.lastIndexOf("/") + 1).toLowerCase();
         const hit = files2.find((f) => f.name.toLowerCase() === lower) || files2.find((f) => base(f.name) === lower) || files2.find((f) => f.name.toLowerCase().indexOf(lower) >= 0);
         if (!hit) {
-          say2(`No file matching "${wanted}".`);
+          say3(`No file matching "${wanted}".`);
           return false;
         }
         switchToFile(hit.id);
@@ -36853,7 +37441,7 @@ ${doc2.documentElement.outerHTML}`;
         else Persist.removeEntryFromCfg(m.cfg, m.file.name);
         afterSuiteEdit(dir, m.cfg);
         const cfgName = m.cfg.slice(m.cfg.lastIndexOf("/") + 1);
-        say2((add ? "Added to " : "Removed from ") + cfgName);
+        say3((add ? "Added to " : "Removed from ") + cfgName);
         return true;
       };
       on("suite.add-file", () => editSuite(true), () => {
@@ -37098,6 +37686,8 @@ ${doc2.documentElement.outerHTML}`;
   var teardown3 = [];
   var mounted3 = false;
   var editor = null;
+  var NO_OPEN_DOCUMENT = { sides: () => null, resolve: () => null };
+  var openDocument = NO_OPEN_DOCUMENT;
   function onWin(type, fn, opts) {
     window.addEventListener(type, fn, opts);
     teardown3.push(() => window.removeEventListener(type, fn, opts));
@@ -37153,33 +37743,24 @@ ${doc2.documentElement.outerHTML}`;
           if (id != null && text != null) EditHistory.reconcileActiveFile(id, text);
         });
       }
-      if (ed) queueMicrotask(promptTextConflict);
       return ed;
     }
-    let textConflictPromptOpen = false;
-    function promptTextConflict() {
-      if (textConflictPromptOpen || !persist2 || typeof persist2.getConflict !== "function") return;
-      const conflict = persist2.getConflict();
-      if (!conflict || typeof ConflictDialog === "undefined" || !ConflictDialog.resolveTextConflict) return;
-      const file = Persist.getFileById(conflict.fileId);
-      textConflictPromptOpen = true;
-      ConflictDialog.resolveTextConflict({ fileName: file ? file.name : "", source: conflict.source }).then((choice) => {
-        textConflictPromptOpen = false;
-        if (!choice || !persist2 || persist2.getCurrentFileId() !== conflict.fileId) return;
-        const res = persist2.resolveConflict(choice);
-        if (!res.ok) {
-          showToast("Couldn\u2019t resolve the conflict. Both versions are kept.", { kind: "warn" });
-          return;
-        }
-        if (res.copyId) {
-          const copy = Persist.getFileById(res.copyId);
-          showToast("Kept theirs as " + (copy ? copy.name : "a copy") + ".");
-        }
-      });
+    function holdsOpenFile(pid, fid) {
+      return !!persist2 && Persist.getActiveProjectId() === pid && persist2.getCurrentFileId() === fid && typeof persist2.getConflict === "function" && !!persist2.getConflict();
     }
-    window.addEventListener("beljar:text-conflict", (ev) => {
-      const id = ev && ev.detail ? ev.detail.fileId : null;
-      if (persist2 && id && id === persist2.getCurrentFileId()) promptTextConflict();
+    function openConflictSides(pid, fid) {
+      if (!holdsOpenFile(pid, fid)) return null;
+      const c = persist2.getConflict();
+      return { mine: persist2.getEditorText(), theirs: Persist.getFileText(fid), source: c.source };
+    }
+    function resolveOpenConflict(pid, fid, choice) {
+      if (!holdsOpenFile(pid, fid)) return null;
+      const res = persist2.resolveConflict(choice);
+      return !!(res && res.ok);
+    }
+    openDocument = { sides: openConflictSides, resolve: resolveOpenConflict };
+    teardown3.push(() => {
+      openDocument = NO_OPEN_DOCUMENT;
     });
     function getActiveEditorView() {
       return editor && editor.getView ? editor.getView() : null;
@@ -37473,9 +38054,9 @@ ${doc2.documentElement.outerHTML}`;
         Toasts.error("CodeMirror editor bundle failed to load.", { duration: 0, closable: true });
       }
     }
-    function setTip2(el6, text, opts) {
-      if (!el6 || typeof Tooltips === "undefined" || !Tooltips.set) return;
-      Tooltips.set(el6, text, opts);
+    function setTip2(el7, text, opts) {
+      if (!el7 || typeof Tooltips === "undefined" || !Tooltips.set) return;
+      Tooltips.set(el7, text, opts);
     }
     function toggleTheme2() {
       return Frame.toggleTheme();
@@ -37591,18 +38172,18 @@ ${doc2.documentElement.outerHTML}`;
       }
       return null;
     }
-    function bindExplorerDiagTip(el6, fileId, fileName, diag) {
-      if (!el6 || !diag) return;
-      el6.removeAttribute("title");
+    function bindExplorerDiagTip(el7, fileId, fileName, diag) {
+      if (!el7 || !diag) return;
+      el7.removeAttribute("title");
       const items3 = explorerFileDiagItems(fileId, fileName);
       if (items3 && items3.length) {
-        el6.setAttribute("data-tooltip", lintTooltipHead(items3));
-        el6.setAttribute("data-tooltip-head", "");
-        el6.setAttribute("data-tooltip-errors", JSON.stringify(items3));
-        if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el6);
+        el7.setAttribute("data-tooltip", lintTooltipHead(items3));
+        el7.setAttribute("data-tooltip-head", "");
+        el7.setAttribute("data-tooltip-errors", JSON.stringify(items3));
+        if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el7);
         return;
       }
-      setTip2(el6, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
+      setTip2(el7, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
     }
     function updateTabLintStyles() {
       if (!editorTabsEl) return;
@@ -38125,23 +38706,23 @@ ${doc2.documentElement.outerHTML}`;
     }
     let headerProjectRenameInput = null;
     function endHeaderProjectRename() {
-      const el6 = document.getElementById("header-context");
-      if (!el6 || !headerProjectRenameInput) return;
+      const el7 = document.getElementById("header-context");
+      if (!el7 || !headerProjectRenameInput) return;
       const nameEl = document.createElement("span");
       nameEl.className = "header-context-name";
       nameEl.id = "header-context-name";
       headerProjectRenameInput.replaceWith(nameEl);
       headerProjectRenameInput = null;
-      el6.classList.remove("is-renaming");
+      el7.classList.remove("is-renaming");
     }
     function startHeaderProjectRename() {
       if (headerProjectRenameInput) return;
-      const el6 = document.getElementById("header-context");
+      const el7 = document.getElementById("header-context");
       const nameEl = document.getElementById("header-context-name");
-      if (!el6 || !nameEl) return;
+      if (!el7 || !nameEl) return;
       const initial = Persist.getProjectName();
-      el6.classList.add("is-renaming");
-      setTip2(el6, "");
+      el7.classList.add("is-renaming");
+      setTip2(el7, "");
       const input2 = document.createElement("input");
       input2.type = "text";
       input2.className = "header-context-inline-name";
@@ -38217,14 +38798,14 @@ ${doc2.documentElement.outerHTML}`;
       });
     }
     function updateHeaderContext() {
-      const el6 = document.getElementById("header-context");
+      const el7 = document.getElementById("header-context");
       const nameEl = document.getElementById("header-context-name");
-      if (!el6 || !nameEl) return;
+      if (!el7 || !nameEl) return;
       if (headerProjectRenameInput) return;
       nameEl.textContent = Persist.getProjectName();
       const tip = headerContextFileHint();
-      el6.setAttribute("aria-label", tip);
-      setTip2(el6, tip);
+      el7.setAttribute("aria-label", tip);
+      setTip2(el7, tip);
     }
     const headerContextEl = document.getElementById("header-context");
     if (headerContextEl) {
@@ -38508,6 +39089,9 @@ ${doc2.documentElement.outerHTML}`;
     mount: mount2,
     unmount: unmount3,
     isMounted: () => mounted3,
+    // The review window's door to the file this page has open (docs/PERSIST.md §4.4).
+    openConflictSides: (pid, fid) => openDocument.sides(pid, fid),
+    resolveOpenConflict: (pid, fid, choice) => openDocument.resolve(pid, fid, choice),
     // Test seam: how many registrations unmount still has to undo.
     pendingTeardown: () => teardown3.length
   };
@@ -38515,7 +39099,7 @@ ${doc2.documentElement.outerHTML}`;
   mount2();
 
   // js/compat/beljar-window-aliases.mjs
-  var g14 = globalThis;
+  var g16 = globalThis;
   var ALIASES = [
     ["BelJarExplorerSuiteLayout", "ExplorerSuiteLayout"],
     ["BelJarHarpoonGoalSections", "HarpoonGoalSections"],
@@ -38569,7 +39153,7 @@ ${doc2.documentElement.outerHTML}`;
   ];
   function installBelJarWindowAliases() {
     for (const [legacy, neu] of ALIASES) {
-      if (neu in g14 && g14[neu] != null) g14[legacy] = g14[neu];
+      if (neu in g16 && g16[neu] != null) g16[legacy] = g16[neu];
     }
   }
   installBelJarWindowAliases();

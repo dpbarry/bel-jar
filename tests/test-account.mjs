@@ -1,8 +1,8 @@
 // The account's decisions (js/account/account.mjs): what a sign-in means for
-// this browser, which projects the claim flow offers, when a sync round makes
-// removing projects safe, and how a project is described.
+// this browser, which projects it adopts, when a sync round makes removing
+// projects safe, and how a failed sign-in is explained.
 import fs from 'node:fs';
-import { accountStep, claimCandidates, roundIsSafe, projectLine, signInFailure } from '../js/account/account.mjs';
+import { accountStep, adoptable, roundIsSafe, signInFailure } from '../js/account/account.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -24,10 +24,12 @@ const projects = [
   { id: 'p2', name: 'Empty', owner: null },
   { id: 'p3', name: 'Already theirs', owner: 'u_dean' },
 ];
-const stats = { p1: { files: 3, size: 4300, editedAt: 5 }, p2: { files: 1, size: 0, editedAt: 5 }, p3: { files: 1, size: 9, editedAt: 5 } };
-const offered = claimCandidates(projects, (id) => stats[id]);
-expect(offered.length === 1 && offered[0].id === 'p1' && offered[0].files === 3,
-  'only this device\'s own projects with work in them are offered (not an empty one, not one that is already an account\'s)');
+const sizes = { p1: 4300, p2: 0, p3: 9 };
+expect(JSON.stringify(adoptable(projects, (id) => sizes[id])) === '["p1"]',
+  'signing in adopts every project here that belongs to no account and has something in it, and asks nothing');
+expect(adoptable(projects, (id) => sizes[id]).indexOf('p2') < 0,
+  'an empty one waits for its first character: every browser starts with one, and the account would collect them');
+expect(adoptable([{ id: 'x', owner: 'u_other' }], () => 5).length === 0, 'another account\'s project is never adopted');
 
 expect(roundIsSafe({ projects: { a: { status: 'clean' }, b: { status: 'pushed' } } }), 'every project clean or pushed: safe to remove');
 expect(!roundIsSafe({ projects: { a: { status: 'clean' }, b: { status: 'error' } } }), 'one project that could not sync: not safe');
@@ -35,11 +37,6 @@ expect(!roundIsSafe({ projects: { a: { status: 'busy' } } }), 'a project still m
 expect(!roundIsSafe(null), 'no round (offline, or another tab syncs): not safe');
 expect(roundIsSafe({ projects: {} }), 'no projects at all: nothing to lose');
 
-const now = Date.UTC(2026, 8, 28, 12);
-expect(projectLine({ files: 3, size: 4300, editedAt: now - 3600e3 }, now) === '3 files · 4.2 KB · edited today', 'a project in one line');
-expect(projectLine({ files: 1, size: 20, editedAt: now - 86400e3 * 1.5 }, now) === '1 file · 20 characters · edited yesterday', 'small, and yesterday');
-expect(/^2 files · 12 KB · edited 5 days ago$/.test(projectLine({ files: 2, size: 12288, editedAt: now - 86400e3 * 5 }, now)), 'days ago');
-expect(!/—/.test(projectLine({ files: 2, size: 1, editedAt: 0 }, now)), 'no em dash, in the house voice');
 
 // ── a failed sign-in, explained ──────────────────────────────────────────────
 // Every step the server can name (server/auth.mjs: fail('…') and failed('…'), read from the
@@ -65,4 +62,4 @@ for (const why of steps) for (const d of ['', 'no-cookie', 'mismatch', 'incorrec
   expect(said === null || !/—/.test(said), `no em dash in "${why}/${d}", in the house voice`);
 }
 
-console.log(`OK account (${n} checks: sign-in steps, what the claim flow offers, when removal is safe, how a project reads, every sign-in failure explained)`);
+console.log(`OK account (${n} checks: sign-in steps, what sign-in adopts, when removal is safe, every sign-in failure explained)`);

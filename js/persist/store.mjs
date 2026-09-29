@@ -22,7 +22,8 @@ export const CLASSES = [
   { pattern: /^beljar\/device$/, cls: 'device' },
   { pattern: /^beljar\/notifications$/, cls: 'device' },
   { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: 'device' },
-  { pattern: /^beljar\/tabs\/(ping|pong|bye)$/, cls: 'device' },
+  // the tab guard's handshake, and sync telling the other tabs how it is (sync/sync-status.mjs)
+  { pattern: /^beljar\/tabs\/(ping|pong|bye|sync-status|sync-ask)$/, cls: 'device' },
   { pattern: /^beljar\/tombstones$/, cls: 'device' },
   { pattern: /^beljar\/settings-sync$/, cls: 'device' },
   { pattern: /^beljar\/p\/[^/]+\/meta$/, cls: 'work' },

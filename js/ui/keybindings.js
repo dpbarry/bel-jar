@@ -113,6 +113,9 @@
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // A file changed here and in the cloud in the same lines: ask (the review
+    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -1021,6 +1024,13 @@
       ex: ["set", "se"],
       args: [{ kind: "option", label: "option" }]
     },
+    // ── Account ────────────────────────────────────────────────────────────────
+    // The avatar's and the cloud's actions, by name (js/account/). Each is
+    // available only where it works: no server, no sign-in; signed out, no sync.
+    { id: "account.sign-in", title: "Sign In with GitHub", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "account.sign-out", title: "Sign Out", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "sync.now", title: "Sync Now", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "sync.review", title: "Review Differences", section: "Account", scope: "global", palette: true, keybindable: true },
     // ── Tools ──────────────────────────────────────────────────────────────────
     // Not keybindable: `nav.anywhere` owns Mod+K. The literal `shortcut` is the
     // palette's own display fallback for an entry with no chord of its own.
@@ -1588,7 +1598,7 @@
     "Mod+Shift+Delete": 1,
     "Alt+F4": 1
   };
-  var SECTION_ORDER = ["File", "Edit", "Motion", "Navigate", "Prover", "Run", "View", "Settings", "Tools"];
+  var SECTION_ORDER = ["File", "Edit", "Motion", "Navigate", "Prover", "Run", "View", "Settings", "Account", "Tools"];
   var globalHandlers = /* @__PURE__ */ Object.create(null);
   var globalFallback = null;
   var listening = false;

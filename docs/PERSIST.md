@@ -46,6 +46,10 @@ Every key starts with `beljar/`. `beljar/schema` holds the format version (now 4
   including anything left under the older `beljar-*` / `beljar:` names. That is the policy while no
   one's work depends on it; the day users exist, `onMissingMigration: 'refuse'` opens read-only instead.
   A migration that throws is never followed by a wipe: the data may be half-way.
+  ⛔ It has happened once on the live site: the first deploy of this store (2026-09-29) found the old
+  `beljar-*` keys with no `beljar/schema` (the old code never wrote one), took the storage for fresh,
+  and deleted them in every browser that opened it. Accounts and sync exist now, so the next format
+  change on the live site ships a migration, or `refuse`, never the wipe.
 - **Newer** than the code: the data belongs to a newer BelJar (another tab updated). **Nothing is
   touched**; the page is read-only and asks to be reloaded.
 - A running tab that sees another tab stamp a newer version goes read-only at once, so it can never
@@ -60,7 +64,7 @@ table** (`store.mjs`), never passed by callers who could mislabel it.
 
 | Class | What | Syncs | Under quota pressure |
 |---|---|---|---|
-| `work` | projects, the file tree, file text | the account's projects, once signed in (a device's own stay on it until claimed) | never dropped; a failed write is reported |
+| `work` | projects, the file tree, file text | the account's projects, once signed in (a device's own join it at sign-in, an empty one at its first character) | never dropped; a failed write is reported |
 | `settings` | preferences, keybindings | by default, once signed in; the user can turn it off | never dropped |
 | `device` | layout, panel sizes, open tabs, cursor and scroll, REPL transcript, notifications | never: syncing a laptop's panel sizes to a 4K monitor is hostile | never dropped |
 | `cache` | semantic checkpoints: anything that can be recomputed | never | evicted first, oldest first, so a write that matters can land |
@@ -209,9 +213,10 @@ first. `owner` is the account a project belongs to, or null for one that lives o
 ⛔ **A browser shows its own projects and the signed-in account's, never another account's.** One
 lab computer serves many students. The account is the device row `account` (an opaque id, never a
 credential); signed in, a new project belongs to the account and syncs, signed out it belongs to the
-device. `claimProject` gives a device's project to the account (the sign-in claim flow asks, per
-project); `removeAccountProjects` takes an account's projects off the device, with their sync
-bookkeeping (signing out on a shared computer). Changing the account reloads the page.
+device. `claimProject` gives a device's project to the account: signed in, every project here with
+something in it is claimed, silently (§5.7); `removeAccountProjects` takes an account's projects off
+the device, with their sync bookkeeping (what signing out does). Changing the account reloads the
+page.
 
 ⛔ **A page is pinned to its project.** The project a page works on is decided when it loads and
 changes only when the page itself switches (and then reloads). `beljar/device.activeProject` is
@@ -463,14 +468,36 @@ bindings the code reads) and the upload, listed as wrangler lists it: nothing pr
 everything the page loads does. ⛔ wrangler skips no file on its own; until this step the live site
 served `/.git/`.
 
-**In the page** (`js/account/account.mjs`): the header's account button (hidden where the site has
-no server, so local and probe pages are unchanged), sync started once someone is signed in, the
-claim flow after a first sign-in on a device (each project with its size and last edit, "Keep on
-this device only" always offered, asked once per account; Project > Add project to your account
-later), and signing out, which offers to remove the account's projects from the browser and does
-so only after a fresh sync round confirms they are all on the server, with sync stopped and its
-last round finished first. While a menu is open, toasts fade back and let clicks through: they live
-in the top layer, and one sat over the account menu.
+**In the page: sign in and forget it** (2026-09-29, replacing the claim flow; the contract for how
+it looks is [`docs/UI.md`](UI.md)).
+
+- **Signing in** (`js/account/account.mjs`) is the whole setup. Every project in this browser that
+  belongs to no account and has something in it joins the account, on every load while signed in,
+  and syncs; nobody is asked, and nothing says it went well. An empty project waits for its first
+  character (every browser starts with one, and the account would collect them); a write to it
+  claims it then. The avatar sits at the header's right, round; its popover says who, then Settings
+  and Sign out. Where the site has no server the button stays hidden.
+- **Signing out** asks the syncing tab for one last round (`Persist.confirmSynced`, from any tab)
+  and, when it says everything is on the server, removes the account's projects from the browser,
+  with sync stopped and its last round finished first. The only question it ever asks is when that
+  cannot be confirmed: "Not everything is in the cloud yet", Stay signed in or Sign out anyway.
+- **One summary, every tab** (`js/persist/sync/sync-status.mjs`): signed in, the state (`differs`,
+  `offline`, `error`, `syncing`, `pending`, `synced`, in that order of what needs you), the last
+  sync, and the files changed in two places. Only the tab holding the lock runs rounds; it posts
+  its runner's status as a tab message, a tab that opens asks for it, and every tab builds the same
+  summary (`Persist.syncSummary`, `Persist.onSyncSummary`).
+- **Where it shows** (`js/account/sync-ui.mjs`): a cloud beside the project name, signed in only
+  (synced, syncing, offline, couldn't sync, files to review), whose popover says the state and
+  offers Sync now and Review differences; a strip segment only when something needs you (files to
+  review, offline, a failing round) and "Back online. Everything is synced." in passing; the explorer
+  marks files changed in two places. Nothing toasts.
+- **The same lines changed in two places** interrupt nothing: both versions are kept (§4.4), and
+  Review differences (`js/ui/review-differences.mjs`, opened from the strip or the cloud) shows each
+  file's compact diff with Keep mine or Use cloud. The open file is settled through its document
+  (`App.resolveOpenConflict`), any other through storage (`Persist.resolveStoredConflict`). Settings
+  > Account > "When the same lines changed" can settle what comes from the cloud as it appears.
+- While a menu is open, toasts fade back and let clicks through: they live in the top layer, and
+  one sat over the account menu.
 
 **A failed sign-in says why.** The server sends the page back to
 `/?signin=failed&why=<step>&detail=<GitHub's answer>`: `config` (no secret: refused before GitHub),
@@ -494,8 +521,15 @@ checks do not run there; sign-in, editing and sync do.
   (`tests/_sync-protocol-suite.mjs`) against the reference server.
 - `tests/test-auth-worker.mjs`: sign-in against a stand-in GitHub (`tests/_fake-github.mjs`):
   the state, the exchange, sessions as accounts, forged and replayed callbacks, handles, signing
-  out on the server. `tests/test-account.mjs`: the page's decisions. `scratch/probes/probe-account.mjs`:
-  the whole thing in Chrome, sign-in to claim to sign-out, and another device getting it back.
+  out on the server. `tests/test-account.mjs`: the page's decisions (what sign-in adopts, when
+  removal is safe, every failure explained). `tests/test-sync-status.mjs`: the summary's order,
+  every tab told the same, a non-syncing tab confirming through the syncing one, the time limit,
+  the runner's `pending` and `safe`, and the messages stored at all. `tests/test-review-differences.mjs`:
+  a real two-device conflict listed, both sides read, Use cloud, Keep mine reaching the other
+  device, the diff, the strip segment, the cloud's words. `scratch/probes/probe-account.mjs`: the
+  whole thing in Chrome, two devices: sign-in asking nothing, the empty project joining at its
+  first character, offline and back, the same lines changed on both and reviewed, sign-out quiet
+  and then asking, a failed sign-in explained; every new surface shot in both themes.
   Tests never read a developer's `.dev.vars` (`tests/_worker-env.mjs` refuses to run if they do).
 - `tests/test-sync-worker.mjs`: the same rules against the Worker, run by `wrangler dev` on a
   fresh local D1 and R2 over HTTP; its gate (accounts, same-site, JSON, known methods); commits
@@ -557,10 +591,13 @@ purpose and seen to fail its test (2026-09-25): 13 in Node, 3 in Chrome.
 
 ### 5.10 Not built yet
 
-- **A sync status in the UI**, from `runner.status()` (only the syncing tab has it today).
+- **Home and the editor as two pages** (plan v5, phase 02): projects and the account on home,
+  "Keep in this browser only" per project there, the start page setting.
+- **Typing measured with a round in flight** (plan v5, p1-10): sync never runs on a keystroke, but
+  a round landing mid-typing has not been profiled.
+- **The sync preferences on `:set` and the palette**: they live in Settings > Account, shown only
+  where a server answers; the generated preference commands have no way yet to say "not here".
 - **An installable BelJar**, if Safari's exemption is wanted (§5.9).
-- **A design pass on the account surfaces**: the header button, its menu, the claim and sign-out
-  dialogs, and how a sign-in failure reads. They work; they are not yet good to look at.
 
 Known limits: another tab's write in the very instant the syncing tab applies a merge is the one
 window left (the tab guard warns about two tabs on one project); one file open in two tabs while it

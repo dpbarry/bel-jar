@@ -539,6 +539,33 @@ const FRP = global.FloatingRectPlacement;
       return sec;
     }
 
+    /**
+     * State, said at the top of a popover: a title and one muted line under it
+     * ("All changes synced" / "Synced 2 minutes ago"). Sentence case, never the
+     * section's small capitals: a section names a group, this says how things are
+     * (docs/UI.md §1). `tone` ('warning' | 'error') colours the title.
+     */
+    function buildStatus(item) {
+      const row = document.createElement('div');
+      row.className = 'menu-status' + (item.tone ? ` is-${item.tone}` : '') + (item.className ? ` ${item.className}` : '');
+      row.setAttribute('role', 'presentation');
+      if (item.media) row.appendChild(item.media);
+      const text = document.createElement('div');
+      text.className = 'menu-status-text';
+      const title = document.createElement('div');
+      title.className = 'menu-status-title';
+      title.textContent = item.title ?? item.label ?? '';
+      text.appendChild(title);
+      if (item.detail) {
+        const detail = document.createElement('div');
+        detail.className = 'menu-status-detail';
+        detail.textContent = item.detail;
+        text.appendChild(detail);
+      }
+      row.appendChild(text);
+      return row;
+    }
+
     function normalizeMenuItems(items) {
       if (!items || !items.length) return [];
       var out = [];
@@ -578,6 +605,10 @@ const FRP = global.FloatingRectPlacement;
         }
         if (rowType === 'section') {
           wrap.appendChild(buildSection(item));
+          continue;
+        }
+        if (rowType === 'status') {
+          wrap.appendChild(buildStatus(item));
           continue;
         }
         if (rowType !== 'item' && customRowTypes[rowType]) {

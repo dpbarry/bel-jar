@@ -1894,17 +1894,6 @@
       const files = Persist.listFiles() || [];
       return files.filter((f) => ProjectSource.isSignaturePath(String(f.name || ""))).length;
     }
-    function projectHomeCaption() {
-      const id = Persist.getActiveProjectId();
-      const project = (Persist.listProjects() || []).find((p) => p.id === id);
-      return project && project.owner ? "Saved in this browser and your account" : "Saved in this browser only";
-    }
-    function activeProjectIsClaimable() {
-      if (typeof Account === "undefined" || !Account.user()) return false;
-      const id = Persist.getActiveProjectId();
-      const project = (Persist.listProjects() || []).find((p) => p.id === id);
-      return !!project && project.owner === null;
-    }
     function buildProjectMenuItems() {
       const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
       const currentFile = currentId ? Persist.getFileById(currentId) : null;
@@ -1951,11 +1940,6 @@
           onSelect: () => folderInputEl.click()
         },
         { type: "separator" },
-        { type: "section", label: projectHomeCaption() },
-        ...activeProjectIsClaimable() ? [{
-          label: "Add project to your account",
-          onSelect: () => Account.claimActiveProject()
-        }] : [],
         {
           label: "Download project",
           disabled: !(Persist.listFiles() || []).length,
@@ -2394,6 +2378,12 @@
         items: () => typeof Account !== "undefined" ? Account.menuItems() : []
       },
       {
+        id: "btn-sync",
+        side: "bottom",
+        align: "start",
+        items: () => typeof SyncUI !== "undefined" ? SyncUI.menuItems() : []
+      },
+      {
         id: "menu-project",
         side: "bottom",
         align: "start",
@@ -2808,6 +2798,9 @@ ${doc.documentElement.outerHTML}`;
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // A file changed here and in the cloud in the same lines: ask (the review
+    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -3752,6 +3745,13 @@ ${doc.documentElement.outerHTML}`;
       ex: ["set", "se"],
       args: [{ kind: "option", label: "option" }]
     },
+    // ── Account ────────────────────────────────────────────────────────────────
+    // The avatar's and the cloud's actions, by name (js/account/). Each is
+    // available only where it works: no server, no sign-in; signed out, no sync.
+    { id: "account.sign-in", title: "Sign In with GitHub", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "account.sign-out", title: "Sign Out", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "sync.now", title: "Sync Now", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "sync.review", title: "Review Differences", section: "Account", scope: "global", palette: true, keybindable: true },
     // ── Tools ──────────────────────────────────────────────────────────────────
     // Not keybindable: `nav.anywhere` owns Mod+K. The literal `shortcut` is the
     // palette's own display fallback for an entry with no chord of its own.
@@ -4345,6 +4345,18 @@ ${doc.documentElement.outerHTML}`;
       on("file.import-folder", () => folderInputEl.click());
       on("file.download", downloadCurrentFile);
       on("project.download", () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
+      const account = () => typeof Account !== "undefined" ? Account : null;
+      const syncState = () => typeof Persist.syncSummary === "function" ? Persist.syncSummary() : null;
+      on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
+      on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
+      on("sync.now", () => Persist.confirmSynced(), () => {
+        const s = syncState();
+        return !!s && s.signedIn && s.state !== "offline";
+      });
+      on("sync.review", () => SyncUI.review(), () => {
+        const s = syncState();
+        return !!s && s.differs.length > 0;
+      });
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -4668,6 +4680,8 @@ ${doc.documentElement.outerHTML}`;
   var teardown = [];
   var mounted = false;
   var editor = null;
+  var NO_OPEN_DOCUMENT = { sides: () => null, resolve: () => null };
+  var openDocument = NO_OPEN_DOCUMENT;
   function onWin(type, fn, opts) {
     window.addEventListener(type, fn, opts);
     teardown.push(() => window.removeEventListener(type, fn, opts));
@@ -4723,33 +4737,24 @@ ${doc.documentElement.outerHTML}`;
           if (id != null && text != null) EditHistory.reconcileActiveFile(id, text);
         });
       }
-      if (ed) queueMicrotask(promptTextConflict);
       return ed;
     }
-    let textConflictPromptOpen = false;
-    function promptTextConflict() {
-      if (textConflictPromptOpen || !persist || typeof persist.getConflict !== "function") return;
-      const conflict = persist.getConflict();
-      if (!conflict || typeof ConflictDialog === "undefined" || !ConflictDialog.resolveTextConflict) return;
-      const file = Persist.getFileById(conflict.fileId);
-      textConflictPromptOpen = true;
-      ConflictDialog.resolveTextConflict({ fileName: file ? file.name : "", source: conflict.source }).then((choice) => {
-        textConflictPromptOpen = false;
-        if (!choice || !persist || persist.getCurrentFileId() !== conflict.fileId) return;
-        const res = persist.resolveConflict(choice);
-        if (!res.ok) {
-          showToast("Couldn\u2019t resolve the conflict. Both versions are kept.", { kind: "warn" });
-          return;
-        }
-        if (res.copyId) {
-          const copy = Persist.getFileById(res.copyId);
-          showToast("Kept theirs as " + (copy ? copy.name : "a copy") + ".");
-        }
-      });
+    function holdsOpenFile(pid, fid) {
+      return !!persist && Persist.getActiveProjectId() === pid && persist.getCurrentFileId() === fid && typeof persist.getConflict === "function" && !!persist.getConflict();
     }
-    window.addEventListener("beljar:text-conflict", (ev) => {
-      const id = ev && ev.detail ? ev.detail.fileId : null;
-      if (persist && id && id === persist.getCurrentFileId()) promptTextConflict();
+    function openConflictSides(pid, fid) {
+      if (!holdsOpenFile(pid, fid)) return null;
+      const c = persist.getConflict();
+      return { mine: persist.getEditorText(), theirs: Persist.getFileText(fid), source: c.source };
+    }
+    function resolveOpenConflict(pid, fid, choice) {
+      if (!holdsOpenFile(pid, fid)) return null;
+      const res = persist.resolveConflict(choice);
+      return !!(res && res.ok);
+    }
+    openDocument = { sides: openConflictSides, resolve: resolveOpenConflict };
+    teardown.push(() => {
+      openDocument = NO_OPEN_DOCUMENT;
     });
     function getActiveEditorView() {
       return editor && editor.getView ? editor.getView() : null;
@@ -6078,6 +6083,9 @@ ${doc.documentElement.outerHTML}`;
     mount,
     unmount,
     isMounted: () => mounted,
+    // The review window's door to the file this page has open (docs/PERSIST.md §4.4).
+    openConflictSides: (pid, fid) => openDocument.sides(pid, fid),
+    resolveOpenConflict: (pid, fid, choice) => openDocument.resolve(pid, fid, choice),
     // Test seam: how many registrations unmount still has to undo.
     pendingTeardown: () => teardown.length
   };

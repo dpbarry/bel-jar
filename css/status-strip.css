@@ -1014,6 +1014,17 @@ html.jar-strip-owns-status .editor-topbar-controls {
   font-weight: 500;
 }
 
+/* Sync, only when it needs you: files to review, offline, a round that keeps
+   failing. The same standing colours as the tab above (docs/UI.md §2). */
+.jar-strip__seg--sync.is-warning {
+  color: var(--ide-status-warning);
+  font-weight: 500;
+}
+.jar-strip__seg--sync.is-error {
+  color: var(--ide-status-error);
+  font-weight: 500;
+}
+
 /* Drawn, not typed: it takes the segment's colour through `currentColor`, so
    there is exactly one place that decides what this widget looks like. */
 .jar-strip__icon {

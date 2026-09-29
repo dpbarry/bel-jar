@@ -131,34 +131,11 @@ export function resolveConflicts(conflicts, options) {
   });
 }
 
-/**
- * A file changed on both sides in the same lines (docs/PERSIST.md §4.4). Both
- * versions are kept until this is answered; closing the dialog decides nothing
- * and it asks again the next time the file opens.
- *
- * @param {{ fileName?: string, source?: 'tab' | 'device' }} [opts]
- * @returns {Promise<'mine' | 'theirs' | 'both' | null>}
- */
-export function resolveTextConflict(opts) {
-  opts = opts || {};
-  const where = opts.source === 'device' ? 'Another device' : 'Another tab';
-  return PromptDialog.open({
-    ariaLabel: 'Edit conflict',
-    subject: opts.fileName || undefined,
-    message: where + ' changed the same lines as you.',
-    note: 'Both versions are kept until you choose.',
-    layout: 'row',
-    buttons: [
-      { action: 'both', label: 'Keep both', variant: 'secondary' },
-      { action: 'theirs', label: 'Take theirs', variant: 'secondary' },
-      { action: 'mine', label: 'Keep mine', variant: 'primary' },
-    ],
-  }).then((action) => (action === 'mine' || action === 'theirs' || action === 'both' ? action : null));
-}
+// A file changed in two places in the same lines is not asked here: it is
+// marked, and reviewed when the person chooses (js/ui/review-differences.mjs).
 
 export const ConflictDialog = {
   resolveConflicts,
-  resolveTextConflict,
 };
 
 const g = typeof window !== 'undefined' ? window : globalThis;

@@ -102,23 +102,6 @@
       return files.filter((f) => ProjectSource.isSignaturePath(String(f.name || ''))).length;
     }
 
-    // Where this project's work lives. A project that belongs to no account
-    // lives in this browser alone, and a browser can clear it: the caption
-    // sits beside the download that keeps a copy (docs/PERSIST.md §5.9).
-    function projectHomeCaption() {
-      const id = Persist.getActiveProjectId();
-      const project = (Persist.listProjects() || []).find((p) => p.id === id);
-      return project && project.owner ? 'Saved in this browser and your account' : 'Saved in this browser only';
-    }
-
-    // Signed in, and this page's project lives only in this browser.
-    function activeProjectIsClaimable() {
-      if (typeof Account === 'undefined' || !Account.user()) return false;
-      const id = Persist.getActiveProjectId();
-      const project = (Persist.listProjects() || []).find((p) => p.id === id);
-      return !!project && project.owner === null;
-    }
-
     function buildProjectMenuItems() {
       const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
       const currentFile = currentId ? Persist.getFileById(currentId) : null;
@@ -166,11 +149,6 @@
           onSelect: () => folderInputEl.click(),
         },
         { type: 'separator' },
-        { type: 'section', label: projectHomeCaption() },
-        ...(activeProjectIsClaimable() ? [{
-          label: 'Add project to your account',
-          onSelect: () => Account.claimActiveProject(),
-        }] : []),
         {
           label: 'Download project',
           disabled: !(Persist.listFiles() || []).length,
@@ -674,6 +652,12 @@
         side: 'bottom',
         align: 'end',
         items: () => (typeof Account !== 'undefined' ? Account.menuItems() : []),
+      },
+      {
+        id: 'btn-sync',
+        side: 'bottom',
+        align: 'start',
+        items: () => (typeof SyncUI !== 'undefined' ? SyncUI.menuItems() : []),
       },
       {
         id: 'menu-project',

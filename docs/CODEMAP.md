@@ -25,7 +25,7 @@ index.html
 | Corpus | `library/` | Bundled examples + manifests |
 | Test fixtures | `tests/fixtures/` | Sample Beluga sources for unit tests |
 | Server | `server/` | The Cloudflare Worker: the sync API on D1 and R2, and GitHub sign-in with sessions ([PERSIST §5.7](PERSIST.md)); `server/wrangler.jsonc` is local development only |
-| Account | `js/account/` | The page's side of accounts: the header button, starting sync, the claim flow, signing out |
+| Account | `js/account/` | The page's side of accounts and sync: the avatar, sign-in adopting every project, signing out, and sync shown where it belongs (`sync-ui.mjs`: the cloud beside the project name, the strip, the explorer marks). Review differences is `js/ui/review-differences.mjs`; the summary every tab shares is `js/persist/sync/sync-status.mjs` |
 
 **Seam:** shell does **not** ES-import `js/editor-src/`. Glue is `window` system-noun globals (`Persist`, `BelEditor`, `Harpoon`, …) plus `beljar:*` events. Legacy `BelJar*` names are compat aliases ([`beljar-window-aliases.mjs`](../js/compat/beljar-window-aliases.mjs)). Soft `typeof` only at editor / Beluga / session edges; peers inside `shell.js` call each other directly.
 

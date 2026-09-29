@@ -54,7 +54,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   };
 
   // Mirrors the catalogue's section order so the sheet and the palette read alike.
-  var SECTION_ORDER = ['File', 'Edit', 'Motion', 'Navigate', 'Prover', 'Run', 'View', 'Settings', 'Tools'];
+  var SECTION_ORDER = ['File', 'Edit', 'Motion', 'Navigate', 'Prover', 'Run', 'View', 'Settings', 'Account', 'Tools'];
   var globalHandlers = Object.create(null);
   /**
    * The runner for a global command nobody named explicitly.

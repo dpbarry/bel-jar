@@ -1164,8 +1164,6 @@
     // the account this browser is signed in as ('' signed out): whose projects it
     // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
     { id: "account", type: "string", default: "" },
-    // the account this device last asked about its own projects (the claim flow, once per account)
-    { id: "claimAskedFor", type: "string", default: "" },
     // durability.mjs: when this browser was last asked to keep BelJar's storage,
     // and when this device was told Safari may delete it (ms; 0: never)
     { id: "persistAskedAt", type: "number", default: 0 },

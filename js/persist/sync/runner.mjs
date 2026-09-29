@@ -16,6 +16,18 @@ import { TOMBSTONES_KEY } from '../keys.mjs';
 
 export const SYNC_LOCK = 'beljar/sync';
 
+// What a finished round may say of a project for its work to be safe on the server.
+const SAFE = new Set(['clean', 'pushed', 'downloaded', 'forgot', 'deleted', 'absent', 'restored']);
+
+/**
+ * A round's result says every project's work is on the server. The one rule for
+ * "nothing would be lost": signing out removes projects only when it holds, and
+ * the tab that syncs tells the others (status.safe).
+ */
+export function roundIsSafe(result) {
+  return !!result && !!result.projects && Object.values(result.projects).every((r) => SAFE.has(r.status));
+}
+
 /**
  * @param {object} o
  * @param {{ syncAll(): Promise<object> }} o.engine
@@ -41,7 +53,9 @@ export function createSyncRunner(o) {
   const backoff = o.backoff || [5000, 15000, 60000, 300000];
   const listeners = new Set();
 
-  let status = { state: 'waiting', leader: false, lastSync: 0, error: null };
+  // pending: a change this tab heard that no finished round has carried yet.
+  // safe: the last round confirmed every project's work is on the server.
+  let status = { state: 'waiting', leader: false, lastSync: 0, error: null, pending: false, safe: false };
   let leader = false;
   let stopped = false;
   let running = null;
@@ -49,6 +63,7 @@ export function createSyncRunner(o) {
   let timer = null;
   let firstChange = 0;
   let failures = 0;
+  let dirty = false; // a change heard since the last round began
   let release = null;
   let abort = null;
   let unsubscribe = null;
@@ -71,6 +86,8 @@ export function createSyncRunner(o) {
   /** Something here changed: sync once it has been quiet a while. */
   function changed() {
     if (!leader || stopped) return;
+    dirty = true;
+    if (!status.pending) update({ pending: true });
     const t = now();
     if (!firstChange) firstChange = t;
     wakeIn(Math.min(quietMs, maxWaitMs - (t - firstChange)));
@@ -91,15 +108,20 @@ export function createSyncRunner(o) {
     }
     firstChange = 0;
     if (timer != null) { timers.clear(timer); timer = null; }
+    // The changes heard so far ride this round; one heard during it waits for the next.
+    const carried = dirty;
+    dirty = false;
     update({ state: 'syncing' });
     running = engine.syncAll().then((res) => {
       failures = 0;
       const errs = problems(res);
-      update({ state: errs.length ? 'error' : 'idle', lastSync: now(), error: errs[0] || null, result: res });
+      if (errs.length && carried) dirty = true;
+      update({ state: errs.length ? 'error' : 'idle', lastSync: now(), error: errs[0] || null, result: res, pending: dirty, safe: roundIsSafe(res) });
       return res;
     }, (err) => {
       failures += 1;
-      update({ state: err && err.offline ? 'offline' : 'error', error: String(err && err.message || err) });
+      if (carried) dirty = true;
+      update({ state: err && err.offline ? 'offline' : 'error', error: String(err && err.message || err), pending: dirty, safe: false });
       return null;
     }).then((res) => {
       running = null;

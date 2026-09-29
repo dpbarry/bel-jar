@@ -93,6 +93,7 @@ const EXPECTED_PALETTE_ORDER = [
   'set.occurrence-highlight', 'set.selection-matches', 'set.bracket-match',
   'set.auto-close-brackets', 'set.reindent-paste', 'set.format-on-save', 'set.trim-whitespace',
   'set.hole-gutter', 'set.hole-emphasis', 'set.quiet-typing', 'set.hover-sticky',
+  'account.sign-in', 'account.sign-out', 'sync.now', 'sync.review',
   'keys.full-keyboard', 'keys.macros', 'app.reload', 'cmdline.repeat', 'cmdline.open',
   'tools.palette', 'tools.graph', 'tools.inspector',
 ];

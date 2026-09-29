@@ -7,7 +7,8 @@
     { pattern: /^beljar\/device$/, cls: "device" },
     { pattern: /^beljar\/notifications$/, cls: "device" },
     { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: "device" },
-    { pattern: /^beljar\/tabs\/(ping|pong|bye)$/, cls: "device" },
+    // the tab guard's handshake, and sync telling the other tabs how it is (sync/sync-status.mjs)
+    { pattern: /^beljar\/tabs\/(ping|pong|bye|sync-status|sync-ask)$/, cls: "device" },
     { pattern: /^beljar\/tombstones$/, cls: "device" },
     { pattern: /^beljar\/settings-sync$/, cls: "device" },
     { pattern: /^beljar\/p\/[^/]+\/meta$/, cls: "work" },
@@ -585,6 +586,9 @@
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // A file changed here and in the cloud in the same lines: ask (the review
+    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -692,8 +696,6 @@
     // the account this browser is signed in as ('' signed out): whose projects it
     // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
     { id: "account", type: "string", default: "" },
-    // the account this device last asked about its own projects (the claim flow, once per account)
-    { id: "claimAskedFor", type: "string", default: "" },
     // durability.mjs: when this browser was last asked to keep BelJar's storage,
     // and when this device was told Safari may delete it (ms; 0: never)
     { id: "persistAskedAt", type: "number", default: 0 },
@@ -1187,6 +1189,34 @@
     function removeConflict(fid, pid) {
       return store2.remove(conflictKey(pid || projectId(), fid));
     }
+    function listConflicts() {
+      const out = [];
+      for (const p of peekVisible()) {
+        const prefix = projectPrefix(p.id) + "conflict/";
+        const keys = store2.keys(prefix);
+        if (!keys.length) continue;
+        const names = new Map(peekTree(p.id).files.map((f) => [f.id, f.name]));
+        for (const key of keys) {
+          const fid = key.slice(prefix.length);
+          const rec = normalizeConflict(store2.get(key));
+          if (!rec) continue;
+          out.push({ pid: p.id, project: p.name, fid, path: names.get(fid) || fid, source: rec.source, at: rec.at });
+        }
+      }
+      return out;
+    }
+    function conflictSides(fid, pid) {
+      const rec = readConflict(fid, pid);
+      if (!rec) return null;
+      return { base: rec.base, mine: rec.mine, theirs: getText(fid, pid), source: rec.source, at: rec.at };
+    }
+    function resolveStoredConflict(fid, choice, pid) {
+      const rec = readConflict(fid, pid);
+      if (!rec || choice !== "mine" && choice !== "theirs") return false;
+      if (choice === "mine" && !setText(fid, rec.mine, pid).ok) return false;
+      removeConflict(fid, pid);
+      return true;
+    }
     function snapshotProject(pid) {
       const meta = normalizeMeta(pid, store2.get(metaKey(pid)));
       if (!meta) return null;
@@ -1306,6 +1336,9 @@
       readConflict,
       writeConflict,
       removeConflict,
+      listConflicts,
+      conflictSides,
+      resolveStoredConflict,
       // accounts
       account,
       setAccount,
@@ -3362,6 +3395,10 @@
 
   // js/persist/sync/runner.mjs
   var SYNC_LOCK = "beljar/sync";
+  var SAFE = /* @__PURE__ */ new Set(["clean", "pushed", "downloaded", "forgot", "deleted", "absent", "restored"]);
+  function roundIsSafe(result) {
+    return !!result && !!result.projects && Object.values(result.projects).every((r) => SAFE.has(r.status));
+  }
   function createSyncRunner(o) {
     const engine = o.engine;
     const timers = o.timers || {
@@ -3374,7 +3411,7 @@
     const pollMs = o.pollMs != null ? o.pollMs : 6e4;
     const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
     const listeners = /* @__PURE__ */ new Set();
-    let status = { state: "waiting", leader: false, lastSync: 0, error: null };
+    let status = { state: "waiting", leader: false, lastSync: 0, error: null, pending: false, safe: false };
     let leader = false;
     let stopped = false;
     let running = null;
@@ -3382,6 +3419,7 @@
     let timer = null;
     let firstChange = 0;
     let failures = 0;
+    let dirty = false;
     let release = null;
     let abort = null;
     let unsubscribe = null;
@@ -3403,6 +3441,8 @@
     }
     function changed() {
       if (!leader || stopped) return;
+      dirty = true;
+      if (!status.pending) update({ pending: true });
       const t = now();
       if (!firstChange) firstChange = t;
       wakeIn(Math.min(quietMs, maxWaitMs - (t - firstChange)));
@@ -3424,15 +3464,19 @@
         timers.clear(timer);
         timer = null;
       }
+      const carried = dirty;
+      dirty = false;
       update({ state: "syncing" });
       running = engine.syncAll().then((res) => {
         failures = 0;
         const errs = problems(res);
-        update({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res });
+        if (errs.length && carried) dirty = true;
+        update({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res, pending: dirty, safe: roundIsSafe(res) });
         return res;
       }, (err) => {
         failures += 1;
-        update({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err) });
+        if (carried) dirty = true;
+        update({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err), pending: dirty, safe: false });
         return null;
       }).then((res) => {
         running = null;
@@ -3513,6 +3557,136 @@
         leader = false;
         update({ state: "stopped", leader: false });
         return Promise.resolve(running).then(() => void 0);
+      }
+    };
+  }
+
+  // js/persist/sync/sync-status.mjs
+  var STATUS_MESSAGE = "sync-status";
+  var ASK_MESSAGE = "sync-ask";
+  function summarize({ account, runner, online, differs }) {
+    const files2 = differs || [];
+    if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, differs: files2 };
+    const st = runner || {};
+    let state;
+    if (files2.length) state = "differs";
+    else if (online === false || st.state === "offline") state = "offline";
+    else if (st.state === "error") state = "error";
+    else if (st.state === "syncing") state = "syncing";
+    else if (st.pending) state = "pending";
+    else if (st.lastSync) state = "synced";
+    else state = "syncing";
+    return { signedIn: true, state, lastSync: st.lastSync || 0, error: st.state === "error" ? st.error || null : null, differs: files2 };
+  }
+  function createSyncStatus(o) {
+    const now = o.now || (() => Date.now());
+    const timers = o.timers || { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h) };
+    const online = o.online || (() => true);
+    let seq = 0;
+    const newId2 = o.newId || (() => now().toString(36) + "-" + ++seq + "-" + Math.random().toString(36).slice(2, 8));
+    const listeners = /* @__PURE__ */ new Set();
+    const asked = /* @__PURE__ */ new Map();
+    let runner = null;
+    let unsubscribeRunner = null;
+    let local = null;
+    let remote = null;
+    let lastKey = "";
+    const leading = () => !!(local && local.leader);
+    const current = () => leading() ? local : remote || local;
+    function summary() {
+      return summarize({ account: o.account(), runner: current(), online: online(), differs: o.conflicts() });
+    }
+    function emit() {
+      const s = summary();
+      const key = JSON.stringify(s);
+      if (key === lastKey) return;
+      lastKey = key;
+      for (const fn of [...listeners]) {
+        try {
+          fn(s);
+        } catch (_) {
+        }
+      }
+    }
+    function tell(st, answered) {
+      o.tabs.post(STATUS_MESSAGE, {
+        state: st.state,
+        pending: !!st.pending,
+        lastSync: st.lastSync || 0,
+        error: st.error || null,
+        safe: !!st.safe,
+        at: now(),
+        answered: answered || null
+      });
+    }
+    o.tabs.on((kind, msg) => {
+      if (!msg || typeof msg !== "object") return;
+      if (kind === STATUS_MESSAGE) {
+        remote = msg;
+        if (msg.answered && asked.has(msg.answered)) {
+          const resolve = asked.get(msg.answered);
+          asked.delete(msg.answered);
+          resolve({ ok: !!msg.safe, reason: msg.safe ? null : msg.state || "unsafe" });
+        }
+        emit();
+      } else if (kind === ASK_MESSAGE && leading() && runner) {
+        if (msg.round) {
+          runner.syncNow().then(() => tell(runner.status(), msg.id));
+        } else {
+          tell(local, null);
+        }
+      }
+    });
+    return {
+      /** Follow this tab's runner (Persist.startSync); a non-syncing tab asks the syncing one how things are. */
+      attach(r) {
+        this.detach();
+        runner = r;
+        local = r.status();
+        unsubscribeRunner = r.subscribe((st) => {
+          local = st;
+          emit();
+          if (st.leader) tell(st, null);
+        });
+        o.tabs.post(ASK_MESSAGE, { id: newId2(), round: false, at: now() });
+        emit();
+      },
+      detach() {
+        if (unsubscribeRunner) unsubscribeRunner();
+        unsubscribeRunner = null;
+        runner = null;
+        local = null;
+        remote = null;
+        emit();
+      },
+      summary,
+      /** Something the summary reads changed (a conflict, the network, the account): tell whoever listens. */
+      refresh: emit,
+      /** fn(summary) on every change; returns the unsubscribe. */
+      subscribe(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      /**
+       * Sync now and say whether every project's work is on the server:
+       * { ok, reason }. From the syncing tab it runs the round itself; from any
+       * other it asks that tab, and waits at most `timeoutMs` for the answer.
+       */
+      confirm(timeoutMs = 15e3) {
+        if (!runner) return Promise.resolve({ ok: false, reason: "not-syncing" });
+        if (leading()) {
+          return runner.syncNow().then((res) => ({ ok: roundIsSafe(res), reason: roundIsSafe(res) ? null : runner.status().state }));
+        }
+        const id = newId2();
+        return new Promise((resolve) => {
+          asked.set(id, resolve);
+          o.tabs.post(ASK_MESSAGE, { id, round: true, at: now() });
+          timers.set(() => {
+            if (!asked.has(id)) return;
+            asked.delete(id);
+            resolve({ ok: false, reason: "no-answer" });
+          }, timeoutMs);
+        });
       }
     };
   }
@@ -3768,9 +3942,6 @@
     else if (k.kind === "tree" || k.kind === "meta") noteTreeChanged();
   });
   var SYNC_NOTICES = {
-    conflict: function(n) {
-      return { kind: "warn", title: "Edits to " + n.path + " overlap another device\u2019s", body: "Open it to choose. Both versions are kept until you do." };
-    },
     copied: function(n) {
       return { kind: "warn", title: "Saved this device\u2019s " + n.from + " as " + n.path, body: "Another device changed the same lines while a conflict here was still open." };
     },
@@ -3853,6 +4024,19 @@
     }, 2e3);
   });
   var syncRunner = null;
+  var syncStatus = createSyncStatus({
+    account: work.account,
+    conflicts: work.listConflicts,
+    tabs: { post: records.postTabMessage, on: records.onTabMessage },
+    online: function() {
+      var nav = globalThis.navigator;
+      return !nav || nav.onLine !== false;
+    }
+  });
+  store.subscribe(function(e) {
+    var k = e && e.key ? parseKey(e.key) : null;
+    if (k && k.kind === "conflict") syncStatus.refresh();
+  });
   function startSync(opts) {
     var account = work.account();
     if (!account) throw new Error("Persist.startSync: nobody is signed in on this browser (Persist.setAccount first)");
@@ -3873,11 +4057,13 @@
       locks: opts.locks !== void 0 ? opts.locks : nav && nav.locks || null
     });
     syncRunner.start();
+    syncStatus.attach(syncRunner);
     return syncRunner;
   }
   function stopSync() {
     const r = syncRunner;
     syncRunner = null;
+    syncStatus.detach();
     return r ? r.stop() : Promise.resolve();
   }
   function syncNow() {
@@ -3885,7 +4071,11 @@
   }
   if (typeof globalThis.addEventListener === "function") {
     globalThis.addEventListener("online", function() {
+      syncStatus.refresh();
       syncNow();
+    });
+    globalThis.addEventListener("offline", function() {
+      syncStatus.refresh();
     });
   }
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
@@ -3904,10 +4094,21 @@
     setAccount: work.setAccount,
     claimProject: work.claimProject,
     projectStats: work.projectStats,
+    onFileChange: work.onFileChange,
     removeAccountProjects: work.removeAccountProjects,
     startSync,
     stopSync,
     syncNow,
+    syncSummary: syncStatus.summary,
+    onSyncSummary: syncStatus.subscribe,
+    confirmSynced: syncStatus.confirm,
+    listConflicts: work.listConflicts,
+    conflictSides: function(pid, fid) {
+      return work.conflictSides(fid, pid);
+    },
+    resolveStoredConflict: function(pid, fid, choice) {
+      return work.resolveStoredConflict(fid, choice, pid);
+    },
     durabilityStatus: durability.status,
     // the open document
     createPersist: documents.createPersist,

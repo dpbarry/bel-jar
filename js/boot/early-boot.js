@@ -164,6 +164,9 @@
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // A file changed here and in the cloud in the same lines: ask (the review
+    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -224,8 +227,6 @@
     // the account this browser is signed in as ('' signed out): whose projects it
     // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
     { id: "account", type: "string", default: "" },
-    // the account this device last asked about its own projects (the claim flow, once per account)
-    { id: "claimAskedFor", type: "string", default: "" },
     // durability.mjs: when this browser was last asked to keep BelJar's storage,
     // and when this device was told Safari may delete it (ms; 0: never)
     { id: "persistAskedAt", type: "number", default: 0 },

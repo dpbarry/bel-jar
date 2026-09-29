@@ -23,6 +23,7 @@ import { create as createDeviceRecords } from './device-records.mjs';
 import { parseKey } from './keys.mjs';
 import { createSyncEngine } from './sync/engine.mjs';
 import { createSyncRunner } from './sync/runner.mjs';
+import { createSyncStatus } from './sync/sync-status.mjs';
 import { createDurability } from './durability.mjs';
 
 // ── a full disk: reported once, cleared when writes succeed again ──────────
@@ -190,12 +191,10 @@ store.subscribe(function (e) {
 });
 
 // ── sync ────────────────────────────────────────────────────────────────────
-// What sync did that a person should know about. The words follow the house
-// voice; the conflict itself is asked by the dialog when the file is open.
+// What sync did that a person may want to find again, in the notifications. A
+// file changed in two places is not here: it is state, shown by the cloud and
+// the strip until someone reviews it (docs/UI.md §2, §3).
 var SYNC_NOTICES = {
-  conflict: function (n) {
-    return { kind: 'warn', title: 'Edits to ' + n.path + ' overlap another device’s', body: 'Open it to choose. Both versions are kept until you do.' };
-  },
   copied: function (n) {
     return { kind: 'warn', title: 'Saved this device’s ' + n.from + ' as ' + n.path, body: 'Another device changed the same lines while a conflict here was still open.' };
   },
@@ -291,6 +290,23 @@ whenPageReady(function () {
 
 var syncRunner = null;
 
+// What sync is doing, the same in every tab (sync/sync-status.mjs).
+var syncStatus = createSyncStatus({
+  account: work.account,
+  conflicts: work.listConflicts,
+  tabs: { post: records.postTabMessage, on: records.onTabMessage },
+  online: function () {
+    var nav = globalThis.navigator;
+    return !nav || nav.onLine !== false;
+  },
+});
+
+// A file changed in two places, or settled: the summary lists them.
+store.subscribe(function (e) {
+  var k = e && e.key ? parseKey(e.key) : null;
+  if (k && k.kind === 'conflict') syncStatus.refresh();
+});
+
 /**
  * Start syncing the account this browser is signed in as. `opts.transport`
  * speaks the protocol (sync/protocol.mjs); `opts.locks` stands in for
@@ -316,6 +332,7 @@ function startSync(opts) {
     locks: opts.locks !== undefined ? opts.locks : (nav && nav.locks) || null,
   });
   syncRunner.start();
+  syncStatus.attach(syncRunner);
   return syncRunner;
 }
 
@@ -323,6 +340,7 @@ function startSync(opts) {
 function stopSync() {
   const r = syncRunner;
   syncRunner = null;
+  syncStatus.detach();
   return r ? r.stop() : Promise.resolve();
 }
 
@@ -332,7 +350,8 @@ function syncNow() {
 }
 
 if (typeof globalThis.addEventListener === 'function') {
-  globalThis.addEventListener('online', function () { syncNow(); });
+  globalThis.addEventListener('online', function () { syncStatus.refresh(); syncNow(); });
+  globalThis.addEventListener('offline', function () { syncStatus.refresh(); });
 }
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('visibilitychange', function () {
@@ -352,10 +371,17 @@ export const Persist = {
   setAccount: work.setAccount,
   claimProject: work.claimProject,
   projectStats: work.projectStats,
+  onFileChange: work.onFileChange,
   removeAccountProjects: work.removeAccountProjects,
   startSync: startSync,
   stopSync: stopSync,
   syncNow: syncNow,
+  syncSummary: syncStatus.summary,
+  onSyncSummary: syncStatus.subscribe,
+  confirmSynced: syncStatus.confirm,
+  listConflicts: work.listConflicts,
+  conflictSides: function (pid, fid) { return work.conflictSides(fid, pid); },
+  resolveStoredConflict: function (pid, fid, choice) { return work.resolveStoredConflict(fid, choice, pid); },
   durabilityStatus: durability.status,
 
   // the open document

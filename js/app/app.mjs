@@ -22,6 +22,10 @@ import { create as createCommandPalette } from './app-command-palette.mjs';
 const teardown = [];
 let mounted = false;
 let editor = null;
+// The open document's side of a file changed in two places, for the review
+// window (App.openConflictSides / App.resolveOpenConflict): set by mount().
+const NO_OPEN_DOCUMENT = { sides: () => null, resolve: () => null };
+let openDocument = NO_OPEN_DOCUMENT;
 
 function onWin(type, fn, opts) {
   window.addEventListener(type, fn, opts);
@@ -110,41 +114,36 @@ function mountEditorFor(snapshot, openOpts) {
       if (id != null && text != null) EditHistory.reconcileActiveFile(id, text);
     });
   }
-  // A conflict left open before a reload or a file switch asks again here.
-  if (ed) queueMicrotask(promptTextConflict);
   return ed;
 }
 
 // ── A file changed on both sides in the same lines (docs/PERSIST.md §4.4) ─────
 // The document keeps both versions and writes neither over the other until a
-// person chooses. One prompt at a time; dismissing it decides nothing.
-let textConflictPromptOpen = false;
+// person chooses. Nothing interrupts: the strip and the explorer mark the file,
+// and the review window (js/ui/review-differences.mjs) asks when opened. For
+// the file this page has open it goes through here, so the editor moves too.
 
-function promptTextConflict() {
-  if (textConflictPromptOpen || !persist || typeof persist.getConflict !== 'function') return;
-  const conflict = persist.getConflict();
-  if (!conflict || typeof ConflictDialog === 'undefined' || !ConflictDialog.resolveTextConflict) return;
-  const file = Persist.getFileById(conflict.fileId);
-  textConflictPromptOpen = true;
-  ConflictDialog.resolveTextConflict({ fileName: file ? file.name : '', source: conflict.source }).then((choice) => {
-    textConflictPromptOpen = false;
-    if (!choice || !persist || persist.getCurrentFileId() !== conflict.fileId) return;
-    const res = persist.resolveConflict(choice);
-    if (!res.ok) {
-      showToast('Couldn’t resolve the conflict. Both versions are kept.', { kind: 'warn' });
-      return;
-    }
-    if (res.copyId) {
-      const copy = Persist.getFileById(res.copyId);
-      showToast('Kept theirs as ' + (copy ? copy.name : 'a copy') + '.');
-    }
-  });
+function holdsOpenFile(pid, fid) {
+  return !!persist && Persist.getActiveProjectId() === pid && persist.getCurrentFileId() === fid
+    && typeof persist.getConflict === 'function' && !!persist.getConflict();
 }
 
-window.addEventListener('beljar:text-conflict', (ev) => {
-  const id = ev && ev.detail ? ev.detail.fileId : null;
-  if (persist && id && id === persist.getCurrentFileId()) promptTextConflict();
-});
+/** Both sides of the open file: yours as the editor holds it, and what storage holds. Null when not open here. */
+function openConflictSides(pid, fid) {
+  if (!holdsOpenFile(pid, fid)) return null;
+  const c = persist.getConflict();
+  return { mine: persist.getEditorText(), theirs: Persist.getFileText(fid), source: c.source };
+}
+
+/** Keep one side of the open file: true when it took, null when the file is not open here. */
+function resolveOpenConflict(pid, fid, choice) {
+  if (!holdsOpenFile(pid, fid)) return null;
+  const res = persist.resolveConflict(choice);
+  return !!(res && res.ok);
+}
+
+openDocument = { sides: openConflictSides, resolve: resolveOpenConflict };
+teardown.push(() => { openDocument = NO_OPEN_DOCUMENT; });
 
 // ── Workspace state restore ───────────────────────────────────────────────────
 
@@ -1461,6 +1460,9 @@ window.App = {
   mount,
   unmount,
   isMounted: () => mounted,
+  // The review window's door to the file this page has open (docs/PERSIST.md §4.4).
+  openConflictSides: (pid, fid) => openDocument.sides(pid, fid),
+  resolveOpenConflict: (pid, fid, choice) => openDocument.resolve(pid, fid, choice),
   // Test seam: how many registrations unmount still has to undo.
   pendingTeardown: () => teardown.length,
 };

@@ -430,6 +430,13 @@
   --ide-status-checking: light-dark(hsl(217, 72%, 52%), hsl(215, 58%, 66%));
   --ide-status-warning: light-dark(hsl(38, 80%, 52%), hsl(42, 85%, 62%));
   --ide-status-error: light-dark(hsl(0, 68%, 50%), hsl(0, 72%, 60%));
+  /* Review differences (js/ui/review-differences.mjs): the other version's lines
+     and yours. Washes, not verdicts: neither side is wrong until someone chooses,
+     so they stay quieter than the error and clean colours above. */
+  --diff-theirs-bg: light-dark(hsla(8, 70%, 55%, 0.1), hsla(8, 70%, 60%, 0.12));
+  --diff-theirs-fg: light-dark(hsl(8, 55%, 42%), hsl(8, 70%, 72%));
+  --diff-mine-bg: light-dark(hsla(150, 50%, 42%, 0.1), hsla(150, 45%, 55%, 0.12));
+  --diff-mine-fg: light-dark(hsl(150, 45%, 30%), hsl(150, 45%, 68%));
   /* ⛔ The record light, and deliberately NOT red. Red, amber and green are
      spoken for on the status strip — errors, warnings, a clean check — and a
      recording is none of those: it is a state you are IN, not a verdict on your

@@ -629,6 +629,14 @@ export const CATALOG = [
     args: [{ kind: 'option', label: 'option' }],
   },
 
+  // ── Account ────────────────────────────────────────────────────────────────
+  // The avatar's and the cloud's actions, by name (js/account/). Each is
+  // available only where it works: no server, no sign-in; signed out, no sync.
+  { id: 'account.sign-in', title: 'Sign In with GitHub', section: 'Account', scope: 'global', palette: true, keybindable: true },
+  { id: 'account.sign-out', title: 'Sign Out', section: 'Account', scope: 'global', palette: true, keybindable: true },
+  { id: 'sync.now', title: 'Sync Now', section: 'Account', scope: 'global', palette: true, keybindable: true },
+  { id: 'sync.review', title: 'Review Differences', section: 'Account', scope: 'global', palette: true, keybindable: true },
+
   // ── Tools ──────────────────────────────────────────────────────────────────
   // Not keybindable: `nav.anywhere` owns Mod+K. The literal `shortcut` is the
   // palette's own display fallback for an entry with no chord of its own.

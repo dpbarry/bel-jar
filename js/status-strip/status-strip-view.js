@@ -14,14 +14,15 @@
     "symbols",
     "spacer",
     "tab",
+    "sync",
     "undo",
     "redo",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
@@ -229,6 +230,34 @@
         tone: "warning",
         title: "Both tabs save to the same files. The later save overwrites the other."
       };
+    },
+    /**
+     * Sync, only when it needs you (docs/UI.md §2): files changed here and
+     * somewhere else, offline, or a round that keeps failing. Its steady state,
+     * synced, is the cloud's beside the project name and never repeated here.
+     * Files to review show signed out too: two tabs can differ with no account.
+     */
+    sync(s) {
+      const x = s.sync;
+      if (!x) return null;
+      if (x.differs && x.differs.length) {
+        const n = x.differs.length;
+        return {
+          key: "sync",
+          text: n === 1 ? "1 file to review" : n + " files to review",
+          tone: "warning",
+          title: "Review differences",
+          action: "review-differences"
+        };
+      }
+      if (!x.signedIn) return null;
+      if (x.state === "offline") {
+        return { key: "sync", text: "Offline", tone: "warning", title: "Changes sync when you\u2019re back online" };
+      }
+      if (x.state === "error") {
+        return { key: "sync", text: "Couldn\u2019t sync", tone: "error", title: "Sync now", action: "sync-now" };
+      }
+      return null;
     },
     /**
      * Undo and redo, as one tray with the history beside them. The tray appears
@@ -465,6 +494,9 @@
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // A file changed here and in the cloud in the same lines: ask (the review
+    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -2237,7 +2269,9 @@
     historyOpen: false,
     keymapOpen: false,
     /** A second tab has this project open. Standing, not a toast. */
-    tabConflict: false
+    tabConflict: false,
+    /** What sync is doing (Persist.syncSummary, pushed by js/account/sync-ui.mjs). */
+    sync: null
   };
   var detail = "standard";
   var rendered = "";
@@ -2410,6 +2444,8 @@
     "open-harpoon": () => global5.Commands?.run("prover.open-in-harpoon") || global5.Commands?.run("view.harpoon"),
     "run": () => global5.Commands?.run("run.file"),
     "edit-history": () => openHistory(),
+    "review-differences": () => global5.Commands?.run("sync.review"),
+    "sync-now": () => global5.Commands?.run("sync.now"),
     "undo": () => stepHistory("undo"),
     "redo": () => stepHistory("redo"),
     "keymap-menu": () => {
@@ -2561,7 +2597,8 @@
       "redoDepth",
       "historyOpen",
       "keymapOpen",
-      "tabConflict"
+      "tabConflict",
+      "sync"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];

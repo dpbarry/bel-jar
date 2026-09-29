@@ -538,6 +538,52 @@ export function createWork(opts) {
     return store.remove(conflictKey(pid || projectId(), fid));
   }
 
+  /**
+   * Every file changed in two places and waiting for a person, in the projects
+   * this page may show: [{ pid, project, fid, path, source, at }]. Keys and trees
+   * only, never a file's text: the cloud and the strip read it on every change.
+   */
+  function listConflicts() {
+    const out = [];
+    for (const p of peekVisible()) {
+      const prefix = projectPrefix(p.id) + 'conflict/';
+      const keys = store.keys(prefix);
+      if (!keys.length) continue;
+      const names = new Map(peekTree(p.id).files.map((f) => [f.id, f.name]));
+      for (const key of keys) {
+        const fid = key.slice(prefix.length);
+        const rec = normalizeConflict(store.get(key));
+        if (!rec) continue;
+        out.push({ pid: p.id, project: p.name, fid, path: names.get(fid) || fid, source: rec.source, at: rec.at });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Both sides of a file changed in two places: `mine` is kept in the conflict
+   * record, `theirs` is what storage holds (docs/PERSIST.md §4.4). Null when the
+   * file has no conflict.
+   */
+  function conflictSides(fid, pid) {
+    const rec = readConflict(fid, pid);
+    if (!rec) return null;
+    return { base: rec.base, mine: rec.mine, theirs: getText(fid, pid), source: rec.source, at: rec.at };
+  }
+
+  /**
+   * A person chose, for a file no editor on this page holds: 'mine' writes this
+   * side over the other (sync carries it up), 'theirs' keeps what storage holds.
+   * The open file goes through its document instead, which also moves the editor.
+   */
+  function resolveStoredConflict(fid, choice, pid) {
+    const rec = readConflict(fid, pid);
+    if (!rec || (choice !== 'mine' && choice !== 'theirs')) return false;
+    if (choice === 'mine' && !setText(fid, rec.mine, pid).ok) return false;
+    removeConflict(fid, pid);
+    return true;
+  }
+
   // ── the online layer's door (sync/engine.mjs) ─────────────────────────────
 
   /**
@@ -699,6 +745,9 @@ export function createWork(opts) {
     readConflict,
     writeConflict,
     removeConflict,
+    listConflicts,
+    conflictSides,
+    resolveStoredConflict,
     // accounts
     account,
     setAccount,

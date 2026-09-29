@@ -180,6 +180,45 @@
   padding-top: 0.3rem;
 }
 
+/* State at the top of a popover (js/ui/menu.mjs `status` rows): what is true,
+   and one muted line under it. Sentence case on the item's own inset, so it reads
+   as the popover talking, not as a label over a group (docs/UI.md §1). */
+.menu-status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.7rem 0.45rem 0.65rem;
+  pointer-events: none;
+  user-select: none;
+}
+
+.menu-status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.menu-status-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--menu-item-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-status-detail {
+  font-size: 0.7rem;
+  color: var(--menu-section-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-status.is-warning .menu-status-title { color: var(--ide-status-warning); }
+.menu-status.is-error .menu-status-title { color: var(--ide-status-error); }
+
 /* Find-references list: keep it a short, scrolling stack rather than a tall
    panel — capped height with its own scrollbar (scoped to ref menus only). */
 .menu:has(.menu-item-ref) {

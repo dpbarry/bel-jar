@@ -114,6 +114,22 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('file.import-folder', () => folderInputEl.click());
       on('file.download', downloadCurrentFile);
       on('project.download', () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
+
+      // The account and sync (js/account/), each only where it works: no server,
+      // no sign-in; signed out, nothing to sync; nothing changed in two places,
+      // nothing to review.
+      const account = () => (typeof Account !== 'undefined' ? Account : null);
+      const syncState = () => (typeof Persist.syncSummary === 'function' ? Persist.syncSummary() : null);
+      on('account.sign-in', () => account().signIn(), () => !!account() && account().available() && !account().user());
+      on('account.sign-out', () => account().signOut(), () => !!account() && !!account().user());
+      on('sync.now', () => Persist.confirmSynced(), () => {
+        const s = syncState();
+        return !!s && s.signedIn && s.state !== 'offline';
+      });
+      on('sync.review', () => SyncUI.review(), () => {
+        const s = syncState();
+        return !!s && s.differs.length > 0;
+      });
       on('tab.next', () => stepTab(1), () => openTabIds().length > 1);
       on('tab.prev', () => stepTab(-1), () => openTabIds().length > 1);
       on(

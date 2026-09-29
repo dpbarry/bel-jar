@@ -137,6 +137,9 @@ export const SETTINGS = [
   { id: 'libraryExpandDefault', section: 'workspace', default: OFF },
   // Signed in, settings follow you between devices; off here, this device keeps its own.
   { id: 'syncSettings', section: 'workspace', default: ON, sync: false },
+  // A file changed here and in the cloud in the same lines: ask (the review
+  // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
+  { id: 'syncOverlap', section: 'workspace', default: 'ask', values: ['ask', 'mine', 'cloud'] },
 
   // ── Aliases ─────────────────────────────────────────────────────────────
   { id: 'aliasActivation', section: 'aliases', default: 'greedy', values: ['greedy', 'strict'] },

@@ -37,14 +37,14 @@
  */
 export const SEGMENT_ORDER = [
   'keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems',
-  'orca', 'symbols', 'spacer', 'tab', 'undo', 'redo', 'history', 'checker',
+  'orca', 'symbols', 'spacer', 'tab', 'sync', 'undo', 'redo', 'history', 'checker',
 ];
 
 export const DETAIL_LEVELS = ['compact', 'standard', 'detailed'];
 
 const PRESETS = {
-  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'undo', 'redo', 'history', 'checker'],
-  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'undo', 'redo', 'history', 'checker'],
+  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'sync', 'undo', 'redo', 'history', 'checker'],
+  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'sync', 'undo', 'redo', 'history', 'checker'],
   detailed: SEGMENT_ORDER,
 };
 
@@ -294,6 +294,35 @@ const BUILDERS = {
       tone: 'warning',
       title: 'Both tabs save to the same files. The later save overwrites the other.',
     };
+  },
+
+  /**
+   * Sync, only when it needs you (docs/UI.md §2): files changed here and
+   * somewhere else, offline, or a round that keeps failing. Its steady state,
+   * synced, is the cloud's beside the project name and never repeated here.
+   * Files to review show signed out too: two tabs can differ with no account.
+   */
+  sync(s) {
+    const x = s.sync;
+    if (!x) return null;
+    if (x.differs && x.differs.length) {
+      const n = x.differs.length;
+      return {
+        key: 'sync',
+        text: n === 1 ? '1 file to review' : n + ' files to review',
+        tone: 'warning',
+        title: 'Review differences',
+        action: 'review-differences',
+      };
+    }
+    if (!x.signedIn) return null;
+    if (x.state === 'offline') {
+      return { key: 'sync', text: 'Offline', tone: 'warning', title: 'Changes sync when you’re back online' };
+    }
+    if (x.state === 'error') {
+      return { key: 'sync', text: 'Couldn’t sync', tone: 'error', title: 'Sync now', action: 'sync-now' };
+    }
+    return null;
   },
 
   /**

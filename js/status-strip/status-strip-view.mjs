@@ -77,6 +77,8 @@ const state = {
   keymapOpen: false,
   /** A second tab has this project open. Standing, not a toast. */
   tabConflict: false,
+  /** What sync is doing (Persist.syncSummary, pushed by js/account/sync-ui.mjs). */
+  sync: null,
 };
 
 let detail = 'standard';
@@ -338,6 +340,8 @@ const ACTIONS = {
     || global.Commands?.run('view.harpoon'),
   'run': () => global.Commands?.run('run.file'),
   'edit-history': () => openHistory(),
+  'review-differences': () => global.Commands?.run('sync.review'),
+  'sync-now': () => global.Commands?.run('sync.now'),
   'undo': () => stepHistory('undo'),
   'redo': () => stepHistory('redo'),
   'keymap-menu': () => { toggleKeymap(syncKeymap); syncKeymap(); },
@@ -530,7 +534,7 @@ function setEditorState(next) {
   // it, the builder read it, and the bar never showed a goal. A new piece of
   // editor state has to be added in BOTH places, here and in `state` above.
   for (const key of ['style', 'mode', 'pending', 'mark', 'macro', 'hasFile', 'line', 'col', 'selChars', 'selLines',
-    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen', 'keymapOpen', 'tabConflict']) {
+    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen', 'keymapOpen', 'tabConflict', 'sync']) {
     if (!(key in next) || state[key] === next[key]) continue;
     state[key] = next[key];
     changed = true;

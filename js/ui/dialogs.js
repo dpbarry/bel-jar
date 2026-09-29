@@ -645,25 +645,8 @@
       openDialog(dialogEl);
     });
   }
-  function resolveTextConflict(opts) {
-    opts = opts || {};
-    const where = opts.source === "device" ? "Another device" : "Another tab";
-    return PromptDialog.open({
-      ariaLabel: "Edit conflict",
-      subject: opts.fileName || void 0,
-      message: where + " changed the same lines as you.",
-      note: "Both versions are kept until you choose.",
-      layout: "row",
-      buttons: [
-        { action: "both", label: "Keep both", variant: "secondary" },
-        { action: "theirs", label: "Take theirs", variant: "secondary" },
-        { action: "mine", label: "Keep mine", variant: "primary" }
-      ]
-    }).then((action) => action === "mine" || action === "theirs" || action === "both" ? action : null);
-  }
   var ConflictDialog = {
-    resolveConflicts,
-    resolveTextConflict
+    resolveConflicts
   };
   var g5 = typeof window !== "undefined" ? window : globalThis;
   g5.ConflictDialog = ConflictDialog;

@@ -4,6 +4,8 @@ const global = globalThis;
   var settingsDialogEl = null;
   var keybindingsApi = null;
   var aliasesApi = null;
+  var refreshAccountTab = null;
+  var selectCategoryRef = null;
   var controls = {};
   var settingsSearchInput = null;
   var closeSettingsSearch = null;
@@ -1255,6 +1257,9 @@ const global = globalThis;
       { id: 'repl', label: 'REPL' },
       { id: 'workspace', label: 'Workspace' },
       { id: 'aliases', label: 'Aliases' },
+      // Shown only where a server answers (js/account/account.mjs): a tab of
+      // sync settings on a page with no sync would offer what does not work.
+      { id: 'account', label: 'Account' },
     ];
 
     var panelBodies = {};
@@ -2117,6 +2122,49 @@ const global = globalThis;
     });
     aliasesApi = mountAliasesSheet(aliasUnit.body);
 
+    // Account: who is signed in, and how sync behaves. The first row follows the
+    // account; the tab is there only where a server answers.
+    addActionRow(panelBodies.account, 'Not signed in', 'Sign in to have your projects and settings on every device.',
+      'Sign in with GitHub', function () {
+        var A = global.Account;
+        if (!A) return;
+        if (A.user()) A.signOut();
+        else A.signIn();
+      });
+    var accountRow = panelBodies.account.lastElementChild;
+    addSwitchRow(panelBodies.account, 'sync-settings', 'Sync settings',
+      'Keep your preferences the same on every device.',
+      function () { return Settings.get('syncSettings'); },
+      function (p, on) { Settings.set('syncSettings', on); }
+    );
+    addDropdownRow(panelBodies.account, 'sync-overlap', 'When the same lines changed',
+      'A file edited here and elsewhere in the same place.',
+      [
+        { value: 'ask', label: 'Ask' },
+        { value: 'mine', label: 'Keep mine' },
+        { value: 'cloud', label: 'Use cloud' },
+      ],
+      function () { return Settings.get('syncOverlap'); },
+      function (p, v) { Settings.set('syncOverlap', v); }
+    );
+    refreshAccountTab = function () {
+      var A = global.Account;
+      var there = !!(A && A.available());
+      var tab = nav.querySelector('.jar-settings__nav-item[data-category="account"]');
+      if (tab) tab.hidden = !there;
+      if (!there && activeCategory === 'account') selectCategory('appearance');
+      var who = A && A.user();
+      var lbl = accountRow.querySelector('.jar-dialog__setting-label');
+      var dsc = accountRow.querySelector('.jar-dialog__setting-desc');
+      var btn = accountRow.querySelector('.jar-settings__action-btn');
+      if (lbl) lbl.textContent = who ? (who.name || '@' + who.handle) : 'Not signed in';
+      if (dsc) dsc.textContent = who ? '@' + who.handle + ', signed in with GitHub.' : 'Sign in to have your projects and settings on every device.';
+      if (btn) btn.textContent = who ? 'Sign out' : 'Sign in with GitHub';
+    };
+    refreshAccountTab();
+    global.addEventListener('beljar:account', refreshAccountTab);
+    selectCategoryRef = selectCategory;
+
     selectCategory(activeCategory);
 
     shell.appendChild(nav);
@@ -2219,6 +2267,9 @@ const global = globalThis;
       categories.forEach(function (cat) {
         var body = panelBodies[cat.id];
         if (!body) return;
+        // A hidden tab offers nothing, in search either.
+        var tabBtn = nav.querySelector('.jar-settings__nav-item[data-category="' + cat.id + '"]');
+        if (tabBtn && tabBtn.hidden) return;
         var section = '';
         // A subordinate group's rows are indexed under the STYLE that owns them
         // ("Leader key" reads as Vim, not as Keys) — and only while that group is
@@ -2459,9 +2510,15 @@ const global = globalThis;
     return settingsDialogEl;
   }
 
-  function open() {
+  /** Open Settings, on `category` when one is named (the avatar's Settings opens Account). */
+  function open(category) {
     ensureSettingsDialog();
     if (typeof closeSettingsSearch === 'function') closeSettingsSearch(true);
+    if (refreshAccountTab) refreshAccountTab();
+    if (typeof category === 'string' && selectCategoryRef) {
+      var tab = settingsDialogEl && settingsDialogEl.querySelector('.jar-settings__nav-item[data-category="' + category + '"]');
+      if (tab && !tab.hidden) selectCategoryRef(category);
+    }
     syncFromState();
     // The chord rows carry per-style notes, so they are only right for the
     // style in force at render time. Rebuild on every open.

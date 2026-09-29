@@ -11,6 +11,7 @@ Agent rules and commands: [`AGENTS.md`](../AGENTS.md), [`.cursor/rules/`](../.cu
 | Doc | Role |
 |-----|------|
 | [CODEMAP.md](CODEMAP.md) | Where code lives — two-layer runtime, domains, vocabulary |
+| [UI.md](UI.md) | ⭐ **Read before building or changing a surface.** Menus hold actions and state lives in surfaces, one indicator per fact, silent by default, the vocabulary to reuse, the voice |
 | [COMMANDS.md](COMMANDS.md) | ⭐ **Read before adding or changing a command.** The shape, the recipe, the invariants and the traps |
 | [ORCA.md](ORCA.md) | Proof search — what it is, the 32.1%, how to run it |
 | [HARPOON.md](HARPOON.md) | Proving surface — states, invariants, how to change it |

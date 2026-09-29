@@ -34057,6 +34057,8 @@
   var g13 = typeof window !== "undefined" ? window : globalThis;
   var user = null;
   var available = false;
+  var unreachable2 = null;
+  var adopting = false;
   function accountStep(me, local) {
     if (!me) return local ? "ended" : "signed-out";
     if (local === me.id) return "same";
@@ -34095,20 +34097,35 @@
         return "Sign-in stopped at a step this page doesn\u2019t know.";
     }
   }
-  async function fetchMe() {
+  async function askServer() {
+    let error = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await fetch("/api/auth/me", { credentials: "same-origin", headers: { accept: "application/json" } });
+        if (res.status === 404) return { none: true };
         if (res.status === 200 && /application\/json/.test(res.headers.get("content-type") || "")) {
           const body = await res.json();
-          return body && "user" in body ? body.user : void 0;
+          return body && "user" in body ? { user: body.user } : { error: "not-json" };
         }
-        if (res.status < 500) return void 0;
+        error = res.status === 200 ? "not-json" : "status-" + res.status;
       } catch (_) {
+        error = "network";
       }
       if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
     }
-    return void 0;
+    return { error };
+  }
+  function reach(answer, deployed) {
+    if (answer && "user" in answer) return "signed";
+    if (!deployed) return "none";
+    return "unreachable";
+  }
+  function unreachableWords(error) {
+    if (error === "network") return "The request never came back: the network, or a browser extension, stopped it.";
+    if (error === "not-json") return "The server answered with something other than an account.";
+    if (/^status-4/.test(error || "")) return "This address has no account service (" + error.slice(7) + ").";
+    if (/^status-/.test(error || "")) return "The server answered with an error (" + error.slice(7) + ").";
+    return "The server did not answer.";
   }
   function toast3(kind, message2) {
     const T = g13.Toasts;
@@ -34145,13 +34162,15 @@
     if (!available) return;
     btn.replaceChildren();
     btn.classList.toggle("is-signed-in", !!user);
+    btn.classList.toggle("is-unreachable", !!unreachable2);
     if (user) {
       btn.setAttribute("aria-label", "Account: @" + user.handle);
       btn.setAttribute("data-tooltip", "@" + user.handle);
       btn.appendChild(avatarNode("account-avatar"));
     } else {
-      btn.setAttribute("aria-label", "Sign in");
-      btn.setAttribute("data-tooltip", "Sign in");
+      const label = unreachable2 ? "Can\u2019t reach BelJar\u2019s server" : "Sign in";
+      btn.setAttribute("aria-label", label);
+      btn.setAttribute("data-tooltip", label);
       btn.insertAdjacentHTML(
         "beforeend",
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>'
@@ -34159,6 +34178,13 @@
     }
   }
   function menuItems() {
+    if (unreachable2) {
+      return [
+        { type: "status", title: "Can\u2019t reach BelJar\u2019s server", detail: unreachableWords(unreachable2), tone: "warning" },
+        { type: "separator" },
+        { label: "Try again", onSelect: () => connect() }
+      ];
+    }
     if (!user) return [{ label: "Sign in with GitHub", onSelect: signIn }];
     return [
       {
@@ -34258,11 +34284,37 @@
     const rest = params.toString();
     g13.history.replaceState(null, "", g13.location.pathname + (rest ? "?" + rest : "") + g13.location.hash);
   }
+  function noteUnreachable(error) {
+    const N = g13.Notifications;
+    if (!N || typeof N.emit !== "function") return;
+    N.emit({
+      kind: "warn",
+      category: "ops",
+      origin: "local",
+      source: "account.reach",
+      dedupeKey: "account.reach",
+      title: "Can\u2019t reach BelJar\u2019s server",
+      body: unreachableWords(error) + " Sign-in and sync are off until it can. (" + error + ")"
+    });
+  }
   async function boot() {
     noteFailedSignIn();
-    const me = await fetchMe();
-    if (me === void 0) return;
+    await connect();
+  }
+  async function connect() {
+    const answer = await askServer();
+    const where = reach(answer, !!g13.BELJAR_DEPLOYED);
+    if (where === "none") return;
     available = true;
+    if (where === "unreachable") {
+      unreachable2 = answer.error || "status-404";
+      user = null;
+      render5();
+      noteUnreachable(unreachable2);
+      return;
+    }
+    unreachable2 = null;
+    const me = answer.user;
     user = me;
     const P3 = g13.Persist;
     const step2 = accountStep(me, P3.getAccount());
@@ -34277,7 +34329,8 @@
     g13.dispatchEvent(new CustomEvent("beljar:account", { detail: { user: user ? Object.assign({}, user) : null } }));
     if (!me) return;
     adopt();
-    adoptOnWrite();
+    if (!adopting) adoptOnWrite();
+    adopting = true;
     P3.startSync({ transport: createHttpTransport() });
   }
   var Account2 = {

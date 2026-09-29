@@ -476,7 +476,14 @@ it looks is [`docs/UI.md`](UI.md)).
   and syncs; nobody is asked, and nothing says it went well. An empty project waits for its first
   character (every browser starts with one, and the account would collect them); a write to it
   claims it then. The avatar sits at the header's right, round; its popover says who, then Settings
-  and Sign out. Where the site has no server the button stays hidden.
+  and Sign out, and a picture that cannot load (a blocker, a deleted avatar) becomes the initial,
+  never an empty circle. Where the site has no server (a 404: local static serving, the probes)
+  the button stays hidden. ⛔ On a deployed host (`BELJAR_DEPLOYED`, set by `index.html` from the
+  same host list as the runtime's) a server is always there, so a failure to ask it is never taken
+  for "no server": the button stays, in the warning colour, its popover says why ("the network, or
+  a browser extension, stopped it", or the status) with Try again, and a notification keeps the
+  reason. `/api/auth/me` is asked twice before that. A blocked request once made the whole account
+  vanish with no trace.
 - **Signing out** asks the syncing tab for one last round (`Persist.confirmSynced`, from any tab)
   and, when it says everything is on the server, removes the account's projects from the browser,
   with sync stopped and its last round finished first. The only question it ever asks is when that

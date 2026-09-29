@@ -20,7 +20,9 @@ export { roundIsSafe } from '../persist/sync/runner.mjs';
 const g = typeof window !== 'undefined' ? window : globalThis;
 
 let user = null; // { id, handle, name, avatar } | null
-let available = false; // the server answered
+let available = false; // the button shows: the server answered, or this host must have one
+let unreachable = null; // why a deployed host's server could not be asked ('network', 'status-503', ...)
+let adopting = false; // the write listener is on (once per page: Try again connects anew)
 
 /**
  * What to do with who the server says is signed in (`me`) and who this browser
@@ -81,24 +83,50 @@ export function signInFailure(why, detail) {
 }
 
 /**
- * Who the server says is signed in: a user, null (nobody), or undefined (no
- * server here: the account stays out of sight). A 404 is a host without the
- * API and is final; a network failure or a server error may pass, so it is
- * asked once more before the page decides there is no server.
+ * Who the server says is signed in: { user } (null: nobody), { none: true } (a
+ * host without the API: a 404, final), or { error } when the asking failed:
+ * 'network' (the request never came back: the network, or an extension that
+ * stopped it), 'status-503', 'not-json'. A failure may pass, so it is asked
+ * once more first.
  */
-async function fetchMe() {
+async function askServer() {
+  let error = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      if (res.status === 404) return { none: true };
       if (res.status === 200 && /application\/json/.test(res.headers.get('content-type') || '')) {
         const body = await res.json();
-        return body && 'user' in body ? body.user : undefined;
+        return body && 'user' in body ? { user: body.user } : { error: 'not-json' };
       }
-      if (res.status < 500) return undefined;
-    } catch (_) { /* the network: once more */ }
+      error = res.status === 200 ? 'not-json' : 'status-' + res.status;
+    } catch (_) {
+      error = 'network';
+    }
     if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
   }
-  return undefined;
+  return { error };
+}
+
+/**
+ * What an answer means on this host: 'signed' (the server answered), 'none' (no
+ * server here: the account stays out of sight, as on a local static server), or
+ * 'unreachable'. ⛔ A deployed host always has a server, so there nothing is
+ * ever "none": a failure is shown and explained, never a button that vanishes.
+ */
+export function reach(answer, deployed) {
+  if (answer && 'user' in answer) return 'signed';
+  if (!deployed) return 'none';
+  return 'unreachable';
+}
+
+/** Why the server could not be reached, in one sentence. */
+export function unreachableWords(error) {
+  if (error === 'network') return 'The request never came back: the network, or a browser extension, stopped it.';
+  if (error === 'not-json') return 'The server answered with something other than an account.';
+  if (/^status-4/.test(error || '')) return 'This address has no account service (' + error.slice(7) + ').';
+  if (/^status-/.test(error || '')) return 'The server answered with an error (' + error.slice(7) + ').';
+  return 'The server did not answer.';
 }
 
 function toast(kind, message) {
@@ -147,13 +175,15 @@ function render() {
   if (!available) return;
   btn.replaceChildren();
   btn.classList.toggle('is-signed-in', !!user);
+  btn.classList.toggle('is-unreachable', !!unreachable);
   if (user) {
     btn.setAttribute('aria-label', 'Account: @' + user.handle);
     btn.setAttribute('data-tooltip', '@' + user.handle);
     btn.appendChild(avatarNode('account-avatar'));
   } else {
-    btn.setAttribute('aria-label', 'Sign in');
-    btn.setAttribute('data-tooltip', 'Sign in');
+    const label = unreachable ? 'Can’t reach BelJar’s server' : 'Sign in';
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('data-tooltip', label);
     btn.insertAdjacentHTML('beforeend',
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
       + '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>');
@@ -162,6 +192,13 @@ function render() {
 
 /** The avatar's popover: who, then what you can do. State, then actions (docs/UI.md §1). */
 function menuItems() {
+  if (unreachable) {
+    return [
+      { type: 'status', title: 'Can’t reach BelJar’s server', detail: unreachableWords(unreachable), tone: 'warning' },
+      { type: 'separator' },
+      { label: 'Try again', onSelect: () => connect() },
+    ];
+  }
   if (!user) return [{ label: 'Sign in with GitHub', onSelect: signIn }];
   return [
     {
@@ -279,11 +316,42 @@ function noteFailedSignIn() {
   g.history.replaceState(null, '', g.location.pathname + (rest ? '?' + rest : '') + g.location.hash);
 }
 
+// A deployed host whose server could not be asked: said once, with the reason,
+// where it can be found again; the button stays, marked (docs/UI.md §3).
+function noteUnreachable(error) {
+  const N = g.Notifications;
+  if (!N || typeof N.emit !== 'function') return;
+  N.emit({
+    kind: 'warn',
+    category: 'ops',
+    origin: 'local',
+    source: 'account.reach',
+    dedupeKey: 'account.reach',
+    title: 'Can’t reach BelJar’s server',
+    body: unreachableWords(error) + ' Sign-in and sync are off until it can. (' + error + ')',
+  });
+}
+
 async function boot() {
   noteFailedSignIn();
-  const me = await fetchMe();
-  if (me === undefined) return; // no server here: BelJar stays as it was
+  await connect();
+}
+
+/** Ask who is signed in, and set the page up for the answer. Try again runs it anew. */
+async function connect() {
+  const answer = await askServer();
+  const where = reach(answer, !!g.BELJAR_DEPLOYED);
+  if (where === 'none') return; // no server here: BelJar stays as it was
   available = true;
+  if (where === 'unreachable') {
+    unreachable = answer.error || 'status-404';
+    user = null;
+    render();
+    noteUnreachable(unreachable);
+    return;
+  }
+  unreachable = null;
+  const me = answer.user;
   user = me;
   const P = g.Persist;
   const step = accountStep(me, P.getAccount());
@@ -296,7 +364,8 @@ async function boot() {
   g.dispatchEvent(new CustomEvent('beljar:account', { detail: { user: user ? Object.assign({}, user) : null } }));
   if (!me) return;
   adopt();
-  adoptOnWrite();
+  if (!adopting) adoptOnWrite();
+  adopting = true;
   P.startSync({ transport: createHttpTransport() });
 }
 

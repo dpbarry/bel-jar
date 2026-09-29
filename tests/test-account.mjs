@@ -2,7 +2,7 @@
 // this browser, which projects it adopts, when a sync round makes removing
 // projects safe, and how a failed sign-in is explained.
 import fs from 'node:fs';
-import { accountStep, adoptable, roundIsSafe, signInFailure } from '../js/account/account.mjs';
+import { accountStep, adoptable, roundIsSafe, signInFailure, reach, unreachableWords } from '../js/account/account.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -30,6 +30,17 @@ expect(JSON.stringify(adoptable(projects, (id) => sizes[id])) === '["p1"]',
 expect(adoptable(projects, (id) => sizes[id]).indexOf('p2') < 0,
   'an empty one waits for its first character: every browser starts with one, and the account would collect them');
 expect(adoptable([{ id: 'x', owner: 'u_other' }], () => 5).length === 0, 'another account\'s project is never adopted');
+
+// ── the server answered, or it did not ──────────────────────────────────────
+expect(reach({ user: null }, false) === 'signed' && reach({ user: { id: 'u' } }, true) === 'signed', 'an answer, signed in or not, is an answer anywhere');
+expect(reach({ none: true }, false) === 'none', 'a local static server has no API: the account stays out of sight');
+expect(reach({ error: 'network' }, false) === 'none', 'and locally, a failure is no server either');
+expect(reach({ error: 'network' }, true) === 'unreachable' && reach({ none: true }, true) === 'unreachable',
+  'on a deployed host there is always a server: a failure, even a 404, is shown and explained, never a vanished button');
+const reasons = ['network', 'not-json', 'status-404', 'status-503', 'status-429', null];
+const said = reasons.map((r) => unreachableWords(r));
+expect(new Set(said.slice(0, 4)).size === 4 && said.every((w) => w && !/—/.test(w)), 'every way of not reaching it reads differently, no em dash');
+expect(/extension/.test(unreachableWords('network')) && /503/.test(unreachableWords('status-503')), 'a blocked request names the likely cause; a status names its number');
 
 expect(roundIsSafe({ projects: { a: { status: 'clean' }, b: { status: 'pushed' } } }), 'every project clean or pushed: safe to remove');
 expect(!roundIsSafe({ projects: { a: { status: 'clean' }, b: { status: 'error' } } }), 'one project that could not sync: not safe');

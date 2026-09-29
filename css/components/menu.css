@@ -208,12 +208,13 @@
   text-overflow: ellipsis;
 }
 
+/* The title is one line; the detail may take two, at the menu's own width. */
 .menu-status-detail {
   font-size: 0.7rem;
+  line-height: 1.35;
   color: var(--menu-section-fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .menu-status.is-warning .menu-status-title { color: var(--ide-status-warning); }

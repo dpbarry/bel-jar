@@ -269,8 +269,10 @@
   </div>
   <div id="menu-root" class="menu-root"></div>
 
-  <!-- The Beluga runtime is served from R2 on the deployed hosts: the fast
-       build is ~31.5 MB, over Cloudflare's per-file static-asset cap. Local,
+  <!-- The deployed hosts. The Beluga runtime is served from R2 there (the fast
+       build is ~31.5 MB, over Cloudflare's per-file static-asset cap), and a
+       server always answers /api, so an account that cannot be reached is a
+       failure to explain, never "no server" (js/account/account.mjs). Local,
        file:// and the probes fall through to the copies in this repo. -->
   <script>
     (function () {
@@ -278,6 +280,7 @@
       var deployed = ['deanbarry.com', 'workers.dev', 'pages.dev'].some(function (d) {
         return h === d || h.endsWith('.' + d);
       });
+      window.BELJAR_DEPLOYED = deployed;
       if (deployed) window.BELJAR_RUNTIME_BASE = 'https://beljar-cdn.deanbarry.com/';
     })();
   </script>

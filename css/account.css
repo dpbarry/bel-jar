@@ -38,6 +38,12 @@
   opacity: 1;
 }
 
+/* A deployed site whose server could not be asked: the button stays, in the
+   warning colour, and its popover says why (js/account/account.mjs). */
+.account-btn.is-unreachable {
+  color: var(--ide-status-warning);
+}
+
 /* The same face at the top of its popover, beside the name. */
 .account-avatar--menu {
   width: 1.75rem;

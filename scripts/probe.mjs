@@ -42,7 +42,7 @@ try {
     sameAsKeybindings: Commands.defaults().length === Keybindings.DEFAULTS.length,
   }));
   console.log('  registry:', JSON.stringify(reg));
-  check(reg.total === 161, `registry holds 161 commands (got ${reg.total})`);
+  check(reg.total === 162, `registry holds 162 commands (got ${reg.total})`);
   check(reg.unwired.length === 0, 'every palette command has behaviour attached', reg.unwired.join(', '));
   check(reg.chordedUnwired.length === 0,
     'every command that ships a chord has behaviour behind it', reg.chordedUnwired.join(', '));
@@ -117,7 +117,7 @@ try {
     unbound: [...document.querySelectorAll('.jar-kb__chord.is-empty')].length,
   }));
   console.log('  sheet:', JSON.stringify(sheet));
-  check(sheet.rows === 151, `sheet renders every bindable command (got ${sheet.rows})`);
+  check(sheet.rows === 152, `sheet renders every bindable command (got ${sheet.rows})`);
   check(
     sheet.sections.join(',') === 'File,Edit,Motion,Navigate,Prover,Run,View,Settings,Account,Tools',
     'sheet section headers appear once each, in SECTION_ORDER',
@@ -146,8 +146,8 @@ try {
     'and nothing inside it scrolls separately', scrollports.innerScrollports.join(' | '));
   check(scrollports.filterSticky === 'sticky',
     'the command filter sticks as you scroll past it', scrollports.filterSticky);
-  check(/151 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
-  check(sheet.unbound === 131, `unbound rows render as empty chords (got ${sheet.unbound})`);
+  check(/152 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
+  check(sheet.unbound === 132, `unbound rows render as empty chords (got ${sheet.unbound})`);
   await page.screenshot({ path: path.join(outDir, 'keybindings-sheet.png') });
 
   // ── filtering ───────────────────────────────────────────────────────────────

@@ -3,8 +3,9 @@
  * summary, the same in every tab (Persist.syncSummary):
  *
  *   the cloud        beside the project name, signed in only: synced, syncing,
- *                    offline, couldn't sync, files to review. Its popover says
- *                    the state and offers Sync now and Review differences.
+ *                    offline, couldn't sync, files to review, changes made
+ *                    offline. Its popover says the state and offers Sync now
+ *                    and Review differences, or, held, the offline review.
  *   the strip        a segment only when something needs you (status-strip-
  *                    segments.mjs `sync`), and "Back online" in passing.
  *   the explorer     files changed in two places are marked.
@@ -13,6 +14,7 @@
  * when the person asks (docs/UI.md §3).
  */
 import { openReviewDifferences, refreshReviewDifferences, resolveDifference } from '../ui/review-differences.mjs';
+import { openReviewOffline } from '../ui/review-offline.mjs';
 
 const g = typeof window !== 'undefined' ? window : globalThis;
 
@@ -32,7 +34,7 @@ const GLYPHS = {
 /** How the cloud looks for a state: waiting for a round and in one read the same. */
 export function cloudLook(state) {
   if (state === 'pending' || state === 'syncing') return 'syncing';
-  if (state === 'differs' || state === 'error') return 'alert';
+  if (state === 'differs' || state === 'error' || state === 'held') return 'alert';
   return state === 'offline' ? 'offline' : 'synced';
 }
 
@@ -58,6 +60,8 @@ export function cloudWords(s, now = Date.now()) {
     }
     case 'offline':
       return { tip: 'Offline', title: 'Offline', detail: 'Changes sync when you’re back online.' };
+    case 'held':
+      return { tip: 'Changes made offline', title: 'Changes made offline', detail: 'They wait for you to upload them, or use the cloud’s version.', tone: 'warning' };
     case 'error':
       return { tip: 'Couldn’t sync', title: 'Couldn’t sync', detail: 'BelJar keeps trying.', tone: 'error' };
     case 'syncing':
@@ -74,7 +78,7 @@ function renderCloud(s) {
   btn.hidden = !s.signedIn;
   if (!s.signedIn) return;
   const look = cloudLook(s.state);
-  btn.dataset.state = s.state === 'differs' ? 'differs' : look;
+  btn.dataset.state = s.state === 'differs' || s.state === 'held' ? 'differs' : look;
   btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
     + GLYPHS[look] + '</svg>';
   const tip = cloudWords(s).tip;
@@ -90,6 +94,11 @@ function menuItems() {
   const items = [{ type: 'status', title: words.title, detail: words.detail, tone: words.tone }];
   if (s.differs.length) {
     items.push({ type: 'separator' }, { label: 'Review differences', onSelect: () => openReviewDifferences() });
+  }
+  // Held, the review is the way on: Upload is there, beside what it sends.
+  if (s.state === 'held') {
+    items.push({ type: 'separator' }, { label: 'Review changes made offline', onSelect: () => openReviewOffline() });
+    return items;
   }
   items.push({ type: 'separator' }, {
     label: 'Sync now',
@@ -116,10 +125,13 @@ function markExplorer(s) {
     : '';
 }
 
-// "When the same lines changed": Ask leaves it to the review window; Keep mine
-// and Use cloud settle what came from the cloud as soon as it appears.
+// Settings > Account: merging, "Where edits overlap: Keep mine / Keep the
+// cloud’s" settles what came from the cloud to that side as soon as it
+// appears. Asking (either setting) leaves it to the review window.
 function applyPreference(s) {
-  const how = g.Settings && g.Settings.get('syncOverlap');
+  const S = g.Settings;
+  if (!S || S.get('syncBothChanged') !== 'merge') return false;
+  const how = S.get('syncOverlap');
   if (how !== 'mine' && how !== 'cloud') return false;
   let settled = false;
   for (const c of s.differs) {
@@ -133,6 +145,11 @@ function say(text) {
   if (g.StatusStrip && typeof g.StatusStrip.setMessage === 'function') g.StatusStrip.setMessage(text);
 }
 
+/** "Say when you go offline" (Settings > Account): the strip's notes, never the cloud's state. */
+function notices() {
+  return !g.Settings || g.Settings.get('syncNotices') !== false;
+}
+
 function update(s) {
   if (applyPreference(s)) return; // the summary moves again, and comes back here
   const before = summary;
@@ -140,17 +157,20 @@ function update(s) {
   if (s.state === 'offline') wasOffline = true;
   else if (wasOffline && s.state === 'synced') {
     wasOffline = false;
-    if (before) say('Back online. Everything is synced.');
+    if (before && notices()) say('Back online. Everything is synced.');
   }
   renderCloud(s);
   markExplorer(s);
   refreshReviewDifferences();
-  if (g.StatusStrip && typeof g.StatusStrip.setEditorState === 'function') g.StatusStrip.setEditorState({ sync: s });
+  if (g.StatusStrip && typeof g.StatusStrip.setEditorState === 'function') {
+    g.StatusStrip.setEditorState({ sync: Object.assign({}, s, { notices: notices() }) });
+  }
 }
 
 export const SyncUI = {
   menuItems,
   review: () => openReviewDifferences(),
+  reviewOffline: () => openReviewOffline(),
   summary: () => summary || (g.Persist ? g.Persist.syncSummary() : null),
 };
 g.SyncUI = SyncUI;
@@ -163,6 +183,13 @@ if (typeof document !== 'undefined') {
     update(P.syncSummary());
     // Signing in, switching project: the summary is the same, what it means here is not.
     g.addEventListener('beljar:account', () => update(P.syncSummary()));
+    // A sync setting changed (here, in another tab, or from another device):
+    // show it now, and let "Where edits overlap" settle what waits.
+    if (g.Settings && typeof g.Settings.subscribe === 'function') {
+      g.Settings.subscribe((e) => {
+        if (e && Array.isArray(e.ids) && e.ids.some((id) => /^sync/.test(id))) update(P.syncSummary());
+      });
+    }
     g.addEventListener('beljar:project-tree-changed', () => { if (summary) markExplorer(summary); });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go, { once: true });

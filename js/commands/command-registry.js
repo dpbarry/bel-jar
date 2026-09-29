@@ -110,11 +110,26 @@
     { id: "inspectorFollow", section: "workspace", default: ON },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
-    { id: "syncSettings", section: "workspace", default: ON, sync: false },
-    // A file changed here and in the cloud in the same lines: ask (the review
-    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
-    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
+    { id: "syncSettings", section: "account", default: ON, sync: false },
+    // A file changed on this device and in the cloud since they last synced:
+    // 'merge' what merges, or 'ask' about every such file (nothing merges by
+    // itself: sync/merge-project.mjs `askAll`).
+    { id: "syncBothChanged", section: "account", default: "merge", values: ["merge", "ask"] },
+    // Merging, the lines changed on both sides: 'ask' (the review window), or
+    // settle them to 'mine' or the 'cloud' as they appear (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "account", default: "ask", values: ["ask", "mine", "cloud"] },
+    // Edits made while offline, once back online: 'upload' on their own, or 'ask'
+    // first (held until the person uploads them or takes the cloud's instead).
+    { id: "syncReconnect", section: "account", default: "upload", values: ["upload", "ask"] },
+    // "Offline" in the strip, and "Back online" when it returns. The cloud beside
+    // the project name says it either way.
+    { id: "syncNotices", section: "account", default: ON },
+    // Signing out on this browser: 'remove' the account's projects (safe on a
+    // shared computer), or 'keep' them here to work on signed out; they sync
+    // again when the same account signs in (work.mjs `keptAccounts`).
+    { id: "signOutKeep", section: "account", default: "remove", values: ["remove", "keep"], sync: false },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -1030,6 +1045,7 @@
     { id: "account.sign-out", title: "Sign Out", section: "Account", scope: "global", palette: true, keybindable: true },
     { id: "sync.now", title: "Sync Now", section: "Account", scope: "global", palette: true, keybindable: true },
     { id: "sync.review", title: "Review Differences", section: "Account", scope: "global", palette: true, keybindable: true },
+    { id: "sync.review-offline", title: "Review Changes Made Offline", section: "Account", scope: "global", palette: true, keybindable: true },
     // ── Tools ──────────────────────────────────────────────────────────────────
     // Not keybindable: `nav.anywhere` owns Mod+K. The literal `shortcut` is the
     // palette's own display fallback for an entry with no chord of its own.

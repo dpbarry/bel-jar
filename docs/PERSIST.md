@@ -488,21 +488,54 @@ it looks is [`docs/UI.md`](UI.md)).
   and, when it says everything is on the server, removes the account's projects from the browser,
   with sync stopped and its last round finished first. The only question it ever asks is when that
   cannot be confirmed: "Not everything is in the cloud yet", Stay signed in or Sign out anyway.
+  With "Projects in this browser: Keep them" nothing leaves, so nothing is asked: the account's
+  projects stay, usable signed out (device `keptAccounts`, `work.mjs` `isVisible`), never adopted by
+  another account, and syncing again, with what was done meanwhile, when the same account signs in.
+- **Settings > Account** (`settings-schema.mjs`, section `account`, with its own Reset):
+  - *Sync settings* (`syncSettings`, this device only).
+  - *Changed in two places* (`syncBothChanged`): a file edited here and in the cloud since they
+    last synced. `merge` ("Merge them", the default), or `ask` ("Ask me"): nothing merges by
+    itself (`merge-project.mjs` `askAll`), and every such file waits in Review differences,
+    unless both sides made the very same change.
+  - *Where edits overlap* (`syncOverlap`), nested under it and shown only when merging: `ask`
+    (the review), or `mine` / `cloud`, settled to that side as they appear (`sync-ui.mjs`).
+  - *Back online* (`syncReconnect`): `upload` ("Upload them", the default), or `ask` ("Ask me
+    first"): see "held" below.
+  - *Say when you go offline* (`syncNotices`): the strip's "Offline" and "Back online". The cloud
+    says it either way.
+  - *Projects in this browser*, under Signing out (`signOutKeep`, this device only): `remove` or
+    `keep`.
+  ⛔ Each choice is short enough for its control (11rem): the probe measures every trigger.
+- **Held: "Back online: Ask me first"** (`js/persist/sync/hold.mjs`). When the connection
+  goes (the browser says so, or a round cannot reach the server) while this device has work the
+  cloud lacks, the runner is held (`runner.hold`): no round runs, in either direction, until the
+  person decides. Back online, the summary says `held`, the strip "Changes made offline", and
+  the review (`js/ui/review-offline.mjs`) lists each project with what changed (edited with a
+  compact diff against the cloud's text, new, renamed, deleted; a project made offline, a project
+  deleted offline, and one the cloud deleted meanwhile), then Upload (releases, from any tab:
+  `Persist.releaseSync`) or "Use the cloud’s" (`engine.useCloud`: the head's texts, tree and name,
+  a deletion here undone, a deletion there taken, files waiting for review settled). ⛔ The hold is
+  the device's, not the tab's: the device row `syncHeldFor` names the account it holds for, so a
+  reload keeps it and whichever tab syncs next takes it up; a hold with nothing left to show
+  (undone, or the cloud's taken) lets go by itself once back online, and so does the setting going
+  back to "Upload them". ⛔ `runner.release` reports the release together with the round it starts:
+  released-and-still-offline in between would be held again before the round could try.
 - **One summary, every tab** (`js/persist/sync/sync-status.mjs`): signed in, the state (`differs`,
-  `offline`, `error`, `syncing`, `pending`, `synced`, in that order of what needs you), the last
+  `offline`, `held`, `error`, `syncing`, `pending`, `synced`, in that order of what needs you;
+  held while the browser is offline reads `offline`, since nothing can be done yet), the last
   sync, and the files changed in two places. Only the tab holding the lock runs rounds; it posts
   its runner's status as a tab message, a tab that opens asks for it, and every tab builds the same
   summary (`Persist.syncSummary`, `Persist.onSyncSummary`).
 - **Where it shows** (`js/account/sync-ui.mjs`): a cloud beside the project name, signed in only
   (synced, syncing, offline, couldn't sync, files to review), whose popover says the state and
   offers Sync now and Review differences; a strip segment only when something needs you (files to
-  review, offline, a failing round) and "Back online. Everything is synced." in passing; the explorer
-  marks files changed in two places. Nothing toasts.
+  review, offline, a failing round, changes made offline) and "Back online. Everything is synced."
+  in passing; the explorer marks files changed in two places. Nothing toasts.
 - **The same lines changed in two places** interrupt nothing: both versions are kept (§4.4), and
   Review differences (`js/ui/review-differences.mjs`, opened from the strip or the cloud) shows each
   file's compact diff with Keep mine or Use cloud. The open file is settled through its document
   (`App.resolveOpenConflict`), any other through storage (`Persist.resolveStoredConflict`). Settings
-  > Account > "When the same lines changed" can settle what comes from the cloud as it appears.
+  > Account > "Changed in two places" can settle what comes from the cloud as it appears.
 - While a menu is open, toasts fade back and let clicks through: they live in the top layer, and
   one sat over the account menu.
 
@@ -531,7 +564,11 @@ checks do not run there; sign-in, editing and sync do.
   out on the server. `tests/test-account.mjs`: the page's decisions (what sign-in adopts, when
   removal is safe, every failure explained). `tests/test-sync-status.mjs`: the summary's order,
   every tab told the same, a non-syncing tab confirming through the syncing one, the time limit,
-  the runner's `pending` and `safe`, and the messages stored at all. `tests/test-review-differences.mjs`:
+  the runner's `pending` and `safe`, held and released from any tab, and the messages stored at
+  all. `tests/test-sync-hold.mjs`: "Ask me first" on the real runner: never by default,
+  held at an offline edit, Upload, still unreachable, a reload, opened offline, the next tab taking
+  it up, nothing waiting, the setting. `tests/test-sync-engine.mjs` §12–14: ask about every file,
+  kept on sign-out, and what the offline review reads and takes. `tests/test-review-differences.mjs`:
   a real two-device conflict listed, both sides read, Use cloud, Keep mine reaching the other
   device, the diff, the strip segment, the cloud's words. `scratch/probes/probe-account.mjs`: the
   whole thing in Chrome, two devices: sign-in asking nothing, the empty project joining at its

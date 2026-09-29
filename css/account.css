@@ -164,6 +164,29 @@
   white-space: nowrap;
 }
 
+/* Changes made offline (js/ui/review-offline.mjs): a project, then its files. */
+.review__project {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ui-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review__changes,
+.review__kind {
+  color: var(--ui-fg-muted);
+  white-space: nowrap;
+}
+
+.review__change {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .review__actions,
 .review__all {
   display: flex;
@@ -179,6 +202,11 @@
 .review__all {
   justify-content: flex-end;
   padding-top: 0.2rem;
+}
+
+.review__problem {
+  margin: 0;
+  color: var(--ide-status-error);
 }
 
 .review-diff {

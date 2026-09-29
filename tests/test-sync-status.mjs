@@ -29,6 +29,12 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   expect(st({ runner: { state: 'idle', pending: true, lastSync: 5 } }) === 'pending', 'a change waiting for the next round: pending');
   expect(st({ runner: { state: 'idle', lastSync: 5 } }) === 'synced', 'nothing waiting: synced');
   expect(st({ runner: { state: 'idle' } }) === 'syncing', 'signed in and no round finished yet: syncing, never a false "synced"');
+  // Held ("Back online: Ask me first"): the edits wait for the person.
+  expect(st({ runner: { state: 'offline', held: true }, online: false }) === 'offline', 'held while the browser is offline: offline, nothing to do yet');
+  expect(st({ runner: { state: 'offline', held: true } }) === 'held', 'held and back online: held, though the runner last said offline');
+  expect(st({ runner: { state: 'idle', held: true, lastSync: 5 } }) === 'held', 'held outranks synced');
+  expect(st({ runner: { state: 'error', held: true } }) === 'held', 'and a failed round');
+  expect(st({ differs: file, runner: { state: 'idle', held: true } }) === 'differs', 'files to review still come first');
 }
 
 // ── two tabs, one lock ──────────────────────────────────────────────────────
@@ -63,6 +69,13 @@ function fakeRunner(leader) {
       const res = r.next;
       r.set({ state: 'idle', lastSync: status.lastSync + 1, safe: roundIsSafe(res), pending: false });
       return res;
+    },
+    releases: 0,
+    hold() { r.set({ held: true }); },
+    async release() {
+      r.releases += 1;
+      r.set({ held: false });
+      return r.syncNow();
     },
   };
   return r;
@@ -111,6 +124,17 @@ function fakeRunner(leader) {
   leadRunner.next = { projects: { p: { status: 'pushed' } } };
   const own = await leaderTab.confirm(1000);
   expect(own.ok === true && leadRunner.rounds === 3, 'the syncing tab confirms by itself');
+
+  // Held: every tab shows it, and Upload from any tab lets the rounds go.
+  leadRunner.hold();
+  await tick();
+  expect(otherTab.summary().state === 'held', `a tab that does not sync shows the hold (${otherTab.summary().state})`);
+  const up = await otherTab.release(1000);
+  expect(up.ok === true && leadRunner.releases === 1 && leadRunner.rounds === 4, `Upload in a tab that does not sync: the syncing tab releases, and a round runs (${JSON.stringify(up)})`);
+  await tick();
+  expect(otherTab.summary().state === 'synced' && leaderTab.summary().state === 'synced', 'and every tab hears it');
+  leadRunner.hold();
+  expect((await leaderTab.release(1000)).ok === true && leadRunner.releases === 2, 'the syncing tab releases by itself');
 }
 
 {
@@ -123,6 +147,8 @@ function fakeRunner(leader) {
   expect(r.ok === false && r.reason === 'no-answer' && Date.now() - t0 < 1000, `no syncing tab: "no answer" after the wait (${JSON.stringify(r)})`);
   const off = createSyncStatus({ account: () => 'u_1', conflicts: () => [], tabs: bus.tab() });
   expect((await off.confirm(10)).reason === 'not-syncing', 'sync never started: not safe, and says why');
+  const gone = await lone.release(60);
+  expect(gone.ok === false && gone.reason === 'no-answer', 'Upload with no syncing tab: "no answer", never a hang');
 }
 
 // ── the runner: pending and safe ────────────────────────────────────────────
@@ -188,4 +214,4 @@ function fakeRunner(leader) {
   expect(heard.includes(STATUS_MESSAGE) && heard.includes(ASK_MESSAGE), `and the other tab hears them (${heard.join()})`);
 }
 
-console.log(`OK sync status (${n} checks: the state order, every tab told the same, asking the syncing tab, the time limit, pending and safe, the messages stored)`);
+console.log(`OK sync status (${n} checks: the state order, every tab told the same, asking the syncing tab, held and released from any tab, the time limit, pending and safe, the messages stored)`);

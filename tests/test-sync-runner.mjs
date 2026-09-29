@@ -4,6 +4,7 @@
 // seen to happen at the moment it should.
 import { createSyncRunner, SYNC_LOCK } from '../js/persist/sync/runner.mjs';
 import { TOMBSTONES_KEY } from '../js/persist/keys.mjs';
+import { flush, clock, lockManager, storeStub } from './_runner-env.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -11,61 +12,6 @@ function expect(cond, msg) {
   if (cond) return;
   console.error('FAIL:', msg);
   process.exit(1);
-}
-
-const flush = () => new Promise((r) => setImmediate(r));
-
-function clock() {
-  let t = 0;
-  const due = [];
-  return {
-    now: () => t,
-    timers: {
-      set(fn, ms) { const h = { at: t + ms, fn }; due.push(h); return h; },
-      clear(h) { const i = due.indexOf(h); if (i >= 0) due.splice(i, 1); },
-    },
-    async advance(ms) {
-      const end = t + ms;
-      for (;;) {
-        due.sort((a, b) => a.at - b.at);
-        if (!due.length || due[0].at > end) break;
-        const h = due.shift();
-        t = h.at;
-        h.fn();
-        await flush();
-      }
-      t = end;
-      await flush();
-    },
-  };
-}
-
-/** The Web Locks API, as far as the runner uses it: one holder, the rest queue. */
-function lockManager() {
-  const queue = [];
-  let held = null;
-  function grant() {
-    if (held || !queue.length) return;
-    held = queue.shift();
-    Promise.resolve(held.fn()).then(() => { held = null; grant(); });
-  }
-  return {
-    request(name, opts, fn) {
-      return new Promise((resolve, reject) => {
-        const entry = { name, fn, reject };
-        if (opts && opts.signal) {
-          opts.signal.addEventListener('abort', () => {
-            const i = queue.indexOf(entry);
-            if (i >= 0) { queue.splice(i, 1); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); }
-          });
-        }
-        queue.push(entry);
-        grant();
-        resolve();
-      });
-    },
-    holder: () => held,
-  };
 }
 
 function engineStub() {
@@ -83,14 +29,6 @@ function engineStub() {
     }
   };
   return e;
-}
-
-function storeStub() {
-  const fns = new Set();
-  return {
-    subscribe(fn) { fns.add(fn); return () => fns.delete(fn); },
-    emit(e) { for (const fn of [...fns]) fn(e); },
-  };
 }
 
 const OPTS = { quietMs: 5000, maxWaitMs: 30000, pollMs: 60000, backoff: [5000, 15000, 60000] };
@@ -264,4 +202,31 @@ const OPTS = { quietMs: 5000, maxWaitMs: 30000, pollMs: 60000, backoff: [5000, 1
   r.stop();
 }
 
-console.log(`OK sync runner (${n} checks: one tab, quiet spell, longest wait, poll, no overlap, backoff, hand-over)`);
+// ── held: no round until released ("Back online: Ask me first") ─────
+{
+  const c = clock();
+  const store = storeStub();
+  const e = engineStub();
+  const r = createSyncRunner({ engine: e, store, locks: lockManager(), timers: c.timers, now: c.now, ...OPTS });
+  r.hold();
+  expect(r.status().held === true, 'held before it starts: the status says so');
+  r.start();
+  await flush();
+  expect(r.status().leader && e.calls === 0, 'holding the lock, held: the first round waits');
+  store.emit({ key: 'beljar/p/p1/f/f1', cls: 'work', origin: 'local' });
+  expect(r.status().pending === true, 'a change is still heard, and waits');
+  await c.advance(OPTS.maxWaitMs + OPTS.pollMs);
+  expect(e.calls === 0, 'no quiet spell, longest wait or poll runs a round while held');
+  expect((await r.syncNow()) === null && e.calls === 0, 'nor does asking');
+  r.hold();
+  expect(r.status().held === true, 'holding twice is holding');
+  const res = await r.release();
+  expect(e.calls === 1 && res && r.status().held === false && r.status().pending === false, 'released: one round at once, carrying what waited');
+  expect((await r.release()) === null && e.calls === 1, 'releasing what is not held does nothing');
+  store.emit({ key: 'beljar/p/p1/f/f1', cls: 'work', origin: 'local' });
+  await c.advance(OPTS.quietMs);
+  expect(e.calls === 2, 'and rounds run as before');
+  r.stop();
+}
+
+console.log(`OK sync runner (${n} checks: one tab, quiet spell, longest wait, poll, no overlap, backoff, hand-over, held)`);

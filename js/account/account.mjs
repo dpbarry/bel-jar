@@ -253,10 +253,14 @@ async function signOut() {
   if (!user) return;
   const P = g.Persist;
   saveNow();
-  // The last round, run by whichever tab syncs, must say everything is in the
-  // cloud: removing the projects is what signing out does.
-  const check = await P.confirmSynced();
-  if (!check.ok) {
+  // "Your projects: Keep in this browser" (Settings > Account): nothing leaves,
+  // so nothing can be lost and nothing is asked. One last round still brings
+  // the cloud up to date where it can, but signing out does not wait on it.
+  const keep = !!(g.Settings && g.Settings.get('signOutKeep') === 'keep');
+  // Removing: the last round, run by whichever tab syncs, must say everything
+  // is in the cloud first.
+  const check = await P.confirmSynced(keep ? 5000 : undefined);
+  if (!keep && !check.ok) {
     const choice = await g.PromptDialog.open({
       ariaLabel: 'Sign out',
       message: 'Not everything is in the cloud yet.',
@@ -277,7 +281,8 @@ async function signOut() {
   try {
     await fetch('/api/auth/signout', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}' });
   } catch (_) { /* the session ends here either way */ }
-  P.removeAccountProjects(user.id);
+  if (keep) P.keepAccountProjects(user.id);
+  else P.removeAccountProjects(user.id);
   P.setAccount(null);
   g.location.reload();
 }

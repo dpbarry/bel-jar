@@ -2,7 +2,7 @@ import globals from 'globals';
 
 /** Window globals published by the shell / editor seam (system nouns). */
 const SHELL_GLOBALS = [
-  'Account', 'SyncUI', 'ReviewDifferences',
+  'Account', 'SyncUI', 'ReviewDifferences', 'ReviewOffline',
   'AvailableMacros',
   'BelEditor',
   'BelugaClient',

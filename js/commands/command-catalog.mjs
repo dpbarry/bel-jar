@@ -636,6 +636,7 @@ export const CATALOG = [
   { id: 'account.sign-out', title: 'Sign Out', section: 'Account', scope: 'global', palette: true, keybindable: true },
   { id: 'sync.now', title: 'Sync Now', section: 'Account', scope: 'global', palette: true, keybindable: true },
   { id: 'sync.review', title: 'Review Differences', section: 'Account', scope: 'global', palette: true, keybindable: true },
+  { id: 'sync.review-offline', title: 'Review Changes Made Offline', section: 'Account', scope: 'global', palette: true, keybindable: true },
 
   // ── Tools ──────────────────────────────────────────────────────────────────
   // Not keybindable: `nav.anywhere` owns Mod+K. The literal `shortcut` is the

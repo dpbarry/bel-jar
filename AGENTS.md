@@ -19,7 +19,7 @@ BelJar is a browser IDE for the Beluga proof assistant. The AST/semantic engine 
 ## Quick commands
 
 ```bash
-npm test                  # full suite: 245 files, ~90s (BELJAR_TEST_JOBS=8 default)
+npm test                  # full suite: 286 files, ~110s (BELJAR_TEST_JOBS=8 default)
 npm run test:fast         # same minus the 7 Beluga integration files, ~50s — says so on exit
 npm run build             # editor + shell ESM leaves + library (not OCaml)
 npm run check:build       # fail when authored .mjs is newer than committed .js

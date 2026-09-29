@@ -42,6 +42,11 @@ function runModel(raw) {
   };
 }
 
+function accountIds(raw) {
+  if (!Array.isArray(raw)) return undefined;
+  return [...new Set(raw.filter((id) => typeof id === 'string' && id !== ''))];
+}
+
 const PANEL_W = { group: 'layout', default: 250, min: 160, max: 512, integer: true, boot: true };
 const PANEL_H = { group: 'layout', default: 190, min: 96, max: 384, integer: true, boot: true };
 
@@ -51,6 +56,13 @@ export const DEVICE = [
   // the account this browser is signed in as ('' signed out): whose projects it
   // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
   { id: 'account', type: 'string', default: '' },
+  // signed out with "Keep in this browser": the accounts whose projects stay
+  // here, usable signed out and never adopted by another account (work.mjs
+  // `isVisible`). Each leaves the list when it signs in again.
+  { id: 'keptAccounts', type: 'json', default: [], normalize: accountIds },
+  // "Back online: Ask me first": the account whose offline edits wait
+  // for the person ('' none). Outlives a reload (sync/hold.mjs).
+  { id: 'syncHeldFor', type: 'string', default: '' },
   // durability.mjs: when this browser was last asked to keep BelJar's storage,
   // and when this device was told Safari may delete it (ms; 0: never)
   { id: 'persistAskedAt', type: 'number', default: 0 },

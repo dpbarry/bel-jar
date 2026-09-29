@@ -104,7 +104,11 @@ export function mergeProject(a) {
         const theirs = need(t.hash);
         if (baseText === undefined || theirs === undefined) continue;
         const r = merge3(baseText, mine, theirs);
-        if (r.ok) {
+        // `askAll` ("Changed in two places: Ask me", Settings > Account):
+        // nothing merges by itself, so a clean merge waits for a person as an
+        // overlap does. The very same change on both sides never gets here:
+        // equal hashes are settled above, with nothing to ask.
+        if (r.ok && !a.askAll) {
           out.push({ id, path, text: r.text });
         } else {
           out.push({ id, path, text: theirs });

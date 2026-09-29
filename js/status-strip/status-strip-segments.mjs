@@ -316,7 +316,13 @@ const BUILDERS = {
       };
     }
     if (!x.signedIn) return null;
-    if (x.state === 'offline') {
+    // Edits made offline, held for the person: a thing to do, so it shows
+    // whatever "Say when you go offline" says.
+    if (x.state === 'held') {
+      return { key: 'sync', text: 'Changes made offline', tone: 'warning', title: 'Review changes made offline', action: 'review-offline' };
+    }
+    // "Say when you go offline" off: the cloud still says it, the strip does not.
+    if (x.state === 'offline' && x.notices !== false) {
       return { key: 'sync', text: 'Offline', tone: 'warning', title: 'Changes sync when you’re back online' };
     }
     if (x.state === 'error') {

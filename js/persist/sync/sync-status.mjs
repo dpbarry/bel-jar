@@ -19,8 +19,10 @@ export const ASK_MESSAGE = 'sync-ask';
  * The one summary: { signedIn, state, lastSync, error, differs }.
  *
  * state: 'off' (signed out) | 'differs' (files changed in two places wait for a
- * person) | 'offline' | 'error' | 'syncing' | 'pending' (a change waits for the
- * next round) | 'synced'. The order is what needs the person first. `differs`
+ * person) | 'offline' | 'held' (edits made offline wait to be uploaded or
+ * dropped: "Back online: Ask me first") | 'error' | 'syncing' |
+ * 'pending' (a change waits for the next round) | 'synced'. The order is what
+ * needs the person first. `differs`
  * lists the files, and is filled signed out too: two tabs can differ with no
  * account at all.
  */
@@ -30,7 +32,11 @@ export function summarize({ account, runner, online, differs }) {
   const st = runner || {};
   let state;
   if (files.length) state = 'differs';
-  else if (online === false || st.state === 'offline') state = 'offline';
+  else if (online === false) state = 'offline';
+  // Held, the runner's last word stays "offline" until someone releases it:
+  // back online, what shows is that the edits wait.
+  else if (st.held) state = 'held';
+  else if (st.state === 'offline') state = 'offline';
   else if (st.state === 'error') state = 'error';
   else if (st.state === 'syncing') state = 'syncing';
   else if (st.pending) state = 'pending';
@@ -85,7 +91,7 @@ export function createSyncStatus(o) {
   function tell(st, answered) {
     o.tabs.post(STATUS_MESSAGE, {
       state: st.state, pending: !!st.pending, lastSync: st.lastSync || 0, error: st.error || null,
-      safe: !!st.safe, at: now(), answered: answered || null,
+      safe: !!st.safe, held: !!st.held, at: now(), answered: answered || null,
     });
   }
 
@@ -100,7 +106,9 @@ export function createSyncStatus(o) {
       }
       emit();
     } else if (kind === ASK_MESSAGE && leading() && runner) {
-      if (msg.round) {
+      if (msg.release) {
+        runner.release().then(() => tell(runner.status(), msg.id));
+      } else if (msg.round) {
         runner.syncNow().then(() => tell(runner.status(), msg.id));
       } else {
         tell(local, null);
@@ -142,6 +150,25 @@ export function createSyncStatus(o) {
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
+    },
+
+    /**
+     * Let held rounds run again (the person chose Upload): the syncing tab
+     * releases its runner; any other asks it to. Resolves once it has.
+     */
+    release(timeoutMs = 15000) {
+      if (!runner) return Promise.resolve({ ok: false, reason: 'not-syncing' });
+      if (leading()) return runner.release().then(() => ({ ok: true, reason: null }));
+      const id = newId();
+      return new Promise((resolve) => {
+        asked.set(id, () => resolve({ ok: true, reason: null }));
+        o.tabs.post(ASK_MESSAGE, { id, release: true, at: now() });
+        timers.set(() => {
+          if (!asked.has(id)) return;
+          asked.delete(id);
+          resolve({ ok: false, reason: 'no-answer' });
+        }, timeoutMs);
+      });
     },
 
     /**

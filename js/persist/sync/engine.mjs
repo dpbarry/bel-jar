@@ -239,6 +239,8 @@ export function createSyncEngine(opts) {
         text: (h) => texts.get(h),
         conflicted: local.conflicted,
         newFileId: () => work.newFileId(pid),
+        // "Changed in two places: Ask about every file" (Settings > Account).
+        askAll: !!(opts.settings && opts.settings.get('syncBothChanged') === 'ask'),
       });
       if (r.needs) {
         if (fetched) throw bad('a merge needed a file the server did not send');
@@ -270,6 +272,105 @@ export function createSyncEngine(opts) {
     if (!work.applyProject(pid, project, { owner: account })) throw storageFailure('a downloaded project');
     writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
     return { status: 'downloaded' };
+  }
+
+  // ── "Back online: Ask me first" (hold.mjs, review-offline.mjs) ────────────
+
+  /**
+   * What this device changed in the account's projects since they last synced,
+   * for the person to see before it goes up: [{ pid, name, isNew, deleted,
+   * renamed, files: [{ fid, path, change }] }], `change` one of 'added',
+   * 'edited', 'renamed', 'deleted'. `isNew`: the cloud never had it from here;
+   * `deleted`: deleted here. Local records only; nothing is sent.
+   */
+  async function localChanges() {
+    const out = [];
+    for (const p of work.allProjects()) {
+      if (p.owner !== account) continue;
+      const local = await localSide(p.id);
+      if (!local || !local.manifest) continue;
+      const rec = readRecord(p.id);
+      const base = rec && rec.version ? rec.manifest : null;
+      if (base && sameManifest(local.manifest, base)) continue;
+      const before = new Map((base ? base.files : []).map((f) => [f.id, f]));
+      const files = [];
+      for (const f of local.manifest.files) {
+        const b = before.get(f.id);
+        before.delete(f.id);
+        if (!b) files.push({ fid: f.id, path: f.path, change: 'added' });
+        else if (b.hash !== f.hash) files.push({ fid: f.id, path: f.path, change: 'edited' });
+        else if (b.path !== f.path) files.push({ fid: f.id, path: f.path, change: 'renamed' });
+      }
+      for (const [fid, b] of before) files.push({ fid, path: b.path, change: 'deleted' });
+      out.push({
+        pid: p.id,
+        name: local.meta.name,
+        isNew: !base,
+        deleted: false,
+        renamed: !!base && base.name !== local.meta.name,
+        files,
+      });
+    }
+    const tombs = work.readTombstones();
+    for (const pid of Object.keys(tombs).sort()) {
+      if (tombs[pid].owner !== account) continue;
+      out.push({ pid, name: tombs[pid].name, isNew: false, deleted: true, renamed: false, files: [] });
+    }
+    return out;
+  }
+
+  /**
+   * The cloud's side of a project, to set beside this device's: { state, name,
+   * texts }. `state` is 'absent' (it never had it), 'deleted' or 'present';
+   * `texts` holds the cloud's text of each of `fids`, null where it has no
+   * such file.
+   */
+  async function cloudSide(pid, fids = []) {
+    const head = readHead(await call('head', pid));
+    if (!head) return { state: 'absent', name: null, texts: {} };
+    if (head.deleted) return { state: 'deleted', name: null, texts: {} };
+    const byId = new Map(head.manifest.files.map((f) => [f.id, f]));
+    const got = await fetchTexts(pid, [...new Set(fids.map((id) => byId.get(id)).filter(Boolean).map((f) => f.hash))]);
+    const texts = {};
+    for (const id of fids) {
+      const f = byId.get(id);
+      texts[id] = f ? got.get(f.hash) : null;
+    }
+    return { state: 'present', name: head.manifest.name, texts };
+  }
+
+  /**
+   * Make this device's copy of a project the cloud's ("Use the cloud’s"). The
+   * cloud has it: every text, the tree and the name become the head's, a
+   * deletion here is undone, and files waiting for review stop waiting. The
+   * cloud deleted it: it goes here too. Either way nothing of this device's is
+   * left to send. False when the cloud never had it: there is nothing to take.
+   * An open editor takes the change as it takes another device's.
+   */
+  async function useCloud(pid) {
+    const head = readHead(await call('head', pid));
+    if (!head) return false;
+    if (head.deleted) {
+      if (work.readTombstones()[pid]) work.dropTombstone(pid);
+      if (work.snapshotProject(pid)) work.forgetProject(pid);
+      return true;
+    }
+    const theirs = head.manifest;
+    const got = await fetchTexts(pid, [...new Set(theirs.files.map((f) => f.hash))]);
+    const project = {
+      name: theirs.name,
+      createdAt: theirs.createdAt,
+      files: theirs.files.map((f) => ({ id: f.id, path: f.path, text: got.get(f.hash) })),
+      folders: theirs.folders,
+      suites: theirs.suites,
+    };
+    // Nothing is awaited from here to the last write.
+    const snap = work.snapshotProject(pid);
+    if (snap) for (const fid of snap.conflicted) work.removeConflict(fid, pid);
+    if (work.readTombstones()[pid]) work.dropTombstone(pid);
+    if (!work.applyProject(pid, project, { owner: account })) throw storageFailure('the cloud’s version of a project');
+    writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
+    return true;
   }
 
   async function settleTombstone(pid, tomb, head) {
@@ -391,5 +492,5 @@ export function createSyncEngine(opts) {
     return { projects, settings };
   }
 
-  return { account, syncAll, syncProject, syncSettings: settingsSync.sync };
+  return { account, syncAll, syncProject, syncSettings: settingsSync.sync, localChanges, cloudSide, useCloud };
 }

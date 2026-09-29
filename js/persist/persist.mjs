@@ -24,6 +24,7 @@ import { parseKey } from './keys.mjs';
 import { createSyncEngine } from './sync/engine.mjs';
 import { createSyncRunner } from './sync/runner.mjs';
 import { createSyncStatus } from './sync/sync-status.mjs';
+import { createHoldPolicy } from './sync/hold.mjs';
 import { createDurability } from './durability.mjs';
 
 // ── a full disk: reported once, cleared when writes succeed again ──────────
@@ -289,6 +290,8 @@ whenPageReady(function () {
 });
 
 var syncRunner = null;
+var syncEngine = null;
+var holdPolicy = null;
 
 // What sync is doing, the same in every tab (sync/sync-status.mjs).
 var syncStatus = createSyncStatus({
@@ -331,6 +334,20 @@ function startSync(opts) {
     store: store,
     locks: opts.locks !== undefined ? opts.locks : (nav && nav.locks) || null,
   });
+  syncEngine = engine;
+  // "Back online: Ask me first" (Settings > Account): what this device
+  // did offline waits for the person before it goes up (sync/hold.mjs).
+  holdPolicy = createHoldPolicy({
+    runner: syncRunner,
+    engine: engine,
+    device: Device,
+    settings: Settings,
+    account: account,
+    online: function () {
+      var n = globalThis.navigator;
+      return !n || n.onLine !== false;
+    },
+  });
   syncRunner.start();
   syncStatus.attach(syncRunner);
   return syncRunner;
@@ -340,6 +357,9 @@ function startSync(opts) {
 function stopSync() {
   const r = syncRunner;
   syncRunner = null;
+  syncEngine = null;
+  if (holdPolicy) holdPolicy.stop();
+  holdPolicy = null;
   syncStatus.detach();
   return r ? r.stop() : Promise.resolve();
 }
@@ -350,9 +370,14 @@ function syncNow() {
 }
 
 if (typeof globalThis.addEventListener === 'function') {
-  globalThis.addEventListener('online', function () { syncStatus.refresh(); syncNow(); });
-  globalThis.addEventListener('offline', function () { syncStatus.refresh(); });
+  globalThis.addEventListener('online', function () { syncStatus.refresh(); if (holdPolicy) holdPolicy.check(); syncNow(); });
+  globalThis.addEventListener('offline', function () { syncStatus.refresh(); if (holdPolicy) holdPolicy.check(); });
 }
+// "Back online" changed, here, in another tab or on another device: back to
+// "Upload them", what waits goes.
+Settings.subscribe(function (e) {
+  if (holdPolicy && e && Array.isArray(e.ids) && e.ids.indexOf('syncReconnect') >= 0) holdPolicy.check();
+});
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') syncNow();
@@ -373,6 +398,7 @@ export const Persist = {
   projectStats: work.projectStats,
   onFileChange: work.onFileChange,
   removeAccountProjects: work.removeAccountProjects,
+  keepAccountProjects: work.keepAccountProjects,
   startSync: startSync,
   stopSync: stopSync,
   syncNow: syncNow,
@@ -382,6 +408,12 @@ export const Persist = {
   listConflicts: work.listConflicts,
   conflictSides: function (pid, fid) { return work.conflictSides(fid, pid); },
   resolveStoredConflict: function (pid, fid, choice) { return work.resolveStoredConflict(fid, choice, pid); },
+  // edits made offline, held for review ("Back online: Ask me first")
+  offlineChanges: function () { return syncEngine ? syncEngine.localChanges() : Promise.resolve([]); },
+  cloudSide: function (pid, fids) { return syncEngine ? syncEngine.cloudSide(pid, fids) : Promise.resolve({ state: 'unknown', name: null, texts: {} }); },
+  useCloud: function (pid) { return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false); },
+  projectFileText: function (pid, fid) { return work.getText(fid, pid); },
+  releaseSync: function () { return syncStatus.release(); },
   durabilityStatus: durability.status,
 
   // the open document

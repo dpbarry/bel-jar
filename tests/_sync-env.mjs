@@ -54,6 +54,10 @@ export function makeDevice(server, o = {}) {
 export function signIn(dev, server, account, transport) {
   dev.work.setAccount(account);
   dev.account = account;
+  // One count per device, never per sign-in: a commit id the server has seen
+  // is answered as a replay, so a second sign-in must not reuse the first's.
+  dev.signIns = (dev.signIns || 0) + 1;
+  const tag = dev.name + '-' + account + '-s' + dev.signIns + '-c';
   let n = 0;
   dev.engine = createSyncEngine({
     store: dev.store,
@@ -63,7 +67,7 @@ export function signIn(dev, server, account, transport) {
     account,
     hash: syncHash,
     notify: (x) => dev.notices.push(x),
-    commitId: () => dev.name + '-' + account + '-c' + (++n),
+    commitId: () => tag + (++n),
   });
   return dev.engine;
 }

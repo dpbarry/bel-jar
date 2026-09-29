@@ -157,9 +157,10 @@ function sameTree(a, b) {
 
 /**
  * Synced projects deleted on this device, until the server has been told:
- * { pid: { version, owner, pending, at } }. `version` is the one this device
- * last synced; `pending` a commit sent but never answered (it may have made
- * the version after).
+ * { pid: { version, owner, pending, at, name } }. `version` is the one this
+ * device last synced; `pending` a commit sent but never answered (it may have
+ * made the version after); `name` what it was called, for the person
+ * (review-offline.mjs), '' in a tombstone written before it was kept.
  */
 function normalizeTombstones(raw) {
   const out = {};
@@ -172,6 +173,7 @@ function normalizeTombstones(raw) {
       owner: t.owner,
       pending: typeof t.pending === 'string' && t.pending ? t.pending : null,
       at: typeof t.at === 'number' ? t.at : 0,
+      name: typeof t.name === 'string' ? t.name : '',
     };
   }
   return out;
@@ -249,14 +251,34 @@ export function createWork(opts) {
     return device.get('account') || null;
   }
 
-  /** Signed in as `uid`, or signed out (null). The caller reloads: the list changes. */
+  /**
+   * Signed in as `uid`, or signed out (null). The caller reloads: the list
+   * changes. The account that kept its projects here signing in again takes
+   * them back as its own (they sync again): nothing is kept for it any more.
+   */
   function setAccount(uid) {
+    if (uid && kept().includes(String(uid))) device.set('keptAccounts', kept().filter((id) => id !== String(uid)));
     if (uid) return device.set('account', String(uid));
     return device.reset((row) => row.id === 'account');
   }
 
+  /**
+   * Signing out with "Keep in this browser": `uid`'s projects stay, with their
+   * sync bookkeeping, and show while nobody is signed in. Another account that
+   * signs in neither sees them nor adopts them (they are not ownerless).
+   */
+  function keepAccountProjects(uid) {
+    return uid ? device.set('keptAccounts', kept().concat(String(uid))) : false;
+  }
+
+  function kept() {
+    const ids = device.get('keptAccounts');
+    return Array.isArray(ids) ? ids : [];
+  }
+
   function isVisible(p) {
-    return p.owner === null || p.owner === account();
+    if (p.owner === null || p.owner === account()) return true;
+    return !account() && kept().includes(p.owner);
   }
 
   /** The projects this page may show: this device's own, and the account's. */
@@ -299,6 +321,9 @@ export function createWork(opts) {
     if (dropped) writeTombstones(tombs);
     const synced = store.get(SETTINGS_SYNC_KEY);
     if (synced && synced.account === uid) store.remove(SETTINGS_SYNC_KEY);
+    // Nothing of theirs is here now: nothing waits, and nothing is kept.
+    if (device.get('syncHeldFor') === String(uid)) device.reset((row) => row.id === 'syncHeldFor');
+    if (kept().includes(String(uid))) device.set('keptAccounts', kept().filter((id) => id !== String(uid)));
     return n;
   }
 
@@ -403,6 +428,7 @@ export function createWork(opts) {
         owner,
         pending: synced.pending && typeof synced.pending.id === 'string' ? synced.pending.id : null,
         at: now(),
+        name: list[idx].name,
       };
       if (!writeTombstones(tombs).ok) return null;
     }
@@ -753,6 +779,7 @@ export function createWork(opts) {
     setAccount,
     claimProject,
     removeAccountProjects,
+    keepAccountProjects,
     // the online layer
     allProjects,
     projectStats,

@@ -11,6 +11,12 @@ const global = globalThis;
   var closeSettingsSearch = null;
   /** style → the option group nested under the Editing style row. */
   var styleGroups = {};
+  /** "Where edits overlap", nested under "Changed in two places": only when merging. */
+  var overlapGroup = null;
+
+  function paintSyncRows() {
+    if (overlapGroup) overlapGroup.hidden = Settings.get('syncBothChanged') !== 'merge';
+  }
 
   function persist() {
     return Persist
@@ -109,6 +115,7 @@ const global = globalThis;
     // import, another tab — so the nested group follows the STORED style here
     // rather than only on the dropdown's own change handler.
     paintStyleRows(Settings.get('keymapStyle'));
+    paintSyncRows();
   }
 
   function makeResetLink(onClick) {
@@ -1421,6 +1428,10 @@ const global = globalThis;
       if (aliasesApi) aliasesApi.refresh();
     });
 
+    attachPanelReset(main.querySelector('[data-category="account"]'), function () {
+      runCategoryReset(function () { Settings.reset('account'); }, 'account-reset');
+    });
+
     // Appearance
     addDropdownRow(
       panelBodies.appearance,
@@ -2132,20 +2143,62 @@ const global = globalThis;
         else A.signIn();
       });
     var accountRow = panelBodies.account.lastElementChild;
+
+    addSectionHead(panelBodies.account, 'Sync');
     addSwitchRow(panelBodies.account, 'sync-settings', 'Sync settings',
       'Keep your preferences the same on every device.',
       function () { return Settings.get('syncSettings'); },
       function (p, on) { Settings.set('syncSettings', on); }
     );
-    addDropdownRow(panelBodies.account, 'sync-overlap', 'When the same lines changed',
-      'A file edited here and elsewhere in the same place.',
+    // Where edits overlap exists only because they merge: nested under the row
+    // that causes it, and hidden when every file is asked about anyway.
+    addDropdownRow(panelBodies.account, 'sync-both-changed', 'Changed in two places',
+      'A file edited on this device and in the cloud since they last synced.',
       [
-        { value: 'ask', label: 'Ask' },
+        { value: 'merge', label: 'Merge them' },
+        { value: 'ask', label: 'Ask me' },
+      ],
+      function () { return Settings.get('syncBothChanged'); },
+      function (p, v) { Settings.set('syncBothChanged', v); paintSyncRows(); }
+    );
+    overlapGroup = addSubordinateGroup(panelBodies.account, 'Sync');
+    addDropdownRow(overlapGroup, 'sync-overlap', 'Where edits overlap',
+      'The same lines changed on both sides, which cannot merge.',
+      [
+        { value: 'ask', label: 'Ask me' },
         { value: 'mine', label: 'Keep mine' },
-        { value: 'cloud', label: 'Use cloud' },
+        { value: 'cloud', label: 'Keep the cloud’s' },
       ],
       function () { return Settings.get('syncOverlap'); },
       function (p, v) { Settings.set('syncOverlap', v); }
+    );
+    paintSyncRows();
+
+    addSectionHead(panelBodies.account, 'Offline');
+    addDropdownRow(panelBodies.account, 'sync-reconnect', 'Back online',
+      'What happens to edits made while offline.',
+      [
+        { value: 'upload', label: 'Upload them' },
+        { value: 'ask', label: 'Ask me first' },
+      ],
+      function () { return Settings.get('syncReconnect'); },
+      function (p, v) { Settings.set('syncReconnect', v); }
+    );
+    addSwitchRow(panelBodies.account, 'sync-notices', 'Say when you go offline',
+      'A note in the strip when the connection drops, and when it’s back.',
+      function () { return Settings.get('syncNotices'); },
+      function (p, on) { Settings.set('syncNotices', on); }
+    );
+
+    addSectionHead(panelBodies.account, 'Signing out');
+    addDropdownRow(panelBodies.account, 'sign-out-keep', 'Projects in this browser',
+      'Kept, they stay usable signed out, and sync when you sign in again.',
+      [
+        { value: 'remove', label: 'Remove them' },
+        { value: 'keep', label: 'Keep them' },
+      ],
+      function () { return Settings.get('signOutKeep'); },
+      function (p, v) { Settings.set('signOutKeep', v); }
     );
     refreshAccountTab = function () {
       var A = global.Account;

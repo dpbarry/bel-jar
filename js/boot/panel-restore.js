@@ -162,11 +162,26 @@
     { id: "inspectorFollow", section: "workspace", default: ON },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
-    { id: "syncSettings", section: "workspace", default: ON, sync: false },
-    // A file changed here and in the cloud in the same lines: ask (the review
-    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
-    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
+    { id: "syncSettings", section: "account", default: ON, sync: false },
+    // A file changed on this device and in the cloud since they last synced:
+    // 'merge' what merges, or 'ask' about every such file (nothing merges by
+    // itself: sync/merge-project.mjs `askAll`).
+    { id: "syncBothChanged", section: "account", default: "merge", values: ["merge", "ask"] },
+    // Merging, the lines changed on both sides: 'ask' (the review window), or
+    // settle them to 'mine' or the 'cloud' as they appear (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "account", default: "ask", values: ["ask", "mine", "cloud"] },
+    // Edits made while offline, once back online: 'upload' on their own, or 'ask'
+    // first (held until the person uploads them or takes the cloud's instead).
+    { id: "syncReconnect", section: "account", default: "upload", values: ["upload", "ask"] },
+    // "Offline" in the strip, and "Back online" when it returns. The cloud beside
+    // the project name says it either way.
+    { id: "syncNotices", section: "account", default: ON },
+    // Signing out on this browser: 'remove' the account's projects (safe on a
+    // shared computer), or 'keep' them here to work on signed out; they sync
+    // again when the same account signs in (work.mjs `keptAccounts`).
+    { id: "signOutKeep", section: "account", default: "remove", values: ["remove", "keep"], sync: false },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -199,6 +214,10 @@
       sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
     };
   }
+  function accountIds(raw) {
+    if (!Array.isArray(raw)) return void 0;
+    return [...new Set(raw.filter((id) => typeof id === "string" && id !== ""))];
+  }
   var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
   var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
   var DEVICE = [
@@ -207,6 +226,13 @@
     // the account this browser is signed in as ('' signed out): whose projects it
     // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
     { id: "account", type: "string", default: "" },
+    // signed out with "Keep in this browser": the accounts whose projects stay
+    // here, usable signed out and never adopted by another account (work.mjs
+    // `isVisible`). Each leaves the list when it signs in again.
+    { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // "Back online: Ask me first": the account whose offline edits wait
+    // for the person ('' none). Outlives a reload (sync/hold.mjs).
+    { id: "syncHeldFor", type: "string", default: "" },
     // durability.mjs: when this browser was last asked to keep BelJar's storage,
     // and when this device was told Safari may delete it (ms; 0: never)
     { id: "persistAskedAt", type: "number", default: 0 },

@@ -209,6 +209,23 @@ expect(seg({ ...pending, goalPending: false }, 'goal').title.indexOf('has not ch
 expect(seg(pending, 'holes').text === '+1 more', 'the hole count knows you are standing in one');
 expect(seg({ ...pending, holes: 1 }, 'holes').text === 'last hole', 'even with the goal still computing');
 
+// ── sync: only what needs the person (docs/UI.md; the cloud says the rest) ──
+const syncOf = (x) => ({ ...base, sync: { signedIn: true, state: 'synced', differs: [], notices: true, ...x } });
+const file1 = [{ pid: 'p', fid: 'f', path: 'a.bel', source: 'device' }];
+expect(find(syncOf({}), 'sync') === undefined, 'synced: the cloud says it; the strip says nothing');
+expect(find(syncOf({ state: 'syncing' }), 'sync') === undefined, 'syncing is not the strip\'s news either');
+expect(find(syncOf({ state: 'differs', differs: file1 }), 'sync').text === '1 file to review'
+  && find(syncOf({ state: 'differs', differs: file1 }), 'sync').action === 'review-differences', 'files to review open the review');
+expect(find({ ...base, sync: { signedIn: false, state: 'differs', differs: file1 } }, 'sync').text === '1 file to review',
+  'files to review show signed out too (two tabs)');
+expect(find({ ...base, sync: { signedIn: false, state: 'off', differs: [] } }, 'sync') === undefined, 'signed out, nothing else');
+expect(find(syncOf({ state: 'offline' }), 'sync').text === 'Offline', 'offline, with "Say when you go offline" on');
+expect(find(syncOf({ state: 'offline', notices: false }), 'sync') === undefined, 'and silent with it off');
+const held = find(syncOf({ state: 'held', notices: false }), 'sync');
+expect(held && held.text === 'Changes made offline' && held.action === 'review-offline' && held.tone === 'warning',
+  'edits held for the person: the strip says so, and opens the review, whatever the notices setting');
+expect(find(syncOf({ state: 'error' }), 'sync').action === 'sync-now', 'could not sync: the strip offers Sync now');
+
 // ── ⛔ no tone may be styled NOWHERE ───────────────────────────────
 // A tone is a CLAIM ON A STYLESHEET. REC declared `error` for weeks while
 // `is-error` had rules under `--problems` and `--checker` only, so the one chip
@@ -241,6 +258,7 @@ const STATES = [
   { ...base, undoDepth: 3, redoDepth: 1 },
   { ...base, tabConflict: true },
   { ...base, style: 'emacs', mark: true },
+  ...['differs', 'offline', 'held', 'error'].map((state) => syncOf({ state, differs: state === 'differs' ? file1 : [] })),
   ...['NORMAL', 'INSERT', 'VISUAL', 'V-LINE', 'V-BLOCK', 'REPLACE']
     .map((m) => ({ ...base, style: 'vim', mode: m })),
 ];

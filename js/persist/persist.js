@@ -482,7 +482,7 @@
 
   // js/persist/settings-schema.mjs
   var SETTINGS_KEY = "beljar/settings";
-  var SECTIONS = ["appearance", "editor", "keybindings", "beluga", "harpoon", "repl", "workspace", "aliases"];
+  var SECTIONS = ["appearance", "editor", "keybindings", "beluga", "harpoon", "repl", "workspace", "aliases", "account"];
   function cleanKeybindings(map) {
     if (!map || typeof map !== "object" || Array.isArray(map)) return void 0;
     const out = {};
@@ -584,11 +584,26 @@
     { id: "inspectorFollow", section: "workspace", default: ON },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
-    { id: "syncSettings", section: "workspace", default: ON, sync: false },
-    // A file changed here and in the cloud in the same lines: ask (the review
-    // window), or settle it as soon as it appears (js/account/sync-ui.mjs).
-    { id: "syncOverlap", section: "workspace", default: "ask", values: ["ask", "mine", "cloud"] },
+    { id: "syncSettings", section: "account", default: ON, sync: false },
+    // A file changed on this device and in the cloud since they last synced:
+    // 'merge' what merges, or 'ask' about every such file (nothing merges by
+    // itself: sync/merge-project.mjs `askAll`).
+    { id: "syncBothChanged", section: "account", default: "merge", values: ["merge", "ask"] },
+    // Merging, the lines changed on both sides: 'ask' (the review window), or
+    // settle them to 'mine' or the 'cloud' as they appear (js/account/sync-ui.mjs).
+    { id: "syncOverlap", section: "account", default: "ask", values: ["ask", "mine", "cloud"] },
+    // Edits made while offline, once back online: 'upload' on their own, or 'ask'
+    // first (held until the person uploads them or takes the cloud's instead).
+    { id: "syncReconnect", section: "account", default: "upload", values: ["upload", "ask"] },
+    // "Offline" in the strip, and "Back online" when it returns. The cloud beside
+    // the project name says it either way.
+    { id: "syncNotices", section: "account", default: ON },
+    // Signing out on this browser: 'remove' the account's projects (safe on a
+    // shared computer), or 'keep' them here to work on signed out; they sync
+    // again when the same account signs in (work.mjs `keptAccounts`).
+    { id: "signOutKeep", section: "account", default: "remove", values: ["remove", "keep"], sync: false },
     // ── Aliases ─────────────────────────────────────────────────────────────
     { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
     // null: the built-in alias table.
@@ -688,6 +703,10 @@
       sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
     };
   }
+  function accountIds(raw) {
+    if (!Array.isArray(raw)) return void 0;
+    return [...new Set(raw.filter((id) => typeof id === "string" && id !== ""))];
+  }
   var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
   var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
   var DEVICE = [
@@ -696,6 +715,13 @@
     // the account this browser is signed in as ('' signed out): whose projects it
     // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
     { id: "account", type: "string", default: "" },
+    // signed out with "Keep in this browser": the accounts whose projects stay
+    // here, usable signed out and never adopted by another account (work.mjs
+    // `isVisible`). Each leaves the list when it signs in again.
+    { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // "Back online: Ask me first": the account whose offline edits wait
+    // for the person ('' none). Outlives a reload (sync/hold.mjs).
+    { id: "syncHeldFor", type: "string", default: "" },
     // durability.mjs: when this browser was last asked to keep BelJar's storage,
     // and when this device was told Safari may delete it (ms; 0: never)
     { id: "persistAskedAt", type: "number", default: 0 },
@@ -929,7 +955,8 @@
         version: Number.isInteger(t.version) && t.version > 0 ? t.version : 0,
         owner: t.owner,
         pending: typeof t.pending === "string" && t.pending ? t.pending : null,
-        at: typeof t.at === "number" ? t.at : 0
+        at: typeof t.at === "number" ? t.at : 0,
+        name: typeof t.name === "string" ? t.name : ""
       };
     }
     return out;
@@ -983,11 +1010,20 @@
       return device.get("account") || null;
     }
     function setAccount(uid) {
+      if (uid && kept().includes(String(uid))) device.set("keptAccounts", kept().filter((id) => id !== String(uid)));
       if (uid) return device.set("account", String(uid));
       return device.reset((row) => row.id === "account");
     }
+    function keepAccountProjects(uid) {
+      return uid ? device.set("keptAccounts", kept().concat(String(uid))) : false;
+    }
+    function kept() {
+      const ids = device.get("keptAccounts");
+      return Array.isArray(ids) ? ids : [];
+    }
     function isVisible(p) {
-      return p.owner === null || p.owner === account();
+      if (p.owner === null || p.owner === account()) return true;
+      return !account() && kept().includes(p.owner);
     }
     function peekVisible() {
       return peekProjects().filter(isVisible);
@@ -1020,6 +1056,8 @@
       if (dropped) writeTombstones(tombs);
       const synced = store2.get(SETTINGS_SYNC_KEY);
       if (synced && synced.account === uid) store2.remove(SETTINGS_SYNC_KEY);
+      if (device.get("syncHeldFor") === String(uid)) device.reset((row) => row.id === "syncHeldFor");
+      if (kept().includes(String(uid))) device.set("keptAccounts", kept().filter((id) => id !== String(uid)));
       return n;
     }
     function readTombstones() {
@@ -1091,7 +1129,8 @@
           version: synced.version > 0 ? synced.version : 0,
           owner,
           pending: synced.pending && typeof synced.pending.id === "string" ? synced.pending.id : null,
-          at: now()
+          at: now(),
+          name: list[idx].name
         };
         if (!writeTombstones(tombs).ok) return null;
       }
@@ -1344,6 +1383,7 @@
       setAccount,
       claimProject,
       removeAccountProjects,
+      keepAccountProjects,
       // the online layer
       allProjects,
       projectStats,
@@ -2934,7 +2974,7 @@
           const theirs = need(t.hash);
           if (baseText === void 0 || theirs === void 0) continue;
           const r = merge3(baseText, mine, theirs);
-          if (r.ok) {
+          if (r.ok && !a.askAll) {
             out.push({ id, path, text: r.text });
           } else {
             out.push({ id, path, text: theirs });
@@ -3260,7 +3300,9 @@
           theirs,
           text: (h) => texts.get(h),
           conflicted: local.conflicted,
-          newFileId: () => work2.newFileId(pid)
+          newFileId: () => work2.newFileId(pid),
+          // "Changed in two places: Ask about every file" (Settings > Account).
+          askAll: !!(opts.settings && opts.settings.get("syncBothChanged") === "ask")
         });
         if (r.needs) {
           if (fetched) throw bad("a merge needed a file the server did not send");
@@ -3289,6 +3331,78 @@
       if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("a downloaded project");
       writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
       return { status: "downloaded" };
+    }
+    async function localChanges() {
+      const out = [];
+      for (const p of work2.allProjects()) {
+        if (p.owner !== account) continue;
+        const local = await localSide(p.id);
+        if (!local || !local.manifest) continue;
+        const rec = readRecord2(p.id);
+        const base = rec && rec.version ? rec.manifest : null;
+        if (base && sameManifest(local.manifest, base)) continue;
+        const before = new Map((base ? base.files : []).map((f) => [f.id, f]));
+        const files2 = [];
+        for (const f of local.manifest.files) {
+          const b = before.get(f.id);
+          before.delete(f.id);
+          if (!b) files2.push({ fid: f.id, path: f.path, change: "added" });
+          else if (b.hash !== f.hash) files2.push({ fid: f.id, path: f.path, change: "edited" });
+          else if (b.path !== f.path) files2.push({ fid: f.id, path: f.path, change: "renamed" });
+        }
+        for (const [fid, b] of before) files2.push({ fid, path: b.path, change: "deleted" });
+        out.push({
+          pid: p.id,
+          name: local.meta.name,
+          isNew: !base,
+          deleted: false,
+          renamed: !!base && base.name !== local.meta.name,
+          files: files2
+        });
+      }
+      const tombs = work2.readTombstones();
+      for (const pid of Object.keys(tombs).sort()) {
+        if (tombs[pid].owner !== account) continue;
+        out.push({ pid, name: tombs[pid].name, isNew: false, deleted: true, renamed: false, files: [] });
+      }
+      return out;
+    }
+    async function cloudSide(pid, fids = []) {
+      const head = readHead(await call("head", pid));
+      if (!head) return { state: "absent", name: null, texts: {} };
+      if (head.deleted) return { state: "deleted", name: null, texts: {} };
+      const byId = new Map(head.manifest.files.map((f) => [f.id, f]));
+      const got = await fetchTexts(pid, [...new Set(fids.map((id) => byId.get(id)).filter(Boolean).map((f) => f.hash))]);
+      const texts = {};
+      for (const id of fids) {
+        const f = byId.get(id);
+        texts[id] = f ? got.get(f.hash) : null;
+      }
+      return { state: "present", name: head.manifest.name, texts };
+    }
+    async function useCloud(pid) {
+      const head = readHead(await call("head", pid));
+      if (!head) return false;
+      if (head.deleted) {
+        if (work2.readTombstones()[pid]) work2.dropTombstone(pid);
+        if (work2.snapshotProject(pid)) work2.forgetProject(pid);
+        return true;
+      }
+      const theirs = head.manifest;
+      const got = await fetchTexts(pid, [...new Set(theirs.files.map((f) => f.hash))]);
+      const project = {
+        name: theirs.name,
+        createdAt: theirs.createdAt,
+        files: theirs.files.map((f) => ({ id: f.id, path: f.path, text: got.get(f.hash) })),
+        folders: theirs.folders,
+        suites: theirs.suites
+      };
+      const snap = work2.snapshotProject(pid);
+      if (snap) for (const fid of snap.conflicted) work2.removeConflict(fid, pid);
+      if (work2.readTombstones()[pid]) work2.dropTombstone(pid);
+      if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("the cloud\u2019s version of a project");
+      writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
+      return true;
     }
     async function settleTombstone(pid, tomb, head) {
       if (!head || head.deleted) {
@@ -3390,7 +3504,7 @@
       }
       return { projects, settings };
     }
-    return { account, syncAll, syncProject, syncSettings: settingsSync.sync };
+    return { account, syncAll, syncProject, syncSettings: settingsSync.sync, localChanges, cloudSide, useCloud };
   }
 
   // js/persist/sync/runner.mjs
@@ -3411,7 +3525,7 @@
     const pollMs = o.pollMs != null ? o.pollMs : 6e4;
     const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
     const listeners = /* @__PURE__ */ new Set();
-    let status = { state: "waiting", leader: false, lastSync: 0, error: null, pending: false, safe: false };
+    let status = { state: "waiting", leader: false, lastSync: 0, error: null, pending: false, safe: false, held: false };
     let leader = false;
     let stopped = false;
     let running = null;
@@ -3420,6 +3534,7 @@
     let firstChange = 0;
     let failures = 0;
     let dirty = false;
+    let held = false;
     let release = null;
     let abort = null;
     let unsubscribe = null;
@@ -3454,7 +3569,7 @@
       return out;
     }
     function round() {
-      if (!leader || stopped) return Promise.resolve(null);
+      if (!leader || stopped || held) return Promise.resolve(null);
       if (running) {
         again = true;
         return running;
@@ -3533,6 +3648,31 @@
       status() {
         return status;
       },
+      /**
+       * No round runs until release(): the edits made offline wait for the person
+       * to upload them, or take the cloud's instead (persist.mjs holds it when the
+       * connection drops, with "Back online: Ask me first").
+       */
+      hold() {
+        if (held) return;
+        held = true;
+        if (timer != null) {
+          timers.clear(timer);
+          timer = null;
+        }
+        update({ held: true });
+      },
+      /** Let rounds run again, starting one now. */
+      release() {
+        if (!held) return Promise.resolve(null);
+        held = false;
+        if (leader && !stopped && !running) {
+          status = Object.assign({}, status, { held: false });
+          return round();
+        }
+        update({ held: false });
+        return round();
+      },
       /** fn(status) on every change: { state, leader, lastSync, error, result }. */
       subscribe(fn) {
         listeners.add(fn);
@@ -3570,7 +3710,9 @@
     const st = runner || {};
     let state;
     if (files2.length) state = "differs";
-    else if (online === false || st.state === "offline") state = "offline";
+    else if (online === false) state = "offline";
+    else if (st.held) state = "held";
+    else if (st.state === "offline") state = "offline";
     else if (st.state === "error") state = "error";
     else if (st.state === "syncing") state = "syncing";
     else if (st.pending) state = "pending";
@@ -3615,6 +3757,7 @@
         lastSync: st.lastSync || 0,
         error: st.error || null,
         safe: !!st.safe,
+        held: !!st.held,
         at: now(),
         answered: answered || null
       });
@@ -3630,7 +3773,9 @@
         }
         emit();
       } else if (kind === ASK_MESSAGE && leading() && runner) {
-        if (msg.round) {
+        if (msg.release) {
+          runner.release().then(() => tell(runner.status(), msg.id));
+        } else if (msg.round) {
           runner.syncNow().then(() => tell(runner.status(), msg.id));
         } else {
           tell(local, null);
@@ -3668,6 +3813,24 @@
         return () => listeners.delete(fn);
       },
       /**
+       * Let held rounds run again (the person chose Upload): the syncing tab
+       * releases its runner; any other asks it to. Resolves once it has.
+       */
+      release(timeoutMs = 15e3) {
+        if (!runner) return Promise.resolve({ ok: false, reason: "not-syncing" });
+        if (leading()) return runner.release().then(() => ({ ok: true, reason: null }));
+        const id = newId2();
+        return new Promise((resolve) => {
+          asked.set(id, () => resolve({ ok: true, reason: null }));
+          o.tabs.post(ASK_MESSAGE, { id, release: true, at: now() });
+          timers.set(() => {
+            if (!asked.has(id)) return;
+            asked.delete(id);
+            resolve({ ok: false, reason: "no-answer" });
+          }, timeoutMs);
+        });
+      },
+      /**
        * Sync now and say whether every project's work is on the server:
        * { ok, reason }. From the syncing tab it runs the round itself; from any
        * other it asks that tab, and waits at most `timeoutMs` for the answer.
@@ -3687,6 +3850,71 @@
             resolve({ ok: false, reason: "no-answer" });
           }, timeoutMs);
         });
+      }
+    };
+  }
+
+  // js/persist/sync/hold.mjs
+  var HELD_ROW = "syncHeldFor";
+  function createHoldPolicy(o) {
+    const online = o.online || (() => true);
+    let wasHeld = false;
+    let checking = null;
+    let stopped = false;
+    const asking = () => o.settings.get("syncReconnect") === "ask";
+    const heldHere = () => o.device.get(HELD_ROW) === String(o.account);
+    const offline = (st) => st.state === "offline" || !online();
+    function hold() {
+      o.device.set(HELD_ROW, String(o.account));
+      o.runner.hold();
+    }
+    function waiting() {
+      if (!checking) {
+        checking = Promise.resolve().then(() => o.engine.localChanges()).then((list) => list.length > 0, () => true).finally(() => {
+          checking = null;
+        });
+      }
+      return checking;
+    }
+    function onStatus(st) {
+      if (stopped) return;
+      if (wasHeld && !st.held && heldHere()) o.device.reset((row) => row.id === HELD_ROW);
+      wasHeld = !!st.held;
+      if (!st.leader) return;
+      if (st.held) {
+        if (!asking()) {
+          o.runner.release();
+          return;
+        }
+        if (offline(st)) return;
+        waiting().then((any) => {
+          const now = o.runner.status();
+          if (!stopped && !any && now.held && !offline(now)) o.runner.release();
+        });
+        return;
+      }
+      if (heldHere()) {
+        o.runner.hold();
+        return;
+      }
+      if (!asking() || !offline(st)) return;
+      if (st.pending) {
+        hold();
+        return;
+      }
+      waiting().then((any) => {
+        const now = o.runner.status();
+        if (!stopped && any && now.leader && !now.held && asking() && offline(now) && !heldHere()) hold();
+      });
+    }
+    const unsubscribe = o.runner.subscribe(onStatus);
+    onStatus(o.runner.status());
+    return {
+      /** Look again: the network or the setting changed. */
+      check: () => onStatus(o.runner.status()),
+      stop() {
+        stopped = true;
+        unsubscribe();
       }
     };
   }
@@ -4024,6 +4252,8 @@
     }, 2e3);
   });
   var syncRunner = null;
+  var syncEngine = null;
+  var holdPolicy = null;
   var syncStatus = createSyncStatus({
     account: work.account,
     conflicts: work.listConflicts,
@@ -4056,6 +4286,18 @@
       store,
       locks: opts.locks !== void 0 ? opts.locks : nav && nav.locks || null
     });
+    syncEngine = engine;
+    holdPolicy = createHoldPolicy({
+      runner: syncRunner,
+      engine,
+      device: Device,
+      settings: Settings,
+      account,
+      online: function() {
+        var n = globalThis.navigator;
+        return !n || n.onLine !== false;
+      }
+    });
     syncRunner.start();
     syncStatus.attach(syncRunner);
     return syncRunner;
@@ -4063,6 +4305,9 @@
   function stopSync() {
     const r = syncRunner;
     syncRunner = null;
+    syncEngine = null;
+    if (holdPolicy) holdPolicy.stop();
+    holdPolicy = null;
     syncStatus.detach();
     return r ? r.stop() : Promise.resolve();
   }
@@ -4072,12 +4317,17 @@
   if (typeof globalThis.addEventListener === "function") {
     globalThis.addEventListener("online", function() {
       syncStatus.refresh();
+      if (holdPolicy) holdPolicy.check();
       syncNow();
     });
     globalThis.addEventListener("offline", function() {
       syncStatus.refresh();
+      if (holdPolicy) holdPolicy.check();
     });
   }
+  Settings.subscribe(function(e) {
+    if (holdPolicy && e && Array.isArray(e.ids) && e.ids.indexOf("syncReconnect") >= 0) holdPolicy.check();
+  });
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("visibilitychange", function() {
       if (document.visibilityState === "visible") syncNow();
@@ -4096,6 +4346,7 @@
     projectStats: work.projectStats,
     onFileChange: work.onFileChange,
     removeAccountProjects: work.removeAccountProjects,
+    keepAccountProjects: work.keepAccountProjects,
     startSync,
     stopSync,
     syncNow,
@@ -4108,6 +4359,22 @@
     },
     resolveStoredConflict: function(pid, fid, choice) {
       return work.resolveStoredConflict(fid, choice, pid);
+    },
+    // edits made offline, held for review ("Back online: Ask me first")
+    offlineChanges: function() {
+      return syncEngine ? syncEngine.localChanges() : Promise.resolve([]);
+    },
+    cloudSide: function(pid, fids) {
+      return syncEngine ? syncEngine.cloudSide(pid, fids) : Promise.resolve({ state: "unknown", name: null, texts: {} });
+    },
+    useCloud: function(pid) {
+      return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false);
+    },
+    projectFileText: function(pid, fid) {
+      return work.getText(fid, pid);
+    },
+    releaseSync: function() {
+      return syncStatus.release();
     },
     durabilityStatus: durability.status,
     // the open document

@@ -519,8 +519,149 @@ function world() {
   a.work.deleteProject(pid);
   a.store.set(SETTINGS_SYNC_KEY, { account: 'u_dean', version: 3, values: {} });
   expect(a.store.get(TOMBSTONES_KEY)[pid], 'a tombstone is waiting');
+  a.device.set('syncHeldFor', 'u_dean');
+  a.device.set('keptAccounts', ['u_other', 'u_dean']);
   a.work.removeAccountProjects('u_dean');
+  expect(a.device.get('syncHeldFor') === '', 'removing them lets go of the hold on their offline edits');
+  expect(JSON.stringify(a.device.get('keptAccounts')) === '["u_other"]', 'and of their place on the kept list, not another account\'s');
   expect(!a.store.get(TOMBSTONES_KEY) && !a.store.get(SETTINGS_SYNC_KEY), 'removing an account\'s projects takes its tombstones and settings bookkeeping too');
 }
 
-console.log(`OK sync engine (${n} checks: push, pull, merge, conflict, deletes both ways, owners, lost answers, offline, damage, moving targets, an open editor, settings)`);
+// ── 12. "Changed in two places: Ask about every file" ───────────────────────
+{
+  const { a, b } = world();
+  const pid = a.work.projectId();
+  const main = fileId(a.work, pid, 'main.bel');
+  a.work.setText(main, 'one\ntwo\nthree\nfour\n', pid);
+  await a.engine.syncAll();
+  await b.engine.syncAll();
+  b.settings.set('syncBothChanged', 'ask');
+  a.work.setText(main, 'one by A\ntwo\nthree\nfour\n', pid);
+  b.work.setText(main, 'one\ntwo\nthree\nfour by B\n', pid);
+  await a.engine.syncAll();
+  await b.engine.syncAll();
+  const rec = b.work.readConflict(main, pid);
+  expect(rec && rec.mine === 'one\ntwo\nthree\nfour by B\n' && rec.theirs === 'one by A\ntwo\nthree\nfour\n',
+    'edits in different lines that would merge wait for the person instead');
+  expect(b.work.getText(main, pid) === 'one by A\ntwo\nthree\nfour\n', 'and storage holds theirs meanwhile, as for an overlap');
+  b.work.removeConflict(main, pid);
+  a.work.setText(main, 'same\n', pid);
+  b.work.setText(main, 'same\n', pid);
+  await a.engine.syncAll();
+  await b.engine.syncAll();
+  expect(!b.work.readConflict(main, pid) && b.work.getText(main, pid) === 'same\n', 'the same change on both sides has nothing to ask');
+  b.settings.set('syncBothChanged', 'merge');
+  a.work.setText(main, 'x by A\nsame\n', pid);
+  b.work.setText(main, 'same\ny by B\n', pid);
+  await a.engine.syncAll();
+  await b.engine.syncAll();
+  expect(!b.work.readConflict(main, pid) && b.work.getText(main, pid) === 'x by A\nsame\ny by B\n', 'the default merges them quietly');
+}
+
+// ── 13. "Signing out: Keep in this browser" ─────────────────────────────────
+{
+  const server = createMemoryServer({ hash: syncHash });
+  const a = makeDevice(server, { name: 'A', account: null });
+  a.work.projectId();
+  const engineA = signIn(a, server, 'u_dean');
+  const mine = a.work.createProject('Kept');
+  await engineA.syncAll();
+  const v1 = server.history(mine).versions.length;
+  a.work.keepAccountProjects('u_dean');
+  a.work.setAccount(null);
+  const shown = () => a.work.listProjects().map((p) => p.id);
+  expect(shown().includes(mine), 'signed out, the kept account\'s projects are still listed');
+  const kept = fileId(a.work, mine, 'main.bel');
+  a.work.setText(kept, 'worked on signed out\n', mine);
+  expect(a.work.getProject(mine).owner === 'u_dean', 'and stay the account\'s: nobody else adopts them');
+  a.work.setAccount('u_guest');
+  expect(!shown().includes(mine), 'another account signed in does not see them');
+  a.work.keepAccountProjects('u_guest');
+  a.work.setAccount(null);
+  expect(shown().includes(mine), 'and a second account keeping its own does not hide the first\'s');
+  const res = await signIn(a, server, 'u_dean').syncAll();
+  expect(statusOf(res, mine) === 'pushed' && server.history(mine).versions.length === v1 + 1,
+    'the same account signing in again takes them back, and what was done signed out goes up');
+  const list = a.device.get('keptAccounts');
+  expect(!list.includes('u_dean') && list.includes('u_guest'), `it leaves the kept list; the other account stays on it (${JSON.stringify(list)})`);
+  a.work.setAccount(null);
+  expect(!shown().includes(mine), 'signed out again without keeping: not listed');
+}
+
+// ── 14. edits made offline: what they are, the cloud's side, the cloud's version ──
+{
+  const { server, a, b } = world();
+  const pid = a.work.projectId();
+  const main = fileId(a.work, pid, 'main.bel');
+  a.work.setText(main, 'rec nat : type.\n', pid);
+  const extra = addFile(a.work, pid, 'extra.bel', 'x\n');
+  const gone = a.work.createProject('Gone');
+  const cut = a.work.createProject('Cut there');
+  await a.engine.syncAll();
+  await b.engine.syncAll();
+  const name0 = a.work.getProject(pid).name;
+  expect(same(await a.engine.localChanges(), []), 'synced: nothing of this device\'s waits');
+
+  // Offline on A.
+  a.work.setText(main, 'rec nat : type.\nz : nat.\n', pid);
+  const notes = addFile(a.work, pid, 'notes.bel', 'n\n');
+  renameFile(a.work, pid, extra, 'extra2.bel');
+  a.work.renameProject(pid, 'Renamed');
+  const fresh = a.work.createProject('Fresh');
+  a.work.deleteProject(gone);
+  const cutMain = fileId(a.work, cut, 'main.bel');
+  a.work.setText(cutMain, 'edited offline\n', cut);
+  // Meanwhile B deletes "Cut there".
+  b.work.deleteProject(cut);
+  await b.engine.syncAll();
+
+  const list = await a.engine.localChanges();
+  const byId = Object.fromEntries(list.map((p) => [p.pid, p]));
+  const changeOf = (p, fid) => (p.files.find((f) => f.fid === fid) || {}).change;
+  expect(list.length === 4, `four projects changed here (${list.map((p) => p.name).join(', ')})`);
+  expect(byId[pid] && byId[pid].name === 'Renamed' && byId[pid].renamed && !byId[pid].isNew, 'a changed project is listed, and says it was renamed');
+  expect(changeOf(byId[pid], main) === 'edited' && changeOf(byId[pid], notes) === 'added' && changeOf(byId[pid], extra) === 'renamed',
+    'each file says how it changed');
+  expect(byId[fresh] && byId[fresh].isNew, 'a project made offline is new');
+  expect(byId[gone] && byId[gone].deleted && byId[gone].name === 'Gone', 'a project deleted offline is listed by the name it had');
+  expect(byId[cut] && changeOf(byId[cut], cutMain) === 'edited', 'and one edited here');
+
+  const side = await a.engine.cloudSide(pid, [main, notes]);
+  expect(side.state === 'present' && side.name === name0, `the cloud's side of it, by the cloud's name (${side.state}, ${side.name})`);
+  expect(side.texts[main] === 'rec nat : type.\n' && side.texts[notes] === null, 'with the cloud\'s text of each file, null where it has none');
+  expect((await a.engine.cloudSide(fresh)).state === 'absent', 'the cloud never had the new one');
+  expect((await a.engine.cloudSide(cut)).state === 'deleted', 'and deleted the other');
+
+  // "Use the cloud’s", project by project.
+  const versions = server.history(pid).versions.length;
+  expect(await a.engine.useCloud(pid), 'the cloud\'s version is taken');
+  expect(same(projectState(a.work, pid), projectState(b.work, pid)), 'the project is the cloud\'s again: texts, tree and name');
+  expect(!(await a.engine.localChanges()).some((p) => p.pid === pid), 'and nothing of it waits');
+  expect(await a.engine.useCloud(gone) && a.work.getProject(gone) && !a.work.readTombstones()[gone], 'a project deleted here comes back, and its tombstone goes');
+  expect(await a.engine.useCloud(cut) && !a.work.getProject(cut) && !a.work.readTombstones()[cut], 'one the cloud deleted goes here too');
+  expect((await a.engine.useCloud(fresh)) === false && a.work.getProject(fresh), 'the new one has no cloud version: nothing is taken, nothing lost');
+  const res = await a.engine.syncAll();
+  expect(statusOf(res, pid) === 'clean' && server.history(pid).versions.length === versions, 'the next round sends nothing for it');
+  expect(statusOf(res, gone) === 'clean', 'nor for the one brought back');
+  expect(!(cut in res.projects) && !a.work.getProject(cut), 'and does not bring back the one the cloud deleted');
+  expect(statusOf(res, fresh) === 'pushed', 'the new one goes up as ever');
+}
+{
+  // Taking the cloud's version settles files waiting for review.
+  const { a, b } = world();
+  const pid = a.work.projectId();
+  const main = fileId(a.work, pid, 'main.bel');
+  a.work.setText(main, 'theorem\n', pid);
+  await a.engine.syncAll();
+  await b.engine.syncAll();
+  a.work.setText(main, 'theorem by A\n', pid);
+  b.work.setText(main, 'theorem by B\n', pid);
+  await a.engine.syncAll();
+  await b.engine.syncAll();
+  expect(b.work.readConflict(main, pid), 'a file waits for review');
+  addFile(b.work, pid, 'more.bel', 'more\n');
+  expect(await b.engine.useCloud(pid) && !b.work.readConflict(main, pid), 'the cloud\'s version: nothing waits for review any more');
+  expect(b.work.getText(main, pid) === 'theorem by A\n' && !fileId(b.work, pid, 'more.bel'), 'and the project is exactly the cloud\'s');
+}
+
+console.log(`OK sync engine (${n} checks: push, pull, merge, conflict, deletes both ways, owners, lost answers, offline, damage, moving targets, an open editor, settings, ask about every file, kept on sign-out, offline changes and the cloud's version)`);

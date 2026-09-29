@@ -341,6 +341,7 @@ const ACTIONS = {
   'run': () => global.Commands?.run('run.file'),
   'edit-history': () => openHistory(),
   'review-differences': () => global.Commands?.run('sync.review'),
+  'review-offline': () => global.Commands?.run('sync.review-offline'),
   'sync-now': () => global.Commands?.run('sync.now'),
   'undo': () => stepHistory('undo'),
   'redo': () => stepHistory('redo'),

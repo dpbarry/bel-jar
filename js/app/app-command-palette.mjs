@@ -124,11 +124,15 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('account.sign-out', () => account().signOut(), () => !!account() && !!account().user());
       on('sync.now', () => Persist.confirmSynced(), () => {
         const s = syncState();
-        return !!s && s.signedIn && s.state !== 'offline';
+        return !!s && s.signedIn && s.state !== 'offline' && s.state !== 'held';
       });
       on('sync.review', () => SyncUI.review(), () => {
         const s = syncState();
         return !!s && s.differs.length > 0;
+      });
+      on('sync.review-offline', () => SyncUI.reviewOffline(), () => {
+        const s = syncState();
+        return !!s && s.state === 'held';
       });
       on('tab.next', () => stepTab(1), () => openTabIds().length > 1);
       on('tab.prev', () => stepTab(-1), () => openTabIds().length > 1);

@@ -55,7 +55,8 @@ export function createSyncRunner(o) {
 
   // pending: a change this tab heard that no finished round has carried yet.
   // safe: the last round confirmed every project's work is on the server.
-  let status = { state: 'waiting', leader: false, lastSync: 0, error: null, pending: false, safe: false };
+  // held: rounds wait for the person ("Back online: Ask me first").
+  let status = { state: 'waiting', leader: false, lastSync: 0, error: null, pending: false, safe: false, held: false };
   let leader = false;
   let stopped = false;
   let running = null;
@@ -64,6 +65,7 @@ export function createSyncRunner(o) {
   let firstChange = 0;
   let failures = 0;
   let dirty = false; // a change heard since the last round began
+  let held = false;
   let release = null;
   let abort = null;
   let unsubscribe = null;
@@ -101,7 +103,7 @@ export function createSyncRunner(o) {
   }
 
   function round() {
-    if (!leader || stopped) return Promise.resolve(null);
+    if (!leader || stopped || held) return Promise.resolve(null);
     if (running) {
       again = true;
       return running;
@@ -180,6 +182,34 @@ export function createSyncRunner(o) {
 
     status() {
       return status;
+    },
+
+    /**
+     * No round runs until release(): the edits made offline wait for the person
+     * to upload them, or take the cloud's instead (persist.mjs holds it when the
+     * connection drops, with "Back online: Ask me first").
+     */
+    hold() {
+      if (held) return;
+      held = true;
+      if (timer != null) { timers.clear(timer); timer = null; }
+      update({ held: true });
+    },
+
+    /** Let rounds run again, starting one now. */
+    release() {
+      if (!held) return Promise.resolve(null);
+      held = false;
+      // Said together with the round it starts (round() reports "syncing"): a
+      // runner whose last round could not reach the server must never read
+      // as released and still offline, or the hold would be taken up again
+      // before the round could try.
+      if (leader && !stopped && !running) {
+        status = Object.assign({}, status, { held: false });
+        return round();
+      }
+      update({ held: false });
+      return round();
     },
 
     /** fn(status) on every change: { state, leader, lastSync, error, result }. */

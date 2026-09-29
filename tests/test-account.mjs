@@ -57,6 +57,7 @@ expect(signInFailure('denied', '') === null, 'a sign-in the person cancelled is 
 expect(/secret/.test(signInFailure('exchange', 'incorrect_client_credentials')) && /not your account/.test(signInFailure('exchange', 'incorrect_client_credentials')),
   'a secret GitHub rejects is named as the server\'s fault, not the person\'s');
 expect(/expired|already used/.test(signInFailure('exchange', 'bad_verification_code')), 'an expired or reused code says so');
+expect(/Wait a few minutes/.test(signInFailure('exchange', 'status-429')), 'GitHub turning the server away (429) says to wait, not what went wrong with the account');
 expect(/cookie/.test(signInFailure('state', 'no-cookie')) && /another tab/.test(signInFailure('state', 'mismatch')),
   'a missing state cookie and a newer sign-in in another tab read differently');
 for (const why of steps) for (const d of ['', 'no-cookie', 'mismatch', 'incorrect_client_credentials', 'bad_verification_code', 'status-500']) {

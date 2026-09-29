@@ -88,6 +88,7 @@ export function signInFailure(why, detail) {
       }
       if (detail === 'bad_verification_code') return 'GitHub’s one-time sign-in code had expired or was already used. Try again.';
       if (detail === 'redirect_uri_mismatch') return 'This site’s address doesn’t match the one BelJar’s GitHub app is registered with.';
+      if (detail === 'status-429') return 'GitHub is turning away sign-ins from BelJar’s server for a while (too many requests). Wait a few minutes, then try again.';
       return 'GitHub didn’t hand over a sign-in token.';
     case 'profile':
       return 'GitHub signed you in, but BelJar couldn’t read your public profile.';

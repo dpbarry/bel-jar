@@ -140,6 +140,12 @@ store.applyRemote(key, data, at)   // the online layer's only way in
 need its exemption: Persist (which hands the areas to the stores), early boot (which hands them to
 pure readers because first paint cannot wait), and those readers.
 
+⛔ **Every name the app asks for exists.** `tests/test-persist-api-use.mjs` reads every script the
+page can load and holds each `Persist.<name>` to the real Persist, and each literal id given to
+`Settings`, `readSetting`/`writeSetting` and `Device` to its table. `js/beluga/beluga-client.js`, a
+plain script outside the build, kept calling two preference readers the rebuild removed, and Run
+threw on every file until `probe:live` ran a check (2026-09-28); `probe:app` now runs a file too.
+
 ⛔ **The store needs a real Storage.** It lists keys (the schema wipe, whole-project deletes,
 eviction, the project list), so a stand-in without `key()` and `length` is refused at creation
 rather than silently finding nothing.

@@ -33781,6 +33781,7 @@
         }
         if (detail2 === "bad_verification_code") return "GitHub\u2019s one-time sign-in code had expired or was already used. Try again.";
         if (detail2 === "redirect_uri_mismatch") return "This site\u2019s address doesn\u2019t match the one BelJar\u2019s GitHub app is registered with.";
+        if (detail2 === "status-429") return "GitHub is turning away sign-ins from BelJar\u2019s server for a while (too many requests). Wait a few minutes, then try again.";
         return "GitHub didn\u2019t hand over a sign-in token.";
       case "profile":
         return "GitHub signed you in, but BelJar couldn\u2019t read your public profile.";

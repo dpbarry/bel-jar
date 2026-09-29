@@ -38,12 +38,16 @@
   var LOAD_CANCELLED_MSG = 'Beluga load cancelled';
   var CHECK_CANCELLED_MSG = 'Beluga check cancelled';
 
+  // The settings table (js/persist/settings-schema.mjs) where the page has one; the
+  // defaults, both on, where it does not (Node tests). Until 2026-09-28 these asked
+  // Persist for functions the persistence rebuild removed, and Run threw on every file.
+  // Literal ids, so tests/test-persist-api-use.mjs holds them to the table.
   function shouldFallbackStable() {
-    return !global.Persist || global.Persist.readStoredBelugaFallbackStable();
+    return !global.Settings || !!global.Settings.get('belugaFallbackStable');
   }
 
   function shouldCancelOnEdit() {
-    return !global.Persist || global.Persist.readStoredBelugaCancelOnEdit();
+    return !global.Settings || !!global.Settings.get('belugaCancelOnEdit');
   }
   var RECONFIGURED_MSG = 'BelugaClient reconfigured';
   var LONG_LOAD_THRESHOLD_MS = 1200;

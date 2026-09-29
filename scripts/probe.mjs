@@ -988,6 +988,21 @@ try {
   await page.evaluate(() => FloatingWindow.closeAll());
   await new Promise((r) => setTimeout(r, 200));
 
+  // ── Run: a file through BelugaClient, with the page's own Persist and Settings ──
+  // Last, so a check in flight cannot colour the status strip checks above. Until
+  // 2026-09-28 nothing ran a file with the real Persist on the page, and Run threw
+  // on every file for days (a call into a Persist function the rebuild removed).
+  const runFile = await page.evaluate(async (src) => {
+    try {
+      await window.BelugaClient.warm();
+      const out = await window.BelugaClient.load(src, { pinned: true });
+      return { ok: true, out: String(out).slice(0, 160) };
+    } catch (e) {
+      return { ok: false, why: String((e && e.message) || e).slice(0, 200) };
+    }
+  }, ['LF nat : type =', '| z : nat', '| s : nat -> nat;', ''].join('\n'));
+  console.log('  run:', JSON.stringify(runFile));
+  check(runFile.ok, `Run checks a file with the page's own settings (${runFile.why || 'ok'})`);
 
 } catch (e) {
   // Recorded, not reported here: `finish` runs once, from `finally`, so the

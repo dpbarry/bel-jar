@@ -34096,14 +34096,19 @@
     }
   }
   async function fetchMe() {
-    try {
-      const res = await fetch("/api/auth/me", { credentials: "same-origin", headers: { accept: "application/json" } });
-      if (res.status !== 200 || !/application\/json/.test(res.headers.get("content-type") || "")) return void 0;
-      const body = await res.json();
-      return body && "user" in body ? body.user : void 0;
-    } catch (_) {
-      return void 0;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "same-origin", headers: { accept: "application/json" } });
+        if (res.status === 200 && /application\/json/.test(res.headers.get("content-type") || "")) {
+          const body = await res.json();
+          return body && "user" in body ? body.user : void 0;
+        }
+        if (res.status < 500) return void 0;
+      } catch (_) {
+      }
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
     }
+    return void 0;
   }
   function toast3(kind, message2) {
     const T = g13.Toasts;
@@ -34115,19 +34120,23 @@
     } catch (_) {
     }
   }
-  function avatarNode(cls) {
-    if (user && user.avatar) {
-      const img = document.createElement("img");
-      img.className = cls;
-      img.alt = "";
-      img.src = user.avatar;
-      img.referrerPolicy = "no-referrer";
-      return img;
-    }
+  function initialNode(cls) {
     const initial = document.createElement("span");
     initial.className = cls + " account-initial";
     initial.textContent = (user && (user.name || user.handle) || "?").trim().charAt(0).toUpperCase();
     return initial;
+  }
+  function avatarNode(cls) {
+    if (!(user && user.avatar)) return initialNode(cls);
+    const img = document.createElement("img");
+    img.className = cls;
+    img.alt = "";
+    img.referrerPolicy = "no-referrer";
+    img.addEventListener("error", () => {
+      if (img.parentNode) img.replaceWith(initialNode(cls));
+    }, { once: true });
+    img.src = user.avatar;
+    return img;
   }
   function render5() {
     const btn = document.getElementById("btn-account");

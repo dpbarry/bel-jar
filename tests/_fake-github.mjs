@@ -3,12 +3,43 @@
 // exchange (single-use codes; checks the client id and secret), and the
 // profile. Tests point the Worker at it with the GITHUB_* vars.
 import http from 'node:http';
+import zlib from 'node:zlib';
 import { freePort } from './_worker-env.mjs';
 
+// `avatar`: this stand-in serves a real picture for 'ok' and none for 'missing'
+// (a 404, as a blocked or deleted image would be), from its own origin: cross-
+// origin to the site, as GitHub's avatars are. The profile carries its URL.
 export const PEOPLE = {
-  dean: { id: 101, login: 'Dean-B', name: 'Dean', avatar_url: null },
-  renamed: { id: 202, login: 'dean-b', name: 'Someone else', avatar_url: null },
+  dean: { id: 101, login: 'Dean-B', name: 'Dean', avatar: 'ok' },
+  renamed: { id: 202, login: 'dean-b', name: 'Someone else', avatar: 'missing' },
 };
+
+/** A square PNG of one colour, encoded here so it is certainly valid (zlib's own deflate and CRC). */
+function solidPng(size, [r, g, b]) {
+  const raw = Buffer.alloc((size * 3 + 1) * size);
+  for (let y = 0; y < size; y++) {
+    const row = y * (size * 3 + 1);
+    for (let x = 0; x < size; x++) raw.set([r, g, b], row + 1 + x * 3);
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+const AVATAR_PNG = solidPng(16, [214, 92, 150]);
 
 export async function startFakeGitHub() {
   let signedIn = 'dean';
@@ -59,7 +90,15 @@ export async function startFakeGitHub() {
       const who = tokens.get(String(req.headers.authorization || '').replace(/^Bearer /, ''));
       seen.profiles += 1;
       res.writeHead(who ? 200 : 401, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(who ? PEOPLE[who] : { message: 'Bad credentials' }));
+      if (!who) {
+        res.end(JSON.stringify({ message: 'Bad credentials' }));
+        return;
+      }
+      const { avatar, ...person } = PEOPLE[who];
+      res.end(JSON.stringify(Object.assign(person, { avatar_url: avatar ? url + '/avatars/' + who + '-' + avatar + '.png' : null })));
+    } else if (u.pathname.startsWith('/avatars/') && u.pathname.endsWith('-ok.png')) {
+      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+      res.end(AVATAR_PNG);
     } else {
       res.writeHead(404);
       res.end();

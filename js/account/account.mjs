@@ -80,15 +80,25 @@ export function signInFailure(why, detail) {
   }
 }
 
+/**
+ * Who the server says is signed in: a user, null (nobody), or undefined (no
+ * server here: the account stays out of sight). A 404 is a host without the
+ * API and is final; a network failure or a server error may pass, so it is
+ * asked once more before the page decides there is no server.
+ */
 async function fetchMe() {
-  try {
-    const res = await fetch('/api/auth/me', { credentials: 'same-origin', headers: { accept: 'application/json' } });
-    if (res.status !== 200 || !/application\/json/.test(res.headers.get('content-type') || '')) return undefined;
-    const body = await res.json();
-    return body && 'user' in body ? body.user : undefined;
-  } catch (_) {
-    return undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      if (res.status === 200 && /application\/json/.test(res.headers.get('content-type') || '')) {
+        const body = await res.json();
+        return body && 'user' in body ? body.user : undefined;
+      }
+      if (res.status < 500) return undefined;
+    } catch (_) { /* the network: once more */ }
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
   }
+  return undefined;
 }
 
 function toast(kind, message) {
@@ -104,19 +114,30 @@ function saveNow() {
 
 // ── the header's avatar ─────────────────────────────────────────────────────
 
-function avatarNode(cls) {
-  if (user && user.avatar) {
-    const img = document.createElement('img');
-    img.className = cls;
-    img.alt = '';
-    img.src = user.avatar;
-    img.referrerPolicy = 'no-referrer';
-    return img;
-  }
+function initialNode(cls) {
   const initial = document.createElement('span');
   initial.className = cls + ' account-initial';
   initial.textContent = (user && (user.name || user.handle) || '?').trim().charAt(0).toUpperCase();
   return initial;
+}
+
+/**
+ * The picture, or the initial when there is none. ⛔ A picture that cannot load
+ * (a blocker, a network, a deleted avatar) becomes the initial too: an <img>
+ * that fails with an empty alt draws nothing, and the account button was an
+ * invisible empty circle in a browser whose extension stopped GitHub's image.
+ */
+function avatarNode(cls) {
+  if (!(user && user.avatar)) return initialNode(cls);
+  const img = document.createElement('img');
+  img.className = cls;
+  img.alt = '';
+  img.referrerPolicy = 'no-referrer';
+  img.addEventListener('error', () => {
+    if (img.parentNode) img.replaceWith(initialNode(cls));
+  }, { once: true });
+  img.src = user.avatar;
+  return img;
 }
 
 function render() {

@@ -33761,6 +33761,35 @@
     if (days < 30) return "edited " + days + " days ago";
     return "edited " + new Date(ms).toLocaleDateString();
   }
+  function signInFailure(why, detail2) {
+    switch (why) {
+      case "denied":
+        return null;
+      case "config":
+        return "Sign-in isn\u2019t set up on this server yet: it has no GitHub secret. Nothing is wrong with your account.";
+      case "state":
+        if (detail2 === "no-cookie") {
+          return "BelJar couldn\u2019t match GitHub\u2019s answer to this browser: the sign-in cookie was missing. It lasts 10 minutes and has to stay in the browser that started, so check that cookies are allowed for this site, then try again.";
+        }
+        if (detail2 === "mismatch") return "A newer sign-in started after this one, in another tab. Finish that one, or try again.";
+        return "GitHub\u2019s answer came back incomplete. Try again.";
+      case "code":
+        return "GitHub sent you back without a sign-in code.";
+      case "exchange":
+        if (detail2 === "incorrect_client_credentials") {
+          return "GitHub rejected BelJar\u2019s app credentials: the server\u2019s GitHub secret is wrong. This is the server\u2019s fault, not your account\u2019s.";
+        }
+        if (detail2 === "bad_verification_code") return "GitHub\u2019s one-time sign-in code had expired or was already used. Try again.";
+        if (detail2 === "redirect_uri_mismatch") return "This site\u2019s address doesn\u2019t match the one BelJar\u2019s GitHub app is registered with.";
+        return "GitHub didn\u2019t hand over a sign-in token.";
+      case "profile":
+        return "GitHub signed you in, but BelJar couldn\u2019t read your public profile.";
+      case "github":
+        return "BelJar\u2019s server couldn\u2019t reach GitHub. Try again in a minute.";
+      default:
+        return "Sign-in stopped at a step this page doesn\u2019t know.";
+    }
+  }
   function projectLine(p, now = Date.now()) {
     return [p.files === 1 ? "1 file" : p.files + " files", sizeLabel(p.size), whenLabel(p.editedAt, now)].join(" \xB7 ");
   }
@@ -33921,9 +33950,28 @@
     if (!search) return;
     const params = new URLSearchParams(search);
     if (params.get("signin") !== "failed") return;
-    toast3("error", params.get("why") === "denied" ? "Sign-in was cancelled." : "Couldn\u2019t sign in with GitHub.");
+    const why = params.get("why") || "";
+    const detail2 = params.get("detail") || "";
+    const explained = signInFailure(why, detail2);
+    if (!explained) {
+      toast3("info", "Sign-in was cancelled.");
+    } else {
+      toast3("error", "Couldn\u2019t sign in with GitHub. The notifications say why.");
+      const N = g13.Notifications;
+      if (N && typeof N.emit === "function") {
+        N.emit({
+          kind: "error",
+          category: "ops",
+          origin: "local",
+          source: "account.signin",
+          title: "Couldn\u2019t sign in with GitHub",
+          body: explained + ` (step: ${why}${detail2 ? ", " + detail2 : ""})`
+        });
+      }
+    }
     params.delete("signin");
     params.delete("why");
+    params.delete("detail");
     const rest = params.toString();
     g13.history.replaceState(null, "", g13.location.pathname + (rest ? "?" + rest : "") + g13.location.hash);
   }

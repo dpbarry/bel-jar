@@ -129,9 +129,20 @@ async function accountFor(env, profile, now) {
   throw new Error('auth: no free handle for ' + base);
 }
 
+/**
+ * Back to the site, saying which step failed (why) and, where there is one, GitHub's own
+ * answer (detail, e.g. incorrect_client_credentials): the page explains both. Workers Logs
+ * keep the same line. ⛔ Never a code, a token or the secret: only these two words.
+ */
+function failed(why, detail, cookies = []) {
+  const d = typeof detail === 'string' && /^[A-Za-z0-9_-]{1,60}$/.test(detail) ? detail : null;
+  console.warn('auth: sign-in failed:', why, d || '-');
+  return redirect('/?signin=failed&why=' + why + (d ? '&detail=' + d : ''), cookies);
+}
+
 async function start(request, env) {
   // Both, or nobody is sent through GitHub's consent only to fail the exchange on the way back.
-  if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) return json({ error: 'sign-in is not configured' }, 503);
+  if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) return failed('config');
   const url = new URL(request.url);
   const cookies = cookiePolicy(url);
   const state = randomToken(24);
@@ -147,18 +158,23 @@ async function callback(request, env) {
   const url = new URL(request.url);
   const cookies = cookiePolicy(url);
   const clearState = setCookie(cookies.state, '', 0, cookies.secure);
-  const fail = (why) => redirect('/?signin=failed&why=' + encodeURIComponent(why), [clearState]);
+  const fail = (why, detail) => failed(why, detail, [clearState]);
   const state = url.searchParams.get('state');
   const expected = readCookie(request, cookies.state);
-  if (!state || !expected || state !== expected) return fail('state');
+  // The detail tells a browser that sent no cookie (blocked, expired after 10 minutes, another
+  // browser) from one whose state is another sign-in's (two tabs).
+  if (!state || !expected || state !== expected) return fail('state', !state ? 'no-state' : !expected ? 'no-cookie' : 'mismatch');
   const code = url.searchParams.get('code');
-  if (!code) return fail(url.searchParams.get('error') === 'access_denied' ? 'denied' : 'code');
+  if (!code) {
+    const error = url.searchParams.get('error');
+    return error === 'access_denied' ? fail('denied') : fail('code', error);
+  }
   const gh = github(env);
   let profile;
   try {
     const tokenRes = await fetch(gh.token, {
       method: 'POST',
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      headers: { accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'BelJar' },
       body: JSON.stringify({
         client_id: env.GITHUB_CLIENT_ID,
         client_secret: env.GITHUB_CLIENT_SECRET,
@@ -166,17 +182,19 @@ async function callback(request, env) {
         redirect_uri: url.origin + '/api/auth/github/callback',
       }),
     });
-    const token = await tokenRes.json();
-    if (!token || typeof token.access_token !== 'string') return fail('exchange');
+    const token = await tokenRes.json().catch(() => null);
+    // GitHub answers 200 with { error } when it refuses: incorrect_client_credentials (the
+    // secret), bad_verification_code (expired or used), redirect_uri_mismatch.
+    if (!token || typeof token.access_token !== 'string') return fail('exchange', token && token.error ? token.error : 'status-' + tokenRes.status);
     const userRes = await fetch(gh.api + '/user', {
       headers: { authorization: 'Bearer ' + token.access_token, accept: 'application/vnd.github+json', 'user-agent': 'BelJar' },
     });
-    if (userRes.status !== 200) return fail('profile');
+    if (userRes.status !== 200) return fail('profile', 'status-' + userRes.status);
     profile = await userRes.json();
   } catch (_) {
     return fail('github');
   }
-  if (!profile || profile.id == null) return fail('profile');
+  if (!profile || profile.id == null) return fail('profile', 'no-id');
   const now = Date.now();
   const userId = await accountFor(env, profile, now);
   const session = randomToken(32);

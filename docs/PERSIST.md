@@ -449,7 +449,9 @@ the dashboard, and a listed route would switch workers.dev off. The live GitHub 
 its secret is set with `npx wrangler secret put GITHUB_CLIENT_SECRET --name bel-jar` (any folder;
 it prompts) and is in no file; without it, sign-in answers 503 at the start. Tables:
 `npx wrangler d1 migrations apply DB --remote`, from the repository (applied 2026-09-28).
-`npm run probe:live` checks all of it on the real site.
+`npm run probe:live` checks all of it on the real site, the secret included: GitHub checks an app's
+credentials before the code, so a made-up code must come back as `bad_verification_code`, never
+`incorrect_client_credentials`.
 `tests/test-deploy-config.mjs` holds the config (no dev switch, no secret var, /api/* only, the
 bindings the code reads) and the upload, listed as wrangler lists it: nothing private goes up, and
 everything the page loads does. ⛔ wrangler skips no file on its own; until this step the live site
@@ -463,6 +465,15 @@ later), and signing out, which offers to remove the account's projects from the 
 so only after a fresh sync round confirms they are all on the server, with sync stopped and its
 last round finished first. While a menu is open, toasts fade back and let clicks through: they live
 in the top layer, and one sat over the account menu.
+
+**A failed sign-in says why.** The server sends the page back to
+`/?signin=failed&why=<step>&detail=<GitHub's answer>`: `config` (no secret: refused before GitHub),
+`state` (`no-cookie`, `mismatch`: another tab's sign-in, `no-state`), `denied` (cancelled, not a
+failure), `code`, `exchange` (GitHub's word: `incorrect_client_credentials` is the server's secret,
+`bad_verification_code` an expired or used code), `profile`, `github` (unreachable). Workers Logs keep
+the same two words, never a code, token or secret. The page shows a toast and puts the reason in
+the notifications (`signInFailure`; `tests/test-account.mjs` reads every step out of
+`server/auth.mjs` and holds that each has its own sentence).
 
 Locally: `npm run dev` (`scripts/dev-server.mjs`: migrations, then wrangler dev) and open
 `http://127.0.0.1:8787` (127.0.0.1, not localhost: the local GitHub app's callback is registered
@@ -542,6 +553,8 @@ purpose and seen to fail its test (2026-09-25): 13 in Node, 3 in Chrome.
 
 - **A sync status in the UI**, from `runner.status()` (only the syncing tab has it today).
 - **An installable BelJar**, if Safari's exemption is wanted (§5.9).
+- **A design pass on the account surfaces**: the header button, its menu, the claim and sign-out
+  dialogs, and how a sign-in failure reads. They work; they are not yet good to look at.
 
 Known limits: another tab's write in the very instant the syncing tab applies a merge is the one
 window left (the tab guard warns about two tabs on one project); one file open in two tabs while it

@@ -1,7 +1,8 @@
 // The account's decisions (js/account/account.mjs): what a sign-in means for
 // this browser, which projects the claim flow offers, when a sync round makes
 // removing projects safe, and how a project is described.
-import { accountStep, claimCandidates, roundIsSafe, projectLine } from '../js/account/account.mjs';
+import fs from 'node:fs';
+import { accountStep, claimCandidates, roundIsSafe, projectLine, signInFailure } from '../js/account/account.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -40,4 +41,27 @@ expect(projectLine({ files: 1, size: 20, editedAt: now - 86400e3 * 1.5 }, now) =
 expect(/^2 files · 12 KB · edited 5 days ago$/.test(projectLine({ files: 2, size: 12288, editedAt: now - 86400e3 * 5 }, now)), 'days ago');
 expect(!/—/.test(projectLine({ files: 2, size: 1, editedAt: 0 }, now)), 'no em dash, in the house voice');
 
-console.log(`OK account (${n} checks: sign-in steps, what the claim flow offers, when removal is safe, how a project reads)`);
+// ── a failed sign-in, explained ──────────────────────────────────────────────
+// Every step the server can name (server/auth.mjs: fail('…') and failed('…'), read from the
+// source so a new one cannot land without its sentence) gets its own, never the fallback.
+const auth = fs.readFileSync(new URL('../server/auth.mjs', import.meta.url), 'utf8');
+const steps = [...new Set([...auth.matchAll(/\bfail(?:ed)?\('([a-z]+)'/g)].map((m) => m[1]))];
+expect(steps.length >= 7, `the server's failure steps are found in its source (${steps.join(', ')})`);
+const fallback = signInFailure('no-such-step', '');
+for (const why of steps) {
+  const said = signInFailure(why, '');
+  expect(why === 'denied' ? said === null : typeof said === 'string' && said !== fallback,
+    `the page has its own explanation for "${why}"`);
+}
+expect(signInFailure('denied', '') === null, 'a sign-in the person cancelled is not a failure');
+expect(/secret/.test(signInFailure('exchange', 'incorrect_client_credentials')) && /not your account/.test(signInFailure('exchange', 'incorrect_client_credentials')),
+  'a secret GitHub rejects is named as the server\'s fault, not the person\'s');
+expect(/expired|already used/.test(signInFailure('exchange', 'bad_verification_code')), 'an expired or reused code says so');
+expect(/cookie/.test(signInFailure('state', 'no-cookie')) && /another tab/.test(signInFailure('state', 'mismatch')),
+  'a missing state cookie and a newer sign-in in another tab read differently');
+for (const why of steps) for (const d of ['', 'no-cookie', 'mismatch', 'incorrect_client_credentials', 'bad_verification_code', 'status-500']) {
+  const said = signInFailure(why, d);
+  expect(said === null || !/—/.test(said), `no em dash in "${why}/${d}", in the house voice`);
+}
+
+console.log(`OK account (${n} checks: sign-in steps, what the claim flow offers, when removal is safe, how a project reads, every sign-in failure explained)`);

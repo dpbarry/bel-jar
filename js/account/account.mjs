@@ -62,6 +62,42 @@ function whenLabel(ms, now) {
   return 'edited ' + new Date(ms).toLocaleDateString();
 }
 
+/**
+ * What a failed sign-in means, from where the server says it stopped (`why`) and, where
+ * there is one, GitHub's own answer (`detail`): server/auth.mjs `failed()`. null for a
+ * sign-in the person cancelled, which is not a failure. Every step the server can name
+ * has its own sentence (tests/test-account.mjs holds that).
+ */
+export function signInFailure(why, detail) {
+  switch (why) {
+    case 'denied':
+      return null;
+    case 'config':
+      return 'Sign-in isn’t set up on this server yet: it has no GitHub secret. Nothing is wrong with your account.';
+    case 'state':
+      if (detail === 'no-cookie') {
+        return 'BelJar couldn’t match GitHub’s answer to this browser: the sign-in cookie was missing. It lasts 10 minutes and has to stay in the browser that started, so check that cookies are allowed for this site, then try again.';
+      }
+      if (detail === 'mismatch') return 'A newer sign-in started after this one, in another tab. Finish that one, or try again.';
+      return 'GitHub’s answer came back incomplete. Try again.';
+    case 'code':
+      return 'GitHub sent you back without a sign-in code.';
+    case 'exchange':
+      if (detail === 'incorrect_client_credentials') {
+        return 'GitHub rejected BelJar’s app credentials: the server’s GitHub secret is wrong. This is the server’s fault, not your account’s.';
+      }
+      if (detail === 'bad_verification_code') return 'GitHub’s one-time sign-in code had expired or was already used. Try again.';
+      if (detail === 'redirect_uri_mismatch') return 'This site’s address doesn’t match the one BelJar’s GitHub app is registered with.';
+      return 'GitHub didn’t hand over a sign-in token.';
+    case 'profile':
+      return 'GitHub signed you in, but BelJar couldn’t read your public profile.';
+    case 'github':
+      return 'BelJar’s server couldn’t reach GitHub. Try again in a minute.';
+    default:
+      return 'Sign-in stopped at a step this page doesn’t know.';
+  }
+}
+
 /** One line under a project's name: "3 files · 4.2 KB · edited today". */
 export function projectLine(p, now = Date.now()) {
   return [p.files === 1 ? '1 file' : p.files + ' files', sizeLabel(p.size), whenLabel(p.editedAt, now)].join(' · ');
@@ -241,9 +277,29 @@ function noteFailedSignIn() {
   if (!search) return; // an ordinary load: no query at all
   const params = new URLSearchParams(search);
   if (params.get('signin') !== 'failed') return;
-  toast('error', params.get('why') === 'denied' ? 'Sign-in was cancelled.' : 'Couldn’t sign in with GitHub.');
+  const why = params.get('why') || '';
+  const detail = params.get('detail') || '';
+  const explained = signInFailure(why, detail);
+  if (!explained) {
+    toast('info', 'Sign-in was cancelled.');
+  } else {
+    // The toast goes; the notification stays, with the reason, where it can be found again.
+    toast('error', 'Couldn’t sign in with GitHub. The notifications say why.');
+    const N = g.Notifications;
+    if (N && typeof N.emit === 'function') {
+      N.emit({
+        kind: 'error',
+        category: 'ops',
+        origin: 'local',
+        source: 'account.signin',
+        title: 'Couldn’t sign in with GitHub',
+        body: explained + ` (step: ${why}${detail ? ', ' + detail : ''})`,
+      });
+    }
+  }
   params.delete('signin');
   params.delete('why');
+  params.delete('detail');
   const rest = params.toString();
   g.history.replaceState(null, '', g.location.pathname + (rest ? '?' + rest : '') + g.location.hash);
 }

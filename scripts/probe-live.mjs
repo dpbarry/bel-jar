@@ -143,6 +143,15 @@ try {
   const stateCookie = (start.headers.getSetCookie ? start.headers.getSetCookie() : []).find((c) => c.startsWith('__Host-bj_state='));
   check(!!stateCookie && /HttpOnly/.test(stateCookie) && /Secure/.test(stateCookie) && /SameSite=Lax/.test(stateCookie),
     'the one-time state rides in a __Host-, HttpOnly, Secure cookie');
+  // The stored secret, without signing anyone in: GitHub checks the app's credentials before
+  // the code, so a made-up code is refused as bad_verification_code only if the secret is right
+  // (incorrect_client_credentials if not; the Worker passes GitHub's word back as the detail).
+  const probeState = to ? to.searchParams.get('state') : '';
+  const back = await hit('/api/auth/github/callback?code=probe-not-a-code&state=' + encodeURIComponent(probeState || ''),
+    { headers: { cookie: stateCookie ? stateCookie.split(';')[0] : '' } });
+  const landed = back.headers.get('location') || '';
+  check(landed === '/?signin=failed&why=exchange&detail=bad_verification_code',
+    `GitHub accepts the server's secret: a made-up code is refused as a bad code, not bad credentials (${landed})`);
   const heads = await hit('/api/sync/heads', { method: 'POST', headers: { 'content-type': 'application/json', origin: site }, body: '{"args":[]}' });
   check(heads.status === 401, `the sync API refuses a request without a session (${heads.status})`);
   const forged = await hit('/api/sync/heads', { method: 'POST', headers: { 'content-type': 'application/json', origin: site, 'x-beljar-account': 'u_anyone' }, body: '{"args":[]}' });

@@ -50,19 +50,46 @@ function finish(code) {
   expect(SESSION_MS === 90 * 24 * 60 * 60 * 1000, 'sessions last 90 days');
 }
 
+/** fn() with console.warn captured: the lines the Worker leaves in Workers Logs. */
+async function logged(fn) {
+  const lines = [];
+  const warn = console.warn;
+  console.warn = (...a) => lines.push(a.join(' '));
+  try {
+    return { res: await fn(), lines };
+  } finally {
+    console.warn = warn;
+  }
+}
+
 // ── half-configured: deployed before `wrangler secret put` ───────────────────
 {
   const start = new Request('https://beljar.deanbarry.com/api/auth/github/start');
-  const at = (env) => handleAuth(start, env, '/api/auth/github/start', () => true);
-  expect((await at({ GITHUB_CLIENT_ID: 'Ov23x' })).status === 503 && (await at({})).status === 503,
-    'without its secret, sign-in refuses at the start, before sending anyone through GitHub to fail on the way back');
-  expect((await at({ GITHUB_CLIENT_ID: 'Ov23x', GITHUB_CLIENT_SECRET: 's' })).status === 302, 'with both, it goes to GitHub');
+  const at = (env) => logged(() => handleAuth(start, env, '/api/auth/github/start', () => true));
+  const half = await at({ GITHUB_CLIENT_ID: 'Ov23x' });
+  const none = await at({});
+  expect(half.res.headers.get('location') === '/?signin=failed&why=config' && none.res.headers.get('location') === '/?signin=failed&why=config',
+    'without its secret, sign-in refuses at the start, back to the page with the reason, before sending anyone through GitHub');
+  const both = await at({ GITHUB_CLIENT_ID: 'Ov23x', GITHUB_CLIENT_SECRET: 's' });
+  expect(new URL(both.res.headers.get('location')).origin === 'https://github.com', 'with both, it goes to GitHub');
 }
 
 // ── a stand-in for GitHub (tests/_fake-github.mjs) ───────────────────────────
 gh = await startFakeGitHub();
 const GH = gh.url;
 const seen = gh.seen;
+
+// ── a secret GitHub rejects, named as such (the handler in-process) ──────────
+{
+  const env = Object.assign({ GITHUB_CLIENT_ID: 'test-client', GITHUB_CLIENT_SECRET: 'wrong-secret' }, gh.vars);
+  const cb = new Request('https://beljar.deanbarry.com/api/auth/github/callback?state=st4te&code=c0de1',
+    { headers: { cookie: '__Host-bj_state=st4te' } });
+  const { res, lines } = await logged(() => handleAuth(cb, env, '/api/auth/github/callback', () => true));
+  expect(res.headers.get('location') === '/?signin=failed&why=exchange&detail=incorrect_client_credentials',
+    `a secret GitHub rejects comes back named, so the page can say it is the server's fault (${res.headers.get('location')})`);
+  expect(lines.length === 1 && lines[0] === 'auth: sign-in failed: exchange incorrect_client_credentials' && !/wrong-secret|c0de1|st4te/.test(lines.join()),
+    `and the Worker logs the step and GitHub's answer, never the secret, the code or the state (${lines.join(' | ')})`);
+}
 
 try {
   dev = await startWorker({
@@ -156,13 +183,13 @@ expect((await desktop.sync().heads()).some((h) => h.id === 'p_mine'), 'and sees 
   const forged = new URL(atGitHub.headers.get('location'));
   forged.searchParams.set('state', 'not-the-state');
   const res = await mallory.get(forged.toString());
-  expect(res.headers.get('location') === '/?signin=failed&why=state' && !mallory.jar.has('bj_session'), 'a callback with another state starts no session');
+  expect(res.headers.get('location') === '/?signin=failed&why=state&detail=mismatch' && !mallory.jar.has('bj_session'), 'a callback with another state starts no session');
 
   const stranger = browser();
   const s2 = await browser().get(W + '/api/auth/github/start');
   const g2 = await fetch(s2.headers.get('location'), { redirect: 'manual' });
   const r2 = await stranger.get(g2.headers.get('location'));
-  expect(r2.headers.get('location') === '/?signin=failed&why=state' && !stranger.jar.has('bj_session'),
+  expect(r2.headers.get('location') === '/?signin=failed&why=state&detail=no-cookie' && !stranger.jar.has('bj_session'),
     'a callback in a browser that did not start the sign-in starts no session (a link sent to someone)');
 
   const replay = browser();
@@ -175,7 +202,7 @@ expect((await desktop.sync().heads()).some((h) => h.id === 'p_mine'), 'and sees 
   const reused = new URL(cb);
   reused.searchParams.set('state', new URL(s4.headers.get('location')).searchParams.get('state'));
   const r4 = await replay.get(reused.toString());
-  expect(r4.headers.get('location') === '/?signin=failed&why=exchange' && !replay.jar.has('bj_session'), 'a code already used starts no session');
+  expect(r4.headers.get('location') === '/?signin=failed&why=exchange&detail=bad_verification_code' && !replay.jar.has('bj_session'), 'a code already used starts no session');
 
   gh.signIn(null);
   const declined = await browser().signIn();

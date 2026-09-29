@@ -40,8 +40,14 @@ export async function startFakeGitHub() {
         seen.exchanges.push(b);
         const who = codes.get(b.code);
         codes.delete(b.code);
+        // As GitHub answers (checked against it 2026-09-28): 200 with { error }, the
+        // credentials checked before the code.
         res.writeHead(200, { 'content-type': 'application/json' });
-        if (b.client_id !== 'test-client' || b.client_secret !== 'test-secret' || !who) {
+        if (b.client_id !== 'test-client' || b.client_secret !== 'test-secret') {
+          res.end(JSON.stringify({ error: 'incorrect_client_credentials' }));
+          return;
+        }
+        if (!who) {
           res.end(JSON.stringify({ error: 'bad_verification_code' }));
           return;
         }

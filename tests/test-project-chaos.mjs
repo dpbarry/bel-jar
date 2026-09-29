@@ -17,6 +17,8 @@ function loadPersist() {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: (k) => storage.delete(k),
+    get length() { return storage.size; },
+    key: (i) => [...storage.keys()][i] ?? null,
   };
   const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage });
   ctx.globalThis = ctx;
@@ -178,13 +180,14 @@ function getText(id) {
 // ── project silo: second project isolated ─────────────────────────────────────
 {
   const { P: P1 } = loadPersist();
-  P1.ensureProject();
-  P1.setFileText('workspace://main.bel', 'PROJECT_A');
+  const home = P1.getActiveProjectId();
+  const mainA = P1.listFiles()[0].id;
+  P1.setFileText(mainA, 'PROJECT_A');
   const pid = P1.createProject('B');
   P1.setActiveProjectId(pid);
-  P1.setFileText('workspace://main.bel', 'PROJECT_B');
-  P1.setActiveProjectId(P1.DEFAULT_PROJECT_ID);
-  expect(P1.getFileText('workspace://main.bel') === 'PROJECT_A', 'switch back preserves silo A');
+  P1.setFileText(P1.listFiles()[0].id, 'PROJECT_B');
+  P1.setActiveProjectId(home);
+  expect(P1.getFileText(mainA) === 'PROJECT_A', 'switch back preserves silo A');
 }
 
 // ── workspace developments: multiple independent folders ──────────────────────

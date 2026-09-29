@@ -26,6 +26,7 @@ import {
 } from './project-prelude.mjs';
 import { computeSettleDelayMs, SETTLE_DELAY_MS } from './settle-delay.mjs';
 import { suitePreludeBannerForActive } from './suite-prelude-banner.mjs';
+import { readSetting } from '../../persist/settings-schema.mjs';
 
 function fnv1a(text) {
   let h = 0x811c9dc5;
@@ -196,7 +197,7 @@ export function createEditorCheckHost(deps) {
 
   function scheduleDevelopmentCheckIfNeeded(view) {
     const P = persist();
-    if (P?.readStoredSuiteCheck?.() === 'active') return;
+    if (readSetting('suiteCheck') === 'active') return;
     const activeId = P?.getActiveFileId?.();
     if (!activeId) return;
     const sig = nonActiveDevSignature(view, activeId);
@@ -206,7 +207,7 @@ export function createEditorCheckHost(deps) {
   }
 
   function scheduleDevelopmentCheck(view) {
-    if (persist()?.readStoredSuiteCheck?.() === 'active') return;
+    if (readSetting('suiteCheck') === 'active') return;
     ensureDevelopmentChecked(view);
   }
 

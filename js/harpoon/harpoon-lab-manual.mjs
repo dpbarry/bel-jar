@@ -778,10 +778,7 @@ function createManual(deps) {
     var token = {};
     this._sweepToken = token;
     if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
-    var persist = globalThis.Persist;
-    var on = !persist || typeof persist.readStoredHarpoonVerifyMoves !== 'function'
-      ? true
-      : persist.readStoredHarpoonVerifyMoves();
+    var on = Settings.get('harpoonVerifyMoves');
     if (!on) return;
     var rows = this._moveRows.slice(0, 8);
     var i = 0;

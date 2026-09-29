@@ -10,6 +10,7 @@ import {
   scheduleScrollToCenter,
 } from '../ide/viewport.mjs';
 import { dispatchEdit } from '../edit-history.mjs';
+import { readSetting } from '../../persist/settings-schema.mjs';
 
 function showFormatToast(message, kind) {
   const T = typeof window !== 'undefined' ? window.Toasts : null;
@@ -252,9 +253,8 @@ export function formatString(src, tree, opts = {}) {
 }
 
 function resolvePrintWidth(opts = {}) {
-  const g = typeof window !== 'undefined' ? window : globalThis;
   return opts.printWidth
-    ?? g.Persist?.readStoredEditorFormatWidth?.()
+    ?? readSetting('editorFormatWidth')
     ?? 80;
 }
 

@@ -1,9 +1,9 @@
 import { EditorView } from '@codemirror/view';
 import { Annotation, Transaction } from '@codemirror/state';
 import { historyField } from '@codemirror/commands';
+import { merge3 } from '../persist/merge.mjs';
 
 export const EDIT_HISTORY_CAP = 100;
-export const SESSION_KEY_PREFIX = 'beljar-edit-history-v1:';
 export const TYPING_GROUP_MS = 150;
 
 /**
@@ -26,6 +26,13 @@ export const EDIT_HISTORY_MIN_ENTRIES = 12;
 const PERSIST_DEBOUNCE_MS = 400;
 
 export const editHistoryTxn = Annotation.define();
+
+/**
+ * Marks a change someone else made to an open file: another tab, a pull, a
+ * rewrite merged in by the document (docs/PERSIST.md §4.4). It is not a step of
+ * yours, and it is not folded into one: undo takes back your edits and keeps it.
+ */
+export const externalChange = Annotation.define();
 
 function emptyStructural() {
   return {
@@ -513,30 +520,27 @@ export function createEditHistory(adapter) {
   let persistPending = false;
 
   /**
-   * Write the stack to sessionStorage, newest-first and inside the byte
-   * budget. Whatever does not fit is simply not persisted — losing the OLDEST
-   * steps across a reload is a far better failure than the previous one, where
-   * a single over-quota `setItem` threw and nothing at all was saved.
+   * Write the stack to the tab store (it outlives a reload, not the tab),
+   * newest-first and inside the byte budget. Whatever does not fit is simply
+   * not persisted: losing the OLDEST steps across a reload is a far better
+   * failure than the previous one, where a single over-quota write threw and
+   * nothing at all was saved.
+   *
+   * adapter.writeStack(projectKey, data) answers false when it was refused.
    */
   function writeStack() {
-    const store = adapter.sessionStorage;
-    if (!store || !adapter.projectKey) return;
-    const key = SESSION_KEY_PREFIX + adapter.projectKey;
+    if (!adapter.writeStack || !adapter.projectKey) return;
     let budget = SESSION_BYTE_CAP;
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const undo = undoStack.slice(newestWithin(undoStack, budget, 1));
       const redo = redoStack.slice(newestWithin(redoStack, budget, 0));
-      try {
-        store.setItem(key, JSON.stringify({ undo, redo }));
+      if (adapter.writeStack(adapter.projectKey, { undo, redo })) return;
+      // Quota is shared with everything else on the origin, so a budget that
+      // should have fit can still be refused. Shed and retry, then give up.
+      budget = Math.floor(budget / 4);
+      if (budget < 4096) {
+        adapter.clearStack?.(adapter.projectKey);
         return;
-      } catch (_) {
-        // Quota is shared with everything else on the origin, so a budget that
-        // should have fit can still be refused. Shed and retry, then give up.
-        budget = Math.floor(budget / 4);
-        if (budget < 4096) {
-          try { store.removeItem?.(key); } catch (_e) { /* nothing left to do */ }
-          return;
-        }
       }
     }
   }
@@ -559,7 +563,7 @@ export function createEditHistory(adapter) {
    * crash-then-reload survivable.
    */
   function persistStack() {
-    if (!adapter.sessionStorage || !adapter.projectKey) return;
+    if (!adapter.writeStack || !adapter.projectKey) return;
     if (persistTimer) {
       persistPending = true;
       return;
@@ -581,16 +585,14 @@ export function createEditHistory(adapter) {
    * would then try to write one project's text into another's.
    */
   function loadStack() {
-    const store = adapter.sessionStorage;
-    if (!store || !adapter.projectKey) return;
+    if (!adapter.readStack || !adapter.projectKey) return;
     try {
-      const raw = store.getItem(SESSION_KEY_PREFIX + adapter.projectKey);
-      if (!raw) {
+      const parsed = adapter.readStack(adapter.projectKey);
+      if (!parsed) {
         undoStack = [];
         redoStack = [];
         return;
       }
-      const parsed = JSON.parse(raw);
       undoStack = Array.isArray(parsed.undo)
         ? parsed.undo.map(normalizeEntry).filter(Boolean)
         : [];
@@ -958,6 +960,7 @@ export function createEditHistory(adapter) {
    */
   function reconcileDrift(entry, direction) {
     const facing = direction === 'undo' ? 'after' : 'before';
+    const target = direction === 'undo' ? 'before' : 'after';
     const s = entry.structural || emptyStructural();
     const skip = new Set([
       ...(direction === 'undo' ? s.deleted : s.created).map((f) => f.id),
@@ -971,6 +974,21 @@ export function createEditHistory(adapter) {
       const patch = s.cfg?.[fileId];
       const expect = rec ? rec[facing] : (patch ? patch[facing] : null);
       if (expect == null || expect === cur) continue;
+      // Someone else changed this file since the step. Take back only the
+      // step's own change and keep theirs, when the two do not touch: merge
+      // (what the step left, what is there now, what the step started from).
+      // The step then moves between the current text and the merged one, both
+      // ways. When they do touch, fold the drift into the step as before:
+      // undo still never refuses.
+      if (rec && typeof rec[target] === 'string') {
+        const m = merge3(expect, cur, rec[target]);
+        if (m.ok) {
+          rec[facing] = cur;
+          rec[target] = m.text;
+          folded = true;
+          continue;
+        }
+      }
       if (amendEntryFile(entry, fileId, facing, cur)) folded = true;
     }
     return folded;
@@ -1022,6 +1040,18 @@ export function createEditHistory(adapter) {
     // `applying` is us; `openEntry` is a transaction that commitEntry will
     // snapshot for itself. Everything else has to land somewhere.
     if (openEntry || applying) return;
+
+    // Someone else's change (docs/PERSIST.md §4.4): close the burst being typed
+    // at the text it had BEFORE the change, so the burst's step holds only your
+    // keystrokes, and record nothing for the change itself. Undo meets it later
+    // as drift and keeps it (reconcileDrift).
+    if (update.transactions.length && update.transactions.every((tr) => tr.annotation(externalChange))) {
+      if (typingGroup && typingGroup.fileId === fileId) {
+        typingGroup.pendingAfter = update.startState.doc.toString();
+        flushTypingGroup();
+      }
+      return;
+    }
 
     // ⛔ An out-of-band rewrite is NOT ignorable. Trim-on-save, format-on-save,
     // a reindent, a rename's internal sync — each dispatches with

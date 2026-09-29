@@ -14,12 +14,14 @@
     "symbols",
     "spacer",
     "tab",
+    "undo",
+    "redo",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
@@ -46,12 +48,20 @@
   var BUILDERS = {
     /**
      * Which keymap. Stable, so it carries no colour and no chip — and gated on a
-     * file, because with no editor open there is no keymap to be in.
+     * file, because with no editor open there is no keymap to be in. Clicking it
+     * opens the picker.
      */
     keymap(s) {
       if (!s.hasFile) return null;
       const name = s.style === "vim" ? "Vim" : s.style === "emacs" ? "Emacs" : "Standard";
-      return { key: "keymap", text: name, tone: "plain", title: name + " keymap" };
+      return {
+        key: "keymap",
+        text: name,
+        tone: "plain",
+        title: "Editing style",
+        action: "keymap-menu",
+        pressed: !!s.keymapOpen
+      };
     },
     /** The mode WITHIN the keymap — only where there is one to be in. */
     mode(s) {
@@ -221,11 +231,22 @@
       };
     },
     /**
-     * The way into the edit-history panel.
-     *
-     * Silent until there is something to undo or redo, so an untouched file
-     * carries no widget at all. A waiting redo branch is a tone change, spelled
-     * out in the panel — not a second number beside the word.
+     * Undo and redo, as one tray with the history beside them. The tray appears
+     * whole or not at all, so a direction with nothing in it is disabled rather
+     * than missing — a button that comes and goes shoves its neighbours. The
+     * view appends the live key to `title` from `command`.
+     */
+    undo(s) {
+      if (!s.undoDepth && !s.redoDepth) return null;
+      return { key: "undo", icon: "undo", title: "Undo", command: "edit.undo", action: "undo", disabled: !s.undoDepth };
+    },
+    redo(s) {
+      if (!s.undoDepth && !s.redoDepth) return null;
+      return { key: "redo", icon: "redo", title: "Redo", command: "edit.redo", action: "redo", disabled: !s.redoDepth };
+    },
+    /**
+     * The way into the edit-history panel. A waiting redo branch is a tone
+     * change, spelled out in the panel — not a number beside the icon.
      */
     history(s) {
       const undo = s.undoDepth || 0;
@@ -233,13 +254,11 @@
       if (!undo && !redo) return null;
       return {
         key: "history",
-        text: "History",
         // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
-        // and already carries the HOLES magenta — borrowing it painted the undo
-        // arrow bright pink, which read as an error badge sitting next to the
-        // checker. A widget that means something else gets its own mark.
+        // and already carries the HOLES magenta — borrowing it painted the arrow
+        // bright pink, which read as an error badge sitting next to the checker.
         icon: "history",
-        title: "Editor history",
+        title: "Edit history",
         tone: redo ? "branched" : "plain",
         action: "edit-history",
         pressed: !!s.historyOpen
@@ -333,261 +352,322 @@
     return { line: parsed.line, col: parsed.col };
   }
 
-  // js/commands/command-settings.mjs
+  // js/persist/table.mjs
+  function typeOf(row) {
+    if (row.values) return "enum";
+    if (row.type) return row.type;
+    if (typeof row.default === "boolean") return "bool";
+    if (typeof row.default === "number") return "number";
+    return "string";
+  }
+
+  // js/persist/settings-schema.mjs
+  function cleanKeybindings(map) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return void 0;
+    const out = {};
+    for (const [id, v] of Object.entries(map)) {
+      if (v === "" || v === null) out[id] = "";
+      else if (typeof v === "string") out[id] = v;
+    }
+    return out;
+  }
+  function cleanAliasPairs(v) {
+    if (v === null) return null;
+    return Array.isArray(v) ? v : void 0;
+  }
+  var ON = true;
+  var OFF = false;
   var SETTINGS = [
+    // ── Appearance ──────────────────────────────────────────────────────────
+    { id: "theme", section: "appearance", default: "dark", values: ["dark", "light"], boot: true },
+    { id: "uiFontSize", section: "appearance", default: "md", values: ["sm", "md", "lg", "xl"], boot: true },
+    { id: "uiTextContrast", section: "appearance", default: "medium", values: ["low", "medium", "high", "maximum"], boot: true },
+    { id: "motionPref", section: "appearance", default: "system", values: ["system", "reduce", "full"], boot: true },
+    { id: "toastDuration", section: "appearance", default: "normal", values: ["short", "normal", "long"] },
+    // ── Editor: typography ──────────────────────────────────────────────────
+    { id: "editorFontSize", section: "editor", default: "md", values: ["sm", "md", "lg", "xl"] },
+    { id: "editorLineHeight", section: "editor", default: "normal", values: ["compact", "normal", "relaxed"] },
+    { id: "editorWordWrap", section: "editor", default: OFF },
+    { id: "editorFontFamily", section: "editor", default: "jetbrains", values: ["jetbrains", "system"], boot: true },
+    { id: "editorCursorBlink", section: "editor", default: "blink", values: ["off", "blink", "fast"] },
+    { id: "editorScrollPastEnd", section: "editor", default: ON },
+    { id: "editorWhitespace", section: "editor", default: "none", values: ["none", "trailing", "selection", "all"] },
+    { id: "editorRulers", section: "editor", default: OFF },
+    // ── Editor: indentation and saving ──────────────────────────────────────
+    { id: "editorTabSize", section: "editor", default: 2, values: [2, 4] },
+    { id: "autosaveDelay", section: "editor", default: 320, values: [320, 1e3, 2e3] },
+    { id: "editorFormatWidth", section: "editor", default: 80, values: [80, 100, 120] },
+    { id: "editorReindentPaste", section: "editor", default: ON },
+    { id: "cfgAutoSync", section: "editor", default: ON },
+    { id: "formatOnSave", section: "editor", default: OFF },
+    { id: "trimTrailingWs", section: "editor", default: OFF },
+    // ── Editor: code insight ────────────────────────────────────────────────
+    { id: "editorSyntaxHighlight", section: "editor", default: ON },
+    { id: "editorSemanticHighlight", section: "editor", default: ON },
+    { id: "editorParseHighlight", section: "editor", default: ON },
+    { id: "editorOccurrenceHighlight", section: "editor", default: ON },
+    { id: "editorBracketMatch", section: "editor", default: ON },
+    { id: "editorAutoCloseBrackets", section: "editor", default: ON },
+    { id: "editorSelectionMatches", section: "editor", default: ON },
+    { id: "hoverScope", section: "editor", default: "all", values: ["all", "user-only", "none"] },
+    { id: "hoverSticky", section: "editor", default: OFF },
+    { id: "editorAutocompleteTrigger", section: "editor", default: "typing", values: ["typing", "none", "always"] },
+    { id: "editorAutocompleteContinue", section: "editor", default: OFF },
+    { id: "quietWhileTyping", section: "editor", default: OFF },
+    // ── Editor: gutters and diagnostics ─────────────────────────────────────
+    { id: "editorLineNumbers", section: "editor", default: ON },
+    { id: "editorLineNumberMode", section: "editor", default: "absolute", values: ["absolute", "relative", "hybrid"] },
+    { id: "editorFoldGutter", section: "editor", default: ON },
+    { id: "editorFoldPersist", section: "editor", default: "session", values: ["session", "none", "local"], sync: false },
+    { id: "editorActiveLine", section: "editor", default: ON },
+    { id: "diagPresentation", section: "editor", default: "both", values: ["both", "underlines", "gutter", "none"] },
+    { id: "diagSeverity", section: "editor", default: "all", values: ["all", "errors"] },
+    { id: "editorHoleGutter", section: "editor", default: ON },
+    { id: "editorHoleEmphasis", section: "editor", default: "normal", values: ["subtle", "normal", "loud"], boot: true },
+    { id: "stickyDeclHeader", section: "editor", default: OFF },
+    // ── Keybindings and the keyboard ────────────────────────────────────────
+    { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
+    { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
+    // null: the status strip picks its own default for the keymap style.
+    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
+    { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
+    { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
+    { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
+    { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
+    // ── Beluga ──────────────────────────────────────────────────────────────
+    // Which build this device downloads: a phone and a workstation differ.
+    { id: "belugaMode", section: "beluga", default: "stable", values: ["stable", "fast"], sync: false },
+    { id: "belugaFallbackStable", section: "beluga", default: ON },
+    { id: "belugaCancelOnEdit", section: "beluga", default: ON },
+    { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
+    { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },
+    // ── Harpoon ─────────────────────────────────────────────────────────────
+    { id: "harpoonMode", section: "harpoon", default: "manual", values: ["manual", "orca"] },
+    { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
+    { id: "autosolveFocusNext", section: "harpoon", default: ON },
+    { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // ── REPL ────────────────────────────────────────────────────────────────
+    { id: "replAutoscroll", section: "repl", default: ON },
+    { id: "replWelcome", section: "repl", default: ON },
+    { id: "replEcho", section: "repl", default: ON },
+    { id: "replFilterChatter", section: "repl", default: ON },
+    { id: "replHoverTimestamp", section: "repl", default: OFF },
+    { id: "replAutocompleteTrigger", section: "repl", default: "typing", values: ["typing", "none", "always"] },
+    { id: "replAutocompleteContinue", section: "repl", default: OFF },
+    { id: "replHistoryCap", section: "repl", default: 1e3, values: [100, 250, 500, 1e3] },
+    // Where this browser keeps history: a shared computer is not your laptop.
+    { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
+    // ── Workspace ───────────────────────────────────────────────────────────
+    { id: "inspectorFollow", section: "workspace", default: ON },
+    { id: "restorePanels", section: "workspace", default: ON },
+    { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Signed in, settings follow you between devices; off here, this device keeps its own.
+    { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // ── Aliases ─────────────────────────────────────────────────────────────
+    { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
+    // null: the built-in alias table.
+    { id: "aliasPairs", section: "aliases", default: null, type: "json", normalize: cleanAliasPairs }
+  ];
+  var BY_ID = new Map(SETTINGS.map((row) => [row.id, row]));
+  function settingRow(id) {
+    return BY_ID.get(id) || null;
+  }
+
+  // js/commands/command-settings.mjs
+  var ROWS = [
     // ── layout ────────────────────────────────────────────────────────────────
     {
       slug: "word-wrap",
       title: "Word wrap",
-      kind: "bool",
       aliases: ["wrap"],
-      read: "readStoredEditorWordWrap",
-      write: "writeStoredEditorWordWrap"
+      setting: "editorWordWrap"
     },
     {
       slug: "line-numbers",
       title: "Line numbers",
-      kind: "bool",
       aliases: ["number", "nu"],
-      read: "readStoredEditorLineNumbers",
-      write: "writeStoredEditorLineNumbers"
+      setting: "editorLineNumbers"
     },
     {
       slug: "line-number-style",
       title: "Line number style",
-      kind: "enum",
-      values: ["absolute", "relative", "hybrid"],
       labels: { absolute: "Absolute", relative: "Relative", hybrid: "Relative + current" },
       aliases: ["relativenumber", "rnu"],
-      read: "readStoredEditorLineNumberMode",
-      write: "writeStoredEditorLineNumberMode"
+      setting: "editorLineNumberMode"
     },
     {
       slug: "fold-gutter",
       title: "Code folding",
-      kind: "bool",
       aliases: ["foldenable", "fen"],
-      read: "readStoredEditorFoldGutter",
-      write: "writeStoredEditorFoldGutter"
+      setting: "editorFoldGutter"
     },
     {
       slug: "active-line",
       title: "Active line highlight",
-      kind: "bool",
       aliases: ["cursorline", "cul"],
-      read: "readStoredEditorActiveLine",
-      write: "writeStoredEditorActiveLine"
+      setting: "editorActiveLine"
     },
     {
       slug: "scroll-past-end",
       title: "Scroll past end",
-      kind: "bool",
       aliases: ["scrollpastend", "spe"],
-      read: "readStoredEditorScrollPastEnd",
-      write: "writeStoredEditorScrollPastEnd"
+      setting: "editorScrollPastEnd"
     },
     {
       slug: "rulers",
       title: "Print-width ruler",
-      kind: "bool",
       aliases: ["colorcolumn", "cc"],
-      read: "readStoredEditorRulers",
-      write: "writeStoredEditorRulers"
+      setting: "editorRulers"
     },
     {
       slug: "sticky-decl",
       title: "Structure path",
-      kind: "bool",
       aliases: ["sticky"],
-      read: "readStoredStickyDeclHeader",
-      write: "writeStoredStickyDeclHeader"
+      setting: "stickyDeclHeader"
     },
     {
       slug: "tab-size",
       title: "Tab size",
-      kind: "enum",
-      values: [2, 4],
       aliases: ["tabstop", "ts"],
       labels: { 2: "2 spaces", 4: "4 spaces" },
-      read: "readStoredEditorTabSize",
-      write: "writeStoredEditorTabSize"
+      setting: "editorTabSize"
     },
     {
       slug: "format-width",
       title: "Format print width",
-      kind: "enum",
-      values: [80, 100, 120],
       aliases: ["textwidth", "tw"],
       labels: { 80: "80 columns", 100: "100 columns", 120: "120 columns" },
-      read: "readStoredEditorFormatWidth",
-      write: "writeStoredEditorFormatWidth"
+      setting: "editorFormatWidth"
     },
     {
       slug: "whitespace",
       title: "Show whitespace",
       verb: "whitespace marks",
-      kind: "enum",
-      values: ["none", "trailing", "selection", "all"],
       on: "all",
       off: "none",
       aliases: ["list"],
       labels: { none: "Off", trailing: "Trailing only", selection: "In selection", all: "All" },
-      read: "readStoredEditorWhitespace",
-      write: "writeStoredEditorWhitespace"
+      setting: "editorWhitespace"
     },
     // ── type ──────────────────────────────────────────────────────────────────
     {
       slug: "font-size",
       title: "Font size",
-      kind: "enum",
-      values: ["sm", "md", "lg", "xl"],
       labels: { sm: "Small", md: "Default", lg: "Large", xl: "Larger" },
-      read: "readStoredEditorFontSize",
-      write: "writeStoredEditorFontSize"
+      setting: "editorFontSize"
     },
     {
       slug: "line-height",
       title: "Line height",
-      kind: "enum",
-      values: ["compact", "normal", "relaxed"],
       labels: { compact: "Compact", normal: "Default", relaxed: "Relaxed" },
-      read: "readStoredEditorLineHeight",
-      write: "writeStoredEditorLineHeight"
+      setting: "editorLineHeight"
     },
     {
       slug: "font-family",
       title: "Editor font",
-      kind: "enum",
-      values: ["jetbrains", "system"],
       labels: { jetbrains: "JetBrains Mono", system: "System monospace" },
-      read: "readStoredEditorFontFamily",
-      write: "writeStoredEditorFontFamily"
+      setting: "editorFontFamily"
     },
     {
       slug: "cursor-blink",
       title: "Cursor blink",
-      kind: "enum",
-      values: ["off", "blink", "fast"],
       labels: { off: "Solid", blink: "Blink", fast: "Fast" },
-      read: "readStoredEditorCursorBlink",
-      write: "writeStoredEditorCursorBlink"
+      setting: "editorCursorBlink"
     },
     // ── highlighting ──────────────────────────────────────────────────────────
     {
       slug: "syntax-highlight",
       title: "Syntax highlighting",
-      kind: "bool",
       aliases: ["syntax"],
-      read: "readStoredEditorSyntaxHighlight",
-      write: "writeStoredEditorSyntaxHighlight"
+      setting: "editorSyntaxHighlight"
     },
     {
       slug: "semantic-highlight",
       title: "Semantic highlighting",
-      kind: "bool",
-      read: "readStoredEditorSemanticHighlight",
-      write: "writeStoredEditorSemanticHighlight"
+      setting: "editorSemanticHighlight"
     },
     {
       slug: "parse-highlight",
       title: "Invalid parse styling",
-      kind: "bool",
-      read: "readStoredEditorParseHighlight",
-      write: "writeStoredEditorParseHighlight"
+      setting: "editorParseHighlight"
     },
     {
       slug: "occurrence-highlight",
       title: "Occurrence highlight",
-      kind: "bool",
-      read: "readStoredEditorOccurrenceHighlight",
-      write: "writeStoredEditorOccurrenceHighlight"
+      setting: "editorOccurrenceHighlight"
     },
     {
       slug: "selection-matches",
       title: "Selection matches",
-      kind: "bool",
       aliases: ["hlsearch", "hls"],
-      read: "readStoredEditorSelectionMatches",
-      write: "writeStoredEditorSelectionMatches"
+      setting: "editorSelectionMatches"
     },
     {
       slug: "bracket-match",
       title: "Bracket matching",
-      kind: "bool",
       aliases: ["showmatch", "sm"],
-      read: "readStoredEditorBracketMatch",
-      write: "writeStoredEditorBracketMatch"
+      setting: "editorBracketMatch"
     },
     // ── editing behaviour ─────────────────────────────────────────────────────
     {
       slug: "auto-close-brackets",
       title: "Auto-close brackets",
-      kind: "bool",
       aliases: ["autoclose"],
-      read: "readStoredEditorAutoCloseBrackets",
-      write: "writeStoredEditorAutoCloseBrackets"
+      setting: "editorAutoCloseBrackets"
     },
     {
       slug: "reindent-paste",
       title: "Re-indent on paste",
-      kind: "bool",
-      read: "readStoredEditorReindentPaste",
-      write: "writeStoredEditorReindentPaste"
+      setting: "editorReindentPaste"
     },
     {
       slug: "format-on-save",
       title: "Format on save",
-      kind: "bool",
-      read: "readStoredFormatOnSave",
-      write: "writeStoredFormatOnSave"
+      setting: "formatOnSave"
     },
     {
       slug: "trim-whitespace",
       title: "Trim trailing whitespace on save",
-      kind: "bool",
-      read: "readStoredTrimTrailingWs",
-      write: "writeStoredTrimTrailingWs"
+      setting: "trimTrailingWs"
     },
     // ── proof surface ─────────────────────────────────────────────────────────
     {
       slug: "hole-gutter",
       title: "Hole gutter marks",
-      kind: "bool",
-      read: "readStoredEditorHoleGutter",
-      write: "writeStoredEditorHoleGutter"
+      setting: "editorHoleGutter"
     },
     {
       slug: "hole-emphasis",
       title: "Hole gutter emphasis",
-      kind: "enum",
-      values: ["subtle", "normal", "loud"],
       labels: { subtle: "Subtle", normal: "Default", loud: "Loud" },
-      read: "readStoredEditorHoleEmphasis",
-      write: "writeStoredEditorHoleEmphasis"
+      setting: "editorHoleEmphasis"
     },
     {
       slug: "quiet-typing",
       title: "Quiet while typing",
-      kind: "bool",
       aliases: ["quiet"],
-      read: "readStoredQuietWhileTyping",
-      write: "writeStoredQuietWhileTyping"
+      setting: "quietWhileTyping"
     },
     {
       slug: "hover-sticky",
       title: "Sticky hover",
-      kind: "bool",
-      read: "readStoredHoverSticky",
-      write: "writeStoredHoverSticky"
+      setting: "hoverSticky"
     }
   ];
+  var SETTINGS2 = ROWS.map((r) => {
+    const row = settingRow(r.setting);
+    if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
+    return typeOf(row) === "bool" ? { ...r, kind: "bool" } : { ...r, kind: "enum", values: row.values };
+  });
   function optionCandidates() {
     const out = [];
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       if (s.kind !== "bool" && s.off === void 0) continue;
       out.push({ value: "no" + s.slug, label: s.title + " (off)" });
       for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
@@ -606,7 +686,7 @@
     const key = String(name == null ? "" : name).toLowerCase();
     if (!key) return null;
     const bare = key.startsWith("set.") ? key.slice(4) : key;
-    return SETTINGS.find((s) => s.slug === bare) || SETTINGS.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+    return SETTINGS2.find((s) => s.slug === bare) || SETTINGS2.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
 
   // js/status-strip/status-strip-complete.mjs
@@ -618,9 +698,9 @@
     if (q.length > tl.length) return -1;
     let s = 0;
     let prev = -2;
-    let from = 0;
+    let from2 = 0;
     for (let i = 0; i < q.length; i += 1) {
-      const idx = tl.indexOf(q[i], from);
+      const idx = tl.indexOf(q[i], from2);
       if (idx < 0) return -1;
       let step2 = 1;
       if (idx === prev + 1) step2 += 4;
@@ -628,7 +708,7 @@
       if (idx === 0 || before === " " || before === "-" || before === "." || before === "/") step2 += 6;
       s += step2;
       prev = idx;
-      from = idx + 1;
+      from2 = idx + 1;
     }
     if (tl.startsWith(q)) s += 8;
     return s;
@@ -800,23 +880,12 @@
   function loadHistory() {
     if (historyLoaded) return;
     historyLoaded = true;
-    const P = global.Persist;
-    if (P && typeof P.readStoredCommandLineHistory === "function") {
-      try {
-        history = P.readStoredCommandLineHistory() || [];
-      } catch (_) {
-        history = [];
-      }
-    }
+    const D = global.Device;
+    if (D) history = D.get("commandLineHistory");
   }
   function saveHistory() {
-    const P = global.Persist;
-    if (P && typeof P.writeStoredCommandLineHistory === "function") {
-      try {
-        P.writeStoredCommandLineHistory(history);
-      } catch (_) {
-      }
-    }
+    const D = global.Device;
+    if (D) D.set("commandLineHistory", history);
   }
   function commandSources(face) {
     const C = global.Commands;
@@ -992,15 +1061,15 @@
     listEl.style.maxHeight = rows2 * rowH + listPad.top + listPad.bottom + "px";
   }
   function anchorList() {
-    const bar2 = host && host.closest ? host.closest(".jar-strip") : null;
-    if (!bar2 || !listEl) return;
-    const rect = bar2.getBoundingClientRect();
+    const bar = host && host.closest ? host.closest(".jar-strip") : null;
+    if (!bar || !listEl) return;
+    const rect = bar.getBoundingClientRect();
     listEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
     const zone = host.parentNode && host.parentNode.getBoundingClientRect ? host.parentNode : null;
-    const field = (open || exInput ? zone : null) || bar2.querySelector(".jar-strip__seg--command") || zone;
-    const from = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
+    const field = (open || exInput ? zone : null) || bar.querySelector(".jar-strip__seg--command") || zone;
+    const from2 = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
     const pad = 6;
-    let left = from && from.width ? from.left : rect.left + pad;
+    let left = from2 && from2.width ? from2.left : rect.left + pad;
     const width = listEl.offsetWidth || 0;
     left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
     listEl.style.left = Math.max(pad, Math.round(left)) + "px";
@@ -1236,8 +1305,8 @@
   }
   function step(delta) {
     if (!items.length) return false;
-    const from = active < 0 ? delta > 0 ? -1 : 0 : active;
-    active = (from + delta + items.length * 2) % items.length;
+    const from2 = active < 0 ? delta > 0 ? -1 : 0 : active;
+    active = (from2 + delta + items.length * 2) % items.length;
     chosen = true;
     resetCycle();
     paintActive();
@@ -1701,20 +1770,31 @@
     return rows2;
   }
   function historySummary(undoCount, redoCount) {
-    const u = Number(undoCount) || 0;
-    const r = Number(redoCount) || 0;
-    if (!u && !r) return "Nothing to undo yet";
-    const parts = [];
-    if (u) parts.push(plural2(u, "step", "steps") + " to undo");
-    if (r) parts.push(plural2(r, "step", "steps") + " to redo");
-    return parts.join(" \xB7 ");
+    const n = (Number(undoCount) || 0) + (Number(redoCount) || 0);
+    return n ? plural2(n, "step", "steps") : "No steps yet";
+  }
+
+  // js/status-strip/status-strip-popup.mjs
+  var PAD = 6;
+  function anchorAbove(panel, segSelector, align, textSel) {
+    const strip = document.querySelector(".jar-strip");
+    if (!strip || !panel) return;
+    const bar = strip.getBoundingClientRect();
+    panel.style.bottom = Math.max(0, Math.round(window.innerHeight - bar.top)) + "px";
+    const segEl = strip.querySelector(segSelector);
+    const seg = segEl?.getBoundingClientRect();
+    const width = panel.offsetWidth || 0;
+    const label = segEl?.querySelector(".jar-strip__label")?.getBoundingClientRect();
+    const text = textSel && panel.querySelector(textSel)?.getBoundingClientRect();
+    const inset = label && text ? text.left - panel.getBoundingClientRect().left - (label.left - seg.left) : 0;
+    const want = align === "left" ? seg ? seg.left - inset : bar.left + PAD : seg ? seg.right - width : bar.right - width - PAD;
+    panel.style.left = Math.max(PAD, Math.round(Math.min(want, window.innerWidth - width - PAD))) + "px";
   }
 
   // js/status-strip/status-strip-history-ui.mjs
   var global2 = globalThis;
   var panelEl = null;
   var listEl2 = null;
-  var footEl = null;
   var open2 = false;
   var active2 = -1;
   var rows = [];
@@ -1729,21 +1809,8 @@
     const f = P.getFileById(id);
     return f ? f.name : null;
   }
-  function bar() {
-    return document.querySelector(".jar-strip");
-  }
   function anchor() {
-    const strip = bar();
-    if (!strip || !panelEl) return;
-    const rect = strip.getBoundingClientRect();
-    panelEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
-    const seg = strip.querySelector(".jar-strip__seg--history");
-    const from = seg ? seg.getBoundingClientRect() : null;
-    const pad = 6;
-    const width = panelEl.offsetWidth || 0;
-    let left = from ? from.right - width : rect.right - width - pad;
-    left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
-    panelEl.style.left = Math.max(pad, Math.round(left)) + "px";
+    anchorAbove(panelEl, ".jar-strip__seg--history", "right");
   }
   function ensurePanel() {
     if (panelEl && panelEl.isConnected) return panelEl;
@@ -1765,65 +1832,9 @@
     listEl2.className = "jar-hist__list";
     listEl2.setAttribute("role", "listbox");
     panelEl.appendChild(listEl2);
-    footEl = document.createElement("div");
-    footEl.className = "jar-hist__foot";
-    panelEl.appendChild(footEl);
     panelEl._count = count;
     document.body.appendChild(panelEl);
     return panelEl;
-  }
-  function liveKeymapStyle() {
-    const P = global2.Persist;
-    const raw = P && typeof P.readStoredKeymapStyle === "function" ? P.readStoredKeymapStyle() : "";
-    const s = String(raw || "").toLowerCase();
-    return s === "vim" || s === "emacs" ? s : "default";
-  }
-  var FIXED_STYLE_SPECS = {
-    vim: { "edit.undo": "u", "edit.redo": "Control+R" },
-    emacs: { "edit.undo": "Control+Z", "edit.redo": "Control+Shift+Z" }
-  };
-  function liveKeyLabel(commandId) {
-    const K = global2.Keybindings;
-    const style = liveKeymapStyle();
-    const fixed = FIXED_STYLE_SPECS[style] && FIXED_STYLE_SPECS[style][commandId];
-    if (fixed != null) {
-      return K && typeof K.formatShortcut === "function" ? K.formatShortcut(fixed) : fixed;
-    }
-    if (!K || typeof K.labelFor !== "function") return "";
-    try {
-      return K.labelFor(commandId) || "";
-    } catch (_) {
-      return "";
-    }
-  }
-  function hintRow(commandId, fallbackLabel) {
-    const row = document.createElement("span");
-    row.className = "jar-hist__hint";
-    const C = global2.Commands;
-    let label = fallbackLabel;
-    try {
-      const cmd = C && typeof C.get === "function" ? C.get(commandId) : null;
-      if (cmd && cmd.title) label = cmd.title;
-    } catch (_) {
-    }
-    const keys = liveKeyLabel(commandId);
-    const name = document.createElement("span");
-    name.className = "jar-hist__hint-name";
-    name.textContent = label;
-    row.appendChild(name);
-    if (keys) {
-      const kbd = document.createElement("kbd");
-      kbd.className = "jar-hist__key";
-      kbd.textContent = keys;
-      row.appendChild(kbd);
-    }
-    return row;
-  }
-  function renderFoot() {
-    if (!footEl) return;
-    footEl.textContent = "";
-    footEl.appendChild(hintRow("edit.undo", "Undo"));
-    footEl.appendChild(hintRow("edit.redo", "Redo"));
   }
   function rowEl(row, index) {
     if (row.now) {
@@ -1892,7 +1903,6 @@
     panel._count.textContent = historySummary(undo.length, redo.length);
     listEl2.textContent = "";
     rows.forEach((row, i) => listEl2.appendChild(rowEl(row, i)));
-    renderFoot();
     if (active2 < 0 || active2 >= rows.length) active2 = rows.findIndex((r) => r.now);
     paintActive2();
     const now = listEl2.querySelector(".jar-hist__now");
@@ -2030,8 +2040,158 @@
     render();
   }
 
-  // js/status-strip/status-strip-view.mjs
+  // js/status-strip/status-strip-keys.mjs
   var global3 = globalThis;
+  function liveKeymapStyle() {
+    const s = String(global3.Settings?.get?.("keymapStyle") || "").toLowerCase();
+    return s === "vim" || s === "emacs" ? s : "default";
+  }
+  var FIXED_STYLE_SPECS = {
+    vim: { "edit.undo": "u", "edit.redo": "Control+R" },
+    emacs: { "edit.undo": "Control+Z", "edit.redo": "Control+Shift+Z" }
+  };
+  function liveKeyLabel(commandId) {
+    const K = global3.Keybindings;
+    const fixed = FIXED_STYLE_SPECS[liveKeymapStyle()]?.[commandId];
+    if (fixed != null) return typeof K?.formatShortcut === "function" ? K.formatShortcut(fixed) : fixed;
+    try {
+      return typeof K?.labelFor === "function" ? K.labelFor(commandId) || "" : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  // js/status-strip/status-strip-keymap-ui.mjs
+  var global4 = globalThis;
+  var STYLES = [
+    { value: "default", name: "Standard" },
+    { value: "vim", name: "Vim" },
+    { value: "emacs", name: "Emacs" }
+  ];
+  var panelEl2 = null;
+  var listEl3 = null;
+  var active3 = -1;
+  var onChanged2 = null;
+  var anchor2 = () => anchorAbove(panelEl2, ".jar-strip__seg--keymap", "left", ".jar-style__name");
+  function rowEl2(style, index, current) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "jar-style__row" + (current ? " is-current" : "");
+    el.setAttribute("role", "option");
+    el.setAttribute("aria-selected", current ? "true" : "false");
+    el.dataset.index = String(index);
+    const name = document.createElement("span");
+    name.className = "jar-style__name";
+    name.textContent = style.name;
+    el.appendChild(name);
+    return el;
+  }
+  function build2() {
+    panelEl2 = document.createElement("div");
+    panelEl2.className = "jar-hist jar-hist--style";
+    panelEl2.setAttribute("role", "dialog");
+    panelEl2.setAttribute("aria-label", "Editing style");
+    const head = document.createElement("div");
+    head.className = "jar-hist__head";
+    const title = document.createElement("span");
+    title.className = "jar-hist__title";
+    title.textContent = "Editing style";
+    head.appendChild(title);
+    listEl3 = document.createElement("div");
+    listEl3.className = "jar-hist__list";
+    listEl3.setAttribute("role", "listbox");
+    const current = liveKeymapStyle();
+    STYLES.forEach((s, i) => listEl3.appendChild(rowEl2(s, i, s.value === current)));
+    active3 = -1;
+    panelEl2.append(head, listEl3);
+    document.body.appendChild(panelEl2);
+    paintActive3();
+  }
+  function paintActive3() {
+    Array.from(listEl3.children).forEach((n, i) => n.classList.toggle("is-active", i === active3));
+  }
+  function choose(index) {
+    const style = STYLES[index];
+    close3();
+    if (style && style.value !== liveKeymapStyle()) {
+      global4.Settings.set("keymapStyle", style.value);
+      global4.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: "keymap-style" } }));
+      global4.StatusStrip?.setEditorState?.({ style: style.value });
+    }
+    global4.CurrentEditor?.focus?.();
+  }
+  var from = () => active3 < 0 ? Math.max(0, STYLES.findIndex((s) => s.value === liveKeymapStyle())) : active3;
+  var moveTo = (i) => {
+    active3 = (i + STYLES.length) % STYLES.length;
+    paintActive3();
+  };
+  var KEYS = {
+    Escape: () => close3({ focusEditor: true }),
+    ArrowDown: () => moveTo(active3 < 0 ? from() : active3 + 1),
+    ArrowUp: () => moveTo(active3 < 0 ? from() : active3 - 1),
+    Home: () => moveTo(0),
+    End: () => moveTo(STYLES.length - 1),
+    Enter: () => choose(from()),
+    " ": () => choose(from())
+  };
+  function onKeyDown2(e) {
+    const fn = KEYS[e.key];
+    if (!fn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fn();
+  }
+  function onDocPointerDown2(e) {
+    const t = e.target;
+    if (panelEl2?.contains(t) || t?.closest?.(".jar-strip__seg--keymap")) return;
+    close3();
+  }
+  function onListClick2(e) {
+    const row = e.target?.closest?.(".jar-style__row");
+    if (row) choose(Number(row.dataset.index));
+  }
+  function onListMove(e) {
+    if (e.pointerType === "touch") return;
+    const row = e.target?.closest?.(".jar-style__row");
+    if (row && Number(row.dataset.index) !== active3) moveTo(Number(row.dataset.index));
+  }
+  function onListLeave() {
+    if (active3 >= 0) {
+      active3 = -1;
+      paintActive3();
+    }
+  }
+  var isOpen3 = () => !!panelEl2;
+  function close3(opts) {
+    if (!panelEl2) return false;
+    document.removeEventListener("keydown", onKeyDown2, true);
+    document.removeEventListener("pointerdown", onDocPointerDown2, true);
+    window.removeEventListener("resize", anchor2);
+    panelEl2.remove();
+    panelEl2 = null;
+    listEl3 = null;
+    onChanged2?.();
+    if (opts?.focusEditor) global4.CurrentEditor?.focus?.();
+    return true;
+  }
+  function toggle2(changed) {
+    if (panelEl2) return close3(), false;
+    onChanged2 = changed || null;
+    build2();
+    listEl3.addEventListener("click", onListClick2);
+    listEl3.addEventListener("pointermove", onListMove);
+    listEl3.addEventListener("pointerleave", onListLeave);
+    document.addEventListener("keydown", onKeyDown2, true);
+    document.addEventListener("pointerdown", onDocPointerDown2, true);
+    window.addEventListener("resize", anchor2);
+    anchor2();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(anchor2);
+    onChanged2?.();
+    return true;
+  }
+
+  // js/status-strip/status-strip-view.mjs
+  var global5 = globalThis;
   var root = null;
   var segmentHost = null;
   var vimSlotEl = null;
@@ -2075,18 +2235,15 @@
     undoDepth: 0,
     redoDepth: 0,
     historyOpen: false,
+    keymapOpen: false,
     /** A second tab has this project open. Standing, not a toast. */
     tabConflict: false
   };
   var detail = "standard";
   var rendered = "";
-  function persist() {
-    return global3.Persist || null;
-  }
   function storedMode() {
-    const p = persist();
     try {
-      const v = p && typeof p.readStoredStatusStrip === "function" ? p.readStoredStatusStrip() : null;
+      const v = Settings.get("statusStrip");
       if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
     } catch (_) {
     }
@@ -2122,6 +2279,7 @@
   function unmount() {
     close({ restore: false });
     close2();
+    close3();
     if (root && root.parentNode) root.parentNode.removeChild(root);
     root = null;
     segmentHost = null;
@@ -2141,7 +2299,7 @@
     return dotEl;
   }
   function renderType(host2, text) {
-    const ed = global3.BelEditor;
+    const ed = global5.BelEditor;
     const norm = ed && typeof ed.normalizeType === "function" ? ed.normalizeType(text) : String(text == null ? "" : text);
     host2.textContent = "";
     if (!norm) return;
@@ -2157,7 +2315,17 @@
   var ICONS = {
     history: [
       { d: "M2.78 8.92A5.3 5.3 0 1 0 4.45 4.06", stroke: true },
-      { d: "M1.36 6.84 2.85 2.28 6.05 5.84Z", fill: true }
+      { d: "M1.36 6.84 2.85 2.28 6.05 5.84Z", fill: true },
+      { d: "M8 5.4V8.2l1.9 1.2", stroke: true, width: 1.3 }
+    ],
+    // A straight shaft hooking back, so the chevron meets a line, not an arc.
+    undo: [
+      { d: "M5.4 2.9 2.4 5.9l3 3", stroke: true },
+      { d: "M2.6 5.9h6.9a3.4 3.4 0 0 1 0 6.8H7.2", stroke: true }
+    ],
+    redo: [
+      { d: "M10.6 2.9l3 3-3 3", stroke: true },
+      { d: "M13.4 5.9H6.5a3.4 3.4 0 0 0 0 6.8h2.3", stroke: true }
     ]
   };
   function iconEl(name) {
@@ -2175,8 +2343,9 @@
       p.setAttribute("fill", part.fill ? "currentColor" : "none");
       if (part.stroke) {
         p.setAttribute("stroke", "currentColor");
-        p.setAttribute("stroke-width", "1.5");
+        p.setAttribute("stroke-width", String(part.width || 1.5));
         p.setAttribute("stroke-linecap", "round");
+        p.setAttribute("stroke-linejoin", "round");
       }
       svg.appendChild(p);
     }
@@ -2189,15 +2358,16 @@
       return gap;
     }
     const el = document.createElement(seg.action ? "button" : "span");
-    el.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "");
+    el.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "") + (seg.text || seg.render ? "" : " is-icon");
     if (seg.action) {
       el.type = "button";
       el.dataset.action = seg.action;
     }
+    if (seg.disabled) el.setAttribute("aria-disabled", "true");
     if (seg.title) {
       el.setAttribute("data-tooltip", seg.title);
       el.setAttribute("aria-label", seg.title);
-      global3.Tooltips?.bind?.(el);
+      global5.Tooltips?.bind?.(el);
     }
     if (seg.pressed != null) el.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
     if (seg.pressed) el.classList.add("is-open");
@@ -2212,6 +2382,7 @@
       mark.textContent = seg.mark;
       el.appendChild(mark);
     }
+    if (!seg.text && !seg.render) return el;
     const label = document.createElement("span");
     label.className = "jar-strip__label";
     if (seg.render === "type") renderType(label, seg.text);
@@ -2219,16 +2390,32 @@
     el.appendChild(label);
     return el;
   }
+  function withKeys(seg) {
+    const keys = seg.command ? liveKeyLabel(seg.command) : "";
+    return keys ? { ...seg, title: seg.title + " (" + keys + ")" } : seg;
+  }
+  function stepHistory(dir) {
+    const ed = global5.CurrentEditor;
+    if (typeof ed?.[dir] !== "function") return global5.EditHistory?.[dir]?.();
+    ed.focus?.();
+    return ed[dir]();
+  }
   var ACTIONS = {
-    "focus-editor": () => global3.CurrentEditor?.focus?.(),
-    "goto-line": () => global3.CommandPalette?.open({ mode: "line" }),
-    "commands": () => global3.CommandPalette?.open({ mode: "commands" }),
-    "next-problem": () => global3.Commands?.run("nav.next-problem"),
-    "run-default": () => global3.Commands?.run("run.default") || global3.Commands?.run("run.file"),
-    "next-hole": () => global3.Commands?.run("nav.next-hole"),
-    "open-harpoon": () => global3.Commands?.run("prover.open-in-harpoon") || global3.Commands?.run("view.harpoon"),
-    "run": () => global3.Commands?.run("run.file"),
+    "focus-editor": () => global5.CurrentEditor?.focus?.(),
+    "goto-line": () => global5.CommandPalette?.open({ mode: "line" }),
+    "commands": () => global5.CommandPalette?.open({ mode: "commands" }),
+    "next-problem": () => global5.Commands?.run("nav.next-problem"),
+    "run-default": () => global5.Commands?.run("run.default") || global5.Commands?.run("run.file"),
+    "next-hole": () => global5.Commands?.run("nav.next-hole"),
+    "open-harpoon": () => global5.Commands?.run("prover.open-in-harpoon") || global5.Commands?.run("view.harpoon"),
+    "run": () => global5.Commands?.run("run.file"),
     "edit-history": () => openHistory(),
+    "undo": () => stepHistory("undo"),
+    "redo": () => stepHistory("redo"),
+    "keymap-menu": () => {
+      toggle2(syncKeymap);
+      syncKeymap();
+    },
     /**
      * Stop the recording, then hand the keyboard straight back.
      *
@@ -2237,8 +2424,8 @@
      * none, and the default of 1 would eat the last key of the macro.
      */
     "macro-stop": () => {
-      global3.Commands?.run("macro.record", { dropTrailing: 0 });
-      global3.CurrentEditor?.focus?.();
+      global5.Commands?.run("macro.record", { dropTrailing: 0 });
+      global5.CurrentEditor?.focus?.();
     }
   };
   function runAction(action) {
@@ -2250,20 +2437,23 @@
     syncHistory();
   }
   function syncHistory() {
-    const H = global3.EditHistory;
+    const H = global5.EditHistory;
     setEditorState({
       undoDepth: H && H.getUndoStack ? H.getUndoStack().length : 0,
       redoDepth: H && H.getRedoStack ? H.getRedoStack().length : 0,
       historyOpen: isOpen2()
     });
   }
+  function syncKeymap() {
+    setEditorState({ keymapOpen: isOpen3() });
+  }
   function paint() {
     frame = 0;
     if (!mounted) return;
     const host2 = ensureRoot();
     if (!host2) return;
-    const segments = buildSegments(state, detail);
-    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "") + ":" + (s.title || "")).join("|");
+    const segments = buildSegments(state, detail).map(withKeys);
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "") + (s.disabled ? "d" : "") + ":" + (s.title || "")).join("|");
     if (signature === rendered) return;
     rendered = signature;
     const els = segments.map(segmentEl);
@@ -2370,6 +2560,7 @@
       "undoDepth",
       "redoDepth",
       "historyOpen",
+      "keymapOpen",
       "tabConflict"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
@@ -2392,20 +2583,20 @@
     schedule();
   }
   function goalAtCaret() {
-    const ed = global3.CurrentEditor;
+    const ed = global5.CurrentEditor;
     if (!ed || typeof ed.holeAtCursor !== "function") return "";
     try {
       const hit = ed.holeAtCursor();
       const goal = hit && hit.hole ? hit.hole.goal : null;
       if (!goal) return "";
-      const norm = global3.BelEditor && typeof global3.BelEditor.normalizeType === "function" ? global3.BelEditor.normalizeType(String(goal)) : String(goal);
+      const norm = global5.BelEditor && typeof global5.BelEditor.normalizeType === "function" ? global5.BelEditor.normalizeType(String(goal)) : String(goal);
       return norm;
     } catch (_) {
       return "";
     }
   }
   function seedFromEditor() {
-    const ed = global3.CurrentEditor;
+    const ed = global5.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     if (!view) {
       setEditorState({ hasFile: false, line: NaN, col: NaN, selChars: 0, selLines: 0, goal: "" });
@@ -2415,9 +2606,8 @@
     const doc = view.state.doc;
     const head = doc.lineAt(sel.head);
     const selChars = Math.abs(sel.to - sel.from);
-    const p = persist();
     setEditorState({
-      style: p && typeof p.readStoredKeymapStyle === "function" ? p.readStoredKeymapStyle() : "default",
+      style: Settings.get("keymapStyle"),
       hasFile: true,
       line: head.number,
       col: sel.head - head.from + 1,
@@ -2453,7 +2643,7 @@
     paint();
   }
   function refreshProofState() {
-    const ed = global3.CurrentEditor;
+    const ed = global5.CurrentEditor;
     if (!ed) {
       setEditorState({ holes: 0, symbols: NaN, goal: "", inHole: false, goalPending: false });
       return;
@@ -2462,7 +2652,7 @@
     let symbols = NaN;
     let goalState = { inHole: false, goal: "", goalPending: false };
     try {
-      goalState = global3.BelEditor?.goalAtCaret?.() || goalState;
+      goalState = global5.BelEditor?.goalAtCaret?.() || goalState;
     } catch (_) {
     }
     let checking = state.checking;
@@ -2501,18 +2691,18 @@
     const btn = e.target && e.target.closest ? e.target.closest(".jar-strip__seg[data-action]") : null;
     if (!btn) return;
     e.preventDefault();
-    runAction(btn.dataset.action);
+    if (btn.getAttribute("aria-disabled") !== "true") runAction(btn.dataset.action);
   }
   function init() {
     if (inited || typeof document === "undefined") return;
     inited = true;
-    global3.addEventListener("beljar:hole-goals-updated", refreshProofState);
-    global3.addEventListener("beljar:file-lint", onLint);
-    global3.addEventListener("beljar:keybindings-changed", apply);
+    global5.addEventListener("beljar:hole-goals-updated", refreshProofState);
+    global5.addEventListener("beljar:file-lint", onLint);
+    global5.addEventListener("beljar:keybindings-changed", apply);
     document.addEventListener("click", onClick, true);
     apply();
   }
-  global3.StatusStrip = {
+  global5.StatusStrip = {
     init,
     apply,
     setEditorState,

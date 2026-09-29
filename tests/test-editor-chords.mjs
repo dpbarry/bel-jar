@@ -34,6 +34,8 @@ const ctx = vm.createContext({
     getItem(k) { return store[k] ?? null; },
     setItem(k, v) { store[k] = String(v); },
     removeItem(k) { delete store[k]; },
+    get length() { return Object.keys(store).length; },
+    key(i) { return Object.keys(store)[i] ?? null; },
   },
   navigator: { platform: 'Win32' },
   addEventListener() {},
@@ -48,7 +50,7 @@ runPersistStackInContext(ctx);
 vm.runInContext(readFileSync(join(here, '..', 'js', 'ui', 'keybindings.js'), 'utf8'), ctx);
 
 const KB = ctx.Keybindings;
-const P = ctx.Persist;
+const S = ctx.Settings;
 
 // ── the whole editor-scope bindable set gets a chord ──────────────────────────
 
@@ -59,7 +61,7 @@ expect(editorIds.length > 60, `the editor-scope bindable set is worth pinning ($
 // chord per command without tripping the reserved or conflict checks.
 const overrides = {};
 editorIds.forEach((id, i) => { overrides[id] = 'Mod+Alt+Shift+F' + (i + 1); });
-P.writeStoredKeybindings(overrides);
+S.set('keybindings', overrides);
 
 const called = [];
 const fallback = (id) => () => { called.push(id); return true; };
@@ -107,5 +109,5 @@ KB.buildEditorKeymap({}, { fallback: (id) => () => { omitCalled.push(id); return
 expect(omitCalled.indexOf(omitId) < 0, 'an omitted id emits no entry');
 expect(omitCalled.length === editorIds.length - 1, 'everything else still does');
 
-P.writeStoredKeybindings({});
+S.set('keybindings', {});
 console.log(`OK editor chords (${editorIds.length} editor commands, all live when bound)`);

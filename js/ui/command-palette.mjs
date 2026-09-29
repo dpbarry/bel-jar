@@ -651,12 +651,7 @@ const global = globalThis;
    * here, so the two halves cannot drift into meaning different things.
    */
   function runCommandEntry() {
-    var style = '';
-    try {
-      if (typeof Persist !== 'undefined' && Persist.readStoredKeymapStyle) {
-        style = Persist.readStoredKeymapStyle();
-      }
-    } catch (e) { /* Standard is the honest fallback */ }
+    var style = Settings.get('keymapStyle');
     var line = typeof StatusStrip !== 'undefined' && StatusStrip.openCommandLine;
     // No strip to open it in (a page with no editor mounted yet): the palette is
     // the honest fallback, not an error.

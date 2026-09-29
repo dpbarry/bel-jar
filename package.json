@@ -10,7 +10,8 @@
     "build:shell": "node scripts/build-shell.mjs",
     "build:grammar": "lezer-generator beluga.grammar -o js/editor-src/beluga-parser.js",
     "vendor-fonts": "node scripts/vendor-fonts.mjs",
-    "lint": "eslint js/",
+    "lint": "eslint js/ server/",
+    "dev": "node scripts/dev-server.mjs",
     "check:build": "node scripts/check-build-stale.mjs",
     "test": "npm run check:build && node tests/run-all.mjs",
     "test:fast": "npm run check:build && node tests/run-all.mjs --fast",
@@ -44,6 +45,7 @@
     "esbuild": "^0.25.0",
     "eslint": "^9.39.4",
     "globals": "^16.5.0",
-    "puppeteer-core": "^25.3.0"
+    "puppeteer-core": "^25.3.0",
+    "wrangler": "^4.143.0"
   }
 }

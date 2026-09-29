@@ -1,6 +1,6 @@
 const global = globalThis;
 var belugaBusy = false;
-  var belugaMode = Persist.readStoredBelugaMode();
+  var belugaMode = Settings.get('belugaMode');
 
   var btnLoad = null;
   var btnRun = null;
@@ -41,7 +41,7 @@ var belugaBusy = false;
 
   function setBelugaMode(m) {
     belugaMode = m;
-    Persist.writeStoredBelugaMode(m);
+    Settings.set('belugaMode', m);
     if (typeof BelugaClient !== 'undefined') {
       BelugaClient.configure(modeToConfig(m));
       BelugaClient.warm().catch(function () {});
@@ -51,7 +51,7 @@ var belugaBusy = false;
 
   function belugaProgressHook(msg) {
     if (msg && msg.phase === 'build-fallback') {
-      if (!Persist.readStoredBelugaFallbackStable()) return;
+      if (!Settings.get('belugaFallbackStable')) return;
       Toasts.warn(
         'Fast build hit the stack limit. Retrying with Stable; switch to Stable in Settings to avoid this.',
         { duration: 0, closable: true },

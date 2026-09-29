@@ -26,6 +26,8 @@ const ctx = vm.createContext({
     getItem(k) { return store[k] ?? null; },
     setItem(k, v) { store[k] = String(v); },
     removeItem(k) { delete store[k]; },
+    get length() { return Object.keys(store).length; },
+    key(i) { return Object.keys(store)[i] ?? null; },
   },
   navigator: { platform: 'Win32' },
   addEventListener(type, fn) { if (type === 'keydown') keydownListener = fn; },
@@ -40,14 +42,16 @@ runPersistStackInContext(ctx);
 vm.runInContext(readFileSync(join(here, '..', 'js', 'ui', 'keybindings.js'), 'utf8'), ctx);
 
 const KB = ctx.Keybindings;
-const P = ctx.Persist;
+const S = ctx.Settings;
 
-// Count reads of the stored override map — the localStorage + JSON.parse hop.
+// Count reads of the override map. Settings answers from memory, but each read
+// still copies the map and the dispatch table re-normalizes 66 specs from it;
+// a keystroke must not pay for that when nothing changed.
 let reads = 0;
-const realRead = P.readStoredKeybindings;
-P.readStoredKeybindings = function () {
-  reads += 1;
-  return realRead.apply(P, arguments);
+const realGet = S.get;
+S.get = function (id) {
+  if (id === 'keybindings') reads += 1;
+  return realGet.apply(S, arguments);
 };
 
 const fired = [];
@@ -115,26 +119,27 @@ expect(press('f', { ctrl: true, shift: true }).fired.join(',') === 'edit.search-
 // Function keys carry no modifier but can still be bound, so they must not be
 // short-circuited by the fast path. Bind one and press it — a read count cannot
 // show this any more, and firing is the property that was meant.
-P.writeStoredKeybindings({ 'nav.anywhere': 'F8' });
+S.set('keybindings', { 'nav.anywhere': 'F8' });
 expect(press('F8').fired.join(',') === 'nav.anywhere', 'function keys reach the tables');
-P.writeStoredKeybindings({});
+S.set('keybindings', {});
 
 // ── no stale overrides ────────────────────────────────────────────────────────
-// Nothing is cached between calls: a write from a settings import or another tab
-// goes through Persist directly and must take effect on the very next keystroke.
+// A write from anywhere (an import, another tab, the online layer) goes through
+// Settings, which bumps the revision the dispatch cache is keyed on, so it must
+// take effect on the very next keystroke with nothing told to refresh.
 
-P.writeStoredKeybindings({ 'nav.anywhere': 'Mod+J' });
+S.set('keybindings', { 'nav.anywhere': 'Mod+J' });
 expect(press('k', { ctrl: true }).fired.length === 0, 'old chord stops firing after an external rebind');
 expect(press('j', { ctrl: true }).fired.join(',') === 'nav.anywhere', 'new chord fires immediately');
 
-P.writeStoredKeybindings({});
+S.set('keybindings', {});
 expect(press('k', { ctrl: true }).fired.join(',') === 'nav.anywhere', 'clearing overrides restores the default');
 
 // A default freed by a rebind is swallowed, not passed to the browser.
-P.writeStoredKeybindings({ 'nav.anywhere': 'Mod+B' });
+S.set('keybindings', { 'nav.anywhere': 'Mod+B' });
 const freed = press('k', { ctrl: true });
 expect(freed.fired.length === 0, 'the freed default fires nothing');
 expect(freed.prevented, 'the freed default is still swallowed');
-P.writeStoredKeybindings({});
+S.set('keybindings', {});
 
 console.log(`OK keybindings dispatch (${globalCount} global commands, <=1 read per rebind, 0 per repeat, 0 while typing)`);

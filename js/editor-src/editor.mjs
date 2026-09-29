@@ -268,7 +268,10 @@ import {
   dispatchEdit,
   runHistoryUndo,
   runHistoryRedo,
+  externalChange,
 } from './edit-history.mjs';
+import { readSetting } from '../persist/settings-schema.mjs';
+import { textChanges } from '../persist/merge.mjs';
 
 const TAB_SIZE = 2;
 const INDENT = '  ';
@@ -378,6 +381,27 @@ function replaceDocNonUndoable(view, text, opts = {}) {
     selection: EditorSelection.single(anchor, head),
     annotations: anns,
     effects,
+  });
+}
+
+/**
+ * Put someone else's change into an open editor (docs/PERSIST.md §4.4): only
+ * the lines that differ, so the cursor, folds and incremental parse elsewhere
+ * are untouched, and marked as not yours (edit history keeps it out of your
+ * steps; undo takes back your edits around it).
+ */
+function applyExternalTextTo(view, next) {
+  if (!view) return;
+  const cur = view.state.doc.toString();
+  const text = String(next ?? '');
+  if (cur === text) return;
+  view.dispatch({
+    changes: textChanges(cur, text),
+    annotations: [
+      externalChange.of(true),
+      Transaction.addToHistory.of(false),
+      Transaction.userEvent.of('external'),
+    ],
   });
 }
 
@@ -853,6 +877,15 @@ function mountAuxEditor(parentEl, options, documentId, docPath) {
   });
   const view = new EditorView({ parent: parentEl, state });
   view.dom.classList.add('jar-editor--aux', 'jar-editor--cfg');
+  if (options.persist && typeof options.persist.setCheckpointProviders === 'function') {
+    // A cfg has no semantic checkpoint; its text still has to meet a change
+    // made underneath it the same way a proof's does.
+    options.persist.setCheckpointProviders({
+      getText: () => view.state.doc.toString(),
+      peekText: () => view.state.doc.toString(),
+      applyExternalText: (next) => applyExternalTextTo(view, next),
+    });
+  }
   activeEditorView = view;
   activeEditorPrefsApplier = (prefs) => {
     view.dispatch({
@@ -1091,7 +1124,7 @@ export function mount(parentEl, options = {}) {
     const semantic = options.semanticCheckpoint;
     if (!semantic) return;
     const belugaBuild = typeof g.Persist !== 'undefined'
-      ? g.Persist.readStoredBelugaMode()
+      ? readSetting('belugaMode')
       : 'stable';
     semanticEngine.importCheckpoint(semantic, {
       docFp: docFingerprint(text),
@@ -1118,10 +1151,13 @@ export function mount(parentEl, options = {}) {
         }
         return semanticView?.state?.doc ? semanticView.state.doc.toString() : '';
       },
+      // The same text with no save transforms: what a comparison must see.
+      peekText: () => (semanticView?.state?.doc ? semanticView.state.doc.toString() : ''),
+      applyExternalText: (next) => applyExternalTextTo(semanticView, next),
       getViewport: () => captureViewportLocal(semanticView),
       getDocFp: (text) => docFingerprint(text != null ? text : semanticView?.state.doc.toString() || ''),
       getBelugaBuild: () => (
-        typeof g.Persist !== 'undefined' ? g.Persist.readStoredBelugaMode() : 'stable'
+        typeof g.Persist !== 'undefined' ? readSetting('belugaMode') : 'stable'
       ),
       getScopeKey: currentScopeKey,
     });
@@ -1527,8 +1563,6 @@ export function mount(parentEl, options = {}) {
     }
     view.dispatch({ effects });
     refreshSettlementLint(view);
-    const p = typeof window !== 'undefined' ? window.Persist : null;
-    if (p?.applyStoredEditorChrome) p.applyStoredEditorChrome();
   };
 
   function reconfigureRemappableKeymap() {
@@ -1721,7 +1755,7 @@ export function mount(parentEl, options = {}) {
       semanticEngine.importCheckpoint(blob, {
         docFp: docFingerprint(text),
         belugaBuild: typeof g.Persist !== 'undefined'
-          ? g.Persist.readStoredBelugaMode()
+          ? readSetting('belugaMode')
           : 'stable',
         scopeKey: currentScopeKey(),
       });

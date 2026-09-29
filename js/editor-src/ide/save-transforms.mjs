@@ -2,6 +2,7 @@
 
 import { EditorSelection, Transaction } from '@codemirror/state';
 import { formatDocument } from '../format/document-format.mjs';
+import { readSetting } from '../../persist/settings-schema.mjs';
 
 /**
  * The trailing-whitespace runs to delete, as MINIMAL edits.
@@ -58,17 +59,11 @@ export function isBelSavePath(filePath) {
   return base.indexOf('.') === -1;
 }
 
-function persistApi() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  return g.Persist;
-}
-
 /** Apply format/trim prefs to the live editor before Persist materializes text. */
 export function applySaveTransforms(view, filePath) {
   if (!view?.state || !isBelSavePath(filePath)) return false;
-  const p = persistApi();
-  const formatOn = !!p?.readStoredFormatOnSave?.();
-  const trimOn = !!p?.readStoredTrimTrailingWs?.();
+  const formatOn = !!readSetting('formatOnSave');
+  const trimOn = !!readSetting('trimTrailingWs');
   if (!formatOn && !trimOn) return false;
 
   let changed = false;

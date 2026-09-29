@@ -144,19 +144,13 @@ function bindReposition(on) {
   }
 }
 
-function persistApi() {
-  return typeof Persist !== 'undefined' ? Persist : null;
-}
-
 function autocompleteTrigger() {
-  var p = persistApi();
-  var v = p && p.readStoredReplAutocompleteTrigger ? p.readStoredReplAutocompleteTrigger() : null;
+  var v = Settings.get('replAutocompleteTrigger');
   return v === 'none' || v === 'always' ? v : 'typing';
 }
 
 function autocompleteContinue() {
-  var p = persistApi();
-  return !!(p && p.readStoredReplAutocompleteContinue && p.readStoredReplAutocompleteContinue());
+  return Settings.get('replAutocompleteContinue');
 }
 
 function caretPos(input) {

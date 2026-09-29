@@ -20,6 +20,7 @@ import { _pure as emacsMaps } from './emacs-setup.mjs';
 import { emacsKeyRows, readableEmacsKey } from './emacs-keys.mjs';
 import { EMACS_SUBSTITUTES } from './emacs-runtime.mjs';
 import { VIM_MACRO_ROWS } from './macro-keys.mjs';
+import { readSetting } from '../../../persist/settings-schema.mjs';
 
 /**
  * Pure: `[keys, id]` pairs for a style, leader already expanded.
@@ -133,8 +134,7 @@ export function styleMacros(style, isReserved) {
   if (!C || typeof C.get !== 'function') return [];
   let leader = DEFAULT_LEADER;
   try {
-    const p = g.Persist;
-    if (p && typeof p.readStoredVimLeader === 'function') leader = p.readStoredVimLeader() || leader;
+    leader = readSetting('vimLeader') || leader;
   } catch (_) { /* the default leader is the honest fallback */ }
   const out = [];
   for (const group of styleMacroGroups(style, leader)) {

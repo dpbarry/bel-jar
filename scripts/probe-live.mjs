@@ -9,6 +9,10 @@
 // looked fine. Nothing in the product starts that worker today, which is
 // exactly why only a probe that starts it could see it.
 //
+// And the server: sign-in configured (id AND secret), the sync API closed to
+// anyone without a session, and no file of the repository served (until
+// 2026-09-28 the live site served /.git/).
+//
 // ⛔ Hits the network, so it is NOT part of `npm run probe`. Point it at another
 // deployment with BELJAR_LIVE_URL=https://... npm run probe:live
 import { openProbe } from './probe-harness.mjs';
@@ -121,6 +125,37 @@ try {
   check(sw.registered, 'the service worker registered on the live origin');
   check(sw.cached.some((u) => new URL(u).host === CDN_HOST && new URL(u).pathname === '/beluga_web.bc.js'),
     'and it cached the R2 runtime, so repeat visits skip the 24 MB');
+
+  // 5. The server (server/, docs/PERSIST.md §5.7): sign-in configured with BOTH its id and its
+  //    secret (start answers 503 without either), the sync API closed to anyone without a
+  //    session, and none of the repository served as a file.
+  const site = new URL(LIVE).origin;
+  const hit = (p, init) => fetch(site + p, Object.assign({ redirect: 'manual' }, init));
+  const me = await hit('/api/auth/me');
+  const meBody = await me.json().catch(() => null);
+  check(me.status === 200 && meBody && meBody.user === null, `the server answers: /api/auth/me says nobody is signed in (${me.status})`);
+  const start = await hit('/api/auth/github/start');
+  const to = start.headers.get('location') ? new URL(start.headers.get('location')) : null;
+  check(start.status === 302 && to && to.origin + to.pathname === 'https://github.com/login/oauth/authorize',
+    `sign-in sends the browser to GitHub, so its id and secret are both set (${start.status})`);
+  check(to && /^Ov23/.test(to.searchParams.get('client_id') || '') && to.searchParams.get('redirect_uri') === site + '/api/auth/github/callback'
+    && !to.searchParams.get('scope'), `with the live app, our callback and no scopes (${to && to.search.slice(0, 120)})`);
+  const stateCookie = (start.headers.getSetCookie ? start.headers.getSetCookie() : []).find((c) => c.startsWith('__Host-bj_state='));
+  check(!!stateCookie && /HttpOnly/.test(stateCookie) && /Secure/.test(stateCookie) && /SameSite=Lax/.test(stateCookie),
+    'the one-time state rides in a __Host-, HttpOnly, Secure cookie');
+  const heads = await hit('/api/sync/heads', { method: 'POST', headers: { 'content-type': 'application/json', origin: site }, body: '{"args":[]}' });
+  check(heads.status === 401, `the sync API refuses a request without a session (${heads.status})`);
+  const forged = await hit('/api/sync/heads', { method: 'POST', headers: { 'content-type': 'application/json', origin: site, 'x-beljar-account': 'u_anyone' }, body: '{"args":[]}' });
+  check(forged.status === 401, `and the dev account header means nothing here (${forged.status})`);
+  const cross = await hit('/api/auth/signout', { method: 'POST', headers: { origin: 'https://elsewhere.example' } });
+  check(cross.status === 403, `another site cannot sign anyone out (${cross.status})`);
+  for (const p of ['/.git/config', '/.git/HEAD', '/wrangler.jsonc', '/server/worker.mjs', '/server/.dev.vars', '/package.json', '/AGENTS.md']) {
+    const r = await hit(p);
+    check(r.status === 404, `${p} is not served (${r.status})`);
+  }
+  const account = await page.waitForFunction(() => { const b = document.getElementById('btn-account'); return b && !b.hidden; }, { timeout: 15000 })
+    .then(() => true, () => false);
+  check(account, 'the page found the server: the header shows the account button');
 
   console.log('  total wall:', Date.now() - t0, 'ms');
   if (consoleErrs.length) console.log('  console errors:', JSON.stringify(consoleErrs));

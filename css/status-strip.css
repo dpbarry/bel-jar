@@ -968,12 +968,43 @@ html.jar-strip-owns-status .editor-topbar-controls {
   color: var(--ui-fg-faint);
 }
 
-/* -- Edit history: the `⟲` segment and the timeline behind it -- */
+/* -- Edit history: the undo / redo / history tray and the timeline behind it -- */
 
-/* The handle into the history panel. The word is stable, so it does not
-   reserve digit-width the way a live count would. */
+.jar-strip__seg--undo,
+.jar-strip__seg--redo,
 .jar-strip__seg--history {
   color: var(--ui-fg-muted);
+}
+
+/* An icon alone is a square target, not a word with its label torn off. */
+.jar-strip__seg.is-icon {
+  justify-content: center;
+  min-width: 1.35rem;
+  padding-inline: 0.2rem;
+}
+
+.jar-strip__seg.is-icon .jar-strip__icon {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+/* Nothing that way: present so the tray does not shift, but plainly inert. */
+.jar-strip__seg[aria-disabled='true'] {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.jar-strip__seg[aria-disabled='true']:hover {
+    background: transparent;
+    color: var(--ui-fg-muted);
+  }
+}
+
+/* The picker's handle stays lit while its list is up, like the history's. */
+.jar-strip__seg--keymap.is-open {
+  background: var(--header-menu-bg-hover);
+  color: var(--ui-fg-strong);
 }
 
 /* A second tab on this project. Standing, so it is a colour — the same warning
@@ -1185,38 +1216,6 @@ html.jar-strip-owns-status .editor-topbar-controls {
   flex: 0 0 auto;
 }
 
-/* The keys, named from the registry so a rebound undo shows the chord the user
-   actually has. */
-.jar-hist__foot {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 0.32rem 0.6rem;
-  border-top: 1px solid color-mix(in srgb, var(--search-drop-border) 60%, transparent);
-}
-
-.jar-hist__hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.64rem;
-  color: var(--ui-fg-faint);
-}
-
-.jar-hist__key {
-  display: inline-block;
-  padding: 0.06rem 0.28rem;
-  border-radius: 3px;
-  border: 1px solid light-dark(hsla(220, 12%, 74%, 0.95), color-mix(in srgb, var(--chrome-divider) 55%, transparent));
-  background: light-dark(hsla(220, 14%, 94%, 1), var(--repl-kbd-bg));
-  color: light-dark(hsla(220, 16%, 28%, 1), var(--repl-kbd-fg));
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  line-height: 1.25;
-  font-variant-numeric: tabular-nums;
-}
-
 /* A plain edit shows the text it inserted or removed rather than the word
    "Typing" eight times over — see changePreview. Mono, because it is source. */
 .jar-hist__label.is-preview {
@@ -1253,4 +1252,46 @@ html.jar-strip-owns-status .editor-topbar-controls {
   font-size: 0.68rem;
   color: var(--ui-fg-faint);
   font-style: italic;
+}
+
+/* -- The editing-style picker: the history panel's frame, its own rows -- */
+
+/* Sized to its words, and its text column lined up (in JS) with the label of the
+   segment under it: the panel stands on its handle rather than hanging off it. */
+.jar-hist--style {
+  width: max-content;
+}
+
+.jar-style__row {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.34rem 0.6rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: var(--menu-item-fg);
+  text-align: left;
+  cursor: pointer;
+  transition: background 100ms var(--ease-out), color 100ms var(--ease-out);
+}
+
+.jar-style__row.is-active {
+  background: var(--search-row-active-bg);
+  color: var(--search-row-active-fg);
+}
+
+.jar-style__row:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+/* ⛔ The style in use is marked in place — colour and weight — not by a leading
+   dot. A dot column indents every name off the caption's edge and off the word
+   in the strip below, and the whole panel leans right. */
+.jar-style__row.is-current {
+  color: var(--accent-mid);
+  font-weight: 600;
 }

@@ -7,23 +7,18 @@ import { isQuietTypingActiveForView } from '../quiet-typing.mjs';
 import { getEngine } from '../ide-actions.mjs';
 import { vimAllowsRemap } from '../keymap-style.mjs';
 import { listStepDelta } from './list-keys.mjs';
+import { readSetting } from '../../../persist/settings-schema.mjs';
 
 const POPUP_GAP_PX = 4;
 const VIEW_PAD_PX = 8;
 
-function persistApi() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  return g.Persist;
-}
-
 function autocompleteTrigger() {
-  const p = persistApi();
-  const v = p?.readStoredEditorAutocompleteTrigger?.();
+  const v = readSetting('editorAutocompleteTrigger');
   return v === 'none' || v === 'always' ? v : 'typing';
 }
 
 function autocompleteContinue() {
-  return !!persistApi()?.readStoredEditorAutocompleteContinue?.();
+  return !!readSetting('editorAutocompleteContinue');
 }
 
 /** Cursor at end of a token, before whitespace or EOF. */
@@ -485,7 +480,7 @@ export function belEditorAutocomplete(engine, opts = {}) {
 
   const runToggleIfDefault = (view) => {
     const g = typeof window !== 'undefined' ? window : globalThis;
-    const style = g.Persist?.readStoredKeymapStyle?.();
+    const style = readSetting('keymapStyle');
     if (style === 'emacs') return false;
     if (style === 'vim' && !vimAllowsRemap(view, 'edit.autocomplete')) return false;
     const KB = g.Keybindings;

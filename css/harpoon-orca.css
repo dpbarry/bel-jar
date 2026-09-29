@@ -148,6 +148,8 @@
   .harpoon-lab-orca,
   .harpoon-lab-orca::before,
   .harpoon-lab-orca-badge { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) and (hover: hover) and (pointer: fine) {
   .harpoon-lab-orca:not(:disabled):hover::before { transform: none; }
 }
 

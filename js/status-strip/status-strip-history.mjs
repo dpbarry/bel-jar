@@ -259,13 +259,11 @@ export function buildHistoryRows(undoStack, redoStack, opts) {
   return rows;
 }
 
-/** The one-line summary the strip segment shows in its tooltip. */
+/**
+ * The panel's count. ⛔ A size, not a direction: "8 steps to undo" read as the
+ * panel urging you to undo them.
+ */
 export function historySummary(undoCount, redoCount) {
-  const u = Number(undoCount) || 0;
-  const r = Number(redoCount) || 0;
-  if (!u && !r) return 'Nothing to undo yet';
-  const parts = [];
-  if (u) parts.push(plural(u, 'step', 'steps') + ' to undo');
-  if (r) parts.push(plural(r, 'step', 'steps') + ' to redo');
-  return parts.join(' · ');
+  const n = (Number(undoCount) || 0) + (Number(redoCount) || 0);
+  return n ? plural(n, 'step', 'steps') : 'No steps yet';
 }

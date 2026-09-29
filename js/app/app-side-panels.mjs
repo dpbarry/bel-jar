@@ -28,10 +28,10 @@
         cfg.btn.setAttribute('aria-pressed', open ? 'true' : 'false');
       }
       if (cfg.panel) cfg.panel.setAttribute('aria-hidden', open ? 'false' : 'true');
-      if (typeof cfg.writeOpen === 'function') cfg.writeOpen(open);
-      if (typeof Persist !== 'undefined' && Persist.writeStoredActiveSidePanel) {
-        if (open) Persist.writeStoredActiveSidePanel(id);
-        else if (!getOpenSidePanelId()) Persist.writeStoredActiveSidePanel(null);
+      if (typeof cfg.onOpenChange === 'function') cfg.onOpenChange(open);
+      if (typeof Persist !== 'undefined' && Persist.writeSidePanel) {
+        if (open) Persist.writeSidePanel(id);
+        else if (!getOpenSidePanelId()) Persist.writeSidePanel(null);
       }
       scheduleWorkspaceSave();
     }

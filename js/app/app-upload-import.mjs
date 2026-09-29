@@ -511,6 +511,21 @@
       if (id) downloadFileById(id);
     }
 
+    // The whole project, in one step: export is how work outlives a browser
+    // that clears its storage (docs/PERSIST.md §5.9).
+    function downloadProject() {
+      const files = Persist.listFiles() || [];
+      if (!files.length) return false;
+      const text = (id) => (typeof projectFileText === 'function' ? projectFileText(id) : (Persist.getFileText(id) || ''));
+      const archive = DownloadZip.projectArchive(
+        Persist.getProjectName(),
+        files.map((f) => ({ path: f.name, text: text(f.id) })),
+        Persist.listEmptyFolders ? Persist.listEmptyFolders() : [],
+      );
+      DownloadZip.downloadZip(archive.entries, archive.fileName);
+      return true;
+    }
+
     function downloadFolder(folderPath) {
       if (!folderPath) return;
 
@@ -650,6 +665,7 @@
       uploadFolderInputEl: uploadFolderInputEl,
       folderInputEl: folderInputEl,
       downloadCurrentFile: downloadCurrentFile,
+      downloadProject: downloadProject,
       downloadFileById: downloadFileById,
       downloadFolder: downloadFolder,
       downloadSuite: downloadSuite,

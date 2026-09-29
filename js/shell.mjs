@@ -46,5 +46,6 @@ import './ui/jar-dropdown.mjs';
 import './ui/settings-ui.mjs';
 import './harpoon/harpoon-ui.mjs';
 import './beluga/beluga-run-boot.mjs';
+import './account/account.mjs';
 import './app/app.mjs';
 import './compat/beljar-window-aliases.mjs';

@@ -74,10 +74,6 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   var globalFallback = null;
   var listening = false;
 
-  function persistApi() {
-    return global.Persist || null;
-  }
-
   // The global keydown listener runs on EVERY keypress in the app, editor typing
   // included, and walks every global-scope command. Reading overrides inside
   // `resolve` meant a localStorage read per command per keystroke — invisible at
@@ -106,10 +102,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   }
 
   function readOverrides() {
-    var p = persistApi();
-    if (!p || typeof p.readStoredKeybindings !== 'function') return {};
-    var o = p.readStoredKeybindings();
-    return o && typeof o === 'object' ? o : {};
+    return Settings.get('keybindings');
   }
 
   /**
@@ -120,18 +113,12 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
    * the expensive part, and that is what gets skipped when the string has not
    * moved. Keying on the stored bytes rather than on a change EVENT is what
    * keeps the old contract intact — a write from another tab, a settings
-   * import, or a direct `Persist.writeStoredKeybindings` still takes effect on
+   * import, or a direct `Settings.set('keybindings', …)` still takes effect on
    * the very next keystroke, with nothing to remember to notify.
    */
   function overridesRaw() {
-    try {
-      var p = persistApi();
-      var key = p && p.KEYBINDINGS_KEY;
-      if (!key || !global.localStorage) return null;
-      return global.localStorage.getItem(key) || '';
-    } catch (_) {
-      return null;
-    }
+    // Settings bumps this on every change to the keybindings, from any source.
+    return Settings.revision('keybindings');
   }
 
   /** A canonical spec, pre-split so matching allocates nothing. */
@@ -197,8 +184,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   }
 
   function writeOverrides(map) {
-    var p = persistApi();
-    if (p && typeof p.writeStoredKeybindings === 'function') p.writeStoredKeybindings(map);
+    Settings.set('keybindings', map);
   }
 
   function notifyChanged() {
@@ -443,9 +429,7 @@ var IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform |
   }
 
   function resetAll() {
-    var p = persistApi();
-    if (p && typeof p.resetKeybindingPrefs === 'function') p.resetKeybindingPrefs();
-    else writeOverrides({});
+    Settings.reset('keybindings');
     notifyChanged();
     return { ok: true };
   }

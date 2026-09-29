@@ -1,5 +1,15 @@
-"use strict";
 (() => {
+  // js/persist/settings-apply.mjs
+  function prefersReducedMotion(motionPref) {
+    if (motionPref === "reduce") return true;
+    if (motionPref === "full") return false;
+    try {
+      return typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // js/repl/repl-output.mjs
   var global = globalThis;
   var output = document.getElementById("output");
@@ -135,7 +145,7 @@
     return block;
   }
   function scrollReplBottom() {
-    if (typeof Persist !== "undefined" && !Persist.readStoredReplAutoscroll()) return;
+    if (typeof Persist !== "undefined" && !Settings.get("replAutoscroll")) return;
     if (typeof ReplStream !== "undefined" && ReplStream.ensureLiveLine) {
       ReplStream.ensureLiveLine();
     }
@@ -617,7 +627,7 @@
         continue;
       }
       if (!trimmed || trimmed === "[]" || trimmed === "^." || trimmed === "^" || trimmed === ";") {
-        var filterChatter = typeof Persist === "undefined" || Persist.readStoredReplFilterChatter();
+        var filterChatter = typeof Persist === "undefined" || Settings.get("replFilterChatter");
         if (filterChatter) {
           i++;
           continue;
@@ -728,14 +738,8 @@
   var pendingRunBlock = null;
   var pendingRunStartedAt = 0;
   var MIN_PENDING_MS = 180;
-  function prefersReducedMotion() {
-    try {
-      if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
-        return Persist.prefersReducedMotion();
-      }
-    } catch (_) {
-    }
-    return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function prefersReducedMotion2() {
+    return prefersReducedMotion(Settings.get("motionPref"));
   }
   function waitMs(ms) {
     return new Promise(function(resolve) {
@@ -850,7 +854,7 @@
     pendingRunStartedAt = 0;
     if (!block) return Promise.resolve();
     if (!block.isConnected) return Promise.resolve();
-    var reduce = prefersReducedMotion();
+    var reduce = prefersReducedMotion2();
     if (reduce) {
       block.remove();
       return Promise.resolve();
@@ -871,7 +875,7 @@
   }
   async function morphPendingPre(pre, kind, text) {
     if (!pre) return;
-    var reduce = prefersReducedMotion();
+    var reduce = prefersReducedMotion2();
     pre.classList.add("repl-rich-pre--run-resolving");
     if (!reduce) await waitMs(120);
     pre.classList.remove(
@@ -905,7 +909,7 @@
       await morphPendingPre(pre, "holes", holesText);
       return;
     }
-    var reduce = prefersReducedMotion();
+    var reduce = prefersReducedMotion2();
     var hp = document.createElement("pre");
     hp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
     if (!reduce) hp.classList.add("repl-rich-pre--run-stack-enter");
@@ -1097,7 +1101,7 @@
     });
   }
   function insertWelcomeBanner() {
-    if (typeof Persist !== "undefined" && !Persist.readStoredReplWelcome()) return;
+    if (typeof Persist !== "undefined" && !Settings.get("replWelcome")) return;
     var wrap = document.createElement("div");
     wrap.className = "repl-banner";
     var lead = document.createElement("div");

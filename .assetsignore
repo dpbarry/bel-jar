@@ -1,14 +1,27 @@
 # What the deployed site does NOT carry.
 #
-# The two Beluga runtime blobs are served from R2 (cdn.rpi-backend.com): the
+# The two Beluga runtime blobs are served from R2 (beljar-cdn.deanbarry.com): the
 # fast build is ~31.5 MB, over Cloudflare's 25 MiB per-file static-asset cap,
 # and shipping both would mean ~56 MB of upload on every deploy. index.html
 # points at the bucket on deployed hosts; locally they load from this repo.
 beluga_web.bc.js
 beluga_web.bc.dt.js
 
+# The repository itself. wrangler skips nothing on its own (only .assetsignore,
+# _redirects and _headers), and the Git build deploys from a clone, so until
+# 2026-09-28 the live site served /.git/ (config, index, every object).
+.git
+.gitignore
+.gitattributes
+.gitmodules
+.nojekyll
+
 # Source, tooling and docs — none of it is fetched at runtime.
 node_modules
+# the sync Worker's source and its local config: code the Worker runs, never a file it serves
+server
+.wrangler
+wrangler.jsonc
 Beluga-W
 _rebuild
 tests

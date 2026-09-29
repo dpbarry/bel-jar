@@ -37,14 +37,14 @@
  */
 export const SEGMENT_ORDER = [
   'keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems',
-  'orca', 'symbols', 'spacer', 'tab', 'history', 'checker',
+  'orca', 'symbols', 'spacer', 'tab', 'undo', 'redo', 'history', 'checker',
 ];
 
 export const DETAIL_LEVELS = ['compact', 'standard', 'detailed'];
 
 const PRESETS = {
-  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'history', 'checker'],
-  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'history', 'checker'],
+  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'undo', 'redo', 'history', 'checker'],
+  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'undo', 'redo', 'history', 'checker'],
   detailed: SEGMENT_ORDER,
 };
 
@@ -90,12 +90,16 @@ function stopSentence(s) {
 const BUILDERS = {
   /**
    * Which keymap. Stable, so it carries no colour and no chip — and gated on a
-   * file, because with no editor open there is no keymap to be in.
+   * file, because with no editor open there is no keymap to be in. Clicking it
+   * opens the picker.
    */
   keymap(s) {
     if (!s.hasFile) return null;
     const name = s.style === 'vim' ? 'Vim' : (s.style === 'emacs' ? 'Emacs' : 'Standard');
-    return { key: 'keymap', text: name, tone: 'plain', title: name + ' keymap' };
+    return {
+      key: 'keymap', text: name, tone: 'plain', title: 'Editing style',
+      action: 'keymap-menu', pressed: !!s.keymapOpen,
+    };
   },
 
   /** The mode WITHIN the keymap — only where there is one to be in. */
@@ -293,11 +297,24 @@ const BUILDERS = {
   },
 
   /**
-   * The way into the edit-history panel.
-   *
-   * Silent until there is something to undo or redo, so an untouched file
-   * carries no widget at all. A waiting redo branch is a tone change, spelled
-   * out in the panel — not a second number beside the word.
+   * Undo and redo, as one tray with the history beside them. The tray appears
+   * whole or not at all, so a direction with nothing in it is disabled rather
+   * than missing — a button that comes and goes shoves its neighbours. The
+   * view appends the live key to `title` from `command`.
+   */
+  undo(s) {
+    if (!s.undoDepth && !s.redoDepth) return null;
+    return { key: 'undo', icon: 'undo', title: 'Undo', command: 'edit.undo', action: 'undo', disabled: !s.undoDepth };
+  },
+
+  redo(s) {
+    if (!s.undoDepth && !s.redoDepth) return null;
+    return { key: 'redo', icon: 'redo', title: 'Redo', command: 'edit.redo', action: 'redo', disabled: !s.redoDepth };
+  },
+
+  /**
+   * The way into the edit-history panel. A waiting redo branch is a tone
+   * change, spelled out in the panel — not a number beside the icon.
    */
   history(s) {
     const undo = s.undoDepth || 0;
@@ -305,13 +322,11 @@ const BUILDERS = {
     if (!undo && !redo) return null;
     return {
       key: 'history',
-      text: 'History',
       // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
-      // and already carries the HOLES magenta — borrowing it painted the undo
-      // arrow bright pink, which read as an error badge sitting next to the
-      // checker. A widget that means something else gets its own mark.
+      // and already carries the HOLES magenta — borrowing it painted the arrow
+      // bright pink, which read as an error badge sitting next to the checker.
       icon: 'history',
-      title: 'Editor history',
+      title: 'Edit history',
       tone: redo ? 'branched' : 'plain',
       action: 'edit-history',
       pressed: !!s.historyOpen,

@@ -5,8 +5,10 @@
 //
 // The whole design rests on one property of the `storage` event: it fires in
 // the OTHER tabs of an origin, never in the writer, and only on a real write.
-// This harness reproduces exactly that — two module instances, one shared
-// storage, and each tab's listener wired to a bus that skips its own writes.
+// Each simulated tab here runs a real Persist over one shared browser storage
+// (_persist-env.mjs), so the handshake travels through the real store and its
+// real cross-tab events, not a stand-in.
+import { makeBrowserStorage, openTab as openPersistTab } from './_persist-env.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -16,30 +18,12 @@ function expect(cond, msg) {
 
 const MODULE = new URL('../js/persist/tab-guard.mjs', import.meta.url).href;
 
-const store = new Map();
+const browser = makeBrowserStorage();
 const tabs = [];
-let writer = null;
 
-const localStorage = {
-  getItem(k) { return store.has(k) ? store.get(k) : null; },
-  removeItem(k) { store.delete(k); },
-  setItem(k, v) {
-    const old = store.has(k) ? store.get(k) : null;
-    store.set(k, String(v));
-    // Every tab but the one that wrote.
-    for (const t of tabs) {
-      if (t === writer) continue;
-      for (const fn of t.listeners) fn({ key: k, newValue: String(v), oldValue: old });
-    }
-  },
-};
-
-globalThis.localStorage = localStorage;
-
-/** Load one more instance of the module, wired to its own listener list. */
+/** Load one more instance of the module, on its own Persist over the shared storage. */
 async function openTab(projectId) {
   const tab = {
-    listeners: [],
     pagehide: [],
     pageshow: [],
     warnings: [],
@@ -48,66 +32,57 @@ async function openTab(projectId) {
     tabConflict: false,
   };
   tabs.push(tab);
+  const env = openPersistTab(browser);
+
+  // The guard reads its globals at call time; point them at THIS tab for the
+  // length of every call into it, including messages arriving from others.
+  let tabPersist = null;
+  const surfaces = () => ({
+    Persist: tabPersist,
+    Toasts: { warn: (m) => tab.warnings.push(m) },
+    StatusStrip: { setTabConflict: (on) => { tab.tabConflict = !!on; } },
+    Notifications: { emit: (n) => tab.notifications.push(n) },
+  });
+  const wrap = (fn) => (...args) => {
+    const names = ['Persist', 'Toasts', 'StatusStrip', 'Notifications'];
+    const saved = names.map((n) => globalThis[n]);
+    Object.assign(globalThis, surfaces());
+    try { return fn(...args); } finally {
+      names.forEach((n, i) => { globalThis[n] = saved[i]; });
+    }
+  };
+  tabPersist = Object.create(env.P);
+  tabPersist.getActiveProjectId = () => tab.projectId;
+  tabPersist.onTabMessage = (fn) => env.P.onTabMessage(wrap(fn));
 
   const prevAdd = globalThis.addEventListener;
   const prevRaf = globalThis.requestAnimationFrame;
-  const prevPersist = globalThis.Persist;
-  const prevToasts = globalThis.Toasts;
-  const prevStatusStrip = globalThis.StatusStrip;
-  const prevNotifications = globalThis.Notifications;
-
   globalThis.addEventListener = (type, fn) => {
-    if (type === 'storage') tab.listeners.push(fn);
-    else if (type === 'pagehide') tab.pagehide.push(fn);
-    else if (type === 'pageshow') tab.pageshow.push(fn);
+    if (type === 'pagehide') tab.pagehide.push(wrap(fn));
+    else if (type === 'pageshow') tab.pageshow.push(wrap(fn));
   };
   // A no-op, not null: null falls through to a boot timer, and that timer
   // announces with whichever tab's Persist happens to be installed when it
   // fires. The tests call announce() themselves.
   globalThis.requestAnimationFrame = () => 0;
-  globalThis.Persist = { getActiveProjectId: () => tab.projectId };
-  globalThis.Toasts = { warn: (m) => tab.warnings.push(m) };
-  globalThis.StatusStrip = { setTabConflict: (on) => { tab.tabConflict = !!on; } };
-  globalThis.Notifications = { emit: (n) => tab.notifications.push(n) };
 
-  // A fresh query string is a fresh module instance: a second tab.
-  const mod = await import(`${MODULE}?tab=${tabs.length}`);
-  tab.announce = () => { writer = tab; mod.announce(); writer = null; };
+  // A fresh query string is a fresh module instance: a second tab. Its body
+  // runs after import() returns, so this tab's globals stay up until it has.
+  const names = ['Persist', 'Toasts', 'StatusStrip', 'Notifications'];
+  const saved = names.map((n) => globalThis[n]);
+  Object.assign(globalThis, surfaces());
+  let mod;
+  try {
+    mod = await import(`${MODULE}?tab=${tabs.length}`);
+  } finally {
+    names.forEach((n, i) => { globalThis[n] = saved[i]; });
+    globalThis.addEventListener = prevAdd;
+    globalThis.requestAnimationFrame = prevRaf;
+  }
 
-  // The module's own listeners are captured; restore the globals but keep the
-  // per-tab surfaces reachable by re-pointing them at call time.
-  const wrap = (fn) => (...args) => {
-    const savedPersist = globalThis.Persist;
-    const savedToasts = globalThis.Toasts;
-    const savedStatusStrip = globalThis.StatusStrip;
-    const savedNotifications = globalThis.Notifications;
-    globalThis.Persist = { getActiveProjectId: () => tab.projectId };
-    globalThis.Toasts = { warn: (m) => tab.warnings.push(m) };
-    globalThis.StatusStrip = { setTabConflict: (on) => { tab.tabConflict = !!on; } };
-    globalThis.Notifications = { emit: (n) => tab.notifications.push(n) };
-    const prevWriter = writer;
-    writer = tab;
-    try { return fn(...args); } finally {
-      writer = prevWriter;
-      globalThis.Persist = savedPersist;
-      globalThis.Toasts = savedToasts;
-      globalThis.StatusStrip = savedStatusStrip;
-      globalThis.Notifications = savedNotifications;
-    }
-  };
-  tab.listeners = tab.listeners.map(wrap);
-  tab.pagehide = tab.pagehide.map(wrap);
-  tab.pageshow = tab.pageshow.map(wrap);
   tab.announce = wrap(() => mod.announce());
   tab.hide = () => { for (const fn of tab.pagehide) fn(); };
   tab.show = (e) => { for (const fn of tab.pageshow) fn(e); };
-
-  globalThis.addEventListener = prevAdd;
-  globalThis.requestAnimationFrame = prevRaf;
-  globalThis.Persist = prevPersist;
-  globalThis.Toasts = prevToasts;
-  globalThis.StatusStrip = prevStatusStrip;
-  globalThis.Notifications = prevNotifications;
   return tab;
 }
 

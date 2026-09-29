@@ -21,6 +21,7 @@ import { beljarUndo, beljarRedo } from './undo-route.mjs';
 import { whichKeyHint, WHICH_KEY_MS } from './which-key-hint.mjs';
 import { pasteSystemClipboard, writeSystemClipboard } from '../clipboard-bridge.mjs';
 import { listStepDelta } from '../completion/list-keys.mjs';
+import { readSetting } from '../../../persist/settings-schema.mjs';
 
 let bridged = false;
 let emacsKeysBound = false;
@@ -162,9 +163,8 @@ function installEmacsClipboardBridge() {
 }
 
 function emacsYankSource() {
-  const P = globalThis.Persist;
   try {
-    return P && typeof P.readStoredEmacsYankSource === 'function' ? P.readStoredEmacsYankSource() : 'system';
+    return readSetting('emacsYankSource');
   } catch (_) {
     return 'system';
   }

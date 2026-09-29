@@ -10,6 +10,7 @@ import {
   isQuietTypingActive,
   quietWhileTypingEnabled,
 } from '../js/editor-src/ide/quiet-typing.mjs';
+import { withSettings } from './_settings.mjs';
 
 assert.equal(trimTrailingWhitespace('a  \nb\t\n'), 'a\nb\n');
 assert.equal(trimTrailingWhitespace('a  \nb\t'), 'a\nb');
@@ -23,15 +24,15 @@ assert.equal(isBelSavePath('lib.elf'), false);
 assert.equal(isBelSavePath('orphan'), true);
 
 {
-  const prev = globalThis.Persist;
-  globalThis.Persist = { readStoredQuietWhileTyping: () => true };
-  assert.equal(quietWhileTypingEnabled(), true);
   const eng = { isSettledFor: (v) => v === 2 };
-  assert.equal(isQuietTypingActive(eng, 1), true);
-  assert.equal(isQuietTypingActive(eng, 2), false);
-  globalThis.Persist = { readStoredQuietWhileTyping: () => false };
-  assert.equal(isQuietTypingActive(eng, 1), false);
-  globalThis.Persist = prev;
+  withSettings({ quietWhileTyping: true }, () => {
+    assert.equal(quietWhileTypingEnabled(), true);
+    assert.equal(isQuietTypingActive(eng, 1), true);
+    assert.equal(isQuietTypingActive(eng, 2), false);
+  });
+  withSettings({ quietWhileTyping: false }, () => {
+    assert.equal(isQuietTypingActive(eng, 1), false);
+  });
 }
 
 // ⛔ Trim-on-save must not move the caret, and must not eat the space you are

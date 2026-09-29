@@ -1,29 +1,29 @@
+import { readDevice, writeDevice } from '../../persist/device-schema.mjs';
+
 const listeners = new Set();
 
-const DEFAULT = Object.freeze({
-  layout: 'force',
-  impl: 'show',
-  depth: 1,
-  labelDensity: 3,
-  sidebarCollapsed: false,
-});
-
-function persistApi() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  return g.Persist;
-}
+/** Each graph preference is a device row (device-schema.mjs). */
+const ROWS = {
+  layout: 'graphLayout',
+  impl: 'graphImpl',
+  depth: 'graphDepth',
+  labelDensity: 'graphLabelDensity',
+  sidebarCollapsed: 'graphSidebarCollapsed',
+};
 
 export function loadGraphPrefs() {
-  const p = persistApi();
-  if (p?.readStoredGraphPrefs) return p.readStoredGraphPrefs();
-  return { ...DEFAULT };
+  const out = {};
+  for (const [field, id] of Object.entries(ROWS)) out[field] = readDevice(id);
+  return out;
 }
 
 export function saveGraphPrefs(partial) {
-  const p = persistApi();
-  const next = p?.writeStoredGraphPrefs
-    ? p.writeStoredGraphPrefs(partial)
-    : { ...loadGraphPrefs(), ...partial };
+  const changes = partial || {};
+  for (const [field, id] of Object.entries(ROWS)) {
+    if (field in changes) writeDevice(id, changes[field]);
+  }
+  // Without the shell (Node tests) nothing is stored: answer with the change applied.
+  const next = globalThis.Device ? loadGraphPrefs() : { ...loadGraphPrefs(), ...changes };
   for (const fn of listeners) fn(next);
   return next;
 }

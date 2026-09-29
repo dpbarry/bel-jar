@@ -198,10 +198,9 @@ function createTreeUi(deps) {
 
           // Collapse / reopen the inspector rail — header toggle with a slim strip
           // when collapsed (never a zero-width rail or edge-straddling chevron).
-          // State persists across redraws and app sessions via Persist.
-          var persist = global.Persist;
-          var collapsed = !!(persist && persist.readStoredHarpoonDetailsCollapsed
-            && persist.readStoredHarpoonDetailsCollapsed());
+          // State persists across redraws and app sessions (the device table).
+          var device = global.Device;
+          var collapsed = !!(device && device.get('harpoonDetailsCollapsed'));
           var railHead = el('div', 'hpt-rail-head');
           var railTitle = el('span', 'hpt-rail-title', 'Details');
           var toggle = el('button', 'icon-btn hpt-rail-toggle');
@@ -219,9 +218,7 @@ function createTreeUi(deps) {
           }
           toggle.addEventListener('click', function () {
             collapsed = !collapsed;
-            if (persist && persist.writeStoredHarpoonDetailsCollapsed) {
-              persist.writeStoredHarpoonDetailsCollapsed(collapsed);
-            }
+            if (device) device.set('harpoonDetailsCollapsed', collapsed);
             applyCollapsed();
           });
           rail.appendChild(railHead);
@@ -579,7 +576,7 @@ function createTreeUi(deps) {
           where.appendChild(el('div', 'hpt-detail-branch', 'in branch: ' + st.branch));
         }
         if (st && typeof st.checks === 'number' && st.checks > 0) {
-          var showStats = typeof Persist === 'undefined' || Persist.readStoredAutosolveShowStats();
+          var showStats = typeof Persist === 'undefined' || Settings.get('autosolveShowStats');
           if (showStats) {
             var checksEl = el('div', 'hpt-detail-checks', st.checks + ' checker call' + (st.checks === 1 ? '' : 's'));
             setTip(checksEl, 'Times BelJar asked Beluga to certify a candidate move at this hole '

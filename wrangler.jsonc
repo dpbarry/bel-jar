@@ -1,0 +1,36 @@
+// PRODUCTION: the deployed site, https://beljar.deanbarry.com (docs/PERSIST.md §5.7).
+//
+// Cloudflare's Git integration deploys from this file: the site's static files
+// from the repository root (minus .assetsignore), and the Worker in server/ for
+// /api/* only, so every page and file is served exactly as it was before the
+// server existed. Local development uses server/wrangler.jsonc (`npm run dev`).
+//
+// ⛔ No DEV_ACCOUNT_HEADER here, ever: it lets a request name its own account.
+// ⛔ GITHUB_CLIENT_SECRET is a secret (`npx wrangler secret put`), never a var.
+// tests/test-deploy-config.mjs holds both.
+{
+  "name": "bel-jar",
+  "main": "server/worker.mjs",
+  "compatibility_date": "2026-09-21",
+  // Until this file existed, the Git build generated one (and served it, at
+  // /wrangler.jsonc): bel-jar, 2026-09-21, logs on, the root as the site. This
+  // keeps all four and adds the API.
+  "observability": { "enabled": true },
+  "assets": { "directory": ".", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  // No "routes": beljar.deanbarry.com stays attached where it is (the dashboard).
+  // Listing any route here would also switch workers.dev off (wrangler 4.143
+  // defaults workers_dev to "no routes listed") and re-attach the domain.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "beljar-sync",
+      "database_id": "a0beffeb-23d2-4dae-ab6c-78e4ff59b0db",
+      "migrations_dir": "server/migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "TEXTS", "bucket_name": "beljar-texts" }
+  ],
+  // The live GitHub OAuth app. The id is public (GitHub shows it in every sign-in link).
+  "vars": { "GITHUB_CLIENT_ID": "Ov23liywDmLbi2XHRnOZ" }
+}

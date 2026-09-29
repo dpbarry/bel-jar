@@ -1,14 +1,265 @@
 (() => {
+  // js/persist/store.mjs
+  var SCHEMA = 4;
+
+  // js/persist/table.mjs
+  function typeOf(row) {
+    if (row.values) return "enum";
+    if (row.type) return row.type;
+    if (typeof row.default === "boolean") return "bool";
+    if (typeof row.default === "number") return "number";
+    return "string";
+  }
+  function clone(v) {
+    return v !== null && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
+  }
+  function normalizeValue(row, raw) {
+    switch (typeOf(row)) {
+      case "enum": {
+        if (row.values.includes(raw)) return raw;
+        if (typeof raw === "string" && raw.trim() !== "" && row.values.some((v) => typeof v === "number")) {
+          const n = Number(raw);
+          if (row.values.includes(n)) return n;
+        }
+        return void 0;
+      }
+      case "bool":
+        return typeof raw === "boolean" ? raw : void 0;
+      case "string":
+        return typeof raw === "string" && raw !== "" ? raw : void 0;
+      case "number": {
+        let n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+        if (!Number.isFinite(n)) return void 0;
+        if (row.min != null && n < row.min) n = row.min;
+        if (row.max != null && n > row.max) n = row.max;
+        return row.integer ? Math.round(n) : n;
+      }
+      case "json":
+        return row.normalize ? row.normalize(raw) : raw;
+      default:
+        return void 0;
+    }
+  }
+  function resolveRows(rows, stored) {
+    const src = stored && typeof stored === "object" ? stored : {};
+    const out = {};
+    for (const row of rows) {
+      const n = Object.prototype.hasOwnProperty.call(src, row.id) ? normalizeValue(row, src[row.id]) : void 0;
+      out[row.id] = clone(n === void 0 ? row.default : n);
+    }
+    return out;
+  }
+  function readBootRows(storage, schema, key, rows) {
+    try {
+      if (storage.getItem("beljar/schema") !== String(schema)) return resolveRows(rows, {});
+      const env = JSON.parse(storage.getItem(key) || "null");
+      return resolveRows(rows, env && env.data && env.data.values);
+    } catch (_) {
+      return resolveRows(rows, {});
+    }
+  }
+
+  // js/persist/settings-schema.mjs
+  var SETTINGS_KEY = "beljar/settings";
+  function cleanKeybindings(map) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return void 0;
+    const out = {};
+    for (const [id, v] of Object.entries(map)) {
+      if (v === "" || v === null) out[id] = "";
+      else if (typeof v === "string") out[id] = v;
+    }
+    return out;
+  }
+  function cleanAliasPairs(v) {
+    if (v === null) return null;
+    return Array.isArray(v) ? v : void 0;
+  }
+  var ON = true;
+  var OFF = false;
+  var SETTINGS = [
+    // ── Appearance ──────────────────────────────────────────────────────────
+    { id: "theme", section: "appearance", default: "dark", values: ["dark", "light"], boot: true },
+    { id: "uiFontSize", section: "appearance", default: "md", values: ["sm", "md", "lg", "xl"], boot: true },
+    { id: "uiTextContrast", section: "appearance", default: "medium", values: ["low", "medium", "high", "maximum"], boot: true },
+    { id: "motionPref", section: "appearance", default: "system", values: ["system", "reduce", "full"], boot: true },
+    { id: "toastDuration", section: "appearance", default: "normal", values: ["short", "normal", "long"] },
+    // ── Editor: typography ──────────────────────────────────────────────────
+    { id: "editorFontSize", section: "editor", default: "md", values: ["sm", "md", "lg", "xl"] },
+    { id: "editorLineHeight", section: "editor", default: "normal", values: ["compact", "normal", "relaxed"] },
+    { id: "editorWordWrap", section: "editor", default: OFF },
+    { id: "editorFontFamily", section: "editor", default: "jetbrains", values: ["jetbrains", "system"], boot: true },
+    { id: "editorCursorBlink", section: "editor", default: "blink", values: ["off", "blink", "fast"] },
+    { id: "editorScrollPastEnd", section: "editor", default: ON },
+    { id: "editorWhitespace", section: "editor", default: "none", values: ["none", "trailing", "selection", "all"] },
+    { id: "editorRulers", section: "editor", default: OFF },
+    // ── Editor: indentation and saving ──────────────────────────────────────
+    { id: "editorTabSize", section: "editor", default: 2, values: [2, 4] },
+    { id: "autosaveDelay", section: "editor", default: 320, values: [320, 1e3, 2e3] },
+    { id: "editorFormatWidth", section: "editor", default: 80, values: [80, 100, 120] },
+    { id: "editorReindentPaste", section: "editor", default: ON },
+    { id: "cfgAutoSync", section: "editor", default: ON },
+    { id: "formatOnSave", section: "editor", default: OFF },
+    { id: "trimTrailingWs", section: "editor", default: OFF },
+    // ── Editor: code insight ────────────────────────────────────────────────
+    { id: "editorSyntaxHighlight", section: "editor", default: ON },
+    { id: "editorSemanticHighlight", section: "editor", default: ON },
+    { id: "editorParseHighlight", section: "editor", default: ON },
+    { id: "editorOccurrenceHighlight", section: "editor", default: ON },
+    { id: "editorBracketMatch", section: "editor", default: ON },
+    { id: "editorAutoCloseBrackets", section: "editor", default: ON },
+    { id: "editorSelectionMatches", section: "editor", default: ON },
+    { id: "hoverScope", section: "editor", default: "all", values: ["all", "user-only", "none"] },
+    { id: "hoverSticky", section: "editor", default: OFF },
+    { id: "editorAutocompleteTrigger", section: "editor", default: "typing", values: ["typing", "none", "always"] },
+    { id: "editorAutocompleteContinue", section: "editor", default: OFF },
+    { id: "quietWhileTyping", section: "editor", default: OFF },
+    // ── Editor: gutters and diagnostics ─────────────────────────────────────
+    { id: "editorLineNumbers", section: "editor", default: ON },
+    { id: "editorLineNumberMode", section: "editor", default: "absolute", values: ["absolute", "relative", "hybrid"] },
+    { id: "editorFoldGutter", section: "editor", default: ON },
+    { id: "editorFoldPersist", section: "editor", default: "session", values: ["session", "none", "local"], sync: false },
+    { id: "editorActiveLine", section: "editor", default: ON },
+    { id: "diagPresentation", section: "editor", default: "both", values: ["both", "underlines", "gutter", "none"] },
+    { id: "diagSeverity", section: "editor", default: "all", values: ["all", "errors"] },
+    { id: "editorHoleGutter", section: "editor", default: ON },
+    { id: "editorHoleEmphasis", section: "editor", default: "normal", values: ["subtle", "normal", "loud"], boot: true },
+    { id: "stickyDeclHeader", section: "editor", default: OFF },
+    // ── Keybindings and the keyboard ────────────────────────────────────────
+    { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
+    { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
+    // null: the status strip picks its own default for the keymap style.
+    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
+    { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
+    { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
+    { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
+    { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
+    // ── Beluga ──────────────────────────────────────────────────────────────
+    // Which build this device downloads: a phone and a workstation differ.
+    { id: "belugaMode", section: "beluga", default: "stable", values: ["stable", "fast"], sync: false },
+    { id: "belugaFallbackStable", section: "beluga", default: ON },
+    { id: "belugaCancelOnEdit", section: "beluga", default: ON },
+    { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
+    { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },
+    // ── Harpoon ─────────────────────────────────────────────────────────────
+    { id: "harpoonMode", section: "harpoon", default: "manual", values: ["manual", "orca"] },
+    { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
+    { id: "autosolveFocusNext", section: "harpoon", default: ON },
+    { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // ── REPL ────────────────────────────────────────────────────────────────
+    { id: "replAutoscroll", section: "repl", default: ON },
+    { id: "replWelcome", section: "repl", default: ON },
+    { id: "replEcho", section: "repl", default: ON },
+    { id: "replFilterChatter", section: "repl", default: ON },
+    { id: "replHoverTimestamp", section: "repl", default: OFF },
+    { id: "replAutocompleteTrigger", section: "repl", default: "typing", values: ["typing", "none", "always"] },
+    { id: "replAutocompleteContinue", section: "repl", default: OFF },
+    { id: "replHistoryCap", section: "repl", default: 1e3, values: [100, 250, 500, 1e3] },
+    // Where this browser keeps history: a shared computer is not your laptop.
+    { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
+    // ── Workspace ───────────────────────────────────────────────────────────
+    { id: "inspectorFollow", section: "workspace", default: ON },
+    { id: "restorePanels", section: "workspace", default: ON },
+    { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Signed in, settings follow you between devices; off here, this device keeps its own.
+    { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // ── Aliases ─────────────────────────────────────────────────────────────
+    { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
+    // null: the built-in alias table.
+    { id: "aliasPairs", section: "aliases", default: null, type: "json", normalize: cleanAliasPairs }
+  ];
+  var BY_ID = new Map(SETTINGS.map((row) => [row.id, row]));
+  function readBootSettings(storage, schema) {
+    return readBootRows(storage, schema, SETTINGS_KEY, SETTINGS);
+  }
+
+  // js/persist/settings-apply.mjs
+  var UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
+  var UI_TEXT_CONTRAST = { low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
+  var EDITOR_MONO = {
+    jetbrains: "'JetBrains Mono', monospace",
+    system: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+  };
+  function applyDocumentSettings(docEl, values) {
+    if (!docEl || !values) return;
+    docEl.classList.toggle("light", values.theme === "light");
+    docEl.style.setProperty("--ui-font-scale", String(UI_FONT_SCALES[values.uiFontSize] || 1));
+    docEl.style.setProperty("--ui-text-contrast", String(UI_TEXT_CONTRAST[values.uiTextContrast] || UI_TEXT_CONTRAST.medium));
+    docEl.classList.toggle("jar-motion-reduce", values.motionPref === "reduce");
+    docEl.classList.toggle("jar-motion-full", values.motionPref === "full");
+    docEl.style.setProperty("--editor-mono", EDITOR_MONO[values.editorFontFamily] || EDITOR_MONO.jetbrains);
+    docEl.style.setProperty("--editor-ligatures", "none");
+    docEl.classList.toggle("jar-hole-subtle", values.editorHoleEmphasis === "subtle");
+    docEl.classList.toggle("jar-hole-loud", values.editorHoleEmphasis === "loud");
+  }
+
+  // js/persist/device-schema.mjs
+  var DEVICE_KEY = "beljar/device";
+  function stringList(cap) {
+    return (raw) => {
+      if (!Array.isArray(raw)) return void 0;
+      const out = [];
+      for (const x of raw) {
+        if (typeof x === "string" && x && out.indexOf(x) === -1) out.push(x);
+      }
+      return cap ? out.slice(0, cap) : out;
+    };
+  }
+  function runModel(raw) {
+    if (!raw || typeof raw !== "object") return void 0;
+    const { baseMs, msPerLine, sampleCount } = raw;
+    if (!(typeof msPerLine === "number" && msPerLine > 0) || !(typeof baseMs === "number" && baseMs >= 0)) return void 0;
+    return {
+      baseMs,
+      msPerLine,
+      sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
+    };
+  }
+  var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
+  var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
+  var DEVICE = [
+    // which project the next load opens (a page stays on the one it opened: work.mjs)
+    { id: "activeProject", type: "string", default: "" },
+    // the account this browser is signed in as ('' signed out): whose projects it
+    // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
+    { id: "account", type: "string", default: "" },
+    // the account this device last asked about its own projects (the claim flow, once per account)
+    { id: "claimAskedFor", type: "string", default: "" },
+    // durability.mjs: when this browser was last asked to keep BelJar's storage,
+    // and when this device was told Safari may delete it (ms; 0: never)
+    { id: "persistAskedAt", type: "number", default: 0 },
+    { id: "durabilityWarnedAt", type: "number", default: 0 },
+    // layout
+    { id: "editorSplit", group: "layout", default: 0.5, min: 0.18, max: 0.82, boot: true },
+    { id: "explorerWidth", ...PANEL_W, cssVar: "--explorer-w" },
+    { id: "explorerHeight", ...PANEL_H, max: 320, cssVar: "--explorer-h" },
+    { id: "inspectorWidth", ...PANEL_W, cssVar: "--inspector-w" },
+    { id: "inspectorHeight", ...PANEL_H, cssVar: "--inspector-h" },
+    { id: "libraryWidth", ...PANEL_W, cssVar: "--library-w" },
+    { id: "libraryHeight", ...PANEL_H, cssVar: "--library-h" },
+    { id: "harpoonWidth", ...PANEL_W, cssVar: "--harpoon-w" },
+    { id: "harpoonHeight", ...PANEL_H, cssVar: "--harpoon-h" },
+    { id: "harpoonDetailsCollapsed", default: false },
+    // the dependency graph panel
+    { id: "graphLayout", default: "force", values: ["force", "flat"] },
+    { id: "graphImpl", default: "show", values: ["show", "hide"] },
+    { id: "graphDepth", default: 1, values: [1, 2, 3] },
+    { id: "graphLabelDensity", default: 3, values: [1, 2, 3, 4, 5] },
+    { id: "graphSidebarCollapsed", default: false },
+    // what this device has learned or been told
+    { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
+    { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    { id: "runModel", type: "json", default: null, normalize: runModel },
+    { id: "jumpLog", default: false }
+  ];
+  var BY_ID2 = new Map(DEVICE.map((row) => [row.id, row]));
+  function readBootDevice(storage, schema) {
+    return readBootRows(storage, schema, DEVICE_KEY, DEVICE);
+  }
+
   // js/boot/early-boot-core.mjs
   var SPLIT_STACK_MQ = "(max-width: 48rem)";
-  var UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
-  var UI_TEXT_CONTRAST = { normal: 1, low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
-  function clampSplit(n, min, max, fallback) {
-    if (!Number.isFinite(n)) return fallback;
-    if (n < min) return min;
-    if (n > max) return max;
-    return n;
-  }
   function applySplitVars(rootStyle, ratio, stackMq, matchMedia) {
     const a = Math.round(ratio * 1e6) / 1e6;
     const b = Math.round((1 - ratio) * 1e6) / 1e6;
@@ -20,68 +271,20 @@
       rootStyle.setProperty("--workspace-split-cols", `${a}fr ${b}fr`);
     }
   }
-  function applyStoredPanelPx(rootStyle, storage, key, cssVar) {
-    const n = parseFloat(storage.getItem(key));
-    if (Number.isFinite(n) && n > 0) rootStyle.setProperty(cssVar, `${n}px`);
+  function applyStoredSettings(docEl, storage) {
+    applyDocumentSettings(docEl, readBootSettings(storage, SCHEMA));
   }
-  function applyDocumentPrefs(docEl, storage) {
-    if (storage.getItem("beljar-theme") === "light") {
-      docEl.classList.add("light");
+  function applyPanelDimensionPrefs(rootStyle, device) {
+    for (const row of DEVICE) {
+      if (row.cssVar && device[row.id] !== row.default) rootStyle.setProperty(row.cssVar, `${device[row.id]}px`);
     }
-    const uiFontStored = storage.getItem("beljar-ui-font-size");
-    docEl.style.setProperty("--ui-font-scale", String(UI_FONT_SCALES[uiFontStored] || 1));
-    const uiTextContrastStored = storage.getItem("beljar-ui-text-contrast");
-    docEl.style.setProperty(
-      "--ui-text-contrast",
-      String(UI_TEXT_CONTRAST[uiTextContrastStored] || UI_TEXT_CONTRAST.medium)
-    );
-    const motion = storage.getItem("beljar-motion-pref");
-    docEl.classList.toggle("jar-motion-reduce", motion === "reduce");
-    docEl.classList.toggle("jar-motion-full", motion === "full");
-    const editorFont = storage.getItem("beljar-editor-font-family");
-    docEl.style.setProperty(
-      "--editor-mono",
-      editorFont === "system" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "'JetBrains Mono', monospace"
-    );
-    docEl.style.setProperty(
-      "--editor-ligatures",
-      storage.getItem("beljar-editor-ligatures") === "off" ? "none" : "common-ligatures"
-    );
-    const holeEmph = storage.getItem("beljar-editor-hole-emphasis");
-    docEl.classList.toggle("jar-hole-subtle", holeEmph === "subtle");
-    docEl.classList.toggle("jar-hole-loud", holeEmph === "loud");
-  }
-  function applyPanelDimensionPrefs(rootStyle, storage) {
-    applyStoredPanelPx(rootStyle, storage, "beljar-explorer-w", "--explorer-w");
-    applyStoredPanelPx(rootStyle, storage, "beljar-inspector-w", "--inspector-w");
-    applyStoredPanelPx(rootStyle, storage, "beljar-library-w", "--library-w");
-    applyStoredPanelPx(rootStyle, storage, "beljar-harpoon-w", "--harpoon-w");
-    applyStoredPanelPx(rootStyle, storage, "beljar-explorer-h", "--explorer-h");
-    applyStoredPanelPx(rootStyle, storage, "beljar-inspector-h", "--inspector-h");
-    applyStoredPanelPx(rootStyle, storage, "beljar-library-h", "--library-h");
-    applyStoredPanelPx(rootStyle, storage, "beljar-harpoon-h", "--harpoon-h");
-  }
-  function readSplitRatio(storage, splitKey, min, max, fallback) {
-    return clampSplit(parseFloat(storage.getItem(splitKey)), min, max, fallback);
   }
   function installEarlyBoot(env) {
-    const {
-      document: document2,
-      window: window2,
-      localStorage: localStorage2,
-      splitKey,
-      splitMin,
-      splitMax,
-      splitDefault
-    } = env;
-    applyDocumentPrefs(document2.documentElement, localStorage2);
-    applyPanelDimensionPrefs(document2.documentElement.style, localStorage2);
-    applySplitVars(
-      document2.documentElement.style,
-      readSplitRatio(localStorage2, splitKey, splitMin, splitMax, splitDefault),
-      SPLIT_STACK_MQ,
-      window2.matchMedia.bind(window2)
-    );
+    const { document: document2, window: window2, localStorage: localStorage2 } = env;
+    const device = readBootDevice(localStorage2, SCHEMA);
+    applyStoredSettings(document2.documentElement, localStorage2);
+    applyPanelDimensionPrefs(document2.documentElement.style, device);
+    applySplitVars(document2.documentElement.style, device.editorSplit, SPLIT_STACK_MQ, window2.matchMedia.bind(window2));
   }
   function registerServiceWorker(nav, loc) {
     if (!("serviceWorker" in nav)) return;
@@ -99,23 +302,8 @@
   }
 
   // js/boot/early-boot.mjs
-  var g = globalThis;
-  g.BELJAR_SPLIT_KEY = "beljar-editor-split";
-  g.BELJAR_SPLIT_MIN = 0.18;
-  g.BELJAR_SPLIT_MAX = 0.82;
-  g.BELJAR_SPLIT_DEFAULT = 0.5;
   try {
-    installEarlyBoot({
-      document,
-      window,
-      localStorage,
-      navigator,
-      location,
-      splitKey: g.BELJAR_SPLIT_KEY,
-      splitMin: g.BELJAR_SPLIT_MIN,
-      splitMax: g.BELJAR_SPLIT_MAX,
-      splitDefault: g.BELJAR_SPLIT_DEFAULT
-    });
+    installEarlyBoot({ document, window, localStorage });
   } catch (_) {
   }
   registerServiceWorker(navigator, location);

@@ -995,19 +995,19 @@
   }
   function readWorkspace(projectId) {
     var persist = P();
-    if (!persist || typeof persist.readStoredWorkspace !== "function") {
+    if (!persist || typeof persist.readWorkspace !== "function") {
       return emptyWorkspace(projectId);
     }
-    return normalizeWorkspace(persist.readStoredWorkspace(projectId), projectId);
+    return normalizeWorkspace(persist.readWorkspace(projectId), projectId);
   }
   function writeWorkspace(snapshot, projectId) {
     var persist = P();
-    if (!persist || typeof persist.writeStoredWorkspace !== "function") return false;
+    if (!persist || typeof persist.writeWorkspace !== "function") return false;
     var pid = projectId || (persist.getActiveProjectId ? persist.getActiveProjectId() : "default");
     var next = normalizeWorkspace(snapshot, pid);
     next.projectId = pid;
     next.updatedAt = Date.now();
-    return persist.writeStoredWorkspace(next, pid);
+    return persist.writeWorkspace(next, pid);
   }
   function registerProvider(name, hooks) {
     if (!name || !hooks) return;
@@ -1046,7 +1046,7 @@
     var snap = emptyWorkspace(pid);
     var openIds = persist && persist.getOpenFileIds ? persist.getOpenFileIds() : [];
     var activeFileId = persist && persist.getActiveFileId ? persist.getActiveFileId() : null;
-    snap.activeSidePanel = persist && typeof persist.readStoredActiveSidePanel === "function" ? persist.readStoredActiveSidePanel(pid) : null;
+    snap.activeSidePanel = persist && typeof persist.readSidePanel === "function" ? persist.readSidePanel(pid) : null;
     snap.floating = [];
     collectFromProviders(snap);
     snap.floating = mergeFloatingSnapshots(prior.floating, activeFileId, openIds, snap.floating);
@@ -1102,8 +1102,8 @@
   }
   function resetWorkspaceState(projectId) {
     var persist = P();
-    if (persist && typeof persist.resetStoredWorkspace === "function") {
-      persist.resetStoredWorkspace(projectId);
+    if (persist && typeof persist.resetWorkspace === "function") {
+      persist.resetWorkspace(projectId);
     }
     restoredForProject = null;
   }
@@ -1130,6 +1130,87 @@
   g2.WorkspaceState = WorkspaceState;
   g2.BelJarWorkspaceState = g2.WorkspaceState;
 
+  // js/persist/table.mjs
+  function clone(v) {
+    return v !== null && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
+  }
+
+  // js/persist/device-schema.mjs
+  function stringList(cap) {
+    return (raw) => {
+      if (!Array.isArray(raw)) return void 0;
+      const out = [];
+      for (const x of raw) {
+        if (typeof x === "string" && x && out.indexOf(x) === -1) out.push(x);
+      }
+      return cap ? out.slice(0, cap) : out;
+    };
+  }
+  function runModel(raw) {
+    if (!raw || typeof raw !== "object") return void 0;
+    const { baseMs, msPerLine, sampleCount } = raw;
+    if (!(typeof msPerLine === "number" && msPerLine > 0) || !(typeof baseMs === "number" && baseMs >= 0)) return void 0;
+    return {
+      baseMs,
+      msPerLine,
+      sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
+    };
+  }
+  var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
+  var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
+  var DEVICE = [
+    // which project the next load opens (a page stays on the one it opened: work.mjs)
+    { id: "activeProject", type: "string", default: "" },
+    // the account this browser is signed in as ('' signed out): whose projects it
+    // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
+    { id: "account", type: "string", default: "" },
+    // the account this device last asked about its own projects (the claim flow, once per account)
+    { id: "claimAskedFor", type: "string", default: "" },
+    // durability.mjs: when this browser was last asked to keep BelJar's storage,
+    // and when this device was told Safari may delete it (ms; 0: never)
+    { id: "persistAskedAt", type: "number", default: 0 },
+    { id: "durabilityWarnedAt", type: "number", default: 0 },
+    // layout
+    { id: "editorSplit", group: "layout", default: 0.5, min: 0.18, max: 0.82, boot: true },
+    { id: "explorerWidth", ...PANEL_W, cssVar: "--explorer-w" },
+    { id: "explorerHeight", ...PANEL_H, max: 320, cssVar: "--explorer-h" },
+    { id: "inspectorWidth", ...PANEL_W, cssVar: "--inspector-w" },
+    { id: "inspectorHeight", ...PANEL_H, cssVar: "--inspector-h" },
+    { id: "libraryWidth", ...PANEL_W, cssVar: "--library-w" },
+    { id: "libraryHeight", ...PANEL_H, cssVar: "--library-h" },
+    { id: "harpoonWidth", ...PANEL_W, cssVar: "--harpoon-w" },
+    { id: "harpoonHeight", ...PANEL_H, cssVar: "--harpoon-h" },
+    { id: "harpoonDetailsCollapsed", default: false },
+    // the dependency graph panel
+    { id: "graphLayout", default: "force", values: ["force", "flat"] },
+    { id: "graphImpl", default: "show", values: ["show", "hide"] },
+    { id: "graphDepth", default: 1, values: [1, 2, 3] },
+    { id: "graphLabelDensity", default: 3, values: [1, 2, 3, 4, 5] },
+    { id: "graphSidebarCollapsed", default: false },
+    // what this device has learned or been told
+    { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
+    { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    { id: "runModel", type: "json", default: null, normalize: runModel },
+    { id: "jumpLog", default: false }
+  ];
+  var BY_ID = new Map(DEVICE.map((row) => [row.id, row]));
+  function deviceRow(id) {
+    return BY_ID.get(id) || null;
+  }
+  function deviceDefault(id) {
+    const row = deviceRow(id);
+    if (!row) throw new Error(`device: no row "${id}" (declare it in device-schema.mjs)`);
+    return clone(row.default);
+  }
+  function readDevice(id) {
+    const D = globalThis.Device;
+    return D ? D.get(id) : deviceDefault(id);
+  }
+  function writeDevice(id, value) {
+    const D = globalThis.Device;
+    return D ? D.set(id, value) : false;
+  }
+
   // js/workspace/workspace-split.mjs
   var STACK_MQ = "(max-width: 48rem)";
   var HIT_GRACE_PX = 6;
@@ -1155,8 +1236,8 @@
     var inspectorPanel = document.querySelector(".inspector-panel");
     var libraryPanel = document.querySelector(".library-panel");
     if (!workspace || !workspacePanes || !editorPanel || !outputPanel) return null;
-    var persist = globalThis.Persist;
-    var ratio = persist && persist.readStoredEditorSplit ? persist.readStoredEditorSplit() : 0.5;
+    var splitRow = deviceRow("editorSplit");
+    var ratio = readDevice("editorSplit");
     var stackedMq = globalThis.matchMedia(STACK_MQ);
     var dragging = false;
     var hitStrip = document.createElement("div");
@@ -1165,7 +1246,7 @@
     hitStrip.tabIndex = -1;
     workspacePanes.appendChild(hitStrip);
     function clamp(r) {
-      return persist && persist.clampEditorSplit ? persist.clampEditorSplit(r) : Math.min(0.82, Math.max(0.18, r));
+      return Math.min(splitRow.max, Math.max(splitRow.min, r));
     }
     function isStacked() {
       return stackedMq.matches;
@@ -1206,8 +1287,8 @@
     function applyLayout(save) {
       ratio = clamp(ratio);
       applySplitVars(ratio);
-      if (save && persist && persist.writeStoredEditorSplit) {
-        persist.writeStoredEditorSplit(ratio);
+      if (save) {
+        writeDevice("editorSplit", ratio);
       }
       if (typeof opts.onResize === "function") opts.onResize();
       requestAnimationFrame(positionHitStrip);
@@ -1297,8 +1378,6 @@
   // js/workspace/side-panel-resize.mjs
   var STACK_MQ2 = "(max-width: 48rem)";
   var HIT_GRACE_PX2 = 6;
-  var DEFAULT_W = 250;
-  var DEFAULT_H = 190;
   var liveTeardown2 = null;
   function dispose2() {
     var run = liveTeardown2;
@@ -1314,11 +1393,6 @@
     opts = opts || {};
     var workspace = document.querySelector(".workspace");
     if (!workspace) return null;
-    var persist = globalThis.Persist;
-    if (persist) {
-      DEFAULT_W = persist.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
-      DEFAULT_H = persist.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
-    }
     var stackedMq = globalThis.matchMedia(STACK_MQ2);
     var resizers = [];
     function isStacked() {
@@ -1437,75 +1511,29 @@
         }
       };
     }
-    var panelConfigs = [
-      {
-        panel: document.querySelector(".explorer-panel"),
-        openClass: "is-explorer-open",
-        cssVarW: "--explorer-w",
-        cssVarH: "--explorer-h",
+    function panelConfig(name) {
+      var sizeId = function(stacked) {
+        return name + (stacked ? "Height" : "Width");
+      };
+      return {
+        panel: document.querySelector("." + name + "-panel"),
+        openClass: "is-" + name + "-open",
+        cssVarW: deviceRow(sizeId(false)).cssVar,
+        cssVarH: deviceRow(sizeId(true)).cssVar,
         read: function(stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredExplorerHeight() : persist.readStoredExplorerWidth();
+          return readDevice(sizeId(stacked));
         },
         write: function(px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredExplorerHeight(px);
-          else persist.writeStoredExplorerWidth(px);
+          writeDevice(sizeId(stacked), px);
         }
-      },
-      {
-        panel: document.querySelector(".inspector-panel"),
-        openClass: "is-inspector-open",
-        cssVarW: "--inspector-w",
-        cssVarH: "--inspector-h",
-        read: function(stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredInspectorHeight() : persist.readStoredInspectorWidth();
-        },
-        write: function(px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredInspectorHeight(px);
-          else persist.writeStoredInspectorWidth(px);
-        }
-      },
-      {
-        panel: document.querySelector(".library-panel"),
-        openClass: "is-library-open",
-        cssVarW: "--library-w",
-        cssVarH: "--library-h",
-        read: function(stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredLibraryHeight() : persist.readStoredLibraryWidth();
-        },
-        write: function(px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredLibraryHeight(px);
-          else persist.writeStoredLibraryWidth(px);
-        }
-      },
-      {
-        panel: document.querySelector(".harpoon-panel"),
-        openClass: "is-harpoon-open",
-        cssVarW: "--harpoon-w",
-        cssVarH: "--harpoon-h",
-        read: function(stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredHarpoonHeight() : persist.readStoredHarpoonWidth();
-        },
-        write: function(px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredHarpoonHeight(px);
-          else persist.writeStoredHarpoonWidth(px);
-        }
-      }
-    ];
-    if (persist) {
-      var root = document.documentElement.style;
-      for (var i = 0; i < panelConfigs.length; i++) {
-        var cfg = panelConfigs[i];
-        root.setProperty(cfg.cssVarW, cfg.read(false) + "px");
-        root.setProperty(cfg.cssVarH, cfg.read(true) + "px");
-      }
+      };
+    }
+    var panelConfigs = ["explorer", "inspector", "library", "harpoon"].map(panelConfig);
+    var root = document.documentElement.style;
+    for (var i = 0; i < panelConfigs.length; i++) {
+      var cfg = panelConfigs[i];
+      root.setProperty(cfg.cssVarW, cfg.read(false) + "px");
+      root.setProperty(cfg.cssVarH, cfg.read(true) + "px");
     }
     for (var j = 0; j < panelConfigs.length; j++) {
       panelConfigs[j].seam = "right";

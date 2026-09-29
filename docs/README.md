@@ -15,6 +15,7 @@ Agent rules and commands: [`AGENTS.md`](../AGENTS.md), [`.cursor/rules/`](../.cu
 | [ORCA.md](ORCA.md) | Proof search — what it is, the 32.1%, how to run it |
 | [HARPOON.md](HARPOON.md) | Proving surface — states, invariants, how to change it |
 | [edit-history.md](edit-history.md) | Undo/redo contract, and the budgets that keep the stack persistable |
+| [PERSIST.md](PERSIST.md) | ⭐ **Read before storing anything.** Where everything BelJar remembers lives: one store, the settings and device tables, projects on opaque ids, concurrency, and sync against a reference server |
 
 ## Open plans
 

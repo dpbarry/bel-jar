@@ -8,16 +8,16 @@ var replHistory = [];
   function loadHistory() {
     if (historyLoaded) return;
     historyLoaded = true;
-    if (typeof Persist === 'undefined' || !Persist.readStoredReplCommandHistory) return;
+    if (typeof Persist === 'undefined' || !Persist.readReplCommands) return;
     try {
-      var stored = Persist.readStoredReplCommandHistory();
+      var stored = Persist.readReplCommands();
       if (Array.isArray(stored) && stored.length) replHistory = stored.slice();
     } catch (_) {}
   }
 
   function persistHistory() {
-    if (typeof Persist === 'undefined' || !Persist.writeStoredReplCommandHistory) return;
-    Persist.writeStoredReplCommandHistory(replHistory);
+    if (typeof Persist === 'undefined' || !Persist.writeReplCommands) return;
+    Persist.writeReplCommands(replHistory);
   }
 
   function getHistory() {
@@ -33,7 +33,7 @@ var replHistory = [];
     loadHistory();
     replHistoryIndex = null;
     replHistory.push(s);
-    var cap = typeof Persist !== 'undefined' ? Persist.readStoredReplHistoryCap() : 0;
+    var cap = typeof Persist !== 'undefined' ? Settings.get('replHistoryCap') : 0;
     if (cap > 0 && replHistory.length > cap) {
       replHistory.splice(0, replHistory.length - cap);
     } else if (!cap && replHistory.length > 500) {
@@ -127,7 +127,7 @@ var replHistory = [];
     var parsed = parseBelugaCmd(cmd);
     var verb = parsed.verb;
 
-    var echoOn = typeof Persist === 'undefined' || Persist.readStoredReplEcho();
+    var echoOn = typeof Persist === 'undefined' || Settings.get('replEcho');
 
     // BelJar-local `run` — BelugaRun owns turn + history on success.
     if (/^run$/i.test(verb)) {

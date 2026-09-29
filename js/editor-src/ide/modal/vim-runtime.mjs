@@ -16,6 +16,7 @@ import { EditorView, keymap } from '@codemirror/view';
 import { Vim, CodeMirror, getCM } from '@replit/codemirror-vim';
 import { whichKeyHint, WHICH_KEY_MS } from './which-key-hint.mjs';
 import { beljarUndo, beljarRedo } from './undo-route.mjs';
+import { readSetting } from '../../../persist/settings-schema.mjs';
 
 /**
  * Vim chrome. The caret is BelJar's ordinary one in every mode: the package's
@@ -114,18 +115,9 @@ export function vimStatus() {
 }
 
 export function vimOptions() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  const p = g.Persist;
-  const read = (name, fallback) => {
-    try {
-      return p && typeof p[name] === 'function' ? p[name]() : fallback;
-    } catch (_) {
-      return fallback;
-    }
-  };
   return {
-    leader: read('readStoredVimLeader', String.fromCharCode(92)),
-    insertEscape: read('readStoredVimInsertEscape', ''),
+    leader: readSetting('vimLeader'),
+    insertEscape: readSetting('vimInsertEscape'),
   };
 }
 

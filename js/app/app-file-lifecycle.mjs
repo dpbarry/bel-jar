@@ -236,6 +236,14 @@
       resyncEditorAfterHistory();
     });
 
+    // The tree changed in another tab, or on another device through sync:
+    // tab names and the header follow, as they do for a change made here.
+    window.addEventListener('beljar:project-tree-changed', function (ev) {
+      if (!ev || !ev.detail || ev.detail.kind !== 'external') return;
+      renderTabs();
+      updateHeaderContext();
+    });
+
     // Find-references hover preview: switch tabs to peek cross-file rows, then
     // restore the pre-menu editor state when the menu closes without a click.
 

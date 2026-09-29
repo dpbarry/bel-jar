@@ -23,6 +23,8 @@ import {
   toggle as toggleHistory, close as closeHistory, refresh as refreshHistory,
   isOpen as historyOpen,
 } from './status-strip-history-ui.mjs';
+import { toggle as toggleKeymap, close as closeKeymap, isOpen as keymapOpen } from './status-strip-keymap-ui.mjs';
+import { liveKeyLabel } from './status-strip-keys.mjs';
 
 const global = globalThis;
 
@@ -72,6 +74,7 @@ const state = {
   undoDepth: 0,
   redoDepth: 0,
   historyOpen: false,
+  keymapOpen: false,
   /** A second tab has this project open. Standing, not a toast. */
   tabConflict: false,
 };
@@ -79,14 +82,9 @@ const state = {
 let detail = 'standard';
 let rendered = '';
 
-function persist() {
-  return global.Persist || null;
-}
-
 export function storedMode() {
-  const p = persist();
   try {
-    const v = p && typeof p.readStoredStatusStrip === 'function' ? p.readStoredStatusStrip() : null;
+    const v = Settings.get('statusStrip');
     if (v === 'off' || v === 'compact' || v === 'standard' || v === 'detailed') return v;
   } catch (_) { /* fall through to the default */ }
   // On by default. A bar reporting the goal at the caret, the holes left and
@@ -137,6 +135,7 @@ function ownStatusDot(owned) {
 function unmount() {
   closeLine({ restore: false });
   closeHistory();
+  closeKeymap();
   if (root && root.parentNode) root.parentNode.removeChild(root);
   root = null;
   segmentHost = null;
@@ -225,6 +224,16 @@ const ICONS = {
   history: [
     { d: 'M2.78 8.92A5.3 5.3 0 1 0 4.45 4.06', stroke: true },
     { d: 'M1.36 6.84 2.85 2.28 6.05 5.84Z', fill: true },
+    { d: 'M8 5.4V8.2l1.9 1.2', stroke: true, width: 1.3 },
+  ],
+  // A straight shaft hooking back, so the chevron meets a line, not an arc.
+  undo: [
+    { d: 'M5.4 2.9 2.4 5.9l3 3', stroke: true },
+    { d: 'M2.6 5.9h6.9a3.4 3.4 0 0 1 0 6.8H7.2', stroke: true },
+  ],
+  redo: [
+    { d: 'M10.6 2.9l3 3-3 3', stroke: true },
+    { d: 'M13.4 5.9H6.5a3.4 3.4 0 0 0 0 6.8h2.3', stroke: true },
   ],
 };
 
@@ -243,8 +252,9 @@ function iconEl(name) {
     p.setAttribute('fill', part.fill ? 'currentColor' : 'none');
     if (part.stroke) {
       p.setAttribute('stroke', 'currentColor');
-      p.setAttribute('stroke-width', '1.5');
+      p.setAttribute('stroke-width', String(part.width || 1.5));
       p.setAttribute('stroke-linecap', 'round');
+      p.setAttribute('stroke-linejoin', 'round');
     }
     svg.appendChild(p);
   }
@@ -263,11 +273,15 @@ function segmentEl(seg) {
     + (seg.mono ? ' is-mono' : '')
     + (seg.dot ? ' is-dot' : '')
     + (seg.grow ? ' is-grow' : '')
-    + (seg.hint ? ' is-hint' : '');
+    + (seg.hint ? ' is-hint' : '')
+    + (seg.text || seg.render ? '' : ' is-icon');
   if (seg.action) {
     el.type = 'button';
     el.dataset.action = seg.action;
   }
+  // `aria-disabled`, not `disabled`: a disabled button swallows the pointer, and
+  // with it the tooltip that says which key would do this.
+  if (seg.disabled) el.setAttribute('aria-disabled', 'true');
   if (seg.title) {
     el.setAttribute('data-tooltip', seg.title);
     el.setAttribute('aria-label', seg.title);
@@ -291,12 +305,26 @@ function segmentEl(seg) {
     mark.textContent = seg.mark;
     el.appendChild(mark);
   }
+  if (!seg.text && !seg.render) return el;
   const label = document.createElement('span');
   label.className = 'jar-strip__label';
   if (seg.render === 'type') renderType(label, seg.text);
   else label.textContent = seg.text || '';
   el.appendChild(label);
   return el;
+}
+
+/** The key that runs a segment's command right now, in its tooltip. */
+function withKeys(seg) {
+  const keys = seg.command ? liveKeyLabel(seg.command) : '';
+  return keys ? { ...seg, title: seg.title + ' (' + keys + ')' } : seg;
+}
+
+function stepHistory(dir) {
+  const ed = global.CurrentEditor;
+  if (typeof ed?.[dir] !== 'function') return global.EditHistory?.[dir]?.();
+  ed.focus?.();
+  return ed[dir]();
 }
 
 const ACTIONS = {
@@ -310,6 +338,9 @@ const ACTIONS = {
     || global.Commands?.run('view.harpoon'),
   'run': () => global.Commands?.run('run.file'),
   'edit-history': () => openHistory(),
+  'undo': () => stepHistory('undo'),
+  'redo': () => stepHistory('redo'),
+  'keymap-menu': () => { toggleKeymap(syncKeymap); syncKeymap(); },
   /**
    * Stop the recording, then hand the keyboard straight back.
    *
@@ -349,19 +380,23 @@ function syncHistory() {
   });
 }
 
+function syncKeymap() {
+  setEditorState({ keymapOpen: keymapOpen() });
+}
+
 function paint() {
   frame = 0;
   if (!mounted) return;
   const host = ensureRoot();
   if (!host) return;
-  const segments = buildSegments(state, detail);
+  const segments = buildSegments(state, detail).map(withKeys);
   // Cheap identity check: a repaint that would change nothing is skipped, so a
   // caret sweeping within one line never touches the DOM.
   // ⚠ The TITLE is part of the identity. A tooltip is content: REC's names the
   // key that ends the recording, and that sentence changes with the vim mode
   // while its chip reads `REC` throughout. Left out, the repaint that follows a
   // mode change kept the stale instruction.
-  const signature = segments.map((s) => s.key + ':' + s.text + ':' + s.tone + ':' + (s.pressed ? '1' : '') + ':' + (s.title || '')).join('|');
+  const signature = segments.map((s) => s.key + ':' + s.text + ':' + s.tone + ':' + (s.pressed ? '1' : '') + (s.disabled ? 'd' : '') + ':' + (s.title || '')).join('|');
   if (signature === rendered) return;
   rendered = signature;
   const els = segments.map(segmentEl);
@@ -495,7 +530,7 @@ function setEditorState(next) {
   // it, the builder read it, and the bar never showed a goal. A new piece of
   // editor state has to be added in BOTH places, here and in `state` above.
   for (const key of ['style', 'mode', 'pending', 'mark', 'macro', 'hasFile', 'line', 'col', 'selChars', 'selLines',
-    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen', 'tabConflict']) {
+    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen', 'keymapOpen', 'tabConflict']) {
     if (!(key in next) || state[key] === next[key]) continue;
     state[key] = next[key];
     changed = true;
@@ -553,9 +588,8 @@ function seedFromEditor() {
   const doc = view.state.doc;
   const head = doc.lineAt(sel.head);
   const selChars = Math.abs(sel.to - sel.from);
-  const p = persist();
   setEditorState({
-    style: p && typeof p.readStoredKeymapStyle === 'function' ? p.readStoredKeymapStyle() : 'default',
+    style: Settings.get('keymapStyle'),
     hasFile: true,
     line: head.number,
     col: sel.head - head.from + 1,
@@ -662,7 +696,7 @@ function onClick(e) {
   const btn = e.target && e.target.closest ? e.target.closest('.jar-strip__seg[data-action]') : null;
   if (!btn) return;
   e.preventDefault();
-  runAction(btn.dataset.action);
+  if (btn.getAttribute('aria-disabled') !== 'true') runAction(btn.dataset.action);
 }
 
 function init() {

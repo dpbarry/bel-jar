@@ -40,29 +40,15 @@ var FADE_OUT_MS = 175;
     return { baseMs: DEFAULT_BASE_MS, msPerLine: DEFAULT_MS_PER_LINE, sampleCount: 0 };
   }
 
-  function normalizeStats(raw) {
-    if (!raw) return null;
-    if (typeof raw.msPerLine === 'number' && raw.msPerLine > 0 && typeof raw.baseMs === 'number') {
-      return {
-        baseMs: Math.max(MIN_BASE_MS, raw.baseMs),
-        msPerLine: Math.max(MIN_MS_PER_LINE, raw.msPerLine),
-        sampleCount: raw.sampleCount > 0 ? raw.sampleCount : 1,
-      };
-    }
-    if (raw.lines > 0 && raw.ms > 0) {
-      return {
-        baseMs: DEFAULT_BASE_MS,
-        msPerLine: Math.max(MIN_MS_PER_LINE, raw.ms / raw.lines),
-        sampleCount: 1,
-      };
-    }
-    return null;
-  }
-
   function readModel() {
-    var P = global.Persist;
-    if (!P) return null;
-    return normalizeStats(P.loadStat());
+    var D = global.Device;
+    var raw = D ? D.get('runModel') : null;
+    if (!raw) return null;
+    return {
+      baseMs: Math.max(MIN_BASE_MS, raw.baseMs),
+      msPerLine: Math.max(MIN_MS_PER_LINE, raw.msPerLine),
+      sampleCount: raw.sampleCount,
+    };
   }
 
   function learningAlpha(sampleCount) {
@@ -71,8 +57,8 @@ var FADE_OUT_MS = 175;
 
   function writeStats(lines, ms) {
     if (lines < LEARN_MIN_LINES || ms <= 0) return;
-    var P = global.Persist;
-    if (!P) return;
+    var D = global.Device;
+    if (!D) return;
     try {
       var prev = readModel() || defaultModel();
       var observedRate = ms / lines;
@@ -90,9 +76,7 @@ var FADE_OUT_MS = 175;
         var impliedBase = Math.max(MIN_BASE_MS, ms - lines * msPerLine);
         baseMs = prev.baseMs * (1 - alpha) + impliedBase * alpha;
       }
-      P.saveStat({
-        lines: lines,
-        ms: ms,
+      D.set('runModel', {
         msPerLine: Math.round(msPerLine * 100) / 100,
         baseMs: Math.round(baseMs),
         sampleCount: prev.sampleCount + 1,
@@ -238,6 +222,12 @@ var FADE_OUT_MS = 175;
   }
 
   global.RunProgress = {
+    /** Fold one finished run into the device's model (what complete() does with its timing). */
+    learn: writeStats,
+
+    /** How long a run of this many lines should take, by the learned model. */
+    estimateMs: estimateDurationMs,
+
     bind: function (opts) {
       headerEl = opts.header;
       fillEl = opts.fill;

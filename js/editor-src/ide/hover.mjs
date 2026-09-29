@@ -9,6 +9,7 @@ import { isSuitePreludeBannerDiag } from '../semantic/suite-prelude-banner.mjs';
 import { polishBelugaMessage } from './beluga-diag.mjs';
 import { isQuietTypingActiveForView } from './quiet-typing.mjs';
 import { Prec } from '@codemirror/state';
+import { readSetting } from '../../persist/settings-schema.mjs';
 
 export const HOVER_OPEN_MS = 60;
 
@@ -434,8 +435,7 @@ function pointerLeftHoverTarget(view, event) {
 
 function hoverStickyEnabled() {
   try {
-    const P = typeof window !== 'undefined' ? window.Persist : globalThis.Persist;
-    return !!P?.readStoredHoverSticky?.();
+    return !!readSetting('hoverSticky');
   } catch (_) {
     return false;
   }
@@ -645,20 +645,18 @@ function makeHoleTooltip(range, name, goalAt) {
   };
 }
 
-export function readHoverScope(g) {
-  const P = g.Persist;
-  if (!P || typeof P.readStoredHoverScope !== 'function') return 'all';
-  return P.readStoredHoverScope();
+export function readHoverScope() {
+  return readSetting('hoverScope');
 }
 
-function showSymbolTooltips(g) {
-  return readHoverScope(g) !== 'none';
+function showSymbolTooltips() {
+  return readHoverScope() !== 'none';
 }
 
 export { showSymbolTooltips, showBuiltinTooltips };
 
-function showBuiltinTooltips(g) {
-  return readHoverScope(g) === 'all';
+function showBuiltinTooltips() {
+  return readHoverScope() === 'all';
 }
 
 export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
@@ -673,7 +671,7 @@ export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
       const diagHit = diagnosticsForRegion(view, region, diagSources);
 
       let typeTip = null;
-      const symbolTips = showSymbolTooltips(g);
+      const symbolTips = showSymbolTooltips();
       const eng = engineFor(g, semanticEngine);
       const quiet = isQuietTypingActiveForView(eng, view.state);
       if (symbolTips && region.term && !quiet) {
@@ -726,7 +724,7 @@ export function hoverTooltip(semanticEngine = null, getOverlayDiags = null) {
           if (kwHit.label === 'HOLE') {
             const eng = engineFor(g, semanticEngine);
             typeTip = makeHoleTooltip(range, kwHit.name, () => holeGoalAt(eng, view.state.doc, range.from));
-          } else if (showBuiltinTooltips(g)) {
+          } else if (showBuiltinTooltips()) {
             typeTip = makeKeywordTooltip(range, kwHit.label, kwHit.name, kwHit.desc);
           } else {
             kwHit = null;

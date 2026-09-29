@@ -341,16 +341,17 @@ var EXPLORER_CHEVRON_SVG =
     };
   }
 
-  function loadCollapsed(projectName) {
+  // Which folders are folded belongs to this project on this device (its session).
+  function loadCollapsed() {
     var P = global.Persist;
     if (!P) return new Set();
-    return new Set(P.getExplorerFold(projectName));
+    return new Set(P.readExplorerFolds());
   }
 
-  function saveCollapsed(projectName, collapsed) {
+  function saveCollapsed(collapsed) {
     var P = global.Persist;
     if (!P) return;
-    P.setExplorerFold(projectName, [].slice.call(collapsed));
+    P.writeExplorerFolds([].slice.call(collapsed));
   }
 
   function init(opts) {
@@ -358,7 +359,7 @@ var EXPLORER_CHEVRON_SVG =
     var container = opts.container;
     if (!container) return null;
 
-    var collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project');
+    var collapsed = loadCollapsed();
     var saveTimer = null;
     var dndDetach = null;
     var focusedRow = null;
@@ -479,7 +480,7 @@ var EXPLORER_CHEVRON_SVG =
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(function () {
         saveTimer = null;
-        saveCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project', collapsed);
+        saveCollapsed(collapsed);
         if (global.WorkspaceState && global.WorkspaceState.scheduleSave) {
           global.WorkspaceState.scheduleSave();
         }
@@ -1186,7 +1187,7 @@ var EXPLORER_CHEVRON_SVG =
         }
       },
       reloadFoldState: function () {
-        collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : 'Untitled Project');
+        collapsed = loadCollapsed();
       },
       destroy: function () {
         if (dndDetach) dndDetach();

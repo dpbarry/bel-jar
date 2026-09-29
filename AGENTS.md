@@ -25,12 +25,13 @@ npm run build             # editor + shell ESM leaves + library (not OCaml)
 npm run check:build       # fail when authored .mjs is newer than committed .js
 node scripts/build-editor.mjs   # editor bundle only
 node scripts/build-shell.mjs    # shell ESM → IIFE (tooltips, dialogs, boot, …)
-npm run probe             # ALL probes in real Chrome (~3min)
+npm run probe             # ALL probes in real Chrome (~6min; keymap ~4, undo ~1¼)
 npm run probe:app         # ROUTINE: general surfaces only (~24s)
-npm run probe:keymap      # deep: Vim/Emacs, the command line, every binding pressed (~2.5min)
+npm run probe:keymap      # deep: Vim/Emacs, the command line, every binding pressed (~4min)
 npm run probe:harpoon     # deep: the manual proving surface (~10s)
 npm run probe:holes       # deep: the Harpoon holes panel (~8s)
 npm run probe:live        # AFTER A DEPLOY: the live site, R2, both Beluga workers (network; not in `probe`)
+npm run dev               # site + sync + sign-in at http://127.0.0.1:8787 (PERSIST §5.7; secrets in server/.dev.vars; local D1 in ~/.beljar-dev)
 ```
 
 **Two tiers.** `npm test` is pure Node — parsers, semantic model, formatters, Beluga. `npm run
@@ -54,13 +55,21 @@ or a tab Chrome discards fires neither. The flush lives on `visibilitychange` �
 that one is DIRTY-GATED (`persist.flushCheckpointIfDirty`, `ReplPersist.saveIfPending`)
 because the ordinary flush writes unconditionally and this hook fires on every alt-tab.
 `js/persist/tab-guard.mjs` warns when a second tab has the same project open — a handshake
-over the `storage` event, so it cannot produce a false alarm.
+over the `storage` event, so it cannot produce a false alarm. Keeping the storage at all is
+`js/persist/durability.mjs` (PERSIST §5.9): it asks `navigator.storage.persist()` at the next
+click once there is work to lose, says Safari's 7-day deletion once, and Project > Download project
+is the export.
 
 **Deploy (Cloudflare).** Live at `https://beljar.deanbarry.com`, a Worker with static assets
 (`.assetsignore` keeps the runtime blobs and the source tree out of the upload). The old GitHub Pages
 address redirects there from `index.html` (`tests/test-canonical-redirect.mjs`).
 `bel-jar.deanbarry100.workers.dev` still serves, but it is a separate origin with separate storage:
-not an address to give anyone. The Beluga runtime
+not an address to give anyone. The deploy is `wrangler.jsonc` at the root (Worker `bel-jar`: the
+site's files, plus `server/worker.mjs` for `/api/*` on D1 `beljar-sync` and R2 `beljar-texts`);
+`tests/test-deploy-config.mjs` holds it and lists the upload as wrangler does.
+⛔ wrangler uploads every file `.assetsignore` does not name (it served `/.git/` until 2026-09-28).
+⛔ A new migration in `server/migrations/` is applied with
+`npx wrangler d1 migrations apply DB --remote` BEFORE the push that needs it. The Beluga runtime
 is served from R2, `https://beljar-cdn.deanbarry.com/` (bucket `beljar-runtime`, CORS for the site
 origins), because the fast build is over the 25 MiB per-file cap. `index.html` sets
 `BELJAR_RUNTIME_BASE` on deployed hosts; local dev and the probes stay same-origin.
@@ -87,6 +96,7 @@ OCaml shim rebuild (rare): `_rebuild/rebuild.ps1` — only when `Beluga-W/src/we
 | **Harpoon (proving surface)** | [`docs/HARPOON.md`](docs/HARPOON.md) |
 | **Modal editing** (open) | [`docs/modal-editing.md`](docs/modal-editing.md) |
 | **Undo** | [`docs/edit-history.md`](docs/edit-history.md) |
+| **Persistence** (in progress) | [`docs/PERSIST.md`](docs/PERSIST.md): one store, every setting and every piece of device state in a table, projects and files on opaque ids; ⛔ only the store touches browser storage (`test-store-ownership.mjs`); ⛔ a change underneath an open file is merged, never overwritten (§4.4); sync (§5) is built against a reference server (`js/persist/sync/`), and the real server must pass its tests; read before storing anything |
 | **Archive** | [`docs/archive/`](docs/archive/) — closed plans + shelved Orca-past-32% programme |
 
 ## Active work

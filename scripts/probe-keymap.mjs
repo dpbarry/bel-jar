@@ -59,9 +59,8 @@ try {
   await new Promise((r) => setTimeout(r, 3500));
   // ── Vim's `:` lands in the bar (spike S2) ───────────────────────────────────
   const vimSeam = await page.evaluate(async () => {
-    Persist.writeStoredKeymapStyle('vim');
+    Settings.set('keymapStyle', 'vim');
     // The same path the settings dialog takes when a pref changes.
-    Persist.applyStoredEditorChrome?.();
     BelEditor.applyEditorPrefs?.();
     return true;
   });
@@ -143,7 +142,7 @@ try {
   // editor had already taken away.
   const shadow = await page.evaluate(async () => {
     const openSheet = async (style) => {
-      Persist.writeStoredKeymapStyle(style);
+      Settings.set('keymapStyle', style);
       SettingsUI.open();
       await new Promise((r) => setTimeout(r, 400));
       const item = [...document.querySelectorAll('button, [role="tab"], .jar-settings__rail-item')]
@@ -178,7 +177,7 @@ try {
     const standard = await openSheet('default');
     const emacs = await openSheet('emacs');
     const vim = await openSheet('vim');
-    Persist.writeStoredKeymapStyle('default');
+    Settings.set('keymapStyle', 'default');
     return { standard, emacs, vim };
   });
   const eFindRow = shadow.emacs.rows.find((r) => r.id === 'edit.find') || {};
@@ -239,7 +238,7 @@ try {
   // in. Nested under the row that causes them, hidden when it does not, they
   // read as what they are.
   const panelFor = (style) => page.evaluate(async (s) => {
-    Persist.writeStoredKeymapStyle(s);
+    Settings.set('keymapStyle', s);
     SettingsUI.open();
     await new Promise((r) => setTimeout(r, 400));
     const tab = [...document.querySelectorAll('button, [role="tab"], .jar-settings__rail-item')]
@@ -287,7 +286,7 @@ try {
     await page.keyboard.press('Escape');
     await new Promise((r) => setTimeout(r, 250));
   }
-  await page.evaluate(() => Persist.writeStoredKeymapStyle('default'));
+  await page.evaluate(() => Settings.set('keymapStyle', 'default'));
 
   // ── the Editing style passage carries the measured chord facts ─────────────
   //
@@ -347,7 +346,7 @@ try {
   // no test had ever built the keymap. `tests/test-editor-chords.mjs` pins the
   // projection; this pins that the EDITOR actually passes the fallback through.
   const motionChord = await page.evaluate(async () => {
-    Persist.writeStoredKeymapStyle('default');
+    Settings.set('keymapStyle', 'default');
     BelEditor.applyEditorPrefs?.();
     await new Promise((r) => setTimeout(r, 600));
     const view = window.CurrentEditor.getView();
@@ -583,8 +582,7 @@ try {
   // ── Emacs C-c prefix, driven for real ───────────────────────────────────────
   await page.keyboard.press('Escape');
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('emacs');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'emacs');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 900));
@@ -617,8 +615,7 @@ try {
   check(/one editor pane|splits/.test(declined), 'C-x 2 answers instead of doing nothing', declined);
 
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('vim');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'vim');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 900));
@@ -724,7 +721,7 @@ try {
   await new Promise((r) => setTimeout(r, 250));
 
   // The leader is the case people actually forget.
-  const leaderKey = await page.evaluate(() => Persist.readStoredVimLeader());
+  const leaderKey = await page.evaluate(() => Settings.get('vimLeader'));
   await page.keyboard.type(leaderKey);
   await new Promise((r) => setTimeout(r, 700));
   const whichLeader = await hintRows();
@@ -756,7 +753,7 @@ try {
   const wRan = await page.evaluate(async () => {
     const view = CurrentEditor.getView();
     view.dispatch({ changes: { from: view.state.doc.length, insert: '%{{ probe }}%' } });
-    return { revBefore: Persist.exportSnapshot ? 1 : 1, len: view.state.doc.length };
+    return { len: view.state.doc.length };
   });
   await page.keyboard.press('Escape');
   await page.keyboard.type(':w');
@@ -765,10 +762,12 @@ try {
   const wAfter = await page.evaluate(() => ({
     msg: (document.querySelector('.jar-strip__message') || {}).textContent || '',
     stored: (Persist.getFileById(Persist.getActiveFileId()) || {}).name || '',
+    landed: Persist.getFileText(Persist.getActiveFileId()).includes('%{{ probe }}%'),
   }));
   console.log('  :w:', JSON.stringify({ ...wRan, ...wAfter }));
   check(/^Saved/.test(wAfter.msg), ':w reports the save it performed', wAfter.msg);
   check(wAfter.msg.indexOf(wAfter.stored) >= 0, ':w names the file it saved', wAfter.msg);
+  check(wAfter.landed, ':w put the edit in storage', JSON.stringify(wAfter));
 
   await page.keyboard.press('Escape');
   await page.keyboard.type(':e nosuchfile.bel');
@@ -779,7 +778,7 @@ try {
 
   // `:set` writes a real preference through vim's own ex line.
   const setRan = await page.evaluate(async () => {
-    const before = Persist.readStoredEditorWordWrap();
+    const before = Settings.get('editorWordWrap');
     return { before };
   });
   await page.keyboard.press('Escape');
@@ -787,14 +786,14 @@ try {
   await page.keyboard.press('Enter');
   await new Promise((r) => setTimeout(r, 400));
   const setAfter = await page.evaluate(() => ({
-    wrap: Persist.readStoredEditorWordWrap(),
+    wrap: Settings.get('editorWordWrap'),
     msg: (document.querySelector('.jar-strip__message') || {}).textContent || '',
   }));
   console.log('  :set:', JSON.stringify({ ...setRan, ...setAfter }));
   check(setAfter.wrap === false, ':set nowrap writes the real preference', JSON.stringify(setAfter));
   check(setAfter.msg === 'Word wrap off',
     'and the bar names the preference the way the settings panel does', setAfter.msg);
-  await page.evaluate((v) => Persist.writeStoredEditorWordWrap(v), setRan.before);
+  await page.evaluate((v) => Settings.set('editorWordWrap', v), setRan.before);
 
   const leaderRan = await page.evaluate(async () => {
     CommandPalette.close();
@@ -825,7 +824,7 @@ try {
   const tryLeader = async (stored, typed) => {
     await page.evaluate((v) => {
       CommandPalette.close();
-      Persist.writeStoredVimLeader(v);
+      Settings.set('vimLeader', v);
       BelEditor.applyModalPrefs();
     }, stored);
     await new Promise((r) => setTimeout(r, 350));
@@ -860,7 +859,7 @@ try {
     check(r.open, `the ${label} leader opens the palette`, JSON.stringify(r));
   }
   await page.evaluate((v) => {
-    Persist.writeStoredVimLeader(v);
+    Settings.set('vimLeader', v);
     BelEditor.applyModalPrefs();
   }, String.fromCharCode(92));
   await new Promise((r) => setTimeout(r, 300));
@@ -897,7 +896,7 @@ try {
     const NL2 = String.fromCharCode(10);
     const CDOC = ['abcd', 'wxyz', 'QQQQ', ''].join(NL2);
 
-    await page.evaluate(() => { Persist.writeStoredKeymapStyle('vim'); BelEditor.applyEditorPrefs?.(); });
+    await page.evaluate(() => { Settings.set('keymapStyle', 'vim'); BelEditor.applyEditorPrefs?.(); });
     await new Promise((r) => setTimeout(r, 900));
     await page.click('.cm-content');
     await page.keyboard.press('Escape');
@@ -1132,7 +1131,7 @@ try {
 
   const setMode = async (mode) => {
     await page.evaluate((m) => {
-      Persist.writeStoredEditorLineNumberMode(m);
+      Settings.set('editorLineNumberMode', m);
       BelEditor.applyEditorPrefs();
     }, mode);
     await new Promise((r) => setTimeout(r, 500));
@@ -1679,8 +1678,7 @@ try {
       starredHeading: [...win.querySelectorAll('.jar-macros__group')]
         .some((n) => /^\*/.test(n.textContent)),
       notes: win.querySelectorAll('.jar-macros__note').length,
-      leader: (Persist.readStoredVimLeader && Persist.readStoredVimLeader())
-        || String.fromCharCode(92),
+      leader: Settings.get('vimLeader'),
     };
   }, true);
 
@@ -1748,8 +1746,7 @@ try {
   // Under Emacs the flip is the point: the keys column shows the chord that
   // works THERE, not BelJar's greyed-out default.
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('emacs');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'emacs');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 1100));
@@ -1834,8 +1831,7 @@ try {
     JSON.stringify(emacsRows.exNames.slice(0, 4)));
   await page.evaluate(() => {
     FloatingWindow.closeAll();
-    Persist.writeStoredKeymapStyle('vim');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'vim');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 1100));
@@ -1859,8 +1855,7 @@ try {
 
   await page.keyboard.press('Escape');
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('default');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'default');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 600));
@@ -1871,12 +1866,12 @@ try {
     const count = () => document.querySelectorAll('.jar-strip__seg').length;
     const out = {};
     for (const level of ['compact', 'standard', 'detailed']) {
-      Persist.writeStoredStatusStrip(level);
+      Settings.set('statusStrip', level);
       StatusStrip.apply();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       out[level] = count();
     }
-    Persist.writeStoredStatusStrip('off');
+    Settings.set('statusStrip', 'off');
     StatusStrip.apply();
     out.off = !!document.querySelector('.jar-strip');
     return out;
@@ -1885,7 +1880,7 @@ try {
   check(levels.detailed >= levels.standard && levels.standard >= levels.compact,
     'verbosity levels are ordered', JSON.stringify(levels));
   check(levels.off === false, 'Off removes the node entirely — no hidden element updating');
-  await page.evaluate(() => { Persist.writeStoredStatusStrip('standard'); StatusStrip.apply(); });
+  await page.evaluate(() => { Settings.set('statusStrip', 'standard'); StatusStrip.apply(); });
 
   const realErrors = errors.filter((e) => !/favicon|Failed to load resource/i.test(e));
   check(realErrors.length === 0, 'no page errors during boot and interaction', realErrors.slice(0, 4).join(' | '));
@@ -2070,8 +2065,7 @@ try {
   // ── Vim's ex line ───────────────────────────────────────────────────────────
   console.log('\n[7] Vim\u2019s ex line');
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('vim');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'vim');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 1200));
@@ -2187,8 +2181,7 @@ try {
 
   // Switching away from Vim must not leave the list or listeners behind.
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('default');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'default');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 900));
@@ -2199,8 +2192,7 @@ try {
   console.log('');
   console.log('[8] Emacs');
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('emacs');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'emacs');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 1200));
@@ -2572,8 +2564,7 @@ try {
 
   // ── back to Standard ───────────────────────────────────────────────────────
   await page.evaluate(() => {
-    Persist.writeStoredKeymapStyle('default');
-    Persist.applyStoredEditorChrome?.();
+    Settings.set('keymapStyle', 'default');
     BelEditor.applyEditorPrefs?.();
   });
   await new Promise((r) => setTimeout(r, 900));
@@ -2746,7 +2737,7 @@ try {
     }, shot);
   };
 
-  await page.evaluate(() => { Persist.writeStoredKeymapStyle('vim'); BelEditor.applyEditorPrefs?.(); });
+  await page.evaluate(() => { Settings.set('keymapStyle', 'vim'); BelEditor.applyEditorPrefs?.(); });
   await new Promise((r) => setTimeout(r, 1300));
   await page.click('.cm-content');
   await page.keyboard.press('Escape');
@@ -2806,7 +2797,7 @@ try {
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 250));
 
-  await page.evaluate(() => { Persist.writeStoredKeymapStyle('default'); BelEditor.applyEditorPrefs?.(); });
+  await page.evaluate(() => { Settings.set('keymapStyle', 'default'); BelEditor.applyEditorPrefs?.(); });
   await new Promise((r) => setTimeout(r, 1200));
   await page.evaluate(() => StatusStrip.openCommandLine(''));
   await new Promise((r) => setTimeout(r, 250));
@@ -2840,9 +2831,9 @@ try {
   await page.keyboard.type('4');
   await page.keyboard.press('Enter');
   await new Promise((r) => setTimeout(r, 400));
-  check(String(await page.evaluate(() => Persist.readStoredEditorTabSize())) === '4',
+  check(String(await page.evaluate(() => Settings.get('editorTabSize'))) === '4',
     'and Enter runs it');
-  await page.evaluate(() => Persist.writeStoredEditorTabSize(2));
+  await page.evaluate(() => Settings.set('editorTabSize', 2));
 
   // `:w!` — the bang is grammar, not part of the name.
   await page.evaluate(() => StatusStrip.openCommandLine(''));
@@ -2875,7 +2866,7 @@ try {
 {
 const mSettle = (ms = 260) => new Promise((r) => setTimeout(r, ms));
 const mStyle = async (s) => {
-  await page.evaluate((v) => { Persist.writeStoredKeymapStyle(v); BelEditor.applyEditorPrefs?.(); }, s);
+  await page.evaluate((v) => { Settings.set('keymapStyle', v); BelEditor.applyEditorPrefs?.(); }, s);
   await mSettle(1400);
   await page.click('.cm-content');
   await page.keyboard.press('Escape');
@@ -3138,7 +3129,7 @@ const mChord = async (mods, code) => {
   });
 
   const setStyle = async (v) => {
-    await page.evaluate((x) => { Persist.writeStoredKeymapStyle(x); BelEditor.applyEditorPrefs?.(); }, v);
+    await page.evaluate((x) => { Settings.set('keymapStyle', x); BelEditor.applyEditorPrefs?.(); }, v);
     await new Promise((r) => setTimeout(r, 1300));
     await page.click('.cm-content');
   };
@@ -3245,7 +3236,7 @@ const mChord = async (mods, code) => {
       },
     });
   });
-  check(await page.evaluate(() => Persist.readStoredEmacsYankSource()) === 'system',
+  check(await page.evaluate(() => Settings.get('emacsYankSource')) === 'system',
     'C-y pastes from the system clipboard until asked otherwise');
   await chord(['Control'], 'KeyK'); s = await state();
   check(s.doc.startsWith('\nbravo'), 'C-k kill line', JSON.stringify(s.doc.slice(0, 8)));
@@ -3256,7 +3247,7 @@ const mChord = async (mods, code) => {
   s = await state();
   check(s.doc.startsWith('ZZZ'), 'C-y yank pastes the system clipboard', JSON.stringify(s.doc.slice(0, 8)));
 
-  await page.evaluate(() => Persist.writeStoredEmacsYankSource('kill-ring'));
+  await page.evaluate(() => Settings.set('emacsYankSource', 'kill-ring'));
   await load(PLAIN);
   await chord(['Control'], 'KeyK');
   await page.evaluate(() => { window.__emacsClip = 'ZZZ'; });
@@ -3265,7 +3256,7 @@ const mChord = async (mods, code) => {
   s = await state();
   check(s.doc.startsWith('alpha'), 'with Kill ring chosen, C-y yanks the kill ring', JSON.stringify(s.doc.slice(0, 8)));
   await page.evaluate(() => {
-    Persist.writeStoredEmacsYankSource('system');
+    Settings.set('emacsYankSource', 'system');
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: window.__realClipboard });
   });
 
@@ -3383,7 +3374,7 @@ const mChord = async (mods, code) => {
   check(!changed(ctlBefore, ctlAfter),
     'CONTROL: an unbound chord reads as dead, so the signal is not noise',
     JSON.stringify({ before: ctlBefore, after: ctlAfter }));
-  const leaderKey = await page.evaluate(() => Persist.readStoredVimLeader());
+  const leaderKey = await page.evaluate(() => Settings.get('vimLeader'));
   const vimSeqs = (maps.normal || [
     'gd', 'gr', 'gD', 'gh', 'gi', 'K',
     ']h', '[h', ']e', '[e', ']d', '[d', ']c', '[c',
@@ -3488,9 +3479,8 @@ const mChord = async (mods, code) => {
   }
 
   /**
-   * The history panel's footer must name a key that actually works — not the
-   * Standard chord recited regardless of style. Opens the panel and reads the
-   * two `.jar-hist__key` chips against what THIS style's undo/redo really are.
+   * The strip's undo/redo buttons must name a key that actually works — not the
+   * Standard chord recited regardless of style.
    *
    * ⛔ `Keybindings.labelFor('edit.undo')` used to be shown unconditionally: an
    * Emacs user was told to press Ctrl+Y for redo, which is yank, because that
@@ -3503,15 +3493,11 @@ const mChord = async (mods, code) => {
       await page.keyboard.type('x', { delay: 16 });
       await new Promise((r) => setTimeout(r, 400));
     }
-    await page.click('.jar-strip__seg--history');
-    await new Promise((r) => setTimeout(r, 550));
-    const keys = await page.evaluate(() =>
-      [...document.querySelectorAll('.jar-hist__key')].map((k) => k.textContent));
-    check(keys[0] === undoLabel && keys[1] === redoLabel,
-      `${styleName}  the history panel footer names the real undo/redo keys`,
-      `got ${JSON.stringify(keys)}, wanted [${undoLabel}, ${redoLabel}]`);
-    await page.keyboard.press('Escape');
-    await new Promise((r) => setTimeout(r, 300));
+    const tips = await page.evaluate(() => ['undo', 'redo'].map((k) =>
+      document.querySelector('.jar-strip__seg--' + k)?.getAttribute('data-tooltip') || ''));
+    check(tips[0] === `Undo (${undoLabel})` && tips[1] === `Redo (${redoLabel})`,
+      `${styleName}  the strip's undo/redo tooltips name the real keys`,
+      `got ${JSON.stringify(tips)}, wanted [${undoLabel}, ${redoLabel}]`);
   }
 
   // ⛔ The `C-x k` check above closes the last tab, so there is no editor left.
@@ -3544,7 +3530,30 @@ const mChord = async (mods, code) => {
     () => page.keyboard.press('KeyU'), () => chord(['Control'], 'KeyR'), 'u', 'C-r');
   await checkFooterMatches('vim', 'u', 'Ctrl+R');
 
-  await setStyle('default');
+  // Back to Standard through the strip's own picker, not the settings API.
+  await page.click('.jar-strip__seg--keymap');
+  await new Promise((r) => setTimeout(r, 400));
+  const picker = await page.evaluate(() => {
+    const p = document.querySelector('.jar-hist--style');
+    if (!p) return null;
+    const bar = document.querySelector('.jar-strip').getBoundingClientRect();
+    return {
+      rows: [...p.querySelectorAll('.jar-style__row')].map((r) => r.querySelector('.jar-style__name').textContent),
+      current: p.querySelector('.jar-style__row.is-current .jar-style__name')?.textContent,
+      flush: Math.round(bar.top - p.getBoundingClientRect().bottom) === 0,
+    };
+  });
+  check(picker && picker.rows.join() === 'Standard,Vim,Emacs' && picker.current === 'Vim' && picker.flush,
+    'the keymap segment opens a picker flush on the strip, marking the style in use', JSON.stringify(picker));
+  await page.click('.jar-style__row[data-index="0"]');
+  await new Promise((r) => setTimeout(r, 1300));
+  const picked = await page.evaluate(() => ({
+    setting: Settings.get('keymapStyle'),
+    seg: document.querySelector('.jar-strip__seg--keymap')?.textContent,
+    open: !!document.querySelector('.jar-hist--style'),
+  }));
+  check(picked.setting === 'default' && picked.seg === 'Standard' && !picked.open,
+    'picking Standard switches the style and closes the picker', JSON.stringify(picked));
   await page.click('.cm-content');
   await undoLeg('Standard', false,
     () => chord(['Control'], 'KeyZ'), () => chord(['Control'], 'KeyY'), 'Ctrl+Z', 'Ctrl+Y');
@@ -3611,9 +3620,9 @@ const mChord = async (mods, code) => {
   await type('set ts=4');
   await page.keyboard.press('Enter');
   await new Promise((r) => setTimeout(r, 350));
-  check(String(await page.evaluate(() => Persist.readStoredEditorTabSize())) === '4',
+  check(String(await page.evaluate(() => Settings.get('editorTabSize'))) === '4',
     'Standard: and `:set ts=4` runs from it — a command that exists ONLY on that line');
-  await page.evaluate(() => Persist.writeStoredEditorTabSize(2));
+  await page.evaluate(() => Settings.set('editorTabSize', 2));
   await shutLine();
 
   for (const style of ['default', 'vim']) {
@@ -3668,7 +3677,7 @@ const mChord = async (mods, code) => {
     'Emacs: `C-x z` (repeat-last-command) answers', JSON.stringify(par.msg));
   await shutLine();
 
-  await page.evaluate(() => { Persist.writeStoredKeymapStyle('default'); BelEditor.applyEditorPrefs?.(); });
+  await page.evaluate(() => { Settings.set('keymapStyle', 'default'); BelEditor.applyEditorPrefs?.(); });
   // (the harness checks page errors once, at finish)
 
 }

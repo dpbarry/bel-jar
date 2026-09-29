@@ -11,22 +11,11 @@
   var lastUpAt = 0;
   var sawOtherKey = false;
   var listening = false;
-  function persist() {
-    return global.Persist || null;
-  }
   function settings() {
-    const p = persist();
-    const read = (name, fallback) => {
-      try {
-        return p && typeof p[name] === "function" ? p[name]() : fallback;
-      } catch (_) {
-        return fallback;
-      }
-    };
     return {
-      trigger: read("readStoredDoubleTapTrigger", "off"),
-      target: read("readStoredDoubleTapCommand", "tools.palette"),
-      windowMs: SPEEDS[read("readStoredDoubleTapSpeed", "normal")] || SPEEDS.normal
+      trigger: Settings.get("doubleTapTrigger"),
+      target: Settings.get("doubleTapCommand"),
+      windowMs: SPEEDS[Settings.get("doubleTapSpeed")] || SPEEDS.normal
     };
   }
   function shouldFire(state) {

@@ -1,417 +1,141 @@
+// Settings as the real Persist bundle stands them up: one store and one Settings
+// for the page, published beside Persist and Device, a clean slate on first
+// boot, device records following the settings that say where they live, and
+// device state surviving a settings reset.
+// Every setting's own values and defaults are pinned by test-settings.mjs.
 import vm from 'node:vm';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
-import assert from 'node:assert';
+import assert from 'node:assert/strict';
 import { runPersistStackInContext } from './persist-stack.mjs';
+import { TOAST_DURATION_MS, CHECK_DELAY_SCALE, prefersReducedMotion } from '../js/persist/settings-apply.mjs';
 
-const here = dirname(fileURLToPath(import.meta.url));
-
-function makeStorage() {
-  const storage = new Map();
+function makeStorage(maxChars = Infinity) {
+  const m = new Map();
+  const used = () => [...m].reduce((a, [k, v]) => a + k.length + v.length, 0);
   return {
-    getItem: (k) => (storage.has(k) ? storage.get(k) : null),
-    setItem: (k, v) => storage.set(k, String(v)),
-    removeItem: (k) => storage.delete(k),
-    _map: storage,
+    get length() { return m.size; },
+    key: (i) => [...m.keys()][i] ?? null,
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem(k, v) {
+      v = String(v);
+      if (used() - (m.has(k) ? k.length + m.get(k).length : 0) + k.length + v.length > maxChars) {
+        const e = new Error('quota'); e.name = 'QuotaExceededError'; throw e;
+      }
+      m.set(k, v);
+    },
+    removeItem: (k) => m.delete(k),
+    _map: m,
   };
 }
 
-function freshPersist() {
-  const fakeLocalStorage = makeStorage();
-  const fakeSessionStorage = makeStorage();
-  const ctx = vm.createContext({
-    globalThis: {},
-    clearTimeout,
-    setTimeout,
-    TextEncoder,
-    localStorage: fakeLocalStorage,
-    sessionStorage: fakeSessionStorage,
-  });
+// Values made inside the Persist sandbox carry that realm's prototypes; strict
+// deepEqual compares prototypes, so copy them into this realm before comparing.
+const here = (v) => JSON.parse(JSON.stringify(v));
+
+function freshPersist(seed = {}, opts = {}) {
+  const ls = makeStorage(opts.maxChars);
+  const ss = makeStorage();
+  for (const [k, v] of Object.entries(seed)) ls.setItem(k, v);
+  const ctx = vm.createContext({ clearTimeout, setTimeout, TextEncoder, localStorage: ls, sessionStorage: ss });
   ctx.globalThis = ctx;
   runPersistStackInContext(ctx);
-  return { P: ctx.Persist, localStorage: fakeLocalStorage, sessionStorage: fakeSessionStorage };
+  return { P: ctx.Persist, S: ctx.Settings, D: ctx.Device, ls, ss };
 }
 
-const { P, localStorage } = freshPersist();
-
-assert.equal(P.readStoredReplAutoscroll(), true);
-P.writeStoredReplAutoscroll(false);
-assert.equal(P.readStoredReplAutoscroll(), false);
-
-assert.equal(P.readStoredReplHoverTimestamp(), false);
-P.writeStoredReplHoverTimestamp(true);
-assert.equal(P.readStoredReplHoverTimestamp(), true);
-P.writeStoredReplHoverTimestamp(false);
-assert.equal(P.readStoredReplHoverTimestamp(), false);
-
-assert.equal(P.readStoredReplAutocompleteTrigger(), 'typing');
-P.writeStoredReplAutocompleteTrigger('none');
-assert.equal(P.readStoredReplAutocompleteTrigger(), 'none');
-P.writeStoredReplAutocompleteTrigger('always');
-assert.equal(P.readStoredReplAutocompleteTrigger(), 'always');
-P.writeStoredReplAutocompleteTrigger('typing');
-assert.equal(P.readStoredReplAutocompleteTrigger(), 'typing');
-assert.equal(P.readStoredReplAutocompleteContinue(), false);
-P.writeStoredReplAutocompleteContinue(true);
-assert.equal(P.readStoredReplAutocompleteContinue(), true);
-P.writeStoredReplAutocompleteContinue(false);
-assert.equal(P.readStoredReplAutocompleteContinue(), false);
-
-assert.equal(P.readStoredReplHistoryCap(), 1000);
-P.writeStoredReplHistoryCap(500);
-assert.equal(P.readStoredReplHistoryCap(), 500);
-P.writeStoredReplHistoryCap(1000);
-assert.equal(P.readStoredReplHistoryCap(), 1000);
-
-assert.equal(P.readStoredReplHistoryPersist(), 'local');
-P.writeStoredReplHistoryPersist('session');
-assert.equal(P.readStoredReplHistoryPersist(), 'session');
-P.writeStoredReplHistoryPersist('none');
-assert.equal(P.readStoredReplHistoryPersist(), 'none');
-P.writeStoredReplHistoryPersist('local');
-assert.equal(P.readStoredReplHistoryPersist(), 'local');
-
-assert.equal(P.readStoredReplTranscript(), null);
-P.writeStoredReplTranscript({ html: '<div class="repl-banner"></div>', scrollTop: 12, savedAt: 99 });
+// ── one Settings, published beside Persist, over a clean slate ───────────────
 {
-  const snap = P.readStoredReplTranscript();
-  assert.ok(snap);
-  assert.equal(snap.v, 1);
-  assert.equal(snap.html, '<div class="repl-banner"></div>');
-  assert.equal(snap.scrollTop, 12);
-  assert.equal(snap.savedAt, 99);
+  const { P, S, D, ls } = freshPersist({ 'beljar-theme': 'light', 'beljar-state-v2': '{}', 'other-app': 'x' });
+  assert.ok(P && S && D, 'the bundle publishes Persist, Settings and Device');
+  assert.equal(typeof P.readStoredTheme, 'undefined', 'Persist no longer answers for settings');
+  assert.equal(ls.getItem('beljar-theme'), null, 'first boot wipes the old settings keys');
+  assert.equal(ls.getItem('beljar-state-v2'), null, 'and every other old BelJar key');
+  assert.equal(ls.getItem('other-app'), 'x', "another app's key on the origin survives");
+  assert.equal(S.get('theme'), 'dark', 'so nothing old leaks into a setting');
+  S.set('theme', 'light');
+  assert.equal(JSON.parse(ls.getItem('beljar/settings')).data.values.theme, 'light', 'a setting lands in the one record');
 }
-P.writeStoredReplTranscript(null);
-assert.equal(P.readStoredReplTranscript(), null);
 
-assert.deepEqual(P.readStoredReplCommandHistory(), []);
-P.writeStoredReplCommandHistory(['types', 'help', 'query 1 * D : nat']);
-assert.deepEqual(P.readStoredReplCommandHistory(), ['types', 'help', 'query 1 * D : nat']);
-P.writeStoredReplCommandHistory([]);
-assert.deepEqual(P.readStoredReplCommandHistory(), []);
-
+// ── the REPL history follows its setting, wherever the setting changes ──────
 {
-  const { P: P2, localStorage: ls, sessionStorage: ss } = freshPersist();
-  P2.writeStoredReplHistoryPersist('local');
-  P2.writeStoredReplTranscript({ html: '<div>local</div>', scrollTop: 0, savedAt: 1 });
-  P2.writeStoredReplCommandHistory(['local-cmd']);
-  assert.ok(ls.getItem('beljar-repl-transcript-v1'));
-  assert.equal(ss.getItem('beljar-repl-transcript-v1'), null);
+  const { P, S, ls, ss } = freshPersist();
+  const T = 'beljar/repl/transcript';
+  assert.equal(S.get('replHistoryPersist'), 'local');
+  assert.equal(P.readReplTranscript(), null);
+  P.writeReplTranscript({ html: '<div>local</div>', scrollTop: 12, savedAt: 99 });
+  P.writeReplCommands(['types', 'help']);
+  assert.deepEqual(here(P.readReplTranscript()), { html: '<div>local</div>', scrollTop: 12, savedAt: 99 });
+  assert.ok(ls.getItem(T) && !ss.getItem(T), 'local mode keeps it on this device');
 
-  P2.writeStoredReplHistoryPersist('session');
-  assert.ok(ss.getItem('beljar-repl-transcript-v1'));
-  assert.equal(ls.getItem('beljar-repl-transcript-v1'), null);
-  assert.deepEqual(P2.readStoredReplCommandHistory(), ['local-cmd']);
-  assert.equal(P2.readStoredReplTranscript().html, '<div>local</div>');
+  S.set('replHistoryPersist', 'session');
+  assert.ok(ss.getItem(T), 'switching to session MOVES the transcript to the tab store');
+  assert.equal(ls.getItem(T), null, 'and off the device');
+  assert.deepEqual(here(P.readReplCommands()), ['types', 'help'], 'with the command history');
+  assert.equal(P.readReplTranscript().html, '<div>local</div>');
 
-  P2.writeStoredReplHistoryPersist('none');
-  assert.equal(P2.readStoredReplTranscript(), null);
-  assert.deepEqual(P2.readStoredReplCommandHistory(), []);
-  assert.equal(ls.getItem('beljar-repl-transcript-v1'), null);
-  assert.equal(ss.getItem('beljar-repl-transcript-v1'), null);
+  S.set('replHistoryPersist', 'none');
+  assert.equal(P.readReplTranscript(), null, "'none' clears it");
+  assert.deepEqual(here(P.readReplCommands()), []);
+  assert.equal(ls.getItem(T), null);
+  assert.equal(ss.getItem(T), null);
+  P.writeReplTranscript({ html: '<div>ignored</div>', scrollTop: 0, savedAt: 2 });
+  P.writeReplCommands(['ignored']);
+  assert.equal(P.readReplTranscript(), null, "and nothing is kept while it is 'none'");
 
-  P2.writeStoredReplTranscript({ html: '<div>ignored</div>', scrollTop: 0, savedAt: 2 });
-  P2.writeStoredReplCommandHistory(['ignored']);
-  assert.equal(P2.readStoredReplTranscript(), null);
-  assert.deepEqual(P2.readStoredReplCommandHistory(), []);
+  S.set('replHistoryPersist', 'local');
+  S.set('replHistoryCap', 100);
+  P.writeReplCommands(Array.from({ length: 150 }, (_, i) => 'c' + i));
+  const kept = P.readReplCommands();
+  assert.equal(kept.length, 100, 'history is capped by its setting');
+  assert.equal(kept[99], 'c149', 'keeping the newest');
+
+  S.set('replEcho', false);
+  S.set('replHistoryCap', 1000);
+  const before = here(P.readReplCommands());
+  assert.equal(before.length, 100, 'the capped history is what is kept');
+  S.reset('repl');
+  assert.equal(S.get('replEcho'), true, 'resetting the REPL section restores its settings');
+  assert.deepEqual(here(P.readReplCommands()), before,
+    'history is data, not a setting: a reset does not throw it away');
 }
 
-assert.equal(P.readStoredBelugaFallbackStable(), true);
-P.writeStoredBelugaFallbackStable(false);
-assert.equal(P.readStoredBelugaFallbackStable(), false);
-
-assert.equal(P.readStoredRestorePanels(), true);
-P.writeStoredRestorePanels(false);
-assert.equal(P.readStoredRestorePanels(), false);
-
-assert.equal(P.readStoredAutosaveDelay(), 320);
-P.writeStoredAutosaveDelay(2000);
-assert.equal(P.readStoredAutosaveDelay(), 2000);
-
-assert.equal(P.readStoredEditorSyntaxHighlight(), true);
-P.writeStoredEditorSyntaxHighlight(false);
-assert.equal(P.readStoredEditorSyntaxHighlight(), false);
-
-assert.equal(P.readStoredUiFontSize(), 'md');
-P.writeStoredUiFontSize('lg');
-assert.equal(P.readStoredUiFontSize(), 'lg');
-assert.equal(P.uiFontScaleForSize('lg'), 1.125);
-P.writeStoredUiFontSize('md');
-assert.equal(P.readStoredUiFontSize(), 'md');
-assert.equal(P.readStoredUiTextContrast(), 'medium');
-assert.equal(P.uiTextContrastMultiplierForLevel('unknown'), 1.6);
-P.writeStoredUiTextContrast('low');
-assert.equal(P.readStoredUiTextContrast(), 'low');
-assert.equal(P.uiTextContrastMultiplierForLevel('low'), 1);
-P.writeStoredUiTextContrast('medium');
-assert.equal(P.readStoredUiTextContrast(), 'medium');
-assert.equal(P.uiTextContrastMultiplierForLevel('medium'), 1.6);
-P.writeStoredUiTextContrast('maximum');
-assert.equal(P.readStoredUiTextContrast(), 'maximum');
-assert.equal(P.uiTextContrastMultiplierForLevel('maximum'), 4.5);
-P.resetAppearancePrefs();
-assert.equal(P.readStoredUiFontSize(), 'md');
-assert.equal(P.readStoredUiTextContrast(), 'medium');
-
-P.writeStoredEditorSplit(0.42);
-assert.ok(Math.abs(P.readStoredEditorSplit() - 0.42) < 0.001);
-P.writeStoredExplorerWidth(300);
-P.writeStoredHarpoonHeight(220);
-assert.equal(P.readStoredExplorerWidth(), 300);
-assert.equal(P.readStoredHarpoonHeight(), 220);
-P.resetLayoutPrefs();
-assert.equal(P.readStoredEditorSplit(), 0.5);
-assert.equal(P.readStoredExplorerWidth(), P.DEFAULT_SIDE_PANEL_WIDTH);
-assert.equal(P.readStoredInspectorWidth(), P.DEFAULT_SIDE_PANEL_WIDTH);
-assert.equal(P.readStoredLibraryWidth(), P.DEFAULT_SIDE_PANEL_WIDTH);
-assert.equal(P.readStoredHarpoonWidth(), P.DEFAULT_SIDE_PANEL_WIDTH);
-assert.equal(P.readStoredExplorerHeight(), P.DEFAULT_SIDE_PANEL_HEIGHT);
-assert.equal(P.readStoredHarpoonHeight(), P.DEFAULT_SIDE_PANEL_HEIGHT);
-assert.equal(P.DEFAULT_SIDE_PANEL_WIDTH, 250);
-assert.equal(P.DEFAULT_SIDE_PANEL_HEIGHT, 190);
-
-assert.equal(P.readStoredInspectorFollow(), true);
-P.writeStoredInspectorFollow(false);
-assert.equal(P.readStoredInspectorFollow(), false);
-P.writeStoredInspectorFollow(true);
-assert.equal(P.readStoredInspectorFollow(), true);
-
-assert.equal(P.readStoredReplEcho(), true);
-P.writeStoredReplEcho(false);
-assert.equal(P.readStoredReplEcho(), false);
-P.writeStoredReplEcho(true);
-
-assert.equal(P.readStoredReplFilterChatter(), true);
-P.writeStoredReplFilterChatter(false);
-assert.equal(P.readStoredReplFilterChatter(), false);
-
-assert.equal(P.readStoredEditorCursorBlink(), 'blink');
-P.writeStoredEditorCursorBlink('off');
-assert.equal(P.readStoredEditorCursorBlink(), 'off');
-P.writeStoredEditorCursorBlink('blink');
-assert.equal(P.readStoredEditorCursorBlink(), 'blink');
-
-assert.equal(P.readStoredEditorScrollPastEnd(), true);
-P.writeStoredEditorScrollPastEnd(false);
-assert.equal(P.readStoredEditorScrollPastEnd(), false);
-
-assert.equal(P.readStoredEditorWhitespace(), 'none');
-P.writeStoredEditorWhitespace('trailing');
-assert.equal(P.readStoredEditorWhitespace(), 'trailing');
-P.writeStoredEditorWhitespace('selection');
-assert.equal(P.readStoredEditorWhitespace(), 'selection');
-P.writeStoredEditorWhitespace('all');
-assert.equal(P.readStoredEditorWhitespace(), 'all');
-P.writeStoredEditorWhitespace('none');
-assert.equal(P.readStoredEditorWhitespace(), 'none');
-
-assert.equal(P.readStoredEditorRulers(), false);
-P.writeStoredEditorRulers(true);
-assert.equal(P.readStoredEditorRulers(), true);
-
-assert.equal(P.readStoredEditorFontFamily(), 'jetbrains');
-P.writeStoredEditorFontFamily('system');
-assert.equal(P.readStoredEditorFontFamily(), 'system');
-P.writeStoredEditorFontFamily('jetbrains');
-
-assert.equal(P.readStoredEditorHoleEmphasis(), 'normal');
-P.writeStoredEditorHoleEmphasis('loud');
-assert.equal(P.readStoredEditorHoleEmphasis(), 'loud');
-P.writeStoredEditorHoleEmphasis('normal');
-
-assert.equal(P.readStoredMotionPref(), 'system');
-P.writeStoredMotionPref('reduce');
-assert.equal(P.readStoredMotionPref(), 'reduce');
-assert.equal(P.prefersReducedMotion(), true);
-P.writeStoredMotionPref('full');
-assert.equal(P.prefersReducedMotion(), false);
-P.writeStoredMotionPref('system');
-
-assert.equal(P.readStoredToastDuration(), 'normal');
-P.writeStoredToastDuration('short');
-assert.equal(P.toastDurationMs(), 2000);
-P.writeStoredToastDuration('long');
-assert.equal(P.toastDurationMs(), 5000);
-assert.equal(P.toastDurationForMode('long'), 5000);
-assert.equal(P.toastDurationForMode('short'), 2000);
-assert.equal(P.toastDurationForMode('normal'), 3500);
-P.writeStoredToastDuration('normal');
-assert.equal(P.toastDurationMs(), 3500);
-
-assert.equal(P.readStoredCheckAggressiveness(), 'balanced');
-assert.equal(P.checkAggressivenessScale(), 1);
-P.writeStoredCheckAggressiveness('responsive');
-assert.equal(P.checkAggressivenessScale(), 0.7);
-P.writeStoredCheckAggressiveness('thorough');
-assert.equal(P.checkAggressivenessScale(), 1.45);
-P.writeStoredCheckAggressiveness('balanced');
-
-assert.equal(P.readStoredAutosolveFocusNext(), true);
-P.writeStoredAutosolveFocusNext(false);
-assert.equal(P.readStoredAutosolveFocusNext(), false);
-P.writeStoredAutosolveFocusNext(true);
-
-assert.equal(P.readStoredAutosolveShowStats(), true);
-P.writeStoredAutosolveShowStats(false);
-assert.equal(P.readStoredAutosolveShowStats(), false);
-P.writeStoredAutosolveShowStats(true);
-
-assert.equal(typeof P.readStoredHarpoonMode, 'function');
-assert.equal(P.readStoredHarpoonMode(), 'manual');
-P.writeStoredHarpoonMode('orca');
-assert.equal(P.readStoredHarpoonMode(), 'orca');
-P.writeStoredHarpoonMode('manual');
-assert.equal(P.readStoredHarpoonMode(), 'manual');
-
-assert.equal(typeof P.readStoredHarpoonVerifyMoves, 'function');
-assert.equal(P.readStoredHarpoonVerifyMoves(), true);
-P.writeStoredHarpoonVerifyMoves(false);
-assert.equal(P.readStoredHarpoonVerifyMoves(), false);
-P.writeStoredHarpoonVerifyMoves(true);
-
-assert.equal(P.readStoredQuietWhileTyping(), false);
-P.writeStoredQuietWhileTyping(true);
-assert.equal(P.readStoredQuietWhileTyping(), true);
-P.writeStoredQuietWhileTyping(false);
-
-assert.equal(P.readStoredDiagPresentation(), 'both');
-P.writeStoredDiagPresentation('underlines');
-assert.equal(P.readStoredDiagPresentation(), 'underlines');
-P.writeStoredDiagPresentation('gutter');
-assert.equal(P.readStoredDiagPresentation(), 'gutter');
-P.writeStoredDiagPresentation('both');
-assert.equal(P.readStoredDiagPresentation(), 'both');
-
-assert.equal(P.readStoredDiagSeverity(), 'all');
-P.writeStoredDiagSeverity('errors');
-assert.equal(P.readStoredDiagSeverity(), 'errors');
-P.writeStoredDiagSeverity('all');
-
-assert.equal(P.readStoredFormatOnSave(), false);
-P.writeStoredFormatOnSave(true);
-assert.equal(P.readStoredFormatOnSave(), true);
-P.writeStoredFormatOnSave(false);
-
-assert.equal(P.readStoredTrimTrailingWs(), false);
-P.writeStoredTrimTrailingWs(true);
-assert.equal(P.readStoredTrimTrailingWs(), true);
-P.writeStoredTrimTrailingWs(false);
-
-assert.equal(P.readStoredStickyDeclHeader(), false);
-P.writeStoredStickyDeclHeader(true);
-assert.equal(P.readStoredStickyDeclHeader(), true);
-P.writeStoredStickyDeclHeader(false);
-
-assert.equal(P.readStoredSuiteCheck(), 'suite');
-P.writeStoredSuiteCheck('active');
-assert.equal(P.readStoredSuiteCheck(), 'active');
-P.writeStoredSuiteCheck('suite');
-assert.equal(P.readStoredSuiteCheck(), 'suite');
-
-assert.equal(P.readStoredHoverSticky(), false);
-P.writeStoredHoverSticky(true);
-assert.equal(P.readStoredHoverSticky(), true);
-P.writeStoredHoverSticky(false);
-
+// ── device state is untouched by settings resets, and has its own ───────────
 {
-  P.writeStoredEditorDiagGutter(false);
-  // Legacy gutter-off maps to underlines when presentation key unset.
-  assert.equal(P.readStoredDiagPresentation(), 'underlines');
-  P.writeStoredDiagPresentation('both');
+  const { P, S, D, ls } = freshPersist();
+  D.set('editorSplit', 0.42);
+  D.set('explorerWidth', 300);
+  D.set('harpoonHeight', 220);
+  D.set('commandLineHistory', ['fmt', 'w']);
+  P.writeWorkspace({ activeSidePanel: 'library' });
+  S.resetAll();
+  assert.equal(D.get('editorSplit'), 0.42, 'Reset all settings keeps the layout');
+  assert.equal(D.get('explorerWidth'), 300);
+  assert.equal(P.readWorkspace().activeSidePanel, 'library', 'and the workspace');
+  assert.deepEqual(here(D.get('commandLineHistory')), ['fmt', 'w'], 'and the command-line history');
+  assert.ok(!('commandLineHistory' in S.exportBundle().values), 'which is device state, never exported');
+  assert.deepEqual(Object.keys(JSON.parse(ls.getItem('beljar/device')).data.values).sort(),
+    ['activeProject', 'commandLineHistory', 'editorSplit', 'explorerWidth', 'harpoonHeight'],
+    'device state is one record, holding only what differs from the defaults');
+
+  D.reset((row) => row.group === 'layout');
+  assert.equal(D.get('editorSplit'), 0.5, 'Reset panel layout puts the split back');
+  assert.equal(D.get('explorerWidth'), 250);
+  assert.equal(D.get('harpoonHeight'), 190);
+  assert.deepEqual(here(D.get('commandLineHistory')), ['fmt', 'w'], 'and nothing that is not layout');
 }
 
+// ── a full disk is reported through Persist's own save-blocked state ─────────
 {
-  P.writeStoredEditorRulers(true);
-  P.writeStoredMotionPref('reduce');
-  P.writeStoredKeymapStyle('vim');
-  const bundle = P.exportUserSettings();
-  assert.equal(bundle.v, 1);
-  assert.ok(bundle.prefs['beljar-editor-rulers']);
-  assert.equal(bundle.prefs['beljar-motion-pref'], 'reduce');
-  assert.equal(bundle.prefs['beljar-keymap-style'], 'vim');
-  P.writeStoredEditorRulers(false);
-  P.writeStoredMotionPref('system');
-  P.writeStoredKeymapStyle('default');
-  const result = P.importUserSettings(bundle);
-  assert.equal(result.ok, true);
-  assert.equal(P.readStoredEditorRulers(), true);
-  assert.equal(P.readStoredMotionPref(), 'reduce');
-  assert.equal(P.readStoredKeymapStyle(), 'vim');
-  P.writeStoredEditorRulers(false);
-  P.writeStoredMotionPref('system');
-  P.writeStoredKeymapStyle('default');
+  const { P, S } = freshPersist({}, { maxChars: 200 });
+  assert.equal(P.isSaveBlocked(), false);
+  assert.equal(S.set('keybindings', { 'nav.anywhere': 'x'.repeat(400) }), false, 'a setting that cannot fit is refused');
+  assert.equal(P.isSaveBlocked(), true, 'and the page knows saving is blocked');
+  assert.equal(S.set('theme', 'light'), true, 'a write that fits goes through');
+  assert.equal(P.isSaveBlocked(), false, 'and clears the block');
 }
 
-assert.equal(P.readStoredKeymapStyle(), 'default');
-P.writeStoredKeymapStyle('emacs');
-assert.equal(P.readStoredKeymapStyle(), 'emacs');
-P.writeStoredKeymapStyle('vim');
-assert.equal(P.readStoredKeymapStyle(), 'vim');
-P.resetKeybindingPrefs();
-assert.equal(P.readStoredKeymapStyle(), 'default');
+// ── the helpers that derive from settings ────────────────────────────────────
+assert.deepEqual(TOAST_DURATION_MS, { short: 2000, normal: 3500, long: 5000 });
+assert.deepEqual(CHECK_DELAY_SCALE, { responsive: 0.7, balanced: 1, thorough: 1.45 });
+assert.equal(prefersReducedMotion('reduce'), true);
+assert.equal(prefersReducedMotion('full'), false);
 
-assert.equal(P.readStoredStatusStrip(), null);
-P.writeStoredStatusStrip('standard');
-assert.equal(P.readStoredStatusStrip(), 'standard');
-P.writeStoredStatusStrip('compact');
-assert.equal(P.readStoredStatusStrip(), 'compact');
-P.writeStoredStatusStrip('detailed');
-assert.equal(P.readStoredStatusStrip(), 'detailed');
-P.writeStoredStatusStrip('off');
-assert.equal(P.readStoredStatusStrip(), 'off');
-// Unknown values clear the key rather than sticking.
-P.writeStoredStatusStrip('nope');
-assert.equal(P.readStoredStatusStrip(), null);
-// An unrecognised value is not a value: nothing has shipped, so there is no
-// legacy spelling to read forward.
-localStorage.setItem('beljar-status-strip', 'full');
-assert.equal(P.readStoredStatusStrip(), null);
-P.writeStoredStatusStrip('off');
-{
-  const bundle = P.exportUserSettings();
-  assert.equal(bundle.prefs['beljar-status-strip'], 'off');
-}
-P.resetKeybindingPrefs();
-assert.equal(P.readStoredStatusStrip(), null);
-
-P.writeStoredCommandLineHistory(['fmt', 'w']);
-P.writeStoredVimLeader(',');
-P.writeStoredVimInsertEscape('jk');
-P.writeStoredDoubleTapTrigger('shift');
-P.writeStoredDoubleTapCommand('nav.goto');
-P.writeStoredDoubleTapSpeed('fast');
-{
-  const bundle = P.exportUserSettings();
-  assert.equal(bundle.prefs['beljar-command-line-history'], JSON.stringify(['fmt', 'w']));
-  assert.equal(bundle.prefs['beljar-double-tap-trigger'], 'shift');
-}
-P.resetKeybindingPrefs();
-assert.deepEqual(P.readStoredCommandLineHistory(), []);
-assert.equal(P.readStoredDoubleTapTrigger(), 'off');
-
-assert.equal(typeof P.resetHarpoonPrefs, 'function');
-P.writeStoredHarpoonMode('orca');
-P.writeStoredHarpoonVerifyMoves(false);
-P.resetBelugaPrefs();
-assert.equal(P.readStoredHarpoonMode(), 'orca');
-P.resetHarpoonPrefs();
-assert.equal(P.readStoredHarpoonMode(), 'manual');
-assert.equal(P.readStoredHarpoonVerifyMoves(), true);
-
-P.writeStoredReplEcho(false);
-P.writeStoredReplTranscript({ html: '<div class="keep"></div>', scrollTop: 0, savedAt: 1 });
-P.resetReplPrefs();
-assert.equal(P.readStoredReplEcho(), true);
-{
-  const snap = P.readStoredReplTranscript();
-  assert.ok(snap);
-  assert.equal(snap.html, '<div class="keep"></div>');
-}
-
-P.writeStoredInspectorFollow(false);
-P.writeStoredWorkspace({ activeSidePanel: 'library' });
-P.resetWorkspacePrefs();
-assert.equal(P.readStoredInspectorFollow(), true);
-assert.equal(P.readStoredWorkspace().activeSidePanel, 'library');
-
-console.log('OK settings persist');
+console.log('OK settings persist (one Settings and one Device per page, clean first boot, REPL history follows its setting, device state survives resets, full disk reported)');

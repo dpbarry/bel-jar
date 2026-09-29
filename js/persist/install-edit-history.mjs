@@ -54,7 +54,9 @@ var history = null;
     var P = global.Persist;
     return {
       projectKey: projectKey(),
-      sessionStorage: global.sessionStorage || null,
+      readStack: function (key) { return P.readUndoStack(key); },
+      writeStack: function (key, data) { return P.writeUndoStack(key, data); },
+      clearStack: function (key) { P.clearUndoStack(key); },
       getFileText: function (id) { return P.getFileText(id); },
       setFileText: function (id, text) { P.setFileText(id, text); },
       listFiles: function () { return P.listFiles(); },

@@ -133,20 +133,20 @@
 
   function readWorkspace(projectId) {
     var persist = P();
-    if (!persist || typeof persist.readStoredWorkspace !== 'function') {
+    if (!persist || typeof persist.readWorkspace !== 'function') {
       return emptyWorkspace(projectId);
     }
-    return normalizeWorkspace(persist.readStoredWorkspace(projectId), projectId);
+    return normalizeWorkspace(persist.readWorkspace(projectId), projectId);
   }
 
   function writeWorkspace(snapshot, projectId) {
     var persist = P();
-    if (!persist || typeof persist.writeStoredWorkspace !== 'function') return false;
+    if (!persist || typeof persist.writeWorkspace !== 'function') return false;
     var pid = projectId || (persist.getActiveProjectId ? persist.getActiveProjectId() : 'default');
     var next = normalizeWorkspace(snapshot, pid);
     next.projectId = pid;
     next.updatedAt = Date.now();
-    return persist.writeStoredWorkspace(next, pid);
+    return persist.writeWorkspace(next, pid);
   }
 
   function registerProvider(name, hooks) {
@@ -190,8 +190,8 @@
     var openIds = persist && persist.getOpenFileIds ? persist.getOpenFileIds() : [];
     var activeFileId = persist && persist.getActiveFileId ? persist.getActiveFileId() : null;
 
-    snap.activeSidePanel = persist && typeof persist.readStoredActiveSidePanel === 'function'
-      ? persist.readStoredActiveSidePanel(pid)
+    snap.activeSidePanel = persist && typeof persist.readSidePanel === 'function'
+      ? persist.readSidePanel(pid)
       : null;
 
     snap.floating = [];
@@ -256,8 +256,8 @@
 
   function resetWorkspaceState(projectId) {
     var persist = P();
-    if (persist && typeof persist.resetStoredWorkspace === 'function') {
-      persist.resetStoredWorkspace(projectId);
+    if (persist && typeof persist.resetWorkspace === 'function') {
+      persist.resetWorkspace(projectId);
     }
     restoredForProject = null;
   }

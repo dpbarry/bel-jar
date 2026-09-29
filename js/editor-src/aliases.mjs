@@ -1,6 +1,7 @@
 import { isolateHistory } from '@codemirror/commands';
 import { Annotation, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { readSetting } from '../persist/settings-schema.mjs';
 
 const aliasTxn = Annotation.define();
 
@@ -83,17 +84,16 @@ export const ALIAS_PAIRS = Object.entries(DEFAULT_ALIAS_MAP)
 
 const GREEDY_BLOCKED_EVENTS = new Set(['input.alias', 'rename', 'format', 'undo', 'redo']);
 
+// ⛔ Normalized once, not once per keystroke: `aliases()` is an update listener.
+// The cache is keyed on which Settings answered and its revision for
+// 'aliasPairs', which moves on EVERY change from any source (the dialog, a
+// reset, an import, another tab, the online layer), so nothing has to remember
+// to invalidate it. A list of "the events that might rewrite the alias table"
+// once missed settings imports; this cannot.
 let cachedPairs = null;
 let cachedMaxLen = 0;
-// ⛔ Read once, not once per keystroke. `aliases()` is an update listener, so
-// this used to be a `localStorage` hit on every document change — for a
-// preference that only moves when the user changes it, and that already has an
-// invalidation channel sitting right there.
-let cachedActivation = null;
-// Which Persist the cached answer came from. The editor bundle can load before
-// Persist exists, and tests swap the object outright — either way the cache has
-// to notice, and an identity compare is still far cheaper than a storage read.
-let cachedActivationFrom = null;
+let cachedFrom = null;
+let cachedRev = -1;
 
 export function normalizeAliasPairs(raw) {
   const seen = new Set();
@@ -126,23 +126,15 @@ export function defaultAliasPairs() {
 export function invalidateAliasPairs() {
   cachedPairs = null;
   cachedMaxLen = 0;
-  cachedActivation = null;
-  cachedActivationFrom = null;
-}
-
-function loadStoredPairs() {
-  const persist = typeof globalThis !== 'undefined' ? globalThis.Persist : null;
-  if (!persist || typeof persist.readStoredAliasPairs !== 'function') return null;
-  try {
-    return persist.readStoredAliasPairs();
-  } catch (_) {
-    return null;
-  }
 }
 
 export function getAliasPairs() {
-  if (cachedPairs) return cachedPairs;
-  const stored = loadStoredPairs();
+  const S = globalThis.Settings || null;
+  const rev = S ? S.revision('aliasPairs') : -1;
+  if (cachedPairs && cachedFrom === S && cachedRev === rev) return cachedPairs;
+  const stored = readSetting('aliasPairs');
+  cachedFrom = S;
+  cachedRev = rev;
   cachedPairs = stored == null ? defaultAliasPairs() : normalizeAliasPairs(stored);
   cachedMaxLen = cachedPairs.length ? cachedPairs[0][0].length : 0;
   return cachedPairs;
@@ -153,19 +145,9 @@ function maxAliasLen() {
   return cachedMaxLen;
 }
 
+// Settings are read from memory, so there is nothing here worth caching.
 export function readAliasActivationMode() {
-  const persist = typeof globalThis !== 'undefined' ? globalThis.Persist : null;
-  if (cachedActivation && cachedActivationFrom === persist) return cachedActivation;
-  if (persist && typeof persist.readStoredAliasActivation === 'function') {
-    cachedActivation = persist.readStoredAliasActivation();
-    cachedActivationFrom = persist;
-    return cachedActivation;
-  }
-  // Nothing to cache: Persist is not on the page yet, and the real answer is
-  // still to come.
-  cachedActivation = null;
-  cachedActivationFrom = null;
-  return 'greedy';
+  return readSetting('aliasActivation');
 }
 
 export function expandBelAliases(text) {
@@ -331,21 +313,3 @@ export function aliases() {
   });
 }
 
-if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
-  globalThis.addEventListener('beljar:settings-changed', (e) => {
-    const key = e && e.detail ? e.detail.key : '';
-    // ⛔ Not just the `alias*` keys. Importing a settings file and resetting
-    // everything BOTH rewrite the alias table, and neither is spelled `alias`
-    // — so a user who imported their preferences went on typing against the
-    // aliases they had before, with no way to tell until a reload. An empty
-    // key means "something changed and nobody said what", which is also a
-    // reason to re-read.
-    if (!key
-      || /^alias/.test(key)
-      || key === 'aliases-reset'
-      || key === 'settings-import'
-      || key === 'settings-reset-all') {
-      invalidateAliasPairs();
-    }
-  });
-}

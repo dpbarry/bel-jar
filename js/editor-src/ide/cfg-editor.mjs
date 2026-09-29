@@ -188,7 +188,6 @@ function cfgEntryNote(entry, exists) {
 function cfgHover(documentId) {
   const cfgPath = resolveCfgDocumentPath(documentId);
   return hoverTooltip((view, pos) => {
-    const g = typeof window !== 'undefined' ? window : globalThis;
     const entry = cfgEntryAt(view.state, pos, cfgPath);
     if (!entry) return null;
 
@@ -202,7 +201,7 @@ function cfgHover(documentId) {
       stack.appendChild(tip);
     }
 
-    if (showSymbolTooltips(g)) {
+    if (showSymbolTooltips()) {
       if (entry.index >= 0) {
         const exists = !!fileIdForPath(entry.fullPath);
         if (!diags.length || exists) stack.appendChild(cfgEntryNote(entry, exists));

@@ -12,8 +12,9 @@
  * lately" accuses a tab that is perfectly alive — and silence after a crash
  * is not evidence the other tab left.
  *
- * Instead it is a handshake over the `storage` event, which fires in the OTHER
- * tabs of an origin and only on a real write:
+ * Instead it is a handshake over the store's cross-tab events (the browser's
+ * `storage` event, which fires in the OTHER tabs of an origin and only on a
+ * real write): `Persist.postTabMessage` / `Persist.onTabMessage`.
  *
  *   1. A tab announces itself on boot by writing a nonce to the ping key.
  *   2. Any tab that sees a ping for the project IT has open answers, records
@@ -29,9 +30,6 @@
  */
 const global = globalThis;
 
-const PING_KEY = 'beljar-tab-ping';
-const PONG_KEY = 'beljar-tab-pong';
-const BYE_KEY = 'beljar-tab-bye';
 const DEDUPE = 'workspace.multi-tab';
 
 const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -50,19 +48,9 @@ function projectId() {
   }
 }
 
-function write(key, value) {
-  try {
-    global.localStorage?.setItem(key, JSON.stringify(value));
-  } catch (_) { /* quota, or storage disabled — nothing to guard then */ }
-}
-
-function parse(raw) {
-  try {
-    const v = JSON.parse(raw);
-    return v && typeof v === 'object' ? v : null;
-  } catch (_) {
-    return null;
-  }
+function write(kind, value) {
+  const P = global.Persist;
+  if (P && typeof P.postTabMessage === 'function') P.postTabMessage(kind, value);
 }
 
 /**
@@ -97,24 +85,22 @@ function forgetInboxRecord() {
   for (const id of ids) N.dismiss(id);
 }
 
-function onStorage(e) {
-  if (departed || !e || !e.newValue) return;
+function onMessage(kind, msg) {
+  if (departed || !msg || typeof msg !== 'object') return;
   const mine = projectId();
-  if (!mine) return;
-  const msg = parse(e.newValue);
-  if (!msg || msg.p !== mine) return;
-  if (e.key === PING_KEY) {
+  if (!mine || msg.p !== mine) return;
+  if (kind === 'ping') {
     if (msg.n === nonce) return;
     noteCompanion(msg.n);
-    write(PONG_KEY, { n: msg.n, from: nonce, p: mine, at: Date.now() });
+    write('pong', { n: msg.n, from: nonce, p: mine, at: Date.now() });
     return;
   }
-  if (e.key === PONG_KEY) {
+  if (kind === 'pong') {
     if (msg.n !== nonce) return;
     noteCompanion(msg.from);
     return;
   }
-  if (e.key === BYE_KEY) {
+  if (kind === 'bye') {
     if (msg.n === nonce) return;
     forgetCompanion(msg.n);
   }
@@ -127,7 +113,7 @@ export function announce() {
   const p = projectId();
   if (!p) return;
   announcedProject = p;
-  write(PING_KEY, { n: nonce, p, at: Date.now() });
+  write('ping', { n: nonce, p, at: Date.now() });
 }
 
 /** `pagehide`. A crashed tab never reaches here, so it cannot clear anyone. */
@@ -136,7 +122,7 @@ export function depart() {
   const p = projectId() || announcedProject;
   if (!p) return;
   departed = true;
-  write(BYE_KEY, { n: nonce, p, at: Date.now() });
+  write('bye', { n: nonce, p, at: Date.now() });
 }
 
 /**
@@ -152,8 +138,9 @@ function onPageShow(e) {
 }
 
 export function initTabGuard() {
-  if (!global.addEventListener || !global.localStorage) return;
-  global.addEventListener('storage', onStorage);
+  const P = global.Persist;
+  if (!global.addEventListener || !P || typeof P.onTabMessage !== 'function') return;
+  P.onTabMessage(onMessage);
   global.addEventListener('pagehide', () => depart());
   global.addEventListener('pageshow', onPageShow);
   // After boot, so Persist knows which project is active and the strip

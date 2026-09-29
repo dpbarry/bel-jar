@@ -38,6 +38,8 @@ export const CATALOG = [
   { id: 'file.upload-folder', title: 'Upload Folder', section: 'File', scope: 'global', palette: true },
   { id: 'file.import-folder', title: 'Import Folder as New Project', section: 'File', scope: 'global', palette: true },
   { id: 'file.download', title: 'Download Current File', section: 'File', scope: 'global', palette: true },
+  // The whole project as a zip: how work outlives a browser that clears its storage.
+  { id: 'project.download', title: 'Download Project', section: 'File', scope: 'global', palette: true },
   { id: 'tab.next', title: 'Next Tab', section: 'File', scope: 'global', palette: true, keybindable: true, ex: ['bn'] },
   { id: 'tab.prev', title: 'Previous Tab', section: 'File', scope: 'global', palette: true, keybindable: true, ex: ['bp'] },
   { id: 'tab.close', title: 'Close Tab', section: 'File', scope: 'global', palette: true, keybindable: true },

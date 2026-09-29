@@ -4,7 +4,6 @@
 
 export const SCHEMA_VERSION = 1;
 export const DEFAULT_CAP = 100;
-export const STORAGE_KEY = 'beljar-notifications';
 
 const KINDS = new Set(['error', 'warn', 'info', 'success', 'system']);
 const CATEGORIES = new Set(['teaching', 'ops', 'product', 'remote']);
@@ -124,65 +123,6 @@ export function createMemoryAdapter(seed) {
     },
     save(next) {
       items = Array.isArray(next) ? next.slice() : [];
-    },
-  };
-}
-
-export function createLocalPersistAdapter(opts) {
-  const o = opts && typeof opts === 'object' ? opts : {};
-  const key = o.key || STORAGE_KEY;
-  const loadFn = typeof o.load === 'function' ? o.load : null;
-  const saveFn = typeof o.save === 'function' ? o.save : null;
-
-  function readRaw() {
-    if (loadFn) {
-      try {
-        return loadFn(key);
-      } catch (_) {
-        return null;
-      }
-    }
-    try {
-      if (typeof localStorage === 'undefined') return null;
-      return localStorage.getItem(key);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function writeRaw(text) {
-    if (saveFn) {
-      try {
-        saveFn(key, text);
-        return;
-      } catch (_) {
-        return;
-      }
-    }
-    try {
-      if (typeof localStorage === 'undefined') return;
-      if (text == null) localStorage.removeItem(key);
-      else localStorage.setItem(key, text);
-    } catch (_) {}
-  }
-
-  return {
-    load() {
-      const raw = readRaw();
-      if (!raw) return [];
-      try {
-        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        const list = Array.isArray(parsed)
-          ? parsed
-          : (parsed && Array.isArray(parsed.items) ? parsed.items : []);
-        return list.map(migrateRecord).filter(Boolean);
-      } catch (_) {
-        return [];
-      }
-    },
-    save(next) {
-      const items = Array.isArray(next) ? next : [];
-      writeRaw(JSON.stringify({ v: SCHEMA_VERSION, items }));
     },
   };
 }

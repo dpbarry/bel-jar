@@ -257,6 +257,8 @@ const fakeLocalStorage = {
   getItem: (k) => (storage.has(k) ? storage.get(k) : null),
   setItem: (k, v) => storage.set(k, String(v)),
   removeItem: (k) => storage.delete(k),
+  get length() { return storage.size; },
+  key: (i) => [...storage.keys()][i] ?? null,
 };
 const ctx = vm.createContext({
   globalThis: {},
@@ -275,7 +277,7 @@ Persist.replaceProject([
 ], { projectName: 'TestProj' });
 expect(Persist.listFiles().length === 2, 'replaceProject sets exact file count');
 expect(Persist.getProjectName() === 'TestProj', 'replaceProject sets project name');
-expect(Persist.getDefaultCfgPath() === null, 'replaceProject clears default cfg');
+expect(Object.keys(Persist.getActiveCfgByDir()).length === 0, 'replaceProject without suites activates no cfg');
 
 Persist.replaceProject([
   { name: 'grp/base.bel', text: 'LF a : type;' },
@@ -288,7 +290,8 @@ Persist.replaceProject([
 expect(Persist.getActiveCfgForDir('grp') === 'grp/long.cfg', 'per-folder active cfg stored');
 expect(Persist.getActiveCfgsForDir('grp').join('|') === 'grp/long.cfg', 'active cfg list migrated');
 expect(Persist.getActiveCfgForDir('cps') === 'cps/sources.cfg', 'second folder active cfg stored');
-expect(Persist.getDefaultCfgPath() === 'grp/long.cfg', 'getDefaultCfgPath reflects active file folder cfg');
+expect(Persist.getFileById(Persist.getActiveFileId()).name === 'grp/base.bel'
+  && Persist.getActiveCfgForDir('grp') === 'grp/long.cfg', 'the active file is the first, and its folder has the chosen cfg');
 
 Persist.backfillActiveCfgByDir({ debruijn: 'debruijn/main.cfg' });
 expect(Persist.getActiveCfgForDir('debruijn') === 'debruijn/main.cfg', 'backfill adds missing dirs');
@@ -306,12 +309,10 @@ Persist.setFileText(idB, 'LF tok : type;');
 expect(Persist.getFileText(idB) === 'LF tok : type;', 'setFileText/getFileText round-trip');
 expect(Persist.getFileText(idC) === '', 'unwritten file reads as empty text');
 
-// moveFile reorders the registry (= project run order).
-expect(Persist.moveFile(idC, -1) === true, 'moveFile up succeeds');
-expect(Persist.listFiles()[1].id === idC, 'c.bel moved to index 1');
-expect(Persist.moveFile(idC, -1) === true && Persist.listFiles()[0].id === idC, 'c.bel moved to front');
-expect(Persist.moveFile(idC, -1) === false, 'moving the first file up is a no-op');
-expect(Persist.moveFile('nope', 1) === false, 'unknown id is a no-op');
+// Files keep the order they were created in: a folder run without a cfg runs
+// them in this order, and nothing reorders them (so a merge can keep it).
+expect(Persist.listFiles().map((f) => f.id).join() === [Persist.listFiles()[0].id, idB, idC].join(),
+  'the registry is in creation order');
 
 // ── open-files list (tabs ⊂ project) ─────────────────────────────────────────
 for (const f of Persist.listFiles()) Persist.openFile(f.id);

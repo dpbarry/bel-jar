@@ -9,62 +9,32 @@ import { Transaction } from '@codemirror/state';
 import { ViewPlugin } from '@codemirror/view';
 import { readEditorPrefs } from '../editor-prefs.mjs';
 import { keysFromFoldedRanges, matchStoredFoldKeys } from './fold-keys.mjs';
+import { readSetting } from '../../persist/settings-schema.mjs';
 
-const SESSION_STORE_KEY = 'beljar-fold-session-v1';
-const LOCAL_STORE_KEY = 'beljar-fold-local-v1';
-
-function storageForMode(mode) {
-  if (typeof globalThis === 'undefined') return null;
-  if (mode === 'session') return globalThis.sessionStorage ?? null;
-  if (mode === 'local') return globalThis.localStorage ?? null;
-  return null;
-}
-
-function readStoreBlob(mode) {
-  const store = storageForMode(mode);
-  if (!store) return {};
-  try {
-    const raw = store.getItem(mode === 'session' ? SESSION_STORE_KEY : LOCAL_STORE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeStoreBlob(mode, blob) {
-  const store = storageForMode(mode);
-  if (!store) return;
-  try {
-    const key = mode === 'session' ? SESSION_STORE_KEY : LOCAL_STORE_KEY;
-    if (!blob || !Object.keys(blob).length) store.removeItem(key);
-    else store.setItem(key, JSON.stringify(blob));
-  } catch {
-    // quota / privacy mode — ignore
-  }
+// Where folds are kept (this device, this tab, nowhere) is the editorFoldPersist
+// setting; Persist picks the store (device-records.mjs). Without the shell (Node
+// tests) nothing is kept.
+function persistApi() {
+  const P = globalThis.Persist;
+  return P && typeof P.readFileFolds === 'function' ? P : null;
 }
 
 export function readFoldPersistMode() {
-  const p = typeof globalThis !== 'undefined' ? globalThis.Persist : null;
-  const mode = p?.readStoredEditorFoldPersist?.();
+  const mode = readSetting('editorFoldPersist');
   if (mode === 'none' || mode === 'local') return mode;
   return 'session';
 }
 
 export function readFileFoldKeys(fileId, mode = readFoldPersistMode()) {
-  if (!fileId || mode === 'none') return [];
-  const blob = readStoreBlob(mode);
-  const keys = blob[fileId];
-  return Array.isArray(keys) ? keys.filter((k) => typeof k === 'string') : [];
+  const P = persistApi();
+  if (!fileId || mode === 'none' || !P) return [];
+  return P.readFileFolds(fileId);
 }
 
 export function writeFileFoldKeys(fileId, keys, mode = readFoldPersistMode()) {
-  if (!fileId || mode === 'none') return;
-  const blob = readStoreBlob(mode);
-  if (keys?.length) blob[fileId] = keys;
-  else delete blob[fileId];
-  writeStoreBlob(mode, blob);
+  const P = persistApi();
+  if (!fileId || mode === 'none' || !P) return;
+  P.writeFileFolds(fileId, keys || []);
 }
 
 function foldedRangeList(state) {

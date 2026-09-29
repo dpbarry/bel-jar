@@ -33,9 +33,7 @@ function formatTs(ms) {
 }
 
 function hoverTimestampOn() {
-  return typeof Persist !== 'undefined'
-    && typeof Persist.readStoredReplHoverTimestamp === 'function'
-    && Persist.readStoredReplHoverTimestamp();
+  return Settings.get('replHoverTimestamp');
 }
 
 function clearStampTooltip(el) {

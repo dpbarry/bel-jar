@@ -7,101 +7,108 @@
  * declaration, and the `set.*` catalogue entries, their behaviour, `:set`'s
  * completion list and Vim's `:set` are all generated from it.
  *
- * `read`/`write` are Persist method NAMES, not functions: this module is data,
- * loaded long before Persist exists. `tests/test-command-settings.mjs` checks
- * every name against the real Persist surface, which is the only thing standing
- * between a typo here and a silently dead setting.
+ * A row names the setting it drives (`setting`, an id in settings-schema.mjs)
+ * and adds only the command surface's own words: slug, title, labels and the
+ * vi names. Whether it flips or cycles, and the values it cycles through in
+ * order, come from the settings table, never from here: a value list written
+ * here too was a second copy of the schema, and the two had drifted apart.
+ * An id the table does not declare throws at load.
  *
- * `kind: 'bool'` flips. `kind: 'enum'` cycles `values`; when an enum also has a
+ * A boolean flips. A choice cycles its values; when a choice also has a
  * vi-style on/off flavour (`:set list` / `:set nolist`) it names `on` and `off`.
  * `aliases` are the names `:set` answers to — vi's own spellings where vi has one.
  */
+import { settingRow, typeOf } from '../persist/settings-schema.mjs';
 
-export const SETTINGS = [
+const ROWS = [
   // ── layout ────────────────────────────────────────────────────────────────
-  { slug: 'word-wrap', title: 'Word wrap', kind: 'bool', aliases: ['wrap'],
-    read: 'readStoredEditorWordWrap', write: 'writeStoredEditorWordWrap' },
-  { slug: 'line-numbers', title: 'Line numbers', kind: 'bool', aliases: ['number', 'nu'],
-    read: 'readStoredEditorLineNumbers', write: 'writeStoredEditorLineNumbers' },
-  { slug: 'line-number-style', title: 'Line number style', kind: 'enum',
-    values: ['absolute', 'relative', 'hybrid'],
+  { slug: 'word-wrap', title: 'Word wrap', aliases: ['wrap'],
+    setting: 'editorWordWrap' },
+  { slug: 'line-numbers', title: 'Line numbers', aliases: ['number', 'nu'],
+    setting: 'editorLineNumbers' },
+  { slug: 'line-number-style', title: 'Line number style',
     labels: { absolute: 'Absolute', relative: 'Relative', hybrid: 'Relative + current' },
     aliases: ['relativenumber', 'rnu'],
-    read: 'readStoredEditorLineNumberMode', write: 'writeStoredEditorLineNumberMode' },
-  { slug: 'fold-gutter', title: 'Code folding', kind: 'bool', aliases: ['foldenable', 'fen'],
-    read: 'readStoredEditorFoldGutter', write: 'writeStoredEditorFoldGutter' },
-  { slug: 'active-line', title: 'Active line highlight', kind: 'bool', aliases: ['cursorline', 'cul'],
-    read: 'readStoredEditorActiveLine', write: 'writeStoredEditorActiveLine' },
-  { slug: 'scroll-past-end', title: 'Scroll past end', kind: 'bool', aliases: ['scrollpastend', 'spe'],
-    read: 'readStoredEditorScrollPastEnd', write: 'writeStoredEditorScrollPastEnd' },
-  { slug: 'rulers', title: 'Print-width ruler', kind: 'bool', aliases: ['colorcolumn', 'cc'],
-    read: 'readStoredEditorRulers', write: 'writeStoredEditorRulers' },
-  { slug: 'sticky-decl', title: 'Structure path', kind: 'bool', aliases: ['sticky'],
-    read: 'readStoredStickyDeclHeader', write: 'writeStoredStickyDeclHeader' },
-  { slug: 'tab-size', title: 'Tab size', kind: 'enum', values: [2, 4], aliases: ['tabstop', 'ts'],
+    setting: 'editorLineNumberMode' },
+  { slug: 'fold-gutter', title: 'Code folding', aliases: ['foldenable', 'fen'],
+    setting: 'editorFoldGutter' },
+  { slug: 'active-line', title: 'Active line highlight', aliases: ['cursorline', 'cul'],
+    setting: 'editorActiveLine' },
+  { slug: 'scroll-past-end', title: 'Scroll past end', aliases: ['scrollpastend', 'spe'],
+    setting: 'editorScrollPastEnd' },
+  { slug: 'rulers', title: 'Print-width ruler', aliases: ['colorcolumn', 'cc'],
+    setting: 'editorRulers' },
+  { slug: 'sticky-decl', title: 'Structure path', aliases: ['sticky'],
+    setting: 'stickyDeclHeader' },
+  { slug: 'tab-size', title: 'Tab size', aliases: ['tabstop', 'ts'],
     labels: { 2: '2 spaces', 4: '4 spaces' },
-    read: 'readStoredEditorTabSize', write: 'writeStoredEditorTabSize' },
-  { slug: 'format-width', title: 'Format print width', kind: 'enum', values: [80, 100, 120],
+    setting: 'editorTabSize' },
+  { slug: 'format-width', title: 'Format print width',
     aliases: ['textwidth', 'tw'],
     labels: { 80: '80 columns', 100: '100 columns', 120: '120 columns' },
-    read: 'readStoredEditorFormatWidth', write: 'writeStoredEditorFormatWidth' },
-  { slug: 'whitespace', title: 'Show whitespace', verb: 'whitespace marks', kind: 'enum',
-    values: ['none', 'trailing', 'selection', 'all'], on: 'all', off: 'none', aliases: ['list'],
+    setting: 'editorFormatWidth' },
+  { slug: 'whitespace', title: 'Show whitespace', verb: 'whitespace marks',
+    on: 'all', off: 'none', aliases: ['list'],
     labels: { none: 'Off', trailing: 'Trailing only', selection: 'In selection', all: 'All' },
-    read: 'readStoredEditorWhitespace', write: 'writeStoredEditorWhitespace' },
+    setting: 'editorWhitespace' },
 
   // ── type ──────────────────────────────────────────────────────────────────
-  { slug: 'font-size', title: 'Font size', kind: 'enum', values: ['sm', 'md', 'lg', 'xl'],
+  { slug: 'font-size', title: 'Font size',
     labels: { sm: 'Small', md: 'Default', lg: 'Large', xl: 'Larger' },
-    read: 'readStoredEditorFontSize', write: 'writeStoredEditorFontSize' },
-  { slug: 'line-height', title: 'Line height', kind: 'enum',
-    values: ['compact', 'normal', 'relaxed'],
+    setting: 'editorFontSize' },
+  { slug: 'line-height', title: 'Line height',
     labels: { compact: 'Compact', normal: 'Default', relaxed: 'Relaxed' },
-    read: 'readStoredEditorLineHeight', write: 'writeStoredEditorLineHeight' },
-  { slug: 'font-family', title: 'Editor font', kind: 'enum', values: ['jetbrains', 'system'],
+    setting: 'editorLineHeight' },
+  { slug: 'font-family', title: 'Editor font',
     labels: { jetbrains: 'JetBrains Mono', system: 'System monospace' },
-    read: 'readStoredEditorFontFamily', write: 'writeStoredEditorFontFamily' },
-  { slug: 'cursor-blink', title: 'Cursor blink', kind: 'enum', values: ['off', 'blink', 'fast'],
+    setting: 'editorFontFamily' },
+  { slug: 'cursor-blink', title: 'Cursor blink',
     labels: { off: 'Solid', blink: 'Blink', fast: 'Fast' },
-    read: 'readStoredEditorCursorBlink', write: 'writeStoredEditorCursorBlink' },
+    setting: 'editorCursorBlink' },
 
   // ── highlighting ──────────────────────────────────────────────────────────
-  { slug: 'syntax-highlight', title: 'Syntax highlighting', kind: 'bool', aliases: ['syntax'],
-    read: 'readStoredEditorSyntaxHighlight', write: 'writeStoredEditorSyntaxHighlight' },
-  { slug: 'semantic-highlight', title: 'Semantic highlighting', kind: 'bool',
-    read: 'readStoredEditorSemanticHighlight', write: 'writeStoredEditorSemanticHighlight' },
-  { slug: 'parse-highlight', title: 'Invalid parse styling', kind: 'bool',
-    read: 'readStoredEditorParseHighlight', write: 'writeStoredEditorParseHighlight' },
-  { slug: 'occurrence-highlight', title: 'Occurrence highlight', kind: 'bool',
-    read: 'readStoredEditorOccurrenceHighlight', write: 'writeStoredEditorOccurrenceHighlight' },
-  { slug: 'selection-matches', title: 'Selection matches', kind: 'bool',
+  { slug: 'syntax-highlight', title: 'Syntax highlighting', aliases: ['syntax'],
+    setting: 'editorSyntaxHighlight' },
+  { slug: 'semantic-highlight', title: 'Semantic highlighting',
+    setting: 'editorSemanticHighlight' },
+  { slug: 'parse-highlight', title: 'Invalid parse styling',
+    setting: 'editorParseHighlight' },
+  { slug: 'occurrence-highlight', title: 'Occurrence highlight',
+    setting: 'editorOccurrenceHighlight' },
+  { slug: 'selection-matches', title: 'Selection matches',
     aliases: ['hlsearch', 'hls'],
-    read: 'readStoredEditorSelectionMatches', write: 'writeStoredEditorSelectionMatches' },
-  { slug: 'bracket-match', title: 'Bracket matching', kind: 'bool', aliases: ['showmatch', 'sm'],
-    read: 'readStoredEditorBracketMatch', write: 'writeStoredEditorBracketMatch' },
+    setting: 'editorSelectionMatches' },
+  { slug: 'bracket-match', title: 'Bracket matching', aliases: ['showmatch', 'sm'],
+    setting: 'editorBracketMatch' },
 
   // ── editing behaviour ─────────────────────────────────────────────────────
-  { slug: 'auto-close-brackets', title: 'Auto-close brackets', kind: 'bool', aliases: ['autoclose'],
-    read: 'readStoredEditorAutoCloseBrackets', write: 'writeStoredEditorAutoCloseBrackets' },
-  { slug: 'reindent-paste', title: 'Re-indent on paste', kind: 'bool',
-    read: 'readStoredEditorReindentPaste', write: 'writeStoredEditorReindentPaste' },
-  { slug: 'format-on-save', title: 'Format on save', kind: 'bool',
-    read: 'readStoredFormatOnSave', write: 'writeStoredFormatOnSave' },
-  { slug: 'trim-whitespace', title: 'Trim trailing whitespace on save', kind: 'bool',
-    read: 'readStoredTrimTrailingWs', write: 'writeStoredTrimTrailingWs' },
+  { slug: 'auto-close-brackets', title: 'Auto-close brackets', aliases: ['autoclose'],
+    setting: 'editorAutoCloseBrackets' },
+  { slug: 'reindent-paste', title: 'Re-indent on paste',
+    setting: 'editorReindentPaste' },
+  { slug: 'format-on-save', title: 'Format on save',
+    setting: 'formatOnSave' },
+  { slug: 'trim-whitespace', title: 'Trim trailing whitespace on save',
+    setting: 'trimTrailingWs' },
 
   // ── proof surface ─────────────────────────────────────────────────────────
-  { slug: 'hole-gutter', title: 'Hole gutter marks', kind: 'bool',
-    read: 'readStoredEditorHoleGutter', write: 'writeStoredEditorHoleGutter' },
-  { slug: 'hole-emphasis', title: 'Hole gutter emphasis', kind: 'enum',
-    values: ['subtle', 'normal', 'loud'],
+  { slug: 'hole-gutter', title: 'Hole gutter marks',
+    setting: 'editorHoleGutter' },
+  { slug: 'hole-emphasis', title: 'Hole gutter emphasis',
     labels: { subtle: 'Subtle', normal: 'Default', loud: 'Loud' },
-    read: 'readStoredEditorHoleEmphasis', write: 'writeStoredEditorHoleEmphasis' },
-  { slug: 'quiet-typing', title: 'Quiet while typing', kind: 'bool', aliases: ['quiet'],
-    read: 'readStoredQuietWhileTyping', write: 'writeStoredQuietWhileTyping' },
-  { slug: 'hover-sticky', title: 'Sticky hover', kind: 'bool',
-    read: 'readStoredHoverSticky', write: 'writeStoredHoverSticky' },
+    setting: 'editorHoleEmphasis' },
+  { slug: 'quiet-typing', title: 'Quiet while typing', aliases: ['quiet'],
+    setting: 'quietWhileTyping' },
+  { slug: 'hover-sticky', title: 'Sticky hover',
+    setting: 'hoverSticky' },
 ];
+
+/** The rows, with what they flip or cycle taken from the settings table. */
+export const SETTINGS = ROWS.map((r) => {
+  const row = settingRow(r.setting);
+  if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
+  return typeOf(row) === 'bool' ? { ...r, kind: 'bool' } : { ...r, kind: 'enum', values: row.values };
+});
 
 /** Only the first letter: `Auto-close brackets` must not become `auto-close`. */
 function lowerFirst(text) {
@@ -313,21 +320,17 @@ export function describeChange(spec, value) {
 }
 
 /**
- * Write one preference through `persist`. `requested === undefined` toggles a
- * boolean and cycles an enum, which is what a chord on `set.word-wrap` means.
- *
- * `persist` is a parameter rather than a global so this is testable without a
- * browser — the accessor names are the only thing that has to be right, and
- * `tests/test-command-settings.mjs` checks all of them against the real Persist.
+ * Write one preference through `settings` (the Settings object, passed in so
+ * this runs without a browser). `requested === undefined` toggles a boolean
+ * and cycles a choice, which is what a chord on `set.word-wrap` means.
  */
-export function applyValue(persist, spec, requested) {
-  if (!persist || !spec) return { ok: false, message: 'Settings are not ready yet.' };
-  if (typeof persist[spec.read] !== 'function' || typeof persist[spec.write] !== 'function') {
-    return { ok: false, message: `${spec.title} cannot be changed here.` };
+export function applyValue(settings, spec, requested) {
+  if (!settings || typeof settings.get !== 'function' || !spec) {
+    return { ok: false, message: 'Settings are not ready yet.' };
   }
-  const value = nextValue(spec, persist[spec.read](), requested);
+  const value = nextValue(spec, settings.get(spec.setting), requested);
   if (value === null) return { ok: false, message: `${spec.title}: no such value.` };
-  persist[spec.write](value);
+  if (!settings.set(spec.setting, value)) return { ok: false, message: `${spec.title} could not be saved.` };
   return { ok: true, applied: true, spec, value, message: describeChange(spec, value) };
 }
 
@@ -335,7 +338,7 @@ export function applyValue(persist, spec, requested) {
  * A whole `:set` line, parse through write. Returns what to say either way: an
  * option that does not exist should answer, not fail silently.
  */
-export function runSetOn(persist, raw) {
+export function runSetOn(settings, raw) {
   const res = parseSet(raw);
   if (res.error === 'usage') {
     return { ok: false, message: 'Usage: :set nu, :set nowrap, :set ts=4' };
@@ -356,5 +359,5 @@ export function runSetOn(persist, raw) {
       message: `${res.spec.title} is not on or off. Try :set ${res.name}=${res.spec.values[0]}.`,
     };
   }
-  return applyValue(persist, res.spec, res.requested);
+  return applyValue(settings, res.spec, res.requested);
 }

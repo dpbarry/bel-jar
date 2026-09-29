@@ -116,8 +116,12 @@ function shellActivePath() {
     try { return ed.getActivePath() || ''; } catch (_) { return ''; }
   }
   const g = typeof window !== 'undefined' ? window : globalThis;
-  if (g.Persist && typeof g.Persist.getActiveFileName === 'function') {
-    try { return g.Persist.getActiveFileName() || ''; } catch (_) { return ''; }
+  const P = g.Persist;
+  if (P && typeof P.getFileById === 'function' && typeof P.getActiveFileId === 'function') {
+    try {
+      const file = P.getFileById(P.getActiveFileId());
+      return file ? file.name : '';
+    } catch (_) { return ''; }
   }
   return '';
 }

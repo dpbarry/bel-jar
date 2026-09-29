@@ -362,11 +362,7 @@ function el(tag, cls, text) {
 }
 
 function activeStyle() {
-  try {
-    const P = global.Persist;
-    if (P && typeof P.readStoredKeymapStyle === 'function') return P.readStoredKeymapStyle();
-  } catch (_) { /* the default is the honest fallback */ }
-  return 'default';
+  return Settings.get('keymapStyle');
 }
 
 function describeAll() {

@@ -1792,8 +1792,12 @@ button.harpoon-lab-banner:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .harpoon-hole-goal-track,
+  .harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask {
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) and (hover: hover) and (pointer: fine) {
   .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-track,
-  .harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask,
   .harpoon-panel-hole:hover .harpoon-hole-goal.is-clipped .harpoon-hole-goal-mask {
     transition: none;
   }

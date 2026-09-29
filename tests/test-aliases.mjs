@@ -7,6 +7,7 @@ import {
   normalizeAliasPairs,
   defaultAliasPairs,
 } from '../js/editor-src/aliases.mjs';
+import { withSettings } from './_settings.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -36,32 +37,28 @@ const chunk = doc.slice(win.from, win.to);
 expect(chunk === '\\land', 'paste-before scan window includes suffix');
 expect(expandBelAliases(chunk) === '∧', 'paste-before completes alias');
 
-const prev = globalThis.Persist;
-globalThis.Persist = { readStoredAliasActivation() { return 'strict'; } };
-expect(maybeExpandBelAliases('\\lor') === '\\lor', 'strict leaves text');
-globalThis.Persist = { readStoredAliasActivation() { return 'greedy'; } };
-expect(maybeExpandBelAliases('\\lor') === '∨', 'greedy expands text');
-globalThis.Persist = undefined;
-expect(readAliasActivationMode() === 'greedy', 'default greedy');
+withSettings({ aliasActivation: 'strict' }, () => {
+  expect(maybeExpandBelAliases('\\lor') === '\\lor', 'strict leaves text');
+});
+withSettings({ aliasActivation: 'greedy' }, () => {
+  expect(maybeExpandBelAliases('\\lor') === '∨', 'greedy expands text');
+});
+expect(readAliasActivationMode() === 'greedy', 'no Settings on the page: the table default, greedy');
 
 invalidateAliasPairs();
 expect(defaultAliasPairs().length > 10, 'defaults exist');
 expect(normalizeAliasPairs([['zz', '1'], ['z', '2'], ['zz', 'dup']])[0][0] === 'zz', 'normalize longest first + dedupe');
 
-let stored = [['hello', 'world'], ['->', '→']];
-globalThis.Persist = {
-  readStoredAliasActivation() { return 'strict'; },
-  readStoredAliasPairs() { return stored; },
-};
-invalidateAliasPairs();
-expect(expandBelAliases('hello -> x') === 'world → x', 'custom pairs expand');
-expect(getAliasPairs().some(([f]) => f === 'hello'), 'custom pair listed');
-expect(!getAliasPairs().some(([f]) => f === '\\lambda'), 'defaults replaced when custom stored');
+withSettings({ aliasActivation: 'strict', aliasPairs: [['hello', 'world'], ['->', '→']] }, (S) => {
+  expect(expandBelAliases('hello -> x') === 'world → x', 'custom pairs expand');
+  expect(getAliasPairs().some(([f]) => f === 'hello'), 'custom pair listed');
+  expect(!getAliasPairs().some(([f]) => f === '\\lambda'), 'defaults replaced when custom stored');
 
-stored = null;
-invalidateAliasPairs();
-expect(expandBelAliases('\\lambda') === 'λ', 'null storage restores defaults');
-
-globalThis.Persist = prev;
+  // No invalidation call: the cache follows Settings' revision, whatever changed it.
+  S.set('aliasPairs', null);
+  expect(expandBelAliases('\\lambda') === 'λ', 'clearing the custom pairs restores the defaults at once');
+  S.importBundle({ kind: 'beljar-settings', values: { aliasPairs: [['yo', 'hey']] } });
+  expect(expandBelAliases('yo') === 'hey', 'and an import reaches the typing path too (it once did not)');
+});
 
 console.log('OK jar-aliases');

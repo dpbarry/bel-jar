@@ -1,175 +1,290 @@
-// Projects layer: files live in folders live in a project, every project saved
-// in main storage, only the active one is hot. Verifies migration (existing
-// flat-keyed data → default project), siloing (a new project's files/state are
-// isolated), active-project switching, and delete. vm-loaded with a fake
-// localStorage like test-multifile-switch / test-project-source.
-import vm from 'node:vm';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
-import { runPersistStackInContext } from './persist-stack.mjs';
+// The work model (docs/PERSIST.md §4.2): projects and files on opaque ids, a
+// clean slate over any older format, per-project isolation, a page pinned to
+// its project, whole-project delete, and caches that follow another tab.
+import { makeBrowserStorage, openTab } from './_persist-env.mjs';
 
+let n = 0;
 function expect(cond, msg) {
+  n += 1;
   if (cond) return;
   console.error('FAIL:', msg);
   process.exit(1);
 }
 
-const here = dirname(fileURLToPath(import.meta.url));
+const keysOf = (storage) => [...storage.map.keys()].sort();
 
-// A fresh persist instance over a given localStorage seed.
-function loadPersist(seed) {
-  const store = new Map(Object.entries(seed || {}));
-  const localStorage = {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, String(v)),
-    removeItem: (k) => store.delete(k),
-  };
-  const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage });
-  ctx.globalThis = ctx;
-  runPersistStackInContext(ctx);
-  return { P: ctx.Persist, store };
-}
-
-// ── migration: existing flat-keyed data becomes the default project ──────────
+// ── a fresh browser: one project, one empty main.bel, open and active ───────
 {
-  const { P, store } = loadPersist({
-    'beljar-project-files': JSON.stringify([{ id: 'workspace://main.bel', name: 'main.bel' }]),
-    'beljar-project-name': 'My Old Work',
-    'beljar-state-v2': JSON.stringify({ v: 2, meta: { documentId: 'workspace://main.bel' }, editor: { text: 'LF a : type;', local: {} }, semantic: null }),
-  });
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
   const projects = P.listProjects();
-  expect(projects.length === 1, 'migration creates exactly one project');
-  expect(projects[0].id === P.DEFAULT_PROJECT_ID, 'it is the default project');
-  expect(P.getProjectName() === 'My Old Work', 'default project inherits the legacy name');
-  expect(P.getActiveProjectId() === P.DEFAULT_PROJECT_ID, 'default project is active');
-  expect(P.listFiles().length === 1 && P.listFiles()[0].name === 'main.bel', 'legacy files preserved');
-  expect(P.getFileText('workspace://main.bel') === 'LF a : type;', 'legacy file text preserved');
-  // Default project keeps writing the historical flat key (no new namespaced key).
-  expect(store.has('beljar-project-files'), 'default project still uses the flat files key');
+  expect(projects.length === 1 && projects[0].name === 'Untitled Project', 'a fresh browser has one untitled project');
+  expect(/^p_[0-9a-hjkmnp-tv-z]{26}$/.test(projects[0].id), `project ids are 128-bit, time-ordered and opaque (${projects[0].id})`);
+  const files = P.listFiles();
+  expect(files.length === 1 && files[0].name === 'main.bel', 'with one main.bel');
+  expect(/^f_[0-9a-hjkmnp-tv-z]{26}$/.test(files[0].id), `file ids too (${files[0].id})`);
+  const made = [P.createFile('a.bel'), P.createFile('b.bel'), P.createFile('c.bel')];
+  expect(made.slice().sort().join() === made.join(), 'ids made one after another sort in the order they were made');
+  expect(P.getActiveFileId() === files[0].id && P.getOpenFileIds().join() === files[0].id, 'open and active');
+  expect(P.getFileText(files[0].id) === '', 'and empty');
 }
 
-// ── createProject silos a new container; default untouched ───────────────────
+// ── any older format is wiped, not migrated ─────────────────────────────────
 {
-  const { P, store } = loadPersist({});
-  P.ensureProject(); // seed default with a main.bel
-  P.setFileText('workspace://main.bel', 'DEFAULT PROJECT BODY');
-  const defaultFiles = P.listFiles().map((f) => f.name);
+  const storage = makeBrowserStorage({
+    'beljar/schema': '3',
+    'beljar-editor-split': '0.3',
+    'beljar-fold-local-v1': '{}',
+    'beljar/device': JSON.stringify({ at: 1, data: { activeProject: 'p_old' } }),
+    'beljar-project-files': JSON.stringify([{ id: 'workspace://main.bel', name: 'main.bel' }]),
+    'beljar-state-v2': JSON.stringify({ v: 2, editor: { text: 'OLD' } }),
+    'beljar-proj:p-x:files': '[]',
+    'beljar/projects': JSON.stringify({ at: 1, data: [{ id: 'p_old', name: 'Old' }] }),
+    'unrelated-site-key': 'kept',
+  });
+  const { P } = openTab(storage);
+  expect(P.listProjects().length === 1 && P.listProjects()[0].name === 'Untitled Project', 'an older schema starts clean');
+  expect(!keysOf(storage).some((k) => /^beljar[-:]/.test(k)), `no old-format key survives (${keysOf(storage).join(', ')})`);
+  expect(!storage.map.has('beljar/projects') && !P.listProjects().some((p) => p.id === 'p_old'),
+    'the previous format (schema 3, one shared project list) is gone too');
+  expect(storage.getItem('unrelated-site-key') === 'kept', 'keys that are not BelJar\'s are left alone');
+}
 
+// ── two paths never meet in storage; a rename never moves text ──────────────
+{
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const a = P.createFile('proofs/nat.bel');
+  const b = P.createFile('proofs_nat.bel');
+  const c = P.createFile('proofs nat.bel');
+  P.setFileText(a, 'A');
+  P.setFileText(b, 'B');
+  P.setFileText(c, 'C');
+  expect(P.getFileText(a) === 'A' && P.getFileText(b) === 'B' && P.getFileText(c) === 'C',
+    'files whose paths slug alike keep their own text (the old storage-key collision)');
+  const fileKeys = keysOf(storage).filter((k) => k.includes('/f/'));
+  expect(fileKeys.every((k) => /\/f\/f_[0-9a-hjkmnp-tv-z]{26}$/.test(k)), `no path appears in a key (${fileKeys.join(', ')})`);
+  const before = keysOf(storage).join();
+  P.renameFile(a, 'lemmas/nat.bel');
+  expect(P.getFileText(a) === 'A' && P.getFileById(a).name === 'lemmas/nat.bel', 'a rename keeps id and text');
+  expect(keysOf(storage).join() === before, 'and moves no record');
+  const fresh = openTab(storage).P;
+  expect(fresh.getFileText(a) === 'A' && fresh.getFileText(b) === 'B', 'all of it survives a reload');
+}
+
+// ── projects are isolated; creating one does not switch to it ───────────────
+{
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const home = P.getActiveProjectId();
+  const main = P.listFiles()[0].id;
+  P.setFileText(main, 'HOME BODY');
   const pid = P.createProject('Second');
-  expect(pid !== P.DEFAULT_PROJECT_ID, 'new project gets its own id');
-  expect(P.listProjects().length === 2, 'two projects now');
-  // createProject must NOT change the active project.
-  expect(P.getActiveProjectId() === P.DEFAULT_PROJECT_ID, 'createProject does not switch active');
-  expect(JSON.stringify(P.listFiles().map((f) => f.name)) === JSON.stringify(defaultFiles),
-    'default project files unchanged after creating another');
+  expect(pid !== home && P.listProjects().length === 2, 'a second project with its own id');
+  expect(P.getActiveProjectId() === home, 'createProject does not switch this page');
+  expect(P.listFiles().length === 1 && P.getFileText(main) === 'HOME BODY', 'this project is untouched');
 
-  // The new silo lives under namespaced keys, separate from the flat ones.
-  const namespaced = [...store.keys()].filter((k) => k.startsWith('beljar-proj:'));
-  expect(namespaced.length > 0, 'new project writes namespaced keys');
-
-  // Switch active → see the new project's seeded file, isolated text.
   P.setActiveProjectId(pid);
-  expect(P.listFiles().length === 1 && P.listFiles()[0].name === 'main.bel', 'new project seeded with main.bel');
-  expect(P.getFileText('workspace://main.bel') === '', 'new project main.bel is blank (isolated state)');
-  P.setFileText('workspace://main.bel', 'SECOND PROJECT BODY');
-
-  // Back to default → its body is intact, not the second project's.
-  P.setActiveProjectId(P.DEFAULT_PROJECT_ID);
-  expect(P.getFileText('workspace://main.bel') === 'DEFAULT PROJECT BODY',
-    'per-project file state is fully isolated');
+  const second = P.listFiles();
+  expect(second.length === 1 && second[0].name === 'main.bel' && second[0].id !== main, 'the new project has its own main.bel');
+  expect(P.getFileText(second[0].id) === '', 'blank');
+  P.setFileText(second[0].id, 'SECOND BODY');
+  P.setActiveProjectId(home);
+  expect(P.getFileText(main) === 'HOME BODY', 'switching back finds this project\'s text');
+  expect(openTab(storage).P.getActiveProjectId() === home, 'the next load opens the project last made active');
 }
 
-// ── newBlankProject activates + reload-ready ─────────────────────────────────
+// ── ⛔ a page is pinned to its project: another tab switching cannot redirect it ──
 {
-  const { P } = loadPersist({});
-  P.ensureProject();
+  const storage = makeBrowserStorage();
+  const tabA = openTab(storage).P;
+  const home = tabA.getActiveProjectId();
+  const homeMain = tabA.listFiles()[0].id;
+  const tabB = openTab(storage).P;
+  const other = tabB.newBlankProject('Elsewhere');
+  expect(tabB.getActiveProjectId() === other, 'tab B switched to its new project');
+  expect(tabA.getActiveProjectId() === home, 'tab A is still on its own project');
+  expect(tabA.listFiles().map((f) => f.id).join() === homeMain, 'and still sees its own files');
+  const doc = tabA.createPersist({ documentId: homeMain, debounceMs: 1 });
+  doc.scheduleEditorPersist('WRITTEN IN A');
+  doc.flushCheckpoint();
+  const again = openTab(storage).P;
+  again.setActiveProjectId(home);
+  expect(again.getFileText(homeMain) === 'WRITTEN IN A', 'tab A\'s save landed in tab A\'s project');
+  again.setActiveProjectId(other);
+  expect(again.listFiles().every((f) => again.getFileText(f.id) === ''), 'and not in the project tab B opened');
+}
+
+// ── another tab's write reaches this tab's caches ───────────────────────────
+{
+  const storage = makeBrowserStorage();
+  const tabA = openTab(storage).P;
+  const tabB = openTab(storage).P;
+  const id = tabA.listFiles()[0].id;
+  expect(tabA.getFileText(id) === '' && tabA.listFiles().length === 1, 'tab A has read (and cached) the file and the tree');
+  tabB.setFileText(id, 'FROM B');
+  const made = tabB.createFile('from-b.bel');
+  expect(tabA.getFileText(id) === 'FROM B', 'tab A reads tab B\'s text, not its cached copy');
+  expect(tabA.getFileById(made) && tabA.listFiles().length === 2, 'and tab B\'s new file');
+}
+
+// ── newBlankProject / createProjectWithFiles ────────────────────────────────
+{
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const home = P.getActiveProjectId();
+  const homeMain = P.listFiles()[0].id;
+  P.setFileText(homeMain, 'ORIGINAL');
   const pid = P.newBlankProject('Blank');
-  expect(P.getActiveProjectId() === pid, 'newBlankProject makes the new project active');
-  expect(P.listFiles().length === 1, 'blank project has one file');
-  expect(P.getProjectName() === 'Blank', 'blank project carries its name');
-}
+  expect(P.getActiveProjectId() === pid && P.getProjectName() === 'Blank' && P.listFiles().length === 1,
+    'newBlankProject makes a named one-file project and switches to it');
 
-// ── createProjectWithFiles imports into a fresh silo ─────────────────────────
-{
-  const { P } = loadPersist({});
-  P.ensureProject();
-  P.setFileText('workspace://main.bel', 'ORIGINAL');
-  const entries = [
+  const res = P.createProjectWithFiles('Imported', [
     { name: 'lam.bel', text: 'LF term : type;' },
     { name: 'sub/eq.bel', text: 'rec f : x = ?;' },
-  ];
-  const res = P.createProjectWithFiles('Imported', entries, { projectName: 'Imported' });
-  expect(P.getActiveProjectId() === res.projectId, 'imported project becomes active');
-  expect(P.listFiles().length === 2, 'imported files present (seeded main.bel replaced)');
-  const names = P.listFiles().map((f) => f.name).sort();
-  expect(JSON.stringify(names) === JSON.stringify(['lam.bel', 'sub/eq.bel']), 'exactly the imported files');
-  // Original project still intact.
-  P.setActiveProjectId(P.DEFAULT_PROJECT_ID);
-  expect(P.getFileText('workspace://main.bel') === 'ORIGINAL', 'original project untouched by import');
+  ], { projectName: 'Imported' });
+  expect(P.getActiveProjectId() === res.projectId, 'the imported project is active');
+  expect(P.listFiles().map((f) => f.name).join() === 'lam.bel,sub/eq.bel', 'with exactly the imported files, in order');
+  expect(res.activeId === P.listFiles()[0].id && P.getOpenFileIds().join() === res.activeId, 'the first open and active');
+  expect(P.getFileText(res.activeId) === 'LF term : type;', 'with their text');
+  P.setActiveProjectId(home);
+  expect(P.getFileText(homeMain) === 'ORIGINAL', 'the original project is untouched');
 }
 
-// ── deleteProject removes its keys; refuses the last ─────────────────────────
+// ── replaceProject leaves no orphaned records ───────────────────────────────
 {
-  const { P, store } = loadPersist({});
-  P.ensureProject();
-  const pid = P.createProject('Doomed');
-  P.setActiveProjectId(pid);
-  P.setFileText('workspace://main.bel', 'doomed body');
-  const before = [...store.keys()].filter((k) => k.startsWith('beljar-proj:')).length;
-  expect(before > 0, 'doomed project has namespaced keys');
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const old = P.createFile('old.bel');
+  P.setFileText(old, 'old');
+  P.replaceProject([{ name: 'new.bel', text: 'new' }]);
+  const records = keysOf(storage).filter((k) => /\/(f|cache)\//.test(k));
+  const live = P.listFiles().map((f) => f.id);
+  expect(records.length === 1 && records[0].endsWith('/f/' + live[0]), `only the new file has records (${records.join(', ')})`);
+}
 
-  P.setActiveProjectId(P.DEFAULT_PROJECT_ID);
+// ── deleteProject removes every record under it; refuses the last ───────────
+{
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const home = P.getActiveProjectId();
+  const pid = P.newBlankProject('Doomed');
+  P.setFileText(P.listFiles()[0].id, 'doomed body');
+  expect(keysOf(storage).some((k) => k.startsWith('beljar/p/' + pid + '/')), 'the doomed project has records');
   const next = P.deleteProject(pid);
-  expect(next === P.DEFAULT_PROJECT_ID, 'delete returns the fallback project id');
-  expect(P.listProjects().length === 1, 'project removed from registry');
-  const after = [...store.keys()].filter((k) => k.startsWith('beljar-proj:' + pid.replace(/[^a-zA-Z0-9._-]/g, '_'))).length;
-  expect(after === 0, 'all of the deleted project\'s keys are gone');
-
-  expect(P.deleteProject(P.DEFAULT_PROJECT_ID) === null, 'refuses to delete the last project');
-  expect(P.listProjects().length === 1, 'last project survives');
+  expect(next === home, 'delete returns the project to fall back to');
+  expect(P.listProjects().map((p) => p.id).join() === home, 'the registry forgets it');
+  expect(!keysOf(storage).some((k) => k.startsWith('beljar/p/' + pid + '/')), 'and every record under it is gone');
+  expect(P.getActiveProjectId() === home && openTab(storage).P.getActiveProjectId() === home,
+    'deleting the active project falls back, now and on the next load');
+  expect(P.deleteProject(home) === null && P.listProjects().length === 1, 'the last project cannot be deleted');
 }
 
-// ── renameProject ────────────────────────────────────────────────────────────
+// ── ⛔ no record is shared by every project ─────────────────────────────────
 {
-  const { P } = loadPersist({});
-  P.ensureProject();
+  const storage = makeBrowserStorage();
+  const A = openTab(storage).P;
+  const B = openTab(storage).P;
+  const a = A.createProject('From A');
+  const b = B.createProject('From B');
+  const names = openTab(storage).P.listProjects().map((p) => p.name).sort().join();
+  expect(names === 'From A,From B', `two tabs creating projects at once keep both (${names})`);
+  expect([...storage.map.keys()].some((k) => k === 'beljar/p/' + a + '/meta')
+    && [...storage.map.keys()].some((k) => k === 'beljar/p/' + b + '/meta')
+    && !storage.map.has('beljar/projects'), 'each project is its own meta record; there is no shared list');
+  const meta = JSON.parse(storage.getItem('beljar/p/' + a + '/meta')).data;
+  expect(meta.owner === null && meta.name === 'From A' && typeof meta.createdAt === 'number',
+    'a new project belongs to this device (owner null) until an account claims it');
+  expect(A.listProjects().find((p) => p.id === a).owner === null, 'and the owner is on the listed project');
+}
+
+// ── a project the disk refuses is not half-made ─────────────────────────────
+// Room for the new tree record but not the session after it: the partial
+// create the cleanup exists for (sized from a real tree record, not guessed).
+{
+  const scratch = makeBrowserStorage();
+  const sp = openTab(scratch).P.createProject('Too big');
+  const treeKey = 'beljar/p/' + sp + '/tree';
+  const treeSize = treeKey.length + scratch.getItem(treeKey).length;
+
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const before = P.listProjects().length;
+  const keysBefore = [...storage.map.keys()].sort().join();
+  storage.maxChars = [...storage.map].reduce((a, [k, v]) => a + k.length + v.length, 0) + treeSize + 20;
+  expect(P.createProject('Too big') === null, 'a create the disk refuses part-way answers null');
+  storage.maxChars = null;
+  expect(P.listProjects().length === before, 'nothing is listed');
+  expect([...storage.map.keys()].sort().join() === keysBefore, 'and no record of it is left behind');
+}
+
+// ── renameProject ───────────────────────────────────────────────────────────
+{
+  const { P } = openTab(makeBrowserStorage());
   const pid = P.createProject('Old Name');
   expect(P.renameProject(pid, 'New Name') === true, 'rename succeeds');
-  const found = P.listProjects().find((p) => p.id === pid);
-  expect(found && found.name === 'New Name', 'registry reflects the new name');
-  expect(P.renameProject('nope', 'x') === false, 'rename of unknown id fails');
+  expect(P.listProjects().find((p) => p.id === pid).name === 'New Name', 'the registry has the new name');
+  expect(P.renameProject(pid, '   ') === true && P.listProjects().find((p) => p.id === pid).name === 'Untitled Project',
+    'a blank name falls back to Untitled Project');
+  expect(P.renameProject('p_nope', 'x') === false, 'an unknown id fails');
 }
 
-// ── empty project registry ────────────────────────────────────────────────────
+// ── a project can be emptied, and filled again ──────────────────────────────
 {
-  const { P } = loadPersist({});
-  P.ensureProject();
-  P.deleteFile('workspace://main.bel');
-  expect(P.listFiles().length === 0, 'all files can be deleted');
-  expect(P.getActiveFileId() === null, 'no active file when empty');
-  expect(P.getOpenFileIds().length === 0, 'no open tabs when empty');
-  expect(P.listFiles().length === 0, 'listFiles does not re-seed main.bel');
+  const { P } = openTab(makeBrowserStorage());
+  P.deleteFile(P.listFiles()[0].id);
+  expect(P.listFiles().length === 0 && P.getActiveFileId() === null && P.getOpenFileIds().length === 0,
+    'all files can be deleted: no active file, no tabs');
+  expect(P.listFiles().length === 0, 'and nothing re-seeds main.bel');
   const id = P.createFile('fresh.bel');
-  expect(P.listFiles().length === 1 && P.listFiles()[0].name === 'fresh.bel',
-    'createFile works on an empty project');
-  expect(P.getFileText(id) === '', 'new file starts blank');
+  expect(P.listFiles().map((f) => f.name).join() === 'fresh.bel' && P.getFileText(id) === '', 'createFile works on an empty project');
 }
 
-// ── folder delete must not leave dangling empty-folder markers ────────────────
+// ── deleting a file drops its text, view and cache; restore brings it back ──
 {
-  const { P } = loadPersist({});
-  P.ensureProject();
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const id = P.createFile('gone.bel');
+  const doc = P.createPersist({ documentId: id, debounceMs: 1 });
+  let editorText = 'LF gone : type;';
+  doc.setCheckpointProviders({
+    getText: () => editorText,
+    getViewport: () => ({ selection: { anchor: 3, head: 3 } }),
+    getSemantic: () => ({ types: { v: 1, decls: [{ name: 'gone' }], metavars: [], reconstructed: [] } }),
+  });
+  doc.flushCheckpoint();
+  expect(keysOf(storage).some((k) => k.endsWith('/cache/' + id)), 'the file has a semantic cache');
+  P.deleteFile(id);
+  expect(!keysOf(storage).some((k) => k.endsWith('/' + id)), 'deleting it drops its text and cache');
+  const session = JSON.parse(storage.getItem('beljar/p/' + P.getActiveProjectId() + '/session')).data;
+  expect(!(id in session.views), 'and its view');
+  editorText = 'LF zombie : type;'; // the editor, still open on it, keeps typing
+  doc.flushCheckpoint();
+  expect(!keysOf(storage).some((k) => k.endsWith('/' + id)), '⛔ a save after the delete does not resurrect it');
+  expect(P.restoreDeletedFile(id, 'gone.bel', 'LF back : type;') === true, 'restore puts it back');
+  expect(P.getFileById(id).name === 'gone.bel' && P.getFileText(id) === 'LF back : type;', 'same id, restored text');
+  expect(P.restoreDeletedFile(id, 'gone.bel', 'x') === false, 'restoring a file that exists is refused');
+}
+
+// ── folder delete must not leave dangling empty-folder markers ──────────────
+{
+  const { P } = openTab(makeBrowserStorage());
   const f1 = P.createFile('church-rosser/a.bel');
   const f2 = P.createFile('church-rosser/b.bel');
-  P.setFileText(f1, 'x');
-  P.setFileText(f2, 'y');
   P.deleteFile(f1);
   P.deleteFile(f2);
-  expect(P.listEmptyFolders().indexOf('church-rosser') !== -1,
-    'deleting files leaves parent as empty-folder marker');
+  expect(P.listEmptyFolders().indexOf('church-rosser') !== -1, 'deleting the files leaves the folder as an empty-folder marker');
   P.pruneEmptyFoldersUnder('church-rosser');
-  expect(P.listEmptyFolders().indexOf('church-rosser') === -1,
-    'pruneEmptyFoldersUnder removes the folder marker');
+  expect(P.listEmptyFolders().indexOf('church-rosser') === -1, 'pruneEmptyFoldersUnder removes the marker');
 }
 
-console.log('OK projects (migration, siloing isolation, active switch, blank/import create, delete, rename, empty registry, folder prune)');
+// ── a returned list is a copy ───────────────────────────────────────────────
+{
+  const { P } = openTab(makeBrowserStorage());
+  const files = P.listFiles();
+  files[0].name = 'mutated.bel';
+  files.push({ id: 'f_fake0000', name: 'fake.bel' });
+  expect(P.listFiles().length === 1 && P.listFiles()[0].name === 'main.bel', 'mutating a returned list changes nothing');
+}
+
+console.log(`OK projects (${n} checks: opaque ids, clean slate, no collision, isolation, pinned page, cross-tab caches, import, delete, restore, folders)`);

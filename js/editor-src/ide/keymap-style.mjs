@@ -41,6 +41,7 @@ import { vimCaretMotion } from './modal/vim-caret.mjs';
 import {
   ensureEmacsKeys, ensureEmacsUndoBridge, emacsChainGuard, emacsChromeTheme,
 } from './modal/emacs-runtime.mjs';
+import { readSetting } from '../../persist/settings-schema.mjs';
 
 // ── the public surface, unchanged ────────────────────────────────────────────
 export {
@@ -68,10 +69,8 @@ export { whichKeyHint } from './modal/which-key-hint.mjs';
  * keymap disagreed, silently, and nothing on screen said so.
  */
 export function applyModalPrefs() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  const p = g.Persist;
   const style = normalizeKeymapStyle(
-    p && typeof p.readStoredKeymapStyle === 'function' ? p.readStoredKeymapStyle() : 'default'
+    readSetting('keymapStyle')
   );
   if (style !== 'vim') return false;
   installVimBindings(vimOptions());

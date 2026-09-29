@@ -14,6 +14,8 @@ function freshCtx() {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: (k) => storage.delete(k),
+    get length() { return storage.size; },
+    key: (i) => [...storage.keys()][i] ?? null,
   };
   const ctx = vm.createContext({
     globalThis: {},
@@ -21,7 +23,7 @@ function freshCtx() {
     setTimeout,
     TextEncoder,
     localStorage: fakeLocalStorage,
-    sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {}, length: 0, key: () => null },
   });
   ctx.globalThis = ctx;
   runPersistStackInContext(ctx);
@@ -33,8 +35,20 @@ const ctx = freshCtx();
 const P = ctx.Persist;
 const W = ctx.WorkspaceState;
 
-assert.equal(P.workspaceKeyFor('default'), 'beljar-workspace-v1');
-assert.equal(P.workspaceKeyFor('my-proj'), 'beljar-proj:my-proj:workspace-v1');
+// The workspace and side panel belong to this project's session: another
+// project starts clean, and coming back finds this one's.
+{
+  const home = P.getActiveProjectId();
+  P.writeWorkspace({ v: 1, activeSidePanel: 'inspector', floating: [] });
+  const other = P.createProject('Other');
+  assert.equal(P.readWorkspace(other), null, 'another project has its own (empty) workspace');
+  assert.equal(P.readSidePanel(other), null, 'and its own side panel');
+  assert.equal(P.readWorkspace(home).activeSidePanel, 'inspector', 'this project keeps its workspace');
+  assert.equal(P.readSidePanel(), 'inspector', 'writing the workspace records its side panel');
+  const key = 'beljar/p/' + home + '/session';
+  assert.equal(JSON.parse(ctx.localStorage.getItem(key)).data.panel, 'inspector', 'in the session record early boot reads');
+  P.resetWorkspace();
+}
 
 const norm = W.normalizeWorkspace({
   v: 1,
@@ -71,10 +85,10 @@ const capped = W.normalizeWorkspace({
 }, 'default');
 assert.equal(capped.floating.length, W.MAX_FLOATING);
 
-P.writeStoredActiveSidePanel('library');
-assert.equal(P.readStoredActiveSidePanel(), 'library');
-assert.equal(P.readStoredLibraryOpen(), true);
-assert.equal(P.readStoredInspectorOpen(), false);
+P.writeSidePanel('library');
+assert.equal(P.readSidePanel(), 'library');
+P.writeSidePanel('not-a-panel');
+assert.equal(P.readSidePanel(), null, 'an unknown panel is stored as none');
 
 const va = P.normalizeViewportAnchor({ kind: 'decl', declIndex: 2, sigOffset: 15 });
 assert.deepEqual(va, { kind: 'decl', declIndex: 2, sigOffset: 15 });
@@ -90,12 +104,13 @@ const floats = W.filterFloatingForFile(
 assert.equal(floats.length, 1);
 assert.equal(floats[0].id, 'a');
 
-P.writeStoredWorkspace({ v: 1, projectId: 'default', activeSidePanel: 'harpoon', floating: [] });
-const raw = P.readStoredWorkspace();
+P.writeWorkspace({ v: 1, projectId: 'default', activeSidePanel: 'harpoon', floating: [] });
+const raw = P.readWorkspace();
 assert.equal(raw.activeSidePanel, 'harpoon');
 
-P.resetStoredWorkspace();
-assert.equal(P.readStoredWorkspace(), null);
+P.resetWorkspace();
+assert.equal(P.readWorkspace(), null);
+assert.equal(P.readSidePanel(), null, 'resetting the workspace clears the side panel too');
 
 const merged = W.mergeFloatingSnapshots(
   [
@@ -156,7 +171,7 @@ const liveHarpoonKept = W.mergeFloatingSnapshots(
 assert.equal(liveHarpoonKept.length, 1);
 assert.equal(liveHarpoonKept[0].id, 'harp');
 
-P.writeStoredWorkspace({ v: 1, projectId: 'default', activeSidePanel: null, floating: [] });
-assert.equal(P.readStoredActiveSidePanel(), null);
+P.writeWorkspace({ v: 1, projectId: 'default', activeSidePanel: null, floating: [] });
+assert.equal(P.readSidePanel(), null);
 
 console.log('OK workspace state');

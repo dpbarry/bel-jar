@@ -45,6 +45,7 @@ import { normalizeKeymapStyle } from './modal/style-policy.mjs';
 import { handleVimCaretKey } from './modal/vim-caret.mjs';
 import { createMacroStore, registerName, registerLabel, KEY_CAP } from './macro-store.mjs';
 import { macroStopLabel } from './modal/macro-keys.mjs';
+import { readSetting } from '../../persist/settings-schema.mjs';
 
 /** A replay that goes this deep is recursing; stop rather than hang the tab. */
 const MAX_DEPTH = 32;
@@ -98,9 +99,8 @@ function stopKey() {
 }
 
 function styleNow() {
-  const p = globalRef().Persist;
   try {
-    return normalizeKeymapStyle(p && p.readStoredKeymapStyle ? p.readStoredKeymapStyle() : '');
+    return normalizeKeymapStyle(readSetting('keymapStyle'));
   } catch (_) {
     return 'default';
   }

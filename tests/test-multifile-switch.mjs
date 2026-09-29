@@ -1,27 +1,16 @@
-// Multi-file switch correctness: switching documents must (1) flush the old
-// file's checkpoint under the OLD key while its providers are still wired,
-// (2) drop the providers so a save scheduled in the switch gap cannot write
-// old-engine data under the NEW key, and (3) load the new file's own state.
-// Also pins that a fresh engine mints symbol ids under its own documentId.
-import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+// Multi-file switch correctness: switching documents must (1) save the old
+// file's records while its providers are still wired, (2) drop the providers
+// so a save scheduled in the switch gap cannot write old-engine data into the
+// NEW file's records, and (3) load the new file's own state. Also pins that a
+// fresh engine mints symbol ids under its own documentId.
 import { Text } from '@codemirror/state';
 import { parser } from '../js/editor-src/beluga-parser.js';
 import { createSemanticEngine } from '../js/editor-src/semantic/semantic-engine.mjs';
 import { createSemanticScheduler } from '../js/editor-src/semantic/semantic-scheduler.mjs';
-import { runPersistStackInContext } from './persist-stack.mjs';
+import { makeBrowserStorage, openTab } from './_persist-env.mjs';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const ctx = vm.createContext({
-  globalThis: {},
-  clearTimeout,
-  setTimeout,
-  TextEncoder,
-});
-ctx.globalThis = ctx;
-const Persist = runPersistStackInContext(ctx);
+const storage = makeBrowserStorage();
+const Persist = openTab(storage).P;
 
 function expect(cond, msg) {
   if (cond) return;
@@ -30,33 +19,25 @@ function expect(cond, msg) {
 }
 
 const fp = Persist.documentFingerprint;
-const TEXT_A = `LF o : type =\n  | imp : o → o → o\n;\n`;
-const TEXT_B = `LF tm : type =\n  | lam : (tm → tm) → tm\n;\n`;
-const FILE_A = Persist.DEFAULT_DOCUMENT_ID; // workspace://main.bel
-const FILE_B = 'workspace://second.bel';
-
-function keyFor(id, backend) {
-  // stateKeyFor is private; recover the key by writing a sentinel state and
-  // finding which backend key holds it.
-  const probe = Persist.createPersist({ backend, documentId: id });
-  probe.scheduleEditorPersist('__probe__' + id);
-  probe.flushCheckpoint();
-  const dump = backend._dump();
-  for (const k of Object.keys(dump)) {
-    const v = JSON.parse(dump[k]);
-    if (v && v.editor && v.editor.text === '__probe__' + id) return k;
-  }
-  return null;
-}
+const TEXT_A = `LF o : type =
+  | imp : o → o → o
+;
+`;
+const TEXT_B = `LF tm : type =
+  | lam : (tm → tm) → tm
+;
+`;
+const FILE_A = Persist.listFiles()[0].id;
+const FILE_B = Persist.createFile('second.bel');
+const PID = Persist.getActiveProjectId();
+const record = (kind, id) => {
+  const raw = storage.getItem(`beljar/p/${PID}/${kind}/${id}`);
+  return raw ? JSON.parse(raw).data : null;
+};
 
 // --- switchFile isolates the two files' stored state ---------------------------
 {
-  const backend = Persist.createMemoryBackend();
-  const KEY_A = keyFor(FILE_A, backend);
-  const KEY_B = keyFor(FILE_B, backend);
-  expect(KEY_A && KEY_B && KEY_A !== KEY_B, 'A and B persist under distinct keys');
-
-  const p = Persist.createPersist({ backend, documentId: FILE_A, debounceMs: 1 });
+  const p = Persist.createPersist({ documentId: FILE_A, debounceMs: 1 });
 
   // Simulate the mounted editor for A: providers reflect engine A.
   p.setCheckpointProviders({
@@ -72,22 +53,17 @@ function keyFor(id, backend) {
   p.scheduleEditorPersist(TEXT_A);
   p.flushCheckpoint();
 
-  // Pre-seed B's slot with its own text (as if created earlier).
-  {
-    const pb = Persist.createPersist({ backend, documentId: FILE_B });
-    pb.scheduleEditorPersist(TEXT_B);
-    pb.flushCheckpoint();
-  }
+  // B's text exists already (as if created earlier).
+  Persist.setFileText(FILE_B, TEXT_B);
 
   // Switch A -> B.
   const snapshot = p.switchFile(FILE_B);
 
-  // (a) A's blob landed under A's key, fingerprinted for A's text, with
-  //     A-engine semantic payload.
-  const storedA = JSON.parse(backend._dump()[KEY_A]);
-  expect(storedA.editor.text === TEXT_A, "A's text saved under A's key");
-  expect(storedA.semantic && storedA.semantic.docFp === fp(TEXT_A), "A's semantic docFp matches A's text");
-  expect(storedA.semantic.types.decls[0][0] === 'sym-A', "A's semantic payload under A's key");
+  // (a) A's records hold A's text and A-engine checkpoint, fingerprinted for A.
+  expect(record('f', FILE_A).text === TEXT_A, "A's text saved in A's record");
+  const semA = record('cache', FILE_A);
+  expect(semA && semA.docFp === fp(TEXT_A), "A's checkpoint fingerprint matches A's text");
+  expect(semA.types.decls[0][0] === 'sym-A', "A's engine payload in A's cache record");
 
   // (b) the returned snapshot is B's.
   expect(snapshot.meta.documentId === FILE_B, 'snapshot documentId is B');
@@ -95,17 +71,16 @@ function keyFor(id, backend) {
   expect(p.getCurrentFileId() === FILE_B, 'current file id is B');
 
   // (c) a save fired in the gap BEFORE the new editor rewires providers must
-  //     NOT write A-engine data under B's key (providers were dropped).
+  //     NOT write A-engine data into B's records (providers were dropped).
   p.flushCheckpoint();
-  const storedB = JSON.parse(backend._dump()[KEY_B]);
-  expect(storedB.editor.text === TEXT_B, "gap-save kept B's text");
-  const bSem = storedB.semantic;
+  expect(record('f', FILE_B).text === TEXT_B, "gap-save kept B's text");
+  const bSem = record('cache', FILE_B);
   expect(
     !bSem || !bSem.types.decls.some(([k]) => k === 'sym-A'),
-    "gap-save did not leak A's engine payload under B's key",
+    "gap-save did not leak A's engine payload into B's records",
   );
 
-  // (d) after the remount re-wires providers to engine B, saves go under B only.
+  // (d) after the remount re-wires providers to engine B, saves go to B only.
   p.setCheckpointProviders({
     getSemantic: () => ({
       types: { v: 1, decls: [['sym-B', 'T(B)', 'fpB']], metavars: [], reconstructed: [] },
@@ -119,10 +94,8 @@ function keyFor(id, backend) {
   p.scheduleEditorPersist(TEXT_B);
   p.flushCheckpoint();
 
-  const storedB2 = JSON.parse(backend._dump()[KEY_B]);
-  expect(storedB2.semantic.types.decls[0][0] === 'sym-B', "B-engine payload saved under B's key");
-  const storedA2 = JSON.parse(backend._dump()[KEY_A]);
-  expect(storedA2.semantic.types.decls[0][0] === 'sym-A', "A's key untouched by B saves");
+  expect(record('cache', FILE_B).types.decls[0][0] === 'sym-B', "B-engine payload saved in B's cache record");
+  expect(record('cache', FILE_A).types.decls[0][0] === 'sym-A', "A's records untouched by B saves");
 }
 
 // --- fresh engine mints ids under its own documentId ----------------------------

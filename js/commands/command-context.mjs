@@ -35,10 +35,8 @@ function closestFrom(el, selector) {
 
 /** `default` | `vim` | `emacs`, from stored settings. */
 export function editingStyle() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  const p = g.Persist;
   try {
-    const v = p && typeof p.readStoredKeymapStyle === 'function' ? p.readStoredKeymapStyle() : '';
+    const v = Settings.get('keymapStyle');
     return v === 'vim' || v === 'emacs' ? v : 'default';
   } catch (_) {
     return 'default';

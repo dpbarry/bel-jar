@@ -1,0 +1,31 @@
+// LOCAL DEVELOPMENT ONLY: the sync API with a local D1 and R2 (wrangler dev).
+//
+//   npm run dev    (scripts/dev-server.mjs: migrations, then wrangler dev, with
+//                   the local database outside the repository; run bare,
+//                   wrangler dev keeps its state inside what it watches and
+//                   reloads forever)
+//
+// Production is ../wrangler.jsonc, which Cloudflare's Git build deploys. This
+// one has a placeholder database, a dev bucket, and the dev account header.
+{
+  "name": "beljar-sync-dev",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-21",
+  // The site itself, from the repository root (its .assetsignore applies, so the
+  // Beluga runtime is not served: locally, sign-in, editing and sync work, and
+  // Beluga checks do not). /api/* reaches the Worker first.
+  "assets": { "directory": "..", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "beljar-sync-dev",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "TEXTS", "bucket_name": "beljar-texts-dev" }
+  ],
+  // The account comes from the X-BelJar-Account header: local only, never deployed.
+  "vars": { "DEV_ACCOUNT_HEADER": "yes" }
+}

@@ -42,7 +42,7 @@ try {
     sameAsKeybindings: Commands.defaults().length === Keybindings.DEFAULTS.length,
   }));
   console.log('  registry:', JSON.stringify(reg));
-  check(reg.total === 156, `registry holds 156 commands (got ${reg.total})`);
+  check(reg.total === 157, `registry holds 157 commands (got ${reg.total})`);
   check(reg.unwired.length === 0, 'every palette command has behaviour attached', reg.unwired.join(', '));
   check(reg.chordedUnwired.length === 0,
     'every command that ships a chord has behaviour behind it', reg.chordedUnwired.join(', '));
@@ -62,13 +62,13 @@ try {
     chords: [...document.querySelectorAll('.jar-palette-item-shortcut')].length,
   }));
   console.log('  palette:', JSON.stringify(pal));
-  // 112 palette commands minus the 20 that `when()` gates out of an empty
+  // 121 palette commands minus the 20 that `when()` gates out of an empty
   // workspace: 4 Prover moves (no hole at the caret), 7 Harpoon lab commands
   // (no lab open), run.module / run.project (no suite, single file),
   // tab.next / tab.prev / tab.close-others / tab.close-right (one tab open),
   // suite.add-file / suite.remove-file (no suite owns the directory).
   // `cmdline.repeat` joins them until something has been typed on the line.
-  check(pal.rows === 100, `palette shows 100 of 120 with the rest gated (got ${pal.rows})`);
+  check(pal.rows === 101, `palette shows 101 of 121 with the rest gated (got ${pal.rows})`);
   check(
     pal.sections.join(',') === 'File,Edit,Navigate,Prover,Run,View,Settings,Tools',
     'the Prover header survives on its two ungated reports',
@@ -284,7 +284,7 @@ try {
   check(/2 errors/.test(broken.text), 'and says so in words', broken.text);
 
   const offParity = await page.evaluate(async () => {
-    Persist.writeStoredStatusStrip('off');
+    Settings.set('statusStrip', 'off');
     StatusStrip.apply();
     await new Promise((r) => requestAnimationFrame(r));
     const topDot = document.getElementById('ide-status-dot');
@@ -295,7 +295,7 @@ try {
   });
   check(!offParity.ownsClass && offParity.topVisible,
     'with the bar off, the topbar dot comes back', JSON.stringify(offParity));
-  await page.evaluate(() => { Persist.writeStoredStatusStrip('standard'); StatusStrip.apply(); });
+  await page.evaluate(() => { Settings.set('statusStrip', 'standard'); StatusStrip.apply(); });
   await new Promise((r) => setTimeout(r, 250));
 
   // ── the goal renders as real Beluga, never raw ASCII ────────────────────────
@@ -389,10 +389,10 @@ try {
       return { ctlW: Math.round(c.width), left: Math.round(b.left - c.left), right: Math.round(c.right - b.right) };
     };
     const on = read();
-    Persist.writeStoredStatusStrip('off'); StatusStrip.apply();
+    Settings.set('statusStrip', 'off'); StatusStrip.apply();
     await new Promise((r) => requestAnimationFrame(r));
     const off = read();
-    Persist.writeStoredStatusStrip('standard'); StatusStrip.apply();
+    Settings.set('statusStrip', 'standard'); StatusStrip.apply();
     await new Promise((r) => requestAnimationFrame(r));
     return { on, off };
   });
@@ -547,7 +547,7 @@ try {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await new Promise((r) => setTimeout(r, 250));
-    const stored = Persist.readStoredCommandLineHistory();
+    const stored = Device.get('commandLineHistory');
     // Re-open and walk the ring with ArrowUp on an empty line.
     StatusStrip.openCommandLine('');
     const input2 = document.querySelector('.jar-cmdline__input');
@@ -706,7 +706,7 @@ try {
 
   // ── double-tap gesture ──────────────────────────────────────────────────────
   const gesture = await page.evaluate(async () => {
-    Persist.writeStoredDoubleTapTrigger('shift');
+    Settings.set('doubleTapTrigger', 'shift');
     CommandPalette.close();
     const tap = () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true, bubbles: true }));
@@ -724,7 +724,7 @@ try {
     await new Promise((r) => setTimeout(r, 200));
     const afterDouble = CommandPalette.isOpen();
     CommandPalette.close();
-    Persist.writeStoredDoubleTapTrigger('off');
+    Settings.set('doubleTapTrigger', 'off');
     return { afterTyping, afterDouble };
   });
   console.log('  gesture:', JSON.stringify(gesture));
@@ -820,8 +820,8 @@ try {
     await new Promise((r) => setTimeout(r, 150));
     // The block above turned the trigger off again; the gesture only fires
     // while it is on.
-    Persist.writeStoredDoubleTapTrigger('shift');
-    Persist.writeStoredDoubleTapCommand('keys.macros');
+    Settings.set('doubleTapTrigger', 'shift');
+    Settings.set('doubleTapCommand', 'keys.macros');
     const tap = () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true, bubbles: true }));
       window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', bubbles: true }));
@@ -838,8 +838,8 @@ try {
       modalOpen: !!document.querySelector('dialog[open]'),
     };
     FloatingWindow.closeAll();
-    Persist.writeStoredDoubleTapCommand('tools.palette');
-    Persist.writeStoredDoubleTapTrigger('off');
+    Settings.set('doubleTapCommand', 'tools.palette');
+    Settings.set('doubleTapTrigger', 'off');
     return out;
   });
   console.log('  retargeted:', JSON.stringify(retargeted));
@@ -897,7 +897,7 @@ try {
       isMac: facts.isMac,
       withSub: facts.rows.filter((r) => r.substitute && r.substitute !== '—').length,
       usableHere: facts.rows.filter((r) => r.substitute && r.substitute !== '—'
-        && (!r.subStyle || r.subStyle === Persist.readStoredKeymapStyle())).length,
+        && (!r.subStyle || r.subStyle === Settings.get('keymapStyle'))).length,
       without: facts.rows.filter((r) => !r.substitute || r.substitute === '—').length,
       // ⛔ THE rule of this window, applied to the block that used to break it.
       dashesAnywhere: [...win.querySelectorAll('.jar-macros__row')]

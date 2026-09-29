@@ -1,3 +1,4 @@
+import { prefersReducedMotion as reducedMotionFor } from '../persist/settings-apply.mjs';
 'use strict';
 
 const global = globalThis;
@@ -156,7 +157,7 @@ var output = document.getElementById('output');
   }
 
   function scrollReplBottom() {
-    if (typeof Persist !== 'undefined' && !Persist.readStoredReplAutoscroll()) return;
+    if (typeof Persist !== 'undefined' && !Settings.get('replAutoscroll')) return;
     if (typeof ReplStream !== 'undefined' && ReplStream.ensureLiveLine) {
       ReplStream.ensureLiveLine();
     }
@@ -680,7 +681,7 @@ var output = document.getElementById('output');
       }
 
       if (!trimmed || trimmed === '[]' || trimmed === '^.' || trimmed === '^' || trimmed === ';') {
-        var filterChatter = typeof Persist === 'undefined' || Persist.readStoredReplFilterChatter();
+        var filterChatter = typeof Persist === 'undefined' || Settings.get('replFilterChatter');
         if (filterChatter) { i++; continue; }
       }
 
@@ -805,13 +806,7 @@ var output = document.getElementById('output');
   var MIN_PENDING_MS = 180;
 
   function prefersReducedMotion() {
-    try {
-      if (typeof Persist !== 'undefined' && typeof Persist.prefersReducedMotion === 'function') {
-        return Persist.prefersReducedMotion();
-      }
-    } catch (_) {}
-    return typeof matchMedia === 'function'
-      && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return reducedMotionFor(Settings.get('motionPref'));
   }
 
   function waitMs(ms) {
@@ -1223,7 +1218,7 @@ var output = document.getElementById('output');
   }
 
   function insertWelcomeBanner() {
-    if (typeof Persist !== 'undefined' && !Persist.readStoredReplWelcome()) return;
+    if (typeof Persist !== 'undefined' && !Settings.get('replWelcome')) return;
     var wrap = document.createElement('div');
     wrap.className = 'repl-banner';
 

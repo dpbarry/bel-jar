@@ -1,252 +1,313 @@
 (() => {
-  // js/commands/command-settings.mjs
+  // js/persist/table.mjs
+  function typeOf(row) {
+    if (row.values) return "enum";
+    if (row.type) return row.type;
+    if (typeof row.default === "boolean") return "bool";
+    if (typeof row.default === "number") return "number";
+    return "string";
+  }
+
+  // js/persist/settings-schema.mjs
+  function cleanKeybindings(map) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return void 0;
+    const out = {};
+    for (const [id, v] of Object.entries(map)) {
+      if (v === "" || v === null) out[id] = "";
+      else if (typeof v === "string") out[id] = v;
+    }
+    return out;
+  }
+  function cleanAliasPairs(v) {
+    if (v === null) return null;
+    return Array.isArray(v) ? v : void 0;
+  }
+  var ON = true;
+  var OFF = false;
   var SETTINGS = [
+    // ── Appearance ──────────────────────────────────────────────────────────
+    { id: "theme", section: "appearance", default: "dark", values: ["dark", "light"], boot: true },
+    { id: "uiFontSize", section: "appearance", default: "md", values: ["sm", "md", "lg", "xl"], boot: true },
+    { id: "uiTextContrast", section: "appearance", default: "medium", values: ["low", "medium", "high", "maximum"], boot: true },
+    { id: "motionPref", section: "appearance", default: "system", values: ["system", "reduce", "full"], boot: true },
+    { id: "toastDuration", section: "appearance", default: "normal", values: ["short", "normal", "long"] },
+    // ── Editor: typography ──────────────────────────────────────────────────
+    { id: "editorFontSize", section: "editor", default: "md", values: ["sm", "md", "lg", "xl"] },
+    { id: "editorLineHeight", section: "editor", default: "normal", values: ["compact", "normal", "relaxed"] },
+    { id: "editorWordWrap", section: "editor", default: OFF },
+    { id: "editorFontFamily", section: "editor", default: "jetbrains", values: ["jetbrains", "system"], boot: true },
+    { id: "editorCursorBlink", section: "editor", default: "blink", values: ["off", "blink", "fast"] },
+    { id: "editorScrollPastEnd", section: "editor", default: ON },
+    { id: "editorWhitespace", section: "editor", default: "none", values: ["none", "trailing", "selection", "all"] },
+    { id: "editorRulers", section: "editor", default: OFF },
+    // ── Editor: indentation and saving ──────────────────────────────────────
+    { id: "editorTabSize", section: "editor", default: 2, values: [2, 4] },
+    { id: "autosaveDelay", section: "editor", default: 320, values: [320, 1e3, 2e3] },
+    { id: "editorFormatWidth", section: "editor", default: 80, values: [80, 100, 120] },
+    { id: "editorReindentPaste", section: "editor", default: ON },
+    { id: "cfgAutoSync", section: "editor", default: ON },
+    { id: "formatOnSave", section: "editor", default: OFF },
+    { id: "trimTrailingWs", section: "editor", default: OFF },
+    // ── Editor: code insight ────────────────────────────────────────────────
+    { id: "editorSyntaxHighlight", section: "editor", default: ON },
+    { id: "editorSemanticHighlight", section: "editor", default: ON },
+    { id: "editorParseHighlight", section: "editor", default: ON },
+    { id: "editorOccurrenceHighlight", section: "editor", default: ON },
+    { id: "editorBracketMatch", section: "editor", default: ON },
+    { id: "editorAutoCloseBrackets", section: "editor", default: ON },
+    { id: "editorSelectionMatches", section: "editor", default: ON },
+    { id: "hoverScope", section: "editor", default: "all", values: ["all", "user-only", "none"] },
+    { id: "hoverSticky", section: "editor", default: OFF },
+    { id: "editorAutocompleteTrigger", section: "editor", default: "typing", values: ["typing", "none", "always"] },
+    { id: "editorAutocompleteContinue", section: "editor", default: OFF },
+    { id: "quietWhileTyping", section: "editor", default: OFF },
+    // ── Editor: gutters and diagnostics ─────────────────────────────────────
+    { id: "editorLineNumbers", section: "editor", default: ON },
+    { id: "editorLineNumberMode", section: "editor", default: "absolute", values: ["absolute", "relative", "hybrid"] },
+    { id: "editorFoldGutter", section: "editor", default: ON },
+    { id: "editorFoldPersist", section: "editor", default: "session", values: ["session", "none", "local"], sync: false },
+    { id: "editorActiveLine", section: "editor", default: ON },
+    { id: "diagPresentation", section: "editor", default: "both", values: ["both", "underlines", "gutter", "none"] },
+    { id: "diagSeverity", section: "editor", default: "all", values: ["all", "errors"] },
+    { id: "editorHoleGutter", section: "editor", default: ON },
+    { id: "editorHoleEmphasis", section: "editor", default: "normal", values: ["subtle", "normal", "loud"], boot: true },
+    { id: "stickyDeclHeader", section: "editor", default: OFF },
+    // ── Keybindings and the keyboard ────────────────────────────────────────
+    { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
+    { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
+    // null: the status strip picks its own default for the keymap style.
+    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
+    { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
+    { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
+    { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
+    { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
+    // ── Beluga ──────────────────────────────────────────────────────────────
+    // Which build this device downloads: a phone and a workstation differ.
+    { id: "belugaMode", section: "beluga", default: "stable", values: ["stable", "fast"], sync: false },
+    { id: "belugaFallbackStable", section: "beluga", default: ON },
+    { id: "belugaCancelOnEdit", section: "beluga", default: ON },
+    { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
+    { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },
+    // ── Harpoon ─────────────────────────────────────────────────────────────
+    { id: "harpoonMode", section: "harpoon", default: "manual", values: ["manual", "orca"] },
+    { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
+    { id: "autosolveFocusNext", section: "harpoon", default: ON },
+    { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // ── REPL ────────────────────────────────────────────────────────────────
+    { id: "replAutoscroll", section: "repl", default: ON },
+    { id: "replWelcome", section: "repl", default: ON },
+    { id: "replEcho", section: "repl", default: ON },
+    { id: "replFilterChatter", section: "repl", default: ON },
+    { id: "replHoverTimestamp", section: "repl", default: OFF },
+    { id: "replAutocompleteTrigger", section: "repl", default: "typing", values: ["typing", "none", "always"] },
+    { id: "replAutocompleteContinue", section: "repl", default: OFF },
+    { id: "replHistoryCap", section: "repl", default: 1e3, values: [100, 250, 500, 1e3] },
+    // Where this browser keeps history: a shared computer is not your laptop.
+    { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
+    // ── Workspace ───────────────────────────────────────────────────────────
+    { id: "inspectorFollow", section: "workspace", default: ON },
+    { id: "restorePanels", section: "workspace", default: ON },
+    { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Signed in, settings follow you between devices; off here, this device keeps its own.
+    { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // ── Aliases ─────────────────────────────────────────────────────────────
+    { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
+    // null: the built-in alias table.
+    { id: "aliasPairs", section: "aliases", default: null, type: "json", normalize: cleanAliasPairs }
+  ];
+  var BY_ID = new Map(SETTINGS.map((row) => [row.id, row]));
+  function settingRow(id) {
+    return BY_ID.get(id) || null;
+  }
+
+  // js/commands/command-settings.mjs
+  var ROWS = [
     // ── layout ────────────────────────────────────────────────────────────────
     {
       slug: "word-wrap",
       title: "Word wrap",
-      kind: "bool",
       aliases: ["wrap"],
-      read: "readStoredEditorWordWrap",
-      write: "writeStoredEditorWordWrap"
+      setting: "editorWordWrap"
     },
     {
       slug: "line-numbers",
       title: "Line numbers",
-      kind: "bool",
       aliases: ["number", "nu"],
-      read: "readStoredEditorLineNumbers",
-      write: "writeStoredEditorLineNumbers"
+      setting: "editorLineNumbers"
     },
     {
       slug: "line-number-style",
       title: "Line number style",
-      kind: "enum",
-      values: ["absolute", "relative", "hybrid"],
       labels: { absolute: "Absolute", relative: "Relative", hybrid: "Relative + current" },
       aliases: ["relativenumber", "rnu"],
-      read: "readStoredEditorLineNumberMode",
-      write: "writeStoredEditorLineNumberMode"
+      setting: "editorLineNumberMode"
     },
     {
       slug: "fold-gutter",
       title: "Code folding",
-      kind: "bool",
       aliases: ["foldenable", "fen"],
-      read: "readStoredEditorFoldGutter",
-      write: "writeStoredEditorFoldGutter"
+      setting: "editorFoldGutter"
     },
     {
       slug: "active-line",
       title: "Active line highlight",
-      kind: "bool",
       aliases: ["cursorline", "cul"],
-      read: "readStoredEditorActiveLine",
-      write: "writeStoredEditorActiveLine"
+      setting: "editorActiveLine"
     },
     {
       slug: "scroll-past-end",
       title: "Scroll past end",
-      kind: "bool",
       aliases: ["scrollpastend", "spe"],
-      read: "readStoredEditorScrollPastEnd",
-      write: "writeStoredEditorScrollPastEnd"
+      setting: "editorScrollPastEnd"
     },
     {
       slug: "rulers",
       title: "Print-width ruler",
-      kind: "bool",
       aliases: ["colorcolumn", "cc"],
-      read: "readStoredEditorRulers",
-      write: "writeStoredEditorRulers"
+      setting: "editorRulers"
     },
     {
       slug: "sticky-decl",
       title: "Structure path",
-      kind: "bool",
       aliases: ["sticky"],
-      read: "readStoredStickyDeclHeader",
-      write: "writeStoredStickyDeclHeader"
+      setting: "stickyDeclHeader"
     },
     {
       slug: "tab-size",
       title: "Tab size",
-      kind: "enum",
-      values: [2, 4],
       aliases: ["tabstop", "ts"],
       labels: { 2: "2 spaces", 4: "4 spaces" },
-      read: "readStoredEditorTabSize",
-      write: "writeStoredEditorTabSize"
+      setting: "editorTabSize"
     },
     {
       slug: "format-width",
       title: "Format print width",
-      kind: "enum",
-      values: [80, 100, 120],
       aliases: ["textwidth", "tw"],
       labels: { 80: "80 columns", 100: "100 columns", 120: "120 columns" },
-      read: "readStoredEditorFormatWidth",
-      write: "writeStoredEditorFormatWidth"
+      setting: "editorFormatWidth"
     },
     {
       slug: "whitespace",
       title: "Show whitespace",
       verb: "whitespace marks",
-      kind: "enum",
-      values: ["none", "trailing", "selection", "all"],
       on: "all",
       off: "none",
       aliases: ["list"],
       labels: { none: "Off", trailing: "Trailing only", selection: "In selection", all: "All" },
-      read: "readStoredEditorWhitespace",
-      write: "writeStoredEditorWhitespace"
+      setting: "editorWhitespace"
     },
     // ── type ──────────────────────────────────────────────────────────────────
     {
       slug: "font-size",
       title: "Font size",
-      kind: "enum",
-      values: ["sm", "md", "lg", "xl"],
       labels: { sm: "Small", md: "Default", lg: "Large", xl: "Larger" },
-      read: "readStoredEditorFontSize",
-      write: "writeStoredEditorFontSize"
+      setting: "editorFontSize"
     },
     {
       slug: "line-height",
       title: "Line height",
-      kind: "enum",
-      values: ["compact", "normal", "relaxed"],
       labels: { compact: "Compact", normal: "Default", relaxed: "Relaxed" },
-      read: "readStoredEditorLineHeight",
-      write: "writeStoredEditorLineHeight"
+      setting: "editorLineHeight"
     },
     {
       slug: "font-family",
       title: "Editor font",
-      kind: "enum",
-      values: ["jetbrains", "system"],
       labels: { jetbrains: "JetBrains Mono", system: "System monospace" },
-      read: "readStoredEditorFontFamily",
-      write: "writeStoredEditorFontFamily"
+      setting: "editorFontFamily"
     },
     {
       slug: "cursor-blink",
       title: "Cursor blink",
-      kind: "enum",
-      values: ["off", "blink", "fast"],
       labels: { off: "Solid", blink: "Blink", fast: "Fast" },
-      read: "readStoredEditorCursorBlink",
-      write: "writeStoredEditorCursorBlink"
+      setting: "editorCursorBlink"
     },
     // ── highlighting ──────────────────────────────────────────────────────────
     {
       slug: "syntax-highlight",
       title: "Syntax highlighting",
-      kind: "bool",
       aliases: ["syntax"],
-      read: "readStoredEditorSyntaxHighlight",
-      write: "writeStoredEditorSyntaxHighlight"
+      setting: "editorSyntaxHighlight"
     },
     {
       slug: "semantic-highlight",
       title: "Semantic highlighting",
-      kind: "bool",
-      read: "readStoredEditorSemanticHighlight",
-      write: "writeStoredEditorSemanticHighlight"
+      setting: "editorSemanticHighlight"
     },
     {
       slug: "parse-highlight",
       title: "Invalid parse styling",
-      kind: "bool",
-      read: "readStoredEditorParseHighlight",
-      write: "writeStoredEditorParseHighlight"
+      setting: "editorParseHighlight"
     },
     {
       slug: "occurrence-highlight",
       title: "Occurrence highlight",
-      kind: "bool",
-      read: "readStoredEditorOccurrenceHighlight",
-      write: "writeStoredEditorOccurrenceHighlight"
+      setting: "editorOccurrenceHighlight"
     },
     {
       slug: "selection-matches",
       title: "Selection matches",
-      kind: "bool",
       aliases: ["hlsearch", "hls"],
-      read: "readStoredEditorSelectionMatches",
-      write: "writeStoredEditorSelectionMatches"
+      setting: "editorSelectionMatches"
     },
     {
       slug: "bracket-match",
       title: "Bracket matching",
-      kind: "bool",
       aliases: ["showmatch", "sm"],
-      read: "readStoredEditorBracketMatch",
-      write: "writeStoredEditorBracketMatch"
+      setting: "editorBracketMatch"
     },
     // ── editing behaviour ─────────────────────────────────────────────────────
     {
       slug: "auto-close-brackets",
       title: "Auto-close brackets",
-      kind: "bool",
       aliases: ["autoclose"],
-      read: "readStoredEditorAutoCloseBrackets",
-      write: "writeStoredEditorAutoCloseBrackets"
+      setting: "editorAutoCloseBrackets"
     },
     {
       slug: "reindent-paste",
       title: "Re-indent on paste",
-      kind: "bool",
-      read: "readStoredEditorReindentPaste",
-      write: "writeStoredEditorReindentPaste"
+      setting: "editorReindentPaste"
     },
     {
       slug: "format-on-save",
       title: "Format on save",
-      kind: "bool",
-      read: "readStoredFormatOnSave",
-      write: "writeStoredFormatOnSave"
+      setting: "formatOnSave"
     },
     {
       slug: "trim-whitespace",
       title: "Trim trailing whitespace on save",
-      kind: "bool",
-      read: "readStoredTrimTrailingWs",
-      write: "writeStoredTrimTrailingWs"
+      setting: "trimTrailingWs"
     },
     // ── proof surface ─────────────────────────────────────────────────────────
     {
       slug: "hole-gutter",
       title: "Hole gutter marks",
-      kind: "bool",
-      read: "readStoredEditorHoleGutter",
-      write: "writeStoredEditorHoleGutter"
+      setting: "editorHoleGutter"
     },
     {
       slug: "hole-emphasis",
       title: "Hole gutter emphasis",
-      kind: "enum",
-      values: ["subtle", "normal", "loud"],
       labels: { subtle: "Subtle", normal: "Default", loud: "Loud" },
-      read: "readStoredEditorHoleEmphasis",
-      write: "writeStoredEditorHoleEmphasis"
+      setting: "editorHoleEmphasis"
     },
     {
       slug: "quiet-typing",
       title: "Quiet while typing",
-      kind: "bool",
       aliases: ["quiet"],
-      read: "readStoredQuietWhileTyping",
-      write: "writeStoredQuietWhileTyping"
+      setting: "quietWhileTyping"
     },
     {
       slug: "hover-sticky",
       title: "Sticky hover",
-      kind: "bool",
-      read: "readStoredHoverSticky",
-      write: "writeStoredHoverSticky"
+      setting: "hoverSticky"
     }
   ];
+  var SETTINGS2 = ROWS.map((r) => {
+    const row = settingRow(r.setting);
+    if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
+    return typeOf(row) === "bool" ? { ...r, kind: "bool" } : { ...r, kind: "enum", values: row.values };
+  });
   function lowerFirst(text) {
     const t = String(text || "");
     return t.charAt(0).toLowerCase() + t.slice(1);
@@ -255,7 +316,7 @@
     return "set." + slug;
   }
   function settingEntries() {
-    return SETTINGS.map((s) => ({
+    return SETTINGS2.map((s) => ({
       id: settingId(s.slug),
       title: (s.kind === "bool" ? "Toggle " : "Cycle ") + lowerFirst(s.verb || s.title),
       section: "Settings",
@@ -266,7 +327,7 @@
   }
   function optionNames() {
     const out = [];
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       out.push(s.slug);
       for (const a of s.aliases || []) out.push(a);
     }
@@ -274,11 +335,11 @@
   }
   function optionCandidates() {
     const out = [];
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       if (s.kind !== "bool" && s.off === void 0) continue;
       out.push({ value: "no" + s.slug, label: s.title + " (off)" });
       for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
@@ -289,7 +350,7 @@
     const key = String(name == null ? "" : name).toLowerCase();
     if (!key) return null;
     const bare = key.startsWith("set.") ? key.slice(4) : key;
-    return SETTINGS.find((s) => s.slug === bare) || SETTINGS.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+    return SETTINGS2.find((s) => s.slug === bare) || SETTINGS2.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
   function nextValue(spec, current, requested) {
     if (!spec) return null;
@@ -377,6 +438,8 @@
     { id: "file.upload-folder", title: "Upload Folder", section: "File", scope: "global", palette: true },
     { id: "file.import-folder", title: "Import Folder as New Project", section: "File", scope: "global", palette: true },
     { id: "file.download", title: "Download Current File", section: "File", scope: "global", palette: true },
+    // The whole project as a zip: how work outlives a browser that clears its storage.
+    { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -1194,10 +1257,8 @@
 
   // js/commands/command-context.mjs
   function editingStyle() {
-    const g = typeof window !== "undefined" ? window : globalThis;
-    const p = g.Persist;
     try {
-      const v = p && typeof p.readStoredKeymapStyle === "function" ? p.readStoredKeymapStyle() : "";
+      const v = Settings.get("keymapStyle");
       return v === "vim" || v === "emacs" ? v : "default";
     } catch (_) {
       return "default";
@@ -1417,7 +1478,7 @@
     // The preference table, so the editor's `:set` resolves through the same
     // source as the palette rows without importing across the bundle seam.
     settings: {
-      list: () => SETTINGS.slice(),
+      list: () => SETTINGS2.slice(),
       find: findSetting,
       next: nextValue,
       nearest: nearestSetting,
@@ -1990,13 +2051,7 @@
     else open(opts);
   }
   function runCommandEntry() {
-    var style = "";
-    try {
-      if (typeof Persist !== "undefined" && Persist.readStoredKeymapStyle) {
-        style = Persist.readStoredKeymapStyle();
-      }
-    } catch (e) {
-    }
+    var style = Settings.get("keymapStyle");
     var line = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
     if (!line) return toggle({ mode: "commands" });
     if (style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });

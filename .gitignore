@@ -32,3 +32,9 @@ scripts/*.log
 # Prover debug probes + local fixtures (not product)
 scripts/debug-*.mjs
 scripts/.str-step-*.bel
+
+# wrangler dev / d1 --local state (local D1 and R2 data)
+.wrangler/
+
+# wrangler dev secrets (GitHub OAuth client secret): never committed
+.dev.vars*

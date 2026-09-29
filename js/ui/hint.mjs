@@ -23,22 +23,16 @@ const DEFAULT_DURATION_MS = 10000;
   let actionFn = null;
 
   function wasDismissed(id) {
-    if (!id || typeof Persist === 'undefined') return false;
-    if (Persist.readStoredHintDismissed && Persist.readStoredHintDismissed(id)) return true;
-    // Migrate the original library flag into the generic store.
-    if (id === 'library' && Persist.readStoredLibraryHintDismissed && Persist.readStoredLibraryHintDismissed()) {
-      persistDismissed('library');
-      return true;
-    }
-    return false;
+    if (!id || typeof Device === 'undefined') return false;
+    return Device.get('dismissedHints').indexOf(id) !== -1;
   }
 
   function persistDismissed(id) {
-    if (!id || typeof Persist === 'undefined') return;
-    if (Persist.writeStoredHintDismissed) Persist.writeStoredHintDismissed(id, true);
-    if (id === 'library' && Persist.writeStoredLibraryHintDismissed) {
-      Persist.writeStoredLibraryHintDismissed(true);
-    }
+    if (!id || typeof Device === 'undefined') return;
+    var list = Device.get('dismissedHints');
+    if (list.indexOf(id) !== -1) return;
+    list.push(id);
+    Device.set('dismissedHints', list);
   }
 
   function clearTimers() {

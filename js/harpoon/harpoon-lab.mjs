@@ -543,7 +543,7 @@ function E() { return global.BelEditor || null; }
       this.updateCompromiseBanner();
     }
     try {
-      var focusNext = typeof Persist === 'undefined' || Persist.readStoredAutosolveFocusNext();
+      var focusNext = typeof Persist === 'undefined' || Settings.get('autosolveFocusNext');
       if (focusNext && global.CurrentEditor && typeof global.CurrentEditor.cycleHole === 'function') {
         global.CurrentEditor.cycleHole(1);
       }
@@ -1959,11 +1959,7 @@ function E() { return global.BelEditor || null; }
 
   // Which surface the lab opens into. Manual unless the user has chosen otherwise.
   function openingMode() {
-    var persist = global.Persist;
-    if (persist && typeof persist.readStoredHarpoonMode === 'function') {
-      return persist.readStoredHarpoonMode() === 'orca' ? 'orca' : 'manual';
-    }
-    return 'manual';
+    return Settings.get('harpoonMode');
   }
 
   function runSession(view, prep, host) {

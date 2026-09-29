@@ -1,7 +1,7 @@
+import { readDevice, writeDevice, deviceRow } from '../persist/device-schema.mjs';
+
 var STACK_MQ = '(max-width: 48rem)';
   var HIT_GRACE_PX = 6;
-  var DEFAULT_W = 250;
-  var DEFAULT_H = 190;
 
   // The live set of resizers, so a re-init replaces rather than stacks.
   var liveTeardown = null;
@@ -18,12 +18,6 @@ var STACK_MQ = '(max-width: 48rem)';
     opts = opts || {};
     var workspace = document.querySelector('.workspace');
     if (!workspace) return null;
-
-    var persist = globalThis.Persist;
-    if (persist) {
-      DEFAULT_W = persist.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
-      DEFAULT_H = persist.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
-    }
 
     var stackedMq = globalThis.matchMedia(STACK_MQ);
     var resizers = [];
@@ -159,76 +153,27 @@ var STACK_MQ = '(max-width: 48rem)';
       };
     }
 
-    var panelConfigs = [
-      {
-        panel: document.querySelector('.explorer-panel'),
-        openClass: 'is-explorer-open',
-        cssVarW: '--explorer-w',
-        cssVarH: '--explorer-h',
-        read: function (stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredExplorerHeight() : persist.readStoredExplorerWidth();
-        },
-        write: function (px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredExplorerHeight(px);
-          else persist.writeStoredExplorerWidth(px);
-        },
-      },
-      {
-        panel: document.querySelector('.inspector-panel'),
-        openClass: 'is-inspector-open',
-        cssVarW: '--inspector-w',
-        cssVarH: '--inspector-h',
-        read: function (stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredInspectorHeight() : persist.readStoredInspectorWidth();
-        },
-        write: function (px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredInspectorHeight(px);
-          else persist.writeStoredInspectorWidth(px);
-        },
-      },
-      {
-        panel: document.querySelector('.library-panel'),
-        openClass: 'is-library-open',
-        cssVarW: '--library-w',
-        cssVarH: '--library-h',
-        read: function (stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredLibraryHeight() : persist.readStoredLibraryWidth();
-        },
-        write: function (px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredLibraryHeight(px);
-          else persist.writeStoredLibraryWidth(px);
-        },
-      },
-      {
-        panel: document.querySelector('.harpoon-panel'),
-        openClass: 'is-harpoon-open',
-        cssVarW: '--harpoon-w',
-        cssVarH: '--harpoon-h',
-        read: function (stacked) {
-          if (!persist) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist.readStoredHarpoonHeight() : persist.readStoredHarpoonWidth();
-        },
-        write: function (px, stacked) {
-          if (!persist) return;
-          if (stacked) persist.writeStoredHarpoonHeight(px);
-          else persist.writeStoredHarpoonWidth(px);
-        },
-      },
-    ];
+    // One config per panel, sized by its two device rows (`<name>Width`,
+    // `<name>Height`), which also name the custom property early boot paints.
+    function panelConfig(name) {
+      var sizeId = function (stacked) { return name + (stacked ? 'Height' : 'Width'); };
+      return {
+        panel: document.querySelector('.' + name + '-panel'),
+        openClass: 'is-' + name + '-open',
+        cssVarW: deviceRow(sizeId(false)).cssVar,
+        cssVarH: deviceRow(sizeId(true)).cssVar,
+        read: function (stacked) { return readDevice(sizeId(stacked)); },
+        write: function (px, stacked) { writeDevice(sizeId(stacked), px); },
+      };
+    }
 
-    if (persist) {
-      var root = document.documentElement.style;
-      for (var i = 0; i < panelConfigs.length; i++) {
-        var cfg = panelConfigs[i];
-        root.setProperty(cfg.cssVarW, cfg.read(false) + 'px');
-        root.setProperty(cfg.cssVarH, cfg.read(true) + 'px');
-      }
+    var panelConfigs = ['explorer', 'inspector', 'library', 'harpoon'].map(panelConfig);
+
+    var root = document.documentElement.style;
+    for (var i = 0; i < panelConfigs.length; i++) {
+      var cfg = panelConfigs[i];
+      root.setProperty(cfg.cssVarW, cfg.read(false) + 'px');
+      root.setProperty(cfg.cssVarH, cfg.read(true) + 'px');
     }
 
     for (var j = 0; j < panelConfigs.length; j++) {

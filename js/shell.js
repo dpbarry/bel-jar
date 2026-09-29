@@ -32,36 +32,23 @@
   function defaultModel() {
     return { baseMs: DEFAULT_BASE_MS, msPerLine: DEFAULT_MS_PER_LINE, sampleCount: 0 };
   }
-  function normalizeStats(raw) {
-    if (!raw) return null;
-    if (typeof raw.msPerLine === "number" && raw.msPerLine > 0 && typeof raw.baseMs === "number") {
-      return {
-        baseMs: Math.max(MIN_BASE_MS, raw.baseMs),
-        msPerLine: Math.max(MIN_MS_PER_LINE, raw.msPerLine),
-        sampleCount: raw.sampleCount > 0 ? raw.sampleCount : 1
-      };
-    }
-    if (raw.lines > 0 && raw.ms > 0) {
-      return {
-        baseMs: DEFAULT_BASE_MS,
-        msPerLine: Math.max(MIN_MS_PER_LINE, raw.ms / raw.lines),
-        sampleCount: 1
-      };
-    }
-    return null;
-  }
   function readModel() {
-    var P3 = global.Persist;
-    if (!P3) return null;
-    return normalizeStats(P3.loadStat());
+    var D = global.Device;
+    var raw = D ? D.get("runModel") : null;
+    if (!raw) return null;
+    return {
+      baseMs: Math.max(MIN_BASE_MS, raw.baseMs),
+      msPerLine: Math.max(MIN_MS_PER_LINE, raw.msPerLine),
+      sampleCount: raw.sampleCount
+    };
   }
   function learningAlpha(sampleCount) {
     return Math.max(LEARN_ALPHA_FLOOR, Math.min(LEARN_ALPHA_CAP, 2 / (sampleCount + 2)));
   }
   function writeStats(lines, ms) {
     if (lines < LEARN_MIN_LINES || ms <= 0) return;
-    var P3 = global.Persist;
-    if (!P3) return;
+    var D = global.Device;
+    if (!D) return;
     try {
       var prev = readModel() || defaultModel();
       var observedRate = ms / lines;
@@ -77,9 +64,7 @@
         var impliedBase = Math.max(MIN_BASE_MS, ms - lines * msPerLine);
         baseMs = prev.baseMs * (1 - alpha) + impliedBase * alpha;
       }
-      P3.saveStat({
-        lines,
-        ms,
+      D.set("runModel", {
         msPerLine: Math.round(msPerLine * 100) / 100,
         baseMs: Math.round(baseMs),
         sampleCount: prev.sampleCount + 1
@@ -211,6 +196,10 @@
     setTimeout(finish, FADE_OUT_MS + 50);
   }
   global.RunProgress = {
+    /** Fold one finished run into the device's model (what complete() does with its timing). */
+    learn: writeStats,
+    /** How long a run of this many lines should take, by the learned model. */
+    estimateMs: estimateDurationMs,
     bind: function(opts) {
       headerEl = opts.header;
       fillEl = opts.fill;
@@ -271,2250 +260,1398 @@
     }
   };
 
-  // js/persist/persist-ui-prefs.mjs
-  function create(deps) {
-    var THEME_STORAGE_KEY2 = deps.THEME_STORAGE_KEY;
-    var UI_FONT_SIZE_KEY2 = deps.UI_FONT_SIZE_KEY;
-    var UI_FONT_SCALES2 = deps.UI_FONT_SCALES;
-    var UI_TEXT_CONTRAST_KEY2 = deps.UI_TEXT_CONTRAST_KEY;
-    var UI_TEXT_CONTRAST_MULTIPLIERS2 = deps.UI_TEXT_CONTRAST_MULTIPLIERS;
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    function readStoredTheme2() {
-      try {
-        return backendLoad2(THEME_STORAGE_KEY2) === "light" ? "light" : "dark";
-      } catch (_) {
-        return "dark";
-      }
+  // js/persist/store.mjs
+  var SCHEMA = 4;
+  var SCHEMA_KEY = "beljar/schema";
+  var CLASSES = [
+    { pattern: /^beljar\/settings$/, cls: "settings" },
+    { pattern: /^beljar\/device$/, cls: "device" },
+    { pattern: /^beljar\/notifications$/, cls: "device" },
+    { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: "device" },
+    { pattern: /^beljar\/tabs\/(ping|pong|bye)$/, cls: "device" },
+    { pattern: /^beljar\/tombstones$/, cls: "device" },
+    { pattern: /^beljar\/settings-sync$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/meta$/, cls: "work" },
+    { pattern: /^beljar\/p\/[^/]+\/tree$/, cls: "work" },
+    { pattern: /^beljar\/p\/[^/]+\/f\/[^/]+$/, cls: "work" },
+    { pattern: /^beljar\/p\/[^/]+\/session$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/folds$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/undo$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/conflict\/[^/]+$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/sync$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/cache\/[^/]+$/, cls: "cache" }
+  ];
+  function classOf(key) {
+    const k = String(key || "");
+    for (const row of CLASSES) {
+      if (row.pattern.test(k)) return row.cls;
     }
-    function writeStoredTheme2(mode) {
-      if (mode === "light") backendSave2(THEME_STORAGE_KEY2, "light");
-      else backendRemove2(THEME_STORAGE_KEY2);
-    }
-    function readStoredUiFontSize2() {
-      try {
-        var v = backendLoad2(UI_FONT_SIZE_KEY2);
-        if (v === "sm" || v === "lg" || v === "xl") return v;
-        return "md";
-      } catch (_) {
-        return "md";
-      }
-    }
-    function writeStoredUiFontSize2(size) {
-      if (size === "md") backendRemove2(UI_FONT_SIZE_KEY2);
-      else if (size === "sm" || size === "lg" || size === "xl") backendSave2(UI_FONT_SIZE_KEY2, size);
-      else backendRemove2(UI_FONT_SIZE_KEY2);
-    }
-    function uiFontScaleForSize2(size) {
-      return UI_FONT_SCALES2[size] || 1;
-    }
-    function applyStoredUiFontSize2(doc2) {
-      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
-      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
-      if (!root2) return;
-      root2.style.setProperty("--ui-font-scale", String(uiFontScaleForSize2(readStoredUiFontSize2())));
-    }
-    function readStoredUiTextContrast2() {
-      try {
-        var v = backendLoad2(UI_TEXT_CONTRAST_KEY2);
-        if (v === "low" || v === "normal") return "low";
-        if (v === "medium" || v === "high" || v === "maximum") return v;
-        return "medium";
-      } catch (_) {
-        return "medium";
-      }
-    }
-    function writeStoredUiTextContrast2(contrast) {
-      if (contrast === "medium") backendRemove2(UI_TEXT_CONTRAST_KEY2);
-      else if (contrast === "low" || contrast === "high" || contrast === "maximum") {
-        backendSave2(UI_TEXT_CONTRAST_KEY2, contrast);
-      } else backendRemove2(UI_TEXT_CONTRAST_KEY2);
-    }
-    function uiTextContrastMultiplierForLevel2(contrast) {
-      return UI_TEXT_CONTRAST_MULTIPLIERS2[contrast] || UI_TEXT_CONTRAST_MULTIPLIERS2.medium;
-    }
-    function applyStoredUiTextContrast2(doc2) {
-      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
-      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
-      if (!root2) return;
-      root2.style.setProperty("--ui-text-contrast", String(uiTextContrastMultiplierForLevel2(readStoredUiTextContrast2())));
-    }
+    return null;
+  }
+  function isCapacityError(err) {
+    if (!err) return false;
+    const name = String(err.name || "");
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
+    if (err.code === 22 || err.code === 1014) return true;
+    return /quota/i.test(String(err.message || ""));
+  }
+  function createMemoryStorage() {
+    const m = /* @__PURE__ */ new Map();
     return {
-      readStoredTheme: readStoredTheme2,
-      writeStoredTheme: writeStoredTheme2,
-      readStoredUiFontSize: readStoredUiFontSize2,
-      writeStoredUiFontSize: writeStoredUiFontSize2,
-      uiFontScaleForSize: uiFontScaleForSize2,
-      applyStoredUiFontSize: applyStoredUiFontSize2,
-      readStoredUiTextContrast: readStoredUiTextContrast2,
-      writeStoredUiTextContrast: writeStoredUiTextContrast2,
-      uiTextContrastMultiplierForLevel: uiTextContrastMultiplierForLevel2,
-      applyStoredUiTextContrast: applyStoredUiTextContrast2
+      get length() {
+        return m.size;
+      },
+      key(i) {
+        return i >= 0 && i < m.size ? [...m.keys()][i] : null;
+      },
+      getItem(k) {
+        return m.has(k) ? m.get(k) : null;
+      },
+      setItem(k, v) {
+        m.set(String(k), String(v));
+      },
+      removeItem(k) {
+        m.delete(k);
+      },
+      clear() {
+        m.clear();
+      }
     };
   }
-
-  // js/persist/persist-settings.mjs
-  function create2(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var THEME_STORAGE_KEY2 = deps.THEME_STORAGE_KEY;
-    var UI_FONT_SIZE_KEY2 = deps.UI_FONT_SIZE_KEY;
-    var UI_TEXT_CONTRAST_KEY2 = deps.UI_TEXT_CONTRAST_KEY;
-    var BELUGA_MODE_STORAGE_KEY2 = deps.BELUGA_MODE_STORAGE_KEY;
-    var DEFAULT_PROJECT_NAME2 = deps.DEFAULT_PROJECT_NAME;
-    var ensureProject2 = deps.ensureProject;
-    var getFileText2 = deps.getFileText;
-    var readState2 = deps.readState;
-    var defaultBackend2 = deps.defaultBackend;
-    var stateKeyFor2 = deps.stateKeyFor;
-    function readStoredBelugaMode2() {
-      try {
-        var v = backendLoad2(BELUGA_MODE_STORAGE_KEY2);
-        if (v === "fast" || v === "stable") return v;
-        var old = backendLoad2("beljar-beluga-build");
-        return old === "fast" || old === "auto" ? "fast" : "stable";
-      } catch (_) {
-        return "stable";
-      }
-    }
-    function writeStoredBelugaMode2(mode) {
-      backendSave2(BELUGA_MODE_STORAGE_KEY2, mode);
-    }
-    var HOVER_SCOPE_KEY = "beljar-hover-scope";
-    function readStoredHoverScope2() {
-      try {
-        var v = backendLoad2(HOVER_SCOPE_KEY);
-        if (v === "user-only") return "user-only";
-        if (v === "none") return "none";
-        return "all";
-      } catch (_) {
-        return "all";
-      }
-    }
-    function writeStoredHoverScope2(scope) {
-      if (scope === "all") {
-        backendRemove2(HOVER_SCOPE_KEY);
-      } else {
-        backendSave2(HOVER_SCOPE_KEY, scope);
-      }
-    }
-    var ALIAS_ACTIVATION_KEY = "beljar-alias-activation";
-    var ALIAS_PAIRS_KEY = "beljar-alias-pairs";
-    var CFG_AUTO_SYNC_KEY = "beljar-cfg-auto-sync";
-    function readStoredCfgAutoSync2() {
-      try {
-        var v = backendLoad2(CFG_AUTO_SYNC_KEY);
-        return v !== "off";
-      } catch (_) {
-        return true;
-      }
-    }
-    function writeStoredCfgAutoSync2(on) {
-      if (on) backendRemove2(CFG_AUTO_SYNC_KEY);
-      else backendSave2(CFG_AUTO_SYNC_KEY, "off");
-    }
-    function readStoredAliasActivation2() {
-      try {
-        var v = backendLoad2(ALIAS_ACTIVATION_KEY);
-        return v === "strict" ? "strict" : "greedy";
-      } catch (_) {
-        return "greedy";
-      }
-    }
-    function writeStoredAliasActivation2(mode) {
-      if (mode === "strict") backendSave2(ALIAS_ACTIVATION_KEY, "strict");
-      else backendRemove2(ALIAS_ACTIVATION_KEY);
-    }
-    function readStoredAliasPairs2() {
-      try {
-        var raw = backendLoad2(ALIAS_PAIRS_KEY);
-        if (raw == null || raw === "") return null;
-        var parsed = tryParse2(raw);
-        if (!Array.isArray(parsed)) return null;
-        return parsed;
-      } catch (_) {
-        return null;
-      }
-    }
-    function writeStoredAliasPairs2(pairs) {
-      if (pairs == null) {
-        backendRemove2(ALIAS_PAIRS_KEY);
-        return;
-      }
-      if (!Array.isArray(pairs)) return;
-      backendSave2(ALIAS_PAIRS_KEY, JSON.stringify(pairs));
-    }
-    var REPL_AUTOSCROLL_KEY = "beljar-repl-autoscroll";
-    var REPL_WELCOME_KEY = "beljar-repl-welcome";
-    var REPL_ECHO_KEY = "beljar-repl-echo";
-    var REPL_FILTER_CHATTER_KEY = "beljar-repl-filter-chatter";
-    var REPL_HOVER_TIMESTAMP_KEY = "beljar-repl-hover-timestamp";
-    var REPL_HISTORY_CAP_KEY = "beljar-repl-history-cap";
-    var REPL_HISTORY_PERSIST_KEY = "beljar-repl-history-persist";
-    var REPL_AUTOCOMPLETE_TRIGGER_KEY = "beljar-repl-autocomplete-trigger";
-    var REPL_AUTOCOMPLETE_CONTINUE_KEY = "beljar-repl-autocomplete-continue";
-    var REPL_TRANSCRIPT_KEY = "beljar-repl-transcript-v1";
-    var REPL_CMD_HISTORY_KEY = "beljar-repl-cmd-history-v1";
-    var REPL_CMD_HISTORY_DEFAULT_CAP = 1e3;
-    var BELUGA_FALLBACK_STABLE_KEY = "beljar-beluga-fallback-stable";
-    var BELUGA_CANCEL_ON_EDIT_KEY = "beljar-beluga-cancel-on-edit";
-    var LIBRARY_EXPAND_DEFAULT_KEY = "beljar-library-expand-default";
-    var LIBRARY_HINT_DISMISSED_KEY = "beljar-library-hint-dismissed";
-    var HINT_DISMISSED_PREFIX = "beljar-hint-dismissed:";
-    var RESTORE_PANELS_KEY = "beljar-restore-panels";
-    var AUTOSAVE_DELAY_KEY = "beljar-autosave-delay";
-    var EDITOR_FONT_SIZE_KEY = "beljar-editor-font-size";
-    var EDITOR_LINE_HEIGHT_KEY = "beljar-editor-line-height";
-    var EDITOR_WORD_WRAP_KEY = "beljar-editor-word-wrap";
-    var EDITOR_TAB_SIZE_KEY = "beljar-editor-tab-size";
-    var EDITOR_LINE_NUMBERS_KEY = "beljar-editor-line-numbers";
-    var EDITOR_FOLD_GUTTER_KEY = "beljar-editor-fold-gutter";
-    var EDITOR_FOLD_PERSIST_KEY = "beljar-editor-fold-persist";
-    var EDITOR_ACTIVE_LINE_KEY = "beljar-editor-active-line";
-    var EDITOR_DIAG_GUTTER_KEY = "beljar-editor-diag-gutter";
-    var EDITOR_HOLE_GUTTER_KEY = "beljar-editor-hole-gutter";
-    var EDITOR_SYNTAX_HIGHLIGHT_KEY = "beljar-editor-syntax-highlight";
-    var EDITOR_SEMANTIC_HIGHLIGHT_KEY = "beljar-editor-semantic-highlight";
-    var EDITOR_PARSE_HIGHLIGHT_KEY = "beljar-editor-parse-highlight";
-    var EDITOR_OCCURRENCE_HIGHLIGHT_KEY = "beljar-editor-occurrence-highlight";
-    var EDITOR_BRACKET_MATCH_KEY = "beljar-editor-bracket-match";
-    var EDITOR_AUTO_CLOSE_BRACKETS_KEY = "beljar-editor-auto-close-brackets";
-    var EDITOR_SELECTION_MATCHES_KEY = "beljar-editor-selection-matches";
-    var EDITOR_REINDENT_PASTE_KEY = "beljar-editor-reindent-paste";
-    var EDITOR_FORMAT_WIDTH_KEY = "beljar-editor-format-width";
-    var EDITOR_AUTOCOMPLETE_TRIGGER_KEY = "beljar-editor-autocomplete-trigger";
-    var EDITOR_AUTOCOMPLETE_CONTINUE_KEY = "beljar-editor-autocomplete-continue";
-    var EDITOR_CURSOR_BLINK_KEY = "beljar-editor-cursor-blink";
-    var EDITOR_SCROLL_PAST_END_KEY = "beljar-editor-scroll-past-end";
-    var EDITOR_WHITESPACE_KEY = "beljar-editor-whitespace";
-    var EDITOR_RULERS_KEY = "beljar-editor-rulers";
-    var EDITOR_FONT_FAMILY_KEY = "beljar-editor-font-family";
-    var EDITOR_HOLE_EMPHASIS_KEY = "beljar-editor-hole-emphasis";
-    var KEYMAP_STYLE_KEY = "beljar-keymap-style";
-    var STATUS_STRIP_KEY = "beljar-status-strip";
-    var COMMAND_LINE_HISTORY_KEY = "beljar-command-line-history";
-    var DOUBLE_TAP_TRIGGER_KEY = "beljar-double-tap-trigger";
-    var DOUBLE_TAP_COMMAND_KEY = "beljar-double-tap-command";
-    var DOUBLE_TAP_SPEED_KEY = "beljar-double-tap-speed";
-    var VIM_LEADER_KEY = "beljar-vim-leader";
-    var EMACS_YANK_SOURCE_KEY = "beljar-emacs-yank-source";
-    var EDITOR_LINE_NUMBER_MODE_KEY = "beljar-editor-line-number-mode";
-    var VIM_INSERT_ESCAPE_KEY = "beljar-vim-insert-escape";
-    var MOTION_PREF_KEY = "beljar-motion-pref";
-    var TOAST_DURATION_KEY = "beljar-toast-duration";
-    var CHECK_AGGRESSIVENESS_KEY = "beljar-check-aggressiveness";
-    var AUTOSOLVE_FOCUS_NEXT_KEY = "beljar-autosolve-focus-next";
-    var AUTOSOLVE_SHOW_STATS_KEY = "beljar-autosolve-show-stats";
-    var HARPOON_MODE_KEY = "beljar-harpoon-mode";
-    var HARPOON_VERIFY_MOVES_KEY = "beljar-harpoon-verify-moves";
-    var QUIET_WHILE_TYPING_KEY = "beljar-quiet-while-typing";
-    var DIAG_PRESENTATION_KEY = "beljar-diag-presentation";
-    var DIAG_SEVERITY_KEY = "beljar-diag-severity";
-    var FORMAT_ON_SAVE_KEY = "beljar-format-on-save";
-    var TRIM_TRAILING_WS_KEY = "beljar-trim-trailing-ws";
-    var STICKY_DECL_HEADER_KEY = "beljar-sticky-decl-header";
-    var SUITE_CHECK_KEY = "beljar-suite-check";
-    var HOVER_STICKY_KEY = "beljar-hover-sticky";
-    function readBoolDefaultOn(key) {
-      try {
-        return backendLoad2(key) !== "off";
-      } catch (_) {
-        return true;
-      }
-    }
-    function writeBoolDefaultOn(key, on) {
-      if (on) backendRemove2(key);
-      else backendSave2(key, "off");
-    }
-    function readBoolDefaultOff(key) {
-      try {
-        return backendLoad2(key) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeBoolDefaultOff(key, on) {
-      if (on) backendSave2(key, "1");
-      else backendRemove2(key);
-    }
-    function readStoredReplAutoscroll2() {
-      return readBoolDefaultOn(REPL_AUTOSCROLL_KEY);
-    }
-    function writeStoredReplAutoscroll2(on) {
-      writeBoolDefaultOn(REPL_AUTOSCROLL_KEY, on);
-    }
-    function readStoredReplWelcome2() {
-      return readBoolDefaultOn(REPL_WELCOME_KEY);
-    }
-    function writeStoredReplWelcome2(on) {
-      writeBoolDefaultOn(REPL_WELCOME_KEY, on);
-    }
-    function readStoredReplEcho2() {
-      return readBoolDefaultOn(REPL_ECHO_KEY);
-    }
-    function writeStoredReplEcho2(on) {
-      writeBoolDefaultOn(REPL_ECHO_KEY, on);
-    }
-    function readStoredReplFilterChatter2() {
-      return readBoolDefaultOn(REPL_FILTER_CHATTER_KEY);
-    }
-    function writeStoredReplFilterChatter2(on) {
-      writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on);
-    }
-    function readStoredReplHoverTimestamp2() {
-      return readBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY);
-    }
-    function writeStoredReplHoverTimestamp2(on) {
-      writeBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY, on);
-    }
-    function readStoredReplAutocompleteTrigger2() {
-      try {
-        var v = backendLoad2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
-        if (v === "none" || v === "always") return v;
-        return "typing";
-      } catch (_) {
-        return "typing";
-      }
-    }
-    function writeStoredReplAutocompleteTrigger2(mode) {
-      if (mode === "none" || mode === "always") backendSave2(REPL_AUTOCOMPLETE_TRIGGER_KEY, mode);
-      else backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
-    }
-    function readStoredReplAutocompleteContinue2() {
-      return readBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY);
-    }
-    function writeStoredReplAutocompleteContinue2(on) {
-      writeBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY, on);
-    }
-    function readStoredReplHistoryCap2() {
-      try {
-        var v = parseInt(backendLoad2(REPL_HISTORY_CAP_KEY), 10);
-        if (v === 100 || v === 250 || v === 500 || v === 1e3) return v;
-        return REPL_CMD_HISTORY_DEFAULT_CAP;
-      } catch (_) {
-        return REPL_CMD_HISTORY_DEFAULT_CAP;
-      }
-    }
-    function writeStoredReplHistoryCap2(cap) {
-      var n = Number(cap);
-      if (n === 100 || n === 250 || n === 500) backendSave2(REPL_HISTORY_CAP_KEY, String(n));
-      else backendRemove2(REPL_HISTORY_CAP_KEY);
-    }
-    function readStoredReplHistoryPersist2() {
-      try {
-        var v = backendLoad2(REPL_HISTORY_PERSIST_KEY);
-        if (v === "session" || v === "none") return v;
-        return "local";
-      } catch (_) {
-        return "local";
-      }
-    }
-    function replHistoryStore(mode) {
-      if (typeof globalThis === "undefined") return null;
-      if (mode === "session") return globalThis.sessionStorage || null;
-      if (mode === "local") return globalThis.localStorage || null;
-      return null;
-    }
-    function replHistoryStoreGet(mode, key) {
-      var store2 = replHistoryStore(mode);
-      if (!store2) return null;
-      try {
-        return store2.getItem(key);
-      } catch (_) {
-        return null;
-      }
-    }
-    function replHistoryStoreSet(mode, key, value) {
-      var store2 = replHistoryStore(mode);
-      if (!store2) return;
-      try {
-        store2.setItem(key, value);
-      } catch (_) {
-      }
-    }
-    function replHistoryStoreRemove(mode, key) {
-      var store2 = replHistoryStore(mode);
-      if (!store2) return;
-      try {
-        store2.removeItem(key);
-      } catch (_) {
-      }
-    }
-    function clearReplHistoryPayload(mode) {
-      if (mode === "session" || mode === "local") {
-        replHistoryStoreRemove(mode, REPL_TRANSCRIPT_KEY);
-        replHistoryStoreRemove(mode, REPL_CMD_HISTORY_KEY);
-        return;
-      }
-      replHistoryStoreRemove("session", REPL_TRANSCRIPT_KEY);
-      replHistoryStoreRemove("session", REPL_CMD_HISTORY_KEY);
-      replHistoryStoreRemove("local", REPL_TRANSCRIPT_KEY);
-      replHistoryStoreRemove("local", REPL_CMD_HISTORY_KEY);
-    }
-    function writeStoredReplHistoryPersist2(mode) {
-      var next = mode === "session" || mode === "none" ? mode : "local";
-      var prev = readStoredReplHistoryPersist2();
-      if (next === "local") backendRemove2(REPL_HISTORY_PERSIST_KEY);
-      else backendSave2(REPL_HISTORY_PERSIST_KEY, next);
-      if (prev === next) return;
-      if (next === "none") {
-        clearReplHistoryPayload();
-        return;
-      }
-      if (prev === "session" || prev === "local") {
-        var keys = [REPL_TRANSCRIPT_KEY, REPL_CMD_HISTORY_KEY];
-        for (var i = 0; i < keys.length; i++) {
-          var key = keys[i];
-          var raw = replHistoryStoreGet(prev, key);
-          if (raw && !replHistoryStoreGet(next, key)) replHistoryStoreSet(next, key, raw);
-        }
-        clearReplHistoryPayload(prev);
-      }
-    }
-    function readStoredReplTranscript2() {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return null;
-        var raw = replHistoryStoreGet(mode, REPL_TRANSCRIPT_KEY);
-        if (!raw) return null;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== "object" || parsed.v !== 1) return null;
-        if (typeof parsed.html !== "string") return null;
-        return {
-          v: 1,
-          html: parsed.html,
-          scrollTop: typeof parsed.scrollTop === "number" ? parsed.scrollTop : 0,
-          savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0
-        };
-      } catch (_) {
-        return null;
-      }
-    }
-    function writeStoredReplTranscript2(snap) {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return;
-        if (!snap || typeof snap.html !== "string" || !snap.html) {
-          replHistoryStoreRemove(mode, REPL_TRANSCRIPT_KEY);
-          return;
-        }
-        replHistoryStoreSet(mode, REPL_TRANSCRIPT_KEY, JSON.stringify({
-          v: 1,
-          html: snap.html,
-          scrollTop: typeof snap.scrollTop === "number" ? snap.scrollTop : 0,
-          savedAt: typeof snap.savedAt === "number" ? snap.savedAt : Date.now()
-        }));
-      } catch (_) {
-      }
-    }
-    function clampReplCommandHistory(list3) {
-      var arr = Array.isArray(list3) ? list3.filter(function(s) {
-        return typeof s === "string";
-      }) : [];
-      var cap = readStoredReplHistoryCap2();
-      if (!cap) cap = REPL_CMD_HISTORY_DEFAULT_CAP;
-      if (arr.length > cap) arr = arr.slice(arr.length - cap);
-      return arr;
-    }
-    function readStoredReplCommandHistory2() {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return [];
-        var raw = replHistoryStoreGet(mode, REPL_CMD_HISTORY_KEY);
-        if (!raw) return [];
-        var parsed = JSON.parse(raw);
-        return clampReplCommandHistory(parsed);
-      } catch (_) {
-        return [];
-      }
-    }
-    function writeStoredReplCommandHistory2(list3) {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return;
-        var arr = clampReplCommandHistory(list3);
-        if (!arr.length) replHistoryStoreRemove(mode, REPL_CMD_HISTORY_KEY);
-        else replHistoryStoreSet(mode, REPL_CMD_HISTORY_KEY, JSON.stringify(arr));
-      } catch (_) {
-      }
-    }
-    function readStoredBelugaFallbackStable2() {
-      return readBoolDefaultOn(BELUGA_FALLBACK_STABLE_KEY);
-    }
-    function writeStoredBelugaFallbackStable2(on) {
-      writeBoolDefaultOn(BELUGA_FALLBACK_STABLE_KEY, on);
-    }
-    function readStoredBelugaCancelOnEdit2() {
-      return readBoolDefaultOn(BELUGA_CANCEL_ON_EDIT_KEY);
-    }
-    function writeStoredBelugaCancelOnEdit2(on) {
-      writeBoolDefaultOn(BELUGA_CANCEL_ON_EDIT_KEY, on);
-    }
-    function readStoredLibraryExpandDefault2() {
-      return readBoolDefaultOff(LIBRARY_EXPAND_DEFAULT_KEY);
-    }
-    function writeStoredLibraryExpandDefault2(on) {
-      writeBoolDefaultOff(LIBRARY_EXPAND_DEFAULT_KEY, on);
-    }
-    function readStoredLibraryHintDismissed2() {
-      return readBoolDefaultOff(LIBRARY_HINT_DISMISSED_KEY);
-    }
-    function writeStoredLibraryHintDismissed2(on) {
-      writeBoolDefaultOff(LIBRARY_HINT_DISMISSED_KEY, on);
-    }
-    function readStoredHintDismissed2(id) {
-      if (id == null || id === "") return false;
-      return readBoolDefaultOff(HINT_DISMISSED_PREFIX + String(id));
-    }
-    function writeStoredHintDismissed2(id, on) {
-      if (id == null || id === "") return;
-      writeBoolDefaultOff(HINT_DISMISSED_PREFIX + String(id), !!on);
-    }
-    function readStoredRestorePanels2() {
-      return readBoolDefaultOn(RESTORE_PANELS_KEY);
-    }
-    function writeStoredRestorePanels2(on) {
-      writeBoolDefaultOn(RESTORE_PANELS_KEY, on);
-    }
-    function readStoredAutosaveDelay2() {
-      try {
-        var v = parseInt(backendLoad2(AUTOSAVE_DELAY_KEY), 10);
-        if (v === 320 || v === 1e3 || v === 2e3) return v;
-        return 320;
-      } catch (_) {
-        return 320;
-      }
-    }
-    function writeStoredAutosaveDelay2(ms) {
-      var n = Number(ms);
-      if (n === 320) backendRemove2(AUTOSAVE_DELAY_KEY);
-      else if (n === 1e3 || n === 2e3) backendSave2(AUTOSAVE_DELAY_KEY, String(n));
-      else backendRemove2(AUTOSAVE_DELAY_KEY);
-    }
-    function readStoredEditorFontSize2() {
-      try {
-        var v = backendLoad2(EDITOR_FONT_SIZE_KEY);
-        if (v === "sm" || v === "lg" || v === "xl") return v;
-        return "md";
-      } catch (_) {
-        return "md";
-      }
-    }
-    function writeStoredEditorFontSize2(size) {
-      if (size === "md") backendRemove2(EDITOR_FONT_SIZE_KEY);
-      else if (size === "sm" || size === "lg" || size === "xl") backendSave2(EDITOR_FONT_SIZE_KEY, size);
-      else backendRemove2(EDITOR_FONT_SIZE_KEY);
-    }
-    function readStoredEditorLineHeight2() {
-      try {
-        var v = backendLoad2(EDITOR_LINE_HEIGHT_KEY);
-        if (v === "compact" || v === "relaxed") return v;
-        return "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredEditorLineHeight2(mode) {
-      if (mode === "normal") backendRemove2(EDITOR_LINE_HEIGHT_KEY);
-      else if (mode === "compact" || mode === "relaxed") backendSave2(EDITOR_LINE_HEIGHT_KEY, mode);
-      else backendRemove2(EDITOR_LINE_HEIGHT_KEY);
-    }
-    function readStoredEditorWordWrap2() {
-      return readBoolDefaultOff(EDITOR_WORD_WRAP_KEY);
-    }
-    function writeStoredEditorWordWrap2(on) {
-      writeBoolDefaultOff(EDITOR_WORD_WRAP_KEY, on);
-    }
-    function readStoredEditorTabSize2() {
-      try {
-        return backendLoad2(EDITOR_TAB_SIZE_KEY) === "4" ? 4 : 2;
-      } catch (_) {
-        return 2;
-      }
-    }
-    function writeStoredEditorTabSize2(n) {
-      if (Number(n) === 4) backendSave2(EDITOR_TAB_SIZE_KEY, "4");
-      else backendRemove2(EDITOR_TAB_SIZE_KEY);
-    }
-    function readStoredEditorLineNumbers2() {
-      return readBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY);
-    }
-    function writeStoredEditorLineNumbers2(on) {
-      writeBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY, on);
-    }
-    function readStoredEditorLineNumberMode2() {
-      try {
-        var v = backendLoad2(EDITOR_LINE_NUMBER_MODE_KEY);
-        if (v === "relative" || v === "hybrid") return v;
-        return "absolute";
-      } catch (_) {
-        return "absolute";
-      }
-    }
-    function writeStoredEditorLineNumberMode2(v) {
-      if (v === "relative" || v === "hybrid") backendSave2(EDITOR_LINE_NUMBER_MODE_KEY, v);
-      else backendRemove2(EDITOR_LINE_NUMBER_MODE_KEY);
-    }
-    function readStoredEditorFoldGutter2() {
-      return readBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY);
-    }
-    function writeStoredEditorFoldGutter2(on) {
-      writeBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY, on);
-    }
-    function readStoredEditorFoldPersist2() {
-      try {
-        var v = backendLoad2(EDITOR_FOLD_PERSIST_KEY);
-        if (v === "none" || v === "local") return v;
-        return "session";
-      } catch (_) {
-        return "session";
-      }
-    }
-    function writeStoredEditorFoldPersist2(mode) {
-      if (mode === "none" || mode === "local") backendSave2(EDITOR_FOLD_PERSIST_KEY, mode);
-      else backendRemove2(EDITOR_FOLD_PERSIST_KEY);
-    }
-    function readStoredEditorActiveLine2() {
-      return readBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY);
-    }
-    function writeStoredEditorActiveLine2(on) {
-      writeBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY, on);
-    }
-    function readStoredEditorDiagGutter2() {
-      return readBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY);
-    }
-    function writeStoredEditorDiagGutter2(on) {
-      writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, on);
-    }
-    function readStoredEditorHoleGutter2() {
-      return readBoolDefaultOn(EDITOR_HOLE_GUTTER_KEY);
-    }
-    function writeStoredEditorHoleGutter2(on) {
-      writeBoolDefaultOn(EDITOR_HOLE_GUTTER_KEY, on);
-    }
-    function readStoredEditorSyntaxHighlight2() {
-      return readBoolDefaultOn(EDITOR_SYNTAX_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorSyntaxHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_SYNTAX_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorSemanticHighlight2() {
-      return readBoolDefaultOn(EDITOR_SEMANTIC_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorSemanticHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_SEMANTIC_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorParseHighlight2() {
-      return readBoolDefaultOn(EDITOR_PARSE_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorParseHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_PARSE_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorOccurrenceHighlight2() {
-      return readBoolDefaultOn(EDITOR_OCCURRENCE_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorOccurrenceHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_OCCURRENCE_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorBracketMatch2() {
-      return readBoolDefaultOn(EDITOR_BRACKET_MATCH_KEY);
-    }
-    function writeStoredEditorBracketMatch2(on) {
-      writeBoolDefaultOn(EDITOR_BRACKET_MATCH_KEY, on);
-    }
-    function readStoredEditorAutoCloseBrackets2() {
-      return readBoolDefaultOn(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
-    }
-    function writeStoredEditorAutoCloseBrackets2(on) {
-      writeBoolDefaultOn(EDITOR_AUTO_CLOSE_BRACKETS_KEY, on);
-    }
-    function readStoredEditorSelectionMatches2() {
-      return readBoolDefaultOn(EDITOR_SELECTION_MATCHES_KEY);
-    }
-    function writeStoredEditorSelectionMatches2(on) {
-      writeBoolDefaultOn(EDITOR_SELECTION_MATCHES_KEY, on);
-    }
-    function readStoredEditorReindentPaste2() {
-      return readBoolDefaultOn(EDITOR_REINDENT_PASTE_KEY);
-    }
-    function writeStoredEditorReindentPaste2(on) {
-      writeBoolDefaultOn(EDITOR_REINDENT_PASTE_KEY, on);
-    }
-    function readStoredEditorFormatWidth2() {
-      try {
-        var v = parseInt(backendLoad2(EDITOR_FORMAT_WIDTH_KEY), 10);
-        if (v === 100 || v === 120) return v;
-        return 80;
-      } catch (_) {
-        return 80;
-      }
-    }
-    function writeStoredEditorFormatWidth2(width) {
-      var n = Number(width);
-      if (n === 80) backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
-      else if (n === 100 || n === 120) backendSave2(EDITOR_FORMAT_WIDTH_KEY, String(n));
-      else backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
-    }
-    function readStoredEditorAutocompleteTrigger2() {
-      try {
-        var v = backendLoad2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
-        if (v === "none" || v === "always") return v;
-        return "typing";
-      } catch (_) {
-        return "typing";
-      }
-    }
-    function writeStoredEditorAutocompleteTrigger2(mode) {
-      if (mode === "none" || mode === "always") backendSave2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY, mode);
-      else backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
-    }
-    function readStoredEditorAutocompleteContinue2() {
-      return readBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
-    }
-    function writeStoredEditorAutocompleteContinue2(on) {
-      writeBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY, on);
-    }
-    function readStoredEditorCursorBlink() {
-      try {
-        var v = backendLoad2(EDITOR_CURSOR_BLINK_KEY);
-        if (v === "off" || v === "fast") return v;
-        return "blink";
-      } catch (_) {
-        return "blink";
-      }
-    }
-    function writeStoredEditorCursorBlink(mode) {
-      if (mode === "off" || mode === "fast") backendSave2(EDITOR_CURSOR_BLINK_KEY, mode);
-      else backendRemove2(EDITOR_CURSOR_BLINK_KEY);
-    }
-    function readStoredEditorScrollPastEnd() {
-      return readBoolDefaultOn(EDITOR_SCROLL_PAST_END_KEY);
-    }
-    function writeStoredEditorScrollPastEnd(on) {
-      writeBoolDefaultOn(EDITOR_SCROLL_PAST_END_KEY, on);
-    }
-    function readStoredEditorWhitespace() {
-      try {
-        var v = backendLoad2(EDITOR_WHITESPACE_KEY);
-        if (v === "trailing" || v === "all" || v === "selection") return v;
-        return "none";
-      } catch (_) {
-        return "none";
-      }
-    }
-    function writeStoredEditorWhitespace(mode) {
-      if (mode === "trailing" || mode === "all" || mode === "selection") backendSave2(EDITOR_WHITESPACE_KEY, mode);
-      else backendRemove2(EDITOR_WHITESPACE_KEY);
-    }
-    function readStoredEditorRulers() {
-      return readBoolDefaultOff(EDITOR_RULERS_KEY);
-    }
-    function writeStoredEditorRulers(on) {
-      writeBoolDefaultOff(EDITOR_RULERS_KEY, on);
-    }
-    function readStoredEditorFontFamily() {
-      try {
-        var v = backendLoad2(EDITOR_FONT_FAMILY_KEY);
-        if (v === "system") return "system";
-        return "jetbrains";
-      } catch (_) {
-        return "jetbrains";
-      }
-    }
-    function writeStoredEditorFontFamily(family) {
-      if (family === "system") backendSave2(EDITOR_FONT_FAMILY_KEY, "system");
-      else backendRemove2(EDITOR_FONT_FAMILY_KEY);
-    }
-    function readStoredEditorHoleEmphasis() {
-      try {
-        var v = backendLoad2(EDITOR_HOLE_EMPHASIS_KEY);
-        if (v === "subtle" || v === "loud") return v;
-        return "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredEditorHoleEmphasis(mode) {
-      if (mode === "subtle" || mode === "loud") backendSave2(EDITOR_HOLE_EMPHASIS_KEY, mode);
-      else backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
-    }
-    function readStoredKeymapStyle() {
-      try {
-        var v = backendLoad2(KEYMAP_STYLE_KEY);
-        if (v === "vim" || v === "emacs") return v;
-        return "default";
-      } catch (_) {
-        return "default";
-      }
-    }
-    function writeStoredKeymapStyle(style) {
-      if (style === "vim" || style === "emacs") backendSave2(KEYMAP_STYLE_KEY, style);
-      else backendRemove2(KEYMAP_STYLE_KEY);
-    }
-    function readStoredStatusStrip() {
-      try {
-        var v = backendLoad2(STATUS_STRIP_KEY);
-        if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
-        return null;
-      } catch (_) {
-        return null;
-      }
-    }
-    function writeStoredStatusStrip(mode) {
-      if (mode === "off" || mode === "compact" || mode === "standard" || mode === "detailed") backendSave2(STATUS_STRIP_KEY, mode);
-      else backendRemove2(STATUS_STRIP_KEY);
-    }
-    function readStoredCommandLineHistory() {
-      try {
-        var raw = backendLoad2(COMMAND_LINE_HISTORY_KEY);
-        if (!raw) return [];
-        var parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return [];
-        return parsed.filter(function(x) {
-          return typeof x === "string" && x;
-        }).slice(0, 50);
-      } catch (_) {
-        return [];
-      }
-    }
-    function writeStoredCommandLineHistory(list3) {
-      if (!Array.isArray(list3) || !list3.length) {
-        backendRemove2(COMMAND_LINE_HISTORY_KEY);
-        return;
-      }
-      var clean = list3.filter(function(x) {
-        return typeof x === "string" && x;
-      }).slice(0, 50);
-      backendSave2(COMMAND_LINE_HISTORY_KEY, JSON.stringify(clean));
-    }
-    function readStoredDoubleTapTrigger() {
-      try {
-        var v = backendLoad2(DOUBLE_TAP_TRIGGER_KEY);
-        return v === "shift" || v === "control" || v === "alt" ? v : "off";
-      } catch (_) {
-        return "off";
-      }
-    }
-    function writeStoredDoubleTapTrigger(v) {
-      if (v === "shift" || v === "control" || v === "alt") backendSave2(DOUBLE_TAP_TRIGGER_KEY, v);
-      else backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
-    }
-    function readStoredDoubleTapCommand() {
-      try {
-        var v = backendLoad2(DOUBLE_TAP_COMMAND_KEY);
-        return typeof v === "string" && v ? v : "tools.palette";
-      } catch (_) {
-        return "tools.palette";
-      }
-    }
-    function writeStoredDoubleTapCommand(v) {
-      if (typeof v === "string" && v && v !== "tools.palette") backendSave2(DOUBLE_TAP_COMMAND_KEY, v);
-      else backendRemove2(DOUBLE_TAP_COMMAND_KEY);
-    }
-    function readStoredDoubleTapSpeed() {
-      try {
-        var v = backendLoad2(DOUBLE_TAP_SPEED_KEY);
-        return v === "fast" || v === "relaxed" ? v : "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredDoubleTapSpeed(v) {
-      if (v === "fast" || v === "relaxed") backendSave2(DOUBLE_TAP_SPEED_KEY, v);
-      else backendRemove2(DOUBLE_TAP_SPEED_KEY);
-    }
-    function readStoredVimLeader() {
-      try {
-        var v = backendLoad2(VIM_LEADER_KEY);
-        if (v === "," || v === " ") return v;
-        return String.fromCharCode(92);
-      } catch (_) {
-        return String.fromCharCode(92);
-      }
-    }
-    function writeStoredVimLeader(v) {
-      if (v === "," || v === " ") backendSave2(VIM_LEADER_KEY, v);
-      else backendRemove2(VIM_LEADER_KEY);
-    }
-    function readStoredEmacsYankSource() {
-      try {
-        return backendLoad2(EMACS_YANK_SOURCE_KEY) === "kill-ring" ? "kill-ring" : "system";
-      } catch (_) {
-        return "system";
-      }
-    }
-    function writeStoredEmacsYankSource(v) {
-      if (v === "kill-ring") backendSave2(EMACS_YANK_SOURCE_KEY, "kill-ring");
-      else backendRemove2(EMACS_YANK_SOURCE_KEY);
-    }
-    function readStoredVimInsertEscape() {
-      try {
-        var v = backendLoad2(VIM_INSERT_ESCAPE_KEY);
-        return v === "jk" || v === "jj" || v === "kj" ? v : "";
-      } catch (_) {
-        return "";
-      }
-    }
-    function writeStoredVimInsertEscape(v) {
-      if (v === "jk" || v === "jj" || v === "kj") backendSave2(VIM_INSERT_ESCAPE_KEY, v);
-      else backendRemove2(VIM_INSERT_ESCAPE_KEY);
-    }
-    function readStoredMotionPref() {
-      try {
-        var v = backendLoad2(MOTION_PREF_KEY);
-        if (v === "reduce" || v === "full") return v;
-        return "system";
-      } catch (_) {
-        return "system";
-      }
-    }
-    function writeStoredMotionPref(mode) {
-      if (mode === "reduce" || mode === "full") backendSave2(MOTION_PREF_KEY, mode);
-      else backendRemove2(MOTION_PREF_KEY);
-    }
-    function applyStoredMotionPref(doc2) {
-      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
-      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
-      if (!root2) return;
-      var mode = readStoredMotionPref();
-      root2.classList.toggle("jar-motion-reduce", mode === "reduce");
-      root2.classList.toggle("jar-motion-full", mode === "full");
-    }
-    function prefersReducedMotion2() {
-      var mode = readStoredMotionPref();
-      if (mode === "reduce") return true;
-      if (mode === "full") return false;
-      try {
-        return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-      } catch (_) {
-        return false;
-      }
-    }
-    function readStoredToastDuration() {
-      try {
-        var v = backendLoad2(TOAST_DURATION_KEY);
-        if (v === "short" || v === "long") return v;
-        return "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredToastDuration(mode) {
-      if (mode === "short" || mode === "long") backendSave2(TOAST_DURATION_KEY, mode);
-      else backendRemove2(TOAST_DURATION_KEY);
-    }
-    function toastDurationForMode(mode) {
-      if (mode === "short") return 2e3;
-      if (mode === "long") return 5e3;
-      return 3500;
-    }
-    function toastDurationMs() {
-      return toastDurationForMode(readStoredToastDuration());
-    }
-    function readStoredCheckAggressiveness() {
-      try {
-        var v = backendLoad2(CHECK_AGGRESSIVENESS_KEY);
-        if (v === "responsive" || v === "thorough") return v;
-        return "balanced";
-      } catch (_) {
-        return "balanced";
-      }
-    }
-    function writeStoredCheckAggressiveness(mode) {
-      if (mode === "responsive" || mode === "thorough") backendSave2(CHECK_AGGRESSIVENESS_KEY, mode);
-      else backendRemove2(CHECK_AGGRESSIVENESS_KEY);
-    }
-    function checkAggressivenessScale() {
-      var mode = readStoredCheckAggressiveness();
-      if (mode === "responsive") return 0.7;
-      if (mode === "thorough") return 1.45;
-      return 1;
-    }
-    function readStoredAutosolveFocusNext() {
-      return readBoolDefaultOn(AUTOSOLVE_FOCUS_NEXT_KEY);
-    }
-    function writeStoredAutosolveFocusNext(on) {
-      writeBoolDefaultOn(AUTOSOLVE_FOCUS_NEXT_KEY, on);
-    }
-    function readStoredAutosolveShowStats() {
-      return readBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY);
-    }
-    function writeStoredAutosolveShowStats(on) {
-      writeBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY, on);
-    }
-    function readStoredHarpoonMode() {
-      try {
-        return backendLoad2(HARPOON_MODE_KEY) === "orca" ? "orca" : "manual";
-      } catch (_) {
-        return "manual";
-      }
-    }
-    function writeStoredHarpoonMode(mode) {
-      if (mode === "orca") backendSave2(HARPOON_MODE_KEY, "orca");
-      else backendRemove2(HARPOON_MODE_KEY);
-    }
-    function readStoredHarpoonVerifyMoves() {
-      return readBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY);
-    }
-    function writeStoredHarpoonVerifyMoves(on) {
-      writeBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY, on);
-    }
-    function readStoredQuietWhileTyping() {
-      return readBoolDefaultOff(QUIET_WHILE_TYPING_KEY);
-    }
-    function writeStoredQuietWhileTyping(on) {
-      writeBoolDefaultOff(QUIET_WHILE_TYPING_KEY, on);
-    }
-    function readStoredDiagPresentation() {
-      try {
-        var v = backendLoad2(DIAG_PRESENTATION_KEY);
-        if (v === "underlines" || v === "gutter" || v === "none" || v === "both") return v;
-        if (backendLoad2(EDITOR_DIAG_GUTTER_KEY) === "off") return "underlines";
-        return "both";
-      } catch (_) {
-        return "both";
-      }
-    }
-    function writeStoredDiagPresentation(mode) {
-      if (mode === "underlines" || mode === "gutter" || mode === "none") {
-        backendSave2(DIAG_PRESENTATION_KEY, mode);
-      } else {
-        backendRemove2(DIAG_PRESENTATION_KEY);
-      }
-      if (mode === "underlines" || mode === "none") writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, false);
-      else writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, true);
-    }
-    function readStoredDiagSeverity() {
-      try {
-        var v = backendLoad2(DIAG_SEVERITY_KEY);
-        if (v === "errors") return "errors";
-        return "all";
-      } catch (_) {
-        return "all";
-      }
-    }
-    function writeStoredDiagSeverity(mode) {
-      if (mode === "errors") backendSave2(DIAG_SEVERITY_KEY, "errors");
-      else backendRemove2(DIAG_SEVERITY_KEY);
-    }
-    function readStoredFormatOnSave() {
-      return readBoolDefaultOff(FORMAT_ON_SAVE_KEY);
-    }
-    function writeStoredFormatOnSave(on) {
-      writeBoolDefaultOff(FORMAT_ON_SAVE_KEY, on);
-    }
-    function readStoredTrimTrailingWs() {
-      return readBoolDefaultOff(TRIM_TRAILING_WS_KEY);
-    }
-    function writeStoredTrimTrailingWs(on) {
-      writeBoolDefaultOff(TRIM_TRAILING_WS_KEY, on);
-    }
-    function readStoredStickyDeclHeader() {
-      return readBoolDefaultOff(STICKY_DECL_HEADER_KEY);
-    }
-    function writeStoredStickyDeclHeader(on) {
-      writeBoolDefaultOff(STICKY_DECL_HEADER_KEY, on);
-    }
-    function readStoredSuiteCheck() {
-      try {
-        var v = backendLoad2(SUITE_CHECK_KEY);
-        if (v === "active") return "active";
-        return "suite";
-      } catch (_) {
-        return "suite";
-      }
-    }
-    function writeStoredSuiteCheck(mode) {
-      if (mode === "active") backendSave2(SUITE_CHECK_KEY, "active");
-      else backendRemove2(SUITE_CHECK_KEY);
-    }
-    function readStoredHoverSticky() {
-      return readBoolDefaultOff(HOVER_STICKY_KEY);
-    }
-    function writeStoredHoverSticky(on) {
-      writeBoolDefaultOff(HOVER_STICKY_KEY, on);
-    }
-    function applyStoredEditorChrome(doc2) {
-      var root2 = doc2 && doc2.documentElement ? doc2.documentElement : null;
-      if (!root2 && typeof document !== "undefined") root2 = document.documentElement;
-      if (!root2) return;
-      var family = readStoredEditorFontFamily();
-      root2.style.setProperty(
-        "--editor-mono",
-        family === "system" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "'JetBrains Mono', monospace"
-      );
-      root2.style.setProperty("--editor-ligatures", "none");
-      backendRemove2("beljar-editor-ligatures");
-      var emph = readStoredEditorHoleEmphasis();
-      root2.classList.toggle("jar-hole-subtle", emph === "subtle");
-      root2.classList.toggle("jar-hole-loud", emph === "loud");
-    }
-    var USER_SETTINGS_EXPORT_KEYS = [
-      "beljar-theme",
-      "beljar-ui-font-size",
-      "beljar-ui-text-contrast",
-      "beljar-motion-pref",
-      "beljar-toast-duration",
-      "beljar-beluga-mode",
-      "beljar-beluga-fallback-stable",
-      "beljar-beluga-cancel-on-edit",
-      "beljar-check-aggressiveness",
-      "beljar-hover-scope",
-      "beljar-alias-activation",
-      "beljar-alias-pairs",
-      "beljar-cfg-auto-sync",
-      "beljar-repl-autoscroll",
-      "beljar-repl-welcome",
-      "beljar-repl-echo",
-      "beljar-repl-filter-chatter",
-      "beljar-repl-hover-timestamp",
-      "beljar-repl-history-cap",
-      "beljar-repl-history-persist",
-      REPL_AUTOCOMPLETE_TRIGGER_KEY,
-      REPL_AUTOCOMPLETE_CONTINUE_KEY,
-      "beljar-library-expand-default",
-      "beljar-restore-panels",
-      "beljar-inspector-follow",
-      "beljar-autosave-delay",
-      "beljar-autosolve-focus-next",
-      "beljar-autosolve-show-stats",
-      "beljar-harpoon-mode",
-      "beljar-harpoon-verify-moves",
-      QUIET_WHILE_TYPING_KEY,
-      DIAG_PRESENTATION_KEY,
-      DIAG_SEVERITY_KEY,
-      FORMAT_ON_SAVE_KEY,
-      TRIM_TRAILING_WS_KEY,
-      STICKY_DECL_HEADER_KEY,
-      SUITE_CHECK_KEY,
-      HOVER_STICKY_KEY,
-      "beljar-keybindings",
-      EDITOR_FONT_SIZE_KEY,
-      EDITOR_LINE_HEIGHT_KEY,
-      EDITOR_WORD_WRAP_KEY,
-      EDITOR_TAB_SIZE_KEY,
-      EDITOR_LINE_NUMBERS_KEY,
-      EDITOR_LINE_NUMBER_MODE_KEY,
-      EDITOR_FOLD_GUTTER_KEY,
-      EDITOR_FOLD_PERSIST_KEY,
-      EDITOR_ACTIVE_LINE_KEY,
-      EDITOR_DIAG_GUTTER_KEY,
-      EDITOR_HOLE_GUTTER_KEY,
-      EDITOR_SYNTAX_HIGHLIGHT_KEY,
-      EDITOR_SEMANTIC_HIGHLIGHT_KEY,
-      EDITOR_PARSE_HIGHLIGHT_KEY,
-      EDITOR_OCCURRENCE_HIGHLIGHT_KEY,
-      EDITOR_BRACKET_MATCH_KEY,
-      EDITOR_AUTO_CLOSE_BRACKETS_KEY,
-      EDITOR_SELECTION_MATCHES_KEY,
-      EDITOR_REINDENT_PASTE_KEY,
-      EDITOR_FORMAT_WIDTH_KEY,
-      EDITOR_AUTOCOMPLETE_TRIGGER_KEY,
-      EDITOR_AUTOCOMPLETE_CONTINUE_KEY,
-      EDITOR_CURSOR_BLINK_KEY,
-      EDITOR_SCROLL_PAST_END_KEY,
-      EDITOR_WHITESPACE_KEY,
-      EDITOR_RULERS_KEY,
-      EDITOR_FONT_FAMILY_KEY,
-      EDITOR_HOLE_EMPHASIS_KEY,
-      KEYMAP_STYLE_KEY,
-      STATUS_STRIP_KEY,
-      COMMAND_LINE_HISTORY_KEY,
-      VIM_LEADER_KEY,
-      EMACS_YANK_SOURCE_KEY,
-      VIM_INSERT_ESCAPE_KEY,
-      DOUBLE_TAP_TRIGGER_KEY,
-      DOUBLE_TAP_COMMAND_KEY,
-      DOUBLE_TAP_SPEED_KEY
-    ];
-    function exportUserSettings() {
-      var prefs = {};
-      for (var i = 0; i < USER_SETTINGS_EXPORT_KEYS.length; i++) {
-        var key = USER_SETTINGS_EXPORT_KEYS[i];
-        try {
-          var v = backendLoad2(key);
-          if (v != null && v !== "") prefs[key] = v;
-        } catch (_) {
-        }
-      }
-      try {
-        if (typeof globalThis !== "undefined" && globalThis.localStorage) {
-          var kb = globalThis.localStorage.getItem("beljar-keybindings");
-          if (kb) prefs["beljar-keybindings"] = kb;
-        }
-      } catch (_) {
-      }
-      return { v: 1, exportedAt: Date.now(), prefs };
-    }
-    function importUserSettings(bundle) {
-      if (!bundle || typeof bundle !== "object" || !bundle.prefs || typeof bundle.prefs !== "object") {
-        return { ok: false, reason: "invalid" };
-      }
-      var prefs = bundle.prefs;
-      var applied = 0;
-      Object.keys(prefs).forEach(function(key) {
-        if (USER_SETTINGS_EXPORT_KEYS.indexOf(key) < 0 && key !== "beljar-keybindings") return;
-        var val = prefs[key];
-        if (typeof val !== "string") return;
-        try {
-          if (key === "beljar-keybindings") {
-            if (typeof globalThis !== "undefined" && globalThis.localStorage) {
-              if (!val || val === "{}") globalThis.localStorage.removeItem(key);
-              else globalThis.localStorage.setItem(key, val);
-              applied += 1;
-            }
-            return;
-          }
-          backendSave2(key, val);
-          applied += 1;
-        } catch (_) {
-        }
-      });
-      return { ok: true, applied };
-    }
-    function resetAppearancePrefs2() {
-      backendRemove2(THEME_STORAGE_KEY2);
-      backendRemove2(UI_FONT_SIZE_KEY2);
-      backendRemove2(UI_TEXT_CONTRAST_KEY2);
-      backendRemove2(MOTION_PREF_KEY);
-      backendRemove2(TOAST_DURATION_KEY);
-    }
-    function resetEditorTypographyPrefs2() {
-      backendRemove2(EDITOR_FONT_SIZE_KEY);
-      backendRemove2(EDITOR_LINE_HEIGHT_KEY);
-      backendRemove2(EDITOR_WORD_WRAP_KEY);
-      backendRemove2("beljar-editor-ligatures");
-      backendRemove2(EDITOR_FONT_FAMILY_KEY);
-      backendRemove2(EDITOR_CURSOR_BLINK_KEY);
-      backendRemove2(EDITOR_SCROLL_PAST_END_KEY);
-      backendRemove2(EDITOR_WHITESPACE_KEY);
-      backendRemove2(EDITOR_RULERS_KEY);
-    }
-    function resetEditorIndentPrefs2() {
-      backendRemove2(EDITOR_TAB_SIZE_KEY);
-      backendRemove2(AUTOSAVE_DELAY_KEY);
-      backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
-      backendRemove2(EDITOR_REINDENT_PASTE_KEY);
-      backendRemove2(CFG_AUTO_SYNC_KEY);
-      backendRemove2(FORMAT_ON_SAVE_KEY);
-      backendRemove2(TRIM_TRAILING_WS_KEY);
-    }
-    function resetEditorCodeInsightPrefs2() {
-      backendRemove2(EDITOR_SYNTAX_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_SEMANTIC_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_PARSE_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_OCCURRENCE_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_BRACKET_MATCH_KEY);
-      backendRemove2(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
-      backendRemove2(EDITOR_SELECTION_MATCHES_KEY);
-      backendRemove2(HOVER_SCOPE_KEY);
-      backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
-      backendRemove2(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
-      backendRemove2(QUIET_WHILE_TYPING_KEY);
-      backendRemove2(HOVER_STICKY_KEY);
-    }
-    function resetEditorGutterPrefs2() {
-      backendRemove2(EDITOR_LINE_NUMBERS_KEY);
-      backendRemove2(EDITOR_FOLD_GUTTER_KEY);
-      backendRemove2(EDITOR_FOLD_PERSIST_KEY);
-      backendRemove2(EDITOR_ACTIVE_LINE_KEY);
-      backendRemove2(EDITOR_DIAG_GUTTER_KEY);
-      backendRemove2(DIAG_PRESENTATION_KEY);
-      backendRemove2(DIAG_SEVERITY_KEY);
-      backendRemove2(EDITOR_HOLE_GUTTER_KEY);
-      backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
-      backendRemove2(STICKY_DECL_HEADER_KEY);
-    }
-    function resetEditorPrefs2() {
-      resetEditorTypographyPrefs2();
-      resetEditorIndentPrefs2();
-      resetEditorCodeInsightPrefs2();
-      resetEditorGutterPrefs2();
-    }
-    function resetBelugaPrefs2() {
-      backendRemove2(BELUGA_MODE_STORAGE_KEY2);
-      backendRemove2(BELUGA_FALLBACK_STABLE_KEY);
-      backendRemove2(BELUGA_CANCEL_ON_EDIT_KEY);
-      backendRemove2(CHECK_AGGRESSIVENESS_KEY);
-      backendRemove2(SUITE_CHECK_KEY);
-    }
-    function resetHarpoonPrefs2() {
-      backendRemove2(AUTOSOLVE_FOCUS_NEXT_KEY);
-      backendRemove2(AUTOSOLVE_SHOW_STATS_KEY);
-      backendRemove2(HARPOON_MODE_KEY);
-      backendRemove2(HARPOON_VERIFY_MOVES_KEY);
-    }
-    function resetReplPrefs2() {
-      backendRemove2(REPL_AUTOSCROLL_KEY);
-      backendRemove2(REPL_WELCOME_KEY);
-      backendRemove2(REPL_ECHO_KEY);
-      backendRemove2(REPL_FILTER_CHATTER_KEY);
-      backendRemove2(REPL_HOVER_TIMESTAMP_KEY);
-      backendRemove2(REPL_HISTORY_CAP_KEY);
-      backendRemove2(REPL_HISTORY_PERSIST_KEY);
-      backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
-      backendRemove2(REPL_AUTOCOMPLETE_CONTINUE_KEY);
-    }
-    var KEYBINDINGS_KEY = "beljar-keybindings";
-    function readStoredKeybindings2() {
-      try {
-        var raw = globalThis.localStorage && globalThis.localStorage.getItem(KEYBINDINGS_KEY);
-        if (!raw) return {};
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-        var out = {};
-        Object.keys(parsed).forEach(function(id) {
-          var v = parsed[id];
-          if (v === "" || v === null) out[id] = "";
-          else if (typeof v === "string") out[id] = v;
-        });
-        return out;
-      } catch (_) {
-        return {};
-      }
-    }
-    function writeStoredKeybindings2(map) {
-      try {
-        if (!globalThis.localStorage) return;
-        var clean = {};
-        if (map && typeof map === "object") {
-          Object.keys(map).forEach(function(id) {
-            var v = map[id];
-            if (v === "" || v === null) clean[id] = "";
-            else if (typeof v === "string" && v) clean[id] = v;
-          });
-        }
-        if (!Object.keys(clean).length) globalThis.localStorage.removeItem(KEYBINDINGS_KEY);
-        else globalThis.localStorage.setItem(KEYBINDINGS_KEY, JSON.stringify(clean));
-      } catch (_) {
-      }
-    }
-    function resetKeybindingPrefs2() {
-      writeStoredKeybindings2({});
-      backendRemove2(KEYMAP_STYLE_KEY);
-      backendRemove2(STATUS_STRIP_KEY);
-      backendRemove2(COMMAND_LINE_HISTORY_KEY);
-      backendRemove2(VIM_LEADER_KEY);
-      backendRemove2(EMACS_YANK_SOURCE_KEY);
-      backendRemove2(VIM_INSERT_ESCAPE_KEY);
-      backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
-      backendRemove2(DOUBLE_TAP_COMMAND_KEY);
-      backendRemove2(DOUBLE_TAP_SPEED_KEY);
-    }
-    function resetAliasesPrefs2() {
-      backendRemove2(ALIAS_ACTIVATION_KEY);
-      backendRemove2(ALIAS_PAIRS_KEY);
-    }
-    function isAliasExpandablePath2(name) {
-      var PS = typeof ProjectSource !== "undefined" ? ProjectSource : null;
-      if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
-      var n = String(name || "").toLowerCase();
-      if (n.endsWith(".cfg")) return false;
-      if (n.endsWith(".bel") || n.endsWith(".elf")) return true;
-      var base = String(name || "").slice(String(name || "").lastIndexOf("/") + 1);
-      return base.indexOf(".") === -1;
-    }
-    function fileNameForId2(id) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) return files[i].name || "";
-      }
-      return "";
-    }
-    function expandAliasesForStorage2(text, fileName) {
-      if (readStoredAliasActivation2() !== "greedy") return String(text != null ? text : "");
-      if (!isAliasExpandablePath2(fileName)) return String(text != null ? text : "");
-      if (typeof BelEditor !== "undefined" && typeof BelEditor.expandBelAliases === "function") {
-        return BelEditor.expandBelAliases(text);
-      }
-      return String(text != null ? text : "");
-    }
-    function expandAliasesInAllFiles2() {
-      if (readStoredAliasActivation2() !== "greedy") return 0;
-      var files = ensureProject2();
-      var changed = 0;
-      for (var i = 0; i < files.length; i++) {
-        var f = files[i];
-        if (!isAliasExpandablePath2(f.name)) continue;
-        var cur = getFileText2(f.id);
-        var next = expandAliasesForStorage2(cur, f.name);
-        if (next !== cur) {
-          var state2 = readState2(defaultBackend2, f.id);
-          state2.editor.text = next;
-          state2.meta.updatedAt = Date.now();
-          state2.meta.revision = (state2.meta.revision || 0) + 1;
-          backendSave2(stateKeyFor2(f.id), JSON.stringify(state2));
-          changed += 1;
-        }
-      }
-      return changed;
-    }
-    function explorerFoldKey(projectName) {
-      return "beljar-explorer-fold:" + String(projectName || DEFAULT_PROJECT_NAME2);
-    }
-    function getExplorerFold2(projectName) {
-      try {
-        var arr = tryParse2(backendLoad2(explorerFoldKey(projectName)));
-        return Array.isArray(arr) ? arr : [];
-      } catch (_) {
-        return [];
-      }
-    }
-    function setExplorerFold2(projectName, paths) {
-      try {
-        backendSave2(explorerFoldKey(projectName), JSON.stringify(Array.isArray(paths) ? paths : []));
-      } catch (_) {
-      }
-    }
-    return {
-      readStoredBelugaMode: readStoredBelugaMode2,
-      writeStoredBelugaMode: writeStoredBelugaMode2,
-      readStoredHoverScope: readStoredHoverScope2,
-      writeStoredHoverScope: writeStoredHoverScope2,
-      readStoredCfgAutoSync: readStoredCfgAutoSync2,
-      writeStoredCfgAutoSync: writeStoredCfgAutoSync2,
-      readStoredAliasActivation: readStoredAliasActivation2,
-      writeStoredAliasActivation: writeStoredAliasActivation2,
-      readStoredAliasPairs: readStoredAliasPairs2,
-      writeStoredAliasPairs: writeStoredAliasPairs2,
-      readBoolDefaultOn,
-      writeBoolDefaultOn,
-      readBoolDefaultOff,
-      writeBoolDefaultOff,
-      readStoredReplAutoscroll: readStoredReplAutoscroll2,
-      writeStoredReplAutoscroll: writeStoredReplAutoscroll2,
-      readStoredReplWelcome: readStoredReplWelcome2,
-      writeStoredReplWelcome: writeStoredReplWelcome2,
-      readStoredReplEcho: readStoredReplEcho2,
-      writeStoredReplEcho: writeStoredReplEcho2,
-      readStoredReplFilterChatter: readStoredReplFilterChatter2,
-      writeStoredReplFilterChatter: writeStoredReplFilterChatter2,
-      readStoredReplHoverTimestamp: readStoredReplHoverTimestamp2,
-      writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp2,
-      readStoredReplAutocompleteTrigger: readStoredReplAutocompleteTrigger2,
-      writeStoredReplAutocompleteTrigger: writeStoredReplAutocompleteTrigger2,
-      readStoredReplAutocompleteContinue: readStoredReplAutocompleteContinue2,
-      writeStoredReplAutocompleteContinue: writeStoredReplAutocompleteContinue2,
-      readStoredReplHistoryCap: readStoredReplHistoryCap2,
-      writeStoredReplHistoryCap: writeStoredReplHistoryCap2,
-      readStoredReplHistoryPersist: readStoredReplHistoryPersist2,
-      writeStoredReplHistoryPersist: writeStoredReplHistoryPersist2,
-      readStoredReplTranscript: readStoredReplTranscript2,
-      writeStoredReplTranscript: writeStoredReplTranscript2,
-      readStoredReplCommandHistory: readStoredReplCommandHistory2,
-      writeStoredReplCommandHistory: writeStoredReplCommandHistory2,
-      readStoredBelugaFallbackStable: readStoredBelugaFallbackStable2,
-      writeStoredBelugaFallbackStable: writeStoredBelugaFallbackStable2,
-      readStoredBelugaCancelOnEdit: readStoredBelugaCancelOnEdit2,
-      writeStoredBelugaCancelOnEdit: writeStoredBelugaCancelOnEdit2,
-      readStoredLibraryExpandDefault: readStoredLibraryExpandDefault2,
-      writeStoredLibraryExpandDefault: writeStoredLibraryExpandDefault2,
-      readStoredLibraryHintDismissed: readStoredLibraryHintDismissed2,
-      writeStoredLibraryHintDismissed: writeStoredLibraryHintDismissed2,
-      readStoredHintDismissed: readStoredHintDismissed2,
-      writeStoredHintDismissed: writeStoredHintDismissed2,
-      readStoredRestorePanels: readStoredRestorePanels2,
-      writeStoredRestorePanels: writeStoredRestorePanels2,
-      readStoredAutosaveDelay: readStoredAutosaveDelay2,
-      writeStoredAutosaveDelay: writeStoredAutosaveDelay2,
-      readStoredEditorFontSize: readStoredEditorFontSize2,
-      writeStoredEditorFontSize: writeStoredEditorFontSize2,
-      readStoredEditorLineHeight: readStoredEditorLineHeight2,
-      writeStoredEditorLineHeight: writeStoredEditorLineHeight2,
-      readStoredEditorWordWrap: readStoredEditorWordWrap2,
-      writeStoredEditorWordWrap: writeStoredEditorWordWrap2,
-      readStoredEditorTabSize: readStoredEditorTabSize2,
-      writeStoredEditorTabSize: writeStoredEditorTabSize2,
-      readStoredEditorLineNumberMode: readStoredEditorLineNumberMode2,
-      writeStoredEditorLineNumberMode: writeStoredEditorLineNumberMode2,
-      readStoredEditorLineNumbers: readStoredEditorLineNumbers2,
-      writeStoredEditorLineNumbers: writeStoredEditorLineNumbers2,
-      readStoredEditorFoldGutter: readStoredEditorFoldGutter2,
-      writeStoredEditorFoldGutter: writeStoredEditorFoldGutter2,
-      readStoredEditorFoldPersist: readStoredEditorFoldPersist2,
-      writeStoredEditorFoldPersist: writeStoredEditorFoldPersist2,
-      readStoredEditorActiveLine: readStoredEditorActiveLine2,
-      writeStoredEditorActiveLine: writeStoredEditorActiveLine2,
-      readStoredEditorDiagGutter: readStoredEditorDiagGutter2,
-      writeStoredEditorDiagGutter: writeStoredEditorDiagGutter2,
-      readStoredEditorHoleGutter: readStoredEditorHoleGutter2,
-      writeStoredEditorHoleGutter: writeStoredEditorHoleGutter2,
-      readStoredEditorSyntaxHighlight: readStoredEditorSyntaxHighlight2,
-      writeStoredEditorSyntaxHighlight: writeStoredEditorSyntaxHighlight2,
-      readStoredEditorSemanticHighlight: readStoredEditorSemanticHighlight2,
-      writeStoredEditorSemanticHighlight: writeStoredEditorSemanticHighlight2,
-      readStoredEditorParseHighlight: readStoredEditorParseHighlight2,
-      writeStoredEditorParseHighlight: writeStoredEditorParseHighlight2,
-      readStoredEditorOccurrenceHighlight: readStoredEditorOccurrenceHighlight2,
-      writeStoredEditorOccurrenceHighlight: writeStoredEditorOccurrenceHighlight2,
-      readStoredEditorBracketMatch: readStoredEditorBracketMatch2,
-      writeStoredEditorBracketMatch: writeStoredEditorBracketMatch2,
-      readStoredEditorAutoCloseBrackets: readStoredEditorAutoCloseBrackets2,
-      writeStoredEditorAutoCloseBrackets: writeStoredEditorAutoCloseBrackets2,
-      readStoredEditorSelectionMatches: readStoredEditorSelectionMatches2,
-      writeStoredEditorSelectionMatches: writeStoredEditorSelectionMatches2,
-      readStoredEditorReindentPaste: readStoredEditorReindentPaste2,
-      writeStoredEditorReindentPaste: writeStoredEditorReindentPaste2,
-      readStoredEditorFormatWidth: readStoredEditorFormatWidth2,
-      writeStoredEditorFormatWidth: writeStoredEditorFormatWidth2,
-      readStoredEditorAutocompleteTrigger: readStoredEditorAutocompleteTrigger2,
-      writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger2,
-      readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue2,
-      writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue2,
-      readStoredEditorCursorBlink,
-      writeStoredEditorCursorBlink,
-      readStoredEditorScrollPastEnd,
-      writeStoredEditorScrollPastEnd,
-      readStoredEditorWhitespace,
-      writeStoredEditorWhitespace,
-      readStoredEditorRulers,
-      writeStoredEditorRulers,
-      readStoredEditorFontFamily,
-      writeStoredEditorFontFamily,
-      readStoredEditorHoleEmphasis,
-      writeStoredEditorHoleEmphasis,
-      readStoredKeymapStyle,
-      writeStoredKeymapStyle,
-      readStoredStatusStrip,
-      readStoredDoubleTapTrigger,
-      writeStoredDoubleTapTrigger,
-      readStoredDoubleTapCommand,
-      writeStoredDoubleTapCommand,
-      readStoredDoubleTapSpeed,
-      writeStoredDoubleTapSpeed,
-      readStoredEmacsYankSource,
-      writeStoredEmacsYankSource,
-      readStoredVimLeader,
-      writeStoredVimLeader,
-      readStoredVimInsertEscape,
-      writeStoredVimInsertEscape,
-      readStoredCommandLineHistory,
-      writeStoredCommandLineHistory,
-      writeStoredStatusStrip,
-      readStoredMotionPref,
-      writeStoredMotionPref,
-      applyStoredMotionPref,
-      prefersReducedMotion: prefersReducedMotion2,
-      readStoredToastDuration,
-      writeStoredToastDuration,
-      toastDurationForMode,
-      toastDurationMs,
-      readStoredCheckAggressiveness,
-      writeStoredCheckAggressiveness,
-      checkAggressivenessScale,
-      readStoredAutosolveFocusNext,
-      writeStoredAutosolveFocusNext,
-      readStoredHarpoonMode,
-      writeStoredHarpoonMode,
-      readStoredHarpoonVerifyMoves,
-      writeStoredHarpoonVerifyMoves,
-      readStoredAutosolveShowStats,
-      writeStoredAutosolveShowStats,
-      readStoredQuietWhileTyping,
-      writeStoredQuietWhileTyping,
-      readStoredDiagPresentation,
-      writeStoredDiagPresentation,
-      readStoredDiagSeverity,
-      writeStoredDiagSeverity,
-      readStoredFormatOnSave,
-      writeStoredFormatOnSave,
-      readStoredTrimTrailingWs,
-      writeStoredTrimTrailingWs,
-      readStoredStickyDeclHeader,
-      writeStoredStickyDeclHeader,
-      readStoredSuiteCheck,
-      writeStoredSuiteCheck,
-      readStoredHoverSticky,
-      writeStoredHoverSticky,
-      applyStoredEditorChrome,
-      exportUserSettings,
-      importUserSettings,
-      resetAppearancePrefs: resetAppearancePrefs2,
-      resetEditorTypographyPrefs: resetEditorTypographyPrefs2,
-      resetEditorIndentPrefs: resetEditorIndentPrefs2,
-      resetEditorCodeInsightPrefs: resetEditorCodeInsightPrefs2,
-      resetEditorGutterPrefs: resetEditorGutterPrefs2,
-      resetEditorPrefs: resetEditorPrefs2,
-      resetBelugaPrefs: resetBelugaPrefs2,
-      resetHarpoonPrefs: resetHarpoonPrefs2,
-      resetReplPrefs: resetReplPrefs2,
-      readStoredKeybindings: readStoredKeybindings2,
-      writeStoredKeybindings: writeStoredKeybindings2,
-      resetKeybindingPrefs: resetKeybindingPrefs2,
-      resetAliasesPrefs: resetAliasesPrefs2,
-      isAliasExpandablePath: isAliasExpandablePath2,
-      fileNameForId: fileNameForId2,
-      expandAliasesForStorage: expandAliasesForStorage2,
-      expandAliasesInAllFiles: expandAliasesInAllFiles2,
-      explorerFoldKey,
-      getExplorerFold: getExplorerFold2,
-      setExplorerFold: setExplorerFold2
-    };
+  function isBeljarKey(key) {
+    return typeof key === "string" && /^beljar[/:.-]/.test(key);
   }
-
-  // js/persist/persist-layout.mjs
-  function create3(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projectPrefix2 = deps.projectPrefix;
-    var getActiveProjectId2 = deps.getActiveProjectId;
-    var EDITOR_SPLIT_STORAGE_KEY2 = deps.EDITOR_SPLIT_STORAGE_KEY;
-    var DEFAULT_EDITOR_SPLIT2 = deps.DEFAULT_EDITOR_SPLIT;
-    var MIN_EDITOR_SPLIT2 = deps.MIN_EDITOR_SPLIT;
-    var MAX_EDITOR_SPLIT2 = deps.MAX_EDITOR_SPLIT;
-    var SIDE_PANEL_LAYOUT2 = deps.SIDE_PANEL_LAYOUT;
-    var DEFAULT_SIDE_PANEL_WIDTH2 = deps.DEFAULT_SIDE_PANEL_WIDTH;
-    var DEFAULT_SIDE_PANEL_HEIGHT2 = deps.DEFAULT_SIDE_PANEL_HEIGHT;
-    var EXPLORER_OPEN_KEY2 = deps.EXPLORER_OPEN_KEY;
-    var INSPECTOR_OPEN_KEY2 = deps.INSPECTOR_OPEN_KEY;
-    var INSPECTOR_FOLLOW_KEY2 = deps.INSPECTOR_FOLLOW_KEY;
-    var LIBRARY_OPEN_KEY2 = deps.LIBRARY_OPEN_KEY;
-    var LOAD_STATS_KEY2 = deps.LOAD_STATS_KEY;
-    var WORKSPACE_KEY = "beljar-workspace-v1";
-    var ACTIVE_SIDE_PANEL_KEY = "beljar-active-side-panel";
-    var SIDE_PANEL_IDS2 = ["explorer", "inspector", "library", "harpoon"];
-    var RESTORE_PANELS_KEY = "beljar-restore-panels";
-    var LIBRARY_EXPAND_DEFAULT_KEY = "beljar-library-expand-default";
-    function resetLayoutPrefs2() {
-      backendRemove2(EDITOR_SPLIT_STORAGE_KEY2);
-      for (var panelId in SIDE_PANEL_LAYOUT2) {
-        if (!Object.prototype.hasOwnProperty.call(SIDE_PANEL_LAYOUT2, panelId)) continue;
-        var layout = SIDE_PANEL_LAYOUT2[panelId];
-        backendRemove2(layout.widthKey);
-        backendRemove2(layout.heightKey);
-      }
+  function allKeys(storage) {
+    const out = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k != null) out.push(k);
     }
-    function workspaceKeyFor2(pid) {
-      var prefix = projectPrefix2(pid);
-      if (prefix === "") return WORKSPACE_KEY;
-      return prefix + "workspace-v1";
-    }
-    function activeSidePanelKey(pid) {
-      var prefix = projectPrefix2(pid);
-      if (prefix === "") return ACTIVE_SIDE_PANEL_KEY;
-      return prefix + "active-side-panel";
-    }
-    function migrateActiveSidePanelFromLegacy(pid) {
-      if (backendLoad2(activeSidePanelKey(pid))) return null;
-      if (readStoredHarpoonOpen2()) return "harpoon";
-      if (readStoredLibraryOpen2()) return "library";
-      if (readStoredInspectorOpen2()) return "inspector";
-      if (readStoredExplorerOpen2()) return "explorer";
-      return null;
-    }
-    function readStoredActiveSidePanel2(pid) {
-      pid = pid || getActiveProjectId2();
-      try {
-        var raw = backendLoad2(activeSidePanelKey(pid));
-        if (raw && SIDE_PANEL_IDS2.indexOf(raw) !== -1) return raw;
-      } catch (_) {
-      }
-      var migrated = migrateActiveSidePanelFromLegacy(pid);
-      if (migrated) {
-        writeStoredActiveSidePanel2(migrated, pid);
-        return migrated;
-      }
-      return null;
-    }
-    function writeStoredActiveSidePanel2(id, pid) {
-      pid = pid || getActiveProjectId2();
-      var key = activeSidePanelKey(pid);
-      if (!id || SIDE_PANEL_IDS2.indexOf(id) === -1) {
-        backendRemove2(key);
-        writeStoredExplorerOpen2(false);
-        writeStoredInspectorOpen2(false);
-        writeStoredLibraryOpen2(false);
-        writeStoredHarpoonOpen2(false);
-        return;
-      }
-      backendSave2(key, id);
-      if (id === "explorer") writeStoredExplorerOpen2(true);
-      else writeStoredExplorerOpen2(false);
-      if (id === "inspector") writeStoredInspectorOpen2(true);
-      else writeStoredInspectorOpen2(false);
-      if (id === "library") writeStoredLibraryOpen2(true);
-      else writeStoredLibraryOpen2(false);
-      if (id === "harpoon") writeStoredHarpoonOpen2(true);
-      else writeStoredHarpoonOpen2(false);
-    }
-    function readStoredWorkspace2(pid) {
-      pid = pid || getActiveProjectId2();
-      return tryParse2(backendLoad2(workspaceKeyFor2(pid)));
-    }
-    function writeStoredWorkspace2(snapshot, pid) {
-      pid = pid || getActiveProjectId2();
-      try {
-        backendSave2(workspaceKeyFor2(pid), JSON.stringify(snapshot));
-        if (snapshot) {
-          writeStoredActiveSidePanel2(snapshot.activeSidePanel || null, pid);
-        }
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }
-    function resetStoredWorkspace2(pid) {
-      pid = pid || getActiveProjectId2();
-      backendRemove2(workspaceKeyFor2(pid));
-      backendRemove2(activeSidePanelKey(pid));
-    }
-    function resetWorkspaceState3(pid) {
-      resetStoredWorkspace2(pid);
-    }
-    function resetWorkspacePrefs2() {
-      backendRemove2(INSPECTOR_FOLLOW_KEY2);
-      backendRemove2(RESTORE_PANELS_KEY);
-      backendRemove2(LIBRARY_EXPAND_DEFAULT_KEY);
-    }
-    function clampEditorSplit2(ratio) {
-      var n = Number(ratio);
-      if (!isFinite(n)) return DEFAULT_EDITOR_SPLIT2;
-      if (n < MIN_EDITOR_SPLIT2) return MIN_EDITOR_SPLIT2;
-      if (n > MAX_EDITOR_SPLIT2) return MAX_EDITOR_SPLIT2;
-      return n;
-    }
-    function readStoredEditorSplit2() {
-      try {
-        return clampEditorSplit2(parseFloat(backendLoad2(EDITOR_SPLIT_STORAGE_KEY2)));
-      } catch (_) {
-        return DEFAULT_EDITOR_SPLIT2;
-      }
-    }
-    function writeStoredEditorSplit2(ratio) {
-      var clamped = clampEditorSplit2(ratio);
-      if (Math.abs(clamped - DEFAULT_EDITOR_SPLIT2) < 1e-3) {
-        backendRemove2(EDITOR_SPLIT_STORAGE_KEY2);
-      } else {
-        backendSave2(EDITOR_SPLIT_STORAGE_KEY2, String(clamped));
-      }
-    }
-    function clampPanelPx(n, min, max, fallback) {
-      var v = Number(n);
-      if (!isFinite(v)) return fallback;
-      if (v < min) return min;
-      if (v > max) return max;
-      return Math.round(v);
-    }
-    function readStoredSidePanelWidth(layout) {
-      try {
-        return clampPanelPx(
-          parseFloat(backendLoad2(layout.widthKey)),
-          layout.minW,
-          layout.maxW,
-          DEFAULT_SIDE_PANEL_WIDTH2
-        );
-      } catch (_) {
-        return DEFAULT_SIDE_PANEL_WIDTH2;
-      }
-    }
-    function writeStoredSidePanelWidth(layout, px) {
-      var clamped = clampPanelPx(px, layout.minW, layout.maxW, DEFAULT_SIDE_PANEL_WIDTH2);
-      if (clamped === DEFAULT_SIDE_PANEL_WIDTH2) backendRemove2(layout.widthKey);
-      else backendSave2(layout.widthKey, String(clamped));
-    }
-    function readStoredSidePanelHeight(layout) {
-      try {
-        return clampPanelPx(
-          parseFloat(backendLoad2(layout.heightKey)),
-          layout.minH,
-          layout.maxH,
-          DEFAULT_SIDE_PANEL_HEIGHT2
-        );
-      } catch (_) {
-        return DEFAULT_SIDE_PANEL_HEIGHT2;
-      }
-    }
-    function writeStoredSidePanelHeight(layout, px) {
-      var clamped = clampPanelPx(px, layout.minH, layout.maxH, DEFAULT_SIDE_PANEL_HEIGHT2);
-      if (clamped === DEFAULT_SIDE_PANEL_HEIGHT2) backendRemove2(layout.heightKey);
-      else backendSave2(layout.heightKey, String(clamped));
-    }
-    function readStoredExplorerWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.explorer);
-    }
-    function writeStoredExplorerWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.explorer, px);
-    }
-    function readStoredInspectorWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.inspector);
-    }
-    function writeStoredInspectorWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.inspector, px);
-    }
-    function readStoredExplorerHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.explorer);
-    }
-    function writeStoredExplorerHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.explorer, px);
-    }
-    function readStoredInspectorHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.inspector);
-    }
-    function writeStoredInspectorHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.inspector, px);
-    }
-    function readStoredExplorerOpen2() {
-      try {
-        return backendLoad2(EXPLORER_OPEN_KEY2) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function loadStat2() {
-      try {
-        var o = tryParse2(backendLoad2(LOAD_STATS_KEY2));
-        if (o && o.lines > 0 && o.ms > 0) return o;
-      } catch (_) {
-      }
-      return null;
-    }
-    function saveStat2(stat) {
-      try {
-        if (!stat || stat.lines <= 0 || stat.ms <= 0) return;
-        backendSave2(LOAD_STATS_KEY2, JSON.stringify({ lines: stat.lines, ms: stat.ms }));
-      } catch (_) {
-      }
-    }
-    function writeStoredExplorerOpen2(open11) {
-      if (open11) backendSave2(EXPLORER_OPEN_KEY2, "1");
-      else backendRemove2(EXPLORER_OPEN_KEY2);
-    }
-    function readStoredInspectorOpen2() {
-      try {
-        return backendLoad2(INSPECTOR_OPEN_KEY2) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredInspectorOpen2(open11) {
-      if (open11) backendSave2(INSPECTOR_OPEN_KEY2, "1");
-      else backendRemove2(INSPECTOR_OPEN_KEY2);
-    }
-    function readStoredInspectorFollow2() {
-      try {
-        var v = backendLoad2(INSPECTOR_FOLLOW_KEY2);
-        if (v === "1") return true;
-        if (v === "off") return false;
-        if (globalThis.sessionStorage && globalThis.sessionStorage.getItem(INSPECTOR_FOLLOW_KEY2) === "1") {
-          writeStoredInspectorFollow2(true);
-          return true;
-        }
-        return true;
-      } catch (_) {
-        return true;
-      }
-    }
-    function writeStoredInspectorFollow2(on) {
-      try {
-        if (on) backendSave2(INSPECTOR_FOLLOW_KEY2, "1");
-        else backendSave2(INSPECTOR_FOLLOW_KEY2, "off");
-        if (globalThis.sessionStorage) globalThis.sessionStorage.removeItem(INSPECTOR_FOLLOW_KEY2);
-      } catch (_) {
-      }
-    }
-    function readStoredLibraryOpen2() {
-      try {
-        return backendLoad2(LIBRARY_OPEN_KEY2) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredLibraryOpen2(open11) {
-      if (open11) backendSave2(LIBRARY_OPEN_KEY2, "1");
-      else backendRemove2(LIBRARY_OPEN_KEY2);
-    }
-    function readStoredHarpoonOpen2() {
-      try {
-        return backendLoad2("beljar-harpoon-open") === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredHarpoonOpen2(open11) {
-      if (open11) backendSave2("beljar-harpoon-open", "1");
-      else backendRemove2("beljar-harpoon-open");
-    }
-    function readStoredHarpoonDetailsCollapsed2() {
-      try {
-        return backendLoad2("beljar-harpoon-details-collapsed") === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredHarpoonDetailsCollapsed2(collapsed) {
-      if (collapsed) backendSave2("beljar-harpoon-details-collapsed", "1");
-      else backendRemove2("beljar-harpoon-details-collapsed");
-    }
-    function readStoredLibraryWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.library);
-    }
-    function writeStoredLibraryWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.library, px);
-    }
-    function readStoredLibraryHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.library);
-    }
-    function writeStoredLibraryHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.library, px);
-    }
-    function readStoredHarpoonWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.harpoon);
-    }
-    function writeStoredHarpoonWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.harpoon, px);
-    }
-    function readStoredHarpoonHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.harpoon);
-    }
-    function writeStoredHarpoonHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.harpoon, px);
-    }
-    return {
-      resetLayoutPrefs: resetLayoutPrefs2,
-      workspaceKeyFor: workspaceKeyFor2,
-      activeSidePanelKey,
-      migrateActiveSidePanelFromLegacy,
-      readStoredActiveSidePanel: readStoredActiveSidePanel2,
-      writeStoredActiveSidePanel: writeStoredActiveSidePanel2,
-      readStoredWorkspace: readStoredWorkspace2,
-      writeStoredWorkspace: writeStoredWorkspace2,
-      resetStoredWorkspace: resetStoredWorkspace2,
-      resetWorkspaceState: resetWorkspaceState3,
-      resetWorkspacePrefs: resetWorkspacePrefs2,
-      clampEditorSplit: clampEditorSplit2,
-      readStoredEditorSplit: readStoredEditorSplit2,
-      writeStoredEditorSplit: writeStoredEditorSplit2,
-      clampPanelPx,
-      readStoredSidePanelWidth,
-      writeStoredSidePanelWidth,
-      readStoredSidePanelHeight,
-      writeStoredSidePanelHeight,
-      readStoredExplorerWidth: readStoredExplorerWidth2,
-      writeStoredExplorerWidth: writeStoredExplorerWidth2,
-      readStoredInspectorWidth: readStoredInspectorWidth2,
-      writeStoredInspectorWidth: writeStoredInspectorWidth2,
-      readStoredExplorerHeight: readStoredExplorerHeight2,
-      writeStoredExplorerHeight: writeStoredExplorerHeight2,
-      readStoredInspectorHeight: readStoredInspectorHeight2,
-      writeStoredInspectorHeight: writeStoredInspectorHeight2,
-      readStoredExplorerOpen: readStoredExplorerOpen2,
-      loadStat: loadStat2,
-      saveStat: saveStat2,
-      writeStoredExplorerOpen: writeStoredExplorerOpen2,
-      readStoredInspectorOpen: readStoredInspectorOpen2,
-      writeStoredInspectorOpen: writeStoredInspectorOpen2,
-      readStoredInspectorFollow: readStoredInspectorFollow2,
-      writeStoredInspectorFollow: writeStoredInspectorFollow2,
-      readStoredLibraryOpen: readStoredLibraryOpen2,
-      writeStoredLibraryOpen: writeStoredLibraryOpen2,
-      readStoredHarpoonOpen: readStoredHarpoonOpen2,
-      writeStoredHarpoonOpen: writeStoredHarpoonOpen2,
-      readStoredHarpoonDetailsCollapsed: readStoredHarpoonDetailsCollapsed2,
-      writeStoredHarpoonDetailsCollapsed: writeStoredHarpoonDetailsCollapsed2,
-      readStoredLibraryWidth: readStoredLibraryWidth2,
-      writeStoredLibraryWidth: writeStoredLibraryWidth2,
-      readStoredLibraryHeight: readStoredLibraryHeight2,
-      writeStoredLibraryHeight: writeStoredLibraryHeight2,
-      readStoredHarpoonWidth: readStoredHarpoonWidth2,
-      writeStoredHarpoonWidth: writeStoredHarpoonWidth2,
-      readStoredHarpoonHeight: readStoredHarpoonHeight2,
-      writeStoredHarpoonHeight: writeStoredHarpoonHeight2
-    };
+    return out;
   }
-
-  // js/persist/persist-graph-prefs.mjs
-  function create4(deps) {
-    var DEFAULT_GRAPH_PREFS2 = deps.DEFAULT_GRAPH_PREFS;
-    var GRAPH_PREFS_STORAGE_KEY2 = deps.GRAPH_PREFS_STORAGE_KEY;
-    var LEGACY_GRAPH_LAYOUT_KEY2 = deps.LEGACY_GRAPH_LAYOUT_KEY;
-    var LEGACY_GRAPH_IMPL_KEY2 = deps.LEGACY_GRAPH_IMPL_KEY;
-    var LEGACY_GRAPH_DEPTH_KEY2 = deps.LEGACY_GRAPH_DEPTH_KEY;
-    var LEGACY_GRAPH_SIDEBAR_KEY2 = deps.LEGACY_GRAPH_SIDEBAR_KEY;
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    function normalizeGraphPrefs2(raw) {
-      if (!raw || typeof raw !== "object") {
-        return {
-          layout: DEFAULT_GRAPH_PREFS2.layout,
-          impl: DEFAULT_GRAPH_PREFS2.impl,
-          depth: DEFAULT_GRAPH_PREFS2.depth,
-          labelDensity: DEFAULT_GRAPH_PREFS2.labelDensity,
-          sidebarCollapsed: DEFAULT_GRAPH_PREFS2.sidebarCollapsed
-        };
-      }
-      var depth = parseInt(raw.depth, 10);
-      if (!isFinite(depth)) depth = DEFAULT_GRAPH_PREFS2.depth;
-      depth = Math.min(3, Math.max(1, depth));
-      var labelDensity = parseInt(raw.labelDensity, 10);
-      if (!isFinite(labelDensity)) labelDensity = DEFAULT_GRAPH_PREFS2.labelDensity;
-      labelDensity = Math.min(5, Math.max(1, labelDensity));
-      return {
-        layout: raw.layout === "flat" ? "flat" : "force",
-        impl: raw.impl === "hide" ? "hide" : "show",
-        depth,
-        labelDensity,
-        sidebarCollapsed: !!raw.sidebarCollapsed
-      };
+  function parseEnvelope(raw) {
+    if (raw == null) return null;
+    try {
+      const env = JSON.parse(raw);
+      if (!env || typeof env !== "object" || typeof env.at !== "number" || !("data" in env)) return null;
+      return env;
+    } catch (_) {
+      return null;
     }
-    function migrateLegacyGraphPrefs() {
-      var prefs = normalizeGraphPrefs2(null);
-      var touched = false;
-      try {
-        var layout = backendLoad2(LEGACY_GRAPH_LAYOUT_KEY2);
-        if (layout === "flat") {
-          prefs.layout = "flat";
-          touched = true;
-        }
-        var impl = backendLoad2(LEGACY_GRAPH_IMPL_KEY2);
-        if (impl === "hide" || impl === "nodes" || impl === "none") {
-          prefs.impl = "hide";
-          touched = true;
-        }
-        var depth = parseInt(backendLoad2(LEGACY_GRAPH_DEPTH_KEY2) || "", 10);
-        if (isFinite(depth)) {
-          prefs.depth = Math.min(3, Math.max(1, depth));
-          touched = true;
-        }
-        var sidebar = backendLoad2(LEGACY_GRAPH_SIDEBAR_KEY2);
-        if (sidebar === "collapsed") {
-          prefs.sidebarCollapsed = true;
-          touched = true;
-        }
-        if (touched) {
-          backendSave2(GRAPH_PREFS_STORAGE_KEY2, JSON.stringify(prefs));
-          backendRemove2(LEGACY_GRAPH_LAYOUT_KEY2);
-          backendRemove2(LEGACY_GRAPH_IMPL_KEY2);
-          backendRemove2(LEGACY_GRAPH_DEPTH_KEY2);
-          backendRemove2(LEGACY_GRAPH_SIDEBAR_KEY2);
-        }
-      } catch (_) {
-      }
-      return prefs;
-    }
-    function readStoredGraphPrefs2() {
-      try {
-        var parsed = tryParse2(backendLoad2(GRAPH_PREFS_STORAGE_KEY2));
-        if (parsed) return normalizeGraphPrefs2(parsed);
-        return migrateLegacyGraphPrefs();
-      } catch (_) {
-        return normalizeGraphPrefs2(null);
-      }
-    }
-    function writeStoredGraphPrefs2(partial) {
-      var next = normalizeGraphPrefs2(Object.assign({}, readStoredGraphPrefs2(), partial || {}));
-      backendSave2(GRAPH_PREFS_STORAGE_KEY2, JSON.stringify(next));
-      return next;
-    }
-    return {
-      normalizeGraphPrefs: normalizeGraphPrefs2,
-      migrateLegacyGraphPrefs,
-      readStoredGraphPrefs: readStoredGraphPrefs2,
-      writeStoredGraphPrefs: writeStoredGraphPrefs2
-    };
   }
-
-  // js/persist/persist-projects.mjs
-  function create5(deps) {
-    var PROJECTS_KEY2 = deps.PROJECTS_KEY;
-    var ACTIVE_PROJECT_KEY2 = deps.ACTIVE_PROJECT_KEY;
-    var DEFAULT_PROJECT_ID2 = deps.DEFAULT_PROJECT_ID;
-    var DEFAULT_PROJECT_NAME2 = deps.DEFAULT_PROJECT_NAME;
-    var DEFAULT_DOCUMENT_ID2 = deps.DEFAULT_DOCUMENT_ID;
-    var PROJECT_NAME_KEY2 = deps.PROJECT_NAME_KEY;
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projKey2 = deps.projKey;
-    var stateKeyFor2 = deps.stateKeyFor;
-    var replaceProject2 = deps.replaceProject;
-    function readProjects() {
-      var raw = tryParse2(backendLoad2(PROJECTS_KEY2));
-      return Array.isArray(raw) && raw.length ? raw : null;
+  function createStore(opts = {}) {
+    const storage = opts.storage || globalThis.localStorage;
+    if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function" || typeof storage.removeItem !== "function" || typeof storage.key !== "function" || typeof storage.length !== "number") {
+      throw new Error("store: storage must be a Storage (getItem, setItem, removeItem, key, length)");
     }
-    function writeProjects(projects) {
-      backendSave2(PROJECTS_KEY2, JSON.stringify(projects));
-    }
-    function ensureProjects() {
-      var projects = readProjects();
-      if (projects) return projects;
-      var legacyName = backendLoad2(PROJECT_NAME_KEY2);
-      projects = [{
-        id: DEFAULT_PROJECT_ID2,
-        name: legacyName && String(legacyName).trim() || DEFAULT_PROJECT_NAME2,
-        createdAt: Date.now()
-      }];
-      writeProjects(projects);
-      if (!backendLoad2(ACTIVE_PROJECT_KEY2)) backendSave2(ACTIVE_PROJECT_KEY2, DEFAULT_PROJECT_ID2);
-      return projects;
-    }
-    function listProjects2() {
-      return ensureProjects();
-    }
-    function getActiveProjectId2() {
-      ensureProjects();
-      var id = backendLoad2(ACTIVE_PROJECT_KEY2);
-      var projects = readProjects() || [];
-      if (id && projects.some(function(p) {
-        return p.id === id;
-      })) return id;
-      return projects.length ? projects[0].id : DEFAULT_PROJECT_ID2;
-    }
-    function setActiveProjectId2(id) {
-      ensureProjects();
-      backendSave2(ACTIVE_PROJECT_KEY2, id);
-    }
-    function getActiveProject2() {
-      var id = getActiveProjectId2();
-      var projects = readProjects() || [];
-      for (var i = 0; i < projects.length; i++) {
-        if (projects[i].id === id) return projects[i];
-      }
-      return projects[0] || null;
-    }
-    function createProject2(name) {
-      var projects = ensureProjects();
-      var used = {};
-      for (var i = 0; i < projects.length; i++) used[projects[i].id] = true;
-      var base = "p-" + Date.now().toString(36);
-      var id = base;
-      var n = 1;
-      while (used[id]) {
-        id = base + "-" + n;
-        n += 1;
-      }
-      projects.push({
-        id,
-        name: String(name || DEFAULT_PROJECT_NAME2).trim() || DEFAULT_PROJECT_NAME2,
-        createdAt: Date.now()
-      });
-      writeProjects(projects);
-      backendSave2(projKey2("files", id), JSON.stringify([{ id: DEFAULT_DOCUMENT_ID2, name: "main.bel" }]));
-      backendSave2(projKey2("active-file", id), DEFAULT_DOCUMENT_ID2);
-      backendSave2(projKey2("open-files", id), JSON.stringify([DEFAULT_DOCUMENT_ID2]));
-      backendSave2(projKey2("empty-folders", id), JSON.stringify([]));
-      return id;
-    }
-    function renameProject2(id, name) {
-      var projects = ensureProjects();
-      var trimmed = String(name != null ? name : "").trim() || DEFAULT_PROJECT_NAME2;
-      for (var i = 0; i < projects.length; i++) {
-        if (projects[i].id === id) {
-          projects[i].name = trimmed;
-          writeProjects(projects);
-          if (id === DEFAULT_PROJECT_ID2) backendSave2(PROJECT_NAME_KEY2, trimmed);
-          return true;
+    const now = opts.now || (() => Date.now());
+    const schema = opts.schema == null ? SCHEMA : opts.schema;
+    const onCapacity = typeof opts.onCapacity === "function" ? opts.onCapacity : () => {
+    };
+    const events = opts.events || (typeof globalThis.addEventListener === "function" ? globalThis : null);
+    const listeners2 = /* @__PURE__ */ new Set();
+    let blocked2 = false;
+    const onVersionAhead = typeof opts.onVersionAhead === "function" ? opts.onVersionAhead : () => {
+    };
+    const onCannotUpgrade = typeof opts.onCannotUpgrade === "function" ? opts.onCannotUpgrade : () => {
+    };
+    const migrations = opts.migrations || {};
+    const missingPolicy = opts.onMissingMigration === "refuse" ? "refuse" : "wipe";
+    let resetReason = null;
+    let readOnly = false;
+    const versionOf = (raw) => {
+      const n = Number(raw);
+      return raw != null && raw !== "" && Number.isInteger(n) ? n : null;
+    };
+    function wipeAndStamp() {
+      for (const area of [storage, ...opts.alsoWipe || []]) {
+        if (!area) continue;
+        for (const k of allKeys(area)) {
+          if (isBeljarKey(k)) area.removeItem(k);
         }
       }
-      return false;
+      storage.setItem(SCHEMA_KEY, String(schema));
     }
-    function deleteProject2(id) {
-      var projects = ensureProjects();
-      if (projects.length <= 1) return null;
-      var idx = -1;
-      for (var i = 0; i < projects.length; i++) {
-        if (projects[i].id === id) {
-          idx = i;
+    const storedRaw = storage.getItem(SCHEMA_KEY);
+    const storedVersion = versionOf(storedRaw);
+    if (storedRaw === String(schema)) {
+    } else if (storedVersion != null && storedVersion > schema) {
+      readOnly = true;
+      resetReason = "newer";
+      onVersionAhead(storedVersion);
+    } else if (storedRaw == null) {
+      resetReason = "fresh";
+      wipeAndStamp();
+    } else {
+      let v = storedVersion;
+      let failure = v == null ? "unreadable" : null;
+      while (!failure && v < schema) {
+        const step2 = migrations[v];
+        if (typeof step2 !== "function") {
+          failure = "missing";
           break;
         }
+        try {
+          step2(storage);
+        } catch (err) {
+          failure = "threw";
+          readOnly = true;
+          resetReason = "refused";
+          onCannotUpgrade("migration from " + v + " failed: " + String(err && err.message || err));
+          break;
+        }
+        v += 1;
       }
-      if (idx === -1) return null;
-      var files = tryParse2(backendLoad2(projKey2("files", id)));
-      if (Array.isArray(files)) {
-        for (var j = 0; j < files.length; j++) backendRemove2(stateKeyFor2(files[j].id, id));
+      if (!failure) {
+        resetReason = "migrated";
+        storage.setItem(SCHEMA_KEY, String(schema));
+      } else if (failure !== "threw") {
+        if (missingPolicy === "wipe") {
+          resetReason = "schema-changed";
+          wipeAndStamp();
+        } else {
+          readOnly = true;
+          resetReason = "refused";
+          onCannotUpgrade("no migration from " + storedRaw + " to " + schema);
+        }
       }
-      backendRemove2(projKey2("files", id));
-      backendRemove2(projKey2("active-file", id));
-      backendRemove2(projKey2("open-files", id));
-      backendRemove2(projKey2("default-cfg", id));
-      backendRemove2(projKey2("active-cfg-by-dir", id));
-      backendRemove2(projKey2("empty-folders", id));
-      projects.splice(idx, 1);
-      writeProjects(projects);
-      var nextId2 = projects[Math.max(0, idx - 1)].id;
-      if (getActiveProjectId2() === id) setActiveProjectId2(nextId2);
-      return nextId2;
     }
-    function newBlankProject2(name) {
-      var id = createProject2(name);
-      setActiveProjectId2(id);
-      return id;
+    const READ_ONLY = { ok: false, error: { code: "read-only" } };
+    function emit2(evt) {
+      for (const fn of [...listeners2]) {
+        try {
+          fn(evt);
+        } catch (_) {
+        }
+      }
     }
-    function createProjectWithFiles2(name, entries, options) {
-      var id = createProject2(name);
-      setActiveProjectId2(id);
-      var result = replaceProject2(entries, options || {});
-      return { projectId: id, files: result.files, activeId: result.activeId };
+    function requireClass(key) {
+      const cls = classOf(key);
+      if (!cls) throw new Error(`store: "${key}" matches no class in CLASSES; add it there first`);
+      return cls;
     }
+    function envelopeOf(key) {
+      return parseEnvelope(storage.getItem(key));
+    }
+    function evictionOrder(except) {
+      return allKeys(storage).filter((k) => k !== except && classOf(k) === "cache").map((k) => ({ k, at: (envelopeOf(k) || { at: 0 }).at })).sort((a, b) => a.at - b.at).map((x) => x.k);
+    }
+    function markHealthy() {
+      if (!blocked2) return;
+      blocked2 = false;
+      onCapacity("clear");
+    }
+    function write2(key, cls, env) {
+      if (readOnly) return READ_ONLY;
+      const raw = JSON.stringify(env);
+      let lastErr = null;
+      const victims = evictionOrder(key);
+      for (let attempt = 0; attempt <= victims.length; attempt++) {
+        try {
+          storage.setItem(key, raw);
+          if (cls !== "cache") markHealthy();
+          return { ok: true };
+        } catch (err) {
+          if (!isCapacityError(err)) return { ok: false, error: { code: "unknown", detail: String(err && err.message || err) } };
+          lastErr = err;
+          if (attempt < victims.length) storage.removeItem(victims[attempt]);
+        }
+      }
+      const detail2 = String(lastErr && (lastErr.message || lastErr.name) || "");
+      if (cls !== "cache" && !blocked2) {
+        blocked2 = true;
+        onCapacity("blocked", detail2);
+      }
+      return { ok: false, error: { code: "capacity", detail: detail2 } };
+    }
+    const store3 = {
+      SCHEMA: schema,
+      /** 'fresh' | 'schema-changed' | null — why this store started empty, if it did. */
+      resetReason,
+      classOf,
+      /** The stored data, or undefined. Never throws: a corrupt record reads as absent. */
+      get(key) {
+        const env = envelopeOf(key);
+        return env ? env.data : void 0;
+      },
+      /** When the record was last written, or 0 if it does not exist. */
+      at(key) {
+        const env = envelopeOf(key);
+        return env ? env.at : 0;
+      },
+      set(key, data) {
+        const cls = requireClass(key);
+        if (data === void 0) return store3.remove(key);
+        const res = write2(key, cls, { at: now(), data });
+        if (res.ok) emit2({ key, cls, origin: "local" });
+        return res;
+      },
+      update(key, fn) {
+        return store3.set(key, fn(store3.get(key)));
+      },
+      remove(key) {
+        const cls = requireClass(key);
+        if (readOnly) return READ_ONLY;
+        storage.removeItem(key);
+        emit2({ key, cls, origin: "local" });
+        return { ok: true };
+      },
+      /** Every stored key under `prefix` (the schema key is not a record). */
+      keys(prefix = "beljar/") {
+        return allKeys(storage).filter((k) => k !== SCHEMA_KEY && k.startsWith(prefix)).sort();
+      },
+      /** Delete every record under `prefix`, e.g. a whole project. */
+      removeAll(prefix) {
+        if (!prefix || !prefix.startsWith("beljar/")) throw new Error("store.removeAll needs a beljar/ prefix");
+        if (readOnly) return 0;
+        const gone = store3.keys(prefix);
+        for (const k of gone) storage.removeItem(k);
+        for (const k of gone) emit2({ key: k, cls: classOf(k), origin: "local" });
+        return gone.length;
+      },
+      /**
+       * The online layer's only way in. Writes what it pulled with the time the
+       * other side stamped, and tells subscribers it came from elsewhere so the
+       * editor treats it like another tab's change. `null` data deletes.
+       */
+      applyRemote(key, data, at) {
+        const cls = requireClass(key);
+        if (readOnly) return READ_ONLY;
+        if (data === null || data === void 0) {
+          storage.removeItem(key);
+          emit2({ key, cls, origin: "remote" });
+          return { ok: true };
+        }
+        const res = write2(key, cls, { at: Number(at) || now(), data });
+        if (res.ok) emit2({ key, cls, origin: "remote" });
+        return res;
+      },
+      subscribe(fn) {
+        listeners2.add(fn);
+        return () => listeners2.delete(fn);
+      },
+      /** True while a write that matters is failing for want of space. */
+      isBlocked() {
+        return blocked2;
+      },
+      /**
+       * True when this page must not write: the storage belongs to a newer
+       * BelJar, or holds older data this code will neither migrate nor wipe.
+       * Every write then answers { ok: false, error: { code: 'read-only' } }.
+       */
+      isReadOnly() {
+        return readOnly;
+      },
+      dispose() {
+        if (events && onStorageEvent) events.removeEventListener("storage", onStorageEvent);
+        listeners2.clear();
+      }
+    };
+    let onStorageEvent = null;
+    if (events) {
+      onStorageEvent = (e) => {
+        if (e.storageArea && e.storageArea !== storage) return;
+        if (e.key === null) {
+          if (!readOnly && storage.getItem(SCHEMA_KEY) == null) storage.setItem(SCHEMA_KEY, String(schema));
+          emit2({ key: null, cls: null, origin: "tab" });
+          return;
+        }
+        if (e.key === SCHEMA_KEY) {
+          const v = versionOf(e.newValue);
+          if (v != null && v > schema && !readOnly) {
+            readOnly = true;
+            onVersionAhead(v);
+          }
+          return;
+        }
+        if (!e.key.startsWith("beljar/")) return;
+        const env = parseEnvelope(e.newValue);
+        emit2({ key: e.key, cls: classOf(e.key), origin: "tab", data: env ? env.data : void 0 });
+      };
+      events.addEventListener("storage", onStorageEvent);
+    }
+    return store3;
+  }
+
+  // js/persist/table.mjs
+  function typeOf(row) {
+    if (row.values) return "enum";
+    if (row.type) return row.type;
+    if (typeof row.default === "boolean") return "bool";
+    if (typeof row.default === "number") return "number";
+    return "string";
+  }
+  function sameValue(a, b) {
+    if (a === b) return true;
+    if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+  function clone(v) {
+    return v !== null && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
+  }
+  function normalizeValue(row, raw) {
+    switch (typeOf(row)) {
+      case "enum": {
+        if (row.values.includes(raw)) return raw;
+        if (typeof raw === "string" && raw.trim() !== "" && row.values.some((v) => typeof v === "number")) {
+          const n = Number(raw);
+          if (row.values.includes(n)) return n;
+        }
+        return void 0;
+      }
+      case "bool":
+        return typeof raw === "boolean" ? raw : void 0;
+      case "string":
+        return typeof raw === "string" && raw !== "" ? raw : void 0;
+      case "number": {
+        let n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+        if (!Number.isFinite(n)) return void 0;
+        if (row.min != null && n < row.min) n = row.min;
+        if (row.max != null && n > row.max) n = row.max;
+        return row.integer ? Math.round(n) : n;
+      }
+      case "json":
+        return row.normalize ? row.normalize(raw) : raw;
+      default:
+        return void 0;
+    }
+  }
+  function resolveRows(rows2, stored) {
+    const src = stored && typeof stored === "object" ? stored : {};
+    const out = {};
+    for (const row of rows2) {
+      const n = Object.prototype.hasOwnProperty.call(src, row.id) ? normalizeValue(row, src[row.id]) : void 0;
+      out[row.id] = clone(n === void 0 ? row.default : n);
+    }
+    return out;
+  }
+  function createTable(store3, opts) {
+    const { key, rows: rows2 } = opts;
+    const byId2 = new Map(rows2.map((row) => [row.id, row]));
+    const ids = rows2.map((row) => row.id);
+    const listeners2 = /* @__PURE__ */ new Set();
+    const revisions = /* @__PURE__ */ new Map();
+    function readOverrides2() {
+      const rec = store3.get(key);
+      const values = rec && rec.values && typeof rec.values === "object" ? rec.values : {};
+      const out = {};
+      for (const [id, raw] of Object.entries(values)) {
+        const row = byId2.get(id);
+        if (!row) continue;
+        const v = normalizeValue(row, raw);
+        if (v !== void 0 && !sameValue(v, row.default)) out[id] = v;
+      }
+      return out;
+    }
+    let overrides = readOverrides2();
+    function requireRow(id) {
+      const row = byId2.get(id);
+      if (!row) throw new Error(opts.unknown ? opts.unknown(id) : `${key}: no row "${id}"`);
+      return row;
+    }
+    function emit2(changed, origin) {
+      if (!changed.length) return;
+      for (const id of changed) revisions.set(id, (revisions.get(id) || 0) + 1);
+      for (const fn of [...listeners2]) {
+        try {
+          fn({ ids: changed, origin });
+        } catch (_) {
+        }
+      }
+    }
+    function commit(next) {
+      const changed = ids.filter((id) => !sameValue(id in next ? next[id] : void 0, id in overrides ? overrides[id] : void 0));
+      if (!changed.length) return { ok: true, changed };
+      const res = store3.set(key, { values: next });
+      if (!res.ok) return { ok: false, changed: [] };
+      overrides = next;
+      emit2(changed, "local");
+      return { ok: true, changed };
+    }
+    const unsubscribe = store3.subscribe((e) => {
+      if (e.origin === "local") return;
+      if (e.key !== key && e.key !== null) return;
+      const before = overrides;
+      overrides = readOverrides2();
+      emit2(ids.filter((id) => !sameValue(before[id], overrides[id])), e.origin);
+    });
     return {
-      readProjects,
-      writeProjects,
-      ensureProjects,
-      listProjects: listProjects2,
-      getActiveProjectId: getActiveProjectId2,
-      setActiveProjectId: setActiveProjectId2,
-      getActiveProject: getActiveProject2,
-      createProject: createProject2,
-      renameProject: renameProject2,
-      deleteProject: deleteProject2,
-      newBlankProject: newBlankProject2,
-      createProjectWithFiles: createProjectWithFiles2
+      /** The row declaring `id`, or null. */
+      rowOf(id) {
+        return byId2.get(id) || null;
+      },
+      /** The effective value: what was stored, or the default. Never touches storage. */
+      get(id) {
+        const row = requireRow(id);
+        return clone(id in overrides ? overrides[id] : row.default);
+      },
+      /**
+       * Store a value. Returns false, and stores nothing, when the value is not
+       * one this row can hold or storage refused it. Setting a value back to its
+       * default removes it from the record.
+       */
+      set(id, value) {
+        const row = requireRow(id);
+        const v = normalizeValue(row, value);
+        if (v === void 0) return false;
+        const next = { ...overrides };
+        if (sameValue(v, row.default)) delete next[id];
+        else next[id] = clone(v);
+        return commit(next).ok;
+      },
+      /** A number that changes whenever `id`'s effective value does. */
+      revision(id) {
+        requireRow(id);
+        return revisions.get(id) || 0;
+      },
+      isDefault(id) {
+        requireRow(id);
+        return !(id in overrides);
+      },
+      defaultOf(id) {
+        return clone(requireRow(id).default);
+      },
+      /** Every row's effective value. */
+      values() {
+        return resolveRows(rows2, overrides);
+      },
+      /** Only what differs from the defaults (a copy). */
+      overrides() {
+        return clone(overrides);
+      },
+      /** Back to the defaults for every id `pick(row)` selects (all when omitted). */
+      reset(pick2) {
+        const next = {};
+        for (const [id, v] of Object.entries(overrides)) {
+          if (pick2 && !pick2(byId2.get(id))) next[id] = v;
+        }
+        return commit(next).ok;
+      },
+      commit,
+      /** fn({ ids, origin: 'local' | 'tab' | 'remote' }) whenever effective values change. */
+      subscribe(fn) {
+        listeners2.add(fn);
+        return () => listeners2.delete(fn);
+      },
+      dispose() {
+        unsubscribe();
+        listeners2.clear();
+      }
     };
   }
 
-  // js/persist/persist-file-registry.mjs
-  function create6(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projKey2 = deps.projKey;
-    var stateKeyFor2 = deps.stateKeyFor;
-    var defaultBackend2 = deps.defaultBackend;
-    var readState2 = deps.readState;
-    var emptyState2 = deps.emptyState;
-    var DEFAULT_DOCUMENT_ID2 = deps.DEFAULT_DOCUMENT_ID;
-    var dirOf6 = deps.dirOf;
-    var expandAliasesForStorage2 = deps.expandAliasesForStorage;
-    var fileNameForId2 = deps.fileNameForId;
-    var readStoredCfgAutoSync2 = deps.readStoredCfgAutoSync;
-    var writeOpenFileIds2 = deps.writeOpenFileIds;
-    var closeOpenFile2 = deps.closeOpenFile;
-    var writeActiveCfgByDir2 = deps.writeActiveCfgByDir;
-    var setActiveCfgForDir2 = deps.setActiveCfgForDir;
-    var removeActiveCfgForDir2 = deps.removeActiveCfgForDir;
-    var readActiveCfgByDir2 = deps.readActiveCfgByDir;
-    var normalizeActiveCfgList2 = deps.normalizeActiveCfgList;
-    var setProjectName2 = deps.setProjectName;
-    function readProjectFiles2() {
-      var raw = tryParse2(backendLoad2(projKey2("files")));
-      if (Array.isArray(raw)) return raw;
+  // js/persist/settings-schema.mjs
+  var SETTINGS_KEY = "beljar/settings";
+  var SECTIONS = ["appearance", "editor", "keybindings", "beluga", "harpoon", "repl", "workspace", "aliases"];
+  function cleanKeybindings(map) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return void 0;
+    const out = {};
+    for (const [id, v] of Object.entries(map)) {
+      if (v === "" || v === null) out[id] = "";
+      else if (typeof v === "string") out[id] = v;
+    }
+    return out;
+  }
+  function cleanAliasPairs(v) {
+    if (v === null) return null;
+    return Array.isArray(v) ? v : void 0;
+  }
+  var ON = true;
+  var OFF = false;
+  var SETTINGS = [
+    // ── Appearance ──────────────────────────────────────────────────────────
+    { id: "theme", section: "appearance", default: "dark", values: ["dark", "light"], boot: true },
+    { id: "uiFontSize", section: "appearance", default: "md", values: ["sm", "md", "lg", "xl"], boot: true },
+    { id: "uiTextContrast", section: "appearance", default: "medium", values: ["low", "medium", "high", "maximum"], boot: true },
+    { id: "motionPref", section: "appearance", default: "system", values: ["system", "reduce", "full"], boot: true },
+    { id: "toastDuration", section: "appearance", default: "normal", values: ["short", "normal", "long"] },
+    // ── Editor: typography ──────────────────────────────────────────────────
+    { id: "editorFontSize", section: "editor", default: "md", values: ["sm", "md", "lg", "xl"] },
+    { id: "editorLineHeight", section: "editor", default: "normal", values: ["compact", "normal", "relaxed"] },
+    { id: "editorWordWrap", section: "editor", default: OFF },
+    { id: "editorFontFamily", section: "editor", default: "jetbrains", values: ["jetbrains", "system"], boot: true },
+    { id: "editorCursorBlink", section: "editor", default: "blink", values: ["off", "blink", "fast"] },
+    { id: "editorScrollPastEnd", section: "editor", default: ON },
+    { id: "editorWhitespace", section: "editor", default: "none", values: ["none", "trailing", "selection", "all"] },
+    { id: "editorRulers", section: "editor", default: OFF },
+    // ── Editor: indentation and saving ──────────────────────────────────────
+    { id: "editorTabSize", section: "editor", default: 2, values: [2, 4] },
+    { id: "autosaveDelay", section: "editor", default: 320, values: [320, 1e3, 2e3] },
+    { id: "editorFormatWidth", section: "editor", default: 80, values: [80, 100, 120] },
+    { id: "editorReindentPaste", section: "editor", default: ON },
+    { id: "cfgAutoSync", section: "editor", default: ON },
+    { id: "formatOnSave", section: "editor", default: OFF },
+    { id: "trimTrailingWs", section: "editor", default: OFF },
+    // ── Editor: code insight ────────────────────────────────────────────────
+    { id: "editorSyntaxHighlight", section: "editor", default: ON },
+    { id: "editorSemanticHighlight", section: "editor", default: ON },
+    { id: "editorParseHighlight", section: "editor", default: ON },
+    { id: "editorOccurrenceHighlight", section: "editor", default: ON },
+    { id: "editorBracketMatch", section: "editor", default: ON },
+    { id: "editorAutoCloseBrackets", section: "editor", default: ON },
+    { id: "editorSelectionMatches", section: "editor", default: ON },
+    { id: "hoverScope", section: "editor", default: "all", values: ["all", "user-only", "none"] },
+    { id: "hoverSticky", section: "editor", default: OFF },
+    { id: "editorAutocompleteTrigger", section: "editor", default: "typing", values: ["typing", "none", "always"] },
+    { id: "editorAutocompleteContinue", section: "editor", default: OFF },
+    { id: "quietWhileTyping", section: "editor", default: OFF },
+    // ── Editor: gutters and diagnostics ─────────────────────────────────────
+    { id: "editorLineNumbers", section: "editor", default: ON },
+    { id: "editorLineNumberMode", section: "editor", default: "absolute", values: ["absolute", "relative", "hybrid"] },
+    { id: "editorFoldGutter", section: "editor", default: ON },
+    { id: "editorFoldPersist", section: "editor", default: "session", values: ["session", "none", "local"], sync: false },
+    { id: "editorActiveLine", section: "editor", default: ON },
+    { id: "diagPresentation", section: "editor", default: "both", values: ["both", "underlines", "gutter", "none"] },
+    { id: "diagSeverity", section: "editor", default: "all", values: ["all", "errors"] },
+    { id: "editorHoleGutter", section: "editor", default: ON },
+    { id: "editorHoleEmphasis", section: "editor", default: "normal", values: ["subtle", "normal", "loud"], boot: true },
+    { id: "stickyDeclHeader", section: "editor", default: OFF },
+    // ── Keybindings and the keyboard ────────────────────────────────────────
+    { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
+    { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
+    // null: the status strip picks its own default for the keymap style.
+    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
+    { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
+    { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
+    { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
+    { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
+    // ── Beluga ──────────────────────────────────────────────────────────────
+    // Which build this device downloads: a phone and a workstation differ.
+    { id: "belugaMode", section: "beluga", default: "stable", values: ["stable", "fast"], sync: false },
+    { id: "belugaFallbackStable", section: "beluga", default: ON },
+    { id: "belugaCancelOnEdit", section: "beluga", default: ON },
+    { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
+    { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },
+    // ── Harpoon ─────────────────────────────────────────────────────────────
+    { id: "harpoonMode", section: "harpoon", default: "manual", values: ["manual", "orca"] },
+    { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
+    { id: "autosolveFocusNext", section: "harpoon", default: ON },
+    { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // ── REPL ────────────────────────────────────────────────────────────────
+    { id: "replAutoscroll", section: "repl", default: ON },
+    { id: "replWelcome", section: "repl", default: ON },
+    { id: "replEcho", section: "repl", default: ON },
+    { id: "replFilterChatter", section: "repl", default: ON },
+    { id: "replHoverTimestamp", section: "repl", default: OFF },
+    { id: "replAutocompleteTrigger", section: "repl", default: "typing", values: ["typing", "none", "always"] },
+    { id: "replAutocompleteContinue", section: "repl", default: OFF },
+    { id: "replHistoryCap", section: "repl", default: 1e3, values: [100, 250, 500, 1e3] },
+    // Where this browser keeps history: a shared computer is not your laptop.
+    { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
+    // ── Workspace ───────────────────────────────────────────────────────────
+    { id: "inspectorFollow", section: "workspace", default: ON },
+    { id: "restorePanels", section: "workspace", default: ON },
+    { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Signed in, settings follow you between devices; off here, this device keeps its own.
+    { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // ── Aliases ─────────────────────────────────────────────────────────────
+    { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
+    // null: the built-in alias table.
+    { id: "aliasPairs", section: "aliases", default: null, type: "json", normalize: cleanAliasPairs }
+  ];
+  var BY_ID = new Map(SETTINGS.map((row) => [row.id, row]));
+  function settingRow(id) {
+    return BY_ID.get(id) || null;
+  }
+  function isSyncedSetting(row) {
+    return !!row && row.sync !== false;
+  }
+  var normalizeSetting = normalizeValue;
+  function defaultOf(id) {
+    const row = settingRow(id);
+    if (!row) throw new Error(`settings: no setting "${id}"`);
+    return clone(row.default);
+  }
+  function readSetting(id) {
+    const S = globalThis.Settings;
+    return S ? S.get(id) : defaultOf(id);
+  }
+
+  // js/persist/settings.mjs
+  var EXPORT_KIND = "beljar-settings";
+  function createSettings(store3) {
+    const table = createTable(store3, {
+      key: SETTINGS_KEY,
+      rows: SETTINGS,
+      unknown: (id) => `settings: no setting "${id}" (declare it in settings-schema.mjs)`
+    });
+    return {
+      SECTIONS,
+      get: table.get,
+      set: table.set,
+      revision: table.revision,
+      isDefault: table.isDefault,
+      values: table.values,
+      subscribe: table.subscribe,
+      dispose: table.dispose,
+      defaultOf,
+      /** Back to defaults for one Settings category. */
+      reset(section) {
+        if (!SECTIONS.includes(section)) throw new Error(`settings: no section "${section}"`);
+        return table.reset((row) => row.section === section);
+      },
+      resetAll() {
+        return table.reset();
+      },
+      /** Exactly what the user changed, in a file they can keep. */
+      exportBundle(now = Date.now()) {
+        return { kind: EXPORT_KIND, exportedAt: now, values: table.overrides() };
+      },
+      /**
+       * Apply an exported bundle. Unknown ids and values a setting cannot hold are
+       * skipped and named, never half-applied: what is valid lands in one write.
+       */
+      importBundle(bundle) {
+        if (!bundle || bundle.kind !== EXPORT_KIND || !bundle.values || typeof bundle.values !== "object") {
+          return { ok: false, reason: "not a BelJar settings file", applied: [], skipped: [] };
+        }
+        const next = table.overrides();
+        const applied = [];
+        const skipped = [];
+        for (const [id, raw] of Object.entries(bundle.values)) {
+          const row = settingRow(id);
+          const v = row ? normalizeSetting(row, raw) : void 0;
+          if (v === void 0) {
+            skipped.push(id);
+            continue;
+          }
+          if (sameValue(v, row.default)) delete next[id];
+          else next[id] = clone(v);
+          applied.push(id);
+        }
+        const res = table.commit(next);
+        return { ok: res.ok, applied: res.ok ? applied : [], skipped };
+      }
+    };
+  }
+
+  // js/persist/device-schema.mjs
+  var DEVICE_KEY = "beljar/device";
+  function stringList(cap) {
+    return (raw) => {
+      if (!Array.isArray(raw)) return void 0;
+      const out = [];
+      for (const x of raw) {
+        if (typeof x === "string" && x && out.indexOf(x) === -1) out.push(x);
+      }
+      return cap ? out.slice(0, cap) : out;
+    };
+  }
+  function runModel(raw) {
+    if (!raw || typeof raw !== "object") return void 0;
+    const { baseMs, msPerLine, sampleCount } = raw;
+    if (!(typeof msPerLine === "number" && msPerLine > 0) || !(typeof baseMs === "number" && baseMs >= 0)) return void 0;
+    return {
+      baseMs,
+      msPerLine,
+      sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
+    };
+  }
+  var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
+  var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
+  var DEVICE = [
+    // which project the next load opens (a page stays on the one it opened: work.mjs)
+    { id: "activeProject", type: "string", default: "" },
+    // the account this browser is signed in as ('' signed out): whose projects it
+    // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
+    { id: "account", type: "string", default: "" },
+    // the account this device last asked about its own projects (the claim flow, once per account)
+    { id: "claimAskedFor", type: "string", default: "" },
+    // durability.mjs: when this browser was last asked to keep BelJar's storage,
+    // and when this device was told Safari may delete it (ms; 0: never)
+    { id: "persistAskedAt", type: "number", default: 0 },
+    { id: "durabilityWarnedAt", type: "number", default: 0 },
+    // layout
+    { id: "editorSplit", group: "layout", default: 0.5, min: 0.18, max: 0.82, boot: true },
+    { id: "explorerWidth", ...PANEL_W, cssVar: "--explorer-w" },
+    { id: "explorerHeight", ...PANEL_H, max: 320, cssVar: "--explorer-h" },
+    { id: "inspectorWidth", ...PANEL_W, cssVar: "--inspector-w" },
+    { id: "inspectorHeight", ...PANEL_H, cssVar: "--inspector-h" },
+    { id: "libraryWidth", ...PANEL_W, cssVar: "--library-w" },
+    { id: "libraryHeight", ...PANEL_H, cssVar: "--library-h" },
+    { id: "harpoonWidth", ...PANEL_W, cssVar: "--harpoon-w" },
+    { id: "harpoonHeight", ...PANEL_H, cssVar: "--harpoon-h" },
+    { id: "harpoonDetailsCollapsed", default: false },
+    // the dependency graph panel
+    { id: "graphLayout", default: "force", values: ["force", "flat"] },
+    { id: "graphImpl", default: "show", values: ["show", "hide"] },
+    { id: "graphDepth", default: 1, values: [1, 2, 3] },
+    { id: "graphLabelDensity", default: 3, values: [1, 2, 3, 4, 5] },
+    { id: "graphSidebarCollapsed", default: false },
+    // what this device has learned or been told
+    { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
+    { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    { id: "runModel", type: "json", default: null, normalize: runModel },
+    { id: "jumpLog", default: false }
+  ];
+  var BY_ID2 = new Map(DEVICE.map((row) => [row.id, row]));
+  function deviceRow(id) {
+    return BY_ID2.get(id) || null;
+  }
+  function deviceDefault(id) {
+    const row = deviceRow(id);
+    if (!row) throw new Error(`device: no row "${id}" (declare it in device-schema.mjs)`);
+    return clone(row.default);
+  }
+  function readDevice(id) {
+    const D = globalThis.Device;
+    return D ? D.get(id) : deviceDefault(id);
+  }
+  function writeDevice(id, value) {
+    const D = globalThis.Device;
+    return D ? D.set(id, value) : false;
+  }
+
+  // js/persist/keys.mjs
+  var NOTIFICATIONS_KEY = "beljar/notifications";
+  var REPL_TRANSCRIPT_KEY = "beljar/repl/transcript";
+  var REPL_COMMANDS_KEY = "beljar/repl/commands";
+  var TOMBSTONES_KEY = "beljar/tombstones";
+  var SETTINGS_SYNC_KEY = "beljar/settings-sync";
+  function tabMessageKey(kind) {
+    return "beljar/tabs/" + kind;
+  }
+  function projectPrefix(pid) {
+    return "beljar/p/" + pid + "/";
+  }
+  function metaKey(pid) {
+    return projectPrefix(pid) + "meta";
+  }
+  function treeKey(pid) {
+    return projectPrefix(pid) + "tree";
+  }
+  function fileKey(pid, fid) {
+    return projectPrefix(pid) + "f/" + fid;
+  }
+  function sessionKey(pid) {
+    return projectPrefix(pid) + "session";
+  }
+  function cacheKey(pid, fid) {
+    return projectPrefix(pid) + "cache/" + fid;
+  }
+  function foldsKey(pid) {
+    return projectPrefix(pid) + "folds";
+  }
+  function syncKey(pid) {
+    return projectPrefix(pid) + "sync";
+  }
+  function undoKey(pid) {
+    return projectPrefix(pid) + "undo";
+  }
+  function conflictKey(pid, fid) {
+    return projectPrefix(pid) + "conflict/" + fid;
+  }
+  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|f|cache|conflict)(?:\/([^/]+))?$/;
+  function parseKey(key) {
+    var m = typeof key === "string" ? PROJECT_KEY.exec(key) : null;
+    if (!m) return null;
+    var hasFile = m[2] === "f" || m[2] === "cache" || m[2] === "conflict";
+    if (hasFile !== (m[3] != null)) return null;
+    return hasFile ? { pid: m[1], kind: m[2], fid: m[3] } : { pid: m[1], kind: m[2] };
+  }
+  var B32 = "0123456789abcdefghjkmnpqrstvwxyz";
+  var lastTime = -1;
+  var lastRand = null;
+  function randomBytes(n) {
+    var cryptoApi = globalThis.crypto;
+    if (cryptoApi && typeof cryptoApi.getRandomValues === "function") return cryptoApi.getRandomValues(new Uint8Array(n));
+    var out = new Uint8Array(n);
+    for (var i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+    return out;
+  }
+  function encodeTime(ms) {
+    var s = "";
+    var t = ms;
+    for (var i = 0; i < 10; i++) {
+      s = B32[t % 32] + s;
+      t = Math.floor(t / 32);
+    }
+    return s;
+  }
+  function encodeRandom(bytes) {
+    var s = "";
+    var acc = 0;
+    var bits = 0;
+    for (var i = 0; i < bytes.length; i++) {
+      acc = acc << 8 | bytes[i];
+      bits += 8;
+      while (bits >= 5) {
+        bits -= 5;
+        s += B32[acc >> bits & 31];
+      }
+      acc &= (1 << bits) - 1;
+    }
+    return s;
+  }
+  function increment(bytes) {
+    for (var i = bytes.length - 1; i >= 0; i--) {
+      if (bytes[i] < 255) {
+        bytes[i] += 1;
+        return true;
+      }
+      bytes[i] = 0;
+    }
+    return false;
+  }
+  function newId(kind, taken) {
+    for (; ; ) {
+      var now = Date.now();
+      if (now > lastTime || !lastRand) {
+        lastTime = now;
+        lastRand = randomBytes(10);
+      } else if (!increment(lastRand)) {
+        lastTime += 1;
+        lastRand = randomBytes(10);
+      }
+      var id = kind + "_" + encodeTime(lastTime) + encodeRandom(lastRand);
+      if (!taken || !taken(id)) return id;
+    }
+  }
+
+  // js/persist/work.mjs
+  var DEFAULT_PROJECT_NAME = "Untitled Project";
+  var FIRST_FILE_NAME = "main.bel";
+  var CACHE_LIMIT = 1024;
+  function cleanName(name) {
+    return String(name != null ? name : "").trim() || DEFAULT_PROJECT_NAME;
+  }
+  function stringList2(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const x of raw) {
+      if (typeof x === "string" && x && out.indexOf(x) === -1) out.push(x);
+    }
+    return out;
+  }
+  function emptyTree() {
+    return { files: [], folders: [], suites: {} };
+  }
+  function normalizeTree(raw) {
+    const t = emptyTree();
+    if (!raw || typeof raw !== "object") return t;
+    if (Array.isArray(raw.files)) {
+      const seen = /* @__PURE__ */ new Set();
+      for (const f of raw.files) {
+        if (!f || typeof f.id !== "string" || !f.id || typeof f.name !== "string" || seen.has(f.id)) continue;
+        seen.add(f.id);
+        t.files.push({ id: f.id, name: f.name });
+      }
+    }
+    t.folders = stringList2(raw.folders);
+    if (raw.suites && typeof raw.suites === "object" && !Array.isArray(raw.suites)) {
+      for (const dir of Object.keys(raw.suites)) {
+        const list3 = stringList2(raw.suites[dir]);
+        if (list3.length) t.suites[dir] = list3;
+      }
+    }
+    return t;
+  }
+  function copyTree(t) {
+    const suites = {};
+    for (const dir of Object.keys(t.suites)) suites[dir] = t.suites[dir].slice();
+    return {
+      files: t.files.map((f) => ({ id: f.id, name: f.name })),
+      folders: t.folders.slice(),
+      suites
+    };
+  }
+  function normalizeSession(raw) {
+    const s = { open: null, active: null, views: {}, workspace: null, panel: null, explorerFolds: [] };
+    if (!raw || typeof raw !== "object") return s;
+    if (Array.isArray(raw.open)) s.open = stringList2(raw.open);
+    if (typeof raw.active === "string" && raw.active) s.active = raw.active;
+    if (raw.views && typeof raw.views === "object" && !Array.isArray(raw.views)) {
+      for (const fid of Object.keys(raw.views)) {
+        const v = raw.views[fid];
+        if (v && typeof v === "object") s.views[fid] = v;
+      }
+    }
+    if (raw.workspace && typeof raw.workspace === "object") s.workspace = raw.workspace;
+    if (typeof raw.panel === "string" && raw.panel) s.panel = raw.panel;
+    s.explorerFolds = stringList2(raw.explorerFolds);
+    return s;
+  }
+  function normalizeMeta(pid, raw) {
+    if (!raw || typeof raw !== "object") return null;
+    return {
+      id: pid,
+      name: cleanName(raw.name),
+      createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+      owner: typeof raw.owner === "string" && raw.owner ? raw.owner : null
+    };
+  }
+  function metaRecord(meta) {
+    return { name: meta.name, createdAt: meta.createdAt, owner: meta.owner };
+  }
+  function normalizeConflict(raw) {
+    if (!raw || typeof raw !== "object" || typeof raw.theirs !== "string" || typeof raw.mine !== "string") return null;
+    return {
+      base: typeof raw.base === "string" ? raw.base : "",
+      mine: raw.mine,
+      theirs: raw.theirs,
+      at: typeof raw.at === "number" ? raw.at : 0,
+      source: raw.source === "device" ? "device" : "tab"
+    };
+  }
+  function sameTree(a, b) {
+    return JSON.stringify(normalizeTree(a)) === JSON.stringify(normalizeTree(b));
+  }
+  function normalizeTombstones(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const pid of Object.keys(raw)) {
+      const t = raw[pid];
+      if (!t || typeof t !== "object" || typeof t.owner !== "string" || !t.owner) continue;
+      out[pid] = {
+        version: Number.isInteger(t.version) && t.version > 0 ? t.version : 0,
+        owner: t.owner,
+        pending: typeof t.pending === "string" && t.pending ? t.pending : null,
+        at: typeof t.at === "number" ? t.at : 0
+      };
+    }
+    return out;
+  }
+  function createWork(opts) {
+    const store3 = opts.store;
+    const now = opts.now || (() => Date.now());
+    const device = opts.device || createTable(store3, { key: DEVICE_KEY, rows: DEVICE });
+    const cache = /* @__PURE__ */ new Map();
+    const PROJECTS = " projects";
+    let pinned = null;
+    store3.subscribe((evt) => {
+      if (evt.key == null) {
+        cache.clear();
+        return;
+      }
+      cache.delete(evt.key);
+      const k = parseKey(evt.key);
+      if (k && k.kind === "meta") cache.delete(PROJECTS);
+    });
+    function remember2(key, value) {
+      if (cache.size >= CACHE_LIMIT) cache.clear();
+      cache.set(key, value);
+      return value;
+    }
+    function cached(key, load) {
+      if (cache.has(key)) return cache.get(key);
+      return remember2(key, load(store3.get(key)));
+    }
+    function put(key, value, stored) {
+      const res = store3.set(key, stored !== void 0 ? stored : value);
+      if (res.ok) remember2(key, value);
+      return res;
+    }
+    function peekProjects() {
+      if (cache.has(PROJECTS)) return cache.get(PROJECTS);
+      const list3 = [];
+      for (const key of store3.keys("beljar/p/")) {
+        const k = parseKey(key);
+        if (!k || k.kind !== "meta") continue;
+        const meta = normalizeMeta(k.pid, store3.get(key));
+        if (meta) list3.push(meta);
+      }
+      list3.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return remember2(PROJECTS, list3);
+    }
+    function hasProject(pid) {
+      return peekProjects().some((p) => p.id === pid);
+    }
+    function account() {
+      return device.get("account") || null;
+    }
+    function setAccount(uid) {
+      if (uid) return device.set("account", String(uid));
+      return device.reset((row) => row.id === "account");
+    }
+    function isVisible(p) {
+      return p.owner === null || p.owner === account();
+    }
+    function peekVisible() {
+      return peekProjects().filter(isVisible);
+    }
+    function claimProject(pid) {
+      const uid = account();
+      const meta = normalizeMeta(pid, store3.get(metaKey(pid)));
+      if (!uid || !meta || meta.owner !== null) return false;
+      meta.owner = uid;
+      return put(metaKey(pid), metaRecord(meta)).ok;
+    }
+    function removeAccountProjects(uid) {
+      if (!uid) return 0;
+      let n = 0;
+      for (const p of peekProjects()) {
+        if (p.owner !== uid) continue;
+        store3.remove(metaKey(p.id));
+        store3.removeAll(projectPrefix(p.id));
+        if (pinned === p.id) pinned = null;
+        n += 1;
+      }
+      const tombs = readTombstones();
+      let dropped = false;
+      for (const pid of Object.keys(tombs)) {
+        if (tombs[pid].owner === uid) {
+          delete tombs[pid];
+          dropped = true;
+        }
+      }
+      if (dropped) writeTombstones(tombs);
+      const synced = store3.get(SETTINGS_SYNC_KEY);
+      if (synced && synced.account === uid) store3.remove(SETTINGS_SYNC_KEY);
+      return n;
+    }
+    function readTombstones() {
+      return normalizeTombstones(store3.get(TOMBSTONES_KEY));
+    }
+    function writeTombstones(tombs) {
+      return Object.keys(tombs).length ? store3.set(TOMBSTONES_KEY, tombs) : store3.remove(TOMBSTONES_KEY);
+    }
+    function writeDevice2(pid) {
+      return device.set("activeProject", pid);
+    }
+    function createProject(name) {
+      const pid = newId("p", (id) => store3.keys(projectPrefix(id)).length > 0);
+      const fid = newId("f");
+      const landed = put(treeKey(pid), normalizeTree({ files: [{ id: fid, name: FIRST_FILE_NAME }] })).ok && put(sessionKey(pid), normalizeSession({ open: [fid], active: fid })).ok && put(metaKey(pid), metaRecord({ name: cleanName(name), createdAt: now(), owner: account() })).ok;
+      if (landed) return pid;
+      store3.removeAll(projectPrefix(pid));
       return null;
     }
-    function writeProjectFiles(files) {
-      backendSave2(projKey2("files"), JSON.stringify(files));
+    function ensureProjects() {
+      if (!peekVisible().length) {
+        const pid = createProject(DEFAULT_PROJECT_NAME);
+        if (!pid) throw new Error("BelJar could not create a project: storage refused the write (full, or owned by another version)");
+        writeDevice2(pid);
+      }
+      return peekVisible();
     }
-    function readEmptyFolders() {
-      var raw = tryParse2(backendLoad2(projKey2("empty-folders")));
-      if (!Array.isArray(raw)) return [];
-      return raw.filter(function(p) {
-        return typeof p === "string" && p;
+    function listProjects() {
+      return ensureProjects().map((p) => Object.assign({}, p));
+    }
+    function pinnedProject() {
+      return pinned;
+    }
+    function projectId2() {
+      if (pinned) return pinned;
+      const list3 = ensureProjects();
+      const want = device.get("activeProject");
+      pinned = list3.some((p) => p.id === want) ? want : list3[0].id;
+      if (want !== pinned) writeDevice2(pinned);
+      return pinned;
+    }
+    function getProject(pid) {
+      const p = peekProjects().find((x) => x.id === (pid || projectId2()));
+      return p ? Object.assign({}, p) : null;
+    }
+    function setActiveProject(pid) {
+      if (!ensureProjects().some((p) => p.id === pid)) return false;
+      writeDevice2(pid);
+      pinned = pid;
+      return true;
+    }
+    function renameProject(pid, name) {
+      const meta = normalizeMeta(pid, store3.get(metaKey(pid)));
+      if (!meta) return false;
+      meta.name = cleanName(name);
+      return put(metaKey(pid), metaRecord(meta)).ok;
+    }
+    function deleteProject(pid) {
+      const list3 = ensureProjects();
+      if (list3.length <= 1) return null;
+      const idx = list3.findIndex((p) => p.id === pid);
+      if (idx === -1) return null;
+      const others = list3.filter((p) => p.id !== pid);
+      const owner = list3[idx].owner;
+      const synced = store3.get(syncKey(pid));
+      if (owner && synced && typeof synced === "object" && (synced.version > 0 || synced.pending)) {
+        const tombs = readTombstones();
+        tombs[pid] = {
+          version: synced.version > 0 ? synced.version : 0,
+          owner,
+          pending: synced.pending && typeof synced.pending.id === "string" ? synced.pending.id : null,
+          at: now()
+        };
+        if (!writeTombstones(tombs).ok) return null;
+      }
+      store3.remove(metaKey(pid));
+      store3.removeAll(projectPrefix(pid));
+      const next = others[Math.max(0, idx - 1)].id;
+      if (device.get("activeProject") === pid) writeDevice2(next);
+      if (pinned === pid) pinned = next;
+      return next;
+    }
+    function peekTree(pid) {
+      return cached(treeKey(pid || projectId2()), normalizeTree);
+    }
+    function readTree(pid) {
+      return copyTree(peekTree(pid));
+    }
+    function writeTree(tree, pid) {
+      pid = pid || projectId2();
+      if (!hasProject(pid)) return { ok: false, error: { code: "gone" } };
+      return put(treeKey(pid), normalizeTree(tree));
+    }
+    function updateTree(fn, pid) {
+      const draft = readTree(pid);
+      const next = fn(draft);
+      return writeTree(next || draft, pid);
+    }
+    function hasFile(fid, pid) {
+      return peekTree(pid).files.some((f) => f.id === fid);
+    }
+    function newFileId(pid) {
+      const files2 = peekTree(pid).files;
+      return newId("f", (id) => files2.some((f) => f.id === id));
+    }
+    function getText(fid, pid) {
+      return cached(fileKey(pid || projectId2(), fid), (d) => d && typeof d.text === "string" ? d.text : "");
+    }
+    function setText(fid, text, pid) {
+      const t = String(text != null ? text : "");
+      return put(fileKey(pid || projectId2(), fid), t, { text: t });
+    }
+    function textOrigin(fid, pid) {
+      const d = store3.get(fileKey(pid || projectId2(), fid));
+      return d && d.via === "sync" ? "sync" : "local";
+    }
+    function removeFiles(fids, pid) {
+      pid = pid || projectId2();
+      const views = peekSession(pid).views;
+      let hadView = false;
+      for (const fid of fids) {
+        store3.remove(fileKey(pid, fid));
+        store3.remove(cacheKey(pid, fid));
+        store3.remove(conflictKey(pid, fid));
+        if (views[fid]) hadView = true;
+      }
+      if (hadView) {
+        updateSession((draft) => {
+          for (const fid of fids) delete draft.views[fid];
+        }, pid);
+      }
+    }
+    function peekSession(pid) {
+      return cached(sessionKey(pid || projectId2()), normalizeSession);
+    }
+    function readSession(pid) {
+      return JSON.parse(JSON.stringify(peekSession(pid)));
+    }
+    function updateSession(fn, pid) {
+      pid = pid || projectId2();
+      if (!hasProject(pid)) return { ok: false, error: { code: "gone" } };
+      const draft = readSession(pid);
+      const next = normalizeSession(fn(draft) || draft);
+      const live2 = new Set(peekTree(pid).files.map((f) => f.id));
+      if (next.open) next.open = next.open.filter((id) => live2.has(id));
+      if (next.active && !live2.has(next.active)) next.active = null;
+      for (const fid of Object.keys(next.views)) {
+        if (!live2.has(fid)) delete next.views[fid];
+      }
+      return put(sessionKey(pid), next);
+    }
+    function readCache(fid, pid) {
+      const d = store3.get(cacheKey(pid || projectId2(), fid));
+      return d && typeof d === "object" ? d : null;
+    }
+    function writeCache(fid, data, pid) {
+      const key = cacheKey(pid || projectId2(), fid);
+      if (data == null) return store3.remove(key);
+      return store3.set(key, data);
+    }
+    function readConflict(fid, pid) {
+      return normalizeConflict(store3.get(conflictKey(pid || projectId2(), fid)));
+    }
+    function writeConflict(fid, conflict, pid) {
+      return store3.set(conflictKey(pid || projectId2(), fid), conflict);
+    }
+    function removeConflict(fid, pid) {
+      return store3.remove(conflictKey(pid || projectId2(), fid));
+    }
+    function snapshotProject(pid) {
+      const meta = normalizeMeta(pid, store3.get(metaKey(pid)));
+      if (!meta) return null;
+      const tree = copyTree(peekTree(pid));
+      const texts = {};
+      for (const f of tree.files) texts[f.id] = getText(f.id, pid);
+      const conflicted = /* @__PURE__ */ new Set();
+      const prefix = projectPrefix(pid) + "conflict/";
+      for (const key of store3.keys(prefix)) conflicted.add(key.slice(prefix.length));
+      return { meta, tree, texts, conflicted };
+    }
+    function applyProject(pid, next, opts2) {
+      const o = opts2 || {};
+      const at = now();
+      const before = normalizeMeta(pid, store3.get(metaKey(pid)));
+      const prev = before ? peekTree(pid) : emptyTree();
+      for (const c of o.conflicts || []) {
+        const rec = { base: c.base, mine: c.mine, theirs: c.theirs, at, source: "device" };
+        if (!store3.set(conflictKey(pid, c.id), rec).ok) return false;
+      }
+      for (const f of next.files) {
+        const key = fileKey(pid, f.id);
+        if (before && store3.get(key) !== void 0 && getText(f.id, pid) === f.text) continue;
+        if (!store3.applyRemote(key, { text: f.text, via: "sync" }, at).ok) return false;
+      }
+      const tree = normalizeTree({
+        files: next.files.map((f) => ({ id: f.id, name: f.path })),
+        folders: next.folders,
+        suites: next.suites
+      });
+      if (!before || !sameTree(tree, prev)) {
+        if (!store3.applyRemote(treeKey(pid), tree, at).ok) return false;
+      }
+      const meta = {
+        name: cleanName(next.name),
+        createdAt: next.createdAt || (before ? before.createdAt : at),
+        owner: before ? before.owner : o.owner || null
+      };
+      if (!before || before.name !== meta.name || before.createdAt !== meta.createdAt) {
+        if (!store3.applyRemote(metaKey(pid), metaRecord(meta), at).ok) return false;
+      }
+      const keep = new Set(next.files.map((f) => f.id));
+      for (const f of prev.files) {
+        if (keep.has(f.id)) continue;
+        store3.applyRemote(fileKey(pid, f.id), null);
+        store3.remove(cacheKey(pid, f.id));
+        store3.remove(conflictKey(pid, f.id));
+      }
+      return true;
+    }
+    function forgetProject(pid) {
+      store3.applyRemote(metaKey(pid), null);
+      store3.removeAll(projectPrefix(pid));
+      if (pinned === pid) pinned = null;
+    }
+    function projectStats(pid) {
+      const tree = peekTree(pid);
+      let size = 0;
+      let editedAt = store3.at(metaKey(pid));
+      editedAt = Math.max(editedAt, store3.at(treeKey(pid)));
+      for (const f of tree.files) {
+        size += getText(f.id, pid).length;
+        editedAt = Math.max(editedAt, store3.at(fileKey(pid, f.id)));
+      }
+      return { files: tree.files.length, size, editedAt };
+    }
+    function allProjects() {
+      return peekProjects().map((p) => Object.assign({}, p));
+    }
+    function dropTombstone(pid) {
+      const tombs = readTombstones();
+      if (!(pid in tombs)) return { ok: true };
+      delete tombs[pid];
+      return writeTombstones(tombs);
+    }
+    function onFileChange(fn) {
+      return store3.subscribe((evt) => {
+        if (evt.key == null) {
+          fn({ pid: null, fid: null, origin: evt.origin });
+          return;
+        }
+        const k = parseKey(evt.key);
+        if (k && k.kind === "f") fn({ pid: k.pid, fid: k.fid, origin: evt.origin });
       });
     }
-    function writeEmptyFolders(paths) {
-      backendSave2(projKey2("empty-folders"), JSON.stringify(paths || []));
+    return {
+      // projects
+      listProjects,
+      getProject,
+      hasProject,
+      projectId: projectId2,
+      pinnedProject,
+      setActiveProject,
+      createProject,
+      renameProject,
+      deleteProject,
+      // tree
+      peekTree,
+      readTree,
+      writeTree,
+      updateTree,
+      hasFile,
+      newFileId,
+      // text
+      getText,
+      setText,
+      textOrigin,
+      removeFiles,
+      // session
+      peekSession,
+      readSession,
+      updateSession,
+      // cache
+      readCache,
+      writeCache,
+      // conflicts
+      readConflict,
+      writeConflict,
+      removeConflict,
+      // accounts
+      account,
+      setAccount,
+      claimProject,
+      removeAccountProjects,
+      // the online layer
+      allProjects,
+      projectStats,
+      snapshotProject,
+      applyProject,
+      forgetProject,
+      readTombstones,
+      dropTombstone,
+      // events
+      onFileChange
+    };
+  }
+
+  // js/persist/work-files.mjs
+  function create(deps) {
+    var work2 = deps.work;
+    var settings2 = deps.settings;
+    function dirOf5(name) {
+      var i = String(name || "").lastIndexOf("/");
+      return i === -1 ? "" : name.slice(0, i);
     }
-    function listEmptyFolders2() {
+    function notifyProjectTreeChanged(kind) {
+      var g15 = typeof window !== "undefined" ? window : null;
+      if (g15 && typeof g15.dispatchEvent === "function") {
+        g15.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      }
+    }
+    function listFiles2() {
+      return work2.peekTree().files.map(function(f) {
+        return { id: f.id, name: f.name };
+      });
+    }
+    function getFileById(id) {
+      var files2 = work2.peekTree().files;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id === id) return { id: files2[i].id, name: files2[i].name };
+      }
+      return null;
+    }
+    function fileNameForId(id) {
+      var f = getFileById(id);
+      return f ? f.name : "";
+    }
+    function writeFiles(files2) {
+      work2.updateTree(function(t) {
+        t.files = files2;
+      });
+    }
+    function readEmptyFolders() {
+      return work2.peekTree().folders.slice();
+    }
+    function writeEmptyFolders(paths) {
+      work2.updateTree(function(t) {
+        t.folders = paths || [];
+      });
+    }
+    function listEmptyFolders() {
       return readEmptyFolders();
     }
-    function addEmptyFolder2(path) {
+    function addEmptyFolder(path) {
       var p = String(path || "").trim();
       if (!p) return;
       var list3 = readEmptyFolders();
@@ -2524,7 +1661,7 @@
       writeEmptyFolders(list3);
       notifyProjectTreeChanged("folder-add");
     }
-    function removeEmptyFolder2(path) {
+    function removeEmptyFolder(path) {
       var p = String(path || "");
       var list3 = readEmptyFolders();
       var next = list3.filter(function(x) {
@@ -2534,15 +1671,15 @@
       writeEmptyFolders(next);
       notifyProjectTreeChanged("folder-remove");
     }
-    function clearEmptyFolders2() {
+    function clearEmptyFolders() {
       if (!readEmptyFolders().length) return;
       writeEmptyFolders([]);
       notifyProjectTreeChanged("folder-clear");
     }
-    function pruneEmptyFoldersUnder2(prefix) {
+    function pruneEmptyFoldersUnder(prefix) {
       var p = String(prefix || "").trim();
       if (!p) {
-        clearEmptyFolders2();
+        clearEmptyFolders();
         return;
       }
       var list3 = readEmptyFolders();
@@ -2554,13 +1691,13 @@
         notifyProjectTreeChanged("folder-prune");
       }
     }
-    function renameEmptyFolderPrefix2(from, to) {
+    function renameEmptyFolderPrefix(from2, to) {
       var list3 = readEmptyFolders();
       var changed = false;
       for (var i = 0; i < list3.length; i++) {
         var p = list3[i];
-        if (p === from || p.indexOf(from + "/") === 0) {
-          list3[i] = to ? to + p.slice(from.length) : p.slice(from.length + 1);
+        if (p === from2 || p.indexOf(from2 + "/") === 0) {
+          list3[i] = to ? to + p.slice(from2.length) : p.slice(from2.length + 1);
           changed = true;
         }
       }
@@ -2585,11 +1722,11 @@
         notifyProjectTreeChanged("folder-prune");
       }
     }
-    function folderSubtreeOccupied(folderPath, files, emptyFolders) {
-      if (!folderPath) return files.length > 0 || emptyFolders.length > 0;
+    function folderSubtreeOccupied(folderPath, files2, emptyFolders) {
+      if (!folderPath) return files2.length > 0 || emptyFolders.length > 0;
       var prefix = folderPath + "/";
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].name.indexOf(prefix) === 0) return true;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].name.indexOf(prefix) === 0) return true;
       }
       for (var j = 0; j < emptyFolders.length; j++) {
         if (emptyFolders[j].indexOf(prefix) === 0) return true;
@@ -2601,13 +1738,13 @@
       if (!name || name.indexOf("/") === -1) return;
       var parts = name.split("/");
       parts.pop();
-      var files = ensureProject2();
+      var files2 = listFiles2();
       var empty = readEmptyFolders();
       for (var i = parts.length - 1; i >= 0; i--) {
         var fp = parts.slice(0, i + 1).join("/");
         if (skipPrefixes && isPrefixUnderAny(fp, skipPrefixes)) continue;
-        if (!folderSubtreeOccupied(fp, files, empty)) {
-          addEmptyFolder2(fp);
+        if (!folderSubtreeOccupied(fp, files2, empty)) {
+          addEmptyFolder(fp);
           empty = readEmptyFolders();
         }
       }
@@ -2618,10 +1755,10 @@
       }
       return false;
     }
-    function relocatedPrefixTarget(prefix, moves, files) {
+    function relocatedPrefixTarget(prefix, moves, files2) {
       var ps = prefix + "/";
-      for (var i = 0; i < files.length; i++) {
-        var n = files[i].name;
+      for (var i = 0; i < files2.length; i++) {
+        var n = files2[i].name;
         if (n === prefix || n.indexOf(ps) === 0) return null;
       }
       var related = [];
@@ -2631,9 +1768,9 @@
       if (!related.length) return null;
       var newPrefix = null;
       for (var k = 0; k < related.length; k++) {
-        var from = related[k].from;
+        var from2 = related[k].from;
         var to = related[k].to;
-        var rel = from.slice(prefix.length + 1);
+        var rel = from2.slice(prefix.length + 1);
         var np = rel ? to.slice(0, to.length - rel.length - 1) : to;
         if (newPrefix === null) newPrefix = np;
         else if (newPrefix !== np) return null;
@@ -2641,12 +1778,12 @@
       }
       return newPrefix;
     }
-    function inferRelocatedFolderPrefixes(moves, files) {
+    function inferRelocatedFolderPrefixes(moves, files2) {
       var candidates = {};
       for (var i = 0; i < moves.length; i++) {
-        var from = moves[i].from;
-        if (!from || from.indexOf("/") === -1) continue;
-        var parts = from.split("/");
+        var from2 = moves[i].from;
+        if (!from2 || from2.indexOf("/") === -1) continue;
+        var parts = from2.split("/");
         parts.pop();
         var acc = "";
         for (var p = 0; p < parts.length; p++) {
@@ -2656,119 +1793,319 @@
       }
       var out = {};
       for (var prefix in candidates) {
-        var target = relocatedPrefixTarget(prefix, moves, files);
+        var target = relocatedPrefixTarget(prefix, moves, files2);
         if (target != null) out[prefix] = target;
       }
       return out;
     }
-    function preserveEmptyFoldersAfterMoves2(moves) {
+    function preserveEmptyFoldersAfterMoves(moves) {
       if (!moves || !moves.length) return;
-      var files = ensureProject2();
-      var reloc = inferRelocatedFolderPrefixes(moves, files);
+      var files2 = listFiles2();
+      var reloc = inferRelocatedFolderPrefixes(moves, files2);
       for (var oldP in reloc) {
-        renameEmptyFolderPrefix2(oldP, reloc[oldP]);
-        removeEmptyFolder2(oldP);
+        renameEmptyFolderPrefix(oldP, reloc[oldP]);
+        removeEmptyFolder(oldP);
       }
       var skip = reloc;
       var seen = {};
       for (var i = 0; i < moves.length; i++) {
-        var from = moves[i].from;
-        if (!from || seen[from]) continue;
-        seen[from] = true;
-        preserveEmptyFoldersAfterPath(from, skip);
+        var from2 = moves[i].from;
+        if (!from2 || seen[from2]) continue;
+        seen[from2] = true;
+        preserveEmptyFoldersAfterPath(from2, skip);
       }
     }
-    function ensureProject2() {
-      var files = readProjectFiles2();
-      if (files !== null) return files;
-      var defaultFile = { id: DEFAULT_DOCUMENT_ID2, name: "main.bel" };
-      files = [defaultFile];
-      writeProjectFiles(files);
-      backendSave2(projKey2("active-file"), DEFAULT_DOCUMENT_ID2);
-      return files;
-    }
-    function listFiles3() {
-      return ensureProject2();
-    }
-    function getActiveFileId2() {
-      var files = listFiles3();
-      if (!files.length) return null;
-      var id = backendLoad2(projKey2("active-file"));
-      if (id && files.some(function(f) {
-        return f.id === id;
-      })) return id;
-      return files[0].id;
-    }
-    function setActiveFileId2(id) {
-      backendSave2(projKey2("active-file"), id);
-    }
-    function uniqueFileId(name, used) {
-      var id = "workspace://" + (name || "untitled.bel");
-      var base = id;
-      var counter = 1;
-      while (used[id]) {
-        var dot = base.lastIndexOf(".");
-        id = dot > 10 ? base.slice(0, dot) + "-" + counter + base.slice(dot) : base + "-" + counter;
-        counter++;
+    function getActiveFileId() {
+      var files2 = work2.peekTree().files;
+      if (!files2.length) return null;
+      var id = work2.peekSession().active;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id === id) return id;
       }
-      used[id] = true;
-      return id;
+      return files2[0].id;
     }
-    function replaceProject2(entries, options) {
-      options = options || {};
-      var old = readProjectFiles2() || [];
-      for (var i = 0; i < old.length; i++) {
-        backendRemove2(stateKeyFor2(old[i].id));
-      }
-      var used = {};
-      var files = [];
-      var list3 = entries || [];
-      for (var j = 0; j < list3.length; j++) {
-        var ent = list3[j];
-        var name = String(ent.name || "untitled.bel");
-        var id = uniqueFileId(name, used);
-        files.push({ id, name });
-        var state2 = emptyState2(id);
-        state2.editor.text = expandAliasesForStorage2(ent.text, name);
-        state2.meta.updatedAt = Date.now();
-        state2.meta.revision = 1;
-        backendSave2(stateKeyFor2(id), JSON.stringify(state2));
-      }
-      writeProjectFiles(files);
-      var activeId2 = options.activeId;
-      if (!activeId2 || !files.some(function(f) {
-        return f.id === activeId2;
-      })) {
-        activeId2 = files.length ? files[0].id : null;
-      }
-      if (activeId2) backendSave2(projKey2("active-file"), activeId2);
-      writeOpenFileIds2(options.openIds && options.openIds.length ? options.openIds.filter(function(id2) {
-        return files.some(function(f) {
-          return f.id === id2;
-        });
-      }) : activeId2 ? [activeId2] : []);
-      if (options.projectName) setProjectName2(options.projectName);
-      if (options.activeCfgByDir && typeof options.activeCfgByDir === "object") {
-        writeActiveCfgByDir2(options.activeCfgByDir);
-      } else if (options.defaultCfgPath) {
-        setActiveCfgForDir2(dirOf6(options.defaultCfgPath), options.defaultCfgPath);
-      } else {
-        writeActiveCfgByDir2({});
-      }
-      writeEmptyFolders([]);
-      return { files, activeId: activeId2 };
+    function setActiveFileId(id) {
+      work2.updateSession(function(s) {
+        s.active = id || null;
+      });
     }
-    function createFile2(name) {
-      var files = ensureProject2();
-      var used = {};
-      for (var u = 0; u < files.length; u++) used[files[u].id] = true;
+    function getOpenFileIds() {
+      var files2 = work2.peekTree().files;
+      if (!files2.length) return [];
+      var open11 = work2.peekSession().open;
+      if (open11 === null) {
+        var active5 = getActiveFileId();
+        return active5 ? [active5] : [];
+      }
+      var valid = {};
+      for (var i = 0; i < files2.length; i++) valid[files2[i].id] = true;
+      return open11.filter(function(id) {
+        return valid[id];
+      });
+    }
+    function setOpenFileIds(ids) {
+      work2.updateSession(function(s) {
+        s.open = (ids || []).slice();
+      });
+    }
+    function openFile(id) {
+      var ids = getOpenFileIds();
+      if (!getFileById(id)) return ids;
+      if (ids.indexOf(id) === -1) {
+        ids.push(id);
+        setOpenFileIds(ids);
+      }
+      return ids;
+    }
+    function closeOpenFile(id) {
+      var ids = getOpenFileIds();
+      var idx = ids.indexOf(id);
+      if (idx === -1) return ids;
+      ids.splice(idx, 1);
+      setOpenFileIds(ids);
+      return ids;
+    }
+    function getProjectName() {
+      var p = work2.getProject();
+      return p ? p.name : DEFAULT_PROJECT_NAME;
+    }
+    function setProjectName(name) {
+      work2.renameProject(work2.projectId(), name);
+    }
+    function normalizeActiveCfgList(val) {
+      if (!val) return [];
+      if (Array.isArray(val)) {
+        var out = [];
+        for (var i = 0; i < val.length; i++) {
+          var s = String(val[i] != null ? val[i] : "").trim();
+          if (s) out.push(s);
+        }
+        return out;
+      }
+      var one = String(val).trim();
+      return one ? [one] : [];
+    }
+    function readActiveCfgByDir() {
+      var suites = work2.peekTree().suites;
+      var out = {};
+      for (var dir in suites) out[dir] = suites[dir].slice();
+      return out;
+    }
+    function normalizeActiveCfgByDir(map) {
+      var out = {};
+      var keys = Object.keys(map || {});
+      for (var i = 0; i < keys.length; i++) {
+        var list3 = normalizeActiveCfgList(map[keys[i]]);
+        if (list3.length) out[keys[i]] = list3;
+      }
+      return out;
+    }
+    function writeActiveCfgByDir(map) {
+      var out = normalizeActiveCfgByDir(map);
+      work2.updateTree(function(t) {
+        t.suites = out;
+      });
+    }
+    function getActiveCfgsForDir(dir) {
+      var map = readActiveCfgByDir();
+      var d = dir != null ? String(dir) : "";
+      return normalizeActiveCfgList(map[d]);
+    }
+    function getActiveCfgForDir(dir) {
+      var list3 = getActiveCfgsForDir(dir);
+      return list3.length ? list3[0] : null;
+    }
+    function setActiveCfgsForDir(dir, paths) {
+      var map = readActiveCfgByDir();
+      var d = dir != null ? String(dir) : "";
+      var list3 = normalizeActiveCfgList(paths);
+      if (list3.length) map[d] = list3;
+      else delete map[d];
+      writeActiveCfgByDir(map);
+    }
+    function setActiveCfgForDir(dir, path) {
+      var trimmed = String(path != null ? path : "").trim();
+      if (trimmed) setActiveCfgsForDir(dir, [trimmed]);
+      else setActiveCfgsForDir(dir, []);
+    }
+    function addActiveCfgForDir(dir, path) {
+      var trimmed = String(path != null ? path : "").trim();
+      if (!trimmed) return;
+      var list3 = getActiveCfgsForDir(dir);
+      for (var i = 0; i < list3.length; i++) {
+        if (list3[i] === trimmed) return;
+      }
+      list3.push(trimmed);
+      setActiveCfgsForDir(dir, list3);
+    }
+    function removeActiveCfgForDir(dir, path) {
+      var trimmed = String(path != null ? path : "").trim();
+      if (!trimmed) return;
+      var list3 = getActiveCfgsForDir(dir);
+      var next = [];
+      for (var i = 0; i < list3.length; i++) {
+        if (list3[i] !== trimmed) next.push(list3[i]);
+      }
+      setActiveCfgsForDir(dir, next);
+    }
+    function getActiveCfgByDir() {
+      return readActiveCfgByDir();
+    }
+    function backfillActiveCfgByDir(byDir) {
+      if (!byDir || typeof byDir !== "object") return readActiveCfgByDir();
+      var map = readActiveCfgByDir();
+      var changed = false;
+      for (var d in byDir) {
+        if (!Object.prototype.hasOwnProperty.call(byDir, d)) continue;
+        var path = String(byDir[d] != null ? byDir[d] : "").trim();
+        if (!path || normalizeActiveCfgList(map[d]).length) continue;
+        map[d] = [path];
+        changed = true;
+      }
+      if (changed) writeActiveCfgByDir(map);
+      return map;
+    }
+    function isAliasExpandablePath(name) {
+      var PS = typeof ProjectSource !== "undefined" ? ProjectSource : null;
+      if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
+      var n = String(name || "").toLowerCase();
+      if (n.endsWith(".cfg")) return false;
+      if (n.endsWith(".bel") || n.endsWith(".elf")) return true;
+      var base = String(name || "").slice(String(name || "").lastIndexOf("/") + 1);
+      return base.indexOf(".") === -1;
+    }
+    function expandAliasesForStorage(text, fileName) {
+      var s = String(text != null ? text : "");
+      if (settings2.get("aliasActivation") !== "greedy") return s;
+      if (!isAliasExpandablePath(fileName)) return s;
+      if (typeof BelEditor !== "undefined" && typeof BelEditor.expandBelAliases === "function") {
+        return BelEditor.expandBelAliases(s);
+      }
+      return s;
+    }
+    function expandAliasesInAllFiles() {
+      if (settings2.get("aliasActivation") !== "greedy") return 0;
+      var files2 = listFiles2();
+      var changed = 0;
+      for (var i = 0; i < files2.length; i++) {
+        var f = files2[i];
+        if (!isAliasExpandablePath(f.name)) continue;
+        var cur = work2.getText(f.id);
+        var next = expandAliasesForStorage(cur, f.name);
+        if (next !== cur) {
+          work2.setText(f.id, next);
+          changed += 1;
+        }
+      }
+      return changed;
+    }
+    function getFileText(id) {
+      return work2.getText(id);
+    }
+    function setFileText(id, text) {
+      work2.setText(id, expandAliasesForStorage(text, fileNameForId(id)));
+      try {
+        if (typeof BelEditor !== "undefined" && typeof BelEditor.invalidateFileHealthAfterChange === "function") {
+          BelEditor.invalidateFileHealthAfterChange(id);
+        }
+      } catch (_) {
+      }
+    }
+    function createFile(name) {
       var fileName = name || "untitled.bel";
-      var id = uniqueFileId(fileName, used);
-      files.push({ id, name: fileName });
-      writeProjectFiles(files);
+      var id = work2.newFileId();
+      var files2 = listFiles2();
+      files2.push({ id, name: fileName });
+      writeFiles(files2);
       pruneEmptyFoldersForFile(fileName);
       notifyProjectTreeChanged("create");
       return id;
+    }
+    function replaceProject(entries, options) {
+      options = options || {};
+      work2.removeFiles(work2.peekTree().files.map(function(f) {
+        return f.id;
+      }));
+      var files2 = [];
+      var list3 = entries || [];
+      for (var j = 0; j < list3.length; j++) {
+        var name = String(list3[j].name || "untitled.bel");
+        var id = work2.newFileId();
+        work2.setText(id, expandAliasesForStorage(list3[j].text, name));
+        files2.push({ id, name });
+      }
+      work2.writeTree({
+        files: files2,
+        folders: [],
+        suites: normalizeActiveCfgByDir(options.activeCfgByDir)
+      });
+      var activeId2 = files2.length ? files2[0].id : null;
+      work2.updateSession(function(s) {
+        s.active = activeId2;
+        s.open = activeId2 ? [activeId2] : [];
+        s.views = {};
+      });
+      if (options.projectName) setProjectName(options.projectName);
+      return { files: listFiles2(), activeId: activeId2 };
+    }
+    function restoreDeletedFile(id, name, text) {
+      if (getFileById(id)) return false;
+      work2.setText(id, expandAliasesForStorage(text, name));
+      var files2 = listFiles2();
+      files2.push({ id, name });
+      writeFiles(files2);
+      pruneEmptyFoldersForFile(name);
+      notifyProjectTreeChanged("restore");
+      return true;
+    }
+    function deleteFile(id) {
+      var files2 = listFiles2();
+      var idx = -1;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id === id) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx === -1) return null;
+      var deletedName = files2[idx].name;
+      if (/\.cfg$/i.test(deletedName)) {
+        removeActiveCfgForDir(dirOf5(deletedName), deletedName);
+      }
+      files2.splice(idx, 1);
+      writeFiles(files2);
+      rewriteCfgsForOp(deletedName, null);
+      closeOpenFile(id);
+      work2.removeFiles([id]);
+      preserveEmptyFoldersAfterPath(deletedName);
+      notifyProjectTreeChanged("delete");
+      return files2.length ? files2[Math.max(0, idx - 1)].id : null;
+    }
+    function renameFile(id, newName) {
+      var files2 = listFiles2();
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id !== id) continue;
+        var oldName = files2[i].name;
+        files2[i].name = newName;
+        writeFiles(files2);
+        rewriteCfgsForOp(oldName, newName);
+        var map = readActiveCfgByDir();
+        var changed = false;
+        for (var k in map) {
+          var cfgs = map[k];
+          for (var j = 0; j < cfgs.length; j++) {
+            if (cfgs[j] === oldName) {
+              cfgs[j] = newName;
+              changed = true;
+            }
+          }
+        }
+        if (changed) writeActiveCfgByDir(map);
+        pruneEmptyFoldersForFile(newName);
+        if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
+        notifyProjectTreeChanged("rename");
+        return;
+      }
     }
     function relToCfgDir(cfgDir, fullPath) {
       if (!cfgDir) return fullPath;
@@ -2796,45 +2133,36 @@
       return t && t.charAt(0) !== "%" && isCfgEntryToken2(t);
     }
     function cfgTextForRewrite(fileId) {
-      var g14 = typeof window !== "undefined" ? window : null;
-      if (g14) {
-        var activeId2 = getActiveFileId2();
-        var ed = g14.CurrentEditor;
-        if (fileId === activeId2 && ed && typeof ed.getValue === "function") {
+      var g15 = typeof window !== "undefined" ? window : null;
+      if (g15) {
+        var ed = g15.CurrentEditor;
+        if (fileId === getActiveFileId() && ed && typeof ed.getValue === "function") {
           return String(ed.getValue() ?? "");
         }
       }
-      return getFileText2(fileId);
+      return getFileText(fileId);
     }
     function notifyCfgRewritten(fileIds) {
       if (!fileIds.length) return;
-      var g14 = typeof window !== "undefined" ? window : null;
-      if (g14 && typeof g14.dispatchEvent === "function") {
-        g14.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
-      }
-    }
-    function notifyProjectTreeChanged(kind) {
-      var g14 = typeof window !== "undefined" ? window : null;
-      if (g14 && typeof g14.dispatchEvent === "function") {
-        g14.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      var g15 = typeof window !== "undefined" ? window : null;
+      if (g15 && typeof g15.dispatchEvent === "function") {
+        g15.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
       var lines = String(text == null ? "" : text).split("\n");
       var out = [];
       var changed = false;
-      var oldDir = dirOf6(oldName);
-      var newDir = newName != null ? dirOf6(newName) : null;
+      var oldDir = dirOf5(oldName);
+      var newDir = newName != null ? dirOf5(newName) : null;
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
         var t = line.trim();
-        var isEntry = isCfgEntryLine(t);
-        if (!isEntry) {
+        if (!isCfgEntryLine(t)) {
           out.push(line);
           continue;
         }
-        var resolved = resolveCfgEntryPath(cfgDir, t);
-        if (resolved !== oldName) {
+        if (resolveCfgEntryPath(cfgDir, t) !== oldName) {
           out.push(line);
           continue;
         }
@@ -2856,101 +2184,29 @@
       }
       return changed ? out.join("\n") : null;
     }
-    function restoreDeletedFile2(id, name, text) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) return false;
-      }
-      files.push({ id, name });
-      writeProjectFiles(files);
-      var state2 = emptyState2(id);
-      state2.editor.text = expandAliasesForStorage2(text, name);
-      state2.meta.updatedAt = Date.now();
-      state2.meta.revision = 1;
-      backendSave2(stateKeyFor2(id), JSON.stringify(state2));
-      pruneEmptyFoldersForFile(name);
-      notifyProjectTreeChanged("restore");
-      return true;
-    }
-    function deleteFile2(id) {
-      var files = ensureProject2();
-      var idx = -1;
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) {
-          idx = i;
-          break;
-        }
-      }
-      if (idx === -1) return null;
-      var deletedName = files[idx].name;
-      if (/\.cfg$/i.test(deletedName)) {
-        removeActiveCfgForDir2(dirOf6(deletedName), deletedName);
-      }
-      files.splice(idx, 1);
-      writeProjectFiles(files);
-      rewriteCfgsForOp(deletedName, null);
-      closeOpenFile2(id);
-      defaultBackend2.removeSync(stateKeyFor2(id));
-      preserveEmptyFoldersAfterPath(deletedName);
-      if (!files.length) {
-        backendRemove2(projKey2("active-file"));
-        writeOpenFileIds2([]);
-      }
-      notifyProjectTreeChanged("delete");
-      return files.length ? files[Math.max(0, idx - 1)].id : null;
-    }
     function rewriteCfgsForOp(oldName, newName) {
-      if (!readStoredCfgAutoSync2()) return [];
-      var files = ensureProject2();
+      if (!settings2.get("cfgAutoSync")) return [];
+      var files2 = listFiles2();
       var updatedIds = [];
-      for (var i = 0; i < files.length; i++) {
-        var fn = files[i].name;
+      for (var i = 0; i < files2.length; i++) {
+        var fn = files2[i].name;
         if (!/\.cfg$/i.test(fn)) continue;
-        var cfgDir = dirOf6(fn);
-        var text = cfgTextForRewrite(files[i].id);
+        var cfgDir = dirOf5(fn);
+        var text = cfgTextForRewrite(files2[i].id);
         if (!cfgListsEntry(text, cfgDir, oldName)) continue;
         var updated = rewriteCfgBody(text, cfgDir, oldName, newName);
         if (updated != null) {
-          setFileText2(files[i].id, updated);
-          updatedIds.push(files[i].id);
+          setFileText(files2[i].id, updated);
+          updatedIds.push(files2[i].id);
         }
       }
       notifyCfgRewritten(updatedIds);
       return updatedIds;
     }
-    function renameFile2(id, newName) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) {
-          var oldName = files[i].name;
-          files[i].name = newName;
-          writeProjectFiles(files);
-          rewriteCfgsForOp(oldName, newName);
-          var map = readActiveCfgByDir2();
-          var changed = false;
-          for (var k in map) {
-            if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
-            var list3 = normalizeActiveCfgList2(map[k]);
-            for (var j = 0; j < list3.length; j++) {
-              if (list3[j] === oldName) {
-                list3[j] = newName;
-                changed = true;
-              }
-            }
-            if (list3.length) map[k] = list3;
-          }
-          if (changed) writeActiveCfgByDir2(map);
-          pruneEmptyFoldersForFile(newName);
-          if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
-          notifyProjectTreeChanged("rename");
-          return;
-        }
-      }
-    }
     function cfgFileByPath(cfgPath) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].name === cfgPath) return files[i];
+      var files2 = work2.peekTree().files;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].name === cfgPath) return { id: files2[i].id, name: files2[i].name };
       }
       return null;
     }
@@ -2963,65 +2219,63 @@
       }
       return false;
     }
-    function addEntryToCfg2(cfgPath, fileName) {
+    function addEntryToCfg(cfgPath, fileName) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var dir = dirOf6(cfgPath);
+      var dir = dirOf5(cfgPath);
       var rel = relToCfgDir(dir, fileName);
       if (rel == null || rel === "") return false;
-      var text = String(getFileText2(cfg.id) || "");
+      var text = String(getFileText(cfg.id) || "");
       if (cfgListsEntry(text, dir, fileName)) return false;
       var body = text.replace(/\s*$/, "");
-      setFileText2(cfg.id, (body ? body + "\n" : "") + rel + "\n");
+      setFileText(cfg.id, (body ? body + "\n" : "") + rel + "\n");
       return true;
     }
-    function prependEntryToCfg2(cfgPath, fileName) {
+    function prependEntryToCfg(cfgPath, fileName) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var dir = dirOf6(cfgPath);
+      var dir = dirOf5(cfgPath);
       var rel = relToCfgDir(dir, fileName);
       if (rel == null || rel === "") return false;
-      var text = String(getFileText2(cfg.id) || "");
+      var text = String(getFileText(cfg.id) || "");
       if (cfgListsEntry(text, dir, fileName)) return false;
       var lines = text.split("\n");
       var firstEntry = -1;
       for (var i = 0; i < lines.length; i++) {
-        var t = lines[i].trim();
-        if (isCfgEntryLine(t)) {
+        if (isCfgEntryLine(lines[i].trim())) {
           firstEntry = i;
           break;
         }
       }
       if (firstEntry === -1) {
         var body = text.replace(/\s*$/, "");
-        setFileText2(cfg.id, (body ? body + "\n" : "") + rel + "\n");
+        setFileText(cfg.id, (body ? body + "\n" : "") + rel + "\n");
         return true;
       }
       var before = lines.slice(0, firstEntry).join("\n");
       var after = lines.slice(firstEntry).join("\n");
       var prefix = before.length ? before + "\n" : "";
-      setFileText2(cfg.id, prefix + rel + "\n" + after);
+      setFileText(cfg.id, prefix + rel + "\n" + after);
       return true;
     }
-    function removeEntryFromCfg2(cfgPath, fileName) {
+    function removeEntryFromCfg(cfgPath, fileName) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var updated = rewriteCfgBody(getFileText2(cfg.id), dirOf6(cfgPath), fileName, null);
+      var updated = rewriteCfgBody(getFileText(cfg.id), dirOf5(cfgPath), fileName, null);
       if (updated == null) return false;
-      setFileText2(cfg.id, updated);
+      setFileText(cfg.id, updated);
       return true;
     }
-    function moveEntryInCfg2(cfgPath, fileName, delta) {
+    function moveEntryInCfg(cfgPath, fileName, delta) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var dir = dirOf6(cfgPath);
-      var lines = String(getFileText2(cfg.id) || "").split("\n");
+      var dir = dirOf5(cfgPath);
+      var lines = String(getFileText(cfg.id) || "").split("\n");
       var entryLineIdx = [];
       var targetAt = -1;
       for (var i = 0; i < lines.length; i++) {
         var t = lines[i].trim();
-        var isEntry = isCfgEntryLine(t);
-        if (!isEntry) continue;
+        if (!isCfgEntryLine(t)) continue;
         if ((dir ? dir + "/" + t : t) === fileName) targetAt = entryLineIdx.length;
         entryLineIdx.push(i);
       }
@@ -3033,421 +2287,198 @@
       var tmp = lines[a];
       lines[a] = lines[b];
       lines[b] = tmp;
-      setFileText2(cfg.id, lines.join("\n"));
+      setFileText(cfg.id, lines.join("\n"));
       return true;
     }
-    function getFileById2(id) {
-      var files = listFiles3();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) return files[i];
-      }
-      return null;
+    function newBlankProject(name) {
+      var pid = work2.createProject(name);
+      if (pid) work2.setActiveProject(pid);
+      return pid;
     }
-    function moveFile2(id, delta) {
-      var files = ensureProject2();
-      var idx = -1;
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) {
-          idx = i;
+    function createProjectWithFiles(name, entries, options) {
+      var pid = work2.createProject(name);
+      if (!pid) return { projectId: null, files: [], activeId: null };
+      work2.setActiveProject(pid);
+      var result = replaceProject(entries, options || {});
+      return { projectId: pid, files: result.files, activeId: result.activeId };
+    }
+    return {
+      // files
+      listFiles: listFiles2,
+      getFileById,
+      fileNameForId,
+      getFileText,
+      setFileText,
+      createFile,
+      replaceProject,
+      restoreDeletedFile,
+      deleteFile,
+      renameFile,
+      // folders
+      listEmptyFolders,
+      addEmptyFolder,
+      removeEmptyFolder,
+      clearEmptyFolders,
+      pruneEmptyFoldersUnder,
+      renameEmptyFolderPrefix,
+      preserveEmptyFoldersAfterMoves,
+      // session
+      getActiveFileId,
+      setActiveFileId,
+      getOpenFileIds,
+      setOpenFileIds,
+      openFile,
+      closeOpenFile,
+      // project
+      getProjectName,
+      setProjectName,
+      newBlankProject,
+      createProjectWithFiles,
+      // cfg
+      addEntryToCfg,
+      prependEntryToCfg,
+      removeEntryFromCfg,
+      moveEntryInCfg,
+      getActiveCfgForDir,
+      getActiveCfgsForDir,
+      setActiveCfgForDir,
+      setActiveCfgsForDir,
+      addActiveCfgForDir,
+      removeActiveCfgForDir,
+      getActiveCfgByDir,
+      backfillActiveCfgByDir,
+      // aliases
+      isAliasExpandablePath,
+      expandAliasesForStorage,
+      expandAliasesInAllFiles
+    };
+  }
+
+  // js/persist/merge.mjs
+  var MAX_DIFF_LINES = 4e4;
+  function splitLines(text) {
+    return String(text != null ? text : "").split("\n");
+  }
+  function lcsMatch(a, b) {
+    const match = new Int32Array(a.length).fill(-1);
+    let start = 0;
+    let endA = a.length;
+    let endB = b.length;
+    while (start < endA && start < endB && a[start] === b[start]) {
+      match[start] = start;
+      start += 1;
+    }
+    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+      endA -= 1;
+      endB -= 1;
+      match[endA] = endB;
+    }
+    const n = endA - start;
+    const m = endB - start;
+    if (n === 0 || m === 0 || n + m > MAX_DIFF_LINES) return match;
+    const max = n + m;
+    const off = max + 1;
+    const v = new Int32Array(2 * max + 3);
+    const trace = [];
+    let found = -1;
+    for (let d = 0; d <= max && found < 0; d++) {
+      trace.push(v.slice(off - d - 1, off + d + 2));
+      for (let k = -d; k <= d; k += 2) {
+        let x2 = k === -d || k !== d && v[off + k - 1] < v[off + k + 1] ? v[off + k + 1] : v[off + k - 1] + 1;
+        let y2 = x2 - k;
+        while (x2 < n && y2 < m && a[start + x2] === b[start + y2]) {
+          x2++;
+          y2++;
+        }
+        v[off + k] = x2;
+        if (x2 >= n && y2 >= m) {
+          found = d;
           break;
         }
       }
-      if (idx === -1) return false;
-      var to = Math.max(0, Math.min(files.length - 1, idx + (delta || 0)));
-      if (to === idx) return false;
-      var entry = files.splice(idx, 1)[0];
-      files.splice(to, 0, entry);
-      writeProjectFiles(files);
-      return true;
     }
-    var fileTextCache = /* @__PURE__ */ new Map();
-    function getFileText2(id) {
-      var raw = defaultBackend2.loadSync(stateKeyFor2(id));
-      var hit = fileTextCache.get(id);
-      if (hit && hit.raw === raw) return hit.text;
-      var state2 = readState2(defaultBackend2, id);
-      var text = state2 && state2.editor && typeof state2.editor.text === "string" ? state2.editor.text : "";
-      if (fileTextCache.size > 512) fileTextCache.clear();
-      fileTextCache.set(id, { raw, text });
-      return text;
-    }
-    function setFileText2(id, text) {
-      var state2 = readState2(defaultBackend2, id);
-      state2.editor.text = expandAliasesForStorage2(text, fileNameForId2(id));
-      state2.meta.updatedAt = Date.now();
-      state2.meta.revision = (state2.meta.revision || 0) + 1;
-      backendSave2(stateKeyFor2(id), JSON.stringify(state2));
-      fileTextCache.delete(id);
-      try {
-        if (typeof BelEditor !== "undefined" && typeof BelEditor.invalidateFileHealthAfterChange === "function") {
-          BelEditor.invalidateFileHealthAfterChange(id);
-        }
-      } catch (_) {
+    let x = n;
+    let y = m;
+    for (let d = found; d >= 0; d--) {
+      const vd = trace[d];
+      const at = (k2) => vd[k2 + d + 1];
+      const k = x - y;
+      const prevK = k === -d || k !== d && at(k - 1) < at(k + 1) ? k + 1 : k - 1;
+      const prevX = at(prevK);
+      const prevY = prevX - prevK;
+      while (x > prevX && y > prevY) {
+        x -= 1;
+        y -= 1;
+        match[start + x] = start + y;
+      }
+      if (d > 0) {
+        x = prevX;
+        y = prevY;
       }
     }
-    return {
-      readProjectFiles: readProjectFiles2,
-      writeProjectFiles,
-      readEmptyFolders,
-      writeEmptyFolders,
-      listEmptyFolders: listEmptyFolders2,
-      addEmptyFolder: addEmptyFolder2,
-      removeEmptyFolder: removeEmptyFolder2,
-      clearEmptyFolders: clearEmptyFolders2,
-      pruneEmptyFoldersUnder: pruneEmptyFoldersUnder2,
-      renameEmptyFolderPrefix: renameEmptyFolderPrefix2,
-      pruneEmptyFoldersForFile,
-      folderSubtreeOccupied,
-      preserveEmptyFoldersAfterPath,
-      isPrefixUnderAny,
-      relocatedPrefixTarget,
-      inferRelocatedFolderPrefixes,
-      preserveEmptyFoldersAfterMoves: preserveEmptyFoldersAfterMoves2,
-      ensureProject: ensureProject2,
-      listFiles: listFiles3,
-      getActiveFileId: getActiveFileId2,
-      setActiveFileId: setActiveFileId2,
-      uniqueFileId,
-      replaceProject: replaceProject2,
-      createFile: createFile2,
-      relToCfgDir,
-      resolveCfgEntryPath,
-      isCfgEntryToken: isCfgEntryToken2,
-      isCfgEntryLine,
-      cfgTextForRewrite,
-      notifyCfgRewritten,
-      rewriteCfgBody,
-      restoreDeletedFile: restoreDeletedFile2,
-      deleteFile: deleteFile2,
-      rewriteCfgsForOp,
-      renameFile: renameFile2,
-      cfgFileByPath,
-      cfgListsEntry,
-      addEntryToCfg: addEntryToCfg2,
-      prependEntryToCfg: prependEntryToCfg2,
-      removeEntryFromCfg: removeEntryFromCfg2,
-      moveEntryInCfg: moveEntryInCfg2,
-      getFileById: getFileById2,
-      moveFile: moveFile2,
-      getFileText: getFileText2,
-      setFileText: setFileText2
-    };
+    return match;
+  }
+  function sameLines(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  function merge3(base, mine, theirs) {
+    const b0 = String(base != null ? base : "");
+    const m0 = String(mine != null ? mine : "");
+    const t0 = String(theirs != null ? theirs : "");
+    if (m0 === t0 || t0 === b0) return { ok: true, text: m0 };
+    if (m0 === b0) return { ok: true, text: t0 };
+    const O = splitLines(b0);
+    const A = splitLines(m0);
+    const B = splitLines(t0);
+    const ma = lcsMatch(O, A);
+    const mb = lcsMatch(O, B);
+    const out = [];
+    const conflicts = [];
+    let i = 0;
+    let j = 0;
+    let k = 0;
+    for (; ; ) {
+      let o = i;
+      while (o < O.length && !(ma[o] >= 0 && mb[o] >= 0)) o++;
+      const aEnd = o < O.length ? ma[o] : A.length;
+      const bEnd = o < O.length ? mb[o] : B.length;
+      if (i < o || j < aEnd || k < bEnd) {
+        const oc = O.slice(i, o);
+        const ac = A.slice(j, aEnd);
+        const bc = B.slice(k, bEnd);
+        if (sameLines(ac, oc)) out.push(...bc);
+        else if (sameLines(bc, oc) || sameLines(ac, bc)) out.push(...ac);
+        else {
+          conflicts.push({ line: out.length, base: oc, mine: ac, theirs: bc });
+          out.push(...ac);
+        }
+      }
+      if (o >= O.length) break;
+      out.push(O[o]);
+      i = o + 1;
+      j = aEnd + 1;
+      k = bEnd + 1;
+    }
+    const text = out.join("\n");
+    return conflicts.length ? { ok: false, text, conflicts } : { ok: true, text };
+  }
+  function conflictedCopyName(name, taken) {
+    const slash = name.lastIndexOf("/");
+    const dir = slash === -1 ? "" : name.slice(0, slash + 1);
+    const leaf = name.slice(slash + 1);
+    const dot = leaf.lastIndexOf(".");
+    const stem = dot > 0 ? leaf.slice(0, dot) : leaf;
+    const ext = dot > 0 ? leaf.slice(dot) : "";
+    for (let n = 1; ; n++) {
+      const candidate = dir + stem + (n === 1 ? " (conflicted copy)" : " (conflicted copy " + n + ")") + ext;
+      if (!taken.has(candidate)) return candidate;
+    }
   }
 
-  // js/persist/persist-open-tabs.mjs
-  function create7(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projKey2 = deps.projKey;
-    var listFiles3 = deps.listFiles;
-    var getFileById2 = deps.getFileById;
-    var readProjectFiles2 = deps.readProjectFiles;
-    var getActiveProject2 = deps.getActiveProject;
-    var renameProject2 = deps.renameProject;
-    var getActiveProjectId2 = deps.getActiveProjectId;
-    var DEFAULT_PROJECT_NAME2 = deps.DEFAULT_PROJECT_NAME;
-    var dirOf6 = deps.dirOf;
-    var defaultBackend2 = deps.defaultBackend;
-    var getActiveFileId2 = deps.getActiveFileId;
-    function writeOpenFileIds2(ids) {
-      backendSave2(projKey2("open-files"), JSON.stringify(ids));
-    }
-    function setOpenFileIds2(ids) {
-      writeOpenFileIds2(ids || []);
-    }
-    function getOpenFileIds2() {
-      var files = listFiles3();
-      if (!files.length) return [];
-      var valid = {};
-      for (var i = 0; i < files.length; i++) valid[files[i].id] = true;
-      var raw = tryParse2(backendLoad2(projKey2("open-files")));
-      if (!Array.isArray(raw)) {
-        var all = files.map(function(f) {
-          return f.id;
-        });
-        writeOpenFileIds2(all);
-        return all;
-      }
-      var out = [];
-      for (var j = 0; j < raw.length; j++) {
-        if (valid[raw[j]] && out.indexOf(raw[j]) === -1) out.push(raw[j]);
-      }
-      return out;
-    }
-    function openFile2(id) {
-      var ids = getOpenFileIds2();
-      if (!getFileById2(id)) return ids;
-      if (ids.indexOf(id) === -1) {
-        ids.push(id);
-        writeOpenFileIds2(ids);
-      }
-      return ids;
-    }
-    function closeOpenFile2(id) {
-      var ids = getOpenFileIds2();
-      var idx = ids.indexOf(id);
-      if (idx === -1) return ids;
-      ids.splice(idx, 1);
-      writeOpenFileIds2(ids);
-      return ids;
-    }
-    function getProjectName2() {
-      try {
-        var p = getActiveProject2();
-        return p && p.name && String(p.name).trim() ? String(p.name).trim() : DEFAULT_PROJECT_NAME2;
-      } catch (_) {
-        return DEFAULT_PROJECT_NAME2;
-      }
-    }
-    function setProjectName2(name) {
-      renameProject2(getActiveProjectId2(), name);
-    }
-    function normalizeActiveCfgList2(val) {
-      if (!val) return [];
-      if (Array.isArray(val)) {
-        var out = [];
-        for (var i = 0; i < val.length; i++) {
-          var s = String(val[i] != null ? val[i] : "").trim();
-          if (s) out.push(s);
-        }
-        return out;
-      }
-      var one = String(val).trim();
-      return one ? [one] : [];
-    }
-    function readActiveCfgByDir2() {
-      var raw = tryParse2(backendLoad2(projKey2("active-cfg-by-dir")));
-      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-        var normalized = {};
-        var keys = Object.keys(raw);
-        for (var ki = 0; ki < keys.length; ki++) {
-          var k = keys[ki];
-          normalized[k] = normalizeActiveCfgList2(raw[k]);
-        }
-        return normalized;
-      }
-      var migrated = {};
-      var legacy = backendLoad2(projKey2("default-cfg"));
-      if (legacy && String(legacy).trim()) {
-        migrated[dirOf6(String(legacy).trim())] = [String(legacy).trim()];
-        writeActiveCfgByDir2(migrated);
-        defaultBackend2.removeSync(projKey2("default-cfg"));
-      }
-      return migrated;
-    }
-    function writeActiveCfgByDir2(map) {
-      var out = {};
-      var keys = Object.keys(map || {});
-      for (var i = 0; i < keys.length; i++) {
-        var k = keys[i];
-        var list3 = normalizeActiveCfgList2(map[k]);
-        if (list3.length) out[k] = list3;
-      }
-      if (!Object.keys(out).length) {
-        backendRemove2(projKey2("active-cfg-by-dir"));
-        return;
-      }
-      backendSave2(projKey2("active-cfg-by-dir"), JSON.stringify(out));
-    }
-    function getActiveCfgsForDir2(dir) {
-      var map = readActiveCfgByDir2();
-      var d = dir != null ? String(dir) : "";
-      return normalizeActiveCfgList2(map[d]);
-    }
-    function getActiveCfgForDir2(dir) {
-      var list3 = getActiveCfgsForDir2(dir);
-      return list3.length ? list3[0] : null;
-    }
-    function setActiveCfgsForDir2(dir, paths) {
-      var map = readActiveCfgByDir2();
-      var d = dir != null ? String(dir) : "";
-      var list3 = normalizeActiveCfgList2(paths);
-      if (list3.length) map[d] = list3;
-      else delete map[d];
-      writeActiveCfgByDir2(map);
-    }
-    function setActiveCfgForDir2(dir, path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (trimmed) setActiveCfgsForDir2(dir, [trimmed]);
-      else setActiveCfgsForDir2(dir, []);
-    }
-    function addActiveCfgForDir2(dir, path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (!trimmed) return;
-      var list3 = getActiveCfgsForDir2(dir);
-      for (var i = 0; i < list3.length; i++) {
-        if (list3[i] === trimmed) return;
-      }
-      list3.push(trimmed);
-      setActiveCfgsForDir2(dir, list3);
-    }
-    function removeActiveCfgForDir2(dir, path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (!trimmed) return;
-      var list3 = getActiveCfgsForDir2(dir);
-      var next = [];
-      for (var i = 0; i < list3.length; i++) {
-        if (list3[i] !== trimmed) next.push(list3[i]);
-      }
-      setActiveCfgsForDir2(dir, next);
-    }
-    function getActiveCfgByDir2() {
-      return readActiveCfgByDir2();
-    }
-    function backfillActiveCfgByDir2(byDir) {
-      if (!byDir || typeof byDir !== "object") return readActiveCfgByDir2();
-      var map = readActiveCfgByDir2();
-      var changed = false;
-      for (var d in byDir) {
-        if (!Object.prototype.hasOwnProperty.call(byDir, d)) continue;
-        var path = String(byDir[d] != null ? byDir[d] : "").trim();
-        if (!path || normalizeActiveCfgList2(map[d]).length) continue;
-        map[d] = [path];
-        changed = true;
-      }
-      if (changed) writeActiveCfgByDir2(map);
-      return map;
-    }
-    function getDefaultCfgPath2() {
-      try {
-        var activeId2 = getActiveFileId2();
-        var files = readProjectFiles2() || [];
-        for (var i = 0; i < files.length; i++) {
-          if (files[i].id === activeId2) return getActiveCfgForDir2(dirOf6(files[i].name));
-        }
-        return null;
-      } catch (_) {
-        return null;
-      }
-    }
-    function setDefaultCfgPath2(path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (!trimmed) return;
-      setActiveCfgForDir2(dirOf6(trimmed), trimmed);
-    }
-    return {
-      writeOpenFileIds: writeOpenFileIds2,
-      setOpenFileIds: setOpenFileIds2,
-      getOpenFileIds: getOpenFileIds2,
-      openFile: openFile2,
-      closeOpenFile: closeOpenFile2,
-      getProjectName: getProjectName2,
-      setProjectName: setProjectName2,
-      normalizeActiveCfgList: normalizeActiveCfgList2,
-      readActiveCfgByDir: readActiveCfgByDir2,
-      writeActiveCfgByDir: writeActiveCfgByDir2,
-      getActiveCfgsForDir: getActiveCfgsForDir2,
-      getActiveCfgForDir: getActiveCfgForDir2,
-      setActiveCfgsForDir: setActiveCfgsForDir2,
-      setActiveCfgForDir: setActiveCfgForDir2,
-      addActiveCfgForDir: addActiveCfgForDir2,
-      removeActiveCfgForDir: removeActiveCfgForDir2,
-      getActiveCfgByDir: getActiveCfgByDir2,
-      backfillActiveCfgByDir: backfillActiveCfgByDir2,
-      getDefaultCfgPath: getDefaultCfgPath2,
-      setDefaultCfgPath: setDefaultCfgPath2
-    };
-  }
-
-  // js/persist/persist.mjs
-  var SCHEMA_VERSION = 3;
-  var LEGACY_CHECKPOINT_V2 = 2;
-  var LEGACY_SCHEMA_VERSION = 1;
-  var STATE_KEY = "beljar-state-v2";
-  var LEGACY_STATE_KEY = "beljar-state-v1";
-  var LEGACY_SEMANTIC_TYPES_KEY = "beljar:semantic-types";
-  var DEFAULT_DOCUMENT_ID = "workspace://main.bel";
-  var THEME_STORAGE_KEY = "beljar-theme";
-  var UI_FONT_SIZE_KEY = "beljar-ui-font-size";
-  var UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
-  var UI_TEXT_CONTRAST_KEY = "beljar-ui-text-contrast";
-  var UI_TEXT_CONTRAST_MULTIPLIERS = { low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
-  var BELUGA_MODE_STORAGE_KEY = "beljar-beluga-mode";
-  var EDITOR_SPLIT_STORAGE_KEY = globalThis.BELJAR_SPLIT_KEY || "beljar-editor-split";
-  var GRAPH_PREFS_STORAGE_KEY = "beljar-graph-prefs";
-  var LEGACY_GRAPH_LAYOUT_KEY = "beljar:graph-layout";
-  var LEGACY_GRAPH_IMPL_KEY = "beljar:graph-impl";
-  var LEGACY_GRAPH_DEPTH_KEY = "beljar:graph-depth";
-  var LEGACY_GRAPH_SIDEBAR_KEY = "beljar:graph-sidebar";
-  var PROJECT_FILES_KEY = "beljar-project-files";
-  var PROJECT_NAME_KEY = "beljar-project-name";
-  var DEFAULT_CFG_KEY = "beljar-default-cfg";
-  var ACTIVE_CFG_BY_DIR_KEY = "beljar-active-cfg-by-dir";
-  var ACTIVE_FILE_KEY = "beljar-active-file";
-  var OPEN_FILES_KEY = "beljar-open-files";
-  var DEFAULT_PROJECT_NAME = "Untitled Project";
-  var PROJECTS_KEY = "beljar-projects";
-  var ACTIVE_PROJECT_KEY = "beljar-active-project";
-  var DEFAULT_PROJECT_ID = "default";
-  var DEFAULT_GRAPH_PREFS = Object.freeze({
-    layout: "force",
-    impl: "show",
-    depth: 1,
-    labelDensity: 3,
-    sidebarCollapsed: false
-  });
-  var DEFAULT_EDITOR_SPLIT = globalThis.BELJAR_SPLIT_DEFAULT != null ? globalThis.BELJAR_SPLIT_DEFAULT : 0.5;
-  var MIN_EDITOR_SPLIT = globalThis.BELJAR_SPLIT_MIN != null ? globalThis.BELJAR_SPLIT_MIN : 0.18;
-  var MAX_EDITOR_SPLIT = globalThis.BELJAR_SPLIT_MAX != null ? globalThis.BELJAR_SPLIT_MAX : 0.82;
-  var EXPLORER_WIDTH_KEY = "beljar-explorer-w";
-  var INSPECTOR_WIDTH_KEY = "beljar-inspector-w";
-  var EXPLORER_HEIGHT_KEY = "beljar-explorer-h";
-  var INSPECTOR_HEIGHT_KEY = "beljar-inspector-h";
-  var EXPLORER_OPEN_KEY = "beljar-explorer-open";
-  var LOAD_STATS_KEY = "beljar.loadStats";
-  var INSPECTOR_OPEN_KEY = "beljar-inspector-open";
-  var INSPECTOR_FOLLOW_KEY = "beljar-inspector-follow";
-  var LIBRARY_OPEN_KEY = "beljar-library-open";
-  var LIBRARY_WIDTH_KEY = "beljar-library-w";
-  var LIBRARY_HEIGHT_KEY = "beljar-library-h";
-  var HARPOON_WIDTH_KEY = "beljar-harpoon-w";
-  var HARPOON_HEIGHT_KEY = "beljar-harpoon-h";
-  var DEFAULT_SIDE_PANEL_WIDTH = 250;
-  var DEFAULT_SIDE_PANEL_HEIGHT = 190;
-  var SIDE_PANEL_LAYOUT = {
-    explorer: {
-      widthKey: EXPLORER_WIDTH_KEY,
-      heightKey: EXPLORER_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 320
-    },
-    inspector: {
-      widthKey: INSPECTOR_WIDTH_KEY,
-      heightKey: INSPECTOR_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 384
-    },
-    library: {
-      widthKey: LIBRARY_WIDTH_KEY,
-      heightKey: LIBRARY_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 384
-    },
-    harpoon: {
-      widthKey: HARPOON_WIDTH_KEY,
-      heightKey: HARPOON_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 384
-    }
-  };
+  // js/persist/document.mjs
   var textEncoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
-  function tryParse(json) {
-    try {
-      return JSON.parse(json);
-    } catch (_) {
-      return null;
-    }
-  }
   function utf8Bytes(text) {
     if (textEncoder) return textEncoder.encode(text);
     var encoded = unescape(encodeURIComponent(text));
@@ -3456,145 +2487,13 @@
     return bytes;
   }
   function documentFingerprint(code) {
-    var text = String(code != null ? code : "");
-    var bytes = utf8Bytes(text);
+    var bytes = utf8Bytes(String(code != null ? code : ""));
     var hash = 2166136261;
     for (var i = 0; i < bytes.length; i++) {
       hash ^= bytes[i];
       hash = Math.imul(hash, 16777619) >>> 0;
     }
     return bytes.length + ":" + hash.toString(16).padStart(8, "0");
-  }
-  function createLocalStorageBackend(store2) {
-    store2 = store2 || globalThis.localStorage;
-    return {
-      loadSync: function(key) {
-        try {
-          return store2.getItem(key);
-        } catch (_) {
-          return null;
-        }
-      },
-      saveSync: function(key, value) {
-        store2.setItem(key, value);
-      },
-      removeSync: function(key) {
-        try {
-          store2.removeItem(key);
-        } catch (_) {
-        }
-      }
-    };
-  }
-  function createMemoryBackend(initial) {
-    var store2 = initial ? Object.assign({}, initial) : {};
-    return {
-      loadSync: function(key) {
-        return Object.prototype.hasOwnProperty.call(store2, key) ? store2[key] : null;
-      },
-      saveSync: function(key, value) {
-        store2[key] = value;
-      },
-      removeSync: function(key) {
-        delete store2[key];
-      },
-      _dump: function() {
-        return Object.assign({}, store2);
-      }
-    };
-  }
-  function createLocalStorageAdapter(store2) {
-    var backend = createLocalStorageBackend(store2);
-    return {
-      getItem: function(key) {
-        return backend.loadSync(key);
-      },
-      setItem: function(key, value) {
-        try {
-          backend.saveSync(key, value);
-        } catch (_) {
-        }
-      },
-      removeItem: function(key) {
-        backend.removeSync(key);
-      }
-    };
-  }
-  var defaultBackend = createLocalStorageBackend();
-  function slugify(s) {
-    return String(s).replace(/[^a-zA-Z0-9._-]/g, "_");
-  }
-  function projectPrefix(pid) {
-    pid = pid || getActiveProjectId();
-    return pid === DEFAULT_PROJECT_ID ? "" : "beljar-proj:" + slugify(pid) + ":";
-  }
-  function projKey(suffix, pid) {
-    var prefix = projectPrefix(pid);
-    if (prefix === "") {
-      if (suffix === "files") return PROJECT_FILES_KEY;
-      if (suffix === "active-file") return ACTIVE_FILE_KEY;
-      if (suffix === "open-files") return OPEN_FILES_KEY;
-      if (suffix === "default-cfg") return DEFAULT_CFG_KEY;
-      if (suffix === "active-cfg-by-dir") return ACTIVE_CFG_BY_DIR_KEY;
-    }
-    return prefix + suffix;
-  }
-  function dirOf(name) {
-    var i = String(name || "").lastIndexOf("/");
-    return i === -1 ? "" : name.slice(0, i);
-  }
-  function stateKeyFor(id, pid) {
-    var prefix = projectPrefix(pid);
-    if (prefix === "") {
-      if (!id || id === DEFAULT_DOCUMENT_ID) return STATE_KEY;
-      return "beljar-file:" + slugify(id);
-    }
-    if (!id || id === DEFAULT_DOCUMENT_ID) return prefix + "state-v2";
-    return prefix + "file:" + slugify(id);
-  }
-  function backendLoad(key) {
-    return defaultBackend.loadSync(key);
-  }
-  function backendSave(key, value) {
-    try {
-      defaultBackend.saveSync(key, value);
-      return true;
-    } catch (err) {
-      if (isCapacityError(err)) reportCapacityFailure(classifyPersistError(err));
-      return false;
-    }
-  }
-  function backendRemove(key) {
-    defaultBackend.removeSync(key);
-  }
-  var _uiPrefsApi = create({
-    THEME_STORAGE_KEY,
-    UI_FONT_SIZE_KEY,
-    UI_FONT_SCALES,
-    UI_TEXT_CONTRAST_KEY,
-    UI_TEXT_CONTRAST_MULTIPLIERS,
-    backendLoad,
-    backendSave,
-    backendRemove
-  });
-  function healKnownCorruptEditorText(text) {
-    if (typeof text !== "string" || text.indexOf(": a o") === -1) return text;
-    return text.replace(/\| ∨ : a o → o → o/g, "| \u2228 : o \u2192 o \u2192 o").replace(/\| ∨ : a o -> o -> o/g, "| \u2228 : o -> o -> o").replace(/\| v : a o → o → o/g, "| \u2228 : o \u2192 o \u2192 o").replace(/\| v : a o -> o -> o/g, "| \u2228 : o -> o -> o");
-  }
-  function emptyState(documentId) {
-    return {
-      v: SCHEMA_VERSION,
-      meta: {
-        documentId: documentId || DEFAULT_DOCUMENT_ID,
-        updatedAt: 0,
-        revision: 0
-      },
-      editor: {
-        text: "",
-        local: {}
-      },
-      semantic: null
-    };
   }
   function normalizeViewportAnchor(raw) {
     if (!raw || typeof raw !== "object" || typeof raw.kind !== "string") return null;
@@ -3614,7 +2513,7 @@
     }
     return null;
   }
-  function normalizeLocal(raw) {
+  function normalizeView(raw) {
     if (!raw || typeof raw !== "object") return {};
     var out = {};
     if (raw.selection && typeof raw.selection === "object") {
@@ -3645,119 +2544,1379 @@
       deriveAttempted: Array.isArray(raw.deriveAttempted) ? raw.deriveAttempted : []
     };
   }
-  function normalizeLoaded(raw, documentId) {
-    var base = emptyState(documentId);
-    if (!raw || typeof raw !== "object") return base;
-    if (raw.v === SCHEMA_VERSION || raw.v === LEGACY_CHECKPOINT_V2) {
-      if (raw.meta && typeof raw.meta === "object") {
-        if (typeof raw.meta.documentId === "string") base.meta.documentId = raw.meta.documentId;
-        if (typeof raw.meta.updatedAt === "number") base.meta.updatedAt = raw.meta.updatedAt;
-        if (typeof raw.meta.revision === "number") base.meta.revision = raw.meta.revision;
-      }
-      if (raw.editor && typeof raw.editor.text === "string") {
-        base.editor.text = healKnownCorruptEditorText(raw.editor.text);
-      }
-      base.editor.local = normalizeLocal(raw.editor && raw.editor.local);
-      base.semantic = normalizeSemantic(raw.semantic);
-      return base;
-    }
-    if (raw.v === LEGACY_SCHEMA_VERSION && raw.editor && typeof raw.editor.text === "string") {
-      base.editor.text = healKnownCorruptEditorText(raw.editor.text);
-    }
-    return base;
-  }
-  function migrateLegacySemantic(state2, backend) {
-    if (state2.semantic) return state2;
-    var raw = backend.loadSync(LEGACY_SEMANTIC_TYPES_KEY);
-    if (!raw) return state2;
-    var types = tryParse(raw);
-    if (!types) return state2;
-    state2.semantic = {
-      docFp: documentFingerprint(state2.editor.text),
-      scopeKey: "legacy",
-      belugaBuild: readStoredBelugaMode(),
-      types,
-      identity: [],
-      deriveAttempted: []
-    };
-    backend.removeSync(LEGACY_SEMANTIC_TYPES_KEY);
-    return state2;
-  }
-  function readState(backend, documentId) {
-    var b = backend || defaultBackend;
-    var key = stateKeyFor(documentId);
-    var parsed = tryParse(b.loadSync(key));
-    var state2 = normalizeLoaded(parsed, documentId);
-    if (parsed && (parsed.v === SCHEMA_VERSION || parsed.v === LEGACY_CHECKPOINT_V2)) {
-      return migrateLegacySemantic(state2, b);
-    }
-    if (key === STATE_KEY) {
-      var legacy = tryParse(b.loadSync(LEGACY_STATE_KEY));
-      if (legacy) {
-        state2 = normalizeLoaded(legacy, documentId);
-        b.removeSync(LEGACY_STATE_KEY);
-      }
-    }
-    return migrateLegacySemantic(state2, b);
-  }
-  var readStateForId = readState;
   function semanticHasPayload(semantic) {
     if (!semantic || !semantic.types) return false;
     var t = semantic.types;
     return !!(t.decls && t.decls.length || t.metavars && t.metavars.length || t.reconstructed && t.reconstructed.length || semantic.identity && semantic.identity.length || semantic.deriveAttempted && semantic.deriveAttempted.length);
   }
-  function trimSemanticForQuota(semantic) {
-    if (!semantic) return null;
-    var next = JSON.parse(JSON.stringify(semantic));
-    next.deriveAttempted = [];
-    if (next.types && next.types.metavars && next.types.metavars.length > 32) {
-      next.types.metavars = next.types.metavars.slice(-32);
-    }
-    return next;
-  }
-  var CAPACITY_DEDUPE = "persist.capacity";
-  var saveBlocked = false;
-  var lastSaveError = null;
-  function isCapacityError(err) {
-    if (!err) return false;
-    if (err.code === "capacity") return true;
-    var name = String(err.name || "");
-    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
-    if (err.code === 22 || err.code === 1014) return true;
-    return /quota/i.test(String(err.message || ""));
-  }
-  function classifyPersistError(err) {
-    if (!err) return { code: "unknown", retryable: false, detail: null };
-    if (isCapacityError(err)) {
+  function createDocuments(deps) {
+    var work2 = deps.work;
+    var settings2 = deps.settings;
+    var files2 = deps.files || null;
+    var open11 = /* @__PURE__ */ new Set();
+    work2.onFileChange(function(e) {
+      open11.forEach(function(doc2) {
+        doc2.noteFileChange(e);
+      });
+    });
+    function load(documentId) {
+      var conflict = work2.readConflict(documentId);
+      var stored = work2.getText(documentId);
+      if (conflict && conflict.theirs !== stored) {
+        conflict.theirs = stored;
+        work2.writeConflict(documentId, conflict);
+      }
       return {
-        code: "capacity",
-        retryable: false,
-        detail: String(err.message || err.name || "")
+        state: {
+          meta: { documentId },
+          editor: {
+            text: conflict ? conflict.mine : stored,
+            local: normalizeView(work2.peekSession().views[documentId])
+          },
+          semantic: normalizeSemantic(work2.readCache(documentId))
+        },
+        base: conflict ? conflict.base : stored,
+        conflicted: !!conflict
       };
     }
-    if (err.code === "network" || err.code === "auth" || err.code === "conflict") {
+    function copyName(name) {
+      return conflictedCopyName(name, new Set((files2 ? files2.listFiles() : []).map(function(f) {
+        return f.name;
+      })));
+    }
+    function createPersist(opts) {
+      opts = opts || {};
+      var documentId = opts.documentId;
+      if (!documentId) throw new Error("createPersist needs a documentId");
+      var loaded = load(documentId);
+      var state2 = loaded.state;
+      var base = loaded.base;
+      var conflicted = loaded.conflicted;
+      var saveTimer3 = null;
+      var providers3 = null;
+      var reconciling = false;
+      var reconcileQueued = false;
+      var savedView = JSON.stringify(state2.editor.local);
+      var savedSemantic = JSON.stringify(state2.semantic);
+      function collectSemantic() {
+        if (!providers3 || typeof providers3.getSemantic !== "function") return state2.semantic;
+        var exported = providers3.getSemantic();
+        if (!exported) return state2.semantic;
+        var text = state2.editor.text;
+        var docFp = typeof providers3.getDocFp === "function" ? providers3.getDocFp(text) : documentFingerprint(text);
+        var belugaBuild = typeof providers3.getBelugaBuild === "function" ? providers3.getBelugaBuild() : settings2.get("belugaMode");
+        var scopeKey = typeof exported.scopeKey === "string" ? exported.scopeKey : typeof providers3.getScopeKey === "function" ? providers3.getScopeKey() : "";
+        var semantic = {
+          docFp,
+          scopeKey,
+          belugaBuild,
+          types: exported.types || { v: 1, decls: [], metavars: [], reconstructed: [] },
+          identity: exported.identity || [],
+          deriveAttempted: exported.deriveAttempted || []
+        };
+        return semanticHasPayload(semantic) ? semantic : null;
+      }
+      function collectView() {
+        if (providers3 && typeof providers3.getViewport === "function") {
+          return normalizeView(providers3.getViewport());
+        }
+        return state2.editor.local || {};
+      }
+      function collectText() {
+        if (providers3 && typeof providers3.getText === "function") {
+          try {
+            var live2 = providers3.getText();
+            if (live2 != null) return String(live2);
+          } catch (_) {
+          }
+        }
+        return state2.editor.text;
+      }
+      function peekText() {
+        var read = providers3 && (typeof providers3.peekText === "function" ? providers3.peekText : typeof providers3.getText === "function" ? providers3.getText : null);
+        if (read) {
+          try {
+            var t = read();
+            if (t != null) return String(t);
+          } catch (_) {
+          }
+        }
+        return state2.editor.text;
+      }
+      function canShow() {
+        return !providers3 || typeof providers3.applyExternalText === "function";
+      }
+      function show3(text) {
+        state2.editor.text = text;
+        if (providers3 && typeof providers3.applyExternalText === "function") providers3.applyExternalText(text);
+      }
+      function announceConflict(source) {
+        var g15 = typeof window !== "undefined" ? window : null;
+        if (g15 && typeof g15.dispatchEvent === "function" && typeof CustomEvent === "function") {
+          g15.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
+        }
+      }
+      function reconcile() {
+        reconcileQueued = false;
+        if (reconciling || !work2.hasFile(documentId)) return;
+        var stored = work2.getText(documentId);
+        if (conflicted) {
+          var rec = work2.readConflict(documentId);
+          if (rec && rec.theirs !== stored) {
+            rec.theirs = stored;
+            work2.writeConflict(documentId, rec);
+          }
+          return;
+        }
+        if (stored === base) return;
+        var found = work2.readConflict(documentId);
+        if (found) {
+          conflicted = true;
+          base = found.base;
+          work2.writeConflict(documentId, {
+            base: found.base,
+            mine: peekText(),
+            theirs: stored,
+            at: found.at,
+            source: found.source
+          });
+          announceConflict(found.source);
+          return;
+        }
+        reconciling = true;
+        try {
+          var mine = peekText();
+          if (mine === stored) {
+            base = stored;
+          } else if (mine === base && canShow()) {
+            base = stored;
+            show3(stored);
+          } else {
+            var m = merge3(base, mine, stored);
+            if (m.ok && canShow()) {
+              base = stored;
+              show3(m.text);
+              scheduleSave3();
+            } else {
+              var source = work2.textOrigin(documentId) === "sync" ? "device" : "tab";
+              conflicted = true;
+              work2.writeConflict(documentId, { base, mine, theirs: stored, at: Date.now(), source });
+              announceConflict(source);
+            }
+          }
+        } finally {
+          reconciling = false;
+        }
+      }
+      function noteFileChange(e) {
+        if (e.fid !== null && (e.fid !== documentId || e.pid !== work2.projectId())) return;
+        if (reconcileQueued) return;
+        reconcileQueued = true;
+        Promise.resolve().then(reconcile);
+      }
+      function persistNow() {
+        clearTimeout(saveTimer3);
+        saveTimer3 = null;
+        if (reconciling) {
+          scheduleSave3();
+          return;
+        }
+        var exists = work2.hasFile(documentId);
+        if (exists && !conflicted && work2.getText(documentId) !== base) reconcile();
+        state2.editor.text = collectText();
+        state2.editor.local = collectView();
+        state2.semantic = collectSemantic();
+        if (!exists) return;
+        if (conflicted) {
+          var rec = work2.readConflict(documentId);
+          if (rec && rec.mine !== state2.editor.text) {
+            rec.mine = state2.editor.text;
+            work2.writeConflict(documentId, rec);
+          }
+        } else if (state2.editor.text !== base) {
+          if (work2.setText(documentId, state2.editor.text).ok) base = state2.editor.text;
+        }
+        var view = JSON.stringify(state2.editor.local);
+        if (view !== savedView) {
+          var local = state2.editor.local;
+          if (work2.updateSession(function(s) {
+            s.views[documentId] = local;
+          }).ok) savedView = view;
+        }
+        var semantic = JSON.stringify(state2.semantic);
+        if (semantic !== savedSemantic) {
+          if (work2.writeCache(documentId, state2.semantic).ok) savedSemantic = semantic;
+        }
+      }
+      function scheduleSave3() {
+        clearTimeout(saveTimer3);
+        var delay = opts.debounceMs != null ? opts.debounceMs : settings2.get("autosaveDelay");
+        saveTimer3 = globalThis.setTimeout(persistNow, delay);
+      }
+      function scheduleEditorPersist(text) {
+        if (text != null) state2.editor.text = String(text);
+        scheduleSave3();
+      }
+      function markEditorDirty() {
+        scheduleSave3();
+      }
+      function cancelPendingSave() {
+        clearTimeout(saveTimer3);
+        saveTimer3 = null;
+      }
+      function replaceEditorText(text) {
+        cancelPendingSave();
+        state2.editor.text = String(text != null ? text : "");
+        if (!conflicted && work2.getText(documentId) === state2.editor.text) base = state2.editor.text;
+      }
+      function hasPendingSave() {
+        return saveTimer3 != null;
+      }
+      function flushCheckpointIfDirty() {
+        if (saveTimer3 != null) persistNow();
+      }
+      function getInitialCheckpoint() {
+        return JSON.parse(JSON.stringify(state2));
+      }
+      function setCheckpointProviders(next) {
+        providers3 = next || null;
+      }
+      function switchFile(newId3) {
+        if (!newId3) return null;
+        persistNow();
+        providers3 = null;
+        documentId = newId3;
+        var next = load(documentId);
+        state2 = next.state;
+        base = next.base;
+        conflicted = next.conflicted;
+        savedView = JSON.stringify(state2.editor.local);
+        savedSemantic = JSON.stringify(state2.semantic);
+        return getInitialCheckpoint();
+      }
+      function getConflict() {
+        if (!conflicted) return null;
+        var rec = work2.readConflict(documentId);
+        return {
+          fileId: documentId,
+          base: rec ? rec.base : base,
+          mine: peekText(),
+          theirs: work2.getText(documentId),
+          source: rec ? rec.source : "tab"
+        };
+      }
+      function resolveConflict(choice) {
+        if (!conflicted) return { ok: false, reason: "no-conflict" };
+        if (choice !== "mine" && choice !== "theirs" && choice !== "both") return { ok: false, reason: "unknown-choice" };
+        cancelPendingSave();
+        var theirs = work2.getText(documentId);
+        var mine = peekText();
+        if (choice === "theirs") {
+          base = theirs;
+          show3(theirs);
+          conflicted = false;
+          work2.removeConflict(documentId);
+          return { ok: true, copyId: null };
+        }
+        var copyId = null;
+        if (choice === "both") {
+          if (!files2) return { ok: false, reason: "no-files" };
+          var file = work2.peekTree().files.find(function(f) {
+            return f.id === documentId;
+          });
+          copyId = files2.createFile(copyName(file ? file.name : "untitled"));
+          if (!work2.setText(copyId, theirs).ok) return { ok: false, reason: "write-failed" };
+        }
+        if (!work2.setText(documentId, mine).ok) return { ok: false, reason: "write-failed", copyId };
+        base = mine;
+        state2.editor.text = mine;
+        conflicted = false;
+        work2.removeConflict(documentId);
+        return { ok: true, copyId };
+      }
+      var handle = { noteFileChange };
+      open11.add(handle);
       return {
-        code: err.code,
-        retryable: !!err.retryable,
-        detail: err.detail != null ? String(err.detail) : err.message ? String(err.message) : null
+        getEditorText: function() {
+          return state2.editor.text;
+        },
+        getEditorLocal: function() {
+          return normalizeView(state2.editor.local);
+        },
+        getSemanticCheckpoint: function() {
+          return state2.semantic ? JSON.parse(JSON.stringify(state2.semantic)) : null;
+        },
+        getInitialCheckpoint,
+        getCurrentFileId: function() {
+          return documentId;
+        },
+        scheduleEditorPersist,
+        markEditorDirty,
+        scheduleCheckpointSave: scheduleSave3,
+        cancelPendingSave,
+        replaceEditorText,
+        flushCheckpoint: persistNow,
+        flushCheckpointIfDirty,
+        hasPendingSave,
+        setCheckpointProviders,
+        switchFile,
+        getConflict,
+        resolveConflict,
+        /** Stop listening for changes underneath (tests; a page never closes its document). */
+        dispose: function() {
+          cancelPendingSave();
+          open11.delete(handle);
+        }
       };
+    }
+    return { createPersist };
+  }
+
+  // js/persist/device-records.mjs
+  var TAB_PREFIX = "beljar/tabs/";
+  var SIDE_PANEL_IDS = ["explorer", "inspector", "library", "harpoon"];
+  function stringList3(raw) {
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === "string" && x) : [];
+  }
+  function create2(deps) {
+    const { store: store3, tabStore: tabStore2, work: work2, settings: settings2 } = deps;
+    function storeFor(mode) {
+      if (mode === "local") return store3;
+      if (mode === "session") return tabStore2;
+      return null;
+    }
+    function followSetting(settingId2, keysIn) {
+      let last = settings2.get(settingId2);
+      settings2.subscribe((e) => {
+        if (e.ids.indexOf(settingId2) === -1) return;
+        const prev = last;
+        const next = settings2.get(settingId2);
+        last = next;
+        if (prev === next) return;
+        const from2 = storeFor(prev);
+        const to = storeFor(next);
+        if (!from2) return;
+        for (const key of keysIn(from2)) {
+          const data = from2.get(key);
+          if (to && data !== void 0 && to.get(key) === void 0) to.set(key, data);
+          from2.remove(key);
+        }
+      });
+    }
+    const replStore = () => storeFor(settings2.get("replHistoryPersist"));
+    followSetting("replHistoryPersist", () => [REPL_TRANSCRIPT_KEY, REPL_COMMANDS_KEY]);
+    function readReplTranscript() {
+      const s = replStore();
+      const d = s && s.get(REPL_TRANSCRIPT_KEY);
+      if (!d || typeof d !== "object" || typeof d.html !== "string") return null;
+      return {
+        html: d.html,
+        scrollTop: typeof d.scrollTop === "number" ? d.scrollTop : 0,
+        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0
+      };
+    }
+    function writeReplTranscript(snap) {
+      const s = replStore();
+      if (!s) return;
+      if (!snap || typeof snap.html !== "string" || !snap.html) {
+        s.remove(REPL_TRANSCRIPT_KEY);
+        return;
+      }
+      s.set(REPL_TRANSCRIPT_KEY, {
+        html: snap.html,
+        scrollTop: typeof snap.scrollTop === "number" ? snap.scrollTop : 0,
+        savedAt: typeof snap.savedAt === "number" ? snap.savedAt : Date.now()
+      });
+    }
+    function clampCommands(list3) {
+      const arr = Array.isArray(list3) ? list3.filter((x) => typeof x === "string") : [];
+      const cap = settings2.get("replHistoryCap");
+      return arr.length > cap ? arr.slice(arr.length - cap) : arr;
+    }
+    function readReplCommands() {
+      const s = replStore();
+      return s ? clampCommands(s.get(REPL_COMMANDS_KEY)) : [];
+    }
+    function writeReplCommands(list3) {
+      const s = replStore();
+      if (!s) return;
+      const arr = clampCommands(list3);
+      if (arr.length) s.set(REPL_COMMANDS_KEY, arr);
+      else s.remove(REPL_COMMANDS_KEY);
+    }
+    const foldStore = () => storeFor(settings2.get("editorFoldPersist"));
+    followSetting("editorFoldPersist", (s) => s.keys("beljar/p/").filter((k) => k.endsWith("/folds")));
+    function readFileFolds(fid) {
+      const s = foldStore();
+      const d = s && s.get(foldsKey(work2.projectId()));
+      return d && typeof d === "object" ? stringList3(d[fid]) : [];
+    }
+    function writeFileFolds(fid, keys) {
+      const s = foldStore();
+      if (!s || !fid) return;
+      const key = foldsKey(work2.projectId());
+      const cur = s.get(key);
+      const live2 = new Set(work2.peekTree().files.map((f) => f.id));
+      const next = {};
+      if (cur && typeof cur === "object") {
+        for (const id of Object.keys(cur)) if (live2.has(id)) next[id] = cur[id];
+      }
+      const clean = stringList3(keys);
+      if (clean.length && live2.has(fid)) next[fid] = clean;
+      else delete next[fid];
+      if (Object.keys(next).length) s.set(key, next);
+      else s.remove(key);
+    }
+    function readNotifications() {
+      const d = store3.get(NOTIFICATIONS_KEY);
+      return Array.isArray(d) ? d : [];
+    }
+    function writeNotifications(items3) {
+      const list3 = Array.isArray(items3) ? items3 : [];
+      if (list3.length) store3.set(NOTIFICATIONS_KEY, list3);
+      else store3.remove(NOTIFICATIONS_KEY);
+    }
+    function readUndoStack(pid) {
+      const d = tabStore2.get(undoKey(pid));
+      return d && typeof d === "object" ? d : null;
+    }
+    function writeUndoStack(pid, data) {
+      return tabStore2.set(undoKey(pid), data).ok;
+    }
+    function clearUndoStack(pid) {
+      tabStore2.remove(undoKey(pid));
+    }
+    function postTabMessage(kind, msg) {
+      store3.set(tabMessageKey(kind), msg);
+    }
+    function onTabMessage(fn) {
+      return store3.subscribe((e) => {
+        if (e.origin !== "tab" || !e.key || e.key.indexOf(TAB_PREFIX) !== 0 || e.data === void 0) return;
+        fn(e.key.slice(TAB_PREFIX.length), e.data);
+      });
+    }
+    function sidePanelOrNull(id) {
+      return id && SIDE_PANEL_IDS.indexOf(id) !== -1 ? id : null;
+    }
+    function readSidePanel(pid) {
+      return sidePanelOrNull(work2.peekSession(pid || void 0).panel);
+    }
+    function writeSidePanel(id, pid) {
+      const panel2 = sidePanelOrNull(id);
+      work2.updateSession((s) => {
+        s.panel = panel2;
+      }, pid || void 0);
+    }
+    function readWorkspace2(pid) {
+      return work2.readSession(pid || void 0).workspace;
+    }
+    function writeWorkspace2(snapshot, pid) {
+      return work2.updateSession((s) => {
+        s.workspace = snapshot && typeof snapshot === "object" ? snapshot : null;
+        if (s.workspace) s.panel = sidePanelOrNull(s.workspace.activeSidePanel);
+      }, pid || void 0).ok;
+    }
+    function resetWorkspace(pid) {
+      work2.updateSession((s) => {
+        s.workspace = null;
+        s.panel = null;
+      }, pid || void 0);
+    }
+    function readExplorerFolds() {
+      return work2.peekSession().explorerFolds.slice();
+    }
+    function writeExplorerFolds(paths) {
+      work2.updateSession((s) => {
+        s.explorerFolds = stringList3(paths);
+      });
     }
     return {
-      code: "unknown",
-      retryable: false,
-      detail: String(err.message || err)
+      readReplTranscript,
+      writeReplTranscript,
+      readReplCommands,
+      writeReplCommands,
+      readFileFolds,
+      writeFileFolds,
+      readNotifications,
+      writeNotifications,
+      readUndoStack,
+      writeUndoStack,
+      clearUndoStack,
+      postTabMessage,
+      onTabMessage,
+      readSidePanel,
+      writeSidePanel,
+      readWorkspace: readWorkspace2,
+      writeWorkspace: writeWorkspace2,
+      resetWorkspace,
+      readExplorerFolds,
+      writeExplorerFolds
     };
   }
-  function reportCapacityFailure(classified) {
-    var already = saveBlocked;
-    saveBlocked = true;
-    lastSaveError = classified || { code: "capacity", retryable: false, detail: null };
-    if (already) return;
-    if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
-      globalThis.Toasts.error("Couldn\u2019t save: storage full.", {
-        duration: 0,
-        closable: true
+
+  // js/persist/sync/protocol.mjs
+  var MANIFEST_VERSION = 1;
+  function canonicalJson(value) {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+    const keys = Object.keys(value).filter((k) => value[k] !== void 0).sort();
+    return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonicalJson(value[k])).join(",") + "}";
+  }
+  var HASH = /^[0-9a-f]{64}$/;
+  function isHash(h) {
+    return typeof h === "string" && HASH.test(h);
+  }
+  function hex(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, "0");
+    return s;
+  }
+  async function sha256(text) {
+    const subtle = globalThis.crypto && globalThis.crypto.subtle;
+    if (!subtle) throw new Error("sync: Web Crypto is not available");
+    const digest = await subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
+    return hex(new Uint8Array(digest));
+  }
+  function emptyManifest() {
+    return { v: MANIFEST_VERSION, name: "", createdAt: 0, files: [], folders: [], suites: {} };
+  }
+  function stringList4(raw) {
+    const out = [];
+    if (!Array.isArray(raw)) return out;
+    for (const x of raw) {
+      if (typeof x === "string" && x && !out.includes(x)) out.push(x);
+    }
+    return out;
+  }
+  function normalizeManifest(raw) {
+    if (!raw || typeof raw !== "object" || raw.v !== MANIFEST_VERSION || !Array.isArray(raw.files)) return null;
+    if (typeof raw.name !== "string") return null;
+    const ids = /* @__PURE__ */ new Set();
+    const paths = /* @__PURE__ */ new Set();
+    const files2 = [];
+    for (const f of raw.files) {
+      if (!f || typeof f.id !== "string" || !f.id || typeof f.path !== "string" || !f.path || !isHash(f.hash)) return null;
+      if (ids.has(f.id) || paths.has(f.path)) return null;
+      ids.add(f.id);
+      paths.add(f.path);
+      files2.push({ id: f.id, path: f.path, hash: f.hash });
+    }
+    const suites = {};
+    if (raw.suites && typeof raw.suites === "object" && !Array.isArray(raw.suites)) {
+      for (const dir of Object.keys(raw.suites).sort()) {
+        const list3 = stringList4(raw.suites[dir]);
+        if (list3.length) suites[dir] = list3;
+      }
+    }
+    return {
+      v: MANIFEST_VERSION,
+      name: raw.name,
+      createdAt: typeof raw.createdAt === "number" && raw.createdAt > 0 ? raw.createdAt : 0,
+      files: files2,
+      folders: stringList4(raw.folders).sort(),
+      suites
+    };
+  }
+  function manifestOf(meta, tree, hashes) {
+    return normalizeManifest({
+      v: MANIFEST_VERSION,
+      name: meta.name,
+      createdAt: meta.createdAt,
+      files: tree.files.map((f) => ({ id: f.id, path: f.name, hash: hashes[f.id] })),
+      folders: tree.folders,
+      suites: tree.suites
+    });
+  }
+  function sameManifest(a, b) {
+    return canonicalJson(a) === canonicalJson(b);
+  }
+  function filesById(manifest) {
+    const m = /* @__PURE__ */ new Map();
+    for (const f of manifest.files) m.set(f.id, f);
+    return m;
+  }
+
+  // js/persist/sync/merge-project.mjs
+  function sameList(a, b) {
+    return a.length === b.length && a.every((x, i) => x === b[i]);
+  }
+  function pick(base, mine, theirs, same) {
+    if (same(mine, theirs)) return mine;
+    if (same(mine, base)) return theirs;
+    return mine;
+  }
+  var is = (a, b) => a === b;
+  function mergeProject(a) {
+    const B = filesById(a.base);
+    const M = filesById(a.mine);
+    const T = filesById(a.theirs);
+    const conflicted = a.conflicted || /* @__PURE__ */ new Set();
+    const needs = /* @__PURE__ */ new Set();
+    const out = [];
+    const conflicts = [];
+    const notices = [];
+    const copies = [];
+    function need(hash) {
+      const t = a.text(hash);
+      if (t === void 0) needs.add(hash);
+      return t;
+    }
+    const changedHere = (id, m, b) => conflicted.has(id) || m.hash !== b.hash || m.path !== b.path;
+    const changedThere = (t, b) => t.hash !== b.hash || t.path !== b.path;
+    const order2 = [...T.keys()];
+    for (const id of M.keys()) if (!T.has(id)) order2.push(id);
+    for (const id of order2) {
+      const b = B.get(id);
+      const m = M.get(id);
+      const t = T.get(id);
+      if (m && t) {
+        const path = pick(b ? b.path : void 0, m.path, t.path, is);
+        const mine = a.mineTexts[id];
+        if (m.hash === t.hash || b && t.hash === b.hash) {
+          out.push({ id, path, text: mine });
+        } else if (b && m.hash === b.hash) {
+          const theirs = need(t.hash);
+          if (theirs !== void 0) out.push({ id, path, text: theirs });
+        } else {
+          const baseText = b ? need(b.hash) : "";
+          const theirs = need(t.hash);
+          if (baseText === void 0 || theirs === void 0) continue;
+          const r = merge3(baseText, mine, theirs);
+          if (r.ok) {
+            out.push({ id, path, text: r.text });
+          } else {
+            out.push({ id, path, text: theirs });
+            if (conflicted.has(id)) {
+              copies.push({ of: id, text: mine });
+            } else {
+              conflicts.push({ id, base: baseText, mine, theirs });
+              notices.push({ kind: "conflict", path });
+            }
+          }
+        }
+      } else if (m) {
+        if (!b) {
+          out.push({ id, path: m.path, text: a.mineTexts[id] });
+        } else if (changedHere(id, m, b)) {
+          out.push({ id, path: m.path, text: a.mineTexts[id] });
+          notices.push({ kind: "kept", path: m.path });
+        }
+      } else if (t) {
+        if (!b || changedThere(t, b)) {
+          const theirs = need(t.hash);
+          if (theirs === void 0) continue;
+          out.push({ id, path: t.path, text: theirs });
+          if (b) notices.push({ kind: "restored", path: t.path });
+        }
+      }
+    }
+    if (needs.size) return { needs: [...needs] };
+    for (const c of copies) {
+      const at = out.findIndex((f) => f.id === c.of);
+      out.splice(at + 1, 0, { id: a.newFileId(), path: out[at].path, text: c.text, copyOf: c.of });
+    }
+    const taken = new Set(out.map((f) => f.path));
+    const seen = /* @__PURE__ */ new Set();
+    for (const f of out) {
+      if (seen.has(f.path)) {
+        const from2 = f.path;
+        f.path = conflictedCopyName(from2, taken);
+        taken.add(f.path);
+        notices.push({ kind: f.copyOf ? "copied" : "renamed", path: f.path, from: from2 });
+      }
+      seen.add(f.path);
+      delete f.copyOf;
+    }
+    const bf = new Set(a.base.folders);
+    const mf = new Set(a.mine.folders);
+    const tf = new Set(a.theirs.folders);
+    const folders = [.../* @__PURE__ */ new Set([...a.theirs.folders, ...a.mine.folders])].filter((x) => mf.has(x) && tf.has(x) || mf.has(x) && !bf.has(x) || tf.has(x) && !bf.has(x)).filter((x) => !out.some((f) => f.path.startsWith(x + "/"))).sort();
+    const suites = {};
+    const dirs = /* @__PURE__ */ new Set([...Object.keys(a.base.suites), ...Object.keys(a.mine.suites), ...Object.keys(a.theirs.suites)]);
+    for (const dir of [...dirs].sort()) {
+      const v = pick(a.base.suites[dir] || [], a.mine.suites[dir] || [], a.theirs.suites[dir] || [], sameList);
+      if (v.length) suites[dir] = v.slice();
+    }
+    return {
+      project: {
+        name: pick(a.base.name, a.mine.name, a.theirs.name, is),
+        createdAt: a.theirs.createdAt || a.mine.createdAt,
+        files: out,
+        folders,
+        suites
+      },
+      conflicts,
+      notices
+    };
+  }
+
+  // js/persist/sync/settings-sync.mjs
+  function cleanSyncedValues(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const id of Object.keys(raw).sort()) {
+      const row = settingRow(id);
+      if (!isSyncedSetting(row)) continue;
+      const v = normalizeSetting(row, raw[id]);
+      if (v !== void 0 && !sameValue(v, row.default)) out[id] = v;
+    }
+    return out;
+  }
+  function sameValues(a, b) {
+    const ka = Object.keys(a);
+    return ka.length === Object.keys(b).length && ka.every((id) => id in b && sameValue(a[id], b[id]));
+  }
+  function mergeSettingValues(base, mine, theirs) {
+    const out = {};
+    const ids = /* @__PURE__ */ new Set([...Object.keys(base), ...Object.keys(mine), ...Object.keys(theirs)]);
+    for (const id of [...ids].sort()) {
+      const b = base[id];
+      const m = mine[id];
+      const t = theirs[id];
+      const v = sameValue(m, t) ? m : sameValue(m, b) ? t : m;
+      if (v !== void 0) out[id] = v;
+    }
+    return out;
+  }
+  function readRecord(store3, account) {
+    const r = store3.get(SETTINGS_SYNC_KEY);
+    if (!r || typeof r !== "object" || r.account !== account) return null;
+    const pending = r.pending && typeof r.pending === "object" && typeof r.pending.id === "string" ? { id: r.pending.id, base: Number(r.pending.base) || 0, values: cleanSyncedValues(r.pending.values) } : null;
+    return {
+      account,
+      version: Number.isInteger(r.version) && r.version > 0 ? r.version : 0,
+      values: cleanSyncedValues(r.values),
+      pending
+    };
+  }
+  function createSettingsSync(o) {
+    const { store: store3, account } = o;
+    const attempts = o.attempts || 8;
+    function writeRecord(rec) {
+      const res = store3.set(SETTINGS_SYNC_KEY, rec);
+      if (!res.ok) throw Object.assign(new Error("sync: could not record the settings sync"), { storage: res.error });
+    }
+    function local() {
+      const rec = store3.get(SETTINGS_KEY);
+      return cleanSyncedValues(rec && rec.values);
+    }
+    function apply2(values) {
+      const rec = store3.get(SETTINGS_KEY);
+      const cur = rec && rec.values && typeof rec.values === "object" ? rec.values : {};
+      const next = {};
+      for (const id of Object.keys(cur)) {
+        const row = settingRow(id);
+        if (row && !isSyncedSetting(row)) next[id] = cur[id];
+      }
+      Object.assign(next, values);
+      const res = store3.applyRemote(SETTINGS_KEY, { values: next });
+      if (!res.ok) throw Object.assign(new Error("sync: could not apply synced settings"), { storage: res.error });
+    }
+    function normalizeHead(raw) {
+      if (raw == null) return null;
+      if (typeof raw !== "object" || !Number.isInteger(raw.version) || raw.version < 1) {
+        throw new Error("sync: the server sent settings this version cannot read");
+      }
+      return { version: raw.version, values: cleanSyncedValues(raw.values) };
+    }
+    async function sync() {
+      if (!o.settings.get("syncSettings")) return { status: "off" };
+      for (let i = 0; i < attempts; i++) {
+        const rec = readRecord(store3, account);
+        if (rec && rec.pending) {
+          const res = await o.call("commitSettings", rec.pending);
+          writeRecord(res && res.ok ? { account, version: res.version, values: rec.pending.values, pending: null } : { account, version: rec.version, values: rec.values, pending: null });
+          continue;
+        }
+        const head = normalizeHead(await o.call("settings"));
+        const mine = local();
+        if (!head || rec && head.version === rec.version) {
+          const synced = head ? rec.values : null;
+          if (synced ? sameValues(mine, synced) : !Object.keys(mine).length) return { status: "clean" };
+          const kept = { account, version: rec ? rec.version : 0, values: rec ? rec.values : {} };
+          const pending = { id: o.commitId(), base: head ? head.version : 0, values: mine };
+          writeRecord({ ...kept, pending });
+          const res = await o.call("commitSettings", pending);
+          if (res && res.ok) {
+            writeRecord({ account, version: res.version, values: mine, pending: null });
+            return { status: "pushed", version: res.version };
+          }
+          writeRecord({ ...kept, pending: null });
+          continue;
+        }
+        const merged = mergeSettingValues(rec ? rec.values : {}, mine, head.values);
+        if (!sameValues(merged, mine)) apply2(merged);
+        writeRecord({ account, version: head.version, values: head.values, pending: null });
+      }
+      return { status: "busy" };
+    }
+    return { sync };
+  }
+
+  // js/persist/sync/engine.mjs
+  var ATTEMPTS = 8;
+  function unreachable(method, err) {
+    const e = new Error("sync: " + method + " could not reach the server" + (err && err.message ? " (" + err.message + ")" : ""));
+    e.offline = true;
+    e.cause = err;
+    return e;
+  }
+  function bad(what) {
+    return new Error("sync: " + what);
+  }
+  function refused(res) {
+    return Object.assign(new Error("sync: the server refused (" + res.error + ")"), { code: res.error });
+  }
+  function storageFailure(what) {
+    return Object.assign(new Error("sync: storage refused " + what), { storage: true });
+  }
+  function normalizeRecord(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    let version2 = Number.isInteger(raw.version) && raw.version > 0 ? raw.version : 0;
+    const manifest = version2 && raw.manifest ? normalizeManifest(raw.manifest) : null;
+    if (!manifest) version2 = 0;
+    let pending = null;
+    if (raw.pending && typeof raw.pending === "object" && typeof raw.pending.id === "string" && raw.pending.id) {
+      const m = normalizeManifest(raw.pending.manifest);
+      const base = Number.isInteger(raw.pending.base) && raw.pending.base >= 0 ? raw.pending.base : -1;
+      if (m && base >= 0) pending = { id: raw.pending.id, base, manifest: m };
+    }
+    return { version: version2, manifest, pending };
+  }
+  function readHead(raw) {
+    if (raw == null) return null;
+    if (typeof raw !== "object" || !Number.isInteger(raw.version) || raw.version < 1) throw bad("the server sent a head this version cannot read");
+    const deleted = raw.deleted === true;
+    const manifest = deleted ? null : normalizeManifest(raw.manifest);
+    if (!deleted && !manifest) throw bad("the server sent a manifest this version cannot read");
+    return { version: raw.version, deleted, manifest, commit: typeof raw.commit === "string" ? raw.commit : null };
+  }
+  function readHeads(raw) {
+    if (!Array.isArray(raw)) throw bad("the server sent a project list this version cannot read");
+    const out = [];
+    for (const h of raw) {
+      if (!h || typeof h.id !== "string" || !h.id || !Number.isInteger(h.version) || h.version < 1) continue;
+      out.push({ id: h.id, version: h.version, deleted: h.deleted === true });
+    }
+    return out;
+  }
+  function createSyncEngine(opts) {
+    const { store: store3, work: work2, transport, account } = opts;
+    if (!account) throw new Error("sync: an engine syncs one account; none was given");
+    const hash = opts.hash || sha256;
+    const notify = opts.notify || (() => {
+    });
+    const commitId = opts.commitId || (() => newId("c"));
+    const trace = opts.trace || (() => {
+    });
+    function moved(pid, at) {
+      trace({ kind: "moved", pid, at });
+      return null;
+    }
+    const hashed = /* @__PURE__ */ new Map();
+    async function call(method, ...args) {
+      try {
+        return await transport[method](...args);
+      } catch (err) {
+        throw unreachable(method, err);
+      }
+    }
+    async function hashFile(pid, fid, text) {
+      const key = pid + "/" + fid;
+      const known = hashed.get(key);
+      if (known && known.text === text) return known.hash;
+      const h = await hash(text);
+      hashed.set(key, { text, hash: h });
+      return h;
+    }
+    function readRecord2(pid) {
+      return normalizeRecord(store3.get(syncKey(pid)));
+    }
+    function writeRecord(pid, rec) {
+      if (!store3.set(syncKey(pid), rec).ok) throw storageFailure("the sync record");
+    }
+    async function localSide(pid) {
+      const snap = work2.snapshotProject(pid);
+      if (!snap) return null;
+      const hashes = {};
+      for (const f of snap.tree.files) hashes[f.id] = await hashFile(pid, f.id, snap.texts[f.id]);
+      snap.hashes = hashes;
+      snap.manifest = manifestOf(snap.meta, snap.tree, hashes);
+      return snap;
+    }
+    function unchangedSince(pid, snap) {
+      const now = work2.snapshotProject(pid);
+      if (!now) return false;
+      if (now.meta.name !== snap.meta.name || now.meta.createdAt !== snap.meta.createdAt || now.meta.owner !== snap.meta.owner) return false;
+      if (JSON.stringify(now.tree) !== JSON.stringify(snap.tree)) return false;
+      for (const f of now.tree.files) if (now.texts[f.id] !== snap.texts[f.id]) return false;
+      if (now.conflicted.size !== snap.conflicted.size) return false;
+      for (const id of now.conflicted) if (!snap.conflicted.has(id)) return false;
+      return true;
+    }
+    async function fetchTexts(pid, wanted) {
+      const got = /* @__PURE__ */ new Map();
+      if (!wanted.length) return got;
+      const res = await call("blobs", pid, wanted);
+      for (const h of wanted) {
+        const text = res && typeof res[h] === "string" ? res[h] : void 0;
+        if (text === void 0) throw bad("the server is missing a file its version lists");
+        if (await hash(text) !== h) throw bad("a file arrived damaged");
+        got.set(h, text);
+      }
+      return got;
+    }
+    function settle(pid, kept, pending, res) {
+      if (res && res.ok && Number.isInteger(res.version) && res.version > 0) {
+        writeRecord(pid, { version: res.version, manifest: pending.manifest, pending: null });
+        return true;
+      }
+      if (res && res.error) throw refused(res);
+      writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending: null });
+      return false;
+    }
+    async function push2(pid, local, rec, base) {
+      const texts = /* @__PURE__ */ new Map();
+      for (const f of local.tree.files) texts.set(local.hashes[f.id], local.texts[f.id]);
+      const missing = await call("missing", pid, [...texts.keys()]);
+      if (!Array.isArray(missing)) throw bad("the server sent an answer this version cannot read");
+      if (missing.length) {
+        const up = {};
+        for (const h of missing) {
+          if (!texts.has(h)) throw bad("the server asked for a file this version never named");
+          up[h] = texts.get(h);
+        }
+        const res = await call("putBlobs", pid, up);
+        if (res && res.error) throw refused(res);
+        if (!res || !res.ok) throw bad("the server did not take the files");
+      }
+      const kept = { version: rec ? rec.version : 0, manifest: rec ? rec.manifest : null };
+      const pending = { id: commitId(), base, manifest: local.manifest };
+      writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending });
+      return settle(pid, kept, pending, await call("commit", pid, pending));
+    }
+    async function pull(pid, local, rec, head) {
+      const theirs = head.manifest;
+      const base = rec && rec.version ? rec.manifest : emptyManifest();
+      const texts = /* @__PURE__ */ new Map();
+      for (const f of local.tree.files) texts.set(local.hashes[f.id], local.texts[f.id]);
+      for (let fetched = false; ; ) {
+        const r = mergeProject({
+          base,
+          mine: local.manifest,
+          mineTexts: local.texts,
+          theirs,
+          text: (h) => texts.get(h),
+          conflicted: local.conflicted,
+          newFileId: () => work2.newFileId(pid)
+        });
+        if (r.needs) {
+          if (fetched) throw bad("a merge needed a file the server did not send");
+          for (const [h, t] of await fetchTexts(pid, r.needs)) texts.set(h, t);
+          fetched = true;
+          continue;
+        }
+        if (!unchangedSince(pid, local)) return moved(pid, "merge");
+        if (!work2.applyProject(pid, r.project, { conflicts: r.conflicts })) throw storageFailure("a merged project");
+        writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
+        for (const n of r.notices) notify(Object.assign({ pid, project: r.project.name }, n));
+        return;
+      }
+    }
+    async function download(pid, head) {
+      const theirs = head.manifest;
+      const got = await fetchTexts(pid, [...new Set(theirs.files.map((f) => f.hash))]);
+      if (work2.snapshotProject(pid) || work2.readTombstones()[pid]) return moved(pid, "download");
+      const project = {
+        name: theirs.name,
+        createdAt: theirs.createdAt,
+        files: theirs.files.map((f) => ({ id: f.id, path: f.path, text: got.get(f.hash) })),
+        folders: theirs.folders,
+        suites: theirs.suites
+      };
+      if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("a downloaded project");
+      writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
+      return { status: "downloaded" };
+    }
+    async function settleTombstone(pid, tomb, head) {
+      if (!head || head.deleted) {
+        work2.dropTombstone(pid);
+        return { status: "deleted" };
+      }
+      if (head.version === tomb.version || tomb.pending && head.commit === tomb.pending) {
+        const res = await call("remove", pid, { id: commitId(), base: head.version });
+        if (res && res.ok) {
+          work2.dropTombstone(pid);
+          return { status: "deleted" };
+        }
+        if (res && res.error) throw refused(res);
+        return null;
+      }
+      work2.dropTombstone(pid);
+      notify({ kind: "project-restored", pid, project: head.manifest.name });
+      return null;
+    }
+    async function step2(pid, hint) {
+      const rec = readRecord2(pid);
+      if (rec && rec.pending) {
+        const res = await call("commit", pid, rec.pending);
+        settle(pid, rec, rec.pending, res);
+        return null;
+      }
+      const tomb = work2.readTombstones()[pid];
+      const local = await localSide(pid);
+      if (local && local.meta.owner !== account) return { status: "not-ours" };
+      if (local && !local.manifest) return { status: "error", message: "two files share a path" };
+      if (hint && local && rec && rec.version && !tomb && !hint.deleted && hint.version === rec.version && sameManifest(local.manifest, rec.manifest)) {
+        return { status: "clean" };
+      }
+      const head = readHead(await call("head", pid));
+      if (!local) {
+        if (tomb && tomb.owner === account) return settleTombstone(pid, tomb, head);
+        if (!head || head.deleted) return { status: "absent" };
+        return download(pid, head);
+      }
+      if (!head) {
+        return await push2(pid, local, rec, 0) ? { status: "pushed" } : null;
+      }
+      const synced = rec && rec.version ? rec : null;
+      if (head.deleted) {
+        if (synced && sameManifest(local.manifest, synced.manifest) && !local.conflicted.size) {
+          if (!unchangedSince(pid, local)) return moved(pid, "forget");
+          work2.forgetProject(pid);
+          notify({ kind: "project-deleted", pid, project: local.meta.name });
+          return { status: "forgot" };
+        }
+        if (!await push2(pid, local, rec, head.version)) return null;
+        notify({ kind: "project-kept", pid, project: local.meta.name });
+        return { status: "restored" };
+      }
+      if (synced && head.version === synced.version) {
+        if (sameManifest(local.manifest, synced.manifest)) return { status: "clean" };
+        return await push2(pid, local, rec, head.version) ? { status: "pushed" } : null;
+      }
+      await pull(pid, local, rec, head);
+      return null;
+    }
+    async function syncProject(pid, hint) {
+      for (let i = 0; i < ATTEMPTS; i++) {
+        const r = await step2(pid, i === 0 ? hint : null);
+        if (r) return Object.assign({ pid }, r);
+      }
+      return { pid, status: "busy" };
+    }
+    const settingsSync = createSettingsSync({
+      store: store3,
+      settings: opts.settings,
+      account,
+      commitId,
+      call
+    });
+    async function syncAll() {
+      const heads = readHeads(await call("heads"));
+      const byId2 = new Map(heads.map((h) => [h.id, h]));
+      const ids = /* @__PURE__ */ new Set();
+      for (const p of work2.allProjects()) if (p.owner === account) ids.add(p.id);
+      const tombs = work2.readTombstones();
+      for (const pid of Object.keys(tombs)) if (tombs[pid].owner === account) ids.add(pid);
+      for (const h of heads) if (!h.deleted) ids.add(h.id);
+      const projects = {};
+      for (const pid of [...ids].sort()) {
+        try {
+          projects[pid] = await syncProject(pid, byId2.get(pid) || null);
+        } catch (err) {
+          if (err && err.offline) throw err;
+          projects[pid] = { pid, status: "error", message: String(err && err.message || err) };
+        }
+      }
+      let settings2;
+      try {
+        settings2 = await settingsSync.sync();
+      } catch (err) {
+        if (err && err.offline) throw err;
+        settings2 = { status: "error", message: String(err && err.message || err) };
+      }
+      return { projects, settings: settings2 };
+    }
+    return { account, syncAll, syncProject, syncSettings: settingsSync.sync };
+  }
+
+  // js/persist/sync/runner.mjs
+  var SYNC_LOCK = "beljar/sync";
+  function createSyncRunner(o) {
+    const engine = o.engine;
+    const timers = o.timers || {
+      set: (fn, ms) => globalThis.setTimeout(fn, ms),
+      clear: (h) => globalThis.clearTimeout(h)
+    };
+    const now = o.now || (() => Date.now());
+    const quietMs = o.quietMs != null ? o.quietMs : 5e3;
+    const maxWaitMs = o.maxWaitMs != null ? o.maxWaitMs : 3e4;
+    const pollMs = o.pollMs != null ? o.pollMs : 6e4;
+    const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
+    const listeners2 = /* @__PURE__ */ new Set();
+    let status = { state: "waiting", leader: false, lastSync: 0, error: null };
+    let leader = false;
+    let stopped = false;
+    let running2 = null;
+    let again = false;
+    let timer2 = null;
+    let firstChange = 0;
+    let failures = 0;
+    let release = null;
+    let abort = null;
+    let unsubscribe = null;
+    function update(patch) {
+      status = Object.assign({}, status, patch);
+      for (const fn of [...listeners2]) {
+        try {
+          fn(status);
+        } catch (_) {
+        }
+      }
+    }
+    function wakeIn(ms) {
+      if (timer2 != null) timers.clear(timer2);
+      timer2 = timers.set(() => {
+        timer2 = null;
+        round();
+      }, Math.max(0, ms));
+    }
+    function changed() {
+      if (!leader || stopped) return;
+      const t = now();
+      if (!firstChange) firstChange = t;
+      wakeIn(Math.min(quietMs, maxWaitMs - (t - firstChange)));
+    }
+    function problems(res) {
+      const out = [];
+      for (const r of Object.values(res.projects || {})) if (r.status === "error") out.push(r.message);
+      if (res.settings && res.settings.status === "error") out.push(res.settings.message);
+      return out;
+    }
+    function round() {
+      if (!leader || stopped) return Promise.resolve(null);
+      if (running2) {
+        again = true;
+        return running2;
+      }
+      firstChange = 0;
+      if (timer2 != null) {
+        timers.clear(timer2);
+        timer2 = null;
+      }
+      update({ state: "syncing" });
+      running2 = engine.syncAll().then((res) => {
+        failures = 0;
+        const errs = problems(res);
+        update({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res });
+        return res;
+      }, (err) => {
+        failures += 1;
+        update({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err) });
+        return null;
+      }).then((res) => {
+        running2 = null;
+        if (stopped) return res;
+        if (again) {
+          again = false;
+          round();
+        } else {
+          wakeIn(failures ? backoff[Math.min(failures, backoff.length) - 1] : pollMs);
+        }
+        return res;
       });
+      return running2;
+    }
+    return {
+      SYNC_LOCK,
+      /** Ask for the lock, and listen for changes (heard only while holding it). */
+      start() {
+        if (unsubscribe) return;
+        unsubscribe = o.store.subscribe((e) => {
+          if (e.origin === "remote") return;
+          if (e.cls === "work" || e.cls === "settings" || e.key === TOMBSTONES_KEY) changed();
+        });
+        const locks = o.locks;
+        if (!locks || typeof locks.request !== "function") {
+          update({ state: "unsupported" });
+          return;
+        }
+        abort = typeof AbortController === "function" ? new AbortController() : null;
+        Promise.resolve(locks.request(SYNC_LOCK, abort ? { signal: abort.signal } : {}, () => {
+          if (stopped) return void 0;
+          leader = true;
+          update({ state: "idle", leader: true });
+          round();
+          return new Promise((resolve2) => {
+            release = resolve2;
+          });
+        })).catch(() => {
+        });
+      },
+      /**
+       * Sync now (this tab must hold the lock). Resolves to the result of a round
+       * that STARTED after this call, or null: a round already running may have
+       * begun before the change the caller wants synced.
+       */
+      async syncNow() {
+        if (running2) {
+          again = true;
+          await running2;
+          if (running2) return running2;
+        }
+        return round();
+      },
+      status() {
+        return status;
+      },
+      /** fn(status) on every change: { state, leader, lastSync, error, result }. */
+      subscribe(fn) {
+        listeners2.add(fn);
+        return () => listeners2.delete(fn);
+      },
+      /**
+       * Stop, and resolve once a round in flight has finished: nothing sync does
+       * lands after this resolves (signing out removes projects right after).
+       */
+      stop() {
+        stopped = true;
+        if (timer2 != null) {
+          timers.clear(timer2);
+          timer2 = null;
+        }
+        if (unsubscribe) {
+          unsubscribe();
+          unsubscribe = null;
+        }
+        if (abort) abort.abort();
+        if (release) release();
+        leader = false;
+        update({ state: "stopped", leader: false });
+        return Promise.resolve(running2).then(() => void 0);
+      }
+    };
+  }
+
+  // js/persist/durability.mjs
+  var WORK_TO_LOSE = 200;
+  var ASK_EVERY = 30 * 24 * 60 * 60 * 1e3;
+  var RECOUNT_MS = 5e3;
+  function countWork(work2, limit) {
+    let n = 0;
+    for (const p of work2.allProjects()) {
+      if (p.owner !== null) continue;
+      const snap = work2.snapshotProject(p.id);
+      if (!snap) continue;
+      for (const f of snap.tree.files) {
+        n += String(snap.texts[f.id]).replace(/\s+/g, "").length;
+        if (n >= limit) return n;
+      }
+    }
+    return n;
+  }
+  function createDurability(o) {
+    const now = o.now || (() => Date.now());
+    const timers = o.timers || {
+      set: (fn, ms) => globalThis.setTimeout(fn, ms),
+      clear: (h) => globalThis.clearTimeout(h)
+    };
+    const state2 = { persisted: null, workToLose: false, asked: false, warned: false };
+    let unsubscribe = null;
+    let recount = null;
+    let onClick2 = null;
+    let disposed = false;
+    function warnIfAtRisk() {
+      if (!o.sevenDayRule || state2.persisted || o.device.get("durabilityWarnedAt")) return;
+      o.device.set("durabilityWarnedAt", now());
+      state2.warned = true;
+      o.warn();
+    }
+    function settle(granted) {
+      state2.persisted = !!granted;
+      if (!state2.persisted) warnIfAtRisk();
+    }
+    function askAtNextClick() {
+      if (onClick2 || !o.events) return;
+      onClick2 = () => {
+        o.events.removeEventListener("pointerdown", onClick2, true);
+        onClick2 = null;
+        if (disposed || askedLately()) return;
+        o.device.set("persistAskedAt", now());
+        state2.asked = true;
+        let answer;
+        try {
+          answer = o.storage.persist();
+        } catch (err) {
+          answer = Promise.reject(err);
+        }
+        Promise.resolve(answer).then(settle, () => settle(false));
+      };
+      o.events.addEventListener("pointerdown", onClick2, true);
+    }
+    function askedLately() {
+      const last = o.device.get("persistAskedAt");
+      return !!last && now() - last < ASK_EVERY;
+    }
+    function thereIsWork() {
+      state2.workToLose = true;
+      const canAsk = !!(o.storage && typeof o.storage.persist === "function");
+      if (canAsk && !askedLately()) askAtNextClick();
+      else warnIfAtRisk();
+    }
+    function count() {
+      if (state2.workToLose || disposed) return;
+      if (countWork(o.work, WORK_TO_LOSE) < WORK_TO_LOSE) return;
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+      thereIsWork();
+    }
+    return {
+      /** Learn whether the browser already keeps the storage; then wait for work to lose. */
+      async start() {
+        try {
+          state2.persisted = !!(o.storage && typeof o.storage.persisted === "function" && await o.storage.persisted());
+        } catch (_) {
+          state2.persisted = false;
+        }
+        if (state2.persisted || disposed) return;
+        count();
+        if (state2.workToLose) return;
+        unsubscribe = o.store.subscribe((e) => {
+          if (e.cls !== "work" || recount != null) return;
+          recount = timers.set(() => {
+            recount = null;
+            count();
+          }, RECOUNT_MS);
+        });
+      },
+      /** { persisted: true | false | null (not known yet), workToLose, asked, warned } */
+      status() {
+        return Object.assign({}, state2);
+      },
+      dispose() {
+        disposed = true;
+        if (unsubscribe) {
+          unsubscribe();
+          unsubscribe = null;
+        }
+        if (recount != null) {
+          timers.clear(recount);
+          recount = null;
+        }
+        if (onClick2 && o.events) o.events.removeEventListener("pointerdown", onClick2, true);
+        onClick2 = null;
+      }
+    };
+  }
+
+  // js/persist/persist.mjs
+  var CAPACITY_DEDUPE = "persist.capacity";
+  function reportCapacityFailure(detail2) {
+    if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
+      globalThis.Toasts.error("Couldn\u2019t save: storage full.", { duration: 0, closable: true });
     }
     if (typeof globalThis.Notifications !== "undefined" && globalThis.Notifications.emit) {
       globalThis.Notifications.emit({
@@ -3766,16 +3925,38 @@
         origin: "local",
         title: "Couldn\u2019t save: storage full",
         body: "Your last successful save is intact. Newer edits may be lost on reload until browser storage frees up.",
-        detail: classified && classified.detail ? classified.detail : null,
+        detail: detail2 || null,
         source: "persist.capacity",
         dedupeKey: CAPACITY_DEDUPE
       });
     }
   }
+  function whenPageReady(fn) {
+    if (typeof document !== "undefined" && document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", fn, { once: true });
+    } else {
+      setTimeout(fn, 0);
+    }
+  }
+  function announceReadOnly(message2) {
+    whenPageReady(function() {
+      var C2 = globalThis.ConfirmDialog;
+      if (C2 && typeof C2.confirm === "function") {
+        C2.confirm({
+          ariaLabel: "Reload BelJar",
+          message: message2,
+          confirmLabel: "Reload",
+          cancelLabel: "Not now",
+          danger: false
+        }).then(function(yes) {
+          if (yes && globalThis.location && typeof globalThis.location.reload === "function") globalThis.location.reload();
+        });
+      } else if (globalThis.Toasts && typeof globalThis.Toasts.error === "function") {
+        globalThis.Toasts.error(message2, { duration: 0, closable: true });
+      }
+    });
+  }
   function clearCapacityFailure() {
-    if (!saveBlocked && !lastSaveError) return;
-    saveBlocked = false;
-    lastSaveError = null;
     var N = globalThis.Notifications;
     if (!N || typeof N.list !== "function" || typeof N.dismiss !== "function") return;
     var list3 = N.list();
@@ -3786,1333 +3967,307 @@
       }
     }
   }
-  function isSaveBlocked() {
-    return !!saveBlocked;
-  }
-  function writeState(backend, state2) {
-    var b = backend || defaultBackend;
-    var key = stateKeyFor(state2.meta && state2.meta.documentId);
+  function browserArea(name) {
     try {
-      b.saveSync(key, JSON.stringify(state2));
-      clearCapacityFailure();
-      return { ok: true };
-    } catch (err) {
-      var classified = classifyPersistError(err);
-      if (classified.code !== "capacity") {
-        lastSaveError = classified;
-        return { ok: false, error: classified };
+      var area = globalThis[name];
+      if (area) {
+        area.getItem("beljar/schema");
+        return area;
       }
-      if (state2.semantic) {
-        state2.semantic = trimSemanticForQuota(state2.semantic);
-        try {
-          b.saveSync(key, JSON.stringify(state2));
-          clearCapacityFailure();
-          return { ok: true };
-        } catch (err2) {
-          classified = classifyPersistError(err2);
-          if (classified.code !== "capacity") {
-            lastSaveError = classified;
-            return { ok: false, error: classified };
-          }
-        }
-      }
-      reportCapacityFailure(classified);
-      return { ok: false, error: classified };
+    } catch (_) {
     }
+    return null;
   }
-  function createPersist(opts) {
-    opts = opts || {};
-    var backend = opts.backend || defaultBackend;
-    var documentId = opts.documentId || DEFAULT_DOCUMENT_ID;
-    var debounceMs = opts.debounceMs != null ? opts.debounceMs : readStoredAutosaveDelay();
-    var state2 = readStateForId(backend, documentId);
-    var saveTimer3 = null;
-    var providers3 = null;
-    function collectSemantic() {
-      if (!providers3 || typeof providers3.getSemantic !== "function") return state2.semantic;
-      var exported = providers3.getSemantic();
-      if (!exported) return state2.semantic;
-      var text = state2.editor.text;
-      var docFp = typeof providers3.getDocFp === "function" ? providers3.getDocFp(text) : documentFingerprint(text);
-      var belugaBuild = typeof providers3.getBelugaBuild === "function" ? providers3.getBelugaBuild() : readStoredBelugaMode();
-      var scopeKey = typeof exported.scopeKey === "string" ? exported.scopeKey : typeof providers3.getScopeKey === "function" ? providers3.getScopeKey() : "";
-      var semantic = {
-        docFp,
-        scopeKey,
-        belugaBuild,
-        types: exported.types || { v: 1, decls: [], metavars: [], reconstructed: [] },
-        identity: exported.identity || [],
-        deriveAttempted: exported.deriveAttempted || []
-      };
-      return semanticHasPayload(semantic) ? semantic : null;
+  var sessionArea = browserArea("sessionStorage");
+  var store = createStore({
+    storage: browserArea("localStorage") || createMemoryStorage(),
+    alsoWipe: [sessionArea].filter(Boolean),
+    onCapacity: function(state2, detail2) {
+      if (state2 === "blocked") reportCapacityFailure(detail2);
+      else clearCapacityFailure();
+    },
+    onVersionAhead: function() {
+      announceReadOnly("BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.");
+    },
+    onCannotUpgrade: function() {
+      announceReadOnly("This BelJar can\u2019t open what an older one saved, so it changed nothing. Changes here are not being saved.");
     }
-    function collectLocal() {
-      if (providers3 && typeof providers3.getViewport === "function") {
-        return normalizeLocal(providers3.getViewport());
+  });
+  var tabStore = createStore({ storage: sessionArea || createMemoryStorage() });
+  var Settings2 = createSettings(store);
+  var Device2 = createTable(store, {
+    key: DEVICE_KEY,
+    rows: DEVICE,
+    unknown: function(id) {
+      return 'device: no row "' + id + '" (declare it in device-schema.mjs)';
+    }
+  });
+  var work = createWork({ store, device: Device2 });
+  var files = create({ work, settings: Settings2 });
+  var documents = createDocuments({ work, settings: Settings2, files });
+  var records = create2({ store, tabStore, work, settings: Settings2 });
+  var treeNoticeQueued = false;
+  var projectGoneShown = false;
+  function noteTreeChanged() {
+    if (treeNoticeQueued) return;
+    treeNoticeQueued = true;
+    Promise.resolve().then(function() {
+      treeNoticeQueued = false;
+      var g15 = typeof window !== "undefined" ? window : null;
+      if (g15 && typeof g15.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        g15.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       }
-      return state2.editor.local || {};
-    }
-    function collectEditorText() {
-      if (providers3 && typeof providers3.getText === "function") {
-        try {
-          var live2 = providers3.getText();
-          if (live2 != null) return String(live2);
-        } catch (_) {
-        }
-      }
-      return state2.editor.text;
-    }
-    function persistNow() {
-      clearTimeout(saveTimer3);
-      saveTimer3 = null;
-      state2.meta.updatedAt = Date.now();
-      state2.meta.revision += 1;
-      state2.editor.text = collectEditorText();
-      state2.editor.local = collectLocal();
-      state2.semantic = collectSemantic();
-      writeState(backend, state2);
-    }
-    function scheduleSave3() {
-      clearTimeout(saveTimer3);
-      var delay = opts.debounceMs != null ? debounceMs : readStoredAutosaveDelay();
-      saveTimer3 = globalThis.setTimeout(persistNow, delay);
-    }
-    function scheduleEditorPersist(text) {
-      if (text != null) state2.editor.text = String(text);
-      scheduleSave3();
-    }
-    function markEditorDirty() {
-      scheduleSave3();
-    }
-    function cancelPendingSave() {
-      clearTimeout(saveTimer3);
-      saveTimer3 = null;
-    }
-    function replaceEditorText(text) {
-      cancelPendingSave();
-      state2.editor.text = String(text != null ? text : "");
-    }
-    function flushCheckpoint() {
-      persistNow();
-    }
-    function hasPendingSave() {
-      return saveTimer3 != null;
-    }
-    function flushCheckpointIfDirty() {
-      if (saveTimer3 != null) persistNow();
-    }
-    function flushEditor() {
-      flushCheckpoint();
-    }
-    function exportSnapshot() {
-      return JSON.parse(JSON.stringify(state2));
-    }
-    function importSnapshot(snapshot, flush) {
-      state2 = normalizeLoaded(snapshot, documentId);
-      if (flush) persistNow();
-    }
-    function setCheckpointProviders(next) {
-      providers3 = next || null;
-    }
-    function setBackend(next) {
-      backend = next || defaultBackend;
-      state2 = readStateForId(backend, documentId);
-    }
-    function switchFile(newId2) {
-      if (!newId2) return null;
-      persistNow();
-      providers3 = null;
-      documentId = newId2;
-      state2 = readStateForId(backend, documentId);
-      return exportSnapshot();
-    }
-    function getCurrentFileId() {
-      return documentId;
-    }
-    return {
-      getEditorText: function() {
-        return state2.editor.text;
-      },
-      getEditorLocal: function() {
-        return normalizeLocal(state2.editor.local);
-      },
-      getSemanticCheckpoint: function() {
-        return state2.semantic ? JSON.parse(JSON.stringify(state2.semantic)) : null;
-      },
-      getInitialCheckpoint: exportSnapshot,
-      scheduleEditorPersist,
-      markEditorDirty,
-      cancelPendingSave,
-      replaceEditorText,
-      scheduleCheckpointSave: scheduleSave3,
-      flushCheckpoint,
-      flushCheckpointIfDirty,
-      hasPendingSave,
-      flushEditor,
-      exportSnapshot,
-      importSnapshot,
-      setCheckpointProviders,
-      setBackend,
-      switchFile,
-      getCurrentFileId,
-      /** @deprecated use setBackend */
-      setAdapter: function(adapter) {
-        if (!adapter) return;
-        setBackend({
-          loadSync: function(k) {
-            return adapter.getItem(k);
-          },
-          saveSync: function(k, v) {
-            adapter.setItem(k, v);
-          },
-          removeSync: function(k) {
-            adapter.removeItem(k);
-          }
+    });
+  }
+  function announceProjectGone() {
+    if (projectGoneShown) return;
+    projectGoneShown = true;
+    var message2 = "This project was deleted in another tab or on another device. Changes here can\u2019t be saved.";
+    whenPageReady(function() {
+      var C2 = globalThis.ConfirmDialog;
+      if (C2 && typeof C2.confirm === "function") {
+        C2.confirm({
+          ariaLabel: "Project deleted",
+          message: message2,
+          confirmLabel: "Open another project",
+          cancelLabel: "Not now",
+          danger: false
+        }).then(function(yes) {
+          if (yes && globalThis.location && typeof globalThis.location.reload === "function") globalThis.location.reload();
         });
+      } else if (globalThis.Toasts && typeof globalThis.Toasts.error === "function") {
+        globalThis.Toasts.error(message2, { duration: 0, closable: true });
       }
-    };
+    });
   }
-  function readStoredTheme() {
-    return _uiPrefsApi.readStoredTheme();
-  }
-  function writeStoredTheme(mode) {
-    return _uiPrefsApi.writeStoredTheme(mode);
-  }
-  function readStoredUiFontSize() {
-    return _uiPrefsApi.readStoredUiFontSize();
-  }
-  function writeStoredUiFontSize(size) {
-    return _uiPrefsApi.writeStoredUiFontSize(size);
-  }
-  function uiFontScaleForSize(size) {
-    return _uiPrefsApi.uiFontScaleForSize(size);
-  }
-  function applyStoredUiFontSize(doc2) {
-    return _uiPrefsApi.applyStoredUiFontSize(doc2);
-  }
-  function readStoredUiTextContrast() {
-    return _uiPrefsApi.readStoredUiTextContrast();
-  }
-  function writeStoredUiTextContrast(contrast) {
-    return _uiPrefsApi.writeStoredUiTextContrast(contrast);
-  }
-  function uiTextContrastMultiplierForLevel(contrast) {
-    return _uiPrefsApi.uiTextContrastMultiplierForLevel(contrast);
-  }
-  function applyStoredUiTextContrast(doc2) {
-    return _uiPrefsApi.applyStoredUiTextContrast(doc2);
-  }
-  var _settingsApi = create2({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    THEME_STORAGE_KEY,
-    UI_FONT_SIZE_KEY,
-    UI_TEXT_CONTRAST_KEY,
-    BELUGA_MODE_STORAGE_KEY,
-    DEFAULT_PROJECT_NAME,
-    ensureProject: function() {
-      return ensureProject();
+  store.subscribe(function(e) {
+    if (e.origin === "local" || !e.key) return;
+    var pid = work.pinnedProject();
+    var k = pid ? parseKey(e.key) : null;
+    if (!k || k.pid !== pid) return;
+    if (k.kind === "meta" && !work.hasProject(pid)) announceProjectGone();
+    else if (k.kind === "tree" || k.kind === "meta") noteTreeChanged();
+  });
+  var SYNC_NOTICES = {
+    conflict: function(n) {
+      return { kind: "warn", title: "Edits to " + n.path + " overlap another device\u2019s", body: "Open it to choose. Both versions are kept until you do." };
     },
-    getFileText: function(id) {
-      return getFileText(id);
+    copied: function(n) {
+      return { kind: "warn", title: "Saved this device\u2019s " + n.from + " as " + n.path, body: "Another device changed the same lines while a conflict here was still open." };
     },
-    readState,
-    defaultBackend,
-    stateKeyFor
-  });
-  function readStoredBelugaMode() {
-    return _settingsApi.readStoredBelugaMode.apply(_settingsApi, arguments);
-  }
-  function writeStoredBelugaMode() {
-    return _settingsApi.writeStoredBelugaMode.apply(_settingsApi, arguments);
-  }
-  function readStoredHoverScope() {
-    return _settingsApi.readStoredHoverScope.apply(_settingsApi, arguments);
-  }
-  function writeStoredHoverScope() {
-    return _settingsApi.writeStoredHoverScope.apply(_settingsApi, arguments);
-  }
-  function readStoredCfgAutoSync() {
-    return _settingsApi.readStoredCfgAutoSync.apply(_settingsApi, arguments);
-  }
-  function writeStoredCfgAutoSync() {
-    return _settingsApi.writeStoredCfgAutoSync.apply(_settingsApi, arguments);
-  }
-  function readStoredAliasActivation() {
-    return _settingsApi.readStoredAliasActivation.apply(_settingsApi, arguments);
-  }
-  function writeStoredAliasActivation() {
-    return _settingsApi.writeStoredAliasActivation.apply(_settingsApi, arguments);
-  }
-  function readStoredAliasPairs() {
-    return _settingsApi.readStoredAliasPairs.apply(_settingsApi, arguments);
-  }
-  function writeStoredAliasPairs() {
-    return _settingsApi.writeStoredAliasPairs.apply(_settingsApi, arguments);
-  }
-  function readStoredReplAutoscroll() {
-    return _settingsApi.readStoredReplAutoscroll.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplAutoscroll() {
-    return _settingsApi.writeStoredReplAutoscroll.apply(_settingsApi, arguments);
-  }
-  function readStoredReplWelcome() {
-    return _settingsApi.readStoredReplWelcome.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplWelcome() {
-    return _settingsApi.writeStoredReplWelcome.apply(_settingsApi, arguments);
-  }
-  function readStoredReplEcho() {
-    return _settingsApi.readStoredReplEcho.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplEcho() {
-    return _settingsApi.writeStoredReplEcho.apply(_settingsApi, arguments);
-  }
-  function readStoredReplFilterChatter() {
-    return _settingsApi.readStoredReplFilterChatter.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplFilterChatter() {
-    return _settingsApi.writeStoredReplFilterChatter.apply(_settingsApi, arguments);
-  }
-  function readStoredReplHoverTimestamp() {
-    return _settingsApi.readStoredReplHoverTimestamp.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplHoverTimestamp() {
-    return _settingsApi.writeStoredReplHoverTimestamp.apply(_settingsApi, arguments);
-  }
-  function readStoredReplAutocompleteTrigger() {
-    return _settingsApi.readStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplAutocompleteTrigger() {
-    return _settingsApi.writeStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function readStoredReplAutocompleteContinue() {
-    return _settingsApi.readStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplAutocompleteContinue() {
-    return _settingsApi.writeStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  function readStoredReplHistoryCap() {
-    return _settingsApi.readStoredReplHistoryCap.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplHistoryCap() {
-    return _settingsApi.writeStoredReplHistoryCap.apply(_settingsApi, arguments);
-  }
-  function readStoredReplHistoryPersist() {
-    return _settingsApi.readStoredReplHistoryPersist.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplHistoryPersist() {
-    return _settingsApi.writeStoredReplHistoryPersist.apply(_settingsApi, arguments);
-  }
-  function readStoredReplTranscript() {
-    return _settingsApi.readStoredReplTranscript.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplTranscript() {
-    return _settingsApi.writeStoredReplTranscript.apply(_settingsApi, arguments);
-  }
-  function readStoredReplCommandHistory() {
-    return _settingsApi.readStoredReplCommandHistory.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplCommandHistory() {
-    return _settingsApi.writeStoredReplCommandHistory.apply(_settingsApi, arguments);
-  }
-  function readStoredBelugaFallbackStable() {
-    return _settingsApi.readStoredBelugaFallbackStable.apply(_settingsApi, arguments);
-  }
-  function writeStoredBelugaFallbackStable() {
-    return _settingsApi.writeStoredBelugaFallbackStable.apply(_settingsApi, arguments);
-  }
-  function readStoredBelugaCancelOnEdit() {
-    return _settingsApi.readStoredBelugaCancelOnEdit.apply(_settingsApi, arguments);
-  }
-  function writeStoredBelugaCancelOnEdit() {
-    return _settingsApi.writeStoredBelugaCancelOnEdit.apply(_settingsApi, arguments);
-  }
-  function readStoredLibraryExpandDefault() {
-    return _settingsApi.readStoredLibraryExpandDefault.apply(_settingsApi, arguments);
-  }
-  function writeStoredLibraryExpandDefault() {
-    return _settingsApi.writeStoredLibraryExpandDefault.apply(_settingsApi, arguments);
-  }
-  function readStoredLibraryHintDismissed() {
-    return _settingsApi.readStoredLibraryHintDismissed.apply(_settingsApi, arguments);
-  }
-  function writeStoredLibraryHintDismissed() {
-    return _settingsApi.writeStoredLibraryHintDismissed.apply(_settingsApi, arguments);
-  }
-  function readStoredHintDismissed() {
-    return _settingsApi.readStoredHintDismissed.apply(_settingsApi, arguments);
-  }
-  function writeStoredHintDismissed() {
-    return _settingsApi.writeStoredHintDismissed.apply(_settingsApi, arguments);
-  }
-  function readStoredRestorePanels() {
-    return _settingsApi.readStoredRestorePanels.apply(_settingsApi, arguments);
-  }
-  function writeStoredRestorePanels() {
-    return _settingsApi.writeStoredRestorePanels.apply(_settingsApi, arguments);
-  }
-  function readStoredAutosaveDelay() {
-    return _settingsApi.readStoredAutosaveDelay.apply(_settingsApi, arguments);
-  }
-  function writeStoredAutosaveDelay() {
-    return _settingsApi.writeStoredAutosaveDelay.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFontSize() {
-    return _settingsApi.readStoredEditorFontSize.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFontSize() {
-    return _settingsApi.writeStoredEditorFontSize.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorLineHeight() {
-    return _settingsApi.readStoredEditorLineHeight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorLineHeight() {
-    return _settingsApi.writeStoredEditorLineHeight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorWordWrap() {
-    return _settingsApi.readStoredEditorWordWrap.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorWordWrap() {
-    return _settingsApi.writeStoredEditorWordWrap.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorTabSize() {
-    return _settingsApi.readStoredEditorTabSize.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorTabSize() {
-    return _settingsApi.writeStoredEditorTabSize.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorLineNumbers() {
-    return _settingsApi.readStoredEditorLineNumbers.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorLineNumbers() {
-    return _settingsApi.writeStoredEditorLineNumbers.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorLineNumberMode() {
-    return _settingsApi.readStoredEditorLineNumberMode.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorLineNumberMode() {
-    return _settingsApi.writeStoredEditorLineNumberMode.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFoldGutter() {
-    return _settingsApi.readStoredEditorFoldGutter.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFoldGutter() {
-    return _settingsApi.writeStoredEditorFoldGutter.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFoldPersist() {
-    return _settingsApi.readStoredEditorFoldPersist.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFoldPersist() {
-    return _settingsApi.writeStoredEditorFoldPersist.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorActiveLine() {
-    return _settingsApi.readStoredEditorActiveLine.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorActiveLine() {
-    return _settingsApi.writeStoredEditorActiveLine.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorDiagGutter() {
-    return _settingsApi.readStoredEditorDiagGutter.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorDiagGutter() {
-    return _settingsApi.writeStoredEditorDiagGutter.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorHoleGutter() {
-    return _settingsApi.readStoredEditorHoleGutter.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorHoleGutter() {
-    return _settingsApi.writeStoredEditorHoleGutter.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorSyntaxHighlight() {
-    return _settingsApi.readStoredEditorSyntaxHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorSyntaxHighlight() {
-    return _settingsApi.writeStoredEditorSyntaxHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorSemanticHighlight() {
-    return _settingsApi.readStoredEditorSemanticHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorSemanticHighlight() {
-    return _settingsApi.writeStoredEditorSemanticHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorParseHighlight() {
-    return _settingsApi.readStoredEditorParseHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorParseHighlight() {
-    return _settingsApi.writeStoredEditorParseHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorOccurrenceHighlight() {
-    return _settingsApi.readStoredEditorOccurrenceHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorOccurrenceHighlight() {
-    return _settingsApi.writeStoredEditorOccurrenceHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorBracketMatch() {
-    return _settingsApi.readStoredEditorBracketMatch.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorBracketMatch() {
-    return _settingsApi.writeStoredEditorBracketMatch.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorAutoCloseBrackets() {
-    return _settingsApi.readStoredEditorAutoCloseBrackets.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorAutoCloseBrackets() {
-    return _settingsApi.writeStoredEditorAutoCloseBrackets.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorSelectionMatches() {
-    return _settingsApi.readStoredEditorSelectionMatches.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorSelectionMatches() {
-    return _settingsApi.writeStoredEditorSelectionMatches.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorReindentPaste() {
-    return _settingsApi.readStoredEditorReindentPaste.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorReindentPaste() {
-    return _settingsApi.writeStoredEditorReindentPaste.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFormatWidth() {
-    return _settingsApi.readStoredEditorFormatWidth.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFormatWidth() {
-    return _settingsApi.writeStoredEditorFormatWidth.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorAutocompleteTrigger() {
-    return _settingsApi.readStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorAutocompleteTrigger() {
-    return _settingsApi.writeStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorAutocompleteContinue() {
-    return _settingsApi.readStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorAutocompleteContinue() {
-    return _settingsApi.writeStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  var _settingsExtraNames = [
-    "readStoredEditorCursorBlink",
-    "writeStoredEditorCursorBlink",
-    "readStoredEditorScrollPastEnd",
-    "writeStoredEditorScrollPastEnd",
-    "readStoredEditorWhitespace",
-    "writeStoredEditorWhitespace",
-    "readStoredEditorRulers",
-    "writeStoredEditorRulers",
-    "readStoredEditorFontFamily",
-    "writeStoredEditorFontFamily",
-    "readStoredEditorHoleEmphasis",
-    "writeStoredEditorHoleEmphasis",
-    "readStoredKeymapStyle",
-    "writeStoredKeymapStyle",
-    "readStoredStatusStrip",
-    "writeStoredStatusStrip",
-    "readStoredCommandLineHistory",
-    "writeStoredCommandLineHistory",
-    "readStoredDoubleTapTrigger",
-    "writeStoredDoubleTapTrigger",
-    "readStoredDoubleTapCommand",
-    "writeStoredDoubleTapCommand",
-    "readStoredDoubleTapSpeed",
-    "writeStoredDoubleTapSpeed",
-    "readStoredVimLeader",
-    "writeStoredVimLeader",
-    "readStoredEmacsYankSource",
-    "writeStoredEmacsYankSource",
-    "readStoredVimInsertEscape",
-    "writeStoredVimInsertEscape",
-    "readStoredMotionPref",
-    "writeStoredMotionPref",
-    "applyStoredMotionPref",
-    "prefersReducedMotion",
-    "readStoredToastDuration",
-    "writeStoredToastDuration",
-    "toastDurationForMode",
-    "toastDurationMs",
-    "readStoredCheckAggressiveness",
-    "writeStoredCheckAggressiveness",
-    "checkAggressivenessScale",
-    "readStoredAutosolveFocusNext",
-    "writeStoredAutosolveFocusNext",
-    "readStoredAutosolveShowStats",
-    "writeStoredAutosolveShowStats",
-    "readStoredHarpoonMode",
-    "writeStoredHarpoonMode",
-    "readStoredHarpoonVerifyMoves",
-    "writeStoredHarpoonVerifyMoves",
-    "readStoredQuietWhileTyping",
-    "writeStoredQuietWhileTyping",
-    "readStoredDiagPresentation",
-    "writeStoredDiagPresentation",
-    "readStoredDiagSeverity",
-    "writeStoredDiagSeverity",
-    "readStoredFormatOnSave",
-    "writeStoredFormatOnSave",
-    "readStoredTrimTrailingWs",
-    "writeStoredTrimTrailingWs",
-    "readStoredStickyDeclHeader",
-    "writeStoredStickyDeclHeader",
-    "readStoredSuiteCheck",
-    "writeStoredSuiteCheck",
-    "readStoredHoverSticky",
-    "writeStoredHoverSticky",
-    "applyStoredEditorChrome",
-    "exportUserSettings",
-    "importUserSettings"
-  ];
-  var _settingsExtra = {};
-  _settingsExtraNames.forEach(function(name) {
-    _settingsExtra[name] = function() {
-      return _settingsApi[name].apply(_settingsApi, arguments);
-    };
-  });
-  function resetAppearancePrefs() {
-    return _settingsApi.resetAppearancePrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorTypographyPrefs() {
-    return _settingsApi.resetEditorTypographyPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorIndentPrefs() {
-    return _settingsApi.resetEditorIndentPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorCodeInsightPrefs() {
-    return _settingsApi.resetEditorCodeInsightPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorGutterPrefs() {
-    return _settingsApi.resetEditorGutterPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorPrefs() {
-    return _settingsApi.resetEditorPrefs.apply(_settingsApi, arguments);
-  }
-  function resetBelugaPrefs() {
-    return _settingsApi.resetBelugaPrefs.apply(_settingsApi, arguments);
-  }
-  function resetHarpoonPrefs() {
-    return _settingsApi.resetHarpoonPrefs.apply(_settingsApi, arguments);
-  }
-  function resetReplPrefs() {
-    return _settingsApi.resetReplPrefs.apply(_settingsApi, arguments);
-  }
-  function readStoredKeybindings() {
-    return _settingsApi.readStoredKeybindings.apply(_settingsApi, arguments);
-  }
-  function writeStoredKeybindings() {
-    return _settingsApi.writeStoredKeybindings.apply(_settingsApi, arguments);
-  }
-  function resetKeybindingPrefs() {
-    return _settingsApi.resetKeybindingPrefs.apply(_settingsApi, arguments);
-  }
-  function resetAliasesPrefs() {
-    return _settingsApi.resetAliasesPrefs.apply(_settingsApi, arguments);
-  }
-  function fileNameForId() {
-    return _settingsApi.fileNameForId.apply(_settingsApi, arguments);
-  }
-  function expandAliasesForStorage() {
-    return _settingsApi.expandAliasesForStorage.apply(_settingsApi, arguments);
-  }
-  function expandAliasesInAllFiles() {
-    return _settingsApi.expandAliasesInAllFiles.apply(_settingsApi, arguments);
-  }
-  function isAliasExpandablePath() {
-    return _settingsApi.isAliasExpandablePath.apply(_settingsApi, arguments);
-  }
-  function getExplorerFold() {
-    return _settingsApi.getExplorerFold.apply(_settingsApi, arguments);
-  }
-  function setExplorerFold() {
-    return _settingsApi.setExplorerFold.apply(_settingsApi, arguments);
-  }
-  var _layoutApi = create3({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projectPrefix,
-    getActiveProjectId: function() {
-      return getActiveProjectId();
+    kept: function(n) {
+      return { kind: "info", title: "Kept " + n.path, body: "Another device deleted it, but it had changes here." };
     },
-    EDITOR_SPLIT_STORAGE_KEY,
-    DEFAULT_EDITOR_SPLIT,
-    MIN_EDITOR_SPLIT,
-    MAX_EDITOR_SPLIT,
-    SIDE_PANEL_LAYOUT,
-    DEFAULT_SIDE_PANEL_WIDTH,
-    DEFAULT_SIDE_PANEL_HEIGHT,
-    EXPLORER_OPEN_KEY,
-    INSPECTOR_OPEN_KEY,
-    INSPECTOR_FOLLOW_KEY,
-    LIBRARY_OPEN_KEY,
-    LOAD_STATS_KEY
-  });
-  function resetLayoutPrefs() {
-    return _layoutApi.resetLayoutPrefs.apply(_layoutApi, arguments);
-  }
-  function workspaceKeyFor() {
-    return _layoutApi.workspaceKeyFor.apply(_layoutApi, arguments);
-  }
-  function readStoredActiveSidePanel() {
-    return _layoutApi.readStoredActiveSidePanel.apply(_layoutApi, arguments);
-  }
-  function writeStoredActiveSidePanel() {
-    return _layoutApi.writeStoredActiveSidePanel.apply(_layoutApi, arguments);
-  }
-  function readStoredWorkspace() {
-    return _layoutApi.readStoredWorkspace.apply(_layoutApi, arguments);
-  }
-  function writeStoredWorkspace() {
-    return _layoutApi.writeStoredWorkspace.apply(_layoutApi, arguments);
-  }
-  function resetStoredWorkspace() {
-    return _layoutApi.resetStoredWorkspace.apply(_layoutApi, arguments);
-  }
-  function resetWorkspaceState() {
-    return _layoutApi.resetWorkspaceState.apply(_layoutApi, arguments);
-  }
-  function resetWorkspacePrefs() {
-    return _layoutApi.resetWorkspacePrefs.apply(_layoutApi, arguments);
-  }
-  function clampEditorSplit() {
-    return _layoutApi.clampEditorSplit.apply(_layoutApi, arguments);
-  }
-  function readStoredEditorSplit() {
-    return _layoutApi.readStoredEditorSplit.apply(_layoutApi, arguments);
-  }
-  function writeStoredEditorSplit() {
-    return _layoutApi.writeStoredEditorSplit.apply(_layoutApi, arguments);
-  }
-  function readStoredExplorerWidth() {
-    return _layoutApi.readStoredExplorerWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredExplorerWidth() {
-    return _layoutApi.writeStoredExplorerWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorWidth() {
-    return _layoutApi.readStoredInspectorWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorWidth() {
-    return _layoutApi.writeStoredInspectorWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredExplorerHeight() {
-    return _layoutApi.readStoredExplorerHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredExplorerHeight() {
-    return _layoutApi.writeStoredExplorerHeight.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorHeight() {
-    return _layoutApi.readStoredInspectorHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorHeight() {
-    return _layoutApi.writeStoredInspectorHeight.apply(_layoutApi, arguments);
-  }
-  function readStoredExplorerOpen() {
-    return _layoutApi.readStoredExplorerOpen.apply(_layoutApi, arguments);
-  }
-  function loadStat() {
-    return _layoutApi.loadStat.apply(_layoutApi, arguments);
-  }
-  function saveStat() {
-    return _layoutApi.saveStat.apply(_layoutApi, arguments);
-  }
-  function writeStoredExplorerOpen() {
-    return _layoutApi.writeStoredExplorerOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorOpen() {
-    return _layoutApi.readStoredInspectorOpen.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorOpen() {
-    return _layoutApi.writeStoredInspectorOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorFollow() {
-    return _layoutApi.readStoredInspectorFollow.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorFollow() {
-    return _layoutApi.writeStoredInspectorFollow.apply(_layoutApi, arguments);
-  }
-  function readStoredLibraryOpen() {
-    return _layoutApi.readStoredLibraryOpen.apply(_layoutApi, arguments);
-  }
-  function writeStoredLibraryOpen() {
-    return _layoutApi.writeStoredLibraryOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonOpen() {
-    return _layoutApi.readStoredHarpoonOpen.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonOpen() {
-    return _layoutApi.writeStoredHarpoonOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonDetailsCollapsed() {
-    return _layoutApi.readStoredHarpoonDetailsCollapsed.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonDetailsCollapsed() {
-    return _layoutApi.writeStoredHarpoonDetailsCollapsed.apply(_layoutApi, arguments);
-  }
-  function readStoredLibraryWidth() {
-    return _layoutApi.readStoredLibraryWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredLibraryWidth() {
-    return _layoutApi.writeStoredLibraryWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredLibraryHeight() {
-    return _layoutApi.readStoredLibraryHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredLibraryHeight() {
-    return _layoutApi.writeStoredLibraryHeight.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonWidth() {
-    return _layoutApi.readStoredHarpoonWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonWidth() {
-    return _layoutApi.writeStoredHarpoonWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonHeight() {
-    return _layoutApi.readStoredHarpoonHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonHeight() {
-    return _layoutApi.writeStoredHarpoonHeight.apply(_layoutApi, arguments);
-  }
-  var _graphPrefsApi = create4({
-    DEFAULT_GRAPH_PREFS,
-    GRAPH_PREFS_STORAGE_KEY,
-    LEGACY_GRAPH_LAYOUT_KEY,
-    LEGACY_GRAPH_IMPL_KEY,
-    LEGACY_GRAPH_DEPTH_KEY,
-    LEGACY_GRAPH_SIDEBAR_KEY,
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse
-  });
-  function normalizeGraphPrefs(raw) {
-    return _graphPrefsApi.normalizeGraphPrefs(raw);
-  }
-  function readStoredGraphPrefs() {
-    return _graphPrefsApi.readStoredGraphPrefs();
-  }
-  function writeStoredGraphPrefs(partial) {
-    return _graphPrefsApi.writeStoredGraphPrefs(partial);
-  }
-  var _projectsApi = create5({
-    PROJECTS_KEY,
-    ACTIVE_PROJECT_KEY,
-    DEFAULT_PROJECT_ID,
-    DEFAULT_PROJECT_NAME,
-    DEFAULT_DOCUMENT_ID,
-    PROJECT_NAME_KEY,
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projKey,
-    stateKeyFor,
-    replaceProject: function(entries, options) {
-      return replaceProject(entries, options);
+    restored: function(n) {
+      return { kind: "info", title: "Restored " + n.path, body: "It was deleted here, but another device changed it." };
+    },
+    renamed: function(n) {
+      return { kind: "info", title: "Renamed " + n.from + " to " + n.path, body: "Another device added a file with the same name." };
+    },
+    "project-deleted": function(n) {
+      return { kind: "info", title: "Removed " + n.project, body: "It was deleted on another device." };
+    },
+    "project-restored": function(n) {
+      return { kind: "info", title: "Restored " + n.project, body: "It was deleted here, but another device changed it." };
+    },
+    "project-kept": function(n) {
+      return { kind: "info", title: "Kept " + n.project, body: "Another device deleted it, but it had changes here." };
     }
-  });
-  function listProjects() {
-    return _projectsApi.listProjects();
+  };
+  function announceSync(notice) {
+    var N = globalThis.Notifications;
+    var make = SYNC_NOTICES[notice && notice.kind];
+    if (!make || !N || typeof N.emit !== "function") return;
+    var words = make(notice);
+    N.emit({
+      kind: words.kind,
+      category: "ops",
+      origin: "remote",
+      source: "sync",
+      title: words.title,
+      body: words.body,
+      detail: notice.project && notice.path ? "In " + notice.project + "." : null
+    });
   }
-  function getActiveProjectId() {
-    return _projectsApi.getActiveProjectId();
+  function underSevenDayRule() {
+    var nav = globalThis.navigator;
+    if (!nav || nav.vendor !== "Apple Computer, Inc.") return false;
+    var app = nav.standalone === true || typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(display-mode: standalone)").matches;
+    return !app;
   }
-  function setActiveProjectId(id) {
-    return _projectsApi.setActiveProjectId(id);
-  }
-  function getActiveProject() {
-    return _projectsApi.getActiveProject();
-  }
-  function createProject(name) {
-    return _projectsApi.createProject(name);
-  }
-  function renameProject(id, name) {
-    return _projectsApi.renameProject(id, name);
-  }
-  function deleteProject(id) {
-    return _projectsApi.deleteProject(id);
-  }
-  var _openTabsApi = null;
-  var _fileRegistryApi = null;
-  _fileRegistryApi = create6({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projKey,
-    stateKeyFor,
-    defaultBackend,
-    readState,
-    emptyState,
-    DEFAULT_DOCUMENT_ID,
-    dirOf,
-    expandAliasesForStorage: function(t, n) {
-      return expandAliasesForStorage(t, n);
-    },
-    fileNameForId: function(id) {
-      return fileNameForId(id);
-    },
-    readStoredCfgAutoSync: function() {
-      return readStoredCfgAutoSync();
-    },
-    writeOpenFileIds: function(ids) {
-      return writeOpenFileIds(ids);
-    },
-    closeOpenFile: function(id) {
-      return closeOpenFile(id);
-    },
-    writeActiveCfgByDir: function(m) {
-      return writeActiveCfgByDir(m);
-    },
-    setActiveCfgForDir: function(d, p) {
-      return setActiveCfgForDir(d, p);
-    },
-    removeActiveCfgForDir: function(d, p) {
-      return removeActiveCfgForDir(d, p);
-    },
-    readActiveCfgByDir: function() {
-      return readActiveCfgByDir();
-    },
-    normalizeActiveCfgList: function(v) {
-      return normalizeActiveCfgList(v);
-    },
-    setProjectName: function(n) {
-      return setProjectName(n);
+  function announceSevenDays() {
+    if (globalThis.Toasts && typeof globalThis.Toasts.warn === "function") {
+      globalThis.Toasts.warn(
+        "Safari deletes this site\u2019s data after 7 days without a visit. To keep a copy, download your projects from the Project menu.",
+        { duration: 0, closable: true, notify: false }
+      );
     }
-  });
-  function readProjectFiles() {
-    return _fileRegistryApi.readProjectFiles.apply(_fileRegistryApi, arguments);
-  }
-  function listEmptyFolders() {
-    return _fileRegistryApi.listEmptyFolders.apply(_fileRegistryApi, arguments);
-  }
-  function addEmptyFolder() {
-    return _fileRegistryApi.addEmptyFolder.apply(_fileRegistryApi, arguments);
-  }
-  function removeEmptyFolder() {
-    return _fileRegistryApi.removeEmptyFolder.apply(_fileRegistryApi, arguments);
-  }
-  function clearEmptyFolders() {
-    return _fileRegistryApi.clearEmptyFolders.apply(_fileRegistryApi, arguments);
-  }
-  function pruneEmptyFoldersUnder() {
-    return _fileRegistryApi.pruneEmptyFoldersUnder.apply(_fileRegistryApi, arguments);
-  }
-  function renameEmptyFolderPrefix() {
-    return _fileRegistryApi.renameEmptyFolderPrefix.apply(_fileRegistryApi, arguments);
-  }
-  function preserveEmptyFoldersAfterMoves() {
-    return _fileRegistryApi.preserveEmptyFoldersAfterMoves.apply(_fileRegistryApi, arguments);
-  }
-  function ensureProject() {
-    return _fileRegistryApi.ensureProject.apply(_fileRegistryApi, arguments);
-  }
-  function listFiles() {
-    return _fileRegistryApi.listFiles.apply(_fileRegistryApi, arguments);
-  }
-  function getActiveFileId() {
-    return _fileRegistryApi.getActiveFileId.apply(_fileRegistryApi, arguments);
-  }
-  function setActiveFileId() {
-    return _fileRegistryApi.setActiveFileId.apply(_fileRegistryApi, arguments);
-  }
-  function replaceProject() {
-    return _fileRegistryApi.replaceProject.apply(_fileRegistryApi, arguments);
-  }
-  function createFile() {
-    return _fileRegistryApi.createFile.apply(_fileRegistryApi, arguments);
-  }
-  function restoreDeletedFile() {
-    return _fileRegistryApi.restoreDeletedFile.apply(_fileRegistryApi, arguments);
-  }
-  function deleteFile() {
-    return _fileRegistryApi.deleteFile.apply(_fileRegistryApi, arguments);
-  }
-  function renameFile() {
-    return _fileRegistryApi.renameFile.apply(_fileRegistryApi, arguments);
-  }
-  function addEntryToCfg() {
-    return _fileRegistryApi.addEntryToCfg.apply(_fileRegistryApi, arguments);
-  }
-  function prependEntryToCfg() {
-    return _fileRegistryApi.prependEntryToCfg.apply(_fileRegistryApi, arguments);
-  }
-  function removeEntryFromCfg() {
-    return _fileRegistryApi.removeEntryFromCfg.apply(_fileRegistryApi, arguments);
-  }
-  function moveEntryInCfg() {
-    return _fileRegistryApi.moveEntryInCfg.apply(_fileRegistryApi, arguments);
-  }
-  function getFileById() {
-    return _fileRegistryApi.getFileById.apply(_fileRegistryApi, arguments);
-  }
-  function moveFile() {
-    return _fileRegistryApi.moveFile.apply(_fileRegistryApi, arguments);
-  }
-  function getFileText() {
-    return _fileRegistryApi.getFileText.apply(_fileRegistryApi, arguments);
-  }
-  function setFileText() {
-    return _fileRegistryApi.setFileText.apply(_fileRegistryApi, arguments);
-  }
-  _openTabsApi = create7({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projKey,
-    listFiles: function() {
-      return listFiles();
-    },
-    getFileById: function(id) {
-      return getFileById(id);
-    },
-    readProjectFiles: function() {
-      return readProjectFiles();
-    },
-    getActiveProject: function() {
-      return getActiveProject();
-    },
-    renameProject: function(id, name) {
-      return renameProject(id, name);
-    },
-    getActiveProjectId: function() {
-      return getActiveProjectId();
-    },
-    DEFAULT_PROJECT_NAME,
-    dirOf,
-    defaultBackend,
-    getActiveFileId: function() {
-      return getActiveFileId();
+    if (globalThis.Notifications && typeof globalThis.Notifications.emit === "function") {
+      globalThis.Notifications.emit({
+        kind: "warn",
+        category: "ops",
+        origin: "local",
+        source: "persist.durability",
+        dedupeKey: "persist.durability",
+        title: "Safari may delete your projects",
+        body: "Safari deletes a site\u2019s data after 7 days without a visit, and your projects live only in this browser. To keep a copy, download each project from the Project menu."
+      });
     }
+  }
+  var nav0 = globalThis.navigator;
+  var durability = createDurability({
+    store,
+    work,
+    device: Device2,
+    storage: nav0 && nav0.storage || null,
+    events: typeof window !== "undefined" ? window : null,
+    sevenDayRule: underSevenDayRule(),
+    warn: announceSevenDays
   });
-  function writeOpenFileIds() {
-    return _openTabsApi.writeOpenFileIds.apply(_openTabsApi, arguments);
+  whenPageReady(function() {
+    var idle = globalThis.requestIdleCallback;
+    if (typeof idle === "function") idle(function() {
+      durability.start();
+    }, { timeout: 1e4 });
+    else setTimeout(function() {
+      durability.start();
+    }, 2e3);
+  });
+  var syncRunner = null;
+  function startSync(opts) {
+    var account = work.account();
+    if (!account) throw new Error("Persist.startSync: nobody is signed in on this browser (Persist.setAccount first)");
+    if (!opts || !opts.transport) throw new Error("Persist.startSync needs a transport (js/persist/sync/protocol.mjs)");
+    stopSync();
+    var nav = globalThis.navigator;
+    var engine = createSyncEngine({
+      store,
+      work,
+      settings: Settings2,
+      transport: opts.transport,
+      account,
+      notify: announceSync
+    });
+    syncRunner = createSyncRunner({
+      engine,
+      store,
+      locks: opts.locks !== void 0 ? opts.locks : nav && nav.locks || null
+    });
+    syncRunner.start();
+    return syncRunner;
   }
-  function setOpenFileIds() {
-    return _openTabsApi.setOpenFileIds.apply(_openTabsApi, arguments);
+  function stopSync() {
+    const r = syncRunner;
+    syncRunner = null;
+    return r ? r.stop() : Promise.resolve();
   }
-  function getOpenFileIds() {
-    return _openTabsApi.getOpenFileIds.apply(_openTabsApi, arguments);
+  function syncNow() {
+    return syncRunner ? syncRunner.syncNow() : Promise.resolve(null);
   }
-  function openFile() {
-    return _openTabsApi.openFile.apply(_openTabsApi, arguments);
+  if (typeof globalThis.addEventListener === "function") {
+    globalThis.addEventListener("online", function() {
+      syncNow();
+    });
   }
-  function closeOpenFile() {
-    return _openTabsApi.closeOpenFile.apply(_openTabsApi, arguments);
-  }
-  function getProjectName() {
-    return _openTabsApi.getProjectName.apply(_openTabsApi, arguments);
-  }
-  function setProjectName() {
-    return _openTabsApi.setProjectName.apply(_openTabsApi, arguments);
-  }
-  function normalizeActiveCfgList() {
-    return _openTabsApi.normalizeActiveCfgList.apply(_openTabsApi, arguments);
-  }
-  function readActiveCfgByDir() {
-    return _openTabsApi.readActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function writeActiveCfgByDir() {
-    return _openTabsApi.writeActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function getActiveCfgsForDir() {
-    return _openTabsApi.getActiveCfgsForDir.apply(_openTabsApi, arguments);
-  }
-  function getActiveCfgForDir() {
-    return _openTabsApi.getActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function setActiveCfgsForDir() {
-    return _openTabsApi.setActiveCfgsForDir.apply(_openTabsApi, arguments);
-  }
-  function setActiveCfgForDir() {
-    return _openTabsApi.setActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function addActiveCfgForDir() {
-    return _openTabsApi.addActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function removeActiveCfgForDir() {
-    return _openTabsApi.removeActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function getActiveCfgByDir() {
-    return _openTabsApi.getActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function backfillActiveCfgByDir() {
-    return _openTabsApi.backfillActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function getDefaultCfgPath() {
-    return _openTabsApi.getDefaultCfgPath.apply(_openTabsApi, arguments);
-  }
-  function setDefaultCfgPath() {
-    return _openTabsApi.setDefaultCfgPath.apply(_openTabsApi, arguments);
-  }
-  function newBlankProject(name) {
-    return _projectsApi.newBlankProject(name);
-  }
-  function createProjectWithFiles(name, entries, options) {
-    return _projectsApi.createProjectWithFiles(name, entries, options);
-  }
-  function createAsyncPersistLayer() {
-    return {
-      push: function() {
-        return Promise.resolve({ ok: false, reason: "not-configured" });
-      },
-      pull: function() {
-        return Promise.resolve({ ok: false, reason: "not-configured" });
-      }
-    };
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === "visible") syncNow();
+    });
   }
   var Persist2 = {
-    SCHEMA_VERSION,
-    STATE_KEY,
-    LEGACY_STATE_KEY,
-    LEGACY_SEMANTIC_TYPES_KEY,
-    DEFAULT_DOCUMENT_ID,
-    THEME_STORAGE_KEY,
-    EDITOR_SPLIT_STORAGE_KEY,
-    GRAPH_PREFS_STORAGE_KEY,
-    DEFAULT_GRAPH_PREFS,
-    DEFAULT_EDITOR_SPLIT,
-    MIN_EDITOR_SPLIT,
-    MAX_EDITOR_SPLIT,
+    DEFAULT_PROJECT_NAME,
     documentFingerprint,
-    createLocalStorageBackend,
-    createMemoryBackend,
-    createLocalStorageAdapter,
-    createPersist,
-    createAsyncPersistLayer,
-    classifyPersistError,
-    isSaveBlocked,
-    readStoredTheme,
-    writeStoredTheme,
-    UI_FONT_SIZE_KEY,
-    UI_FONT_SCALES,
-    readStoredUiFontSize,
-    writeStoredUiFontSize,
-    uiFontScaleForSize,
-    applyStoredUiFontSize,
-    UI_TEXT_CONTRAST_KEY,
-    UI_TEXT_CONTRAST_MULTIPLIERS,
-    readStoredUiTextContrast,
-    writeStoredUiTextContrast,
-    uiTextContrastMultiplierForLevel,
-    applyStoredUiTextContrast,
-    readStoredEditorSplit,
-    writeStoredEditorSplit,
-    readStoredExplorerWidth,
-    writeStoredExplorerWidth,
-    readStoredInspectorWidth,
-    writeStoredInspectorWidth,
-    readStoredExplorerHeight,
-    writeStoredExplorerHeight,
-    readStoredInspectorHeight,
-    writeStoredInspectorHeight,
-    readStoredExplorerOpen,
-    writeStoredExplorerOpen,
-    loadStat,
-    saveStat,
-    getExplorerFold,
-    setExplorerFold,
-    readStoredInspectorOpen,
-    writeStoredInspectorOpen,
-    readStoredInspectorFollow,
-    writeStoredInspectorFollow,
-    readStoredLibraryOpen,
-    writeStoredLibraryOpen,
-    readStoredHarpoonOpen,
-    writeStoredHarpoonOpen,
-    readStoredHarpoonDetailsCollapsed,
-    writeStoredHarpoonDetailsCollapsed,
-    readStoredLibraryWidth,
-    writeStoredLibraryWidth,
-    readStoredLibraryHeight,
-    writeStoredLibraryHeight,
-    readStoredHarpoonWidth,
-    writeStoredHarpoonWidth,
-    readStoredHarpoonHeight,
-    writeStoredHarpoonHeight,
-    DEFAULT_SIDE_PANEL_WIDTH,
-    DEFAULT_SIDE_PANEL_HEIGHT,
-    SIDE_PANEL_LAYOUT,
-    readStoredGraphPrefs,
-    writeStoredGraphPrefs,
-    normalizeGraphPrefs,
-    clampEditorSplit,
-    readStoredBelugaMode,
-    writeStoredBelugaMode,
-    readStoredHoverScope,
-    writeStoredHoverScope,
-    readStoredAliasActivation,
-    writeStoredAliasActivation,
-    readStoredAliasPairs,
-    writeStoredAliasPairs,
-    readStoredCfgAutoSync,
-    writeStoredCfgAutoSync,
-    readStoredReplAutoscroll,
-    writeStoredReplAutoscroll,
-    readStoredReplWelcome,
-    writeStoredReplWelcome,
-    readStoredReplEcho,
-    writeStoredReplEcho,
-    readStoredReplFilterChatter,
-    writeStoredReplFilterChatter,
-    readStoredReplHoverTimestamp,
-    writeStoredReplHoverTimestamp,
-    readStoredReplAutocompleteTrigger,
-    writeStoredReplAutocompleteTrigger,
-    readStoredReplAutocompleteContinue,
-    writeStoredReplAutocompleteContinue,
-    readStoredReplHistoryCap,
-    writeStoredReplHistoryCap,
-    readStoredReplHistoryPersist,
-    writeStoredReplHistoryPersist,
-    readStoredReplTranscript,
-    writeStoredReplTranscript,
-    readStoredReplCommandHistory,
-    writeStoredReplCommandHistory,
-    readStoredBelugaFallbackStable,
-    writeStoredBelugaFallbackStable,
-    readStoredBelugaCancelOnEdit,
-    writeStoredBelugaCancelOnEdit,
-    readStoredLibraryExpandDefault,
-    writeStoredLibraryExpandDefault,
-    readStoredLibraryHintDismissed,
-    writeStoredLibraryHintDismissed,
-    readStoredHintDismissed,
-    writeStoredHintDismissed,
-    readStoredRestorePanels,
-    writeStoredRestorePanels,
-    readStoredActiveSidePanel,
-    writeStoredActiveSidePanel,
-    readStoredWorkspace,
-    writeStoredWorkspace,
-    resetStoredWorkspace,
-    resetWorkspaceState,
-    workspaceKeyFor,
     normalizeViewportAnchor,
-    readStoredAutosaveDelay,
-    writeStoredAutosaveDelay,
-    readStoredEditorFontSize,
-    writeStoredEditorFontSize,
-    readStoredEditorLineHeight,
-    writeStoredEditorLineHeight,
-    readStoredEditorWordWrap,
-    writeStoredEditorWordWrap,
-    readStoredEditorTabSize,
-    writeStoredEditorTabSize,
-    readStoredEditorLineNumberMode,
-    writeStoredEditorLineNumberMode,
-    readStoredEditorLineNumbers,
-    writeStoredEditorLineNumbers,
-    readStoredEditorFoldGutter,
-    writeStoredEditorFoldGutter,
-    readStoredEditorFoldPersist,
-    writeStoredEditorFoldPersist,
-    readStoredEditorActiveLine,
-    writeStoredEditorActiveLine,
-    readStoredEditorDiagGutter,
-    writeStoredEditorDiagGutter,
-    readStoredEditorHoleGutter,
-    writeStoredEditorHoleGutter,
-    readStoredEditorSyntaxHighlight,
-    writeStoredEditorSyntaxHighlight,
-    readStoredEditorSemanticHighlight,
-    writeStoredEditorSemanticHighlight,
-    readStoredEditorParseHighlight,
-    writeStoredEditorParseHighlight,
-    readStoredEditorOccurrenceHighlight,
-    writeStoredEditorOccurrenceHighlight,
-    readStoredEditorBracketMatch,
-    writeStoredEditorBracketMatch,
-    readStoredEditorAutoCloseBrackets,
-    writeStoredEditorAutoCloseBrackets,
-    readStoredEditorSelectionMatches,
-    writeStoredEditorSelectionMatches,
-    readStoredEditorReindentPaste,
-    writeStoredEditorReindentPaste,
-    readStoredEditorFormatWidth,
-    writeStoredEditorFormatWidth,
-    readStoredEditorAutocompleteTrigger,
-    writeStoredEditorAutocompleteTrigger,
-    readStoredEditorAutocompleteContinue,
-    writeStoredEditorAutocompleteContinue,
-    ..._settingsExtra,
-    resetLayoutPrefs,
-    resetAppearancePrefs,
-    resetEditorTypographyPrefs,
-    resetEditorIndentPrefs,
-    resetEditorCodeInsightPrefs,
-    resetEditorGutterPrefs,
-    resetEditorPrefs,
-    resetBelugaPrefs,
-    resetHarpoonPrefs,
-    resetReplPrefs,
-    resetWorkspacePrefs,
-    resetAliasesPrefs,
-    KEYBINDINGS_KEY: "beljar-keybindings",
-    readStoredKeybindings,
-    writeStoredKeybindings,
-    resetKeybindingPrefs,
-    expandAliasesInAllFiles,
-    isAliasExpandablePath,
-    normalizeLoaded,
-    emptyState,
-    // Projects (top-level containers):
-    DEFAULT_PROJECT_ID,
-    listProjects,
-    getActiveProjectId,
-    setActiveProjectId,
-    getActiveProject,
-    createProject,
-    renameProject,
-    deleteProject,
-    newBlankProject,
-    createProjectWithFiles,
-    // Project/multi-file management:
-    ensureProject,
-    listFiles,
-    getActiveFileId,
-    setActiveFileId,
-    replaceProject,
-    createFile,
-    restoreDeletedFile,
-    deleteFile,
-    renameFile,
-    addEntryToCfg,
-    prependEntryToCfg,
-    removeEntryFromCfg,
-    moveEntryInCfg,
-    getFileById,
-    listEmptyFolders,
-    addEmptyFolder,
-    removeEmptyFolder,
-    clearEmptyFolders,
-    pruneEmptyFoldersUnder,
-    renameEmptyFolderPrefix,
-    preserveEmptyFoldersAfterMoves,
-    moveFile,
-    getFileText,
-    setFileText,
-    getOpenFileIds,
-    setOpenFileIds,
-    openFile,
-    closeOpenFile,
-    getProjectName,
-    setProjectName,
-    getDefaultCfgPath,
-    setDefaultCfgPath,
-    getActiveCfgForDir,
-    getActiveCfgsForDir,
-    setActiveCfgForDir,
-    setActiveCfgsForDir,
-    addActiveCfgForDir,
-    removeActiveCfgForDir,
-    getActiveCfgByDir,
-    backfillActiveCfgByDir,
-    DEFAULT_PROJECT_NAME
+    isSaveBlocked: store.isBlocked,
+    isReadOnly: store.isReadOnly,
+    // accounts and sync (docs/PERSIST.md §5)
+    getAccount: work.account,
+    setAccount: work.setAccount,
+    claimProject: work.claimProject,
+    projectStats: work.projectStats,
+    removeAccountProjects: work.removeAccountProjects,
+    startSync,
+    stopSync,
+    syncNow,
+    durabilityStatus: durability.status,
+    // the open document
+    createPersist: documents.createPersist,
+    // projects
+    listProjects: work.listProjects,
+    getActiveProjectId: work.projectId,
+    setActiveProjectId: work.setActiveProject,
+    createProject: work.createProject,
+    renameProject: work.renameProject,
+    deleteProject: work.deleteProject,
+    newBlankProject: files.newBlankProject,
+    createProjectWithFiles: files.createProjectWithFiles,
+    getProjectName: files.getProjectName,
+    setProjectName: files.setProjectName,
+    // files
+    listFiles: files.listFiles,
+    getFileById: files.getFileById,
+    getFileText: files.getFileText,
+    setFileText: files.setFileText,
+    createFile: files.createFile,
+    replaceProject: files.replaceProject,
+    restoreDeletedFile: files.restoreDeletedFile,
+    deleteFile: files.deleteFile,
+    renameFile: files.renameFile,
+    listEmptyFolders: files.listEmptyFolders,
+    addEmptyFolder: files.addEmptyFolder,
+    removeEmptyFolder: files.removeEmptyFolder,
+    clearEmptyFolders: files.clearEmptyFolders,
+    pruneEmptyFoldersUnder: files.pruneEmptyFoldersUnder,
+    renameEmptyFolderPrefix: files.renameEmptyFolderPrefix,
+    preserveEmptyFoldersAfterMoves: files.preserveEmptyFoldersAfterMoves,
+    expandAliasesInAllFiles: files.expandAliasesInAllFiles,
+    isAliasExpandablePath: files.isAliasExpandablePath,
+    // .cfg membership and the active suite per directory
+    addEntryToCfg: files.addEntryToCfg,
+    prependEntryToCfg: files.prependEntryToCfg,
+    removeEntryFromCfg: files.removeEntryFromCfg,
+    moveEntryInCfg: files.moveEntryInCfg,
+    getActiveCfgForDir: files.getActiveCfgForDir,
+    getActiveCfgsForDir: files.getActiveCfgsForDir,
+    setActiveCfgForDir: files.setActiveCfgForDir,
+    setActiveCfgsForDir: files.setActiveCfgsForDir,
+    addActiveCfgForDir: files.addActiveCfgForDir,
+    removeActiveCfgForDir: files.removeActiveCfgForDir,
+    getActiveCfgByDir: files.getActiveCfgByDir,
+    backfillActiveCfgByDir: files.backfillActiveCfgByDir,
+    // this project's session on this device: tabs, workspace, side panel, explorer folds
+    getActiveFileId: files.getActiveFileId,
+    setActiveFileId: files.setActiveFileId,
+    getOpenFileIds: files.getOpenFileIds,
+    setOpenFileIds: files.setOpenFileIds,
+    openFile: files.openFile,
+    closeOpenFile: files.closeOpenFile,
+    readWorkspace: records.readWorkspace,
+    writeWorkspace: records.writeWorkspace,
+    resetWorkspace: records.resetWorkspace,
+    readSidePanel: records.readSidePanel,
+    writeSidePanel: records.writeSidePanel,
+    readExplorerFolds: records.readExplorerFolds,
+    writeExplorerFolds: records.writeExplorerFolds,
+    // device records (device-records.mjs)
+    readReplTranscript: records.readReplTranscript,
+    writeReplTranscript: records.writeReplTranscript,
+    readReplCommands: records.readReplCommands,
+    writeReplCommands: records.writeReplCommands,
+    readFileFolds: records.readFileFolds,
+    writeFileFolds: records.writeFileFolds,
+    readNotifications: records.readNotifications,
+    writeNotifications: records.writeNotifications,
+    readUndoStack: records.readUndoStack,
+    writeUndoStack: records.writeUndoStack,
+    clearUndoStack: records.clearUndoStack,
+    postTabMessage: records.postTabMessage,
+    onTabMessage: records.onTabMessage
   };
   var g = typeof window !== "undefined" ? window : globalThis;
   g.Persist = Persist2;
+  g.Settings = Settings2;
+  g.Device = Device2;
   g.BelJarPersist = g.Persist;
 
   // js/persist/install-edit-history.mjs
@@ -5134,8 +4289,8 @@
   function fileToBringForward(entry, direction, P3) {
     var cur = P3.getActiveFileId();
     var target = null;
-    var active4 = entry.structural && entry.structural.activeFileId;
-    if (active4) target = direction === "undo" ? active4.before : active4.after;
+    var active5 = entry.structural && entry.structural.activeFileId;
+    if (active5) target = direction === "undo" ? active5.before : active5.after;
     if (!target) {
       var ids = Object.keys(entry.files || {});
       var offScreen = [];
@@ -5154,7 +4309,15 @@
     var P3 = global2.Persist;
     return {
       projectKey: projectKey(),
-      sessionStorage: global2.sessionStorage || null,
+      readStack: function(key) {
+        return P3.readUndoStack(key);
+      },
+      writeStack: function(key, data) {
+        return P3.writeUndoStack(key, data);
+      },
+      clearStack: function(key) {
+        P3.clearUndoStack(key);
+      },
       getFileText: function(id) {
         return P3.getFileText(id);
       },
@@ -5328,9 +4491,6 @@
 
   // js/persist/tab-guard.mjs
   var global3 = globalThis;
-  var PING_KEY = "beljar-tab-ping";
-  var PONG_KEY = "beljar-tab-pong";
-  var BYE_KEY = "beljar-tab-bye";
   var DEDUPE = "workspace.multi-tab";
   var nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
   var companions = /* @__PURE__ */ new Set();
@@ -5346,19 +4506,9 @@
       return "";
     }
   }
-  function write(key, value) {
-    try {
-      global3.localStorage?.setItem(key, JSON.stringify(value));
-    } catch (_) {
-    }
-  }
-  function parse(raw) {
-    try {
-      const v = JSON.parse(raw);
-      return v && typeof v === "object" ? v : null;
-    } catch (_) {
-      return null;
-    }
+  function write(kind, value) {
+    const P3 = global3.Persist;
+    if (P3 && typeof P3.postTabMessage === "function") P3.postTabMessage(kind, value);
   }
   function paint(on) {
     warned = !!on;
@@ -5381,24 +4531,22 @@
     const ids = N.list().filter((r) => r && r.dedupeKey === DEDUPE).map((r) => r.id);
     for (const id of ids) N.dismiss(id);
   }
-  function onStorage(e) {
-    if (departed || !e || !e.newValue) return;
+  function onMessage(kind, msg) {
+    if (departed || !msg || typeof msg !== "object") return;
     const mine = projectId();
-    if (!mine) return;
-    const msg = parse(e.newValue);
-    if (!msg || msg.p !== mine) return;
-    if (e.key === PING_KEY) {
+    if (!mine || msg.p !== mine) return;
+    if (kind === "ping") {
       if (msg.n === nonce) return;
       noteCompanion(msg.n);
-      write(PONG_KEY, { n: msg.n, from: nonce, p: mine, at: Date.now() });
+      write("pong", { n: msg.n, from: nonce, p: mine, at: Date.now() });
       return;
     }
-    if (e.key === PONG_KEY) {
+    if (kind === "pong") {
       if (msg.n !== nonce) return;
       noteCompanion(msg.from);
       return;
     }
-    if (e.key === BYE_KEY) {
+    if (kind === "bye") {
       if (msg.n === nonce) return;
       forgetCompanion(msg.n);
     }
@@ -5408,14 +4556,14 @@
     const p = projectId();
     if (!p) return;
     announcedProject = p;
-    write(PING_KEY, { n: nonce, p, at: Date.now() });
+    write("ping", { n: nonce, p, at: Date.now() });
   }
   function depart() {
     if (departed) return;
     const p = projectId() || announcedProject;
     if (!p) return;
     departed = true;
-    write(BYE_KEY, { n: nonce, p, at: Date.now() });
+    write("bye", { n: nonce, p, at: Date.now() });
   }
   function onPageShow(e) {
     if (!e || !e.persisted) return;
@@ -5425,8 +4573,9 @@
     announce();
   }
   function initTabGuard() {
-    if (!global3.addEventListener || !global3.localStorage) return;
-    global3.addEventListener("storage", onStorage);
+    const P3 = global3.Persist;
+    if (!global3.addEventListener || !P3 || typeof P3.onTabMessage !== "function") return;
+    P3.onTabMessage(onMessage);
     global3.addEventListener("pagehide", () => depart());
     global3.addEventListener("pageshow", onPageShow);
     const afterBoot = () => {
@@ -5440,253 +4589,191 @@
   initTabGuard();
 
   // js/commands/command-settings.mjs
-  var SETTINGS = [
+  var ROWS = [
     // ── layout ────────────────────────────────────────────────────────────────
     {
       slug: "word-wrap",
       title: "Word wrap",
-      kind: "bool",
       aliases: ["wrap"],
-      read: "readStoredEditorWordWrap",
-      write: "writeStoredEditorWordWrap"
+      setting: "editorWordWrap"
     },
     {
       slug: "line-numbers",
       title: "Line numbers",
-      kind: "bool",
       aliases: ["number", "nu"],
-      read: "readStoredEditorLineNumbers",
-      write: "writeStoredEditorLineNumbers"
+      setting: "editorLineNumbers"
     },
     {
       slug: "line-number-style",
       title: "Line number style",
-      kind: "enum",
-      values: ["absolute", "relative", "hybrid"],
       labels: { absolute: "Absolute", relative: "Relative", hybrid: "Relative + current" },
       aliases: ["relativenumber", "rnu"],
-      read: "readStoredEditorLineNumberMode",
-      write: "writeStoredEditorLineNumberMode"
+      setting: "editorLineNumberMode"
     },
     {
       slug: "fold-gutter",
       title: "Code folding",
-      kind: "bool",
       aliases: ["foldenable", "fen"],
-      read: "readStoredEditorFoldGutter",
-      write: "writeStoredEditorFoldGutter"
+      setting: "editorFoldGutter"
     },
     {
       slug: "active-line",
       title: "Active line highlight",
-      kind: "bool",
       aliases: ["cursorline", "cul"],
-      read: "readStoredEditorActiveLine",
-      write: "writeStoredEditorActiveLine"
+      setting: "editorActiveLine"
     },
     {
       slug: "scroll-past-end",
       title: "Scroll past end",
-      kind: "bool",
       aliases: ["scrollpastend", "spe"],
-      read: "readStoredEditorScrollPastEnd",
-      write: "writeStoredEditorScrollPastEnd"
+      setting: "editorScrollPastEnd"
     },
     {
       slug: "rulers",
       title: "Print-width ruler",
-      kind: "bool",
       aliases: ["colorcolumn", "cc"],
-      read: "readStoredEditorRulers",
-      write: "writeStoredEditorRulers"
+      setting: "editorRulers"
     },
     {
       slug: "sticky-decl",
       title: "Structure path",
-      kind: "bool",
       aliases: ["sticky"],
-      read: "readStoredStickyDeclHeader",
-      write: "writeStoredStickyDeclHeader"
+      setting: "stickyDeclHeader"
     },
     {
       slug: "tab-size",
       title: "Tab size",
-      kind: "enum",
-      values: [2, 4],
       aliases: ["tabstop", "ts"],
       labels: { 2: "2 spaces", 4: "4 spaces" },
-      read: "readStoredEditorTabSize",
-      write: "writeStoredEditorTabSize"
+      setting: "editorTabSize"
     },
     {
       slug: "format-width",
       title: "Format print width",
-      kind: "enum",
-      values: [80, 100, 120],
       aliases: ["textwidth", "tw"],
       labels: { 80: "80 columns", 100: "100 columns", 120: "120 columns" },
-      read: "readStoredEditorFormatWidth",
-      write: "writeStoredEditorFormatWidth"
+      setting: "editorFormatWidth"
     },
     {
       slug: "whitespace",
       title: "Show whitespace",
       verb: "whitespace marks",
-      kind: "enum",
-      values: ["none", "trailing", "selection", "all"],
       on: "all",
       off: "none",
       aliases: ["list"],
       labels: { none: "Off", trailing: "Trailing only", selection: "In selection", all: "All" },
-      read: "readStoredEditorWhitespace",
-      write: "writeStoredEditorWhitespace"
+      setting: "editorWhitespace"
     },
     // ── type ──────────────────────────────────────────────────────────────────
     {
       slug: "font-size",
       title: "Font size",
-      kind: "enum",
-      values: ["sm", "md", "lg", "xl"],
       labels: { sm: "Small", md: "Default", lg: "Large", xl: "Larger" },
-      read: "readStoredEditorFontSize",
-      write: "writeStoredEditorFontSize"
+      setting: "editorFontSize"
     },
     {
       slug: "line-height",
       title: "Line height",
-      kind: "enum",
-      values: ["compact", "normal", "relaxed"],
       labels: { compact: "Compact", normal: "Default", relaxed: "Relaxed" },
-      read: "readStoredEditorLineHeight",
-      write: "writeStoredEditorLineHeight"
+      setting: "editorLineHeight"
     },
     {
       slug: "font-family",
       title: "Editor font",
-      kind: "enum",
-      values: ["jetbrains", "system"],
       labels: { jetbrains: "JetBrains Mono", system: "System monospace" },
-      read: "readStoredEditorFontFamily",
-      write: "writeStoredEditorFontFamily"
+      setting: "editorFontFamily"
     },
     {
       slug: "cursor-blink",
       title: "Cursor blink",
-      kind: "enum",
-      values: ["off", "blink", "fast"],
       labels: { off: "Solid", blink: "Blink", fast: "Fast" },
-      read: "readStoredEditorCursorBlink",
-      write: "writeStoredEditorCursorBlink"
+      setting: "editorCursorBlink"
     },
     // ── highlighting ──────────────────────────────────────────────────────────
     {
       slug: "syntax-highlight",
       title: "Syntax highlighting",
-      kind: "bool",
       aliases: ["syntax"],
-      read: "readStoredEditorSyntaxHighlight",
-      write: "writeStoredEditorSyntaxHighlight"
+      setting: "editorSyntaxHighlight"
     },
     {
       slug: "semantic-highlight",
       title: "Semantic highlighting",
-      kind: "bool",
-      read: "readStoredEditorSemanticHighlight",
-      write: "writeStoredEditorSemanticHighlight"
+      setting: "editorSemanticHighlight"
     },
     {
       slug: "parse-highlight",
       title: "Invalid parse styling",
-      kind: "bool",
-      read: "readStoredEditorParseHighlight",
-      write: "writeStoredEditorParseHighlight"
+      setting: "editorParseHighlight"
     },
     {
       slug: "occurrence-highlight",
       title: "Occurrence highlight",
-      kind: "bool",
-      read: "readStoredEditorOccurrenceHighlight",
-      write: "writeStoredEditorOccurrenceHighlight"
+      setting: "editorOccurrenceHighlight"
     },
     {
       slug: "selection-matches",
       title: "Selection matches",
-      kind: "bool",
       aliases: ["hlsearch", "hls"],
-      read: "readStoredEditorSelectionMatches",
-      write: "writeStoredEditorSelectionMatches"
+      setting: "editorSelectionMatches"
     },
     {
       slug: "bracket-match",
       title: "Bracket matching",
-      kind: "bool",
       aliases: ["showmatch", "sm"],
-      read: "readStoredEditorBracketMatch",
-      write: "writeStoredEditorBracketMatch"
+      setting: "editorBracketMatch"
     },
     // ── editing behaviour ─────────────────────────────────────────────────────
     {
       slug: "auto-close-brackets",
       title: "Auto-close brackets",
-      kind: "bool",
       aliases: ["autoclose"],
-      read: "readStoredEditorAutoCloseBrackets",
-      write: "writeStoredEditorAutoCloseBrackets"
+      setting: "editorAutoCloseBrackets"
     },
     {
       slug: "reindent-paste",
       title: "Re-indent on paste",
-      kind: "bool",
-      read: "readStoredEditorReindentPaste",
-      write: "writeStoredEditorReindentPaste"
+      setting: "editorReindentPaste"
     },
     {
       slug: "format-on-save",
       title: "Format on save",
-      kind: "bool",
-      read: "readStoredFormatOnSave",
-      write: "writeStoredFormatOnSave"
+      setting: "formatOnSave"
     },
     {
       slug: "trim-whitespace",
       title: "Trim trailing whitespace on save",
-      kind: "bool",
-      read: "readStoredTrimTrailingWs",
-      write: "writeStoredTrimTrailingWs"
+      setting: "trimTrailingWs"
     },
     // ── proof surface ─────────────────────────────────────────────────────────
     {
       slug: "hole-gutter",
       title: "Hole gutter marks",
-      kind: "bool",
-      read: "readStoredEditorHoleGutter",
-      write: "writeStoredEditorHoleGutter"
+      setting: "editorHoleGutter"
     },
     {
       slug: "hole-emphasis",
       title: "Hole gutter emphasis",
-      kind: "enum",
-      values: ["subtle", "normal", "loud"],
       labels: { subtle: "Subtle", normal: "Default", loud: "Loud" },
-      read: "readStoredEditorHoleEmphasis",
-      write: "writeStoredEditorHoleEmphasis"
+      setting: "editorHoleEmphasis"
     },
     {
       slug: "quiet-typing",
       title: "Quiet while typing",
-      kind: "bool",
       aliases: ["quiet"],
-      read: "readStoredQuietWhileTyping",
-      write: "writeStoredQuietWhileTyping"
+      setting: "quietWhileTyping"
     },
     {
       slug: "hover-sticky",
       title: "Sticky hover",
-      kind: "bool",
-      read: "readStoredHoverSticky",
-      write: "writeStoredHoverSticky"
+      setting: "hoverSticky"
     }
   ];
+  var SETTINGS2 = ROWS.map((r) => {
+    const row = settingRow(r.setting);
+    if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
+    return typeOf(row) === "bool" ? { ...r, kind: "bool" } : { ...r, kind: "enum", values: row.values };
+  });
   function lowerFirst(text) {
     const t = String(text || "");
     return t.charAt(0).toLowerCase() + t.slice(1);
@@ -5695,7 +4782,7 @@
     return "set." + slug;
   }
   function settingEntries() {
-    return SETTINGS.map((s) => ({
+    return SETTINGS2.map((s) => ({
       id: settingId(s.slug),
       title: (s.kind === "bool" ? "Toggle " : "Cycle ") + lowerFirst(s.verb || s.title),
       section: "Settings",
@@ -5706,7 +4793,7 @@
   }
   function optionNames() {
     const out = [];
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       out.push(s.slug);
       for (const a of s.aliases || []) out.push(a);
     }
@@ -5714,11 +4801,11 @@
   }
   function optionCandidates() {
     const out = [];
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
-    for (const s of SETTINGS) {
+    for (const s of SETTINGS2) {
       if (s.kind !== "bool" && s.off === void 0) continue;
       out.push({ value: "no" + s.slug, label: s.title + " (off)" });
       for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
@@ -5737,7 +4824,7 @@
     const key = String(name == null ? "" : name).toLowerCase();
     if (!key) return null;
     const bare = key.startsWith("set.") ? key.slice(4) : key;
-    return SETTINGS.find((s) => s.slug === bare) || SETTINGS.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+    return SETTINGS2.find((s) => s.slug === bare) || SETTINGS2.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
   function nextValue(spec, current, requested) {
     if (!spec) return null;
@@ -5781,10 +4868,10 @@
     const value = eq >= 0 ? text.slice(eq + 1).trim() : null;
     const typed2 = (eq >= 0 ? text.slice(0, eq) : text).trim();
     let name = typed2.toLowerCase();
-    let toggle5 = false;
+    let toggle6 = false;
     if (name.endsWith("!")) {
       name = name.slice(0, -1);
-      toggle5 = true;
+      toggle6 = true;
     }
     let negated = false;
     if (!findSetting(name) && name.startsWith("no") && findSetting(name.slice(2))) {
@@ -5793,7 +4880,7 @@
     }
     const spec = findSetting(name);
     if (!spec) {
-      return { error: "unknown", name, near: nearestSetting(name), typed: typed2, value, negated, toggle: toggle5 };
+      return { error: "unknown", name, near: nearestSetting(name), typed: typed2, value, negated, toggle: toggle6 };
     }
     if (value != null && value !== "" && spec.kind === "enum" && !(spec.values || []).some((v) => String(v) === String(value))) {
       return { error: "value", name, spec, value };
@@ -5804,7 +4891,7 @@
     let requested;
     if (value != null && value !== "") requested = value;
     else if (negated) requested = false;
-    else if (toggle5) requested = void 0;
+    else if (toggle6) requested = void 0;
     else if (spec.kind === "bool" || spec.on !== void 0) requested = true;
     else requested = void 0;
     return { spec, requested };
@@ -5820,17 +4907,16 @@
     const labels = spec.labels || {};
     return spec.title + ": " + (labels[value] != null ? labels[value] : String(value));
   }
-  function applyValue(persist4, spec, requested) {
-    if (!persist4 || !spec) return { ok: false, message: "Settings are not ready yet." };
-    if (typeof persist4[spec.read] !== "function" || typeof persist4[spec.write] !== "function") {
-      return { ok: false, message: `${spec.title} cannot be changed here.` };
+  function applyValue(settings2, spec, requested) {
+    if (!settings2 || typeof settings2.get !== "function" || !spec) {
+      return { ok: false, message: "Settings are not ready yet." };
     }
-    const value = nextValue(spec, persist4[spec.read](), requested);
+    const value = nextValue(spec, settings2.get(spec.setting), requested);
     if (value === null) return { ok: false, message: `${spec.title}: no such value.` };
-    persist4[spec.write](value);
+    if (!settings2.set(spec.setting, value)) return { ok: false, message: `${spec.title} could not be saved.` };
     return { ok: true, applied: true, spec, value, message: describeChange(spec, value) };
   }
-  function runSetOn(persist4, raw) {
+  function runSetOn(settings2, raw) {
     const res = parseSet(raw);
     if (res.error === "usage") {
       return { ok: false, message: "Usage: :set nu, :set nowrap, :set ts=4" };
@@ -5850,7 +4936,7 @@
         message: `${res.spec.title} is not on or off. Try :set ${res.name}=${res.spec.values[0]}.`
       };
     }
-    return applyValue(persist4, res.spec, res.requested);
+    return applyValue(settings2, res.spec, res.requested);
   }
 
   // js/commands/command-catalog.mjs
@@ -5862,6 +4948,8 @@
     { id: "file.upload-folder", title: "Upload Folder", section: "File", scope: "global", palette: true },
     { id: "file.import-folder", title: "Import Folder as New Project", section: "File", scope: "global", palette: true },
     { id: "file.download", title: "Download Current File", section: "File", scope: "global", palette: true },
+    // The whole project as a zip: how work outlives a browser that clears its storage.
+    { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -6695,10 +5783,8 @@
     }
   }
   function editingStyle() {
-    const g14 = typeof window !== "undefined" ? window : globalThis;
-    const p = g14.Persist;
     try {
-      const v = p && typeof p.readStoredKeymapStyle === "function" ? p.readStoredKeymapStyle() : "";
+      const v = Settings.get("keymapStyle");
       return v === "vim" || v === "emacs" ? v : "default";
     } catch (_) {
       return "default";
@@ -6930,7 +6016,7 @@
     // The preference table, so the editor's `:set` resolves through the same
     // source as the palette rows without importing across the bundle seam.
     settings: {
-      list: () => SETTINGS.slice(),
+      list: () => SETTINGS2.slice(),
       find: findSetting,
       next: nextValue,
       nearest: nearestSetting,
@@ -6995,12 +6081,14 @@
     "symbols",
     "spacer",
     "tab",
+    "undo",
+    "redo",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "undo", "redo", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
@@ -7027,12 +6115,20 @@
   var BUILDERS = {
     /**
      * Which keymap. Stable, so it carries no colour and no chip — and gated on a
-     * file, because with no editor open there is no keymap to be in.
+     * file, because with no editor open there is no keymap to be in. Clicking it
+     * opens the picker.
      */
     keymap(s) {
       if (!s.hasFile) return null;
       const name = s.style === "vim" ? "Vim" : s.style === "emacs" ? "Emacs" : "Standard";
-      return { key: "keymap", text: name, tone: "plain", title: name + " keymap" };
+      return {
+        key: "keymap",
+        text: name,
+        tone: "plain",
+        title: "Editing style",
+        action: "keymap-menu",
+        pressed: !!s.keymapOpen
+      };
     },
     /** The mode WITHIN the keymap — only where there is one to be in. */
     mode(s) {
@@ -7202,11 +6298,22 @@
       };
     },
     /**
-     * The way into the edit-history panel.
-     *
-     * Silent until there is something to undo or redo, so an untouched file
-     * carries no widget at all. A waiting redo branch is a tone change, spelled
-     * out in the panel — not a second number beside the word.
+     * Undo and redo, as one tray with the history beside them. The tray appears
+     * whole or not at all, so a direction with nothing in it is disabled rather
+     * than missing — a button that comes and goes shoves its neighbours. The
+     * view appends the live key to `title` from `command`.
+     */
+    undo(s) {
+      if (!s.undoDepth && !s.redoDepth) return null;
+      return { key: "undo", icon: "undo", title: "Undo", command: "edit.undo", action: "undo", disabled: !s.undoDepth };
+    },
+    redo(s) {
+      if (!s.undoDepth && !s.redoDepth) return null;
+      return { key: "redo", icon: "redo", title: "Redo", command: "edit.redo", action: "redo", disabled: !s.redoDepth };
+    },
+    /**
+     * The way into the edit-history panel. A waiting redo branch is a tone
+     * change, spelled out in the panel — not a number beside the icon.
      */
     history(s) {
       const undo = s.undoDepth || 0;
@@ -7214,13 +6321,11 @@
       if (!undo && !redo) return null;
       return {
         key: "history",
-        text: "History",
         // ⛔ `icon`, not `mark`. `.jar-strip__mark` is the goal segment's turnstile
-        // and already carries the HOLES magenta — borrowing it painted the undo
-        // arrow bright pink, which read as an error badge sitting next to the
-        // checker. A widget that means something else gets its own mark.
+        // and already carries the HOLES magenta — borrowing it painted the arrow
+        // bright pink, which read as an error badge sitting next to the checker.
         icon: "history",
-        title: "Editor history",
+        title: "Edit history",
         tone: redo ? "branched" : "plain",
         action: "edit-history",
         pressed: !!s.historyOpen
@@ -7323,9 +6428,9 @@
     if (q.length > tl.length) return -1;
     let s = 0;
     let prev = -2;
-    let from = 0;
+    let from2 = 0;
     for (let i = 0; i < q.length; i += 1) {
-      const idx = tl.indexOf(q[i], from);
+      const idx = tl.indexOf(q[i], from2);
       if (idx < 0) return -1;
       let step2 = 1;
       if (idx === prev + 1) step2 += 4;
@@ -7333,7 +6438,7 @@
       if (idx === 0 || before === " " || before === "-" || before === "." || before === "/") step2 += 6;
       s += step2;
       prev = idx;
-      from = idx + 1;
+      from2 = idx + 1;
     }
     if (tl.startsWith(q)) s += 8;
     return s;
@@ -7505,23 +6610,12 @@
   function loadHistory() {
     if (historyLoaded) return;
     historyLoaded = true;
-    const P3 = global5.Persist;
-    if (P3 && typeof P3.readStoredCommandLineHistory === "function") {
-      try {
-        history2 = P3.readStoredCommandLineHistory() || [];
-      } catch (_) {
-        history2 = [];
-      }
-    }
+    const D = global5.Device;
+    if (D) history2 = D.get("commandLineHistory");
   }
   function saveHistory() {
-    const P3 = global5.Persist;
-    if (P3 && typeof P3.writeStoredCommandLineHistory === "function") {
-      try {
-        P3.writeStoredCommandLineHistory(history2);
-      } catch (_) {
-      }
-    }
+    const D = global5.Device;
+    if (D) D.set("commandLineHistory", history2);
   }
   function commandSources(face) {
     const C2 = global5.Commands;
@@ -7697,15 +6791,15 @@
     listEl.style.maxHeight = rows2 * rowH + listPad.top + listPad.bottom + "px";
   }
   function anchorList() {
-    const bar2 = host && host.closest ? host.closest(".jar-strip") : null;
-    if (!bar2 || !listEl) return;
-    const rect = bar2.getBoundingClientRect();
+    const bar = host && host.closest ? host.closest(".jar-strip") : null;
+    if (!bar || !listEl) return;
+    const rect = bar.getBoundingClientRect();
     listEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
     const zone = host.parentNode && host.parentNode.getBoundingClientRect ? host.parentNode : null;
-    const field = (open || exInput ? zone : null) || bar2.querySelector(".jar-strip__seg--command") || zone;
-    const from = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
+    const field = (open || exInput ? zone : null) || bar.querySelector(".jar-strip__seg--command") || zone;
+    const from2 = field && field.getBoundingClientRect ? field.getBoundingClientRect() : null;
     const pad = 6;
-    let left = from && from.width ? from.left : rect.left + pad;
+    let left = from2 && from2.width ? from2.left : rect.left + pad;
     const width = listEl.offsetWidth || 0;
     left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
     listEl.style.left = Math.max(pad, Math.round(left)) + "px";
@@ -7941,8 +7035,8 @@
   }
   function step(delta) {
     if (!items.length) return false;
-    const from = active < 0 ? delta > 0 ? -1 : 0 : active;
-    active = (from + delta + items.length * 2) % items.length;
+    const from2 = active < 0 ? delta > 0 ? -1 : 0 : active;
+    active = (from2 + delta + items.length * 2) % items.length;
     chosen = true;
     resetCycle();
     paintActive();
@@ -8406,20 +7500,31 @@
     return rows2;
   }
   function historySummary(undoCount, redoCount) {
-    const u = Number(undoCount) || 0;
-    const r = Number(redoCount) || 0;
-    if (!u && !r) return "Nothing to undo yet";
-    const parts = [];
-    if (u) parts.push(plural2(u, "step", "steps") + " to undo");
-    if (r) parts.push(plural2(r, "step", "steps") + " to redo");
-    return parts.join(" \xB7 ");
+    const n = (Number(undoCount) || 0) + (Number(redoCount) || 0);
+    return n ? plural2(n, "step", "steps") : "No steps yet";
+  }
+
+  // js/status-strip/status-strip-popup.mjs
+  var PAD = 6;
+  function anchorAbove(panel2, segSelector, align, textSel) {
+    const strip2 = document.querySelector(".jar-strip");
+    if (!strip2 || !panel2) return;
+    const bar = strip2.getBoundingClientRect();
+    panel2.style.bottom = Math.max(0, Math.round(window.innerHeight - bar.top)) + "px";
+    const segEl = strip2.querySelector(segSelector);
+    const seg = segEl?.getBoundingClientRect();
+    const width = panel2.offsetWidth || 0;
+    const label = segEl?.querySelector(".jar-strip__label")?.getBoundingClientRect();
+    const text = textSel && panel2.querySelector(textSel)?.getBoundingClientRect();
+    const inset = label && text ? text.left - panel2.getBoundingClientRect().left - (label.left - seg.left) : 0;
+    const want = align === "left" ? seg ? seg.left - inset : bar.left + PAD : seg ? seg.right - width : bar.right - width - PAD;
+    panel2.style.left = Math.max(PAD, Math.round(Math.min(want, window.innerWidth - width - PAD))) + "px";
   }
 
   // js/status-strip/status-strip-history-ui.mjs
   var global6 = globalThis;
   var panelEl = null;
   var listEl2 = null;
-  var footEl = null;
   var open2 = false;
   var active2 = -1;
   var rows = [];
@@ -8434,21 +7539,8 @@
     const f = P3.getFileById(id);
     return f ? f.name : null;
   }
-  function bar() {
-    return document.querySelector(".jar-strip");
-  }
   function anchor() {
-    const strip2 = bar();
-    if (!strip2 || !panelEl) return;
-    const rect = strip2.getBoundingClientRect();
-    panelEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + "px";
-    const seg = strip2.querySelector(".jar-strip__seg--history");
-    const from = seg ? seg.getBoundingClientRect() : null;
-    const pad = 6;
-    const width = panelEl.offsetWidth || 0;
-    let left = from ? from.right - width : rect.right - width - pad;
-    left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
-    panelEl.style.left = Math.max(pad, Math.round(left)) + "px";
+    anchorAbove(panelEl, ".jar-strip__seg--history", "right");
   }
   function ensurePanel() {
     if (panelEl && panelEl.isConnected) return panelEl;
@@ -8470,65 +7562,9 @@
     listEl2.className = "jar-hist__list";
     listEl2.setAttribute("role", "listbox");
     panelEl.appendChild(listEl2);
-    footEl = document.createElement("div");
-    footEl.className = "jar-hist__foot";
-    panelEl.appendChild(footEl);
     panelEl._count = count;
     document.body.appendChild(panelEl);
     return panelEl;
-  }
-  function liveKeymapStyle() {
-    const P3 = global6.Persist;
-    const raw = P3 && typeof P3.readStoredKeymapStyle === "function" ? P3.readStoredKeymapStyle() : "";
-    const s = String(raw || "").toLowerCase();
-    return s === "vim" || s === "emacs" ? s : "default";
-  }
-  var FIXED_STYLE_SPECS = {
-    vim: { "edit.undo": "u", "edit.redo": "Control+R" },
-    emacs: { "edit.undo": "Control+Z", "edit.redo": "Control+Shift+Z" }
-  };
-  function liveKeyLabel(commandId) {
-    const K = global6.Keybindings;
-    const style = liveKeymapStyle();
-    const fixed = FIXED_STYLE_SPECS[style] && FIXED_STYLE_SPECS[style][commandId];
-    if (fixed != null) {
-      return K && typeof K.formatShortcut === "function" ? K.formatShortcut(fixed) : fixed;
-    }
-    if (!K || typeof K.labelFor !== "function") return "";
-    try {
-      return K.labelFor(commandId) || "";
-    } catch (_) {
-      return "";
-    }
-  }
-  function hintRow(commandId, fallbackLabel) {
-    const row = document.createElement("span");
-    row.className = "jar-hist__hint";
-    const C2 = global6.Commands;
-    let label = fallbackLabel;
-    try {
-      const cmd = C2 && typeof C2.get === "function" ? C2.get(commandId) : null;
-      if (cmd && cmd.title) label = cmd.title;
-    } catch (_) {
-    }
-    const keys = liveKeyLabel(commandId);
-    const name = document.createElement("span");
-    name.className = "jar-hist__hint-name";
-    name.textContent = label;
-    row.appendChild(name);
-    if (keys) {
-      const kbd = document.createElement("kbd");
-      kbd.className = "jar-hist__key";
-      kbd.textContent = keys;
-      row.appendChild(kbd);
-    }
-    return row;
-  }
-  function renderFoot() {
-    if (!footEl) return;
-    footEl.textContent = "";
-    footEl.appendChild(hintRow("edit.undo", "Undo"));
-    footEl.appendChild(hintRow("edit.redo", "Redo"));
   }
   function rowEl(row, index) {
     if (row.now) {
@@ -8597,7 +7633,6 @@
     panel2._count.textContent = historySummary(undo.length, redo.length);
     listEl2.textContent = "";
     rows.forEach((row, i) => listEl2.appendChild(rowEl(row, i)));
-    renderFoot();
     if (active2 < 0 || active2 >= rows.length) active2 = rows.findIndex((r) => r.now);
     paintActive2();
     const now = listEl2.querySelector(".jar-hist__now");
@@ -8735,8 +7770,158 @@
     render();
   }
 
-  // js/status-strip/status-strip-view.mjs
+  // js/status-strip/status-strip-keys.mjs
   var global7 = globalThis;
+  function liveKeymapStyle() {
+    const s = String(global7.Settings?.get?.("keymapStyle") || "").toLowerCase();
+    return s === "vim" || s === "emacs" ? s : "default";
+  }
+  var FIXED_STYLE_SPECS = {
+    vim: { "edit.undo": "u", "edit.redo": "Control+R" },
+    emacs: { "edit.undo": "Control+Z", "edit.redo": "Control+Shift+Z" }
+  };
+  function liveKeyLabel(commandId) {
+    const K = global7.Keybindings;
+    const fixed = FIXED_STYLE_SPECS[liveKeymapStyle()]?.[commandId];
+    if (fixed != null) return typeof K?.formatShortcut === "function" ? K.formatShortcut(fixed) : fixed;
+    try {
+      return typeof K?.labelFor === "function" ? K.labelFor(commandId) || "" : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  // js/status-strip/status-strip-keymap-ui.mjs
+  var global8 = globalThis;
+  var STYLES = [
+    { value: "default", name: "Standard" },
+    { value: "vim", name: "Vim" },
+    { value: "emacs", name: "Emacs" }
+  ];
+  var panelEl2 = null;
+  var listEl3 = null;
+  var active3 = -1;
+  var onChanged2 = null;
+  var anchor2 = () => anchorAbove(panelEl2, ".jar-strip__seg--keymap", "left", ".jar-style__name");
+  function rowEl2(style, index, current) {
+    const el6 = document.createElement("button");
+    el6.type = "button";
+    el6.className = "jar-style__row" + (current ? " is-current" : "");
+    el6.setAttribute("role", "option");
+    el6.setAttribute("aria-selected", current ? "true" : "false");
+    el6.dataset.index = String(index);
+    const name = document.createElement("span");
+    name.className = "jar-style__name";
+    name.textContent = style.name;
+    el6.appendChild(name);
+    return el6;
+  }
+  function build2() {
+    panelEl2 = document.createElement("div");
+    panelEl2.className = "jar-hist jar-hist--style";
+    panelEl2.setAttribute("role", "dialog");
+    panelEl2.setAttribute("aria-label", "Editing style");
+    const head = document.createElement("div");
+    head.className = "jar-hist__head";
+    const title = document.createElement("span");
+    title.className = "jar-hist__title";
+    title.textContent = "Editing style";
+    head.appendChild(title);
+    listEl3 = document.createElement("div");
+    listEl3.className = "jar-hist__list";
+    listEl3.setAttribute("role", "listbox");
+    const current = liveKeymapStyle();
+    STYLES.forEach((s, i) => listEl3.appendChild(rowEl2(s, i, s.value === current)));
+    active3 = -1;
+    panelEl2.append(head, listEl3);
+    document.body.appendChild(panelEl2);
+    paintActive3();
+  }
+  function paintActive3() {
+    Array.from(listEl3.children).forEach((n, i) => n.classList.toggle("is-active", i === active3));
+  }
+  function choose(index) {
+    const style = STYLES[index];
+    close3();
+    if (style && style.value !== liveKeymapStyle()) {
+      global8.Settings.set("keymapStyle", style.value);
+      global8.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: "keymap-style" } }));
+      global8.StatusStrip?.setEditorState?.({ style: style.value });
+    }
+    global8.CurrentEditor?.focus?.();
+  }
+  var from = () => active3 < 0 ? Math.max(0, STYLES.findIndex((s) => s.value === liveKeymapStyle())) : active3;
+  var moveTo = (i) => {
+    active3 = (i + STYLES.length) % STYLES.length;
+    paintActive3();
+  };
+  var KEYS = {
+    Escape: () => close3({ focusEditor: true }),
+    ArrowDown: () => moveTo(active3 < 0 ? from() : active3 + 1),
+    ArrowUp: () => moveTo(active3 < 0 ? from() : active3 - 1),
+    Home: () => moveTo(0),
+    End: () => moveTo(STYLES.length - 1),
+    Enter: () => choose(from()),
+    " ": () => choose(from())
+  };
+  function onKeyDown2(e) {
+    const fn = KEYS[e.key];
+    if (!fn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fn();
+  }
+  function onDocPointerDown2(e) {
+    const t = e.target;
+    if (panelEl2?.contains(t) || t?.closest?.(".jar-strip__seg--keymap")) return;
+    close3();
+  }
+  function onListClick2(e) {
+    const row = e.target?.closest?.(".jar-style__row");
+    if (row) choose(Number(row.dataset.index));
+  }
+  function onListMove(e) {
+    if (e.pointerType === "touch") return;
+    const row = e.target?.closest?.(".jar-style__row");
+    if (row && Number(row.dataset.index) !== active3) moveTo(Number(row.dataset.index));
+  }
+  function onListLeave() {
+    if (active3 >= 0) {
+      active3 = -1;
+      paintActive3();
+    }
+  }
+  var isOpen3 = () => !!panelEl2;
+  function close3(opts) {
+    if (!panelEl2) return false;
+    document.removeEventListener("keydown", onKeyDown2, true);
+    document.removeEventListener("pointerdown", onDocPointerDown2, true);
+    window.removeEventListener("resize", anchor2);
+    panelEl2.remove();
+    panelEl2 = null;
+    listEl3 = null;
+    onChanged2?.();
+    if (opts?.focusEditor) global8.CurrentEditor?.focus?.();
+    return true;
+  }
+  function toggle2(changed) {
+    if (panelEl2) return close3(), false;
+    onChanged2 = changed || null;
+    build2();
+    listEl3.addEventListener("click", onListClick2);
+    listEl3.addEventListener("pointermove", onListMove);
+    listEl3.addEventListener("pointerleave", onListLeave);
+    document.addEventListener("keydown", onKeyDown2, true);
+    document.addEventListener("pointerdown", onDocPointerDown2, true);
+    window.addEventListener("resize", anchor2);
+    anchor2();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(anchor2);
+    onChanged2?.();
+    return true;
+  }
+
+  // js/status-strip/status-strip-view.mjs
+  var global9 = globalThis;
   var root = null;
   var segmentHost = null;
   var vimSlotEl = null;
@@ -8780,18 +7965,15 @@
     undoDepth: 0,
     redoDepth: 0,
     historyOpen: false,
+    keymapOpen: false,
     /** A second tab has this project open. Standing, not a toast. */
     tabConflict: false
   };
   var detail = "standard";
   var rendered = "";
-  function persist() {
-    return global7.Persist || null;
-  }
   function storedMode() {
-    const p = persist();
     try {
-      const v = p && typeof p.readStoredStatusStrip === "function" ? p.readStoredStatusStrip() : null;
+      const v = Settings.get("statusStrip");
       if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
     } catch (_) {
     }
@@ -8827,6 +8009,7 @@
   function unmount() {
     close({ restore: false });
     close2();
+    close3();
     if (root && root.parentNode) root.parentNode.removeChild(root);
     root = null;
     segmentHost = null;
@@ -8846,7 +8029,7 @@
     return dotEl;
   }
   function renderType(host2, text) {
-    const ed = global7.BelEditor;
+    const ed = global9.BelEditor;
     const norm2 = ed && typeof ed.normalizeType === "function" ? ed.normalizeType(text) : String(text == null ? "" : text);
     host2.textContent = "";
     if (!norm2) return;
@@ -8862,7 +8045,17 @@
   var ICONS = {
     history: [
       { d: "M2.78 8.92A5.3 5.3 0 1 0 4.45 4.06", stroke: true },
-      { d: "M1.36 6.84 2.85 2.28 6.05 5.84Z", fill: true }
+      { d: "M1.36 6.84 2.85 2.28 6.05 5.84Z", fill: true },
+      { d: "M8 5.4V8.2l1.9 1.2", stroke: true, width: 1.3 }
+    ],
+    // A straight shaft hooking back, so the chevron meets a line, not an arc.
+    undo: [
+      { d: "M5.4 2.9 2.4 5.9l3 3", stroke: true },
+      { d: "M2.6 5.9h6.9a3.4 3.4 0 0 1 0 6.8H7.2", stroke: true }
+    ],
+    redo: [
+      { d: "M10.6 2.9l3 3-3 3", stroke: true },
+      { d: "M13.4 5.9H6.5a3.4 3.4 0 0 0 0 6.8h2.3", stroke: true }
     ]
   };
   function iconEl(name) {
@@ -8880,8 +8073,9 @@
       p.setAttribute("fill", part.fill ? "currentColor" : "none");
       if (part.stroke) {
         p.setAttribute("stroke", "currentColor");
-        p.setAttribute("stroke-width", "1.5");
+        p.setAttribute("stroke-width", String(part.width || 1.5));
         p.setAttribute("stroke-linecap", "round");
+        p.setAttribute("stroke-linejoin", "round");
       }
       svg.appendChild(p);
     }
@@ -8894,15 +8088,16 @@
       return gap;
     }
     const el6 = document.createElement(seg.action ? "button" : "span");
-    el6.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "");
+    el6.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "") + (seg.text || seg.render ? "" : " is-icon");
     if (seg.action) {
       el6.type = "button";
       el6.dataset.action = seg.action;
     }
+    if (seg.disabled) el6.setAttribute("aria-disabled", "true");
     if (seg.title) {
       el6.setAttribute("data-tooltip", seg.title);
       el6.setAttribute("aria-label", seg.title);
-      global7.Tooltips?.bind?.(el6);
+      global9.Tooltips?.bind?.(el6);
     }
     if (seg.pressed != null) el6.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
     if (seg.pressed) el6.classList.add("is-open");
@@ -8917,6 +8112,7 @@
       mark.textContent = seg.mark;
       el6.appendChild(mark);
     }
+    if (!seg.text && !seg.render) return el6;
     const label = document.createElement("span");
     label.className = "jar-strip__label";
     if (seg.render === "type") renderType(label, seg.text);
@@ -8924,16 +8120,32 @@
     el6.appendChild(label);
     return el6;
   }
+  function withKeys(seg) {
+    const keys = seg.command ? liveKeyLabel(seg.command) : "";
+    return keys ? { ...seg, title: seg.title + " (" + keys + ")" } : seg;
+  }
+  function stepHistory(dir) {
+    const ed = global9.CurrentEditor;
+    if (typeof ed?.[dir] !== "function") return global9.EditHistory?.[dir]?.();
+    ed.focus?.();
+    return ed[dir]();
+  }
   var ACTIONS = {
-    "focus-editor": () => global7.CurrentEditor?.focus?.(),
-    "goto-line": () => global7.CommandPalette?.open({ mode: "line" }),
-    "commands": () => global7.CommandPalette?.open({ mode: "commands" }),
-    "next-problem": () => global7.Commands?.run("nav.next-problem"),
-    "run-default": () => global7.Commands?.run("run.default") || global7.Commands?.run("run.file"),
-    "next-hole": () => global7.Commands?.run("nav.next-hole"),
-    "open-harpoon": () => global7.Commands?.run("prover.open-in-harpoon") || global7.Commands?.run("view.harpoon"),
-    "run": () => global7.Commands?.run("run.file"),
+    "focus-editor": () => global9.CurrentEditor?.focus?.(),
+    "goto-line": () => global9.CommandPalette?.open({ mode: "line" }),
+    "commands": () => global9.CommandPalette?.open({ mode: "commands" }),
+    "next-problem": () => global9.Commands?.run("nav.next-problem"),
+    "run-default": () => global9.Commands?.run("run.default") || global9.Commands?.run("run.file"),
+    "next-hole": () => global9.Commands?.run("nav.next-hole"),
+    "open-harpoon": () => global9.Commands?.run("prover.open-in-harpoon") || global9.Commands?.run("view.harpoon"),
+    "run": () => global9.Commands?.run("run.file"),
     "edit-history": () => openHistory(),
+    "undo": () => stepHistory("undo"),
+    "redo": () => stepHistory("redo"),
+    "keymap-menu": () => {
+      toggle2(syncKeymap);
+      syncKeymap();
+    },
     /**
      * Stop the recording, then hand the keyboard straight back.
      *
@@ -8942,8 +8154,8 @@
      * none, and the default of 1 would eat the last key of the macro.
      */
     "macro-stop": () => {
-      global7.Commands?.run("macro.record", { dropTrailing: 0 });
-      global7.CurrentEditor?.focus?.();
+      global9.Commands?.run("macro.record", { dropTrailing: 0 });
+      global9.CurrentEditor?.focus?.();
     }
   };
   function runAction(action) {
@@ -8955,20 +8167,23 @@
     syncHistory();
   }
   function syncHistory() {
-    const H = global7.EditHistory;
+    const H = global9.EditHistory;
     setEditorState({
       undoDepth: H && H.getUndoStack ? H.getUndoStack().length : 0,
       redoDepth: H && H.getRedoStack ? H.getRedoStack().length : 0,
       historyOpen: isOpen2()
     });
   }
+  function syncKeymap() {
+    setEditorState({ keymapOpen: isOpen3() });
+  }
   function paint2() {
     frame = 0;
     if (!mounted) return;
     const host2 = ensureRoot();
     if (!host2) return;
-    const segments = buildSegments(state, detail);
-    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "") + ":" + (s.title || "")).join("|");
+    const segments = buildSegments(state, detail).map(withKeys);
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "") + (s.disabled ? "d" : "") + ":" + (s.title || "")).join("|");
     if (signature === rendered) return;
     rendered = signature;
     const els = segments.map(segmentEl);
@@ -9075,6 +8290,7 @@
       "undoDepth",
       "redoDepth",
       "historyOpen",
+      "keymapOpen",
       "tabConflict"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
@@ -9097,20 +8313,20 @@
     schedule();
   }
   function goalAtCaret() {
-    const ed = global7.CurrentEditor;
+    const ed = global9.CurrentEditor;
     if (!ed || typeof ed.holeAtCursor !== "function") return "";
     try {
       const hit = ed.holeAtCursor();
       const goal = hit && hit.hole ? hit.hole.goal : null;
       if (!goal) return "";
-      const norm2 = global7.BelEditor && typeof global7.BelEditor.normalizeType === "function" ? global7.BelEditor.normalizeType(String(goal)) : String(goal);
+      const norm2 = global9.BelEditor && typeof global9.BelEditor.normalizeType === "function" ? global9.BelEditor.normalizeType(String(goal)) : String(goal);
       return norm2;
     } catch (_) {
       return "";
     }
   }
   function seedFromEditor() {
-    const ed = global7.CurrentEditor;
+    const ed = global9.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
     if (!view) {
       setEditorState({ hasFile: false, line: NaN, col: NaN, selChars: 0, selLines: 0, goal: "" });
@@ -9120,9 +8336,8 @@
     const doc2 = view.state.doc;
     const head = doc2.lineAt(sel.head);
     const selChars = Math.abs(sel.to - sel.from);
-    const p = persist();
     setEditorState({
-      style: p && typeof p.readStoredKeymapStyle === "function" ? p.readStoredKeymapStyle() : "default",
+      style: Settings.get("keymapStyle"),
       hasFile: true,
       line: head.number,
       col: sel.head - head.from + 1,
@@ -9158,7 +8373,7 @@
     paint2();
   }
   function refreshProofState() {
-    const ed = global7.CurrentEditor;
+    const ed = global9.CurrentEditor;
     if (!ed) {
       setEditorState({ holes: 0, symbols: NaN, goal: "", inHole: false, goalPending: false });
       return;
@@ -9167,7 +8382,7 @@
     let symbols = NaN;
     let goalState = { inHole: false, goal: "", goalPending: false };
     try {
-      goalState = global7.BelEditor?.goalAtCaret?.() || goalState;
+      goalState = global9.BelEditor?.goalAtCaret?.() || goalState;
     } catch (_) {
     }
     let checking = state.checking;
@@ -9206,18 +8421,18 @@
     const btn = e.target && e.target.closest ? e.target.closest(".jar-strip__seg[data-action]") : null;
     if (!btn) return;
     e.preventDefault();
-    runAction(btn.dataset.action);
+    if (btn.getAttribute("aria-disabled") !== "true") runAction(btn.dataset.action);
   }
   function init2() {
     if (inited || typeof document === "undefined") return;
     inited = true;
-    global7.addEventListener("beljar:hole-goals-updated", refreshProofState);
-    global7.addEventListener("beljar:file-lint", onLint);
-    global7.addEventListener("beljar:keybindings-changed", apply);
+    global9.addEventListener("beljar:hole-goals-updated", refreshProofState);
+    global9.addEventListener("beljar:file-lint", onLint);
+    global9.addEventListener("beljar:keybindings-changed", apply);
     document.addEventListener("click", onClick, true);
     apply();
   }
-  global7.StatusStrip = {
+  global9.StatusStrip = {
     init: init2,
     apply,
     setEditorState,
@@ -9290,10 +8505,10 @@
   }
 
   // js/ui/keybindings.mjs
-  var global8 = globalThis;
+  var global10 = globalThis;
   var IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var DEFAULTS = [];
-  var BY_ID = /* @__PURE__ */ Object.create(null);
+  var BY_ID3 = /* @__PURE__ */ Object.create(null);
   var projectedVersion = -1;
   function syncDefaults() {
     var v = Commands2.version();
@@ -9301,10 +8516,10 @@
     projectedVersion = v;
     var next = Commands2.defaults();
     DEFAULTS.length = 0;
-    for (var k in BY_ID) delete BY_ID[k];
+    for (var k in BY_ID3) delete BY_ID3[k];
     for (var i = 0; i < next.length; i++) {
       DEFAULTS.push(next[i]);
-      BY_ID[next[i].id] = next[i];
+      BY_ID3[next[i].id] = next[i];
     }
   }
   syncDefaults();
@@ -9324,9 +8539,6 @@
   var globalHandlers = /* @__PURE__ */ Object.create(null);
   var globalFallback = null;
   var listening = false;
-  function persistApi() {
-    return global8.Persist || null;
-  }
   var scopeDefsCache = /* @__PURE__ */ Object.create(null);
   var scopeDefsVersion = -1;
   function defsForScope(scope) {
@@ -9345,20 +8557,10 @@
     return out;
   }
   function readOverrides() {
-    var p = persistApi();
-    if (!p || typeof p.readStoredKeybindings !== "function") return {};
-    var o = p.readStoredKeybindings();
-    return o && typeof o === "object" ? o : {};
+    return Settings.get("keybindings");
   }
   function overridesRaw() {
-    try {
-      var p = persistApi();
-      var key = p && p.KEYBINDINGS_KEY;
-      if (!key || !global8.localStorage) return null;
-      return global8.localStorage.getItem(key) || "";
-    } catch (_) {
-      return null;
-    }
+    return Settings.revision("keybindings");
   }
   function compileSpec(n) {
     if (!n) return null;
@@ -9406,16 +8608,15 @@
     return table;
   }
   function writeOverrides(map) {
-    var p = persistApi();
-    if (p && typeof p.writeStoredKeybindings === "function") p.writeStoredKeybindings(map);
+    Settings.set("keybindings", map);
   }
   function notifyChanged() {
     globalTable = null;
     try {
-      if (typeof global8.CustomEvent === "function") {
-        global8.dispatchEvent(new global8.CustomEvent("beljar:keybindings-changed", { detail: {} }));
-      } else if (typeof global8.dispatchEvent === "function") {
-        global8.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
+      if (typeof global10.CustomEvent === "function") {
+        global10.dispatchEvent(new global10.CustomEvent("beljar:keybindings-changed", { detail: {} }));
+      } else if (typeof global10.dispatchEvent === "function") {
+        global10.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
       }
     } catch (_) {
     }
@@ -9493,7 +8694,7 @@
     return v === null || v === "";
   }
   function resolveWith(id, isMac, overrides) {
-    var def = BY_ID[id];
+    var def = BY_ID3[id];
     if (!def) return null;
     if (Object.prototype.hasOwnProperty.call(overrides, id)) {
       var ov = overrides[id];
@@ -9512,7 +8713,7 @@
   }
   function has2(id) {
     syncDefaults();
-    return !!BY_ID[id];
+    return !!BY_ID3[id];
   }
   function labelFor(id, isMac) {
     return formatShortcut(resolve(id, isMac), isMac);
@@ -9570,7 +8771,7 @@
   }
   function titleFor2(id) {
     syncDefaults();
-    var def = BY_ID[id];
+    var def = BY_ID3[id];
     return def ? def.title : "";
   }
   function findConflict(spec, exceptId) {
@@ -9587,7 +8788,7 @@
     return null;
   }
   function setBinding(id, spec) {
-    if (!BY_ID[id]) return { ok: false, reason: "unknown" };
+    if (!BY_ID3[id]) return { ok: false, reason: "unknown" };
     if (isUnboundSentinel(spec)) {
       var mapClear = readOverrides();
       mapClear[id] = "";
@@ -9601,7 +8802,7 @@
     var conflictId = findConflict(n, id);
     if (conflictId) return { ok: false, reason: "conflict", conflictId };
     var map = readOverrides();
-    var def = BY_ID[id];
+    var def = BY_ID3[id];
     var plat = platformDefaultSpec(def);
     if (n === plat) delete map[id];
     else map[id] = n;
@@ -9613,7 +8814,7 @@
     return setBinding(id, "");
   }
   function resetBinding(id) {
-    if (!BY_ID[id]) return { ok: false, reason: "unknown" };
+    if (!BY_ID3[id]) return { ok: false, reason: "unknown" };
     var map = readOverrides();
     delete map[id];
     writeOverrides(map);
@@ -9621,9 +8822,7 @@
     return { ok: true };
   }
   function resetAll() {
-    var p = persistApi();
-    if (p && typeof p.resetKeybindingPrefs === "function") p.resetKeybindingPrefs();
-    else writeOverrides({});
+    Settings.reset("keybindings");
     notifyChanged();
     return { ok: true };
   }
@@ -9709,7 +8908,7 @@
       var list3 = opts.omitIds;
       for (var oi = 0; oi < list3.length; oi++) {
         omit[list3[oi]] = true;
-        var omitDef = BY_ID[list3[oi]];
+        var omitDef = BY_ID3[list3[oi]];
         if (omitDef && omitDef.scope === "editor") {
           var omitPlat = platformDefaultSpec(omitDef);
           if (omitPlat) omitDefaultSpecs[normalizeSpec(omitPlat)] = true;
@@ -9797,12 +8996,12 @@
     if (opts && typeof opts.fallback === "function") globalFallback = opts.fallback;
     if (listening) return;
     listening = true;
-    global8.addEventListener("keydown", onGlobalKeydown, true);
+    global10.addEventListener("keydown", onGlobalKeydown, true);
   }
   function setGlobalHandler(id, fn) {
     globalHandlers[id] = fn;
   }
-  global8.Keybindings = {
+  global10.Keybindings = {
     DEFAULTS,
     IS_MAC,
     has: has2,
@@ -9811,7 +9010,7 @@
     labelFor,
     isUserOverride,
     platformDefaultSpec: function(id, isMac) {
-      return platformDefaultSpec(BY_ID[id], isMac);
+      return platformDefaultSpec(BY_ID3[id], isMac);
     },
     normalizeSpec,
     formatShortcut,
@@ -9848,14 +9047,14 @@
       RESERVED
     }
   };
-  global8.BelJarKeybindings = global8.Keybindings;
+  global10.BelJarKeybindings = global10.Keybindings;
 
   // js/ui/perf-hud.mjs
-  var global9 = globalThis;
+  var global11 = globalThis;
   var panel = null;
   var timer = null;
   function perf() {
-    return global9.Perf || null;
+    return global11.Perf || null;
   }
   function formatBreakdown(bd) {
     if (!bd || !bd.phases) return "(no edit trace yet \u2014 type in the editor)";
@@ -9903,8 +9102,8 @@
     return panel;
   }
   function enable() {
-    global9.PerfDebug = true;
-    global9.BelJarPerfDebug = global9.PerfDebug;
+    global11.PerfDebug = true;
+    global11.BelJarPerfDebug = global11.PerfDebug;
     var p = perf();
     if (p) p.enabled = true;
     ensurePanel2();
@@ -9923,11 +9122,11 @@
     panel = null;
     var p = perf();
     if (p) p.enabled = false;
-    global9.PerfDebug = false;
-    global9.BelJarPerfDebug = global9.PerfDebug;
+    global11.PerfDebug = false;
+    global11.BelJarPerfDebug = global11.PerfDebug;
   }
-  global9.PerfHud = { enable, disable, refresh: render2 };
-  global9.BelJarPerfHud = global9.PerfHud;
+  global11.PerfHud = { enable, disable, refresh: render2 };
+  global11.BelJarPerfHud = global11.PerfHud;
 
   // js/editor-src/project-paths.mjs
   function fileBase(name) {
@@ -9968,7 +9167,7 @@
   }
 
   // js/editor-src/semantic/development.mjs
-  function dirOf2(name) {
+  function dirOf(name) {
     const i = String(name || "").lastIndexOf("/");
     return i === -1 ? "" : name.slice(0, i);
   }
@@ -9992,21 +9191,21 @@
     }
     return out;
   }
-  function cfgByDirFromFiles(files, getText) {
+  function cfgByDirFromFiles(files2, getText) {
     const cfgByDir = {};
-    for (const f of files) {
+    for (const f of files2) {
       const n = String(f.name || "");
       if (!n.toLowerCase().endsWith(".cfg")) continue;
-      const dir = dirOf2(n);
+      const dir = dirOf(n);
       const base = n.slice(n.lastIndexOf("/") + 1);
       if (!cfgByDir[dir]) cfgByDir[dir] = {};
       cfgByDir[dir][base] = String(getText(f.id) ?? "");
     }
     return cfgByDir;
   }
-  function allSignaturePaths(files) {
+  function allSignaturePaths(files2) {
     const out = [];
-    for (const f of files) {
+    for (const f of files2) {
       const fn = String(f.name || "");
       if (isSignaturePath(fn)) out.push(fn);
     }
@@ -10056,14 +9255,14 @@
     }
     return ordered;
   }
-  function topLevelCfgPaths(files, getText) {
+  function topLevelCfgPaths(files2, getText) {
     const referenced = {};
     const cfgPaths = [];
-    for (const f of files) {
+    for (const f of files2) {
       const n = String(f.name || "");
       if (!n.toLowerCase().endsWith(".cfg")) continue;
       cfgPaths.push(n);
-      const cdir = dirOf2(n);
+      const cdir = dirOf(n);
       for (const entry of parseCfg(getText(f.id))) {
         if (entry.toLowerCase().endsWith(".cfg")) {
           referenced[joinPath(cdir, entry)] = true;
@@ -10073,30 +9272,30 @@
     cfgPaths.sort();
     return cfgPaths.filter((p) => !referenced[p]);
   }
-  function resolveActiveChain(files, cfgPath, getText) {
+  function resolveActiveChain(files2, cfgPath, getText) {
     if (!cfgPath) return [];
-    const allSet = pathSetFrom(allSignaturePaths(files));
-    const cfgByDir = cfgByDirFromFiles(files, getText);
-    const dir = dirOf2(cfgPath);
+    const allSet = pathSetFrom(allSignaturePaths(files2));
+    const cfgByDir = cfgByDirFromFiles(files2, getText);
+    const dir = dirOf(cfgPath);
     const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
     const map = cfgByDir[dir];
     if (!map?.[base]) return [];
     return resolveCfgOrder(dir, map[base], cfgByDir, allSet, /* @__PURE__ */ new Set());
   }
-  function owningCfgForFile(files, fileName, getText, preferredCfg = null) {
-    const dir = dirOf2(fileName);
-    const cfgs = files.filter((f) => /\.cfg$/i.test(String(f.name || "")) && dirOf2(f.name) === dir).map((f) => f.name);
+  function owningCfgForFile(files2, fileName, getText, preferredCfg = null) {
+    const dir = dirOf(fileName);
+    const cfgs = files2.filter((f) => /\.cfg$/i.test(String(f.name || "")) && dirOf(f.name) === dir).map((f) => f.name);
     if (!cfgs.length) return null;
-    const owning = cfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(fileName));
+    const owning = cfgs.filter((cfg) => resolveActiveChain(files2, cfg, getText).includes(fileName));
     if (!owning.length) return null;
     if (preferredCfg && owning.includes(preferredCfg)) return preferredCfg;
     return owning[0];
   }
-  function bestCfgInDir(files, getText, dir) {
-    const cfgByDir = cfgByDirFromFiles(files, getText);
+  function bestCfgInDir(files2, getText, dir) {
+    const cfgByDir = cfgByDirFromFiles(files2, getText);
     const map = cfgByDir[dir != null ? String(dir) : ""];
     if (!map) return null;
-    const pathSet = pathSetFrom(allSignaturePaths(files).filter((p) => dirOf2(p) === dir));
+    const pathSet = pathSetFrom(allSignaturePaths(files2).filter((p) => dirOf(p) === dir));
     let best = null;
     let bestCount = -1;
     for (const cfgName of Object.keys(map)) {
@@ -10109,28 +9308,28 @@
     }
     return best;
   }
-  function inferActiveCfgForDir(files, getText, dir) {
-    return bestCfgInDir(files, getText, dir);
+  function inferActiveCfgForDir(files2, getText, dir) {
+    return bestCfgInDir(files2, getText, dir);
   }
-  function inferActiveCfgByDir(files, getText) {
-    const cfgByDir = cfgByDirFromFiles(files, getText);
+  function inferActiveCfgByDir(files2, getText) {
+    const cfgByDir = cfgByDirFromFiles(files2, getText);
     const out = {};
     for (const dir of Object.keys(cfgByDir)) {
-      const best = bestCfgInDir(files, getText, dir);
+      const best = bestCfgInDir(files2, getText, dir);
       if (best) out[dir] = best;
     }
     return out;
   }
   function defaultActiveCfgForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g14 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g14.Persist;
+    const g15 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g15.Persist;
     if (P3 && typeof P3.getActiveCfgForDir === "function") {
       const path = P3.getActiveCfgForDir(d);
       if (path) {
         if (typeof P3.listFiles === "function") {
-          const files = P3.listFiles();
-          if (files.some((f) => f.name === path)) return path;
+          const files2 = P3.listFiles();
+          if (files2.some((f) => f.name === path)) return path;
         } else return path;
       }
     }
@@ -10149,8 +9348,8 @@
   }
   function defaultActiveCfgsForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g14 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g14.Persist;
+    const g15 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g15.Persist;
     if (P3 && typeof P3.getActiveCfgsForDir === "function") {
       const list3 = P3.getActiveCfgsForDir(d);
       if (list3?.length) {
@@ -10168,26 +9367,26 @@
     if (typeof options?.activeCfgsForDir === "function") return options.activeCfgsForDir;
     return defaultActiveCfgsForDir;
   }
-  function resolveOwningActiveCfg(files, filePath, getText, activeCfgs) {
+  function resolveOwningActiveCfg(files2, filePath, getText, activeCfgs) {
     if (!activeCfgs?.length) return null;
-    const owning = activeCfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(filePath));
+    const owning = activeCfgs.filter((cfg) => resolveActiveChain(files2, cfg, getText).includes(filePath));
     return owning.length === 1 ? owning[0] : null;
   }
-  function standaloneResult(active4) {
+  function standaloneResult(active5) {
     return {
       kind: "standalone",
       cfg: null,
-      paths: active4 ? [active4.name] : [],
-      activeIndex: active4 ? 0 : -1,
+      paths: active5 ? [active5.name] : [],
+      activeIndex: active5 ? 0 : -1,
       preludePaths: [],
-      scopeKey: active4 ? `standalone:${active4.name}` : "standalone:"
+      scopeKey: active5 ? `standalone:${active5.name}` : "standalone:"
     };
   }
-  function developmentForFile(files, activeId2, getText, options = {}) {
+  function developmentForFile(files2, activeId2, getText, options = {}) {
     const activeCfgsForDir2 = resolveActiveCfgsForDir(options);
     const activeCfgForDir = resolveActiveCfgForDir(options);
-    const active4 = files.find((f) => f.id === activeId2);
-    if (!active4) {
+    const active5 = files2.find((f) => f.id === activeId2);
+    if (!active5) {
       return {
         kind: "standalone",
         cfg: null,
@@ -10197,18 +9396,18 @@
         scopeKey: "standalone:"
       };
     }
-    if (/\.cfg$/i.test(String(active4.name))) {
-      const paths2 = resolveActiveChain(files, active4.name, getText);
+    if (/\.cfg$/i.test(String(active5.name))) {
+      const paths2 = resolveActiveChain(files2, active5.name, getText);
       return {
         kind: "module",
-        cfg: active4.name,
+        cfg: active5.name,
         paths: paths2,
         activeIndex: -1,
         preludePaths: [],
-        scopeKey: `module:${active4.name}`
+        scopeKey: `module:${active5.name}`
       };
     }
-    if (!isSignaturePath(active4.name)) {
+    if (!isSignaturePath(active5.name)) {
       return {
         kind: "standalone",
         cfg: null,
@@ -10218,16 +9417,16 @@
         scopeKey: "standalone:"
       };
     }
-    let cfgPath = resolveOwningActiveCfg(files, active4.name, getText, activeCfgsForDir2(dirOf2(active4.name)));
-    if (!cfgPath) cfgPath = activeCfgForDir(dirOf2(active4.name));
-    let paths = cfgPath ? resolveActiveChain(files, cfgPath, getText) : [];
-    let activeIndex3 = paths.indexOf(active4.name);
+    let cfgPath = resolveOwningActiveCfg(files2, active5.name, getText, activeCfgsForDir2(dirOf(active5.name)));
+    if (!cfgPath) cfgPath = activeCfgForDir(dirOf(active5.name));
+    let paths = cfgPath ? resolveActiveChain(files2, cfgPath, getText) : [];
+    let activeIndex3 = paths.indexOf(active5.name);
     if (activeIndex3 < 0) {
-      cfgPath = owningCfgForFile(files, active4.name, getText, cfgPath);
-      if (!cfgPath) return standaloneResult(active4);
-      paths = resolveActiveChain(files, cfgPath, getText);
-      activeIndex3 = paths.indexOf(active4.name);
-      if (activeIndex3 < 0) return standaloneResult(active4);
+      cfgPath = owningCfgForFile(files2, active5.name, getText, cfgPath);
+      if (!cfgPath) return standaloneResult(active5);
+      paths = resolveActiveChain(files2, cfgPath, getText);
+      activeIndex3 = paths.indexOf(active5.name);
+      if (activeIndex3 < 0) return standaloneResult(active5);
     }
     return {
       kind: "module",
@@ -10238,25 +9437,25 @@
       scopeKey: `module:${cfgPath}`
     };
   }
-  function cfgPathForActive(files, activeId2, getText, options = {}) {
-    const dev = developmentForFile(files, activeId2, getText, options);
+  function cfgPathForActive(files2, activeId2, getText, options = {}) {
+    const dev = developmentForFile(files2, activeId2, getText, options);
     return dev.kind === "module" && dev.cfg ? dev.cfg : null;
   }
   function visibilityPaths(dev) {
     if (!dev || !dev.paths.length) return [];
-    const active4 = dev.paths[dev.activeIndex >= 0 ? dev.activeIndex : dev.paths.length - 1];
+    const active5 = dev.paths[dev.activeIndex >= 0 ? dev.activeIndex : dev.paths.length - 1];
     const out = [...dev.preludePaths];
-    if (active4 && out.indexOf(active4) === -1) out.push(active4);
+    if (active5 && out.indexOf(active5) === -1) out.push(active5);
     return out;
   }
-  function workspaceDevelopments(files, getText) {
-    const sigPaths = allSignaturePaths(files);
-    const cfgByDir = cfgByDirFromFiles(files, getText);
+  function workspaceDevelopments(files2, getText) {
+    const sigPaths = allSignaturePaths(files2);
+    const cfgByDir = cfgByDirFromFiles(files2, getText);
     const allSet = pathSetFrom(sigPaths);
     const developments = [];
     const covered = {};
-    for (const cfgPath of topLevelCfgPaths(files, getText)) {
-      const dir = dirOf2(cfgPath);
+    for (const cfgPath of topLevelCfgPaths(files2, getText)) {
+      const dir = dirOf(cfgPath);
       const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
       const map = cfgByDir[dir];
       if (!map?.[base]) continue;
@@ -10276,15 +9475,15 @@
     }
     return developments;
   }
-  function orderedDevelopmentPaths(files, activeId2, getText, options = {}) {
-    return developmentForFile(files, activeId2, getText, options).paths;
+  function orderedDevelopmentPaths(files2, activeId2, getText, options = {}) {
+    return developmentForFile(files2, activeId2, getText, options).paths;
   }
-  function preludePathsFor(files, activeId2, getText, options = {}) {
-    return developmentForFile(files, activeId2, getText, options).preludePaths;
+  function preludePathsFor(files2, activeId2, getText, options = {}) {
+    return developmentForFile(files2, activeId2, getText, options).preludePaths;
   }
-  function listDevelopmentMembers(files, activeId2, getText, options = {}, liveActiveText = null) {
-    const dev = developmentForFile(files, activeId2, getText, options);
-    const byName = new Map(files.map((f) => [f.name, f]));
+  function listDevelopmentMembers(files2, activeId2, getText, options = {}, liveActiveText = null) {
+    const dev = developmentForFile(files2, activeId2, getText, options);
+    const byName = new Map(files2.map((f) => [f.name, f]));
     const members = [];
     for (const path of dev.paths) {
       const f = byName.get(path);
@@ -10293,7 +9492,7 @@
       members.push({ id: f.id, name: f.name, text });
     }
     if (!members.length) {
-      const f = files.find((x) => x.id === activeId2);
+      const f = files2.find((x) => x.id === activeId2);
       if (f) {
         members.push({
           id: f.id,
@@ -10306,11 +9505,11 @@
   }
 
   // js/workspace/project-source.mjs
-  function concat(files) {
+  function concat(files2) {
     const parts = [];
     const spans = [];
     let cursor = 1;
-    for (const f of files) {
+    for (const f of files2) {
       const text = String(f.text != null ? f.text : "");
       const lineCount2 = text.split("\n").length;
       spans.push({
@@ -10375,7 +9574,7 @@
     if (!names.length) return null;
     const pathSet = {};
     for (const p of paths) {
-      if (dirOf2(p) === dir) pathSet[p] = true;
+      if (dirOf(p) === dir) pathSet[p] = true;
     }
     if (activeName) {
       for (const name of names) {
@@ -10399,7 +9598,7 @@
     cfgByDir = cfgByDir || {};
     const byDir = {};
     for (const p of paths) {
-      const d = dirOf2(p);
+      const d = dirOf(p);
       if (!byDir[d]) byDir[d] = [];
       byDir[d].push(p);
     }
@@ -10430,33 +9629,33 @@
     cfgByDir = cfgByDir || {};
     const byDir = {};
     for (const p of belPaths) {
-      const d = dirOf2(p);
+      const d = dirOf(p);
       if (!byDir[d]) byDir[d] = [];
       byDir[d].push(p);
     }
     const out = [];
     for (const dir of Object.keys(byDir).sort()) {
-      const files = byDir[dir].slice().sort();
+      const files2 = byDir[dir].slice().sort();
       const cfgText = pickCfgForDir(cfgByDir, dir, belPaths, null);
       if (cfgText) {
-        const belSet = Object.fromEntries(files.map((p) => [p, true]));
+        const belSet = Object.fromEntries(files2.map((p) => [p, true]));
         const ordered = resolveCfgOrder(dir, cfgText, cfgByDir, belSet, /* @__PURE__ */ new Set());
         const seen = Object.fromEntries(ordered.map((p) => [p, true]));
         out.push(...ordered);
-        for (const p of files) {
+        for (const p of files2) {
           if (!seen[p]) out.push(p);
         }
       } else {
-        out.push(...files);
+        out.push(...files2);
       }
     }
     return out;
   }
-  function developmentFilesFor(files, activeId2, getText, options) {
-    const ordered = orderedDevelopmentPaths(files, activeId2, getText, options);
+  function developmentFilesFor(files2, activeId2, getText, options) {
+    const ordered = orderedDevelopmentPaths(files2, activeId2, getText, options);
     const out = [];
     for (const name of ordered) {
-      for (const f of files) {
+      for (const f of files2) {
         if (f.name === name) {
           out.push(f);
           break;
@@ -10465,26 +9664,26 @@
     }
     return out;
   }
-  function orderedPathsForCfg(files, cfgPath, getText) {
+  function orderedPathsForCfg(files2, cfgPath, getText) {
     if (!cfgPath) return [];
-    const dir = dirOf2(cfgPath);
+    const dir = dirOf(cfgPath);
     const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
     const paths = [];
-    for (const f of files) {
+    for (const f of files2) {
       const fn = String(f.name || "");
-      if (dirOf2(fn) === dir && isSignaturePath(fn)) paths.push(fn);
+      if (dirOf(fn) === dir && isSignaturePath(fn)) paths.push(fn);
     }
-    const cfgByDir = cfgByDirFromFiles(files, getText);
+    const cfgByDir = cfgByDirFromFiles(files2, getText);
     const map = cfgByDir[dir];
     if (!map || !map[base]) return [];
     const pathSet = Object.fromEntries(paths.map((p) => [p, true]));
     return resolveCfgOrder(dir, map[base], cfgByDir, pathSet, /* @__PURE__ */ new Set());
   }
-  function developmentFilesForCfg(files, cfgPath, getText) {
-    const ordered = orderedPathsForCfg(files, cfgPath, getText);
+  function developmentFilesForCfg(files2, cfgPath, getText) {
+    const ordered = orderedPathsForCfg(files2, cfgPath, getText);
     const out = [];
     for (const name of ordered) {
-      for (const f of files) {
+      for (const f of files2) {
         if (f.name === name) {
           out.push(f);
           break;
@@ -10493,22 +9692,22 @@
     }
     return out;
   }
-  function inferDefaultCfgPath(files, getText) {
-    const cfgFiles = files.filter((f) => String(f.name || "").toLowerCase().endsWith(".cfg"));
+  function inferDefaultCfgPath(files2, getText) {
+    const cfgFiles = files2.filter((f) => String(f.name || "").toLowerCase().endsWith(".cfg"));
     if (!cfgFiles.length) return null;
-    const cfgByDir = cfgByDirFromFiles(files, getText);
-    const sigPaths = allSignaturePaths(files);
+    const cfgByDir = cfgByDirFromFiles(files2, getText);
+    const sigPaths = allSignaturePaths(files2);
     let best = null;
     let bestCount = -1;
     for (const cfg of cfgFiles) {
       const cfgPath = cfg.name;
-      const dir = dirOf2(cfgPath);
+      const dir = dirOf(cfgPath);
       const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
       const map = cfgByDir[dir];
       if (!map || !map[base]) continue;
       const pathSet = {};
       for (const p of sigPaths) {
-        if (dirOf2(p) === dir) pathSet[p] = true;
+        if (dirOf(p) === dir) pathSet[p] = true;
       }
       const ord = resolveCfgOrder(dir, map[base], cfgByDir, pathSet, /* @__PURE__ */ new Set());
       if (!best || ord.length > bestCount || ord.length === bestCount && cfgPath < best) {
@@ -10518,12 +9717,12 @@
     }
     return best;
   }
-  function preludeFilesFor(files, activeId2, getText, options) {
-    const paths = preludePathsFor(files, activeId2, getText, options || {});
+  function preludeFilesFor(files2, activeId2, getText, options) {
+    const paths = preludePathsFor(files2, activeId2, getText, options || {});
     if (!paths.length) return [];
     const out = [];
     for (const name of paths) {
-      for (const f of files) {
+      for (const f of files2) {
         if (f.name === name) {
           out.push(f);
           break;
@@ -10598,10 +9797,10 @@
       prelude: adjustedPrelude
     };
   }
-  function assembleProjectCode(files) {
+  function assembleProjectCode(files2) {
     const hoistedLines = [];
     const stripped = [];
-    for (const f of files) {
+    for (const f of files2) {
       const peeled = peelGlobalFilePragmas(String(f.text != null ? f.text : ""));
       if (peeled.hoisted) {
         for (const line of peeled.hoisted.split("\n")) {
@@ -10632,8 +9831,8 @@
       spans
     };
   }
-  function buildPrelude(files, activeId2, getText, options) {
-    const pre = preludeFilesFor(files, activeId2, getText, options);
+  function buildPrelude(files2, activeId2, getText, options) {
+    const pre = preludeFilesFor(files2, activeId2, getText, options);
     if (!pre.length) return null;
     const parts = [];
     const spans = [];
@@ -10713,12 +9912,12 @@
     );
     return { text: out, preludeIssues: issues };
   }
-  function scanProjectText(files, query2, limit) {
+  function scanProjectText(files2, query2, limit) {
     const cap = limit || 60;
     const q = String(query2 || "").toLowerCase();
     if (!q) return [];
     const out = [];
-    for (const f of files) {
+    for (const f of files2) {
       const text = String(f.text != null ? f.text : "");
       const lines = text.split("\n");
       let offset = 0;
@@ -10743,12 +9942,12 @@
     }
     return out;
   }
-  function reorder(files, id, delta) {
-    const idx = files.findIndex((f) => f.id === id);
-    if (idx === -1) return files;
-    const to = Math.max(0, Math.min(files.length - 1, idx + (delta || 0)));
-    if (to === idx) return files;
-    const next = files.slice();
+  function reorder(files2, id, delta) {
+    const idx = files2.findIndex((f) => f.id === id);
+    if (idx === -1) return files2;
+    const to = Math.max(0, Math.min(files2.length - 1, idx + (delta || 0)));
+    if (to === idx) return files2;
+    const next = files2.slice();
     const entry = next.splice(idx, 1)[0];
     next.splice(to, 0, entry);
     return next;
@@ -10758,7 +9957,7 @@
     mapLine,
     remapLocations,
     reorder,
-    dirOf: dirOf2,
+    dirOf,
     joinPath,
     baseNoExt,
     fileBase,
@@ -10807,10 +10006,10 @@
   g2.BelJarProjectSource = g2.ProjectSource;
 
   // js/workspace/workspace-state.mjs
-  var SCHEMA_VERSION2 = 1;
+  var SCHEMA_VERSION = 1;
   var MAX_FLOATING = 8;
   var SAVE_DEBOUNCE_MS = 400;
-  var SIDE_PANEL_IDS = ["explorer", "inspector", "library", "harpoon"];
+  var SIDE_PANEL_IDS2 = ["explorer", "inspector", "library", "harpoon"];
   var providers = /* @__PURE__ */ Object.create(null);
   var saveTimer = null;
   var restoredForProject = null;
@@ -10854,21 +10053,21 @@
     if (typeof raw.fileId !== "string" || !raw.fileId) return null;
     var geom = clampGeom(raw.geom);
     if (!geom) return null;
-    var anchor2 = raw.anchor && typeof raw.anchor === "object" ? raw.anchor : null;
-    if (!anchor2) return null;
+    var anchor3 = raw.anchor && typeof raw.anchor === "object" ? raw.anchor : null;
+    if (!anchor3) return null;
     return {
       id: typeof raw.id === "string" ? raw.id : kind + ":" + raw.fileId + ":" + geom.x,
       kind,
       geom,
       fileId: raw.fileId,
-      anchor: anchor2,
+      anchor: anchor3,
       followEditor: !!raw.followEditor,
       zOrder: isFinite(Number(raw.zOrder)) ? Number(raw.zOrder) : 0
     };
   }
   function emptyWorkspace(projectId2) {
     return {
-      v: SCHEMA_VERSION2,
+      v: SCHEMA_VERSION,
       projectId: projectId2 || "default",
       updatedAt: 0,
       activeSidePanel: null,
@@ -10884,11 +10083,11 @@
   function normalizeWorkspace(raw, projectId2) {
     var base = emptyWorkspace(projectId2);
     if (!raw || typeof raw !== "object") return base;
-    if (raw.v !== SCHEMA_VERSION2) return base;
+    if (raw.v !== SCHEMA_VERSION) return base;
     if (typeof raw.projectId === "string") base.projectId = raw.projectId;
     if (typeof raw.updatedAt === "number") base.updatedAt = raw.updatedAt;
     var asp = raw.activeSidePanel;
-    if (asp === null || SIDE_PANEL_IDS.indexOf(asp) !== -1) base.activeSidePanel = asp;
+    if (asp === null || SIDE_PANEL_IDS2.indexOf(asp) !== -1) base.activeSidePanel = asp;
     if (raw.sidebar && typeof raw.sidebar === "object") {
       var sb = raw.sidebar;
       if (sb.inspector && typeof sb.inspector === "object") {
@@ -10924,20 +10123,20 @@
     return base;
   }
   function readWorkspace(projectId2) {
-    var persist4 = P();
-    if (!persist4 || typeof persist4.readStoredWorkspace !== "function") {
+    var persist2 = P();
+    if (!persist2 || typeof persist2.readWorkspace !== "function") {
       return emptyWorkspace(projectId2);
     }
-    return normalizeWorkspace(persist4.readStoredWorkspace(projectId2), projectId2);
+    return normalizeWorkspace(persist2.readWorkspace(projectId2), projectId2);
   }
   function writeWorkspace(snapshot, projectId2) {
-    var persist4 = P();
-    if (!persist4 || typeof persist4.writeStoredWorkspace !== "function") return false;
-    var pid = projectId2 || (persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default");
+    var persist2 = P();
+    if (!persist2 || typeof persist2.writeWorkspace !== "function") return false;
+    var pid = projectId2 || (persist2.getActiveProjectId ? persist2.getActiveProjectId() : "default");
     var next = normalizeWorkspace(snapshot, pid);
     next.projectId = pid;
     next.updatedAt = Date.now();
-    return persist4.writeStoredWorkspace(next, pid);
+    return persist2.writeWorkspace(next, pid);
   }
   function registerProvider(name, hooks) {
     if (!name || !hooks) return;
@@ -10970,19 +10169,19 @@
     }).slice(0, MAX_FLOATING);
   }
   function collectWorkspace() {
-    var persist4 = P();
-    var pid = persist4 && persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default";
+    var persist2 = P();
+    var pid = persist2 && persist2.getActiveProjectId ? persist2.getActiveProjectId() : "default";
     var prior = readWorkspace(pid);
     var snap = emptyWorkspace(pid);
-    var openIds = persist4 && persist4.getOpenFileIds ? persist4.getOpenFileIds() : [];
-    var activeFileId2 = persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null;
-    snap.activeSidePanel = persist4 && typeof persist4.readStoredActiveSidePanel === "function" ? persist4.readStoredActiveSidePanel(pid) : null;
+    var openIds = persist2 && persist2.getOpenFileIds ? persist2.getOpenFileIds() : [];
+    var activeFileId2 = persist2 && persist2.getActiveFileId ? persist2.getActiveFileId() : null;
+    snap.activeSidePanel = persist2 && typeof persist2.readSidePanel === "function" ? persist2.readSidePanel(pid) : null;
     snap.floating = [];
     collectFromProviders(snap);
     snap.floating = mergeFloatingSnapshots(prior.floating, activeFileId2, openIds, snap.floating);
     snap.projectId = pid;
     snap.updatedAt = Date.now();
-    snap.v = SCHEMA_VERSION2;
+    snap.v = SCHEMA_VERSION;
     return snap;
   }
   function scheduleSave() {
@@ -11006,13 +10205,13 @@
   }
   function applyWorkspace(snapshot, deps) {
     deps = deps || {};
-    var persist4 = P();
-    var pid = deps.projectId || (persist4 && persist4.getActiveProjectId ? persist4.getActiveProjectId() : "default");
+    var persist2 = P();
+    var pid = deps.projectId || (persist2 && persist2.getActiveProjectId ? persist2.getActiveProjectId() : "default");
     var ws = normalizeWorkspace(snapshot, pid);
     if (restoredForProject === pid + ":" + ws.updatedAt) return;
     restoredForProject = pid + ":" + ws.updatedAt;
-    var openIds = deps.openFileIds || (persist4 && persist4.getOpenFileIds ? persist4.getOpenFileIds() : []);
-    var activeFileId2 = deps.activeFileId || (persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null);
+    var openIds = deps.openFileIds || (persist2 && persist2.getOpenFileIds ? persist2.getOpenFileIds() : []);
+    var activeFileId2 = deps.activeFileId || (persist2 && persist2.getActiveFileId ? persist2.getActiveFileId() : null);
     if (typeof deps.applySidePanel === "function" && ws.activeSidePanel) {
       deps.applySidePanel(ws.activeSidePanel);
     }
@@ -11030,17 +10229,17 @@
       deps.restoreFloating(floats, deps);
     }
   }
-  function resetWorkspaceState2(projectId2) {
-    var persist4 = P();
-    if (persist4 && typeof persist4.resetStoredWorkspace === "function") {
-      persist4.resetStoredWorkspace(projectId2);
+  function resetWorkspaceState(projectId2) {
+    var persist2 = P();
+    if (persist2 && typeof persist2.resetWorkspace === "function") {
+      persist2.resetWorkspace(projectId2);
     }
     restoredForProject = null;
   }
   var WorkspaceState2 = {
-    SCHEMA_VERSION: SCHEMA_VERSION2,
+    SCHEMA_VERSION,
     MAX_FLOATING,
-    SIDE_PANEL_IDS,
+    SIDE_PANEL_IDS: SIDE_PANEL_IDS2,
     normalizeWorkspace,
     normalizeFloatingEntry,
     normalizeInspectorTarget,
@@ -11052,7 +10251,7 @@
     registerProvider,
     applyWorkspace,
     filterFloatingForFile,
-    resetWorkspaceState: resetWorkspaceState2,
+    resetWorkspaceState,
     mergeFloatingSnapshots,
     clampGeom
   };
@@ -11085,8 +10284,8 @@
     var inspectorPanel = document.querySelector(".inspector-panel");
     var libraryPanel = document.querySelector(".library-panel");
     if (!workspace || !workspacePanes || !editorPanel || !outputPanel) return null;
-    var persist4 = globalThis.Persist;
-    var ratio = persist4 && persist4.readStoredEditorSplit ? persist4.readStoredEditorSplit() : 0.5;
+    var splitRow = deviceRow("editorSplit");
+    var ratio = readDevice("editorSplit");
     var stackedMq = globalThis.matchMedia(STACK_MQ);
     var dragging = false;
     var hitStrip = document.createElement("div");
@@ -11095,7 +10294,7 @@
     hitStrip.tabIndex = -1;
     workspacePanes.appendChild(hitStrip);
     function clamp3(r) {
-      return persist4 && persist4.clampEditorSplit ? persist4.clampEditorSplit(r) : Math.min(0.82, Math.max(0.18, r));
+      return Math.min(splitRow.max, Math.max(splitRow.min, r));
     }
     function isStacked() {
       return stackedMq.matches;
@@ -11136,8 +10335,8 @@
     function applyLayout(save) {
       ratio = clamp3(ratio);
       applySplitVars(ratio);
-      if (save && persist4 && persist4.writeStoredEditorSplit) {
-        persist4.writeStoredEditorSplit(ratio);
+      if (save) {
+        writeDevice("editorSplit", ratio);
       }
       if (typeof opts.onResize === "function") opts.onResize();
       requestAnimationFrame(positionHitStrip);
@@ -11227,8 +10426,6 @@
   // js/workspace/side-panel-resize.mjs
   var STACK_MQ2 = "(max-width: 48rem)";
   var HIT_GRACE_PX2 = 6;
-  var DEFAULT_W = 250;
-  var DEFAULT_H = 190;
   var liveTeardown2 = null;
   function dispose2() {
     var run3 = liveTeardown2;
@@ -11244,11 +10441,6 @@
     opts = opts || {};
     var workspace = document.querySelector(".workspace");
     if (!workspace) return null;
-    var persist4 = globalThis.Persist;
-    if (persist4) {
-      DEFAULT_W = persist4.DEFAULT_SIDE_PANEL_WIDTH || DEFAULT_W;
-      DEFAULT_H = persist4.DEFAULT_SIDE_PANEL_HEIGHT || DEFAULT_H;
-    }
     var stackedMq = globalThis.matchMedia(STACK_MQ2);
     var resizers = [];
     function isStacked() {
@@ -11264,7 +10456,7 @@
       hitStrip.setAttribute("aria-hidden", "true");
       hitStrip.tabIndex = -1;
       panel2.appendChild(hitStrip);
-      function isOpen5() {
+      function isOpen6() {
         return workspace.classList.contains(config.openClass);
       }
       function applySize(save) {
@@ -11283,7 +10475,7 @@
         return isStacked() ? config.seamStacked : config.seam;
       }
       function positionHitStrip() {
-        if (!isOpen5()) {
+        if (!isOpen6()) {
           hitStrip.style.display = "none";
           return;
         }
@@ -11344,7 +10536,7 @@
         globalThis.removeEventListener("pointercancel", endDrag);
       }
       function startDrag(ev) {
-        if (!isOpen5() || ev.button !== 0) return;
+        if (!isOpen6() || ev.button !== 0) return;
         ev.preventDefault();
         setDragging(true);
         size = pointerSize(ev);
@@ -11367,75 +10559,29 @@
         }
       };
     }
-    var panelConfigs = [
-      {
-        panel: document.querySelector(".explorer-panel"),
-        openClass: "is-explorer-open",
-        cssVarW: "--explorer-w",
-        cssVarH: "--explorer-h",
+    function panelConfig(name) {
+      var sizeId = function(stacked) {
+        return name + (stacked ? "Height" : "Width");
+      };
+      return {
+        panel: document.querySelector("." + name + "-panel"),
+        openClass: "is-" + name + "-open",
+        cssVarW: deviceRow(sizeId(false)).cssVar,
+        cssVarH: deviceRow(sizeId(true)).cssVar,
         read: function(stacked) {
-          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist4.readStoredExplorerHeight() : persist4.readStoredExplorerWidth();
+          return readDevice(sizeId(stacked));
         },
         write: function(px, stacked) {
-          if (!persist4) return;
-          if (stacked) persist4.writeStoredExplorerHeight(px);
-          else persist4.writeStoredExplorerWidth(px);
+          writeDevice(sizeId(stacked), px);
         }
-      },
-      {
-        panel: document.querySelector(".inspector-panel"),
-        openClass: "is-inspector-open",
-        cssVarW: "--inspector-w",
-        cssVarH: "--inspector-h",
-        read: function(stacked) {
-          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist4.readStoredInspectorHeight() : persist4.readStoredInspectorWidth();
-        },
-        write: function(px, stacked) {
-          if (!persist4) return;
-          if (stacked) persist4.writeStoredInspectorHeight(px);
-          else persist4.writeStoredInspectorWidth(px);
-        }
-      },
-      {
-        panel: document.querySelector(".library-panel"),
-        openClass: "is-library-open",
-        cssVarW: "--library-w",
-        cssVarH: "--library-h",
-        read: function(stacked) {
-          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist4.readStoredLibraryHeight() : persist4.readStoredLibraryWidth();
-        },
-        write: function(px, stacked) {
-          if (!persist4) return;
-          if (stacked) persist4.writeStoredLibraryHeight(px);
-          else persist4.writeStoredLibraryWidth(px);
-        }
-      },
-      {
-        panel: document.querySelector(".harpoon-panel"),
-        openClass: "is-harpoon-open",
-        cssVarW: "--harpoon-w",
-        cssVarH: "--harpoon-h",
-        read: function(stacked) {
-          if (!persist4) return stacked ? DEFAULT_H : DEFAULT_W;
-          return stacked ? persist4.readStoredHarpoonHeight() : persist4.readStoredHarpoonWidth();
-        },
-        write: function(px, stacked) {
-          if (!persist4) return;
-          if (stacked) persist4.writeStoredHarpoonHeight(px);
-          else persist4.writeStoredHarpoonWidth(px);
-        }
-      }
-    ];
-    if (persist4) {
-      var root2 = document.documentElement.style;
-      for (var i = 0; i < panelConfigs.length; i++) {
-        var cfg = panelConfigs[i];
-        root2.setProperty(cfg.cssVarW, cfg.read(false) + "px");
-        root2.setProperty(cfg.cssVarH, cfg.read(true) + "px");
-      }
+      };
+    }
+    var panelConfigs = ["explorer", "inspector", "library", "harpoon"].map(panelConfig);
+    var root2 = document.documentElement.style;
+    for (var i = 0; i < panelConfigs.length; i++) {
+      var cfg = panelConfigs[i];
+      root2.setProperty(cfg.cssVarW, cfg.read(false) + "px");
+      root2.setProperty(cfg.cssVarH, cfg.read(true) + "px");
     }
     for (var j = 0; j < panelConfigs.length; j++) {
       panelConfigs[j].seam = "right";
@@ -11511,7 +10657,7 @@
       }
     }
     if (!cfgFile) return true;
-    const dir = dirOf2(cfgPath);
+    const dir = dirOf(cfgPath);
     for (const entry of parseCfg(getText(cfgFile.id))) {
       if (!isCfgEntryToken(entry)) continue;
       const full = dir ? `${dir}/${entry}` : entry;
@@ -11521,8 +10667,8 @@
   }
   function canActivateCfg(cfgPath, activeCfgs, allFiles, getText, resolveMembers) {
     const nextSet = memberSet(allFiles, cfgPath, getText, resolveMembers);
-    const active4 = activeCfgs || [];
-    for (const other of active4) {
+    const active5 = activeCfgs || [];
+    for (const other of active5) {
       if (other === cfgPath) return { ok: true };
       const existing = memberSet(allFiles, other, getText, resolveMembers);
       for (const p of Object.keys(nextSet)) {
@@ -11653,13 +10799,13 @@
     const m = margin;
     return x >= m && y >= m && x + w <= vw - m && y + h <= vh - m;
   }
-  function separatedFromAnchor(x, y, w, h, anchor2, gap) {
-    const tr = anchor2;
-    const g14 = gap;
-    return x + w <= tr.left - g14 || x >= tr.right + g14 || y + h <= tr.top - g14 || y >= tr.bottom + g14;
+  function separatedFromAnchor(x, y, w, h, anchor3, gap) {
+    const tr = anchor3;
+    const g15 = gap;
+    return x + w <= tr.left - g15 || x >= tr.right + g15 || y + h <= tr.top - g15 || y >= tr.bottom + g15;
   }
-  function overlapAreaWithAnchor(x, y, w, h, anchor2) {
-    const tr = anchor2;
+  function overlapAreaWithAnchor(x, y, w, h, anchor3) {
+    const tr = anchor3;
     const ix = Math.max(x, tr.left);
     const iy = Math.max(y, tr.top);
     const ax = Math.min(x + w, tr.right);
@@ -11672,15 +10818,15 @@
     const y2 = Math.min(vh - m, y + h) - Math.max(m, y);
     return Math.max(0, x2) * Math.max(0, y2);
   }
-  function computePointMenuPlacement(tw, th, vw, vh, m, g14, tr) {
-    let x = tr.left + g14;
-    let y = tr.top + g14;
-    if (x + tw > vw - m) x = tr.left - g14 - tw;
-    if (y + th > vh - m) y = tr.top - g14 - th;
+  function computePointMenuPlacement(tw, th, vw, vh, m, g15, tr) {
+    let x = tr.left + g15;
+    let y = tr.top + g15;
+    if (x + tw > vw - m) x = tr.left - g15 - tw;
+    if (y + th > vh - m) y = tr.top - g15 - th;
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeSideMenuPlacement(tw, th, vw, vh, m, g14, tr, side, align) {
+  function computeSideMenuPlacement(tw, th, vw, vh, m, g15, tr, side, align) {
     const ah = tr.bottom - tr.top;
     const aw = tr.right - tr.left;
     const alignY = () => {
@@ -11696,34 +10842,34 @@
     let x;
     let y;
     if (side === "right") {
-      x = tr.right + g14;
-      if (x + tw > vw - m) x = tr.left - g14 - tw;
+      x = tr.right + g15;
+      if (x + tw > vw - m) x = tr.left - g15 - tw;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "left") {
-      x = tr.left - g14 - tw;
-      if (x < m) x = tr.right + g14;
+      x = tr.left - g15 - tw;
+      if (x < m) x = tr.right + g15;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "bottom") {
-      y = tr.bottom + g14;
-      if (y + th > vh - m) y = tr.top - g14 - th;
+      y = tr.bottom + g15;
+      if (y + th > vh - m) y = tr.top - g15 - th;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     } else {
-      y = tr.top - g14 - th;
-      if (y < m) y = tr.bottom + g14;
+      y = tr.top - g15 - th;
+      if (y < m) y = tr.bottom + g15;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     }
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g14, tr) {
+  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g15, tr) {
     const side = opts.side;
     const align = opts.align ?? "start";
-    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g14, tr);
-    return computeSideMenuPlacement(tw, th, vw, vh, m, g14, tr, side, align);
+    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g15, tr);
+    return computeSideMenuPlacement(tw, th, vw, vh, m, g15, tr, side, align);
   }
   function computePosition(opts) {
     const tw = opts.width;
@@ -11734,14 +10880,14 @@
     const gap = opts.gap ?? DEFAULT_GAP;
     const tr = normalizeAnchor(opts.anchor);
     const m = margin;
-    const g14 = gap;
+    const g15 = gap;
     if (opts.mode === "menu") {
-      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g14, tr);
+      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g15, tr);
     }
     const preferPlacement = opts.preferPlacement ?? PREFERENCE_TOOLTIP;
     const requireSeparation = opts.requireSeparation !== false;
     const fits = (x, y) => fitsViewport(x, y, tw, th, vw, vh, m);
-    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g14);
+    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g15);
     const clampY = (x, y) => {
       const iy = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
       return { x, y: iy };
@@ -11753,28 +10899,28 @@
     function tryPlacement(side) {
       switch (side) {
         case "right": {
-          const x = tr.right + g14;
+          const x = tr.right + g15;
           if (x + tw > vw - m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "left": {
-          const x = tr.left - g14 - tw;
+          const x = tr.left - g15 - tw;
           if (x < m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "bottom": {
-          const y = tr.bottom + g14;
+          const y = tr.bottom + g15;
           if (y + th > vh - m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "top": {
-          const y = tr.top - g14 - th;
+          const y = tr.top - g15 - th;
           if (y < m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
@@ -11789,10 +10935,10 @@
       if (pos) return pos;
     }
     const emergency = [
-      () => ({ x: m, y: tr.bottom + g14 }),
-      () => ({ x: vw - m - tw, y: tr.bottom + g14 }),
-      () => ({ x: tr.left - g14 - tw, y: vh - m - th }),
-      () => ({ x: tr.right + g14, y: vh - m - th }),
+      () => ({ x: m, y: tr.bottom + g15 }),
+      () => ({ x: vw - m - tw, y: tr.bottom + g15 }),
+      () => ({ x: tr.left - g15 - tw, y: vh - m - th }),
+      () => ({ x: tr.right + g15, y: vh - m - th }),
       () => ({ x: m, y: m })
     ];
     let best = null;
@@ -11813,7 +10959,7 @@
       }
     }
     if (best) return best;
-    const c = clampToViewport(tr.right + g14, tr.bottom + g14, tw, th, vw, vh, m);
+    const c = clampToViewport(tr.right + g15, tr.bottom + g15, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "fallback" };
   }
   var FloatingRectPlacement2 = {
@@ -11870,9 +11016,9 @@
     tip.style.removeProperty("--tooltip-arrow-x");
     tip.style.removeProperty("--tooltip-arrow-y");
   }
-  function applySpout(tip, anchor2, placement, x, y, tw, th, tr, arrowBox = null) {
+  function applySpout(tip, anchor3, placement, x, y, tw, th, tr, arrowBox = null) {
     clearSpout(tip);
-    if (anchor2.hasAttribute("data-tooltip-no-spout")) {
+    if (anchor3.hasAttribute("data-tooltip-no-spout")) {
       tip.classList.add("tooltip-spout-none");
       return;
     }
@@ -11949,8 +11095,8 @@
     }
     tooltipLeaveGen++;
   }
-  function parseLintErrors(anchor2) {
-    const raw = anchor2.getAttribute("data-tooltip-errors");
+  function parseLintErrors(anchor3) {
+    const raw = anchor3.getAttribute("data-tooltip-errors");
     if (!raw) return null;
     try {
       const items3 = JSON.parse(raw);
@@ -11959,12 +11105,12 @@
       return null;
     }
   }
-  function isStackedLintErrors(anchor2) {
-    return !!parseLintErrors(anchor2) && !anchor2.hasAttribute("data-tooltip-head");
+  function isStackedLintErrors(anchor3) {
+    return !!parseLintErrors(anchor3) && !anchor3.hasAttribute("data-tooltip-head");
   }
-  function anchorHasTooltip(anchor2) {
-    if (!anchor2) return false;
-    return !!(anchor2.getAttribute("data-tooltip") || anchor2.getAttribute("data-tooltip-tone") || anchor2.hasAttribute("data-tooltip-head") || anchor2.hasAttribute("data-tooltip-rich") && typeof anchor2._belTooltipRich === "function" || parseLintErrors(anchor2));
+  function anchorHasTooltip(anchor3) {
+    if (!anchor3) return false;
+    return !!(anchor3.getAttribute("data-tooltip") || anchor3.getAttribute("data-tooltip-tone") || anchor3.hasAttribute("data-tooltip-head") || anchor3.hasAttribute("data-tooltip-rich") && typeof anchor3._belTooltipRich === "function" || parseLintErrors(anchor3));
   }
   function fillDiagnosticTooltip(tip, message2, severity) {
     tip.classList.add("tooltip-inner--diagnostic", `tooltip-inner--${severity}`);
@@ -11983,11 +11129,11 @@
     frame2.append(head, body);
     tip.appendChild(frame2);
   }
-  function fillTooltipContent(tip, anchor2) {
-    const text = anchor2.getAttribute("data-tooltip");
-    const tone = anchor2.getAttribute("data-tooltip-tone");
-    const items3 = parseLintErrors(anchor2);
-    const headed = anchor2.hasAttribute("data-tooltip-head");
+  function fillTooltipContent(tip, anchor3) {
+    const text = anchor3.getAttribute("data-tooltip");
+    const tone = anchor3.getAttribute("data-tooltip-tone");
+    const items3 = parseLintErrors(anchor3);
+    const headed = anchor3.hasAttribute("data-tooltip-head");
     tip.classList.remove(
       "tooltip-inner--lint-errors",
       "tooltip-inner--diagnostic",
@@ -11995,12 +11141,12 @@
       "tooltip-inner--warning",
       "tooltip-inner--rich"
     );
-    if (anchor2.hasAttribute("data-tooltip-rich") && typeof anchor2._belTooltipRich === "function") {
+    if (anchor3.hasAttribute("data-tooltip-rich") && typeof anchor3._belTooltipRich === "function") {
       tip.classList.add("tooltip-inner--rich");
       tip.replaceChildren();
       let frag = null;
       try {
-        frag = anchor2._belTooltipRich(anchor2);
+        frag = anchor3._belTooltipRich(anchor3);
       } catch (_) {
         frag = null;
       }
@@ -12045,24 +11191,24 @@
     if (!text) return;
     tip.textContent = text;
   }
-  function tooltipPreferPlacement(anchor2) {
-    const raw = (anchor2.getAttribute("data-tooltip-placement") || "").trim().toLowerCase();
+  function tooltipPreferPlacement(anchor3) {
+    const raw = (anchor3.getAttribute("data-tooltip-placement") || "").trim().toLowerCase();
     if (!raw) return frp().PREFERENCE_TOOLTIP;
     const side = raw === "below" ? "bottom" : raw === "above" ? "top" : raw;
     const order2 = ["bottom", "top", "right", "left"];
     if (!order2.includes(side)) return frp().PREFERENCE_TOOLTIP;
     return [side, ...order2.filter((s) => s !== side)];
   }
-  function anchorConnected(anchor2) {
-    return !!(anchor2 && anchor2.isConnected);
+  function anchorConnected(anchor3) {
+    return !!(anchor3 && anchor3.isConnected);
   }
-  function tooltipRectEl(anchor2) {
-    const fn = anchor2._belTooltipRectEl;
+  function tooltipRectEl(anchor3) {
+    const fn = anchor3._belTooltipRectEl;
     if (typeof fn === "function") {
-      const el6 = fn(anchor2);
+      const el6 = fn(anchor3);
       if (el6 && el6.nodeType === 1 && el6.isConnected) return el6;
     }
-    return anchor2;
+    return anchor3;
   }
   function clearTooltipRoot() {
     tooltipRoot.replaceChildren();
@@ -12070,8 +11216,8 @@
   function tooltipAnimatedEl() {
     return tooltipRoot.querySelector(".tooltip-stack") || tooltipRoot.querySelector(".tooltip-inner");
   }
-  function buildStackedDiagnosticTooltips(anchor2) {
-    const items3 = parseLintErrors(anchor2);
+  function buildStackedDiagnosticTooltips(anchor3) {
+    const items3 = parseLintErrors(anchor3);
     clearTooltipRoot();
     const stack = document.createElement("div");
     stack.className = "tooltip-stack";
@@ -12108,10 +11254,10 @@
     if (placement === "bottom") return inners[0];
     return verticallyClosestStackInner(inners, tr);
   }
-  function applyStackSpout(stack, anchor2, placement, x, y, tw, th, tr) {
+  function applyStackSpout(stack, anchor3, placement, x, y, tw, th, tr) {
     const inners = [...stack.querySelectorAll(".tooltip-inner")];
     for (let i = 0; i < inners.length; i++) clearSpout(inners[i]);
-    if (anchor2.hasAttribute("data-tooltip-no-spout")) {
+    if (anchor3.hasAttribute("data-tooltip-no-spout")) {
       for (let i = 0; i < inners.length; i++) inners[i].classList.add("tooltip-spout-none");
       return;
     }
@@ -12124,56 +11270,56 @@
     const target = stackSpoutTarget(inners, placement, tr);
     if (!target) return;
     const targetRect = target.getBoundingClientRect();
-    applySpout(target, anchor2, placement, x, y, tw, th, tr, {
+    applySpout(target, anchor3, placement, x, y, tw, th, tr, {
       left: targetRect.left,
       top: targetRect.top,
       width: targetRect.width,
       height: targetRect.height
     });
   }
-  function layoutTooltip(anchor2) {
-    if (!anchorConnected(anchor2)) {
+  function layoutTooltip(anchor3) {
+    if (!anchorConnected(anchor3)) {
       hideTooltip();
       return;
     }
-    if (!anchorHasTooltip(anchor2) || tooltipRoot.hidden) return;
-    const stacked = isStackedLintErrors(anchor2);
+    if (!anchorHasTooltip(anchor3) || tooltipRoot.hidden) return;
+    const stacked = isStackedLintErrors(anchor3);
     let tip;
-    if (stacked) tip = buildStackedDiagnosticTooltips(anchor2);
+    if (stacked) tip = buildStackedDiagnosticTooltips(anchor3);
     else {
       tip = tooltipRoot.querySelector(".tooltip-inner");
       if (!tip) {
         ensureTooltipInner();
         tip = tooltipRoot.querySelector(".tooltip-inner");
       }
-      fillTooltipContent(tip, anchor2);
+      fillTooltipContent(tip, anchor3);
     }
     if (!tip) return;
     tooltipRoot.classList.add("is-measuring");
     const tw = tooltipRoot.offsetWidth;
     const th = tooltipRoot.offsetHeight;
-    const tr = tooltipRectEl(anchor2).getBoundingClientRect();
+    const tr = tooltipRectEl(anchor3).getBoundingClientRect();
     const pos = frp().computePosition({
       anchor: tr,
       width: tw,
       height: th,
       margin: tooltipMargin(),
       gap: tooltipGap(),
-      preferPlacement: tooltipPreferPlacement(anchor2)
+      preferPlacement: tooltipPreferPlacement(anchor3)
     });
     tooltipRoot.classList.remove("is-measuring");
     tooltipRoot.style.left = `${pos.x}px`;
     tooltipRoot.style.top = `${pos.y}px`;
-    if (stacked) applyStackSpout(tip, anchor2, pos.placement, pos.x, pos.y, tw, th, tr);
-    else applySpout(tip, anchor2, pos.placement, pos.x, pos.y, tw, th, tr);
+    if (stacked) applyStackSpout(tip, anchor3, pos.placement, pos.x, pos.y, tw, th, tr);
+    else applySpout(tip, anchor3, pos.placement, pos.x, pos.y, tw, th, tr);
     tooltipRoot.classList.add("is-visible");
   }
-  function isPlainTextTooltip(anchor2) {
-    if (!anchor2.getAttribute("data-tooltip")) return false;
-    if (anchor2.getAttribute("data-tooltip-tone")) return false;
-    if (anchor2.hasAttribute("data-tooltip-head")) return false;
-    if (anchor2.hasAttribute("data-tooltip-rich")) return false;
-    if (parseLintErrors(anchor2)) return false;
+  function isPlainTextTooltip(anchor3) {
+    if (!anchor3.getAttribute("data-tooltip")) return false;
+    if (anchor3.getAttribute("data-tooltip-tone")) return false;
+    if (anchor3.hasAttribute("data-tooltip-head")) return false;
+    if (anchor3.hasAttribute("data-tooltip-rich")) return false;
+    if (parseLintErrors(anchor3)) return false;
     return true;
   }
   function refreshTooltipIfAnchored(target) {
@@ -12205,22 +11351,22 @@
       tooltipRoot.appendChild(inner);
     }
   }
-  function showTooltip(anchor2, opts) {
+  function showTooltip(anchor3, opts) {
     opts = opts || {};
-    if (suppressedTooltipAnchors.has(anchor2)) return;
-    if (!anchorConnected(anchor2)) return;
-    if (!anchorHasTooltip(anchor2)) return;
+    if (suppressedTooltipAnchors.has(anchor3)) return;
+    if (!anchorConnected(anchor3)) return;
+    if (!anchorHasTooltip(anchor3)) return;
     cancelTooltipHideAnim();
-    if (tooltipAnchor === anchor2 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
-      layoutTooltip(anchor2);
+    if (tooltipAnchor === anchor3 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
+      layoutTooltip(anchor3);
       return;
     }
     clearTooltipRoot();
-    if (!isStackedLintErrors(anchor2)) ensureTooltipInner();
+    if (!isStackedLintErrors(anchor3)) ensureTooltipInner();
     tooltipRoot.classList.remove("is-leaving");
-    tooltipAnchor = anchor2;
+    tooltipAnchor = anchor3;
     tooltipRoot.hidden = false;
-    layoutTooltip(anchor2);
+    layoutTooltip(anchor3);
   }
   function hideTooltip() {
     tooltipAnchor = null;
@@ -12362,9 +11508,9 @@
       },
       true
     );
-    const tooltipAttrObserver = new MutationObserver(function(records) {
-      for (let i = 0; i < records.length; i++) {
-        const r = records[i];
+    const tooltipAttrObserver = new MutationObserver(function(records2) {
+      for (let i = 0; i < records2.length; i++) {
+        const r = records2[i];
         if (r.type !== "attributes" || r.attributeName !== "data-tooltip" && r.attributeName !== "data-tooltip-errors" && r.attributeName !== "data-tooltip-tone" && r.attributeName !== "data-tooltip-head") continue;
         const el6 = r.target;
         if (!el6 || el6.nodeType !== 1) continue;
@@ -12458,7 +11604,7 @@
   }
 
   // js/ui/hint.mjs
-  var global10 = globalThis;
+  var global12 = globalThis;
   var DEFAULT_DURATION_MS = 1e4;
   var GAP_PX = 10;
   var LEAVE_MS = 160;
@@ -12476,20 +11622,15 @@
   var resizeBound = false;
   var actionFn = null;
   function wasDismissed(id) {
-    if (!id || typeof Persist === "undefined") return false;
-    if (Persist.readStoredHintDismissed && Persist.readStoredHintDismissed(id)) return true;
-    if (id === "library" && Persist.readStoredLibraryHintDismissed && Persist.readStoredLibraryHintDismissed()) {
-      persistDismissed("library");
-      return true;
-    }
-    return false;
+    if (!id || typeof Device === "undefined") return false;
+    return Device.get("dismissedHints").indexOf(id) !== -1;
   }
   function persistDismissed(id) {
-    if (!id || typeof Persist === "undefined") return;
-    if (Persist.writeStoredHintDismissed) Persist.writeStoredHintDismissed(id, true);
-    if (id === "library" && Persist.writeStoredLibraryHintDismissed) {
-      Persist.writeStoredLibraryHintDismissed(true);
-    }
+    if (!id || typeof Device === "undefined") return;
+    var list3 = Device.get("dismissedHints");
+    if (list3.indexOf(id) !== -1) return;
+    list3.push(id);
+    Device.set("dismissedHints", list3);
   }
   function clearTimers() {
     if (autoTimer != null) {
@@ -12502,29 +11643,29 @@
     }
   }
   function releaseTooltip() {
-    if (anchorEl && global10.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
+    if (anchorEl && global12.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
   }
   function suppressTooltip() {
-    if (anchorEl && global10.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
-    if (anchorEl && global10.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
+    if (anchorEl && global12.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
+    if (anchorEl && global12.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
   }
   function progressBar() {
     return rootEl && rootEl.querySelector(".hint-progress-bar");
   }
   function freezeProgressBar() {
-    const bar2 = progressBar();
-    if (!bar2) return;
-    const t = getComputedStyle(bar2).transform;
-    bar2.style.animation = "none";
-    bar2.style.transition = "none";
-    bar2.style.transform = t && t !== "none" ? t : "scaleX(0)";
+    const bar = progressBar();
+    if (!bar) return;
+    const t = getComputedStyle(bar).transform;
+    bar.style.animation = "none";
+    bar.style.transition = "none";
+    bar.style.transform = t && t !== "none" ? t : "scaleX(0)";
   }
   function clearProgressBarFreeze() {
-    const bar2 = progressBar();
-    if (!bar2) return;
-    bar2.style.removeProperty("animation");
-    bar2.style.removeProperty("transition");
-    bar2.style.removeProperty("transform");
+    const bar = progressBar();
+    if (!bar) return;
+    bar.style.removeProperty("animation");
+    bar.style.removeProperty("transition");
+    bar.style.removeProperty("transform");
   }
   function ensureDom() {
     if (rootEl) return true;
@@ -12670,11 +11811,11 @@
   function show(opts) {
     const o = opts && typeof opts === "object" ? opts : {};
     const id = o.id != null ? String(o.id) : null;
-    const anchor2 = o.anchor;
+    const anchor3 = o.anchor;
     const text = o.text != null ? String(o.text) : "";
     const duration = typeof o.duration === "number" && o.duration > 0 ? o.duration : DEFAULT_DURATION_MS;
     const once = o.once !== false;
-    if (!anchor2 || !text) return false;
+    if (!anchor3 || !text) return false;
     if (once && id && wasDismissed(id)) return false;
     if (!ensureDom()) return false;
     if (visible || dismissing) {
@@ -12682,7 +11823,7 @@
       finishHide();
     }
     activeId = id;
-    anchorEl = anchor2;
+    anchorEl = anchor3;
     actionFn = typeof o.onClick === "function" ? o.onClick : null;
     if (cardEl) {
       if (actionFn) cardEl.classList.add("is-action");
@@ -12717,7 +11858,7 @@
     if (!visible || dismissing) return;
     place();
   }
-  global10.Hint = {
+  global12.Hint = {
     show,
     dismiss,
     wasDismissed,
@@ -12727,11 +11868,11 @@
       return activeId === String(id);
     }
   };
-  global10.BelJarHint = global10.Hint;
+  global12.BelJarHint = global12.Hint;
 
   // js/ui/menu.mjs
-  var global11 = globalThis;
-  var FRP = global11.FloatingRectPlacement;
+  var global13 = globalThis;
+  var FRP = global13.FloatingRectPlacement;
   var MARGIN = FRP.DEFAULT_MARGIN;
   var customRowTypes = /* @__PURE__ */ Object.create(null);
   var allControllers = /* @__PURE__ */ new Set();
@@ -12797,13 +11938,13 @@
     const SUBMENU_OPEN_DELAY_MS = 90;
     const MENU_ITEM_TIP_DELAY_MS = 300;
     function hideMenuTooltips() {
-      const T = global11.Tooltips;
+      const T = global13.Tooltips;
       if (T && T.hide) T.hide();
     }
     function bindMenuItemTooltip(btn, item) {
       const text = item.tooltip;
       if (!text) return;
-      const T = global11.Tooltips;
+      const T = global13.Tooltips;
       if (!T) return;
       let timer2 = null;
       btn.addEventListener("mouseenter", () => {
@@ -12829,15 +11970,15 @@
       });
     }
     const controller = { menuRoot };
-    function isOpen5() {
+    function isOpen6() {
       return openMenus.length > 0;
     }
     function rootAnchor() {
       return rootAnchorEl;
     }
-    function anchorRect(anchor2) {
-      if (anchor2 instanceof Element) return anchor2.getBoundingClientRect();
-      return FRP.normalizeAnchor(anchor2);
+    function anchorRect(anchor3) {
+      if (anchor3 instanceof Element) return anchor3.getBoundingClientRect();
+      return FRP.normalizeAnchor(anchor3);
     }
     function submenuPlacementAnchor(anchorRowEl) {
       const parentMenuEl = anchorRowEl.closest(".menu");
@@ -12863,14 +12004,14 @@
       }
       return { anchorRef, align };
     }
-    function layoutMenuEl(menuEl, anchor2, side, align, isSubmenu) {
+    function layoutMenuEl(menuEl, anchor3, side, align, isSubmenu) {
       let ar;
-      if (isSubmenu && anchor2 instanceof Element) {
-        const placed = submenuPlacementAnchor(anchor2);
+      if (isSubmenu && anchor3 instanceof Element) {
+        const placed = submenuPlacementAnchor(anchor3);
         ar = placed.anchorRef;
         align = placed.align;
       } else {
-        ar = anchorRect(anchor2);
+        ar = anchorRect(anchor3);
       }
       const alreadyVisible = menuEl.classList.contains("is-visible");
       if (!alreadyVisible) {
@@ -13321,12 +12462,12 @@
     function open11(opts) {
       closeOtherControllers();
       const items3 = opts.items;
-      const anchor2 = opts.anchor;
+      const anchor3 = opts.anchor;
       const side = opts.side;
       const align = opts.align ?? "start";
       const launch = () => {
         rootOnClose = opts.onClose || null;
-        rootAnchorEl = anchor2 instanceof Element ? anchor2 : null;
+        rootAnchorEl = anchor3 instanceof Element ? anchor3 : null;
         const menuEl = buildMenu(items3, 0);
         if (side === "bottom") {
           menuEl.classList.add("is-drop-down");
@@ -13338,13 +12479,13 @@
         openMenus.push({
           el: menuEl,
           level: 0,
-          anchorRef: anchor2,
+          anchorRef: anchor3,
           triggerEl: null,
           side,
           align,
           isSubmenu: false
         });
-        layoutMenuEl(menuEl, anchor2, side, align, false);
+        layoutMenuEl(menuEl, anchor3, side, align, false);
         setActiveController(controller);
         rovingTabIndexForPanel(menuEl);
         focusMenuItem(menuEl, 0);
@@ -13397,7 +12538,7 @@
     controller.openContext = openContext;
     controller.bindContextMenu = bindContextMenu;
     controller.closeAll = closeAll3;
-    controller.isOpen = isOpen5;
+    controller.isOpen = isOpen6;
     controller.rootAnchor = rootAnchor;
     controller.relayoutAll = relayoutAll;
     controller.forceCloseSync = forceCloseSync;
@@ -13408,9 +12549,9 @@
   var defaultRoot = document.getElementById("menu-root");
   var defaultMenu = defaultRoot ? createMenuController(defaultRoot) : null;
   var dialogMenuControllers = /* @__PURE__ */ new WeakMap();
-  function menuControllerForAnchor(anchor2) {
-    if (!(anchor2 instanceof Element)) return defaultMenu;
-    const dlg = anchor2.closest("dialog.jar-dialog[open]");
+  function menuControllerForAnchor(anchor3) {
+    if (!(anchor3 instanceof Element)) return defaultMenu;
+    const dlg = anchor3.closest("dialog.jar-dialog[open]");
     if (!dlg) return defaultMenu;
     let ctrl = dialogMenuControllers.get(dlg);
     if (ctrl) return ctrl;
@@ -13432,10 +12573,10 @@
     }, { once: true });
     return ctrl;
   }
-  global11.Menu = {
+  global13.Menu = {
     open(opts) {
-      const anchor2 = opts && opts.anchor;
-      const ctrl = menuControllerForAnchor(anchor2 instanceof Element ? anchor2 : null);
+      const anchor3 = opts && opts.anchor;
+      const ctrl = menuControllerForAnchor(anchor3 instanceof Element ? anchor3 : null);
       if (ctrl) ctrl.open(opts);
     },
     openContext(opts) {
@@ -13462,7 +12603,7 @@
   };
 
   // js/ui/command-palette.mjs
-  var global12 = globalThis;
+  var global14 = globalThis;
   function fuzzyScore(query2, text) {
     if (!query2) return { score: 0, positions: [] };
     const t = String(text || "");
@@ -13471,10 +12612,10 @@
     if (q.length > tl.length) return null;
     let score2 = 0;
     let prev = -2;
-    let from = 0;
+    let from2 = 0;
     const positions = [];
     for (let qi = 0; qi < q.length; qi++) {
-      const idx = tl.indexOf(q[qi], from);
+      const idx = tl.indexOf(q[qi], from2);
       if (idx < 0) return null;
       let s = 1;
       if (idx === prev + 1) s += 4;
@@ -13485,7 +12626,7 @@
       score2 += s;
       positions.push(idx);
       prev = idx;
-      from = idx + 1;
+      from2 = idx + 1;
     }
     const spread = positions[positions.length - 1] - positions[0] - (q.length - 1);
     score2 -= Math.floor(spread * 0.5);
@@ -13627,7 +12768,7 @@
   }
   var IS_MAC2 = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var ui = null;
-  var isOpen3 = false;
+  var isOpen4 = false;
   var sessionId = 0;
   var flatItems = [];
   var activeIndex = 0;
@@ -13636,7 +12777,7 @@
   function buildUi() {
     const backdrop = document.createElement("div");
     backdrop.className = "jar-palette-backdrop";
-    backdrop.addEventListener("pointerdown", close3);
+    backdrop.addEventListener("pointerdown", close4);
     const panel2 = document.createElement("div");
     panel2.className = "jar-palette";
     panel2.setAttribute("role", "dialog");
@@ -13686,7 +12827,7 @@
         runActive();
       } else if (e.key === "Escape" || e.ctrlKey && e.key === "g") {
         e.preventDefault();
-        close3();
+        close4();
       } else if (e.key === "Tab") {
         e.preventDefault();
       }
@@ -13740,7 +12881,7 @@
       detail: "Current file",
       mono: false,
       run: () => {
-        const ed = global12.CurrentEditor;
+        const ed = global14.CurrentEditor;
         if (!ed || typeof ed.getView !== "function") return;
         const view = ed.getView();
         if (!view) return;
@@ -13782,9 +12923,9 @@
     if (parsed.mode === "help") {
       return rankItems(helpItems(), parsed.query, 20);
     }
-    const files = providerItems("files").map((f) => ({ ...f, section: "Files" }));
+    const files2 = providerItems("files").map((f) => ({ ...f, section: "Files" }));
     const symbols = providerItems("symbols").map((s) => ({ ...s, section: "Symbols" }));
-    return rankItems(files.concat(symbols), parsed.query, 50);
+    return rankItems(files2.concat(symbols), parsed.query, 50);
   }
   function emptyMessage(parsed) {
     if (parsed.legacyHash) return "Project search is now %. Type after % to search.";
@@ -13911,14 +13052,14 @@
   function runActive() {
     const item = flatItems[activeIndex];
     if (!item) return;
-    close3();
+    close4();
     try {
       item.run();
     } catch (err) {
-      if (global12.console && console.error) console.error("[palette]", err);
-      if (global12.Toasts && global12.Toasts.warn) {
+      if (global14.console && console.error) console.error("[palette]", err);
+      if (global14.Toasts && global14.Toasts.warn) {
         const msg = err && err.message ? String(err.message) : String(err);
-        global12.Toasts.warn("Command failed: " + msg);
+        global14.Toasts.warn("Command failed: " + msg);
       }
     }
   }
@@ -13929,7 +13070,7 @@
     sessionId += 1;
     commandItemsCache = null;
     restoreFocusTo = document.activeElement;
-    isOpen3 = true;
+    isOpen4 = true;
     ui.backdrop.classList.add("is-open");
     ui.panel.classList.add("is-open");
     ui.input.value = MODE_PREFIX[mode];
@@ -13941,29 +13082,23 @@
     } catch (_) {
     }
   }
-  function close3() {
-    if (!ui || !isOpen3) return;
-    isOpen3 = false;
+  function close4() {
+    if (!ui || !isOpen4) return;
+    isOpen4 = false;
     ui.backdrop.classList.remove("is-open");
     ui.panel.classList.remove("is-open");
     const back = restoreFocusTo;
     restoreFocusTo = null;
     if (back && typeof back.focus === "function" && document.contains(back)) back.focus();
   }
-  function toggle2(opts) {
-    if (isOpen3) close3();
+  function toggle3(opts) {
+    if (isOpen4) close4();
     else open3(opts);
   }
   function runCommandEntry() {
-    var style = "";
-    try {
-      if (typeof Persist !== "undefined" && Persist.readStoredKeymapStyle) {
-        style = Persist.readStoredKeymapStyle();
-      }
-    } catch (e) {
-    }
+    var style = Settings.get("keymapStyle");
     var line = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
-    if (!line) return toggle2({ mode: "commands" });
+    if (!line) return toggle3({ mode: "commands" });
     if (style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });
     return StatusStrip.openCommandLine("");
   }
@@ -13974,20 +13109,20 @@
     const key = (e.key || "").toLowerCase();
     if (key === "k" && !e.shiftKey && !e.altKey) {
       e.preventDefault();
-      toggle2({ mode: "anywhere" });
+      toggle3({ mode: "anywhere" });
     } else if (key === "p" && e.shiftKey && !e.altKey) {
       e.preventDefault();
-      toggle2({ mode: "commands" });
+      toggle3({ mode: "commands" });
     } else if (key === "o" && e.shiftKey && !e.altKey) {
       e.preventDefault();
-      toggle2({ mode: "symbols" });
+      toggle3({ mode: "symbols" });
     } else if (key === "f" && e.shiftKey && !e.altKey) {
       e.preventDefault();
-      toggle2({ mode: "search" });
+      toggle3({ mode: "search" });
     }
   }
   function dispose3() {
-    close3();
+    close4();
     if (fallbackKeydown) {
       window.removeEventListener("keydown", fallbackKeydown, true);
       fallbackKeydown = null;
@@ -13997,10 +13132,10 @@
     dispose3();
     if (typeof Keybindings !== "undefined" && typeof Keybindings.initGlobals === "function") {
       Keybindings.initGlobals({
-        "nav.anywhere": () => toggle2({ mode: "anywhere" }),
+        "nav.anywhere": () => toggle3({ mode: "anywhere" }),
         "tools.commands": runCommandEntry,
-        "nav.symbol": () => toggle2({ mode: "symbols" }),
-        "edit.search-project": () => toggle2({ mode: "search" })
+        "nav.symbol": () => toggle3({ mode: "symbols" }),
+        "edit.search-project": () => toggle3({ mode: "search" })
       }, {
         // ⛔ Everything else runs through the registry. These four need a
         // closure because they open a specific palette MODE; the other 63
@@ -14026,17 +13161,17 @@
     }
     return formatShortcut2(idOrSpec, IS_MAC2);
   }
-  global12.CommandPalette = {
+  global14.CommandPalette = {
     register,
     dispose: dispose3,
     unregister: unregister2,
     setProvider,
     open: open3,
-    close: close3,
-    toggle: toggle2,
+    close: close4,
+    toggle: toggle3,
     runCommandEntry,
     init: init5,
-    isOpen: () => isOpen3,
+    isOpen: () => isOpen4,
     /** Bumped on every `open()`. See the note there. */
     sessionId: () => sessionId,
     shortcutLabel: shortcutLabelFor,
@@ -14057,7 +13192,7 @@
   };
 
   // js/ui/floating-window.mjs
-  var global13 = globalThis;
+  var global15 = globalThis;
   var MARGIN2 = 8;
   var open4 = /* @__PURE__ */ new Set();
   var zTop = 4e3;
@@ -14065,10 +13200,10 @@
     return Math.min(Math.max(v, lo), hi);
   }
   function viewportW() {
-    return typeof global13.innerWidth === "number" ? global13.innerWidth : 1024;
+    return typeof global15.innerWidth === "number" ? global15.innerWidth : 1024;
   }
   function viewportH() {
-    return typeof global13.innerHeight === "number" ? global13.innerHeight : 768;
+    return typeof global15.innerHeight === "number" ? global15.innerHeight : 768;
   }
   function makeEl(tag, cls) {
     const n = document.createElement(tag);
@@ -14084,7 +13219,7 @@
     const root2 = makeEl("div", "floating-window" + (opts.className ? " " + opts.className : ""));
     root2.style.width = width + "px";
     root2.style.height = height + "px";
-    const bar2 = makeEl("div", "floating-window-bar");
+    const bar = makeEl("div", "floating-window-bar");
     const titleEl = makeEl("span", "floating-window-title");
     setTitleContent(titleEl, opts.title);
     const barActions = makeEl("div", "floating-window-actions");
@@ -14101,7 +13236,7 @@
             btn.setAttribute("aria-pressed", on ? "true" : "false");
             const t = tip(on);
             if (t) btn.setAttribute("aria-label", t);
-            if (global13.Tooltips?.set) global13.Tooltips.set(btn, t);
+            if (global15.Tooltips?.set) global15.Tooltips.set(btn, t);
           };
           setPressed(!!act.pressed);
           if (act.ref) act.ref.setPressed = setPressed;
@@ -14113,11 +13248,11 @@
           });
         } else {
           if (act.label) btn.setAttribute("aria-label", act.label);
-          if (typeof act.tooltip === "function" && global13.Tooltips?.setRich) {
-            global13.Tooltips.setRich(btn, act.tooltip, act.label);
+          if (typeof act.tooltip === "function" && global15.Tooltips?.setRich) {
+            global15.Tooltips.setRich(btn, act.tooltip, act.label);
             btn.classList.add("floating-window-action--info");
-          } else if (global13.Tooltips?.set && act.label) {
-            global13.Tooltips.set(btn, act.label);
+          } else if (global15.Tooltips?.set && act.label) {
+            global15.Tooltips.set(btn, act.label);
           }
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -14132,12 +13267,12 @@
     closeBtn2.type = "button";
     closeBtn2.setAttribute("aria-label", "Close");
     closeBtn2.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-    bar2.append(titleEl, barActions, closeBtn2);
+    bar.append(titleEl, barActions, closeBtn2);
     const body = makeEl("div", "floating-window-body");
     if (opts.content) body.appendChild(opts.content);
     const grip = makeEl("div", "floating-window-grip");
     grip.setAttribute("aria-hidden", "true");
-    root2.append(bar2, body, grip);
+    root2.append(bar, body, grip);
     document.body.appendChild(root2);
     let x = typeof opts.x === "number" ? opts.x : Math.round((viewportW() - width) / 2);
     let y = typeof opts.y === "number" ? opts.y : Math.round(viewportH() * 0.18);
@@ -14179,13 +13314,13 @@
     function onDragUp() {
       if (!dragP) return;
       dragP = null;
-      global13.removeEventListener("pointermove", onDragMove);
-      global13.removeEventListener("pointerup", onDragUp);
-      global13.removeEventListener("pointercancel", onDragUp);
+      global15.removeEventListener("pointermove", onDragMove);
+      global15.removeEventListener("pointerup", onDragUp);
+      global15.removeEventListener("pointercancel", onDragUp);
       document.body.classList.remove("floating-window-dragging");
       notifyGeometryChange();
     }
-    bar2.addEventListener("pointerdown", (e) => {
+    bar.addEventListener("pointerdown", (e) => {
       if (e.target === closeBtn2 || closeBtn2.contains(e.target)) return;
       for (const b of actionBtns) {
         if (e.target === b || b.contains(e.target)) return;
@@ -14193,9 +13328,9 @@
       if (e.button !== 0) return;
       dragP = { px: e.clientX, py: e.clientY, startX: x, startY: y };
       document.body.classList.add("floating-window-dragging");
-      global13.addEventListener("pointermove", onDragMove);
-      global13.addEventListener("pointerup", onDragUp);
-      global13.addEventListener("pointercancel", onDragUp);
+      global15.addEventListener("pointermove", onDragMove);
+      global15.addEventListener("pointerup", onDragUp);
+      global15.addEventListener("pointercancel", onDragUp);
       e.preventDefault();
     });
     let rez = null;
@@ -14210,9 +13345,9 @@
     function onRezUp() {
       if (!rez) return;
       rez = null;
-      global13.removeEventListener("pointermove", onRezMove);
-      global13.removeEventListener("pointerup", onRezUp);
-      global13.removeEventListener("pointercancel", onRezUp);
+      global15.removeEventListener("pointermove", onRezMove);
+      global15.removeEventListener("pointerup", onRezUp);
+      global15.removeEventListener("pointercancel", onRezUp);
       document.body.classList.remove("floating-window-resizing");
       notifyGeometryChange();
     }
@@ -14220,14 +13355,14 @@
       if (e.button !== 0) return;
       rez = { px: e.clientX, py: e.clientY, startW: root2.offsetWidth, startH: root2.offsetHeight };
       document.body.classList.add("floating-window-resizing");
-      global13.addEventListener("pointermove", onRezMove);
-      global13.addEventListener("pointerup", onRezUp);
-      global13.addEventListener("pointercancel", onRezUp);
+      global15.addEventListener("pointermove", onRezMove);
+      global15.addEventListener("pointerup", onRezUp);
+      global15.addEventListener("pointercancel", onRezUp);
       e.preventDefault();
       e.stopPropagation();
     });
     let closed = false;
-    function close5() {
+    function close6() {
       if (closed) return;
       closed = true;
       onDragUp();
@@ -14242,7 +13377,7 @@
         }
       }
     }
-    closeBtn2.addEventListener("click", close5);
+    closeBtn2.addEventListener("click", close6);
     function setTitleContent(target, title) {
       target.textContent = "";
       if (title == null) return;
@@ -14252,7 +13387,7 @@
     const handle = {
       el: root2,
       body,
-      close: close5,
+      close: close6,
       getGeometry,
       setContent(node) {
         body.textContent = "";
@@ -14269,10 +13404,10 @@
   function closeAll() {
     for (const h of [...open4]) h.close();
   }
-  global13.FloatingWindow = { open: openWindow, closeAll };
+  global15.FloatingWindow = { open: openWindow, closeAll };
 
   // js/ui/available-macros.mjs
-  var global14 = globalThis;
+  var global16 = globalThis;
   var RESERVED_MARK = "*";
   var INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
   function aboutFragment() {
@@ -14403,8 +13538,8 @@
       }
       if (row.id && !keys[had].id) keys[had] = row;
     };
-    for (const g14 of styleGroups3 || []) {
-      for (const r of g14.rows) {
+    for (const g15 of styleGroups3 || []) {
+      for (const r of g15.rows) {
         push2({
           id: r.id,
           title: r.title,
@@ -14433,10 +13568,10 @@
       prefix: access.prefix,
       rows: rows2.filter((r) => (r.ex || []).length)
     }] : [];
-    const live2 = groups.filter((g14) => g14.rows.length);
+    const live2 = groups.filter((g15) => g15.rows.length);
     if (note && live2.length) live2[live2.length - 1].closing = note;
     const tail = reserved ? [reserved] : [];
-    return live2.concat(line.filter((g14) => g14.rows.length)).concat(tail.filter((g14) => g14 && (g14.rows.length || (g14.meta || []).length)));
+    return live2.concat(line.filter((g15) => g15.rows.length)).concat(tail.filter((g15) => g15 && (g15.rows.length || (g15.meta || []).length)));
   }
   function commandLineAccess(style, chord) {
     if (style === "vim") return { prefix: ":", open: "Press : in Normal mode." };
@@ -14445,7 +13580,7 @@
     return null;
   }
   function countRows(groups) {
-    return (groups || []).reduce((n, g14) => n + g14.rows.length, 0);
+    return (groups || []).reduce((n, g15) => n + g15.rows.length, 0);
   }
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -14454,19 +13589,14 @@
     return node;
   }
   function activeStyle() {
-    try {
-      const P3 = global14.Persist;
-      if (P3 && typeof P3.readStoredKeymapStyle === "function") return P3.readStoredKeymapStyle();
-    } catch (_) {
-    }
-    return "default";
+    return Settings.get("keymapStyle");
   }
   function describeAll() {
-    const C2 = global14.Commands;
+    const C2 = global16.Commands;
     if (!C2 || typeof C2.describe !== "function") return [];
-    const E3 = global14.BelEditor;
+    const E3 = global16.BelEditor;
     const style = activeStyle();
-    let isMac = /Mac|iPhone|iPad/.test(global14.navigator && global14.navigator.platform || "");
+    let isMac = /Mac|iPhone|iPad/.test(global16.navigator && global16.navigator.platform || "");
     if (E3 && typeof E3.reservedChordFacts === "function") {
       try {
         isMac = !!E3.reservedChordFacts().isMac;
@@ -14488,7 +13618,7 @@
     if (shadow) {
       const tag = el("span", "jar-macros__tag", shadow.tag);
       tag.setAttribute("data-tooltip", shadow.tip);
-      if (global14.Tooltips && typeof global14.Tooltips.bind === "function") global14.Tooltips.bind(tag);
+      if (global16.Tooltips && typeof global16.Tooltips.bind === "function") global16.Tooltips.bind(tag);
       what.appendChild(tag);
     }
     r.appendChild(what);
@@ -14558,8 +13688,8 @@
     return wrap;
   }
   function styleGroups() {
-    const E3 = global14.BelEditor;
-    const C2 = global14.Commands;
+    const E3 = global16.BelEditor;
+    const C2 = global16.Commands;
     if (!E3 || typeof E3.styleMacros !== "function") return [];
     const style = activeStyle();
     const facts = reservedFacts();
@@ -14571,15 +13701,15 @@
       return [];
     }
     if (!C2 || typeof C2.chordShadowFor !== "function") return groups;
-    return groups.map((g14) => ({
-      name: g14.name,
-      rows: g14.rows.map((r) => Object.assign({}, r, {
+    return groups.map((g15) => ({
+      name: g15.name,
+      rows: g15.rows.map((r) => Object.assign({}, r, {
         shadow: C2.chordShadowFor({ style, keys: r.keys, commandId: r.id })
       }))
     }));
   }
   function reservedFacts() {
-    const E3 = global14.BelEditor;
+    const E3 = global16.BelEditor;
     if (!E3 || typeof E3.reservedChordFacts !== "function") return null;
     try {
       return E3.reservedChordFacts();
@@ -14588,8 +13718,8 @@
     }
   }
   function glossFor(chord) {
-    const C2 = global14.Commands;
-    const KB = global14.Keybindings;
+    const C2 = global16.Commands;
+    const KB = global16.Keybindings;
     if (!C2 || !KB || typeof KB.normalizeSpec !== "function") return "";
     const spec = KB.normalizeSpec(chord);
     if (!spec) return "";
@@ -14598,13 +13728,13 @@
     return cmd ? cmd.title : "";
   }
   function lineAccess() {
-    const KB = global14.Keybindings;
+    const KB = global16.Keybindings;
     const chord = KB && typeof KB.labelFor === "function" ? KB.labelFor("cmdline.open") : "";
     return commandLineAccess(activeStyle(), chord);
   }
   function openAvailableMacros() {
     const access = lineAccess();
-    const E3 = global14.BelEditor;
+    const E3 = global16.BelEditor;
     let note = "";
     try {
       note = E3 && typeof E3.packageKeyNote === "function" ? E3.packageKeyNote(activeStyle()) : "";
@@ -14618,13 +13748,13 @@
       note
     );
     if (!countRows(groups)) {
-      if (global14.StatusStrip && global14.StatusStrip.setMessage) {
-        global14.StatusStrip.setMessage("The command list is not ready yet.");
+      if (global16.StatusStrip && global16.StatusStrip.setMessage) {
+        global16.StatusStrip.setMessage("The command list is not ready yet.");
       }
       return false;
     }
-    if (!global14.FloatingWindow || typeof global14.FloatingWindow.open !== "function") return false;
-    global14.FloatingWindow.open({
+    if (!global16.FloatingWindow || typeof global16.FloatingWindow.open !== "function") return false;
+    global16.FloatingWindow.open({
       title: "Available Keys",
       className: "floating-window--macros",
       actions: [{
@@ -14640,14 +13770,14 @@
     });
     return true;
   }
-  global14.AvailableMacros = { open: openAvailableMacros };
+  global16.AvailableMacros = { open: openAvailableMacros };
 
   // js/ui/full-keyboard.mjs
-  var global15 = globalThis;
-  var active3 = false;
+  var global17 = globalThis;
+  var active4 = false;
   var listening2 = false;
   function strip() {
-    const B = global15.StatusStrip;
+    const B = global17.StatusStrip;
     return B && typeof B.setMessage === "function" ? B : null;
   }
   function say(text) {
@@ -14655,24 +13785,24 @@
     if (B) B.setMessage(text);
   }
   function isSupported() {
-    const nav = global15.navigator;
+    const nav = global17.navigator;
     return !!(nav && nav.keyboard && typeof nav.keyboard.lock === "function");
   }
   function isActive() {
-    return active3 && !!(global15.document && global15.document.fullscreenElement);
+    return active4 && !!(global17.document && global17.document.fullscreenElement);
   }
   function watchFullscreen() {
-    if (listening2 || !global15.document) return;
+    if (listening2 || !global17.document) return;
     listening2 = true;
-    global15.document.addEventListener("fullscreenchange", () => {
-      if (global15.document.fullscreenElement || !active3) return;
-      active3 = false;
+    global17.document.addEventListener("fullscreenchange", () => {
+      if (global17.document.fullscreenElement || !active4) return;
+      active4 = false;
       releaseLock();
       say("Full keyboard off.");
     });
   }
   function releaseLock() {
-    const nav = global15.navigator;
+    const nav = global17.navigator;
     if (nav && nav.keyboard && typeof nav.keyboard.unlock === "function") {
       try {
         nav.keyboard.unlock();
@@ -14685,51 +13815,51 @@
       say("This browser has no Keyboard Lock, so the reserved chords stay reserved.");
       return false;
     }
-    const el6 = global15.document && global15.document.documentElement;
+    const el6 = global17.document && global17.document.documentElement;
     if (!el6 || typeof el6.requestFullscreen !== "function") {
       say("Full keyboard needs fullscreen, which this browser will not give.");
       return false;
     }
     watchFullscreen();
     try {
-      if (!global15.document.fullscreenElement) await el6.requestFullscreen();
-      await global15.navigator.keyboard.lock();
+      if (!global17.document.fullscreenElement) await el6.requestFullscreen();
+      await global17.navigator.keyboard.lock();
     } catch (err) {
-      if (global15.document.fullscreenElement && global15.document.exitFullscreen) {
+      if (global17.document.fullscreenElement && global17.document.exitFullscreen) {
         try {
-          await global15.document.exitFullscreen();
+          await global17.document.exitFullscreen();
         } catch (_) {
         }
       }
       releaseLock();
-      active3 = false;
+      active4 = false;
       say("Full keyboard could not start: " + (err && err.message || "the browser refused."));
       return false;
     }
-    active3 = true;
+    active4 = true;
     say("Full keyboard on \u2014 Ctrl+N, Ctrl+T, Ctrl+W and the rest are yours. Hold Esc to leave.");
     return true;
   }
   async function exit() {
-    if (!active3) return false;
-    active3 = false;
+    if (!active4) return false;
+    active4 = false;
     releaseLock();
-    if (global15.document && global15.document.fullscreenElement && global15.document.exitFullscreen) {
+    if (global17.document && global17.document.fullscreenElement && global17.document.exitFullscreen) {
       try {
-        await global15.document.exitFullscreen();
+        await global17.document.exitFullscreen();
       } catch (_) {
       }
     }
     say("Full keyboard off.");
     return true;
   }
-  function toggle3() {
+  function toggle4() {
     return isActive() ? exit() : enter();
   }
-  global15.FullKeyboard = { isSupported, isActive, enter, exit, toggle: toggle3 };
+  global17.FullKeyboard = { isSupported, isActive, enter, exit, toggle: toggle4 };
 
   // js/ui/double-tap.mjs
-  var global16 = globalThis;
+  var global18 = globalThis;
   var TRIGGERS = {
     off: null,
     shift: { key: "Shift", flag: "shiftKey" },
@@ -14740,22 +13870,11 @@
   var lastUpAt = 0;
   var sawOtherKey = false;
   var listening3 = false;
-  function persist2() {
-    return global16.Persist || null;
-  }
   function settings() {
-    const p = persist2();
-    const read = (name, fallback) => {
-      try {
-        return p && typeof p[name] === "function" ? p[name]() : fallback;
-      } catch (_) {
-        return fallback;
-      }
-    };
     return {
-      trigger: read("readStoredDoubleTapTrigger", "off"),
-      target: read("readStoredDoubleTapCommand", "tools.palette"),
-      windowMs: SPEEDS[read("readStoredDoubleTapSpeed", "normal")] || SPEEDS.normal
+      trigger: Settings.get("doubleTapTrigger"),
+      target: Settings.get("doubleTapCommand"),
+      windowMs: SPEEDS[Settings.get("doubleTapSpeed")] || SPEEDS.normal
     };
   }
   function shouldFire(state2) {
@@ -14778,7 +13897,7 @@
   function blocked(e) {
     const doc2 = typeof document !== "undefined" ? document : null;
     const t = e && e.target || (doc2 ? doc2.activeElement : null);
-    const B = global16.StatusStrip;
+    const B = global18.StatusStrip;
     return !!blockReason({
       composing: !!(e && (e.isComposing || e.keyCode === 229)),
       recordingChord: !!(t && t.classList && t.classList.contains("jar-kb__chord") && t.classList.contains("is-recording")),
@@ -14796,7 +13915,7 @@
     if (e.metaKey) held.push("metaKey");
     return held.some((f) => f !== flag);
   }
-  function onKeyDown2(e) {
+  function onKeyDown3(e) {
     const cfg = settings();
     const trigger = TRIGGERS[cfg.trigger];
     if (!trigger || e.key !== trigger.key) {
@@ -14840,18 +13959,18 @@
     return { close: true, run: id };
   }
   function run2(id) {
-    const C2 = global16.Commands;
-    const P3 = global16.CommandPalette;
+    const C2 = global18.Commands;
+    const P3 = global18.CommandPalette;
     const paletteOpen = !!(P3 && typeof P3.isOpen === "function" && P3.isOpen());
     const action = resolveAction(id, paletteOpen);
     if (action.close && P3 && typeof P3.close === "function") P3.close();
     if (action.run && C2 && typeof C2.run === "function") C2.run(action.run);
   }
   function init6() {
-    if (listening3 || typeof global16.addEventListener !== "function") return false;
+    if (listening3 || typeof global18.addEventListener !== "function") return false;
     listening3 = true;
-    global16.addEventListener("keydown", onKeyDown2, true);
-    global16.addEventListener("keyup", onKeyUp, true);
+    global18.addEventListener("keydown", onKeyDown3, true);
+    global18.addEventListener("keyup", onKeyUp, true);
     return true;
   }
   var GESTURE_TARGETS = [
@@ -14865,7 +13984,7 @@
     "view.harpoon",
     "keys.macros"
   ];
-  global16.DoubleTap = {
+  global18.DoubleTap = {
     init: init6,
     shouldFire,
     targets: () => GESTURE_TARGETS.slice(),
@@ -14882,7 +14001,7 @@
   if (typeof document !== "undefined") init6();
 
   // js/ui/scroll-fade.mjs
-  var global17 = globalThis;
+  var global19 = globalThis;
   var EPS = 1;
   function computeSides(m) {
     var axis = m.axis || "both";
@@ -14975,10 +14094,10 @@
       }
     };
   }
-  global17.ScrollFade = { attach: attach2, computeSides };
+  global19.ScrollFade = { attach: attach2, computeSides };
 
   // js/ui/text-slide.mjs
-  var global18 = globalThis;
+  var global20 = globalThis;
   var SPEED_PX_PER_S = 90;
   var MIN_SLIDE_S = 0.5;
   var SLIDE_FRAC = 0.38;
@@ -14998,7 +14117,7 @@
       while (el6.firstChild) inner.appendChild(el6.firstChild);
       el6.appendChild(inner);
     }
-    var active4 = false;
+    var active5 = false;
     var returnHandler = null;
     function measure2() {
       var overflow = inner.scrollWidth - el6.clientWidth;
@@ -15015,14 +14134,14 @@
     }
     function start() {
       if (!prefersFineHover2()) return;
-      active4 = true;
+      active5 = true;
       cancelReturn();
       inner.style.transition = "";
       inner.style.transform = "";
       if (measure2() > 1) el6.classList.add("text-slide--playing");
     }
     function stop() {
-      active4 = false;
+      active5 = false;
       if (!el6.classList.contains("text-slide--playing")) return;
       var cur = window.getComputedStyle(inner).transform;
       el6.classList.remove("text-slide--playing");
@@ -15033,7 +14152,7 @@
       returnHandler = function(e) {
         if (e.propertyName !== "transform") return;
         cancelReturn();
-        if (!active4) {
+        if (!active5) {
           inner.style.transition = "";
           inner.style.transform = "";
         }
@@ -15044,7 +14163,7 @@
     triggerEl.addEventListener("mouseleave", stop);
     if (typeof ResizeObserver !== "undefined") {
       var ro = new ResizeObserver(function() {
-        if (active4) measure2();
+        if (active5) measure2();
       });
       ro.observe(el6);
     }
@@ -15052,7 +14171,7 @@
   function bindAll() {
     document.querySelectorAll("[data-text-slide]").forEach(bind2);
   }
-  global18.TextSlide = { bind: bind2, bindAll };
+  global20.TextSlide = { bind: bind2, bindAll };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bindAll);
   } else {
@@ -15705,15 +14824,32 @@
       openDialog(dialogEl);
     });
   }
+  function resolveTextConflict(opts) {
+    opts = opts || {};
+    const where = opts.source === "device" ? "Another device" : "Another tab";
+    return PromptDialog.open({
+      ariaLabel: "Edit conflict",
+      subject: opts.fileName || void 0,
+      message: where + " changed the same lines as you.",
+      note: "Both versions are kept until you choose.",
+      layout: "row",
+      buttons: [
+        { action: "both", label: "Keep both", variant: "secondary" },
+        { action: "theirs", label: "Take theirs", variant: "secondary" },
+        { action: "mine", label: "Keep mine", variant: "primary" }
+      ]
+    }).then((action) => action === "mine" || action === "theirs" || action === "both" ? action : null);
+  }
   var ConflictDialog2 = {
-    resolveConflicts
+    resolveConflicts,
+    resolveTextConflict
   };
   var g12 = typeof window !== "undefined" ? window : globalThis;
   g12.ConflictDialog = ConflictDialog2;
   g12.BelJarConflictDialog = g12.ConflictDialog;
 
   // js/ui/name-conflicts.mjs
-  var global19 = globalThis;
+  var global21 = globalThis;
   function parentDir(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
@@ -15787,9 +14923,9 @@
     }
     return Object.keys(set);
   }
-  function occupiedFolderPaths(files, emptyFolders) {
+  function occupiedFolderPaths(files2, emptyFolders) {
     var paths = folderPathsFromFilePaths(
-      (files || []).map(function(f) {
+      (files2 || []).map(function(f) {
         return f.name;
       })
     );
@@ -15807,11 +14943,11 @@
   function isDescendantPath(ancestor, path) {
     return path === ancestor || path.indexOf(ancestor + "/") === 0;
   }
-  function filesUnderPrefix(files, prefix) {
+  function filesUnderPrefix(files2, prefix) {
     var out = [];
-    for (var i = 0; i < files.length; i++) {
-      var n = files[i].name;
-      if (n === prefix || n.indexOf(prefix + "/") === 0) out.push(files[i]);
+    for (var i = 0; i < files2.length; i++) {
+      var n = files2[i].name;
+      if (n === prefix || n.indexOf(prefix + "/") === 0) out.push(files2[i]);
     }
     return out;
   }
@@ -16052,8 +15188,8 @@
     }));
     if (!fromPrefix) return null;
     for (var i = 0; i < moves.length; i++) {
-      var from = moves[i].from;
-      if (from !== fromPrefix && from.indexOf(fromPrefix + "/") !== 0) return null;
+      var from2 = moves[i].from;
+      if (from2 !== fromPrefix && from2.indexOf(fromPrefix + "/") !== 0) return null;
     }
     var underFrom = filesUnderPrefix(existingFiles, fromPrefix);
     if (underFrom.length !== moves.length) return null;
@@ -16353,9 +15489,9 @@
     for (var rf = 0; rf < replaceFolders.length; rf++) {
       var folder = replaceFolders[rf];
       var deleteIds = [];
-      for (var g14 = 0; g14 < existingFiles.length; g14++) {
-        var nm = existingFiles[g14].name;
-        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g14].id);
+      for (var g15 = 0; g15 < existingFiles.length; g15++) {
+        var nm = existingFiles[g15].name;
+        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g15].id);
       }
       plan.replaceFolder.push({
         prefix: folder.prefix,
@@ -16374,7 +15510,7 @@
     }
     return plan;
   }
-  global19.NameConflicts = {
+  global21.NameConflicts = {
     parentDir,
     baseName: baseName2,
     joinPath: joinPath2,
@@ -16396,10 +15532,10 @@
     detectMoveConflicts,
     applyMoveResolutions
   };
-  global19.BelJarNameConflicts = global19.NameConflicts;
+  global21.BelJarNameConflicts = global21.NameConflicts;
 
   // js/ui/download-zip.mjs
-  var global20 = globalThis;
+  var global22 = globalThis;
   var CRC_TABLE = (function() {
     var table = new Uint32Array(256);
     for (var n = 0; n < 256; n++) {
@@ -16527,16 +15663,41 @@
   function downloadZip(entries, fileName) {
     triggerDownload(buildZip(entries), fileName || "download.zip");
   }
-  global20.DownloadZip = {
+  function fileSafeName(name) {
+    var s = String(name == null ? "" : name).replace(/[\/\\:*?"<>|\u0000-\u001f]/g, "-").replace(/^[\s.]+|[\s.]+$/g, "").slice(0, 120);
+    if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(s)) s += "-project";
+    return s;
+  }
+  function projectArchive(projectName, files2, folders) {
+    var root2 = fileSafeName(projectName) || "project";
+    var byPath = function(a, b) {
+      return a < b ? -1 : a > b ? 1 : 0;
+    };
+    var entries = (files2 || []).slice().sort(function(a, b) {
+      return byPath(a.path, b.path);
+    }).map(function(f) {
+      return { path: root2 + "/" + f.path, data: f.text == null ? "" : String(f.text) };
+    });
+    (folders || []).slice().sort(byPath).forEach(function(dir) {
+      var holds = (files2 || []).some(function(f) {
+        return f.path.indexOf(dir + "/") === 0;
+      });
+      if (!holds) entries.push({ path: root2 + "/" + dir + "/", directory: true });
+    });
+    return { fileName: root2 + ".zip", entries };
+  }
+  global22.DownloadZip = {
     buildZip,
     triggerDownload,
     downloadTextFile,
-    downloadZip
+    downloadZip,
+    fileSafeName,
+    projectArchive
   };
-  global20.BelJarDownloadZip = global20.DownloadZip;
+  global22.BelJarDownloadZip = global22.DownloadZip;
 
   // js/ui/tree-dnd.mjs
-  var global21 = globalThis;
+  var global23 = globalThis;
   var THRESHOLD = 4;
   var AUTO_EXPAND_MS = 600;
   function attach3(container, opts) {
@@ -16696,11 +15857,11 @@
       container.removeEventListener("pointercancel", onPointerUp);
     };
   }
-  global21.TreeDnD = { attach: attach3 };
-  global21.BelJarTreeDnD = global21.TreeDnD;
+  global23.TreeDnD = { attach: attach3 };
+  global23.BelJarTreeDnD = global23.TreeDnD;
 
   // js/ui/header-search.mjs
-  var global22 = globalThis;
+  var global24 = globalThis;
   function init7(opts) {
     opts = opts || {};
     var host2 = opts.host;
@@ -16709,25 +15870,25 @@
     var header = opts.header || host2.closest(".panel-header, .inspector-header-bar");
     var openClass = opts.openClass || "is-search-open";
     var blurDelay = opts.blurDelay != null ? opts.blurDelay : 140;
-    var isOpen5 = false;
+    var isOpen6 = false;
     function emit2(name, arg) {
       if (typeof opts[name] === "function") opts[name](arg);
     }
     function open11() {
-      if (isOpen5) return;
-      isOpen5 = true;
+      if (isOpen6) return;
+      isOpen6 = true;
       host2.classList.add("is-open");
       if (header) header.classList.add(openClass);
       input2.setAttribute("aria-expanded", "true");
       requestAnimationFrame(function() {
-        if (isOpen5) input2.focus();
+        if (isOpen6) input2.focus();
       });
       emit2("onOpen");
     }
-    function close5(force) {
-      if (!isOpen5) return;
+    function close6(force) {
+      if (!isOpen6) return;
       if (!force && input2.value) return;
-      isOpen5 = false;
+      isOpen6 = false;
       host2.classList.remove("is-open");
       if (header) header.classList.remove(openClass);
       input2.setAttribute("aria-expanded", "false");
@@ -16737,14 +15898,14 @@
       if (had) emit2("onInput", "");
       emit2("onClose");
     }
-    function toggle5() {
-      if (isOpen5) close5(true);
+    function toggle6() {
+      if (isOpen6) close6(true);
       else open11();
     }
     host2.addEventListener("mousedown", function(e) {
       if (e.target === input2) return;
       e.preventDefault();
-      if (isOpen5) input2.focus();
+      if (isOpen6) input2.focus();
       else open11();
     });
     input2.addEventListener("focus", open11);
@@ -16758,7 +15919,7 @@
           input2.value = "";
           emit2("onInput", "");
         } else {
-          close5(true);
+          close6(true);
         }
         emit2("onEscape", e);
         return;
@@ -16769,35 +15930,35 @@
       setTimeout(function() {
         if (host2.contains(document.activeElement)) return;
         if (typeof opts.keepOpenFor === "function" && opts.keepOpenFor(document.activeElement)) return;
-        close5(false);
+        close6(false);
       }, blurDelay);
     });
     if (typeof opts.keepOpenFor === "function") {
       document.addEventListener("pointerdown", function(e) {
-        if (!isOpen5) return;
+        if (!isOpen6) return;
         if (host2.contains(e.target)) return;
         if (opts.keepOpenFor(e.target)) return;
-        close5(true);
+        close6(true);
       }, true);
     }
     return {
       open: open11,
-      close: close5,
-      toggle: toggle5,
+      close: close6,
+      toggle: toggle6,
       isOpen: function() {
-        return isOpen5;
+        return isOpen6;
       },
       input: input2,
       host: host2
     };
   }
-  global22.HeaderSearch = { init: init7 };
-  global22.BelJarHeaderSearch = global22.HeaderSearch;
+  global24.HeaderSearch = { init: init7 };
+  global24.BelJarHeaderSearch = global24.HeaderSearch;
 
   // js/explorer/explorer-inline-name.mjs
-  var global23 = globalThis;
+  var global25 = globalThis;
   var NC = function() {
-    return global23.NameConflicts;
+    return global25.NameConflicts;
   };
   function lastSegment(path) {
     var s = String(path || "");
@@ -16823,15 +15984,15 @@
     if (n === "." || n === "..") return "Invalid name.";
     return null;
   }
-  function folderPathExists(files, emptyFolders, folderPath) {
+  function folderPathExists(files2, emptyFolders, folderPath) {
     var fp = String(folderPath || "");
     if (!fp) return false;
     var empty = emptyFolders || [];
     for (var i = 0; i < empty.length; i++) {
       if (empty[i] === fp) return true;
     }
-    for (var j = 0; j < files.length; j++) {
-      var n = files[j].name;
+    for (var j = 0; j < files2.length; j++) {
+      var n = files2[j].name;
       if (n === fp || n.indexOf(fp + "/") === 0) return true;
     }
     return false;
@@ -16841,45 +16002,45 @@
     if (!name) return "";
     return name;
   }
-  function suggestDefaultFileName(parentDir3, files) {
+  function suggestDefaultFileName(parentDir3, files2) {
     var nc = NC();
     var base = "untitled.bel";
     var full = joinPath3(parentDir3, base);
-    if (nc && nc.nameConflict && !nc.nameConflict(files, full)) return full;
+    if (nc && nc.nameConflict && !nc.nameConflict(files2, full)) return full;
     if (nc && nc.suggestNewPath) {
       var paths = [];
-      for (var i = 0; i < files.length; i++) paths.push(files[i].name);
+      for (var i = 0; i < files2.length; i++) paths.push(files2[i].name);
       return nc.suggestNewPath(full, paths);
     }
     return full;
   }
-  function suggestDefaultFolderName(parentDir3, files, emptyFolders) {
+  function suggestDefaultFolderName(parentDir3, files2, emptyFolders) {
     var nc = NC();
     var full = joinPath3(parentDir3, "untitled");
-    if (!folderPathExists(files, emptyFolders, full)) return full;
+    if (!folderPathExists(files2, emptyFolders, full)) return full;
     if (nc && nc.suggestNewPath && nc.occupiedFolderPaths) {
-      return nc.suggestNewPath(full, nc.occupiedFolderPaths(files, emptyFolders));
+      return nc.suggestNewPath(full, nc.occupiedFolderPaths(files2, emptyFolders));
     }
     var n = 1;
-    while (folderPathExists(files, emptyFolders, full)) {
+    while (folderPathExists(files2, emptyFolders, full)) {
       n += 1;
       full = joinPath3(parentDir3, "untitled-" + n);
     }
     return full;
   }
-  function validateFileCommit(rawName, parentDirPath, files, excludeId) {
+  function validateFileCommit(rawName, parentDirPath, files2, excludeId) {
     var err = invalidPathSegment(rawName);
     if (err) return { ok: false, error: err };
     var name = normalizeInlineFileName(rawName);
     if (!name) return { ok: false, error: "Name is required." };
     var full = joinPath3(parentDirPath, name);
     var nc = NC();
-    if (nc && nc.nameConflict(files, full, excludeId)) {
+    if (nc && nc.nameConflict(files2, full, excludeId)) {
       return { ok: false, error: "A file with that name already exists in this folder." };
     }
     return { ok: true, fullPath: full, baseName: name };
   }
-  function validateFolderCommit(rawName, parentDirPath, files, emptyFolders, excludeFolderPath) {
+  function validateFolderCommit(rawName, parentDirPath, files2, emptyFolders, excludeFolderPath) {
     var err = invalidPathSegment(rawName);
     if (err) return { ok: false, error: err };
     var seg = String(rawName || "").trim();
@@ -16888,7 +16049,7 @@
     if (excludeFolderPath && full === excludeFolderPath) {
       return { ok: true, fullPath: full, segment: seg };
     }
-    if (folderPathExists(files, emptyFolders, full)) {
+    if (folderPathExists(files2, emptyFolders, full)) {
       return { ok: false, error: "A folder with that name already exists." };
     }
     return { ok: true, fullPath: full, segment: seg };
@@ -16907,7 +16068,7 @@
     if (target.kind === "file") return target.parentDir != null ? target.parentDir : "";
     return "";
   }
-  global23.ExplorerInlineName = {
+  global25.ExplorerInlineName = {
     lastSegment,
     parentDir: parentDir2,
     joinPath: joinPath3,
@@ -16921,13 +16082,13 @@
     resolveCreateParentFromRow,
     resolveCreateParentDir
   };
-  global23.BelJarExplorerInlineName = global23.ExplorerInlineName;
+  global25.BelJarExplorerInlineName = global25.ExplorerInlineName;
 
   // js/explorer/explorer-tree.mjs
-  var global24 = globalThis;
+  var global26 = globalThis;
   var EXPLORER_CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   function explorerFileBucket2(name) {
-    var PS = global24.ProjectSource;
+    var PS = global26.ProjectSource;
     if (PS && PS.isCfgPath(name)) return 0;
     if (PS && PS.isSignaturePath(name)) return 1;
     var low = String(name).toLowerCase();
@@ -16935,15 +16096,15 @@
     if (low.endsWith(".bel")) return 1;
     return 2;
   }
-  function sortExplorerFilesLegacy(files, orderedNames) {
+  function sortExplorerFilesLegacy(files2, orderedNames) {
     var orderIndex = {};
     if (orderedNames) for (var k = 0; k < orderedNames.length; k++) orderIndex[orderedNames[k]] = k;
     var cfg = [];
     var members = [];
     var bel = [];
     var other = [];
-    for (var i = 0; i < files.length; i++) {
-      var f = files[i];
+    for (var i = 0; i < files2.length; i++) {
+      var f = files2[i];
       var bucket = explorerFileBucket2(f.name);
       if (bucket === 0) cfg.push(f);
       else if (orderIndex[f.name] !== void 0) members.push(f);
@@ -16974,10 +16135,10 @@
       sortExplorerNode(folder, layoutForDir, folder.path);
     });
   }
-  function buildExplorerModel(files, emptyFolders, layoutForDir) {
+  function buildExplorerModel(files2, emptyFolders, layoutForDir) {
     var root2 = { folders: /* @__PURE__ */ new Map(), files: [] };
-    for (var i = 0; i < files.length; i++) {
-      var file = files[i];
+    for (var i = 0; i < files2.length; i++) {
+      var file = files2[i];
       var parts = file.name.split("/");
       var node = root2;
       var path = "";
@@ -17009,14 +16170,14 @@
     return root2;
   }
   function resolveCreateParentFromRow2(row) {
-    var IL = global24.ExplorerInlineName;
+    var IL = global26.ExplorerInlineName;
     if (IL && IL.resolveCreateParentFromRow) return IL.resolveCreateParentFromRow(row);
     if (!row) return "";
     if (row.hasAttribute("data-folder-path")) return row.getAttribute("data-folder-path") || "";
     return row.getAttribute("data-drop-zone") || "";
   }
   function resolveCreateParentDir2(target) {
-    var IL = global24.ExplorerInlineName;
+    var IL = global26.ExplorerInlineName;
     if (IL && IL.resolveCreateParentDir) return IL.resolveCreateParentDir(target);
     if (!target) return "";
     if (target.kind === "folder") return target.folderPath || "";
@@ -17086,20 +16247,20 @@
     return { fileIds, folderPaths };
   }
   function toggleCtrlSelection(selectedFiles, selectedFolders, clickedKey, activeId2) {
-    var files = new Set(selectedFiles);
+    var files2 = new Set(selectedFiles);
     var folders = new Set(selectedFolders);
-    if (!files.size && !folders.size) {
-      if (activeId2) files.add(activeId2);
-      if (clickedKey.kind === "file") files.add(clickedKey.key);
+    if (!files2.size && !folders.size) {
+      if (activeId2) files2.add(activeId2);
+      if (clickedKey.kind === "file") files2.add(clickedKey.key);
       else folders.add(clickedKey.key);
-      return { fileIds: files, folderPaths: folders };
+      return { fileIds: files2, folderPaths: folders };
     }
     if (clickedKey.kind === "file") {
-      if (files.has(clickedKey.key)) files.delete(clickedKey.key);
-      else files.add(clickedKey.key);
+      if (files2.has(clickedKey.key)) files2.delete(clickedKey.key);
+      else files2.add(clickedKey.key);
     } else if (folders.has(clickedKey.key)) folders.delete(clickedKey.key);
     else folders.add(clickedKey.key);
-    return { fileIds: files, folderPaths: folders };
+    return { fileIds: files2, folderPaths: folders };
   }
   function isPathUnderFolder(path, folderPath) {
     if (!folderPath) return path.indexOf("/") !== -1;
@@ -17155,8 +16316,8 @@
     for (var f = 0; f < fps.length; f++) {
       var fp = fps[f];
       var nested = false;
-      for (var g14 = 0; g14 < fps.length; g14++) {
-        if (fps[g14] !== fp && isPathUnderFolder(fp, fps[g14])) {
+      for (var g15 = 0; g15 < fps.length; g15++) {
+        if (fps[g15] !== fp && isPathUnderFolder(fp, fps[g15])) {
           nested = true;
           break;
         }
@@ -17257,21 +16418,21 @@
       tailRow: kind === "file" && depth === 0 ? last : null
     };
   }
-  function loadCollapsed(projectName) {
-    var P3 = global24.Persist;
+  function loadCollapsed() {
+    var P3 = global26.Persist;
     if (!P3) return /* @__PURE__ */ new Set();
-    return new Set(P3.getExplorerFold(projectName));
+    return new Set(P3.readExplorerFolds());
   }
-  function saveCollapsed(projectName, collapsed) {
-    var P3 = global24.Persist;
+  function saveCollapsed(collapsed) {
+    var P3 = global26.Persist;
     if (!P3) return;
-    P3.setExplorerFold(projectName, [].slice.call(collapsed));
+    P3.writeExplorerFolds([].slice.call(collapsed));
   }
   function init8(opts) {
     opts = opts || {};
     var container = opts.container;
     if (!container) return null;
-    var collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : "Untitled Project");
+    var collapsed = loadCollapsed();
     var saveTimer3 = null;
     var dndDetach = null;
     var focusedRow = null;
@@ -17281,7 +16442,7 @@
     var selectedFolders = /* @__PURE__ */ new Set();
     var pendingShiftSelect = null;
     var suppressClearSelection = false;
-    function listEmptyFolders2() {
+    function listEmptyFolders() {
       return opts.listEmptyFolders ? opts.listEmptyFolders() : [];
     }
     function expandParentChain(parentDirPath) {
@@ -17384,9 +16545,9 @@
       if (saveTimer3) clearTimeout(saveTimer3);
       saveTimer3 = setTimeout(function() {
         saveTimer3 = null;
-        saveCollapsed(opts.getProjectName ? opts.getProjectName() : "Untitled Project", collapsed);
-        if (global24.WorkspaceState && global24.WorkspaceState.scheduleSave) {
-          global24.WorkspaceState.scheduleSave();
+        saveCollapsed(collapsed);
+        if (global26.WorkspaceState && global26.WorkspaceState.scheduleSave) {
+          global26.WorkspaceState.scheduleSave();
         }
       }, 120);
     }
@@ -17399,8 +16560,8 @@
       refresh5();
     }
     function collapseSubtree(folderPath) {
-      var files = opts.listFiles ? opts.listFiles() : [];
-      var model = buildExplorerModel(files, listEmptyFolders2());
+      var files2 = opts.listFiles ? opts.listFiles() : [];
+      var model = buildExplorerModel(files2, listEmptyFolders());
       if (!folderPath) {
         collectFolderPaths(model).forEach(function(p) {
           collapsed.add(p);
@@ -17419,7 +16580,7 @@
         collapsed.clear();
       } else {
         collapsed.delete(folderPath);
-        var m2 = buildExplorerModel(opts.listFiles ? opts.listFiles() : [], listEmptyFolders2());
+        var m2 = buildExplorerModel(opts.listFiles ? opts.listFiles() : [], listEmptyFolders());
         collectSubtreeFolderPaths(m2, folderPath).forEach(function(p) {
           collapsed.delete(p);
         });
@@ -17461,13 +16622,13 @@
         folderPaths: Array.from(selectedFolders)
       };
     }
-    function pruneSelection(files) {
+    function pruneSelection(files2) {
       var fileIdSet = {};
-      for (var i = 0; i < files.length; i++) fileIdSet[files[i].id] = true;
+      for (var i = 0; i < files2.length; i++) fileIdSet[files2[i].id] = true;
       selectedFiles.forEach(function(id) {
         if (!fileIdSet[id]) selectedFiles.delete(id);
       });
-      var model = buildExplorerModel(files, listEmptyFolders2());
+      var model = buildExplorerModel(files2, listEmptyFolders());
       var allPaths = collectFolderPaths(model);
       var pathSet = {};
       for (var j = 0; j < allPaths.length; j++) pathSet[allPaths[j]] = true;
@@ -17477,11 +16638,11 @@
     }
     function expandForRowKey(key) {
       if (!key) return;
-      var files = opts.listFiles ? opts.listFiles() : [];
+      var files2 = opts.listFiles ? opts.listFiles() : [];
       if (key.kind === "file") {
-        for (var i = 0; i < files.length; i++) {
-          if (files[i].id === key.key) {
-            expandParentChain(parentDirFromName(files[i].name));
+        for (var i = 0; i < files2.length; i++) {
+          if (files2[i].id === key.key) {
+            expandParentChain(parentDirFromName(files2[i].name));
             return;
           }
         }
@@ -17542,7 +16703,7 @@
       var selCount = fileIds.length + folderPaths.length;
       var existingFiles = opts.listFiles ? opts.listFiles() : [];
       if (inSelection && selCount >= 2) {
-        var cap = selectionDragCapability(fileIds, folderPaths, existingFiles, listEmptyFolders2());
+        var cap = selectionDragCapability(fileIds, folderPaths, existingFiles, listEmptyFolders());
         if (cap.ok) {
           var rf = cap.fileIds;
           var rfp = cap.folderPaths;
@@ -17797,12 +16958,12 @@
     }
     function refresh5() {
       if (!opts.listFiles) return;
-      var files = opts.listFiles();
-      pruneSelection(files);
+      var files2 = opts.listFiles();
+      pruneSelection(files2);
       var prevFocus = !inlineSession && focusedRow && (focusedRow.getAttribute("data-file-id") || focusedRow.getAttribute("data-folder-path"));
       var shiftPending = pendingShiftSelect;
       container.innerHTML = "";
-      var model = buildExplorerModel(files, listEmptyFolders2(), opts.getSuiteLayoutForDir || null);
+      var model = buildExplorerModel(files2, listEmptyFolders(), opts.getSuiteLayoutForDir || null);
       var isEmpty = model.files.length === 0 && model.folders.size === 0;
       container.classList.toggle("is-project-empty", isEmpty);
       if (isEmpty) {
@@ -17839,8 +17000,8 @@
       clearSelection();
     }
     container.addEventListener("click", onBackgroundClick);
-    if (typeof global24.Menu !== "undefined") {
-      global24.Menu.bindContextMenu(container, function(e) {
+    if (typeof global26.Menu !== "undefined") {
+      global26.Menu.bindContextMenu(container, function(e) {
         var fileEl = e.target.closest("[data-file-id]");
         var folderEl = e.target.closest("[data-folder-path]");
         var hasSelection = selectedFiles.size + selectedFolders.size > 0;
@@ -17899,8 +17060,8 @@
       }
       return null;
     }
-    if (typeof global24.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
-      dndDetach = global24.TreeDnD.attach(container, {
+    if (typeof global26.TreeDnD !== "undefined" && typeof opts.onDrop === "function") {
+      dndDetach = global26.TreeDnD.attach(container, {
         getDragPayload: buildDragPayload,
         resolveDrop,
         canDrop: opts.canDrop,
@@ -18006,11 +17167,11 @@
         if (!sidebar || !sidebar.explorer || !sidebar.explorer.revealActiveFile) return;
         var activeId2 = opts.getActiveId ? opts.getActiveId() : null;
         if (!activeId2) return;
-        var files = opts.listFiles ? opts.listFiles() : [];
+        var files2 = opts.listFiles ? opts.listFiles() : [];
         var file = null;
-        for (var fi = 0; fi < files.length; fi++) {
-          if (files[fi].id === activeId2) {
-            file = files[fi];
+        for (var fi = 0; fi < files2.length; fi++) {
+          if (files2[fi].id === activeId2) {
+            file = files2[fi];
             break;
           }
         }
@@ -18029,7 +17190,7 @@
         }
       },
       reloadFoldState: function() {
-        collapsed = loadCollapsed(opts.getProjectName ? opts.getProjectName() : "Untitled Project");
+        collapsed = loadCollapsed();
       },
       destroy: function() {
         if (dndDetach) dndDetach();
@@ -18038,7 +17199,7 @@
       }
     };
   }
-  global24.Explorer = {
+  global26.Explorer = {
     buildExplorerModel,
     collectFolderPaths,
     collectSubtreeFolderPaths,
@@ -18053,11 +17214,11 @@
     sameParentFileIdsForDrag,
     init: init8
   };
-  global24.BelJarExplorer = global24.Explorer;
+  global26.BelJarExplorer = global26.Explorer;
 
   // js/library/library-suites.mjs
-  var global25 = globalThis;
-  function dirOf3(path) {
+  var global27 = globalThis;
+  function dirOf2(path) {
     var i = String(path || "").lastIndexOf("/");
     return i === -1 ? "" : path.slice(0, i);
   }
@@ -18073,19 +17234,19 @@
   }
   function listActiveSuites(opts) {
     opts = opts || {};
-    var listFiles3 = opts.listFiles;
-    if (typeof listFiles3 !== "function") return [];
+    var listFiles2 = opts.listFiles;
+    if (typeof listFiles2 !== "function") return [];
     if (typeof opts.getActiveCfgsForDir !== "function" && typeof opts.getActiveCfgForDir !== "function") return [];
-    var files = listFiles3();
+    var files2 = listFiles2();
     var cfgDirs = {};
-    for (var i = 0; i < files.length; i++) {
-      var name = files[i].name;
+    for (var i = 0; i < files2.length; i++) {
+      var name = files2[i].name;
       if (!/\.cfg$/i.test(name)) continue;
-      var dir = dirOf3(name);
+      var dir = dirOf2(name);
       if (!Object.prototype.hasOwnProperty.call(cfgDirs, dir)) cfgDirs[dir] = true;
     }
     var names = /* @__PURE__ */ new Set();
-    for (var j = 0; j < files.length; j++) names.add(files[j].name);
+    for (var j = 0; j < files2.length; j++) names.add(files2[j].name);
     var out = [];
     for (var dirKey in cfgDirs) {
       if (!Object.prototype.hasOwnProperty.call(cfgDirs, dirKey)) continue;
@@ -18103,11 +17264,11 @@
     });
     return out;
   }
-  global25.LibrarySuites = { listActiveSuites };
-  global25.BelJarLibrarySuites = global25.LibrarySuites;
+  global27.LibrarySuites = { listActiveSuites };
+  global27.BelJarLibrarySuites = global27.LibrarySuites;
 
   // js/library/library-search.mjs
-  var global26 = globalThis;
+  var global28 = globalThis;
   var SEARCH_ICON2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
   function normalizeQuery(q) {
     return String(q || "").trim().toLowerCase();
@@ -18263,7 +17424,7 @@
       renderHit(container, hits[i], layout, onSelect);
     }
   }
-  global26.LibrarySearch = {
+  global28.LibrarySearch = {
     SEARCH_ICON: SEARCH_ICON2,
     normalizeQuery,
     metadataHay,
@@ -18271,10 +17432,10 @@
     searchEntries,
     renderResults: renderResults2
   };
-  global26.BelJarLibrarySearch = global26.LibrarySearch;
+  global28.BelJarLibrarySearch = global28.LibrarySearch;
 
   // js/explorer/explorer-search.mjs
-  var global27 = globalThis;
+  var global29 = globalThis;
   function baseName3(name) {
     var i = String(name).lastIndexOf("/");
     return i === -1 ? String(name) : String(name).slice(i + 1);
@@ -18294,14 +17455,14 @@
     var input2 = opts.input;
     var ac = opts.ac;
     if (!wrap || !input2 || !ac) return null;
-    var LS = global27.LibrarySearch;
-    var HS = global27.HeaderSearch;
+    var LS = global29.LibrarySearch;
+    var HS = global29.HeaderSearch;
     var hits = [];
     var activeIndex3 = -1;
     var token = 0;
     var timer2 = null;
     var controller = null;
-    function listFiles3() {
+    function listFiles2() {
       return typeof opts.listFiles === "function" ? opts.listFiles() || [] : [];
     }
     function getText(id) {
@@ -18312,11 +17473,11 @@
       }
     }
     function buildEntries() {
-      var files = listFiles3();
+      var files2 = listFiles2();
       var byPath = /* @__PURE__ */ Object.create(null);
       var entries = [];
-      for (var i = 0; i < files.length; i++) {
-        var f = files[i];
+      for (var i = 0; i < files2.length; i++) {
+        var f = files2[i];
         if (!f || !f.name) continue;
         byPath[f.name] = f.id;
         var entry = {
@@ -18372,7 +17533,7 @@
         e.preventDefault();
       });
       item.addEventListener("click", function(e) {
-        pick(hit, e);
+        pick2(hit, e);
       });
       return item;
     }
@@ -18401,7 +17562,7 @@
       for (var k = 0; k < rows2.length; k++) rows2[k].classList.toggle("is-active", k === activeIndex3);
       if (rows2[activeIndex3]) rows2[activeIndex3].scrollIntoView({ block: "nearest" });
     }
-    function pick(hit) {
+    function pick2(hit) {
       if (!hit) return;
       if (typeof opts.onOpenFile === "function") {
         opts.onOpenFile(hit.entry.id, { line: hit.line || null });
@@ -18457,7 +17618,7 @@
           setActiveIndex(activeIndex3 - 1);
         } else if (e.key === "Enter") {
           e.preventDefault();
-          pick(activeIndex3 >= 0 ? hits[activeIndex3] : hits[0]);
+          pick2(activeIndex3 >= 0 ? hits[activeIndex3] : hits[0]);
         }
       }
     }) : null;
@@ -18472,11 +17633,11 @@
       }
     };
   }
-  global27.ExplorerSearch = { init: init9 };
-  global27.BelJarExplorerSearch = global27.ExplorerSearch;
+  global29.ExplorerSearch = { init: init9 };
+  global29.BelJarExplorerSearch = global29.ExplorerSearch;
 
   // js/library/library-preview.mjs
-  var global28 = globalThis;
+  var global30 = globalThis;
   var CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_INSERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
@@ -18539,8 +17700,8 @@
       return;
     }
     codeEl.className = "library-preview__code-source jar-hl-source" + (ext === "elf" ? " jar-hl-source--elf" : "");
-    if (global28.BelEditor && typeof global28.BelEditor.renderSourceInto === "function") {
-      global28.BelEditor.renderSourceInto(codeEl, text, ext);
+    if (global30.BelEditor && typeof global30.BelEditor.renderSourceInto === "function") {
+      global30.BelEditor.renderSourceInto(codeEl, text, ext);
       return;
     }
     codeEl.textContent = text;
@@ -18558,7 +17719,7 @@
     return "";
   }
   function suiteByFileForFolderChildren(children, cfgTextByLabel) {
-    var SL = global28.ExplorerSuiteLayout;
+    var SL = global30.ExplorerSuiteLayout;
     if (!SL || typeof SL.computeDirLayout !== "function") return {};
     var fileChildren = [];
     var activeCfgs = [];
@@ -18586,9 +17747,9 @@
   }
   function open7(opts) {
     opts = opts || {};
-    if (!opts.scopeFolder || typeof global28.Dialog === "undefined") return;
+    if (!opts.scopeFolder || typeof global30.Dialog === "undefined") return;
     if (activeDialog && activeDialog.open) {
-      global28.Dialog.requestDialogClose(activeDialog);
+      global30.Dialog.requestDialogClose(activeDialog);
       activeDialog = null;
     }
     var scopeFolder = opts.scopeFolder;
@@ -18603,7 +17764,7 @@
     var fileIndex = /* @__PURE__ */ Object.create(null);
     var searchFiles = [];
     var searchToken = 0;
-    var LS = global28.LibrarySearch;
+    var LS = global30.LibrarySearch;
     var treeRows = [];
     var selectedId = null;
     var loadToken = 0;
@@ -19045,7 +18206,7 @@
       }
     }
     treePane.addEventListener("keydown", handleTreeKeydown);
-    var dialogEl = global28.Dialog.createDialog({
+    var dialogEl = global30.Dialog.createDialog({
       ariaLabel: "Library preview: " + scopeLabel,
       content: shell,
       className: "jar-library-preview-dialog",
@@ -19060,7 +18221,7 @@
         document.activeElement.blur();
       }
     });
-    global28.Dialog.openDialog(dialogEl);
+    global30.Dialog.openDialog(dialogEl);
     ensureCfgTextsLoaded().then(function() {
       renderTree();
       if (selectedId && fileIndex[selectedId]) {
@@ -19074,16 +18235,16 @@
       });
     });
   }
-  function close4() {
-    if (activeDialog && global28.Dialog) {
-      global28.Dialog.requestDialogClose(activeDialog);
+  function close5() {
+    if (activeDialog && global30.Dialog) {
+      global30.Dialog.requestDialogClose(activeDialog);
     }
   }
-  global28.LibraryPreview = { open: open7, close: close4 };
-  global28.BelJarLibraryPreview = global28.LibraryPreview;
+  global30.LibraryPreview = { open: open7, close: close5 };
+  global30.BelJarLibraryPreview = global30.LibraryPreview;
 
   // js/library/library-panel.mjs
-  var global29 = globalThis;
+  var global31 = globalThis;
   var CHEVRON_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
   var ICON_COPY2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_PREVIEW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -19091,7 +18252,7 @@
   function stemOf(label) {
     return String(label || "").replace(/\.[^.]+$/, "");
   }
-  function dirOf4(path) {
+  function dirOf3(path) {
     var i = String(path || "").lastIndexOf("/");
     return i === -1 ? "" : path.slice(0, i);
   }
@@ -19111,9 +18272,9 @@
     var allFileEntries = [];
     var suitesCache = [];
     var searchWrap = document.getElementById("library-search-wrap");
-    var LS = global29.LibrarySearch;
+    var LS = global31.LibrarySearch;
     function readExpandDefault() {
-      return typeof global29.Persist !== "undefined" && global29.Persist.readStoredLibraryExpandDefault();
+      return typeof global31.Persist !== "undefined" && Settings.get("libraryExpandDefault");
     }
     function isCategoryExpanded(foldKey, forceOpen) {
       if (forceOpen) return true;
@@ -19134,12 +18295,12 @@
         searchPending = false;
         searchToken += 1;
       }
-      render5();
+      render6();
     }
     function applyTip(el6, tip) {
       if (typeof opts.applyTip === "function") opts.applyTip(el6, tip);
     }
-    function toast3(msg, kind) {
+    function toast4(msg, kind) {
       if (typeof opts.showToast === "function") opts.showToast(msg, { kind: kind || "info" });
     }
     function hasEditor() {
@@ -19151,9 +18312,9 @@
     function activeFileDir() {
       if (!hasActiveFile() || typeof opts.listFiles !== "function") return null;
       var id = opts.getActiveFileId();
-      var files = opts.listFiles();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) return dirOf4(files[i].name);
+      var files2 = opts.listFiles();
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id === id) return dirOf3(files2[i].name);
       }
       return null;
     }
@@ -19164,8 +18325,8 @@
     function refreshSuites() {
       if (typeof opts.listActiveSuites === "function") {
         suitesCache = opts.listActiveSuites();
-      } else if (global29.LibrarySuites) {
-        suitesCache = global29.LibrarySuites.listActiveSuites({
+      } else if (global31.LibrarySuites) {
+        suitesCache = global31.LibrarySuites.listActiveSuites({
           listFiles: opts.listFiles,
           getActiveCfgForDir: opts.getActiveCfgForDir
         });
@@ -19175,8 +18336,8 @@
       return suitesCache;
     }
     function openLibraryPreview(previewOpts) {
-      if (!global29.LibraryPreview || typeof global29.LibraryPreview.open !== "function") return;
-      global29.LibraryPreview.open({
+      if (!global31.LibraryPreview || typeof global31.LibraryPreview.open !== "function") return;
+      global31.LibraryPreview.open({
         scopeFolder: previewOpts.scopeFolder,
         scopeLabel: previewOpts.scopeLabel,
         initialFile: previewOpts.initialFile || null,
@@ -19187,22 +18348,22 @@
           fetchContent(item.path).then(function(code) {
             return navigator.clipboard.writeText(code);
           }).then(function() {
-            toast3("Copied to clipboard");
+            toast4("Copied to clipboard");
           }).catch(function() {
-            toast3("Could not copy to clipboard.", { kind: "warn" });
+            toast4("Could not copy to clipboard.", { kind: "warn" });
           });
         },
-        onInsertFile: function(anchor2, item) {
-          var row = beginLibraryMenuIntent(anchor2);
+        onInsertFile: function(anchor3, item) {
+          var row = beginLibraryMenuIntent(anchor3);
           fetchContent(item.path).then(function(code) {
-            openInsertMenu(anchor2, code, item);
+            openInsertMenu(anchor3, code, item);
           }).catch(function() {
             cancelLibraryMenuIntent(row);
-            toast3("Could not load library sample.", { kind: "warn" });
+            toast4("Could not load library sample.", { kind: "warn" });
           });
         },
-        onInsertFolder: function(anchor2, folder) {
-          openFolderInsertMenu(anchor2, folder);
+        onInsertFolder: function(anchor3, folder) {
+          openFolderInsertMenu(anchor3, folder);
         }
       });
     }
@@ -19262,8 +18423,8 @@
       return d ? d + "/" + name : name;
     }
     function resolveBulkPlan(incoming, existingFiles) {
-      var NC2 = global29.NameConflicts;
-      var CD = global29.ConflictDialog;
+      var NC2 = global31.NameConflicts;
+      var CD = global31.ConflictDialog;
       if (!NC2) {
         return Promise.resolve({ create: incoming.slice(), replace: [], replaceFolder: [] });
       }
@@ -19294,8 +18455,8 @@
       });
     }
     function resolveMagicPlan(relPath, code, existingFiles) {
-      var NC2 = global29.NameConflicts;
-      var CD = global29.ConflictDialog;
+      var NC2 = global31.NameConflicts;
+      var CD = global31.ConflictDialog;
       var incoming = [{ name: relPath, text: code }];
       if (!NC2) {
         return Promise.resolve({ create: [{ name: relPath, text: code }], replace: [], replaceFolder: [] });
@@ -19325,7 +18486,7 @@
       });
     }
     function applyFilePlan(plan, suite) {
-      var P3 = global29.Persist;
+      var P3 = global31.Persist;
       if (!plan) return;
       var targetId = null;
       var targetPath = null;
@@ -19350,7 +18511,7 @@
         if (!P3.prependEntryToCfg(suite.cfgPath, targetPath)) {
           if (created) {
             P3.deleteFile(targetId);
-            toast3("Could not add to suite (already listed or invalid path).", { kind: "warn" });
+            toast4("Could not add to suite (already listed or invalid path).", { kind: "warn" });
             return;
           }
         }
@@ -19362,24 +18523,24 @@
       }
       if (suite) {
         var suiteName = suite.cfgPath.slice(suite.cfgPath.lastIndexOf("/") + 1);
-        toast3("Added " + targetPath.split("/").pop() + " to prelude of " + suiteName);
+        toast4("Added " + targetPath.split("/").pop() + " to prelude of " + suiteName);
       } else {
-        toast3("Created " + targetPath.split("/").pop());
+        toast4("Created " + targetPath.split("/").pop());
       }
     }
     function syncActiveCfgsAfterBulk() {
-      var P3 = global29.Persist;
-      var PS = global29.ProjectSource;
+      var P3 = global31.Persist;
+      var PS = global31.ProjectSource;
       if (!P3 || !PS || typeof PS.inferActiveCfgByDir !== "function") return;
       if (typeof P3.backfillActiveCfgByDir !== "function") return;
-      var files = P3.listFiles();
-      var byDir = PS.inferActiveCfgByDir(files, function(id) {
+      var files2 = P3.listFiles();
+      var byDir = PS.inferActiveCfgByDir(files2, function(id) {
         return P3.getFileText(id);
       });
       P3.backfillActiveCfgByDir(byDir);
     }
     function applyBulkPlan(plan) {
-      var P3 = global29.Persist;
+      var P3 = global31.Persist;
       if (!plan) return;
       if (typeof opts.applyUploadPlan === "function") {
         var count = 0;
@@ -19396,7 +18557,7 @@
           var dir = activeFileDir();
           opts.afterSuiteEdit(dir != null ? dir : "");
         }
-        toast3("Inserted " + count + " file" + (count === 1 ? "" : "s"));
+        toast4("Inserted " + count + " file" + (count === 1 ? "" : "s"));
         return;
       }
       var count = 0;
@@ -19409,8 +18570,8 @@
           }
           var folderEntries = folder.entries || [];
           for (var fe = 0; fe < folderEntries.length; fe++) {
-            var newId2 = P3.createFile(folderEntries[fe].name);
-            P3.setFileText(newId2, folderEntries[fe].text);
+            var newId3 = P3.createFile(folderEntries[fe].name);
+            P3.setFileText(newId3, folderEntries[fe].text);
             count += 1;
           }
         }
@@ -19450,7 +18611,7 @@
         }
         opts.onProjectChanged({ modifiedActive });
       }
-      toast3("Inserted " + count + " file" + (count === 1 ? "" : "s"));
+      toast4("Inserted " + count + " file" + (count === 1 ? "" : "s"));
     }
     function applyMagicPlan(plan, suite) {
       applyFilePlan(plan, suite);
@@ -19503,12 +18664,12 @@
     function runExportAsNewProject(folder, activeItem) {
       if (typeof opts.onExportAsNewProject !== "function") return;
       if (!folder) {
-        toast3("Could not locate library folder.", { kind: "warn" });
+        toast4("Could not locate library folder.", { kind: "warn" });
         return;
       }
       fetchFolderProjectEntries(folder).then(function(rawEntries) {
         if (!rawEntries.length) {
-          toast3("No files to export.", { kind: "warn" });
+          toast4("No files to export.", { kind: "warn" });
           return;
         }
         opts.onExportAsNewProject({
@@ -19517,11 +18678,11 @@
           activeRelPath: activeItem ? projectRelForLibraryItem(activeItem, folder) : null
         });
       }).catch(function() {
-        toast3("Could not load library samples.", { kind: "warn" });
+        toast4("Could not load library samples.", { kind: "warn" });
       });
     }
     function runInsertAtRoot(item) {
-      var P3 = global29.Persist;
+      var P3 = global31.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !isLibraryProjectFile(item)) return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -19531,11 +18692,11 @@
           applyFilePlan(plan, null);
         });
       }).catch(function() {
-        toast3("Could not load library sample.", { kind: "warn" });
+        toast4("Could not load library sample.", { kind: "warn" });
       });
     }
     function runInsertUnderCurrentFolder(item) {
-      var P3 = global29.Persist;
+      var P3 = global31.Persist;
       if (!P3 || typeof P3.createFile !== "function" || !canInsertUnderCurrentFolder() || !isLibraryProjectFile(item)) return;
       var dir = activeFileDir();
       if (!dir) return;
@@ -19547,7 +18708,7 @@
           applyFilePlan(plan, null);
         });
       }).catch(function() {
-        toast3("Could not load library sample.", { kind: "warn" });
+        toast4("Could not load library sample.", { kind: "warn" });
       });
     }
     function collectFolderFiles(folder, relPrefix) {
@@ -19567,18 +18728,18 @@
       return out;
     }
     function runFolderInsert(folder, mode) {
-      var P3 = global29.Persist;
+      var P3 = global31.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       var rootPrefix = folder.name || "";
       var entries = collectFolderFiles(folder, rootPrefix);
       if (!entries.length) {
-        toast3("No files in this folder.", { kind: "warn" });
+        toast4("No files in this folder.", { kind: "warn" });
         return;
       }
       var projectBase = "";
       if (mode === "under") {
         if (!canInsertUnderCurrentFolder()) {
-          toast3("Open a file inside a folder first.", { kind: "warn" });
+          toast4("Open a file inside a folder first.", { kind: "warn" });
           return;
         }
         projectBase = activeFileDir();
@@ -19596,28 +18757,28 @@
         if (!plan) return;
         applyBulkPlan(plan);
       }).catch(function() {
-        toast3("Could not load library samples.", { kind: "warn" });
+        toast4("Could not load library samples.", { kind: "warn" });
       });
     }
-    function libraryMenuRow(anchor2) {
-      if (!anchor2 || !anchor2.closest) return null;
-      return anchor2.closest(".library-category-item") || anchor2.closest(".library-example-item") || anchor2.closest(".library-preview-tree-folder") || anchor2.closest(".library-preview-tree-file");
+    function libraryMenuRow(anchor3) {
+      if (!anchor3 || !anchor3.closest) return null;
+      return anchor3.closest(".library-category-item") || anchor3.closest(".library-example-item") || anchor3.closest(".library-preview-tree-folder") || anchor3.closest(".library-preview-tree-file");
     }
-    function beginLibraryMenuIntent(anchor2) {
-      var row = libraryMenuRow(anchor2);
+    function beginLibraryMenuIntent(anchor3) {
+      var row = libraryMenuRow(anchor3);
       if (row) row.classList.add("is-menu-open");
       return row;
     }
     function cancelLibraryMenuIntent(row) {
       if (row) row.classList.remove("is-menu-open");
     }
-    function openLibraryMenu(anchor2, menuOpts) {
-      if (typeof global29.Menu === "undefined") return;
-      var row = libraryMenuRow(anchor2);
+    function openLibraryMenu(anchor3, menuOpts) {
+      if (typeof global31.Menu === "undefined") return;
+      var row = libraryMenuRow(anchor3);
       if (row) row.classList.add("is-menu-open");
       var userOnClose = menuOpts.onClose;
-      global29.Menu.open({
-        anchor: menuOpts.anchor != null ? menuOpts.anchor : anchor2,
+      global31.Menu.open({
+        anchor: menuOpts.anchor != null ? menuOpts.anchor : anchor3,
         side: menuOpts.side,
         align: menuOpts.align,
         items: menuOpts.items,
@@ -19628,8 +18789,8 @@
         }
       });
     }
-    function openFolderInsertMenu(anchor2, folder) {
-      openLibraryMenu(anchor2, {
+    function openFolderInsertMenu(anchor3, folder) {
+      openLibraryMenu(anchor3, {
         side: "right",
         align: "start",
         items: [
@@ -19649,8 +18810,8 @@
         ]
       });
     }
-    function openFileInsertMenu(anchor2, item, code) {
-      if (typeof global29.Menu === "undefined") return;
+    function openFileInsertMenu(anchor3, item, code) {
+      if (typeof global31.Menu === "undefined") return;
       refreshSuites();
       var ed = typeof opts.getEditor === "function" ? opts.getEditor() : null;
       var editorReady = !!(ed && hasEditor());
@@ -19674,7 +18835,7 @@
           label: "Insert to active suite",
           disabled: !suitesCache.length || !isSuiteSourceFile(item),
           onSelect: function() {
-            openSuitePicker(anchor2, item);
+            openSuitePicker(anchor3, item);
           }
         },
         {
@@ -19712,19 +18873,19 @@
           }
         }
       ];
-      openLibraryMenu(anchor2, {
+      openLibraryMenu(anchor3, {
         side: "right",
         align: "start",
         items: items3
       });
     }
-    function openInsertMenu(anchor2, code, item) {
-      openFileInsertMenu(anchor2, item, prepareLibraryInsert(code, item));
+    function openInsertMenu(anchor3, code, item) {
+      openFileInsertMenu(anchor3, item, prepareLibraryInsert(code, item));
     }
     function runMagic(item, suite) {
       if (!suite) return;
       if (!isSuiteSourceFile(item)) return;
-      var P3 = global29.Persist;
+      var P3 = global31.Persist;
       if (!P3 || typeof P3.createFile !== "function") return;
       fetchContent(item.path).then(function(code) {
         code = prepareLibraryInsert(code, item.path);
@@ -19734,18 +18895,18 @@
           applyMagicPlan(plan, suite);
         });
       }).catch(function() {
-        toast3("Could not load library sample.", { kind: "warn" });
+        toast4("Could not load library sample.", { kind: "warn" });
       });
     }
-    function openSuitePicker(anchor2, item) {
+    function openSuitePicker(anchor3, item) {
       refreshSuites();
       if (!suitesCache.length) return;
       if (suitesCache.length === 1) {
         runMagic(item, suitesCache[0]);
         return;
       }
-      if (typeof global29.Menu === "undefined") return;
-      openLibraryMenu(anchor2, {
+      if (typeof global31.Menu === "undefined") return;
+      openLibraryMenu(anchor3, {
         side: "right",
         align: "start",
         items: suitesCache.map(function(s) {
@@ -19877,7 +19038,7 @@
         searchSnippets = null;
         searchPending = false;
         if (searchWrap) searchWrap.classList.remove("is-searching");
-        render5();
+        render6();
         return;
       }
       var token = ++searchToken;
@@ -19890,7 +19051,7 @@
       searchSnippets = /* @__PURE__ */ Object.create(null);
       searchPending = true;
       if (searchWrap) searchWrap.classList.add("is-searching");
-      render5();
+      render6();
       LS.searchEntries(allFileEntries, q, fetchContent, { limit: 0 }).then(function(hits) {
         if (token !== searchToken) return;
         searchPending = false;
@@ -19904,7 +19065,7 @@
             searchSnippets[h.entry.id] = { snippet: h.snippet, line: h.line };
           }
         }
-        render5();
+        render6();
       });
     }
     var searchTimer = null;
@@ -19948,11 +19109,11 @@
         fetchContent(item.path).then(function(code) {
           return navigator.clipboard.writeText(code);
         }).then(function() {
-          toast3("Copied to clipboard");
+          toast4("Copied to clipboard");
           var ed = typeof opts.getEditor === "function" ? opts.getEditor() : null;
           if (ed && ed.focus) ed.focus();
         }).catch(function() {
-          toast3("Could not copy to clipboard.", { kind: "warn" });
+          toast4("Could not copy to clipboard.", { kind: "warn" });
         });
       });
       var insertBtn = actionBtn2("", "Insert", ICON_INSERT2, false, function(btn) {
@@ -19961,7 +19122,7 @@
           openInsertMenu(btn, code, item);
         }).catch(function() {
           cancelLibraryMenuIntent(row2);
-          toast3("Could not load library sample.", { kind: "warn" });
+          toast4("Could not load library sample.", { kind: "warn" });
         });
       });
       actions.appendChild(copyBtn);
@@ -19979,8 +19140,8 @@
       });
       if (item.description) {
         applyTip(row, item.description);
-      } else if (typeof global29.Tooltips !== "undefined" && global29.Tooltips.bindOverflow) {
-        global29.Tooltips.bindOverflow(nameEl, function() {
+      } else if (typeof global31.Tooltips !== "undefined" && global31.Tooltips.bindOverflow) {
+        global31.Tooltips.bindOverflow(nameEl, function() {
           return item.label;
         });
       }
@@ -20019,7 +19180,7 @@
         if (folder.description) applyTip(toggleBtn, folder.description);
         toggleBtn.addEventListener("click", function() {
           toggleCategoryExpanded(foldKey);
-          render5();
+          render6();
         });
         catRow.appendChild(toggleBtn);
         var previewBtn = actionBtn2("library-category-preview", "Preview", ICON_PREVIEW, false, function() {
@@ -20060,7 +19221,7 @@
       }
       return rendered2;
     }
-    function render5() {
+    function render6() {
       container.innerHTML = "";
       if (!manifest || !manifest.sections || !manifest.sections.length) {
         var empty = document.createElement("p");
@@ -20104,15 +19265,15 @@
       }).then(function(data) {
         manifest = data;
         rebuildFileIndex();
-        render5();
+        render6();
       }).catch(function() {
         manifest = null;
         allFileEntries = [];
-        render5();
+        render6();
       });
     }
-    if (searchEl && searchWrap && global29.HeaderSearch) {
-      global29.HeaderSearch.init({
+    if (searchEl && searchWrap && global31.HeaderSearch) {
+      global31.HeaderSearch.init({
         host: searchWrap,
         input: searchEl,
         onInput: scheduleSearch
@@ -20124,18 +19285,48 @@
     return {
       refresh: function() {
         refreshSuites();
-        render5();
+        render6();
       },
       collapseFolders,
       reload: loadManifest
     };
   }
-  global29.Library = { init: init10 };
-  global29.BelJarLibrary = global29.Library;
+  global31.Library = { init: init10 };
+  global31.BelJarLibrary = global31.Library;
+
+  // js/persist/settings-apply.mjs
+  var UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
+  var UI_TEXT_CONTRAST = { low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
+  var EDITOR_MONO = {
+    jetbrains: "'JetBrains Mono', monospace",
+    system: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+  };
+  var TOAST_DURATION_MS = { short: 2e3, normal: 3500, long: 5e3 };
+  function prefersReducedMotion(motionPref) {
+    if (motionPref === "reduce") return true;
+    if (motionPref === "full") return false;
+    try {
+      return typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {
+      return false;
+    }
+  }
+  function applyDocumentSettings(docEl, values) {
+    if (!docEl || !values) return;
+    docEl.classList.toggle("light", values.theme === "light");
+    docEl.style.setProperty("--ui-font-scale", String(UI_FONT_SCALES[values.uiFontSize] || 1));
+    docEl.style.setProperty("--ui-text-contrast", String(UI_TEXT_CONTRAST[values.uiTextContrast] || UI_TEXT_CONTRAST.medium));
+    docEl.classList.toggle("jar-motion-reduce", values.motionPref === "reduce");
+    docEl.classList.toggle("jar-motion-full", values.motionPref === "full");
+    docEl.style.setProperty("--editor-mono", EDITOR_MONO[values.editorFontFamily] || EDITOR_MONO.jetbrains);
+    docEl.style.setProperty("--editor-ligatures", "none");
+    docEl.classList.toggle("jar-hole-subtle", values.editorHoleEmphasis === "subtle");
+    docEl.classList.toggle("jar-hole-loud", values.editorHoleEmphasis === "loud");
+  }
 
   // js/ui/toasts.mjs
-  var global30 = globalThis;
-  var DEFAULT_DURATION_MS2 = 3500;
+  var global32 = globalThis;
+  var DEFAULT_DURATION_MS2 = TOAST_DURATION_MS.normal;
   var LEAVE_MS2 = 280;
   var UNTIL_POLL_MS = 120;
   var stackEl = null;
@@ -20146,24 +19337,10 @@
     return "toast-" + seq;
   }
   function durationForMode(mode) {
-    try {
-      if (typeof Persist !== "undefined" && typeof Persist.toastDurationForMode === "function") {
-        return Persist.toastDurationForMode(mode);
-      }
-    } catch (_) {
-    }
-    if (mode === "short") return 2e3;
-    if (mode === "long") return 5e3;
-    return DEFAULT_DURATION_MS2;
+    return TOAST_DURATION_MS[mode] || DEFAULT_DURATION_MS2;
   }
   function normalizeDuration(opts) {
-    var fallback = DEFAULT_DURATION_MS2;
-    try {
-      if (typeof Persist !== "undefined" && typeof Persist.toastDurationMs === "function") {
-        fallback = Persist.toastDurationMs();
-      }
-    } catch (_) {
-    }
+    var fallback = durationForMode(readSetting("toastDuration"));
     if (!opts || opts.duration === void 0) return fallback;
     const d = opts.duration;
     if (d === false || d === null || d === 0 || d === Infinity) return null;
@@ -20196,7 +19373,7 @@
     return false;
   }
   function pushNotification(message2, parsed) {
-    const N = global30.Notifications;
+    const N = global32.Notifications;
     if (!N) return;
     if (typeof N.fromToast === "function") {
       N.fromToast(message2, {
@@ -20241,7 +19418,7 @@
     try {
       if (entry.onDismiss) entry.onDismiss();
     } catch (err) {
-      if (global30.console && console.error) console.error("[toast]", err);
+      if (global32.console && console.error) console.error("[toast]", err);
     }
     removeNode(entry);
     if (live.size === 0) hideToastLayer();
@@ -20292,7 +19469,7 @@
       try {
         if (untilFn()) animateOut(id, entry);
       } catch (err) {
-        if (global30.console && console.error) console.error("[toast]", err);
+        if (global32.console && console.error) console.error("[toast]", err);
         animateOut(id, entry);
       }
     }, UNTIL_POLL_MS);
@@ -20383,7 +19560,7 @@
     }
     stackEl = null;
   }
-  global30.Toasts = {
+  global32.Toasts = {
     init: init11,
     dispose: dispose4,
     show: show2,
@@ -20395,16 +19572,15 @@
     dismissAll,
     _pure: { normalizeDuration, parseOpts, shouldNotify, DEFAULT_DURATION_MS: DEFAULT_DURATION_MS2 }
   };
-  global30.BelJarToasts = global30.Toasts;
+  global32.BelJarToasts = global32.Toasts;
 
   // js/ui/notification-store.mjs
-  var SCHEMA_VERSION3 = 1;
+  var SCHEMA_VERSION2 = 1;
   var DEFAULT_CAP = 100;
-  var STORAGE_KEY = "beljar-notifications";
   var KINDS = /* @__PURE__ */ new Set(["error", "warn", "info", "success", "system"]);
   var CATEGORIES = /* @__PURE__ */ new Set(["teaching", "ops", "product", "remote"]);
   var ORIGINS = /* @__PURE__ */ new Set(["local", "remote"]);
-  function newId() {
+  function newId2() {
     try {
       if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         return crypto.randomUUID();
@@ -20416,17 +19592,17 @@
   function migrateRecord(raw) {
     if (!raw || typeof raw !== "object") return null;
     const v = raw.v == null ? 1 : Number(raw.v);
-    if (v === 1) return normalizeRecord(raw);
-    return normalizeRecord(raw);
+    if (v === 1) return normalizeRecord2(raw);
+    return normalizeRecord2(raw);
   }
-  function normalizeRecord(input2) {
+  function normalizeRecord2(input2) {
     if (input2 == null) return null;
     if (typeof input2 === "string") {
       const title2 = String(input2).trim();
       if (!title2) return null;
       return {
-        id: newId(),
-        v: SCHEMA_VERSION3,
+        id: newId2(),
+        v: SCHEMA_VERSION2,
         kind: "info",
         category: "ops",
         title: title2,
@@ -20462,8 +19638,8 @@
       };
     }
     return {
-      id: input2.id && String(input2.id) || newId(),
-      v: SCHEMA_VERSION3,
+      id: input2.id && String(input2.id) || newId2(),
+      v: SCHEMA_VERSION2,
       kind,
       category,
       title: title || String(input2.body || "Notification").slice(0, 120),
@@ -20483,15 +19659,15 @@
   function linkTarget(rec) {
     const l = rec && rec.links;
     if (!l || !l.fileId) return null;
-    const from = Number.isFinite(l.from) ? l.from : null;
+    const from2 = Number.isFinite(l.from) ? l.from : null;
     const line = Number.isFinite(l.line) && l.line >= 1 ? Math.floor(l.line) : null;
-    if (from == null && line == null) return null;
+    if (from2 == null && line == null) return null;
     const path = l.path != null ? String(l.path) : "";
     const base = path ? path.slice(path.lastIndexOf("/") + 1) : String(l.fileId);
     return {
       fileId: String(l.fileId),
-      from,
-      to: Number.isFinite(l.to) ? l.to : from,
+      from: from2,
+      to: Number.isFinite(l.to) ? l.to : from2,
       line,
       label: line != null ? base + ":" + line : base
     };
@@ -20504,60 +19680,6 @@
       },
       save(next) {
         items3 = Array.isArray(next) ? next.slice() : [];
-      }
-    };
-  }
-  function createLocalPersistAdapter(opts) {
-    const o = opts && typeof opts === "object" ? opts : {};
-    const key = o.key || STORAGE_KEY;
-    const loadFn = typeof o.load === "function" ? o.load : null;
-    const saveFn = typeof o.save === "function" ? o.save : null;
-    function readRaw() {
-      if (loadFn) {
-        try {
-          return loadFn(key);
-        } catch (_) {
-          return null;
-        }
-      }
-      try {
-        if (typeof localStorage === "undefined") return null;
-        return localStorage.getItem(key);
-      } catch (_) {
-        return null;
-      }
-    }
-    function writeRaw(text) {
-      if (saveFn) {
-        try {
-          saveFn(key, text);
-          return;
-        } catch (_) {
-          return;
-        }
-      }
-      try {
-        if (typeof localStorage === "undefined") return;
-        if (text == null) localStorage.removeItem(key);
-        else localStorage.setItem(key, text);
-      } catch (_) {
-      }
-    }
-    return {
-      load() {
-        const raw = readRaw();
-        if (!raw) return [];
-        try {
-          const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-          const list3 = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.items) ? parsed.items : [];
-          return list3.map(migrateRecord).filter(Boolean);
-        } catch (_) {
-          return [];
-        }
-      },
-      save(next) {
-        const items3 = Array.isArray(next) ? next : [];
-        writeRaw(JSON.stringify({ v: SCHEMA_VERSION3, items: items3 }));
       }
     };
   }
@@ -20581,7 +19703,7 @@
       if (next.length > max) next = next.slice(0, max);
       return next;
     }
-    function persist4() {
+    function persist2() {
       try {
         adapter.save(items3);
       } catch (_) {
@@ -20608,7 +19730,7 @@
       return items3.length;
     }
     function upsert(input2) {
-      const rec = normalizeRecord(input2);
+      const rec = normalizeRecord2(input2);
       if (!rec) return null;
       if (rec.dedupeKey) {
         const idx = items3.findIndex((r) => r.dedupeKey === rec.dedupeKey && !r.dismissedAt);
@@ -20626,14 +19748,14 @@
           };
           items3[idx] = merged;
           items3 = prune(items3, cap);
-          persist4();
+          persist2();
           notify();
           return merged;
         }
       }
       items3.push(rec);
       items3 = prune(items3, cap);
-      persist4();
+      persist2();
       notify();
       return rec;
     }
@@ -20641,21 +19763,21 @@
       const idx = items3.findIndex((r) => r.id === id);
       if (idx < 0) return false;
       items3.splice(idx, 1);
-      persist4();
+      persist2();
       notify();
       return true;
     }
     function clear2() {
       if (items3.length === 0) return;
       items3 = [];
-      persist4();
+      persist2();
       notify();
     }
     function markRead(id) {
       const rec = get2(id);
       if (!rec || rec.readAt) return false;
       rec.readAt = Date.now();
-      persist4();
+      persist2();
       notify();
       return true;
     }
@@ -20669,7 +19791,7 @@
         }
       }
       if (changed) {
-        persist4();
+        persist2();
         notify();
       }
       return changed;
@@ -20778,12 +19900,12 @@
     while (rest) {
       const open11 = rest.indexOf("`");
       if (open11 < 0) break;
-      const close5 = rest.indexOf("`", open11 + 1);
-      if (close5 < 0) break;
+      const close6 = rest.indexOf("`", open11 + 1);
+      if (close6 < 0) break;
       if (open11 > 0) out.push({ code: false, text: rest.slice(0, open11) });
-      const code = rest.slice(open11 + 1, close5);
+      const code = rest.slice(open11 + 1, close6);
       if (code) out.push({ code: true, text: code });
-      rest = rest.slice(close5 + 1);
+      rest = rest.slice(close6 + 1);
     }
     if (rest) out.push({ code: false, text: rest });
     return out;
@@ -20820,10 +19942,10 @@
   }
 
   // js/ui/notifications.mjs
-  var global31 = globalThis;
+  var global33 = globalThis;
   var bellBtn = null;
-  var panelEl2 = null;
-  var listEl3 = null;
+  var panelEl3 = null;
+  var listEl4 = null;
   var emptyEl = null;
   var clearBtn = null;
   var countEl2 = null;
@@ -20838,7 +19960,7 @@
   }
   function onBellClick(e) {
     e.stopPropagation();
-    toggle4();
+    toggle5();
   }
   function onClearClick(e) {
     e.stopPropagation();
@@ -20847,8 +19969,8 @@
   function onWindowResize() {
     if (open8) positionPanel();
   }
-  var store = createNotificationStore({
-    adapter: typeof localStorage !== "undefined" ? createLocalPersistAdapter() : createMemoryAdapter()
+  var store2 = createNotificationStore({
+    adapter: typeof Persist !== "undefined" && Persist.readNotifications ? { load: () => Persist.readNotifications(), save: (items3) => Persist.writeNotifications(items3) } : createMemoryAdapter()
   });
   function svgMarkup(paths, cls) {
     return "<svg" + (cls ? ' class="' + cls + '"' : "") + ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
@@ -20863,8 +19985,8 @@
   }
   function updateBellState() {
     if (!bellBtn) return;
-    const total = store.count();
-    const unread = store.unreadCount();
+    const total = store2.count();
+    const unread = store2.unreadCount();
     if (total > 0) bellBtn.setAttribute("data-has-notifications", "");
     else bellBtn.removeAttribute("data-has-notifications");
     if (unread > 0) bellBtn.setAttribute("data-has-unread", "");
@@ -20986,13 +20108,13 @@
     return li;
   }
   function renderList2() {
-    if (!listEl3 || !emptyEl) return;
-    const records = store.list();
-    const view = panelView(records, Date.now());
-    listEl3.textContent = "";
-    for (const item of view.items) listEl3.appendChild(buildItem(item));
+    if (!listEl4 || !emptyEl) return;
+    const records2 = store2.list();
+    const view = panelView(records2, Date.now());
+    listEl4.textContent = "";
+    for (const item of view.items) listEl4.appendChild(buildItem(item));
     emptyEl.hidden = !view.empty;
-    listEl3.hidden = view.empty;
+    listEl4.hidden = view.empty;
     if (clearBtn) clearBtn.hidden = view.empty;
     if (countEl2) {
       countEl2.textContent = view.total ? String(view.total) : "";
@@ -21003,7 +20125,7 @@
   }
   function openTarget(id, target) {
     if (!target) return;
-    store.markRead(id);
+    store2.markRead(id);
     try {
       window.dispatchEvent(new CustomEvent("beljar:open-file-at", {
         detail: {
@@ -21019,7 +20141,7 @@
     setOpen(false);
   }
   function emit(partial) {
-    const rec = store.upsert(partial);
+    const rec = store2.upsert(partial);
     return rec ? rec.id : null;
   }
   function push(message2, opts) {
@@ -21071,28 +20193,28 @@
     });
   }
   function dismiss3(id) {
-    store.dismiss(id);
+    store2.dismiss(id);
   }
   function clear() {
-    store.clear();
+    store2.clear();
   }
   function positionPanel() {
-    if (!bellBtn || !panelEl2) return;
-    const anchor2 = bellBtn.closest(".header-end") || bellBtn;
-    const r = anchor2.getBoundingClientRect();
+    if (!bellBtn || !panelEl3) return;
+    const anchor3 = bellBtn.closest(".header-end") || bellBtn;
+    const r = anchor3.getBoundingClientRect();
     const right = Math.max(0, window.innerWidth - r.right);
-    panelEl2.style.setProperty("--notif-panel-right", right + "px");
+    panelEl3.style.setProperty("--notif-panel-right", right + "px");
   }
   function setOpen(next) {
-    if (!panelEl2 || !bellBtn) return;
+    if (!panelEl3 || !bellBtn) return;
     open8 = !!next;
     if (open8) {
       positionPanel();
       renderList2();
-      store.markAllRead();
+      store2.markAllRead();
     }
-    panelEl2.classList.toggle("is-open", open8);
-    panelEl2.setAttribute("aria-hidden", open8 ? "false" : "true");
+    panelEl3.classList.toggle("is-open", open8);
+    panelEl3.setAttribute("aria-hidden", open8 ? "false" : "true");
     bellBtn.setAttribute("aria-expanded", open8 ? "true" : "false");
     bellBtn.classList.toggle("is-active", open8);
     if (open8 && typeof Tooltips !== "undefined") {
@@ -21100,13 +20222,13 @@
       Tooltips.suppressAnchor(bellBtn);
     }
   }
-  function toggle4() {
+  function toggle5() {
     setOpen(!open8);
   }
-  function onDocPointerDown2(e) {
+  function onDocPointerDown3(e) {
     if (!open8) return;
     const t = e.target;
-    if (panelEl2 && panelEl2.contains(t)) return;
+    if (panelEl3 && panelEl3.contains(t)) return;
     if (bellBtn && bellBtn.contains(t)) return;
     setOpen(false);
   }
@@ -21120,20 +20242,20 @@
   function init12() {
     dispose5();
     bellBtn = document.getElementById("btn-notifications");
-    panelEl2 = document.getElementById("notif-panel");
-    listEl3 = document.getElementById("notif-panel-list");
+    panelEl3 = document.getElementById("notif-panel");
+    listEl4 = document.getElementById("notif-panel-list");
     emptyEl = document.getElementById("notif-panel-empty");
     clearBtn = document.getElementById("btn-notif-clear");
     countEl2 = document.getElementById("notif-panel-count");
-    if (!bellBtn || !panelEl2) return;
-    unsub = store.subscribe(() => renderList2());
+    if (!bellBtn || !panelEl3) return;
+    unsub = store2.subscribe(() => renderList2());
     track(bellBtn, "click", onBellClick);
     if (clearBtn) track(clearBtn, "click", onClearClick);
-    track(document, "pointerdown", onDocPointerDown2, true);
+    track(document, "pointerdown", onDocPointerDown3, true);
     track(document, "keydown", onDocKeyDown, true);
     track(window, "resize", onWindowResize);
-    if (listEl3 && global31.ScrollFade && typeof global31.ScrollFade.attach === "function") {
-      fade = global31.ScrollFade.attach(listEl3, { axis: "y", size: 14 });
+    if (listEl4 && global33.ScrollFade && typeof global33.ScrollFade.attach === "function") {
+      fade = global33.ScrollFade.attach(listEl4, { axis: "y", size: 14 });
     }
     positionPanel();
     renderList2();
@@ -21159,13 +20281,13 @@
     }
     setOpen(false);
     bellBtn = null;
-    panelEl2 = null;
-    listEl3 = null;
+    panelEl3 = null;
+    listEl4 = null;
     emptyEl = null;
     clearBtn = null;
     countEl2 = null;
   }
-  global31.Notifications = {
+  global33.Notifications = {
     init: init12,
     dispose: dispose5,
     emit,
@@ -21174,16 +20296,16 @@
     fromToast,
     dismiss: dismiss3,
     clear,
-    markRead: (id) => store.markRead(id),
-    markAllRead: () => store.markAllRead(),
-    toggle: toggle4,
+    markRead: (id) => store2.markRead(id),
+    markAllRead: () => store2.markAllRead(),
+    toggle: toggle5,
     isOpen: () => open8,
-    count: () => store.count(),
-    unreadCount: () => store.unreadCount(),
-    list: () => store.list(),
-    store,
+    count: () => store2.count(),
+    unreadCount: () => store2.unreadCount(),
+    list: () => store2.list(),
+    store: store2,
     _pure: {
-      normalizeRecord,
+      normalizeRecord: normalizeRecord2,
       linkTarget,
       itemView,
       panelView,
@@ -21192,13 +20314,13 @@
       inlineSegments,
       formatStamp,
       formatStampFull,
-      SCHEMA_VERSION: SCHEMA_VERSION3
+      SCHEMA_VERSION: SCHEMA_VERSION2
     }
   };
-  global31.BelJarNotifications = global31.Notifications;
+  global33.BelJarNotifications = global33.Notifications;
 
   // js/frame/frame.mjs
-  var global32 = globalThis;
+  var global34 = globalThis;
   var teardown2 = [];
   var mounted2 = false;
   function track2(target, type, fn, opts) {
@@ -21207,31 +20329,35 @@
     teardown2.push(() => target.removeEventListener(type, fn, opts));
   }
   function toggleTheme() {
-    const root2 = document.documentElement;
-    root2.classList.toggle("light");
-    const isLight = root2.classList.contains("light");
-    if (global32.Persist && typeof global32.Persist.writeStoredTheme === "function") {
-      global32.Persist.writeStoredTheme(isLight ? "light" : "dark");
-    }
-    global32.dispatchEvent(new CustomEvent("beljar:settings-changed", {
+    const next = Settings.get("theme") === "light" ? "dark" : "light";
+    Settings.set("theme", next);
+    global34.dispatchEvent(new CustomEvent("beljar:settings-changed", {
       detail: { key: "theme" }
     }));
-    return isLight ? "light" : "dark";
+    return next;
+  }
+  function repaint() {
+    applyDocumentSettings(document.documentElement, Settings.values());
+  }
+  function onSettingsChanged(e) {
+    if (e.ids.some((id) => settingRow(id).boot)) repaint();
   }
   function onReload() {
-    global32.location.reload();
+    global34.location.reload();
   }
   function onSettings() {
-    if (global32.SettingsUI && typeof global32.SettingsUI.open === "function") {
-      global32.SettingsUI.open();
+    if (global34.SettingsUI && typeof global34.SettingsUI.open === "function") {
+      global34.SettingsUI.open();
     }
   }
   function mount() {
     if (mounted2) return;
     mounted2 = true;
-    if (global32.Toasts && typeof global32.Toasts.init === "function") global32.Toasts.init();
-    if (global32.Notifications && typeof global32.Notifications.init === "function") {
-      global32.Notifications.init();
+    repaint();
+    teardown2.push(Settings.subscribe(onSettingsChanged));
+    if (global34.Toasts && typeof global34.Toasts.init === "function") global34.Toasts.init();
+    if (global34.Notifications && typeof global34.Notifications.init === "function") {
+      global34.Notifications.init();
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
     track2(document.getElementById("btn-reload"), "click", onReload);
@@ -21247,7 +20373,7 @@
       } catch (_) {
       }
     }
-    for (const peer of [global32.Notifications, global32.Toasts]) {
+    for (const peer of [global34.Notifications, global34.Toasts]) {
       if (peer && typeof peer.dispose === "function") {
         try {
           peer.dispose();
@@ -21263,11 +20389,11 @@
     isMounted: () => mounted2,
     pendingTeardown: () => teardown2.length
   };
-  global32.Frame = Frame2;
-  global32.BelJarFrame = global32.Frame;
+  global34.Frame = Frame2;
+  global34.BelJarFrame = global34.Frame;
 
   // js/repl/repl-stream.mjs
-  var global33 = globalThis;
+  var global35 = globalThis;
   var outputEl2 = null;
   var liveEl = null;
   var cmdInputEl = null;
@@ -21289,7 +20415,7 @@
     return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + "." + pad3(d.getMilliseconds());
   }
   function hoverTimestampOn() {
-    return typeof Persist !== "undefined" && typeof Persist.readStoredReplHoverTimestamp === "function" && Persist.readStoredReplHoverTimestamp();
+    return Settings.get("replHoverTimestamp");
   }
   function clearStampTooltip(el6) {
     if (!el6 || el6.nodeType !== 1) return;
@@ -21504,7 +20630,7 @@
     if (input2 && !input2.disabled) input2.focus();
   }
   function isSelectingText() {
-    var sel = global33.getSelection && global33.getSelection();
+    var sel = global35.getSelection && global35.getSelection();
     return !!(sel && !sel.isCollapsed && String(sel).length);
   }
   function bindFocusDelegation() {
@@ -21589,13 +20715,13 @@
     return openTurnBody;
   }
   ensureLiveLine();
-  if (typeof global33.addEventListener === "function") {
-    global33.addEventListener("beljar:settings-changed", function(e) {
+  if (typeof global35.addEventListener === "function") {
+    global35.addEventListener("beljar:settings-changed", function(e) {
       var key = e && e.detail ? e.detail.key : "";
       if (key === "repl-hover-timestamp" || key === "repl-reset") syncStampHoverPref();
     });
   }
-  global33.ReplStream = {
+  global35.ReplStream = {
     ensureLiveLine,
     getLiveLine,
     getCommandInput,
@@ -21610,20 +20736,20 @@
     rebindStamps,
     syncStampHoverPref
   };
-  global33.BelJarReplStream = global33.ReplStream;
+  global35.BelJarReplStream = global35.ReplStream;
 
   // js/repl/repl-output.mjs
-  var global34 = globalThis;
+  var global36 = globalThis;
   var output = document.getElementById("output");
   function normBelugaRaw(s) {
-    return global34.BelugaText ? global34.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
+    return global36.BelugaText ? global36.BelugaText.normalizeBelugaRaw(s) : String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
   function stripAnsi(s) {
-    return global34.BelugaText ? global34.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
+    return global36.BelugaText ? global36.BelugaText.stripBelugaAnsi(s) : normBelugaRaw(s);
   }
   function isInternalQueryLine(trimmed) {
-    if (global34.BelugaText && global34.BelugaText.isInternalQueryLine) {
-      return global34.BelugaText.isInternalQueryLine(trimmed);
+    if (global36.BelugaText && global36.BelugaText.isInternalQueryLine) {
+      return global36.BelugaText.isInternalQueryLine(trimmed);
     }
     return trimmed === "[]" || trimmed === "^." || trimmed === "^" || /^\[[^\]]*(?:TClo|FREE BVar|\?[A-Za-z0-9_.]+)/i.test(trimmed);
   }
@@ -21747,7 +20873,7 @@
     return block;
   }
   function scrollReplBottom() {
-    if (typeof Persist !== "undefined" && !Persist.readStoredReplAutoscroll()) return;
+    if (typeof Persist !== "undefined" && !Settings.get("replAutoscroll")) return;
     if (typeof ReplStream !== "undefined" && ReplStream.ensureLiveLine) {
       ReplStream.ensureLiveLine();
     }
@@ -21777,8 +20903,8 @@
     });
   }
   function belugaCommandErrorInfo(text) {
-    if (global34.BelugaText && typeof global34.BelugaText.parseBelugaCommandError === "function") {
-      return global34.BelugaText.parseBelugaCommandError(text);
+    if (global36.BelugaText && typeof global36.BelugaText.parseBelugaCommandError === "function") {
+      return global36.BelugaText.parseBelugaCommandError(text);
     }
     return null;
   }
@@ -21952,7 +21078,7 @@
     });
   }
   function collectEditorQuerySourceLines() {
-    var editor2 = global34.CurrentEditor;
+    var editor2 = global36.CurrentEditor;
     if (!editor2 || typeof editor2.getValue !== "function") return [];
     var src = editor2.getValue();
     var out = [];
@@ -22038,7 +21164,7 @@
     return { solutions, isDone, queryLine, queryError };
   }
   function queryDisplayRows(bindings) {
-    return global34.BelugaText && global34.BelugaText.prettifyQueryBindings ? global34.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
+    return global36.BelugaText && global36.BelugaText.prettifyQueryBindings ? global36.BelugaText.prettifyQueryBindings(bindings) : bindings || [];
   }
   function displayQueryBindings(container, rows2) {
     container.replaceChildren();
@@ -22229,7 +21355,7 @@
         continue;
       }
       if (!trimmed || trimmed === "[]" || trimmed === "^." || trimmed === "^" || trimmed === ";") {
-        var filterChatter = typeof Persist === "undefined" || Persist.readStoredReplFilterChatter();
+        var filterChatter = typeof Persist === "undefined" || Settings.get("replFilterChatter");
         if (filterChatter) {
           i++;
           continue;
@@ -22340,14 +21466,8 @@
   var pendingRunBlock = null;
   var pendingRunStartedAt = 0;
   var MIN_PENDING_MS = 180;
-  function prefersReducedMotion() {
-    try {
-      if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
-        return Persist.prefersReducedMotion();
-      }
-    } catch (_) {
-    }
-    return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function prefersReducedMotion2() {
+    return prefersReducedMotion(Settings.get("motionPref"));
   }
   function waitMs(ms) {
     return new Promise(function(resolve2) {
@@ -22462,7 +21582,7 @@
     pendingRunStartedAt = 0;
     if (!block) return Promise.resolve();
     if (!block.isConnected) return Promise.resolve();
-    var reduce = prefersReducedMotion();
+    var reduce = prefersReducedMotion2();
     if (reduce) {
       block.remove();
       return Promise.resolve();
@@ -22483,7 +21603,7 @@
   }
   async function morphPendingPre(pre, kind, text) {
     if (!pre) return;
-    var reduce = prefersReducedMotion();
+    var reduce = prefersReducedMotion2();
     pre.classList.add("repl-rich-pre--run-resolving");
     if (!reduce) await waitMs(120);
     pre.classList.remove(
@@ -22517,7 +21637,7 @@
       await morphPendingPre(pre, "holes", holesText);
       return;
     }
-    var reduce = prefersReducedMotion();
+    var reduce = prefersReducedMotion2();
     var hp = document.createElement("pre");
     hp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
     if (!reduce) hp.classList.add("repl-rich-pre--run-stack-enter");
@@ -22689,8 +21809,8 @@
       var grid = document.createElement("div");
       grid.className = "repl-rich-kv-grid";
       appendRichKvRow(grid, "Folder", name);
-      var files = projectFilesSummary(belCount, elfCount, cfgCount);
-      if (files) appendRichKvRow(grid, "Files", files);
+      var files2 = projectFilesSummary(belCount, elfCount, cfgCount);
+      if (files2) appendRichKvRow(grid, "Files", files2);
       if (defaultCfgPath) appendRichKvRow(grid, "Flow", defaultCfgPath.split("/").pop());
       shell.appendChild(grid);
       var note = document.createElement("div");
@@ -22709,7 +21829,7 @@
     });
   }
   function insertWelcomeBanner() {
-    if (typeof Persist !== "undefined" && !Persist.readStoredReplWelcome()) return;
+    if (typeof Persist !== "undefined" && !Settings.get("replWelcome")) return;
     var wrap = document.createElement("div");
     wrap.className = "repl-banner";
     var lead = document.createElement("div");
@@ -22751,7 +21871,7 @@
     streamAppend(block);
     scrollReplBottom();
   }
-  global34.ReplOutput = {
+  global36.ReplOutput = {
     appendOutput,
     appendReplHelp,
     appendRunOutput,
@@ -22788,10 +21908,10 @@
       return out;
     }
   };
-  global34.BelJarReplOutput = global34.ReplOutput;
+  global36.BelJarReplOutput = global36.ReplOutput;
 
   // js/repl/repl-run-cmd.mjs
-  var global35 = globalThis;
+  var global37 = globalThis;
   function baseName4(path) {
     var s = String(path || "");
     var i = s.lastIndexOf("/");
@@ -22800,7 +21920,7 @@
   function formatRunPath(absPath, cwd) {
     var p = String(absPath || "");
     if (!p) return p;
-    if (dirOf2(p) === String(cwd != null ? cwd : "")) return baseName4(p);
+    if (dirOf(p) === String(cwd != null ? cwd : "")) return baseName4(p);
     return p;
   }
   function formatRunCaption(absPath, cwd, amalgam) {
@@ -22812,10 +21932,10 @@
     return amalgam ? "&" + shown : shown;
   }
   function rewriteRunStatusLabel(raw, fromLabel, toLabel) {
-    var from = String(fromLabel || "");
+    var from2 = String(fromLabel || "");
     var to = String(toLabel || "");
-    if (!from || !to || from === to) return String(raw == null ? "" : raw);
-    var esc = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!from2 || !to || from2 === to) return String(raw == null ? "" : raw);
+    var esc = from2.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return String(raw).replace(
       new RegExp("(##\\s*(?:Type Reconstruction (?:begin|done)|Holes)\\s*:\\s*)" + esc + "(\\s*##)", "gi"),
       "$1" + to + "$2"
@@ -22868,9 +21988,9 @@
     }
     return null;
   }
-  function lookupFileByPath(files, path) {
-    for (var i = 0; i < files.length; i++) {
-      if (files[i].name === path) return { path: files[i].name, id: files[i].id };
+  function lookupFileByPath(files2, path) {
+    for (var i = 0; i < files2.length; i++) {
+      if (files2[i].name === path) return { path: files2[i].name, id: files2[i].id };
     }
     return null;
   }
@@ -22909,32 +22029,32 @@
   }
   function resolveRunTarget(arg, opts) {
     opts = opts || {};
-    var files = opts.files || [];
+    var files2 = opts.files || [];
     var cwd = opts.cwd != null ? opts.cwd : "";
     var want = String(arg || "").trim();
     if (!want) return { error: "Missing path." };
     var nav = normalizeWorkspacePath(want, cwd);
     if (nav && nav.error) return { error: nav.error };
     if (nav && nav.path != null) {
-      var navHit = lookupFileByPath(files, nav.path);
+      var navHit = lookupFileByPath(files2, nav.path);
       if (navHit) return navHit;
       return { error: 'No file matching "' + want + '".' };
     }
     var i;
-    for (i = 0; i < files.length; i++) {
-      if (files[i].name === want) return { path: files[i].name, id: files[i].id };
+    for (i = 0; i < files2.length; i++) {
+      if (files2[i].name === want) return { path: files2[i].name, id: files2[i].id };
     }
     var joined = joinPath(cwd, want);
     if (joined !== want) {
-      for (i = 0; i < files.length; i++) {
-        if (files[i].name === joined) return { path: files[i].name, id: files[i].id };
+      for (i = 0; i < files2.length; i++) {
+        if (files2[i].name === joined) return { path: files2[i].name, id: files2[i].id };
       }
     }
     var baseWant = baseName4(want);
     var hits = [];
-    for (i = 0; i < files.length; i++) {
-      var bn = baseName4(files[i].name);
-      if (bn === baseWant || bn === want) hits.push(files[i]);
+    for (i = 0; i < files2.length; i++) {
+      var bn = baseName4(files2[i].name);
+      if (bn === baseWant || bn === want) hits.push(files2[i]);
     }
     if (hits.length === 1) return { path: hits[0].name, id: hits[0].id };
     if (hits.length > 1) {
@@ -22946,7 +22066,7 @@
     }
     return { error: 'No file matching "' + want + '".' };
   }
-  function resolveSuiteCfg(suite, files, cwd) {
+  function resolveSuiteCfg(suite, files2, cwd) {
     var name = String(suite || "").trim();
     if (!name) return { error: "Missing suite name." };
     var nav = normalizeWorkspacePath(name, cwd);
@@ -22954,8 +22074,8 @@
     if (nav && nav.path != null) {
       var navPath = nav.path;
       if (navPath && !/\.cfg$/i.test(navPath)) navPath = navPath + ".cfg";
-      for (var n = 0; n < files.length; n++) {
-        if (files[n].name === navPath) return { path: files[n].name };
+      for (var n = 0; n < files2.length; n++) {
+        if (files2[n].name === navPath) return { path: files2[n].name };
       }
       return { error: 'No suite matching "' + suite + '".' };
     }
@@ -22964,13 +22084,13 @@
     var i;
     for (i = 0; i < candidates.length; i++) {
       var c = candidates[i];
-      for (var j = 0; j < files.length; j++) {
-        if (files[j].name === c) return { path: files[j].name };
+      for (var j = 0; j < files2.length; j++) {
+        if (files2[j].name === c) return { path: files2[j].name };
       }
     }
     var hits = [];
-    for (i = 0; i < files.length; i++) {
-      var fn = files[i].name || "";
+    for (i = 0; i < files2.length; i++) {
+      var fn = files2[i].name || "";
       if (!/\.cfg$/i.test(fn)) continue;
       var bn = baseName4(fn);
       if (bn === cfgBase || bn.replace(/\.cfg$/i, "") === name.replace(/\.cfg$/i, "")) {
@@ -22983,7 +22103,7 @@
     }
     return { error: 'No suite matching "' + name + '".' };
   }
-  function resolveFolderPath(arg, files, cwd) {
+  function resolveFolderPath(arg, files2, cwd) {
     var want = arg == null ? "" : String(arg);
     if (want === "(root)") want = "";
     if (want === "") return { path: "" };
@@ -22994,8 +22114,8 @@
       if (want === "") return { path: "" };
     }
     var dirs = /* @__PURE__ */ Object.create(null);
-    for (var i = 0; i < files.length; i++) {
-      dirs[dirOf2(files[i].name)] = true;
+    for (var i = 0; i < files2.length; i++) {
+      dirs[dirOf(files2[i].name)] = true;
     }
     if (Object.prototype.hasOwnProperty.call(dirs, want)) return { path: want };
     if (!(nav && nav.path != null)) {
@@ -23004,10 +22124,10 @@
     }
     return { error: 'No folder matching "' + arg + '".' };
   }
-  function activeCwd(files, activeId2) {
+  function activeCwd(files2, activeId2) {
     if (!activeId2) return "";
-    for (var i = 0; i < (files || []).length; i++) {
-      if (files[i].id === activeId2) return dirOf2(files[i].name);
+    for (var i = 0; i < (files2 || []).length; i++) {
+      if (files2[i].id === activeId2) return dirOf(files2[i].name);
     }
     return "";
   }
@@ -23020,11 +22140,11 @@
     }
     return "";
   }
-  function activeFileInSuite(files, activeId2) {
+  function activeFileInSuite(files2, activeId2) {
     if (!activeId2 || typeof ProjectSource === "undefined" || !ProjectSource.cfgPathForActive) {
       return false;
     }
-    return !!ProjectSource.cfgPathForActive(files, activeId2, function(id) {
+    return !!ProjectSource.cfgPathForActive(files2, activeId2, function(id) {
       return fileTextForResolve(id, activeId2);
     });
   }
@@ -23040,13 +22160,13 @@
     if (typeof BelugaRun === "undefined") {
       return { ok: false, error: "Run is not available." };
     }
-    var files = typeof Persist !== "undefined" && Persist.listFiles ? Persist.listFiles() || [] : [];
+    var files2 = typeof Persist !== "undefined" && Persist.listFiles ? Persist.listFiles() || [] : [];
     var activeId2 = typeof Persist !== "undefined" && Persist.getActiveFileId ? Persist.getActiveFileId() : null;
-    var cwd = activeCwd(files, activeId2);
+    var cwd = activeCwd(files2, activeId2);
     switch (parsed.kind) {
       case "fileActive":
         if (!activeId2) return { ok: false, error: "No active file." };
-        if (activeFileInSuite(files, activeId2)) await BelugaRun.runToHere();
+        if (activeFileInSuite(files2, activeId2)) await BelugaRun.runToHere();
         else await BelugaRun.runFile();
         return { ok: true };
       case "hereActive":
@@ -23057,25 +22177,25 @@
         await BelugaRun.runProject();
         return { ok: true };
       case "file": {
-        var fileHit = resolveRunTarget(parsed.path, { files, cwd });
+        var fileHit = resolveRunTarget(parsed.path, { files: files2, cwd });
         if (fileHit.error) return { ok: false, error: fileHit.error };
         await BelugaRun.runFile(fileHit.id);
         return { ok: true };
       }
       case "here": {
-        var hereHit = resolveRunTarget(parsed.path, { files, cwd });
+        var hereHit = resolveRunTarget(parsed.path, { files: files2, cwd });
         if (hereHit.error) return { ok: false, error: hereHit.error };
         await BelugaRun.runToHere(hereHit.id);
         return { ok: true };
       }
       case "suite": {
-        var suiteHit = resolveSuiteCfg(parsed.suite, files, cwd);
+        var suiteHit = resolveSuiteCfg(parsed.suite, files2, cwd);
         if (suiteHit.error) return { ok: false, error: suiteHit.error };
         await BelugaRun.runModuleCfg(suiteHit.path);
         return { ok: true };
       }
       case "folder": {
-        var folderHit = resolveFolderPath(parsed.path, files, cwd);
+        var folderHit = resolveFolderPath(parsed.path, files2, cwd);
         if (folderHit.error) return { ok: false, error: folderHit.error };
         await BelugaRun.runFolder(folderHit.path);
         return { ok: true };
@@ -23085,7 +22205,7 @@
     }
   }
   var api = {
-    dirOf: dirOf2,
+    dirOf,
     joinPath,
     baseName: baseName4,
     formatRunPath,
@@ -23102,8 +22222,8 @@
     dispatchRunCommand,
     executeRunCommand
   };
-  global35.ReplRunCmd = api;
-  global35.BelJarReplRunCmd = api;
+  global37.ReplRunCmd = api;
+  global37.BelJarReplRunCmd = api;
 
   // js/repl/repl-ac-suggest.mjs
   var MAX_ITEMS = 16;
@@ -23133,10 +22253,10 @@
     var bn = baseName4(absPath);
     if ((counts[bn] || 0) > 1) return absPath;
     var formatted = formatRunPath(absPath, cwd);
-    if (formatted === bn && dirOf2(absPath) !== String(cwd != null ? cwd : "")) {
+    if (formatted === bn && dirOf(absPath) !== String(cwd != null ? cwd : "")) {
       return absPath;
     }
-    if (!dirOf2(absPath) && String(cwd || "") !== "") return "~/" + bn;
+    if (!dirOf(absPath) && String(cwd || "") !== "") return "~/" + bn;
     return formatted;
   }
   function isNavToken(token) {
@@ -23165,8 +22285,8 @@
     if (dirNorm && dirNorm.path != null) {
       var base = dirNorm.path;
       if (base === "") {
-        if (dirOf2(absPath) !== "") return false;
-      } else if (absPath !== base && absPath.indexOf(base + "/") !== 0 && dirOf2(absPath) !== base) {
+        if (dirOf(absPath) !== "") return false;
+      } else if (absPath !== base && absPath.indexOf(base + "/") !== 0 && dirOf(absPath) !== base) {
         return false;
       }
       if (filter && bnL.indexOf(filter) !== 0 && pathL.indexOf(filter) === -1) return false;
@@ -23175,8 +22295,8 @@
     return labelL.indexOf(tl) === 0;
   }
   function compareByPath(aPath, bPath, cwd) {
-    var aDir = dirOf2(aPath);
-    var bDir = dirOf2(bPath);
+    var aDir = dirOf(aPath);
+    var bDir = dirOf(bPath);
     var aCwd = aDir === String(cwd || "") ? 0 : 1;
     var bCwd = bDir === String(cwd || "") ? 0 : 1;
     if (aCwd !== bCwd) return aCwd - bCwd;
@@ -23261,10 +22381,10 @@
     }
     return out.slice(0, MAX_ITEMS);
   }
-  function suggestRunPaths(files, cwd, token) {
+  function suggestRunPaths(files2, cwd, token) {
     var paths = [];
-    for (var i = 0; i < files.length; i++) {
-      var n = files[i] && files[i].name;
+    for (var i = 0; i < files2.length; i++) {
+      var n = files2[i] && files2[i].name;
       if (!n) continue;
       if (isSignaturePath(n) || isCfgPath(n)) paths.push(n);
     }
@@ -23290,10 +22410,10 @@
       return it;
     });
   }
-  function suggestRunSuites(files, cwd, token) {
+  function suggestRunSuites(files2, cwd, token) {
     var paths = [];
-    for (var i = 0; i < files.length; i++) {
-      var n = files[i] && files[i].name;
+    for (var i = 0; i < files2.length; i++) {
+      var n = files2[i] && files2[i].name;
       if (n && isCfgPath(n)) paths.push(n);
     }
     var counts = basenameCounts(paths.map(function(p2) {
@@ -23309,7 +22429,7 @@
       var p = paths[j];
       var suite = baseName4(p).replace(/\.cfg$/i, "");
       var label = (counts[suite] || 0) > 1 ? p.replace(/\.cfg$/i, "") : suite;
-      if (dirOf2(p) !== String(cwd || "") && (counts[suite] || 0) <= 1) {
+      if (dirOf(p) !== String(cwd || "") && (counts[suite] || 0) <= 1) {
         label = suggestPathLabel(p, cwd, basenameCounts(paths)).replace(/\.cfg$/i, "");
       }
       if (!matchesToken(p, label, token, cwd) && !matchesToken(p, suite, token, cwd)) continue;
@@ -23329,13 +22449,13 @@
       return it;
     });
   }
-  function suggestRunFolders(files, cwd, token) {
+  function suggestRunFolders(files2, cwd, token) {
     var dirs = /* @__PURE__ */ Object.create(null);
     dirs[""] = true;
-    for (var i = 0; i < files.length; i++) {
-      var n = files[i] && files[i].name;
+    for (var i = 0; i < files2.length; i++) {
+      var n = files2[i] && files2[i].name;
       if (!n) continue;
-      var d = dirOf2(n);
+      var d = dirOf(n);
       dirs[d] = true;
       if (d) {
         var parts = d.split("/");
@@ -23354,8 +22474,8 @@
       var label;
       if (folder === "") label = "~";
       else if (folder === String(cwd || "")) label = ".";
-      else if (dirOf2(folder) === String(cwd || "")) label = baseName4(folder);
-      else if (!dirOf2(folder) && String(cwd || "")) label = "~/" + folder;
+      else if (dirOf(folder) === String(cwd || "")) label = baseName4(folder);
+      else if (!dirOf(folder) && String(cwd || "")) label = "~/" + folder;
       else label = folder;
       var t = String(token || "").replace(/\\/g, "/");
       if (t) {
@@ -23400,17 +22520,17 @@
     opts = opts || {};
     var ctx = parseCompletionContext(opts.line);
     if (!ctx) return null;
-    var files = opts.files || [];
+    var files2 = opts.files || [];
     var cwd = opts.cwd != null ? opts.cwd : "";
     var items3 = [];
     if (ctx.kind === "verb") {
       items3 = suggestVerbs(ctx.token, opts.verbs);
     } else if (ctx.kind === "runPath") {
-      items3 = suggestRunPaths(files, cwd, ctx.token);
+      items3 = suggestRunPaths(files2, cwd, ctx.token);
     } else if (ctx.kind === "runSuite") {
-      items3 = suggestRunSuites(files, cwd, ctx.token);
+      items3 = suggestRunSuites(files2, cwd, ctx.token);
     } else if (ctx.kind === "runFolder") {
-      items3 = suggestRunFolders(files, cwd, ctx.token);
+      items3 = suggestRunFolders(files2, cwd, ctx.token);
     }
     if (!items3.length) return null;
     return {
@@ -23422,10 +22542,10 @@
   }
 
   // js/repl/repl-autocomplete.mjs
-  var global36 = globalThis;
+  var global38 = globalThis;
   var inputEl = null;
   var popupEl = null;
-  var listEl4 = null;
+  var listEl5 = null;
   var mirrorEl = null;
   var items2 = [];
   var activeIndex2 = -1;
@@ -23448,16 +22568,16 @@
     return inputEl;
   }
   function ensurePopup() {
-    if (popupEl && popupEl.isConnected && listEl4 && listEl4.isConnected) return popupEl;
+    if (popupEl && popupEl.isConnected && listEl5 && listEl5.isConnected) return popupEl;
     if (typeof document === "undefined" || !document.body) return null;
     popupEl = document.createElement("div");
     popupEl.className = "repl-ac";
     popupEl.hidden = true;
-    listEl4 = document.createElement("ul");
-    listEl4.className = "repl-ac-list";
-    listEl4.setAttribute("role", "listbox");
-    listEl4.setAttribute("aria-label", "Command completions");
-    popupEl.appendChild(listEl4);
+    listEl5 = document.createElement("ul");
+    listEl5.className = "repl-ac-list";
+    listEl5.setAttribute("role", "listbox");
+    listEl5.setAttribute("aria-label", "Command completions");
+    popupEl.appendChild(listEl5);
     document.body.appendChild(popupEl);
     return popupEl;
   }
@@ -23499,26 +22619,26 @@
     };
   }
   function positionPopup() {
-    if (!popupEl || popupEl.hidden || !open9 || !listEl4) return;
+    if (!popupEl || popupEl.hidden || !open9 || !listEl5) return;
     var input2 = getInput();
     if (!input2) return;
-    var anchor2 = tokenAnchor(input2, replaceFrom);
-    if (!anchor2) return;
-    listEl4.style.maxHeight = "";
+    var anchor3 = tokenAnchor(input2, replaceFrom);
+    if (!anchor3) return;
+    listEl5.style.maxHeight = "";
     var popW = popupEl.offsetWidth || 0;
     var popH = popupEl.offsetHeight || 0;
     if (popH < 1) return;
-    var roomBelow = window.innerHeight - anchor2.bottom - VIEW_PAD_PX;
-    var roomAbove = anchor2.top - VIEW_PAD_PX;
+    var roomBelow = window.innerHeight - anchor3.bottom - VIEW_PAD_PX;
+    var roomAbove = anchor3.top - VIEW_PAD_PX;
     var placeBelow = roomBelow >= popH + POPUP_GAP_PX || roomBelow >= roomAbove;
     var avail = placeBelow ? roomBelow : roomAbove;
     if (avail > 0 && popH > avail - POPUP_GAP_PX) {
-      listEl4.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + "px";
+      listEl5.style.maxHeight = Math.max(48, avail - POPUP_GAP_PX) + "px";
       popH = popupEl.offsetHeight || popH;
     }
     var maxLeft = window.innerWidth - VIEW_PAD_PX - popW;
-    var left = Math.max(VIEW_PAD_PX, Math.min(anchor2.left, maxLeft));
-    var top = placeBelow ? anchor2.bottom + POPUP_GAP_PX : anchor2.top - popH - POPUP_GAP_PX;
+    var left = Math.max(VIEW_PAD_PX, Math.min(anchor3.left, maxLeft));
+    var top = placeBelow ? anchor3.bottom + POPUP_GAP_PX : anchor3.top - popH - POPUP_GAP_PX;
     if (top < VIEW_PAD_PX) top = VIEW_PAD_PX;
     if (top + popH > window.innerHeight - VIEW_PAD_PX) {
       top = Math.max(VIEW_PAD_PX, window.innerHeight - VIEW_PAD_PX - popH);
@@ -23541,17 +22661,12 @@
       if (output2) output2.removeEventListener("scroll", onReposition);
     }
   }
-  function persistApi2() {
-    return typeof Persist !== "undefined" ? Persist : null;
-  }
   function autocompleteTrigger() {
-    var p = persistApi2();
-    var v = p && p.readStoredReplAutocompleteTrigger ? p.readStoredReplAutocompleteTrigger() : null;
+    var v = Settings.get("replAutocompleteTrigger");
     return v === "none" || v === "always" ? v : "typing";
   }
   function autocompleteContinue() {
-    var p = persistApi2();
-    return !!(p && p.readStoredReplAutocompleteContinue && p.readStoredReplAutocompleteContinue());
+    return Settings.get("replAutocompleteContinue");
   }
   function caretPos(input2) {
     if (!input2) return 0;
@@ -23569,16 +22684,16 @@
     }
     return !!(e && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === " " || e.key === "Spacebar" || e.code === "Space"));
   }
-  function listFiles2() {
+  function listFiles() {
     return typeof Persist !== "undefined" && Persist.listFiles ? Persist.listFiles() || [] : [];
   }
   function currentCwd() {
-    var files = listFiles2();
+    var files2 = listFiles();
     var id = typeof Persist !== "undefined" && Persist.getActiveFileId ? Persist.getActiveFileId() : null;
-    if (typeof activeCwd === "function") return activeCwd(files, id);
+    if (typeof activeCwd === "function") return activeCwd(files2, id);
     if (!id) return "";
-    for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return dirOf2(files[i].name);
+    for (var i = 0; i < files2.length; i++) {
+      if (files2[i].id === id) return dirOf(files2[i].name);
     }
     return "";
   }
@@ -23601,27 +22716,27 @@
       popupEl.style.left = "";
       popupEl.style.top = "";
     }
-    if (listEl4) {
-      listEl4.textContent = "";
-      listEl4.style.maxHeight = "";
+    if (listEl5) {
+      listEl5.textContent = "";
+      listEl5.style.maxHeight = "";
     }
   }
-  function isOpen4() {
+  function isOpen5() {
     return open9 && items2.length > 0;
   }
   function scrollActiveIntoView(li) {
-    if (!listEl4 || !li) return;
+    if (!listEl5 || !li) return;
     var top = li.offsetTop;
     var bottom = top + li.offsetHeight;
-    var viewTop = listEl4.scrollTop;
-    var viewBottom = viewTop + listEl4.clientHeight;
-    if (top < viewTop) listEl4.scrollTop = top;
-    else if (bottom > viewBottom) listEl4.scrollTop = bottom - listEl4.clientHeight;
+    var viewTop = listEl5.scrollTop;
+    var viewBottom = viewTop + listEl5.clientHeight;
+    if (top < viewTop) listEl5.scrollTop = top;
+    else if (bottom > viewBottom) listEl5.scrollTop = bottom - listEl5.clientHeight;
   }
   function setActive2(idx) {
-    if (!listEl4 || !items2.length) return;
+    if (!listEl5 || !items2.length) return;
     activeIndex2 = Math.max(0, Math.min(items2.length - 1, idx));
-    var kids = listEl4.children;
+    var kids = listEl5.children;
     for (var i = 0; i < kids.length; i++) {
       if (i === activeIndex2) kids[i].setAttribute("aria-selected", "true");
       else kids[i].removeAttribute("aria-selected");
@@ -23671,7 +22786,7 @@
   }
   function render3(result) {
     var popup = ensurePopup();
-    if (!popup || !listEl4) return;
+    if (!popup || !listEl5) return;
     if (!result || !result.items || !result.items.length) {
       hide();
       return;
@@ -23681,7 +22796,7 @@
     typedToken = result.token || "";
     activeIndex2 = 0;
     open9 = true;
-    listEl4.textContent = "";
+    listEl5.textContent = "";
     for (var i = 0; i < items2.length; i++) {
       var it = items2[i];
       var li = document.createElement("li");
@@ -23693,7 +22808,7 @@
         e.preventDefault();
         accept2(parseInt(e.currentTarget.dataset.index, 10));
       });
-      listEl4.appendChild(li);
+      listEl5.appendChild(li);
     }
     popup.hidden = false;
     popup.style.visibility = "hidden";
@@ -23708,7 +22823,7 @@
     if (!input2) return null;
     return suggestReplCompletions({
       line: input2.value || "",
-      files: listFiles2(),
+      files: listFiles(),
       cwd: currentCwd(),
       verbs: listVerbs()
     });
@@ -23739,20 +22854,20 @@
     }, 20);
   }
   function toggleExplicit() {
-    if (isOpen4()) {
+    if (isOpen5()) {
       hide();
       return true;
     }
     refresh3({ explicit: true });
     return true;
   }
-  function onKeyDown3(e) {
+  function onKeyDown4(e) {
     if (!e) return false;
     if (isAutocompleteToggle(e)) {
       toggleExplicit();
       return true;
     }
-    if (!isOpen4()) return false;
+    if (!isOpen5()) return false;
     var delta = listStepDelta(e);
     if (delta) {
       setActive2(activeIndex2 + delta);
@@ -23786,7 +22901,7 @@
     if (!inputEl || alwaysNavBound) return;
     alwaysNavBound = true;
     inputEl.addEventListener("keydown", function(e) {
-      if (!onKeyDown3(e)) return;
+      if (!onKeyDown4(e)) return;
       e.preventDefault();
       e.stopPropagation();
     }, true);
@@ -23803,33 +22918,33 @@
     refresh: refresh3,
     onInput,
     hide,
-    isOpen: isOpen4,
+    isOpen: isOpen5,
     toggleExplicit,
-    onKeyDown: onKeyDown3,
+    onKeyDown: onKeyDown4,
     _compute: compute,
     _suggest: suggestReplCompletions
   };
-  global36.ReplAutocomplete = api2;
-  global36.BelJarReplAutocomplete = api2;
+  global38.ReplAutocomplete = api2;
+  global38.BelJarReplAutocomplete = api2;
 
   // js/repl/repl-commands.mjs
-  var global37 = globalThis;
+  var global39 = globalThis;
   var replHistory = [];
   var replHistoryIndex = null;
   var historyLoaded2 = false;
   function loadHistory2() {
     if (historyLoaded2) return;
     historyLoaded2 = true;
-    if (typeof Persist === "undefined" || !Persist.readStoredReplCommandHistory) return;
+    if (typeof Persist === "undefined" || !Persist.readReplCommands) return;
     try {
-      var stored = Persist.readStoredReplCommandHistory();
+      var stored = Persist.readReplCommands();
       if (Array.isArray(stored) && stored.length) replHistory = stored.slice();
     } catch (_) {
     }
   }
   function persistHistory() {
-    if (typeof Persist === "undefined" || !Persist.writeStoredReplCommandHistory) return;
-    Persist.writeStoredReplCommandHistory(replHistory);
+    if (typeof Persist === "undefined" || !Persist.writeReplCommands) return;
+    Persist.writeReplCommands(replHistory);
   }
   function getHistory() {
     loadHistory2();
@@ -23842,7 +22957,7 @@
     loadHistory2();
     replHistoryIndex = null;
     replHistory.push(s);
-    var cap = typeof Persist !== "undefined" ? Persist.readStoredReplHistoryCap() : 0;
+    var cap = typeof Persist !== "undefined" ? Settings.get("replHistoryCap") : 0;
     if (cap > 0 && replHistory.length > cap) {
       replHistory.splice(0, replHistory.length - cap);
     } else if (!cap && replHistory.length > 500) {
@@ -23857,7 +22972,7 @@
     return document.getElementById("command-input");
   }
   function parseBelugaCmd(prefixed) {
-    var norm2 = global37.BelugaText ? global37.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
+    var norm2 = global39.BelugaText ? global39.BelugaText.normalizeBelugaRaw(prefixed) : String(prefixed != null ? prefixed : "").replace(/\r\n/g, "\n");
     var inner = norm2.replace(/^%:/, "").trim();
     if (!inner) return { verb: "", args: "" };
     var sp = inner.search(/\s/);
@@ -23917,7 +23032,7 @@
     var isHelp = bareCmd === "help";
     var parsed = parseBelugaCmd(cmd);
     var verb = parsed.verb;
-    var echoOn = typeof Persist === "undefined" || Persist.readStoredReplEcho();
+    var echoOn = typeof Persist === "undefined" || Settings.get("replEcho");
     if (/^run$/i.test(verb)) {
       cmdInputEl3.value = "";
       replHistoryIndex = null;
@@ -24009,7 +23124,7 @@
       }
     }
   }
-  global37.ReplCommands = {
+  global39.ReplCommands = {
     runCmd,
     resetHistoryIndex,
     historyUp,
@@ -24017,10 +23132,10 @@
     getHistory,
     recordHistory
   };
-  global37.BelJarReplCommands = global37.ReplCommands;
+  global39.BelJarReplCommands = global39.ReplCommands;
 
   // js/repl/repl-persist.mjs
-  var global38 = globalThis;
+  var global40 = globalThis;
   var SAVE_DEBOUNCE_MS2 = 300;
   var HTML_CAP = 400 * 1024;
   var saveTimer2 = null;
@@ -24064,16 +23179,16 @@
   }
   function persistCommandHistory() {
     var p = getPersist();
-    if (!p || typeof p.writeStoredReplCommandHistory !== "function") return;
-    if (typeof p.readStoredReplHistoryPersist === "function" && p.readStoredReplHistoryPersist() === "none") return;
+    if (!p || typeof p.writeReplCommands !== "function") return;
+    if (Settings.get("replHistoryPersist") === "none") return;
     var cmds = typeof ReplCommands !== "undefined" && ReplCommands.getHistory ? ReplCommands.getHistory() : null;
-    if (cmds) p.writeStoredReplCommandHistory(cmds);
+    if (cmds) p.writeReplCommands(cmds);
   }
   function writeSnapshot() {
     if (restoring) return;
     var p = getPersist();
-    if (!p || typeof p.writeStoredReplTranscript !== "function") return;
-    if (typeof p.readStoredReplHistoryPersist === "function" && p.readStoredReplHistoryPersist() === "none") {
+    if (!p || typeof p.writeReplTranscript !== "function") return;
+    if (Settings.get("replHistoryPersist") === "none") {
       return;
     }
     var output2 = getOutput2();
@@ -24083,9 +23198,9 @@
     var trimmed = trimOldest(nodes, html);
     html = trimmed.html;
     if (!html) {
-      p.writeStoredReplTranscript(null);
+      p.writeReplTranscript(null);
     } else {
-      p.writeStoredReplTranscript({
+      p.writeReplTranscript({
         html,
         scrollTop: output2.scrollTop || 0,
         savedAt: Date.now()
@@ -24114,8 +23229,8 @@
   }
   function restore() {
     var p = getPersist();
-    if (!p || typeof p.readStoredReplTranscript !== "function") return false;
-    var snap = p.readStoredReplTranscript();
+    if (!p || typeof p.readReplTranscript !== "function") return false;
+    var snap = p.readReplTranscript();
     if (!snap || !snap.html) return false;
     var stream = getStream();
     var output2 = getOutput2();
@@ -24162,16 +23277,16 @@
       if (ok) scheduleSave2();
     }
   }
-  global38.ReplPersist = {
+  global40.ReplPersist = {
     scheduleSave: scheduleSave2,
     saveNow,
     saveIfPending,
     restore
   };
-  global38.BelJarReplPersist = global38.ReplPersist;
+  global40.BelJarReplPersist = global40.ReplPersist;
 
   // js/ui/jar-toggle.mjs
-  var global39 = globalThis;
+  var global41 = globalThis;
   function createParts(opts) {
     opts = opts || {};
     var input2 = document.createElement("input");
@@ -24194,7 +23309,7 @@
     }
     return { input: input2, track: track3, setChecked };
   }
-  function create8(opts) {
+  function create3(opts) {
     opts = opts || {};
     var wrap = document.createElement("label");
     wrap.className = "jar-toggle";
@@ -24205,11 +23320,11 @@
     parts.element = wrap;
     return parts;
   }
-  global39.Toggle = { create: create8, createParts };
-  global39.BelJarToggle = global39.Toggle;
+  global41.Toggle = { create: create3, createParts };
+  global41.BelJarToggle = global41.Toggle;
 
   // js/ui/jar-dropdown.mjs
-  var global40 = globalThis;
+  var global42 = globalThis;
   var openDropdowns = [];
   function closeAll2() {
     for (var i = openDropdowns.length - 1; i >= 0; i--) {
@@ -24227,7 +23342,7 @@
       }
     });
   }
-  function create9(options, currentValue, onChange) {
+  function create4(options, currentValue, onChange) {
     var selected = currentValue;
     var focusedIdx = -1;
     var optionEls = [];
@@ -24270,10 +23385,10 @@
       btn.addEventListener("click", function() {
         if (opt.value !== selected) {
           setValue(opt.value);
-          close5();
+          close6();
           onChange(opt.value);
         } else {
-          close5();
+          close6();
         }
       });
       panel2.appendChild(btn);
@@ -24349,7 +23464,7 @@
       updateFocus();
       if (openDropdowns.indexOf(api3) === -1) openDropdowns.push(api3);
     }
-    function close5() {
+    function close6() {
       container.classList.remove("is-open");
       panel2.classList.remove("is-open");
       trigger.setAttribute("aria-expanded", "false");
@@ -24360,12 +23475,12 @@
       if (idx !== -1) openDropdowns.splice(idx, 1);
     }
     trigger.addEventListener("click", function() {
-      if (container.classList.contains("is-open")) close5();
+      if (container.classList.contains("is-open")) close6();
       else open11();
     });
     trigger.addEventListener("keydown", function(e) {
-      var isOpen5 = container.classList.contains("is-open");
-      if (!isOpen5) {
+      var isOpen6 = container.classList.contains("is-open");
+      if (!isOpen6) {
         if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           open11();
@@ -24374,7 +23489,7 @@
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        close5();
+        close6();
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
         focusedIdx = Math.min(focusedIdx + 1, options.length - 1);
@@ -24391,7 +23506,7 @@
             setValue(o.value);
             onChange(o.value);
           }
-          close5();
+          close6();
         }
       }
     });
@@ -24399,18 +23514,18 @@
     var api3 = {
       element: container,
       setValue,
-      close: close5,
+      close: close6,
       containsTarget: function(target) {
         return container.contains(target) || panel2.contains(target);
       }
     };
     return api3;
   }
-  global40.Dropdown = { create: create9, closeAll: closeAll2 };
-  global40.BelJarDropdown = global40.Dropdown;
+  global42.Dropdown = { create: create4, closeAll: closeAll2 };
+  global42.BelJarDropdown = global42.Dropdown;
 
   // js/ui/settings-ui.mjs
-  var global41 = globalThis;
+  var global43 = globalThis;
   var settingsDialogEl = null;
   var keybindingsApi = null;
   var aliasesApi = null;
@@ -24418,7 +23533,7 @@
   var settingsSearchInput = null;
   var closeSettingsSearch = null;
   var styleGroups2 = {};
-  function persist3() {
+  function persist() {
     return Persist;
   }
   function paintStyleRows(style) {
@@ -24432,7 +23547,7 @@
   }
   function notifySettingsChanged(key) {
     try {
-      global41.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
+      global43.dispatchEvent(new CustomEvent("beljar:settings-changed", { detail: { key: key || "" } }));
     } catch (_) {
     }
   }
@@ -24442,10 +23557,10 @@
     });
   }
   function applyLiveSettings(key) {
-    if (typeof global41.beljarApplyLiveSettings === "function") global41.beljarApplyLiveSettings(key);
+    if (typeof global43.beljarApplyLiveSettings === "function") global43.beljarApplyLiveSettings(key);
   }
   function writePersist(key, fn) {
-    var p = persist3();
+    var p = persist();
     if (p) fn(p);
     Dropdown.closeAll();
     applyLiveSettings(key);
@@ -24453,7 +23568,7 @@
   }
   function runCategoryReset(applyReset, notifyKey) {
     Dropdown.closeAll();
-    var p = persist3();
+    var p = persist();
     if (p && applyReset) applyReset(p);
     syncFromState();
     var key = notifyKey || "category-reset";
@@ -24461,35 +23576,24 @@
     postSettingsApply(key);
   }
   function resetAllSettings() {
-    runCategoryReset(function(p) {
-      p.resetAppearancePrefs();
-      document.documentElement.classList.remove("light");
-      if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
-      if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
-      if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-      if (typeof global41.syncEditorCmTheme === "function") global41.syncEditorCmTheme();
-      p.resetEditorPrefs();
-      if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
-      p.resetBelugaPrefs();
+    runCategoryReset(function() {
+      Settings.resetAll();
       BelugaRun.setBelugaMode("stable");
-      p.resetHarpoonPrefs();
-      p.resetReplPrefs();
-      p.resetWorkspacePrefs();
-      var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-      global41.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
-      p.resetAliasesPrefs();
+      global43.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", {
+        detail: { on: Settings.get("inspectorFollow") }
+      }));
     }, "settings-reset-all");
     Keybindings.resetAll();
     if (keybindingsApi) keybindingsApi.refresh();
     if (aliasesApi) aliasesApi.refresh();
     syncFromState();
     applyLiveSettings("settings-reset-all");
-    if (global41.Toasts && typeof global41.Toasts.success === "function") {
-      global41.Toasts.success("All settings reset.");
+    if (global43.Toasts && typeof global43.Toasts.success === "function") {
+      global43.Toasts.success("All settings reset.");
     }
   }
   function syncFromState() {
-    var p = persist3();
+    var p = persist();
     if (!p) return;
     Object.keys(controls).forEach(function(id) {
       var c = controls[id];
@@ -24500,7 +23604,7 @@
         else c.input.checked = c.read();
       }
     });
-    if (typeof p.readStoredKeymapStyle === "function") paintStyleRows(p.readStoredKeymapStyle());
+    paintStyleRows(Settings.get("keymapStyle"));
   }
   function makeResetLink(onClick2) {
     var btn = document.createElement("button");
@@ -24623,8 +23727,7 @@
   var KB_FILTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
   function activeEditingStyle() {
     try {
-      var P3 = global41.Persist;
-      return P3 && P3.readStoredKeymapStyle ? P3.readStoredKeymapStyle() : "default";
+      return Settings.get("keymapStyle");
     } catch (_) {
       return "default";
     }
@@ -24665,10 +23768,10 @@
     var recordingChord = null;
     var invalidTimer = null;
     function toastWarn(message2) {
-      if (global41.Toasts && typeof global41.Toasts.warn === "function") {
-        global41.Toasts.warn(message2);
-      } else if (global41.Toasts && typeof global41.Toasts.show === "function") {
-        global41.Toasts.show(message2, { kind: "warn" });
+      if (global43.Toasts && typeof global43.Toasts.warn === "function") {
+        global43.Toasts.warn(message2);
+      } else if (global43.Toasts && typeof global43.Toasts.show === "function") {
+        global43.Toasts.show(message2, { kind: "warn" });
       }
     }
     function kb() {
@@ -24961,15 +24064,15 @@
     var rows2 = [];
     var CLOSE_SVG2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
     function toastWarn(message2) {
-      if (global41.Toasts && typeof global41.Toasts.warn === "function") {
-        global41.Toasts.warn(message2);
-      } else if (global41.Toasts && typeof global41.Toasts.show === "function") {
-        global41.Toasts.show(message2, { kind: "warn" });
+      if (global43.Toasts && typeof global43.Toasts.warn === "function") {
+        global43.Toasts.warn(message2);
+      } else if (global43.Toasts && typeof global43.Toasts.show === "function") {
+        global43.Toasts.show(message2, { kind: "warn" });
       }
     }
     function setTip2(el6, text) {
-      if (global41.Tooltips && typeof global41.Tooltips.set === "function") {
-        global41.Tooltips.set(el6, text);
+      if (global43.Tooltips && typeof global43.Tooltips.set === "function") {
+        global43.Tooltips.set(el6, text);
       } else {
         el6.setAttribute("aria-label", text);
       }
@@ -24981,16 +24084,16 @@
       var seen = /* @__PURE__ */ Object.create(null);
       var out = [];
       (Array.isArray(raw) ? raw : []).forEach(function(item) {
-        var from = "";
+        var from2 = "";
         var to = "";
         if (Array.isArray(item)) {
-          from = String(item[0] || "");
+          from2 = String(item[0] || "");
           to = String(item[1] || "");
         }
-        from = from.trim();
-        if (!from || to === "" || seen[from]) return;
-        seen[from] = true;
-        out.push([from, to]);
+        from2 = from2.trim();
+        if (!from2 || to === "" || seen[from2]) return;
+        seen[from2] = true;
+        out.push([from2, to]);
       });
       return out.sort(function(a, b) {
         return b[0].length - a[0].length || a[0].localeCompare(b[0]);
@@ -25006,8 +24109,7 @@
       return [];
     }
     function loadPairs() {
-      var p = persist3();
-      var stored = p && typeof p.readStoredAliasPairs === "function" ? p.readStoredAliasPairs() : null;
+      var stored = Settings.get("aliasPairs");
       return stored == null ? defaultPairs() : normalizePairs(stored);
     }
     function pairsFromRows() {
@@ -25025,13 +24127,11 @@
     }
     function commit(notifyKey) {
       writePersist(notifyKey || "alias-pairs", function(p) {
-        if (typeof p.writeStoredAliasPairs === "function") {
-          p.writeStoredAliasPairs(pairsFromRows());
-        }
+        Settings.set("aliasPairs", pairsFromRows());
       });
     }
-    function findDuplicate(from, exceptId) {
-      var needle = String(from || "").trim();
+    function findDuplicate(from2, exceptId) {
+      var needle = String(from2 || "").trim();
       if (!needle) return null;
       for (var i = 0; i < rows2.length; i++) {
         if (rows2[i].id === exceptId) continue;
@@ -25139,7 +24239,7 @@
           return r.id !== row.id;
         });
         commit();
-        render5();
+        render6();
       });
       el6.appendChild(trigger);
       el6.appendChild(arrow);
@@ -25147,7 +24247,7 @@
       el6.appendChild(del);
       return el6;
     }
-    function render5() {
+    function render6() {
       list3.replaceChildren();
       footer.hidden = false;
       if (!rows2.length) {
@@ -25163,13 +24263,13 @@
     }
     function reload() {
       rows2 = rowsFromPairs(loadPairs());
-      render5();
+      render6();
     }
     addBtn.addEventListener("click", function() {
       if (typeof closeSettingsSearch === "function") closeSettingsSearch(true);
       var row = { id: nextRowId++, from: "", to: "" };
       rows2.push(row);
-      render5();
+      render6();
       var triggerEl = list3.querySelector('[data-row-id="' + row.id + '"] .jar-alias__input--trigger');
       if (triggerEl) triggerEl.focus();
     });
@@ -25201,7 +24301,7 @@
     }
     m.appendChild(lbl);
     if (dsc) m.appendChild(dsc);
-    var toggle5 = Toggle.create({
+    var toggle6 = Toggle.create({
       id: inputId,
       checked: readFn(),
       ariaLabel: labelText,
@@ -25212,10 +24312,10 @@
       }
     });
     r.appendChild(m);
-    r.appendChild(toggle5.element);
+    r.appendChild(toggle6.element);
     parent.appendChild(r);
-    controls[id] = { type: "switch", input: toggle5.input, setChecked: toggle5.setChecked, read: readFn };
-    return toggle5.input;
+    controls[id] = { type: "switch", input: toggle6.input, setChecked: toggle6.setChecked, read: readFn };
+    return toggle6.input;
   }
   var BACKSLASH = String.fromCharCode(92);
   var SETTING_INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path fill="currentColor" d="M8 7.1a.75.75 0 0 1 .75.75v3.3a.75.75 0 1 1-1.5 0v-3.3A.75.75 0 0 1 8 7.1Zm0-2.35a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg>';
@@ -25376,7 +24476,7 @@
   }
   function ensureSettingsDialog() {
     if (settingsDialogEl) return settingsDialogEl;
-    var p0 = persist3();
+    var p0 = persist();
     function gestureTargetOptions() {
       var ids = typeof DoubleTap !== "undefined" && DoubleTap.targets ? DoubleTap.targets() : ["tools.palette"];
       var out = [];
@@ -25547,19 +24647,13 @@
     navFoot.appendChild(resetAllBtn);
     nav.appendChild(navFoot);
     attachPanelReset(main.querySelector('[data-category="appearance"]'), function() {
-      runCategoryReset(function(p) {
-        p.resetAppearancePrefs();
-        document.documentElement.classList.remove("light");
-        if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
-        if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
-        if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-        if (typeof global41.syncEditorCmTheme === "function") global41.syncEditorCmTheme();
+      runCategoryReset(function() {
+        Settings.reset("appearance");
       }, "appearance-reset");
     });
     attachPanelReset(main.querySelector('[data-category="editor"]'), function() {
-      runCategoryReset(function(p) {
-        p.resetEditorPrefs();
-        if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
+      runCategoryReset(function() {
+        Settings.reset("editor");
       }, "editor-reset");
     });
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function() {
@@ -25579,31 +24673,31 @@
       }
     );
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function() {
-      runCategoryReset(function(p) {
-        p.resetBelugaPrefs();
+      runCategoryReset(function() {
+        Settings.reset("beluga");
         BelugaRun.setBelugaMode("stable");
       }, "beluga-reset");
     });
     attachPanelReset(main.querySelector('[data-category="harpoon"]'), function() {
-      runCategoryReset(function(p) {
-        p.resetHarpoonPrefs();
+      runCategoryReset(function() {
+        Settings.reset("harpoon");
       }, "harpoon-reset");
     });
     attachPanelReset(main.querySelector('[data-category="repl"]'), function() {
-      runCategoryReset(function(p) {
-        p.resetReplPrefs();
+      runCategoryReset(function() {
+        Settings.reset("repl");
       }, "repl-reset");
     });
     attachPanelReset(main.querySelector('[data-category="workspace"]'), function() {
-      runCategoryReset(function(p) {
-        p.resetWorkspacePrefs();
-        var on = typeof p.readStoredInspectorFollow === "function" ? p.readStoredInspectorFollow() : true;
-        global41.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
+      runCategoryReset(function() {
+        Settings.reset("workspace");
+        var on = Settings.get("inspectorFollow");
+        global43.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on } }));
       }, "workspace-reset");
     });
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function() {
-      runCategoryReset(function(p) {
-        p.resetAliasesPrefs();
+      runCategoryReset(function() {
+        Settings.reset("aliases");
       }, "aliases-reset");
       if (aliasesApi) aliasesApi.refresh();
     });
@@ -25614,13 +24708,11 @@
       "",
       [{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }],
       function() {
-        return p0 && p0.readStoredTheme() === "light" ? "light" : "dark";
+        return Settings.get("theme");
       },
       function(p, v) {
-        var isLight = v === "light";
-        document.documentElement.classList.toggle("light", isLight);
-        p.writeStoredTheme(isLight ? "light" : "dark");
-        if (typeof global41.syncEditorCmTheme === "function") global41.syncEditorCmTheme();
+        Settings.set("theme", v);
+        if (typeof global43.syncEditorCmTheme === "function") global43.syncEditorCmTheme();
       }
     );
     addDropdownRow(
@@ -25635,11 +24727,10 @@
         { value: "xl", label: "Larger" }
       ],
       function() {
-        return p0 ? p0.readStoredUiFontSize() : "md";
+        return Settings.get("uiFontSize");
       },
       function(p, v) {
-        p.writeStoredUiFontSize(v);
-        if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
+        Settings.set("uiFontSize", v);
       }
     );
     addDropdownRow(
@@ -25654,11 +24745,10 @@
         { value: "maximum", label: "Maximum" }
       ],
       function() {
-        return p0 ? p0.readStoredUiTextContrast() : "medium";
+        return Settings.get("uiTextContrast");
       },
       function(p, v) {
-        p.writeStoredUiTextContrast(v);
-        if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
+        Settings.set("uiTextContrast", v);
       }
     );
     addDropdownRow(
@@ -25672,11 +24762,10 @@
         { value: "full", label: "Full" }
       ],
       function() {
-        return p0 ? p0.readStoredMotionPref() : "system";
+        return Settings.get("motionPref");
       },
       function(p, v) {
-        p.writeStoredMotionPref(v);
-        if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
+        Settings.set("motionPref", v);
       }
     );
     addDropdownRow(
@@ -25690,10 +24779,10 @@
         { value: "long", label: "Long" }
       ],
       function() {
-        return p0 ? p0.readStoredToastDuration() : "normal";
+        return Settings.get("toastDuration");
       },
       function(p, v) {
-        p.writeStoredToastDuration(v);
+        Settings.set("toastDuration", v);
       }
     );
     addSectionHead(panelBodies.editor, "Typography");
@@ -25707,11 +24796,10 @@
         { value: "system", label: "System monospace" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorFontFamily() : "jetbrains";
+        return Settings.get("editorFontFamily");
       },
       function(p, v) {
-        p.writeStoredEditorFontFamily(v);
-        if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
+        Settings.set("editorFontFamily", v);
       }
     );
     addDropdownRow(
@@ -25726,10 +24814,10 @@
         { value: "xl", label: "Larger" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorFontSize() : "md";
+        return Settings.get("editorFontSize");
       },
       function(p, v) {
-        p.writeStoredEditorFontSize(v);
+        Settings.set("editorFontSize", v);
       }
     );
     addDropdownRow(
@@ -25743,10 +24831,10 @@
         { value: "relaxed", label: "Relaxed" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorLineHeight() : "normal";
+        return Settings.get("editorLineHeight");
       },
       function(p, v) {
-        p.writeStoredEditorLineHeight(v);
+        Settings.set("editorLineHeight", v);
       }
     );
     addSwitchRow(
@@ -25755,10 +24843,10 @@
       "Word wrap",
       "Wraps lines that would be longer than the viewport.",
       function() {
-        return p0 ? p0.readStoredEditorWordWrap() : false;
+        return Settings.get("editorWordWrap");
       },
       function(p, on) {
-        p.writeStoredEditorWordWrap(on);
+        Settings.set("editorWordWrap", on);
       }
     );
     addDropdownRow(
@@ -25772,10 +24860,10 @@
         { value: "off", label: "Solid" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorCursorBlink() : "blink";
+        return Settings.get("editorCursorBlink");
       },
       function(p, v) {
-        p.writeStoredEditorCursorBlink(v);
+        Settings.set("editorCursorBlink", v);
       }
     );
     addSwitchRow(
@@ -25784,10 +24872,10 @@
       "Scroll past end",
       "Allow scrolling the last line to mid-viewport.",
       function() {
-        return p0 ? p0.readStoredEditorScrollPastEnd() : true;
+        return Settings.get("editorScrollPastEnd");
       },
       function(p, on) {
-        p.writeStoredEditorScrollPastEnd(on);
+        Settings.set("editorScrollPastEnd", on);
       }
     );
     addDropdownRow(
@@ -25802,10 +24890,10 @@
         { value: "all", label: "All" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorWhitespace() : "none";
+        return Settings.get("editorWhitespace");
       },
       function(p, v) {
-        p.writeStoredEditorWhitespace(v);
+        Settings.set("editorWhitespace", v);
       }
     );
     addSwitchRow(
@@ -25814,10 +24902,10 @@
       "Print-width ruler",
       "Vertical guide at the format print width.",
       function() {
-        return p0 ? p0.readStoredEditorRulers() : false;
+        return Settings.get("editorRulers");
       },
       function(p, on) {
-        p.writeStoredEditorRulers(on);
+        Settings.set("editorRulers", on);
       }
     );
     addSectionHead(panelBodies.editor, "Indentation & saving");
@@ -25828,10 +24916,10 @@
       "Spaces per tab.",
       [{ value: "2", label: "2 spaces" }, { value: "4", label: "4 spaces" }],
       function() {
-        return p0 ? String(p0.readStoredEditorTabSize()) : "2";
+        return String(Settings.get("editorTabSize"));
       },
       function(p, v) {
-        p.writeStoredEditorTabSize(parseInt(v, 10));
+        Settings.set("editorTabSize", parseInt(v, 10));
       }
     );
     addDropdownRow(
@@ -25845,10 +24933,10 @@
         { value: "2000", label: "Slow (2s)" }
       ],
       function() {
-        return p0 ? String(p0.readStoredAutosaveDelay()) : "320";
+        return String(Settings.get("autosaveDelay"));
       },
       function(p, v) {
-        p.writeStoredAutosaveDelay(parseInt(v, 10));
+        Settings.set("autosaveDelay", parseInt(v, 10));
       }
     );
     addDropdownRow(
@@ -25862,10 +24950,10 @@
         { value: "120", label: "120 columns" }
       ],
       function() {
-        return p0 ? String(p0.readStoredEditorFormatWidth()) : "80";
+        return String(Settings.get("editorFormatWidth"));
       },
       function(p, v) {
-        p.writeStoredEditorFormatWidth(parseInt(v, 10));
+        Settings.set("editorFormatWidth", parseInt(v, 10));
       }
     );
     addSwitchRow(
@@ -25874,10 +24962,10 @@
       "Re-indent on paste",
       "Re-indent pasted text.",
       function() {
-        return p0 ? p0.readStoredEditorReindentPaste() : true;
+        return Settings.get("editorReindentPaste");
       },
       function(p, on) {
-        p.writeStoredEditorReindentPaste(on);
+        Settings.set("editorReindentPaste", on);
       }
     );
     addSwitchRow(
@@ -25886,10 +24974,10 @@
       "Sync suite .cfg on file ops",
       "Rewrite suite .cfg entries on same-folder rename or delete. Moves leave entries for cfg lint.",
       function() {
-        return p0 ? p0.readStoredCfgAutoSync() : true;
+        return Settings.get("cfgAutoSync");
       },
       function(p, on) {
-        p.writeStoredCfgAutoSync(on);
+        Settings.set("cfgAutoSync", on);
       }
     );
     addSwitchRow(
@@ -25898,10 +24986,10 @@
       "Format on save",
       "Run Format Document when auto-save flushes a .bel file.",
       function() {
-        return p0 ? p0.readStoredFormatOnSave() : false;
+        return Settings.get("formatOnSave");
       },
       function(p, on) {
-        p.writeStoredFormatOnSave(on);
+        Settings.set("formatOnSave", on);
       }
     );
     addSwitchRow(
@@ -25910,10 +24998,10 @@
       "Trim trailing whitespace on save",
       "Strip spaces and tabs at line ends when auto-save flushes a .bel file.",
       function() {
-        return p0 ? p0.readStoredTrimTrailingWs() : false;
+        return Settings.get("trimTrailingWs");
       },
       function(p, on) {
-        p.writeStoredTrimTrailingWs(on);
+        Settings.set("trimTrailingWs", on);
       }
     );
     addSectionHead(panelBodies.editor, "Code insight");
@@ -25923,10 +25011,10 @@
       "Syntax highlighting",
       "Color keywords, strings, and comments.",
       function() {
-        return p0 ? p0.readStoredEditorSyntaxHighlight() : true;
+        return Settings.get("editorSyntaxHighlight");
       },
       function(p, on) {
-        p.writeStoredEditorSyntaxHighlight(on);
+        Settings.set("editorSyntaxHighlight", on);
       }
     );
     addSwitchRow(
@@ -25935,10 +25023,10 @@
       "Semantic highlighting",
       "Color bound variables and declarations.",
       function() {
-        return p0 ? p0.readStoredEditorSemanticHighlight() : true;
+        return Settings.get("editorSemanticHighlight");
       },
       function(p, on) {
-        p.writeStoredEditorSemanticHighlight(on);
+        Settings.set("editorSemanticHighlight", on);
       }
     );
     addSwitchRow(
@@ -25947,10 +25035,10 @@
       "Invalid parse styling",
       "Dim tokens in broken or incomplete declarations.",
       function() {
-        return p0 ? p0.readStoredEditorParseHighlight() : true;
+        return Settings.get("editorParseHighlight");
       },
       function(p, on) {
-        p.writeStoredEditorParseHighlight(on);
+        Settings.set("editorParseHighlight", on);
       }
     );
     addSwitchRow(
@@ -25959,10 +25047,10 @@
       "Occurrence highlight",
       "Underline other uses of the word at the cursor.",
       function() {
-        return p0 ? p0.readStoredEditorOccurrenceHighlight() : true;
+        return Settings.get("editorOccurrenceHighlight");
       },
       function(p, on) {
-        p.writeStoredEditorOccurrenceHighlight(on);
+        Settings.set("editorOccurrenceHighlight", on);
       }
     );
     addSwitchRow(
@@ -25971,10 +25059,10 @@
       "Bracket matching",
       "Highlight matching brackets.",
       function() {
-        return p0 ? p0.readStoredEditorBracketMatch() : true;
+        return Settings.get("editorBracketMatch");
       },
       function(p, on) {
-        p.writeStoredEditorBracketMatch(on);
+        Settings.set("editorBracketMatch", on);
       }
     );
     addSwitchRow(
@@ -25983,10 +25071,10 @@
       "Auto-close brackets",
       "Insert closing brackets automatically.",
       function() {
-        return p0 ? p0.readStoredEditorAutoCloseBrackets() : true;
+        return Settings.get("editorAutoCloseBrackets");
       },
       function(p, on) {
-        p.writeStoredEditorAutoCloseBrackets(on);
+        Settings.set("editorAutoCloseBrackets", on);
       }
     );
     addSwitchRow(
@@ -25995,10 +25083,10 @@
       "Selection matches",
       "Highlight other matches of the selection.",
       function() {
-        return p0 ? p0.readStoredEditorSelectionMatches() : true;
+        return Settings.get("editorSelectionMatches");
       },
       function(p, on) {
-        p.writeStoredEditorSelectionMatches(on);
+        Settings.set("editorSelectionMatches", on);
       }
     );
     addDropdownRow(
@@ -26012,10 +25100,10 @@
         { value: "always", label: "Always at token end" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorAutocompleteTrigger() : "typing";
+        return Settings.get("editorAutocompleteTrigger");
       },
       function(p, v) {
-        p.writeStoredEditorAutocompleteTrigger(v);
+        Settings.set("editorAutocompleteTrigger", v);
       }
     );
     addSwitchRow(
@@ -26024,10 +25112,10 @@
       "Continue suggesting after accept",
       "Keep showing completions after Tab or click when more options remain.",
       function() {
-        return p0 ? p0.readStoredEditorAutocompleteContinue() : false;
+        return Settings.get("editorAutocompleteContinue");
       },
       function(p, on) {
-        p.writeStoredEditorAutocompleteContinue(on);
+        Settings.set("editorAutocompleteContinue", on);
       }
     );
     addDropdownRow(
@@ -26041,10 +25129,10 @@
         { value: "none", label: "Off" }
       ],
       function() {
-        return p0 ? p0.readStoredHoverScope() : "all";
+        return Settings.get("hoverScope");
       },
       function(p, v) {
-        p.writeStoredHoverScope(v);
+        Settings.set("hoverScope", v);
       }
     );
     addSwitchRow(
@@ -26053,10 +25141,10 @@
       "Sticky hover",
       "Keep type hover open until Escape or click outside. Scroll and pointer leave do not dismiss.",
       function() {
-        return p0 ? p0.readStoredHoverSticky() : false;
+        return Settings.get("hoverSticky");
       },
       function(p, on) {
-        p.writeStoredHoverSticky(on);
+        Settings.set("hoverSticky", on);
       }
     );
     addSwitchRow(
@@ -26065,10 +25153,10 @@
       "Quiet while typing",
       "Hold hover, occurrence highlight, and auto-complete until checking settles. Show Autocomplete still works.",
       function() {
-        return p0 ? p0.readStoredQuietWhileTyping() : false;
+        return Settings.get("quietWhileTyping");
       },
       function(p, on) {
-        p.writeStoredQuietWhileTyping(on);
+        Settings.set("quietWhileTyping", on);
       }
     );
     addSectionHead(panelBodies.editor, "Gutter");
@@ -26078,10 +25166,10 @@
       "Line numbers",
       "Show line numbers in the gutter.",
       function() {
-        return p0 ? p0.readStoredEditorLineNumbers() : true;
+        return Settings.get("editorLineNumbers");
       },
       function(p, on) {
-        p.writeStoredEditorLineNumbers(on);
+        Settings.set("editorLineNumbers", on);
       }
     );
     addDropdownRow(
@@ -26095,10 +25183,10 @@
         { value: "hybrid", label: "Relative + current line" }
       ],
       function() {
-        return p0 && p0.readStoredEditorLineNumberMode ? p0.readStoredEditorLineNumberMode() : "absolute";
+        return Settings.get("editorLineNumberMode");
       },
       function(p, v) {
-        if (p.writeStoredEditorLineNumberMode) p.writeStoredEditorLineNumberMode(v);
+        Settings.set("editorLineNumberMode", v);
       }
     );
     addSwitchRow(
@@ -26107,10 +25195,10 @@
       "Code folding",
       "Fold markers in the gutter.",
       function() {
-        return p0 ? p0.readStoredEditorFoldGutter() : true;
+        return Settings.get("editorFoldGutter");
       },
       function(p, on) {
-        p.writeStoredEditorFoldGutter(on);
+        Settings.set("editorFoldGutter", on);
       }
     );
     addDropdownRow(
@@ -26124,10 +25212,10 @@
         { value: "local", label: "Always" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorFoldPersist() : "session";
+        return Settings.get("editorFoldPersist");
       },
       function(p, v) {
-        p.writeStoredEditorFoldPersist(v);
+        Settings.set("editorFoldPersist", v);
       }
     );
     addSwitchRow(
@@ -26136,10 +25224,10 @@
       "Active line highlight",
       "Background on the current line.",
       function() {
-        return p0 ? p0.readStoredEditorActiveLine() : true;
+        return Settings.get("editorActiveLine");
       },
       function(p, on) {
-        p.writeStoredEditorActiveLine(on);
+        Settings.set("editorActiveLine", on);
       }
     );
     addSwitchRow(
@@ -26148,10 +25236,10 @@
       "Structure path",
       "Show the enclosing declaration path (a > b > c) at the top of the editor, driven by the cursor.",
       function() {
-        return p0 ? p0.readStoredStickyDeclHeader() : false;
+        return Settings.get("stickyDeclHeader");
       },
       function(p, on) {
-        p.writeStoredStickyDeclHeader(on);
+        Settings.set("stickyDeclHeader", on);
       }
     );
     addDropdownRow(
@@ -26166,10 +25254,10 @@
         { value: "none", label: "Off" }
       ],
       function() {
-        return p0 ? p0.readStoredDiagPresentation() : "both";
+        return Settings.get("diagPresentation");
       },
       function(p, v) {
-        p.writeStoredDiagPresentation(v);
+        Settings.set("diagPresentation", v);
       }
     );
     addSwitchRow(
@@ -26178,10 +25266,10 @@
       "Show warnings",
       "When off, only errors appear as underlines and gutter marks.",
       function() {
-        return p0 ? p0.readStoredDiagSeverity() !== "errors" : true;
+        return p0 ? Settings.get("diagSeverity") !== "errors" : true;
       },
       function(p, on) {
-        p.writeStoredDiagSeverity(on ? "all" : "errors");
+        Settings.set("diagSeverity", on ? "all" : "errors");
       }
     );
     addSwitchRow(
@@ -26190,10 +25278,10 @@
       "Hole gutter marks",
       "Mark lines with proof holes.",
       function() {
-        return p0 ? p0.readStoredEditorHoleGutter() : true;
+        return Settings.get("editorHoleGutter");
       },
       function(p, on) {
-        p.writeStoredEditorHoleGutter(on);
+        Settings.set("editorHoleGutter", on);
       }
     );
     addDropdownRow(
@@ -26207,11 +25295,10 @@
         { value: "loud", label: "Loud" }
       ],
       function() {
-        return p0 ? p0.readStoredEditorHoleEmphasis() : "normal";
+        return Settings.get("editorHoleEmphasis");
       },
       function(p, v) {
-        p.writeStoredEditorHoleEmphasis(v);
-        if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
+        Settings.set("editorHoleEmphasis", v);
       }
     );
     addDropdownRow(
@@ -26225,11 +25312,10 @@
         { value: "emacs", label: "Emacs" }
       ],
       function() {
-        return p0 && typeof p0.readStoredKeymapStyle === "function" ? p0.readStoredKeymapStyle() : "default";
+        return Settings.get("keymapStyle");
       },
       function(p, v) {
-        if (typeof p.writeStoredKeymapStyle === "function") p.writeStoredKeymapStyle(v);
-        if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
+        Settings.set("keymapStyle", v);
         if (typeof BelEditor !== "undefined" && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
         if (keybindingsApi && keybindingsApi.refresh) keybindingsApi.refresh();
         paintStyleRows(v);
@@ -26251,10 +25337,10 @@
         { value: " ", label: "Space" }
       ],
       function() {
-        return p0 && p0.readStoredVimLeader ? p0.readStoredVimLeader() : BACKSLASH;
+        return Settings.get("vimLeader");
       },
       function(p, v) {
-        if (p.writeStoredVimLeader) p.writeStoredVimLeader(v);
+        Settings.set("vimLeader", v);
         applyModal();
       }
     );
@@ -26270,10 +25356,10 @@
         { value: "kj", label: "kj" }
       ],
       function() {
-        return p0 && p0.readStoredVimInsertEscape ? p0.readStoredVimInsertEscape() : "";
+        return Settings.get("vimInsertEscape");
       },
       function(p, v) {
-        if (p.writeStoredVimInsertEscape) p.writeStoredVimInsertEscape(v);
+        Settings.set("vimInsertEscape", v);
         applyModal();
       }
     );
@@ -26288,14 +25374,14 @@
         { value: "kill-ring", label: "Kill ring" }
       ],
       function() {
-        return p0 && p0.readStoredEmacsYankSource ? p0.readStoredEmacsYankSource() : "system";
+        return Settings.get("emacsYankSource");
       },
       function(p, v) {
-        if (p.writeStoredEmacsYankSource) p.writeStoredEmacsYankSource(v);
+        Settings.set("emacsYankSource", v);
       }
     );
     styleGroups2 = { vim: vimGroup, emacs: emacsGroup };
-    paintStyleRows(p0 && p0.readStoredKeymapStyle ? p0.readStoredKeymapStyle() : "default");
+    paintStyleRows(Settings.get("keymapStyle"));
     addDropdownRow(
       panelBodies.keybindings,
       "status-strip",
@@ -26311,7 +25397,7 @@
         return StatusStrip.storedMode();
       },
       function(p, v) {
-        if (typeof p.writeStoredStatusStrip === "function") p.writeStoredStatusStrip(v);
+        Settings.set("statusStrip", v);
         StatusStrip.apply();
       }
     );
@@ -26328,10 +25414,10 @@
         { value: "alt", label: "Alt Alt" }
       ],
       function() {
-        return p0 && p0.readStoredDoubleTapTrigger ? p0.readStoredDoubleTapTrigger() : "off";
+        return Settings.get("doubleTapTrigger");
       },
       function(p, v) {
-        if (p.writeStoredDoubleTapTrigger) p.writeStoredDoubleTapTrigger(v);
+        Settings.set("doubleTapTrigger", v);
       }
     );
     addDropdownRow(
@@ -26341,10 +25427,10 @@
       "What the two taps run.",
       gestureTargetOptions(),
       function() {
-        return p0 && p0.readStoredDoubleTapCommand ? p0.readStoredDoubleTapCommand() : "tools.palette";
+        return Settings.get("doubleTapCommand");
       },
       function(p, v) {
-        if (p.writeStoredDoubleTapCommand) p.writeStoredDoubleTapCommand(v);
+        Settings.set("doubleTapCommand", v);
       }
     );
     addDropdownRow(
@@ -26358,10 +25444,10 @@
         { value: "relaxed", label: "Relaxed  500ms" }
       ],
       function() {
-        return p0 && p0.readStoredDoubleTapSpeed ? p0.readStoredDoubleTapSpeed() : "normal";
+        return Settings.get("doubleTapSpeed");
       },
       function(p, v) {
-        if (p.writeStoredDoubleTapSpeed) p.writeStoredDoubleTapSpeed(v);
+        Settings.set("doubleTapSpeed", v);
       }
     );
     var kbUnit = addEditorUnit(panelBodies.keybindings, {
@@ -26388,10 +25474,10 @@
       "Retry with Stable if Fast fails",
       "If a Fast run crashes, retry on the Stable worker.",
       function() {
-        return p0 ? p0.readStoredBelugaFallbackStable() : true;
+        return Settings.get("belugaFallbackStable");
       },
       function(p, on) {
-        p.writeStoredBelugaFallbackStable(on);
+        Settings.set("belugaFallbackStable", on);
       }
     );
     addSwitchRow(
@@ -26400,10 +25486,10 @@
       "Cancel load on edit",
       "Abort a pending Run/Load when the buffer changes.",
       function() {
-        return p0 ? p0.readStoredBelugaCancelOnEdit() : true;
+        return Settings.get("belugaCancelOnEdit");
       },
       function(p, on) {
-        p.writeStoredBelugaCancelOnEdit(on);
+        Settings.set("belugaCancelOnEdit", on);
       }
     );
     addDropdownRow(
@@ -26417,10 +25503,10 @@
         { value: "thorough", label: "Thorough" }
       ],
       function() {
-        return p0 ? p0.readStoredCheckAggressiveness() : "balanced";
+        return Settings.get("checkAggressiveness");
       },
       function(p, v) {
-        p.writeStoredCheckAggressiveness(v);
+        Settings.set("checkAggressiveness", v);
       }
     );
     addDropdownRow(
@@ -26433,10 +25519,10 @@
         { value: "active", label: "Active file only" }
       ],
       function() {
-        return p0 ? p0.readStoredSuiteCheck() : "suite";
+        return Settings.get("suiteCheck");
       },
       function(p, v) {
-        p.writeStoredSuiteCheck(v);
+        Settings.set("suiteCheck", v);
       }
     );
     addDropdownRow(
@@ -26446,10 +25532,10 @@
       "Manual lets you pick each tactic yourself, with Orca (the search) one click away. Orca starts searching immediately.",
       [{ value: "manual", label: "Manual" }, { value: "orca", label: "Orca" }],
       function() {
-        return p0 ? p0.readStoredHarpoonMode() : "manual";
+        return Settings.get("harpoonMode");
       },
       function(p, v) {
-        p.writeStoredHarpoonMode(v);
+        Settings.set("harpoonMode", v);
       }
     );
     addSwitchRow(
@@ -26458,10 +25544,10 @@
       "Pre-verify offered tactics",
       "Check the top tactics against Beluga in the background so each shows whether it holds before you pick it. Costs a few checker calls per goal.",
       function() {
-        return p0 ? p0.readStoredHarpoonVerifyMoves() : true;
+        return Settings.get("harpoonVerifyMoves");
       },
       function(p, on) {
-        p.writeStoredHarpoonVerifyMoves(on);
+        Settings.set("harpoonVerifyMoves", on);
       }
     );
     addSwitchRow(
@@ -26470,10 +25556,10 @@
       "Focus next hole after place",
       "After placing a solved proof, jump the editor to the next open hole.",
       function() {
-        return p0 ? p0.readStoredAutosolveFocusNext() : true;
+        return Settings.get("autosolveFocusNext");
       },
       function(p, on) {
-        p.writeStoredAutosolveFocusNext(on);
+        Settings.set("autosolveFocusNext", on);
       }
     );
     addSwitchRow(
@@ -26482,10 +25568,10 @@
       "Show checker call counts",
       "Show how many Beluga certifies ran per hole in the proof tree.",
       function() {
-        return p0 ? p0.readStoredAutosolveShowStats() : true;
+        return Settings.get("autosolveShowStats");
       },
       function(p, on) {
-        p.writeStoredAutosolveShowStats(on);
+        Settings.set("autosolveShowStats", on);
       }
     );
     addSwitchRow(
@@ -26494,10 +25580,10 @@
       "Auto-scroll output",
       "Scroll to new output.",
       function() {
-        return p0 ? p0.readStoredReplAutoscroll() : true;
+        return Settings.get("replAutoscroll");
       },
       function(p, on) {
-        p.writeStoredReplAutoscroll(on);
+        Settings.set("replAutoscroll", on);
       }
     );
     addDropdownRow(
@@ -26511,10 +25597,10 @@
         { value: "always", label: "Always at token end" }
       ],
       function() {
-        return p0 ? p0.readStoredReplAutocompleteTrigger() : "typing";
+        return Settings.get("replAutocompleteTrigger");
       },
       function(p, v) {
-        p.writeStoredReplAutocompleteTrigger(v);
+        Settings.set("replAutocompleteTrigger", v);
       }
     );
     addSwitchRow(
@@ -26523,10 +25609,10 @@
       "Continue suggesting after accept",
       "Keep showing completions after Tab or click when more options remain.",
       function() {
-        return p0 ? p0.readStoredReplAutocompleteContinue() : false;
+        return Settings.get("replAutocompleteContinue");
       },
       function(p, on) {
-        p.writeStoredReplAutocompleteContinue(on);
+        Settings.set("replAutocompleteContinue", on);
       }
     );
     addSwitchRow(
@@ -26535,10 +25621,10 @@
       "Banner after clear",
       "Show the Beluga version line again after clear.",
       function() {
-        return p0 ? p0.readStoredReplWelcome() : true;
+        return Settings.get("replWelcome");
       },
       function(p, on) {
-        p.writeStoredReplWelcome(on);
+        Settings.set("replWelcome", on);
       }
     );
     addSwitchRow(
@@ -26547,10 +25633,10 @@
       "Echo commands",
       "Repeat typed commands in the transcript.",
       function() {
-        return p0 ? p0.readStoredReplEcho() : true;
+        return Settings.get("replEcho");
       },
       function(p, on) {
-        p.writeStoredReplEcho(on);
+        Settings.set("replEcho", on);
       }
     );
     addSwitchRow(
@@ -26559,10 +25645,10 @@
       "Filter chatter",
       "Hide noisy Beluga status lines in the transcript.",
       function() {
-        return p0 ? p0.readStoredReplFilterChatter() : true;
+        return Settings.get("replFilterChatter");
       },
       function(p, on) {
-        p.writeStoredReplFilterChatter(on);
+        Settings.set("replFilterChatter", on);
       }
     );
     addSwitchRow(
@@ -26571,10 +25657,10 @@
       "Hover for timestamp",
       "Show the time a command or output was logged when hovering it.",
       function() {
-        return p0 ? p0.readStoredReplHoverTimestamp() : false;
+        return Settings.get("replHoverTimestamp");
       },
       function(p, on) {
-        p.writeStoredReplHoverTimestamp(on);
+        Settings.set("replHoverTimestamp", on);
       }
     );
     addDropdownRow(
@@ -26588,10 +25674,10 @@
         { value: "none", label: "Never" }
       ],
       function() {
-        return p0 ? p0.readStoredReplHistoryPersist() : "local";
+        return Settings.get("replHistoryPersist");
       },
       function(p, v) {
-        p.writeStoredReplHistoryPersist(v);
+        Settings.set("replHistoryPersist", v);
       }
     );
     addDropdownRow(
@@ -26606,10 +25692,10 @@
         { value: "1000", label: "1000 commands" }
       ],
       function() {
-        return p0 ? String(p0.readStoredReplHistoryCap()) : "1000";
+        return String(Settings.get("replHistoryCap"));
       },
       function(p, v) {
-        p.writeStoredReplHistoryCap(parseInt(v, 10));
+        Settings.set("replHistoryCap", parseInt(v, 10));
       }
     );
     addSwitchRow(
@@ -26618,10 +25704,10 @@
       "Restore panel on reload",
       "Reopen the last side panel after reload.",
       function() {
-        return p0 ? p0.readStoredRestorePanels() : true;
+        return Settings.get("restorePanels");
       },
       function(p, on) {
-        p.writeStoredRestorePanels(on);
+        Settings.set("restorePanels", on);
       }
     );
     addSwitchRow(
@@ -26630,10 +25716,10 @@
       "Expand library by default",
       "Expand all library categories on load.",
       function() {
-        return p0 ? p0.readStoredLibraryExpandDefault() : false;
+        return Settings.get("libraryExpandDefault");
       },
       function(p, on) {
-        p.writeStoredLibraryExpandDefault(on);
+        Settings.set("libraryExpandDefault", on);
       }
     );
     addSwitchRow(
@@ -26642,11 +25728,11 @@
       "Inspector follows cursor",
       "Update the inspector as the editor cursor moves.",
       function() {
-        return p0 ? p0.readStoredInspectorFollow() : true;
+        return Settings.get("inspectorFollow");
       },
       function(p, on) {
-        p.writeStoredInspectorFollow(on);
-        global41.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
+        Settings.set("inspectorFollow", on);
+        global43.dispatchEvent(new CustomEvent("beljar:inspector-follow-changed", { detail: { on: !!on } }));
       }
     );
     addActionRow(
@@ -26660,10 +25746,12 @@
           confirmLabel: "Reset",
           ariaLabel: "Reset panel layout"
         }).then(function(ok) {
-          if (!ok || !persist3()) return;
-          persist3().resetLayoutPrefs();
+          if (!ok || typeof Device === "undefined") return;
+          Device.reset(function(row) {
+            return row.group === "layout";
+          });
           postSettingsApply("layout-reset");
-          if (typeof global41.location !== "undefined") global41.location.reload();
+          if (typeof global43.location !== "undefined") global43.location.reload();
         });
       }
     );
@@ -26673,9 +25761,7 @@
       "Download appearance, editor, keybindings, aliases, and other prefs as JSON.",
       "Export\u2026",
       function() {
-        var p = persist3();
-        if (!p || typeof p.exportUserSettings !== "function") return;
-        var bundle = p.exportUserSettings();
+        var bundle = Settings.exportBundle();
         var blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
@@ -26701,32 +25787,23 @@
           if (!file) return;
           var reader = new FileReader();
           reader.onload = function() {
-            var p = persist3();
-            if (!p || typeof p.importUserSettings !== "function") return;
             try {
               var bundle = JSON.parse(String(reader.result || ""));
-              var result = p.importUserSettings(bundle);
-              if (!result || !result.ok) {
-                if (global41.Toasts && global41.Toasts.warn) global41.Toasts.warn("Could not import settings.");
+              var result = Settings.importBundle(bundle);
+              if (!result.ok) {
+                if (global43.Toasts && global43.Toasts.warn) global43.Toasts.warn("Not a BelJar settings file.");
                 return;
-              }
-              if (typeof p.applyStoredUiFontSize === "function") p.applyStoredUiFontSize();
-              if (typeof p.applyStoredUiTextContrast === "function") p.applyStoredUiTextContrast();
-              if (typeof p.applyStoredMotionPref === "function") p.applyStoredMotionPref();
-              if (typeof p.applyStoredEditorChrome === "function") p.applyStoredEditorChrome();
-              if (p.readStoredTheme && document.documentElement) {
-                document.documentElement.classList.toggle("light", p.readStoredTheme() === "light");
               }
               syncFromState();
               if (keybindingsApi) keybindingsApi.refresh();
               if (aliasesApi) aliasesApi.refresh();
               applyLiveSettings("settings-import");
               postSettingsApply("settings-import");
-              if (global41.Toasts && global41.Toasts.success) {
-                global41.Toasts.success("Imported " + (result.applied || 0) + " settings.");
+              if (global43.Toasts && global43.Toasts.success) {
+                global43.Toasts.success("Imported " + result.applied.length + " settings" + (result.skipped.length ? ", skipped " + result.skipped.length : "") + ".");
               }
             } catch (_) {
-              if (global41.Toasts && global41.Toasts.warn) global41.Toasts.warn("Invalid settings file.");
+              if (global43.Toasts && global43.Toasts.warn) global43.Toasts.warn("Invalid settings file.");
             }
           };
           reader.readAsText(file);
@@ -26741,12 +25818,12 @@
       "Strict: while typing. Greedy: also on paste, import, and library insert.",
       [{ value: "strict", label: "Strict" }, { value: "greedy", label: "Greedy" }],
       function() {
-        return p0 ? p0.readStoredAliasActivation() : "greedy";
+        return Settings.get("aliasActivation");
       },
       function(p, v) {
-        p.writeStoredAliasActivation(v);
+        Settings.set("aliasActivation", v);
         if (v !== "greedy") return;
-        var ed = global41.CurrentEditor;
+        var ed = global43.CurrentEditor;
         if (ed && typeof ed.getValue === "function") {
           var activeId2 = p.getActiveFileId();
           if (activeId2) p.setFileText(activeId2, ed.getValue());
@@ -26916,19 +25993,19 @@
       });
       if (aliasesApi && typeof aliasesApi.list === "function") {
         aliasesApi.list().forEach(function(pair) {
-          var from = String(pair.from || "");
+          var from2 = String(pair.from || "");
           var to = String(pair.to || "");
-          var hay = (from + " " + to).toLowerCase();
+          var hay = (from2 + " " + to).toLowerCase();
           if (hay.indexOf(q) < 0) return;
-          var fromL = from.toLowerCase();
+          var fromL = from2.toLowerCase();
           hits.push({
             kind: "alias",
             categoryId: "aliases",
-            title: from + " \u2192 " + to,
+            title: from2 + " \u2192 " + to,
             meta: "Aliases",
             rowId: pair.id,
             focus: fromL.indexOf(q) >= 0 ? "from" : "to",
-            rank: hitRank(from, q) < 2 ? hitRank(from, q) : hitRank(to, q)
+            rank: hitRank(from2, q) < 2 ? hitRank(from2, q) : hitRank(to, q)
           });
         });
       }
@@ -27087,16 +26164,16 @@
     if (keybindingsApi && typeof keybindingsApi.refresh === "function") keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
   }
-  global41.SettingsUI = {
+  global43.SettingsUI = {
     syncFromState,
     ensureSettingsDialog,
     open: open10,
     notifySettingsChanged
   };
-  global41.BelJarSettingsUI = global41.SettingsUI;
+  global43.BelJarSettingsUI = global43.SettingsUI;
 
   // js/harpoon/harpoon-icon.mjs
-  var global42 = globalThis;
+  var global44 = globalThis;
   var MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="1.6"/><path d="M6.2 6.2 16.5 16.5"/><path d="M20.5 20.5 19.5 12 16.5 16.5 12 19.5Z"/></svg>';
   function appendGlyph(parent, className) {
     var span = document.createElement("span");
@@ -27105,16 +26182,16 @@
     parent.appendChild(span);
     return span;
   }
-  global42.HarpoonIcon = { markup: MARKUP, appendGlyph };
-  global42.BelJarHarpoonIcon = global42.HarpoonIcon;
+  global44.HarpoonIcon = { markup: MARKUP, appendGlyph };
+  global44.BelJarHarpoonIcon = global44.HarpoonIcon;
 
   // js/harpoon/harpoon-glyphs.mjs
-  var global43 = globalThis;
+  var global45 = globalThis;
   function fallbackNormalize(text) {
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192").replace(/([[({])[ \t]+/g, "$1").replace(/[ \t]+([\])}])/g, "$1");
   }
   function displayBeluga(text) {
-    var ed = global43.BelEditor || null;
+    var ed = global45.BelEditor || null;
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(text);
     return fallbackNormalize(text);
   }
@@ -27127,7 +26204,7 @@
   function looksLikeBeluga(s) {
     return /(\|-|⊢|\[|=>|->)/.test(String(s || ""));
   }
-  global43.HarpoonGlyphs = {
+  global45.HarpoonGlyphs = {
     displayBeluga,
     compactTypeLabel,
     looksLikeBeluga,
@@ -27135,20 +26212,20 @@
   };
 
   // js/harpoon/harpoon-lab-tree.mjs
-  var global44 = globalThis;
+  var global46 = globalThis;
   function norm(s) {
     return String(s == null ? "" : s).replace(/\s+/g, " ").trim();
   }
   function glyphs() {
-    return global44.HarpoonGlyphs || null;
+    return global46.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
-    var g14 = glyphs();
-    return g14 ? g14.displayBeluga(text) : String(text == null ? "" : text);
+    var g15 = glyphs();
+    return g15 ? g15.displayBeluga(text) : String(text == null ? "" : text);
   }
   function compactTypeLabel2(box) {
-    var g14 = glyphs();
-    return g14 ? g14.compactTypeLabel(box) : norm(box);
+    var g15 = glyphs();
+    return g15 ? g15.compactTypeLabel(box) : norm(box);
   }
   function trunc(s, max) {
     s = String(s == null ? "" : s);
@@ -27429,10 +26506,10 @@
     if (n.type === "ghost") return SIZE.ghost.label;
     return SIZE.move.label;
   }
-  function renderNodeBody(g14, n, pw, h, clipId) {
+  function renderNodeBody(g15, n, pw, h, clipId) {
     var isArm = n.type === "arm";
     var rx = isArm ? 6 : 8;
-    g14.appendChild(el3("rect", {
+    g15.appendChild(el3("rect", {
       x: -pw / 2,
       y: -h / 2,
       width: pw,
@@ -27447,16 +26524,16 @@
       "clip-path": "url(#" + clipId + ")"
     });
     text.textContent = label;
-    g14.appendChild(text);
+    g15.appendChild(text);
     if (n.closed) {
-      g14.appendChild(el3("circle", {
+      g15.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
         class: "hpt-status hpt-status--done"
       }));
     } else if (n.open && n.type === "move") {
-      g14.appendChild(el3("circle", {
+      g15.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
@@ -27465,12 +26542,12 @@
     }
   }
   function looksLikeType(s) {
-    var g14 = glyphs();
-    if (g14 && typeof g14.looksLikeBeluga === "function") return g14.looksLikeBeluga(s);
+    var g15 = glyphs();
+    if (g15 && typeof g15.looksLikeBeluga === "function") return g15.looksLikeBeluga(s);
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
   function highlightInto(host2, text, kind) {
-    var ed = global44.BelEditor || null;
+    var ed = global46.BelEditor || null;
     var raw = String(text == null ? "" : text).trim();
     var strictSource = kind !== "type" && ed && typeof ed.readAliasActivationMode === "function" && ed.readAliasActivationMode() !== "greedy";
     var greedySource = kind !== "type" && !strictSource && ed && typeof ed.expandBelAliases === "function";
@@ -27626,24 +26703,24 @@
     });
     var selectedG = null;
     var selectedId = opts.selectedId || null;
-    function select(n, g14) {
+    function select(n, g15) {
       if (selectedG) selectedG.classList.remove("is-selected");
-      selectedG = g14;
-      if (g14) g14.classList.add("is-selected");
+      selectedG = g15;
+      if (g15) g15.classList.add("is-selected");
       if (opts.onSelect) opts.onSelect(n);
     }
     nodes.forEach(function(n, idx) {
       var pw = n.w;
       var h = n.h;
-      var g14 = el3("g", {
+      var g15 = el3("g", {
         class: "hpt-node hpt-node--" + (n.kind || n.type) + (n.type === "ghost" ? " is-ghost" : ""),
         transform: "translate(" + n.x + "," + n.y + ")",
         "data-node-id": String(n.id),
         tabindex: "0",
         role: "button"
       });
-      g14.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
-      renderNodeBody(g14, n, pw, h, n._clipId);
+      g15.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
+      renderNodeBody(g15, n, pw, h, n._clipId);
       if (mode !== "space" && n.altCount > 0 && n.type === "move") {
         var bw = 20;
         var bh = 13;
@@ -27654,7 +26731,7 @@
         var ct = el3("text", { x: bw / 2, y: bh - 4, class: "hpt-altcount-text" });
         ct.textContent = "+" + n.altCount;
         chip.appendChild(ct);
-        g14.appendChild(chip);
+        g15.appendChild(chip);
       }
       var ariaTip;
       if (n.type === "ghost" && n.ghost) {
@@ -27662,28 +26739,28 @@
       } else {
         ariaTip = n.step && n.step.rationale || n.label || "";
       }
-      if (global44.Tooltips && typeof global44.Tooltips.setRich === "function") {
+      if (global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
         (function(node) {
-          global44.Tooltips.setRich(g14, function() {
+          global46.Tooltips.setRich(g15, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
       } else {
         var title = document.createElementNS(SVGNS, "title");
         title.textContent = ariaTip;
-        g14.appendChild(title);
+        g15.appendChild(title);
       }
-      g14.addEventListener("click", function() {
-        select(n, g14);
+      g15.addEventListener("click", function() {
+        select(n, g15);
       });
-      g14.addEventListener("keydown", function(ev) {
+      g15.addEventListener("keydown", function(ev) {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
-          select(n, g14);
+          select(n, g15);
         }
       });
-      scene.appendChild(g14);
-      if (selectedId && n.id === selectedId) select(n, g14);
+      scene.appendChild(g15);
+      if (selectedId && n.id === selectedId) select(n, g15);
     });
     function applyVB() {
       svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
@@ -27758,7 +26835,7 @@
     }
     return svg;
   }
-  global44.HarpoonTree = {
+  global46.HarpoonTree = {
     buildModel,
     render: render4,
     breadcrumb,
@@ -27766,7 +26843,7 @@
   };
 
   // js/harpoon/harpoon-lab-display.mjs
-  var global45 = globalThis;
+  var global47 = globalThis;
   function createDisplay(deps) {
     var el6 = deps.el;
     var E3 = deps.E;
@@ -27777,13 +26854,13 @@
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g14 = global45.HarpoonGlyphs;
-      if (g14) return g14.fallbackNormalize(text);
+      var g15 = global47.HarpoonGlyphs;
+      if (g15) return g15.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g14 = global45.HarpoonGlyphs;
-      if (g14) return g14.displayBeluga(typeStr);
+      var g15 = global47.HarpoonGlyphs;
+      if (g15) return g15.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
       return normalizeGlyphs2(typeStr);
@@ -27850,7 +26927,7 @@
       if (!ed || !prep || typeof ed.resolveHoleGoalForHit !== "function") {
         return { goalType: na.goalType, goalState: na.goalState || "live" };
       }
-      var api3 = global45.CurrentEditor;
+      var api3 = global47.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = ed.resolveHoleGoalForHit(session.view, eng, prep.hit);
       if (!hit || !hit.goal) {
@@ -27866,17 +26943,17 @@
       var name = session && session.prep && session.prep.name;
       var cached = session && name && session._fullDeclSig && session._fullDeclSig.name === name ? session._fullDeclSig.type : null;
       var view = session && session.view;
-      var from = session ? session.declFrom : null;
-      if (!view || !name || from == null) return cached || sourceType;
+      var from2 = session ? session.declFrom : null;
+      if (!view || !name || from2 == null) return cached || sourceType;
       if (session.fileId && liveEditorFileId2() !== session.fileId) return cached || sourceType;
-      var api3 = global45.CurrentEditor;
+      var api3 = global47.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       if (!eng || typeof eng.intelSyncAt !== "function") return cached || sourceType;
-      var to = session.declTo != null ? session.declTo : Math.min(from + 400, view.state.doc.length);
-      var idx = view.state.doc.sliceString(from, to).indexOf(name);
+      var to = session.declTo != null ? session.declTo : Math.min(from2 + 400, view.state.doc.length);
+      var idx = view.state.doc.sliceString(from2, to).indexOf(name);
       if (idx < 0) return cached || sourceType;
       try {
-        var intel = eng.intelSyncAt(from + idx);
+        var intel = eng.intelSyncAt(from2 + idx);
         if (intel && intel.type && intel.definition && intel.definition.isGlobal && (intel.definition.name === name || intel.name === name)) {
           session._fullDeclSig = { name, type: intel.type };
           return intel.type;
@@ -28078,12 +27155,12 @@
     };
     function goalHeadFromGoal(goal) {
       if (!goal) return null;
-      var g14 = String(goal).trim();
-      if (g14[0] === "[" && g14[g14.length - 1] === "]" || g14[0] === "(" && g14[g14.length - 1] === ")") {
-        g14 = g14.slice(1, -1).trim();
+      var g15 = String(goal).trim();
+      if (g15[0] === "[" && g15[g15.length - 1] === "]" || g15[0] === "(" && g15[g15.length - 1] === ")") {
+        g15 = g15.slice(1, -1).trim();
       }
-      var m = g14.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
-      var concl = (m ? m[1] : g14).trim();
+      var m = g15.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
+      var concl = (m ? m[1] : g15).trim();
       var head = concl.split(/\s+/)[0];
       return head || null;
     }
@@ -28128,7 +27205,7 @@
     }
     function moveLead(s) {
       if (s && s.lead) return s.lead;
-      var ed = global45.BelEditor;
+      var ed = global47.BelEditor;
       if (ed && typeof ed.stepLead === "function" && s && s.meta) {
         var fromEd = ed.stepLead({ kind: s.move }, s.meta, { goal: s.goal });
         if (fromEd) return fromEd;
@@ -28296,10 +27373,10 @@
   }
 
   // js/harpoon/harpoon-lab-commit.mjs
-  var global46 = globalThis;
+  var global48 = globalThis;
   function createCommit(deps) {
     var E3 = deps.E;
-    var toast3 = deps.toast;
+    var toast4 = deps.toast;
     var liveEditorFileId2 = deps.liveEditorFileId;
     var prepareForHole2 = deps.prepareForHole;
     function defaultCommitState2() {
@@ -28339,14 +27416,14 @@
     var COMMIT_NAV_TIMEOUT_MS = 8e3;
     function withCommitTimeout(promise, ms, message2) {
       return new Promise(function(resolve2, reject) {
-        var timer2 = global46.setTimeout(function() {
+        var timer2 = global48.setTimeout(function() {
           reject(new Error(message2 || "Timed out."));
         }, ms);
         Promise.resolve(promise).then(function(v) {
-          global46.clearTimeout(timer2);
+          global48.clearTimeout(timer2);
           resolve2(v);
         }).catch(function(e) {
-          global46.clearTimeout(timer2);
+          global48.clearTimeout(timer2);
           reject(e);
         });
       });
@@ -28356,11 +27433,11 @@
       var fileId = this.fileId || this.anchor && this.anchor.fileId;
       this.clearPendingCommitNav();
       var view = this.resolveView();
-      var api3 = global46.CurrentEditor;
+      var api3 = global48.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng) || this.compromise && this.compromise.liveHit;
       if (!fileId || !hit) {
-        toast3("Open the file to place the proof.", "error");
+        toast4("Open the file to place the proof.", "error");
         this.resetCommitForRetry();
         return Promise.resolve(false);
       }
@@ -28375,8 +27452,8 @@
         self.verifyAndCommit(src, { skipBeginUi: true });
       };
       self._pendingCommitNavListener = onActive;
-      global46.addEventListener("beljar:active-editor-view", onActive);
-      global46.dispatchEvent(new CustomEvent("beljar:open-file-at", {
+      global48.addEventListener("beljar:active-editor-view", onActive);
+      global48.dispatchEvent(new CustomEvent("beljar:open-file-at", {
         detail: {
           fileId,
           from: hit.from,
@@ -28389,11 +27466,11 @@
         onActive();
         return Promise.resolve(false);
       }
-      self._pendingCommitNavTimer = global46.setTimeout(function() {
+      self._pendingCommitNavTimer = global48.setTimeout(function() {
         if (!self.pendingCommitSource) return;
         self.clearPendingCommitNav();
         self.resetCommitForRetry();
-        toast3("Could not open the file to place the proof.", "error");
+        toast4("Could not open the file to place the proof.", "error");
       }, COMMIT_NAV_TIMEOUT_MS);
       return Promise.resolve(false);
     }
@@ -28401,7 +27478,7 @@
       opts = opts || {};
       var ed = E3();
       var self = this;
-      var client = global46.BelugaClient;
+      var client = global48.BelugaClient;
       if (!ed) return Promise.resolve(false);
       if (!opts.skipBeginUi) this.beginCommitUi("verify");
       this.probeAnchor();
@@ -28419,7 +27496,7 @@
         this.finishCommitFailure("Open the file to place the proof.", false);
         return Promise.resolve(false);
       }
-      var api3 = global46.CurrentEditor;
+      var api3 = global48.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       var hit = this.findLiveHit(view, eng);
       if (!hit) {
@@ -28520,7 +27597,7 @@
   }
 
   // js/harpoon/harpoon-lab-reel.mjs
-  var global47 = globalThis;
+  var global49 = globalThis;
   function createReel(deps) {
     var el6 = deps.el;
     var tacticVerb2 = deps.tacticVerb || function(k) {
@@ -28574,8 +27651,8 @@
       var node = session._statTipEl || session._autoSearchSpinner;
       if (!node) return;
       if (node.getAttribute("data-tooltip") === tip) return;
-      if (global47.Tooltips && global47.Tooltips.set) {
-        global47.Tooltips.set(node, tip, { ariaLabel: false });
+      if (global49.Tooltips && global49.Tooltips.set) {
+        global49.Tooltips.set(node, tip, { ariaLabel: false });
       } else if (tip) {
         node.setAttribute("data-tooltip", tip);
       }
@@ -28614,10 +27691,7 @@
       bindStepGoalTip2(copy.querySelector(".harpoon-lab-auto-move"), step2.goal);
     }
     function reelMotionOk() {
-      if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
-        return !Persist.prefersReducedMotion();
-      }
-      return !(global47.matchMedia && global47.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      return !prefersReducedMotion(Settings.get("motionPref"));
     }
     function reelClearMotion(el7) {
       if (!el7) return;
@@ -28782,8 +27856,8 @@
         btn._belPauseState = paused;
         btn.innerHTML = paused ? ICON_PLAY2 : ICON_PAUSE2;
         btn.setAttribute("aria-label", paused ? "Resume search" : "Pause search");
-        if (global47.Tooltips && global47.Tooltips.set) {
-          global47.Tooltips.set(btn, paused ? "Resume" : "Pause");
+        if (global49.Tooltips && global49.Tooltips.set) {
+          global49.Tooltips.set(btn, paused ? "Resume" : "Pause");
         }
       }
       if (this._autoSearchBox) {
@@ -28826,10 +27900,10 @@
         return;
       }
       if (!wrap || !wrap.parentNode) {
-        var anchor2 = this._autoSearchBox;
-        if (!anchor2 || !anchor2.parentNode) return;
+        var anchor3 = this._autoSearchBox;
+        if (!anchor3 || !anchor3.parentNode) return;
         wrap = el6("div", "harpoon-lab-context");
-        anchor2.parentNode.insertBefore(wrap, anchor2);
+        anchor3.parentNode.insertBefore(wrap, anchor3);
         this._ctxWrap = wrap;
       }
       wrap.textContent = "";
@@ -29278,8 +28352,8 @@
       return String(reason).replace(/^File\s+"[^"]*",\s*line\s+\d+,\s*column\s+\d+\s*/i, "").replace(/^Error:\s*/i, "").trim();
     }
     function belugaText(s) {
-      var g14 = globalThis.HarpoonGlyphs;
-      return g14 ? g14.displayBeluga(s) : String(s == null ? "" : s);
+      var g15 = globalThis.HarpoonGlyphs;
+      return g15 ? g15.displayBeluga(s) : String(s == null ? "" : s);
     }
     var STUCK_REASON = {
       "no-move": "no move certified",
@@ -29350,24 +28424,24 @@
             return byKey[k];
           });
         };
-        var addGroup = function(g14) {
-          var li = el6("li", "harpoon-stuck-tried-row is-" + g14.verdict);
-          li.appendChild(el6("span", "hpt-card-kind hpt-kind--" + g14.kind, g14.kind));
+        var addGroup = function(g15) {
+          var li = el6("li", "harpoon-stuck-tried-row is-" + g15.verdict);
+          li.appendChild(el6("span", "hpt-card-kind hpt-kind--" + g15.kind, g15.kind));
           var hd = el6("code", "harpoon-stuck-tried-head");
-          renderSource2(hd, g14.heads[0]);
+          renderSource2(hd, g15.heads[0]);
           li.appendChild(hd);
-          if (g14.heads.length > 1) {
-            var more = el6("span", "harpoon-stuck-tried-more", "+" + (g14.heads.length - 1));
-            setTip2(more, g14.heads.map(belugaText).join("\n"), { ariaLabel: false });
+          if (g15.heads.length > 1) {
+            var more = el6("span", "harpoon-stuck-tried-more", "+" + (g15.heads.length - 1));
+            setTip2(more, g15.heads.map(belugaText).join("\n"), { ariaLabel: false });
             more.setAttribute(
               "aria-label",
-              g14.heads.length + " candidates rejected with this objection"
+              g15.heads.length + " candidates rejected with this objection"
             );
             li.appendChild(more);
           }
-          if (g14.reason) {
-            var rn = el6("span", "harpoon-stuck-tried-reason", g14.reason);
-            setTip2(rn, g14.reason, { ariaLabel: false });
+          if (g15.reason) {
+            var rn = el6("span", "harpoon-stuck-tried-reason", g15.reason);
+            setTip2(rn, g15.reason, { ariaLabel: false });
             li.appendChild(rn);
           }
           list3.appendChild(li);
@@ -29390,7 +28464,7 @@
   }
 
   // js/harpoon/harpoon-lab-tree-ui.mjs
-  var global48 = globalThis;
+  var global50 = globalThis;
   function createTreeUi(deps) {
     var el6 = deps.el;
     var iconBtn2 = deps.iconBtn;
@@ -29418,7 +28492,7 @@
       var section = el6("div", "harpoon-deriv");
       var header = el6("div", "harpoon-deriv-header");
       header.appendChild(el6("span", "harpoon-lab-section-label is-steps", "Derivation"));
-      var toggle5 = el6("div", "harpoon-deriv-toggle");
+      var toggle6 = el6("div", "harpoon-deriv-toggle");
       var views = [["list", "List"], ["tree", "Tree"]];
       var view = "list";
       var listHost = el6("ol", "harpoon-lab-auto-trail is-instant");
@@ -29429,7 +28503,7 @@
         view = v;
         listHost.hidden = v !== "list";
         treeHost.hidden = v !== "tree";
-        toggle5.querySelectorAll(".harpoon-deriv-tab").forEach(function(t) {
+        toggle6.querySelectorAll(".harpoon-deriv-tab").forEach(function(t) {
           t.classList.toggle("is-active", t.dataset.view === v);
         });
         if (v === "tree" && !treeDrawn) {
@@ -29445,9 +28519,9 @@
         t.addEventListener("click", function() {
           if (view !== vv[0]) showView(vv[0]);
         });
-        toggle5.appendChild(t);
+        toggle6.appendChild(t);
       });
-      header.appendChild(toggle5);
+      header.appendChild(toggle6);
       var popBtn = iconBtn2(
         "icon-btn harpoon-deriv-popout",
         ICON_POPOUT2,
@@ -29480,9 +28554,9 @@
         return opts.live ? self.derivationNa() || na : na;
       }
       function draw() {
-        if (!global48.HarpoonTree) return;
+        if (!global50.HarpoonTree) return;
         var n = cur();
-        var root2 = global48.HarpoonTree.buildModel({
+        var root2 = global50.HarpoonTree.buildModel({
           steps: n.steps || [],
           trace: n.trace || null,
           complete: !!n.complete,
@@ -29491,7 +28565,7 @@
           goalType: n.goalType || "",
           theoremSnapshot: n.theoremSnapshot || null
         });
-        global48.HarpoonTree.render(treeHost, root2, {
+        global50.HarpoonTree.render(treeHost, root2, {
           mode,
           // The roomy explorer gives the graph a whole pane; the compact one gives it a
           // fixed strip inside the panel, where filling would mean growing the panel.
@@ -29524,8 +28598,8 @@
           treeMode: treeMode || mode
         };
       }
-      if (global48.Menu && global48.Menu.bindContextMenu) {
-        global48.Menu.bindContextMenu(treeHost, function() {
+      if (global50.Menu && global50.Menu.bindContextMenu) {
+        global50.Menu.bindContextMenu(treeHost, function() {
           var hasTrace = !!(cur().trace && cur().trace.length);
           return [
             {
@@ -29548,11 +28622,11 @@
         let applyCollapsed = function() {
           split.classList.toggle("is-rail-collapsed", collapsed);
           rail.classList.toggle("is-collapsed", collapsed);
-          toggle5.innerHTML = collapsed ? ICON_CHEVRON_LEFT2 : ICON_CHEVRON_RIGHT2;
+          toggle6.innerHTML = collapsed ? ICON_CHEVRON_LEFT2 : ICON_CHEVRON_RIGHT2;
           var tip = collapsed ? "Show details panel" : "Hide details panel";
-          setTip2(toggle5, tip);
-          toggle5.setAttribute("aria-label", tip);
-          toggle5.setAttribute("aria-expanded", collapsed ? "false" : "true");
+          setTip2(toggle6, tip);
+          toggle6.setAttribute("aria-label", tip);
+          toggle6.setAttribute("aria-expanded", collapsed ? "false" : "true");
         };
         var split = el6("div", "hpt-split");
         var left = el6("div", "hpt-split-tree");
@@ -29562,19 +28636,17 @@
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
-        var persist4 = global48.Persist;
-        var collapsed = !!(persist4 && persist4.readStoredHarpoonDetailsCollapsed && persist4.readStoredHarpoonDetailsCollapsed());
+        var device = global50.Device;
+        var collapsed = !!(device && device.get("harpoonDetailsCollapsed"));
         var railHead = el6("div", "hpt-rail-head");
         var railTitle = el6("span", "hpt-rail-title", "Details");
-        var toggle5 = el6("button", "icon-btn hpt-rail-toggle");
-        toggle5.type = "button";
+        var toggle6 = el6("button", "icon-btn hpt-rail-toggle");
+        toggle6.type = "button";
         railHead.appendChild(railTitle);
-        railHead.appendChild(toggle5);
-        toggle5.addEventListener("click", function() {
+        railHead.appendChild(toggle6);
+        toggle6.addEventListener("click", function() {
           collapsed = !collapsed;
-          if (persist4 && persist4.writeStoredHarpoonDetailsCollapsed) {
-            persist4.writeStoredHarpoonDetailsCollapsed(collapsed);
-          }
+          if (device) device.set("harpoonDetailsCollapsed", collapsed);
           applyCollapsed();
         });
         rail.appendChild(railHead);
@@ -29756,9 +28828,9 @@
       banner.appendChild(el6("div", "hpt-detail-name", name));
       mount3.appendChild(banner);
       if (na.goalType) {
-        var g14 = el6("div", "hpt-detail-goal");
-        renderType4(g14, na.goalType);
-        mount3.appendChild(detailSection("Theorem", g14));
+        var g15 = el6("div", "hpt-detail-goal");
+        renderType4(g15, na.goalType);
+        mount3.appendChild(detailSection("Theorem", g15));
       }
       var snap = na.theoremSnapshot;
       if (snap && (snap.premiseCount || snap.totality)) {
@@ -29798,8 +28870,8 @@
       mount3.appendChild(el6("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
-      if (!n || !global48.HarpoonTree || typeof global48.HarpoonTree.breadcrumb !== "function") return null;
-      var parts = global48.HarpoonTree.breadcrumb(n);
+      if (!n || !global50.HarpoonTree || typeof global50.HarpoonTree.breadcrumb !== "function") return null;
+      var parts = global50.HarpoonTree.breadcrumb(n);
       if (!parts.length) return null;
       function truncPart(s) {
         s = String(s || "");
@@ -29865,14 +28937,14 @@
         }
       ];
       var wrap = el6("div", "hpt-alt-tray");
-      groups.forEach(function(g14) {
+      groups.forEach(function(g15) {
         var rows2 = tried.filter(function(v) {
-          return v.verdict === g14.key;
+          return v.verdict === g15.key;
         });
         if (!rows2.length) return;
-        var sec = el6("div", "hpt-alt-group is-" + g14.key);
-        var groupLabel = el6("div", "hpt-alt-group-label", g14.label + " (" + rows2.length + ")");
-        if (g14.tip) setTip2(groupLabel, g14.tip);
+        var sec = el6("div", "hpt-alt-group is-" + g15.key);
+        var groupLabel = el6("div", "hpt-alt-group-label", g15.label + " (" + rows2.length + ")");
+        if (g15.tip) setTip2(groupLabel, g15.tip);
         sec.appendChild(groupLabel);
         var list3 = el6("ul", "hpt-detail-tried");
         rows2.forEach(function(v) {
@@ -29888,9 +28960,9 @@
       if (!hole || !hole.line || !fileId) return;
       var text = liveFileText2(fileId);
       if (!text) return;
-      var from = lineColToOffset2(text, hole.line, hole.col);
-      if (typeof global48.openFileAt === "function") {
-        global48.openFileAt(fileId, from, from + 1, { line: hole.line, col: hole.col, name: hole.name });
+      var from2 = lineColToOffset2(text, hole.line, hole.col);
+      if (typeof global50.openFileAt === "function") {
+        global50.openFileAt(fileId, from2, from2 + 1, { line: hole.line, col: hole.col, name: hole.name });
       }
     }
     ;
@@ -29912,7 +28984,7 @@
         where.appendChild(el6("div", "hpt-detail-branch", "in branch: " + st.branch));
       }
       if (st && typeof st.checks === "number" && st.checks > 0) {
-        var showStats = typeof Persist === "undefined" || Persist.readStoredAutosolveShowStats();
+        var showStats = typeof Persist === "undefined" || Settings.get("autosolveShowStats");
         if (showStats) {
           var checksEl = el6("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
           setTip2(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
@@ -30092,7 +29164,7 @@
     var iconBtn2 = deps.iconBtn;
     var setTip2 = deps.setTip;
     var E3 = deps.E;
-    var toast3 = deps.toast;
+    var toast4 = deps.toast;
     var renderSource2 = deps.renderSource;
     var appendAutoGoalHero = deps.appendAutoGoalHero;
     var appendDeclLabel = deps.appendDeclLabel;
@@ -30147,8 +29219,8 @@
       return { verb: base.verb, arg, tip: base.tip, meta };
     }
     function displayGoal(s) {
-      var g14 = globalThis.HarpoonGlyphs;
-      return g14 ? g14.displayBeluga(s) : String(s == null ? "" : s);
+      var g15 = globalThis.HarpoonGlyphs;
+      return g15 ? g15.displayBeluga(s) : String(s == null ? "" : s);
     }
     function moveHeadText(text) {
       return String(text || "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 90);
@@ -30264,12 +29336,12 @@
       return wrap;
     }
     function skelBar() {
-      var bar2 = el6("div", "harpoon-lab-bar");
+      var bar = el6("div", "harpoon-lab-bar");
       var status = el6("div", "harpoon-lab-status");
       status.appendChild(el6("span", "harpoon-lab-status-dot"));
       status.appendChild(skel("harpoon-skel--text", "3.6rem"));
-      bar2.appendChild(status);
-      return bar2;
+      bar.appendChild(status);
+      return bar;
     }
     function skelMoveRow(i) {
       var row = el6("div", "harpoon-lab-move is-skeleton");
@@ -30438,13 +29510,13 @@
       var prep = this.prep;
       var self = this;
       if (!ed || !client || !prep || typeof ed.manualState !== "function") {
-        toast3("Manual Harpoon is unavailable.", "error");
+        toast4("Manual Harpoon is unavailable.", "error");
         return Promise.resolve(false);
       }
       var declText = prep.assembledCode.slice(prep.assembledDeclFrom, prep.assembledDeclTo);
       var thm = ed.theoremUnderProof(declText);
       if (!thm) {
-        toast3("Harpoon could not read this theorem.", "error");
+        toast4("Harpoon could not read this theorem.", "error");
         return Promise.resolve(false);
       }
       if (this.disposed) return Promise.resolve(false);
@@ -30607,7 +29679,7 @@
           clearApplying();
           setTacticStatus(self, "not accepted", true);
           markPip(row, "rejected", r.error || "The checker did not accept this move.");
-          toast3(firstLineOf(r.error) || "That move did not type-check.", "error");
+          toast4(firstLineOf(r.error) || "That move did not type-check.", "error");
           return false;
         }
         m.state = r.state;
@@ -30620,7 +29692,7 @@
         clearApplying();
         setTacticStatus(self, "no answer on " + applyVerb, true);
         markPip(row, "rejected", err && err.message || String(err));
-        toast3(firstLineOf(err && err.message) || "That move could not be checked.", "error");
+        toast4(firstLineOf(err && err.message) || "That move could not be checked.", "error");
         return false;
       });
     }
@@ -30681,8 +29753,7 @@
       var token = {};
       this._sweepToken = token;
       if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
-      var persist4 = globalThis.Persist;
-      var on = !persist4 || typeof persist4.readStoredHarpoonVerifyMoves !== "function" ? true : persist4.readStoredHarpoonVerifyMoves();
+      var on = Settings.get("harpoonVerifyMoves");
       if (!on) return;
       var rows2 = this._moveRows.slice(0, 8);
       var i = 0;
@@ -30928,7 +29999,7 @@
       }
       var body = solvedBodyOf2(m.state.code, m.declName);
       if (!body) {
-        toast3("Harpoon lost the proof body.", "error");
+        toast4("Harpoon lost the proof body.", "error");
         return Promise.resolve(false);
       }
       this.beginCommitUi("verify");
@@ -31011,7 +30082,7 @@
           if (commit.status === "checking") this.updateCommitPlace();
         }
         var open11 = st ? st.holes.length : 0;
-        var bar2 = el6("div", "harpoon-lab-bar");
+        var bar = el6("div", "harpoon-lab-bar");
         var status = el6("div", "harpoon-lab-status");
         var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
@@ -31022,7 +30093,7 @@
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
-        bar2.appendChild(status);
+        bar.appendChild(status);
         var actions = el6("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
@@ -31046,8 +30117,8 @@
         redoBtn.disabled = !(st && ed.manualCanRedo(st));
         actions.appendChild(undoBtn);
         actions.appendChild(redoBtn);
-        bar2.appendChild(actions);
-        box.appendChild(bar2);
+        bar.appendChild(actions);
+        box.appendChild(bar);
         if (st && st.holes.length > 1) {
           var pickBand = el6("div", "harpoon-lab-picker-band");
           var picker = el6("div", "harpoon-lab-picker");
@@ -31087,7 +30158,7 @@
         }
       } else {
         var open11 = st ? st.holes.length : 0;
-        var bar2 = el6("div", "harpoon-lab-bar");
+        var bar = el6("div", "harpoon-lab-bar");
         var status = el6("div", "harpoon-lab-status");
         var dot = el6("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
@@ -31098,7 +30169,7 @@
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
-        bar2.appendChild(status);
+        bar.appendChild(status);
         var actions = el6("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
@@ -31122,8 +30193,8 @@
         redoBtn.disabled = !(st && ed.manualCanRedo(st));
         actions.appendChild(undoBtn);
         actions.appendChild(redoBtn);
-        bar2.appendChild(actions);
-        box.appendChild(bar2);
+        bar.appendChild(actions);
+        box.appendChild(bar);
         if (st && st.holes.length > 1) {
           var pickBand = el6("div", "harpoon-lab-picker-band");
           var picker = el6("div", "harpoon-lab-picker");
@@ -31300,21 +30371,21 @@
   }
 
   // js/harpoon/harpoon-lab.mjs
-  var global49 = globalThis;
+  var global51 = globalThis;
   function E() {
-    return global49.BelEditor || null;
+    return global51.BelEditor || null;
   }
   function P2() {
-    return global49.HarpoonEngine || null;
+    return global51.HarpoonEngine || null;
   }
   function C() {
-    return global49.BelugaClient || null;
+    return global51.BelugaClient || null;
   }
   function FW() {
-    return global49.FloatingWindow || null;
+    return global51.FloatingWindow || null;
   }
   function toast2(msg, kind) {
-    var T = global49.Toasts;
+    var T = global51.Toasts;
     if (!T) return;
     if (kind === "error" && T.error) T.error(msg);
     else if (kind === "success" && T.success) T.success(msg);
@@ -31363,8 +30434,8 @@
   }
   function setTip(el6, text, opts) {
     if (!el6) return;
-    if (global49.Tooltips && global49.Tooltips.set) {
-      global49.Tooltips.set(el6, text, opts);
+    if (global51.Tooltips && global51.Tooltips.set) {
+      global51.Tooltips.set(el6, text, opts);
     } else {
       el6.removeAttribute("title");
       var tip = text != null ? String(text).trim() : "";
@@ -31389,14 +30460,14 @@
     if (!host2) return;
     var shown = goal ? displayType(goal) : "";
     if (!shown) {
-      if (global49.Tooltips && global49.Tooltips.setRich) global49.Tooltips.setRich(host2, null);
+      if (global51.Tooltips && global51.Tooltips.setRich) global51.Tooltips.setRich(host2, null);
       setTip(host2, "", { ariaLabel: false });
       host2.removeAttribute("data-tooltip-placement");
       return;
     }
     host2.setAttribute("data-tooltip-placement", "below");
-    if (global49.Tooltips && typeof global49.Tooltips.setRich === "function") {
-      global49.Tooltips.setRich(host2, function() {
+    if (global51.Tooltips && typeof global51.Tooltips.setRich === "function") {
+      global51.Tooltips.setRich(host2, function() {
         return buildLabeledCodeTip("Goal at this step", goal, "type");
       }, "Goal at this step: " + shown);
     } else {
@@ -31407,8 +30478,8 @@
     if (!el6 || !tip) return;
     el6.setAttribute("data-tooltip-placement", placement || "below");
     el6.setAttribute("data-tooltip-no-track", "");
-    if (richCode && global49.Tooltips && typeof global49.Tooltips.setRich === "function") {
-      global49.Tooltips.setRich(el6, function() {
+    if (richCode && global51.Tooltips && typeof global51.Tooltips.setRich === "function") {
+      global51.Tooltips.setRich(el6, function() {
         return buildLabeledCodeTip(tip, richCode, richKind || "type");
       }, tip);
     } else {
@@ -31440,14 +30511,14 @@
       }
     }, 300);
   }
-  if (typeof global49.addEventListener === "function") {
-    global49.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
-    global49.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
-    global49.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
-    global49.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
+  if (typeof global51.addEventListener === "function") {
+    global51.addEventListener("beljar:doc-changed", scheduleAnchorProbeAll);
+    global51.addEventListener("beljar:file-lint", scheduleAnchorProbeAll);
+    global51.addEventListener("beljar:development-checked", scheduleAnchorProbeAll);
+    global51.addEventListener("beljar:active-editor-view", scheduleAnchorProbeAll);
   }
   function liveEditorFileId() {
-    var api3 = global49.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     if (api3 && typeof api3.getDocumentId === "function") {
       var docId = api3.getDocumentId();
       if (docId) return docId;
@@ -31456,13 +30527,13 @@
       var edId = api3.getActiveFileId();
       if (edId) return edId;
     }
-    var P3 = global49.Persist;
+    var P3 = global51.Persist;
     return P3 && P3.getActiveFileId ? P3.getActiveFileId() : null;
   }
   function liveFileText(fileId) {
-    var P3 = global49.Persist;
+    var P3 = global51.Persist;
     if (!P3 || !fileId) return "";
-    var api3 = global49.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     if (fileId === liveEditorFileId() && api3 && typeof api3.getValue === "function") {
       return api3.getValue();
     }
@@ -31478,28 +30549,28 @@
     var c = Math.max(0, (col || 1) - 1);
     return offset + Math.min(c, lineText.length);
   }
-  function findHoleHitInText(docText, anchor2, ed) {
-    if (!anchor2 || !docText || !ed || typeof ed.parseDecl !== "function") return null;
-    var loc = ed.locateMember ? ed.locateMember(docText, anchor2.declName) : null;
-    var from;
+  function findHoleHitInText(docText, anchor3, ed) {
+    if (!anchor3 || !docText || !ed || typeof ed.parseDecl !== "function") return null;
+    var loc = ed.locateMember ? ed.locateMember(docText, anchor3.declName) : null;
+    var from2;
     var to;
     if (loc) {
-      from = loc.from;
+      from2 = loc.from;
       to = loc.to;
     } else {
       var re = new RegExp(
-        "(^|[\\n\\r])[ \\t]*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + String(anchor2.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
+        "(^|[\\n\\r])[ \\t]*(?:and\\s+(?:rec\\s+)?|(?:rec|proof)\\s+)" + String(anchor3.declName || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:"
       );
       var m = re.exec(docText);
       if (!m) return null;
-      from = m.index + m[1].length;
-      var semi = docText.indexOf(";", from);
+      from2 = m.index + m[1].length;
+      var semi = docText.indexOf(";", from2);
       to = semi < 0 ? docText.length : semi + 1;
     }
-    var declSlice = docText.slice(from, to);
+    var declSlice = docText.slice(from2, to);
     var decl = ed.parseDecl(declSlice);
-    if (!decl || anchor2.declKey && decl.kw + ":" + decl.name !== anchor2.declKey) return null;
-    var bodyStart = from + (decl.bodyStart != null ? decl.bodyStart : declSlice.indexOf("=") + 1);
+    if (!decl || anchor3.declKey && decl.kw + ":" + decl.name !== anchor3.declKey) return null;
+    var bodyStart = from2 + (decl.bodyStart != null ? decl.bodyStart : declSlice.indexOf("=") + 1);
     var body = docText.slice(bodyStart, to);
     var qIdx = body.indexOf("?");
     if (qIdx < 0) return null;
@@ -31564,12 +30635,12 @@
   }
   var liveSessions = [];
   function activeSession() {
-    var active4 = global49.document ? global49.document.activeElement : null;
+    var active5 = global51.document ? global51.document.activeElement : null;
     var newest = null;
     for (var i = liveSessions.length - 1; i >= 0; i -= 1) {
       var s = liveSessions[i];
       if (!s || !s.bodyEl) continue;
-      if (active4 && s.bodyEl.contains(active4)) return s;
+      if (active5 && s.bodyEl.contains(active5)) return s;
       if (!newest) newest = s;
     }
     return newest;
@@ -31674,9 +30745,9 @@
       this.updateCompromiseBanner();
     }
     try {
-      var focusNext = typeof Persist === "undefined" || Persist.readStoredAutosolveFocusNext();
-      if (focusNext && global49.CurrentEditor && typeof global49.CurrentEditor.cycleHole === "function") {
-        global49.CurrentEditor.cycleHole(1);
+      var focusNext = typeof Persist === "undefined" || Settings.get("autosolveFocusNext");
+      if (focusNext && global51.CurrentEditor && typeof global51.CurrentEditor.cycleHole === "function") {
+        global51.CurrentEditor.cycleHole(1);
       }
     } catch (_) {
     }
@@ -31692,7 +30763,7 @@
       st.detail = commitFailureUserMessage();
       st.detailRaw = raw;
       toast2(st.detail, "error");
-      var N = global49.Notifications;
+      var N = global51.Notifications;
       if (N && typeof N.emit === "function") {
         N.emit({
           kind: "error",
@@ -31728,11 +30799,11 @@
   };
   Session.prototype.clearPendingCommitNav = function() {
     if (this._pendingCommitNavTimer != null) {
-      global49.clearTimeout(this._pendingCommitNavTimer);
+      global51.clearTimeout(this._pendingCommitNavTimer);
       this._pendingCommitNavTimer = null;
     }
     if (this._pendingCommitNavListener) {
-      global49.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
+      global51.removeEventListener("beljar:active-editor-view", this._pendingCommitNavListener);
       this._pendingCommitNavListener = null;
     }
     this.pendingCommitSource = null;
@@ -31745,7 +30816,7 @@
     if (idx !== -1) probeSessions.splice(idx, 1);
   };
   Session.prototype.resolveView = function() {
-    var api3 = global49.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     if (!api3 || !this.fileId) return this.view;
     if (liveEditorFileId() === this.fileId && typeof api3.getView === "function") {
       var v = api3.getView();
@@ -31756,8 +30827,8 @@
   Session.prototype.captureAnchor = function(view, prep) {
     var ed = E();
     if (!ed || typeof ed.captureHarpoonAnchor !== "function" || !prep) return;
-    var api3 = global49.CurrentEditor;
-    var P3 = global49.Persist;
+    var api3 = global51.CurrentEditor;
+    var P3 = global51.Persist;
     var fileId = this.fileId || (P3 && P3.getActiveFileId ? P3.getActiveFileId() : null);
     var fileText = view ? view.state.doc.toString() : prep.fileText != null ? prep.fileText : liveFileText(fileId);
     var declSlice = prep.span ? view ? view.state.doc.sliceString(prep.span.from, prep.span.to) : fileText.slice(prep.span.from, prep.span.to) : "";
@@ -31770,9 +30841,9 @@
   };
   Session.prototype.findLiveHit = function(view, engine) {
     if (!this.anchor) return null;
-    var anchor2 = { declKey: this.anchor.declKey, holeKey: this.anchor.holeKey };
+    var anchor3 = { declKey: this.anchor.declKey, holeKey: this.anchor.holeKey };
     if (view && engine) {
-      var hit = findHoleHit(view, engine, anchor2);
+      var hit = findHoleHit(view, engine, anchor3);
       if (hit) return hit;
     }
     var ed = E();
@@ -31786,10 +30857,10 @@
     if (!ed || typeof ed.assessHarpoonAnchor !== "function" || !this.anchor || !this.nativeAuto) return;
     var fileId = this.fileId || this.anchor.fileId;
     if (!fileId) return;
-    var api3 = global49.CurrentEditor;
-    var active4 = liveEditorFileId() === fileId;
+    var api3 = global51.CurrentEditor;
+    var active5 = liveEditorFileId() === fileId;
     this.resolveView();
-    var view = active4 ? this.view : null;
+    var view = active5 ? this.view : null;
     var fileText = liveFileText(fileId);
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var liveHit = this.findLiveHit(view, eng);
@@ -31874,7 +30945,7 @@
     }
     this.userCancelled = false;
     var view = this.resolveView();
-    var api3 = global49.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var hit = this.findLiveHit(view, eng);
     if (!hit) {
@@ -32024,7 +31095,7 @@
     );
     if (this._autoGoalWrap) {
       var goalHost = this._autoGoalWrap.querySelector(".harpoon-hole-goal");
-      var ed = typeof global49.BelEditor !== "undefined" ? global49.BelEditor : null;
+      var ed = typeof global51.BelEditor !== "undefined" ? global51.BelEditor : null;
       if (goalHost && ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goalHost, { surface: "lab", goalState: "live", goal: match.goal });
       } else if (goalHost) {
@@ -32075,7 +31146,7 @@
       return Promise.resolve(false);
     }
     var proveCode = codeOverride || prep.proveCode || prep.assembledCode;
-    var api3 = global49.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var goalHit = typeof ed.resolveHoleGoalForHit === "function" ? ed.resolveHoleGoalForHit(this.view, eng, prep.hit) : { goal: thm.compType && thm.compType.raw ? thm.compType.raw : "", state: "approximate", loadingLive: true };
     if ((!goalHit || !goalHit.goal) && prep.hit && prep.hit.hole && prep.hit.hole.goal) {
@@ -32397,12 +31468,12 @@
     var body = this.bodyEl;
     if (!body) return;
     var open11 = m.subgoals && m.subgoals.length || 0;
-    var bar2 = el4("div", "harpoon-lab-bar");
+    var bar = el4("div", "harpoon-lab-bar");
     var status = el4("div", "harpoon-lab-status");
     var dot = el4("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
     dot.setAttribute("data-tooltip", m.complete ? "Proven" : "Unproven");
     dot.setAttribute("aria-label", m.complete ? "Proven" : "Unproven");
-    if (global49.Tooltips && global49.Tooltips.bind) global49.Tooltips.bind(dot);
+    if (global51.Tooltips && global51.Tooltips.bind) global51.Tooltips.bind(dot);
     status.appendChild(dot);
     var label = el4("span", "harpoon-lab-status-text");
     if (m.complete) {
@@ -32413,7 +31484,7 @@
       label.textContent = open11 + " goals";
     }
     status.appendChild(label);
-    bar2.appendChild(status);
+    bar.appendChild(status);
     var actions = el4("div", "harpoon-lab-bar-actions");
     actions.appendChild(iconBtn("icon-btn", ICON_UNDO, "Undo", "Undo", function() {
       self.undo();
@@ -32421,8 +31492,8 @@
     actions.appendChild(iconBtn("icon-btn", ICON_REDO, "Redo", "Redo", function() {
       self.redo();
     }));
-    bar2.appendChild(actions);
-    body.insertBefore(bar2, body.firstChild);
+    bar.appendChild(actions);
+    body.insertBefore(bar, body.firstChild);
   };
   Session.prototype.renderCtx = function(parent, label, binders) {
     if (!binders || !binders.length) return;
@@ -32477,7 +31548,7 @@
       autoBtn.appendChild(spark);
       autoBtn.appendChild(el4("span", "harpoon-lab-auto-btn-label", "Auto-solve"));
       autoBtn.setAttribute("data-tooltip", "Let BelJar search for the whole proof");
-      if (global49.Tooltips && global49.Tooltips.bind) global49.Tooltips.bind(autoBtn);
+      if (global51.Tooltips && global51.Tooltips.bind) global51.Tooltips.bind(autoBtn);
       autoBtn.addEventListener("click", function(e) {
         e.preventDefault();
         self.runTactic({ kind: "auto" });
@@ -32494,7 +31565,7 @@
         if (mv.arg) b.appendChild(el4("span", "harpoon-lab-tac-arg", mv.arg));
         if (mv.tip) {
           b.setAttribute("data-tooltip", mv.tip);
-          if (global49.Tooltips && global49.Tooltips.bind) global49.Tooltips.bind(b);
+          if (global51.Tooltips && global51.Tooltips.bind) global51.Tooltips.bind(b);
         }
         b.addEventListener("click", function(e) {
           e.preventDefault();
@@ -32833,7 +31904,7 @@
       }
       return;
     }
-    var work = el4("div", "harpoon-lab-work");
+    var work2 = el4("div", "harpoon-lab-work");
     var focused = this.findSubgoal(this.focusedId) || m.subgoals[0];
     var focusedIdx = 0;
     for (var fi = 0; fi < m.subgoals.length; fi++) {
@@ -32858,10 +31929,10 @@
         });
         picker.appendChild(tab);
       });
-      work.appendChild(picker);
+      work2.appendChild(picker);
     }
-    work.appendChild(this.renderGoalCard(focused, focusedIdx, m.subgoals.length));
-    body.appendChild(work);
+    work2.appendChild(this.renderGoalCard(focused, focusedIdx, m.subgoals.length));
+    body.appendChild(work2);
   };
   function finishPrepare(ed, ctx, span, decl, hit) {
     var assembled = String(ctx.code);
@@ -32914,7 +31985,7 @@
   }
   function prepareForHole(view, hit) {
     var ed = E();
-    var api3 = global49.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     var ctx = api3 && typeof api3.getHoleActionContext === "function" ? api3.getHoleActionContext() : null;
     if (!ctx || !ctx.code) {
       toast2("Harpoon: no checkable program.", "error");
@@ -32962,8 +32033,8 @@
   function removeFloatSession(session) {
     var idx = floatSessions.indexOf(session);
     if (idx !== -1) floatSessions.splice(idx, 1);
-    if (global49.WorkspaceState && global49.WorkspaceState.scheduleSave) {
-      global49.WorkspaceState.scheduleSave();
+    if (global51.WorkspaceState && global51.WorkspaceState.scheduleSave) {
+      global51.WorkspaceState.scheduleSave();
     }
   }
   function listHoleHits(view, engine) {
@@ -32980,17 +32051,17 @@
     }
     return out;
   }
-  function findHoleHit(view, engine, anchor2) {
-    if (!anchor2) return null;
+  function findHoleHit(view, engine, anchor3) {
+    if (!anchor3) return null;
     var hits = listHoleHits(view, engine);
-    if (anchor2.holeKey) {
+    if (anchor3.holeKey) {
       for (var i = 0; i < hits.length; i++) {
-        if (holeKeyFromHit(hits[i]) === anchor2.holeKey) return hits[i];
+        if (holeKeyFromHit(hits[i]) === anchor3.holeKey) return hits[i];
       }
     }
-    if (!anchor2.declKey) return null;
+    if (!anchor3.declKey) return null;
     var ed = E();
-    var api3 = global49.CurrentEditor;
+    var api3 = global51.CurrentEditor;
     for (var j = 0; j < hits.length; j++) {
       var hit = hits[j];
       var span = null;
@@ -33000,22 +32071,18 @@
       else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
       if (!span) continue;
       var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
-      if (decl && decl.kw + ":" + decl.name === anchor2.declKey) return hit;
+      if (decl && decl.kw + ":" + decl.name === anchor3.declKey) return hit;
     }
     return null;
   }
   function openingMode() {
-    var persist4 = global49.Persist;
-    if (persist4 && typeof persist4.readStoredHarpoonMode === "function") {
-      return persist4.readStoredHarpoonMode() === "orca" ? "orca" : "manual";
-    }
-    return "manual";
+    return Settings.get("harpoonMode");
   }
   function runSession(view, prep, host2) {
     var session = new Session(view, prep.span.from, prep.span.to, host2);
     session.prep = prep;
-    var persist4 = global49.Persist;
-    session.fileId = host2.fileId || (persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null);
+    var persist2 = global51.Persist;
+    session.fileId = host2.fileId || (persist2 && persist2.getActiveFileId ? persist2.getActiveFileId() : null);
     session.captureAnchor(view, prep);
     session.bindProbe();
     var content = el4("div", "harpoon-lab" + (host2.kind === "panel" ? " harpoon-lab--panel" : ""));
@@ -33038,8 +32105,8 @@
     }
     var prep = prepareForHole(view, hit);
     if (!prep) return;
-    var persist4 = global49.Persist;
-    var fileId = persist4 && persist4.getActiveFileId ? persist4.getActiveFileId() : null;
+    var persist2 = global51.Persist;
+    var fileId = persist2 && persist2.getActiveFileId ? persist2.getActiveFileId() : null;
     var session = runSession(view, prep, {
       kind: "float",
       mount: function(content, s) {
@@ -33056,8 +32123,8 @@
           x: geom.x,
           y: geom.y,
           onGeometryChange: function() {
-            if (global49.WorkspaceState && global49.WorkspaceState.scheduleSave) {
-              global49.WorkspaceState.scheduleSave();
+            if (global51.WorkspaceState && global51.WorkspaceState.scheduleSave) {
+              global51.WorkspaceState.scheduleSave();
             }
           },
           onClose: function() {
@@ -33065,8 +32132,8 @@
           }
         });
         floatSessions.push(s);
-        if (global49.WorkspaceState && global49.WorkspaceState.scheduleSave) {
-          global49.WorkspaceState.scheduleSave();
+        if (global51.WorkspaceState && global51.WorkspaceState.scheduleSave) {
+          global51.WorkspaceState.scheduleSave();
         }
       }
     });
@@ -33075,7 +32142,7 @@
   function labTitle(name) {
     var wrap = document.createElement("span");
     wrap.className = "harpoon-lab-title";
-    if (global49.HarpoonIcon) global49.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
+    if (global51.HarpoonIcon) global51.HarpoonIcon.appendGlyph(wrap, "harpoon-lab-title-glyph");
     wrap.appendChild(el4("span", "harpoon-lab-title-text", name ? "Harpoon \xB7 " + name : "Harpoon"));
     return wrap;
   }
@@ -33151,7 +32218,7 @@
     openFromHole(view, engine, hit, { geom: entry.geom });
     return true;
   }
-  global49.Harpoon = {
+  global51.Harpoon = {
     // Test seam: probes mount a Session over a fabricated state to drive the
     // SHIPPED render/click paths rather than a re-implementation of them.
     _Session: Session,
@@ -33162,12 +32229,12 @@
     collectFloatingHarpoonWindows,
     restoreFloatingHarpoonWindow
   };
-  global49.BelJarHarpoon = global49.Harpoon;
+  global51.BelJarHarpoon = global51.Harpoon;
 
   // js/harpoon/harpoon-goal-sections.mjs
-  var global50 = globalThis;
-  function dirOf5(name) {
-    var PS = global50.ProjectSource;
+  var global52 = globalThis;
+  function dirOf4(name) {
+    var PS = global52.ProjectSource;
     if (PS && typeof PS.dirOf === "function") return PS.dirOf(name);
     var i = String(name || "").lastIndexOf("/");
     return i === -1 ? "" : name.slice(0, i);
@@ -33183,7 +32250,7 @@
     return dot === -1 ? base : base.slice(0, dot);
   }
   function holeHostFile(name) {
-    var PS = global50.ProjectSource;
+    var PS = global52.ProjectSource;
     if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
     var low = String(name || "").toLowerCase();
     if (low.endsWith(".cfg") || low.endsWith(".elf")) return false;
@@ -33192,7 +32259,7 @@
     return base.indexOf(".") === -1;
   }
   function scanFileHoles(text) {
-    var ed = global50.BelEditor;
+    var ed = global52.BelEditor;
     if (ed && typeof ed.scanFileHoles === "function") return ed.scanFileHoles(text);
     return [];
   }
@@ -33242,35 +32309,35 @@
   }
   function buildSections(opts) {
     opts = opts || {};
-    var files = (opts.files || []).map(normalizeFile);
+    var files2 = (opts.files || []).map(normalizeFile);
     var getText = opts.getText || function() {
       return "";
     };
-    var getActiveCfgsForDir2 = opts.getActiveCfgsForDir || function() {
+    var getActiveCfgsForDir = opts.getActiveCfgsForDir || function() {
       return [];
     };
     var activeFileId2 = opts.activeFileId || null;
     var activeHits = opts.activeHits || null;
     var memberHoles = opts.memberHoles || {};
     var developmentPaths = opts.developmentPaths || null;
-    var PS = global50.ProjectSource;
+    var PS = global52.ProjectSource;
     var resolveMembers = opts.resolveMembers || (PS && typeof PS.orderedPathsForCfg === "function" ? function(all, cfgPath2, gt) {
       return PS.orderedPathsForCfg(all, cfgPath2, gt);
     } : null);
     var fileByName = {};
-    for (var i = 0; i < files.length; i++) fileByName[files[i].name] = files[i];
+    for (var i = 0; i < files2.length; i++) fileByName[files2[i].name] = files2[i];
     var byDir = {};
-    for (var j = 0; j < files.length; j++) {
-      var d = dirOf5(files[j].name);
+    for (var j = 0; j < files2.length; j++) {
+      var d = dirOf4(files2[j].name);
       if (!byDir[d]) byDir[d] = [];
-      byDir[d].push(files[j]);
+      byDir[d].push(files2[j]);
     }
     var dirKeys = Object.keys(byDir).sort();
     var activeDir = opts.activeFileDir;
     if (activeDir == null && activeFileId2) {
-      for (var ai = 0; ai < files.length; ai++) {
-        if (files[ai].id === activeFileId2) {
-          activeDir = dirOf5(files[ai].name);
+      for (var ai = 0; ai < files2.length; ai++) {
+        if (files2[ai].id === activeFileId2) {
+          activeDir = dirOf4(files2[ai].name);
           break;
         }
       }
@@ -33287,14 +32354,14 @@
     for (var di = 0; di < dirKeys.length; di++) {
       var dir = dirKeys[di];
       var filesInDir = byDir[dir];
-      var activeCfgs = getActiveCfgsForDir2(dir);
+      var activeCfgs = getActiveCfgsForDir(dir);
       var placed = {};
       var dirEntries = [];
       for (var si = 0; si < activeCfgs.length; si++) {
         var cfgPath = activeCfgs[si];
         var cfgFile = fileByName[cfgPath];
         if (!cfgFile) continue;
-        var memberPaths = resolveMembers ? resolveMembers(files, cfgPath, getText) : [];
+        var memberPaths = resolveMembers ? resolveMembers(files2, cfgPath, getText) : [];
         var blockNames = [cfgPath];
         for (var mi = 0; mi < memberPaths.length; mi++) blockNames.push(memberPaths[mi]);
         var suiteLabel = cfgBaseLabel(cfgPath);
@@ -33341,15 +32408,15 @@
     }
     return { sections, totalCount };
   }
-  global50.HarpoonGoalSections = {
+  global52.HarpoonGoalSections = {
     buildSections
   };
-  global50.BelJarHarpoonGoalSections = global50.HarpoonGoalSections;
+  global52.BelJarHarpoonGoalSections = global52.HarpoonGoalSections;
 
   // js/harpoon/harpoon-panel.mjs
-  var global51 = globalThis;
+  var global53 = globalThis;
   function E2() {
-    return global51.BelEditor || null;
+    return global53.BelEditor || null;
   }
   var el5 = function(tag, cls, text) {
     var n = document.createElement(tag);
@@ -33358,7 +32425,7 @@
     return n;
   };
   function curView() {
-    var api3 = global51.CurrentEditor;
+    var api3 = global53.CurrentEditor;
     return api3 && typeof api3.getView === "function" ? api3.getView() : null;
   }
   function activeSyntacticHits(view) {
@@ -33369,13 +32436,13 @@
     });
   }
   function normalizeGlyphs(text) {
-    var g14 = global51.HarpoonGlyphs;
-    if (g14) return g14.fallbackNormalize(text);
+    var g15 = global53.HarpoonGlyphs;
+    if (g15) return g15.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g14 = global51.HarpoonGlyphs;
-    if (g14) return g14.displayBeluga(typeStr);
+    var g15 = global53.HarpoonGlyphs;
+    if (g15) return g15.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
     return normalizeGlyphs(typeStr);
@@ -33397,7 +32464,7 @@
   }
   function setSuiteTip(host2, label) {
     var name = label || "(none)";
-    var tips = global51.Tooltips;
+    var tips = global53.Tooltips;
     if (tips && typeof tips.setRich === "function") {
       tips.setRich(host2, function() {
         var row = el5("span", "harpoon-tip-suite");
@@ -33410,7 +32477,7 @@
     if (tips && typeof tips.set === "function") tips.set(host2, "Suite: " + name);
   }
   var bodyEl2 = null;
-  var panelEl3 = null;
+  var panelEl4 = null;
   var backBtn = null;
   var proving = false;
   var backHandler = null;
@@ -33424,9 +32491,9 @@
     } else if (st === "pending") {
       st = "loading";
     }
-    var g14 = goal || "";
-    if (g14) g14 = displayType2(g14).replace(/\s+/g, "");
-    return st + ":" + g14;
+    var g15 = goal || "";
+    if (g15) g15 = displayType2(g15).replace(/\s+/g, "");
+    return st + ":" + g15;
   }
   function modelRenderKey(model) {
     if (!model || !model.totalCount) return "";
@@ -33449,13 +32516,13 @@
   }
   function jumpToEntry(entry) {
     var hit = entry.hit;
-    var from = hit.from != null ? hit.from : hit.hole.from;
-    if (from == null) return;
-    var to = hit.to != null ? hit.to : hit.hole.to != null ? hit.hole.to : from + 1;
+    var from2 = hit.from != null ? hit.from : hit.hole.from;
+    if (from2 == null) return;
+    var to = hit.to != null ? hit.to : hit.hole.to != null ? hit.hole.to : from2 + 1;
     window.dispatchEvent(new CustomEvent("beljar:open-file-at", {
       detail: {
         fileId: entry.fileId,
-        from,
+        from: from2,
         to,
         line: hit.hole.line,
         col: hit.hole.col
@@ -33473,7 +32540,7 @@
   }
   function declKeyForHit(view, hit) {
     var ed = E2();
-    var api3 = global51.CurrentEditor;
+    var api3 = global53.CurrentEditor;
     if (!hit) return null;
     var span = null;
     if (api3 && api3.getMemberSpan) span = api3.getMemberSpan(hit.from);
@@ -33486,12 +32553,12 @@
     return decl.kw + ":" + decl.name;
   }
   function activeFileId() {
-    var p = typeof global51.Persist !== "undefined" ? global51.Persist : null;
+    var p = typeof global53.Persist !== "undefined" ? global53.Persist : null;
     if (!p) return null;
     return typeof p.getActiveFileId === "function" ? p.getActiveFileId() : null;
   }
   function activeFilePath() {
-    var p = typeof global51.Persist !== "undefined" ? global51.Persist : null;
+    var p = typeof global53.Persist !== "undefined" ? global53.Persist : null;
     if (!p) return "";
     var id = typeof p.getActiveFileId === "function" ? p.getActiveFileId() : typeof p.getCurrentFileId === "function" ? p.getCurrentFileId() : null;
     if (!id || typeof p.getFileById !== "function") return "";
@@ -33525,9 +32592,9 @@
   }
   function applyGoalStateToModel(model, view) {
     var ed = E2();
-    var api3 = global51.CurrentEditor;
+    var api3 = global53.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-    var P3 = typeof global51.Persist !== "undefined" ? global51.Persist : null;
+    var P3 = typeof global53.Persist !== "undefined" ? global53.Persist : null;
     if (!ed || typeof ed.enrichHoleHitsWithGoalState !== "function" || !view) return model;
     var activeId2 = activeFileId();
     var getText = P3 && typeof P3.getFileText === "function" ? function(id) {
@@ -33601,8 +32668,8 @@
     return Object.assign({}, entry, { hit: mergeHitGoal(entry.hit, rich) });
   }
   function collectProjectSections() {
-    var P3 = typeof global51.Persist !== "undefined" ? global51.Persist : null;
-    var PG = typeof global51.HarpoonGoalSections !== "undefined" ? global51.HarpoonGoalSections : null;
+    var P3 = typeof global53.Persist !== "undefined" ? global53.Persist : null;
+    var PG = typeof global53.HarpoonGoalSections !== "undefined" ? global53.HarpoonGoalSections : null;
     var holeGoals = collectInScopeHoleGoals();
     var view = curView();
     var ed = E2();
@@ -33633,14 +32700,14 @@
         totalCount: hits.length
       };
     }
-    var files = typeof P3.listFiles === "function" ? P3.listFiles() : [];
+    var files2 = typeof P3.listFiles === "function" ? P3.listFiles() : [];
     var getText = typeof P3.getFileText === "function" ? function(id) {
       return P3.getFileText(id);
     } : function() {
       return "";
     };
     var model = PG.buildSections({
-      files,
+      files: files2,
       getText,
       activeFileId: activeFileId(),
       activeHits: activeSyntacticHits(view),
@@ -33664,7 +32731,7 @@
   var declTextCache = /* @__PURE__ */ Object.create(null);
   function fileTextFor(fileId) {
     if (fileId in declTextCache) return declTextCache[fileId];
-    var P3 = typeof global51.Persist !== "undefined" ? global51.Persist : null;
+    var P3 = typeof global53.Persist !== "undefined" ? global53.Persist : null;
     var t = null;
     try {
       t = P3 && typeof P3.getFileText === "function" ? P3.getFileText(fileId) : null;
@@ -33882,8 +32949,8 @@
   function beginPanelSession(fileId, declKey, start) {
     enterProofMode();
     if (declKey && fileId) provingDecl = { fileId, declKey };
-    if (global51.WorkspaceState && global51.WorkspaceState.scheduleSave) {
-      global51.WorkspaceState.scheduleSave();
+    if (global53.WorkspaceState && global53.WorkspaceState.scheduleSave) {
+      global53.WorkspaceState.scheduleSave();
     }
     bodyEl2.textContent = "";
     var host2 = el5("div", "harpoon-panel-session");
@@ -33894,7 +32961,7 @@
         panelSession = null;
         return;
       }
-      var proof = global51.HarpoonEngine;
+      var proof = global53.HarpoonEngine;
       if (proof && proof.dispose) proof.dispose();
       provingDecl = null;
       renderList3();
@@ -33917,25 +32984,25 @@
     });
   }
   function proveHit(view, eng, hit, fileId) {
-    var lab = global51.Harpoon;
+    var lab = global53.Harpoon;
     if (!lab || typeof lab.proveInPanel !== "function") return;
     var fid = fileId || activeFileId();
     beginPanelSession(fid, declKeyForHit(view, hit), function(host2, opts) {
       return lab.proveInPanel(view, eng, hit, host2, opts);
     });
   }
-  function declKeyInFileText(fileId, from) {
+  function declKeyInFileText(fileId, from2) {
     var ed = E2();
-    var P3 = global51.Persist;
+    var P3 = global53.Persist;
     if (!ed || !P3 || typeof ed.declSpanInText !== "function") return null;
     var text = String(P3.getFileText(fileId) || "");
-    var span = ed.memberSpanInText ? ed.memberSpanInText(text, from) : ed.declSpanInText(text, from);
+    var span = ed.memberSpanInText ? ed.memberSpanInText(text, from2) : ed.declSpanInText(text, from2);
     var decl = span ? ed.parseDecl(text.slice(span.from, span.to)) : null;
     return decl ? decl.kw + ":" + decl.name : null;
   }
   function proveEntry(entry) {
     var fid = entry.fileId;
-    var lab = global51.Harpoon;
+    var lab = global53.Harpoon;
     if (fid !== activeFileId()) {
       if (!lab || typeof lab.proveInPanelForFile !== "function") return;
       beginPanelSession(fid, declKeyInFileText(fid, entry.hit.from), function(host2, opts) {
@@ -33944,15 +33011,15 @@
       return;
     }
     var view = curView();
-    var api3 = global51.CurrentEditor;
+    var api3 = global53.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     if (view && eng) proveHit(view, eng, entry.hit, fid);
   }
   function init13(container, opts) {
     bodyEl2 = container;
-    panelEl3 = opts && opts.panelEl || container.closest(".harpoon-panel");
-    if (panelEl3) {
-      backBtn = panelEl3.querySelector(".harpoon-panel-back");
+    panelEl4 = opts && opts.panelEl || container.closest(".harpoon-panel");
+    if (panelEl4) {
+      backBtn = panelEl4.querySelector(".harpoon-panel-back");
       if (backBtn) {
         backBtn.addEventListener("click", function(e) {
           e.preventDefault();
@@ -33977,7 +33044,7 @@
     var eng = deps && deps.engine;
     if (!view || !eng) return;
     if (decl.fileId && decl.fileId !== activeFileId()) return;
-    var lab = global51.Harpoon;
+    var lab = global53.Harpoon;
     if (!lab) return;
     var hit = null;
     if (typeof lab.restoreFloatingHarpoonWindow === "function") {
@@ -33997,16 +33064,16 @@
     }
     if (hit) proveHit(view, eng, hit, decl.fileId);
   }
-  global51.HarpoonPanel = {
+  global53.HarpoonPanel = {
     init: init13,
     refresh: refresh4,
     collectWorkspaceHarpoon,
     restoreWorkspaceHarpoon
   };
-  global51.BelJarHarpoonPanel = global51.HarpoonPanel;
+  global53.BelJarHarpoonPanel = global53.HarpoonPanel;
 
   // js/beluga/beluga-text.mjs
-  var global52 = globalThis;
+  var global54 = globalThis;
   function normalizeBelugaRaw(s) {
     return String(s != null ? s : "").replace(/\r\n/g, "\n");
   }
@@ -34093,7 +33160,7 @@
     }
     return out;
   }
-  global52.BelugaText = {
+  global54.BelugaText = {
     normalizeBelugaRaw,
     stripBelugaAnsi,
     isBelugaCommandError,
@@ -34103,9 +33170,9 @@
   };
 
   // js/beluga/beluga-run.mjs
-  var global53 = globalThis;
+  var global55 = globalThis;
   var belugaBusy = false;
-  var belugaMode = Persist.readStoredBelugaMode();
+  var belugaMode = Settings.get("belugaMode");
   var btnLoad = null;
   var btnRun = null;
   var cmdInputEl2 = null;
@@ -34140,7 +33207,7 @@
   }
   function setBelugaMode(m) {
     belugaMode = m;
-    Persist.writeStoredBelugaMode(m);
+    Settings.set("belugaMode", m);
     if (typeof BelugaClient !== "undefined") {
       BelugaClient.configure(modeToConfig(m));
       BelugaClient.warm().catch(function() {
@@ -34150,7 +33217,7 @@
   }
   function belugaProgressHook(msg) {
     if (msg && msg.phase === "build-fallback") {
-      if (!Persist.readStoredBelugaFallbackStable()) return;
+      if (!Settings.get("belugaFallbackStable")) return;
       Toasts.warn(
         "Fast build hit the stack limit. Retrying with Stable; switch to Stable in Settings to avoid this.",
         { duration: 0, closable: true }
@@ -34179,10 +33246,10 @@
     if (fileId === activeId2 && editor2) return editor2.getValue();
     return Persist.getFileText(fileId) || "";
   }
-  function resolveDefaultCfgPath(files, getText) {
+  function resolveDefaultCfgPath(files2, getText) {
     var activeId2 = Persist.getActiveFileId();
     if (!activeId2) return null;
-    var dev = ProjectSource.developmentForFile(files, activeId2, getText);
+    var dev = ProjectSource.developmentForFile(files2, activeId2, getText);
     return dev.kind === "module" && dev.cfg ? dev.cfg : null;
   }
   function baseName6(p) {
@@ -34195,9 +33262,9 @@
   }
   function activeFileName() {
     var id = Persist.getActiveFileId();
-    var files = Persist.listFiles() || [];
-    for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return baseName6(files[i].name);
+    var files2 = Persist.listFiles() || [];
+    for (var i = 0; i < files2.length; i++) {
+      if (files2[i].id === id) return baseName6(files2[i].name);
     }
     return "input.bel";
   }
@@ -34236,9 +33303,9 @@
       return fileTextForRun(id, activeId2, editor2);
     };
   }
-  function entriesForPaths(paths, files, getText) {
+  function entriesForPaths(paths, files2, getText) {
     var byName = {};
-    for (var i = 0; i < files.length; i++) byName[files[i].name] = files[i];
+    for (var i = 0; i < files2.length; i++) byName[files2[i].name] = files2[i];
     var out = [];
     for (var j = 0; j < paths.length; j++) {
       var f = byName[paths[j]];
@@ -34247,19 +33314,19 @@
     return out;
   }
   function buildProjectSource() {
-    var files = Persist.listFiles();
-    if (!files || !files.length) return null;
+    var files2 = Persist.listFiles();
+    if (!files2 || !files2.length) return null;
     var getText = makeGetText();
-    var cfgPath = resolveDefaultCfgPath(files, getText);
+    var cfgPath = resolveDefaultCfgPath(files2, getText);
     if (!cfgPath) return null;
     return buildCfgSource(cfgPath);
   }
   function buildCfgSource(cfgPath) {
     if (!cfgPath) return null;
-    var files = Persist.listFiles();
-    if (!files || !files.length) return null;
+    var files2 = Persist.listFiles();
+    if (!files2 || !files2.length) return null;
     var getText = makeGetText();
-    var dev = ProjectSource.developmentFilesForCfg(files, cfgPath, getText);
+    var dev = ProjectSource.developmentFilesForCfg(files2, cfgPath, getText);
     if (!dev || !dev.length) return null;
     var entries = dev.map(function(f) {
       return { id: f.id, name: f.name, text: getText(f.id) };
@@ -34272,8 +33339,8 @@
     var editor2 = typeof CurrentEditor !== "undefined" ? CurrentEditor : null;
     if (!editor2) return null;
     var activeId2 = Persist.getActiveFileId();
-    var files = Persist.listFiles();
-    var prelude = ProjectSource.buildPrelude(files, activeId2, function(id) {
+    var files2 = Persist.listFiles();
+    var prelude = ProjectSource.buildPrelude(files2, activeId2, function(id) {
       return fileTextForRun(id, activeId2, editor2);
     });
     var body = editor2.getValue();
@@ -34406,16 +33473,16 @@
     return targetId || Persist.getActiveFileId();
   }
   function fileNameOf(id) {
-    var files = Persist.listFiles() || [];
-    for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return baseName6(files[i].name);
+    var files2 = Persist.listFiles() || [];
+    for (var i = 0; i < files2.length; i++) {
+      if (files2[i].id === id) return baseName6(files2[i].name);
     }
     return "input.bel";
   }
   function filePathOf(id) {
-    var files = Persist.listFiles() || [];
-    for (var i = 0; i < files.length; i++) {
-      if (files[i].id === id) return files[i].name;
+    var files2 = Persist.listFiles() || [];
+    for (var i = 0; i < files2.length; i++) {
+      if (files2[i].id === id) return files2[i].name;
     }
     return null;
   }
@@ -34445,11 +33512,11 @@
     if (!id) return;
     var cfgPath = cfgPathForId(id);
     if (cfgPath) return runModuleCfg(cfgPath);
-    var files = Persist.listFiles();
+    var files2 = Persist.listFiles();
     var getText = makeGetText();
     var name = fileNameOf(id);
     var path = filePathOf(id) || name;
-    var prelude = ProjectSource.buildPrelude(files, id, getText);
+    var prelude = ProjectSource.buildPrelude(files2, id, getText);
     var assembled = ProjectSource.assembleCheckerCode(getText(id), prelude);
     var amalgam = !!assembled.prelude;
     return runLoad(assembled.code, null, {
@@ -34466,8 +33533,8 @@
     if (!id) return;
     var cfgPath = cfgPathForId(id);
     if (cfgPath) return runModuleCfg(cfgPath);
-    var files = Persist.listFiles();
-    var cfgPath2 = ProjectSource.cfgPathForActive(files, id, makeGetText());
+    var files2 = Persist.listFiles();
+    var cfgPath2 = ProjectSource.cfgPathForActive(files2, id, makeGetText());
     if (!cfgPath2) return runToHere(id);
     return runModuleCfg(cfgPath2);
   }
@@ -34486,19 +33553,19 @@
     if (belugaBusy) return;
     var activeCfg = Persist.getActiveCfgForDir(folderPath);
     if (activeCfg) return runModuleCfg(activeCfg);
-    var files = Persist.listFiles();
-    var dirOf6 = ProjectSource.dirOf;
-    for (var i = 0; i < files.length; i++) {
-      if (/\.cfg$/i.test(files[i].name) && dirOf6(files[i].name) === folderPath) {
-        return runModuleCfg(files[i].name);
+    var files2 = Persist.listFiles();
+    var dirOf5 = ProjectSource.dirOf;
+    for (var i = 0; i < files2.length; i++) {
+      if (/\.cfg$/i.test(files2[i].name) && dirOf5(files2[i].name) === folderPath) {
+        return runModuleCfg(files2[i].name);
       }
     }
     var paths = [];
-    for (var j = 0; j < files.length; j++) {
-      if (dirOf6(files[j].name) === folderPath && ProjectSource.isSignaturePath(files[j].name)) paths.push(files[j].name);
+    for (var j = 0; j < files2.length; j++) {
+      if (dirOf5(files2[j].name) === folderPath && ProjectSource.isSignaturePath(files2[j].name)) paths.push(files2[j].name);
     }
     if (!paths.length) return;
-    var entries = entriesForPaths(paths, files, makeGetText());
+    var entries = entriesForPaths(paths, files2, makeGetText());
     var assembled = ProjectSource.assembleProjectCode(entries);
     var folderLabel = folderPath || "(root)";
     return runLoad(assembled.code, assembled.spans, {
@@ -34513,14 +33580,14 @@
       Toasts.error("Beluga is not available.");
       return;
     }
-    var files = Persist.listFiles();
-    if (!files || !files.length) return;
+    var files2 = Persist.listFiles();
+    if (!files2 || !files2.length) return;
     var getText = makeGetText();
-    var devs = ProjectSource.workspaceDevelopments(files, getText);
+    var devs = ProjectSource.workspaceDevelopments(files2, getText);
     if (!devs || !devs.length) return runModule();
     var jobs = [];
     for (var i = 0; i < devs.length; i++) {
-      var entries = entriesForPaths(devs[i].paths, files, getText);
+      var entries = entriesForPaths(devs[i].paths, files2, getText);
       if (!entries.length) continue;
       var assembled = ProjectSource.assembleProjectCode(entries);
       jobs.push({ dev: devs[i], code: assembled.code, spans: assembled.spans });
@@ -34619,7 +33686,7 @@
       });
     });
   }
-  global53.BelugaRun = {
+  global55.BelugaRun = {
     init: init14,
     setBelugaBusy,
     isBelugaBusy,
@@ -34639,10 +33706,271 @@
     ensureEditorLoadedForRun,
     getProjectSpans
   };
-  global53.BelJarBelugaRun = global53.BelugaRun;
+  global55.BelJarBelugaRun = global55.BelugaRun;
+
+  // js/persist/sync/http-transport.mjs
+  var METHODS = ["heads", "head", "blobs", "missing", "putBlobs", "commit", "remove", "settings", "commitSettings"];
+  function createHttpTransport(o = {}) {
+    const base = (o.base || "/api/sync").replace(/\/$/, "");
+    const doFetch = o.fetch || ((...a) => globalThis.fetch(...a));
+    const headers = Object.assign({ "content-type": "application/json" }, o.headers || {});
+    async function call(method, args) {
+      const res = await doFetch(base + "/" + method, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ args }),
+        credentials: "same-origin"
+      });
+      if (res.status !== 200) {
+        throw Object.assign(new Error("sync server answered " + res.status + " to " + method), { status: res.status });
+      }
+      const body = await res.json();
+      if (!body || !("result" in body)) throw new Error("sync server sent no result for " + method);
+      return body.result;
+    }
+    const transport = {};
+    for (const m of METHODS) transport[m] = (...args) => call(m, args);
+    return transport;
+  }
+
+  // js/account/account.mjs
+  var g13 = typeof window !== "undefined" ? window : globalThis;
+  var SAFE = /* @__PURE__ */ new Set(["clean", "pushed", "downloaded", "forgot", "deleted", "absent", "restored"]);
+  var user = null;
+  var available = false;
+  function accountStep(me, local) {
+    if (!me) return local ? "ended" : "signed-out";
+    if (local === me.id) return "same";
+    return local ? "switched" : "first";
+  }
+  function claimCandidates(projects, statsOf) {
+    return projects.filter((p) => p.owner === null).map((p) => Object.assign({ id: p.id, name: p.name }, statsOf(p.id))).filter((p) => p.size > 0);
+  }
+  function roundIsSafe(result) {
+    return !!result && !!result.projects && Object.values(result.projects).every((r) => SAFE.has(r.status));
+  }
+  function sizeLabel(chars) {
+    if (chars < 1024) return chars + " characters";
+    return (chars / 1024).toFixed(chars < 10240 ? 1 : 0) + " KB";
+  }
+  function whenLabel(ms, now) {
+    if (!ms) return "never edited";
+    const days = Math.floor((now - ms) / 864e5);
+    if (days <= 0) return "edited today";
+    if (days === 1) return "edited yesterday";
+    if (days < 30) return "edited " + days + " days ago";
+    return "edited " + new Date(ms).toLocaleDateString();
+  }
+  function projectLine(p, now = Date.now()) {
+    return [p.files === 1 ? "1 file" : p.files + " files", sizeLabel(p.size), whenLabel(p.editedAt, now)].join(" \xB7 ");
+  }
+  async function fetchMe() {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "same-origin", headers: { accept: "application/json" } });
+      if (res.status !== 200 || !/application\/json/.test(res.headers.get("content-type") || "")) return void 0;
+      const body = await res.json();
+      return body && "user" in body ? body.user : void 0;
+    } catch (_) {
+      return void 0;
+    }
+  }
+  function toast3(kind, message2) {
+    const T = g13.Toasts;
+    if (T && typeof T[kind] === "function") T[kind](message2);
+  }
+  function saveNow2() {
+    try {
+      if (g13.Commands && typeof g13.Commands.run === "function") g13.Commands.run("file.save");
+    } catch (_) {
+    }
+  }
+  function render5() {
+    const btn = document.getElementById("btn-account");
+    if (!btn) return;
+    btn.hidden = !available;
+    if (!available) return;
+    btn.replaceChildren();
+    const label = user ? "Account: @" + user.handle : "Sign in";
+    btn.setAttribute("aria-label", label);
+    btn.setAttribute("data-tooltip", user ? "@" + user.handle : "Sign in");
+    btn.classList.toggle("is-signed-in", !!user);
+    if (user && user.avatar) {
+      const img = document.createElement("img");
+      img.className = "account-avatar";
+      img.alt = "";
+      img.src = user.avatar;
+      img.referrerPolicy = "no-referrer";
+      btn.appendChild(img);
+    } else if (user) {
+      const initial = document.createElement("span");
+      initial.className = "account-initial";
+      initial.textContent = (user.name || user.handle || "?").trim().charAt(0).toUpperCase();
+      btn.appendChild(initial);
+    } else {
+      btn.insertAdjacentHTML(
+        "beforeend",
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>'
+      );
+    }
+  }
+  function menuItems() {
+    if (!user) {
+      return [
+        { type: "section", label: "Sync your projects between devices" },
+        { label: "Sign in with GitHub", onSelect: signIn }
+      ];
+    }
+    return [
+      { type: "section", label: "Signed in as @" + user.handle },
+      { label: "Sign out\u2026", onSelect: signOutInteractive }
+    ];
+  }
+  function signIn() {
+    saveNow2();
+    g13.location.assign("/api/auth/github/start");
+  }
+  async function askToClaim() {
+    const P3 = g13.Persist;
+    const candidates = claimCandidates(P3.listProjects(), P3.projectStats);
+    if (!candidates.length) {
+      g13.Device.set("claimAskedFor", user.id);
+      return;
+    }
+    const D = g13.PromptDialog;
+    const el6 = (tag, cls, text) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text != null) n.textContent = text;
+      return n;
+    };
+    const body = el6("div", "account-claim");
+    body.appendChild(el6("p", "jar-prompt-dialog__message", "Add this browser\u2019s projects to your account?"));
+    body.appendChild(el6("p", "jar-prompt-dialog__note", "Projects you add sync to your other devices. The rest stay in this browser only."));
+    const list3 = el6("ul", "account-claim__list");
+    const now = Date.now();
+    for (const p of candidates) {
+      const row = el6("li", "account-claim__row");
+      const label = el6("label", "account-claim__label");
+      const box = el6("input");
+      box.type = "checkbox";
+      box.checked = true;
+      box.value = p.id;
+      label.appendChild(box);
+      const text = el6("span", "account-claim__text");
+      text.appendChild(el6("span", "account-claim__name", p.name));
+      text.appendChild(el6("span", "account-claim__meta", projectLine(p, now)));
+      label.appendChild(text);
+      row.appendChild(label);
+      list3.appendChild(row);
+    }
+    body.appendChild(list3);
+    body.appendChild(D.buildActions([
+      { action: "keep", label: "Keep on this device only", variant: "secondary" },
+      { action: "add", label: "Add to my account", variant: "primary" }
+    ], "row"));
+    const choice = await D.open({ ariaLabel: "Add projects to your account", body });
+    if (choice !== "add" && choice !== "keep") return;
+    g13.Device.set("claimAskedFor", user.id);
+    if (choice === "keep") return;
+    const picked = [...list3.querySelectorAll("input:checked")].map((b) => b.value);
+    let added = 0;
+    for (const pid of picked) if (P3.claimProject(pid)) added += 1;
+    if (added) {
+      P3.syncNow();
+      g13.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
+      toast3("success", added === 1 ? "Added 1 project to your account." : "Added " + added + " projects to your account.");
+    }
+  }
+  function claimActiveProject() {
+    const P3 = g13.Persist;
+    if (!user || !P3.claimProject(P3.getActiveProjectId())) return false;
+    P3.syncNow();
+    toast3("success", "Added this project to your account.");
+    return true;
+  }
+  async function signOutInteractive() {
+    if (!user) return;
+    const choice = await g13.PromptDialog.open({
+      ariaLabel: "Sign out",
+      message: "Sign out of BelJar in this browser?",
+      note: "Your projects stay in your account. On a shared computer, remove them from this browser too.",
+      layout: "row",
+      buttons: [
+        { action: "keep", label: "Sign out", variant: "secondary" },
+        { action: "remove", label: "Sign out and remove them", variant: "primary" }
+      ]
+    });
+    if (choice !== "keep" && choice !== "remove") return;
+    const P3 = g13.Persist;
+    saveNow2();
+    if (choice === "remove" && !roundIsSafe(await P3.syncNow())) {
+      toast3("error", "Couldn\u2019t confirm your projects are in your account, so nothing was removed. You\u2019re still signed in.");
+      return;
+    }
+    await P3.stopSync();
+    try {
+      await fetch("/api/auth/signout", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: "{}" });
+    } catch (_) {
+    }
+    if (choice === "remove") P3.removeAccountProjects(user.id);
+    P3.setAccount(null);
+    g13.location.reload();
+  }
+  function noteFailedSignIn() {
+    const search = g13.location && g13.location.search;
+    if (!search) return;
+    const params = new URLSearchParams(search);
+    if (params.get("signin") !== "failed") return;
+    toast3("error", params.get("why") === "denied" ? "Sign-in was cancelled." : "Couldn\u2019t sign in with GitHub.");
+    params.delete("signin");
+    params.delete("why");
+    const rest = params.toString();
+    g13.history.replaceState(null, "", g13.location.pathname + (rest ? "?" + rest : "") + g13.location.hash);
+  }
+  async function boot() {
+    noteFailedSignIn();
+    const me = await fetchMe();
+    if (me === void 0) return;
+    available = true;
+    user = me;
+    const P3 = g13.Persist;
+    const step2 = accountStep(me, P3.getAccount());
+    if (step2 === "first" || step2 === "switched") {
+      P3.setAccount(me.id);
+      if (step2 === "switched") {
+        g13.location.reload();
+        return;
+      }
+    }
+    render5();
+    if (!me) return;
+    P3.startSync({ transport: createHttpTransport() });
+    if (g13.Device.get("claimAskedFor") !== me.id) askToClaim();
+  }
+  var Account2 = {
+    user: () => user ? Object.assign({}, user) : null,
+    available: () => available,
+    menuItems,
+    signIn,
+    signOut: signOutInteractive,
+    claimActiveProject,
+    _boot: boot
+  };
+  g13.Account = Account2;
+  if (typeof document !== "undefined") {
+    const go = () => {
+      const idle = g13.requestIdleCallback;
+      if (typeof idle === "function") idle(() => {
+        boot();
+      }, { timeout: 2e3 });
+      else setTimeout(boot, 0);
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go, { once: true });
+    else go();
+  }
 
   // js/app/app-empty-state.mjs
-  function create10(opts) {
+  function create5(opts) {
     var getInspectorPanelEl = opts.getInspectorPanelEl;
     var getInspectorProjectEmptyEl = opts.getInspectorProjectEmptyEl;
     var getEditorEmptyEl = opts.getEditorEmptyEl;
@@ -34683,7 +34011,7 @@
   }
 
   // js/app/app-side-panels.mjs
-  function create11(opts) {
+  function create6(opts) {
     var workspaceEl = opts.workspaceEl;
     var panels = opts.panels || {};
     var onLayout = opts.onLayout || function() {
@@ -34709,10 +34037,10 @@
         cfg.btn.setAttribute("aria-pressed", open11 ? "true" : "false");
       }
       if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open11 ? "false" : "true");
-      if (typeof cfg.writeOpen === "function") cfg.writeOpen(open11);
-      if (typeof Persist !== "undefined" && Persist.writeStoredActiveSidePanel) {
-        if (open11) Persist.writeStoredActiveSidePanel(id);
-        else if (!getOpenSidePanelId()) Persist.writeStoredActiveSidePanel(null);
+      if (typeof cfg.onOpenChange === "function") cfg.onOpenChange(open11);
+      if (typeof Persist !== "undefined" && Persist.writeSidePanel) {
+        if (open11) Persist.writeSidePanel(id);
+        else if (!getOpenSidePanelId()) Persist.writeSidePanel(null);
       }
       scheduleWorkspaceSave();
     }
@@ -34756,7 +34084,7 @@
   }
 
   // js/app/app-file-tabs.mjs
-  function create12(opts) {
+  function create7(opts) {
     var editorTabsEl = opts.editorTabsEl;
     var listOpenFiles = opts.listOpenFiles;
     var getActiveId = opts.getActiveId;
@@ -34767,10 +34095,10 @@
     var onNew = opts.onNew;
     function renderTabs() {
       if (!editorTabsEl) return;
-      var files = listOpenFiles() || [];
+      var files2 = listOpenFiles() || [];
       var activeId2 = getActiveId();
       editorTabsEl.innerHTML = "";
-      files.forEach(function(file) {
+      files2.forEach(function(file) {
         var tab = document.createElement("button");
         tab.type = "button";
         tab.role = "tab";
@@ -34827,7 +34155,7 @@
   }
 
   // js/app/app-suite-cfg.mjs
-  function create13(deps) {
+  function create8(deps) {
     var getEditor = deps.getEditor;
     var getPersist2 = deps.getPersist;
     var projectFileText = deps.projectFileText;
@@ -34844,15 +34172,15 @@
     function ensureProjectActiveCfgs() {
       if (typeof ProjectSource.inferActiveCfgByDir !== "function") return;
       if (typeof Persist.backfillActiveCfgByDir !== "function") return;
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const getText = (id) => projectFileText(id);
-      Persist.backfillActiveCfgByDir(ProjectSource.inferActiveCfgByDir(files, getText));
+      Persist.backfillActiveCfgByDir(ProjectSource.inferActiveCfgByDir(files2, getText));
     }
     function ensureActiveCfgForDir(dir) {
       if (Persist.getActiveCfgForDir(dir)) return;
       if (typeof ProjectSource.inferActiveCfgForDir !== "function") return;
-      const files = Persist.listFiles();
-      const path = ProjectSource.inferActiveCfgForDir(files, projectFileText, dir);
+      const files2 = Persist.listFiles();
+      const path = ProjectSource.inferActiveCfgForDir(files2, projectFileText, dir);
       if (path) Persist.setActiveCfgForDir(dir, path);
     }
     function activeCfgForDir(dir) {
@@ -34872,50 +34200,50 @@
       if (!SL || typeof SL.computeDirLayout !== "function") {
         return { orderedFiles: filesInDir, suiteByFile: {} };
       }
-      const active4 = activeCfgsForDir2(dir);
+      const active5 = activeCfgsForDir2(dir);
       const allFiles = Persist.listFiles();
       const getText = projectFileText;
-      return SL.computeDirLayout(filesInDir, active4, suiteMembersResolver, allFiles, getText);
+      return SL.computeDirLayout(filesInDir, active5, suiteMembersResolver, allFiles, getText);
     }
     function owningActiveCfgForFile(fileName) {
       const dir = ProjectSource.dirOf(fileName);
       const activeCfgs = activeCfgsForDir2(dir);
       if (!activeCfgs.length) return null;
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const getText = projectFileText;
-      return ProjectSource.resolveOwningActiveCfg(files, fileName, getText, activeCfgs);
+      return ProjectSource.resolveOwningActiveCfg(files2, fileName, getText, activeCfgs);
     }
     function reconcileActiveCfgsInDir(dir, editedCfg) {
-      const active4 = activeCfgsForDir2(dir);
-      if (active4.length < 2) return;
+      const active5 = activeCfgsForDir2(dir);
+      if (active5.length < 2) return;
       const SL = ExplorerSuiteLayout;
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const getText = projectFileText;
-      if (editedCfg && active4.includes(editedCfg)) {
-        const others = active4.filter((c) => c !== editedCfg);
-        if (SL.findCfgIntersection(editedCfg, others, files, getText, suiteMembersResolver).length) {
+      if (editedCfg && active5.includes(editedCfg)) {
+        const others = active5.filter((c) => c !== editedCfg);
+        if (SL.findCfgIntersection(editedCfg, others, files2, getText, suiteMembersResolver).length) {
           Persist.removeActiveCfgForDir(dir, editedCfg);
           return;
         }
       }
-      for (let i = 1; i < active4.length; i++) {
-        const cfg = active4[i];
-        const earlier = active4.slice(0, i);
-        if (SL.findCfgIntersection(cfg, earlier, files, getText, suiteMembersResolver).length) {
+      for (let i = 1; i < active5.length; i++) {
+        const cfg = active5[i];
+        const earlier = active5.slice(0, i);
+        if (SL.findCfgIntersection(cfg, earlier, files2, getText, suiteMembersResolver).length) {
           Persist.removeActiveCfgForDir(dir, cfg);
         }
       }
     }
     function makeActiveCfgForFile(fileName) {
       const dir = ProjectSource.dirOf(fileName);
-      const active4 = activeCfgsForDir2(dir);
-      const files = Persist.listFiles();
+      const active5 = activeCfgsForDir2(dir);
+      const files2 = Persist.listFiles();
       const getText = projectFileText;
       const SL = ExplorerSuiteLayout;
-      if (active4.includes(fileName)) {
+      if (active5.includes(fileName)) {
         Persist.removeActiveCfgForDir(dir, fileName);
       } else if (SL) {
-        const check = SL.canActivateCfg(fileName, active4, files, getText, suiteMembersResolver);
+        const check = SL.canActivateCfg(fileName, active5, files2, getText, suiteMembersResolver);
         if (!check.ok) {
           showToast(check.reason || "Cannot activate suite", { kind: "warn" });
           return;
@@ -34934,27 +34262,27 @@
       updateRunButtonTooltip();
     }
     function moduleNameFor(fileId) {
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const getText = projectFileText;
       const id = fileId || Persist.getActiveFileId();
-      const dev = ProjectSource.developmentForFile(files, id, getText);
+      const dev = ProjectSource.developmentForFile(files2, id, getText);
       if (dev.kind !== "module" || !dev.cfg) return null;
       return dev.cfg.slice(dev.cfg.lastIndexOf("/") + 1).replace(/\.cfg$/i, "");
     }
     function activeSuiteMembership(fileName) {
       const cfg = owningActiveCfgForFile(fileName);
       if (!cfg) return { cfg: null, member: false, index: -1, count: 0 };
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const getText = projectFileText;
-      const paths = ProjectSource.developmentFilesForCfg(files, cfg, getText).map((f) => f.name);
+      const paths = ProjectSource.developmentFilesForCfg(files2, cfg, getText).map((f) => f.name);
       const index = paths.indexOf(fileName);
       return { cfg, member: index !== -1, index, count: paths.length };
     }
     function cfgHasDanglingEntry2(cfgName) {
-      const files = Persist.listFiles();
-      const cfgFile = files.find((f) => f.name === cfgName);
+      const files2 = Persist.listFiles();
+      const cfgFile = files2.find((f) => f.name === cfgName);
       if (!cfgFile) return false;
-      const names = new Set(files.map((f) => f.name));
+      const names = new Set(files2.map((f) => f.name));
       const dir = ProjectSource.dirOf(cfgName);
       for (const entry of ProjectSource.parseCfg(projectFileText(cfgFile.id))) {
         if (!ProjectSource.isCfgEntryToken(entry)) continue;
@@ -35044,7 +34372,7 @@
   }
 
   // js/app/app-upload-import.mjs
-  function create14(deps) {
+  function create9(deps) {
     var getEditor = deps.getEditor;
     var getPersist2 = deps.getPersist;
     var showToast = deps.showToast;
@@ -35069,11 +34397,11 @@
     fileInputEl.multiple = true;
     document.body.appendChild(fileInputEl);
     fileInputEl.addEventListener("change", async () => {
-      const files = Array.from(fileInputEl.files || []);
+      const files2 = Array.from(fileInputEl.files || []);
       fileInputEl.value = "";
       if (!getPersist2()) return;
       const entries = [];
-      for (const file of files) {
+      for (const file of files2) {
         entries.push({ name: file.name, text: await file.text() });
       }
       const result = await resolveAndApplyUpload(entries, { openTabs: true });
@@ -35186,8 +34514,8 @@
       const currentId = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
       if (currentId && unique.includes(currentId)) {
         const openIds = Persist.getOpenFileIds().filter((x) => !unique.includes(x));
-        const files = Persist.listFiles();
-        const fallback = openIds[0] || (files.find((f) => !unique.includes(f.id)) || {}).id;
+        const files2 = Persist.listFiles();
+        const fallback = openIds[0] || (files2.find((f) => !unique.includes(f.id)) || {}).id;
         if (fallback) switchToFile(fallback);
       }
       for (const id of unique) {
@@ -35481,6 +34809,18 @@
       const id = Persist.getActiveFileId && Persist.getActiveFileId();
       if (id) downloadFileById(id);
     }
+    function downloadProject() {
+      const files2 = Persist.listFiles() || [];
+      if (!files2.length) return false;
+      const text = (id) => typeof projectFileText === "function" ? projectFileText(id) : Persist.getFileText(id) || "";
+      const archive = DownloadZip.projectArchive(
+        Persist.getProjectName(),
+        files2.map((f) => ({ path: f.name, text: text(f.id) })),
+        Persist.listEmptyFolders ? Persist.listEmptyFolders() : []
+      );
+      DownloadZip.downloadZip(archive.entries, archive.fileName);
+      return true;
+    }
     function downloadFolder(folderPath) {
       if (!folderPath) return;
       const allFiles = Persist.listFiles() || [];
@@ -35600,6 +34940,7 @@
       uploadFolderInputEl,
       folderInputEl,
       downloadCurrentFile,
+      downloadProject,
       downloadFileById,
       downloadFolder,
       downloadSuite,
@@ -35608,7 +34949,7 @@
   }
 
   // js/app/app-file-lifecycle.mjs
-  function create15(deps) {
+  function create10(deps) {
     var getEditor = deps.getEditor;
     var setEditor = deps.setEditor;
     var getPersist2 = deps.getPersist;
@@ -35791,6 +35132,11 @@
       if (!mounted4 || Persist.getFileById(mounted4)) return;
       resyncEditorAfterHistory();
     });
+    window.addEventListener("beljar:project-tree-changed", function(ev) {
+      if (!ev || !ev.detail || ev.detail.kind !== "external") return;
+      renderTabs();
+      updateHeaderContext();
+    });
     function captureRefPeekRestore() {
       if (!getEditor() || !getPersist2()) return null;
       const local = typeof getEditor().getViewport === "function" ? getEditor().getViewport() : getPersist2().getEditorLocal();
@@ -35830,24 +35176,24 @@
       }
       switchToFile(fileId, { peekAt, keepSelection: true });
     }
-    function openFileAt(fileId, from, to, opts) {
+    function openFileAt(fileId, from2, to, opts) {
       opts = opts || {};
-      if (from == null && !Number.isFinite(opts.line)) return;
+      if (from2 == null && !Number.isFinite(opts.line)) return;
       if (typeof BelEditor !== "undefined" && typeof BelEditor.logJumpRequest === "function") {
         BelEditor.logJumpRequest({
           fileId,
-          from,
+          from: from2,
           to,
           line: opts.line,
           col: opts.col,
           phase: "openFileAt"
         });
       } else {
-        console.warn("[bel-jar:jump] openFileAt (BelEditor.logJumpRequest missing)", { fileId, from, to });
+        console.warn("[bel-jar:jump] openFileAt (BelEditor.logJumpRequest missing)", { fileId, from: from2, to });
       }
       const jumpAt = {
-        from,
-        to: to != null ? to : from,
+        from: from2,
+        to: to != null ? to : from2,
         line: opts.line,
         col: opts.col,
         name: opts.name
@@ -35949,10 +35295,10 @@
     async function deleteFilesInteractive(ids) {
       const unique = [...new Set((ids || []).filter(Boolean))];
       if (!unique.length) return;
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const names = unique.map((id) => Persist.getFileById(id)).filter(Boolean).map((f) => f.name);
       if (!names.length) return;
-      const deletingAll = unique.length >= files.length;
+      const deletingAll = unique.length >= files2.length;
       const confirmOpts = unique.length === 1 ? {
         subject: names[0],
         message: "Remove this file from the project?",
@@ -35968,7 +35314,7 @@
       const H = typeof EditHistory !== "undefined" ? EditHistory : null;
       const performDelete = function() {
         if (getPersist2() && unique.includes(getPersist2().getCurrentFileId())) {
-          const fallback = Persist.getOpenFileIds().find((x) => !unique.includes(x)) || (files.find((f) => !unique.includes(f.id)) || {}).id;
+          const fallback = Persist.getOpenFileIds().find((x) => !unique.includes(x)) || (files2.find((f) => !unique.includes(f.id)) || {}).id;
           if (fallback) switchToFile(fallback);
         }
         for (const id of unique) {
@@ -36080,7 +35426,7 @@
 
   // js/app/app-explorer-bootstrap.mjs
   var projectTreeListenerBound = false;
-  function create16(deps) {
+  function create11(deps) {
     var getEditor = deps.getEditor;
     var getPersist2 = deps.getPersist;
     var projectFileText = deps.projectFileText;
@@ -36118,16 +35464,16 @@
     var explorerController = null;
     var explorerSearchController = null;
     var libraryController = null;
-    function renameFolderPrefix(from, to) {
-      if (!from || from === to) return;
+    function renameFolderPrefix(from2, to) {
+      if (!from2 || from2 === to) return;
       const H = typeof EditHistory !== "undefined" ? EditHistory : null;
       const run3 = () => {
-        const files = Persist.listFiles();
+        const files2 = Persist.listFiles();
         const moves = [];
-        for (let i = 0; i < files.length; i++) {
-          const f = files[i];
-          if (f.name !== from && !f.name.startsWith(from + "/")) continue;
-          const rel = f.name === from ? "" : f.name.slice(from.length + 1);
+        for (let i = 0; i < files2.length; i++) {
+          const f = files2[i];
+          if (f.name !== from2 && !f.name.startsWith(from2 + "/")) continue;
+          const rel = f.name === from2 ? "" : f.name.slice(from2.length + 1);
           const newPath = to ? rel ? to + "/" + rel : to : rel;
           if (newPath !== f.name) {
             moves.push({ from: f.name, to: newPath });
@@ -36135,9 +35481,9 @@
           }
         }
         Persist.preserveEmptyFoldersAfterMoves(moves);
-        Persist.renameEmptyFolderPrefix(from, to);
+        Persist.renameEmptyFolderPrefix(from2, to);
       };
-      if (H && typeof H.transact === "function") H.transact("file-rename", run3, "Rename " + from);
+      if (H && typeof H.transact === "function") H.transact("file-rename", run3, "Rename " + from2);
       else run3();
       reloadActiveEditorFromPersist();
       renderTabs();
@@ -36156,7 +35502,7 @@
     function handleExplorerInlineCommit(session, rawName) {
       const IL = ExplorerInlineName;
       if (!IL) return false;
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const empty = Persist.listEmptyFolders();
       if (session.kind === "file") {
         const file = Persist.getFileById(session.fileId);
@@ -36165,7 +35511,7 @@
         const result = IL.validateFileCommit(
           rawName,
           parentDir3,
-          files,
+          files2,
           session.fileId
         );
         if (!result.ok) {
@@ -36196,7 +35542,7 @@
         const result = IL.validateFolderCommit(
           rawName,
           parentDir3,
-          files,
+          files2,
           empty,
           session.folderPath
         );
@@ -36220,8 +35566,8 @@
       ensureExplorer();
       if (!explorerController) return;
       const IL = ExplorerInlineName;
-      const files = Persist.listFiles();
-      const fullPath = IL.suggestDefaultFileName(parentDir3, files);
+      const files2 = Persist.listFiles();
+      const fullPath = IL.suggestDefaultFileName(parentDir3, files2);
       const id = Persist.createFile(fullPath);
       explorerController.beginInlineName({
         kind: "file",
@@ -36237,9 +35583,9 @@
       ensureExplorer();
       if (!explorerController) return;
       const IL = ExplorerInlineName;
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const empty = Persist.listEmptyFolders();
-      const fullPath = IL.suggestDefaultFolderName(parentDir3, files, empty);
+      const fullPath = IL.suggestDefaultFolderName(parentDir3, files2, empty);
       Persist.addEmptyFolder(fullPath);
       explorerController.beginInlineName({
         kind: "folder",
@@ -36283,8 +35629,8 @@
           if (!open11.length) return null;
           const cur = getPersist2() ? getPersist2().getCurrentFileId() : null;
           if (cur && open11.includes(cur)) return cur;
-          const active4 = Persist.getActiveFileId();
-          if (active4 && open11.includes(active4)) return active4;
+          const active5 = Persist.getActiveFileId();
+          if (active5 && open11.includes(active5)) return active5;
           return open11[open11.length - 1] || null;
         },
         getActiveCfgForDir: activeCfgForDir,
@@ -36428,7 +35774,7 @@
   }
 
   // js/app/app-menus.mjs
-  function create17(deps) {
+  function create12(deps) {
     var getEditor = deps.getEditor;
     var getPersist2 = deps.getPersist;
     var newProject = deps.newProject;
@@ -36442,6 +35788,7 @@
     var uploadFolderInputEl = deps.uploadFolderInputEl;
     var folderInputEl = deps.folderInputEl;
     var downloadCurrentFile = deps.downloadCurrentFile;
+    var downloadProject = deps.downloadProject;
     var downloadFileById = deps.downloadFileById;
     var downloadFolder = deps.downloadFolder;
     var downloadSuite = deps.downloadSuite;
@@ -36514,8 +35861,19 @@
       });
     }
     function signatureFileCount() {
-      const files = Persist.listFiles() || [];
-      return files.filter((f) => ProjectSource.isSignaturePath(String(f.name || ""))).length;
+      const files2 = Persist.listFiles() || [];
+      return files2.filter((f) => ProjectSource.isSignaturePath(String(f.name || ""))).length;
+    }
+    function projectHomeCaption() {
+      const id = Persist.getActiveProjectId();
+      const project = (Persist.listProjects() || []).find((p) => p.id === id);
+      return project && project.owner ? "Saved in this browser and your account" : "Saved in this browser only";
+    }
+    function activeProjectIsClaimable() {
+      if (typeof Account === "undefined" || !Account.user()) return false;
+      const id = Persist.getActiveProjectId();
+      const project = (Persist.listProjects() || []).find((p) => p.id === id);
+      return !!project && project.owner === null;
     }
     function buildProjectMenuItems() {
       const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
@@ -36563,6 +35921,16 @@
           onSelect: () => folderInputEl.click()
         },
         { type: "separator" },
+        { type: "section", label: projectHomeCaption() },
+        ...activeProjectIsClaimable() ? [{
+          label: "Add project to your account",
+          onSelect: () => Account.claimActiveProject()
+        }] : [],
+        {
+          label: "Download project",
+          disabled: !(Persist.listFiles() || []).length,
+          onSelect: downloadProject
+        },
         {
           label: 'Download "' + (currentFile ? currentFile.name : "file") + '"',
           onSelect: downloadCurrentFile
@@ -36639,8 +36007,8 @@
     }
     function fileContextItems(fileId, opts) {
       const fromTab = !!(opts && opts.fromTab);
-      const files = Persist.listFiles();
-      const file = files.find((f) => f.id === fileId);
+      const files2 = Persist.listFiles();
+      const file = files2.find((f) => f.id === fileId);
       if (!file) return [];
       const parentDir3 = ProjectSource.dirOf(file.name);
       const manage = [
@@ -36776,7 +36144,7 @@
       return out;
     }
     function explorerFolderContextItems(folderPath) {
-      const create20 = explorerCreateMenuItems(folderPath);
+      const create15 = explorerCreateMenuItems(folderPath);
       const rename = [
         { label: "Rename\u2026", onSelect: () => renameFolderInteractive(folderPath) },
         {
@@ -36794,25 +36162,25 @@
       ];
       const run3 = folderRunItems(folderPath);
       const runBlock = run3.length ? run3.concat([{ type: "separator" }]) : [];
-      return create20.concat(rename).concat(destroy).concat(runBlock);
+      return create15.concat(rename).concat(destroy).concat(runBlock);
     }
     function folderRunItems(folderPath) {
-      const files = Persist.listFiles() || [];
-      const dirOf6 = ProjectSource.dirOf;
-      const hasRunnable = files.some(
-        (f) => dirOf6(f.name) === folderPath && ProjectSource.isSignaturePath(String(f.name))
+      const files2 = Persist.listFiles() || [];
+      const dirOf5 = ProjectSource.dirOf;
+      const hasRunnable = files2.some(
+        (f) => dirOf5(f.name) === folderPath && ProjectSource.isSignaturePath(String(f.name))
       );
       if (!hasRunnable) return [];
-      const cfg = files.find((f) => /\.cfg$/i.test(String(f.name)) && dirOf6(f.name) === folderPath);
+      const cfg = files2.find((f) => /\.cfg$/i.test(String(f.name)) && dirOf5(f.name) === folderPath);
       return [{
         label: cfg ? "Run suite" : "Run folder",
         onSelect: () => BelugaRun.runFolder(folderPath)
       }];
     }
     function backgroundRunItems() {
-      const create20 = explorerCreateMenuItems("");
-      if (signatureFileCount() < 1) return create20;
-      return create20.concat([
+      const create15 = explorerCreateMenuItems("");
+      if (signatureFileCount() < 1) return create15;
+      return create15.concat([
         { label: "Run project", onSelect: () => BelugaRun.runProject() },
         { type: "separator" }
       ]);
@@ -36851,10 +36219,10 @@
       ed.format();
     }
     function formatProjectFiles() {
-      const files = (Persist.listFiles() || []).filter(
+      const files2 = (Persist.listFiles() || []).filter(
         (f) => ProjectSource.isSignaturePath(String(f.name || ""))
       );
-      if (!files.length) {
+      if (!files2.length) {
         showToast("No Beluga source files to format.", { kind: "warn" });
         return;
       }
@@ -36864,8 +36232,8 @@
         return;
       }
       const ed = getEditor();
-      const persist4 = getPersist2();
-      if (persist4 && typeof persist4.flushCheckpoint === "function") persist4.flushCheckpoint();
+      const persist2 = getPersist2();
+      if (persist2 && typeof persist2.flushCheckpoint === "function") persist2.flushCheckpoint();
       else if (ed && typeof ed.flushCheckpoint === "function") ed.flushCheckpoint();
       const liveId = ed && typeof ed.getCurrentFileId === "function" ? ed.getCurrentFileId() : null;
       const applyFormatted = (id, next) => {
@@ -36884,8 +36252,8 @@
             ed.setValue(next);
           }
           const applied = typeof ed.getValue === "function" ? ed.getValue() : next;
-          if (persist4 && typeof persist4.replaceEditorText === "function") persist4.replaceEditorText(applied);
-          if (persist4 && typeof persist4.flushCheckpoint === "function") persist4.flushCheckpoint();
+          if (persist2 && typeof persist2.replaceEditorText === "function") persist2.replaceEditorText(applied);
+          if (persist2 && typeof persist2.flushCheckpoint === "function") persist2.flushCheckpoint();
           else Persist.setFileText(id, applied);
           return;
         }
@@ -36893,39 +36261,39 @@
       };
       const run3 = () => {
         let changed2 = 0;
-        let refused2 = 0;
-        for (const f of files) {
+        let refused3 = 0;
+        for (const f of files2) {
           const src = projectFileText(f.id);
           const next = formatOffline(src, { quiet: true });
           if (next == null) {
-            refused2 += 1;
+            refused3 += 1;
             continue;
           }
           if (next === src) continue;
           applyFormatted(f.id, next);
           changed2 += 1;
         }
-        return { changed: changed2, refused: refused2, total: files.length };
+        return { changed: changed2, refused: refused3, total: files2.length };
       };
       let stats;
       if (typeof EditHistory !== "undefined" && typeof EditHistory.transact === "function") {
-        stats = EditHistory.transact("format", run3, "Format project").result || { changed: 0, refused: 0, total: files.length };
+        stats = EditHistory.transact("format", run3, "Format project").result || { changed: 0, refused: 0, total: files2.length };
       } else {
         stats = run3();
       }
-      const { changed, refused, total } = stats;
-      if (changed === 0 && refused === 0) {
+      const { changed, refused: refused2, total } = stats;
+      if (changed === 0 && refused2 === 0) {
         showToast("All files already formatted.", { kind: "success" });
-      } else if (refused === 0) {
+      } else if (refused2 === 0) {
         showToast(changed === 1 ? "Formatted 1 file." : "Formatted " + changed + " files.", { kind: "success" });
       } else if (changed === 0) {
         showToast(
-          refused === total ? "Format refused for every file." : "Format refused for " + refused + " file" + (refused === 1 ? "" : "s") + ".",
+          refused2 === total ? "Format refused for every file." : "Format refused for " + refused2 + " file" + (refused2 === 1 ? "" : "s") + ".",
           { kind: "warn" }
         );
       } else {
         showToast(
-          "Formatted " + changed + " of " + total + " files (" + refused + " refused).",
+          "Formatted " + changed + " of " + total + " files (" + refused2 + " refused).",
           { kind: "warn" }
         );
       }
@@ -36989,6 +36357,12 @@
       ];
     }
     const headerMenuDefs = [
+      {
+        id: "btn-account",
+        side: "bottom",
+        align: "end",
+        items: () => typeof Account !== "undefined" ? Account.menuItems() : []
+      },
       {
         id: "menu-project",
         side: "bottom",
@@ -37150,8 +36524,8 @@ body {
     const parts = [];
     let cursor = 0;
     let lastComment = null;
-    const pushCode = (from, to) => {
-      let lo = from;
+    const pushCode = (from2, to) => {
+      let lo = from2;
       let hi = to;
       while (lo < hi && /\s/.test(text[lo])) lo += 1;
       while (hi > lo && /\s/.test(text[hi - 1])) hi -= 1;
@@ -37234,15 +36608,15 @@ body {
     return `<!doctype html>
 ${doc2.documentElement.outerHTML}`;
   }
-  function create18(deps) {
+  function create13(deps) {
     const getEditor = deps.getEditor;
     const getPersist2 = deps.getPersist;
     const projectFileText = deps.projectFileText;
     const showToast = deps.showToast;
     function exportCurrentManuscript() {
       const editor2 = getEditor();
-      const persist4 = getPersist2();
-      const fileId = editor2?.getCurrentFileId?.() || persist4?.getCurrentFileId?.() || Persist.getActiveFileId?.();
+      const persist2 = getPersist2();
+      const fileId = editor2?.getCurrentFileId?.() || persist2?.getCurrentFileId?.() || Persist.getActiveFileId?.();
       const file = fileId ? Persist.getFileById(fileId) : null;
       if (!editor2 || !file) {
         showToast("No file is open to export.", { kind: "warn" });
@@ -37268,7 +36642,7 @@ ${doc2.documentElement.outerHTML}`;
   }
 
   // js/app/app-command-palette.mjs
-  function create19(deps) {
+  function create14(deps) {
     var getPersist2 = deps.getPersist;
     var toggleSidePanel = deps.toggleSidePanel;
     var toggleTheme2 = deps.toggleTheme;
@@ -37278,6 +36652,7 @@ ${doc2.documentElement.outerHTML}`;
     var uploadFolderInputEl = deps.uploadFolderInputEl;
     var folderInputEl = deps.folderInputEl;
     var downloadCurrentFile = deps.downloadCurrentFile;
+    var downloadProject = deps.downloadProject;
     var editorExec = deps.editorExec;
     var moduleNameFor = deps.moduleNameFor;
     var signatureFileCount = deps.signatureFileCount;
@@ -37296,17 +36671,16 @@ ${doc2.documentElement.outerHTML}`;
         if (typeof StatusStrip !== "undefined" && StatusStrip.setMessage) StatusStrip.setMessage(text);
       };
       const reapplyPrefs = () => {
-        if (typeof Persist.applyStoredEditorChrome === "function") Persist.applyStoredEditorChrome();
         if (typeof BelEditor !== "undefined" && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
       };
       const toggleSetting = (spec) => {
-        const res = applyValue(Persist, spec, void 0);
+        const res = applyValue(Settings, spec, void 0);
         if (res.applied) reapplyPrefs();
         say2(res.message);
         return res.ok;
       };
       const runSet = (argText) => {
-        const res = runSetOn(Persist, argText);
+        const res = runSetOn(Settings, argText);
         if (res.applied) reapplyPrefs();
         say2(res.message);
         return res.ok;
@@ -37351,6 +36725,7 @@ ${doc2.documentElement.outerHTML}`;
       on("file.upload-folder", () => uploadFolderInputEl.click());
       on("file.import-folder", () => folderInputEl.click());
       on("file.download", downloadCurrentFile);
+      on("project.download", () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -37392,6 +36767,7 @@ ${doc2.documentElement.outerHTML}`;
         const p = getPersist2();
         if (!p || typeof p.flushCheckpoint !== "function") return false;
         p.flushCheckpoint();
+        if (typeof Persist.syncNow === "function") Persist.syncNow();
         const file = Persist.getFileById ? Persist.getFileById(p.getCurrentFileId()) : null;
         say2(file && file.name ? "Saved " + file.name : "Saved.");
         return true;
@@ -37402,10 +36778,10 @@ ${doc2.documentElement.outerHTML}`;
           say2("Usage: :e <file>");
           return false;
         }
-        const files = Persist.listFiles() || [];
+        const files2 = Persist.listFiles() || [];
         const lower = wanted.toLowerCase();
         const base = (n) => n.slice(n.lastIndexOf("/") + 1).toLowerCase();
-        const hit = files.find((f) => f.name.toLowerCase() === lower) || files.find((f) => base(f.name) === lower) || files.find((f) => f.name.toLowerCase().indexOf(lower) >= 0);
+        const hit = files2.find((f) => f.name.toLowerCase() === lower) || files2.find((f) => base(f.name) === lower) || files2.find((f) => f.name.toLowerCase().indexOf(lower) >= 0);
         if (!hit) {
           say2(`No file matching "${wanted}".`);
           return false;
@@ -37531,7 +36907,7 @@ ${doc2.documentElement.outerHTML}`;
         s.backToManual();
         return true;
       }, searching);
-      for (const spec of SETTINGS) {
+      for (const spec of SETTINGS2) {
         on(settingId(spec.slug), () => toggleSetting(spec));
       }
       on("settings.set", (ctx) => runSet(ctx && ctx.argText));
@@ -37689,34 +37065,33 @@ ${doc2.documentElement.outerHTML}`;
     const inspectorProjectEmptyEl = document.getElementById("inspector-project-empty");
     const cmdInput = typeof ReplStream !== "undefined" && ReplStream.getCommandInput ? ReplStream.getCommandInput() : document.getElementById("command-input");
     const btnRun2 = typeof ReplStream !== "undefined" && ReplStream.getRunButton ? ReplStream.getRunButton() : document.getElementById("btn-run");
-    Persist.ensureProject();
     ensureProjectActiveCfgs();
     if (typeof EditHistoryInstall !== "undefined") {
       EditHistoryInstall.init();
     }
     const openFileIds = Persist.getOpenFileIds();
     const activeFileId2 = openFileIds.length ? openFileIds.includes(Persist.getActiveFileId()) ? Persist.getActiveFileId() : openFileIds[0] : null;
-    let persist4 = activeFileId2 ? Persist.createPersist({ documentId: activeFileId2 }) : null;
-    const initialCheckpoint = persist4 ? persist4.getInitialCheckpoint() : null;
+    let persist2 = activeFileId2 ? Persist.createPersist({ documentId: activeFileId2 }) : null;
+    const initialCheckpoint = persist2 ? persist2.getInitialCheckpoint() : null;
     function mountEditorFor(snapshot, openOpts) {
       if (typeof BelEditor === "undefined" || !BelEditor.mount) return null;
       const initialLocal = openOpts && openOpts.initialLocal != null ? openOpts.initialLocal : snapshot ? snapshot.editor.local : null;
-      const docId = persist4 && persist4.getCurrentFileId() || snapshot && snapshot.meta && snapshot.meta.documentId || void 0;
+      const docId = persist2 && persist2.getCurrentFileId() || snapshot && snapshot.meta && snapshot.meta.documentId || void 0;
       const file = docId ? Persist.getFileById(docId) : null;
       const ed = BelEditor.mount(editorMount, {
-        doc: snapshot ? snapshot.editor.text : persist4 ? persist4.getEditorText() : "",
+        doc: snapshot ? snapshot.editor.text : persist2 ? persist2.getEditorText() : "",
         initialLocal,
         semanticCheckpoint: snapshot ? snapshot.semantic : null,
         documentId: docId,
         filePath: file ? file.name : void 0,
         jumpAt: openOpts && openOpts.jumpAt,
-        persist: persist4,
+        persist: persist2,
         onDocChange: function(text) {
-          if (persist4) {
-            if (text == null && typeof persist4.markEditorDirty === "function") {
-              persist4.markEditorDirty();
+          if (persist2) {
+            if (text == null && typeof persist2.markEditorDirty === "function") {
+              persist2.markEditorDirty();
             } else {
-              persist4.scheduleEditorPersist(text);
+              persist2.scheduleEditorPersist(text);
             }
           }
           if (file && /\.cfg$/i.test(file.name)) scheduleCfgExplorerRefresh(file.name);
@@ -37729,8 +37104,34 @@ ${doc2.documentElement.outerHTML}`;
           if (id != null && text != null) EditHistory.reconcileActiveFile(id, text);
         });
       }
+      if (ed) queueMicrotask(promptTextConflict);
       return ed;
     }
+    let textConflictPromptOpen = false;
+    function promptTextConflict() {
+      if (textConflictPromptOpen || !persist2 || typeof persist2.getConflict !== "function") return;
+      const conflict = persist2.getConflict();
+      if (!conflict || typeof ConflictDialog === "undefined" || !ConflictDialog.resolveTextConflict) return;
+      const file = Persist.getFileById(conflict.fileId);
+      textConflictPromptOpen = true;
+      ConflictDialog.resolveTextConflict({ fileName: file ? file.name : "", source: conflict.source }).then((choice) => {
+        textConflictPromptOpen = false;
+        if (!choice || !persist2 || persist2.getCurrentFileId() !== conflict.fileId) return;
+        const res = persist2.resolveConflict(choice);
+        if (!res.ok) {
+          showToast("Couldn\u2019t resolve the conflict. Both versions are kept.", { kind: "warn" });
+          return;
+        }
+        if (res.copyId) {
+          const copy = Persist.getFileById(res.copyId);
+          showToast("Kept theirs as " + (copy ? copy.name : "a copy") + ".");
+        }
+      });
+    }
+    window.addEventListener("beljar:text-conflict", (ev) => {
+      const id = ev && ev.detail ? ev.detail.fileId : null;
+      if (persist2 && id && id === persist2.getCurrentFileId()) promptTextConflict();
+    });
     function getActiveEditorView() {
       return editor && editor.getView ? editor.getView() : null;
     }
@@ -37816,14 +37217,14 @@ ${doc2.documentElement.outerHTML}`;
       });
       WorkspaceState.registerProvider("floating", {
         collect(out) {
-          const fileId = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
+          const fileId = persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId();
           collectWorkspaceFloating(fileId, out);
         }
       });
     }
     function applyStoredSidePanel(id) {
       if (!id) return;
-      if (typeof Persist.readStoredRestorePanels === "function" && !Persist.readStoredRestorePanels()) return;
+      if (!Settings.get("restorePanels")) return;
       closeOtherSidePanels(id);
       setSidePanelOpen(id, true);
       notifySidePanelLayout();
@@ -37848,7 +37249,7 @@ ${doc2.documentElement.outerHTML}`;
       WorkspaceState.applyWorkspace(ws, {
         projectId: Persist.getActiveProjectId(),
         openFileIds: Persist.getOpenFileIds(),
-        activeFileId: persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
+        activeFileId: persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId(),
         view: getActiveEditorView(),
         engine: getSemanticEngine(),
         applySidePanel: applyStoredSidePanel,
@@ -37869,11 +37270,11 @@ ${doc2.documentElement.outerHTML}`;
       return !!(view && view.dom && view.dom.classList.contains("jar-editor--cfg"));
     }
     function remountActiveEditor(openOpts) {
-      if (!persist4 || !editor) return;
-      const id = persist4.getCurrentFileId();
+      if (!persist2 || !editor) return;
+      const id = persist2.getCurrentFileId();
       if (!id) return;
-      persist4.flushCheckpoint();
-      const snapshot = persist4.getInitialCheckpoint();
+      persist2.flushCheckpoint();
+      const snapshot = persist2.getInitialCheckpoint();
       editor.destroy();
       editor = mountEditorFor(snapshot, openOpts || {});
       window.CurrentEditor = editor;
@@ -37887,8 +37288,8 @@ ${doc2.documentElement.outerHTML}`;
       updateRunButtonTooltip();
     }
     function ensureEditorMatchesFileKind() {
-      if (!persist4 || !editor) return;
-      const id = persist4.getCurrentFileId();
+      if (!persist2 || !editor) return;
+      const id = persist2.getCurrentFileId();
       if (!id) return;
       const file = Persist.getFileById(id);
       if (!file) return;
@@ -37934,13 +37335,13 @@ ${doc2.documentElement.outerHTML}`;
       return Persist.getOpenFileIds().length === 0;
     }
     function enterCanvasIdleView() {
-      if (persist4) persist4.flushCheckpoint();
+      if (persist2) persist2.flushCheckpoint();
       WorkspaceState.flushWorkspace();
       if (editor && typeof editor.destroy === "function") editor.destroy();
       editor = null;
       window.CurrentEditor = null;
       window.BelJarCurrentEditor = window.CurrentEditor;
-      persist4 = null;
+      persist2 = null;
       if (typeof FloatingWindow !== "undefined" && FloatingWindow.closeAll) FloatingWindow.closeAll();
       if (typeof BelugaClient !== "undefined" && BelugaClient.noteEditorChange) {
         BelugaClient.noteEditorChange("");
@@ -37961,8 +37362,8 @@ ${doc2.documentElement.outerHTML}`;
     }
     function ensurePersistForFile(id) {
       if (!id) return null;
-      if (!persist4) persist4 = Persist.createPersist({ documentId: id });
-      return persist4;
+      if (!persist2) persist2 = Persist.createPersist({ documentId: id });
+      return persist2;
     }
     function syncEditorCmTheme() {
       if (!editor || typeof editor.setDarkTheme !== "function") return;
@@ -37979,10 +37380,6 @@ ${doc2.documentElement.outerHTML}`;
     if (!restoredTranscript) ReplOutput.insertWelcomeBanner();
     BelugaRun.init();
     Frame.mount();
-    if (typeof Persist !== "undefined") {
-      if (Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
-      if (Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
-    }
     function shouldApplyEditorPrefs(key) {
       if (!key || key === "layout-reset") return false;
       if (key === "theme") return false;
@@ -37998,12 +37395,6 @@ ${doc2.documentElement.outerHTML}`;
     function applyLiveSettings2(key) {
       if (!key || key === "layout-reset") return;
       if (key === "theme" || key === "appearance-reset" || key === "settings-import") syncEditorCmTheme();
-      if (key === "appearance-reset" || key === "motion-pref" || key === "settings-import") {
-        if (typeof Persist !== "undefined" && Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
-      }
-      if (key === "appearance-reset" || key === "editor-reset" || key === "settings-import" || key === "editor-font-family" || key === "editor-hole-emphasis") {
-        if (typeof Persist !== "undefined" && Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
-      }
       if (shouldApplyEditorPrefs(key) || key === "editor-reset" || key === "settings-import") {
         if (typeof BelEditor !== "undefined" && typeof BelEditor.applyEditorPrefs === "function") {
           BelEditor.applyEditorPrefs();
@@ -38059,25 +37450,18 @@ ${doc2.documentElement.outerHTML}`;
       explorer: {
         btn: filesBtn,
         panel: explorerPanelEl,
-        openClass: "is-explorer-open",
-        writeOpen: (open11) => {
-          Persist.writeStoredExplorerOpen(open11);
-        }
+        openClass: "is-explorer-open"
       },
       inspector: {
         btn: inspectorBtn,
         panel: inspectorPanelEl,
-        openClass: "is-inspector-open",
-        writeOpen: (open11) => {
-          Persist.writeStoredInspectorOpen(open11);
-        }
+        openClass: "is-inspector-open"
       },
       library: {
         btn: libraryBtn,
         panel: libraryPanelEl,
         openClass: "is-library-open",
-        writeOpen: (open11) => {
-          Persist.writeStoredLibraryOpen(open11);
+        onOpenChange: (open11) => {
           if (!open11) {
             const lib = getLibraryController();
             if (lib && typeof lib.collapseFolders === "function") lib.collapseFolders();
@@ -38087,12 +37471,7 @@ ${doc2.documentElement.outerHTML}`;
       harpoon: {
         btn: harpoonBtn,
         panel: harpoonPanelEl,
-        openClass: "is-harpoon-open",
-        writeOpen: (open11) => {
-          if (Persist.writeStoredHarpoonOpen) {
-            Persist.writeStoredHarpoonOpen(open11);
-          }
-        }
+        openClass: "is-harpoon-open"
       }
     };
     const editorTabsEl = document.getElementById("editor-tabs");
@@ -38178,7 +37557,7 @@ ${doc2.documentElement.outerHTML}`;
     }
     function updateTabLintStyles() {
       if (!editorTabsEl) return;
-      const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
+      const activeId2 = persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId();
       editorTabsEl.querySelectorAll(".editor-tab[data-file-id]").forEach((tab) => {
         const id = tab.getAttribute("data-file-id");
         tab.classList.toggle("has-errors", fileTabHasErrors(id, activeId2));
@@ -38214,9 +37593,9 @@ ${doc2.documentElement.outerHTML}`;
       if (suiteCfgApi) return suiteCfgApi.ensureProjectActiveCfgs.apply(suiteCfgApi, arguments);
       if (typeof ProjectSource.inferActiveCfgByDir !== "function") return;
       if (typeof Persist.backfillActiveCfgByDir !== "function") return;
-      const files = Persist.listFiles();
+      const files2 = Persist.listFiles();
       const getText = (id) => projectFileText(id);
-      Persist.backfillActiveCfgByDir(ProjectSource.inferActiveCfgByDir(files, getText));
+      Persist.backfillActiveCfgByDir(ProjectSource.inferActiveCfgByDir(files2, getText));
     }
     function ensureActiveCfgForDir() {
       return suiteCfgApi.ensureActiveCfgForDir.apply(suiteCfgApi, arguments);
@@ -38329,6 +37708,9 @@ ${doc2.documentElement.outerHTML}`;
     function downloadCurrentFile() {
       return uploadImportApi.downloadCurrentFile.apply(uploadImportApi, arguments);
     }
+    function downloadProject() {
+      return uploadImportApi.downloadProject.apply(uploadImportApi, arguments);
+    }
     function downloadFileById() {
       return uploadImportApi.downloadFileById.apply(uploadImportApi, arguments);
     }
@@ -38393,13 +37775,13 @@ ${doc2.documentElement.outerHTML}`;
         window.CurrentEditor = ed;
         window.BelJarCurrentEditor = ed;
       },
-      getPersist: () => persist4,
+      getPersist: () => persist2,
       setPersist: (p) => {
-        persist4 = p;
+        persist2 = p;
       }
     };
     function __initAppPeels() {
-      emptyStateApi = create10({
+      emptyStateApi = create5({
         getInspectorPanelEl: () => inspectorPanelEl,
         getInspectorProjectEmptyEl: () => inspectorProjectEmptyEl,
         getEditorEmptyEl: () => editorEmptyEl,
@@ -38407,7 +37789,7 @@ ${doc2.documentElement.outerHTML}`;
         projectTreeEmpty,
         editorCanvasIdle
       });
-      sidePanelsApi = create11({
+      sidePanelsApi = create6({
         workspaceEl,
         panels: SIDE_PANELS,
         onLayout: () => {
@@ -38417,14 +37799,14 @@ ${doc2.documentElement.outerHTML}`;
           WorkspaceState.scheduleSave();
         }
       });
-      fileTabsApi = create12({
+      fileTabsApi = create7({
         editorTabsEl,
         listOpenFiles: () => {
           return Persist.getOpenFileIds().map((id) => Persist.getFileById(id)).filter(Boolean);
         },
-        getActiveId: () => persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId(),
+        getActiveId: () => persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId(),
         fileHasErrors: (fileId) => {
-          const activeId2 = persist4 ? persist4.getCurrentFileId() : Persist.getActiveFileId();
+          const activeId2 = persist2 ? persist2.getCurrentFileId() : Persist.getActiveFileId();
           return fileTabHasErrors(fileId, activeId2);
         },
         setTip: setTip2,
@@ -38432,7 +37814,7 @@ ${doc2.documentElement.outerHTML}`;
         onClose: (id) => closeFile(id),
         onNew: () => newFile()
       });
-      suiteCfgApi = create13(Object.assign({}, peelHub, {
+      suiteCfgApi = create8(Object.assign({}, peelHub, {
         projectFileText,
         showToast,
         belFileHealth,
@@ -38445,7 +37827,7 @@ ${doc2.documentElement.outerHTML}`;
         renderTabs,
         getLibraryController
       }));
-      uploadImportApi = create14(Object.assign({}, peelHub, {
+      uploadImportApi = create9(Object.assign({}, peelHub, {
         showToast,
         projectFileText,
         switchToFile,
@@ -38462,11 +37844,11 @@ ${doc2.documentElement.outerHTML}`;
         onCfgContentChange,
         cfgTabLint
       }));
-      manuscriptExportApi = create18(Object.assign({}, peelHub, {
+      manuscriptExportApi = create13(Object.assign({}, peelHub, {
         projectFileText,
         showToast
       }));
-      fileLifecycleApi = create15(Object.assign({}, peelHub, {
+      fileLifecycleApi = create10(Object.assign({}, peelHub, {
         mountEditorFor,
         ensurePersistForFile,
         syncEditorCmTheme,
@@ -38492,7 +37874,7 @@ ${doc2.documentElement.outerHTML}`;
         getExplorerController,
         syncCfgEditorsAfterRewrite: uploadImportApi.syncCfgEditorsAfterRewrite
       }));
-      explorerBootstrapApi = create16(Object.assign({}, peelHub, {
+      explorerBootstrapApi = create11(Object.assign({}, peelHub, {
         projectFileText,
         showToast,
         setTip: setTip2,
@@ -38527,7 +37909,7 @@ ${doc2.documentElement.outerHTML}`;
         getWorkspaceBootPending: () => workspaceBootPending,
         restoreWorkspaceForFile
       }));
-      menusApi = create17(Object.assign({}, peelHub, {
+      menusApi = create12(Object.assign({}, peelHub, {
         newProject,
         newFile,
         buildSwitchProjectSubmenu,
@@ -38539,6 +37921,7 @@ ${doc2.documentElement.outerHTML}`;
         uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
         folderInputEl: uploadImportApi.folderInputEl,
         downloadCurrentFile,
+        downloadProject,
         downloadFileById,
         downloadFolder,
         downloadSuite,
@@ -38568,7 +37951,7 @@ ${doc2.documentElement.outerHTML}`;
         editorTabsEl,
         projectFileText
       }));
-      create19(Object.assign({}, peelHub, {
+      create14(Object.assign({}, peelHub, {
         toggleSidePanel,
         toggleTheme: toggleTheme2,
         newProject,
@@ -38577,6 +37960,7 @@ ${doc2.documentElement.outerHTML}`;
         uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
         folderInputEl: uploadImportApi.folderInputEl,
         downloadCurrentFile,
+        downloadProject,
         editorExec,
         moduleNameFor,
         closeFile,
@@ -38601,7 +37985,7 @@ ${doc2.documentElement.outerHTML}`;
     }
     let suppressUnloadFlush = false;
     function switchProjectAndReload(mutate) {
-      if (persist4) persist4.flushCheckpoint();
+      if (persist2) persist2.flushCheckpoint();
       WorkspaceState.flushWorkspace();
       suppressUnloadFlush = true;
       try {
@@ -38809,7 +38193,7 @@ ${doc2.documentElement.outerHTML}`;
       if (tab) tab.classList.toggle("has-errors", !!hasErrors);
     }
     onWin("beljar:file-lint", (ev) => {
-      const id = persist4 ? persist4.getCurrentFileId() : null;
+      const id = persist2 ? persist2.getCurrentFileId() : null;
       if (!id || !ev.detail) return;
       const file = Persist.getFileById(id);
       if (!file) return;
@@ -39008,14 +38392,14 @@ ${doc2.documentElement.outerHTML}`;
       });
     }
     function flushEverythingToStorage(pendingOnly) {
-      const wasDirty = !!(persist4 && persist4.hasPendingSave && persist4.hasPendingSave());
+      const wasDirty = !!(persist2 && persist2.hasPendingSave && persist2.hasPendingSave());
       if (typeof ReplPersist !== "undefined") {
         if (pendingOnly && ReplPersist.saveIfPending) ReplPersist.saveIfPending();
         else if (ReplPersist.saveNow) ReplPersist.saveNow();
       }
-      if (persist4 && !suppressUnloadFlush) {
-        if (pendingOnly && persist4.flushCheckpointIfDirty) persist4.flushCheckpointIfDirty();
-        else persist4.flushCheckpoint();
+      if (persist2 && !suppressUnloadFlush) {
+        if (pendingOnly && persist2.flushCheckpointIfDirty) persist2.flushCheckpointIfDirty();
+        else persist2.flushCheckpoint();
       }
       if (!pendingOnly || wasDirty) WorkspaceState.flushWorkspace();
     }
@@ -39082,7 +38466,7 @@ ${doc2.documentElement.outerHTML}`;
   mount2();
 
   // js/compat/beljar-window-aliases.mjs
-  var g13 = globalThis;
+  var g14 = globalThis;
   var ALIASES = [
     ["BelJarExplorerSuiteLayout", "ExplorerSuiteLayout"],
     ["BelJarHarpoonGoalSections", "HarpoonGoalSections"],
@@ -39136,7 +38520,7 @@ ${doc2.documentElement.outerHTML}`;
   ];
   function installBelJarWindowAliases() {
     for (const [legacy, neu] of ALIASES) {
-      if (neu in g13 && g13[neu] != null) g13[legacy] = g13[neu];
+      if (neu in g14 && g14[neu] != null) g14[legacy] = g14[neu];
     }
   }
   installBelJarWindowAliases();

@@ -126,11 +126,11 @@ const entry = (over) => ({
   expect(rows.length === 1 && rows[0].now, 'an empty history is just the marker');
 }
 
-// ── the summary the strip tooltip shows ──────────────────────────────────────
+// ── the panel's count ────────────────────────────────────────────────────────
 {
-  expect(historySummary(0, 0) === 'Nothing to undo yet', 'empty reads as a sentence');
-  expect(historySummary(1, 0) === '1 step to undo', 'singular');
-  expect(historySummary(4, 2) === '4 steps to undo · 2 steps to redo', 'both directions');
+  expect(historySummary(0, 0) === 'No steps yet', 'empty reads as a sentence');
+  expect(historySummary(1, 0) === '1 step', 'singular');
+  expect(historySummary(4, 2) === '6 steps', 'a size, not a direction');
 }
 
 // ── the strip segment ────────────────────────────────────────────────────────
@@ -142,10 +142,15 @@ const entry = (over) => ({
   const some = buildSegments({ ...base, undoDepth: 7 }, 'standard');
   const seg = some.find((s) => s.key === 'history');
   expect(seg, 'the widget appears once there is something to undo');
-  expect(seg.text === 'History', `it is a label, not a count (got ${seg.text})`);
+  expect(seg.icon === 'history' && !seg.text, `it is an icon, not a count (got ${seg.text})`);
   expect(seg.action === 'edit-history', 'and it opens the panel');
   expect(seg.tone === 'plain', 'no branch, no accent');
-  expect(seg.title === 'Editor history', 'the tooltip names the panel');
+  expect(seg.title === 'Edit history', 'the tooltip names the panel');
+
+  const undoSeg = some.find((s) => s.key === 'undo');
+  const redoSeg = some.find((s) => s.key === 'redo');
+  expect(undoSeg && !undoSeg.disabled && undoSeg.command === 'edit.undo', 'undo is live with steps behind you');
+  expect(redoSeg && redoSeg.disabled && redoSeg.command === 'edit.redo', 'redo is shown but off with nothing ahead');
 
   const branched = buildSegments({ ...base, undoDepth: 7, redoDepth: 2 }, 'standard');
   expect(branched.find((s) => s.key === 'history').tone === 'branched',
@@ -157,12 +162,17 @@ const entry = (over) => ({
     `the widget sits directly left of the checker (${keys.join(',')})`);
   expect(keys.indexOf('spacer') < keys.indexOf('history'),
     'on the right-hand side of the spacer');
+  expect(keys.indexOf('undo') === keys.indexOf('history') - 2 && keys.indexOf('redo') === keys.indexOf('history') - 1,
+    `undo and redo sit directly left of the history (${keys.join(',')})`);
+  const withTab = buildSegments({ ...base, undoDepth: 7, tabConflict: true }, 'standard').map((s) => s.key);
+  expect(withTab.indexOf('tab') < withTab.indexOf('undo'), 'the transients stay left of the tray');
 
   // Redo-only: you undid everything, so there is nothing to undo but plenty to
   // get back. The widget must not vanish and strand the branch.
   const onlyRedo = buildSegments({ ...base, undoDepth: 0, redoDepth: 3 }, 'standard');
   const r = onlyRedo.find((s) => s.key === 'history');
-  expect(r && r.text === 'History', 'a pure redo branch still shows the widget');
+  expect(r, 'a pure redo branch still shows the widget');
+  expect(onlyRedo.find((s) => s.key === 'undo').disabled, 'with undo off');
 
   for (const level of ['compact', 'standard', 'detailed']) {
     const at = buildSegments({ ...base, undoDepth: 2 }, level).map((s) => s.key);

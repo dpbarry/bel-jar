@@ -16,6 +16,8 @@
 import '../ui/tooltips.mjs';
 import '../ui/toasts.mjs';
 import '../ui/notifications.mjs';
+import { settingRow } from '../persist/settings-schema.mjs';
+import { applyDocumentSettings } from '../persist/settings-apply.mjs';
 
 const global = globalThis;
 
@@ -28,20 +30,29 @@ function track(target, type, fn, opts) {
   teardown.push(() => target.removeEventListener(type, fn, opts));
 }
 
-// Flip the ground and tell whoever cares. The editor re-themes CodeMirror off
-// this; a page with no editor simply has no listener. Reuses the one settings
-// channel rather than adding a second one that only the frame knows about.
+// Flip the ground and tell whoever cares. The frame's own subscription repaints
+// the page; the editor re-themes CodeMirror off the one settings channel, and a
+// page with no editor simply has no listener.
 function toggleTheme() {
-  const root = document.documentElement;
-  root.classList.toggle('light');
-  const isLight = root.classList.contains('light');
-  if (global.Persist && typeof global.Persist.writeStoredTheme === 'function') {
-    global.Persist.writeStoredTheme(isLight ? 'light' : 'dark');
-  }
+  const next = Settings.get('theme') === 'light' ? 'dark' : 'light';
+  Settings.set('theme', next);
   global.dispatchEvent(new CustomEvent('beljar:settings-changed', {
     detail: { key: 'theme' },
   }));
-  return isLight ? 'light' : 'dark';
+  return next;
+}
+
+/**
+ * ⛔ The page's look follows the settings wherever they change from: the
+ * dialog, :set, a reset, an import, another tab, the online layer. Nothing else
+ * applies them, so nothing can forget to.
+ */
+function repaint() {
+  applyDocumentSettings(document.documentElement, Settings.values());
+}
+
+function onSettingsChanged(e) {
+  if (e.ids.some((id) => settingRow(id).boot)) repaint();
 }
 
 function onReload() {
@@ -57,6 +68,9 @@ function onSettings() {
 function mount() {
   if (mounted) return;
   mounted = true;
+
+  repaint();
+  teardown.push(Settings.subscribe(onSettingsChanged));
 
   if (global.Toasts && typeof global.Toasts.init === 'function') global.Toasts.init();
   if (global.Notifications && typeof global.Notifications.init === 'function') {

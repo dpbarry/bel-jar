@@ -2,6 +2,7 @@ import globals from 'globals';
 
 /** Window globals published by the shell / editor seam (system nouns). */
 const SHELL_GLOBALS = [
+  'Account',
   'AvailableMacros',
   'BelEditor',
   'BelugaClient',
@@ -39,6 +40,7 @@ const SHELL_GLOBALS = [
   'LiveIntel',
   'Menu',
   'NameConflicts',
+  'Settings', 'Device',
   'NamePrompt',
   'Notifications',
   'Perf',
@@ -150,6 +152,16 @@ export default [
         ...shellGlobalsMap,
         CodeMirror: 'readonly',
       },
+    },
+    rules: baseRules,
+  },
+  {
+    // The sync Worker (server/): Cloudflare's runtime, no DOM, no shell globals.
+    files: ['server/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.serviceworker },
     },
     rules: baseRules,
   },

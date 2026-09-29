@@ -23,10 +23,14 @@ function freshPersist() {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: (k) => storage.delete(k),
+    get length() { return storage.size; },
+    key: (i) => [...storage.keys()][i] ?? null,
   };
   const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage: fakeLocalStorage });
   ctx.globalThis = ctx;
   runPersistStackInContext(ctx);
+  // The page's Settings, published beside Persist, so a test can set one.
+  ctx.Persist.settings = ctx.Settings;
   return ctx.Persist;
 }
 
@@ -107,7 +111,7 @@ function activateCfg(P, dir, cfgPath) {
 // ── auto-sync off: cfgs never change on file ops ─────────────────────────────
 {
   const P = freshPersist();
-  P.writeStoredCfgAutoSync(false);
+  P.settings.set('cfgAutoSync', false);
   P.replaceProject([
     { name: 'grp/base.bel', text: 'LF a : type;' },
     { name: 'grp/sources.cfg', text: 'base.bel\n' },

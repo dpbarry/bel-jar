@@ -1423,6 +1423,17 @@
     };
   }
 
+  // js/persist/settings-apply.mjs
+  function prefersReducedMotion(motionPref) {
+    if (motionPref === "reduce") return true;
+    if (motionPref === "full") return false;
+    try {
+      return typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // js/harpoon/harpoon-lab-reel.mjs
   var global6 = globalThis;
   function createReel(deps) {
@@ -1518,10 +1529,7 @@
       bindStepGoalTip2(copy.querySelector(".harpoon-lab-auto-move"), step.goal);
     }
     function reelMotionOk() {
-      if (typeof Persist !== "undefined" && typeof Persist.prefersReducedMotion === "function") {
-        return !Persist.prefersReducedMotion();
-      }
-      return !(global6.matchMedia && global6.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      return !prefersReducedMotion(Settings.get("motionPref"));
     }
     function reelClearMotion(el5) {
       if (!el5) return;
@@ -2466,8 +2474,8 @@
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
-        var persist = global7.Persist;
-        var collapsed = !!(persist && persist.readStoredHarpoonDetailsCollapsed && persist.readStoredHarpoonDetailsCollapsed());
+        var device = global7.Device;
+        var collapsed = !!(device && device.get("harpoonDetailsCollapsed"));
         var railHead = el4("div", "hpt-rail-head");
         var railTitle = el4("span", "hpt-rail-title", "Details");
         var toggle = el4("button", "icon-btn hpt-rail-toggle");
@@ -2476,9 +2484,7 @@
         railHead.appendChild(toggle);
         toggle.addEventListener("click", function() {
           collapsed = !collapsed;
-          if (persist && persist.writeStoredHarpoonDetailsCollapsed) {
-            persist.writeStoredHarpoonDetailsCollapsed(collapsed);
-          }
+          if (device) device.set("harpoonDetailsCollapsed", collapsed);
           applyCollapsed();
         });
         rail.appendChild(railHead);
@@ -2816,7 +2822,7 @@
         where.appendChild(el4("div", "hpt-detail-branch", "in branch: " + st.branch));
       }
       if (st && typeof st.checks === "number" && st.checks > 0) {
-        var showStats = typeof Persist === "undefined" || Persist.readStoredAutosolveShowStats();
+        var showStats = typeof Persist === "undefined" || Settings.get("autosolveShowStats");
         if (showStats) {
           var checksEl = el4("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
           setTip2(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
@@ -3585,8 +3591,7 @@
       var token = {};
       this._sweepToken = token;
       if (!m || !m.state || !this._moveRows || !this._moveRows.length) return;
-      var persist = globalThis.Persist;
-      var on = !persist || typeof persist.readStoredHarpoonVerifyMoves !== "function" ? true : persist.readStoredHarpoonVerifyMoves();
+      var on = Settings.get("harpoonVerifyMoves");
       if (!on) return;
       var rows = this._moveRows.slice(0, 8);
       var i = 0;
@@ -4578,7 +4583,7 @@
       this.updateCompromiseBanner();
     }
     try {
-      var focusNext = typeof Persist === "undefined" || Persist.readStoredAutosolveFocusNext();
+      var focusNext = typeof Persist === "undefined" || Settings.get("autosolveFocusNext");
       if (focusNext && global8.CurrentEditor && typeof global8.CurrentEditor.cycleHole === "function") {
         global8.CurrentEditor.cycleHole(1);
       }
@@ -5909,11 +5914,7 @@
     return null;
   }
   function openingMode() {
-    var persist = global8.Persist;
-    if (persist && typeof persist.readStoredHarpoonMode === "function") {
-      return persist.readStoredHarpoonMode() === "orca" ? "orca" : "manual";
-    }
-    return "manual";
+    return Settings.get("harpoonMode");
   }
   function runSession(view, prep, host) {
     var session = new Session(view, prep.span.from, prep.span.to, host);

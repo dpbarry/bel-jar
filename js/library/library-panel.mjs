@@ -34,7 +34,7 @@ var CHEVRON_SVG =
     var LS = global.LibrarySearch;
 
     function readExpandDefault() {
-      return typeof global.Persist !== 'undefined' && global.Persist.readStoredLibraryExpandDefault();
+      return typeof global.Persist !== 'undefined' && Settings.get('libraryExpandDefault');
     }
 
     function isCategoryExpanded(foldKey, forceOpen) {

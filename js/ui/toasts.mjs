@@ -1,8 +1,11 @@
 // Ephemeral on-screen messages — slide up from the top-right workspace corner.
 // Inbox is opt-in: opts.durable === true or opts.notify === true. Errors alone
 // do not auto-bridge (teaching/ops durability goes through Notifications.emit).
+import { readSetting } from '../persist/settings-schema.mjs';
+import { TOAST_DURATION_MS } from '../persist/settings-apply.mjs';
+
 const global = globalThis;
-const DEFAULT_DURATION_MS = 3500;
+const DEFAULT_DURATION_MS = TOAST_DURATION_MS.normal;
   const LEAVE_MS = 280;
   const UNTIL_POLL_MS = 120;
 
@@ -16,23 +19,11 @@ const DEFAULT_DURATION_MS = 3500;
   }
 
   function durationForMode(mode) {
-    try {
-      if (typeof Persist !== 'undefined' && typeof Persist.toastDurationForMode === 'function') {
-        return Persist.toastDurationForMode(mode);
-      }
-    } catch (_) {}
-    if (mode === 'short') return 2000;
-    if (mode === 'long') return 5000;
-    return DEFAULT_DURATION_MS;
+    return TOAST_DURATION_MS[mode] || DEFAULT_DURATION_MS;
   }
 
   function normalizeDuration(opts) {
-    var fallback = DEFAULT_DURATION_MS;
-    try {
-      if (typeof Persist !== 'undefined' && typeof Persist.toastDurationMs === 'function') {
-        fallback = Persist.toastDurationMs();
-      }
-    } catch (_) {}
+    var fallback = durationForMode(readSetting('toastDuration'));
     if (!opts || opts.duration === undefined) return fallback;
     const d = opts.duration;
     if (d === false || d === null || d === 0 || d === Infinity) return null;

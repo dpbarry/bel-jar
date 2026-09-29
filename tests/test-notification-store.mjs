@@ -1,13 +1,12 @@
 import {
   createNotificationStore,
   createMemoryAdapter,
-  createLocalPersistAdapter,
   linkTarget,
   normalizeRecord,
   migrateRecord,
   SCHEMA_VERSION,
-  STORAGE_KEY,
 } from '../js/ui/notification-store.mjs';
+import { makeBrowserStorage, openTab } from './_persist-env.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -96,17 +95,17 @@ store.clear();
 expect(store.count() === 0, 'clear');
 expect(seen === 1, 'unsub works');
 
-const bag = new Map();
-const persistAdapter = createLocalPersistAdapter({
-  key: STORAGE_KEY,
-  load: (k) => bag.get(k) || null,
-  save: (k, v) => { bag.set(k, v); },
-});
-const s2 = createNotificationStore({ adapter: persistAdapter });
+// Through Persist, as notifications.mjs wires it, and back after a reload.
+const browser = makeBrowserStorage();
+const adapterOf = (P) => ({ load: () => P.readNotifications(), save: (items) => P.writeNotifications(items) });
+const s2 = createNotificationStore({ adapter: adapterOf(openTab(browser).P) });
 s2.upsert({ title: 'Persisted', source: 'test', category: 'ops' });
-const s3 = createNotificationStore({ adapter: persistAdapter });
-expect(s3.count() === 1, 'local persist round-trip');
+expect(browser.getItem('beljar/notifications') !== null, 'notifications are a store record');
+const s3 = createNotificationStore({ adapter: adapterOf(openTab(browser).P) });
+expect(s3.count() === 1, 'persist round-trip through a reload');
 expect(s3.list()[0].title === 'Persisted', 'persisted title');
+s3.clear();
+expect(browser.getItem('beljar/notifications') === null, 'clearing the inbox removes the record');
 
 // -- linkTarget: what the inbox can actually navigate to --------------------
 expect(linkTarget(null) === null, 'linkTarget: no record');

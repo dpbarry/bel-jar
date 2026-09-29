@@ -1,27 +1,19 @@
 import { editorTextForIndexing } from '../semantic/project-prelude.mjs';
 
-const KEY = 'beljar-jump-log';
+import { readDevice, writeDevice } from '../../persist/device-schema.mjs';
 
 export function jumpLogEnabled() {
   const g = typeof globalThis !== 'undefined' ? globalThis : window;
   if (g.JumpLog === false) return false;
   if (g.JumpLog === true) return true;
-  try {
-    const v = localStorage.getItem(KEY);
-    if (v === '0') return false;
-    if (v === '1') return true;
-  } catch (_) { /* ignore */ }
-  return false;
+  return readDevice('jumpLog');
 }
 
 export function enableJumpLog(on = true) {
   const g = typeof globalThis !== 'undefined' ? globalThis : window;
   g.JumpLog = !!on;
-  g.BelJarJumpLog = g.JumpLog
-  try {
-    if (on) localStorage.setItem(KEY, '1');
-    else localStorage.setItem(KEY, '0');
-  } catch (_) { /* ignore */ }
+  g.BelJarJumpLog = g.JumpLog;
+  writeDevice('jumpLog', !!on);
   console.warn(`[bel-jar:jump] logging ${on ? 'on' : 'off'}`);
 }
 

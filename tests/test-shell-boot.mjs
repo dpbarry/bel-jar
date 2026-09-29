@@ -170,6 +170,8 @@ const localStorage = {
   getItem(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
   setItem(k, v) { store[k] = String(v); },
   removeItem(k) { delete store[k]; },
+  get length() { return Object.keys(store).length; },
+  key(i) { return Object.keys(store)[i] ?? null; },
 };
 
 const documentStub = {
@@ -308,7 +310,7 @@ try {
   process.exit(1);
 }
 
-expect(ctx.Persist && typeof ctx.Persist.ensureProject === 'function', 'Persist');
+expect(ctx.Persist && typeof ctx.Persist.listFiles === 'function', 'Persist');
 expect(ctx.ProjectSource && typeof ctx.ProjectSource.dirOf === 'function', 'ProjectSource');
 expect(ctx.BelugaRun && typeof ctx.BelugaRun.init === 'function', 'BelugaRun');
 expect(ctx.Explorer && typeof ctx.Explorer.buildExplorerModel === 'function', 'Explorer');

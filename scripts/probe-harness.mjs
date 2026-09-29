@@ -27,6 +27,15 @@ const TYPES = {
  * each probe names the globals it actually depends on, so a probe for the
  * command layer does not silently wait on Harpoon.
  */
+/**
+ * A static server has no API: the page asks /api/auth/me, gets a 404 and leaves the account
+ * button hidden (js/account/account.mjs). Chrome still logs that 404 as an error; any other
+ * 404, even elsewhere under /api/auth/, counts.
+ */
+export function isNoServer404(m) {
+  return /404/.test(m.text()) && /\/api\/auth\/me$/.test((m.location() || {}).url || '');
+}
+
 export async function openProbe(opts = {}) {
   const root = process.cwd();
   const port = Number(process.env.PROBE_PORT || opts.port || 8871);
@@ -60,7 +69,7 @@ export async function openProbe(opts = {}) {
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('console', (m) => { if (m.type() === 'error' && !isNoServer404(m)) errors.push(m.text()); });
 
   await page.goto(`http://localhost:${port}/index.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
@@ -99,8 +108,7 @@ export async function openProbe(opts = {}) {
    */
   const setStyle = async (style) => {
     await page.evaluate((v) => {
-      Persist.writeStoredKeymapStyle(v);
-      Persist.applyStoredEditorChrome?.();
+      Settings.set('keymapStyle', v);
       BelEditor.applyEditorPrefs?.();
     }, style);
     await wait(1300);
@@ -134,6 +142,14 @@ export async function openProbe(opts = {}) {
    * cannot fail loudly is worse than no probe.
    */
   const finish = async (label, err) => {
+    // ⛔ Eight probes call `finish(crash)`, with no label. The crash landed in
+    // `label`, `err` stayed undefined, and a probe that threw halfway still
+    // passed "ran to completion" and exited 0 (found 2026-09-24; one of them
+    // was the post-deploy probe). Either shape now means what it says.
+    if (typeof label !== 'string') {
+      err = err || label;
+      label = path.basename(process.argv[1] || 'probe', '.mjs');
+    }
     check(!err, 'the probe ran to completion', err ? String(err && err.stack || err) : '');
     check(errors.length === 0, 'no page errors throughout', errors.slice(0, 3).join(' | '));
     await browser.close();

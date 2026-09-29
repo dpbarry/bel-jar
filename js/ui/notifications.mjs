@@ -3,7 +3,6 @@
 // that decision, so the panel cannot quietly disagree with what we test.
 import {
   createNotificationStore,
-  createLocalPersistAdapter,
   createMemoryAdapter,
   linkTarget,
   normalizeRecord,
@@ -57,8 +56,8 @@ function onWindowResize() {
 }
 
 const store = createNotificationStore({
-  adapter: typeof localStorage !== 'undefined'
-    ? createLocalPersistAdapter()
+  adapter: typeof Persist !== 'undefined' && Persist.readNotifications
+    ? { load: () => Persist.readNotifications(), save: (items) => Persist.writeNotifications(items) }
     : createMemoryAdapter(),
 });
 

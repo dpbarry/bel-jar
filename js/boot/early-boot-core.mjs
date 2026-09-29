@@ -1,15 +1,9 @@
+import { SCHEMA } from '../persist/store.mjs';
+import { readBootSettings } from '../persist/settings-schema.mjs';
+import { applyDocumentSettings } from '../persist/settings-apply.mjs';
+import { DEVICE, readBootDevice } from '../persist/device-schema.mjs';
+
 export const SPLIT_STACK_MQ = '(max-width: 48rem)';
-
-export const UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
-
-export const UI_TEXT_CONTRAST = { normal: 1, low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
-
-export function clampSplit(n, min, max, fallback) {
-  if (!Number.isFinite(n)) return fallback;
-  if (n < min) return min;
-  if (n > max) return max;
-  return n;
-}
 
 export function applySplitVars(rootStyle, ratio, stackMq, matchMedia) {
   const a = Math.round(ratio * 1e6) / 1e6;
@@ -23,80 +17,32 @@ export function applySplitVars(rootStyle, ratio, stackMq, matchMedia) {
   }
 }
 
-export function applyStoredPanelPx(rootStyle, storage, key, cssVar) {
-  const n = parseFloat(storage.getItem(key));
-  if (Number.isFinite(n) && n > 0) rootStyle.setProperty(cssVar, `${n}px`);
+/**
+ * First paint from the stored settings, through the same function every later
+ * change goes through (settings-apply.mjs), so boot can never paint a setting
+ * one way and a live change paint it another.
+ */
+export function applyStoredSettings(docEl, storage) {
+  applyDocumentSettings(docEl, readBootSettings(storage, SCHEMA));
 }
 
-export function applyDocumentPrefs(docEl, storage) {
-  if (storage.getItem('beljar-theme') === 'light') {
-    docEl.classList.add('light');
+/**
+ * Panel sizes the user dragged, before first paint. Only sizes that differ
+ * from the default are painted: the stylesheet already holds the defaults.
+ * The custom property each size paints into is declared on its device row.
+ */
+export function applyPanelDimensionPrefs(rootStyle, device) {
+  for (const row of DEVICE) {
+    if (row.cssVar && device[row.id] !== row.default) rootStyle.setProperty(row.cssVar, `${device[row.id]}px`);
   }
-
-  const uiFontStored = storage.getItem('beljar-ui-font-size');
-  docEl.style.setProperty('--ui-font-scale', String(UI_FONT_SCALES[uiFontStored] || 1));
-
-  const uiTextContrastStored = storage.getItem('beljar-ui-text-contrast');
-  docEl.style.setProperty(
-    '--ui-text-contrast',
-    String(UI_TEXT_CONTRAST[uiTextContrastStored] || UI_TEXT_CONTRAST.medium),
-  );
-
-  const motion = storage.getItem('beljar-motion-pref');
-  docEl.classList.toggle('jar-motion-reduce', motion === 'reduce');
-  docEl.classList.toggle('jar-motion-full', motion === 'full');
-
-  const editorFont = storage.getItem('beljar-editor-font-family');
-  docEl.style.setProperty(
-    '--editor-mono',
-    editorFont === 'system'
-      ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
-      : "'JetBrains Mono', monospace",
-  );
-  docEl.style.setProperty(
-    '--editor-ligatures',
-    storage.getItem('beljar-editor-ligatures') === 'off' ? 'none' : 'common-ligatures',
-  );
-
-  const holeEmph = storage.getItem('beljar-editor-hole-emphasis');
-  docEl.classList.toggle('jar-hole-subtle', holeEmph === 'subtle');
-  docEl.classList.toggle('jar-hole-loud', holeEmph === 'loud');
-}
-
-export function applyPanelDimensionPrefs(rootStyle, storage) {
-  applyStoredPanelPx(rootStyle, storage, 'beljar-explorer-w', '--explorer-w');
-  applyStoredPanelPx(rootStyle, storage, 'beljar-inspector-w', '--inspector-w');
-  applyStoredPanelPx(rootStyle, storage, 'beljar-library-w', '--library-w');
-  applyStoredPanelPx(rootStyle, storage, 'beljar-harpoon-w', '--harpoon-w');
-  applyStoredPanelPx(rootStyle, storage, 'beljar-explorer-h', '--explorer-h');
-  applyStoredPanelPx(rootStyle, storage, 'beljar-inspector-h', '--inspector-h');
-  applyStoredPanelPx(rootStyle, storage, 'beljar-library-h', '--library-h');
-  applyStoredPanelPx(rootStyle, storage, 'beljar-harpoon-h', '--harpoon-h');
-}
-
-export function readSplitRatio(storage, splitKey, min, max, fallback) {
-  return clampSplit(parseFloat(storage.getItem(splitKey)), min, max, fallback);
 }
 
 export function installEarlyBoot(env) {
-  const {
-    document,
-    window,
-    localStorage,
-    splitKey,
-    splitMin,
-    splitMax,
-    splitDefault,
-  } = env;
-
-  applyDocumentPrefs(document.documentElement, localStorage);
-  applyPanelDimensionPrefs(document.documentElement.style, localStorage);
-  applySplitVars(
-    document.documentElement.style,
-    readSplitRatio(localStorage, splitKey, splitMin, splitMax, splitDefault),
-    SPLIT_STACK_MQ,
-    window.matchMedia.bind(window),
-  );
+  const { document, window, localStorage } = env;
+  const device = readBootDevice(localStorage, SCHEMA);
+  applyStoredSettings(document.documentElement, localStorage);
+  applyPanelDimensionPrefs(document.documentElement.style, device);
+  applySplitVars(document.documentElement.style, device.editorSplit, SPLIT_STACK_MQ, window.matchMedia.bind(window));
 }
 
 export function registerServiceWorker(nav, loc) {

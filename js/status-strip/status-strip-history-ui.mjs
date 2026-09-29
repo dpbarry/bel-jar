@@ -10,12 +10,12 @@
  * DOM and the keyboard, nothing else.
  */
 import { buildHistoryRows, historySummary } from './status-strip-history.mjs';
+import { anchorAbove } from './status-strip-popup.mjs';
 
 const global = globalThis;
 
 let panelEl = null;
 let listEl = null;
-let footEl = null;
 let open = false;
 let active = -1;
 let rows = [];
@@ -34,25 +34,8 @@ function nameOf(id) {
   return f ? f.name : null;
 }
 
-function bar() {
-  return document.querySelector('.jar-strip');
-}
-
 function anchor() {
-  const strip = bar();
-  if (!strip || !panelEl) return;
-  const rect = strip.getBoundingClientRect();
-  // No gap: the strip's top border IS the panel's bottom edge.
-  panelEl.style.bottom = Math.max(0, Math.round(window.innerHeight - rect.top)) + 'px';
-  // Right-aligned to the segment it belongs to, so it points at the thing you
-  // clicked rather than at the far side of the window.
-  const seg = strip.querySelector('.jar-strip__seg--history');
-  const from = seg ? seg.getBoundingClientRect() : null;
-  const pad = 6;
-  const width = panelEl.offsetWidth || 0;
-  let left = from ? from.right - width : rect.right - width - pad;
-  left = Math.min(left, Math.max(pad, window.innerWidth - width - pad));
-  panelEl.style.left = Math.max(pad, Math.round(left)) + 'px';
+  anchorAbove(panelEl, '.jar-strip__seg--history', 'right');
 }
 
 function ensurePanel() {
@@ -78,118 +61,9 @@ function ensurePanel() {
   listEl.setAttribute('role', 'listbox');
   panelEl.appendChild(listEl);
 
-  footEl = document.createElement('div');
-  footEl.className = 'jar-hist__foot';
-  // Populated in render(), not here — see renderFoot for why it has to be
-  // rebuilt on every paint rather than fixed at panel creation.
-  panelEl.appendChild(footEl);
-
   panelEl._count = count;
   document.body.appendChild(panelEl);
   return panelEl;
-}
-
-/**
- * Which style the editor is actually in right now.
- *
- * Read fresh every time rather than cached: this drives what the footer tells
- * the user to press, and a stale read here is a wrong instruction, not a
- * cosmetic glitch.
- */
-function liveKeymapStyle() {
-  const P = global.Persist;
-  const raw = P && typeof P.readStoredKeymapStyle === 'function' ? P.readStoredKeymapStyle() : '';
-  const s = String(raw || '').toLowerCase();
-  return s === 'vim' || s === 'emacs' ? s : 'default';
-}
-
-/**
- * Vim's and Emacs' OWN undo/redo keys — not reachable through the Keybindings
- * sheet, so there is no override to read for them.
- *
- * `edit.undo`/`edit.redo` in the catalogue are the STANDARD chord only. Under
- * Vim, Normal-mode undo is the package's own fixed `u` / `Ctrl-R`
- * (`ensureVimUndoBridge` in vim-runtime.mjs just points what they DO at
- * BelJar's history; it does not touch what triggers them). Under Emacs the
- * bridge binds its own fixed aliases (`ensureEmacsUndoBridge` in
- * emacs-runtime.mjs) — `edit.redo` is even policy-`off` there, so the registry
- * chord for it does not fire at all. Showing `Keybindings.labelFor('edit.undo')`
- * regardless of style told an Emacs user to press Ctrl+Y for redo, which is
- * yank.
- *
- * ⛔ Emacs shows `Ctrl+Z` / `Ctrl+Shift+Z`, not the stock-Emacs `C-/` / `C-S-/`
- * — even though `ensureEmacsUndoBridge` binds BOTH pairs as equal aliases and
- * either works. Real GNU Emacs uses `C-z` to suspend the frame, so `C-/` is
- * its bound-in undo key; a browser tab has no frame to suspend, and every
- * other application trains people to reach for `Ctrl+Z`, so that alias is the
- * one BelJar's own users actually press. The hint names what people use, not
- * what is most traditional.
- *
- * Specs use BelJar's own `Control+…` vocabulary rather than the packages'
- * `C-…` shorthand, so `Keybindings.formatShortcut` renders them exactly like
- * every other chord in the app (`Ctrl+Z` on Windows/Linux, `⌃Z` on a Mac).
- */
-const FIXED_STYLE_SPECS = {
-  vim: { 'edit.undo': 'u', 'edit.redo': 'Control+R' },
-  emacs: { 'edit.undo': 'Control+Z', 'edit.redo': 'Control+Shift+Z' },
-};
-
-function liveKeyLabel(commandId) {
-  const K = global.Keybindings;
-  const style = liveKeymapStyle();
-  const fixed = FIXED_STYLE_SPECS[style] && FIXED_STYLE_SPECS[style][commandId];
-  if (fixed != null) {
-    return K && typeof K.formatShortcut === 'function' ? K.formatShortcut(fixed) : fixed;
-  }
-  // Standard style: the registry chord, WITH the user's own override if they
-  // rebound it — a panel that names a key you rebound away from is a surface
-  // offering what does not work.
-  if (!K || typeof K.labelFor !== 'function') return '';
-  try {
-    return K.labelFor(commandId) || '';
-  } catch (_) {
-    return '';
-  }
-}
-
-/** A footer hint: the command's name, and the key that ACTUALLY runs it now. */
-function hintRow(commandId, fallbackLabel) {
-  const row = document.createElement('span');
-  row.className = 'jar-hist__hint';
-  const C = global.Commands;
-  let label = fallbackLabel;
-  try {
-    const cmd = C && typeof C.get === 'function' ? C.get(commandId) : null;
-    if (cmd && cmd.title) label = cmd.title;
-  } catch (_) { /* the fallback label still reads correctly */ }
-  const keys = liveKeyLabel(commandId);
-  const name = document.createElement('span');
-  name.className = 'jar-hist__hint-name';
-  name.textContent = label;
-  row.appendChild(name);
-  if (keys) {
-    const kbd = document.createElement('kbd');
-    kbd.className = 'jar-hist__key';
-    kbd.textContent = keys;
-    row.appendChild(kbd);
-  }
-  return row;
-}
-
-/**
- * Rebuilt every render, not fixed at panel creation.
- *
- * ⛔ The style can change while the panel is open — Settings is one click away
- * — and `render()` is what runs on that repaint (via the stack's own
- * `onStackChange`, which fires on every project swap too). A footer built once
- * at `ensurePanel()` would keep naming the style that was live when the panel
- * FIRST opened.
- */
-function renderFoot() {
-  if (!footEl) return;
-  footEl.textContent = '';
-  footEl.appendChild(hintRow('edit.undo', 'Undo'));
-  footEl.appendChild(hintRow('edit.redo', 'Redo'));
 }
 
 function rowEl(row, index) {
@@ -271,7 +145,6 @@ function render() {
 
   listEl.textContent = '';
   rows.forEach((row, i) => listEl.appendChild(rowEl(row, i)));
-  renderFoot();
   if (active < 0 || active >= rows.length) active = rows.findIndex((r) => r.now);
   paintActive();
   // Open on the present, not on the top of a long list: the row you came to act

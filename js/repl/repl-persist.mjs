@@ -58,19 +58,19 @@ function trimOldest(nodes, html) {
 
 function persistCommandHistory() {
   var p = getPersist();
-  if (!p || typeof p.writeStoredReplCommandHistory !== 'function') return;
-  if (typeof p.readStoredReplHistoryPersist === 'function' && p.readStoredReplHistoryPersist() === 'none') return;
+  if (!p || typeof p.writeReplCommands !== 'function') return;
+  if (Settings.get('replHistoryPersist') === 'none') return;
   var cmds = typeof ReplCommands !== 'undefined' && ReplCommands.getHistory
     ? ReplCommands.getHistory()
     : null;
-  if (cmds) p.writeStoredReplCommandHistory(cmds);
+  if (cmds) p.writeReplCommands(cmds);
 }
 
 function writeSnapshot() {
   if (restoring) return;
   var p = getPersist();
-  if (!p || typeof p.writeStoredReplTranscript !== 'function') return;
-  if (typeof p.readStoredReplHistoryPersist === 'function' && p.readStoredReplHistoryPersist() === 'none') {
+  if (!p || typeof p.writeReplTranscript !== 'function') return;
+  if (Settings.get('replHistoryPersist') === 'none') {
     return;
   }
   var output = getOutput();
@@ -82,9 +82,9 @@ function writeSnapshot() {
   html = trimmed.html;
 
   if (!html) {
-    p.writeStoredReplTranscript(null);
+    p.writeReplTranscript(null);
   } else {
-    p.writeStoredReplTranscript({
+    p.writeReplTranscript({
       html: html,
       scrollTop: output.scrollTop || 0,
       savedAt: Date.now(),
@@ -123,8 +123,8 @@ function saveIfPending() {
 
 function restore() {
   var p = getPersist();
-  if (!p || typeof p.readStoredReplTranscript !== 'function') return false;
-  var snap = p.readStoredReplTranscript();
+  if (!p || typeof p.readReplTranscript !== 'function') return false;
+  var snap = p.readReplTranscript();
   if (!snap || !snap.html) return false;
 
   var stream = getStream();

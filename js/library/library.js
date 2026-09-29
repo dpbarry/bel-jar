@@ -1057,7 +1057,7 @@
     var searchWrap = document.getElementById("library-search-wrap");
     var LS = global5.LibrarySearch;
     function readExpandDefault() {
-      return typeof global5.Persist !== "undefined" && global5.Persist.readStoredLibraryExpandDefault();
+      return typeof global5.Persist !== "undefined" && Settings.get("libraryExpandDefault");
     }
     function isCategoryExpanded(foldKey, forceOpen) {
       if (forceOpen) return true;

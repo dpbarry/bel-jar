@@ -1,2248 +1,1376 @@
 (() => {
-  // js/persist/persist-ui-prefs.mjs
-  function create(deps) {
-    var THEME_STORAGE_KEY2 = deps.THEME_STORAGE_KEY;
-    var UI_FONT_SIZE_KEY2 = deps.UI_FONT_SIZE_KEY;
-    var UI_FONT_SCALES2 = deps.UI_FONT_SCALES;
-    var UI_TEXT_CONTRAST_KEY2 = deps.UI_TEXT_CONTRAST_KEY;
-    var UI_TEXT_CONTRAST_MULTIPLIERS2 = deps.UI_TEXT_CONTRAST_MULTIPLIERS;
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    function readStoredTheme2() {
-      try {
-        return backendLoad2(THEME_STORAGE_KEY2) === "light" ? "light" : "dark";
-      } catch (_) {
-        return "dark";
-      }
+  // js/persist/store.mjs
+  var SCHEMA = 4;
+  var SCHEMA_KEY = "beljar/schema";
+  var CLASSES = [
+    { pattern: /^beljar\/settings$/, cls: "settings" },
+    { pattern: /^beljar\/device$/, cls: "device" },
+    { pattern: /^beljar\/notifications$/, cls: "device" },
+    { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: "device" },
+    { pattern: /^beljar\/tabs\/(ping|pong|bye)$/, cls: "device" },
+    { pattern: /^beljar\/tombstones$/, cls: "device" },
+    { pattern: /^beljar\/settings-sync$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/meta$/, cls: "work" },
+    { pattern: /^beljar\/p\/[^/]+\/tree$/, cls: "work" },
+    { pattern: /^beljar\/p\/[^/]+\/f\/[^/]+$/, cls: "work" },
+    { pattern: /^beljar\/p\/[^/]+\/session$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/folds$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/undo$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/conflict\/[^/]+$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/sync$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/cache\/[^/]+$/, cls: "cache" }
+  ];
+  function classOf(key) {
+    const k = String(key || "");
+    for (const row of CLASSES) {
+      if (row.pattern.test(k)) return row.cls;
     }
-    function writeStoredTheme2(mode) {
-      if (mode === "light") backendSave2(THEME_STORAGE_KEY2, "light");
-      else backendRemove2(THEME_STORAGE_KEY2);
-    }
-    function readStoredUiFontSize2() {
-      try {
-        var v = backendLoad2(UI_FONT_SIZE_KEY2);
-        if (v === "sm" || v === "lg" || v === "xl") return v;
-        return "md";
-      } catch (_) {
-        return "md";
-      }
-    }
-    function writeStoredUiFontSize2(size) {
-      if (size === "md") backendRemove2(UI_FONT_SIZE_KEY2);
-      else if (size === "sm" || size === "lg" || size === "xl") backendSave2(UI_FONT_SIZE_KEY2, size);
-      else backendRemove2(UI_FONT_SIZE_KEY2);
-    }
-    function uiFontScaleForSize2(size) {
-      return UI_FONT_SCALES2[size] || 1;
-    }
-    function applyStoredUiFontSize2(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
-      root.style.setProperty("--ui-font-scale", String(uiFontScaleForSize2(readStoredUiFontSize2())));
-    }
-    function readStoredUiTextContrast2() {
-      try {
-        var v = backendLoad2(UI_TEXT_CONTRAST_KEY2);
-        if (v === "low" || v === "normal") return "low";
-        if (v === "medium" || v === "high" || v === "maximum") return v;
-        return "medium";
-      } catch (_) {
-        return "medium";
-      }
-    }
-    function writeStoredUiTextContrast2(contrast) {
-      if (contrast === "medium") backendRemove2(UI_TEXT_CONTRAST_KEY2);
-      else if (contrast === "low" || contrast === "high" || contrast === "maximum") {
-        backendSave2(UI_TEXT_CONTRAST_KEY2, contrast);
-      } else backendRemove2(UI_TEXT_CONTRAST_KEY2);
-    }
-    function uiTextContrastMultiplierForLevel2(contrast) {
-      return UI_TEXT_CONTRAST_MULTIPLIERS2[contrast] || UI_TEXT_CONTRAST_MULTIPLIERS2.medium;
-    }
-    function applyStoredUiTextContrast2(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
-      root.style.setProperty("--ui-text-contrast", String(uiTextContrastMultiplierForLevel2(readStoredUiTextContrast2())));
-    }
+    return null;
+  }
+  function isCapacityError(err) {
+    if (!err) return false;
+    const name = String(err.name || "");
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
+    if (err.code === 22 || err.code === 1014) return true;
+    return /quota/i.test(String(err.message || ""));
+  }
+  function createMemoryStorage() {
+    const m = /* @__PURE__ */ new Map();
     return {
-      readStoredTheme: readStoredTheme2,
-      writeStoredTheme: writeStoredTheme2,
-      readStoredUiFontSize: readStoredUiFontSize2,
-      writeStoredUiFontSize: writeStoredUiFontSize2,
-      uiFontScaleForSize: uiFontScaleForSize2,
-      applyStoredUiFontSize: applyStoredUiFontSize2,
-      readStoredUiTextContrast: readStoredUiTextContrast2,
-      writeStoredUiTextContrast: writeStoredUiTextContrast2,
-      uiTextContrastMultiplierForLevel: uiTextContrastMultiplierForLevel2,
-      applyStoredUiTextContrast: applyStoredUiTextContrast2
+      get length() {
+        return m.size;
+      },
+      key(i) {
+        return i >= 0 && i < m.size ? [...m.keys()][i] : null;
+      },
+      getItem(k) {
+        return m.has(k) ? m.get(k) : null;
+      },
+      setItem(k, v) {
+        m.set(String(k), String(v));
+      },
+      removeItem(k) {
+        m.delete(k);
+      },
+      clear() {
+        m.clear();
+      }
     };
   }
-
-  // js/persist/persist-settings.mjs
-  function create2(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var THEME_STORAGE_KEY2 = deps.THEME_STORAGE_KEY;
-    var UI_FONT_SIZE_KEY2 = deps.UI_FONT_SIZE_KEY;
-    var UI_TEXT_CONTRAST_KEY2 = deps.UI_TEXT_CONTRAST_KEY;
-    var BELUGA_MODE_STORAGE_KEY2 = deps.BELUGA_MODE_STORAGE_KEY;
-    var DEFAULT_PROJECT_NAME2 = deps.DEFAULT_PROJECT_NAME;
-    var ensureProject2 = deps.ensureProject;
-    var getFileText2 = deps.getFileText;
-    var readState2 = deps.readState;
-    var defaultBackend2 = deps.defaultBackend;
-    var stateKeyFor2 = deps.stateKeyFor;
-    function readStoredBelugaMode2() {
-      try {
-        var v = backendLoad2(BELUGA_MODE_STORAGE_KEY2);
-        if (v === "fast" || v === "stable") return v;
-        var old = backendLoad2("beljar-beluga-build");
-        return old === "fast" || old === "auto" ? "fast" : "stable";
-      } catch (_) {
-        return "stable";
-      }
-    }
-    function writeStoredBelugaMode2(mode) {
-      backendSave2(BELUGA_MODE_STORAGE_KEY2, mode);
-    }
-    var HOVER_SCOPE_KEY = "beljar-hover-scope";
-    function readStoredHoverScope2() {
-      try {
-        var v = backendLoad2(HOVER_SCOPE_KEY);
-        if (v === "user-only") return "user-only";
-        if (v === "none") return "none";
-        return "all";
-      } catch (_) {
-        return "all";
-      }
-    }
-    function writeStoredHoverScope2(scope) {
-      if (scope === "all") {
-        backendRemove2(HOVER_SCOPE_KEY);
-      } else {
-        backendSave2(HOVER_SCOPE_KEY, scope);
-      }
-    }
-    var ALIAS_ACTIVATION_KEY = "beljar-alias-activation";
-    var ALIAS_PAIRS_KEY = "beljar-alias-pairs";
-    var CFG_AUTO_SYNC_KEY = "beljar-cfg-auto-sync";
-    function readStoredCfgAutoSync2() {
-      try {
-        var v = backendLoad2(CFG_AUTO_SYNC_KEY);
-        return v !== "off";
-      } catch (_) {
-        return true;
-      }
-    }
-    function writeStoredCfgAutoSync2(on) {
-      if (on) backendRemove2(CFG_AUTO_SYNC_KEY);
-      else backendSave2(CFG_AUTO_SYNC_KEY, "off");
-    }
-    function readStoredAliasActivation2() {
-      try {
-        var v = backendLoad2(ALIAS_ACTIVATION_KEY);
-        return v === "strict" ? "strict" : "greedy";
-      } catch (_) {
-        return "greedy";
-      }
-    }
-    function writeStoredAliasActivation2(mode) {
-      if (mode === "strict") backendSave2(ALIAS_ACTIVATION_KEY, "strict");
-      else backendRemove2(ALIAS_ACTIVATION_KEY);
-    }
-    function readStoredAliasPairs2() {
-      try {
-        var raw = backendLoad2(ALIAS_PAIRS_KEY);
-        if (raw == null || raw === "") return null;
-        var parsed = tryParse2(raw);
-        if (!Array.isArray(parsed)) return null;
-        return parsed;
-      } catch (_) {
-        return null;
-      }
-    }
-    function writeStoredAliasPairs2(pairs) {
-      if (pairs == null) {
-        backendRemove2(ALIAS_PAIRS_KEY);
-        return;
-      }
-      if (!Array.isArray(pairs)) return;
-      backendSave2(ALIAS_PAIRS_KEY, JSON.stringify(pairs));
-    }
-    var REPL_AUTOSCROLL_KEY = "beljar-repl-autoscroll";
-    var REPL_WELCOME_KEY = "beljar-repl-welcome";
-    var REPL_ECHO_KEY = "beljar-repl-echo";
-    var REPL_FILTER_CHATTER_KEY = "beljar-repl-filter-chatter";
-    var REPL_HOVER_TIMESTAMP_KEY = "beljar-repl-hover-timestamp";
-    var REPL_HISTORY_CAP_KEY = "beljar-repl-history-cap";
-    var REPL_HISTORY_PERSIST_KEY = "beljar-repl-history-persist";
-    var REPL_AUTOCOMPLETE_TRIGGER_KEY = "beljar-repl-autocomplete-trigger";
-    var REPL_AUTOCOMPLETE_CONTINUE_KEY = "beljar-repl-autocomplete-continue";
-    var REPL_TRANSCRIPT_KEY = "beljar-repl-transcript-v1";
-    var REPL_CMD_HISTORY_KEY = "beljar-repl-cmd-history-v1";
-    var REPL_CMD_HISTORY_DEFAULT_CAP = 1e3;
-    var BELUGA_FALLBACK_STABLE_KEY = "beljar-beluga-fallback-stable";
-    var BELUGA_CANCEL_ON_EDIT_KEY = "beljar-beluga-cancel-on-edit";
-    var LIBRARY_EXPAND_DEFAULT_KEY = "beljar-library-expand-default";
-    var LIBRARY_HINT_DISMISSED_KEY = "beljar-library-hint-dismissed";
-    var HINT_DISMISSED_PREFIX = "beljar-hint-dismissed:";
-    var RESTORE_PANELS_KEY = "beljar-restore-panels";
-    var AUTOSAVE_DELAY_KEY = "beljar-autosave-delay";
-    var EDITOR_FONT_SIZE_KEY = "beljar-editor-font-size";
-    var EDITOR_LINE_HEIGHT_KEY = "beljar-editor-line-height";
-    var EDITOR_WORD_WRAP_KEY = "beljar-editor-word-wrap";
-    var EDITOR_TAB_SIZE_KEY = "beljar-editor-tab-size";
-    var EDITOR_LINE_NUMBERS_KEY = "beljar-editor-line-numbers";
-    var EDITOR_FOLD_GUTTER_KEY = "beljar-editor-fold-gutter";
-    var EDITOR_FOLD_PERSIST_KEY = "beljar-editor-fold-persist";
-    var EDITOR_ACTIVE_LINE_KEY = "beljar-editor-active-line";
-    var EDITOR_DIAG_GUTTER_KEY = "beljar-editor-diag-gutter";
-    var EDITOR_HOLE_GUTTER_KEY = "beljar-editor-hole-gutter";
-    var EDITOR_SYNTAX_HIGHLIGHT_KEY = "beljar-editor-syntax-highlight";
-    var EDITOR_SEMANTIC_HIGHLIGHT_KEY = "beljar-editor-semantic-highlight";
-    var EDITOR_PARSE_HIGHLIGHT_KEY = "beljar-editor-parse-highlight";
-    var EDITOR_OCCURRENCE_HIGHLIGHT_KEY = "beljar-editor-occurrence-highlight";
-    var EDITOR_BRACKET_MATCH_KEY = "beljar-editor-bracket-match";
-    var EDITOR_AUTO_CLOSE_BRACKETS_KEY = "beljar-editor-auto-close-brackets";
-    var EDITOR_SELECTION_MATCHES_KEY = "beljar-editor-selection-matches";
-    var EDITOR_REINDENT_PASTE_KEY = "beljar-editor-reindent-paste";
-    var EDITOR_FORMAT_WIDTH_KEY = "beljar-editor-format-width";
-    var EDITOR_AUTOCOMPLETE_TRIGGER_KEY = "beljar-editor-autocomplete-trigger";
-    var EDITOR_AUTOCOMPLETE_CONTINUE_KEY = "beljar-editor-autocomplete-continue";
-    var EDITOR_CURSOR_BLINK_KEY = "beljar-editor-cursor-blink";
-    var EDITOR_SCROLL_PAST_END_KEY = "beljar-editor-scroll-past-end";
-    var EDITOR_WHITESPACE_KEY = "beljar-editor-whitespace";
-    var EDITOR_RULERS_KEY = "beljar-editor-rulers";
-    var EDITOR_FONT_FAMILY_KEY = "beljar-editor-font-family";
-    var EDITOR_HOLE_EMPHASIS_KEY = "beljar-editor-hole-emphasis";
-    var KEYMAP_STYLE_KEY = "beljar-keymap-style";
-    var STATUS_STRIP_KEY = "beljar-status-strip";
-    var COMMAND_LINE_HISTORY_KEY = "beljar-command-line-history";
-    var DOUBLE_TAP_TRIGGER_KEY = "beljar-double-tap-trigger";
-    var DOUBLE_TAP_COMMAND_KEY = "beljar-double-tap-command";
-    var DOUBLE_TAP_SPEED_KEY = "beljar-double-tap-speed";
-    var VIM_LEADER_KEY = "beljar-vim-leader";
-    var EMACS_YANK_SOURCE_KEY = "beljar-emacs-yank-source";
-    var EDITOR_LINE_NUMBER_MODE_KEY = "beljar-editor-line-number-mode";
-    var VIM_INSERT_ESCAPE_KEY = "beljar-vim-insert-escape";
-    var MOTION_PREF_KEY = "beljar-motion-pref";
-    var TOAST_DURATION_KEY = "beljar-toast-duration";
-    var CHECK_AGGRESSIVENESS_KEY = "beljar-check-aggressiveness";
-    var AUTOSOLVE_FOCUS_NEXT_KEY = "beljar-autosolve-focus-next";
-    var AUTOSOLVE_SHOW_STATS_KEY = "beljar-autosolve-show-stats";
-    var HARPOON_MODE_KEY = "beljar-harpoon-mode";
-    var HARPOON_VERIFY_MOVES_KEY = "beljar-harpoon-verify-moves";
-    var QUIET_WHILE_TYPING_KEY = "beljar-quiet-while-typing";
-    var DIAG_PRESENTATION_KEY = "beljar-diag-presentation";
-    var DIAG_SEVERITY_KEY = "beljar-diag-severity";
-    var FORMAT_ON_SAVE_KEY = "beljar-format-on-save";
-    var TRIM_TRAILING_WS_KEY = "beljar-trim-trailing-ws";
-    var STICKY_DECL_HEADER_KEY = "beljar-sticky-decl-header";
-    var SUITE_CHECK_KEY = "beljar-suite-check";
-    var HOVER_STICKY_KEY = "beljar-hover-sticky";
-    function readBoolDefaultOn(key) {
-      try {
-        return backendLoad2(key) !== "off";
-      } catch (_) {
-        return true;
-      }
-    }
-    function writeBoolDefaultOn(key, on) {
-      if (on) backendRemove2(key);
-      else backendSave2(key, "off");
-    }
-    function readBoolDefaultOff(key) {
-      try {
-        return backendLoad2(key) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeBoolDefaultOff(key, on) {
-      if (on) backendSave2(key, "1");
-      else backendRemove2(key);
-    }
-    function readStoredReplAutoscroll2() {
-      return readBoolDefaultOn(REPL_AUTOSCROLL_KEY);
-    }
-    function writeStoredReplAutoscroll2(on) {
-      writeBoolDefaultOn(REPL_AUTOSCROLL_KEY, on);
-    }
-    function readStoredReplWelcome2() {
-      return readBoolDefaultOn(REPL_WELCOME_KEY);
-    }
-    function writeStoredReplWelcome2(on) {
-      writeBoolDefaultOn(REPL_WELCOME_KEY, on);
-    }
-    function readStoredReplEcho2() {
-      return readBoolDefaultOn(REPL_ECHO_KEY);
-    }
-    function writeStoredReplEcho2(on) {
-      writeBoolDefaultOn(REPL_ECHO_KEY, on);
-    }
-    function readStoredReplFilterChatter2() {
-      return readBoolDefaultOn(REPL_FILTER_CHATTER_KEY);
-    }
-    function writeStoredReplFilterChatter2(on) {
-      writeBoolDefaultOn(REPL_FILTER_CHATTER_KEY, on);
-    }
-    function readStoredReplHoverTimestamp2() {
-      return readBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY);
-    }
-    function writeStoredReplHoverTimestamp2(on) {
-      writeBoolDefaultOff(REPL_HOVER_TIMESTAMP_KEY, on);
-    }
-    function readStoredReplAutocompleteTrigger2() {
-      try {
-        var v = backendLoad2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
-        if (v === "none" || v === "always") return v;
-        return "typing";
-      } catch (_) {
-        return "typing";
-      }
-    }
-    function writeStoredReplAutocompleteTrigger2(mode) {
-      if (mode === "none" || mode === "always") backendSave2(REPL_AUTOCOMPLETE_TRIGGER_KEY, mode);
-      else backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
-    }
-    function readStoredReplAutocompleteContinue2() {
-      return readBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY);
-    }
-    function writeStoredReplAutocompleteContinue2(on) {
-      writeBoolDefaultOff(REPL_AUTOCOMPLETE_CONTINUE_KEY, on);
-    }
-    function readStoredReplHistoryCap2() {
-      try {
-        var v = parseInt(backendLoad2(REPL_HISTORY_CAP_KEY), 10);
-        if (v === 100 || v === 250 || v === 500 || v === 1e3) return v;
-        return REPL_CMD_HISTORY_DEFAULT_CAP;
-      } catch (_) {
-        return REPL_CMD_HISTORY_DEFAULT_CAP;
-      }
-    }
-    function writeStoredReplHistoryCap2(cap) {
-      var n = Number(cap);
-      if (n === 100 || n === 250 || n === 500) backendSave2(REPL_HISTORY_CAP_KEY, String(n));
-      else backendRemove2(REPL_HISTORY_CAP_KEY);
-    }
-    function readStoredReplHistoryPersist2() {
-      try {
-        var v = backendLoad2(REPL_HISTORY_PERSIST_KEY);
-        if (v === "session" || v === "none") return v;
-        return "local";
-      } catch (_) {
-        return "local";
-      }
-    }
-    function replHistoryStore(mode) {
-      if (typeof globalThis === "undefined") return null;
-      if (mode === "session") return globalThis.sessionStorage || null;
-      if (mode === "local") return globalThis.localStorage || null;
-      return null;
-    }
-    function replHistoryStoreGet(mode, key) {
-      var store = replHistoryStore(mode);
-      if (!store) return null;
-      try {
-        return store.getItem(key);
-      } catch (_) {
-        return null;
-      }
-    }
-    function replHistoryStoreSet(mode, key, value) {
-      var store = replHistoryStore(mode);
-      if (!store) return;
-      try {
-        store.setItem(key, value);
-      } catch (_) {
-      }
-    }
-    function replHistoryStoreRemove(mode, key) {
-      var store = replHistoryStore(mode);
-      if (!store) return;
-      try {
-        store.removeItem(key);
-      } catch (_) {
-      }
-    }
-    function clearReplHistoryPayload(mode) {
-      if (mode === "session" || mode === "local") {
-        replHistoryStoreRemove(mode, REPL_TRANSCRIPT_KEY);
-        replHistoryStoreRemove(mode, REPL_CMD_HISTORY_KEY);
-        return;
-      }
-      replHistoryStoreRemove("session", REPL_TRANSCRIPT_KEY);
-      replHistoryStoreRemove("session", REPL_CMD_HISTORY_KEY);
-      replHistoryStoreRemove("local", REPL_TRANSCRIPT_KEY);
-      replHistoryStoreRemove("local", REPL_CMD_HISTORY_KEY);
-    }
-    function writeStoredReplHistoryPersist2(mode) {
-      var next = mode === "session" || mode === "none" ? mode : "local";
-      var prev = readStoredReplHistoryPersist2();
-      if (next === "local") backendRemove2(REPL_HISTORY_PERSIST_KEY);
-      else backendSave2(REPL_HISTORY_PERSIST_KEY, next);
-      if (prev === next) return;
-      if (next === "none") {
-        clearReplHistoryPayload();
-        return;
-      }
-      if (prev === "session" || prev === "local") {
-        var keys = [REPL_TRANSCRIPT_KEY, REPL_CMD_HISTORY_KEY];
-        for (var i = 0; i < keys.length; i++) {
-          var key = keys[i];
-          var raw = replHistoryStoreGet(prev, key);
-          if (raw && !replHistoryStoreGet(next, key)) replHistoryStoreSet(next, key, raw);
-        }
-        clearReplHistoryPayload(prev);
-      }
-    }
-    function readStoredReplTranscript2() {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return null;
-        var raw = replHistoryStoreGet(mode, REPL_TRANSCRIPT_KEY);
-        if (!raw) return null;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== "object" || parsed.v !== 1) return null;
-        if (typeof parsed.html !== "string") return null;
-        return {
-          v: 1,
-          html: parsed.html,
-          scrollTop: typeof parsed.scrollTop === "number" ? parsed.scrollTop : 0,
-          savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0
-        };
-      } catch (_) {
-        return null;
-      }
-    }
-    function writeStoredReplTranscript2(snap) {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return;
-        if (!snap || typeof snap.html !== "string" || !snap.html) {
-          replHistoryStoreRemove(mode, REPL_TRANSCRIPT_KEY);
-          return;
-        }
-        replHistoryStoreSet(mode, REPL_TRANSCRIPT_KEY, JSON.stringify({
-          v: 1,
-          html: snap.html,
-          scrollTop: typeof snap.scrollTop === "number" ? snap.scrollTop : 0,
-          savedAt: typeof snap.savedAt === "number" ? snap.savedAt : Date.now()
-        }));
-      } catch (_) {
-      }
-    }
-    function clampReplCommandHistory(list) {
-      var arr = Array.isArray(list) ? list.filter(function(s) {
-        return typeof s === "string";
-      }) : [];
-      var cap = readStoredReplHistoryCap2();
-      if (!cap) cap = REPL_CMD_HISTORY_DEFAULT_CAP;
-      if (arr.length > cap) arr = arr.slice(arr.length - cap);
-      return arr;
-    }
-    function readStoredReplCommandHistory2() {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return [];
-        var raw = replHistoryStoreGet(mode, REPL_CMD_HISTORY_KEY);
-        if (!raw) return [];
-        var parsed = JSON.parse(raw);
-        return clampReplCommandHistory(parsed);
-      } catch (_) {
-        return [];
-      }
-    }
-    function writeStoredReplCommandHistory2(list) {
-      try {
-        var mode = readStoredReplHistoryPersist2();
-        if (mode === "none") return;
-        var arr = clampReplCommandHistory(list);
-        if (!arr.length) replHistoryStoreRemove(mode, REPL_CMD_HISTORY_KEY);
-        else replHistoryStoreSet(mode, REPL_CMD_HISTORY_KEY, JSON.stringify(arr));
-      } catch (_) {
-      }
-    }
-    function readStoredBelugaFallbackStable2() {
-      return readBoolDefaultOn(BELUGA_FALLBACK_STABLE_KEY);
-    }
-    function writeStoredBelugaFallbackStable2(on) {
-      writeBoolDefaultOn(BELUGA_FALLBACK_STABLE_KEY, on);
-    }
-    function readStoredBelugaCancelOnEdit2() {
-      return readBoolDefaultOn(BELUGA_CANCEL_ON_EDIT_KEY);
-    }
-    function writeStoredBelugaCancelOnEdit2(on) {
-      writeBoolDefaultOn(BELUGA_CANCEL_ON_EDIT_KEY, on);
-    }
-    function readStoredLibraryExpandDefault2() {
-      return readBoolDefaultOff(LIBRARY_EXPAND_DEFAULT_KEY);
-    }
-    function writeStoredLibraryExpandDefault2(on) {
-      writeBoolDefaultOff(LIBRARY_EXPAND_DEFAULT_KEY, on);
-    }
-    function readStoredLibraryHintDismissed2() {
-      return readBoolDefaultOff(LIBRARY_HINT_DISMISSED_KEY);
-    }
-    function writeStoredLibraryHintDismissed2(on) {
-      writeBoolDefaultOff(LIBRARY_HINT_DISMISSED_KEY, on);
-    }
-    function readStoredHintDismissed2(id) {
-      if (id == null || id === "") return false;
-      return readBoolDefaultOff(HINT_DISMISSED_PREFIX + String(id));
-    }
-    function writeStoredHintDismissed2(id, on) {
-      if (id == null || id === "") return;
-      writeBoolDefaultOff(HINT_DISMISSED_PREFIX + String(id), !!on);
-    }
-    function readStoredRestorePanels2() {
-      return readBoolDefaultOn(RESTORE_PANELS_KEY);
-    }
-    function writeStoredRestorePanels2(on) {
-      writeBoolDefaultOn(RESTORE_PANELS_KEY, on);
-    }
-    function readStoredAutosaveDelay2() {
-      try {
-        var v = parseInt(backendLoad2(AUTOSAVE_DELAY_KEY), 10);
-        if (v === 320 || v === 1e3 || v === 2e3) return v;
-        return 320;
-      } catch (_) {
-        return 320;
-      }
-    }
-    function writeStoredAutosaveDelay2(ms) {
-      var n = Number(ms);
-      if (n === 320) backendRemove2(AUTOSAVE_DELAY_KEY);
-      else if (n === 1e3 || n === 2e3) backendSave2(AUTOSAVE_DELAY_KEY, String(n));
-      else backendRemove2(AUTOSAVE_DELAY_KEY);
-    }
-    function readStoredEditorFontSize2() {
-      try {
-        var v = backendLoad2(EDITOR_FONT_SIZE_KEY);
-        if (v === "sm" || v === "lg" || v === "xl") return v;
-        return "md";
-      } catch (_) {
-        return "md";
-      }
-    }
-    function writeStoredEditorFontSize2(size) {
-      if (size === "md") backendRemove2(EDITOR_FONT_SIZE_KEY);
-      else if (size === "sm" || size === "lg" || size === "xl") backendSave2(EDITOR_FONT_SIZE_KEY, size);
-      else backendRemove2(EDITOR_FONT_SIZE_KEY);
-    }
-    function readStoredEditorLineHeight2() {
-      try {
-        var v = backendLoad2(EDITOR_LINE_HEIGHT_KEY);
-        if (v === "compact" || v === "relaxed") return v;
-        return "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredEditorLineHeight2(mode) {
-      if (mode === "normal") backendRemove2(EDITOR_LINE_HEIGHT_KEY);
-      else if (mode === "compact" || mode === "relaxed") backendSave2(EDITOR_LINE_HEIGHT_KEY, mode);
-      else backendRemove2(EDITOR_LINE_HEIGHT_KEY);
-    }
-    function readStoredEditorWordWrap2() {
-      return readBoolDefaultOff(EDITOR_WORD_WRAP_KEY);
-    }
-    function writeStoredEditorWordWrap2(on) {
-      writeBoolDefaultOff(EDITOR_WORD_WRAP_KEY, on);
-    }
-    function readStoredEditorTabSize2() {
-      try {
-        return backendLoad2(EDITOR_TAB_SIZE_KEY) === "4" ? 4 : 2;
-      } catch (_) {
-        return 2;
-      }
-    }
-    function writeStoredEditorTabSize2(n) {
-      if (Number(n) === 4) backendSave2(EDITOR_TAB_SIZE_KEY, "4");
-      else backendRemove2(EDITOR_TAB_SIZE_KEY);
-    }
-    function readStoredEditorLineNumbers2() {
-      return readBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY);
-    }
-    function writeStoredEditorLineNumbers2(on) {
-      writeBoolDefaultOn(EDITOR_LINE_NUMBERS_KEY, on);
-    }
-    function readStoredEditorLineNumberMode2() {
-      try {
-        var v = backendLoad2(EDITOR_LINE_NUMBER_MODE_KEY);
-        if (v === "relative" || v === "hybrid") return v;
-        return "absolute";
-      } catch (_) {
-        return "absolute";
-      }
-    }
-    function writeStoredEditorLineNumberMode2(v) {
-      if (v === "relative" || v === "hybrid") backendSave2(EDITOR_LINE_NUMBER_MODE_KEY, v);
-      else backendRemove2(EDITOR_LINE_NUMBER_MODE_KEY);
-    }
-    function readStoredEditorFoldGutter2() {
-      return readBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY);
-    }
-    function writeStoredEditorFoldGutter2(on) {
-      writeBoolDefaultOn(EDITOR_FOLD_GUTTER_KEY, on);
-    }
-    function readStoredEditorFoldPersist2() {
-      try {
-        var v = backendLoad2(EDITOR_FOLD_PERSIST_KEY);
-        if (v === "none" || v === "local") return v;
-        return "session";
-      } catch (_) {
-        return "session";
-      }
-    }
-    function writeStoredEditorFoldPersist2(mode) {
-      if (mode === "none" || mode === "local") backendSave2(EDITOR_FOLD_PERSIST_KEY, mode);
-      else backendRemove2(EDITOR_FOLD_PERSIST_KEY);
-    }
-    function readStoredEditorActiveLine2() {
-      return readBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY);
-    }
-    function writeStoredEditorActiveLine2(on) {
-      writeBoolDefaultOn(EDITOR_ACTIVE_LINE_KEY, on);
-    }
-    function readStoredEditorDiagGutter2() {
-      return readBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY);
-    }
-    function writeStoredEditorDiagGutter2(on) {
-      writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, on);
-    }
-    function readStoredEditorHoleGutter2() {
-      return readBoolDefaultOn(EDITOR_HOLE_GUTTER_KEY);
-    }
-    function writeStoredEditorHoleGutter2(on) {
-      writeBoolDefaultOn(EDITOR_HOLE_GUTTER_KEY, on);
-    }
-    function readStoredEditorSyntaxHighlight2() {
-      return readBoolDefaultOn(EDITOR_SYNTAX_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorSyntaxHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_SYNTAX_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorSemanticHighlight2() {
-      return readBoolDefaultOn(EDITOR_SEMANTIC_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorSemanticHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_SEMANTIC_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorParseHighlight2() {
-      return readBoolDefaultOn(EDITOR_PARSE_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorParseHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_PARSE_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorOccurrenceHighlight2() {
-      return readBoolDefaultOn(EDITOR_OCCURRENCE_HIGHLIGHT_KEY);
-    }
-    function writeStoredEditorOccurrenceHighlight2(on) {
-      writeBoolDefaultOn(EDITOR_OCCURRENCE_HIGHLIGHT_KEY, on);
-    }
-    function readStoredEditorBracketMatch2() {
-      return readBoolDefaultOn(EDITOR_BRACKET_MATCH_KEY);
-    }
-    function writeStoredEditorBracketMatch2(on) {
-      writeBoolDefaultOn(EDITOR_BRACKET_MATCH_KEY, on);
-    }
-    function readStoredEditorAutoCloseBrackets2() {
-      return readBoolDefaultOn(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
-    }
-    function writeStoredEditorAutoCloseBrackets2(on) {
-      writeBoolDefaultOn(EDITOR_AUTO_CLOSE_BRACKETS_KEY, on);
-    }
-    function readStoredEditorSelectionMatches2() {
-      return readBoolDefaultOn(EDITOR_SELECTION_MATCHES_KEY);
-    }
-    function writeStoredEditorSelectionMatches2(on) {
-      writeBoolDefaultOn(EDITOR_SELECTION_MATCHES_KEY, on);
-    }
-    function readStoredEditorReindentPaste2() {
-      return readBoolDefaultOn(EDITOR_REINDENT_PASTE_KEY);
-    }
-    function writeStoredEditorReindentPaste2(on) {
-      writeBoolDefaultOn(EDITOR_REINDENT_PASTE_KEY, on);
-    }
-    function readStoredEditorFormatWidth2() {
-      try {
-        var v = parseInt(backendLoad2(EDITOR_FORMAT_WIDTH_KEY), 10);
-        if (v === 100 || v === 120) return v;
-        return 80;
-      } catch (_) {
-        return 80;
-      }
-    }
-    function writeStoredEditorFormatWidth2(width) {
-      var n = Number(width);
-      if (n === 80) backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
-      else if (n === 100 || n === 120) backendSave2(EDITOR_FORMAT_WIDTH_KEY, String(n));
-      else backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
-    }
-    function readStoredEditorAutocompleteTrigger2() {
-      try {
-        var v = backendLoad2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
-        if (v === "none" || v === "always") return v;
-        return "typing";
-      } catch (_) {
-        return "typing";
-      }
-    }
-    function writeStoredEditorAutocompleteTrigger2(mode) {
-      if (mode === "none" || mode === "always") backendSave2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY, mode);
-      else backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
-    }
-    function readStoredEditorAutocompleteContinue2() {
-      return readBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
-    }
-    function writeStoredEditorAutocompleteContinue2(on) {
-      writeBoolDefaultOff(EDITOR_AUTOCOMPLETE_CONTINUE_KEY, on);
-    }
-    function readStoredEditorCursorBlink() {
-      try {
-        var v = backendLoad2(EDITOR_CURSOR_BLINK_KEY);
-        if (v === "off" || v === "fast") return v;
-        return "blink";
-      } catch (_) {
-        return "blink";
-      }
-    }
-    function writeStoredEditorCursorBlink(mode) {
-      if (mode === "off" || mode === "fast") backendSave2(EDITOR_CURSOR_BLINK_KEY, mode);
-      else backendRemove2(EDITOR_CURSOR_BLINK_KEY);
-    }
-    function readStoredEditorScrollPastEnd() {
-      return readBoolDefaultOn(EDITOR_SCROLL_PAST_END_KEY);
-    }
-    function writeStoredEditorScrollPastEnd(on) {
-      writeBoolDefaultOn(EDITOR_SCROLL_PAST_END_KEY, on);
-    }
-    function readStoredEditorWhitespace() {
-      try {
-        var v = backendLoad2(EDITOR_WHITESPACE_KEY);
-        if (v === "trailing" || v === "all" || v === "selection") return v;
-        return "none";
-      } catch (_) {
-        return "none";
-      }
-    }
-    function writeStoredEditorWhitespace(mode) {
-      if (mode === "trailing" || mode === "all" || mode === "selection") backendSave2(EDITOR_WHITESPACE_KEY, mode);
-      else backendRemove2(EDITOR_WHITESPACE_KEY);
-    }
-    function readStoredEditorRulers() {
-      return readBoolDefaultOff(EDITOR_RULERS_KEY);
-    }
-    function writeStoredEditorRulers(on) {
-      writeBoolDefaultOff(EDITOR_RULERS_KEY, on);
-    }
-    function readStoredEditorFontFamily() {
-      try {
-        var v = backendLoad2(EDITOR_FONT_FAMILY_KEY);
-        if (v === "system") return "system";
-        return "jetbrains";
-      } catch (_) {
-        return "jetbrains";
-      }
-    }
-    function writeStoredEditorFontFamily(family) {
-      if (family === "system") backendSave2(EDITOR_FONT_FAMILY_KEY, "system");
-      else backendRemove2(EDITOR_FONT_FAMILY_KEY);
-    }
-    function readStoredEditorHoleEmphasis() {
-      try {
-        var v = backendLoad2(EDITOR_HOLE_EMPHASIS_KEY);
-        if (v === "subtle" || v === "loud") return v;
-        return "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredEditorHoleEmphasis(mode) {
-      if (mode === "subtle" || mode === "loud") backendSave2(EDITOR_HOLE_EMPHASIS_KEY, mode);
-      else backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
-    }
-    function readStoredKeymapStyle() {
-      try {
-        var v = backendLoad2(KEYMAP_STYLE_KEY);
-        if (v === "vim" || v === "emacs") return v;
-        return "default";
-      } catch (_) {
-        return "default";
-      }
-    }
-    function writeStoredKeymapStyle(style) {
-      if (style === "vim" || style === "emacs") backendSave2(KEYMAP_STYLE_KEY, style);
-      else backendRemove2(KEYMAP_STYLE_KEY);
-    }
-    function readStoredStatusStrip() {
-      try {
-        var v = backendLoad2(STATUS_STRIP_KEY);
-        if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
-        return null;
-      } catch (_) {
-        return null;
-      }
-    }
-    function writeStoredStatusStrip(mode) {
-      if (mode === "off" || mode === "compact" || mode === "standard" || mode === "detailed") backendSave2(STATUS_STRIP_KEY, mode);
-      else backendRemove2(STATUS_STRIP_KEY);
-    }
-    function readStoredCommandLineHistory() {
-      try {
-        var raw = backendLoad2(COMMAND_LINE_HISTORY_KEY);
-        if (!raw) return [];
-        var parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return [];
-        return parsed.filter(function(x) {
-          return typeof x === "string" && x;
-        }).slice(0, 50);
-      } catch (_) {
-        return [];
-      }
-    }
-    function writeStoredCommandLineHistory(list) {
-      if (!Array.isArray(list) || !list.length) {
-        backendRemove2(COMMAND_LINE_HISTORY_KEY);
-        return;
-      }
-      var clean = list.filter(function(x) {
-        return typeof x === "string" && x;
-      }).slice(0, 50);
-      backendSave2(COMMAND_LINE_HISTORY_KEY, JSON.stringify(clean));
-    }
-    function readStoredDoubleTapTrigger() {
-      try {
-        var v = backendLoad2(DOUBLE_TAP_TRIGGER_KEY);
-        return v === "shift" || v === "control" || v === "alt" ? v : "off";
-      } catch (_) {
-        return "off";
-      }
-    }
-    function writeStoredDoubleTapTrigger(v) {
-      if (v === "shift" || v === "control" || v === "alt") backendSave2(DOUBLE_TAP_TRIGGER_KEY, v);
-      else backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
-    }
-    function readStoredDoubleTapCommand() {
-      try {
-        var v = backendLoad2(DOUBLE_TAP_COMMAND_KEY);
-        return typeof v === "string" && v ? v : "tools.palette";
-      } catch (_) {
-        return "tools.palette";
-      }
-    }
-    function writeStoredDoubleTapCommand(v) {
-      if (typeof v === "string" && v && v !== "tools.palette") backendSave2(DOUBLE_TAP_COMMAND_KEY, v);
-      else backendRemove2(DOUBLE_TAP_COMMAND_KEY);
-    }
-    function readStoredDoubleTapSpeed() {
-      try {
-        var v = backendLoad2(DOUBLE_TAP_SPEED_KEY);
-        return v === "fast" || v === "relaxed" ? v : "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredDoubleTapSpeed(v) {
-      if (v === "fast" || v === "relaxed") backendSave2(DOUBLE_TAP_SPEED_KEY, v);
-      else backendRemove2(DOUBLE_TAP_SPEED_KEY);
-    }
-    function readStoredVimLeader() {
-      try {
-        var v = backendLoad2(VIM_LEADER_KEY);
-        if (v === "," || v === " ") return v;
-        return String.fromCharCode(92);
-      } catch (_) {
-        return String.fromCharCode(92);
-      }
-    }
-    function writeStoredVimLeader(v) {
-      if (v === "," || v === " ") backendSave2(VIM_LEADER_KEY, v);
-      else backendRemove2(VIM_LEADER_KEY);
-    }
-    function readStoredEmacsYankSource() {
-      try {
-        return backendLoad2(EMACS_YANK_SOURCE_KEY) === "kill-ring" ? "kill-ring" : "system";
-      } catch (_) {
-        return "system";
-      }
-    }
-    function writeStoredEmacsYankSource(v) {
-      if (v === "kill-ring") backendSave2(EMACS_YANK_SOURCE_KEY, "kill-ring");
-      else backendRemove2(EMACS_YANK_SOURCE_KEY);
-    }
-    function readStoredVimInsertEscape() {
-      try {
-        var v = backendLoad2(VIM_INSERT_ESCAPE_KEY);
-        return v === "jk" || v === "jj" || v === "kj" ? v : "";
-      } catch (_) {
-        return "";
-      }
-    }
-    function writeStoredVimInsertEscape(v) {
-      if (v === "jk" || v === "jj" || v === "kj") backendSave2(VIM_INSERT_ESCAPE_KEY, v);
-      else backendRemove2(VIM_INSERT_ESCAPE_KEY);
-    }
-    function readStoredMotionPref() {
-      try {
-        var v = backendLoad2(MOTION_PREF_KEY);
-        if (v === "reduce" || v === "full") return v;
-        return "system";
-      } catch (_) {
-        return "system";
-      }
-    }
-    function writeStoredMotionPref(mode) {
-      if (mode === "reduce" || mode === "full") backendSave2(MOTION_PREF_KEY, mode);
-      else backendRemove2(MOTION_PREF_KEY);
-    }
-    function applyStoredMotionPref(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
-      var mode = readStoredMotionPref();
-      root.classList.toggle("jar-motion-reduce", mode === "reduce");
-      root.classList.toggle("jar-motion-full", mode === "full");
-    }
-    function prefersReducedMotion() {
-      var mode = readStoredMotionPref();
-      if (mode === "reduce") return true;
-      if (mode === "full") return false;
-      try {
-        return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-      } catch (_) {
-        return false;
-      }
-    }
-    function readStoredToastDuration() {
-      try {
-        var v = backendLoad2(TOAST_DURATION_KEY);
-        if (v === "short" || v === "long") return v;
-        return "normal";
-      } catch (_) {
-        return "normal";
-      }
-    }
-    function writeStoredToastDuration(mode) {
-      if (mode === "short" || mode === "long") backendSave2(TOAST_DURATION_KEY, mode);
-      else backendRemove2(TOAST_DURATION_KEY);
-    }
-    function toastDurationForMode(mode) {
-      if (mode === "short") return 2e3;
-      if (mode === "long") return 5e3;
-      return 3500;
-    }
-    function toastDurationMs() {
-      return toastDurationForMode(readStoredToastDuration());
-    }
-    function readStoredCheckAggressiveness() {
-      try {
-        var v = backendLoad2(CHECK_AGGRESSIVENESS_KEY);
-        if (v === "responsive" || v === "thorough") return v;
-        return "balanced";
-      } catch (_) {
-        return "balanced";
-      }
-    }
-    function writeStoredCheckAggressiveness(mode) {
-      if (mode === "responsive" || mode === "thorough") backendSave2(CHECK_AGGRESSIVENESS_KEY, mode);
-      else backendRemove2(CHECK_AGGRESSIVENESS_KEY);
-    }
-    function checkAggressivenessScale() {
-      var mode = readStoredCheckAggressiveness();
-      if (mode === "responsive") return 0.7;
-      if (mode === "thorough") return 1.45;
-      return 1;
-    }
-    function readStoredAutosolveFocusNext() {
-      return readBoolDefaultOn(AUTOSOLVE_FOCUS_NEXT_KEY);
-    }
-    function writeStoredAutosolveFocusNext(on) {
-      writeBoolDefaultOn(AUTOSOLVE_FOCUS_NEXT_KEY, on);
-    }
-    function readStoredAutosolveShowStats() {
-      return readBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY);
-    }
-    function writeStoredAutosolveShowStats(on) {
-      writeBoolDefaultOn(AUTOSOLVE_SHOW_STATS_KEY, on);
-    }
-    function readStoredHarpoonMode() {
-      try {
-        return backendLoad2(HARPOON_MODE_KEY) === "orca" ? "orca" : "manual";
-      } catch (_) {
-        return "manual";
-      }
-    }
-    function writeStoredHarpoonMode(mode) {
-      if (mode === "orca") backendSave2(HARPOON_MODE_KEY, "orca");
-      else backendRemove2(HARPOON_MODE_KEY);
-    }
-    function readStoredHarpoonVerifyMoves() {
-      return readBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY);
-    }
-    function writeStoredHarpoonVerifyMoves(on) {
-      writeBoolDefaultOn(HARPOON_VERIFY_MOVES_KEY, on);
-    }
-    function readStoredQuietWhileTyping() {
-      return readBoolDefaultOff(QUIET_WHILE_TYPING_KEY);
-    }
-    function writeStoredQuietWhileTyping(on) {
-      writeBoolDefaultOff(QUIET_WHILE_TYPING_KEY, on);
-    }
-    function readStoredDiagPresentation() {
-      try {
-        var v = backendLoad2(DIAG_PRESENTATION_KEY);
-        if (v === "underlines" || v === "gutter" || v === "none" || v === "both") return v;
-        if (backendLoad2(EDITOR_DIAG_GUTTER_KEY) === "off") return "underlines";
-        return "both";
-      } catch (_) {
-        return "both";
-      }
-    }
-    function writeStoredDiagPresentation(mode) {
-      if (mode === "underlines" || mode === "gutter" || mode === "none") {
-        backendSave2(DIAG_PRESENTATION_KEY, mode);
-      } else {
-        backendRemove2(DIAG_PRESENTATION_KEY);
-      }
-      if (mode === "underlines" || mode === "none") writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, false);
-      else writeBoolDefaultOn(EDITOR_DIAG_GUTTER_KEY, true);
-    }
-    function readStoredDiagSeverity() {
-      try {
-        var v = backendLoad2(DIAG_SEVERITY_KEY);
-        if (v === "errors") return "errors";
-        return "all";
-      } catch (_) {
-        return "all";
-      }
-    }
-    function writeStoredDiagSeverity(mode) {
-      if (mode === "errors") backendSave2(DIAG_SEVERITY_KEY, "errors");
-      else backendRemove2(DIAG_SEVERITY_KEY);
-    }
-    function readStoredFormatOnSave() {
-      return readBoolDefaultOff(FORMAT_ON_SAVE_KEY);
-    }
-    function writeStoredFormatOnSave(on) {
-      writeBoolDefaultOff(FORMAT_ON_SAVE_KEY, on);
-    }
-    function readStoredTrimTrailingWs() {
-      return readBoolDefaultOff(TRIM_TRAILING_WS_KEY);
-    }
-    function writeStoredTrimTrailingWs(on) {
-      writeBoolDefaultOff(TRIM_TRAILING_WS_KEY, on);
-    }
-    function readStoredStickyDeclHeader() {
-      return readBoolDefaultOff(STICKY_DECL_HEADER_KEY);
-    }
-    function writeStoredStickyDeclHeader(on) {
-      writeBoolDefaultOff(STICKY_DECL_HEADER_KEY, on);
-    }
-    function readStoredSuiteCheck() {
-      try {
-        var v = backendLoad2(SUITE_CHECK_KEY);
-        if (v === "active") return "active";
-        return "suite";
-      } catch (_) {
-        return "suite";
-      }
-    }
-    function writeStoredSuiteCheck(mode) {
-      if (mode === "active") backendSave2(SUITE_CHECK_KEY, "active");
-      else backendRemove2(SUITE_CHECK_KEY);
-    }
-    function readStoredHoverSticky() {
-      return readBoolDefaultOff(HOVER_STICKY_KEY);
-    }
-    function writeStoredHoverSticky(on) {
-      writeBoolDefaultOff(HOVER_STICKY_KEY, on);
-    }
-    function applyStoredEditorChrome(doc) {
-      var root = doc && doc.documentElement ? doc.documentElement : null;
-      if (!root && typeof document !== "undefined") root = document.documentElement;
-      if (!root) return;
-      var family = readStoredEditorFontFamily();
-      root.style.setProperty(
-        "--editor-mono",
-        family === "system" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "'JetBrains Mono', monospace"
-      );
-      root.style.setProperty("--editor-ligatures", "none");
-      backendRemove2("beljar-editor-ligatures");
-      var emph = readStoredEditorHoleEmphasis();
-      root.classList.toggle("jar-hole-subtle", emph === "subtle");
-      root.classList.toggle("jar-hole-loud", emph === "loud");
-    }
-    var USER_SETTINGS_EXPORT_KEYS = [
-      "beljar-theme",
-      "beljar-ui-font-size",
-      "beljar-ui-text-contrast",
-      "beljar-motion-pref",
-      "beljar-toast-duration",
-      "beljar-beluga-mode",
-      "beljar-beluga-fallback-stable",
-      "beljar-beluga-cancel-on-edit",
-      "beljar-check-aggressiveness",
-      "beljar-hover-scope",
-      "beljar-alias-activation",
-      "beljar-alias-pairs",
-      "beljar-cfg-auto-sync",
-      "beljar-repl-autoscroll",
-      "beljar-repl-welcome",
-      "beljar-repl-echo",
-      "beljar-repl-filter-chatter",
-      "beljar-repl-hover-timestamp",
-      "beljar-repl-history-cap",
-      "beljar-repl-history-persist",
-      REPL_AUTOCOMPLETE_TRIGGER_KEY,
-      REPL_AUTOCOMPLETE_CONTINUE_KEY,
-      "beljar-library-expand-default",
-      "beljar-restore-panels",
-      "beljar-inspector-follow",
-      "beljar-autosave-delay",
-      "beljar-autosolve-focus-next",
-      "beljar-autosolve-show-stats",
-      "beljar-harpoon-mode",
-      "beljar-harpoon-verify-moves",
-      QUIET_WHILE_TYPING_KEY,
-      DIAG_PRESENTATION_KEY,
-      DIAG_SEVERITY_KEY,
-      FORMAT_ON_SAVE_KEY,
-      TRIM_TRAILING_WS_KEY,
-      STICKY_DECL_HEADER_KEY,
-      SUITE_CHECK_KEY,
-      HOVER_STICKY_KEY,
-      "beljar-keybindings",
-      EDITOR_FONT_SIZE_KEY,
-      EDITOR_LINE_HEIGHT_KEY,
-      EDITOR_WORD_WRAP_KEY,
-      EDITOR_TAB_SIZE_KEY,
-      EDITOR_LINE_NUMBERS_KEY,
-      EDITOR_LINE_NUMBER_MODE_KEY,
-      EDITOR_FOLD_GUTTER_KEY,
-      EDITOR_FOLD_PERSIST_KEY,
-      EDITOR_ACTIVE_LINE_KEY,
-      EDITOR_DIAG_GUTTER_KEY,
-      EDITOR_HOLE_GUTTER_KEY,
-      EDITOR_SYNTAX_HIGHLIGHT_KEY,
-      EDITOR_SEMANTIC_HIGHLIGHT_KEY,
-      EDITOR_PARSE_HIGHLIGHT_KEY,
-      EDITOR_OCCURRENCE_HIGHLIGHT_KEY,
-      EDITOR_BRACKET_MATCH_KEY,
-      EDITOR_AUTO_CLOSE_BRACKETS_KEY,
-      EDITOR_SELECTION_MATCHES_KEY,
-      EDITOR_REINDENT_PASTE_KEY,
-      EDITOR_FORMAT_WIDTH_KEY,
-      EDITOR_AUTOCOMPLETE_TRIGGER_KEY,
-      EDITOR_AUTOCOMPLETE_CONTINUE_KEY,
-      EDITOR_CURSOR_BLINK_KEY,
-      EDITOR_SCROLL_PAST_END_KEY,
-      EDITOR_WHITESPACE_KEY,
-      EDITOR_RULERS_KEY,
-      EDITOR_FONT_FAMILY_KEY,
-      EDITOR_HOLE_EMPHASIS_KEY,
-      KEYMAP_STYLE_KEY,
-      STATUS_STRIP_KEY,
-      COMMAND_LINE_HISTORY_KEY,
-      VIM_LEADER_KEY,
-      EMACS_YANK_SOURCE_KEY,
-      VIM_INSERT_ESCAPE_KEY,
-      DOUBLE_TAP_TRIGGER_KEY,
-      DOUBLE_TAP_COMMAND_KEY,
-      DOUBLE_TAP_SPEED_KEY
-    ];
-    function exportUserSettings() {
-      var prefs = {};
-      for (var i = 0; i < USER_SETTINGS_EXPORT_KEYS.length; i++) {
-        var key = USER_SETTINGS_EXPORT_KEYS[i];
-        try {
-          var v = backendLoad2(key);
-          if (v != null && v !== "") prefs[key] = v;
-        } catch (_) {
-        }
-      }
-      try {
-        if (typeof globalThis !== "undefined" && globalThis.localStorage) {
-          var kb = globalThis.localStorage.getItem("beljar-keybindings");
-          if (kb) prefs["beljar-keybindings"] = kb;
-        }
-      } catch (_) {
-      }
-      return { v: 1, exportedAt: Date.now(), prefs };
-    }
-    function importUserSettings(bundle) {
-      if (!bundle || typeof bundle !== "object" || !bundle.prefs || typeof bundle.prefs !== "object") {
-        return { ok: false, reason: "invalid" };
-      }
-      var prefs = bundle.prefs;
-      var applied = 0;
-      Object.keys(prefs).forEach(function(key) {
-        if (USER_SETTINGS_EXPORT_KEYS.indexOf(key) < 0 && key !== "beljar-keybindings") return;
-        var val = prefs[key];
-        if (typeof val !== "string") return;
-        try {
-          if (key === "beljar-keybindings") {
-            if (typeof globalThis !== "undefined" && globalThis.localStorage) {
-              if (!val || val === "{}") globalThis.localStorage.removeItem(key);
-              else globalThis.localStorage.setItem(key, val);
-              applied += 1;
-            }
-            return;
-          }
-          backendSave2(key, val);
-          applied += 1;
-        } catch (_) {
-        }
-      });
-      return { ok: true, applied };
-    }
-    function resetAppearancePrefs2() {
-      backendRemove2(THEME_STORAGE_KEY2);
-      backendRemove2(UI_FONT_SIZE_KEY2);
-      backendRemove2(UI_TEXT_CONTRAST_KEY2);
-      backendRemove2(MOTION_PREF_KEY);
-      backendRemove2(TOAST_DURATION_KEY);
-    }
-    function resetEditorTypographyPrefs2() {
-      backendRemove2(EDITOR_FONT_SIZE_KEY);
-      backendRemove2(EDITOR_LINE_HEIGHT_KEY);
-      backendRemove2(EDITOR_WORD_WRAP_KEY);
-      backendRemove2("beljar-editor-ligatures");
-      backendRemove2(EDITOR_FONT_FAMILY_KEY);
-      backendRemove2(EDITOR_CURSOR_BLINK_KEY);
-      backendRemove2(EDITOR_SCROLL_PAST_END_KEY);
-      backendRemove2(EDITOR_WHITESPACE_KEY);
-      backendRemove2(EDITOR_RULERS_KEY);
-    }
-    function resetEditorIndentPrefs2() {
-      backendRemove2(EDITOR_TAB_SIZE_KEY);
-      backendRemove2(AUTOSAVE_DELAY_KEY);
-      backendRemove2(EDITOR_FORMAT_WIDTH_KEY);
-      backendRemove2(EDITOR_REINDENT_PASTE_KEY);
-      backendRemove2(CFG_AUTO_SYNC_KEY);
-      backendRemove2(FORMAT_ON_SAVE_KEY);
-      backendRemove2(TRIM_TRAILING_WS_KEY);
-    }
-    function resetEditorCodeInsightPrefs2() {
-      backendRemove2(EDITOR_SYNTAX_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_SEMANTIC_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_PARSE_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_OCCURRENCE_HIGHLIGHT_KEY);
-      backendRemove2(EDITOR_BRACKET_MATCH_KEY);
-      backendRemove2(EDITOR_AUTO_CLOSE_BRACKETS_KEY);
-      backendRemove2(EDITOR_SELECTION_MATCHES_KEY);
-      backendRemove2(HOVER_SCOPE_KEY);
-      backendRemove2(EDITOR_AUTOCOMPLETE_TRIGGER_KEY);
-      backendRemove2(EDITOR_AUTOCOMPLETE_CONTINUE_KEY);
-      backendRemove2(QUIET_WHILE_TYPING_KEY);
-      backendRemove2(HOVER_STICKY_KEY);
-    }
-    function resetEditorGutterPrefs2() {
-      backendRemove2(EDITOR_LINE_NUMBERS_KEY);
-      backendRemove2(EDITOR_FOLD_GUTTER_KEY);
-      backendRemove2(EDITOR_FOLD_PERSIST_KEY);
-      backendRemove2(EDITOR_ACTIVE_LINE_KEY);
-      backendRemove2(EDITOR_DIAG_GUTTER_KEY);
-      backendRemove2(DIAG_PRESENTATION_KEY);
-      backendRemove2(DIAG_SEVERITY_KEY);
-      backendRemove2(EDITOR_HOLE_GUTTER_KEY);
-      backendRemove2(EDITOR_HOLE_EMPHASIS_KEY);
-      backendRemove2(STICKY_DECL_HEADER_KEY);
-    }
-    function resetEditorPrefs2() {
-      resetEditorTypographyPrefs2();
-      resetEditorIndentPrefs2();
-      resetEditorCodeInsightPrefs2();
-      resetEditorGutterPrefs2();
-    }
-    function resetBelugaPrefs2() {
-      backendRemove2(BELUGA_MODE_STORAGE_KEY2);
-      backendRemove2(BELUGA_FALLBACK_STABLE_KEY);
-      backendRemove2(BELUGA_CANCEL_ON_EDIT_KEY);
-      backendRemove2(CHECK_AGGRESSIVENESS_KEY);
-      backendRemove2(SUITE_CHECK_KEY);
-    }
-    function resetHarpoonPrefs2() {
-      backendRemove2(AUTOSOLVE_FOCUS_NEXT_KEY);
-      backendRemove2(AUTOSOLVE_SHOW_STATS_KEY);
-      backendRemove2(HARPOON_MODE_KEY);
-      backendRemove2(HARPOON_VERIFY_MOVES_KEY);
-    }
-    function resetReplPrefs2() {
-      backendRemove2(REPL_AUTOSCROLL_KEY);
-      backendRemove2(REPL_WELCOME_KEY);
-      backendRemove2(REPL_ECHO_KEY);
-      backendRemove2(REPL_FILTER_CHATTER_KEY);
-      backendRemove2(REPL_HOVER_TIMESTAMP_KEY);
-      backendRemove2(REPL_HISTORY_CAP_KEY);
-      backendRemove2(REPL_HISTORY_PERSIST_KEY);
-      backendRemove2(REPL_AUTOCOMPLETE_TRIGGER_KEY);
-      backendRemove2(REPL_AUTOCOMPLETE_CONTINUE_KEY);
-    }
-    var KEYBINDINGS_KEY = "beljar-keybindings";
-    function readStoredKeybindings2() {
-      try {
-        var raw = globalThis.localStorage && globalThis.localStorage.getItem(KEYBINDINGS_KEY);
-        if (!raw) return {};
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-        var out = {};
-        Object.keys(parsed).forEach(function(id) {
-          var v = parsed[id];
-          if (v === "" || v === null) out[id] = "";
-          else if (typeof v === "string") out[id] = v;
-        });
-        return out;
-      } catch (_) {
-        return {};
-      }
-    }
-    function writeStoredKeybindings2(map) {
-      try {
-        if (!globalThis.localStorage) return;
-        var clean = {};
-        if (map && typeof map === "object") {
-          Object.keys(map).forEach(function(id) {
-            var v = map[id];
-            if (v === "" || v === null) clean[id] = "";
-            else if (typeof v === "string" && v) clean[id] = v;
-          });
-        }
-        if (!Object.keys(clean).length) globalThis.localStorage.removeItem(KEYBINDINGS_KEY);
-        else globalThis.localStorage.setItem(KEYBINDINGS_KEY, JSON.stringify(clean));
-      } catch (_) {
-      }
-    }
-    function resetKeybindingPrefs2() {
-      writeStoredKeybindings2({});
-      backendRemove2(KEYMAP_STYLE_KEY);
-      backendRemove2(STATUS_STRIP_KEY);
-      backendRemove2(COMMAND_LINE_HISTORY_KEY);
-      backendRemove2(VIM_LEADER_KEY);
-      backendRemove2(EMACS_YANK_SOURCE_KEY);
-      backendRemove2(VIM_INSERT_ESCAPE_KEY);
-      backendRemove2(DOUBLE_TAP_TRIGGER_KEY);
-      backendRemove2(DOUBLE_TAP_COMMAND_KEY);
-      backendRemove2(DOUBLE_TAP_SPEED_KEY);
-    }
-    function resetAliasesPrefs2() {
-      backendRemove2(ALIAS_ACTIVATION_KEY);
-      backendRemove2(ALIAS_PAIRS_KEY);
-    }
-    function isAliasExpandablePath2(name) {
-      var PS = typeof ProjectSource !== "undefined" ? ProjectSource : null;
-      if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
-      var n = String(name || "").toLowerCase();
-      if (n.endsWith(".cfg")) return false;
-      if (n.endsWith(".bel") || n.endsWith(".elf")) return true;
-      var base = String(name || "").slice(String(name || "").lastIndexOf("/") + 1);
-      return base.indexOf(".") === -1;
-    }
-    function fileNameForId2(id) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) return files[i].name || "";
-      }
-      return "";
-    }
-    function expandAliasesForStorage2(text, fileName) {
-      if (readStoredAliasActivation2() !== "greedy") return String(text != null ? text : "");
-      if (!isAliasExpandablePath2(fileName)) return String(text != null ? text : "");
-      if (typeof BelEditor !== "undefined" && typeof BelEditor.expandBelAliases === "function") {
-        return BelEditor.expandBelAliases(text);
-      }
-      return String(text != null ? text : "");
-    }
-    function expandAliasesInAllFiles2() {
-      if (readStoredAliasActivation2() !== "greedy") return 0;
-      var files = ensureProject2();
-      var changed = 0;
-      for (var i = 0; i < files.length; i++) {
-        var f = files[i];
-        if (!isAliasExpandablePath2(f.name)) continue;
-        var cur = getFileText2(f.id);
-        var next = expandAliasesForStorage2(cur, f.name);
-        if (next !== cur) {
-          var state = readState2(defaultBackend2, f.id);
-          state.editor.text = next;
-          state.meta.updatedAt = Date.now();
-          state.meta.revision = (state.meta.revision || 0) + 1;
-          backendSave2(stateKeyFor2(f.id), JSON.stringify(state));
-          changed += 1;
-        }
-      }
-      return changed;
-    }
-    function explorerFoldKey(projectName) {
-      return "beljar-explorer-fold:" + String(projectName || DEFAULT_PROJECT_NAME2);
-    }
-    function getExplorerFold2(projectName) {
-      try {
-        var arr = tryParse2(backendLoad2(explorerFoldKey(projectName)));
-        return Array.isArray(arr) ? arr : [];
-      } catch (_) {
-        return [];
-      }
-    }
-    function setExplorerFold2(projectName, paths) {
-      try {
-        backendSave2(explorerFoldKey(projectName), JSON.stringify(Array.isArray(paths) ? paths : []));
-      } catch (_) {
-      }
-    }
-    return {
-      readStoredBelugaMode: readStoredBelugaMode2,
-      writeStoredBelugaMode: writeStoredBelugaMode2,
-      readStoredHoverScope: readStoredHoverScope2,
-      writeStoredHoverScope: writeStoredHoverScope2,
-      readStoredCfgAutoSync: readStoredCfgAutoSync2,
-      writeStoredCfgAutoSync: writeStoredCfgAutoSync2,
-      readStoredAliasActivation: readStoredAliasActivation2,
-      writeStoredAliasActivation: writeStoredAliasActivation2,
-      readStoredAliasPairs: readStoredAliasPairs2,
-      writeStoredAliasPairs: writeStoredAliasPairs2,
-      readBoolDefaultOn,
-      writeBoolDefaultOn,
-      readBoolDefaultOff,
-      writeBoolDefaultOff,
-      readStoredReplAutoscroll: readStoredReplAutoscroll2,
-      writeStoredReplAutoscroll: writeStoredReplAutoscroll2,
-      readStoredReplWelcome: readStoredReplWelcome2,
-      writeStoredReplWelcome: writeStoredReplWelcome2,
-      readStoredReplEcho: readStoredReplEcho2,
-      writeStoredReplEcho: writeStoredReplEcho2,
-      readStoredReplFilterChatter: readStoredReplFilterChatter2,
-      writeStoredReplFilterChatter: writeStoredReplFilterChatter2,
-      readStoredReplHoverTimestamp: readStoredReplHoverTimestamp2,
-      writeStoredReplHoverTimestamp: writeStoredReplHoverTimestamp2,
-      readStoredReplAutocompleteTrigger: readStoredReplAutocompleteTrigger2,
-      writeStoredReplAutocompleteTrigger: writeStoredReplAutocompleteTrigger2,
-      readStoredReplAutocompleteContinue: readStoredReplAutocompleteContinue2,
-      writeStoredReplAutocompleteContinue: writeStoredReplAutocompleteContinue2,
-      readStoredReplHistoryCap: readStoredReplHistoryCap2,
-      writeStoredReplHistoryCap: writeStoredReplHistoryCap2,
-      readStoredReplHistoryPersist: readStoredReplHistoryPersist2,
-      writeStoredReplHistoryPersist: writeStoredReplHistoryPersist2,
-      readStoredReplTranscript: readStoredReplTranscript2,
-      writeStoredReplTranscript: writeStoredReplTranscript2,
-      readStoredReplCommandHistory: readStoredReplCommandHistory2,
-      writeStoredReplCommandHistory: writeStoredReplCommandHistory2,
-      readStoredBelugaFallbackStable: readStoredBelugaFallbackStable2,
-      writeStoredBelugaFallbackStable: writeStoredBelugaFallbackStable2,
-      readStoredBelugaCancelOnEdit: readStoredBelugaCancelOnEdit2,
-      writeStoredBelugaCancelOnEdit: writeStoredBelugaCancelOnEdit2,
-      readStoredLibraryExpandDefault: readStoredLibraryExpandDefault2,
-      writeStoredLibraryExpandDefault: writeStoredLibraryExpandDefault2,
-      readStoredLibraryHintDismissed: readStoredLibraryHintDismissed2,
-      writeStoredLibraryHintDismissed: writeStoredLibraryHintDismissed2,
-      readStoredHintDismissed: readStoredHintDismissed2,
-      writeStoredHintDismissed: writeStoredHintDismissed2,
-      readStoredRestorePanels: readStoredRestorePanels2,
-      writeStoredRestorePanels: writeStoredRestorePanels2,
-      readStoredAutosaveDelay: readStoredAutosaveDelay2,
-      writeStoredAutosaveDelay: writeStoredAutosaveDelay2,
-      readStoredEditorFontSize: readStoredEditorFontSize2,
-      writeStoredEditorFontSize: writeStoredEditorFontSize2,
-      readStoredEditorLineHeight: readStoredEditorLineHeight2,
-      writeStoredEditorLineHeight: writeStoredEditorLineHeight2,
-      readStoredEditorWordWrap: readStoredEditorWordWrap2,
-      writeStoredEditorWordWrap: writeStoredEditorWordWrap2,
-      readStoredEditorTabSize: readStoredEditorTabSize2,
-      writeStoredEditorTabSize: writeStoredEditorTabSize2,
-      readStoredEditorLineNumberMode: readStoredEditorLineNumberMode2,
-      writeStoredEditorLineNumberMode: writeStoredEditorLineNumberMode2,
-      readStoredEditorLineNumbers: readStoredEditorLineNumbers2,
-      writeStoredEditorLineNumbers: writeStoredEditorLineNumbers2,
-      readStoredEditorFoldGutter: readStoredEditorFoldGutter2,
-      writeStoredEditorFoldGutter: writeStoredEditorFoldGutter2,
-      readStoredEditorFoldPersist: readStoredEditorFoldPersist2,
-      writeStoredEditorFoldPersist: writeStoredEditorFoldPersist2,
-      readStoredEditorActiveLine: readStoredEditorActiveLine2,
-      writeStoredEditorActiveLine: writeStoredEditorActiveLine2,
-      readStoredEditorDiagGutter: readStoredEditorDiagGutter2,
-      writeStoredEditorDiagGutter: writeStoredEditorDiagGutter2,
-      readStoredEditorHoleGutter: readStoredEditorHoleGutter2,
-      writeStoredEditorHoleGutter: writeStoredEditorHoleGutter2,
-      readStoredEditorSyntaxHighlight: readStoredEditorSyntaxHighlight2,
-      writeStoredEditorSyntaxHighlight: writeStoredEditorSyntaxHighlight2,
-      readStoredEditorSemanticHighlight: readStoredEditorSemanticHighlight2,
-      writeStoredEditorSemanticHighlight: writeStoredEditorSemanticHighlight2,
-      readStoredEditorParseHighlight: readStoredEditorParseHighlight2,
-      writeStoredEditorParseHighlight: writeStoredEditorParseHighlight2,
-      readStoredEditorOccurrenceHighlight: readStoredEditorOccurrenceHighlight2,
-      writeStoredEditorOccurrenceHighlight: writeStoredEditorOccurrenceHighlight2,
-      readStoredEditorBracketMatch: readStoredEditorBracketMatch2,
-      writeStoredEditorBracketMatch: writeStoredEditorBracketMatch2,
-      readStoredEditorAutoCloseBrackets: readStoredEditorAutoCloseBrackets2,
-      writeStoredEditorAutoCloseBrackets: writeStoredEditorAutoCloseBrackets2,
-      readStoredEditorSelectionMatches: readStoredEditorSelectionMatches2,
-      writeStoredEditorSelectionMatches: writeStoredEditorSelectionMatches2,
-      readStoredEditorReindentPaste: readStoredEditorReindentPaste2,
-      writeStoredEditorReindentPaste: writeStoredEditorReindentPaste2,
-      readStoredEditorFormatWidth: readStoredEditorFormatWidth2,
-      writeStoredEditorFormatWidth: writeStoredEditorFormatWidth2,
-      readStoredEditorAutocompleteTrigger: readStoredEditorAutocompleteTrigger2,
-      writeStoredEditorAutocompleteTrigger: writeStoredEditorAutocompleteTrigger2,
-      readStoredEditorAutocompleteContinue: readStoredEditorAutocompleteContinue2,
-      writeStoredEditorAutocompleteContinue: writeStoredEditorAutocompleteContinue2,
-      readStoredEditorCursorBlink,
-      writeStoredEditorCursorBlink,
-      readStoredEditorScrollPastEnd,
-      writeStoredEditorScrollPastEnd,
-      readStoredEditorWhitespace,
-      writeStoredEditorWhitespace,
-      readStoredEditorRulers,
-      writeStoredEditorRulers,
-      readStoredEditorFontFamily,
-      writeStoredEditorFontFamily,
-      readStoredEditorHoleEmphasis,
-      writeStoredEditorHoleEmphasis,
-      readStoredKeymapStyle,
-      writeStoredKeymapStyle,
-      readStoredStatusStrip,
-      readStoredDoubleTapTrigger,
-      writeStoredDoubleTapTrigger,
-      readStoredDoubleTapCommand,
-      writeStoredDoubleTapCommand,
-      readStoredDoubleTapSpeed,
-      writeStoredDoubleTapSpeed,
-      readStoredEmacsYankSource,
-      writeStoredEmacsYankSource,
-      readStoredVimLeader,
-      writeStoredVimLeader,
-      readStoredVimInsertEscape,
-      writeStoredVimInsertEscape,
-      readStoredCommandLineHistory,
-      writeStoredCommandLineHistory,
-      writeStoredStatusStrip,
-      readStoredMotionPref,
-      writeStoredMotionPref,
-      applyStoredMotionPref,
-      prefersReducedMotion,
-      readStoredToastDuration,
-      writeStoredToastDuration,
-      toastDurationForMode,
-      toastDurationMs,
-      readStoredCheckAggressiveness,
-      writeStoredCheckAggressiveness,
-      checkAggressivenessScale,
-      readStoredAutosolveFocusNext,
-      writeStoredAutosolveFocusNext,
-      readStoredHarpoonMode,
-      writeStoredHarpoonMode,
-      readStoredHarpoonVerifyMoves,
-      writeStoredHarpoonVerifyMoves,
-      readStoredAutosolveShowStats,
-      writeStoredAutosolveShowStats,
-      readStoredQuietWhileTyping,
-      writeStoredQuietWhileTyping,
-      readStoredDiagPresentation,
-      writeStoredDiagPresentation,
-      readStoredDiagSeverity,
-      writeStoredDiagSeverity,
-      readStoredFormatOnSave,
-      writeStoredFormatOnSave,
-      readStoredTrimTrailingWs,
-      writeStoredTrimTrailingWs,
-      readStoredStickyDeclHeader,
-      writeStoredStickyDeclHeader,
-      readStoredSuiteCheck,
-      writeStoredSuiteCheck,
-      readStoredHoverSticky,
-      writeStoredHoverSticky,
-      applyStoredEditorChrome,
-      exportUserSettings,
-      importUserSettings,
-      resetAppearancePrefs: resetAppearancePrefs2,
-      resetEditorTypographyPrefs: resetEditorTypographyPrefs2,
-      resetEditorIndentPrefs: resetEditorIndentPrefs2,
-      resetEditorCodeInsightPrefs: resetEditorCodeInsightPrefs2,
-      resetEditorGutterPrefs: resetEditorGutterPrefs2,
-      resetEditorPrefs: resetEditorPrefs2,
-      resetBelugaPrefs: resetBelugaPrefs2,
-      resetHarpoonPrefs: resetHarpoonPrefs2,
-      resetReplPrefs: resetReplPrefs2,
-      readStoredKeybindings: readStoredKeybindings2,
-      writeStoredKeybindings: writeStoredKeybindings2,
-      resetKeybindingPrefs: resetKeybindingPrefs2,
-      resetAliasesPrefs: resetAliasesPrefs2,
-      isAliasExpandablePath: isAliasExpandablePath2,
-      fileNameForId: fileNameForId2,
-      expandAliasesForStorage: expandAliasesForStorage2,
-      expandAliasesInAllFiles: expandAliasesInAllFiles2,
-      explorerFoldKey,
-      getExplorerFold: getExplorerFold2,
-      setExplorerFold: setExplorerFold2
-    };
+  function isBeljarKey(key) {
+    return typeof key === "string" && /^beljar[/:.-]/.test(key);
   }
-
-  // js/persist/persist-layout.mjs
-  function create3(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projectPrefix2 = deps.projectPrefix;
-    var getActiveProjectId2 = deps.getActiveProjectId;
-    var EDITOR_SPLIT_STORAGE_KEY2 = deps.EDITOR_SPLIT_STORAGE_KEY;
-    var DEFAULT_EDITOR_SPLIT2 = deps.DEFAULT_EDITOR_SPLIT;
-    var MIN_EDITOR_SPLIT2 = deps.MIN_EDITOR_SPLIT;
-    var MAX_EDITOR_SPLIT2 = deps.MAX_EDITOR_SPLIT;
-    var SIDE_PANEL_LAYOUT2 = deps.SIDE_PANEL_LAYOUT;
-    var DEFAULT_SIDE_PANEL_WIDTH2 = deps.DEFAULT_SIDE_PANEL_WIDTH;
-    var DEFAULT_SIDE_PANEL_HEIGHT2 = deps.DEFAULT_SIDE_PANEL_HEIGHT;
-    var EXPLORER_OPEN_KEY2 = deps.EXPLORER_OPEN_KEY;
-    var INSPECTOR_OPEN_KEY2 = deps.INSPECTOR_OPEN_KEY;
-    var INSPECTOR_FOLLOW_KEY2 = deps.INSPECTOR_FOLLOW_KEY;
-    var LIBRARY_OPEN_KEY2 = deps.LIBRARY_OPEN_KEY;
-    var LOAD_STATS_KEY2 = deps.LOAD_STATS_KEY;
-    var WORKSPACE_KEY = "beljar-workspace-v1";
-    var ACTIVE_SIDE_PANEL_KEY = "beljar-active-side-panel";
-    var SIDE_PANEL_IDS = ["explorer", "inspector", "library", "harpoon"];
-    var RESTORE_PANELS_KEY = "beljar-restore-panels";
-    var LIBRARY_EXPAND_DEFAULT_KEY = "beljar-library-expand-default";
-    function resetLayoutPrefs2() {
-      backendRemove2(EDITOR_SPLIT_STORAGE_KEY2);
-      for (var panelId in SIDE_PANEL_LAYOUT2) {
-        if (!Object.prototype.hasOwnProperty.call(SIDE_PANEL_LAYOUT2, panelId)) continue;
-        var layout = SIDE_PANEL_LAYOUT2[panelId];
-        backendRemove2(layout.widthKey);
-        backendRemove2(layout.heightKey);
-      }
+  function allKeys(storage) {
+    const out = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k != null) out.push(k);
     }
-    function workspaceKeyFor2(pid) {
-      var prefix = projectPrefix2(pid);
-      if (prefix === "") return WORKSPACE_KEY;
-      return prefix + "workspace-v1";
-    }
-    function activeSidePanelKey(pid) {
-      var prefix = projectPrefix2(pid);
-      if (prefix === "") return ACTIVE_SIDE_PANEL_KEY;
-      return prefix + "active-side-panel";
-    }
-    function migrateActiveSidePanelFromLegacy(pid) {
-      if (backendLoad2(activeSidePanelKey(pid))) return null;
-      if (readStoredHarpoonOpen2()) return "harpoon";
-      if (readStoredLibraryOpen2()) return "library";
-      if (readStoredInspectorOpen2()) return "inspector";
-      if (readStoredExplorerOpen2()) return "explorer";
-      return null;
-    }
-    function readStoredActiveSidePanel2(pid) {
-      pid = pid || getActiveProjectId2();
-      try {
-        var raw = backendLoad2(activeSidePanelKey(pid));
-        if (raw && SIDE_PANEL_IDS.indexOf(raw) !== -1) return raw;
-      } catch (_) {
-      }
-      var migrated = migrateActiveSidePanelFromLegacy(pid);
-      if (migrated) {
-        writeStoredActiveSidePanel2(migrated, pid);
-        return migrated;
-      }
-      return null;
-    }
-    function writeStoredActiveSidePanel2(id, pid) {
-      pid = pid || getActiveProjectId2();
-      var key = activeSidePanelKey(pid);
-      if (!id || SIDE_PANEL_IDS.indexOf(id) === -1) {
-        backendRemove2(key);
-        writeStoredExplorerOpen2(false);
-        writeStoredInspectorOpen2(false);
-        writeStoredLibraryOpen2(false);
-        writeStoredHarpoonOpen2(false);
-        return;
-      }
-      backendSave2(key, id);
-      if (id === "explorer") writeStoredExplorerOpen2(true);
-      else writeStoredExplorerOpen2(false);
-      if (id === "inspector") writeStoredInspectorOpen2(true);
-      else writeStoredInspectorOpen2(false);
-      if (id === "library") writeStoredLibraryOpen2(true);
-      else writeStoredLibraryOpen2(false);
-      if (id === "harpoon") writeStoredHarpoonOpen2(true);
-      else writeStoredHarpoonOpen2(false);
-    }
-    function readStoredWorkspace2(pid) {
-      pid = pid || getActiveProjectId2();
-      return tryParse2(backendLoad2(workspaceKeyFor2(pid)));
-    }
-    function writeStoredWorkspace2(snapshot, pid) {
-      pid = pid || getActiveProjectId2();
-      try {
-        backendSave2(workspaceKeyFor2(pid), JSON.stringify(snapshot));
-        if (snapshot) {
-          writeStoredActiveSidePanel2(snapshot.activeSidePanel || null, pid);
-        }
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }
-    function resetStoredWorkspace2(pid) {
-      pid = pid || getActiveProjectId2();
-      backendRemove2(workspaceKeyFor2(pid));
-      backendRemove2(activeSidePanelKey(pid));
-    }
-    function resetWorkspaceState2(pid) {
-      resetStoredWorkspace2(pid);
-    }
-    function resetWorkspacePrefs2() {
-      backendRemove2(INSPECTOR_FOLLOW_KEY2);
-      backendRemove2(RESTORE_PANELS_KEY);
-      backendRemove2(LIBRARY_EXPAND_DEFAULT_KEY);
-    }
-    function clampEditorSplit2(ratio) {
-      var n = Number(ratio);
-      if (!isFinite(n)) return DEFAULT_EDITOR_SPLIT2;
-      if (n < MIN_EDITOR_SPLIT2) return MIN_EDITOR_SPLIT2;
-      if (n > MAX_EDITOR_SPLIT2) return MAX_EDITOR_SPLIT2;
-      return n;
-    }
-    function readStoredEditorSplit2() {
-      try {
-        return clampEditorSplit2(parseFloat(backendLoad2(EDITOR_SPLIT_STORAGE_KEY2)));
-      } catch (_) {
-        return DEFAULT_EDITOR_SPLIT2;
-      }
-    }
-    function writeStoredEditorSplit2(ratio) {
-      var clamped = clampEditorSplit2(ratio);
-      if (Math.abs(clamped - DEFAULT_EDITOR_SPLIT2) < 1e-3) {
-        backendRemove2(EDITOR_SPLIT_STORAGE_KEY2);
-      } else {
-        backendSave2(EDITOR_SPLIT_STORAGE_KEY2, String(clamped));
-      }
-    }
-    function clampPanelPx(n, min, max, fallback) {
-      var v = Number(n);
-      if (!isFinite(v)) return fallback;
-      if (v < min) return min;
-      if (v > max) return max;
-      return Math.round(v);
-    }
-    function readStoredSidePanelWidth(layout) {
-      try {
-        return clampPanelPx(
-          parseFloat(backendLoad2(layout.widthKey)),
-          layout.minW,
-          layout.maxW,
-          DEFAULT_SIDE_PANEL_WIDTH2
-        );
-      } catch (_) {
-        return DEFAULT_SIDE_PANEL_WIDTH2;
-      }
-    }
-    function writeStoredSidePanelWidth(layout, px) {
-      var clamped = clampPanelPx(px, layout.minW, layout.maxW, DEFAULT_SIDE_PANEL_WIDTH2);
-      if (clamped === DEFAULT_SIDE_PANEL_WIDTH2) backendRemove2(layout.widthKey);
-      else backendSave2(layout.widthKey, String(clamped));
-    }
-    function readStoredSidePanelHeight(layout) {
-      try {
-        return clampPanelPx(
-          parseFloat(backendLoad2(layout.heightKey)),
-          layout.minH,
-          layout.maxH,
-          DEFAULT_SIDE_PANEL_HEIGHT2
-        );
-      } catch (_) {
-        return DEFAULT_SIDE_PANEL_HEIGHT2;
-      }
-    }
-    function writeStoredSidePanelHeight(layout, px) {
-      var clamped = clampPanelPx(px, layout.minH, layout.maxH, DEFAULT_SIDE_PANEL_HEIGHT2);
-      if (clamped === DEFAULT_SIDE_PANEL_HEIGHT2) backendRemove2(layout.heightKey);
-      else backendSave2(layout.heightKey, String(clamped));
-    }
-    function readStoredExplorerWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.explorer);
-    }
-    function writeStoredExplorerWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.explorer, px);
-    }
-    function readStoredInspectorWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.inspector);
-    }
-    function writeStoredInspectorWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.inspector, px);
-    }
-    function readStoredExplorerHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.explorer);
-    }
-    function writeStoredExplorerHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.explorer, px);
-    }
-    function readStoredInspectorHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.inspector);
-    }
-    function writeStoredInspectorHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.inspector, px);
-    }
-    function readStoredExplorerOpen2() {
-      try {
-        return backendLoad2(EXPLORER_OPEN_KEY2) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function loadStat2() {
-      try {
-        var o = tryParse2(backendLoad2(LOAD_STATS_KEY2));
-        if (o && o.lines > 0 && o.ms > 0) return o;
-      } catch (_) {
-      }
-      return null;
-    }
-    function saveStat2(stat) {
-      try {
-        if (!stat || stat.lines <= 0 || stat.ms <= 0) return;
-        backendSave2(LOAD_STATS_KEY2, JSON.stringify({ lines: stat.lines, ms: stat.ms }));
-      } catch (_) {
-      }
-    }
-    function writeStoredExplorerOpen2(open) {
-      if (open) backendSave2(EXPLORER_OPEN_KEY2, "1");
-      else backendRemove2(EXPLORER_OPEN_KEY2);
-    }
-    function readStoredInspectorOpen2() {
-      try {
-        return backendLoad2(INSPECTOR_OPEN_KEY2) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredInspectorOpen2(open) {
-      if (open) backendSave2(INSPECTOR_OPEN_KEY2, "1");
-      else backendRemove2(INSPECTOR_OPEN_KEY2);
-    }
-    function readStoredInspectorFollow2() {
-      try {
-        var v = backendLoad2(INSPECTOR_FOLLOW_KEY2);
-        if (v === "1") return true;
-        if (v === "off") return false;
-        if (globalThis.sessionStorage && globalThis.sessionStorage.getItem(INSPECTOR_FOLLOW_KEY2) === "1") {
-          writeStoredInspectorFollow2(true);
-          return true;
-        }
-        return true;
-      } catch (_) {
-        return true;
-      }
-    }
-    function writeStoredInspectorFollow2(on) {
-      try {
-        if (on) backendSave2(INSPECTOR_FOLLOW_KEY2, "1");
-        else backendSave2(INSPECTOR_FOLLOW_KEY2, "off");
-        if (globalThis.sessionStorage) globalThis.sessionStorage.removeItem(INSPECTOR_FOLLOW_KEY2);
-      } catch (_) {
-      }
-    }
-    function readStoredLibraryOpen2() {
-      try {
-        return backendLoad2(LIBRARY_OPEN_KEY2) === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredLibraryOpen2(open) {
-      if (open) backendSave2(LIBRARY_OPEN_KEY2, "1");
-      else backendRemove2(LIBRARY_OPEN_KEY2);
-    }
-    function readStoredHarpoonOpen2() {
-      try {
-        return backendLoad2("beljar-harpoon-open") === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredHarpoonOpen2(open) {
-      if (open) backendSave2("beljar-harpoon-open", "1");
-      else backendRemove2("beljar-harpoon-open");
-    }
-    function readStoredHarpoonDetailsCollapsed2() {
-      try {
-        return backendLoad2("beljar-harpoon-details-collapsed") === "1";
-      } catch (_) {
-        return false;
-      }
-    }
-    function writeStoredHarpoonDetailsCollapsed2(collapsed) {
-      if (collapsed) backendSave2("beljar-harpoon-details-collapsed", "1");
-      else backendRemove2("beljar-harpoon-details-collapsed");
-    }
-    function readStoredLibraryWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.library);
-    }
-    function writeStoredLibraryWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.library, px);
-    }
-    function readStoredLibraryHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.library);
-    }
-    function writeStoredLibraryHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.library, px);
-    }
-    function readStoredHarpoonWidth2() {
-      return readStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.harpoon);
-    }
-    function writeStoredHarpoonWidth2(px) {
-      writeStoredSidePanelWidth(SIDE_PANEL_LAYOUT2.harpoon, px);
-    }
-    function readStoredHarpoonHeight2() {
-      return readStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.harpoon);
-    }
-    function writeStoredHarpoonHeight2(px) {
-      writeStoredSidePanelHeight(SIDE_PANEL_LAYOUT2.harpoon, px);
-    }
-    return {
-      resetLayoutPrefs: resetLayoutPrefs2,
-      workspaceKeyFor: workspaceKeyFor2,
-      activeSidePanelKey,
-      migrateActiveSidePanelFromLegacy,
-      readStoredActiveSidePanel: readStoredActiveSidePanel2,
-      writeStoredActiveSidePanel: writeStoredActiveSidePanel2,
-      readStoredWorkspace: readStoredWorkspace2,
-      writeStoredWorkspace: writeStoredWorkspace2,
-      resetStoredWorkspace: resetStoredWorkspace2,
-      resetWorkspaceState: resetWorkspaceState2,
-      resetWorkspacePrefs: resetWorkspacePrefs2,
-      clampEditorSplit: clampEditorSplit2,
-      readStoredEditorSplit: readStoredEditorSplit2,
-      writeStoredEditorSplit: writeStoredEditorSplit2,
-      clampPanelPx,
-      readStoredSidePanelWidth,
-      writeStoredSidePanelWidth,
-      readStoredSidePanelHeight,
-      writeStoredSidePanelHeight,
-      readStoredExplorerWidth: readStoredExplorerWidth2,
-      writeStoredExplorerWidth: writeStoredExplorerWidth2,
-      readStoredInspectorWidth: readStoredInspectorWidth2,
-      writeStoredInspectorWidth: writeStoredInspectorWidth2,
-      readStoredExplorerHeight: readStoredExplorerHeight2,
-      writeStoredExplorerHeight: writeStoredExplorerHeight2,
-      readStoredInspectorHeight: readStoredInspectorHeight2,
-      writeStoredInspectorHeight: writeStoredInspectorHeight2,
-      readStoredExplorerOpen: readStoredExplorerOpen2,
-      loadStat: loadStat2,
-      saveStat: saveStat2,
-      writeStoredExplorerOpen: writeStoredExplorerOpen2,
-      readStoredInspectorOpen: readStoredInspectorOpen2,
-      writeStoredInspectorOpen: writeStoredInspectorOpen2,
-      readStoredInspectorFollow: readStoredInspectorFollow2,
-      writeStoredInspectorFollow: writeStoredInspectorFollow2,
-      readStoredLibraryOpen: readStoredLibraryOpen2,
-      writeStoredLibraryOpen: writeStoredLibraryOpen2,
-      readStoredHarpoonOpen: readStoredHarpoonOpen2,
-      writeStoredHarpoonOpen: writeStoredHarpoonOpen2,
-      readStoredHarpoonDetailsCollapsed: readStoredHarpoonDetailsCollapsed2,
-      writeStoredHarpoonDetailsCollapsed: writeStoredHarpoonDetailsCollapsed2,
-      readStoredLibraryWidth: readStoredLibraryWidth2,
-      writeStoredLibraryWidth: writeStoredLibraryWidth2,
-      readStoredLibraryHeight: readStoredLibraryHeight2,
-      writeStoredLibraryHeight: writeStoredLibraryHeight2,
-      readStoredHarpoonWidth: readStoredHarpoonWidth2,
-      writeStoredHarpoonWidth: writeStoredHarpoonWidth2,
-      readStoredHarpoonHeight: readStoredHarpoonHeight2,
-      writeStoredHarpoonHeight: writeStoredHarpoonHeight2
-    };
+    return out;
   }
-
-  // js/persist/persist-graph-prefs.mjs
-  function create4(deps) {
-    var DEFAULT_GRAPH_PREFS2 = deps.DEFAULT_GRAPH_PREFS;
-    var GRAPH_PREFS_STORAGE_KEY2 = deps.GRAPH_PREFS_STORAGE_KEY;
-    var LEGACY_GRAPH_LAYOUT_KEY2 = deps.LEGACY_GRAPH_LAYOUT_KEY;
-    var LEGACY_GRAPH_IMPL_KEY2 = deps.LEGACY_GRAPH_IMPL_KEY;
-    var LEGACY_GRAPH_DEPTH_KEY2 = deps.LEGACY_GRAPH_DEPTH_KEY;
-    var LEGACY_GRAPH_SIDEBAR_KEY2 = deps.LEGACY_GRAPH_SIDEBAR_KEY;
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    function normalizeGraphPrefs2(raw) {
-      if (!raw || typeof raw !== "object") {
-        return {
-          layout: DEFAULT_GRAPH_PREFS2.layout,
-          impl: DEFAULT_GRAPH_PREFS2.impl,
-          depth: DEFAULT_GRAPH_PREFS2.depth,
-          labelDensity: DEFAULT_GRAPH_PREFS2.labelDensity,
-          sidebarCollapsed: DEFAULT_GRAPH_PREFS2.sidebarCollapsed
-        };
-      }
-      var depth = parseInt(raw.depth, 10);
-      if (!isFinite(depth)) depth = DEFAULT_GRAPH_PREFS2.depth;
-      depth = Math.min(3, Math.max(1, depth));
-      var labelDensity = parseInt(raw.labelDensity, 10);
-      if (!isFinite(labelDensity)) labelDensity = DEFAULT_GRAPH_PREFS2.labelDensity;
-      labelDensity = Math.min(5, Math.max(1, labelDensity));
-      return {
-        layout: raw.layout === "flat" ? "flat" : "force",
-        impl: raw.impl === "hide" ? "hide" : "show",
-        depth,
-        labelDensity,
-        sidebarCollapsed: !!raw.sidebarCollapsed
-      };
+  function parseEnvelope(raw) {
+    if (raw == null) return null;
+    try {
+      const env = JSON.parse(raw);
+      if (!env || typeof env !== "object" || typeof env.at !== "number" || !("data" in env)) return null;
+      return env;
+    } catch (_) {
+      return null;
     }
-    function migrateLegacyGraphPrefs() {
-      var prefs = normalizeGraphPrefs2(null);
-      var touched = false;
-      try {
-        var layout = backendLoad2(LEGACY_GRAPH_LAYOUT_KEY2);
-        if (layout === "flat") {
-          prefs.layout = "flat";
-          touched = true;
-        }
-        var impl = backendLoad2(LEGACY_GRAPH_IMPL_KEY2);
-        if (impl === "hide" || impl === "nodes" || impl === "none") {
-          prefs.impl = "hide";
-          touched = true;
-        }
-        var depth = parseInt(backendLoad2(LEGACY_GRAPH_DEPTH_KEY2) || "", 10);
-        if (isFinite(depth)) {
-          prefs.depth = Math.min(3, Math.max(1, depth));
-          touched = true;
-        }
-        var sidebar = backendLoad2(LEGACY_GRAPH_SIDEBAR_KEY2);
-        if (sidebar === "collapsed") {
-          prefs.sidebarCollapsed = true;
-          touched = true;
-        }
-        if (touched) {
-          backendSave2(GRAPH_PREFS_STORAGE_KEY2, JSON.stringify(prefs));
-          backendRemove2(LEGACY_GRAPH_LAYOUT_KEY2);
-          backendRemove2(LEGACY_GRAPH_IMPL_KEY2);
-          backendRemove2(LEGACY_GRAPH_DEPTH_KEY2);
-          backendRemove2(LEGACY_GRAPH_SIDEBAR_KEY2);
-        }
-      } catch (_) {
-      }
-      return prefs;
-    }
-    function readStoredGraphPrefs2() {
-      try {
-        var parsed = tryParse2(backendLoad2(GRAPH_PREFS_STORAGE_KEY2));
-        if (parsed) return normalizeGraphPrefs2(parsed);
-        return migrateLegacyGraphPrefs();
-      } catch (_) {
-        return normalizeGraphPrefs2(null);
-      }
-    }
-    function writeStoredGraphPrefs2(partial) {
-      var next = normalizeGraphPrefs2(Object.assign({}, readStoredGraphPrefs2(), partial || {}));
-      backendSave2(GRAPH_PREFS_STORAGE_KEY2, JSON.stringify(next));
-      return next;
-    }
-    return {
-      normalizeGraphPrefs: normalizeGraphPrefs2,
-      migrateLegacyGraphPrefs,
-      readStoredGraphPrefs: readStoredGraphPrefs2,
-      writeStoredGraphPrefs: writeStoredGraphPrefs2
-    };
   }
-
-  // js/persist/persist-projects.mjs
-  function create5(deps) {
-    var PROJECTS_KEY2 = deps.PROJECTS_KEY;
-    var ACTIVE_PROJECT_KEY2 = deps.ACTIVE_PROJECT_KEY;
-    var DEFAULT_PROJECT_ID2 = deps.DEFAULT_PROJECT_ID;
-    var DEFAULT_PROJECT_NAME2 = deps.DEFAULT_PROJECT_NAME;
-    var DEFAULT_DOCUMENT_ID2 = deps.DEFAULT_DOCUMENT_ID;
-    var PROJECT_NAME_KEY2 = deps.PROJECT_NAME_KEY;
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projKey2 = deps.projKey;
-    var stateKeyFor2 = deps.stateKeyFor;
-    var replaceProject2 = deps.replaceProject;
-    function readProjects() {
-      var raw = tryParse2(backendLoad2(PROJECTS_KEY2));
-      return Array.isArray(raw) && raw.length ? raw : null;
+  function createStore(opts = {}) {
+    const storage = opts.storage || globalThis.localStorage;
+    if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function" || typeof storage.removeItem !== "function" || typeof storage.key !== "function" || typeof storage.length !== "number") {
+      throw new Error("store: storage must be a Storage (getItem, setItem, removeItem, key, length)");
     }
-    function writeProjects(projects) {
-      backendSave2(PROJECTS_KEY2, JSON.stringify(projects));
-    }
-    function ensureProjects() {
-      var projects = readProjects();
-      if (projects) return projects;
-      var legacyName = backendLoad2(PROJECT_NAME_KEY2);
-      projects = [{
-        id: DEFAULT_PROJECT_ID2,
-        name: legacyName && String(legacyName).trim() || DEFAULT_PROJECT_NAME2,
-        createdAt: Date.now()
-      }];
-      writeProjects(projects);
-      if (!backendLoad2(ACTIVE_PROJECT_KEY2)) backendSave2(ACTIVE_PROJECT_KEY2, DEFAULT_PROJECT_ID2);
-      return projects;
-    }
-    function listProjects2() {
-      return ensureProjects();
-    }
-    function getActiveProjectId2() {
-      ensureProjects();
-      var id = backendLoad2(ACTIVE_PROJECT_KEY2);
-      var projects = readProjects() || [];
-      if (id && projects.some(function(p) {
-        return p.id === id;
-      })) return id;
-      return projects.length ? projects[0].id : DEFAULT_PROJECT_ID2;
-    }
-    function setActiveProjectId2(id) {
-      ensureProjects();
-      backendSave2(ACTIVE_PROJECT_KEY2, id);
-    }
-    function getActiveProject2() {
-      var id = getActiveProjectId2();
-      var projects = readProjects() || [];
-      for (var i = 0; i < projects.length; i++) {
-        if (projects[i].id === id) return projects[i];
-      }
-      return projects[0] || null;
-    }
-    function createProject2(name) {
-      var projects = ensureProjects();
-      var used = {};
-      for (var i = 0; i < projects.length; i++) used[projects[i].id] = true;
-      var base = "p-" + Date.now().toString(36);
-      var id = base;
-      var n = 1;
-      while (used[id]) {
-        id = base + "-" + n;
-        n += 1;
-      }
-      projects.push({
-        id,
-        name: String(name || DEFAULT_PROJECT_NAME2).trim() || DEFAULT_PROJECT_NAME2,
-        createdAt: Date.now()
-      });
-      writeProjects(projects);
-      backendSave2(projKey2("files", id), JSON.stringify([{ id: DEFAULT_DOCUMENT_ID2, name: "main.bel" }]));
-      backendSave2(projKey2("active-file", id), DEFAULT_DOCUMENT_ID2);
-      backendSave2(projKey2("open-files", id), JSON.stringify([DEFAULT_DOCUMENT_ID2]));
-      backendSave2(projKey2("empty-folders", id), JSON.stringify([]));
-      return id;
-    }
-    function renameProject2(id, name) {
-      var projects = ensureProjects();
-      var trimmed = String(name != null ? name : "").trim() || DEFAULT_PROJECT_NAME2;
-      for (var i = 0; i < projects.length; i++) {
-        if (projects[i].id === id) {
-          projects[i].name = trimmed;
-          writeProjects(projects);
-          if (id === DEFAULT_PROJECT_ID2) backendSave2(PROJECT_NAME_KEY2, trimmed);
-          return true;
+    const now = opts.now || (() => Date.now());
+    const schema = opts.schema == null ? SCHEMA : opts.schema;
+    const onCapacity = typeof opts.onCapacity === "function" ? opts.onCapacity : () => {
+    };
+    const events = opts.events || (typeof globalThis.addEventListener === "function" ? globalThis : null);
+    const listeners = /* @__PURE__ */ new Set();
+    let blocked = false;
+    const onVersionAhead = typeof opts.onVersionAhead === "function" ? opts.onVersionAhead : () => {
+    };
+    const onCannotUpgrade = typeof opts.onCannotUpgrade === "function" ? opts.onCannotUpgrade : () => {
+    };
+    const migrations = opts.migrations || {};
+    const missingPolicy = opts.onMissingMigration === "refuse" ? "refuse" : "wipe";
+    let resetReason = null;
+    let readOnly = false;
+    const versionOf = (raw) => {
+      const n = Number(raw);
+      return raw != null && raw !== "" && Number.isInteger(n) ? n : null;
+    };
+    function wipeAndStamp() {
+      for (const area of [storage, ...opts.alsoWipe || []]) {
+        if (!area) continue;
+        for (const k of allKeys(area)) {
+          if (isBeljarKey(k)) area.removeItem(k);
         }
       }
-      return false;
+      storage.setItem(SCHEMA_KEY, String(schema));
     }
-    function deleteProject2(id) {
-      var projects = ensureProjects();
-      if (projects.length <= 1) return null;
-      var idx = -1;
-      for (var i = 0; i < projects.length; i++) {
-        if (projects[i].id === id) {
-          idx = i;
+    const storedRaw = storage.getItem(SCHEMA_KEY);
+    const storedVersion = versionOf(storedRaw);
+    if (storedRaw === String(schema)) {
+    } else if (storedVersion != null && storedVersion > schema) {
+      readOnly = true;
+      resetReason = "newer";
+      onVersionAhead(storedVersion);
+    } else if (storedRaw == null) {
+      resetReason = "fresh";
+      wipeAndStamp();
+    } else {
+      let v = storedVersion;
+      let failure = v == null ? "unreadable" : null;
+      while (!failure && v < schema) {
+        const step = migrations[v];
+        if (typeof step !== "function") {
+          failure = "missing";
           break;
         }
+        try {
+          step(storage);
+        } catch (err) {
+          failure = "threw";
+          readOnly = true;
+          resetReason = "refused";
+          onCannotUpgrade("migration from " + v + " failed: " + String(err && err.message || err));
+          break;
+        }
+        v += 1;
       }
-      if (idx === -1) return null;
-      var files = tryParse2(backendLoad2(projKey2("files", id)));
-      if (Array.isArray(files)) {
-        for (var j = 0; j < files.length; j++) backendRemove2(stateKeyFor2(files[j].id, id));
+      if (!failure) {
+        resetReason = "migrated";
+        storage.setItem(SCHEMA_KEY, String(schema));
+      } else if (failure !== "threw") {
+        if (missingPolicy === "wipe") {
+          resetReason = "schema-changed";
+          wipeAndStamp();
+        } else {
+          readOnly = true;
+          resetReason = "refused";
+          onCannotUpgrade("no migration from " + storedRaw + " to " + schema);
+        }
       }
-      backendRemove2(projKey2("files", id));
-      backendRemove2(projKey2("active-file", id));
-      backendRemove2(projKey2("open-files", id));
-      backendRemove2(projKey2("default-cfg", id));
-      backendRemove2(projKey2("active-cfg-by-dir", id));
-      backendRemove2(projKey2("empty-folders", id));
-      projects.splice(idx, 1);
-      writeProjects(projects);
-      var nextId = projects[Math.max(0, idx - 1)].id;
-      if (getActiveProjectId2() === id) setActiveProjectId2(nextId);
-      return nextId;
     }
-    function newBlankProject2(name) {
-      var id = createProject2(name);
-      setActiveProjectId2(id);
-      return id;
+    const READ_ONLY = { ok: false, error: { code: "read-only" } };
+    function emit(evt) {
+      for (const fn of [...listeners]) {
+        try {
+          fn(evt);
+        } catch (_) {
+        }
+      }
     }
-    function createProjectWithFiles2(name, entries, options) {
-      var id = createProject2(name);
-      setActiveProjectId2(id);
-      var result = replaceProject2(entries, options || {});
-      return { projectId: id, files: result.files, activeId: result.activeId };
+    function requireClass(key) {
+      const cls = classOf(key);
+      if (!cls) throw new Error(`store: "${key}" matches no class in CLASSES; add it there first`);
+      return cls;
     }
+    function envelopeOf(key) {
+      return parseEnvelope(storage.getItem(key));
+    }
+    function evictionOrder(except) {
+      return allKeys(storage).filter((k) => k !== except && classOf(k) === "cache").map((k) => ({ k, at: (envelopeOf(k) || { at: 0 }).at })).sort((a, b) => a.at - b.at).map((x) => x.k);
+    }
+    function markHealthy() {
+      if (!blocked) return;
+      blocked = false;
+      onCapacity("clear");
+    }
+    function write(key, cls, env) {
+      if (readOnly) return READ_ONLY;
+      const raw = JSON.stringify(env);
+      let lastErr = null;
+      const victims = evictionOrder(key);
+      for (let attempt = 0; attempt <= victims.length; attempt++) {
+        try {
+          storage.setItem(key, raw);
+          if (cls !== "cache") markHealthy();
+          return { ok: true };
+        } catch (err) {
+          if (!isCapacityError(err)) return { ok: false, error: { code: "unknown", detail: String(err && err.message || err) } };
+          lastErr = err;
+          if (attempt < victims.length) storage.removeItem(victims[attempt]);
+        }
+      }
+      const detail = String(lastErr && (lastErr.message || lastErr.name) || "");
+      if (cls !== "cache" && !blocked) {
+        blocked = true;
+        onCapacity("blocked", detail);
+      }
+      return { ok: false, error: { code: "capacity", detail } };
+    }
+    const store2 = {
+      SCHEMA: schema,
+      /** 'fresh' | 'schema-changed' | null — why this store started empty, if it did. */
+      resetReason,
+      classOf,
+      /** The stored data, or undefined. Never throws: a corrupt record reads as absent. */
+      get(key) {
+        const env = envelopeOf(key);
+        return env ? env.data : void 0;
+      },
+      /** When the record was last written, or 0 if it does not exist. */
+      at(key) {
+        const env = envelopeOf(key);
+        return env ? env.at : 0;
+      },
+      set(key, data) {
+        const cls = requireClass(key);
+        if (data === void 0) return store2.remove(key);
+        const res = write(key, cls, { at: now(), data });
+        if (res.ok) emit({ key, cls, origin: "local" });
+        return res;
+      },
+      update(key, fn) {
+        return store2.set(key, fn(store2.get(key)));
+      },
+      remove(key) {
+        const cls = requireClass(key);
+        if (readOnly) return READ_ONLY;
+        storage.removeItem(key);
+        emit({ key, cls, origin: "local" });
+        return { ok: true };
+      },
+      /** Every stored key under `prefix` (the schema key is not a record). */
+      keys(prefix = "beljar/") {
+        return allKeys(storage).filter((k) => k !== SCHEMA_KEY && k.startsWith(prefix)).sort();
+      },
+      /** Delete every record under `prefix`, e.g. a whole project. */
+      removeAll(prefix) {
+        if (!prefix || !prefix.startsWith("beljar/")) throw new Error("store.removeAll needs a beljar/ prefix");
+        if (readOnly) return 0;
+        const gone = store2.keys(prefix);
+        for (const k of gone) storage.removeItem(k);
+        for (const k of gone) emit({ key: k, cls: classOf(k), origin: "local" });
+        return gone.length;
+      },
+      /**
+       * The online layer's only way in. Writes what it pulled with the time the
+       * other side stamped, and tells subscribers it came from elsewhere so the
+       * editor treats it like another tab's change. `null` data deletes.
+       */
+      applyRemote(key, data, at) {
+        const cls = requireClass(key);
+        if (readOnly) return READ_ONLY;
+        if (data === null || data === void 0) {
+          storage.removeItem(key);
+          emit({ key, cls, origin: "remote" });
+          return { ok: true };
+        }
+        const res = write(key, cls, { at: Number(at) || now(), data });
+        if (res.ok) emit({ key, cls, origin: "remote" });
+        return res;
+      },
+      subscribe(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      /** True while a write that matters is failing for want of space. */
+      isBlocked() {
+        return blocked;
+      },
+      /**
+       * True when this page must not write: the storage belongs to a newer
+       * BelJar, or holds older data this code will neither migrate nor wipe.
+       * Every write then answers { ok: false, error: { code: 'read-only' } }.
+       */
+      isReadOnly() {
+        return readOnly;
+      },
+      dispose() {
+        if (events && onStorageEvent) events.removeEventListener("storage", onStorageEvent);
+        listeners.clear();
+      }
+    };
+    let onStorageEvent = null;
+    if (events) {
+      onStorageEvent = (e) => {
+        if (e.storageArea && e.storageArea !== storage) return;
+        if (e.key === null) {
+          if (!readOnly && storage.getItem(SCHEMA_KEY) == null) storage.setItem(SCHEMA_KEY, String(schema));
+          emit({ key: null, cls: null, origin: "tab" });
+          return;
+        }
+        if (e.key === SCHEMA_KEY) {
+          const v = versionOf(e.newValue);
+          if (v != null && v > schema && !readOnly) {
+            readOnly = true;
+            onVersionAhead(v);
+          }
+          return;
+        }
+        if (!e.key.startsWith("beljar/")) return;
+        const env = parseEnvelope(e.newValue);
+        emit({ key: e.key, cls: classOf(e.key), origin: "tab", data: env ? env.data : void 0 });
+      };
+      events.addEventListener("storage", onStorageEvent);
+    }
+    return store2;
+  }
+
+  // js/persist/table.mjs
+  function typeOf(row) {
+    if (row.values) return "enum";
+    if (row.type) return row.type;
+    if (typeof row.default === "boolean") return "bool";
+    if (typeof row.default === "number") return "number";
+    return "string";
+  }
+  function sameValue(a, b) {
+    if (a === b) return true;
+    if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+  function clone(v) {
+    return v !== null && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
+  }
+  function normalizeValue(row, raw) {
+    switch (typeOf(row)) {
+      case "enum": {
+        if (row.values.includes(raw)) return raw;
+        if (typeof raw === "string" && raw.trim() !== "" && row.values.some((v) => typeof v === "number")) {
+          const n = Number(raw);
+          if (row.values.includes(n)) return n;
+        }
+        return void 0;
+      }
+      case "bool":
+        return typeof raw === "boolean" ? raw : void 0;
+      case "string":
+        return typeof raw === "string" && raw !== "" ? raw : void 0;
+      case "number": {
+        let n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+        if (!Number.isFinite(n)) return void 0;
+        if (row.min != null && n < row.min) n = row.min;
+        if (row.max != null && n > row.max) n = row.max;
+        return row.integer ? Math.round(n) : n;
+      }
+      case "json":
+        return row.normalize ? row.normalize(raw) : raw;
+      default:
+        return void 0;
+    }
+  }
+  function resolveRows(rows, stored) {
+    const src = stored && typeof stored === "object" ? stored : {};
+    const out = {};
+    for (const row of rows) {
+      const n = Object.prototype.hasOwnProperty.call(src, row.id) ? normalizeValue(row, src[row.id]) : void 0;
+      out[row.id] = clone(n === void 0 ? row.default : n);
+    }
+    return out;
+  }
+  function createTable(store2, opts) {
+    const { key, rows } = opts;
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const ids = rows.map((row) => row.id);
+    const listeners = /* @__PURE__ */ new Set();
+    const revisions = /* @__PURE__ */ new Map();
+    function readOverrides() {
+      const rec = store2.get(key);
+      const values = rec && rec.values && typeof rec.values === "object" ? rec.values : {};
+      const out = {};
+      for (const [id, raw] of Object.entries(values)) {
+        const row = byId.get(id);
+        if (!row) continue;
+        const v = normalizeValue(row, raw);
+        if (v !== void 0 && !sameValue(v, row.default)) out[id] = v;
+      }
+      return out;
+    }
+    let overrides = readOverrides();
+    function requireRow(id) {
+      const row = byId.get(id);
+      if (!row) throw new Error(opts.unknown ? opts.unknown(id) : `${key}: no row "${id}"`);
+      return row;
+    }
+    function emit(changed, origin) {
+      if (!changed.length) return;
+      for (const id of changed) revisions.set(id, (revisions.get(id) || 0) + 1);
+      for (const fn of [...listeners]) {
+        try {
+          fn({ ids: changed, origin });
+        } catch (_) {
+        }
+      }
+    }
+    function commit(next) {
+      const changed = ids.filter((id) => !sameValue(id in next ? next[id] : void 0, id in overrides ? overrides[id] : void 0));
+      if (!changed.length) return { ok: true, changed };
+      const res = store2.set(key, { values: next });
+      if (!res.ok) return { ok: false, changed: [] };
+      overrides = next;
+      emit(changed, "local");
+      return { ok: true, changed };
+    }
+    const unsubscribe = store2.subscribe((e) => {
+      if (e.origin === "local") return;
+      if (e.key !== key && e.key !== null) return;
+      const before = overrides;
+      overrides = readOverrides();
+      emit(ids.filter((id) => !sameValue(before[id], overrides[id])), e.origin);
+    });
     return {
-      readProjects,
-      writeProjects,
-      ensureProjects,
-      listProjects: listProjects2,
-      getActiveProjectId: getActiveProjectId2,
-      setActiveProjectId: setActiveProjectId2,
-      getActiveProject: getActiveProject2,
-      createProject: createProject2,
-      renameProject: renameProject2,
-      deleteProject: deleteProject2,
-      newBlankProject: newBlankProject2,
-      createProjectWithFiles: createProjectWithFiles2
+      /** The row declaring `id`, or null. */
+      rowOf(id) {
+        return byId.get(id) || null;
+      },
+      /** The effective value: what was stored, or the default. Never touches storage. */
+      get(id) {
+        const row = requireRow(id);
+        return clone(id in overrides ? overrides[id] : row.default);
+      },
+      /**
+       * Store a value. Returns false, and stores nothing, when the value is not
+       * one this row can hold or storage refused it. Setting a value back to its
+       * default removes it from the record.
+       */
+      set(id, value) {
+        const row = requireRow(id);
+        const v = normalizeValue(row, value);
+        if (v === void 0) return false;
+        const next = { ...overrides };
+        if (sameValue(v, row.default)) delete next[id];
+        else next[id] = clone(v);
+        return commit(next).ok;
+      },
+      /** A number that changes whenever `id`'s effective value does. */
+      revision(id) {
+        requireRow(id);
+        return revisions.get(id) || 0;
+      },
+      isDefault(id) {
+        requireRow(id);
+        return !(id in overrides);
+      },
+      defaultOf(id) {
+        return clone(requireRow(id).default);
+      },
+      /** Every row's effective value. */
+      values() {
+        return resolveRows(rows, overrides);
+      },
+      /** Only what differs from the defaults (a copy). */
+      overrides() {
+        return clone(overrides);
+      },
+      /** Back to the defaults for every id `pick(row)` selects (all when omitted). */
+      reset(pick2) {
+        const next = {};
+        for (const [id, v] of Object.entries(overrides)) {
+          if (pick2 && !pick2(byId.get(id))) next[id] = v;
+        }
+        return commit(next).ok;
+      },
+      commit,
+      /** fn({ ids, origin: 'local' | 'tab' | 'remote' }) whenever effective values change. */
+      subscribe(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      dispose() {
+        unsubscribe();
+        listeners.clear();
+      }
     };
   }
 
-  // js/persist/persist-file-registry.mjs
-  function create6(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projKey2 = deps.projKey;
-    var stateKeyFor2 = deps.stateKeyFor;
-    var defaultBackend2 = deps.defaultBackend;
-    var readState2 = deps.readState;
-    var emptyState2 = deps.emptyState;
-    var DEFAULT_DOCUMENT_ID2 = deps.DEFAULT_DOCUMENT_ID;
-    var dirOf2 = deps.dirOf;
-    var expandAliasesForStorage2 = deps.expandAliasesForStorage;
-    var fileNameForId2 = deps.fileNameForId;
-    var readStoredCfgAutoSync2 = deps.readStoredCfgAutoSync;
-    var writeOpenFileIds2 = deps.writeOpenFileIds;
-    var closeOpenFile2 = deps.closeOpenFile;
-    var writeActiveCfgByDir2 = deps.writeActiveCfgByDir;
-    var setActiveCfgForDir2 = deps.setActiveCfgForDir;
-    var removeActiveCfgForDir2 = deps.removeActiveCfgForDir;
-    var readActiveCfgByDir2 = deps.readActiveCfgByDir;
-    var normalizeActiveCfgList2 = deps.normalizeActiveCfgList;
-    var setProjectName2 = deps.setProjectName;
-    function readProjectFiles2() {
-      var raw = tryParse2(backendLoad2(projKey2("files")));
-      if (Array.isArray(raw)) return raw;
+  // js/persist/settings-schema.mjs
+  var SETTINGS_KEY = "beljar/settings";
+  var SECTIONS = ["appearance", "editor", "keybindings", "beluga", "harpoon", "repl", "workspace", "aliases"];
+  function cleanKeybindings(map) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return void 0;
+    const out = {};
+    for (const [id, v] of Object.entries(map)) {
+      if (v === "" || v === null) out[id] = "";
+      else if (typeof v === "string") out[id] = v;
+    }
+    return out;
+  }
+  function cleanAliasPairs(v) {
+    if (v === null) return null;
+    return Array.isArray(v) ? v : void 0;
+  }
+  var ON = true;
+  var OFF = false;
+  var SETTINGS = [
+    // ── Appearance ──────────────────────────────────────────────────────────
+    { id: "theme", section: "appearance", default: "dark", values: ["dark", "light"], boot: true },
+    { id: "uiFontSize", section: "appearance", default: "md", values: ["sm", "md", "lg", "xl"], boot: true },
+    { id: "uiTextContrast", section: "appearance", default: "medium", values: ["low", "medium", "high", "maximum"], boot: true },
+    { id: "motionPref", section: "appearance", default: "system", values: ["system", "reduce", "full"], boot: true },
+    { id: "toastDuration", section: "appearance", default: "normal", values: ["short", "normal", "long"] },
+    // ── Editor: typography ──────────────────────────────────────────────────
+    { id: "editorFontSize", section: "editor", default: "md", values: ["sm", "md", "lg", "xl"] },
+    { id: "editorLineHeight", section: "editor", default: "normal", values: ["compact", "normal", "relaxed"] },
+    { id: "editorWordWrap", section: "editor", default: OFF },
+    { id: "editorFontFamily", section: "editor", default: "jetbrains", values: ["jetbrains", "system"], boot: true },
+    { id: "editorCursorBlink", section: "editor", default: "blink", values: ["off", "blink", "fast"] },
+    { id: "editorScrollPastEnd", section: "editor", default: ON },
+    { id: "editorWhitespace", section: "editor", default: "none", values: ["none", "trailing", "selection", "all"] },
+    { id: "editorRulers", section: "editor", default: OFF },
+    // ── Editor: indentation and saving ──────────────────────────────────────
+    { id: "editorTabSize", section: "editor", default: 2, values: [2, 4] },
+    { id: "autosaveDelay", section: "editor", default: 320, values: [320, 1e3, 2e3] },
+    { id: "editorFormatWidth", section: "editor", default: 80, values: [80, 100, 120] },
+    { id: "editorReindentPaste", section: "editor", default: ON },
+    { id: "cfgAutoSync", section: "editor", default: ON },
+    { id: "formatOnSave", section: "editor", default: OFF },
+    { id: "trimTrailingWs", section: "editor", default: OFF },
+    // ── Editor: code insight ────────────────────────────────────────────────
+    { id: "editorSyntaxHighlight", section: "editor", default: ON },
+    { id: "editorSemanticHighlight", section: "editor", default: ON },
+    { id: "editorParseHighlight", section: "editor", default: ON },
+    { id: "editorOccurrenceHighlight", section: "editor", default: ON },
+    { id: "editorBracketMatch", section: "editor", default: ON },
+    { id: "editorAutoCloseBrackets", section: "editor", default: ON },
+    { id: "editorSelectionMatches", section: "editor", default: ON },
+    { id: "hoverScope", section: "editor", default: "all", values: ["all", "user-only", "none"] },
+    { id: "hoverSticky", section: "editor", default: OFF },
+    { id: "editorAutocompleteTrigger", section: "editor", default: "typing", values: ["typing", "none", "always"] },
+    { id: "editorAutocompleteContinue", section: "editor", default: OFF },
+    { id: "quietWhileTyping", section: "editor", default: OFF },
+    // ── Editor: gutters and diagnostics ─────────────────────────────────────
+    { id: "editorLineNumbers", section: "editor", default: ON },
+    { id: "editorLineNumberMode", section: "editor", default: "absolute", values: ["absolute", "relative", "hybrid"] },
+    { id: "editorFoldGutter", section: "editor", default: ON },
+    { id: "editorFoldPersist", section: "editor", default: "session", values: ["session", "none", "local"], sync: false },
+    { id: "editorActiveLine", section: "editor", default: ON },
+    { id: "diagPresentation", section: "editor", default: "both", values: ["both", "underlines", "gutter", "none"] },
+    { id: "diagSeverity", section: "editor", default: "all", values: ["all", "errors"] },
+    { id: "editorHoleGutter", section: "editor", default: ON },
+    { id: "editorHoleEmphasis", section: "editor", default: "normal", values: ["subtle", "normal", "loud"], boot: true },
+    { id: "stickyDeclHeader", section: "editor", default: OFF },
+    // ── Keybindings and the keyboard ────────────────────────────────────────
+    { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
+    { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
+    // null: the status strip picks its own default for the keymap style.
+    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
+    { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
+    { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
+    { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
+    { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
+    // ── Beluga ──────────────────────────────────────────────────────────────
+    // Which build this device downloads: a phone and a workstation differ.
+    { id: "belugaMode", section: "beluga", default: "stable", values: ["stable", "fast"], sync: false },
+    { id: "belugaFallbackStable", section: "beluga", default: ON },
+    { id: "belugaCancelOnEdit", section: "beluga", default: ON },
+    { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
+    { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },
+    // ── Harpoon ─────────────────────────────────────────────────────────────
+    { id: "harpoonMode", section: "harpoon", default: "manual", values: ["manual", "orca"] },
+    { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
+    { id: "autosolveFocusNext", section: "harpoon", default: ON },
+    { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // ── REPL ────────────────────────────────────────────────────────────────
+    { id: "replAutoscroll", section: "repl", default: ON },
+    { id: "replWelcome", section: "repl", default: ON },
+    { id: "replEcho", section: "repl", default: ON },
+    { id: "replFilterChatter", section: "repl", default: ON },
+    { id: "replHoverTimestamp", section: "repl", default: OFF },
+    { id: "replAutocompleteTrigger", section: "repl", default: "typing", values: ["typing", "none", "always"] },
+    { id: "replAutocompleteContinue", section: "repl", default: OFF },
+    { id: "replHistoryCap", section: "repl", default: 1e3, values: [100, 250, 500, 1e3] },
+    // Where this browser keeps history: a shared computer is not your laptop.
+    { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
+    // ── Workspace ───────────────────────────────────────────────────────────
+    { id: "inspectorFollow", section: "workspace", default: ON },
+    { id: "restorePanels", section: "workspace", default: ON },
+    { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Signed in, settings follow you between devices; off here, this device keeps its own.
+    { id: "syncSettings", section: "workspace", default: ON, sync: false },
+    // ── Aliases ─────────────────────────────────────────────────────────────
+    { id: "aliasActivation", section: "aliases", default: "greedy", values: ["greedy", "strict"] },
+    // null: the built-in alias table.
+    { id: "aliasPairs", section: "aliases", default: null, type: "json", normalize: cleanAliasPairs }
+  ];
+  var BY_ID = new Map(SETTINGS.map((row) => [row.id, row]));
+  function settingRow(id) {
+    return BY_ID.get(id) || null;
+  }
+  function isSyncedSetting(row) {
+    return !!row && row.sync !== false;
+  }
+  var normalizeSetting = normalizeValue;
+  function defaultOf(id) {
+    const row = settingRow(id);
+    if (!row) throw new Error(`settings: no setting "${id}"`);
+    return clone(row.default);
+  }
+
+  // js/persist/settings.mjs
+  var EXPORT_KIND = "beljar-settings";
+  function createSettings(store2) {
+    const table = createTable(store2, {
+      key: SETTINGS_KEY,
+      rows: SETTINGS,
+      unknown: (id) => `settings: no setting "${id}" (declare it in settings-schema.mjs)`
+    });
+    return {
+      SECTIONS,
+      get: table.get,
+      set: table.set,
+      revision: table.revision,
+      isDefault: table.isDefault,
+      values: table.values,
+      subscribe: table.subscribe,
+      dispose: table.dispose,
+      defaultOf,
+      /** Back to defaults for one Settings category. */
+      reset(section) {
+        if (!SECTIONS.includes(section)) throw new Error(`settings: no section "${section}"`);
+        return table.reset((row) => row.section === section);
+      },
+      resetAll() {
+        return table.reset();
+      },
+      /** Exactly what the user changed, in a file they can keep. */
+      exportBundle(now = Date.now()) {
+        return { kind: EXPORT_KIND, exportedAt: now, values: table.overrides() };
+      },
+      /**
+       * Apply an exported bundle. Unknown ids and values a setting cannot hold are
+       * skipped and named, never half-applied: what is valid lands in one write.
+       */
+      importBundle(bundle) {
+        if (!bundle || bundle.kind !== EXPORT_KIND || !bundle.values || typeof bundle.values !== "object") {
+          return { ok: false, reason: "not a BelJar settings file", applied: [], skipped: [] };
+        }
+        const next = table.overrides();
+        const applied = [];
+        const skipped = [];
+        for (const [id, raw] of Object.entries(bundle.values)) {
+          const row = settingRow(id);
+          const v = row ? normalizeSetting(row, raw) : void 0;
+          if (v === void 0) {
+            skipped.push(id);
+            continue;
+          }
+          if (sameValue(v, row.default)) delete next[id];
+          else next[id] = clone(v);
+          applied.push(id);
+        }
+        const res = table.commit(next);
+        return { ok: res.ok, applied: res.ok ? applied : [], skipped };
+      }
+    };
+  }
+
+  // js/persist/device-schema.mjs
+  var DEVICE_KEY = "beljar/device";
+  function stringList(cap) {
+    return (raw) => {
+      if (!Array.isArray(raw)) return void 0;
+      const out = [];
+      for (const x of raw) {
+        if (typeof x === "string" && x && out.indexOf(x) === -1) out.push(x);
+      }
+      return cap ? out.slice(0, cap) : out;
+    };
+  }
+  function runModel(raw) {
+    if (!raw || typeof raw !== "object") return void 0;
+    const { baseMs, msPerLine, sampleCount } = raw;
+    if (!(typeof msPerLine === "number" && msPerLine > 0) || !(typeof baseMs === "number" && baseMs >= 0)) return void 0;
+    return {
+      baseMs,
+      msPerLine,
+      sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
+    };
+  }
+  var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
+  var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
+  var DEVICE = [
+    // which project the next load opens (a page stays on the one it opened: work.mjs)
+    { id: "activeProject", type: "string", default: "" },
+    // the account this browser is signed in as ('' signed out): whose projects it
+    // shows, and who owns a new one (work.mjs). An opaque id, never a credential.
+    { id: "account", type: "string", default: "" },
+    // the account this device last asked about its own projects (the claim flow, once per account)
+    { id: "claimAskedFor", type: "string", default: "" },
+    // durability.mjs: when this browser was last asked to keep BelJar's storage,
+    // and when this device was told Safari may delete it (ms; 0: never)
+    { id: "persistAskedAt", type: "number", default: 0 },
+    { id: "durabilityWarnedAt", type: "number", default: 0 },
+    // layout
+    { id: "editorSplit", group: "layout", default: 0.5, min: 0.18, max: 0.82, boot: true },
+    { id: "explorerWidth", ...PANEL_W, cssVar: "--explorer-w" },
+    { id: "explorerHeight", ...PANEL_H, max: 320, cssVar: "--explorer-h" },
+    { id: "inspectorWidth", ...PANEL_W, cssVar: "--inspector-w" },
+    { id: "inspectorHeight", ...PANEL_H, cssVar: "--inspector-h" },
+    { id: "libraryWidth", ...PANEL_W, cssVar: "--library-w" },
+    { id: "libraryHeight", ...PANEL_H, cssVar: "--library-h" },
+    { id: "harpoonWidth", ...PANEL_W, cssVar: "--harpoon-w" },
+    { id: "harpoonHeight", ...PANEL_H, cssVar: "--harpoon-h" },
+    { id: "harpoonDetailsCollapsed", default: false },
+    // the dependency graph panel
+    { id: "graphLayout", default: "force", values: ["force", "flat"] },
+    { id: "graphImpl", default: "show", values: ["show", "hide"] },
+    { id: "graphDepth", default: 1, values: [1, 2, 3] },
+    { id: "graphLabelDensity", default: 3, values: [1, 2, 3, 4, 5] },
+    { id: "graphSidebarCollapsed", default: false },
+    // what this device has learned or been told
+    { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
+    { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    { id: "runModel", type: "json", default: null, normalize: runModel },
+    { id: "jumpLog", default: false }
+  ];
+  var BY_ID2 = new Map(DEVICE.map((row) => [row.id, row]));
+
+  // js/persist/keys.mjs
+  var NOTIFICATIONS_KEY = "beljar/notifications";
+  var REPL_TRANSCRIPT_KEY = "beljar/repl/transcript";
+  var REPL_COMMANDS_KEY = "beljar/repl/commands";
+  var TOMBSTONES_KEY = "beljar/tombstones";
+  var SETTINGS_SYNC_KEY = "beljar/settings-sync";
+  function tabMessageKey(kind) {
+    return "beljar/tabs/" + kind;
+  }
+  function projectPrefix(pid) {
+    return "beljar/p/" + pid + "/";
+  }
+  function metaKey(pid) {
+    return projectPrefix(pid) + "meta";
+  }
+  function treeKey(pid) {
+    return projectPrefix(pid) + "tree";
+  }
+  function fileKey(pid, fid) {
+    return projectPrefix(pid) + "f/" + fid;
+  }
+  function sessionKey(pid) {
+    return projectPrefix(pid) + "session";
+  }
+  function cacheKey(pid, fid) {
+    return projectPrefix(pid) + "cache/" + fid;
+  }
+  function foldsKey(pid) {
+    return projectPrefix(pid) + "folds";
+  }
+  function syncKey(pid) {
+    return projectPrefix(pid) + "sync";
+  }
+  function undoKey(pid) {
+    return projectPrefix(pid) + "undo";
+  }
+  function conflictKey(pid, fid) {
+    return projectPrefix(pid) + "conflict/" + fid;
+  }
+  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|f|cache|conflict)(?:\/([^/]+))?$/;
+  function parseKey(key) {
+    var m = typeof key === "string" ? PROJECT_KEY.exec(key) : null;
+    if (!m) return null;
+    var hasFile = m[2] === "f" || m[2] === "cache" || m[2] === "conflict";
+    if (hasFile !== (m[3] != null)) return null;
+    return hasFile ? { pid: m[1], kind: m[2], fid: m[3] } : { pid: m[1], kind: m[2] };
+  }
+  var B32 = "0123456789abcdefghjkmnpqrstvwxyz";
+  var lastTime = -1;
+  var lastRand = null;
+  function randomBytes(n) {
+    var cryptoApi = globalThis.crypto;
+    if (cryptoApi && typeof cryptoApi.getRandomValues === "function") return cryptoApi.getRandomValues(new Uint8Array(n));
+    var out = new Uint8Array(n);
+    for (var i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+    return out;
+  }
+  function encodeTime(ms) {
+    var s = "";
+    var t = ms;
+    for (var i = 0; i < 10; i++) {
+      s = B32[t % 32] + s;
+      t = Math.floor(t / 32);
+    }
+    return s;
+  }
+  function encodeRandom(bytes) {
+    var s = "";
+    var acc = 0;
+    var bits = 0;
+    for (var i = 0; i < bytes.length; i++) {
+      acc = acc << 8 | bytes[i];
+      bits += 8;
+      while (bits >= 5) {
+        bits -= 5;
+        s += B32[acc >> bits & 31];
+      }
+      acc &= (1 << bits) - 1;
+    }
+    return s;
+  }
+  function increment(bytes) {
+    for (var i = bytes.length - 1; i >= 0; i--) {
+      if (bytes[i] < 255) {
+        bytes[i] += 1;
+        return true;
+      }
+      bytes[i] = 0;
+    }
+    return false;
+  }
+  function newId(kind, taken) {
+    for (; ; ) {
+      var now = Date.now();
+      if (now > lastTime || !lastRand) {
+        lastTime = now;
+        lastRand = randomBytes(10);
+      } else if (!increment(lastRand)) {
+        lastTime += 1;
+        lastRand = randomBytes(10);
+      }
+      var id = kind + "_" + encodeTime(lastTime) + encodeRandom(lastRand);
+      if (!taken || !taken(id)) return id;
+    }
+  }
+
+  // js/persist/work.mjs
+  var DEFAULT_PROJECT_NAME = "Untitled Project";
+  var FIRST_FILE_NAME = "main.bel";
+  var CACHE_LIMIT = 1024;
+  function cleanName(name) {
+    return String(name != null ? name : "").trim() || DEFAULT_PROJECT_NAME;
+  }
+  function stringList2(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const x of raw) {
+      if (typeof x === "string" && x && out.indexOf(x) === -1) out.push(x);
+    }
+    return out;
+  }
+  function emptyTree() {
+    return { files: [], folders: [], suites: {} };
+  }
+  function normalizeTree(raw) {
+    const t = emptyTree();
+    if (!raw || typeof raw !== "object") return t;
+    if (Array.isArray(raw.files)) {
+      const seen = /* @__PURE__ */ new Set();
+      for (const f of raw.files) {
+        if (!f || typeof f.id !== "string" || !f.id || typeof f.name !== "string" || seen.has(f.id)) continue;
+        seen.add(f.id);
+        t.files.push({ id: f.id, name: f.name });
+      }
+    }
+    t.folders = stringList2(raw.folders);
+    if (raw.suites && typeof raw.suites === "object" && !Array.isArray(raw.suites)) {
+      for (const dir of Object.keys(raw.suites)) {
+        const list = stringList2(raw.suites[dir]);
+        if (list.length) t.suites[dir] = list;
+      }
+    }
+    return t;
+  }
+  function copyTree(t) {
+    const suites = {};
+    for (const dir of Object.keys(t.suites)) suites[dir] = t.suites[dir].slice();
+    return {
+      files: t.files.map((f) => ({ id: f.id, name: f.name })),
+      folders: t.folders.slice(),
+      suites
+    };
+  }
+  function normalizeSession(raw) {
+    const s = { open: null, active: null, views: {}, workspace: null, panel: null, explorerFolds: [] };
+    if (!raw || typeof raw !== "object") return s;
+    if (Array.isArray(raw.open)) s.open = stringList2(raw.open);
+    if (typeof raw.active === "string" && raw.active) s.active = raw.active;
+    if (raw.views && typeof raw.views === "object" && !Array.isArray(raw.views)) {
+      for (const fid of Object.keys(raw.views)) {
+        const v = raw.views[fid];
+        if (v && typeof v === "object") s.views[fid] = v;
+      }
+    }
+    if (raw.workspace && typeof raw.workspace === "object") s.workspace = raw.workspace;
+    if (typeof raw.panel === "string" && raw.panel) s.panel = raw.panel;
+    s.explorerFolds = stringList2(raw.explorerFolds);
+    return s;
+  }
+  function normalizeMeta(pid, raw) {
+    if (!raw || typeof raw !== "object") return null;
+    return {
+      id: pid,
+      name: cleanName(raw.name),
+      createdAt: typeof raw.createdAt === "number" ? raw.createdAt : 0,
+      owner: typeof raw.owner === "string" && raw.owner ? raw.owner : null
+    };
+  }
+  function metaRecord(meta) {
+    return { name: meta.name, createdAt: meta.createdAt, owner: meta.owner };
+  }
+  function normalizeConflict(raw) {
+    if (!raw || typeof raw !== "object" || typeof raw.theirs !== "string" || typeof raw.mine !== "string") return null;
+    return {
+      base: typeof raw.base === "string" ? raw.base : "",
+      mine: raw.mine,
+      theirs: raw.theirs,
+      at: typeof raw.at === "number" ? raw.at : 0,
+      source: raw.source === "device" ? "device" : "tab"
+    };
+  }
+  function sameTree(a, b) {
+    return JSON.stringify(normalizeTree(a)) === JSON.stringify(normalizeTree(b));
+  }
+  function normalizeTombstones(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const pid of Object.keys(raw)) {
+      const t = raw[pid];
+      if (!t || typeof t !== "object" || typeof t.owner !== "string" || !t.owner) continue;
+      out[pid] = {
+        version: Number.isInteger(t.version) && t.version > 0 ? t.version : 0,
+        owner: t.owner,
+        pending: typeof t.pending === "string" && t.pending ? t.pending : null,
+        at: typeof t.at === "number" ? t.at : 0
+      };
+    }
+    return out;
+  }
+  function createWork(opts) {
+    const store2 = opts.store;
+    const now = opts.now || (() => Date.now());
+    const device = opts.device || createTable(store2, { key: DEVICE_KEY, rows: DEVICE });
+    const cache = /* @__PURE__ */ new Map();
+    const PROJECTS = " projects";
+    let pinned = null;
+    store2.subscribe((evt) => {
+      if (evt.key == null) {
+        cache.clear();
+        return;
+      }
+      cache.delete(evt.key);
+      const k = parseKey(evt.key);
+      if (k && k.kind === "meta") cache.delete(PROJECTS);
+    });
+    function remember(key, value) {
+      if (cache.size >= CACHE_LIMIT) cache.clear();
+      cache.set(key, value);
+      return value;
+    }
+    function cached(key, load) {
+      if (cache.has(key)) return cache.get(key);
+      return remember(key, load(store2.get(key)));
+    }
+    function put(key, value, stored) {
+      const res = store2.set(key, stored !== void 0 ? stored : value);
+      if (res.ok) remember(key, value);
+      return res;
+    }
+    function peekProjects() {
+      if (cache.has(PROJECTS)) return cache.get(PROJECTS);
+      const list = [];
+      for (const key of store2.keys("beljar/p/")) {
+        const k = parseKey(key);
+        if (!k || k.kind !== "meta") continue;
+        const meta = normalizeMeta(k.pid, store2.get(key));
+        if (meta) list.push(meta);
+      }
+      list.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return remember(PROJECTS, list);
+    }
+    function hasProject(pid) {
+      return peekProjects().some((p) => p.id === pid);
+    }
+    function account() {
+      return device.get("account") || null;
+    }
+    function setAccount(uid) {
+      if (uid) return device.set("account", String(uid));
+      return device.reset((row) => row.id === "account");
+    }
+    function isVisible(p) {
+      return p.owner === null || p.owner === account();
+    }
+    function peekVisible() {
+      return peekProjects().filter(isVisible);
+    }
+    function claimProject(pid) {
+      const uid = account();
+      const meta = normalizeMeta(pid, store2.get(metaKey(pid)));
+      if (!uid || !meta || meta.owner !== null) return false;
+      meta.owner = uid;
+      return put(metaKey(pid), metaRecord(meta)).ok;
+    }
+    function removeAccountProjects(uid) {
+      if (!uid) return 0;
+      let n = 0;
+      for (const p of peekProjects()) {
+        if (p.owner !== uid) continue;
+        store2.remove(metaKey(p.id));
+        store2.removeAll(projectPrefix(p.id));
+        if (pinned === p.id) pinned = null;
+        n += 1;
+      }
+      const tombs = readTombstones();
+      let dropped = false;
+      for (const pid of Object.keys(tombs)) {
+        if (tombs[pid].owner === uid) {
+          delete tombs[pid];
+          dropped = true;
+        }
+      }
+      if (dropped) writeTombstones(tombs);
+      const synced = store2.get(SETTINGS_SYNC_KEY);
+      if (synced && synced.account === uid) store2.remove(SETTINGS_SYNC_KEY);
+      return n;
+    }
+    function readTombstones() {
+      return normalizeTombstones(store2.get(TOMBSTONES_KEY));
+    }
+    function writeTombstones(tombs) {
+      return Object.keys(tombs).length ? store2.set(TOMBSTONES_KEY, tombs) : store2.remove(TOMBSTONES_KEY);
+    }
+    function writeDevice(pid) {
+      return device.set("activeProject", pid);
+    }
+    function createProject(name) {
+      const pid = newId("p", (id) => store2.keys(projectPrefix(id)).length > 0);
+      const fid = newId("f");
+      const landed = put(treeKey(pid), normalizeTree({ files: [{ id: fid, name: FIRST_FILE_NAME }] })).ok && put(sessionKey(pid), normalizeSession({ open: [fid], active: fid })).ok && put(metaKey(pid), metaRecord({ name: cleanName(name), createdAt: now(), owner: account() })).ok;
+      if (landed) return pid;
+      store2.removeAll(projectPrefix(pid));
       return null;
     }
-    function writeProjectFiles(files) {
-      backendSave2(projKey2("files"), JSON.stringify(files));
+    function ensureProjects() {
+      if (!peekVisible().length) {
+        const pid = createProject(DEFAULT_PROJECT_NAME);
+        if (!pid) throw new Error("BelJar could not create a project: storage refused the write (full, or owned by another version)");
+        writeDevice(pid);
+      }
+      return peekVisible();
     }
-    function readEmptyFolders() {
-      var raw = tryParse2(backendLoad2(projKey2("empty-folders")));
-      if (!Array.isArray(raw)) return [];
-      return raw.filter(function(p) {
-        return typeof p === "string" && p;
+    function listProjects() {
+      return ensureProjects().map((p) => Object.assign({}, p));
+    }
+    function pinnedProject() {
+      return pinned;
+    }
+    function projectId() {
+      if (pinned) return pinned;
+      const list = ensureProjects();
+      const want = device.get("activeProject");
+      pinned = list.some((p) => p.id === want) ? want : list[0].id;
+      if (want !== pinned) writeDevice(pinned);
+      return pinned;
+    }
+    function getProject(pid) {
+      const p = peekProjects().find((x) => x.id === (pid || projectId()));
+      return p ? Object.assign({}, p) : null;
+    }
+    function setActiveProject(pid) {
+      if (!ensureProjects().some((p) => p.id === pid)) return false;
+      writeDevice(pid);
+      pinned = pid;
+      return true;
+    }
+    function renameProject(pid, name) {
+      const meta = normalizeMeta(pid, store2.get(metaKey(pid)));
+      if (!meta) return false;
+      meta.name = cleanName(name);
+      return put(metaKey(pid), metaRecord(meta)).ok;
+    }
+    function deleteProject(pid) {
+      const list = ensureProjects();
+      if (list.length <= 1) return null;
+      const idx = list.findIndex((p) => p.id === pid);
+      if (idx === -1) return null;
+      const others = list.filter((p) => p.id !== pid);
+      const owner = list[idx].owner;
+      const synced = store2.get(syncKey(pid));
+      if (owner && synced && typeof synced === "object" && (synced.version > 0 || synced.pending)) {
+        const tombs = readTombstones();
+        tombs[pid] = {
+          version: synced.version > 0 ? synced.version : 0,
+          owner,
+          pending: synced.pending && typeof synced.pending.id === "string" ? synced.pending.id : null,
+          at: now()
+        };
+        if (!writeTombstones(tombs).ok) return null;
+      }
+      store2.remove(metaKey(pid));
+      store2.removeAll(projectPrefix(pid));
+      const next = others[Math.max(0, idx - 1)].id;
+      if (device.get("activeProject") === pid) writeDevice(next);
+      if (pinned === pid) pinned = next;
+      return next;
+    }
+    function peekTree(pid) {
+      return cached(treeKey(pid || projectId()), normalizeTree);
+    }
+    function readTree(pid) {
+      return copyTree(peekTree(pid));
+    }
+    function writeTree(tree, pid) {
+      pid = pid || projectId();
+      if (!hasProject(pid)) return { ok: false, error: { code: "gone" } };
+      return put(treeKey(pid), normalizeTree(tree));
+    }
+    function updateTree(fn, pid) {
+      const draft = readTree(pid);
+      const next = fn(draft);
+      return writeTree(next || draft, pid);
+    }
+    function hasFile(fid, pid) {
+      return peekTree(pid).files.some((f) => f.id === fid);
+    }
+    function newFileId(pid) {
+      const files2 = peekTree(pid).files;
+      return newId("f", (id) => files2.some((f) => f.id === id));
+    }
+    function getText(fid, pid) {
+      return cached(fileKey(pid || projectId(), fid), (d) => d && typeof d.text === "string" ? d.text : "");
+    }
+    function setText(fid, text, pid) {
+      const t = String(text != null ? text : "");
+      return put(fileKey(pid || projectId(), fid), t, { text: t });
+    }
+    function textOrigin(fid, pid) {
+      const d = store2.get(fileKey(pid || projectId(), fid));
+      return d && d.via === "sync" ? "sync" : "local";
+    }
+    function removeFiles(fids, pid) {
+      pid = pid || projectId();
+      const views = peekSession(pid).views;
+      let hadView = false;
+      for (const fid of fids) {
+        store2.remove(fileKey(pid, fid));
+        store2.remove(cacheKey(pid, fid));
+        store2.remove(conflictKey(pid, fid));
+        if (views[fid]) hadView = true;
+      }
+      if (hadView) {
+        updateSession((draft) => {
+          for (const fid of fids) delete draft.views[fid];
+        }, pid);
+      }
+    }
+    function peekSession(pid) {
+      return cached(sessionKey(pid || projectId()), normalizeSession);
+    }
+    function readSession(pid) {
+      return JSON.parse(JSON.stringify(peekSession(pid)));
+    }
+    function updateSession(fn, pid) {
+      pid = pid || projectId();
+      if (!hasProject(pid)) return { ok: false, error: { code: "gone" } };
+      const draft = readSession(pid);
+      const next = normalizeSession(fn(draft) || draft);
+      const live = new Set(peekTree(pid).files.map((f) => f.id));
+      if (next.open) next.open = next.open.filter((id) => live.has(id));
+      if (next.active && !live.has(next.active)) next.active = null;
+      for (const fid of Object.keys(next.views)) {
+        if (!live.has(fid)) delete next.views[fid];
+      }
+      return put(sessionKey(pid), next);
+    }
+    function readCache(fid, pid) {
+      const d = store2.get(cacheKey(pid || projectId(), fid));
+      return d && typeof d === "object" ? d : null;
+    }
+    function writeCache(fid, data, pid) {
+      const key = cacheKey(pid || projectId(), fid);
+      if (data == null) return store2.remove(key);
+      return store2.set(key, data);
+    }
+    function readConflict(fid, pid) {
+      return normalizeConflict(store2.get(conflictKey(pid || projectId(), fid)));
+    }
+    function writeConflict(fid, conflict, pid) {
+      return store2.set(conflictKey(pid || projectId(), fid), conflict);
+    }
+    function removeConflict(fid, pid) {
+      return store2.remove(conflictKey(pid || projectId(), fid));
+    }
+    function snapshotProject(pid) {
+      const meta = normalizeMeta(pid, store2.get(metaKey(pid)));
+      if (!meta) return null;
+      const tree = copyTree(peekTree(pid));
+      const texts = {};
+      for (const f of tree.files) texts[f.id] = getText(f.id, pid);
+      const conflicted = /* @__PURE__ */ new Set();
+      const prefix = projectPrefix(pid) + "conflict/";
+      for (const key of store2.keys(prefix)) conflicted.add(key.slice(prefix.length));
+      return { meta, tree, texts, conflicted };
+    }
+    function applyProject(pid, next, opts2) {
+      const o = opts2 || {};
+      const at = now();
+      const before = normalizeMeta(pid, store2.get(metaKey(pid)));
+      const prev = before ? peekTree(pid) : emptyTree();
+      for (const c of o.conflicts || []) {
+        const rec = { base: c.base, mine: c.mine, theirs: c.theirs, at, source: "device" };
+        if (!store2.set(conflictKey(pid, c.id), rec).ok) return false;
+      }
+      for (const f of next.files) {
+        const key = fileKey(pid, f.id);
+        if (before && store2.get(key) !== void 0 && getText(f.id, pid) === f.text) continue;
+        if (!store2.applyRemote(key, { text: f.text, via: "sync" }, at).ok) return false;
+      }
+      const tree = normalizeTree({
+        files: next.files.map((f) => ({ id: f.id, name: f.path })),
+        folders: next.folders,
+        suites: next.suites
+      });
+      if (!before || !sameTree(tree, prev)) {
+        if (!store2.applyRemote(treeKey(pid), tree, at).ok) return false;
+      }
+      const meta = {
+        name: cleanName(next.name),
+        createdAt: next.createdAt || (before ? before.createdAt : at),
+        owner: before ? before.owner : o.owner || null
+      };
+      if (!before || before.name !== meta.name || before.createdAt !== meta.createdAt) {
+        if (!store2.applyRemote(metaKey(pid), metaRecord(meta), at).ok) return false;
+      }
+      const keep = new Set(next.files.map((f) => f.id));
+      for (const f of prev.files) {
+        if (keep.has(f.id)) continue;
+        store2.applyRemote(fileKey(pid, f.id), null);
+        store2.remove(cacheKey(pid, f.id));
+        store2.remove(conflictKey(pid, f.id));
+      }
+      return true;
+    }
+    function forgetProject(pid) {
+      store2.applyRemote(metaKey(pid), null);
+      store2.removeAll(projectPrefix(pid));
+      if (pinned === pid) pinned = null;
+    }
+    function projectStats(pid) {
+      const tree = peekTree(pid);
+      let size = 0;
+      let editedAt = store2.at(metaKey(pid));
+      editedAt = Math.max(editedAt, store2.at(treeKey(pid)));
+      for (const f of tree.files) {
+        size += getText(f.id, pid).length;
+        editedAt = Math.max(editedAt, store2.at(fileKey(pid, f.id)));
+      }
+      return { files: tree.files.length, size, editedAt };
+    }
+    function allProjects() {
+      return peekProjects().map((p) => Object.assign({}, p));
+    }
+    function dropTombstone(pid) {
+      const tombs = readTombstones();
+      if (!(pid in tombs)) return { ok: true };
+      delete tombs[pid];
+      return writeTombstones(tombs);
+    }
+    function onFileChange(fn) {
+      return store2.subscribe((evt) => {
+        if (evt.key == null) {
+          fn({ pid: null, fid: null, origin: evt.origin });
+          return;
+        }
+        const k = parseKey(evt.key);
+        if (k && k.kind === "f") fn({ pid: k.pid, fid: k.fid, origin: evt.origin });
       });
     }
-    function writeEmptyFolders(paths) {
-      backendSave2(projKey2("empty-folders"), JSON.stringify(paths || []));
+    return {
+      // projects
+      listProjects,
+      getProject,
+      hasProject,
+      projectId,
+      pinnedProject,
+      setActiveProject,
+      createProject,
+      renameProject,
+      deleteProject,
+      // tree
+      peekTree,
+      readTree,
+      writeTree,
+      updateTree,
+      hasFile,
+      newFileId,
+      // text
+      getText,
+      setText,
+      textOrigin,
+      removeFiles,
+      // session
+      peekSession,
+      readSession,
+      updateSession,
+      // cache
+      readCache,
+      writeCache,
+      // conflicts
+      readConflict,
+      writeConflict,
+      removeConflict,
+      // accounts
+      account,
+      setAccount,
+      claimProject,
+      removeAccountProjects,
+      // the online layer
+      allProjects,
+      projectStats,
+      snapshotProject,
+      applyProject,
+      forgetProject,
+      readTombstones,
+      dropTombstone,
+      // events
+      onFileChange
+    };
+  }
+
+  // js/persist/work-files.mjs
+  function create(deps) {
+    var work2 = deps.work;
+    var settings = deps.settings;
+    function dirOf(name) {
+      var i = String(name || "").lastIndexOf("/");
+      return i === -1 ? "" : name.slice(0, i);
     }
-    function listEmptyFolders2() {
+    function notifyProjectTreeChanged(kind) {
+      var g2 = typeof window !== "undefined" ? window : null;
+      if (g2 && typeof g2.dispatchEvent === "function") {
+        g2.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      }
+    }
+    function listFiles() {
+      return work2.peekTree().files.map(function(f) {
+        return { id: f.id, name: f.name };
+      });
+    }
+    function getFileById(id) {
+      var files2 = work2.peekTree().files;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id === id) return { id: files2[i].id, name: files2[i].name };
+      }
+      return null;
+    }
+    function fileNameForId(id) {
+      var f = getFileById(id);
+      return f ? f.name : "";
+    }
+    function writeFiles(files2) {
+      work2.updateTree(function(t) {
+        t.files = files2;
+      });
+    }
+    function readEmptyFolders() {
+      return work2.peekTree().folders.slice();
+    }
+    function writeEmptyFolders(paths) {
+      work2.updateTree(function(t) {
+        t.folders = paths || [];
+      });
+    }
+    function listEmptyFolders() {
       return readEmptyFolders();
     }
-    function addEmptyFolder2(path) {
+    function addEmptyFolder(path) {
       var p = String(path || "").trim();
       if (!p) return;
       var list = readEmptyFolders();
@@ -2252,7 +1380,7 @@
       writeEmptyFolders(list);
       notifyProjectTreeChanged("folder-add");
     }
-    function removeEmptyFolder2(path) {
+    function removeEmptyFolder(path) {
       var p = String(path || "");
       var list = readEmptyFolders();
       var next = list.filter(function(x) {
@@ -2262,15 +1390,15 @@
       writeEmptyFolders(next);
       notifyProjectTreeChanged("folder-remove");
     }
-    function clearEmptyFolders2() {
+    function clearEmptyFolders() {
       if (!readEmptyFolders().length) return;
       writeEmptyFolders([]);
       notifyProjectTreeChanged("folder-clear");
     }
-    function pruneEmptyFoldersUnder2(prefix) {
+    function pruneEmptyFoldersUnder(prefix) {
       var p = String(prefix || "").trim();
       if (!p) {
-        clearEmptyFolders2();
+        clearEmptyFolders();
         return;
       }
       var list = readEmptyFolders();
@@ -2282,7 +1410,7 @@
         notifyProjectTreeChanged("folder-prune");
       }
     }
-    function renameEmptyFolderPrefix2(from, to) {
+    function renameEmptyFolderPrefix(from, to) {
       var list = readEmptyFolders();
       var changed = false;
       for (var i = 0; i < list.length; i++) {
@@ -2313,11 +1441,11 @@
         notifyProjectTreeChanged("folder-prune");
       }
     }
-    function folderSubtreeOccupied(folderPath, files, emptyFolders) {
-      if (!folderPath) return files.length > 0 || emptyFolders.length > 0;
+    function folderSubtreeOccupied(folderPath, files2, emptyFolders) {
+      if (!folderPath) return files2.length > 0 || emptyFolders.length > 0;
       var prefix = folderPath + "/";
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].name.indexOf(prefix) === 0) return true;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].name.indexOf(prefix) === 0) return true;
       }
       for (var j = 0; j < emptyFolders.length; j++) {
         if (emptyFolders[j].indexOf(prefix) === 0) return true;
@@ -2329,13 +1457,13 @@
       if (!name || name.indexOf("/") === -1) return;
       var parts = name.split("/");
       parts.pop();
-      var files = ensureProject2();
+      var files2 = listFiles();
       var empty = readEmptyFolders();
       for (var i = parts.length - 1; i >= 0; i--) {
         var fp = parts.slice(0, i + 1).join("/");
         if (skipPrefixes && isPrefixUnderAny(fp, skipPrefixes)) continue;
-        if (!folderSubtreeOccupied(fp, files, empty)) {
-          addEmptyFolder2(fp);
+        if (!folderSubtreeOccupied(fp, files2, empty)) {
+          addEmptyFolder(fp);
           empty = readEmptyFolders();
         }
       }
@@ -2346,10 +1474,10 @@
       }
       return false;
     }
-    function relocatedPrefixTarget(prefix, moves, files) {
+    function relocatedPrefixTarget(prefix, moves, files2) {
       var ps = prefix + "/";
-      for (var i = 0; i < files.length; i++) {
-        var n = files[i].name;
+      for (var i = 0; i < files2.length; i++) {
+        var n = files2[i].name;
         if (n === prefix || n.indexOf(ps) === 0) return null;
       }
       var related = [];
@@ -2369,7 +1497,7 @@
       }
       return newPrefix;
     }
-    function inferRelocatedFolderPrefixes(moves, files) {
+    function inferRelocatedFolderPrefixes(moves, files2) {
       var candidates = {};
       for (var i = 0; i < moves.length; i++) {
         var from = moves[i].from;
@@ -2384,18 +1512,18 @@
       }
       var out = {};
       for (var prefix in candidates) {
-        var target = relocatedPrefixTarget(prefix, moves, files);
+        var target = relocatedPrefixTarget(prefix, moves, files2);
         if (target != null) out[prefix] = target;
       }
       return out;
     }
-    function preserveEmptyFoldersAfterMoves2(moves) {
+    function preserveEmptyFoldersAfterMoves(moves) {
       if (!moves || !moves.length) return;
-      var files = ensureProject2();
-      var reloc = inferRelocatedFolderPrefixes(moves, files);
+      var files2 = listFiles();
+      var reloc = inferRelocatedFolderPrefixes(moves, files2);
       for (var oldP in reloc) {
-        renameEmptyFolderPrefix2(oldP, reloc[oldP]);
-        removeEmptyFolder2(oldP);
+        renameEmptyFolderPrefix(oldP, reloc[oldP]);
+        removeEmptyFolder(oldP);
       }
       var skip = reloc;
       var seen = {};
@@ -2406,97 +1534,297 @@
         preserveEmptyFoldersAfterPath(from, skip);
       }
     }
-    function ensureProject2() {
-      var files = readProjectFiles2();
-      if (files !== null) return files;
-      var defaultFile = { id: DEFAULT_DOCUMENT_ID2, name: "main.bel" };
-      files = [defaultFile];
-      writeProjectFiles(files);
-      backendSave2(projKey2("active-file"), DEFAULT_DOCUMENT_ID2);
-      return files;
-    }
-    function listFiles2() {
-      return ensureProject2();
-    }
-    function getActiveFileId2() {
-      var files = listFiles2();
-      if (!files.length) return null;
-      var id = backendLoad2(projKey2("active-file"));
-      if (id && files.some(function(f) {
-        return f.id === id;
-      })) return id;
-      return files[0].id;
-    }
-    function setActiveFileId2(id) {
-      backendSave2(projKey2("active-file"), id);
-    }
-    function uniqueFileId(name, used) {
-      var id = "workspace://" + (name || "untitled.bel");
-      var base = id;
-      var counter = 1;
-      while (used[id]) {
-        var dot = base.lastIndexOf(".");
-        id = dot > 10 ? base.slice(0, dot) + "-" + counter + base.slice(dot) : base + "-" + counter;
-        counter++;
+    function getActiveFileId() {
+      var files2 = work2.peekTree().files;
+      if (!files2.length) return null;
+      var id = work2.peekSession().active;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id === id) return id;
       }
-      used[id] = true;
-      return id;
+      return files2[0].id;
     }
-    function replaceProject2(entries, options) {
-      options = options || {};
-      var old = readProjectFiles2() || [];
-      for (var i = 0; i < old.length; i++) {
-        backendRemove2(stateKeyFor2(old[i].id));
-      }
-      var used = {};
-      var files = [];
-      var list = entries || [];
-      for (var j = 0; j < list.length; j++) {
-        var ent = list[j];
-        var name = String(ent.name || "untitled.bel");
-        var id = uniqueFileId(name, used);
-        files.push({ id, name });
-        var state = emptyState2(id);
-        state.editor.text = expandAliasesForStorage2(ent.text, name);
-        state.meta.updatedAt = Date.now();
-        state.meta.revision = 1;
-        backendSave2(stateKeyFor2(id), JSON.stringify(state));
-      }
-      writeProjectFiles(files);
-      var activeId = options.activeId;
-      if (!activeId || !files.some(function(f) {
-        return f.id === activeId;
-      })) {
-        activeId = files.length ? files[0].id : null;
-      }
-      if (activeId) backendSave2(projKey2("active-file"), activeId);
-      writeOpenFileIds2(options.openIds && options.openIds.length ? options.openIds.filter(function(id2) {
-        return files.some(function(f) {
-          return f.id === id2;
-        });
-      }) : activeId ? [activeId] : []);
-      if (options.projectName) setProjectName2(options.projectName);
-      if (options.activeCfgByDir && typeof options.activeCfgByDir === "object") {
-        writeActiveCfgByDir2(options.activeCfgByDir);
-      } else if (options.defaultCfgPath) {
-        setActiveCfgForDir2(dirOf2(options.defaultCfgPath), options.defaultCfgPath);
-      } else {
-        writeActiveCfgByDir2({});
-      }
-      writeEmptyFolders([]);
-      return { files, activeId };
+    function setActiveFileId(id) {
+      work2.updateSession(function(s) {
+        s.active = id || null;
+      });
     }
-    function createFile2(name) {
-      var files = ensureProject2();
-      var used = {};
-      for (var u = 0; u < files.length; u++) used[files[u].id] = true;
+    function getOpenFileIds() {
+      var files2 = work2.peekTree().files;
+      if (!files2.length) return [];
+      var open = work2.peekSession().open;
+      if (open === null) {
+        var active = getActiveFileId();
+        return active ? [active] : [];
+      }
+      var valid = {};
+      for (var i = 0; i < files2.length; i++) valid[files2[i].id] = true;
+      return open.filter(function(id) {
+        return valid[id];
+      });
+    }
+    function setOpenFileIds(ids) {
+      work2.updateSession(function(s) {
+        s.open = (ids || []).slice();
+      });
+    }
+    function openFile(id) {
+      var ids = getOpenFileIds();
+      if (!getFileById(id)) return ids;
+      if (ids.indexOf(id) === -1) {
+        ids.push(id);
+        setOpenFileIds(ids);
+      }
+      return ids;
+    }
+    function closeOpenFile(id) {
+      var ids = getOpenFileIds();
+      var idx = ids.indexOf(id);
+      if (idx === -1) return ids;
+      ids.splice(idx, 1);
+      setOpenFileIds(ids);
+      return ids;
+    }
+    function getProjectName() {
+      var p = work2.getProject();
+      return p ? p.name : DEFAULT_PROJECT_NAME;
+    }
+    function setProjectName(name) {
+      work2.renameProject(work2.projectId(), name);
+    }
+    function normalizeActiveCfgList(val) {
+      if (!val) return [];
+      if (Array.isArray(val)) {
+        var out = [];
+        for (var i = 0; i < val.length; i++) {
+          var s = String(val[i] != null ? val[i] : "").trim();
+          if (s) out.push(s);
+        }
+        return out;
+      }
+      var one = String(val).trim();
+      return one ? [one] : [];
+    }
+    function readActiveCfgByDir() {
+      var suites = work2.peekTree().suites;
+      var out = {};
+      for (var dir in suites) out[dir] = suites[dir].slice();
+      return out;
+    }
+    function normalizeActiveCfgByDir(map) {
+      var out = {};
+      var keys = Object.keys(map || {});
+      for (var i = 0; i < keys.length; i++) {
+        var list = normalizeActiveCfgList(map[keys[i]]);
+        if (list.length) out[keys[i]] = list;
+      }
+      return out;
+    }
+    function writeActiveCfgByDir(map) {
+      var out = normalizeActiveCfgByDir(map);
+      work2.updateTree(function(t) {
+        t.suites = out;
+      });
+    }
+    function getActiveCfgsForDir(dir) {
+      var map = readActiveCfgByDir();
+      var d = dir != null ? String(dir) : "";
+      return normalizeActiveCfgList(map[d]);
+    }
+    function getActiveCfgForDir(dir) {
+      var list = getActiveCfgsForDir(dir);
+      return list.length ? list[0] : null;
+    }
+    function setActiveCfgsForDir(dir, paths) {
+      var map = readActiveCfgByDir();
+      var d = dir != null ? String(dir) : "";
+      var list = normalizeActiveCfgList(paths);
+      if (list.length) map[d] = list;
+      else delete map[d];
+      writeActiveCfgByDir(map);
+    }
+    function setActiveCfgForDir(dir, path) {
+      var trimmed = String(path != null ? path : "").trim();
+      if (trimmed) setActiveCfgsForDir(dir, [trimmed]);
+      else setActiveCfgsForDir(dir, []);
+    }
+    function addActiveCfgForDir(dir, path) {
+      var trimmed = String(path != null ? path : "").trim();
+      if (!trimmed) return;
+      var list = getActiveCfgsForDir(dir);
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] === trimmed) return;
+      }
+      list.push(trimmed);
+      setActiveCfgsForDir(dir, list);
+    }
+    function removeActiveCfgForDir(dir, path) {
+      var trimmed = String(path != null ? path : "").trim();
+      if (!trimmed) return;
+      var list = getActiveCfgsForDir(dir);
+      var next = [];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] !== trimmed) next.push(list[i]);
+      }
+      setActiveCfgsForDir(dir, next);
+    }
+    function getActiveCfgByDir() {
+      return readActiveCfgByDir();
+    }
+    function backfillActiveCfgByDir(byDir) {
+      if (!byDir || typeof byDir !== "object") return readActiveCfgByDir();
+      var map = readActiveCfgByDir();
+      var changed = false;
+      for (var d in byDir) {
+        if (!Object.prototype.hasOwnProperty.call(byDir, d)) continue;
+        var path = String(byDir[d] != null ? byDir[d] : "").trim();
+        if (!path || normalizeActiveCfgList(map[d]).length) continue;
+        map[d] = [path];
+        changed = true;
+      }
+      if (changed) writeActiveCfgByDir(map);
+      return map;
+    }
+    function isAliasExpandablePath(name) {
+      var PS = typeof ProjectSource !== "undefined" ? ProjectSource : null;
+      if (PS && typeof PS.isSignaturePath === "function") return PS.isSignaturePath(name);
+      var n = String(name || "").toLowerCase();
+      if (n.endsWith(".cfg")) return false;
+      if (n.endsWith(".bel") || n.endsWith(".elf")) return true;
+      var base = String(name || "").slice(String(name || "").lastIndexOf("/") + 1);
+      return base.indexOf(".") === -1;
+    }
+    function expandAliasesForStorage(text, fileName) {
+      var s = String(text != null ? text : "");
+      if (settings.get("aliasActivation") !== "greedy") return s;
+      if (!isAliasExpandablePath(fileName)) return s;
+      if (typeof BelEditor !== "undefined" && typeof BelEditor.expandBelAliases === "function") {
+        return BelEditor.expandBelAliases(s);
+      }
+      return s;
+    }
+    function expandAliasesInAllFiles() {
+      if (settings.get("aliasActivation") !== "greedy") return 0;
+      var files2 = listFiles();
+      var changed = 0;
+      for (var i = 0; i < files2.length; i++) {
+        var f = files2[i];
+        if (!isAliasExpandablePath(f.name)) continue;
+        var cur = work2.getText(f.id);
+        var next = expandAliasesForStorage(cur, f.name);
+        if (next !== cur) {
+          work2.setText(f.id, next);
+          changed += 1;
+        }
+      }
+      return changed;
+    }
+    function getFileText(id) {
+      return work2.getText(id);
+    }
+    function setFileText(id, text) {
+      work2.setText(id, expandAliasesForStorage(text, fileNameForId(id)));
+      try {
+        if (typeof BelEditor !== "undefined" && typeof BelEditor.invalidateFileHealthAfterChange === "function") {
+          BelEditor.invalidateFileHealthAfterChange(id);
+        }
+      } catch (_) {
+      }
+    }
+    function createFile(name) {
       var fileName = name || "untitled.bel";
-      var id = uniqueFileId(fileName, used);
-      files.push({ id, name: fileName });
-      writeProjectFiles(files);
+      var id = work2.newFileId();
+      var files2 = listFiles();
+      files2.push({ id, name: fileName });
+      writeFiles(files2);
       pruneEmptyFoldersForFile(fileName);
       notifyProjectTreeChanged("create");
       return id;
+    }
+    function replaceProject(entries, options) {
+      options = options || {};
+      work2.removeFiles(work2.peekTree().files.map(function(f) {
+        return f.id;
+      }));
+      var files2 = [];
+      var list = entries || [];
+      for (var j = 0; j < list.length; j++) {
+        var name = String(list[j].name || "untitled.bel");
+        var id = work2.newFileId();
+        work2.setText(id, expandAliasesForStorage(list[j].text, name));
+        files2.push({ id, name });
+      }
+      work2.writeTree({
+        files: files2,
+        folders: [],
+        suites: normalizeActiveCfgByDir(options.activeCfgByDir)
+      });
+      var activeId = files2.length ? files2[0].id : null;
+      work2.updateSession(function(s) {
+        s.active = activeId;
+        s.open = activeId ? [activeId] : [];
+        s.views = {};
+      });
+      if (options.projectName) setProjectName(options.projectName);
+      return { files: listFiles(), activeId };
+    }
+    function restoreDeletedFile(id, name, text) {
+      if (getFileById(id)) return false;
+      work2.setText(id, expandAliasesForStorage(text, name));
+      var files2 = listFiles();
+      files2.push({ id, name });
+      writeFiles(files2);
+      pruneEmptyFoldersForFile(name);
+      notifyProjectTreeChanged("restore");
+      return true;
+    }
+    function deleteFile(id) {
+      var files2 = listFiles();
+      var idx = -1;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id === id) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx === -1) return null;
+      var deletedName = files2[idx].name;
+      if (/\.cfg$/i.test(deletedName)) {
+        removeActiveCfgForDir(dirOf(deletedName), deletedName);
+      }
+      files2.splice(idx, 1);
+      writeFiles(files2);
+      rewriteCfgsForOp(deletedName, null);
+      closeOpenFile(id);
+      work2.removeFiles([id]);
+      preserveEmptyFoldersAfterPath(deletedName);
+      notifyProjectTreeChanged("delete");
+      return files2.length ? files2[Math.max(0, idx - 1)].id : null;
+    }
+    function renameFile(id, newName) {
+      var files2 = listFiles();
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].id !== id) continue;
+        var oldName = files2[i].name;
+        files2[i].name = newName;
+        writeFiles(files2);
+        rewriteCfgsForOp(oldName, newName);
+        var map = readActiveCfgByDir();
+        var changed = false;
+        for (var k in map) {
+          var cfgs = map[k];
+          for (var j = 0; j < cfgs.length; j++) {
+            if (cfgs[j] === oldName) {
+              cfgs[j] = newName;
+              changed = true;
+            }
+          }
+        }
+        if (changed) writeActiveCfgByDir(map);
+        pruneEmptyFoldersForFile(newName);
+        if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
+        notifyProjectTreeChanged("rename");
+        return;
+      }
     }
     function relToCfgDir(cfgDir, fullPath) {
       if (!cfgDir) return fullPath;
@@ -2526,13 +1854,12 @@
     function cfgTextForRewrite(fileId) {
       var g2 = typeof window !== "undefined" ? window : null;
       if (g2) {
-        var activeId = getActiveFileId2();
         var ed = g2.CurrentEditor;
-        if (fileId === activeId && ed && typeof ed.getValue === "function") {
+        if (fileId === getActiveFileId() && ed && typeof ed.getValue === "function") {
           return String(ed.getValue() ?? "");
         }
       }
-      return getFileText2(fileId);
+      return getFileText(fileId);
     }
     function notifyCfgRewritten(fileIds) {
       if (!fileIds.length) return;
@@ -2541,28 +1868,20 @@
         g2.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
       }
     }
-    function notifyProjectTreeChanged(kind) {
-      var g2 = typeof window !== "undefined" ? window : null;
-      if (g2 && typeof g2.dispatchEvent === "function") {
-        g2.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
-      }
-    }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
       var lines = String(text == null ? "" : text).split("\n");
       var out = [];
       var changed = false;
-      var oldDir = dirOf2(oldName);
-      var newDir = newName != null ? dirOf2(newName) : null;
+      var oldDir = dirOf(oldName);
+      var newDir = newName != null ? dirOf(newName) : null;
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
         var t = line.trim();
-        var isEntry = isCfgEntryLine(t);
-        if (!isEntry) {
+        if (!isCfgEntryLine(t)) {
           out.push(line);
           continue;
         }
-        var resolved = resolveCfgEntryPath(cfgDir, t);
-        if (resolved !== oldName) {
+        if (resolveCfgEntryPath(cfgDir, t) !== oldName) {
           out.push(line);
           continue;
         }
@@ -2584,101 +1903,29 @@
       }
       return changed ? out.join("\n") : null;
     }
-    function restoreDeletedFile2(id, name, text) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) return false;
-      }
-      files.push({ id, name });
-      writeProjectFiles(files);
-      var state = emptyState2(id);
-      state.editor.text = expandAliasesForStorage2(text, name);
-      state.meta.updatedAt = Date.now();
-      state.meta.revision = 1;
-      backendSave2(stateKeyFor2(id), JSON.stringify(state));
-      pruneEmptyFoldersForFile(name);
-      notifyProjectTreeChanged("restore");
-      return true;
-    }
-    function deleteFile2(id) {
-      var files = ensureProject2();
-      var idx = -1;
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) {
-          idx = i;
-          break;
-        }
-      }
-      if (idx === -1) return null;
-      var deletedName = files[idx].name;
-      if (/\.cfg$/i.test(deletedName)) {
-        removeActiveCfgForDir2(dirOf2(deletedName), deletedName);
-      }
-      files.splice(idx, 1);
-      writeProjectFiles(files);
-      rewriteCfgsForOp(deletedName, null);
-      closeOpenFile2(id);
-      defaultBackend2.removeSync(stateKeyFor2(id));
-      preserveEmptyFoldersAfterPath(deletedName);
-      if (!files.length) {
-        backendRemove2(projKey2("active-file"));
-        writeOpenFileIds2([]);
-      }
-      notifyProjectTreeChanged("delete");
-      return files.length ? files[Math.max(0, idx - 1)].id : null;
-    }
     function rewriteCfgsForOp(oldName, newName) {
-      if (!readStoredCfgAutoSync2()) return [];
-      var files = ensureProject2();
+      if (!settings.get("cfgAutoSync")) return [];
+      var files2 = listFiles();
       var updatedIds = [];
-      for (var i = 0; i < files.length; i++) {
-        var fn = files[i].name;
+      for (var i = 0; i < files2.length; i++) {
+        var fn = files2[i].name;
         if (!/\.cfg$/i.test(fn)) continue;
-        var cfgDir = dirOf2(fn);
-        var text = cfgTextForRewrite(files[i].id);
+        var cfgDir = dirOf(fn);
+        var text = cfgTextForRewrite(files2[i].id);
         if (!cfgListsEntry(text, cfgDir, oldName)) continue;
         var updated = rewriteCfgBody(text, cfgDir, oldName, newName);
         if (updated != null) {
-          setFileText2(files[i].id, updated);
-          updatedIds.push(files[i].id);
+          setFileText(files2[i].id, updated);
+          updatedIds.push(files2[i].id);
         }
       }
       notifyCfgRewritten(updatedIds);
       return updatedIds;
     }
-    function renameFile2(id, newName) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) {
-          var oldName = files[i].name;
-          files[i].name = newName;
-          writeProjectFiles(files);
-          rewriteCfgsForOp(oldName, newName);
-          var map = readActiveCfgByDir2();
-          var changed = false;
-          for (var k in map) {
-            if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
-            var list = normalizeActiveCfgList2(map[k]);
-            for (var j = 0; j < list.length; j++) {
-              if (list[j] === oldName) {
-                list[j] = newName;
-                changed = true;
-              }
-            }
-            if (list.length) map[k] = list;
-          }
-          if (changed) writeActiveCfgByDir2(map);
-          pruneEmptyFoldersForFile(newName);
-          if (oldName !== newName) preserveEmptyFoldersAfterPath(oldName);
-          notifyProjectTreeChanged("rename");
-          return;
-        }
-      }
-    }
     function cfgFileByPath(cfgPath) {
-      var files = ensureProject2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].name === cfgPath) return files[i];
+      var files2 = work2.peekTree().files;
+      for (var i = 0; i < files2.length; i++) {
+        if (files2[i].name === cfgPath) return { id: files2[i].id, name: files2[i].name };
       }
       return null;
     }
@@ -2691,65 +1938,63 @@
       }
       return false;
     }
-    function addEntryToCfg2(cfgPath, fileName) {
+    function addEntryToCfg(cfgPath, fileName) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var dir = dirOf2(cfgPath);
+      var dir = dirOf(cfgPath);
       var rel = relToCfgDir(dir, fileName);
       if (rel == null || rel === "") return false;
-      var text = String(getFileText2(cfg.id) || "");
+      var text = String(getFileText(cfg.id) || "");
       if (cfgListsEntry(text, dir, fileName)) return false;
       var body = text.replace(/\s*$/, "");
-      setFileText2(cfg.id, (body ? body + "\n" : "") + rel + "\n");
+      setFileText(cfg.id, (body ? body + "\n" : "") + rel + "\n");
       return true;
     }
-    function prependEntryToCfg2(cfgPath, fileName) {
+    function prependEntryToCfg(cfgPath, fileName) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var dir = dirOf2(cfgPath);
+      var dir = dirOf(cfgPath);
       var rel = relToCfgDir(dir, fileName);
       if (rel == null || rel === "") return false;
-      var text = String(getFileText2(cfg.id) || "");
+      var text = String(getFileText(cfg.id) || "");
       if (cfgListsEntry(text, dir, fileName)) return false;
       var lines = text.split("\n");
       var firstEntry = -1;
       for (var i = 0; i < lines.length; i++) {
-        var t = lines[i].trim();
-        if (isCfgEntryLine(t)) {
+        if (isCfgEntryLine(lines[i].trim())) {
           firstEntry = i;
           break;
         }
       }
       if (firstEntry === -1) {
         var body = text.replace(/\s*$/, "");
-        setFileText2(cfg.id, (body ? body + "\n" : "") + rel + "\n");
+        setFileText(cfg.id, (body ? body + "\n" : "") + rel + "\n");
         return true;
       }
       var before = lines.slice(0, firstEntry).join("\n");
       var after = lines.slice(firstEntry).join("\n");
       var prefix = before.length ? before + "\n" : "";
-      setFileText2(cfg.id, prefix + rel + "\n" + after);
+      setFileText(cfg.id, prefix + rel + "\n" + after);
       return true;
     }
-    function removeEntryFromCfg2(cfgPath, fileName) {
+    function removeEntryFromCfg(cfgPath, fileName) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var updated = rewriteCfgBody(getFileText2(cfg.id), dirOf2(cfgPath), fileName, null);
+      var updated = rewriteCfgBody(getFileText(cfg.id), dirOf(cfgPath), fileName, null);
       if (updated == null) return false;
-      setFileText2(cfg.id, updated);
+      setFileText(cfg.id, updated);
       return true;
     }
-    function moveEntryInCfg2(cfgPath, fileName, delta) {
+    function moveEntryInCfg(cfgPath, fileName, delta) {
       var cfg = cfgFileByPath(cfgPath);
       if (!cfg) return false;
-      var dir = dirOf2(cfgPath);
-      var lines = String(getFileText2(cfg.id) || "").split("\n");
+      var dir = dirOf(cfgPath);
+      var lines = String(getFileText(cfg.id) || "").split("\n");
       var entryLineIdx = [];
       var targetAt = -1;
       for (var i = 0; i < lines.length; i++) {
         var t = lines[i].trim();
-        var isEntry = isCfgEntryLine(t);
-        if (!isEntry) continue;
+        if (!isCfgEntryLine(t)) continue;
         if ((dir ? dir + "/" + t : t) === fileName) targetAt = entryLineIdx.length;
         entryLineIdx.push(i);
       }
@@ -2761,421 +2006,198 @@
       var tmp = lines[a];
       lines[a] = lines[b];
       lines[b] = tmp;
-      setFileText2(cfg.id, lines.join("\n"));
+      setFileText(cfg.id, lines.join("\n"));
       return true;
     }
-    function getFileById2(id) {
-      var files = listFiles2();
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) return files[i];
-      }
-      return null;
+    function newBlankProject(name) {
+      var pid = work2.createProject(name);
+      if (pid) work2.setActiveProject(pid);
+      return pid;
     }
-    function moveFile2(id, delta) {
-      var files = ensureProject2();
-      var idx = -1;
-      for (var i = 0; i < files.length; i++) {
-        if (files[i].id === id) {
-          idx = i;
+    function createProjectWithFiles(name, entries, options) {
+      var pid = work2.createProject(name);
+      if (!pid) return { projectId: null, files: [], activeId: null };
+      work2.setActiveProject(pid);
+      var result = replaceProject(entries, options || {});
+      return { projectId: pid, files: result.files, activeId: result.activeId };
+    }
+    return {
+      // files
+      listFiles,
+      getFileById,
+      fileNameForId,
+      getFileText,
+      setFileText,
+      createFile,
+      replaceProject,
+      restoreDeletedFile,
+      deleteFile,
+      renameFile,
+      // folders
+      listEmptyFolders,
+      addEmptyFolder,
+      removeEmptyFolder,
+      clearEmptyFolders,
+      pruneEmptyFoldersUnder,
+      renameEmptyFolderPrefix,
+      preserveEmptyFoldersAfterMoves,
+      // session
+      getActiveFileId,
+      setActiveFileId,
+      getOpenFileIds,
+      setOpenFileIds,
+      openFile,
+      closeOpenFile,
+      // project
+      getProjectName,
+      setProjectName,
+      newBlankProject,
+      createProjectWithFiles,
+      // cfg
+      addEntryToCfg,
+      prependEntryToCfg,
+      removeEntryFromCfg,
+      moveEntryInCfg,
+      getActiveCfgForDir,
+      getActiveCfgsForDir,
+      setActiveCfgForDir,
+      setActiveCfgsForDir,
+      addActiveCfgForDir,
+      removeActiveCfgForDir,
+      getActiveCfgByDir,
+      backfillActiveCfgByDir,
+      // aliases
+      isAliasExpandablePath,
+      expandAliasesForStorage,
+      expandAliasesInAllFiles
+    };
+  }
+
+  // js/persist/merge.mjs
+  var MAX_DIFF_LINES = 4e4;
+  function splitLines(text) {
+    return String(text != null ? text : "").split("\n");
+  }
+  function lcsMatch(a, b) {
+    const match = new Int32Array(a.length).fill(-1);
+    let start = 0;
+    let endA = a.length;
+    let endB = b.length;
+    while (start < endA && start < endB && a[start] === b[start]) {
+      match[start] = start;
+      start += 1;
+    }
+    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+      endA -= 1;
+      endB -= 1;
+      match[endA] = endB;
+    }
+    const n = endA - start;
+    const m = endB - start;
+    if (n === 0 || m === 0 || n + m > MAX_DIFF_LINES) return match;
+    const max = n + m;
+    const off = max + 1;
+    const v = new Int32Array(2 * max + 3);
+    const trace = [];
+    let found = -1;
+    for (let d = 0; d <= max && found < 0; d++) {
+      trace.push(v.slice(off - d - 1, off + d + 2));
+      for (let k = -d; k <= d; k += 2) {
+        let x2 = k === -d || k !== d && v[off + k - 1] < v[off + k + 1] ? v[off + k + 1] : v[off + k - 1] + 1;
+        let y2 = x2 - k;
+        while (x2 < n && y2 < m && a[start + x2] === b[start + y2]) {
+          x2++;
+          y2++;
+        }
+        v[off + k] = x2;
+        if (x2 >= n && y2 >= m) {
+          found = d;
           break;
         }
       }
-      if (idx === -1) return false;
-      var to = Math.max(0, Math.min(files.length - 1, idx + (delta || 0)));
-      if (to === idx) return false;
-      var entry = files.splice(idx, 1)[0];
-      files.splice(to, 0, entry);
-      writeProjectFiles(files);
-      return true;
     }
-    var fileTextCache = /* @__PURE__ */ new Map();
-    function getFileText2(id) {
-      var raw = defaultBackend2.loadSync(stateKeyFor2(id));
-      var hit = fileTextCache.get(id);
-      if (hit && hit.raw === raw) return hit.text;
-      var state = readState2(defaultBackend2, id);
-      var text = state && state.editor && typeof state.editor.text === "string" ? state.editor.text : "";
-      if (fileTextCache.size > 512) fileTextCache.clear();
-      fileTextCache.set(id, { raw, text });
-      return text;
-    }
-    function setFileText2(id, text) {
-      var state = readState2(defaultBackend2, id);
-      state.editor.text = expandAliasesForStorage2(text, fileNameForId2(id));
-      state.meta.updatedAt = Date.now();
-      state.meta.revision = (state.meta.revision || 0) + 1;
-      backendSave2(stateKeyFor2(id), JSON.stringify(state));
-      fileTextCache.delete(id);
-      try {
-        if (typeof BelEditor !== "undefined" && typeof BelEditor.invalidateFileHealthAfterChange === "function") {
-          BelEditor.invalidateFileHealthAfterChange(id);
-        }
-      } catch (_) {
+    let x = n;
+    let y = m;
+    for (let d = found; d >= 0; d--) {
+      const vd = trace[d];
+      const at = (k2) => vd[k2 + d + 1];
+      const k = x - y;
+      const prevK = k === -d || k !== d && at(k - 1) < at(k + 1) ? k + 1 : k - 1;
+      const prevX = at(prevK);
+      const prevY = prevX - prevK;
+      while (x > prevX && y > prevY) {
+        x -= 1;
+        y -= 1;
+        match[start + x] = start + y;
+      }
+      if (d > 0) {
+        x = prevX;
+        y = prevY;
       }
     }
-    return {
-      readProjectFiles: readProjectFiles2,
-      writeProjectFiles,
-      readEmptyFolders,
-      writeEmptyFolders,
-      listEmptyFolders: listEmptyFolders2,
-      addEmptyFolder: addEmptyFolder2,
-      removeEmptyFolder: removeEmptyFolder2,
-      clearEmptyFolders: clearEmptyFolders2,
-      pruneEmptyFoldersUnder: pruneEmptyFoldersUnder2,
-      renameEmptyFolderPrefix: renameEmptyFolderPrefix2,
-      pruneEmptyFoldersForFile,
-      folderSubtreeOccupied,
-      preserveEmptyFoldersAfterPath,
-      isPrefixUnderAny,
-      relocatedPrefixTarget,
-      inferRelocatedFolderPrefixes,
-      preserveEmptyFoldersAfterMoves: preserveEmptyFoldersAfterMoves2,
-      ensureProject: ensureProject2,
-      listFiles: listFiles2,
-      getActiveFileId: getActiveFileId2,
-      setActiveFileId: setActiveFileId2,
-      uniqueFileId,
-      replaceProject: replaceProject2,
-      createFile: createFile2,
-      relToCfgDir,
-      resolveCfgEntryPath,
-      isCfgEntryToken,
-      isCfgEntryLine,
-      cfgTextForRewrite,
-      notifyCfgRewritten,
-      rewriteCfgBody,
-      restoreDeletedFile: restoreDeletedFile2,
-      deleteFile: deleteFile2,
-      rewriteCfgsForOp,
-      renameFile: renameFile2,
-      cfgFileByPath,
-      cfgListsEntry,
-      addEntryToCfg: addEntryToCfg2,
-      prependEntryToCfg: prependEntryToCfg2,
-      removeEntryFromCfg: removeEntryFromCfg2,
-      moveEntryInCfg: moveEntryInCfg2,
-      getFileById: getFileById2,
-      moveFile: moveFile2,
-      getFileText: getFileText2,
-      setFileText: setFileText2
-    };
+    return match;
+  }
+  function sameLines(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  function merge3(base, mine, theirs) {
+    const b0 = String(base != null ? base : "");
+    const m0 = String(mine != null ? mine : "");
+    const t0 = String(theirs != null ? theirs : "");
+    if (m0 === t0 || t0 === b0) return { ok: true, text: m0 };
+    if (m0 === b0) return { ok: true, text: t0 };
+    const O = splitLines(b0);
+    const A = splitLines(m0);
+    const B = splitLines(t0);
+    const ma = lcsMatch(O, A);
+    const mb = lcsMatch(O, B);
+    const out = [];
+    const conflicts = [];
+    let i = 0;
+    let j = 0;
+    let k = 0;
+    for (; ; ) {
+      let o = i;
+      while (o < O.length && !(ma[o] >= 0 && mb[o] >= 0)) o++;
+      const aEnd = o < O.length ? ma[o] : A.length;
+      const bEnd = o < O.length ? mb[o] : B.length;
+      if (i < o || j < aEnd || k < bEnd) {
+        const oc = O.slice(i, o);
+        const ac = A.slice(j, aEnd);
+        const bc = B.slice(k, bEnd);
+        if (sameLines(ac, oc)) out.push(...bc);
+        else if (sameLines(bc, oc) || sameLines(ac, bc)) out.push(...ac);
+        else {
+          conflicts.push({ line: out.length, base: oc, mine: ac, theirs: bc });
+          out.push(...ac);
+        }
+      }
+      if (o >= O.length) break;
+      out.push(O[o]);
+      i = o + 1;
+      j = aEnd + 1;
+      k = bEnd + 1;
+    }
+    const text = out.join("\n");
+    return conflicts.length ? { ok: false, text, conflicts } : { ok: true, text };
+  }
+  function conflictedCopyName(name, taken) {
+    const slash = name.lastIndexOf("/");
+    const dir = slash === -1 ? "" : name.slice(0, slash + 1);
+    const leaf = name.slice(slash + 1);
+    const dot = leaf.lastIndexOf(".");
+    const stem = dot > 0 ? leaf.slice(0, dot) : leaf;
+    const ext = dot > 0 ? leaf.slice(dot) : "";
+    for (let n = 1; ; n++) {
+      const candidate = dir + stem + (n === 1 ? " (conflicted copy)" : " (conflicted copy " + n + ")") + ext;
+      if (!taken.has(candidate)) return candidate;
+    }
   }
 
-  // js/persist/persist-open-tabs.mjs
-  function create7(deps) {
-    var backendLoad2 = deps.backendLoad;
-    var backendSave2 = deps.backendSave;
-    var backendRemove2 = deps.backendRemove;
-    var tryParse2 = deps.tryParse;
-    var projKey2 = deps.projKey;
-    var listFiles2 = deps.listFiles;
-    var getFileById2 = deps.getFileById;
-    var readProjectFiles2 = deps.readProjectFiles;
-    var getActiveProject2 = deps.getActiveProject;
-    var renameProject2 = deps.renameProject;
-    var getActiveProjectId2 = deps.getActiveProjectId;
-    var DEFAULT_PROJECT_NAME2 = deps.DEFAULT_PROJECT_NAME;
-    var dirOf2 = deps.dirOf;
-    var defaultBackend2 = deps.defaultBackend;
-    var getActiveFileId2 = deps.getActiveFileId;
-    function writeOpenFileIds2(ids) {
-      backendSave2(projKey2("open-files"), JSON.stringify(ids));
-    }
-    function setOpenFileIds2(ids) {
-      writeOpenFileIds2(ids || []);
-    }
-    function getOpenFileIds2() {
-      var files = listFiles2();
-      if (!files.length) return [];
-      var valid = {};
-      for (var i = 0; i < files.length; i++) valid[files[i].id] = true;
-      var raw = tryParse2(backendLoad2(projKey2("open-files")));
-      if (!Array.isArray(raw)) {
-        var all = files.map(function(f) {
-          return f.id;
-        });
-        writeOpenFileIds2(all);
-        return all;
-      }
-      var out = [];
-      for (var j = 0; j < raw.length; j++) {
-        if (valid[raw[j]] && out.indexOf(raw[j]) === -1) out.push(raw[j]);
-      }
-      return out;
-    }
-    function openFile2(id) {
-      var ids = getOpenFileIds2();
-      if (!getFileById2(id)) return ids;
-      if (ids.indexOf(id) === -1) {
-        ids.push(id);
-        writeOpenFileIds2(ids);
-      }
-      return ids;
-    }
-    function closeOpenFile2(id) {
-      var ids = getOpenFileIds2();
-      var idx = ids.indexOf(id);
-      if (idx === -1) return ids;
-      ids.splice(idx, 1);
-      writeOpenFileIds2(ids);
-      return ids;
-    }
-    function getProjectName2() {
-      try {
-        var p = getActiveProject2();
-        return p && p.name && String(p.name).trim() ? String(p.name).trim() : DEFAULT_PROJECT_NAME2;
-      } catch (_) {
-        return DEFAULT_PROJECT_NAME2;
-      }
-    }
-    function setProjectName2(name) {
-      renameProject2(getActiveProjectId2(), name);
-    }
-    function normalizeActiveCfgList2(val) {
-      if (!val) return [];
-      if (Array.isArray(val)) {
-        var out = [];
-        for (var i = 0; i < val.length; i++) {
-          var s = String(val[i] != null ? val[i] : "").trim();
-          if (s) out.push(s);
-        }
-        return out;
-      }
-      var one = String(val).trim();
-      return one ? [one] : [];
-    }
-    function readActiveCfgByDir2() {
-      var raw = tryParse2(backendLoad2(projKey2("active-cfg-by-dir")));
-      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-        var normalized = {};
-        var keys = Object.keys(raw);
-        for (var ki = 0; ki < keys.length; ki++) {
-          var k = keys[ki];
-          normalized[k] = normalizeActiveCfgList2(raw[k]);
-        }
-        return normalized;
-      }
-      var migrated = {};
-      var legacy = backendLoad2(projKey2("default-cfg"));
-      if (legacy && String(legacy).trim()) {
-        migrated[dirOf2(String(legacy).trim())] = [String(legacy).trim()];
-        writeActiveCfgByDir2(migrated);
-        defaultBackend2.removeSync(projKey2("default-cfg"));
-      }
-      return migrated;
-    }
-    function writeActiveCfgByDir2(map) {
-      var out = {};
-      var keys = Object.keys(map || {});
-      for (var i = 0; i < keys.length; i++) {
-        var k = keys[i];
-        var list = normalizeActiveCfgList2(map[k]);
-        if (list.length) out[k] = list;
-      }
-      if (!Object.keys(out).length) {
-        backendRemove2(projKey2("active-cfg-by-dir"));
-        return;
-      }
-      backendSave2(projKey2("active-cfg-by-dir"), JSON.stringify(out));
-    }
-    function getActiveCfgsForDir2(dir) {
-      var map = readActiveCfgByDir2();
-      var d = dir != null ? String(dir) : "";
-      return normalizeActiveCfgList2(map[d]);
-    }
-    function getActiveCfgForDir2(dir) {
-      var list = getActiveCfgsForDir2(dir);
-      return list.length ? list[0] : null;
-    }
-    function setActiveCfgsForDir2(dir, paths) {
-      var map = readActiveCfgByDir2();
-      var d = dir != null ? String(dir) : "";
-      var list = normalizeActiveCfgList2(paths);
-      if (list.length) map[d] = list;
-      else delete map[d];
-      writeActiveCfgByDir2(map);
-    }
-    function setActiveCfgForDir2(dir, path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (trimmed) setActiveCfgsForDir2(dir, [trimmed]);
-      else setActiveCfgsForDir2(dir, []);
-    }
-    function addActiveCfgForDir2(dir, path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (!trimmed) return;
-      var list = getActiveCfgsForDir2(dir);
-      for (var i = 0; i < list.length; i++) {
-        if (list[i] === trimmed) return;
-      }
-      list.push(trimmed);
-      setActiveCfgsForDir2(dir, list);
-    }
-    function removeActiveCfgForDir2(dir, path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (!trimmed) return;
-      var list = getActiveCfgsForDir2(dir);
-      var next = [];
-      for (var i = 0; i < list.length; i++) {
-        if (list[i] !== trimmed) next.push(list[i]);
-      }
-      setActiveCfgsForDir2(dir, next);
-    }
-    function getActiveCfgByDir2() {
-      return readActiveCfgByDir2();
-    }
-    function backfillActiveCfgByDir2(byDir) {
-      if (!byDir || typeof byDir !== "object") return readActiveCfgByDir2();
-      var map = readActiveCfgByDir2();
-      var changed = false;
-      for (var d in byDir) {
-        if (!Object.prototype.hasOwnProperty.call(byDir, d)) continue;
-        var path = String(byDir[d] != null ? byDir[d] : "").trim();
-        if (!path || normalizeActiveCfgList2(map[d]).length) continue;
-        map[d] = [path];
-        changed = true;
-      }
-      if (changed) writeActiveCfgByDir2(map);
-      return map;
-    }
-    function getDefaultCfgPath2() {
-      try {
-        var activeId = getActiveFileId2();
-        var files = readProjectFiles2() || [];
-        for (var i = 0; i < files.length; i++) {
-          if (files[i].id === activeId) return getActiveCfgForDir2(dirOf2(files[i].name));
-        }
-        return null;
-      } catch (_) {
-        return null;
-      }
-    }
-    function setDefaultCfgPath2(path) {
-      var trimmed = String(path != null ? path : "").trim();
-      if (!trimmed) return;
-      setActiveCfgForDir2(dirOf2(trimmed), trimmed);
-    }
-    return {
-      writeOpenFileIds: writeOpenFileIds2,
-      setOpenFileIds: setOpenFileIds2,
-      getOpenFileIds: getOpenFileIds2,
-      openFile: openFile2,
-      closeOpenFile: closeOpenFile2,
-      getProjectName: getProjectName2,
-      setProjectName: setProjectName2,
-      normalizeActiveCfgList: normalizeActiveCfgList2,
-      readActiveCfgByDir: readActiveCfgByDir2,
-      writeActiveCfgByDir: writeActiveCfgByDir2,
-      getActiveCfgsForDir: getActiveCfgsForDir2,
-      getActiveCfgForDir: getActiveCfgForDir2,
-      setActiveCfgsForDir: setActiveCfgsForDir2,
-      setActiveCfgForDir: setActiveCfgForDir2,
-      addActiveCfgForDir: addActiveCfgForDir2,
-      removeActiveCfgForDir: removeActiveCfgForDir2,
-      getActiveCfgByDir: getActiveCfgByDir2,
-      backfillActiveCfgByDir: backfillActiveCfgByDir2,
-      getDefaultCfgPath: getDefaultCfgPath2,
-      setDefaultCfgPath: setDefaultCfgPath2
-    };
-  }
-
-  // js/persist/persist.mjs
-  var SCHEMA_VERSION = 3;
-  var LEGACY_CHECKPOINT_V2 = 2;
-  var LEGACY_SCHEMA_VERSION = 1;
-  var STATE_KEY = "beljar-state-v2";
-  var LEGACY_STATE_KEY = "beljar-state-v1";
-  var LEGACY_SEMANTIC_TYPES_KEY = "beljar:semantic-types";
-  var DEFAULT_DOCUMENT_ID = "workspace://main.bel";
-  var THEME_STORAGE_KEY = "beljar-theme";
-  var UI_FONT_SIZE_KEY = "beljar-ui-font-size";
-  var UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
-  var UI_TEXT_CONTRAST_KEY = "beljar-ui-text-contrast";
-  var UI_TEXT_CONTRAST_MULTIPLIERS = { low: 1, medium: 1.6, high: 2.4, maximum: 4.5 };
-  var BELUGA_MODE_STORAGE_KEY = "beljar-beluga-mode";
-  var EDITOR_SPLIT_STORAGE_KEY = globalThis.BELJAR_SPLIT_KEY || "beljar-editor-split";
-  var GRAPH_PREFS_STORAGE_KEY = "beljar-graph-prefs";
-  var LEGACY_GRAPH_LAYOUT_KEY = "beljar:graph-layout";
-  var LEGACY_GRAPH_IMPL_KEY = "beljar:graph-impl";
-  var LEGACY_GRAPH_DEPTH_KEY = "beljar:graph-depth";
-  var LEGACY_GRAPH_SIDEBAR_KEY = "beljar:graph-sidebar";
-  var PROJECT_FILES_KEY = "beljar-project-files";
-  var PROJECT_NAME_KEY = "beljar-project-name";
-  var DEFAULT_CFG_KEY = "beljar-default-cfg";
-  var ACTIVE_CFG_BY_DIR_KEY = "beljar-active-cfg-by-dir";
-  var ACTIVE_FILE_KEY = "beljar-active-file";
-  var OPEN_FILES_KEY = "beljar-open-files";
-  var DEFAULT_PROJECT_NAME = "Untitled Project";
-  var PROJECTS_KEY = "beljar-projects";
-  var ACTIVE_PROJECT_KEY = "beljar-active-project";
-  var DEFAULT_PROJECT_ID = "default";
-  var DEFAULT_GRAPH_PREFS = Object.freeze({
-    layout: "force",
-    impl: "show",
-    depth: 1,
-    labelDensity: 3,
-    sidebarCollapsed: false
-  });
-  var DEFAULT_EDITOR_SPLIT = globalThis.BELJAR_SPLIT_DEFAULT != null ? globalThis.BELJAR_SPLIT_DEFAULT : 0.5;
-  var MIN_EDITOR_SPLIT = globalThis.BELJAR_SPLIT_MIN != null ? globalThis.BELJAR_SPLIT_MIN : 0.18;
-  var MAX_EDITOR_SPLIT = globalThis.BELJAR_SPLIT_MAX != null ? globalThis.BELJAR_SPLIT_MAX : 0.82;
-  var EXPLORER_WIDTH_KEY = "beljar-explorer-w";
-  var INSPECTOR_WIDTH_KEY = "beljar-inspector-w";
-  var EXPLORER_HEIGHT_KEY = "beljar-explorer-h";
-  var INSPECTOR_HEIGHT_KEY = "beljar-inspector-h";
-  var EXPLORER_OPEN_KEY = "beljar-explorer-open";
-  var LOAD_STATS_KEY = "beljar.loadStats";
-  var INSPECTOR_OPEN_KEY = "beljar-inspector-open";
-  var INSPECTOR_FOLLOW_KEY = "beljar-inspector-follow";
-  var LIBRARY_OPEN_KEY = "beljar-library-open";
-  var LIBRARY_WIDTH_KEY = "beljar-library-w";
-  var LIBRARY_HEIGHT_KEY = "beljar-library-h";
-  var HARPOON_WIDTH_KEY = "beljar-harpoon-w";
-  var HARPOON_HEIGHT_KEY = "beljar-harpoon-h";
-  var DEFAULT_SIDE_PANEL_WIDTH = 250;
-  var DEFAULT_SIDE_PANEL_HEIGHT = 190;
-  var SIDE_PANEL_LAYOUT = {
-    explorer: {
-      widthKey: EXPLORER_WIDTH_KEY,
-      heightKey: EXPLORER_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 320
-    },
-    inspector: {
-      widthKey: INSPECTOR_WIDTH_KEY,
-      heightKey: INSPECTOR_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 384
-    },
-    library: {
-      widthKey: LIBRARY_WIDTH_KEY,
-      heightKey: LIBRARY_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 384
-    },
-    harpoon: {
-      widthKey: HARPOON_WIDTH_KEY,
-      heightKey: HARPOON_HEIGHT_KEY,
-      minW: 160,
-      maxW: 512,
-      minH: 96,
-      maxH: 384
-    }
-  };
+  // js/persist/document.mjs
   var textEncoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
-  function tryParse(json) {
-    try {
-      return JSON.parse(json);
-    } catch (_) {
-      return null;
-    }
-  }
   function utf8Bytes(text) {
     if (textEncoder) return textEncoder.encode(text);
     var encoded = unescape(encodeURIComponent(text));
@@ -3184,145 +2206,13 @@
     return bytes;
   }
   function documentFingerprint(code) {
-    var text = String(code != null ? code : "");
-    var bytes = utf8Bytes(text);
+    var bytes = utf8Bytes(String(code != null ? code : ""));
     var hash = 2166136261;
     for (var i = 0; i < bytes.length; i++) {
       hash ^= bytes[i];
       hash = Math.imul(hash, 16777619) >>> 0;
     }
     return bytes.length + ":" + hash.toString(16).padStart(8, "0");
-  }
-  function createLocalStorageBackend(store) {
-    store = store || globalThis.localStorage;
-    return {
-      loadSync: function(key) {
-        try {
-          return store.getItem(key);
-        } catch (_) {
-          return null;
-        }
-      },
-      saveSync: function(key, value) {
-        store.setItem(key, value);
-      },
-      removeSync: function(key) {
-        try {
-          store.removeItem(key);
-        } catch (_) {
-        }
-      }
-    };
-  }
-  function createMemoryBackend(initial) {
-    var store = initial ? Object.assign({}, initial) : {};
-    return {
-      loadSync: function(key) {
-        return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null;
-      },
-      saveSync: function(key, value) {
-        store[key] = value;
-      },
-      removeSync: function(key) {
-        delete store[key];
-      },
-      _dump: function() {
-        return Object.assign({}, store);
-      }
-    };
-  }
-  function createLocalStorageAdapter(store) {
-    var backend = createLocalStorageBackend(store);
-    return {
-      getItem: function(key) {
-        return backend.loadSync(key);
-      },
-      setItem: function(key, value) {
-        try {
-          backend.saveSync(key, value);
-        } catch (_) {
-        }
-      },
-      removeItem: function(key) {
-        backend.removeSync(key);
-      }
-    };
-  }
-  var defaultBackend = createLocalStorageBackend();
-  function slugify(s) {
-    return String(s).replace(/[^a-zA-Z0-9._-]/g, "_");
-  }
-  function projectPrefix(pid) {
-    pid = pid || getActiveProjectId();
-    return pid === DEFAULT_PROJECT_ID ? "" : "beljar-proj:" + slugify(pid) + ":";
-  }
-  function projKey(suffix, pid) {
-    var prefix = projectPrefix(pid);
-    if (prefix === "") {
-      if (suffix === "files") return PROJECT_FILES_KEY;
-      if (suffix === "active-file") return ACTIVE_FILE_KEY;
-      if (suffix === "open-files") return OPEN_FILES_KEY;
-      if (suffix === "default-cfg") return DEFAULT_CFG_KEY;
-      if (suffix === "active-cfg-by-dir") return ACTIVE_CFG_BY_DIR_KEY;
-    }
-    return prefix + suffix;
-  }
-  function dirOf(name) {
-    var i = String(name || "").lastIndexOf("/");
-    return i === -1 ? "" : name.slice(0, i);
-  }
-  function stateKeyFor(id, pid) {
-    var prefix = projectPrefix(pid);
-    if (prefix === "") {
-      if (!id || id === DEFAULT_DOCUMENT_ID) return STATE_KEY;
-      return "beljar-file:" + slugify(id);
-    }
-    if (!id || id === DEFAULT_DOCUMENT_ID) return prefix + "state-v2";
-    return prefix + "file:" + slugify(id);
-  }
-  function backendLoad(key) {
-    return defaultBackend.loadSync(key);
-  }
-  function backendSave(key, value) {
-    try {
-      defaultBackend.saveSync(key, value);
-      return true;
-    } catch (err) {
-      if (isCapacityError(err)) reportCapacityFailure(classifyPersistError(err));
-      return false;
-    }
-  }
-  function backendRemove(key) {
-    defaultBackend.removeSync(key);
-  }
-  var _uiPrefsApi = create({
-    THEME_STORAGE_KEY,
-    UI_FONT_SIZE_KEY,
-    UI_FONT_SCALES,
-    UI_TEXT_CONTRAST_KEY,
-    UI_TEXT_CONTRAST_MULTIPLIERS,
-    backendLoad,
-    backendSave,
-    backendRemove
-  });
-  function healKnownCorruptEditorText(text) {
-    if (typeof text !== "string" || text.indexOf(": a o") === -1) return text;
-    return text.replace(/\| ∨ : a o → o → o/g, "| \u2228 : o \u2192 o \u2192 o").replace(/\| ∨ : a o -> o -> o/g, "| \u2228 : o -> o -> o").replace(/\| v : a o → o → o/g, "| \u2228 : o \u2192 o \u2192 o").replace(/\| v : a o -> o -> o/g, "| \u2228 : o -> o -> o");
-  }
-  function emptyState(documentId) {
-    return {
-      v: SCHEMA_VERSION,
-      meta: {
-        documentId: documentId || DEFAULT_DOCUMENT_ID,
-        updatedAt: 0,
-        revision: 0
-      },
-      editor: {
-        text: "",
-        local: {}
-      },
-      semantic: null
-    };
   }
   function normalizeViewportAnchor(raw) {
     if (!raw || typeof raw !== "object" || typeof raw.kind !== "string") return null;
@@ -3342,7 +2232,7 @@
     }
     return null;
   }
-  function normalizeLocal(raw) {
+  function normalizeView(raw) {
     if (!raw || typeof raw !== "object") return {};
     var out = {};
     if (raw.selection && typeof raw.selection === "object") {
@@ -3373,119 +2263,1379 @@
       deriveAttempted: Array.isArray(raw.deriveAttempted) ? raw.deriveAttempted : []
     };
   }
-  function normalizeLoaded(raw, documentId) {
-    var base = emptyState(documentId);
-    if (!raw || typeof raw !== "object") return base;
-    if (raw.v === SCHEMA_VERSION || raw.v === LEGACY_CHECKPOINT_V2) {
-      if (raw.meta && typeof raw.meta === "object") {
-        if (typeof raw.meta.documentId === "string") base.meta.documentId = raw.meta.documentId;
-        if (typeof raw.meta.updatedAt === "number") base.meta.updatedAt = raw.meta.updatedAt;
-        if (typeof raw.meta.revision === "number") base.meta.revision = raw.meta.revision;
-      }
-      if (raw.editor && typeof raw.editor.text === "string") {
-        base.editor.text = healKnownCorruptEditorText(raw.editor.text);
-      }
-      base.editor.local = normalizeLocal(raw.editor && raw.editor.local);
-      base.semantic = normalizeSemantic(raw.semantic);
-      return base;
-    }
-    if (raw.v === LEGACY_SCHEMA_VERSION && raw.editor && typeof raw.editor.text === "string") {
-      base.editor.text = healKnownCorruptEditorText(raw.editor.text);
-    }
-    return base;
-  }
-  function migrateLegacySemantic(state, backend) {
-    if (state.semantic) return state;
-    var raw = backend.loadSync(LEGACY_SEMANTIC_TYPES_KEY);
-    if (!raw) return state;
-    var types = tryParse(raw);
-    if (!types) return state;
-    state.semantic = {
-      docFp: documentFingerprint(state.editor.text),
-      scopeKey: "legacy",
-      belugaBuild: readStoredBelugaMode(),
-      types,
-      identity: [],
-      deriveAttempted: []
-    };
-    backend.removeSync(LEGACY_SEMANTIC_TYPES_KEY);
-    return state;
-  }
-  function readState(backend, documentId) {
-    var b = backend || defaultBackend;
-    var key = stateKeyFor(documentId);
-    var parsed = tryParse(b.loadSync(key));
-    var state = normalizeLoaded(parsed, documentId);
-    if (parsed && (parsed.v === SCHEMA_VERSION || parsed.v === LEGACY_CHECKPOINT_V2)) {
-      return migrateLegacySemantic(state, b);
-    }
-    if (key === STATE_KEY) {
-      var legacy = tryParse(b.loadSync(LEGACY_STATE_KEY));
-      if (legacy) {
-        state = normalizeLoaded(legacy, documentId);
-        b.removeSync(LEGACY_STATE_KEY);
-      }
-    }
-    return migrateLegacySemantic(state, b);
-  }
-  var readStateForId = readState;
   function semanticHasPayload(semantic) {
     if (!semantic || !semantic.types) return false;
     var t = semantic.types;
     return !!(t.decls && t.decls.length || t.metavars && t.metavars.length || t.reconstructed && t.reconstructed.length || semantic.identity && semantic.identity.length || semantic.deriveAttempted && semantic.deriveAttempted.length);
   }
-  function trimSemanticForQuota(semantic) {
-    if (!semantic) return null;
-    var next = JSON.parse(JSON.stringify(semantic));
-    next.deriveAttempted = [];
-    if (next.types && next.types.metavars && next.types.metavars.length > 32) {
-      next.types.metavars = next.types.metavars.slice(-32);
-    }
-    return next;
-  }
-  var CAPACITY_DEDUPE = "persist.capacity";
-  var saveBlocked = false;
-  var lastSaveError = null;
-  function isCapacityError(err) {
-    if (!err) return false;
-    if (err.code === "capacity") return true;
-    var name = String(err.name || "");
-    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
-    if (err.code === 22 || err.code === 1014) return true;
-    return /quota/i.test(String(err.message || ""));
-  }
-  function classifyPersistError(err) {
-    if (!err) return { code: "unknown", retryable: false, detail: null };
-    if (isCapacityError(err)) {
+  function createDocuments(deps) {
+    var work2 = deps.work;
+    var settings = deps.settings;
+    var files2 = deps.files || null;
+    var open = /* @__PURE__ */ new Set();
+    work2.onFileChange(function(e) {
+      open.forEach(function(doc) {
+        doc.noteFileChange(e);
+      });
+    });
+    function load(documentId) {
+      var conflict = work2.readConflict(documentId);
+      var stored = work2.getText(documentId);
+      if (conflict && conflict.theirs !== stored) {
+        conflict.theirs = stored;
+        work2.writeConflict(documentId, conflict);
+      }
       return {
-        code: "capacity",
-        retryable: false,
-        detail: String(err.message || err.name || "")
+        state: {
+          meta: { documentId },
+          editor: {
+            text: conflict ? conflict.mine : stored,
+            local: normalizeView(work2.peekSession().views[documentId])
+          },
+          semantic: normalizeSemantic(work2.readCache(documentId))
+        },
+        base: conflict ? conflict.base : stored,
+        conflicted: !!conflict
       };
     }
-    if (err.code === "network" || err.code === "auth" || err.code === "conflict") {
+    function copyName(name) {
+      return conflictedCopyName(name, new Set((files2 ? files2.listFiles() : []).map(function(f) {
+        return f.name;
+      })));
+    }
+    function createPersist(opts) {
+      opts = opts || {};
+      var documentId = opts.documentId;
+      if (!documentId) throw new Error("createPersist needs a documentId");
+      var loaded = load(documentId);
+      var state = loaded.state;
+      var base = loaded.base;
+      var conflicted = loaded.conflicted;
+      var saveTimer = null;
+      var providers = null;
+      var reconciling = false;
+      var reconcileQueued = false;
+      var savedView = JSON.stringify(state.editor.local);
+      var savedSemantic = JSON.stringify(state.semantic);
+      function collectSemantic() {
+        if (!providers || typeof providers.getSemantic !== "function") return state.semantic;
+        var exported = providers.getSemantic();
+        if (!exported) return state.semantic;
+        var text = state.editor.text;
+        var docFp = typeof providers.getDocFp === "function" ? providers.getDocFp(text) : documentFingerprint(text);
+        var belugaBuild = typeof providers.getBelugaBuild === "function" ? providers.getBelugaBuild() : settings.get("belugaMode");
+        var scopeKey = typeof exported.scopeKey === "string" ? exported.scopeKey : typeof providers.getScopeKey === "function" ? providers.getScopeKey() : "";
+        var semantic = {
+          docFp,
+          scopeKey,
+          belugaBuild,
+          types: exported.types || { v: 1, decls: [], metavars: [], reconstructed: [] },
+          identity: exported.identity || [],
+          deriveAttempted: exported.deriveAttempted || []
+        };
+        return semanticHasPayload(semantic) ? semantic : null;
+      }
+      function collectView() {
+        if (providers && typeof providers.getViewport === "function") {
+          return normalizeView(providers.getViewport());
+        }
+        return state.editor.local || {};
+      }
+      function collectText() {
+        if (providers && typeof providers.getText === "function") {
+          try {
+            var live = providers.getText();
+            if (live != null) return String(live);
+          } catch (_) {
+          }
+        }
+        return state.editor.text;
+      }
+      function peekText() {
+        var read = providers && (typeof providers.peekText === "function" ? providers.peekText : typeof providers.getText === "function" ? providers.getText : null);
+        if (read) {
+          try {
+            var t = read();
+            if (t != null) return String(t);
+          } catch (_) {
+          }
+        }
+        return state.editor.text;
+      }
+      function canShow() {
+        return !providers || typeof providers.applyExternalText === "function";
+      }
+      function show(text) {
+        state.editor.text = text;
+        if (providers && typeof providers.applyExternalText === "function") providers.applyExternalText(text);
+      }
+      function announceConflict(source) {
+        var g2 = typeof window !== "undefined" ? window : null;
+        if (g2 && typeof g2.dispatchEvent === "function" && typeof CustomEvent === "function") {
+          g2.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
+        }
+      }
+      function reconcile() {
+        reconcileQueued = false;
+        if (reconciling || !work2.hasFile(documentId)) return;
+        var stored = work2.getText(documentId);
+        if (conflicted) {
+          var rec = work2.readConflict(documentId);
+          if (rec && rec.theirs !== stored) {
+            rec.theirs = stored;
+            work2.writeConflict(documentId, rec);
+          }
+          return;
+        }
+        if (stored === base) return;
+        var found = work2.readConflict(documentId);
+        if (found) {
+          conflicted = true;
+          base = found.base;
+          work2.writeConflict(documentId, {
+            base: found.base,
+            mine: peekText(),
+            theirs: stored,
+            at: found.at,
+            source: found.source
+          });
+          announceConflict(found.source);
+          return;
+        }
+        reconciling = true;
+        try {
+          var mine = peekText();
+          if (mine === stored) {
+            base = stored;
+          } else if (mine === base && canShow()) {
+            base = stored;
+            show(stored);
+          } else {
+            var m = merge3(base, mine, stored);
+            if (m.ok && canShow()) {
+              base = stored;
+              show(m.text);
+              scheduleSave();
+            } else {
+              var source = work2.textOrigin(documentId) === "sync" ? "device" : "tab";
+              conflicted = true;
+              work2.writeConflict(documentId, { base, mine, theirs: stored, at: Date.now(), source });
+              announceConflict(source);
+            }
+          }
+        } finally {
+          reconciling = false;
+        }
+      }
+      function noteFileChange(e) {
+        if (e.fid !== null && (e.fid !== documentId || e.pid !== work2.projectId())) return;
+        if (reconcileQueued) return;
+        reconcileQueued = true;
+        Promise.resolve().then(reconcile);
+      }
+      function persistNow() {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        if (reconciling) {
+          scheduleSave();
+          return;
+        }
+        var exists = work2.hasFile(documentId);
+        if (exists && !conflicted && work2.getText(documentId) !== base) reconcile();
+        state.editor.text = collectText();
+        state.editor.local = collectView();
+        state.semantic = collectSemantic();
+        if (!exists) return;
+        if (conflicted) {
+          var rec = work2.readConflict(documentId);
+          if (rec && rec.mine !== state.editor.text) {
+            rec.mine = state.editor.text;
+            work2.writeConflict(documentId, rec);
+          }
+        } else if (state.editor.text !== base) {
+          if (work2.setText(documentId, state.editor.text).ok) base = state.editor.text;
+        }
+        var view = JSON.stringify(state.editor.local);
+        if (view !== savedView) {
+          var local = state.editor.local;
+          if (work2.updateSession(function(s) {
+            s.views[documentId] = local;
+          }).ok) savedView = view;
+        }
+        var semantic = JSON.stringify(state.semantic);
+        if (semantic !== savedSemantic) {
+          if (work2.writeCache(documentId, state.semantic).ok) savedSemantic = semantic;
+        }
+      }
+      function scheduleSave() {
+        clearTimeout(saveTimer);
+        var delay = opts.debounceMs != null ? opts.debounceMs : settings.get("autosaveDelay");
+        saveTimer = globalThis.setTimeout(persistNow, delay);
+      }
+      function scheduleEditorPersist(text) {
+        if (text != null) state.editor.text = String(text);
+        scheduleSave();
+      }
+      function markEditorDirty() {
+        scheduleSave();
+      }
+      function cancelPendingSave() {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      function replaceEditorText(text) {
+        cancelPendingSave();
+        state.editor.text = String(text != null ? text : "");
+        if (!conflicted && work2.getText(documentId) === state.editor.text) base = state.editor.text;
+      }
+      function hasPendingSave() {
+        return saveTimer != null;
+      }
+      function flushCheckpointIfDirty() {
+        if (saveTimer != null) persistNow();
+      }
+      function getInitialCheckpoint() {
+        return JSON.parse(JSON.stringify(state));
+      }
+      function setCheckpointProviders(next) {
+        providers = next || null;
+      }
+      function switchFile(newId2) {
+        if (!newId2) return null;
+        persistNow();
+        providers = null;
+        documentId = newId2;
+        var next = load(documentId);
+        state = next.state;
+        base = next.base;
+        conflicted = next.conflicted;
+        savedView = JSON.stringify(state.editor.local);
+        savedSemantic = JSON.stringify(state.semantic);
+        return getInitialCheckpoint();
+      }
+      function getConflict() {
+        if (!conflicted) return null;
+        var rec = work2.readConflict(documentId);
+        return {
+          fileId: documentId,
+          base: rec ? rec.base : base,
+          mine: peekText(),
+          theirs: work2.getText(documentId),
+          source: rec ? rec.source : "tab"
+        };
+      }
+      function resolveConflict(choice) {
+        if (!conflicted) return { ok: false, reason: "no-conflict" };
+        if (choice !== "mine" && choice !== "theirs" && choice !== "both") return { ok: false, reason: "unknown-choice" };
+        cancelPendingSave();
+        var theirs = work2.getText(documentId);
+        var mine = peekText();
+        if (choice === "theirs") {
+          base = theirs;
+          show(theirs);
+          conflicted = false;
+          work2.removeConflict(documentId);
+          return { ok: true, copyId: null };
+        }
+        var copyId = null;
+        if (choice === "both") {
+          if (!files2) return { ok: false, reason: "no-files" };
+          var file = work2.peekTree().files.find(function(f) {
+            return f.id === documentId;
+          });
+          copyId = files2.createFile(copyName(file ? file.name : "untitled"));
+          if (!work2.setText(copyId, theirs).ok) return { ok: false, reason: "write-failed" };
+        }
+        if (!work2.setText(documentId, mine).ok) return { ok: false, reason: "write-failed", copyId };
+        base = mine;
+        state.editor.text = mine;
+        conflicted = false;
+        work2.removeConflict(documentId);
+        return { ok: true, copyId };
+      }
+      var handle = { noteFileChange };
+      open.add(handle);
       return {
-        code: err.code,
-        retryable: !!err.retryable,
-        detail: err.detail != null ? String(err.detail) : err.message ? String(err.message) : null
+        getEditorText: function() {
+          return state.editor.text;
+        },
+        getEditorLocal: function() {
+          return normalizeView(state.editor.local);
+        },
+        getSemanticCheckpoint: function() {
+          return state.semantic ? JSON.parse(JSON.stringify(state.semantic)) : null;
+        },
+        getInitialCheckpoint,
+        getCurrentFileId: function() {
+          return documentId;
+        },
+        scheduleEditorPersist,
+        markEditorDirty,
+        scheduleCheckpointSave: scheduleSave,
+        cancelPendingSave,
+        replaceEditorText,
+        flushCheckpoint: persistNow,
+        flushCheckpointIfDirty,
+        hasPendingSave,
+        setCheckpointProviders,
+        switchFile,
+        getConflict,
+        resolveConflict,
+        /** Stop listening for changes underneath (tests; a page never closes its document). */
+        dispose: function() {
+          cancelPendingSave();
+          open.delete(handle);
+        }
       };
+    }
+    return { createPersist };
+  }
+
+  // js/persist/device-records.mjs
+  var TAB_PREFIX = "beljar/tabs/";
+  var SIDE_PANEL_IDS = ["explorer", "inspector", "library", "harpoon"];
+  function stringList3(raw) {
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === "string" && x) : [];
+  }
+  function create2(deps) {
+    const { store: store2, tabStore: tabStore2, work: work2, settings } = deps;
+    function storeFor(mode) {
+      if (mode === "local") return store2;
+      if (mode === "session") return tabStore2;
+      return null;
+    }
+    function followSetting(settingId, keysIn) {
+      let last = settings.get(settingId);
+      settings.subscribe((e) => {
+        if (e.ids.indexOf(settingId) === -1) return;
+        const prev = last;
+        const next = settings.get(settingId);
+        last = next;
+        if (prev === next) return;
+        const from = storeFor(prev);
+        const to = storeFor(next);
+        if (!from) return;
+        for (const key of keysIn(from)) {
+          const data = from.get(key);
+          if (to && data !== void 0 && to.get(key) === void 0) to.set(key, data);
+          from.remove(key);
+        }
+      });
+    }
+    const replStore = () => storeFor(settings.get("replHistoryPersist"));
+    followSetting("replHistoryPersist", () => [REPL_TRANSCRIPT_KEY, REPL_COMMANDS_KEY]);
+    function readReplTranscript() {
+      const s = replStore();
+      const d = s && s.get(REPL_TRANSCRIPT_KEY);
+      if (!d || typeof d !== "object" || typeof d.html !== "string") return null;
+      return {
+        html: d.html,
+        scrollTop: typeof d.scrollTop === "number" ? d.scrollTop : 0,
+        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0
+      };
+    }
+    function writeReplTranscript(snap) {
+      const s = replStore();
+      if (!s) return;
+      if (!snap || typeof snap.html !== "string" || !snap.html) {
+        s.remove(REPL_TRANSCRIPT_KEY);
+        return;
+      }
+      s.set(REPL_TRANSCRIPT_KEY, {
+        html: snap.html,
+        scrollTop: typeof snap.scrollTop === "number" ? snap.scrollTop : 0,
+        savedAt: typeof snap.savedAt === "number" ? snap.savedAt : Date.now()
+      });
+    }
+    function clampCommands(list) {
+      const arr = Array.isArray(list) ? list.filter((x) => typeof x === "string") : [];
+      const cap = settings.get("replHistoryCap");
+      return arr.length > cap ? arr.slice(arr.length - cap) : arr;
+    }
+    function readReplCommands() {
+      const s = replStore();
+      return s ? clampCommands(s.get(REPL_COMMANDS_KEY)) : [];
+    }
+    function writeReplCommands(list) {
+      const s = replStore();
+      if (!s) return;
+      const arr = clampCommands(list);
+      if (arr.length) s.set(REPL_COMMANDS_KEY, arr);
+      else s.remove(REPL_COMMANDS_KEY);
+    }
+    const foldStore = () => storeFor(settings.get("editorFoldPersist"));
+    followSetting("editorFoldPersist", (s) => s.keys("beljar/p/").filter((k) => k.endsWith("/folds")));
+    function readFileFolds(fid) {
+      const s = foldStore();
+      const d = s && s.get(foldsKey(work2.projectId()));
+      return d && typeof d === "object" ? stringList3(d[fid]) : [];
+    }
+    function writeFileFolds(fid, keys) {
+      const s = foldStore();
+      if (!s || !fid) return;
+      const key = foldsKey(work2.projectId());
+      const cur = s.get(key);
+      const live = new Set(work2.peekTree().files.map((f) => f.id));
+      const next = {};
+      if (cur && typeof cur === "object") {
+        for (const id of Object.keys(cur)) if (live.has(id)) next[id] = cur[id];
+      }
+      const clean = stringList3(keys);
+      if (clean.length && live.has(fid)) next[fid] = clean;
+      else delete next[fid];
+      if (Object.keys(next).length) s.set(key, next);
+      else s.remove(key);
+    }
+    function readNotifications() {
+      const d = store2.get(NOTIFICATIONS_KEY);
+      return Array.isArray(d) ? d : [];
+    }
+    function writeNotifications(items) {
+      const list = Array.isArray(items) ? items : [];
+      if (list.length) store2.set(NOTIFICATIONS_KEY, list);
+      else store2.remove(NOTIFICATIONS_KEY);
+    }
+    function readUndoStack(pid) {
+      const d = tabStore2.get(undoKey(pid));
+      return d && typeof d === "object" ? d : null;
+    }
+    function writeUndoStack(pid, data) {
+      return tabStore2.set(undoKey(pid), data).ok;
+    }
+    function clearUndoStack(pid) {
+      tabStore2.remove(undoKey(pid));
+    }
+    function postTabMessage(kind, msg) {
+      store2.set(tabMessageKey(kind), msg);
+    }
+    function onTabMessage(fn) {
+      return store2.subscribe((e) => {
+        if (e.origin !== "tab" || !e.key || e.key.indexOf(TAB_PREFIX) !== 0 || e.data === void 0) return;
+        fn(e.key.slice(TAB_PREFIX.length), e.data);
+      });
+    }
+    function sidePanelOrNull(id) {
+      return id && SIDE_PANEL_IDS.indexOf(id) !== -1 ? id : null;
+    }
+    function readSidePanel(pid) {
+      return sidePanelOrNull(work2.peekSession(pid || void 0).panel);
+    }
+    function writeSidePanel(id, pid) {
+      const panel = sidePanelOrNull(id);
+      work2.updateSession((s) => {
+        s.panel = panel;
+      }, pid || void 0);
+    }
+    function readWorkspace(pid) {
+      return work2.readSession(pid || void 0).workspace;
+    }
+    function writeWorkspace(snapshot, pid) {
+      return work2.updateSession((s) => {
+        s.workspace = snapshot && typeof snapshot === "object" ? snapshot : null;
+        if (s.workspace) s.panel = sidePanelOrNull(s.workspace.activeSidePanel);
+      }, pid || void 0).ok;
+    }
+    function resetWorkspace(pid) {
+      work2.updateSession((s) => {
+        s.workspace = null;
+        s.panel = null;
+      }, pid || void 0);
+    }
+    function readExplorerFolds() {
+      return work2.peekSession().explorerFolds.slice();
+    }
+    function writeExplorerFolds(paths) {
+      work2.updateSession((s) => {
+        s.explorerFolds = stringList3(paths);
+      });
     }
     return {
-      code: "unknown",
-      retryable: false,
-      detail: String(err.message || err)
+      readReplTranscript,
+      writeReplTranscript,
+      readReplCommands,
+      writeReplCommands,
+      readFileFolds,
+      writeFileFolds,
+      readNotifications,
+      writeNotifications,
+      readUndoStack,
+      writeUndoStack,
+      clearUndoStack,
+      postTabMessage,
+      onTabMessage,
+      readSidePanel,
+      writeSidePanel,
+      readWorkspace,
+      writeWorkspace,
+      resetWorkspace,
+      readExplorerFolds,
+      writeExplorerFolds
     };
   }
-  function reportCapacityFailure(classified) {
-    var already = saveBlocked;
-    saveBlocked = true;
-    lastSaveError = classified || { code: "capacity", retryable: false, detail: null };
-    if (already) return;
-    if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
-      globalThis.Toasts.error("Couldn\u2019t save: storage full.", {
-        duration: 0,
-        closable: true
+
+  // js/persist/sync/protocol.mjs
+  var MANIFEST_VERSION = 1;
+  function canonicalJson(value) {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+    const keys = Object.keys(value).filter((k) => value[k] !== void 0).sort();
+    return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonicalJson(value[k])).join(",") + "}";
+  }
+  var HASH = /^[0-9a-f]{64}$/;
+  function isHash(h) {
+    return typeof h === "string" && HASH.test(h);
+  }
+  function hex(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, "0");
+    return s;
+  }
+  async function sha256(text) {
+    const subtle = globalThis.crypto && globalThis.crypto.subtle;
+    if (!subtle) throw new Error("sync: Web Crypto is not available");
+    const digest = await subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
+    return hex(new Uint8Array(digest));
+  }
+  function emptyManifest() {
+    return { v: MANIFEST_VERSION, name: "", createdAt: 0, files: [], folders: [], suites: {} };
+  }
+  function stringList4(raw) {
+    const out = [];
+    if (!Array.isArray(raw)) return out;
+    for (const x of raw) {
+      if (typeof x === "string" && x && !out.includes(x)) out.push(x);
+    }
+    return out;
+  }
+  function normalizeManifest(raw) {
+    if (!raw || typeof raw !== "object" || raw.v !== MANIFEST_VERSION || !Array.isArray(raw.files)) return null;
+    if (typeof raw.name !== "string") return null;
+    const ids = /* @__PURE__ */ new Set();
+    const paths = /* @__PURE__ */ new Set();
+    const files2 = [];
+    for (const f of raw.files) {
+      if (!f || typeof f.id !== "string" || !f.id || typeof f.path !== "string" || !f.path || !isHash(f.hash)) return null;
+      if (ids.has(f.id) || paths.has(f.path)) return null;
+      ids.add(f.id);
+      paths.add(f.path);
+      files2.push({ id: f.id, path: f.path, hash: f.hash });
+    }
+    const suites = {};
+    if (raw.suites && typeof raw.suites === "object" && !Array.isArray(raw.suites)) {
+      for (const dir of Object.keys(raw.suites).sort()) {
+        const list = stringList4(raw.suites[dir]);
+        if (list.length) suites[dir] = list;
+      }
+    }
+    return {
+      v: MANIFEST_VERSION,
+      name: raw.name,
+      createdAt: typeof raw.createdAt === "number" && raw.createdAt > 0 ? raw.createdAt : 0,
+      files: files2,
+      folders: stringList4(raw.folders).sort(),
+      suites
+    };
+  }
+  function manifestOf(meta, tree, hashes) {
+    return normalizeManifest({
+      v: MANIFEST_VERSION,
+      name: meta.name,
+      createdAt: meta.createdAt,
+      files: tree.files.map((f) => ({ id: f.id, path: f.name, hash: hashes[f.id] })),
+      folders: tree.folders,
+      suites: tree.suites
+    });
+  }
+  function sameManifest(a, b) {
+    return canonicalJson(a) === canonicalJson(b);
+  }
+  function filesById(manifest) {
+    const m = /* @__PURE__ */ new Map();
+    for (const f of manifest.files) m.set(f.id, f);
+    return m;
+  }
+
+  // js/persist/sync/merge-project.mjs
+  function sameList(a, b) {
+    return a.length === b.length && a.every((x, i) => x === b[i]);
+  }
+  function pick(base, mine, theirs, same) {
+    if (same(mine, theirs)) return mine;
+    if (same(mine, base)) return theirs;
+    return mine;
+  }
+  var is = (a, b) => a === b;
+  function mergeProject(a) {
+    const B = filesById(a.base);
+    const M = filesById(a.mine);
+    const T = filesById(a.theirs);
+    const conflicted = a.conflicted || /* @__PURE__ */ new Set();
+    const needs = /* @__PURE__ */ new Set();
+    const out = [];
+    const conflicts = [];
+    const notices = [];
+    const copies = [];
+    function need(hash) {
+      const t = a.text(hash);
+      if (t === void 0) needs.add(hash);
+      return t;
+    }
+    const changedHere = (id, m, b) => conflicted.has(id) || m.hash !== b.hash || m.path !== b.path;
+    const changedThere = (t, b) => t.hash !== b.hash || t.path !== b.path;
+    const order = [...T.keys()];
+    for (const id of M.keys()) if (!T.has(id)) order.push(id);
+    for (const id of order) {
+      const b = B.get(id);
+      const m = M.get(id);
+      const t = T.get(id);
+      if (m && t) {
+        const path = pick(b ? b.path : void 0, m.path, t.path, is);
+        const mine = a.mineTexts[id];
+        if (m.hash === t.hash || b && t.hash === b.hash) {
+          out.push({ id, path, text: mine });
+        } else if (b && m.hash === b.hash) {
+          const theirs = need(t.hash);
+          if (theirs !== void 0) out.push({ id, path, text: theirs });
+        } else {
+          const baseText = b ? need(b.hash) : "";
+          const theirs = need(t.hash);
+          if (baseText === void 0 || theirs === void 0) continue;
+          const r = merge3(baseText, mine, theirs);
+          if (r.ok) {
+            out.push({ id, path, text: r.text });
+          } else {
+            out.push({ id, path, text: theirs });
+            if (conflicted.has(id)) {
+              copies.push({ of: id, text: mine });
+            } else {
+              conflicts.push({ id, base: baseText, mine, theirs });
+              notices.push({ kind: "conflict", path });
+            }
+          }
+        }
+      } else if (m) {
+        if (!b) {
+          out.push({ id, path: m.path, text: a.mineTexts[id] });
+        } else if (changedHere(id, m, b)) {
+          out.push({ id, path: m.path, text: a.mineTexts[id] });
+          notices.push({ kind: "kept", path: m.path });
+        }
+      } else if (t) {
+        if (!b || changedThere(t, b)) {
+          const theirs = need(t.hash);
+          if (theirs === void 0) continue;
+          out.push({ id, path: t.path, text: theirs });
+          if (b) notices.push({ kind: "restored", path: t.path });
+        }
+      }
+    }
+    if (needs.size) return { needs: [...needs] };
+    for (const c of copies) {
+      const at = out.findIndex((f) => f.id === c.of);
+      out.splice(at + 1, 0, { id: a.newFileId(), path: out[at].path, text: c.text, copyOf: c.of });
+    }
+    const taken = new Set(out.map((f) => f.path));
+    const seen = /* @__PURE__ */ new Set();
+    for (const f of out) {
+      if (seen.has(f.path)) {
+        const from = f.path;
+        f.path = conflictedCopyName(from, taken);
+        taken.add(f.path);
+        notices.push({ kind: f.copyOf ? "copied" : "renamed", path: f.path, from });
+      }
+      seen.add(f.path);
+      delete f.copyOf;
+    }
+    const bf = new Set(a.base.folders);
+    const mf = new Set(a.mine.folders);
+    const tf = new Set(a.theirs.folders);
+    const folders = [.../* @__PURE__ */ new Set([...a.theirs.folders, ...a.mine.folders])].filter((x) => mf.has(x) && tf.has(x) || mf.has(x) && !bf.has(x) || tf.has(x) && !bf.has(x)).filter((x) => !out.some((f) => f.path.startsWith(x + "/"))).sort();
+    const suites = {};
+    const dirs = /* @__PURE__ */ new Set([...Object.keys(a.base.suites), ...Object.keys(a.mine.suites), ...Object.keys(a.theirs.suites)]);
+    for (const dir of [...dirs].sort()) {
+      const v = pick(a.base.suites[dir] || [], a.mine.suites[dir] || [], a.theirs.suites[dir] || [], sameList);
+      if (v.length) suites[dir] = v.slice();
+    }
+    return {
+      project: {
+        name: pick(a.base.name, a.mine.name, a.theirs.name, is),
+        createdAt: a.theirs.createdAt || a.mine.createdAt,
+        files: out,
+        folders,
+        suites
+      },
+      conflicts,
+      notices
+    };
+  }
+
+  // js/persist/sync/settings-sync.mjs
+  function cleanSyncedValues(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const id of Object.keys(raw).sort()) {
+      const row = settingRow(id);
+      if (!isSyncedSetting(row)) continue;
+      const v = normalizeSetting(row, raw[id]);
+      if (v !== void 0 && !sameValue(v, row.default)) out[id] = v;
+    }
+    return out;
+  }
+  function sameValues(a, b) {
+    const ka = Object.keys(a);
+    return ka.length === Object.keys(b).length && ka.every((id) => id in b && sameValue(a[id], b[id]));
+  }
+  function mergeSettingValues(base, mine, theirs) {
+    const out = {};
+    const ids = /* @__PURE__ */ new Set([...Object.keys(base), ...Object.keys(mine), ...Object.keys(theirs)]);
+    for (const id of [...ids].sort()) {
+      const b = base[id];
+      const m = mine[id];
+      const t = theirs[id];
+      const v = sameValue(m, t) ? m : sameValue(m, b) ? t : m;
+      if (v !== void 0) out[id] = v;
+    }
+    return out;
+  }
+  function readRecord(store2, account) {
+    const r = store2.get(SETTINGS_SYNC_KEY);
+    if (!r || typeof r !== "object" || r.account !== account) return null;
+    const pending = r.pending && typeof r.pending === "object" && typeof r.pending.id === "string" ? { id: r.pending.id, base: Number(r.pending.base) || 0, values: cleanSyncedValues(r.pending.values) } : null;
+    return {
+      account,
+      version: Number.isInteger(r.version) && r.version > 0 ? r.version : 0,
+      values: cleanSyncedValues(r.values),
+      pending
+    };
+  }
+  function createSettingsSync(o) {
+    const { store: store2, account } = o;
+    const attempts = o.attempts || 8;
+    function writeRecord(rec) {
+      const res = store2.set(SETTINGS_SYNC_KEY, rec);
+      if (!res.ok) throw Object.assign(new Error("sync: could not record the settings sync"), { storage: res.error });
+    }
+    function local() {
+      const rec = store2.get(SETTINGS_KEY);
+      return cleanSyncedValues(rec && rec.values);
+    }
+    function apply(values) {
+      const rec = store2.get(SETTINGS_KEY);
+      const cur = rec && rec.values && typeof rec.values === "object" ? rec.values : {};
+      const next = {};
+      for (const id of Object.keys(cur)) {
+        const row = settingRow(id);
+        if (row && !isSyncedSetting(row)) next[id] = cur[id];
+      }
+      Object.assign(next, values);
+      const res = store2.applyRemote(SETTINGS_KEY, { values: next });
+      if (!res.ok) throw Object.assign(new Error("sync: could not apply synced settings"), { storage: res.error });
+    }
+    function normalizeHead(raw) {
+      if (raw == null) return null;
+      if (typeof raw !== "object" || !Number.isInteger(raw.version) || raw.version < 1) {
+        throw new Error("sync: the server sent settings this version cannot read");
+      }
+      return { version: raw.version, values: cleanSyncedValues(raw.values) };
+    }
+    async function sync() {
+      if (!o.settings.get("syncSettings")) return { status: "off" };
+      for (let i = 0; i < attempts; i++) {
+        const rec = readRecord(store2, account);
+        if (rec && rec.pending) {
+          const res = await o.call("commitSettings", rec.pending);
+          writeRecord(res && res.ok ? { account, version: res.version, values: rec.pending.values, pending: null } : { account, version: rec.version, values: rec.values, pending: null });
+          continue;
+        }
+        const head = normalizeHead(await o.call("settings"));
+        const mine = local();
+        if (!head || rec && head.version === rec.version) {
+          const synced = head ? rec.values : null;
+          if (synced ? sameValues(mine, synced) : !Object.keys(mine).length) return { status: "clean" };
+          const kept = { account, version: rec ? rec.version : 0, values: rec ? rec.values : {} };
+          const pending = { id: o.commitId(), base: head ? head.version : 0, values: mine };
+          writeRecord({ ...kept, pending });
+          const res = await o.call("commitSettings", pending);
+          if (res && res.ok) {
+            writeRecord({ account, version: res.version, values: mine, pending: null });
+            return { status: "pushed", version: res.version };
+          }
+          writeRecord({ ...kept, pending: null });
+          continue;
+        }
+        const merged = mergeSettingValues(rec ? rec.values : {}, mine, head.values);
+        if (!sameValues(merged, mine)) apply(merged);
+        writeRecord({ account, version: head.version, values: head.values, pending: null });
+      }
+      return { status: "busy" };
+    }
+    return { sync };
+  }
+
+  // js/persist/sync/engine.mjs
+  var ATTEMPTS = 8;
+  function unreachable(method, err) {
+    const e = new Error("sync: " + method + " could not reach the server" + (err && err.message ? " (" + err.message + ")" : ""));
+    e.offline = true;
+    e.cause = err;
+    return e;
+  }
+  function bad(what) {
+    return new Error("sync: " + what);
+  }
+  function refused(res) {
+    return Object.assign(new Error("sync: the server refused (" + res.error + ")"), { code: res.error });
+  }
+  function storageFailure(what) {
+    return Object.assign(new Error("sync: storage refused " + what), { storage: true });
+  }
+  function normalizeRecord(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    let version = Number.isInteger(raw.version) && raw.version > 0 ? raw.version : 0;
+    const manifest = version && raw.manifest ? normalizeManifest(raw.manifest) : null;
+    if (!manifest) version = 0;
+    let pending = null;
+    if (raw.pending && typeof raw.pending === "object" && typeof raw.pending.id === "string" && raw.pending.id) {
+      const m = normalizeManifest(raw.pending.manifest);
+      const base = Number.isInteger(raw.pending.base) && raw.pending.base >= 0 ? raw.pending.base : -1;
+      if (m && base >= 0) pending = { id: raw.pending.id, base, manifest: m };
+    }
+    return { version, manifest, pending };
+  }
+  function readHead(raw) {
+    if (raw == null) return null;
+    if (typeof raw !== "object" || !Number.isInteger(raw.version) || raw.version < 1) throw bad("the server sent a head this version cannot read");
+    const deleted = raw.deleted === true;
+    const manifest = deleted ? null : normalizeManifest(raw.manifest);
+    if (!deleted && !manifest) throw bad("the server sent a manifest this version cannot read");
+    return { version: raw.version, deleted, manifest, commit: typeof raw.commit === "string" ? raw.commit : null };
+  }
+  function readHeads(raw) {
+    if (!Array.isArray(raw)) throw bad("the server sent a project list this version cannot read");
+    const out = [];
+    for (const h of raw) {
+      if (!h || typeof h.id !== "string" || !h.id || !Number.isInteger(h.version) || h.version < 1) continue;
+      out.push({ id: h.id, version: h.version, deleted: h.deleted === true });
+    }
+    return out;
+  }
+  function createSyncEngine(opts) {
+    const { store: store2, work: work2, transport, account } = opts;
+    if (!account) throw new Error("sync: an engine syncs one account; none was given");
+    const hash = opts.hash || sha256;
+    const notify = opts.notify || (() => {
+    });
+    const commitId = opts.commitId || (() => newId("c"));
+    const trace = opts.trace || (() => {
+    });
+    function moved(pid, at) {
+      trace({ kind: "moved", pid, at });
+      return null;
+    }
+    const hashed = /* @__PURE__ */ new Map();
+    async function call(method, ...args) {
+      try {
+        return await transport[method](...args);
+      } catch (err) {
+        throw unreachable(method, err);
+      }
+    }
+    async function hashFile(pid, fid, text) {
+      const key = pid + "/" + fid;
+      const known = hashed.get(key);
+      if (known && known.text === text) return known.hash;
+      const h = await hash(text);
+      hashed.set(key, { text, hash: h });
+      return h;
+    }
+    function readRecord2(pid) {
+      return normalizeRecord(store2.get(syncKey(pid)));
+    }
+    function writeRecord(pid, rec) {
+      if (!store2.set(syncKey(pid), rec).ok) throw storageFailure("the sync record");
+    }
+    async function localSide(pid) {
+      const snap = work2.snapshotProject(pid);
+      if (!snap) return null;
+      const hashes = {};
+      for (const f of snap.tree.files) hashes[f.id] = await hashFile(pid, f.id, snap.texts[f.id]);
+      snap.hashes = hashes;
+      snap.manifest = manifestOf(snap.meta, snap.tree, hashes);
+      return snap;
+    }
+    function unchangedSince(pid, snap) {
+      const now = work2.snapshotProject(pid);
+      if (!now) return false;
+      if (now.meta.name !== snap.meta.name || now.meta.createdAt !== snap.meta.createdAt || now.meta.owner !== snap.meta.owner) return false;
+      if (JSON.stringify(now.tree) !== JSON.stringify(snap.tree)) return false;
+      for (const f of now.tree.files) if (now.texts[f.id] !== snap.texts[f.id]) return false;
+      if (now.conflicted.size !== snap.conflicted.size) return false;
+      for (const id of now.conflicted) if (!snap.conflicted.has(id)) return false;
+      return true;
+    }
+    async function fetchTexts(pid, wanted) {
+      const got = /* @__PURE__ */ new Map();
+      if (!wanted.length) return got;
+      const res = await call("blobs", pid, wanted);
+      for (const h of wanted) {
+        const text = res && typeof res[h] === "string" ? res[h] : void 0;
+        if (text === void 0) throw bad("the server is missing a file its version lists");
+        if (await hash(text) !== h) throw bad("a file arrived damaged");
+        got.set(h, text);
+      }
+      return got;
+    }
+    function settle(pid, kept, pending, res) {
+      if (res && res.ok && Number.isInteger(res.version) && res.version > 0) {
+        writeRecord(pid, { version: res.version, manifest: pending.manifest, pending: null });
+        return true;
+      }
+      if (res && res.error) throw refused(res);
+      writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending: null });
+      return false;
+    }
+    async function push(pid, local, rec, base) {
+      const texts = /* @__PURE__ */ new Map();
+      for (const f of local.tree.files) texts.set(local.hashes[f.id], local.texts[f.id]);
+      const missing = await call("missing", pid, [...texts.keys()]);
+      if (!Array.isArray(missing)) throw bad("the server sent an answer this version cannot read");
+      if (missing.length) {
+        const up = {};
+        for (const h of missing) {
+          if (!texts.has(h)) throw bad("the server asked for a file this version never named");
+          up[h] = texts.get(h);
+        }
+        const res = await call("putBlobs", pid, up);
+        if (res && res.error) throw refused(res);
+        if (!res || !res.ok) throw bad("the server did not take the files");
+      }
+      const kept = { version: rec ? rec.version : 0, manifest: rec ? rec.manifest : null };
+      const pending = { id: commitId(), base, manifest: local.manifest };
+      writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending });
+      return settle(pid, kept, pending, await call("commit", pid, pending));
+    }
+    async function pull(pid, local, rec, head) {
+      const theirs = head.manifest;
+      const base = rec && rec.version ? rec.manifest : emptyManifest();
+      const texts = /* @__PURE__ */ new Map();
+      for (const f of local.tree.files) texts.set(local.hashes[f.id], local.texts[f.id]);
+      for (let fetched = false; ; ) {
+        const r = mergeProject({
+          base,
+          mine: local.manifest,
+          mineTexts: local.texts,
+          theirs,
+          text: (h) => texts.get(h),
+          conflicted: local.conflicted,
+          newFileId: () => work2.newFileId(pid)
+        });
+        if (r.needs) {
+          if (fetched) throw bad("a merge needed a file the server did not send");
+          for (const [h, t] of await fetchTexts(pid, r.needs)) texts.set(h, t);
+          fetched = true;
+          continue;
+        }
+        if (!unchangedSince(pid, local)) return moved(pid, "merge");
+        if (!work2.applyProject(pid, r.project, { conflicts: r.conflicts })) throw storageFailure("a merged project");
+        writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
+        for (const n of r.notices) notify(Object.assign({ pid, project: r.project.name }, n));
+        return;
+      }
+    }
+    async function download(pid, head) {
+      const theirs = head.manifest;
+      const got = await fetchTexts(pid, [...new Set(theirs.files.map((f) => f.hash))]);
+      if (work2.snapshotProject(pid) || work2.readTombstones()[pid]) return moved(pid, "download");
+      const project = {
+        name: theirs.name,
+        createdAt: theirs.createdAt,
+        files: theirs.files.map((f) => ({ id: f.id, path: f.path, text: got.get(f.hash) })),
+        folders: theirs.folders,
+        suites: theirs.suites
+      };
+      if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("a downloaded project");
+      writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
+      return { status: "downloaded" };
+    }
+    async function settleTombstone(pid, tomb, head) {
+      if (!head || head.deleted) {
+        work2.dropTombstone(pid);
+        return { status: "deleted" };
+      }
+      if (head.version === tomb.version || tomb.pending && head.commit === tomb.pending) {
+        const res = await call("remove", pid, { id: commitId(), base: head.version });
+        if (res && res.ok) {
+          work2.dropTombstone(pid);
+          return { status: "deleted" };
+        }
+        if (res && res.error) throw refused(res);
+        return null;
+      }
+      work2.dropTombstone(pid);
+      notify({ kind: "project-restored", pid, project: head.manifest.name });
+      return null;
+    }
+    async function step(pid, hint) {
+      const rec = readRecord2(pid);
+      if (rec && rec.pending) {
+        const res = await call("commit", pid, rec.pending);
+        settle(pid, rec, rec.pending, res);
+        return null;
+      }
+      const tomb = work2.readTombstones()[pid];
+      const local = await localSide(pid);
+      if (local && local.meta.owner !== account) return { status: "not-ours" };
+      if (local && !local.manifest) return { status: "error", message: "two files share a path" };
+      if (hint && local && rec && rec.version && !tomb && !hint.deleted && hint.version === rec.version && sameManifest(local.manifest, rec.manifest)) {
+        return { status: "clean" };
+      }
+      const head = readHead(await call("head", pid));
+      if (!local) {
+        if (tomb && tomb.owner === account) return settleTombstone(pid, tomb, head);
+        if (!head || head.deleted) return { status: "absent" };
+        return download(pid, head);
+      }
+      if (!head) {
+        return await push(pid, local, rec, 0) ? { status: "pushed" } : null;
+      }
+      const synced = rec && rec.version ? rec : null;
+      if (head.deleted) {
+        if (synced && sameManifest(local.manifest, synced.manifest) && !local.conflicted.size) {
+          if (!unchangedSince(pid, local)) return moved(pid, "forget");
+          work2.forgetProject(pid);
+          notify({ kind: "project-deleted", pid, project: local.meta.name });
+          return { status: "forgot" };
+        }
+        if (!await push(pid, local, rec, head.version)) return null;
+        notify({ kind: "project-kept", pid, project: local.meta.name });
+        return { status: "restored" };
+      }
+      if (synced && head.version === synced.version) {
+        if (sameManifest(local.manifest, synced.manifest)) return { status: "clean" };
+        return await push(pid, local, rec, head.version) ? { status: "pushed" } : null;
+      }
+      await pull(pid, local, rec, head);
+      return null;
+    }
+    async function syncProject(pid, hint) {
+      for (let i = 0; i < ATTEMPTS; i++) {
+        const r = await step(pid, i === 0 ? hint : null);
+        if (r) return Object.assign({ pid }, r);
+      }
+      return { pid, status: "busy" };
+    }
+    const settingsSync = createSettingsSync({
+      store: store2,
+      settings: opts.settings,
+      account,
+      commitId,
+      call
+    });
+    async function syncAll() {
+      const heads = readHeads(await call("heads"));
+      const byId = new Map(heads.map((h) => [h.id, h]));
+      const ids = /* @__PURE__ */ new Set();
+      for (const p of work2.allProjects()) if (p.owner === account) ids.add(p.id);
+      const tombs = work2.readTombstones();
+      for (const pid of Object.keys(tombs)) if (tombs[pid].owner === account) ids.add(pid);
+      for (const h of heads) if (!h.deleted) ids.add(h.id);
+      const projects = {};
+      for (const pid of [...ids].sort()) {
+        try {
+          projects[pid] = await syncProject(pid, byId.get(pid) || null);
+        } catch (err) {
+          if (err && err.offline) throw err;
+          projects[pid] = { pid, status: "error", message: String(err && err.message || err) };
+        }
+      }
+      let settings;
+      try {
+        settings = await settingsSync.sync();
+      } catch (err) {
+        if (err && err.offline) throw err;
+        settings = { status: "error", message: String(err && err.message || err) };
+      }
+      return { projects, settings };
+    }
+    return { account, syncAll, syncProject, syncSettings: settingsSync.sync };
+  }
+
+  // js/persist/sync/runner.mjs
+  var SYNC_LOCK = "beljar/sync";
+  function createSyncRunner(o) {
+    const engine = o.engine;
+    const timers = o.timers || {
+      set: (fn, ms) => globalThis.setTimeout(fn, ms),
+      clear: (h) => globalThis.clearTimeout(h)
+    };
+    const now = o.now || (() => Date.now());
+    const quietMs = o.quietMs != null ? o.quietMs : 5e3;
+    const maxWaitMs = o.maxWaitMs != null ? o.maxWaitMs : 3e4;
+    const pollMs = o.pollMs != null ? o.pollMs : 6e4;
+    const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
+    const listeners = /* @__PURE__ */ new Set();
+    let status = { state: "waiting", leader: false, lastSync: 0, error: null };
+    let leader = false;
+    let stopped = false;
+    let running = null;
+    let again = false;
+    let timer = null;
+    let firstChange = 0;
+    let failures = 0;
+    let release = null;
+    let abort = null;
+    let unsubscribe = null;
+    function update(patch) {
+      status = Object.assign({}, status, patch);
+      for (const fn of [...listeners]) {
+        try {
+          fn(status);
+        } catch (_) {
+        }
+      }
+    }
+    function wakeIn(ms) {
+      if (timer != null) timers.clear(timer);
+      timer = timers.set(() => {
+        timer = null;
+        round();
+      }, Math.max(0, ms));
+    }
+    function changed() {
+      if (!leader || stopped) return;
+      const t = now();
+      if (!firstChange) firstChange = t;
+      wakeIn(Math.min(quietMs, maxWaitMs - (t - firstChange)));
+    }
+    function problems(res) {
+      const out = [];
+      for (const r of Object.values(res.projects || {})) if (r.status === "error") out.push(r.message);
+      if (res.settings && res.settings.status === "error") out.push(res.settings.message);
+      return out;
+    }
+    function round() {
+      if (!leader || stopped) return Promise.resolve(null);
+      if (running) {
+        again = true;
+        return running;
+      }
+      firstChange = 0;
+      if (timer != null) {
+        timers.clear(timer);
+        timer = null;
+      }
+      update({ state: "syncing" });
+      running = engine.syncAll().then((res) => {
+        failures = 0;
+        const errs = problems(res);
+        update({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res });
+        return res;
+      }, (err) => {
+        failures += 1;
+        update({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err) });
+        return null;
+      }).then((res) => {
+        running = null;
+        if (stopped) return res;
+        if (again) {
+          again = false;
+          round();
+        } else {
+          wakeIn(failures ? backoff[Math.min(failures, backoff.length) - 1] : pollMs);
+        }
+        return res;
       });
+      return running;
+    }
+    return {
+      SYNC_LOCK,
+      /** Ask for the lock, and listen for changes (heard only while holding it). */
+      start() {
+        if (unsubscribe) return;
+        unsubscribe = o.store.subscribe((e) => {
+          if (e.origin === "remote") return;
+          if (e.cls === "work" || e.cls === "settings" || e.key === TOMBSTONES_KEY) changed();
+        });
+        const locks = o.locks;
+        if (!locks || typeof locks.request !== "function") {
+          update({ state: "unsupported" });
+          return;
+        }
+        abort = typeof AbortController === "function" ? new AbortController() : null;
+        Promise.resolve(locks.request(SYNC_LOCK, abort ? { signal: abort.signal } : {}, () => {
+          if (stopped) return void 0;
+          leader = true;
+          update({ state: "idle", leader: true });
+          round();
+          return new Promise((resolve) => {
+            release = resolve;
+          });
+        })).catch(() => {
+        });
+      },
+      /**
+       * Sync now (this tab must hold the lock). Resolves to the result of a round
+       * that STARTED after this call, or null: a round already running may have
+       * begun before the change the caller wants synced.
+       */
+      async syncNow() {
+        if (running) {
+          again = true;
+          await running;
+          if (running) return running;
+        }
+        return round();
+      },
+      status() {
+        return status;
+      },
+      /** fn(status) on every change: { state, leader, lastSync, error, result }. */
+      subscribe(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      /**
+       * Stop, and resolve once a round in flight has finished: nothing sync does
+       * lands after this resolves (signing out removes projects right after).
+       */
+      stop() {
+        stopped = true;
+        if (timer != null) {
+          timers.clear(timer);
+          timer = null;
+        }
+        if (unsubscribe) {
+          unsubscribe();
+          unsubscribe = null;
+        }
+        if (abort) abort.abort();
+        if (release) release();
+        leader = false;
+        update({ state: "stopped", leader: false });
+        return Promise.resolve(running).then(() => void 0);
+      }
+    };
+  }
+
+  // js/persist/durability.mjs
+  var WORK_TO_LOSE = 200;
+  var ASK_EVERY = 30 * 24 * 60 * 60 * 1e3;
+  var RECOUNT_MS = 5e3;
+  function countWork(work2, limit) {
+    let n = 0;
+    for (const p of work2.allProjects()) {
+      if (p.owner !== null) continue;
+      const snap = work2.snapshotProject(p.id);
+      if (!snap) continue;
+      for (const f of snap.tree.files) {
+        n += String(snap.texts[f.id]).replace(/\s+/g, "").length;
+        if (n >= limit) return n;
+      }
+    }
+    return n;
+  }
+  function createDurability(o) {
+    const now = o.now || (() => Date.now());
+    const timers = o.timers || {
+      set: (fn, ms) => globalThis.setTimeout(fn, ms),
+      clear: (h) => globalThis.clearTimeout(h)
+    };
+    const state = { persisted: null, workToLose: false, asked: false, warned: false };
+    let unsubscribe = null;
+    let recount = null;
+    let onClick = null;
+    let disposed = false;
+    function warnIfAtRisk() {
+      if (!o.sevenDayRule || state.persisted || o.device.get("durabilityWarnedAt")) return;
+      o.device.set("durabilityWarnedAt", now());
+      state.warned = true;
+      o.warn();
+    }
+    function settle(granted) {
+      state.persisted = !!granted;
+      if (!state.persisted) warnIfAtRisk();
+    }
+    function askAtNextClick() {
+      if (onClick || !o.events) return;
+      onClick = () => {
+        o.events.removeEventListener("pointerdown", onClick, true);
+        onClick = null;
+        if (disposed || askedLately()) return;
+        o.device.set("persistAskedAt", now());
+        state.asked = true;
+        let answer;
+        try {
+          answer = o.storage.persist();
+        } catch (err) {
+          answer = Promise.reject(err);
+        }
+        Promise.resolve(answer).then(settle, () => settle(false));
+      };
+      o.events.addEventListener("pointerdown", onClick, true);
+    }
+    function askedLately() {
+      const last = o.device.get("persistAskedAt");
+      return !!last && now() - last < ASK_EVERY;
+    }
+    function thereIsWork() {
+      state.workToLose = true;
+      const canAsk = !!(o.storage && typeof o.storage.persist === "function");
+      if (canAsk && !askedLately()) askAtNextClick();
+      else warnIfAtRisk();
+    }
+    function count() {
+      if (state.workToLose || disposed) return;
+      if (countWork(o.work, WORK_TO_LOSE) < WORK_TO_LOSE) return;
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+      thereIsWork();
+    }
+    return {
+      /** Learn whether the browser already keeps the storage; then wait for work to lose. */
+      async start() {
+        try {
+          state.persisted = !!(o.storage && typeof o.storage.persisted === "function" && await o.storage.persisted());
+        } catch (_) {
+          state.persisted = false;
+        }
+        if (state.persisted || disposed) return;
+        count();
+        if (state.workToLose) return;
+        unsubscribe = o.store.subscribe((e) => {
+          if (e.cls !== "work" || recount != null) return;
+          recount = timers.set(() => {
+            recount = null;
+            count();
+          }, RECOUNT_MS);
+        });
+      },
+      /** { persisted: true | false | null (not known yet), workToLose, asked, warned } */
+      status() {
+        return Object.assign({}, state);
+      },
+      dispose() {
+        disposed = true;
+        if (unsubscribe) {
+          unsubscribe();
+          unsubscribe = null;
+        }
+        if (recount != null) {
+          timers.clear(recount);
+          recount = null;
+        }
+        if (onClick && o.events) o.events.removeEventListener("pointerdown", onClick, true);
+        onClick = null;
+      }
+    };
+  }
+
+  // js/persist/persist.mjs
+  var CAPACITY_DEDUPE = "persist.capacity";
+  function reportCapacityFailure(detail) {
+    if (typeof globalThis.Toasts !== "undefined" && globalThis.Toasts.error) {
+      globalThis.Toasts.error("Couldn\u2019t save: storage full.", { duration: 0, closable: true });
     }
     if (typeof globalThis.Notifications !== "undefined" && globalThis.Notifications.emit) {
       globalThis.Notifications.emit({
@@ -3494,16 +3644,38 @@
         origin: "local",
         title: "Couldn\u2019t save: storage full",
         body: "Your last successful save is intact. Newer edits may be lost on reload until browser storage frees up.",
-        detail: classified && classified.detail ? classified.detail : null,
+        detail: detail || null,
         source: "persist.capacity",
         dedupeKey: CAPACITY_DEDUPE
       });
     }
   }
+  function whenPageReady(fn) {
+    if (typeof document !== "undefined" && document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", fn, { once: true });
+    } else {
+      setTimeout(fn, 0);
+    }
+  }
+  function announceReadOnly(message) {
+    whenPageReady(function() {
+      var C = globalThis.ConfirmDialog;
+      if (C && typeof C.confirm === "function") {
+        C.confirm({
+          ariaLabel: "Reload BelJar",
+          message,
+          confirmLabel: "Reload",
+          cancelLabel: "Not now",
+          danger: false
+        }).then(function(yes) {
+          if (yes && globalThis.location && typeof globalThis.location.reload === "function") globalThis.location.reload();
+        });
+      } else if (globalThis.Toasts && typeof globalThis.Toasts.error === "function") {
+        globalThis.Toasts.error(message, { duration: 0, closable: true });
+      }
+    });
+  }
   function clearCapacityFailure() {
-    if (!saveBlocked && !lastSaveError) return;
-    saveBlocked = false;
-    lastSaveError = null;
     var N = globalThis.Notifications;
     if (!N || typeof N.list !== "function" || typeof N.dismiss !== "function") return;
     var list = N.list();
@@ -3514,1332 +3686,306 @@
       }
     }
   }
-  function isSaveBlocked() {
-    return !!saveBlocked;
-  }
-  function writeState(backend, state) {
-    var b = backend || defaultBackend;
-    var key = stateKeyFor(state.meta && state.meta.documentId);
+  function browserArea(name) {
     try {
-      b.saveSync(key, JSON.stringify(state));
-      clearCapacityFailure();
-      return { ok: true };
-    } catch (err) {
-      var classified = classifyPersistError(err);
-      if (classified.code !== "capacity") {
-        lastSaveError = classified;
-        return { ok: false, error: classified };
+      var area = globalThis[name];
+      if (area) {
+        area.getItem("beljar/schema");
+        return area;
       }
-      if (state.semantic) {
-        state.semantic = trimSemanticForQuota(state.semantic);
-        try {
-          b.saveSync(key, JSON.stringify(state));
-          clearCapacityFailure();
-          return { ok: true };
-        } catch (err2) {
-          classified = classifyPersistError(err2);
-          if (classified.code !== "capacity") {
-            lastSaveError = classified;
-            return { ok: false, error: classified };
-          }
-        }
-      }
-      reportCapacityFailure(classified);
-      return { ok: false, error: classified };
+    } catch (_) {
     }
+    return null;
   }
-  function createPersist(opts) {
-    opts = opts || {};
-    var backend = opts.backend || defaultBackend;
-    var documentId = opts.documentId || DEFAULT_DOCUMENT_ID;
-    var debounceMs = opts.debounceMs != null ? opts.debounceMs : readStoredAutosaveDelay();
-    var state = readStateForId(backend, documentId);
-    var saveTimer = null;
-    var providers = null;
-    function collectSemantic() {
-      if (!providers || typeof providers.getSemantic !== "function") return state.semantic;
-      var exported = providers.getSemantic();
-      if (!exported) return state.semantic;
-      var text = state.editor.text;
-      var docFp = typeof providers.getDocFp === "function" ? providers.getDocFp(text) : documentFingerprint(text);
-      var belugaBuild = typeof providers.getBelugaBuild === "function" ? providers.getBelugaBuild() : readStoredBelugaMode();
-      var scopeKey = typeof exported.scopeKey === "string" ? exported.scopeKey : typeof providers.getScopeKey === "function" ? providers.getScopeKey() : "";
-      var semantic = {
-        docFp,
-        scopeKey,
-        belugaBuild,
-        types: exported.types || { v: 1, decls: [], metavars: [], reconstructed: [] },
-        identity: exported.identity || [],
-        deriveAttempted: exported.deriveAttempted || []
-      };
-      return semanticHasPayload(semantic) ? semantic : null;
+  var sessionArea = browserArea("sessionStorage");
+  var store = createStore({
+    storage: browserArea("localStorage") || createMemoryStorage(),
+    alsoWipe: [sessionArea].filter(Boolean),
+    onCapacity: function(state, detail) {
+      if (state === "blocked") reportCapacityFailure(detail);
+      else clearCapacityFailure();
+    },
+    onVersionAhead: function() {
+      announceReadOnly("BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.");
+    },
+    onCannotUpgrade: function() {
+      announceReadOnly("This BelJar can\u2019t open what an older one saved, so it changed nothing. Changes here are not being saved.");
     }
-    function collectLocal() {
-      if (providers && typeof providers.getViewport === "function") {
-        return normalizeLocal(providers.getViewport());
+  });
+  var tabStore = createStore({ storage: sessionArea || createMemoryStorage() });
+  var Settings = createSettings(store);
+  var Device = createTable(store, {
+    key: DEVICE_KEY,
+    rows: DEVICE,
+    unknown: function(id) {
+      return 'device: no row "' + id + '" (declare it in device-schema.mjs)';
+    }
+  });
+  var work = createWork({ store, device: Device });
+  var files = create({ work, settings: Settings });
+  var documents = createDocuments({ work, settings: Settings, files });
+  var records = create2({ store, tabStore, work, settings: Settings });
+  var treeNoticeQueued = false;
+  var projectGoneShown = false;
+  function noteTreeChanged() {
+    if (treeNoticeQueued) return;
+    treeNoticeQueued = true;
+    Promise.resolve().then(function() {
+      treeNoticeQueued = false;
+      var g2 = typeof window !== "undefined" ? window : null;
+      if (g2 && typeof g2.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        g2.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       }
-      return state.editor.local || {};
-    }
-    function collectEditorText() {
-      if (providers && typeof providers.getText === "function") {
-        try {
-          var live = providers.getText();
-          if (live != null) return String(live);
-        } catch (_) {
-        }
-      }
-      return state.editor.text;
-    }
-    function persistNow() {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-      state.meta.updatedAt = Date.now();
-      state.meta.revision += 1;
-      state.editor.text = collectEditorText();
-      state.editor.local = collectLocal();
-      state.semantic = collectSemantic();
-      writeState(backend, state);
-    }
-    function scheduleSave() {
-      clearTimeout(saveTimer);
-      var delay = opts.debounceMs != null ? debounceMs : readStoredAutosaveDelay();
-      saveTimer = globalThis.setTimeout(persistNow, delay);
-    }
-    function scheduleEditorPersist(text) {
-      if (text != null) state.editor.text = String(text);
-      scheduleSave();
-    }
-    function markEditorDirty() {
-      scheduleSave();
-    }
-    function cancelPendingSave() {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
-    function replaceEditorText(text) {
-      cancelPendingSave();
-      state.editor.text = String(text != null ? text : "");
-    }
-    function flushCheckpoint() {
-      persistNow();
-    }
-    function hasPendingSave() {
-      return saveTimer != null;
-    }
-    function flushCheckpointIfDirty() {
-      if (saveTimer != null) persistNow();
-    }
-    function flushEditor() {
-      flushCheckpoint();
-    }
-    function exportSnapshot() {
-      return JSON.parse(JSON.stringify(state));
-    }
-    function importSnapshot(snapshot, flush) {
-      state = normalizeLoaded(snapshot, documentId);
-      if (flush) persistNow();
-    }
-    function setCheckpointProviders(next) {
-      providers = next || null;
-    }
-    function setBackend(next) {
-      backend = next || defaultBackend;
-      state = readStateForId(backend, documentId);
-    }
-    function switchFile(newId) {
-      if (!newId) return null;
-      persistNow();
-      providers = null;
-      documentId = newId;
-      state = readStateForId(backend, documentId);
-      return exportSnapshot();
-    }
-    function getCurrentFileId() {
-      return documentId;
-    }
-    return {
-      getEditorText: function() {
-        return state.editor.text;
-      },
-      getEditorLocal: function() {
-        return normalizeLocal(state.editor.local);
-      },
-      getSemanticCheckpoint: function() {
-        return state.semantic ? JSON.parse(JSON.stringify(state.semantic)) : null;
-      },
-      getInitialCheckpoint: exportSnapshot,
-      scheduleEditorPersist,
-      markEditorDirty,
-      cancelPendingSave,
-      replaceEditorText,
-      scheduleCheckpointSave: scheduleSave,
-      flushCheckpoint,
-      flushCheckpointIfDirty,
-      hasPendingSave,
-      flushEditor,
-      exportSnapshot,
-      importSnapshot,
-      setCheckpointProviders,
-      setBackend,
-      switchFile,
-      getCurrentFileId,
-      /** @deprecated use setBackend */
-      setAdapter: function(adapter) {
-        if (!adapter) return;
-        setBackend({
-          loadSync: function(k) {
-            return adapter.getItem(k);
-          },
-          saveSync: function(k, v) {
-            adapter.setItem(k, v);
-          },
-          removeSync: function(k) {
-            adapter.removeItem(k);
-          }
+    });
+  }
+  function announceProjectGone() {
+    if (projectGoneShown) return;
+    projectGoneShown = true;
+    var message = "This project was deleted in another tab or on another device. Changes here can\u2019t be saved.";
+    whenPageReady(function() {
+      var C = globalThis.ConfirmDialog;
+      if (C && typeof C.confirm === "function") {
+        C.confirm({
+          ariaLabel: "Project deleted",
+          message,
+          confirmLabel: "Open another project",
+          cancelLabel: "Not now",
+          danger: false
+        }).then(function(yes) {
+          if (yes && globalThis.location && typeof globalThis.location.reload === "function") globalThis.location.reload();
         });
+      } else if (globalThis.Toasts && typeof globalThis.Toasts.error === "function") {
+        globalThis.Toasts.error(message, { duration: 0, closable: true });
       }
-    };
+    });
   }
-  function readStoredTheme() {
-    return _uiPrefsApi.readStoredTheme();
-  }
-  function writeStoredTheme(mode) {
-    return _uiPrefsApi.writeStoredTheme(mode);
-  }
-  function readStoredUiFontSize() {
-    return _uiPrefsApi.readStoredUiFontSize();
-  }
-  function writeStoredUiFontSize(size) {
-    return _uiPrefsApi.writeStoredUiFontSize(size);
-  }
-  function uiFontScaleForSize(size) {
-    return _uiPrefsApi.uiFontScaleForSize(size);
-  }
-  function applyStoredUiFontSize(doc) {
-    return _uiPrefsApi.applyStoredUiFontSize(doc);
-  }
-  function readStoredUiTextContrast() {
-    return _uiPrefsApi.readStoredUiTextContrast();
-  }
-  function writeStoredUiTextContrast(contrast) {
-    return _uiPrefsApi.writeStoredUiTextContrast(contrast);
-  }
-  function uiTextContrastMultiplierForLevel(contrast) {
-    return _uiPrefsApi.uiTextContrastMultiplierForLevel(contrast);
-  }
-  function applyStoredUiTextContrast(doc) {
-    return _uiPrefsApi.applyStoredUiTextContrast(doc);
-  }
-  var _settingsApi = create2({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    THEME_STORAGE_KEY,
-    UI_FONT_SIZE_KEY,
-    UI_TEXT_CONTRAST_KEY,
-    BELUGA_MODE_STORAGE_KEY,
-    DEFAULT_PROJECT_NAME,
-    ensureProject: function() {
-      return ensureProject();
+  store.subscribe(function(e) {
+    if (e.origin === "local" || !e.key) return;
+    var pid = work.pinnedProject();
+    var k = pid ? parseKey(e.key) : null;
+    if (!k || k.pid !== pid) return;
+    if (k.kind === "meta" && !work.hasProject(pid)) announceProjectGone();
+    else if (k.kind === "tree" || k.kind === "meta") noteTreeChanged();
+  });
+  var SYNC_NOTICES = {
+    conflict: function(n) {
+      return { kind: "warn", title: "Edits to " + n.path + " overlap another device\u2019s", body: "Open it to choose. Both versions are kept until you do." };
     },
-    getFileText: function(id) {
-      return getFileText(id);
+    copied: function(n) {
+      return { kind: "warn", title: "Saved this device\u2019s " + n.from + " as " + n.path, body: "Another device changed the same lines while a conflict here was still open." };
     },
-    readState,
-    defaultBackend,
-    stateKeyFor
-  });
-  function readStoredBelugaMode() {
-    return _settingsApi.readStoredBelugaMode.apply(_settingsApi, arguments);
-  }
-  function writeStoredBelugaMode() {
-    return _settingsApi.writeStoredBelugaMode.apply(_settingsApi, arguments);
-  }
-  function readStoredHoverScope() {
-    return _settingsApi.readStoredHoverScope.apply(_settingsApi, arguments);
-  }
-  function writeStoredHoverScope() {
-    return _settingsApi.writeStoredHoverScope.apply(_settingsApi, arguments);
-  }
-  function readStoredCfgAutoSync() {
-    return _settingsApi.readStoredCfgAutoSync.apply(_settingsApi, arguments);
-  }
-  function writeStoredCfgAutoSync() {
-    return _settingsApi.writeStoredCfgAutoSync.apply(_settingsApi, arguments);
-  }
-  function readStoredAliasActivation() {
-    return _settingsApi.readStoredAliasActivation.apply(_settingsApi, arguments);
-  }
-  function writeStoredAliasActivation() {
-    return _settingsApi.writeStoredAliasActivation.apply(_settingsApi, arguments);
-  }
-  function readStoredAliasPairs() {
-    return _settingsApi.readStoredAliasPairs.apply(_settingsApi, arguments);
-  }
-  function writeStoredAliasPairs() {
-    return _settingsApi.writeStoredAliasPairs.apply(_settingsApi, arguments);
-  }
-  function readStoredReplAutoscroll() {
-    return _settingsApi.readStoredReplAutoscroll.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplAutoscroll() {
-    return _settingsApi.writeStoredReplAutoscroll.apply(_settingsApi, arguments);
-  }
-  function readStoredReplWelcome() {
-    return _settingsApi.readStoredReplWelcome.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplWelcome() {
-    return _settingsApi.writeStoredReplWelcome.apply(_settingsApi, arguments);
-  }
-  function readStoredReplEcho() {
-    return _settingsApi.readStoredReplEcho.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplEcho() {
-    return _settingsApi.writeStoredReplEcho.apply(_settingsApi, arguments);
-  }
-  function readStoredReplFilterChatter() {
-    return _settingsApi.readStoredReplFilterChatter.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplFilterChatter() {
-    return _settingsApi.writeStoredReplFilterChatter.apply(_settingsApi, arguments);
-  }
-  function readStoredReplHoverTimestamp() {
-    return _settingsApi.readStoredReplHoverTimestamp.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplHoverTimestamp() {
-    return _settingsApi.writeStoredReplHoverTimestamp.apply(_settingsApi, arguments);
-  }
-  function readStoredReplAutocompleteTrigger() {
-    return _settingsApi.readStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplAutocompleteTrigger() {
-    return _settingsApi.writeStoredReplAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function readStoredReplAutocompleteContinue() {
-    return _settingsApi.readStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplAutocompleteContinue() {
-    return _settingsApi.writeStoredReplAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  function readStoredReplHistoryCap() {
-    return _settingsApi.readStoredReplHistoryCap.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplHistoryCap() {
-    return _settingsApi.writeStoredReplHistoryCap.apply(_settingsApi, arguments);
-  }
-  function readStoredReplHistoryPersist() {
-    return _settingsApi.readStoredReplHistoryPersist.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplHistoryPersist() {
-    return _settingsApi.writeStoredReplHistoryPersist.apply(_settingsApi, arguments);
-  }
-  function readStoredReplTranscript() {
-    return _settingsApi.readStoredReplTranscript.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplTranscript() {
-    return _settingsApi.writeStoredReplTranscript.apply(_settingsApi, arguments);
-  }
-  function readStoredReplCommandHistory() {
-    return _settingsApi.readStoredReplCommandHistory.apply(_settingsApi, arguments);
-  }
-  function writeStoredReplCommandHistory() {
-    return _settingsApi.writeStoredReplCommandHistory.apply(_settingsApi, arguments);
-  }
-  function readStoredBelugaFallbackStable() {
-    return _settingsApi.readStoredBelugaFallbackStable.apply(_settingsApi, arguments);
-  }
-  function writeStoredBelugaFallbackStable() {
-    return _settingsApi.writeStoredBelugaFallbackStable.apply(_settingsApi, arguments);
-  }
-  function readStoredBelugaCancelOnEdit() {
-    return _settingsApi.readStoredBelugaCancelOnEdit.apply(_settingsApi, arguments);
-  }
-  function writeStoredBelugaCancelOnEdit() {
-    return _settingsApi.writeStoredBelugaCancelOnEdit.apply(_settingsApi, arguments);
-  }
-  function readStoredLibraryExpandDefault() {
-    return _settingsApi.readStoredLibraryExpandDefault.apply(_settingsApi, arguments);
-  }
-  function writeStoredLibraryExpandDefault() {
-    return _settingsApi.writeStoredLibraryExpandDefault.apply(_settingsApi, arguments);
-  }
-  function readStoredLibraryHintDismissed() {
-    return _settingsApi.readStoredLibraryHintDismissed.apply(_settingsApi, arguments);
-  }
-  function writeStoredLibraryHintDismissed() {
-    return _settingsApi.writeStoredLibraryHintDismissed.apply(_settingsApi, arguments);
-  }
-  function readStoredHintDismissed() {
-    return _settingsApi.readStoredHintDismissed.apply(_settingsApi, arguments);
-  }
-  function writeStoredHintDismissed() {
-    return _settingsApi.writeStoredHintDismissed.apply(_settingsApi, arguments);
-  }
-  function readStoredRestorePanels() {
-    return _settingsApi.readStoredRestorePanels.apply(_settingsApi, arguments);
-  }
-  function writeStoredRestorePanels() {
-    return _settingsApi.writeStoredRestorePanels.apply(_settingsApi, arguments);
-  }
-  function readStoredAutosaveDelay() {
-    return _settingsApi.readStoredAutosaveDelay.apply(_settingsApi, arguments);
-  }
-  function writeStoredAutosaveDelay() {
-    return _settingsApi.writeStoredAutosaveDelay.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFontSize() {
-    return _settingsApi.readStoredEditorFontSize.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFontSize() {
-    return _settingsApi.writeStoredEditorFontSize.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorLineHeight() {
-    return _settingsApi.readStoredEditorLineHeight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorLineHeight() {
-    return _settingsApi.writeStoredEditorLineHeight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorWordWrap() {
-    return _settingsApi.readStoredEditorWordWrap.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorWordWrap() {
-    return _settingsApi.writeStoredEditorWordWrap.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorTabSize() {
-    return _settingsApi.readStoredEditorTabSize.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorTabSize() {
-    return _settingsApi.writeStoredEditorTabSize.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorLineNumbers() {
-    return _settingsApi.readStoredEditorLineNumbers.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorLineNumbers() {
-    return _settingsApi.writeStoredEditorLineNumbers.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorLineNumberMode() {
-    return _settingsApi.readStoredEditorLineNumberMode.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorLineNumberMode() {
-    return _settingsApi.writeStoredEditorLineNumberMode.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFoldGutter() {
-    return _settingsApi.readStoredEditorFoldGutter.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFoldGutter() {
-    return _settingsApi.writeStoredEditorFoldGutter.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFoldPersist() {
-    return _settingsApi.readStoredEditorFoldPersist.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFoldPersist() {
-    return _settingsApi.writeStoredEditorFoldPersist.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorActiveLine() {
-    return _settingsApi.readStoredEditorActiveLine.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorActiveLine() {
-    return _settingsApi.writeStoredEditorActiveLine.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorDiagGutter() {
-    return _settingsApi.readStoredEditorDiagGutter.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorDiagGutter() {
-    return _settingsApi.writeStoredEditorDiagGutter.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorHoleGutter() {
-    return _settingsApi.readStoredEditorHoleGutter.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorHoleGutter() {
-    return _settingsApi.writeStoredEditorHoleGutter.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorSyntaxHighlight() {
-    return _settingsApi.readStoredEditorSyntaxHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorSyntaxHighlight() {
-    return _settingsApi.writeStoredEditorSyntaxHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorSemanticHighlight() {
-    return _settingsApi.readStoredEditorSemanticHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorSemanticHighlight() {
-    return _settingsApi.writeStoredEditorSemanticHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorParseHighlight() {
-    return _settingsApi.readStoredEditorParseHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorParseHighlight() {
-    return _settingsApi.writeStoredEditorParseHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorOccurrenceHighlight() {
-    return _settingsApi.readStoredEditorOccurrenceHighlight.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorOccurrenceHighlight() {
-    return _settingsApi.writeStoredEditorOccurrenceHighlight.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorBracketMatch() {
-    return _settingsApi.readStoredEditorBracketMatch.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorBracketMatch() {
-    return _settingsApi.writeStoredEditorBracketMatch.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorAutoCloseBrackets() {
-    return _settingsApi.readStoredEditorAutoCloseBrackets.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorAutoCloseBrackets() {
-    return _settingsApi.writeStoredEditorAutoCloseBrackets.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorSelectionMatches() {
-    return _settingsApi.readStoredEditorSelectionMatches.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorSelectionMatches() {
-    return _settingsApi.writeStoredEditorSelectionMatches.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorReindentPaste() {
-    return _settingsApi.readStoredEditorReindentPaste.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorReindentPaste() {
-    return _settingsApi.writeStoredEditorReindentPaste.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorFormatWidth() {
-    return _settingsApi.readStoredEditorFormatWidth.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorFormatWidth() {
-    return _settingsApi.writeStoredEditorFormatWidth.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorAutocompleteTrigger() {
-    return _settingsApi.readStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorAutocompleteTrigger() {
-    return _settingsApi.writeStoredEditorAutocompleteTrigger.apply(_settingsApi, arguments);
-  }
-  function readStoredEditorAutocompleteContinue() {
-    return _settingsApi.readStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  function writeStoredEditorAutocompleteContinue() {
-    return _settingsApi.writeStoredEditorAutocompleteContinue.apply(_settingsApi, arguments);
-  }
-  var _settingsExtraNames = [
-    "readStoredEditorCursorBlink",
-    "writeStoredEditorCursorBlink",
-    "readStoredEditorScrollPastEnd",
-    "writeStoredEditorScrollPastEnd",
-    "readStoredEditorWhitespace",
-    "writeStoredEditorWhitespace",
-    "readStoredEditorRulers",
-    "writeStoredEditorRulers",
-    "readStoredEditorFontFamily",
-    "writeStoredEditorFontFamily",
-    "readStoredEditorHoleEmphasis",
-    "writeStoredEditorHoleEmphasis",
-    "readStoredKeymapStyle",
-    "writeStoredKeymapStyle",
-    "readStoredStatusStrip",
-    "writeStoredStatusStrip",
-    "readStoredCommandLineHistory",
-    "writeStoredCommandLineHistory",
-    "readStoredDoubleTapTrigger",
-    "writeStoredDoubleTapTrigger",
-    "readStoredDoubleTapCommand",
-    "writeStoredDoubleTapCommand",
-    "readStoredDoubleTapSpeed",
-    "writeStoredDoubleTapSpeed",
-    "readStoredVimLeader",
-    "writeStoredVimLeader",
-    "readStoredEmacsYankSource",
-    "writeStoredEmacsYankSource",
-    "readStoredVimInsertEscape",
-    "writeStoredVimInsertEscape",
-    "readStoredMotionPref",
-    "writeStoredMotionPref",
-    "applyStoredMotionPref",
-    "prefersReducedMotion",
-    "readStoredToastDuration",
-    "writeStoredToastDuration",
-    "toastDurationForMode",
-    "toastDurationMs",
-    "readStoredCheckAggressiveness",
-    "writeStoredCheckAggressiveness",
-    "checkAggressivenessScale",
-    "readStoredAutosolveFocusNext",
-    "writeStoredAutosolveFocusNext",
-    "readStoredAutosolveShowStats",
-    "writeStoredAutosolveShowStats",
-    "readStoredHarpoonMode",
-    "writeStoredHarpoonMode",
-    "readStoredHarpoonVerifyMoves",
-    "writeStoredHarpoonVerifyMoves",
-    "readStoredQuietWhileTyping",
-    "writeStoredQuietWhileTyping",
-    "readStoredDiagPresentation",
-    "writeStoredDiagPresentation",
-    "readStoredDiagSeverity",
-    "writeStoredDiagSeverity",
-    "readStoredFormatOnSave",
-    "writeStoredFormatOnSave",
-    "readStoredTrimTrailingWs",
-    "writeStoredTrimTrailingWs",
-    "readStoredStickyDeclHeader",
-    "writeStoredStickyDeclHeader",
-    "readStoredSuiteCheck",
-    "writeStoredSuiteCheck",
-    "readStoredHoverSticky",
-    "writeStoredHoverSticky",
-    "applyStoredEditorChrome",
-    "exportUserSettings",
-    "importUserSettings"
-  ];
-  var _settingsExtra = {};
-  _settingsExtraNames.forEach(function(name) {
-    _settingsExtra[name] = function() {
-      return _settingsApi[name].apply(_settingsApi, arguments);
-    };
-  });
-  function resetAppearancePrefs() {
-    return _settingsApi.resetAppearancePrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorTypographyPrefs() {
-    return _settingsApi.resetEditorTypographyPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorIndentPrefs() {
-    return _settingsApi.resetEditorIndentPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorCodeInsightPrefs() {
-    return _settingsApi.resetEditorCodeInsightPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorGutterPrefs() {
-    return _settingsApi.resetEditorGutterPrefs.apply(_settingsApi, arguments);
-  }
-  function resetEditorPrefs() {
-    return _settingsApi.resetEditorPrefs.apply(_settingsApi, arguments);
-  }
-  function resetBelugaPrefs() {
-    return _settingsApi.resetBelugaPrefs.apply(_settingsApi, arguments);
-  }
-  function resetHarpoonPrefs() {
-    return _settingsApi.resetHarpoonPrefs.apply(_settingsApi, arguments);
-  }
-  function resetReplPrefs() {
-    return _settingsApi.resetReplPrefs.apply(_settingsApi, arguments);
-  }
-  function readStoredKeybindings() {
-    return _settingsApi.readStoredKeybindings.apply(_settingsApi, arguments);
-  }
-  function writeStoredKeybindings() {
-    return _settingsApi.writeStoredKeybindings.apply(_settingsApi, arguments);
-  }
-  function resetKeybindingPrefs() {
-    return _settingsApi.resetKeybindingPrefs.apply(_settingsApi, arguments);
-  }
-  function resetAliasesPrefs() {
-    return _settingsApi.resetAliasesPrefs.apply(_settingsApi, arguments);
-  }
-  function fileNameForId() {
-    return _settingsApi.fileNameForId.apply(_settingsApi, arguments);
-  }
-  function expandAliasesForStorage() {
-    return _settingsApi.expandAliasesForStorage.apply(_settingsApi, arguments);
-  }
-  function expandAliasesInAllFiles() {
-    return _settingsApi.expandAliasesInAllFiles.apply(_settingsApi, arguments);
-  }
-  function isAliasExpandablePath() {
-    return _settingsApi.isAliasExpandablePath.apply(_settingsApi, arguments);
-  }
-  function getExplorerFold() {
-    return _settingsApi.getExplorerFold.apply(_settingsApi, arguments);
-  }
-  function setExplorerFold() {
-    return _settingsApi.setExplorerFold.apply(_settingsApi, arguments);
-  }
-  var _layoutApi = create3({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projectPrefix,
-    getActiveProjectId: function() {
-      return getActiveProjectId();
+    kept: function(n) {
+      return { kind: "info", title: "Kept " + n.path, body: "Another device deleted it, but it had changes here." };
     },
-    EDITOR_SPLIT_STORAGE_KEY,
-    DEFAULT_EDITOR_SPLIT,
-    MIN_EDITOR_SPLIT,
-    MAX_EDITOR_SPLIT,
-    SIDE_PANEL_LAYOUT,
-    DEFAULT_SIDE_PANEL_WIDTH,
-    DEFAULT_SIDE_PANEL_HEIGHT,
-    EXPLORER_OPEN_KEY,
-    INSPECTOR_OPEN_KEY,
-    INSPECTOR_FOLLOW_KEY,
-    LIBRARY_OPEN_KEY,
-    LOAD_STATS_KEY
-  });
-  function resetLayoutPrefs() {
-    return _layoutApi.resetLayoutPrefs.apply(_layoutApi, arguments);
-  }
-  function workspaceKeyFor() {
-    return _layoutApi.workspaceKeyFor.apply(_layoutApi, arguments);
-  }
-  function readStoredActiveSidePanel() {
-    return _layoutApi.readStoredActiveSidePanel.apply(_layoutApi, arguments);
-  }
-  function writeStoredActiveSidePanel() {
-    return _layoutApi.writeStoredActiveSidePanel.apply(_layoutApi, arguments);
-  }
-  function readStoredWorkspace() {
-    return _layoutApi.readStoredWorkspace.apply(_layoutApi, arguments);
-  }
-  function writeStoredWorkspace() {
-    return _layoutApi.writeStoredWorkspace.apply(_layoutApi, arguments);
-  }
-  function resetStoredWorkspace() {
-    return _layoutApi.resetStoredWorkspace.apply(_layoutApi, arguments);
-  }
-  function resetWorkspaceState() {
-    return _layoutApi.resetWorkspaceState.apply(_layoutApi, arguments);
-  }
-  function resetWorkspacePrefs() {
-    return _layoutApi.resetWorkspacePrefs.apply(_layoutApi, arguments);
-  }
-  function clampEditorSplit() {
-    return _layoutApi.clampEditorSplit.apply(_layoutApi, arguments);
-  }
-  function readStoredEditorSplit() {
-    return _layoutApi.readStoredEditorSplit.apply(_layoutApi, arguments);
-  }
-  function writeStoredEditorSplit() {
-    return _layoutApi.writeStoredEditorSplit.apply(_layoutApi, arguments);
-  }
-  function readStoredExplorerWidth() {
-    return _layoutApi.readStoredExplorerWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredExplorerWidth() {
-    return _layoutApi.writeStoredExplorerWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorWidth() {
-    return _layoutApi.readStoredInspectorWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorWidth() {
-    return _layoutApi.writeStoredInspectorWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredExplorerHeight() {
-    return _layoutApi.readStoredExplorerHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredExplorerHeight() {
-    return _layoutApi.writeStoredExplorerHeight.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorHeight() {
-    return _layoutApi.readStoredInspectorHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorHeight() {
-    return _layoutApi.writeStoredInspectorHeight.apply(_layoutApi, arguments);
-  }
-  function readStoredExplorerOpen() {
-    return _layoutApi.readStoredExplorerOpen.apply(_layoutApi, arguments);
-  }
-  function loadStat() {
-    return _layoutApi.loadStat.apply(_layoutApi, arguments);
-  }
-  function saveStat() {
-    return _layoutApi.saveStat.apply(_layoutApi, arguments);
-  }
-  function writeStoredExplorerOpen() {
-    return _layoutApi.writeStoredExplorerOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorOpen() {
-    return _layoutApi.readStoredInspectorOpen.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorOpen() {
-    return _layoutApi.writeStoredInspectorOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredInspectorFollow() {
-    return _layoutApi.readStoredInspectorFollow.apply(_layoutApi, arguments);
-  }
-  function writeStoredInspectorFollow() {
-    return _layoutApi.writeStoredInspectorFollow.apply(_layoutApi, arguments);
-  }
-  function readStoredLibraryOpen() {
-    return _layoutApi.readStoredLibraryOpen.apply(_layoutApi, arguments);
-  }
-  function writeStoredLibraryOpen() {
-    return _layoutApi.writeStoredLibraryOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonOpen() {
-    return _layoutApi.readStoredHarpoonOpen.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonOpen() {
-    return _layoutApi.writeStoredHarpoonOpen.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonDetailsCollapsed() {
-    return _layoutApi.readStoredHarpoonDetailsCollapsed.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonDetailsCollapsed() {
-    return _layoutApi.writeStoredHarpoonDetailsCollapsed.apply(_layoutApi, arguments);
-  }
-  function readStoredLibraryWidth() {
-    return _layoutApi.readStoredLibraryWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredLibraryWidth() {
-    return _layoutApi.writeStoredLibraryWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredLibraryHeight() {
-    return _layoutApi.readStoredLibraryHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredLibraryHeight() {
-    return _layoutApi.writeStoredLibraryHeight.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonWidth() {
-    return _layoutApi.readStoredHarpoonWidth.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonWidth() {
-    return _layoutApi.writeStoredHarpoonWidth.apply(_layoutApi, arguments);
-  }
-  function readStoredHarpoonHeight() {
-    return _layoutApi.readStoredHarpoonHeight.apply(_layoutApi, arguments);
-  }
-  function writeStoredHarpoonHeight() {
-    return _layoutApi.writeStoredHarpoonHeight.apply(_layoutApi, arguments);
-  }
-  var _graphPrefsApi = create4({
-    DEFAULT_GRAPH_PREFS,
-    GRAPH_PREFS_STORAGE_KEY,
-    LEGACY_GRAPH_LAYOUT_KEY,
-    LEGACY_GRAPH_IMPL_KEY,
-    LEGACY_GRAPH_DEPTH_KEY,
-    LEGACY_GRAPH_SIDEBAR_KEY,
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse
-  });
-  function normalizeGraphPrefs(raw) {
-    return _graphPrefsApi.normalizeGraphPrefs(raw);
-  }
-  function readStoredGraphPrefs() {
-    return _graphPrefsApi.readStoredGraphPrefs();
-  }
-  function writeStoredGraphPrefs(partial) {
-    return _graphPrefsApi.writeStoredGraphPrefs(partial);
-  }
-  var _projectsApi = create5({
-    PROJECTS_KEY,
-    ACTIVE_PROJECT_KEY,
-    DEFAULT_PROJECT_ID,
-    DEFAULT_PROJECT_NAME,
-    DEFAULT_DOCUMENT_ID,
-    PROJECT_NAME_KEY,
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projKey,
-    stateKeyFor,
-    replaceProject: function(entries, options) {
-      return replaceProject(entries, options);
+    restored: function(n) {
+      return { kind: "info", title: "Restored " + n.path, body: "It was deleted here, but another device changed it." };
+    },
+    renamed: function(n) {
+      return { kind: "info", title: "Renamed " + n.from + " to " + n.path, body: "Another device added a file with the same name." };
+    },
+    "project-deleted": function(n) {
+      return { kind: "info", title: "Removed " + n.project, body: "It was deleted on another device." };
+    },
+    "project-restored": function(n) {
+      return { kind: "info", title: "Restored " + n.project, body: "It was deleted here, but another device changed it." };
+    },
+    "project-kept": function(n) {
+      return { kind: "info", title: "Kept " + n.project, body: "Another device deleted it, but it had changes here." };
     }
-  });
-  function listProjects() {
-    return _projectsApi.listProjects();
+  };
+  function announceSync(notice) {
+    var N = globalThis.Notifications;
+    var make = SYNC_NOTICES[notice && notice.kind];
+    if (!make || !N || typeof N.emit !== "function") return;
+    var words = make(notice);
+    N.emit({
+      kind: words.kind,
+      category: "ops",
+      origin: "remote",
+      source: "sync",
+      title: words.title,
+      body: words.body,
+      detail: notice.project && notice.path ? "In " + notice.project + "." : null
+    });
   }
-  function getActiveProjectId() {
-    return _projectsApi.getActiveProjectId();
+  function underSevenDayRule() {
+    var nav = globalThis.navigator;
+    if (!nav || nav.vendor !== "Apple Computer, Inc.") return false;
+    var app = nav.standalone === true || typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(display-mode: standalone)").matches;
+    return !app;
   }
-  function setActiveProjectId(id) {
-    return _projectsApi.setActiveProjectId(id);
-  }
-  function getActiveProject() {
-    return _projectsApi.getActiveProject();
-  }
-  function createProject(name) {
-    return _projectsApi.createProject(name);
-  }
-  function renameProject(id, name) {
-    return _projectsApi.renameProject(id, name);
-  }
-  function deleteProject(id) {
-    return _projectsApi.deleteProject(id);
-  }
-  var _openTabsApi = null;
-  var _fileRegistryApi = null;
-  _fileRegistryApi = create6({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projKey,
-    stateKeyFor,
-    defaultBackend,
-    readState,
-    emptyState,
-    DEFAULT_DOCUMENT_ID,
-    dirOf,
-    expandAliasesForStorage: function(t, n) {
-      return expandAliasesForStorage(t, n);
-    },
-    fileNameForId: function(id) {
-      return fileNameForId(id);
-    },
-    readStoredCfgAutoSync: function() {
-      return readStoredCfgAutoSync();
-    },
-    writeOpenFileIds: function(ids) {
-      return writeOpenFileIds(ids);
-    },
-    closeOpenFile: function(id) {
-      return closeOpenFile(id);
-    },
-    writeActiveCfgByDir: function(m) {
-      return writeActiveCfgByDir(m);
-    },
-    setActiveCfgForDir: function(d, p) {
-      return setActiveCfgForDir(d, p);
-    },
-    removeActiveCfgForDir: function(d, p) {
-      return removeActiveCfgForDir(d, p);
-    },
-    readActiveCfgByDir: function() {
-      return readActiveCfgByDir();
-    },
-    normalizeActiveCfgList: function(v) {
-      return normalizeActiveCfgList(v);
-    },
-    setProjectName: function(n) {
-      return setProjectName(n);
+  function announceSevenDays() {
+    if (globalThis.Toasts && typeof globalThis.Toasts.warn === "function") {
+      globalThis.Toasts.warn(
+        "Safari deletes this site\u2019s data after 7 days without a visit. To keep a copy, download your projects from the Project menu.",
+        { duration: 0, closable: true, notify: false }
+      );
     }
-  });
-  function readProjectFiles() {
-    return _fileRegistryApi.readProjectFiles.apply(_fileRegistryApi, arguments);
-  }
-  function listEmptyFolders() {
-    return _fileRegistryApi.listEmptyFolders.apply(_fileRegistryApi, arguments);
-  }
-  function addEmptyFolder() {
-    return _fileRegistryApi.addEmptyFolder.apply(_fileRegistryApi, arguments);
-  }
-  function removeEmptyFolder() {
-    return _fileRegistryApi.removeEmptyFolder.apply(_fileRegistryApi, arguments);
-  }
-  function clearEmptyFolders() {
-    return _fileRegistryApi.clearEmptyFolders.apply(_fileRegistryApi, arguments);
-  }
-  function pruneEmptyFoldersUnder() {
-    return _fileRegistryApi.pruneEmptyFoldersUnder.apply(_fileRegistryApi, arguments);
-  }
-  function renameEmptyFolderPrefix() {
-    return _fileRegistryApi.renameEmptyFolderPrefix.apply(_fileRegistryApi, arguments);
-  }
-  function preserveEmptyFoldersAfterMoves() {
-    return _fileRegistryApi.preserveEmptyFoldersAfterMoves.apply(_fileRegistryApi, arguments);
-  }
-  function ensureProject() {
-    return _fileRegistryApi.ensureProject.apply(_fileRegistryApi, arguments);
-  }
-  function listFiles() {
-    return _fileRegistryApi.listFiles.apply(_fileRegistryApi, arguments);
-  }
-  function getActiveFileId() {
-    return _fileRegistryApi.getActiveFileId.apply(_fileRegistryApi, arguments);
-  }
-  function setActiveFileId() {
-    return _fileRegistryApi.setActiveFileId.apply(_fileRegistryApi, arguments);
-  }
-  function replaceProject() {
-    return _fileRegistryApi.replaceProject.apply(_fileRegistryApi, arguments);
-  }
-  function createFile() {
-    return _fileRegistryApi.createFile.apply(_fileRegistryApi, arguments);
-  }
-  function restoreDeletedFile() {
-    return _fileRegistryApi.restoreDeletedFile.apply(_fileRegistryApi, arguments);
-  }
-  function deleteFile() {
-    return _fileRegistryApi.deleteFile.apply(_fileRegistryApi, arguments);
-  }
-  function renameFile() {
-    return _fileRegistryApi.renameFile.apply(_fileRegistryApi, arguments);
-  }
-  function addEntryToCfg() {
-    return _fileRegistryApi.addEntryToCfg.apply(_fileRegistryApi, arguments);
-  }
-  function prependEntryToCfg() {
-    return _fileRegistryApi.prependEntryToCfg.apply(_fileRegistryApi, arguments);
-  }
-  function removeEntryFromCfg() {
-    return _fileRegistryApi.removeEntryFromCfg.apply(_fileRegistryApi, arguments);
-  }
-  function moveEntryInCfg() {
-    return _fileRegistryApi.moveEntryInCfg.apply(_fileRegistryApi, arguments);
-  }
-  function getFileById() {
-    return _fileRegistryApi.getFileById.apply(_fileRegistryApi, arguments);
-  }
-  function moveFile() {
-    return _fileRegistryApi.moveFile.apply(_fileRegistryApi, arguments);
-  }
-  function getFileText() {
-    return _fileRegistryApi.getFileText.apply(_fileRegistryApi, arguments);
-  }
-  function setFileText() {
-    return _fileRegistryApi.setFileText.apply(_fileRegistryApi, arguments);
-  }
-  _openTabsApi = create7({
-    backendLoad,
-    backendSave,
-    backendRemove,
-    tryParse,
-    projKey,
-    listFiles: function() {
-      return listFiles();
-    },
-    getFileById: function(id) {
-      return getFileById(id);
-    },
-    readProjectFiles: function() {
-      return readProjectFiles();
-    },
-    getActiveProject: function() {
-      return getActiveProject();
-    },
-    renameProject: function(id, name) {
-      return renameProject(id, name);
-    },
-    getActiveProjectId: function() {
-      return getActiveProjectId();
-    },
-    DEFAULT_PROJECT_NAME,
-    dirOf,
-    defaultBackend,
-    getActiveFileId: function() {
-      return getActiveFileId();
+    if (globalThis.Notifications && typeof globalThis.Notifications.emit === "function") {
+      globalThis.Notifications.emit({
+        kind: "warn",
+        category: "ops",
+        origin: "local",
+        source: "persist.durability",
+        dedupeKey: "persist.durability",
+        title: "Safari may delete your projects",
+        body: "Safari deletes a site\u2019s data after 7 days without a visit, and your projects live only in this browser. To keep a copy, download each project from the Project menu."
+      });
     }
+  }
+  var nav0 = globalThis.navigator;
+  var durability = createDurability({
+    store,
+    work,
+    device: Device,
+    storage: nav0 && nav0.storage || null,
+    events: typeof window !== "undefined" ? window : null,
+    sevenDayRule: underSevenDayRule(),
+    warn: announceSevenDays
   });
-  function writeOpenFileIds() {
-    return _openTabsApi.writeOpenFileIds.apply(_openTabsApi, arguments);
+  whenPageReady(function() {
+    var idle = globalThis.requestIdleCallback;
+    if (typeof idle === "function") idle(function() {
+      durability.start();
+    }, { timeout: 1e4 });
+    else setTimeout(function() {
+      durability.start();
+    }, 2e3);
+  });
+  var syncRunner = null;
+  function startSync(opts) {
+    var account = work.account();
+    if (!account) throw new Error("Persist.startSync: nobody is signed in on this browser (Persist.setAccount first)");
+    if (!opts || !opts.transport) throw new Error("Persist.startSync needs a transport (js/persist/sync/protocol.mjs)");
+    stopSync();
+    var nav = globalThis.navigator;
+    var engine = createSyncEngine({
+      store,
+      work,
+      settings: Settings,
+      transport: opts.transport,
+      account,
+      notify: announceSync
+    });
+    syncRunner = createSyncRunner({
+      engine,
+      store,
+      locks: opts.locks !== void 0 ? opts.locks : nav && nav.locks || null
+    });
+    syncRunner.start();
+    return syncRunner;
   }
-  function setOpenFileIds() {
-    return _openTabsApi.setOpenFileIds.apply(_openTabsApi, arguments);
+  function stopSync() {
+    const r = syncRunner;
+    syncRunner = null;
+    return r ? r.stop() : Promise.resolve();
   }
-  function getOpenFileIds() {
-    return _openTabsApi.getOpenFileIds.apply(_openTabsApi, arguments);
+  function syncNow() {
+    return syncRunner ? syncRunner.syncNow() : Promise.resolve(null);
   }
-  function openFile() {
-    return _openTabsApi.openFile.apply(_openTabsApi, arguments);
+  if (typeof globalThis.addEventListener === "function") {
+    globalThis.addEventListener("online", function() {
+      syncNow();
+    });
   }
-  function closeOpenFile() {
-    return _openTabsApi.closeOpenFile.apply(_openTabsApi, arguments);
-  }
-  function getProjectName() {
-    return _openTabsApi.getProjectName.apply(_openTabsApi, arguments);
-  }
-  function setProjectName() {
-    return _openTabsApi.setProjectName.apply(_openTabsApi, arguments);
-  }
-  function normalizeActiveCfgList() {
-    return _openTabsApi.normalizeActiveCfgList.apply(_openTabsApi, arguments);
-  }
-  function readActiveCfgByDir() {
-    return _openTabsApi.readActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function writeActiveCfgByDir() {
-    return _openTabsApi.writeActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function getActiveCfgsForDir() {
-    return _openTabsApi.getActiveCfgsForDir.apply(_openTabsApi, arguments);
-  }
-  function getActiveCfgForDir() {
-    return _openTabsApi.getActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function setActiveCfgsForDir() {
-    return _openTabsApi.setActiveCfgsForDir.apply(_openTabsApi, arguments);
-  }
-  function setActiveCfgForDir() {
-    return _openTabsApi.setActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function addActiveCfgForDir() {
-    return _openTabsApi.addActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function removeActiveCfgForDir() {
-    return _openTabsApi.removeActiveCfgForDir.apply(_openTabsApi, arguments);
-  }
-  function getActiveCfgByDir() {
-    return _openTabsApi.getActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function backfillActiveCfgByDir() {
-    return _openTabsApi.backfillActiveCfgByDir.apply(_openTabsApi, arguments);
-  }
-  function getDefaultCfgPath() {
-    return _openTabsApi.getDefaultCfgPath.apply(_openTabsApi, arguments);
-  }
-  function setDefaultCfgPath() {
-    return _openTabsApi.setDefaultCfgPath.apply(_openTabsApi, arguments);
-  }
-  function newBlankProject(name) {
-    return _projectsApi.newBlankProject(name);
-  }
-  function createProjectWithFiles(name, entries, options) {
-    return _projectsApi.createProjectWithFiles(name, entries, options);
-  }
-  function createAsyncPersistLayer() {
-    return {
-      push: function() {
-        return Promise.resolve({ ok: false, reason: "not-configured" });
-      },
-      pull: function() {
-        return Promise.resolve({ ok: false, reason: "not-configured" });
-      }
-    };
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === "visible") syncNow();
+    });
   }
   var Persist = {
-    SCHEMA_VERSION,
-    STATE_KEY,
-    LEGACY_STATE_KEY,
-    LEGACY_SEMANTIC_TYPES_KEY,
-    DEFAULT_DOCUMENT_ID,
-    THEME_STORAGE_KEY,
-    EDITOR_SPLIT_STORAGE_KEY,
-    GRAPH_PREFS_STORAGE_KEY,
-    DEFAULT_GRAPH_PREFS,
-    DEFAULT_EDITOR_SPLIT,
-    MIN_EDITOR_SPLIT,
-    MAX_EDITOR_SPLIT,
+    DEFAULT_PROJECT_NAME,
     documentFingerprint,
-    createLocalStorageBackend,
-    createMemoryBackend,
-    createLocalStorageAdapter,
-    createPersist,
-    createAsyncPersistLayer,
-    classifyPersistError,
-    isSaveBlocked,
-    readStoredTheme,
-    writeStoredTheme,
-    UI_FONT_SIZE_KEY,
-    UI_FONT_SCALES,
-    readStoredUiFontSize,
-    writeStoredUiFontSize,
-    uiFontScaleForSize,
-    applyStoredUiFontSize,
-    UI_TEXT_CONTRAST_KEY,
-    UI_TEXT_CONTRAST_MULTIPLIERS,
-    readStoredUiTextContrast,
-    writeStoredUiTextContrast,
-    uiTextContrastMultiplierForLevel,
-    applyStoredUiTextContrast,
-    readStoredEditorSplit,
-    writeStoredEditorSplit,
-    readStoredExplorerWidth,
-    writeStoredExplorerWidth,
-    readStoredInspectorWidth,
-    writeStoredInspectorWidth,
-    readStoredExplorerHeight,
-    writeStoredExplorerHeight,
-    readStoredInspectorHeight,
-    writeStoredInspectorHeight,
-    readStoredExplorerOpen,
-    writeStoredExplorerOpen,
-    loadStat,
-    saveStat,
-    getExplorerFold,
-    setExplorerFold,
-    readStoredInspectorOpen,
-    writeStoredInspectorOpen,
-    readStoredInspectorFollow,
-    writeStoredInspectorFollow,
-    readStoredLibraryOpen,
-    writeStoredLibraryOpen,
-    readStoredHarpoonOpen,
-    writeStoredHarpoonOpen,
-    readStoredHarpoonDetailsCollapsed,
-    writeStoredHarpoonDetailsCollapsed,
-    readStoredLibraryWidth,
-    writeStoredLibraryWidth,
-    readStoredLibraryHeight,
-    writeStoredLibraryHeight,
-    readStoredHarpoonWidth,
-    writeStoredHarpoonWidth,
-    readStoredHarpoonHeight,
-    writeStoredHarpoonHeight,
-    DEFAULT_SIDE_PANEL_WIDTH,
-    DEFAULT_SIDE_PANEL_HEIGHT,
-    SIDE_PANEL_LAYOUT,
-    readStoredGraphPrefs,
-    writeStoredGraphPrefs,
-    normalizeGraphPrefs,
-    clampEditorSplit,
-    readStoredBelugaMode,
-    writeStoredBelugaMode,
-    readStoredHoverScope,
-    writeStoredHoverScope,
-    readStoredAliasActivation,
-    writeStoredAliasActivation,
-    readStoredAliasPairs,
-    writeStoredAliasPairs,
-    readStoredCfgAutoSync,
-    writeStoredCfgAutoSync,
-    readStoredReplAutoscroll,
-    writeStoredReplAutoscroll,
-    readStoredReplWelcome,
-    writeStoredReplWelcome,
-    readStoredReplEcho,
-    writeStoredReplEcho,
-    readStoredReplFilterChatter,
-    writeStoredReplFilterChatter,
-    readStoredReplHoverTimestamp,
-    writeStoredReplHoverTimestamp,
-    readStoredReplAutocompleteTrigger,
-    writeStoredReplAutocompleteTrigger,
-    readStoredReplAutocompleteContinue,
-    writeStoredReplAutocompleteContinue,
-    readStoredReplHistoryCap,
-    writeStoredReplHistoryCap,
-    readStoredReplHistoryPersist,
-    writeStoredReplHistoryPersist,
-    readStoredReplTranscript,
-    writeStoredReplTranscript,
-    readStoredReplCommandHistory,
-    writeStoredReplCommandHistory,
-    readStoredBelugaFallbackStable,
-    writeStoredBelugaFallbackStable,
-    readStoredBelugaCancelOnEdit,
-    writeStoredBelugaCancelOnEdit,
-    readStoredLibraryExpandDefault,
-    writeStoredLibraryExpandDefault,
-    readStoredLibraryHintDismissed,
-    writeStoredLibraryHintDismissed,
-    readStoredHintDismissed,
-    writeStoredHintDismissed,
-    readStoredRestorePanels,
-    writeStoredRestorePanels,
-    readStoredActiveSidePanel,
-    writeStoredActiveSidePanel,
-    readStoredWorkspace,
-    writeStoredWorkspace,
-    resetStoredWorkspace,
-    resetWorkspaceState,
-    workspaceKeyFor,
     normalizeViewportAnchor,
-    readStoredAutosaveDelay,
-    writeStoredAutosaveDelay,
-    readStoredEditorFontSize,
-    writeStoredEditorFontSize,
-    readStoredEditorLineHeight,
-    writeStoredEditorLineHeight,
-    readStoredEditorWordWrap,
-    writeStoredEditorWordWrap,
-    readStoredEditorTabSize,
-    writeStoredEditorTabSize,
-    readStoredEditorLineNumberMode,
-    writeStoredEditorLineNumberMode,
-    readStoredEditorLineNumbers,
-    writeStoredEditorLineNumbers,
-    readStoredEditorFoldGutter,
-    writeStoredEditorFoldGutter,
-    readStoredEditorFoldPersist,
-    writeStoredEditorFoldPersist,
-    readStoredEditorActiveLine,
-    writeStoredEditorActiveLine,
-    readStoredEditorDiagGutter,
-    writeStoredEditorDiagGutter,
-    readStoredEditorHoleGutter,
-    writeStoredEditorHoleGutter,
-    readStoredEditorSyntaxHighlight,
-    writeStoredEditorSyntaxHighlight,
-    readStoredEditorSemanticHighlight,
-    writeStoredEditorSemanticHighlight,
-    readStoredEditorParseHighlight,
-    writeStoredEditorParseHighlight,
-    readStoredEditorOccurrenceHighlight,
-    writeStoredEditorOccurrenceHighlight,
-    readStoredEditorBracketMatch,
-    writeStoredEditorBracketMatch,
-    readStoredEditorAutoCloseBrackets,
-    writeStoredEditorAutoCloseBrackets,
-    readStoredEditorSelectionMatches,
-    writeStoredEditorSelectionMatches,
-    readStoredEditorReindentPaste,
-    writeStoredEditorReindentPaste,
-    readStoredEditorFormatWidth,
-    writeStoredEditorFormatWidth,
-    readStoredEditorAutocompleteTrigger,
-    writeStoredEditorAutocompleteTrigger,
-    readStoredEditorAutocompleteContinue,
-    writeStoredEditorAutocompleteContinue,
-    ..._settingsExtra,
-    resetLayoutPrefs,
-    resetAppearancePrefs,
-    resetEditorTypographyPrefs,
-    resetEditorIndentPrefs,
-    resetEditorCodeInsightPrefs,
-    resetEditorGutterPrefs,
-    resetEditorPrefs,
-    resetBelugaPrefs,
-    resetHarpoonPrefs,
-    resetReplPrefs,
-    resetWorkspacePrefs,
-    resetAliasesPrefs,
-    KEYBINDINGS_KEY: "beljar-keybindings",
-    readStoredKeybindings,
-    writeStoredKeybindings,
-    resetKeybindingPrefs,
-    expandAliasesInAllFiles,
-    isAliasExpandablePath,
-    normalizeLoaded,
-    emptyState,
-    // Projects (top-level containers):
-    DEFAULT_PROJECT_ID,
-    listProjects,
-    getActiveProjectId,
-    setActiveProjectId,
-    getActiveProject,
-    createProject,
-    renameProject,
-    deleteProject,
-    newBlankProject,
-    createProjectWithFiles,
-    // Project/multi-file management:
-    ensureProject,
-    listFiles,
-    getActiveFileId,
-    setActiveFileId,
-    replaceProject,
-    createFile,
-    restoreDeletedFile,
-    deleteFile,
-    renameFile,
-    addEntryToCfg,
-    prependEntryToCfg,
-    removeEntryFromCfg,
-    moveEntryInCfg,
-    getFileById,
-    listEmptyFolders,
-    addEmptyFolder,
-    removeEmptyFolder,
-    clearEmptyFolders,
-    pruneEmptyFoldersUnder,
-    renameEmptyFolderPrefix,
-    preserveEmptyFoldersAfterMoves,
-    moveFile,
-    getFileText,
-    setFileText,
-    getOpenFileIds,
-    setOpenFileIds,
-    openFile,
-    closeOpenFile,
-    getProjectName,
-    setProjectName,
-    getDefaultCfgPath,
-    setDefaultCfgPath,
-    getActiveCfgForDir,
-    getActiveCfgsForDir,
-    setActiveCfgForDir,
-    setActiveCfgsForDir,
-    addActiveCfgForDir,
-    removeActiveCfgForDir,
-    getActiveCfgByDir,
-    backfillActiveCfgByDir,
-    DEFAULT_PROJECT_NAME
+    isSaveBlocked: store.isBlocked,
+    isReadOnly: store.isReadOnly,
+    // accounts and sync (docs/PERSIST.md §5)
+    getAccount: work.account,
+    setAccount: work.setAccount,
+    claimProject: work.claimProject,
+    projectStats: work.projectStats,
+    removeAccountProjects: work.removeAccountProjects,
+    startSync,
+    stopSync,
+    syncNow,
+    durabilityStatus: durability.status,
+    // the open document
+    createPersist: documents.createPersist,
+    // projects
+    listProjects: work.listProjects,
+    getActiveProjectId: work.projectId,
+    setActiveProjectId: work.setActiveProject,
+    createProject: work.createProject,
+    renameProject: work.renameProject,
+    deleteProject: work.deleteProject,
+    newBlankProject: files.newBlankProject,
+    createProjectWithFiles: files.createProjectWithFiles,
+    getProjectName: files.getProjectName,
+    setProjectName: files.setProjectName,
+    // files
+    listFiles: files.listFiles,
+    getFileById: files.getFileById,
+    getFileText: files.getFileText,
+    setFileText: files.setFileText,
+    createFile: files.createFile,
+    replaceProject: files.replaceProject,
+    restoreDeletedFile: files.restoreDeletedFile,
+    deleteFile: files.deleteFile,
+    renameFile: files.renameFile,
+    listEmptyFolders: files.listEmptyFolders,
+    addEmptyFolder: files.addEmptyFolder,
+    removeEmptyFolder: files.removeEmptyFolder,
+    clearEmptyFolders: files.clearEmptyFolders,
+    pruneEmptyFoldersUnder: files.pruneEmptyFoldersUnder,
+    renameEmptyFolderPrefix: files.renameEmptyFolderPrefix,
+    preserveEmptyFoldersAfterMoves: files.preserveEmptyFoldersAfterMoves,
+    expandAliasesInAllFiles: files.expandAliasesInAllFiles,
+    isAliasExpandablePath: files.isAliasExpandablePath,
+    // .cfg membership and the active suite per directory
+    addEntryToCfg: files.addEntryToCfg,
+    prependEntryToCfg: files.prependEntryToCfg,
+    removeEntryFromCfg: files.removeEntryFromCfg,
+    moveEntryInCfg: files.moveEntryInCfg,
+    getActiveCfgForDir: files.getActiveCfgForDir,
+    getActiveCfgsForDir: files.getActiveCfgsForDir,
+    setActiveCfgForDir: files.setActiveCfgForDir,
+    setActiveCfgsForDir: files.setActiveCfgsForDir,
+    addActiveCfgForDir: files.addActiveCfgForDir,
+    removeActiveCfgForDir: files.removeActiveCfgForDir,
+    getActiveCfgByDir: files.getActiveCfgByDir,
+    backfillActiveCfgByDir: files.backfillActiveCfgByDir,
+    // this project's session on this device: tabs, workspace, side panel, explorer folds
+    getActiveFileId: files.getActiveFileId,
+    setActiveFileId: files.setActiveFileId,
+    getOpenFileIds: files.getOpenFileIds,
+    setOpenFileIds: files.setOpenFileIds,
+    openFile: files.openFile,
+    closeOpenFile: files.closeOpenFile,
+    readWorkspace: records.readWorkspace,
+    writeWorkspace: records.writeWorkspace,
+    resetWorkspace: records.resetWorkspace,
+    readSidePanel: records.readSidePanel,
+    writeSidePanel: records.writeSidePanel,
+    readExplorerFolds: records.readExplorerFolds,
+    writeExplorerFolds: records.writeExplorerFolds,
+    // device records (device-records.mjs)
+    readReplTranscript: records.readReplTranscript,
+    writeReplTranscript: records.writeReplTranscript,
+    readReplCommands: records.readReplCommands,
+    writeReplCommands: records.writeReplCommands,
+    readFileFolds: records.readFileFolds,
+    writeFileFolds: records.writeFileFolds,
+    readNotifications: records.readNotifications,
+    writeNotifications: records.writeNotifications,
+    readUndoStack: records.readUndoStack,
+    writeUndoStack: records.writeUndoStack,
+    clearUndoStack: records.clearUndoStack,
+    postTabMessage: records.postTabMessage,
+    onTabMessage: records.onTabMessage
   };
   var g = typeof window !== "undefined" ? window : globalThis;
   g.Persist = Persist;
+  g.Settings = Settings;
+  g.Device = Device;
   g.BelJarPersist = g.Persist;
 })();

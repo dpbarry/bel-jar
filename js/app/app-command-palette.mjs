@@ -18,6 +18,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
     var uploadFolderInputEl = deps.uploadFolderInputEl;
     var folderInputEl = deps.folderInputEl;
     var downloadCurrentFile = deps.downloadCurrentFile;
+    var downloadProject = deps.downloadProject;
     var editorExec = deps.editorExec;
     var moduleNameFor = deps.moduleNameFor;
     var signatureFileCount = deps.signatureFileCount;
@@ -38,15 +39,18 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
         if (typeof StatusStrip !== 'undefined' && StatusStrip.setMessage) StatusStrip.setMessage(text);
       };
 
-      /** Re-apply after a preference write, so the change lands now, not on reload. */
+      /**
+       * Re-apply the editor after a preference write, so the change lands now,
+       * not on reload. The page-level look (fonts, emphasis) the frame repaints
+       * by itself on any settings change.
+       */
       const reapplyPrefs = () => {
-        if (typeof Persist.applyStoredEditorChrome === 'function') Persist.applyStoredEditorChrome();
         if (typeof BelEditor !== 'undefined' && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
       };
 
       /** A `set.*` chord or palette row: toggle a boolean, cycle an enum. */
       const toggleSetting = (spec) => {
-        const res = applyValue(Persist, spec, undefined);
+        const res = applyValue(Settings, spec, undefined);
         if (res.applied) reapplyPrefs();
         say(res.message);
         return res.ok;
@@ -54,7 +58,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
 
       /** `:set nu` · `:set nolist` · `:set ts=4`, from the bar or from Vim. */
       const runSet = (argText) => {
-        const res = runSetOn(Persist, argText);
+        const res = runSetOn(Settings, argText);
         if (res.applied) reapplyPrefs();
         say(res.message);
         return res.ok;
@@ -109,6 +113,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('file.upload-folder', () => uploadFolderInputEl.click());
       on('file.import-folder', () => folderInputEl.click());
       on('file.download', downloadCurrentFile);
+      on('project.download', () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
       on('tab.next', () => stepTab(1), () => openTabIds().length > 1);
       on('tab.prev', () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -144,6 +149,8 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
         const p = getPersist();
         if (!p || typeof p.flushCheckpoint !== 'function') return false;
         p.flushCheckpoint();
+        // An explicit save is also the moment to sync (when this tab syncs).
+        if (typeof Persist.syncNow === 'function') Persist.syncNow();
         const file = Persist.getFileById ? Persist.getFileById(p.getCurrentFileId()) : null;
         say(file && file.name ? 'Saved ' + file.name : 'Saved.');
         return true;

@@ -48,8 +48,8 @@ function makeRegistryGetText() {
   };
 }
 
-// File ids are stable (`workspace://…`) but `name` changes on rename/move — lint
-// against the live registry path, not the path baked into the id at creation.
+// A file's path is its registry `name`; the id is opaque (docs/PERSIST.md §3.4).
+// Without Persist (Node tests), a `workspace://path` document id is its own path.
 export function resolveCfgDocumentPath(documentId) {
   const raw = String(documentId || '');
   const g = typeof window !== 'undefined' ? window : globalThis;

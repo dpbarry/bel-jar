@@ -1,4 +1,19 @@
-import { createEditHistory, normalizeEntry, newEntryId, SESSION_KEY_PREFIX, editHistoryTxn } from '../js/editor-src/edit-history.mjs';
+import { createEditHistory, normalizeEntry, newEntryId, editHistoryTxn, externalChange } from '../js/editor-src/edit-history.mjs';
+import { makeBrowserStorage, openTab } from './_persist-env.mjs';
+
+/**
+ * The undo stack through a real Persist and its tab store, as install-edit-history
+ * wires it. A reload keeps the browser's localStorage: pass the same `local`
+ * (a fresh one is a schema reset, which rightly wipes the tab's storage too).
+ */
+function tabStoreFor(session, local = makeBrowserStorage()) {
+  const { P } = openTab(local, { sessionStorage: session });
+  return {
+    readStack: (k) => P.readUndoStack(k),
+    writeStack: (k, d) => P.writeUndoStack(k, d),
+    clearStack: (k) => P.clearUndoStack(k),
+  };
+}
 import { Transaction } from '@codemirror/state';
 
 function expect(cond, msg) {
@@ -19,7 +34,6 @@ function mockAdapter(initial) {
 
   return {
     projectKey: 'test-project',
-    sessionStorage: null,
     getFileText(id) { return state.texts.get(id) ?? ''; },
     setFileText(id, text) { state.texts.set(id, text); },
     listFiles() { return [...state.files.values()]; },
@@ -135,17 +149,13 @@ function snapTexts(adapter) {
 // when the new key had nothing stored, leaving the previous project's entries
 // live against a workspace whose files they do not describe.
 {
-  const store = new Map();
   const adapter = mockAdapter({
     files: [{ id: 'a', name: 'a.bel' }],
     texts: { a: 'two' },
     activeFileId: 'a',
   });
   adapter.projectKey = 'proj-one';
-  adapter.sessionStorage = {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, v),
-  };
+  Object.assign(adapter, tabStoreFor(makeBrowserStorage()));
   const H = createEditHistory(adapter);
   H.pushEntry(normalizeEntry({
     id: 'e', kind: 'typing',
@@ -273,27 +283,26 @@ function snapTexts(adapter) {
   expect(adapter.getFileText('a') === 'AA' && adapter.getFileText('b') === 'BB', 'multi-file edit restored');
 }
 
-// session round-trip
+// the tab store round-trip: the stack outlives a reload
 {
-  const store = new Map();
-  const sessionStorage = {
-    setItem(k, v) { store.set(k, v); },
-    getItem(k) { return store.get(k) ?? null; },
-  };
+  const session = makeBrowserStorage();
+  const local = makeBrowserStorage();
   const adapter = mockAdapter({
     files: [{ id: 'a', name: 'a.bel' }],
     texts: { a: 'two' },
     activeFileId: 'a',
   });
-  adapter.sessionStorage = sessionStorage;
+  Object.assign(adapter, tabStoreFor(session, local));
   const H1 = createEditHistory(adapter);
   H1.pushEntry(normalizeEntry({
     id: 'e', kind: 'typing',
     files: { a: { before: 'one', after: 'two' } },
     structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
   }));
-  expect(store.has(SESSION_KEY_PREFIX + 'test-project'), 'persisted to session');
+  expect(session.getItem('beljar/p/test-project/undo') !== null, 'persisted to the tab store');
 
+  // A reload: a new Persist over the same browser and the same tab.
+  Object.assign(adapter, tabStoreFor(session, local));
   const H2 = createEditHistory(adapter);
   expect(H2.canUndo(), 'reloaded stack has undo');
   expect(H2.undo(), 'undo after reload');
@@ -597,25 +606,17 @@ const CFG_AFTER = ['a.bel', 'b.bel', ''].join(String.fromCharCode(10));
   expect(adapter.getFileText('c') === CFG_AFTER, 'cfg re-applied');
 }
 
-// The session write is budgeted: an over-quota stack persists its newest steps
-// instead of throwing and persisting nothing at all.
+// The write is budgeted: an over-quota stack persists its newest steps instead
+// of persisting nothing at all. The tab store here refuses past 200k characters.
 {
-  const store = new Map();
-  const sessionStorage = {
-    setItem(k, v) {
-      if (v.length > 200_000) throw new Error('QuotaExceededError');
-      store.set(k, v);
-    },
-    getItem(k) { return store.get(k) ?? null; },
-    removeItem(k) { store.delete(k); },
-  };
+  const session = makeBrowserStorage({}, { maxChars: 200_000 });
   const big = 'x'.repeat(60_000);
   const adapter = mockAdapter({
     files: [{ id: 'a', name: 'a.bel' }],
     texts: { a: big },
     activeFileId: 'a',
   });
-  adapter.sessionStorage = sessionStorage;
+  Object.assign(adapter, tabStoreFor(session));
   const H = createEditHistory(adapter);
   for (let i = 0; i < 40; i += 1) {
     H.pushEntry(normalizeEntry({
@@ -625,9 +626,9 @@ const CFG_AFTER = ['a.bel', 'b.bel', ''].join(String.fromCharCode(10));
     }));
   }
   H.flushPersist();
-  const raw = store.get(SESSION_KEY_PREFIX + 'test-project');
+  const raw = session.getItem('beljar/p/test-project/undo');
   expect(raw, 'an over-quota stack still persists something');
-  const parsed = JSON.parse(raw);
+  const parsed = JSON.parse(raw).data;
   expect(parsed.undo.length > 0, 'with entries in it');
   expect(parsed.undo.length < 40, 'but not all of them');
   expect(parsed.undo[parsed.undo.length - 1].id === 'e39', 'keeping the NEWEST steps');
@@ -700,4 +701,75 @@ const CFG_AFTER = ['a.bel', 'b.bel', ''].join(String.fromCharCode(10));
   expect(!h.validateEntry(gone, 'undo').ok, 'but a file that is gone does');
 }
 
-console.log('OK edit-history (including renames)');
+// ── someone else's change is not your step (docs/PERSIST.md §4.4) ──────────
+// A fake update, shaped the way onDocChange reads one.
+function fakeUpdate(before, after, marks) {
+  return [
+    { state: { doc: { toString: () => after }, selection: { main: { anchor: after.length, head: after.length } } } },
+    {
+      docChanged: true,
+      startState: { doc: { toString: () => before }, selection: { main: { anchor: before.length, head: before.length } } },
+      transactions: [{
+        annotation(ann) {
+          if (ann === externalChange) return marks.external ? true : undefined;
+          if (ann === Transaction.addToHistory) return marks.external ? false : undefined;
+          if (ann === Transaction.userEvent) return marks.external ? 'external' : 'input.type';
+          return undefined;
+        },
+      }],
+    },
+  ];
+}
+
+// A burst being typed when another tab's change lands ends at the text it had
+// BEFORE that change: the step holds only the keystrokes, not the other side.
+// (The two edits are a line apart: edits that touch are a conflict, below.)
+{
+  const adapter = mockAdapter({ files: [{ id: 'a', name: 'a.bel' }], texts: { a: 'x\nkeep\n' }, activeFileId: 'a' });
+  const H = createEditHistory(adapter);
+  const [v1, u1] = fakeUpdate('x\nkeep\n', 'xy\nkeep\n', {});
+  H.onDocChange(v1, u1, 'a');
+  const [v2, u2] = fakeUpdate('xy\nkeep\n', 'xy\nkeep\ntheirs\n', { external: true });
+  H.onDocChange(v2, u2, 'a');
+  expect(H.canUndo(), 'the typing before the external change is a step');
+  adapter.setFileText('a', 'xy\nkeep\ntheirs\n');
+  expect(H.undo(), 'undo runs');
+  expect(adapter.getFileText('a') === 'x\nkeep\ntheirs\n', `undo takes back the typing and keeps the other side's line (${JSON.stringify(adapter.getFileText('a'))})`);
+  expect(H.redo() && adapter.getFileText('a') === 'xy\nkeep\ntheirs\n', 'redo puts the typing back, still keeping it');
+}
+
+// Undo after a change elsewhere in the file keeps that change: merge-first.
+{
+  const adapter = mockAdapter({
+    files: [{ id: 'a', name: 'a.bel' }],
+    texts: { a: 'line one\nline 2\nline 3 from B\n' },
+    activeFileId: 'a',
+  });
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'mine', kind: 'typing',
+    files: { a: { before: 'line 1\nline 2\n', after: 'line one\nline 2\n' } },
+    structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
+  }));
+  expect(H.undo(), 'undo runs');
+  expect(adapter.getFileText('a') === 'line 1\nline 2\nline 3 from B\n',
+    `undo reverses my step only; the line another tab added stays (${JSON.stringify(adapter.getFileText('a'))})`);
+  expect(H.redo(), 'redo runs');
+  expect(adapter.getFileText('a') === 'line one\nline 2\nline 3 from B\n', 'redo re-applies my step, keeping it still');
+  expect(H.undo() && adapter.getFileText('a') === 'line 1\nline 2\nline 3 from B\n', 'and the step goes back and forth cleanly');
+}
+
+// Drift that DOES touch the step still folds (undo never refuses).
+{
+  const adapter = mockAdapter({ files: [{ id: 'a', name: 'a.bel' }], texts: { a: 'line ONE\n' }, activeFileId: 'a' });
+  const H = createEditHistory(adapter);
+  H.pushEntry(normalizeEntry({
+    id: 'mine', kind: 'typing',
+    files: { a: { before: 'line 1\n', after: 'line one\n' } },
+    structural: { created: [], deleted: [], cfg: {}, openFileIds: null, activeFileId: null },
+  }));
+  expect(H.undo() && adapter.getFileText('a') === 'line 1\n', 'overlapping drift folds into the step, as before');
+  expect(H.redo() && adapter.getFileText('a') === 'line ONE\n', 'and redo restores the drifted text');
+}
+
+console.log('OK edit-history (including renames, and changes made by someone else)');

@@ -10,6 +10,7 @@ import { occurrenceHighlight, defLinkDecoration, navigationGestures } from './id
 import { holeGutterHighlight, holeGutterInteraction } from './prover/hole-decorations.mjs';
 import { stickyDeclHeader } from './ide/sticky-decl.mjs';
 import { highlightWhitespaceInSelection } from './ide/whitespace-selection.mjs';
+import { readSetting } from '../persist/settings-schema.mjs';
 
 const FONT_SIZES = {
   sm: '0.75rem',
@@ -30,11 +31,6 @@ const CURSOR_BLINK_MS = {
   fast: 700,
 };
 
-function persistApi() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  return g.Persist;
-}
-
 /**
  * Just the editing style.
  *
@@ -45,50 +41,48 @@ function persistApi() {
  * thirty-two answers nobody read.
  */
 export function readKeymapStylePref() {
-  const p = persistApi();
-  return p?.readStoredKeymapStyle?.() ?? 'default';
+  return readSetting('keymapStyle');
 }
 
 export function readEditorPrefs() {
-  const p = persistApi();
   return {
-    fontSize: p?.readStoredEditorFontSize?.() ?? 'md',
-    lineHeight: p?.readStoredEditorLineHeight?.() ?? 'normal',
-    wordWrap: p?.readStoredEditorWordWrap?.() ?? false,
-    tabSize: p?.readStoredEditorTabSize?.() ?? 2,
-    formatWidth: p?.readStoredEditorFormatWidth?.() ?? 80,
-    reindentPaste: p?.readStoredEditorReindentPaste?.() ?? true,
-    lineNumbers: p?.readStoredEditorLineNumbers?.() ?? true,
-    lineNumberMode: p?.readStoredEditorLineNumberMode?.() ?? 'absolute',
-    foldGutter: p?.readStoredEditorFoldGutter?.() ?? true,
-    foldPersist: p?.readStoredEditorFoldPersist?.() ?? 'session',
-    activeLine: p?.readStoredEditorActiveLine?.() ?? true,
-    diagPresentation: p?.readStoredDiagPresentation?.() ?? 'both',
-    diagSeverity: p?.readStoredDiagSeverity?.() ?? 'all',
+    fontSize: readSetting('editorFontSize'),
+    lineHeight: readSetting('editorLineHeight'),
+    wordWrap: readSetting('editorWordWrap'),
+    tabSize: readSetting('editorTabSize'),
+    formatWidth: readSetting('editorFormatWidth'),
+    reindentPaste: readSetting('editorReindentPaste'),
+    lineNumbers: readSetting('editorLineNumbers'),
+    lineNumberMode: readSetting('editorLineNumberMode'),
+    foldGutter: readSetting('editorFoldGutter'),
+    foldPersist: readSetting('editorFoldPersist'),
+    activeLine: readSetting('editorActiveLine'),
+    diagPresentation: readSetting('diagPresentation'),
+    diagSeverity: readSetting('diagSeverity'),
     diagGutter: (() => {
-      const pres = p?.readStoredDiagPresentation?.() ?? 'both';
+      const pres = readSetting('diagPresentation');
       return pres === 'both' || pres === 'gutter';
     })(),
-    holeGutter: p?.readStoredEditorHoleGutter?.() ?? true,
-    syntaxHighlight: p?.readStoredEditorSyntaxHighlight?.() ?? true,
-    semanticHighlight: p?.readStoredEditorSemanticHighlight?.() ?? true,
-    parseHighlight: p?.readStoredEditorParseHighlight?.() ?? true,
-    occurrenceHighlight: p?.readStoredEditorOccurrenceHighlight?.() ?? true,
-    bracketMatch: p?.readStoredEditorBracketMatch?.() ?? true,
-    autoCloseBrackets: p?.readStoredEditorAutoCloseBrackets?.() ?? true,
-    selectionMatches: p?.readStoredEditorSelectionMatches?.() ?? true,
-    quietWhileTyping: p?.readStoredQuietWhileTyping?.() ?? false,
-    formatOnSave: p?.readStoredFormatOnSave?.() ?? false,
-    trimTrailingWs: p?.readStoredTrimTrailingWs?.() ?? false,
-    stickyDeclHeader: p?.readStoredStickyDeclHeader?.() ?? false,
-    hoverSticky: p?.readStoredHoverSticky?.() ?? false,
-    cursorBlink: p?.readStoredEditorCursorBlink?.() ?? 'blink',
-    scrollPastEnd: p?.readStoredEditorScrollPastEnd?.() ?? true,
-    whitespace: p?.readStoredEditorWhitespace?.() ?? 'none',
-    rulers: p?.readStoredEditorRulers?.() ?? false,
-    fontFamily: p?.readStoredEditorFontFamily?.() ?? 'jetbrains',
-    holeEmphasis: p?.readStoredEditorHoleEmphasis?.() ?? 'normal',
-    keymapStyle: p?.readStoredKeymapStyle?.() ?? 'default',
+    holeGutter: readSetting('editorHoleGutter'),
+    syntaxHighlight: readSetting('editorSyntaxHighlight'),
+    semanticHighlight: readSetting('editorSemanticHighlight'),
+    parseHighlight: readSetting('editorParseHighlight'),
+    occurrenceHighlight: readSetting('editorOccurrenceHighlight'),
+    bracketMatch: readSetting('editorBracketMatch'),
+    autoCloseBrackets: readSetting('editorAutoCloseBrackets'),
+    selectionMatches: readSetting('editorSelectionMatches'),
+    quietWhileTyping: readSetting('quietWhileTyping'),
+    formatOnSave: readSetting('formatOnSave'),
+    trimTrailingWs: readSetting('trimTrailingWs'),
+    stickyDeclHeader: readSetting('stickyDeclHeader'),
+    hoverSticky: readSetting('hoverSticky'),
+    cursorBlink: readSetting('editorCursorBlink'),
+    scrollPastEnd: readSetting('editorScrollPastEnd'),
+    whitespace: readSetting('editorWhitespace'),
+    rulers: readSetting('editorRulers'),
+    fontFamily: readSetting('editorFontFamily'),
+    holeEmphasis: readSetting('editorHoleEmphasis'),
+    keymapStyle: readSetting('keymapStyle'),
   };
 }
 

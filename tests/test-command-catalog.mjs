@@ -63,7 +63,7 @@ for (const cmd of all) {
 // the order BelJar has always shown; changing it is a UI change, not a refactor.
 
 const EXPECTED_PALETTE_ORDER = [
-  'project.new', 'file.new', 'file.upload', 'file.upload-folder', 'file.import-folder', 'file.download',
+  'project.new', 'file.new', 'file.upload', 'file.upload-folder', 'file.import-folder', 'file.download', 'project.download',
   'tab.next', 'tab.prev', 'tab.close', 'tab.close-others', 'tab.close-right',
   'file.save', 'suite.add-file', 'suite.remove-file',
   'edit.undo', 'edit.redo', 'edit.cut', 'edit.copy', 'edit.paste',

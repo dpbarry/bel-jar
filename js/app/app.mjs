@@ -49,7 +49,6 @@ const btnRun = (typeof ReplStream !== 'undefined' && ReplStream.getRunButton)
 
 // ── Project init ──────────────────────────────────────────────────────────────
 
-Persist.ensureProject();
 ensureProjectActiveCfgs();
 
 if (typeof EditHistoryInstall !== 'undefined') {
@@ -111,8 +110,41 @@ function mountEditorFor(snapshot, openOpts) {
       if (id != null && text != null) EditHistory.reconcileActiveFile(id, text);
     });
   }
+  // A conflict left open before a reload or a file switch asks again here.
+  if (ed) queueMicrotask(promptTextConflict);
   return ed;
 }
+
+// ── A file changed on both sides in the same lines (docs/PERSIST.md §4.4) ─────
+// The document keeps both versions and writes neither over the other until a
+// person chooses. One prompt at a time; dismissing it decides nothing.
+let textConflictPromptOpen = false;
+
+function promptTextConflict() {
+  if (textConflictPromptOpen || !persist || typeof persist.getConflict !== 'function') return;
+  const conflict = persist.getConflict();
+  if (!conflict || typeof ConflictDialog === 'undefined' || !ConflictDialog.resolveTextConflict) return;
+  const file = Persist.getFileById(conflict.fileId);
+  textConflictPromptOpen = true;
+  ConflictDialog.resolveTextConflict({ fileName: file ? file.name : '', source: conflict.source }).then((choice) => {
+    textConflictPromptOpen = false;
+    if (!choice || !persist || persist.getCurrentFileId() !== conflict.fileId) return;
+    const res = persist.resolveConflict(choice);
+    if (!res.ok) {
+      showToast('Couldn’t resolve the conflict. Both versions are kept.', { kind: 'warn' });
+      return;
+    }
+    if (res.copyId) {
+      const copy = Persist.getFileById(res.copyId);
+      showToast('Kept theirs as ' + (copy ? copy.name : 'a copy') + '.');
+    }
+  });
+}
+
+window.addEventListener('beljar:text-conflict', (ev) => {
+  const id = ev && ev.detail ? ev.detail.fileId : null;
+  if (persist && id && id === persist.getCurrentFileId()) promptTextConflict();
+});
 
 // ── Workspace state restore ───────────────────────────────────────────────────
 
@@ -220,8 +252,7 @@ function registerWorkspaceProviders() {
 
 function applyStoredSidePanel(id) {
   if (!id) return;
-  if (typeof Persist.readStoredRestorePanels === 'function'
-    && !Persist.readStoredRestorePanels()) return;
+  if (!Settings.get('restorePanels')) return;
   closeOtherSidePanels(id);
   setSidePanelOpen(id, true);
   notifySidePanelLayout();
@@ -413,10 +444,6 @@ BelugaRun.init();
 // Theme, toasts, the inbox and the header buttons that mean the same thing on
 // every route. The frame owns them; this page just asks for them.
 Frame.mount();
-if (typeof Persist !== 'undefined') {
-  if (Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
-  if (Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
-}
 
 function shouldApplyEditorPrefs(key) {
   if (!key || key === 'layout-reset') return false;
@@ -434,13 +461,6 @@ function shouldApplyEditorPrefs(key) {
 function applyLiveSettings(key) {
   if (!key || key === 'layout-reset') return;
   if (key === 'theme' || key === 'appearance-reset' || key === 'settings-import') syncEditorCmTheme();
-  if (key === 'appearance-reset' || key === 'motion-pref' || key === 'settings-import') {
-    if (typeof Persist !== 'undefined' && Persist.applyStoredMotionPref) Persist.applyStoredMotionPref();
-  }
-  if (key === 'appearance-reset' || key === 'editor-reset' || key === 'settings-import'
-    || key === 'editor-font-family' || key === 'editor-hole-emphasis') {
-    if (typeof Persist !== 'undefined' && Persist.applyStoredEditorChrome) Persist.applyStoredEditorChrome();
-  }
   if (shouldApplyEditorPrefs(key) || key === 'editor-reset' || key === 'settings-import') {
     if (typeof BelEditor !== 'undefined' && typeof BelEditor.applyEditorPrefs === 'function') {
       BelEditor.applyEditorPrefs();
@@ -512,24 +532,17 @@ const SIDE_PANELS = {
     btn: filesBtn,
     panel: explorerPanelEl,
     openClass: 'is-explorer-open',
-    writeOpen: (open) => {
-      Persist.writeStoredExplorerOpen(open);
-    },
   },
   inspector: {
     btn: inspectorBtn,
     panel: inspectorPanelEl,
     openClass: 'is-inspector-open',
-    writeOpen: (open) => {
-      Persist.writeStoredInspectorOpen(open);
-    },
   },
   library: {
     btn: libraryBtn,
     panel: libraryPanelEl,
     openClass: 'is-library-open',
-    writeOpen: (open) => {
-      Persist.writeStoredLibraryOpen(open);
+    onOpenChange: (open) => {
       if (!open) {
         const lib = getLibraryController();
         if (lib && typeof lib.collapseFolders === 'function') lib.collapseFolders();
@@ -540,11 +553,6 @@ const SIDE_PANELS = {
     btn: harpoonBtn,
     panel: harpoonPanelEl,
     openClass: 'is-harpoon-open',
-    writeOpen: (open) => {
-      if (Persist.writeStoredHarpoonOpen) {
-        Persist.writeStoredHarpoonOpen(open);
-      }
-    },
   },
 };
 
@@ -735,6 +743,7 @@ function executeUploadPlan() { return uploadImportApi.executeUploadPlan.apply(up
 function reloadActiveEditorFromPersist() { return uploadImportApi.reloadActiveEditorFromPersist.apply(uploadImportApi, arguments); }
 function resolveAndApplyMove() { return uploadImportApi.resolveAndApplyMove.apply(uploadImportApi, arguments); }
 function downloadCurrentFile() { return uploadImportApi.downloadCurrentFile.apply(uploadImportApi, arguments); }
+function downloadProject() { return uploadImportApi.downloadProject.apply(uploadImportApi, arguments); }
 function downloadFileById() { return uploadImportApi.downloadFileById.apply(uploadImportApi, arguments); }
 function downloadFolder() { return uploadImportApi.downloadFolder.apply(uploadImportApi, arguments); }
 function downloadSuite() { return uploadImportApi.downloadSuite.apply(uploadImportApi, arguments); }
@@ -858,7 +867,7 @@ function __initAppPeels() {
     fileInputEl: uploadImportApi.fileInputEl,
     uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
     folderInputEl: uploadImportApi.folderInputEl,
-    downloadCurrentFile, downloadFileById, downloadFolder, downloadSuite, suiteDownloadState,
+    downloadCurrentFile, downloadProject, downloadFileById, downloadFolder, downloadSuite, suiteDownloadState,
     exportCurrentManuscript,
     deleteFileInteractive, closeFile, closeTabsForFiles,
     selectionDeleteFileIds, selectionDeleteDisabled, deleteSelectionInteractive,
@@ -874,7 +883,7 @@ function __initAppPeels() {
     fileInputEl: uploadImportApi.fileInputEl,
     uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
     folderInputEl: uploadImportApi.folderInputEl,
-    downloadCurrentFile, editorExec, moduleNameFor,
+    downloadCurrentFile, downloadProject, editorExec, moduleNameFor,
     closeFile, closeTabsForFiles, activeSuiteMembership, afterSuiteEdit,
     signatureFileCount, switchToFile, openFileAt, projectFileText,
     flushEverythingToStorage,

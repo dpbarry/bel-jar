@@ -33,6 +33,7 @@ import {
   el,
   dispatchOpenFileAt,
 } from './inspector-render.mjs';
+import { readSetting, writeSetting } from '../../persist/settings-schema.mjs';
 
 export {
   groupByKind,
@@ -624,11 +625,7 @@ function goHome() {
 function hydrateFollowEditor() {
   if (followEditorHydrated) return;
   followEditorHydrated = true;
-  const g = typeof window !== 'undefined' ? window : self;
-  const P = g.Persist;
-  if (P && typeof P.readStoredInspectorFollow === 'function') {
-    followEditor = !!P.readStoredInspectorFollow();
-  }
+  followEditor = !!readSetting('inspectorFollow');
 }
 
 function activateEditorFollow(view) {
@@ -642,10 +639,7 @@ function setFollowEditor(on) {
   followEditor = !!on;
   updateSyncButton();
   const g = typeof window !== 'undefined' ? window : self;
-  const P = g.Persist;
-  if (P && typeof P.writeStoredInspectorFollow === 'function') {
-    P.writeStoredInspectorFollow(followEditor);
-  }
+  writeSetting('inspectorFollow', followEditor);
   if (g.SettingsUI && typeof g.SettingsUI.syncFromState === 'function') {
     g.SettingsUI.syncFromState();
   }
@@ -1199,7 +1193,7 @@ export function restoreWorkspaceInspector(sidebar, deps = {}) {
   const view = deps.view;
   if (!view || !sidebar?.inspector) return;
   const g = typeof window !== 'undefined' ? window : self;
-  if (g.Persist?.readStoredInspectorFollow?.()) return;
+  if (readSetting('inspectorFollow')) return;
   if (!panelOpen()) return;
   const target = sidebar.inspector.target;
   if (!target) return;

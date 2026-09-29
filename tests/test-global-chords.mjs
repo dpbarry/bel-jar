@@ -37,6 +37,8 @@ const ctx = vm.createContext({
     getItem(k) { return store[k] ?? null; },
     setItem(k, v) { store[k] = String(v); },
     removeItem(k) { delete store[k]; },
+    get length() { return Object.keys(store).length; },
+    key(i) { return Object.keys(store)[i] ?? null; },
   },
   navigator: { platform: 'Win32' },
   addEventListener(type, fn) { if (type === 'keydown') keydown = fn; },
@@ -51,7 +53,7 @@ runPersistStackInContext(ctx);
 vm.runInContext(readFileSync(join(here, '..', 'js', 'ui', 'keybindings.js'), 'utf8'), ctx);
 
 const KB = ctx.Keybindings;
-const P = ctx.Persist;
+const S = ctx.Settings;
 
 const globalIds = CATALOG.filter((c) => (c.scope || 'global') === 'global' && c.keybindable)
   .map((c) => c.id);
@@ -61,7 +63,7 @@ expect(globalIds.length > 50, `the global-scope bindable set is worth pinning ($
 // there are enough of them.
 const overrides = {};
 globalIds.forEach((id, i) => { overrides[id] = 'Mod+Alt+Shift+F' + (i + 1); });
-P.writeStoredKeybindings(overrides);
+S.set('keybindings', overrides);
 
 const called = [];
 const named = [];
@@ -103,7 +105,7 @@ expect(called.indexOf(globalIds[0]) < 0, 'and the fallback is not also called fo
 {
   let prevented = false;
   const target = globalIds[globalIds.length - 1];
-  P.writeStoredKeybindings({ [target]: 'Mod+Alt+Shift+F24' });
+  S.set('keybindings', { [target]: 'Mod+Alt+Shift+F24' });
   // A fresh module instance, so the earlier fallback is not still installed.
   const store2 = Object.create(null);
   let keydown2 = null;
@@ -112,6 +114,8 @@ expect(called.indexOf(globalIds[0]) < 0, 'and the fallback is not also called fo
       getItem(k) { return store2[k] ?? null; },
       setItem(k, v) { store2[k] = String(v); },
       removeItem(k) { delete store2[k]; },
+      get length() { return Object.keys(store2).length; },
+      key(i) { return Object.keys(store2)[i] ?? null; },
     },
     navigator: { platform: 'Win32' },
     addEventListener(type, fn) { if (type === 'keydown') keydown2 = fn; },
@@ -124,7 +128,7 @@ expect(called.indexOf(globalIds[0]) < 0, 'and the fallback is not also called fo
   ctx2.globalThis = ctx2;
   runPersistStackInContext(ctx2);
   vm.runInContext(readFileSync(join(here, '..', 'js', 'ui', 'keybindings.js'), 'utf8'), ctx2);
-  ctx2.Persist.writeStoredKeybindings({ [target]: 'Mod+Alt+Shift+F24' });
+  ctx2.Settings.set('keybindings', { [target]: 'Mod+Alt+Shift+F24' });
   ctx2.Keybindings.initGlobals({}, { fallback: () => null });
   keydown2({
     key: 'F24',
@@ -140,5 +144,5 @@ expect(called.indexOf(globalIds[0]) < 0, 'and the fallback is not also called fo
   expect(!prevented, 'a bound id with nothing attached does not swallow its chord');
 }
 
-P.writeStoredKeybindings({});
+S.set('keybindings', {});
 console.log(`OK global chords (${globalIds.length} global commands, all live when bound)`);

@@ -1,14 +1,16 @@
 // Preferences as commands: the table, `:set`'s grammar, and the writes it makes.
 //
-// The load-bearing assertion is the last one: every Persist accessor named in
-// the table must actually exist. Nothing else catches a typo there — a bad name
-// produces a setting that is present in the palette and silently does nothing.
+// Every row names a real setting (the module throws at load if not), and the
+// writes go through a REAL Settings over a memory store, so what `:set` stores
+// is what the settings table says it can hold.
 import {
   SETTINGS, settingId, settingEntries, optionNames, optionCandidates, optionValueCandidates,
   findSetting, nextValue, nearestSetting, parseSet, describeChange, orList,
   applyValue, runSetOn,
 } from '../js/commands/command-settings.mjs';
-import { readFileSync } from 'node:fs';
+import { createStore, createMemoryStorage } from '../js/persist/store.mjs';
+import { createSettings } from '../js/persist/settings.mjs';
+import { settingRow } from '../js/persist/settings-schema.mjs';
 
 function expect(cond, msg) {
   if (cond) return;
@@ -21,7 +23,8 @@ for (const s of SETTINGS) {
   expect(/^[a-z][a-z0-9-]*$/.test(s.slug), `slug shape: ${s.slug}`);
   expect(typeof s.title === 'string' && s.title.length > 0, `${s.slug} has a title`);
   expect(s.kind === 'bool' || s.kind === 'enum', `${s.slug} is bool or enum`);
-  expect(typeof s.read === 'string' && typeof s.write === 'string', `${s.slug} names its accessors`);
+  expect(typeof s.setting === 'string' && settingRow(s.setting), `${s.slug} names a real setting`);
+  if (s.kind === 'enum') expect(s.values === settingRow(s.setting).values, `${s.slug} cycles the table's own values`);
   if (s.kind === 'enum') {
     expect(Array.isArray(s.values) && s.values.length > 1, `${s.slug} enumerates values`);
     if (s.on !== undefined) expect(s.values.some((v) => v === s.on), `${s.slug} on is a value`);
@@ -162,14 +165,15 @@ expect(orList(['solo']) === 'solo' && orList([]) === '', 'one, and none');
 
 
 // ── the writes ───────────────────────────────────────────────────────────────
+// A real Settings. `_state[slug]` reads the live value; `_writes` counts changes.
 function fakePersist(initial) {
-  const state = { ...initial };
-  const p = { _state: state, _writes: [] };
-  for (const s of SETTINGS) {
-    p[s.read] = () => state[s.slug];
-    p[s.write] = (v) => { state[s.slug] = v; p._writes.push([s.slug, v]); };
-  }
-  return p;
+  const S = createSettings(createStore({ storage: createMemoryStorage() }));
+  const idOf = Object.fromEntries(SETTINGS.map((s) => [s.slug, s.setting]));
+  for (const [slug, v] of Object.entries(initial)) S.set(idOf[slug], v);
+  S._writes = [];
+  S.subscribe((e) => S._writes.push(e.ids));
+  S._state = new Proxy({}, { get: (_, slug) => S.get(idOf[slug]) });
+  return S;
 }
 
 let P = fakePersist({ 'line-numbers': false, 'word-wrap': true, whitespace: 'none', 'tab-size': 2 });
@@ -201,21 +205,8 @@ P = fakePersist({ 'word-wrap': false, 'font-size': 'md' });
 expect(applyValue(P, wrap, undefined).value === true, 'a chord flips a boolean');
 expect(applyValue(P, wrap, undefined).value === false, 'twice flips back');
 expect(applyValue(P, size, undefined).value === 'lg', 'a chord cycles an enum');
-expect(applyValue({}, wrap, undefined).ok === false, 'a Persist without the accessor is refused');
-expect(applyValue(null, wrap, undefined).ok === false, 'no Persist, no write');
-
-// ── ⚠ the one that catches typos ─────────────────────────────────────────────
-// `editor-prefs.mjs` reads these names; `persist-settings.mjs` defines them. A
-// name that exists in neither is a preference that looks live and is not.
-const persistSrc = ['js/persist/persist-settings.mjs', 'js/persist/persist.mjs', 'js/persist/persist.js']
-  .map((f) => { try { return readFileSync(new URL('../' + f, import.meta.url), 'utf8'); } catch (_) { return ''; } })
-  .join('\n');
-expect(persistSrc.length > 1000, 'the Persist sources were found');
-for (const s of SETTINGS) {
-  for (const name of [s.read, s.write]) {
-    expect(persistSrc.includes(name), `Persist has no ${name} (for ${s.slug})`);
-  }
-}
+expect(applyValue({}, wrap, undefined).ok === false, 'something that is not Settings is refused');
+expect(applyValue(null, wrap, undefined).ok === false, 'no Settings, no write');
 
 // ── the line completes over the real names ───────────────────────────────────
 // The bar feeds `optionCandidates()` into the argument slot of `:set`; if the
@@ -238,4 +229,4 @@ expect(res.kind === 'option', 'the caret in slot 1 asks for options');
 expect(res.items.some((i) => i.value === 'nu'), ':set n offers nu');
 expect(complete('set ', 4, sources).items.length > 10, 'a bare :set  lists the preferences');
 
-console.log(`OK command settings (${SETTINGS.length} preferences, ${optionNames().length} :set names, accessors verified)`);
+console.log(`OK command settings (${SETTINGS.length} preferences, ${optionNames().length} :set names, every one a real setting)`);

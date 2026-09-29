@@ -1,3 +1,5 @@
+import { readSetting } from '../../persist/settings-schema.mjs';
+import { CHECK_DELAY_SCALE } from '../../persist/settings-apply.mjs';
 const MIN_DELAY = 120;
 const MAX_DELAY = 350;
 export const SETTLE_DELAY_MS = 250;
@@ -21,11 +23,7 @@ export function computeSettleDelayMs(syntaxSnap, { preludePaths = 0 } = {}) {
   const fastTyping = typingVelocity > 0 && typingVelocity < 180;
   const base = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * (sizeFactor + suiteFactor);
   let delay = fastTyping ? Math.max(MIN_DELAY, base * 0.75) : base;
-  try {
-    const g = typeof window !== 'undefined' ? window : globalThis;
-    const scale = g.Persist?.checkAggressivenessScale?.();
-    if (typeof scale === 'number' && isFinite(scale) && scale > 0) delay *= scale;
-  } catch (_) {}
+  delay *= CHECK_DELAY_SCALE[readSetting('checkAggressiveness')] || 1;
   return Math.round(Math.min(MAX_DELAY * 2, Math.max(MIN_DELAY * 0.5, delay)));
 }
 

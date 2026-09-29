@@ -1,3 +1,5 @@
+import { readDevice, writeDevice, deviceRow } from '../persist/device-schema.mjs';
+
 var STACK_MQ = '(max-width: 48rem)';
   var HIT_GRACE_PX = 6;
 
@@ -25,11 +27,8 @@ var STACK_MQ = '(max-width: 48rem)';
     var libraryPanel = document.querySelector('.library-panel');
     if (!workspace || !workspacePanes || !editorPanel || !outputPanel) return null;
 
-    var persist = globalThis.Persist;
-    var ratio =
-      persist && persist.readStoredEditorSplit
-        ? persist.readStoredEditorSplit()
-        : 0.5;
+    var splitRow = deviceRow('editorSplit');
+    var ratio = readDevice('editorSplit');
     var stackedMq = globalThis.matchMedia(STACK_MQ);
     var dragging = false;
 
@@ -40,9 +39,7 @@ var STACK_MQ = '(max-width: 48rem)';
     workspacePanes.appendChild(hitStrip);
 
     function clamp(r) {
-      return persist && persist.clampEditorSplit
-        ? persist.clampEditorSplit(r)
-        : Math.min(0.82, Math.max(0.18, r));
+      return Math.min(splitRow.max, Math.max(splitRow.min, r));
     }
 
     function isStacked() {
@@ -90,8 +87,8 @@ var STACK_MQ = '(max-width: 48rem)';
     function applyLayout(save) {
       ratio = clamp(ratio);
       applySplitVars(ratio);
-      if (save && persist && persist.writeStoredEditorSplit) {
-        persist.writeStoredEditorSplit(ratio);
+      if (save) {
+        writeDevice('editorSplit', ratio);
       }
       if (typeof opts.onResize === 'function') opts.onResize();
       requestAnimationFrame(positionHitStrip);

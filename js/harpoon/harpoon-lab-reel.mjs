@@ -1,3 +1,4 @@
+import { prefersReducedMotion } from '../persist/settings-apply.mjs';
 /**
  * Solve conveyor / FLIP / working row — peer of `harpoon-lab.mjs`, bundled via `harpoon-ui.mjs`.
  */
@@ -109,10 +110,7 @@ function createReel(deps) {
       }
 
       function reelMotionOk() {
-        if (typeof Persist !== 'undefined' && typeof Persist.prefersReducedMotion === 'function') {
-          return !Persist.prefersReducedMotion();
-        }
-        return !(global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        return !prefersReducedMotion(Settings.get('motionPref'));
       }
 
       function reelClearMotion(el) {

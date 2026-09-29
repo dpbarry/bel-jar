@@ -17,24 +17,24 @@ import {
   foldedRanges,
 } from '@codemirror/language';
 import { EditorState, Text } from '@codemirror/state';
+import { makeBrowserStorage, openTab } from './_persist-env.mjs';
 
 let failed = false;
 function expect(cond, msg) {
   if (!cond) { console.error('FAIL:', msg); failed = true; }
 }
 
-const store = new Map();
-globalThis.sessionStorage = {
-  getItem(k) { return store.has(k) ? store.get(k) : null; },
-  setItem(k, v) { store.set(k, v); },
-  removeItem(k) { store.delete(k); },
-};
-globalThis.localStorage = globalThis.sessionStorage;
-
-globalThis.Persist = {
-  readStoredEditorFoldPersist: () => 'session',
-  readStoredEditorFoldGutter: () => true,
-};
+// A real Persist: folds live in the store the editorFoldPersist setting picks
+// (this tab by default), per file of the page's project.
+const local = makeBrowserStorage();
+const session = makeBrowserStorage();
+const { P, S } = openTab(local, { sessionStorage: session });
+globalThis.Persist = P;
+globalThis.Settings = S;
+const fileA = P.createFile('a.bel');
+const fileB = P.createFile('b.bel');
+const fileC = P.createFile('c.bel');
+const foldsKey = 'beljar/p/' + P.getActiveProjectId() + '/folds';
 
 function editorState(src) {
   const doc = Text.of(src.split('\n'));
@@ -64,11 +64,11 @@ expect(!gFold, 'single-line rec g is not foldable');
 const keyed = resolveFoldKeys(state, ['decl:RecDeclaration:f']);
 expect(keyed.length === 1 && keyed[0].from === fKey.range.from, 'resolve key to current range');
 
-writeFileFoldKeys('file-a', ['decl:RecDeclaration:f'], 'session');
-expect(readFileFoldKeys('file-a', 'session').length === 1, 'round-trip stored keys');
+writeFileFoldKeys(fileA, ['decl:RecDeclaration:f'], 'session');
+expect(readFileFoldKeys(fileA, 'session').length === 1, 'round-trip stored keys');
 
 const restored = state.update({
-  effects: resolveFoldKeys(state, readFileFoldKeys('file-a', 'session')).map((r) => foldEffect.of(r)),
+  effects: resolveFoldKeys(state, readFileFoldKeys(fileA, 'session')).map((r) => foldEffect.of(r)),
 }).state;
 let folded = false;
 foldedRanges(restored).between(0, restored.doc.length, () => { folded = true; });
@@ -81,20 +81,36 @@ const afterFold = state.update({ effects: foldEffect.of(fKey.range) }).state;
 const key = foldKeyForRange(afterFold, fKey.range);
 expect(key === 'decl:RecDeclaration:f', 'folded range maps back to key');
 
-writeFileFoldKeys('file-b', ['bad'], 'none');
-expect(readFileFoldKeys('file-b', 'none').length === 0, 'none mode does not store');
+writeFileFoldKeys(fileB, ['bad'], 'none');
+expect(readFileFoldKeys(fileB, 'none').length === 0, 'none mode does not store');
 
-expect(readFoldPersistMode() === 'session', 'reads persist mode from Persist');
+expect(readFoldPersistMode() === 'session', 'the mode is the setting (this tab, by default)');
+expect(session.getItem(foldsKey) !== null && local.getItem(foldsKey) === null, 'kept in the tab store');
 
-store.set('beljar-fold-session-v1', '{not json');
-expect(readFileFoldKeys('file-a', 'session').length === 0, 'corrupt store fails gracefully');
+session.setItem(foldsKey, '{not json');
+expect(readFileFoldKeys(fileA, 'session').length === 0, 'corrupt store fails gracefully');
 
-writeFileFoldKeys('file-c', ['decl:RecDeclaration:f', 'decl:RecDeclaration:ghost'], 'session');
-reconcileStoredFoldKeys(state, 'file-c', 'session');
+writeFileFoldKeys(fileC, ['decl:RecDeclaration:f', 'decl:RecDeclaration:ghost'], 'session');
+reconcileStoredFoldKeys(state, fileC, 'session');
 expect(
-  readFileFoldKeys('file-c', 'session').join() === 'decl:RecDeclaration:f',
+  readFileFoldKeys(fileC, 'session').join() === 'decl:RecDeclaration:f',
   'load prunes keys that no longer match foldable blocks',
 );
+
+// ⛔ Changing where folds are kept carries them there, whoever changes it.
+S.set('editorFoldPersist', 'local');
+expect(local.getItem(foldsKey) !== null && session.getItem(foldsKey) === null, 'switching to this device moves the folds');
+expect(readFileFoldKeys(fileC).join() === 'decl:RecDeclaration:f', 'and they still read back');
+S.set('editorFoldPersist', 'none');
+expect(local.getItem(foldsKey) === null && session.getItem(foldsKey) === null, 'switching to none forgets them');
+S.set('editorFoldPersist', 'session');
+
+// A deleted file's folds go with it on the next write.
+writeFileFoldKeys(fileA, ['decl:RecDeclaration:f']);
+writeFileFoldKeys(fileC, ['decl:RecDeclaration:f']);
+P.deleteFile(fileA);
+writeFileFoldKeys(fileC, ['decl:RecDeclaration:f']);
+expect(!(fileA in JSON.parse(session.getItem(foldsKey)).data), 'a deleted file\'s folds are dropped');
 
 if (failed) process.exit(1);
 console.log('OK fold persist');

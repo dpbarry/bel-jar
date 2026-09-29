@@ -136,17 +136,13 @@ export function blurRestoreOnClose(wasSearch) {
 function loadHistory() {
   if (historyLoaded) return;
   historyLoaded = true;
-  const P = global.Persist;
-  if (P && typeof P.readStoredCommandLineHistory === 'function') {
-    try { history = P.readStoredCommandLineHistory() || []; } catch (_) { history = []; }
-  }
+  const D = global.Device;
+  if (D) history = D.get('commandLineHistory');
 }
 
 function saveHistory() {
-  const P = global.Persist;
-  if (P && typeof P.writeStoredCommandLineHistory === 'function') {
-    try { P.writeStoredCommandLineHistory(history); } catch (_) { /* storage full */ }
-  }
+  const D = global.Device;
+  if (D) D.set('commandLineHistory', history);
 }
 
 /** Commands the line can name: ex aliases first, then the id. */

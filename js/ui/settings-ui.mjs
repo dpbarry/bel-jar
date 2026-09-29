@@ -74,29 +74,12 @@ const global = globalThis;
   }
 
   function resetAllSettings() {
-    runCategoryReset(function (p) {
-      p.resetAppearancePrefs();
-      document.documentElement.classList.remove('light');
-      if (typeof p.applyStoredUiFontSize === 'function') p.applyStoredUiFontSize();
-      if (typeof p.applyStoredUiTextContrast === 'function') p.applyStoredUiTextContrast();
-      if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
-      if (typeof global.syncEditorCmTheme === 'function') global.syncEditorCmTheme();
-
-      p.resetEditorPrefs();
-      if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
-
-      p.resetBelugaPrefs();
+    runCategoryReset(function () {
+      Settings.resetAll();
       BelugaRun.setBelugaMode('stable');
-
-      p.resetHarpoonPrefs();
-
-      p.resetReplPrefs();
-
-      p.resetWorkspacePrefs();
-      var on = typeof p.readStoredInspectorFollow === 'function' ? p.readStoredInspectorFollow() : true;
-      global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: on } }));
-
-      p.resetAliasesPrefs();
+      global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', {
+        detail: { on: Settings.get('inspectorFollow') },
+      }));
     }, 'settings-reset-all');
     Keybindings.resetAll();
     if (keybindingsApi) keybindingsApi.refresh();
@@ -123,7 +106,7 @@ const global = globalThis;
     // The style can change from anywhere — `:set`, the palette, a settings
     // import, another tab — so the nested group follows the STORED style here
     // rather than only on the dropdown's own change handler.
-    if (typeof p.readStoredKeymapStyle === 'function') paintStyleRows(p.readStoredKeymapStyle());
+    paintStyleRows(Settings.get('keymapStyle'));
   }
 
   function makeResetLink(onClick) {
@@ -293,8 +276,7 @@ const global = globalThis;
     // from `buildRow`, which is a different scope, and a swallowed
     // ReferenceError here silently reports every style as Standard.
     try {
-      var P = global.Persist;
-      return P && P.readStoredKeymapStyle ? P.readStoredKeymapStyle() : 'default';
+      return Settings.get('keymapStyle');
     } catch (_) {
       return 'default';
     }
@@ -752,8 +734,7 @@ const global = globalThis;
     }
 
     function loadPairs() {
-      var p = persist();
-      var stored = p && typeof p.readStoredAliasPairs === 'function' ? p.readStoredAliasPairs() : null;
+      var stored = Settings.get('aliasPairs');
       return stored == null ? defaultPairs() : normalizePairs(stored);
     }
 
@@ -772,9 +753,7 @@ const global = globalThis;
 
     function commit(notifyKey) {
       writePersist(notifyKey || 'alias-pairs', function (p) {
-        if (typeof p.writeStoredAliasPairs === 'function') {
-          p.writeStoredAliasPairs(pairsFromRows());
-        }
+        Settings.set('aliasPairs', pairsFromRows());
       });
     }
 
@@ -1386,21 +1365,11 @@ const global = globalThis;
     nav.appendChild(navFoot);
 
     attachPanelReset(main.querySelector('[data-category="appearance"]'), function () {
-      runCategoryReset(function (p) {
-        p.resetAppearancePrefs();
-        document.documentElement.classList.remove('light');
-        if (typeof p.applyStoredUiFontSize === 'function') p.applyStoredUiFontSize();
-        if (typeof p.applyStoredUiTextContrast === 'function') p.applyStoredUiTextContrast();
-        if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
-        if (typeof global.syncEditorCmTheme === 'function') global.syncEditorCmTheme();
-      }, 'appearance-reset');
+      runCategoryReset(function () { Settings.reset('appearance'); }, 'appearance-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="editor"]'), function () {
-      runCategoryReset(function (p) {
-        p.resetEditorPrefs();
-        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
-      }, 'editor-reset');
+      runCategoryReset(function () { Settings.reset('editor'); }, 'editor-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="keybindings"]'), function () {
@@ -1420,30 +1389,30 @@ const global = globalThis;
       });
 
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function () {
-      runCategoryReset(function (p) {
-        p.resetBelugaPrefs();
+      runCategoryReset(function () {
+        Settings.reset('beluga');
         BelugaRun.setBelugaMode('stable');
       }, 'beluga-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="harpoon"]'), function () {
-      runCategoryReset(function (p) { p.resetHarpoonPrefs(); }, 'harpoon-reset');
+      runCategoryReset(function () { Settings.reset('harpoon'); }, 'harpoon-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="repl"]'), function () {
-      runCategoryReset(function (p) { p.resetReplPrefs(); }, 'repl-reset');
+      runCategoryReset(function () { Settings.reset('repl'); }, 'repl-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="workspace"]'), function () {
-      runCategoryReset(function (p) {
-        p.resetWorkspacePrefs();
-        var on = typeof p.readStoredInspectorFollow === 'function' ? p.readStoredInspectorFollow() : true;
+      runCategoryReset(function () {
+        Settings.reset('workspace');
+        var on = Settings.get('inspectorFollow');
         global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: on } }));
       }, 'workspace-reset');
     });
 
     attachPanelReset(main.querySelector('[data-category="aliases"]'), function () {
-      runCategoryReset(function (p) { p.resetAliasesPrefs(); }, 'aliases-reset');
+      runCategoryReset(function () { Settings.reset('aliases'); }, 'aliases-reset');
       if (aliasesApi) aliasesApi.refresh();
     });
 
@@ -1454,13 +1423,9 @@ const global = globalThis;
       'Theme',
       '',
       [{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }],
-      function () {
-        return p0 && p0.readStoredTheme() === 'light' ? 'light' : 'dark';
-      },
+      function () { return Settings.get('theme'); },
       function (p, v) {
-        var isLight = v === 'light';
-        document.documentElement.classList.toggle('light', isLight);
-        p.writeStoredTheme(isLight ? 'light' : 'dark');
+        Settings.set('theme', v);
         if (typeof global.syncEditorCmTheme === 'function') global.syncEditorCmTheme();
       }
     );
@@ -1476,10 +1441,9 @@ const global = globalThis;
         { value: 'lg', label: 'Large' },
         { value: 'xl', label: 'Larger' },
       ],
-      function () { return p0 ? p0.readStoredUiFontSize() : 'md'; },
+      function () { return Settings.get('uiFontSize'); },
       function (p, v) {
-        p.writeStoredUiFontSize(v);
-        if (typeof p.applyStoredUiFontSize === 'function') p.applyStoredUiFontSize();
+        Settings.set('uiFontSize', v);
       }
     );
 
@@ -1494,10 +1458,9 @@ const global = globalThis;
         { value: 'high', label: 'High' },
         { value: 'maximum', label: 'Maximum' },
       ],
-      function () { return p0 ? p0.readStoredUiTextContrast() : 'medium'; },
+      function () { return Settings.get('uiTextContrast'); },
       function (p, v) {
-        p.writeStoredUiTextContrast(v);
-        if (typeof p.applyStoredUiTextContrast === 'function') p.applyStoredUiTextContrast();
+        Settings.set('uiTextContrast', v);
       }
     );
 
@@ -1511,10 +1474,9 @@ const global = globalThis;
         { value: 'reduce', label: 'Reduce' },
         { value: 'full', label: 'Full' },
       ],
-      function () { return p0 ? p0.readStoredMotionPref() : 'system'; },
+      function () { return Settings.get('motionPref'); },
       function (p, v) {
-        p.writeStoredMotionPref(v);
-        if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
+        Settings.set('motionPref', v);
       }
     );
 
@@ -1528,8 +1490,8 @@ const global = globalThis;
         { value: 'normal', label: 'Default' },
         { value: 'long', label: 'Long' },
       ],
-      function () { return p0 ? p0.readStoredToastDuration() : 'normal'; },
-      function (p, v) { p.writeStoredToastDuration(v); }
+      function () { return Settings.get('toastDuration'); },
+      function (p, v) { Settings.set('toastDuration', v); }
     );
 
     // Editor — Typography
@@ -1539,10 +1501,9 @@ const global = globalThis;
         { value: 'jetbrains', label: 'JetBrains Mono' },
         { value: 'system', label: 'System monospace' },
       ],
-      function () { return p0 ? p0.readStoredEditorFontFamily() : 'jetbrains'; },
+      function () { return Settings.get('editorFontFamily'); },
       function (p, v) {
-        p.writeStoredEditorFontFamily(v);
-        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+        Settings.set('editorFontFamily', v);
       }
     );
     addDropdownRow(panelBodies.editor, 'editor-font-size', 'Font size', 'Size of code in the editor. Independent of UI font size.',
@@ -1552,8 +1513,8 @@ const global = globalThis;
         { value: 'lg', label: 'Large' },
         { value: 'xl', label: 'Larger' },
       ],
-      function () { return p0 ? p0.readStoredEditorFontSize() : 'md'; },
-      function (p, v) { p.writeStoredEditorFontSize(v); }
+      function () { return Settings.get('editorFontSize'); },
+      function (p, v) { Settings.set('editorFontSize', v); }
     );
     addDropdownRow(panelBodies.editor, 'editor-line-height', 'Line height', 'Spacing between editor lines.',
       [
@@ -1561,12 +1522,12 @@ const global = globalThis;
         { value: 'normal', label: 'Default' },
         { value: 'relaxed', label: 'Relaxed' },
       ],
-      function () { return p0 ? p0.readStoredEditorLineHeight() : 'normal'; },
-      function (p, v) { p.writeStoredEditorLineHeight(v); }
+      function () { return Settings.get('editorLineHeight'); },
+      function (p, v) { Settings.set('editorLineHeight', v); }
     );
     addSwitchRow(panelBodies.editor, 'editor-word-wrap', 'Word wrap', 'Wraps lines that would be longer than the viewport.',
-      function () { return p0 ? p0.readStoredEditorWordWrap() : false; },
-      function (p, on) { p.writeStoredEditorWordWrap(on); }
+      function () { return Settings.get('editorWordWrap'); },
+      function (p, on) { Settings.set('editorWordWrap', on); }
     );
     addDropdownRow(panelBodies.editor, 'editor-cursor-blink', 'Cursor blink', 'How the insertion caret flashes.',
       [
@@ -1574,12 +1535,12 @@ const global = globalThis;
         { value: 'fast', label: 'Fast' },
         { value: 'off', label: 'Solid' },
       ],
-      function () { return p0 ? p0.readStoredEditorCursorBlink() : 'blink'; },
-      function (p, v) { p.writeStoredEditorCursorBlink(v); }
+      function () { return Settings.get('editorCursorBlink'); },
+      function (p, v) { Settings.set('editorCursorBlink', v); }
     );
     addSwitchRow(panelBodies.editor, 'editor-scroll-past-end', 'Scroll past end', 'Allow scrolling the last line to mid-viewport.',
-      function () { return p0 ? p0.readStoredEditorScrollPastEnd() : true; },
-      function (p, on) { p.writeStoredEditorScrollPastEnd(on); }
+      function () { return Settings.get('editorScrollPastEnd'); },
+      function (p, on) { Settings.set('editorScrollPastEnd', on); }
     );
     addDropdownRow(panelBodies.editor, 'editor-whitespace', 'Show whitespace', 'Where to mark spaces and tabs.',
       [
@@ -1588,20 +1549,20 @@ const global = globalThis;
         { value: 'selection', label: 'In selection' },
         { value: 'all', label: 'All' },
       ],
-      function () { return p0 ? p0.readStoredEditorWhitespace() : 'none'; },
-      function (p, v) { p.writeStoredEditorWhitespace(v); }
+      function () { return Settings.get('editorWhitespace'); },
+      function (p, v) { Settings.set('editorWhitespace', v); }
     );
     addSwitchRow(panelBodies.editor, 'editor-rulers', 'Print-width ruler', 'Vertical guide at the format print width.',
-      function () { return p0 ? p0.readStoredEditorRulers() : false; },
-      function (p, on) { p.writeStoredEditorRulers(on); }
+      function () { return Settings.get('editorRulers'); },
+      function (p, on) { Settings.set('editorRulers', on); }
     );
 
     // Editor — Indentation & saving
     addSectionHead(panelBodies.editor, 'Indentation & saving');
     addDropdownRow(panelBodies.editor, 'editor-tab-size', 'Tab size', 'Spaces per tab.',
       [{ value: '2', label: '2 spaces' }, { value: '4', label: '4 spaces' }],
-      function () { return p0 ? String(p0.readStoredEditorTabSize()) : '2'; },
-      function (p, v) { p.writeStoredEditorTabSize(parseInt(v, 10)); }
+      function () { return String(Settings.get('editorTabSize')); },
+      function (p, v) { Settings.set('editorTabSize', parseInt(v, 10)); }
     );
     addDropdownRow(panelBodies.editor, 'editor-autosave', 'Auto-save delay', 'Pause after typing before save.',
       [
@@ -1609,8 +1570,8 @@ const global = globalThis;
         { value: '1000', label: 'Normal (1s)' },
         { value: '2000', label: 'Slow (2s)' },
       ],
-      function () { return p0 ? String(p0.readStoredAutosaveDelay()) : '320'; },
-      function (p, v) { p.writeStoredAutosaveDelay(parseInt(v, 10)); }
+      function () { return String(Settings.get('autosaveDelay')); },
+      function (p, v) { Settings.set('autosaveDelay', parseInt(v, 10)); }
     );
     addDropdownRow(panelBodies.editor, 'editor-format-width', 'Format print width', 'Max line width for Format Document.',
       [
@@ -1618,58 +1579,58 @@ const global = globalThis;
         { value: '100', label: '100 columns' },
         { value: '120', label: '120 columns' },
       ],
-      function () { return p0 ? String(p0.readStoredEditorFormatWidth()) : '80'; },
-      function (p, v) { p.writeStoredEditorFormatWidth(parseInt(v, 10)); }
+      function () { return String(Settings.get('editorFormatWidth')); },
+      function (p, v) { Settings.set('editorFormatWidth', parseInt(v, 10)); }
     );
     addSwitchRow(panelBodies.editor, 'editor-reindent-paste', 'Re-indent on paste', 'Re-indent pasted text.',
-      function () { return p0 ? p0.readStoredEditorReindentPaste() : true; },
-      function (p, on) { p.writeStoredEditorReindentPaste(on); }
+      function () { return Settings.get('editorReindentPaste'); },
+      function (p, on) { Settings.set('editorReindentPaste', on); }
     );
     addSwitchRow(panelBodies.editor, 'cfg-auto-sync', 'Sync suite .cfg on file ops',
       'Rewrite suite .cfg entries on same-folder rename or delete. Moves leave entries for cfg lint.',
-      function () { return p0 ? p0.readStoredCfgAutoSync() : true; },
-      function (p, on) { p.writeStoredCfgAutoSync(on); }
+      function () { return Settings.get('cfgAutoSync'); },
+      function (p, on) { Settings.set('cfgAutoSync', on); }
     );
     addSwitchRow(panelBodies.editor, 'format-on-save', 'Format on save',
       'Run Format Document when auto-save flushes a .bel file.',
-      function () { return p0 ? p0.readStoredFormatOnSave() : false; },
-      function (p, on) { p.writeStoredFormatOnSave(on); }
+      function () { return Settings.get('formatOnSave'); },
+      function (p, on) { Settings.set('formatOnSave', on); }
     );
     addSwitchRow(panelBodies.editor, 'trim-trailing-ws', 'Trim trailing whitespace on save',
       'Strip spaces and tabs at line ends when auto-save flushes a .bel file.',
-      function () { return p0 ? p0.readStoredTrimTrailingWs() : false; },
-      function (p, on) { p.writeStoredTrimTrailingWs(on); }
+      function () { return Settings.get('trimTrailingWs'); },
+      function (p, on) { Settings.set('trimTrailingWs', on); }
     );
 
     // Editor — Code insight
     addSectionHead(panelBodies.editor, 'Code insight');
     addSwitchRow(panelBodies.editor, 'editor-syntax-highlight', 'Syntax highlighting', 'Color keywords, strings, and comments.',
-      function () { return p0 ? p0.readStoredEditorSyntaxHighlight() : true; },
-      function (p, on) { p.writeStoredEditorSyntaxHighlight(on); }
+      function () { return Settings.get('editorSyntaxHighlight'); },
+      function (p, on) { Settings.set('editorSyntaxHighlight', on); }
     );
     addSwitchRow(panelBodies.editor, 'editor-semantic-highlight', 'Semantic highlighting', 'Color bound variables and declarations.',
-      function () { return p0 ? p0.readStoredEditorSemanticHighlight() : true; },
-      function (p, on) { p.writeStoredEditorSemanticHighlight(on); }
+      function () { return Settings.get('editorSemanticHighlight'); },
+      function (p, on) { Settings.set('editorSemanticHighlight', on); }
     );
     addSwitchRow(panelBodies.editor, 'editor-parse-highlight', 'Invalid parse styling', 'Dim tokens in broken or incomplete declarations.',
-      function () { return p0 ? p0.readStoredEditorParseHighlight() : true; },
-      function (p, on) { p.writeStoredEditorParseHighlight(on); }
+      function () { return Settings.get('editorParseHighlight'); },
+      function (p, on) { Settings.set('editorParseHighlight', on); }
     );
     addSwitchRow(panelBodies.editor, 'editor-occurrence-highlight', 'Occurrence highlight', 'Underline other uses of the word at the cursor.',
-      function () { return p0 ? p0.readStoredEditorOccurrenceHighlight() : true; },
-      function (p, on) { p.writeStoredEditorOccurrenceHighlight(on); }
+      function () { return Settings.get('editorOccurrenceHighlight'); },
+      function (p, on) { Settings.set('editorOccurrenceHighlight', on); }
     );
     addSwitchRow(panelBodies.editor, 'editor-bracket-match', 'Bracket matching', 'Highlight matching brackets.',
-      function () { return p0 ? p0.readStoredEditorBracketMatch() : true; },
-      function (p, on) { p.writeStoredEditorBracketMatch(on); }
+      function () { return Settings.get('editorBracketMatch'); },
+      function (p, on) { Settings.set('editorBracketMatch', on); }
     );
     addSwitchRow(panelBodies.editor, 'editor-auto-close-brackets', 'Auto-close brackets', 'Insert closing brackets automatically.',
-      function () { return p0 ? p0.readStoredEditorAutoCloseBrackets() : true; },
-      function (p, on) { p.writeStoredEditorAutoCloseBrackets(on); }
+      function () { return Settings.get('editorAutoCloseBrackets'); },
+      function (p, on) { Settings.set('editorAutoCloseBrackets', on); }
     );
     addSwitchRow(panelBodies.editor, 'editor-selection-matches', 'Selection matches', 'Highlight other matches of the selection.',
-      function () { return p0 ? p0.readStoredEditorSelectionMatches() : true; },
-      function (p, on) { p.writeStoredEditorSelectionMatches(on); }
+      function () { return Settings.get('editorSelectionMatches'); },
+      function (p, on) { Settings.set('editorSelectionMatches', on); }
     );
     addDropdownRow(panelBodies.editor, 'editor-autocomplete-trigger', 'Autocomplete',
       'When the completion popup opens. Show Autocomplete still opens it explicitly.',
@@ -1678,13 +1639,13 @@ const global = globalThis;
         { value: 'typing', label: 'Only after keystroke' },
         { value: 'always', label: 'Always at token end' },
       ],
-      function () { return p0 ? p0.readStoredEditorAutocompleteTrigger() : 'typing'; },
-      function (p, v) { p.writeStoredEditorAutocompleteTrigger(v); }
+      function () { return Settings.get('editorAutocompleteTrigger'); },
+      function (p, v) { Settings.set('editorAutocompleteTrigger', v); }
     );
     addSwitchRow(panelBodies.editor, 'editor-autocomplete-continue', 'Continue suggesting after accept',
       'Keep showing completions after Tab or click when more options remain.',
-      function () { return p0 ? p0.readStoredEditorAutocompleteContinue() : false; },
-      function (p, on) { p.writeStoredEditorAutocompleteContinue(on); }
+      function () { return Settings.get('editorAutocompleteContinue'); },
+      function (p, on) { Settings.set('editorAutocompleteContinue', on); }
     );
     addDropdownRow(panelBodies.editor, 'hover-scope', 'Hover tooltips',
       'Which symbols get hover tooltips. UI tooltips are unaffected.',
@@ -1693,25 +1654,25 @@ const global = globalThis;
         { value: 'user-only', label: 'Identifiers only' },
         { value: 'none', label: 'Off' },
       ],
-      function () { return p0 ? p0.readStoredHoverScope() : 'all'; },
-      function (p, v) { p.writeStoredHoverScope(v); }
+      function () { return Settings.get('hoverScope'); },
+      function (p, v) { Settings.set('hoverScope', v); }
     );
     addSwitchRow(panelBodies.editor, 'hover-sticky', 'Sticky hover',
       'Keep type hover open until Escape or click outside. Scroll and pointer leave do not dismiss.',
-      function () { return p0 ? p0.readStoredHoverSticky() : false; },
-      function (p, on) { p.writeStoredHoverSticky(on); }
+      function () { return Settings.get('hoverSticky'); },
+      function (p, on) { Settings.set('hoverSticky', on); }
     );
     addSwitchRow(panelBodies.editor, 'quiet-while-typing', 'Quiet while typing',
       'Hold hover, occurrence highlight, and auto-complete until checking settles. Show Autocomplete still works.',
-      function () { return p0 ? p0.readStoredQuietWhileTyping() : false; },
-      function (p, on) { p.writeStoredQuietWhileTyping(on); }
+      function () { return Settings.get('quietWhileTyping'); },
+      function (p, on) { Settings.set('quietWhileTyping', on); }
     );
 
     // Editor — Gutter
     addSectionHead(panelBodies.editor, 'Gutter');
     addSwitchRow(panelBodies.editor, 'editor-line-numbers', 'Line numbers', 'Show line numbers in the gutter.',
-      function () { return p0 ? p0.readStoredEditorLineNumbers() : true; },
-      function (p, on) { p.writeStoredEditorLineNumbers(on); }
+      function () { return Settings.get('editorLineNumbers'); },
+      function (p, on) { Settings.set('editorLineNumbers', on); }
     );
     addDropdownRow(panelBodies.editor, 'editor-line-number-style', 'Line number style',
       'Relative numbers count out from the cursor, so a Vim count like 5j can be read off the gutter.',
@@ -1720,12 +1681,12 @@ const global = globalThis;
         { value: 'relative', label: 'Relative' },
         { value: 'hybrid', label: 'Relative + current line' },
       ],
-      function () { return p0 && p0.readStoredEditorLineNumberMode ? p0.readStoredEditorLineNumberMode() : 'absolute'; },
-      function (p, v) { if (p.writeStoredEditorLineNumberMode) p.writeStoredEditorLineNumberMode(v); }
+      function () { return Settings.get('editorLineNumberMode'); },
+      function (p, v) { Settings.set('editorLineNumberMode', v); }
     );
     addSwitchRow(panelBodies.editor, 'editor-fold-gutter', 'Code folding', 'Fold markers in the gutter.',
-      function () { return p0 ? p0.readStoredEditorFoldGutter() : true; },
-      function (p, on) { p.writeStoredEditorFoldGutter(on); }
+      function () { return Settings.get('editorFoldGutter'); },
+      function (p, on) { Settings.set('editorFoldGutter', on); }
     );
     addDropdownRow(panelBodies.editor, 'editor-fold-persist', 'Remember folds', 'Where to store which blocks are folded per file.',
       [
@@ -1733,17 +1694,17 @@ const global = globalThis;
         { value: 'session', label: 'This session' },
         { value: 'local', label: 'Always' },
       ],
-      function () { return p0 ? p0.readStoredEditorFoldPersist() : 'session'; },
-      function (p, v) { p.writeStoredEditorFoldPersist(v); }
+      function () { return Settings.get('editorFoldPersist'); },
+      function (p, v) { Settings.set('editorFoldPersist', v); }
     );
     addSwitchRow(panelBodies.editor, 'editor-active-line', 'Active line highlight', 'Background on the current line.',
-      function () { return p0 ? p0.readStoredEditorActiveLine() : true; },
-      function (p, on) { p.writeStoredEditorActiveLine(on); }
+      function () { return Settings.get('editorActiveLine'); },
+      function (p, on) { Settings.set('editorActiveLine', on); }
     );
     addSwitchRow(panelBodies.editor, 'sticky-decl-header', 'Structure path',
       'Show the enclosing declaration path (a > b > c) at the top of the editor, driven by the cursor.',
-      function () { return p0 ? p0.readStoredStickyDeclHeader() : false; },
-      function (p, on) { p.writeStoredStickyDeclHeader(on); }
+      function () { return Settings.get('stickyDeclHeader'); },
+      function (p, on) { Settings.set('stickyDeclHeader', on); }
     );
     addDropdownRow(panelBodies.editor, 'diag-presentation', 'Diagnostics',
       'Where errors and warnings appear in the editor.',
@@ -1753,17 +1714,17 @@ const global = globalThis;
         { value: 'gutter', label: 'Gutter only' },
         { value: 'none', label: 'Off' },
       ],
-      function () { return p0 ? p0.readStoredDiagPresentation() : 'both'; },
-      function (p, v) { p.writeStoredDiagPresentation(v); }
+      function () { return Settings.get('diagPresentation'); },
+      function (p, v) { Settings.set('diagPresentation', v); }
     );
     addSwitchRow(panelBodies.editor, 'diag-show-warnings', 'Show warnings',
       'When off, only errors appear as underlines and gutter marks.',
-      function () { return p0 ? p0.readStoredDiagSeverity() !== 'errors' : true; },
-      function (p, on) { p.writeStoredDiagSeverity(on ? 'all' : 'errors'); }
+      function () { return p0 ? Settings.get('diagSeverity') !== 'errors' : true; },
+      function (p, on) { Settings.set('diagSeverity', on ? 'all' : 'errors'); }
     );
     addSwitchRow(panelBodies.editor, 'editor-hole-gutter', 'Hole gutter marks', 'Mark lines with proof holes.',
-      function () { return p0 ? p0.readStoredEditorHoleGutter() : true; },
-      function (p, on) { p.writeStoredEditorHoleGutter(on); }
+      function () { return Settings.get('editorHoleGutter'); },
+      function (p, on) { Settings.set('editorHoleGutter', on); }
     );
     addDropdownRow(panelBodies.editor, 'editor-hole-emphasis', 'Hole gutter emphasis', 'How strongly hole lines stand out.',
       [
@@ -1771,10 +1732,9 @@ const global = globalThis;
         { value: 'normal', label: 'Default' },
         { value: 'loud', label: 'Loud' },
       ],
-      function () { return p0 ? p0.readStoredEditorHoleEmphasis() : 'normal'; },
+      function () { return Settings.get('editorHoleEmphasis'); },
       function (p, v) {
-        p.writeStoredEditorHoleEmphasis(v);
-        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+        Settings.set('editorHoleEmphasis', v);
       }
     );
 
@@ -1793,10 +1753,9 @@ const global = globalThis;
         { value: 'vim', label: 'Vim' },
         { value: 'emacs', label: 'Emacs' },
       ],
-      function () { return p0 && typeof p0.readStoredKeymapStyle === 'function' ? p0.readStoredKeymapStyle() : 'default'; },
+      function () { return Settings.get('keymapStyle'); },
       function (p, v) {
-        if (typeof p.writeStoredKeymapStyle === 'function') p.writeStoredKeymapStyle(v);
-        if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
+        Settings.set('keymapStyle', v);
         if (typeof BelEditor !== 'undefined' && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
         // The per-row "live in this style" notes are style-dependent.
         if (keybindingsApi && keybindingsApi.refresh) keybindingsApi.refresh();
@@ -1821,8 +1780,8 @@ const global = globalThis;
         { value: ',', label: 'Comma  ,' },
         { value: ' ', label: 'Space' },
       ],
-      function () { return p0 && p0.readStoredVimLeader ? p0.readStoredVimLeader() : BACKSLASH; },
-      function (p, v) { if (p.writeStoredVimLeader) p.writeStoredVimLeader(v); applyModal(); }
+      function () { return Settings.get('vimLeader'); },
+      function (p, v) { Settings.set('vimLeader', v); applyModal(); }
     );
     addDropdownRow(vimGroup, 'vim-insert-escape', 'Leave Insert with',
       'A two-key sequence that acts as Escape while typing.',
@@ -1832,8 +1791,8 @@ const global = globalThis;
         { value: 'jj', label: 'jj' },
         { value: 'kj', label: 'kj' },
       ],
-      function () { return p0 && p0.readStoredVimInsertEscape ? p0.readStoredVimInsertEscape() : ''; },
-      function (p, v) { if (p.writeStoredVimInsertEscape) p.writeStoredVimInsertEscape(v); applyModal(); }
+      function () { return Settings.get('vimInsertEscape'); },
+      function (p, v) { Settings.set('vimInsertEscape', v); applyModal(); }
     );
 
     // Emacs has one real choice: what C-y pastes. Read on every press, so no
@@ -1846,12 +1805,12 @@ const global = globalThis;
         { value: 'system', label: 'System clipboard' },
         { value: 'kill-ring', label: 'Kill ring' },
       ],
-      function () { return p0 && p0.readStoredEmacsYankSource ? p0.readStoredEmacsYankSource() : 'system'; },
-      function (p, v) { if (p.writeStoredEmacsYankSource) p.writeStoredEmacsYankSource(v); }
+      function () { return Settings.get('emacsYankSource'); },
+      function (p, v) { Settings.set('emacsYankSource', v); }
     );
 
     styleGroups = { vim: vimGroup, emacs: emacsGroup };
-    paintStyleRows(p0 && p0.readStoredKeymapStyle ? p0.readStoredKeymapStyle() : 'default');
+    paintStyleRows(Settings.get('keymapStyle'));
 
     addDropdownRow(panelBodies.keybindings, 'status-strip', 'Status strip',
       'Goal at the caret, holes left, problems, checker state.',
@@ -1865,7 +1824,7 @@ const global = globalThis;
         return StatusStrip.storedMode();
       },
       function (p, v) {
-        if (typeof p.writeStoredStatusStrip === 'function') p.writeStoredStatusStrip(v);
+        Settings.set('statusStrip', v);
         StatusStrip.apply();
       }
     );
@@ -1878,16 +1837,16 @@ const global = globalThis;
         { value: 'control', label: 'Ctrl Ctrl' },
         { value: 'alt', label: 'Alt Alt' },
       ],
-      function () { return p0 && p0.readStoredDoubleTapTrigger ? p0.readStoredDoubleTapTrigger() : 'off'; },
-      function (p, v) { if (p.writeStoredDoubleTapTrigger) p.writeStoredDoubleTapTrigger(v); }
+      function () { return Settings.get('doubleTapTrigger'); },
+      function (p, v) { Settings.set('doubleTapTrigger', v); }
     );
     // Options come from the registry, so a row can never name a command that
     // does not exist and the label is the command's own title.
     addDropdownRow(panelBodies.keybindings, 'double-tap-command', 'Double-tap command',
       'What the two taps run.',
       gestureTargetOptions(),
-      function () { return p0 && p0.readStoredDoubleTapCommand ? p0.readStoredDoubleTapCommand() : 'tools.palette'; },
-      function (p, v) { if (p.writeStoredDoubleTapCommand) p.writeStoredDoubleTapCommand(v); }
+      function () { return Settings.get('doubleTapCommand'); },
+      function (p, v) { Settings.set('doubleTapCommand', v); }
     );
     addDropdownRow(panelBodies.keybindings, 'double-tap-speed', 'Double-tap speed',
       'How close together the two taps must be.',
@@ -1896,8 +1855,8 @@ const global = globalThis;
         { value: 'normal', label: 'Normal  350ms' },
         { value: 'relaxed', label: 'Relaxed  500ms' },
       ],
-      function () { return p0 && p0.readStoredDoubleTapSpeed ? p0.readStoredDoubleTapSpeed() : 'normal'; },
-      function (p, v) { if (p.writeStoredDoubleTapSpeed) p.writeStoredDoubleTapSpeed(v); }
+      function () { return Settings.get('doubleTapSpeed'); },
+      function (p, v) { Settings.set('doubleTapSpeed', v); }
     );
     var kbUnit = addEditorUnit(panelBodies.keybindings, {
       kind: 'kb',
@@ -1918,13 +1877,13 @@ const global = globalThis;
     );
     addSwitchRow(panelBodies.beluga, 'beluga-fallback-stable', 'Retry with Stable if Fast fails',
       'If a Fast run crashes, retry on the Stable worker.',
-      function () { return p0 ? p0.readStoredBelugaFallbackStable() : true; },
-      function (p, on) { p.writeStoredBelugaFallbackStable(on); }
+      function () { return Settings.get('belugaFallbackStable'); },
+      function (p, on) { Settings.set('belugaFallbackStable', on); }
     );
     addSwitchRow(panelBodies.beluga, 'beluga-cancel-on-edit', 'Cancel load on edit',
       'Abort a pending Run/Load when the buffer changes.',
-      function () { return p0 ? p0.readStoredBelugaCancelOnEdit() : true; },
-      function (p, on) { p.writeStoredBelugaCancelOnEdit(on); }
+      function () { return Settings.get('belugaCancelOnEdit'); },
+      function (p, on) { Settings.set('belugaCancelOnEdit', on); }
     );
     addDropdownRow(panelBodies.beluga, 'check-aggressiveness', 'Check aggressiveness',
       'How quickly background checking settles after edits.',
@@ -1933,8 +1892,8 @@ const global = globalThis;
         { value: 'balanced', label: 'Balanced' },
         { value: 'thorough', label: 'Thorough' },
       ],
-      function () { return p0 ? p0.readStoredCheckAggressiveness() : 'balanced'; },
-      function (p, v) { p.writeStoredCheckAggressiveness(v); }
+      function () { return Settings.get('checkAggressiveness'); },
+      function (p, v) { Settings.set('checkAggressiveness', v); }
     );
     addDropdownRow(panelBodies.beluga, 'suite-check', 'Suite check',
       'Settlement always checks the active file (with prelude). Suite mode also type-checks sibling files.',
@@ -1942,8 +1901,8 @@ const global = globalThis;
         { value: 'suite', label: 'Active + suite' },
         { value: 'active', label: 'Active file only' },
       ],
-      function () { return p0 ? p0.readStoredSuiteCheck() : 'suite'; },
-      function (p, v) { p.writeStoredSuiteCheck(v); }
+      function () { return Settings.get('suiteCheck'); },
+      function (p, v) { Settings.set('suiteCheck', v); }
     );
     addDropdownRow(
       panelBodies.harpoon,
@@ -1952,30 +1911,30 @@ const global = globalThis;
       'Manual lets you pick each tactic yourself, with Orca (the search) one click away. '
       + 'Orca starts searching immediately.',
       [{ value: 'manual', label: 'Manual' }, { value: 'orca', label: 'Orca' }],
-      function () { return p0 ? p0.readStoredHarpoonMode() : 'manual'; },
-      function (p, v) { p.writeStoredHarpoonMode(v); }
+      function () { return Settings.get('harpoonMode'); },
+      function (p, v) { Settings.set('harpoonMode', v); }
     );
     addSwitchRow(panelBodies.harpoon, 'harpoon-verify-moves', 'Pre-verify offered tactics',
       'Check the top tactics against Beluga in the background so each shows whether it holds '
       + 'before you pick it. Costs a few checker calls per goal.',
-      function () { return p0 ? p0.readStoredHarpoonVerifyMoves() : true; },
-      function (p, on) { p.writeStoredHarpoonVerifyMoves(on); }
+      function () { return Settings.get('harpoonVerifyMoves'); },
+      function (p, on) { Settings.set('harpoonVerifyMoves', on); }
     );
     addSwitchRow(panelBodies.harpoon, 'autosolve-focus-next', 'Focus next hole after place',
       'After placing a solved proof, jump the editor to the next open hole.',
-      function () { return p0 ? p0.readStoredAutosolveFocusNext() : true; },
-      function (p, on) { p.writeStoredAutosolveFocusNext(on); }
+      function () { return Settings.get('autosolveFocusNext'); },
+      function (p, on) { Settings.set('autosolveFocusNext', on); }
     );
     addSwitchRow(panelBodies.harpoon, 'autosolve-show-stats', 'Show checker call counts',
       'Show how many Beluga certifies ran per hole in the proof tree.',
-      function () { return p0 ? p0.readStoredAutosolveShowStats() : true; },
-      function (p, on) { p.writeStoredAutosolveShowStats(on); }
+      function () { return Settings.get('autosolveShowStats'); },
+      function (p, on) { Settings.set('autosolveShowStats', on); }
     );
 
     // REPL
     addSwitchRow(panelBodies.repl, 'repl-autoscroll', 'Auto-scroll output', 'Scroll to new output.',
-      function () { return p0 ? p0.readStoredReplAutoscroll() : true; },
-      function (p, on) { p.writeStoredReplAutoscroll(on); }
+      function () { return Settings.get('replAutoscroll'); },
+      function (p, on) { Settings.set('replAutoscroll', on); }
     );
     addDropdownRow(panelBodies.repl, 'repl-autocomplete-trigger', 'Autocomplete',
       'When the completion popup opens. Show Autocomplete still opens it explicitly.',
@@ -1984,30 +1943,30 @@ const global = globalThis;
         { value: 'typing', label: 'Only after keystroke' },
         { value: 'always', label: 'Always at token end' },
       ],
-      function () { return p0 ? p0.readStoredReplAutocompleteTrigger() : 'typing'; },
-      function (p, v) { p.writeStoredReplAutocompleteTrigger(v); }
+      function () { return Settings.get('replAutocompleteTrigger'); },
+      function (p, v) { Settings.set('replAutocompleteTrigger', v); }
     );
     addSwitchRow(panelBodies.repl, 'repl-autocomplete-continue', 'Continue suggesting after accept',
       'Keep showing completions after Tab or click when more options remain.',
-      function () { return p0 ? p0.readStoredReplAutocompleteContinue() : false; },
-      function (p, on) { p.writeStoredReplAutocompleteContinue(on); }
+      function () { return Settings.get('replAutocompleteContinue'); },
+      function (p, on) { Settings.set('replAutocompleteContinue', on); }
     );
     addSwitchRow(panelBodies.repl, 'repl-welcome', 'Banner after clear', 'Show the Beluga version line again after clear.',
-      function () { return p0 ? p0.readStoredReplWelcome() : true; },
-      function (p, on) { p.writeStoredReplWelcome(on); }
+      function () { return Settings.get('replWelcome'); },
+      function (p, on) { Settings.set('replWelcome', on); }
     );
     addSwitchRow(panelBodies.repl, 'repl-echo', 'Echo commands', 'Repeat typed commands in the transcript.',
-      function () { return p0 ? p0.readStoredReplEcho() : true; },
-      function (p, on) { p.writeStoredReplEcho(on); }
+      function () { return Settings.get('replEcho'); },
+      function (p, on) { Settings.set('replEcho', on); }
     );
     addSwitchRow(panelBodies.repl, 'repl-filter-chatter', 'Filter chatter', 'Hide noisy Beluga status lines in the transcript.',
-      function () { return p0 ? p0.readStoredReplFilterChatter() : true; },
-      function (p, on) { p.writeStoredReplFilterChatter(on); }
+      function () { return Settings.get('replFilterChatter'); },
+      function (p, on) { Settings.set('replFilterChatter', on); }
     );
     addSwitchRow(panelBodies.repl, 'repl-hover-timestamp', 'Hover for timestamp',
       'Show the time a command or output was logged when hovering it.',
-      function () { return p0 ? p0.readStoredReplHoverTimestamp() : false; },
-      function (p, on) { p.writeStoredReplHoverTimestamp(on); }
+      function () { return Settings.get('replHoverTimestamp'); },
+      function (p, on) { Settings.set('replHoverTimestamp', on); }
     );
     addDropdownRow(panelBodies.repl, 'repl-history-persist', 'Remember history',
       'Transcript and \u2191/\u2193 commands: this tab, across reloads, or never.',
@@ -2016,8 +1975,8 @@ const global = globalThis;
         { value: 'local', label: 'Across sessions' },
         { value: 'none', label: 'Never' },
       ],
-      function () { return p0 ? p0.readStoredReplHistoryPersist() : 'local'; },
-      function (p, v) { p.writeStoredReplHistoryPersist(v); }
+      function () { return Settings.get('replHistoryPersist'); },
+      function (p, v) { Settings.set('replHistoryPersist', v); }
     );
     addDropdownRow(panelBodies.repl, 'repl-history-cap', 'Command history size', 'Commands remembered for ↑/↓.',
       [
@@ -2026,26 +1985,26 @@ const global = globalThis;
         { value: '500', label: '500 commands' },
         { value: '1000', label: '1000 commands' },
       ],
-      function () { return p0 ? String(p0.readStoredReplHistoryCap()) : '1000'; },
-      function (p, v) { p.writeStoredReplHistoryCap(parseInt(v, 10)); }
+      function () { return String(Settings.get('replHistoryCap')); },
+      function (p, v) { Settings.set('replHistoryCap', parseInt(v, 10)); }
     );
 
     // Workspace
     addSwitchRow(panelBodies.workspace, 'restore-panels', 'Restore panel on reload',
       'Reopen the last side panel after reload.',
-      function () { return p0 ? p0.readStoredRestorePanels() : true; },
-      function (p, on) { p.writeStoredRestorePanels(on); }
+      function () { return Settings.get('restorePanels'); },
+      function (p, on) { Settings.set('restorePanels', on); }
     );
     addSwitchRow(panelBodies.workspace, 'library-expand-default', 'Expand library by default',
       'Expand all library categories on load.',
-      function () { return p0 ? p0.readStoredLibraryExpandDefault() : false; },
-      function (p, on) { p.writeStoredLibraryExpandDefault(on); }
+      function () { return Settings.get('libraryExpandDefault'); },
+      function (p, on) { Settings.set('libraryExpandDefault', on); }
     );
     addSwitchRow(panelBodies.workspace, 'inspector-follow', 'Inspector follows cursor',
       'Update the inspector as the editor cursor moves.',
-      function () { return p0 ? p0.readStoredInspectorFollow() : true; },
+      function () { return Settings.get('inspectorFollow'); },
       function (p, on) {
-        p.writeStoredInspectorFollow(on);
+        Settings.set('inspectorFollow', on);
         global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', { detail: { on: !!on } }));
       }
     );
@@ -2061,8 +2020,8 @@ const global = globalThis;
           confirmLabel: 'Reset',
           ariaLabel: 'Reset panel layout',
         }).then(function (ok) {
-          if (!ok || !persist()) return;
-          persist().resetLayoutPrefs();
+          if (!ok || typeof Device === 'undefined') return;
+          Device.reset(function (row) { return row.group === 'layout'; });
           postSettingsApply('layout-reset');
           if (typeof global.location !== 'undefined') global.location.reload();
         });
@@ -2075,9 +2034,7 @@ const global = globalThis;
       'Download appearance, editor, keybindings, aliases, and other prefs as JSON.',
       'Export\u2026',
       function () {
-        var p = persist();
-        if (!p || typeof p.exportUserSettings !== 'function') return;
-        var bundle = p.exportUserSettings();
+        var bundle = Settings.exportBundle();
         var blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
@@ -2102,21 +2059,12 @@ const global = globalThis;
           if (!file) return;
           var reader = new FileReader();
           reader.onload = function () {
-            var p = persist();
-            if (!p || typeof p.importUserSettings !== 'function') return;
             try {
               var bundle = JSON.parse(String(reader.result || ''));
-              var result = p.importUserSettings(bundle);
-              if (!result || !result.ok) {
-                if (global.Toasts && global.Toasts.warn) global.Toasts.warn('Could not import settings.');
+              var result = Settings.importBundle(bundle);
+              if (!result.ok) {
+                if (global.Toasts && global.Toasts.warn) global.Toasts.warn('Not a BelJar settings file.');
                 return;
-              }
-              if (typeof p.applyStoredUiFontSize === 'function') p.applyStoredUiFontSize();
-              if (typeof p.applyStoredUiTextContrast === 'function') p.applyStoredUiTextContrast();
-              if (typeof p.applyStoredMotionPref === 'function') p.applyStoredMotionPref();
-              if (typeof p.applyStoredEditorChrome === 'function') p.applyStoredEditorChrome();
-              if (p.readStoredTheme && document.documentElement) {
-                document.documentElement.classList.toggle('light', p.readStoredTheme() === 'light');
               }
               syncFromState();
               if (keybindingsApi) keybindingsApi.refresh();
@@ -2124,7 +2072,8 @@ const global = globalThis;
               applyLiveSettings('settings-import');
               postSettingsApply('settings-import');
               if (global.Toasts && global.Toasts.success) {
-                global.Toasts.success('Imported ' + (result.applied || 0) + ' settings.');
+                global.Toasts.success('Imported ' + result.applied.length + ' settings'
+                  + (result.skipped.length ? ', skipped ' + result.skipped.length : '') + '.');
               }
             } catch (_) {
               if (global.Toasts && global.Toasts.warn) global.Toasts.warn('Invalid settings file.');
@@ -2140,9 +2089,9 @@ const global = globalThis;
     addDropdownRow(panelBodies.aliases, 'alias-activation', 'Alias expansion',
       'Strict: while typing. Greedy: also on paste, import, and library insert.',
       [{ value: 'strict', label: 'Strict' }, { value: 'greedy', label: 'Greedy' }],
-      function () { return p0 ? p0.readStoredAliasActivation() : 'greedy'; },
+      function () { return Settings.get('aliasActivation'); },
       function (p, v) {
-        p.writeStoredAliasActivation(v);
+        Settings.set('aliasActivation', v);
         if (v !== 'greedy') return;
         var ed = global.CurrentEditor;
         if (ed && typeof ed.getValue === 'function') {

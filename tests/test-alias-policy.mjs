@@ -7,7 +7,11 @@
 // every other seam that can be exercised without a browser: the stored default, which files
 // storage expansion rewrites, proof formatting, Harpoon commit text, and the source renderer.
 // Checker-produced types keep their own always-glyph display (test-turnstile-display.mjs).
-import { create as createSettings } from '../js/persist/persist-settings.mjs';
+import { create as createWorkFiles } from '../js/persist/work-files.mjs';
+import { SETTINGS_KEY } from '../js/persist/settings-schema.mjs';
+import { createStore, createMemoryStorage } from '../js/persist/store.mjs';
+import { createSettings } from '../js/persist/settings.mjs';
+import { makeSettings } from './_settings.mjs';
 import { readAliasActivationMode } from '../js/editor-src/aliases.mjs';
 import { isSignaturePath } from '../js/editor-src/project-paths.mjs';
 import { formatProofBody } from '../js/editor-src/format/proof-format.mjs';
@@ -20,41 +24,39 @@ function expect(cond, msg) {
   console.error('FAIL:', msg);
 }
 
-// A fresh object each time, so aliases.mjs's identity-keyed mode cache re-reads.
+// A real Settings holding the mode, installed where the editor looks for it.
 function setMode(mode) {
-  globalThis.Persist = mode ? { readStoredAliasActivation: () => mode } : undefined;
+  if (mode) globalThis.Settings = makeSettings({ aliasActivation: mode });
+  else delete globalThis.Settings;
 }
-const prevPersist = globalThis.Persist;
+const prevSettings = globalThis.Settings;
 const prevProjectSource = globalThis.ProjectSource;
 
 // ── 1. Greedy is the default ──────────────────────────────────────────────────────────────
 {
-  const store = new Map();
-  const settings = createSettings({
-    backendLoad: (k) => (store.has(k) ? store.get(k) : null),
-    backendSave: (k, v) => store.set(k, v),
-    backendRemove: (k) => store.delete(k),
-    tryParse: (s) => { try { return JSON.parse(s); } catch { return null; } },
-  });
-  expect(settings.readStoredAliasActivation() === 'greedy', 'nothing stored reads as greedy');
-  settings.writeStoredAliasActivation('strict');
-  expect(settings.readStoredAliasActivation() === 'strict', 'strict persists');
-  settings.writeStoredAliasActivation('greedy');
-  expect(settings.readStoredAliasActivation() === 'greedy' && store.size === 0, 'choosing greedy clears the key');
-  store.set('beljar-alias-activation', 'eager');
-  expect(settings.readStoredAliasActivation() === 'greedy', 'an unknown stored value reads as greedy');
+  const storage = createMemoryStorage();
+  const settings = createSettings(createStore({ storage }));
+  expect(settings.get('aliasActivation') === 'greedy', 'nothing stored reads as greedy');
+  settings.set('aliasActivation', 'strict');
+  expect(settings.get('aliasActivation') === 'strict', 'strict persists');
+  settings.set('aliasActivation', 'greedy');
+  expect(!('aliasActivation' in JSON.parse(storage.getItem(SETTINGS_KEY)).data.values),
+    'choosing greedy, the default, stores nothing');
+  expect(!settings.set('aliasActivation', 'eager') && settings.get('aliasActivation') === 'greedy',
+    'an unknown mode is refused and changes nothing');
   setMode(null);
-  expect(readAliasActivationMode() === 'greedy', 'no Persist on the page reads as greedy');
+  expect(readAliasActivationMode() === 'greedy', 'no Settings on the page reads as greedy');
 
   // ── 2. Storage expansion rewrites every source file kind, .elf included; never .cfg ─────
+  const files = createWorkFiles({ work: null, settings });
   const cases = { 'a.bel': true, 'grp/b.ELF': true, 'lemma': true, 'suite.cfg': false, 'notes.md': false };
   globalThis.ProjectSource = undefined;
   for (const [name, want] of Object.entries(cases)) {
-    expect(settings.isAliasExpandablePath(name) === want, `fallback: ${name} expandable=${want}`);
+    expect(files.isAliasExpandablePath(name) === want, `fallback: ${name} expandable=${want}`);
   }
   globalThis.ProjectSource = { isSignaturePath };
   for (const [name, want] of Object.entries(cases)) {
-    expect(settings.isAliasExpandablePath(name) === want, `with ProjectSource: ${name} expandable=${want}`);
+    expect(files.isAliasExpandablePath(name) === want, `with ProjectSource: ${name} expandable=${want}`);
   }
   globalThis.ProjectSource = prevProjectSource;
 }
@@ -117,7 +119,8 @@ const prevProjectSource = globalThis.ProjectSource;
   globalThis.document = prevDocument;
 }
 
-globalThis.Persist = prevPersist;
+if (prevSettings === undefined) delete globalThis.Settings;
+else globalThis.Settings = prevSettings;
 if (failures) {
   console.error(`test-alias-policy: ${failures} failure(s)`);
   process.exit(1);

@@ -1,13 +1,9 @@
+import { readSetting } from '../../persist/settings-schema.mjs';
 /** Quiet-while-typing: suppress thrashy IDE chrome until settlement catches up. */
-
-function persistApi() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  return g.Persist;
-}
 
 export function quietWhileTypingEnabled() {
   try {
-    return !!persistApi()?.readStoredQuietWhileTyping?.();
+    return !!readSetting('quietWhileTyping');
   } catch (_) {
     return false;
   }

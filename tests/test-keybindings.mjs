@@ -19,6 +19,8 @@ const ctx = vm.createContext({
     getItem(k) { return store[k] ?? null; },
     setItem(k, v) { store[k] = String(v); },
     removeItem(k) { delete store[k]; },
+    get length() { return Object.keys(store).length; },
+    key(i) { return Object.keys(store)[i] ?? null; },
   },
   navigator: { platform: 'Win32' },
   addEventListener() {},
@@ -33,9 +35,9 @@ runPersistStackInContext(ctx);
 vm.runInContext(readFileSync(join(here, '..', 'js', 'ui', 'keybindings.js'), 'utf8'), ctx);
 
 const KB = ctx.Keybindings;
-const P = ctx.Persist;
+const S = ctx.Settings;
 expect(KB && typeof KB.resolve === 'function', 'Keybindings exported');
-expect(P && typeof P.readStoredKeybindings === 'function', 'persist keybindings API');
+expect(S && typeof S.get('keybindings') === 'object', 'the page Settings holds the keybindings');
 
 const {
   normalizeSpec,
@@ -71,7 +73,7 @@ expect(formatShortcut('Mod+Y', false) === 'Ctrl+Y', 'label Win');
 expect(formatShortcut('Mod+Shift+Z', true) === '\u2318\u21E7Z', 'label Mac redo');
 expect(KB.titleFor('edit.undo') === 'Undo', 'titleFor undo');
 
-P.writeStoredKeybindings({ 'nav.anywhere': 'Mod+J' });
+S.set('keybindings', { 'nav.anywhere': 'Mod+J' });
 expect(KB.resolve('nav.anywhere') === 'Mod+J', 'override anywhere');
 expect(KB.isUserOverride('nav.anywhere') === true, 'user override flag');
 expect(KB.findConflict('Mod+J', 'nav.anywhere') == null, 'no self conflict');

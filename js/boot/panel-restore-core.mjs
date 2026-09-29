@@ -1,3 +1,7 @@
+import { SCHEMA } from '../persist/store.mjs';
+import { readBootSettings } from '../persist/settings-schema.mjs';
+import { readBootSession } from '../persist/keys.mjs';
+
 const PANEL_CONFIG = {
   harpoon: {
     workspaceClass: 'is-harpoon-open',
@@ -21,30 +25,12 @@ const PANEL_CONFIG = {
   },
 };
 
-const LEGACY_OPEN_KEYS = [
-  ['beljar-harpoon-open', 'harpoon'],
-  ['beljar-library-open', 'library'],
-  ['beljar-inspector-open', 'inspector'],
-  ['beljar-explorer-open', 'explorer'],
-];
-
-export function panelStorageKey(projectId) {
-  if (!projectId || projectId === 'default') return 'beljar-active-side-panel';
-  const safe = String(projectId).replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `beljar-proj:${safe}:active-side-panel`;
-}
-
-export function resolveActivePanel(storage, projectId) {
-  if (storage.getItem('beljar-restore-panels') === 'off') return null;
-
-  const panelKey = panelStorageKey(projectId);
-  let activePanel = storage.getItem(panelKey);
-  if (activePanel) return activePanel;
-
-  for (const [legacyKey, panel] of LEGACY_OPEN_KEYS) {
-    if (storage.getItem(legacyKey) === '1') return panel;
-  }
-  return null;
+/** The side panel the page's project had open, or null (also when Restore panels is off). */
+export function resolveActivePanel(storage) {
+  if (!readBootSettings(storage, SCHEMA).restorePanels) return null;
+  const session = readBootSession(storage, SCHEMA);
+  const panel = session && session.panel;
+  return typeof panel === 'string' && PANEL_CONFIG[panel] ? panel : null;
 }
 
 export function applyActivePanel(document, activePanel) {
@@ -68,8 +54,7 @@ export function applyActivePanel(document, activePanel) {
 }
 
 export function restorePanelState(document, storage) {
-  const projectId = storage.getItem('beljar-active-project') || 'default';
-  const activePanel = resolveActivePanel(storage, projectId);
+  const activePanel = resolveActivePanel(storage);
   if (!activePanel) return false;
   return applyActivePanel(document, activePanel);
 }

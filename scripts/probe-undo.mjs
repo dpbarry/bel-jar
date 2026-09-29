@@ -61,8 +61,8 @@ const redoOnce = async () => { await page.evaluate(() => EditHistory.redo()); aw
 let crash = null;
 try {
   await page.evaluate(() => {
-    Persist.writeStoredTrimTrailingWs?.(false);
-    Persist.writeStoredFormatOnSave?.(false);
+    Settings.set('trimTrailingWs', false);
+    Settings.set('formatOnSave', false);
   });
   await page.click('.cm-content');
   await wait(300);
@@ -129,11 +129,11 @@ try {
   check(twice.head === end.head, 'and the same caret');
 
   // ── 3. undo survives an out-of-band rewrite (trim-on-save) ────────────────
-  await page.evaluate(() => Persist.writeStoredTrimTrailingWs?.(true));
+  await page.evaluate(() => Settings.set('trimTrailingWs', true));
   await page.click('.cm-content');
   await key('End', 150);
   await type('   ', 300);
-  await page.evaluate(() => Persist.flushCheckpoint && Persist.flushCheckpoint());
+  await page.evaluate(() => Commands.run('file.save'));
   await wait(900);
   const beforeTrimUndo = await snap();
   const ok = await page.evaluate(() => EditHistory.undo());
@@ -153,7 +153,7 @@ try {
   check(stalled === 0, 'the whole stack still unwinds with trim-on-save on',
     `stalled with ${stalled} left`);
   check((await toasts()).length === 0, 'and raises no toast doing it');
-  await page.evaluate(() => Persist.writeStoredTrimTrailingWs?.(false));
+  await page.evaluate(() => Settings.set('trimTrailingWs', false));
 
   // ── 4. editing after undo drops the redo branch and nothing else ──────────
   await page.click('.cm-content');
@@ -370,7 +370,8 @@ try {
     if (f) window.belJarSwitchToFileForHistory(f.id);
   });
   await wait(1500);
-  check((await workspace()).editorDocId?.endsWith('pkg/x.bel'), 'the editor is showing pkg/x.bel');
+  const xId = await page.evaluate(() => (Persist.listFiles().find((x) => x.name === 'pkg/x.bel') || {}).id || null);
+  check(xId && (await workspace()).editorDocId === xId, 'the editor is showing pkg/x.bel');
 
   await page.evaluate(() => {
     const P = window.Persist;
@@ -442,7 +443,7 @@ try {
   check(w0.leftOfChecker, 'directly left of the checker segment');
   check(w0.hasIcon && !w0.borrowsGoalMark,
     'it draws its own icon rather than borrowing the goal turnstile');
-  check(w0.text === 'History', `it says History, not a count (says ${w0.text})`);
+  check(w0.text === '', `it is an icon, not a word or a count (says ${w0.text})`);
   check(!w0.branched, 'and is not flagged as branched at the tip of history');
 
   await page.click('.jar-strip__seg--history');
@@ -457,7 +458,7 @@ try {
       rows: document.querySelectorAll('.jar-hist__row').length,
       nowRows: document.querySelectorAll('.jar-hist__now').length,
       caption: document.querySelector('.jar-hist__count')?.textContent || '',
-      keys: [...document.querySelectorAll('.jar-hist__key')].map((k) => k.textContent),
+      tray: ['undo', 'redo'].map((k) => document.querySelector('.jar-strip__seg--' + k)?.getAttribute('data-tooltip') || ''),
       // Shares the strip's top border as its bottom edge, right-aligned to the
       // widget it belongs to.
       gapToStrip: Math.round(b.top - p.bottom),
@@ -481,8 +482,9 @@ try {
   check(panel.previews > 0, 'typed steps show the text they typed, not the word "Typing"');
   check(panel.topPreview.indexOf('zebra') >= 0,
     'and the newest row shows the text just typed', JSON.stringify(panel.topPreview));
-  check(panel.keys.length === 2 && panel.keys.every(Boolean),
-    'the footer names real chords for undo and redo', JSON.stringify(panel.keys));
+  check(panel.tray.every((t) => /\(.+\)/.test(t)),
+    'the undo and redo buttons name real chords in their tooltips', JSON.stringify(panel.tray));
+  check(/^\d+ steps?$/.test(panel.caption), 'the count is a size, not an instruction', panel.caption);
   check((await widget()).expanded === 'true', 'the widget reports itself expanded');
 
   // ⛔ `bindTooltips()` sweeps `[data-tooltip]` once at boot and is not
@@ -519,7 +521,7 @@ try {
   check(after.redo === before.redo + 3, 'and the three land on the redo stack');
   const w1 = await widget();
   check(w1.branched, 'the widget flags the waiting redo branch');
-  check(w1.text === 'History', 'and still says History, not a leftover count');
+  check(w1.text === '', 'and still carries no leftover count');
   const aheadRows = await page.evaluate(() =>
     document.querySelectorAll('.jar-hist__row.is-ahead').length);
   check(aheadRows === 3, 'the panel shows three steps ahead of the marker', String(aheadRows));
@@ -529,6 +531,19 @@ try {
   await wait(400);
   check(!(await page.evaluate(() => !!document.querySelector('.jar-hist'))), 'Escape closes the panel');
   check((await widget()).expanded === 'false', 'and the widget stops reporting itself expanded');
+
+  // The tray's own buttons step the same stack.
+  const t0 = await snap();
+  await page.click('.jar-strip__seg--undo');
+  await wait(500);
+  const t1 = await snap();
+  check(t1.undo === t0.undo - 1 && t1.redo === t0.redo + 1, 'the undo button undoes one step',
+    `${t0.undo}/${t0.redo} -> ${t1.undo}/${t1.redo}`);
+  await page.click('.jar-strip__seg--redo');
+  await wait(500);
+  const t2 = await snap();
+  check(t2.undo === t0.undo && t2.redo === t0.redo, 'and the redo button puts it back',
+    `${t1.undo}/${t1.redo} -> ${t2.undo}/${t2.redo}`);
 
   // The command layer reaches the same panel.
   await page.evaluate(() => Commands.run('view.edit-history'));

@@ -158,10 +158,44 @@ var CRC_TABLE = (function () {
     triggerDownload(buildZip(entries), fileName || 'download.zip');
   }
 
+  /**
+   * A name every filesystem takes: what Windows or macOS refuse in a name
+   * becomes "-", and a name Windows reserves gets a suffix.
+   */
+  function fileSafeName(name) {
+    var s = String(name == null ? '' : name)
+      .replace(/[\/\\:*?"<>|\u0000-\u001f]/g, '-')
+      .replace(/^[\s.]+|[\s.]+$/g, '')
+      .slice(0, 120);
+    if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(s)) s += '-project';
+    return s;
+  }
+
+  /**
+   * A whole project as one archive: every file under a folder named after the
+   * project, so unzipping it and choosing Import folder as new project gives
+   * the project back, name and all. Empty folders come along.
+   * files: [{ path, text }]; folders: [path]. Returns { fileName, entries }.
+   */
+  function projectArchive(projectName, files, folders) {
+    var root = fileSafeName(projectName) || 'project';
+    var byPath = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
+    var entries = (files || []).slice()
+      .sort(function (a, b) { return byPath(a.path, b.path); })
+      .map(function (f) { return { path: root + '/' + f.path, data: f.text == null ? '' : String(f.text) }; });
+    (folders || []).slice().sort(byPath).forEach(function (dir) {
+      var holds = (files || []).some(function (f) { return f.path.indexOf(dir + '/') === 0; });
+      if (!holds) entries.push({ path: root + '/' + dir + '/', directory: true });
+    });
+    return { fileName: root + '.zip', entries: entries };
+  }
+
   global.DownloadZip = {
     buildZip: buildZip,
     triggerDownload: triggerDownload,
     downloadTextFile: downloadTextFile,
     downloadZip: downloadZip,
+    fileSafeName: fileSafeName,
+    projectArchive: projectArchive,
   };
   global.BelJarDownloadZip = global.DownloadZip;

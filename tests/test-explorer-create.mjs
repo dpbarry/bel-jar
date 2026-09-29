@@ -86,6 +86,8 @@ function loadPersist(seed) {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
     removeItem: (k) => store.delete(k),
+    get length() { return store.size; },
+    key: (i) => [...store.keys()][i] ?? null,
   };
   const ctx = vm.createContext({ globalThis: {}, clearTimeout, setTimeout, TextEncoder, localStorage });
   ctx.globalThis = ctx;
@@ -94,7 +96,6 @@ function loadPersist(seed) {
 }
 
 const P = loadPersist({});
-P.ensureProject();
 P.addEmptyFolder('scratch');
 expect(P.listEmptyFolders().length === 1 && P.listEmptyFolders()[0] === 'scratch',
   'addEmptyFolder stores path');

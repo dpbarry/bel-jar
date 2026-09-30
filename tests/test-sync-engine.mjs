@@ -664,4 +664,73 @@ function world() {
   expect(b.work.getText(main, pid) === 'theorem by A\n' && !fileId(b.work, pid, 'more.bel'), 'and the project is exactly the cloud\'s');
 }
 
-console.log(`OK sync engine (${n} checks: push, pull, merge, conflict, deletes both ways, owners, lost answers, offline, damage, moving targets, an open editor, settings, ask about every file, kept on sign-out, offline changes and the cloud's version)`);
+// ── 15. signing out and in again: no ghost, and back to the work ────────────
+{
+  // A blank placeholder: what BelJar makes so the list is never empty.
+  const server = createMemoryServer({ hash: syncHash });
+  const a = makeDevice(server, { name: 'A', account: null });
+  const blank = a.work.projectId();
+  expect(a.work.isBlankProject(blank), 'the project a fresh browser starts with is a blank placeholder');
+  const main = fileId(a.work, blank, 'main.bel');
+  a.work.setText(main, 'x', blank);
+  expect(!a.work.isBlankProject(blank), 'a character in it makes it work');
+  a.work.setText(main, '', blank);
+  expect(a.work.isBlankProject(blank), 'emptied again, it is blank again: nothing in it to lose');
+  a.work.renameProject(blank, 'Lemmas');
+  expect(!a.work.isBlankProject(blank), 'renamed, it is the person’s');
+  a.work.renameProject(blank, 'Untitled Project');
+  addFile(a.work, blank, 'more.bel', '');
+  expect(!a.work.isBlankProject(blank), 'with a second file, too');
+  signIn(a, server, 'u_dean');
+  const theirs = a.work.createProject('Untitled Project');
+  expect(!a.work.isBlankProject(theirs), 'an account’s own empty project is never a placeholder to drop');
+}
+{
+  // ⛔ Why signing out signs out BEFORE removing: reading the project list
+  // creates a project when none is visible, for whoever is signed in. A live
+  // page reads it on every file event (the adoption listener did).
+  const server = createMemoryServer({ hash: syncHash });
+  const ghostly = (order) => {
+    const a = makeDevice(server, { name: 'G' + order, account: 'u_dean' });
+    const pid = a.work.projectId();
+    a.work.setText(fileId(a.work, pid, 'main.bel'), 'work\n', pid);
+    const off = a.work.onFileChange(() => a.work.listProjects()); // as the adoption listener does
+    if (order === 'remove-first') {
+      a.work.removeAccountProjects('u_dean');
+      a.work.setAccount(null);
+    } else {
+      a.work.setAccount(null);
+      a.work.removeAccountProjects('u_dean');
+    }
+    off();
+    return a.work.allProjects();
+  };
+  const old = ghostly('remove-first');
+  expect(old.some((p) => p.owner === 'u_dean'), 'removing while still signed in reads a new project into being, for the account: the ghost');
+  const now = ghostly('sign-out-first');
+  expect(!now.some((p) => p.owner === 'u_dean') && now.length === 1 && now[0].owner === null,
+    `signed out first, the only project made is this browser's own placeholder (${JSON.stringify(now.map((p) => p.owner))})`);
+}
+{
+  // What the account had open is remembered, and handed back once.
+  const server = createMemoryServer({ hash: syncHash });
+  const a = makeDevice(server, { name: 'A', account: null });
+  a.work.projectId();
+  signIn(a, server, 'u_dean');
+  expect(JSON.stringify(a.work.resumeFor('u_dean')) === '{"project":""}', 'a fresh sign-in: back to the account’s work, its newest');
+  const thesis = a.work.createProject('Thesis');
+  a.work.setActiveProject(thesis);
+  a.work.setAccount(null);
+  a.work.removeAccountProjects('u_dean');
+  expect(a.work.resumeFor('u_dean').project === thesis, 'signing out with Thesis open remembers it');
+  a.work.setAccount('u_dean');
+  expect(a.work.resumeFor('u_dean').project === thesis, 'signing in again keeps it');
+  expect(a.work.resumeFor('u_other') === null, 'for that account only');
+  a.work.clearResume();
+  expect(a.work.resumeFor('u_dean') === null, 'and once back, it is forgotten');
+  a.work.setAccount(null);
+  a.work.setAccount('u_other');
+  expect(a.work.resumeFor('u_other').project === '' && a.work.resumeFor('u_dean') === null, 'another account signing in gets its own');
+}
+
+console.log(`OK sync engine (${n} checks: push, pull, merge, conflict, deletes both ways, owners, lost answers, offline, damage, moving targets, an open editor, settings, ask about every file, kept on sign-out, offline changes and the cloud's version, signing out and back)`);

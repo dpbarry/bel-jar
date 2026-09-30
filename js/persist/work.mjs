@@ -258,8 +258,42 @@ export function createWork(opts) {
    */
   function setAccount(uid) {
     if (uid && kept().includes(String(uid))) device.set('keptAccounts', kept().filter((id) => id !== String(uid)));
+    // Signing in: once its work is here, the account's (not a blank
+    // placeholder) is what this page should show. What it had open when it
+    // signed out here is remembered by removeAccountProjects.
+    if (uid && device.get('resumeAccount') !== String(uid)) setResume(String(uid), '');
     if (uid) return device.set('account', String(uid));
     return device.reset((row) => row.id === 'account');
+  }
+
+  function setResume(uid, pid) {
+    device.set('resumeAccount', uid);
+    if (pid) device.set('resumeProject', pid);
+    else device.reset((row) => row.id === 'resumeProject');
+  }
+
+  /** Signed in as `uid` and not yet back at its work: { project } ('' the newest), or null. */
+  function resumeFor(uid) {
+    if (!uid || device.get('resumeAccount') !== String(uid)) return null;
+    return { project: device.get('resumeProject') || '' };
+  }
+
+  function clearResume() {
+    return device.reset((row) => row.id === 'resumeAccount' || row.id === 'resumeProject');
+  }
+
+  /**
+   * A project BelJar made so the list is never empty, that nobody has written
+   * in: no account, the default name, one empty first file, no folders or
+   * suites. Dropping it loses nothing.
+   */
+  function isBlankProject(pid) {
+    const meta = normalizeMeta(pid, store.get(metaKey(pid)));
+    if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME) return false;
+    const t = peekTree(pid);
+    if (t.files.length !== 1 || t.files[0].name !== FIRST_FILE_NAME || t.folders.length) return false;
+    if (t.suites && Object.keys(t.suites).length) return false;
+    return getText(t.files[0].id, pid) === '';
   }
 
   /**
@@ -305,6 +339,10 @@ export function createWork(opts) {
    */
   function removeAccountProjects(uid) {
     if (!uid) return 0;
+    // What was open here, to come back to when the account signs in again.
+    const open = pinned || device.get('activeProject');
+    const wasTheirs = peekProjects().some((p) => p.id === open && p.owner === uid);
+    setResume(String(uid), wasTheirs ? open : '');
     let n = 0;
     for (const p of peekProjects()) {
       if (p.owner !== uid) continue;
@@ -777,6 +815,9 @@ export function createWork(opts) {
     // accounts
     account,
     setAccount,
+    resumeFor,
+    clearResume,
+    isBlankProject,
     claimProject,
     removeAccountProjects,
     keepAccountProjects,

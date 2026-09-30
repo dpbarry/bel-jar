@@ -26,6 +26,8 @@ let editor = null;
 // window (App.openConflictSides / App.resolveOpenConflict): set by mount().
 const NO_OPEN_DOCUMENT = { sides: () => null, resolve: () => null };
 let openDocument = NO_OPEN_DOCUMENT;
+// Signing in, back to the account's work (App.resumeProject): set by mount().
+let resumeDoor = () => false;
 
 function onWin(type, fn, opts) {
   window.addEventListener(type, fn, opts);
@@ -938,6 +940,22 @@ async function newProject(name) {
     Persist.newBlankProject((projName && projName.trim()) || Persist.DEFAULT_PROJECT_NAME));
 }
 
+// Signing in (js/account/account.mjs): open the account's project in place of
+// a blank placeholder, and drop the placeholder. Checked again once the editor
+// has flushed: a keystroke that was still in flight makes it real work, and
+// then the page stays where it is.
+function resumeProject(target, blank) {
+  if (persist) persist.flushCheckpoint();
+  if (!Persist.isBlankProject(blank) || !Persist.listProjects().some((p) => p.id === target)) return false;
+  switchProjectAndReload(() => {
+    Persist.setActiveProjectId(target);
+    Persist.deleteProject(blank);
+  });
+  return true;
+}
+resumeDoor = resumeProject;
+teardown.push(() => { resumeDoor = () => false; });
+
 // Switch to another project (full reload boundary). No-op when already active.
 function switchToProject(id) {
   if (id === Persist.getActiveProjectId()) return;
@@ -1463,6 +1481,7 @@ window.App = {
   // The review window's door to the file this page has open (docs/PERSIST.md §4.4).
   openConflictSides: (pid, fid) => openDocument.sides(pid, fid),
   resolveOpenConflict: (pid, fid, choice) => openDocument.resolve(pid, fid, choice),
+  resumeProject: (target, blank) => resumeDoor(target, blank),
   // Test seam: how many registrations unmount still has to undo.
   pendingTeardown: () => teardown.length,
 };

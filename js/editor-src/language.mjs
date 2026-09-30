@@ -27,6 +27,7 @@ import {
   percentLineCommentFoldHasLeadingGap,
 } from './ide/fold.mjs';
 import { parseErrorHighlightExtensions } from './ide/invalid-highlight.mjs';
+import { declaresName } from './tree-helpers.mjs';
 import { belugaScopeHighlight } from './ide/scope-highlight.mjs';
 
 function lineStartsClosingSemi(doc, pos) {
@@ -45,7 +46,13 @@ function indentContinuationUnderAncestor(cx, ancestorNames) {
   const doc = cx.state.doc;
   if (doc.lineAt(cx.pos).number === doc.lineAt(cx.node.from).number) return cx.continue();
   for (let p = cx.node.parent; p; p = p.parent) {
-    if (ancestorNames.has(p.name)) return cx.baseIndentFor(p) + cx.unit;
+    if (!ancestorNames.has(p.name)) continue;
+    // Stray words the parser dressed as a declaration (tree-helpers
+    // `declaresName`) are no type to continue: null leaves each line where
+    // the author put it. The editor re-indents every file it opens, and
+    // indented them as one.
+    if (!declaresName(p)) return null;
+    return cx.baseIndentFor(p) + cx.unit;
   }
   return cx.baseIndentFor(cx.node) + cx.unit;
 }

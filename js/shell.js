@@ -984,6 +984,12 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signing in again: the account whose work this browser should come back
+    // to, and the project it had open when it signed out here ('' the newest).
+    // Used once, by the first load that finds a blank placeholder open
+    // (account.mjs `resumeAfterSignIn`, work.mjs `isBlankProject`).
+    { id: "resumeAccount", type: "string", default: "" },
+    { id: "resumeProject", type: "string", default: "" },
     // "Back online: Ask me first": the account whose offline edits wait
     // for the person ('' none). Outlives a reload (sync/hold.mjs).
     { id: "syncHeldFor", type: "string", default: "" },
@@ -1292,8 +1298,29 @@
     }
     function setAccount(uid) {
       if (uid && kept().includes(String(uid))) device.set("keptAccounts", kept().filter((id) => id !== String(uid)));
+      if (uid && device.get("resumeAccount") !== String(uid)) setResume(String(uid), "");
       if (uid) return device.set("account", String(uid));
       return device.reset((row) => row.id === "account");
+    }
+    function setResume(uid, pid) {
+      device.set("resumeAccount", uid);
+      if (pid) device.set("resumeProject", pid);
+      else device.reset((row) => row.id === "resumeProject");
+    }
+    function resumeFor(uid) {
+      if (!uid || device.get("resumeAccount") !== String(uid)) return null;
+      return { project: device.get("resumeProject") || "" };
+    }
+    function clearResume() {
+      return device.reset((row) => row.id === "resumeAccount" || row.id === "resumeProject");
+    }
+    function isBlankProject(pid) {
+      const meta = normalizeMeta(pid, store3.get(metaKey(pid)));
+      if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME) return false;
+      const t = peekTree(pid);
+      if (t.files.length !== 1 || t.files[0].name !== FIRST_FILE_NAME || t.folders.length) return false;
+      if (t.suites && Object.keys(t.suites).length) return false;
+      return getText(t.files[0].id, pid) === "";
     }
     function keepAccountProjects(uid) {
       return uid ? device.set("keptAccounts", kept().concat(String(uid))) : false;
@@ -1318,6 +1345,9 @@
     }
     function removeAccountProjects(uid) {
       if (!uid) return 0;
+      const open11 = pinned || device.get("activeProject");
+      const wasTheirs = peekProjects().some((p) => p.id === open11 && p.owner === uid);
+      setResume(String(uid), wasTheirs ? open11 : "");
       let n = 0;
       for (const p of peekProjects()) {
         if (p.owner !== uid) continue;
@@ -1662,6 +1692,9 @@
       // accounts
       account,
       setAccount,
+      resumeFor,
+      clearResume,
+      isBlankProject,
       claimProject,
       removeAccountProjects,
       keepAccountProjects,
@@ -4628,6 +4661,10 @@
     onFileChange: work.onFileChange,
     removeAccountProjects: work.removeAccountProjects,
     keepAccountProjects: work.keepAccountProjects,
+    // signing in again: back to the account's work, not a blank placeholder
+    resumeFor: work.resumeFor,
+    clearResume: work.clearResume,
+    isBlankProject: work.isBlankProject,
     startSync,
     stopSync,
     syncNow,
@@ -34599,10 +34636,59 @@
       await fetch("/api/auth/signout", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: "{}" });
     } catch (_) {
     }
-    if (keep) P3.keepAccountProjects(user.id);
-    else P3.removeAccountProjects(user.id);
-    P3.setAccount(null);
+    const uid = user.id;
+    user = null;
+    if (keep) {
+      P3.keepAccountProjects(uid);
+      P3.setAccount(null);
+    } else {
+      P3.setAccount(null);
+      P3.removeAccountProjects(uid);
+    }
     g13.location.reload();
+  }
+  function resumeTarget(projects, uid, remembered) {
+    const mine = (projects || []).filter((p) => p.owner === uid);
+    if (!mine.length) return null;
+    const back = remembered && mine.find((p) => p.id === remembered);
+    if (back) return back.id;
+    return mine.reduce((a, b) => b.createdAt >= a.createdAt ? b : a).id;
+  }
+  function resumeAfterSignIn() {
+    const P3 = g13.Persist;
+    if (!user || !P3.resumeFor(user.id)) return;
+    let done = false;
+    let off = null;
+    const settle = () => {
+      done = true;
+      if (off) off();
+    };
+    const attempt = (s) => {
+      if (done || !user) return;
+      const r = P3.resumeFor(user.id);
+      if (!r) return settle();
+      const active5 = P3.getActiveProjectId();
+      const ed = g13.CurrentEditor;
+      const typing = !!ed && typeof ed.getValue === "function" && ed.getValue() !== "";
+      if (!P3.isBlankProject(active5) || typing) {
+        P3.clearResume();
+        return settle();
+      }
+      const target = resumeTarget(P3.listProjects(), user.id, r.project);
+      if (!target) {
+        if (s && s.lastSync > 0 && s.state !== "syncing") {
+          P3.clearResume();
+          settle();
+        }
+        return void 0;
+      }
+      P3.clearResume();
+      settle();
+      if (g13.App && typeof g13.App.resumeProject === "function") g13.App.resumeProject(target, active5);
+      return void 0;
+    };
+    off = P3.onSyncSummary(attempt);
+    attempt(P3.syncSummary());
   }
   function noteFailedSignIn() {
     const search = g13.location && g13.location.search;
@@ -34682,6 +34768,7 @@
     if (!adopting) adoptOnWrite();
     adopting = true;
     P3.startSync({ transport: createHttpTransport() });
+    resumeAfterSignIn();
   }
   var Account2 = {
     user: () => user ? Object.assign({}, user) : null,
@@ -38297,6 +38384,7 @@ ${doc2.documentElement.outerHTML}`;
   var editor = null;
   var NO_OPEN_DOCUMENT = { sides: () => null, resolve: () => null };
   var openDocument = NO_OPEN_DOCUMENT;
+  var resumeDoor = () => false;
   function onWin(type, fn, opts) {
     window.addEventListener(type, fn, opts);
     teardown3.push(() => window.removeEventListener(type, fn, opts));
@@ -39253,6 +39341,19 @@ ${doc2.documentElement.outerHTML}`;
       if (projName === null) return;
       switchProjectAndReload(() => Persist.newBlankProject(projName && projName.trim() || Persist.DEFAULT_PROJECT_NAME));
     }
+    function resumeProject(target, blank) {
+      if (persist2) persist2.flushCheckpoint();
+      if (!Persist.isBlankProject(blank) || !Persist.listProjects().some((p) => p.id === target)) return false;
+      switchProjectAndReload(() => {
+        Persist.setActiveProjectId(target);
+        Persist.deleteProject(blank);
+      });
+      return true;
+    }
+    resumeDoor = resumeProject;
+    teardown3.push(() => {
+      resumeDoor = () => false;
+    });
     function switchToProject(id) {
       if (id === Persist.getActiveProjectId()) return;
       switchProjectAndReload(() => Persist.setActiveProjectId(id));
@@ -39701,6 +39802,7 @@ ${doc2.documentElement.outerHTML}`;
     // The review window's door to the file this page has open (docs/PERSIST.md §4.4).
     openConflictSides: (pid, fid) => openDocument.sides(pid, fid),
     resolveOpenConflict: (pid, fid, choice) => openDocument.resolve(pid, fid, choice),
+    resumeProject: (target, blank) => resumeDoor(target, blank),
     // Test seam: how many registrations unmount still has to undo.
     pendingTeardown: () => teardown3.length
   };

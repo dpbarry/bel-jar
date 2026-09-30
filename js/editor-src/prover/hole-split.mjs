@@ -16,7 +16,7 @@
 import { parser } from '../beluga-parser.js';
 import { unifyAgainstGoal, instantiateType, instantiationChanged } from './prover-unify.mjs';
 import { inhabit } from './prover-inhabit.mjs';
-import { firstChildNamed, firstIdentChild, isLFDatatypeHead } from '../tree-helpers.mjs';
+import { declaresName, firstChildNamed, firstIdentChild, isLFDatatypeHead } from '../tree-helpers.mjs';
 import { reIdentDollarHashExact } from './ident.mjs';
 import { transport } from './prover-transport.mjs';
 
@@ -415,6 +415,8 @@ export function enumerateConstructorsTyped(code, family) {
     if (!isCtorNode && !isDecl && !isCompCtorNode) continue;
     if (cur.from >= scopeLimit) continue;
     const node = cur.node;
+    // A stray word under the family is not a constructor of it (tree-helpers).
+    if (isDecl && !declaresName(node)) continue;
     const id = firstIdentChild(node);
     if (!id) continue;
     const name = slice(id);

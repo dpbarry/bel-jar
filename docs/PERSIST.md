@@ -491,6 +491,21 @@ it looks is [`docs/UI.md`](UI.md)).
   With "Projects in this browser: Keep them" nothing leaves, so nothing is asked: the account's
   projects stay, usable signed out (device `keptAccounts`, `work.mjs` `isVisible`), never adopted by
   another account, and syncing again, with what was done meanwhile, when the same account signs in.
+  ⛔ The page is still live while the projects go, and reading the project list creates a project
+  when none is visible (`ensureProjects`), for whoever is signed in. Removing while still signed in
+  made an empty project FOR THE ACCOUNT on every sign-out (the adoption listener read the list on
+  the removals' file events), and the next sign-in uploaded it. So `signOut` adopts nothing from
+  then on, and orders the two steps: removing, sign out first (a read makes this browser's own
+  placeholder); keeping, keep first (the list is never empty).
+- **Signing in again, back to the work.** Removing leaves the browser a blank placeholder (no
+  account, the default name, one empty file: `work.isBlankProject`), and a page that stayed on it
+  after signing in looked as if the work was gone. Signing out remembers the account's project that
+  was open (device `resumeAccount`, `resumeProject`; a fresh sign-in on a new device remembers
+  none). Once the account's work is here (the first round brings it), a page still on the blank
+  placeholder opens that project, else the account's newest, and drops the placeholder
+  (`account.mjs` `resumeAfterSignIn`, `resumeTarget`; `App.resumeProject` switches through the
+  flush-safe path and re-checks blankness after the flush, so a keystroke in flight keeps the page
+  where it is). Once per sign-in: a page where the person is already at work stays.
 - **Settings > Account** (`settings-schema.mjs`, section `account`, with its own Reset):
   - *Sync settings* (`syncSettings`, this device only).
   - *Changed in two places* (`syncBothChanged`): a file edited here and in the cloud since they

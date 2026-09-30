@@ -11,25 +11,10 @@ import { semanticDeclText } from './check-gate.mjs';
 import { publishNameEnv, preludeCtorNames } from './name-env.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
 import { declarationLabel } from './declaration-labels.mjs';
+import { GLOBAL_DECL_PARENT, declaresName } from '../tree-helpers.mjs';
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
 const NOTATION_PRAGMA = new Set(['InfixPragma', 'PrefixPragma']);
-const GLOBAL_DECL_PARENT = new Set([
-  'LFDeclaration',
-  'LFDatatypeDeclaration',
-  'LFConstructor',
-  'SchemaDeclaration',
-  'TypedefDeclaration',
-  'LetDeclaration',
-  'ModuleDeclaration',
-  'InductiveBody',
-  'CoinductiveBody',
-  'CompConstructor',
-  'CompDestructor',
-  'RecBody',
-  'ProofDeclaration',
-]);
-
 const TYPEISH = new Set([
   'LFType',
   'LFKind',
@@ -1541,6 +1526,8 @@ function collectGlobalSymbols(ctx) {
       }
       if (!GLOBAL_DECL_PARENT.has(ref.name)) return;
       const node = ref.node;
+      // A stray word parses as an LF declaration: it names nothing (tree-helpers).
+      if (!declaresName(node)) return;
       // A mutual LF block flattens several type-family heads into one node; emit
       // a symbol for each head, not just the first.
       const heads = node.name === 'LFDatatypeDeclaration'

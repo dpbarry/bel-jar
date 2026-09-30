@@ -7,7 +7,7 @@ import {
 import { Prec, RangeSetBuilder } from '@codemirror/state';
 import { Tag, tags as t } from '@lezer/highlight';
 import { Decoration, ViewPlugin } from '@codemirror/view';
-import { lfDeclarationHasColon } from '../lint-units.mjs';
+import { declaresName } from '../tree-helpers.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
 
 const PARSE_ERROR = '\u26A0';
@@ -21,7 +21,7 @@ const parseErrorNeutralStyle = HighlightStyle.define([
 function neutralHighlightContext(node) {
   for (let p = node.parent; p; p = p.parent) {
     if (p.name === PARSE_ERROR) return true;
-    if (p.name === 'LFDeclaration' && !lfDeclarationHasColon(p)) return true;
+    if (!declaresName(p)) return true;
   }
   return false;
 }

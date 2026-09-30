@@ -3,6 +3,7 @@ import { tags as hlTags } from '@lezer/highlight';
 import { Decoration, EditorView, ViewPlugin } from '@codemirror/view';
 import { RangeSetBuilder, StateField, StateEffect } from '@codemirror/state';
 import { walkTree } from '../tree-walk.mjs';
+import { declaresName } from '../tree-helpers.mjs';
 import { envHasGlobal, envHasPreludeName, nameEnvForTree } from '../semantic/name-env.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
 
@@ -59,16 +60,6 @@ export function collectBoundTintRanges(tree, doc, visibleRanges) {
   return pending;
 }
 
-function lfDeclarationComplete(node) {
-  let colon = false;
-  let dot = false;
-  for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (c.name === ':') colon = true;
-    if (c.name === '.') dot = true;
-  }
-  return colon && dot;
-}
-
 function buildDecorations(view, markCache) {
   const tree = syntaxTree(view.state);
   const doc = view.state.doc;
@@ -94,7 +85,7 @@ function buildDecorations(view, markCache) {
         if (seenDecl.has(ref.from)) return;
         seenDecl.add(ref.from);
         const node = ref.node;
-        if (!lfDeclarationComplete(node)) return;
+        if (!declaresName(node)) return;
         let id = null;
         for (let c = node.firstChild; c; c = c.nextSibling) {
           if (c.name === 'LowerIdentifier') { id = c; break; }

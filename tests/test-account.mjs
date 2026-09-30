@@ -2,7 +2,7 @@
 // this browser, which projects it adopts, when a sync round makes removing
 // projects safe, and how a failed sign-in is explained.
 import fs from 'node:fs';
-import { accountStep, adoptable, roundIsSafe, signInFailure, reach, unreachableWords } from '../js/account/account.mjs';
+import { accountStep, adoptable, roundIsSafe, signInFailure, reach, unreachableWords, resumeTarget } from '../js/account/account.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -73,4 +73,21 @@ for (const why of steps) for (const d of ['', 'no-cookie', 'mismatch', 'incorrec
   expect(said === null || !/—/.test(said), `no em dash in "${why}/${d}", in the house voice`);
 }
 
-console.log(`OK account (${n} checks: sign-in steps, what sign-in adopts, when removal is safe, every sign-in failure explained)`);
+// ── signing in again: which of the account's projects to come back to ───────
+{
+  const projects = [
+    { id: 'p_old', owner: 'u_1', createdAt: 100 },
+    { id: 'p_new', owner: 'u_1', createdAt: 300 },
+    { id: 'p_theirs', owner: 'u_2', createdAt: 900 },
+    { id: 'p_here', owner: null, createdAt: 950 },
+  ];
+  expect(resumeTarget(projects, 'u_1', 'p_old') === 'p_old', 'the project it had open when it signed out here');
+  expect(resumeTarget(projects, 'u_1', '') === 'p_new', 'none remembered (a new device): its newest');
+  expect(resumeTarget(projects, 'u_1', 'p_gone') === 'p_new', 'the remembered one is gone: its newest');
+  expect(resumeTarget(projects, 'u_1', 'p_theirs') === 'p_new', "never another account's, nor this browser's own");
+  expect(resumeTarget(projects, 'u_3', '') === null, 'an account with nothing here: stay');
+  const tied = [{ id: 'p_a', owner: 'u_1', createdAt: 5 }, { id: 'p_b', owner: 'u_1', createdAt: 5 }];
+  expect(resumeTarget(tied, 'u_1', '') === 'p_b', 'made in the same millisecond: the later in the list, every time');
+}
+
+console.log(`OK account (${n} checks: sign-in steps, what sign-in adopts, when removal is safe, every sign-in failure explained, where signing in comes back to)`);

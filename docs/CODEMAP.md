@@ -38,7 +38,7 @@ index.html
 | Domain | Start here | Also look in |
 |--------|------------|--------------|
 | **Mount / public API** | [`editor.mjs`](../js/editor-src/editor.mjs) | Shell-facing barrel |
-| **Parser / grammar** | [`beluga.grammar`](../beluga.grammar) | `beluga-parser*`, `beluga-tokens`, `language`, `tree-walk` |
+| **Parser / grammar** | [`beluga.grammar`](../beluga.grammar) | `beluga-parser*`, `beluga-tokens`, `language`, `tree-walk`; ⛔ what declares a name is `tree-helpers.mjs` `declaresName`, one rule for every reader (symbols, the names walk, hover, Harpoon's constructors, suite lint, the indenter, the sticky header, the lint): error recovery makes an LF declaration out of any stray word (`tests/test-declares-name.mjs`) |
 | **Semantic / checking** | [`semantic-engine.mjs`](../js/editor-src/semantic/semantic-engine.mjs) | `semantic/*` |
 | **Prover / holes** | [`prover-orchestrator.mjs`](../js/editor-src/prover/prover-orchestrator.mjs) | `prover/*` (hyp, moves, candidates, synth, certify, hole-*) |
 | **Harpoon (dual)** | [Harpoon dual](#harpoon-dual) | Shell lab UI vs editor-src model — globals only |

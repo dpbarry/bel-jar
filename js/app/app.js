@@ -4702,6 +4702,7 @@ ${doc.documentElement.outerHTML}`;
   var editor = null;
   var NO_OPEN_DOCUMENT = { sides: () => null, resolve: () => null };
   var openDocument = NO_OPEN_DOCUMENT;
+  var resumeDoor = () => false;
   function onWin(type, fn, opts) {
     window.addEventListener(type, fn, opts);
     teardown.push(() => window.removeEventListener(type, fn, opts));
@@ -5658,6 +5659,19 @@ ${doc.documentElement.outerHTML}`;
       if (projName === null) return;
       switchProjectAndReload(() => Persist.newBlankProject(projName && projName.trim() || Persist.DEFAULT_PROJECT_NAME));
     }
+    function resumeProject(target, blank) {
+      if (persist) persist.flushCheckpoint();
+      if (!Persist.isBlankProject(blank) || !Persist.listProjects().some((p) => p.id === target)) return false;
+      switchProjectAndReload(() => {
+        Persist.setActiveProjectId(target);
+        Persist.deleteProject(blank);
+      });
+      return true;
+    }
+    resumeDoor = resumeProject;
+    teardown.push(() => {
+      resumeDoor = () => false;
+    });
     function switchToProject(id) {
       if (id === Persist.getActiveProjectId()) return;
       switchProjectAndReload(() => Persist.setActiveProjectId(id));
@@ -6106,6 +6120,7 @@ ${doc.documentElement.outerHTML}`;
     // The review window's door to the file this page has open (docs/PERSIST.md §4.4).
     openConflictSides: (pid, fid) => openDocument.sides(pid, fid),
     resolveOpenConflict: (pid, fid, choice) => openDocument.resolve(pid, fid, choice),
+    resumeProject: (target, blank) => resumeDoor(target, blank),
     // Test seam: how many registrations unmount still has to undo.
     pendingTeardown: () => teardown.length
   };

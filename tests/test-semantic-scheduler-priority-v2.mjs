@@ -10,7 +10,9 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
-const PAD = '\n// pad\n'.repeat(80);
+// A Beluga comment. `// pad` is not one: its words parsed as a stray
+// declaration `pad` swallowing `c`, and this test found that instead of `c`.
+const PAD = '\n% pad\n'.repeat(80);
 const SRC = `o : type.\npf : o -> type.\n${PAD}c : pf A -> pf A.\n${PAD}d : pf B -> pf B.\n`;
 const upd = (e, src) => e.update(parser.parse(src), Text.of(src.split('\n')));
 

@@ -1,11 +1,11 @@
 import {
   GAP_PRAGMA_LINE,
-  lfDeclarationHasColon,
   lineSyntaxMessage,
   computeLintBlocks,
 } from './lint-units.mjs';
 import {
   GLOBAL_DECL_PARENT,
+  declaresName,
   firstChildNamed,
   firstIdentChild,
   isLFDatatypeHead,
@@ -75,7 +75,7 @@ function inParseErrorContext(node, blockFrom, blockTo) {
   for (let p = node.parent; p; p = p.parent) {
     if (p.from < blockFrom || p.to > blockTo) return false;
     if (p.name === PARSE_ERROR) return true;
-    if (p.name === 'LFDeclaration' && !lfDeclarationHasColon(p)) return true;
+    if (!declaresName(p)) return true;
     if (p.name === 'Program') break;
   }
   return false;
@@ -679,7 +679,7 @@ function doNamesWalk(tree, doc, blockAt) {
         }
       }
 
-      if (GLOBAL_DECL_PARENT.has(n)) addDefMapEntry(node);
+      if (GLOBAL_DECL_PARENT.has(n) && declaresName(node)) addDefMapEntry(node);
 
       if (n === 'LFDatatypeDeclaration') {
         inLFDatatype = true;
@@ -710,13 +710,8 @@ function doNamesWalk(tree, doc, blockAt) {
               p === 'CompDestructor' ||
               p === 'LetDeclaration') {
             noteDefinedName(ref.from, ref.to);
-          } else if (p === 'LFDeclaration') {
-            let hasDot = false, hasError = false;
-            for (let c = parent.firstChild; c; c = c.nextSibling) {
-              if (c.name === '.') hasDot = true;
-              if (c.type.isError) hasError = true;
-            }
-            if (hasDot && !hasError) noteDefinedName(ref.from, ref.to);
+          } else if (p === 'LFDeclaration' && declaresName(parent)) {
+            noteDefinedName(ref.from, ref.to);
           }
         }
 
@@ -743,13 +738,8 @@ function doNamesWalk(tree, doc, blockAt) {
               p === 'ProofDeclaration' ||
               p === 'LFConstructor') {
             noteDefinedName(ref.from, ref.to);
-          } else if (p === 'LFDeclaration') {
-            let hasDot = false, hasError = false;
-            for (let c = parent.firstChild; c; c = c.nextSibling) {
-              if (c.name === '.') hasDot = true;
-              if (c.type.isError) hasError = true;
-            }
-            if (hasDot && !hasError) noteDefinedName(ref.from, ref.to);
+          } else if (p === 'LFDeclaration' && declaresName(parent)) {
+            noteDefinedName(ref.from, ref.to);
           }
         }
 

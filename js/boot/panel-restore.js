@@ -230,6 +230,12 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signing in again: the account whose work this browser should come back
+    // to, and the project it had open when it signed out here ('' the newest).
+    // Used once, by the first load that finds a blank placeholder open
+    // (account.mjs `resumeAfterSignIn`, work.mjs `isBlankProject`).
+    { id: "resumeAccount", type: "string", default: "" },
+    { id: "resumeProject", type: "string", default: "" },
     // "Back online: Ask me first": the account whose offline edits wait
     // for the person ('' none). Outlives a reload (sync/hold.mjs).
     { id: "syncHeldFor", type: "string", default: "" },

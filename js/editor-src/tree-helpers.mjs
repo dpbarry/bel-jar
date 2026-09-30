@@ -24,6 +24,29 @@ export const GLOBAL_DECL_PARENT = new Set([
   'ProofDeclaration',
 ]);
 
+/**
+ * Does this declaration node declare its name?
+ *
+ * ⛔ The one answer, for every reader of the tree: symbols (completion, hover,
+ * go to definition, rename), the names walk (settlement, suite peers), Harpoon's
+ * constructors, suite lint, the sticky header, highlighting and the lint. They
+ * each used to decide for themselves, four ways, and most never asked: a stray
+ * word became a constant with a made-up type in completion.
+ *
+ * A top-level LF declaration has no keyword, so the parser's error recovery
+ * makes one out of anything: `abc def` is two of them, `:` and `.` invented.
+ * It declares its name once the author has written its `:`; the `.` may still
+ * be coming. Every other declaration opens with a keyword or `|`, which
+ * recovery never writes for the author.
+ */
+export function declaresName(node) {
+  if (!node || node.name !== 'LFDeclaration') return true;
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === ':') return true;
+  }
+  return false;
+}
+
 // First direct child with the given node name, or null.
 export function firstChildNamed(node, name) {
   for (let c = node.firstChild; c; c = c.nextSibling) {

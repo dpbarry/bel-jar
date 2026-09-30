@@ -28,7 +28,7 @@
 import { parser } from '../beluga-parser.js';
 import { Text } from '@codemirror/state';
 import { walkTree } from '../tree-walk.mjs';
-import { firstIdentChild, isLFDatatypeHead } from '../tree-helpers.mjs';
+import { declaresName, firstIdentChild, isLFDatatypeHead } from '../tree-helpers.mjs';
 import { GLOBAL_FILE_PRAGMA_LINE } from '../semantic/project-prelude.mjs';
 
 // The leading global pragma a file carries (with its 0-based line index), or null.
@@ -149,9 +149,9 @@ export function fileShadowInfo(text) {
         for (const h of heads) memberType.set(h.name, h.name);
         // A constructor's "family" is the first head of its declaration block.
         if (heads.length) for (const c of ctors) if (!memberType.has(c)) memberType.set(c, heads[0].name);
-      } else if (cursor.name === 'LFDeclaration') {
+      } else if (cursor.name === 'LFDeclaration' && declaresName(cursor.node)) {
         // `nat : type.` declares a family; `s : nat -> nat.` a constant of the
-        // family its type ends in.
+        // family its type ends in. A stray word declares nothing (tree-helpers).
         const node = cursor.node;
         const id = firstIdentChild(node);
         if (!id) continue;

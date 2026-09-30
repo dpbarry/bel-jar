@@ -719,6 +719,12 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signing in again: the account whose work this browser should come back
+    // to, and the project it had open when it signed out here ('' the newest).
+    // Used once, by the first load that finds a blank placeholder open
+    // (account.mjs `resumeAfterSignIn`, work.mjs `isBlankProject`).
+    { id: "resumeAccount", type: "string", default: "" },
+    { id: "resumeProject", type: "string", default: "" },
     // "Back online: Ask me first": the account whose offline edits wait
     // for the person ('' none). Outlives a reload (sync/hold.mjs).
     { id: "syncHeldFor", type: "string", default: "" },
@@ -1011,8 +1017,29 @@
     }
     function setAccount(uid) {
       if (uid && kept().includes(String(uid))) device.set("keptAccounts", kept().filter((id) => id !== String(uid)));
+      if (uid && device.get("resumeAccount") !== String(uid)) setResume(String(uid), "");
       if (uid) return device.set("account", String(uid));
       return device.reset((row) => row.id === "account");
+    }
+    function setResume(uid, pid) {
+      device.set("resumeAccount", uid);
+      if (pid) device.set("resumeProject", pid);
+      else device.reset((row) => row.id === "resumeProject");
+    }
+    function resumeFor(uid) {
+      if (!uid || device.get("resumeAccount") !== String(uid)) return null;
+      return { project: device.get("resumeProject") || "" };
+    }
+    function clearResume() {
+      return device.reset((row) => row.id === "resumeAccount" || row.id === "resumeProject");
+    }
+    function isBlankProject(pid) {
+      const meta = normalizeMeta(pid, store2.get(metaKey(pid)));
+      if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME) return false;
+      const t = peekTree(pid);
+      if (t.files.length !== 1 || t.files[0].name !== FIRST_FILE_NAME || t.folders.length) return false;
+      if (t.suites && Object.keys(t.suites).length) return false;
+      return getText(t.files[0].id, pid) === "";
     }
     function keepAccountProjects(uid) {
       return uid ? device.set("keptAccounts", kept().concat(String(uid))) : false;
@@ -1037,6 +1064,9 @@
     }
     function removeAccountProjects(uid) {
       if (!uid) return 0;
+      const open = pinned || device.get("activeProject");
+      const wasTheirs = peekProjects().some((p) => p.id === open && p.owner === uid);
+      setResume(String(uid), wasTheirs ? open : "");
       let n = 0;
       for (const p of peekProjects()) {
         if (p.owner !== uid) continue;
@@ -1381,6 +1411,9 @@
       // accounts
       account,
       setAccount,
+      resumeFor,
+      clearResume,
+      isBlankProject,
       claimProject,
       removeAccountProjects,
       keepAccountProjects,
@@ -4347,6 +4380,10 @@
     onFileChange: work.onFileChange,
     removeAccountProjects: work.removeAccountProjects,
     keepAccountProjects: work.keepAccountProjects,
+    // signing in again: back to the account's work, not a blank placeholder
+    resumeFor: work.resumeFor,
+    clearResume: work.clearResume,
+    isBlankProject: work.isBlankProject,
     startSync,
     stopSync,
     syncNow,

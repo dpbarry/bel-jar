@@ -399,6 +399,10 @@ export const Persist = {
   onFileChange: work.onFileChange,
   removeAccountProjects: work.removeAccountProjects,
   keepAccountProjects: work.keepAccountProjects,
+  // signing in again: back to the account's work, not a blank placeholder
+  resumeFor: work.resumeFor,
+  clearResume: work.clearResume,
+  isBlankProject: work.isBlankProject,
   startSync: startSync,
   stopSync: stopSync,
   syncNow: syncNow,

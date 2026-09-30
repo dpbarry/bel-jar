@@ -1,3 +1,5 @@
+import { declaresName } from './tree-helpers.mjs';
+
 export const GAP_PRAGMA_LINE =
   /^\s*--(?:open|abbrev|name|infix|prefix|assoc|not|nostrengthen|opaque|coverage|warncoverage|query)\b/i;
 
@@ -37,13 +39,6 @@ function subtreeHasError(node) {
   return bad;
 }
 
-export function lfDeclarationHasColon(node) {
-  for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (c.name === ':') return true;
-  }
-  return false;
-}
-
 function hasBadPragmaLineInRange(doc, from, to) {
   const l0 = doc.lineAt(from).number;
   const l1 = doc.lineAt(Math.max(from, to - 1)).number;
@@ -78,7 +73,7 @@ function unitSyntaxFault(inner, doc, raw) {
     return hasBadPragmaLineInRange(doc, raw.from, raw.to) || realError;
   }
   if (subtreeHasError(inner)) return true;
-  if (inner.name === 'LFDeclaration' && !lfDeclarationHasColon(inner)) return true;
+  if (!declaresName(inner)) return true;
   if (realError) return true;
   if (hasBadPragmaLineInRange(doc, raw.from, raw.to)) return true;
   return false;

@@ -1,7 +1,7 @@
 import { syntaxTree, ensureSyntaxTree } from '@codemirror/language';
 import { ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 import { TOP_LEVEL_FOLD_NODES, declarationHeadName } from './fold.mjs';
-import { firstIdentChild } from '../tree-helpers.mjs';
+import { declaresName, firstIdentChild } from '../tree-helpers.mjs';
 import { highlightDocRange } from '../format/source-render.mjs';
 import { jumpToRange } from './ide-actions.mjs';
 
@@ -45,12 +45,12 @@ const REDUNDANT_WHEN_CHILD = {
   CofunctionExpression: 'CofunctionBranch',
 };
 
-/** Enclosing top-level fold node at `pos`, or null. */
+/** Enclosing top-level fold node at `pos`, or null (stray words declare nothing: tree-helpers). */
 export function enclosingTopLevelDecl(state, pos) {
   ensureSyntaxTree(state, Math.min(state.doc.length, pos + 1), 50);
   let node = syntaxTree(state).resolveInner(pos, 1);
   while (node) {
-    if (TOP_LEVEL_FOLD_NODES.has(node.name)) return node;
+    if (TOP_LEVEL_FOLD_NODES.has(node.name)) return declaresName(node) ? node : null;
     node = node.parent;
   }
   return null;
@@ -166,6 +166,7 @@ export function crumbSpan(state, node) {
     case 'TypedefDeclaration':
     case 'LetDeclaration':
     case 'ProofDeclaration': {
+      if (!declaresName(node)) return null;
       const range = headIdentRange(node);
       if (!range) return null;
       return packSpan(range.from, range.to, doc.sliceString(range.from, range.to));

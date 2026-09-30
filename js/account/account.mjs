@@ -281,10 +281,84 @@ async function signOut() {
   try {
     await fetch('/api/auth/signout', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}' });
   } catch (_) { /* the session ends here either way */ }
-  if (keep) P.keepAccountProjects(user.id);
-  else P.removeAccountProjects(user.id);
-  P.setAccount(null);
+  // ⛔ The page is still live while the projects go, and reading the project
+  // list creates one when none is visible (work.mjs `ensureProjects`), for
+  // whoever is signed in. Removing while still signed in made an empty
+  // project FOR THE ACCOUNT every time, and the next sign-in uploaded it.
+  // So: adopt nothing from here on; removing, sign out first (anything read
+  // into existence is this browser's own); keeping, keep first (the list is
+  // never empty).
+  const uid = user.id;
+  user = null;
+  if (keep) {
+    P.keepAccountProjects(uid);
+    P.setAccount(null);
+  } else {
+    P.setAccount(null);
+    P.removeAccountProjects(uid);
+  }
   g.location.reload();
+}
+
+// ── signing in again: back to the work ──────────────────────────────────────
+
+/**
+ * Where a page that has just signed in should be: the project the account had
+ * open when it signed out here, else its newest. Null: stay. Only ever in
+ * place of a blank placeholder (Persist.isBlankProject), which is all a
+ * browser has once the account's projects left it.
+ */
+export function resumeTarget(projects, uid, remembered) {
+  const mine = (projects || []).filter((p) => p.owner === uid);
+  if (!mine.length) return null;
+  const back = remembered && mine.find((p) => p.id === remembered);
+  if (back) return back.id;
+  // Made in the same millisecond: the later in the list (it sorts by time, then id).
+  return mine.reduce((a, b) => (b.createdAt >= a.createdAt ? b : a)).id;
+}
+
+/**
+ * Signed in and showing a blank placeholder: once the account's work is here
+ * (the first round brings it), open it and drop the placeholder. Once per
+ * sign-in (work.mjs `resumeFor`): a page where the person is already at work
+ * stays, and so does one where a finished round brought nothing.
+ */
+function resumeAfterSignIn() {
+  const P = g.Persist;
+  if (!user || !P.resumeFor(user.id)) return;
+  let done = false;
+  let off = null;
+  const settle = () => {
+    done = true;
+    if (off) off();
+  };
+  const attempt = (s) => {
+    if (done || !user) return;
+    const r = P.resumeFor(user.id);
+    if (!r) return settle();
+    const active = P.getActiveProjectId();
+    const ed = g.CurrentEditor;
+    const typing = !!ed && typeof ed.getValue === 'function' && ed.getValue() !== '';
+    if (!P.isBlankProject(active) || typing) {
+      P.clearResume();
+      return settle();
+    }
+    const target = resumeTarget(P.listProjects(), user.id, r.project);
+    if (!target) {
+      // Nothing of the account's here yet: wait for a round to finish.
+      if (s && s.lastSync > 0 && s.state !== 'syncing') {
+        P.clearResume();
+        settle();
+      }
+      return undefined;
+    }
+    P.clearResume();
+    settle();
+    if (g.App && typeof g.App.resumeProject === 'function') g.App.resumeProject(target, active);
+    return undefined;
+  };
+  off = P.onSyncSummary(attempt);
+  attempt(P.syncSummary());
 }
 
 // ── boot ────────────────────────────────────────────────────────────────────
@@ -372,6 +446,7 @@ async function connect() {
   if (!adopting) adoptOnWrite();
   adopting = true;
   P.startSync({ transport: createHttpTransport() });
+  resumeAfterSignIn();
 }
 
 export const Account = {

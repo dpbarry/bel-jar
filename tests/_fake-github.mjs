@@ -12,6 +12,8 @@ import { freePort } from './_worker-env.mjs';
 export const PEOPLE = {
   dean: { id: 101, login: 'Dean-B', name: 'Dean', avatar: 'ok' },
   renamed: { id: 202, login: 'dean-b', name: 'Someone else', avatar: 'missing' },
+  // An account with nothing in the cloud yet: signing in starts from scratch.
+  newcomer: { id: 303, login: 'new-person', name: 'New Person', avatar: 'ok' },
 };
 
 /** A square PNG of one colour, encoded here so it is certainly valid (zlib's own deflate and CRC). */

@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { walkTree } from './tree-walk.mjs';
 import {
   GLOBAL_DECL_PARENT,
+  declaresName,
   firstChildNamed,
   firstIdentChild,
   isLFDatatypeHead,
@@ -1227,7 +1228,7 @@ function classifyAsBinderSite(ident) {
   if (!p) return null;
   const pname = p.name;
 
-  if (GLOBAL_DECL_PARENT.has(pname) && sameSpan(firstIdentChild(p), ident)) {
+  if (GLOBAL_DECL_PARENT.has(pname) && declaresName(p) && sameSpan(firstIdentChild(p), ident)) {
     return { kind: 'decl-global', declParent: p };
   }
 
